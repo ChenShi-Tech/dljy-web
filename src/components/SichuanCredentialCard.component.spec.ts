@@ -1,5 +1,3 @@
-// @vitest-environment happy-dom
-//
 // 四川凭据卡片的展示不变量（Issue #1620 / codex #1886 P2 闭环；#1925 通用凭据层适配）。
 //
 // 核心场景一：一次连通测试最长 20 秒，期间生效凭据可能被换掉。服务端此时会
@@ -84,6 +82,13 @@ async function mountCard() {
   return wrapper
 }
 
+// 按文案定位按钮：nth-of-type 之类位置选择器会在按钮增删或调序时静默改指别的按钮。
+function button(wrapper: ReturnType<typeof mount>, label: string) {
+  const hit = wrapper.findAll('button').find((b) => b.text().includes(label))
+  if (!hit) throw new Error(`按钮不存在：${label}`)
+  return hit
+}
+
 describe('SichuanCredentialCard', () => {
   beforeEach(() => {
     fetchStatus.mockReset()
@@ -104,7 +109,7 @@ describe('SichuanCredentialCard', () => {
       notRecordedReason: '生效凭据在测试期间被更换，本次结论属于旧凭据，未写回——请对新凭据重新测试',
     })
 
-    await wrapper.find('button:nth-of-type(2)').trigger('click')
+    await button(wrapper, '测试连通').trigger('click')
     await new Promise((resolve) => setTimeout(resolve, 0))
     await wrapper.vm.$nextTick()
 
@@ -127,7 +132,7 @@ describe('SichuanCredentialCard', () => {
       recorded: true,
     })
 
-    await wrapper.find('button:nth-of-type(2)').trigger('click')
+    await button(wrapper, '测试连通').trigger('click')
     await new Promise((resolve) => setTimeout(resolve, 0))
     await wrapper.vm.$nextTick()
 
