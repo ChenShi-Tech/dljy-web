@@ -16,7 +16,7 @@ import { useEChart } from '../composables/useEChart'
 import { useQuerySync } from '../composables/useQuerySync'
 import { axisTooltip, bottomLayoutLegend, bottomToolbox, emptyOverlay } from '@/services/chart/chartOptions'
 import { debounce } from '../utils/timing'
-import { timeoutSignal } from '@/services/api'
+import { searchCityByOpenMeteo, reverseGeocode, fetchForecastBundle } from '@/services/weather'
 import ForecastIntro from '@/components/forecast/ForecastIntro.vue'
 
 type Loc = { name: string; lon: number; lat: number; admin1?: string }
@@ -139,10 +139,9 @@ async function searchCity(q: string) {
   const seq = ++searchSeq
   searchLoading.value = true
   try {
-    const r = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(kw)}&count=10&language=zh`, { signal: timeoutSignal(5000) })
-    const j = await r.json()
+    const found = await searchCityByOpenMeteo(kw)
     if (seq !== searchSeq) return
-    searchOptions.value = (j.results || []).map((x: any): Loc => ({ name: x.name, lon: x.longitude, lat: x.latitude, admin1: x.admin1 }))
+    searchOptions.value = found
   } catch {
     if (seq === searchSeq) { searchOptions.value = []; ElMessage.warning('城市搜索失败,请稍后重试') }
   } finally { if (seq === searchSeq) searchLoading.value = false }
@@ -157,12 +156,8 @@ function locate() {
     async (pos) => {
       const lat = pos.coords.latitude, lon = pos.coords.longitude
       let name = '我的位置', admin1 = ''
-      try {
-        const r = await fetch(`https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat}&longitude=${lon}&localityLanguage=zh`, { signal: timeoutSignal(5000) })
-        const j = await r.json()
-        name = j.city || j.locality || j.principalSubdivision || '我的位置'
-        admin1 = j.principalSubdivision || ''
-      } catch { /* 逆地理失败,仍用经纬度出天气 */ }
+      const hit = await reverseGeocode(lat, lon)
+      if (hit) { name = hit.name || name; admin1 = hit.admin1 }
       pickLoc({ name, lon, lat, admin1 })
       locating.value = false
     },
@@ -177,18 +172,8 @@ async function load() {
   trendChart.showLoading(); hourChart.showLoading()
   try {
     const c = loc.value
-    const da = ['weather_code', 'temperature_2m_max', 'temperature_2m_min', 'temperature_2m_mean',
-      'apparent_temperature_max', 'apparent_temperature_min', 'relative_humidity_2m_mean', 'precipitation_sum',
-      'rain_sum', 'snowfall_sum', 'precipitation_hours', 'wind_speed_10m_max', 'wind_gusts_10m_max',
-      'wind_direction_10m_dominant', 'shortwave_radiation_sum', 'sunshine_duration', 'sunrise', 'sunset'].join(',')
-    const ho = ['temperature_2m', 'apparent_temperature', 'relative_humidity_2m', 'precipitation', 'rain',
-      'wind_speed_10m', 'wind_direction_10m', 'wind_gusts_10m', 'cloud_cover', 'weather_code'].join(',')
-    const cu = ['temperature_2m', 'apparent_temperature', 'relative_humidity_2m', 'wind_speed_10m', 'weather_code'].join(',')
-    const url = `https://api.open-meteo.com/v1/forecast?latitude=${c.lat}&longitude=${c.lon}&daily=${da}&hourly=${ho}&current=${cu}&timezone=Asia%2FShanghai&forecast_days=15`
-    const res = await fetch(url, { signal: timeoutSignal(8000) })
-    if (!res.ok) throw new Error('Open-Meteo 请求失败 ' + res.status)
-    const j = await res.json()
-    cur.value = j.current; daily.value = j.daily; hourly.value = j.hourly; dayIdx.value = 0
+    const bundle = await fetchForecastBundle(c.lat, c.lon)
+    cur.value = bundle.current; daily.value = bundle.daily; hourly.value = bundle.hourly; dayIdx.value = 0
     await nextTick()
     renderTrend(); renderHour()
   } catch (e) {
