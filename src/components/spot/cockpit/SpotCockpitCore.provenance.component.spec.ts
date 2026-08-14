@@ -1,5 +1,3 @@
-// @vitest-environment happy-dom
-//
 // 同 YunnanNodePricePanel.provenance.component.spec.ts（#1791），这里锁的是驾驶舱
 // 现货 cockpit 页的节点价来源标注与数据基准徽章。
 //

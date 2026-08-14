@@ -5,6 +5,15 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { shallowMount } from '@vue/test-utils'
 import { nextTick } from 'vue'
+import DynamicTable from '@/components/common/DynamicTable.vue'
+
+// ChartCard 的显式 stub（shallow 模式下显式指定优先）：透传 actions 具名插槽，
+// 让「合计 X 万元」这类投影可走 DOM 文本断言，而不必直取组件内部计算属性。
+const global = {
+  stubs: {
+    ChartCard: { template: '<div><slot name="actions" /></div>' },
+  },
+}
 
 vi.mock('@/services/captured', () => ({
   fetchCaptured: vi.fn(),
@@ -43,13 +52,14 @@ describe('SpotPnLPanel 缺测 null 诚实展示（#1755）', () => {
       .mockResolvedValueOnce({ code: 200, data: LOSS_ROWS_NULL } as never)
       .mockResolvedValueOnce({ code: 200, data: SETTLE_ROWS_NULL } as never)
 
-    const wrapper = shallowMount(SpotPnLPanel)
+    const wrapper = shallowMount(SpotPnLPanel, { global })
     await nextTick()
     await nextTick()
     await nextTick()
 
     // 厂站 P&L 表行：电网损失列（全 null）应为「-」，总电费/平均电价应为「-」
-    const rows = (wrapper.vm as unknown as { plantTableRows: Record<string, string>[] }).plantTableRows
+    // 经 DynamicTable 的 rows props（组件对外契约）取数，不直取内部计算属性。
+    const rows = wrapper.findComponent(DynamicTable).props('rows') as Record<string, string>[]
     const row = rows.find((r) => r.plant === '厂A')
     expect(row).toBeDefined()
     expect(row!.gridLossTotal).toBe('-')   // 全 null → 「-」，不是「0.00」
@@ -66,10 +76,11 @@ describe('SpotPnLPanel 缺测 null 诚实展示（#1755）', () => {
     vi.mocked(fetchCaptured)
       .mockResolvedValueOnce({ code: 200, data: allNull } as never)
       .mockResolvedValueOnce({ code: 200, data: [] } as never)
-    const wrapper = shallowMount(SpotPnLPanel)
+    const wrapper = shallowMount(SpotPnLPanel, { global })
     await nextTick(); await nextTick(); await nextTick()
-    const vm = wrapper.vm as unknown as { lossBreakdown: { total: number | null } }
-    expect(vm.lossBreakdown.total).toBeNull()  // 全 null → 合计 null（空态判定依据）
+    // 模板投影「合计 {{ fmtNum(...) }} 万元」：fmtNum(null) = '-'，全 null 时合计显示「-」而非 0。
+    // （buildWaterfallOption 的空态判定依据同一 lossBreakdown.total，模板投影是其可见症状。）
+    expect(wrapper.text()).toContain('合计 - 万元')
   })
 
   it('有值段正常聚合（对照：非 null 数据不受影响）', async () => {
@@ -77,12 +88,12 @@ describe('SpotPnLPanel 缺测 null 诚实展示（#1755）', () => {
       .mockResolvedValueOnce({ code: 200, data: LOSS_ROWS_NULL.map((r) => ({ ...r, gridLossTotal: 12.3, gridLossPerMwh: 0.0102 })) } as never)
       .mockResolvedValueOnce({ code: 200, data: SETTLE_ROWS_NULL.map((r) => ({ ...r, avgPrice: 395.4, totalFee: 474480 })) } as never)
 
-    const wrapper = shallowMount(SpotPnLPanel)
+    const wrapper = shallowMount(SpotPnLPanel, { global })
     await nextTick()
     await nextTick()
     await nextTick()
 
-    const rows = (wrapper.vm as unknown as { plantTableRows: Record<string, string>[] }).plantTableRows
+    const rows = wrapper.findComponent(DynamicTable).props('rows') as Record<string, string>[]
     const row = rows.find((r) => r.plant === '厂A')
     expect(row).toBeDefined()
     expect(row!.gridLossTotal).toBe('0')   // 有值 → 数值（0.00246 万 → fmtNum 最小 0 位 → '0'）
