@@ -11,7 +11,8 @@ import { fetchCaptured } from '@/services/captured'
 import { onRegionChange } from '../composables/useRegionReload'
 import RegionDataBanner from '@/components/region/RegionDataBanner.vue'
 import { currentRegion } from '@/services/region/regionContext'
-import { apiGet, timeoutSignal } from '@/services/api'
+import { apiGet } from '@/services/api'
+import { fetchCurrentWeather, fetchDaily15, searchCityByQweather, lookupCityByCoords } from '@/services/weather'
 import { getCurrentUser, type AuthUser } from '@/services/auth'
 import { firstAccessiblePath, roleLabels, subjectTypeLabels } from '@/services/governance'
 import { useRoute, useRouter } from 'vue-router'
@@ -529,27 +530,9 @@ const wxOptions = ref<WxLoc[]>([])
 const wxSearching = ref(false)
 const live = ref<{ temp: number; text: string } | null>(null)
 const liveName = computed(() => live.value?.text || '')
-// Open-Meteo WMO 码→中文(仅外网回退时用)
-const WMO_TXT: Record<number, string> = {
-  0: '晴', 1: '晴', 2: '少云', 3: '阴', 45: '雾', 48: '雾', 51: '小雨', 53: '小雨', 55: '中雨',
-  56: '小雨', 57: '中雨', 61: '小雨', 63: '中雨', 65: '大雨', 66: '雨', 67: '大雨',
-  71: '小雪', 73: '雪', 75: '大雪', 77: '雪', 80: '阵雨', 81: '阵雨', 82: '阵雨',
-  85: '阵雪', 86: '阵雪', 95: '雷阵雨', 96: '雷阵雨', 99: '雷阵雨'
-}
-// 实时天气:和风优先,失败回退 Open-Meteo(保留外网链路)
+// 实时天气:和风优先,失败回退 Open-Meteo(回退链路与码表在 services/weather)
 async function loadLiveWeather() {
-  const c = wxLoc.value
-  try {
-    const r: any = await apiGet<any>('/qweather', { path: '/v7/weather/now', location: `${c.lon},${c.lat}` })
-    const now = r?.now
-    if (now && now.temp != null) { live.value = { temp: Math.round(Number(now.temp)), text: String(now.text || '') }; return }
-  } catch { /* 和风失败 → 外网回退 */ }
-  try {
-    const res = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${c.lat}&longitude=${c.lon}&current=temperature_2m,weather_code&timezone=Asia%2FShanghai`, { signal: timeoutSignal(3500) })
-    const j = await res.json()
-    live.value = j?.current?.temperature_2m != null
-      ? { temp: Math.round(Number(j.current.temperature_2m)), text: WMO_TXT[Number(j.current.weather_code)] || '' } : null
-  } catch { live.value = null }
+  live.value = await fetchCurrentWeather(wxLoc.value.lat, wxLoc.value.lon)
 }
 // 右下角天气栏:保留原「多城市×日期网格」,支持换省份;数据走和风 15d(失败回退 Open-Meteo)
 const province = ref(provinceNameForRegion())
@@ -558,20 +541,7 @@ useQuerySync({ loadType, province })
 if (!loadTypes.some((t) => t.key === loadType.value)) loadType.value = '2'
 if (!CHINA_PROVINCES.some((p) => p.name === province.value)) province.value = provinceNameForRegion()
 async function oneCity15d(city: PCity): Promise<any[]> {
-  try {
-    const r: any = await apiGet<any>('/qweather', { path: '/v7/weather/15d', location: `${city.lon},${city.lat}` })
-    if (Array.isArray(r?.daily) && r.daily.length) {
-      return r.daily.map((d: any) => ({ fxDate: d.fxDate, textDay: d.textDay, high: d.tempMax, low: d.tempMin, humidity: d.humidity }))
-    }
-  } catch { /* 和风失败 → 外网回退 */ }
-  try {
-    const res = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${city.lat}&longitude=${city.lon}&daily=weather_code,temperature_2m_max,temperature_2m_min,relative_humidity_2m_mean&timezone=Asia%2FShanghai&forecast_days=15`, { signal: timeoutSignal(4500) })
-    const j = await res.json()
-    if (j?.daily?.time) {
-      return j.daily.time.map((t: string, i: number) => ({ fxDate: t, textDay: WMO_TXT[Number(j.daily.weather_code[i])] || '', high: j.daily.temperature_2m_max[i], low: j.daily.temperature_2m_min[i], humidity: j.daily.relative_humidity_2m_mean?.[i] }))
-    }
-  } catch { /* ignore */ }
-  return []
+  return fetchDaily15(city.lat, city.lon)
 }
 // 天气网格缓存:内存 + localStorage(1 小时 TTL)。打开页面优先读本地,过期才重新拉。
 const _provCache: Record<string, { cols: any[]; rows: any[] }> = {}
@@ -650,9 +620,9 @@ async function doSearchWxCity() {
   if (!kw) { wxOptions.value = []; return }
   const seq = ++wxSeq; wxSearching.value = true
   try {
-    const r: any = await apiGet<any>('/qweather', { path: '/geo/v2/city/lookup', location: kw, number: 10 })
+    const found = await searchCityByQweather(kw)
     if (seq !== wxSeq) return
-    wxOptions.value = (r?.location || []).map((x: any): WxLoc => ({ name: x.name, lat: Number(x.lat), lon: Number(x.lon), admin1: x.adm1 }))
+    wxOptions.value = found
   } catch { if (seq === wxSeq) wxOptions.value = [] } finally { if (seq === wxSeq) wxSearching.value = false }
 }
 // 输入即搜防抖 300ms:避免每个按键都打城市检索接口(wxSeq 竞态保护仍保留)
@@ -664,21 +634,13 @@ function locateWx() {
     async (pos) => {
       const lat = pos.coords.latitude, lon = pos.coords.longitude
       let name = '我的位置', admin1 = ''
-      try {
-        const r: any = await apiGet<any>('/qweather', { path: '/geo/v2/city/lookup', location: `${lon.toFixed(2)},${lat.toFixed(2)}` })
-        const l0 = r?.location?.[0]
-        if (l0) { name = l0.name || name; admin1 = l0.adm1 || '' }
-      } catch { /* 逆地理失败仍按经纬度出天气 */ }
+      const hit = await lookupCityByCoords(lon, lat)
+      if (hit) { name = hit.name || name; admin1 = hit.admin1 || '' }
       pickWxLoc({ name, lat, lon, admin1 }); wxLocating.value = false
     },
     () => { wxLocating.value = false },
     { enableHighAccuracy: false, timeout: 8000, maximumAge: 600000 }
   )
-}
-function fmtWind(v: any): string {
-  if (v == null || v === '') return ''
-  const n = Number(v)
-  return Number.isFinite(n) ? `${Math.round(n)}级` : String(v)
 }
 function fmtTemp(cell: any): string {
   if (!cell) return '-'
