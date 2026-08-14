@@ -16,7 +16,7 @@
 ## 提交流程
 
 1. 从 `main` 拉分支（命名 `feat/…`、`fix/…`）。
-2. 本地四门禁全绿：`npm run check && npm run test:unit && npm run test:coverage && npm run build`。
+2. 本地五门禁全绿：`npm run lint && npm run check && npm run test:unit && npm run test:coverage && npm run build`。
 3. 提 PR：说清改了什么页面/行为、怎么验证；截图/录屏欢迎。
 4. CI 绿 + 维护者 review 后合入。PR 保持小而聚焦——大 PR 在双轨同步下冲突概率高。
 
