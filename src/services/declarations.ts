@@ -140,6 +140,40 @@ export type DeclarationOrder = {
       confidence?: number
       biasRatio?: number
       rationale?: string
+      /** 概率分布消费结论（#1963）：P10/P50/P90 摘要 + 漂移回退标志 */
+      quantileDigest?: {
+        mean: number
+        peak: number
+        peakHour: number
+        valley: number
+        valleyHour: number
+        spread: number
+        avgBandWidth: number
+        widestBandHour: number
+        widestBandWidth: number
+        driftFallback?: boolean | null
+        exposureFactorApplied?: number
+      } | null
+      /** 储能套利窗口结论（#1963） */
+      arbitrage?: {
+        assetLabel: string
+        requiredSpreadYuanPerMwh: number
+        prepareExecute: boolean
+        windows: Array<{
+          chargeFrom: number
+          chargeTo: number
+          dischargeFrom: number
+          dischargeTo: number
+          chargePriceP50: number
+          dischargePriceP50: number
+          p50Spread: number
+          conservativeSpread: number
+          verdict: 'execute' | 'needs_approval' | 'skip'
+          safetyMultiple: number
+        }>
+      } | null
+      /** 凯利仓位上限红线（%）（#1963） */
+      kellyCapPct?: number | null
       writtenBy: string
       writtenAt: string
     }
@@ -183,6 +217,17 @@ export type DeclarationOrder = {
       suggestion: string
       action: string
       reason: string
+      /** 挂牌价与年度均价（库内年度合同量加权，#1966） */
+      listingPriceYuanPerMwh?: number | null
+      annualAvgYuanPerMwh?: number | null
+      listingCompare?: { diffPct: number; verdict: 'below' | 'above' | 'comparable' } | null
+      /** 分布判时机（lock_now/wait/neutral，依赖 S3 概率分布） */
+      timingVerdict?: 'lock_now' | 'wait' | 'neutral' | null
+      /** 波动守卫（>5% 暂停补仓/改对冲） */
+      volatility?: { changePct: number | null; paused: boolean }
+      kellyCapPct?: number | null
+      /** 已执行登记到公司合约库 */
+      executedRegistered?: boolean | null
       writtenBy: string
       writtenAt: string
     }
@@ -191,6 +236,16 @@ export type DeclarationOrder = {
       reportSummary: string
       decisionsLogged: number
       coverageOk: boolean
+      /** 市场概况（本单口径：出清优先/申报兜底，全市场待数据活源，#1967） */
+      marketDigest?: {
+        sourceBasis: 'declared' | 'cleared'
+        totalVolumeMwh: number
+        highYuanPerMwh: number | null
+        lowYuanPerMwh: number | null
+        weightedAvgYuanPerMwh: number | null
+      } | null
+      /** 明日提醒（自动拼装 + 人工补充） */
+      tomorrowReminders?: string[]
       writtenBy: string
       writtenAt: string
     }

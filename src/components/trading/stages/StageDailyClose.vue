@@ -10,9 +10,13 @@
 // ⚠️ 决策日志为原型态：链存浏览器本地、哈希前端计算，能检出误改但不防蓄意篡改，
 // 也不具备 ≥5 年留存——这条限制常驻显示。生产化方向是服务端存储 + 服务端哈希。
 import { computed, onMounted, reactive, ref } from 'vue'
-import { NotebookPen, ShieldAlert, Link2, RefreshCw, Save, FileText } from 'lucide-vue-next'
+import { CalendarClock, ClipboardCopy, Download, NotebookPen, ShieldAlert, Link2, RefreshCw, Save, FileText } from 'lucide-vue-next'
 import { coverageOf, hitRate, validateDraft, verifyChain, type DecisionLogEntry } from 'shared/trading-rules/decision-log.mjs'
 import { REGIME_LABEL } from 'shared/trading-rules/supply-demand.mjs'
+import { getMarketTiming } from 'shared/trading-rules/market-timing.mjs'
+import { getTradingCalendar, shiftIsoDate, workdayView } from 'shared/trading-rules/trading-calendar.mjs'
+import { buildMarketDigest } from '@/services/trading/marketDigest'
+import { currentRegion } from '@/services/region/regionContext'
 import {
   PROTOTYPE_STORAGE_NOTICE,
   appendAndPersist,
@@ -49,6 +53,12 @@ const form = reactive({
   correctionOf: null as string | null
 })
 
+/**
+ * 日志归属标的日（手册异常分支：当日未写 → 次日晨会强制补写）。默认当前标的日；
+ * 改成昨日即进入「补写模式」——写入的条目归属补写日，填写率按归属日统计。
+ */
+const logTargetDate = ref(props.targetDate)
+
 const chain = computed(() => verifyChain(log.value))
 const coverage = computed(() => coverageOf(log.value, props.targetDate, expectedPoints.value))
 const hits = computed(() => hitRate(log.value))
@@ -62,7 +72,7 @@ function submit() {
   errorMsg.value = ''
   try {
     const { correctionOf, ...fields } = form
-    const draft = { at: new Date().toISOString(), targetDate: props.targetDate, ...fields }
+    const draft = { at: new Date().toISOString(), targetDate: logTargetDate.value, ...fields }
     log.value = correctionOf
       ? correctAndPersist(correctionOf, draft)
       : appendAndPersist({ ...draft, correctionOf: null })
@@ -138,6 +148,70 @@ function applyAssist(s: Record<string, unknown>) {
   }
 }
 
+// ── 市场概况（会议要求：总成交量/时段量价/开高低收）+ 口径诚实标注 ───────────
+// 全市场侧量价无活源（#1968/#1981）——用本单可得口径（出清优先，无出清用申报）
+// 给同构统计，sourceBasis 随日报呈现，不把本单口径冒充全市场。
+const marketDigest = computed(() =>
+  buildMarketDigest(decl.value?.clearing?.clearedCurveMwh96, decl.value?.energyCurveMwh96, decl.value?.priceCurve96)
+)
+
+// ── ③ 明日提醒（手册 S7 步骤③）─────────────────────────────────────────────
+const customReminders = ref('')
+const tomorrowReminders = computed<string[]>(() => {
+  const items: string[] = []
+  const rid = currentRegion.value.id
+  const timing = getMarketTiming(rid)
+  const cal = getTradingCalendar(rid)
+  const tomorrowIso = shiftIsoDate(props.targetDate, 1)
+  if (timing) items.push(`明日申报截止 ${timing.bidDeadline}（${currentRegion.value.shortName || rid} 规则包）——截止前 60 分钟备妥审批链`)
+  if (cal) {
+    const v = workdayView(cal, tomorrowIso)
+    items.push(`明天主要做 D+${cal.primarySpotTarget}（${v.primarySpot.date}）的现货交易`)
+  }
+  if (pf.value.morningReview?.pendingAnalysis) items.push('S1 偏差主因仍挂「待分析」——晨会补定后回填主因')
+  if (pf.value.clearingReview?.needsRealtimeAction) items.push('实时调整指令已记录——明晨核对执行结果与实时价差')
+  if (pf.value.contract && pf.value.contract.gapMwh > 0) items.push(`月度中长期缺口 ${Math.round(pf.value.contract.gapMwh)} MWh 未平——关注挂牌价动向`)
+  if (!coverage.value.meetsVeto) items.push('今日决策日志未达标——按手册次日晨会强制补写')
+  const custom = customReminders.value.split('\n').map((x) => x.trim()).filter(Boolean)
+  return [...items, ...custom]
+})
+
+// ── ④ 日报导出（Markdown 落文件 + 剪贴板复制）───────────────────────────────
+const reportMarkdown = computed(() => {
+  const lines = [`# 交易日日报 ${props.targetDate}`, '', ...reportLines.value]
+  const md = marketDigest.value
+  if (md) {
+    lines.push('', `## 市场概况（口径：${md.sourceBasis === 'cleared' ? '本单出清' : '本单申报'}——全市场概况待数据活源 #1968）`)
+    lines.push(`总电量 ${md.totalVolumeMwh} MWh；开 ${md.openYuanPerMwh ?? '—'} / 收 ${md.closeYuanPerMwh ?? '—'} / 高 ${md.highYuanPerMwh ?? '—'}（${md.highHour ?? '—'} 时）/ 低 ${md.lowYuanPerMwh ?? '—'}（${md.lowHour ?? '—'} 时）；量加权均价 ${md.weightedAvgYuanPerMwh ?? '—'} 元/MWh`)
+  }
+  if (tomorrowReminders.value.length) {
+    lines.push('', '## 明日提醒', ...tomorrowReminders.value.map((x) => `- ${x}`))
+  }
+  if (summary.value.trim()) lines.push('', '## 总体小结', summary.value.trim())
+  return lines.join('\n')
+})
+
+function downloadReport() {
+  const blob = new Blob([reportMarkdown.value], { type: 'text/markdown;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `交易日日报-${props.targetDate}.md`
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
+const copyState = ref('')
+async function copyReport() {
+  try {
+    await navigator.clipboard.writeText(reportMarkdown.value)
+    copyState.value = '已复制到剪贴板'
+  } catch {
+    copyState.value = '复制失败（浏览器未授权剪贴板）——用导出落文件'
+  }
+  setTimeout(() => { copyState.value = '' }, 3000)
+}
+
 // ── ② 自动日报（从各阶段产出汇总）────────────────────────────────────────────
 const reportLines = computed<string[]>(() => {
   const lines: string[] = []
@@ -191,7 +265,18 @@ async function writeBack() {
       {
         reportSummary: summary.value.trim(),
         decisionsLogged: coverage.value.recorded,
-        coverageOk: coverage.value.meetsVeto
+        coverageOk: coverage.value.meetsVeto,
+        // 市场概况（本单口径，见 marketDigest 注释）与明日提醒（手册 S7 步骤③④）
+        marketDigest: marketDigest.value
+          ? {
+              sourceBasis: marketDigest.value.sourceBasis,
+              totalVolumeMwh: marketDigest.value.totalVolumeMwh,
+              highYuanPerMwh: marketDigest.value.highYuanPerMwh,
+              lowYuanPerMwh: marketDigest.value.lowYuanPerMwh,
+              weightedAvgYuanPerMwh: marketDigest.value.weightedAvgYuanPerMwh
+            }
+          : null,
+        tomorrowReminders: tomorrowReminders.value
       },
       `S7 日报收尾：${coverage.value.meetsVeto ? '决策日志达标' : '决策日志未达标'}`
     )
@@ -230,6 +315,10 @@ async function writeBack() {
         />
         <p v-if="!chain.intact" class="dc7-broken">链在第 {{ chain.brokenAtSeq }} 条断开：{{ chain.reason }}</p>
 
+        <div class="dc7-logdate" :class="{ backfill: logTargetDate !== targetDate }">
+          <label>日志归属标的日<input v-model="logTargetDate" type="date" /></label>
+          <em v-if="logTargetDate !== targetDate">补写模式：条目归属 {{ logTargetDate }}（次日晨会强制补写的落点）</em>
+        </div>
         <div class="dc7-form">
           <label>当日应记录决策点数<input v-model.number="expectedPoints" type="number" min="1" /></label>
           <label class="full">决策点<input v-model="form.decisionPoint" type="text" placeholder="如：储能充放时段选择" /></label>
@@ -293,11 +382,47 @@ async function writeBack() {
         </table>
       </section>
 
-      <!-- 自动日报 + 收口 -->
+      <!-- 自动日报 + 市场概况 + 明日提醒 + 收口 -->
       <section class="dc7-panel">
         <h3><FileText :size="14" /> 当日日报（自动汇总）</h3>
         <div class="dc7-report">
           <p v-for="(line, i) in reportLines" :key="i">{{ line }}</p>
+        </div>
+
+        <!-- 市场概况（会议要求；口径=本单，诚实标注） -->
+        <div v-if="marketDigest" class="dc7-market">
+          <h4>市场概况</h4>
+          <div class="dc7-market-stats">
+            <span>总电量 <strong>{{ marketDigest.totalVolumeMwh }}</strong> MWh</span>
+            <span>开 <strong>{{ marketDigest.openYuanPerMwh ?? '—' }}</strong></span>
+            <span>收 <strong>{{ marketDigest.closeYuanPerMwh ?? '—' }}</strong></span>
+            <span>高 <strong>{{ marketDigest.highYuanPerMwh ?? '—' }}</strong>（{{ marketDigest.highHour ?? '—' }} 时）</span>
+            <span>低 <strong>{{ marketDigest.lowYuanPerMwh ?? '—' }}</strong>（{{ marketDigest.lowHour ?? '—' }} 时）</span>
+            <span>量加权均价 <strong>{{ marketDigest.weightedAvgYuanPerMwh ?? '—' }}</strong> 元/MWh</span>
+          </div>
+          <details class="dc7-market-hours">
+            <summary>逐时段量价（24 小时）<em>口径：{{ marketDigest.sourceBasis === 'cleared' ? '本单出清' : '本单申报' }}——全市场概况待数据活源 #1968</em></summary>
+            <table class="dc7-table">
+              <thead><tr><th>时</th><th>电量 MWh</th><th>价格 元/MWh</th></tr></thead>
+              <tbody>
+                <tr v-for="h in marketDigest.hourly" :key="h.hour" :class="{ 'dc7-peak': h.hour === marketDigest.highHour, 'dc7-valley': h.hour === marketDigest.lowHour }">
+                  <td>{{ String(h.hour).padStart(2, '0') }}</td>
+                  <td>{{ h.volumeMwh ?? '—' }}</td>
+                  <td>{{ h.priceYuanPerMwh ?? '—' }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </details>
+        </div>
+
+        <!-- 明日提醒（手册 S7 步骤③） -->
+        <div class="dc7-reminders">
+          <h4><CalendarClock :size="13" /> 明日提醒</h4>
+          <ul>
+            <li v-for="(r, i) in tomorrowReminders" :key="i">{{ r }}</li>
+            <li v-if="!tomorrowReminders.length" class="dc7-empty-li">无自动提醒——下方自行补充。</li>
+          </ul>
+          <textarea v-model="customReminders" rows="2" class="dc7-summary" placeholder="自行补充的明日提醒（一行一条）" />
         </div>
 
         <h3>总体小结 → 写回收口</h3>
@@ -309,9 +434,16 @@ async function writeBack() {
           <button type="button" class="primary" :disabled="!decl || !summaryValid || saving" @click="writeBack">
             <Save :size="13" /> {{ written ? '更新收口' : '写回收口，完成一日闭环' }}
           </button>
+          <button type="button" class="ghost" @click="downloadReport"><Download :size="13" /> 导出日报（Markdown）</button>
+          <button type="button" class="ghost" @click="copyReport"><ClipboardCopy :size="13" /> 复制全文</button>
+          <span v-if="copyState" class="dc7-ok">{{ copyState }}</span>
           <span v-if="saveMsg" class="dc7-ok">{{ saveMsg }}</span>
           <span v-if="saveError" class="dc7-error">{{ saveError }}</span>
         </div>
+        <p class="dc7-send-note">
+          导出为 Markdown 落文件 / 复制粘贴自取；定时发送通道（邮件/钉钉）未接——日报发送以人工转发为主，
+          不伪造「已发送」状态。
+        </p>
         <p v-if="coverage.recorded > 0 && !coverage.meetsVeto" class="dc7-veto-warn">
           决策日志填写率未达一票否决线（{{ coverage.recorded }}/{{ coverage.expected }}）——收口时如实标注「未达标」。
         </p>
@@ -374,4 +506,25 @@ button.ghost { display: inline-flex; align-items: center; gap: 4px; padding: 3px
 .dc7-summary { width: 100%; padding: 6px 8px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 6px; font-size: 12px; font-family: inherit; resize: vertical; }
 .dc7-ok { font-size: 12px; color: #15803d; }
 .dc7-veto-warn { margin: 6px 0 0; font-size: 11px; color: #b45309; }
+
+.dc7-logdate { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 6px; font-size: 11px; }
+.dc7-logdate label { display: flex; align-items: center; gap: 5px; color: var(--el-text-color-secondary, #667); }
+.dc7-logdate input { padding: 3px 6px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 4px; font-size: 11px; }
+.dc7-logdate.backfill { padding: 5px 8px; border-radius: 6px; background: #fffbeb; }
+.dc7-logdate.backfill em { font-style: normal; color: #92400e; font-size: 11px; }
+
+.dc7-market { margin-top: 10px; padding: 8px 10px; border: 1px solid var(--el-border-color-lighter, #ebeef5); border-radius: 8px; }
+.dc7-market h4 { margin: 0 0 6px; font-size: 12px; }
+.dc7-market-stats { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; font-variant-numeric: tabular-nums; }
+.dc7-market-hours { margin-top: 6px; }
+.dc7-market-hours summary { display: flex; align-items: center; gap: 8px; font-size: 11px; font-weight: 600; cursor: pointer; }
+.dc7-market-hours summary em { font-style: normal; font-weight: 400; font-size: 10px; color: #92400e; }
+.dc7-peak td { background: #fef2f2; }
+.dc7-valley td { background: #f0fdf4; }
+
+.dc7-reminders { margin-top: 10px; padding: 8px 10px; border: 1px solid #bfdbfe; border-radius: 8px; background: #f8fbff; }
+.dc7-reminders h4 { display: flex; align-items: center; gap: 5px; margin: 0 0 4px; font-size: 12px; }
+.dc7-reminders ul { margin: 0 0 6px; padding-left: 18px; font-size: 12px; line-height: 1.8; }
+.dc7-empty-li { color: var(--el-text-color-secondary, #667); list-style: none; }
+.dc7-send-note { margin: 6px 0 0; font-size: 10px; color: var(--el-text-color-secondary, #889); }
 </style>

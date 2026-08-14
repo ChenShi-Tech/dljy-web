@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { assessContractGap } from './contractGap'
+import { assessContractGap, assessContractGapForPosition, kellyPositionCap, listingVsAnnualAverage, timingWithDistribution, volatilityGuard } from './contractGap'
 
 describe('S6 中长期补仓：敞口评估（买方立场）', () => {
   it('敞口 = 预测 − 持仓；敞口率以预测为分母', () => {
@@ -69,5 +69,106 @@ describe('S6 中长期补仓：敞口评估（买方立场）', () => {
     const cheap = assessContractGap({ forecastMwh: 1000, contractedMwh: 700, regime: 'extreme_surplus', direction: null })
     expect(expensive.suggestion).toBe('buy-urgent')
     expect(cheap.suggestion).toBe('hold')
+  })
+})
+
+describe('#1966：挂牌价 vs 年度均价', () => {
+  it('低于年均价 → 补仓划算；高于 → 不补', () => {
+    const below = listingVsAnnualAverage(260, 300)
+    expect(below?.verdict).toBe('below')
+    expect(below?.hint).toContain('划算')
+    const above = listingVsAnnualAverage(330, 300)
+    expect(above?.verdict).toBe('above')
+  })
+
+  it('±3% 内算无显著差异；缺输入 null', () => {
+    expect(listingVsAnnualAverage(305, 300)?.verdict).toBe('comparable')
+    expect(listingVsAnnualAverage(null, 300)).toBeNull()
+    expect(listingVsAnnualAverage(300, 0)).toBeNull()
+  })
+})
+
+describe('#1966：概率分布判时机', () => {
+  const digest = { mean: 300, valley: 200, peak: 450 }
+  it('挂牌价低于均值 5% 以上 → 锁价', () => {
+    expect(timingWithDistribution(270, digest)?.verdict).toBe('lock_now')
+  })
+  it('高于均值 5% 以上 → 观望；±5% 内中性', () => {
+    expect(timingWithDistribution(330, digest)?.verdict).toBe('wait')
+    expect(timingWithDistribution(300, digest)?.verdict).toBe('neutral')
+  })
+  it('缺挂牌价或分布 → null', () => {
+    expect(timingWithDistribution(null, digest)).toBeNull()
+    expect(timingWithDistribution(300, null)).toBeNull()
+  })
+})
+
+describe('#1966：波动守卫（>5% 暂停 + 对冲）', () => {
+  it('超 ±5% → 暂停并给对冲建议', () => {
+    const g = volatilityGuard(6.2)
+    expect(g.paused).toBe(true)
+    expect(g.hint).toContain('暂停补仓')
+    expect(g.hint).toContain('对冲')
+  })
+  it('带内不暂停；未录入提示守卫不生效（不默认安全）', () => {
+    expect(volatilityGuard(3).paused).toBe(false)
+    const na = volatilityGuard(null)
+    expect(na.paused).toBe(false)
+    expect(na.hint).toContain('未录入')
+  })
+})
+
+describe('#1966：凯利仓位上限', () => {
+  const digest = { mean: 300, valley: 200 }
+  it('胜率取 S3 置信度，半 Kelly × 风险预算封顶', () => {
+    const k = kellyPositionCap({ confidencePct: 70, listingYuanPerMwh: 260, digest, riskBudgetPct: 18 })
+    expect(k).not.toBeNull()
+    expect(k!.winYuanPerMwh).toBe(40)
+    expect(k!.lossYuanPerMwh).toBe(60)
+    expect(k!.capPct).toBeGreaterThan(0)
+    expect(k!.capPct).toBeLessThanOrEqual(18)
+    expect(k!.note).toContain('半 Kelly')
+  })
+  it('置信度 50 以下（无把握）→ 上限趋零（低风险操作）', () => {
+    const k = kellyPositionCap({ confidencePct: 40, listingYuanPerMwh: 299, digest })
+    expect(k!.capPct).toBeLessThanOrEqual(1)
+  })
+  it('缺任一输入 → null', () => {
+    expect(kellyPositionCap({ confidencePct: null, listingYuanPerMwh: 260, digest })).toBeNull()
+    expect(kellyPositionCap({ confidencePct: 70, listingYuanPerMwh: null, digest })).toBeNull()
+  })
+})
+
+describe('#2005：立场感知补仓口径', () => {
+  const base = { forecastMwh: 1000, contractedMwh: 800, regime: 'tight' as const, direction: null }
+
+  it('买方（售电）原口径不变', () => {
+    const r = assessContractGapForPosition({ ...base, position: 'RETAILER' })
+    expect(r.frame).toBe('buyer')
+    expect(r.gapMwh).toBe(200)
+    expect(r.suggestion).toBe('buy-urgent')
+  })
+
+  it('卖方（电厂）镜像：合同>预测发电=合同缺口，语义与建议翻转', () => {
+    // 合同 1200 > 预测发电 1000 → 缺 200 需补；现货偏紧时买回贵 → 紧急处理
+    const r = assessContractGapForPosition({ forecastMwh: 1000, contractedMwh: 1200, regime: 'tight', direction: null, position: 'GENERATOR' })
+    expect(r.frame).toBe('seller')
+    expect(r.gapMwh).toBe(200)
+    expect(r.gapLabel).toContain('合同缺口')
+    expect(r.reason).toContain('合同缺口')
+  })
+
+  it('卖方富余：现货便宜 → 多签锁价提示', () => {
+    const r = assessContractGapForPosition({ forecastMwh: 1200, contractedMwh: 800, regime: 'surplus', direction: null, position: 'GENERATOR' })
+    expect(r.gapMwh).toBe(-400)
+    expect(r.reason).toContain('富余')
+    expect(r.reason).toContain('锁价')
+  })
+
+  it('储能：明确不套买方逻辑（frame=storage，数字仅参考）', () => {
+    const r = assessContractGapForPosition({ ...base, position: 'STORAGE' })
+    expect(r.frame).toBe('storage')
+    expect(r.reason).toContain('套利')
+    expect(r.reason).toContain('不适用') // 直接包含或经说明——储能口径说明
   })
 })

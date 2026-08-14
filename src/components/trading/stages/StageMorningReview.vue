@@ -38,6 +38,9 @@ import {
   MORNING_WINDOW_NOTE,
   validateMorningReview
 } from 'shared/trading-rules/morning-review.mjs'
+import { shiftIsoDate } from 'shared/trading-rules/trading-calendar.mjs'
+import { reviewFocusOf } from 'shared/trading-rules/position-review.mjs'
+import { activePosition } from '@/services/position/positionContext'
 import { onRegionChange } from '@/composables/useRegionReload'
 import AiAssistFill from '@/components/trading/AiAssistFill.vue'
 import type { StageId } from '@/data/workflowStages'
@@ -207,8 +210,20 @@ const saveError = ref('')
 
 const written = computed(() => props.declaration?.preflight?.morningReview ?? null)
 
+// ── 立场复盘焦点（#2005）：同一张偏差表，三类身份问的问题不同 ────────────────
+const reviewFocus = computed(() => reviewFocusOf(activePosition.value))
+
+// ── 异常分支（手册：当日未写日志 → 次日晨会强制补写）─────────────────────────
+// 判据：昨日有申报单可复盘（reviewed 存在）但决策日志链上没有归属昨日标的日的条目。
+// 拦截写回（不是提示完就算）——补写入口在 S7（日志归属日期切到昨日即补写模式）。
+const yesterdayIso = computed(() => shiftIsoDate(props.targetDate, -1))
+const yesterdayLogMissing = computed(() => {
+  if (!reviewed.value) return false
+  return !loadLog().some((e) => e.targetDate === yesterdayIso.value)
+})
+
 async function writeBack() {
-  if (!props.declaration || !validation.value.ok) return
+  if (!props.declaration || !validation.value.ok || yesterdayLogMissing.value) return
   saving.value = true
   saveMsg.value = ''
   saveError.value = ''
@@ -247,6 +262,22 @@ async function writeBack() {
 <template>
   <div class="mr">
     <p class="mr-window" :class="`mr-window-${windowState}`">{{ MORNING_WINDOW_NOTE[windowState] }}</p>
+
+    <!-- 立场复盘焦点：用户侧问「买没买到」、电源侧问「卖没卖掉」、储能问「窗口吃到没」 -->
+    <section v-if="reviewFocus" class="mr-focus">
+      <strong>{{ activePosition === 'GENERATOR' ? '电厂侧' : activePosition === 'STORAGE' ? '储能' : '用户侧' }}复盘目标：{{ reviewFocus.goal }}</strong>
+      <ul>
+        <li v-for="(point, i) in reviewFocus.reviewPoints" :key="i">{{ point }}</li>
+      </ul>
+    </section>
+
+    <!-- 异常分支：昨日决策日志缺失 → 强制补写（KPI 100% 必填），未补不收口今日复盘 -->
+    <p v-if="yesterdayLogMissing" class="mr-backfill-block">
+      <TriangleAlert :size="13" />
+      昨日（{{ yesterdayIso }}）有申报单但决策日志为空——按手册「当日未写日志，次日晨会强制补写」，
+      今日复盘暂不可写回。
+      <button type="button" class="mr-jump" @click="emit('go', 'daily-close')">去 S7 补写昨日日志（归属日期切昨日）</button>
+    </p>
 
     <section class="mr-panel">
       <h3><History :size="14" /> ① 中标情况 · 申报 vs 出清（标的日 {{ reviewedDate }}）</h3>
@@ -387,7 +418,7 @@ async function writeBack() {
         <button
           type="button"
           class="primary"
-          :disabled="!declaration || !validation.ok || saving"
+          :disabled="yesterdayLogMissing || !declaration || !validation.ok || saving"
           @click="writeBack"
         >
           <Save :size="13" /> {{ written ? '更新复盘结论' : '写回并进入 S2' }}
@@ -409,6 +440,11 @@ async function writeBack() {
 
 <style scoped>
 .mr { display: flex; flex-direction: column; gap: 12px; }
+.mr-backfill-block { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin: 0; padding: 7px 12px; border: 1px solid #f87171; border-radius: 8px; background: #fef2f2; color: #991b1b; font-size: 12px; line-height: 1.6; }
+.mr-jump { padding: 0; border: none; background: none; color: #1d4ed8; font: inherit; font-size: 12px; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
+.mr-focus { margin: 0; padding: 7px 12px; border: 1px solid #bfdbfe; border-radius: 8px; background: #f8fbff; font-size: 12px; }
+.mr-focus strong { color: #075985; }
+.mr-focus ul { margin: 4px 0 0; padding-left: 18px; font-size: 11px; line-height: 1.7; color: #475569; }
 .mr-window { margin: 0; padding: 6px 12px; border-radius: 8px; font-size: 12px; }
 .mr-window-within { background: #f0fdf4; color: #166534; }
 .mr-window-before { background: #f8fafc; color: #475569; }

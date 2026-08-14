@@ -44,6 +44,8 @@ import {
   type SourceKind
 } from '@/services/trading/fundamentalsClient'
 import { currentRegion } from '@/services/region/regionContext'
+import { reviewFocusOf } from 'shared/trading-rules/position-review.mjs'
+import { activePosition } from '@/services/position/positionContext'
 import AgentChatPanel from '@/components/agent/AgentChatPanel.vue'
 import type { StageId } from '@/data/workflowStages'
 
@@ -506,6 +508,9 @@ const effectiveCredibility = computed(() => {
   return CRED_ORDER[Math.max(fromIntegrity, cap)]
 })
 
+// ── 立场目标（#2005）：同一态势判断，三类身份的策略方向相反 ──────────────────
+const positionGoal = computed(() => reviewFocusOf(activePosition.value)?.goal ?? null)
+
 // ── 写回 ────────────────────────────────────────────────────────────────────
 const saving = ref(false)
 const saveMsg = ref('')
@@ -637,6 +642,9 @@ async function writeBack() {
         </p>
       </div>
 
+      <p v-if="positionGoal" class="ma-pos-goal" title="同一态势判断，三类身份的策略方向相反（#2005）">
+        当前立场目标：{{ positionGoal }}——下方建议按此立场解读。
+      </p>
       <div class="ma-actions">
         <button type="button" class="primary" :disabled="!declaration || !daySummary.dominantRegime || saving" @click="writeBack">
           <Save :size="13" /> {{ written?.regime ? '更新写回' : '写回并进入 S3 方向判断' }}
@@ -972,6 +980,7 @@ async function writeBack() {
 
 .ma-tip, .ma-foot { margin: 6px 0 0; font-size: 11px; line-height: 1.6; color: var(--el-text-color-secondary, #667); }
 .ma-foot { color: #a16207; }
+.ma-pos-goal { margin: 6px 0 0; font-size: 11px; color: #075985; }
 
 .ma-coupling { display: flex; gap: 12px; flex-wrap: wrap; font-size: 11px; }
 .ma-coupling label { display: inline-flex; align-items: center; gap: 5px; }
