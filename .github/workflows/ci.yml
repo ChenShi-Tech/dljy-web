@@ -42,9 +42,13 @@ jobs:
             exit 1
           fi
 
+      # lint 只拦 error（分层守卫 + correctness）；291 处 no-explicit-any 为 warn，
+      # 列技术债渐进清零（见 DEVELOPMENT.md 已知技术债）。
+      - run: npm run lint
+
       - run: npm run check
 
-      # test:coverage 跑同一套 spec 并附带覆盖率阈值门禁（24/20/23/19），
+      # test:coverage 跑同一套 spec 并附带覆盖率阈值门禁（见 vitest.config.ts），
       # 不再单独跑 test:unit（纯重复）。
       - run: npm run test:coverage
 
