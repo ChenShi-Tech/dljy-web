@@ -8,8 +8,8 @@ import { viteStaticCopy } from 'vite-plugin-static-copy'
 // 与原仓 vite.config.ts 的刻意差异只有三处：
 //   1. 代理目标经 loadEnv 读取（原仓只读 process.env；协作者把托管 dev API 地址
 //      写进 .env.local 即生效，无需导出 shell 环境变量）。
-//   2. 删除 /pi-api 代理与 data/*、worktree 的 watch 排除（对应目录不在本仓）。
-//   3. 无本机多 worktree 场景，watch 只排 node_modules/dist。
+//   2. watch 不排 data/* 与 worktree（对应目录不在本仓），只排 node_modules/dist。
+//   3. /pi-api 与 /data-svc 代理目标同样经 loadEnv 读取（原仓硬编码端口）。
 // 其余（分包、双入口、cesium 静态拷贝、5174 strictPort）与原仓保持一致，
 // 保证「原仓构建绿 ⇒ 本仓构建绿」。
 

@@ -8,7 +8,7 @@
 import { ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import AgentChatPanel from '@/components/agent/AgentChatPanel.vue'
-import { identityHeaders } from '@/services/agent/agentClient'
+import { setSessionAutoApprove } from '@/services/agent/piPocClient'
 
 const sessionId = ref('')
 const autoApprove = ref(false)
@@ -23,13 +23,7 @@ async function toggleAutoApprove(enabled: string | number | boolean) {
   if (!sessionId.value) return
   toggling.value = true
   try {
-    const res = await fetch(`/pi-api/agent/sessions/${encodeURIComponent(sessionId.value)}/auto-approve`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', ...identityHeaders() },
-      body: JSON.stringify({ enabled: enabled === true })
-    })
-    if (!res.ok) throw new Error(`HTTP ${res.status}`)
-    autoApprove.value = ((await res.json()) as { auto_approve?: boolean }).auto_approve === true
+    autoApprove.value = await setSessionAutoApprove(sessionId.value, enabled === true)
     ElMessage.success(autoApprove.value
       ? '已开启本会话自动执行授权：落库草稿不再逐次审批（对外提交仍永不自动）'
       : '已关闭自动执行授权：业务写操作恢复逐次审批')

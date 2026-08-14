@@ -7,8 +7,8 @@
 // 设计见 docs/architecture/agent-poc-strategic-qa-design.md。
 import { ref } from 'vue'
 import AgentChatPanel from '@/components/agent/AgentChatPanel.vue'
+import { fetchDataGaps } from '@/services/agent/piPocClient'
 
-const GAPS_URL = '/pi-api/agent/data-gaps'
 const gapsMarkdown = ref('')
 const gapsError = ref('')
 
@@ -16,9 +16,7 @@ const gapsError = ref('')
 async function loadGaps() {
   gapsError.value = ''
   try {
-    const res = await fetch(GAPS_URL)
-    if (!res.ok) throw new Error(`HTTP ${res.status}`)
-    gapsMarkdown.value = ((await res.json()) as { markdown?: string }).markdown || ''
+    gapsMarkdown.value = await fetchDataGaps()
   } catch (exc) {
     gapsError.value = `缺口清单获取失败：${String(exc)}（pi-poc 服务未启动？）`
   }
