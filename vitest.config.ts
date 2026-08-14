@@ -33,8 +33,9 @@ export default defineConfig({
         'src/data/generated/**'
       ],
       reporter: ['text', 'text-summary', 'html', 'lcov'],
-      // 阈值随原仓（实测基线 −2pp buffer）；原仓调阈值时同步这里。
-      thresholds: { lines: 24, functions: 20, statements: 23, branches: 19 }
+      // 阈值 = floor(实测基线) − 2pp buffer（2026-08-14 测试补齐批后实测：
+      // lines 46 / branches 39.31 / functions 38.86 / statements 44.79）；只升不降。
+      thresholds: { lines: 44, functions: 36, statements: 42, branches: 37 }
     }
   }
 })
