@@ -39,7 +39,7 @@ import { currentRegion } from '@/services/region/regionContext'
 import { getCurrentUser, type AuthUser } from '@/services/auth'
 import { fetchCaptured } from '@/services/captured'
 import { canAccessPath, isPathAvailableInRegion, roleLabels, subjectTypeLabels } from '@/services/governance'
-import { AGENT_API_BASE, identityHeaders } from '@/services/agent/agentClient'
+import { fetchLatestBidPlanSummary, nextDeclarationTargetDate, type BidPlanSummary } from '@/services/forecast/bidPlanClient'
 import { getRuleProfile } from '../rules'
 import { getYunnanRuleVerificationSummary, yunnanScenarios } from '@/services/yunnanTrading'
 import { ElMessage } from 'element-plus'
@@ -134,28 +134,8 @@ async function loadDisclosureSummary() {
 
 // ── 当日报价方案入口卡（bid_plans 流水线产出摘要，epic #336 PR-D）──
 // 有当日 ok 方案才显示（skipped/error/无方案不显示卡，避免首页噪音）；权限复用申报 copilot
-// 细粒度路径；地区切换竞态守卫同披露侧卡（旧 Promise 不回写）。
-interface BidFrontierRow {
-  lambda: number
-  risk_level: string
-  total_declared_mwh: number | null
-  expected_profit_yuan: number | null
-  expected_revenue_yuan: number | null
-  expected_penalty_yuan: number | null
-  var_loss_yuan: number | null
-  cvar_loss_yuan: number | null
-}
-interface BidPlanSummary {
-  targetDate: string
-  priceModel: string
-  lambdas: number[]
-  declaredMwh: number | null
-  planId: string
-  mock: boolean
-  mockFields: string[]
-  basisNote: string
-  frontier: BidFrontierRow[]
-}
+// 细粒度路径；地区切换竞态守卫同披露侧卡（旧 Promise 不回写）。取数与归一在
+// forecast 服务层（bidPlanClient），视图只管竞态与展示。
 const bidPlan = ref<BidPlanSummary | null>(null)
 let planReqSeq = 0
 const canViewDeclaration = computed(() => canAccessPath('/xhjy/yunnan/declaration', currentUser.value))
@@ -167,42 +147,9 @@ async function loadBidPlanSummary() {
   if (!canViewDeclaration.value || currentRegion.value.id !== 'yunnan') { bidPlan.value = null; return }
   const seq = ++planReqSeq
   try {
-    // 锚定当日申报目标日（运行日+1，本地时区）：latest 不带 target_date 会返回库内最大目标日，
-    // 历史/未来回填的 ok 方案会被误展示成「当日报价方案」（codex P2）
-    const t = new Date(Date.now() + 24 * 3600 * 1000)
-    const target = `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, '0')}-${String(t.getDate()).padStart(2, '0')}`
-    const res = await fetch(
-      `${AGENT_API_BASE}/forecast/bid-plans/latest?target_date=${target}`,
-      { headers: identityHeaders() }
-    )
+    const summary = await fetchLatestBidPlanSummary(nextDeclarationTargetDate())
     if (seq !== planReqSeq || currentRegion.value.id !== 'yunnan') return
-    if (!res.ok) { bidPlan.value = null; return }
-    const body = await res.json()
-    const plan = body?.plan
-    if (seq !== planReqSeq || currentRegion.value.id !== 'yunnan') return
-    if (!plan || plan.status !== 'ok' || !Array.isArray(plan.frontier)) { bidPlan.value = null; return }
-    const neutral = plan.frontier.find((f: any) => f?.risk_level === 'neutral') ?? plan.frontier[0]
-    bidPlan.value = {
-      targetDate: String(plan.target_date ?? ''),
-      priceModel: String(plan.price_model_id ?? '—'),
-      lambdas: plan.frontier.map((f: any) => Number(f?.lambda)).filter((v: number) => Number.isFinite(v)),
-      declaredMwh: typeof neutral?.total_declared_mwh === 'number' ? neutral.total_declared_mwh : null,
-      planId: String(plan.plan_id ?? ''),
-      // Mock 冻结纪律：云南结算系数占位时响应 mock=true，卡上必须有可见提示（codex P1）
-      mock: body?.mock === true,
-      mockFields: Array.isArray(plan.basis?.settlement_mock_fields) ? plan.basis.settlement_mock_fields : [],
-      basisNote: String(plan.note ?? body?.note ?? '决策支持参考·非申报/结算依据'),
-      frontier: plan.frontier.map((frontier: any) => ({
-        lambda: Number(frontier?.lambda),
-        risk_level: String(frontier?.risk_level ?? '—'),
-        total_declared_mwh: typeof frontier?.total_declared_mwh === 'number' ? frontier.total_declared_mwh : null,
-        expected_profit_yuan: typeof frontier?.expected_profit_yuan === 'number' ? frontier.expected_profit_yuan : null,
-        expected_revenue_yuan: typeof frontier?.expected_revenue_yuan === 'number' ? frontier.expected_revenue_yuan : null,
-        expected_penalty_yuan: typeof frontier?.expected_penalty_yuan === 'number' ? frontier.expected_penalty_yuan : null,
-        var_loss_yuan: typeof frontier?.var_loss_yuan === 'number' ? frontier.var_loss_yuan : null,
-        cvar_loss_yuan: typeof frontier?.cvar_loss_yuan === 'number' ? frontier.cvar_loss_yuan : null
-      }))
-    }
+    bidPlan.value = summary
   } catch {
     if (seq === planReqSeq) bidPlan.value = null // 真实或空：agent-backend 离线不合成
   }
