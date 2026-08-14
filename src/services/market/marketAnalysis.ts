@@ -192,7 +192,7 @@ function buildRetailPackages(year: number): RetailPackageRow[] {
   ]
 }
 
-function buildPriceTrend(year: number): PriceTrendRow[] {
+function buildPriceTrend(_year: number): PriceTrendRow[] {
   return months.map((month, index) => {
     const mediumLongPrice = round(0.372 + index * 0.003, 4)
     const spotPrice = round(0.405 + Math.sin(index / 2) * 0.045 + index * 0.002, 4)
