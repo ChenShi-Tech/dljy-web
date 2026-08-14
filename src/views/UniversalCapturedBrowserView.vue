@@ -4,13 +4,13 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { Search } from 'lucide-vue-next'
-import { CAPTURE_FAMILIES, CAPTURE_FAMILY_CODES } from 'shared/schema/entities/capture-families.mjs'
 import DynamicTable from '../components/common/DynamicTable.vue'
-import AgentChatPanel from '../components/agent/AgentChatPanel.vue'
+import AgentChatPanel from '@/components/agent/AgentChatPanel.vue'
 import RegionDataBanner from '@/components/region/RegionDataBanner.vue'
 import { fetchCaptured } from '@/services/captured'
 import { onRegionChange } from '../composables/useRegionReload'
-import { buildColumnLabelsFromRows } from '@/data/captureColumnLabels'
+// family 清单与列语义统一取自 data 层（视图禁直接 import shared/schema，见 DEVELOPMENT.md）
+import { buildColumnLabelsFromRows, CAPTURE_FAMILIES, CAPTURE_FAMILY_CODES } from '@/data/captureColumnLabels'
 
 type FamilyOption = { code: string; label: string }
 const route = useRoute()
