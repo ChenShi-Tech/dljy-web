@@ -16,6 +16,8 @@ import { REGIME_LABEL } from 'shared/trading-rules/supply-demand.mjs'
 import { getMarketTiming } from 'shared/trading-rules/market-timing.mjs'
 import { getTradingCalendar, shiftIsoDate, workdayView } from 'shared/trading-rules/trading-calendar.mjs'
 import { buildMarketDigest } from '@/services/trading/marketDigest'
+import { backfillAssistActual, linkAssistToDecision, listAssistTrace } from '@/services/trading/assistTraceStore'
+import AssistTracePanel from '@/components/trading/AssistTracePanel.vue'
 import { currentRegion } from '@/services/region/regionContext'
 import {
   PROTOTYPE_STORAGE_NOTICE,
@@ -80,6 +82,12 @@ function submit() {
     form.judgement = ''
     form.rationale = ''
     form.correctionOf = null
+    // AI 建议采纳后写入链 → 留痕关联日志条目（T+2 回填时同步命中判断）
+    if (adoptedTraceId) {
+      const last = log.value[log.value.length - 1]
+      if (last) linkAssistToDecision(adoptedTraceId, last.id)
+      adoptedTraceId = ''
+    }
   } catch (e) {
     errorMsg.value = e instanceof Error ? e.message : '写入失败'
   }
@@ -103,6 +111,12 @@ const backfillLesson = ref('')
 function doBackfill() {
   if (!backfillTarget.value || backfillValue.value === null) return
   log.value = backfillAndPersist(backfillTarget.value, backfillValue.value, backfillLesson.value || undefined)
+  // 关联的 AI 建议同步回填实际值（回溯命中判断用）
+  for (const t of listAssistTrace()) {
+    if (t.decisionLogId === backfillTarget.value && t.kind === 'decision_log') {
+      backfillAssistActual(t.id, backfillValue.value as number)
+    }
+  }
   backfillTarget.value = ''
   backfillValue.value = null
   backfillLesson.value = ''
@@ -139,7 +153,10 @@ const assistContext = computed(() => ({
   },
   constraint: 'P10 < P50 < P90 必须成立；分位是对该决策点标的价格分布的估计'
 }))
-function applyAssist(s: Record<string, unknown>) {
+/** 采纳的 AI 建议留痕 id——写入链后与日志条目关联，回填实际值时同步命中判断 */
+let adoptedTraceId = ''
+function applyAssist(s: Record<string, unknown>, traceId?: string) {
+  adoptedTraceId = traceId ?? ''
   if (typeof s.judgement === 'string' && s.judgement.trim()) form.judgement = s.judgement.trim()
   if (typeof s.rationale === 'string' && s.rationale.trim()) form.rationale = s.rationale.trim()
   for (const k of ['p10', 'p50', 'p90', 'confidence'] as const) {
@@ -276,7 +293,11 @@ async function writeBack() {
               weightedAvgYuanPerMwh: marketDigest.value.weightedAvgYuanPerMwh
             }
           : null,
-        tomorrowReminders: tomorrowReminders.value
+        tomorrowReminders: tomorrowReminders.value,
+        // 当日 AI 建议采纳清单（#1969 留痕：哪些字段是 AI 建议后采纳的）
+        aiAdopted: listAssistTrace(props.targetDate)
+          .filter((t) => t.adopted)
+          .map((t) => ({ kind: t.kind, fields: t.adoptedFields, at: t.at, confidence: t.confidence }))
       },
       `S7 日报收尾：${coverage.value.meetsVeto ? '决策日志达标' : '决策日志未达标'}`
     )
@@ -380,6 +401,8 @@ async function writeBack() {
             </tr>
           </tbody>
         </table>
+        <!-- AI 建议回溯（建议 vs 实际，判断该不该信它） -->
+        <AssistTracePanel :target-date="targetDate" />
       </section>
 
       <!-- 自动日报 + 市场概况 + 明日提醒 + 收口 -->

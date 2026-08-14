@@ -16,6 +16,7 @@
 import { computed, ref } from 'vue'
 import { Sparkles, Check, X, TriangleAlert } from 'lucide-vue-next'
 import { BASIS_LABEL, requestAssist, type AssistKind, type AssistSuggestion } from '@/services/trading/assistClient'
+import { markAssistAdopted, recordAssistSuggestion } from '@/services/trading/assistTraceStore'
 
 const props = defineProps<{
   kind: AssistKind
@@ -30,13 +31,15 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
-  /** 用户点「采纳填入」：父组件据此写自己的表单 ref */
-  apply: [suggestion: Record<string, unknown>]
+  /** 用户点「采纳填入」：父组件据此写自己的表单 ref；traceId 供留痕关联（可选） */
+  apply: [suggestion: Record<string, unknown>, traceId?: string]
 }>()
 
 const loading = ref(false)
 const error = ref('')
 const result = ref<AssistSuggestion | null>(null)
+/** 本条建议的留痕 id（建议到达即记录，采纳后回填 adopted） */
+let traceId = ''
 
 /** 有值的建议字段（模型判断不了的字段返回 null，不展示、也不会被采纳覆盖）。 */
 const filledFields = computed(() =>
@@ -51,6 +54,18 @@ async function ask() {
   result.value = null
   try {
     result.value = await requestAssist(props.kind, props.context)
+    // 建议到达即留痕（adopted=false）——「AI 给过什么建议、人采没采纳」都要可审计；
+    // targetDate 从注入上下文取（各面板上下文均带）。
+    if (result.value) {
+      traceId = recordAssistSuggestion({
+        at: new Date().toISOString(),
+        targetDate: typeof props.context.targetDate === 'string' ? props.context.targetDate : '',
+        kind: props.kind,
+        suggestion: result.value.suggestion ?? {},
+        basis: result.value.basis ?? {},
+        confidence: result.value.confidence ?? 0
+      })
+    }
   } catch (e) {
     error.value = e instanceof Error ? e.message : '辅助判断失败'
   } finally {
@@ -61,7 +76,11 @@ async function ask() {
 function apply() {
   if (!result.value) return
   // 只把有值的字段交给父组件——null 字段保持用户原值，不被"我不知道"覆盖
-  emit('apply', Object.fromEntries(filledFields.value))
+  const applied = Object.fromEntries(filledFields.value)
+  const tid = traceId
+  emit('apply', applied, tid)
+  if (tid) markAssistAdopted(tid, Object.keys(applied))
+  traceId = ''
   result.value = null
 }
 
