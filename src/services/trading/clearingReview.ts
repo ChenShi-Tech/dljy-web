@@ -26,18 +26,28 @@ export type ClearingAnalysis = {
   /** 偏差绝对量最大的前 N 个时段（N 见 opts.worstCount） */
   worstSlots: WorstSlot[]
   /**
-   * 是否需要转入实时调整：任一时段偏差率超阈值，或出现「未申报却中标」。
-   * 阈值是管理参数（默认 15%），不是市场规则——各公司按自身风控口径覆盖。
+   * 是否需要转入实时调整：任一时段偏差率超调整阈值（手册 ±10%），或出现
+   * 「未申报却中标」。阈值是管理参数，不是市场规则——各公司按自身风控口径覆盖。
    */
   needsRealtimeAction: boolean
-  /** 触发实时调整判断的时段序号 */
+  /** 触发实时调整判断（±10% 档）的时段序号 */
   triggeredSlots: number[]
+  /** 偏差率超严重阈值（手册 ±20%）的时段——手册要求立即排查原因 + 上报主管 */
+  severeSlots: number[]
+  /** 严重偏离成立（severeSlots 非空）——两档阈值固化为手册口径，不再单一可配 */
+  needsEscalation: boolean
   summary: string
 }
 
 export type ClearingAnalysisOptions = {
-  /** 单时段偏差率超过该值即判「需实时调整」；默认 0.15 */
+  /**
+   * 单时段偏差率超过该值即判「需实时调整」（手册第一档 ±10%）；默认 0.1。
+   * realtimeActionThreshold 为历史别名（等价 adjustThreshold），保留兼容既有调用。
+   */
   realtimeActionThreshold?: number
+  adjustThreshold?: number
+  /** 严重偏离阈值（手册第二档 ±20%）→ 立即排查 + 上报主管；默认 0.2 */
+  severeThreshold?: number
   /** 最坏时段列表长度；默认 5 */
   worstCount?: number
 }
@@ -54,7 +64,9 @@ export function analyzeClearing(
   if (!declared.length || declared.length !== cleared.length) {
     throw new Error(`申报与出清曲线长度不一致（${declared.length} vs ${cleared.length}），无法逐时段对齐`)
   }
-  const threshold = opts.realtimeActionThreshold ?? 0.15
+  // 两档阈值按手册固化默认（±10% 调整 / ±20% 严重上报），仍可按公司风控口径覆盖
+  const threshold = opts.adjustThreshold ?? opts.realtimeActionThreshold ?? 0.1
+  const severeThreshold = opts.severeThreshold ?? 0.2
   const worstCount = opts.worstCount ?? 5
 
   const totalDeclaredMwh = round4(declared.reduce((a, b) => a + b, 0))
@@ -86,7 +98,13 @@ export function analyzeClearing(
     )
     .map((r) => r.slot)
 
+  // 严重偏离（±20% 档）：未申报却中标的时段口径都对不上，一并视为严重
+  const severeSlots = rows
+    .filter((r) => (r.deltaPct !== null ? Math.abs(r.deltaPct) > severeThreshold : r.clearedMwh > 0))
+    .map((r) => r.slot)
+
   const needsRealtimeAction = triggeredSlots.length > 0
+  const needsEscalation = severeSlots.length > 0
 
   const summaryParts: string[] = []
   summaryParts.push(
@@ -100,9 +118,12 @@ export function analyzeClearing(
   }
   summaryParts.push(
     needsRealtimeAction
-      ? `有 ${triggeredSlots.length} 个时段偏差率超 ${(threshold * 100).toFixed(0)}%，需评估实时市场调整`
+      ? `有 ${triggeredSlots.length} 个时段偏差率超 ±${(threshold * 100).toFixed(0)}%，需评估实时市场调整`
       : '逐时段偏差均在阈值内，无需实时调整'
   )
+  if (needsEscalation) {
+    summaryParts.push(`${severeSlots.length} 个时段严重偏离（超 ±${(severeThreshold * 100).toFixed(0)}%）——立即排查原因并上报主管`)
+  }
 
   return {
     slots: declared.length,
@@ -112,6 +133,8 @@ export function analyzeClearing(
     worstSlots,
     needsRealtimeAction,
     triggeredSlots,
+    severeSlots,
+    needsEscalation,
     summary: summaryParts.join('；')
   }
 }

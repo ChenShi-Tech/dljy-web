@@ -38,6 +38,9 @@ const direction = computed(() => (pf.value.forecast?.direction ?? null) as 'add'
 // ── 输入（缺上游产出时手填）──────────────────────────────────────────────────
 const forecastInput = ref<number>(0)
 const forecastMwh = computed(() => forecastFromS3.value ?? forecastInput.value)
+
+// ── 持仓视图（F4.2 联动）：日前中标量由 S5 写回自动喂入，不再人工填 ──────────
+const clearingPosition = computed(() => props.declaration?.preflight?.clearingReview?.positionUpdate ?? null)
 const contractedMwh = ref<number>(0)
 const holdBand = ref(0.05)
 
@@ -152,7 +155,13 @@ function gapClass(s: GapSuggestion) {
     <div class="cg-grid">
       <!-- 输入 -->
       <section class="cg-panel">
-        <h3><Wallet :size="14" /> 持仓对照</h3>
+        <h3>
+          <Wallet :size="14" /> 持仓对照
+          <em v-if="clearingPosition" class="cg-pos-auto">
+            日前中标 {{ clearingPosition.dayAheadClearedMwh.toFixed(1) }} MWh（S5 自动喂入，不再人工填）
+          </em>
+          <em v-else class="cg-pos-none">日前中标量未联动——S5 出清分析写回后自动计入持仓视图</em>
+        </h3>
         <div class="cg-fields">
           <label>
             预测电量 MWh

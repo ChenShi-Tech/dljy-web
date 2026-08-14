@@ -8,8 +8,8 @@
 //   ③ 状态机：风控检查 → 送审 → 审批 → 提交。硬约束不过，服务端直接拦转态（409），
 //      不是弹个提示继续走。
 // 储能立场多一张充放电计划单（折叠块），写回后放行清单的 SOC 判据自动生效。
-import { computed, reactive, ref, watch } from 'vue'
-import { FileUp, Link2, PenLine, ShieldCheck, Save } from 'lucide-vue-next'
+import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
+import { FileUp, Link2, PenLine, PhoneCall, ShieldCheck, Save, Layers } from 'lucide-vue-next'
 import {
   buildChecklist,
   evaluateRelease,
@@ -18,8 +18,11 @@ import {
 } from 'shared/trading-rules/release-checklist.mjs'
 import { USAGE_GATE_LABEL } from 'shared/trading-rules/data-integrity.mjs'
 import { getMarketTiming } from 'shared/trading-rules/market-timing.mjs'
+import { getTradingCalendar } from 'shared/trading-rules/trading-calendar.mjs'
 import { currentRegion } from '@/services/region/regionContext'
 import { activePosition } from '@/services/position/positionContext'
+import { getRegionSpotProfile } from '@/data/regionSpotProfiles'
+import { buildSegmentDraft, segmentsToPriceCurve96, validateSegments, type SegmentRow } from '@/services/trading/segmentQuote'
 import {
   approveDeclaration,
   declarationModeOf,
@@ -39,6 +42,42 @@ const emit = defineEmits<{ updated: [d: DeclarationOrder]; go: [stage: StageId] 
 const decl = computed(() => props.declaration)
 const pf = computed(() => decl.value?.preflight ?? {})
 const timing = computed(() => getMarketTiming(currentRegion.value.id))
+// D+N 口径（今天报的是 D+几）由 trading-calendar 权威给出——「D-1」这种标的日视角
+// 的散落标注不再写死在本面板。
+const dnCalendar = computed(() => getTradingCalendar(currentRegion.value.id))
+
+// ── 截止倒计时与三级提醒（手册 S4 步骤③：截止前 60/15/5 分钟）──────────────
+// 只对真实单（LIVE）倒计时；演练单不受截止约束。30s 一跳已够（提醒粒度是分钟级）。
+const now = ref(Date.now())
+let tickTimer: number | undefined
+onMounted(() => {
+  tickTimer = window.setInterval(() => { now.value = Date.now() }, 30_000)
+})
+onUnmounted(() => { if (tickTimer !== undefined) window.clearInterval(tickTimer) })
+
+const minutesToDeadline = computed<number | null>(() => {
+  const d = decl.value
+  if (!d || declarationModeOf(d) !== 'LIVE') return null
+  return Math.floor((new Date(d.deadline).getTime() - now.value) / 60000)
+})
+
+/** 三级提醒档（手册）：≤60 蓝提示 / ≤15 黄警告 / ≤5 红应急；已过 = passed。 */
+const reminderLevel = computed<'normal' | 'blue' | 'yellow' | 'red' | 'passed' | null>(() => {
+  const m = minutesToDeadline.value
+  if (m === null) return null
+  if (m < 0) return 'passed'
+  if (m <= 5) return 'red'
+  if (m <= 15) return 'yellow'
+  if (m <= 60) return 'blue'
+  return 'normal'
+})
+const REMINDER_NOTE: Record<string, string> = {
+  normal: '距截止充足',
+  blue: '蓝色提醒：距截止不足 60 分钟——确认放行清单与审批链是否就绪',
+  yellow: '黄色警告：距截止不足 15 分钟——优先完成审批，预留提交时间',
+  red: '红色应急：距截止不足 5 分钟——走应急通道（联系审批人即时放行）',
+  passed: '已过截止——本单提交会被服务端作废（EXPIRED）'
+}
 
 // ── ① 申报曲线：套用 S3 产出 ────────────────────────────────────────────────
 const forecastTotal = computed(() =>
@@ -56,6 +95,54 @@ const curveMatchesForecast = computed(() => {
 const canEditCurve = computed(() =>
   decl.value ? ['DRAFT', 'RISK_CHECKED', 'REJECTED'].includes(decl.value.status) : false
 )
+
+// ── ①' 分段价量报价草稿（F3.4 · 手册 S4 步骤①：检查「分几段、每段什么价」）────
+// 发电/储能立场报量报价必需；售电 T3 报量不报价（面板提示不生成）。价格锚取 S2
+// 价格中枢（S2 未产出时不硬编——没有锚的分段报价是编数字）。
+const needsPriceQuote = computed(() => ['GENERATOR', 'STORAGE'].includes(activePosition.value ?? ''))
+const priceCenterOfS2 = computed<[number, number] | null>(() => {
+  const g = pf.value.dataGate
+  if (g && Number.isFinite(g.priceCenterLow) && Number.isFinite(g.priceCenterHigh)) {
+    return [Number(g.priceCenterLow), Number(g.priceCenterHigh)]
+  }
+  return null
+})
+const segmentCount = ref<3 | 4>(3)
+const segments = ref<SegmentRow[] | null>(null)
+watch(segmentCount, () => { segments.value = null })
+function generateSegments() {
+  if (!decl.value || !priceCenterOfS2.value) return
+  segments.value = buildSegmentDraft(
+    decl.value.energyCurveMwh96,
+    priceCenterOfS2.value[0],
+    priceCenterOfS2.value[1],
+    segmentCount.value
+  )
+}
+const regionPriceBand = computed(() => {
+  const mech = getRegionSpotProfile(currentRegion.value.id).mechanism
+  return Number.isFinite(mech.priceCap) && Number.isFinite(mech.priceFloor)
+    ? { floor: mech.priceFloor, cap: mech.priceCap }
+    : null
+})
+const segmentValidation = computed(() =>
+  segments.value ? validateSegments(segments.value, regionPriceBand.value) : null
+)
+const canApplySegments = computed(() =>
+  Boolean(segments.value?.length) && segmentValidation.value?.ok === true && canEditCurve.value
+)
+function applySegmentPrices() {
+  if (!decl.value || !segments.value) return
+  const priceCurve96 = segmentsToPriceCurve96(segments.value, decl.value.energyCurveMwh96)
+  if (!priceCurve96) return
+  void run(
+    () => updateDeclarationCurve(decl.value!.id, {
+      priceCurve96,
+      note: `套用分段报价草稿：${segments.value!.map((x) => `${x.label} ${x.priceYuanPerMwh} 元`).join(' / ')}`
+    }),
+    '分段价格曲线已写入申报单（priceCurve96）'
+  )
+}
 
 const busy = ref(false)
 const actionMsg = ref('')
@@ -172,7 +259,7 @@ const approveComment = ref('')
 
 const deadlinePassed = computed(() => {
   if (!decl.value) return false
-  return declarationModeOf(decl.value) === 'LIVE' && Date.now() > new Date(decl.value.deadline).getTime()
+  return declarationModeOf(decl.value) === 'LIVE' && now.value > new Date(decl.value.deadline).getTime()
 })
 
 function doRiskCheck() {
@@ -190,20 +277,92 @@ function doApprove(decision: 'approve' | 'reject') {
     decision === 'approve' ? '已批准' : '已驳回'
   )
 }
-function doSubmit() {
-  if (!decl.value) return
-  void run(() => submitDeclaration(decl.value!.id, `${decl.value!.id}-submit`), '已提交并取得回执')
+// 提交失败自动重试 3 次 → 人工通道（手册 S4 异常处理）。非瞬态错误（过截止/状态机
+// 拒绝）重试无意义，立即转人工通道；成功后留提交快照供回执逐项核对。
+const submitFailures = ref<string[]>([])
+const manualChannelOpen = ref(false)
+const submitSnapshotMwh = ref<number | null>(null)
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
+
+async function doSubmit() {
+  const d = decl.value
+  if (!d || busy.value) return
+  submitFailures.value = []
+  manualChannelOpen.value = false
+  submitSnapshotMwh.value = d.energyCurveMwh96.reduce((a, b) => a + b, 0)
+  busy.value = true
+  actionMsg.value = ''
+  actionError.value = ''
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    try {
+      const updated = await submitDeclaration(d.id, `${d.id}-submit`)
+      emit('updated', updated)
+      actionMsg.value = attempt > 1 ? `第 ${attempt} 次尝试提交成功并取得回执` : '已提交并取得回执'
+      busy.value = false
+      return
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : '提交失败'
+      submitFailures.value = [...submitFailures.value, `第 ${attempt} 次：${msg}`]
+      // 过截止/状态机拒绝是确定性失败，重试只是烧时间
+      if (/截止|EXPIRED|状态/.test(msg)) break
+      if (attempt < 3) await sleep(800)
+    }
+  }
+  busy.value = false
+  actionError.value = '自动提交未成功（见失败记录）——已转人工通道'
+  manualChannelOpen.value = true
 }
+
+/** 回执逐项核对（手册 S4 步骤④）：幂等键/时序/状态/总量逐项过，人工项标 null。 */
+type ReceiptCheckRow = { label: string; pass: boolean | null; detail: string }
+const receiptChecks = computed<ReceiptCheckRow[] | null>(() => {
+  const d = decl.value
+  const r = d?.receipt
+  if (!d || !r) return null
+  const rehearsal = declarationModeOf(d) === 'REHEARSAL'
+  const currentTotal = d.energyCurveMwh96.reduce((a, b) => a + b, 0)
+  return [
+    {
+      label: '回执幂等键与提交键一致',
+      pass: r.idempotencyKey === `${d.id}-submit`,
+      detail: r.idempotencyKey
+    },
+    {
+      label: '回执时间在申报截止前',
+      pass: rehearsal ? null : new Date(r.acknowledgedAt).getTime() <= new Date(d.deadline).getTime(),
+      detail: new Date(r.acknowledgedAt).toLocaleString('zh-CN', { hour12: false }) + (rehearsal ? '（演练单豁免）' : '')
+    },
+    {
+      label: '单据状态已进入已提交及之后',
+      pass: ['SUBMITTED', 'ACKNOWLEDGED', 'CLEARED', 'DEVIATION_TRACKING', 'SETTLED', 'REVIEWED'].includes(d.status),
+      detail: STATUS_LABEL[d.status]
+    },
+    {
+      label: '申报总量与提交快照一致',
+      pass: submitSnapshotMwh.value !== null ? Math.abs(currentTotal - submitSnapshotMwh.value) < 0.05 : null,
+      detail: submitSnapshotMwh.value !== null
+        ? `快照 ${submitSnapshotMwh.value.toFixed(1)} / 当前 ${currentTotal.toFixed(1)} MWh`
+        : '本会话无提交快照——请人工比对'
+    }
+  ]
+})
 </script>
 
 <template>
   <div class="dc">
-    <!-- 截止提示 -->
-    <section v-if="decl" class="dc-deadline" :class="{ over: deadlinePassed }">
+    <!-- 截止提示 + 三级提醒（手册：截止前 60/15/5 分钟） -->
+    <section
+      v-if="decl"
+      class="dc-deadline"
+      :class="{ over: deadlinePassed, [`remind-${reminderLevel}`]: reminderLevel && reminderLevel !== 'normal' }"
+    >
       申报截止 {{ new Date(decl.deadline).toLocaleString('zh-CN', { hour12: false }) }}
-      <template v-if="timing">（{{ currentRegion.shortName || currentRegion.id }}规则包 D-1 {{ timing.bidDeadline }}）</template>
+      <template v-if="timing">（{{ currentRegion.shortName || currentRegion.id }}规则包 截止 {{ timing.bidDeadline }}<template v-if="dnCalendar"> · 今天主要报 D+{{ dnCalendar.primarySpotTarget }}</template>）</template>
       <template v-if="declarationModeOf(decl) === 'REHEARSAL'">· 演练单不受截止约束</template>
       <strong v-else-if="deadlinePassed">已过截止——本单提交会被服务端作废（EXPIRED）</strong>
+      <template v-else-if="minutesToDeadline !== null">
+        · 距截止 <strong>{{ minutesToDeadline }}</strong> 分钟 · {{ REMINDER_NOTE[reminderLevel ?? 'normal'] }}
+      </template>
     </section>
 
     <!-- ① 申报曲线 -->
@@ -229,8 +388,63 @@ function doSubmit() {
           S3 方向判断未产出——曲线只能手工维护。
           <button type="button" class="dc-jump" @click="emit('go', 'direction')">回 S3 补</button>
         </span>
+        <router-link class="dc-jump" to="/xhjy/desk">去申报工作台逐点微调 96 点 →</router-link>
       </div>
     </section>
+
+    <!-- ①' 分段价量报价草稿（F3.4）—— 发电/储能立场报量报价；售电 T3 报量不报价 -->
+    <details v-if="needsPriceQuote" class="dc-segments" :open="!decl?.priceCurve96?.length">
+      <summary>
+        <Layers :size="13" /> 分段价量报价草稿（{{ segmentCount }} 段）
+        <em v-if="decl?.priceCurve96?.length">价格曲线已写入（{{ new Set(decl.priceCurve96).size }} 档价）</em>
+        <em v-else>未生成——发电/储能立场报量报价必需</em>
+      </summary>
+      <div class="dc-seg-bar">
+        <label>
+          段数
+          <select v-model.number="segmentCount">
+            <option :value="3">3 段（基荷/腰荷/峰荷）</option>
+            <option :value="4">4 段（+尖峰）</option>
+          </select>
+        </label>
+        <button type="button" class="dc-btn" :disabled="!priceCenterOfS2" @click="generateSegments">
+          {{ priceCenterOfS2 ? '按电量份额生成分段草稿' : '需先在 S2 产出价格中枢' }}
+        </button>
+        <span v-if="!priceCenterOfS2" class="dc-warn-inline">S2 未写回市场判断（价格中枢）——没有价格锚不生成分段，不编数字。
+          <button type="button" class="dc-jump" @click="emit('go', 'market-analysis')">回 S2</button>
+        </span>
+      </div>
+      <table v-if="segments?.length" class="dc-seg-table">
+        <thead>
+          <tr><th>段位</th><th>价格 元/MWh（可改，须整数）</th><th>电量 MWh</th><th>覆盖点数</th><th>电量占比</th></tr>
+        </thead>
+        <tbody>
+          <tr v-for="(row, i) in segments" :key="row.rank">
+            <td>{{ row.label }}</td>
+            <td><input v-model.number="segments![i]!.priceYuanPerMwh" type="number" step="1" /></td>
+            <td>{{ row.energyMwh.toFixed(1) }}</td>
+            <td>{{ row.slots }}</td>
+            <td>{{ row.sharePct }}%</td>
+          </tr>
+        </tbody>
+      </table>
+      <p v-if="segmentValidation && !segmentValidation.ok" class="dc-err">{{ segmentValidation.problems.join('；') }}</p>
+      <p v-if="segmentValidation?.ok" class="dc-muted">
+        供给曲线约束：价格随段位严格递增、整数价<template v-if="regionPriceBand">、限价带 [{{ regionPriceBand.floor }}, {{ regionPriceBand.cap }}] 内（{{ currentRegion.shortName || currentRegion.id }} 档案）</template>——人工改动实时校验。
+      </p>
+      <button
+        type="button"
+        class="dc-btn primary"
+        :disabled="!canApplySegments"
+        :title="canEditCurve ? '' : '当前状态不可改曲线（提交后价格随单固化）'"
+        @click="applySegmentPrices"
+      >
+        套用为申报单价格曲线（priceCurve96）
+      </button>
+    </details>
+    <p v-else class="dc-muted" style="margin: 0">
+      当前立场（{{ activePosition ?? '未选' }}）为报量不报价口径（售电 T3）——无分段报价环节；发电/储能立场在此生成分段草稿。
+    </p>
 
     <!-- 储能立场：充放电计划（写回后 SOC 判据自动生效） -->
     <details class="dc-storage" :open="activePosition === 'STORAGE'">
@@ -380,12 +594,40 @@ function doSubmit() {
           {{ new Date(decl.riskCheck.evaluatedAt).toLocaleString('zh-CN', { hour12: false }) }}
         </p>
 
-        <!-- 回执 -->
+        <!-- 提交失败记录与人工通道（手册：自动重试 3 次 → 人工通道） -->
+        <div v-if="manualChannelOpen" class="dc-manual">
+          <h4><PhoneCall :size="13" /> 自动提交未成功——人工通道</h4>
+          <ul v-if="submitFailures.length" class="dc-manual-fails">
+            <li v-for="(f, i) in submitFailures" :key="i">{{ f }}</li>
+          </ul>
+          <p>
+            按<strong>人工通道</strong>完成申报：登录交易平台网页端按下列读数填报，或按省交易中心电话申报流程申报。
+            人工申报的受理结果以交易平台侧回执为准——本系统不代发、也不伪造回执；完成后回 S5 人工登记出清。
+          </p>
+          <div class="dc-manual-read">
+            <span>标的日 {{ decl.targetDate }}</span>
+            <span>申报总量 <strong>{{ decl.energyCurveMwh96.reduce((a, b) => a + b, 0).toFixed(1) }}</strong> MWh</span>
+            <span v-if="decl.priceCurve96?.length">价格 {{ new Set(decl.priceCurve96).size }} 档（{{ [...new Set(decl.priceCurve96)].sort((a, b) => a - b).join('/') }} 元/MWh）</span>
+            <span>截止 {{ new Date(decl.deadline).toLocaleString('zh-CN', { hour12: false }) }}</span>
+          </div>
+        </div>
+
+        <!-- 回执 + 逐项核对（手册 S4 步骤④：回执确认不是只看回执号） -->
         <div v-if="decl.receipt" class="dc-receipt">
           回执 {{ decl.receipt.receiptId }} · {{ decl.receipt.gateway }}
           · {{ new Date(decl.receipt.acknowledgedAt).toLocaleString('zh-CN', { hour12: false }) }}
-          <em v-if="decl.receipt.mock">Mock 网关（非真实申报通道）</em>
+          <em v-if="decl.receipt.mock">Mock 网关（非真实申报通道）——真实申报以交易平台回执为准</em>
           <button type="button" class="dc-jump" @click="emit('go', 'clearing')">→ 等出清结果，去 S5</button>
+          <table v-if="receiptChecks" class="dc-receipt-checks">
+            <thead><tr><th>核对项</th><th>结论</th><th>明细</th></tr></thead>
+            <tbody>
+              <tr v-for="c in receiptChecks" :key="c.label" :class="c.pass === false ? 'bad' : c.pass === null ? 'manual' : ''">
+                <td>{{ c.label }}</td>
+                <td>{{ c.pass === true ? '✓ 通过' : c.pass === false ? '✗ 不一致' : '人工比对' }}</td>
+                <td>{{ c.detail }}</td>
+              </tr>
+            </tbody>
+          </table>
         </div>
       </template>
     </section>
@@ -473,4 +715,29 @@ function doSubmit() {
 
 .dc-receipt { margin-top: 8px; padding: 7px 10px; border-radius: 8px; background: #f0fdf4; color: #166534; font-size: 12px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .dc-receipt em { font-style: normal; padding: 1px 7px; border-radius: 8px; background: #fef3c7; color: #92400e; font-size: 10px; }
+.dc-receipt-checks { width: 100%; border-collapse: collapse; font-size: 11px; margin-top: 6px; background: #fff; }
+.dc-receipt-checks th, .dc-receipt-checks td { padding: 4px 8px; border-bottom: 1px solid var(--el-border-color-lighter, #ebeef5); text-align: left; }
+.dc-receipt-checks th { color: var(--el-text-color-secondary, #667); }
+.dc-receipt-checks tr.bad td { background: #fef2f2; color: #991b1b; }
+.dc-receipt-checks tr.manual td { background: #fffbeb; color: #92400e; }
+
+.dc-deadline.remind-blue { border-color: #93c5fd; background: #eff6ff; }
+.dc-deadline.remind-yellow { border-color: #fcd34d; background: #fffbeb; color: #92400e; }
+.dc-deadline.remind-red { border-color: #f87171; background: #fef2f2; color: #991b1b; font-weight: 600; }
+
+.dc-segments { border: 1px solid var(--el-border-color-lighter, #ebeef5); border-radius: 10px; background: #fff; padding: 8px 12px; }
+.dc-segments summary { display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 600; cursor: pointer; flex-wrap: wrap; }
+.dc-segments summary em { font-style: normal; font-weight: 400; font-size: 11px; color: var(--el-text-color-secondary, #889); }
+.dc-segments[open] summary { margin-bottom: 8px; }
+.dc-seg-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 12px; margin-bottom: 8px; }
+.dc-seg-bar select { padding: 3px 6px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 5px; font-size: 12px; }
+.dc-seg-table { width: 100%; border-collapse: collapse; font-size: 11px; font-variant-numeric: tabular-nums; }
+.dc-seg-table th, .dc-seg-table td { padding: 4px 6px; border-bottom: 1px solid var(--el-border-color-lighter, #ebeef5); text-align: right; }
+.dc-seg-table th:first-child, .dc-seg-table td:first-child { text-align: left; }
+.dc-seg-table input { width: 84px; padding: 3px 6px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 4px; font-size: 11px; text-align: right; }
+
+.dc-manual { margin-top: 8px; padding: 8px 12px; border: 1px solid #fca5a5; border-radius: 8px; background: #fef2f2; font-size: 12px; line-height: 1.7; }
+.dc-manual h4 { display: flex; align-items: center; gap: 5px; margin: 0 0 4px; font-size: 12px; color: #991b1b; }
+.dc-manual-fails { margin: 0 0 6px; padding-left: 18px; font-size: 11px; color: #991b1b; }
+.dc-manual-read { display: flex; gap: 14px; flex-wrap: wrap; padding: 5px 9px; border-radius: 6px; background: #fff; font-variant-numeric: tabular-nums; }
 </style>

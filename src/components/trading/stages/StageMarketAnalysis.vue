@@ -17,9 +17,12 @@ import { computed, ref } from 'vue'
 import { ArrowRightLeft, ClipboardCheck, Save } from 'lucide-vue-next'
 import {
   assessSlots,
+  coalPriceToThermalAnchor,
   exportCouplingImpact,
+  provincePriceCompare,
   REGIME_LABEL,
   summarizeDay,
+  thermalAnchorVsPriceCenter,
   type SupplyDemandInput
 } from 'shared/trading-rules/supply-demand.mjs'
 import {
@@ -130,6 +133,22 @@ async function loadFromDb() {
     }
     let applied = 0
     for (const e of entries) {
+      // 煤价（日级）与小时持仓（24 槽）单独落位，其余按四代表时段落格
+      if (e.slot_label === 'all-day' && e.field === 'coal_price_yuan_per_ton') {
+        coalPrice.value = e.value_mw
+        coalSource.value = e.source_kind
+        applied += 1
+        continue
+      }
+      const hourMatch = /^h(\d{2})$/.exec(e.slot_label)
+      if (hourMatch && e.field === 'mlt_position_mwh') {
+        const h = Number(hourMatch[1])
+        if (h >= 0 && h < 24) {
+          hourlyPosition.value[h] = e.value_mw
+          applied += 1
+        }
+        continue
+      }
       const slotIndex = SLOT_DB_LABELS.indexOf(e.slot_label)
       const field = (Object.entries(FIELD_TO_DB).find(([, db]) => db === e.field)?.[0] ?? null) as FieldKey | null
       if (slotIndex < 0 || !field) continue
@@ -160,6 +179,26 @@ async function saveToDb() {
         credibility: (isTrustedSource(sourceOf(i, f)) ? 'B' : 'C') as 'B' | 'C'
       }))
     ).filter((e) => Number.isFinite(e.valueMw))
+    if (coalPrice.value !== null && Number.isFinite(coalPrice.value)) {
+      entries.push({
+        slot: 'all-day',
+        field: 'coal_price_yuan_per_ton',
+        valueMw: coalPrice.value,
+        sourceKind: coalSource.value,
+        credibility: isTrustedSource(coalSource.value) ? ('B' as const) : ('C' as const)
+      })
+    }
+    hourlyPosition.value.forEach((v, h) => {
+      if (v !== null && Number.isFinite(v)) {
+        entries.push({
+          slot: `h${String(h).padStart(2, '0')}`,
+          field: 'mlt_position_mwh',
+          valueMw: v,
+          sourceKind: 'company',
+          credibility: 'C' as const
+        })
+      }
+    })
     const saved = await saveFundamentals(currentRegion.value.id, props.targetDate, entries)
     dbMsg.value = `已保存 ${saved} 格到基本面库（含来源与录入人留痕）`
   } catch (e) {
@@ -249,6 +288,111 @@ async function pullFundamentals() {
   }
 }
 
+// ── 煤价维度（手册 S2 基本面第四项：火电边际成本的锚）─────────────────────────
+// 煤价不进供需比公式（它是价格侧的锚，不是量的侧的量），换算成火电边际成本后与
+// 分档价格中枢对照——中枢是季度拟合的经验值，煤价逐日变，二者脱节即提示修正。
+const coalPrice = ref<number | null>(null)
+const coalSource = ref<SourceKind>('manual')
+const coalAnchor = computed(() => coalPriceToThermalAnchor(coalPrice.value))
+const anchorVerdict = computed(() =>
+  thermalAnchorVsPriceCenter(
+    coalAnchor.value?.totalYuanPerMwh ?? null,
+    daySummary.value.priceCenterLow !== null && daySummary.value.priceCenterHigh !== null
+      ? [daySummary.value.priceCenterLow, daySummary.value.priceCenterHigh]
+      : null
+  )
+)
+
+// ── 昨日偏差 → 今日判断（手册 S2 步骤④：评估昨日偏差是否影响今日判断）──────
+// S1 的复盘结论写在同一张单据的 morningReview 段——本面板读它并要求显式表态：
+// 昨日偏差是否改变今日判断。不表态（not_reviewed）写回时留 null，不默认「无影响」。
+type YesterdayImpact = 'unchanged' | 'reinforce' | 'weaken'
+const YESTERDAY_IMPACT_LABEL: Record<YesterdayImpact, string> = {
+  unchanged: '不改变今日判断',
+  reinforce: '强化今日判断（同一方向更确定）',
+  weaken: '削弱/推翻今日判断（需重估）'
+}
+const yesterdayReview = computed(() => props.declaration?.preflight?.morningReview ?? null)
+const yesterdayImpact = ref<YesterdayImpact | 'not_reviewed'>('not_reviewed')
+const yesterdayNote = ref('')
+
+// ── 24 时段聚合视图（2026-08-13 会议拍板：底层 96 点存储，24 时段仅作聚合展示）──
+// 三列：需求电量（采集负荷预测 96 点聚到小时，无采集则人工）/ 中长期持仓（人工或
+// 合约库，未接前人工）/ 差额（需求−持仓 = 现货敞口）。聚合只做展示，不改存储。
+const HOURLY_LABELS = Array.from({ length: 24 }, (_, h) => `${String(h).padStart(2, '0')}:00`)
+const hourlyDemand = ref<Array<number | null>>(Array(24).fill(null))
+const hourlyDemandSource = ref<'capture' | 'manual'>('manual')
+const hourlyDemandDate = ref('')
+const hourlyPosition = ref<Array<number | null>>(Array(24).fill(null))
+const hourlyGap = computed(() =>
+  hourlyDemand.value.map((d, h) =>
+    d !== null && hourlyPosition.value[h] !== null
+      ? Math.round((d - (hourlyPosition.value[h] as number)) * 10) / 10
+      : null
+  )
+)
+const hourlyTotals = computed(() => {
+  const sum = (a: Array<number | null>) => a.reduce<number>((acc, v) => acc + (v ?? 0), 0)
+  const demandKnown = hourlyDemand.value.some((v) => v !== null)
+  const positionKnown = hourlyPosition.value.some((v) => v !== null)
+  return {
+    demandMwh: demandKnown ? Math.round(sum(hourlyDemand.value) * 10) / 10 : null,
+    positionMwh: positionKnown ? Math.round(sum(hourlyPosition.value) * 10) / 10 : null,
+    gapMwh: demandKnown && positionKnown ? Math.round((sum(hourlyDemand.value) - sum(hourlyPosition.value)) * 10) / 10 : null
+  }
+})
+
+/** 从采集库拉标的日负荷预测 96 点 → 聚合为 24 小时需求电量（MWh，每小时均值 MW×1h）。 */
+const hourlyPulling = ref(false)
+const hourlyPullMsg = ref('')
+const hourlyPullError = ref('')
+async function pullHourlyDemand() {
+  hourlyPulling.value = true
+  hourlyPullMsg.value = ''
+  hourlyPullError.value = ''
+  try {
+    const body = await fetchCaptured<{ data?: Array<{ targetDate?: string; operateDate: string; timePoint: string; value: number; region?: string }> }>(
+      'yn_system_forecast', 'load_forecast', { region: 'yunnan', limit: 4000 }
+    )
+    let rows = (body.data ?? []) as Array<{ targetDate?: string; operateDate: string; timePoint: string; value: number; region?: string }>
+    rows = rows.filter((r) => r.region !== 'all') // 省内口径（同上：排除南网全网 'all'）
+    if (!rows.length) throw new Error('采集库无负荷预测切片')
+    let dayRows = rows.filter((r) => (r.targetDate ?? r.operateDate) === props.targetDate)
+    let usedDate = props.targetDate
+    if (!dayRows.length) {
+      const latest = rows.map((r) => r.targetDate ?? r.operateDate).sort().at(-1)!
+      dayRows = rows.filter((r) => (r.targetDate ?? r.operateDate) === latest)
+      usedDate = latest
+    }
+    const next: Array<number | null> = Array(24).fill(null)
+    for (let h = 0; h < 24; h += 1) {
+      const vals = dayRows
+        .filter((r) => Number(r.timePoint.slice(0, 2)) === h)
+        .map((r) => r.value)
+        .filter((v) => Number.isFinite(v))
+      if (vals.length) next[h] = Math.round((vals.reduce((a, b) => a + b, 0) / vals.length) * 10) / 10
+    }
+    if (!next.some((v) => v !== null)) throw new Error('切片无可聚合时点')
+    hourlyDemand.value = next
+    hourlyDemandSource.value = 'capture'
+    hourlyDemandDate.value = usedDate
+    hourlyPullMsg.value = `需求电量已按 ${usedDate === props.targetDate ? '标的日' : `最近日 ${usedDate}`} 负荷预测聚到 24 小时`
+  } catch (e) {
+    hourlyPullError.value = e instanceof Error ? e.message : '聚合拉取失败——需求电量可逐时人工填'
+  } finally {
+    hourlyPulling.value = false
+  }
+}
+
+// ── 省内 vs 省外比价（会议 §4：判断「先做省内还是省外」）─────────────────────
+const domesticPrice = ref<number | null>(null)
+const externalPrice = ref<number | null>(null)
+const externalPriceSource = ref<SourceKind>('manual')
+const priceCompare = computed(() => provincePriceCompare(domesticPrice.value, externalPrice.value))
+
+// ── 外送公告（会议 §4：外送有无可做交易作为基本面因素）───────────────────────
+const exportNotice = ref('')
+
 // ── AI 晨间分析（L1 简报 + L2 追问，共用一个面板）───────────────────────────
 // 把当前面板的全部推演结果注入为上下文：AI 拿到的是"人已经算出来的东西"，
 // 它的职责是给出态势判断的理由、挑出规则表结论可疑的地方、提示最该防的时段——
@@ -275,6 +419,22 @@ const aiContext = computed(() => ({
   slotAssessments: assessments.value,
   daySummary: daySummary.value,
   exportCoupling: coupling.value,
+  coal: {
+    priceYuanPerTon: coalPrice.value,
+    source: coalSource.value,
+    anchorYuanPerMwh: coalAnchor.value?.totalYuanPerMwh ?? null,
+    anchorAssumptions: coalAnchor.value?.assumptions ?? null,
+    anchorVsPriceCenter: anchorVerdict.value?.verdict ?? null
+  },
+  yesterdayImpact:
+    yesterdayImpact.value === 'not_reviewed'
+      ? null
+      : { impact: yesterdayImpact.value, note: yesterdayNote.value || null, yesterdayReview: yesterdayReview.value },
+  provincePriceCompare: priceCompare.value
+    ? { domesticYuanPerMwh: domesticPrice.value, externalYuanPerMwh: externalPrice.value, ...priceCompare.value }
+    : null,
+  exportNotice: exportNotice.value || null,
+  hourlyExposure: hourlyTotals.value,
   integrityGate: {
     gate: integrityVerdict.value.gate,
     completenessRate: integrityVerdict.value.completenessRate,
@@ -374,7 +534,23 @@ async function writeBack() {
         gate: effectiveGate.value,
         completenessRate: integrityVerdict.value.completenessRate,
         weakestCredibility: effectiveCredibility.value,
-        degradeLevel: integrityVerdict.value.degradeLevel
+        degradeLevel: integrityVerdict.value.degradeLevel,
+        // 煤价维度与中枢对照（手册 S2 基本面第四项）
+        coalPriceYuanPerTon: coalPrice.value,
+        coalAnchorYuanPerMwh: coalAnchor.value?.totalYuanPerMwh ?? null,
+        coalAnchorVerdict: anchorVerdict.value?.verdict ?? null,
+        // 昨日偏差是否影响今日判断（手册 S2 步骤④；未表态留 null 不默认无影响）
+        yesterdayImpact:
+          yesterdayImpact.value === 'not_reviewed'
+            ? null
+            : { impact: yesterdayImpact.value, note: yesterdayNote.value || null },
+        // 省内外比价与外送公告（会议 §4 要素）
+        provinceCompare: priceCompare.value
+          ? { domesticYuanPerMwh: domesticPrice.value, externalYuanPerMwh: externalPrice.value, diffPct: priceCompare.value.diffPct, side: priceCompare.value.side }
+          : null,
+        exportNotice: exportNotice.value || null,
+        // 24 时段聚合汇总（逐时明细在基本面库 h00–h23 槽，payload 只带总数）
+        hourlyExposure: hourlyTotals.value
       },
       `S2 早间分析：${REGIME_LABEL[s.dominantRegime]}，中枢 ${s.priceCenterLow}–${s.priceCenterHigh} 元/MWh`
     )
@@ -423,6 +599,44 @@ async function writeBack() {
         主导态势取<strong>时段数最多</strong>的档位而非平均供需比——平均会把「多数偏紧 + 个别极松」
         抹成宽松，恰好抹掉当天最该防的时段。
       </p>
+
+      <!-- 昨日偏差 → 今日判断（手册 S2 步骤④） -->
+      <div class="ma-yday">
+        <template v-if="yesterdayReview">
+          <div class="ma-yday-facts">
+            <span>S1 复盘（{{ yesterdayReview.reviewedDate }}）：主因
+              <strong>{{ yesterdayReview.causeLabel ?? '—' }}</strong>
+              <em v-if="yesterdayReview.pendingAnalysis" class="ma-yday-pending">待分析</em>
+            </span>
+            <span v-if="yesterdayReview.clearRate !== null && yesterdayReview.clearRate !== undefined">中标率 {{ (yesterdayReview.clearRate * 100).toFixed(1) }}%</span>
+            <span v-if="yesterdayReview.executionDeviationMwh !== null && yesterdayReview.executionDeviationMwh !== undefined">执行偏差 {{ yesterdayReview.executionDeviationMwh }} MWh</span>
+          </div>
+          <div v-if="yesterdayReview.lessons" class="ma-yday-lessons">要点：{{ yesterdayReview.lessons }}</div>
+          <div class="ma-yday-input">
+            <label>
+              昨日偏差是否影响今日判断
+              <select v-model="yesterdayImpact">
+                <option value="not_reviewed">（未表态）</option>
+                <option value="unchanged">不改变今日判断</option>
+                <option value="reinforce">强化今日判断</option>
+                <option value="weaken">削弱/推翻今日判断</option>
+              </select>
+            </label>
+            <input
+              v-model="yesterdayNote"
+              type="text"
+              class="ma-yday-note"
+              placeholder="影响说明（选了「削弱/推翻」时必填：哪个判断要重估）"
+              :required="yesterdayImpact === 'weaken'"
+            />
+          </div>
+        </template>
+        <p v-else class="ma-warn-inline">
+          S1 晨会复盘未写回——无法评估昨日偏差对今日判断的影响。
+          <button type="button" class="ma-jump" @click="emit('go', 'morning-review')">回 S1 补复盘</button>
+        </p>
+      </div>
+
       <div class="ma-actions">
         <button type="button" class="primary" :disabled="!declaration || !daySummary.dominantRegime || saving" @click="writeBack">
           <Save :size="13" /> {{ written?.regime ? '更新写回' : '写回并进入 S3 方向判断' }}
@@ -506,8 +720,117 @@ async function writeBack() {
           </template>
           <template v-else>档位未变（{{ coupling.regimeBefore ? REGIME_LABEL[coupling.regimeBefore] : '—' }}）</template>
         </p>
+        <p class="ma-tip" style="margin-top: 8px">
+          供需比 → 历史价格区间映射（给定预测供需比，调出历史上相同供需比时段的价格范围）：
+          规则层已实现（supply-demand.mjs::historicalPriceBand），但「历史供需比 × 价格」配对数据
+          尚无活源（数据活源 #1968 / Epic #1981）——不给编造的区间。
+        </p>
+      </section>
+
+      <!-- 日内要素：煤价（基本面第四项）· 省内外比价 · 外送公告（会议 §4） -->
+      <section class="ma-panel">
+        <h3>
+          日内要素 · 煤价 / 省内外比价 / 外送公告
+          <em class="ma-src-legend">煤价是火电边际成本的锚（换算式可复核）；比价答「先做省内还是省外」</em>
+        </h3>
+
+        <div class="ma-coal">
+          <label>
+            到厂煤价 元/吨
+            <span class="ma-cell">
+              <input
+                v-model.number="coalPrice"
+                type="number"
+                min="0"
+                placeholder="如 850（5500 大卡）"
+                @input="coalSource = 'manual'"
+              />
+              <i class="ma-src" :class="`src-${coalSource}`">{{ SOURCE_KIND_LABEL[coalSource] }}</i>
+            </span>
+          </label>
+          <p v-if="coalAnchor" class="ma-coal-anchor">
+            火电边际成本锚 ≈ <strong>{{ coalAnchor.totalYuanPerMwh }}</strong> 元/MWh
+            （燃料 {{ coalAnchor.fuelYuanPerMwh }} + 其它变动；标煤 {{ coalAnchor.standardCoalYuanPerTon }} 元/吨标煤）
+            <span class="ma-coal-assume">{{ coalAnchor.assumptions }}</span>
+          </p>
+          <p v-if="anchorVerdict" class="ma-coal-verdict" :class="anchorVerdict.verdict">{{ anchorVerdict.hint }}</p>
+        </div>
+
+        <div class="ma-compare">
+          <label>省内参考 元/MWh
+            <input v-model.number="domesticPrice" type="number" min="0" placeholder="可取本页价格中枢中值" />
+          </label>
+          <button
+            type="button"
+            class="ma-compare-fill"
+            :disabled="daySummary.priceCenterLow === null || daySummary.priceCenterHigh === null"
+            title="取供需分档价格中枢的中值作省内参考（来源=本页 S2 推演）"
+            @click="domesticPrice = daySummary.priceCenterLow !== null && daySummary.priceCenterHigh !== null
+              ? Math.round((daySummary.priceCenterLow + daySummary.priceCenterHigh) / 2)
+              : null"
+          >
+            取中枢中值
+          </button>
+          <label>省外/省间参考 元/MWh
+            <span class="ma-cell">
+              <input
+                v-model.number="externalPrice"
+                type="number"
+                min="0"
+                placeholder="省间联动价（人工录入）"
+                @input="externalPriceSource = 'manual'"
+              />
+              <i class="ma-src" :class="`src-${externalPriceSource}`">{{ SOURCE_KIND_LABEL[externalPriceSource] }}</i>
+            </span>
+          </label>
+          <p v-if="priceCompare" class="ma-compare-out" :class="priceCompare.side">{{ priceCompare.hint }}</p>
+          <p v-else class="ma-tip" style="margin: 4px 0 0">填入两边参考价后给出「先省内还是先省外」比价结论。</p>
+        </div>
+
+        <label class="ma-notice">
+          外送公告（有无、可做交易窗口）
+          <input v-model="exportNotice" type="text" placeholder="如「华东通道 11:00–13:00 有 200 MW 余量窗口」；无公告留空" />
+        </label>
       </section>
     </div>
+
+    <!-- 24 时段聚合视图（底层 96 点存储，24 时段仅作聚合展示 · 会议拍板） -->
+    <details class="ma-hourly">
+      <summary>
+        24 时段聚合视图：需求电量 / 中长期持仓 / 差额（现货敞口）
+        <em v-if="hourlyTotals.gapMwh !== null">合计 需求 {{ hourlyTotals.demandMwh }} · 持仓 {{ hourlyTotals.positionMwh }} · 差额 {{ hourlyTotals.gapMwh }} MWh</em>
+        <em v-else>需求与持仓至少填一侧后出合计</em>
+      </summary>
+      <div class="ma-hourly-bar">
+        <button type="button" class="pull" :disabled="hourlyPulling" @click="pullHourlyDemand">
+          {{ hourlyPulling ? '聚合中…' : '需求电量按采集负荷预测聚合（96 点 → 24 小时）' }}
+        </button>
+        <span v-if="hourlyPullMsg" class="ma-pull-ok">{{ hourlyPullMsg }}</span>
+        <span v-if="hourlyPullError" class="ma-err">{{ hourlyPullError }}</span>
+        <span class="ma-tip" style="margin: 0">
+          需求电量来源：{{ hourlyDemandSource === 'capture' ? `采集（${hourlyDemandDate}）` : '人工' }}；持仓为人工/公司口径（合约库联动见 S6）——
+          差额 = 需求 − 持仓，正数即需在现货补买的敞口。持仓逐时保存随「保存到基本面库」。
+        </span>
+      </div>
+      <table class="ma-table ma-hourly-table">
+        <thead>
+          <tr><th>时刻</th><th>需求电量 MWh</th><th>中长期持仓 MWh</th><th>差额（敞口）MWh</th></tr>
+        </thead>
+        <tbody>
+          <tr v-for="(h, i) in HOURLY_LABELS" :key="h" :class="{ 'row-bad': hourlyGap[i] !== null && (hourlyGap[i] as number) > 0 }">
+            <td class="ma-slot">{{ h }}</td>
+            <td>
+              <span class="ma-cell">
+                <input v-model.number="hourlyDemand[i]" type="number" @input="hourlyDemandSource = 'manual'" />
+                <i v-if="hourlyDemandSource === 'capture'" class="ma-src src-capture">采集</i>
+              </span>
+            </td>
+            <td><input v-model.number="hourlyPosition[i]" type="number" placeholder="持仓" /></td>
+            <td><strong>{{ hourlyGap[i] ?? '—' }}</strong></td>
+          </tr>
+        </tbody>
+      </table>
+    </details>
 
     <!-- 第二行：八源验签 × AI 晨间分析，与上一行「基本面 × 供需比」成 2×2 -->
     <div class="ma-grid">
@@ -659,4 +982,45 @@ async function writeBack() {
 .ma-sources td select, .ma-sources td input[type='number'] { font-size: 11px; }
 .row-bad { background: #fff7ed; }
 .ma-problems { margin: 8px 0 0; padding-left: 18px; font-size: 11px; color: #b45309; line-height: 1.7; }
+
+/* 昨日偏差 → 今日判断 */
+.ma-yday { margin: 8px 0; padding: 8px 10px; border-radius: 8px; background: rgba(255,255,255,.75); border: 1px dashed var(--el-border-color, #dcdfe6); }
+.ma-yday-facts { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; }
+.ma-yday-pending { font-style: normal; font-size: 10px; padding: 0 6px; border-radius: 8px; background: #fef3c7; color: #92400e; }
+.ma-yday-lessons { margin: 4px 0 0; font-size: 11px; color: var(--el-text-color-secondary, #667); }
+.ma-yday-input { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 6px; font-size: 11px; }
+.ma-yday-input select { padding: 3px 6px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 5px; font-size: 11px; }
+.ma-yday-note { flex: 1; min-width: 220px; padding: 4px 7px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 5px; font-size: 11px; }
+.ma-warn-inline { font-size: 12px; color: #b45309; }
+.ma-jump { padding: 0; border: none; background: none; color: #1d4ed8; font: inherit; font-size: 12px; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
+
+/* 日内要素：煤价 / 比价 / 公告 */
+.ma-coal, .ma-compare { display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px; }
+.ma-coal label, .ma-compare label { display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--el-text-color-secondary, #667); }
+.ma-coal input, .ma-compare input { width: 110px; padding: 3px 6px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 5px; font-size: 12px; text-align: right; }
+.ma-coal-anchor { margin: 0; font-size: 12px; font-variant-numeric: tabular-nums; }
+.ma-coal-assume { display: block; font-size: 10px; color: var(--el-text-color-secondary, #889); }
+.ma-coal-verdict { margin: 0; padding: 5px 9px; border-radius: 6px; font-size: 11px; line-height: 1.6; }
+.ma-coal-verdict.anchor_within { background: #f0fdf4; color: #166534; }
+.ma-coal-verdict.anchor_above_center, .ma-coal-verdict.anchor_below_center { background: #fffbeb; color: #92400e; }
+.ma-compare { flex-direction: row; flex-wrap: wrap; align-items: center; gap: 10px; }
+.ma-compare-out { margin: 0; padding: 5px 9px; border-radius: 6px; font-size: 11px; }
+.ma-compare-out.domestic { background: #eff6ff; color: #1d4ed8; }
+.ma-compare-out.external { background: #f5f3ff; color: #6d28d9; }
+.ma-compare-out.comparable { background: #f8fafc; color: #64748b; }
+.ma-compare-fill { padding: 3px 10px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 5px; background: #fff; font-size: 11px; cursor: pointer; color: #475569; }
+.ma-compare-fill:disabled { opacity: .45; cursor: not-allowed; }
+.ma-notice { display: flex; flex-direction: column; gap: 3px; font-size: 11px; color: var(--el-text-color-secondary, #667); }
+.ma-notice input { padding: 4px 7px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 5px; font-size: 12px; }
+
+/* 24 时段聚合视图 */
+.ma-hourly { border: 1px solid var(--el-border-color-lighter, #ebeef5); border-radius: 10px; background: #fff; padding: 8px 12px; }
+.ma-hourly summary { display: flex; align-items: center; gap: 10px; font-size: 12px; font-weight: 600; cursor: pointer; flex-wrap: wrap; }
+.ma-hourly summary em { font-style: normal; font-weight: 400; font-size: 11px; color: var(--el-text-color-secondary, #889); font-variant-numeric: tabular-nums; }
+.ma-hourly[open] summary { margin-bottom: 8px; }
+.ma-hourly-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; }
+.ma-hourly-bar .pull { padding: 3px 11px; border: 1px solid #059669; border-radius: 12px; background: #fff; color: #047857; font-size: 11px; cursor: pointer; }
+.ma-hourly-bar .pull:disabled { opacity: .5; cursor: wait; }
+.ma-hourly-table td input { width: 84px; }
+.ma-hourly-table tr.row-bad td:last-child { color: #b45309; font-weight: 600; }
 </style>

@@ -29,16 +29,28 @@ describe('S5 出清分析：中标率与逐时段偏差', () => {
     expect(r.worstSlots.map((w) => w.slot)).not.toContain(1)
   })
 
-  it('实时调整判断卡在阈值边界：15% 不触发，越过才触发（默认阈值 0.15）', () => {
-    const noAction = analyzeClearing([100], [85]) // 偏差率恰 -15%，不超过
+  it('两档阈值按手册固化：±10% 触发实时调整（默认 0.1，历史别名兼容）', () => {
+    const noAction = analyzeClearing([100], [90]) // 偏差率恰 -10%，不超过
     expect(noAction.needsRealtimeAction).toBe(false)
-    const action = analyzeClearing([100], [84.9]) // -15.1%，越界
+    const action = analyzeClearing([100], [89.9]) // -10.1%，越界
     expect(action.needsRealtimeAction).toBe(true)
     expect(action.triggeredSlots).toEqual([0])
   })
 
+  it('±20% 严重偏离档：触发上报且给 severeSlots', () => {
+    const r = analyzeClearing([100, 100], [79, 95]) // -21% / -5%
+    expect(r.severeSlots).toEqual([0])
+    expect(r.needsEscalation).toBe(true)
+    expect(r.summary).toContain('严重偏离')
+    expect(r.summary).toContain('上报主管')
+    // 未过 ±20% 的普通偏差不进严重档
+    const mild = analyzeClearing([100], [85])
+    expect(mild.needsRealtimeAction).toBe(true)
+    expect(mild.needsEscalation).toBe(false)
+  })
+
   it('阈值是管理参数，可按公司风控口径覆盖', () => {
-    const strict = analyzeClearing([100], [92], { realtimeActionThreshold: 0.05 })
+    const strict = analyzeClearing([100], [94.9], { realtimeActionThreshold: 0.05 }) // -5.1% > 5%
     expect(strict.needsRealtimeAction).toBe(true)
     const loose = analyzeClearing([100], [92], { realtimeActionThreshold: 0.1 })
     expect(loose.needsRealtimeAction).toBe(false)

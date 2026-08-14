@@ -631,14 +631,17 @@ export const CAPTURE_FAMILIES = {
   // 定级依据是**实际打开看过内容**，不是按族名猜：
   //   · sdpt_zsjfx 的 112 个文件里 107 个是 `singleData`——省调发布的新能源预测曲线图表；
   //     其余是节假日/节气配置与展示项配置。**它与「结算」无关**（早前按名字猜成
-  //     「市场结算分析」是错的，已在 #1987 订正）。这也让它的索引族 `sdpt_zsjfx_idx`
-  //     早已登记为 public 不再显得诡异——两者本就同源同性质。
+  //     「市场结算分析」是错的，已在 #1987 订正）。
+  //     ⚠️ #1478 复核修正：`singleData` 的 dataMap 内混装「公司新能源预测/公司负荷预测」
+  //     系列且行级带 `sdgs_id`（实测 224 文件中 72 个含主体标识），同文件混公私无法键级拆分
+  //     ——⑦ 号规则（public 族载荷不得含公司主体标识）判红。改判 company（与同宿主
+  //     sdpt_zrqsb 同构）；索引族 sdpt_zsjfx_idx 无主体载荷，维持 public。
   //   · profile_ptwd 是一个 Excel 附件：副高指数 1991-2025（公开气象指数）。
   //   · 三个 weather_* 与 sdpt_area 分别是气象预报/行政区树/区域字典。
   //
   // 全部 kind: 'document'——它们的响应是对象或数组整体消费（预测曲线的 dataMap、
   // 行政区树的嵌套 children、字典的 label 列表），拆成行式表会在登记阶段做口径变更。
-  sdpt_zsjfx: { apiFamily: null, label: '数据分析单图数据(新能源预测曲线/节假日配置)', kind: 'document', visibility: 'public' },
+  sdpt_zsjfx: { apiFamily: null, label: '数据分析单图数据(新能源预测曲线/节假日配置)', kind: 'document', visibility: 'company', ownerCompanyId: SANDE_SHANXI_COMPANY_ID },
   weather_hourlyData: { apiFamily: null, label: '逐小时天气预报(温度/风速/天气码)', kind: 'document', visibility: 'public' },
   weather_dayData: { apiFamily: null, label: '逐日天气预报(当前天气+多日展望)', kind: 'document', visibility: 'public' },
   weather_districtTree: { apiFamily: null, label: '气象行政区树(市/区县+中心坐标)', kind: 'document', visibility: 'public' },

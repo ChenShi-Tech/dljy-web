@@ -225,3 +225,128 @@ export function summarizeDay(assessments) {
     summary: `全日以${REGIME_LABEL[dominantRegime]}为主（${Math.round((counts[dominantRegime] / valid.length) * 100)}% 时段），价格中枢参考 ${Math.min(...lows)}–${Math.max(...highs)} 元/MWh；最紧在第 ${tightest.slot} 段（SR ${tightest.ratio}），最松在第 ${loosest.slot} 段（SR ${loosest.ratio}）`
   }
 }
+
+// ============================================================================
+// 煤价维度（手册 S2 基本面四项之一 · 2026-08-13 会议重申）
+// ----------------------------------------------------------------------------
+// 煤价是火电边际成本的锚：供需比判断「今天谁在边际」，煤价换算的火电边际成本
+// 决定「边际机组大概报什么价」。二者对照可以校验经验分档表的价格中枢是否已与
+// 燃料市场脱节——分档表是季度拟合的经验值，煤价是逐日变的。
+//
+// 换算口径（可解释、每一步可复核）：
+//   标煤单价（元/吨标煤） = 到厂煤价（元/吨） × 7000 / 收到基热值（kcal/kg）
+//   燃料成本（元/MWh）  = 标煤单价（元/kg） × 供电煤耗（g/kWh）
+//                        = 标煤单价（元/吨）/1000 × 煤耗(g/kWh)
+//   火电边际成本 ≈ 燃料成本 + 其它变动成本（元/MWh）
+// ============================================================================
+
+/**
+ * @typedef {Object} CoalCostOptions
+ * @property {number} [calorificKcalPerKg] 到厂煤收到基热值，默认 5500（市场煤主流）
+ * @property {number} [consumptionGramsPerKwh] 供电煤耗 g/kWh，默认 300（现役主流机组区间 270–320）
+ * @property {number} [otherVariableYuanPerMwh] 燃料外的变动成本（运维/辅机等），默认 30
+ */
+
+/**
+ * 煤价 → 火电边际成本锚。
+ * @param {number|null} coalPriceYuanPerTon 到厂煤价 元/吨；null/非有限值返回 null（不猜）
+ * @param {CoalCostOptions} [opts]
+ * @returns {{standardCoalYuanPerTon:number, fuelYuanPerMwh:number, totalYuanPerMwh:number, assumptions:string}|null}
+ */
+export function coalPriceToThermalAnchor(coalPriceYuanPerTon, opts = {}) {
+  const p = Number(coalPriceYuanPerTon)
+  if (!Number.isFinite(p) || p <= 0) return null
+  const rawCalorific = Number(opts.calorificKcalPerKg)
+  const rawConsumption = Number(opts.consumptionGramsPerKwh)
+  const rawOtherVar = Number(opts.otherVariableYuanPerMwh)
+  const calorific = Number.isFinite(rawCalorific) && rawCalorific > 0 ? rawCalorific : 5500
+  const consumption = Number.isFinite(rawConsumption) && rawConsumption > 0 ? rawConsumption : 300
+  const otherVar = Number.isFinite(rawOtherVar) ? rawOtherVar : 30
+  const standardCoalYuanPerTon = Math.round(p * (7000 / calorific))
+  const fuelYuanPerMwh = Math.round((standardCoalYuanPerTon / 1000) * consumption * 10) / 10
+  return {
+    standardCoalYuanPerTon,
+    fuelYuanPerMwh,
+    totalYuanPerMwh: Math.round((fuelYuanPerMwh + otherVar) * 10) / 10,
+    assumptions: `热值 ${calorific} kcal/kg · 供电煤耗 ${consumption} g/kWh · 其它变动 ${otherVar} 元/MWh`
+  }
+}
+
+/** @typedef {'anchor_above_center'|'anchor_within'|'anchor_below_center'} AnchorVerdict */
+
+/**
+ * 煤价锚与分档价格中枢的对照：中枢是经验拟合值，锚是当日燃料换算值——
+ * 锚高于中枢区间说明分档表低估了火电成本（价格中枢该上修），反之亦然。
+ * @param {number|null} anchorYuanPerMwh
+ * @param {[number,number]|null} priceCenter
+ * @param {number} [tolerancePct] 区间边界容差（%），默认 5——贴边不算脱节
+ * @returns {{verdict:AnchorVerdict, hint:string}|null} 任一输入缺失返回 null（不硬比）
+ */
+export function thermalAnchorVsPriceCenter(anchorYuanPerMwh, priceCenter, tolerancePct = 5) {
+  // 先验原始值再转数：Number(null) === 0，先转会把「没给」伪装成「锚为 0」
+  if (!Number.isFinite(anchorYuanPerMwh) || !priceCenter) return null
+  const a = Number(anchorYuanPerMwh)
+  const [low, high] = priceCenter
+  const tol = tolerancePct / 100
+  if (a > high * (1 + tol)) {
+    return {
+      verdict: 'anchor_above_center',
+      hint: `煤价锚 ${a} 元/MWh 高于中枢上界 ${high}（超 ${(tolerancePct)}% 容差）——分档表可能低估火电成本，价格中枢与申报价位宜上修`
+    }
+  }
+  if (a < low * (1 - tol)) {
+    return {
+      verdict: 'anchor_below_center',
+      hint: `煤价锚 ${a} 元/MWh 低于中枢下界 ${low}（超 ${tolerancePct}% 容差）——分档表可能高估火电成本，价格中枢与申报价位宜下修`
+    }
+  }
+  return { verdict: 'anchor_within', hint: `煤价锚 ${a} 元/MWh 落在中枢区间 ${low}–${high} 内（±${tolerancePct}% 容差）——分档表与当日燃料市场未脱节` }
+}
+
+/**
+ * 省内 vs 省外比价（会议 §4：判断「先做省内还是省外」）。
+ * 售电买电：哪边便宜先做哪边；发电卖电方向相反——direction 由调用方传入语义，
+ * 本函数只做价比与差异度判级，不绑定立场。
+ * @param {number|null} domesticYuanPerMwh 省内日前参考价（元/MWh）
+ * @param {number|null} externalYuanPerMwh 省外/省间参考价（元/MWh）
+ * @param {number} [thresholdPct] 显著性阈值（%），默认 3——低于它算无显著差异
+ * @returns {{diffPct:number, side:'domestic'|'external'|'comparable', hint:string}|null}
+ */
+export function provincePriceCompare(domesticYuanPerMwh, externalYuanPerMwh, thresholdPct = 3) {
+  if (!Number.isFinite(domesticYuanPerMwh) || !Number.isFinite(externalYuanPerMwh)) return null
+  const d = Number(domesticYuanPerMwh)
+  const e = Number(externalYuanPerMwh)
+  if (d <= 0 || e <= 0) return null
+  const diffPct = Math.round(((e - d) / d) * 1000) / 10
+  if (Math.abs(diffPct) < thresholdPct) {
+    return { diffPct, side: 'comparable', hint: `省外较省内 ${diffPct > 0 ? '高' : '低'} ${Math.abs(diffPct)}%（< ${thresholdPct}% 阈值）——两边无显著差异，按通道容量与执行风险取便` }
+  }
+  return diffPct > 0
+    ? { diffPct, side: 'domestic', hint: `省外较省内高 ${diffPct}%——买电先省内（更便宜）、卖电先省外（更贵），按自身立场取方向` }
+    : { diffPct, side: 'external', hint: `省外较省内低 ${Math.abs(diffPct)}%——买电先省外（更便宜）、卖电先省内（更贵），按自身立场取方向` }
+}
+
+/**
+ * 供需比 → 历史价格区间映射（会议 §4：给定预测供需比，调出历史上相同供需比
+ * 时段的价格范围做参考）。
+ *
+ * 纯函数：历史配对数据（ratio × price）由调用方给——本函数不存历史、不造历史。
+ * 数据活源（#1968）接通前，UI 应走「历史映射未接数据」空态而不是喂样本编数字。
+ * @param {number|null} ratio 预测供需比
+ * @param {Array<{ratio:number, priceYuanPerMwh:number}>} history 历史配对样本
+ * @param {number} [bandWidth] 供需比邻域半宽，默认 0.05
+ * @param {number} [minSamples] 邻域内最少样本数，低于它返回 insufficient（不硬给区间）
+ * @returns {{status:'ok', count:number, p10:number, p50:number, p90:number}|{status:'insufficient', count:number}|{status:'no_input'}}
+ */
+export function historicalPriceBand(ratio, history, bandWidth = 0.05, minSamples = 8) {
+  if (!Number.isFinite(ratio) || !Array.isArray(history) || !history.length) return { status: 'no_input' }
+  const r = Number(ratio)
+  const prices = history
+    .filter((h) => Number.isFinite(Number(h?.ratio)) && Number.isFinite(Number(h?.priceYuanPerMwh)))
+    .filter((h) => Math.abs(Number(h.ratio) - r) <= bandWidth)
+    .map((h) => Number(h.priceYuanPerMwh))
+    .sort((a, b) => a - b)
+  if (prices.length < minSamples) return { status: 'insufficient', count: prices.length }
+  const q = (p) => prices[Math.min(prices.length - 1, Math.round(p * (prices.length - 1)))]
+  return { status: 'ok', count: prices.length, p10: q(0.1), p50: q(0.5), p90: q(0.9) }
+}

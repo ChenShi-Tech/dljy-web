@@ -11,6 +11,7 @@ import {
   getFamilyVisibility
 } from './entities/capture-families.mjs'
 import { REGION_GRID_OPERATOR } from '../region/constants.mjs'
+import { listGridDatasetCodes } from './grid-dataset-catalog.mjs'
 
 export const SOURCE_INPUT_TYPES = Object.freeze({
   API: 'api',
@@ -111,6 +112,40 @@ function target({
     valueFields,
     expectedPointsPerDay,
     capturedAtField,
+    qualityRules
+  }
+}
+
+/**
+ * 私有 PG 落库目标（配 `storageBackend: 'private-pg'`）。与 capture target 三点不同：
+ *
+ *   1. **没有 family/datasetKey**——不落 capture.sqlite。两条存储路径单轨隔离，
+ *      `assertSourceDeclaration` 会拒绝 private-pg 源复用 capture family。
+ *   2. 用 `resourceKind` 对应 PG 的 `resource_kind`：批次、checkpoint、隔离区都按它分组。
+ *   3. **不含 SQL**。INSERT 语句属执行层（`factInsertSql` 由摄取器传入），声明层只说
+ *      「落哪张表、该表收哪些逻辑数据集」，避免注册表变成 SQL 仓库。
+ *
+ * `datasetRefs` 是**引用键**——指向层 1 `grid-dataset-catalog` 的 datasetCode，调用方应
+ * 用 `listGridDatasetCodes()` 派生而不是手写清单，否则层 1 增删数据集时这里会静默漂移。
+ */
+function privatePgTarget({
+  resourceKind,
+  factTable,
+  datasetRefs = null,
+  datasetRefsNote = null,
+  checkpointKeyShape,
+  requiredFields = [],
+  qualityRules = {}
+}) {
+  return {
+    backend: STORAGE_BACKENDS.PRIVATE_PG,
+    resourceKind,
+    factTable,
+    // null = 该资源在层 1 无对应登记，必须用 datasetRefsNote 写明原因（例如上游未授予该 scope）
+    datasetRefs: datasetRefs ? Object.freeze([...datasetRefs]) : null,
+    datasetRefsNote,
+    checkpointKeyShape,
+    requiredFields,
     qualityRules
   }
 }
@@ -720,6 +755,104 @@ const SOURCE_DECLARATIONS = {
     basis: 'captured',
     sourceType: 'IMPORT',
     mock: false,
+    productionWrite: false
+  },
+  // 中广核云南厂侧数据 API（#1697/#1699/#1536）——**首个 storageBackend:'private-pg' 源**。
+  //
+  // 它此前完全不在本注册表里：有凭据存储、有私有 PG schema、有 RLS、有 Python 读路径、有三个
+  // 专属门禁，唯独没有接入契约声明。那是「四套注册表互不知情」最实质的一处——一条生产链路
+  // 整个绕开了声明式注册表。本条把它登记进来，使它与其它条目受同一套纪律约束。
+  //
+  // 注意它与南网官方披露的关系：这批数据的权威来源是南网官方披露，本通道只是取得它的一种
+  // 方式；官方通道一旦接通，重叠部分以官方为准，本通道退为该公司的自有副本。跟进见 #1343。
+  'cgn-yunnan-data-api-v1': {
+    sourceId: 'cgn-yunnan-data-api-v1',
+    label: '中广核云南厂侧数据 API v1（私有 PG·四维隔离）',
+    inputType: SOURCE_INPUT_TYPES.API,
+    parser: 'cgnYunnan.privatePgIngestion',
+    manifest: '数据提供方/厂侧部署、经 HTTPS 轮询取数的外部服务，**不是电网官方接口**；'
+      + '凭据经「数据源接入设置」页录入（runtime 存储 > env），基址与 API Key 均不进仓库',
+    gridScope: 'csg',
+    // 业务地域覆盖南网五省——实测 26 类披露里 15 条 regionScope 是「南方电网整体」，
+    // 数据本身讲的是整个南网。这与隔离地域（恒 yunnan，见 isolation）是两回事。
+    businessRegionScope: ['guangdong', 'guangxi', 'yunnan', 'guizhou', 'hainan'],
+    storageBackend: STORAGE_BACKENDS.PRIVATE_PG,
+    ingestControl: INGEST_CONTROLS.BATCHED,
+    backendRationale: '外部 API 直连持续采集：需凭据、批次台账（追溯某行事实来自哪次响应）、'
+      + 'checkpoint 断点续跑、脏行隔离区与原文归档；且数据落该公司专属隔离域',
+    // 代码链路完整（摄取/读路径/门禁齐备）但尚未启用真实采集，故 wired 而非 live。
+    // 启用需四重显式激活，见 docs/data/cgn-yunnan-api-ingestion.md。
+    readiness: SOURCE_READINESS.WIRED,
+    // 隔离键**只存引用**，不复制字面值——四元组的权威在
+    // server/cgn-yunnan-data-source-store.mjs::CGN_YUNNAN_DATA_SOURCE 与 PG 的 CHECK 约束两处，
+    // 注册表再抄一遍就会变成第三处漂移源。
+    isolation: {
+      mode: 'dedicated-schema',
+      dataSourceInstanceRef: 'cgn-yunnan-data-api-v1',
+      pgSchema: 'dljy_private',
+      roleSet: 'dljy_cgn_private',
+      scopeKeys: ['source_instance_id', 'owner_group_id', 'company_id', 'region_id'],
+      // 恒 false：通用业务库的公司授权即便命中该公司，也不得因此获得本链路的事实访问权。
+      // 这条是 docs/data/pg-migration-campaign.md 明文边界的机器可读形式。
+      generalCompanyScopeInherits: false
+    },
+    fieldMappings: {
+      seam: '上游三套响应骨架各自适配后落同一批事实表：market-series 是 series[].points[] 两层、'
+        + 'node-prices 是 items[] + cursor 分页、disclosures 是 items[] + 中文字段名 + 字符串数值',
+      disclosureValues: 'JSON number 写 numeric_value、JSON string（即使长得像数字）写 text_value，'
+        + '不强制转数、不补零、不插值',
+      unknownFields: '上游新增/改名字段先进 quarantine（DISCLOSURE_SHAPE_UNRECOGNIZED），'
+        + '经人工确认后扩表，不静默塞进错误指标'
+    },
+    unitConversions: {
+      price: 'CNY/MWh',
+      power: 'MW'
+    },
+    timeAxis: TIME_AXIS.POINT,
+    targets: [
+      privatePgTarget({
+        resourceKind: 'node_price',
+        factTable: 'dljy_private.fact_node_price',
+        datasetRefs: listGridDatasetCodes('csg', 'node_price'),
+        checkpointKeyShape: '<market>:<interval>',
+        requiredFields: ['node_name', 'time_point', 'price'],
+        qualityRules: { guardEmpty: true }
+      }),
+      privatePgTarget({
+        resourceKind: 'plant_node_price',
+        factTable: 'dljy_private.fact_plant_node_price',
+        // 层 1 只登记上游 catalog 实际暴露的 38 个数据集；场站映射价需要 plant:node-price:read，
+        // 当前密钥无此 scope（实测该端点 403），故上游 catalog 不返回它、层 1 也不登记。
+        datasetRefs: null,
+        datasetRefsNote: '需 plant:node-price:read scope；当前密钥未获授权，上游 catalog 未暴露，故层 1 未登记',
+        checkpointKeyShape: '<market>:1h',
+        requiredFields: ['plant', 'node_name', 'hour_slot', 'price'],
+        qualityRules: { guardEmpty: true }
+      }),
+      privatePgTarget({
+        resourceKind: 'market_series',
+        factTable: 'dljy_private.fact_company_market_series',
+        // 从层 1 派生而非手写：层 1 增删曲线时这里自动跟随，不会静默漂移
+        datasetRefs: listGridDatasetCodes('csg', 'market_series'),
+        checkpointKeyShape: '<series>',
+        requiredFields: ['series', 'date', 'time_point'],
+        qualityRules: { guardEmpty: true }
+      }),
+      privatePgTarget({
+        resourceKind: 'disclosure',
+        factTable: 'dljy_private.fact_disclosure',
+        datasetRefs: listGridDatasetCodes('csg', 'disclosure'),
+        checkpointKeyShape: '<dataset>',
+        requiredFields: ['operate_date'],
+        qualityRules: { guardEmpty: true }
+      })
+    ],
+    ownership: SOURCE_OWNERSHIP.COMPANY,
+    ownerCompanyId: CGN_YUNNAN_COMPANY_ID,
+    basis: 'captured',
+    sourceType: 'REAL',
+    mock: false,
+    // 未启用真实采集前恒 false；启用由四重显式激活控制，不由本声明决定
     productionWrite: false
   },
 }

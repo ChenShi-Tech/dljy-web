@@ -149,6 +149,30 @@ export type DeclarationOrder = {
       maxGapSlot: number | null
       needsRealtimeAction: boolean
       summary: string
+      /** 严重偏离（>±20%）时段数（手册第二档，#1965） */
+      severeSlotCount?: number
+      needsEscalation?: boolean
+      /** 实时调整指令草稿（±10% 档决策留痕；执行通道未接须平台人工操作） */
+      realtimeAdjustment?: {
+        action: 'none' | 'increase' | 'decrease'
+        label?: string
+        volumeMwh: number | null
+        reason: string | null
+      } | null
+      /** 严重偏离上报记录 */
+      escalation?: { reason: string; reportedBy: string; reportedAt: string } | null
+      /** 持仓联动（F4.2）：日前中标量自动喂给 S6 持仓视图 */
+      positionUpdate?: { dayAheadClearedMwh: number; declaredMwh: number }
+      /** 外送出清量价（人工录入留痕） */
+      exportClearing?: { volumeMwh: number | null; avgPriceYuanPerMwh: number | null } | null
+      /** 电站出勤记录（人工录入留痕，清比例随录随算） */
+      stationRecords?: Array<{
+        station: string
+        declaredMwh: number | null
+        clearedMwh: number | null
+        clearRate: number | null
+        attendancePct: number | null
+      }>
       writtenBy: string
       writtenAt: string
     }

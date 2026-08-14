@@ -35,12 +35,37 @@ import StageDailyClose from '@/components/trading/stages/StageDailyClose.vue'
 const route = useRoute()
 const router = useRouter()
 
-// ── 标的交易日（默认明日 D+1）────────────────────────────────────────────────
-function tomorrow(): string {
-  const d = new Date(Date.now() + 86400000)
+// ── 标的交易日（默认值按地区 D+N 口径取：新疆 D+2 / 山西 D+1）───────────────
+// 口径权威在 shared/trading-rules/trading-calendar.mjs（作业日视角：今天做的是
+// D+几的交易）。未登记地区不默认抄邻省——回落明日但显式标「口径未登记，请人工
+// 确认」：一个错的标的日会让全天产出挂到错误的一天上。
+import {
+  defaultTargetDate,
+  getTradingCalendar,
+  workdaySummary
+} from 'shared/trading-rules/trading-calendar.mjs'
+import { currentRegion } from '@/services/region/regionContext'
+
+function isoOf(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
-const targetDate = ref(tomorrow())
+function tomorrow(): string {
+  return isoOf(new Date(Date.now() + 86400000))
+}
+const calendar = computed(() => getTradingCalendar(currentRegion.value.id))
+const calendarSummary = computed(() =>
+  calendar.value ? workdaySummary(calendar.value, isoOf(new Date())) : ''
+)
+
+const targetDate = ref(defaultTargetDate(currentRegion.value.id, isoOf(new Date())) ?? tomorrow())
+
+// 换地区 = 换口径：标的日按新口径重置（旧日期是旧口径下的选择，跟着换不算粗暴）
+watch(
+  () => currentRegion.value.id,
+  (rid) => {
+    targetDate.value = defaultTargetDate(rid, isoOf(new Date())) ?? tomorrow()
+  }
+)
 
 // ── 作业主线单据 ─────────────────────────────────────────────────────────────
 const declaration = ref<DeclarationOrder | null>(null)
@@ -155,6 +180,21 @@ onMounted(loadDeclaration)
         标的交易日
         <input v-model="targetDate" type="date" />
       </label>
+      <span
+        v-if="calendar"
+        class="td-cal"
+        :title="`${calendar.source}${calendar.verify ? '（口径待复核）' : ''}`"
+      >
+        {{ currentRegion.shortName || currentRegion.id }} D+N 口径：{{ calendarSummary }}
+        <em v-if="calendar.verify">待复核</em>
+      </span>
+      <span
+        v-else
+        class="td-cal unregistered"
+        title="该地区没有权威依据的 D+N 口径，不抄邻省。标的日为默认明日（D+1），请按当地交易安排人工确认。"
+      >
+        {{ currentRegion.shortName || currentRegion.id }} D+N 口径未登记——标的日按默认 D+1，请人工确认
+      </span>
       <template v-if="loading">
         <span class="td-muted">读取中…</span>
       </template>
@@ -253,6 +293,9 @@ onMounted(loadDeclaration)
 .td-bind { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 8px 12px; border: 1px solid var(--el-border-color-lighter, #ebeef5); border-radius: 8px; font-size: 12px; background: #fff; }
 .td-date { display: inline-flex; align-items: center; gap: 6px; }
 .td-date input { padding: 3px 7px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 5px; font-size: 12px; }
+.td-cal { max-width: 100%; padding: 3px 10px; border-radius: 8px; background: #f0f9ff; color: #075985; font-size: 11px; line-height: 1.5; cursor: help; }
+.td-cal em { font-style: normal; margin-left: 4px; padding: 0 6px; border-radius: 8px; background: #fef3c7; color: #92400e; font-size: 10px; }
+.td-cal.unregistered { background: #fffbeb; color: #92400e; cursor: help; }
 .td-decl { display: inline-flex; align-items: center; gap: 5px; font-family: ui-monospace, monospace; }
 .td-decl em { font-style: normal; padding: 1px 7px; border-radius: 8px; background: #eff6ff; color: #1d4ed8; font-family: inherit; }
 .td-cap { color: var(--el-text-color-secondary, #667); }

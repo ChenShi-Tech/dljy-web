@@ -646,6 +646,8 @@ export function calculateStorageCashFlows(form: StorageCalculatorForm) {
 /**
  * 资本金内部收益率 IRR（%）。
  * E2 修复：负 IRR 如实返回（项目亏损时 IRR 为负是正常财务结论，不得截断为 0）；
+ * #1351 修复：搜索上界自 500% 倍增扩展至 1e8%，低资本开支/高收入现金流的高 IRR 实根
+ * 不再被误报为「无解」（如 [-100, 10000] 的 9900%）；
  * 现金流无变号 / 搜索区间内无实根 / 不收敛时返回 NaN（不再用 0 当哨兵，
  * 调用方用 Number.isFinite 判断"无解"，UI 层显示为「无解」，图表点置 null）。
  */
@@ -658,6 +660,16 @@ export function calculateIRR(cashFlows: number[]) {
 
   const npvAt = (rate: number) => cashFlows.reduce((sum, cashFlow, index) => sum + cashFlow / (1 + rate) ** index, 0)
   const derivativeAt = (rate: number) => cashFlows.reduce((sum, cashFlow, index) => sum - index * cashFlow / (1 + rate) ** (index + 1), 0)
+  const bisectRoot = (low: number, high: number) => {
+    for (let index = 0; index < 80; index += 1) {
+      const mid = (low + high) / 2
+      const midValue = npvAt(mid)
+      if (Math.abs(midValue) < 1e-7) return mid
+      if (npvAt(low) * midValue <= 0) high = mid
+      else low = mid
+    }
+    return (low + high) / 2
+  }
 
   let rate = 0.1
   for (let index = 0; index < 100; index += 1) {
@@ -675,23 +687,24 @@ export function calculateIRR(cashFlows: number[]) {
     const currentRate = -0.95 + step * (5.95 / 1200)
     const currentValue = npvAt(currentRate)
     if (previousValue === 0) return roundIrr(previousRate)
-    if (previousValue * currentValue <= 0) {
-      let low = previousRate
-      let high = currentRate
-      for (let index = 0; index < 80; index += 1) {
-        const mid = (low + high) / 2
-        const midValue = npvAt(mid)
-        if (Math.abs(midValue) < 1e-7) return roundIrr(mid)
-        if (npvAt(low) * midValue <= 0) high = mid
-        else low = mid
-      }
-      return roundIrr((low + high) / 2)
-    }
+    if (previousValue * currentValue <= 0) return roundIrr(bisectRoot(previousRate, currentRate))
     previousRate = currentRate
     previousValue = currentValue
   }
 
-  // 网格扫描区间 (-95%, 500%) 内未找到变号：视为无解
+  // 高 IRR 扫掠（#1351）：低资本开支/高收入现金流的实根可远超 500%（[-100, 10000] 即 9900%）。
+  // 上界自 500% 起倍增推进、1e6（1e8%）封顶；扫掠步数与二分迭代均有硬上限，数值非有限即止损。
+  for (let sweep = 0; sweep < 20 && previousRate < 1e6; sweep += 1) {
+    const currentRate = Math.min(previousRate * 2, 1e6)
+    const currentValue = npvAt(currentRate)
+    if (previousValue === 0) return roundIrr(previousRate)
+    if (previousValue * currentValue <= 0) return roundIrr(bisectRoot(previousRate, currentRate))
+    if (!Number.isFinite(currentValue)) break
+    previousRate = currentRate
+    previousValue = currentValue
+  }
+
+  // 常规区间与高 IRR 扫掠区间均未找到变号：视为无解
   return NaN
 }
 

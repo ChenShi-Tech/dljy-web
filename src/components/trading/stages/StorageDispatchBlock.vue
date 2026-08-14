@@ -257,6 +257,30 @@ const saveMsg = ref('')
 const saveError = ref('')
 const written = computed(() => props.declaration?.preflight?.storagePlan ?? null)
 
+/**
+ * 下发报文预览（F4.3 下发侧 · 模拟）：场站下发通道未接，报文仅供人工下发参照——
+ * 不伪造场站回执、不冒充已下发。mock: true 显式标注。
+ */
+const dispatchMessagePreview = computed<string | null>(() => {
+  if (!written.value || !executionCurve.value.length) return null
+  const asset = loadedAsset.value
+  return JSON.stringify(
+    {
+      messageKind: 'storage-dispatch-plan',
+      mock: true,
+      sourceType: 'MOCK',
+      productionWrite: false,
+      station: asset?.assetName ?? '（未选档案资产）',
+      targetDate: props.declaration?.targetDate ?? null,
+      unit: 'MW',
+      points: executionCurve.value.map((v) => Math.round(v * 100) / 100),
+      note: '模拟报文：下发通道未接，仅供人工下发参照，不代表已下发或场站已确认'
+    },
+    null,
+    2
+  )
+})
+
 async function writeBack() {
   if (!props.declaration) return
   saving.value = true
@@ -535,9 +559,23 @@ const aiReviewQuestion = computed(() =>
       />
     </details>
   </div>
+    <!-- 下发报文预览（F4.3 下发侧 · 模拟） -->
+    <details v-if="dispatchMessagePreview" class="sb-msg">
+      <summary>
+        下发报文预览（模拟）
+        <em>mock: true · sourceType: MOCK——下发通道未接，仅供人工下发参照，不伪造场站回执</em>
+      </summary>
+      <pre>{{ dispatchMessagePreview }}</pre>
+    </details>
+  </div>
 </template>
 
 <style scoped>
+.sb-msg { border: 1px dashed #f59e0b; border-radius: 8px; padding: 6px 10px; background: #fffbeb; }
+.sb-msg summary { display: flex; align-items: center; gap: 8px; font-size: 11px; font-weight: 600; cursor: pointer; flex-wrap: wrap; color: #92400e; }
+.sb-msg summary em { font-style: normal; font-weight: 400; font-size: 10px; color: #b45309; }
+.sb-msg pre { max-height: 240px; overflow: auto; margin: 6px 0 0; padding: 8px; border-radius: 6px; background: #fff; font-size: 10px; line-height: 1.5; }
+
 .sb { display: flex; flex-direction: column; gap: 10px; }
 .sb-top { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .sb-verdict { display: inline-flex; align-items: center; gap: 6px; padding: 5px 12px; border-radius: 8px; font-weight: 600; font-size: 12px; }

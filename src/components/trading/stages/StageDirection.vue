@@ -14,14 +14,26 @@
 //
 // 方向与价差的号位一致性有校验：判「增持」（预期实时价高于日前）却填负价差，
 // 说明两处有一处想错了，界面拦下来让人先想清楚。
-import { computed, ref } from 'vue'
-import { Compass, LineChart, Save, Sparkles, TriangleAlert } from 'lucide-vue-next'
+import { computed, onMounted, ref } from 'vue'
+import { Compass, LineChart, Save, Sparkles, TriangleAlert, Zap } from 'lucide-vue-next'
 import { decideBias } from 'shared/trading-rules/demand-bias.mjs'
 import { exposureFactorOf, USAGE_GATE_LABEL } from 'shared/trading-rules/data-integrity.mjs'
-import { REGIME_LABEL } from 'shared/trading-rules/supply-demand.mjs'
+import { DEFAULT_REGIME_BANDS, REGIME_LABEL } from 'shared/trading-rules/supply-demand.mjs'
+import { breakevenSpread } from 'shared/trading-rules/storage-arbitrage.mjs'
 import { savePreflight, type DeclarationOrder } from '@/services/declarations'
 import { applyBias, buildLoadCurve96, LOAD_SHAPE_LABEL, type LoadShapeId } from '@/services/trading/loadShape'
 import { runForecastPredict, unavailableReasonOf, type ForecastResult } from '@/services/forecast/mlForecastClient'
+import {
+  arbitrageWindowList,
+  digestOf,
+  driftAssessment,
+  hourlyPointsOf,
+  toHourlyQuantiles,
+  type ArbitrageWindowRow,
+  type HourlyQuantiles
+} from '@/services/trading/priceDistribution'
+import { buildOodaDecision, defaultStorageParams, type StorageParams } from '@/services/quant/quant'
+import { listStorageAssets, type StorageAsset } from '@/services/trading/storageAssetsClient'
 import { currentRegion } from '@/services/region/regionContext'
 import AgentChatPanel from '@/components/agent/AgentChatPanel.vue'
 import AiAssistFill from '@/components/trading/AiAssistFill.vue'
@@ -67,7 +79,7 @@ const bias = computed(() => {
     priceSpreadYuanPerMwh: priceSpread.value,
     confidenceScore: confidence.value,
     managementBand: 0.2,
-    exposureFactor: exposureFactor.value
+    exposureFactor: effectiveExposureFactor.value
   })
 })
 
@@ -110,23 +122,105 @@ async function loadForecast() {
   }
 }
 
-/** 预测曲线摘要（给人看 + 注入 AI）：均值、峰段均值、谷段均值、峰谷差。 */
-const forecastDigest = computed(() => {
-  const pts: number[] = (forecast.value as unknown as { points?: Array<{ value?: number }> })?.points
-    ?.map((p) => Number(p?.value)).filter((v: number) => Number.isFinite(v)) ?? []
-  if (pts.length < 24) return null
-  const mean = pts.reduce((a, b) => a + b, 0) / pts.length
-  const per = Math.floor(pts.length / 24)
-  const hourAvg = Array.from({ length: 24 }, (_, h) =>
-    pts.slice(h * per, (h + 1) * per).reduce((a, b) => a + b, 0) / per)
-  const peak = Math.max(...hourAvg)
-  const valley = Math.min(...hourAvg)
-  const peakHour = hourAvg.indexOf(peak)
-  const valleyHour = hourAvg.indexOf(valley)
-  return {
-    mean: Math.round(mean), peak: Math.round(peak), valley: Math.round(valley),
-    peakHour, valleyHour, spread: Math.round(peak - valley)
+/** 预测分位曲线（P10/P50/P90 → 24 小时聚合）与分布摘要（Z1：看分布而非点价）。 */
+const quantiles = computed<HourlyQuantiles | null>(() =>
+  forecast.value ? toHourlyQuantiles(forecast.value.lower, forecast.value.points, forecast.value.upper) : null
+)
+
+const forecastDigest = computed(() => (quantiles.value ? digestOf(quantiles.value) : null))
+
+/**
+ * 模型漂移判定（手册 S3 异常处理：漂移告警 → 回退保守 + 人工加大安全边际）。
+ * 漂移时暴露系数机械封顶 0.5（偏置自动减半），不是提示完就算。
+ */
+const drift = computed(() => driftAssessment(forecast.value?.metrics))
+const effectiveExposureFactor = computed(() =>
+  drift.value.drifted ? Math.min(exposureFactor.value, 0.5) : exposureFactor.value
+)
+
+// ── 储能套利窗口清单（F2.4）+ P90 价差 vs 盈亏平衡自动比对 ──────────────────
+// 资产参数取企业档案（同 S4），未建档用默认并如实标注；盈亏平衡用 R3 口径
+// （充电价参考取预测谷段 P50；容量收益未计 = 要求价差偏保守，标注说明）。
+const assets = ref<StorageAsset[]>([])
+const assetNote = ref('')
+onMounted(async () => {
+  try {
+    assets.value = await listStorageAssets()
+    if (!assets.value.length) assetNote.value = '企业储能档案未建档——套利窗口按默认参数评估，S4 建档后自动换用'
+  } catch {
+    assetNote.value = '储能档案读取失败——套利窗口按默认参数评估'
   }
+})
+const regionAsset = computed(
+  () => assets.value.find((a) => a.region === currentRegion.value.id) ?? assets.value[0] ?? null
+)
+const assetLabel = computed(() =>
+  regionAsset.value ? `${regionAsset.value.assetName}（档案）` : '默认参数'
+)
+const requiredSpread = computed(() => {
+  const a = regionAsset.value
+  const r = breakevenSpread({
+    chargePriceYuanPerMwh: forecastDigest.value?.valley ?? 0,
+    roundTripEfficiency: a?.etaRoundTrip ?? 0.87,
+    chargeAdderYuanPerMwh: a?.chargeAdderYuanPerMwh ?? 71.56,
+    cycleCostYuanPerMwh: a?.cycleCostYuanPerMwh ?? 110,
+    // 容量收益（R11）在 S4 计划块按档案容量电价核算，此处未计 → 要求价差偏保守（更高）
+    cCapYuanPerMwh: 0,
+    cAsYuanPerMwh: 0
+  })
+  return r.requiredSpreadYuanPerMwh
+})
+const storageParams = computed<StorageParams>(() => {
+  const a = regionAsset.value
+  const side = Math.sqrt(a?.etaRoundTrip ?? 0.87) * 100
+  return {
+    ...defaultStorageParams,
+    powerMw: a?.powerMw ?? defaultStorageParams.powerMw,
+    energyMwh: a?.capacityMwh ?? defaultStorageParams.energyMwh,
+    chargeEfficiency: Math.round(side * 10) / 10,
+    dischargeEfficiency: Math.round(side * 10) / 10,
+    minSoc: Math.round((a?.socMin ?? 0.1) * 1000) / 10,
+    maxSoc: Math.round((a?.socMax ?? 0.9) * 1000) / 10
+  }
+})
+const arbitrageRows = computed<ArbitrageWindowRow[]>(() =>
+  quantiles.value ? arbitrageWindowList(quantiles.value, requiredSpread.value) : []
+)
+/** P90 口径价差超盈亏平衡×1.15 → 「准备执行」信号（手册 S3 步骤④） */
+const prepareExecute = computed(() => arbitrageRows.value.some((r) => r.verdict === 'execute'))
+/** 凯利仓位上限红线：复用 quant 域 OODA 链（胜率启发式，样本回填后转贝叶斯） */
+const kellyCap = computed(() =>
+  quantiles.value ? buildOodaDecision(hourlyPointsOf(quantiles.value), storageParams.value).kelly : null
+)
+
+/** S2 态势对应的策略速查（F3.1 决策树建议的分档表形态：储能/售电策略各一句）。 */
+const regimeBand = computed(() =>
+  upstream.value?.regime
+    ? DEFAULT_REGIME_BANDS.find((b) => b.regime === upstream.value?.regime) ?? null
+    : null
+)
+
+/** 分布带状图（SVG path：P90-P10 带 + P50 线），24 小时。 */
+const bandChart = computed(() => {
+  const q = quantiles.value
+  if (!q) return null
+  const W = 480
+  const H = 150
+  const padL = 10
+  const padR = 10
+  const padT = 10
+  const padB = 18
+  const all = [...q.p10, ...q.p90]
+  const min = Math.min(...all)
+  const max = Math.max(...all)
+  const x = (h: number) => padL + (h / 23) * (W - padL - padR)
+  const y = (v: number) => padT + (1 - (v - min) / Math.max(max - min, 1e-6)) * (H - padT - padB)
+  const line = (arr: number[]) =>
+    arr.map((v, h) => `${h === 0 ? 'M' : 'L'}${x(h).toFixed(1)},${y(v).toFixed(1)}`).join(' ')
+  const upper = q.p90.map((v, h) => `${x(h).toFixed(1)},${y(v).toFixed(1)}`)
+  const lowerRev = [...q.p10].reverse().map((v, i) => `${x(23 - i).toFixed(1)},${y(v).toFixed(1)}`)
+  const band = `M${upper.join(' L')} L${lowerRev.join(' L')} Z`
+  return { W, H, band, p50: line(q.p50), p10: line(q.p10), p90: line(q.p90) }
 })
 
 // ── AI 建议（判据先算好，AI 解释与建议，人拍板采纳）──────────────────────────
@@ -140,10 +234,16 @@ const aiContext = computed(() => ({
     priceCenterHigh: upstream.value.priceCenterHigh, gate: upstream.value.gate
   } : null,
   mlPriceForecast: forecastDigest.value,
+  quantileBand: quantiles.value ? { avgBandWidth: forecastDigest.value?.avgBandWidth, widestBandHour: forecastDigest.value?.widestBandHour } : null,
+  modelDrift: drift.value,
+  arbitrageWindows: arbitrageRows.value.length
+    ? { requiredSpreadYuanPerMwh: requiredSpread.value, windows: arbitrageRows.value, prepareExecute: prepareExecute.value }
+    : null,
+  kellyCap: kellyCap.value,
   mlForecastUnavailable: forecastError.value || null,
   currentInput: { direction: direction.value, priceSpread: priceSpread.value, confidence: confidence.value },
-  biasRule: '偏置 = R4 规则表(ΔP×置信度) × 暴露系数(S2 门禁: 可申报1/可参考0.5/仅展示0)，管理带 ±20%',
-  exposureFactor: exposureFactor.value
+  biasRule: '偏置 = R4 规则表(ΔP×置信度) × 暴露系数(S2 门禁: 可申报1/可参考0.5/仅展示0，模型漂移时封顶0.5)，管理带 ±20%',
+  exposureFactor: effectiveExposureFactor.value
 }))
 // ── AI 辅助填报：方向/ΔP/置信度/理由四项都是**人工经验判断**（无数据库可查）────
 // 复用同一份上下文（S2 判断 + ML 预测摘要 + R4 机制），产出结构化建议供一键采纳。
@@ -188,7 +288,24 @@ async function writeBack() {
         direction: direction.value,
         confidence: confidence.value,
         biasRatio: bias.value.biasRatio,
-        rationale: rationale.value.trim()
+        rationale: rationale.value.trim(),
+        // 概率分布消费结论（#1963）：分位摘要 + 漂移回退标志 + 套利窗口/P90 比对
+        quantileDigest: quantiles.value
+          ? {
+              ...forecastDigest.value,
+              driftFallback: drift.value.drifted || null,
+              exposureFactorApplied: effectiveExposureFactor.value
+            }
+          : null,
+        arbitrage: arbitrageRows.value.length
+          ? {
+              assetLabel: assetLabel.value,
+              requiredSpreadYuanPerMwh: requiredSpread.value,
+              prepareExecute: prepareExecute.value,
+              windows: arbitrageRows.value
+            }
+          : null,
+        kellyCapPct: kellyCap.value?.riskAdjustedFraction ?? null
       },
       `S3 方向判断：${DIRECTION_LABEL[direction.value]}（置信 ${confidence.value}），偏置 ${(bias.value.biasRatio * 100).toFixed(1)}%`
     )
@@ -213,11 +330,21 @@ async function writeBack() {
       <strong>{{ exposureFactor }}</strong>
       <template v-if="exposureFactor === 0.5">（偏置自动减半）</template>
       <template v-else-if="exposureFactor === 0">（偏置强制归零）</template>
+      <span v-if="regimeBand" class="dr-strategy">
+        策略速查（F3.1）：储能「{{ regimeBand.storageStrategy }}」· 售电「{{ regimeBand.retailStrategy }}」（边际机组：{{ regimeBand.marginalUnit }}）
+      </span>
     </section>
     <section v-else class="dr-upstream warn">
       <TriangleAlert :size="13" />
       S2 早间分析尚未产出市场判断——方向决策没有依据，暴露系数按 0.5 保守处理。建议
       <button type="button" class="dr-jump" @click="emit('go', 'market-analysis')">先回 S2 完成分析</button>。
+    </section>
+
+    <!-- 模型漂移告警（手册 S3 异常处理：回退保守 + 人工加大安全边际） -->
+    <section v-if="drift.drifted" class="dr-drift">
+      <TriangleAlert :size="13" />
+      预测模型漂移告警：{{ drift.reasons.join('；') }}——已回退保守处理（暴露系数封顶 0.5，偏置自动减半），
+      请人工加大安全边际后再定方向。
     </section>
 
     <div class="dr-grid">
@@ -298,8 +425,8 @@ async function writeBack() {
           与 AI 建议给"往哪偏、偏多少"提供参照，S4 还可逐点微调。
         </p>
 
-        <!-- ML 价格预测参考：与申报工作台同一套 /agent-api 预测端点 -->
-        <h3><LineChart :size="13" /> ML 价格预测参考</h3>
+        <!-- ML 价格预测参考：P10/P50/P90 概率分布上屏（Z1：看分布而非点价） -->
+        <h3><LineChart :size="13" /> ML 价格概率分布（P10/P50/P90）</h3>
         <div class="dr-forecast">
           <button type="button" class="dr-fc-btn" :disabled="forecastLoading" @click="loadForecast">
             {{ forecastLoading ? '预测中…' : `跑 ${targetDate} 价格预测` }}
@@ -309,11 +436,72 @@ async function writeBack() {
             <span>均值 <strong>{{ forecastDigest.mean }}</strong></span>
             <span>峰 <strong>{{ forecastDigest.peak }}</strong>（{{ forecastDigest.peakHour }} 时）</span>
             <span>谷 <strong>{{ forecastDigest.valley }}</strong>（{{ forecastDigest.valleyHour }} 时）</span>
-            <span>峰谷差 <strong>{{ forecastDigest.spread }}</strong> 元/MWh</span>
+            <span>峰谷差 <strong>{{ forecastDigest.spread }}</strong></span>
+            <span class="dr-band-note" :title="'P90−P10 逐小时均值：带宽越宽不确定性越大，越该保守'">
+              平均带宽 <strong>{{ forecastDigest.avgBandWidth }}</strong>（最宽 {{ forecastDigest.widestBandWidth }} @{{ forecastDigest.widestBandHour }} 时）
+            </span>
           </template>
           <span v-else-if="!forecastLoading" class="dr-muted">
-            未跑——预测数值可作为「预期价差 ΔP」的参照（需 agent-backend 8000 在线）
+            未跑——分布与套利窗口需预测在线（agent-backend 8000）
           </span>
+        </div>
+
+        <div v-if="bandChart" class="dr-band-chart">
+          <svg :viewBox="`0 0 ${bandChart.W} ${bandChart.H}`" role="img" aria-label="价格概率分布带状图：P90-P10 带与 P50 中位线">
+            <path :d="bandChart.band" fill="#93c5fd" fill-opacity="0.35" />
+            <path :d="bandChart.p10" fill="none" stroke="#60a5fa" stroke-width="1" stroke-dasharray="3 2" />
+            <path :d="bandChart.p90" fill="none" stroke="#60a5fa" stroke-width="1" stroke-dasharray="3 2" />
+            <path :d="bandChart.p50" fill="none" stroke="#1d4ed8" stroke-width="2" />
+            <text v-for="h in [0, 6, 12, 18, 23]" :key="h" :x="10 + (h / 23) * 460" :y="bandChart.H - 4" text-anchor="middle" font-size="9" fill="#889">{{ h }}时</text>
+          </svg>
+          <p class="dr-band-legend">
+            实线 = P50 中位；带 = P90–P10 区间（虚线为两沿）。<strong>决策看带宽不只看中位</strong>——
+            高价时段带宽最宽时，按 P10（不利侧）核可做性，见下方套利窗口的保守口径比对。
+          </p>
+        </div>
+
+        <!-- 套利窗口清单（F2.4，储能立场）+ P90 价差 vs 盈亏平衡自动比对 + 凯利仓位红线 -->
+        <div v-if="forecastDigest" class="dr-arb">
+          <h4><Zap :size="13" /> 套利窗口清单（储能立场 · 保守口径判级）</h4>
+          <p v-if="assetNote" class="dr-arb-note">{{ assetNote }}</p>
+          <template v-if="arbitrageRows.length">
+            <table class="dr-arb-table">
+              <thead>
+                <tr><th>充电窗口（谷）</th><th>放电窗口（峰）</th><th>谷价 P50</th><th>峰价 P50</th><th>P50 价差</th><th>P90 保守价差</th><th>判级（vs 要求 {{ requiredSpread }}）</th></tr>
+              </thead>
+              <tbody>
+                <tr v-for="r in arbitrageRows" :key="`${r.chargeFrom}-${r.dischargeFrom}`" :class="r.verdict">
+                  <td>{{ r.chargeFrom }}–{{ r.chargeTo + 1 }} 时</td>
+                  <td>{{ r.dischargeFrom }}–{{ r.dischargeTo + 1 }} 时</td>
+                  <td>{{ r.chargePriceP50 }}</td>
+                  <td>{{ r.dischargePriceP50 }}</td>
+                  <td>{{ r.p50Spread }}</td>
+                  <td><strong>{{ r.conservativeSpread }}</strong></td>
+                  <td>{{ r.verdictLabel }}（×{{ r.safetyMultiple }}）</td>
+                </tr>
+              </tbody>
+            </table>
+            <p class="dr-arb-verdict" :class="{ exec: prepareExecute }">
+              <template v-if="prepareExecute">
+                <strong>准备执行</strong>：存在 P90 保守口径价差（峰 P10 − 谷 P90）超过盈亏平衡
+                {{ requiredSpread }} 元/MWh × 1.15 的窗口——可进 S4 出充放计划。
+              </template>
+              <template v-else>
+                无「准备执行」信号：各窗口 P90 保守口径未同时超盈亏平衡 × 1.15——按判级列执行或等待窗口。
+              </template>
+              盈亏平衡要求价差 {{ requiredSpread }} 元/MWh（R3 口径 · 充电价参考取预测谷段 P50 ·
+              容量收益未计故偏保守 · 资产参数：{{ assetLabel }}）。
+            </p>
+          </template>
+          <p v-else class="dr-arb-empty">
+            预测形态下无可配对的「谷段在前、峰段在后」窗口——不硬凑循环（与 R2 时序可行性同构）。
+          </p>
+          <p v-if="kellyCap" class="dr-kelly">
+            凯利仓位上限红线：风险折减仓位 <strong>{{ kellyCap.riskAdjustedFraction }}%</strong>
+            （半 Kelly {{ kellyCap.halfKellyFraction }}% × 风险预算约束 → 建议不超过
+            {{ kellyCap.recommendedMwh }} MWh）——「能挣多少/最多赔多少」先看这条线，禁止满仓裸奔；
+            持仓率合规带 80–120% 与凯利上限取更严者。
+          </p>
         </div>
       </section>
     </div>
@@ -390,6 +578,32 @@ async function writeBack() {
 .dr-fc-btn { padding: 4px 12px; border: 1px solid #059669; border-radius: 5px; background: #ecfdf5; color: #047857; font-size: 12px; cursor: pointer; }
 .dr-fc-btn:disabled { opacity: .5; cursor: wait; }
 .dr-muted { font-size: 11px; color: var(--el-text-color-secondary, #667); }
+
+/* 漂移横幅与策略速查 */
+.dr-drift { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding: 8px 12px; border: 1px solid #fca5a5; border-radius: 8px; background: #fef2f2; color: #991b1b; font-size: 12px; line-height: 1.6; }
+.dr-strategy { width: 100%; font-size: 11px; color: #075985; }
+
+/* 分布带状图 */
+.dr-band-chart { margin-top: 10px; }
+.dr-band-chart svg { width: 100%; height: auto; display: block; }
+.dr-band-legend { margin: 4px 0 0; font-size: 11px; line-height: 1.6; color: var(--el-text-color-secondary, #667); }
+.dr-band-note { font-size: 11px; color: #92400e; cursor: help; }
+
+/* 套利窗口清单 */
+.dr-arb { margin-top: 12px; padding-top: 10px; border-top: 1px dashed var(--el-border-color, #dcdfe6); }
+.dr-arb h4 { display: flex; align-items: center; gap: 5px; margin: 0 0 6px; font-size: 12px; }
+.dr-arb-note { margin: 0 0 6px; font-size: 11px; color: #b45309; }
+.dr-arb-table { width: 100%; border-collapse: collapse; font-size: 11px; font-variant-numeric: tabular-nums; }
+.dr-arb-table th, .dr-arb-table td { padding: 4px 6px; border-bottom: 1px solid var(--el-border-color-lighter, #ebeef5); text-align: right; }
+.dr-arb-table th:first-child, .dr-arb-table td:first-child, .dr-arb-table th:nth-child(2), .dr-arb-table td:nth-child(2) { text-align: left; }
+.dr-arb-table th { color: var(--el-text-color-secondary, #667); font-weight: 600; }
+.dr-arb-table tr.execute td:last-child { color: #15803d; font-weight: 600; }
+.dr-arb-table tr.needs_approval td:last-child { color: #92400e; }
+.dr-arb-table tr.skip td:last-child { color: #64748b; }
+.dr-arb-verdict { margin: 8px 0 0; padding: 6px 9px; border-radius: 6px; background: #f8fafc; font-size: 11px; line-height: 1.7; color: #475569; }
+.dr-arb-verdict.exec { background: #f0fdf4; color: #166534; }
+.dr-arb-empty { margin: 6px 0 0; font-size: 11px; color: var(--el-text-color-secondary, #667); }
+.dr-kelly { margin: 8px 0 0; padding: 6px 9px; border-radius: 6px; background: #fffbeb; color: #92400e; font-size: 11px; line-height: 1.7; }
 
 .dr-ai { border: 1px solid var(--el-border-color-lighter, #ebeef5); border-radius: 10px; background: #fff; padding: 8px 12px; }
 .dr-ai summary { display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 600; cursor: pointer; flex-wrap: wrap; }

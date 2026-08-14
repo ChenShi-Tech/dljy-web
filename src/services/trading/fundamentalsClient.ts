@@ -11,6 +11,10 @@ export type FundamentalField =
   | 'system_load_mw'
   | 'export_plan_mw'
   | 'reserve_mw'
+  /** 日级煤价（元/吨），slot 固定 'all-day'；单位在字段名自述（非 MW） */
+  | 'coal_price_yuan_per_ton'
+  /** 小时级中长期持仓（MWh），slot 为 h00–h23（S2 24 时段聚合视图） */
+  | 'mlt_position_mwh'
 
 export type SourceKind = 'dispatch' | 'capture' | 'company' | 'manual'
 
@@ -29,6 +33,7 @@ export function isTrustedSource(kind: SourceKind | null | undefined): boolean {
 export type FundamentalEntry = {
   slot_label: string
   field: FundamentalField
+  /** 数值：*_mw 字段为 MW；煤价字段为元/吨（字段名自述单位，服务端同口径） */
   value_mw: number
   source_kind: SourceKind
   credibility: 'A' | 'B' | 'C' | 'D'

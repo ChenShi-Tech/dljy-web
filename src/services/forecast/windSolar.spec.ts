@@ -43,6 +43,29 @@ describe('calculateIRR 负值与无解语义（E2）', () => {
   })
 })
 
+describe('calculateIRR 高 IRR 语义（#1351）', () => {
+  it('低资本开支/高收入现金流返回真实高 IRR，不再误报无解', () => {
+    // [-100, 10000]：1 倍投入、100 倍首期回收，IRR 手算恰为 9900%
+    expect(calculateIRR([-100, 10000])).toBeCloseTo(9900, 3)
+  })
+
+  it('极端高收益现金流在扫掠上界内仍可解', () => {
+    // [-1, 1000000]：IRR = 99999900%（倍增上界 1e8% 内）；1e6 量级下 NPV 消元的
+    // 浮点噪声约万分位，用相对界断言而非绝对容差
+    const irr = calculateIRR([-1, 1000000])
+    expect(irr).toBeGreaterThan(99999800)
+    expect(irr).toBeLessThan(100000000)
+  })
+
+  it('负 IRR 与同号无解语义不回归', () => {
+    const irr = calculateIRR([-100, 30, 30, 30])
+    expect(Number.isFinite(irr)).toBe(true)
+    expect(irr).toBeLessThan(0)
+    expect(Number.isNaN(calculateIRR([-100, -10, -5]))).toBe(true)
+    expect(Number.isNaN(calculateIRR([100, 10, 5]))).toBe(true)
+  })
+})
+
 describe('光伏衰减电量（C6）', () => {
   it('逐年电量 = 首年电量 × (1−首衰/100) × (1−年衰/100)^(y−1)', () => {
     const form = plainForm({ degradation_rate: 0.55, first_year_degradation: 2 })
@@ -104,9 +127,17 @@ describe('敏感性分析弹性定义（E1）', () => {
 })
 
 describe('LCOE 反推与哨兵治理（E4/E5）', () => {
-  it('目标 IRR 高不可达时返回 NaN 而非 -1', () => {
-    const lcoe = calculateWindSolarLcoe(plainForm({ target_equity_irr: 1000 }))
+  it('目标 IRR 超出 IRR 搜索上界（1e8%）时返回 NaN 而非 -1', () => {
+    // #1351 后 IRR 搜索上界扩至 1e8%：target=1000（十万百分点）已真实可收敛，
+    // 「高不可达」语义改用超出上界的 target=2e6（两亿百分点）验证
+    const lcoe = calculateWindSolarLcoe(plainForm({ target_equity_irr: 2000000 }))
     expect(Number.isNaN(lcoe)).toBe(true)
+  })
+
+  it('目标 IRR 在扩展上界内（1000）可反推收敛（#1351 行为改进）', () => {
+    const lcoe = calculateWindSolarLcoe(plainForm({ target_equity_irr: 1000 }))
+    expect(Number.isFinite(lcoe)).toBe(true)
+    expect(lcoe).toBeGreaterThan(0)
   })
 
   it('正常参数下反推收敛且验算 IRR 接近目标', () => {
