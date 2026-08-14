@@ -1,0 +1,12 @@
+# 本仓自有配置与上游生成物镜像由维护者把关（配合分支保护的 Code Owner review 强制生效）。
+/.github/            @sheldon123z
+/vendor/             @sheldon123z
+/shared/schema/generated/ @sheldon123z
+/package.json        @sheldon123z
+/package-lock.json   @sheldon123z
+/vite.config.ts      @sheldon123z
+/tsconfig.json       @sheldon123z
+/vitest.config.ts    @sheldon123z
+/.env.example        @sheldon123z
+/README.md           @sheldon123z
+/CONTRIBUTING.md     @sheldon123z
