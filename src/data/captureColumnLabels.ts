@@ -13,6 +13,11 @@
 
 import { getQualityRule } from 'shared/data-quality/rules.mjs'
 
+// 数据族清单 re-export：视图层禁直接 import shared/schema/**（DEVELOPMENT.md 分层约定；
+// 通用数据浏览器此前是唯一违例）。data 层是 schema 信息面向视图的合法出口——
+// family 清单与列语义本就同源（ROW_SCHEMAS），在此一并取用零额外链路。
+export { CAPTURE_FAMILIES, CAPTURE_FAMILY_CODES } from 'shared/schema/entities/capture-families.mjs'
+
 // 固定字段：跨数据族语义基本一致的拼音缩写列。
 const STATIC_LABELS: Record<string, string> = {
   // —— 日期 / 时间类 ——
