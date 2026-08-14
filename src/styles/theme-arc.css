@@ -1,0 +1,282 @@
+/* ============================================================
+   弧光 Arclight —— 能源交易科技主题（html[data-theme='arc']）
+   设计纪律：动效必须有功能含义；发光只给"正在发生的事"；
+   全部动效尊重 prefers-reduced-motion。
+   规划：docs/agent-harness/主题与信息架构规划.md
+   ============================================================ */
+
+html[data-theme='arc'] {
+  --bg: #070d18;
+  --panel: #0c1626;
+  --panel-2: #101d33;
+  --text: #d7e4f5;
+  --muted: #74879f;
+  --line: #1c2c44;
+  --primary: #06b6d4;
+  --primary-strong: #0891b2;
+  --accent: #38bdf8;
+  --warning: #f59e0b;
+  --success: #34d399;
+  --glow: rgba(34, 211, 238, 0.35);
+  --period-accent: #38bdf8; /* 平段缺省，下方按时段覆盖 */
+  color-scheme: dark;
+
+  /* —— 与三档换肤(theme.css)共用的全站变量词汇:弧光取值 ——
+     业务页面(变量化的 40+ 视图)与 chartChrome 取色都依赖这批变量;
+     此前 arc 只定义了 13 个,其余回退浅色默认值导致"切弧光部分页面仍是白的"。 */
+  --panel-image: linear-gradient(165deg, rgba(16, 29, 51, 0.6), rgba(12, 22, 38, 0.4));
+  --panel-sub: #101d33;
+  --sidebar-bg: #081020;
+  --topbar-bg: #0a1322;
+
+  --text-body: #c3d3e8;
+  --text-soft: #9fb3cc;
+
+  --line-soft: #16243a;
+  --line-faint: #121d30;
+
+  --accent-2: #2dd4bf;
+  --danger: #f87171;
+
+  --primary-tint: rgba(6, 182, 212, 0.1);
+  --primary-tint-border: rgba(6, 182, 212, 0.3);
+  --surface-hover: rgba(56, 189, 248, 0.07);
+  --danger-tint: rgba(248, 113, 113, 0.12);
+  --warning-tint: rgba(245, 158, 11, 0.12);
+
+  --radius: 10px;
+  --radius-sm: 8px;
+  --font-display: inherit;
+  --shadow: 0 8px 24px rgba(2, 8, 20, 0.5);
+  --glow-text: 0 0 16px rgba(34, 211, 238, 0.4);
+  --panel-backdrop: blur(8px);
+  --panel-edge: rgba(34, 211, 238, 0.35);
+
+  --sidebar-text: #c9d9ec;
+  --sidebar-muted: #74879f;
+  --sidebar-border: #16243a;
+  --brand-mark-bg: #06b6d4;
+
+  --chip-bg: rgba(16, 29, 51, 0.7);
+  --chip-border: #1c2c44;
+  --chip-text: #d7e4f5;
+  --chip-label: #74879f;
+  --chip-sub: #9fb3cc;
+
+  --ai-btn-bg: linear-gradient(135deg, #06b6d4, #0ea5e9);
+  --ai-btn-fg: #04121a;
+
+  --mask-bg: rgba(3, 8, 18, 0.6);
+  --scrim: rgba(7, 13, 24, 0.85);
+
+  --chart-axis-label: #74879f;
+  --chart-split-line: rgba(56, 189, 248, 0.1);
+  --chart-neutral-line: rgba(116, 135, 159, 0.4);
+  --chart-danger: #f87171;
+
+  --wx-chip-bg: linear-gradient(135deg, rgba(6, 182, 212, 0.14), rgba(56, 189, 248, 0.1));
+  --wx-chip-fg: #d7e4f5;
+
+  /* —— Element Plus 暗色覆盖(同 neon 范式,消除 el 组件白底/白弹层) —— */
+  --el-bg-color: #0c1626;
+  --el-bg-color-page: #070d18;
+  --el-bg-color-overlay: #101d33;
+  --el-text-color-primary: #d7e4f5;
+  --el-text-color-regular: #c3d3e8;
+  --el-text-color-secondary: #74879f;
+  --el-text-color-placeholder: #58708c;
+  --el-text-color-disabled: #46596f;
+  --el-border-color: #1c2c44;
+  --el-border-color-light: #1a2940;
+  --el-border-color-lighter: #16243a;
+  --el-border-color-extra-light: #121d30;
+  --el-border-color-dark: #243a5c;
+  --el-border-color-hover: rgba(6, 182, 212, 0.5);
+  --el-fill-color: #101d33;
+  --el-fill-color-light: #101d33;
+  --el-fill-color-lighter: #0c1626;
+  --el-fill-color-extra-light: #0c1626;
+  --el-fill-color-blank: #0c1626;
+  --el-fill-color-dark: #142540;
+  --el-fill-color-darker: #182c4c;
+  --el-mask-color: rgba(3, 8, 18, 0.6);
+  --el-mask-color-extra-light: rgba(3, 8, 18, 0.3);
+
+  --el-color-primary: #06b6d4;
+  --el-color-primary-light-3: #4fd0e3;
+  --el-color-primary-light-5: #82dfec;
+  --el-color-primary-light-7: #b5edf5;
+  --el-color-primary-light-8: #cef4f9;
+  --el-color-primary-light-9: #123448;
+  --el-color-primary-dark-2: #0594ac;
+
+  --el-table-bg-color: #0c1626;
+  --el-table-tr-bg-color: #0c1626;
+  --el-table-header-bg-color: #101d33;
+  --el-table-row-hover-bg-color: #142540;
+  --el-table-current-row-bg-color: #142540;
+  --el-table-header-text-color: #c9d9ec;
+  --el-table-text-color: #c3d3e8;
+  --el-table-border-color: #16243a;
+  --el-table-border: 1px solid #16243a;
+}
+html[data-theme='arc'][data-period='peak'] { --period-accent: #fbbf24; }
+html[data-theme='arc'][data-period='valley'] { --period-accent: #34d399; }
+
+/* ── 壳层：深空底 + 极淡电网格 + 顶部辉光（唯一的氛围装饰，≤4%) ── */
+html[data-theme='arc'] body {
+  background:
+    radial-gradient(1100px 480px at 70% -10%, rgba(34, 211, 238, 0.07), transparent 60%),
+    linear-gradient(rgba(56, 189, 248, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(56, 189, 248, 0.03) 1px, transparent 1px),
+    var(--bg);
+  background-size: auto, 44px 44px, 44px 44px, auto;
+}
+
+html[data-theme='arc'] .sidebar {
+  background: linear-gradient(180deg, #0a1322 0%, #081020 100%);
+  border-right: 1px solid var(--line);
+  box-shadow: inset -1px 0 0 rgba(34, 211, 238, 0.06);
+}
+html[data-theme='arc'] .brand-mark {
+  background: linear-gradient(135deg, #06b6d4, #0ea5e9);
+  box-shadow: 0 0 14px var(--glow);
+}
+
+/* 菜单"电流"：激活项左缘能量流动条 —— 编码"你在这里" */
+html[data-theme='arc'] .sidebar .el-menu-item.is-active {
+  background: rgba(6, 182, 212, 0.13) !important;
+  position: relative;
+}
+html[data-theme='arc'] .sidebar .el-menu-item.is-active::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 8px;
+  bottom: 8px;
+  width: 3px;
+  border-radius: 2px;
+  background: linear-gradient(180deg, transparent, #22d3ee, #38bdf8, #22d3ee, transparent);
+  background-size: 100% 220%;
+  animation: arc-energy-flow 2.6s linear infinite;
+  box-shadow: 0 0 8px var(--glow);
+}
+@keyframes arc-energy-flow {
+  to { background-position: 0 220%; }
+}
+
+html[data-theme='arc'] .topbar {
+  background: rgba(10, 19, 34, 0.88);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--line);
+}
+html[data-theme='arc'] .topbar h1,
+html[data-theme='arc'] .breadcrumb { color: var(--text); }
+
+/* 面板：暗卡 + 悬浮微光（hover 是交互暗示，属功能动效） */
+html[data-theme='arc'] .panel,
+html[data-theme='arc'] .metric-card {
+  background: var(--panel);
+  border-color: var(--line);
+  box-shadow: 0 1px 0 rgba(34, 211, 238, 0.04);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+html[data-theme='arc'] .panel:hover,
+html[data-theme='arc'] .metric-card:hover {
+  border-color: rgba(34, 211, 238, 0.35);
+  box-shadow: 0 0 0 1px rgba(34, 211, 238, 0.12), 0 6px 22px rgba(2, 8, 20, 0.5);
+}
+
+/* ── 功能性动效工具类（页面/组件按需挂） ── */
+
+/* 数据刚刷新：一次性脉冲 */
+html[data-theme='arc'] .arc-pulse {
+  animation: arc-pulse 0.9s ease-out 1;
+}
+@keyframes arc-pulse {
+  0% { box-shadow: 0 0 0 0 var(--glow); }
+  100% { box-shadow: 0 0 0 14px transparent; }
+}
+
+/* 红涨绿跌（国内市场习惯） */
+html[data-theme='arc'] .num-up { color: #f87171; }
+html[data-theme='arc'] .num-down { color: #34d399; }
+
+/* 运行中呼吸边框（智能体工具执行/任务进行中） */
+html[data-theme='arc'] .arc-breathe {
+  animation: arc-breathe 1.8s ease-in-out infinite;
+}
+@keyframes arc-breathe {
+  0%, 100% { border-color: var(--line); }
+  50% { border-color: rgba(34, 211, 238, 0.55); }
+}
+
+/* ── 智能体面板暗色适配 ── */
+html[data-theme='arc'] .agent-panel { background: var(--panel); } /* --panel-bg 已上提为通用 token(theme.css base :root),此处不再局部补丁 */
+html[data-theme='arc'] .agent-panel .bubble { background: var(--panel-2); }
+html[data-theme='arc'] .agent-panel .msg.user .bubble { background: var(--primary-strong); }
+html[data-theme='arc'] .agent-panel .panel-input input {
+  background: var(--panel-2);
+  color: var(--text);
+  border-color: var(--line);
+}
+html[data-theme='arc'] .agent-panel .tool-card { background: rgba(34, 211, 238, 0.05); }
+html[data-theme='arc'] .agent-panel .tool-card.running { animation: arc-breathe 1.8s ease-in-out infinite; }
+html[data-theme='arc'] .agent-panel .chart-card { background: var(--panel-2); }
+html[data-theme='arc'] .agent-panel .approval-card {
+  background: rgba(245, 158, 11, 0.08);
+  animation: arc-approval 2.4s ease-in-out infinite;
+}
+@keyframes arc-approval {
+  0%, 100% { border-color: rgba(245, 158, 11, 0.5); }
+  50% { border-color: #fbbf24; box-shadow: 0 0 12px rgba(251, 191, 36, 0.25); }
+}
+html[data-theme='arc'] .agent-panel .shimmer {
+  background: linear-gradient(90deg, #475569 25%, #a5f3fc 50%, #475569 75%);
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+}
+
+/* ── 电价带（PriceTicker）── */
+.price-ticker {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  font-size: 12.5px;
+  user-select: none;
+}
+.price-ticker .pt-period {
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-weight: 700;
+  font-size: 11.5px;
+  color: #0b1220;
+  background: var(--period-accent, #38bdf8);
+}
+.price-ticker .pt-price { font-weight: 700; font-variant-numeric: tabular-nums; }
+.price-ticker .pt-unit { color: var(--muted); font-size: 11px; }
+.price-ticker .pt-delta { font-variant-numeric: tabular-nums; font-size: 12px; }
+.price-ticker .pt-delta.num-up { color: #ef4444; }
+.price-ticker .pt-delta.num-down { color: #16a34a; }
+html[data-theme='arc'] .price-ticker { background: var(--panel-2); }
+html[data-theme='arc'] .price-ticker .pt-delta.num-up { color: #f87171; }
+html[data-theme='arc'] .price-ticker .pt-delta.num-down { color: #34d399; }
+.price-ticker svg { display: block; }
+@media (max-width: 900px) {
+  .price-ticker { display: none; }
+}
+
+/* ── 降级：减少动效偏好 ── */
+@media (prefers-reduced-motion: reduce) {
+  html[data-theme='arc'] *,
+  html[data-theme='arc'] *::before,
+  html[data-theme='arc'] *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

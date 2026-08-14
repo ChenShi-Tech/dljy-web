@@ -1,0 +1,401 @@
+/* =====================================================================
+ * 三档风格主题契约(default / neon / paper)—— 完整设计 token 系统
+ * ---------------------------------------------------------------------
+ * neon / paper 的取值直接对齐 demo 源:
+ *   src/views/demo/neon/NeonOverview.vue · NeonAi.vue
+ *   src/views/demo/paper/PaperOverview.vue · PaperAi.vue
+ * 目标:主界面切到 neon / paper 时,观感即两套 demo(底色/卡片/辉光/字体/圆角)。
+ *
+ * 回归红线:default 列每个 token 值 === 改造前现状色;新增 token(--radius /
+ * --font-display / --accent-2 / --glow-text / --panel-backdrop / --panel-image)
+ * 在 default 取“无副作用”值(none / inherit / 等于原 6px 等),不改变原版观感。
+ *
+ * 本文件在 main.ts 中于 element-plus + global.css 之后引入,保证 --el-* 覆盖优先级。
+ * ===================================================================== */
+
+:root,
+:root[data-theme='default'],
+:root[data-theme='classic'] {
+  /* —— 底色 / 面板 —— */
+  --bg: #f3f6f9;
+  --panel: #ffffff;
+  --panel-bg: var(--panel); /* 「面板底」别名(聊天面板/历史新建钮/重命名框/审批备注/artifact 链用);全 5 主题统一取 --panel,修复 neon/arc 下回退白底穿帮 */
+  --panel-image: none; /* 卡片叠加渐变(neon 用);default/paper = none */
+  --panel-sub: #f8fafc;
+  --sidebar-bg: #172b3a;
+  --topbar-bg: #ffffff;
+
+  /* —— 文字 —— */
+  --text: #1f2a37;
+  --text-body: #344054;
+  --text-soft: #475467;
+  --muted: #667085;
+
+  /* —— 线条 —— */
+  --line: #d9e2ec;
+  --line-soft: #e6edf3;
+  --line-faint: #f0f2f5;
+
+  /* —— 主题色 —— */
+  --primary: #0f766e;
+  --primary-strong: #0b5f59;
+  --accent: #2563eb;
+  --accent-2: #2563eb; /* 次强调(neon 青柠 / paper 暗金);default 取 = accent 不显特异 */
+  --success: #16803c;
+  --warning: #d97706;
+  --danger: #dc2626;
+
+  /* —— 着色表面(高亮/激活/hover/告警底;逐页迁移复用)—— */
+  --primary-tint: #ecfdf5;
+  --primary-tint-border: #d7f0ea;
+  --surface-hover: #f1f5f6;
+  --danger-tint: #fde8e4;
+  --warning-tint: #fff8e8;
+
+  /* —— 形状 / 字体 / 效果 —— */
+  --radius: 6px; /* 卡片圆角(default 原值 6px) */
+  --radius-sm: 4px; /* 按钮/输入圆角 */
+  --font-display: inherit; /* 标题/强调字体(paper = 衬线);default 继承 Inter */
+  --shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+  --glow-text: none; /* 强调数字辉光(neon 用) */
+  --panel-backdrop: none; /* 卡片 backdrop-filter(neon 毛玻璃) */
+  --panel-edge: var(--line); /* 卡片发光描边(neon 用),default = 普通边框色 */
+
+  /* —— 侧边栏(三档均为深底浅字)—— */
+  --sidebar-text: #ffffff;
+  --sidebar-muted: #9fb3c8;
+  --sidebar-border: rgba(255, 255, 255, 0.08);
+  --brand-mark-bg: #0f9f8f;
+
+  /* —— 顶栏上下文 chip —— */
+  --chip-bg: #f8fbfd;
+  --chip-border: #dbe6ee;
+  --chip-text: #172b3a;
+  --chip-label: #7c8b97;
+  --chip-sub: #5b6b78;
+
+  /* —— AI 导航按钮渐变 —— */
+  --ai-btn-bg: linear-gradient(135deg, #0f766e, #19988b);
+  --ai-btn-fg: #ffffff;
+
+  /* —— 移动端遮罩 / 过场磨砂 —— */
+  --mask-bg: rgba(15, 23, 42, 0.45);
+  --scrim: rgba(255, 255, 255, 0.78);
+
+  /* —— echarts 图表 chrome(default = 原 echarts 取色)—— */
+  --chart-axis-label: #909399;
+  --chart-split-line: #f0f2f5;
+  --chart-neutral-line: #c8cdd6;
+  --chart-danger: #ee4d4d;
+
+  /* —— 首页天气挂件 —— */
+  --wx-chip-bg: linear-gradient(135deg, #e3f2fd, #fff7e6);
+  --wx-chip-fg: #5a4a2a;
+
+  color-scheme: light;
+}
+
+/* =====================================================================
+ * 霓虹(neon)—— 深色 + 青色辉光(对齐 NeonOverview/NeonAi)
+ * ===================================================================== */
+:root[data-theme='neon'] {
+  --bg: #060914;
+  --panel: #0e1830; /* 卡片基底(纯色兜底);叠加 --panel-image 渐变 */
+  --panel-image: linear-gradient(160deg, rgba(20, 30, 56, 0.72), rgba(10, 16, 34, 0.66));
+  --panel-sub: #14203a;
+  --sidebar-bg: #04060f;
+  --topbar-bg: #0a1428;
+
+  --text: #e6f0ff;
+  --text-body: #d6e4fb;
+  --text-soft: #9bb6dd;
+  --muted: #7fa8d6;
+
+  --line: rgba(90, 130, 200, 0.22);
+  --line-soft: rgba(90, 130, 200, 0.12);
+  --line-faint: rgba(90, 130, 200, 0.08);
+
+  --primary: #22d3ee;
+  --primary-strong: #0891b2;
+  --accent: #e879f9;
+  --accent-2: #a3e635;
+  --success: #4ade80;
+  --warning: #fbbf24;
+  --danger: #fb7185;
+
+  --primary-tint: rgba(34, 211, 238, 0.1);
+  --primary-tint-border: rgba(34, 211, 238, 0.28);
+  --surface-hover: rgba(120, 160, 220, 0.08);
+  --danger-tint: rgba(251, 113, 133, 0.14);
+  --warning-tint: rgba(251, 191, 36, 0.12);
+
+  --radius: 16px;
+  --radius-sm: 12px;
+  --font-display: inherit;
+  --shadow: 0 10px 30px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  --glow-text: 0 0 18px rgba(34, 211, 238, 0.45);
+  --panel-backdrop: blur(8px);
+  --panel-edge: rgba(34, 211, 238, 0.4);
+
+  --sidebar-text: #cfe2ff;
+  --sidebar-muted: #7fa8d6;
+  --sidebar-border: rgba(120, 160, 220, 0.18);
+  --brand-mark-bg: #22d3ee;
+
+  --chip-bg: rgba(20, 30, 56, 0.6);
+  --chip-border: rgba(90, 130, 200, 0.3);
+  --chip-text: #cfe2ff;
+  --chip-label: #7fa8d6;
+  --chip-sub: #9bb6dd;
+
+  --ai-btn-bg: linear-gradient(135deg, #22d3ee, #34d399);
+  --ai-btn-fg: #04121a;
+
+  --mask-bg: rgba(2, 6, 16, 0.6);
+  --scrim: rgba(8, 12, 24, 0.8);
+
+  --chart-axis-label: #7fa8d6;
+  --chart-split-line: rgba(90, 120, 180, 0.14);
+  --chart-neutral-line: rgba(120, 160, 220, 0.28);
+  --chart-danger: #fb7185;
+
+  --wx-chip-bg: linear-gradient(135deg, rgba(34, 211, 238, 0.12), rgba(232, 121, 249, 0.1));
+  --wx-chip-fg: #cfe2ff;
+
+  color-scheme: dark;
+
+  /* —— Element Plus 暗色覆盖(消除白底;el 组件吃纯色,用 panel 兜底纯色)—— */
+  --el-bg-color: #0e1830;
+  --el-bg-color-page: #060914;
+  --el-bg-color-overlay: #0e1830;
+  --el-text-color-primary: #e6f0ff;
+  --el-text-color-regular: #d6e4fb;
+  --el-text-color-secondary: #7fa8d6;
+  --el-text-color-placeholder: #5e789f;
+  --el-text-color-disabled: #4b6a96;
+  --el-border-color: rgba(90, 130, 200, 0.3);
+  --el-border-color-light: rgba(90, 130, 200, 0.22);
+  --el-border-color-lighter: rgba(90, 130, 200, 0.16);
+  --el-border-color-extra-light: rgba(90, 130, 200, 0.1);
+  --el-border-color-dark: rgba(90, 130, 200, 0.38);
+  --el-border-color-hover: rgba(34, 211, 238, 0.5);
+  --el-fill-color: #14203a;
+  --el-fill-color-light: #14203a;
+  --el-fill-color-lighter: #0e1830;
+  --el-fill-color-extra-light: #0e1830;
+  --el-fill-color-blank: #0e1830;
+  --el-fill-color-dark: #18243e;
+  --el-fill-color-darker: #1c2a46;
+  --el-mask-color: rgba(2, 6, 16, 0.6);
+  --el-mask-color-extra-light: rgba(2, 6, 16, 0.3);
+
+  --el-color-primary: #22d3ee;
+  --el-color-primary-light-3: #64e0f3;
+  --el-color-primary-light-5: #90e9f6;
+  --el-color-primary-light-7: #bcf1f9;
+  --el-color-primary-light-8: #d3f6fb;
+  --el-color-primary-light-9: #16344a;
+  --el-color-primary-dark-2: #1ba9be;
+
+  --el-table-bg-color: #0e1830;
+  --el-table-tr-bg-color: #0e1830;
+  --el-table-header-bg-color: #14203a;
+  --el-table-row-hover-bg-color: #18243e;
+  --el-table-current-row-bg-color: #18243e;
+  --el-table-header-text-color: #cfe2ff;
+  --el-table-text-color: #d6e4fb;
+  --el-table-border-color: rgba(90, 130, 200, 0.16);
+  --el-table-border: 1px solid rgba(90, 130, 200, 0.16);
+}
+
+/* =====================================================================
+ * 暖纸(paper)—— 暖纸质感 + 砖红 + 衬线(对齐 PaperOverview/PaperAi)
+ * ===================================================================== */
+:root[data-theme='paper'] {
+  --bg: #faf9f6; /* 页底近白暖(demo .paper-root) */
+  --panel: #ffffff; /* 卡片纯白(demo .card) */
+  --panel-image: none;
+  --panel-sub: #f0ece3; /* 段控/内嵌(demo .segment) */
+  --sidebar-bg: #2a2620;
+  --topbar-bg: #fcfbf8;
+
+  --text: #211f1b;
+  --text-body: #3d3a34;
+  --text-soft: #4a463f;
+  --muted: #8a8378;
+
+  --line: #ece8df; /* 卡片描边(demo .card border) */
+  --line-soft: #e7e1d5;
+  --line-faint: #f4f1ea;
+
+  --primary: #c45b36;
+  --primary-strong: #a4452a;
+  --accent: #b4543a;
+  --accent-2: #9a7b3a;
+  --success: #4f7355;
+  --warning: #9a7b3a;
+  --danger: #b4543a;
+
+  --primary-tint: rgba(196, 91, 54, 0.08);
+  --primary-tint-border: rgba(196, 91, 54, 0.22);
+  --surface-hover: #f4f1ea;
+  --danger-tint: rgba(180, 84, 58, 0.12);
+  --warning-tint: rgba(154, 123, 58, 0.12);
+
+  --radius: 14px;
+  --radius-sm: 10px;
+  --font-display: 'Source Serif 4', 'Source Serif Pro', Georgia, 'Songti SC', 'Noto Serif SC', serif;
+  --shadow: 0 1px 2px rgba(80, 60, 40, 0.05);
+  --glow-text: none;
+  --panel-backdrop: none;
+  --panel-edge: var(--line);
+
+  --sidebar-text: #f3eee3;
+  --sidebar-muted: #b8ae9c;
+  --sidebar-border: rgba(255, 250, 240, 0.1);
+  --brand-mark-bg: #c45b36;
+
+  --chip-bg: #f0ece3;
+  --chip-border: #e6e1d6;
+  --chip-text: #211f1b;
+  --chip-label: #a4998a;
+  --chip-sub: #7a746a;
+
+  --ai-btn-bg: linear-gradient(135deg, #c45b36, #a4452a);
+  --ai-btn-fg: #fbf7ef;
+
+  --mask-bg: rgba(40, 30, 20, 0.4);
+  --scrim: rgba(250, 249, 246, 0.82);
+
+  --chart-axis-label: #9a958c;
+  --chart-split-line: #efede7;
+  --chart-neutral-line: #cfc6b4;
+  --chart-danger: #b4543a;
+
+  --wx-chip-bg: linear-gradient(135deg, #efe6d4, #f6eede);
+  --wx-chip-fg: #5a4a2a;
+
+  color-scheme: light;
+
+  /* —— Element Plus 暖色覆盖 —— */
+  --el-bg-color: #ffffff;
+  --el-bg-color-page: #faf9f6;
+  --el-bg-color-overlay: #ffffff;
+  --el-text-color-primary: #211f1b;
+  --el-text-color-regular: #3d3a34;
+  --el-text-color-secondary: #8a8378;
+  --el-text-color-placeholder: #a8a296;
+  --el-text-color-disabled: #c4bcae;
+  --el-border-color: #ece8df;
+  --el-border-color-light: #e7e1d5;
+  --el-border-color-lighter: #efebe2;
+  --el-border-color-extra-light: #f4f1ea;
+  --el-border-color-hover: #c8a98f;
+  --el-fill-color: #f0ece3;
+  --el-fill-color-light: #f4f1ea;
+  --el-fill-color-lighter: #f8f5ee;
+  --el-fill-color-extra-light: #fbf9f4;
+  --el-fill-color-blank: #ffffff;
+
+  --el-color-primary: #c45b36;
+  --el-color-primary-light-3: #d68c72;
+  --el-color-primary-light-5: #e1ad9b;
+  --el-color-primary-light-7: #edcdc2;
+  --el-color-primary-light-8: #f3ded6;
+  --el-color-primary-light-9: #faf0ea;
+  --el-color-primary-dark-2: #9d492b;
+
+  --el-table-header-bg-color: #f8f5ee;
+  --el-table-row-hover-bg-color: #f4f1ea;
+  --el-table-current-row-bg-color: #f4f1ea;
+  --el-table-border-color: #ece8df;
+}
+
+/* =====================================================================
+ * 主题专属结构增强(让骨架/卡片观感贴合 demo)
+ * —— 仅 neon/paper 生效;default 不受影响。
+ * ===================================================================== */
+
+/* neon 页底:径向辉光 + 细网格(对齐 demo .neon-root + .grid-overlay) */
+:root[data-theme='neon'] body {
+  background:
+    radial-gradient(1200px 700px at 15% -10%, #0d1b3a 0%, #060914 55%),
+    #04060f;
+}
+:root[data-theme='neon'] .app-layout::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background-image:
+    linear-gradient(rgba(70, 120, 200, 0.06) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(70, 120, 200, 0.06) 1px, transparent 1px);
+  background-size: 44px 44px;
+}
+/* 内容层置于网格之上 */
+:root[data-theme='neon'] .sidebar,
+:root[data-theme='neon'] .workspace {
+  position: relative;
+  z-index: 1;
+}
+
+/* neon 卡片发光描边(对齐 demo .card::before 的青↔品红渐变描边) */
+:root[data-theme='neon'] .metric-card,
+:root[data-theme='neon'] .panel {
+  position: relative;
+}
+:root[data-theme='neon'] .metric-card::before,
+:root[data-theme='neon'] .panel::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  border-radius: var(--radius);
+  padding: 1px;
+  pointer-events: none;
+  background: linear-gradient(120deg, rgba(34, 211, 238, 0.7), rgba(232, 121, 249, 0.5), transparent 60%);
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  opacity: 0.5;
+}
+/* 卡片内容压在发光描边之上 */
+:root[data-theme='neon'] .metric-card > *,
+:root[data-theme='neon'] .panel > * {
+  position: relative;
+  z-index: 1;
+}
+
+/* paper 页底 */
+:root[data-theme='paper'] body {
+  background: var(--bg);
+}
+
+/* =====================================================================
+ * 切换主题时的柔和交叉淡入
+ * —— useTheme.setTheme 在切档瞬间给 <html> 加 .theme-anim,~520ms 后移除。
+ * 只过渡颜色类属性(不含 transform / opacity),故节点呼吸/旋转/连线流动等
+ * keyframe 动画不受影响。
+ * ===================================================================== */
+html.theme-anim,
+html.theme-anim * {
+  transition:
+    background-color 0.45s ease,
+    color 0.4s ease,
+    border-color 0.45s ease,
+    box-shadow 0.45s ease,
+    fill 0.45s ease,
+    stroke 0.45s ease !important;
+}
+
+/* 支持 View Transitions 的浏览器(Chrome/Edge):整页快照交叉淡入,
+   渐变/背景图/半透明卡一并平滑过渡,无残影。由 useTheme.setTheme 触发。 */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: 0.5s;
+  animation-timing-function: ease;
+  mix-blend-mode: normal;
+}

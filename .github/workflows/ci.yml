@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality-gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # mirror-guard 需要与 base 分支比对；仓库不大，全量 clone 便宜。
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.12'
+          cache: npm
+
+      - run: npm ci
+
+      # 镜像守卫：vendor/ 与 shared/schema/generated/ 是上游生成物快照（只读），
+      # 协作者 PR 改它们会在下一次同步被覆盖——直接拒绝，避免无效工作。
+      - name: Mirror guard
+        if: github.event_name == 'pull_request'
+        run: |
+          changed=$(git diff --name-only "origin/${{ github.base_ref }}...HEAD" -- 'vendor/' 'shared/schema/generated/')
+          if [ -n "$changed" ]; then
+            echo '::error::以下文件是上游生成物镜像（只读），请勿在本仓修改：'
+            echo "$changed"
+            exit 1
+          fi
+
+      - run: npm run check
+
+      # test:coverage 跑同一套 spec 并附带覆盖率阈值门禁（24/20/23/19），
+      # 不再单独跑 test:unit（纯重复）。
+      - run: npm run test:coverage
+
+      - run: npm run build

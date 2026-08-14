@@ -1,0 +1,100 @@
+import { fileURLToPath, URL } from 'node:url'
+import { defineConfig, loadEnv } from 'vite'
+import vue from '@vitejs/plugin-vue'
+import { viteStaticCopy } from 'vite-plugin-static-copy'
+
+// dljy-web 是 dljy 原仓前端的保密镜像下游（见 CONTRIBUTING.md）。
+// 本文件为「新仓自有」：同步脚本不覆盖它，改动直接在本仓维护。
+// 与原仓 vite.config.ts 的刻意差异只有三处：
+//   1. 代理目标经 loadEnv 读取（原仓只读 process.env；协作者把托管 dev API 地址
+//      写进 .env.local 即生效，无需导出 shell 环境变量）。
+//   2. 删除 /pi-api 代理与 data/*、worktree 的 watch 排除（对应目录不在本仓）。
+//   3. 无本机多 worktree 场景，watch 只排 node_modules/dist。
+// 其余（分包、双入口、cesium 静态拷贝、5174 strictPort）与原仓保持一致，
+// 保证「原仓构建绿 ⇒ 本仓构建绿」。
+
+export default defineConfig(({ mode }) => {
+  const env = { ...loadEnv(mode, fileURLToPath(new URL('.', import.meta.url)), ''), ...process.env }
+  // 两个后端面必须是两个独立端点：/agent-api 会被 rewrite 成 /api，
+  // 若与 4174 面共用同一 upstream 会路径撞车。
+  const apiTarget = env.DLJY_DEV_API_TARGET || 'http://127.0.0.1:4174'
+  const agentApiTarget = env.DLJY_AGENT_API_TARGET || 'http://127.0.0.1:8000'
+
+  return {
+    plugins: [
+      vue(),
+      viteStaticCopy({
+        targets: [
+          { src: 'node_modules/cesium/Build/Cesium/Assets', dest: 'cesium', rename: { stripBase: 4 } },
+          { src: 'node_modules/cesium/Build/Cesium/ThirdParty', dest: 'cesium', rename: { stripBase: 4 } },
+          { src: 'node_modules/cesium/Build/Cesium/Workers', dest: 'cesium', rename: { stripBase: 4 } },
+          { src: 'node_modules/cesium/Build/Cesium/Widgets', dest: 'cesium', rename: { stripBase: 4 } }
+        ]
+      })
+    ],
+    define: {
+      CESIUM_BASE_URL: JSON.stringify('/cesium')
+    },
+    resolve: {
+      alias: {
+        // 前后端共享的零依赖 schema/规则（由原仓白名单同步，见 shared/ 目录）。
+        shared: fileURLToPath(new URL('./shared', import.meta.url)),
+        '@': fileURLToPath(new URL('./src', import.meta.url))
+      }
+    },
+    build: {
+      // Cesium 为按路由加载的独立 vendor（约 4 MiB minified），阈值随原仓。
+      chunkSizeWarningLimit: 4200,
+      rollupOptions: {
+        input: {
+          index: fileURLToPath(new URL('./index.html', import.meta.url)),
+          gridGeo: fileURLToPath(new URL('./grid-geo.html', import.meta.url))
+        },
+        output: {
+          manualChunks(id) {
+            if (!id.includes('node_modules')) return undefined
+            if (id.includes('/cesium/') || id.includes('/@cesium/')) return 'vendor-cesium'
+            if (id.includes('xlsx')) return 'vendor-xlsx'
+            if (id.includes('echarts-gl') || id.includes('claygl')) return 'vendor-echarts-gl'
+            if (id.includes('echarts')) return 'vendor-echarts'
+            if (id.includes('zrender')) return 'vendor-zrender'
+            if (id.includes('element-plus')) return 'vendor-element-plus'
+            if (id.includes('@vue-flow')) return 'vendor-vueflow'
+            if (id.includes('@vue') || id.includes('vue-router')) return 'vendor-vue'
+            if (id.includes('lucide-vue-next')) return 'vendor-icons'
+            if (id.includes('markdown-it') || id.includes('highlight.js') || id.includes('dompurify')) return 'vendor-markdown'
+            // 只被异步引用的大依赖（mermaid/d3 等）交还 rollup 默认分包，
+            // 手动 catch-all 会把它们拖成同步 chunk（原仓历史教训），不 catch-all。
+            return undefined
+          }
+        }
+      }
+    },
+    server: {
+      port: 5174,
+      // 被占用直接失败而非静默跳端口，与原仓约定一致。
+      strictPort: true,
+      // 允许经隧道/内网主机访问（协作者给维护者演示时用）。
+      allowedHosts: true,
+      proxy: {
+        '/agent-api': {
+          // 用 127.0.0.1 而非 localhost：localhost 可能解析成 IPv6 而后端只听 IPv4，
+          // 每请求干等 1s 超时（原仓 PR #19 教训）。托管地址同理写 IP 或明确域名。
+          target: agentApiTarget,
+          changeOrigin: true,
+          rewrite: (path) => path.replace(/^\/agent-api/, '/api')
+        },
+        '/api': apiTarget,
+        // Dify 报告工坊与 Studio 同源嵌入：全部经 4174 面二次转发。
+        '/dify-api': apiTarget,
+        '/dify-sso': apiTarget,
+        '/dify-studio': apiTarget,
+        '/console': apiTarget,
+        '/_next': apiTarget
+      },
+      watch: {
+        ignored: ['**/node_modules/**', '**/dist/**']
+      }
+    }
+  }
+})

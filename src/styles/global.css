@@ -1,0 +1,1295 @@
+/* 颜色语义变量见 src/styles/theme.css(default / neon / paper 三档主题契约)。
+   此处仅保留字体设置;default 档各变量值 === 改造前现状色。 */
+:root {
+  font-family:
+    Inter, "PingFang SC", "Microsoft YaHei", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  overflow-x: hidden;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+.app-layout {
+  display: flex;
+  min-height: 100vh;
+}
+
+.sidebar {
+  width: 236px;
+  flex: 0 0 auto;
+  background: var(--sidebar-bg);
+  transition: width 0.2s ease;
+}
+
+.sidebar.collapsed {
+  width: 64px;
+}
+
+.mobile-menu-mask {
+  display: none;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 64px;
+  padding: 0 16px;
+  color: var(--sidebar-text);
+  border-bottom: 1px solid var(--sidebar-border);
+}
+
+.brand-mark {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  border-radius: 6px;
+  background: var(--brand-mark-bg);
+  font-weight: 800;
+}
+
+.brand-copy {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.2;
+  min-width: 0;
+}
+
+.brand-copy span {
+  margin-top: 3px;
+  color: var(--sidebar-muted);
+  font-size: 12px;
+}
+
+.menu-scroll {
+  height: calc(100vh - 64px);
+}
+
+.sidebar .el-menu {
+  border-right: 0;
+}
+
+.sidebar .el-menu-item.is-active {
+  background: var(--primary) !important;
+}
+
+/* neon: 展开侧栏时激活项底色为 cyan（--primary），文字需深色才能看清；
+   收起后弹出菜单不在 .sidebar 内，不受此规则影响，走 active-text-color 亮色。 */
+html[data-theme='neon'] .sidebar .el-menu-item.is-active {
+  color: #04060f !important;
+}
+
+.menu-icon {
+  width: 18px;
+  height: 18px;
+  margin-right: 10px;
+}
+
+.workspace {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: nowrap;
+  gap: 8px 14px;
+  min-height: 64px;
+  padding: 9px 22px;
+  border-bottom: 1px solid var(--line);
+  background: var(--topbar-bg);
+}
+
+.topbar-left,
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+/* 左侧标题/数据带可随空间收缩；右侧动作区固定宽度、钉右、绝不换行 */
+.topbar-left {
+  flex: 1 1 auto;
+}
+
+.topbar-actions {
+  flex: 0 0 auto;
+  flex-wrap: nowrap;
+  justify-content: flex-end;
+}
+
+.topbar h1 {
+  margin: 2px 0 0;
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.breadcrumb {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.area-select {
+  width: 112px;
+}
+
+.user-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--panel);
+  cursor: pointer;
+}
+
+.page-shell {
+  width: 100%;
+  min-width: 0;
+  flex: 1;
+  padding: 18px;
+}
+
+.page-stack,
+.dashboard {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.metric-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.metric-card,
+.panel {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel-image), var(--panel);
+  box-shadow: var(--shadow);
+  backdrop-filter: var(--panel-backdrop);
+}
+
+.metric-card {
+  padding: 18px;
+}
+
+.metric-card span,
+.panel.compact span {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.metric-card strong {
+  display: block;
+  margin-top: 8px;
+  font-family: var(--font-display);
+  font-size: 26px;
+  text-shadow: var(--glow-text);
+  overflow-wrap: anywhere;
+}
+
+.metric-card small {
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.metric-card em {
+  display: block;
+  margin-top: 8px;
+  font-style: normal;
+  font-size: 13px;
+}
+
+.green {
+  color: var(--success);
+}
+
+.blue {
+  color: var(--accent);
+}
+
+.orange {
+  color: var(--warning);
+}
+
+.panel {
+  padding: 16px;
+}
+
+.panel-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 14px;
+}
+
+.panel-title h2 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.panel-title span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.content-grid {
+  display: grid;
+  gap: 16px;
+}
+
+.two-columns {
+  grid-template-columns: minmax(0, 1.6fr) minmax(280px, 0.8fr);
+}
+
+.three-columns {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.four-columns {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.toolbar .el-input {
+  max-width: 260px;
+}
+
+.toolbar .el-select {
+  max-width: 180px;
+}
+
+.forecast-toolbar {
+  flex-wrap: wrap;
+}
+
+.forecast-toolbar .el-input-number {
+  width: 118px;
+}
+
+.forecast-knn-controls,
+.forecast-data-source-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
+.forecast-knn-controls {
+  margin-bottom: 10px;
+}
+
+.forecast-knn-controls .el-checkbox-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+}
+
+.forecast-data-source-row .el-select {
+  width: 210px;
+}
+
+.registry-toolbar {
+  flex-wrap: wrap;
+}
+
+.tag-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.sync-key-list {
+  margin-top: 6px;
+}
+
+.weather-signal-list {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.weather-signal-list article {
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--line-soft);
+  border-radius: 6px;
+  background: var(--panel-sub);
+}
+
+.weather-signal-list strong,
+.weather-signal-list span {
+  display: block;
+}
+
+.weather-signal-list strong {
+  font-size: 13px;
+}
+
+.weather-signal-list span {
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+  word-break: break-word;
+}
+
+.metadata-preview {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 12px;
+}
+
+.status-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.status-section {
+  min-width: 0;
+}
+
+.compact-title {
+  margin-top: 4px;
+  margin-bottom: 10px;
+}
+
+.compact-title h3 {
+  margin: 0;
+  font-size: 15px;
+}
+
+.contract-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.contract-summary article {
+  padding: 12px;
+  border: 1px solid var(--line-soft);
+  border-radius: 6px;
+  background: var(--panel-sub);
+}
+
+.contract-summary span,
+.muted-small {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.contract-summary strong {
+  display: block;
+  margin-top: 6px;
+  font-size: 20px;
+}
+
+.workflow-family-list {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.workflow-family-list article {
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--line-soft);
+  border-radius: 6px;
+  background: var(--panel);
+}
+
+.workflow-family-list strong,
+.workflow-family-list span,
+.workflow-family-list em {
+  display: block;
+}
+
+.workflow-family-list strong {
+  font-size: 14px;
+}
+
+.workflow-family-list span,
+.workflow-family-list p {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.workflow-family-list em {
+  margin-top: 6px;
+  color: var(--accent);
+  font-style: normal;
+  font-size: 12px;
+}
+
+.workflow-family-list p {
+  margin: 8px 0 0;
+  line-height: 1.5;
+}
+
+.contract-cell,
+.contract-seed {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.contract-cell span {
+  color: var(--text-soft);
+  font-size: 12px;
+}
+
+.chart {
+  height: 360px;
+  min-width: 0;
+}
+
+.panel.compact {
+  min-height: 112px;
+}
+
+.panel.compact strong {
+  display: block;
+  margin-top: 12px;
+  font-family: var(--font-display);
+  font-size: 24px;
+  text-shadow: var(--glow-text);
+  overflow-wrap: anywhere;
+}
+
+.timeline,
+.notice-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.timeline-item,
+.notice-item {
+  display: grid;
+  grid-template-columns: 46px minmax(0, 1fr);
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--line-soft);
+  border-radius: 5px;
+}
+
+.timeline-item span,
+.notice-item span {
+  color: var(--primary);
+  font-size: 12px;
+}
+
+.timeline-item small,
+.notice-item small {
+  grid-column: 2;
+  color: var(--muted);
+}
+
+.decision-brief {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.brief-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 230px;
+  gap: 14px;
+}
+
+.brief-main,
+.brief-side,
+.action-card,
+.evidence-list article,
+.blocker-list article {
+  min-width: 0;
+  border: 1px solid var(--line-soft);
+  border-radius: 6px;
+  background: var(--panel-sub);
+}
+
+.brief-main {
+  padding: 14px;
+}
+
+.brief-heading {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.brief-heading strong {
+  line-height: 1.5;
+}
+
+.brief-main p,
+.action-card p,
+.blocker-list p {
+  margin: 10px 0 0;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+.impact-strip {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.impact-strip article {
+  min-width: 0;
+  padding: 10px;
+  border-radius: 4px;
+  background: var(--panel);
+}
+
+.impact-strip span,
+.impact-strip small,
+.brief-side span,
+.brief-side small,
+.action-card span,
+.action-card small,
+.evidence-list span,
+.evidence-list small,
+.blocker-list span {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.impact-strip strong {
+  display: inline-block;
+  margin-top: 6px;
+  font-size: 20px;
+}
+
+.brief-side {
+  padding: 14px;
+}
+
+.brief-side strong {
+  display: block;
+  margin: 8px 0;
+  font-size: 18px;
+}
+
+.brief-section h3 {
+  margin: 0 0 10px;
+  font-size: 15px;
+}
+
+.action-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.action-card {
+  padding: 12px;
+}
+
+.action-card div {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.action-card strong,
+.evidence-list strong,
+.blocker-list strong {
+  display: block;
+  line-height: 1.45;
+}
+
+.evidence-list,
+.blocker-list {
+  display: grid;
+  gap: 8px;
+}
+
+.evidence-list article,
+.blocker-list article {
+  padding: 10px 12px;
+}
+
+.decision-stage-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.decision-stage-grid article,
+.handoff-panel article,
+.decision-evidence-list article {
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--line-soft);
+  border-radius: 6px;
+  background: var(--panel-sub);
+}
+
+.decision-stage-grid div,
+.decision-evidence-list div {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.decision-stage-grid strong,
+.decision-evidence-list strong,
+.handoff-panel strong {
+  display: block;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.decision-stage-grid span,
+.decision-stage-grid small,
+.decision-stage-grid em,
+.decision-evidence-list span,
+.decision-evidence-list small,
+.handoff-panel span {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.decision-stage-grid p,
+.decision-evidence-list p,
+.handoff-panel p {
+  margin: 10px 0;
+  color: var(--text-body);
+  line-height: 1.6;
+}
+
+.decision-stage-grid em {
+  margin-top: 8px;
+  font-style: normal;
+}
+
+.handoff-panel,
+.decision-evidence-list {
+  display: grid;
+  gap: 10px;
+}
+
+.review-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.review-summary-grid article {
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--line-soft);
+  border-radius: 6px;
+  background: var(--panel-sub);
+}
+
+.review-summary-grid span,
+.review-summary-grid small {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.review-summary-grid strong {
+  display: inline-block;
+  margin-top: 6px;
+  font-size: 22px;
+}
+
+.execution-plan-list {
+  display: grid;
+  gap: 12px;
+}
+
+.execution-plan-list article {
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid var(--line-soft);
+  border-radius: 6px;
+  background: var(--panel-sub);
+}
+
+.execution-plan-list header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.execution-plan-list strong,
+.execution-plan-list span,
+.execution-plan-list small,
+.execution-plan-list p,
+.execution-detail-grid h3,
+.execution-detail-grid li {
+  overflow-wrap: anywhere;
+}
+
+.execution-plan-list span,
+.execution-plan-list small {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.execution-plan-list p {
+  margin: 10px 0;
+  color: var(--text-body);
+  line-height: 1.65;
+}
+
+.execution-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.execution-detail-grid section {
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid var(--line-soft);
+  border-radius: 6px;
+  background: var(--panel);
+}
+
+.execution-detail-grid h3 {
+  margin: 0 0 8px;
+  font-size: 13px;
+}
+
+.execution-detail-grid ul {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.execution-detail-grid li {
+  color: var(--text-body);
+  line-height: 1.65;
+}
+
+.execution-tag-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.execution-policy {
+  margin-top: 10px;
+}
+
+.review-policy {
+  margin-top: 12px;
+}
+
+.restore-notes {
+  display: grid;
+  gap: 8px;
+  color: var(--text-body);
+}
+
+.restore-notes p,
+.advice {
+  margin: 0;
+  line-height: 1.7;
+}
+
+.forecast-insight-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.forecast-insight-grid article {
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--line-soft);
+  border-radius: 6px;
+  background: var(--panel-sub);
+}
+
+.forecast-insight-grid span,
+.forecast-insight-grid small {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.forecast-insight-grid strong {
+  display: block;
+  margin: 6px 0;
+  font-size: 18px;
+}
+
+.forecast-feature-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.forecast-feature-summary article,
+.feature-source-list article {
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--line-soft);
+  border-radius: 6px;
+  background: var(--panel-sub);
+}
+
+.forecast-feature-summary span,
+.forecast-feature-summary small,
+.feature-source-list span,
+.feature-source-list small {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.forecast-feature-summary strong,
+.feature-source-list strong {
+  display: block;
+  margin: 6px 0;
+  overflow-wrap: anywhere;
+}
+
+.feature-source-list {
+  display: grid;
+  gap: 8px;
+}
+
+.day-rolling-source-list {
+  margin-top: 12px;
+  max-height: 180px;
+  overflow: auto;
+}
+
+.subsection-title {
+  margin: 0 0 10px;
+  font-size: 14px;
+}
+
+.feature-policy {
+  margin-top: 12px;
+}
+
+.watch-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+/* topbar 响应式：渐窄渐藏，避免横向溢出。
+   .topbar-ticker 的 !important 压过 AppLayout.vue scoped 里裸 .topbar-ticker{display:flex}（特异性更高）。
+   .workspace > .topbar 限定全局顶栏，避开 demo/业务页内同名 .topbar。 */
+
+@media (max-width: 1900px) and (min-width: 1501px) {
+  .topbar-ticker {
+    display: none !important;
+  }
+
+  .topbar-actions {
+    flex-wrap: wrap;
+  }
+}
+
+@media (max-width: 1500px) and (min-width: 1341px) {
+  .topbar-ticker,
+  .ctx-card-rule {
+    display: none !important;
+  }
+}
+
+@media (max-width: 1340px) {
+  .topbar-ticker,
+  .context-cards {
+    display: none !important;
+  }
+}
+
+/* ≤1500px 即允许换行：侧栏展开约 236px，1440px 视口下 workspace 实际仅 ~1204px，
+   若沿用视口 ≤1366px 断点会漏掉 1367–1500px 这段（笔记本常见）的换行需求。 */
+@media (max-width: 1500px) {
+  .workspace > .topbar {
+    flex-wrap: wrap;
+    height: auto;
+    min-height: 64px;
+    padding: 12px 16px;
+  }
+
+  .topbar-actions {
+    flex-wrap: wrap;
+  }
+}
+
+@media (max-width: 1366px) and (min-width: 1025px) {
+  .breadcrumb {
+    display: none;
+  }
+}
+
+@media (max-width: 960px) {
+  .metric-grid,
+  .contract-summary,
+  .workflow-family-list,
+  .forecast-insight-grid,
+  .forecast-feature-summary,
+  .weather-signal-list,
+  .brief-layout,
+  .impact-strip,
+  .action-grid,
+  .decision-stage-grid,
+  .execution-detail-grid,
+  .review-summary-grid,
+  .two-columns,
+  .three-columns,
+  .four-columns {
+    grid-template-columns: 1fr;
+  }
+
+  .topbar {
+    align-items: flex-start;
+    height: auto;
+    min-height: 64px;
+    flex-direction: column;
+    padding: 12px 16px;
+  }
+
+  .topbar-actions {
+    flex-wrap: wrap;
+  }
+}
+
+@media (max-width: 768px) {
+  :root {
+    font-size: 15px;
+  }
+
+  .app-layout {
+    display: block;
+    min-height: 100svh;
+  }
+
+  .mobile-menu-mask {
+    position: fixed;
+    inset: 0;
+    z-index: 35;
+    display: block;
+    width: 100%;
+    border: 0;
+    background: var(--mask-bg);
+    cursor: pointer;
+  }
+
+  .sidebar,
+  .sidebar.collapsed {
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 40;
+    width: min(82vw, 292px);
+    transform: translateX(-102%);
+    box-shadow: 18px 0 36px rgba(15, 23, 42, 0.24);
+    transition: transform 0.22s ease;
+  }
+
+  .sidebar.mobile-open {
+    transform: translateX(0);
+  }
+
+  .brand {
+    height: 58px;
+    padding: 0 14px;
+  }
+
+  .menu-scroll {
+    height: calc(100svh - 58px);
+  }
+
+  .sidebar .el-menu {
+    width: 100%;
+  }
+
+  .workspace {
+    min-height: 100svh;
+  }
+
+  .topbar {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    align-items: center;
+    height: auto;
+    min-height: 56px;
+    flex-direction: row;
+    gap: 10px;
+    padding: 8px 10px;
+  }
+
+  .topbar-left {
+    flex: 1;
+    min-width: 0;
+    gap: 8px;
+  }
+
+  .topbar-left > div {
+    min-width: 0;
+  }
+
+  .topbar h1 {
+    margin-top: 0;
+    font-size: 16px;
+    line-height: 1.3;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .breadcrumb {
+    display: none;
+  }
+
+  .topbar-actions {
+    flex: 0 0 auto;
+    justify-content: flex-end;
+    gap: 6px;
+  }
+
+  .area-select {
+    display: none;
+  }
+
+  .user-button {
+    max-width: 96px;
+    height: 32px;
+    padding: 0 8px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .page-shell {
+    padding: 10px;
+  }
+
+  .page-stack,
+  .dashboard {
+    gap: 10px;
+  }
+
+  .panel,
+  .metric-card {
+    padding: 12px;
+    border-radius: 6px;
+  }
+
+  .panel-title {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .panel-title h2 {
+    font-size: 15px;
+    line-height: 1.35;
+  }
+
+  .metric-card strong,
+  .panel.compact strong {
+    font-size: 21px;
+  }
+
+  .toolbar {
+    align-items: stretch;
+    gap: 8px;
+  }
+
+  .toolbar .el-input,
+  .toolbar .el-select,
+  .toolbar .el-date-editor,
+  .toolbar .el-input-number,
+  .forecast-data-source-row .el-select {
+    width: 100%;
+    max-width: none;
+  }
+
+  .toolbar .el-button,
+  .forecast-knn-controls .el-button,
+  .forecast-data-source-row .el-button {
+    min-height: 34px;
+  }
+
+  .forecast-knn-controls,
+  .forecast-data-source-row {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .forecast-knn-controls .el-checkbox-group {
+    gap: 4px 10px;
+  }
+
+  .chart {
+    height: 280px;
+  }
+
+  .el-table {
+    width: 100%;
+    max-width: 100%;
+    font-size: 12px;
+  }
+
+  .el-table .cell {
+    padding: 0 8px;
+    line-height: 1.4;
+  }
+
+  .el-table th.el-table__cell,
+  .el-table td.el-table__cell {
+    padding: 7px 0;
+  }
+
+  .el-card,
+  .el-card__body {
+    min-width: 0;
+  }
+
+  .el-card__body {
+    padding: 12px;
+  }
+
+  .el-dialog {
+    width: calc(100vw - 28px) !important;
+    max-width: 420px;
+    margin-top: 8vh !important;
+  }
+
+  .el-popover.el-popper {
+    max-width: calc(100vw - 24px);
+  }
+
+  .notice-list {
+    max-height: 60vh;
+    overflow: auto;
+  }
+
+  .timeline-item,
+  .notice-item {
+    grid-template-columns: 40px minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 480px) {
+  .topbar {
+    padding: 7px 8px;
+  }
+
+  .topbar-actions {
+    gap: 4px;
+  }
+
+  .topbar-actions .el-button {
+    width: 30px;
+    height: 30px;
+  }
+
+  .user-button {
+    max-width: 74px;
+  }
+
+  .page-shell {
+    padding: 8px;
+  }
+
+  .panel,
+  .metric-card {
+    padding: 10px;
+  }
+
+  .chart {
+    height: 248px;
+  }
+}
+
+/* =====================================================================
+ * 全局动效降级 —— 尊重系统「减少动态效果」(prefers-reduced-motion)。
+ * 项目动效纪律:全部动效尊重 prefers-reduced-motion。此前仅 theme-arc.css
+ * 覆盖 arc 主题,其余 4 主题的 token 渐入 / 光标闪烁 / spinner / 平滑滚动
+ * 不受控。此处兜底:开启后近乎关闭所有动画与过渡,并禁用平滑滚动。
+ * ===================================================================== */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* =====================================================================
+ * 取向 B：AI 面板（.ai-dock）推开内容后工作区变窄 → 顶栏切紧凑，避免项目挤成一团。
+ * 顶栏的 @media 响应断点按「视口宽」判定，而推开只缩小「工作区宽」、视口不变故不触发；
+ * 用 :has 在面板打开时显式补上紧凑：隐面包屑 / 收紧间距 / 标题截断 / 允许换行兜底。
+ * ===================================================================== */
+.app-layout:has(.ai-dock.open) .topbar { gap: 6px 8px; flex-wrap: wrap; }
+.app-layout:has(.ai-dock.open) .breadcrumb { display: none; }
+.app-layout:has(.ai-dock.open) .topbar h1 {
+  font-size: 16px;
+  max-width: 34vw;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.app-layout:has(.ai-dock.open) .topbar-actions { gap: 6px; }

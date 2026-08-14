@@ -1,0 +1,33 @@
+/* 统一响应式断点规约 + 图表/筛选区移动端基础适配。
+ *
+ * 断点档位（视图内媒体查询请对齐本表，不要再发明新数值）：
+ *   1340px  顶栏上下文卡收起（lg）
+ *   1140px  行情条收起（md）
+ *   1024px  桌面紧凑（sm）
+ *    768px  移动端阈值：菜单转抽屉、图表降高、筛选区纵排（xs）
+ *    480px  小屏手机（xxs）
+ *
+ * CSS 变量无法用于媒体查询条件，因此以上数值靠本规约约束。
+ */
+
+/* 图表容器统一类：视图把图表挂载 div 标记为 chart-host（保留各自高度），
+ * 移动端统一降高，避免 96 点曲线在小屏占满两屏。 */
+@media (max-width: 768px) {
+  .chart-host {
+    height: 260px !important;
+    min-height: 0 !important;
+  }
+
+  /* 筛选/参数条在移动端纵向堆叠，控件占满整行便于点按 */
+  .filters-bar,
+  .params {
+    flex-direction: column;
+    align-items: stretch !important;
+  }
+}
+
+@media (max-width: 480px) {
+  .chart-host {
+    height: 220px !important;
+  }
+}

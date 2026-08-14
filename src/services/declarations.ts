@@ -1,0 +1,390 @@
+// 现货申报单客户端（P1 申报闭环）：对接 /api/v1/trading/spot/declarations。
+// 申报台步骤条由申报单状态驱动（替代轮询智能体状态字符串）。
+// DeclarationStatus 联合改由契约单一来源生成（#756 C3）：
+// shared/contracts/spot-declaration.contract.json → spotDeclarationContract.gen.ts；
+// 此处 re-export 保持既有 import 路径不变，消费方零改动。
+import { apiGet, apiPost, apiPut } from '@/services/api'
+import type { DataBasis } from '@/services/dataBasis'
+import type {
+  DeclarationStatus,
+  SpotDeclarationCreatePayload as SpotDeclarationCreatePayloadGen
+} from '@/services/contracts/spotDeclarationContract.gen'
+
+export type { DeclarationStatus, SpotDeclarationCreatePayload } from '@/services/contracts/spotDeclarationContract.gen'
+
+/**
+ * 申报单模式（契约 v2）。类型取自生成物的 mode 字段，避免此处手写联合造成两处真相。
+ * LIVE=真实申报（受 D-1 10:30 截止约束）；REHEARSAL=历史模拟演练（仅豁免时间维度）。
+ */
+export type DeclarationMode = NonNullable<SpotDeclarationCreatePayloadGen['mode']>
+
+export const DECLARATION_MODE_LABEL: Record<DeclarationMode, string> = {
+  LIVE: '真实申报',
+  REHEARSAL: '历史模拟'
+}
+
+export type RiskCheckItem = {
+  checkId: 'capacity' | 'priceCap' | 'exposure'
+  name: string
+  status: 'PASS' | 'FAIL' | 'UNAVAILABLE'
+  detail: string
+}
+
+export type RiskCheckResult = {
+  checks: RiskCheckItem[]
+  passed: boolean
+  gateLevel: 'L2' | 'L3'
+  totalMwh: number
+  maxMw: number
+  evaluatedAt: string
+  inputs?: Record<string, unknown>
+}
+
+export type ApprovalRecord = {
+  at: string
+  approver: string
+  role: string
+  decision: 'approve' | 'reject'
+  gateLevel: string
+  comment: string | null
+  /** 演练单创建人自批留痕（真实单永远缺席）——四眼原则豁免的审计标记 */
+  rehearsalSelfApproval?: boolean
+}
+
+export type DeclarationAuditEntry = {
+  at: string
+  actor: string
+  role: string
+  action: string
+  from: string | null
+  to: string | null
+  note: string | null
+}
+
+export type DeclarationOrder = {
+  id: string
+  targetDate: string
+  deadline: string
+  status: DeclarationStatus
+  /** 申报单模式。存量单无此字段，消费方一律按 LIVE 处理（用 declarationModeOf 归一化）。 */
+  mode?: DeclarationMode
+  companyId: string
+  region: string | null
+  subjectId: string | null
+  subjectType: string | null
+  capacityMw: number
+  // 96 个 15 分钟时段电量（MWh/点）；平均功率 MW = 点电量 × 4
+  energyCurveMwh96: number[]
+  priceCurve96: number[] | null
+  strategySource: string
+  basis: DataBasis
+  /** 报价依据摘要（契约 v3 起必填）；存量单可能缺失 */
+  quoteRationale?: string
+  /**
+   * 一日作业链各阶段产出（契约 v5，v1.0 七步动线）。每步做完写回这里，下一步与服务端
+   * 风控检查直接读——交易员不必在页面之间手抄结论。
+   * **是作业留痕而非权威判据**：服务端对能自算的硬字段（basis/capacity/报价精度）不看它。
+   * 写入窗口由服务端按阶段把门：申报前判据限提交前，出清复盘限出清后，日终收口不限。
+   */
+  preflight?: {
+    /** S1 晨会复盘：昨日偏差认知 + 今日不重犯要点 */
+    morningReview?: {
+      reviewedDate: string
+      reviewedDeclarationId: string | null
+      /** ① 中标情况：申报 vs 出清的中标率 */
+      clearRate: number | null
+      /**
+       * 偏差主因 **id**，取值集合见 `shared/trading-rules/morning-review.mjs::DEVIATION_CAUSES`。
+       * 改版前（按责任环节分类）的历史单据存的是中文标签，展示一律走 `causeLabelOf` 兜底，
+       * 命中不了原样显示——把当时真实写下的判断显示成「未知」等于抹掉它。
+       */
+      cause: string
+      /** 写入时的中文标签快照，便于不加载规则层也能读懂这条留痕 */
+      causeLabel?: string
+      /** 归因未判定（`cause === 'pending'`），待晨会人工讨论后回填主因 */
+      pendingAnalysis?: boolean
+      /** ② 执行偏差摘要：申报 vs 实际（后端 quant /review 口径）。未取到为 null，不用 0 冒充「无偏差」 */
+      executionDeviationMwh?: number | null
+      assessedMwh?: number | null
+      /** 实际侧来源（如 `replay`）；`client_provided:*` 表示服务端无法验证其口径 */
+      actualSource?: string | null
+      lessons: string
+      writtenBy: string
+      writtenAt: string
+    }
+    /**
+     * S2 早间分析的产出：数据可信度门禁 + 今日市场判断。
+     * 市场判断字段（regime、priceCenterLow/High、coverage）在 v1.0 动线下由早间分析写入；
+     * 若只跑了八源核验则仅有门禁字段，故市场判断部分为可选。
+     */
+    dataGate?: {
+      gate: string
+      completenessRate: number
+      weakestCredibility: string
+      degradeLevel: number
+      writtenBy: string
+      writtenAt: string
+      regime?: string
+      coverage?: number
+      priceCenterLow?: number
+      priceCenterHigh?: number
+      tightestSlot?: { slot: number; ratio: number; regime: string } | null
+      loosestSlot?: { slot: number; ratio: number; regime: string } | null
+    }
+    storagePlan?: { socTrajectoryOk: boolean; socEndOk: boolean; safetyMultiple: number | null; cycles: number; grossMarginYuan: number; writtenBy: string; writtenAt: string }
+    /** S3 方向判断的产出：方向 + 置信度 + 申报曲线（供 R4 偏置校验） */
+    forecast?: {
+      curveMwh96: number[]
+      source: string
+      direction?: 'add' | 'reduce' | 'hold'
+      confidence?: number
+      biasRatio?: number
+      rationale?: string
+      writtenBy: string
+      writtenAt: string
+    }
+    /** S5 出清分析：中标偏差结论 */
+    clearingReview?: {
+      clearRate: number | null
+      maxGapSlot: number | null
+      needsRealtimeAction: boolean
+      summary: string
+      writtenBy: string
+      writtenAt: string
+    }
+    /** S6 中长期补仓决定 */
+    contract?: {
+      gapMwh: number
+      gapPct: number | null
+      suggestion: string
+      action: string
+      reason: string
+      writtenBy: string
+      writtenAt: string
+    }
+    /** S7 日报收尾 */
+    dailyClose?: {
+      reportSummary: string
+      decisionsLogged: number
+      coverageOk: boolean
+      writtenBy: string
+      writtenAt: string
+    }
+  }
+  note: string | null
+  riskCheck: RiskCheckResult | null
+  approvalRecord: ApprovalRecord[]
+  receipt: {
+    receiptId: string
+    gateway: string
+    acknowledgedAt: string
+    idempotencyKey: string
+    mock: boolean
+    /** 回执自证模式：演练回执标 REHEARSAL，单看回执即可判断是否真实申报 */
+    mode?: DeclarationMode
+    note?: string
+  } | null
+  clearing: { clearedCurveMwh96: number[] | null; markedAt: string; source: string } | null
+  createdBy: string
+  createdAt: string
+  updatedAt: string
+  audit: DeclarationAuditEntry[]
+}
+
+export type DeclarationMeta = {
+  targetDate: string
+  deadline: string
+  deadlineHHmm: string
+  now: string
+  msRemaining: number
+  expired: boolean
+}
+
+const BASE = '/v1/trading/spot/declarations'
+
+export async function fetchDeclarationMeta(date: string): Promise<DeclarationMeta> {
+  const res = await apiGet<{ data: DeclarationMeta }>(`${BASE}/meta`, { date })
+  return (res.data ?? res) as unknown as DeclarationMeta
+}
+
+export type DeclarationListParams = {
+  /** 精确目标日；与 dateFrom/dateTo 同传时服务端以 date 为准（appliedFilters 回显生效条件） */
+  date?: string
+  /** 目标日范围，含端点；单传一侧即开区间 */
+  dateFrom?: string
+  dateTo?: string
+  status?: DeclarationStatus
+  mode?: DeclarationMode
+  limit?: number
+  offset?: number
+}
+
+export type DeclarationListPage = {
+  rows: DeclarationOrder[]
+  /** 过滤后、分页前的总数 */
+  total: number
+  limit: number
+  offset: number
+  /** 模式分布。服务端刻意不含 mode 过滤，故切 mode 筛选时两个计数不互相抹零 */
+  counts: Record<DeclarationMode, number>
+  appliedFilters: {
+    date: string | null
+    dateFrom: string | null
+    dateTo: string | null
+    status: string | null
+    mode: string | null
+  }
+}
+
+/** 申报单模式归一化：存量单无 mode 字段一律视为 LIVE（与服务端 declarationMode 同口径）。 */
+export function declarationModeOf(declaration: Pick<DeclarationOrder, 'mode'> | null | undefined): DeclarationMode {
+  return declaration?.mode === 'REHEARSAL' ? 'REHEARSAL' : 'LIVE'
+}
+
+export async function listDeclarations(params: DeclarationListParams = {}): Promise<DeclarationOrder[]> {
+  const res = await apiGet<{ data: { rows: DeclarationOrder[] } }>(BASE, params)
+  const data = (res.data ?? res) as unknown as { rows?: DeclarationOrder[] }
+  return data.rows ?? []
+}
+
+/**
+ * 带分页元信息的列表查询（历史申报单区块用）。
+ * 服务端未回 counts/total 时按 rows 兜底推导，避免旧后端下 UI 整块空白。
+ */
+export async function listDeclarationsPage(params: DeclarationListParams = {}): Promise<DeclarationListPage> {
+  const res = await apiGet<{ data: DeclarationListPage }>(BASE, params)
+  const data = (res.data ?? res) as unknown as Partial<DeclarationListPage>
+  const rows = data.rows ?? []
+  const counts = data.counts ?? rows.reduce(
+    (acc, row) => { acc[declarationModeOf(row)] += 1; return acc },
+    { LIVE: 0, REHEARSAL: 0 } as Record<DeclarationMode, number>
+  )
+  return {
+    rows,
+    total: typeof data.total === 'number' ? data.total : rows.length,
+    limit: typeof data.limit === 'number' ? data.limit : rows.length,
+    offset: typeof data.offset === 'number' ? data.offset : 0,
+    counts,
+    appliedFilters: data.appliedFilters ?? {
+      date: params.date ?? null,
+      dateFrom: params.dateFrom ?? null,
+      dateTo: params.dateTo ?? null,
+      status: params.status ?? null,
+      mode: params.mode ?? null
+    }
+  }
+}
+
+export async function getDeclaration(id: string): Promise<DeclarationOrder> {
+  const res = await apiGet<{ data: DeclarationOrder }>(`${BASE}/${encodeURIComponent(id)}`)
+  return (res.data ?? res) as unknown as DeclarationOrder
+}
+
+export async function createDeclaration(input: {
+  targetDate: string
+  capacityMw: number
+  /**
+   * 报价依据摘要（契约 v3 起必填）。须写明本次报价的成本锚或机会成本锚且可追溯到具体
+   * 数值——监管质询时这是自证报价形成过程的唯一材料，事后补写等于自证材料失效。
+   */
+  quoteRationale: string
+  energyCurveMwh96?: number[]
+  priceCurve96?: number[] | null
+  strategySource?: string
+  basis?: DataBasis
+  note?: string
+  subjectType?: string
+  /** 缺省 LIVE。REHEARSAL 创建后不可改（服务端 updateCurve 不接受 mode）。 */
+  mode?: DeclarationMode
+}): Promise<DeclarationOrder> {
+  const res = await apiPost<{ data: DeclarationOrder }>(BASE, input)
+  return (res.data ?? res) as unknown as DeclarationOrder
+}
+
+export type PreflightStage =
+  | 'morningReview'
+  | 'dataGate'
+  | 'storagePlan'
+  | 'forecast'
+  | 'clearingReview'
+  | 'contract'
+  | 'dailyClose'
+
+/**
+ * 写回某一阶段的作业产出。
+ * 这是七步作业链串成一条的写入端：做完本阶段即写回，下一阶段自动读到。
+ */
+export async function savePreflight(
+  id: string,
+  stage: PreflightStage,
+  payload: Record<string, unknown>,
+  note?: string
+): Promise<DeclarationOrder> {
+  const res = await apiPost<{ data: DeclarationOrder }>(`${BASE}/${id}/preflight`, { stage, payload, note })
+  return (res.data ?? res) as unknown as DeclarationOrder
+}
+
+export async function updateDeclarationCurve(id: string, input: {
+  energyCurveMwh96?: number[]
+  priceCurve96?: number[] | null
+  basis?: DataBasis
+  note?: string
+  strategySource?: string
+}): Promise<DeclarationOrder> {
+  const res = await apiPut<{ data: DeclarationOrder }>(`${BASE}/${encodeURIComponent(id)}/curve`, input)
+  return (res.data ?? res) as unknown as DeclarationOrder
+}
+
+export async function runDeclarationRiskCheck(id: string, input: {
+  // 当月中长期合约总电量（MWh），服务端据此调 harness 敞口端点
+  exposureTotalMwh?: number
+  // 地区限价区间（来自 RegionSpotProfile.mechanism.priceCap，来源被记录审计）
+  priceCap?: { floor: number; cap: number; source?: string }
+}): Promise<DeclarationOrder> {
+  const res = await apiPost<{ data: DeclarationOrder }>(`${BASE}/${encodeURIComponent(id)}/risk-check`, input)
+  return (res.data ?? res) as unknown as DeclarationOrder
+}
+
+export async function submitDeclarationForApproval(id: string): Promise<DeclarationOrder> {
+  const res = await apiPost<{ data: DeclarationOrder }>(`${BASE}/${encodeURIComponent(id)}/submit-for-approval`, {})
+  return (res.data ?? res) as unknown as DeclarationOrder
+}
+
+export async function approveDeclaration(id: string, decision: 'approve' | 'reject', comment?: string): Promise<DeclarationOrder> {
+  const res = await apiPost<{ data: DeclarationOrder }>(`${BASE}/${encodeURIComponent(id)}/approve`, { decision, comment })
+  return (res.data ?? res) as unknown as DeclarationOrder
+}
+
+export async function submitDeclaration(id: string, idempotencyKey: string): Promise<DeclarationOrder> {
+  const res = await apiPost<{ data: DeclarationOrder }>(`${BASE}/${encodeURIComponent(id)}/submit`, { idempotencyKey })
+  return (res.data ?? res) as unknown as DeclarationOrder
+}
+
+export async function markDeclarationCleared(id: string, input: { clearedCurveMwh96?: number[]; note?: string } = {}): Promise<DeclarationOrder> {
+  const res = await apiPost<{ data: DeclarationOrder }>(`${BASE}/${encodeURIComponent(id)}/mark-cleared`, input)
+  return (res.data ?? res) as unknown as DeclarationOrder
+}
+
+export const STATUS_LABEL: Record<DeclarationStatus, string> = {
+  DRAFT: '草稿',
+  RISK_CHECKED: '已风控检查',
+  PENDING_APPROVAL: '待审批',
+  APPROVED: '已审批',
+  SUBMITTED: '已提交',
+  ACKNOWLEDGED: '回执确认',
+  CLEARED: '已出清',
+  DEVIATION_TRACKING: '偏差跟踪',
+  SETTLED: '已结算',
+  REVIEWED: '已复盘',
+  REJECTED: '已驳回',
+  EXPIRED: '已逾期'
+}
+
+// 状态 → 申报台向导步骤（0情报与草稿 / 1风控与审批 / 2提交回执 / 3出清跟踪）
+export function stepOfStatus(status: DeclarationStatus): number {
+  if (status === 'DRAFT' || status === 'REJECTED') return 0
+  if (status === 'RISK_CHECKED' || status === 'PENDING_APPROVAL') return 1
+  if (status === 'APPROVED' || status === 'SUBMITTED' || status === 'ACKNOWLEDGED') return 2
+  if (status === 'EXPIRED') return 1
+  return 3
+}

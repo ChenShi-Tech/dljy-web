@@ -1,0 +1,1058 @@
+[
+  {
+    "id": "ai-agent",
+    "path": "/ai-agent",
+    "title": "智能体工作台",
+    "domain": "系统",
+    "kind": "real",
+    "endpoint": "/agent-api/agent/*",
+    "dataPath": "",
+    "nav": {
+      "group": null,
+      "listed": true
+    },
+    "regions": [],
+    "feature": null
+  },
+  {
+    "id": "cockpit",
+    "path": "/dashboard",
+    "title": "交易驾驶舱",
+    "domain": "首页",
+    "kind": "mixed",
+    "endpoint": "local + /api/real + /agent-api/agent",
+    "dataPath": "sdpt_zcqxhdl/knn-api",
+    "nav": {
+      "group": null,
+      "listed": true
+    },
+    "regions": [],
+    "feature": null
+  },
+  {
+    "id": "data-source-settings",
+    "path": "/data-source-settings",
+    "title": "数据源接入",
+    "domain": "系统",
+    "kind": "real",
+    "endpoint": "GET /api/v1/grid-access/points; GET|PUT|DELETE /api/v1/grid-access/points/{id}/credentials + /api/v1/data-sources/cgn-yunnan + /api/v1/sichuan-ingest; POST */test + */trigger; GET */plant-bindings + */health",
+    "dataPath": "data/private/credentials + external_sc.ingest_run + load_forecast + reservoir_plan",
+    "nav": {
+      "group": "/system",
+      "listed": true
+    },
+    "regions": [],
+    "feature": null,
+    "accessExempt": true
+  },
+  {
+    "id": "declaration-checkup",
+    "path": "/declaration-checkup",
+    "title": "申报体检",
+    "domain": "系统",
+    "kind": "real",
+    "endpoint": "/pi-api/agent/*",
+    "dataPath": "",
+    "nav": {
+      "group": null,
+      "listed": false
+    },
+    "regions": [],
+    "feature": null
+  },
+  {
+    "id": "interprovincial-price",
+    "path": "/djcs/interprovincial-price",
+    "title": "跨省跨区电价",
+    "domain": "电价测算",
+    "kind": "mixed",
+    "endpoint": "local interprovincialPrice + planned price calculator suite",
+    "dataPath": "interprovincial_price_calculator",
+    "nav": {
+      "group": "/gsgl",
+      "listed": true
+    },
+    "regions": [],
+    "feature": null
+  },
+  {
+    "id": "retail-price",
+    "path": "/djcs/retail-price",
+    "title": "售电电价测算",
+    "domain": "电价测算",
+    "kind": "mixed",
+    "endpoint": "local retailPrice + planned price calculator suite",
+    "dataPath": "pricing_calculators",
+    "nav": {
+      "group": "/gsgl",
+      "listed": true
+    },
+    "regions": [],
+    "feature": null
+  },
+  {
+    "id": "grid-spatial-command",
+    "path": "/grid-assets/command",
+    "title": "电力空间联动驾驶舱",
+    "domain": "空间资产",
+    "kind": "real",
+    "endpoint": "GET /api/v1/grid/geo-assets/{plants,nodes,weather/current,disclosures/events,topology/manifest} + exact-only market loaders",
+    "dataPath": "versioned grid geo assets + lazy real weather/market/disclosure layers + controlled topology manifest",
+    "nav": {
+      "group": "/grid-assets",
+      "listed": true
+    },
+    "regions": [
+      "GRID_GEO_REGION_IDS"
+    ],
+    "feature": "gridGeo"
+  },
+  {
+    "id": "grid-disclosure-spatial",
+    "path": "/grid-assets/disclosures",
+    "title": "公开披露空间层",
+    "domain": "空间资产",
+    "kind": "real",
+    "endpoint": "GET /api/v1/grid/geo-assets/disclosures/{providers,events}",
+    "dataPath": "CSG authorized information_disclosure export + isolated company/user overlays",
+    "nav": {
+      "group": "/grid-assets",
+      "listed": true
+    },
+    "regions": [
+      "GRID_GEO_REGION_IDS"
+    ],
+    "feature": "gridGeo"
+  },
+  {
+    "id": "grid-market-spatial",
+    "path": "/grid-assets/market",
+    "title": "电力市场空间态势",
+    "domain": "空间资产",
+    "kind": "real",
+    "endpoint": "GET /api/v1/grid/geo-assets/plants/:id/integrations + /agent-api/v1/spot/node-price/daily + scoped captured-data source",
+    "dataPath": "grid geo stable mapping + region-exact node price + owner-registry verified output source",
+    "nav": {
+      "group": "/grid-assets",
+      "listed": true
+    },
+    "regions": [
+      "GRID_GEO_REGION_IDS"
+    ],
+    "feature": "gridGeo"
+  },
+  {
+    "id": "grid-geo-nodes",
+    "path": "/grid-assets/nodes",
+    "title": "节点空间资产台",
+    "domain": "空间资产",
+    "kind": "real",
+    "endpoint": "GET|POST|PATCH /api/v1/grid/geo-assets/nodes",
+    "dataPath": "versioned grid_geo_assets + node price family references",
+    "nav": {
+      "group": "/grid-assets",
+      "listed": true
+    },
+    "regions": [
+      "GRID_GEO_REGION_IDS"
+    ],
+    "feature": "gridGeo"
+  },
+  {
+    "id": "grid-operator-profile",
+    "path": "/grid-assets/operator-profile",
+    "title": "南网国网展示画像",
+    "domain": "空间资产",
+    "kind": "real",
+    "endpoint": "GET /api/v1/grid/geo-assets/operator-profile",
+    "dataPath": "REGION_GRID_OPERATOR + versioned grid operator profile manifest",
+    "nav": {
+      "group": "/grid-assets",
+      "listed": true
+    },
+    "regions": [
+      "GRID_GEO_REGION_IDS"
+    ],
+    "feature": "gridGeo"
+  },
+  {
+    "id": "grid-geo-assets",
+    "path": "/grid-assets/plants",
+    "title": "电厂地理空间",
+    "domain": "空间资产",
+    "kind": "real",
+    "endpoint": "GET /api/v1/grid/geo-assets/{manifest,plants,plants/:id,weather/current}",
+    "dataPath": "yn_dim_plant + yn_dim_plant_node + curated public location evidence",
+    "nav": {
+      "group": "/grid-assets",
+      "listed": true
+    },
+    "regions": [
+      "GRID_GEO_REGION_IDS"
+    ],
+    "feature": "gridGeo"
+  },
+  {
+    "id": "grid-topology-provider",
+    "path": "/grid-assets/topology",
+    "title": "授权网架接入舱",
+    "domain": "空间资产",
+    "kind": "real",
+    "endpoint": "GET /api/v1/grid/geo-assets/topology/{manifest,evidence,snapshot}",
+    "dataPath": "authorized topology provider contract + fail-closed empty snapshot",
+    "nav": {
+      "group": "/grid-assets",
+      "listed": true
+    },
+    "regions": [
+      "GRID_GEO_REGION_IDS"
+    ],
+    "feature": "gridGeo"
+  },
+  {
+    "id": "grid-weather-impact",
+    "path": "/grid-assets/weather-impact",
+    "title": "气象交易影响时序",
+    "domain": "空间资产",
+    "kind": "real",
+    "endpoint": "GET region-registered historical weather + owner-registry verified output source + /agent-api/v1/spot/node-price/series",
+    "dataPath": "region-registered historical actual weather + scoped exact plant output + region-exact pricing node series",
+    "nav": {
+      "group": "/grid-assets",
+      "listed": true
+    },
+    "regions": [
+      "GRID_GEO_REGION_IDS"
+    ],
+    "feature": "gridGeo"
+  },
+  {
+    "id": "company-assets",
+    "path": "/gsgl/assets",
+    "title": "场站机组台账",
+    "domain": "公司管理",
+    "kind": "real",
+    "endpoint": "GET/POST/PATCH/DELETE /api/company/stations|units",
+    "dataPath": "company_sqlite",
+    "nav": {
+      "group": "/gsgl",
+      "listed": true
+    },
+    "regions": [],
+    "feature": null
+  },
+  {
+    "id": "company-contracts",
+    "path": "/gsgl/contracts",
+    "title": "合同管理",
+    "domain": "公司管理",
+    "kind": "real",
+    "endpoint": "GET/POST/PATCH/DELETE /api/company/contracts",
+    "dataPath": "company_sqlite",
+    "nav": {
+      "group": "/gsgl",
+      "listed": true
+    },
+    "regions": [],
+    "feature": null
+  },
+  {
+    "id": "company-output",
+    "path": "/gsgl/output",
+    "title": "机组出力",
+    "domain": "公司管理",
+    "kind": "real",
+    "endpoint": "GET/POST /api/company/unit-output",
+    "dataPath": "company_sqlite",
+    "nav": {
+      "group": "/gsgl",
+      "listed": true
+    },
+    "regions": [],
+    "feature": null
+  },
+  {
+    "id": "company-overview",
+    "path": "/gsgl/overview",
+    "title": "经营总览大屏",
+    "domain": "公司管理",
+    "kind": "mixed",
+    "endpoint": "GET /api/company/dashboard",
+    "dataPath": "company_sqlite",
+    "nav": {
+      "group": "/gsgl",
+      "listed": true
+    },
+    "regions": [],
+    "feature": null
+  },
+  {
+    "id": "company-profile",
+    "path": "/gsgl/profile",
+    "title": "公司档案",
+    "domain": "公司管理",
+    "kind": "real",
+    "endpoint": "GET/POST /api/company/profile + /api/company/list",
+    "dataPath": "company_sqlite",
+    "nav": {
+      "group": "/gsgl",
+      "listed": true
+    },
+    "regions": [],
+    "feature": null
+  },
+  {
+    "id": "report-workshop",
+    "path": "/gsgl/report-workshop",
+    "title": "报告工坊",
+    "domain": "公司管理",
+    "kind": "mixed",
+    "endpoint": "POST /dify-api/v1/workflows/run (Dify 工作流编排)",
+    "dataPath": "dify",
+    "nav": {
+      "group": "/gsgl",
+      "listed": true
+    },
+    "regions": [],
+    "feature": null
+  },
+  {
+    "id": "company-trades",
+    "path": "/gsgl/trades",
+    "title": "历史交易",
+    "domain": "公司管理",
+    "kind": "real",
+    "endpoint": "GET/POST/PATCH/DELETE /api/company/trades",
+    "dataPath": "company_sqlite",
+    "nav": {
+      "group": "/gsgl",
+      "listed": true
+    },
+    "regions": [],
+    "feature": null
+  },
+  {
+    "id": "market-insight-cockpit",
+    "path": "/insight/cockpit",
+    "title": "市场洞察驾驶舱",
+    "domain": "数据分析",
+    "kind": "mixed",
+    "endpoint": "GET /agent-api/v1/market-insight/bundle + agent sessions (SSE)",
+    "dataPath": "market_insight",
+    "nav": {
+      "group": null,
+      "listed": true
+    },
+    "regions": [],
+    "feature": null
+  },
+  {
+    "id": "report-center",
+    "path": "/report/center",
+    "title": "报表中心",
+    "domain": "报表中心",
+    "kind": "mixed",
+    "endpoint": "GET /api/v1/reports/* + local reportEngine",
+    "dataPath": "api_v1_reports",
+    "nav": {
+      "group": null,
+      "listed": true
+    },
+    "regions": [],
+    "feature": "reports"
+  },
+  {
+    "id": "region-rules",
+    "path": "/sdzl/region-rules",
+    "title": "地区规则体系",
+    "domain": "售电资料",
+    "kind": "real",
+    "endpoint": "local region rules",
+    "dataPath": "local_rules",
+    "nav": {
+      "group": "/gsgl",
+      "listed": true
+    },
+    "regions": [],
+    "feature": null
+  },
+  {
+    "id": "zptwd-0",
+    "path": "/sdzl/zptwd",
+    "title": "交易平台文档",
+    "domain": "售电资料",
+    "kind": "real",
+    "endpoint": "GET /sdpt/zptwd/list + 文件下载",
+    "dataPath": "sdpt_zptwd",
+    "nav": {
+      "group": "/gsgl",
+      "listed": true
+    },
+    "regions": [],
+    "feature": null
+  },
+  {
+    "id": "actualLoad",
+    "path": "/sjfx/actualLoad",
+    "title": "逐日系统负荷实际值",
+    "domain": "数据分析",
+    "kind": "real",
+    "endpoint": "GET /sdpt/actualLoad/query",
+    "dataPath": "sdpt_actualLoad",
+    "nav": {
+      "group": null,
+      "listed": true
+    },
+    "regions": [],
+    "feature": null
+  },
+  {
+    "id": "elninolanina",
+    "path": "/sjfx/elninolanina",
+    "title": "厄尔尼诺拉尼娜",
+    "domain": "数据分析",
+    "kind": "real",
+    "endpoint": "GET /sdpt/elninolanina/list",
+    "dataPath": "sdpt_elninolanina",
+    "nav": {
+      "group": "/gsgl",
+      "listed": true
+    },
+    "regions": [],
+    "feature": null
+  },
+  {
+    "id": "fshq",
+    "path": "/sjfx/fshq",
+    "title": "分时行情",
+    "domain": "数据分析",
+    "kind": "real",
+    "endpoint": "GET /sdpt/fshq/data?rqlx&bdrq&jyyf",
+    "dataPath": "sdpt_fshq",
+    "nav": {
+      "group": null,
+      "listed": true
+    },
+    "regions": [],
+    "feature": null
+  },
+  {
+    "id": "actualLoad2",
+    "path": "/sjfx/jieqi",
+    "title": "24节气",
+    "domain": "数据分析",
+    "kind": "real",
+    "endpoint": "GET /sdpt/actualLoad/query2?xl",
+    "dataPath": "sdpt_actualLoad",
+    "nav": {
+      "group": "/gsgl",
+      "listed": true
+    },
+    "regions": [],
+    "feature": null
+  },
+  {
+    "id": "market-analysis",
+    "path": "/sjfx/market-ops",
+    "title": "市场经营分析",
+    "domain": "数据分析",
+    "kind": "mixed",
+    "endpoint": "local marketAnalysis + planned /api/v1/market/* and /api/v1/market-analysis/*",
+    "dataPath": "market_analysis",
+    "nav": {
+      "group": null,
+      "listed": true
+    },
+    "regions": [],
+    "feature": null
+  },
+  {
+    "id": "singleZsjfx",
+    "path": "/sjfx/singleZsjfx",
+    "title": "数据分析",
+    "domain": "数据分析",
+    "kind": "mixed",
+    "endpoint": "POST /sdpt/zsjfx/singleData",
+    "dataPath": "sdpt_zsjfx",
+    "nav": {
+      "group": null,
+      "listed": true
+    },
+    "regions": [],
+    "feature": null
+  },
+  {
+    "id": "tqyb",
+    "path": "/sjfx/tqyb",
+    "title": "天气预报",
+    "domain": "数据分析",
+    "kind": "real",
+    "endpoint": "GET /weather/dayData|hourlyData|districtTree",
+    "dataPath": "weather_dayData",
+    "nav": {
+      "group": "/gsgl",
+      "listed": true
+    },
+    "regions": [],
+    "feature": null
+  },
+  {
+    "id": "zcqxhdl",
+    "path": "/sjfx/zcqxhdl",
+    "title": "出清现货电量分析",
+    "domain": "数据分析",
+    "kind": "real",
+    "endpoint": "POST /sdpt/zcqxhdl/list (宽范围)",
+    "dataPath": "sdpt_zcqxhdl",
+    "nav": {
+      "group": null,
+      "listed": true
+    },
+    "regions": [],
+    "feature": null
+  },
+  {
+    "id": "zrsjg",
+    "path": "/sjfx/zrsjg",
+    "title": "价格分析",
+    "domain": "数据分析",
+    "kind": "real",
+    "endpoint": "GET /sdpt/zcqxhdl/listrs?typeList[]&tag=0",
+    "dataPath": "sdpt_zcqxhdl",
+    "nav": {
+      "group": null,
+      "listed": true
+    },
+    "regions": [],
+    "feature": null
+  },
+  {
+    "id": "zrxgx",
+    "path": "/sjfx/zrxgx",
+    "title": "现货价格与新能源关系",
+    "domain": "数据分析",
+    "kind": "real",
+    "endpoint": "POST /sdpt/zcqxhdl/list24 (ts=回溯天数)",
+    "dataPath": "sdpt_zcqxhdl",
+    "nav": {
+      "group": null,
+      "listed": true
+    },
+    "regions": [],
+    "feature": null
+  },
+  {
+    "id": "zrxgx2",
+    "path": "/sjfx/zrxgx2",
+    "title": "现货价格与统调负荷关系",
+    "domain": "数据分析",
+    "kind": "real",
+    "endpoint": "POST /sdpt/zcqxhdl/fhlist24",
+    "dataPath": "sdpt_zcqxhdl",
+    "nav": {
+      "group": null,
+      "listed": true
+    },
+    "regions": [],
+    "feature": null
+  },
+  {
+    "id": "zptjg-92",
+    "path": "/sjxh/zjzzt",
+    "title": "省间中长期交易电量计划",
+    "domain": "省间现货",
+    "kind": "real",
+    "endpoint": "GET /sdpt/zptjg/list?tag=92",
+    "dataPath": "sdpt_zptjg",
+    "nav": {
+      "group": null,
+      "listed": true
+    },
+    "regions": [],
+    "feature": null
+  },
+  {
+    "id": "strategic-qa",
+    "path": "/strategic-qa",
+    "title": "战略问答",
+    "domain": "系统",
+    "kind": "real",
+    "endpoint": "/pi-api/agent/*",
+    "dataPath": "",
+    "nav": {
+      "group": null,
+      "listed": false
+    },
+    "regions": [],
+    "feature": null
+  },
+  {
+    "id": "system-accounts",
+    "path": "/system/accounts",
+    "title": "用户与会话",
+    "domain": "系统管理",
+    "kind": "real",
+    "endpoint": "GET/POST/PATCH /api/auth/users + GET/DELETE /api/auth/sessions",
+    "dataPath": "auth_sqlite",
+    "nav": {
+      "group": "/system",
+      "listed": true
+    },
+    "regions": [],
+    "feature": null
+  },
+  {
+    "id": "system-ai-studio",
+    "path": "/system/ai-studio",
+    "title": "AI 工作室",
+    "domain": "系统管理",
+    "kind": "mixed",
+    "endpoint": "/agent-api/agent/{skills,sub-agents,graphs,schedules}/* + /dify-sso/session + ANY /dify-studio/*",
+    "dataPath": "schedules_sqlite,dify,llm",
+    "nav": {
+      "group": "/system",
+      "listed": true
+    },
+    "regions": [],
+    "feature": null
+  },
+  {
+    "id": "truck-charging",
+    "path": "/tzcs/truck-charging",
+    "title": "重卡充换电测算",
+    "domain": "投资测算",
+    "kind": "mixed",
+    "endpoint": "local truckCharging（legacy /api/v1/investment-calculator/truck-sensitivity-analysis，新聚合走 /api/v1/investment-assessment/runs）",
+    "dataPath": "truck_charging_calculator",
+    "nav": {
+      "group": "/gsgl",
+      "listed": true
+    },
+    "regions": [],
+    "feature": null
+  },
+  {
+    "id": "wind-solar",
+    "path": "/tzcs/wind-solar",
+    "title": "新能源资产测算",
+    "domain": "投资测算",
+    "kind": "mixed",
+    "endpoint": "local windSolar（legacy /api/v1/investment-calculator/*，新聚合走 /api/v1/investment-assessment/runs）",
+    "dataPath": "wind_solar_calculator",
+    "nav": {
+      "group": "/gsgl",
+      "listed": true
+    },
+    "regions": [],
+    "feature": null
+  },
+  {
+    "id": "approval-queue",
+    "path": "/xhjy/approvals",
+    "title": "申报审批队列",
+    "domain": "现货交易",
+    "kind": "real",
+    "endpoint": "GET/POST /api/v1/trading/spot/declarations*",
+    "dataPath": "spot_declarations",
+    "nav": {
+      "group": null,
+      "listed": true
+    },
+    "regions": [],
+    "feature": null
+  },
+  {
+    "id": "region-calibration",
+    "path": "/xhjy/calibration",
+    "title": "地区决策标定",
+    "domain": "智能实验室",
+    "kind": "mixed",
+    "endpoint": "local regionStrategyAdvisor",
+    "dataPath": "region_spot_profiles",
+    "nav": {
+      "group": "/gsgl",
+      "listed": true
+    },
+    "regions": [],
+    "feature": null
+  },
+  {
+    "id": "declaration-desk",
+    "path": "/xhjy/desk",
+    "title": "申报工作台",
+    "domain": "现货交易",
+    "kind": "mixed",
+    "endpoint": "/api/v1/trading/spot/declarations + /api/real + /agent-api/agent/*",
+    "dataPath": "spot_declarations/knn-api",
+    "nav": {
+      "group": null,
+      "listed": true
+    },
+    "regions": [],
+    "feature": null
+  },
+  {
+    "id": "spot-monitor",
+    "path": "/xhjy/monitor",
+    "title": "实时监盘",
+    "domain": "现货交易",
+    "kind": "mixed",
+    "endpoint": "POST /agent-api/agent/quant/monitor",
+    "dataPath": "quant_direct",
+    "nav": {
+      "group": null,
+      "listed": true
+    },
+    "regions": [],
+    "feature": null
+  },
+  {
+    "id": "morning-brief",
+    "path": "/xhjy/morning-brief",
+    "title": "交易晨报",
+    "domain": "智能实验室",
+    "kind": "mixed",
+    "endpoint": "POST /agent-api/agent/sessions + /sessions/{id}/messages (SSE)",
+    "dataPath": "llm",
+    "nav": {
+      "group": null,
+      "listed": true
+    },
+    "regions": [],
+    "feature": null
+  },
+  {
+    "id": "policy-intel",
+    "path": "/xhjy/policy-intel",
+    "title": "政策情报官",
+    "domain": "智能实验室",
+    "kind": "mixed",
+    "endpoint": "POST /agent-api/agent/sessions + /sessions/{id}/messages (SSE) + disclosure 工具",
+    "dataPath": "llm",
+    "nav": {
+      "group": null,
+      "listed": true
+    },
+    "regions": [],
+    "feature": null
+  },
+  {
+    "id": "presubmit-check",
+    "path": "/xhjy/presubmit-check",
+    "title": "申报前体检",
+    "domain": "智能实验室",
+    "kind": "mixed",
+    "endpoint": "POST /agent-api/agent/sessions + /sessions/{id}/messages (SSE)",
+    "dataPath": "llm",
+    "nav": {
+      "group": null,
+      "listed": true
+    },
+    "regions": [],
+    "feature": null
+  },
+  {
+    "id": "spot-region-overview",
+    "path": "/xhjy/region",
+    "title": "地区现货概览",
+    "domain": "现货交易",
+    "kind": "mixed",
+    "endpoint": "local regional trading registry",
+    "dataPath": "local_region_trading",
+    "nav": {
+      "group": "/gsgl",
+      "listed": true
+    },
+    "regions": [],
+    "feature": null
+  },
+  {
+    "id": "review-center",
+    "path": "/xhjy/review",
+    "title": "复盘中心",
+    "domain": "现货交易",
+    "kind": "mixed",
+    "endpoint": "POST /agent-api/agent/quant/review + daily_review场景",
+    "dataPath": "quant_direct",
+    "nav": {
+      "group": null,
+      "listed": true
+    },
+    "regions": [],
+    "feature": null
+  },
+  {
+    "id": "risk-center",
+    "path": "/xhjy/risk-center",
+    "title": "风控阈值面板",
+    "domain": "现货交易",
+    "kind": "mixed",
+    "endpoint": "POST /agent-api/agent/quant/{exposure,review,monitor} + /agent-api/agent/alerts",
+    "dataPath": "quant_direct",
+    "nav": {
+      "group": null,
+      "listed": true
+    },
+    "regions": [],
+    "feature": null
+  },
+  {
+    "id": "storage-copilot",
+    "path": "/xhjy/storage-copilot",
+    "title": "储能投资收益测算",
+    "domain": "智能实验室",
+    "kind": "mixed",
+    "endpoint": "POST /agent-api/v1/investment-assessment/runs + /intents/parse + /agent-api/agent/sessions + /sessions/{id}/messages (SSE)",
+    "dataPath": "agent_backend",
+    "nav": {
+      "group": null,
+      "listed": true
+    },
+    "regions": [],
+    "feature": null
+  },
+  {
+    "id": "trading-day",
+    "path": "/xhjy/trading-day",
+    "title": "交易员一日作业台",
+    "domain": "现货交易",
+    "kind": "mixed",
+    "endpoint": "local trading-rules + GET/POST /api/v1/trading/spot/declarations + POST /:id/preflight",
+    "dataPath": "local_rules/spot_declarations",
+    "nav": {
+      "group": null,
+      "listed": true
+    },
+    "regions": [],
+    "feature": null
+  },
+  {
+    "id": "yunnan-node-price",
+    "path": "/xhjy/yunnan/node-price",
+    "title": "节点电价分析",
+    "domain": "市场洞察",
+    "kind": "real",
+    "endpoint": "GET /agent-api/v1/spot/cgn-yunnan/node-price/*",
+    "dataPath": "dljy_private.latest_node_price",
+    "nav": {
+      "group": null,
+      "listed": true
+    },
+    "regions": [
+      "['yunnan']"
+    ],
+    "feature": "yunnanTrading"
+  },
+  {
+    "id": "yunnan-settlement-price",
+    "path": "/xhjy/yunnan/settlement-price",
+    "title": "结算价分析",
+    "domain": "市场洞察",
+    "kind": "real",
+    "endpoint": "GET /api/real yn_spot_settlement + GET /agent-api/v1/spot/cgn-yunnan/node-price/daily",
+    "dataPath": "yn_spot_settlement",
+    "nav": {
+      "group": null,
+      "listed": true
+    },
+    "regions": [
+      "['yunnan']"
+    ],
+    "feature": "yunnanTrading"
+  },
+  {
+    "id": "zptqx-0",
+    "path": "/xhjy/zptqx",
+    "title": "日前电量预估",
+    "domain": "现货交易",
+    "kind": "real",
+    "endpoint": "GET /sdpt/zptqx/list?tag=0",
+    "dataPath": "sdpt_zptqx",
+    "nav": {
+      "group": null,
+      "listed": true
+    },
+    "regions": [],
+    "feature": null
+  },
+  {
+    "id": "zrqsb",
+    "path": "/xhjy/zrqsb",
+    "title": "日前上报",
+    "domain": "现货交易",
+    "kind": "real",
+    "endpoint": "POST /sdpt/zrqsb/list",
+    "dataPath": "sdpt_zrqsb",
+    "nav": {
+      "group": null,
+      "listed": true
+    },
+    "regions": [],
+    "feature": null
+  },
+  {
+    "id": "forecast-center",
+    "path": "/ycsj/center",
+    "title": "预测中心",
+    "domain": "预测数据",
+    "kind": "forecast",
+    "endpoint": "聚合五模块同源接口（组件原样挂入，见各模块登记）",
+    "dataPath": "sdpt_* 回放 + forecastProviders + agent_backend forecast 族",
+    "nav": {
+      "group": null,
+      "listed": true
+    },
+    "regions": [],
+    "feature": null
+  },
+  {
+    "id": "data-browser",
+    "path": "/yygl/data-browser",
+    "title": "通用数据浏览器",
+    "domain": "数据管理",
+    "kind": "mixed",
+    "endpoint": "GET /api/real?family=&match=&region=",
+    "dataPath": "*",
+    "nav": {
+      "group": "/gsgl",
+      "listed": true
+    },
+    "regions": [],
+    "feature": null
+  },
+  {
+    "id": "data-governance",
+    "path": "/yygl/data-governance",
+    "title": "数据治理控制台",
+    "domain": "数据管理",
+    "kind": "real",
+    "endpoint": "GET /api/v1/governance/{catalog,quality,backup}",
+    "dataPath": "capture_sqlite + data/private/governance/quality-report.json + data/private-backups",
+    "nav": {
+      "group": "/gsgl",
+      "listed": true
+    },
+    "regions": [],
+    "feature": null
+  },
+  {
+    "id": "data-onboarding",
+    "path": "/yygl/data-onboarding",
+    "title": "数据接入向导",
+    "domain": "数据管理",
+    "kind": "real",
+    "endpoint": "GET /api/v1/governance/catalog + /api/v1/import-templates/records + POST /api/v1/ingest/:kind",
+    "dataPath": "governance_catalog + import_records + capture_sqlite",
+    "nav": {
+      "group": "/gsgl",
+      "listed": true
+    },
+    "regions": [],
+    "feature": null
+  },
+  {
+    "id": "import-hub",
+    "path": "/yygl/import-hub",
+    "title": "数据导入融合台",
+    "domain": "数据管理",
+    "kind": "mixed",
+    "endpoint": "local importHub + planned /api/v1/power/import|market/packages/retail/import|settlements/import|retail-settlement-import/upload|market/trades/import",
+    "dataPath": "import_workflows",
+    "nav": {
+      "group": "/gsgl",
+      "listed": true
+    },
+    "regions": [],
+    "feature": null
+  },
+  {
+    "id": "ingest",
+    "path": "/yygl/ingest",
+    "title": "数据摄取管理",
+    "domain": "数据管理",
+    "kind": "mixed",
+    "endpoint": "POST /api/v1/ingest/:kind",
+    "dataPath": "capture_sqlite",
+    "nav": {
+      "group": "/gsgl",
+      "listed": true
+    },
+    "regions": [],
+    "feature": null
+  },
+  {
+    "id": "operations",
+    "path": "/yygl/ops",
+    "title": "运营中枢",
+    "domain": "运营管理",
+    "kind": "mixed",
+    "endpoint": "local operations + planned /api/v1/stations|contracts|settlements|risks|statistics|retail-settlement-import|model-config|agents",
+    "dataPath": "operations_backend",
+    "nav": {
+      "group": "/gsgl",
+      "listed": true
+    },
+    "regions": [],
+    "feature": null
+  },
+  {
+    "id": "exposure-board",
+    "path": "/zcqjy/exposure",
+    "title": "中长期敞口看板",
+    "domain": "中长期交易",
+    "kind": "mixed",
+    "endpoint": "POST /agent-api/agent/quant/exposure",
+    "dataPath": "quant_direct",
+    "nav": {
+      "group": null,
+      "listed": true
+    },
+    "regions": [],
+    "feature": null
+  },
+  {
+    "id": "zccljk",
+    "path": "/zcqjy/zccljk",
+    "title": "持仓量监控",
+    "domain": "中长期交易",
+    "kind": "real",
+    "endpoint": "GET /sdpt/zfsdjy/ccljkDay|ccljkTime|list",
+    "dataPath": "sdpt_zfsdjy",
+    "nav": {
+      "group": null,
+      "listed": true
+    },
+    "regions": [],
+    "feature": null
+  },
+  {
+    "id": "zfsdjy",
+    "path": "/zcqjy/zfsdjy",
+    "title": "分时段交易",
+    "domain": "中长期交易",
+    "kind": "real",
+    "endpoint": "GET /sdpt/zfsdjy/list",
+    "dataPath": "sdpt_zfsdjy",
+    "nav": {
+      "group": null,
+      "listed": true
+    },
+    "regions": [],
+    "feature": null
+  },
+  {
+    "id": "zjyap",
+    "path": "/zcqjy/zjyap",
+    "title": "交易月历",
+    "domain": "中长期交易",
+    "kind": "real",
+    "endpoint": "GET /sdpt/zjyap/calendar",
+    "dataPath": "sdpt_zjyap",
+    "nav": {
+      "group": null,
+      "listed": true
+    },
+    "regions": [],
+    "feature": null
+  }
+]
