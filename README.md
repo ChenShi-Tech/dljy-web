@@ -23,9 +23,10 @@ npm run dev          # http://localhost:5174（端口被占会直接报错，先
 ## 本地质量门禁（提 PR 前必须全绿）
 
 ```bash
-npm run check          # vue-tsc 类型检查
-npm run test:unit      # vitest（纯函数 + 组件双环境）
-npm run test:coverage  # 覆盖率阈值门禁
+npm run lint          # ESLint：correctness + 分层守卫（views 禁 fetch / 禁 import shared/schema）
+npm run check         # vue-tsc 类型检查
+npm run test:unit     # vitest（纯函数 + 组件双环境）
+npm run test:coverage # 覆盖率阈值门禁（lines 44 / functions 36 / statements 42 / branches 37）
 npm run build          # 生产构建（含 index 与 grid-geo 双入口）
 ```
 
