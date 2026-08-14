@@ -14,7 +14,7 @@ import ChartCard from '../../components/common/ChartCard.vue'
 import SparkBar from '../../components/common/SparkBar.vue'
 import { axisTooltip, chartToolbox, insideZoom, emptyOverlay, fmtNum } from '@/services/chart/chartOptions'
 import {
-  POWER, lineSeries, barSeries, signColorItem, enhancedToolbox,
+  POWER, lineSeries, barSeries, enhancedToolbox,
   tooltipStyle, legend, grid, catAxis, valueAxis, animation
 } from '@/services/chart/chartStyle'
 import { maxBy, thresholdClass } from '../../utils/tableFormat'

@@ -18,7 +18,6 @@ import {
   Database,
   FileChartColumn,
   Table2,
-  Layers,
   ListChecks,
   Map as MapIcon,
   Upload

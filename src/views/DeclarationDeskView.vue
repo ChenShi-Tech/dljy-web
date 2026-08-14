@@ -8,7 +8,7 @@
 import { computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessageBox } from 'element-plus'
-import { AlarmClock, ArrowLeft, ArrowRight, Bot, CheckCircle2, FileSearch, FlaskConical, History, LineChart, Loader2, PlugZap, ShieldCheck, Sparkles, Stamp, XCircle } from 'lucide-vue-next'
+import { AlarmClock, ArrowRight, Bot, CheckCircle2, FileSearch, FlaskConical, History, LineChart, Loader2, PlugZap, ShieldCheck, Sparkles, Stamp, XCircle } from 'lucide-vue-next'
 import AgentChatPanel from '../components/agent/AgentChatPanel.vue'
 import AgentHistorySidebar from '../components/agent/AgentHistorySidebar.vue'
 import DeclarationForecastCompare from '../components/forecast/DeclarationForecastCompare.vue'

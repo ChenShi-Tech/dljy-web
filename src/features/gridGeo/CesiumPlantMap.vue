@@ -42,7 +42,6 @@ import {
 import 'cesium/Build/Cesium/Widgets/widgets.css'
 import {
   BASE_MAP_PROVIDERS,
-  resolveBaseMapFallbackSequence,
   resolveBaseMapSequenceWithPreferred,
   resolvePreferredBaseMapId,
   shouldFallbackBaseMap,

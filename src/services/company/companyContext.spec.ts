@@ -27,7 +27,7 @@ const { resolveCompanyForRegion, setCompanyOptions, selectedCompanyId, companyOp
   './companyContext'
 )
 const { companyUnselected } = await import('./companyApi')
-const { selectedRegionId, setCurrentRegionId } = await import('@/services/region/regionContext')
+const { setCurrentRegionId } = await import('@/services/region/regionContext')
 
 function fakeUser(overrides: Partial<AuthUser>): AuthUser {
   return {

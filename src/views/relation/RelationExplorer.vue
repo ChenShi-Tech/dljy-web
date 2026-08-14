@@ -111,7 +111,7 @@ async function loadData() {
     data.value = routeAvailable.value ? contract.blocks.relation_scatter.dataset : null
     await nextTick()
     renderAll()
-  } catch (e) {
+  } catch {
     if (seq !== loadSeq.value) return // 旧轮的错误不覆盖新轮（#405）
     // 失败时清空旧数据并重绘为空态，避免 ECharts 仍持上一轮（其它地区/日期）画布
     // 被误读为当前地区真实（codex P1：清 data 后必须刷新三视图，否则旧散点残留）

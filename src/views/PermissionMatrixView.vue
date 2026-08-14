@@ -71,10 +71,10 @@ const actionOptions = computed(() => {
   return [...actions].sort()
 })
 const accessOverrides = computed(() => {
-  overrideRevision.value
+  // 订阅用：override revision 变化时让本 computed 重算
+  const _overrideRevision = overrideRevision.value
   return getAccessOverrides()
 })
-const selectedRule = computed(() => getEffectiveAccessRule(selectedRoleCode.value))
 const selectedIsAdminLevel = computed(() => isAdminLevelRole(selectedRoleCode.value))
 const selectedHasOverride = computed(() => Boolean(accessOverrides.value[selectedRoleCode.value]))
 const authSyncLabel = computed(() => {

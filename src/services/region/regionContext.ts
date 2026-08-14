@@ -2,8 +2,6 @@ import { computed, ref, watch } from 'vue'
 import { defaultRegionId, getRegionById, isSelectableRegion } from '@/data/regions'
 import { getRegionSpotProfile } from '@/data/regionSpotProfiles'
 import type { RegionCalibratedParams } from '@/services/region/regionStrategyAdvisor'
-import type { DataBasis } from '@/services/dataBasis'
-
 const storageKey = 'dljy.currentRegionId'
 
 function readInitialRegionId() {

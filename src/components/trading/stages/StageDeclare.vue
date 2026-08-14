@@ -227,11 +227,13 @@ watch(
 )
 
 const items = computed(() => {
-  form.redLinesTouched = redLineInput.value
+  // 纯派生（原实现把解析结果写回 form 再读出——computed 内副作用，lint 已拦）：
+  // redLinesTouched 只被 buildChecklist 消费，直接随展开透传，行为等价。
+  const redLinesTouched = redLineInput.value
     .split(/[,，;；\s]+/)
     .map((s) => s.trim())
     .filter(Boolean)
-  return buildChecklist(form)
+  return buildChecklist({ ...form, redLinesTouched })
 })
 const verdict = computed(() => evaluateRelease(items.value, overrides.value))
 

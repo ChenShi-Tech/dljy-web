@@ -347,7 +347,6 @@ const renderedReport = computed(() => {
 
 // 统计指标
 const stats = computed(() => {
-  const now = Date.now()
   const todayStart = new Date().setHours(0, 0, 0, 0)
   const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1).getTime()
 

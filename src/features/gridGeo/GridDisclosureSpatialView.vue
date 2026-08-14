@@ -6,7 +6,7 @@ import { selectedCompanyId } from '@/services/company/companyContext'
 import { onRegionChange } from '@/composables/useRegionReload'
 import {
   Activity, AlertTriangle, ArrowRight, Bookmark, CalendarClock, CheckCircle2,
-  Database, ExternalLink, Factory, FileSearch, Filter, Globe2, Heart, Layers3,
+  Database, ExternalLink, Factory, FileSearch, Globe2, Heart, Layers3,
   MapPinned, Network, RefreshCw, Search, ShieldCheck, Sparkles, X, Zap,
 } from 'lucide-vue-next'
 import {

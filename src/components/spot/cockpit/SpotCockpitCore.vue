@@ -117,10 +117,6 @@ function ttfix() {
   return { backgroundColor: c.tooltipBg, borderColor: c.tooltipBorder, textStyle: { color: c.tooltipText, fontSize: 11 } }
 }
 
-function hourLabel(i: number) {
-  return String(i).padStart(2, '0') + ':00'
-}
-
 // ── 图表容器 + 实例（每图一个 useEChart；主题切换由 useEChart dispose 重建 + 重调 render 跟随）──
 const heatmapEl = ref<HTMLElement | null>(null)
 const basisEl = ref<HTMLElement | null>(null)
