@@ -300,7 +300,7 @@ import '@vue-flow/core/dist/theme-default.css'
 import '@vue-flow/controls/dist/style.css'
 import '@vue-flow/minimap/dist/style.css'
 import 'highlight.js/styles/github.css'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import StudioFlowNode from '@/components/studio/StudioFlowNode.vue'
 import { renderMarkdown } from '../utils/markdown'
 import {
@@ -317,7 +317,7 @@ import { packageRegionSummary } from '@/services/region/regionContext'
 
 const {
   addNodes, addEdges, onConnect, removeNodes, removeEdges,
-  updateNodeData, findEdge, screenToFlowCoordinate, setNodes, setEdges,
+  updateNodeData, screenToFlowCoordinate, setNodes, setEdges,
   toObject, fitView, nodes: vfNodes, edges: vfEdges
 } = useVueFlow()
 
@@ -576,7 +576,7 @@ function flowToSpec(): GraphSpec {
 async function loadTemplates() {
   try {
     templates.value = await fetchTemplates()
-  } catch (e) {
+  } catch {
     /* 后端离线时模板下拉为空,不阻塞 */
   }
 }

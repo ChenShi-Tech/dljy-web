@@ -12,7 +12,6 @@ import {
   testMcpServer,
   type McpServerSummary,
   type McpServerBody,
-  type McpTransport,
 } from '@/services/agent/mcpClient'
 
 const servers = ref<McpServerSummary[]>([])

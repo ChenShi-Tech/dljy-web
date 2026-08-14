@@ -159,7 +159,6 @@ const marketLabel = computed(() => (market.value === 'da' ? '日前' : '实时')
 
 const {
   plantOptions,
-  rowsByPlant,
   unitOptions,
   filteredRows,
   plantLabel,

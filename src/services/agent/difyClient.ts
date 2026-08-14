@@ -145,7 +145,7 @@ export async function listReportHistory(
 /**
  * 获取单个报告的详细结果
  */
-export async function getReportDetail(reportId: string): Promise<ReportResult | null> {
+export async function getReportDetail(_reportId: string): Promise<ReportResult | null> {
   try {
     const res = await apiGet<any>('/dify-api/console/api/apps/workflow-logs/${reportId}')
     return res?.data ?? null

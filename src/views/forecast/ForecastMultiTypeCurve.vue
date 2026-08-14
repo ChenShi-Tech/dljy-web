@@ -29,7 +29,6 @@ const stationScoped = !!cfg.stationScoped
 const stationKind = (cfg.stationKind ?? 'zxztqa') as 'zxztqa' | 'zgnrx' | 'gsfhyc'
 const dateField = cfg.dateField || 'date'
 const typeField = cfg.typeField || 'type'
-const totalField = cfg.totalField || cfg.totalField || 'hj'
 const unit = cfg.unit || ''
 
 const L96 = Array.from({ length: 96 }, (_, i) => { const m = (i + 1) * 15; return `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}` })

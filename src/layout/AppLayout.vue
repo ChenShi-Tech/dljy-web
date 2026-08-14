@@ -78,7 +78,8 @@ const menuColors = computed(() => {
 
 const activePath = computed(() => route.path)
 const visibleNavigation = computed(() => {
-  accessRevision.value
+  // 订阅用：权限/地区 revision 变化时让本 computed 重算
+  const _accessRevision = accessRevision.value
   // 立场视图层（#2196）：角色×地区过滤后，再按当前立场出工作台（共享页恒可见，
   // 组合/集团视角全量；专职立场只看共享页 + 本立场专属页）。
   const byRoleAndRegion = filterNavigationForUser(navigation, currentUser.value, currentRegion.value.id)

@@ -6,7 +6,7 @@
 import { computed, nextTick, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { Search, Star, CornerDownLeft, ArrowUp, ArrowDown } from 'lucide-vue-next'
-import { navigation, type NavItem } from '@/data/navigation'
+import { navigation } from '@/data/navigation'
 import {
   filterNavigationForUser,
   isPathAvailableInRegion,

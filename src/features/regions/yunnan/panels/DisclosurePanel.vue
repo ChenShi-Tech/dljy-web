@@ -131,7 +131,7 @@ const displayRows = computed(() => {
   }
   // 保留原有展示层美化逻辑：只翻译 region，隐藏归一化管道字段。
   return out.map((row) => {
-    const { id, apiFamily, module, sourceApi, operationFamily, status, ...rest } = row
+    const { id: _id, apiFamily: _apiFamily, module: _module, sourceApi: _sourceApi, operationFamily: _operationFamily, status: _status, ...rest } = row
     if (typeof rest.region === 'string' && REGION_LABELS[rest.region]) rest.region = REGION_LABELS[rest.region]
     return rest
   })

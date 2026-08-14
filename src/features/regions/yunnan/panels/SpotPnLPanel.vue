@@ -98,11 +98,6 @@ function trackedSum() {
   }
 }
 
-function toNum(v: unknown): number {
-  const n = Number(v)
-  return Number.isFinite(n) ? n : 0
-}
-
 // ── 派生：电厂候选（两族 distinct plant 并集，按名排序）──
 const plantOptions = computed(() => {
   const set = new Set<string>()

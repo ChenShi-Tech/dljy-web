@@ -17,7 +17,7 @@
 // 未生效数据绝不显示「已可见」；生效按钮结果如实回显（成功/失败 + stdout 摘要）。
 // 向导本身不产数据——它只消费 governance catalog / import-templates records /
 // 只读信号汇总，并复用既有 ingest 端点触发 ETL。
-import { computed, onMounted, reactive, ref } from 'vue'
+import { onMounted, reactive, ref } from 'vue'
 import type { Component } from 'vue'
 import { RouterLink } from 'vue-router'
 import {
@@ -29,7 +29,7 @@ import { apiGet } from '@/services/api'
 import { freshnessOf, type Freshness } from '@/services/data/freshness'
 import { triggerIngest, type IngestKind, type IngestResult } from '@/services/data/ingestClient'
 import type { DataSourceBasis } from '@/services/data/types'
-import { aggregateFreshness, deriveJourneySteps, type JourneySteps } from './data-onboarding/onboardingJourney'
+import { deriveJourneySteps, type JourneySteps } from './data-onboarding/onboardingJourney'
 
 // ─── 数据源信封类型（与后端 governance/import-hub 接口对齐）───────────────────
 type CatalogItem = {

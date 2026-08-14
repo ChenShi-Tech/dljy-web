@@ -147,7 +147,7 @@ async function doTrigger(menuCode?: string) {
   }
 }
 
-function reportTriggerItem(item: SichuanTriggerItem, scopeLabel: string) {
+function reportTriggerItem(item: SichuanTriggerItem, _scopeLabel: string) {
   const itemLabel = menuLabelByCode.value[item.menuCode] ?? item.menuCode
   if (item.status === 'success') {
     ElMessage.success(`「${itemLabel}」采集成功：新增 ${item.inserted ?? 0} 条（共拉取 ${item.fetched ?? 0} 条）`)

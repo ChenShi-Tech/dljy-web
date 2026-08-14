@@ -3,7 +3,7 @@
 // 申报建议与决策概览端点。工作台可带上下文（?model/date/train_days）跳入。
 // 页面仅做前端装配，不写入申报单，不作为结算依据。
 import { computed, nextTick, onActivated, onMounted, ref, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { useRoute } from 'vue-router'
 import {
   Activity,
   ClipboardList,
@@ -72,7 +72,6 @@ const RISK_LEVEL_COLOR: Record<OptimizeBidFrontierPoint['risk_level'], string> =
 // 工作台「在驾驶舱中使用此上下文」跳入时经 query 带 model/date/train_days（setup 期一次性消费，
 // 避免 onMounted 里再赋值触发 watch 双发 loadCockpit）。非法值回退默认。
 const route = useRoute()
-const router = useRouter()
 function queryStr(key: string): string {
   const v = route.query[key]
   return typeof v === 'string' ? v : ''
@@ -123,7 +122,6 @@ const frontierPoints = computed(() => [...(optimizeResult.value?.optimize_bid.fr
 const actualIsCaptured = computed(() => actualCurve.value?.basis === 'captured')
 const actualMissing = computed(() => Boolean(actualCurveDate.value) && actualCurve.value !== null && !actualIsCaptured.value)
 const actualHourlySourced = computed(() => actualIsCaptured.value && actualCurve.value?.sourcePoints === 24)
-const priceBasis = computed(() => priceForecast.value?.basis ?? 'illustrative')
 const optimizeNote = computed(() => optimizeResult.value?.optimize_bid.note ?? '')
 const riskNote = computed(() => riskResult.value?.risk_quantification.note ?? '')
 // #764 校准标注：分位带来自 /predict（默认共形校准）；VaR/CVaR 来自 /risk-quantify（quantile_calibrated）
