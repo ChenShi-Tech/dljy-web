@@ -991,6 +991,10 @@ async function writeBack() {
 .ma-sources td select, .ma-sources td input[type='number'] { font-size: 11px; }
 .row-bad { background: #fff7ed; }
 .ma-problems { margin: 8px 0 0; padding-left: 18px; font-size: 11px; color: #b45309; line-height: 1.7; }
+@media (max-width: 760px) {
+  .ma-grid { grid-template-columns: 1fr; }
+  .ma-table, .ma-hourly-table { display: block; overflow-x: auto; }
+}
 
 /* 昨日偏差 → 今日判断 */
 .ma-yday { margin: 8px 0; padding: 8px 10px; border-radius: 8px; background: rgba(255,255,255,.75); border: 1px dashed var(--el-border-color, #dcdfe6); }

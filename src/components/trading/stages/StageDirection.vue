@@ -22,7 +22,8 @@ import { DEFAULT_REGIME_BANDS, REGIME_LABEL } from 'shared/trading-rules/supply-
 import { breakevenSpread } from 'shared/trading-rules/storage-arbitrage.mjs'
 import { savePreflight, type DeclarationOrder } from '@/services/declarations'
 import { applyBias, buildLoadCurve96, LOAD_SHAPE_LABEL, type LoadShapeId } from '@/services/trading/loadShape'
-import { runForecastPredict, unavailableReasonOf, type ForecastResult } from '@/services/forecast/mlForecastClient'
+import { runForecastPredict, runMidterm, unavailableReasonOf, type ForecastResult, type MidtermResult } from '@/services/forecast/mlForecastClient'
+import { dualCurveDecision, type MidtermCurve } from '@/services/trading/priceDistribution'
 import {
   arbitrageWindowList,
   digestOf,
@@ -193,6 +194,47 @@ const kellyCap = computed(() =>
   quantiles.value ? buildOodaDecision(hourlyPointsOf(quantiles.value), storageParams.value).kelly : null
 )
 
+// ── 日前 vs 中长期双曲线对比（#2006 · 会议 §5.1）─────────────────────────────
+// 中长期侧消费预测域 /midterm 日均价序列（模型活在预测域，本面板只消费结果）；
+// 需要显式拉取（中长期预测非每日必跑），拉不到诚实空态不编曲线。
+const midterm = ref<MidtermResult | null>(null)
+const midtermLoading = ref(false)
+const midtermError = ref('')
+async function loadMidterm() {
+  midtermLoading.value = true
+  midtermError.value = ''
+  midterm.value = null
+  try {
+    midterm.value = await runMidterm({ region_id: currentRegion.value.id, target: 'price' }, 14)
+  } catch (e) {
+    midtermError.value = e instanceof Error ? e.message : '中长期价预测不可达（预测域服务）'
+  } finally {
+    midtermLoading.value = false
+  }
+}
+const midtermCurve = computed<MidtermCurve | null>(() => {
+  const m = midterm.value
+  if (!m || !Array.isArray(m.daily_avg_price) || !m.daily_avg_price.length) return null
+  return {
+    dailyAvgPrice: m.daily_avg_price.map(Number).filter(Number.isFinite),
+    maseVsPersistence: Number.isFinite(Number(m.mase_vs_persistence)) ? Number(m.mase_vs_persistence) : null
+  }
+})
+const dualDecision = computed(() =>
+  dualCurveDecision(
+    forecastDigest.value ? { mean: forecastDigest.value.mean, avgBandWidth: forecastDigest.value.avgBandWidth } : null,
+    midtermCurve.value
+  )
+)
+/** 中长期日均价迷你条形（首日=最近可锁价，趋势一眼可见） */
+const midtermSpark = computed(() => {
+  const p = midtermCurve.value?.dailyAvgPrice ?? []
+  if (p.length < 2) return null
+  const max = Math.max(...p)
+  const min = Math.min(...p)
+  return p.map((v, i) => ({ i, v, h: Math.max(6, Math.round(((v - min) / Math.max(max - min, 1e-6)) * 40) + 6) }))
+})
+
 /** S2 态势对应的策略速查（F3.1 决策树建议的分档表形态：储能/售电策略各一句）。 */
 const regimeBand = computed(() =>
   upstream.value?.regime
@@ -240,6 +282,7 @@ const aiContext = computed(() => ({
     ? { requiredSpreadYuanPerMwh: requiredSpread.value, windows: arbitrageRows.value, prepareExecute: prepareExecute.value }
     : null,
   kellyCap: kellyCap.value,
+  dualCurve: dualDecision.value,
   mlForecastUnavailable: forecastError.value || null,
   currentInput: { direction: direction.value, priceSpread: priceSpread.value, confidence: confidence.value },
   biasRule: '偏置 = R4 规则表(ΔP×置信度) × 暴露系数(S2 门禁: 可申报1/可参考0.5/仅展示0，模型漂移时封顶0.5)，管理带 ±20%',
@@ -305,7 +348,19 @@ async function writeBack() {
               windows: arbitrageRows.value
             }
           : null,
-        kellyCapPct: kellyCap.value?.riskAdjustedFraction ?? null
+        kellyCapPct: kellyCap.value?.riskAdjustedFraction ?? null,
+        // 双曲线对比结论（#2006）：日前 vs 中长期 + 置信度 + 先后顺序建议
+        dualCurve: dualDecision.value
+          ? {
+              daMean: dualDecision.value.daMean,
+              daBandPct: dualDecision.value.daBandPct,
+              mltNear: dualDecision.value.mltNear,
+              mltAvg: dualDecision.value.mltAvg,
+              daPremiumPct: dualDecision.value.daPremiumPct,
+              confident: dualDecision.value.confident,
+              verdict: dualDecision.value.verdict
+            }
+          : null
       },
       `S3 方向判断：${DIRECTION_LABEL[direction.value]}（置信 ${confidence.value}），偏置 ${(bias.value.biasRatio * 100).toFixed(1)}%`
     )
@@ -496,6 +551,41 @@ async function writeBack() {
           <p v-else class="dr-arb-empty">
             预测形态下无可配对的「谷段在前、峰段在后」窗口——不硬凑循环（与 R2 时序可行性同构）。
           </p>
+        <!-- 日前 vs 中长期双曲线对比（#2006：会议决策核心输入） -->
+        <div class="dr-dual">
+          <h4>日前 vs 中长期价 双曲线对比</h4>
+          <div class="dr-dual-bar">
+            <button type="button" class="dr-fc-btn" :disabled="midtermLoading" @click="loadMidterm">
+              {{ midtermLoading ? '取中长期预测中…' : '取中长期价预测（预测域 /midterm · 14 天）' }}
+            </button>
+            <span v-if="midtermError" class="dr-err">{{ midtermError }}</span>
+            <span v-else-if="!midtermCurve && !midtermLoading" class="dr-muted">未取——对比需日前分布与中长期日均价两条曲线齐备</span>
+          </div>
+          <template v-if="dualDecision">
+            <div class="dr-dual-curves">
+              <div class="dr-dual-side">
+                <span class="dr-dual-title">日前（P50 均值）</span>
+                <strong>{{ Math.round(dualDecision.daMean) }}</strong>
+                <span class="dr-dual-unit">元/MWh · 带宽 {{ dualDecision.daBandPct }}%</span>
+              </div>
+              <div class="dr-dual-side">
+                <span class="dr-dual-title">中长期（近期/均值）</span>
+                <strong>{{ Math.round(dualDecision.mltNear) }}</strong>
+                <span class="dr-dual-unit">/ {{ Math.round(dualDecision.mltAvg) }} 元/MWh</span>
+              </div>
+              <div v-if="midtermSpark" class="dr-dual-spark">
+                <span v-for="b in midtermSpark" :key="b.i" class="dr-ms-bar" :style="{ height: b.h + 'px' }" :title="`D+${b.i + 1} ≈ ${Math.round(b.v)}`" />
+              </div>
+            </div>
+            <p class="dr-dual-verdict" :class="`v-${dualDecision.verdict}`">
+              <em :class="dualDecision.confident ? 'hi' : 'lo'">{{ dualDecision.confident ? '高置信' : '低置信' }}</em>
+              {{ dualDecision.hint }}
+              <span class="dr-dual-note">{{ dualDecision.confidenceNote }}</span>
+            </p>
+          </template>
+          <p v-else-if="midtermCurve" class="dr-muted">日前分布未产出（先跑上方价格预测）——双曲线对比需要两条曲线齐备。</p>
+        </div>
+
           <p v-if="kellyCap" class="dr-kelly">
             凯利仓位上限红线：风险折减仓位 <strong>{{ kellyCap.riskAdjustedFraction }}%</strong>
             （半 Kelly {{ kellyCap.halfKellyFraction }}% × 风险预算约束 → 建议不超过
@@ -603,6 +693,23 @@ async function writeBack() {
 .dr-arb-verdict { margin: 8px 0 0; padding: 6px 9px; border-radius: 6px; background: #f8fafc; font-size: 11px; line-height: 1.7; color: #475569; }
 .dr-arb-verdict.exec { background: #f0fdf4; color: #166534; }
 .dr-arb-empty { margin: 6px 0 0; font-size: 11px; color: var(--el-text-color-secondary, #667); }
+.dr-dual { margin-top: 12px; padding: 8px 12px; border: 1px solid var(--el-border-color-lighter, #ebeef5); border-radius: 8px; background: #fff; }
+.dr-dual h4 { margin: 0 0 6px; font-size: 12px; }
+.dr-dual-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.dr-dual-curves { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin-top: 8px; }
+.dr-dual-side { display: flex; flex-direction: column; gap: 2px; padding: 6px 12px; border: 1px solid var(--el-border-color-lighter, #ebeef5); border-radius: 8px; }
+.dr-dual-title { font-size: 10px; color: var(--el-text-color-secondary, #667); }
+.dr-dual-side strong { font-size: 18px; font-variant-numeric: tabular-nums; }
+.dr-dual-unit { font-size: 10px; color: var(--el-text-color-secondary, #889); }
+.dr-dual-spark { display: flex; align-items: flex-end; gap: 2px; height: 46px; }
+.dr-ms-bar { width: 8px; background: #a78bfa; border-radius: 1px 1px 0 0; }
+.dr-dual-verdict { margin: 8px 0 0; padding: 6px 10px; border-radius: 6px; font-size: 11px; line-height: 1.7; background: #f8fafc; }
+.dr-dual-verdict.v-prefer_spot { background: #f0fdf4; color: #166534; }
+.dr-dual-verdict.v-prefer_mlt { background: #eff6ff; color: #1d4ed8; }
+.dr-dual-verdict em { font-style: normal; margin-right: 6px; padding: 1px 8px; border-radius: 8px; font-weight: 600; }
+.dr-dual-verdict em.hi { background: #dcfce7; color: #15803d; }
+.dr-dual-verdict em.lo { background: #fef3c7; color: #92400e; }
+.dr-dual-note { display: block; margin-top: 2px; font-size: 10px; color: var(--el-text-color-secondary, #889); }
 .dr-kelly { margin: 8px 0 0; padding: 6px 9px; border-radius: 6px; background: #fffbeb; color: #92400e; font-size: 11px; line-height: 1.7; }
 
 .dr-ai { border: 1px solid var(--el-border-color-lighter, #ebeef5); border-radius: 10px; background: #fff; padding: 8px 12px; }

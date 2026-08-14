@@ -550,4 +550,7 @@ button.ghost { display: inline-flex; align-items: center; gap: 4px; padding: 3px
 .dc7-reminders ul { margin: 0 0 6px; padding-left: 18px; font-size: 12px; line-height: 1.8; }
 .dc7-empty-li { color: var(--el-text-color-secondary, #667); list-style: none; }
 .dc7-send-note { margin: 6px 0 0; font-size: 10px; color: var(--el-text-color-secondary, #889); }
+@media (max-width: 760px) {
+  .dc7-table { display: block; overflow-x: auto; }
+}
 </style>

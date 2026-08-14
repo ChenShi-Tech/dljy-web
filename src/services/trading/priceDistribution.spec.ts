@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   arbitrageWindowList,
+  dualCurveDecision,
   digestOf,
   driftAssessment,
   hourlyPointsOf,
@@ -115,5 +116,46 @@ describe('hourlyPointsOf：P50 → quant 域点结构', () => {
     const pts = hourlyPointsOf(q)
     expect(pts).toHaveLength(24)
     expect(pts[19]).toEqual({ hour: 19, price: 445 })
+  })
+})
+
+describe('dualCurveDecision：日前 vs 中长期双曲线决策（#2006）', () => {
+  const mlt = { dailyAvgPrice: [240, 242, 245, 241, 238, 236, 240], maseVsPersistence: 0.8 }
+
+  it('日前贵 + 高置信 → 先现货（买卖立场语义双写）', () => {
+    const d = dualCurveDecision({ mean: 320, avgBandWidth: 40 }, mlt)
+    expect(d?.verdict).toBe('prefer_spot')
+    expect(d?.daPremiumPct).toBeGreaterThan(3)
+    expect(d?.hint).toContain('卖方先现货')
+    expect(d?.hint).toContain('买方')
+  })
+
+  it('日前便宜 + 高置信 → 锁中长期', () => {
+    const d = dualCurveDecision({ mean: 200, avgBandWidth: 30 }, mlt)
+    expect(d?.verdict).toBe('prefer_mlt')
+    expect(d?.hint).toContain('锁中长期')
+  })
+
+  it('带宽过宽（>25%）→ 低置信观望，不动作', () => {
+    const d = dualCurveDecision({ mean: 320, avgBandWidth: 100 }, mlt)
+    expect(d?.verdict).toBe('wait')
+    expect(d?.hint).toContain('低置信')
+  })
+
+  it('中期 MASE>1（不如持久基线）→ 低置信观望', () => {
+    const d = dualCurveDecision({ mean: 320, avgBandWidth: 40 }, { ...mlt, maseVsPersistence: 1.3 })
+    expect(d?.verdict).toBe('wait')
+    expect(d?.confidenceNote).toContain('MASE')
+  })
+
+  it('两曲线相当（±3% 内）→ wait（价差不足以驱动顺序）', () => {
+    const d = dualCurveDecision({ mean: 242, avgBandWidth: 30 }, mlt)
+    expect(d?.verdict).toBe('wait')
+  })
+
+  it('任一侧缺失 → null 不硬比', () => {
+    expect(dualCurveDecision(null, mlt)).toBeNull()
+    expect(dualCurveDecision({ mean: 300, avgBandWidth: 30 }, null)).toBeNull()
+    expect(dualCurveDecision({ mean: 300, avgBandWidth: 30 }, { dailyAvgPrice: [], maseVsPersistence: 0.5 })).toBeNull()
   })
 })

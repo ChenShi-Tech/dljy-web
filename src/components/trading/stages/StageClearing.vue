@@ -181,7 +181,7 @@ async function writeBack() {
 
 <template>
   <div class="cl">
-    <section v-if="!decl" class="cl-wait">未绑定单据。</section>
+    <section v-if="!decl" class="cl-wait">未绑定作业单据——先在顶部选择或新建标的日申报单。</section>
     <section v-else-if="!submitted" class="cl-wait">
       申报还没出门（当前 {{ STATUS_LABEL[decl.status] }}）——出清无从谈起。
       <button type="button" class="cl-jump" @click="emit('go', 'declare')">回 S4 完成申报</button>
@@ -355,6 +355,11 @@ async function writeBack() {
 .cl-table th:first-child, .cl-table td:first-child { text-align: left; }
 .cl-table th { color: var(--el-text-color-secondary, #667); font-weight: 600; }
 .cl-bad-cell { color: #b91c1c; }
+@media (max-width: 760px) {
+  .cl-table, .cl-stations table { display: block; overflow-x: auto; }
+  .cl-stats { gap: 6px; }
+  .cl-stat { padding: 6px 10px; }
+}
 
 .cl-escalate { margin: 8px 0; padding: 8px 12px; border: 1px solid #f87171; border-radius: 8px; background: #fef2f2; }
 .cl-escalate h4 { display: flex; align-items: center; gap: 5px; margin: 0 0 4px; font-size: 12px; color: #991b1b; }

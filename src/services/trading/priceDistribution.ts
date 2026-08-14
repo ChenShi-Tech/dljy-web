@@ -201,3 +201,83 @@ export function arbitrageWindowList(
   }
   return rows
 }
+
+// ============================================================================
+// 日前 vs 中长期双曲线决策（#2006 · 会议 §5.1：S2/S3 决策核心输入）
+// ----------------------------------------------------------------------------
+// 「必须同时展示日前价 + 中长期（滚搓/撮合）价两条曲线对比 + 置信度，而非单一
+// 预测值」。日前侧取 S3 概率分布（P50 均值与带宽）；中长期侧消费预测域 /midterm
+// 的日均价序列（模型活在预测域，本层只消费）。决策规则（会议）：
+//   高置信 + 日前价高 → 先现货（卖方卖贵/买方观望不锁）
+//   高置信 + 日前价低 → 锁中长期（买方锁低价/卖方留现货另说——立场语义双写）
+//   低置信 → 观望/谨慎
+// 置信口径（客观判据，不拍脑袋）：日前带宽/中位 ≤ 25% 且中期 MASE ≤ 1 = 高置信。
+// ============================================================================
+
+export type MidtermCurve = {
+  /** 未来 N 天日均电价（元/MWh），下标 0 = 明日 */
+  dailyAvgPrice: number[]
+  /** 中期模型 MASE（vs 持久基线）；>1 = 不如基线（低置信）；null = 后端未给 */
+  maseVsPersistence: number | null
+}
+
+export type DualCurveDecision = {
+  daMean: number
+  daBandPct: number
+  mltNear: number
+  mltAvg: number
+  /** 日前相对中长期的溢价 %（正=日前贵） */
+  daPremiumPct: number
+  confident: boolean
+  confidenceNote: string
+  verdict: 'prefer_spot' | 'prefer_mlt' | 'wait'
+  hint: string
+} | null
+
+/**
+ * 双曲线对比决策。任一侧缺失返回 null（不硬比）。mltNear 取中期序列首日（最近的
+// 可锁价），mltAvg 取全序列均值（趋势锚）。
+ */
+export function dualCurveDecision(
+  da: { mean: number; avgBandWidth: number } | null | undefined,
+  mlt: MidtermCurve | null | undefined
+): DualCurveDecision {
+  if (!Number.isFinite(da?.mean) || !mlt || !Array.isArray(mlt.dailyAvgPrice) || !mlt.dailyAvgPrice.length) return null
+  const prices = mlt.dailyAvgPrice.map(Number).filter(Number.isFinite)
+  if (!prices.length) return null
+  const daMean = Number(da!.mean)
+  const daBandPct = Math.round((Number(da!.avgBandWidth) / Math.max(daMean, 1e-6)) * 1000) / 10
+  const mltNear = prices[0]!
+  const mltAvg = Math.round((prices.reduce((a, b) => a + b, 0) / prices.length) * 100) / 100
+  const maseOk = mlt.maseVsPersistence === null || mlt.maseVsPersistence === undefined ? true : Number(mlt.maseVsPersistence) <= 1
+  const confident = daBandPct <= 25 && maseOk
+  const confidenceNote = [
+    `日前带宽/中位 ${daBandPct}%${daBandPct <= 25 ? '（窄）' : '（宽→低置信）'}`,
+    mlt.maseVsPersistence == null ? '中期 MASE 未给（按可信处理）' : `中期 MASE ${Number(mlt.maseVsPersistence).toFixed(2)}${maseOk ? '（≤1 优于持久基线）' : '（>1 低置信）'}`
+  ].join(' · ')
+  const premium = Math.round(((daMean - mltNear) / Math.max(mltNear, 1e-6)) * 1000) / 10
+  if (!confident) {
+    return {
+      daMean, daBandPct, mltNear, mltAvg, daPremiumPct: premium, confident, confidenceNote,
+      verdict: 'wait',
+      hint: `低置信，观望/谨慎：日前均值 ${Math.round(daMean)} vs 中长期近期 ${Math.round(mltNear)} 元/MWh（日前溢价 ${premium}%），但${daBandPct > 25 ? '日前带宽过宽' : '中期预测不如持久基线'}——按会议规则低置信不动作，人工加大安全边际`
+    }
+  }
+  return premium > 3
+    ? {
+        daMean, daBandPct, mltNear, mltAvg, daPremiumPct: premium, confident, confidenceNote,
+        verdict: 'prefer_spot',
+        hint: `高置信 · 日前贵 ${premium}%（日前均值 ${Math.round(daMean)} > 中长期近期 ${Math.round(mltNear)}）——卖方先现货卖贵；买方不急锁中长期（等回落），先现货补缺`
+      }
+    : premium < -3
+      ? {
+          daMean, daBandPct, mltNear, mltAvg, daPremiumPct: premium, confident, confidenceNote,
+          verdict: 'prefer_mlt',
+          hint: `高置信 · 日前便宜 ${Math.abs(premium)}%（日前均值 ${Math.round(daMean)} < 中长期近期 ${Math.round(mltNear)}）——买方锁中长期低价划算；卖方留现货另议（卖方语义反向）`
+        }
+      : {
+          daMean, daBandPct, mltNear, mltAvg, daPremiumPct: premium, confident, confidenceNote,
+          verdict: 'wait',
+          hint: `高置信但两曲线相当（日前溢价 ${premium}%，±3% 内）——价差不足以驱动先后顺序，按敞口与执行成本取便`
+        }
+}

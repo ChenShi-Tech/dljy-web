@@ -511,4 +511,8 @@ function gapClass(s: GapSuggestion) {
 .cg-frame { margin-left: auto; font-style: normal; font-size: 10px; padding: 1px 8px; border-radius: 8px; }
 .cg-frame.buyer { background: #eff6ff; color: #1d4ed8; }
 .cg-frame.seller { background: #fef3c7; color: #92400e; }
-.cg-frame.storage { background: #f5f3ff; color: #6d28d9; }</style>
+.cg-frame.storage { background: #f5f3ff; color: #6d28d9; }@media (max-width: 760px) {
+  .cg-grid { grid-template-columns: 1fr; }
+  .cg-table, table { display: block; overflow-x: auto; }
+}
+</style>

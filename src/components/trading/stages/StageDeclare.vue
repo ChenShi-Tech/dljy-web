@@ -262,6 +262,10 @@ const deadlinePassed = computed(() => {
   return declarationModeOf(decl.value) === 'LIVE' && now.value > new Date(decl.value.deadline).getTime()
 })
 
+function scrollToSection(id: string) {
+  document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+}
+
 function doRiskCheck() {
   if (!decl.value) return
   void run(() => runDeclarationRiskCheck(decl.value!.id, {}), '风控检查完成（判据取自各阶段写回产出）')
@@ -350,6 +354,14 @@ const receiptChecks = computed<ReceiptCheckRow[] | null>(() => {
 
 <template>
   <div class="dc">
+    <!-- 段内导航（#1970：面板偏长，锚点直达四段） -->
+    <nav v-if="decl" class="dc-section-nav">
+      <button type="button" @click="scrollToSection('dc-sec-curve')">① 申报曲线</button>
+      <button type="button" @click="scrollToSection('dc-sec-segments')">② 分段报价</button>
+      <button type="button" @click="scrollToSection('dc-sec-checklist')">③ 放行自查</button>
+      <button type="button" @click="scrollToSection('dc-sec-machine')">④ 风控→提交</button>
+    </nav>
+
     <!-- 截止提示 + 三级提醒（手册：截止前 60/15/5 分钟） -->
     <section
       v-if="decl"
@@ -366,7 +378,7 @@ const receiptChecks = computed<ReceiptCheckRow[] | null>(() => {
     </section>
 
     <!-- ① 申报曲线 -->
-    <section class="dc-panel">
+    <section id="dc-sec-curve" class="dc-panel">
       <h3><FileUp :size="14" /> ① 申报曲线</h3>
       <div class="dc-curve">
         <span>单据当前 <strong>{{ declaredTotal.toFixed(1) }}</strong> MWh</span>
@@ -393,7 +405,7 @@ const receiptChecks = computed<ReceiptCheckRow[] | null>(() => {
     </section>
 
     <!-- ①' 分段价量报价草稿（F3.4）—— 发电/储能立场报量报价；售电 T3 报量不报价 -->
-    <details v-if="needsPriceQuote" class="dc-segments" :open="!decl?.priceCurve96?.length">
+    <details v-if="needsPriceQuote" id="dc-sec-segments" class="dc-segments" :open="!decl?.priceCurve96?.length">
       <summary>
         <Layers :size="13" /> 分段价量报价草稿（{{ segmentCount }} 段）
         <em v-if="decl?.priceCurve96?.length">价格曲线已写入（{{ new Set(decl.priceCurve96).size }} 档价）</em>
@@ -457,7 +469,7 @@ const receiptChecks = computed<ReceiptCheckRow[] | null>(() => {
     </details>
 
     <!-- ② 放行自查 -->
-    <section class="dc-panel">
+    <section id="dc-sec-checklist" class="dc-panel">
       <h3>
         <ShieldCheck :size="14" /> ② 放行自查（T4 十项）
         <span class="dc-verdict" :class="verdict.allowed ? 'ok' : 'bad'">
@@ -547,9 +559,9 @@ const receiptChecks = computed<ReceiptCheckRow[] | null>(() => {
     </section>
 
     <!-- ③ 状态机 -->
-    <section class="dc-panel">
+    <section id="dc-sec-machine" class="dc-panel">
       <h3><Save :size="14" /> ③ 风控 → 审批 → 提交</h3>
-      <div v-if="!decl" class="dc-muted">未绑定单据。</div>
+      <div v-if="!decl" class="dc-muted">未绑定作业单据——先在顶部选择或新建标的日申报单。</div>
       <template v-else>
         <div class="dc-machine">
           <span class="dc-status">{{ STATUS_LABEL[decl.status] }}</span>
@@ -713,6 +725,14 @@ const receiptChecks = computed<ReceiptCheckRow[] | null>(() => {
 .dc-table tr.unavailable td { background: #fffbeb; }
 .dc-detail-cell { color: var(--el-text-color-secondary, #667); }
 
+.dc-section-nav { display: flex; gap: 6px; flex-wrap: wrap; }
+.dc-section-nav button { padding: 3px 12px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 12px; background: #fff; font-size: 11px; cursor: pointer; color: #475569; }
+.dc-section-nav button:hover { border-color: #2563eb; color: #1d4ed8; }
+@media (max-width: 760px) {
+  .dc-grid { grid-template-columns: 1fr; }
+  .dc-table, .dc-seg-table, .dc-receipt-checks { display: block; overflow-x: auto; }
+  .dc-fields { grid-template-columns: 1fr 1fr; }
+}
 .dc-receipt { margin-top: 8px; padding: 7px 10px; border-radius: 8px; background: #f0fdf4; color: #166534; font-size: 12px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .dc-receipt em { font-style: normal; padding: 1px 7px; border-radius: 8px; background: #fef3c7; color: #92400e; font-size: 10px; }
 .dc-receipt-checks { width: 100%; border-collapse: collapse; font-size: 11px; margin-top: 6px; background: #fff; }

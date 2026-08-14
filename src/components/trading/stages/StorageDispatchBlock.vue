@@ -558,7 +558,7 @@ const aiReviewQuestion = computed(() =>
         history-key="s4_storage_plan_review"
       />
     </details>
-  </div>
+
     <!-- 下发报文预览（F4.3 下发侧 · 模拟） -->
     <details v-if="dispatchMessagePreview" class="sb-msg">
       <summary>

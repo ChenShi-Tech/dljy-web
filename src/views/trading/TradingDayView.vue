@@ -8,7 +8,7 @@
 //
 // 容器只管三件事：① 绑定/建单（顶部条）；② 步进条（页内切换，不走路由）；③ 按当前步
 // 渲染对应面板。各步的业务逻辑全在自己面板里，容器不掺和——这样每步可独立演进。
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { FileText, Plus } from 'lucide-vue-next'
 import WorkflowStepper from '@/components/spot/WorkflowStepper.vue'
@@ -130,6 +130,27 @@ function selectStage(stage: StageId) {
   router.replace({ query: { ...route.query, stage } })
 }
 
+// ── 键盘动线（#1970）：高频作业不摸鼠标也能走完七步 ──────────────────────────
+// Alt+←/→ 相邻步切换；Alt+1…7 直达第 N 步（用 e.code 判定——macOS 上 Alt+数字会
+// 产出特殊字符，按 e.key 判会把 ¡ 当 1）。表单输入不受影响（无 Alt 修饰不触发）。
+function onKeydown(e: KeyboardEvent) {
+  if (!e.altKey || e.ctrlKey || e.metaKey) return
+  const idx = ALL_STAGES.findIndex((st) => st.id === activeStage.value)
+  const digit = /^Digit([1-7])$/.exec(e.code)
+  if (e.code === 'ArrowRight' && idx >= 0 && idx < ALL_STAGES.length - 1) {
+    e.preventDefault()
+    selectStage(ALL_STAGES[idx + 1]!.id)
+  } else if (e.code === 'ArrowLeft' && idx > 0) {
+    e.preventDefault()
+    selectStage(ALL_STAGES[idx - 1]!.id)
+  } else if (digit) {
+    e.preventDefault()
+    selectStage(ALL_STAGES[Number(digit[1]) - 1]!.id)
+  }
+}
+onMounted(() => window.addEventListener('keydown', onKeydown))
+onUnmounted(() => window.removeEventListener('keydown', onKeydown))
+
 // 单据刷新后，若当前步因前置未做而该回退，重新校准（但不覆盖用户显式选的 ?stage=）
 watch(declaration, () => {
   const q = route.query.stage
@@ -233,6 +254,10 @@ onMounted(loadDeclaration)
 
     <!-- 页内步进条（不走路由）-->
     <WorkflowStepper :current="activeStage" :declaration="declaration" @select="selectStage" />
+    <p class="td-guide">
+      首次使用：按 S1→S7 顺序走，<strong>高亮步 = 当前该做的</strong>，上一步产出自动喂下一步。
+      快捷键：Alt+←/→ 切换相邻步，Alt+1…7 直达。
+    </p>
 
     <!-- 当前面板 -->
     <main class="td-stage">
@@ -307,6 +332,7 @@ onMounted(loadDeclaration)
 .td-rat-hint { font-size: 11px; color: #b45309; }
 .td-err { margin: 0; padding: 6px 10px; border-radius: 6px; background: #fef2f2; color: #991b1b; font-size: 12px; }
 
+.td-guide { margin: -6px 0 0; font-size: 11px; line-height: 1.6; color: var(--el-text-color-secondary, #889); }
 .td-stage { padding: 14px 16px; border: 1px solid var(--el-border-color-lighter, #ebeef5); border-radius: 10px; background: #fff; }
 .td-stage-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-bottom: 12px; padding-bottom: 10px; border-bottom: 1px solid var(--el-border-color-lighter, #ebeef5); }
 .td-stage-head h3 { margin: 0; font-size: 15px; }
