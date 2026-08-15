@@ -59,7 +59,7 @@ describe('decomposeDaily（三层拆解 · 恒等红线）', () => {
   })
 
   it('价格缺失点进缺口计数、不计入对应层', () => {
-    const d = decomposeDaily([pt('00:15', 10, 10, undefined, 320), pt('01:15', 10, 10, 300, undefined)])
+    const d = decomposeDaily([pt('00:15', 10, 10, undefined, 320), pt('01:15', 10, 10, 300, undefined)], null)
     expect(d.priceGapPoints).toBe(2)
     expect(d.daRevenueYuan).toBeCloseTo(10 * 300) // 仅第二点有日前价：10×300
     expect(d.rtIncrementYuan).toBeCloseTo(0) // 第一点实际=申报 → 0×320=0

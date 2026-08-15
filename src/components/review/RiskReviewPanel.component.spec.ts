@@ -8,16 +8,18 @@ vi.mock('@/services/quant/quantClient', () => ({ fetchCvar: vi.fn() }))
 vi.mock('@/services/tradingMemory', () => ({ getRegionWinStats: vi.fn() }))
 vi.mock('@/services/region/regionContext', () => ({ currentRegion: { value: { id: 'shanxi' } } }))
 
-import { fetchReviewRange } from '@/services/review/reviewPeriodClient'
+import { fetchReviewRange, type PeriodReviewDay } from '@/services/review/reviewPeriodClient'
 import { fetchCvar } from '@/services/quant/quantClient'
 import { getRegionWinStats } from '@/services/tradingMemory'
 import RiskReviewPanel from './RiskReviewPanel.vue'
 import { mount } from '@/test/mount'
 
-function okDay(date: string, spreadPnl: number | null, devPct = 0.02) {
+function okDay(date: string, spreadPnl: number | null, devPct = 0.02): PeriodReviewDay {
   return {
     ok: true as const, date, declaredTotalMwh: 1000, causeId: null, causeLabel: null,
     result: {
+      date,
+      source: 'platform',
       deviation: { points: 1, total_abs_deviation_mwh: devPct * 1000, assessed_mwh: 5, estimated_penalty_yuan: 500, tolerance_pct: 3, worst_point: { datetime: date, deviation: 1 } },
       backtest: { da_revenue_yuan: 1, avg_da_price: 1, da_rt_spread_pnl_yuan: spreadPnl ?? undefined, note: '' },
       detail: [
@@ -25,7 +27,7 @@ function okDay(date: string, spreadPnl: number | null, devPct = 0.02) {
         { datetime: `${date} 00:30`, declared: 10, actual: 10, da_price: 100, rt_price: 95 }
       ]
     }
-  }
+  } as unknown as PeriodReviewDay
 }
 
 beforeEach(() => {

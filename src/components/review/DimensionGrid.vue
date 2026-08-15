@@ -38,7 +38,7 @@ function onDimension(card: DimensionCard) {
     >
       <span class="dg-head">
         <b>{{ c.label }}</b>
-        <i v-if="c.anchor" class="dg-anchor-tag">现有区块</i>
+        <i v-if="c.anchor" class="dg-anchor-tag">{{ c.anchor === 'deviation' || c.anchor === 'result' ? '现有区块' : '深入面板' }}</i>
       </span>
       <span class="dg-counts">
         <i class="rd rd-ready">{{ c.counts.ready }} 就绪</i>

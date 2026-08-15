@@ -31,6 +31,13 @@ import { apiGet } from '@/services/api'
 import DimensionGrid from '@/components/review/DimensionGrid.vue'
 import TodoInbox from '@/components/review/TodoInbox.vue'
 import ReviewTemplateForm from '@/components/review/ReviewTemplateForm.vue'
+import DeviationAggregatePanel from '@/components/review/DeviationAggregatePanel.vue'
+import PnlDecomposePanel from '@/components/review/PnlDecomposePanel.vue'
+import MarketAttributionPanel from '@/components/review/MarketAttributionPanel.vue'
+import RiskReviewPanel from '@/components/review/RiskReviewPanel.vue'
+import SubjectCockpit from '@/components/review/SubjectCockpit.vue'
+import EmotionPatternPanel from '@/components/review/EmotionPatternPanel.vue'
+import MeetingMinutesForm from '@/components/review/MeetingMinutesForm.vue'
 import {
   buildDimensionCards,
   deviationMetricOf,
@@ -39,6 +46,7 @@ import {
   type TemplateCard,
   type TodoRow
 } from '@/services/review/cockpitModel'
+import { getRegionWinStats } from '@/services/tradingMemory'
 
 const route = useRoute()
 
@@ -129,18 +137,37 @@ const deviationMetric = computed(() =>
   })
 )
 
+/** 三主体驾驶舱（批1 售电 R1/R4 公司级日度行）喂当日 /review 真数。 */
+const subjectDaySummary = computed(() =>
+  result.value && deviationMetric.value.totalAbsDeviationMwh !== null
+    ? {
+        date: date.value,
+        declaredTotalMwh: declaredTotalMwh.value,
+        deviationMwh: deviationMetric.value.totalAbsDeviationMwh,
+        deviationPct: deviationMetric.value.deviationPct,
+        estimatedPenaltyYuan: deviationMetric.value.estimatedPenaltyYuan
+      }
+    : null
+)
+
 // 模板抽屉：chip/待办行打开单模板；无锚点维度先看维度模板清单再进
 const templateDrawer = ref<{ mode: 'template'; templateId: string } | { mode: 'dimension'; dimension: DimensionCard['key'] } | null>(null)
 
 function openTemplate(t: TemplateCard) {
   templateDrawer.value = { mode: 'template', templateId: t.id }
 }
+/** 三主体驾驶舱等按 id 直开模板渲染器。 */
+function openTemplateById(id: string) {
+  templateDrawer.value = { mode: 'template', templateId: id }
+}
 function openTodoInstance(row: TodoRow) {
   templateDrawer.value = { mode: 'template', templateId: row.templateId }
 }
 function onSelectDimension(card: DimensionCard) {
   if (card.anchor) {
-    document.getElementById(`sec-${card.anchor}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    // 维度面板默认折叠（details），先展开再滚到锚点
+    openedDims.value.add(card.anchor)
+    nextTick(() => document.getElementById(`sec-${card.anchor}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' }))
   } else {
     templateDrawer.value = { mode: 'dimension', dimension: card.key }
   }
@@ -149,6 +176,21 @@ const drawerCard = computed(() => {
   const d = templateDrawer.value
   return d && d.mode === 'dimension' ? (dimensionCards.find((c) => c.key === d.dimension) ?? null) : null
 })
+
+// M2–M4 维度面板区：策略/市场/风险/决策 + 三主体，默认折叠、维度入口点击展开
+const openedDims = ref(new Set<string>())
+function dimOpen(key: string): boolean {
+  return openedDims.value.has(key)
+}
+function toggleDim(key: string, open: boolean) {
+  const next = new Set(openedDims.value)
+  if (open) next.add(key)
+  else next.delete(key)
+  openedDims.value = next
+}
+
+// 策略维度：胜率概览（tradingMemory 后验真数据；样本 <30 不出结论只标样本不足——T04 硬规则）
+const winStats = computed(() => getRegionWinStats(currentRegion.value.id))
 
 async function load() {
   loading.value = true
@@ -496,6 +538,12 @@ onRegionChange(() => {
             </template>
           </section>
         </div>
+
+        <!-- 偏差维度深入：周/月聚合（#2042 模板七/八） -->
+        <DeviationAggregatePanel :tolerance-pct="tolerancePct" :penalty-price="penaltyPrice" />
+
+        <!-- 结果维度深入：收益三层拆解与 Top5（#2043 模板二/三） -->
+        <PnlDecomposePanel :spec="settlementSpec" :tolerance-pct="tolerancePct" :penalty-price="penaltyPrice" />
       </div>
 
       <!-- 右：待办箱 + 智能体复盘 + 历史报告 -->
@@ -529,6 +577,50 @@ onRegionChange(() => {
         </section>
       </div>
     </div>
+
+    <!-- 六维深入面板区（M2–M4 · #2042–#2049）：默认折叠，六维入口卡点击展开并滚到锚点 -->
+    <section class="dim-panels">
+      <details id="sec-strategy" class="panel dim-panel" :open="dimOpen('strategy')" @toggle="e => toggleDim('strategy', (e.target as HTMLDetailsElement).open)">
+        <summary>策略复盘 · 胜率概览（模板四）</summary>
+        <div class="dim-body">
+          <div class="win-facts">
+            <span>后验胜率 <b>{{ (winStats.posteriorWinRate * 100).toFixed(1) }}%</b></span>
+            <span>样本 {{ winStats.sampleSize }} 笔</span>
+            <span v-if="winStats.sampleSize > 0">90% 可信区间 {{ (winStats.credibleLow * 100).toFixed(0) }}%–{{ (winStats.credibleHigh * 100).toFixed(0) }}%</span>
+          </div>
+          <p v-if="winStats.sampleSize < 30" class="dim-note">
+            样本 &lt;30 不出胜率结论、只标「样本不足」（T04 方案原文硬规则）——上方数字仅为后验分布参考。
+          </p>
+          <p class="dim-note">
+            策略库与胜率分析报告的服务端化（tradingMemory 收编 PG、回测/实盘双口径分列）归 #2045；
+            本区当前消费前端 Beta-Binomial 后验真数据。
+          </p>
+        </div>
+      </details>
+
+      <details id="sec-market" class="panel dim-panel" :open="dimOpen('market')" @toggle="e => toggleDim('market', (e.target as HTMLDetailsElement).open)">
+        <summary>市场复盘 · 月度市场归因（#2046 模板六）</summary>
+        <div class="dim-body"><MarketAttributionPanel /></div>
+      </details>
+
+      <details id="sec-risk" class="panel dim-panel" :open="dimOpen('risk')" @toggle="e => toggleDim('risk', (e.target as HTMLDetailsElement).open)">
+        <summary>风险复盘 · 事件库与压力测试（#2047 模板九/十）</summary>
+        <div class="dim-body"><RiskReviewPanel :tolerance-pct="tolerancePct" :penalty-price="penaltyPrice" /></div>
+      </details>
+
+      <details id="sec-decision" class="panel dim-panel" :open="dimOpen('decision')" @toggle="e => toggleDim('decision', (e.target as HTMLDetailsElement).open)">
+        <summary>决策复盘 · 情绪化识别与会议纪要（#2049 模板十一/十二）</summary>
+        <div class="dim-body dim-stack">
+          <EmotionPatternPanel />
+          <MeetingMinutesForm />
+        </div>
+      </details>
+
+      <details id="sec-subject" class="panel dim-panel" :open="dimOpen('subject')" @toggle="e => toggleDim('subject', (e.target as HTMLDetailsElement).open)">
+        <summary>三主体驾驶舱 · 售电/新能源/储能（#2048）</summary>
+        <div class="dim-body"><SubjectCockpit :day-summary="subjectDaySummary" @open-template="id => openTemplateById(id)" /></div>
+      </details>
+    </section>
 
     <!-- 报告阅读弹层 -->
     <div v-if="readingReport" class="report-overlay" @click.self="readingReport = null">
@@ -595,6 +687,20 @@ onRegionChange(() => {
 .m-value.bad { color: #b91c1c; }
 .m-sub { font-size: 11.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
 .m-note { margin: 2px 0 0; font-size: 11.5px; line-height: 1.7; color: var(--muted); }
+
+/* 六维深入面板区（M2–M4）：默认折叠，锚点由六维入口卡触发展开 */
+.dim-panels { display: flex; flex-direction: column; gap: 10px; }
+.dim-panel { padding: 0; }
+.dim-panel summary {
+  cursor: pointer; padding: 11px 16px; font-size: 13px; font-weight: 600;
+  color: var(--text); list-style: revert;
+}
+.dim-panel[open] summary { border-bottom: 1px solid var(--line); }
+.dim-body { padding: 12px 16px; }
+.dim-stack { display: flex; flex-direction: column; gap: 14px; }
+.win-facts { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12.5px; font-variant-numeric: tabular-nums; }
+.win-facts b { font-size: 15px; }
+.dim-note { margin: 8px 0 0; font-size: 11.5px; line-height: 1.7; color: var(--muted); }
 
 /* 模板抽屉（沿用报告弹层的浮层模式） */
 .tpl-overlay {

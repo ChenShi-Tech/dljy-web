@@ -4,13 +4,15 @@ import DimensionGrid from './DimensionGrid.vue'
 import { mount } from '@/test/mount'
 
 describe('DimensionGrid（六维入口卡）', () => {
-  it('六维齐全：偏差/结果维度带「现有区块」锚标，模板 chip 带就绪度徽章', () => {
+  it('六维齐全：全部维度有锚（偏差/结果=现有区块，其余=深入面板），模板 chip 带就绪度徽章', () => {
     const wrapper = mount(DimensionGrid)
     const text = wrapper.text()
     for (const label of ['结果复盘', '策略复盘', '市场复盘', '偏差复盘', '风险复盘', '决策复盘']) {
       expect(text).toContain(label)
     }
-    expect(wrapper.findAll('.dg-anchor-tag')).toHaveLength(2)
+    const tags = wrapper.findAll('.dg-anchor-tag').map((t) => t.text())
+    expect(tags.filter((t) => t === '现有区块')).toHaveLength(2)
+    expect(tags.filter((t) => t === '深入面板')).toHaveLength(4)
     // 缺数据模板 chip 有「缺数据」标记（如 T02 data_gap）
     expect(text).toContain('缺数据')
     // 就绪模板有「就绪」标记

@@ -37,14 +37,14 @@ describe('buildDimensionCards（六维入口卡）', () => {
     expect(new Set(ids).size).toBe(ids.length)
   })
 
-  it('偏差复盘/结果复盘锚到既有区块，其余四维无锚（入口即模板抽屉）', () => {
+  it('六维全部锚到驾驶舱区块（#2042–#2049 落地后无「空维度」）', () => {
     const by = Object.fromEntries(cards.map((c) => [c.key, c.anchor]))
     expect(by.deviation).toBe('deviation')
     expect(by.result).toBe('result')
-    expect(by.strategy).toBeNull()
-    expect(by.market).toBeNull()
-    expect(by.risk).toBeNull()
-    expect(by.decision).toBeNull()
+    expect(by.strategy).toBe('strategy')
+    expect(by.market).toBe('market')
+    expect(by.risk).toBe('risk')
+    expect(by.decision).toBe('decision')
   })
 
   it('data_gap 模板卡带 gapNote（缺数据要说明缺口，不许静默）', () => {

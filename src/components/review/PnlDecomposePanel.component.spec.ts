@@ -5,7 +5,7 @@ import { nextTick } from 'vue'
 vi.mock('vue-router', () => ({ useRouter: () => ({ push: vi.fn() }) }))
 vi.mock('@/services/review/reviewPeriodClient', () => ({ fetchReviewRange: vi.fn() }))
 
-import { fetchReviewRange } from '@/services/review/reviewPeriodClient'
+import { fetchReviewRange, type PeriodReviewDay } from '@/services/review/reviewPeriodClient'
 import PnlDecomposePanel from './PnlDecomposePanel.vue'
 import { mount } from '@/test/mount'
 import type { SettlementRuleSpec } from '@/rules/types'
@@ -17,17 +17,19 @@ const spec = {
   recycleSubjects: [], notes: [], references: []
 } as unknown as SettlementRuleSpec
 
-function okDay(date: string, da: number, rt: number) {
+function okDay(date: string, da: number, rt: number): PeriodReviewDay {
   return {
     ok: true as const, date, declaredTotalMwh: 10, causeId: null, causeLabel: null,
     result: {
+      date,
+      source: 'platform',
       deviation: { points: 1, total_abs_deviation_mwh: 1, assessed_mwh: 0, estimated_penalty_yuan: 0, tolerance_pct: 3, worst_point: { datetime: date, deviation: 0 } },
       detail: [
         { datetime: `${date} 00:15`, declared: 10, actual: 10, da_price: da, rt_price: rt },
         { datetime: `${date} 11:15`, declared: 5, actual: 5, da_price: da, rt_price: rt }
       ]
     }
-  }
+  } as unknown as PeriodReviewDay
 }
 
 beforeEach(() => {

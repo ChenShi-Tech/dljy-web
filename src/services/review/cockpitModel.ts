@@ -31,10 +31,18 @@ export type DimensionCard = {
   anchor: string | null
 }
 
-/** 「偏差复盘/结果复盘」锚到既有区块（2026-08-13 拍板：升级现页，不另建） */
+/**
+ * 六维 → 驾驶舱页内锚点（2026-08-13 拍板：升级现页不另建）。
+ * 偏差/结果锚到既有核心区块；策略/市场/风险/决策锚到 M2–M4 维度面板
+ * （#2042–#2049 落地后六维全部有真实落点）。
+ */
 const DIMENSION_ANCHORS: Partial<Record<ReviewDimension, string>> = {
   deviation: 'deviation',
-  result: 'result'
+  result: 'result',
+  strategy: 'strategy',
+  market: 'market',
+  risk: 'risk',
+  decision: 'decision'
 }
 
 function toCard(t: (typeof REVIEW_TEMPLATES)[number]): TemplateCard {
