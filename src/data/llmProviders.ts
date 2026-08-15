@@ -45,8 +45,16 @@ export const llmProviders: LlmProvider[] = [
     id: "moonshot",
     name: "月之暗面 Kimi",
     baseURL: "https://api.moonshot.cn/v1",
-    models: ["moonshot-v1-8k","moonshot-v1-32k","moonshot-v1-128k","kimi-k2.6"],
-    docUrl: "https://platform.moonshot.cn",
+    models: ["moonshot-v1-8k","moonshot-v1-32k","moonshot-v1-128k","kimi-k2.6","kimi-k2.7-code","kimi-k3"],
+    docUrl: "https://platform.kimi.ai",
+  },
+  {
+    id: "kimi_coding",
+    name: "Kimi Code",
+    baseURL: "https://api.kimi.com/coding/v1",
+    models: ["kimi-k2.6","kimi-k2.7-code","kimi-k3"],
+    docUrl: "https://www.kimi.com/code/docs",
+    note: "key 形如 sk-kimi-，与开放平台的 key 不通用"
   },
   {
     id: "hunyuan",

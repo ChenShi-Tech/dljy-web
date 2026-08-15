@@ -299,7 +299,8 @@ async function writeBack() {
                 <td><input v-model="row.station" type="text" placeholder="电站名" /></td>
                 <td><input v-model.number="row.declaredMwh" type="number" /></td>
                 <td><input v-model.number="row.clearedMwh" type="number" /></td>
-                <td>{{ stationRecords[i]?.clearRate !== null && stationRecords[i] ? (stationRecords[i].clearRate! * 100).toFixed(1) + '%' : '—' }}</td>
+                <!-- 清比例按行内数据现算：stationRecords 是剔空名行后的派生数组，下标与本表错行 -->
+                <td>{{ row.declaredMwh && row.declaredMwh > 0 && row.clearedMwh !== null ? ((row.clearedMwh / row.declaredMwh) * 100).toFixed(1) + '%' : '—' }}</td>
                 <td><input v-model.number="row.attendancePct" type="number" min="0" max="100" /></td>
                 <td><button type="button" class="cl-jump" @click="removeStationRow(i)">删</button></td>
               </tr>

@@ -99,39 +99,61 @@ describe('effectIdsFromApproval 两侧 payload 形状', () => {
   })
 })
 
-describe('compareObservations 三维度', () => {
+describe('compareObservations：判 pi 是否劣于 legacy，不判两侧是否相同', () => {
   const base: TurnObservation = { shape: ['token', 'done'], effects: [], ok: true, textLength: 12 }
 
-  it('完全一致时三维度全 true', () => {
-    expect(compareObservations(base, { ...base })).toEqual({
-      eventShapeMatch: true, effectsMatch: true, availabilityMatch: true,
-    })
+  it('两侧都答出且 pi 无多余写动作 → 无回归', () => {
+    const r = compareObservations(base, { ...base })
+    expect(r.availabilityRegressed).toBe(false)
+    expect(r.availabilityImproved).toBe(false)
+    expect(r.unsafeEffects).toEqual([])
+    expect(r.shapeMatch).toBe(true)
   })
 
-  it('形状不同只影响 eventShapeMatch', () => {
+  it('形状不同不再构成任何回归信号（只是观测项）', () => {
     const pi = { ...base, shape: ['token', 'tool_call', 'tool_result', 'token', 'done'] }
-    expect(compareObservations(base, pi)).toEqual({
-      eventShapeMatch: false, effectsMatch: true, availabilityMatch: true,
-    })
+    const r = compareObservations(base, pi)
+    expect(r.shapeMatch).toBe(false)
+    expect(r.availabilityRegressed).toBe(false)
+    expect(r.unsafeEffects).toEqual([])
   })
 
-  it('一侧请求了写动作、另一侧没有 → 落库内容不一致（零容忍维度）', () => {
+  it('pi 多做了 legacy 未做的写动作 → 记入 unsafeEffects（唯一保留的零容忍方向）', () => {
     const pi = { ...base, effects: ['submit_declaration'] }
-    expect(compareObservations(base, pi).effectsMatch).toBe(false)
+    expect(compareObservations(base, pi).unsafeEffects).toEqual(['submit_declaration'])
   })
 
-  it('一侧答出内容、另一侧空 → 可用性不一致', () => {
-    expect(compareObservations(base, { ...base, textLength: 0 }).availabilityMatch).toBe(false)
+  it('legacy 做了而 pi 没做 → 不是回归，只记观测（pi 更克制）', () => {
+    const legacy = { ...base, effects: ['generate_report'] }
+    const r = compareObservations(legacy, base)
+    expect(r.unsafeEffects).toEqual([])
+    expect(r.legacyOnlyEffects).toEqual(['generate_report'])
   })
 
-  it('两侧都没走完 → 可用性判为一致：一致地坏不是回归，记成差异会误封升级闸', () => {
+  it('legacy 答出而 pi 没答出 → 判 pi 回归', () => {
+    const r = compareObservations(base, { ...base, textLength: 0 })
+    expect(r.availabilityRegressed).toBe(true)
+    expect(r.availabilityImproved).toBe(false)
+  })
+
+  it('pi 答出而 legacy 没答出 → 判 pi 改进，绝不算差异', () => {
+    // 这正是改口径要解决的实测场景：旧图崩掉、pi 正常答出，
+    // 旧口径把它记成「差异」推高差异率，反而把更好的一侧拦在门外。
     const legacy = { ...base, ok: false, textLength: 0 }
-    const pi = { ...base, ok: false, textLength: 0 }
-    expect(compareObservations(legacy, pi).availabilityMatch).toBe(true)
+    const r = compareObservations(legacy, base)
+    expect(r.availabilityImproved).toBe(true)
+    expect(r.availabilityRegressed).toBe(false)
   })
 
-  it('产出长度不同但都非空 → 仍算可用性一致（措辞长短不是可用性差异）', () => {
-    expect(compareObservations(base, { ...base, textLength: 999 }).availabilityMatch).toBe(true)
+  it('两侧都没走完 → 既不算回归也不算改进（一致地坏不是回归）', () => {
+    const dead = { ...base, ok: false, textLength: 0 }
+    const r = compareObservations(dead, { ...dead })
+    expect(r.availabilityRegressed).toBe(false)
+    expect(r.availabilityImproved).toBe(false)
+  })
+
+  it('产出长度不同但都非空 → 不算回归（措辞长短不是可用性差异）', () => {
+    expect(compareObservations(base, { ...base, textLength: 999 }).availabilityRegressed).toBe(false)
   })
 })
 

@@ -157,11 +157,39 @@ function sameSequence(a: string[], b: string[]): boolean {
 }
 
 /** 三维度对拍。落库内容零容忍，另两维的容差在服务端按**跨轮次差异率**判，这里只出单轮布尔。 */
+function answered(o: TurnObservation): boolean {
+  return o.ok && o.textLength > 0
+}
+
+/**
+ * 单轮对拍：**判 pi 是否劣于 legacy，而不是判两侧是否相同**（2026-08-15 用户拍板改口径）。
+ *
+ * 为什么必须改：原口径三个维度测的全是「两侧一不一致」，没有一个在测「哪一侧是对的」。
+ * 实测（36 条真实问法，两轮）的后果是双向的——
+ * - 旧图在缺供应商密钥时整轮崩、pi 正常答出，被记成「差异」推高差异率，**把更好的一侧拦在门外**；
+ * - 反过来，两侧一起答错、一起弹错审批，会被记成「一致」一路绿灯放行。
+ *
+ * 而两套底座结构性就不同（旧图有子代理事件、pi 没有；旧图在只读问题上弹审批、pi 不弹），
+ * 这类差异不会随修 bug 或换模型收敛。继续按「对齐一致」判，等于要求 pi 去模仿旧图的错误。
+ *
+ * 新口径按「目标等效」：只要 pi 达成了目标且没多做危险动作，就不算回归。
+ */
 export function compareObservations(legacy: TurnObservation, pi: TurnObservation) {
+  const legacyAnswered = answered(legacy)
+  const piAnswered = answered(pi)
+  // pi 多做了 legacy 没做的写动作 —— 唯一保留零容忍的方向。反过来 pi 少做是更克制，不算回归。
+  const legacyEffects = new Set(legacy.effects)
+  const unsafeEffects = pi.effects.filter((id) => !legacyEffects.has(id))
   return {
-    eventShapeMatch: sameSequence(legacy.shape, pi.shape),
-    effectsMatch: sameSequence(legacy.effects, pi.effects),
-    // 「产出可用性」= 都正常收尾且都答出了非空内容。一侧能答一侧报错/空，是用户直接感知的退化
-    availabilityMatch: legacy.ok === pi.ok && (legacy.textLength > 0) === (pi.textLength > 0),
+    /** pi 回归：legacy 答出来了而 pi 没答出来。这是用户直接感知的退化 */
+    availabilityRegressed: legacyAnswered && !piAnswered,
+    /** pi 改进：pi 答出来了而 legacy 没答出来。**记录但不计入差异**——它正是切流的理由 */
+    availabilityImproved: piAnswered && !legacyAnswered,
+    /** pi 独有的写动作（零容忍）。空数组表示 pi 没有多做任何 legacy 未做的事 */
+    unsafeEffects,
+    /** legacy 独有的写动作：观测项，不阻断（pi 不做 = 更克制） */
+    legacyOnlyEffects: legacy.effects.filter((id) => !new Set(pi.effects).has(id)),
+    /** 事件形状是否相同：**观测项，不再作阻断依据**（两侧工具面与子代理结构本就不同） */
+    shapeMatch: sameSequence(legacy.shape, pi.shape),
   }
 }
