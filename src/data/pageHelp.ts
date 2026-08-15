@@ -82,7 +82,7 @@ export const pageHelpRegistry: Record<string, PageHelpEntry> = {
   },
   ReviewCenter: {
     title: '复盘中心',
-    body: 'D+1 动线复盘：96 点偏差图（申报/实际折线+受考核电量柱）+ 偏差考核/申报回测/结算对账三数字卡 + 智能体复盘一键生成 daily_review 报告与历史列表。可从申报台④步深链带入申报单作回测基准。容差/考核价取当前地区结算规则 SettlementRuleSpec，结算对账按月拉 /api/v1/settlements。属决策支持，非投资建议；以正式结算口径为准。',
+    body: '六维复盘驾驶舱（#2033）：顶部偏差率指标卡（quant /review 权威口径，仅覆盖区出数）与风险事件占位卡；六维入口卡带 31 项模板注册表就绪度徽章（缺数据诚实标注缺口）；复盘待办箱在触发引擎（#2039）上线前显示就绪度台账、不拿假分母。既有 D+1 动线保留：96 点偏差图、偏差考核/申报回测/结算对账三数字卡、智能体复盘 daily_review 报告与历史列表、申报台④步深链带入申报单基准。容差/考核价读 SettlementRuleSpec；模板 24 时段视图底层 96 点。属决策支持，非投资建议；以正式结算口径为准。',
     docPath: 'docs/agent-harness/market-tools-and-agent-dispatch.md'
   },
   RiskCenter: {

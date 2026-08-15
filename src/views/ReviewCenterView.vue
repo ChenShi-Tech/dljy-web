@@ -28,6 +28,17 @@ import { currentRegion } from '@/services/region/regionContext'
 import { onRegionChange } from '../composables/useRegionReload'
 import RegionDataBanner from '@/components/region/RegionDataBanner.vue'
 import { apiGet } from '@/services/api'
+import DimensionGrid from '@/components/review/DimensionGrid.vue'
+import TodoInbox from '@/components/review/TodoInbox.vue'
+import ReviewTemplateForm from '@/components/review/ReviewTemplateForm.vue'
+import {
+  buildDimensionCards,
+  deviationMetricOf,
+  RISK_CARD_NOTE,
+  type DimensionCard,
+  type TemplateCard,
+  type TodoRow
+} from '@/services/review/cockpitModel'
 
 const route = useRoute()
 
@@ -102,6 +113,42 @@ const readingReport = ref<{ title: string; html: string } | null>(null)
 const pnlClass = computed(() =>
   (result.value?.backtest.da_rt_spread_pnl_yuan ?? 0) >= 0 ? 'good' : 'bad'
 )
+
+// ── 六维驾驶舱 v1（Epic #2033 · #2038）──────────────────────────────────────
+// 两张真数指标卡之一：偏差率（总偏差/申报总量，quant /review 权威口径，仅覆盖区出数）；
+// 风险事件卡 M3 前占位空态；覆盖率/填写率不上（触发引擎无分母，不拿假数凑）。
+const dimensionCards = buildDimensionCards()
+const declaredTotalMwh = computed(() =>
+  result.value?.detail.length ? result.value.detail.reduce((a, p) => a + (p.declared ?? 0), 0) : null
+)
+const deviationMetric = computed(() =>
+  deviationMetricOf({
+    totalAbsDeviationMwh: result.value?.deviation.total_abs_deviation_mwh ?? null,
+    declaredTotalMwh: declaredTotalMwh.value,
+    estimatedPenaltyYuan: result.value?.deviation.estimated_penalty_yuan ?? null
+  })
+)
+
+// 模板抽屉：chip/待办行打开单模板；无锚点维度先看维度模板清单再进
+const templateDrawer = ref<{ mode: 'template'; templateId: string } | { mode: 'dimension'; dimension: DimensionCard['key'] } | null>(null)
+
+function openTemplate(t: TemplateCard) {
+  templateDrawer.value = { mode: 'template', templateId: t.id }
+}
+function openTodoInstance(row: TodoRow) {
+  templateDrawer.value = { mode: 'template', templateId: row.templateId }
+}
+function onSelectDimension(card: DimensionCard) {
+  if (card.anchor) {
+    document.getElementById(`sec-${card.anchor}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  } else {
+    templateDrawer.value = { mode: 'dimension', dimension: card.key }
+  }
+}
+const drawerCard = computed(() => {
+  const d = templateDrawer.value
+  return d && d.mode === 'dimension' ? (dimensionCards.find((c) => c.key === d.dimension) ?? null) : null
+})
 
 async function load() {
   loading.value = true
@@ -218,9 +265,24 @@ async function loadSettlementReview() {
 onMounted(() => {
   load()
   void loadSettlementReview()
-  loadReports()
+  loadReports().then(() => openDeepLinkedReport())
   loadSettlements()
+  // 深链（#2038/#2040）：?todo=1 滚到待办箱；?run=1 直接展开一键生成（S1 报告卡手动触发入口）
+  if (route.query.todo === '1') {
+    nextTick(() => document.getElementById('review-todo')?.scrollIntoView({ behavior: 'smooth', block: 'start' }))
+  }
+  if (route.query.run === '1') {
+    reportRunning.value = true
+  }
 })
+
+/** ?report=<session_id>：S1 昨夜报告卡「看全文」直开阅读器。 */
+async function openDeepLinkedReport() {
+  const sid = typeof route.query.report === 'string' ? route.query.report : ''
+  if (!sid) return
+  const item = reports.value.find((r) => r.session_id === sid)
+  if (item) await openReport(item)
+}
 watch(reviewMonth, loadSettlements)
 // 地区切换：onRegionChange 自包含地按新地区 SettlementRuleSpec 更新容差并重载，
 // 不依赖 settlementSpec watch 的执行顺序（加固：守卫逻辑收敛到单一 watch 内）。
@@ -263,6 +325,35 @@ onRegionChange(() => {
       <span v-else-if="declarationId" class="demo-tag">申报单 {{ declarationId }} 不可达，已降级合成基准</span>
       <span v-if="result?.source === 'synthetic_mock'" class="demo-tag">演示数据</span>
       <span v-if="error" class="error-tag">{{ error }}</span>
+    </section>
+
+    <!-- 六维驾驶舱 v1（Epic #2033 · #2038）：两张真数指标卡 + 六维入口。
+         偏差/结果维度锚到下方既有区块（升级现页不另建）；其余维度入口=模板抽屉。 -->
+    <section class="cockpit">
+      <div class="metric-cards">
+        <div class="metric-card" :class="{ empty: !result }">
+          <div class="m-head">
+            偏差率（{{ date }}）
+            <span class="m-src">{{ result?.actual_source ? `实际侧：${result.actual_source}` : 'quant /review 权威口径' }}</span>
+          </div>
+          <template v-if="result">
+            <b class="m-value" :class="deviationMetric.deviationPct !== null && deviationMetric.deviationPct > 0.05 ? 'bad' : ''">
+              {{ deviationMetric.deviationPct === null ? '—' : (deviationMetric.deviationPct * 100).toFixed(2) + '%' }}
+            </b>
+            <span class="m-sub">
+              总偏差 {{ deviationMetric.totalAbsDeviationMwh ?? '—' }} MWh ·
+              考核费估算 {{ deviationMetric.estimatedPenaltyYuan?.toLocaleString() ?? '—' }} 元
+              · 免考核带 ±{{ result.deviation.tolerance_pct }}%
+            </span>
+          </template>
+          <p v-else class="m-note">未出数：未接入地区/覆盖区外/参数未定时诚实空态（见下方引导卡），不合成、不串读他省。</p>
+        </div>
+        <div class="metric-card placeholder">
+          <div class="m-head">风险事件<span class="m-tag">M3 前占位</span></div>
+          <p class="m-note">{{ RISK_CARD_NOTE }}</p>
+        </div>
+      </div>
+      <DimensionGrid :cards="dimensionCards" @select-dimension="onSelectDimension" @open-template="openTemplate" />
     </section>
 
     <!-- 结算口径日复盘（云南三段式）：与下方「申报 vs 实际偏差考核」是两套口径。
@@ -353,7 +444,7 @@ onRegionChange(() => {
             </template>
           </el-empty>
         </section>
-        <section v-else class="panel chart-block">
+        <section v-else id="sec-deviation" class="panel chart-block">
           <div class="block-title">申报 vs 实际 · 96 点偏差</div>
           <div ref="chartEl" class="main-chart chart-host" />
         </section>
@@ -367,7 +458,7 @@ onRegionChange(() => {
           </ul>
         </section>
 
-        <div class="card-row" v-if="result">
+        <div class="card-row" id="sec-result" v-if="result">
           <section class="panel num-card">
             <div class="block-title">偏差考核（容差 ±{{ result.deviation.tolerance_pct }}%）</div>
             <div class="num-row"><span>总偏差电量</span><b>{{ result.deviation.total_abs_deviation_mwh }} MWh</b></div>
@@ -407,8 +498,10 @@ onRegionChange(() => {
         </div>
       </div>
 
-      <!-- 右：智能体复盘 + 历史报告 -->
+      <!-- 右：待办箱 + 智能体复盘 + 历史报告 -->
       <div class="right-col">
+        <TodoInbox @open-instance="openTodoInstance" />
+
         <section class="panel agent-block">
           <div class="block-title"><Sparkles :size="14" /> 智能体复盘（归因叙事 + 报告落盘）</div>
           <button v-if="!reportRunning" class="launch" @click="reportRunning = true">
@@ -447,12 +540,88 @@ onRegionChange(() => {
         <div class="report-body md" v-html="readingReport.html" />
       </div>
     </div>
+
+    <!-- 复盘模板抽屉（#2038 通用渲染器）：维度清单 → 单模板表单 -->
+    <div v-if="templateDrawer" class="tpl-overlay" @click.self="templateDrawer = null">
+      <div class="tpl-drawer panel">
+        <header>
+          <b>复盘模板</b>
+          <button class="close" @click="templateDrawer = null"><X :size="16" /></button>
+        </header>
+        <div class="tpl-body">
+          <template v-if="drawerCard">
+            <p class="muted">
+              「{{ drawerCard.label }}」维度 {{ drawerCard.templates.length }} 项模板——
+              就绪 {{ drawerCard.counts.ready }} · 缺数据 {{ drawerCard.counts.dataGap }} · 后置 {{ drawerCard.counts.deferred }}。点击查看渲染。
+            </p>
+            <button
+              v-for="t in drawerCard.templates"
+              :key="t.id"
+              class="tpl-pick"
+              @click="openTemplate(t)"
+            >
+              <span>{{ t.id }} {{ t.name }}{{ t.slots24 ? ' · 24 时段' : '' }}</span>
+              <i :class="`rd-${t.readiness}`">{{ t.readiness === 'ready' ? '就绪' : t.readiness === 'data_gap' ? '缺数据' : '后置' }}</i>
+            </button>
+          </template>
+          <ReviewTemplateForm
+            v-else-if="templateDrawer.mode === 'template'"
+            :template-id="templateDrawer.templateId"
+            :spec="settlementSpec"
+          />
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
 <style scoped>
 .review { gap: 14px; }
 .muted { color: var(--muted); font-size: 12.5px; }
+
+/* 六维驾驶舱 v1（#2038） */
+.cockpit { display: flex; flex-direction: column; gap: 10px; }
+.metric-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 10px; }
+.metric-card {
+  display: flex; flex-direction: column; gap: 4px;
+  padding: 12px 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel, #fff);
+}
+.metric-card.placeholder { border-style: dashed; background: transparent; }
+.metric-card.empty { border-style: dashed; }
+.m-head { display: flex; align-items: center; gap: 8px; font-size: 12.5px; font-weight: 600; color: var(--text); }
+.m-src { font-size: 10.5px; font-weight: 400; color: var(--muted); border: 1px dashed var(--line); border-radius: 999px; padding: 0 7px; }
+.m-tag { font-size: 10px; font-weight: 400; color: #a16207; background: #fffbeb; border-radius: 999px; padding: 0 7px; }
+.m-value { font-size: 26px; font-variant-numeric: tabular-nums; color: var(--text); }
+.m-value.bad { color: #b91c1c; }
+.m-sub { font-size: 11.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.m-note { margin: 2px 0 0; font-size: 11.5px; line-height: 1.7; color: var(--muted); }
+
+/* 模板抽屉（沿用报告弹层的浮层模式） */
+.tpl-overlay {
+  position: fixed; inset: 0; z-index: 50;
+  background: rgba(0, 0, 0, 0.45);
+  display: grid; place-items: center;
+}
+.tpl-drawer {
+  width: min(860px, 94vw); max-height: 86vh;
+  display: flex; flex-direction: column; overflow: hidden;
+}
+.tpl-drawer header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 16px; border-bottom: 1px solid var(--line);
+}
+.tpl-drawer .close { border: none; background: transparent; cursor: pointer; color: var(--muted); }
+.tpl-body { padding: 14px 18px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; }
+.tpl-pick {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 8px 12px; border: 1px solid var(--line); border-radius: 8px;
+  background: transparent; color: var(--text); font-size: 12.5px; cursor: pointer; text-align: left;
+}
+.tpl-pick:hover { border-color: var(--primary); background: #f8fbff; }
+.tpl-pick i { font-style: normal; font-size: 10.5px; border-radius: 999px; padding: 0 7px; }
+.tpl-pick .rd-ready { background: #f0fdf4; color: #15803d; }
+.tpl-pick .rd-data_gap { background: #fffbeb; color: #a16207; }
+.tpl-pick .rd-deferred { background: #f1f5f9; color: #64748b; }
 .params {
   display: flex; flex-wrap: wrap; align-items: center; gap: 14px;
   padding: 12px 16px; font-size: 13px;
