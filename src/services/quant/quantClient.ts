@@ -354,6 +354,25 @@ export function fetchBacktest(params: {
   return post('/backtest', params)
 }
 
+// ── 风险指标（CVaR 引擎权威计算，#2047 压力测试消费）──
+export type CvarResult = {
+  var_95: number
+  var_99: number
+  cvar_95: number
+  cvar_99: number
+  max_drawdown: number
+  volatility: number
+  sharpe_ratio: number
+  sortino_ratio: number
+  tail_risk: number
+  policy_source?: string
+}
+
+/** 收益率/价差序列（分数口径）→ VaR/CVaR/波动率/最大回撤/夏普/索提诺（历史模拟法）。 */
+export function fetchCvar(returns: number[]): Promise<CvarResult> {
+  return post('/cvar', { returns })
+}
+
 // ── 历史报告 ──
 export type ReportItem = { session_id: string; path: string; title: string; mtime: number }
 
