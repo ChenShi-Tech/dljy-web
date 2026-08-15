@@ -43,6 +43,9 @@ import { reviewFocusOf } from 'shared/trading-rules/position-review.mjs'
 import { activePosition } from '@/services/position/positionContext'
 import { onRegionChange } from '@/composables/useRegionReload'
 import AiAssistFill from '@/components/trading/AiAssistFill.vue'
+import ReviewThreeQuestions from './ReviewThreeQuestions.vue'
+import OvernightReportCard from './OvernightReportCard.vue'
+import ReviewTodoBadge from './ReviewTodoBadge.vue'
 import type { StageId } from '@/data/workflowStages'
 
 const props = defineProps<{ declaration: DeclarationOrder | null; targetDate: string }>()
@@ -213,6 +216,21 @@ const written = computed(() => props.declaration?.preflight?.morningReview ?? nu
 // ── 立场复盘焦点（#2005）：同一张偏差表，三类身份问的问题不同 ────────────────
 const reviewFocus = computed(() => reviewFocusOf(activePosition.value))
 
+// ── 复盘体系三件套（Epic #2033 · #2040，全部只读/跳转，零新写回口径）──────────
+// 三问数字复用 ①② 既有取数；环比昨日读昨日晨会写回链（昨单 preflight.morningReview
+// 记录的正是昨日 S1 复盘的执行偏差）；回测收益取 execReview.backtest 段。
+const threeQuestionsPnl = computed(() =>
+  execReview.value
+    ? {
+        daRevenueYuan: execReview.value.backtest.da_revenue_yuan,
+        spreadPnlYuan: execReview.value.backtest.da_rt_spread_pnl_yuan ?? null
+      }
+    : null
+)
+/** 昨日晨会写回的执行偏差（挂在昨单 preflight 上，正是今天 reviewed 这张单）。 */
+const prevDeviationMwh = computed(() => reviewed.value?.preflight?.morningReview?.executionDeviationMwh ?? null)
+const prevReviewedDate = computed(() => shiftIsoDate(reviewedDate.value, -1))
+
 // ── 异常分支（手册：当日未写日志 → 次日晨会强制补写）─────────────────────────
 // 判据：昨日有申报单可复盘（reviewed 存在）但决策日志链上没有归属昨日标的日的条目。
 // 拦截写回（不是提示完就算）——补写入口在 S7（日志归属日期切到昨日即补写模式）。
@@ -262,6 +280,26 @@ async function writeBack() {
 <template>
   <div class="mr">
     <p class="mr-window" :class="`mr-window-${windowState}`">{{ MORNING_WINDOW_NOTE[windowState] }}</p>
+
+    <!-- 复盘体系三件套（#2040）：三问结论条 + 昨夜智能体报告卡 + 复盘待办徽标。
+         全部只读/跳转，不给 S1 增加任何填写负担（<5 分钟红线）。 -->
+    <section class="mr-system">
+      <ReviewThreeQuestions
+        :reviewed-date="reviewedDate"
+        :has-reviewed="!!reviewed"
+        :clear-rate="analysis?.clearRate ?? null"
+        :deviation-mwh="execReview?.deviation.total_abs_deviation_mwh ?? null"
+        :deviation-pct="execDeviationPct"
+        :prev-deviation-mwh="prevDeviationMwh"
+        :prev-reviewed-date="prevReviewedDate"
+        :pnl="threeQuestionsPnl"
+        :position="activePosition"
+      />
+      <div class="mr-system-row">
+        <div class="mr-report-slot"><OvernightReportCard /></div>
+        <ReviewTodoBadge />
+      </div>
+    </section>
 
     <!-- 立场复盘焦点：用户侧问「买没买到」、电源侧问「卖没卖掉」、储能问「窗口吃到没」 -->
     <section v-if="reviewFocus" class="mr-focus">
@@ -440,6 +478,11 @@ async function writeBack() {
 
 <style scoped>
 .mr { display: flex; flex-direction: column; gap: 12px; }
+/* 复盘体系三件套（#2040） */
+.mr-system { display: flex; flex-direction: column; gap: 8px; }
+.mr-system-row { display: flex; gap: 10px; align-items: stretch; flex-wrap: wrap; }
+.mr-report-slot { flex: 1 1 320px; min-width: 0; display: flex; }
+.mr-report-slot > * { flex: 1; }
 .mr-backfill-block { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin: 0; padding: 7px 12px; border: 1px solid #f87171; border-radius: 8px; background: #fef2f2; color: #991b1b; font-size: 12px; line-height: 1.6; }
 .mr-jump { padding: 0; border: none; background: none; color: #1d4ed8; font: inherit; font-size: 12px; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
 .mr-focus { margin: 0; padding: 7px 12px; border: 1px solid #bfdbfe; border-radius: 8px; background: #f8fbff; font-size: 12px; }
