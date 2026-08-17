@@ -15,19 +15,20 @@ import {
   BrainCircuit,
   Building2,
   Factory,
-  Workflow,
   Database,
   FileChartColumn,
   Table2,
   Layers,
   ListChecks,
-  Map as MapIcon
+  Map as MapIcon,
+  Upload
 } from 'lucide-vue-next'
 import { yunnanTradingNavigation } from '../features/yunnanTrading/navigation'
 import { REPORTS_FEATURE_ENABLED } from '../features/reports/config'
 import { reportsNavigation } from '../features/reports/navigation'
 import { GRID_GEO_FEATURE_ENABLED } from '../features/gridGeo/config'
 import { gridGeoNavigation } from '../features/gridGeo/navigation'
+import type { SubjectType } from '@/services/governance'
 
 // 冻结下架（简化 IA·PR-A）：演示/静态占位分组默认从侧边栏摘除（代码与路由保留、深链可达），
 // 需要演示时在 .env.local 置 1 恢复显示。
@@ -42,6 +43,10 @@ export type NavItem = {
   children?: NavItem[]
   // 演示能力标记：菜单分组/子项渲染「演示」标签，提示该域为 demo-only（不再投开发）。
   demo?: boolean
+  // 立场亲和（#2193 · #2196）：该页面属于哪个市场立场的专属工作台。缺省 = 共享
+  // （发电/售电/储能全立场可见）；组合/集团视角（TRADER/GROUP）恒全可见。
+  // 只做叶子级标注——分组内常混排共享与专属页（如公司管理：台账属发电、合同共享）。
+  stanceAffinity?: SubjectType[]
 }
 
 // 按交易工作流组织的菜单（信息架构重构，见 docs/agent-harness/主题与信息架构规划.md §2）。
@@ -58,14 +63,14 @@ export const navigation: NavItem[] = [
       { path: '/sjfx/fshq', title: '分时行情', icon: LineChart },
       { path: '/sjfx/zrsjg', title: '价格分析', icon: ChartSpline },
       { path: '/sjfx/zcqxhdl', title: '出清现货电量分析', icon: LineChart },
-      { path: '/sjfx/zrxgx', title: '现货价格×新能源', icon: ChartSpline },
+      { path: '/sjfx/zrxgx', title: '现货价格×新能源', icon: ChartSpline, stanceAffinity: ['GENERATOR'] },
       { path: '/sjfx/zrxgx2', title: '现货价格×统调负荷', icon: ChartSpline },
       { path: '/sjfx/actualLoad', title: '逐日系统负荷', icon: LineChart },
       { path: '/sjfx/singleZsjfx', title: '综合数据分析', icon: ChartSpline },
       { path: '/sjfx/market-ops', title: '市场经营分析', icon: ChartSpline },
       // 云南专属真实页 fold 入市场洞察（切云南才现）
       // price-output-linkage 已并入云南交易工作台 tab（父 Issue #456），市场洞察外层不再单列
-      { path: '/xhjy/yunnan/node-price', title: '节点电价分析', icon: Network, regionIds: ['yunnan'] },
+      { path: '/xhjy/yunnan/node-price', title: '节点电价分析', icon: Network, regionIds: ['yunnan'], stanceAffinity: ['GENERATOR'] },
       { path: '/xhjy/yunnan/settlement-price', title: '结算价分析', icon: Coins, regionIds: ['yunnan'] }
     ]
   },
@@ -84,7 +89,7 @@ export const navigation: NavItem[] = [
       // 各步产出串成一条链、步骤切换只发生在页内。早间分析/放行清单/储能计划/决策日志等旧独立页已并入。
       { path: '/xhjy/trading-day', title: '一日作业台', icon: ListChecks },
       { path: '/xhjy/monitor', title: '实时监盘', icon: LineChart },
-      { path: '/xhjy/zrqsb', title: '日前上报', icon: FileText },
+      { path: '/xhjy/zrqsb', title: '日前上报', icon: FileText, stanceAffinity: ['GENERATOR'] },
       { path: '/xhjy/zptqx', title: '日前电量预估', icon: ChartSpline },
       { path: '/xhjy/desk', title: '申报工作台', icon: Bot },
       { path: '/xhjy/approvals', title: '申报审批队列', icon: FileText },
@@ -145,8 +150,8 @@ export const navigation: NavItem[] = [
     children: [
       { path: '/gsgl/overview', title: '经营总览大屏', icon: Gauge },
       { path: '/gsgl/profile', title: '公司档案', icon: Building2 },
-      { path: '/gsgl/assets', title: '场站机组台账', icon: Factory },
-      { path: '/gsgl/output', title: '机组出力', icon: ChartSpline },
+      { path: '/gsgl/assets', title: '场站机组台账', icon: Factory, stanceAffinity: ['GENERATOR'] },
+      { path: '/gsgl/output', title: '机组出力', icon: ChartSpline, stanceAffinity: ['GENERATOR'] },
       { path: '/gsgl/trades', title: '历史交易', icon: CalendarRange },
       { path: '/gsgl/contracts', title: '合同管理', icon: FileText },
       { path: '/gsgl/report-workshop', title: '报告工坊', icon: FileChartColumn },
@@ -154,19 +159,20 @@ export const navigation: NavItem[] = [
     ]
   },
   // 冻结下架：离线计算器组默认摘除（VITE_ENABLE_CALCULATORS_NAV=1 恢复；路由保留深链可达）。
+  // 条件展开会让字面量丢失上下文类型（stanceAffinity 退化成 string[]），故显式标 NavItem[]。
   ...(CALCULATORS_NAV_ENABLED
-    ? [{
+    ? ([{
         // 离线计算器（投资 + 电价合并）
         path: '/calculators',
         title: '测算工具',
         icon: Calculator,
         children: [
-          { path: '/tzcs/wind-solar', title: '新能源资产测算', icon: Calculator },
+          { path: '/tzcs/wind-solar', title: '新能源资产测算', icon: Calculator, stanceAffinity: ['GENERATOR'] },
           { path: '/tzcs/truck-charging', title: '重卡充换电测算', icon: Calculator },
-          { path: '/djcs/retail-price', title: '售电电价测算', icon: Calculator },
+          { path: '/djcs/retail-price', title: '售电电价测算', icon: Calculator, stanceAffinity: ['RETAILER'] },
           { path: '/djcs/interprovincial-price', title: '跨省跨区电价', icon: Calculator }
         ]
-      }]
+      }] as NavItem[])
     : []),
   {
     // 横向工具域：数据动作链（手录 → 自动摄取 → 回放探查），对标「测算工具」收口范式。
@@ -178,11 +184,18 @@ export const navigation: NavItem[] = [
     children: [
       // 数据接入向导为数据管理组首项（#885）：从用户体验出发的六类数据旅程总览 + 一键生效闭环，
       // 把散落 3 个导航组的数据进入线收成一张「先做什么、点哪生效、去哪见数」的地图。
-      { path: '/yygl/data-onboarding', title: '数据接入向导', icon: Compass },
-      { path: '/yygl/import-hub', title: '数据导入融合台', icon: FileText },
-      { path: '/yygl/ingest', title: '数据摄取管理', icon: Workflow },
-      { path: '/yygl/data-governance', title: '数据治理控制台', icon: Database },
+      // #2174 P2-2b：管理四页（向导/导入/摄取/治理）迁独立数据运维台，本组只留探查工具。
       { path: '/yygl/data-browser', title: '通用数据浏览器', icon: Table2 }
+    ]
+  },
+  {
+    // 数据运维域（#2174 P2-2b）：六管理页已迁独立数据运维台（/ops-console.html），
+    // 主前端只留桥接入口；本组仅 ADMIN 可见（adminOnlyRoutes 同口径）。
+    path: '/data-ops',
+    title: '数据运维',
+    icon: Upload,
+    children: [
+      { path: '/data-ops/console', title: '数据运维台', icon: Upload }
     ]
   },
   {
@@ -227,7 +240,6 @@ export const navigation: NavItem[] = [
     title: '系统管理',
     icon: ShieldCheck,
     children: [
-      { path: '/data-source-settings', title: '数据源接入', icon: Database },
       // AI 工作室：技能/子智能体/Dify 工作流/高级编排/定时任务五页 tab 化合并（原分散于本组与
       // 「智能实验室」组；「AI工作流中枢」作为它们的导航壳被 tab 栏取代，已删）。
       { path: '/system/ai-studio', title: 'AI 工作室', icon: Bot },

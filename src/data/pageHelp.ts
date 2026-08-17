@@ -266,30 +266,15 @@ export const pageHelpRegistry: Record<string, PageHelpEntry> = {
     title: '运营中枢',
     body: '多 tab 综合运营面：电站/合同/结算/风险/统计/导入任务/模型版本/智能体监控，每 tab 含指标卡 + 行表。数据来自本地 operations（计划后端 /api/v1/{stations,contracts,settlements,risks,statistics,...}），智能体监控来自 agentMonitor。当前为混合口径、结构化合成（计划后端未接时本地优先）。'
   },
-  ImportHub: {
-    title: '数据导入融合台',
-    body: '多源导入融合台：电量/零售套餐/结算/售电结算/市场交易多源导入 tab + 导入历史 + 任务状态。文件上传/参数配置→触发导入→查看任务状态与历史、失败重试。数据来自本地 importHub（计划后端 /api/v1/{power/import,market/...}）。当前为混合口径、结构化合成。',
-    docPath: 'docs/data/import-hub-capture-bridge.md'
+  OpsConsoleBridge: {
+    title: '数据运维台（桥接跳转）',
+    body: '数据管理操作面已收口独立数据运维台（/ops-console.html，API 经 /data-svc 代理 data-service :8190）：上传中心（Excel 五步流）/导入融合台/接入向导/数据摄取管理/治理控制台/数据源接入六页，ADMIN/BOSS 可用；云南现货主力数据由中广核厂侧 API 每日自动入库（接入向导首卡）。',
+    docPath: 'docs/data/data-service.md'
   },
   DataBrowser: {
     title: '通用数据浏览器',
     body: '任意已注册数据族的归一化真实回放数据浏览器：族/region 选择器 + 动态列表格（列由归一化 schema 动态生成）+ 筛选 + CSV 导出，region 数据状态经 RegionDataBanner 提示。数据来自 GET /api/real?family=&match=&region=（region-aware）。用于跨族核查已采集归一化数据，列结构由各 family normalizer 产物决定。',
     docPath: 'docs/data/universal-data-browser.md'
-  },
-  DataGovernance: {
-    title: '数据治理控制台',
-    body: '数据治理只读聚合：数据资产目录（含数据归属列，company 私有族标归属公司/public 标公共）+ 新鲜度 + 质量报告（G1 quality-report.json 告警）+ 备份 manifest，按 x-region-id 限定地区。数据来自 GET /api/v1/governance/{catalog,quality,backup}（capture.sqlite + quality-report.json + data/private-backups）。为真实治理元数据。',
-    docPath: 'docs/data/data-governance-console.md'
-  },
-  DataIngestion: {
-    title: '数据摄取管理',
-    body: '触发 ETL 摄取：云南现货/气象/市场经营分析等数据落 capture-raw + capture.sqlite。数据来自 POST /api/v1/ingest/:kind（capture.sqlite）。用于手动触发或查看数据摄取任务，当前为混合口径（真实摄取与演示并存）。',
-    docPath: 'docs/data/data-ingestion-spec.md'
-  },
-  DataOnboarding: {
-    title: '数据接入向导',
-    body: '按「你手里有什么数据」组织的数据接入旅程总览：现货节点电价(T0)/系统负荷水电(T0T1)/交易中心月度导出包/气象全自动/结算零售交易。每张卡片五步线（输入→校验→落位→生效→见数）按真实状态点亮，上传投递后可「一键生效」直接跑 ETL 不必切命令行。状态来自 GET /api/v1/governance/catalog 新鲜度 + /api/v1/import-templates/records 台账两路只读信号；生效复用 POST /api/v1/ingest/:kind（spot-ingest/forecast-etl 写用户数据目录，非生产写入）。向导不产数据，状态如实透传：未落 capture 显示「未知」，未生效不标「已可见」。',
-    docPath: 'docs/data/data-onboarding-journey.md'
   },
 
   // ── 售电资料 ────────────────────────────────────────────────────────────
@@ -311,11 +296,6 @@ export const pageHelpRegistry: Record<string, PageHelpEntry> = {
   },
 
   // ── 系统（AI 设置 / 技能 / 智能体工作台） ──────────────────────────────
-  AiSettings: {
-    title: 'AI 模型设置',
-    body: '配置 LLM 厂商/Key/baseURL/model + 管理令牌 + 采样参数 + 角色→模型路由 + Agent 工作流参数，支持测试连接。经 /api/agent/llm/* 读服务端 model_providers.yaml + KeyStore。API Key 保存在服务端（不入库、不入 git），前端不持密钥。从 AI 导航助手进入，不在主菜单。为真实配置数据。',
-    docPath: 'docs/agent-harness/agent-config-and-memory.md'
-  },
   AgentWorkbench: {
     title: '智能体工作台',
     body: '智能体对话工作台：左历史侧栏（按登录用户隔离、Node SQLite 持久化）+ 右 AgentChatPanel（/agent-api/agent/* SSE 流式）。支持深链 ?q= 与 ?scenario=chat|declaration_prep|daily_review，历史回放续聊。persist-history 默认开启。对话走 agent-backend、历史走 Node SQLite，为真实会话数据。',

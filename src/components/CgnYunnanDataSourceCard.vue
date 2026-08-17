@@ -135,8 +135,8 @@ onMounted(load)
 
       <template v-if="status?.canManageSource">
         <div class="field">
-          <label>基础地址（只填 HTTPS 站点根地址）</label>
-          <el-input v-model="baseUrl" placeholder="https://xxxx.ngrok-free.app" />
+          <label>基础地址（HTTPS，可含反代路径前缀；填到 /api/v1 之前）</label>
+          <el-input v-model="baseUrl" placeholder="https://host.example.com 或 https://host.example.com/prefix" />
         </div>
         <div class="field">
           <label>API Key（以 ynapi_ 开头）</label>

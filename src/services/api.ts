@@ -291,6 +291,10 @@ function buildUrl(path: string, query?: Record<string, string | number | boolean
 
 function pathBase(path: string) {
   if (/^[a-z][a-z\d+\-.]*:\/\//i.test(path)) return path
+  // #2169 P2-2a：数据管理路径族统一改道 data-service（/data-svc 代理 → :8190）。
+  // 调用方零改动（裸 /v1/... 与 /api/v1/... 两种形态都识别）。
+  const dataSvc = dataServicePath(path)
+  if (dataSvc) return dataSvc
   if (isExplicitApiPath(path)) return path
   return `${API_BASE}${path}`
 }
@@ -302,6 +306,13 @@ function isExplicitApiPath(path: string) {
     || path === '/dify-sso' || path.startsWith('/dify-sso/')
     || path === '/dify-studio' || path.startsWith('/dify-studio/')
 }
+
+// ── #2169 P2-2a：数据管理路径族 → data-service（:8190）────────────────────────
+// 判定逻辑与路径族清单抽在 dataServiceRoutes.ts（纯函数，独立单测覆盖）。
+import { dataServicePath } from './dataServiceRoutes'
+export { DATA_SVC_ROOT, dataServicePath } from './dataServiceRoutes'
+// 立场切换意图（#2193）：服务端校验 ∈ 允许集合，缺头=home；未选择/未登录不发。
+import { currentStanceHeader } from './stance/stanceContext'
 
 // 统一身份 + 地区请求头构造（Phase 0 起导出）：data/request.ts 的 agentRequest() 基座
 // 复用此函数，收敛通道 C（agentClient/quantClient/spotClient/mlForecastClient）各自手写的
@@ -316,6 +327,12 @@ export function requestHeaders() {
   const token = localStorage.getItem(TOKEN_KEY)
   if (token) {
     headers.authorization = `Bearer ${token}`
+  }
+  // 立场意图（#2193）：与地区同款「意图头 + 服务端权威校验」。值为空时不发，
+  // 服务端按 home 立场处理（与历史行为一致）。
+  const stanceHeader = currentStanceHeader()
+  if (stanceHeader) {
+    headers['x-stance-id'] = stanceHeader
   }
   const user = readStoredGovernanceUser()
   if (user) {

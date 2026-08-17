@@ -6,14 +6,16 @@
 //
 // 两条 fail-safe：
 //   1. 查询失败/超时/未登录 → 一律按全 off（走旧图）。灰度状态读不到时，「保守」的方向
-//      是旧图而不是新底座：把用户送上未验证链路的代价远大于少一次对拍。
+//      是旧图而不是新底座：把用户送上未验证链路的代价远大于少一次对拍。**前提是旧图那边
+//      还认这个场景**——已完成迁移的场景必须出灰度表进 PI_NATIVE_SCENARIOS，否则这条
+//      fail-safe 会把用户送去一个不再服务该场景的后端（见下）。
 //   2. 缓存键绑当前令牌：换账号（含登出再登录）自动作废，不会把上一个账号的命中结果
 //      套在下一个账号头上（canary 是按用户/公司命中的）。
 
 import { AGENT_API_BASE_ROOT, fetchRaw, timeoutSignal } from '@/services/api'
 
-/** 可灰度的四个生产场景（与 server/agent-rollout-store.mjs::ROLLOUT_SCENARIOS 同表）。 */
-export const ROLLOUT_SCENARIOS = ['chat', 'declaration_prep', 'daily_review', 'morning_brief'] as const
+/** 仍在灰度中的生产场景（与 server/agent-rollout-store.mjs::ROLLOUT_SCENARIOS 同表）。 */
+export const ROLLOUT_SCENARIOS = ['declaration_prep', 'daily_review', 'morning_brief'] as const
 export type RolloutScenario = (typeof ROLLOUT_SCENARIOS)[number]
 
 export type RolloutMode = 'off' | 'shadow' | 'canary' | 'primary'
@@ -26,9 +28,12 @@ export const LEGACY_AGENT_BASE = `${AGENT_API_BASE_ROOT}/agent`
 /** pi 底座（pi-poc 编排服务）基址：开发态 vite 代理 /pi-api → 8100，生产 nginx 同源同名。 */
 export const PI_AGENT_BASE = '/pi-api/agent'
 
-// PoC 专属入口（#1526/#1527）：本来就直连 pi，是**并行新入口**而非「替换旧图」，
-// 因此不在灰度表里，也不受灰度开关影响——把它们塞进灰度表会让「已灰度场景数」虚高。
-const PI_NATIVE_SCENARIOS = new Set(['strategic_qa', 'declaration_checkup'])
+// 恒定走 pi、不查灰度表的场景。两类来源：
+//   · PoC 专属入口（#1526/#1527）：本来就直连 pi，是**并行新入口**而非「替换旧图」。
+//   · **已完成迁移**的场景：`chat` 于 #2158 切流完成并删除旧 supervisor 路径，两侧不再并存。
+// 后者恒定 pi 而不是「灰度表说 pi」——旧图那边已经不认这个场景，再去查一次表只会新增一个
+// 失败点：查询超时时 fail-safe 会把用户送回一个 400。
+const PI_NATIVE_SCENARIOS = new Set(['strategic_qa', 'declaration_checkup', 'chat'])
 
 const ROLLOUT_PATH = '/v1/agent/rollout'
 const QUERY_TIMEOUT_MS = 4000

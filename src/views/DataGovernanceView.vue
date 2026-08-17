@@ -111,8 +111,10 @@ type QualityItem = {
 type QualityPayload = {
   generatedAt: string | null
   region: string
-  summary: { pass: number; warn: number; fail: number }
+  summary: { pass: number; warn: number; fail: number; streams?: { total: number; pass: number; warn: number; fail: number } }
   items: QualityItem[]
+  // #2175 断流对账：每条数据流一行（族流 + 上传契约流），fail=按声明节奏停更。
+  streams?: Array<{ stream: string; kind: 'family' | 'upload-contract'; region: string; cadence: string; status: 'pass' | 'warn' | 'fail'; ageHours: number | null; lastAt: string | null; detail: string }>
   empty: boolean
   message: string
 }
@@ -479,6 +481,11 @@ const qualityAlerts = computed<QualityAlert[]>(() => {
 const failAlerts = computed(() => qualityAlerts.value.filter((item) => item.status === 'fail'))
 const warnAlerts = computed(() => qualityAlerts.value.filter((item) => item.status === 'warn'))
 
+// #2175 断流对账：卡片只列非健康流（fail 断流红 / warn 观察），后端已按严重度排序。
+const streamWatchlist = computed(() => (quality.value?.streams ?? []).filter((s) => s.status !== 'pass'))
+const streamFails = computed(() => (quality.value?.streams ?? []).filter((s) => s.status === 'fail'))
+const streamFailCount = computed(() => streamFails.value.length)
+
 const backupManifestRows = computed<Array<Record<string, unknown>>>(() =>
   Object.entries(backup.value?.latest?.manifests ?? {}).map(([name, manifest]) => ({
     name,
@@ -678,6 +685,37 @@ function browserLink(alert: QualityAlert) {
         </el-tab-pane>
 
         <el-tab-pane label="质量告警" name="quality">
+          <!-- #2175 断流汇总：声明节奏 vs 实际最后活动的跨族聚合（fail=断流红），fail 存在即置顶红横幅 -->
+          <el-alert
+            v-if="streamFailCount > 0"
+            type="error"
+            :closable="false"
+            class="stream-banner"
+            :title="`数据断流告警：${streamFailCount} 条数据流按声明节奏已停更（fail）`"
+            :description="streamFails.map((s) => s.stream).join('、')"
+          />
+          <section v-if="streamWatchlist.length" class="quality-section stream-section">
+            <h3>数据流健康（断流对账）</h3>
+            <el-table :data="streamWatchlist" size="small" border>
+              <el-table-column prop="stream" label="数据流" min-width="170" />
+              <el-table-column label="类型" width="100">
+                <template #default="{ row }">{{ row.kind === 'upload-contract' ? '上传契约' : '采集族' }}</template>
+              </el-table-column>
+              <el-table-column prop="cadence" label="节奏" width="70" />
+              <el-table-column label="状态" width="80">
+                <template #default="{ row }">
+                  <el-tag size="small" :type="row.status === 'fail' ? 'danger' : row.status === 'warn' ? 'warning' : 'success'">{{ row.status }}</el-tag>
+                </template>
+              </el-table-column>
+              <el-table-column label="停更时长" width="100">
+                <template #default="{ row }">{{ row.ageHours === null ? '—' : `${Math.round(row.ageHours)} 小时` }}</template>
+              </el-table-column>
+              <el-table-column label="最后活动" width="150">
+                <template #default="{ row }">{{ row.lastAt ? row.lastAt.slice(0, 16).replace('T', ' ') : '无记录' }}</template>
+              </el-table-column>
+              <el-table-column prop="detail" label="说明" min-width="200" />
+            </el-table>
+          </section>
           <DataState
             :empty="quality?.empty || !qualityAlerts.length"
             :empty-text="quality?.message || '暂无 fail/warn 质量告警'"
@@ -943,6 +981,14 @@ function browserLink(alert: QualityAlert) {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 14px;
+}
+
+/* #2175 断流汇总卡：横幅置顶、健康表收边距 */
+.stream-banner {
+  margin-bottom: 10px;
+}
+.stream-section {
+  margin-bottom: 12px;
 }
 
 .quality-section {

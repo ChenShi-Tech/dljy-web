@@ -4,6 +4,8 @@ import { resetCaptureAccessDenied } from '@/services/api'
 import { getCurrentUser, getToken } from '@/services/auth'
 import { canAccessPath, firstAccessiblePath, isPathAvailableInRegion } from '@/services/governance'
 import { getCurrentRegionSnapshot } from '@/services/region/regionContext'
+import { isMultiStance, activeStanceType, requiresStanceSelection } from '@/services/stance/stanceContext'
+import { isPathAvailableInStance } from '@/services/stance/stanceNavigation'
 
 const YUNNAN_TRADING_FEATURE_ENABLED = import.meta.env.VITE_DISABLE_YUNNAN_TRADING !== '1'
 const yunnanTradingRoutes = YUNNAN_TRADING_FEATURE_ENABLED
@@ -51,11 +53,10 @@ const truckChargingInvestment = () => import('../views/TruckChargingInvestmentVi
 const retailPriceCalculator = () => import('../views/RetailPriceCalculatorView.vue')
 const interprovincialPriceCalculator = () => import('../views/InterprovincialPriceCalculatorView.vue')
 const operationsWorkbench = () => import('../views/OperationsWorkbenchView.vue')
-const importHub = () => import('../views/ImportHubView.vue')
 const dataBrowser = () => import('../views/UniversalCapturedBrowserView.vue')
-const dataIngestion = () => import('../views/DataIngestionView.vue')
-const dataOnboarding = () => import('../views/DataOnboardingView.vue')
-const dataGovernance = () => import('../views/DataGovernanceView.vue')
+// #2174 P2-2b：六管理页迁独立数据运维台（ops-console.html + src/features/opsConsole/），
+// 主前端只留桥接页（旧路径 redirect 到此，跳 /ops-console.html#/ops/... 保深链）。
+const opsConsoleBridge = () => import('../views/ops/OpsConsoleBridge.vue')
 const regionRules = () => import('../views/RegionRulesView.vue')
 const regionalTradingHub = () => import('../views/RegionalTradingHubView.vue')
 // 申报工作台（重写原现货决策台：对齐 D-1 真实申报动线，嵌入 declaration_prep 智能体图）
@@ -74,7 +75,6 @@ const reviewCenter = () => import('../views/ReviewCenterView.vue')
 const platformDocs = () => import('../views/PlatformDocsView.vue')
 // 预测中心把五个既有预测页面挂为一级 tab；原路由改 redirect 保持收藏链接。
 const forecastCenter = () => import('../views/forecast/ForecastCenterView.vue')
-const dataSourceSettings = () => import('../views/DataSourceSettingsView.vue')
 const agentWorkbench = () => import('../views/AgentWorkbenchView.vue')
 const strategicQA = () => import('../views/StrategicQAView.vue')
 const declarationCheckup = () => import('../views/DeclarationCheckupView.vue')
@@ -144,6 +144,9 @@ const router = createRouter({
   routes: [
     { path: '/', redirect: DEMO_PAGES_ENABLED ? '/demo/cgn-new-energy' : '/dashboard' },
     { path: '/login', name: 'Login', component: () => import('../views/LoginView.vue') },
+    // 登录后的工作立场选择页（#2193）：顶层平级、不进 AppLayout；与 /login 同款
+    // 「无 meta → 不进 feature-map/manifest」的顶层路由形态，守卫内显式特判。
+    { path: '/select-stance', name: 'SelectStance', component: () => import('../views/SelectStanceView.vue') },
 
     // ── /demo/* 驾驶舱风格展示页(顶层全屏、隔离、不进侧边栏;守卫已放行)──
     // 冻结下架（简化 IA·PR-A）：整组由 VITE_ENABLE_DEMO_PAGES 门控、默认关闭；代码保留，需要演示时置 1 恢复。
@@ -296,11 +299,19 @@ const router = createRouter({
 
         // 运营管理 /yygl
         page('yygl/ops', 'OperationsWorkbench', { block: '运营管理', title: '运营中枢', code: 'operations', endpoint: 'local operations + planned /api/v1/stations|contracts|settlements|risks|statistics|retail-settlement-import|model-config|agents', dataPath: 'operations_backend', scope: '电站、合同、结算、风险、统计、数据导入、模型配置、智能体监控运营面迁移', kind: 'mixed' }, operationsWorkbench),
-        page('yygl/data-onboarding', 'DataOnboarding', { block: '数据管理', title: '数据接入向导', code: 'data-onboarding', endpoint: 'GET /api/v1/governance/catalog + /api/v1/import-templates/records + POST /api/v1/ingest/:kind', dataPath: 'governance_catalog + import_records + capture_sqlite', scope: '六类数据（现货节点电价T0/系统负荷水电T0T1/交易中心月度导出包/南网披露Cookie/气象全自动/结算零售交易）接入旅程总览：输入→校验→落位→生效→见数一键闭环', kind: 'real' }, dataOnboarding),
-        page('yygl/import-hub', 'ImportHub', { block: '数据管理', title: '数据导入融合台', code: 'import-hub', endpoint: 'local importHub + planned /api/v1/power/import|market/packages/retail/import|settlements/import|retail-settlement-import/upload|market/trades/import', dataPath: 'import_workflows', scope: '电量、零售套餐、结算、售电结算、市场交易导入迁移', kind: 'mixed' }, importHub),
         page('yygl/data-browser', 'DataBrowser', { block: '数据管理', title: '通用数据浏览器', code: 'data-browser', endpoint: 'GET /api/real?family=&match=&region=', dataPath: '*', scope: '任意已注册数据族归一化真实回放数据，动态列展示+筛选+CSV导出', kind: 'mixed' }, dataBrowser),
-        page('yygl/data-governance', 'DataGovernance', { block: '数据管理', title: '数据治理控制台', code: 'data-governance', endpoint: 'GET /api/v1/governance/{catalog,quality,backup}', dataPath: 'capture_sqlite + data/private/governance/quality-report.json + data/private-backups', scope: '数据资产目录、新鲜度、质量报告和备份 manifest 只读聚合；按 x-region-id 限定地区', kind: 'real' }, dataGovernance),
-        page('yygl/ingest', 'DataIngestion', { block: '数据管理', title: '数据摄取管理', code: 'ingest', endpoint: 'POST /api/v1/ingest/:kind', dataPath: 'capture_sqlite', scope: '触发 ETL 摄取(云南现货/气象/市场经营分析) 落 capture-raw+capture.sqlite', kind: 'mixed' }, dataIngestion),
+
+        // 数据运维 /data-ops（#2169 P1：上传中心独立路由域——P2 data-service 进程化时整组迁出主前端）
+
+
+        // 数据运维 /data-ops（#2174 P2-2b：六管理页已迁独立数据运维台，主前端保桥接深链）
+        page('data-ops/console', 'OpsConsoleBridge', { block: '数据运维', title: '数据运维台', code: 'ops-console', endpoint: 'external /ops-console.html（数据管理操作面，API 经 /data-svc → data-service :8190）', dataPath: 'ops_console', scope: '桥接跳转独立控制台：上传中心/导入融合台/接入向导/摄取管理/治理控制台/数据源接入六页', kind: 'real' }, opsConsoleBridge),
+        { path: 'yygl/data-onboarding', redirect: { path: '/data-ops/console', query: { to: '/ops/data-onboarding' } } },
+        { path: 'yygl/import-hub', redirect: { path: '/data-ops/console', query: { to: '/ops/import-hub' } } },
+        { path: 'yygl/data-governance', redirect: { path: '/data-ops/console', query: { to: '/ops/data-governance' } } },
+        { path: 'yygl/ingest', redirect: { path: '/data-ops/console', query: { to: '/ops/ingest' } } },
+        { path: 'data-ops/upload', redirect: { path: '/data-ops/console', query: { to: '/ops/upload' } } },
+        { path: 'data-source-settings', redirect: { path: '/data-ops/console', query: { to: '/ops/data-source-settings' } } },
 
         // 售电资料 /sdzl
         page('sdzl/region-rules', 'RegionRules', { block: '售电资料', title: '地区规则体系', code: 'region-rules', endpoint: 'local region rules', dataPath: 'local_rules', scope: '地区规则画像 + 主体角色关注矩阵', kind: 'real' }, regionRules),
@@ -308,7 +319,6 @@ const router = createRouter({
 
         // AI 模型设置（从 AI 导航助手进入，不在左侧菜单）
         aiStudioRedirect('ai-settings', 'models'),
-        page('data-source-settings', 'DataSourceSettings', { block: '系统', title: '数据源接入', code: 'data-source-settings', endpoint: 'GET /api/v1/grid-access/points; GET|PUT|DELETE /api/v1/grid-access/points/{id}/credentials + /api/v1/data-sources/cgn-yunnan + /api/v1/sichuan-ingest; POST */test + */trigger; GET */plant-bindings + */health', dataPath: 'data/private/credentials + external_sc.ingest_run + load_forecast + reservoir_plan', scope: '电网官方平台（接入点凭据按账号隔离 + 四川采集运维）+ 企业自建通道（中广核云南）+ 受控 Provider；仅服务端掩码存储，整页 ADMIN/BOSS', kind: 'real' }, dataSourceSettings),
         dataSourceSettingsRedirect('sichuan-access', 'official'),
         // 智能体工作台（交互式 Agent 对话，后端 /api/agent/* SSE）
         page('ai-agent', 'AgentWorkbench', { block: '系统', title: '智能体工作台', code: 'ai-agent', endpoint: '/agent-api/agent/*', dataPath: '', kind: 'real' }, agentWorkbench),
@@ -348,6 +358,18 @@ router.beforeEach((to) => {
   if (to.path === '/login' && getToken()) {
     return '/dashboard'
   }
+  // 立场选择（#2193）：多立场账号未选立场 → 一律先落选择页（透传回跳目标）；
+  // /select-stance 对单立场账号不可见（无选择可做，直接落默认工作台）。
+  if (to.path === '/select-stance') {
+    if (!isMultiStance.value) {
+      const user = getCurrentUser()
+      return firstAccessiblePath(user, getCurrentRegionSnapshot().id)
+    }
+    return true
+  }
+  if (to.path !== '/login' && requiresStanceSelection()) {
+    return { path: '/select-stance', query: { redirect: to.fullPath } }
+  }
   if (to.path !== '/login') {
     const user = getCurrentUser()
     const regionId = getCurrentRegionSnapshot().id
@@ -362,6 +384,11 @@ router.beforeEach((to) => {
       return canAccessPath('/sdzl/region-rules', user) ? '/sdzl/region-rules' : firstAccessiblePath(user, regionId)
     }
     if (!canAccessPath(to.path, user)) {
+      return firstAccessiblePath(user, regionId)
+    }
+    // 立场视图层（#2196）：直链进不属于当前立场的专属页 → 落默认工作台（共享页与
+    // 组合/集团视角恒放行；豁免逻辑收敛在 isPathAvailableInStance 内）。
+    if (!isPathAvailableInStance(to.path, activeStanceType.value)) {
       return firstAccessiblePath(user, regionId)
     }
   }

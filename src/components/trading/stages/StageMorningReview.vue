@@ -40,7 +40,7 @@ import {
 } from 'shared/trading-rules/morning-review.mjs'
 import { shiftIsoDate } from 'shared/trading-rules/trading-calendar.mjs'
 import { reviewFocusOf } from 'shared/trading-rules/position-review.mjs'
-import { activePosition } from '@/services/position/positionContext'
+import { activeStanceType } from '@/services/stance/stanceContext'
 import { onRegionChange } from '@/composables/useRegionReload'
 import AiAssistFill from '@/components/trading/AiAssistFill.vue'
 import ReviewThreeQuestions from './ReviewThreeQuestions.vue'
@@ -214,7 +214,7 @@ const saveError = ref('')
 const written = computed(() => props.declaration?.preflight?.morningReview ?? null)
 
 // ── 立场复盘焦点（#2005）：同一张偏差表，三类身份问的问题不同 ────────────────
-const reviewFocus = computed(() => reviewFocusOf(activePosition.value))
+const reviewFocus = computed(() => reviewFocusOf(activeStanceType.value))
 
 // ── 复盘体系三件套（Epic #2033 · #2040，全部只读/跳转，零新写回口径）──────────
 // 三问数字复用 ①② 既有取数；环比昨日读昨日晨会写回链（昨单 preflight.morningReview
@@ -303,7 +303,7 @@ async function writeBack() {
 
     <!-- 立场复盘焦点：用户侧问「买没买到」、电源侧问「卖没卖掉」、储能问「窗口吃到没」 -->
     <section v-if="reviewFocus" class="mr-focus">
-      <strong>{{ activePosition === 'GENERATOR' ? '电厂侧' : activePosition === 'STORAGE' ? '储能' : '用户侧' }}复盘目标：{{ reviewFocus.goal }}</strong>
+      <strong>{{ activeStanceType === 'GENERATOR' ? '电厂侧' : activeStanceType === 'STORAGE' ? '储能' : '用户侧' }}复盘目标：{{ reviewFocus.goal }}</strong>
       <ul>
         <li v-for="(point, i) in reviewFocus.reviewPoints" :key="i">{{ point }}</li>
       </ul>

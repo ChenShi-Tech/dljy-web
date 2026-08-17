@@ -156,7 +156,7 @@ function sameSequence(a: string[], b: string[]): boolean {
   return a.length === b.length && a.every((v, i) => v === b[i])
 }
 
-/** 三维度对拍。落库内容零容忍，另两维的容差在服务端按**跨轮次差异率**判，这里只出单轮布尔。 */
+/** 「答出来了」= 正常收尾且产出非空。两个方向的可用性判定都基于它。 */
 function answered(o: TurnObservation): boolean {
   return o.ok && o.textLength > 0
 }

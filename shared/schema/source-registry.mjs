@@ -569,6 +569,32 @@ const SOURCE_DECLARATIONS = {
     mock: false,
     productionWrite: false
   },
+  // 数据运维台上传中心（Epic #2169 P1）：五步流「确认落库」的 capture-family 型契约经
+  // 此源双写（归一化同源 yn-fact-market::normalizeMarketDataset，与 import-hub 在线投递
+  // 同链）；首批仅公共 7 键（market_analysis public），套餐两键仍走 import-hub 旧入口。
+  'data-upload-center': {
+    sourceId: 'data-upload-center',
+    label: '数据运维台上传中心（手录投递）',
+    inputType: SOURCE_INPUT_TYPES.MANUAL,
+    parser: 'uploadContracts.captureFamily',
+    fieldMappings: { datasetKey: 'marketSchemaForDataset(datasetKey)（upload-contracts 契约声明列/别名做入口校验）' },
+    unitConversions: { quantity: 'MWh', price: '元/MWh' },
+    timeAxis: TIME_AXIS.TIME,
+    targets: [
+      target({
+        family: 'market_analysis',
+        datasetKey: '*',
+        ownership: SOURCE_OWNERSHIP.PUBLIC,
+        requiredFields: ['id', 'area'],
+        qualityRules: { guardEmpty: true }
+      })
+    ],
+    ownership: SOURCE_OWNERSHIP.PUBLIC,
+    basis: 'captured',
+    sourceType: 'IMPORT',
+    mock: false,
+    productionWrite: false
+  },
   // 市场经营分析手录「批量」摄取入口（issue #769）：与 import-hub-market-analysis 同族（market_analysis
   // public），区别在投递通道——本源是 import:market-export 批处理（--dir/--file + --region），
   // 在线 ImportHub 投递仍走 import-hub-market-analysis。归一化同源 yn-fact-market::normalizeMarketDataset
