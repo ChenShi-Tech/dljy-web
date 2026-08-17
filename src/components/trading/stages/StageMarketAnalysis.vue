@@ -309,11 +309,6 @@ const anchorVerdict = computed(() =>
 // S1 的复盘结论写在同一张单据的 morningReview 段——本面板读它并要求显式表态：
 // 昨日偏差是否改变今日判断。不表态（not_reviewed）写回时留 null，不默认「无影响」。
 type YesterdayImpact = 'unchanged' | 'reinforce' | 'weaken'
-const YESTERDAY_IMPACT_LABEL: Record<YesterdayImpact, string> = {
-  unchanged: '不改变今日判断',
-  reinforce: '强化今日判断（同一方向更确定）',
-  weaken: '削弱/推翻今日判断（需重估）'
-}
 const yesterdayReview = computed(() => props.declaration?.preflight?.morningReview ?? null)
 const yesterdayImpact = ref<YesterdayImpact | 'not_reviewed'>('not_reviewed')
 const yesterdayNote = ref('')

@@ -97,9 +97,6 @@ const adjust = reactive<{ action: AdjustAction; volumeMwh: number | null; reason
   volumeMwh: null,
   reason: ''
 })
-const adjustValid = computed(() =>
-  adjust.action === 'none' ? true : (adjust.volumeMwh !== null && Number.isFinite(adjust.volumeMwh) && adjust.volumeMwh > 0 && adjust.reason.trim().length >= 8)
-)
 
 // ── ④ 严重偏离上报（手册：>±20% → 立即排查原因 + 上报主管）─────────────────
 const escalation = reactive<{ reason: string; reportedBy: string }>({ reason: '', reportedBy: '' })
