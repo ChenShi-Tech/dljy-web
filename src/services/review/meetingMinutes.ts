@@ -3,13 +3,17 @@
 // 会后 1 个工作日归档提醒（方案原文）：周六/周日顺延到周一，法定节假日未接入
 // （节假日表属数据接入项，接入前以周末顺延为保守口径并注明）。
 
-/** 会议日期 → 归档截止（+1 个工作日，周末顺延到下一工作日）。 */
+/** 会议日期 → 归档截止（+1 个工作日，周末顺延到下一工作日）。
+ *  全程 UTC 日历运算：CI runner 时区不固定（多为 UTC），本地 get* 会随部署环境偏移一天。 */
 export function archiveDeadline(meetingIso: string): string | null {
-  const d = new Date(`${meetingIso}T00:00:00+08:00`)
-  if (Number.isNaN(d.getTime())) return null
-  d.setDate(d.getDate() + 1)
-  while (d.getDay() === 0 || d.getDay() === 6) d.setDate(d.getDate() + 1)
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(meetingIso)
+  if (!m) return null
+  let t = Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]))
+  do {
+    t += 86400000
+  } while (new Date(t).getUTCDay() === 0 || new Date(t).getUTCDay() === 6)
+  const d = new Date(t)
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`
 }
 
 /** 案例库检索强化（#2049）：visibility 尊重商业敏感默认不公开。 */
