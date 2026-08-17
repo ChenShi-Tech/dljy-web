@@ -51,7 +51,7 @@ export const opsRouter = createRouter({
   ]
 })
 
-opsRouter.beforeEach((to) => {
+opsRouter.beforeEach((_to) => {
   if (!getToken()) {
     // 未登录：引导回主平台登录（登录态共享 localStorage，登录后回到本台即可用）。
     return { path: '/ops/guard', query: { reason: 'unauthenticated' } }

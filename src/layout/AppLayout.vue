@@ -20,7 +20,6 @@ import {
 import { currentRegion, selectedRegionId, setCurrentRegionId } from '@/services/region/regionContext'
 import { resolveRegionSwitchRoute } from '@/services/region/regionNavigation'
 import {
-  activeStance,
   activeStanceKey,
   activeStanceType,
   isMultiStance,

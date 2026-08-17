@@ -14,7 +14,7 @@
               │   /dify-*、/console、/_next 同走此面
               ├── /agent-api/*  ──► Python FastAPI  （DLJY_AGENT_API_TARGET，默认 127.0.0.1:8000）
               │   （路径会被 rewrite：/agent-api/xxx → /api/xxx）
-              └── /pi-api/*     ──► pi-poc 编排服务 （DLJY_PI_API_TARGET，默认 127.0.0.1:8100）
+              └── /pi-api/*     ──► pi-poc 编排服务 （DLJY_PI_POC_TARGET，默认 127.0.0.1:8100；rewrite → /api）
                   （仅战略问答 #1526 / 申报体检 #1527 两个 PoC 页使用）
 ```
 
@@ -79,7 +79,7 @@ npm run dev                        # http://localhost:5174
 5. **401 白名单**：`/auth/login`、`/auth/login-options`、`/qweather`、`/csg/disclosure` 之外的 401 会清登录态 + `auth-expired` 事件 + 跳 `/login?redirect=`。新端点若属「后端代理外部服务」性质，评估是否要加白名单（否则外部服务 401 会误触发全局登出）。
 6. **GET 退避重试**：502/503/504 自动重试最多 2 次（退避 400→800ms）；500/404 不重试；AbortError 直抛。新写 client 不要自己再包一层重试。
 7. **mock 标注透传**：收编/新写 client 时，信封的 `mock` 与 `mockFields` 必须原样透传给 UI 层（驾驶舱/工作台的 Mock 可见标注依赖它）；「缺数据返 null、失败不缓存、未知回落标 synthetic」是数据诚实性红线。
-8. **`/pi-api` 特例**：仅两个 PoC 页使用，后端是 integrations/pi-poc 沙箱（`DLJY_PI_API_TARGET`，默认 8100）；不跑 PoC 时该代理目标不可达属正常。
+8. **`/pi-api` 特例**：战略问答/申报体检 PoC 与智能体工作台（chat 已切流 #2158）共用，后端是 integrations/pi-poc 沙箱（`DLJY_PI_POC_TARGET`，默认 8100，代理 rewrite `/pi-api` → `/api`）；不跑该服务时代理目标不可达属正常。
 
 ## 4. 联调与排错
 
