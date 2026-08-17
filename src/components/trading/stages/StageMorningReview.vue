@@ -293,7 +293,7 @@ async function writeBack() {
         :prev-deviation-mwh="prevDeviationMwh"
         :prev-reviewed-date="prevReviewedDate"
         :pnl="threeQuestionsPnl"
-        :position="activePosition"
+        :position="activeStanceType"
       />
       <div class="mr-system-row">
         <div class="mr-report-slot"><OvernightReportCard /></div>
