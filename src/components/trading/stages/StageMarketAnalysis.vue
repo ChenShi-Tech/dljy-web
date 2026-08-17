@@ -45,7 +45,7 @@ import {
 } from '@/services/trading/fundamentalsClient'
 import { currentRegion } from '@/services/region/regionContext'
 import { reviewFocusOf } from 'shared/trading-rules/position-review.mjs'
-import { activePosition } from '@/services/position/positionContext'
+import { activeStanceType } from '@/services/stance/stanceContext'
 import AgentChatPanel from '@/components/agent/AgentChatPanel.vue'
 import type { StageId } from '@/data/workflowStages'
 
@@ -509,7 +509,7 @@ const effectiveCredibility = computed(() => {
 })
 
 // ── 立场目标（#2005）：同一态势判断，三类身份的策略方向相反 ──────────────────
-const positionGoal = computed(() => reviewFocusOf(activePosition.value)?.goal ?? null)
+const positionGoal = computed(() => reviewFocusOf(activeStanceType.value)?.goal ?? null)
 
 // ── 写回 ────────────────────────────────────────────────────────────────────
 const saving = ref(false)

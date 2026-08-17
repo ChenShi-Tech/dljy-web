@@ -19,6 +19,8 @@ export default defineConfig(({ mode }) => {
   // 若与 4174 面共用同一 upstream 会路径撞车。
   const apiTarget = env.DLJY_DEV_API_TARGET || 'http://127.0.0.1:4174'
   const agentApiTarget = env.DLJY_AGENT_API_TARGET || 'http://127.0.0.1:8000'
+  const dataSvcTarget = env.DLJY_DATA_SVC_TARGET || 'http://127.0.0.1:8190'
+  const piPocTarget = env.DLJY_PI_POC_TARGET || 'http://127.0.0.1:8100'
 
   return {
     plugins: [
@@ -83,6 +85,23 @@ export default defineConfig(({ mode }) => {
           target: agentApiTarget,
           changeOrigin: true,
           rewrite: (path) => path.replace(/^\/agent-api/, '/api')
+        },
+        // pi 底座（integrations/pi-poc 编排服务，主仓库 `cd integrations/pi-poc && npm run dev`）。
+        // rollout.ts::PI_NATIVE_SCENARIOS = {strategic_qa, declaration_checkup, chat} 恒定走此基址——
+        // chat 于 #2158 切流完成、旧 supervisor 路径随 #2212 删除，两侧不再并存，缺此代理会让
+        // 智能体工作台建会话 POST 直接 404（POST 不走 SPA fallback，症状是「后端未启用智能体」）。
+        '/pi-api': {
+          target: piPocTarget,
+          changeOrigin: true,
+          rewrite: (path) => path.replace(/^\/pi-api/, '/api')
+        },
+        // #2169 P2-2a：数据管理路径族经 api.ts::dataServicePath 改写为 /data-svc/api/...，
+        // 此代理剥前缀转发到 data-service :8190；读服务面（/api → 4174）不变。
+        // 本文件是镜像仓自有文件、不随 sync:web 覆盖，故需随原仓代理拓扑手动跟进。
+        '/data-svc': {
+          target: dataSvcTarget,
+          changeOrigin: true,
+          rewrite: (path) => path.replace(/^\/data-svc/, '')
         },
         '/api': apiTarget,
         // Dify 报告工坊与 Studio 同源嵌入：全部经 4174 面二次转发。

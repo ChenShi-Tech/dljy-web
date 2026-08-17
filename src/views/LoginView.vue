@@ -11,6 +11,7 @@ import loginPosterSrc from '../assets/login/power-market-quant-dashboard.png'
 import { ApiError } from '@/services/api'
 import { changePassword, login, type AuthUser } from '@/services/auth'
 import { canAccessPath, firstAccessiblePath } from '@/services/governance'
+import { requiresStanceSelection } from '@/services/stance/stanceContext'
 
 const loginVideoModules = import.meta.glob('../assets/login/power-market-login-loop.mp4', {
   eager: true,
@@ -211,6 +212,11 @@ function onPasswordInput() {
 
 function resolveLoginTarget(roleUser: Awaited<ReturnType<typeof login>>['user']) {
   const redirect = typeof route.query.redirect === 'string' ? route.query.redirect : ''
+  // 多立场账号未选立场 → 先落立场选择页（#2193），回跳目标透传。
+  // login() 内部已随 persistAuthUser 同步过立场集合，此处读到的是最新状态。
+  if (requiresStanceSelection()) {
+    return { path: '/select-stance', query: redirect ? { redirect } : {} }
+  }
   if (redirect && canAccessPath(redirect, roleUser)) {
     return redirect
   }

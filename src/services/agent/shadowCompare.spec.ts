@@ -186,8 +186,10 @@ describe('splitTurnPayload 默认地区上下文 vs 其余上下文', () => {
 })
 
 describe('isComparableTurn 可对拍判定', () => {
+  // 样例场景取仍在灰度中的 declaration_prep：chat 已随 #2158 出灰度表（切流完成、
+  // 旧路径已删），isRolloutScenario('chat') 现在是 false，拿它当样例会永远不可对拍。
   const ok = {
-    isFirstTurn: true, scenario: 'chat', scenarioDeclared: true,
+    isFirstTurn: true, scenario: 'declaration_prep', scenarioDeclared: true,
     isShadowSession: false, hasExtraContext: false,
   }
 
@@ -195,7 +197,7 @@ describe('isComparableTurn 可对拍判定', () => {
     expect(isComparableTurn(ok)).toBe(true)
   })
 
-  it('未显式声明场景的调用不对拍：工作室自定义图不传 scenario，缺省 chat 会污染 chat 报告', () => {
+  it('未显式声明场景的调用不对拍：工作室自定义图不传 scenario，缺省值会污染对应场景的报告', () => {
     expect(isComparableTurn({ ...ok, scenarioDeclared: false })).toBe(false)
   })
 

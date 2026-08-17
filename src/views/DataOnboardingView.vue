@@ -1,16 +1,17 @@
 <script setup lang="ts">
-// 数据接入向导（#885）：从用户体验出发，按「用户手里有什么数据」组织的旅程总览 +
-// UI 内一键生效闭环。把散落 3 个导航组（数据管理 / 信息披露与采集 / 系统管理）的 4 条
-// 数据进入线（导入中心手录 / 命令行 ETL / 自动 scheduler / 外部凭据）收成一张「先做什么、
-// 再做什么、点哪里生效、去哪见数」的地图，并修复「上传→须命令行跑 ETL→才见数」的断点。
+// 数据接入向导（数据运维台 /ops/data-onboarding；#885 建，#2215 对齐真实通道）：
+// 按「用户手里有什么数据」组织的旅程总览 + UI 内一键生效闭环。数据进入线现有五条：
+// 中广核厂侧 API 全自动 / 台账与模板手录 / 命令行 ETL / 定时 scheduler / 上传中心，
+// 收成一张「先做什么、再做什么、点哪里生效、去哪见数」的地图。
 //
-// 五类旅程卡片（按数据类别组织，非按技术通道）：
-//   ① 现货节点电价 T0（模板→投递→点 spot-ingest 生效→预测页见数）
-//   ② 系统负荷/水电 T0/T1（模板→投递→点 forecast-etl 生效→预测页见数）
+// 旅程卡片（按数据类别组织，非按技术通道）：
+//   ⓪ 中广核云南厂侧 API 全自动（调度每日自动拉电价/市场曲线/披露→私有 PG→驾驶舱见数）
+//   ① 现货节点电价 T0（手录兜底：模板→投递→点 spot-ingest 生效→预测页见数）
+//   ② 系统负荷/水电 T0/T1（手录：模板→投递→点 forecast-etl 生效→预测页见数）
 //   ③ 交易中心月度导出包（离线包→命令行 import:spot-export，如实说明须服务器执行）
-//   ④ 南网披露 Cookie（录凭据→测连通→披露概览见数）
-//   ⑤ 气象全自动（scheduler 06:30 自动采→手动补采→天气/发电预测见数）
-//   ⑥ 结算/零售/交易记录（import-hub 台账录入即见数）
+//   ④ 气象全自动（scheduler 06:30 自动采→手动补采→天气/发电预测见数）
+//   ⑤ 结算/零售/交易记录（import-hub 台账录入即见数）
+// 上传中心（/ops/upload 五步流，Epic #2169 P1）承接结构化 Excel 批量入库。
 //
 // 诚实红线：状态标签如实透传（freshness/台账/接入态），取数失败显示「未知」不猜；
 // 未生效数据绝不显示「已可见」；生效按钮结果如实回显（成功/失败 + stdout 摘要）。
@@ -46,7 +47,8 @@ type RecordsPayload = { rows: TemplateRecord[]; total: number } & Record<string,
 // ─── 卡片配置 ────────────────────────────────────────────────────────────────
 type JourneyKind = 'template' | 'command' | 'auto' | 'ledger'
 type EffectAction = { kind: IngestKind; label: string }
-type ConsumeLink = { to: string; label: string }
+// external=true 指向主前端页面：本台 hash 路由仅注册 /ops/*，主前端 path 模式用同源 <a>（#2215）。
+type ConsumeLink = { to: string; label: string; external?: boolean }
 
 interface OnboardingCard {
   key: string
@@ -55,7 +57,7 @@ interface OnboardingCard {
   icon: Component
   what: string
   howText: string
-  howLink?: { to: string; label: string }
+  howLink?: { to: string; label: string; external?: boolean }
   howCommand?: { command: string; note: string }
   families: string[]
   templateIds: string[]
@@ -68,19 +70,40 @@ interface OnboardingCard {
 // 深链 path 全部核对真实路由（router/index.ts + features/*/routes.ts）。
 const CARDS: OnboardingCard[] = [
   {
+    // #2215：云南现货数据的主力通道（#2185/#2203 起每日自动）。向导此前只讲手录——
+    // 那是无 API 通道时代的叙事，必须让自动通道排第一。私有库不在治理 catalog
+    // （governance 只覆盖 capture 族），状态线不接 family 新鲜度，如实显示引导。
+    key: 'cgn-auto',
+    category: '全自动 · 云南现货主力通道',
+    title: '中广核云南厂侧 API（电价 / 市场曲线 / 披露）',
+    icon: Network,
+    what: '中广核云南专属厂侧数据 API（数据提供方部署，非电网官方接口）每日自动拉取：全网/场站节点电价（00:20，3 日回看）与 11 条市场曲线 + 26 类公共披露（00:50），写入中广核私有 PostgreSQL。日前价上游 D+1~D+2 发布，回看窗口自动补齐。',
+    howText: '数据源接入页保存直连端点与 API Key、联通测试通过且三重启用后，调度任务全自动拉取；手动补拉入口在数据摄取管理页。',
+    howLink: { to: '/ops/data-source-settings', label: '查看数据源接入状态与联通测试' },
+    families: [],
+    templateIds: [],
+    consume: [
+      { to: '/dashboard', label: '交易驾驶舱', external: true },
+      { to: '/xhjy/monitor', label: '实时监盘', external: true },
+      { to: '/ops/ingest', label: '数据摄取管理（手动补拉）' }
+    ],
+    cadence: 'daily',
+    journey: 'auto'
+  },
+  {
     key: 'node-price',
     category: 'T0 · 交易中心口径',
     title: '现货节点电价',
     icon: Network,
     what: '交易中心发布的日前节点电价（DLR），按节点×时段，是价格预测与申报决策的核心输入。',
-    howText: '下载 yn-t0-node-price 模板，按节点电价填报后上传，系统校验通过即投递到清单协议目录。',
-    howLink: { to: '/yygl/import-hub', label: '去数据导入融合台上传模板' },
+    howText: '中广核云南集团：节点电价已由厂侧 API 每日自动入库（见上方全自动卡），本卡手录通道仅在无 API 接入时使用——下载 yn-t0-node-price 模板填报上传，校验通过即投递到清单协议目录。',
+    howLink: { to: '/ops/import-hub', label: '去数据导入融合台上传模板' },
     families: ['yn_node_price', 'yn_plant_nodal_price'],
     templateIds: ['yn-t0-node-price'],
     effect: { kind: 'spot-ingest', label: '一键生效（摄取节点电价）' },
     consume: [
-      { to: '/xhjy/yunnan/node-price', label: '节点电价分析' },
-      { to: '/ycsj/workbench', label: 'ML 预测工作台' }
+      { to: '/xhjy/yunnan/node-price', label: '节点电价分析', external: true },
+      { to: '/ycsj/workbench', label: 'ML 预测工作台', external: true }
     ],
     cadence: 'daily',
     journey: 'template'
@@ -91,14 +114,14 @@ const CARDS: OnboardingCard[] = [
     title: '系统负荷 / 水电出力',
     icon: Zap,
     what: '统调系统负荷（T0 实际/计划）与水电出力（T1），是负荷与发电预测的关键外生变量。',
-    howText: '下载 yn-t0-system-load（统调负荷）/ yn-t1-hydro（水电出力）模板填报上传，投递到清单协议目录。',
-    howLink: { to: '/yygl/import-hub', label: '去数据导入融合台上传模板' },
+    howText: '云南负荷/新能源/总出力等市场曲线已随厂侧 API 自动进入中广核私有库（见上方全自动卡）；本卡用于公共清单协议族（yn_system_supply）——下载 yn-t0-system-load（统调负荷）/ yn-t1-hydro（水电出力）模板填报上传，投递到清单协议目录。',
+    howLink: { to: '/ops/import-hub', label: '去数据导入融合台上传模板' },
     families: ['yn_system_supply'],
     templateIds: ['yn-t0-system-load', 'yn-t1-hydro'],
     effect: { kind: 'forecast-etl', label: '一键生效（跑预测 ETL）' },
     consume: [
-      { to: '/ycsj/workbench', label: 'ML 预测工作台' },
-      { to: '/ycsj/station-generation', label: '厂站发电预测' }
+      { to: '/ycsj/workbench', label: 'ML 预测工作台', external: true },
+      { to: '/ycsj/station-generation', label: '厂站发电预测', external: true }
     ],
     cadence: 'daily',
     journey: 'template'
@@ -117,8 +140,8 @@ const CARDS: OnboardingCard[] = [
     families: ['yn_spot_settlement', 'yn_settlement_detail', 'yn_dim_plant'],
     templateIds: [],
     consume: [
-      { to: '/xhjy/yunnan/settlement-price', label: '结算价分析' },
-      { to: '/gsgl/output', label: '机组出力' }
+      { to: '/xhjy/yunnan/settlement-price', label: '结算价分析', external: true },
+      { to: '/gsgl/output', label: '机组出力', external: true }
     ],
     cadence: 'monthly',
     journey: 'command'
@@ -130,13 +153,13 @@ const CARDS: OnboardingCard[] = [
     icon: CloudSun,
     what: 'Open-Meteo 公开气象（温度/湿度/风速/云量/降水 + GHI/DNI/DHI 辐照），驱动发电预测。',
     howText: '由定时任务每日 06:30 自动采集（data_ingestion kind），无需手录；缺数时可手动补采。',
-    howLink: { to: '/system/ai-studio?tab=schedules', label: '查看定时采集任务' },
+    howLink: { to: '/system/ai-studio?tab=schedules', label: '查看定时采集任务', external: true },
     families: ['yn_meteo', 'yn_irradiance'],
     templateIds: [],
     effect: { kind: 'weather-export', label: '手动补采气象' },
     consume: [
-      { to: '/sjfx/tqyb', label: '天气预报' },
-      { to: '/ycsj/station-generation', label: '厂站发电预测' }
+      { to: '/sjfx/tqyb', label: '天气预报', external: true },
+      { to: '/ycsj/station-generation', label: '厂站发电预测', external: true }
     ],
     cadence: 'daily',
     journey: 'auto'
@@ -148,12 +171,12 @@ const CARDS: OnboardingCard[] = [
     icon: Coins,
     what: '售电结算、零售套餐、市场交易等结构化台账数据，经数据导入融合台录入后直接进台账见数。',
     howText: '在数据导入融合台对应 tab 上传 CSV/Excel（投递型落 capture，台账型落 import-hub 台账）。',
-    howLink: { to: '/yygl/import-hub', label: '去数据导入融合台录入' },
+    howLink: { to: '/ops/import-hub', label: '去数据导入融合台录入' },
     families: [],
     templateIds: [],
     consume: [
-      { to: '/yygl/import-hub', label: '导入台账与历史' },
-      { to: '/gsgl/trades', label: '历史交易' }
+      { to: '/ops/import-hub', label: '导入台账与历史' },
+      { to: '/gsgl/trades', label: '历史交易', external: true }
     ],
     cadence: 'daily',
     journey: 'ledger'
@@ -281,14 +304,16 @@ onMounted(loadAll)
       <h1>数据接入向导</h1>
       <p class="lede">
         从「你手里有什么数据」出发，按类别把数据进入系统的旅程一步步走通：先做什么、点哪里生效、去哪见数。
+        云南现货主力数据已由中广核厂侧 API 每日自动入库（首卡）；手录模板 / 月度导出包 / 台账等通道按需使用。
         每张卡片的五步线（输入→校验→落位→生效→见数）按当前真实状态实时点亮；上传投递后可点「一键生效」直接跑 ETL，不必切命令行。
       </p>
     </header>
 
     <section class="link-row">
-      <RouterLink to="/yygl/import-hub" class="link"><FileText :size="13" /> 数据导入融合台</RouterLink>
-      <RouterLink to="/yygl/ingest" class="link"><Workflow :size="13" /> 数据摄取管理</RouterLink>
-      <RouterLink to="/yygl/data-governance" class="link"><Database :size="13" /> 数据治理控制台</RouterLink>
+      <RouterLink to="/ops/upload" class="link"><CloudDownload :size="13" /> 数据上传中心</RouterLink>
+      <RouterLink to="/ops/import-hub" class="link"><FileText :size="13" /> 数据导入融合台</RouterLink>
+      <RouterLink to="/ops/ingest" class="link"><Workflow :size="13" /> 数据摄取管理</RouterLink>
+      <RouterLink to="/ops/data-governance" class="link"><Database :size="13" /> 数据治理控制台</RouterLink>
     </section>
 
     <div v-if="loadErr" class="load-err">⚠ 状态取数失败（{{ loadErr }}）；卡片状态显示为「未知」，不影响生效操作。</div>
@@ -317,7 +342,8 @@ onMounted(loadAll)
         <div class="sect">
           <span class="sect-label">怎么接</span>
           <p class="sect-body">{{ card.howText }}</p>
-          <RouterLink v-if="card.howLink" :to="card.howLink.to" class="link">{{ card.howLink.label }} →</RouterLink>
+          <a v-if="card.howLink?.external" :href="card.howLink.to" class="link">{{ card.howLink.label }} →</a>
+          <RouterLink v-else-if="card.howLink" :to="card.howLink.to" class="link">{{ card.howLink.label }} →</RouterLink>
           <div v-if="card.howCommand" class="cmd-box">
             <code>{{ card.howCommand.command }}</code>
             <button class="copy" type="button" @click="copyCommand(card.howCommand.command)">复制</button>
@@ -330,6 +356,9 @@ onMounted(loadAll)
           <span class="sect-label">当前状态</span>
           <div v-if="card.journey === 'ledger'" class="status-row">
             <span class="muted">台账型数据：导入融合台录入并通过校验即进台账见数，无独立新鲜度档。</span>
+          </div>
+          <div v-else-if="!card.families.length && card.journey === 'auto'" class="status-row">
+            <span class="muted">调度每日自动拉取；私有库新鲜度见交易驾驶舱 / 实时监盘与数据源接入页。</span>
           </div>
           <div v-else class="status-row">
             <span class="tag" :class="familyFreshness(card.families, card.cadence)">数据{{ freshnessTone[familyFreshness(card.families, card.cadence)] }}</span>
@@ -362,7 +391,10 @@ onMounted(loadAll)
         <div class="sect">
           <span class="sect-label">去哪见数</span>
           <div class="consume-links">
-            <RouterLink v-for="c in card.consume" :key="c.to" :to="c.to" class="consume-link">{{ c.label }} →</RouterLink>
+            <template v-for="c in card.consume" :key="c.to">
+              <a v-if="c.external" :href="c.to" class="consume-link">{{ c.label }} →</a>
+              <RouterLink v-else :to="c.to" class="consume-link">{{ c.label }} →</RouterLink>
+            </template>
           </div>
         </div>
       </article>
@@ -370,9 +402,9 @@ onMounted(loadAll)
 
     <section class="note">
       <p class="muted">
-        说明：本向导只消费数据治理目录、导入台账与披露接入态三路只读信号，本身不产生数据。「一键生效」复用既有 <code>POST /api/v1/ingest/:kind</code> 端点
-        （spot-ingest / forecast-etl 写用户数据目录与 Parquet，非生产写入；weather-export 从 Open-Meteo 拉取）。
-        各状态标签如实透传：数据未落 capture 时显示「未知」，未生效绝不标「已可见」。
+        说明：本向导只消费数据治理目录、导入台账等只读信号，本身不产生数据。「一键生效」复用既有 <code>POST /api/v1/ingest/:kind</code> 端点
+        （spot-ingest / forecast-etl 写用户数据目录与 Parquet，非生产写入；weather-export 从 Open-Meteo 拉取；中广核厂侧 API 摄取在数据摄取管理页触发，写中广核私有 PostgreSQL）。
+        各状态标签如实透传：数据未落 capture 时显示「未知」，未生效绝不标「已可见」；指向主前端的「见数」链接为同源跳转。
       </p>
     </section>
   </div>

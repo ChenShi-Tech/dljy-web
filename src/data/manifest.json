@@ -30,20 +30,19 @@
     "feature": null
   },
   {
-    "id": "data-source-settings",
-    "path": "/data-source-settings",
-    "title": "数据源接入",
-    "domain": "系统",
+    "id": "ops-console",
+    "path": "/data-ops/console",
+    "title": "数据运维台",
+    "domain": "数据运维",
     "kind": "real",
-    "endpoint": "GET /api/v1/grid-access/points; GET|PUT|DELETE /api/v1/grid-access/points/{id}/credentials + /api/v1/data-sources/cgn-yunnan + /api/v1/sichuan-ingest; POST */test + */trigger; GET */plant-bindings + */health",
-    "dataPath": "data/private/credentials + external_sc.ingest_run + load_forecast + reservoir_plan",
+    "endpoint": "external /ops-console.html（数据管理操作面，API 经 /data-svc → data-service :8190）",
+    "dataPath": "ops_console",
     "nav": {
-      "group": "/system",
+      "group": "/gsgl",
       "listed": true
     },
     "regions": [],
-    "feature": null,
-    "accessExempt": true
+    "feature": null
   },
   {
     "id": "declaration-checkup",
@@ -913,66 +912,6 @@
     "kind": "mixed",
     "endpoint": "GET /api/real?family=&match=&region=",
     "dataPath": "*",
-    "nav": {
-      "group": "/gsgl",
-      "listed": true
-    },
-    "regions": [],
-    "feature": null
-  },
-  {
-    "id": "data-governance",
-    "path": "/yygl/data-governance",
-    "title": "数据治理控制台",
-    "domain": "数据管理",
-    "kind": "real",
-    "endpoint": "GET /api/v1/governance/{catalog,quality,backup}",
-    "dataPath": "capture_sqlite + data/private/governance/quality-report.json + data/private-backups",
-    "nav": {
-      "group": "/gsgl",
-      "listed": true
-    },
-    "regions": [],
-    "feature": null
-  },
-  {
-    "id": "data-onboarding",
-    "path": "/yygl/data-onboarding",
-    "title": "数据接入向导",
-    "domain": "数据管理",
-    "kind": "real",
-    "endpoint": "GET /api/v1/governance/catalog + /api/v1/import-templates/records + POST /api/v1/ingest/:kind",
-    "dataPath": "governance_catalog + import_records + capture_sqlite",
-    "nav": {
-      "group": "/gsgl",
-      "listed": true
-    },
-    "regions": [],
-    "feature": null
-  },
-  {
-    "id": "import-hub",
-    "path": "/yygl/import-hub",
-    "title": "数据导入融合台",
-    "domain": "数据管理",
-    "kind": "mixed",
-    "endpoint": "local importHub + planned /api/v1/power/import|market/packages/retail/import|settlements/import|retail-settlement-import/upload|market/trades/import",
-    "dataPath": "import_workflows",
-    "nav": {
-      "group": "/gsgl",
-      "listed": true
-    },
-    "regions": [],
-    "feature": null
-  },
-  {
-    "id": "ingest",
-    "path": "/yygl/ingest",
-    "title": "数据摄取管理",
-    "domain": "数据管理",
-    "kind": "mixed",
-    "endpoint": "POST /api/v1/ingest/:kind",
-    "dataPath": "capture_sqlite",
     "nav": {
       "group": "/gsgl",
       "listed": true

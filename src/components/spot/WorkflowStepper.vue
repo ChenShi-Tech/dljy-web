@@ -16,7 +16,7 @@ import {
   stagesForPosition,
   type StageId
 } from '@/data/workflowStages'
-import { activePosition } from '@/services/position/positionContext'
+import { activeStanceType } from '@/services/stance/stanceContext'
 
 const props = defineProps<{
   /** 当前所在阶段 */
@@ -27,7 +27,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{ select: [stage: StageId] }>()
 
-const stages = computed(() => stagesForPosition(activePosition.value))
+const stages = computed(() => stagesForPosition(activeStanceType.value))
 const states = computed(() => stageStates(stages.value, props.declaration))
 
 const currentIndex = computed(() => stages.value.findIndex((s) => s.id === props.current))

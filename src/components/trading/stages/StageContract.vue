@@ -25,7 +25,7 @@ import {
 import { REGIME_LABEL } from 'shared/trading-rules/supply-demand.mjs'
 import { savePreflight, type DeclarationOrder } from '@/services/declarations'
 import { createContract, fetchContracts, type CompanyContract } from '@/services/company/companyApi'
-import { activePosition } from '@/services/position/positionContext'
+import { activeStanceType } from '@/services/stance/stanceContext'
 import AiAssistFill from '@/components/trading/AiAssistFill.vue'
 import type { StageId } from '@/data/workflowStages'
 
@@ -76,7 +76,7 @@ function overlapsMonth(c: CompanyContract, iso: string): number {
 
 /** 买方立场取 buyerPrice，卖方（发电/储能）取 sellerPrice。 */
 const priceOf = (c: CompanyContract): number | null => {
-  const v = activePosition.value === 'GENERATOR' || activePosition.value === 'STORAGE' ? c.sellerPrice : c.buyerPrice
+  const v = activeStanceType.value === 'GENERATOR' || activeStanceType.value === 'STORAGE' ? c.sellerPrice : c.buyerPrice
   return Number.isFinite(v) ? Number(v) : null
 }
 
@@ -179,7 +179,7 @@ async function registerToLibrary() {
   registerMsg.value = ''
   registerError.value = ''
   try {
-    const sellSide = activePosition.value === 'GENERATOR' || activePosition.value === 'STORAGE'
+    const sellSide = activeStanceType.value === 'GENERATOR' || activeStanceType.value === 'STORAGE'
     const monthEnd = new Date(new Date(d.targetDate).getFullYear(), new Date(d.targetDate).getMonth() + 1, 0).toISOString().slice(0, 10)
     await createContract({
       contractNo: `S6-${d.targetDate}-${Date.now().toString().slice(-6)}`,
@@ -214,7 +214,7 @@ const assessment = computed(() =>
     regime: regime.value as Parameters<typeof assessContractGap>[0]['regime'],
     direction: direction.value,
     holdBand: holdBand.value,
-    position: activePosition.value
+    position: activeStanceType.value
   })
 )
 

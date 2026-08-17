@@ -13,7 +13,9 @@ import { createAgentClient } from '@/services/agent/httpClient'
 
 const activeTab = ref<ImportHubTab>('retailSettlement')
 const dataset = getImportHubDataset()
-const retailSettlementImportClient = createAgentClient('/v1/retail-settlement-import', {
+// #2174 P2-2c-3：管理入口统一收口 data-service（/data-svc 代理 → :8190 转发 agent-backend）。
+const retailSettlementImportClient = createAgentClient('/data-svc/api/v1/retail-settlement-import', {
+  rawBase: true,
   rootBase: true,
   timeoutMs: 30_000
 })

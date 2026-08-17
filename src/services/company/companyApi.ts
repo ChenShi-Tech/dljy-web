@@ -121,6 +121,19 @@ export async function refreshCompanyOptions(): Promise<CompanyOption[]> {
   return options
 }
 
+// ---- 公司注册立场（#2193 立场体系） ----
+// 立场授权的服务端权威在 companies.subject_types；读走可见公司列表（含 subjectTypes 字段），
+// 写走平台管理员端点（requireAdminSession，非管理员 403）。
+export async function fetchCompanySubjectTypes(companyId: string | null | undefined): Promise<string[]> {
+  if (!companyId) return []
+  const rows = await fetchCompanies()
+  return rows.find((row) => row.companyId === companyId)?.subjectTypes ?? []
+}
+
+export async function saveCompanySubjectTypes(companyId: string, subjectTypes: string[]): Promise<void> {
+  await apiPatch(`/company/companies/${encodeURIComponent(companyId)}`, { subjectTypes })
+}
+
 // ---- 场站 ----
 export async function fetchStations(scope?: 'group'): Promise<CompanyStation[]> {
   if (companyUnselected() && scope !== 'group') return []

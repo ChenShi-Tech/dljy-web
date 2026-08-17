@@ -20,7 +20,7 @@ import { USAGE_GATE_LABEL } from 'shared/trading-rules/data-integrity.mjs'
 import { getMarketTiming } from 'shared/trading-rules/market-timing.mjs'
 import { getTradingCalendar } from 'shared/trading-rules/trading-calendar.mjs'
 import { currentRegion } from '@/services/region/regionContext'
-import { activePosition } from '@/services/position/positionContext'
+import { activeStanceType } from '@/services/stance/stanceContext'
 import { getRegionSpotProfile } from '@/data/regionSpotProfiles'
 import { buildSegmentDraft, segmentsToPriceCurve96, validateSegments, type SegmentRow } from '@/services/trading/segmentQuote'
 import {
@@ -99,7 +99,7 @@ const canEditCurve = computed(() =>
 // ── ①' 分段价量报价草稿（F3.4 · 手册 S4 步骤①：检查「分几段、每段什么价」）────
 // 发电/储能立场报量报价必需；售电 T3 报量不报价（面板提示不生成）。价格锚取 S2
 // 价格中枢（S2 未产出时不硬编——没有锚的分段报价是编数字）。
-const needsPriceQuote = computed(() => ['GENERATOR', 'STORAGE'].includes(activePosition.value ?? ''))
+const needsPriceQuote = computed(() => ['GENERATOR', 'STORAGE'].includes(activeStanceType.value ?? ''))
 const priceCenterOfS2 = computed<[number, number] | null>(() => {
   const g = pf.value.dataGate
   if (g && Number.isFinite(g.priceCenterLow) && Number.isFinite(g.priceCenterHigh)) {
@@ -455,11 +455,11 @@ const receiptChecks = computed<ReceiptCheckRow[] | null>(() => {
       </button>
     </details>
     <p v-else class="dc-muted" style="margin: 0">
-      当前立场（{{ activePosition ?? '未选' }}）为报量不报价口径（售电 T3）——无分段报价环节；发电/储能立场在此生成分段草稿。
+      当前立场（{{ activeStanceType ?? '未选' }}）为报量不报价口径（售电 T3）——无分段报价环节；发电/储能立场在此生成分段草稿。
     </p>
 
     <!-- 储能立场：充放电计划（写回后 SOC 判据自动生效） -->
-    <details class="dc-storage" :open="activePosition === 'STORAGE'">
+    <details class="dc-storage" :open="activeStanceType === 'STORAGE'">
       <summary>
         储能充放电计划（R1/R2/R3/R11 + 八项约束）
         <em v-if="pf.storagePlan">已写回：循环 {{ pf.storagePlan.cycles }} 次 · 预期毛利 {{ pf.storagePlan.grossMarginYuan }} 元</em>

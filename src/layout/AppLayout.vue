@@ -20,6 +20,16 @@ import {
 import { currentRegion, selectedRegionId, setCurrentRegionId } from '@/services/region/regionContext'
 import { resolveRegionSwitchRoute } from '@/services/region/regionNavigation'
 import {
+  activeStance,
+  activeStanceKey,
+  activeStanceType,
+  isMultiStance,
+  setActiveStance,
+  stanceKeyOf,
+  stances
+} from '@/services/stance/stanceContext'
+import { filterNavigationForStance, isPathAvailableInStance, resolveStanceSwitchRoute } from '@/services/stance/stanceNavigation'
+import {
   canAccessPath,
   filterNavigationForUser,
   firstAccessiblePath,
@@ -69,7 +79,10 @@ const menuColors = computed(() => {
 const activePath = computed(() => route.path)
 const visibleNavigation = computed(() => {
   accessRevision.value
-  return withCurrentRegionTradingTitle(filterNavigationForUser(navigation, currentUser.value, currentRegion.value.id))
+  // 立场视图层（#2196）：角色×地区过滤后，再按当前立场出工作台（共享页恒可见，
+  // 组合/集团视角全量；专职立场只看共享页 + 本立场专属页）。
+  const byRoleAndRegion = filterNavigationForUser(navigation, currentUser.value, currentRegion.value.id)
+  return withCurrentRegionTradingTitle(filterNavigationForStance(byRoleAndRegion, activeStanceType.value))
 })
 const currentGate = computed(() => getDecisionGateHint(route.path, currentUser.value))
 const subjectTypeLabel = computed(() => subjectTypeLabels[currentUser.value.subjectType])
@@ -121,6 +134,27 @@ function switchCompany(companyId: string) {
   }
 }
 
+function stanceOptionLabel(stance: (typeof stances.value)[number]) {
+  const label = subjectTypeLabels[stance.subjectType] ?? stance.subjectType
+  return stance.crossView ? `${label}视角` : label
+}
+
+function switchStance(key: string) {
+  if (key === activeStanceKey.value) return
+  const next = stances.value.find((s) => stanceKeyOf(s) === key)
+  if (!next || !setActiveStance(key)) {
+    ElMessage.warning('该立场不在当前账号的允许集合内')
+    return
+  }
+  ElMessage.success(`已切换到${stanceOptionLabel(next)}`)
+  // 立场切换后的路由解析（#2196）：当前页在新立场仍可见则停留（共享页/系统页不踢人），
+  // 否则落该用户的默认工作台。
+  const nextPath = resolveStanceSwitchRoute(next.subjectType, currentUser.value, route.path)
+  if (nextPath !== route.path) {
+    router.replace(nextPath)
+  }
+}
+
 async function refreshTopbarCompanyOptions() {
   if (!topbarCompanySwitchable.value) return
   companyOptionsLoading.value = true
@@ -155,7 +189,11 @@ function closeMobileMenu() {
 function refreshAccessMatrix() {
   accessRevision.value += 1
   currentUser.value = getCurrentUser()
-  if (!canAccessPath(route.path, currentUser.value) || !isPathAvailableInRegion(route.path, currentRegion.value.id)) {
+  if (
+    !canAccessPath(route.path, currentUser.value)
+    || !isPathAvailableInRegion(route.path, currentRegion.value.id)
+    || !isPathAvailableInStance(route.path, activeStanceType.value)
+  ) {
     router.replace(firstAccessiblePath(currentUser.value, currentRegion.value.id))
   }
 }
@@ -324,6 +362,27 @@ watch(
         <div class="topbar-actions">
           <RegionSwitcher v-model="selectedRegionModel" />
           <el-select
+            v-if="isMultiStance"
+            class="stance-switcher"
+            :model-value="activeStanceKey"
+            title="切换作业立场（发电/售电/储能…）"
+            size="small"
+            @update:model-value="switchStance"
+          >
+            <el-option
+              v-for="stance in stances"
+              :key="stanceKeyOf(stance)"
+              :label="stanceOptionLabel(stance)"
+              :value="stanceKeyOf(stance)"
+            >
+              <span class="stance-option">
+                <span>{{ stanceOptionLabel(stance) }}</span>
+                <el-tag v-if="stance.crossView" size="small" type="warning" effect="plain">切换视角</el-tag>
+                <el-tag v-else size="small" type="success" effect="plain">主立场</el-tag>
+              </span>
+            </el-option>
+          </el-select>
+          <el-select
             v-if="topbarCompanySwitchable"
             class="company-switcher"
             :model-value="selectedCompanyId"
@@ -451,6 +510,20 @@ watch(
 .company-switcher {
   flex: 0 1 170px;
   width: 170px;
+}
+
+/* 立场切换器（#2193）：比公司切换器窄一档，多立场账号才渲染 */
+.stance-switcher {
+  flex: 0 0 120px;
+  width: 120px;
+}
+
+.stance-option {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
 }
 
 .company-option {
@@ -646,6 +719,13 @@ watch(
     min-width: 0;
   }
 
+  /* 立场切换器同步收缩（#2193），与公司切换器同节奏 */
+  .stance-switcher {
+    flex: 0 1 96px;
+    max-width: 96px;
+    min-width: 0;
+  }
+
   .user-meta {
     display: none;
   }
@@ -678,10 +758,18 @@ watch(
   .company-switcher {
     display: none;
   }
+
+  .stance-switcher {
+    display: none;
+  }
 }
 
 @media (max-width: 768px) {
   .company-switcher {
+    display: none;
+  }
+
+  .stance-switcher {
     display: none;
   }
 }

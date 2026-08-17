@@ -20,6 +20,8 @@ export type CompanyOption = {
   tier?: 'GROUP' | 'COMPANY' | string
   parentCompanyId?: string | null
   status?: string
+  /** 公司注册立场（#2193）：交易中心登记的市场主体类型集合，立场切换授权的服务端权威。 */
+  subjectTypes?: string[]
 }
 
 const availableCompanies = ref<CompanyOption[]>([])

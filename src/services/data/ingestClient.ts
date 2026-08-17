@@ -11,6 +11,8 @@ export type IngestKind =
   | 'market-export'
   | 'spot-ingest'
   | 'forecast-etl'
+  | 'cgn-yunnan-prices'
+  | 'cgn-yunnan-market'
 
 export interface IngestResult {
   code: number

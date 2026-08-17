@@ -11,6 +11,7 @@ import {
 } from '@/services/governance'
 import { regionIdForAreaCode } from '@/data/regions'
 import { setCurrentRegionId } from '@/services/region/regionContext'
+import { clearStanceContext, syncStancesFromSession } from '@/services/stance/stanceContext'
 
 const TOKEN_KEY = 'dljy_restore_token'
 const USER_KEY = 'dljy_governance_user'
@@ -142,6 +143,8 @@ export async function logout() {
 function clearAuthState() {
   localStorage.removeItem(TOKEN_KEY)
   localStorage.removeItem(USER_KEY)
+  // 立场随会话清空（#2193）：防下一个登录账号继承上一个账号的作业立场。
+  clearStanceContext()
 }
 
 // Sub-4(#520)：登录成功后默认地区随账号归属（YN→yunnan、SX→shanxi）。只在显式登录
@@ -204,6 +207,8 @@ function persistAuthUser(response: LoginResponse | InfoResponse, fallbackUsernam
     throw new Error('用户信息接口缺少 user 字段')
   }
   localStorage.setItem(USER_KEY, JSON.stringify(user))
+  // 立场允许集合随会话同源更新（#2193）：登录与 getInfo 刷新走同一处，两侧天然一致。
+  syncStancesFromSession(user)
   return user
 }
 
