@@ -56,6 +56,8 @@ const isMobile = ref(false)
 const mobileMenuOpen = ref(false)
 const currentUser = ref<AuthUser>(getCurrentUser())
 const notices = ref<Notice[]>([])
+// 公告是否为模拟数据：由服务端 provenance 判定，不在前端写死。
+const noticesAreMock = ref(false)
 const accessRevision = ref(0)
 const companyOptionsLoading = ref(false)
 
@@ -231,6 +233,7 @@ onMounted(async () => {
     const [info, dashboard] = await Promise.all([getInfo(), getDashboard()])
     currentUser.value = info.user
     notices.value = dashboard.notices
+    noticesAreMock.value = dashboard.provenance?.realDataConnected === false
     await refreshTopbarCompanyOptions()
   } catch (error) {
     await logout()
@@ -413,6 +416,9 @@ watch(
               <el-button class="icon-action" :icon="Bell" circle title="通知" />
             </template>
             <div class="notice-list">
+              <div v-if="noticesAreMock" class="notice-mock-hint">
+                模拟数据 · 平台公告源尚未接入，以下为示例内容
+              </div>
               <div v-for="notice in notices" :key="notice.id" class="notice-item">
                 <span>{{ notice.level }}</span>
                 <strong>{{ notice.title }}</strong>
@@ -661,6 +667,11 @@ watch(
   min-width: 0;
 }
 
+/* 空间吃紧时 tooltip 包裹层可收缩，由卡片内 ellipsis 兜底，防与动作区重叠 */
+.context-cards > * {
+  min-width: 0;
+}
+
 .ctx-card {
   display: flex;
   flex-direction: column;
@@ -753,12 +764,14 @@ watch(
   }
 }
 
-/* ≤850px：公司收缩后仍换行，藏掉保持动作区 1 行 */
-@media (max-width: 850px) {
+/* ≤955px：公司切换器提前隐藏防挤换行；集团切换器维持 ≤850px */
+@media (max-width: 955px) {
   .company-switcher {
     display: none;
   }
+}
 
+@media (max-width: 850px) {
   .stance-switcher {
     display: none;
   }
@@ -777,6 +790,7 @@ watch(
 .topbar-ticker {
   display: flex;
   align-items: center;
-  min-width: 0;
+  /* 价带不参与收缩：防「峰段/平段/谷段」徽标竖排换行 */
+  flex: 0 0 auto;
 }
 </style>

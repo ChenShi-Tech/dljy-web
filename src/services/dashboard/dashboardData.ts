@@ -242,9 +242,12 @@ export type DashboardExecutionResponse = {
   gitPolicy: string
 }
 
+// 透出 provenance 而非只回 data：顶栏公告目前由内存常量供数（provenance.sourceType='MOCK'），
+// 调用方据此显示「模拟数据」提示。接真实数据源后 sourceType 变化，提示自动消失——
+// 判据来自服务端标注，不在前端硬编码「这里是假的」。
 export async function getDashboard() {
   const payload = await apiGet<DashboardPayload>('/dashboard')
-  return payload.data!
+  return { ...payload.data!, provenance: payload.provenance }
 }
 
 export async function runDashboardExecution(request: DashboardExecutionRequest) {
