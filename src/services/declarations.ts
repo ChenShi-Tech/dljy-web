@@ -111,6 +111,45 @@ export type DeclarationOrder = {
       lessons: string
       writtenBy: string
       writtenAt: string
+      // ── 六维复盘扩展（需求文档 §五，新增字段全 optional，旧单据读取不报错）──
+      /** 需求1：责任归属 id（模板七四分类），见 `shared/.../morning-review.mjs::DEVIATION_RESPONSIBILITY` */
+      responsibility?: 'forecast' | 'emergency' | 'strategy' | 'operation' | null
+      /** 写入时的中文标签快照 */
+      responsibilityLabel?: string
+      /** 需求2：偏差考核费用（模板八；后端 /review 估算）。null=未取到，不用 0 冒充 */
+      deviationCostYuan?: number | null
+      /** 需求2：偏差率（%，偏差量/申报量） */
+      deviationRate?: number | null
+      /** 需求3：结果三层拆分快照（品种/峰平谷/单笔） */
+      resultLayers?: {
+        byProduct?: Array<{
+          product: string
+          revenue: number | null   // null=未取到（不用 0 冒充）
+          share: number | null
+          sourceType: 'REAL' | 'MOCK'
+        }>
+        byPeriod?: Array<{ segment: string; slots: number; totalMwh: number; sharePct: number | null }>
+        topTrades?: {
+          topGain: Array<{ slot: number; note: string }>
+          topLoss: Array<{ slot: number; note: string }>
+        } | null
+      } | null
+      /** 需求4：决策复盘三问结论（模板一精简版） */
+      decisionReview?: {
+        totalDecisions: number
+        reviewedDecisions: number
+        threeQuestions: Array<{
+          decisionId: string
+          info: 'ok' | 'lacking'
+          logic: 'ok' | 'flawed'
+          emotion: 'calm' | 'biased'
+          note?: string
+        }>
+      } | null
+      /** 需求6：本次复盘的角色（角色专属区口径） */
+      role?: 'retail' | 'storage' | 'renewable'
+      /** 需求6：角色专属汇总（R1/R4、E3/S1、N1 口径；结构按角色定，旧读取方不解析） */
+      roleSpecific?: Record<string, unknown> | null
     }
     /**
      * S2 早间分析的产出：数据可信度门禁 + 今日市场判断。
