@@ -457,12 +457,12 @@ onMounted(() => {
   gap: 8px;
   margin-bottom: 8px;
   color: var(--text-body);
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 .retail-form-grid small {
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 .select-grid :deep(.el-select),

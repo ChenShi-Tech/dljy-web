@@ -205,10 +205,10 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .extra-panel { padding-top: 4px; }
-.hint { color: var(--el-text-color-secondary); font-size: 12px; margin: 0 0 8px; }
-.lbl { color: var(--el-text-color-secondary); font-size: 13px; }
+.hint { color: var(--el-text-color-secondary); font-size: var(--font-sm); margin: 0 0 8px; }
+.lbl { color: var(--el-text-color-secondary); font-size: var(--font-md); }
 .chart { width: 100%; height: 360px; }
 .chart.sm { height: 240px; }
 .ext-card { border: 1px solid var(--el-border-color-lighter); border-radius: 6px; padding: 10px 12px; margin-bottom: 12px; }
-.ext-hd { display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 14px; margin-bottom: 4px; flex-wrap: wrap; }
+.ext-hd { display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: var(--font-lg); margin-bottom: 4px; flex-wrap: wrap; }
 </style>

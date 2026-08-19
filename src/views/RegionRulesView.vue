@@ -375,7 +375,7 @@ onUnmounted(() => {
 
 .rule-hero-main h2 {
   margin: 8px 0 8px;
-  font-size: 28px;
+  font-size: var(--font-28);
   font-weight: 750;
   color: var(--text);
   letter-spacing: 0;
@@ -401,7 +401,7 @@ onUnmounted(() => {
 .hero-kicker,
 .section-kicker {
   color: var(--primary);
-  font-size: 13px;
+  font-size: var(--font-md);
   font-weight: 650;
 }
 
@@ -431,14 +431,14 @@ onUnmounted(() => {
 }
 
 .hero-metrics strong {
-  font-size: 26px;
+  font-size: var(--font-26);
   color: var(--primary);
 }
 
 .hero-metrics span {
   margin-top: 4px;
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 .focus-panel,
@@ -470,7 +470,7 @@ onUnmounted(() => {
 .module-heading h3,
 .focus-heading h3 {
   margin: 6px 0 8px;
-  font-size: 20px;
+  font-size: var(--font-20);
   color: var(--text);
 }
 
@@ -587,7 +587,7 @@ onUnmounted(() => {
   border-radius: 6px;
   background: var(--primary-tint);
   color: var(--primary);
-  font-size: 12px;
+  font-size: var(--font-sm);
   line-height: 1.4;
 }
 
@@ -634,7 +634,7 @@ onUnmounted(() => {
 .route-empty {
   margin: 0;
   color: var(--muted);
-  font-size: 13px;
+  font-size: var(--font-md);
 }
 
 .route-link strong,
@@ -673,7 +673,7 @@ onUnmounted(() => {
 .rule-card h4 {
   margin: 0 0 8px;
   color: var(--text);
-  font-size: 16px;
+  font-size: var(--font-16);
 }
 
 .rule-card ul {
@@ -740,7 +740,7 @@ onUnmounted(() => {
   border-radius: 6px;
   background: var(--surface-hover);
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 @media (max-width: 1180px) {
@@ -767,7 +767,7 @@ onUnmounted(() => {
   }
 
   .rule-hero-main h2 {
-    font-size: 22px;
+    font-size: var(--font-22);
   }
 
   .hero-metrics {

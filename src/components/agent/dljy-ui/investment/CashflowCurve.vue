@@ -44,17 +44,17 @@ const maxAbs = computed(() => Math.max(1, ...rows.value.map((r) => Math.abs(r.ne
   padding: 14px;
 }
 header { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; margin-bottom: 10px; }
-h3 { margin: 0; font-size: 16px; color: var(--text, #111827); }
-header span, footer { color: var(--muted, #667085); font-size: 12px; }
+h3 { margin: 0; font-size: var(--font-16); color: var(--text, #111827); }
+header span, footer { color: var(--muted, #667085); font-size: var(--font-sm); }
 .cashflow-list { display: grid; gap: 7px; }
 .cash-row { display: grid; grid-template-columns: 42px minmax(0, 1fr) 80px; align-items: center; gap: 10px; }
-.year { color: var(--muted, #667085); font-size: 12px; }
+.year { color: var(--muted, #667085); font-size: var(--font-sm); }
 .tracks { position: relative; height: 18px; background: rgba(148, 163, 184, 0.14); border-radius: 999px; overflow: hidden; }
 .tracks i { position: absolute; left: 0; height: 8px; border-radius: 999px; }
 .tracks .net { top: 2px; background: #0f766e; }
 .tracks .cum { bottom: 2px; background: #2563eb; opacity: 0.72; }
 .tracks .neg { background: #dc2626; }
-strong { text-align: right; font-size: 12px; color: var(--text, #111827); }
+strong { text-align: right; font-size: var(--font-sm); color: var(--text, #111827); }
 footer { display: flex; align-items: center; gap: 6px; margin-top: 10px; }
 footer span {
   width: 10px;

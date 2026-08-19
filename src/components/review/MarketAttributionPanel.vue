@@ -146,22 +146,22 @@ function removeFocus(i: number) {
 </template>
 
 <style scoped>
-.map { display: flex; flex-direction: column; gap: 8px; font-size: 12.5px; }
+.map { display: flex; flex-direction: column; gap: 8px; font-size: var(--font-12-5); }
 .map-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
-.map-head input { padding: 2px 6px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 6px; font-size: 11.5px; }
+.map-head input { padding: 2px 6px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 6px; font-size: var(--font-11-5); }
 .map-muted { margin: 0; color: var(--el-text-color-secondary, #909399); }
-.map-warn { margin: 0; padding: 6px 9px; border-radius: 6px; background: #fffbeb; color: #92400e; font-size: 11.5px; }
-.map-basis { margin: 0; font-size: 11px; color: var(--el-text-color-secondary, #909399); }
-.map-table { width: 100%; border-collapse: collapse; font-size: 11.5px; }
+.map-warn { margin: 0; padding: 6px 9px; border-radius: 6px; background: #fffbeb; color: #92400e; font-size: var(--font-11-5); }
+.map-basis { margin: 0; font-size: var(--font-xs); color: var(--el-text-color-secondary, #909399); }
+.map-table { width: 100%; border-collapse: collapse; font-size: var(--font-11-5); }
 .map-table th, .map-table td { padding: 5px 8px; border-bottom: 1px solid var(--el-border-color-lighter, #ebeef5); text-align: left; vertical-align: top; }
-.map-table th { color: var(--el-text-color-secondary, #666); font-weight: 500; font-size: 10.5px; white-space: nowrap; }
-.map-note { margin: 2px 0 0; font-size: 10.5px; color: var(--el-text-color-secondary, #909399); line-height: 1.6; }
+.map-table th { color: var(--el-text-color-secondary, #666); font-weight: 500; font-size: var(--font-10-5); white-space: nowrap; }
+.map-note { margin: 2px 0 0; font-size: var(--font-10-5); color: var(--el-text-color-secondary, #909399); line-height: 1.6; }
 .map-event { margin: 2px 0; font-variant-numeric: tabular-nums; }
-.map-input { width: 100%; padding: 4px 7px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 6px; font-size: 11.5px; box-sizing: border-box; font-family: inherit; }
+.map-input { width: 100%; padding: 4px 7px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 6px; font-size: var(--font-11-5); box-sizing: border-box; font-family: inherit; }
 .map-focus { display: flex; flex-direction: column; gap: 5px; }
-.map-focus b { font-size: 12px; }
+.map-focus b { font-size: var(--font-sm); }
 .map-focus-add { display: flex; gap: 6px; }
-.map-focus-add button { padding: 3px 12px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 6px; background: #fff; font-size: 11.5px; cursor: pointer; }
-.map-focus-item { margin: 0; padding: 4px 8px; border: 1px solid var(--el-border-color-lighter, #ebeef5); border-radius: 6px; font-size: 11.5px; }
+.map-focus-add button { padding: 3px 12px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 6px; background: #fff; font-size: var(--font-11-5); cursor: pointer; }
+.map-focus-item { margin: 0; padding: 4px 8px; border: 1px solid var(--el-border-color-lighter, #ebeef5); border-radius: 6px; font-size: var(--font-11-5); }
 .map-x { border: none; background: none; color: #b91c1c; cursor: pointer; padding: 0 2px; }
 </style>

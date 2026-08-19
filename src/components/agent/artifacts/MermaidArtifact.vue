@@ -61,6 +61,6 @@ async function copy() {
 <style scoped>
 .mermaid-host { padding: 12px; overflow-x: auto; text-align: center; }
 .mmd-svg :deep(svg) { max-width: 100%; height: auto; }
-.mmd-error { color: #dc2626; font-size: 12.5px; text-align: left; white-space: pre-wrap; }
-.mmd-loading { font-size: 12.5px; opacity: 0.5; }
+.mmd-error { color: #dc2626; font-size: var(--font-12-5); text-align: left; white-space: pre-wrap; }
+.mmd-loading { font-size: var(--font-12-5); opacity: 0.5; }
 </style>

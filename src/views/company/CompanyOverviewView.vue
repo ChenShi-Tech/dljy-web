@@ -456,30 +456,30 @@ function buildFinOption(): Record<string, unknown> {
 .topbar { grid-column: span 12; display: flex; justify-content: space-between; align-items: center; }
 .brand { display: flex; align-items: center; gap: 14px; }
 .logo {
-  width: 46px; height: 46px; border-radius: 13px; display: grid; place-items: center; font-size: 22px;
+  width: 46px; height: 46px; border-radius: 13px; display: grid; place-items: center; font-size: var(--font-22);
   background: linear-gradient(135deg, var(--primary), var(--accent));
   box-shadow: 0 0 24px var(--glow);
 }
-.brand h1 { margin: 0; font-size: 21px; letter-spacing: 1px; font-weight: 700; color: var(--text); text-shadow: var(--glow-text); }
-.brand p { margin: 3px 0 0; font-size: 11px; color: var(--muted); letter-spacing: 1.5px; }
-.status { display: flex; align-items: center; gap: 16px; font-size: 13px; color: var(--text-soft); }
+.brand h1 { margin: 0; font-size: var(--font-21); letter-spacing: 1px; font-weight: 700; color: var(--text); text-shadow: var(--glow-text); }
+.brand p { margin: 3px 0 0; font-size: var(--font-xs); color: var(--muted); letter-spacing: 1.5px; }
+.status { display: flex; align-items: center; gap: 16px; font-size: var(--font-md); color: var(--text-soft); }
 .live { display: inline-flex; align-items: center; gap: 7px; color: var(--success); }
 .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--success); box-shadow: 0 0 10px var(--success); animation: pulse 1.6s infinite; }
-.clock { font-variant-numeric: tabular-nums; font-size: 15px; color: var(--text); }
+.clock { font-variant-numeric: tabular-nums; font-size: var(--font-15); color: var(--text); }
 /* PriceTicker 嵌入顶栏深色兜底（其内部样式用 CSS 变量，局部 --period-accent 已覆盖；
    此处再兜底根色，防止全局 classic 下文字不可读） */
 .status :deep(.ticker) { color: var(--text-soft); }
 .status :deep(.ticker):not(:first-child) { margin-left: 4px; }
 .tag-demo {
-  padding: 4px 10px; border-radius: 999px; font-size: 11px; color: var(--warning);
+  padding: 4px 10px; border-radius: 999px; font-size: var(--font-xs); color: var(--warning);
   border: 1px solid rgba(245, 158, 11, 0.4); background: rgba(245, 158, 11, 0.1);
 }
 .tag-mixed {
-  padding: 4px 10px; border-radius: 999px; font-size: 11px; color: var(--accent);
+  padding: 4px 10px; border-radius: 999px; font-size: var(--font-xs); color: var(--accent);
   border: 1px solid rgba(56, 189, 248, 0.4); background: rgba(56, 189, 248, 0.1);
 }
 .tag-real {
-  padding: 4px 10px; border-radius: 999px; font-size: 11px; color: var(--success);
+  padding: 4px 10px; border-radius: 999px; font-size: var(--font-xs); color: var(--success);
   border: 1px solid rgba(34, 197, 94, 0.4); background: rgba(34, 197, 94, 0.1);
 }
 
@@ -490,11 +490,11 @@ function buildFinOption(): Record<string, unknown> {
   border: 1px solid var(--line);
 }
 .ctrl-group { display: flex; align-items: center; gap: 10px; }
-.ctrl-label { font-size: 12px; color: var(--muted); white-space: nowrap; }
+.ctrl-label { font-size: var(--font-sm); color: var(--muted); white-space: nowrap; }
 .co-select { width: 230px; }
-.co-fixed { font-size: 13px; color: var(--text); }
+.co-fixed { font-size: var(--font-md); color: var(--text); }
 .co-date { width: 240px; }
-.ctrl-hint { font-size: 11px; color: var(--muted); }
+.ctrl-hint { font-size: var(--font-xs); color: var(--muted); }
 .ctrl-right { margin-left: auto; }
 .co-export { background: var(--panel-2); border-color: var(--line); color: var(--text-soft); }
 .co-export:hover { border-color: var(--primary); color: var(--primary); }
@@ -507,8 +507,8 @@ function buildFinOption(): Record<string, unknown> {
 .span6 { grid-column: span 6; }
 .span4 { grid-column: span 4; }
 
-.err-bar { grid-column: span 12; color: var(--danger); font-size: 13px; padding: 10px 14px; }
-.empty-bar { grid-column: span 12; color: var(--muted); font-size: 13px; padding: 24px; text-align: center; }
+.err-bar { grid-column: span 12; color: var(--danger); font-size: var(--font-md); padding: 10px 14px; }
+.empty-bar { grid-column: span 12; color: var(--muted); font-size: var(--font-md); padding: 24px; text-align: center; }
 
 @keyframes pulse { 0%, 100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.5); opacity: 0.5; } }
 

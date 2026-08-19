@@ -112,7 +112,7 @@ const completenessPct = computed(() => {
   gap: 5px;
   padding: 2px 9px;
   border-radius: 10px;
-  font-size: 11px;
+  font-size: var(--font-xs);
   line-height: 1.5;
   font-weight: 500;
   border: 1px solid;
@@ -180,7 +180,7 @@ const completenessPct = computed(() => {
 }
 
 .dq-badge__note {
-  font-size: 11px;
+  font-size: var(--font-xs);
   color: var(--muted, #909399);
 }
 </style>

@@ -48,7 +48,7 @@ defineProps<{ profile: RegionSpotProfile }>()
 .mechanism-strip small {
   display: block;
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--font-sm);
   margin-bottom: 4px;
 }
 .mechanism-strip strong {

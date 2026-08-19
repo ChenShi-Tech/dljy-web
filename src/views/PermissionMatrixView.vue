@@ -667,7 +667,7 @@ function regionStatusType(status: RegionRuleSet['spotRuleStatus']): TagType {
   align-items: center;
   gap: 6px;
   color: var(--primary);
-  font-size: 13px;
+  font-size: var(--font-md);
   font-weight: 650;
 }
 
@@ -680,7 +680,7 @@ function regionStatusType(status: RegionRuleSet['spotRuleStatus']): TagType {
 }
 
 .permission-hero h2 {
-  font-size: 28px;
+  font-size: var(--font-28);
 }
 
 .permission-hero p {
@@ -706,14 +706,14 @@ function regionStatusType(status: RegionRuleSet['spotRuleStatus']): TagType {
 }
 
 .hero-metrics strong {
-  font-size: 24px;
+  font-size: var(--font-24);
   color: var(--primary);
 }
 
 .hero-metrics span {
   margin-top: 4px;
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 .matrix-layout {
@@ -805,7 +805,7 @@ function regionStatusType(status: RegionRuleSet['spotRuleStatus']): TagType {
   flex-direction: column;
   gap: 6px;
   color: var(--text-soft);
-  font-size: 13px;
+  font-size: var(--font-md);
   font-weight: 650;
 }
 
@@ -818,7 +818,7 @@ function regionStatusType(status: RegionRuleSet['spotRuleStatus']): TagType {
   margin-bottom: 10px;
 }
 .route-search { max-width: 360px; }
-.route-count { font-size: 12.5px; color: var(--el-text-color-secondary); }
+.route-count { font-size: var(--font-12-5); color: var(--el-text-color-secondary); }
 
 /* 折叠头：block 名 + 已开计数 + 全选，三者一行排开 */
 .route-group-title {
@@ -828,14 +828,14 @@ function regionStatusType(status: RegionRuleSet['spotRuleStatus']): TagType {
   width: 100%;
   padding-right: 12px;
 }
-.route-group-title strong { font-size: 13px; font-weight: 650; }
+.route-group-title strong { font-size: var(--font-md); font-weight: 650; }
 .route-group-count {
   margin-right: auto;
-  font-size: 12px;
+  font-size: var(--font-sm);
   color: var(--el-text-color-secondary);
 }
 .route-collapse :deep(.el-collapse-item__content) { padding-bottom: 0; }
-.route-empty { margin: 12px 2px; font-size: 13px; color: var(--el-text-color-secondary); }
+.route-empty { margin: 12px 2px; font-size: var(--font-md); color: var(--el-text-color-secondary); }
 
 .route-groups {
   display: grid;
@@ -911,7 +911,7 @@ function regionStatusType(status: RegionRuleSet['spotRuleStatus']): TagType {
   border-radius: 6px;
   background: var(--primary-tint);
   color: var(--primary-strong);
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 .module-tags em {
@@ -960,7 +960,7 @@ function regionStatusType(status: RegionRuleSet['spotRuleStatus']): TagType {
   border-radius: 5px;
   background: var(--panel-sub);
   color: var(--text-soft);
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 @media (max-width: 1180px) {

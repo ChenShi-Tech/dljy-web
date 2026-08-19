@@ -254,7 +254,7 @@ onRegionChange(async () => {
       <el-card shadow="never" class="mb">
         <template #header>
           <div class="card-head">
-            <span style="font-weight:600;font-size:13px">{{ runDate }} · 日前上报电量（合计 + 96 点）</span>
+            <span style="font-weight:600;font-size: var(--font-md)">{{ runDate }} · 日前上报电量（合计 + 96 点）</span>
             <el-button size="small" :disabled="!dlRows.length" @click="exportTable">导出CSV</el-button>
           </div>
         </template>
@@ -267,7 +267,7 @@ onRegionChange(async () => {
       </el-card>
 
       <el-card shadow="never">
-        <template #header><span style="font-weight:600;font-size:13px">日前上报曲线 · 电量(左) / 价格·价差·策略·zcqjj(右)</span></template>
+        <template #header><span style="font-weight:600;font-size: var(--font-md)">日前上报曲线 · 电量(左) / 价格·价差·策略·zcqjj(右)</span></template>
         <div ref="chartRef" class="chart chart-host"></div>
       </el-card>
     </template>
@@ -278,9 +278,9 @@ onRegionChange(async () => {
 <style scoped>
 .rep { padding: 12px 16px; background: var(--el-fill-color-light); min-height: calc(100vh - 90px); }
 .toolbar { display: flex; align-items: center; gap: 8px; background: var(--panel); padding: 10px 12px; border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,.04); }
-.toolbar .lbl { font-size: 13px; color: var(--el-text-color-regular); font-weight: 600; }
+.toolbar .lbl { font-size: var(--font-md); color: var(--el-text-color-regular); font-weight: 600; }
 /* 下拉里对「采集时属未来日、无申报电量」的运行日做可见标注（仍可选中查看其余分组） */
-.opt-tag { margin-left: 8px; font-size: 11px; color: var(--el-color-warning); }
+.opt-tag { margin-left: 8px; font-size: var(--font-xs); color: var(--el-color-warning); }
 .chart { height: 520px; width: 100%; }
 .card-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .mb { margin-bottom: 12px; }
@@ -288,6 +288,6 @@ onRegionChange(async () => {
 @media (max-width: 768px) {
   .toolbar { flex-direction: column; align-items: stretch; }
 }
-.src { color: var(--el-text-color-secondary); font-size: 12px; margin: 12px 0 0; }
+.src { color: var(--el-text-color-secondary); font-size: var(--font-sm); margin: 12px 0 0; }
 .src code { color: var(--el-color-primary); }
 </style>

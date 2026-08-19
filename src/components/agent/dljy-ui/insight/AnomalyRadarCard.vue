@@ -57,8 +57,8 @@ const items = computed<Row[]>(() => {
 <style scoped>
 .mic-radar { border: 1px solid var(--line-soft, #e5e7eb); border-radius: 12px; background: var(--panel, #fff); padding: 14px; }
 header { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
-h3 { margin: 0; font-size: 15.5px; color: var(--text, #111827); }
-.sub { font-size: 11.5px; color: var(--muted, #667085); }
+h3 { margin: 0; font-size: var(--font-15-5); color: var(--text, #111827); }
+.sub { font-size: var(--font-11-5); color: var(--muted, #667085); }
 .flow { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 9px; }
 .row { display: flex; gap: 10px; padding: 9px 11px; border-radius: 10px; background: var(--panel-sub, #f8fafc); border: 1px solid var(--line-soft, #e5e7eb); }
 .row.high { box-shadow: inset 3px 0 0 var(--danger, #fb7185); }
@@ -70,14 +70,14 @@ h3 { margin: 0; font-size: 15.5px; color: var(--text, #111827); }
 .row.low .beacon { background: var(--primary, #22d3ee); box-shadow: 0 0 10px var(--primary, #22d3ee); }
 .body { min-width: 0; }
 .line1 { display: flex; align-items: center; gap: 8px; }
-.type { font-size: 13px; font-weight: 600; color: var(--text, #111827); }
-.sev { font-size: 10.5px; padding: 0 7px; border-radius: 999px; }
+.type { font-size: var(--font-md); font-weight: 600; color: var(--text, #111827); }
+.sev { font-size: var(--font-10-5); padding: 0 7px; border-radius: 999px; }
 .sev.high { color: var(--danger, #e11d48); background: var(--danger-tint, rgba(251, 113, 133, .16)); }
 .sev.mid { color: var(--warning, #b45309); background: var(--warning-tint, rgba(251, 191, 36, .18)); }
 .sev.low { color: var(--primary, #0891b2); background: var(--primary-tint, rgba(34, 211, 238, .16)); }
-.time { font-size: 11px; color: var(--muted, #98a2b3); font-variant-numeric: tabular-nums; }
-.msg { margin: 3px 0 0; font-size: 12.5px; color: var(--text-body, #344054); line-height: 1.5; }
-.empty { display: flex; align-items: center; gap: 9px; padding: 16px 12px; color: var(--muted, #98a2b3); font-size: 13px; }
+.time { font-size: var(--font-xs); color: var(--muted, #98a2b3); font-variant-numeric: tabular-nums; }
+.msg { margin: 3px 0 0; font-size: var(--font-12-5); color: var(--text-body, #344054); line-height: 1.5; }
+.empty { display: flex; align-items: center; gap: 9px; padding: 16px 12px; color: var(--muted, #98a2b3); font-size: var(--font-md); }
 .ok-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--success, #4ade80); box-shadow: 0 0 10px var(--success, #4ade80); animation: mic-pulse 1.6s infinite; }
 @keyframes mic-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
 </style>

@@ -1262,7 +1262,7 @@ onRegionChange(() => {
 
   background: var(--panel);
   color: var(--ck-txt);
-  font-size: 13px;
+  font-size: var(--font-md);
   -webkit-font-smoothing: antialiased;
   border: 1px solid var(--ck-border);
   border-radius: var(--radius, 12px);
@@ -1333,14 +1333,14 @@ onRegionChange(() => {
   box-shadow: 0 0 0 1px rgba(56, 189, 248, 0.35), 0 4px 14px rgba(14, 165, 233, 0.25);
 }
 .brand h1 {
-  font-size: 16px;
+  font-size: var(--font-16);
   letter-spacing: 0.5px;
   font-weight: 700;
   margin: 0;
   color: var(--ck-txt);
 }
 .brand .sub {
-  font-size: 10.5px;
+  font-size: var(--font-10-5);
   color: var(--ck-txt-3);
   letter-spacing: 2px;
   text-transform: uppercase;
@@ -1361,7 +1361,7 @@ onRegionChange(() => {
   border: 1px solid var(--ck-border-hi);
   border-radius: 10px;
   color: var(--ck-warn);
-  font-size: 11px;
+  font-size: var(--font-xs);
   white-space: nowrap;
 }
 .seg {
@@ -1376,7 +1376,7 @@ onRegionChange(() => {
   border: 0;
   color: var(--ck-txt-2);
   padding: 7px 14px;
-  font-size: 12px;
+  font-size: var(--font-sm);
   cursor: pointer;
   font-weight: 600;
 }
@@ -1392,7 +1392,7 @@ onRegionChange(() => {
   border-radius: 6px;
   background: var(--ck-panel-2);
   color: var(--ck-txt);
-  font-size: 11px;
+  font-size: var(--font-xs);
   padding: 0 8px;
 }
 .pill {
@@ -1401,14 +1401,14 @@ onRegionChange(() => {
   border: 1px solid var(--ck-border);
   border-radius: 8px;
   color: var(--ck-txt);
-  font-size: 12px;
+  font-size: var(--font-sm);
   display: inline-flex;
   gap: 8px;
   align-items: center;
 }
 .pill .k {
   color: var(--ck-txt-3);
-  font-size: 11px;
+  font-size: var(--font-xs);
 }
 .ck-date {
   width: 140px;
@@ -1435,7 +1435,7 @@ onRegionChange(() => {
   min-width: 0;
 }
 .kpi .lab {
-  font-size: 11px;
+  font-size: var(--font-xs);
   color: var(--ck-txt-3);
   letter-spacing: 0;
   margin-bottom: 6px;
@@ -1445,20 +1445,20 @@ onRegionChange(() => {
   flex-wrap: wrap;
 }
 .kpi .val {
-  font-size: 24px;
+  font-size: var(--font-24);
   font-weight: 700;
   line-height: 1;
   letter-spacing: 0;
   overflow-wrap: anywhere;
 }
 .kpi .val small {
-  font-size: 12px;
+  font-size: var(--font-sm);
   color: var(--ck-txt-3);
   font-weight: 500;
   margin-left: 3px;
 }
 .kpi .delta {
-  font-size: 11px;
+  font-size: var(--font-xs);
   margin-top: 6px;
   display: inline-flex;
   align-items: center;
@@ -1513,7 +1513,7 @@ onRegionChange(() => {
   background: var(--ck-da);
 }
 .panel > .head h3 {
-  font-size: 13.5px;
+  font-size: var(--font-13-5);
   font-weight: 700;
   letter-spacing: 0.3px;
   margin: 0;
@@ -1521,7 +1521,7 @@ onRegionChange(() => {
 }
 .panel > .head .meta {
   color: var(--ck-txt-3);
-  font-size: 11px;
+  font-size: var(--font-xs);
 }
 .panel > .head .right {
   margin-left: auto;
@@ -1530,7 +1530,7 @@ onRegionChange(() => {
   align-items: center;
 }
 .chip {
-  font-size: 10.5px;
+  font-size: var(--font-10-5);
   padding: 3px 8px;
   border-radius: 5px;
   border: 1px solid var(--ck-border-hi);
@@ -1560,11 +1560,11 @@ onRegionChange(() => {
 }
 .insight .ic {
   color: var(--ck-gold);
-  font-size: 15px;
+  font-size: var(--font-15);
   line-height: 1.2;
 }
 .insight .tx {
-  font-size: 12px;
+  font-size: var(--font-sm);
   color: var(--ck-txt);
   line-height: 1.55;
 }
@@ -1589,7 +1589,7 @@ onRegionChange(() => {
   cursor: pointer;
   padding: 10px 14px;
   color: var(--ck-txt-2);
-  font-size: 11.5px;
+  font-size: var(--font-11-5);
   user-select: none;
 }
 .arena-source-table-wrap {
@@ -1601,7 +1601,7 @@ onRegionChange(() => {
   width: 100%;
   border-collapse: collapse;
   min-width: 520px;
-  font-size: 11px;
+  font-size: var(--font-xs);
 }
 .arena-source-table th,
 .arena-source-table td {
@@ -1676,7 +1676,7 @@ onRegionChange(() => {
   border-radius: 6px;
   display: grid;
   place-items: center;
-  font-size: 12px;
+  font-size: var(--font-sm);
   flex: none;
 }
 .dec.risk .ico {
@@ -1696,25 +1696,25 @@ onRegionChange(() => {
   color: var(--ck-gold);
 }
 .dec .t {
-  font-size: 12.5px;
+  font-size: var(--font-12-5);
   font-weight: 700;
 }
 .dec .desc {
-  font-size: 11.5px;
+  font-size: var(--font-11-5);
   color: var(--ck-txt-2);
   line-height: 1.5;
 }
 .dec .impact {
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 .dec .impact b {
   font-family: var(--ck-mono);
-  font-size: 14px;
+  font-size: var(--font-lg);
 }
 .rail-empty {
   padding: 18px 16px;
   color: var(--ck-txt-3);
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 /* positions */
@@ -1731,16 +1731,16 @@ onRegionChange(() => {
   border-right: 0;
 }
 .pos-cell .l {
-  font-size: 11px;
+  font-size: var(--font-xs);
   color: var(--ck-txt-3);
   margin-bottom: 5px;
 }
 .pos-cell .v {
-  font-size: 18px;
+  font-size: var(--font-18);
   font-weight: 700;
 }
 .pos-cell .v small {
-  font-size: 11px;
+  font-size: var(--font-xs);
   color: var(--ck-txt-3);
   font-weight: 500;
 }
@@ -1759,7 +1759,7 @@ onRegionChange(() => {
 .ck-footer {
   text-align: center;
   color: var(--ck-txt-3);
-  font-size: 11px;
+  font-size: var(--font-xs);
   padding: 14px 16px 4px;
 }
 

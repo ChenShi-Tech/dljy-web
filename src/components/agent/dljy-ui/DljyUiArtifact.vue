@@ -81,6 +81,6 @@ const resolved = computed(() => COMPONENTS[props.block.component])
   border-radius: 8px;
   color: #b91c1c;
   background: rgba(254, 226, 226, 0.45);
-  font-size: 12.5px;
+  font-size: var(--font-12-5);
 }
 </style>

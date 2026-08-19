@@ -246,7 +246,7 @@ onMounted(() => {
 .ops-hint {
   margin: 0 0 12px;
   padding: 8px 12px;
-  font-size: 13px;
+  font-size: var(--font-md);
   color: var(--el-text-color-secondary);
   background: var(--surface-hover, #f5f7fa);
   border-radius: 8px;

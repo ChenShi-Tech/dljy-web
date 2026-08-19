@@ -63,11 +63,11 @@ const kindTagType = computed(() => ({ real: 'success', forecast: 'danger', mixed
 <style scoped>
 .placeholder { padding: 24px; max-width: 920px; }
 .ph-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
-.ph-crumb { color: var(--el-text-color-secondary); font-size: 13px; }
-.ph-title { margin: 4px 0 0; font-size: 22px; }
+.ph-crumb { color: var(--el-text-color-secondary); font-size: var(--font-md); }
+.ph-title { margin: 4px 0 0; font-size: var(--font-22); }
 .ph-warn { margin-bottom: 16px; }
 .ph-desc { margin-bottom: 16px; }
-.ph-desc code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; }
-.ph-todo { color: var(--el-text-color-regular); font-size: 13px; background: var(--el-fill-color-light); padding: 12px 14px; border-radius: 6px; }
+.ph-desc code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: var(--font-md); }
+.ph-todo { color: var(--el-text-color-regular); font-size: var(--font-md); background: var(--el-fill-color-light); padding: 12px 14px; border-radius: 6px; }
 .ph-todo code { color: var(--el-color-primary); }
 </style>

@@ -186,14 +186,14 @@ function selectRegion(id: string) {
 }
 
 .region-switcher-button span {
-  font-size: 13px;
+  font-size: var(--font-md);
   font-weight: 700;
   line-height: 1;
 }
 
 .region-switcher-button small {
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--font-xs);
   line-height: 1;
 }
 
@@ -219,7 +219,7 @@ function selectRegion(id: string) {
 .region-switcher-head span {
   margin-top: 4px;
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 .region-section {
@@ -230,7 +230,7 @@ function selectRegion(id: string) {
 .region-section h3 {
   margin: 0;
   color: var(--text-body);
-  font-size: 13px;
+  font-size: var(--font-md);
 }
 
 .region-card-grid {
@@ -281,13 +281,13 @@ function selectRegion(id: string) {
 }
 
 .region-card strong {
-  font-size: 13px;
+  font-size: var(--font-md);
 }
 
 .region-card span {
   margin-top: 6px;
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--font-xs);
 }
 
 .region-card .maturity-tag {

@@ -181,7 +181,7 @@ onRegionChange(load)
 .toolbar { display: flex; justify-content: flex-end; margin-bottom: 8px; }
 .metric-tabs { margin-top: 4px; }
 .heads { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-.heads .h { text-align: center; font-weight: 700; font-size: 14px; color: var(--text); padding: 6px 0; }
+.heads .h { text-align: center; font-weight: 700; font-size: var(--font-lg); color: var(--text); padding: 6px 0; }
 .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .grid-all { grid-auto-rows: 240px; }
 .mb { margin-bottom: 12px; }

@@ -149,25 +149,25 @@ const periodLabel = computed(() => (period.value === 'week' ? `周（${anchor.va
 </template>
 
 <style scoped>
-.dap { display: flex; flex-direction: column; gap: 8px; font-size: 12.5px; }
+.dap { display: flex; flex-direction: column; gap: 8px; font-size: var(--font-12-5); }
 .dap-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
 .dap-ctrl { display: inline-flex; gap: 4px; align-items: center; }
-.dap-ctrl button { padding: 2px 10px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 6px; background: #fff; font-size: 11.5px; cursor: pointer; }
+.dap-ctrl button { padding: 2px 10px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 6px; background: #fff; font-size: var(--font-11-5); cursor: pointer; }
 .dap-ctrl button.on { border-color: var(--el-color-primary, #2563eb); color: var(--el-color-primary, #2563eb); }
-.dap-ctrl input { padding: 2px 6px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 6px; font-size: 11.5px; }
+.dap-ctrl input { padding: 2px 6px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 6px; font-size: var(--font-11-5); }
 .dap-muted { margin: 0; color: var(--el-text-color-secondary, #909399); }
-.dap-warn { margin: 0; padding: 6px 9px; border-radius: 6px; background: #fffbeb; color: #92400e; font-size: 11.5px; line-height: 1.6; }
-.dap-table { width: 100%; border-collapse: collapse; font-size: 11.5px; font-variant-numeric: tabular-nums; }
+.dap-warn { margin: 0; padding: 6px 9px; border-radius: 6px; background: #fffbeb; color: #92400e; font-size: var(--font-11-5); line-height: 1.6; }
+.dap-table { width: 100%; border-collapse: collapse; font-size: var(--font-11-5); font-variant-numeric: tabular-nums; }
 .dap-table th, .dap-table td { padding: 3px 7px; border-bottom: 1px solid var(--el-border-color-lighter, #ebeef5); text-align: right; white-space: nowrap; }
 .dap-table th:first-child, .dap-table td:first-child { text-align: left; }
-.dap-table th { color: var(--el-text-color-secondary, #666); font-weight: 500; font-size: 10.5px; }
+.dap-table th { color: var(--el-text-color-secondary, #666); font-weight: 500; font-size: var(--font-10-5); }
 .dap-total td { font-weight: 600; border-top: 1px solid var(--el-border-color, #dcdfe6); }
 .dap-table .bad { color: #b91c1c; }
-.dap-note { margin: 0; font-size: 11px; color: var(--el-text-color-secondary, #909399); line-height: 1.6; }
+.dap-note { margin: 0; font-size: var(--font-xs); color: var(--el-text-color-secondary, #909399); line-height: 1.6; }
 .dap-cause { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-.dap-cause b { font-size: 12px; }
-.dap-chip { font-size: 11px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 999px; padding: 1px 8px; }
-.dap-axis label { display: flex; align-items: center; gap: 8px; font-size: 12px; flex-wrap: wrap; }
-.dap-axis select { padding: 3px 7px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 6px; font-size: 12px; }
-.dap-actions summary { cursor: pointer; font-size: 11.5px; color: var(--el-text-color-secondary, #666); }
+.dap-cause b { font-size: var(--font-sm); }
+.dap-chip { font-size: var(--font-xs); border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 999px; padding: 1px 8px; }
+.dap-axis label { display: flex; align-items: center; gap: 8px; font-size: var(--font-sm); flex-wrap: wrap; }
+.dap-axis select { padding: 3px 7px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 6px; font-size: var(--font-sm); }
+.dap-actions summary { cursor: pointer; font-size: var(--font-11-5); color: var(--el-text-color-secondary, #666); }
 </style>

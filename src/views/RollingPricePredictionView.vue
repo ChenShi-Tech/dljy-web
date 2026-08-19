@@ -221,21 +221,21 @@ onRegionChange(load)
 .body { display: grid; grid-template-columns: 360px minmax(0, 1fr); gap: 12px; margin-top: 12px; }
 .params { display: flex; flex-direction: column; gap: 12px; }
 .panel { background: var(--panel); border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,.04); padding: 10px 12px; }
-.pt { font-size: 13px; font-weight: 700; color: var(--text); padding-bottom: 8px; border-bottom: 1px solid var(--line-faint); margin-bottom: 8px; }
+.pt { font-size: var(--font-md); font-weight: 700; color: var(--text); padding-bottom: 8px; border-bottom: 1px solid var(--line-faint); margin-bottom: 8px; }
 .row { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; flex-wrap: wrap; }
 .row.col { flex-direction: column; align-items: flex-start; }
-.row .k { font-size: 12px; color: var(--el-text-color-regular); min-width: 56px; }
+.row .k { font-size: var(--font-sm); color: var(--el-text-color-regular); min-width: 56px; }
 .result { background: var(--panel); border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,.04); padding: 12px 14px; min-width: 0; }
-.rhead { font-size: 14px; font-weight: 700; color: var(--text); margin-bottom: 10px; }
-.rhead .sub { font-size: 12px; font-weight: 400; color: var(--el-text-color-secondary); margin-left: 10px; }
+.rhead { font-size: var(--font-lg); font-weight: 700; color: var(--text); margin-bottom: 10px; }
+.rhead .sub { font-size: var(--font-sm); font-weight: 400; color: var(--el-text-color-secondary); margin-left: 10px; }
 .cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 10px; }
 .card { background: linear-gradient(120deg, var(--panel-sub), var(--panel-sub)); border-radius: 8px; padding: 12px 14px; }
-.cv { font-size: 24px; font-weight: 700; color: var(--accent); }
-.cl { font-size: 12px; color: var(--el-text-color-secondary); margin-top: 2px; }
+.cv { font-size: var(--font-24); font-weight: 700; color: var(--accent); }
+.cl { font-size: var(--font-sm); color: var(--el-text-color-secondary); margin-top: 2px; }
 .chart { height: 220px; width: 100%; margin-bottom: 10px; }
-.big :deep(.el-table__cell) { font-size: 13px; }
+.big :deep(.el-table__cell) { font-size: var(--font-md); }
 .mb { margin-bottom: 12px; }
-.src { color: var(--el-text-color-secondary); font-size: 12px; margin: 12px 0 0; }
+.src { color: var(--el-text-color-secondary); font-size: var(--font-sm); margin: 12px 0 0; }
 .src code { color: var(--el-color-primary); }
 /* 移动端:左右双栏改纵排,顶栏与摘要卡片自适应换行 */
 @media (max-width: 1024px) {

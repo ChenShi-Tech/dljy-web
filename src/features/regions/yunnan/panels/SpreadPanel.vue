@@ -340,7 +340,7 @@ onRegionChange(() => {
   align-items: center;
   gap: 6px;
   color: #2563eb;
-  font-size: 13px;
+  font-size: var(--font-md);
   font-weight: 650;
 }
 
@@ -376,7 +376,7 @@ onRegionChange(() => {
 
 .sp-field > span {
   color: #50616e;
-  font-size: 12px;
+  font-size: var(--font-sm);
   font-weight: 650;
 }
 
@@ -420,23 +420,23 @@ onRegionChange(() => {
   align-items: center;
   gap: 5px;
   color: #50616e;
-  font-size: 12px;
+  font-size: var(--font-sm);
   font-weight: 650;
 }
 
 .kpi-value {
   color: #172b3a;
-  font-size: 22px;
+  font-size: var(--font-22);
   font-weight: 760;
 }
 
 .kpi-value.kpi-method {
-  font-size: 16px;
+  font-size: var(--font-16);
 }
 
 .kpi-sub {
   color: #687987;
-  font-size: 11px;
+  font-size: var(--font-xs);
   line-height: 1.4;
 }
 
@@ -450,7 +450,7 @@ onRegionChange(() => {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  font-size: 11px;
+  font-size: var(--font-xs);
   color: var(--muted, #909399);
 }
 
@@ -464,14 +464,14 @@ onRegionChange(() => {
 .sp-notes h4 {
   margin: 0 0 8px;
   color: #172b3a;
-  font-size: 14px;
+  font-size: var(--font-lg);
 }
 
 .sp-notes ul {
   margin: 0;
   padding-left: 18px;
   color: #5c6b76;
-  font-size: 12px;
+  font-size: var(--font-sm);
   line-height: 1.7;
 }
 

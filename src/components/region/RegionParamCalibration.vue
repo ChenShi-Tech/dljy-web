@@ -61,7 +61,7 @@ function handoff(path: string) {
 }
 .section-kicker {
   color: var(--primary);
-  font-size: 13px;
+  font-size: var(--font-md);
   font-weight: 650;
 }
 .param-grid {
@@ -82,7 +82,7 @@ function handoff(path: string) {
 .param-grid small {
   display: block;
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--font-sm);
   margin-bottom: 6px;
 }
 .param-grid strong {
@@ -93,7 +93,7 @@ function handoff(path: string) {
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
-  font-size: 13px;
+  font-size: var(--font-md);
   color: var(--text-soft);
 }
 @media (max-width: 1180px) {

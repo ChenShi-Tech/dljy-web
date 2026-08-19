@@ -504,7 +504,7 @@ onRegionChange(() => {
   align-items: center;
   gap: 6px;
   color: #0f766e;
-  font-size: 13px;
+  font-size: var(--font-md);
   font-weight: 650;
 }
 
@@ -534,7 +534,7 @@ onRegionChange(() => {
 
 .np-field > span {
   color: #50616e;
-  font-size: 12px;
+  font-size: var(--font-sm);
   font-weight: 650;
 }
 
@@ -565,7 +565,7 @@ onRegionChange(() => {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  font-size: 11px;
+  font-size: var(--font-xs);
   color: var(--muted, #909399);
 }
 
@@ -590,12 +590,12 @@ onRegionChange(() => {
   gap: 6px;
   margin: 0;
   color: #172b3a;
-  font-size: 15px;
+  font-size: var(--font-15);
 }
 
 .np-table-sub {
   color: #687987;
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 @media (max-width: 768px) {

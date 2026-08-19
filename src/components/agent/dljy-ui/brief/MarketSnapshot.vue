@@ -106,22 +106,22 @@ function srcCls(s: string): string {
 <style scoped>
 .ms-card { border: 1px solid var(--line-soft, #e5e7eb); border-radius: 8px; background: var(--panel, #fff); padding: 14px; }
 header { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
-h3 { margin: 0; font-size: 16px; color: var(--text, #111827); }
-.ms-sub { font-size: 12px; color: var(--muted, #667085); }
+h3 { margin: 0; font-size: var(--font-16); color: var(--text, #111827); }
+.ms-sub { font-size: var(--font-sm); color: var(--muted, #667085); }
 .ms-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
 .ms-tile { background: var(--panel-sub, #f8fafc); border: 1px solid var(--line-soft, #e5e7eb); border-radius: 8px; padding: 11px 12px; }
 .ms-tile-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px; }
-.ms-label { font-size: 12.5px; color: var(--muted, #667085); }
-.ms-src { font-size: 11px; padding: 1px 7px; border-radius: 999px; flex: none; }
+.ms-label { font-size: var(--font-12-5); color: var(--muted, #667085); }
+.ms-src { font-size: var(--font-xs); padding: 1px 7px; border-radius: 999px; flex: none; }
 .ms-src.ms-real { color: #15803d; background: rgba(22, 163, 74, 0.12); }
 .ms-src.ms-mock { color: #b45309; background: rgba(245, 158, 11, 0.14); }
 .ms-src.ms-missing { color: #6b7280; background: rgba(107, 114, 128, 0.12); }
 .ms-primary { display: flex; align-items: baseline; gap: 5px; }
-.ms-primary strong { font-size: 22px; color: var(--text, #111827); }
-.ms-unit { font-size: 11.5px; color: var(--muted, #98a2b3); }
-.ms-primary-label { font-size: 11.5px; color: var(--muted, #667085); margin-top: 1px; }
-.ms-subs { display: flex; gap: 12px; margin-top: 8px; font-size: 12px; color: var(--text-body, #344054); }
+.ms-primary strong { font-size: var(--font-22); color: var(--text, #111827); }
+.ms-unit { font-size: var(--font-11-5); color: var(--muted, #98a2b3); }
+.ms-primary-label { font-size: var(--font-11-5); color: var(--muted, #667085); margin-top: 1px; }
+.ms-subs { display: flex; gap: 12px; margin-top: 8px; font-size: var(--font-sm); color: var(--text-body, #344054); }
 .ms-spark { display: block; width: 100%; height: 24px; margin-top: 8px; color: var(--primary, #0f766e); opacity: 0.85; }
-.ms-empty { margin: 0; color: var(--muted, #98a2b3); font-size: 13px; }
-@media (max-width: 700px) { .ms-primary strong { font-size: 19px; } }
+.ms-empty { margin: 0; color: var(--muted, #98a2b3); font-size: var(--font-md); }
+@media (max-width: 700px) { .ms-primary strong { font-size: var(--font-19); } }
 </style>

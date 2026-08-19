@@ -69,19 +69,19 @@ const showDelta = computed(() => typeof props.deltaPct === 'number' && Number.is
   box-shadow: 0 0 14px color-mix(in srgb, var(--primary) calc(var(--kpi-glow-strength, 0.45) * 100%), transparent);
 }
 .kpi-top { display: flex; justify-content: space-between; align-items: center; min-height: 18px; }
-.kpi-label { font-size: 12.5px; color: var(--muted); letter-spacing: 0.2px; font-weight: 500; }
+.kpi-label { font-size: var(--font-12-5); color: var(--muted); letter-spacing: 0.2px; font-weight: 500; }
 .kpi-delta {
-  font-size: 11px; padding: 2px 7px; border-radius: 6px;
+  font-size: var(--font-xs); padding: 2px 7px; border-radius: 6px;
   font-variant-numeric: tabular-nums; font-weight: 600; line-height: 1.4;
 }
 .kpi-delta.up { color: var(--success); background: color-mix(in srgb, var(--success) 15%, transparent); }
 .kpi-delta.down { color: var(--danger); background: color-mix(in srgb, var(--danger) 15%, transparent); }
 .kpi-value { display: flex; align-items: baseline; gap: 5px; margin-top: 2px; }
 .kpi-num {
-  font-size: 28px; font-weight: 700;
+  font-size: var(--font-28); font-weight: 700;
   font-variant-numeric: tabular-nums;
   color: var(--text); letter-spacing: -0.5px; line-height: 1.1;
 }
-.kpi-unit { font-size: 12px; color: var(--muted); font-weight: 500; }
-.kpi-hint { font-size: 11px; color: var(--text-soft); margin-top: 1px; }
+.kpi-unit { font-size: var(--font-sm); color: var(--muted); font-weight: 500; }
+.kpi-hint { font-size: var(--font-xs); color: var(--text-soft); margin-top: 1px; }
 </style>

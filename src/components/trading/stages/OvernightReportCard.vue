@@ -88,15 +88,15 @@ function triggerManually() {
 
 <style scoped>
 .orc { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border: 1px solid var(--el-border-color-lighter, #ebeef5); border-radius: 10px; background: #fff; min-width: 0; }
-.orc-head { display: flex; align-items: center; gap: 6px; font-size: 12px; }
-.orc-head b { font-size: 12.5px; }
-.orc-src { margin-left: auto; font-size: 10.5px; color: var(--el-text-color-secondary, #666); border: 1px dashed var(--el-border-color, #dcdfe6); border-radius: 999px; padding: 0 7px; }
+.orc-head { display: flex; align-items: center; gap: 6px; font-size: var(--font-sm); }
+.orc-head b { font-size: var(--font-12-5); }
+.orc-src { margin-left: auto; font-size: var(--font-10-5); color: var(--el-text-color-secondary, #666); border: 1px dashed var(--el-border-color, #dcdfe6); border-radius: 999px; padding: 0 7px; }
 .orc-card { display: flex; flex-direction: column; gap: 2px; text-align: left; padding: 7px 9px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 8px; background: #f8fafc; cursor: pointer; min-width: 0; }
 .orc-card:hover { border-color: var(--el-color-primary, #2563eb); }
-.orc-title { display: flex; align-items: center; gap: 5px; font-size: 12.5px; font-weight: 600; color: var(--el-text-color-primary, #303133); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.orc-meta { font-size: 11px; color: var(--el-text-color-secondary, #666); }
-.orc-summary { margin: 0; font-size: 12px; line-height: 1.6; color: var(--el-text-color-regular, #606266); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-.orc-muted { margin: 0; font-size: 11.5px; color: var(--el-text-color-secondary, #666); }
-.orc-empty { margin: 0; font-size: 12px; color: var(--el-text-color-secondary, #666); }
-.orc-trigger { align-self: flex-start; padding: 0; border: none; background: none; color: #2563eb; font-size: 12px; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
+.orc-title { display: flex; align-items: center; gap: 5px; font-size: var(--font-12-5); font-weight: 600; color: var(--el-text-color-primary, #303133); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.orc-meta { font-size: var(--font-xs); color: var(--el-text-color-secondary, #666); }
+.orc-summary { margin: 0; font-size: var(--font-sm); line-height: 1.6; color: var(--el-text-color-regular, #606266); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.orc-muted { margin: 0; font-size: var(--font-11-5); color: var(--el-text-color-secondary, #666); }
+.orc-empty { margin: 0; font-size: var(--font-sm); color: var(--el-text-color-secondary, #666); }
+.orc-trigger { align-self: flex-start; padding: 0; border: none; background: none; color: #2563eb; font-size: var(--font-sm); cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
 </style>

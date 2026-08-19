@@ -942,7 +942,7 @@ function browserLink(alert: QualityAlert) {
   align-items: center;
   gap: 8px;
   color: var(--el-text-color-secondary);
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 .metric-grid {
@@ -963,13 +963,13 @@ function browserLink(alert: QualityAlert) {
 .metric-cell span {
   display: block;
   color: var(--el-text-color-secondary);
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 .metric-cell strong {
   display: block;
   margin-top: 6px;
-  font-size: 20px;
+  font-size: var(--font-20);
   font-weight: 650;
 }
 
@@ -997,7 +997,7 @@ function browserLink(alert: QualityAlert) {
 
 .quality-section h3 {
   margin: 0 0 10px;
-  font-size: 14px;
+  font-size: var(--font-lg);
 }
 
 .alert-row {
@@ -1028,13 +1028,13 @@ function browserLink(alert: QualityAlert) {
 .alert-row p {
   margin: 8px 0;
   color: var(--el-text-color-regular);
-  font-size: 13px;
+  font-size: var(--font-md);
 }
 
 .alert-row__meta,
 .muted {
   color: var(--el-text-color-secondary);
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 .backup-layout {
@@ -1055,10 +1055,10 @@ function browserLink(alert: QualityAlert) {
   flex-wrap: wrap;
   align-items: center;
   gap: 16px;
-  font-size: 13px;
+  font-size: var(--font-md);
 }
 .spot-summary strong {
-  font-size: 15px;
+  font-size: var(--font-15);
   margin-left: 4px;
 }
 .spot-grid {
@@ -1083,10 +1083,10 @@ function browserLink(alert: QualityAlert) {
 }
 .spot-card__title strong {
   display: block;
-  font-size: 14px;
+  font-size: var(--font-lg);
 }
 .spot-card__title code {
-  font-size: 11px;
+  font-size: var(--font-xs);
 }
 .spot-metrics {
   list-style: none;
@@ -1095,7 +1095,7 @@ function browserLink(alert: QualityAlert) {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
   gap: 8px 14px;
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 .spot-metrics li {
   display: flex;
@@ -1108,15 +1108,15 @@ function browserLink(alert: QualityAlert) {
 }
 .spot-metrics li span {
   color: var(--el-text-color-secondary);
-  font-size: 11px;
+  font-size: var(--font-xs);
 }
 .spot-metrics li b {
   font-weight: 650;
-  font-size: 13px;
+  font-size: var(--font-md);
   word-break: break-all;
 }
 .spot-metrics small {
-  font-size: 10px;
+  font-size: var(--font-10);
 }
 .spot-warn-text {
   color: var(--el-color-warning);
@@ -1126,7 +1126,7 @@ function browserLink(alert: QualityAlert) {
 }
 .spot-empty {
   margin: 0;
-  font-size: 12px;
+  font-size: var(--font-sm);
   color: var(--el-text-color-secondary);
   font-style: italic;
 }
@@ -1134,7 +1134,7 @@ function browserLink(alert: QualityAlert) {
   margin: 0;
   padding-top: 8px;
   border-top: 1px dashed var(--el-border-color-lighter);
-  font-size: 11px;
+  font-size: var(--font-xs);
 }
 
 /* issue #455 质量下钻展开区 */
@@ -1146,7 +1146,7 @@ function browserLink(alert: QualityAlert) {
 .spot-drilldown__btn {
   align-self: flex-start;
   padding: 4px 10px;
-  font-size: 12px;
+  font-size: var(--font-sm);
   color: var(--el-color-primary);
   background: var(--el-color-primary-light-9);
   border: 1px solid var(--el-color-primary-light-7);
@@ -1169,7 +1169,7 @@ function browserLink(alert: QualityAlert) {
 }
 .drill-section h4 {
   margin: 0 0 8px;
-  font-size: 13px;
+  font-size: var(--font-md);
   display: flex;
   align-items: baseline;
   gap: 6px;
@@ -1178,11 +1178,11 @@ function browserLink(alert: QualityAlert) {
 .drill-section h4 small {
   font-weight: normal;
   color: var(--el-text-color-secondary);
-  font-size: 11px;
+  font-size: var(--font-xs);
 }
 .drill-empty {
   margin: 0;
-  font-size: 12px;
+  font-size: var(--font-sm);
   font-style: italic;
 }
 

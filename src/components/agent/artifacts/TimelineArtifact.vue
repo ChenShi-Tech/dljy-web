@@ -43,7 +43,7 @@ defineProps<{ block: TimelineArtifactBlock }>()
 .tl-item.down .tl-dot { background: #dc2626; }
 .tl-item.active .tl-dot { background: var(--el-color-primary, #2563eb); box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15); }
 .tl-row { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
-.tl-time { font-size: 11.5px; opacity: 0.55; flex-shrink: 0; font-variant-numeric: tabular-nums; }
-.tl-title { font-size: 13.5px; font-weight: 600; }
-.tl-desc { font-size: 12.5px; opacity: 0.75; margin-top: 2px; }
+.tl-time { font-size: var(--font-11-5); opacity: 0.55; flex-shrink: 0; font-variant-numeric: tabular-nums; }
+.tl-title { font-size: var(--font-13-5); font-weight: 600; }
+.tl-desc { font-size: var(--font-12-5); opacity: 0.75; margin-top: 2px; }
 </style>

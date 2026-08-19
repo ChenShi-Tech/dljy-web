@@ -113,7 +113,7 @@ defineExpose({ ask: askChip, open })
   padding: 10px 14px;
   border-bottom: 1px solid var(--line, #d9e2ec);
 }
-.sk-title { display: flex; align-items: center; gap: 6px; font-size: 13.5px; font-weight: 600; }
+.sk-title { display: flex; align-items: center; gap: 6px; font-size: var(--font-13-5); font-weight: 600; }
 .sk-close {
   border: none; background: transparent; cursor: pointer;
   color: var(--muted, #667085); display: grid; place-items: center;
@@ -129,7 +129,7 @@ defineExpose({ ask: askChip, open })
 }
 .sk-chip {
   padding: 4px 10px;
-  font-size: 12px;
+  font-size: var(--font-sm);
   border: 1px dashed var(--primary, #0f766e);
   border-radius: 999px;
   background: transparent;

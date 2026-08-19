@@ -612,30 +612,30 @@ function exportContractsCsv() {
 
 <style scoped>
 .company-page { padding: 20px; }
-.page-title { margin: 0 0 16px; font-size: 20px; }
+.page-title { margin: 0 0 16px; font-size: var(--font-20); }
 .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 16px; }
 .stat-card { background: var(--el-bg-color-overlay, #fff); border: 1px solid var(--el-border-color-lighter, #ebeef5); border-radius: 8px; padding: 14px 16px; }
 .stat-card.warn .stat-value { color: var(--el-color-warning, #e6a23c); }
 .stat-card.danger .stat-value { color: var(--el-color-danger, #f56c6c); }
-.stat-label { color: var(--el-text-color-secondary, #909399); font-size: 13px; margin-bottom: 6px; }
-.stat-value { font-size: 24px; font-weight: 600; }
+.stat-label { color: var(--el-text-color-secondary, #909399); font-size: var(--font-md); margin-bottom: 6px; }
+.stat-value { font-size: var(--font-24); font-weight: 600; }
 .toolbar { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
-.readonly-hint { color: var(--el-text-color-secondary, #909399); font-size: 13px; }
+.readonly-hint { color: var(--el-text-color-secondary, #909399); font-size: var(--font-md); }
 .filters-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 12px; }
-.import-hint { margin: 0 0 8px; color: var(--el-text-color-secondary, #909399); font-size: 13px; }
+.import-hint { margin: 0 0 8px; color: var(--el-text-color-secondary, #909399); font-size: var(--font-md); }
 .ownership-alert { margin-top: 12px; }
 .detail-header { display: flex; align-items: center; justify-content: space-between; margin: 8px 0; padding-top: 8px; border-top: 1px solid var(--el-border-color-lighter, #ebeef5); }
 .detail-title { font-weight: 600; }
 .detail-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
 .exec-cell { display: flex; flex-direction: column; gap: 2px; }
-.exec-vol { font-size: 13px; }
+.exec-vol { font-size: var(--font-md); }
 .exec-vol small { color: var(--el-text-color-secondary, #909399); font-weight: 400; }
-.exec-dev { font-size: 12px; color: var(--el-text-color-secondary, #909399); }
+.exec-dev { font-size: var(--font-sm); color: var(--el-text-color-secondary, #909399); }
 .view-body { display: flex; flex-direction: column; gap: 18px; }
 .view-section-title { font-weight: 600; margin-bottom: 8px; }
-.view-section-title small { color: var(--el-text-color-secondary, #909399); font-weight: 400; margin-left: 6px; font-size: 12px; }
-.exec-summary { display: flex; flex-wrap: wrap; gap: 16px; margin-bottom: 8px; font-size: 13px; }
-.exec-summary b { font-size: 15px; }
+.view-section-title small { color: var(--el-text-color-secondary, #909399); font-weight: 400; margin-left: 6px; font-size: var(--font-sm); }
+.exec-summary { display: flex; flex-wrap: wrap; gap: 16px; margin-bottom: 8px; font-size: var(--font-md); }
+.exec-summary b { font-size: var(--font-15); }
 .alert-panel { margin-bottom: 12px; border-radius: 8px; }
 .alert-title { font-weight: 600; color: var(--el-color-warning, #e6a23c); }
 .alert-title small { color: var(--el-text-color-secondary, #909399); font-weight: 400; margin-left: 8px; }
@@ -645,6 +645,6 @@ function exportContractsCsv() {
 .alert-no { font-weight: 600; }
 .alert-name { color: var(--el-text-color-regular, #606266); }
 .alert-spacer { flex: 1; }
-.alert-date { color: var(--el-text-color-secondary, #909399); font-size: 13px; }
-.settle-note { margin: 4px 0 0; font-size: 12px; color: var(--el-text-color-secondary, #909399); }
+.alert-date { color: var(--el-text-color-secondary, #909399); font-size: var(--font-md); }
+.settle-note { margin: 4px 0 0; font-size: var(--font-sm); color: var(--el-text-color-secondary, #909399); }
 </style>

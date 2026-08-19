@@ -110,12 +110,12 @@ onMounted(load)
 <style scoped>
 .notify-panel { border: 1px solid var(--el-border-color); border-radius: 8px; padding: 14px; margin: 12px 0; }
 .np-head { display: flex; align-items: center; justify-content: space-between; }
-.np-title { display: flex; align-items: center; gap: 6px; font-weight: 600; font-size: 14px; }
-.np-desc { font-size: 12px; color: var(--el-text-color-secondary); margin: 6px 0 10px; }
+.np-title { display: flex; align-items: center; gap: 6px; font-weight: 600; font-size: var(--font-lg); }
+.np-desc { font-size: var(--font-sm); color: var(--el-text-color-secondary); margin: 6px 0 10px; }
 .np-channel { border-top: 1px solid var(--el-border-color-lighter); padding: 10px 0; }
 .np-ch-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
-.np-ch-name { font-size: 13px; font-weight: 600; flex: 1; }
-.np-tag { font-size: 11px; padding: 1px 6px; border-radius: 8px; background: var(--el-fill-color); }
+.np-ch-name { font-size: var(--font-md); font-weight: 600; flex: 1; }
+.np-tag { font-size: var(--font-xs); padding: 1px 6px; border-radius: 8px; background: var(--el-fill-color); }
 .np-fields { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; }
 .np-fields .el-input { width: 100%; }
 @media (max-width: 600px) { .np-fields { grid-template-columns: 1fr; } }

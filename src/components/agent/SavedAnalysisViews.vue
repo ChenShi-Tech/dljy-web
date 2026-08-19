@@ -90,14 +90,14 @@ function configKind(cfg: SavedAnalysisView['config'] | undefined): string | unde
 <style scoped>
 .saved-views { padding: 8px 10px; }
 .saved-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
-.saved-title { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 600; color: var(--text-secondary, #555); }
+.saved-title { display: inline-flex; align-items: center; gap: 5px; font-size: var(--font-sm); font-weight: 600; color: var(--text-secondary, #555); }
 .saved-refresh { border: none; background: transparent; cursor: pointer; color: var(--text-secondary, #888); }
-.saved-hint { font-size: 12px; color: var(--text-secondary, #999); padding: 6px 2px; }
+.saved-hint { font-size: var(--font-sm); color: var(--text-secondary, #999); padding: 6px 2px; }
 .saved-hint.is-error { color: #c0392b; }
 .saved-list { list-style: none; margin: 0; padding: 0; }
 .saved-item { border-bottom: 1px solid var(--border, #eee); padding: 4px 0; }
 .saved-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.saved-name { flex: 1; text-align: left; border: none; background: transparent; cursor: pointer; font-size: 13px; color: var(--text, #222); padding: 4px 0; }
-.saved-rerun { display: inline-flex; align-items: center; gap: 3px; font-size: 11px; border: 1px solid var(--border, #ddd); border-radius: 4px; background: transparent; cursor: pointer; padding: 2px 6px; }
+.saved-name { flex: 1; text-align: left; border: none; background: transparent; cursor: pointer; font-size: var(--font-md); color: var(--text, #222); padding: 4px 0; }
+.saved-rerun { display: inline-flex; align-items: center; gap: 3px; font-size: var(--font-xs); border: 1px solid var(--border, #ddd); border-radius: 4px; background: transparent; cursor: pointer; padding: 2px 6px; }
 .saved-render { margin: 6px 0; }
 </style>

@@ -171,7 +171,7 @@ watch([tabs, () => route.query.tab, () => currentRegion.value.id], () => {
   align-items: baseline;
   flex-wrap: wrap;
   gap: 6px;
-  font-size: 12px;
+  font-size: var(--font-sm);
   color: var(--el-text-color-regular);
   line-height: 1.5;
 }

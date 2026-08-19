@@ -71,7 +71,7 @@ function exportCsv() {
 
 <style scoped>
 .tbl-scroll { overflow-x: auto; max-height: 420px; }
-table { border-collapse: collapse; width: 100%; font-size: 12.5px; }
+table { border-collapse: collapse; width: 100%; font-size: var(--font-12-5); }
 th, td { border: 1px solid rgba(125, 125, 125, 0.2); padding: 5px 10px; text-align: left; white-space: nowrap; }
 th {
   background: rgba(125, 125, 125, 0.08); font-weight: 600; cursor: pointer; user-select: none;
@@ -82,5 +82,5 @@ td.right, th.right { text-align: right; font-variant-numeric: tabular-nums; }
 td.center, th.center { text-align: center; }
 tbody tr:nth-child(even) { background: rgba(125, 125, 125, 0.03); }
 .sort-ic { vertical-align: middle; margin-left: 2px; }
-.tbl-foot { padding: 8px 12px; font-size: 12px; opacity: 0.7; border-top: 1px solid rgba(125, 125, 125, 0.14); }
+.tbl-foot { padding: 8px 12px; font-size: var(--font-sm); opacity: 0.7; border-top: 1px solid rgba(125, 125, 125, 0.14); }
 </style>

@@ -50,17 +50,17 @@ function arrow(m: CardMetric): string {
   padding: 12px 14px;
   display: flex; flex-direction: column; gap: 3px;
 }
-.m-label { font-size: 12px; opacity: 0.6; }
-.m-value { font-size: 21px; font-weight: 700; line-height: 1.2; word-break: break-all; }
-.m-unit { font-size: 12px; font-weight: 500; opacity: 0.55; margin-left: 3px; }
-.m-delta { font-size: 12px; font-weight: 600; display: flex; align-items: center; gap: 2px; }
+.m-label { font-size: var(--font-sm); opacity: 0.6; }
+.m-value { font-size: var(--font-21); font-weight: 700; line-height: 1.2; word-break: break-all; }
+.m-unit { font-size: var(--font-sm); font-weight: 500; opacity: 0.55; margin-left: 3px; }
+.m-delta { font-size: var(--font-sm); font-weight: 600; display: flex; align-items: center; gap: 2px; }
 .m-delta.up { color: #dc2626; }
 .m-delta.down { color: #16a34a; }
 .m-delta.flat { color: #6b7280; }
-.m-arrow { font-size: 10px; }
-.m-hint { font-size: 11px; opacity: 0.5; }
+.m-arrow { font-size: var(--font-10); }
+.m-hint { font-size: var(--font-xs); opacity: 0.5; }
 .card-foot {
-  padding: 8px 14px; font-size: 11.5px; opacity: 0.55;
+  padding: 8px 14px; font-size: var(--font-11-5); opacity: 0.55;
   border-top: 1px solid rgba(125, 125, 125, 0.14);
 }
 </style>

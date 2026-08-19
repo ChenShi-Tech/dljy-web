@@ -47,13 +47,13 @@ const router = useRouter()
 }
 .region-locked .head h3 {
   margin: 0;
-  font-size: 14px;
+  font-size: var(--font-lg);
   font-weight: 700;
   color: var(--text);
 }
 .region-locked .muted {
   color: var(--muted);
-  font-size: 13px;
+  font-size: var(--font-md);
   line-height: 1.7;
   margin: 0 0 12px;
 }
@@ -71,7 +71,7 @@ const router = useRouter()
   align-items: center;
   gap: 5px;
   padding: 7px 14px;
-  font-size: 13px;
+  font-size: var(--font-md);
   border: 1px solid var(--primary);
   border-radius: 8px;
   background: transparent;

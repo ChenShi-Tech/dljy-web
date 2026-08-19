@@ -268,7 +268,7 @@ const cssHeight = () => (typeof props.height === 'number' ? `${props.height}px` 
 }
 .chart-card__title {
   margin: 0;
-  font-size: 14px;
+  font-size: var(--font-lg);
   font-weight: 600;
   color: var(--text, #1f2a37);
   letter-spacing: 0.2px;
@@ -282,7 +282,7 @@ const cssHeight = () => (typeof props.height === 'number' ? `${props.height}px` 
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  font-size: 11px;
+  font-size: var(--font-xs);
   color: var(--muted, #909399);
 }
 .chart-card__dot {
@@ -321,7 +321,7 @@ const cssHeight = () => (typeof props.height === 'number' ? `${props.height}px` 
   width: 24px;
   height: 24px;
   cursor: pointer;
-  font-size: 13px;
+  font-size: var(--font-md);
   line-height: 1;
 }
 .chart-card__fsbtn:hover {
@@ -336,7 +336,7 @@ const cssHeight = () => (typeof props.height === 'number' ? `${props.height}px` 
   height: 24px;
   padding: 0 8px;
   cursor: pointer;
-  font-size: 11px;
+  font-size: var(--font-xs);
   font-weight: 600;
   letter-spacing: 0.5px;
   line-height: 1;
@@ -359,13 +359,13 @@ const cssHeight = () => (typeof props.height === 'number' ? `${props.height}px` 
   align-items: center;
   justify-content: center;
   color: var(--muted, #909399);
-  font-size: 13px;
+  font-size: var(--font-md);
   pointer-events: none;
 }
 .chart-card__brush {
   margin-top: 6px;
   padding: 4px 10px;
-  font-size: 12px;
+  font-size: var(--font-sm);
   color: var(--text-body, #344054);
   background: var(--primary-tint, #ecfdf5);
   border-radius: 6px;

@@ -141,17 +141,17 @@ function onSessionReady(sessionId: string) {
   padding: 14px 18px; background: var(--panel, #fff);
   border: 1px solid var(--line-soft, #e5e7eb); border-radius: 14px;
 }
-.pi-title h2 { margin: 0; font-size: 19px; color: var(--text, #111); }
-.pi-sub { font-size: 12.5px; color: var(--muted, #667085); }
+.pi-title h2 { margin: 0; font-size: var(--font-19); color: var(--text, #111); }
+.pi-sub { font-size: var(--font-12-5); color: var(--muted, #667085); }
 .pi-form {
   display: flex; flex-wrap: wrap; align-items: flex-end; gap: 14px;
   padding: 12px 18px; background: var(--panel, #fff);
   border: 1px solid var(--line-soft, #e5e7eb); border-radius: 14px;
 }
-.pi-field { display: flex; flex-direction: column; gap: 6px; font-size: 12.5px; font-weight: 600; color: var(--text-body, #222); }
+.pi-field { display: flex; flex-direction: column; gap: 6px; font-size: var(--font-12-5); font-weight: 600; color: var(--text-body, #222); }
 .pi-grow { flex: 1; min-width: 240px; }
 .pi-field input {
-  padding: 7px 10px; font-size: 13px; font-weight: 400;
+  padding: 7px 10px; font-size: var(--font-md); font-weight: 400;
   border: 1px solid var(--line, #d0d5dd); border-radius: 8px; background: var(--panel, #fff); color: var(--text-body, #222);
 }
 /* 两列工作区：左历史侧栏 + 右对话面板 */

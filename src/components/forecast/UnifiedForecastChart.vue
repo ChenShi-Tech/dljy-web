@@ -122,5 +122,5 @@ defineExpose({ resize: chart.resize })
 
 <style scoped>
 .unified-chart { width: 100%; }
-.band-caption { font-size: 12px; color: #909399; margin-bottom: 4px; }
+.band-caption { font-size: var(--font-sm); color: #909399; margin-bottom: 4px; }
 </style>

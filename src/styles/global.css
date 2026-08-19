@@ -1,6 +1,60 @@
 /* 颜色语义变量见 src/styles/theme.css(default / neon / paper 三档主题契约)。
    此处仅保留字体设置;default 档各变量值 === 改造前现状色。 */
 :root {
+
+  /* —— 字号档位（全站统一；新代码用 var(--font-*)，不写裸 px）——
+     语义五档覆盖正文体系；其余按像素值命名。全局调字号只动这里。
+     顶栏专用 --font-tb-* 钉在原值，不随放大档变化。 */
+  --font-xs: 11px;
+  --font-sm: 12px;
+  --font-md: 13px;
+  --font-lg: 14px;
+  --font-xl: 17px;
+
+  /* 顶栏专用档：钉在原值，不随全站放大档变化 */
+  --font-tb-10: 10px;
+  --font-tb-11: 11px;
+  --font-tb-11-5: 11.5px;
+  --font-tb-12: 12px;
+  --font-tb-12-5: 12.5px;
+  --font-tb-13: 13px;
+  --font-tb-16: 16px;
+  --font-tb-18: 18px;
+  --font-6-2: 6.2px;
+  --font-6-5: 6.5px;
+  --font-7: 7px;
+  --font-7-5: 7.5px;
+  --font-8: 8px;
+  --font-8-5: 8.5px;
+  --font-9: 9px;
+  --font-9-5: 9.5px;
+  --font-10: 10px;
+  --font-10-5: 10.5px;
+  --font-11-5: 11.5px;
+  --font-12-5: 12.5px;
+  --font-13-5: 13.5px;
+  --font-14-5: 14.5px;
+  --font-15: 15px;
+  --font-15-5: 15.5px;
+  --font-16: 16px;
+  --font-18: 18px;
+  --font-19: 19px;
+  --font-20: 20px;
+  --font-21: 21px;
+  --font-22: 22px;
+  --font-23: 23px;
+  --font-24: 24px;
+  --font-25: 25px;
+  --font-26: 26px;
+  --font-27: 27px;
+  --font-28: 28px;
+  --font-29: 29px;
+  --font-30: 30px;
+  --font-32: 32px;
+  --font-34: 34px;
+  --font-36: 36px;
+  --font-38: 38px;
+  --font-48: 48px;
   font-family:
     Inter, "PingFang SC", "Microsoft YaHei", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
@@ -73,7 +127,7 @@ select {
 .brand-copy span {
   margin-top: 3px;
   color: var(--sidebar-muted);
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 .menu-scroll {
@@ -140,13 +194,13 @@ html[data-theme='neon'] .sidebar .el-menu-item.is-active {
 
 .topbar h1 {
   margin: 2px 0 0;
-  font-size: 18px;
+  font-size: var(--font-tb-18);
   font-weight: 700;
 }
 
 .breadcrumb {
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--font-tb-12);
 }
 
 .area-select {
@@ -201,20 +255,20 @@ html[data-theme='neon'] .sidebar .el-menu-item.is-active {
 .metric-card span,
 .panel.compact span {
   color: var(--muted);
-  font-size: 13px;
+  font-size: var(--font-md);
 }
 
 .metric-card strong {
   display: block;
   margin-top: 8px;
   font-family: var(--font-display);
-  font-size: 26px;
+  font-size: var(--font-26);
   text-shadow: var(--glow-text);
   overflow-wrap: anywhere;
 }
 
 .metric-card small {
-  font-size: 13px;
+  font-size: var(--font-md);
   font-weight: 500;
 }
 
@@ -222,7 +276,7 @@ html[data-theme='neon'] .sidebar .el-menu-item.is-active {
   display: block;
   margin-top: 8px;
   font-style: normal;
-  font-size: 13px;
+  font-size: var(--font-md);
 }
 
 .green {
@@ -251,12 +305,12 @@ html[data-theme='neon'] .sidebar .el-menu-item.is-active {
 
 .panel-title h2 {
   margin: 0;
-  font-size: 16px;
+  font-size: var(--font-16);
 }
 
 .panel-title span {
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 .content-grid {
@@ -356,13 +410,13 @@ html[data-theme='neon'] .sidebar .el-menu-item.is-active {
 }
 
 .weather-signal-list strong {
-  font-size: 13px;
+  font-size: var(--font-md);
 }
 
 .weather-signal-list span {
   margin-top: 8px;
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--font-sm);
   line-height: 1.5;
   word-break: break-word;
 }
@@ -371,7 +425,7 @@ html[data-theme='neon'] .sidebar .el-menu-item.is-active {
   margin: 0;
   white-space: pre-wrap;
   word-break: break-word;
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 .status-stack {
@@ -391,7 +445,7 @@ html[data-theme='neon'] .sidebar .el-menu-item.is-active {
 
 .compact-title h3 {
   margin: 0;
-  font-size: 15px;
+  font-size: var(--font-15);
 }
 
 .contract-summary {
@@ -411,13 +465,13 @@ html[data-theme='neon'] .sidebar .el-menu-item.is-active {
 .contract-summary span,
 .muted-small {
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 .contract-summary strong {
   display: block;
   margin-top: 6px;
-  font-size: 20px;
+  font-size: var(--font-20);
 }
 
 .workflow-family-list {
@@ -442,20 +496,20 @@ html[data-theme='neon'] .sidebar .el-menu-item.is-active {
 }
 
 .workflow-family-list strong {
-  font-size: 14px;
+  font-size: var(--font-lg);
 }
 
 .workflow-family-list span,
 .workflow-family-list p {
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 .workflow-family-list em {
   margin-top: 6px;
   color: var(--accent);
   font-style: normal;
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 .workflow-family-list p {
@@ -473,7 +527,7 @@ html[data-theme='neon'] .sidebar .el-menu-item.is-active {
 
 .contract-cell span {
   color: var(--text-soft);
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 .chart {
@@ -489,7 +543,7 @@ html[data-theme='neon'] .sidebar .el-menu-item.is-active {
   display: block;
   margin-top: 12px;
   font-family: var(--font-display);
-  font-size: 24px;
+  font-size: var(--font-24);
   text-shadow: var(--glow-text);
   overflow-wrap: anywhere;
 }
@@ -514,7 +568,7 @@ html[data-theme='neon'] .sidebar .el-menu-item.is-active {
 .timeline-item span,
 .notice-item span {
   color: var(--primary);
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 .timeline-item small,
@@ -593,13 +647,13 @@ html[data-theme='neon'] .sidebar .el-menu-item.is-active {
 .blocker-list span {
   display: block;
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 .impact-strip strong {
   display: inline-block;
   margin-top: 6px;
-  font-size: 20px;
+  font-size: var(--font-20);
 }
 
 .brief-side {
@@ -609,12 +663,12 @@ html[data-theme='neon'] .sidebar .el-menu-item.is-active {
 .brief-side strong {
   display: block;
   margin: 8px 0;
-  font-size: 18px;
+  font-size: var(--font-18);
 }
 
 .brief-section h3 {
   margin: 0 0 10px;
-  font-size: 15px;
+  font-size: var(--font-15);
 }
 
 .action-grid {
@@ -692,7 +746,7 @@ html[data-theme='neon'] .sidebar .el-menu-item.is-active {
 .handoff-panel span {
   display: block;
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--font-sm);
   overflow-wrap: anywhere;
 }
 
@@ -734,13 +788,13 @@ html[data-theme='neon'] .sidebar .el-menu-item.is-active {
 .review-summary-grid small {
   display: block;
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 .review-summary-grid strong {
   display: inline-block;
   margin-top: 6px;
-  font-size: 22px;
+  font-size: var(--font-22);
 }
 
 .execution-plan-list {
@@ -776,7 +830,7 @@ html[data-theme='neon'] .sidebar .el-menu-item.is-active {
 .execution-plan-list small {
   display: block;
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 .execution-plan-list p {
@@ -801,7 +855,7 @@ html[data-theme='neon'] .sidebar .el-menu-item.is-active {
 
 .execution-detail-grid h3 {
   margin: 0 0 8px;
-  font-size: 13px;
+  font-size: var(--font-md);
 }
 
 .execution-detail-grid ul {
@@ -859,13 +913,13 @@ html[data-theme='neon'] .sidebar .el-menu-item.is-active {
 .forecast-insight-grid small {
   display: block;
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 .forecast-insight-grid strong {
   display: block;
   margin: 6px 0;
-  font-size: 18px;
+  font-size: var(--font-18);
 }
 
 .forecast-feature-summary {
@@ -890,7 +944,7 @@ html[data-theme='neon'] .sidebar .el-menu-item.is-active {
 .feature-source-list small {
   display: block;
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--font-sm);
   overflow-wrap: anywhere;
 }
 
@@ -914,7 +968,7 @@ html[data-theme='neon'] .sidebar .el-menu-item.is-active {
 
 .subsection-title {
   margin: 0 0 10px;
-  font-size: 14px;
+  font-size: var(--font-lg);
 }
 
 .feature-policy {
@@ -1011,7 +1065,7 @@ html[data-theme='neon'] .sidebar .el-menu-item.is-active {
 
 @media (max-width: 768px) {
   :root {
-    font-size: 15px;
+    font-size: var(--font-15);
   }
 
   .app-layout {
@@ -1088,7 +1142,7 @@ html[data-theme='neon'] .sidebar .el-menu-item.is-active {
 
   .topbar h1 {
     margin-top: 0;
-    font-size: 16px;
+    font-size: var(--font-16);
     line-height: 1.3;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -1140,13 +1194,13 @@ html[data-theme='neon'] .sidebar .el-menu-item.is-active {
   }
 
   .panel-title h2 {
-    font-size: 15px;
+    font-size: var(--font-15);
     line-height: 1.35;
   }
 
   .metric-card strong,
   .panel.compact strong {
-    font-size: 21px;
+    font-size: var(--font-21);
   }
 
   .toolbar {
@@ -1186,7 +1240,7 @@ html[data-theme='neon'] .sidebar .el-menu-item.is-active {
   .el-table {
     width: 100%;
     max-width: 100%;
-    font-size: 12px;
+    font-size: var(--font-sm);
   }
 
   .el-table .cell {
@@ -1286,7 +1340,7 @@ html[data-theme='neon'] .sidebar .el-menu-item.is-active {
 .app-layout:has(.ai-dock.open) .topbar { gap: 6px 8px; flex-wrap: wrap; }
 .app-layout:has(.ai-dock.open) .breadcrumb { display: none; }
 .app-layout:has(.ai-dock.open) .topbar h1 {
-  font-size: 16px;
+  font-size: var(--font-tb-16);
   max-width: 34vw;
   overflow: hidden;
   text-overflow: ellipsis;

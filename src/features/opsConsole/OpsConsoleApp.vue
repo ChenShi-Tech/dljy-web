@@ -46,13 +46,13 @@ const userRole = computed(() => user.value?.role ?? '')
 .ops-shell { height: 100vh; }
 .ops-aside { display: flex; flex-direction: column; border-right: 1px solid var(--el-border-color-light); background: var(--el-bg-color); }
 .ops-brand { padding: 16px 16px 10px; }
-.ops-brand h1 { margin: 0; font-size: 17px; }
-.ops-brand p { margin: 4px 0 0; font-size: 11px; color: var(--el-text-color-secondary); }
+.ops-brand h1 { margin: 0; font-size: var(--font-xl); }
+.ops-brand p { margin: 4px 0 0; font-size: var(--font-xs); color: var(--el-text-color-secondary); }
 .ops-menu { flex: 1; border-right: none; }
 .ops-aside-footer { padding: 12px 16px; border-top: 1px solid var(--el-border-color-lighter); }
-.ops-back { font-size: 12px; color: var(--el-color-primary); text-decoration: none; }
+.ops-back { font-size: var(--font-sm); color: var(--el-color-primary); text-decoration: none; }
 .ops-header { display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--el-border-color-light); }
-.ops-title { font-size: 15px; font-weight: 600; }
-.ops-user { font-size: 12px; color: var(--el-text-color-secondary); }
+.ops-title { font-size: var(--font-15); font-weight: 600; }
+.ops-user { font-size: var(--font-sm); color: var(--el-text-color-secondary); }
 .ops-main { background: var(--el-fill-color-lighter); overflow: auto; }
 </style>

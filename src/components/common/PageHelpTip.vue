@@ -103,7 +103,7 @@ const docUrl = computed(() => {
 }
 
 .page-help-card__title {
-  font-size: 14px;
+  font-size: var(--font-lg);
   font-weight: 600;
   color: var(--text);
   line-height: 1.35;
@@ -111,7 +111,7 @@ const docUrl = computed(() => {
 
 .page-help-card__body {
   margin: 0;
-  font-size: 12.5px;
+  font-size: var(--font-12-5);
   line-height: 1.6;
   color: var(--text);
   white-space: pre-line;
@@ -122,7 +122,7 @@ const docUrl = computed(() => {
   align-items: center;
   gap: 4px;
   align-self: flex-start;
-  font-size: 12px;
+  font-size: var(--font-sm);
   color: var(--primary);
   text-decoration: none;
 }

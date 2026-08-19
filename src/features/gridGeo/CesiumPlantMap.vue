@@ -1620,10 +1620,10 @@ defineExpose({ focusPlant, focusNode, resetView })
 <style scoped>
 .map-tools{position:absolute;z-index:9;right:12px;bottom:14px;display:flex;gap:8px;align-items:flex-end}
 .map-tool-group{position:relative}
-.map-tool{display:flex;align-items:center;gap:6px;padding:7px 12px;font-size:14px;cursor:pointer;color:var(--text-body);border:1px solid var(--line);border-radius:8px;background:var(--panel)}
+.map-tool{display:flex;align-items:center;gap:6px;padding:7px 12px;font-size: var(--font-lg);cursor:pointer;color:var(--text-body);border:1px solid var(--line);border-radius:8px;background:var(--panel)}
 .map-tool:hover{color:var(--primary);border-color:var(--primary)}
 .basemap-menu{position:absolute;right:0;bottom:calc(100% + 6px);min-width:190px;margin:0;padding:5px;list-style:none;border:1px solid var(--line);border-radius:9px;background:var(--panel);box-shadow:var(--shadow,0 12px 32px rgba(0,0,0,.14))}
-.basemap-menu button{display:block;width:100%;padding:8px 10px;font-size:14px;text-align:left;cursor:pointer;color:var(--text-body);border:0;border-radius:6px;background:transparent}
+.basemap-menu button{display:block;width:100%;padding:8px 10px;font-size: var(--font-lg);text-align:left;cursor:pointer;color:var(--text-body);border:0;border-radius:6px;background:transparent}
 .basemap-menu button:disabled{cursor:not-allowed;opacity:.42}
 .basemap-menu button:hover{background:var(--surface-hover)}
 .basemap-menu button.active{color:var(--primary);background:var(--primary-tint)}
@@ -1655,7 +1655,7 @@ defineExpose({ focusPlant, focusNode, resetView })
   background: radial-gradient(circle at 50% 35%, rgba(44, 158, 188, 0.18), transparent 36%), #020811;
 }
 
-.map-fallback span { max-width: 520px; color: #7fa2af; font-size: 12px; }
+.map-fallback span { max-width: 520px; color: #7fa2af; font-size: var(--font-sm); }
 
 .sr-only {
   position: absolute;
@@ -1686,8 +1686,8 @@ defineExpose({ focusPlant, focusNode, resetView })
   backdrop-filter: blur(12px);
 }
 
-.provider-fallback strong { font-size: 11px; }
-.provider-fallback span { color: #c8aa69; font-size: 9px; line-height: 1.45; }
+.provider-fallback strong { font-size: var(--font-xs); }
+.provider-fallback span { color: #c8aa69; font-size: var(--font-9); line-height: 1.45; }
 
 .map-hover-card {
   position: absolute;
@@ -1707,8 +1707,8 @@ defineExpose({ focusPlant, focusNode, resetView })
   backdrop-filter: blur(14px);
 }
 
-.map-hover-card strong { overflow: hidden; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
-.map-hover-card span { overflow: hidden; color: #82afbd; font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+.map-hover-card strong { overflow: hidden; font-size: var(--font-xs); text-overflow: ellipsis; white-space: nowrap; }
+.map-hover-card span { overflow: hidden; color: #82afbd; font-size: var(--font-9); text-overflow: ellipsis; white-space: nowrap; }
 
 @media (max-width: 620px), (pointer: coarse) {
   .map-hover-card { display: none; }
@@ -1728,7 +1728,7 @@ defineExpose({ focusPlant, focusNode, resetView })
   bottom: 5px;
   left: auto;
   color: rgba(219, 239, 255, 0.72);
-  font-size: 10px;
+  font-size: var(--font-10);
   text-shadow: 0 1px 2px #000;
 }
 </style>

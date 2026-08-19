@@ -330,8 +330,8 @@ onRegionChange(load)
 </template>
 
 <style scoped>
-.muted { color: var(--muted); font-size: 12.5px; }
-.mono { font-family: ui-monospace, monospace; font-size: 13px; }
+.muted { color: var(--muted); font-size: var(--font-12-5); }
+.mono { font-family: ui-monospace, monospace; font-size: var(--font-md); }
 
 .approval-card {
   margin-top: 10px;
@@ -340,9 +340,9 @@ onRegionChange(load)
   border-radius: 8px;
 }
 .card-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.card-body { margin: 8px 0; font-size: 13px; }
+.card-body { margin: 8px 0; font-size: var(--font-md); }
 .card-body b { font-variant-numeric: tabular-nums; }
-.check-list { margin: 6px 0 0; padding-left: 16px; font-size: 12.5px; color: var(--muted); }
+.check-list { margin: 6px 0 0; padding-left: 16px; font-size: var(--font-12-5); color: var(--muted); }
 .check-list li { margin: 2px 0; }
 .check-list li[data-status='PASS'] b { color: var(--success); }
 .check-list li[data-status='FAIL'] b { color: #b91c1c; }

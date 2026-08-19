@@ -72,7 +72,7 @@ function exportCsv() {
 
 <style scoped>
 .st-scroll { overflow-x: auto; max-height: 460px; }
-table { border-collapse: collapse; width: 100%; font-size: 12.5px; }
+table { border-collapse: collapse; width: 100%; font-size: var(--font-12-5); }
 th, td { border: 1px solid rgba(125, 125, 125, 0.2); padding: 5px 10px; white-space: nowrap; }
 th { background: rgba(125, 125, 125, 0.08); font-weight: 600; position: sticky; top: 0; text-align: left; }
 th.r, td.r { text-align: right; font-variant-numeric: tabular-nums; }
@@ -80,7 +80,7 @@ th.r, td.r { text-align: right; font-variant-numeric: tabular-nums; }
 tbody tr:nth-child(even) { background: rgba(125, 125, 125, 0.03); }
 .total td { font-weight: 700; background: rgba(125, 125, 125, 0.06); border-top: 2px solid rgba(125, 125, 125, 0.3); }
 .st-summary {
-  padding: 8px 14px; font-size: 12px; opacity: 0.7;
+  padding: 8px 14px; font-size: var(--font-sm); opacity: 0.7;
   border-top: 1px solid rgba(125, 125, 125, 0.14);
 }
 </style>

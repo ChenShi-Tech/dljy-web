@@ -13,7 +13,7 @@ defineProps<{ text: string }>()
 .forecast-intro {
   margin: 0 0 12px;
   padding: 9px 12px;
-  font-size: 13px;
+  font-size: var(--font-md);
   line-height: 1.6;
   color: var(--el-text-color-regular);
   background: var(--panel, #fff);

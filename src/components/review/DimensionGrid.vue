@@ -74,10 +74,10 @@ function onDimension(card: DimensionCard) {
 .dg-card:hover { border-color: var(--el-color-primary, #2563eb); }
 .dg-anchored { background: #f8fbff; }
 .dg-head { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
-.dg-head b { font-size: 13px; color: var(--el-text-color-primary, #303133); }
-.dg-anchor-tag { font-style: normal; font-size: 10px; color: #0369a1; border: 1px solid #bae6fd; border-radius: 999px; padding: 0 6px; white-space: nowrap; }
+.dg-head b { font-size: var(--font-md); color: var(--el-text-color-primary, #303133); }
+.dg-anchor-tag { font-style: normal; font-size: var(--font-10); color: #0369a1; border: 1px solid #bae6fd; border-radius: 999px; padding: 0 6px; white-space: nowrap; }
 .dg-counts { display: flex; flex-wrap: wrap; gap: 4px; }
-.rd { font-style: normal; font-size: 10.5px; border-radius: 999px; padding: 0 7px; }
+.rd { font-style: normal; font-size: var(--font-10-5); border-radius: 999px; padding: 0 7px; }
 .rd-ready { background: #f0fdf4; color: #15803d; }
 .rd-gap { background: #fffbeb; color: #a16207; }
 .rd-deferred { background: #f1f5f9; color: #64748b; }
@@ -86,11 +86,11 @@ function onDimension(card: DimensionCard) {
 .dg-chip {
   display: flex; align-items: center; gap: 5px; width: 100%;
   padding: 3px 8px; border: 1px dashed transparent; border-radius: 6px;
-  background: transparent; font-size: 11.5px; color: var(--el-text-color-regular, #606266);
+  background: transparent; font-size: var(--font-11-5); color: var(--el-text-color-regular, #606266);
   cursor: pointer; text-align: left; min-width: 0;
 }
 .dg-chip:hover { border-color: var(--el-color-primary, #2563eb); background: #f8fbff; }
-.dg-chip i { margin-left: auto; font-style: normal; font-size: 10px; white-space: nowrap; opacity: 0.85; }
+.dg-chip i { margin-left: auto; font-style: normal; font-size: var(--font-10); white-space: nowrap; opacity: 0.85; }
 .dg-chip-ready i { color: #15803d; }
 .dg-chip-data_gap i { color: #a16207; }
 .dg-chip-deferred i { color: #64748b; }
