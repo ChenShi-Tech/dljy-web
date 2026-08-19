@@ -1,10 +1,10 @@
 <script setup lang="ts">
-// S5 出清分析（出清结果公布后）—— 反馈环的当日中途站
+// S5 出清分析（出清结果公布后）， 反馈环的当日中途站
 //
-// 两段动作：① 登记出清结果（96 点出清曲线，手工粘贴或按申报全额速填——速填会如实
+// 两段动作：① 登记出清结果（96 点出清曲线，手工粘贴或按申报全额速填，速填会如实
 // 标注为「按申报假定」，它只是无偏差日的快捷键，不是数据来源）；② 偏差判读
 // （analyzeClearing 真算：中标率、最坏时段、是否需转实时调整），结论写回
-// preflight.clearingReview——S1 明晨复盘与 S7 今晚日报都读它。
+// preflight.clearingReview，S1 明晨复盘与 S7 今晚日报都读它。
 import { computed, reactive, ref } from 'vue'
 import { Activity, Save, Send, TriangleAlert } from 'lucide-vue-next'
 import {
@@ -27,7 +27,7 @@ const submitted = computed(() =>
 )
 const clearedCurve = computed(() => decl.value?.clearing?.clearedCurveMwh96 ?? null)
 
-// ── ① 登记出清结果 ──────────────────────────────────────────────────────────
+// ① 登记出清结果
 const clearedText = ref('')
 const parsedCleared = computed(() => {
   const parsed = clearedText.value
@@ -71,7 +71,7 @@ function registerFullAward() {
   )
 }
 
-// ── ② 偏差判读与写回 ────────────────────────────────────────────────────────
+// ② 偏差判读与写回
 const analysis = computed<ClearingAnalysis | null>(() => {
   if (!decl.value?.energyCurveMwh96?.length || !clearedCurve.value?.length) return null
   try {
@@ -83,9 +83,9 @@ const analysis = computed<ClearingAnalysis | null>(() => {
 
 const written = computed(() => decl.value?.preflight?.clearingReview ?? null)
 
-// ── ③ 实时调整指令草稿（手册 S5 步骤③：±10% 档 → 判断并下达指令）────────────
+// ③ 实时调整指令草稿（手册 S5 步骤③：±10% 档 → 判断并下达指令）
 // 指令先记录决策与理由；真实「实时市场申报通道」未接（数据活源 #1968/#2007），
-// 执行仍需交易平台人工操作——记录不冒充已执行。
+// 执行仍需交易平台人工操作，记录不冒充已执行。
 type AdjustAction = 'none' | 'increase' | 'decrease'
 const ADJUST_LABEL: Record<AdjustAction, string> = {
   none: '不调整（偏差可承受）',
@@ -98,11 +98,11 @@ const adjust = reactive<{ action: AdjustAction; volumeMwh: number | null; reason
   reason: ''
 })
 
-// ── ④ 严重偏离上报（手册：>±20% → 立即排查原因 + 上报主管）─────────────────
+// ④ 严重偏离上报（手册：>±20% → 立即排查原因 + 上报主管）
 const escalation = reactive<{ reason: string; reportedBy: string }>({ reason: '', reportedBy: '' })
 const escalationValid = computed(() => escalation.reason.trim().length >= 8 && escalation.reportedBy.trim().length > 0)
 
-// ── 外送出清量价与电站出勤记录（会议：按电站一条记录算清比例/出勤率）────────
+// 外送出清量价与电站出勤记录（会议：按电站一条记录算清比例/出勤率）
 type StationRow = { station: string; declaredMwh: number | null; clearedMwh: number | null; attendancePct: number | null }
 const stationRows = ref<StationRow[]>([])
 const exportClearing = reactive<{ volumeMwh: number | null; avgPriceYuanPerMwh: number | null }>({

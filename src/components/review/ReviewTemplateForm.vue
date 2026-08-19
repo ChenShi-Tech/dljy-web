@@ -70,7 +70,7 @@ function adopt(fieldKey: string) {
   adopted[fieldKey] = true
 }
 
-// ── slots24 聚合视图 ─────────────────────────────────────────────────────────
+// slots24 聚合视图
 const segments = computed(() => segmentLabelsOf(props.spec))
 const slots24Columns = computed(() => autoFields.value.filter((f) => !isPeakFlag(f)))
 function isPeakFlag(f: ReviewTemplateField): boolean {

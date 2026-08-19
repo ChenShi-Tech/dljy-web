@@ -1,17 +1,15 @@
-// ============================================================================
 // data/request.ts — 统一取数基座 agentRequest()（Phase 0）
 // ----------------------------------------------------------------------------
 // 收敛通道 C（spotClient / quantClient / mlForecastClient / studioClient）将各自手写的
 // header 注入 / 超时 / GET 重试 / applyRegionHeaders 到单一基座，复用 api.ts 的：
-//   - requestHeaders()：统一身份 + 地区（x-region-id）+ token + governance 头
-//   - timeoutSignal()：可中断的超时 AbortSignal
-//   - applyRegionHeaders()：回读 x-region-served/x-region-fallback → regionDataStatus
+// - requestHeaders()：统一身份 + 地区（x-region-id）+ token + governance 头
+// - timeoutSignal()：可中断的超时 AbortSignal
+// - applyRegionHeaders()：回读 x-region-served/x-region-fallback → regionDataStatus
 //
 // Phase 0 先提供能力（返回原始 Response），不强制现有 client 改用。#657 起契约层
 // adapter 正式采纳本基座作为新增模块契约的统一取数入口；既有页面 client 不做批量迁移。
 // Phase 2 在此把 Node ApiEnvelope / Python BaseResponse 的可信度元信息归一，供契约层
 // 组合 UnifiedResult 或模块标准 view model。
-// ============================================================================
 
 import { applyRegionHeaders, requestHeaders, timeoutSignal } from '../api'
 import { selectedRegionId } from '../region/regionContext'
@@ -108,8 +106,8 @@ export async function agentRequest(
 ): Promise<Response> {
   const method: AgentRequestMethod = options.method ?? 'GET'
   // 捕获发起时地区：响应头只在「本请求所属地区仍是当前地区」时才有资格更新全局
-  // regionDataStatus（RegionDataBanner）——否则切地区后旧地区慢响应会污染新地区的
-  // Mock/回退横幅，页面级 generation 守卫管不到这层全局状态（roborev job419）。
+  // regionDataStatus（RegionDataBanner），否则切地区后旧地区慢响应会污染新地区的
+  // Mock/回退横幅，页面级 generation 守卫管不到这层全局状态。
   const requestRegion = selectedRegionId.value
   const headers = new Headers(requestHeaders())
   if (options.headers) {
@@ -145,7 +143,7 @@ export type EnvelopeMeta = {
 }
 
 /**
- * 从后端响应体提取可信度元信息（不解 data——data 解包由各 client 按信封形态处理：
+ * 从后端响应体提取可信度元信息（不解 data，data 解包由各 client 按信封形态处理：
  * Node ApiEnvelope 取 .data/.rows，Python BaseResponse 取 .data，裸对象即自身）。
  * 统一收敛 Node provenance.sourceType / Python mock+sourceType / forecast basis 四套标注。
  */

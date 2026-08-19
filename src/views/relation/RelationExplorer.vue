@@ -1,9 +1,9 @@
 <script setup lang="ts">
-// 关系分析共享工作台 —— zrxgx（价格×新能源）/ zrxgx2（价格×统调负荷）共用。
+// 关系分析共享工作台，zrxgx（价格×新能源）/ zrxgx2（价格×统调负荷）共用。
 // 同一份 relation_scatter 契约数据，三视图切换：
-//   ① 总览热力图（默认）：小时 × 驱动量分箱 → 平均电价，一屏看价–量地形；
-//   ② 散点矩阵：24 张小时子图，每图叠最小二乘拟合线 + r²/斜率角标（保留原参考竖线）；
-//   ③ 敏感度概览条：24 根柱=各小时电价对驱动量的边际敏感度（元/(MWh·GW)）。
+// ① 总览热力图（默认）：小时 × 驱动量分箱 → 平均电价，一屏看价–量地形；
+// ② 散点矩阵：24 张小时子图，每图叠最小二乘拟合线 + r²/斜率角标（保留原参考竖线）；
+// ③ 敏感度概览条：24 根柱=各小时电价对驱动量的边际敏感度（元/(MWh·GW)）。
 // 顶部 KPI 摘要（整体相关系数 / 最强·最弱相关时段 / 平均边际敏感度）先给结论。
 // 差异（X 轴范围/参考线/能力门控/文案）经 props 注入；派生量走纯计算层 relationInsight.ts（带单测）。
 import { computed, onMounted, ref, nextTick, watch, type ComponentPublicInstance } from 'vue'
@@ -114,7 +114,7 @@ async function loadData() {
   } catch {
     if (seq !== loadSeq.value) return // 旧轮的错误不覆盖新轮（#405）
     // 失败时清空旧数据并重绘为空态，避免 ECharts 仍持上一轮（其它地区/日期）画布
-    // 被误读为当前地区真实（codex P1：清 data 后必须刷新三视图，否则旧散点残留）
+    // 被误读为当前地区真实（清 data 后必须刷新三视图，否则旧散点残留）
     data.value = null
     dates.value = []
     error.value = `${currentRegion.value.name}关系数据加载失败（运行日 ${runDate.value}）`
@@ -124,7 +124,7 @@ async function loadData() {
   }
 }
 
-// —— 视图① 热力图 ——
+// 视图① 热力图
 function renderHeatmap() {
   const xd = data.value?.xd ?? []
   const m = heatmapMatrix(xd, { days: days.value, binCount: props.binCount ?? 10, binMax: props.xFixedMax })
@@ -156,7 +156,7 @@ function renderHeatmap() {
   }, { notMerge: true })
 }
 
-// —— 视图② 散点矩阵（叠拟合线 + r²/斜率角标）——
+// 视图② 散点矩阵（叠拟合线 + r²/斜率角标）
 function renderHour(idx: number) {
   const d = data.value
   if (!d) { cellCharts[idx].setOption({ ...emptyOverlay(true) }, { notMerge: true }); return }
@@ -213,7 +213,7 @@ function renderHour(idx: number) {
   }, { notMerge: true })
 }
 
-// —— 视图③ 敏感度概览条 ——
+// 视图③ 敏感度概览条
 function renderSensitivity() {
   const bars = sensitivityBars(data.value?.xd ?? [], days.value)
   const cc = chartChrome()

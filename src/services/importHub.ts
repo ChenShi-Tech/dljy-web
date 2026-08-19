@@ -1,7 +1,7 @@
 import { listExcelTemplateDeclarations } from 'shared/schema/source-registry.mjs'
 import type { ExcelTemplateDeclaration } from '@/utils/importTemplate'
 
-// #768：Excel 标准模板声明 facade——页面经此读声明，不越过 service 直读 shared/schema/**
+// #768：Excel 标准模板声明 facade，页面经此读声明，不越过 service 直读 shared/schema/**
 // （verify:arch-boundaries 守卫2：views 不得直连 shared/schema）。type-only 引用 importTemplate
 // 使 xlsx 仍只在下载时懒加载进 bundle。
 export type { ExcelTemplateDeclaration }
@@ -89,7 +89,7 @@ export function getImportHubDataset(): ImportHubDataset {
       // 固定 datasetKey=market_packages（与 MarketOps「套餐」tab 同源，避免两套数据）。
       // 前端 ImportHubView 对 retail 上传带 datasetKey=market_packages + region。
       // #669：服务端按 datasetKey 把 market_packages 落 company 私有族 market_retail_packages
-      //（归属 comp-cgn-yunnan，会话 companyId 定 owner），非归属公司会话投递被拒——端点/datasetKey 不变，仅落库族与归属收紧。
+      // （归属 comp-cgn-yunnan，会话 companyId 定 owner），非归属公司会话投递被拒，端点/datasetKey 不变，仅落库族与归属收紧。
       type: 'retail',
       label: '零售套餐导入',
       template: 'retail_package_template.csv',

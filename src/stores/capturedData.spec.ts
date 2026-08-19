@@ -1,19 +1,16 @@
 // @vitest-environment happy-dom
 // ↑ 勿删：本文件不是 *.component.spec.ts，vitest node project 默认不给 DOM；store 经
 //   regionContext 读/写 localStorage（地区上下文），靠此 pragma 按文件切到 happy-dom。
-// ============================================================================
 // stores/capturedData.spec.ts — 只读回放缓存 store 回归（Phase 0）
-// ----------------------------------------------------------------------------
 // 守什么不变量：
-//   ① 同 family|match|region 键：缓存命中不二次请求、并发 inflight 合流只发一次——
+//   ① 同 family|match|region 键：缓存命中不二次请求、并发 inflight 合流只发一次
 //      坏掉的症状是 sdpt_zcqxhdl 等 family 被 5+ 页各自重复取数（本 store 的立身之本）。
 //   ② force 绕过缓存重取并更新缓存；失败向上抛、不污染缓存、inflight 已清可立即重试。
 //   ③ 地区隔离：缓存键含地区维度，切区即清 cache+inflight，旧地区数据不可复用。
 // 坏掉的症状：切区后页面显示他省回放数据；网络面板同一族重复请求。
 
 // 分层：fetchCaptured 整层 vi.mock（只测 store 编排，回放层自有 spec）；regionContext
-// 走真实模块——切区用真实 setCurrentRegionId 触发，验证 store watch 挂在真实地区链路上。
-// ============================================================================
+// 走真实模块，切区用真实 setCurrentRegionId 触发，验证 store watch 挂在真实地区链路上。
 import { nextTick } from 'vue'
 import { createPinia, setActivePinia } from 'pinia'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -161,7 +158,7 @@ describe('useCapturedDataStore · drop / invalidate / has', () => {
   it('invalidate(region)：只清以 |<region> 结尾的键，他区键保留', () => {
     const store = useCapturedDataStore()
     // 正常运行下切区即全清（watch），多区键并存只出现在「挂起请求切区后回写」边界（见下）；
-    // 此处直接构造键，聚焦后缀匹配逻辑本身。
+    // 直接构造键，聚焦后缀匹配逻辑本身。
     store.cache.set('famA|m|shanxi', { data: 1, loadedAt: 1, region: 'shanxi' })
     store.cache.set('famB|m2|yunnan', { data: 2, loadedAt: 2, region: 'yunnan' })
 
@@ -217,7 +214,7 @@ describe('useCapturedDataStore · 切区失效', () => {
     await p
 
     // 回写发生：键仍是旧地区（fam|m|yunnan），但 region 字段记的是 resolve 时刻的当前
-    // 地区（shanxi）——键与 region 不一致。旧键不会被当前地区命中（键含地区后缀），危害
+    // 地区（shanxi），键与 region 不一致。旧键不会被当前地区命中（键含地区后缀），危害
     // 有限；若未来加 analysisData 式守卫（resolve 时地区已变则不写缓存），此处断言需改为
     // cache.size === 0。
     const entry = store.cache.get('fam|m|yunnan')

@@ -60,7 +60,7 @@ watch(selectedPlantId, () => { cardOffset.value = null })
 const cardEl = ref<HTMLElement | null>(null)
 
 /**
- * 位移按**地图容器与卡片的实际 rect** 夹取，不用 window 常量——.market-shell 是
+ * 位移按地图容器与卡片的实际 rect 夹取，不用 window 常量，.market-shell 是
  * overflow:hidden，按窗口算会让卡片被裁掉标题与拖动手柄，之后再也拖不回来。
  */
 const cardStyle = computed(() => {

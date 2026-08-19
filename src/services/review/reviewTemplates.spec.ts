@@ -12,7 +12,7 @@ import {
 } from 'shared/review-templates/registry.mjs'
 
 // 注册表结构性校验的主力在门禁 verify:review-templates（快照/来源/红线/口径）；
-// 本 spec 只守**helper 语义**与几条业务不变量——helper 与数据解耦烂掉时这里先红。
+// 本 spec 只守helper 语义与几条业务不变量，helper 与数据解耦烂掉时这里先红。
 
 describe('复盘模板注册表 helper', () => {
   it('templateById 命中返回模板、未命中返回 null 不抛', () => {

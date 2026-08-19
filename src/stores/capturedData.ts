@@ -1,16 +1,13 @@
-// ============================================================================
 // stores/capturedData.ts — 只读回放数据的前端内存缓存（Phase 0）
-// ----------------------------------------------------------------------------
 // pinia store：缓存经 fetchCaptured 回放的「只读派生数据」，按 family|match|region 为键
 // 去重 + inflight 合并 + 切区自动失效，消灭 sdpt_zcqxhdl 等 family 被 5+ 页各自重复取数。
 //
 // 定位（重要）：本 store 不是「数据真相来源」，只是域A capture-raw/capture.sqlite 与域B
-// Parquet 在前端的易失缓存镜像——可随时清空重建（invalidate/refresh 从后端重取）。真相
+// Parquet 在前端的易失缓存镜像，可随时清空重建（invalidate/refresh 从后端重取）。真相
 // 在后端持久层（见 docs/data/data-layer-unification.md「数据存储架构根基」）。
 //
 // Phase 0 提供缓存能力；Phase 4 起页面经 useCaptured() composable 消费，替换 27 处直调
 // fetchCaptured。缓存项的 basis/sourceType 诚实标注留待 Phase 2 信封归一后填充。
-// ============================================================================
 
 import { defineStore } from 'pinia'
 import { ref, watch } from 'vue'
@@ -90,7 +87,7 @@ export const useCapturedDataStore = defineStore('capturedData', () => {
     return cache.value.has(currentKey(family, match))
   }
 
-  // 切换地区时立即清缓存——回放数据地区隔离，旧地区数据不可复用。
+  // 切换地区时立即清缓存，回放数据地区隔离，旧地区数据不可复用。
   // watch 注册在 store setup 内，store 首次实例化（app 挂 pinia 后）即生效。
   watch(
     () => currentRegion.value.id,

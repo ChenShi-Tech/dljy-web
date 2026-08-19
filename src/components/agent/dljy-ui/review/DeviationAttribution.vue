@@ -1,10 +1,10 @@
 <script setup lang="ts">
-// review/DeviationAttribution —— 偏差归因分解（Epic #2033 · #2038 预留位 / #2042 转正消费）
+// review/DeviationAttribution ， 偏差归因分解（Epic #2033 · #2038 预留位 / #2042 转正消费）
 // ---------------------------------------------------------------------------
 // dljy-ui artifact 渲染件：偏差总量按成因分解（S1 业务成因四因子 / 周月责任归因二轴，
-// 两轴正交不合并——Epic 拍板）。数据由智能体按 quant /review 聚合下发；
+// 两轴正交不合并，Epic 拍板）。数据由智能体按 quant /review 聚合下发；
 // 占比合计应为 1，缺归因部分显式「未归因」，不摊到其它因子假装闭合。
-// 责任归因二轴仅周聚合人工补填（AI 只给映射建议）——本渲染件对二轴数据只读呈现。
+// 责任归因二轴仅周聚合人工补填（AI 只给映射建议），本渲染件对二轴数据只读呈现。
 import { computed } from 'vue'
 import { fmt, num, obj } from '../storage/helpers'
 

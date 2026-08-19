@@ -11,9 +11,9 @@ import type { ModuleContractMeta, QuarterHourPoint } from './common'
 /**
  * 中长期分时段交易 / 持仓监控的采集族。
  *
- * 这是**三德普华公司私有族**（2026-08-03 由 public 更正）：载荷是该公司的合同台账与逐日持仓
+ * 这是三德普华公司私有族（2026-08-03 由 public 更正）：载荷是该公司的合同台账与逐日持仓
  * 电量/持仓均价。消费页必须把它传给 `<RegionDataBanner :families>`，否则未获授权的登录用户
- * 只会看到一张空表、不知道是被拒（横幅在未传 families 时**永不**显示无权限态）。
+ * 只会看到一张空表、不知道是被拒（横幅在未传 families 时永不显示无权限态）。
  */
 export const MIDLONG_TIME_BLOCK_FAMILY = 'sdpt_zfsdjy'
 

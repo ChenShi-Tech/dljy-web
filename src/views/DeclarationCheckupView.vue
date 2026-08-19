@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// 申报体检（#1527 PoC 第二切片）：pi harness 驱动的既有场景迁移验证——查行情 →
+// 申报体检（#1527 PoC 第二切片）：pi harness 驱动的既有场景迁移验证，查行情 →
 // 沙箱实算体检 → 业务语义审批卡 → 人批准后落库申报台 DRAFT（submit 永不可执行）。
 // AgentChatPanel 零改动接流（scenario→base 路由在 agentClient 服务层，/pi-api → 8100）。
 // 「自动执行授权」开关 = --dangerously-skip-permissions 类比：人亲手开启后 L1 业务写

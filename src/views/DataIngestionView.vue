@@ -2,7 +2,7 @@
 // 数据摄取管理页（数据运维台 /ops/ingest）：手动触发 POST /api/v1/ingest/:kind。
 // 台内闭环：/ops/import-hub（手录 CSV）→ 本页（手动/自动摄取）→ 主前端 /yygl/data-browser（回放）。
 // 定时自动摄取在主前端「AI 工作室 → 定时任务」（/system/ai-studio?tab=schedules）。
-// 链接注意：本台 hash 路由仅注册 /ops/*；主前端页用同源 <a>（path 模式）跳转（#2215）。
+// 链接：本台 hash 路由仅注册 /ops/*；主前端页用同源 <a>（path 模式）跳转（#2215）。
 // 主题变量驱动，四档主题协调；遵循现有深色交易终端风格。
 import { reactive, ref } from 'vue'
 import { RouterLink } from 'vue-router'
@@ -19,7 +19,7 @@ interface KindMeta {
   paramsHint: string
   example: string
   // 手动触发实际携带的参数（缺省 {} 保持既有 kind 行为）。中广核两个 kind 显式带
-  // 回看窗口——上游日前价 D+1~D+2 才发布，单拉「今天」会 404（#2203）。
+  // 回看窗口，上游日前价 D+1~D+2 才发布，单拉「今天」会 404（#2203）。
   params?: Record<string, unknown>
 }
 
@@ -50,7 +50,7 @@ async function run(meta: KindMeta) {
   }
 }
 
-// 摄取结果真伪判定（修 Codex P1-3：避免把合成兜底误标为可决策）。
+// 摄取结果真伪判定（避免把合成兜底误标为可决策）。
 // commitFamily source=IMPORT 默认 captured（operational）；但 weather-export 在 Open-Meteo
 // 失败/超时时后端会走合成兜底正常退出（exitCode 0），此时 ETL stdout 会打印 sourceType=MOCK /
 // (--synthetic 合成)（见 import-weather-export.mjs）。保守嗅探 stdout/stderr：出现

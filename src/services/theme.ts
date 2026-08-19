@@ -2,8 +2,8 @@
 // / neon（霓虹·深色辉光）/ paper（暖纸·暖色质感），唯一写入 <html data-theme>。
 // 同时维护市场时段 data-period（峰/平/谷），驱动时段感知配色与电价带。
 // 历史：classic/arc 来自 agent-harness 规划（docs/agent-harness/主题与信息架构规划.md）；
-//      neon/paper 来自三档换肤交接（历史文档已归档，git log 可追溯），
-//      本文件在合并时统一两套系统。composables/useTheme.ts 是本服务的薄适配层。
+// neon/paper 来自三档换肤交接（历史文档已归档，git log 可追溯），
+// 本文件在合并时统一两套系统。composables/useTheme.ts 是本服务的薄适配层。
 
 import { nextTick, reactive } from 'vue'
 

@@ -148,7 +148,7 @@ function clearAuthState() {
 }
 
 // Sub-4(#520)：登录成功后默认地区随账号归属（YN→yunnan、SX→shanxi）。只在显式登录
-// 动作时联动一次——getInfo（刷新恢复会话）不联动，保留用户会话中手动切换的地区偏好；
+// 动作时联动一次，getInfo（刷新恢复会话）不联动，保留用户会话中手动切换的地区偏好；
 // GROUP（集团）与未登记属地不联动。公共披露数据全员可用，故不做硬锁，登录后仍可自由切换。
 function applyAccountRegionPreference(user: AuthUser) {
   const regionId = regionIdForAreaCode(user.areaCode)

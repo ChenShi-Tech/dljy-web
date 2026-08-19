@@ -1,5 +1,5 @@
 // 云南现货结算规则规格（征求意见稿口径）。
-// 效力：consultation —— 依据云南电力市场结算实施细则（征求意见稿）方向性建模；
+// 效力：consultation：依据云南电力市场结算实施细则（征求意见稿）方向性建模；
 // 正式版发布后更新 version/effectiveness。2025 连续结算方案报审稿按行业转载
 // 处理，不作为参数依据（见地区交易规则体系效力分级，历史文档已归档、git log 可追溯）。
 import type { SettlementRuleSpec } from '../../types'
@@ -24,7 +24,7 @@ export const yunnanSettlementRuleSpec: SettlementRuleSpec = {
   midlongNegTolerancePct: undefined,
   adjustmentFactor: undefined,
   monthlyDeviationBenchmarkPrice: undefined,
-  // 注意：timeSegmentFactors 在云南现货结算中【非结算乘子】——现货按节点电价×偏差电量结算，
+  // timeSegmentFactors 在云南现货结算中【非结算乘子】，现货按节点电价×偏差电量结算，
   // 不存在峰谷系数乘子。此处保留仅作「用户侧峰谷目录电价」分时展示参考（2024年5月起执行的
   // 零售电价机制，非批发现货结算），factor 全 1 占位。若后续正式文本明确现货分时系数再启用。
   timeSegmentFactors: [

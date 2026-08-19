@@ -37,7 +37,7 @@ export function useSlashInput(opts: {
   const menuItems = ref<SlashMenuItem[]>([])
   const activeIndex = ref(0)
 
-  // ── 菜单状态机：跟随输入内容刷新 ──
+  // 菜单状态机：跟随输入内容刷新
   function refresh() {
     const text = input.value
     if (!text.startsWith('/') || /\n/.test(text)) {
@@ -107,7 +107,7 @@ export function useSlashInput(opts: {
     }
   }
 
-  // ── 输入历史（↑↓ 翻阅，仅本宿主、本次页面生命周期内） ──
+  // 输入历史（↑↓ 翻阅，仅本宿主、本次页面生命周期内）
   const sent: string[] = [] // 最新的在前
   let browseIdx = -1 // -1 = 未在翻阅
   let draft = ''
@@ -140,7 +140,7 @@ export function useSlashInput(opts: {
     return true
   }
 
-  // ── 统一键盘处理：返回 true 表示按键已被消费，宿主不再处理 ──
+  // 统一键盘处理：返回 true 表示按键已被消费，宿主不再处理
   function onKeydown(e: KeyboardEvent): boolean {
     if (menuOpen.value) {
       if (e.key === 'ArrowDown') {

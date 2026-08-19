@@ -8,7 +8,7 @@ import {
 } from './regionModules'
 
 // 注册表内任一能力覆盖路由（insight 组经典页）。注意 statusByRegion 除 shanxi/yunnan 外，
-// 广东/四川已经 #770 声明式试点登记为 degraded——它们不是「未登记」。
+// 广东/四川已经 #770 声明式试点登记为 degraded，它们不是「未登记」。
 const COVERED_PATH = '/sjfx/zrsjg'
 // 注册表覆盖面之外的合成路径（能力注册表不管它，保持兼容放行）。
 const UNCOVERED_PATH = '/no-such-page-for-spec'
@@ -45,7 +45,7 @@ describe('未登记地区能力 fail-closed（ADR 裁决四）', () => {
   })
 
   it('hidden 子能力继续 hidden（收紧不放松）', () => {
-    // zrxgx.xnyzd 是山西 sdpt_zcqxhdl 专有维度，云南登记 hidden——既有语义回归锚点。
+    // zrxgx.xnyzd 是山西 sdpt_zcqxhdl 专有维度，云南登记 hidden，既有语义回归锚点。
     expect(getRegionSubCapability('insight', 'zrxgx.xnyzd', 'yunnan')?.status).toBe('hidden')
   })
 
@@ -54,7 +54,7 @@ describe('未登记地区能力 fail-closed（ADR 裁决四）', () => {
   })
 })
 
-// 公司私有族在无源地区应整体隐藏（而非降级卡）——规则与逐族清单见
+// 公司私有族在无源地区应整体隐藏（而非降级卡），规则与逐族清单见
 // docs/data/family-visibility-inventory.md。
 // ⚠️ 这里必须用单测而非 UI 实机验证：guangdong/sichuan 不在 REAL_DATA_REGION_IDS（{yunnan,shanxi}）内，
 // 切换面板禁用、localStorage 写入也会被 regionContext 拒绝回落默认地区，UI 上根本切不过去；
@@ -64,7 +64,7 @@ describe('公司私有族在无源地区 hidden', () => {
   const ZRQSB = '/xhjy/zrqsb'
   // sdpt_zptqx：同属三德普华的私有族（曾误标 public，匿名可读全量 888 行，已更正）。
   const ZPTQX = '/xhjy/zptqx'
-  // sdpt_zfsdjy：同上（#1617 合并后复查发现）——中长期合同台账 + 逐日持仓电量/持仓均价。
+  // sdpt_zfsdjy：同上（#1617 合并后复查发现），中长期合同台账 + 逐日持仓电量/持仓均价。
   const ZFSDJY_PATHS = ['/zcqjy/zfsdjy', '/zcqjy/zccljk']
   // 依赖三德普华私有族的两个预测子能力。
   const PRIVATE_FORECAST_TABS = ['forecast.tab.gscwfh', 'forecast.tab.renewable-ab']
@@ -102,7 +102,7 @@ describe('公司私有族在无源地区 hidden', () => {
 
   // 二阶影响：TRADER 的默认落地页恰是 /xhjy/zptqx。把它在非宿主地区收紧为 hidden 后，
   // 该角色在那些地区必须有兜底，否则一登录就停在一个不可达页面（或反复重定向）。
-  // firstAccessiblePath 的 defaultRoute→/dashboard 回落负责这件事——锁住它，
+  // firstAccessiblePath 的 defaultRoute→/dashboard 回落负责这件事，锁住它，
   // 免得日后有人把 /dashboard 也收紧却没发现这条依赖。
   it('以私有族页面为默认落地页的角色，在无源地区回落到可用页', () => {
     expect(firstAccessiblePath({ roleCode: 'TRADER' }, 'shanxi')).toBe('/xhjy/zptqx')
@@ -115,8 +115,8 @@ describe('公司私有族在无源地区 hidden', () => {
   })
 
   it('public 族载体保持 degraded（缺的是本省采集、不是授权，入口应保留）', () => {
-    // 反例锚点：**私有族收紧不得误伤公共族**。以下 tab 均依赖 public 族 sdpt_zptjg
-    // （云南有该族采集，缺的只是特定 tag 切片）——它们必须继续 degraded、入口保留。
+    // 反例锚点：私有族收紧不得误伤公共族。以下 tab 均依赖 public 族 sdpt_zptjg
+    // （云南有该族采集，缺的只是特定 tag 切片），它们必须继续 degraded、入口保留。
     for (const id of ['forecast.tab.jgyc', 'forecast.tab.gsfhyc', 'forecast.tab.jjkj', 'forecast.tab.rqhdcl']) {
       expect(getRegionSubCapability('forecast', id, 'yunnan')?.status).toBe('degraded')
     }

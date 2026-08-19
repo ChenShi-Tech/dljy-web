@@ -4,7 +4,7 @@
 // 扩展方式（关键）：新增一种 artifact = 往 FENCE_REGISTRY 填一个 { types, parse } 项
 // （+ 如需自定义视图再加一个组件并在 ArtifactRenderer 注册）。业务图表类（申报曲线、
 // 预测带、敞口…）的 parse 把语义 JSON 经 ./businessCharts 转成 ECharts option，统一
-// 回落 kind:'chart' 复用 ChartArtifact —— 无需新组件、不改 ArtifactRenderer。
+// 回落 kind:'chart' 复用 ChartArtifact，无需新组件、不改 ArtifactRenderer。
 //
 // 设计原则：JSON body 解析失败安全降级为代码块，绝不丢内容；解析是纯函数，供流式
 // （每次 token 追加后整体重解析）与静态场景共用。
@@ -28,7 +28,7 @@ import {
   buildPieOption
 } from './businessCharts'
 
-// ── 块类型（discriminated union；每加一种带独立视图的 artifact 加一个 kind） ──
+// 块类型（discriminated union；每加一种带独立视图的 artifact 加一个 kind）
 export type CardMetric = {
   label: string
   value: string | number
@@ -141,7 +141,7 @@ export type ArtifactBlock =
 
 const FENCE_OPEN = /^(\s*)(`{3,}|~{3,})(.*)$/
 
-// ── 宽松 JSON：容忍 // 与 /* */ 注释、对象/数组尾随逗号（LLM 常见），仍走
+// 宽松 JSON：容忍 // 与 /* */ 注释、对象/数组尾随逗号（LLM 常见），仍走
 // JSON.parse（绝不 eval）。失败返回 undefined，由调用方降级为代码块。
 export function looseParseJson(src: string): unknown {
   const direct = tryJson(src)
@@ -198,7 +198,7 @@ function optStr(v: unknown): string | undefined {
   const s = String(v)
   return s === '' ? undefined : s
 }
-// 链接协议白名单：仅放行 http(s)，挡掉 javascript:/data: 等绕过净化的危险协议(Codex P2)。
+// 链接协议白名单：仅放行 http(s)，挡掉 javascript:/data: 等绕过净化的危险协议。
 function safeHttpUrl(v: unknown): string | undefined {
   const s = optStr(v)
   if (!s) return undefined
@@ -260,7 +260,7 @@ function normalizeCard(data: unknown, fallbackTitle: string): CardArtifactBlock 
   }
 }
 
-// ── 围栏 info 拆分：首词为类型，其余为标题 ──
+// 围栏 info 拆分：首词为类型，其余为标题
 function splitInfo(info: string): { type: string; title: string } {
   const sp = info.search(/\s/)
   const type = (sp === -1 ? info : info.slice(0, sp)).toLowerCase()
@@ -268,7 +268,7 @@ function splitInfo(info: string): { type: string; title: string } {
   return { type, title }
 }
 
-// ── 各类围栏 parser（匹配 type 后调用；自带降级，返回的一定是合法块） ──
+// 各类围栏 parser（匹配 type 后调用；自带降级，返回的一定是合法块）
 function parseChartFence(title: string, body: string): ArtifactBlock {
   const opt = looseParseJson(body)
   if (opt && typeof opt === 'object' && !Array.isArray(opt)) {
@@ -302,9 +302,9 @@ function isValidEChartsSeries(series: unknown): boolean {
   return hasType(series)
 }
 
-// 启发式：判断 JSON 是否为 ECharts option。要求 series 是「含已知 type 的对象（或其数组）」——
+// 启发式：判断 JSON 是否为 ECharts option。要求 series 是「含已知 type 的对象（或其数组）」
 // 满足即视为图表（单 series 图如 pie/gauge 不需坐标轴，故不再强求坐标系/可视组件存在）。
-// 用于容错 agent 误用 ```json 包图表 —— 应渲染为图表而非 JSON 代码块；同时避免误判致 setOption 崩。
+// 用于容错 agent 误用 ```json 包图表，应渲染为图表而非 JSON 代码块；同时避免误判致 setOption 崩。
 function looksLikeEChartsOption(v: unknown): boolean {
   if (!v || typeof v !== 'object' || Array.isArray(v)) return false
   return isValidEChartsSeries((v as Record<string, unknown>).series)
@@ -363,7 +363,7 @@ const CALLOUT_DEFAULT_TITLE: Record<CalloutLevel, string> = {
 function parseCalloutFence(title: string, body: string, type: string): ArtifactBlock {
   let level: CalloutLevel = CALLOUT_LEVELS[type] ?? 'info'
   let heading = title
-  // ```callout warning 标题 —— 允许 title 首词覆盖级别
+  // ```callout warning 标题，允许 title 首词覆盖级别
   if (type === 'callout' || type === 'note') {
     const words = title.split(/\s+/).filter(Boolean)
     const lv = CALLOUT_LEVELS[(words[0] ?? '').toLowerCase()]
@@ -380,7 +380,7 @@ function parseCalloutFence(title: string, body: string, type: string): ArtifactB
   }
 }
 
-// ── B1 通用 artifact：表格 / 引用 / JSON 树 / 时间线 ──
+// B1 通用 artifact：表格 / 引用 / JSON 树 / 时间线
 function alignOf(v: unknown): TableColumn['align'] {
   const s = String(v ?? '').toLowerCase()
   if (s === 'left') return 'left'
@@ -403,7 +403,7 @@ function normalizeTable(data: unknown, title: string): TableArtifactBlock | null
           align: alignOf(o.align)
         }
       }
-      // 字符串列：key 用字符串本身，兼容对象行按列名取值(Codex P2)；数组行仍按 index 取。
+      // 字符串列：key 用字符串本身，兼容对象行按列名取值；数组行仍按 index 取。
       return { key: str(c), label: str(c) }
     })
   }
@@ -499,7 +499,7 @@ function parseJsonViewFence(title: string, body: string): ArtifactBlock {
   return data === undefined ? codeBlock('json', title, body) : { kind: 'jsonview', title: title || 'JSON', data }
 }
 
-// ── B2 业务图表：语义 JSON 经 ./businessCharts 转 ECharts option，回落 chart kind ──
+// B2 业务图表：语义 JSON 经 ./businessCharts 转 ECharts option，回落 chart kind
 function bizChart(
   builder: (data: unknown) => Record<string, unknown> | null,
   defTitle: string
@@ -510,7 +510,7 @@ function bizChart(
   }
 }
 
-// ── B3 业务表格/对比：对账(差异染色) / 地区规则对比(复用 table) ──
+// B3 业务表格/对比：对账(差异染色) / 地区规则对比(复用 table)
 function objOf(v: unknown): Record<string, unknown> {
   return v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : {}
 }
@@ -677,7 +677,7 @@ function parseClearingFence(title: string, body: string): ArtifactBlock {
   return opt ? { kind: 'chart', title: title || '出清博弈', option: opt } : codeBlock('json', title, body)
 }
 
-// ── B4 公式 / 流程图：原文交给 katex / mermaid 组件渲染 ──
+// B4 公式 / 流程图：原文交给 katex / mermaid 组件渲染
 function parseMathFence(_title: string, body: string): ArtifactBlock {
   return { kind: 'math', code: body.trim() }
 }
@@ -685,7 +685,7 @@ function parseMermaidFence(title: string, body: string): ArtifactBlock {
   return { kind: 'mermaid', title, code: body.trim() }
 }
 
-// ── B5 资产/交互：下载卡 / 表单回传 ──
+// B5 资产/交互：下载卡 / 表单回传
 function normalizeDownload(data: unknown, title: string): DownloadArtifactBlock | null {
   const d = objOf(data)
   const src = arrOf(d.files ?? d.items ?? data)
@@ -741,7 +741,7 @@ function parseFormFence(title: string, body: string): ArtifactBlock {
   return normalizeForm(looseParseJson(body), title) ?? codeBlock('json', title, body)
 }
 
-// ── B6 流程清单 / 文本对比 ──
+// B6 流程清单 / 文本对比
 function stepStatus(v: unknown): StepStatus | undefined {
   const s = String(v ?? '').toLowerCase().trim()
   if (!s) return undefined
@@ -843,7 +843,7 @@ function parseDljyUiFence(title: string, body: string): ArtifactBlock {
   }
 }
 
-// ── 围栏注册表：新增 artifact 类型在此「填表」即可 ──
+// 围栏注册表：新增 artifact 类型在此「填表」即可
 type FenceParser = (title: string, body: string, type: string) => ArtifactBlock
 interface FenceSpec {
   types: string[]
@@ -977,7 +977,7 @@ export function pendingArtifactLabel(src: string): string | null {
 
 /**
  * 流式增量切分：把已累积文本切成「已稳定段」与「在写尾部」，供对话框边流边渲染 artifact。
- * - `stable`：截至**最后一个闭合围栏**的全部内容；其内所有围栏均已闭合，可立即
+ * - `stable`：截至最后一个闭合围栏的全部内容；其内所有围栏均已闭合，可立即
  *   `parseArtifactBlocks(stable)` 渲染为正式 artifact。
  * - `tail`：最后一个闭合围栏之后仍在输入的纯文本，或一个尚未闭合的围栏；继续逐 token 渐显。
  * - `pendingLabel`：尾部若是未闭合的带 label 围栏（图表/卡片/流程清单…），返回其友好标签用于

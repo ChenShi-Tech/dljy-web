@@ -1,20 +1,20 @@
 <script setup lang="ts">
-// S4 内的储能充放电计划区块 —— R1 决策单元 / R2 充放选择 / R3 盈亏平衡 / R11 容量折价
+// S4 内的储能充放电计划区块 ， R1 决策单元 / R2 充放选择 / R3 盈亏平衡 / R11 容量折价
 //
-// v1.0 动线下它不再独占一步：储能立场的交易员在 S4 申报执行时**顺手**做完计划并写回
+// v1.0 动线下它不再独占一步：储能立场的交易员在 S4 申报执行时顺手做完计划并写回
 // （preflight.storagePlan），放行清单的 SOC 两项与安全倍数判据据此自动填充。
 //
-// 参数模型（2026-08-11 用户拍板）：**档案是资产事实，覆盖是当日决定，两者不混**——
+// 参数模型（2026-08-11 用户拍板）：档案是资产事实，覆盖是当日决定，两者不混，
 //   · 固定资产/成本参数存企业专有库（market.company_storage_asset，companyId 隔离），
 //     申报时「从企业档案载入」而非逐次手填；
-//   · 载入后仍可临时改（当日检修降容/政策变化）：改动即视为**当日覆盖**，高亮标出并
+// · 载入后仍可临时改（当日检修降容/政策变化）：改动即视为当日覆盖，高亮标出并
 //     随 storagePlan 写回申报单留痕，绝不回写档案；
-//   · 校验类内容（八项约束）默认收敛为徽章行，有阻断才展开——它是检验不是主角。
+// · 校验类内容（八项约束）默认收敛为徽章行，有阻断才展开，它是检验不是主角。
 //
 // 规则推演本身是确定性的（storage-arbitrage.mjs），AI 不重算数字：AI 审查把规则引擎的
 // 完整输出作为「工具结果」注入，只做解释、挑风险、反事实追问（见 aiReviewContext 注释）。
 //
-// 价格序列由使用者给定（可编辑或用预置形态）——本仓无新疆市场数据，不编造价格。
+// 价格序列由使用者给定（可编辑或用预置形态），本仓无新疆市场数据，不编造价格。
 import { computed, onMounted, reactive, ref } from 'vue'
 import { CheckCheck, Database, Save, Sparkles, TriangleAlert } from 'lucide-vue-next'
 import { listStorageAssets, type StorageAsset } from '@/services/trading/storageAssetsClient'
@@ -37,7 +37,7 @@ import { savePreflight, type DeclarationOrder } from '@/services/declarations'
 const props = defineProps<{ declaration: DeclarationOrder | null }>()
 const emit = defineEmits<{ updated: [d: DeclarationOrder] }>()
 
-// ── 价格序列 ────────────────────────────────────────────────────────────────
+// 价格序列
 const PRESETS: Record<string, number[]> = {
   '典型双峰': [
     58, 55, 52, 50, 52, 60, 95, 150, 210, 245, 260, 250,
@@ -70,7 +70,7 @@ const unitPrices = computed(() => {
   return parsed.length ? parsed : PRESETS['典型双峰']
 })
 
-// ── 资产与成本参数（档案拉取 + 当日覆盖模型）────────────────────────────────
+// 资产与成本参数（档案拉取 + 当日覆盖模型）
 const powerMw = ref(100)
 const capacityMwh = ref(600)
 const socStart = ref(0.5)      // 运行态：每天不同，恒手填，不属档案
@@ -162,7 +162,7 @@ function onSelectAsset() {
 }
 onMounted(loadAssets)
 
-// ── 规则推演 ────────────────────────────────────────────────────────────────
+// 规则推演
 const timing = computed(() => getMarketTiming(currentRegion.value.id))
 const decisionUnit = computed(() => (timing.value ? decisionUnitOf(timing.value) : null))
 
@@ -245,7 +245,7 @@ const socPath = computed(() => plan.value.socTrajectory)
 const socMaxSeen = computed(() => (socPath.value.length ? Math.max(...socPath.value) : 0))
 const socMinSeen = computed(() => (socPath.value.length ? Math.min(...socPath.value) : 0))
 
-/** 写回判据取约束校验的**逐项结论**，不重复自算——两套口径迟早漂移。 */
+/** 写回判据取约束校验的逐项结论，不重复自算，两套口径迟早漂移。 */
 const constraintById = computed(() => new Map(constraints.value.map((c) => [c.id, c])))
 const minSafetyMultiple = computed(() => {
   const values = plan.value.pairs.map((p) => p.safetyMultiple).filter((v): v is number => Number.isFinite(v))
@@ -258,7 +258,7 @@ const saveError = ref('')
 const written = computed(() => props.declaration?.preflight?.storagePlan ?? null)
 
 /**
- * 下发报文预览（F4.3 下发侧 · 模拟）：场站下发通道未接，报文仅供人工下发参照——
+ * 下发报文预览（F4.3 下发侧 · 模拟）：场站下发通道未接，报文仅供人工下发参照，
  * 不伪造场站回执、不冒充已下发。mock: true 显式标注。
  */
 const dispatchMessagePreview = computed<string | null>(() => {
@@ -314,8 +314,8 @@ async function writeBack() {
   }
 }
 
-// ── AI 计划审查（确定性推理链 + 工具结果注入）──────────────────────────────
-// 设计红线：**AI 不重算任何数字**。规则引擎（R1/R2/R3/R11 + 八项约束）是确定性权威，
+// AI 计划审查（确定性推理链 + 工具结果注入）
+// 设计红线：AI 不重算任何数字。规则引擎（R1/R2/R3/R11 + 八项约束）是确定性权威，
 // 其完整输出作为"工具已算好的结果"注入上下文；AI 的职责限定在三件事：
 //   ① 解释：把安全倍数/回退对数/约束结论讲成交易员语言；
 //   ② 挑风险：哪对充放的安全倍数贴近 1.3 阈值、当日覆盖的参数是否可疑
@@ -519,7 +519,7 @@ const aiReviewQuestion = computed(() =>
       </section>
     </div>
 
-    <!-- 八项约束：检验不是主角——默认徽章行，有阻断/告警自动展开 -->
+    <!-- 八项约束：检验不是主角，默认徽章行，有阻断/告警自动展开 -->
     <details class="sb-checks-fold" :open="constraints.some((c) => !c.passed)">
       <summary>
         八项约束校验

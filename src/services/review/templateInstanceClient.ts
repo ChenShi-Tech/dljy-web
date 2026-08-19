@@ -4,7 +4,7 @@
 // 后端（#2039 触发引擎/#2037 服务端化）未上线 → 探针 404，前端诚实降级。
 // 会话内 TTL 缓存（5 分钟，按地区）：避免每个消费组件（待办箱/徽标）重复打
 // 无效端点；端点上线后同会话最多延迟 5 分钟出真数，可 force 刷新。
-// 注意：探针刻意不消费地区响应头（applyRegionHeaders）——它不是数据接口，
+// 探针刻意不消费地区响应头（applyRegionHeaders），它不是数据接口，
 // 失败态不该驱动 RegionDataBanner。
 import { AGENT_API_BASE, identityHeaders } from '@/services/agent/agentClient'
 import { currentRegion } from '@/services/region/regionContext'

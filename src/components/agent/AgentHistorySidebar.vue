@@ -1,8 +1,8 @@
 <script setup lang="ts">
-// 智能体历史对话侧边栏（类 ChatGPT 左栏）：按登录用户列出历史会话，
+// 智能体历史对话侧边栏:按登录用户列出历史会话，
 // 点击回放并续聊；支持新建、重命名、删除、折叠。
 // 数据走 Node /api/agent-history（见 services/agentClient.ts + server/chat-store.mjs），
-// 按登录 token 隔离——每个用户只看到自己的历史。
+// 按登录 token 隔离，每个用户只看到自己的历史。
 import { onMounted, ref, watch } from 'vue'
 import { Loader2, MessageSquarePlus, PanelLeftClose, PanelLeftOpen, Pencil, Trash2 } from 'lucide-vue-next'
 import SavedAnalysisViews from './SavedAnalysisViews.vue'
@@ -81,11 +81,11 @@ function formatTime(epochSeconds: number): string {
 }
 
 // 世代守卫：pageKey 变化会触发 reload（申报台在情报/起草间切模式），快切即产生并发请求。
-// 无守卫时旧请求晚归会用上一模式的结果覆盖当前列表——起草标签下列出 chat 场景会话，
+// 无守卫时旧请求晚归会用上一模式的结果覆盖当前列表，起草标签下列出 chat 场景会话，
 // 点进去还会把 chat 会话加载进起草面板。
 let reloadGeneration = 0
-// 当前 sessions 属于哪个作用域。世代守卫只保证"旧响应不覆盖新列表"，管不住**请求在途
-// 那几百毫秒里屏幕上还挂着旧作用域的会话**——模板的 v-for 不受 loading 分支约束，用户
+// 当前 sessions 属于哪个作用域。世代守卫只保证"旧响应不覆盖新列表"，管不住请求在途
+// 那几百毫秒里屏幕上还挂着旧作用域的会话，模板的 v-for 不受 loading 分支约束，用户
 // 从「情报问询」切到「协助起草」后仍能点到 declaration_market 的会话，点下去就把 chat
 // transcript 载进起草面板、并把该 id 记进 draft 槽。故作用域一变先清空。
 // 只在作用域变化时清（改名/删除触发的同作用域 reload 不清），避免列表闪烁。

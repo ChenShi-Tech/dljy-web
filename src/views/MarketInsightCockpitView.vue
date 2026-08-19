@@ -193,7 +193,7 @@ function askGlobal() {
 .mic-err { grid-column: 1 / -1; font-size: 13px; color: var(--danger); padding: 14px 16px; background: var(--danger-tint); border: 1px solid var(--danger); border-radius: 12px; }
 .mic-empty { grid-column: 1 / -1; padding: 40px 28px; text-align: center; color: var(--muted); font-size: 14px; line-height: 1.85; }
 .mic-empty strong { color: var(--primary); }
-/* —— neon 专属沉浸式：深空渐变 + 标题渐变 + 辉光（仅 neon 主题，其余三主题用纯净主题色）—— */
+/* neon 专属沉浸式：深空渐变 + 标题渐变 + 辉光（仅 neon 主题，其余三主题用纯净主题色）*/
 :root[data-theme='neon'] .mic-root {
   background:
     radial-gradient(1200px 700px at 12% -10%, #0d1b3a 0%, rgba(6, 9, 20, 0) 55%),

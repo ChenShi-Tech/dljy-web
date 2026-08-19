@@ -1,10 +1,10 @@
 <script setup lang="ts">
-// S4 申报执行（申报窗口，硬死线取地区规则）—— 决策 + 行动
+// S4 申报执行（申报窗口，硬死线取地区规则）， 决策 + 行动
 //
 // 本面板把申报出门前后的全部动作收在一处，按真实作业顺序排三段：
 //   ① 申报曲线：一键套用 S3 写回的方向曲线（也可去申报台逐点微调）；
 //   ② 放行自查（T4 十项）：判据自动从 S1–S3 的写回产出填充，交易员只补人给的两项
-//      （合规红线自检、双签）。这是**推演台**——权威把关在服务端；
+// （合规红线自检、双签）。这是推演台，权威把关在服务端；
 //   ③ 状态机：风控检查 → 送审 → 审批 → 提交。硬约束不过，服务端直接拦转态（409），
 //      不是弹个提示继续走。
 // 储能立场多一张充放电计划单（折叠块），写回后放行清单的 SOC 判据自动生效。
@@ -42,11 +42,11 @@ const emit = defineEmits<{ updated: [d: DeclarationOrder]; go: [stage: StageId] 
 const decl = computed(() => props.declaration)
 const pf = computed(() => decl.value?.preflight ?? {})
 const timing = computed(() => getMarketTiming(currentRegion.value.id))
-// D+N 口径（今天报的是 D+几）由 trading-calendar 权威给出——「D-1」这种标的日视角
+// D+N 口径（今天报的是 D+几）由 trading-calendar 权威给出，「D-1」这种标的日视角
 // 的散落标注不再写死在本面板。
 const dnCalendar = computed(() => getTradingCalendar(currentRegion.value.id))
 
-// ── 截止倒计时与三级提醒（手册 S4 步骤③：截止前 60/15/5 分钟）──────────────
+// 截止倒计时与三级提醒（手册 S4 步骤③：截止前 60/15/5 分钟）
 // 只对真实单（LIVE）倒计时；演练单不受截止约束。30s 一跳已够（提醒粒度是分钟级）。
 const now = ref(Date.now())
 let tickTimer: number | undefined
@@ -79,7 +79,7 @@ const REMINDER_NOTE: Record<string, string> = {
   passed: '已过截止——本单提交会被服务端作废（EXPIRED）'
 }
 
-// ── ① 申报曲线：套用 S3 产出 ────────────────────────────────────────────────
+// ① 申报曲线：套用 S3 产出
 const forecastTotal = computed(() =>
   pf.value.forecast ? pf.value.forecast.curveMwh96.reduce((a, b) => a + b, 0) : null
 )
@@ -96,9 +96,9 @@ const canEditCurve = computed(() =>
   decl.value ? ['DRAFT', 'RISK_CHECKED', 'REJECTED'].includes(decl.value.status) : false
 )
 
-// ── ①' 分段价量报价草稿（F3.4 · 手册 S4 步骤①：检查「分几段、每段什么价」）────
+// ①' 分段价量报价草稿（F3.4 · 手册 S4 步骤①：检查「分几段、每段什么价」）
 // 发电/储能立场报量报价必需；售电 T3 报量不报价（面板提示不生成）。价格锚取 S2
-// 价格中枢（S2 未产出时不硬编——没有锚的分段报价是编数字）。
+// 价格中枢（S2 未产出时不硬编，没有锚的分段报价是编数字）。
 const needsPriceQuote = computed(() => ['GENERATOR', 'STORAGE'].includes(activeStanceType.value ?? ''))
 const priceCenterOfS2 = computed<[number, number] | null>(() => {
   const g = pf.value.dataGate
@@ -176,7 +176,7 @@ function applyForecastCurve() {
   )
 }
 
-// ── ② 放行自查（T4 十项，推演台）────────────────────────────────────────────
+// ② 放行自查（T4 十项，推演台）
 const form = reactive<ChecklistInput>({
   dailyVarYuan: 82_000,
   varLimitYuan: 100_000,
@@ -205,7 +205,7 @@ const draftOverride = reactive({ itemId: '', approvedBy: '', cosignedBy: '', rea
 
 /**
  * 上游产出 → 判据自动填充：S2 门禁、S3 偏置、储能计划的 SOC 与安全倍数直接落进判据，
- * 交易员只补它们给不出的项。没有上游产出时保持手工值并标「未接入」——不默认成通过。
+ * 交易员只补它们给不出的项。没有上游产出时保持手工值并标「未接入」，不默认成通过。
  */
 watch(
   pf,
@@ -227,7 +227,7 @@ watch(
 )
 
 const items = computed(() => {
-  // 纯派生（原实现把解析结果写回 form 再读出——computed 内副作用，lint 已拦）：
+  // 纯派生（原实现把解析结果写回 form 再读出，computed 内副作用，lint 已拦）：
   // redLinesTouched 只被 buildChecklist 消费，直接随展开透传，行为等价。
   const redLinesTouched = redLineInput.value
     .split(/[,，;；\s]+/)
@@ -255,7 +255,7 @@ function removeOverride(itemId: string) {
   overrides.value = overrides.value.filter((o) => o.itemId !== itemId)
 }
 
-// ── ③ 状态机动作 ────────────────────────────────────────────────────────────
+// ③ 状态机动作
 const status = computed(() => decl.value?.status ?? null)
 const approveComment = ref('')
 
@@ -406,7 +406,7 @@ const receiptChecks = computed<ReceiptCheckRow[] | null>(() => {
       </div>
     </section>
 
-    <!-- ①' 分段价量报价草稿（F3.4）—— 发电/储能立场报量报价；售电 T3 报量不报价 -->
+    <!-- ①' 分段价量报价草稿（F3.4）， 发电/储能立场报量报价；售电 T3 报量不报价 -->
     <details v-if="needsPriceQuote" id="dc-sec-segments" class="dc-segments" :open="!decl?.priceCurve96?.length">
       <summary>
         <Layers :size="13" /> 分段价量报价草稿（{{ segmentCount }} 段）
@@ -504,7 +504,7 @@ const receiptChecks = computed<ReceiptCheckRow[] | null>(() => {
         </div>
 
         <div>
-          <!-- 十项清单：检验不是主角——默认只列未通过项，全过时折叠为一行 -->
+          <!-- 十项清单：检验不是主角，默认只列未通过项，全过时折叠为一行 -->
           <details class="dc-list-fold" :open="!verdict.allowed">
             <summary>
               十项清单

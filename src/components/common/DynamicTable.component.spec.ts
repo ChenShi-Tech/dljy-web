@@ -1,5 +1,5 @@
 // DynamicTable 通用表格契约（Epic #1702 P1）：列并集/筛选/分页/导出是「先看到数据」场景的基础设施，
-// 逻辑偏移会让任意月度新形态数据浏览时列丢失/筛选失效/导出乱码——用组件测试钉死核心计算与导出。
+// 逻辑偏移会让任意月度新形态数据浏览时列丢失/筛选失效/导出乱码，用组件测试钉死核心计算与导出。
 import { describe, it, expect, vi } from 'vitest'
 import { mount } from '@/test/mount'
 import DynamicTable from './DynamicTable.vue'
@@ -23,7 +23,7 @@ function mountTable(props: Record<string, unknown>) {
 describe('DynamicTable（Epic #1702 P1）', () => {
   it('列集合取所有行键并集且保持首次出现顺序', () => {
     const wrapper = mountTable({ rows: [{ a: 1, b: 2 }, { b: 3, c: 4 }], pageSize: 50 })
-    // 断言列文本序列（锁顺序，而非仅计数——排序/倒序实现会被抓）
+    // 断言列文本序列（锁顺序，而非仅计数，排序/倒序实现会被抓）
     expect(wrapper.findAll('.stub-col').map((c) => c.text())).toEqual(['a', 'b', 'c'])
   })
 
@@ -59,7 +59,7 @@ describe('DynamicTable（Epic #1702 P1）', () => {
   })
 
   it('导出 CSV：BOM + 逗号字段引号转义 + a.download 含行数', async () => {
-    // 只 mock 'a' tag——全量 mock createElement 会让 Vue 内部建 DOM 节点也拿到 anchor（无 insertBefore）而崩。
+    // 只 mock 'a' tag，全量 mock createElement 会让 Vue 内部建 DOM 节点也拿到 anchor（无 insertBefore）而崩。
     const realCreateElement = document.createElement.bind(document)
     const createURL = vi.spyOn(URL, 'createObjectURL')
     const clickSpy = vi.fn()

@@ -1,8 +1,8 @@
 // 顶层工具组的渲染期归并（从 AgentChatPanel 抽出，纯函数便于单测）。
 //
-// 一轮里连续调 8 个顶层工具就是 8 张平铺卡片，把对话冲得很长。这里把**连续的顶层
-// 工具**归为一组：折叠只显「done/total + 当前工具名」，展开才逐条看参数与结果
-// ——复刻子智能体分组（.sa-head）已验证的形态。
+// 一轮里连续调 8 个顶层工具就是 8 张平铺卡片，把对话冲得很长。这里把连续的顶层
+// 工具归为一组：折叠只显「done/total + 当前工具名」，展开才逐条看参数与结果
+// ，复刻子智能体分组（.sa-head）已验证的形态。
 //
 // 为什么不新增 seg 类型：HistorySeg 联合由后端 SegAccumulator 唯一落库，新增 kind
 // 要同步改 Python + restoreSeg 并过 verify:agent-lock/smoke。渲染期归并对落库与回放
@@ -12,7 +12,7 @@ export type GroupableToolSeg = {
   kind: string
   name: string
   status: 'running' | 'done' | 'error'
-  /** 子智能体内部工具带此字段——它们已在 subagent-group 内渲染，不参与顶层归并 */
+  /** 子智能体内部工具带此字段，它们已在 subagent-group 内渲染，不参与顶层归并 */
   subRole?: string
   basis?: string
 }
@@ -31,7 +31,7 @@ export function isTopLevelTool(seg: { kind: string; subRole?: string } | undefin
 }
 
 /**
- * 该下标是否为一组连续顶层工具的**起点**（组内其余下标由调用方跳过渲染）。
+ * 该下标是否为一组连续顶层工具的起点（组内其余下标由调用方跳过渲染）。
  * index=0 时 segs[-1] 为 undefined，isTopLevelTool 返回 false，故首位自然算起点。
  */
 export function isToolGroupStart(
@@ -67,9 +67,9 @@ export function summarizeToolGroup(
   }
 }
 
-// 口径由弱到强。组头取**最弱**的那个：组默认折叠，若取最后一个（.sa-head 的
+// 口径由弱到强。组头取最弱的那个：组默认折叠，若取最后一个（.sa-head 的
 // delegateBasis 语义），前面工具用过 synthetic_mock、后面用了 captured 时，组头会显示
-// captured 并把"用了合成数据"这一事实藏在折叠里——混合来源被呈现为全真实数据。
+// captured 并把"用了合成数据"这一事实藏在折叠里，混合来源被呈现为全真实数据。
 // 同 reportEngine.composeProvenance「取最弱口径保证溯源不漂移」。
 const BASIS_RANK: Record<string, number> = {
   synthetic: 0,

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // 通用「多类型 · 复选表格 + 多选联动折线」预测视图(cfg 驱动)。复用于:
-//  E2 价格预测(zptjg tag61,12类型)/ E5 公司新能源出力预测1(zxztqa,总风光)/ E6 公司新能源出力预测2(zgnrx,总风光)。
+// E2 价格预测(zptjg tag61,12类型)/ E5 公司新能源出力预测1(zxztqa,总风光)/ E6 公司新能源出力预测2(zgnrx,总风光)。
 // 经典款:运行日期区间 + 类型筛选 + 数据点(96/24);表格复选→下方图按勾选行显示曲线,图例随勾选实时显示。
 // cfg(route.meta.cfg): { family, match, dateField, typeField, dict?(系统字典名)|typeLabels?, totalField, valueLabel, unit }
 // NOTE(内部): 预测数值为模型输出,准确度后续优化;界面正常自信展示,勿在 UI 标注"不可信"。源: capture-raw/<family>/
@@ -118,8 +118,8 @@ function clearViewState() {
   rows.value = []
   selected.value = []
   range.value = null
-  // fType 是用户/深链筛选态（route.query.type 初始化），不随数据清空——
-  // 否则 /ycsj/jgyc?type=... 深链在首屏 load 即被重置（roborev job463）；
+  // fType 是用户/深链筛选态（route.query.type 初始化），不随数据清空
+  // 否则 /ycsj/jgyc?type=... 深链在首屏 load 即被重置（#463）；
   // 清空筛选只走用户点「重置」的 reset()。
   typeMap.value = { ...(cfg.typeLabels || {}) }
   tableRef.value?.clearSelection?.()

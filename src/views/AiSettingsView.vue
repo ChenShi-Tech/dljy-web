@@ -158,7 +158,7 @@ async function doDelete(pid: string) {
   }
 }
 
-// ── 采样参数 / 角色路由 / 全局工作流（运行期可调，落服务端）──────────────────
+// 采样参数 / 角色路由 / 全局工作流（运行期可调，落服务端）
 import {
   getParams,
   putParams,
@@ -293,7 +293,7 @@ async function saveWorkflow() {
   }
 }
 
-// ── 联网搜索配置（web_search 工具的供应商 + API Key）──────────────────────────
+// 联网搜索配置（web_search 工具的供应商 + API Key）
 const SEARCH_PROVIDERS = [
   { id: 'serper', name: 'Serper（Google 检索）', doc: 'https://serper.dev' },
   { id: 'bocha', name: '博查 Bocha（国内 AI 搜索）', doc: 'https://open.bochaai.com' },
@@ -328,7 +328,7 @@ async function loadSearch() {
 }
 onMounted(loadSearch)
 
-// ── 出网访问黑名单（web_fetch/web_search 与 browser_* 共用；名单为空 = 不限制）──────
+// 出网访问黑名单（web_fetch/web_search 与 browser_* 共用；名单为空 = 不限制）
 const denylist = ref<Denylist | null>(null)
 const newDomain = ref('')
 const denylistBusy = ref(false)
@@ -384,7 +384,7 @@ async function doRemoveDenylist(domain: string) {
   }
 }
 
-// ── 语音播报（页面跳转提示音）─────────────────────────────────────
+// 语音播报（页面跳转提示音）
 // 纯前端 localStorage（voice.ts），默认关、全程静音；AI 回复正文改为每条「朗读」按钮手动播放。
 const ttsEnabled = ref(getVoiceConfig().tts)
 function onTtsChange(v: boolean) {
@@ -402,7 +402,7 @@ async function doTestSearch() {
   searchTestMsg.value = ''
   // 先持久化当前输入的管理令牌（与 doSaveSearch 一致）：加固配置（HARNESS_ADMIN_TOKEN 设）下
   // testSearchConfig 经 adminHeaders() 读 localStorage，不先 setAdminToken 会用旧值、不带
-  // x-admin-token 被本次新增的 _require_admin 拒 403（B47 配套 / Codex P2）。
+  // x-admin-token 被本次新增的 _require_admin 拒 403（B47 配套）。
   setAdminToken(adminToken.value)
   const r = await testSearchConfig({
     provider: searchProvider.value,
@@ -449,7 +449,7 @@ async function doClearSearch() {
   }
 }
 
-// ── 长期记忆管理（查看/删除当前用户的跨会话记忆）─────────────────────────────
+// 长期记忆管理（查看/删除当前用户的跨会话记忆）
 import { listMemories, deleteMemory, clearMemories, type MemoryItem } from '@/services/agent/memoryConfig'
 
 const memories = ref<MemoryItem[]>([])
@@ -844,7 +844,7 @@ const section = ref<string>('access')
 .tts-field { display: flex; align-items: center; gap: 10px; }
 .tts-field label { margin: 0; }
 /* 页面 = 分段导航 + 单个可见分段；卡片的两列排布收敛在 .pane-body 里，
-   不再由页面级 grid 按 DOM 顺序「流」——那正是旧版卡片看着零散的根因。 */
+   不再由页面级 grid 按 DOM 顺序「流」，那正是旧版卡片看着零散的根因。 */
 .ai-settings { display: flex; flex-direction: column; gap: 18px; }
 .section-nav { align-self: flex-start; }
 .pane { display: flex; flex-direction: column; gap: 14px; }

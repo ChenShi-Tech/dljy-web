@@ -1,10 +1,10 @@
 // AI 辅助填报客户端：对接 agent-backend 的 /agent/assist/suggest（结构化建议）。
 //
-// 用途边界（与后端一致的硬约束）：**只服务需要人工经验判断的字段**——偏差主因、方向、
+// 用途边界（与后端一致的硬约束）：只服务需要人工经验判断的字段，偏差主因、方向、
 // 预期价差、置信度、决策理由、补仓动作、概率分位。数据库能取的字段一律走确定性通道
 // （fundamentalsClient / captured / storageAssetsClient），不经这里。
 //
-// 交互契约：AI 只出建议，**不直接改任何表单值**；用户点「采纳填入」才由前端写入。
+// 交互契约：AI 只出建议，不直接改任何表单值；用户点「采纳填入」才由前端写入。
 import { AGENT_API_BASE } from '@/services/agent/agentClient'
 
 /** 判断点标识，与后端 ASSIST_KINDS 的键一一对应（拼错会被后端 400 挡下）。 */
@@ -18,7 +18,7 @@ export type AssistSuggestion = {
   basis: Record<string, string>
   confidence: number
   rationale: string
-  /** 模型自陈的不确定处与反对意见——不看这个就采纳等于放弃判断 */
+  /** 模型自陈的不确定处与反对意见，不看这个就采纳等于放弃判断 */
   caveats: string[]
 }
 

@@ -1,10 +1,10 @@
 // #1459 回归单测：loadClearingCurve 对列表族取错日/跨地区/混列却标 captured。
 //
-// fixture 严格仿真实采集形状（取自 data/private/capture-raw 实际文件，包括**乱序键名**
+// fixture 严格仿真实采集形状（取自 data/private/capture-raw 实际文件，包括乱序键名
 // 与非曲线字段），否则测不出老实现的失败模式：
-//   - 山西 sdpt__zcqxhdl__list24__<date>.json：data.rqdj 是 30 天滚动窗口，每行 24 点，
-//     键序为 date,p1,hj,p2..p9,type,p10,jz,p12,p11,p14,p13,p16,p15,… （p12 在 p11 之前）；
-//   - 云南 sdpt__zcqxhdl__curve__<date>.json：顶层即 { drrq, p1..p96 }。
+// - 山西 sdpt__zcqxhdl__list24__<date>.json：data.rqdj 是 30 天滚动窗口，每行 24 点，
+// 键序为 date,p1,hj,p2..p9,type,p10,jz,p12,p11,p14,p13,p16,p15,… （p12 在 p11 之前）；
+// - 云南 sdpt__zcqxhdl__curve__<date>.json：顶层即 { drrq, p1..p96 }。
 import { describe, expect, it } from 'vitest'
 import { CAPTURE_FAMILIES } from 'shared/schema/entities/capture-families.mjs'
 import {
@@ -50,7 +50,7 @@ const RQDJ_2026_05_15 = {
   p24: 272
 } as const
 
-/** 窗口首行（2026-04-16）——老实现从头 walk 取到的就是它，用来断言不再错日。 */
+/** 窗口首行（2026-04-16），老实现从头 walk 取到的就是它，用来断言不再错日。 */
 const RQDJ_2026_04_16 = {
   date: '2026-04-16',
   p1: 355,
@@ -274,7 +274,7 @@ describe('curveStats 空序列兜底', () => {
   })
 })
 
-// spotPriceCore 内联的 OPENED_DEMO_REGION_IDS 与 regions.ts 权威源须一致——
+// spotPriceCore 内联的 OPENED_DEMO_REGION_IDS 与 regions.ts 权威源须一致
 // 演示地区空态策略生效前提。若 regions.ts 改了演示开通集合，须同步 spotPriceCore 内联。
 describe('演示开通地区集合一致性', () => {
   it('regions.ts OPENED_DEMO_REGION_IDS 含 sichuan', () => {

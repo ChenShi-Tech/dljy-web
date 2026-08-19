@@ -321,7 +321,7 @@ const {
   toObject, fitView, nodes: vfNodes, edges: vfEdges
 } = useVueFlow()
 
-// ── 画布元信息 ──────────────────────────────────────────────────────────────
+// 画布元信息
 const graphName = ref('未命名编排')
 const currentId = ref('')
 const currentVersion = ref(0)
@@ -350,7 +350,7 @@ const hasNodes = computed(() => vfNodes.value.length > 0)
 let nodeSeq = 1
 let edgeSeq = 1
 
-// ── 节点面板 ────────────────────────────────────────────────────────────────
+// 节点面板
 type PaletteItem = { kind: NodeType; role?: string; icon: string; name: string; desc: string }
 const PALETTE: PaletteItem[] = [
   { kind: 'start', icon: '▶', name: '开始', desc: '流程起点' },
@@ -424,7 +424,7 @@ function onDrop(ev: DragEvent) {
   dragItem = null
 }
 
-// ── 连线 ────────────────────────────────────────────────────────────────────
+// 连线
 onConnect((conn: Connection) => {
   addEdges({
     ...conn,
@@ -434,7 +434,7 @@ onConnect((conn: Connection) => {
   })
 })
 
-// ── 选中与检查器 ───────────────────────────────────────────────────────────
+// 选中与检查器
 const selNodeId = ref('')
 const selEdgeId = ref('')
 const selNode = computed(() => vfNodes.value.find((n) => n.id === selNodeId.value) || null)
@@ -482,7 +482,7 @@ function duplicateNode() {
   selNodeId.value = id
 }
 
-// ── 内联校验:实时把问题标到画布节点(红=阻断/黄=提示),不依赖后端 ──
+// 内联校验:实时把问题标到画布节点(红=阻断/黄=提示),不依赖后端
 function computeAndApplyIssues() {
   const ns = vfNodes.value
   const outc: Record<string, number> = {}
@@ -515,7 +515,7 @@ watch(
 )
 const issueCount = computed(() => vfNodes.value.filter((n) => n.data.issue === 'error').length)
 
-// ── 模板 / 保存 / 加载 ───────────────────────────────────────────────────────
+// 模板 / 保存 / 加载
 function specToFlow(spec: GraphSpec) {
   const fnodes = spec.nodes.map((n, i) => ({
     id: n.id,
@@ -682,7 +682,7 @@ async function save() {
   }
 }
 
-// ── 校验 ────────────────────────────────────────────────────────────────────
+// 校验
 const validation = ref<ValidationResult | null>(null)
 const validating = ref(false)
 async function runValidate(): Promise<ValidationResult | null> {
@@ -704,7 +704,7 @@ async function runValidate(): Promise<ValidationResult | null> {
   }
 }
 
-// ── 运行 ────────────────────────────────────────────────────────────────────
+// 运行
 const runOpen = ref(false)
 const task = ref('')
 const phase = ref<'idle' | 'running' | 'awaiting' | 'done'>('idle')
@@ -722,7 +722,7 @@ const backendOnline = ref(false)
 let sessionId = ''
 let abort: AbortController | null = null
 // 当前后台 run 的 id（sendAgentMessage 的 onRunId 回填）。PR #616 把发消息改成「POST 启动后台
-// run + attach 读流」后，切页/卸载/重置只 abort 本地读取不会取消服务端 run——它会继续消耗模型/工具
+// run + attach 读流」后，切页/卸载/重置只 abort 本地读取不会取消服务端 run，它会继续消耗模型/工具
 // 并占住该会话单飞锁。需在 reset/unmount 时显式 stop，与 AgentChatPanel.stop() 对称。
 let currentRunId: string | null = null
 // 用户主动停止标志：onRunId 回调据此在拿到 runId 时补停（竞态窗口：POST 已发但 x-run-id 未返回）。
@@ -932,7 +932,7 @@ function bumpRecursion() {
   ElMessage.success(`递归上限已调高到 ${config.value.recursion_limit}，可重新运行`)
 }
 
-// ── tool 节点参数 JSON 编辑 ─────────────────────────────────────────────────
+// tool 节点参数 JSON 编辑
 const argsError = ref('')
 const argsText = computed<string>({
   get() {
@@ -960,7 +960,7 @@ function fillToolArgs() {
   selNode.value.data.args = next
 }
 
-// ── map 节点 items 编辑（每行一项） ─────────────────────────────────────────
+// map 节点 items 编辑（每行一项）
 const mapItemsText = computed<string>({
   get() {
     const items = selNode.value?.data.items
@@ -975,7 +975,7 @@ const mapItemsText = computed<string>({
   }
 })
 
-// ── 自动布局（按从开始节点的层级横向排布） ───────────────────────────────────
+// 自动布局（按从开始节点的层级横向排布）
 function autoLayout() {
   const ns = vfNodes.value
   const es = vfEdges.value
@@ -1012,7 +1012,7 @@ function autoLayout() {
   ElMessage.success('已自动布局')
 }
 
-// ── 导出 / 导入 JSON ────────────────────────────────────────────────────────
+// 导出 / 导入 JSON
 function exportJson() {
   const spec = flowToSpec()
   const blob = new Blob([JSON.stringify(spec, null, 2)], { type: 'application/json' })
@@ -1050,7 +1050,7 @@ function onImportFile(ev: Event) {
   ;(ev.target as HTMLInputElement).value = ''
 }
 
-// ── 报告 / 产出导出 ─────────────────────────────────────────────────────────
+// 报告 / 产出导出
 function exportReport() {
   const parts: string[] = [`# ${graphName.value} · 运行报告`, '', `> 任务：${task.value || '(无)'}`, '']
   for (const o of Object.values(nodeOutputs.value)) {
@@ -1074,7 +1074,7 @@ async function copyText(text: string) {
   }
 }
 
-// ── 运行历史 ────────────────────────────────────────────────────────────────
+// 运行历史
 const historyOpen = ref(false)
 const runHistory = ref<RunSummary[]>([])
 async function openHistory() {
@@ -1113,7 +1113,7 @@ function fmtTime(ts: number): string {
   return new Date(ts * 1000).toLocaleString('zh-CN', { hour12: false })
 }
 
-// ── 生命周期 ───────────────────────────────────────────────────────────────
+// 生命周期
 onMounted(async () => {
   getRouting().then((r) => { availableModels.value = r.models }).catch(() => { /* 后端离线时无模型列表，节点用角色默认 */ })
   await loadTemplates()
@@ -1131,7 +1131,7 @@ onMounted(async () => {
 })
 onBeforeUnmount(() => {
   // 卸载（切页）时显式停止后台 run：PR #616 后 abort 只断读流，服务端 run 会继续跑并占住
-  // 会话单飞锁，工作室又没有 attach 恢复路径——不补停会卡住该会话直到自然结束。
+  // 会话单飞锁，工作室又没有 attach 恢复路径，不补停会卡住该会话直到自然结束。
   stopBackgroundRun()
   abort?.abort()
 })

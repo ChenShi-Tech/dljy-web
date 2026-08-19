@@ -1,20 +1,17 @@
 // @vitest-environment happy-dom
 // ↑ 勿删：本文件不是 *.component.spec.ts，vitest node project 默认不给 DOM；store 经
 //   regionContext 读/写 localStorage（切区 watch），靠此 pragma 按文件切到 happy-dom。
-// ============================================================================
 // stores/spotSelection.spec.ts — 现货面板共享选中态基座回归（Issue #449）
-// ----------------------------------------------------------------------------
 // 守什么不变量：
-//   ① 初始默认值与导出常量对拍（默认日期/市场/全厂全机占位）——面板 F4-F7 首次挂载
+//   ① 初始默认值与导出常量对拍（默认日期/市场/全厂全机占位），面板 F4-F7 首次挂载
 //      依赖一套稳定的默认筛选，坏掉的症状是各面板初始条件漂移、对不齐口径。
 //   ② setSelection 是局部 patch：未传字段保留现值、显式 undefined 不清空字段。
-//   ③ snapshot()/setDateRange/selection 均为拷贝隔离——mutate 快照或入参数组不得
+//   ③ snapshot()/setDateRange/selection 均为拷贝隔离，mutate 快照或入参数组不得
 //      反写 store 内部（跨页共享态被一方 mutate 会串味到所有面板）。
 //   ④ 切区 reset：云南严格真实数据与其它地区筛选上下文不得串味。
 //
 // 无 service 依赖（纯状态机）：plantOutputClient 只取 ALL_PLANTS/ALL_UNITS 常量对拍，
-// regionContext 走真实模块——切区用真实 setCurrentRegionId 触发。
-// ============================================================================
+// regionContext 走真实模块，切区用真实 setCurrentRegionId 触发。
 import { nextTick } from 'vue'
 import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it } from 'vitest'

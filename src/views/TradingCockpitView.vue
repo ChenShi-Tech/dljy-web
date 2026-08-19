@@ -31,7 +31,7 @@ import SpotCockpitCore from '@/components/spot/cockpit/SpotCockpitCore.vue'
 import CockpitRegionLockedCard from '@/components/spot/cockpit/CockpitRegionLockedCard.vue'
 import AgentChatPanel from '@/components/agent/AgentChatPanel.vue'
 import { PAGE_PROMPT_KEYS } from '@/prompts/pageKeys'
-// 地区增强层面板已全部迁入扩展包（features/regions/<省>/），经 regionSlots 装配——
+// 地区增强层面板已全部迁入扩展包（features/regions/<省>/），经 regionSlots 装配
 // 本内核不再 import 任何省份的面板组件；cockpit tab 复用上面的通用 SpotCockpitCore。
 import { onRegionChange } from '../composables/useRegionReload'
 import { resolveRegionSlot, type RegionSlotId } from '@/services/region/regionSlots'
@@ -54,7 +54,7 @@ import {
 const route = useRoute()
 const currentUser = ref<AuthUser>(getCurrentUser())
 
-// ── 云南身份区域（原云南交易工作台 hero：地区/电网/角色 + 市场阶段/主体类型/主体名 + 规则场景 + 核验状态）──
+// 云南身份区域（原云南交易工作台 hero：地区/电网/角色 + 市场阶段/主体类型/主体名 + 规则场景 + 核验状态）
 const yunnanProfile = getRuleProfile('yunnan')
 const verification = getYunnanRuleVerificationSummary()
 const selectedScenarioId = ref(yunnanScenarios[0].id)
@@ -62,7 +62,7 @@ const selectedScenario = computed(() => yunnanScenarios.find((item) => item.id =
 const roleLabel = computed(() => roleLabels[currentUser.value.roleCode])
 const subjectLabel = computed(() => subjectTypeLabels[currentUser.value.subjectType])
 
-// ── 市场披露摘要（云南 · yn_system_forecast 最新披露日关键数；真实回放，缺数空态）──
+// 市场披露摘要（云南 · yn_system_forecast 最新披露日关键数；真实回放，缺数空态）
 interface DisclosureSummary {
   date: string
   loadForecastMW: number | null      // 明日统调负荷预测（yn，日均）
@@ -71,10 +71,10 @@ interface DisclosureSummary {
 }
 const disclosure = ref<DisclosureSummary | null>(null)
 const disclosureLoading = ref(false)
-// 请求序号：地区切换/重复刷新期间旧 Promise 返回不得回写（否则非云南首页串显云南披露，codex P1）
+// 请求序号：地区切换/重复刷新期间旧 Promise 返回不得回写（否则非云南首页串显云南披露）
 let discReqSeq = 0
 // RBAC：披露关键数复用「披露明细」的细粒度授权（/dashboard 全角色开放，但披露数据只授
-// 交易/风控/量化/结算/售电等角色——PLANT/STORAGE 无权限角色不得经首页绕过取数，codex P1）。
+// 交易/风控/量化/结算/售电等角色，PLANT/STORAGE 无权限角色不得经首页绕过取数）。
 const canViewDisclosure = computed(() => canAccessPath('/xhjy/yunnan/disclosure', currentUser.value))
 
 async function loadDisclosureSummary() {
@@ -83,7 +83,7 @@ async function loadDisclosureSummary() {
   disclosureLoading.value = true
   try {
     // 尾部切片取最新披露：capture 按导出包回放，最新披露可能远早于浏览器今天，
-    // 「按今天回推窗口」在历史包场景整窗落空——limit 尾部（文件按日期升序拼接）即最新若干天。
+    // 「按今天回推窗口」在历史包场景整窗落空，limit 尾部（文件按日期升序拼接）即最新若干天。
     const filter = { limit: 2000 }
     const [loadB, neB, ipB] = await Promise.all([
       fetchCaptured<any>('yn_system_forecast', 'load_forecast', filter),
@@ -103,8 +103,8 @@ async function loadDisclosureSummary() {
       const vals = rows.filter((r) => dayOf(r) === latest && pick(r) && typeof r.value === 'number')
       return { date: latest, avg: vals.length ? +(vals.reduce((s, r) => s + r.value, 0) / vals.length).toFixed(0) : null }
     }
-    // 云南总送出：同一时点可能有多个含「云南」断面——先按 timePoint 合计各断面送出，再对
-    // 时点求日均（与弹性引擎口径一致；直接对断面行求均值会按断面数稀释外送规模，codex P2）。
+    // 云南总送出：同一时点可能有多个含「云南」断面，先按 timePoint 合计各断面送出，再对
+    // 时点求日均（与弹性引擎口径一致；直接对断面行求均值会按断面数稀释外送规模）。
     const latestSectionSum = (body: any): { date: string; avg: number | null } => {
       const rows: any[] = (Array.isArray(body?.data) ? body.data : []).filter(
         (r: any) => typeof r.region === 'string' && r.region.includes('云南')
@@ -132,7 +132,7 @@ async function loadDisclosureSummary() {
   }
 }
 
-// ── 当日报价方案入口卡（bid_plans 流水线产出摘要，epic #336 PR-D）──
+// 当日报价方案入口卡（bid_plans 流水线产出摘要，epic #336 PR-D）
 // 有当日 ok 方案才显示（skipped/error/无方案不显示卡，避免首页噪音）；权限复用申报 copilot
 // 细粒度路径；地区切换竞态守卫同披露侧卡（旧 Promise 不回写）。取数与归一在
 // forecast 服务层（bidPlanClient），视图只管竞态与展示。
@@ -166,9 +166,9 @@ function regionSlot(slotId: RegionSlotId) {
   const registration = resolveRegionSlot(slotId, currentRegion.value.id)
   if (!registration) return null
   if (!registration.capabilityPath) return registration.component
-  // 两道正交闸门缺一不可（codex P1）：
-  //   canAccessPath          → 角色权限（RBAC）
-  //   isPathAvailableInRegion → **地区能力**（hidden / not-configured 一律 fail-closed）
+  // 两道正交闸门缺一不可：
+  // canAccessPath → 角色权限（RBAC）
+  // isPathAvailableInRegion → 地区能力（hidden / not-configured 一律 fail-closed）
   // 只查前者时，ADMIN/BOSS 会绕过地区闸门；扩展包若把甲省 capabilityPath 误注册给乙省，
   // 也会在乙省渲染出本不该出现的面板。
   if (!canAccessPath(registration.capabilityPath, currentUser.value)) return null
@@ -185,7 +185,7 @@ const disclosureSlot = computed(() => regionSlot('cockpit.disclosure'))
 // PLANT_OPERATOR/STORAGE_OPERATOR 等无该权限角色不可绕过路由直接在首页读取全市场数据。
 const canViewCockpit = computed(() => canAccessPath('/xhjy/yunnan/cockpit', currentUser.value))
 
-// ── 云南增强层 tab 门控（原工作台 7 个真实数据 tab，按各自权限路径过滤）──
+// 云南增强层 tab 门控（原工作台 7 个真实数据 tab，按各自权限路径过滤）
 const canViewSpotPnL = computed(() => canAccessPath('/xhjy/yunnan/spot-pnl', currentUser.value))
 const canViewElasticity = computed(() => canAccessPath('/xhjy/yunnan/elasticity', currentUser.value))
 const canViewSpread = computed(() => canAccessPath('/xhjy/yunnan/spread', currentUser.value))
@@ -291,7 +291,7 @@ function riskLevelLabel(level: string): string {
   return ({ aggressive: '激进档', neutral: '中性档', conservative: '保守档' } as Record<string, string>)[level] ?? level
 }
 
-// ── 交易日程（D-1 申报日动线，时刻可按本省规则调整） ──
+// 交易日程（D-1 申报日动线，时刻可按本省规则调整）
 type Phase = { id: string; label: string; from: number; to: number; hint: string }
 const PHASES: Phase[] = [
   { id: 'intel', label: '情报收集', from: 0, to: 9, hint: '查看披露：负荷/新能源预测、检修与联络线计划' },
@@ -314,7 +314,7 @@ const countdown = computed(() => {
   return minutes >= 60 ? `${Math.floor(minutes / 60)}h${minutes % 60}m` : `${minutes}m`
 })
 
-// ── 价格主图：云南中广核为今日日前 vs 实时；其他地区保留昨日出清 vs 今日预测 ──
+// 价格主图：云南中广核为今日日前 vs 实时；其他地区保留昨日出清 vs 今日预测
 const chartEl = ref<HTMLElement | null>(null)
 const priceChart = useEChart(chartEl, { render: () => { void renderChart() } })
 const isDemo = ref(false)
@@ -464,7 +464,7 @@ function startPriceRefresh() {
   }, 60_000)
 }
 
-// ── 智能体快捷任务（总览 tab 内嵌，不离开驾驶舱） ──
+// 智能体快捷任务（总览 tab 内嵌，不离开驾驶舱）
 const tomorrow = computed(() => fmtDate(new Date(Date.now() + 86400000)))
 const quickTasks = computed(() => [
   { icon: Sparkles, label: '生成明日申报草稿', q: `为 ${tomorrow.value} 制定日前申报策略并生成草稿` },

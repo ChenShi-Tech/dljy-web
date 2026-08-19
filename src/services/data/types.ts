@@ -1,19 +1,17 @@
-// ============================================================================
 // data/types.ts — 统一数据层共享类型（Phase 0）
 // ----------------------------------------------------------------------------
 // 归一项目里散落 / 重复定义的数据可信度、来源、信封类型，建立单一权威来源。
 //
 // 合并目标（消除重复定义）：
-//   - dataBasis.ts::DataBasis
-//   - forecast/mlForecastClient.ts::ForecastBasis
-//   - forecast/forecastProviders.ts::ForecastBasis
-//   以上三处字面量相同（'real'|'captured'|'illustrative'|'synthetic'）却各自独立定义
-//   → 统一为 DataSourceBasis；旧名 DataBasis / ForecastBasis 经别名 re-export 保持现有
-//   import 路径不破（dataBasis.ts 工具函数、forecast 通道继续用窄类型）。
+// - dataBasis.ts::DataBasis
+// - forecast/mlForecastClient.ts::ForecastBasis
+// - forecast/forecastProviders.ts::ForecastBasis
+// 以上三处字面量相同（'real'|'captured'|'illustrative'|'synthetic'）却各自独立定义
+// → 统一为 DataSourceBasis；旧名 DataBasis / ForecastBasis 经别名 re-export 保持现有
+// import 路径不破（dataBasis.ts 工具函数、forecast 通道继续用窄类型）。
 //
 // Provenance / 信封类型为 Phase 2「信封归一」准备：agentRequest() 基座把 Node ApiEnvelope
 // 与 Python BaseResponse 归一为 UnifiedEnvelope / UnifiedResult。
-// ============================================================================
 
 /**
  * 数据来源可信度口径（单一权威）。口径定义沿用 dataBasis.ts 既有语义：
@@ -35,7 +33,7 @@ export type DataSourceBasis =
 /**
  * 旧名兼容：DataBasis / ForecastBasis 不含 user_saved，作为 DataSourceBasis 的窄子集。
  * 现有 dataBasis.ts 工具函数（isDecisionGrade / worstBasis / basisFrom*）与 forecast 通道
- * 继续使用此窄类型——它们只处理回放/合成数据，不涉及用户保存产物。
+ * 继续使用此窄类型，它们只处理回放/合成数据，不涉及用户保存产物。
  */
 export type DataBasis = Exclude<DataSourceBasis, 'user_saved'>
 export type ForecastBasis = DataBasis

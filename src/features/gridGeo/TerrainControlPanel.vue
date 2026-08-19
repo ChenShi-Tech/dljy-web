@@ -28,7 +28,7 @@ const ionTokenConfigured = computed(() => String(import.meta.env.VITE_CESIUM_ION
 const flatMode = computed(() => props.viewMode === '2d')
 
 /**
- * 勾着但实际没加载上——晕渲源与 ArcGIS 影像同域，该域对部分出口 IP 整体 403。
+ * 勾着但实际没加载上，晕渲源与 ArcGIS 影像同域，该域对部分出口 IP 整体 403。
  * 不点破的话复选框看起来是生效的。
  */
 const hillshadeBroken = computed(() => !flatMode.value && hillshade.value && props.hillshadeAvailable === false)

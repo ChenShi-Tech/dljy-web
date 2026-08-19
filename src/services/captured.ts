@@ -13,7 +13,7 @@ export type { RegionDataStatus } from '@/services/api'
 // full-history capture beats a small default-page one). See data-inventory.md.
 //
 // 地区维度：当前选中地区(currentRegion)随请求带上 region 参数。后端只回放地区第一级
-// capture-raw/<region>/<family>/（#346 阶段B 去扁平回退）——非基线地区无自身采集即落
+// capture-raw/<region>/<family>/（#346 阶段B 去扁平回退），非基线地区无自身采集即落
 // 种子/mock 合成或空，绝不串读山西真实口径；仅缺自身真实数据走 mock 时响应头标
 // x-data-mock。命中信息由 unwrap 内的 applyRegionHeaders 自动写入 regionDataStatus（见
 // api.ts），供 RegionDataBanner 显示。
@@ -30,7 +30,7 @@ export interface CapturedFilter {
   dateTo?: string
   limit?: number
   /**
-   * 地区覆盖：默认随全局 currentRegion；地区专属数据消费方（如「云南披露对照」——数据只存在于
+   * 地区覆盖：默认随全局 currentRegion；地区专属数据消费方（如「云南披露对照」，数据只存在于
    * capture-raw/yunnan 且页面本身就标称云南）传定值固定取数地区，避免顶栏切区后打到别的
    * 地区目录拿空/回退数据。仅影响本次取数，不改全局地区上下文。
    */
@@ -39,7 +39,7 @@ export interface CapturedFilter {
 
 export async function fetchCaptured<T = any>(family: string, match?: string, filter?: CapturedFilter): Promise<T> {
   const region = filter?.region ?? currentRegion.value.id
-  // #1350：发请求前取号——用户快速切换数据族/地区时较早的请求若最后返回，
+  // #1350：发请求前取号，用户快速切换数据族/地区时较早的请求若最后返回，
   // unwrap 的 seq 守卫会跳过其过期地区头，不覆盖 RegionDataBanner 状态。
   const seq = nextRegionHeaderSeq()
   const res = await fetchRaw('/real', {
@@ -55,9 +55,9 @@ export async function fetchCaptured<T = any>(family: string, match?: string, fil
     return body as unknown as T
   } catch (err) {
     // Sub-2(#518)：company 私有族被回放层公司授权闸门拒绝（401 未登录 / 403 无该公司授权）。
-    // 优雅降级为空信封（rows/data 为空 + accessDenied 标记）而非抛错——页面渲染诚实空态，
+    // 优雅降级为空信封（rows/data 为空 + accessDenied 标记）而非抛错，页面渲染诚实空态，
     // 拒绝状态按 family 记账进 regionDataStatus 供无权限横幅（Sub-4）消费，混合面板中
-    // 公共族成功请求不会冲掉私有族的拒绝态（roborev job144/145）。历史上 /api/real 无鉴权，
+    // 公共族成功请求不会冲掉私有族的拒绝态。历史上 /api/real 无鉴权，
     // 不存在依赖 401/403 抛错语义的消费方；其余错误（404/500 等）保持抛出不变。
     if (err instanceof ApiError && (err.status === 401 || err.status === 403)) {
       const visibility = res.headers.get('x-data-visibility')
@@ -77,9 +77,9 @@ export async function fetchCaptured<T = any>(family: string, match?: string, fil
 /**
  * 取某族「有采集的业务日期」清单（升序去重）。
  *
- * 服务端 `/api/real-list` 对已登记内容日期索引的族（#1531）会给每个文件带 `date`——
+ * 服务端 `/api/real-list` 对已登记内容日期索引的族（#1531）会给每个文件带 `date`
  * 那些族的采集文件名是内容 hash 不含日期，调用方光看文件清单无从知道有哪些天。
- * 此前 `DayAheadReportView` 因此在前端硬编码了一张 91 条的 date→hash 表：**第二份事实源**，
+ * 此前 `DayAheadReportView` 因此在前端硬编码了一张 91 条的 date→hash 表：第二份事实源，
  * 采集扩月即过期，而且和服务端的选文件逻辑各写各的。
  *
  * 未建索引的族返回空数组（不猜、不从文件名正则里抠日期）；401/403 同样返回空数组，

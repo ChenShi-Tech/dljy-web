@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 // ↑ 勿删：exportBundleCsv 依赖 document.createElement / URL.createObjectURL，node 无 DOM。
-//   happy-dom 缺的 URL 静态方法在 spec 层补桩（不动源码）；xlsx.writeFile 被 mock——
+//   happy-dom 缺的 URL 静态方法在 spec 层补桩（不动源码）；xlsx.writeFile 被 mock
 //   真实 writeFile 在测试环境走 fs 写盘副作用，mock 后改为捕获 wb 并用 XLSX.write/read
 //   回读验证序列化产物（比只看对象更能证明「写出的工作簿真的能被 Excel 读回」）。
 //

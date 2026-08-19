@@ -1,11 +1,9 @@
 // @vitest-environment happy-dom
 // ↑ 勿删：本文件不是 *.component.spec.ts，vitest node project 默认不给 DOM；composable
 //   依赖的 regionContext 顶层读写 localStorage，靠此 pragma 按文件切到 happy-dom。
-// ============================================================================
 // composables/useRegionReload.spec.ts — 切区重载封装回归
-// ----------------------------------------------------------------------------
 // 守什么不变量：
-//   ① onRegionChange 只在「地区 id 实际变化」后触发 reload——首屏由各页自身
+//   ① onRegionChange 只在「地区 id 实际变化」后触发 reload，首屏由各页自身
 //      onMounted 负责，注册时不立即执行（无 immediate）。
 //   ② 地区隔离红线：切区必须重载数据（旧地区数据不可沿用），坏掉的症状是
 //      切区后页面仍显示他省回放数据。
@@ -13,7 +11,6 @@
 //
 // regionContext 走真实模块：切区用真实 setCurrentRegionId（连带验证其
 // isSelectableRegion 守卫对非法 id 的拒绝不会误触发重载）。
-// ============================================================================
 import { nextTick } from 'vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { setCurrentRegionId } from '../services/region/regionContext'

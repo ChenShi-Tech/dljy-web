@@ -2,7 +2,7 @@
 // 同 spotClient/elasticityClient 模式：开发态 /agent-api/v1/spot，生产同源 /api/v1/spot。
 //
 // 端点契约（统一 BaseResponse，data 解出后返回）：
-//   GET /v1/spot/spread?date=&region=&window=&threshold=
+// GET /v1/spot/spread?date=&region=&window=&threshold=
 //
 // 数据来源（真实）：价差=节点电价系统均价 DA−RT；预测=昨日同时段价差(persistence)+A 弹性增强。
 // kind=决策支持参考·非结算依据；套利收益=回放参考、非真实成交；严格地区 yunnan「真实或空」。

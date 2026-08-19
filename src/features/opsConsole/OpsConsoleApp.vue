@@ -27,7 +27,7 @@
 </template>
 
 <script setup lang="ts">
-// 数据运维台壳（#2174 P2-2b）：独立控制台布局——侧栏六页 + 头部当前用户 + 回主平台。
+// 数据运维台壳（#2174 P2-2b）：独立控制台布局，侧栏六页 + 头部当前用户 + 回主平台。
 // 纯壳层：业务全在六页组件内（自主前端 views/ 原样复用，零改动迁移）。
 import { computed } from 'vue'
 import { useRoute } from 'vue-router'

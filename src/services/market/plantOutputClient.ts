@@ -8,7 +8,7 @@ export const ALL_UNITS = '__all__'
 
 // 本模块经 fetchCaptured 读取的 company 私有 capture 族（与后端 capture-families.mjs
 // visibility='company' 定级一致）。供消费页把 RegionDataBanner 的 `families` opt-in
-// 声明集中在数据加载层、避免各页内联字符串漂移（Sub-4 #520，roborev job147）。
+// 声明集中在数据加载层、避免各页内联字符串漂移（Sub-4 #520）。
 export const PLANT_OUTPUT_PRIVATE_FAMILIES = ['yn_plant_output', 'yn_dim_plant', 'yn_dim_plant_node'] as const
 
 export type PlantOutputRole = 'actual' | 'plan' | 'forecast' | 'available' | 'theoretical' | 'other'

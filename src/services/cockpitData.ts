@@ -2,21 +2,21 @@
 //
 // 把驾驶舱七大模块所需真实数据并行取回、做最小派生，组装成贴合原型 ECharts
 // builder 入参形状的结构。所有取数走 HTTP：
-//   - 节点电价（热力/系统均价/基差/负价雷达/KPI）→ spotClient（agent-backend /api/v1/spot/*）
-//   - 损益归因 / 申报偏差 / 持仓敞口 → captured.fetchCaptured（/api/real 真实回放）
-//   - 结算三价 → settlementClient（yn_spot_settlement formal 结算聚合）
-//   - 出力完成率 → plantOutputClient（yn_plant_output 多源出力长表）
-//   - 厂站 8 源预测精度擂台 → yn_plant_output（plantForecastArena 服务）
+// - 节点电价（热力/系统均价/基差/负价雷达/KPI）→ spotClient（agent-backend /api/v1/spot/*）
+// - 损益归因 / 申报偏差 / 持仓敞口 → captured.fetchCaptured（/api/real 真实回放）
+// - 结算三价 → settlementClient（yn_spot_settlement formal 结算聚合）
+// - 出力完成率 → plantOutputClient（yn_plant_output 多源出力长表）
+// - 厂站 8 源预测精度擂台 → yn_plant_output（plantForecastArena 服务）
 //
 // 纪律（云南严格地区 · 真实或空）：
-//   - 任何模块取数失败 / 空都不抛断整页，只把该模块标记 basis='captured' 且 hasData=false，
-//     由 UI 显示「请先摄取 import:spot-export --write」空态。绝不伪造、绝不回退别地区。
-//   - 金额源单位为元，展示口径换算为万元（÷1e4，UI 层做）。本层保留元口径，仅做求和/聚合。
+// - 任何模块取数失败 / 空都不抛断整页，只把该模块标记 basis='captured' 且 hasData=false，
+// 由 UI 显示「请先摄取 import:spot-export --write」空态。绝不伪造、绝不回退别地区。
+// - 金额源单位为元，展示口径换算为万元（÷1e4，UI 层做）。本层保留元口径，仅做求和/聚合。
 //
 // 诚实标注：
-//   - 基差用「选定节点」(默认 daily summary 首个有效节点) vs 系统均价，非「自有」节点
-//     （capture 无 self-owned 维度，dim 未消费）。
-//   - 预测精度擂台用 yn_plant_output 8 源长表按实际功率对拍；厂站预测损失排行仍保留为互补视图。
+// - 基差用「选定节点」(默认 daily summary 首个有效节点) vs 系统均价，非「自有」节点
+// （capture 无 self-owned 维度，dim 未消费）。
+// - 预测精度擂台用 yn_plant_output 8 源长表按实际功率对拍；厂站预测损失排行仍保留为互补视图。
 import {
   fetchDailySummary,
   fetchHeatmap,
@@ -33,13 +33,13 @@ import { loadPlantOutputPayload, PLANT_OUTPUT_PRIVATE_FAMILIES, type PlantOutput
 import { buildPlantForecastArena, type PlantForecastArena } from '@/services/market/plantForecastArena'
 
 // 现货驾驶舱经 fetchCaptured（本模块 + settlementClient + plantOutputClient）读取的
-// company 私有 capture 族并集，供 SpotCockpitCore 的 RegionDataBanner opt-in 声明（Sub-4 #520，
-// roborev job147）。去重保证稳定。
+// company 私有 capture 族并集，供 SpotCockpitCore 的 RegionDataBanner opt-in 声明（Sub-4 #520）
+// 去重保证稳定。
 export const COCKPIT_PRIVATE_FAMILIES = [
   ...new Set(['yn_loss_attribution', ...SETTLEMENT_PRIVATE_FAMILIES, ...PLANT_OUTPUT_PRIVATE_FAMILIES])
 ]
 
-// ── 行类型（与 YunnanSpotPnLPanel 对齐，来自数据层 ROW_SCHEMAS）──
+// 行类型（与 YunnanSpotPnLPanel 对齐，来自数据层 ROW_SCHEMAS）
 export interface LossRow {
   date: string
   plant: string
@@ -88,7 +88,7 @@ export interface CockpitOptions {
   node?: string
 }
 
-// ── 模块结果类型 ──
+// 模块结果类型
 export interface CockpitKpis {
   marketAvg: number | null
   settlementAvgPrice: number | null // 综合结算均价（元/MWh，settlementClient 当前日）
@@ -239,7 +239,7 @@ export interface CockpitData {
 
 const WAN = 10000
 
-// #1755：null 感知求和跟踪器（与 SpotPnLPanel 同款）——全 null → null（fmt 显示「—」），
+// #1755：null 感知求和跟踪器（与 SpotPnLPanel 同款），全 null → null（fmt 显示「—」），
 // 部分 null → 有效值之和。
 function trackedSum() {
   let sum = 0
@@ -334,7 +334,7 @@ function inRange(date: string, range?: [string, string]): boolean {
   return true
 }
 
-// ── 热力 matrix 按时段列向求均（忽略 null）= 系统均价曲线 ──
+// 热力 matrix 按时段列向求均（忽略 null）= 系统均价曲线
 function columnMeans(matrix: (number | null)[][]): (number | null)[] {
   const cols = matrix.reduce((m, row) => Math.max(m, row?.length ?? 0), 0)
   const out: (number | null)[] = []
@@ -352,7 +352,7 @@ function columnMeans(matrix: (number | null)[][]): (number | null)[] {
   return out
 }
 
-// ── 系统均价曲线整天均值（用于「当前基差」标量）──
+// 系统均价曲线整天均值（用于「当前基差」标量）
 function average(arr: (number | null)[]): number | null {
   let sum = 0
   let n = 0
@@ -364,7 +364,7 @@ function average(arr: (number | null)[]): number | null {
   return n ? +(sum / n).toFixed(2) : null
 }
 
-// ── 扫最长连续负价段（price<0 的连续 time_point 区间）──
+// 扫最长连续负价段（price<0 的连续 time_point 区间）
 function longestNegativeWindow(
   prices: (number | null)[],
   times: string[]
@@ -409,7 +409,7 @@ function longestNegativeWindow(
   }
 }
 
-// ── 负价雷达：取「负价占比最高 / 价格最负」节点（用于扫弃发窗口）──
+// 负价雷达：取「负价占比最高 / 价格最负」节点（用于扫弃发窗口）
 function pickNegativeNode(items: DailySummaryItem[]): string | null {
   if (!items.length) return null
   // 先按负价占比降序，其次按最低价升序（更负者优先）。
@@ -447,7 +447,7 @@ export async function loadCockpit(opts: CockpitOptions): Promise<CockpitData> {
   const dateRange = opts.dateRange ?? ['2026-05-01', '2026-05-31']
   const errors: string[] = []
 
-  // ── 并行取真实数据 ──
+  // 并行取真实数据
   const [dailyRaw, heatRaw, lossRaw, settleRaw, supplyRaw, settlementPriceRaw, plantOutputRaw] = await Promise.all([
     safe<{ items: DailySummaryItem[] }>(
       fetchDailySummary(date, market, 200, regionName),
@@ -477,11 +477,11 @@ export async function loadCockpit(opts: CockpitOptions): Promise<CockpitData> {
     ?? forecastArena.sources.find((s) => s.mape !== null)
     ?? null
 
-  // ── 系统均价曲线（热力 matrix 列向求均）──
+  // 系统均价曲线（热力 matrix 列向求均）
   const systemAvg = columnMeans(heatMatrix)
   const systemAvgMean = average(systemAvg)
 
-  // ── ① 市场态势 KPI ──
+  // ① 市场态势 KPI
   const validDaily = dailyItems.filter((i) => i.avg !== null && i.avg !== undefined)
   const avgOfAvg = validDaily.length
     ? +(validDaily.reduce((s, i) => s + (i.avg ?? 0), 0) / validDaily.length).toFixed(1)
@@ -507,7 +507,7 @@ export async function loadCockpit(opts: CockpitOptions): Promise<CockpitData> {
     ? +(Math.max(...sysValid) - Math.min(...sysValid)).toFixed(1)
     : null
 
-  // ── ② 价格热力场（截 16~40 节点，后端已 top_nodes=40）──
+  // ② 价格热力场（截 16~40 节点，后端已 top_nodes=40）
   const heatmapModule: HeatmapModule = {
     nodes: heatNodes,
     timePoints: heatTimes,
@@ -515,7 +515,7 @@ export async function loadCockpit(opts: CockpitOptions): Promise<CockpitData> {
     hasData: heatNodes.length > 0 && heatMatrix.length > 0
   }
 
-  // ── ③ 基差（选定节点 vs 系统均价）──
+  // ③ 基差（选定节点 vs 系统均价）
   const basisNode =
     opts.node && opts.node.trim()
       ? opts.node.trim()
@@ -569,7 +569,7 @@ export async function loadCockpit(opts: CockpitOptions): Promise<CockpitData> {
     hasData: basisSeries.length > 0
   }
 
-  // ── ④ 负价雷达 + 弃发建议 ──
+  // ④ 负价雷达 + 弃发建议
   const negTimes = negSeries.map((p) => p.time_point)
   const negPrices = negSeries.map((p) => p.price)
   const negWindow = longestNegativeWindow(negPrices, negTimes)
@@ -608,8 +608,8 @@ export async function loadCockpit(opts: CockpitOptions): Promise<CockpitData> {
     hasData: negSeries.length > 0
   }
 
-  // ── ⑤ 损益瀑布（按日期范围聚合，元口径）──
-  // #1755（codex P2）：null-aware——全空段落 null（前端 fmt 显示「—」），不按假零 0 展示。
+  // ⑤ 损益瀑布（按日期范围聚合，元口径）
+  // #1755：null-aware，全空段落 null（前端 fmt 显示「—」），不按假零 0 展示。
   const strategyLoss = trackedSum()
   const forecastLoss = trackedSum()
   const gridLoss = trackedSum()
@@ -637,14 +637,14 @@ export async function loadCockpit(opts: CockpitOptions): Promise<CockpitData> {
     hasData: lossRows.length > 0 && (ov != null || sl != null || fl != null || gl != null)
   }
 
-  // ── ⑥ 预测损失诊断（按厂站 forecastLossTotal 降序）──
+  // ⑥ 预测损失诊断（按厂站 forecastLossTotal 降序）
   const forecastByPlant = new Map<string, ReturnType<typeof trackedSum>>()
   for (const r of lossRows) {
     let cur = forecastByPlant.get(r.plant)
     if (!cur) { cur = trackedSum(); forecastByPlant.set(r.plant, cur) }
     cur.add(r.forecastLossTotal)
   }
-  // #1755（codex P2）：全 null 的厂站不进入排行（避免 0 损失假数据）。
+  // #1755：全 null 的厂站不进入排行（避免 0 损失假数据）。
   const forecastRanking = Array.from(forecastByPlant.entries())
     .map(([plant, value]) => ({ plant, value: value.value() }))
     .filter((r) => r.plant && r.value != null)
@@ -656,8 +656,8 @@ export async function loadCockpit(opts: CockpitOptions): Promise<CockpitData> {
     hasData: forecastRanking.length > 0
   }
 
-  // ── 策略损失诊断（用于决策清单：策略损失最高厂站）──
-  // #1755（codex P2 同类）：trackedSum 语义——全 null 厂站不参与排行（避免 0 损失假数据）。
+  // 策略损失诊断（用于决策清单：策略损失最高厂站）
+  // #1755：trackedSum 语义，全 null 厂站不参与排行（避免 0 损失假数据）。
   const strategyByPlant = new Map<string, ReturnType<typeof trackedSum>>()
   for (const r of lossRows) {
     let cur = strategyByPlant.get(r.plant)
@@ -669,7 +669,7 @@ export async function loadCockpit(opts: CockpitOptions): Promise<CockpitData> {
     .filter(([, v]) => v != null)
     .sort((a, b) => (b[1] ?? 0) - (a[1] ?? 0))[0]
 
-  // ── ⑦ 申报偏差体检（按日聚合）──
+  // ⑦ 申报偏差体检（按日聚合）
   // #1755：devMap 值类型为求和跟踪器（聚合期），输出时映射回 DeviationDay（number | null）。
   const devMap = new Map<string, {
     date: string
@@ -679,7 +679,7 @@ export async function loadCockpit(opts: CockpitOptions): Promise<CockpitData> {
     rtDevFee: ReturnType<typeof trackedSum>
   }>()
   for (const r of settleRows) {
-    // #1755：null 感知求和——null 不参与加和但计数；该指标全部 null 时输出 null（诚实
+    // #1755：null 感知求和，null 不参与加和但计数；该指标全部 null 时输出 null（诚实
     // 「无数据」，前端 fmt 显示「—」），部分 null 时输出有效值之和（null 等价跳过）。
     const cur = devMap.get(r.date) ?? {
       date: r.date,
@@ -697,8 +697,8 @@ export async function loadCockpit(opts: CockpitOptions): Promise<CockpitData> {
   const devDays = Array.from(devMap.values())
     .map((v) => ({ date: v.date, daDevEnergy: v.daDevEnergy.value(), rtDevEnergy: v.rtDevEnergy.value(), daDevFee: v.daDevFee.value(), rtDevFee: v.rtDevFee.value() }))
     .sort((a, b) => a.date.localeCompare(b.date))
-  // #1755：null 感知——全 null 的 rtDevFee 天不参与 worst 比较（真实最大电费日）。
-  // #1755（codex P2）：先过滤 rtDevFee 非 null，再按 |rtDevFee| 比较——负值不被正小值压过、
+  // #1755：null 感知，全 null 的 rtDevFee 天不参与 worst 比较（真实最大电费日）。
+  // #1755：先过滤 rtDevFee 非 null，再按 |rtDevFee| 比较，负值不被正小值压过、
   // 全 null 时 worstDay 落 null（前端不展示预警/高亮）。
   const devDaysWithFee = devDays.filter((d) => d.rtDevFee != null)
   const worstDay =
@@ -711,8 +711,8 @@ export async function loadCockpit(opts: CockpitOptions): Promise<CockpitData> {
     hasData: devDays.length > 0
   }
 
-  // ── 持仓与敞口（结算 ltm/总电量真实派生）──
-  // #1755（codex P2 同类）：trackedSum——全 null 时敞口不按 0 假数据展示（hasData=false）。
+  // 持仓与敞口（结算 ltm/总电量真实派生）
+  // #1755：trackedSum，全 null 时敞口不按 0 假数据展示（hasData=false）。
   const ltmEnergy = trackedSum()
   const totalEnergy = trackedSum()
   for (const r of settleRows) {
@@ -731,8 +731,8 @@ export async function loadCockpit(opts: CockpitOptions): Promise<CockpitData> {
     hasData: settleRows.length > 0 && (ltmV != null || totalV != null)
   }
 
-  // ── 逐日敞口序列（按结算日聚合 ltm/total，captured 真实派生）──
-  // #1755（codex P2 同类）：trackedSum——全 null 日敞口落 null（图表断点而非假零 0）。
+  // 逐日敞口序列（按结算日聚合 ltm/total，captured 真实派生）
+  // #1755：trackedSum，全 null 日敞口落 null（图表断点而非假零 0）。
   const expByDate = new Map<string, { ltm: ReturnType<typeof trackedSum>; total: ReturnType<typeof trackedSum> }>()
   for (const r of settleRows) {
     const key = String(r.date)
@@ -755,15 +755,15 @@ export async function loadCockpit(opts: CockpitOptions): Promise<CockpitData> {
       }
     })
 
-  // ── 实现损益（万元）= 结算 totalFee 求和换算 ──
-  // #1755（codex P2）：trackedSum 语义——全 null 时 expectedRevenueWan 落 null（KPI 显示
+  // 实现损益（万元）= 结算 totalFee 求和换算
+  // #1755：trackedSum 语义，全 null 时 expectedRevenueWan 落 null（KPI 显示
   // 「—」而非 0.0 万元），部分 null 时有效值之和。
   const totalFee = trackedSum()
   for (const r of settleRows) totalFee.add(r.totalFee)
   const feeValue = totalFee.value()
   const expectedRevenueWan = feeValue == null ? null : +(feeValue / WAN).toFixed(1)
 
-  // ── 竞价空间/水电占比（yn_system_supply 当日均值；缺测行 null 已被过滤语义保护）──
+  // 竞价空间/水电占比（yn_system_supply 当日均值；缺测行 null 已被过滤语义保护）
   interface SupplyRow { date?: string; loadMWh?: number | null; newEnergyMWh?: number | null; hydropowerMWh?: number | null }
   const supplyRows = pickRows<SupplyRow>(supplyRaw)
   let bsSum = 0; let bsN = 0; let hySum = 0; let hyN = 0
@@ -806,7 +806,7 @@ export async function loadCockpit(opts: CockpitOptions): Promise<CockpitData> {
       forecastArena.hasData
   }
 
-  // ── 决策清单（从真实派生；某数据源为空的条目不生成）──
+  // 决策清单（从真实派生；某数据源为空的条目不生成）
   const decisions: DecisionItem[] = []
   // 1) 负价规避 · 弃发
   if (negWindow && avoidLossYuan && avoidLossYuan > 0) {
@@ -863,7 +863,7 @@ export async function loadCockpit(opts: CockpitOptions): Promise<CockpitData> {
   }
 
   // supplyRows 计入整页有数判断：现场可能只导入了披露/供需（节点电价未摄取），
-  // 此时 KPI 已展示竞价空间/水电占比，若 hasAnyData=false 会误弹「未摄取」提示（codex P2）
+  // 此时 KPI 已展示竞价空间/水电占比，若 hasAnyData=false 会误弹「未摄取」提示
   const hasAnyData =
     heatmapModule.hasData ||
     waterfall.hasData ||
@@ -916,9 +916,7 @@ function alignSystemToSeries(
 }
 
 
-// ══════════════════════════════════════════════════════════════════════════
 // 官方预测 vs 实际 · MAPE 擂台（驾驶舱⑦升级，源 yn_system_forecast，南网整年披露）
-// ──────────────────────────────────────────────────────────────────────────
 // 四对指标（load/new_energy/total_generation/non_market 的官方 D-1 预测 vs 实际），
 // 按 (operateDate|timePoint|region) 精确对齐后计算 MAPE；云南主线（region=yn）+
 // 全区域对照（region=all）。hydro 无官方预测表，如实不入擂台。
@@ -964,7 +962,7 @@ function arenaMape(fRows: ForecastRow[], aRows: ForecastRow[], region: string): 
     if (r.region !== region) continue
     const f = finiteNumber(r.value)
     // 对齐日期：new_energy_forecast_d1 是滚动 D-1 集（operateDate=发布日、targetDate=目标日），
-    // 必须用 targetDate 匹配实际，否则「明日预测」错配到发布日当天实际、MAPE 整体错一天（codex P2）；
+    // 必须用 targetDate 匹配实际，否则「明日预测」错配到发布日当天实际、MAPE 整体错一天；
     // 其余单日期表 targetDate=null 回退 operateDate（其 operate_date 即运行日=目标日）。
     const a = actualByKey.get(`${r.targetDate ?? r.operateDate}|${r.timePoint}`)
     if (a === undefined || f === null) continue
@@ -978,7 +976,7 @@ function arenaMape(fRows: ForecastRow[], aRows: ForecastRow[], region: string): 
 export async function loadForecastArena(days = 14): Promise<ForecastArena> {
   const iso = (d: Date) => d.toISOString().slice(0, 10)
   // 窗口锚定库内最新披露日而非浏览器今天：capture 按导出包/月度回放，最新披露可能远早于
-  // 当前日期，固定「今天回推」会让历史包场景整窗落空——先用 load_actual 尾部小切片探测
+  // 当前日期，固定「今天回推」会让历史包场景整窗落空，先用 load_actual 尾部小切片探测
   // 最新 operateDate，再回推 days 窗口；探测失败/无数据回退今天（真实或空）。
   let anchor = iso(new Date())
   try {
@@ -993,7 +991,7 @@ export async function loadForecastArena(days = 14): Promise<ForecastArena> {
   const dateTo = anchor
   const filter = { dateFrom, dateTo }
   // D-1 滚动集窗口平移：/api/real 日期过滤字段是 operateDate（发布日），而
-  // new_energy_forecast_d1 的目标日 targetDate=operateDate+1——同窗查询会漏掉「首日实际」
+  // new_energy_forecast_d1 的目标日 targetDate=operateDate+1，同窗查询会漏掉「首日实际」
   // 对应的预测行（其 operateDate=dateFrom-1）并带入一个窗口外目标日。预测侧查询窗口整体
   // -1 天；MAPE 按 targetDate 与实际集合求交，多余目标日自动不计入。
   const d1Start = new Date(start.getTime() - 24 * 3600 * 1000)

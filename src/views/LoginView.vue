@@ -233,7 +233,7 @@ async function validateLoginForm() {
   return true
 }
 
-// —— 滑块验证：pointer 拖动，直观可靠 ——
+// 滑块验证：pointer 拖动，直观可靠
 const trackRef = ref<HTMLElement | null>(null)
 const dragX = ref(0)
 const HANDLE_W = 44

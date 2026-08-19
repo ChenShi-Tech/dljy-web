@@ -151,7 +151,7 @@ export async function chatCompletion(
   return data.content ?? ''
 }
 
-// ── 联网搜索配置（/llm/search；web_search 工具按此取供应商 + key）──
+// 联网搜索配置（/llm/search；web_search 工具按此取供应商 + key）
 // 与 LLM 密钥同源同鉴权（admin token）。明文 key 不回传，GET 只给 provider + has_key。
 export type SearchConfig = {
   provider: string
@@ -201,7 +201,7 @@ export async function deleteSearchConfig(): Promise<boolean> {
   return res.ok
 }
 
-// ── agent 出网访问黑名单（/llm/denylist）────────────────────────────────────
+// agent 出网访问黑名单（/llm/denylist）
 // web_fetch/web_search 与 browser_* 共用：默认全放行，只拒绝名单内域名。
 // 默认表由 agent runtime 只读提供（env HARNESS_DOMAIN_DENYLIST）；用户增补经管理员鉴权保存并即时生效。
 export type Denylist = {

@@ -4,10 +4,10 @@
 //
 // ⚠️ 本文件分两段：
 // - 「自动生成段」（BEGIN/END AUTO 标记内）：由 scripts/build/sync-llm-providers.mjs 从
-//   packages/agent-runtime/src/agent_runtime/config/model_providers.yaml 派生，勿手改（改了会被覆盖）。
-//   换型号请改 yaml 后跑 npm run sync:llm。
+// packages/agent-runtime/src/agent_runtime/config/model_providers.yaml 派生，勿手改（改了会被覆盖）。
+// 换型号请改 yaml 后跑 npm run sync:llm。
 // - 「手维护段」（标记外）：前端独有的市面接入模板（minimax/baichuan/stepfun/spark/custom），
-//   yaml 没有，由本文件手维护。
+// yaml 没有，由本文件手维护。
 export type LlmProvider = {
   id: string
   name: string

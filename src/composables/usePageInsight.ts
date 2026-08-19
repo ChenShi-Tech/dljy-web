@@ -4,7 +4,7 @@
 // 复用 openAgent 契约：promptKey 经 PagePromptKey 白名单（防自由文本绕过安全基线）、
 // contextPayload 走 untrusted_external_content 语义（随消息下发、不可信外部内容）。
 // 约定：contextPayload 只传「当前筛选派生的切片/摘要」，勿传整页大 raw（如逐日 96 点全量、
-// 多年逐日矩阵），对齐驾驶舱「只传当前 block」的做法——既省 LLM 上下文，也避免噪声淹没判断。
+// 多年逐日矩阵），对齐驾驶舱「只传当前 block」的做法，既省 LLM 上下文，也避免噪声淹没判断。
 import { useAiPanel } from './useAiPanel'
 import { currentRegion } from '@/services/region/regionContext'
 import type { PagePromptKey } from '@/prompts'

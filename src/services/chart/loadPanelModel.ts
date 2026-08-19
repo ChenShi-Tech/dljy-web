@@ -1,12 +1,12 @@
 // 逐日系统负荷子图的「按年矩阵 → 图表系列」纯映射（从 LoadPanelChart 抽出以便单测）。
 //
 // 两种模式（数据驱动、非地区硬编码）：
-//   overlay    —— 逐年同期对比：各年满覆盖、真重叠（如山西 2021-2026）→ 每年一条年线，共用月-日轴；
-//   continuous —— 单一连续时间线被按年切片：年数≥2、跨年同期重叠占比低（各年互补）、
-//                 且拼接后确为一段连续区间（如云南仅 2025-07~2026-07 连续一年，折叠后
-//                 2025 落下半年、2026 落上半年，视觉上"拼接不重叠"）→ 按时序拼成一条连续线，
-//                 x 轴改为带年份的连续日期。重叠用「占比」判（非固定天数）以容忍上游逐日增长；
-//                 并须校验无月级缺口，否则会把隔半年的两段误呈现为连续走势。
+// overlay   ：逐年同期对比：各年满覆盖、真重叠（如山西 2021-2026）→ 每年一条年线，共用月-日轴；
+// continuous：单一连续时间线被按年切片：年数≥2、跨年同期重叠占比低（各年互补）、
+// 且拼接后确为一段连续区间（如云南仅 2025-07~2026-07 连续一年，折叠后
+// 2025 落下半年、2026 落上半年，视觉上"拼接不重叠"）→ 按时序拼成一条连续线，
+// x 轴改为带年份的连续日期。重叠用「占比」判（非固定天数）以容忍上游逐日增长；
+// 并须校验无月级缺口，否则会把隔半年的两段误呈现为连续走势。
 
 export type LoadPanelMode = 'overlay' | 'continuous'
 
@@ -26,13 +26,13 @@ export interface LoadPanelModel {
 }
 
 // 拼接连续线允许的相邻非空点最大「全局日序」间隔。
-// =5 容忍：非闰年 2/29 空槽（跨月+1）、个别缺采日；堵住月级及以上缺口——
-// 避免把"2025 只有 12 月 + 2026 只有 6 月"这类隔半年的两段误呈现为一条连续负荷（codex #1385 P2）。
+// =5 容忍：非闰年 2/29 空槽（跨月+1）、个别缺采日；堵住月级及以上缺口
+// 避免把"2025 只有 12 月 + 2026 只有 6 月"这类隔半年的两段误呈现为一条连续负荷（#1385）。
 const MAX_CONTINUOUS_GAP = 5
 
 // 被 ≥2 年同时覆盖的月-日槽位占比上限：< 该值算「连续切片」，≥ 则算「逐年同期对比」。
-// 用占比而非固定天数，容忍上游逐日增长——数据略超一年只在跨年边界有少量重叠仍判连续；
-// 长到约 1.5 年（近半年可同期对比）才切回逐年对比（codex #1385 P2 二审）。
+// 用占比而非固定天数，容忍上游逐日增长，数据略超一年只在跨年边界有少量重叠仍判连续；
+// 长到约 1.5 年（近半年可同期对比）才切回逐年对比（#1385）。
 const MAX_OVERLAP_RATIO = 0.5
 
 interface DatedPoint {
@@ -72,11 +72,11 @@ function collectPoints(nameList: string[], years: string[], mat: (number | null)
 /**
  * 判定是否为「单一连续时间线被按年切片」。规则（三者皆满足）：
  *   ① 年数≥2；
- *   ② 被 ≥2 年同时覆盖的月-日槽位「占比」 < MAX_OVERLAP_RATIO——区分"逐年同期对比"
+ *   ② 被 ≥2 年同时覆盖的月-日槽位「占比」 < MAX_OVERLAP_RATIO，区分"逐年同期对比"
  *      （山西各年满覆盖、占比≈100%）与"连续切片"（云南各年互补、占比≈0）；用占比而非固定
- *      天数，容忍上游逐日增长（数据略超一年只在边界少量重叠仍判连续，codex #1385 P2 二审）；
+ *      天数，容忍上游逐日增长（数据略超一年只在边界少量重叠仍判连续，#1385）；
  *   ③ 拼接后各非空点确构成一段连续区间（相邻全局日序间隔 ≤ MAX_CONTINUOUS_GAP），
- *      否则会把中间缺口误呈现为连续负荷走势（低重叠 ≠ 日期连续，codex #1385 P2）。
+ *      否则会把中间缺口误呈现为连续负荷走势（低重叠 ≠ 日期连续，#1385）。
  */
 export function isSingleTimeline(nameList: string[], years: string[], mat: (number | null)[][]): boolean {
   if (years.length < 2) return false
@@ -113,8 +113,8 @@ export function buildLoadPanelModel(
   metricName: string
 ): LoadPanelModel {
   if (isSingleTimeline(nameList, years, mat)) {
-    // 连续线：补齐首末非空点之间的完整日历类目，缺测日保留 null（配合 connectNulls:false 断线）——
-    // 不压缩空槽，避免把漏采日两侧误画成相邻的连续负荷（codex #1385 P2）。
+    // 连续线：补齐首末非空点之间的完整日历类目，缺测日保留 null（配合 connectNulls:false 断线）
+    // 不压缩空槽，避免把漏采日两侧误画成相邻的连续负荷（#1385）。
     const pts = collectPoints(nameList, years, mat)
     const base = yearNum(years[0], 0)
     const slots = nameList.length
@@ -125,7 +125,7 @@ export function buildLoadPanelModel(
       const slot = ((g % slots) + slots) % slots
       const yr = base + Math.floor(g / slots)
       // 跳过非闰年不存在的 2/29（固定 366 槽产物），否则会把完整采集的 2/28→3/1 误画成缺测断线；
-      // 真实存在的缺测日仍保留 null（codex #1385 P2）。
+      // 真实存在的缺测日仍保留 null（#1385）。
       if (nameList[slot] === '2月29日' && !isLeapYear(yr)) continue
       xData.push(`${yr}/${nameList[slot]}`)
       data.push(valueByGlobal.has(g) ? (valueByGlobal.get(g) as number) : null)

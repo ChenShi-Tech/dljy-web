@@ -1,19 +1,18 @@
-// ============================================================================
-// 作业立场上下文（当前以哪个市场主体身份作业）—— Epic #2193 立场体系前端层
+// 作业立场上下文（当前以哪个市场主体身份作业）， Epic #2193 立场体系前端层
 // ----------------------------------------------------------------------------
 // 与 regionContext（全局地区）/ companyContext（公司视图）同构的第三个上下文，
-// 但有一条**不能照抄**的关键差别：
+// 但有一条不能照抄的关键差别：
 //
-// 立场允许集合**只来自服务端下发**（登录/刷新 payload 的 `user.stances`，服务端按
+// 立场允许集合只来自服务端下发（登录/刷新 payload 的 `user.stances`，服务端按
 // 「公司注册立场 ∩ 身份」推导，见 `server/auth-store.mjs::deriveUserStances`），
 // 前端零推导、零覆盖表。旧 positionContext 的「公司立场∩身份」客户端推导已上收
-// 服务端（#2193 决策），`src/data/companyPositions.ts` 硬编码覆盖表随之删除——
+// 服务端（#2193 决策），`src/data/companyPositions.ts` 硬编码覆盖表随之删除
 // 前端能自由改「我是什么立场」＝能自行装配出无权提交的申报单据。
 //
 // 与 allowedSubjectTypes 的正交论证（继承自 positionContext，仍是红线）：
-//   `allowedSubjectTypes` 是**数据可见范围**（data-scope.mjs 用它过滤数据行），
-//   回答「我能看到哪些主体类型的数据」；立场回答「我能以哪个主体身份作业」。
-//   把它当立场集合并扩大，等于顺手扩大数据可见范围——那是越权面，不是功能。
+// `allowedSubjectTypes` 是数据可见范围（data-scope.mjs 用它过滤数据行），
+// 回答「我能看到哪些主体类型的数据」；立场回答「我能以哪个主体身份作业」。
+// 把它当立场集合并扩大，等于顺手扩大数据可见范围，那是越权面，不是功能。
 //
 // 切换协议（克隆 x-company-id 模式）：本模块只把选择存 localStorage 并经 api.ts
 // 统一注入 `x-stance-id` 头（值 = `subjectType:subjectId`）；服务端校验 ∈ 允许集合，
@@ -21,7 +20,6 @@
 //
 // 空态原则：会话未就绪/数据脏 → 空集合、activeStance=null，**不得默认成任何具体
 // 立场**（默认成售电就是把储能主体的单据换成售电单据）。单立场账号自动落 home。
-// ============================================================================
 
 import { computed, ref } from 'vue'
 import { isStanceShape, type Stance, type SubjectType } from '@/services/governance'
@@ -84,7 +82,7 @@ export function syncStancesFromSession(user?: SessionUserLike): void {
 }
 
 /**
- * 切换当前作业立场。守卫：拒绝切到不在允许集合内的立场（防御性——真正的闸门在
+ * 切换当前作业立场。守卫：拒绝切到不在允许集合内的立场（防御性，真正的闸门在
  * 服务端 x-stance-id 校验），返回是否成功，便于界面给出反馈而非静默失败。
  */
 export function setActiveStance(key: string): boolean {
@@ -115,7 +113,7 @@ export function clearStanceContext(): void {
   safeRemove()
 }
 
-// ── 内部工具 ──────────────────────────────────────────────────────────────
+// 内部工具
 
 /** 深层直链场景：守卫先于任何显式 sync 调用时，从 localStorage 存档惰性同步。 */
 function ensureSynced() {

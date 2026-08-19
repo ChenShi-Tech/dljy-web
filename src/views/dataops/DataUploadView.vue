@@ -182,7 +182,7 @@
 
 <script setup lang="ts">
 // 数据运维台·上传工作台（Epic #2169 P1 · #2173）：五步流 UI。
-// 纯交互层——校验/落库/幂等/撤销全部服务端权威（server/data/upload-pipeline.mjs），
+// 纯交互层，校验/落库/幂等/撤销全部服务端权威（server/data/upload-pipeline.mjs），
 // 本组件只组织步骤与呈现预检报告/回执。
 import { computed, onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'

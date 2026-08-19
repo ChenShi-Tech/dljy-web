@@ -8,7 +8,7 @@ import {
   suggestResponsibility
 } from './deviationAggregate'
 import type { PeriodReviewDay } from './reviewPeriodClient'
-// type-only import 编译期擦除——不会把 quantClient（触 window）拖进 node 环境
+// type-only import 编译期擦除，不会把 quantClient（触 window）拖进 node 环境
 import type { ReviewResult } from '@/services/quant/quantClient'
 
 const ok = (date: string, over: Partial<{ dev: number; assessed: number; penalty: number; declared: number; causeId: string | null; causeLabel: string | null }> = {}): PeriodReviewDay => ({

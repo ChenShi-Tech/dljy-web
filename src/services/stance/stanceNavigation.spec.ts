@@ -18,7 +18,7 @@ const GENERATOR_ONLY = '/gsgl/output'
 const SHARED = '/dashboard'
 /**
  * 售电侧专属页用 fixture（真实树内的 /djcs/retail-price 在默认冻结的计算器组里
- * 不进导航——这也如实反映了当前售电侧在导航树内暂无专属页的事实，P2 售电补课
+ * 不进导航，这也如实反映了当前售电侧在导航树内暂无专属页的事实，P2 售电补课
  * 后再换真实路径）。
  */
 const fixtureTree = [
@@ -90,7 +90,7 @@ describe('真实导航树的过滤装配', () => {
 
   it('分组内专属页被整组剔除时分组不残留空壳', () => {
     // 公司管理组：台账/出力=发电专属，总览/合同=共享。售电立场下分组应仍存在
-    //（还有共享子项），但子项里不该再有台账/出力。
+    // （还有共享子项），但子项里不该再有台账/出力。
     const group = filterNavigationForStance(navigation, 'RETAILER').find((item) => item.path === '/gsgl')
     expect(group).toBeTruthy()
     expect(group?.children?.map((c) => c.path)).not.toContain(GENERATOR_ONLY)

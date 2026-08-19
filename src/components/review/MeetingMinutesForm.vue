@@ -2,7 +2,7 @@
 // 复盘会议纪要表单（Epic #2033 · M4 · #2049：模板十二，C 档纯人工）
 // ---------------------------------------------------------------------------
 // 议程/上期措施回查/问题清单/改进分工/时限；会后 1 个工作日归档提醒（周末顺延）。
-// 「上期改进措施」自动带入 improvement_actions 未闭环项——端点未上线，诚实占位 +
+// 「上期改进措施」自动带入 improvement_actions 未闭环项，端点未上线，诚实占位 +
 // 人工带入；案例库检索强化（类型/场景/是否公开）占位（visibility 默认不公开）。
 import { computed, ref } from 'vue'
 import { archiveDeadline, CASE_LIBRARY_NOTE, type MinutesActionRow } from '@/services/review/meetingMinutes'

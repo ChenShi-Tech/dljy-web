@@ -1,7 +1,7 @@
 // 模板实例数据面 · 纯逻辑（Epic #2033 · M1 · #2038/#2040 消费端）
 // ---------------------------------------------------------------------------
 // 后端触发引擎（#2039）与模板实例端点（#2037）尚未动工：review.template_instances
-// 表已建（上游迁移 025）但 HTTP 面为空。本模块定义「能力探针」契约——前端按探针
+// 表已建（上游迁移 025）但 HTTP 面为空。本模块定义「能力探针」契约，前端按探针
 // 结果诚实降级（不合成、不拿假分母），端点上线后零改动出真数。
 //
 // 纯逻辑独立成文件（沿用 reviewError.ts 惯例）：传输层模块链触 window，进不了
@@ -24,7 +24,7 @@ export type TemplateInstanceSummary = {
 /**
  * 探针结果三态：
  * - available：端点已上线，instances 为真数据（可为空数组=引擎在跑但无待办）
- * - endpoint-absent：404/405/200-but-HTML——触发引擎未上线（当前常态）
+ * - endpoint-absent：404/405/200-but-HTML，触发引擎未上线（当前常态）
  * - unauthorized / unreachable：权限与网络态（可重试提示）
  */
 export type TemplateInstanceFeed =
@@ -52,7 +52,7 @@ function coerceInstance(row: unknown): TemplateInstanceSummary | null {
 
 /**
  * 从响应体提取实例列表。容忍三种信封：裸数组 / {data:[…]} / {instances:[…]}。
- * 200 但提取不到数组（如静态托管的 HTML 兜底页）按「端点不存在」处理——
+ * 200 但提取不到数组（如静态托管的 HTML 兜底页）按「端点不存在」处理
  * 生产静态部署对未知路径可能回 index.html，不能把 HTML 当空列表渲染。
  */
 function extractInstances(body: unknown): TemplateInstanceSummary[] | null {

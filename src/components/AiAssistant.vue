@@ -313,7 +313,7 @@ function openWorkbench(question?: string, scenario?: AgentScenario) {
   closePanel()
 }
 
-// ── 斜杠指令（/help、/nav、/clear、技能… 输入 / 唤起菜单）──
+// 斜杠指令（/help、/nav、/clear、技能… 输入 / 唤起菜单）
 function makeContext(args: string): CommandContext {
   return {
     host: 'assistant',
@@ -608,7 +608,7 @@ watch(
 
 <style scoped>
 /* 右侧停靠面板:占位项(在 .app-layout flex 里挤压主内容)+ 固定面板(滑入) */
-/* 取向 B：面板把工作区「推开」——dock 开启占 640px flex 宽，内容左移露在面板旁（都看得见）；
+/* 取向 B：面板把工作区「推开」，dock 开启占 640px flex 宽，内容左移露在面板旁（都看得见）；
    .ai-panel 为 position:fixed 浮层贴右，正好落在 dock 的 640px 槽位、与左侧内容并排不重叠。
    工作区变窄导致的顶栏挤压，由 global.css 的 `.app-layout:has(.ai-dock.open) .topbar` 紧凑规则解决。 */
 .ai-dock { flex: 0 0 auto; width: 0; transition: width 0.3s cubic-bezier(0.22, 0.61, 0.36, 1); }

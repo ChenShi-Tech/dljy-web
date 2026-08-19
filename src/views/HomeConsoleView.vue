@@ -1,9 +1,9 @@
 <script setup lang="ts">
 // 首页 (console) — 精修版，对照线上四面板布局（左右宽度 2:1，左右等高）：
-//   左上（2/3宽）：新能源出力预测  —— 日期范围筛选(限数据范围) + 6类分组柱状(总/风/光 各2) + 4条折线(最高/最低气温·实时/日前均价)，三纵轴(负荷|气温|价格)
-//   左下（2/3宽）：交易平台负荷    —— D-3/D-2/D-1 预测「分组柱状」(异色) + 实际值折线，最近 1 个月
-//   右上（1/3宽）：日均价 96 点     —— 价差柱状(±异色) + 日前/实时出清折线，双轴(价格|价差)，上一天/下一天导航(35天变体)
-//   右下（1/3宽）：天气网格        —— 城市×日期，天气「图标」(SVG，非文字) + 风力级别 + 最高/最低气温，横竖可滚动
+//   左上（2/3宽）：新能源出力预测，日期范围筛选(限数据范围) + 6类分组柱状(总/风/光 各2) + 4条折线(最高/最低气温·实时/日前均价)，三纵轴(负荷|气温|价格)
+//   左下（2/3宽）：交易平台负荷，D-3/D-2/D-1 预测「分组柱状」(异色) + 实际值折线，最近 1 个月
+//   右上（1/3宽）：日均价 96 点，价差柱状(±异色) + 日前/实时出清折线，双轴(价格|价差)，上一天/下一天导航(35天变体)
+//   右下（1/3宽）：天气网格，城市×日期，天气「图标」(SVG，非文字) + 风力级别 + 最高/最低气温，横竖可滚动
 // 数据：GET /sdpt/console/*（capture-raw/sdpt_console/）。均为真实业务/气象数据。
 import { onMounted, onBeforeUnmount, ref, nextTick, computed } from 'vue'
 import { ElMessage } from 'element-plus'
@@ -24,7 +24,7 @@ import { useQuerySync } from '../composables/useQuerySync'
 import { axisTooltip, bottomLayoutLegend, bottomToolbox, emptyOverlay, insideZoom } from '@/services/chart/chartOptions'
 import { debounce } from '../utils/timing'
 
-// embedded=true：嵌入「市场洞察驾驶舱」概览分区时用——隐藏角色欢迎区、去整页 padding/底色，
+// embedded=true：嵌入「市场洞察驾驶舱」概览分区时用，隐藏角色欢迎区、去整页 padding/底色，
 // 只保留 console-layout 四板块。默认 false 保持 /dashboard/classic 独立页（现已改 redirect）行为不变。
 defineProps<{ embedded?: boolean }>()
 
@@ -126,7 +126,7 @@ function disabledNeDate(date: Date) {
   return s < neMin.value || s > neMax.value
 }
 
-// 切地区/重复刷新期间，旧 Promise 返回不得回写（否则旧地区新能源/负荷串味新地区）——参照同文件 wxSeq 范式（#1741）
+// 切地区/重复刷新期间，旧 Promise 返回不得回写（否则旧地区新能源/负荷串味新地区），参照同文件 wxSeq 范式（#1741）
 let loadSeq = 0
 async function load() {
   const seq = ++loadSeq
@@ -241,7 +241,7 @@ function renderNewEnergyChart() {
   const cc = chartChrome()
   const dateList: string[] = n.dateList || []
   const series: any[] = []
-  // 6 类出力(总/风/光 各 2)——分组柱状(非堆叠：总≈风+光，堆叠会重复计)，按数据动态显示
+  // 6 类出力(总/风/光 各 2)，分组柱状(非堆叠：总≈风+光，堆叠会重复计)，按数据动态显示
   const barDefs: [string, any[], string][] = [
     ['公司-总1', n.corpTotalList, '#fc8452'],
     ['公司-总2', n.yyTotalList, '#fac858'],

@@ -8,7 +8,7 @@ import { fetchStations, type CompanyStation } from '@/services/company/companyAp
 // {登录地区(currentRegion) · 账号所属公司(companyContext) · 公司下属某个厂站}。
 //
 // 厂站选择优先级：会话已选(localStorage) > 账号绑定的默认厂站(user.forecastStationId)
-//   > 当前公司在当前地区下的首个厂站。仅当候选不在「当前公司·当前地区」场站列表时回退。
+// > 当前公司在当前地区下的首个厂站。仅当候选不在「当前公司·当前地区」场站列表时回退。
 // 切换公司/地区时自动重新解析，保证始终落在合法范围。
 
 const storageKey = 'dljy.currentForecastStationId'

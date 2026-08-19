@@ -3,7 +3,7 @@
 // ---------------------------------------------------------------------------
 // 月度三层：分品种（日前/实时增量先行，中长期未接入如实标注）/ 分时段（读
 // SettlementRuleSpec）/ 单笔 Top5（M2 以日为笔，逐笔归集待 S6 #1966）。
-// 与 #2042 共用 fetchReviewRange——Top5 与拆解表同一次 /review 聚合产出（同源同口径）。
+// 与 #2042 共用 fetchReviewRange，Top5 与拆解表同一次 /review 聚合产出（同源同口径）。
 // 环比超 20% 强制归因（方案原文规则）；反事实定位「策略对比」视图=决策参考非结算依据。
 import { computed, onMounted, ref, watch } from 'vue'
 import PnLWaterfall from '@/components/agent/dljy-ui/review/PnLWaterfall.vue'

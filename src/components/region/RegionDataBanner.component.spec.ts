@@ -1,5 +1,5 @@
 // RegionDataBanner 四态互斥渲染（Epic #1702 P1）：锁住「诚实数据标注/回退」红线。
-// 切地区假绿、Mock 漏标、私有族越权这类 UI 层 bug 纯函数单测够不到——用组件测试钉死四分支优先级
+// 切地区假绿、Mock 漏标、私有族越权这类 UI 层 bug 纯函数单测够不到，用组件测试钉死四分支优先级
 // （无权限 > 演示 > 接口级 Mock > 基线回退），任一状态偏移都会让「诚实标注」失效、误导交易决策。
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { mount } from '@/test/mount'

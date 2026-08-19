@@ -1,5 +1,5 @@
-// 历史模拟单的溯源信息：**被模拟的日期**与**发起模拟的时间**必须同时可读可取回。
-// 只标目标日的话，复盘时分不清这张单是当年真报的、还是事后补跑的回测——两者含义完全不同。
+// 历史模拟单的溯源信息：被模拟的日期与发起模拟的时间必须同时可读可取回。
+// 只标目标日的话，复盘时分不清这张单是当年真报的、还是事后补跑的回测，两者含义完全不同。
 import { describe, expect, it } from 'vitest'
 
 import { buildRehearsalNote, formatRehearsalStamp, parseRehearsalStartedAt } from '@/services/declarationRehearsal'
@@ -53,7 +53,7 @@ describe('parseRehearsalStartedAt', () => {
 
 describe('formatRehearsalStamp', () => {
   // 电力市场口径恒为 +08:00，浏览器时区未必。不显式换算的话，UTC 浏览器在北京时间 12:34
-  // 发起的模拟会被记成「04:34」，复盘按市场口径读就差 8 小时——溯源信息本身失真。
+  // 发起的模拟会被记成「04:34」，复盘按市场口径读就差 8 小时，溯源信息本身失真。
   it('显式换算到 +08:00，不随浏览器时区漂移', () => {
     expect(formatRehearsalStamp(Date.UTC(2026, 6, 29, 4, 34))).toBe('2026-07-29 12:34 (+08:00)')
     expect(formatRehearsalStamp(Date.UTC(2026, 6, 28, 16, 0))).toBe('2026-07-29 00:00 (+08:00)') // 跨日

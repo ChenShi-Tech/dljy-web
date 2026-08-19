@@ -1,8 +1,8 @@
 <script setup lang="ts">
 // 可交互 HTML artifact：沙箱 iframe 预览 / 源码切换 / 复制 / 全屏。
 // iframe 用 sandbox（不含 allow-same-origin）隔离：脚本可跑但无法访问父页面与同源资源。
-// 不提供「新窗口打开」——blob URL 会继承本应用 origin，脚本脱离 sandbox 后可读同源存储/
-// 发已登录请求（Codex P1）；全屏预览仍走 sandbox iframe。
+// 不提供「新窗口打开」，blob URL 会继承本应用 origin，脚本脱离 sandbox 后可读同源存储/
+// 发已登录请求；全屏预览仍走 sandbox iframe。
 import { computed, ref } from 'vue'
 import { AppWindow, Code2, Copy, Check, Maximize2, X } from 'lucide-vue-next'
 import hljs from 'highlight.js/lib/common'

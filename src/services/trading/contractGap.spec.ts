@@ -18,7 +18,7 @@ describe('S6 中长期补仓：敞口评估（买方立场）', () => {
   it('观望带内不动作（默认 ±5%）：动仓的交易成本大于敞口损益', () => {
     const inside = assessContractGap({ forecastMwh: 1000, contractedMwh: 950, regime: 'tight', direction: null })
     expect(inside.suggestion).toBe('hold')
-    // 越出观望带才给动作建议——同样是偏紧市，5% 和 6% 是两个建议
+    // 越出观望带才给动作建议，同样是偏紧市，5% 和 6% 是两个建议
     const outside = assessContractGap({ forecastMwh: 1000, contractedMwh: 940, regime: 'tight', direction: null })
     expect(outside.suggestion).toBe('buy-urgent')
   })
@@ -169,6 +169,6 @@ describe('#2005：立场感知补仓口径', () => {
     const r = assessContractGapForPosition({ ...base, position: 'STORAGE' })
     expect(r.frame).toBe('storage')
     expect(r.reason).toContain('套利')
-    expect(r.reason).toContain('不适用') // 直接包含或经说明——储能口径说明
+    expect(r.reason).toContain('不适用') // 直接包含或经说明，储能口径说明
   })
 })

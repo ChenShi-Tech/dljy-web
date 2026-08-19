@@ -1,15 +1,15 @@
-// 影子对拍的**纯观测与比较**（#1848 第二部分 · Epic #1843 S3-E）。
+// 影子对拍的纯观测与比较（#1848 第二部分 · Epic #1843 S3-E）。
 //
-// 刻意从 shadow.ts 拆出来：本模块只依赖 AgentEvent 的**类型**（type-only import 编译后
+// 刻意从 shadow.ts 拆出来：本模块只依赖 AgentEvent 的类型（type-only import 编译后
 // 不留运行时引用），因此 agentClient 可以直接静态引它来观测用户那一轮，而真正会调
-// agentClient 的发起侧（shadow.ts）留给 agentClient 动态 import——否则两个模块在模块
+// agentClient 的发起侧（shadow.ts）留给 agentClient 动态 import，否则两个模块在模块
 // 求值期互相等对方，是典型的循环依赖崩法。
 //
 // 对拍口径的两条关键取舍（改之前先读 shadow.ts 顶部的四条设计决定）：
-//   · 事件形状比**类型序列**不比工具名。两侧工具面本就不同，带上名字必然 100% 不一致，
-//     会把「事件形状差异率 ≤20%」的阈值变成永久假红。
-//   · 副作用比**请求过审批的动作集合**。审批门就是「对外真实写入」的权威判据（#1844），
-//     用它当口径就不必在前端另维护一份会漂移的写工具清单。
+// · 事件形状比类型序列不比工具名。两侧工具面本就不同，带上名字必然 100% 不一致，
+// 会把「事件形状差异率 ≤20%」的阈值变成永久假红。
+// · 副作用比请求过审批的动作集合。审批门就是「对外真实写入」的权威判据（#1844），
+// 用它当口径就不必在前端另维护一份会漂移的写工具清单。
 
 import type { AgentEvent } from '@/services/agent/agentClient'
 import { isRolloutScenario } from '@/services/agent/rollout'
@@ -18,14 +18,14 @@ import { packageRegionSummary } from '@/services/region/regionContext'
 /**
  * 把一轮的 `payload` 拆成「默认地区上下文」与「其余上下文」。
  *
- * `AgentChatPanel` **每条**消息都会带 `packageRegionSummary()`（地区规则画像），所以不能把
- * 「带 payload」直接当成不可对拍——那会让四个生产场景一条影子都跑不起来，开了 shadow 也永远
- * 攒不到证据，闸看到的是空台账。区分标准是**这份上下文影子侧能不能拿到同一份**：
+ * `AgentChatPanel` 每条消息都会带 `packageRegionSummary()`（地区规则画像），所以不能把
+ * 「带 payload」直接当成不可对拍，那会让四个生产场景一条影子都跑不起来，开了 shadow 也永远
+ * 攒不到证据，闸看到的是空台账。区分标准是这份上下文影子侧能不能拿到同一份：
  *
  * - 地区摘要：由 `regionId` 确定性派生的公开地区元数据（不含任何用户/页面数据），影子侧原样
- *   带上即可对等，故**转发**且不影响可对拍性。
+ *   带上即可对等，故转发且不影响可对拍性。
  * - 其余键（调用方业务 payload、`untrusted_external_content` 页面切片、申报约束等）：旧图侧
- *   会用它们改写输入，影子侧拿不到同一份，两侧即便都答出非空内容也只是**看起来**一致；这类
+ *   会用它们改写输入，影子侧拿不到同一份，两侧即便都答出非空内容也只是看起来一致；这类
  *   轮次判为不可对拍，也顺带避免把页面切片多送一个后端。
  *
  * 默认键集合从 `packageRegionSummary()` 现取而不是手抄一份常量：抄一份就会随字段增删漂移。
@@ -49,11 +49,11 @@ export function splitTurnPayload(payload?: Record<string, unknown> | null): {
 }
 
 /**
- * 这一轮**够不够格拿去对拍**。五个条件缺一不可，都是「宁可少一条台账，也不要一条不可比的」：
+ * 这一轮够不够格拿去对拍。五个条件缺一不可，都是「宁可少一条台账，也不要一条不可比的」：
  *
  * - `isFirstTurn`：pi 侧是新会话、没有旧图那边的历史，第二轮起上下文不对等。
- * - `scenarioDeclared`：调用方**显式声明**了场景才算数。`sendAgentMessage` 的 `scenario` 缺省为
- *   `'chat'`（后端契约要求），而工作室的自定义图运行（`AgentOrchestrationStudioView`）就是不传的——
+ * - `scenarioDeclared`：调用方显式声明了场景才算数。`sendAgentMessage` 的 `scenario` 缺省为
+ *   `'chat'`（后端契约要求），而工作室的自定义图运行（`AgentOrchestrationStudioView`）就是不传的
  *   把它按缺省值当 `chat` 影子，等于拿 `node_*` 图事件去污染 chat 的对拍报告和升级闸，还白烧一次模型调用。
  * - `isRolloutScenario`：只有四个生产场景在灰度表里；PoC 场景本来就直连 pi，没有「旧图侧」可比。
  * - `!isShadowSession`：影子跑自己也经同一条发消息路径，不排除就会一路影子影子的影子。
@@ -73,7 +73,7 @@ export function isComparableTurn(input: {
     && !input.hasExtraContext
 }
 
-/** 一轮对话的可对拍观测量。刻意不含正文——台账不做第二份对话副本（与审计摘要同口径）。 */
+/** 一轮对话的可对拍观测量。刻意不含正文，台账不做第二份对话副本（与审计摘要同口径）。 */
 export type TurnObservation = {
   /** 归一化事件类型序列（合并连续同类，不含工具名与正文） */
   shape: string[]
@@ -86,7 +86,7 @@ export type TurnObservation = {
 }
 
 // 两侧同一能力异名时在此登记（如某天旧图叫 submit_spot_declaration、pi 叫 submit_declaration）。
-// 当前两侧写动作同名，故为空表——留空比预填猜测的名字诚实：猜错会把不同能力归成同一个。
+// 当前两侧写动作同名，故为空表，留空比预填猜测的名字诚实：猜错会把不同能力归成同一个。
 const EFFECT_ALIASES: Record<string, string> = {}
 
 function canonicalEffect(name: string): string {
@@ -96,7 +96,7 @@ function canonicalEffect(name: string): string {
 
 // approval_request 的 payload 形状两侧不同：pi 是 {type:'tool_approval', action_requests:[{name,…}]}，
 // 旧图是 HITL/图 interrupt 的业务语义卡（declaration_approval 等）。逐个候选键取名，
-// 都取不到才回落 payload.type——宁可记一个粗粒度的动作名，也不要把一次写动作记成空。
+// 都取不到才回落 payload.type，宁可记一个粗粒度的动作名，也不要把一次写动作记成空。
 export function effectIdsFromApproval(payload: unknown): string[] {
   const p = (payload ?? {}) as Record<string, unknown>
   const out: string[] = []
@@ -162,11 +162,11 @@ function answered(o: TurnObservation): boolean {
 }
 
 /**
- * 单轮对拍：**判 pi 是否劣于 legacy，而不是判两侧是否相同**（2026-08-15 用户拍板改口径）。
+ * 单轮对拍：判 pi 是否劣于 legacy，而不是判两侧是否相同（2026-08-15 用户拍板改口径）。
  *
  * 为什么必须改：原口径三个维度测的全是「两侧一不一致」，没有一个在测「哪一侧是对的」。
- * 实测（36 条真实问法，两轮）的后果是双向的——
- * - 旧图在缺供应商密钥时整轮崩、pi 正常答出，被记成「差异」推高差异率，**把更好的一侧拦在门外**；
+ * 实测（36 条真实问法，两轮）的后果是双向的
+ * - 旧图在缺供应商密钥时整轮崩、pi 正常答出，被记成「差异」推高差异率，把更好的一侧拦在门外；
  * - 反过来，两侧一起答错、一起弹错审批，会被记成「一致」一路绿灯放行。
  *
  * 而两套底座结构性就不同（旧图有子代理事件、pi 没有；旧图在只读问题上弹审批、pi 不弹），
@@ -177,19 +177,19 @@ function answered(o: TurnObservation): boolean {
 export function compareObservations(legacy: TurnObservation, pi: TurnObservation) {
   const legacyAnswered = answered(legacy)
   const piAnswered = answered(pi)
-  // pi 多做了 legacy 没做的写动作 —— 唯一保留零容忍的方向。反过来 pi 少做是更克制，不算回归。
+  // pi 多做了 legacy 没做的写动作：唯一保留零容忍的方向。反过来 pi 少做是更克制，不算回归。
   const legacyEffects = new Set(legacy.effects)
   const unsafeEffects = pi.effects.filter((id) => !legacyEffects.has(id))
   return {
     /** pi 回归：legacy 答出来了而 pi 没答出来。这是用户直接感知的退化 */
     availabilityRegressed: legacyAnswered && !piAnswered,
-    /** pi 改进：pi 答出来了而 legacy 没答出来。**记录但不计入差异**——它正是切流的理由 */
+    /** pi 改进：pi 答出来了而 legacy 没答出来。记录但不计入差异，它正是切流的理由 */
     availabilityImproved: piAnswered && !legacyAnswered,
     /** pi 独有的写动作（零容忍）。空数组表示 pi 没有多做任何 legacy 未做的事 */
     unsafeEffects,
     /** legacy 独有的写动作：观测项，不阻断（pi 不做 = 更克制） */
     legacyOnlyEffects: legacy.effects.filter((id) => !new Set(pi.effects).has(id)),
-    /** 事件形状是否相同：**观测项，不再作阻断依据**（两侧工具面与子代理结构本就不同） */
+    /** 事件形状是否相同：观测项，不再作阻断依据（两侧工具面与子代理结构本就不同） */
     shapeMatch: sameSequence(legacy.shape, pi.shape),
   }
 }

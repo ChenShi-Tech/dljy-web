@@ -57,7 +57,7 @@ const hideAxis = ref(false)
 useQuerySync({ compare: compareDate })
 
 const dateOf = (s: string) => String(s).slice(0, 10)
-// 防止切地区时旧地区慢响应覆盖新地区出清状态（roborev job415）。
+// 防止切地区时旧地区慢响应覆盖新地区出清状态（#415）。
 let loadGeneration = 0
 
 async function load() {

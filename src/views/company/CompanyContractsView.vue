@@ -82,7 +82,7 @@ async function reload() {
 onMounted(reload)
 watch(selectedCompanyId, reload)
 
-// ── 筛选 / 统计（前端派生，所见即所得）──
+// 筛选 / 统计（前端派生，所见即所得）
 const filteredContracts = computed(() => {
   let r = [...contracts.value]
   if (filters.stationId) r = r.filter((c) => c.stationId === filters.stationId)
@@ -115,7 +115,7 @@ function isOverdue(c: CompanyContract): boolean {
   return new Date(c.endDate).getTime() < Date.now()
 }
 
-// ── 到期预警看板（基于全部合同，不随筛选隐藏；active 合同按到期紧急度分级）──
+// 到期预警看板（基于全部合同，不随筛选隐藏；active 合同按到期紧急度分级）
 const alertOpen = ref(['alerts'])
 function daysToExpiry(c: CompanyContract): number | null {
   if (c.status !== 'active' || !c.endDate) return null
@@ -199,7 +199,7 @@ function execProgressStatus(c: CompanyContract): 'success' | 'warning' | 'except
   return execPct(c) >= 100 ? 'success' : undefined
 }
 
-// ── 查看详情（合同 + 关联交易 + 明细，只读，所有角色可见）──
+// 查看详情（合同 + 关联交易 + 明细，只读，所有角色可见）
 const viewDrawer = reactive({ visible: false, contract: null as CompanyContract | null, details: [] as CompanyContractDetail[], loadingDetails: false })
 async function openView(row: CompanyContract) {
   viewDrawer.contract = row
@@ -236,7 +236,7 @@ const settlementPreview = computed(() => {
   }
 })
 
-// ── 增删改 ──
+// 增删改
 function openCreate() {
   dialog.editId = 0
   Object.assign(dialog.form, blank())
@@ -294,7 +294,7 @@ async function remove(row: CompanyContract) {
   }
 }
 
-// ── 导入 / 导出 ──
+// 导入 / 导出
 function toNum(v: string) {
   const n = Number(v)
   return Number.isFinite(n) ? n : null

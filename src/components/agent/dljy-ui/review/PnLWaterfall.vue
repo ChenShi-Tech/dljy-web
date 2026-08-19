@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// review/PnLWaterfall —— 收益三层拆解瀑布（Epic #2033 · #2038 预留位 / #2043 转正消费）
+// review/PnLWaterfall ， 收益三层拆解瀑布（Epic #2033 · #2038 预留位 / #2043 转正消费）
 // ---------------------------------------------------------------------------
 // dljy-ui artifact 渲染件：分品种/分时段/单笔的收益拆解结构（后端成文走 generate_report，
 // 分层数据由智能体按 backtest_declaration + settlement-review 聚合后下发）。

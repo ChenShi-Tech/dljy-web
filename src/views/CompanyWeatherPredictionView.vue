@@ -1,8 +1,8 @@
 <script setup lang="ts">
 // 公司气象预测 (zgnrx/qxyc) — 精修版,对照 E7.png:数据范围+运行日期筛选,三张图(风速/辐照/温度),
-//  每图 其他日平均(蓝) vs 运行日平均(黄,高亮)。是新能源出力预测的气象输入对比。
+// 每图 其他日平均(蓝) vs 运行日平均(黄,高亮)。是新能源出力预测的气象输入对比。
 // 数据:GET /sdpt/zgnrx/qxyc -> {fs,fz,wd} 各 {nameList(逐15min,一年), legendList[其他日平均,运行日平均], valueList[2]}。
-//  NOTE(内部): 模型气象输入,后续专项优化;界面正常自信展示。源: capture-raw/sdpt_zgnrx/ (qxyc_wide)
+// NOTE(内部): 模型气象输入,后续专项优化;界面正常自信展示。源: capture-raw/sdpt_zgnrx/ (qxyc_wide)
 import { onMounted, ref, computed, nextTick } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
@@ -51,8 +51,8 @@ async function load() {
   PANELS.forEach((p) => charts[p.key].showLoading())
   try {
     if (currentRegion.value.id === 'yunnan') {
-      // 先落局部变量、generation 校验后再赋 data.value——await 后直接赋值会让
-      // 切地区时旧云南慢响应覆盖当前地区状态（roborev job454）。
+      // 先落局部变量、generation 校验后再赋 data.value，await 后直接赋值会让
+      // 切地区时旧云南慢响应覆盖当前地区状态（#454）。
       const yunnanData = await loadYunnanWeather()
       if (generation !== loadGeneration) return
       data.value = yunnanData
@@ -112,7 +112,7 @@ function buildHourlyPanel(rows: any[], field: string) {
     const date = String(row.date ?? datetime.slice(0, 10))
     const time = String(row.time ?? datetime.slice(11, 16))
     // 缺测口径（null/undefined/空串）显式跳过，不得被 Number() 折成真实 0 值
-    // 混入均值聚合（roborev job468；真实呈现纪律）。
+    // 混入均值聚合（#468；真实呈现纪律）。
     const raw = row[field]
     if (raw === null || raw === undefined || raw === '') continue
     const value = Number(raw)

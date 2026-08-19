@@ -6,7 +6,7 @@ import { fetchCaptured } from '@/services/captured'
 import { hedgeCoverage } from '@/services/settlementFormula'
 
 // 敞口看板经 fetchCaptured 读取的 company 私有 capture 族，供 ExposureBoardView 的
-// RegionDataBanner opt-in 声明（Sub-4 #520，roborev job147）。
+// RegionDataBanner opt-in 声明（Sub-4 #520）。
 export const EXPOSURE_PRIVATE_FAMILIES = ['yn_spot_settlement'] as const
 
 export interface SettlementExposure {

@@ -1,13 +1,13 @@
 <script setup lang="ts">
-// 交易员一日作业台 —— v1.0 日常运营七步的**单页连续承载**
+// 交易员一日作业台，v1.0 日常运营七步的单页连续承载
 //
 // 为什么是单页而不是七个路由页（2026-08-10 用户拍板）：七步是一条链，前一步产出是后一步
-// 输入。散在七个独立路由页时，每页各自绑单据、各自加载、各自维护一份状态——交易员在页
+// 输入。散在七个独立路由页时，每页各自绑单据、各自加载、各自维护一份状态，交易员在页
 // 与页之间跳转，本质是在当人肉传送带：结论要靠记忆或手抄带到下一页。单页把这层消除：
 // 一份单据、一份状态、一次加载，七步在页内切换，`?stage=` 深链定位到具体一步。
 //
 // 容器只管三件事：① 绑定/建单（顶部条）；② 步进条（页内切换，不走路由）；③ 按当前步
-// 渲染对应面板。各步的业务逻辑全在自己面板里，容器不掺和——这样每步可独立演进。
+// 渲染对应面板。各步的业务逻辑全在自己面板里，容器不掺和，这样每步可独立演进。
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { FileText, Plus } from 'lucide-vue-next'
@@ -35,9 +35,9 @@ import StageDailyClose from '@/components/trading/stages/StageDailyClose.vue'
 const route = useRoute()
 const router = useRouter()
 
-// ── 标的交易日（默认值按地区 D+N 口径取：新疆 D+2 / 山西 D+1）───────────────
+// 标的交易日（默认值按地区 D+N 口径取：新疆 D+2 / 山西 D+1）
 // 口径权威在 shared/trading-rules/trading-calendar.mjs（作业日视角：今天做的是
-// D+几的交易）。未登记地区不默认抄邻省——回落明日但显式标「口径未登记，请人工
+// D+几的交易）。未登记地区不默认抄邻省，回落明日但显式标「口径未登记，请人工
 // 确认」：一个错的标的日会让全天产出挂到错误的一天上。
 import {
   defaultTargetDate,
@@ -67,7 +67,7 @@ watch(
   }
 )
 
-// ── 作业主线单据 ─────────────────────────────────────────────────────────────
+// 作业主线单据
 const declaration = ref<DeclarationOrder | null>(null)
 const loading = ref(false)
 const declError = ref('')
@@ -89,7 +89,7 @@ async function loadDeclaration() {
   }
 }
 
-// ── 建单（无单时就地建，不跳出作业链）────────────────────────────────────────
+// 建单（无单时就地建，不跳出作业链）
 const newCapacityMw = ref(50)
 const newRationale = ref('')
 const rationaleValid = computed(() => newRationale.value.trim().length >= 8)
@@ -112,13 +112,13 @@ async function createForToday() {
   }
 }
 
-// ── 当前步：?stage= 深链，缺省取第一个未完成的步 ────────────────────────────
+// 当前步：?stage= 深链，缺省取第一个未完成的步
 const VALID_STAGES = new Set(ALL_STAGES.map((s) => s.id))
 
 function readStageFromQuery(): StageId {
   const q = route.query.stage
   if (typeof q === 'string' && VALID_STAGES.has(q as StageId)) return q as StageId
-  // 缺省：第一个未完成的步——让交易员一进来就落在「该干的事」上
+  // 缺省：第一个未完成的步，让交易员一进来就落在「该干的事」上
   const first = ALL_STAGES.find((s) => !isStageDone(s.id, declaration.value))
   return first?.id ?? 'morning-review'
 }
@@ -130,8 +130,8 @@ function selectStage(stage: StageId) {
   router.replace({ query: { ...route.query, stage } })
 }
 
-// ── 键盘动线（#1970）：高频作业不摸鼠标也能走完七步 ──────────────────────────
-// Alt+←/→ 相邻步切换；Alt+1…7 直达第 N 步（用 e.code 判定——macOS 上 Alt+数字会
+// 键盘动线（#1970）：高频作业不摸鼠标也能走完七步
+// Alt+←/→ 相邻步切换；Alt+1…7 直达第 N 步（用 e.code 判定，macOS 上 Alt+数字会
 // 产出特殊字符，按 e.key 判会把 ¡ 当 1）。表单输入不受影响（无 Alt 修饰不触发）。
 function onKeydown(e: KeyboardEvent) {
   if (!e.altKey || e.ctrlKey || e.metaKey) return

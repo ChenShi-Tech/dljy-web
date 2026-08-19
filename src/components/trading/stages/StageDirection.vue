@@ -1,13 +1,13 @@
 <script setup lang="ts">
-// S3 方向判断（09:30–10:30）—— 把 S2 的市场判断变成一个可执行的方向决策
+// S3 方向判断（09:30–10:30）， 把 S2 的市场判断变成一个可执行的方向决策
 //
-// 内在逻辑是一条**判据递进链**：
+// 内在逻辑是一条判据递进链：
 //   S2 市场判断（松紧+价格中枢）→ 预期价差 ΔP（人拍板，可参考 ML 价格预测）
 //   → R4 规则表（ΔP × 置信度 × S2 数据暴露系数）→ 偏置档位 → 申报曲线 = 预测负荷 × (1+偏置)。
 // 偏置档位不由人拍脑袋：S2 门禁落「可参考」时暴露系数 0.5，偏置自动减半；「仅展示」强制归零
-// ——上一步的数据口径**机械地**约束这一步敢押多大。
+// ，上一步的数据口径机械地约束这一步敢押多大。
 //
-// 曲线生成分两层（此前只有 ①，被指"固化"——正解是把 ② 接上，而非让 ① 更花哨）：
+// 曲线生成分两层（此前只有 ①，被指"固化"，正解是把 ② 接上，而非让 ① 更花哨）：
 //   ① 形态模板（双峰/平坦/夜间）：无预测数据时的兜底出发点，总量守恒；
 //   ② ML 价格预测参考 + AI 建议：复用申报工作台同一套 /agent-api 预测端点，
 //      预测数值先算好，AI 只解释"为什么这样建议"，采纳与否由人点按钮。
@@ -43,13 +43,13 @@ import type { StageId } from '@/data/workflowStages'
 const props = defineProps<{ declaration: DeclarationOrder | null; targetDate: string }>()
 const emit = defineEmits<{ updated: [d: DeclarationOrder]; go: [stage: StageId] }>()
 
-// ── 上游产出：S2 市场判断 ───────────────────────────────────────────────────
+// 上游产出：S2 市场判断
 const upstream = computed(() => props.declaration?.preflight?.dataGate ?? null)
 const exposureFactor = computed(() =>
   upstream.value ? exposureFactorOf(upstream.value.gate as Parameters<typeof exposureFactorOf>[0]) : 0.5
 )
 
-// ── 方向决策输入 ────────────────────────────────────────────────────────────
+// 方向决策输入
 type Direction = 'add' | 'reduce' | 'hold'
 const DIRECTION_LABEL: Record<Direction, string> = { add: '增持', reduce: '减持', hold: '观望' }
 const DIRECTION_NOTE: Record<Direction, string> = {
@@ -84,7 +84,7 @@ const bias = computed(() => {
   })
 })
 
-// ── 申报曲线生成 ────────────────────────────────────────────────────────────
+// 申报曲线生成
 const totalMwh = ref(960)
 const shape = ref<LoadShapeId>('double-peak')
 const SHAPES = Object.keys(LOAD_SHAPE_LABEL) as LoadShapeId[]
@@ -93,8 +93,8 @@ const baseCurve = computed(() => buildLoadCurve96(totalMwh.value, shape.value))
 const declaredCurve = computed(() => applyBias(baseCurve.value, bias.value.biasRatio))
 const declaredTotal = computed(() => declaredCurve.value.reduce((a, b) => a + b, 0))
 
-// ── ML 价格预测参考（复用申报工作台同一套 /agent-api 预测端点）─────────────
-// 用途：给「预期价差 ΔP」提供数值参照——预测的日内价格形态（峰谷分布、均值）是
+// ML 价格预测参考（复用申报工作台同一套 /agent-api 预测端点）
+// 用途：给「预期价差 ΔP」提供数值参照，预测的日内价格形态（峰谷分布、均值）是
 // 判断"实时会比日前高还是低"的输入之一。诚实标注：预测服务不在线/数据不可用时
 // 显示原因，不编数字。
 const forecast = ref<ForecastResult | null>(null)
@@ -139,7 +139,7 @@ const effectiveExposureFactor = computed(() =>
   drift.value.drifted ? Math.min(exposureFactor.value, 0.5) : exposureFactor.value
 )
 
-// ── 储能套利窗口清单（F2.4）+ P90 价差 vs 盈亏平衡自动比对 ──────────────────
+// 储能套利窗口清单（F2.4）+ P90 价差 vs 盈亏平衡自动比对
 // 资产参数取企业档案（同 S4），未建档用默认并如实标注；盈亏平衡用 R3 口径
 // （充电价参考取预测谷段 P50；容量收益未计 = 要求价差偏保守，标注说明）。
 const assets = ref<StorageAsset[]>([])
@@ -165,7 +165,7 @@ const requiredSpread = computed(() => {
     roundTripEfficiency: a?.etaRoundTrip ?? 0.87,
     chargeAdderYuanPerMwh: a?.chargeAdderYuanPerMwh ?? 71.56,
     cycleCostYuanPerMwh: a?.cycleCostYuanPerMwh ?? 110,
-    // 容量收益（R11）在 S4 计划块按档案容量电价核算，此处未计 → 要求价差偏保守（更高）
+    // 容量收益（R11）在 S4 计划块按档案容量电价核算，未计入 → 要求价差偏保守（更高）
     cCapYuanPerMwh: 0,
     cAsYuanPerMwh: 0
   })
@@ -194,7 +194,7 @@ const kellyCap = computed(() =>
   quantiles.value ? buildOodaDecision(hourlyPointsOf(quantiles.value), storageParams.value).kelly : null
 )
 
-// ── 日前 vs 中长期双曲线对比（#2006 · 会议 §5.1）─────────────────────────────
+// 日前 vs 中长期双曲线对比（#2006 · 会议 §5.1）
 // 中长期侧消费预测域 /midterm 日均价序列（模型活在预测域，本面板只消费结果）；
 // 需要显式拉取（中长期预测非每日必跑），拉不到诚实空态不编曲线。
 const midterm = ref<MidtermResult | null>(null)
@@ -265,9 +265,9 @@ const bandChart = computed(() => {
   return { W, H, band, p50: line(q.p50), p10: line(q.p10), p90: line(q.p90) }
 })
 
-// ── AI 建议（判据先算好，AI 解释与建议，人拍板采纳）──────────────────────────
+// AI 建议（判据先算好，AI 解释与建议，人拍板采纳）
 // 注入：S2 判断 + R4 规则表机制 + ML 预测摘要 + 当前人选方向。AI 给出「建议方向 +
-// 建议 ΔP 区间 + 理由」，人看后自己改输入框——AI 不直接改任何表单值。
+// 建议 ΔP 区间 + 理由」，人看后自己改输入框，AI 不直接改任何表单值。
 const aiOpen = ref(false)
 const aiContext = computed(() => ({
   targetDate: props.targetDate,
@@ -288,7 +288,7 @@ const aiContext = computed(() => ({
   biasRule: '偏置 = R4 规则表(ΔP×置信度) × 暴露系数(S2 门禁: 可申报1/可参考0.5/仅展示0，模型漂移时封顶0.5)，管理带 ±20%',
   exposureFactor: effectiveExposureFactor.value
 }))
-// ── AI 辅助填报：方向/ΔP/置信度/理由四项都是**人工经验判断**（无数据库可查）────
+// AI 辅助填报：方向/ΔP/置信度/理由四项都是人工经验判断（无数据库可查）
 // 复用同一份上下文（S2 判断 + ML 预测摘要 + R4 机制），产出结构化建议供一键采纳。
 const ASSIST_LABELS = {
   direction: '方向', priceSpread: '预期价差 ΔP', confidence: '置信度', rationale: '决策理由'
@@ -310,7 +310,7 @@ const aiQuestion = computed(() =>
   `你只建议，采纳与否由交易员自己改左侧输入框。`
 )
 
-// ── 写回 ────────────────────────────────────────────────────────────────────
+// 写回
 const saving = ref(false)
 const saveMsg = ref('')
 const saveError = ref('')

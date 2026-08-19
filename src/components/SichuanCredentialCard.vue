@@ -1,14 +1,14 @@
 <script setup lang="ts">
 // 四川开放平台凭据录入卡片（Epic #1618 / #1620；#1925 接入通用凭据层）。
 //
-// 录入的凭据由 Java 采集服务（integrations/sichuan-ingest/，8090）读取——「当前生效」
+// 录入的凭据由 Java 采集服务（integrations/sichuan-ingest/，8090）读取，「当前生效」
 // 那套物化到采集服务读的文件，故保存后免重启生效。
 //
-// #1925 起凭据**按录入账号分记录**：
+// #1925 起凭据按录入账号分记录：
 //   - 本卡片只显示「我自己的记录」的掩码；别人的记录连掩码都看不到（账号级隔离）。
-//   - 每个接入点实际生效的只有一套（无人值守采集用它）：最后一次**完整**保存者生效。
-//     生效者不是我时，卡片顶部有显著提示——否则会出现「我改了却没生效」而无从察觉。
-//   - 「测试连通」测的是**当前生效那套**，不是我的草稿。
+// - 每个接入点实际生效的只有一套（无人值守采集用它）：最后一次完整保存者生效。
+// 生效者不是我时，卡片顶部有显著提示，否则会出现「我改了却没生效」而无从察觉。
+// - 「测试连通」测的是当前生效那套，不是我的草稿。
 //
 // 安全：六项密钥一律 password 输入，保存成功即清空输入框（不在浏览器留明文）；
 // 服务端只回掩码，前端任何路径拿不到明文。
@@ -30,9 +30,9 @@ import {
 const POINT_ID = 'sgcc-sichuan'
 
 const status = ref<GridCredentialStatus | null>(null)
-// **只存已写回当前生效凭据版本的结论**。服务端在「测试期间生效凭据被换了」时会丢弃结论
+// 只存已写回当前生效凭据版本的结论。服务端在「测试期间生效凭据被换了」时会丢弃结论
 // （recorded:false），若这里仍留着它，testTone/testText/tokenMeta 会优先读它，
-// 页面照样显示绿色「凭据有效」+ 令牌有效期——旁边加一句警告压不住这种误导。
+// 页面照样显示绿色「凭据有效」+ 令牌有效期，旁边加一句警告压不住这种误导。
 // 被丢弃的结论只进 discardedNotice，不参与状态区渲染。
 const lastTest = ref<GridCredentialTestReport | null>(null)
 const discardedNotice = ref<string | null>(null)
@@ -90,7 +90,7 @@ const testTone = computed(() => {
   if (result === 'ok') return 'success'
   // 配置错误一律标红要人去改：credentialRejected（平台拒了这套密钥）、
   // credentialMalformed（密钥粘错了）、endpointRejected（端点配错了）。
-  // unreachable/serviceDown/platformError 不是配置问题，标中性——把它们染红会误导人
+  // unreachable/serviceDown/platformError 不是配置问题，标中性，把它们染红会误导人
   // 去改一套本来正确的凭据。platformError 尤其如此：那是平台自己 5xx 了。
   if (result === 'credentialRejected' || result === 'credentialMalformed'
     || result === 'endpointRejected' || result === 'error') return 'danger'
@@ -104,7 +104,7 @@ const testText = computed(() => {
   return `${test.msg ?? test.result}${time}`
 })
 
-// 令牌有效期只在测试成功时有意义，且只展示元信息——令牌本身服务端就不会返回。
+// 令牌有效期只在测试成功时有意义，且只展示元信息，令牌本身服务端就不会返回。
 const tokenMeta = computed(() => {
   const test = lastTest.value
   if (!test || test.result !== 'ok') return null
@@ -177,7 +177,7 @@ async function testConnection() {
   try {
     const report = await testGridCredentials(POINT_ID)
     if (report && report.recorded === false) {
-      // 服务端已丢弃这份结论——它测的不是当前生效凭据。这里也必须丢弃，否则状态区
+      // 服务端已丢弃这份结论，它测的不是当前生效凭据。这里也必须丢弃，否则状态区
       // 会拿它渲染成「凭据有效」。清空后状态区回落到 effective.lastTest（服务端权威值）。
       lastTest.value = null
       discardedNotice.value = report.notRecordedReason ?? '本次测试结论未写回，请重新测试'

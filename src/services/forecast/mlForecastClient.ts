@@ -1,7 +1,7 @@
 // 页面直调后端 ML 预测端点客户端（/api/v1/forecast/*，经 vite 代理 /agent-api → /api → :8000 FastAPI）。
 // 全部预测计算在后端 Python ML 服务，前端只取参数、调用、渲染（PRD v2.2 §一/§六）。
 // 数据口径 basis 由后端透传（'captured' 真实 / 'synthetic' 合成验证），前端据此显示角标。
-// 注：后端原名 ironclaw-backend 已更名 agent-backend，代理前缀随之由 /ironclaw-api 改为 /agent-api。
+// 后端原名 ironclaw-backend 已更名 agent-backend，代理前缀随之由 /ironclaw-api 改为 /agent-api。
 // 基址按环境切换（与 agentClient.AGENT_API_BASE 同约定）：开发态走 vite 代理前缀
 // /agent-api（→ :8000 Python），生产/静态部署后端同源直接挂 /api。此前写死 /agent-api
 // 会让 ML 预测实验室/工作台在生产构建下全部 404（/agent-api 仅是开发代理别名）。
@@ -98,11 +98,11 @@ export type ForecastResult = {
   unit: string
   warnings: string[]
   // Core 转发模式（DLJY_FORECAST_FORWARD_CORE=1）下 Core 不可达或公司上下文不可解析时，
-  // forecast_core_adapter.prediction_unavailable_envelope() 返回 **HTTP 200** + available:false
+  // forecast_core_adapter.prediction_unavailable_envelope() 返回 HTTP 200 + available:false
   // + 空 points + unavailable_reason。不声明这两个字段，消费方就会把"服务不可用"当成一次
   // 成功预测（空曲线），既不显示真实原因也不触发空态出口。
   available?: boolean
-  // ⚠️ 字段名以 **snake_case 为准**：`prediction_envelope_to_legacy()` 输出的是
+  // ⚠️ 字段名以 snake_case 为准：`prediction_envelope_to_legacy()` 输出的是
   // `unavailable_reason`（forecast_core_adapter.py:393）。camelCase 变体一并声明只为兼容，
   // 读取一律走 unavailableReasonOf() 归一，避免又出现"读了个永远不存在的字段"。
   unavailable_reason?: string | null
@@ -126,9 +126,9 @@ export type ForecastRequest = {
   extra?: Record<string, unknown>      // 算法专属参数透传（如 KNN 的 k）
 }
 
-// ── API ──
-// region_id（#763 job646）：/models 的 quality 不达标标注是**地区维**（skill 相对该地区回测基线），
-// 必须带地区——否则后端默认 yunnan，切 shanxi 后模型目录显示云南 skill/quality（跨地区串读）。
+// API
+// region_id（#763 job646）：/models 的 quality 不达标标注是地区维（skill 相对该地区回测基线），
+// 必须带地区，否则后端默认 yunnan，切 shanxi 后模型目录显示云南 skill/quality（跨地区串读）。
 // 默认取全局地区（照本文件其它方法的 x-region-id 头/参数范式）。
 export async function fetchForecastModels(target = 'price', regionId?: string): Promise<ForecastModelCatalog> {
   const rid = regionId ?? currentRegion.value.id
@@ -157,7 +157,7 @@ export function fetchBacktest(req: ForecastRequest, testDays = 15): Promise<Back
   return post(`/backtest?test_days=${testDays}`, req)
 }
 
-// ── 预测质量记分牌（#763 PR-2）：只读 rolling_report 产物（data/generated/forecast-report/*.json）──
+// 预测质量记分牌（#763 PR-2）：只读 rolling_report 产物（data/generated/forecast-report/*.json）
 // 后端 /forecast/scoreboard 定位指定 region 最新滚动回测报告透传；无产物→available=false（诚实空态）。
 // 报告 basis 由后端原样透传（synthetic 报告页面显著警示「合成数据·不代表真实精度」，不回退假数据）。
 export type ScoreboardModelMetrics = {
@@ -222,7 +222,7 @@ export function fetchForecastScoreboard(regionId?: string): Promise<ScoreboardRe
   return get(`/scoreboard?region_id=${encodeURIComponent(rid)}`)
 }
 
-// ── 申报决策建议（预测→动作）──
+// 申报决策建议（预测→动作）
 export type GeneratorStrategy = 'p50' | 'p10' | 'expected'
 export type BidAdviceRequest = ForecastRequest & {
   subject_type?: string            // 'retailer' | 'storage' | 'generator'
@@ -285,7 +285,7 @@ export function fetchBidAdvice(req: BidAdviceRequest): Promise<BidAdviceResult> 
   return post('/bid-advice', req)
 }
 
-// ── 交易决策驾驶舱（一站式决策包）──
+// 交易决策驾驶舱（一站式决策包）
 export type CockpitResult = {
   basis: ForecastBasis
   price_forecast: { points: number[]; lower: number[]; upper: number[]; unit: string }
@@ -298,7 +298,7 @@ export function fetchCockpit(req: BidAdviceRequest): Promise<CockpitResult> {
   return post('/cockpit', req)
 }
 
-// ── 偏差风险情景量化（/risk-quantify）──
+// 偏差风险情景量化（/risk-quantify）
 // VaR/CVaR 为整条申报曲线的标量聚合结果，不返回逐时段 VaR/CVaR 序列。
 export type RiskQuantifyRequest = ForecastRequest & {
   clearing_price?: number
@@ -343,9 +343,9 @@ export type RiskQuantifyResult = {
   productionWrite: boolean
 }
 
-// 后端 forecast 站级分支（传 actual_points 时）返回 basis='client_station_forecast'——基于客户端
+// 后端 forecast 站级分支（传 actual_points 时）返回 basis='client_station_forecast'，基于客户端
 // 传入站级预测的推算，属 ForecastBasis 词表外值。归一到合法枚举保守标注（推算类→illustrative，
-// 未知→synthetic），防类型谎报致 DataBasisBadge 渲染 undefined（roborev job554）。
+// 未知→synthetic），防类型谎报致 DataBasisBadge 渲染 undefined。
 const FORECAST_BASIS_ALLOWED: readonly ForecastBasis[] = ['real', 'captured', 'illustrative', 'synthetic']
 function normalizeForecastBasis(raw: unknown): ForecastBasis {
   const v = String(raw ?? '')
@@ -359,7 +359,7 @@ export async function fetchRiskQuantify(req: RiskQuantifyRequest): Promise<RiskQ
   return { ...res, forecast: { ...res.forecast, basis: normalizeForecastBasis(res.forecast?.basis) } }
 }
 
-// ── PR-P0b 电价闭环：两阶段 mean-CVaR 申报优化（/optimize-bid）──
+// PR-P0b 电价闭环：两阶段 mean-CVaR 申报优化（/optimize-bid）
 // 后端 OptimizeBidRequest 接 forecast 电价预测 P50（price_forecast_p50）替代 clearing_price 常数（400），
 // 修复旧实现 clearing_price 恒 400 与 forecast 电价预测断裂（forecast 已产出 P10/P50/P90 但未喂回申报）。
 // 前端类型对齐（字段对齐 forecast.py 的 OptimizeBidRequest + bid_optimizer.optimize_bid 响应）；UI 接入留后续。
@@ -413,7 +413,7 @@ export function fetchOptimizeBid(req: OptimizeBidRequest): Promise<OptimizeBidRe
   return post('/optimize-bid', req)
 }
 
-// ── 功能 C：偏差考核最小化申报 copilot（/deviation-bid-copilot）──
+// 功能 C：偏差考核最小化申报 copilot（/deviation-bid-copilot）
 // 申报优化目标=偏差考核费用约束下最大化收益；对照基线(P50 直报)，接地区结算规则（新疆）。
 // 申报为决策支持参考·非结算依据，提交前强制人工确认（HITL）。
 export type DeviationBidCopilotRequest = OptimizeBidRequest & {
@@ -483,7 +483,7 @@ export function runForecastTrain(req: ForecastRequest): Promise<{
   return post('/train', req)
 }
 
-// ── L2 扩展端点：超短期 / 中长期 / 偏差考核 / 序列预测（后端 forecast.py 已实现）──
+// L2 扩展端点：超短期 / 中长期 / 偏差考核 / 序列预测（后端 forecast.py 已实现）
 
 // 超短期滚动预测（下一 15min，误差远低于日前）
 export type UltraShortResult = {
@@ -536,7 +536,7 @@ export type DeviationRiskResult = {
     slot_hours?: number
     segmented?: boolean
     // #1575/#1649：未提供可用 P10/P90 分位带（站级 generator 传 actual_lower/upper=None 常态）时
-    // 后端标 ci_available=false 且 worst 退化为 expected——前端不得把 worst 渲染成「最坏罚款」红字。
+    // 后端标 ci_available=false 且 worst 退化为 expected，前端不得把 worst 渲染成「最坏罚款」红字。
     ci_available: boolean
     per_slot?: { slot: number; expected_penalty: number; worst_penalty: number }[]
   }
@@ -565,10 +565,10 @@ export function runPatchtstSeq(req: ForecastRequest): Promise<PatchtstResult> {
   return post('/patchtst-seq', req)
 }
 
-// ── 站级发电量预测（光伏出力，G1.2/G1.3 + G2 真实数据接入）──
+// 站级发电量预测（光伏出力，G1.2/G1.3 + G2 真实数据接入）
 // 前端传入 company station 的 station_id + installed_capacity(MW)。
 // G2：data_source=auto/real 时后端优先用站级真实出力训练(basis=real)，缺则合成；
-//     weather_points 提供真实预测日气象则升 sourceType=MIXED/REAL，否则合成典型日 → MOCK。
+// weather_points 提供真实预测日气象则升 sourceType=MIXED/REAL，否则合成典型日 → MOCK。
 export type StationGenerationWeatherPoint = {
   hour: number
   radiation?: number
@@ -624,7 +624,7 @@ export function runStationGeneration(req: StationGenerationRequest): Promise<Sta
   return post('/station-generation', req)
 }
 
-// ── 预测日真实 NWP（Open-Meteo 免费源，G2.2 / #844）──
+// 预测日真实 NWP（Open-Meteo 免费源，G2.2 / #844）
 // 前端预测前先取预测日逐时气象 → 填 station-generation 的 weather_points → weather_basis=real。
 // 走 /v1/weather/day-forecast（与 station-generation 同源解析坐标：region_id+station_id）；
 // 拿不到/部分覆盖则不传 weather_points，后端自动合成典型日回退 + 既有 warning。

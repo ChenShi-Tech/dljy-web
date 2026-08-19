@@ -11,7 +11,7 @@ const canWrite = computed(() => hasCompanyAdmin(getCurrentUser()))
 
 const form = reactive({ contact: '', address: '', businessScope: '' })
 const loading = ref(false)
-// 注册立场（#2193）：公司在交易中心登记的市场主体类型集合——「本主体既买又卖」的
+// 注册立场（#2193）：公司在交易中心登记的市场主体类型集合，「本主体既买又卖」的
 // 登记处，也是 TRADER/GROUP 账号立场切换授权的服务端权威。仅 BOSS/ADMIN 可改。
 const registryLoading = ref(false)
 const registry = ref<string[]>([])

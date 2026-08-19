@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// 战略问答（#1526 PoC）：pi harness 驱动的旗舰切片——一句战略方向 → 解读 →
+// 战略问答（#1526 PoC）：pi harness 驱动的旗舰切片，一句战略方向 → 解读 →
 // 取数 → 分析 → 图表落页。AgentChatPanel 零改动接流（scenario→base 路由在
 // agentClient 服务层），后端为 integrations/pi-poc 编排服务（/pi-api → 8100）。
 // 持久化走 #498 默认全开：pi-poc 服务端回调 Node 登记归属（需两端同配

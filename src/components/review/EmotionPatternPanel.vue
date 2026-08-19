@@ -3,7 +3,7 @@
 // ---------------------------------------------------------------------------
 // 数据源 = 决策日志（localStorage 哈希链，前端真数据）+ 规则清单 v1（先规则后模型）。
 // 页面明示学习辅导定位、不做排名；可整体停用（配置开关）且停用时无残留展示。
-// 干预措施与效果跟踪（下季度逐人回查）落 improvement_actions——端点未上线本地草稿。
+// 干预措施与效果跟踪（下季度逐人回查）落 improvement_actions，端点未上线本地草稿。
 import { computed, ref } from 'vue'
 import { loadLog } from '@/services/trading/decisionLogStore'
 import {

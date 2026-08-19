@@ -1,9 +1,9 @@
 // 申报台多模型对比编排回归。
 //
-// 锁的是**误导性呈现**：这些逻辑坏掉不会报错，只会让用户拿错误的模型排名或假数据去报价。
+// 锁的是误导性呈现：这些逻辑坏掉不会报错，只会让用户拿错误的模型排名或假数据去报价。
 // 实测依据（云南 captured / train_days=60）：knn 11.44 · xgboost 21.46 · lightgbm 25.16 ·
 // random_forest 27.05 · ridge 42.96 · tslib:PatchTST(占位) 45.87。
-// 注意最后一项——占位模型比最简单的真实模型还差，若参与排名，用户会误以为它只是
+// 注意最后一项，占位模型比最简单的真实模型还差，若参与排名，用户会误以为它只是
 // "表现一般的真实模型"，而不是"结果根本不能用于报价的占位实现"。
 import { describe, expect, it } from 'vitest'
 
@@ -111,7 +111,7 @@ describe('parsePredictableUntil：只在真解析出区间时才给出口', () =
 
 describe('isTrustworthyForecast：合成兜底结果不得参与排名/报价', () => {
   // 后端 run_forecast 在真实回放缺失时用合成数据兜底（basis='synthetic'），而普通
-  // KNN/XGBoost 的 result.mock 仍是 false——只看模型静态属性会把合成曲线当真实模型排名。
+  // KNN/XGBoost 的 result.mock 仍是 false，只看模型静态属性会把合成曲线当真实模型排名。
   it.each([
     [{ basis: 'captured' }, true],
     [{ basis: 'real' }, true],
@@ -119,7 +119,7 @@ describe('isTrustworthyForecast：合成兜底结果不得参与排名/报价', 
     [{ basis: 'synthetic' }, false],
     [{ basis: 'illustrative' }, false],
     [{ basis: 'captured', mock: true }, false],
-    // 质量门禁：只在显式 false 时拦——字段缺省表示后端没跑门禁，不能据此把模型判死
+    // 质量门禁：只在显式 false 时拦，字段缺省表示后端没跑门禁，不能据此把模型判死
     [{ basis: 'captured', metrics: { passes_gate: false } }, false],
     [{ basis: 'captured', metrics: { passes_gate: true } }, true],
     [{ basis: 'captured', metrics: {} }, true],
@@ -130,10 +130,10 @@ describe('isTrustworthyForecast：合成兜底结果不得参与排名/报价', 
   })
 
   // 实测（云南 2026-06-20，真连 agent-backend）：
-  //   knn     passes_gate=false  improve_vs_knn_pct=0.0    ← 拿自己比自己
-  //   xgboost passes_gate=true   improve_vs_knn_pct=10.48
+  // knn     passes_gate=false  improve_vs_knn_pct=0.0    ← 拿自己比自己
+  // xgboost passes_gate=true   improve_vs_knn_pct=10.48
   // 门禁定义是「比 KNN 改善 ≥10%」，对 KNN 自身在定义上就不适用。不豁免的话，默认恒可用的
-  // 基线会被判"未过门禁"——目录加载失败时只剩 knn，会直接导致决策包全程不可用。
+  // 基线会被判"未过门禁"，目录加载失败时只剩 knn，会直接导致决策包全程不可用。
   it('基线（KNN）豁免单日 holdout 门禁：它拿自己比自己，improve 恒为 0', () => {
     const knnResult = { basis: 'captured', metrics: { mae: 11.44, passes_gate: false, improve_vs_knn_pct: 0 } }
     expect(isTrustworthyForecast(knnResult as never)).toBe(false)                        // 不豁免时被误杀
@@ -158,7 +158,7 @@ describe('canBeDecisionModel：目标专用 store 模型不得作决策模型', 
     expect(canBeDecisionModel({ id: 'xgboost', kind: 'compute' } as never)).toBe(true)
     expect(canBeDecisionModel({ id: 'restore-ish', kind: 'compute' } as never)).toBe(true) // 不是前缀匹配就不拦
   })
-  // Epic #1898：remote: 远程模型绑定单一 target，LOAD 腿同样必败——按 supportedTargets 通用判据排除
+  // Epic #1898：remote: 远程模型绑定单一 target，LOAD 腿同样必败，按 supportedTargets 通用判据排除
   it('supportedTargets 不含 load 的目标专用模型（remote: 等）排除出决策候选', () => {
     expect(canBeDecisionModel(
       { id: 'remote:dlinear-yn-price-v1', kind: 'compute', supportedTargets: ['price'] } as never,
@@ -234,7 +234,7 @@ describe('buildCompareRows：合成兜底结果同样不排名', () => {
 })
 
 describe('toChartSeries：不可信曲线必须带标签进图', () => {
-  // 图是最醒目的元素。模型可能返回 captured 数据但单日门禁判负——此时 result 本身看不出
+  // 图是最醒目的元素。模型可能返回 captured 数据但单日门禁判负，此时 result 本身看不出
   // 问题，若不带标签进图，它会和真实可信模型画成一模一样的实线，只看曲线的人会当它可信。
   it('门禁判负的 captured 曲线带「未过门禁」标签', () => {
     const series = toChartSeries([ok('lightgbm', 3, { metrics: { mae: 3, passes_gate: false } })])
@@ -332,7 +332,7 @@ describe('defaultSelection', () => {
   })
 })
 
-// 注：原 isIncapableForTarget 测试块已随该临时挡板删除（#1461 根因闭环）。
+// 原 isIncapableForTarget 测试块已随该临时挡板删除（#1461 根因闭环）。
 // 「不支持某 target 的模型不进选择器」现由后端 contract_catalog 按 supportedTargets 过滤 +
 // 前端 providersForTarget 按 provider.supportedTargets 过滤共同保证（申报台/工作台/驾驶舱统一），
 // 不再需要前端手维护「必失败组合」清单。
@@ -344,7 +344,7 @@ describe('resolveDecisionModel：重跑不得静默改掉用户手选的口径',
     expect(R({ usableIds: ['knn', 'xgboost'], rankedIds: ['xgboost', 'knn'], preferred: 'knn' })).toBe('knn')
   })
 
-  it('重跑场景：偏好在新批次里仍可用 → 仍是它（本条即 codex 指出的回归）', () => {
+  it('重跑场景：偏好在新批次里仍可用 → 仍是它（回归锚）', () => {
     // 用户手选 knn → 点「重跑」→ run() 清空 outcomes → 新结果回来
     const afterRerun = R({ usableIds: ['knn', 'xgboost'], rankedIds: ['xgboost', 'knn'], preferred: 'knn', current: '' })
     expect(afterRerun).toBe('knn')
@@ -382,7 +382,7 @@ describe('canBeDecisionModel：占位模型不得作为申报决策依据', () =
     [{ mock: true }, false],
     [{ available: false }, false],
     // 回放 provider 不是 /forecast/predict 的 model_type：选它决策包稳定报
-    // 「Unsupported forecast model: platform」，比给个坏结果更隐蔽——页面看着正常，
+    // 「Unsupported forecast model: platform」，比给个坏结果更隐蔽，页面看着正常，
     // 只有决策包永远失败。
     [{ kind: 'replay' }, false],
     [{ kind: 'compute' }, true],

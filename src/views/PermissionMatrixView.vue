@@ -99,7 +99,7 @@ const section = ref<string>('roles')
 
 // 路由开关区：73 条里找一条太痛苦，给个按页面名/路径的过滤。
 const routeKeyword = ref('')
-// 默认全折叠——折叠态每个 block 一行（20 × ~44px，两列 ≈ 440px），
+// 默认全折叠，折叠态每个 block 一行（20 × ~44px，两列 ≈ 440px），
 // 比原先 2500px 的全展开可用得多；要改哪个 block 就展开哪个。
 const expandedBlocks = ref<string[]>([])
 
@@ -121,7 +121,7 @@ function blockGrantedCount(routes: MenuRoute[]) {
 }
 
 // 搜索时自动展开命中的 block：否则输入关键词后看到的还是一排折叠头，等于没搜。
-// 用可写 computed 而非 watch 副作用——watch 在 routesByBlock 重算前后的时序不可靠，
+// 用可写 computed 而非 watch 副作用，watch 在 routesByBlock 重算前后的时序不可靠，
 // 实测会出现「筛出 3 组但仍全折叠」。这里直接由关键词推导展开集，无时序问题；
 // 清空关键词即回到用户手动展开的那一组。
 const activeBlocks = computed<string[]>({

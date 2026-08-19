@@ -1,6 +1,6 @@
 // S2 基本面库客户端：对接 /api/v1/market/fundamentals（PG market schema · 迁移 012）。
 //
-// 每个数值带来源（sourceKind）与可信度——这是"给 AI 的数据可信链"的前端一端：
+// 每个数值带来源（sourceKind）与可信度，这是"给 AI 的数据可信链"的前端一端：
 // 展示时标来源徽章，注入 AI 上下文时按来源区分"数据"与"假设"。
 import { apiGet, apiPut } from '@/services/api'
 

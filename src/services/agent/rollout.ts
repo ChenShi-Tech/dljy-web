@@ -1,16 +1,16 @@
 // 灰度命中查询（#1848 第二部分 · Epic #1843 S3-E）。
 //
-// 服务端（server/agent-rollout-store.mjs）是**命中判定的唯一权威**：本模块只负责
-// 「问一次、缓存一会儿、按结果选底座」，不在前端复刻任何判定逻辑——canary 名单比对
+// 服务端（server/agent-rollout-store.mjs）是命中判定的唯一权威：本模块只负责
+// 「问一次、缓存一会儿、按结果选底座」，不在前端复刻任何判定逻辑，canary 名单比对
 // 若在前端做，用户改 localStorage 就能把自己切进 pi，灰度就成了摆设。
 //
 // 两条 fail-safe：
-//   1. 查询失败/超时/未登录 → 一律按全 off（走旧图）。灰度状态读不到时，「保守」的方向
-//      是旧图而不是新底座：把用户送上未验证链路的代价远大于少一次对拍。**前提是旧图那边
-//      还认这个场景**——已完成迁移的场景必须出灰度表进 PI_NATIVE_SCENARIOS，否则这条
-//      fail-safe 会把用户送去一个不再服务该场景的后端（见下）。
-//   2. 缓存键绑当前令牌：换账号（含登出再登录）自动作废，不会把上一个账号的命中结果
-//      套在下一个账号头上（canary 是按用户/公司命中的）。
+// 1. 查询失败/超时/未登录 → 一律按全 off（走旧图）。灰度状态读不到时，「保守」的方向
+// 是旧图而不是新底座：把用户送上未验证链路的代价远大于少一次对拍。**前提是旧图那边
+// 还认这个场景**，已完成迁移的场景必须出灰度表进 PI_NATIVE_SCENARIOS，否则这条
+// fail-safe 会把用户送去一个不再服务该场景的后端（见下）。
+// 2. 缓存键绑当前令牌：换账号（含登出再登录）自动作废，不会把上一个账号的命中结果
+// 套在下一个账号头上（canary 是按用户/公司命中的）。
 
 import { AGENT_API_BASE_ROOT, fetchRaw, timeoutSignal } from '@/services/api'
 
@@ -29,9 +29,9 @@ export const LEGACY_AGENT_BASE = `${AGENT_API_BASE_ROOT}/agent`
 export const PI_AGENT_BASE = '/pi-api/agent'
 
 // 恒定走 pi、不查灰度表的场景。两类来源：
-//   · PoC 专属入口（#1526/#1527）：本来就直连 pi，是**并行新入口**而非「替换旧图」。
-//   · **已完成迁移**的场景：`chat` 于 #2158 切流完成并删除旧 supervisor 路径，两侧不再并存。
-// 后者恒定 pi 而不是「灰度表说 pi」——旧图那边已经不认这个场景，再去查一次表只会新增一个
+// · PoC 专属入口（#1526/#1527）：本来就直连 pi，是并行新入口而非「替换旧图」。
+// · 已完成迁移的场景：`chat` 于 #2158 切流完成并删除旧 supervisor 路径，两侧不再并存。
+// 后者恒定 pi 而不是「灰度表说 pi」，旧图那边已经不认这个场景，再去查一次表只会新增一个
 // 失败点：查询超时时 fail-safe 会把用户送回一个 400。
 const PI_NATIVE_SCENARIOS = new Set(['strategic_qa', 'declaration_checkup', 'chat'])
 
@@ -42,8 +42,8 @@ const TOKEN_KEY = 'dljy_restore_token'
 
 type CacheEntry = { key: string; at: number; effective: RolloutEffective }
 let cache: CacheEntry | null = null
-// 在途请求**按令牌分桶**而不是单槽合流：登出换号时若沿用旧账号那条在途请求的结果，
-// 新账号会拿着别人的 canary 命中去选底座，而 pi 侧建会话不会再复查灰度名单——
+// 在途请求按令牌分桶而不是单槽合流：登出换号时若沿用旧账号那条在途请求的结果，
+// 新账号会拿着别人的 canary 命中去选底座，而 pi 侧建会话不会再复查灰度名单
 // 一次「未命中账号被送进 pi」就是切流事故。只有同一令牌的并发查询才合流。
 const inflightByKey = new Map<string, Promise<RolloutEffective>>()
 
@@ -124,7 +124,7 @@ export function resetRolloutCache(): void {
 }
 
 /**
- * 该场景的请求该发往哪个底座。**服务端权威**：只有 canary 命中或 primary 才返回 pi 基址。
+ * 该场景的请求该发往哪个底座。服务端权威：只有 canary 命中或 primary 才返回 pi 基址。
  * PoC 专属场景不查灰度表，恒定 pi（它们本来就是 pi 入口）。
  */
 export async function resolveServingBase(scenario?: string): Promise<string> {

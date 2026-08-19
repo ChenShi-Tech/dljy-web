@@ -26,13 +26,13 @@ const timeLabels = Array.from({ length: 96 }, (_, i) => {
   return `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`
 })
 
-// ── 四能力状态 ──
+// 四能力状态
 const ultra = ref<UltraShortResult | null>(null); const ultraLoading = ref(false)
 const mid = ref<MidtermResult | null>(null); const midLoading = ref(false); const midHorizon = ref(14)
 const dev = ref<DeviationRiskResult | null>(null); const devLoading = ref(false)
 const patch = ref<PatchtstResult | null>(null); const patchLoading = ref(false)
 
-// ── echarts 实例管理（每图一个容器/实例，按需 init + 切换 resize）──
+// echarts 实例管理（每图一个容器/实例，按需 init + 切换 resize）
 const elUltra = ref<HTMLDivElement | null>(null)
 const elMid = ref<HTMLDivElement | null>(null)
 const elPatch = ref<HTMLDivElement | null>(null)
@@ -44,12 +44,12 @@ function paint(key: string, el: HTMLDivElement | null, option: echarts.EChartsOp
 }
 function lineSeries(name: string, data: number[], color: string): echarts.SeriesOption {
   // target=price 为分时电价(按时段恒定)→阶梯线；load 等连续量→直线
-  // timeLabels 为时段起点标签(slot0=00:00)，须用 step:'end'——'start' 会把横段画成下一槽的值、错位一格(codex #335 P2)
+  // timeLabels 为时段起点标签(slot0=00:00)，须用 step:'end'，'start' 会把横段画成下一槽的值、错位一格(#335)
   return { name, type: 'line', ...(props.target === 'price' ? { step: 'end' as const } : {}), showSymbol: false, data, lineStyle: { width: 2 }, color }
 }
 
 // 各卡片独立世代守卫：同卡片连点作废旧请求，切地区/目标作废全部 in-flight；卡片间互不干扰
-// （并行运行多个预测各自保留结果，codex P2）。严格地区不串读纪律不变（#1744）。
+// （并行运行多个预测各自保留结果）。严格地区不串读纪律不变（#1744）。
 let ultraGen = 0, midGen = 0, devGen = 0, patchGen = 0
 async function doUltra() {
   const gen = ++ultraGen

@@ -107,7 +107,7 @@ describe('summarizeToolGroup', () => {
 
 describe('toolGroupBasis：组头必须取最弱口径', () => {
   // 组默认折叠。若取"最后一个"，前面用过 synthetic_mock、后面用了 captured 时组头会显示
-  // captured，把"用了合成数据"藏进折叠里——混合来源被呈现为全真实数据（Mock 标注纪律）。
+  // captured，把"用了合成数据"藏进折叠里，混合来源被呈现为全真实数据（Mock 标注纪律）。
   it('synthetic 在前、captured 在后 → 仍显示 synthetic', () => {
     const segs = [tool('a', 'done', { basis: 'synthetic' }), tool('b', 'done', { basis: 'captured' })]
     expect(toolGroupBasis(segs)).toBe('synthetic')

@@ -75,7 +75,7 @@ const selectedEvidenceResult = computed(() => (
   evidenceSources.value.find((item) => item.sourceId === selectedEvidenceSourceId.value) ?? null
 ))
 const evidenceFeatures = computed(() => evidenceToTopologyFeatures(selectedEvidenceResult.value, {
-  // manifest 降级为 null 时改用 evidence 自带作用域（#1348 codex P2）：
+  // manifest 降级为 null 时改用 evidence 自带作用域（#1348）：
   // 否则空字符串作用域会让已成功返回的公开证据层因 scope 不完整而无法绘制。
   regionId: topology.value?.regionId ?? selectedEvidenceResult.value?.regionId ?? '',
   gridOperator: topology.value?.gridOperator ?? selectedEvidenceResult.value?.gridOperator ?? '',
@@ -189,8 +189,8 @@ async function load() {
   selectedPlantId.value = null
   selectedTopologyFeatureId.value = null
   try {
-    // 公开证据层与私有 Provider 并行、互不拖垮（#1348 codex P2 两方向）：
-    // manifest 与 evidence 各自 .catch 独立降级——503/瞬断只清空自己那层；
+    // 公开证据层与私有 Provider 并行、互不拖垮（#1348 两方向）：
+    // manifest 与 evidence 各自 .catch 独立降级，503/瞬断只清空自己那层；
     // 401/403 必须继续抛出进外层 catch 走 accessDenied 受控空态，不得吞成「未配置」。
     const degradeNonAuth = (cause: unknown) => {
       if (cause instanceof ApiError && (cause.status === 401 || cause.status === 403)) throw cause

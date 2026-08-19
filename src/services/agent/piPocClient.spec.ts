@@ -1,10 +1,10 @@
 // piPocClient 收编守卫（#1526/#1527）：pi-poc 两个 PoC 页的取数出口。
 // 守的不变量：
-//   1. 端点必须走 PI_AGENT_BASE（rollout.ts 单一定义），页面不得再散落硬编码 '/pi-api/...'——
-//      本仓代理被误删时两页静默 404 的根因正是散落取数无人治理；
-//   2. 请求必须带 identityHeaders 与超时 signal（与 agentClient 同档纪律）；
-//   3. setSessionAutoApprove 的返回以服务端 auto_approve === true 为准（授权状态以服务端为
-//      权威，前端开关只是意向）；失败抛 `HTTP <status>`，由页面回滚开关显示（不留假授权状态）。
+// 1. 端点必须走 PI_AGENT_BASE（rollout.ts 单一定义），页面不得再散落硬编码 '/pi-api/...'
+// 本仓代理被误删时两页静默 404 的根因正是散落取数无人治理；
+// 2. 请求必须带 identityHeaders 与超时 signal（与 agentClient 同档纪律）；
+// 3. setSessionAutoApprove 的返回以服务端 auto_approve === true 为准（授权状态以服务端为
+// 权威，前端开关只是意向）；失败抛 `HTTP <status>`，由页面回滚开关显示（不留假授权状态）。
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 const identityHeaders = vi.hoisted(() => vi.fn(() => ({ 'x-user-id': 'u1' })))

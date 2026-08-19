@@ -121,7 +121,7 @@ const selectedEventId = ref<string | null>(null)
 const selectedTopologyFeatureId = ref<string | null>(null)
 /**
  * 平面图当前下钻到的地市州（#1424）；3D 无地州下钻，切到 Cesium 时由 watch 清空。
- * 范围内的 id 集合由地图给出——边界几何只在地图侧，宿主不自行判定归属。
+ * 范围内的 id 集合由地图给出，边界几何只在地图侧，宿主不自行判定归属。
  */
 const focusedSubdivision = ref<{
   adcode: string
@@ -186,8 +186,8 @@ const visibleMarketMetrics = computed(() => scene.value === 'market' ? trustedMe
 const visibleNodes = computed(() => scene.value === 'nodes' ? nodes.value : [])
 const topologyReady = computed(() => topology.value?.readiness.filter((item) => item.status === 'ready').length ?? 0)
 const topologyRequired = computed(() => topology.value?.readiness.length ?? 0)
-// —— 下钻范围：地图给出 id 集合，侧栏的键盘等价清单按同一子集收窄 ——
-// 不这样做的话，地图上只剩某地州的点，而侧栏仍列全省——键盘用户等于没有下钻能力。
+// 下钻范围：地图给出 id 集合，侧栏的键盘等价清单按同一子集收窄
+// 不这样做的话，地图上只剩某地州的点，而侧栏仍列全省，键盘用户等于没有下钻能力。
 const scopedPlants = computed(() => {
   const scope = focusedSubdivision.value
   if (!scope) return plants.value
@@ -206,7 +206,7 @@ const scopedTopologyFeatures = computed(() => {
   const allowed = new Set(scope.topologyFeatureIds)
   return topologyFeatures.value.filter((feature) => allowed.has(feature.featureId))
 })
-/** 下钻态里的断面/联络线/线路条数——地州视图最想看的就是这个。 */
+/** 下钻态里的断面/联络线/线路条数，地州视图最想看的就是这个。 */
 const scopedChannelCount = computed(() =>
   scopedTopologyFeatures.value.filter((feature) => ['section', 'intertie', 'branch'].includes(feature.kind)).length,
 )
@@ -605,7 +605,7 @@ function selectTopologyFeature(feature: GridTopologyFeature) {
 }
 
 /**
- * 平面图下钻态同步。地图自己已收窄视角与点层，这里只跟随更新侧栏清单与文案——
+ * 平面图下钻态同步。地图自己已收窄视角与点层，这里只跟随更新侧栏清单与文案，
  * 不回写地图，避免两边互相驱动形成回环。
  */
 function onSubdivisionSelect(selection: typeof focusedSubdivision.value) {
@@ -679,7 +679,7 @@ watch(weatherLayer, () => { if (scene.value === 'weather') clearSelection() })
 watch(marketLayer, () => { if (scene.value === 'market') clearSelection() })
 // 气象格点仍只有三维实现；停在 2D 会让侧栏报告图层已生效而地图纹丝不动，
 // 故自动切到能画的视图并告知。
-// 授权网架自 #1424 起平面图也绘制（断面/联络线走 lines、变电站走点层），不再强制切 3D——
+// 授权网架自 #1424 起平面图也绘制（断面/联络线走 lines、变电站走点层），不再强制切 3D
 // 平面图还能按地市州下钻收窄视口，是看送出断面更直接的视图。
 // 同时监听 viewMode：只看 scene 的话，进入气象后用户仍可手动切回 2D，
 // 届时侧栏继续报告「已加载 N 个格点」而平面图什么都不画。
@@ -695,7 +695,7 @@ watch(
     }
   },
 )
-// Cesium 没有地市州下钻，切到 2.5D/3D 时平面图被卸载、下钻态随之失效——
+// Cesium 没有地市州下钻，切到 2.5D/3D 时平面图被卸载、下钻态随之失效
 // 不清空的话侧栏会继续显示「已下钻到某地州」而三维地图是全省视角。
 watch(viewMode, (mode) => {
   if (mode !== '2d') focusedSubdivision.value = null

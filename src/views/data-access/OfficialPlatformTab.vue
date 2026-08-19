@@ -9,7 +9,7 @@
 //
 // 当前仅四川开放凭据录入并绑定采集服务（sgcc-sichuan：credentialEntry + serviceBinding）；
 // 其余省的接入点已登记在册（就绪度用 2026-08-09 实测初始化），待 #1895 采集服务省份化后逐省打开。
-// 故「凭据卡片」与「运维面板」目前是四川专用组件——这里按 currentPoint.credentialEntry /
+// 故「凭据卡片」与「运维面板」目前是四川专用组件，这里按 currentPoint.credentialEntry /
 // serviceBinding 决定是否渲染，#1895 后它们泛化为按接入点驱动。
 import { computed, onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
@@ -46,7 +46,7 @@ const GRID_LABELS: Record<string, string> = {
 
 const officialPoints = computed(() => points.value.filter((p) => p.kind === 'official-platform'))
 
-// 当前地区的官方平台接入点。网区级占位条目 regionId 为 null，不匹配具体省份——
+// 当前地区的官方平台接入点。网区级占位条目 regionId 为 null，不匹配具体省份
 // 它们只进概览矩阵、不进聚焦面板。
 const currentPoint = computed(() =>
   officialPoints.value.find((p) => p.regionId === selectedRegionId.value) ?? null,

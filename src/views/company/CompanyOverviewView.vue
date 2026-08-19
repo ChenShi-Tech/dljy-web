@@ -51,7 +51,7 @@ function fmtBucket(b: string): string {
 const companySelectOptions = computed(() => {
   const opts: { value: string; label: string }[] = []
   if (canSwitch) opts.push({ value: '__group__', label: '集团汇总（全部下属公司）' })
-  // 与全局切换器同口径 selectableCompanies（roborev job375）：跨地区专属公司不可选，
+  // 与全局切换器同口径 selectableCompanies（#375）：跨地区专属公司不可选，
   // 避免下拉出现会被 setCurrentCompanyId 拒绝的选项。
   for (const c of selectableCompanies.value) opts.push({ value: c.companyId, label: c.shortName || c.name })
   return opts
@@ -72,7 +72,7 @@ const sourceBadge = computed(() => {
 })
 
 function onCompanyChange(val: string) {
-  // 先校验后落地（roborev job375）：setCurrentCompanyId 失败（越权/跨地区被拒）时不更新
+  // 先校验后落地（#375）：setCurrentCompanyId 失败（越权/跨地区被拒）时不更新
   // viewScope、不触发 load，避免页面标签/导出名/钻取链接显示被拒公司而数据仍是原公司。
   if (val !== '__group__' && !setCurrentCompanyId(val)) {
     ElMessage.warning('该公司不属于当前地区或不在授权范围内，已保留原选择')
@@ -425,7 +425,7 @@ function buildFinOption(): Record<string, unknown> {
 <style scoped>
 /* 大屏继承全局主题 token（classic/arc/neon/paper），不再硬编码 arc 深色。
    大屏专用变量（blob 辉光强度 / 网格色 / 径向高光 / KPI 辉光强度）按主题覆盖，
-   见文件末 <style> 非 scoped 块 —— 实现四主题对称皮肤（深色辉光、浅色精致）。 */
+   见文件末 <style> 非 scoped 块，实现四主题对称皮肤（深色辉光、浅色精致）。 */
 .biz-screen {
   --screen-blob-alpha: 0.4;
   --screen-grid: rgba(70, 120, 200, 0.06);

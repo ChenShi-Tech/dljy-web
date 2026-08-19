@@ -63,7 +63,7 @@ const findings = computed(() =>
   })
 )
 
-// ── 压力测试（/quant/cvar 真引擎）──
+// 压力测试（/quant/cvar 真引擎）
 const cvar = ref<CvarResult | null>(null)
 const cvarError = ref('')
 async function runStress() {
@@ -81,11 +81,11 @@ async function runStress() {
   }
 }
 
-// ── 承受能力评级（人定）+ 弱→限期整改复测本地跟踪 ──
+// 承受能力评级（人定）+ 弱→限期整改复测本地跟踪
 const stressGrade = ref('')
 const remediation = ref('')
 
-// ── near_miss 登记（事件库端点未上线 → 本地草稿）──
+// near_miss 登记（事件库端点未上线 → 本地草稿）
 const nearMiss = ref({ eventTime: '', riskLevel: 'medium' as 'high' | 'medium' | 'low', positionSnapshot: '', handling: '', effectiveness: '' })
 const nearMissSaved = ref(false)
 function saveNearMiss() {

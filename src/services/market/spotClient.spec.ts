@@ -1,12 +1,12 @@
 // 现货节点价客户端回归：中广核云南私有路径的「真实只读」可信度守门 + 请求构造纪律。
 // 守住的不变量：
-//   1. privateYunnan 信封三重守门——mock:true / sourceType!=='REAL' / productionWrite:true
-//      任一命中必须 throw（私有结算级数据混入合成值 = 数据事故）；坏掉的症状是
-//      中广核页面展示了一页看似正常的假价。
-//   2. 私有路径选中即绑定：URL 改写 /cgn-yunnan、剥 region 参数、删 x-company-id、
-//      cache no-store；且 403/503 原样失败绝不回落公共端点。
-//   3. buildQuery 序列化：undefined/null/空串丢弃，**0 保留**（limit=0 是合法分页语义）。
-//   4. 错误文案优先级 message → detail(str) → detail.message → `请求失败: <status>`。
+// 1. privateYunnan 信封三重守门，mock:true / sourceType!=='REAL' / productionWrite:true
+// 任一命中必须 throw（私有结算级数据混入合成值 = 数据事故）；坏掉的症状是
+// 中广核页面展示了一页看似正常的假价。
+// 2. 私有路径选中即绑定：URL 改写 /cgn-yunnan、剥 region 参数、删 x-company-id、
+// cache no-store；且 403/503 原样失败绝不回落公共端点。
+// 3. buildQuery 序列化：undefined/null/空串丢弃，0 保留（limit=0 是合法分页语义）。
+// 4. 错误文案优先级 message → detail(str) → detail.message → `请求失败: <status>`。
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 

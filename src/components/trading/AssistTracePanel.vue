@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// AI 建议回溯面板（#1969）——建议 vs 实际的偏差可统计，判断该不该信它。
+// AI 建议回溯面板（#1969），建议 vs 实际的偏差可统计，判断该不该信它。
 //
 // 数据来自 assistTraceStore（AiAssistFill 建议到达即留痕、采纳回填 adopted）；
 // decision_log 类建议经 StageDailyClose 与日志条目关联后，T+2 回填实际值即出命中。
