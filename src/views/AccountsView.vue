@@ -72,14 +72,14 @@ function onTabChange(name: string | number) {
 
 .page-head h1 {
   margin: 0;
-  font-size: 20px;
+  font-size: var(--font-20);
   font-weight: 600;
   color: var(--el-text-color-primary);
 }
 
 .page-head .sub {
   margin: 4px 0 0;
-  font-size: 13px;
+  font-size: var(--font-md);
   color: var(--el-text-color-secondary);
 }
 

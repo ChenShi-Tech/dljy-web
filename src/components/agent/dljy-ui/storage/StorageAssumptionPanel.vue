@@ -41,20 +41,20 @@ const rows = computed(() => [
   padding: 14px;
 }
 header { display: flex; align-items: center; gap: 7px; margin-bottom: 10px; color: var(--text, #111827); }
-h3 { margin: 0; font-size: 16px; }
+h3 { margin: 0; font-size: var(--font-16); }
 .rows { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
 .rows > div {
   border: 1px solid var(--line-soft, #e5e7eb);
   border-radius: 6px;
   padding: 8px 9px;
 }
-span { display: block; font-size: 11.5px; color: var(--muted, #667085); }
-strong { display: block; margin-top: 3px; font-size: 13px; color: var(--text, #111827); }
+span { display: block; font-size: var(--font-11-5); color: var(--muted, #667085); }
+strong { display: block; margin-top: 3px; font-size: var(--font-md); color: var(--text, #111827); }
 .note {
   margin: 10px 0 0;
   padding-top: 10px;
   border-top: 1px solid var(--line-soft, #e5e7eb);
-  font-size: 12px;
+  font-size: var(--font-sm);
   line-height: 1.55;
   color: var(--muted, #667085);
 }

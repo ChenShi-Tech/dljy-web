@@ -257,12 +257,12 @@ onRegionChange(load)
 .a3 { padding: 12px 16px; background: var(--el-fill-color-light); min-height: calc(100vh - 90px); }
 .toolbar { display: flex; align-items: center; gap: 8px; background: var(--panel); padding: 10px 12px; border-radius: 8px;
   box-shadow: 0 1px 4px rgba(0,0,0,.04); flex-wrap: wrap; }
-.toolbar .lbl { font-size: 13px; color: var(--el-text-color-regular); font-weight: 600; }
+.toolbar .lbl { font-size: var(--font-md); color: var(--el-text-color-regular); font-weight: 600; }
 .toolbar .spacer { flex: 1; }
 .chart-card { background: var(--panel); border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,.04); padding: 8px 12px; margin-top: 12px;
   height: 640px; display: flex; flex-direction: column; }
 .chart { flex: 1; width: 100%; min-height: 0; }
-.src { color: var(--el-text-color-secondary); font-size: 12px; margin: 4px 0 0; }
+.src { color: var(--el-text-color-secondary); font-size: var(--font-sm); margin: 4px 0 0; }
 .src code { color: var(--el-color-primary); }
 .mb { margin-bottom: 12px; }
 /* 移动端:筛选条纵排,图表卡片降高 */

@@ -606,7 +606,7 @@ onMounted(() => {
 
 .error-detail {
   color: #b45309;
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 .upload-errors {
@@ -617,7 +617,7 @@ onMounted(() => {
   color: #b45309;
   display: flex;
   flex-direction: column;
-  font-size: 13px;
+  font-size: var(--font-md);
   gap: 4px;
   list-style: disc inside;
   max-height: 220px;
@@ -628,7 +628,7 @@ onMounted(() => {
 
 .template-note {
   color: #b45309;
-  font-size: 12px;
+  font-size: var(--font-sm);
   margin: 8px 0 0;
 }
 
@@ -636,7 +636,7 @@ onMounted(() => {
   background: rgba(15, 118, 110, 0.05);
   border: 1px solid var(--line, #e2e8f0);
   border-radius: 8px;
-  font-size: 13px;
+  font-size: var(--font-md);
   margin: 12px 0 0;
   padding: 12px 14px;
 }
@@ -674,7 +674,7 @@ onMounted(() => {
   border-radius: 4px;
   color: #0f766e;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 12px;
+  font-size: var(--font-sm);
   padding: 2px 6px;
   word-break: break-all;
 }
@@ -694,12 +694,12 @@ onMounted(() => {
 
 .drop-zone strong {
   color: var(--text);
-  font-size: 16px;
+  font-size: var(--font-16);
 }
 
 .drop-zone span {
   color: var(--muted);
-  font-size: 13px;
+  font-size: var(--font-md);
 }
 
 .field-list {
@@ -713,7 +713,7 @@ onMounted(() => {
   border: 1px solid var(--line);
   border-radius: 6px;
   color: var(--text);
-  font-size: 13px;
+  font-size: var(--font-md);
   padding: 6px 10px;
 }
 

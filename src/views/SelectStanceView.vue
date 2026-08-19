@@ -92,12 +92,12 @@ function chooseStance(stance: Stance) {
 }
 .title {
   margin: 0 0 8px;
-  font-size: 22px;
+  font-size: var(--font-22);
 }
 .subtitle {
   margin: 0 0 20px;
   color: var(--el-text-color-secondary, #909399);
-  font-size: 13px;
+  font-size: var(--font-md);
   line-height: 1.6;
 }
 .stance-cards {
@@ -125,23 +125,23 @@ function chooseStance(stance: Stance) {
   gap: 8px;
 }
 .stance-name {
-  font-size: 16px;
+  font-size: var(--font-16);
   font-weight: 600;
 }
 .stance-subject {
   margin-top: 6px;
-  font-size: 13px;
+  font-size: var(--font-md);
   color: var(--el-text-color-regular, #606266);
 }
 .stance-desc {
   margin-top: 8px;
-  font-size: 12px;
+  font-size: var(--font-sm);
   color: var(--el-text-color-secondary, #909399);
   line-height: 1.5;
 }
 .footnote {
   margin: 20px 0 0;
-  font-size: 12px;
+  font-size: var(--font-sm);
   color: var(--el-text-color-placeholder, #c0c4cc);
 }
 @media (max-width: 640px) {

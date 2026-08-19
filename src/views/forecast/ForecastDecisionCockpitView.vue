@@ -925,7 +925,7 @@ onMounted(async () => {
 
 <style scoped>
 .decision-cockpit { gap: 14px; }
-.muted { color: var(--muted); font-size: 12.5px; }
+.muted { color: var(--muted); font-size: var(--font-12-5); }
 
 .cockpit-alert {
   display: flex;
@@ -945,13 +945,13 @@ onMounted(async () => {
 .alert-main h1 {
   margin: 0 0 2px;
   color: var(--text);
-  font-size: 18px;
+  font-size: var(--font-18);
   line-height: 1.25;
 }
 .alert-main p {
   margin: 0;
   color: var(--muted);
-  font-size: 12.5px;
+  font-size: var(--font-12-5);
 }
 .alert-badges {
   display: flex;
@@ -967,7 +967,7 @@ onMounted(async () => {
   align-items: center;
   padding: 2px 8px;
   border-radius: 10px;
-  font-size: 11px;
+  font-size: var(--font-xs);
   white-space: nowrap;
 }
 .source-chip {
@@ -999,7 +999,7 @@ onMounted(async () => {
   display: grid;
   gap: 5px;
   min-width: 160px;
-  font-size: 12px;
+  font-size: var(--font-sm);
   color: var(--muted);
 }
 .field.compact { min-width: 140px; }
@@ -1036,7 +1036,7 @@ onMounted(async () => {
   border-radius: 8px;
   color: #b91c1c;
   background: #fef2f2;
-  font-size: 13px;
+  font-size: var(--font-md);
 }
 
 .cockpit-grid {
@@ -1065,7 +1065,7 @@ onMounted(async () => {
   align-items: center;
   gap: 6px;
   margin: 0;
-  font-size: 14px;
+  font-size: var(--font-lg);
   line-height: 1.4;
 }
 .panel-head .muted {
@@ -1096,7 +1096,7 @@ onMounted(async () => {
   border-radius: 10px;
   color: #2563eb;
   background: rgba(37, 99, 235, 0.1);
-  font-size: 12px;
+  font-size: var(--font-sm);
   font-weight: 700;
 }
 .frontier-summary {
@@ -1110,7 +1110,7 @@ onMounted(async () => {
   grid-template-columns: 1fr auto;
   align-items: center;
   gap: 8px;
-  font-size: 12.5px;
+  font-size: var(--font-12-5);
 }
 .frontier-summary span,
 .kv span {
@@ -1140,13 +1140,13 @@ onMounted(async () => {
 .risk-card span {
   display: block;
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 .risk-card b {
   display: block;
   margin-top: 10px;
   color: var(--text);
-  font-size: 19px;
+  font-size: var(--font-19);
   line-height: 1.1;
   font-variant-numeric: tabular-nums;
 }
@@ -1173,7 +1173,7 @@ onMounted(async () => {
   gap: 10px 16px;
   margin-top: 10px;
   color: var(--muted);
-  font-size: 12.5px;
+  font-size: var(--font-12-5);
 }
 .note {
   margin: 10px 0 0;
@@ -1181,7 +1181,7 @@ onMounted(async () => {
   border-left: 3px solid var(--warning);
   color: var(--muted);
   background: color-mix(in srgb, var(--warning) 7%, transparent);
-  font-size: 12.5px;
+  font-size: var(--font-12-5);
   line-height: 1.6;
 }
 .main-panel .panel-head .muted { margin-left: 0; }
@@ -1198,7 +1198,7 @@ onMounted(async () => {
   align-items: center;
   gap: 10px;
   margin: 12px 0 8px;
-  font-size: 13px;
+  font-size: var(--font-md);
 }
 .advice-grid {
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));

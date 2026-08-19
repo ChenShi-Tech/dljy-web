@@ -13,7 +13,7 @@
     "check": "vue-tsc --noEmit",
     "test:unit": "vitest run --configLoader runner",
     "test:coverage": "vitest run --configLoader runner --coverage",
-    "lint": "eslint .",
+    "lint": "node scripts/check-font-tokens.mjs && eslint .",
     "lint:fix": "eslint . --fix"
   },
   "dependencies": {

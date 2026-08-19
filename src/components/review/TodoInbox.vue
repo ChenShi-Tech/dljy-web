@@ -84,16 +84,16 @@ function fmtDue(dueAt: string): string {
 
 <style scoped>
 .ti { padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; }
-.ti-head { display: flex; align-items: center; justify-content: space-between; font-size: 13.5px; }
-.ti-count { font-size: 11px; color: var(--el-text-color-secondary, #666); }
-.ti-muted { margin: 0; font-size: 12px; color: var(--el-text-color-secondary, #666); }
+.ti-head { display: flex; align-items: center; justify-content: space-between; font-size: var(--font-13-5); }
+.ti-count { font-size: var(--font-xs); color: var(--el-text-color-secondary, #666); }
+.ti-muted { margin: 0; font-size: var(--font-sm); color: var(--el-text-color-secondary, #666); }
 .ti-note {
   margin: 0; padding: 8px 10px; border-radius: 6px;
   background: #f8fafc; border: 1px dashed var(--el-border-color, #dcdfe6);
-  font-size: 12px; line-height: 1.7; color: #475569;
+  font-size: var(--font-sm); line-height: 1.7; color: #475569;
 }
-.ti-ledger { margin: 0; font-size: 11.5px; line-height: 1.7; color: var(--el-text-color-secondary, #666); }
-.ti-retry { align-self: flex-start; padding: 4px 12px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 6px; background: #fff; font-size: 12px; cursor: pointer; }
+.ti-ledger { margin: 0; font-size: var(--font-11-5); line-height: 1.7; color: var(--el-text-color-secondary, #666); }
+.ti-retry { align-self: flex-start; padding: 4px 12px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 6px; background: #fff; font-size: var(--font-sm); cursor: pointer; }
 .ti-row {
   display: flex; align-items: center; gap: 8px; flex-wrap: wrap; width: 100%;
   padding: 7px 10px; border: 1px solid var(--el-border-color-lighter, #ebeef5); border-radius: 8px;
@@ -101,7 +101,7 @@ function fmtDue(dueAt: string): string {
 }
 .ti-row:hover { border-color: var(--el-color-primary, #2563eb); }
 .ti-row.overdue { border-color: #fca5a5; background: #fef2f2; }
-.ti-name { font-size: 12.5px; font-weight: 600; color: var(--el-text-color-primary, #303133); }
-.ti-meta { font-size: 11px; color: var(--el-text-color-secondary, #666); font-variant-numeric: tabular-nums; }
-.ti-overdue { margin-left: auto; font-style: normal; font-size: 10.5px; color: #b91c1c; border: 1px solid #fca5a5; border-radius: 999px; padding: 0 7px; }
+.ti-name { font-size: var(--font-12-5); font-weight: 600; color: var(--el-text-color-primary, #303133); }
+.ti-meta { font-size: var(--font-xs); color: var(--el-text-color-secondary, #666); font-variant-numeric: tabular-nums; }
+.ti-overdue { margin-left: auto; font-style: normal; font-size: var(--font-10-5); color: #b91c1c; border: 1px solid #fca5a5; border-radius: 999px; padding: 0 7px; }
 </style>

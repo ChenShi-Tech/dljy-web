@@ -132,12 +132,12 @@ function fmtMoney(v: number | null): string {
   padding: 10px 12px; border: 1px solid var(--el-border-color-lighter, #ebeef5);
   border-radius: 10px; background: #fff; min-width: 0;
 }
-.tq-q { font-size: 11px; color: var(--el-text-color-secondary, #666); font-weight: 600; }
-.tq-a { font-size: 17px; color: var(--el-text-color-primary, #303133); font-variant-numeric: tabular-nums; }
+.tq-q { font-size: var(--font-xs); color: var(--el-text-color-secondary, #666); font-weight: 600; }
+.tq-a { font-size: var(--font-xl); color: var(--el-text-color-primary, #303133); font-variant-numeric: tabular-nums; }
 .tq-a.good { color: #16a34a; }
 .tq-a.bad { color: #b91c1c; }
-.tq-a.muted { color: var(--el-text-color-secondary, #666); font-size: 13.5px; }
-.tq-sub { font-size: 11px; color: var(--el-text-color-secondary, #666); }
+.tq-a.muted { color: var(--el-text-color-secondary, #666); font-size: var(--font-13-5); }
+.tq-sub { font-size: var(--font-xs); color: var(--el-text-color-secondary, #666); }
 .tq-sub.mom.good { color: #15803d; }
 .tq-sub.mom.bad { color: #b91c1c; }
 .tq-sub.muted { opacity: 0.85; }

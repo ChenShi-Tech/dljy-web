@@ -180,7 +180,7 @@ else onRegionChange(load)
     </el-card>
 
     <el-card shadow="never">
-      <template #header><span style="font-weight:600;font-size:13px">{{ cfg.valueLabel || '预测' }}曲线 · 已选 {{ selected.length }} 天（96 点）</span></template>
+      <template #header><span style="font-weight:600;font-size: var(--font-md)">{{ cfg.valueLabel || '预测' }}曲线 · 已选 {{ selected.length }} 天（96 点）</span></template>
       <div ref="chartRef" class="chart chart-host"></div>
     </el-card>
     <!-- 数据源(内部参考,勿对外展示)：真实数据： · 行 -->
@@ -190,13 +190,13 @@ else onRegionChange(load)
 <style scoped>
 .dc { padding: 12px 16px; background: var(--el-fill-color-light); min-height: calc(100vh - 90px); }
 .toolbar { display: flex; align-items: center; gap: 8px; background: var(--panel); padding: 10px 12px; border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,.04); flex-wrap: wrap; }
-.toolbar .lbl { font-size: 13px; color: var(--el-text-color-regular); font-weight: 600; }
+.toolbar .lbl { font-size: var(--font-md); color: var(--el-text-color-regular); font-weight: 600; }
 .toolbar .spacer { flex: 1; }
-.big :deep(.el-table__cell) { font-size: 13px; }
+.big :deep(.el-table__cell) { font-size: var(--font-md); }
 .big :deep(th .cell) { font-weight: 600; color: var(--el-text-color-primary); }
 .chart { height: 300px; width: 100%; }
 .mb { margin-bottom: 12px; }
-.src { color: var(--el-text-color-secondary); font-size: 12px; margin: 12px 0 0; }
+.src { color: var(--el-text-color-secondary); font-size: var(--font-sm); margin: 12px 0 0; }
 .src code { color: var(--el-color-primary); }
 /* 移动端:筛选条纵排,控件占满整行便于点按 */
 @media (max-width: 768px) {

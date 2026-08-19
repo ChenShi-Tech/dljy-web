@@ -1156,14 +1156,14 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 6px;
   color: #0f766e;
-  font-size: 13px;
+  font-size: var(--font-md);
   font-weight: 650;
 }
 
 .pol-hero p {
   margin: 8px 0 0;
   color: #5c6b76;
-  font-size: 13px;
+  font-size: var(--font-md);
   line-height: 1.7;
 }
 
@@ -1196,7 +1196,7 @@ onBeforeUnmount(() => {
 
 .pol-field > span {
   color: #50616e;
-  font-size: 12px;
+  font-size: var(--font-sm);
   font-weight: 650;
 }
 
@@ -1240,14 +1240,14 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 5px;
   color: #5c6b76;
-  font-size: 12px;
+  font-size: var(--font-sm);
   font-weight: 650;
 }
 
 .pol-kpi-value {
   margin-top: 8px;
   color: #18212b;
-  font-size: 22px;
+  font-size: var(--font-22);
   font-weight: 760;
   line-height: 1.2;
 }
@@ -1255,7 +1255,7 @@ onBeforeUnmount(() => {
 .pol-kpi-unit {
   margin-top: 5px;
   color: #7a8793;
-  font-size: 12px;
+  font-size: var(--font-sm);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1269,7 +1269,7 @@ onBeforeUnmount(() => {
 
 .pol-chart-sub {
   color: #64748b;
-  font-size: 12px;
+  font-size: var(--font-sm);
   white-space: nowrap;
 }
 
@@ -1294,12 +1294,12 @@ onBeforeUnmount(() => {
   gap: 6px;
   margin: 0;
   color: #1f2a37;
-  font-size: 15px;
+  font-size: var(--font-15);
 }
 
 .pol-table-sub {
   color: #64748b;
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 .pol-pagination-row {

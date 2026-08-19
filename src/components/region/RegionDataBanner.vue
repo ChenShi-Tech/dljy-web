@@ -88,7 +88,7 @@ const showFallback = computed(() => !isDemoRegion.value && !showMock.value && re
   border-radius: 6px;
   background: var(--panel-sub);
   color: var(--warning);
-  font-size: 13px;
+  font-size: var(--font-md);
   line-height: 1.5;
 }
 

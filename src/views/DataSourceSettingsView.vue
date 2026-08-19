@@ -75,8 +75,8 @@ function onTabChange(name: string | number) {
 
 <style scoped>
 .ds-settings { display: flex; flex-direction: column; gap: 12px; }
-.page-head h1 { margin: 0; font-size: 20px; font-weight: 600; color: var(--el-text-color-primary); }
-.page-head .sub { margin: 4px 0 0; font-size: 13px; line-height: 1.7; color: var(--el-text-color-secondary); }
+.page-head h1 { margin: 0; font-size: var(--font-20); font-weight: 600; color: var(--el-text-color-primary); }
+.page-head .sub { margin: 4px 0 0; font-size: var(--font-md); line-height: 1.7; color: var(--el-text-color-secondary); }
 /* 子 tab 自带 section/card 外距，tab 面板不再叠加内边距。 */
 .ds-tabs :deep(.el-tab-pane) { padding: 0; }
 </style>

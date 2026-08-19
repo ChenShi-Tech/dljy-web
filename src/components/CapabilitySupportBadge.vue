@@ -65,7 +65,7 @@ const expectationLabel: Record<RegionCapabilityDataSupport['expectation'], strin
   border-radius: 8px;
   background: var(--panel);
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--font-sm);
   margin-bottom: 10px;
 }
 .cap-support.degraded {

@@ -291,11 +291,11 @@ onRegionChange(load)
 .fshq { padding: 12px 16px; background: var(--el-fill-color-light); min-height: calc(100vh - 90px); }
 .toolbar { display: flex; align-items: center; gap: 8px; background: var(--panel); padding: 10px 12px; border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,.04); flex-wrap: wrap; }
 .card { background: var(--panel); border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,.04); padding: 8px 12px; margin-top: 12px; }
-.ctitle { font-size: 13px; font-weight: 600; color: var(--el-text-color-primary); padding: 2px 0 6px; }
-.ctitle .hint { font-weight: 400; color: var(--el-text-color-secondary); font-size: 12px; }
+.ctitle { font-size: var(--font-md); font-weight: 600; color: var(--el-text-color-primary); padding: 2px 0 6px; }
+.ctitle .hint { font-weight: 400; color: var(--el-text-color-secondary); font-size: var(--font-sm); }
 .main-chart { height: 460px; width: 100%; }
 .bs-chart { height: 320px; width: 100%; }
-.src { color: var(--el-text-color-secondary); font-size: 12px; margin: 12px 0 0; }
+.src { color: var(--el-text-color-secondary); font-size: var(--font-sm); margin: 12px 0 0; }
 .src code { color: var(--el-color-primary); }
 .src .note { color: var(--warning); }
 .mb { margin-bottom: 12px; }

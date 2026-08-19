@@ -34,7 +34,7 @@ const ICONS: Record<CalloutArtifactBlock['level'], Component> = {
   padding: 10px 12px;
   border-radius: 8px;
   border-left: 3px solid;
-  font-size: 13.5px;
+  font-size: var(--font-13-5);
   line-height: 1.6;
   animation: art-in 0.3s ease-out both;
 }
@@ -61,7 +61,7 @@ const ICONS: Record<CalloutArtifactBlock['level'], Component> = {
 .cl-body :deep(p:first-child) { margin-top: 0; }
 .cl-body :deep(p:last-child) { margin-bottom: 0; }
 .cl-body :deep(code) {
-  background: rgba(125, 125, 125, 0.14); padding: 1px 5px; border-radius: 4px; font-size: 12px;
+  background: rgba(125, 125, 125, 0.14); padding: 1px 5px; border-radius: 4px; font-size: var(--font-sm);
 }
 .cl-body :deep(ul), .cl-body :deep(ol) { padding-left: 18px; margin: 3px 0; }
 .cl-body :deep(a) { color: inherit; text-decoration: underline; }

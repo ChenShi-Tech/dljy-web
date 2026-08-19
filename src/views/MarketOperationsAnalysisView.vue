@@ -394,7 +394,7 @@ onMounted(refreshData)
   color: #b91c1c;
   background: #fef2f2;
   border-radius: 6px;
-  font-size: 13px;
+  font-size: var(--font-md);
 }
 
 .packages-notice {
@@ -404,7 +404,7 @@ onMounted(refreshData)
   background: #fffbeb;
   border: 1px solid #fde68a;
   border-radius: 6px;
-  font-size: 13px;
+  font-size: var(--font-md);
 }
 
 /* 断点对齐 responsive.css 规约（1024 桌面紧凑 / 768 移动端纵排） */

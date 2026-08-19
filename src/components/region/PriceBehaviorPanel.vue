@@ -94,7 +94,7 @@ watch(
 }
 .section-kicker {
   color: var(--primary);
-  font-size: 13px;
+  font-size: var(--font-md);
   font-weight: 650;
 }
 .chart {
@@ -116,7 +116,7 @@ watch(
 .metrics small {
   display: block;
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--font-sm);
   margin-bottom: 4px;
 }
 .metrics strong {

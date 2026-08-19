@@ -839,7 +839,7 @@ onBeforeUnmount(() => {
 .state {
   position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
   margin: 0; padding: 10px 16px; border-radius: 8px;
-  font-size: 13px; color: var(--text-soft); background: var(--panel, rgba(255, 255, 255, .9));
+  font-size: var(--font-md); color: var(--text-soft); background: var(--panel, rgba(255, 255, 255, .9));
 }
 .state.error { color: var(--danger); }
 .drill-crumb {
@@ -849,33 +849,33 @@ onBeforeUnmount(() => {
   position: absolute; bottom: 34px; left: 50%; transform: translateX(-50%); z-index: 9;
   display: flex; align-items: center; gap: 6px; max-width: calc(100% - 32px);
   box-shadow: 0 8px 24px rgba(0, 8, 20, .28);
-  padding: 6px 10px; border-radius: 8px; font-size: 13px;
+  padding: 6px 10px; border-radius: 8px; font-size: var(--font-md);
   color: var(--text-body); border: 1px solid var(--line); background: var(--panel);
 }
 .drill-crumb strong { color: var(--text); }
 .drill-crumb button {
   display: flex; align-items: center; gap: 4px;
-  padding: 2px 6px; font-size: 13px; cursor: pointer;
+  padding: 2px 6px; font-size: var(--font-md); cursor: pointer;
   color: var(--text-soft); border: none; border-radius: 6px; background: transparent;
 }
 .drill-crumb button:hover { color: var(--primary); background: var(--hover, rgba(59, 130, 246, .1)); }
-.crumb-counts { margin-left: 4px; font-size: 12px; color: var(--text-soft); }
+.crumb-counts { margin-left: 4px; font-size: var(--font-sm); color: var(--text-soft); }
 .crumb-back { margin-left: 6px; border-left: 1px solid var(--line) !important; border-radius: 0 !important; padding-left: 10px !important; }
 .drill-hint {
   position: absolute; bottom: 36px; left: 50%; transform: translateX(-50%); z-index: 2; margin: 0;
-  font-size: 12px; color: var(--text-soft); opacity: .8; pointer-events: none; white-space: nowrap;
+  font-size: var(--font-sm); color: var(--text-soft); opacity: .8; pointer-events: none; white-space: nowrap;
 }
 .reset-view {
   /* 右上角是宿主的 2D/2.5D/3D 模式切换，这里避到右下、来源声明上方 */
   position: absolute; right: 12px; bottom: 32px;
   display: flex; align-items: center; gap: 6px;
-  padding: 7px 12px; font-size: 14px; cursor: pointer;
+  padding: 7px 12px; font-size: var(--font-lg); cursor: pointer;
   color: var(--text-body); border: 1px solid var(--line); border-radius: 8px;
   background: var(--panel);
 }
 .reset-view:hover { color: var(--primary); border-color: var(--primary); }
 .source-note {
   position: absolute; right: 10px; bottom: 8px; margin: 0;
-  font-size: 11px; color: var(--muted, var(--text-soft)); opacity: .75; pointer-events: none;
+  font-size: var(--font-xs); color: var(--muted, var(--text-soft)); opacity: .75; pointer-events: none;
 }
 </style>

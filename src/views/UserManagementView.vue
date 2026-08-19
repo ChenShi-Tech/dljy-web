@@ -513,7 +513,7 @@ function formatDate(value?: string | null) {
   align-items: center;
   gap: 6px;
   color: var(--primary);
-  font-size: 13px;
+  font-size: var(--font-md);
   font-weight: 650;
 }
 
@@ -551,12 +551,12 @@ function formatDate(value?: string | null) {
 
 .metric strong {
   color: var(--primary);
-  font-size: 20px;
+  font-size: var(--font-20);
 }
 
 .metric span {
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 .users-panel {
@@ -582,7 +582,7 @@ function formatDate(value?: string | null) {
   border-radius: 5px;
   background: var(--primary-tint);
   color: var(--text-soft);
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 .form-grid {
@@ -597,7 +597,7 @@ function formatDate(value?: string | null) {
   flex-direction: column;
   gap: 6px;
   color: var(--text-soft);
-  font-size: 13px;
+  font-size: var(--font-md);
   font-weight: 650;
 }
 
@@ -610,7 +610,7 @@ function formatDate(value?: string | null) {
   margin-bottom: 0;
   padding-bottom: 6px;
   color: var(--text-soft);
-  font-size: 13px;
+  font-size: var(--font-md);
   font-weight: 650;
   line-height: 1.4;
 }
@@ -621,7 +621,7 @@ function formatDate(value?: string | null) {
 
 .field-hint {
   margin-top: 4px;
-  font-size: 12px;
+  font-size: var(--font-sm);
   color: var(--el-text-color-secondary);
   line-height: 1.4;
 }

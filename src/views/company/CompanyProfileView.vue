@@ -144,8 +144,8 @@ async function saveRegistry() {
 
 <style scoped>
 .company-page { padding: 20px; }
-.page-title { margin: 0 0 16px; font-size: 20px; }
+.page-title { margin: 0 0 16px; font-size: var(--font-20); }
 .card-head { display: flex; align-items: center; justify-content: space-between; }
-.readonly-hint { color: var(--el-text-color-secondary, #909399); font-size: 13px; }
-.hint { margin: 10px 0 0; color: var(--el-text-color-secondary, #909399); font-size: 12px; }
+.readonly-hint { color: var(--el-text-color-secondary, #909399); font-size: var(--font-md); }
+.hint { margin: 10px 0 0; color: var(--el-text-color-secondary, #909399); font-size: var(--font-sm); }
 </style>

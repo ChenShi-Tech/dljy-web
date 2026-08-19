@@ -116,9 +116,9 @@ function basisFromResult(r: IngestResult): DataSourceBasis {
 
 <style scoped>
 .ingest-page { padding: 18px 22px; max-width: 1180px; margin: 0 auto; }
-.page-head h1 { font-size: 22px; font-weight: 600; color: var(--text); margin: 0 0 4px; }
-.lede { color: var(--text-soft); font-size: 13.5px; margin: 0 0 14px; }
-.link-row { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 18px; font-size: 12.5px; }
+.page-head h1 { font-size: var(--font-22); font-weight: 600; color: var(--text); margin: 0 0 4px; }
+.lede { color: var(--text-soft); font-size: var(--font-13-5); margin: 0 0 14px; }
+.link-row { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 18px; font-size: var(--font-12-5); }
 .link { color: var(--primary); text-decoration: none; display: inline-flex; align-items: center; gap: 4px; }
 .link:hover { text-decoration: underline; }
 .kind-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 14px; }
@@ -128,15 +128,15 @@ function basisFromResult(r: IngestResult): DataSourceBasis {
 }
 .kind-head { display: flex; align-items: center; gap: 10px; }
 .kind-icon { color: var(--primary); flex: none; }
-.kind-title h3 { margin: 0; font-size: 15px; font-weight: 600; color: var(--text); }
-.kind-code { font-size: 11px; color: var(--muted); font-family: var(--ck-mono, ui-monospace, monospace); }
-.kind-desc { font-size: 12.5px; color: var(--text-body); margin: 0; line-height: 1.5; }
-.kind-params { font-size: 12px; color: var(--text-soft); margin: 0; }
+.kind-title h3 { margin: 0; font-size: var(--font-15); font-weight: 600; color: var(--text); }
+.kind-code { font-size: var(--font-xs); color: var(--muted); font-family: var(--ck-mono, ui-monospace, monospace); }
+.kind-desc { font-size: var(--font-12-5); color: var(--text-body); margin: 0; line-height: 1.5; }
+.kind-params { font-size: var(--font-sm); color: var(--text-soft); margin: 0; }
 .muted { color: var(--muted); }
 .kind-action { margin-top: 4px; }
 .trigger {
   display: inline-flex; align-items: center; gap: 6px; cursor: pointer;
-  padding: 7px 14px; border-radius: var(--radius-sm, 6px); font-size: 13px; font-weight: 500;
+  padding: 7px 14px; border-radius: var(--radius-sm, 6px); font-size: var(--font-md); font-weight: 500;
   border: 1px solid var(--primary); color: var(--primary); background: transparent;
   transition: background 0.15s;
 }
@@ -144,11 +144,11 @@ function basisFromResult(r: IngestResult): DataSourceBasis {
 .trigger:disabled { opacity: 0.6; cursor: progress; }
 .spin { animation: spin 0.9s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
-.result { margin-top: 6px; padding: 8px 10px; border-radius: var(--radius-sm, 6px); font-size: 12px; border: 1px solid; }
+.result { margin-top: 6px; padding: 8px 10px; border-radius: var(--radius-sm, 6px); font-size: var(--font-sm); border: 1px solid; }
 .result.ok { color: var(--success); border-color: color-mix(in srgb, var(--success) 35%, transparent); background: color-mix(in srgb, var(--success) 7%, transparent); }
 .result.fail, .result.err { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 35%, transparent); background: color-mix(in srgb, var(--danger) 7%, transparent); }
 .result-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 4px; font-weight: 500; }
-.stdout { margin: 4px 0 0; font-size: 11px; color: var(--text-soft); font-family: var(--ck-mono, ui-monospace, monospace); white-space: pre-wrap; word-break: break-all; max-height: 120px; overflow: auto; }
-.note { margin-top: 18px; font-size: 12px; line-height: 1.6; }
+.stdout { margin: 4px 0 0; font-size: var(--font-xs); color: var(--text-soft); font-family: var(--ck-mono, ui-monospace, monospace); white-space: pre-wrap; word-break: break-all; max-height: 120px; overflow: auto; }
+.note { margin-top: 18px; font-size: var(--font-sm); line-height: 1.6; }
 code { font-family: var(--ck-mono, ui-monospace, monospace); font-size: 0.92em; padding: 1px 4px; border-radius: 3px; background: color-mix(in srgb, var(--muted) 14%, transparent); }
 </style>

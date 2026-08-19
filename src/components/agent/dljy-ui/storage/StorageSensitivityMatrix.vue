@@ -41,8 +41,8 @@ const rows = computed(() => Object.entries(results.value).map(([name, item]) => 
   overflow: hidden;
 }
 header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; gap: 12px; }
-h3 { margin: 0; font-size: 16px; color: var(--text, #111827); }
-header span { font-size: 12px; color: var(--muted, #667085); white-space: nowrap; }
+h3 { margin: 0; font-size: var(--font-16); color: var(--text, #111827); }
+header span { font-size: var(--font-sm); color: var(--muted, #667085); white-space: nowrap; }
 .matrix {
   display: grid;
   grid-template-columns: minmax(92px, 1.15fr) repeat(5, minmax(54px, 1fr));
@@ -54,7 +54,7 @@ header span { font-size: 12px; color: var(--muted, #667085); white-space: nowrap
   padding: 8px 9px;
   border-right: 1px solid var(--line-soft, #e5e7eb);
   border-bottom: 1px solid var(--line-soft, #e5e7eb);
-  font-size: 12px;
+  font-size: var(--font-sm);
   min-width: 0;
 }
 .head { background: rgba(148, 163, 184, 0.12); color: var(--muted, #667085); font-weight: 600; }

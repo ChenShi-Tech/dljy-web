@@ -77,15 +77,15 @@ onBeforeUnmount(() => { window.removeEventListener('resize', resize); chart?.dis
 <style scoped>
 .mic-el { border: 1px solid var(--line-soft, #e5e7eb); border-radius: 12px; background: var(--panel, #fff); padding: 14px; }
 header { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-bottom: 8px; }
-h3 { margin: 0; font-size: 15.5px; color: var(--text, #111827); }
-.badge { font-size: 11px; padding: 1px 9px; border-radius: 999px; }
+h3 { margin: 0; font-size: var(--font-15-5); color: var(--text, #111827); }
+.badge { font-size: var(--font-xs); padding: 1px 9px; border-radius: 999px; }
 .badge.steep { color: var(--danger, #e11d48); background: var(--danger-tint, rgba(251, 113, 133, .16)); }
 .badge.flat { color: var(--primary, #0891b2); background: var(--primary-tint, rgba(34, 211, 238, .16)); }
 .chart { width: 100%; height: 196px; }
-.stats { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 8px; font-size: 12px; color: var(--muted, #667085); }
+.stats { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 8px; font-size: var(--font-sm); color: var(--muted, #667085); }
 .stats b { color: var(--text, #111827); font-variant-numeric: tabular-nums; }
-.note { margin: 6px 0 0; font-size: 11px; color: var(--muted, #98a2b3); }
-.empty { padding: 24px 12px; text-align: center; color: var(--muted, #98a2b3); font-size: 13px; }
-.empty p { margin: 0 0 4px; font-size: 14px; }
-.empty span { font-size: 11.5px; }
+.note { margin: 6px 0 0; font-size: var(--font-xs); color: var(--muted, #98a2b3); }
+.empty { padding: 24px 12px; text-align: center; color: var(--muted, #98a2b3); font-size: var(--font-md); }
+.empty p { margin: 0 0 4px; font-size: var(--font-lg); }
+.empty span { font-size: var(--font-11-5); }
 </style>

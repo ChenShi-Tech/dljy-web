@@ -134,7 +134,7 @@ const prevPending = computed(
   width: 19px;
   height: 19px;
   border-radius: 50%;
-  font-size: 11px;
+  font-size: var(--font-xs);
   font-weight: 600;
   background: #e2e8f0;
   color: #64748b;
@@ -148,13 +148,13 @@ const prevPending = computed(
 }
 
 .ws-text b {
-  font-size: 12px;
+  font-size: var(--font-sm);
   font-weight: 600;
 }
 
 .ws-text em {
   font-style: normal;
-  font-size: 10px;
+  font-size: var(--font-10);
   color: var(--el-text-color-secondary, #667);
 }
 
@@ -190,7 +190,7 @@ const prevPending = computed(
 .ws-hint {
   margin: 0;
   padding-left: 2px;
-  font-size: 11px;
+  font-size: var(--font-xs);
   line-height: 1.6;
   color: var(--el-text-color-secondary, #667);
 }

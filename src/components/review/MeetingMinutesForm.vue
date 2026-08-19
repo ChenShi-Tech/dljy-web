@@ -77,18 +77,18 @@ function addAction() {
 </template>
 
 <style scoped>
-.mm { display: flex; flex-direction: column; gap: 9px; font-size: 12.5px; }
+.mm { display: flex; flex-direction: column; gap: 9px; font-size: var(--font-12-5); }
 .mm-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
-.mm-head label { display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--el-text-color-secondary, #666); }
-.mm-deadline { margin: 0; padding: 6px 9px; border-radius: 6px; background: #fffbeb; color: #92400e; font-size: 11.5px; }
-.mm-field { display: flex; flex-direction: column; gap: 4px; font-size: 11.5px; color: var(--el-text-color-secondary, #666); }
+.mm-head label { display: inline-flex; align-items: center; gap: 6px; font-size: var(--font-11-5); color: var(--el-text-color-secondary, #666); }
+.mm-deadline { margin: 0; padding: 6px 9px; border-radius: 6px; background: #fffbeb; color: #92400e; font-size: var(--font-11-5); }
+.mm-field { display: flex; flex-direction: column; gap: 4px; font-size: var(--font-11-5); color: var(--el-text-color-secondary, #666); }
 .mm-block { display: flex; flex-direction: column; gap: 5px; }
-.mm-block b { font-size: 12px; }
-.mm-note { margin: 0; font-size: 11px; color: var(--el-text-color-secondary, #909399); line-height: 1.6; }
-.mm-input { padding: 4px 7px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 6px; font-size: 11.5px; font-family: inherit; }
+.mm-block b { font-size: var(--font-sm); }
+.mm-note { margin: 0; font-size: var(--font-xs); color: var(--el-text-color-secondary, #909399); line-height: 1.6; }
+.mm-input { padding: 4px 7px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 6px; font-size: var(--font-11-5); font-family: inherit; }
 .mm-add { display: flex; gap: 6px; }
-.mm-add button, .mm-add-btn { align-self: flex-start; padding: 3px 12px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 6px; background: #fff; font-size: 11.5px; cursor: pointer; }
-.mm-item { margin: 0; padding: 4px 8px; border: 1px solid var(--el-border-color-lighter, #ebeef5); border-radius: 6px; font-size: 11.5px; }
+.mm-add button, .mm-add-btn { align-self: flex-start; padding: 3px 12px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 6px; background: #fff; font-size: var(--font-11-5); cursor: pointer; }
+.mm-item { margin: 0; padding: 4px 8px; border: 1px solid var(--el-border-color-lighter, #ebeef5); border-radius: 6px; font-size: var(--font-11-5); }
 .mm-x { border: none; background: none; color: #b91c1c; cursor: pointer; padding: 0 2px; }
 .mm-action { display: flex; gap: 6px; flex-wrap: wrap; }
 .mm-action .mm-input { flex: 1; min-width: 100px; }

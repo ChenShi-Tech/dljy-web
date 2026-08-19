@@ -50,8 +50,8 @@ async function loadGaps() {
 <style scoped>
 .strategic-qa { display: flex; flex-direction: column; gap: 12px; height: 100%; }
 .page-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
-.page-head h2 { margin: 0 0 4px; font-size: 18px; }
-.page-head .sub { margin: 0; color: var(--el-text-color-secondary); font-size: 13px; }
+.page-head h2 { margin: 0 0 4px; font-size: var(--font-18); }
+.page-head .sub { margin: 0; color: var(--el-text-color-secondary); font-size: var(--font-md); }
 .gaps-card { max-height: 240px; overflow: auto; }
-.gaps-md { margin: 0; white-space: pre-wrap; font-size: 12px; }
+.gaps-md { margin: 0; white-space: pre-wrap; font-size: var(--font-sm); }
 </style>

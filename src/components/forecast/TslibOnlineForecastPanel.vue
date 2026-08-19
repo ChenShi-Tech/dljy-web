@@ -158,7 +158,7 @@ onMounted(loadModels)
 
 <style scoped>
 .tslib-panel { margin: 12px 0; }
-.tslib-panel__head { display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 13px; }
+.tslib-panel__head { display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: var(--font-md); }
 .tslib-panel__toolbar {
   display: flex;
   align-items: center;
@@ -166,8 +166,8 @@ onMounted(loadModels)
   flex-wrap: wrap;
   margin-bottom: 10px;
 }
-.lbl { font-size: 12px; font-weight: 600; color: var(--el-text-color-regular); }
-.summary { color: var(--el-text-color-secondary); font-size: 12px; margin-left: auto; }
+.lbl { font-size: var(--font-sm); font-weight: 600; color: var(--el-text-color-regular); }
+.summary { color: var(--el-text-color-secondary); font-size: var(--font-sm); margin-left: auto; }
 .tslib-panel__warning { margin-top: 8px; }
 @media (max-width: 768px) {
   .tslib-panel__toolbar { align-items: stretch; flex-direction: column; }

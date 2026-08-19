@@ -72,7 +72,7 @@ watch(() => route.query.mod, (q) => {
 <style scoped>
 .forecast-center { padding: 4px 8px 0; }
 .center-tabs :deep(> .el-tabs__header) { margin-bottom: 6px; padding: 0 12px; }
-.center-tabs :deep(> .el-tabs__header .el-tabs__item) { font-size: 14px; }
+.center-tabs :deep(> .el-tabs__header .el-tabs__item) { font-size: var(--font-lg); }
 .center-tabs :deep(.el-tabs__content) { overflow: visible; }
 </style>
 

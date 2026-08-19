@@ -288,7 +288,7 @@ onMounted(() => {
 
 .interprovincial-section h3 {
   margin: 0 0 10px;
-  font-size: 14px;
+  font-size: var(--font-lg);
 }
 
 .interprovincial-form-grid {
@@ -311,12 +311,12 @@ onMounted(() => {
   gap: 8px;
   margin-bottom: 8px;
   color: var(--text-body);
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 .interprovincial-form-grid small {
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 .interprovincial-form-grid :deep(.el-input-number) {

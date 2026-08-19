@@ -342,8 +342,8 @@ function tradesSummary({ columns }: { columns: { property?: string }[] }): strin
 
 <style scoped>
 .company-page { padding: 20px; }
-.page-title { margin: 0 0 16px; font-size: 20px; }
+.page-title { margin: 0 0 16px; font-size: var(--font-20); }
 .toolbar { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
-.readonly-hint { color: var(--el-text-color-secondary, #909399); font-size: 13px; }
-.import-hint { margin: 0 0 10px; color: var(--el-text-color-secondary, #909399); font-size: 13px; }
+.readonly-hint { color: var(--el-text-color-secondary, #909399); font-size: var(--font-md); }
+.import-hint { margin: 0 0 10px; color: var(--el-text-color-secondary, #909399); font-size: var(--font-md); }
 </style>

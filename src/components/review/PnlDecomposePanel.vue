@@ -172,19 +172,19 @@ function draftOf(date: string) {
 </template>
 
 <style scoped>
-.pdp { display: flex; flex-direction: column; gap: 10px; font-size: 12.5px; }
+.pdp { display: flex; flex-direction: column; gap: 10px; font-size: var(--font-12-5); }
 .pdp-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
-.pdp-head input { padding: 2px 6px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 6px; font-size: 11.5px; }
+.pdp-head input { padding: 2px 6px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 6px; font-size: var(--font-11-5); }
 .pdp-muted { margin: 0; color: var(--el-text-color-secondary, #909399); }
-.pdp-note { margin: 0; font-size: 11px; color: var(--el-text-color-secondary, #909399); line-height: 1.6; }
-.pdp-warn { margin: 0; padding: 6px 9px; border-radius: 6px; background: #fffbeb; color: #92400e; font-size: 11.5px; line-height: 1.6; }
-.pdp-seg b, .pdp-top b { font-size: 12.5px; display: block; margin-bottom: 4px; }
-.pdp-top i { font-style: normal; font-size: 10.5px; color: var(--el-text-color-secondary, #909399); font-weight: 400; }
-.pdp-table { width: 100%; border-collapse: collapse; font-size: 11.5px; font-variant-numeric: tabular-nums; }
+.pdp-note { margin: 0; font-size: var(--font-xs); color: var(--el-text-color-secondary, #909399); line-height: 1.6; }
+.pdp-warn { margin: 0; padding: 6px 9px; border-radius: 6px; background: #fffbeb; color: #92400e; font-size: var(--font-11-5); line-height: 1.6; }
+.pdp-seg b, .pdp-top b { font-size: var(--font-12-5); display: block; margin-bottom: 4px; }
+.pdp-top i { font-style: normal; font-size: var(--font-10-5); color: var(--el-text-color-secondary, #909399); font-weight: 400; }
+.pdp-table { width: 100%; border-collapse: collapse; font-size: var(--font-11-5); font-variant-numeric: tabular-nums; }
 .pdp-table th, .pdp-table td { padding: 3px 7px; border-bottom: 1px solid var(--el-border-color-lighter, #ebeef5); text-align: right; white-space: nowrap; }
-.pdp-table th { color: var(--el-text-color-secondary, #666); font-weight: 500; font-size: 10.5px; }
+.pdp-table th { color: var(--el-text-color-secondary, #666); font-weight: 500; font-size: var(--font-10-5); }
 .pdp-table th:nth-child(n+5), .pdp-table td:nth-child(n+5) { text-align: left; white-space: normal; }
 .pdp-table .good { color: #15803d; }
 .pdp-table .bad { color: #b91c1c; }
-.pdp-input { width: 100%; min-width: 120px; padding: 2px 6px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 5px; font-size: 11.5px; box-sizing: border-box; }
+.pdp-input { width: 100%; min-width: 120px; padding: 2px 6px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 5px; font-size: var(--font-11-5); box-sizing: border-box; }
 </style>

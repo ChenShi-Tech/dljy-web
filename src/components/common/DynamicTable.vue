@@ -146,7 +146,7 @@ function exportCsv() {
 }
 .dynamic-table__count {
   color: var(--el-text-color-secondary);
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 .dynamic-table__pager {
   display: flex;

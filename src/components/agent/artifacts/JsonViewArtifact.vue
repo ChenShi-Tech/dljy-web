@@ -35,6 +35,6 @@ async function copy() {
 .json-tree {
   padding: 10px 12px; overflow-x: auto; max-height: 420px;
   font-family: 'SFMono-Regular', Consolas, Menlo, monospace;
-  font-size: 12.5px; line-height: 1.55;
+  font-size: var(--font-12-5); line-height: 1.55;
 }
 </style>

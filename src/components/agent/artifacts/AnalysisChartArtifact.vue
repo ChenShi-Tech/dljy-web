@@ -150,21 +150,21 @@ function fmt(v: unknown): string {
 
 <style scoped>
 .analysis-body { padding: 8px 10px; }
-.analysis-desc { margin: 0 0 8px; font-size: 12px; color: var(--text-secondary, #666); }
+.analysis-desc { margin: 0 0 8px; font-size: var(--font-sm); color: var(--text-secondary, #666); }
 .chart-host { min-height: 220px; }
-.analysis-empty { padding: 24px 8px; text-align: center; color: var(--text-secondary, #888); font-size: 13px; }
+.analysis-empty { padding: 24px 8px; text-align: center; color: var(--text-secondary, #888); font-size: var(--font-md); }
 .analysis-empty.is-error { color: #c0392b; }
 .kpi-row { display: flex; flex-wrap: wrap; gap: 10px; }
 .kpi-card { flex: 1 1 120px; padding: 12px; border-radius: 8px; background: var(--surface-2, #f5f6f8); text-align: center; }
-.kpi-value { font-size: 20px; font-weight: 700; }
-.kpi-label { margin-top: 4px; font-size: 12px; color: var(--text-secondary, #777); }
+.kpi-value { font-size: var(--font-20); font-weight: 700; }
+.kpi-label { margin-top: 4px; font-size: var(--font-sm); color: var(--text-secondary, #777); }
 .analysis-table-host { overflow-x: auto; }
-.analysis-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.analysis-table { width: 100%; border-collapse: collapse; font-size: var(--font-sm); }
 .analysis-table th, .analysis-table td { padding: 5px 8px; border-bottom: 1px solid var(--border, #eee); text-align: right; white-space: nowrap; }
 .analysis-table th { text-align: right; font-weight: 600; color: var(--text-secondary, #555); }
-.analysis-note { margin: 6px 0 0; font-size: 11px; color: var(--text-secondary, #999); }
+.analysis-note { margin: 6px 0 0; font-size: var(--font-xs); color: var(--text-secondary, #999); }
 .analysis-sql { margin-top: 8px; }
-.sql-toggle { font-size: 11px; padding: 3px 8px; border: 1px solid var(--border, #ddd); border-radius: 4px; background: transparent; cursor: pointer; }
-.sql-code { margin: 6px 0 0; padding: 8px; border-radius: 6px; background: var(--surface-2, #f5f6f8); font-size: 11px; overflow-x: auto; white-space: pre-wrap; }
+.sql-toggle { font-size: var(--font-xs); padding: 3px 8px; border: 1px solid var(--border, #ddd); border-radius: 4px; background: transparent; cursor: pointer; }
+.sql-code { margin: 6px 0 0; padding: 8px; border-radius: 6px; background: var(--surface-2, #f5f6f8); font-size: var(--font-xs); overflow-x: auto; white-space: pre-wrap; }
 </style>
 

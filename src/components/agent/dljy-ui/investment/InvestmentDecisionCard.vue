@@ -71,9 +71,9 @@ const icon = computed(() => (verdict.value === 'invest' ? BadgeCheck : verdict.v
   background: rgba(15, 118, 110, 0.1);
 }
 .copy { min-width: 0; }
-.copy p { margin: 0 0 3px; font-size: 12px; color: var(--muted, #667085); }
-.copy h3 { margin: 0; font-size: 20px; color: var(--text, #111827); line-height: 1.25; }
-.copy span { display: block; margin-top: 5px; font-size: 13px; line-height: 1.5; color: var(--text-body, #344054); }
+.copy p { margin: 0 0 3px; font-size: var(--font-sm); color: var(--muted, #667085); }
+.copy h3 { margin: 0; font-size: var(--font-20); color: var(--text, #111827); line-height: 1.25; }
+.copy span { display: block; margin-top: 5px; font-size: var(--font-md); line-height: 1.5; color: var(--text-body, #344054); }
 .metrics {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -82,8 +82,8 @@ const icon = computed(() => (verdict.value === 'invest' ? BadgeCheck : verdict.v
   background: var(--line-soft, #e5e7eb);
 }
 .metrics article { min-width: 0; padding: 10px 12px; background: var(--panel, #fff); }
-.metrics span { display: block; font-size: 12px; color: var(--muted, #667085); }
-.metrics strong { display: block; margin-top: 4px; font-size: 17px; color: var(--text, #111827); overflow-wrap: anywhere; }
+.metrics span { display: block; font-size: var(--font-sm); color: var(--muted, #667085); }
+.metrics strong { display: block; margin-top: 4px; font-size: var(--font-xl); color: var(--text, #111827); overflow-wrap: anywhere; }
 @media (max-width: 900px) {
   .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }

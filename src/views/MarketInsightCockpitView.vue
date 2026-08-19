@@ -164,34 +164,34 @@ function askGlobal() {
   background: var(--panel); background-image: var(--panel-image);
   border: 1px solid var(--line); box-shadow: var(--shadow);
 }
-.mic-title h2 { margin: 0; font-size: 19px; color: var(--text); }
-.mic-sub { font-size: 12.5px; color: var(--muted); }
+.mic-title h2 { margin: 0; font-size: var(--font-19); color: var(--text); }
+.mic-sub { font-size: var(--font-12-5); color: var(--muted); }
 .mic-ctrl { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.mic-date { padding: 7px 10px; font-size: 13px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel-sub); color: var(--text-body); }
+.mic-date { padding: 7px 10px; font-size: var(--font-md); border: 1px solid var(--line); border-radius: 8px; background: var(--panel-sub); color: var(--text-body); }
 .mic-seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
-.mic-seg button { padding: 7px 13px; font-size: 12.5px; background: transparent; color: var(--muted); border: none; cursor: pointer; }
+.mic-seg button { padding: 7px 13px; font-size: var(--font-12-5); background: transparent; color: var(--muted); border: none; cursor: pointer; }
 .mic-seg button.on { background: var(--primary-tint); color: var(--primary); }
 .mic-main { flex: 1; min-height: 0; display: flex; gap: 12px; }
 .mic-board { flex: 1; min-width: 0; overflow-y: auto; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; align-content: start; }
 .mic-overview { background: var(--panel); background-image: var(--panel-image); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px 4px; }
 .mic-sec-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; padding: 2px 2px 8px; }
-.mic-sec-title { font-size: 15px; font-weight: 600; color: var(--text); }
-.mic-sec-head small { font-size: 12px; color: var(--muted); }
+.mic-sec-title { font-size: var(--font-15); font-weight: 600; color: var(--text); }
+.mic-sec-head small { font-size: var(--font-sm); color: var(--muted); }
 .mic-insight-head { margin-top: 2px; border-top: 1px dashed var(--line); padding-top: 12px; }
-.mic-tag { grid-column: 1 / -1; font-size: 12px; padding: 5px 10px; border-radius: 8px; justify-self: start; }
+.mic-tag { grid-column: 1 / -1; font-size: var(--font-sm); padding: 5px 10px; border-radius: 8px; justify-self: start; }
 .mic-tag.t-real { color: var(--success); background: var(--primary-tint); }
 .mic-tag.t-mock { color: var(--warning); background: var(--warning-tint); }
 .mic-cell { position: relative; min-width: 0; }
 .span-2 { grid-column: 1 / -1; }
 .mic-ask {
   position: absolute; top: 12px; right: 12px; z-index: 2;
-  padding: 3px 10px; font-size: 11.5px; cursor: pointer; white-space: nowrap;
+  padding: 3px 10px; font-size: var(--font-11-5); cursor: pointer; white-space: nowrap;
   color: var(--primary); background: var(--primary-tint);
   border: 1px solid var(--primary-tint-border); border-radius: 999px; transition: all .15s;
 }
 .mic-ask:hover { background: var(--primary-tint); border-color: var(--primary); }
-.mic-err { grid-column: 1 / -1; font-size: 13px; color: var(--danger); padding: 14px 16px; background: var(--danger-tint); border: 1px solid var(--danger); border-radius: 12px; }
-.mic-empty { grid-column: 1 / -1; padding: 40px 28px; text-align: center; color: var(--muted); font-size: 14px; line-height: 1.85; }
+.mic-err { grid-column: 1 / -1; font-size: var(--font-md); color: var(--danger); padding: 14px 16px; background: var(--danger-tint); border: 1px solid var(--danger); border-radius: 12px; }
+.mic-empty { grid-column: 1 / -1; padding: 40px 28px; text-align: center; color: var(--muted); font-size: var(--font-lg); line-height: 1.85; }
 .mic-empty strong { color: var(--primary); }
 /* —— neon 专属沉浸式：深空渐变 + 标题渐变 + 辉光（仅 neon 主题，其余三主题用纯净主题色）—— */
 :root[data-theme='neon'] .mic-root {

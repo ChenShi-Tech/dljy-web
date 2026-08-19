@@ -314,20 +314,20 @@ onRegionChange(() => {
 
 <style scoped>
 .monitor { gap: 14px; }
-.muted { color: var(--muted); font-size: 12.5px; }
+.muted { color: var(--muted); font-size: var(--font-12-5); }
 .params {
   display: flex; flex-wrap: wrap; align-items: center; gap: 14px;
-  padding: 12px 16px; font-size: 13px;
+  padding: 12px 16px; font-size: var(--font-md);
 }
 .params label { display: flex; align-items: center; gap: 6px; color: var(--muted); }
 .params input {
   padding: 5px 9px; border: 1px solid var(--line); border-radius: 8px;
-  background: transparent; color: var(--text); font-size: 13px;
+  background: transparent; color: var(--text); font-size: var(--font-md);
 }
 .params input[type='number'] { width: 90px; }
 .refresh-btn {
   display: inline-flex; align-items: center; gap: 6px;
-  padding: 5px 12px; font-size: 12.5px; border: 1px solid var(--line);
+  padding: 5px 12px; font-size: var(--font-12-5); border: 1px solid var(--line);
   border-radius: 999px; background: transparent; color: var(--muted); cursor: pointer;
 }
 .refresh-btn.on { border-color: var(--primary); color: var(--primary); }
@@ -335,13 +335,13 @@ onRegionChange(() => {
 .spin { animation: spin 1s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 .demo-tag {
-  font-size: 11px; padding: 1px 8px; border-radius: 999px;
+  font-size: var(--font-xs); padding: 1px 8px; border-radius: 999px;
   background: rgba(245, 158, 11, 0.15); color: #b45309;
 }
 .demo-tag.replay { background: rgba(22, 163, 74, 0.12); color: #15803d; }
 .demo-tag.live { background: rgba(14, 116, 144, 0.12); color: #0e7490; }
 .basis-tag {
-  font-size: 11px; padding: 1px 8px; border-radius: 999px;
+  font-size: var(--font-xs); padding: 1px 8px; border-radius: 999px;
   background: rgba(59, 130, 246, 0.12); color: #1d4ed8;
 }
 .basis-tag.granularity {
@@ -350,21 +350,21 @@ onRegionChange(() => {
   color: var(--primary, #3b82f6);
 }
 .basis-tag.warn { background: rgba(239, 68, 68, 0.10); color: #b91c1c; }
-.updated { margin-left: auto; font-size: 11.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
-.error-tag { color: #ef4444; font-size: 12px; }
+.updated { margin-left: auto; font-size: var(--font-11-5); color: var(--muted); font-variant-numeric: tabular-nums; }
+.error-tag { color: #ef4444; font-size: var(--font-sm); }
 
 .monitor-grid { display: grid; grid-template-columns: 1fr 300px; gap: 14px; }
 @media (max-width: 1100px) { .monitor-grid { grid-template-columns: 1fr; } }
 @media (max-width: 768px) { .monitor-grid { grid-template-columns: 1fr; } }
 .chart-block { padding: 12px 16px; }
-.block-title { display: flex; align-items: center; gap: 6px; font-size: 13.5px; font-weight: 600; margin-bottom: 6px; }
+.block-title { display: flex; align-items: center; gap: 6px; font-size: var(--font-13-5); font-weight: 600; margin-bottom: 6px; }
 .main-chart { width: 100%; height: 520px; }
 
 .side-col { display: flex; flex-direction: column; gap: 14px; }
 .alerts { padding: 12px 14px; max-height: 280px; overflow-y: auto; }
 .alert-row {
   display: flex; align-items: center; gap: 8px; width: 100%;
-  padding: 6px 8px; margin-top: 4px; font-size: 12.5px;
+  padding: 6px 8px; margin-top: 4px; font-size: var(--font-12-5);
   border: 1px solid var(--line); border-radius: 8px;
   background: transparent; color: var(--text); cursor: pointer; text-align: left;
 }
@@ -373,14 +373,14 @@ onRegionChange(() => {
 .alert-spread { font-variant-numeric: tabular-nums; }
 .num-up { color: #ef4444; }
 .num-down { color: #16a34a; }
-.alert-dir { margin-left: auto; font-size: 11.5px; color: var(--muted); }
+.alert-dir { margin-left: auto; font-size: var(--font-11-5); color: var(--muted); }
 
 .pv-stats { padding: 12px 14px; }
 .pv-row {
   display: flex; justify-content: space-between; padding: 4px 0;
-  font-size: 13px; color: var(--muted);
+  font-size: var(--font-md); color: var(--muted);
 }
 .pv-row b { color: var(--text); font-variant-numeric: tabular-nums; }
 .pv-row.main { border-top: 1px solid var(--line); margin-top: 4px; padding-top: 8px; }
-.pv-row.main b { color: var(--primary); font-size: 16px; }
+.pv-row.main b { color: var(--primary); font-size: var(--font-16); }
 </style>

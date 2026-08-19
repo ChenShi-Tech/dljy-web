@@ -192,7 +192,7 @@ onMounted(load)
     <!-- 空态：无产物，诚实提示，不回退假数据 -->
     <el-empty v-if="!loading && !report"
       description="未找到滚动回测报告产物（该地区）">
-      <template #image><span style="font-size: 48px">📉</span></template>
+      <template #image><span style="font-size: var(--font-48)">📉</span></template>
       <div class="empty-hint">
         <p>在主仓库 agent-backend 环境下运行离线报告生成：</p>
         <p><code>npm run report:forecast-yunnan -- --gap 1 --min-train-days 12 --refit-every 5</code></p>
@@ -319,30 +319,30 @@ onMounted(load)
 <style scoped>
 .scoreboard { padding: 12px 16px; background: var(--el-fill-color-light); min-height: calc(100vh - 90px); }
 .mb { margin-bottom: 12px; }
-.scoreboard code { font-size: 12px; background: var(--el-fill-color); padding: 1px 5px; border-radius: 4px; }
-.head-meta { display: flex; flex-wrap: wrap; gap: 16px; font-size: 12px; color: var(--el-text-color-regular); margin: 8px 2px 12px; }
+.scoreboard code { font-size: var(--font-sm); background: var(--el-fill-color); padding: 1px 5px; border-radius: 4px; }
+.head-meta { display: flex; flex-wrap: wrap; gap: 16px; font-size: var(--font-sm); color: var(--el-text-color-regular); margin: 8px 2px 12px; }
 .head-meta .gen { color: var(--el-text-color-secondary); margin-left: auto; }
 .toolbar { display: flex; align-items: center; gap: 8px; background: var(--panel); padding: 10px 12px; border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,.04); flex-wrap: wrap; margin-bottom: 12px; }
-.toolbar .lbl { font-size: 13px; color: var(--el-text-color-regular); font-weight: 600; }
+.toolbar .lbl { font-size: var(--font-md); color: var(--el-text-color-regular); font-weight: 600; }
 .toolbar .spacer { flex: 1; }
-.toolbar .hint { font-size: 12px; color: var(--el-text-color-secondary); }
+.toolbar .hint { font-size: var(--font-sm); color: var(--el-text-color-secondary); }
 .caveat { margin-bottom: 10px; }
-.caveat :deep(.el-alert__title) { font-size: 12px; line-height: 1.5; }
+.caveat :deep(.el-alert__title) { font-size: var(--font-sm); line-height: 1.5; }
 .card { margin-bottom: 12px; }
 .card-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
-.ttl { font-weight: 600; font-size: 13px; }
-.note { font-size: 12px; color: var(--el-color-warning); font-weight: 400; }
+.ttl { font-weight: 600; font-size: var(--font-md); }
+.note { font-size: var(--font-sm); color: var(--el-color-warning); font-weight: 400; }
 .tag { margin-left: 6px; }
 .muted { color: var(--el-text-color-secondary); }
 .neg { color: var(--el-color-danger); font-weight: 600; }
-.legend-note { font-size: 12px; color: var(--el-text-color-secondary); margin-top: 8px; display: flex; gap: 10px; flex-wrap: wrap; }
+.legend-note { font-size: var(--font-sm); color: var(--el-text-color-secondary); margin-top: 8px; display: flex; gap: 10px; flex-wrap: wrap; }
 .legend-note .red { color: var(--el-color-danger); }
 .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 12px; }
 .stat-card { background: var(--el-bg-color-overlay, #fff); border: 1px solid var(--el-border-color-lighter, #ebeef5); border-radius: 8px; padding: 12px 14px; }
-.stat-label { color: var(--el-text-color-secondary, #909399); font-size: 12px; margin-bottom: 6px; }
-.stat-value { font-size: 20px; font-weight: 600; }
+.stat-label { color: var(--el-text-color-secondary, #909399); font-size: var(--font-sm); margin-bottom: 6px; }
+.stat-value { font-size: var(--font-20); font-weight: 600; }
 .chart { height: 320px; width: 100%; }
-.empty-hint { font-size: 12px; color: var(--el-text-color-secondary); text-align: left; max-width: 640px; }
+.empty-hint { font-size: var(--font-sm); color: var(--el-text-color-secondary); text-align: left; max-width: 640px; }
 .empty-hint p { margin: 4px 0; }
 :deep(.fail-skill-row) { background: var(--el-color-danger-light-9, #fef0f0); }
 :deep(.fail-skill-row:hover > td) { background: var(--el-color-danger-light-8, #fde2e2) !important; }

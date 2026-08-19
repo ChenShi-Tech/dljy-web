@@ -81,7 +81,7 @@ onMounted(() => { void loadForecastStations() })
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
-  font-size: 13px;
+  font-size: var(--font-md);
   color: var(--el-text-color-regular);
 }
 .fp-seg { display: inline-flex; align-items: center; gap: 4px; }
@@ -93,7 +93,7 @@ onMounted(() => { void loadForecastStations() })
 .tag-ic { margin-right: 2px; vertical-align: -1px; }
 .fp-hint {
   margin-top: 6px;
-  font-size: 12px;
+  font-size: var(--font-sm);
   color: var(--warning);
 }
 @media (max-width: 768px) {

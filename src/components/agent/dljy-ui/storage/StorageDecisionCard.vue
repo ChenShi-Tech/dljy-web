@@ -65,9 +65,9 @@ const icon = computed(() => (verdict.value === 'invest' ? BadgeCheck : verdict.v
   display: grid; place-items: center;
   background: rgba(15, 118, 110, 0.1); color: var(--primary, #0f766e);
 }
-.eyebrow { margin: 0 0 3px; font-size: 12px; color: var(--muted, #667085); }
-h3 { margin: 0; font-size: 20px; color: var(--text, #111827); }
-.reason { margin: 5px 0 0; font-size: 13px; color: var(--text-body, #344054); line-height: 1.5; }
+.eyebrow { margin: 0 0 3px; font-size: var(--font-sm); color: var(--muted, #667085); }
+h3 { margin: 0; font-size: var(--font-20); color: var(--text, #111827); }
+.reason { margin: 5px 0 0; font-size: var(--font-md); color: var(--text-body, #344054); line-height: 1.5; }
 .metric-row {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -76,8 +76,8 @@ h3 { margin: 0; font-size: 20px; color: var(--text, #111827); }
   background: var(--line-soft, #e5e7eb);
 }
 .metric-row > div { background: var(--panel, #fff); padding: 10px 12px; min-width: 0; }
-.metric-row span { display: block; font-size: 12px; color: var(--muted, #667085); }
-.metric-row strong { display: block; margin-top: 3px; font-size: 18px; color: var(--text, #111827); word-break: break-word; }
+.metric-row span { display: block; font-size: var(--font-sm); color: var(--muted, #667085); }
+.metric-row strong { display: block; margin-top: 3px; font-size: var(--font-18); color: var(--text, #111827); word-break: break-word; }
 @media (max-width: 900px) {
   .metric-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }

@@ -353,20 +353,20 @@ onRegionChange(loadData)
 <style scoped>
 .rel { padding: 12px 16px; background: var(--el-fill-color-light); min-height: calc(100vh - 90px); }
 .toolbar { display: flex; align-items: center; gap: 8px; background: var(--panel); padding: 10px 12px; border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,.04); flex-wrap: wrap; }
-.toolbar .lbl { font-size: 13px; color: var(--el-text-color-regular); font-weight: 600; }
+.toolbar .lbl { font-size: var(--font-md); color: var(--el-text-color-regular); font-weight: 600; }
 .toolbar .spacer { flex: 1; }
 .kpis { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 12px; }
 .kpi { flex: 1 1 150px; background: var(--panel); border-radius: 8px; padding: 10px 14px; box-shadow: 0 1px 4px rgba(0,0,0,.04); display: flex; flex-direction: column; gap: 4px; }
-.kpi .k-lbl { font-size: 12px; color: var(--el-text-color-secondary); }
-.kpi .k-val { font-size: 18px; font-weight: 700; color: var(--el-text-color-primary); }
-.kpi .k-val em { font-size: 11px; font-weight: 400; font-style: normal; color: var(--el-text-color-secondary); }
+.kpi .k-lbl { font-size: var(--font-sm); color: var(--el-text-color-secondary); }
+.kpi .k-val { font-size: var(--font-18); font-weight: 700; color: var(--el-text-color-primary); }
+.kpi .k-val em { font-size: var(--font-xs); font-weight: 400; font-style: normal; color: var(--el-text-color-secondary); }
 .kpi .k-val.up { color: #c0392b; }
 .kpi .k-val.down { color: #2980b9; }
 .legend { display: flex; flex-wrap: wrap; gap: 10px 14px; background: var(--panel); border-radius: 8px; padding: 8px 12px; margin-top: 12px; box-shadow: 0 1px 4px rgba(0,0,0,.04); }
-.lg { font-size: 12px; color: var(--el-text-color-regular); display: inline-flex; align-items: center; }
+.lg { font-size: var(--font-sm); color: var(--el-text-color-regular); display: inline-flex; align-items: center; }
 .dot { width: 9px; height: 9px; border-radius: 50%; margin-right: 4px; }
 .fit-line { width: 16px; height: 0; border-top: 1.5px dashed #606266; margin-right: 4px; display: inline-block; }
-.vlg { font-size: 12px; color: var(--el-text-color-regular); display: inline-flex; align-items: center; }
+.vlg { font-size: var(--font-sm); color: var(--el-text-color-regular); display: inline-flex; align-items: center; }
 .vlg i { width: 14px; height: 3px; margin-right: 4px; display: inline-block; }
 .single { background: var(--panel); border-radius: 6px; box-shadow: 0 1px 3px rgba(0,0,0,.04); height: 560px; margin-top: 12px; padding: 8px; }
 .grid { display: grid; gap: 10px; margin-top: 12px; }

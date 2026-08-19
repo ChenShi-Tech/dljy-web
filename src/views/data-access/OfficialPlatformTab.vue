@@ -179,10 +179,10 @@ onMounted(load)
   gap: 14px;
 }
 .focus-head { display: flex; align-items: center; gap: 8px; }
-.focus-head h3 { margin: 0; font-size: 16px; font-weight: 600; color: var(--el-text-color-primary); }
-.focus-hint { margin-left: auto; font-size: 12px; color: var(--el-text-color-secondary); }
-.focus-todo { margin-top: 6px; font-size: 12.5px; color: var(--el-text-color-secondary); }
-.empty-sub { font-size: 12px; color: var(--el-text-color-secondary); }
+.focus-head h3 { margin: 0; font-size: var(--font-16); font-weight: 600; color: var(--el-text-color-primary); }
+.focus-hint { margin-left: auto; font-size: var(--font-sm); color: var(--el-text-color-secondary); }
+.focus-todo { margin-top: 6px; font-size: var(--font-12-5); color: var(--el-text-color-secondary); }
+.empty-sub { font-size: var(--font-sm); color: var(--el-text-color-secondary); }
 
 .matrix-panel {
   padding: 18px 20px;
@@ -191,11 +191,11 @@ onMounted(load)
   background: var(--el-bg-color);
 }
 .matrix-head { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; }
-.matrix-head h3 { margin: 0; font-size: 15px; font-weight: 600; color: var(--el-text-color-primary); }
-.matrix-hint { margin-left: auto; font-size: 12px; color: var(--el-text-color-secondary); }
+.matrix-head h3 { margin: 0; font-size: var(--font-15); font-weight: 600; color: var(--el-text-color-primary); }
+.matrix-hint { margin-left: auto; font-size: var(--font-sm); color: var(--el-text-color-secondary); }
 
 .op-group + .op-group { margin-top: 16px; }
-.op-label { font-size: 13px; font-weight: 600; color: var(--el-text-color-secondary); margin-bottom: 8px; }
+.op-label { font-size: var(--font-md); font-weight: 600; color: var(--el-text-color-secondary); margin-bottom: 8px; }
 .op-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 10px; }
 
 .op-cell {
@@ -210,7 +210,7 @@ onMounted(load)
   transition: border-color 0.15s;
 }
 .op-cell.current { border-color: var(--el-color-primary); box-shadow: 0 0 0 2px var(--el-color-primary-light-8); }
-.cell-name { font-size: 13px; font-weight: 600; color: var(--el-text-color-primary); }
-.cell-host { font-family: var(--el-font-family-mono, monospace); font-size: 11px; color: var(--el-text-color-placeholder); word-break: break-all; }
-.cell-owner { display: flex; align-items: center; gap: 4px; font-size: 11px; color: var(--el-text-color-secondary); }
+.cell-name { font-size: var(--font-md); font-weight: 600; color: var(--el-text-color-primary); }
+.cell-host { font-family: var(--el-font-family-mono, monospace); font-size: var(--font-xs); color: var(--el-text-color-placeholder); word-break: break-all; }
+.cell-owner { display: flex; align-items: center; gap: 4px; font-size: var(--font-xs); color: var(--el-text-color-secondary); }
 </style>

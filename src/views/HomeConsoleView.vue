@@ -983,12 +983,12 @@ onRegionChange(() => {
 }
 .role-meta span {
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 .role-copy h2 {
   margin: 6px 0;
   color: var(--chip-text);
-  font-size: 18px;
+  font-size: var(--font-18);
 }
 .role-copy p {
   margin: 0;
@@ -1014,16 +1014,16 @@ onRegionChange(() => {
 }
 .role-card span {
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 .role-card strong {
   color: var(--chip-text);
-  font-size: 22px;
+  font-size: var(--font-22);
 }
 .role-card small {
   margin-left: 4px;
   color: var(--el-text-color-secondary);
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 .role-card.green strong { color: var(--primary); }
 .role-card.blue strong { color: var(--accent); }
@@ -1041,7 +1041,7 @@ onRegionChange(() => {
   border-radius: 6px;
   background: var(--chip-bg);
   color: var(--text-soft);
-  font-size: 13px;
+  font-size: var(--font-md);
 }
 /* minmax(0,…) 防止右列天气表(max-content)撑大轨道、破坏 2:1 比例；
    两列各面板高度之和相等(776px) → 左右等高 */
@@ -1063,58 +1063,58 @@ onRegionChange(() => {
 }
 /* echarts 卡片标题栏去掉底边框，避免与贴顶图例视觉拥挤 */
 .phead--chart { border-bottom: none; }
-.ptitle { font-weight: 700; font-size: 15px; color: var(--text); }
-.ptitle .total { font-style: normal; font-weight: 700; color: var(--chart-danger); font-size: 14px; }
-.psub { font-size: 12px; color: var(--el-text-color-secondary); }
+.ptitle { font-weight: 700; font-size: var(--font-15); color: var(--text); }
+.ptitle .total { font-style: normal; font-weight: 700; color: var(--chart-danger); font-size: var(--font-lg); }
+.psub { font-size: var(--font-sm); color: var(--el-text-color-secondary); }
 .daynav { display: flex; gap: 2px; }
 
 /* 新能源面板工具区:收窄日期框 + 装饰天气挂件 */
 .ne-tools { display: flex; align-items: center; gap: 10px; }
 /* Element Plus daterange 默认宽度较大,用 :deep 覆盖内部类,贴合日期内容 */
 .ne-tools :deep(.el-date-editor--daterange) { width: 230px; }
-.ne-tools :deep(.el-range-input) { font-size: 12px; }
+.ne-tools :deep(.el-range-input) { font-size: var(--font-sm); }
 .wx-chip {
   display: inline-flex; align-items: center; gap: 4px; padding: 3px 9px;
   background: var(--wx-chip-bg); border-radius: 14px;
 }
 .wx-chip-svg { width: 18px; height: 18px; line-height: 0; display: inline-flex; }
 .wx-chip-svg :deep(.wx-svg) { width: 18px; height: 18px; display: block; }
-.wx-chip em { font-style: normal; font-weight: 700; font-size: 14px; color: var(--wx-chip-fg); }
+.wx-chip em { font-style: normal; font-weight: 700; font-size: var(--font-lg); color: var(--wx-chip-fg); }
 .wx-chip.clickable { cursor: pointer; }
 .wx-chip.clickable:hover { background: var(--el-fill-color-light); }
-.wx-city { color: var(--muted); font-size: 11px; margin-left: 2px; }
+.wx-city { color: var(--muted); font-size: var(--font-xs); margin-left: 2px; }
 .wx-pop-top { display: flex; gap: 6px; margin-bottom: 8px; }
 .wx-pop-top .el-input { flex: 1; }
 .wx-pop-list { display: flex; flex-wrap: wrap; gap: 6px; max-height: 184px; overflow-y: auto; }
-.wx-pop-c { font-size: 12.5px; color: var(--text-soft); padding: 4px 10px; border-radius: 12px; background: var(--panel-sub); cursor: pointer; transition: all 0.15s; }
+.wx-pop-c { font-size: var(--font-12-5); color: var(--text-soft); padding: 4px 10px; border-radius: 12px; background: var(--panel-sub); cursor: pointer; transition: all 0.15s; }
 .wx-pop-c:hover { background: var(--el-color-primary-light-9); color: var(--el-color-primary); }
 .wx-pop-c.on { background: var(--el-color-primary); color: var(--ai-btn-fg); }
 .wx-pop-foot { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--line-faint); text-align: right; }
-.wx-detail { font-size: 12px; color: var(--el-color-primary);cursor: pointer; }
+.wx-detail { font-size: var(--font-sm); color: var(--el-color-primary);cursor: pointer; }
 .wx-detail:hover { text-decoration: underline; }
-.wx-city-sel { font-size: 12px; color: var(--muted); cursor: pointer; }
+.wx-city-sel { font-size: var(--font-sm); color: var(--muted); cursor: pointer; }
 .wx-city-sel:hover { color: var(--el-color-primary); }
 .wx-city-sel small { color: var(--el-text-color-secondary); }
-.wx-row { display: flex; align-items: center; gap: 8px; padding: 6px 4px; border-bottom: 1px solid var(--line-faint); font-size: 12.5px; }
+.wx-row { display: flex; align-items: center; gap: 8px; padding: 6px 4px; border-bottom: 1px solid var(--line-faint); font-size: var(--font-12-5); }
 .wx-row:last-child { border-bottom: none; }
 .wx-rdate { width: 42px; color: var(--el-text-color-regular); flex: none; }
 .wx-ricon { width: 22px; flex: none; line-height: 0; }
 .wx-ricon :deep(.wx-svg) { width: 22px; height: 22px; display: block; }
 .wx-rtext { width: 50px; color: var(--el-text-color-primary); flex: none; }
-.wx-rwind { flex: 1; color: var(--el-text-color-secondary); font-size: 11px; }
+.wx-rwind { flex: 1; color: var(--el-text-color-secondary); font-size: var(--font-xs); }
 .wx-rtemp { color: var(--el-text-color-secondary); flex: none; }
 .wx-rtemp b { color: var(--chart-danger); }
-.wx-empty { padding: 16px; text-align: center; color: var(--el-text-color-placeholder); font-size: 12px; }
+.wx-empty { padding: 16px; text-align: center; color: var(--el-text-color-placeholder); font-size: var(--font-sm); }
 .wx-head-right { display: inline-flex; align-items: center; gap: 8px; }
-.wx-detail2 { font-size: 12px; color: var(--el-color-primary);cursor: pointer; white-space: nowrap; }
+.wx-detail2 { font-size: var(--font-sm); color: var(--el-color-primary);cursor: pointer; white-space: nowrap; }
 .wx-detail2:hover { text-decoration: underline; }
 .wx-city-th { cursor: pointer; }
 .wx-city-th:hover { color: var(--el-color-primary);text-decoration: underline; }
-.wx-hum { font-size: 10px; color: #5b9bd5; }
+.wx-hum { font-size: var(--font-10); color: #5b9bd5; }
 
 /* 交易平台负荷:类型切换 Tab */
 .load-tabs { display: flex; gap: 14px; }
-.load-tab { font-size: 13px; color: var(--el-color-primary);cursor: pointer; user-select: none; }
+.load-tab { font-size: var(--font-md); color: var(--el-color-primary);cursor: pointer; user-select: none; }
 .load-tab:hover { color: var(--el-color-primary-light-3); }
 .load-tab.active { color: var(--el-color-primary);font-weight: 700; }
 .load-tab.disabled { color: var(--el-text-color-disabled); cursor: not-allowed; }
@@ -1127,7 +1127,7 @@ onRegionChange(() => {
 
 /* 天气网格 */
 .wx-wrap { overflow: auto; flex: 1; min-height: 0; }
-.wx-table { border-collapse: separate; border-spacing: 0; font-size: 12px; width: max-content; min-width: 100%; }
+.wx-table { border-collapse: separate; border-spacing: 0; font-size: var(--font-sm); width: max-content; min-width: 100%; }
 .wx-table th, .wx-table td {
   border-right: 1px solid var(--line-faint); border-bottom: 1px solid var(--line-faint); text-align: center;
 }
@@ -1143,12 +1143,12 @@ onRegionChange(() => {
 .wx-cell { padding: 6px 4px; }
 .wx-icon { display: block; line-height: 0; }
 .wx-icon :deep(.wx-svg) { width: 30px; height: 30px; }
-.wx-wind { display: block; font-size: 11px; color: var(--el-text-color-secondary); margin-top: 2px; }
-.wx-temp { display: block; font-size: 12px; color: var(--el-text-color-primary); font-weight: 600; margin-top: 1px; }
+.wx-wind { display: block; font-size: var(--font-xs); color: var(--el-text-color-secondary); margin-top: 2px; }
+.wx-temp { display: block; font-size: var(--font-sm); color: var(--el-text-color-primary); font-weight: 600; margin-top: 1px; }
 .wx-empty { color: var(--el-text-color-disabled); }
 
 .mb { margin-bottom: 12px; }
-.src { color: var(--el-text-color-secondary); font-size: 12px; margin: 12px 0 0; text-align: center; }
+.src { color: var(--el-text-color-secondary); font-size: var(--font-sm); margin: 12px 0 0; text-align: center; }
 .src code { color: var(--el-color-primary);}
 
 @media (max-width: 1400px) {

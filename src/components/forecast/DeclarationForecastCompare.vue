@@ -642,15 +642,15 @@ defineExpose({ run })
 .dfc-models { display: flex; flex-wrap: wrap; gap: 4px; }
 .model-chip {
   padding: 2px 8px; border: 1px solid var(--el-border-color); border-radius: 10px;
-  background: var(--el-fill-color-blank); font-size: 12px; cursor: pointer; color: var(--el-text-color-regular);
+  background: var(--el-fill-color-blank); font-size: var(--font-sm); cursor: pointer; color: var(--el-text-color-regular);
 }
 .model-chip.on { border-color: var(--el-color-primary); color: var(--el-color-primary); background: var(--el-color-primary-light-9); }
 .model-chip.mock { border-style: dashed; }
 .model-chip.off { opacity: 0.45; cursor: not-allowed; }
-.chip-tag { margin-left: 3px; font-size: 10px; color: var(--el-color-warning); }
+.chip-tag { margin-left: 3px; font-size: var(--font-10); color: var(--el-color-warning); }
 .dfc-actions { display: flex; align-items: center; gap: 6px; }
 .rerun {
-  display: inline-flex; align-items: center; gap: 3px; padding: 2px 8px; font-size: 12px;
+  display: inline-flex; align-items: center; gap: 3px; padding: 2px 8px; font-size: var(--font-sm);
   border: 1px solid var(--el-border-color); border-radius: 4px; background: var(--el-fill-color-blank); cursor: pointer;
 }
 /* 选择已改但未运行 → 主色高亮，提示这一步需要用户确认 */
@@ -663,23 +663,23 @@ defineExpose({ run })
 @keyframes dfc-spin { to { transform: rotate(360deg); } }
 .dfc-placeholder {
   height: 240px; display: flex; align-items: center; justify-content: center; gap: 6px;
-  color: var(--el-text-color-secondary); font-size: 13px;
+  color: var(--el-text-color-secondary); font-size: var(--font-md);
 }
 .dfc-empty {
   border: 1px dashed var(--el-color-warning); border-radius: 6px; padding: 14px;
   display: flex; flex-direction: column; align-items: center; gap: 6px; text-align: center;
   color: var(--el-text-color-regular);
 }
-.empty-title { font-size: 13px; font-weight: 600; margin: 0; }
-.empty-reasons { margin: 0; padding-left: 16px; font-size: 12px; text-align: left; align-self: stretch; }
-.empty-hint { margin: 0; font-size: 12px; color: var(--el-text-color-secondary); }
+.empty-title { font-size: var(--font-md); font-weight: 600; margin: 0; }
+.empty-reasons { margin: 0; padding-left: 16px; font-size: var(--font-sm); text-align: left; align-self: stretch; }
+.empty-hint { margin: 0; font-size: var(--font-sm); color: var(--el-text-color-secondary); }
 .empty-exits { display: flex; gap: 6px; flex-wrap: wrap; justify-content: center; }
 .empty-exits button {
-  display: inline-flex; align-items: center; gap: 3px; padding: 3px 10px; font-size: 12px;
+  display: inline-flex; align-items: center; gap: 3px; padding: 3px 10px; font-size: var(--font-sm);
   border: 1px solid var(--el-color-primary); color: var(--el-color-primary); border-radius: 4px;
   background: var(--el-fill-color-blank); cursor: pointer;
 }
-.dfc-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.dfc-table { width: 100%; border-collapse: collapse; font-size: var(--font-sm); }
 .dfc-table th, .dfc-table td { padding: 3px 6px; text-align: left; border-bottom: 1px solid var(--el-border-color-lighter); }
 .dfc-table th { color: var(--el-text-color-secondary); font-weight: 500; }
 .dfc-table tr.mock { background: var(--el-fill-color-light); }
@@ -688,7 +688,7 @@ defineExpose({ run })
 .rank-none { color: var(--el-text-color-disabled); font-weight: 400; }
 .pick { display: inline-flex; align-items: center; gap: 3px; cursor: pointer; }
 .blocked { color: var(--el-text-color-disabled); cursor: help; }
-.dfc-note { margin: 0; font-size: 11px; color: var(--el-text-color-secondary); line-height: 1.5; }
+.dfc-note { margin: 0; font-size: var(--font-xs); color: var(--el-text-color-secondary); line-height: 1.5; }
 .dfc-note.warn { color: var(--el-color-warning); display: flex; align-items: flex-start; gap: 4px; flex-wrap: wrap; }
 /* 窄屏折叠「口径」列（第 3 列）。**不能折叠第 4 列**——撤掉「对目标日实际 MAE」后第 4 列
    正是「决策模型」单选，隐藏它等于让移动端用户既不能切换报价模型、也看不出当前选的是哪个，

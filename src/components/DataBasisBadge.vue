@@ -16,7 +16,7 @@ defineProps<{ basis: DataBasis; prefix?: string }>()
   padding: 2px 8px;
   border: 1px dashed currentColor;
   border-radius: 10px;
-  font-size: 11px;
+  font-size: var(--font-xs);
   line-height: 1.4;
   white-space: nowrap;
 }

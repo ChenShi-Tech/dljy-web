@@ -246,7 +246,7 @@ html[data-theme='arc'] .agent-panel .shimmer {
   padding: 4px 12px;
   border: 1px solid var(--line);
   border-radius: 10px;
-  font-size: 12.5px;
+  font-size: var(--font-tb-12-5);
   user-select: none;
   /* 空间不足走断点整体隐藏，绝不压到换行 */
   white-space: nowrap;
@@ -256,13 +256,13 @@ html[data-theme='arc'] .agent-panel .shimmer {
   padding: 1px 8px;
   border-radius: 999px;
   font-weight: 700;
-  font-size: 11.5px;
+  font-size: var(--font-tb-11-5);
   color: #0b1220;
   background: var(--period-accent, #38bdf8);
 }
 .price-ticker .pt-price { font-weight: 700; font-variant-numeric: tabular-nums; }
-.price-ticker .pt-unit { color: var(--muted); font-size: 11px; }
-.price-ticker .pt-delta { font-variant-numeric: tabular-nums; font-size: 12px; }
+.price-ticker .pt-unit { color: var(--muted); font-size: var(--font-tb-11); }
+.price-ticker .pt-delta { font-variant-numeric: tabular-nums; font-size: var(--font-tb-12); }
 .price-ticker .pt-delta.num-up { color: #ef4444; }
 .price-ticker .pt-delta.num-down { color: #16a34a; }
 html[data-theme='arc'] .price-ticker { background: var(--panel-2); }

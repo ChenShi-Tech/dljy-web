@@ -36,8 +36,8 @@ const activeCfg = computed(() => (active.value === 'zgnrx' ? FORECAST_CFGS.zgnrx
   display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
   padding: 10px 16px 0;
 }
-.ab-label { font-size: 13px; font-weight: 600; color: var(--el-text-color-regular); }
-.ab-hint { font-size: 12px; color: var(--el-text-color-secondary); }
+.ab-label { font-size: var(--font-md); font-weight: 600; color: var(--el-text-color-regular); }
+.ab-hint { font-size: var(--font-sm); color: var(--el-text-color-secondary); }
 @media (max-width: 768px) {
   .ab-switch { padding: 10px 12px 0; }
 }

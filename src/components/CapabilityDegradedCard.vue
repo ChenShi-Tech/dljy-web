@@ -59,13 +59,13 @@ const expectationLabel: Record<RegionCapabilityDataSupport['expectation'], strin
 .cap-degraded__head h3 {
   margin: 0;
   color: var(--text);
-  font-size: 14px;
+  font-size: var(--font-lg);
   font-weight: 700;
 }
 .cap-degraded p {
   margin: 0 0 12px;
   color: var(--muted);
-  font-size: 13px;
+  font-size: var(--font-md);
   line-height: 1.7;
 }
 .cap-degraded p b {
@@ -83,7 +83,7 @@ const expectationLabel: Record<RegionCapabilityDataSupport['expectation'], strin
   gap: 8px;
   align-items: center;
   color: var(--text);
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 .cap-degraded__support-label {
   font-weight: 600;
@@ -102,7 +102,7 @@ const expectationLabel: Record<RegionCapabilityDataSupport['expectation'], strin
   align-items: center;
   gap: 6px;
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 @media (max-width: 768px) {
   .cap-degraded__support-item {

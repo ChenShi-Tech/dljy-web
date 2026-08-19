@@ -257,15 +257,15 @@ onRegionChange(load)
 <style scoped>
 .page { padding: 20px 24px; }
 .page-head { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 16px; gap: 16px; flex-wrap: wrap; }
-.crumb { color: var(--el-text-color-secondary); font-size: 13px; }
-.page-head h2 { margin: 4px 0 0; font-size: 20px; }
+.crumb { color: var(--el-text-color-secondary); font-size: var(--font-md); }
+.page-head h2 { margin: 4px 0 0; font-size: var(--font-20); }
 .head-right { display: flex; align-items: center; gap: 16px; }
-.legend { color: var(--el-text-color-regular); font-size: 13px; display: flex; align-items: center; gap: 6px; }
+.legend { color: var(--el-text-color-regular); font-size: var(--font-md); display: flex; align-items: center; gap: 6px; }
 .chip { width: 14px; height: 14px; border-radius: 3px; display: inline-block; margin-left: 10px; }
 .chip.warm { background: rgba(245, 108, 108, 0.5); }
 .chip.cool { background: rgba(64, 158, 255, 0.5); }
 .cell { margin: -6px -10px; padding: 6px 10px; }
 .mb { margin-bottom: 12px; }
-.src { color: var(--el-text-color-secondary); font-size: 12px; margin-top: 12px; }
+.src { color: var(--el-text-color-secondary); font-size: var(--font-sm); margin-top: 12px; }
 .src code { color: var(--el-color-primary); }
 </style>

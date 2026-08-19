@@ -607,7 +607,7 @@ watch(
   border-radius: 7px;
   background: var(--primary);
   color: #fff;
-  font-size: 13px;
+  font-size: var(--font-tb-13);
   font-weight: 700;
 }
 .user-meta {
@@ -621,7 +621,7 @@ watch(
 }
 .user-meta strong {
   max-width: 100%;
-  font-size: 13px;
+  font-size: var(--font-tb-13);
   font-weight: 600;
   white-space: nowrap;
   overflow: hidden;
@@ -630,7 +630,7 @@ watch(
 .user-meta span {
   max-width: 100%;
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--font-tb-11);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -651,11 +651,11 @@ watch(
   border-bottom: 1px solid var(--line);
 }
 .user-card strong {
-  font-size: 13px;
+  font-size: var(--font-md);
   color: var(--text);
 }
 .user-card span {
-  font-size: 11.5px;
+  font-size: var(--font-11-5);
   color: var(--muted);
   line-height: 1.45;
 }
@@ -687,12 +687,12 @@ watch(
 
 .ctx-card small {
   color: var(--chip-label);
-  font-size: 10px;
+  font-size: var(--font-tb-10);
 }
 
 .ctx-card strong {
   color: var(--chip-text);
-  font-size: 12.5px;
+  font-size: var(--font-tb-12-5);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -703,7 +703,7 @@ watch(
   flex-direction: column;
   gap: 3px;
   max-width: 280px;
-  font-size: 12px;
+  font-size: var(--font-sm);
   line-height: 1.5;
 }
 

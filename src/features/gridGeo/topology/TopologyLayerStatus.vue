@@ -16,5 +16,5 @@ defineProps<{ manifest: GridTopologyManifest; sourceType: 'CONFIG' | 'DB' | 'IMP
 </template>
 
 <style scoped>
-.topology-layer-status{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin:10px 0}.topology-layer-status>div{display:flex;min-width:0;align-items:center;gap:7px;padding:9px;color:#b594ee;border:1px solid #9476bd24;border-radius:9px;background:#090e214d}.topology-layer-status span,.topology-layer-status small,.topology-layer-status strong{display:block;min-width:0}.topology-layer-status small{color:#677f91;font-size:14px}.topology-layer-status strong{overflow:hidden;margin-top:2px;color:#c9dce6;font-size:14px;text-overflow:ellipsis;white-space:nowrap}
+.topology-layer-status{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin:10px 0}.topology-layer-status>div{display:flex;min-width:0;align-items:center;gap:7px;padding:9px;color:#b594ee;border:1px solid #9476bd24;border-radius:9px;background:#090e214d}.topology-layer-status span,.topology-layer-status small,.topology-layer-status strong{display:block;min-width:0}.topology-layer-status small{color:#677f91;font-size: var(--font-lg)}.topology-layer-status strong{overflow:hidden;margin-top:2px;color:#c9dce6;font-size: var(--font-lg);text-overflow:ellipsis;white-space:nowrap}
 </style>

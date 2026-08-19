@@ -469,15 +469,15 @@ onMounted(() => { ensureForecastCatalog() })
 <style scoped>
 .workbench { padding: 12px; }
 .hdr { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
-.title { font-size: 16px; font-weight: 600; }
-.sub { color: var(--el-text-color-secondary); font-size: 12px; }
+.title { font-size: var(--font-16); font-weight: 600; }
+.sub { color: var(--el-text-color-secondary); font-size: var(--font-sm); }
 .controls { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
 .controls.shared { padding-bottom: 10px; border-bottom: 1px solid var(--el-border-color-lighter); }
-.lbl { color: var(--el-text-color-secondary); font-size: 13px; }
-.hint { color: var(--el-text-color-secondary); font-size: 12px; margin: 0 0 8px; }
+.lbl { color: var(--el-text-color-secondary); font-size: var(--font-md); }
+.hint { color: var(--el-text-color-secondary); font-size: var(--font-sm); margin: 0 0 8px; }
 .param-box { margin: 4px 0 12px; }
 .metrics { margin-top: 14px; }
 .ov-card { border: 1px solid var(--el-border-color-lighter); border-radius: 6px; padding: 10px 12px; margin-bottom: 12px; }
-.ov-hd { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-weight: 600; font-size: 14px; margin-bottom: 4px; }
+.ov-hd { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-weight: 600; font-size: var(--font-lg); margin-bottom: 4px; }
 :deep(.best-row) { background: var(--el-color-success-light-9); }
 </style>

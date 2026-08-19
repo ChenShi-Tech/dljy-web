@@ -1627,7 +1627,7 @@ function approvalBrief(payload: Record<string, unknown>): { label: string; value
   align-items: center;
   padding: 8px 14px;
   border-bottom: 1px solid var(--line-soft);
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 .plan-title { font-weight: 600; opacity: 0.7; }
 .plan-item { opacity: 0.55; }
@@ -1641,7 +1641,7 @@ function approvalBrief(payload: Record<string, unknown>): { label: string; value
   border-bottom: 1px solid var(--line-soft);
   background: var(--warning-tint);
   color: var(--warning);
-  font-size: 12.5px;
+  font-size: var(--font-12-5);
   font-weight: 600;
 }
 .reconnect-count { opacity: 0.72; font-weight: 500; }
@@ -1659,12 +1659,12 @@ function approvalBrief(payload: Record<string, unknown>): { label: string; value
   background: var(--primary-tint); border: 1px solid var(--primary-tint-border);
 }
 .empty-logo.offline { color: var(--muted); background: var(--surface-hover); border-color: var(--line); }
-.empty-title { margin: 0; font-size: 15px; font-weight: 650; color: var(--text); }
-.empty-hint .sub { margin: 0; font-size: 12.5px; color: var(--muted); }
+.empty-title { margin: 0; font-size: var(--font-15); font-weight: 650; color: var(--text); }
+.empty-hint .sub { margin: 0; font-size: var(--font-12-5); color: var(--muted); }
 .empty-retry {
   margin-top: 14px; padding: 7px 16px; border-radius: var(--radius-sm);
   border: 1px solid var(--primary); background: transparent; color: var(--primary);
-  font-size: 13px; font-weight: 600; cursor: pointer; transition: background 0.15s ease;
+  font-size: var(--font-md); font-weight: 600; cursor: pointer; transition: background 0.15s ease;
 }
 .empty-retry:hover { background: var(--primary-tint); }
 .empty-suggestions {
@@ -1673,7 +1673,7 @@ function approvalBrief(payload: Record<string, unknown>): { label: string; value
 .suggest-chip {
   padding: 9px 14px; border-radius: var(--radius-sm); text-align: left;
   border: 1px solid var(--line); background: var(--panel-sub); color: var(--text-body);
-  font-size: 13px; cursor: pointer; transition: all 0.15s ease;
+  font-size: var(--font-md); cursor: pointer; transition: all 0.15s ease;
 }
 .suggest-chip:hover { border-color: var(--primary); color: var(--primary); background: var(--primary-tint); }
 .suggest-chip:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
@@ -1688,7 +1688,7 @@ function approvalBrief(payload: Record<string, unknown>): { label: string; value
 .msg.user .avatar { background: var(--primary); color: #fff; }
 .bubble {
   max-width: 78%; padding: 10px 14px; border-radius: 12px;
-  font-size: 14px; line-height: 1.7;
+  font-size: var(--font-lg); line-height: 1.7;
   background: var(--panel-sub);
 }
 .msg.user .bubble { background: var(--primary); color: #fff; }
@@ -1699,10 +1699,10 @@ function approvalBrief(payload: Record<string, unknown>): { label: string; value
 .tool-group.error { border-color: #ef4444; }
 .group-head { width: 100%; }
 .tool-count {
-  padding: 1px 7px; font-size: 11.5px; border-radius: 999px;
+  padding: 1px 7px; font-size: var(--font-11-5); border-radius: 999px;
   background: var(--panel-sub); color: var(--muted); font-variant-numeric: tabular-nums;
 }
-.tool-current { font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tool-current { font-size: var(--font-sm); color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tool-err { color: #b91c1c; }
 .tool-group-body { padding: 0 8px 6px; }
 
@@ -1722,9 +1722,9 @@ function approvalBrief(payload: Record<string, unknown>): { label: string; value
   animation: blink 0.9s steps(2) infinite;
 }
 @keyframes blink { 50% { opacity: 0; } }
-.thinking { font-size: 13px; }
+.thinking { font-size: var(--font-md); }
 /* 动态「在工作」指示条：脉冲点 + 阶段(流光) + 计时秒数 + token 活动量 */
-.stream-meter { display: flex; align-items: center; gap: 6px; margin-top: 6px; font-size: 12px; color: var(--muted); }
+.stream-meter { display: flex; align-items: center; gap: 6px; margin-top: 6px; font-size: var(--font-sm); color: var(--muted); }
 .sm-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; background: var(--primary); animation: sm-pulse 1.1s ease-in-out infinite; }
 .sm-dot.tool { background: var(--warning); }
 .sm-dot.generating { background: var(--success); }
@@ -1746,20 +1746,20 @@ function approvalBrief(payload: Record<string, unknown>): { label: string; value
 /* 工具卡 */
 .tool-card {
   margin: 6px 0; border: 1px solid var(--line);
-  border-radius: 8px; font-size: 12.5px; background: var(--surface-hover);
+  border-radius: 8px; font-size: var(--font-12-5); background: var(--surface-hover);
   animation: tok-in 0.3s ease-out both;
 }
 .tool-card.running { border-color: var(--primary); }
 /* 子智能体内部工具：缩进+虚线，作为所属子智能体的展开细节 */
 .tool-card.subtool { margin-left: 16px; border-style: dashed; background: transparent; }
 .sub-role {
-  font-size: 11px; padding: 1px 6px; border-radius: 4px; font-weight: 600;
+  font-size: var(--font-xs); padding: 1px 6px; border-radius: 4px; font-weight: 600;
   color: var(--primary); background: var(--primary-tint);
 }
 .tool-head {
   display: flex; align-items: center; gap: 6px; width: 100%;
   padding: 6px 10px; background: none; border: none; cursor: pointer;
-  font-size: 12.5px; color: inherit;
+  font-size: var(--font-12-5); color: inherit;
 }
 .tool-name { font-weight: 600; }
 .tool-basis { margin-left: 6px; transform: scale(0.92); }
@@ -1774,7 +1774,7 @@ function approvalBrief(payload: Record<string, unknown>): { label: string; value
   flex: 1; min-width: 0; margin: 0; max-height: 200px; overflow: auto;
   white-space: pre-wrap; word-break: break-word;
   background: var(--panel-sub); border: 1px solid var(--line-faint);
-  border-radius: 6px; padding: 6px 8px; font-size: 11.5px; line-height: 1.5;
+  border-radius: 6px; padding: 6px 8px; font-size: var(--font-11-5); line-height: 1.5;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 
@@ -1787,18 +1787,18 @@ function approvalBrief(payload: Record<string, unknown>): { label: string; value
 .sa-head {
   display: flex; align-items: center; gap: 8px; width: 100%;
   padding: 7px 10px; background: none; border: none; cursor: pointer;
-  font-size: 12.5px; color: var(--text, inherit);
+  font-size: var(--font-12-5); color: var(--text, inherit);
 }
 .sa-role { font-weight: 600; color: var(--primary); flex-shrink: 0; }
 /* 容器头预览：派发任务 / 最终结果摘要（一眼扫过三路智能体在做什么/得出什么） */
 .sa-brief {
-  font-size: 11.5px; color: var(--muted); font-weight: 500;
+  font-size: var(--font-11-5); color: var(--muted); font-weight: 500;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   flex: 1 1 auto; min-width: 0;
 }
 /* 结果预览用主色微强调（结论比过程更重要） */
 .sa-brief-result { color: var(--primary); opacity: 0.85; }
-.sa-count { font-size: 11.5px; color: var(--muted); flex-shrink: 0; }
+.sa-count { font-size: var(--font-11-5); color: var(--muted); flex-shrink: 0; }
 .sa-head .spin { margin-left: auto; flex-shrink: 0; }
 .sa-done { margin-left: auto; color: var(--success); flex-shrink: 0; }
 .sa-err { margin-left: auto; color: var(--danger, #f56c6c); font-weight: 700; flex-shrink: 0; }
@@ -1824,7 +1824,7 @@ function approvalBrief(payload: Record<string, unknown>): { label: string; value
 .delegate-row .tool-name { color: var(--primary); font-weight: 600; }
 .result-row .tool-name { color: var(--success, #67c23a); font-weight: 600; }
 .result-code {
-  margin: 4px 0 0; font-size: 12px; line-height: 1.6;
+  margin: 4px 0 0; font-size: var(--font-sm); line-height: 1.6;
   white-space: pre-wrap; word-break: break-word;
 }
 .result-collapsed {
@@ -1832,8 +1832,8 @@ function approvalBrief(payload: Record<string, unknown>): { label: string; value
   -webkit-mask-image: linear-gradient(to bottom, #000 70%, transparent);
   mask-image: linear-gradient(to bottom, #000 70%, transparent);
 }
-.tool-ok.running { color: var(--muted); font-size: 11px; }
-.tool-ok.err { color: var(--danger, #f56c6c); font-size: 11px; font-weight: 600; }
+.tool-ok.running { color: var(--muted); font-size: var(--font-xs); }
+.tool-ok.err { color: var(--danger, #f56c6c); font-size: var(--font-xs); font-weight: 600; }
 
 /* 中间工具列表区：过程性信息，弱化样式（默认收起，仅在展开后点开） */
 .tools-row { margin-top: 4px; }
@@ -1844,34 +1844,34 @@ function approvalBrief(payload: Record<string, unknown>): { label: string; value
 
 /* 图表段（内联 artifact，外框由 ChartArtifact 提供） */
 .chart-seg { margin: 2px 0; }
-.chart-loading { display: flex; gap: 6px; align-items: center; font-size: 12px; opacity: 0.6; padding: 8px 0; }
+.chart-loading { display: flex; gap: 6px; align-items: center; font-size: var(--font-sm); opacity: 0.6; padding: 8px 0; }
 
 /* 流式生成中骨架（未闭合 artifact 围栏提示） */
 .gen-skeleton {
   display: flex; align-items: center; gap: 6px;
   margin-top: 8px; padding: 8px 12px;
   border: 1px dashed var(--line); border-radius: 8px;
-  font-size: 12.5px; opacity: 0.7;
+  font-size: var(--font-12-5); opacity: 0.7;
 }
 
 /* 审批卡 */
 .approval-card {
   margin: 8px 0; border: 1.5px solid var(--warning); border-radius: 10px;
   padding: 10px 12px; background: var(--warning-tint);
-  animation: tok-in 0.4s ease-out both; font-size: 13px;
+  animation: tok-in 0.4s ease-out both; font-size: var(--font-md);
 }
 .approval-title { font-weight: 700; color: var(--warning); margin-bottom: 6px; }
 .approval-row { display: flex; gap: 8px; margin: 2px 0; }
 .approval-row .k { opacity: 0.6; flex-shrink: 0; }
 .approval-note {
-  width: 100%; margin-top: 8px; padding: 5px 8px; font-size: 12.5px;
+  width: 100%; margin-top: 8px; padding: 5px 8px; font-size: var(--font-12-5);
   border: 1px solid var(--line); border-radius: 6px;
   background: var(--panel); color: var(--text);
 }
 .approval-actions { display: flex; gap: 8px; margin-top: 8px; }
 .btn {
   padding: 5px 16px; border-radius: var(--radius-sm); border: none; cursor: pointer;
-  font-size: 13px; font-weight: 600;
+  font-size: var(--font-md); font-weight: 600;
 }
 .btn.approve { background: var(--success); color: #fff; }
 .btn.reject { background: var(--surface-hover); color: var(--text); }
@@ -1884,7 +1884,7 @@ function approvalBrief(payload: Record<string, unknown>): { label: string; value
   border-top: 1px solid var(--line-soft);
 }
 .panel-input textarea {
-  flex: 1; padding: 9px 12px; font-size: 14px; line-height: 1.5;
+  flex: 1; padding: 9px 12px; font-size: var(--font-lg); line-height: 1.5;
   border: 1px solid var(--line); border-radius: 10px; outline: none;
   background: var(--panel); color: var(--text);
   resize: none; max-height: 160px; overflow-y: auto;
@@ -1910,7 +1910,7 @@ function approvalBrief(payload: Record<string, unknown>): { label: string; value
   z-index: 2; display: inline-flex; align-items: center; gap: 4px;
   padding: 6px 12px; border-radius: 999px; cursor: pointer;
   border: 1px solid var(--line); background: var(--panel); color: var(--text-body);
-  font-size: 12.5px; box-shadow: var(--shadow);
+  font-size: var(--font-12-5); box-shadow: var(--shadow);
 }
 .jump-bottom:hover { border-color: var(--primary); color: var(--primary); }
 .jump-fade-enter-active, .jump-fade-leave-active { transition: opacity 0.2s ease, transform 0.2s ease; }

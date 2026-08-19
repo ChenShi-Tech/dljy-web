@@ -108,18 +108,18 @@ onMounted(() => {
 .dock.collapsed { padding: 6px; gap: 0; }
 .toggle {
   border: none; cursor: pointer; background: rgba(255, 255, 255, .12); color: #fff;
-  font-size: 12.5px; padding: 7px 12px; border-radius: 9px; font-family: inherit;
+  font-size: var(--font-12-5); padding: 7px 12px; border-radius: 9px; font-family: inherit;
 }
 .toggle:hover { background: rgba(255, 255, 255, .2); }
 
 .grp { display: flex; align-items: center; gap: 4px; }
 .grp.view button.on { background: #fff; color: #18181b; }
-.cap { font-size: 10px; color: rgba(255, 255, 255, .42); margin: 0 4px 0 2px; letter-spacing: 1px; }
+.cap { font-size: var(--font-10); color: rgba(255, 255, 255, .42); margin: 0 4px 0 2px; letter-spacing: 1px; }
 .sep { width: 1px; height: 22px; background: rgba(255, 255, 255, .16); margin: 0 4px; }
 
 .grp button {
   border: none; cursor: pointer; background: transparent; color: rgba(255, 255, 255, .62);
-  font-size: 12.5px; padding: 7px 12px; border-radius: 9px; font-family: inherit; transition: all .18s;
+  font-size: var(--font-12-5); padding: 7px 12px; border-radius: 9px; font-family: inherit; transition: all .18s;
   white-space: nowrap;
 }
 .grp button:hover { color: #fff; background: rgba(255, 255, 255, .1); }

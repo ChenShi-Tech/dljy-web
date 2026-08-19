@@ -167,7 +167,7 @@ onRegionChange(load)
     </el-card>
 
     <el-card shadow="never">
-      <template #header><span style="font-weight:600;font-size:13px">分时曲线 · 已选 {{ selected.length }} 行（24 点,仅连有数据的点）</span></template>
+      <template #header><span style="font-weight:600;font-size: var(--font-md)">分时曲线 · 已选 {{ selected.length }} 行（24 点,仅连有数据的点）</span></template>
       <div ref="chartRef" class="chart chart-host"></div>
     </el-card>
     <!-- 数据源(内部参考,勿对外展示)：真实数据：GET /sdpt/zfsdjy/list · 条 · 字典 sdpt_fsdjylx/fsdsjlx -->
@@ -179,14 +179,14 @@ onRegionChange(load)
 .tr { padding: 12px 16px; background: var(--el-fill-color-light); min-height: calc(100vh - 90px); }
 .toolbar { display: flex; align-items: center; gap: 8px; background: var(--panel); padding: 10px 12px; border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,.04); flex-wrap: wrap; }
 .toolbar .spacer { flex: 1; }
-.big :deep(.el-table__cell) { font-size: 13px; }
+.big :deep(.el-table__cell) { font-size: var(--font-md); }
 .big :deep(th .cell) { font-weight: 600; color: var(--el-text-color-primary); }
 .chart { height: 300px; width: 100%; }
 .mb { margin-bottom: 12px; }
 .degraded-card { border: 1px solid color-mix(in srgb, var(--warning, #d97706) 35%, var(--line)); background: color-mix(in srgb, var(--warning, #d97706) 8%, var(--panel)); border-radius: 8px; padding: 14px 16px; color: var(--text); }
-.degraded-title { font-size: 14px; font-weight: 700; margin-bottom: 6px; }
-.degraded-text { font-size: 13px; color: var(--muted); line-height: 1.6; }
-.src { color: var(--el-text-color-secondary); font-size: 12px; margin: 12px 0 0; }
+.degraded-title { font-size: var(--font-lg); font-weight: 700; margin-bottom: 6px; }
+.degraded-text { font-size: var(--font-md); color: var(--muted); line-height: 1.6; }
+.src { color: var(--el-text-color-secondary); font-size: var(--font-sm); margin: 12px 0 0; }
 .src code { color: var(--el-color-primary); }
 
 /* 移动端:筛选条纵向堆叠,控件占满整行便于点按 */

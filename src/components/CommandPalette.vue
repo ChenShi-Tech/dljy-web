@@ -232,7 +232,7 @@ watch(
   flex: 1;
   border: none;
   outline: none;
-  font-size: 15px;
+  font-size: var(--font-15);
   background: transparent;
   color: var(--text, #303133);
 }
@@ -257,10 +257,10 @@ watch(
 }
 .cmdk-title {
   flex: 1;
-  font-size: 14px;
+  font-size: var(--font-lg);
 }
 .cmdk-group {
-  font-size: 12px;
+  font-size: var(--font-sm);
   color: var(--text-muted, #a8abb2);
 }
 .cmdk-fav {
@@ -278,14 +278,14 @@ watch(
   padding: 20px;
   text-align: center;
   color: var(--text-muted, #909399);
-  font-size: 13px;
+  font-size: var(--font-md);
 }
 .cmdk-foot {
   display: flex;
   gap: 16px;
   padding: 8px 14px;
   border-top: 1px solid var(--border, #e4e7ed);
-  font-size: 12px;
+  font-size: var(--font-sm);
   color: var(--text-muted, #a8abb2);
 }
 .cmdk-foot span {

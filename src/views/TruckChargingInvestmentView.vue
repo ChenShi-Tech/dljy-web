@@ -594,7 +594,7 @@ onMounted(runCalculation)
   border: 1px solid var(--line);
   border-radius: 6px;
   color: var(--text);
-  font-size: 13px;
+  font-size: var(--font-md);
   padding: 6px 10px;
 }
 
@@ -617,12 +617,12 @@ onMounted(runCalculation)
 
 .field-cell span {
   color: var(--text);
-  font-size: 13px;
+  font-size: var(--font-md);
 }
 
 .field-cell em {
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--font-sm);
   font-style: normal;
 }
 
@@ -640,7 +640,7 @@ onMounted(runCalculation)
 
 .mode-row span {
   color: var(--text);
-  font-size: 13px;
+  font-size: var(--font-md);
   font-weight: 600;
 }
 

@@ -244,7 +244,7 @@ onMounted(loadWindow)
 
 .ydc-kpi {
   margin-left: auto;
-  font-size: 12.5px;
+  font-size: var(--font-12-5);
   color: var(--el-text-color-secondary);
 }
 
@@ -255,7 +255,7 @@ onMounted(loadWindow)
 
 .ydc-note {
   margin: 0;
-  font-size: 12px;
+  font-size: var(--font-sm);
   color: var(--el-text-color-secondary);
   line-height: 1.6;
 }

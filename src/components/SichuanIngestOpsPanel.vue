@@ -385,21 +385,21 @@ function formatTime(value: string | null | undefined): string {
 <style scoped>
 .ops-panel { display: flex; flex-direction: column; gap: 14px; }
 .ops-head { display: flex; justify-content: space-between; align-items: center; }
-.ops-title { display: flex; align-items: center; gap: 8px; font-size: 15px; font-weight: 600; color: var(--el-text-color-primary); }
+.ops-title { display: flex; align-items: center; gap: 8px; font-size: var(--font-15); font-weight: 600; color: var(--el-text-color-primary); }
 .ops-actions { display: flex; align-items: center; gap: 10px; }
-.updated-at { color: var(--el-text-color-secondary); font-size: 12px; }
+.updated-at { color: var(--el-text-color-secondary); font-size: var(--font-sm); }
 .troubleshoot { margin: 6px 0 0; padding-left: 18px; }
-.troubleshoot code { background: var(--el-fill-color-light); padding: 1px 4px; border-radius: 3px; font-size: 12px; }
+.troubleshoot code { background: var(--el-fill-color-light); padding: 1px 4px; border-radius: 3px; font-size: var(--font-sm); }
 .overview { margin-top: 2px; }
 .section :deep(.el-card__header) { padding: 10px 14px; }
 .card-header { display: flex; align-items: center; gap: 8px; font-weight: 600; }
-.header-count { color: var(--el-text-color-secondary); font-weight: normal; font-size: 12px; }
-.hint { color: var(--el-text-color-secondary); font-size: 12px; margin: 6px 0 0; }
-.alert-hint { font-size: 13px; }
-.alert-meta { font-size: 12px; color: var(--el-text-color-secondary); margin-top: 2px; }
+.header-count { color: var(--el-text-color-secondary); font-weight: normal; font-size: var(--font-sm); }
+.hint { color: var(--el-text-color-secondary); font-size: var(--font-sm); margin: 6px 0 0; }
+.alert-hint { font-size: var(--font-md); }
+.alert-meta { font-size: var(--font-sm); color: var(--el-text-color-secondary); margin-top: 2px; }
 .trigger-row { display: flex; flex-wrap: wrap; gap: 8px; }
-.ds-code { font-family: var(--el-font-family-mono, monospace); font-size: 12px; color: var(--el-text-color-secondary); }
-.ds-label { font-size: 13px; }
-.failure-detail { margin-left: 6px; font-size: 12px; color: var(--el-text-color-regular); }
+.ds-code { font-family: var(--el-font-family-mono, monospace); font-size: var(--font-sm); color: var(--el-text-color-secondary); }
+.ds-label { font-size: var(--font-md); }
+.failure-detail { margin-left: 6px; font-size: var(--font-sm); color: var(--el-text-color-regular); }
 .muted { color: var(--el-text-color-placeholder); }
 </style>

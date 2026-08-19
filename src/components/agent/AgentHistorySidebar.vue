@@ -268,7 +268,7 @@ watch(() => props.pageKey, () => { void reload() })
   border-radius: 9px;
   background: var(--panel);
   cursor: pointer;
-  font-size: 13px;
+  font-size: var(--font-md);
   font-weight: 600;
   color: inherit;
 }
@@ -289,7 +289,7 @@ watch(() => props.pageKey, () => { void reload() })
 .rail-btn:hover { opacity: 1; background: var(--surface-hover); }
 
 .rail-body { flex: 1; overflow-y: auto; padding: 6px; }
-.rail-state { padding: 16px 12px; font-size: 12.5px; opacity: 0.55; display: flex; gap: 6px; align-items: center; }
+.rail-state { padding: 16px 12px; font-size: var(--font-12-5); opacity: 0.55; display: flex; gap: 6px; align-items: center; }
 .rail-state.error { color: var(--danger); opacity: 0.85; }
 
 .hist-item {
@@ -311,7 +311,7 @@ watch(() => props.pageKey, () => { void reload() })
 .hist-item.active .hist-title { color: var(--primary); }
 .hist-main { flex: 1; min-width: 0; }
 .hist-title {
-  font-size: 13px;
+  font-size: var(--font-md);
   font-weight: 600;
   white-space: nowrap;
   overflow: hidden;
@@ -319,7 +319,7 @@ watch(() => props.pageKey, () => { void reload() })
 }
 .rename-input {
   width: 100%;
-  font-size: 13px;
+  font-size: var(--font-md);
   padding: 2px 6px;
   border: 1px solid var(--primary);
   border-radius: 6px;
@@ -327,10 +327,10 @@ watch(() => props.pageKey, () => { void reload() })
   background: var(--panel);
   color: inherit;
 }
-.hist-meta { display: flex; gap: 8px; font-size: 11px; opacity: 0.5; margin-top: 2px; }
+.hist-meta { display: flex; gap: 8px; font-size: var(--font-xs); opacity: 0.5; margin-top: 2px; }
 .hist-scenario { font-weight: 600; }
 .hist-preview {
-  font-size: 11.5px;
+  font-size: var(--font-11-5);
   opacity: 0.55;
   margin-top: 2px;
   white-space: nowrap;

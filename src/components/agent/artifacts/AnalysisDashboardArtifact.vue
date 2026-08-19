@@ -91,11 +91,11 @@ const failedDims = computed<string[]>(() => {
 
 <style scoped>
 .dash-body { padding: 8px 10px; }
-.dash-q { margin: 0 0 8px; font-size: 12px; color: var(--text-secondary, #666); }
-.dash-empty { padding: 24px; text-align: center; color: var(--text-secondary, #888); font-size: 13px; }
+.dash-q { margin: 0 0 8px; font-size: var(--font-sm); color: var(--text-secondary, #666); }
+.dash-empty { padding: 24px; text-align: center; color: var(--text-secondary, #888); font-size: var(--font-md); }
 .dash-grid.is-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 10px; }
 .dash-grid.is-stack { display: flex; flex-direction: column; gap: 10px; }
 .dash-cell { min-width: 0; }
-.dash-note { margin: 8px 0 0; font-size: 11px; color: #b45309; }
+.dash-note { margin: 8px 0 0; font-size: var(--font-xs); color: #b45309; }
 </style>
 
