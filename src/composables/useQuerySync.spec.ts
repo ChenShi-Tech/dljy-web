@@ -1,19 +1,16 @@
 // @vitest-environment happy-dom
 // ↑ 勿删：本文件不是 *.component.spec.ts，vitest node project 默认不给 DOM；useRoute/
 //   useRouter 需要真实 vue-router 实例 + 组件挂载上下文，靠此 pragma 按文件切 happy-dom。
-// ============================================================================
 // composables/useQuerySync.spec.ts — 筛选条件 ⇄ 路由 query 双向同步回归
-// ----------------------------------------------------------------------------
 // 守什么不变量：
 //   ① 进页面按 query 还原筛选（「刷新/分享链接后筛选状态可还原」的立身之本）：
 //      按各 ref 初始类型反序列化（number 取有限数字、boolean 只认 '1'/'true'）。
 //   ② 变更写回 query 用 replace；boolean 序列化为 '1'/'0'；空字符串从 query 删键。
-//   ③ 同步只碰声明的字段——query 里其它键（别的视图/入口写入）必须原样保留。
+//   ③ 同步只碰声明的字段，query 里其它键（别的视图/入口写入）必须原样保留。
 // 坏掉的症状：分享链接打开后筛选错乱；切一次筛选把 URL 里别人的参数洗掉。
 //
 // 真 router：createRouter + createMemoryHistory + 组件挂载（useRoute/useRouter 走真实
-// provide/inject 链），不 mock vue-router——初始还原与 replace 写回都在真导航管线里验证。
-// ============================================================================
+// provide/inject 链），不 mock vue-router，初始还原与 replace 写回都在真导航管线里验证。
 import { defineComponent, h, ref, type Ref } from 'vue'
 import { mount } from '@vue/test-utils'
 import { createMemoryHistory, createRouter, type Router } from 'vue-router'
@@ -27,7 +24,7 @@ beforeEach(async () => {
     history: createMemoryHistory(),
     routes: [{ path: '/', component: { render: () => null } }]
   })
-  // 注：先 push('/') 完成首次导航——只 createRouter 不导航时 isReady() 永远 pending。
+  // 先 push('/') 完成首次导航，只 createRouter 不导航时 isReady() 永远 pending。
   await router.push('/')
 })
 
@@ -161,7 +158,7 @@ describe('useQuerySync · 变更写回 query', () => {
       expect(router.currentRoute.value.query).toMatchObject({ date: '2026-06-02', days: '7', flag: '1' })
     })
     // 不 unmount w1：vue-router 在最后一个安装它的 app 卸载时会把 currentRoute 重置回
-    // START_LOCATION（query 清空）——那是 router 的生命周期行为，会污染本用例的观察窗口。
+    // START_LOCATION（query 清空），那是 router 的生命周期行为，会污染本用例的观察窗口。
     // 两个组件并存不影响验证：restore 只在各自 setup 时同步执行一次。
 
     // 模拟「刷新后重新进页面」：新 ref 组从写回后的 query 还原

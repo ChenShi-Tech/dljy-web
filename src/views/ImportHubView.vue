@@ -92,7 +92,7 @@ const STATUS_TEXT: Record<RealImportRecord['status'], string> = {
   FAILED: '失败'
 }
 
-// ── 逐行错误明细（#768 + #660 遗留 422 展示）：所有 tab / 模板上传共用一处回显 ──
+// 逐行错误明细（#768 + #660 遗留 422 展示）：所有 tab / 模板上传共用一处回显
 // 上传失败或部分跳过时，把 envelope.data.errors 逐行原因（第 N 行 …）铺开展示，
 // 而非笼统只读 error.message。
 const uploadErrors = ref<string[]>([])
@@ -111,7 +111,7 @@ function applyUploadError(error: unknown, context: string) {
   ElMessage.error(error instanceof Error ? error.message : context)
 }
 
-// ── T0/T1 标准数据模板（#768）：声明驱动下载 → 上传 → 逐行报错 → 台账即时见数 ──
+// T0/T1 标准数据模板（#768）：声明驱动下载 → 上传 → 逐行报错 → 台账即时见数
 type TemplateRecord = {
   id: string
   templateId: string

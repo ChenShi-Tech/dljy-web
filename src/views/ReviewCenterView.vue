@@ -54,13 +54,13 @@ function yesterday(): string {
   return new Date(Date.now() - 86400000).toISOString().slice(0, 10)
 }
 
-// P2：结算规则参数化——免考核带默认值改读当前地区 SettlementRuleSpec；
+// P2：结算规则参数化，免考核带默认值改读当前地区 SettlementRuleSpec；
 // 未沉淀规格的地区保留 3% 通用默认并显示"未参数化"提示（不静默借用别省参数）。
 const settlementSpec = computed(() => getSettlementRuleSpec(currentRegion.value.id))
 
-// 复盘默认日期是「昨天」，而真实采集是历史批次——默认值落在覆盖区外就永远空手而归。
+// 复盘默认日期是「昨天」，而真实采集是历史批次，默认值落在覆盖区外就永远空手而归。
 // 覆盖区间集中登记在 captureCoverage（原先只有云南一条硬编码在本文件；#1531 起山西的
-// 申报/价格也按日取真实数据，同样需要钳）。只钳**默认值**，不限制用户手选。
+// 申报/价格也按日取真实数据，同样需要钳）。只钳默认值，不限制用户手选。
 function defaultDateFor(regionId: string): string {
   return clampToCoverage(regionId, 'review', yesterday())
 }
@@ -85,7 +85,7 @@ const reviewFailure = ref<ReviewFailure | null>(null)
 const declarationId = ref(typeof route.query.declarationId === 'string' ? route.query.declarationId : '')
 const declaration = ref<DeclarationOrder | null>(null)
 
-// P2-4：结算对账——导入中心的结算台账（/api/v1/settlements）与自算考核对照
+// P2-4：结算对账，导入中心的结算台账（/api/v1/settlements）与自算考核对照
 type ImportedSettlementRow = { 结算月份: string; 结算对象: string; 电量: number; 电费: number; 偏差费用: number }
 const settlementRows = ref<ImportedSettlementRow[]>([])
 const reviewMonth = computed(() => date.value.slice(0, 7))
@@ -122,7 +122,7 @@ const pnlClass = computed(() =>
   (result.value?.backtest.da_rt_spread_pnl_yuan ?? 0) >= 0 ? 'good' : 'bad'
 )
 
-// ── 六维驾驶舱 v1（Epic #2033 · #2038）──────────────────────────────────────
+// 六维驾驶舱 v1（Epic #2033 · #2038）
 // 两张真数指标卡之一：偏差率（总偏差/申报总量，quant /review 权威口径，仅覆盖区出数）；
 // 风险事件卡 M3 前占位空态；覆盖率/填写率不上（触发引擎无分母，不拿假数凑）。
 const dimensionCards = buildDimensionCards()
@@ -189,7 +189,7 @@ function toggleDim(key: string, open: boolean) {
   openedDims.value = next
 }
 
-// 策略维度：胜率概览（tradingMemory 后验真数据；样本 <30 不出结论只标样本不足——T04 硬规则）
+// 策略维度：胜率概览（tradingMemory 后验真数据；样本 <30 不出结论只标样本不足，T04 硬规则）
 const winStats = computed(() => getRegionWinStats(currentRegion.value.id))
 
 async function load() {
@@ -279,7 +279,7 @@ function money(v: number | null): string {
 }
 
 // 请求序号：日期/地区连续切换时，先发出的请求可能后返回。只认最新一次的结果，
-// 否则旧响应会覆盖新参数的结果（codex PR#1502 P2）。
+// 否则旧响应会覆盖新参数的结果（#1502）。
 let settlementSeq = 0
 
 async function loadSettlementReview() {
@@ -399,7 +399,7 @@ onRegionChange(() => {
     </section>
 
     <!-- 结算口径日复盘（云南三段式）：与下方「申报 vs 实际偏差考核」是两套口径。
-         这里是电网结算单给出的结果——实际上网电量按中长期/日前增量/实时增量三段分解并逐段计价。 -->
+         这里是电网结算单给出的结果：实际上网电量按中长期/日前增量/实时增量三段分解并逐段计价。 -->
     <section v-if="isYunnan" class="panel settlement-review">
       <div class="block-title">
         结算口径复盘 · 三段式电量分解
@@ -491,7 +491,7 @@ onRegionChange(() => {
           <div ref="chartEl" class="main-chart chart-host" />
         </section>
 
-        <!-- 口径边界：后端随响应下发，原样呈现。数字本身不带口径——不显示等于把
+        <!-- 口径边界：后端随响应下发，原样呈现。数字本身不带口径：不显示等于把
              「按平台实时电量自算」悄悄当成了「电网结算结论」。 -->
         <section v-if="result?.caliber_caveats?.length" class="panel caliber-note">
           <div class="block-title">口径边界 · 这份复盘不能当作什么</div>
@@ -857,7 +857,7 @@ onRegionChange(() => {
 .md :deep(table) { border-collapse: collapse; font-size: var(--font-12-5); }
 .md :deep(th), .md :deep(td) { border: 1px solid var(--line); padding: 3px 8px; }
 .md :deep(pre) { background: rgba(20, 24, 34, 0.92); color: #e5e7eb; padding: 10px; border-radius: 8px; overflow-x: auto; }
-/* 口径边界：警示但不报错——它说明的是「这份数据是什么」，不是「出了问题」 */
+/* 口径边界：警示但不报错，它说明的是「这份数据是什么」，不是「出了问题」 */
 .caliber-note { border-left: 3px solid var(--el-color-warning, #e6a23c); }
 .caliber-note ul { margin: 6px 0 0; padding-left: 18px; }
 .caliber-note li { font-size: var(--font-sm); line-height: 1.7; color: var(--el-text-color-regular, #606266); }

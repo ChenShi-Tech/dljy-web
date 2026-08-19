@@ -211,16 +211,16 @@ export function getRegionStatusLabel(status: RegionRuleSet['spotRuleStatus']) {
   return labels[status]
 }
 
-// ── 地区数据真实度分级（真实 / 演示开通 / 未开通）──────────────────────────────
+// 地区数据真实度分级（真实 / 演示开通 / 未开通）
 // 三态模型（前端 UI 驱动，与后端数据策略解耦）：
-//   ①「真实数据地区」REAL_DATA_REGION_IDS：已接入专属真实采集/导出数据。
-//      当前：云南（capture-raw/yunnan/ 真实现货采集）+ 山西（capture-raw 扁平目录即山西现货采集）。
-//   ②「演示开通地区」OPENED_DEMO_REGION_IDS：无专属真实市场数据采集，但已配置演示公司、
-//      在切换面板可切换进入；切进去后市场数据按严格地区策略为空（不回退山西），图表走空态，
-//      由 RegionDataBanner 标注「演示地区」。当前：四川（comp-sichuan-a 演示公司 + 披露接入在建）。
-//   ③ 其余省份：未开通，切换面板禁用灰显，待接入数据或开通后加入上述集合即自动可切。
+// ①「真实数据地区」REAL_DATA_REGION_IDS：已接入专属真实采集/导出数据。
+// 当前：云南（capture-raw/yunnan/ 真实现货采集）+ 山西（capture-raw 扁平目录即山西现货采集）。
+// ②「演示开通地区」OPENED_DEMO_REGION_IDS：无专属真实市场数据采集，但已配置演示公司、
+// 在切换面板可切换进入；切进去后市场数据按严格地区策略为空（不回退山西），图表走空态，
+// 由 RegionDataBanner 标注「演示地区」。当前：四川（comp-sichuan-a 演示公司 + 披露接入在建）。
+// ③ 其余省份：未开通，切换面板禁用灰显，待接入数据或开通后加入上述集合即自动可切。
 //
-// 职责（与后端解耦）：本集合驱动**前端 UI**——切换器可切范围 + 真实/演示/禁用标注 + 横幅。
+// 职责（与后端解耦）：本集合驱动前端 UI，切换器可切范围 + 真实/演示/禁用标注 + 横幅。
 // 后端 `shared/region/constants.mjs::isRegionStrictRealData` 独立管「真实或空、不回退」的
 // 数据策略（所有非基线地区都不回退山西）。两者不再简单镜像：前端管「可切换」，后端管「不回退」，
 // 各司其职共同达成严格地区隔离。
@@ -248,7 +248,7 @@ export function isOpenRegion(regionId: string): boolean {
   return isRealDataRegion(regionId) || isOpenedDemoRegion(regionId)
 }
 
-// 判断某地区在切换面板里是否**可切换**：已开通地区（真实 ∪ 演示开通）∪ 通用版模板
+// 判断某地区在切换面板里是否可切换：已开通地区（真实 ∪ 演示开通）∪ 通用版模板
 // （跨地区入口，不绑定具体省份数据，始终可选）。未开通省份禁用不可切（灰显），避免用户切到
 // 只会看到空/合成的地区。前端守卫（RegionSwitcher/regionContext）统一走本谓词。
 export function isSelectableRegion(regionId: string): boolean {
@@ -256,15 +256,15 @@ export function isSelectableRegion(regionId: string): boolean {
 }
 
 // 返回地区数据成熟度三态：
-//  'real'=真实数据地区；'demo-opened'=演示开通地区（可切、仅有演示数据）；
-//  'demo-disabled'=未开通（禁用灰显）。
+// 'real'=真实数据地区；'demo-opened'=演示开通地区（可切、仅有演示数据）；
+// 'demo-disabled'=未开通（禁用灰显）。
 export function getRegionDataMaturity(regionId: string): RegionDataMaturity {
   if (isRealDataRegion(regionId)) return 'real'
   if (isOpenedDemoRegion(regionId)) return 'demo-opened'
   return 'demo-disabled'
 }
 
-// —— 账号属地 → 前端地区（Sub-4 #520：登录默认地区随账号归属） ——
+// 账号属地 → 前端地区（Sub-4 #520：登录默认地区随账号归属）
 // 只登记已开通可切换的属地（真实 ∪ 演示开通）；GROUP（集团账号）与未登记属地不联动
 // （保持用户偏好/默认）。areaCode 口径与 auth-store 用户表一致（YN/SX/SC/GROUP…）。
 const AREA_CODE_REGION_IDS: Record<string, string> = {

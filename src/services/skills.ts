@@ -1,4 +1,4 @@
-// 技能（Skill）系统：命名的提示模板/工作流，类似 Claude Code 的自定义 slash command。
+// 技能（Skill）系统：命名的提示模板/工作流，即自定义斜杠指令。
 // 每个技能会自动注册为同名斜杠指令（如「分析行情」→ /分析行情 6月10日）。
 // 内置技能对齐 ironclaw 后端子智能体角色；用户自定义技能存 localStorage（与 llm.ts 同模式）。
 import { ref } from 'vue'
@@ -82,13 +82,13 @@ export function saveUserSkills(skills: Skill[]) {
   )
 }
 
-// ── 后端技能（harness 渐进式披露 Skills） ──
+// 后端技能（harness 渐进式披露 Skills）
 // 前端只持有 L1 索引（名称+描述），注册为同名斜杠指令；执行时把任务交给
 // 智能体工作台，由后端 agent 按需 load_skill / read_skill_file 读取全文。
 let backendSkills: Skill[] = []
 let backendFetchedAt = 0
 // 刷新请求序号：force 重取会并发多次 fetch（连续增删改/启停），只应用最新一次结果，
-// 避免较早发出的请求后返回时把 backendSkills 覆盖成过期索引（Codex P2 竞态）。
+// 避免较早发出的请求后返回时把 backendSkills 覆盖成过期索引。
 let backendFetchSeq = 0
 // 后端技能加载版本号：每次成功刷新后自增。斜杠菜单（useSlashInput）以它为响应式
 // 依赖，使「fetch 异步完成」能触发已打开的菜单重算，补上首屏尚未到达的后端技能。
@@ -127,7 +127,7 @@ export function invalidateBackendSkills(): void {
 // 合并优先级：用户自定义 > 前端内置 > 后端（按 name 去重）。
 // 前端内置排在后端之前：同名技能（申报草稿/复盘报告）前端版带专属场景图
 // （审批 interrupt、申报面板），不应被后端索引加载后降级成普通聊天移交。
-// 注意：本函数必须保持纯读取，不在普通渲染/命令列表计算时触发 /agent-api。
+// 本函数必须保持纯读取，不在普通渲染/命令列表计算时触发 /agent-api。
 // 后端刷新由 useSlashInput 在用户输入 "/" 后按需触发，技能工作室变更后由
 // invalidateBackendSkills() 强制触发。
 export function getAllSkills(): Skill[] {

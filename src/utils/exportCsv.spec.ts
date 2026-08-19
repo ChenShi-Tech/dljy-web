@@ -2,7 +2,7 @@
 // ↑ 勿删：exportCsv 依赖 document.createElement / URL.createObjectURL，node project 无 DOM。
 //   happy-dom 缺的 URL 静态方法在 spec 层补齐（不动源码），下载动作用 spy 捕获。
 //
-// CSV 导出回归：RFC 4180 转义 + UTF-8 BOM。坏掉的症状最隐蔽——Excel 打开含逗号/
+// CSV 导出回归：RFC 4180 转义 + UTF-8 BOM。坏掉的症状最隐蔽，Excel 打开含逗号/
 // 引号的单元格错列（账单金额对不上号），或中文表头乱码被当成数据脏列。
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { exportCsv } from './exportCsv'

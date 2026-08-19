@@ -2,7 +2,7 @@
 // 交易晨报（工作台）：确定性状态机 + dljy-ui 生成式工作台。
 // 左栏「数据预检」：fetchMorningBriefBundle 确定性装配 bundle，直接用 dljy-ui 组件
 //   （DataQualityPanel/MarketSnapshot/ForecastBandCard/RiskChecklist）确定性渲染一屏结构化
-//   数据——不依赖 LLM，点预检即有内容（前后端对齐：后端 bundle 7 类数据这里全部上屏）。
+//   数据，不依赖 LLM，点预检即有内容（前后端对齐：后端 bundle 7 类数据这里全部上屏）。
 // 右栏「晨报研判」：AgentChatPanel scenario="morning_brief" 驱动后端四角色并行确定性图
 //   （assemble→gap_check→四角色 fan-out→compose→confirm→finalize）；graph_status 进度、
 //   gap_check/confirm 两 interrupt 的 approval_request、compose 产出的 dljy-ui 围栏均自动渲染。
@@ -71,7 +71,7 @@ const briefPayload = computed(() => ({
   run_mode: 'interactive'
 }))
 
-// ── 历史侧栏协调（照 AgentWorkbenchView 范式）──
+// 历史侧栏协调（照 AgentWorkbenchView 范式）
 type PanelExpose = {
   ask: (q: string) => void
   newConversation: () => void

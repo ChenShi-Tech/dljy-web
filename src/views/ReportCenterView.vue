@@ -177,7 +177,7 @@ function submitSub() {
 function onToggleSub(id: string) { toggleSubscription(id); loadSubs() }
 function onRemoveSub(id: string) { removeSubscription(id); loadSubs() }
 
-// ── 生成队列 / 导出归档：生成与导出动作写回后端异步任务（含审计 traceId） ──
+// 生成队列 / 导出归档：生成与导出动作写回后端异步任务（含审计 traceId）
 // 闭环 tab 展示 = 本会话本地态（可流转）+ 后端种子；状态流转为前端演示态（后端 transition 端点待后续）。
 const localJobs = ref<ReportGenerationJob[]>([])
 const localArtifacts = ref<ReportExportArtifact[]>([])

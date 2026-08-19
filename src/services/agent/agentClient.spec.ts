@@ -1,21 +1,21 @@
 // @vitest-environment happy-dom
 // ↑ 勿删：本文件不是 *.component.spec.ts，vitest node project 默认不给 DOM；
-//   用例依赖 localStorage（身份头 / pi 会话路由登记），靠此 pragma 按文件切到 happy-dom。
+// 用例依赖 localStorage（身份头 / pi 会话路由登记），靠此 pragma 按文件切到 happy-dom。
 //
 // agentClient 契约回归（#1848 / STREAM-5/10 / #1631）：
-//   1. identityHeaders 三元组（token+company+region）与 identityFingerprint 快照——
-//      影子对拍靠指纹防「A 的首轮还在流式返回时换登录 B，影子拿 B 的凭证跑 A 的问题」。
-//   2. pi 会话路由登记——服务端灰度命中的 pi 会话写 localStorage（刷新后仍路由正确）；
-//      baseOverride 影子会话只进内存路由表（写 localStorage 会把真实会话路由表挤出前 50 条）。
-//   3. SSE 流解析（核心）——CRLF/LF 双分隔、心跳帧静默跳过、seq 游标取 max、
-//      尾帧无尾随分隔符仍消费（done 丢失 = 面板状态机悬挂，STREAM-5/10）、
-//      无终态帧抛 AgentStreamDisconnectedError、abort 静默返回。
-//   4. x-run-id 响应头 → 转 attachRunStream 续流。
-//   5. getActiveRun 404 → null 不抛。
+// 1. identityHeaders 三元组（token+company+region）与 identityFingerprint 快照
+// 影子对拍靠指纹防「A 的首轮还在流式返回时换登录 B，影子拿 B 的凭证跑 A 的问题」。
+// 2. pi 会话路由登记，服务端灰度命中的 pi 会话写 localStorage（刷新后仍路由正确）；
+// baseOverride 影子会话只进内存路由表（写 localStorage 会把真实会话路由表挤出前 50 条）。
+// 3. SSE 流解析（核心），CRLF/LF 双分隔、心跳帧静默跳过、seq 游标取 max、
+// 尾帧无尾随分隔符仍消费（done 丢失 = 面板状态机悬挂，STREAM-5/10）、
+// 无终态帧抛 AgentStreamDisconnectedError、abort 静默返回。
+// 4. x-run-id 响应头 → 转 attachRunStream 续流。
+// 5. getActiveRun 404 → null 不抛。
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-// ── 可变 hoisted 状态：mock 工厂引用，用例里改值 ──
+// 可变 hoisted 状态：mock 工厂引用，用例里改值
 const regionState = vi.hoisted(() => ({ id: 'yunnan' }))
 const rolloutState = vi.hoisted(() => ({ base: '/agent-api/agent' }))
 const comparableState = vi.hoisted(() => ({ comparable: false }))

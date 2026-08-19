@@ -1,4 +1,3 @@
-// ============================================================================
 // pageHelp.ts — 全站页面核心说明注册表（Issue #848）
 // ----------------------------------------------------------------------------
 // 以 src/router/index.ts 及各 features/*/routes.ts 的「路由 name」为 key，
@@ -6,17 +5,16 @@
 // 查表渲染「?」悬浮卡。注册表无该 key 时不渲染（渐进覆盖，不硬造）。
 //
 // 内容撰写纪律（红线，守卫 verify:page-help 不校验语义、人工逐条自查）：
-//   1. kind:'forecast' 路由必含「预测数值仅供参考/演示，不作为交易依据」。
-//   2. Mock/演示数据页必含「模拟/演示数据」；带 basis 标注页说明真实/合成来源。
-//   3. 不得暗示未接真实数据的功能「已接真实」；不写「实时行情」等夸大表述。
-//   4. 申报/交易决策页（驾驶舱/申报建议/复盘/模拟器）必含「决策支持，非投资建议；
-//      以正式结算口径为准」。
-//   5. docPath 只填 docs/ 下真实存在的文档路径（守卫校验文件存在性），没有就不填。
+// 1. kind:'forecast' 路由必含「预测数值仅供参考/演示，不作为交易依据」。
+// 2. Mock/演示数据页必含「模拟/演示数据」；带 basis 标注页说明真实/合成来源。
+// 3. 不得暗示未接真实数据的功能「已接真实」；不写「实时行情」等夸大表述。
+// 4. 申报/交易决策页（驾驶舱/申报建议/复盘/模拟器）必含「决策支持，非投资建议；
+// 以正式结算口径为准」。
+// 5. docPath 只填 docs/ 下真实存在的文档路径（守卫校验文件存在性），没有就不填。
 //
 // 取材来源：docs/reference/business-logic-inventory.md（逐页业务逻辑清单）
 // + 各路由 meta.scope/endpoint/kind/note（self-documenting）。新增页面讲解
 // 请先读对应 view 源码与 inventory 条目，不得凭路由名想象。
-// ============================================================================
 
 export interface PageHelpEntry {
   /** 悬浮卡标题，一般取路由 meta.title */
@@ -29,14 +27,14 @@ export interface PageHelpEntry {
 
 /** key = 路由 name（RouteRecordRaw['name']） */
 export const pageHelpRegistry: Record<string, PageHelpEntry> = {
-  // ── 首页 ──────────────────────────────────────────────────────────────────
+  // 首页
   Dashboard: {
     title: '交易驾驶舱',
     body: '登录后默认首页。中广核云南集团账号的实时价格主图与节点价模块固定读取厂侧私有 PostgreSQL 日前/实时数据，60s 自动刷新，页面标注非电网官方接口、完整性与新鲜度；公司/地区不匹配或 PG 异常时诚实报错，不回落公共行情或演示价。结算、损益、预测与智能体区块仍按各自来源单独标注。属决策支持视图，非投资建议；数值以正式结算口径为准。',
     docPath: 'docs/data/spot-cockpit.md'
   },
 
-  // ── 公司管理（多租户公司专属业务数据，按 companyId 隔离） ──────────────────
+  // 公司管理（多租户公司专属业务数据，按 companyId 隔离）
   CompanyOverview: {
     title: '经营总览大屏',
     body: '公司级发电/交易/金融指标全局总览大屏。控制条支持公司切换、5 档时间尺度与日期范围，KPI 行展示总装机/累计发电/新能源占比/利用小时/累计交易量/成交额及 VaR，配发电趋势、装机结构、交易量价、成交额四图。数据按 RBAC+subjectType+companyId 过滤，来自 /api/company/dashboard；当前为演示数据（结构化合成种子，页面标注 source 徽章），非市场回放。可导出 Excel。',
@@ -65,7 +63,7 @@ export const pageHelpRegistry: Record<string, PageHelpEntry> = {
     body: '本公司中长期合同全生命周期：5 统计卡（总数/执行中/即将到期/已逾期/合同电量）+ 到期预警 + 合同明细表（含已执行进度与偏差、结算预览、关联交易）+ 交易明细动态行。已执行量/成交笔数为后端按合同号关联交易聚合的只读派生字段。数据经 /api/company/contracts CRUD，落 company_sqlite。为真实录入数据，支持 CSV 导入导出。'
   },
 
-  // ── 现货交易 ────────────────────────────────────────────────────────────
+  // 现货交易
   DeclarationDesk: {
     title: '申报工作台',
     body: 'D-1 申报动线主工作台：顶部 4 步步骤条（草稿与策略→风控与审批→提交与回执→出清跟踪，由申报单状态机驱动）+ 10:30 截止倒计时；主区左侧情报区（目标日价格预测曲线+申报前情报+智能体起草），右侧申报单工作流（24h 功率编辑柱、批量段、风控检查、送审/审批/提交/回执/出清跟踪按状态条件渲染）。价格预测经 /api/real 回放、申报单状态机经 /api/v1/trading/spot/declarations。回执为 MOCK 网关标注、非真实申报。属决策支持，非投资建议；以正式结算口径为准。',
@@ -106,7 +104,7 @@ export const pageHelpRegistry: Record<string, PageHelpEntry> = {
     docPath: 'docs/data/yunnan-parquet-derive.md'
   },
 
-  // ── 中长期交易 ──────────────────────────────────────────────────────────
+  // 中长期交易
   ExposureBoard: {
     title: '中长期敞口看板',
     body: '合同分解 vs 预计出力的逐时敞口看板：4 KPI（套保率/净卖出敞口/净买入敞口/日均合同电量）+ 主图（合同分解 vs 预计出力双线 + gap 柱正负着色）+ 日×小时敞口热力图 + 智能体解读。支持三种分解模式（峰谷结构/均匀/光伏镜像）与两种对比口径。数据来自 /agent-api/agent/quant/exposure 确定性引擎，合成项显式标注。属决策支持，非投资建议；以正式结算口径为准。',
@@ -128,7 +126,7 @@ export const pageHelpRegistry: Record<string, PageHelpEntry> = {
     docPath: 'docs/data/yunnan-actualload-derive.md'
   },
 
-  // ── 智能实验室（决策标定 + 智能体策略） ──────────────────────────────────
+  // 智能实验室（决策标定 + 智能体策略）
   RegionCalibrationDesk: {
     title: '地区决策标定',
     body: '基于地区现货画像的策略标定台：三面板——策略适配评分（按主体类型 trader/容量/合约覆盖/有无储能）、收益/风险快测、地区参数校准，可一键下发到日前上报或申报工作台。数据来自本地 regionSpotProfiles 与 regionStrategyAdvisor。市场未启动地区显空态引导。属决策支持，非投资建议；以正式结算口径为准。',
@@ -160,7 +158,7 @@ export const pageHelpRegistry: Record<string, PageHelpEntry> = {
     docPath: 'docs/agent-harness/market-tools-and-agent-dispatch.md'
   },
 
-  // ── 数据分析 ────────────────────────────────────────────────────────────
+  // 数据分析
   MarketInsightCockpit: {
     title: '市场洞察驾驶舱',
     body: '一屏确定性渲染的市场洞察：市场快照/价格弹性/价差套利/节点热力/异动雷达五区块 + AI 解读（选中即问）。数据来自 /agent-api/v1/market-insight/bundle + agent sessions(SSE)。用于快速把握市场结构与套利机会。属决策支持，非投资建议；以正式结算口径为准。',
@@ -220,24 +218,24 @@ export const pageHelpRegistry: Record<string, PageHelpEntry> = {
     docPath: 'docs/data/weather-ingestion.md'
   },
 
-  // ── 预测数据（kind:'forecast'，数值仅供参考/演示，不作为交易依据） ────────
+  // 预测数据（kind:'forecast'，数值仅供参考/演示，不作为交易依据）
   ForecastCenter: {
     title: '预测中心',
     body: '预测五页聚合单页：一级 tab 按工作流排序——官方回放、建模工作台、厂站预测、质量记分牌、申报决策。tab 复用原路由的角色权限和地区能力，支持 ?mod= 深链；预测数值仅供参考，非结算依据。',
     docPath: 'docs/forecast/forecast-system-implementation.md'
   },
-  // 注：#1374 预测中心单页化后，原 ForecastWorkbench/ForecastDecisionCockpit/ForecastHub/
+  // #1374 预测中心单页化后，原 ForecastWorkbench/ForecastDecisionCockpit/ForecastHub/
   // StationGeneration/ForecastScoreboard 五个独立路由已改 redirect 到 /ycsj/center（?mod= 深链），
   // 对应说明并入上方 ForecastCenter（#1668）；各模块细节文档仍可经 docPath 单独查阅。
 
-  // ── 省间现货 ────────────────────────────────────────────────────────────
+  // 省间现货
   InterProvincialPlan: {
     title: '省间中长期交易电量计划',
     body: '省间中长期交易电量计划回放：699 条 type92（2024-08~2026-06），独立实现的图表卡（支持 24/96 点切换——这是与 ForecastDailyCurve 的关键区别）。数据来自 GET /sdpt/zptjg/list?tag=92（生产端必填 areaId=1），回放 sdpt_zptjg。为真实采集回放数据。',
     docPath: 'docs/data/yunnan-parquet-derive.md'
   },
 
-  // ── 投资测算（参数驱动，算法真实可验证） ──────────────────────────────────
+  // 投资测算（参数驱动，算法真实可验证）
   WindSolarInvestment: {
     title: '新能源资产测算',
     body: '风电/光伏投资测算：4 指标卡（总投资/资本金、LCOE、资本金 IRR、年发电量）+ 光伏/风电切换 + 计算模式（目标 IRR 反算 LCOE / 指定 LCOE 算 IRR）+ 三免三减半 + 参数 4 节 + 现金流曲线 + 敏感性分析。纯前端 windSolar 算法（legacy /api/v1/investment-calculator/*，新聚合走 /api/v1/investment-assessment/runs）。参数为用户填表默认值（demo），非市场回放。属决策支持，非投资建议。',
@@ -249,7 +247,7 @@ export const pageHelpRegistry: Record<string, PageHelpEntry> = {
     docPath: 'docs/data/sim-calibration.md'
   },
 
-  // ── 电价测算 ────────────────────────────────────────────────────────────
+  // 电价测算
   RetailPriceCalculator: {
     title: '售电电价测算',
     body: '售电电价测算：4 指标卡（到户综合价、总电费、售电利润、加权购电价）+ 工商业/国网代购模式 + 单一制/两部制 + 电压等级 + 分时/售电套餐/已知加权价 + 反推分时价。纯前端 retailPrice 算法（计划 price calculator suite）。核心：省内电价、分时电价、售电套餐、国网代购电价。参数为用户填表。属决策支持，非投资建议。',
@@ -261,7 +259,7 @@ export const pageHelpRegistry: Record<string, PageHelpEntry> = {
     docPath: 'docs/region/region-settlement-rules.md'
   },
 
-  // ── 运营管理 / 数据管理 ──────────────────────────────────────────────────
+  // 运营管理 / 数据管理
   OperationsWorkbench: {
     title: '运营中枢',
     body: '多 tab 综合运营面：电站/合同/结算/风险/统计/导入任务/模型版本/智能体监控，每 tab 含指标卡 + 行表。数据来自本地 operations（计划后端 /api/v1/{stations,contracts,settlements,risks,statistics,...}），智能体监控来自 agentMonitor。当前为混合口径、结构化合成（计划后端未接时本地优先）。'
@@ -277,7 +275,7 @@ export const pageHelpRegistry: Record<string, PageHelpEntry> = {
     docPath: 'docs/data/universal-data-browser.md'
   },
 
-  // ── 售电资料 ────────────────────────────────────────────────────────────
+  // 售电资料
   RegionRules: {
     title: '地区规则体系',
     body: '地区规则画像 + 主体角色关注矩阵：Hero（市场阶段/规则状态/结算模式标签 + 3 指标）+ 地区业务模块卡 + 当前角色·主体重点关注/风险提示/推荐入口三栏 + 4 tab（交易组织/价格结算/风控披露/资料来源）+ 规则依据。纯本地读 rules/ + regionModules + governance，按 region+RBAC 过滤。为本地规则画像数据。',
@@ -288,14 +286,14 @@ export const pageHelpRegistry: Record<string, PageHelpEntry> = {
     body: '交易平台文档回放：列表（32 条取 10）+ 10 个本地文件（7 PDF 可预览 + 2 DOCX + 1 XLSX + 1 PPTX 触发下载）。支持上传日期/文档名/级别筛选，PDF 经 /api/realfile inline 内嵌 iframe 预览、其余触发下载。数据来自 GET /sdpt/zptwd/list + 文件下载，回放 sdpt_zptwd。为真实采集回放文档。'
   },
 
-  // ── 系统管理 ────────────────────────────────────────────────────────────
+  // 系统管理
   SystemAccounts: {
     title: '用户与权限',
     body: '账号、会话与权限三 tab（仅系统管理员可见）。用户管理：账号 CRUD + 角色/数据域 + 密码重置 + 启用停用，经 GET/POST/PATCH /api/auth/users。会话管理：会话列表 + 审计日志 + 撤销下线，经 GET/DELETE /api/auth/sessions。两者落 auth_sqlite，为真实数据。权限矩阵：角色 × 菜单路径 × 操作的授权维护，页内再分角色权限/地区入口/认证目录三段，路由开关按 block 折叠并支持筛选；读前端权限模型 services/governance.ts（local_governance，非后端库）。',
     docPath: 'docs/architecture/company-data-governance.md'
   },
 
-  // ── 系统（AI 设置 / 技能 / 智能体工作台） ──────────────────────────────
+  // 系统（AI 设置 / 技能 / 智能体工作台）
   AgentWorkbench: {
     title: '智能体工作台',
     body: '智能体对话工作台：左历史侧栏（按登录用户隔离、Node SQLite 持久化）+ 右 AgentChatPanel（/agent-api/agent/* SSE 流式）。支持深链 ?q= 与 ?scenario=chat|declaration_prep|daily_review，历史回放续聊。persist-history 默认开启。对话走 agent-backend、历史走 Node SQLite，为真实会话数据。',
@@ -307,7 +305,7 @@ export const pageHelpRegistry: Record<string, PageHelpEntry> = {
     docPath: 'docs/agent-harness/sub-agent-studio.md'
   },
 
-  // ── 活跃 feature 路由（features/*/routes.ts） ───────────────────────────
+  // 活跃 feature 路由（features/*/routes.ts）
   YunnanNodePrice: {
     title: '节点电价分析',
     body: '中广核云南厂侧节点价格曲线、热力图和当日节点日聚合明细，按上游原生 15m/1h 展示。数据来自 GET /agent-api/v1/spot/cgn-yunnan/node-price/*，只允许 comp-cgn-yunnan 集团账号 + yunnan；查询主体固定为 GENERATOR-YN-CGN，非电网官方接口，失败不回落公共价格或回放。',

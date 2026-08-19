@@ -1,11 +1,11 @@
 <script setup lang="ts">
 // 云南「官方预测 vs 实际」对照大图（预测中心 hub 云南 tab，epic #336 PR-B2）。
-// 数据：yn_system_forecast 真实回放（南网官方 D-1 披露，captured）——这是**官方披露
-// 数据**（真实采集），非本系统模型输出；预测值仍非结算依据（hub 决策口径 advisory）。
+// 数据：yn_system_forecast 真实回放（南网官方 D-1 披露，captured），这是官方披露
+// 数据（真实采集），非本系统模型输出；预测值仍非结算依据（hub 决策口径 advisory）。
 // 取数：固定 region=yunnan（数据只在云南地区隔离原始快照中，与顶栏地区解耦）；一次拉窗口
 // （锚定库内最新披露日前 7 天~次日，经 /api/real 载荷级日期过滤），窗口内切日零请求；
 // 主图=所选日 96 点双线（预测虚线/实际实线，图表纪律：功率连续量 lineSeries 直线、
-// 用户电价分时值 stepSeries step:'end'——timePoint 为时段起点标签）。
+// 用户电价分时值 stepSeries step:'end'，timePoint 为时段起点标签）。
 // 云南主线 + 全区域对照开关（行内 region 业务列，与地区隔离键无关）。
 import { computed, onMounted, ref, watch } from 'vue'
 import ChartCard from '../common/ChartCard.vue'
@@ -56,7 +56,7 @@ async function loadWindow() {
   try {
     const d = current.value
     // 锚定库内最新披露日：capture 按导出包回放，最新披露可能远早于浏览器今天，
-    // 「按今天回推」在历史包场景整窗落空——先用尾部小切片探测最新目标日，探测失败回退今天。
+    // 「按今天回推」在历史包场景整窗落空，先用尾部小切片探测最新目标日，探测失败回退今天。
     // region 固定 yunnan：本 tab 标称云南披露、数据只存在于云南地区隔离原始快照，
     // 顶栏切到其他地区时不得打到该地区目录拿空/回退数据（仅本组件取数，不改全局地区）。
     let anchor = isoDay(0)
@@ -71,7 +71,7 @@ async function loadWindow() {
     } catch { /* 探测失败按今天回推（真实或空） */ }
     const filter = { dateFrom: shiftDay(anchor, -7), dateTo: shiftDay(anchor, 1), region: 'yunnan' } // +1 覆盖「披露的明日预测」
     // D-1 滚动集窗口平移：/api/real 按 operateDate（发布日）过滤，而 new_energy_forecast_d1
-    // 的对照日 targetDate=operateDate+1——预测侧窗口整体 -1 天，否则窗口首日只有实际无预测
+    // 的对照日 targetDate=operateDate+1，预测侧窗口整体 -1 天，否则窗口首日只有实际无预测
     const fFilter = d.forecast === 'new_energy_forecast_d1'
       ? { ...filter, dateFrom: shiftDay(anchor, -8), dateTo: shiftDay(anchor, 0) }
       : filter
@@ -107,7 +107,7 @@ function pickSeries(rows: Row[], day: string, region: string, metricFilter?: (m:
     && (metricFilter ? metricFilter(String(r.metric ?? '')) : true)
     && matchRegion(r, region))
   if (current.value.regionMode === 'section') {
-    // 断面族：ETL 同时写 send/receive 两类行且同一时点可有多个含「云南」断面——只取
+    // 断面族：ETL 同时写 send/receive 两类行且同一时点可有多个含「云南」断面，只取
     // 送出行并按 timePoint 合计（与弹性引擎/首页侧卡同口径），否则受电行混入且
     // Map 覆盖成单断面值，「总送出」偏小/抖动
     const byTime = new Map<string, number>()

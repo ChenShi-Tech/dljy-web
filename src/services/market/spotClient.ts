@@ -3,11 +3,11 @@
 // 后端同源 /api/v1/spot。此前若写死 /agent-api 会让生产构建下全部现货读取 404。
 //
 // 端点契约（统一 BaseResponse{code,message,data}，data 解出后返回）：
-//   GET /v1/spot/regions
-//   GET /v1/spot/node-price/nodes?q=&limit=&region=
-//   GET /v1/spot/node-price/series?date=&node=&market=&region=
-//   GET /v1/spot/node-price/daily?date=&market=&limit=&region=
-//   GET /v1/spot/node-price/heatmap?date=&market=&top_nodes=&region=
+// GET /v1/spot/regions
+// GET /v1/spot/node-price/nodes?q=&limit=&region=
+// GET /v1/spot/node-price/series?date=&node=&market=&region=
+// GET /v1/spot/node-price/daily?date=&market=&limit=&region=
+// GET /v1/spot/node-price/heatmap?date=&market=&top_nodes=&region=
 // 云南全局地区下，上述 node-price 路径固定改写为 /v1/spot/cgn-yunnan/node-price/*，
 // 并移除客户端 company/region query；token 主体与 x-region-id 由私有路由核验。
 //

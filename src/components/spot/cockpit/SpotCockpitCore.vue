@@ -50,11 +50,11 @@ const props = withDefaults(defineProps<{
 
 const WAN = 10000
 
-// ── 节点价来源标注（必须与实际取数路径同源）──────────────────────────────
+// 节点价来源标注（必须与实际取数路径同源）
 // spotClient 的改写规则是「云南 + /node-price/ + 账号属中广核云南」才走厂侧专属
-// 端点，否则**静默落到公共节点价端点**（刻意设计，避免向专属端点制造 403）。
+// 端点，否则静默落到公共节点价端点（刻意设计，避免向专属端点制造 403）。
 // 标注若写死成「厂侧 PG」，非中广核账号读到的是公共数据、页面却宣称是某家公司的
-// 私有经营数据——来源错标（#1791）。判定复用 spotClient 同一个谓词，不另立一套。
+// 私有经营数据，来源错标（#1791）。判定复用 spotClient 同一个谓词，不另立一套。
 const usesCgnPrivatePrice = computed(
   () => props.regionId === 'yunnan' && hasCgnYunnanPriceEntitlement(),
 )
@@ -62,7 +62,7 @@ const usesCgnPrivatePrice = computed(
 // 两者都是决策级口径，切换不改变任何权限或功能，只让标签说实话。
 const nodePriceBasis = computed<DataBasis>(() => (usesCgnPrivatePrice.value ? 'real' : 'captured'))
 
-// ── 控件状态 ──
+// 控件状态
 const date = ref(props.initialDate) // 默认 2026-05-01,宿主可经 initialDate 注入
 const market = ref<SpotMarket>(props.initialMarket)
 const marketOptions = [
@@ -70,14 +70,14 @@ const marketOptions = [
   { value: 'rt' as SpotMarket, label: '实时 RT' }
 ]
 
-// ── 数据 / 态 ──
+// 数据 / 态
 const data = ref<CockpitData | null>(null)
 const loading = ref(false)
 let reloadReqId = 0
 const errorMsg = ref('')
 const ingestHint = ref(false)
 
-// ── ECharts chrome（轴/网格/文字/tooltip）随当前主题 ──
+// ECharts chrome（轴/网格/文字/tooltip）随当前主题
 // 每个 builder 在 render 内调用 axisX/axisY/tt/ttfix，函数体内取 chartChrome()，故 useEChart
 // 主题切换 dispose 重建并重调 render 时自动拿到新色。数据系列语义色（青/琥珀/绿/红/金）不走此层。
 const baseGrid = { left: 46, right: 18, top: 18, bottom: 26 }
@@ -117,7 +117,7 @@ function ttfix() {
   return { backgroundColor: c.tooltipBg, borderColor: c.tooltipBorder, textStyle: { color: c.tooltipText, fontSize: 11 } }
 }
 
-// ── 图表容器 + 实例（每图一个 useEChart；主题切换由 useEChart dispose 重建 + 重调 render 跟随）──
+// 图表容器 + 实例（每图一个 useEChart；主题切换由 useEChart dispose 重建 + 重调 render 跟随）
 const heatmapEl = ref<HTMLElement | null>(null)
 const basisEl = ref<HTMLElement | null>(null)
 const negEl = ref<HTMLElement | null>(null)
@@ -170,7 +170,7 @@ function onArenaSourceChange() {
   renderDiag()
 }
 
-// ── ② 价格热力场（节点 × 时段，piecewise 发散配色）──
+// ② 价格热力场（节点 × 时段，piecewise 发散配色）
 function renderHeatmap() {
   const m = data.value?.heatmap
   if (!m || !m.hasData) {
@@ -241,7 +241,7 @@ function renderHeatmap() {
   )
 }
 
-// ── ③ 基差（选定节点价 vs 系统均价 + 面积 + 0 线）──
+// ③ 基差（选定节点价 vs 系统均价 + 面积 + 0 线）
 function renderBasis() {
   const b = data.value?.basis
   if (!b || !b.hasData) {
@@ -287,7 +287,7 @@ function renderBasis() {
   )
 }
 
-// ── ④ 负价雷达（红线 + markArea 高亮弃发窗口；移除与 markArea 冲突的 visualMap）──
+// ④ 负价雷达（红线 + markArea 高亮弃发窗口；移除与 markArea 冲突的 visualMap）
 function renderNeg() {
   const n = data.value?.negRadar
   if (!n || !n.hasData) {
@@ -334,7 +334,7 @@ function renderNeg() {
   )
 }
 
-// ── ⑤ 损益归因瀑布（transparent-stack；原始价值 → 减三段 → 实现）──
+// ⑤ 损益归因瀑布（transparent-stack；原始价值 → 减三段 → 实现）
 function renderWaterfall() {
   const w = data.value?.waterfall
   if (!w || !w.hasData) {
@@ -411,7 +411,7 @@ function renderWaterfall() {
   )
 }
 
-// ── ⑥ 申报偏差体检（双轴：偏差电量柱 + 偏差电费线）──
+// ⑥ 申报偏差体检（双轴：偏差电量柱 + 偏差电费线）
 function renderDeviation() {
   const dev = data.value?.deviation
   if (!dev || !dev.hasData) {
@@ -454,7 +454,7 @@ function renderDeviation() {
   )
 }
 
-// ── ⑦ 预测诊断分发（arena 厂站 8 源 MAPE 擂台 / loss 厂站损失排行）──
+// ⑦ 预测诊断分发（arena 厂站 8 源 MAPE 擂台 / loss 厂站损失排行）
 function renderDiag() {
   if (diagMode.value === 'arena') renderArena()
   else renderForecast()
@@ -486,7 +486,7 @@ async function ensureArena() {
   renderDiag()
 }
 
-// ── ⑦a 厂站 8 源 MAPE 擂台（柱：源排行；线：最佳预测源 vs 实际功率）──
+// ⑦a 厂站 8 源 MAPE 擂台（柱：源排行；线：最佳预测源 vs 实际功率）
 function renderArena() {
   const a = arena.value
   if (arenaLoading.value) {
@@ -625,7 +625,7 @@ function renderArena() {
   )
 }
 
-// ── ⑦b 预测损失诊断（横向条，大者红色靠前）──
+// ⑦b 预测损失诊断（横向条，大者红色靠前）
 function renderForecast() {
   const f = data.value?.forecastDiag
   if (!f || !f.hasData) {
@@ -665,7 +665,7 @@ function emptyTitle(text: string) {
   }
 }
 
-// ── 持仓敞口曲线（逐日敞口 + 套保率，captured 真实派生）──
+// 持仓敞口曲线（逐日敞口 + 套保率，captured 真实派生）
 function renderExposure() {
   const s = data.value?.exposureSeries ?? []
   if (!s.length) {
@@ -719,7 +719,7 @@ function renderAll() {
   renderExposure()
 }
 
-// ── 导出（CSV / XLSX；瀑布/申报偏差/敞口序列/预测损失排行四表，captured 真实数据）──
+// 导出（CSV / XLSX；瀑布/申报偏差/敞口序列/预测损失排行四表，captured 真实数据）
 function buildExportSheets() {
   const d = data.value
   const wf = d?.waterfall
@@ -805,7 +805,7 @@ function onExportCmd(c: string) {
   else if (c === 'zip') exportCockpitZip()
 }
 
-// ── KPI / 决策清单展示派生 ──
+// KPI / 决策清单展示派生
 const kpis = computed(() => data.value?.kpis ?? null)
 const decisions = computed<DecisionItem[]>(() => data.value?.decisions ?? [])
 const position = computed(() => data.value?.position ?? null)
@@ -822,7 +822,7 @@ const decisionIcon: Record<DecisionItem['kind'], string> = {
   audit: '⚖'
 }
 
-// ── 加载 ──
+// 加载
 async function reload() {
   const reqId = ++reloadReqId
   loading.value = true

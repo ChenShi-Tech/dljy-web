@@ -16,7 +16,7 @@ import { axisTooltip, chartToolbox, fmtNum, insideZoom, emptyOverlay } from '@/s
 import { fetchSpotRegions, type SpotMarket } from '@/services/market/spotClient'
 import { fetchElasticity, type ElasticityResult } from '@/services/market/elasticityClient'
 
-// ── 控件状态 ──
+// 控件状态
 const regions = ref<string[]>([])
 const region = ref('云南')
 // 默认取数据范围内一天（节点电价/系统供需 Parquet 当前覆盖 2026-05），避免首屏空。
@@ -30,7 +30,7 @@ const segments = ref(4)
 const segmentOptions = [3, 4, 5, 6]
 const windowDays = ref(21)
 
-// ── 数据 ──
+// 数据
 const result = ref<ElasticityResult | null>(null)
 const loading = ref(false)
 const errorMsg = ref('')
@@ -74,7 +74,7 @@ function onRegionSelect() {
   void reload()
 }
 
-// ── KPI 派生 ──
+// KPI 派生
 const kpis = computed(() => {
   const r = result.value
   if (!r || !r.available) return null
@@ -92,7 +92,7 @@ const kpis = computed(() => {
 
 const improvementPositive = computed(() => (kpis.value?.improvement ?? 0) > 0)
 
-// ── 图① 分段弹性曲线（竞价空间→出清价）──
+// 图① 分段弹性曲线（竞价空间→出清价）
 function buildCurveOption() {
   const cc = chartChrome()
   const r = result.value
@@ -168,7 +168,7 @@ function buildCurveOption() {
   }
 }
 
-// ── 图② 预测 vs 实际价格（96 点）──
+// 图② 预测 vs 实际价格（96 点）
 function buildPredictOption() {
   const cc = chartChrome()
   const r = result.value
@@ -223,7 +223,7 @@ function buildPredictOption() {
   }
 }
 
-// ── 图③ 竞价空间 96 点 + 陡段标注 ──
+// 图③ 竞价空间 96 点 + 陡段标注
 function buildBidSpaceOption() {
   const cc = chartChrome()
   const r = result.value

@@ -102,7 +102,7 @@ async function removeSkill(s: SkillSummary) {
   }
 }
 
-// ── 编辑抽屉 ──
+// 编辑抽屉
 const drawerOpen = ref(false)
 const editing = ref<SkillDetail | null>(null)
 const editName = ref('')
@@ -148,7 +148,7 @@ async function saveEdit() {
   saving.value = false
 }
 
-// ── 附属文件（编辑抽屉内）──
+// 附属文件（编辑抽屉内）
 const fileOpen = ref(false)
 const filePath = ref('')
 const fileContent = ref('')
@@ -213,7 +213,7 @@ async function removeFile(path: string) {
   }
 }
 
-// ── 导入对话框 ──
+// 导入对话框
 const importOpen = ref(false)
 const importTab = ref<'zip' | 'paste'>('zip')
 const importFile = ref<File | null>(null)

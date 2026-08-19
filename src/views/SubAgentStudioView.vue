@@ -112,7 +112,7 @@ async function removeAgent(a: SubAgentSummary) {
   }
 }
 
-// ── 编辑抽屉 ──
+// 编辑抽屉
 const drawerOpen = ref(false)
 const editing = ref<SubAgentDetail | null>(null)
 const isNew = ref(false)
@@ -224,7 +224,7 @@ async function save() {
   saving.value = false
 }
 
-// ── 导入对话框 ──
+// 导入对话框
 const importOpen = ref(false)
 const importTab = ref<'zip' | 'paste'>('zip')
 const importFile = ref<File | null>(null)

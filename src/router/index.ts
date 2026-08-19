@@ -26,11 +26,11 @@ const DEMO_PAGES_ENABLED = import.meta.env.VITE_ENABLE_DEMO_PAGES === '1'
 // Routes rebuilt from the real production menu (getRouters), 6 blocks / 26 pages.
 // Each page carries `meta` describing its real endpoint + where the captured
 // real data lives + whether values are real/forecast — so the PlaceholderView
-// is self-documenting and Codex can build each page from .codex/data-inventory.md.
+// is self-documenting; each page's data source is described in its meta.
 // `kind`: 'real' | 'mixed' (real+forecast series) | 'forecast' (values unreliable).
 const placeholder = () => import('../views/PlaceholderView.vue')
 // Real-data views (built from captured data via /api/real). Others still use
-// the self-documenting placeholder until Codex builds them.
+// the self-documenting placeholder until they are built.
 const dailySystemLoad = () => import('../views/DailySystemLoadView.vue')
 const elNinoLaNina = () => import('../views/ElNinoLaNinaView.vue')
 const dataAnalysis = () => import('../views/DataAnalysisView.vue')
@@ -61,7 +61,7 @@ const regionRules = () => import('../views/RegionRulesView.vue')
 const regionalTradingHub = () => import('../views/RegionalTradingHubView.vue')
 // 申报工作台（重写原现货决策台：对齐 D-1 真实申报动线，嵌入 declaration_prep 智能体图）
 // 交易员一日作业台（v1.0 七步单页承载）：早间分析/晨检/放行清单/储能计划/决策日志五页已并入
-// 本台七步面板；原「交易台」（四线并行首页）也已删除——其"我现在该干哪一步"的职责由本台
+// 本台七步面板；原「交易台」（四线并行首页）也已删除，其"我现在该干哪一步"的职责由本台
 // 的线性七步 + 步进条完整取代（2026-08-11 用户拍板）。
 const tradingDay = () => import('../views/trading/TradingDayView.vue')
 // 交易台四条作业线的作业面：不进侧边栏，只从交易台深链进入（避免导航膨胀，
@@ -148,7 +148,7 @@ const router = createRouter({
     // 「无 meta → 不进 feature-map/manifest」的顶层路由形态，守卫内显式特判。
     { path: '/select-stance', name: 'SelectStance', component: () => import('../views/SelectStanceView.vue') },
 
-    // ── /demo/* 驾驶舱风格展示页(顶层全屏、隔离、不进侧边栏;守卫已放行)──
+    // /demo/* 驾驶舱风格展示页(顶层全屏、隔离、不进侧边栏;守卫已放行)
     // 冻结下架（简化 IA·PR-A）：整组由 VITE_ENABLE_DEMO_PAGES 门控、默认关闭；代码保留，需要演示时置 1 恢复。
     // 一键切换 6 套风格(暗:霓虹/玻璃/HUD,暖:暖纸/瑞士/柔彩)× 总览/AI 两视图。
     // 支持 ?style=&view= 深链,如 /demo/showcase?style=paper&view=ai
@@ -264,7 +264,7 @@ const router = createRouter({
         page('sjfx/elninolanina', 'ElNinoLaNina', { block: '数据分析', title: '厄尔尼诺拉尼娜', code: 'elninolanina', endpoint: 'GET /sdpt/elninolanina/list', dataPath: 'sdpt_elninolanina', scope: '77行(年)', kind: 'real', note: 'ENSO 指数 djf..ndj 12个滑动季' }, elNinoLaNina),
         page('sjfx/tqyb', 'WeatherForecast', { block: '数据分析', title: '天气预报', code: 'tqyb', endpoint: 'GET /weather/dayData|hourlyData|districtTree', dataPath: 'weather_dayData', scope: '11城市×15天日预报+24h时预报', kind: 'real', note: '气象台预报；11个山西地市 adcode' }, weatherForecast),
 
-        // 预测数据 /ycsj  —— ⚠️ 预测值，数值不可信，仅参考格式
+        // 预测数据 /ycsj ：⚠️ 预测值，数值不可信，仅参考格式
         page('ycsj/center', 'ForecastCenter', { block: '预测数据', title: '预测中心', code: 'forecast-center', endpoint: '聚合五模块同源接口（组件原样挂入，见各模块登记）', dataPath: 'sdpt_* 回放 + forecastProviders + agent_backend forecast 族', scope: '预测五页聚合单页: 官方回放、建模工作台、厂站预测、质量记分牌、申报决策；tab 按原路由权限过滤，?mod= 深链', kind: 'forecast' }, forecastCenter),
         { path: 'ycsj/hub', redirect: (to) => ({ path: '/ycsj/center', query: { ...to.query, mod: 'replay' } }) },
         { path: 'ycsj/workbench', redirect: (to) => ({ path: '/ycsj/center', query: { ...to.query, mod: 'bench' } }) },
@@ -301,7 +301,7 @@ const router = createRouter({
         page('yygl/ops', 'OperationsWorkbench', { block: '运营管理', title: '运营中枢', code: 'operations', endpoint: 'local operations + planned /api/v1/stations|contracts|settlements|risks|statistics|retail-settlement-import|model-config|agents', dataPath: 'operations_backend', scope: '电站、合同、结算、风险、统计、数据导入、模型配置、智能体监控运营面迁移', kind: 'mixed' }, operationsWorkbench),
         page('yygl/data-browser', 'DataBrowser', { block: '数据管理', title: '通用数据浏览器', code: 'data-browser', endpoint: 'GET /api/real?family=&match=&region=', dataPath: '*', scope: '任意已注册数据族归一化真实回放数据，动态列展示+筛选+CSV导出', kind: 'mixed' }, dataBrowser),
 
-        // 数据运维 /data-ops（#2169 P1：上传中心独立路由域——P2 data-service 进程化时整组迁出主前端）
+        // 数据运维 /data-ops（#2169 P1：上传中心独立路由域，P2 data-service 进程化时整组迁出主前端）
 
 
         // 数据运维 /data-ops（#2174 P2-2b：六管理页已迁独立数据运维台，主前端保桥接深链）
@@ -324,7 +324,7 @@ const router = createRouter({
         page('ai-agent', 'AgentWorkbench', { block: '系统', title: '智能体工作台', code: 'ai-agent', endpoint: '/agent-api/agent/*', dataPath: '', kind: 'real' }, agentWorkbench),
         // 战略问答 PoC（#1526）：pi harness 旗舰切片，后端 integrations/pi-poc（/pi-api → 8100）
         page('strategic-qa', 'StrategicQA', { block: '系统', title: '战略问答', code: 'strategic-qa', endpoint: '/pi-api/agent/*', dataPath: '', scope: 'pi PoC：取数走 /api/v1/spot 只读权威面；查不到的数据如实报缺口', kind: 'real' }, strategicQA),
-        // 申报体检 PoC（#1527）：pi 第二切片——沙箱实算体检 + 审批卡落库申报台（submit 永不可执行）
+        // 申报体检 PoC（#1527）：pi 第二切片，沙箱实算体检 + 审批卡落库申报台（submit 永不可执行）
         page('declaration-checkup', 'DeclarationCheckup', { block: '系统', title: '申报体检', code: 'declaration-checkup', endpoint: '/pi-api/agent/*', dataPath: '', scope: 'pi PoC：体检沙箱实算；落库申报台 DRAFT 经人工审批；对外提交硬禁', kind: 'real' }, declarationCheckup),
         // 技能工作室 / 子智能体工作室随「AI 工作室」tab 化收编，旧路径保留重定向。
         aiStudioRedirect('ai-skills', 'skills'),
@@ -345,7 +345,7 @@ router.beforeEach((to, from) => {
 router.afterEach((to, from) => {
   finishRouteProgress()
   // 无权限记账（capture 私有族 401/403）按页清账：新页面取数会重新记账，
-  // 避免上一页的拒绝横幅跨页粘滞（Sub-4 #520，roborev job144/145）。
+  // 避免上一页的拒绝横幅跨页粘滞（Sub-4 #520）。
   if (to.path !== from.path) resetCaptureAccessDenied()
 })
 router.onError(() => finishRouteProgress())

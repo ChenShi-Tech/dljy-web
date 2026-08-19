@@ -104,7 +104,7 @@ onMounted(load)
 
 onRegionChange(load)
 
-// ─────────── ECharts calendar 热力图：每日申报/交易标记密度 ───────────
+// ECharts calendar 热力图：每日申报/交易标记密度
 
 /**
  * 派生热力图数据：遍历 byDate 全量数据，

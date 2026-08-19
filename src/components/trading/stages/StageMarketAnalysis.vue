@@ -1,17 +1,17 @@
 <script setup lang="ts">
-// S2 早间分析（08:30–09:30）—— 判断链真正的起点
+// S2 早间分析（08:30–09:30）， 判断链真正的起点
 //
-// 交易员早上要回答的第一个业务问题不是「数据齐不齐」，而是**「今天这个市场是松还是紧」**。
+// 交易员早上要回答的第一个业务问题不是「数据齐不齐」，而是「今天这个市场是松还是紧」。
 // 本面板把四个基本面量（可调机组 / 新能源 / 外送 / 负荷）压成供需比，映射到边际机组与
-// 价格中枢区间，输出一句可执行的市场判断——它是 S3 方向判断的输入。
+// 价格中枢区间，输出一句可执行的市场判断，它是 S3 方向判断的输入。
 //
 // 三个刻意的设计点：
-//   ① **外送是分母项**。外送计划是省内出清的硬边界而非竞价标的，外送增加等价于省内净
+// ① 外送是分母项。外送计划是省内出清的硬边界而非竞价标的，外送增加等价于省内净
 //      负荷增加。放错位置会让松紧判断整个反向，故面板单独给外送耦合推演。
-//   ② **主导态势取众数而非平均**。平均会把「多数时段偏紧 + 个别时段极松」抹成「宽松」，
+// ② 主导态势取众数而非平均。平均会把「多数时段偏紧 + 个别时段极松」抹成「宽松」，
 //      恰好抹掉当天最该防的那几个小时。
-//   ③ **八源验签是本步的异常分支**（v1.0："数据缺失→标注低可信并人工补判"），收进折叠
-//      区块：验签结论参与写回，但只要基本面仍由使用者给定，门禁上限就压在「可参考」——
+// ③ 八源验签是本步的异常分支（v1.0："数据缺失→标注低可信并人工补判"），收进折叠
+// 区块：验签结论参与写回，但只要基本面仍由使用者给定，门禁上限就压在「可参考」，
 //      验签打满分也不放开，防止「表格里都勾了 A」伪装成实测口径。
 import { computed, ref } from 'vue'
 import { ArrowRightLeft, ClipboardCheck, Save } from 'lucide-vue-next'
@@ -83,7 +83,7 @@ function presetSlots(kind: 'typical' | 'renewable' | 'tight'): SlotRow[] {
 const presetName = ref<'typical' | 'renewable' | 'tight' | 'captured' | 'db'>('typical')
 const slots = ref<SlotRow[]>(presetSlots('typical'))
 
-// ── 逐格来源跟踪（可信链）───────────────────────────────────────────────────
+// 逐格来源跟踪（可信链）
 // 六列 × 四段，每格一个来源标记。预置示例=manual（人工假设），采集拉取=capture，
 // 基本面库载入=库里存的来源。展示徽章 + 注入 AI 上下文时按来源区分"数据/假设"。
 type FieldKey = keyof Omit<SlotRow, 'label'>
@@ -118,7 +118,7 @@ function applyPreset(kind: 'typical' | 'renewable' | 'tight') {
   cellSources.value = blankSources() // 预置示例值全按人工假设计
 }
 
-// ── 基本面库（PG · 迁移 012）：保存/载入，缺什么录什么 ─────────────────────
+// 基本面库（PG · 迁移 012）：保存/载入，缺什么录什么
 const dbBusy = ref(false)
 const dbMsg = ref('')
 const dbError = ref('')
@@ -210,10 +210,10 @@ async function saveToDb() {
   }
 }
 
-// ── 从采集库自动拉取基本面（云南 yn_system_forecast 族，真实采集回放）────────
+// 从采集库自动拉取基本面（云南 yn_system_forecast 族，真实采集回放）
 // 该族按 metric 分文件：load_forecast / new_energy_forecast_d1 / inter_provincial_forecast /
 // non_market_forecast，均为 (operateDate, targetDate, timePoint) 96 点时序。拉到什么标什么：
-// 负荷/新能源/外送三项来自调度预测（B 级），可调机组与备用该族没有——保留手工值并如实提示。
+// 负荷/新能源/外送三项来自调度预测（B 级），可调机组与备用该族没有，保留手工值并如实提示。
 const pulling = ref(false)
 const pullMsg = ref('')
 const pullError = ref('')
@@ -252,7 +252,7 @@ async function pullFundamentals() {
       )
       let rows = (body.data ?? []) as Array<{ targetDate?: string; operateDate: string; timePoint: string; value: number; region?: string }>
       // ⚠️ 同一时点可能存两套口径：region='all'（南网全网五省）与省内标签（负荷/新能源
-      // 是 'yn'，外送是 '云南总送出'）。省内供需判断必须**排除 'all'**——混算会把全网量
+      // 是 'yn'，外送是 '云南总送出'）。省内供需判断必须排除 'all'，混算会把全网量
       // 平均进来，数值面目全非（实测：混算 13367 vs 省内真值 4426 MW）。
       const provincial = rows.filter((r) => r.region !== 'all')
       if (provincial.length) rows = provincial
@@ -290,9 +290,9 @@ async function pullFundamentals() {
   }
 }
 
-// ── 煤价维度（手册 S2 基本面第四项：火电边际成本的锚）─────────────────────────
+// 煤价维度（手册 S2 基本面第四项：火电边际成本的锚）
 // 煤价不进供需比公式（它是价格侧的锚，不是量的侧的量），换算成火电边际成本后与
-// 分档价格中枢对照——中枢是季度拟合的经验值，煤价逐日变，二者脱节即提示修正。
+// 分档价格中枢对照，中枢是季度拟合的经验值，煤价逐日变，二者脱节即提示修正。
 const coalPrice = ref<number | null>(null)
 const coalSource = ref<SourceKind>('manual')
 const coalAnchor = computed(() => coalPriceToThermalAnchor(coalPrice.value))
@@ -305,15 +305,15 @@ const anchorVerdict = computed(() =>
   )
 )
 
-// ── 昨日偏差 → 今日判断（手册 S2 步骤④：评估昨日偏差是否影响今日判断）──────
-// S1 的复盘结论写在同一张单据的 morningReview 段——本面板读它并要求显式表态：
+// 昨日偏差 → 今日判断（手册 S2 步骤④：评估昨日偏差是否影响今日判断）
+// S1 的复盘结论写在同一张单据的 morningReview 段，本面板读它并要求显式表态：
 // 昨日偏差是否改变今日判断。不表态（not_reviewed）写回时留 null，不默认「无影响」。
 type YesterdayImpact = 'unchanged' | 'reinforce' | 'weaken'
 const yesterdayReview = computed(() => props.declaration?.preflight?.morningReview ?? null)
 const yesterdayImpact = ref<YesterdayImpact | 'not_reviewed'>('not_reviewed')
 const yesterdayNote = ref('')
 
-// ── 24 时段聚合视图（2026-08-13 会议拍板：底层 96 点存储，24 时段仅作聚合展示）──
+// 24 时段聚合视图（2026-08-13 会议拍板：底层 96 点存储，24 时段仅作聚合展示）
 // 三列：需求电量（采集负荷预测 96 点聚到小时，无采集则人工）/ 中长期持仓（人工或
 // 合约库，未接前人工）/ 差额（需求−持仓 = 现货敞口）。聚合只做展示，不改存储。
 const HOURLY_LABELS = Array.from({ length: 24 }, (_, h) => `${String(h).padStart(2, '0')}:00`)
@@ -381,23 +381,23 @@ async function pullHourlyDemand() {
   }
 }
 
-// ── 省内 vs 省外比价（会议 §4：判断「先做省内还是省外」）─────────────────────
+// 省内 vs 省外比价（会议 §4：判断「先做省内还是省外」）
 const domesticPrice = ref<number | null>(null)
 const externalPrice = ref<number | null>(null)
 const externalPriceSource = ref<SourceKind>('manual')
 const priceCompare = computed(() => provincePriceCompare(domesticPrice.value, externalPrice.value))
 
-// ── 外送公告（会议 §4：外送有无可做交易作为基本面因素）───────────────────────
+// 外送公告（会议 §4：外送有无可做交易作为基本面因素）
 const exportNotice = ref('')
 
-// ── AI 晨间分析（L1 简报 + L2 追问，共用一个面板）───────────────────────────
+// AI 晨间分析（L1 简报 + L2 追问，共用一个面板）
 // 把当前面板的全部推演结果注入为上下文：AI 拿到的是"人已经算出来的东西"，
-// 它的职责是给出态势判断的理由、挑出规则表结论可疑的地方、提示最该防的时段——
+// 它的职责是给出态势判断的理由、挑出规则表结论可疑的地方、提示最该防的时段，
 // 产出是分析初稿与反对意见，不替人拍板；写回仍走人确认的「写回」按钮。
 const aiOpen = ref(false)
 /**
- * 注入 AI 的基本面**逐格带来源**（trusted = dispatch/capture 采集口径，
- * untrusted = company/manual 假设口径）。AI 无法验证数字真伪——可信链的做法是：
+ * 注入 AI 的基本面逐格带来源（trusted = dispatch/capture 采集口径，
+ * untrusted = company/manual 假设口径）。AI 无法验证数字真伪，可信链的做法是：
  * ① 录入侧强制来源（服务端 400 拒无来源数字）+ 录入人留痕；
  * ② 注入侧逐格标注，简报里强制 AI 把"基于数据的判断"与"基于假设的推演"分开写。
  */
@@ -469,7 +469,7 @@ function regimeClass(regime: string | null) {
   return 'r-tight'
 }
 
-// ── 八源验签（作业前清单式自查，与 AI 面板并列成 2×2 第二行）────────────────
+// 八源验签（作业前清单式自查，与 AI 面板并列成 2×2 第二行）
 type SourceRow = SourceStatus & { label: string }
 const sourceRows = ref<SourceRow[]>(
   REQUIRED_SOURCES.map((s) => ({
@@ -487,7 +487,7 @@ const integrityVerdict = computed(() => assessIntegrity(sourceRows.value))
 
 /**
  * 写回口径的封顶：基本面由使用者给定期间，门禁上限「可参考」、可信度上限 C。
- * 验签结果只能把口径**压得更低**（缺源→仅展示、含 D 级→降级），不能抬得更高——
+ * 验签结果只能把口径压得更低（缺源→仅展示、含 D 级→降级），不能抬得更高，
  * 表格里全勾 A 不等于接上了调度边界条件包。
  */
 const GATE_ORDER = ['declarable', 'reference', 'display_only'] as const
@@ -503,10 +503,10 @@ const effectiveCredibility = computed(() => {
   return CRED_ORDER[Math.max(fromIntegrity, cap)]
 })
 
-// ── 立场目标（#2005）：同一态势判断，三类身份的策略方向相反 ──────────────────
+// 立场目标（#2005）：同一态势判断，三类身份的策略方向相反
 const positionGoal = computed(() => reviewFocusOf(activeStanceType.value)?.goal ?? null)
 
-// ── 写回 ────────────────────────────────────────────────────────────────────
+// 写回
 const saving = ref(false)
 const saveMsg = ref('')
 const saveError = ref('')

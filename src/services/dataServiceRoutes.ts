@@ -1,7 +1,7 @@
 // #2169 P2-2a：数据管理路径族 → data-service（:8190）改道判定（纯函数，无 window 依赖）。
 // 与 server/data-service/index.mjs 的装配面对齐（上传中心/导入中心写链/摄取触发/
 // 治理只读三端点/grid-access/sichuan-ingest 转发/中广核数据源控制面）。
-// 刻意排除：`/v1/settlements`（台账读）——复盘中心（交易页）消费，读服务面按边界留平台；
+// 刻意排除：`/v1/settlements`（台账读），复盘中心（交易页）消费，读服务面按边界留平台；
 // retailSettlement 走 /agent-api multipart 通道，收编在 P2-2b。
 export const DATA_SVC_ROOT = '/data-svc'
 

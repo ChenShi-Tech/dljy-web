@@ -1,8 +1,8 @@
 <script setup lang="ts">
 // AgentSidekick：业务页面右侧可折叠智能体栏。
 // 页面提供上下文化预置问题 chips（文案内插当前业务参数），点击即发送。
-// 注意：chips 问题必须传业务参数（月份/总量/模式…），不可传 data_ref
-// 句柄 —— ref 按会话目录隔离，跨会话不可读（架构既定约束）。
+// chips 问题必须传业务参数（月份/总量/模式…），不可传 data_ref
+// 句柄 ， ref 按会话目录隔离，跨会话不可读（架构既定约束）。
 import { ref } from 'vue'
 import { Bot, PanelRightClose, Sparkles } from 'lucide-vue-next'
 import type { AgentScenario } from '@/services/agent/agentClient'

@@ -131,7 +131,7 @@ export function regionPriceCurve(regionId: string): PricePoint[] {
 export function regionStorageParams(regionId: string, base: StorageParams): StorageParams {
   const profile = getRegionSpotProfile(regionId)
   const tp = profile.tradingParams ?? {}
-  // B26 修复：按字段独立覆盖——仅当地区**显式校准了储能相关字段**才覆盖 base。
+  // B26 修复：按字段独立覆盖，仅当地区显式校准了储能相关字段才覆盖 base。
   // 旧实现用聚合 calibrated（任一 tradingParams 字段非空即 true）一刀切，会导致地区只校准
   // lab-only 字段（confidenceBounds/socBounds/riskThresholds）时连带把 base 的罚比/σ 强制重置为
   // 默认（跨维度串扰）。逐字段守卫后：未校准 storage 字段 → 原样保留 base，零行为变更。
@@ -144,15 +144,15 @@ export function regionStorageParams(regionId: string, base: StorageParams): Stor
   return { ...merged, contractPrice: mean }
 }
 
-// ── 交易口径地区化框架（PR-4）────────────────────────────────────────────────
+// 交易口径地区化框架（PR-4）
 // 量化算法当前内置的交易口径字面默认值，集中镜像于此，供 view 层注入时回退使用。
 // 与以下自包含算法中的字面量一一对应（quant.ts/tradingLab.ts 须运行时自包含、不能 import 地区数据，故各自保留同一字面默认）：
-//   peakValleySigma   ↔ quant.analyzePriceCurve 的 ±0.65σ 峰/谷阈值（stats 标注，经 buildOodaDecision 注入）
-//                       注意：detectPeakValleyArbitrage 直接取「先低后高」最大价差对、不用 σ，故 σ 不改变套利识别灵敏度
-//   deviationPenaltyPct ↔ quant.defaultStorageParams.deviationPenaltyPct = 12
-//   confidenceBounds  ↔ tradingLab 置信度 clamp [52, 92]
-//   socBounds         ↔ tradingLab SOC clamp [12, 92]
-//   riskThresholds    ↔ tradingLab 风险判级 收益>18&置信>74→低 / 收益>12→中 / 否则高
+// peakValleySigma   ↔ quant.analyzePriceCurve 的 ±0.65σ 峰/谷阈值（stats 标注，经 buildOodaDecision 注入）
+// detectPeakValleyArbitrage 直接取「先低后高」最大价差对、不用 σ，故 σ 不改变套利识别灵敏度
+// deviationPenaltyPct ↔ quant.defaultStorageParams.deviationPenaltyPct = 12
+// confidenceBounds  ↔ tradingLab 置信度 clamp [52, 92]
+// socBounds         ↔ tradingLab SOC clamp [12, 92]
+// riskThresholds    ↔ tradingLab 风险判级 收益>18&置信>74→低 / 收益>12→中 / 否则高
 // 改这里的默认值时，务必同步上述算法字面量，否则 verify:quant-parity 会失配。
 export const TRADING_PARAM_DEFAULTS = {
   peakValleySigma: 0.65,

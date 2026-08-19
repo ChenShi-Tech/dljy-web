@@ -11,9 +11,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { nextTick } from 'vue'
 
-// —— node 环境无 DOM：api.ts（经 regionContext）模块求值即读 window.localStorage，
+// node 环境无 DOM：api.ts（经 regionContext）模块求值即读 window.localStorage，
 // 须先 stub window 再动态 import（沿用 api.spec.ts 的模式；这里额外补齐
-// location/dispatchEvent，供 handleApiStatus 副作用断言）。——
+// location/dispatchEvent，供 handleApiStatus 副作用断言）。
 function createStorageStub() {
   const map = new Map<string, string>()
   return {
@@ -46,13 +46,13 @@ type ApiError = import('@/services/api').ApiError
 const { defaultRegionId } = await import('@/data/regions')
 const { setCurrentRegionId } = await import('@/services/region/regionContext')
 
-// —— 每用例干净的 window/localStorage；模块级单例 regionDataStatus/deniedCaptureFamilies
+// 每用例干净的 window/localStorage；模块级单例 regionDataStatus/deniedCaptureFamilies
 // 直接赋值重置（api.spec.ts 同款）。regionHeaderSeq/lastAppliedRegionSeq 为模块内 let，
-// 本文件不直接断言其取值，只经行为验证，无需重置。——
+// 本文件不直接断言其取值，只经行为验证，无需重置。
 let win: ReturnType<typeof createWindowStub>
 
 // window 与全局 localStorage 必须同源成对安装：regionContext 读 window.localStorage，
-// 而 api.ts 的 requestHeaders/clearLocalAuthState 读裸全局 localStorage——只换一边会让
+// 而 api.ts 的 requestHeaders/clearLocalAuthState 读裸全局 localStorage，只换一边会让
 // 「写入」与「清除/读取」落在两个 store 上（用例内覆盖 location 时同样要走本函数）。
 function reinstallWindow(overrides?: { pathname?: string; search?: string; hash?: string }) {
   win = createWindowStub(overrides)
@@ -612,7 +612,7 @@ describe('applyRegionHeaders 与 regionDataStatus 状态机', () => {
     })
   })
 
-  it('成功响应（带地区头）不清 accessDenied（混合面板不变量，roborev job144/145）', async () => {
+  it('成功响应（带地区头）不清 accessDenied（混合面板不变量）', async () => {
     api.markCaptureAccessDenied(403, 'company', 'famA')
     await api.unwrap(jsonResponse({ code: 200 }, { headers: { 'x-region-served': 'yunnan' } }), '/real')
     expect(api.regionDataStatus.value.served).toBe('yunnan')

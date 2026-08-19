@@ -1,14 +1,11 @@
-// ============================================================================
 // stores/analysisData.ts — 数据分析用户产物前端 store（Phase 6 PR-B）
-// ----------------------------------------------------------------------------
 // pinia store：管理 /api/v1/analysis/* 的用户产物（视图配置/快照/标注）。
-// 与 capturedData（只读回放缓存）并列——这里是「可写产物」，按公司+地区隔离，
+// 与 capturedData（只读回放缓存）并列，这里是「可写产物」，按公司+地区隔离，
 // 切区清空（用户产物地区隔离，旧地区产物不可见）。
 //
 // 定位：store 是前端状态镜像（views/snapshots/annotations 列表 + loading/error），
 // 真相在后端 analysis.sqlite。写入经 analysisClient → api.ts（统一信封+地区头+
 // idempotency-key），读列表缓存到 store 供「我的视图」抽屉等消费。
-// ============================================================================
 
 import { defineStore } from 'pinia'
 import { ref, watch } from 'vue'
@@ -100,7 +97,7 @@ export const useAnalysisStore = defineStore('analysisData', () => {
     annotations.value = annotations.value.filter((x) => x.annotationId !== annotationId)
   }
 
-  // 切换地区时清空——用户产物按 (company_id, region) 隔离，旧地区产物不可见。
+  // 切换地区时清空，用户产物按 (company_id, region) 隔离，旧地区产物不可见。
   // watch 注册在 store setup 内，store 首次实例化即生效（与 capturedData 同模式）。
   watch(
     () => currentRegion.value.id,

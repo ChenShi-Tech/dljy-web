@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // 一问多维仪表盘 artifact（dljy-meta#18 / P2 #60）：渲染 dashboard_composer（#38）产出的
-// AnalysisDashboard —— 整屏网格布局，每个图表复用 AnalysisChartArtifact；如实标注失败/未成功维度。
+// AnalysisDashboard ， 整屏网格布局，每个图表复用 AnalysisChartArtifact；如实标注失败/未成功维度。
 import { computed, inject, ref } from 'vue'
 import { LayoutDashboard, Save } from 'lucide-vue-next'
 import ArtifactFrame from './ArtifactFrame.vue'
@@ -15,7 +15,7 @@ const dash = computed(() => props.block.dashboard)
 const ctx = inject(ARTIFACT_CONTEXT, undefined)
 
 /**
- * 保存前物化各子图数据（codex P1 3635805739）：dataRef 是会话内句柄，跨会话/重登后按新
+ * 保存前物化各子图数据：dataRef 是会话内句柄，跨会话/重登后按新
  * sessionId 拉旧句柄必 404。趁保存时原会话仍在，把每个 dataRef 解成内联数据快照再持久化；
  * 单图拉取失败则保留原 spec（预览行仍可渲染），不阻断整体保存。
  */

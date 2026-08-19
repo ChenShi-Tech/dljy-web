@@ -48,7 +48,7 @@ const question = computed(
 )
 const regionPayload = computed(() => packageRegionSummary() as unknown as Record<string, unknown>)
 
-// ── 历史侧栏协调（照 AgentWorkbenchView 范式）──
+// 历史侧栏协调（照 AgentWorkbenchView 范式）
 type PanelExpose = {
   ask: (q: string) => void
   newConversation: () => void

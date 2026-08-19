@@ -11,7 +11,7 @@ function round(value: number, digits = 2): number {
   return Math.round(value * f) / f
 }
 
-// ── 储能套利盈亏平衡 ──────────────────────────────────────────────────────────
+// 储能套利盈亏平衡
 
 export type StorageCostParams = {
   /** 充电效率 %（如 95） */
@@ -35,7 +35,7 @@ export type StorageBreakeven = {
 /**
  * 储能套利盈亏平衡价差（纯函数）。
  * 为放出 1MWh 需充入 1/η_rt MWh，往返损耗 (1/η_rt − 1) MWh，以参考价计为效率损耗成本；
- * 叠加度电循环成本即盈亏平衡价差——低于它的"价差套利"实际亏损。
+ * 叠加度电循环成本即盈亏平衡价差，低于它的"价差套利"实际亏损。
  */
 export function storageBreakeven(params: StorageCostParams, referencePriceYuanPerMwh: number): StorageBreakeven {
   const rte = Math.max((params.chargeEfficiencyPct / 100) * (params.dischargeEfficiencyPct / 100), 0.01)
@@ -50,7 +50,7 @@ export function storageBreakeven(params: StorageCostParams, referencePriceYuanPe
   }
 }
 
-// ── 火电边际成本与报价偏离 ────────────────────────────────────────────────────
+// 火电边际成本与报价偏离
 
 export type ThermalCostParams = {
   /** 标煤到厂价 元/吨 */

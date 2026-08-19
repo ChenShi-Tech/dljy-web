@@ -53,7 +53,7 @@ const form = reactive({
   marketFamily: '', reason: '', note: '',
 })
 
-// 节点名结构化解析建议（#1439 第①项）：只**建议**不自动写入——补录的每个字段都进版本
+// 节点名结构化解析建议（#1439 第①项）：只建议不自动写入，补录的每个字段都进版本
 // 历史与审计链，静默改写用户输入会让「谁填的这个值」不可追溯。用户点「用解析值」才应用。
 const parsedName = computed(() => parseGridNodeName(form.nodeName))
 const nameHint = computed(() => {

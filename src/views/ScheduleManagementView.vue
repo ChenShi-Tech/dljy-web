@@ -198,7 +198,7 @@ async function toggleEnabled(t: ScheduledTask, val: boolean) {
   }
 }
 
-// ── 执行历史 ──────────────────────────────────────────────────────────────
+// 执行历史
 const executions = ref<TaskExecution[]>([])
 let pollTimer: number | undefined
 
@@ -240,7 +240,7 @@ function stopPolling() {
   }
 }
 
-// ── 结果中心 ──────────────────────────────────────────────────────────────
+// 结果中心
 const reportType = ref('market_brief')
 const reportTypeOptions = [
   { value: 'market_brief', label: '交易晨报' },
@@ -291,7 +291,7 @@ onMounted(() => {
 })
 // KeepAlive 缓存下切走触发 onDeactivated（非 onBeforeUnmount）：runNow 启动的 4s 轮询须暂停，
 // 否则离开 /system/schedules 后服务端任务 running 期间仍持续打 getExecutions+refreshTasks（#1737）。
-// 不随 onActivated 自动恢复——轮询由 runNow 显式触发，切回可重新触发或刷新执行历史。
+// 不随 onActivated 自动恢复，轮询由 runNow 显式触发，切回可重新触发或刷新执行历史。
 onDeactivated(stopPolling)
 onBeforeUnmount(stopPolling)
 </script>

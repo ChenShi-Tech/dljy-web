@@ -15,7 +15,7 @@
 //
 // 诚实红线：状态标签如实透传（freshness/台账/接入态），取数失败显示「未知」不猜；
 // 未生效数据绝不显示「已可见」；生效按钮结果如实回显（成功/失败 + stdout 摘要）。
-// 向导本身不产数据——它只消费 governance catalog / import-templates records /
+// 向导本身不产数据，它只消费 governance catalog / import-templates records /
 // 只读信号汇总，并复用既有 ingest 端点触发 ETL。
 import { onMounted, reactive, ref } from 'vue'
 import type { Component } from 'vue'
@@ -31,7 +31,7 @@ import { triggerIngest, type IngestKind, type IngestResult } from '@/services/da
 import type { DataSourceBasis } from '@/services/data/types'
 import { deriveJourneySteps, type JourneySteps } from './data-onboarding/onboardingJourney'
 
-// ─── 数据源信封类型（与后端 governance/import-hub 接口对齐）───────────────────
+// 数据源信封类型（与后端 governance/import-hub 接口对齐）
 type CatalogItem = {
   family: string
   dataTime: string | null
@@ -44,7 +44,7 @@ type TemplateRecord = {
 }
 type RecordsPayload = { rows: TemplateRecord[]; total: number } & Record<string, unknown>
 
-// ─── 卡片配置 ────────────────────────────────────────────────────────────────
+// 卡片配置
 type JourneyKind = 'template' | 'command' | 'auto' | 'ledger'
 type EffectAction = { kind: IngestKind; label: string }
 // external=true 指向主前端页面：本台 hash 路由仅注册 /ops/*，主前端 path 模式用同源 <a>（#2215）。
@@ -70,7 +70,7 @@ interface OnboardingCard {
 // 深链 path 全部核对真实路由（router/index.ts + features/*/routes.ts）。
 const CARDS: OnboardingCard[] = [
   {
-    // #2215：云南现货数据的主力通道（#2185/#2203 起每日自动）。向导此前只讲手录——
+    // #2215：云南现货数据的主力通道（#2185/#2203 起每日自动）。向导此前只讲手录
     // 那是无 API 通道时代的叙事，必须让自动通道排第一。私有库不在治理 catalog
     // （governance 只覆盖 capture 族），状态线不接 family 新鲜度，如实显示引导。
     key: 'cgn-auto',
@@ -183,7 +183,7 @@ const CARDS: OnboardingCard[] = [
   }
 ]
 
-// ─── 状态：三路只读信号 ──────────────────────────────────────────────────────
+// 状态：三路只读信号
 const catalog = ref<CatalogPayload | null>(null)
 const recordsByTemplate = reactive<Record<string, TemplateRecord[]>>({})
 const loadErr = ref('')
@@ -219,7 +219,7 @@ async function loadAll() {
   }
 }
 
-// ─── 状态推导（纯函数消费）────────────────────────────────────────────────────
+// 状态推导（纯函数消费）
 // family → 最新新鲜度：从 catalog.items 取该 family 最晚 dataTime，按节律折算。
 function familyFreshness(families: string[], cadence: 'daily' | 'monthly'): Freshness {
   const items = catalog.value?.items
@@ -259,7 +259,7 @@ const STEP_LABELS = ['输入', '校验', '落位', '生效', '见数'] as const
 const STEP_KEYS: (keyof JourneySteps)[] = ['input', 'validate', 'deliver', 'effect', 'consume']
 
 
-// ─── 生效按钮：复用既有 ingest 端点（spot-ingest/forecast-etl/weather-export）──
+// 生效按钮：复用既有 ingest 端点（spot-ingest/forecast-etl/weather-export）
 async function runEffect(card: OnboardingCard) {
   if (!card.effect) return
   busy[card.key] = true

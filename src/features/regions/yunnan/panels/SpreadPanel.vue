@@ -81,7 +81,7 @@ const kpis = computed(() => {
 
 const signHitGood = computed(() => (kpis.value?.signHit ?? 0) > 0.55)
 
-// ── 图① 预测 vs 实际价差（96 点）──
+// 图① 预测 vs 实际价差（96 点）
 function buildSpreadOption() {
   const cc = chartChrome()
   const r = result.value
@@ -139,7 +139,7 @@ function buildSpreadOption() {
   }
 }
 
-// ── 图② 逐时段套利方向（预测符号决定买DA卖RT / 卖DA买RT；|预测|>阈值才动）──
+// 图② 逐时段套利方向（预测符号决定买DA卖RT / 卖DA买RT；|预测|>阈值才动）
 function buildActionOption() {
   const cc = chartChrome()
   const r = result.value

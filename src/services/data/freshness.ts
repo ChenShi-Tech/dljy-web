@@ -1,4 +1,3 @@
-// ============================================================================
 // data/freshness.ts — 数据新鲜度分级（新鲜度透出链前端末端）
 // ----------------------------------------------------------------------------
 // 后端 /api/real 信封的 provenance 现携带真实数据时间（capturedAt 优先 / ingestedAt 兜底，
@@ -6,15 +5,14 @@
 // 四档新鲜度，供 ChartCard 等 UI 显示陈旧指示（黄/红点 + tooltip）。
 //
 // 口径（cadence 决定阈值）：
-//   daily（默认，日更数据如现货结算/节点电价）：fresh <26h · aging 26h–3d · stale >3d
-//   monthly（月度导出如损益/结算月报）：       fresh <32d · aging 32–40d · stale >40d
-//   manual（手录/无固定节律）：                fresh <26h · 否则 aging，**永不 stale**
-//     —— 手录数据没有自然更新节律，把它标红「过期」是误导；给一个温和的 aging 提示、
-//        是否要更新交读者判断（见下方 JSDoc）。
+// daily（默认，日更数据如现货结算/节点电价）：fresh <26h · aging 26h–3d · stale >3d
+// monthly（月度导出如损益/结算月报）：       fresh <32d · aging 32–40d · stale >40d
+// manual（手录/无固定节律）：                fresh <26h · 否则 aging，永不 stale
+// 手录数据没有自然更新节律，把它标红「过期」是误导；给一个温和的 aging 提示、
+// 是否要更新交读者判断（见下方 JSDoc）。
 //
 // 纯函数、无副作用、单测友好。时间来源缺失（null/非法/无 provenance）→ 'unknown'。
 // 与真伪标注（basis.ts）正交：basis 回答「真不真」，freshness 回答「新不新」。
-// ============================================================================
 
 export type Freshness = 'fresh' | 'aging' | 'stale' | 'unknown'
 export type FreshnessCadence = 'daily' | 'monthly' | 'manual'
@@ -41,7 +39,7 @@ const CADENCE_THRESHOLDS: Record<FreshnessCadence, Thresholds> = {
  * @param opts.cadence 业务更新节律，默认 'daily'。
  *   - 'daily'：fresh <26h / aging 26h–3d / stale >3d
  *   - 'monthly'：fresh <32d / aging 32–40d / stale >40d
- *   - 'manual'：fresh <26h / 否则 aging；**永不返回 'stale'**（手录数据无固定节律，
+ *   - 'manual'：fresh <26h / 否则 aging；永不返回 'stale'（手录数据无固定节律，
  *     标「过期」会误导，仅给温和 aging 提示由读者判断是否更新）
  * @returns 四档之一；未来时间（时钟偏移）按 'fresh' 处理。
  */

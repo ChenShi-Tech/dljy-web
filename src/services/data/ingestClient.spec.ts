@@ -1,11 +1,11 @@
 // ingestClient 契约单测（#1406 / #1408）。
 //
 // 守两条曾经出过事的不变量：
-//   ① POST /api/v1/ingest/:kind 必须携带 idempotency-key——网关对全部 /api/v1 写请求强制该头，
-//      缺失直接 428，导致「一键生效」与手动触发 100% 失败。
-//   ② 幂等键必须由 (kind, params) **确定性**派生，不能是随机 UUID——服务端
-//      buildDedupKey(actor, kind, idempotencyKey || contentHash) 在客户端键存在时优先用客户端键，
-//      随机键会让原本基于 contentHash 的双击去重全部失效。
+// ① POST /api/v1/ingest/:kind 必须携带 idempotency-key，网关对全部 /api/v1 写请求强制该头，
+// 缺失直接 428，导致「一键生效」与手动触发 100% 失败。
+// ② 幂等键必须由 (kind, params) 确定性派生，不能是随机 UUID，服务端
+// buildDedupKey(actor, kind, idempotencyKey || contentHash) 在客户端键存在时优先用客户端键，
+// 随机键会让原本基于 contentHash 的双击去重全部失效。
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { ingestIdempotencyKey, triggerIngest } from './ingestClient'

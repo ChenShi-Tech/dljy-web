@@ -109,7 +109,7 @@ async function signOut() {
   router.push('/login')
 }
 
-// 会话管理并入 ADMIN-only 的「用户与会话」后，本入口对非管理员只会被守卫弹回首页——
+// 会话管理并入 ADMIN-only 的「用户与会话」后，本入口对非管理员只会被守卫弹回首页
 // 故按同一套 canAccessPath 判定显隐，不再留一个点了没反应的菜单项（不硬编码角色）。
 const canOpenSecurityCenter = computed(() => canAccessPath('/system/accounts', currentUser.value))
 

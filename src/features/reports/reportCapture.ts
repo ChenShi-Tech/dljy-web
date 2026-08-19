@@ -18,9 +18,9 @@ export function extractDayAheadCurveFromListrsFull(
     if (!raw || typeof raw !== 'object') continue
     const row = raw as ListrsFullRow
     // 权威语义（yunnan-parquet-to-family.mjs 派生源 + 数据对拍确证）：listrs 行的 date=真实标的日
-    // （Parquet operate_date），drrq=date+1 是仿山西平台形状的伴随字段，不得用作日期匹配——
+    // （Parquet operate_date），drrq=date+1 是仿山西平台形状的伴随字段，不得用作日期匹配
     // 按 drrq 匹配会取到偏移一天的曲线。与 PriceAnalysisView 的 rmx/dmx 消费口径（按 date）一致。
-    // 注意：逐日 curve 文件（sdpt__zcqxhdl__curve__<D>.json）的 inner.drrq==D 与此不同源，勿类比。
+    // 逐日 curve 文件（sdpt__zcqxhdl__curve__<D>.json）的 inner.drrq==D 与此不同源，勿类比。
     if (!isDayAheadType(row.type) || row.date !== tradeDate) continue
 
     const points: number[] = []

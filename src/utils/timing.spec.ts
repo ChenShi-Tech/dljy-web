@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 // ↑ 勿删：timing.ts 全部走 window.setTimeout/requestAnimationFrame，node project 无 window。
-//   不用 vi.useFakeTimers，而是手写受控 timer/rAF 队列挂到 window——时间推进完全同步可控，
+//   不用 vi.useFakeTimers，而是手写受控 timer/rAF 队列挂到 window，时间推进完全同步可控，
 //   也不依赖 fake timers 对 happy-dom window 属性的替换细节。
 //
 // 守的不变量：搜索输入防抖重置计时、resize 帧节流一帧只跑最后一次。
@@ -8,7 +8,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { debounce, rafThrottle } from './timing'
 
-// ── 受控 setTimeout：advance(ms) 手动推进虚拟时钟 ──
+// 受控 setTimeout：advance(ms) 手动推进虚拟时钟
 type Timer = { cb: () => void; at: number }
 let clock = 0
 let seq = 0
@@ -26,7 +26,7 @@ function advance(ms: number) {
   }
 }
 
-// ── 受控 requestAnimationFrame：flushFrame() 执行当前挂起的一帧 ──
+// 受控 requestAnimationFrame：flushFrame() 执行当前挂起的一帧
 let rafQueue: Array<() => void>
 let realRaf: typeof window.requestAnimationFrame
 let realCancelRaf: typeof window.cancelAnimationFrame

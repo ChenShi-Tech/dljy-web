@@ -1,7 +1,7 @@
 // 完整 Markdown 渲染：markdown-it（GFM 表格/任务列表/换行）+ highlight.js 代码高亮
 // + DOMPurify 防 XSS。供智能体策略/报告流式渲染使用，替代零依赖 miniMarkdown 的能力上限。
 //
-// 注意：流式渲染场景下每次 token 追加都会整体重渲染，markdown-it 足够快；
+// 流式渲染场景下每次 token 追加都会整体重渲染，markdown-it 足够快；
 // DOMPurify 兜底防注入（外部内容/模型输出都视为不可信）。
 
 import MarkdownIt from 'markdown-it'

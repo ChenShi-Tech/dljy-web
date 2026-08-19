@@ -1,11 +1,11 @@
 // 云南真实数据重组回归（父 Issue #477：市场洞察页云南一年真实数据）。
 // 守住的不变量：
-//   1. 96→24 聚合——每小时 x 值 = 该小时 4 个 15min 的均值（手算对拍）；不满 4 点按
-//      现有点均值（缺测不外推、不补 0）。
-//   2. 诚实 null——某小时 x 或 price 任一缺失 → p{h} = null（绝不造 [x,0] 或半对）。
-//   3. 地区偏好——优先 region='yn' 行；仅当**一条 yn 行都没有**才回落全量（不臆造）。
-//   4. 日期窗口——xd 恰为 [runDate-days+1, runDate] 本地日期升序；dateFrom/dateTo
-//      闭区间传给 fetchCaptured（整年长表载荷级过滤，防 30MB 全量下载回潮）。
+// 1. 96→24 聚合，每小时 x 值 = 该小时 4 个 15min 的均值（手算对拍）；不满 4 点按
+// 现有点均值（缺测不外推、不补 0）。
+// 2. 诚实 null，某小时 x 或 price 任一缺失 → p{h} = null（绝不造 [x,0] 或半对）。
+// 3. 地区偏好，优先 region='yn' 行；仅当一条 yn 行都没有才回落全量（不臆造）。
+// 4. 日期窗口，xd 恰为 [runDate-days+1, runDate] 本地日期升序；dateFrom/dateTo
+// 闭区间传给 fetchCaptured（整年长表载荷级过滤，防 30MB 全量下载回潮）。
 // 坏掉的症状：散点 x 轴数值系统性偏移（聚合错）、图中出现 (x,0) 假点（诚实 null 丢失）、
 // 切别的省数据串进云南页（地区回落丢）、切页卡死数十秒（窗口过滤丢、整年下载）。
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -136,7 +136,7 @@ describe('buildRealtimeScatter · 窗口与地区', () => {
   })
 
   it('地区偏好：有 yn 行只取 yn（他省数据不串页）；一条 yn 都没有才回落全量', async () => {
-    // 桶 1：混着 gd 与 yn——只应取 yn 的均值（gd 的 9000 不得污染）
+    // 桶 1：混着 gd 与 yn，只应取 yn 的均值（gd 的 9000 不得污染）
     fetchCaptured.mockImplementation(async (_f: string, key: string) => ({
       data: key === 'new_energy_actual'
         ? [...quarterRows('2026-05-15', 0, [8, 8, 8, 8]), ...quarterRows('2026-05-15', 0, [9000], 'gd')]
@@ -146,7 +146,7 @@ describe('buildRealtimeScatter · 窗口与地区', () => {
     const a = await buildRealtimeScatter({ runDate: '2026-05-15', days: 1, xMetric: 'new_energy_actual', priceMode: 'rq' })
     expect(a.xd[0].p1).toEqual([8, 0.4]) // gd 行被过滤
 
-    // 桶 2：只有 gd 行——回落全量（不臆造、不静默全空）
+    // 桶 2：只有 gd 行，回落全量（不臆造、不静默全空）
     fetchCaptured.mockImplementation(async (_f: string, key: string) => ({
       data: key === 'new_energy_actual'
         ? quarterRows('2026-05-15', 0, [1, 2, 3, 4], 'gd')

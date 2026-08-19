@@ -126,7 +126,7 @@ function exportTradesCsv() {
   exportCsv(`历史交易_${new Date().toISOString().slice(0, 10)}`, headers, body)
 }
 
-/* ───────────────────────── 图表与表格增强 ───────────────────────── */
+/* 图表与表格增强*/
 
 // 交易类型列表（图表系列颜色取值用，价格类统一橙系语义色）。
 const TYPE_COLORS: Record<string, string> = {

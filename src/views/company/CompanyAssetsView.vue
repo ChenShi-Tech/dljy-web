@@ -63,7 +63,7 @@ async function reload() {
 onMounted(reload)
 watch(selectedCompanyId, reload)
 
-/* ───────────────────────── 图表与表格增强 ───────────────────────── */
+/* 图表与表格增强*/
 
 // SparkBar 标尺上限：场站容量 / 机组额定容量各取列最大值(空表回退 1，避免除零)。
 const capMax = computed(() => maxBy(stations.value, 'capacity') || 1)

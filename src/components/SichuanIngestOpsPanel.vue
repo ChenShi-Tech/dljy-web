@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // 四川披露采集服务运维面板（Issue #1621 / Epic #1618；#1896 从独立页抽为本面板）。
 //
-// 让 Java 采集服务（127.0.0.1:8090）的状态「可见可控」——不看日志也能判断采集是否正常。
+// 让 Java 采集服务（127.0.0.1:8090）的状态「可见可控」，不看日志也能判断采集是否正常。
 // 数据全部来自真实服务（经 Node 转发层 /api/v1/sichuan-ingest），无 Mock 兜底：
 // - 服务不可达（502）→ 显式红色「服务不可达」态
 // - 库不可达（503）→ 红色「服务在运行但数据库不可达」
@@ -9,8 +9,8 @@
 // - 无数据 → 诚实空态
 //
 // #1896 起本面板是「数据源接入 → 电网官方平台」tab 里四川接入点的一部分（凭据录入在其上方的
-// SichuanCredentialCard）。故本面板只管「服务运维」：存活/数据集/运行/触发；**不再重复展示凭据掩码**
-// （凭据的录入、生效集、掩码归 SichuanCredentialCard，#1925 起还含按账号隔离语义）——
+// SichuanCredentialCard）。故本面板只管「服务运维」：存活/数据集/运行/触发；不再重复展示凭据掩码
+// （凭据的录入、生效集、掩码归 SichuanCredentialCard，#1925 起还含按账号隔离语义），
 // 这里只保留 overview 里一个「凭据是否齐全」的布尔标签，作为「采集能否跑起来」的快判。
 //
 // 当前是四川专用（直连 /api/v1/sichuan-ingest）；#1895 采集服务省份化后按接入点泛化。
@@ -79,7 +79,7 @@ const recentRuns = computed(() => status.value?.recentRuns ?? [])
 const alerts = computed(() => status.value?.alerts ?? [])
 
 // 服务端没给 alerts 键 = 采集服务还是引入告警之前的版本。
-// **不能当成「没有告警」渲染**——那会把「不知道有没有断」显示成「一切正常」，
+// 不能当成「没有告警」渲染，那会把「不知道有没有断」显示成「一切正常」，
 // 正是这个面板最该避免的假绿。
 const alertsUnsupported = computed(() => !!status.value && status.value.alerts === undefined)
 
@@ -163,7 +163,7 @@ function reportTriggerItem(item: SichuanTriggerItem, _scopeLabel: string) {
   ElMessage.error(`「${itemLabel}」采集失败${kindText}：${item.message ?? item.failureKind ?? '未知原因'}`)
 }
 
-// —— KeepAlive 安全轮询（守 #1736：onActivated/onDeactivated 对称启停）——
+// ， KeepAlive 安全轮询（守 #1736：onActivated/onDeactivated 对称启停），
 // 本面板经 tab KeepAlive 缓存：切到别的 tab 触发 onDeactivated（停轮询），切回触发 onActivated（恢复）。
 let pollTimer: number | undefined
 function startPoll() {
@@ -237,7 +237,7 @@ function formatTime(value: string | null | undefined): string {
     />
 
     <template v-else>
-      <!-- 连续失败告警（Issue #1622）：放在最上方，且不可关闭——
+      <!-- 连续失败告警（Issue #1622）：放在最上方，且不可关闭，
            它回答的是「这个数据集现在是不是断了」，比任何统计都该先被看到。 -->
       <el-alert
         v-for="alert in alerts"

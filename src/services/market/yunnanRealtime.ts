@@ -3,10 +3,10 @@
 // 父 Issue #477：切云南时市场洞察页显示一年真实数据（替代 sdpt_zcqxhdl mock 回放）。
 //
 // 数据源：yn_system_forecast/<datasetKey>（import:southern-export 从 spot_raw 一年落盘）
-//   - new_energy_actual / load_actual：96 点/天（15min），region ∈ {all, yn, ...}，云南页取 yn
-//   - da_user_price / rt_user_price：24 点/天（小时），用户侧统一电价
+// - new_energy_actual / load_actual：96 点/天（15min），region ∈ {all, yn, ...}，云南页取 yn
+// - da_user_price / rt_user_price：24 点/天（小时），用户侧统一电价
 //
-// 重组：每天每小时一个散点 [xVal, price]——xVal 为该小时 4 个 15min 的均值（96→24 聚合）。
+// 重组：每天每小时一个散点 [xVal, price]，xVal 为该小时 4 个 15min 的均值（96→24 聚合）。
 // 竖线（xnyzd/xnyg/xnygd）云南无对应维度，留空（视图不渲染竖线）。
 import { fetchCaptured } from '@/services/captured'
 
@@ -70,7 +70,7 @@ function hourlyAvgByDate(rows: ForecastRow[], dates: string[]): Map<string, Map<
 
 export type RealtimeScatterDataset = {
   xd: Array<{ date: string; [p: string]: string | number[] | null }>
-  // 竖线维度（xnyzd/xnyg/xnygd）云南无对应数据，留空数组——视图 renderHour 已对空竖线容错。
+  // 竖线维度（xnyzd/xnyg/xnygd）云南无对应数据，留空数组，视图 renderHour 已对空竖线容错。
   xnyzd: unknown[]
   xnyg: unknown[]
   xnygd: unknown[]

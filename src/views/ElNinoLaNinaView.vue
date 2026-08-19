@@ -44,7 +44,7 @@ function cellStyle(v: unknown) {
   return {}
 }
 
-/* ───────────────────────── 图表 ───────────────────────── */
+/* 图表 */
 
 // 取某行某季的 ONI 数值；空值/非数返回 null(留空白,不参与算术)
 function oniValue(row: any, season: string): number | null {

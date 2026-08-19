@@ -1,7 +1,7 @@
 // 24 时段展示聚合（Epic #2033 · M1 · #2038，2026-08-13 拍板：底层 96 点、24 时段仅展示聚合）
 // ---------------------------------------------------------------------------
 // E1–E3/N1 类 slots24 模板的渲染支撑：96 点底座 → 24 小时聚合；峰谷标识读
-// SettlementRuleSpec，未参数化省份显式提示（不借用他省参数——settlement.ts 纪律）。
+// SettlementRuleSpec，未参数化省份显式提示（不借用他省参数，settlement.ts 纪律）。
 import type { SettlementRuleSpec } from '@/rules/types'
 
 /** 96 点 → 24 时段：每 4 点求和；任一原始点缺失则该时段为 null（缺点不出半真值）。 */
@@ -35,7 +35,7 @@ export const SEGMENT_UNPARAMETERIZED_NOTE =
 
 /**
  * 24 小时峰谷标识：按 spec.timeSegmentFactors 的 hours[] 归属；未命中小时标
- * '平'（segmentFactorOf 同款兜底语义——系数缺省 1，标识缺省平段）。
+ * '平'（segmentFactorOf 同款兜底语义，系数缺省 1，标识缺省平段）。
  * spec 为 null（未参数化省份）→ parameterized:false + 提示文案，由页面显式呈现。
  */
 export function segmentLabelsOf(spec: SettlementRuleSpec | null): SegmentLabels {

@@ -422,7 +422,7 @@ function anomalyMarkArea() {
   }
 }
 
-// 主图 anomalyMarkArea 最多高亮 48 段（见上），去重异常时点超此数即截断——供表头提示避免误读（#473）
+// 主图 anomalyMarkArea 最多高亮 48 段（见上），去重异常时点超此数即截断，供表头提示避免误读（#473）
 const anomalyMarkAreaTruncated = computed(() => {
   const seen = new Set<string>()
   for (const row of anomalies.value) seen.add(row.timePoint)

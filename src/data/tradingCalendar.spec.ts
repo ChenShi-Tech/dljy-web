@@ -10,7 +10,7 @@ import {
 
 describe('未登记地区诚实返回 null（不回落他省口径）', () => {
   it('云南（UI 默认地区）未登记 D+N 口径', () => {
-    // 口径与时刻同理：编一个「今天做 D+几」比不给更危险——交易员照它建单。
+    // 口径与时刻同理：编一个「今天做 D+几」比不给更危险，交易员照它建单。
     expect(getTradingCalendar('yunnan')).toBeNull()
     expect(defaultTargetDate('yunnan', '2026-08-15')).toBeNull()
   })

@@ -3,7 +3,7 @@
 // ---------------------------------------------------------------------------
 // 四行结构：价格走势/供需形势 A 档自动预填（市场经营分析真取数，basis 随行标注）；
 // 政策变化人工 + AI 建议占位（不做自动因果声明）；异常价格事件月粒度规则识别
-// （与风险事件库双向引用——事件库端点未上线为登记草稿）；「下月关注点」转行动项
+// （与风险事件库双向引用，事件库端点未上线为登记草稿）；「下月关注点」转行动项
 // （improvement_actions 端点未上线，本地清单诚实占位）。
 import { computed, onMounted, ref, watch } from 'vue'
 import { loadMarketAnalysis, type MarketAnalysisResult } from '@/services/market/marketAnalysis'

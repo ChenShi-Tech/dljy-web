@@ -1,5 +1,5 @@
 // 关系分析纯计算层：把 relation_scatter 契约的逐日逐时散点（RelationScatterDataset.xd）
-// 归约成三种可视化所需的派生量——小时回归 / 热力矩阵 / 敏感度条 / KPI 摘要。
+// 归约成三种可视化所需的派生量，小时回归 / 热力矩阵 / 敏感度条 / KPI 摘要。
 // 全部纯函数、无副作用、不依赖 DOM 或 ECharts，故可 vitest 单测（src/services/analysis/relationInsight.spec.ts）。
 // zrxgx（价格×新能源）与 zrxgx2（价格×统调负荷）共用；驱动量语义（新能源出力 / 统调负荷）由调用方标注。
 import type {
@@ -128,7 +128,7 @@ export interface HeatmapOptions {
   binCount?: number
   /** 驱动量上界（固定量传入，如新能源 14000）；不传则用样本最大值自适应。 */
   binMax?: number
-  /** 驱动量下界；不传时——固定上界场景锚 0，全自适应（未传 binMax）场景用样本最小值。 */
+  /** 驱动量下界；不传时，固定上界场景锚 0，全自适应（未传 binMax）场景用样本最小值。 */
   binMin?: number
 }
 
@@ -150,7 +150,7 @@ export function heatmapMatrix(
   })
   const drivers = all.map((p) => p.driver)
   // 固定上界（新能源 binMax=14000）时下界锚 0；全自适应（负荷未传 binMax）时
-  // 下界也用样本最小值，避免负荷 15k~45k 却从 0 起分箱、下半区色阶全空（codex P2）。
+  // 下界也用样本最小值，避免负荷 15k~45k 却从 0 起分箱、下半区色阶全空。
   const autoScale = opts.binMax == null
   const lo = opts.binMin ?? (autoScale && drivers.length ? Math.min(...drivers) : 0)
   const hi = opts.binMax ?? (drivers.length ? Math.max(...drivers) : 1)

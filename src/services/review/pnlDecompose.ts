@@ -136,7 +136,7 @@ export type TopTradeRow = {
 }
 
 /**
- * 单笔 Top5 盈亏榜（M2 以日为笔：逐笔成交归集待 #1966；口径与拆解同源——同一次
+ * 单笔 Top5 盈亏榜（M2 以日为笔：逐笔成交归集待 #1966；口径与拆解同源，同一次
  * /review 聚合产出，满足「同源同口径」验收）。按 |盈亏| 降序取前 n。
  */
 export function monthlyPnlTop(daily: ReadonlyArray<{ date: string; pnlYuan: number }>, n = 5): TopTradeRow[] {

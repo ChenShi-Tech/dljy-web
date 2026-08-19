@@ -1,14 +1,14 @@
 <script setup lang="ts">
-// S7 日报收尾（16:30–17:30）—— 一日闭环的收口
+// S7 日报收尾（16:30–17:30）， 一日闭环的收口
 //
 // 两件事，缺一不可：
 //   ① 决策日志（T7，append-only + 哈希链）：当日每个决策点都必须留痕，填写率是一票否决 KPI。
-//      理由不在管理考核而在监管质询时它是唯一能自证报价形成过程的材料——所以记下去就改不了。
+// 理由不在管理考核而在监管质询时它是唯一能自证报价形成过程的材料，所以记下去就改不了。
 //   ② 当日日报：从各阶段写回产出自动汇总（市场判断 / 方向 / 中标 / 补仓），交易员补一句
-//      总体小结后写回 preflight.dailyClose——它把今日单据的七段产出盖一个收口戳。
+// 总体小结后写回 preflight.dailyClose，它把今日单据的七段产出盖一个收口戳。
 //
 // ⚠️ 决策日志为原型态：链存浏览器本地、哈希前端计算，能检出误改但不防蓄意篡改，
-// 也不具备 ≥5 年留存——这条限制常驻显示。生产化方向是服务端存储 + 服务端哈希。
+// 也不具备 ≥5 年留存，这条限制常驻显示。生产化方向是服务端存储 + 服务端哈希。
 import { computed, onMounted, reactive, ref } from 'vue'
 import { CalendarClock, ClipboardCopy, Download, NotebookPen, ShieldAlert, Link2, RefreshCw, Save, FileText } from 'lucide-vue-next'
 import { coverageOf, hitRate, validateDraft, verifyChain, type DecisionLogEntry } from 'shared/trading-rules/decision-log.mjs'
@@ -38,7 +38,7 @@ const emit = defineEmits<{ updated: [d: DeclarationOrder]; go: [stage: StageId] 
 const decl = computed(() => props.declaration)
 const pf = computed(() => decl.value?.preflight ?? {})
 
-// ── ① 决策日志 ──────────────────────────────────────────────────────────────
+// ① 决策日志
 const log = ref<DecisionLogEntry[]>([])
 const errorMsg = ref('')
 const expectedPoints = ref(3)
@@ -57,7 +57,7 @@ const form = reactive({
 
 /**
  * 日志归属标的日（手册异常分支：当日未写 → 次日晨会强制补写）。默认当前标的日；
- * 改成昨日即进入「补写模式」——写入的条目归属补写日，填写率按归属日统计。
+ * 改成昨日即进入「补写模式」，写入的条目归属补写日，填写率按归属日统计。
  */
 const logTargetDate = ref(props.targetDate)
 
@@ -124,7 +124,7 @@ function doBackfill() {
 
 function reset() { log.value = clearLog() }
 
-// ── AI 辅助填报：决策日志的判断/理由/概率分位全是**人工经验判断**──────────────
+// AI 辅助填报：决策日志的判断/理由/概率分位全是人工经验判断
 // 这是全链最典型的辅助场景：P10/P50/P90 是交易员对价格分布的主观估计（没有数据库
 // 可查），判断结论与理由要把当日各步产出串成一句话。AI 拿到当日全部已算好的产出
 // （S1–S6 写回 + 决策点名称），给出结构化建议；采纳后仍可手改，写入哈希链的是人确认的值。
@@ -153,7 +153,7 @@ const assistContext = computed(() => ({
   },
   constraint: 'P10 < P50 < P90 必须成立；分位是对该决策点标的价格分布的估计'
 }))
-/** 采纳的 AI 建议留痕 id——写入链后与日志条目关联，回填实际值时同步命中判断 */
+/** 采纳的 AI 建议留痕 id，写入链后与日志条目关联，回填实际值时同步命中判断 */
 let adoptedTraceId = ''
 function applyAssist(s: Record<string, unknown>, traceId?: string) {
   adoptedTraceId = traceId ?? ''
@@ -165,14 +165,14 @@ function applyAssist(s: Record<string, unknown>, traceId?: string) {
   }
 }
 
-// ── 市场概况（会议要求：总成交量/时段量价/开高低收）+ 口径诚实标注 ───────────
-// 全市场侧量价无活源（#1968/#1981）——用本单可得口径（出清优先，无出清用申报）
+// 市场概况（会议要求：总成交量/时段量价/开高低收）+ 口径诚实标注
+// 全市场侧量价无活源（#1968/#1981），用本单可得口径（出清优先，无出清用申报）
 // 给同构统计，sourceBasis 随日报呈现，不把本单口径冒充全市场。
 const marketDigest = computed(() =>
   buildMarketDigest(decl.value?.clearing?.clearedCurveMwh96, decl.value?.energyCurveMwh96, decl.value?.priceCurve96)
 )
 
-// ── ③ 明日提醒（手册 S7 步骤③）─────────────────────────────────────────────
+// ③ 明日提醒（手册 S7 步骤③）
 const customReminders = ref('')
 const tomorrowReminders = computed<string[]>(() => {
   const items: string[] = []
@@ -193,7 +193,7 @@ const tomorrowReminders = computed<string[]>(() => {
   return [...items, ...custom]
 })
 
-// ── ④ 日报导出（Markdown 落文件 + 剪贴板复制）───────────────────────────────
+// ④ 日报导出（Markdown 落文件 + 剪贴板复制）
 const reportMarkdown = computed(() => {
   const lines = [`# 交易日日报 ${props.targetDate}`, '', ...reportLines.value]
   const md = marketDigest.value
@@ -229,7 +229,7 @@ async function copyReport() {
   setTimeout(() => { copyState.value = '' }, 3000)
 }
 
-// ── ② 自动日报（从各阶段产出汇总）────────────────────────────────────────────
+// ② 自动日报（从各阶段产出汇总）
 const reportLines = computed<string[]>(() => {
   const lines: string[] = []
   const d = decl.value
@@ -262,7 +262,7 @@ const reportLines = computed<string[]>(() => {
   return lines
 })
 
-// ── 日报写回 ────────────────────────────────────────────────────────────────
+// 日报写回
 const summary = ref('')
 const summaryValid = computed(() => summary.value.trim().length >= 6)
 const saving = ref(false)

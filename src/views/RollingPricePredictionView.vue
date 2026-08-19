@@ -25,20 +25,20 @@ const loading = ref(true)
 const error = ref('')
 const base = ref<any[]>([])        // 已采集 KNN 结果(96点)
 const summary = ref<any>(null)
-// —— 公共参数 ——
+// 公共参数
 const runDate = ref('2026-06-04')
 const outMode = ref<'all96' | 'h24' | 'single'>('all96')
 const singleTp = ref('03:15')
 // 主筛选 ⇄ 路由 query 双向同步(刷新/分享可还原;date 键兼容旧跳转链接)
 useQuerySync({ date: runDate, mode: outMode as Ref<string> })
-// —— 百分位区间时序 ——
+// 百分位区间时序
 const hist1 = ref<[string, string]>(['2026-05-04', '2026-06-02'])
 const k1 = ref(8)
 const lowerPct = ref(25)
 const upperPct = ref(75)
 const feats = ref<string[]>(['wind', 'solar', 'load'])
 const srcLoad = ref('da_official'), srcWind = ref('da_official'), srcSolar = ref('da_official')
-// —— 火电出力区间 ——
+// 火电出力区间
 const hist2 = ref<[string, string]>(['2026-05-04', '2026-06-03'])
 const k2 = ref(3)
 

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { reportBlocks, reportTemplates } from './templates'
 import { chartSpecToOption, type AnalysisChartSpec } from '../../services/chart/analysisChartSpec'
 
-// #23：契约图表出块——报表与 Agent 分析共用 AnalysisChartSpec。
+// #23：契约图表出块，报表与 Agent 分析共用 AnalysisChartSpec。
 describe('report contract chart block (#23)', () => {
   it('registers the contract chart block in the catalog', () => {
     const b = reportBlocks.find((x) => x.blockId === 'RB-ANALYSIS-PRICE-DURATION')

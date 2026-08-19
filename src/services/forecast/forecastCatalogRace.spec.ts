@@ -62,7 +62,7 @@ describe('#1173 预测目录并发载入世代守卫', () => {
     await second
     const afterNewest = state.models.value.map((m) => m.modelId)
 
-    // 先发的晚归（陈旧结果）——必须被丢弃
+    // 先发的晚归（陈旧结果），必须被丢弃
     deferred[0].resolve(modelsFor('yunnan'))
     await first
 

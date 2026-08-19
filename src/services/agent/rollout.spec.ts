@@ -1,6 +1,6 @@
 // 灰度命中查询单测（#1848 第二部分）。
 // 守两件事：① 命中判定完全来自服务端（前端不复刻名单比对）② 任何读不到的情况都倒向旧图。
-// 第②条是这层的安全底线——灰度查询失败时若默认走 pi，等于用一次网络抖动把用户送上未验证链路。
+// 第②条是这层的安全底线，灰度查询失败时若默认走 pi，等于用一次网络抖动把用户送上未验证链路。
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -59,7 +59,7 @@ describe('resolveServingBase 服务端权威', () => {
     }))
     expect(await resolveServingBase('declaration_prep')).toBe(PI_AGENT_BASE)
     expect(await resolveServingBase('daily_review')).toBe(PI_AGENT_BASE)
-    // canary 名单外由服务端判成 legacy，前端照办——名单比对不在前端做
+    // canary 名单外由服务端判成 legacy，前端照办，名单比对不在前端做
     expect(await resolveServingBase('morning_brief')).toBe(LEGACY_AGENT_BASE)
   })
 
@@ -116,7 +116,7 @@ describe('PoC 专属场景与非灰度场景', () => {
   })
 
   // #2158：chat 切流完成、旧 supervisor 路径已删，两侧不再并存。它必须像 PoC 场景一样
-  // 恒定走 pi 且**完全不查灰度表**——留在表里的话，「查询失败 fail-safe 回旧图」这条
+  // 恒定走 pi 且完全不查灰度表，留在表里的话，「查询失败 fail-safe 回旧图」这条
   // 规则会在一次网络抖动时把主对话入口路由到一个不再服务该场景的后端（建会话直接 400）。
   it('chat 已出灰度表：恒走 pi、不查表，且查询失败也不会倒向旧图', async () => {
     const spy = mockFetch(async () => new Response('boom', { status: 500 }))
@@ -171,7 +171,7 @@ describe('缓存与并发', () => {
     localStorage.setItem('dljy_restore_token', 'token-b')
     const pendingB = resolveServingBase('declaration_prep')
     expect(await pendingA).toBe(PI_AGENT_BASE)
-    // B 若复用了 A 的在途 promise，这里会拿到 pi —— 未命中账号被送进 pi 就是切流事故
+    // B 若复用了 A 的在途 promise，这里会拿到 pi：未命中账号被送进 pi 就是切流事故
     expect(await pendingB).toBe(LEGACY_AGENT_BASE)
     expect(spy).toHaveBeenCalledTimes(2)
   })

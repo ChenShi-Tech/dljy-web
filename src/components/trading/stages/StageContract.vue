@@ -1,15 +1,15 @@
 <script setup lang="ts">
-// S6 中长期补仓（15:00–16:30，低频）—— 决策 + 行动
+// S6 中长期补仓（15:00–16:30，低频）， 决策 + 行动
 //
 // 现货日内的最后一块决策：中长期持仓覆盖到没有问题？口径为买方立场（售电/大用户），
-// 缺口敞在现货上结算。建议核心只有一句话——**缺口敞在贵的现货上要赶紧补，敞在便宜的
-// 现货上可以故意留着**；超签反过来。
+// 缺口敞在现货上结算。建议核心只有一句话，缺口敞在贵的现货上要赶紧补，敞在便宜的
+// 现货上可以故意留着；超签反过来。
 //
 // 三处上游产出自动喂进本面板：
 //   · S3 申报曲线合计 → 预测电量（缺则手填）；
 //   · S2 主导态势 → 现货贵不贵的判据；
 //   · S3 方向 → 两可情形下（现货便宜却判增持、现货贵却判减持）的拍板。
-// 三者缺席时按平衡市处理并在理由里写明——不假装有判断。结论写回 preflight.contract。
+// 三者缺席时按平衡市处理并在理由里写明，不假装有判断。结论写回 preflight.contract。
 import { computed, onMounted, ref, watch } from 'vue'
 import { Save, Wallet, ArrowDownUp, Database, ShieldAlert } from 'lucide-vue-next'
 import {
@@ -35,23 +35,23 @@ const emit = defineEmits<{ updated: [d: DeclarationOrder]; go: [stage: StageId] 
 const decl = computed(() => props.declaration)
 const pf = computed(() => decl.value?.preflight ?? {})
 
-// ── 上游产出 ────────────────────────────────────────────────────────────────
+// 上游产出
 const forecastFromS3 = computed(() =>
   pf.value.forecast ? pf.value.forecast.curveMwh96.reduce((a, b) => a + b, 0) : null
 )
 const regime = computed(() => (pf.value.dataGate?.regime ?? null) as string | null)
 const direction = computed(() => (pf.value.forecast?.direction ?? null) as 'add' | 'reduce' | 'hold' | null)
 
-// ── 输入（缺上游产出时手填）──────────────────────────────────────────────────
+// 输入（缺上游产出时手填）
 const forecastInput = ref<number>(0)
 const forecastMwh = computed(() => forecastFromS3.value ?? forecastInput.value)
 
-// ── 持仓视图（F4.2 联动）：日前中标量由 S5 写回自动喂入，不再人工填 ──────────
+// 持仓视图（F4.2 联动）：日前中标量由 S5 写回自动喂入，不再人工填
 const clearingPosition = computed(() => props.declaration?.preflight?.clearingReview?.positionUpdate ?? null)
 
-// ── 合约库联动（F1.6 · #1966）：月度持仓/年度均价/挂牌价参考自动取公司合同库 ──
+// 合约库联动（F1.6 · #1966）：月度持仓/年度均价/挂牌价参考自动取公司合同库
 // 月度持仓口径：覆盖标的月的生效中长期合同，总量按「重叠天数 ÷ 合同天数」折算到月
-// （年合同写的是全年总量，直接加总会把持仓放大 12 倍）——折算式随面板呈现。
+// （年合同写的是全年总量，直接加总会把持仓放大 12 倍），折算式随面板呈现。
 const MLT_MARKET_TYPES = new Set([
   'annual_bilateral', 'annual_centralized', 'monthly_bilateral', 'monthly_centralized',
   'provincial_green_annual', 'provincial_green_monthly', 'cross_provincial_green_annual', 'cross_provincial_green_monthly'
@@ -146,7 +146,7 @@ async function loadContracts() {
 }
 onMounted(loadContracts)
 
-// ── 价格对比三件套：挂牌价 vs 年均价 / 分布判时机 / 波动守卫 ──────────────────
+// 价格对比三件套：挂牌价 vs 年均价 / 分布判时机 / 波动守卫
 const s3Quantile = computed(() => {
   const q = pf.value.forecast?.quantileDigest as { mean?: number; valley?: number; peak?: number } | undefined
   return q && Number.isFinite(q.mean) ? { mean: Number(q.mean), valley: Number(q.valley ?? q.mean), peak: Number(q.peak ?? q.mean) } : null
@@ -165,7 +165,7 @@ const kelly = computed(() =>
   })
 )
 
-// ── 执行登记到合约库（手册步骤④：执行后更新合约库，持仓自动前进）─────────────
+// 执行登记到合约库（手册步骤④：执行后更新合约库，持仓自动前进）
 const executedVolumeMwh = ref<number | null>(null)
 const executedPriceYuan = ref<number | null>(null)
 const registering = ref(false)
@@ -218,7 +218,7 @@ const assessment = computed(() =>
   })
 )
 
-// ── 实际动作录入（建议是建议、执行是执行——分开记）──────────────────────────
+// 实际动作录入（建议是建议、执行是执行，分开记）
 const ACTION_PRESETS: Record<GapSuggestion, string> = {
   'buy-urgent': '紧急挂牌买入缺口电量',
   buy: '场内分批补仓',
@@ -233,10 +233,10 @@ watch(
   { immediate: true }
 )
 
-// ── AI 辅助填报：**只辅助"执行方式"这一项人工判断**────────────────────────────
+// AI 辅助填报：只辅助"执行方式"这一项人工判断
 // 边界拿捏：敞口量、敞口率、建议方向（急补/择机补/观望/转让）都是 assessContractGap
 // 规则引擎算出来的确定性结果，不需要也不应该让 AI 重判；真正需要经验的是
-// "具体怎么执行"——一次挂牌还是分批、挂什么价位区间、什么条件下暂停。
+// "具体怎么执行"，一次挂牌还是分批、挂什么价位区间、什么条件下暂停。
 const ASSIST_LABELS = { action: '执行动作' }
 const assistContext = computed(() => ({
   targetDate: props.targetDate,
@@ -254,7 +254,7 @@ function applyAssist(s: Record<string, unknown>) {
   if (typeof s.action === 'string' && s.action.trim()) action.value = s.action.trim()
 }
 
-// ── 写回 ────────────────────────────────────────────────────────────────────
+// 写回
 const saving = ref(false)
 const saveMsg = ref('')
 const saveError = ref('')

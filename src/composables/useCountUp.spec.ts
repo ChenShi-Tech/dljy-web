@@ -2,19 +2,16 @@
 // ↑ 勿删：本文件不是 *.component.spec.ts，vitest node project 默认不给 DOM；动画依赖
 //   requestAnimationFrame + 组件生命周期（onMounted/onBeforeUnmount），靠此 pragma 切
 //   happy-dom（其 rAF 由 16ms 定时器驱动，真跑动画收敛，不 mock 时间轴）。
-// ============================================================================
 // composables/useCountUp.spec.ts — 数字滚动动画 + fmtNum 防御格式化回归
-// ----------------------------------------------------------------------------
 // 守什么不变量：
 //   ① 动画从 '0' 出发、按 zh-CN 千分位格式收敛到目标值（easeOutCubic 中间轨迹属
 //      实现细节，只钉两端：起点可观测、终点精确）。
 //   ② decimals 控制小数位（minimumFractionDigits=maximumFractionDigits）。
-//   ③ 卸载清理：onBeforeUnmount 取消未完成的动画帧/延迟——卸载后不再写 ref（泄漏 +
+//   ③ 卸载清理：onBeforeUnmount 取消未完成的动画帧/延迟，卸载后不再写 ref（泄漏 +
 //      Vue 警告），动画冻结在中间值而非继续推进。
 //   ④ fmtNum 防御：undefined/NaN/null 一律落 0（图表空系列 tooltip 不许崩调度）。
 // 坏掉的症状：数字卡在 0 或中间值不收敛；切换页面后控制台「组件已卸载仍写 ref」告警；
 // 空 tooltip 直接 throw 阻塞渲染。
-// ============================================================================
 import { defineComponent, h, type Ref } from 'vue'
 import { mount } from '@vue/test-utils'
 import { describe, expect, it, vi } from 'vitest'

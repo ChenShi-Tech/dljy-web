@@ -1,5 +1,4 @@
 <script setup lang="ts">
-// ============================================================================
 // DataState — 通用数据态容器（Phase 5）
 // ----------------------------------------------------------------------------
 // 统一页面级 loading / error / empty / data 四态展示，消除各页面手写
@@ -16,7 +15,6 @@
 //     <template #skeleton><SpotSkeleton variant="chart" :height="360" /></template>
 //     <MyChart :data="result" />
 //   </DataState>
-// ============================================================================
 import EmptyState from './EmptyState.vue'
 import ErrorState from './ErrorState.vue'
 import LoadingState from './LoadingState.vue'

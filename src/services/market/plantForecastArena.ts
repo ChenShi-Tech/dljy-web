@@ -172,7 +172,7 @@ function buildTrend(
 
 export function buildPlantForecastArena(rows: PlantOutputRow[], date: string): PlantForecastArena {
   const dedupedRows = dedupePlantOutputRows(rows)
-  // 仅计 forecast 源（排除 actual 角色），与下方 sources 排行榜口径一致——
+  // 仅计 forecast 源（排除 actual 角色），与下方 sources 排行榜口径一致
   // 否则实际功率/子站回传等 actual dataType 会被算进「X 类出力源」文案虚高。
   const sourceCount = new Set(
     dedupedRows.filter((row) => row.dataType && row.seriesRole !== 'actual').map((row) => row.dataType)
@@ -201,7 +201,7 @@ export function buildPlantForecastArena(rows: PlantOutputRow[], date: string): P
     acc.samples += 1
     acc.sqSum += diff * diff
     acc.biasSum += diff
-    // 近零实际值（<1 MW）排除，防 MAPE 爆炸——与 cockpitData.ts arenaMape 口径统一
+    // 近零实际值（<1 MW）排除，防 MAPE 爆炸，与 cockpitData.ts arenaMape 口径统一
     // （厂站低出力/停机爬坡时段 actual≈0，1e-9 阈值仅排除精确 0，会让 |diff|/0.05 单点
     // 放大到数千 %，使「精度擂台」排名失真）。
     if (Math.abs(a.value) >= 1) {

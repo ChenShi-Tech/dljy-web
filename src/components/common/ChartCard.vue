@@ -2,7 +2,7 @@
 // 通用图表卡片：标题 + 操作区插槽 + 自适应挂载点 + 可选(全屏 / 框选区域统计 / 数据时间·新鲜度指示)。
 // 生命周期(init/容器 resize/主题重建/dispose)全交给 useEChart 托管。
 //
-// 设计要点：父组件传 buildOption() 「函数」而非静态 option ——
+// 设计要点：父组件传 buildOption() 「函数」而非静态 option ，
 //   1) 主题切换时 useEChart 重建实例并回调 paint()，buildOption() 重新读取
 //      chartChrome() 取最新主题色，暗色/亮色都精致；
 //   2) onMounted 内 watchEffect 自动追踪 buildOption() 内访问的响应式数据
@@ -10,7 +10,7 @@
 //   3) group 相同的多张卡片自动 echarts.connect 联动(tooltip/dataZoom 同步十字线)。
 //
 // 新鲜度：updatedAt 语义为「数据时间」（真实数据的采集/写入时刻，来自 /api/real 信封
-// provenance.capturedAt，见 data/freshness.ts），**不是取数时刻**。未传 freshness 时由
+// provenance.capturedAt，见 data/freshness.ts），不是取数时刻。未传 freshness 时由
 // updatedAt 按 cadence 推导：fresh 绿点脉冲 / aging 黄点 / stale 红点 + tooltip「数据已过期 N 天」。
 // 拿不到真实数据时间的（agent 计算类）应不传 updatedAt（宁缺勿假），不显示时间。
 import { onMounted, onBeforeUnmount, ref, watch, watchEffect, computed } from 'vue'
@@ -63,7 +63,7 @@ type BrushStat = { count: number; sum: number; avg: number; max: number; min: nu
 const brushResult = ref<BrushStat>(null)
 
 // 检测 ECharts option 是否所有 series 数据为空（无 data 或 data.length===0）。
-// 用于「未显式声明 empty 但数据实际为空」的自动兜底——叠加「暂无数据」文字，避免露出空坐标轴。
+// 用于「未显式声明 empty 但数据实际为空」的自动兜底，叠加「暂无数据」文字，避免露出空坐标轴。
 // 无 series（如 graphic-only 自定义图）不算空，交回调用方判断。
 function isAllSeriesEmpty(opt: Record<string, unknown>): boolean {
   const series = opt.series
@@ -130,7 +130,7 @@ onMounted(() => {
 })
 
 // fullscreenchange 挂在 document（不在 useEChart 托管的 window resize/observer/echarts 实例范围内），
-// useEChart 的 onBeforeUnmount 清理不覆盖它——须在此对称卸载。否则每次挂载-卸载（SPA 路由切换）都
+// useEChart 的 onBeforeUnmount 清理不覆盖它，须在此对称卸载。否则每次挂载-卸载（SPA 路由切换）都
 // 在 document 上累加一个监听，闭包钉住已卸载组件的 chart handle/cardRef 致内存泄漏（pre-existing）。
 onBeforeUnmount(() => {
   document.removeEventListener('fullscreenchange', onFsChange)

@@ -1,25 +1,23 @@
-// ============================================================================
 // mechanismProfile — 市场机制画像（逐字段溯源投影）
 // ----------------------------------------------------------------------------
 // 定位（ADR docs/architecture/serving-route-registry-adr.md 裁决四 · Epic #1431 S2）：
 // 数据契约的 meta 回答「数据真不真、哪个地区」；本画像回答「这份数据是什么标的、
-// 什么粒度、da/rt 能不能分」——即**怎么读**这份数据。消费方（图表/agent/报表）据此
+// 什么粒度、da/rt 能不能分」，即怎么读这份数据。消费方（图表/agent/报表）据此
 // 决定渲染口径，不再各自硬编码地区分支。
 //
-// 铁律：**每个字段都带 source，只做投影不造事实**。无法从权威源推导的一律
+// 铁律：每个字段都带 source，只做投影不造事实。无法从权威源推导的一律
 // `{ value: 'unknown', source: null }`，禁止用展示层画像（如 operator profile 的
 // hierarchy 层级文案）猜测机制（二轮评审 B4）。
 //
 // 字段 → 唯一权威源：
-//   priceBasis / maturity / ruleVersion / ruleAsOf → regionSettlementRules（省级规则事实）
-//   gridOperator                                   → REGION_GRID_OPERATOR 常量
-//   daRtSeparated / granularityNative/Served / resamplePolicy
-//                                                  → serving-route-registry 路由声明
-//                                                    （路由本身就是这些事实的来源，不是二手推断）
-//   clearingModel                                  → **恒 unknown**：正式出清规则事实源未接入前，
-//                                                    南网「区域联合出清」等表述只是文档描述，
-//                                                    不构成可机读机制证据（B4）
-// ============================================================================
+// priceBasis / maturity / ruleVersion / ruleAsOf → regionSettlementRules（省级规则事实）
+// gridOperator                                   → REGION_GRID_OPERATOR 常量
+// daRtSeparated / granularityNative/Served / resamplePolicy
+// → serving-route-registry 路由声明
+// （路由本身就是这些事实的来源，不是二手推断）
+// clearingModel                                  → 恒 unknown：正式出清规则事实源未接入前，
+// 南网「区域联合出清」等表述只是文档描述，
+// 不构成可机读机制证据（B4）
 
 import { REGION_GRID_OPERATOR } from 'shared/region/constants.mjs'
 import { resolveServingRoute, type ServingDatasetId, type ServingRoute } from '@/services/data/contracts/servingRoutes.gen'
@@ -51,7 +49,7 @@ export type MechanismProfile = {
   daRtSeparated: MechanismField<boolean>
   /** 源数据原生粒度（分钟） */
   granularityNative: MechanismField<number>
-  /** 服务层交付粒度（分钟）——与原生不等即发生了重采样，UI 必须角标 */
+  /** 服务层交付粒度（分钟），与原生不等即发生了重采样，UI 必须角标 */
   granularityServed: MechanismField<number>
   resamplePolicy: MechanismField<'step_repeat' | 'interpolate' | null>
   /** B4：正式出清规则事实源接入前恒 unknown，不从展示画像推导 */
@@ -71,7 +69,7 @@ function unknownWith(note: string): MechanismField<never> {
 const SERVED_GRANULARITY_MINUTES = 15
 
 /**
- * 结算规则是否为该地区**专属**收录（非通用底座回退）。通用底座的 priceBasis 是保守占位
+ * 结算规则是否为该地区专属收录（非通用底座回退）。通用底座的 priceBasis 是保守占位
  * （`generic-2024` 版本 + notes 标注 fallback），不能当作该省机制事实透出。
  */
 function isRegionSpecificRule(rule: RegionSettlementRule, regionId: string): boolean {
@@ -155,12 +153,12 @@ export function resolveMechanismProfile(regionId: string, datasetId: ServingData
   }
 }
 
-// ── 图表口径规矩（S2 两条硬规矩，消费方必须据此渲染）──────────────────────────
+// 图表口径规矩（S2 两条硬规矩，消费方必须据此渲染）
 
 /**
- * 规矩一：是否允许渲染日前/实时**双线**。
+ * 规矩一：是否允许渲染日前/实时双线。
  * `daRtSeparated=false`（如山西基线宽表无 da/rt 维度）时两条线同源、完全重合，
- * 画双线是伪造信息量——只渲染单线并标注口径。unknown 同样保守按单线处理。
+ * 画双线是伪造信息量，只渲染单线并标注口径。unknown 同样保守按单线处理。
  */
 export function allowsDualPriceSeries(profile: MechanismProfile): boolean {
   return profile.daRtSeparated.value === true

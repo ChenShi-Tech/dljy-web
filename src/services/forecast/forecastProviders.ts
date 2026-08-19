@@ -21,7 +21,7 @@ import { FORECAST_CFGS, type ForecastCfg } from '@/data/forecastHubTabs'
 import { getRegionModuleCapabilities, type RegionCapabilityDataSupport } from '@/services/region/regionModules'
 import { currentRegion } from '@/services/region/regionContext'
 
-// ── 契约 ──────────────────────────────────────────────────────────────────
+// 契约
 export type ProviderKind = 'replay' | 'compute' // 回放真实采集 | 后端实时计算
 
 // ForecastBasis 单一权威定义在 services/data/types.ts（Phase 0 统一类型层，与
@@ -96,7 +96,7 @@ export interface ForecastProvider {
   run(ctx: SharedTaskContext, params: Record<string, unknown>): Promise<UnifiedForecastResult>
 }
 
-// ── 通用工具 ──────────────────────────────────────────────────────────────
+// 通用工具
 const PTS = Array.from({ length: 96 }, (_, i) => `p${i + 1}`)
 
 // 24/96 粒度对齐：96 点 → 24 点（每 4 个 15min 槽聚合为 1 个整点，取均值）。
@@ -149,7 +149,7 @@ function parseCfgCurve(
   return { points, unit: cfg.unit, dateUsed: pick, warnings }
 }
 
-// ── Provider 实现 ─────────────────────────────────────────────────────────
+// Provider 实现
 
 // target → 平台官方采集 cfg 映射（缺失的 target 表示平台无官方采集，platform provider 不支持）。
 const PLATFORM_TARGET_CFG: Record<string, PlatformCfg> = {
@@ -223,14 +223,14 @@ export const platformProvider: ForecastProvider = {
 // KNN：当前回放 knn-api 采集预测曲线（kind=replay）。Phase 4(PR-D) 后端计算化后改 kind=compute、
 // 走 /predict?model_type=knn，参数面板真生效并返回分位数区间。当前 paramsSchema 已就位但回放不消费。
 /**
- * 响应可用性校验——**两条 provider 路径（固定 knn / 动态 ML）必须共用**。
+ * 响应可用性校验，两条 provider 路径（固定 knn / 动态 ML）必须共用。
  *
  * Core 转发模式（`DLJY_FORECAST_FORWARD_CORE=1`）下 Core 不可达或公司上下文不可解析时，
- * `/forecast/predict` 返回 **HTTP 200 + `available:false` + 空 points + `unavailable_reason`**。
+ * `/forecast/predict` 返回 HTTP 200 + `available:false` + 空 points + `unavailable_reason`。
  * 不在此转成失败，消费方就把"服务不可用"当成一次成功预测（空曲线）：全失败空态不出现、
  * 真实原因丢失，还可能把真实模型误描述成占位实现。
  *
- * 尤其注意 **knn 是申报台的默认选中模型**，只修 makeMlProvider 等于漏掉最常走的那条路径。
+ * 尤其注意 knn 是申报台的默认选中模型，只修 makeMlProvider 等于漏掉最常走的那条路径。
  */
 function assertUsableForecast(r: ForecastResult): void {
   if (r?.available === false) {
@@ -284,17 +284,17 @@ const ML_PARAMS: ParamField[] = [
 ]
 
 // #762 模型清单动态化：ML 模型不再硬编码，从后端 /forecast/models（registry.catalog 单一权威）
-// 拉取——新模型（含 fm:Chronos 基础模型）上线自动出现，不可用模型带 available:false + reason。
+// 拉取，新模型（含 fm:Chronos 基础模型）上线自动出现，不可用模型带 available:false + reason。
 // 平台官方(platform)/KNN 基线(knn) 是前端专属 provider（非后端 catalog 模型），保留固定。
 const mlCatalog: Ref<ForecastModel[]> = ref([])
 const catalogLoading = ref(false)
 const catalogError = ref('')
 let catalogLoaded = false
-// 已加载目录对应的地区（#763 job646 修复）：catalog 的 quality/skill 是**地区维**，缓存必须按地区分键——
+// 已加载目录对应的地区（#763 job646 修复）：catalog 的 quality/skill 是地区维，缓存必须按地区分键
 // 否则切 shanxi 仍复用云南目录（全局缓存放大跨地区串读）。地区不匹配即视为需重载。
 let catalogRegion = ''
 // 世代序号（#1173）：切地区 watch 每次都强制刷新，快切即产生并发 in-flight 请求。
-// 无守卫时晚归的陈旧响应会覆盖 mlCatalog 并把 catalogRegion 认领成自己的地区——
+// 无守卫时晚归的陈旧响应会覆盖 mlCatalog 并把 catalogRegion 认领成自己的地区
 // 目录残留他区 skill/quality，且因地区已被认领，后续同地区调用命中缓存不再纠正，
 // 脏状态一直持续到下次切地区。故 await 后只有最新一次请求可写入。
 let catalogReq = 0
@@ -326,7 +326,7 @@ export async function ensureForecastCatalog(force = false): Promise<void> {
 }
 
 // 全局地区切换 → 目录按新地区强制刷新（quality/skill 地区维；否则切 shanxi 仍显云南 skill/quality，job646）。
-// 仅在目录已加载过时才刷新——未挂载任何消费方时不预取（消费方 onMounted 的 ensureForecastCatalog 会按当前地区首载）。
+// 仅在目录已加载过时才刷新，未挂载任何消费方时不预取（消费方 onMounted 的 ensureForecastCatalog 会按当前地区首载）。
 watch(() => currentRegion.value.id, () => { if (catalogLoaded) void ensureForecastCatalog(true) })
 
 // 供页面读取 catalog 加载态（选择器空态/失败提示）。
@@ -373,11 +373,11 @@ function adaptMlResult(r: ForecastResult, modelId: string, granularity: 24 | 96)
 }
 
 // /predict（run_forecast）支持直算的 namespace + knn（baseline namespace 但后端有专用分支）。
-// store: 外部生产模型也支持——经 base_models.create_model 的 store 分支（load_production_model），
-// 运行时按 store_meta 校验 target/region（forecast_service，roborev job566）。
+// store: 外部生产模型也支持，经 base_models.create_model 的 store 分支（load_production_model），
+// 运行时按 store_meta 校验 target/region（forecast_service）。
 // 仅 baseline 的 naive/seasonal_naive 与 fm:（基础模型走 /forecast/foundation 端点）/predict 直算会
-// ValueError（roborev job562）——选择器标 available:false + reason 禁用不隐藏（工作台+驾驶舱共用）。
-// remote：远程推理服务模型（Epic #1898）——train no-op、predict 经 agent-backend 转发外部服务
+// ValueError，选择器标 available:false + reason 禁用不隐藏（工作台+驾驶舱共用）。
+// remote：远程推理服务模型（Epic #1898），train no-op、predict 经 agent-backend 转发外部服务
 const PREDICT_NAMESPACES = new Set(['base', 'deep', 'neural', 'tslib', 'store', 'remote'])
 export function isPredictSupported(model: Pick<ForecastModel, 'modelId' | 'namespace'>): boolean {
   if (model.modelId === 'knn') return true
@@ -431,12 +431,12 @@ function makeMlProvider(model: ForecastModel): ForecastProvider {
   }
 }
 
-// ── 注册表 ────────────────────────────────────────────────────────────────
+// 注册表
 // 响应式（#762）：platform/knn 固定 + ML 从后端 catalog（mlCatalog ref）动态构建；
 // catalog 加载后消费方 computed 自动更新。页面须先 ensureForecastCatalog() 触发加载。
-// 固定 provider（platform/knn）不走 makeMlProvider，但 catalog 里同 id 的条目仍带**地区维**
+// 固定 provider（platform/knn）不走 makeMlProvider，但 catalog 里同 id 的条目仍带地区维
 // quality（skill 门禁相对该地区回测基线）。不合并的话，knn 的 quality 永远是 undefined，
-// 消费方据此判"目录未标注"而放行——记分牌明确 passesSkillGate=false 也拦不住（codex #1453）。
+// 消费方据此判"目录未标注"而放行，记分牌明确 passesSkillGate=false 也拦不住（#1453）。
 // 只并 quality/stage/shadowGate/basisVersion 这些目录侧事实，不动 available（knn 恒可用）
 // 与 run（固定 provider 有自己的 extra.k 等自定义逻辑）。
 function withCatalogQuality(provider: ForecastProvider): ForecastProvider {
@@ -455,7 +455,7 @@ export const PROVIDERS: ComputedRef<ForecastProvider[]> = computed(() => [
   withCatalogQuality(platformProvider),
   withCatalogQuality(knnProvider),
   // 排除与前端固定 provider 重复的 catalog id：knn/platform 由固定 provider 承担自定义逻辑
-  // （如 knn 的 extra.k、platform 的回放），否则重复 Vue key + PROVIDER_MAP 覆盖丢失固定行为（roborev job562）。
+  // （如 knn 的 extra.k、platform 的回放），否则重复 Vue key + PROVIDER_MAP 覆盖丢失固定行为。
   ...mlCatalog.value.filter((m) => m.modelId !== 'knn' && m.modelId !== 'platform').map(makeMlProvider),
 ])
 

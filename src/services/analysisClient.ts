@@ -1,6 +1,6 @@
 // 数据分析用户产物客户端（Phase 6 PR-B）：对接 /api/v1/analysis/*（PR-A 后端）。
 // 走 api.ts 通道 A（统一信封 + 地区头 x-region-id + 写请求自动 idempotency-key + 401 处理），
-// 照抄 declarations.ts 模式——client 零样板，头/重试/鉴权全由 api.ts 处理。
+// 照抄 declarations.ts 模式，client 零样板，头/重试/鉴权全由 api.ts 处理。
 // 不照抄 spotClient/quantClient（那是 agent 代理通道 B，自解 BaseResponse）。
 import { apiGet, apiPost, apiPut, apiDelete } from '@/services/api'
 import type {
@@ -60,7 +60,7 @@ function dataOf<T>(res: unknown): T {
   return ((res as { data?: T })?.data ?? res) as T
 }
 
-// ── views ─────────────────────────────────────────────────────────────────
+// views
 export async function listViews(routePath?: string): Promise<AnalysisView[]> {
   const res = await apiGet(`${BASE}/views`, routePath ? { routePath } : undefined)
   return rowsOf<AnalysisView>(res)
@@ -82,7 +82,7 @@ export async function deleteView(viewId: string): Promise<void> {
   await apiDelete(`${BASE}/views/${encodeURIComponent(viewId)}`)
 }
 
-// ── snapshots ───────────────────────────────────────────────────────────────
+// snapshots
 export async function listSnapshots(opts: { viewId?: string; routePath?: string } = {}): Promise<AnalysisSnapshot[]> {
   const query: Record<string, string> = {}
   if (opts.viewId) query.viewId = opts.viewId
@@ -103,7 +103,7 @@ export async function deleteSnapshot(snapshotId: string): Promise<void> {
   await apiDelete(`${BASE}/snapshots/${encodeURIComponent(snapshotId)}`)
 }
 
-// ── annotations ─────────────────────────────────────────────────────────────
+// annotations
 export async function listAnnotations(opts: { targetType?: AnnotationTargetType; targetRef?: string } = {}): Promise<AnalysisAnnotation[]> {
   const query: Record<string, string> = {}
   if (opts.targetType) query.targetType = opts.targetType

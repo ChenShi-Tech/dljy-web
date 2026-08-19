@@ -2,12 +2,12 @@
 // 预测质量记分牌（#763 PR-2 用户可见层）：把 rolling_report 离线回测产物
 // （data/generated/forecast-report/<region>-*.json，由 `npm run report:forecast-yunnan` 生成）
 // 变成一屏可读的「每个模型相对基线到底好多少、能不能信」。
-//   · 模型×指标表：MAE/RMSE/MASE/skill vs LEAR/skill vs 季节朴素/过门禁/过 skill 门；
-//     打不败基线（passes_skill_gate=false）的模型行标红——不发「可升 production」假信号。
-//   · 概率指标卡：pinball/PICP/PINAW/CRPS≈/Winkler。
-//   · leakage_caveats：era5 实况 / gap 前视泄漏警示原文呈现（诚实标注，绝不吞）。
-//   · basis 标注：report.basis=synthetic → 显著「合成数据·不代表真实精度」横幅（DataBasisBadge）。
-//   · 近 N 日趋势：per_day 逐日 MASE/MAE 折线（图表纪律：不平滑、缺测断点 connectNulls=false）。
+// · 模型×指标表：MAE/RMSE/MASE/skill vs LEAR/skill vs 季节朴素/过门禁/过 skill 门；
+// 打不败基线（passes_skill_gate=false）的模型行标红，不发「可升 production」假信号。
+// · 概率指标卡：pinball/PICP/PINAW/CRPS≈/Winkler。
+// · leakage_caveats：era5 实况 / gap 前视泄漏警示原文呈现（诚实标注，绝不吞）。
+// · basis 标注：report.basis=synthetic → 显著「合成数据·不代表真实精度」横幅（DataBasisBadge）。
+// · 近 N 日趋势：per_day 逐日 MASE/MAE 折线（图表纪律：不平滑、缺测断点 connectNulls=false）。
 // 诚实边界：available=false（无产物）→ 空态提示先跑离线报告，绝不回退假数据。
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
@@ -88,7 +88,7 @@ function rowClass({ row }: { row: Row }): string {
   return row.passes_skill_gate ? '' : 'fail-skill-row'   // 打不败基线的模型标红
 }
 
-// 请求世代守卫（roborev job646 Medium）：快速切地区时旧响应可能覆盖新地区状态。
+// 请求世代守卫（#646）：快速切地区时旧响应可能覆盖新地区状态。
 // 发请求前抓 gen + region 快照，写入前断言仍是最新世代且地区未变，否则丢弃旧响应。
 let generation = 0
 async function load() {
@@ -102,7 +102,7 @@ async function load() {
     const keys = res.available && res.report ? Object.keys(res.report.runs) : []
     activeRun.value = keys.includes('full') ? 'full' : (keys[0] ?? 'full')
     // 图表容器 chartRef 在 v-else-if="report" 分支：数据刚赋值时该分支尚未挂载，chartRef 仍为 null。
-    // 必须等 DOM 打补丁后再 render，否则首载趋势图空白（roborev job641 Medium 渲染竞态）。
+    // 必须等 DOM 打补丁后再 render，否则首载趋势图空白（#641 渲染竞态）。
     await nextTick()
     if (gen !== generation || selectedRegionId.value !== regionId) return   // await 期间又切地区，丢弃
     render()

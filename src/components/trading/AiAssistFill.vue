@@ -1,18 +1,18 @@
 <script setup lang="ts">
-// AI 辅助填报按钮 —— 一日作业链中「人工经验判断」字段的填写协助（2026-08-11 用户拍板）
+// AI 辅助填报按钮 ， 一日作业链中「人工经验判断」字段的填写协助（2026-08-11 用户拍板）
 //
 // 设计契约（三条硬约束，决定了这个组件长什么样）：
-//   ① **只用在需要人工经验判断的字段**（偏差主因、方向、预期价差、置信度、决策理由、
-//      补仓动作、概率分位）。数据库能取的字段不用它——那些走确定性取数通道，
+// ① 只用在需要人工经验判断的字段（偏差主因、方向、预期价差、置信度、决策理由、
+// 补仓动作、概率分位）。数据库能取的字段不用它，那些走确定性取数通道，
 //      机械拉取即可，让 AI 去"判断"一个能查出来的数字是本末倒置。
-//   ② **AI 出建议，人点采纳才写入**。组件自己不改任何东西：它把建议渲染成卡片，
+// ② AI 出建议，人点采纳才写入。组件自己不改任何东西：它把建议渲染成卡片，
 //      用户点「采纳填入」时才 emit('apply', suggestion)，由父组件写进自己的表单 ref。
 //      这保证了「AI 负责判断与推理，人负责决策」的分工不被实现细节侵蚀。
-//   ③ **逐字段标依据**：每个建议值带 data（建立在注入的实际数据上）/ assumption
+// ③ 逐字段标依据：每个建议值带 data（建立在注入的实际数据上）/ assumption
 //      （模型的假设推断）徽章，外加整体置信度与 caveats（模型自陈会错的情形）。
-//      不看 caveats 就采纳等于放弃判断——所以 caveats 与建议值同屏、不折叠。
+// 不看 caveats 就采纳等于放弃判断，所以 caveats 与建议值同屏、不折叠。
 //
-// 上下文由父组件提供（已算好的规则引擎结果 / 上游步骤产出 / 历史事实）——本组件不取数。
+// 上下文由父组件提供（已算好的规则引擎结果 / 上游步骤产出 / 历史事实），本组件不取数。
 import { computed, ref } from 'vue'
 import { Sparkles, Check, X, TriangleAlert } from 'lucide-vue-next'
 import { BASIS_LABEL, requestAssist, type AssistKind, type AssistSuggestion } from '@/services/trading/assistClient'
@@ -54,7 +54,7 @@ async function ask() {
   result.value = null
   try {
     result.value = await requestAssist(props.kind, props.context)
-    // 建议到达即留痕（adopted=false）——「AI 给过什么建议、人采没采纳」都要可审计；
+    // 建议到达即留痕（adopted=false），「AI 给过什么建议、人采没采纳」都要可审计；
     // targetDate 从注入上下文取（各面板上下文均带）。
     if (result.value) {
       traceId = recordAssistSuggestion({
@@ -75,7 +75,7 @@ async function ask() {
 
 function apply() {
   if (!result.value) return
-  // 只把有值的字段交给父组件——null 字段保持用户原值，不被"我不知道"覆盖
+  // 只把有值的字段交给父组件，null 字段保持用户原值，不被"我不知道"覆盖
   const applied = Object.fromEntries(filledFields.value)
   const tid = traceId
   emit('apply', applied, tid)

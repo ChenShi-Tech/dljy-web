@@ -38,7 +38,7 @@ export type GridEvidenceGeometry =
   | { type: 'LineString'; coordinates: GridEvidencePosition[] }
 
 /**
- * 已解析的稳定要素——下游唯一可消费的形状。
+ * 已解析的稳定要素，下游唯一可消费的形状。
  * 只携带稳定 ID、源级身份与 WGS84 几何；不含潮流、热限额、负载率、N-1、母线连接关系。
  */
 export interface GridEvidenceFeature {

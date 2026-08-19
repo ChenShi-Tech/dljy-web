@@ -2,11 +2,11 @@
 // 一日作业链进度条：显示「你在第几步、上一步产出了什么、下一步是什么」。
 //
 // 它不是装饰：七步此前散在独立路由页，交易员做完一步不知道该去哪、也不知道上一步
-// 的结论有没有被下一步接住。进度条把这条链显性化，且状态**只从申报单事实推导**
-// （见 workflowStages.ts），不另存进度——独立存储的进度一旦与单据漂移，比没有更误导人。
+// 的结论有没有被下一步接住。进度条把这条链显性化，且状态只从申报单事实推导
+// （见 workflowStages.ts），不另存进度，独立存储的进度一旦与单据漂移，比没有更误导人。
 //
-// 2026-08-10 起为**纯页内组件**：点击步骤只 emit select 切换作业台内的面板，不做任何
-// 路由跳转——跨页跳转会把链条切碎（每页各自绑单据、各自加载）。
+// 2026-08-10 起为纯页内组件：点击步骤只 emit select 切换作业台内的面板，不做任何
+// 路由跳转，跨页跳转会把链条切碎（每页各自绑单据、各自加载）。
 import { computed } from 'vue'
 import { Check, ChevronRight, Lock } from 'lucide-vue-next'
 import type { DeclarationOrder } from '@/services/declarations'
@@ -34,7 +34,7 @@ const currentIndex = computed(() => stages.value.findIndex((s) => s.id === props
 const nextStage = computed(() => stages.value[currentIndex.value + 1] ?? null)
 const prevStage = computed(() => (currentIndex.value > 0 ? stages.value[currentIndex.value - 1] : null))
 
-/** 上一步是否已产出——没产出就提示回去补，而不是让人在本面板硬填。 */
+/** 上一步是否已产出，没产出就提示回去补，而不是让人在本面板硬填。 */
 const prevPending = computed(
   () => prevStage.value && states.value[prevStage.value.id] !== 'done'
 )

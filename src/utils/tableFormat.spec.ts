@@ -114,7 +114,7 @@ describe('statusTagType：状态关键字映射（大小写不敏感、子串匹
     // '高中'含'高'→danger、'中流'含'中'→warning：单字关键字会命中任何含该字的串。
     expect(statusTagType('高中负荷')).toBe('danger')
     expect(statusTagType('中位数')).toBe('warning')
-    // '生效中'含'中'（warning 列）先于'生效'语义命中——warning 优先级高于 success 的代价。
+    // '生效中'含'中'（warning 列）先于'生效'语义命中，warning 优先级高于 success 的代价。
     expect(statusTagType('生效中')).toBe('warning')
   })
 })

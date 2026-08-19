@@ -1,12 +1,12 @@
 // 完整 Markdown 渲染回归（markdown-it + highlight.js + DOMPurify）。
-// 守的安全不变量：html:false 不放行原始 HTML——智能体报告/策略输出一律视为不可信，
+// 守的安全不变量：html:false 不放行原始 HTML，智能体报告/策略输出一律视为不可信，
 // 坏掉即 XSS。同时锁 breaks/linkify/链接新开页/任务列表/行内渲染这些影响报告可读性的
 // 行为。katex/mermaid 不在本模块（由组件渲染），不测。
 //
 // ⚠️ dompurify 被 mock 为透传：实测本仓 happy-dom（vitest 4 + dompurify 3.4.13）下
-// DOMPurify.sanitize 会剥掉**所有**标签只剩文本（sanitize('<h1>x</h1>') → 'x'），
+// DOMPurify.sanitize 会剥掉所有标签只剩文本（sanitize('<h1>x</h1>') → 'x'），
 // 是 happy-dom DOM 实现与 DOMPurify 的兼容性问题（真实浏览器正常），非源码 bug。
-// 透传后本 spec 守的是 markdown-it html:false 的转义层——生产上 XSS 防线的主层；
+// 透传后本 spec 守的是 markdown-it html:false 的转义层，生产上 XSS 防线的主层；
 // DOMPurify 兜底层无法在本测试环境有效断言。
 import { describe, expect, it, vi } from 'vitest'
 

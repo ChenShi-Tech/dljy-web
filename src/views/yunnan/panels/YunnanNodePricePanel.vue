@@ -23,10 +23,10 @@ import {
 } from '@/services/market/spotClient'
 import { hasCgnYunnanPriceEntitlement } from '@/services/market/cgnYunnanLivePrice'
 
-// ── 控件状态 ──
+// 控件状态
 // 来源标注必须与实际取数路径同源：spotClient 只在「云南 + 账号属中广核云南」时走厂侧
-// 专属端点，其余账号**静默落到公共节点价端点**。标注写死会让非中广核账号读着公共数据、
-// 页面却宣称是中广核厂侧私有数据——来源错标（#1791）。复用 spotClient 同一个谓词。
+// 专属端点，其余账号静默落到公共节点价端点。标注写死会让非中广核账号读着公共数据、
+// 页面却宣称是中广核厂侧私有数据，来源错标（#1791）。复用 spotClient 同一个谓词。
 const usesCgnPrivatePrice = computed(() => hasCgnYunnanPriceEntitlement())
 
 const region = ref('云南')
@@ -43,13 +43,13 @@ const nodeOptions = ref<string[]>([])
 const nodeLoading = ref(false)
 const selectedNode = ref('')
 
-// ── 数据 ──
+// 数据
 const series = ref<NodePricePoint[]>([])
 const compareSeries = ref<NodePricePoint[]>([])
 const heatmap = ref<HeatmapData | null>(null)
 const dailyItems = ref<DailySummaryItem[]>([])
 
-// ── 加载/错误态 ──
+// 加载/错误态
 const seriesLoading = ref(false)
 const heatmapLoading = ref(false)
 const dailyLoading = ref(false)
@@ -165,10 +165,10 @@ function handleError(e: unknown) {
 
 // 三块都空且无硬错误 → 判定私有 PG 尚无该日节点电价。
 // 抽出共用：reloadAll 与 loadSeries（onCompareChange/onNodeChange 仅刷曲线的路径）都调，
-// 否则只刷曲线时 reloadAll 的 reqId 守卫 early return 会跳过空态判断（Codex PR #463 P2）。
+// 否则只刷曲线时 reloadAll 的 reqId 守卫 early return 会跳过空态判断（#463）。
 function refreshIngestHint() {
   // 双向同步：三块都空且无 errorMsg → true，否则 false。
-  // 避免 loadSeries 先于 heatmap/daily 回填时误置 true 后不清（Codex PR #463 P2 #3522402165）。
+  // 避免 loadSeries 先于 heatmap/daily 回填时误置 true 后不清（#463 #3522402165）。
   ingestHint.value = !errorMsg.value && !heatmap.value?.nodes?.length && !dailyItems.value.length && !series.value.length
 }
 
@@ -205,7 +205,7 @@ function onNodeChange() {
   void loadSeries()
 }
 
-// ── 图表 option（buildOption 函数式，ChartCard 自动追踪响应式重绘）──
+// 图表 option（buildOption 函数式，ChartCard 自动追踪响应式重绘）
 function buildSeriesOption() {
   const cc = chartChrome()
   const x = series.value.map((p) => p.time_point)
@@ -345,7 +345,7 @@ function buildHeatmapOption() {
   }
 }
 
-// ── 日聚合明细表（DynamicTable 列标签 + 行映射）──
+// 日聚合明细表（DynamicTable 列标签 + 行映射）
 const dailyLabels: Record<string, string> = {
   node_name: '节点',
   avg: '均价(元/MWh)',

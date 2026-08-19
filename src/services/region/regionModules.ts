@@ -9,7 +9,7 @@ import {
 
 type UserLike = Pick<GovernanceUser, 'roleCode'> | null | undefined
 // not-configured = 能力模块覆盖该路径但该地区未登记状态（ADR serving-route-registry-adr 裁决四：
-// 未登记 fail-closed，与 hidden 一样不放行；语义区别——hidden 是有意隐藏，not-configured 是「暂未开通」）。
+// 未登记 fail-closed，与 hidden 一样不放行；语义区别，hidden 是有意隐藏，not-configured 是「暂未开通」）。
 export type RegionModuleCapabilityStatus = 'available' | 'degraded' | 'hidden' | 'not-configured'
 export type RegionModuleCapabilityGroup = 'insight' | 'spot' | 'midlong' | 'forecast'
 export type RegionCapabilityDataExpectation = 'real' | 'partial' | 'missing' | 'format-only'
@@ -79,7 +79,7 @@ const yunnanTradingRoutes = [
   '/xhjy/yunnan/price-output-linkage',
   '/xhjy/yunnan/cockpit',
   // 旧文字 tab 子路径（retail/settlement/quant/declaration）UI 已删，但 routes.ts 仍作 alias 兜底落驾驶舱；
-  // 授权必须保留——路由守卫 canAccessPath 先于 alias 组件渲染拦截，否则非 ADMIN 角色访问旧收藏深链会被重定向、无法兜底。
+  // 授权必须保留，路由守卫 canAccessPath 先于 alias 组件渲染拦截，否则非 ADMIN 角色访问旧收藏深链会被重定向、无法兜底。
   '/xhjy/yunnan/retail',
   '/xhjy/yunnan/settlement',
   '/xhjy/yunnan/quant',
@@ -87,7 +87,7 @@ const yunnanTradingRoutes = [
 ]
 const yunnanTradingWorkspaceRoutes = [yunnanRoleHomeRoute, ...yunnanTradingRoutes]
 
-// 南网省份实例的形状。来自 shared/region/csg-template.mjs——那是**南网数据模板**，
+// 南网省份实例的形状。来自 shared/region/csg-template.mjs，那是南网数据模板，
 // 与「南网有没有接口」无关：云南真实数据适配器（yn-fact-quickwin / yn-fact-forecast）
 // 与两个 ETL 脚本都消费它，故 #1894 删南网披露栈时保留。
 type CsgRegionInstance = {
@@ -272,17 +272,17 @@ export const regionModuleCapabilities: RegionModuleCapability[] = [
     routeCapabilities: [
       { path: '/dashboard', statusByRegion: { shanxi: 'available', yunnan: 'available' }, note: '驾驶舱基础现货曲线与云南增强区已由现有页面自行降级。' },
       { path: '/xhjy/monitor', statusByRegion: { shanxi: 'available', yunnan: 'degraded' }, note: '准实时/智能体量化口径在云南仍依赖后续真实数据装配。' },
-      // sdpt_zrqsb 是三德普华（comp-sande-puhua）**公司私有族**，非国网/全省公共口径：
+      // sdpt_zrqsb 是三德普华（comp-sande-puhua）公司私有族，非国网/全省公共口径：
       // 其余地区既无自有采集、也不可能跨公司串读，页面永远只能是一张降级卡。
-      // 故按「私有族在无源地区不展示」收紧为 hidden——侧边栏摘除 + 路由守卫拦截 + 切地区自动重定向
+      // 故按「私有族在无源地区不展示」收紧为 hidden，侧边栏摘除 + 路由守卫拦截 + 切地区自动重定向
       // （链路：isRegionRouteAvailable → isPathAvailableInRegion → matchesNavigationRegion / router guard）。
       {
         path: '/xhjy/zrqsb',
         statusByRegion: { shanxi: 'available', yunnan: 'hidden', guangdong: 'hidden', sichuan: 'hidden' },
         note: 'sdpt_zrqsb 为三德普华公司私有族，仅山西宿主可读；其余地区不展示该模块。'
       },
-      // sdpt_zptqx 同为三德普华私有族（**曾误标 public**，匿名可读全量，已更正）。
-      // 此前这里按 public 处理、非宿主地区留 degraded，理由写的是「缺的是本省采集而非授权」——
+      // sdpt_zptqx 同为三德普华私有族（曾误标 public，匿名可读全量，已更正）。
+      // 此前这里按 public 处理、非宿主地区留 degraded，理由写的是「缺的是本省采集而非授权」
       // 定级更正后该理由不成立：其它地区既无自有采集、也不可能跨公司串读，入口只会是一张
       // 必然空手而归的降级卡。故与同页兄弟 zrqsb 同口径收紧为 hidden。
       // ⚠ 四地区必须逐个显式声明：漏声明会回落 not-configured 而被当降级卡渲染（等于规则虚设）。
@@ -293,11 +293,11 @@ export const regionModuleCapabilities: RegionModuleCapability[] = [
       },
       { path: '/xhjy/desk', statusByRegion: { shanxi: 'available', yunnan: 'degraded' }, note: '申报动线可用，云南真实申报数据闭环待接入。' },
       { path: '/xhjy/approvals', statusByRegion: { shanxi: 'available', yunnan: 'degraded' }, note: '审批状态机可用，云南真实交易平台提交回执待接入。' },
-      // Epic #1485 后据实修正：两地区都不是完全可用，但缺的东西不同——
-      // 山西：申报量已可读真实回放（#1498），但**实际上网电量无任何数据源**（sdpt_settlement
-      //   从未接入，#1487），不由调用方提供 96 点实际电量就出不了偏差考核。
+      // Epic #1485 后据实修正：两地区都不是完全可用，但缺的东西不同
+      // 山西：申报量已可读真实回放（#1498），但实际上网电量无任何数据源（sdpt_settlement
+      // 从未接入，#1487），不由调用方提供 96 点实际电量就出不了偏差考核。
       // 云南：结算口径三段式复盘已接真实源可用（#1488），但偏差考核那套的申报/实际两侧都无源
-      //   （sdpt_zrqsb 是山西私有族，严格地区不回退），且结算采集仅覆盖 2026-05。
+      // （sdpt_zrqsb 是山西私有族，严格地区不回退），且结算采集仅覆盖 2026-05。
       { path: '/xhjy/review', statusByRegion: { shanxi: 'degraded', yunnan: 'degraded' }, note: '山西可读真实申报量，但实际上网电量无数据源、须调用方提供；云南结算口径三段式复盘可用（采集仅覆盖 2026-05），偏差考核两侧仍无源。' },
       { path: '/xhjy/risk-center', statusByRegion: { shanxi: 'available', yunnan: 'degraded' }, note: '风险聚合可用，云南现货执行源仍不完整。' }
     ]
@@ -341,7 +341,7 @@ export const regionModuleCapabilities: RegionModuleCapability[] = [
       ]
     },
     routeCapabilities: [
-      // sdpt_zfsdjy 是三德普华私有族（**曾误标 public**，匿名可读该公司中长期合同台账与
+      // sdpt_zfsdjy 是三德普华私有族（曾误标 public，匿名可读该公司中长期合同台账与
       // 逐日持仓电量/持仓均价，#1617 合并后复查发现）。与 /xhjy/zrqsb、/xhjy/zptqx 同口径：
       // 其它地区既无自有采集、也不可能跨公司串读 → hidden，四地区逐个显式声明。
       {
@@ -482,7 +482,7 @@ export const regionModuleCapabilities: RegionModuleCapability[] = [
         scope: 'tab',
         // sdpt_zptsj 为三德普华公司私有族：云南 capture-raw 下虽有同名目录，但只含 yn_system_supply_demand
         // 快照、无 list_tag61_full 切片，错位负荷在云南既无源也不可跨公司串读 → hidden（tab 直接摘除）。
-        // guangdong/sichuan 同为无源地区，必须显式声明 hidden——不写会回落 not-configured，
+        // guangdong/sichuan 同为无源地区，必须显式声明 hidden，不写会回落 not-configured，
         // 而 ForecastHubView 只过滤 hidden、把 not-configured 当降级卡继续展示，规则就只对云南生效。
         statusByRegion: { shanxi: 'available', yunnan: 'hidden', guangdong: 'hidden', sichuan: 'hidden' },
         dataSupportByRegion: {
@@ -496,7 +496,7 @@ export const regionModuleCapabilities: RegionModuleCapability[] = [
         title: '新能源出力预测 A/B',
         scope: 'tab',
         // sdpt_zxztqa / sdpt_zgnrx 均为三德普华公司私有族且仅山西有采集 → hidden（tab 直接摘除）。
-        // 注：sdpt_zgnrx 的另一切片 qxyc_wide 服务「气象预测」tab，云南走 Open-Meteo 公共族，故那个 tab 仍 available。
+        // sdpt_zgnrx 的另一切片 qxyc_wide 服务「气象预测」tab，云南走 Open-Meteo 公共族，故那个 tab 仍 available。
         // guangdong/sichuan 同上须显式声明，否则回落 not-configured 仍会渲染降级卡（见 gscwfh 注释）。
         statusByRegion: { shanxi: 'available', yunnan: 'hidden', guangdong: 'hidden', sichuan: 'hidden' },
         dataSupportByRegion: {

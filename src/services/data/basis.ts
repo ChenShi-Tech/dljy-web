@@ -1,19 +1,17 @@
-// ============================================================================
 // data/basis.ts — 来源/可信度归一映射（Phase 2）
 // ----------------------------------------------------------------------------
 // 把项目里四套并存的「数据真伪/来源」标注归一到单一 DataSourceBasis（types.ts），
 // 供 UI（DataBasisBadge）与决策层用统一口径显示可信度。归一来源：
 //
-//   Node /api        provenance.sourceType : MOCK | DEMO | CAPTURE | DB
-//   Python BaseResp  顶层 mock:bool + sourceType: REAL | MOCK（+ productionWrite）
-//   forecast         basis: real|captured|illustrative|synthetic
-//                    + source_type: REAL | CAPTURED | MIXED | MOCK
-//   capture.sqlite   source_type: CAPTURE | DB | IMPORT | SEED | MOCK
+// Node /api        provenance.sourceType : MOCK | DEMO | CAPTURE | DB
+// Python BaseResp  顶层 mock:bool + sourceType: REAL | MOCK（+ productionWrite）
+// forecast         basis: real|captured|illustrative|synthetic
+// + source_type: REAL | CAPTURED | MIXED | MOCK
+// capture.sqlite   source_type: CAPTURE | DB | IMPORT | SEED | MOCK
 //
-// 归一原则：保守标注——未知/缺失回落 synthetic（宁可显「合成」也不伪装真实）。
+// 归一原则：保守标注，未知/缺失回落 synthetic（宁可显「合成」也不伪装真实）。
 // 与 dataBasis.ts 旧兼容函数（basisFromDemoFlag/basisFromProfileSource）并存：
 // 本文件专注 SourceType 枚举归一，dataBasis.ts 保留旧接入点适配。
-// ============================================================================
 
 import type { DataSourceBasis, SourceType } from './types'
 

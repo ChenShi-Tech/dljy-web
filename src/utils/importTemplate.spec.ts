@@ -6,7 +6,7 @@ import {
 } from 'shared/schema/source-registry.mjs'
 import { buildTemplateSheets } from './importTemplate'
 
-// #768：模板生成器与声明的单一来源锁——数据 sheet 表头必须严格等于声明列名，
+// #768：模板生成器与声明的单一来源锁，数据 sheet 表头必须严格等于声明列名，
 // 说明/示例行必须带注释前缀（上传侧据此过滤），company 模板下载不得暴露公司列。
 describe('importTemplate 生成器', () => {
   it('数据 sheet 第 1 行严格等于声明列名（改声明即改模板）', () => {

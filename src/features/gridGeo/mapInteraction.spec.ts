@@ -41,7 +41,7 @@ describe('空间资产地图聚合', () => {
   })
 })
 
-// #1346 视觉/性能/可访问性门禁 —— 聚合层系统性边界用例。
+// #1346 视觉/性能/可访问性门禁，聚合层系统性边界用例。
 // mapInteraction.ts 的聚合只接 cameraHeightM（不接视口宽度）：
 // 远/中/近景档对应不同缩放层级，390px 小视口本身的性能影响走组件层
 // performanceProfile（requestRenderMode），浏览器级像素回归列为 follow-up。

@@ -31,7 +31,7 @@ describe('MechanismProfile 逐字段溯源', () => {
     expect(yunnan.priceBasis.consumption).toMatchObject({ value: 'unified', source: 'settlement-rules' })
     expect(yunnan.maturity).toMatchObject({ value: 'trial', source: 'settlement-rules' })
 
-    // 蒙西用户侧是全国独一份的分区价——证明画像不是按电网套模板
+    // 蒙西用户侧是全国独一份的分区价，证明画像不是按电网套模板
     const innerMongolia = resolveMechanismProfile('inner-mongolia', 'clearing_price')
     expect(innerMongolia.priceBasis.consumption.value).toBe('zonal')
   })
@@ -83,7 +83,7 @@ describe('图表口径两规矩', () => {
     // 未配置路由的地区 → unknown，保守按单线（不伪造双线信息量）
     expect(allowsDualPriceSeries(resolveMechanismProfile('hebei', 'clearing_price'))).toBe(false)
     // 显式 false 的分支：#1531 后注册表里已无 false 的实例（各地区都能分离），
-    // 但规矩本身仍须成立——新地区若声明 false，消费方必须只画单线。
+    // 但规矩本身仍须成立，新地区若声明 false，消费方必须只画单线。
     const single = resolveMechanismProfile('yunnan', 'clearing_price')
     expect(allowsDualPriceSeries({ ...single, daRtSeparated: { ...single.daRtSeparated, value: false } })).toBe(false)
   })

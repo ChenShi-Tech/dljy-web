@@ -50,7 +50,7 @@ const hideAxis = ref(false)
 const activeGroups = ref<string[]>(['预测', '策略与价格', '电量', '实际值'])
 const company = ref('默认公司')
 const dayCache = ref<Record<string, Record<string, Array<number | null>>>>({})
-// 防止切地区时旧地区慢响应覆盖新地区状态/日缓存（roborev job415）。
+// 防止切地区时旧地区慢响应覆盖新地区状态/日缓存（#415）。
 let loadGeneration = 0
 
 const groupEntries = computed<[string, string[]][]>(() => Object.entries(meta.value?.groups || {}))
@@ -75,8 +75,8 @@ const cols = computed(() => {
 async function load() {
   const generation = ++loadGeneration
   loading.value = true; error.value = ''
-  // 日缓存只按 date 键入，必须随 load（首次挂载/onRegionChange 切地区）清空——
-  // 否则切地区后同一天命中上一地区缓存，跨地区串读曲线（roborev job411）。
+  // 日缓存只按 date 键入，必须随 load（首次挂载/onRegionChange 切地区）清空
+  // 否则切地区后同一天命中上一地区缓存，跨地区串读曲线（#411）。
   clearViewState()
   renderEmptyChart()
   mainChart.showLoading()
@@ -260,7 +260,7 @@ function onReset() {
 }
 function notReady(label: string) { ElMessage.info(`「${label}」为线上功能,当前 demo 暂用真实数据回放,未接该接口`) }
 
-// ── Phase 6 PR-B：分析视图/标注（analysis.sqlite 用户产物，/api/v1/analysis/*）──
+// Phase 6 PR-B：分析视图/标注（analysis.sqlite 用户产物，/api/v1/analysis/*）
 const analysis = useAnalysisStore()
 const ROUTE_PATH = '/sjfx/singleZsjfx'
 const viewsDrawer = ref(false)

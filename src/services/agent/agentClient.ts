@@ -15,10 +15,10 @@ export const AGENT_API_BASE = `${AGENT_API_BASE_ROOT}/agent`
 
 const BASE = AGENT_API_BASE
 
-// ── scenario→base 路由（#1526 PR-5，AgentChatPanel 零改动接流 pi-poc）────────────
+// scenario→base 路由（#1526 PR-5，AgentChatPanel 零改动接流 pi-poc）
 // strategic_qa/declaration_checkup 走 pi-poc 编排服务（开发态 vite 代理 /pi-api → 8100，
 // 生产 nginx 同源同名）。#1848 起判定挪到 rollout.ts：PoC 专属场景恒 pi，四个生产场景
-// 由**服务端灰度状态**决定（canary 命中或 primary 才是 pi），前端不再持有静态映射表——
+// 由服务端灰度状态决定（canary 命中或 primary 才是 pi），前端不再持有静态映射表
 // 命中判定留在前端就等于用户改 localStorage 即可把自己切进未验证链路。
 // 会话级路由仍在 createAgentSession 时登记（内存 Map + localStorage 双写，刷新后仍可
 // 把续聊/回放请求路由到正确后端）；persistHistory 走 #498 默认全开，归属登记由
@@ -73,8 +73,8 @@ export function identityHeaders(): Record<string, string> {
 }
 
 /**
- * 身份指纹（令牌 + 公司 + 地区）。影子跑在用户那一轮**结束之后**才起，而 `identityHeaders()`
- * 是每次请求现读 localStorage 的——同一浏览器里 A 的首轮还在流式返回时退出登录换成 B，
+ * 身份指纹（令牌 + 公司 + 地区）。影子跑在用户那一轮结束之后才起，而 `identityHeaders()`
+ * 是每次请求现读 localStorage 的，同一浏览器里 A 的首轮还在流式返回时退出登录换成 B，
  * 影子会话就会拿 B 的凭证去发 A 的问题、把台账写进 B 的租户，这是 DataScope 隔离回归。
  * 故用户那一轮开始时取一次快照，影子发起前与上报前各比对一次，任一项变了就整轮不跑。
  * 地区也计入：中途切地区会让两侧上下文不同，同样不可比。
@@ -119,7 +119,7 @@ export type AgentEvent =
   | { type: 'approval_request'; payload: Record<string, unknown> }
   | { type: 'todos'; items: { content: string; status: 'pending' | 'in_progress' | 'completed' }[] }
   | { type: 'graph_status'; node: string; status: string }
-  // ── 工作室动态图节点事件（dynamic_graph.py 经 get_stream_writer 发） ──
+  // 工作室动态图节点事件（dynamic_graph.py 经 get_stream_writer 发）
   | { type: 'node_status'; node: string; status: 'running' | 'done' | 'skipped'; label?: string; role?: string; note?: string }
   | { type: 'node_token'; node: string; content: string }
   | { type: 'node_result'; node: string; label?: string; role?: string; output: string }
@@ -186,7 +186,7 @@ export async function createAgentSession(
   scenario: AgentScenario = 'chat',
   title = '',
   // baseOverride 只给影子对拍用（#1848）：强制把会话建在 pi 侧而不问灰度状态。
-  // 业务调用方一律不传——传了就等于绕过服务端的唯一权威判定。
+  // 业务调用方一律不传，传了就等于绕过服务端的唯一权威判定。
   opts?: { persist?: boolean; timeoutMs?: number; promptKey?: string; pageKey?: string; baseOverride?: string }
 ): Promise<AgentSessionInfo> {
   const createBase = opts?.baseOverride || await resolveServingBase(scenario)
@@ -235,7 +235,7 @@ export async function pingAgentService(timeoutMs = 2500): Promise<boolean> {
 
 // 客户端主动取消（停止按钮 / 组件卸载 / 切换任务时 resetRun）触发的 abort：
 // fetch 与 ReadableStream reader 都会抛 AbortError。这属于「正常结束」而非请求失败，
-// 不能向上抛——否则 AgentChatPanel 会弹「⚠️ aborted」错误气泡。
+// 不能向上抛，否则 AgentChatPanel 会弹「⚠️ aborted」错误气泡。
 function isAbortError(err: unknown): boolean {
   return (
     !!err && typeof err === 'object' && (err as { name?: string }).name === 'AbortError'
@@ -389,7 +389,7 @@ export async function stopAgentRun(sessionId: string, runId: string): Promise<bo
   return data?.stopped === true
 }
 
-// 影子对拍（#1848）：只影子**首轮**消息——pi 侧是新会话、没有旧图那边的历史，第二轮起
+// 影子对拍（#1848）：只影子首轮消息，pi 侧是新会话、没有旧图那边的历史，第二轮起
 // 两侧上下文不对等，继续对拍会产出「看起来能比、实际不可比」的数字。「是否首轮」记在这里
 // 而不是面板里：所有接入点都经本函数发消息，记在这一层才不会漏。集合随页面生命周期存活，
 // 上界是用户在一次页面加载里开过的会话数（几十条量级），无需淘汰。
@@ -413,7 +413,7 @@ export async function sendAgentMessage(
   sessionsWithSentMessage.add(sessionId)
   // 够不够格对拍由 isComparableTurn 单点判定（四个条件与理由见其文档）；不够格就连观测都不挂。
   // 注意 AgentChatPanel 每条消息都带地区摘要，故判据是「有没有地区摘要之外的上下文」而不是
-  // 「有没有 payload」——后者会让四个生产场景一条影子都跑不起来，开了 shadow 也永远攒不到证据。
+  // 「有没有 payload」，后者会让四个生产场景一条影子都跑不起来，开了 shadow 也永远攒不到证据。
   const { shadowPayload, hasExtraContext } = splitTurnPayload(opts?.payload)
   const observer: TurnObserver | null = isComparableTurn({
     isFirstTurn,
@@ -422,13 +422,13 @@ export async function sendAgentMessage(
     isShadowSession: ephemeralSessionIds.has(sessionId),
     hasExtraContext,
   }) ? createTurnObserver() : null
-  // 身份快照取在这一轮**开始**时，供影子发起前比对（见 identityFingerprint 文档）
+  // 身份快照取在这一轮开始时，供影子发起前比对（见 identityFingerprint 文档）
   const identityAtTurn = observer ? identityFingerprint() : ''
   const relay = observer
     ? (event: AgentEvent) => { observer.observe(event); onEvent(event) }
     : onEvent
-  // 用户那一轮**结束之后**才起影子，且完全脱离用户路径：先问灰度状态（命中缓存，不发请求），
-  // 关着就连 shadow 模块都不加载。任何异常都吞掉——影子失败只是少一条台账。
+  // 用户那一轮结束之后才起影子，且完全脱离用户路径：先问灰度状态（命中缓存，不发请求），
+  // 关着就连 shadow 模块都不加载。任何异常都吞掉，影子失败只是少一条台账。
   const launchShadow = () => {
     if (!observer) return
     const legacy = observer.result()
@@ -552,7 +552,7 @@ export async function fetchAgentRef<T = unknown>(sessionId: string, refId: strin
   return (await res.json()).data as T
 }
 
-// ── 后端技能 L1 索引（渐进式披露 Skills，见 packages/agent-runtime/src/agent_runtime/skills/loader.py） ──
+// 后端技能 L1 索引（渐进式披露 Skills，见 packages/agent-runtime/src/agent_runtime/skills/loader.py）
 // 只取启用技能的名称+描述，供斜杠菜单/助手提示；全文由 agent 在会话内 load_skill 读取。
 export type AgentSkillMeta = {
   name: string
@@ -568,7 +568,7 @@ export async function fetchAgentSkills(timeoutMs = 4000): Promise<AgentSkillMeta
   return list.filter((s) => s.enabled !== false) // 停用技能不进斜杠菜单（与 skills_index 一致）
 }
 
-// ── 聊天历史（走 Node /api，非 /agent-api；经 api.ts 自动带登录 token，按用户隔离） ──
+// 聊天历史（走 Node /api，非 /agent-api；经 api.ts 自动带登录 token，按用户隔离）
 // 后端：server/chat-store.mjs + server/index.mjs routeAgentHistory。
 // 与 harness checkpointer 解耦：此处存「给 UI 看/回放的逐轮消息段」，刷新恢复 + 历史侧栏用。
 
@@ -632,7 +632,7 @@ export type HistoryTranscript = {
 const HISTORY_BASE = '/agent-history/sessions'
 const enc = encodeURIComponent
 
-// 注：会话「归属登记」不再由前端自助调用（防认领他人 session_id），改由 agent-backend 创建
+// 会话「归属登记」不再由前端自助调用（防认领他人 session_id），改由 agent-backend 创建
 // 会话时（createAgentSession persist=true）用服务端凭证回调 Node 登记 owner。见 routes.py / chat-store.mjs。
 
 // 列出「我的」会话（倒序）。

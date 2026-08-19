@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // Handoff placeholder. Renders the real-page metadata defined on each route in
 // router/index.ts so the running app is a faithful, self-documenting map of the
-// production menu (from getRouters). Codex should replace these with real views
+// production menu (from getRouters). These placeholders should be replaced with real views
 // that load the captured data described here. See docs/data/data-inventory.md.
 import { computed } from 'vue'
 import { useRoute } from 'vue-router'
@@ -54,7 +54,7 @@ const kindTagType = computed(() => ({ real: 'success', forecast: 'danger', mixed
     </el-descriptions>
 
     <p class="ph-todo">
-      ⏳ 待 Codex 实现：按上方真实数据构建本页视图。页面映射全表见
+      ⏳ 待实现：按上方真实数据构建本页视图。页面映射全表见
       <code>docs/data/data-inventory.md</code>；预测逻辑见 <code>docs/forecast/forecast-logic.md</code>。
     </p>
   </div>

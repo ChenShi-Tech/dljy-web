@@ -13,7 +13,7 @@ import { onRegionChange } from '@/composables/useRegionReload'
 
 const ROUTE_PATH = '/yygl/data-governance'
 
-// 现货 S2/S3 新接入的 5 个 yn_* family（issue #384）。consumeNote 如实标注当前消费入口——
+// 现货 S2/S3 新接入的 5 个 yn_* family（issue #384）。consumeNote 如实标注当前消费入口
 // 这 5 族 apiFamily=null（无独立 /api/v1 业务接口），主要经 /api/real 回放 + 本面板质量呈现。
 const SPOT_QUALITY_FAMILIES = [
   { family: 'yn_user_price', label: '用户侧统一电价', consumeNote: '日前/实时用户侧电价 · /api/real 回放 + 本面板' },
@@ -79,7 +79,7 @@ type QualityCompleteness = {
   avgRatio?: number
   failingDayCount?: number
   // quality-scan.mjs::buildCompleteness 已产出的「未达标日」明细（前 50 条，每条带当日
-  // actual/expected/ratio）。前端原本只读 failingDayCount 计数——issue #455 下钻消费它画
+  // actual/expected/ratio）。前端原本只读 failingDayCount 计数，issue #455 下钻消费它画
   // 完整率趋势 + 缺点明细表。
   failingDays?: QualityFailingDay[]
 }

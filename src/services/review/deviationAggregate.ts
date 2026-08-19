@@ -2,7 +2,7 @@
 // ---------------------------------------------------------------------------
 // 验收红线：周报数字与逐日 /review 之和恒等（合计=Σ已取到日，缺数日不计入且如实列名）；
 // 责任归因二轴（预测不准/突发情况/策略失误/操作失误）仅周聚合人工补填，AI 只给
-// 业务成因→责任归因的映射建议、人确认——与 S1 业务成因四因子正交、不合并。
+// 业务成因→责任归因的映射建议、人确认，与 S1 业务成因四因子正交、不合并。
 // 两轴均存 id 不存中文（morning-review.mjs 教训）。
 import type { PeriodReviewDay } from './reviewPeriodClient'
 
@@ -20,7 +20,7 @@ export function responsibilityLabelOf(id: string): string | null {
 }
 
 /**
- * 业务成因 → 责任归因**映射建议**（仅建议，人确认；日度不强制——数据不够时逼人答
+ * 业务成因 → 责任归因映射建议（仅建议，人确认；日度不强制，数据不够时逼人答
  * 第二问只会得到假归因）。pending/none 不给建议（连第一问都没答）。
  */
 export const RESPONSIBILITY_SUGGESTION: Readonly<Record<string, ResponsibilityAxisId>> = Object.freeze({

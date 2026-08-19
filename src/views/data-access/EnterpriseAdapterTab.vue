@@ -2,8 +2,8 @@
 // 数据源接入 · 企业自建通道 tab（Epic #1893 / Issue #1896）。
 //
 // 与「电网官方平台」并列的通道类型：企业方自建接口向本平台透传数据。
-// 首个实例是中广核云南自建透传——它是云南唯一的真实实时数据来源（非电网官方接口）。
-// 本 tab 只收编其配置入口，**不动其取数与幂等台账逻辑**（Epic #1893 边界）。
+// 首个实例是中广核云南自建透传，它是云南唯一的真实实时数据来源（非电网官方接口）。
+// 本 tab 只收编其配置入口，不动其取数与幂等台账逻辑（Epic #1893 边界）。
 import { Building2 } from 'lucide-vue-next'
 import CgnYunnanDataSourceCard from '@/components/CgnYunnanDataSourceCard.vue'
 </script>

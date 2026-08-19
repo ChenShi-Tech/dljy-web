@@ -44,7 +44,7 @@ export type NavItem = {
   demo?: boolean
   // 立场亲和（#2193 · #2196）：该页面属于哪个市场立场的专属工作台。缺省 = 共享
   // （发电/售电/储能全立场可见）；组合/集团视角（TRADER/GROUP）恒全可见。
-  // 只做叶子级标注——分组内常混排共享与专属页（如公司管理：台账属发电、合同共享）。
+  // 只做叶子级标注，分组内常混排共享与专属页（如公司管理：台账属发电、合同共享）。
   stanceAffinity?: SubjectType[]
 }
 
@@ -123,12 +123,12 @@ export const navigation: NavItem[] = [
     ]
   },
   {
-    // 工作流：AI 交易助手（简化 IA·PR-B）——原「智能实验室」+「智能 Copilot」两组并一组，只收敛入口、功能零删减。
+    // 工作流：AI 交易助手（简化 IA·PR-B），原「智能实验室」+「智能 Copilot」两组并一组，只收敛入口、功能零删减。
     // 排序按交易动线：晨报→申报前体检→（申报/复盘在「现货交易」组）→政策/储能专项→通用对话。
     // 「交易策略实验室」已随 #1799 删除（研究沙盘、示意数据，能力由风控阈值面板与敞口看板承接）。
     // 首项「智能体工作台」为通用对话入口（/ai-agent，带会话历史侧栏、persistHistory），
     // 其余为专项 AgentChatPanel 薄壳，各带独立 promptKey；所有子项 path 与 promptKey 不变（后端白名单 pages.py 不动）。
-    // 编排配置类（AI工作流中枢/Dify/LangGraph）已移入「系统管理」——它们是配置工具、非交易员日常动线。
+    // 编排配置类（AI工作流中枢/Dify/LangGraph）已移入「系统管理」，它们是配置工具、非交易员日常动线。
     // 日前竞价空间(/ycsj/jjkj) 已收口进「预测数据回放」hub（SP-4a），改 redirect 保深链。
     // pi PoC 临时入口 `/strategic-qa` `/declaration-checkup` 已从菜单摘除（#1937 阶段一），路由与 governance 授权保留以维持深链可达。
     path: '/ai-copilot',

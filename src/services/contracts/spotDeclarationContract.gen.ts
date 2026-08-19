@@ -42,7 +42,7 @@ export type SpotDeclarationCreatePayload = {
   energyCurveMwh96?: number[]
   /** 96 点申报价 元/MWh；报量不报价时为 null */
   priceCurve96?: number[] | null
-  /** 报价依据摘要：本次报价的成本锚或机会成本锚，须可追溯到具体数值（如「中长期均价 232、现货 P50 预测 248，价差 16 元/MWh」）。监管质询时这是自证报价形成过程的唯一材料——无法解释的报价即高风险报价，故不填不得建单。存量单无此字段者，风控检查按 UNAVAILABLE 升档而非拦死。 */
+  /** 报价依据摘要：本次报价的成本锚或机会成本锚，须可追溯到具体数值（如「中长期均价 232、现货 P50 预测 248，价差 16 元/MWh」）。监管质询时这是自证报价形成过程的唯一材料，无法解释的报价即高风险报价，故不填不得建单。存量单无此字段者，风控检查按 UNAVAILABLE 升档而非拦死。 */
   quoteRationale: string
   /** 主体类型（GENERATOR/RETAILER/TRADER/STORAGE），缺省取会话主体 */
   subjectType?: string

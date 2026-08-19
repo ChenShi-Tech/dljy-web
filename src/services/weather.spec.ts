@@ -1,11 +1,11 @@
 // weather.ts 收编守卫：两个视图（HomeConsole/WeatherForecast）天气取数的统一出口。
 // 守的不变量：
-//   1. 回退顺序固定：和风（平台代理 /qweather）优先 → Open-Meteo 公网回退 → 诚实空
-//      （null / []），绝不合成装饰值（首页曾写死「21°晴」）；
-//   2. WMO 码 → 中文映射只存在于回退链路（和风链路直接用其 text）；
-//   3. 外部辅助数据不参与 provenance 标注——本服务不得读取/写入 mock 标注体系；
-//   4. fetchForecastBundle 是预报页全量拉取：非 ok 必须抛错（该页有整体错误态，
-//      与挂件「隐藏温度」策略不同——静默空会渲染成永远空白页）。
+// 1. 回退顺序固定：和风（平台代理 /qweather）优先 → Open-Meteo 公网回退 → 诚实空
+// （null / []），绝不合成装饰值（首页曾写死「21°晴」）；
+// 2. WMO 码 → 中文映射只存在于回退链路（和风链路直接用其 text）；
+// 3. 外部辅助数据不参与 provenance 标注，本服务不得读取/写入 mock 标注体系；
+// 4. fetchForecastBundle 是预报页全量拉取：非 ok 必须抛错（该页有整体错误态，
+// 与挂件「隐藏温度」策略不同，静默空会渲染成永远空白页）。
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const apiGet = vi.hoisted(() => vi.fn())

@@ -2,7 +2,7 @@
 // 价格分析 (zrsjg / zcqxhdl listrs) — 精修版,对照线上 A8.png:左大 3D 电价图 + 右上时点切面 + 右下日期切面。
 // 顶部:运行日期(区间) + 日前价/实时价 勾选(控制三图显示哪类)。
 // 数据经市场洞察价格分析契约归一为 averageCurves / dayCurves / dailyStats。
-//   3D: 选定日期区间内每天的 96 点价格曲线(时间×日期×价格);时点切面=平均日内;日期切面=按天 max/min/avg。
+// 3D: 选定日期区间内每天的 96 点价格曲线(时间×日期×价格);时点切面=平均日内;日期切面=按天 max/min/avg。
 import { onMounted, onBeforeUnmount, onActivated, ref, nextTick, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import * as echarts from 'echarts'
@@ -52,7 +52,7 @@ let d3Ro: ResizeObserver | null = null // 容器尺寸变化（侧栏折叠/列�
 // 两个 2D 切面图迁入 useEChart,同组 connect:tooltip/缩放跨图联动
 const tHandle = useEChart(tRef, { render: renderTimeSlice, group: 'price-analysis' })
 const dHandle = useEChart(dRef, { render: renderDateSlice, group: 'price-analysis' })
-// 防止切地区时旧地区慢响应覆盖新地区价格状态（roborev job415）。
+// 防止切地区时旧地区慢响应覆盖新地区价格状态（#415）。
 let loadGeneration = 0
 
 async function load() {

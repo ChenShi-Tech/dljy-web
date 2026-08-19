@@ -1,10 +1,10 @@
 <script setup lang="ts">
 // 地区数据来源提示条，四种互斥状态（不重复堆叠，优先级 无权限 > 演示 > 接口级Mock > 基线回退）：
 // 0) 无权限（Sub-2/#518 回放层公司授权闸门 401/403，regionDataStatus.accessDenied）：本页
-//    数据为公司私有族（如中广核云南场站结算/损益），当前账号不在数据归属公司的授权集合内——
+// 数据为公司私有族（如中广核云南场站结算/损益），当前账号不在数据归属公司的授权集合内，
 //    诚实显「无权查看」，绝不显示 mock 假曲线冒充（Sub-4 #520）。
 // 1) 演示地区（非真实数据地区，见 regions.ts::isRealDataRegion）：整区无专属真实市场数据接入
-//    （含已开通演示地区如四川——仅有演示公司、市场数据严格地区不回退即空；及通用模板），
+// （含已开通演示地区如四川，仅有演示公司、市场数据严格地区不回退即空；及通用模板），
 //    现货等数据为空或按地区画像合成的模拟数据，常显演示提示。
 // 2) 真实数据地区某次取数走 mockReplay 合成（响应头 x-data-mock=true）：诚实显「模拟数据」，
 //    避免真实数据地区缺某 family 时把合成曲线当真实（#348 P1）。
@@ -19,7 +19,7 @@ import { deniedCaptureFamilies } from '@/services/api'
 import { currentRegion } from '@/services/region/regionContext'
 import { getRegionById, isRealDataRegion } from '@/data/regions'
 
-// 无权限横幅的 opt-in 契约（Sub-4 #520，roborev job146）：消费私有 capture 族的面板
+// 无权限横幅的 opt-in 契约（Sub-4 #520）：消费私有 capture 族的面板
 // 传入 `families`（自己经 fetchCaptured 取的私有 family 列表），横幅只在这些 family 之一
 // 当前被授权闸门拒绝时显示。不传（公共/普通页面）→ 永不显示无权限态。这让无权限提示严格
 // 绑定「你正在看的这块数据」，杜绝全局拒绝状态跨 tab（单路由多 tab 工作台）/跨面板粘滞。
@@ -33,7 +33,7 @@ const BASELINE_REGION_ID = 'shanxi'
 const baselineLabel = computed(() => getRegionById(BASELINE_REGION_ID).shortName)
 
 // 无权限：本面板声明的私有 family 中至少一个当前被拒（401 未登录会被全局跳登录，
-// 实际停留可见的主要是 403 无授权）。优先级最高——被拒时不叠加演示/Mock 提示。
+// 实际停留可见的主要是 403 无授权）。优先级最高，被拒时不叠加演示/Mock 提示。
 const showAccessDenied = computed(() => {
   const families = props.families
   if (!families || families.length === 0) return false
@@ -42,7 +42,7 @@ const showAccessDenied = computed(() => {
 })
 // 演示地区：整区无专属真实数据接入，优先显示「演示」提示（已涵盖合成/基线来源）。
 const isDemoRegion = computed(() => !isRealDataRegion(currentRegion.value.id))
-// 接口级 Mock：真实数据地区某次取数走了 mockReplay 合成（响应头 x-data-mock=true）——
+// 接口级 Mock：真实数据地区某次取数走了 mockReplay 合成（响应头 x-data-mock=true），
 // 例如山西/云南缺某个 family 的真实采集时，诚实标注「模拟数据」，不因地区整体标真实而漏标（#348 P1）。
 // 演示地区已由演示横幅统一涵盖，不重复堆叠。
 const showMock = computed(() => !isDemoRegion.value && regionDataStatus.value.mock)

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // 复盘待办箱（Epic #2033 · M1 · #2038）：template_instances status=pending/draft。
-// 待办分母来自触发引擎（#2039）——引擎未上线前探针降级为就绪度台账替代视图
+// 待办分母来自触发引擎（#2039），引擎未上线前探针降级为就绪度台账替代视图
 // （不拿假分母，Epic 验收红线）。引擎上线后本组件零改动出真数。
 import { computed, onMounted, ref } from 'vue'
 import { fetchTemplateInstanceFeed } from '@/services/review/templateInstanceClient'

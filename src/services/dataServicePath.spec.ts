@@ -1,6 +1,6 @@
 // #2169 P2-2a：数据管理路径族 → data-service 改道判定的纯函数单测。
 // 关键负例：/v1/settlements（导入台账读）被复盘中心（交易页）消费，读服务面按边界留平台，
-// 不得改道——回归时这条若翻绿意味着边界被破坏。
+// 不得改道，回归时这条若翻绿意味着边界被破坏。
 import { describe, expect, it } from 'vitest'
 import { DATA_SVC_ROOT, dataServicePath } from './dataServiceRoutes'
 
@@ -26,7 +26,7 @@ describe('dataServicePath 数据管理路径族改道（#2169 P2-2a）', () => {
   })
 
   it('边界负例：交易页消费的读路径与无关路径不改道', () => {
-    // 复盘中心（ReviewCenterView）消费的导入台账读——读服务面留平台。
+    // 复盘中心（ReviewCenterView）消费的导入台账读，读服务面留平台。
     expect(dataServicePath('/v1/settlements')).toBeNull()
     expect(dataServicePath('/api/v1/settlements')).toBeNull()
     // 普通业务域与 agent 域不受影响。

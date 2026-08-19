@@ -66,7 +66,7 @@ async function loadModels() {
   const reqId = ++loadModelsReqId
   modelLoading.value = true
   // 切地区/目标时先清空目录：加载在途或失败时残留旧地区模型，predict 却发新 region，
-  // 会重现跨地区口径串读（#1168 竞态，codex P2 #3590941913）
+  // 会重现跨地区口径串读（#1168 竞态）
   models.value = []
   try {
     const response = await fetchForecastModels(props.target, activeRegionId.value)

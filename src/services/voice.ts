@@ -1,7 +1,7 @@
 // 语音服务:语音识别(ASR)+ 语音合成(TTS)。
 // provider 可切换:
-//   · native —— 浏览器原生 Web Speech API,免费、零接入,默认/演示用;
-//   · cloud  —— 第三方云语音(讯飞 / 百度 等),接口与配置已预留,需按厂商协议对接。
+// · native：浏览器原生 Web Speech API,免费、零接入,默认/演示用;
+// · cloud ：第三方云语音(讯飞 / 百度 等),接口与配置已预留,需按厂商协议对接。
 // 两种都保留:native 开箱即用,cloud 可在设置里配置后切换,代码无需返工。
 
 export type VoiceProvider = 'native' | 'cloud'
@@ -30,7 +30,7 @@ export function saveVoiceConfig(cfg: Partial<VoiceConfig>) {
   localStorage.setItem(KEY, JSON.stringify({ ...getVoiceConfig(), ...cfg }))
 }
 
-// ── 识别器统一接口 ───────────────────────────────────────────────
+// 识别器统一接口
 export type RecognizerHandlers = {
   onInterim?: (text: string) => void // 实时中间结果(边说边出)
   onFinal?: (text: string) => void // 一句说完的最终结果
@@ -55,14 +55,14 @@ export function isVoiceSupported(provider?: VoiceProvider): boolean {
   return isNativeSupported()
 }
 
-// 浏览器是否支持语音合成（TTS 朗读）——与 isNativeSupported（语音识别 ASR）正交：
+// 浏览器是否支持语音合成（TTS 朗读），与 isNativeSupported（语音识别 ASR）正交：
 // Firefox 等支持 speechSynthesis 但不支持 SpeechRecognition，朗读按钮应据此独立检测，
 // 而非混用 ASR 能力的 isVoiceSupported，否则在不支持 ASR 的环境会误隐藏朗读按钮。
 export function isSpeechSynthesisSupported(): boolean {
   return typeof window !== 'undefined' && 'speechSynthesis' in window
 }
 
-// ── 原生实现(Web Speech API)────────────────────────────────────
+// 原生实现(Web Speech API)
 function createNativeRecognizer(handlers: RecognizerHandlers): Recognizer {
   const SR: any = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
   let listening = false
@@ -108,7 +108,7 @@ function createNativeRecognizer(handlers: RecognizerHandlers): Recognizer {
   }
 }
 
-// ── 云语音实现(预留)───────────────────────────────────────────
+// 云语音实现(预留)
 // 接讯飞 / 百度 等:通常是 MediaRecorder 录音 → WebSocket / HTTP 上传 → 返回文本。
 // 各厂商协议不同,这里保留统一出入口;未配置时给出友好提示,引导用原生或去设置。
 function createCloudRecognizer(handlers: RecognizerHandlers): Recognizer {
@@ -132,7 +132,7 @@ export function createRecognizer(handlers: RecognizerHandlers, provider?: VoiceP
   return p === 'cloud' ? createCloudRecognizer(handlers) : createNativeRecognizer(handlers)
 }
 
-// ── 语音合成(TTS)──────────────────────────────────────────────
+// 语音合成(TTS)
 // 挑一个尽量好听的中文嗓音:微软神经在线声(晓晓/云希等)> Apple 中文女声 > 系统中文女声。
 let cachedVoice: SpeechSynthesisVoice | null = null
 function bestZhVoice(): SpeechSynthesisVoice | null {

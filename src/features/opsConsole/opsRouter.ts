@@ -5,7 +5,7 @@
 // api.ts::dataServicePath 自动走 /data-svc 代理到 data-service :8190（P2-2a 已落）。
 //
 // 门禁：需主平台登录（token 共享 localStorage）且角色为 ADMIN/BOSS（与主前端
-// adminOnlyRoutes 同口径）；未登录显示引导页（回主平台登录），非管理员 403——
+// adminOnlyRoutes 同口径）；未登录显示引导页（回主平台登录），非管理员 403
 // 不在独立台复刻主前端的登录页与全量权限矩阵（身份根在平台，#2174 红线）。
 import { createRouter, createWebHashHistory, type RouteRecordRaw } from 'vue-router'
 import { getCurrentUser, getToken } from '@/services/auth'

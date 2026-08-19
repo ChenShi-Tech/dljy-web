@@ -65,7 +65,7 @@ const stationOptions = computed(() => {
 const selectedStation = computed(() => stations.value.find((s) => s.id === form.value.stationId) ?? null)
 
 // 站级隔离：偏差考核结算规则跟随厂站所属地区（与上方预测 region_id 同源，见 predict() line 113），
-// 不随全局地区切换器漂移——厂站是物理资产、归属地区固定；缺则降级"未参数化"，不静默套别省。
+// 不随全局地区切换器漂移，厂站是物理资产、归属地区固定；缺则降级"未参数化"，不静默套别省。
 const settlementRegionId = computed(() => String(selectedStation.value?.regionId || selectedRegionId.value))
 const settlementRule = computed(() => getSettlementRuleSpec(settlementRegionId.value))
 const tolerancePct = computed(() => settlementRule.value?.deviationTolerancePct ?? 3)
@@ -184,8 +184,8 @@ function render() {
   const cc = chartChrome()
   const primary = cssVar('--primary') || '#409eff'
   const warn = cssVar('--el-color-warning') || '#e6a23c'
-  const baselineColor = '#67c23a'   // 晴空基线（无云理论出力）——绿色虚线参照
-  const actualColor = '#f56c6c'     // 实际出力（历史实测）——红色实线参照
+  const baselineColor = '#67c23a'   // 晴空基线（无云理论出力），绿色虚线参照
+  const actualColor = '#f56c6c'     // 实际出力（历史实测），红色实线参照
   const r = result.value
   const hasData = !!r && r.points.length > 0
   const labels = hasData ? r!.points.map((p) => `${String(p.hour).padStart(2, '0')}:00`) : []

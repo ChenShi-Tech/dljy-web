@@ -1,8 +1,8 @@
 // 报表 AI 经营解读系统提示（统一前端 prompt 管理：报表层）。
 //
 // 用于报表「RB-AI-SUMMARY」区块：把已计算指标交给大模型生成三段式经营解读。
-// ⚠️ 输出契约硬约束：必须只输出 {"sections":[{"title","body"}, ...]} JSON——
-//   reportBlocks.ts 据此解析，失败才降级为规则模板，改 schema 会触发降级。
+// ⚠️ 输出契约硬约束：必须只输出 {"sections":[{"title","body"}, ...]} JSON
+// reportBlocks.ts 据此解析，失败才降级为规则模板，改 schema 会触发降级。
 import type { ChatMessage } from '../services/llm'
 
 /** 报表解读输入指标（由 reportBlocks 装配后传入）。 */

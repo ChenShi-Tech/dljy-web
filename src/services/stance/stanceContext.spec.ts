@@ -2,9 +2,9 @@
 //
 // 继承自已删除的 positionContext.spec.ts 的两条红线断言（语义随「推导上收服务端」
 // 平移，断言方向不变）：
-//   ① 立场集合与 allowedSubjectTypes（数据可见范围）正交——扩大那个不得扩大这个；
-//   ② 空态不默认——会话未就绪/数据脏 → 空集合，绝不静默回落成某个具体立场
-//     （默认成售电就是把储能主体的单据换成售电单据）。
+// ① 立场集合与 allowedSubjectTypes（数据可见范围）正交，扩大那个不得扩大这个；
+// ② 空态不默认，会话未就绪/数据脏 → 空集合，绝不静默回落成某个具体立场
+// （默认成售电就是把储能主体的单据换成售电单据）。
 // 新增服务端权威语义：允许集合只来自 user.stances 下发，前端零推导。
 import { beforeEach, describe, expect, it } from 'vitest'
 import type { Stance } from '@/services/governance'
@@ -74,7 +74,7 @@ describe('允许集合只来自服务端下发，前端零推导', () => {
 
   it('扩大 allowedSubjectTypes 不会扩大可用立场（两者正交）', () => {
     // allowedSubjectTypes 是 data-scope 的行过滤维度；若被误当立场来源，这个账号
-    // 就能装配出集合外立场的单据——那是越权面。断言用单立场账号才有区分力：
+    // 就能装配出集合外立场的单据，那是越权面。断言用单立场账号才有区分力：
     // 服务端只下发了 home 一项，任何本地字段都不得把它变多。
     syncStancesFromSession({
       subjectType: 'RETAILER',
@@ -115,7 +115,7 @@ describe('空态不默认（继承 positionContext 红线）', () => {
   it('会话未就绪时为空，不默认成任何立场', () => {
     syncStancesFromSession(null)
     expect(stances.value).toEqual([])
-    // 关键：不得回落成 RETAILER —— 那会把储能主体的单据换成售电单据
+    // 关键：不得回落成 RETAILER：那会把储能主体的单据换成售电单据
     expect(activeStance.value).toBeNull()
     expect(requiresStanceSelection()).toBe(false)
   })
