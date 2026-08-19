@@ -91,7 +91,7 @@ function togglePanel() {
   background: var(--panel, rgba(10, 19, 34, 0.85));
   border: 1px solid var(--line, rgba(255, 255, 255, 0.14));
   color: var(--text, #eaf4ff);
-  font-size: 11px;
+  font-size: var(--font-tb-11);
   line-height: 18px;
   white-space: nowrap;
   opacity: 0;
