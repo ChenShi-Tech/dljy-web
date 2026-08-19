@@ -1,12 +1,12 @@
-// ECharts 图表「美学设计语言」层 —— 与 chartOptions.ts 分工：
-//   chartOptions.ts 管「展示规范」(单位 tooltip / dataZoom / toolbox / 空态)；
-//   chartStyle.ts   管「美学质感」(语义色板 / 渐变 / 圆角 / 标注 / 动效 / 精致 tooltip)。
+// ECharts 图表「美学设计语言」层：与 chartOptions.ts 分工：
+// chartOptions.ts 管「展示规范」(单位 tooltip / dataZoom / toolbox / 空态)；
+// chartStyle.ts   管「美学质感」(语义色板 / 渐变 / 圆角 / 标注 / 动效 / 精致 tooltip)。
 //
-// 设计取向：电力交易控制室式的克制专业感 —— 语义化配色、面积渐变、圆角柱、
+// 设计取向：电力交易控制室式的克制专业感：语义化配色、面积渐变、圆角柱、
 // 描边 tooltip、阈值/相位标注、克制动效(≤600ms cubicOut)。所有 chrome 取色走
 // chartChrome()，随 classic/arc/neon/paper 四档主题自动切换，暗色下同样精致。
 //
-// 用法：在视图 render() 内组合调用 —— palette()/lineSeries()/stepSeries()/barSeries()/
+// 用法：在视图 render() 内组合调用：palette()/lineSeries()/stepSeries()/barSeries()/
 // gradientArea()/markLineThreshold()/tooltipStyle() 等拼进 setOption。
 //
 // 曲线真实呈现纪律：禁用 smooth 平滑(样条插值会画出数据中不存在的假峰谷)；
@@ -14,23 +14,23 @@
 import { cssVar, chartChrome } from '@/composables/useTheme'
 import { fmtNum, chartToolbox } from '@/services/chart/chartOptions'
 
-/* ───────────────────────── 配色系统 ───────────────────────── */
+/* 配色系统 */
 
 /** 电力语义命名色：系列按业务含义取色，保证跨视图一致(负荷恒为蓝、新能源恒为青绿…)。 */
 export const POWER = {
-  load: '#2563eb',        // 负荷 / 用电量 —— 蓝
-  newEnergy: '#0f9d8a',   // 新能源合计 —— 青绿(与 --primary teal 同族)
-  wind: '#38bdf8',        // 风电 —— 浅天蓝
-  solar: '#f59e0b',       // 光伏 —— 琥珀
-  thermal: '#b45309',     // 火电 / 燃煤 —— 赭
-  hydro: '#0891b2',       // 水电 —— 青
-  nuclear: '#db2777',     // 核电 —— 品红
-  storage: '#7c3aed',     // 储能 —— 紫
-  price: '#f97316',       // 价格 —— 橙
-  forecast: '#94a3b8',    // 预测 / 计划 —— 中性灰(常配虚线)
-  deviation: '#dc2626',   // 偏差 / 风险 —— 红
-  positive: '#16a34a',    // 盈利 / 买入 / 正向 —— 绿
-  negative: '#dc2626'     // 亏损 / 卖出 / 负向 —— 红
+  load: '#2563eb',        // 负荷 / 用电量：蓝
+  newEnergy: '#0f9d8a',   // 新能源合计：青绿(与 --primary teal 同族)
+  wind: '#38bdf8',        // 风电：浅天蓝
+  solar: '#f59e0b',       // 光伏：琥珀
+  thermal: '#b45309',     // 火电 / 燃煤：赭
+  hydro: '#0891b2',       // 水电：青
+  nuclear: '#db2777',     // 核电：品红
+  storage: '#7c3aed',     // 储能：紫
+  price: '#f97316',       // 价格：橙
+  forecast: '#94a3b8',    // 预测 / 计划：中性灰(常配虚线)
+  deviation: '#dc2626',   // 偏差 / 风险：红
+  positive: '#16a34a',    // 盈利 / 买入 / 正向：绿
+  negative: '#dc2626'     // 亏损 / 卖出 / 负向：红
 } as const
 
 /** 通用分类色板(≥10 色)：未指定语义时按序取色，色相分散、明度协调。 */
@@ -58,7 +58,7 @@ export function divergingColors(): string[] {
   return [...DIVERGING]
 }
 
-/* ───────────────────────── 渐变与质感 ───────────────────────── */
+/* 渐变与质感 */
 
 type GradientStop = { offset: number; color: string }
 function linear(stops: GradientStop[]) {
@@ -85,9 +85,9 @@ export function gradientArea(color: string, topAlpha = 0.32, bottomAlpha = 0.02)
   }
 }
 
-/* ───────────────────────── 系列预设 ───────────────────────── */
+/* 系列预设 */
 
-/** 折线系列基底：直线连接采样点(不平滑——平滑样条会画出数据中不存在的假峰谷)、2.5px、悬停聚焦本系列、隐藏数据点(悬停时显)。 */
+/** 折线系列基底：直线连接采样点(不平滑，平滑样条会画出数据中不存在的假峰谷)、2.5px、悬停聚焦本系列、隐藏数据点(悬停时显)。 */
 export function lineSeries(name: string, data: unknown[], color?: string, extra: Record<string, unknown> = {}) {
   return {
     name,
@@ -105,10 +105,10 @@ export function lineSeries(name: string, data: unknown[], color?: string, extra:
 }
 
 /**
- * 阶梯线系列：用于「按时段恒定」的值——现货出清价/申报价、申报电量、持仓比例、策略系数等。
+ * 阶梯线系列：用于「按时段恒定」的值，现货出清价/申报价、申报电量、持仓比例、策略系数等。
  * 电力现货 96 点(15min)/24 点(1h)数据每个点代表一个时段的恒定值，物理形态就是阶梯。
  *
- * ⚠️ step 方向必须匹配 x 轴标签口径（错配会让曲线整体错位一格，codex #335 P2）：
+ * ⚠️ step 方向必须匹配 x 轴标签口径（错配会让曲线整体错位一格，#335）：
  * - 时段「末刻」标签(首点 00:15/01:00，如 sdpt 采集 POINTS_96=(i+1)*15) → 默认 'start'(00:15 的值覆盖 00:00~00:15)；
  * - 时段「起点」标签(首点 00:00/0:00，如 i*15、slot0=00:00、agent hour=0 起) → 传 extra {step:'end'}(横段保持当前点值至下一点)。
  */
@@ -148,7 +148,7 @@ export function signColorItem() {
   }
 }
 
-/* ───────────────────────── 标注 ───────────────────────── */
+/* 标注 */
 
 /** 阈值参考线(水平虚线 + 端部标签)：如频率 50Hz、利润率 0、ONI ±0.5。 */
 export function markLineThreshold(value: number, label: string, color?: string) {
@@ -187,7 +187,7 @@ export function markPointExtrema(opts: { max?: boolean; min?: boolean } = { max:
   }
 }
 
-/* ───────────────────────── 精致 tooltip / 图例 / grid ───────────────────────── */
+/* 精致 tooltip / 图例 / grid */
 
 /** tooltip 视觉皮肤(描边 + 投影 + 圆角)。与 chartOptions.axisTooltip 的 formatter 组合使用。 */
 export function tooltipStyle() {
@@ -257,7 +257,7 @@ export function valueAxis(name = '', extra: Record<string, unknown> = {}) {
   }
 }
 
-/* ───────────────────────── 动效 ───────────────────────── */
+/* 动效 */
 
 /** 克制入场动效(≤600ms cubicOut + 轻微逐项延迟)，避免廉价弹跳感。 */
 export function animation() {
@@ -288,7 +288,7 @@ export function continuousVisualMap(opts: { min: number; max: number; colors?: s
   }
 }
 
-/* ───────────────────────── 分时背景 / 参考线 / 浮层 ───────────────────────── */
+/* 分时背景 / 参考线 / 浮层 */
 
 /** 峰平谷分时定义：from/to 为小时(0-24)。 */
 export interface PeriodDef { from: number; to: number; label: string; color: string }
@@ -370,7 +370,7 @@ export function kpiOverlay(items: { text: string; sub?: string; color?: string }
   }
 }
 
-/* ───────────────────────── 工具箱 / 分段着色 / 实时 ───────────────────────── */
+/* 工具箱 / 分段着色 / 实时 */
 
 /** 增强工具箱：在 chartToolbox 基础上加 折线↔柱↔堆叠 一键切换(magicType)。 */
 export function enhancedToolbox(name = '图表', magic: ('line' | 'bar' | 'stack')[] = ['line', 'bar']) {

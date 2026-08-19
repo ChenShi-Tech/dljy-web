@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// 交互式智能体面板：流式渐变生成（OpenAI 式）+ 工具卡 + 审批卡 + 图表 + 任务计划。
+// 交互式智能体面板：流式渐变生成+ 工具卡 + 审批卡 + 图表 + 任务计划。
 // 事件协议见 src/services/agentClient.ts 与后端 packages/agent-runtime/src/agent_runtime/api/service.py。
 import { computed, nextTick, onMounted, onBeforeUnmount, provide, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
@@ -73,7 +73,7 @@ const props = withDefaults(
     // 防不同页面同场景互相串台）② 随会话 bind 落库为来源标注（page_key），供历史侧栏显示来源标签。
     // persistHistory 开启的接入点必须显式传且全仓唯一（verify:agent-chat-invariants 静态守卫）。
     historyKey?: string
-    // Copilot 页面注入提示的**白名单 key**（见后端 graphs/page_prompts.py）：session 创建/续聊时
+    // Copilot 页面注入提示的白名单 key（见后端 graphs/page_prompts.py）：session 创建/续聊时
     // 传给 harness，由服务端按 key 解析为固定 supervisor 提示。传 key 而非自由文本，防注入绕过安全基线。
     promptKey?: string
     // B3 上下文感知 AI：调用方注入的选中数据/行/路由上下文。走 untrusted_external_content 语义
@@ -96,13 +96,13 @@ const emit = defineEmits<{
   ready: []
 }>()
 
-// ── 消息模型：assistant 消息由有序「段」组成，事件流逐段构建 ──
+// 消息模型：assistant 消息由有序「段」组成，事件流逐段构建
 type TextSeg = {
   kind: 'text'
   chunks: string[]
   done: boolean
   blocks?: ArtifactBlock[] // 完成后整体解析
-  // ── 流式增量渲染：已闭合围栏即时渲染为 artifact，尾部继续逐 token 渐显 ──
+  // 流式增量渲染：已闭合围栏即时渲染为 artifact，尾部继续逐 token 渐显
   liveBlocks?: ArtifactBlock[] // 稳定段（已闭合围栏）增量解析结果
   tail?: string // 在写尾部原文
   pending?: string | null // 尾部未闭合围栏的「生成中」标签
@@ -119,8 +119,8 @@ type ToolSeg = {
   subRole?: string
   // 工具结果数据口径（real/captured/illustrative/synthetic），从结果文本识别后显示角标
   basis?: DataBasis
-  // 顶层工具组的折叠态，只在组内**首个**工具上有意义（渲染期归并，见 topToolGroupAt）。
-  // 后端 SegAccumulator 不认此字段、落库时丢弃，回放后按默认收起——可接受。
+  // 顶层工具组的折叠态，只在组内首个工具上有意义（渲染期归并，见 topToolGroupAt）。
+  // 后端 SegAccumulator 不认此字段、落库时丢弃，回放后按默认收起，可接受。
   groupCollapsed?: boolean
 }
 type ChartSeg = { kind: 'chart'; title: string; option: Record<string, unknown> | null }
@@ -249,8 +249,8 @@ const TOOL_LABELS: Record<string, string> = {
 }
 const toolLabel = (n: string) => TOOL_LABELS[n] || n
 
-// 顶层工具组归并下沉 toolGrouping.ts（纯函数，单测覆盖边界）；此处只做薄封装：
-// 绑定 toolLabel，并把入参放宽为 Seg[]——topToolGroupAt 已按 isTopLevelTool 过滤，
+// 顶层工具组归并下沉 toolGrouping.ts（纯函数，单测覆盖边界）；本组件只做薄封装：
+// 绑定 toolLabel，并把入参放宽为 Seg[]，topToolGroupAt 已按 isTopLevelTool 过滤，
 // 运行时必为 ToolSeg，但泛型从 Seg[] 推导出的静态类型仍是 Seg[]。
 function toolGroupOf(segs: Seg[], index: number): ToolSeg[] {
   return topToolGroupAt(segs as Array<{ kind: string; subRole?: string }>, index) as unknown as ToolSeg[]
@@ -284,7 +284,7 @@ function roleOfDelegate(toolName: string): string | null {
 }
 
 // 全局查找（或新建）该 role 的唯一折叠容器。
-// 替代旧的"只看 msg.segs 最后一段是否同 role"逻辑——三路并发时事件交织到达，旧逻辑会让同一智能体
+// 替代旧的"只看 msg.segs 最后一段是否同 role"逻辑，三路并发时事件交织到达，旧逻辑会让同一智能体
 // 被切成 N 个碎片容器穿插显示。这里保证每个智能体在整个 assistant 轮次里只有一个容器。
 function ensureSubagentGroup(msg: ChatMsg, role: string): SubagentGroupSeg {
   for (const s of msg.segs) {
@@ -329,7 +329,7 @@ const SUGGESTIONS = [
 
 const canSend = computed(() => input.value.trim().length > 0 && !streaming.value)
 
-// ── 动态「在工作」指示：流式计时 + token 计数 + 阶段，让回答看起来在思考/干活 ──
+// 动态「在工作」指示：流式计时 + token 计数 + 阶段，让回答看起来在思考/干活
 const elapsedMs = ref(0)
 const tokenCount = ref(0)
 let streamTimer: ReturnType<typeof setInterval> | null = null
@@ -364,7 +364,7 @@ const PHASE_LABEL: Record<'thinking' | 'tool' | 'generating', string> = {
 }
 
 // 智能滚动：仅当用户已贴近底部时才跟随流式输出；否则不打断阅读，亮出「回到底部」浮钮。
-// force=true 用于用户自己的动作（发送/回放历史）——无条件滚到底。
+// force=true 用于用户自己的动作（发送/回放历史），无条件滚到底。
 function atBottom() {
   const el = bodyRef.value
   if (!el) return true
@@ -475,7 +475,7 @@ function finishTextSegs(msg: ChatMsg) {
   }
 }
 
-// ── 聊天历史持久化（落 Node /api，按登录用户隔离；失败仅告警不阻断聊天） ──
+// 聊天历史持久化（落 Node /api，按登录用户隔离；失败仅告警不阻断聊天）
 // 存储口径见 docs/agent-harness/agent-chat-history.md：只存稳定字段，blocks 等回放时重算。
 
 function localKey() {
@@ -498,7 +498,7 @@ function restoreSeg(raw: HistorySeg): Seg {
   if (kind === 'text') {
     const text = Array.isArray(raw.chunks) ? (raw.chunks as string[]).join('') : String(raw.text ?? '')
     // 回放解析降级（与 finishTextSegs 收尾路径对称）：某条已落库富 artifact 在 parseArtifactBlocks
-    // 内（renderMarkdown / businessChart builder）抛错时降级为纯文本 <pre>——否则单个坏 artifact 会让
+    // 内（renderMarkdown / businessChart builder）抛错时降级为纯文本 <pre>，否则单个坏 artifact 会让
     // restoreMsg 抛出、整段 transcript 在 loadHistory 赋值前失败 → 历史会话「打不开 / 空白」（本 fix 根因）。
     let blocks: ArtifactBlock[]
     try {
@@ -595,7 +595,7 @@ async function loadHistory(sessionId: string, opts?: { fromClick?: boolean; allo
   // 亦被 beginStream() 作废：加载在途时发新消息，历史响应不得再写回。
   const generation = gens.beginHistoryLoad()
   const stale = () => gens.isHistoryStale(generation)
-  // 切会话前必须作废在途流世代：仅 abort reader 不够——断开 SSE 不停后端 run，旧 send()
+  // 切会话前必须作废在途流世代：仅 abort reader 不够，断开 SSE 不停后端 run，旧 send()
   // 的 finally 仍会以有效世代执行 finalizeStreamAfterRun('completed')，提前触发宿主的
   // done 回调（申报台的 finishIntel/onPrepDone），把仍在后台运行的核查显示为已完成，
   // 还可能对刚加载的新会话做历史刷新。下沉到此，所有调用方（5 个接入点）都受益。
@@ -671,7 +671,7 @@ async function onEvent(e: AgentEvent) {
     appendToken(e.content)
   } else if (e.type === 'tool_call') {
     finishTextSegs(msg) // 文本段在工具调用前定格为 markdown
-    // delegate_<role> 是 supervisor 给子智能体派活，不是普通工具——归并进该 role 的唯一折叠容器，
+    // delegate_<role> 是 supervisor 给子智能体派活，不是普通工具，归并进该 role 的唯一折叠容器，
     // 作为「派发任务」首行展示（用户最关心"派了什么活"），不再平铺成顶层工具卡占屏。
     const delegateRole = roleOfDelegate(e.name)
     if (delegateRole) {
@@ -694,8 +694,8 @@ async function onEvent(e: AgentEvent) {
         grp.delegateStatus = looksLikeError(e.summary) ? 'error' : 'done'
         grp.delegateSummary = e.summary
         // 与普通 tool 段对称：从结果文本识别数据口径（synthetic_mock/合成演示/captured 等），
-        // 在分组头渲染 DataBasisBadge——否则子智能体降级到合成演示时用户无法区分模拟/真实数据。
-        // 始终用最新结果重算口径（pr-comment-patrol round 006 / codex #634）：同 role 多次 delegate 复用
+        // 在分组头渲染 DataBasisBadge，否则子智能体降级到合成演示时用户无法区分模拟/真实数据。
+        // 始终用最新结果重算口径（#634）：同 role 多次 delegate 复用
         // 同一 subagent-group，若仅 basis 真值时覆盖，后一次结果无可识别口径标记时会残留上一次的徽标，
         // 把当前结果误标为模拟/真实。无条件赋值（含 null）以清旧标。
         grp.delegateBasis = basisFromText(e.summary)
@@ -758,7 +758,7 @@ async function onEvent(e: AgentEvent) {
       target.summary = e.summary
       target.basis = basisFromText(e.summary)
     } else {
-      // 兜底：流乱序/中断、或主流 token 打断分组连续性时未匹配到运行中工具——不静默丢，留痕便于排查。
+      // 兜底：流乱序/中断、或主流 token 打断分组连续性时未匹配到运行中工具，不静默丢，留痕便于排查。
       console.warn('[agent-chat] subagent_tool_result 未匹配容器内运行中工具：', e.role, e.name)
     }
   } else if (e.type === 'todos') {
@@ -811,7 +811,7 @@ function ensureAttachPlaceholder() {
 }
 
 // 所有共享状态写入（messages/streamCursor/reconnecting/currentRunId）都要过世代校验：
-// 切换会话后旧流迟到的 token/cursor/错误不得污染新流（roborev job190）。
+// 切换会话后旧流迟到的 token/cursor/错误不得污染新流。
 function guardedStreamCallbacks(gen: number) {
   return {
     onEvent: (e: AgentEvent) => { if (!gens.isStreamStale(gen)) return onEvent(e) },
@@ -897,8 +897,8 @@ function restorePendingApprovalIfNeeded(info: AgentSessionInfo | null) {
 async function attachActiveRunIfAny(initialCursor = -1): Promise<boolean> {
   const s = session.value
   if (!s || agentOffline.value) return false
-  // 流世代必须在**探活之前**预留。getActiveRun/getAgentSession 都是网络往返，期间用户完全
-  // 可能从侧栏选了另一个会话——那条路径的 loadHistory 会 invalidateStream()，于是这里预留的
+  // 流世代必须在探活之前预留。getActiveRun/getAgentSession 都是网络往返，期间用户完全
+  // 可能从侧栏选了另一个会话，那条路径的 loadHistory 会 invalidateStream()，于是这里预留的
   // 世代随即失效，探活回来一查就知道该放手。反过来若等探活返回才 beginStream()，会拿到一个
   // "新"世代：既把用户刚开始的历史加载作废（beginStream 交叉作废历史），又附着到用户已经
   // 离开的那个会话上，选择被静默丢弃。
@@ -1078,7 +1078,7 @@ function stop() {
       console.warn('[agent-chat] 停止后台 run 失败', err)
     })
   } else if (sid) {
-    // 竞态窗口：POST 已发出但 x-run-id 未返回时点停止——abort 只断本地读取，
+    // 竞态窗口：POST 已发出但 x-run-id 未返回时点停止，abort 只断本地读取，
     // 后台 run 不随连接断开取消。onRunId 回调见 cancelled 会立即补停（主路径）；
     // 这里延迟查 active-run 兜底（POST 被 abort 砍在 headers 前时 onRunId 不触发）。
     window.setTimeout(() => {
@@ -1138,7 +1138,7 @@ async function attachRun(sessionId: string, runId?: string): Promise<boolean> {
     ElMessage.warning('智能体服务未就绪，无法切换运行中会话')
     return false
   }
-  // 流世代作废已下沉到 loadHistory 内部，此处不再重复
+  // 流世代作废已下沉到 loadHistory 内部，不再重复
   const loaded = await loadHistory(sessionId, { fromClick: true, allowEmpty: true })
   if (!loaded) {
     // live-token-only 会话（工作室 custom_graph、历史绑定失败/首轮未落库）不在 Node 历史库：
@@ -1165,7 +1165,7 @@ defineExpose({ ask, newConversation, loadHistory, attachRun })
 // 供 artifact 内的表单(FormArtifact)把填写结果作为新消息回传给智能体
 provide(ARTIFACT_CONTEXT, { submit: (text: string) => ask(text), sessionId: () => session.value?.id })
 
-// ── 斜杠指令（/help、/clear、技能… 输入 / 唤起菜单）──
+// 斜杠指令（/help、/clear、技能… 输入 / 唤起菜单）
 function makeContext(args: string): CommandContext {
   return {
     host: 'agent',
@@ -1181,14 +1181,14 @@ function makeContext(args: string): CommandContext {
     setInput: (text) => { input.value = text },
     // 轻量 chat 技能（target='chat'，如 /概念解释）：chat 会话内直接发送；落在专属
     // 会话（申报/复盘）则移交回 chat 会话，避免被后端当作申报追问 / 复盘角色处理
-    // （审批挂起时还会被拒）——与下方 openWorkbench 的场景逃逸一致（修复 PR #46 review）
+    // （审批挂起时还会被拒），与下方 openWorkbench 的场景逃逸一致（修复 PR #46 review）
     sendToChat: (text) => {
       if (props.scenario === 'chat') { ask(text); return }
       void router.push({ path: '/ai-agent', query: { q: text } })
     },
     // 仅当技能场景与当前会话场景一致时才同会话发送（保持上下文）；否则一律按目标
     // 场景移交工作台并 remount 出对应会话。这覆盖全部错配：专属技能落在别的会话、
-    // 跨专属场景，以及 chat 技能落在专属会话——后端会把后者当申报追问 / 复盘角色处理
+    // 跨专属场景，以及 chat 技能落在专属会话，后端会把后者当申报追问 / 复盘角色处理
     // 而丢失通用 supervisor 的工具路由，故需移交回 chat 会话（修复 PR #46 review）。
     openWorkbench: (q, scenario) => {
       const target: AgentScenario = scenario ?? 'chat'
@@ -1270,7 +1270,7 @@ const TODO_ICON: Record<Todo['status'], string> = {
 // ① declaration_prep 图级审批：{type:'declaration_approval', target_date, draft:{points, strategy_note}}
 // ② 工作室自定义图审批：{type:'studio_approval', label, question, summary}
 // ③ HITL 中间件（对外动作工具）：{action_requests:[{name, arguments}], review_configs:[...]}
-//    —— langchain 1.x HumanInTheLoopMiddleware 的 interrupt 值。此前仅认 ①，
+// ， langchain 1.x HumanInTheLoopMiddleware 的 interrupt 值。此前仅认 ①，
 //    HITL 与工作室审批都落到无信息的「工具执行审批」，用户对外动作时审批盲签。
 function clip(v: unknown, n = 200): string {
   const s = String(v)
@@ -1288,7 +1288,7 @@ function approvalBrief(payload: Record<string, unknown>): { label: string; value
   }
 
   // 效果桥的业务写（#1909：归档报告 / 沉淀长期记忆）。不走下面的通用 action_requests
-  // 分支，是因为那条会把整篇报告正文当参数 JSON 铺在卡上——审批人看一坨几千字的 JSON
+  // 分支，是因为那条会把整篇报告正文当参数 JSON 铺在卡上，审批人看一坨几千字的 JSON
   // 等于没有审批。这里只给「往哪写、写什么、多大」三件事。
   if (type === 'effect_approval') {
     if (payload.label) rows.push({ label: '事项', value: String(payload.label) })
@@ -1566,7 +1566,7 @@ function approvalBrief(payload: Record<string, unknown>): { label: string; value
               </div>
             </template>
 
-            <!-- 动态「在工作」指示：流式期间常驻——阶段(思考/调工具/生成) + 计时 + token 活动 -->
+            <!-- 动态「在工作」指示：流式期间常驻，阶段(思考/调工具/生成) + 计时 + token 活动 -->
             <div v-if="streaming && mi === messages.length - 1" class="stream-meter">
               <span class="sm-dot" :class="streamPhase" />
               <span class="shimmer sm-phase">{{ PHASE_LABEL[streamPhase] }}</span>
@@ -1627,7 +1627,7 @@ function approvalBrief(payload: Record<string, unknown>): { label: string; value
   align-items: center;
   padding: 8px 14px;
   border-bottom: 1px solid var(--line-soft);
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 .plan-title { font-weight: 600; opacity: 0.7; }
 .plan-item { opacity: 0.55; }
@@ -1641,7 +1641,7 @@ function approvalBrief(payload: Record<string, unknown>): { label: string; value
   border-bottom: 1px solid var(--line-soft);
   background: var(--warning-tint);
   color: var(--warning);
-  font-size: 12.5px;
+  font-size: var(--font-12-5);
   font-weight: 600;
 }
 .reconnect-count { opacity: 0.72; font-weight: 500; }
@@ -1659,12 +1659,12 @@ function approvalBrief(payload: Record<string, unknown>): { label: string; value
   background: var(--primary-tint); border: 1px solid var(--primary-tint-border);
 }
 .empty-logo.offline { color: var(--muted); background: var(--surface-hover); border-color: var(--line); }
-.empty-title { margin: 0; font-size: 15px; font-weight: 650; color: var(--text); }
-.empty-hint .sub { margin: 0; font-size: 12.5px; color: var(--muted); }
+.empty-title { margin: 0; font-size: var(--font-15); font-weight: 650; color: var(--text); }
+.empty-hint .sub { margin: 0; font-size: var(--font-12-5); color: var(--muted); }
 .empty-retry {
   margin-top: 14px; padding: 7px 16px; border-radius: var(--radius-sm);
   border: 1px solid var(--primary); background: transparent; color: var(--primary);
-  font-size: 13px; font-weight: 600; cursor: pointer; transition: background 0.15s ease;
+  font-size: var(--font-md); font-weight: 600; cursor: pointer; transition: background 0.15s ease;
 }
 .empty-retry:hover { background: var(--primary-tint); }
 .empty-suggestions {
@@ -1673,7 +1673,7 @@ function approvalBrief(payload: Record<string, unknown>): { label: string; value
 .suggest-chip {
   padding: 9px 14px; border-radius: var(--radius-sm); text-align: left;
   border: 1px solid var(--line); background: var(--panel-sub); color: var(--text-body);
-  font-size: 13px; cursor: pointer; transition: all 0.15s ease;
+  font-size: var(--font-md); cursor: pointer; transition: all 0.15s ease;
 }
 .suggest-chip:hover { border-color: var(--primary); color: var(--primary); background: var(--primary-tint); }
 .suggest-chip:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
@@ -1688,21 +1688,21 @@ function approvalBrief(payload: Record<string, unknown>): { label: string; value
 .msg.user .avatar { background: var(--primary); color: #fff; }
 .bubble {
   max-width: 78%; padding: 10px 14px; border-radius: 12px;
-  font-size: 14px; line-height: 1.7;
+  font-size: var(--font-lg); line-height: 1.7;
   background: var(--panel-sub);
 }
 .msg.user .bubble { background: var(--primary); color: #fff; }
 
-/* ── OpenAI 式渐变生成：每个 token 块淡入上浮 ── */
+/* 渐变生成：每个 token 块淡入上浮 */
 /* 顶层工具组：折叠只显统计，展开逐条（形态复刻 .sa-head） */
 .tool-group { margin: 6px 0; border: 1px solid var(--line-faint); border-radius: 8px; overflow: hidden; }
 .tool-group.error { border-color: #ef4444; }
 .group-head { width: 100%; }
 .tool-count {
-  padding: 1px 7px; font-size: 11.5px; border-radius: 999px;
+  padding: 1px 7px; font-size: var(--font-11-5); border-radius: 999px;
   background: var(--panel-sub); color: var(--muted); font-variant-numeric: tabular-nums;
 }
-.tool-current { font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tool-current { font-size: var(--font-sm); color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tool-err { color: #b91c1c; }
 .tool-group-body { padding: 0 8px 6px; }
 
@@ -1722,9 +1722,9 @@ function approvalBrief(payload: Record<string, unknown>): { label: string; value
   animation: blink 0.9s steps(2) infinite;
 }
 @keyframes blink { 50% { opacity: 0; } }
-.thinking { font-size: 13px; }
+.thinking { font-size: var(--font-md); }
 /* 动态「在工作」指示条：脉冲点 + 阶段(流光) + 计时秒数 + token 活动量 */
-.stream-meter { display: flex; align-items: center; gap: 6px; margin-top: 6px; font-size: 12px; color: var(--muted); }
+.stream-meter { display: flex; align-items: center; gap: 6px; margin-top: 6px; font-size: var(--font-sm); color: var(--muted); }
 .sm-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; background: var(--primary); animation: sm-pulse 1.1s ease-in-out infinite; }
 .sm-dot.tool { background: var(--warning); }
 .sm-dot.generating { background: var(--success); }
@@ -1746,20 +1746,20 @@ function approvalBrief(payload: Record<string, unknown>): { label: string; value
 /* 工具卡 */
 .tool-card {
   margin: 6px 0; border: 1px solid var(--line);
-  border-radius: 8px; font-size: 12.5px; background: var(--surface-hover);
+  border-radius: 8px; font-size: var(--font-12-5); background: var(--surface-hover);
   animation: tok-in 0.3s ease-out both;
 }
 .tool-card.running { border-color: var(--primary); }
 /* 子智能体内部工具：缩进+虚线，作为所属子智能体的展开细节 */
 .tool-card.subtool { margin-left: 16px; border-style: dashed; background: transparent; }
 .sub-role {
-  font-size: 11px; padding: 1px 6px; border-radius: 4px; font-weight: 600;
+  font-size: var(--font-xs); padding: 1px 6px; border-radius: 4px; font-weight: 600;
   color: var(--primary); background: var(--primary-tint);
 }
 .tool-head {
   display: flex; align-items: center; gap: 6px; width: 100%;
   padding: 6px 10px; background: none; border: none; cursor: pointer;
-  font-size: 12.5px; color: inherit;
+  font-size: var(--font-12-5); color: inherit;
 }
 .tool-name { font-weight: 600; }
 .tool-basis { margin-left: 6px; transform: scale(0.92); }
@@ -1774,7 +1774,7 @@ function approvalBrief(payload: Record<string, unknown>): { label: string; value
   flex: 1; min-width: 0; margin: 0; max-height: 200px; overflow: auto;
   white-space: pre-wrap; word-break: break-word;
   background: var(--panel-sub); border: 1px solid var(--line-faint);
-  border-radius: 6px; padding: 6px 8px; font-size: 11.5px; line-height: 1.5;
+  border-radius: 6px; padding: 6px 8px; font-size: var(--font-11-5); line-height: 1.5;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 
@@ -1787,18 +1787,18 @@ function approvalBrief(payload: Record<string, unknown>): { label: string; value
 .sa-head {
   display: flex; align-items: center; gap: 8px; width: 100%;
   padding: 7px 10px; background: none; border: none; cursor: pointer;
-  font-size: 12.5px; color: var(--text, inherit);
+  font-size: var(--font-12-5); color: var(--text, inherit);
 }
 .sa-role { font-weight: 600; color: var(--primary); flex-shrink: 0; }
 /* 容器头预览：派发任务 / 最终结果摘要（一眼扫过三路智能体在做什么/得出什么） */
 .sa-brief {
-  font-size: 11.5px; color: var(--muted); font-weight: 500;
+  font-size: var(--font-11-5); color: var(--muted); font-weight: 500;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   flex: 1 1 auto; min-width: 0;
 }
 /* 结果预览用主色微强调（结论比过程更重要） */
 .sa-brief-result { color: var(--primary); opacity: 0.85; }
-.sa-count { font-size: 11.5px; color: var(--muted); flex-shrink: 0; }
+.sa-count { font-size: var(--font-11-5); color: var(--muted); flex-shrink: 0; }
 .sa-head .spin { margin-left: auto; flex-shrink: 0; }
 .sa-done { margin-left: auto; color: var(--success); flex-shrink: 0; }
 .sa-err { margin-left: auto; color: var(--danger, #f56c6c); font-weight: 700; flex-shrink: 0; }
@@ -1824,7 +1824,7 @@ function approvalBrief(payload: Record<string, unknown>): { label: string; value
 .delegate-row .tool-name { color: var(--primary); font-weight: 600; }
 .result-row .tool-name { color: var(--success, #67c23a); font-weight: 600; }
 .result-code {
-  margin: 4px 0 0; font-size: 12px; line-height: 1.6;
+  margin: 4px 0 0; font-size: var(--font-sm); line-height: 1.6;
   white-space: pre-wrap; word-break: break-word;
 }
 .result-collapsed {
@@ -1832,8 +1832,8 @@ function approvalBrief(payload: Record<string, unknown>): { label: string; value
   -webkit-mask-image: linear-gradient(to bottom, #000 70%, transparent);
   mask-image: linear-gradient(to bottom, #000 70%, transparent);
 }
-.tool-ok.running { color: var(--muted); font-size: 11px; }
-.tool-ok.err { color: var(--danger, #f56c6c); font-size: 11px; font-weight: 600; }
+.tool-ok.running { color: var(--muted); font-size: var(--font-xs); }
+.tool-ok.err { color: var(--danger, #f56c6c); font-size: var(--font-xs); font-weight: 600; }
 
 /* 中间工具列表区：过程性信息，弱化样式（默认收起，仅在展开后点开） */
 .tools-row { margin-top: 4px; }
@@ -1844,34 +1844,34 @@ function approvalBrief(payload: Record<string, unknown>): { label: string; value
 
 /* 图表段（内联 artifact，外框由 ChartArtifact 提供） */
 .chart-seg { margin: 2px 0; }
-.chart-loading { display: flex; gap: 6px; align-items: center; font-size: 12px; opacity: 0.6; padding: 8px 0; }
+.chart-loading { display: flex; gap: 6px; align-items: center; font-size: var(--font-sm); opacity: 0.6; padding: 8px 0; }
 
 /* 流式生成中骨架（未闭合 artifact 围栏提示） */
 .gen-skeleton {
   display: flex; align-items: center; gap: 6px;
   margin-top: 8px; padding: 8px 12px;
   border: 1px dashed var(--line); border-radius: 8px;
-  font-size: 12.5px; opacity: 0.7;
+  font-size: var(--font-12-5); opacity: 0.7;
 }
 
 /* 审批卡 */
 .approval-card {
   margin: 8px 0; border: 1.5px solid var(--warning); border-radius: 10px;
   padding: 10px 12px; background: var(--warning-tint);
-  animation: tok-in 0.4s ease-out both; font-size: 13px;
+  animation: tok-in 0.4s ease-out both; font-size: var(--font-md);
 }
 .approval-title { font-weight: 700; color: var(--warning); margin-bottom: 6px; }
 .approval-row { display: flex; gap: 8px; margin: 2px 0; }
 .approval-row .k { opacity: 0.6; flex-shrink: 0; }
 .approval-note {
-  width: 100%; margin-top: 8px; padding: 5px 8px; font-size: 12.5px;
+  width: 100%; margin-top: 8px; padding: 5px 8px; font-size: var(--font-12-5);
   border: 1px solid var(--line); border-radius: 6px;
   background: var(--panel); color: var(--text);
 }
 .approval-actions { display: flex; gap: 8px; margin-top: 8px; }
 .btn {
   padding: 5px 16px; border-radius: var(--radius-sm); border: none; cursor: pointer;
-  font-size: 13px; font-weight: 600;
+  font-size: var(--font-md); font-weight: 600;
 }
 .btn.approve { background: var(--success); color: #fff; }
 .btn.reject { background: var(--surface-hover); color: var(--text); }
@@ -1884,7 +1884,7 @@ function approvalBrief(payload: Record<string, unknown>): { label: string; value
   border-top: 1px solid var(--line-soft);
 }
 .panel-input textarea {
-  flex: 1; padding: 9px 12px; font-size: 14px; line-height: 1.5;
+  flex: 1; padding: 9px 12px; font-size: var(--font-lg); line-height: 1.5;
   border: 1px solid var(--line); border-radius: 10px; outline: none;
   background: var(--panel); color: var(--text);
   resize: none; max-height: 160px; overflow-y: auto;
@@ -1910,7 +1910,7 @@ function approvalBrief(payload: Record<string, unknown>): { label: string; value
   z-index: 2; display: inline-flex; align-items: center; gap: 4px;
   padding: 6px 12px; border-radius: 999px; cursor: pointer;
   border: 1px solid var(--line); background: var(--panel); color: var(--text-body);
-  font-size: 12.5px; box-shadow: var(--shadow);
+  font-size: var(--font-12-5); box-shadow: var(--shadow);
 }
 .jump-bottom:hover { border-color: var(--primary); color: var(--primary); }
 .jump-fade-enter-active, .jump-fade-leave-active { transition: opacity 0.2s ease, transform 0.2s ease; }

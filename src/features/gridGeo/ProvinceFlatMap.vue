@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // 省级平面地图（ECharts geo）。与 CesiumPlantMap 同 props/emits/expose 契约，
-// 由宿主按 viewMode 二选一挂载——数据流不必改动。
+// 由宿主按 viewMode 二选一挂载，数据流不必改动。
 //
 // 相对三维地球的取舍：这里不做地形、不做相机漫游，只把「哪些资产在哪个地市州、
 // 价格与偏差如何」平铺出来。坐标按参考精度使用，非精确厂址以真实地理半径的
@@ -48,12 +48,12 @@ const props = defineProps<{
   plants: GridGeoPlant[]
   viewMode: GridGeoViewMode
   selectedPlantId?: string | null
-  // —— 以下为 Cesium 专用参数：接受以保持契约一致，平面地图不消费 ——
+  // 以下为 Cesium 专用参数：接受以保持契约一致，平面地图不消费
   terrainProvider?: GridGeoTerrainProvider
   verticalExaggeration?: number
   hillshadeEnabled?: boolean
   defaultCamera?: GridOperatorProfile['defaultCamera']
-  // —— 图层 ——
+  // 图层
   weatherLayer?: GridGeoWeatherLayer
   weatherItems?: GridGeoWeatherSnapshot[]
   marketLayer?: GridMarketLayer
@@ -80,7 +80,7 @@ const emit = defineEmits<{
    * 侧栏清单与面包屑；退出下钻时发 null。
    *
    * 一并带上落在范围内的 id 集合：边界几何只存在于地图侧，宿主没有它就无法把
-   * 「键盘等价列表」筛成同一子集——那会让键盘用户拿不到下钻能力。
+   * 「键盘等价列表」筛成同一子集，那会让键盘用户拿不到下钻能力。
    */
   'subdivision-select': [selection: {
     adcode: string
@@ -91,7 +91,7 @@ const emit = defineEmits<{
   } | null]
   /** 与 CesiumPlantMap 同形状，宿主可无差别处理网架选中。 */
   'topology-select': [selection: { featureId: string; x: number; y: number } | null]
-  /** 下钻后把网架查询视口收窄到该地州，并提高 LOD——这正是「下钻」的数据侧含义。 */
+  /** 下钻后把网架查询视口收窄到该地州，并提高 LOD，这正是「下钻」的数据侧含义。 */
   'topology-viewport': [viewport: TopologyViewportQuery]
 }>()
 
@@ -141,7 +141,7 @@ const locatedNodes = computed(() =>
 
 const activeTopology = computed(() => (props.showTopology ? props.topologyFeatures ?? [] : []))
 
-// —— 下钻筛选：省域全景返回全集，地州焦点态只留落在该地州内的要素 ——
+// 下钻筛选：省域全景返回全集，地州焦点态只留落在该地州内的要素
 const visiblePlants = computed(() => {
   const boundary = focusedFeature.value
   if (!boundary) return locatedPlants.value
@@ -160,14 +160,14 @@ const visibleTopology = computed(() => {
   return activeTopology.value.filter((feature) => topologyFeatureInBoundary(feature, boundary))
 })
 
-/** 焦点态下的断面/联络线数量——面包屑上要告诉用户「这里有几条送出通道」。 */
+/** 焦点态下的断面/联络线数量，面包屑上要告诉用户「这里有几条送出通道」。 */
 const visibleSectionCount = computed(() =>
   visibleTopology.value.filter((feature) => ['section', 'intertie', 'branch'].includes(feature.kind)).length,
 )
 
 const metricByPlantId = computed(() => new Map((props.marketMetrics ?? []).map((metric) => [metric.plantId, metric])))
 
-// 电源类型色是**数据编码**，按 useTheme 既有约定不随主题变化——同一类型在任何主题下
+// 电源类型色是数据编码，按 useTheme 既有约定不随主题变化，同一类型在任何主题下
 // 都必须是同一个颜色，否则「蓝色=水电」的读图习惯会被换肤打破。
 const PLANT_TYPE_COLOR: Record<string, string> = {
   hydro: '#2f7fe0',
@@ -180,7 +180,7 @@ const PLANT_TYPE_COLOR: Record<string, string> = {
 
 /**
  * ECharts 的 HTML tooltip 走 innerHTML。standardName / locationLabel 可由资产治理页
- * 写入，服务端 clean() 只做字符串清理不做 HTML 转义——直接拼接会形成存储型 XSS。
+ * 写入，服务端 clean() 只做字符串清理不做 HTML 转义，直接拼接会形成存储型 XSS。
  */
 function escapeHtml(value: unknown): string {
   return String(value ?? '')
@@ -201,7 +201,7 @@ function metricValueFor(metric: GridMarketMetric | undefined, layer: GridMarketL
 }
 
 /**
- * 市场图层色标——与 CesiumPlantMap 的 marketColor 阈值逐档对齐，
+ * 市场图层色标，与 CesiumPlantMap 的 marketColor 阈值逐档对齐，
  * 保证同一份数据在 2D / 3D 下读出同样的冷暖判断。
  */
 function marketColor(value: number | null, layer: GridMarketLayer): string {
@@ -243,14 +243,14 @@ function buildOption(): echarts.EChartsOption | null {
   const accent = cssVar('--primary') || '#3b82f6'
   const panel = cssVar('--panel') || '#ffffff'
 
-  // —— L0 底图：地市州分块 ——
-  // 有意用**统一**中性底色而非彩色循环：底图只是地理参照与点击热区，一旦按块上不同
+  // L0 底图：地市州分块
+  // 有意用统一中性底色而非彩色循环：底图只是地理参照与点击热区，一旦按块上不同
   // 颜色，读者会去找颜色的含义（哪块贵/哪块风险高），而那正是本图不承载的信息。
   // 业务量值一律走点层。
   const activeLayer: GridMarketLayer = props.marketLayer ?? 'none'
   const series: echarts.SeriesOption[] = []
 
-  // —— L2 精度光圈：按 uncertaintyMeters 画真实地理半径 ——
+  // L2 精度光圈：按 uncertaintyMeters 画真实地理半径
   // 用 custom series 而非固定像素，缩放时半径随比例尺变化，不失真。
   const haloPlants = visiblePlants.value.filter(
     (plant) => plant.location.displayPolicy === 'uncertainty-halo' && Number(plant.location.uncertaintyMeters) > 0,
@@ -294,7 +294,7 @@ function buildOption(): echarts.EChartsOption | null {
     })
   }
 
-  // —— L1 资产点 ——
+  // L1 资产点
   series.push({
     type: 'scatter',
     id: 'plants',
@@ -323,7 +323,7 @@ function buildOption(): echarts.EChartsOption | null {
     emphasis: { scale: 1.25, focus: 'none' },
   })
 
-  // —— L3 网架：断面 / 联络线 / 线路 与 变电站 / 母线 ——
+  // L3 网架：断面 / 联络线 / 线路 与 变电站 / 母线
   // 与 CesiumPlantMap 共用 topologyVisualStyle，同一要素在 2D/3D 下同色同粗细，
   // 换视图不会让「哪条是断面」的判断失效。只画 Provider 返回的真实几何，不推测拓扑。
   const topologyLines = visibleTopology.value
@@ -401,7 +401,7 @@ function buildOption(): echarts.EChartsOption | null {
     })
   }
 
-  // —— L4 节点电价点 ——
+  // L4 节点电价点
   const located = visibleNodes.value
   if (located.length) {
     series.push({
@@ -480,7 +480,7 @@ function buildOption(): echarts.EChartsOption | null {
       aspectScale: 0.9,
       itemStyle: {
         // 0.07 在深色主题下几乎等于纯黑，分块看不出来。0.16 能让每块自身可辨，
-        // 又不至于抢过点层——底图要「看得见」，不要「看得重」。
+        // 又不至于抢过点层，底图要「看得见」，不要「看得重」。
         areaColor: echarts.color.modifyAlpha(accent, 0.16),
         borderColor: areaBorder,
         borderWidth: 1.1,
@@ -493,7 +493,7 @@ function buildOption(): echarts.EChartsOption | null {
         fontSize: 14,
         // 地市州名较长（如"西双版纳傣族自治州"），不加粗以免压过业务点层
         fontWeight: 'normal',
-        // 全称在地图上必然重叠且喧宾夺主——简称即可辨认，全称留给 tooltip。
+        // 全称在地图上必然重叠且喧宾夺主，简称即可辨认，全称留给 tooltip。
         formatter: ({ name }: { name: string }) => shortSubdivisionName(name),
       },
       emphasis: {
@@ -507,7 +507,7 @@ function buildOption(): echarts.EChartsOption | null {
       // 选中态完全由 focusedAdcode 驱动 regions 样式：notMerge 重建 option 会丢掉
       // ECharts 自己维护的 select 状态，两套来源并存会让高亮与下钻态对不上。
       selectedMode: false,
-      // 下钻态：视角收到该地州，其余地州压暗留作地理参照——移除它们会让人失去方位感。
+      // 下钻态：视角收到该地州，其余地州压暗留作地理参照，移除它们会让人失去方位感。
       ...(focusView.value ? { center: focusView.value.center, zoom: focusView.value.zoom } : {}),
       regions: focusedAdcode.value
         ? subdivisions.value.map((feature) => {
@@ -516,7 +516,7 @@ function buildOption(): echarts.EChartsOption | null {
               name: feature.properties.name,
               itemStyle: isFocused
                 ? { areaColor: echarts.color.modifyAlpha(accent, 0.34), borderColor: selectedColor, borderWidth: 1.8 }
-                // 0.06/0.4 实测把分块边界压得完全看不见，整张图只剩一块高亮孤悬——
+                // 0.06/0.4 实测把分块边界压得完全看不见，整张图只剩一块高亮孤悬
                 // 压暗是为了让焦点跳出来，不是为了抹掉地理参照。
                 : { areaColor: echarts.color.modifyAlpha(accent, 0.1), borderColor: echarts.color.modifyAlpha(areaBorder, 0.75) },
               label: { show: isFocused, color: cssVar('--text') || '#0f172a', fontWeight: 'bold' as const },
@@ -537,7 +537,7 @@ function render() {
   const dom = container.value
   if (!dom) return
   // 容器尚未布局（clientWidth/Height 为 0）时 echarts.init 会退回 100x100 默认尺寸，
-  // 且此后不会自行纠正——地图会一直缩在角落。此时先不 init，交给 ResizeObserver
+  // 且此后不会自行纠正，地图会一直缩在角落。此时先不 init，交给 ResizeObserver
   // 在拿到真实尺寸后触发。
   if (!dom.clientWidth || !dom.clientHeight) return
 
@@ -590,7 +590,7 @@ function onChartClick(params: unknown) {
 /**
  * 进入地市州焦点态。
  *
- * 同时把网架查询视口收窄到该地州并把 LOD 提到 1——下钻不只是视觉放大，数据侧也该
+ * 同时把网架查询视口收窄到该地州并把 LOD 提到 1，下钻不只是视觉放大，数据侧也该
  * 换成「更小范围、更多细节」，否则地州视图里看到的仍是省级抽稀后的那几条线。
  */
 function emitSubdivisionScope() {
@@ -706,15 +706,15 @@ function resize() {
 function focusPlant(plantId: string) {
   const plant = locatedPlants.value.find((candidate) => candidate.plantId === plantId)
   if (!plant || !chart.value) return
-  // 侧栏点到的资产可能不在当前下钻范围内——那它根本没被渲染，showTip 只会落空。
+  // 侧栏点到的资产可能不在当前下钻范围内，那它根本没被渲染，showTip 只会落空。
   // 先退回省域再定位，比静默什么都不发生要好。
   if (focusedFeature.value && !pointInBoundary(focusedFeature.value, plant.location.longitude, plant.location.latitude)) exitFocus()
-  // 光圈 series 会插在场站之前，seriesIndex:0 指向的是光圈而非场站——用稳定 id 定位。
+  // 光圈 series 会插在场站之前，seriesIndex:0 指向的是光圈而非场站，用稳定 id 定位。
   void nextTick(() => chart.value?.dispatchAction({ type: 'showTip', seriesId: 'plants', name: plant.standardName }))
 }
 
 function focusNode(nodeId: string) {
-  // 宿主传的是 nodeId（侧栏 selectNode 口径），但历史调用方也可能传 assetId——两者都接。
+  // 宿主传的是 nodeId（侧栏 selectNode 口径），但历史调用方也可能传 assetId，两者都接。
   const node = (props.nodes ?? []).find((candidate) => candidate.nodeId === nodeId || candidate.assetId === nodeId)
   if (!node || !chart.value) return
   const location = node.location
@@ -775,7 +775,7 @@ watch(
   { deep: true },
 )
 
-// 焦点态下节点/网架是按需加载的，数据后到时要补发范围快照——否则宿主会一直按点击那一刻
+// 焦点态下节点/网架是按需加载的，数据后到时要补发范围快照，否则宿主会一直按点击那一刻
 // 的空集合过滤，侧栏看起来「这个地州什么都没有」。
 watch([visiblePlants, visibleNodes, visibleTopology], () => {
   if (focusedAdcode.value) emitSubdivisionScope()
@@ -797,7 +797,7 @@ onBeforeUnmount(() => {
 
     <!--
       下钻面包屑：省 › 地市州。左段可点回省域，右侧同时给出该地州范围内实际筛出的
-      资产/节点/通道条数——下钻后地图上若空无一物，用户要能立刻分清是「这里确实没有」
+      资产/节点/通道条数：下钻后地图上若空无一物，用户要能立刻分清是「这里确实没有」
       还是「筛错了」。
     -->
     <nav v-if="focusedAdcode && loadState === 'ready'" class="drill-crumb" aria-label="地图下钻层级">
@@ -839,7 +839,7 @@ onBeforeUnmount(() => {
 .state {
   position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
   margin: 0; padding: 10px 16px; border-radius: 8px;
-  font-size: 13px; color: var(--text-soft); background: var(--panel, rgba(255, 255, 255, .9));
+  font-size: var(--font-md); color: var(--text-soft); background: var(--panel, rgba(255, 255, 255, .9));
 }
 .state.error { color: var(--danger); }
 .drill-crumb {
@@ -849,33 +849,33 @@ onBeforeUnmount(() => {
   position: absolute; bottom: 34px; left: 50%; transform: translateX(-50%); z-index: 9;
   display: flex; align-items: center; gap: 6px; max-width: calc(100% - 32px);
   box-shadow: 0 8px 24px rgba(0, 8, 20, .28);
-  padding: 6px 10px; border-radius: 8px; font-size: 13px;
+  padding: 6px 10px; border-radius: 8px; font-size: var(--font-md);
   color: var(--text-body); border: 1px solid var(--line); background: var(--panel);
 }
 .drill-crumb strong { color: var(--text); }
 .drill-crumb button {
   display: flex; align-items: center; gap: 4px;
-  padding: 2px 6px; font-size: 13px; cursor: pointer;
+  padding: 2px 6px; font-size: var(--font-md); cursor: pointer;
   color: var(--text-soft); border: none; border-radius: 6px; background: transparent;
 }
 .drill-crumb button:hover { color: var(--primary); background: var(--hover, rgba(59, 130, 246, .1)); }
-.crumb-counts { margin-left: 4px; font-size: 12px; color: var(--text-soft); }
+.crumb-counts { margin-left: 4px; font-size: var(--font-sm); color: var(--text-soft); }
 .crumb-back { margin-left: 6px; border-left: 1px solid var(--line) !important; border-radius: 0 !important; padding-left: 10px !important; }
 .drill-hint {
   position: absolute; bottom: 36px; left: 50%; transform: translateX(-50%); z-index: 2; margin: 0;
-  font-size: 12px; color: var(--text-soft); opacity: .8; pointer-events: none; white-space: nowrap;
+  font-size: var(--font-sm); color: var(--text-soft); opacity: .8; pointer-events: none; white-space: nowrap;
 }
 .reset-view {
   /* 右上角是宿主的 2D/2.5D/3D 模式切换，这里避到右下、来源声明上方 */
   position: absolute; right: 12px; bottom: 32px;
   display: flex; align-items: center; gap: 6px;
-  padding: 7px 12px; font-size: 14px; cursor: pointer;
+  padding: 7px 12px; font-size: var(--font-lg); cursor: pointer;
   color: var(--text-body); border: 1px solid var(--line); border-radius: 8px;
   background: var(--panel);
 }
 .reset-view:hover { color: var(--primary); border-color: var(--primary); }
 .source-note {
   position: absolute; right: 10px; bottom: 8px; margin: 0;
-  font-size: 11px; color: var(--muted, var(--text-soft)); opacity: .75; pointer-events: none;
+  font-size: var(--font-xs); color: var(--muted, var(--text-soft)); opacity: .75; pointer-events: none;
 }
 </style>

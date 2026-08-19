@@ -2,7 +2,7 @@
 // 数据源接入设置（/data-source-settings）：外部数据源凭据与采集运维的统一入口（#1896）。
 //
 // 2026-08-10 用户拍板（Epic #1893）：原先散落的「四川开放平台凭据」（本页）与「四川接入服务」
-// （/sichuan-access，独立运维页）合并为单页多 tab，并拓展为「电网官方平台」通用框架——
+// （/sichuan-access，独立运维页）合并为单页多 tab，并拓展为「电网官方平台」通用框架
 // 四川只是国网的一个省，后续网省加配置即接入。tab 三分：
 //   电网官方平台 — 当前地区聚焦（凭据 + 采集运维合体）+ 全网就绪度概览
 //   企业自建通道 — 企业方自建透传接口（中广核云南首个实例）
@@ -75,8 +75,8 @@ function onTabChange(name: string | number) {
 
 <style scoped>
 .ds-settings { display: flex; flex-direction: column; gap: 12px; }
-.page-head h1 { margin: 0; font-size: 20px; font-weight: 600; color: var(--el-text-color-primary); }
-.page-head .sub { margin: 4px 0 0; font-size: 13px; line-height: 1.7; color: var(--el-text-color-secondary); }
+.page-head h1 { margin: 0; font-size: var(--font-20); font-weight: 600; color: var(--el-text-color-primary); }
+.page-head .sub { margin: 4px 0 0; font-size: var(--font-md); line-height: 1.7; color: var(--el-text-color-secondary); }
 /* 子 tab 自带 section/card 外距，tab 面板不再叠加内边距。 */
 .ds-tabs :deep(.el-tab-pane) { padding: 0; }
 </style>

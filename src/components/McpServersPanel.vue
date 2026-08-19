@@ -12,7 +12,6 @@ import {
   testMcpServer,
   type McpServerSummary,
   type McpServerBody,
-  type McpTransport,
 } from '@/services/agent/mcpClient'
 
 const servers = ref<McpServerSummary[]>([])
@@ -140,15 +139,15 @@ onMounted(load)
 <style scoped>
 .mcp-panel { border: 1px solid var(--el-border-color); border-radius: 8px; padding: 14px; margin: 12px 0; }
 .mcp-head { display: flex; align-items: center; justify-content: space-between; }
-.mcp-title { display: flex; align-items: center; gap: 6px; font-weight: 600; font-size: 14px; }
-.mcp-desc { font-size: 12px; color: var(--el-text-color-secondary); margin: 6px 0 10px; }
+.mcp-title { display: flex; align-items: center; gap: 6px; font-weight: 600; font-size: var(--font-lg); }
+.mcp-desc { font-size: var(--font-sm); color: var(--el-text-color-secondary); margin: 6px 0 10px; }
 .mcp-list { list-style: none; margin: 0; padding: 0; }
 .mcp-list li { display: flex; align-items: center; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid var(--el-border-color-lighter); flex-wrap: wrap; gap: 8px; }
-.mcp-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 13px; }
+.mcp-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: var(--font-md); }
 .mcp-name { font-weight: 600; }
 .mcp-name.off { color: var(--el-text-color-secondary); text-decoration: line-through; }
-.mcp-meta { color: var(--el-text-color-secondary); font-size: 12px; }
-.mcp-env, .mcp-domains { font-size: 11px; padding: 1px 6px; border-radius: 8px; background: var(--el-fill-color); }
+.mcp-meta { color: var(--el-text-color-secondary); font-size: var(--font-sm); }
+.mcp-env, .mcp-domains { font-size: var(--font-xs); padding: 1px 6px; border-radius: 8px; background: var(--el-fill-color); }
 .mcp-actions { display: flex; gap: 6px; }
-.mcp-empty { font-size: 13px; color: var(--el-text-color-secondary); }
+.mcp-empty { font-size: var(--font-md); color: var(--el-text-color-secondary); }
 </style>

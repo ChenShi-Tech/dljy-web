@@ -51,7 +51,7 @@ onRegionChange(() => {})
 .desk-head h2 {
   margin: 0 0 4px;
   color: var(--chip-text);
-  font-size: 24px;
+  font-size: var(--font-24);
 }
 .desk-head p {
   margin: 0;

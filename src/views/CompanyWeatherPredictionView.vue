@@ -1,8 +1,8 @@
 <script setup lang="ts">
 // 公司气象预测 (zgnrx/qxyc) — 精修版,对照 E7.png:数据范围+运行日期筛选,三张图(风速/辐照/温度),
-//  每图 其他日平均(蓝) vs 运行日平均(黄,高亮)。是新能源出力预测的气象输入对比。
+// 每图 其他日平均(蓝) vs 运行日平均(黄,高亮)。是新能源出力预测的气象输入对比。
 // 数据:GET /sdpt/zgnrx/qxyc -> {fs,fz,wd} 各 {nameList(逐15min,一年), legendList[其他日平均,运行日平均], valueList[2]}。
-//  NOTE(内部): 模型气象输入,后续专项优化;界面正常自信展示。源: capture-raw/sdpt_zgnrx/ (qxyc_wide)
+// NOTE(内部): 模型气象输入,后续专项优化;界面正常自信展示。源: capture-raw/sdpt_zgnrx/ (qxyc_wide)
 import { onMounted, ref, computed, nextTick } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
@@ -51,8 +51,8 @@ async function load() {
   PANELS.forEach((p) => charts[p.key].showLoading())
   try {
     if (currentRegion.value.id === 'yunnan') {
-      // 先落局部变量、generation 校验后再赋 data.value——await 后直接赋值会让
-      // 切地区时旧云南慢响应覆盖当前地区状态（roborev job454）。
+      // 先落局部变量、generation 校验后再赋 data.value，await 后直接赋值会让
+      // 切地区时旧云南慢响应覆盖当前地区状态（#454）。
       const yunnanData = await loadYunnanWeather()
       if (generation !== loadGeneration) return
       data.value = yunnanData
@@ -112,7 +112,7 @@ function buildHourlyPanel(rows: any[], field: string) {
     const date = String(row.date ?? datetime.slice(0, 10))
     const time = String(row.time ?? datetime.slice(11, 16))
     // 缺测口径（null/undefined/空串）显式跳过，不得被 Number() 折成真实 0 值
-    // 混入均值聚合（roborev job468；真实呈现纪律）。
+    // 混入均值聚合（#468；真实呈现纪律）。
     const raw = row[field]
     if (raw === null || raw === undefined || raw === '') continue
     const value = Number(raw)
@@ -218,7 +218,7 @@ onRegionChange(load)
       <el-button size="small" color="#fc8452" @click="exportCsv">导出</el-button>
     </div>
     <el-card v-for="p in PANELS" :key="p.key" shadow="never" class="mb">
-      <template #header><span style="font-weight:600;font-size:13px">{{ p.label }}（其他日平均 vs 运行日平均）</span></template>
+      <template #header><span style="font-weight:600;font-size: var(--font-md)">{{ p.label }}（其他日平均 vs 运行日平均）</span></template>
       <div :ref="(el) => (refs[p.key].value = el)" class="chart chart-host"></div>
     </el-card>
     <!-- 数据源(内部参考,勿对外展示)：真实数据：GET /sdpt/zgnrx/qxyc · 风速/辐照/温度 · 新能源出力的气象输入对比 -->
@@ -228,11 +228,11 @@ onRegionChange(load)
 <style scoped>
 .qx { padding: 12px 16px; background: var(--el-fill-color-light); min-height: calc(100vh - 90px); }
 .toolbar { display: flex; align-items: center; gap: 8px; background: var(--panel); padding: 10px 12px; border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,.04); flex-wrap: wrap; }
-.toolbar .lbl { font-size: 13px; color: var(--el-text-color-regular); font-weight: 600; }
+.toolbar .lbl { font-size: var(--font-md); color: var(--el-text-color-regular); font-weight: 600; }
 .toolbar .spacer { flex: 1; }
 .chart { height: 220px; width: 100%; }
 .mb { margin-bottom: 12px; }
-.src { color: var(--el-text-color-secondary); font-size: 12px; margin: 12px 0 0; }
+.src { color: var(--el-text-color-secondary); font-size: var(--font-sm); margin: 12px 0 0; }
 .src code { color: var(--el-color-primary); }
 /* 移动端:筛选条纵排,控件占满整行便于点按 */
 @media (max-width: 768px) {

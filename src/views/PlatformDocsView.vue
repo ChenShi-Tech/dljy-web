@@ -80,7 +80,7 @@ onRegionChange(load)
     </div>
 
     <el-card shadow="never">
-      <template #header><span style="font-weight:600;font-size:13px">交易平台文档（{{ filtered.length }} / {{ rows.length }}）</span></template>
+      <template #header><span style="font-weight:600;font-size: var(--font-md)">交易平台文档（{{ filtered.length }} / {{ rows.length }}）</span></template>
       <el-table :data="filtered" height="540" border size="default" class="big" :empty-text="rows.length ? '当前筛选无结果' : '暂无文档数据'">
         <el-table-column type="index" label="序号" width="64" align="center" />
         <el-table-column prop="scrq" label="上传日期" width="120" sortable />
@@ -116,20 +116,20 @@ onRegionChange(load)
 <style scoped>
 .docs { padding: 12px 16px; background: var(--el-fill-color-light); min-height: calc(100vh - 90px); }
 .toolbar { display: flex; align-items: center; gap: 8px; background: var(--panel); padding: 10px 12px; border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,.04); flex-wrap: wrap; }
-.toolbar .lbl { font-size: 13px; color: var(--el-text-color-regular); font-weight: 600; }
+.toolbar .lbl { font-size: var(--font-md); color: var(--el-text-color-regular); font-weight: 600; }
 /* 移动端:筛选条纵排,行内定宽控件占满整行(断点规约 768) */
 @media (max-width: 768px) {
   .toolbar { align-items: stretch; flex-direction: column; }
   .toolbar .el-select, .toolbar .el-input { width: 100% !important; }
 }
-.big :deep(.el-table__cell) { font-size: 13px; }
+.big :deep(.el-table__cell) { font-size: var(--font-md); }
 .big :deep(th .cell) { font-weight: 600; color: var(--el-text-color-primary); }
-.badge { display: inline-block; padding: 2px 10px; border-radius: 4px; font-size: 12px; font-weight: 600; border: 1px solid; }
+.badge { display: inline-block; padding: 2px 10px; border-radius: 4px; font-size: var(--font-sm); font-weight: 600; border: 1px solid; }
 .badge.normal { color: var(--el-color-primary); border-color: var(--line); background: var(--panel-sub); }
 .badge.imp { color: var(--danger); border-color: var(--danger); background: var(--danger-tint); }
-.muted { color: var(--el-text-color-disabled); font-size: 12px; }
+.muted { color: var(--el-text-color-disabled); font-size: var(--font-sm); }
 .pv-frame { width: 100%; height: 78vh; border: none; }
 .mb { margin-bottom: 12px; }
-.src { color: var(--el-text-color-secondary); font-size: 12px; margin: 12px 0 0; }
+.src { color: var(--el-text-color-secondary); font-size: var(--font-sm); margin: 12px 0 0; }
 .src code { color: var(--el-color-primary); }
 </style>

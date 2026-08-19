@@ -19,7 +19,7 @@ export type {
   ModelStage,
 } from './modelContractTypes'
 
-// ── 模型管理契约（dljy-contracts 1.5.0）──
+// 模型管理契约（dljy-contracts 1.5.0）
 // 后端 /forecast/models 当前仍可能返回旧 snake_case catalog。客户端在唯一边界处白名单归一为
 // ModelRegistryEntry；页面和 provider 不再消费 legacy id/reason/source_type/quality 字段。
 export type ForecastModel = ModelRegistryEntry

@@ -19,6 +19,30 @@ export type RoleCode =
 
 export type SubjectType = 'GROUP' | 'GENERATOR' | 'RETAILER' | 'STORAGE' | 'LOAD' | 'TRADER'
 
+/**
+ * 作业立场（#2193）：一次会话里「以哪个市场主体身份作业」的完整主体身份三元组。
+ * 允许集合只由服务端推导下发（登录/刷新 payload 的 user.stances，规则=
+ * 公司注册立场 ∩ 身份，见 server/auth-store.mjs::deriveUserStances）；前端零推导，
+ * 只表达切换意图（x-stance-id 头），越权头服务端 403。
+ * · home（crossView=false）= 账号自身主体，永远存在；单立场账号只有这一项。
+ * · crossView（crossView=true）= TRADER/GROUP 主立场按公司注册立场换类型作业，
+ *   subjectId 沿用账号自身主体。
+ * 与 allowedSubjectTypes（数据可见范围）正交：扩大那个是扩大越权面，扩大不了这个。
+ */
+export type Stance = {
+  subjectType: SubjectType
+  subjectId: string
+  subjectName: string
+  crossView: boolean
+}
+
+export function isStanceShape(value: unknown): value is Stance {
+  if (!value || typeof value !== 'object') return false
+  const s = value as Record<string, unknown>
+  return typeof s.subjectType === 'string' && typeof s.subjectId === 'string'
+    && typeof s.subjectName === 'string' && typeof s.crossView === 'boolean'
+}
+
 export type DataScope = {
   tenantId: string
   areaCode: string
@@ -51,6 +75,8 @@ export type GovernanceUser = {
   dataScopes: DataScope[]
   decisionLevel: 0 | 1 | 2 | 3 | 4 | 5 | 6
   perspective: string
+  /** 立场允许集合（#2193）：服务端推导下发；缺失（旧会话/降级）按单立场 home 处理。 */
+  stances?: Stance[]
 }
 
 export type DecisionGateHint = {
@@ -67,6 +93,8 @@ export type NavigationLike = {
   regionIds?: string[]
   children?: NavigationLike[]
   demo?: boolean
+  /** 立场亲和（#2193 · #2196）：缺省=共享；语义见 services/stance/stanceNavigation.ts。 */
+  stanceAffinity?: SubjectType[]
 }
 
 export type AccessRule = {
@@ -89,14 +117,20 @@ const reportsGroups = ['/report']
 // 电厂空间资产是 grid 只读域；仅给后端同样具备 grid 域的角色开放，售电/结算角色不进入。
 const gridGeoGroups = GRID_GEO_FEATURE_ENABLED ? ['/grid-assets'] : []
 
-export const allGroups = [...gridGeoGroups, ...regionalTradingGroups, ...reportsGroups, '/system', ...enabledRegionGroups, '/gsgl', '/ai-agent', '/strategic-qa', '/declaration-checkup', '/zcqjy', '/xhjy', '/sjfx', '/insight', '/ycsj', '/sjxh', '/tzcs', '/djcs', '/yygl', '/sdzl']
+export const allGroups = [...gridGeoGroups, ...regionalTradingGroups, ...reportsGroups, '/system', ...enabledRegionGroups, '/gsgl', '/ai-agent', '/strategic-qa', '/declaration-checkup', '/zcqjy', '/xhjy', '/sjfx', '/insight', '/ycsj', '/sjxh', '/tzcs', '/djcs', '/yygl', '/data-ops', '/sdzl']
 export const adminLevelRoleCodes: RoleCode[] = ['BOSS', 'ADMIN']
 // /system/ai-studio 与 /system/accounts 是五页/两页 tab 合并后的新入口，权限口径统一收紧为 ADMIN-only：
-//  - 原 /ai-skills、/ai-sub-agents、/system/schedules、/system/users 本就在本清单，口径不变；
-//  - 原 /system/sessions 与 /xhjy/{dify-studio,langgraph-studio} 未列入、非管理员经 /system 与 /xhjy
-//    组可见，合并后随宿主页收紧。方向是收紧不是放开，无越权风险。
-// 旧路径已改为 redirect（不再是页面），故从本清单移除——重定向目标会再过一次本判定。
-export const adminOnlyRoutes = ['/system/ai-studio', '/system/accounts', '/yygl/ingest', '/data-source-settings']
+// - 原 /ai-skills、/ai-sub-agents、/system/schedules、/system/users 本就在本清单，口径不变；
+// - 原 /system/sessions 与 /xhjy/{dify-studio,langgraph-studio} 未列入、非管理员经 /system 与 /xhjy
+// 组可见，合并后随宿主页收紧。方向是收紧不是放开，无越权风险。
+// 旧路径已改为 redirect（不再是页面），故从本清单移除，重定向目标会再过一次本判定。
+// /data-ops/upload（#2169 P1 数据上传中心）：数据管理员操作面，收 ADMIN-only
+// 交易/分析角色不承载数据管理（与 /yygl/ingest、/data-source-settings 同口径）；
+// P2 data-service 独立运维台落地后再按数据运维岗另设角色。
+// #2169 P2-2a：三个数据管理页（导入融合台/接入向导/治理控制台）同口径收紧
+// 「用户前端不再管理数据」：TRADE_LEAD/SETTLEMENT 等业务角色的界面不再出现数据管理入口；
+// 结算专员的导入动线在 P2-2b 数据运维台独立前端恢复。
+export const adminOnlyRoutes = ['/system/ai-studio', '/system/accounts', '/data-ops/console']
 
 const regionalRoutesForRole = (roleCode: RoleCode) => getRegionModuleAccessRoutes(roleCode)
 const adminActions = ['system.admin', 'menu.admin', 'role.admin', 'dataScope.admin', 'dashboard.view', 'trade.view', 'approval.final', 'risk.limit.view', 'settlement.view']
@@ -408,7 +442,7 @@ export const accessRules: Record<RoleCode, AccessRule> = {
     routes: [
       '/dashboard',
       // 父 Issue #456：展开云南区域模块授权（[yunnanRoleHomeRoute, plant-output]），
-      // 让电厂角色能进云南工作台看电厂出力 tab（codex PR 评论 P2：regionModules 加授权不够，
+      // 让电厂角色能进云南工作台看电厂出力 tab（PR 评论：regionModules 加授权不够，
       // canAccessPath 读 accessRules.routes，须在此展开才能生效）。
       ...regionalRoutesForRole('PLANT_OPERATOR'),
       '/xhjy/trading-day',
@@ -625,7 +659,7 @@ export function canAccessPath(path: string, user: Pick<GovernanceUser, 'roleCode
   if (isAdminLevelRole(roleCode)) return true
   if (adminOnlyRoutes.includes(normalized)) return false
   // 原此处放行 /system/sessions（非管理员可看自己的会话）。该页已并入 ADMIN-only 的
-  // /system/accounts，旧路径只是重定向壳，放行它等于放行一个必被目标页拦下的空跳转——故移除。
+  // /system/accounts，旧路径只是重定向壳，放行它等于放行一个必被目标页拦下的空跳转，故移除。
   if (normalized === '/dashboard' || normalized.startsWith('/dashboard/')) return true
   // 公司管理入口对所有登录用户开放：每人看到的是自身公司（后端 companyId 隔离），
   // 写操作由后端 company 写权限闸门控制。故前端不按角色限制 /gsgl 菜单可见性。

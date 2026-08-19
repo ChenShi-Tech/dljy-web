@@ -6,7 +6,7 @@
 //
 // 分页：顶部 el-tabs 按「均值/最小值/最大值」三页切分，每页保留系统 vs 错位两列对比
 // （每图默认高度按视口 0.66 取 [480,860]，用户可拖底部手柄自调、同页两列联动、localStorage 记忆；
-//   高度变化经 useEChart ResizeObserver 自动 resize）；
+// 高度变化经 useEChart ResizeObserver 自动 resize）；
 // 额外「全部」页保留原 6 图一览（2 列 × 3 行，每图 240px）。当前页签 ⇄ URL ?metric= 同步。
 import { onMounted, ref, watch, type Ref } from 'vue'
 import { currentRegion } from '@/services/region/regionContext'
@@ -48,7 +48,7 @@ function defaultPanelHeight(): number {
 }
 function readStoredHeight(): number {
   // 读取也需 try/catch：禁用持久化的浏览器策略 / sandbox iframe 访问 localStorage 会抛
-  // SecurityError，若不捕获会在 setup 阶段中断、整页无法渲染（codex #1385 P2）。
+  // SecurityError，若不捕获会在 setup 阶段中断、整页无法渲染（#1385）。
   try {
     const n = Number(localStorage.getItem(PANEL_HEIGHT_KEY))
     if (Number.isFinite(n) && n >= 280 && n <= 1200) return n
@@ -68,7 +68,7 @@ const activeMetric = ref<ActiveMetric>('average')
 useQuerySync({ metric: activeMetric as Ref<string> })
 if (!VALID_METRICS.includes(activeMetric.value as ActiveMetric)) activeMetric.value = 'average'
 
-// 防止切地区时旧地区慢响应覆盖新地区负荷状态（roborev job415）。
+// 防止切地区时旧地区慢响应覆盖新地区负荷状态（#415）。
 let loadGeneration = 0
 
 async function load() {
@@ -181,7 +181,7 @@ onRegionChange(load)
 .toolbar { display: flex; justify-content: flex-end; margin-bottom: 8px; }
 .metric-tabs { margin-top: 4px; }
 .heads { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-.heads .h { text-align: center; font-weight: 700; font-size: 14px; color: var(--text); padding: 6px 0; }
+.heads .h { text-align: center; font-weight: 700; font-size: var(--font-lg); color: var(--text); padding: 6px 0; }
 .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .grid-all { grid-auto-rows: 240px; }
 .mb { margin-bottom: 12px; }

@@ -95,10 +95,10 @@ function onSwitch(value: string) {
 }
 .scope-label {
   color: var(--el-text-color-secondary, #909399);
-  font-size: 13px;
+  font-size: var(--font-md);
 }
 .scope-name {
-  font-size: 15px;
+  font-size: var(--font-15);
 }
 .scope-switch {
   display: flex;
@@ -107,14 +107,14 @@ function onSwitch(value: string) {
 }
 .switch-hint {
   color: var(--el-text-color-secondary, #909399);
-  font-size: 13px;
+  font-size: var(--font-md);
 }
 .scope-empty {
   display: flex;
   align-items: center;
   gap: 8px;
   color: var(--el-text-color-secondary, #909399);
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 .scope-note {
   display: flex;
@@ -122,6 +122,6 @@ function onSwitch(value: string) {
   gap: 8px;
   margin-left: auto;
   color: var(--el-text-color-secondary, #909399);
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 </style>

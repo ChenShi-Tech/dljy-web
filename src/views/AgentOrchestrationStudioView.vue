@@ -300,7 +300,7 @@ import '@vue-flow/core/dist/theme-default.css'
 import '@vue-flow/controls/dist/style.css'
 import '@vue-flow/minimap/dist/style.css'
 import 'highlight.js/styles/github.css'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import StudioFlowNode from '@/components/studio/StudioFlowNode.vue'
 import { renderMarkdown } from '../utils/markdown'
 import {
@@ -317,11 +317,11 @@ import { packageRegionSummary } from '@/services/region/regionContext'
 
 const {
   addNodes, addEdges, onConnect, removeNodes, removeEdges,
-  updateNodeData, findEdge, screenToFlowCoordinate, setNodes, setEdges,
+  updateNodeData, screenToFlowCoordinate, setNodes, setEdges,
   toObject, fitView, nodes: vfNodes, edges: vfEdges
 } = useVueFlow()
 
-// ── 画布元信息 ──────────────────────────────────────────────────────────────
+// 画布元信息
 const graphName = ref('未命名编排')
 const currentId = ref('')
 const currentVersion = ref(0)
@@ -350,7 +350,7 @@ const hasNodes = computed(() => vfNodes.value.length > 0)
 let nodeSeq = 1
 let edgeSeq = 1
 
-// ── 节点面板 ────────────────────────────────────────────────────────────────
+// 节点面板
 type PaletteItem = { kind: NodeType; role?: string; icon: string; name: string; desc: string }
 const PALETTE: PaletteItem[] = [
   { kind: 'start', icon: '▶', name: '开始', desc: '流程起点' },
@@ -424,7 +424,7 @@ function onDrop(ev: DragEvent) {
   dragItem = null
 }
 
-// ── 连线 ────────────────────────────────────────────────────────────────────
+// 连线
 onConnect((conn: Connection) => {
   addEdges({
     ...conn,
@@ -434,7 +434,7 @@ onConnect((conn: Connection) => {
   })
 })
 
-// ── 选中与检查器 ───────────────────────────────────────────────────────────
+// 选中与检查器
 const selNodeId = ref('')
 const selEdgeId = ref('')
 const selNode = computed(() => vfNodes.value.find((n) => n.id === selNodeId.value) || null)
@@ -482,7 +482,7 @@ function duplicateNode() {
   selNodeId.value = id
 }
 
-// ── 内联校验:实时把问题标到画布节点(红=阻断/黄=提示),不依赖后端 ──
+// 内联校验:实时把问题标到画布节点(红=阻断/黄=提示),不依赖后端
 function computeAndApplyIssues() {
   const ns = vfNodes.value
   const outc: Record<string, number> = {}
@@ -515,7 +515,7 @@ watch(
 )
 const issueCount = computed(() => vfNodes.value.filter((n) => n.data.issue === 'error').length)
 
-// ── 模板 / 保存 / 加载 ───────────────────────────────────────────────────────
+// 模板 / 保存 / 加载
 function specToFlow(spec: GraphSpec) {
   const fnodes = spec.nodes.map((n, i) => ({
     id: n.id,
@@ -576,7 +576,7 @@ function flowToSpec(): GraphSpec {
 async function loadTemplates() {
   try {
     templates.value = await fetchTemplates()
-  } catch (e) {
+  } catch {
     /* 后端离线时模板下拉为空,不阻塞 */
   }
 }
@@ -682,7 +682,7 @@ async function save() {
   }
 }
 
-// ── 校验 ────────────────────────────────────────────────────────────────────
+// 校验
 const validation = ref<ValidationResult | null>(null)
 const validating = ref(false)
 async function runValidate(): Promise<ValidationResult | null> {
@@ -704,7 +704,7 @@ async function runValidate(): Promise<ValidationResult | null> {
   }
 }
 
-// ── 运行 ────────────────────────────────────────────────────────────────────
+// 运行
 const runOpen = ref(false)
 const task = ref('')
 const phase = ref<'idle' | 'running' | 'awaiting' | 'done'>('idle')
@@ -722,7 +722,7 @@ const backendOnline = ref(false)
 let sessionId = ''
 let abort: AbortController | null = null
 // 当前后台 run 的 id（sendAgentMessage 的 onRunId 回填）。PR #616 把发消息改成「POST 启动后台
-// run + attach 读流」后，切页/卸载/重置只 abort 本地读取不会取消服务端 run——它会继续消耗模型/工具
+// run + attach 读流」后，切页/卸载/重置只 abort 本地读取不会取消服务端 run，它会继续消耗模型/工具
 // 并占住该会话单飞锁。需在 reset/unmount 时显式 stop，与 AgentChatPanel.stop() 对称。
 let currentRunId: string | null = null
 // 用户主动停止标志：onRunId 回调据此在拿到 runId 时补停（竞态窗口：POST 已发但 x-run-id 未返回）。
@@ -932,7 +932,7 @@ function bumpRecursion() {
   ElMessage.success(`递归上限已调高到 ${config.value.recursion_limit}，可重新运行`)
 }
 
-// ── tool 节点参数 JSON 编辑 ─────────────────────────────────────────────────
+// tool 节点参数 JSON 编辑
 const argsError = ref('')
 const argsText = computed<string>({
   get() {
@@ -960,7 +960,7 @@ function fillToolArgs() {
   selNode.value.data.args = next
 }
 
-// ── map 节点 items 编辑（每行一项） ─────────────────────────────────────────
+// map 节点 items 编辑（每行一项）
 const mapItemsText = computed<string>({
   get() {
     const items = selNode.value?.data.items
@@ -975,7 +975,7 @@ const mapItemsText = computed<string>({
   }
 })
 
-// ── 自动布局（按从开始节点的层级横向排布） ───────────────────────────────────
+// 自动布局（按从开始节点的层级横向排布）
 function autoLayout() {
   const ns = vfNodes.value
   const es = vfEdges.value
@@ -1012,7 +1012,7 @@ function autoLayout() {
   ElMessage.success('已自动布局')
 }
 
-// ── 导出 / 导入 JSON ────────────────────────────────────────────────────────
+// 导出 / 导入 JSON
 function exportJson() {
   const spec = flowToSpec()
   const blob = new Blob([JSON.stringify(spec, null, 2)], { type: 'application/json' })
@@ -1050,7 +1050,7 @@ function onImportFile(ev: Event) {
   ;(ev.target as HTMLInputElement).value = ''
 }
 
-// ── 报告 / 产出导出 ─────────────────────────────────────────────────────────
+// 报告 / 产出导出
 function exportReport() {
   const parts: string[] = [`# ${graphName.value} · 运行报告`, '', `> 任务：${task.value || '(无)'}`, '']
   for (const o of Object.values(nodeOutputs.value)) {
@@ -1074,7 +1074,7 @@ async function copyText(text: string) {
   }
 }
 
-// ── 运行历史 ────────────────────────────────────────────────────────────────
+// 运行历史
 const historyOpen = ref(false)
 const runHistory = ref<RunSummary[]>([])
 async function openHistory() {
@@ -1113,7 +1113,7 @@ function fmtTime(ts: number): string {
   return new Date(ts * 1000).toLocaleString('zh-CN', { hour12: false })
 }
 
-// ── 生命周期 ───────────────────────────────────────────────────────────────
+// 生命周期
 onMounted(async () => {
   getRouting().then((r) => { availableModels.value = r.models }).catch(() => { /* 后端离线时无模型列表，节点用角色默认 */ })
   await loadTemplates()
@@ -1131,7 +1131,7 @@ onMounted(async () => {
 })
 onBeforeUnmount(() => {
   // 卸载（切页）时显式停止后台 run：PR #616 后 abort 只断读流，服务端 run 会继续跑并占住
-  // 会话单飞锁，工作室又没有 attach 恢复路径——不补停会卡住该会话直到自然结束。
+  // 会话单飞锁，工作室又没有 attach 恢复路径，不补停会卡住该会话直到自然结束。
   stopBackgroundRun()
   abort?.abort()
 })
@@ -1160,7 +1160,7 @@ onBeforeUnmount(() => {
 }
 .st-top-l { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
 .st-name {
-  font-size: 16px;
+  font-size: var(--font-16);
   font-weight: 600;
   color: var(--text);
   background: transparent;
@@ -1172,15 +1172,15 @@ onBeforeUnmount(() => {
   max-width: 320px;
 }
 .st-name:hover, .st-name:focus { border-color: var(--line); background: var(--panel-sub); }
-.st-meta { font-size: 11.5px; color: var(--muted); }
+.st-meta { font-size: var(--font-11-5); color: var(--muted); }
 .st-meta.dirty { color: var(--accent); }
 .st-top-r { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
 .st-sel { width: 132px; }
 
 .st-cfg { display: flex; flex-direction: column; gap: 10px; }
-.st-cfg-title { font-size: 13px; font-weight: 600; color: var(--text); }
-.st-cfg label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--text-body); }
-.st-cfg-tip { font-size: 11px; color: var(--muted); line-height: 1.6; margin: 2px 0 0; }
+.st-cfg-title { font-size: var(--font-md); font-weight: 600; color: var(--text); }
+.st-cfg label { display: flex; flex-direction: column; gap: 4px; font-size: var(--font-sm); color: var(--text-body); }
+.st-cfg-tip { font-size: var(--font-xs); color: var(--muted); line-height: 1.6; margin: 2px 0 0; }
 
 /* 主区 */
 .st-main { flex: 1; min-height: 0; display: grid; grid-template-columns: 196px 1fr 296px; }
@@ -1191,7 +1191,7 @@ onBeforeUnmount(() => {
   overflow: auto;
   background: var(--panel-image), var(--panel);
 }
-.st-pal-title { font-size: 12px; font-weight: 600; color: var(--muted); margin-bottom: 10px; letter-spacing: 0.5px; }
+.st-pal-title { font-size: var(--font-sm); font-weight: 600; color: var(--muted); margin-bottom: 10px; letter-spacing: 0.5px; }
 .st-pal-item {
   display: flex;
   align-items: center;
@@ -1208,25 +1208,25 @@ onBeforeUnmount(() => {
 .st-pal-item:active { cursor: grabbing; }
 .st-pal-icon {
   flex: none; width: 28px; height: 28px; display: grid; place-items: center;
-  border-radius: 7px; font-size: 14px; background: var(--primary-tint); color: var(--primary);
+  border-radius: 7px; font-size: var(--font-lg); background: var(--primary-tint); color: var(--primary);
   font-family: var(--font-display);
 }
 .pi-condition { background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--accent); }
 .pi-approval { background: color-mix(in srgb, #d97706 18%, transparent); color: #d97706; }
 .pi-start, .pi-end { background: var(--surface-hover); color: var(--muted); }
 .st-pal-text { min-width: 0; }
-.st-pal-name { font-size: 12.5px; font-weight: 600; color: var(--text); }
-.st-pal-desc { font-size: 10.5px; color: var(--muted); }
-.st-pal-hint { margin-top: 14px; font-size: 11px; color: var(--muted); line-height: 1.7; }
+.st-pal-name { font-size: var(--font-12-5); font-weight: 600; color: var(--text); }
+.st-pal-desc { font-size: var(--font-10-5); color: var(--muted); }
+.st-pal-hint { margin-top: 14px; font-size: var(--font-xs); color: var(--muted); line-height: 1.7; }
 
 /* 画布 */
 .st-canvas { position: relative; min-width: 0; background: var(--bg); }
-.st-canvas :deep(.vue-flow__edge-text) { font-size: 11px; fill: var(--text-body); }
+.st-canvas :deep(.vue-flow__edge-text) { font-size: var(--font-xs); fill: var(--text-body); }
 .st-canvas :deep(.vue-flow__edge-textbg) { fill: var(--panel); }
 .st-canvas :deep(.vue-flow__edge-path) { stroke: var(--line); stroke-width: 1.5; }
 .st-canvas :deep(.vue-flow__edge.animated .vue-flow__edge-path) { stroke: var(--primary); }
 .st-canvas :deep(.vue-flow__edge.selected .vue-flow__edge-path) { stroke: var(--primary); stroke-width: 2; }
-.st-flow-legend { display: flex; gap: 12px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 5px 10px; font-size: 11px; color: var(--muted); }
+.st-flow-legend { display: flex; gap: 12px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 5px 10px; font-size: var(--font-xs); color: var(--muted); }
 .st-flow-legend .lg { display: inline-flex; align-items: center; gap: 5px; }
 .st-flow-legend .d { width: 8px; height: 8px; border-radius: 50%; }
 .st-flow-legend .d.run { background: var(--primary); }
@@ -1244,31 +1244,31 @@ onBeforeUnmount(() => {
   overflow: auto;
   background: var(--panel-image), var(--panel);
 }
-.st-insp-title { font-size: 13px; font-weight: 600; color: var(--text); margin-bottom: 12px; }
-.st-insp-sub { font-size: 12px; color: var(--muted); margin: 0 0 10px; }
-.st-insp-empty { font-size: 12px; color: var(--muted); line-height: 1.7; }
-.st-field { display: flex; flex-direction: column; gap: 5px; margin-bottom: 12px; font-size: 12px; color: var(--text-body); }
-.st-stats { margin-top: 14px; font-size: 11.5px; color: var(--muted); }
+.st-insp-title { font-size: var(--font-md); font-weight: 600; color: var(--text); margin-bottom: 12px; }
+.st-insp-sub { font-size: var(--font-sm); color: var(--muted); margin: 0 0 10px; }
+.st-insp-empty { font-size: var(--font-sm); color: var(--muted); line-height: 1.7; }
+.st-field { display: flex; flex-direction: column; gap: 5px; margin-bottom: 12px; font-size: var(--font-sm); color: var(--text-body); }
+.st-stats { margin-top: 14px; font-size: var(--font-11-5); color: var(--muted); }
 .st-stats-bad { color: var(--danger, #dc2626); font-weight: 600; }
 .st-insp-acts { display: flex; gap: 8px; }
 
-.st-valid { font-size: 12px; color: var(--text-body); }
+.st-valid { font-size: var(--font-sm); color: var(--text-body); }
 .st-valid-row { margin-bottom: 6px; }
 .st-valid-row.warn { color: var(--accent); }
-.st-valid-list { margin: 8px 0; padding-left: 16px; font-size: 11.5px; line-height: 1.6; }
+.st-valid-list { margin: 8px 0; padding-left: 16px; font-size: var(--font-11-5); line-height: 1.6; }
 .st-valid-list.err li { color: var(--danger, #dc2626); }
 .st-valid-list.warn li { color: var(--accent); }
-.st-arg-err { font-size: 11.5px; color: var(--danger, #dc2626); margin: 4px 0 0; }
+.st-arg-err { font-size: var(--font-11-5); color: var(--danger, #dc2626); margin: 4px 0 0; }
 
 /* 运行历史抽屉 */
-.st-hist-empty { color: var(--muted); font-size: 13px; padding: 20px 0; text-align: center; }
+.st-hist-empty { color: var(--muted); font-size: var(--font-md); padding: 20px 0; text-align: center; }
 .st-hist-item { display: flex; align-items: flex-start; gap: 8px; padding: 10px 8px; border-bottom: 1px solid var(--line-faint); }
 .st-hist-main { flex: 1; min-width: 0; cursor: pointer; }
-.st-hist-name { font-size: 13px; font-weight: 600; color: var(--text); display: flex; align-items: center; gap: 6px; }
-.st-hist-badge { font-size: 10px; padding: 1px 6px; border-radius: 4px; background: var(--primary-tint); color: var(--primary); font-weight: 400; }
+.st-hist-name { font-size: var(--font-md); font-weight: 600; color: var(--text); display: flex; align-items: center; gap: 6px; }
+.st-hist-badge { font-size: var(--font-10); padding: 1px 6px; border-radius: 4px; background: var(--primary-tint); color: var(--primary); font-weight: 400; }
 .st-hist-badge.error { background: color-mix(in srgb, #dc2626 12%, transparent); color: #dc2626; }
-.st-hist-task { font-size: 12px; color: var(--text-body); margin: 3px 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.st-hist-time { font-size: 11px; color: var(--muted); }
+.st-hist-task { font-size: var(--font-sm); color: var(--text-body); margin: 3px 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.st-hist-time { font-size: var(--font-xs); color: var(--muted); }
 
 /* 运行面板 */
 .st-run {
@@ -1281,44 +1281,44 @@ onBeforeUnmount(() => {
 }
 .st-run-head { flex: none; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 16px; border-bottom: 1px solid var(--line-faint); }
 .st-run-task { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; }
-.st-tag { flex: none; font-size: 12px; color: var(--ai-btn-fg); background: var(--primary); padding: 4px 10px; border-radius: 5px; letter-spacing: 1px; }
-.st-task-in { flex: 1; min-width: 0; border: 1px solid var(--line); border-radius: 6px; background: var(--panel-sub); padding: 7px 10px; font-size: 13px; color: var(--text); outline: none; font-family: inherit; }
-.st-run-prog { flex: none; font-size: 12px; color: var(--muted); }
+.st-tag { flex: none; font-size: var(--font-sm); color: var(--ai-btn-fg); background: var(--primary); padding: 4px 10px; border-radius: 5px; letter-spacing: 1px; }
+.st-task-in { flex: 1; min-width: 0; border: 1px solid var(--line); border-radius: 6px; background: var(--panel-sub); padding: 7px 10px; font-size: var(--font-md); color: var(--text); outline: none; font-family: inherit; }
+.st-run-prog { flex: none; font-size: var(--font-sm); color: var(--muted); }
 
 .st-run-body { flex: 1; min-height: 0; display: grid; grid-template-columns: 300px 1fr; gap: 0; }
 .st-minutes { overflow: auto; padding: 12px 14px; border-right: 1px solid var(--line-faint); display: flex; flex-direction: column; gap: 8px; }
-.st-col-title { font-size: 12px; font-weight: 600; color: var(--muted); letter-spacing: 0.5px; margin-bottom: 4px; }
+.st-col-title { font-size: var(--font-sm); font-weight: 600; color: var(--muted); letter-spacing: 0.5px; margin-bottom: 4px; }
 .st-bubble { padding: 8px 11px; border-radius: 9px; background: var(--panel-sub); border: 1px solid var(--line-faint); }
-.st-bubble .st-who { font-size: 11.5px; font-weight: 600; color: var(--text); }
-.st-bubble p { margin: 3px 0 0; font-size: 12px; line-height: 1.6; color: var(--text-body); }
+.st-bubble .st-who { font-size: var(--font-11-5); font-weight: 600; color: var(--text); }
+.st-bubble p { margin: 3px 0 0; font-size: var(--font-sm); line-height: 1.6; color: var(--text-body); }
 .st-bubble.orch { border-color: var(--primary-tint-border); }
 
 .st-outputs { overflow: auto; padding: 12px 16px; }
 .st-out-card { margin-bottom: 10px; border: 1px solid var(--line); border-radius: 9px; overflow: hidden; }
-.st-out-card summary { cursor: pointer; padding: 8px 12px; font-size: 12.5px; font-weight: 600; color: var(--text); background: var(--panel-sub); }
-.st-out-card summary i { font-style: normal; font-weight: 400; color: var(--muted); font-size: 11px; margin-left: 6px; }
+.st-out-card summary { cursor: pointer; padding: 8px 12px; font-size: var(--font-12-5); font-weight: 600; color: var(--text); background: var(--panel-sub); }
+.st-out-card summary i { font-style: normal; font-weight: 400; color: var(--muted); font-size: var(--font-xs); margin-left: 6px; }
 .st-out-card summary .st-copy { float: right; }
 .st-out-card .md { padding: 10px 12px; }
 .st-report { margin-top: 12px; padding: 14px; border: 1px solid var(--primary); border-radius: 10px; background: var(--primary-tint); }
 
 .st-approval { margin-top: 12px; padding: 12px 14px; border: 1px solid var(--accent); border-radius: 9px; background: var(--primary-tint); }
-.st-appr-title { font-size: 12.5px; font-weight: 600; color: var(--accent); }
-.st-appr-q { font-size: 12.5px; color: var(--text); margin: 6px 0; }
-.st-appr-body { font-size: 11px; white-space: pre-wrap; word-break: break-word; max-height: 120px; overflow: auto; color: var(--text-body); background: var(--panel); border-radius: 6px; padding: 8px; margin: 0 0 10px; }
+.st-appr-title { font-size: var(--font-12-5); font-weight: 600; color: var(--accent); }
+.st-appr-q { font-size: var(--font-12-5); color: var(--text); margin: 6px 0; }
+.st-appr-body { font-size: var(--font-xs); white-space: pre-wrap; word-break: break-word; max-height: 120px; overflow: auto; color: var(--text-body); background: var(--panel); border-radius: 6px; padding: 8px; margin: 0 0 10px; }
 .st-appr-acts { display: flex; gap: 10px; }
 
-.st-error { margin-top: 12px; padding: 10px 14px; border: 1px solid var(--danger, #dc2626); border-radius: 9px; background: color-mix(in srgb, #dc2626 8%, transparent); font-size: 12.5px; color: var(--text-body); }
+.st-error { margin-top: 12px; padding: 10px 14px; border: 1px solid var(--danger, #dc2626); border-radius: 9px; background: color-mix(in srgb, #dc2626 8%, transparent); font-size: var(--font-12-5); color: var(--text-body); }
 
 /* markdown 容器 */
-.md { font-size: 13px; line-height: 1.75; color: var(--text-body); word-break: break-word; }
-.md :deep(h1), .md :deep(h2), .md :deep(h3), .md :deep(h4) { font-size: 14px; margin: 12px 0 6px; color: var(--text); font-weight: 600; }
+.md { font-size: var(--font-md); line-height: 1.75; color: var(--text-body); word-break: break-word; }
+.md :deep(h1), .md :deep(h2), .md :deep(h3), .md :deep(h4) { font-size: var(--font-lg); margin: 12px 0 6px; color: var(--text); font-weight: 600; }
 .md :deep(p) { margin: 6px 0; }
 .md :deep(ul), .md :deep(ol) { padding-left: 20px; margin: 6px 0; }
 .md :deep(li) { margin: 3px 0; }
-.md :deep(table) { width: 100%; border-collapse: collapse; font-size: 12px; margin: 8px 0; }
+.md :deep(table) { width: 100%; border-collapse: collapse; font-size: var(--font-sm); margin: 8px 0; }
 .md :deep(th), .md :deep(td) { padding: 6px 9px; border: 1px solid var(--line-faint); text-align: left; }
 .md :deep(th) { background: var(--panel-sub); color: var(--muted); font-weight: 600; }
-.md :deep(code) { background: var(--surface-hover); padding: 1px 5px; border-radius: 4px; font-size: 12px; }
+.md :deep(code) { background: var(--surface-hover); padding: 1px 5px; border-radius: 4px; font-size: var(--font-sm); }
 .md :deep(pre) { background: var(--panel-sub); border: 1px solid var(--line-faint); border-radius: 8px; padding: 10px 12px; overflow: auto; margin: 8px 0; }
 .md :deep(pre code) { background: none; padding: 0; }
 .md :deep(blockquote) { border-left: 3px solid var(--primary); padding-left: 12px; margin: 8px 0; color: var(--muted); }
@@ -1341,7 +1341,7 @@ onBeforeUnmount(() => {
 }
 
 /* AI 生成编排对话框 */
-.nl-tip { margin: 0 0 12px; font-size: 12.5px; line-height: 1.6; color: var(--el-text-color-secondary); }
+.nl-tip { margin: 0 0 12px; font-size: var(--font-12-5); line-height: 1.6; color: var(--el-text-color-secondary); }
 .nl-egs { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-top: 10px; }
-.nl-eg-label { font-size: 12px; color: var(--el-text-color-secondary); }
+.nl-eg-label { font-size: var(--font-sm); color: var(--el-text-color-secondary); }
 </style>

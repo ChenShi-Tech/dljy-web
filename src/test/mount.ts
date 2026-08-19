@@ -9,7 +9,7 @@ export function mount(component: Component, options: MountingOptions<any> = {}) 
   return vtjMount(component, {
     ...options,
     global: {
-      // 先展开 options.global（基础）再写合并后的 plugins/stubs——顺序反了会让传入项覆盖默认（codex P2 #1712）
+      // 先展开 options.global（基础）再写合并后的 plugins/stubs，顺序反了会让传入项覆盖默认（#1712）
       ...options.global,
       plugins: [ElementPlus, ...(options.global?.plugins ?? [])],
       stubs: { transition: true, ...(options.global?.stubs ?? {}) }

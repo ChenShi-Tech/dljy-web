@@ -268,7 +268,7 @@ function exportOutputCsv() {
 
 <style scoped>
 .company-page { padding: 20px; }
-.page-title { margin: 0 0 16px; font-size: 20px; }
+.page-title { margin: 0 0 16px; font-size: var(--font-20); }
 .toolbar { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
 /* 移动端:筛选条纵排,行内定宽控件占满整行(断点规约 768) */
 @media (max-width: 768px) {
@@ -277,6 +277,6 @@ function exportOutputCsv() {
 }
 .bulk-box { padding: 12px; background: var(--el-fill-color-lighter, #fafafa); border-radius: 8px; }
 .bulk-actions { margin-top: 10px; display: flex; gap: 10px; }
-.import-hint { margin: 0 0 8px; color: var(--el-text-color-secondary, #909399); font-size: 13px; }
-.readonly-hint { color: var(--el-text-color-secondary, #909399); font-size: 13px; }
+.import-hint { margin: 0 0 8px; color: var(--el-text-color-secondary, #909399); font-size: var(--font-md); }
+.readonly-hint { color: var(--el-text-color-secondary, #909399); font-size: var(--font-md); }
 </style>

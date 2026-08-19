@@ -105,12 +105,12 @@ const icons: Record<ThemeKey, Component> = {
   line-height: 1.25;
 }
 .ti-meta strong {
-  font-size: 13px;
+  font-size: var(--font-md);
   font-weight: 600;
 }
 .ti-meta small {
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--font-xs);
 }
 
 .ti-dot {

@@ -50,7 +50,7 @@ const hideAxis = ref(false)
 const activeGroups = ref<string[]>(['预测', '策略与价格', '电量', '实际值'])
 const company = ref('默认公司')
 const dayCache = ref<Record<string, Record<string, Array<number | null>>>>({})
-// 防止切地区时旧地区慢响应覆盖新地区状态/日缓存（roborev job415）。
+// 防止切地区时旧地区慢响应覆盖新地区状态/日缓存（#415）。
 let loadGeneration = 0
 
 const groupEntries = computed<[string, string[]][]>(() => Object.entries(meta.value?.groups || {}))
@@ -75,8 +75,8 @@ const cols = computed(() => {
 async function load() {
   const generation = ++loadGeneration
   loading.value = true; error.value = ''
-  // 日缓存只按 date 键入，必须随 load（首次挂载/onRegionChange 切地区）清空——
-  // 否则切地区后同一天命中上一地区缓存，跨地区串读曲线（roborev job411）。
+  // 日缓存只按 date 键入，必须随 load（首次挂载/onRegionChange 切地区）清空
+  // 否则切地区后同一天命中上一地区缓存，跨地区串读曲线（#411）。
   clearViewState()
   renderEmptyChart()
   mainChart.showLoading()
@@ -260,7 +260,7 @@ function onReset() {
 }
 function notReady(label: string) { ElMessage.info(`「${label}」为线上功能,当前 demo 暂用真实数据回放,未接该接口`) }
 
-// ── Phase 6 PR-B：分析视图/标注（analysis.sqlite 用户产物，/api/v1/analysis/*）──
+// Phase 6 PR-B：分析视图/标注（analysis.sqlite 用户产物，/api/v1/analysis/*）
 const analysis = useAnalysisStore()
 const ROUTE_PATH = '/sjfx/singleZsjfx'
 const viewsDrawer = ref(false)
@@ -467,11 +467,11 @@ onRegionChange(load)
 .tag-actions { display: flex; gap: 6px; margin-bottom: 8px; }
 .tag-actions .el-button { flex: 1; padding: 6px 0; }
 .grp-wrap { flex: 1; overflow: auto; }
-.grp-title { font-weight: 600; font-size: 14px; color: var(--el-text-color-primary); }
-.grp-title em { font-style: normal; color: var(--el-text-color-disabled); font-size: 12px; margin-left: 6px; }
+.grp-title { font-weight: 600; font-size: var(--font-lg); color: var(--el-text-color-primary); }
+.grp-title em { font-style: normal; color: var(--el-text-color-disabled); font-size: var(--font-sm); margin-left: 6px; }
 .grp-items { display: flex; flex-direction: column; gap: 2px; }
 .tag-item { height: auto; margin-right: 0; display: flex; align-items: center; }
-.tag-item :deep(.el-checkbox__label) { font-size: 12px; color: var(--el-text-color-secondary); display: inline-flex; align-items: center; white-space: normal; line-height: 1.3; }
+.tag-item :deep(.el-checkbox__label) { font-size: var(--font-sm); color: var(--el-text-color-secondary); display: inline-flex; align-items: center; white-space: normal; line-height: 1.3; }
 .tag-item.is-checked :deep(.el-checkbox__label) { color: var(--el-text-color-primary); font-weight: 600; }
 .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 5px; flex: none; opacity: .35; }
 .tag-item.is-checked .dot { opacity: 1; }
@@ -479,8 +479,8 @@ onRegionChange(load)
 /* 中:日期两列 */
 .dates { display: flex; gap: 8px; background: var(--panel); border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,.04); padding: 8px; height: 100%; min-height: 0; }
 .datecol { flex: 1; overflow: auto; }
-.dchead { position: sticky; top: 0; background: var(--panel-sub); color: var(--el-text-color-regular); font-weight: 600; font-size: 12px; text-align: center; padding: 4px 0; border-radius: 4px; margin-bottom: 4px; }
-.dcell { text-align: center; font-size: 12px; padding: 3px 0; margin-bottom: 2px; border-radius: 4px; color: var(--el-text-color-disabled); cursor: default; user-select: none; }
+.dchead { position: sticky; top: 0; background: var(--panel-sub); color: var(--el-text-color-regular); font-weight: 600; font-size: var(--font-sm); text-align: center; padding: 4px 0; border-radius: 4px; margin-bottom: 4px; }
+.dcell { text-align: center; font-size: var(--font-sm); padding: 3px 0; margin-bottom: 2px; border-radius: 4px; color: var(--el-text-color-disabled); cursor: default; user-select: none; }
 .dcell.has { color: var(--el-text-color-regular); cursor: pointer; background: var(--el-fill-color-lighter); }
 .dcell.has:hover { background: var(--primary-tint); color: var(--el-color-primary); }
 .dcell.on { background: var(--el-color-primary); color: #fff; font-weight: 700; }
@@ -489,7 +489,7 @@ onRegionChange(load)
 /* 右:图表 */
 .chart-wrap { background: var(--panel); border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,.04); padding: 8px 12px; height: 100%; min-height: 0; display: flex; flex-direction: column; }
 .chart { flex: 1; width: 100%; min-height: 0; }
-.src { color: var(--el-text-color-secondary); font-size: 12px; margin: 4px 0 0; }
+.src { color: var(--el-text-color-secondary); font-size: var(--font-sm); margin: 4px 0 0; }
 .src code { color: var(--el-color-primary); }
 .mb { margin-bottom: 12px; }
 /* Phase 6 PR-B：我的视图抽屉 */
@@ -498,8 +498,8 @@ onRegionChange(load)
 .view-list { display: flex; flex-direction: column; gap: 8px; }
 .view-item { background: var(--el-fill-color-light); border-radius: 8px; padding: 10px 12px; border: 1px solid var(--el-border-color-lighter); }
 .view-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 4px; }
-.view-name { font-weight: 600; font-size: 13px; color: var(--el-text-color-primary); word-break: break-all; }
-.view-meta { font-size: 12px; color: var(--el-text-color-secondary); margin-bottom: 8px; }
+.view-name { font-weight: 600; font-size: var(--font-md); color: var(--el-text-color-primary); word-break: break-all; }
+.view-meta { font-size: var(--font-sm); color: var(--el-text-color-secondary); margin-bottom: 8px; }
 .view-actions { display: flex; gap: 6px; }
 /* 窄屏:三栏布局退化为单列;移动端筛选条纵排、图表卡片降高。
    桌面定高+overflow:hidden 会截断单列内容，窄屏恢复页面自然滚动。 */

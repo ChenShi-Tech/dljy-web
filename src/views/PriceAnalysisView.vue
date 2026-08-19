@@ -2,7 +2,7 @@
 // 价格分析 (zrsjg / zcqxhdl listrs) — 精修版,对照线上 A8.png:左大 3D 电价图 + 右上时点切面 + 右下日期切面。
 // 顶部:运行日期(区间) + 日前价/实时价 勾选(控制三图显示哪类)。
 // 数据经市场洞察价格分析契约归一为 averageCurves / dayCurves / dailyStats。
-//   3D: 选定日期区间内每天的 96 点价格曲线(时间×日期×价格);时点切面=平均日内;日期切面=按天 max/min/avg。
+// 3D: 选定日期区间内每天的 96 点价格曲线(时间×日期×价格);时点切面=平均日内;日期切面=按天 max/min/avg。
 import { onMounted, onBeforeUnmount, onActivated, ref, nextTick, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import * as echarts from 'echarts'
@@ -52,7 +52,7 @@ let d3Ro: ResizeObserver | null = null // 容器尺寸变化（侧栏折叠/列�
 // 两个 2D 切面图迁入 useEChart,同组 connect:tooltip/缩放跨图联动
 const tHandle = useEChart(tRef, { render: renderTimeSlice, group: 'price-analysis' })
 const dHandle = useEChart(dRef, { render: renderDateSlice, group: 'price-analysis' })
-// 防止切地区时旧地区慢响应覆盖新地区价格状态（roborev job415）。
+// 防止切地区时旧地区慢响应覆盖新地区价格状态（#415）。
 let loadGeneration = 0
 
 async function load() {
@@ -296,17 +296,17 @@ onRegionChange(load)
 <style scoped>
 .pa { padding: 12px 16px; background: var(--el-fill-color-light); height: calc(100vh - 100px); box-sizing: border-box; display: flex; flex-direction: column; overflow: hidden; }
 .toolbar { display: flex; align-items: center; gap: 8px; background: var(--panel); padding: 10px 12px; border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,.04); flex-wrap: wrap; }
-.toolbar .lbl { font-size: 13px; color: var(--el-text-color-regular); font-weight: 600; }
+.toolbar .lbl { font-size: var(--font-md); color: var(--el-text-color-regular); font-weight: 600; }
 .toolbar .spacer { flex: 1; }
 .body { display: grid; grid-template-columns: 7fr 3fr; gap: 12px; margin-top: 12px; flex: 1; min-height: 0; }
 .card { background: var(--panel); border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,.04); padding: 8px 12px; }
-.ctitle { font-size: 13px; font-weight: 600; color: var(--el-text-color-primary); padding: 2px 0 4px; }
+.ctitle { font-size: var(--font-md); font-weight: 600; color: var(--el-text-color-primary); padding: 2px 0 4px; }
 .big { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
 .chart3d { flex: 1; width: 100%; min-height: 0; }
 .side { display: flex; flex-direction: column; gap: 12px; min-height: 0; }
 .side .card { flex: 1; min-height: 0; overflow: hidden; display: flex; flex-direction: column; }
 .chart-s { flex: 1; width: 100%; min-height: 0; }
-.src { color: var(--el-text-color-secondary); font-size: 12px; margin: 12px 0 0; }
+.src { color: var(--el-text-color-secondary); font-size: var(--font-sm); margin: 12px 0 0; }
 .src code { color: var(--el-color-primary); }
 .mb { margin-bottom: 12px; }
 /* 窄屏:左右布局退化为上下;移动端筛选条纵排。

@@ -68,9 +68,9 @@ export type RegionRiskParams = {
 // 地区可校准的「交易口径参数」接缝（PR-4 框架）。
 // 全部 optional：地区未填 → 量化算法仍用各自字面默认值（与历史一致，零行为变更）；
 // 地区填了 → 由 view 层经 deriveRegionTradingParams 注入 quant.ts / tradingLab.ts
-//   （这两个文件保持运行时自包含、不 import 地区数据，只接收带字面默认值的纯数字参数）。
+// （这两个文件保持运行时自包含、不 import 地区数据，只接收带字面默认值的纯数字参数）。
 // 设计意图：把散落在 quant/tradingLab 的硬编码「知识点」收成可按地区校准的同一接缝；
-//   当前所有地区均不填，值待真实校准（basis 标注「待校准」）。
+// 当前所有地区均不填，值待真实校准（basis 标注「待校准」）。
 export type RegionTradingParams = {
   /** 峰谷套利识别的波动带倍数 σ（quant.detectPeakValleyArbitrage），默认 0.65 */
   peakValleySigma?: number

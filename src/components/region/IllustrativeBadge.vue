@@ -16,7 +16,7 @@ defineProps<{ label?: string }>()
   border-radius: 10px;
   background: var(--panel-sub);
   color: var(--warning);
-  font-size: 11px;
+  font-size: var(--font-xs);
   line-height: 1.4;
 }
 </style>

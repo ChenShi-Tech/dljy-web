@@ -62,7 +62,7 @@ function isTabDegraded(tabKey: string): boolean {
 }
 
 // 决策口径（trustGate）：本 hub 为预测回放（路由 meta.kind='forecast'），预测值非结算事实，
-// 决策口径恒为 advisory_only——以 illustrative basis 显式标注「仅决策支持·非结算依据」。
+// 决策口径恒为 advisory_only，以 illustrative basis 显式标注「仅决策支持·非结算依据」。
 const decisionBasis = computed<DataSourceBasis>(() => (route.meta?.kind === 'forecast' ? 'illustrative' : 'captured'))
 
 // 数据源与口径总览：把可见预测服务按「绑定维度」分组，让用户一眼看清都有什么、各自绑定什么。
@@ -171,7 +171,7 @@ watch([tabs, () => route.query.tab, () => currentRegion.value.id], () => {
   align-items: baseline;
   flex-wrap: wrap;
   gap: 6px;
-  font-size: 12px;
+  font-size: var(--font-sm);
   color: var(--el-text-color-regular);
   line-height: 1.5;
 }

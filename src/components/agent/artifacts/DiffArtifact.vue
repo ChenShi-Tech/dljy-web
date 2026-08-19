@@ -87,17 +87,17 @@ const SIGN: Record<RowType, string> = { eq: ' ', add: '+', del: '-' }
 </template>
 
 <style scoped>
-.diff-labels { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; }
+.diff-labels { display: inline-flex; align-items: center; gap: 5px; font-size: var(--font-xs); }
 .diff-labels .lbl { padding: 1px 6px; border-radius: 4px; max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .diff-labels .arrow { opacity: 0.4; }
-.diff-stat { display: inline-flex; gap: 6px; font-size: 11.5px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.diff-stat { display: inline-flex; gap: 6px; font-size: var(--font-11-5); font-weight: 600; font-variant-numeric: tabular-nums; }
 .add { color: #16a34a; }
 .del { color: #dc2626; }
 .lbl.add { background: rgba(22, 163, 74, 0.12); }
 .lbl.del { background: rgba(220, 38, 38, 0.12); }
 .diff-body {
   margin: 0; padding: 6px 0; max-height: 420px; overflow: auto;
-  font-family: 'SFMono-Regular', Consolas, Menlo, monospace; font-size: 12.5px; line-height: 1.55;
+  font-family: 'SFMono-Regular', Consolas, Menlo, monospace; font-size: var(--font-12-5); line-height: 1.55;
 }
 .diff-line { display: flex; padding: 0 12px; white-space: pre; }
 .diff-line.add { background: rgba(22, 163, 74, 0.1); }

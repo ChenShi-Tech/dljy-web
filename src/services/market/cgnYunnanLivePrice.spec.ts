@@ -1,4 +1,6 @@
 // @vitest-environment happy-dom
+// ↑ 勿删：本文件不是 *.component.spec.ts，vitest node project 默认不给 DOM；
+// 用例依赖 localStorage 等浏览器 API，靠此 pragma 按文件切到 happy-dom（合法机制）。
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const authState = vi.hoisted(() => ({ companyId: 'comp-cgn-yunnan' }))

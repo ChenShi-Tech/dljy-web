@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // 四川披露采集服务运维面板（Issue #1621 / Epic #1618；#1896 从独立页抽为本面板）。
 //
-// 让 Java 采集服务（127.0.0.1:8090）的状态「可见可控」——不看日志也能判断采集是否正常。
+// 让 Java 采集服务（127.0.0.1:8090）的状态「可见可控」，不看日志也能判断采集是否正常。
 // 数据全部来自真实服务（经 Node 转发层 /api/v1/sichuan-ingest），无 Mock 兜底：
 // - 服务不可达（502）→ 显式红色「服务不可达」态
 // - 库不可达（503）→ 红色「服务在运行但数据库不可达」
@@ -9,8 +9,8 @@
 // - 无数据 → 诚实空态
 //
 // #1896 起本面板是「数据源接入 → 电网官方平台」tab 里四川接入点的一部分（凭据录入在其上方的
-// SichuanCredentialCard）。故本面板只管「服务运维」：存活/数据集/运行/触发；**不再重复展示凭据掩码**
-// （凭据的录入、生效集、掩码归 SichuanCredentialCard，#1925 起还含按账号隔离语义）——
+// SichuanCredentialCard）。故本面板只管「服务运维」：存活/数据集/运行/触发；不再重复展示凭据掩码
+// （凭据的录入、生效集、掩码归 SichuanCredentialCard，#1925 起还含按账号隔离语义），
 // 这里只保留 overview 里一个「凭据是否齐全」的布尔标签，作为「采集能否跑起来」的快判。
 //
 // 当前是四川专用（直连 /api/v1/sichuan-ingest）；#1895 采集服务省份化后按接入点泛化。
@@ -79,7 +79,7 @@ const recentRuns = computed(() => status.value?.recentRuns ?? [])
 const alerts = computed(() => status.value?.alerts ?? [])
 
 // 服务端没给 alerts 键 = 采集服务还是引入告警之前的版本。
-// **不能当成「没有告警」渲染**——那会把「不知道有没有断」显示成「一切正常」，
+// 不能当成「没有告警」渲染，那会把「不知道有没有断」显示成「一切正常」，
 // 正是这个面板最该避免的假绿。
 const alertsUnsupported = computed(() => !!status.value && status.value.alerts === undefined)
 
@@ -147,7 +147,7 @@ async function doTrigger(menuCode?: string) {
   }
 }
 
-function reportTriggerItem(item: SichuanTriggerItem, scopeLabel: string) {
+function reportTriggerItem(item: SichuanTriggerItem, _scopeLabel: string) {
   const itemLabel = menuLabelByCode.value[item.menuCode] ?? item.menuCode
   if (item.status === 'success') {
     ElMessage.success(`「${itemLabel}」采集成功：新增 ${item.inserted ?? 0} 条（共拉取 ${item.fetched ?? 0} 条）`)
@@ -163,7 +163,7 @@ function reportTriggerItem(item: SichuanTriggerItem, scopeLabel: string) {
   ElMessage.error(`「${itemLabel}」采集失败${kindText}：${item.message ?? item.failureKind ?? '未知原因'}`)
 }
 
-// —— KeepAlive 安全轮询（守 #1736：onActivated/onDeactivated 对称启停）——
+// ， KeepAlive 安全轮询（守 #1736：onActivated/onDeactivated 对称启停），
 // 本面板经 tab KeepAlive 缓存：切到别的 tab 触发 onDeactivated（停轮询），切回触发 onActivated（恢复）。
 let pollTimer: number | undefined
 function startPoll() {
@@ -237,7 +237,7 @@ function formatTime(value: string | null | undefined): string {
     />
 
     <template v-else>
-      <!-- 连续失败告警（Issue #1622）：放在最上方，且不可关闭——
+      <!-- 连续失败告警（Issue #1622）：放在最上方，且不可关闭，
            它回答的是「这个数据集现在是不是断了」，比任何统计都该先被看到。 -->
       <el-alert
         v-for="alert in alerts"
@@ -385,21 +385,21 @@ function formatTime(value: string | null | undefined): string {
 <style scoped>
 .ops-panel { display: flex; flex-direction: column; gap: 14px; }
 .ops-head { display: flex; justify-content: space-between; align-items: center; }
-.ops-title { display: flex; align-items: center; gap: 8px; font-size: 15px; font-weight: 600; color: var(--el-text-color-primary); }
+.ops-title { display: flex; align-items: center; gap: 8px; font-size: var(--font-15); font-weight: 600; color: var(--el-text-color-primary); }
 .ops-actions { display: flex; align-items: center; gap: 10px; }
-.updated-at { color: var(--el-text-color-secondary); font-size: 12px; }
+.updated-at { color: var(--el-text-color-secondary); font-size: var(--font-sm); }
 .troubleshoot { margin: 6px 0 0; padding-left: 18px; }
-.troubleshoot code { background: var(--el-fill-color-light); padding: 1px 4px; border-radius: 3px; font-size: 12px; }
+.troubleshoot code { background: var(--el-fill-color-light); padding: 1px 4px; border-radius: 3px; font-size: var(--font-sm); }
 .overview { margin-top: 2px; }
 .section :deep(.el-card__header) { padding: 10px 14px; }
 .card-header { display: flex; align-items: center; gap: 8px; font-weight: 600; }
-.header-count { color: var(--el-text-color-secondary); font-weight: normal; font-size: 12px; }
-.hint { color: var(--el-text-color-secondary); font-size: 12px; margin: 6px 0 0; }
-.alert-hint { font-size: 13px; }
-.alert-meta { font-size: 12px; color: var(--el-text-color-secondary); margin-top: 2px; }
+.header-count { color: var(--el-text-color-secondary); font-weight: normal; font-size: var(--font-sm); }
+.hint { color: var(--el-text-color-secondary); font-size: var(--font-sm); margin: 6px 0 0; }
+.alert-hint { font-size: var(--font-md); }
+.alert-meta { font-size: var(--font-sm); color: var(--el-text-color-secondary); margin-top: 2px; }
 .trigger-row { display: flex; flex-wrap: wrap; gap: 8px; }
-.ds-code { font-family: var(--el-font-family-mono, monospace); font-size: 12px; color: var(--el-text-color-secondary); }
-.ds-label { font-size: 13px; }
-.failure-detail { margin-left: 6px; font-size: 12px; color: var(--el-text-color-regular); }
+.ds-code { font-family: var(--el-font-family-mono, monospace); font-size: var(--font-sm); color: var(--el-text-color-secondary); }
+.ds-label { font-size: var(--font-md); }
+.failure-detail { margin-left: 6px; font-size: var(--font-sm); color: var(--el-text-color-regular); }
 .muted { color: var(--el-text-color-placeholder); }
 </style>

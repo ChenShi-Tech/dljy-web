@@ -50,13 +50,13 @@ const columns = computed(() => {
 <style scoped>
 .strat-table { border: 1px solid var(--line-soft, #e5e7eb); border-radius: 8px; background: var(--panel, #fff); padding: 14px; }
 header { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
-h3 { margin: 0; font-size: 16px; color: var(--text, #111827); }
-.strat-tag { font-size: 12px; color: var(--muted, #667085); background: var(--panel-sub, #f8fafc); border: 1px solid var(--line-soft, #e5e7eb); border-radius: 999px; padding: 2px 9px; }
+h3 { margin: 0; font-size: var(--font-16); color: var(--text, #111827); }
+.strat-tag { font-size: var(--font-sm); color: var(--muted, #667085); background: var(--panel-sub, #f8fafc); border: 1px solid var(--line-soft, #e5e7eb); border-radius: 999px; padding: 2px 9px; }
 .strat-scroll { overflow-x: auto; }
-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+table { width: 100%; border-collapse: collapse; font-size: var(--font-md); }
 th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line-soft, #e5e7eb); white-space: nowrap; }
-th { color: var(--muted, #667085); font-weight: 600; font-size: 12px; background: var(--panel-sub, #f8fafc); }
+th { color: var(--muted, #667085); font-weight: 600; font-size: var(--font-sm); background: var(--panel-sub, #f8fafc); }
 td { color: var(--text-body, #344054); }
 tr:last-child td { border-bottom: none; }
-.strat-empty { color: var(--muted, #98a2b3); font-size: 13px; margin: 0; }
+.strat-empty { color: var(--muted, #98a2b3); font-size: var(--font-md); margin: 0; }
 </style>

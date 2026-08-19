@@ -54,7 +54,7 @@ const fmt = (n: number) => `${n >= 0 ? '' : '-'}${Math.abs(n).toFixed(1)} 万元
 }
 .section-kicker {
   color: var(--primary);
-  font-size: 13px;
+  font-size: var(--font-md);
   font-weight: 650;
 }
 .metrics {
@@ -71,12 +71,12 @@ const fmt = (n: number) => `${n >= 0 ? '' : '-'}${Math.abs(n).toFixed(1)} 万元
 .metrics small {
   display: block;
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--font-sm);
   margin-bottom: 6px;
 }
 .metrics strong {
   color: var(--text);
-  font-size: 16px;
+  font-size: var(--font-16);
 }
 .metrics .cost {
   color: var(--danger);

@@ -42,7 +42,6 @@ import {
 import 'cesium/Build/Cesium/Widgets/widgets.css'
 import {
   BASE_MAP_PROVIDERS,
-  resolveBaseMapFallbackSequence,
   resolveBaseMapSequenceWithPreferred,
   resolvePreferredBaseMapId,
   shouldFallbackBaseMap,
@@ -806,7 +805,7 @@ function updateNodeSelectionStyle() {
 
 /**
  * 加载并绘制当前地区的省级行政边界。
- * 只描边、不填色——填色会盖住地形与影像，而这层的目的只是「圈出省在哪」。
+ * 只描边、不填色，填色会盖住地形与影像，而这层的目的只是「圈出省在哪」。
  */
 async function syncRegionBoundary() {
   if (!viewer) return
@@ -835,7 +834,7 @@ async function syncRegionBoundary() {
     })
     if (requestId !== boundaryRequestId || !viewer) return
 
-    // Cesium 的**贴地**多边形不渲染 outline（已知限制），所以边界线必须单独用
+    // Cesium 的贴地多边形不渲染 outline（已知限制），所以边界线必须单独用
     // clampToGround 的 polyline 画，否则只有一层几乎看不见的半透明填充。
     const now = JulianDate.now()
     const outlines: Array<{ positions: unknown }> = []
@@ -900,7 +899,7 @@ function selectBaseMap(id: string) {
     void switchBaseMap(index, '用户切换底图')
     return
   }
-  // 目标不在当前序列里——需 token 的源被排除在自动降级链外，显式 VITE_GRID_GEO_BASEMAP
+  // 目标不在当前序列里，需 token 的源被排除在自动降级链外，显式 VITE_GRID_GEO_BASEMAP
   // 指向免费源时 ion 也不在链上。以它为首选重建序列，其后仍接完整免费降级链。
   baseMapSequence = resolveBaseMapSequenceWithPreferred(id)
   void switchBaseMap(0, '用户切换底图')
@@ -1128,14 +1127,14 @@ function applyLayerAdjustment(layer: ImageryLayer, config: BaseMapProviderConfig
   if (config.adjustment.alpha !== undefined) layer.alpha = config.adjustment.alpha
 }
 
-// 注意：本函数开头的 imageryLayers.removeAll(true) 会连 applyHillshade 加入的图层
+// 本函数开头的 imageryLayers.removeAll(true) 会连 applyHillshade 加入的图层
 // 一起销毁，而 hillshadeEnabled prop 未变不触发 watcher 重建。重建必须收敛在这里，
 // 覆盖「用户手动切换」与「瓦片连续失败自动 fallback」两条路径。
 async function switchBaseMap(index: number, reason = '') {
   if (!viewer) return
   if (baseMapSwitching) {
     // ion 的 fromAssetId 可能慢到用户已经改主意。直接 return 会把这次选择丢掉，
-    // 且旧请求完成后还会把它覆盖回去；改为记住**最后一次**意图，当前切换收尾时接上。
+    // 且旧请求完成后还会把它覆盖回去；改为记住最后一次意图，当前切换收尾时接上。
     pendingBaseMapRequest = { index, reason }
     return
   }
@@ -1173,7 +1172,7 @@ async function switchBaseMap(index: number, reason = '') {
   removeBaseMapErrorListener = null
   viewer.imageryLayers.removeAll(true)
   activeBaseMapIndex = configIndex
-  // 菜单高亮跟随**实际生效**的 provider：env 指定了别的底图、或瓦片报错自动
+  // 菜单高亮跟随实际生效的 provider：env 指定了别的底图、或瓦片报错自动
   // fallback 时，都不能还高亮注册表第一项。
   activeBaseMapId.value = config.id
   baseMapErrorCount = 0
@@ -1347,7 +1346,7 @@ async function createViewer() {
   // 地球基色决定「影像未加载处」的观感。原 #0a2233 过深，未贴图区域近乎纯黑，
   // 整个地球显脏；抬到中蓝后低层级瓦片与缝隙仍能看清轮廓。
   viewer.scene.globe.baseColor = Color.fromCssColorString('#16405f')
-  // 真实光照让地球分昼夜，夜半球完全黑掉——对「看资产分布」没有价值，只制造暗淡。
+  // 真实光照让地球分昼夜，夜半球完全黑掉，对「看资产分布」没有价值，只制造暗淡。
   // 关闭后全球均匀受光，是这次「太暗」最主要的一处根因。
   viewer.scene.globe.enableLighting = false
   viewer.scene.globe.dynamicAtmosphereLighting = false
@@ -1369,7 +1368,7 @@ async function createViewer() {
   if (viewer.scene.skyAtmosphere) {
     viewer.scene.skyAtmosphere.show = props.viewMode === '3d'
     viewer.scene.skyAtmosphere.hueShift = -0.02
-    // 原来 saturationShift/brightnessShift 都是负值——等于主动把大气调暗调灰。
+    // 原来 saturationShift/brightnessShift 都是负值，等于主动把大气调暗调灰。
     // 改为正向微调，地球边缘亮起来，整体不再发闷。
     viewer.scene.skyAtmosphere.saturationShift = 0.05
     viewer.scene.skyAtmosphere.brightnessShift = 0.12
@@ -1380,7 +1379,7 @@ async function createViewer() {
   viewer.scene.highDynamicRange = true
   viewer.scene.postProcessStages.fxaa.enabled = true
 
-  // —— 清晰度 ——
+  // 清晰度
   // Cesium 默认 resolutionScale = 1，即按 CSS 像素渲染。Retina（devicePixelRatio=2）
   // 下等于用一半分辨率渲染再放大，这是「地图糊」的主因，与配色无关。
   // 按 dPR 渲染并封顶 2，避免 3x 屏上像素量翻 9 倍拖垮帧率。
@@ -1621,10 +1620,10 @@ defineExpose({ focusPlant, focusNode, resetView })
 <style scoped>
 .map-tools{position:absolute;z-index:9;right:12px;bottom:14px;display:flex;gap:8px;align-items:flex-end}
 .map-tool-group{position:relative}
-.map-tool{display:flex;align-items:center;gap:6px;padding:7px 12px;font-size:14px;cursor:pointer;color:var(--text-body);border:1px solid var(--line);border-radius:8px;background:var(--panel)}
+.map-tool{display:flex;align-items:center;gap:6px;padding:7px 12px;font-size: var(--font-lg);cursor:pointer;color:var(--text-body);border:1px solid var(--line);border-radius:8px;background:var(--panel)}
 .map-tool:hover{color:var(--primary);border-color:var(--primary)}
 .basemap-menu{position:absolute;right:0;bottom:calc(100% + 6px);min-width:190px;margin:0;padding:5px;list-style:none;border:1px solid var(--line);border-radius:9px;background:var(--panel);box-shadow:var(--shadow,0 12px 32px rgba(0,0,0,.14))}
-.basemap-menu button{display:block;width:100%;padding:8px 10px;font-size:14px;text-align:left;cursor:pointer;color:var(--text-body);border:0;border-radius:6px;background:transparent}
+.basemap-menu button{display:block;width:100%;padding:8px 10px;font-size: var(--font-lg);text-align:left;cursor:pointer;color:var(--text-body);border:0;border-radius:6px;background:transparent}
 .basemap-menu button:disabled{cursor:not-allowed;opacity:.42}
 .basemap-menu button:hover{background:var(--surface-hover)}
 .basemap-menu button.active{color:var(--primary);background:var(--primary-tint)}
@@ -1656,7 +1655,7 @@ defineExpose({ focusPlant, focusNode, resetView })
   background: radial-gradient(circle at 50% 35%, rgba(44, 158, 188, 0.18), transparent 36%), #020811;
 }
 
-.map-fallback span { max-width: 520px; color: #7fa2af; font-size: 12px; }
+.map-fallback span { max-width: 520px; color: #7fa2af; font-size: var(--font-sm); }
 
 .sr-only {
   position: absolute;
@@ -1687,8 +1686,8 @@ defineExpose({ focusPlant, focusNode, resetView })
   backdrop-filter: blur(12px);
 }
 
-.provider-fallback strong { font-size: 11px; }
-.provider-fallback span { color: #c8aa69; font-size: 9px; line-height: 1.45; }
+.provider-fallback strong { font-size: var(--font-xs); }
+.provider-fallback span { color: #c8aa69; font-size: var(--font-9); line-height: 1.45; }
 
 .map-hover-card {
   position: absolute;
@@ -1708,8 +1707,8 @@ defineExpose({ focusPlant, focusNode, resetView })
   backdrop-filter: blur(14px);
 }
 
-.map-hover-card strong { overflow: hidden; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
-.map-hover-card span { overflow: hidden; color: #82afbd; font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+.map-hover-card strong { overflow: hidden; font-size: var(--font-xs); text-overflow: ellipsis; white-space: nowrap; }
+.map-hover-card span { overflow: hidden; color: #82afbd; font-size: var(--font-9); text-overflow: ellipsis; white-space: nowrap; }
 
 @media (max-width: 620px), (pointer: coarse) {
   .map-hover-card { display: none; }
@@ -1729,7 +1728,7 @@ defineExpose({ focusPlant, focusNode, resetView })
   bottom: 5px;
   left: auto;
   color: rgba(219, 239, 255, 0.72);
-  font-size: 10px;
+  font-size: var(--font-10);
   text-shadow: 0 1px 2px #000;
 }
 </style>

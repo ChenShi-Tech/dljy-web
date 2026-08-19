@@ -16,7 +16,7 @@ import { axisTooltip, chartToolbox, fmtNum, insideZoom, emptyOverlay } from '@/s
 import { fetchSpotRegions, type SpotMarket } from '@/services/market/spotClient'
 import { fetchElasticity, type ElasticityResult } from '@/services/market/elasticityClient'
 
-// ── 控件状态 ──
+// 控件状态
 const regions = ref<string[]>([])
 const region = ref('云南')
 // 默认取数据范围内一天（节点电价/系统供需 Parquet 当前覆盖 2026-05），避免首屏空。
@@ -30,7 +30,7 @@ const segments = ref(4)
 const segmentOptions = [3, 4, 5, 6]
 const windowDays = ref(21)
 
-// ── 数据 ──
+// 数据
 const result = ref<ElasticityResult | null>(null)
 const loading = ref(false)
 const errorMsg = ref('')
@@ -74,7 +74,7 @@ function onRegionSelect() {
   void reload()
 }
 
-// ── KPI 派生 ──
+// KPI 派生
 const kpis = computed(() => {
   const r = result.value
   if (!r || !r.available) return null
@@ -92,7 +92,7 @@ const kpis = computed(() => {
 
 const improvementPositive = computed(() => (kpis.value?.improvement ?? 0) > 0)
 
-// ── 图① 分段弹性曲线（竞价空间→出清价）──
+// 图① 分段弹性曲线（竞价空间→出清价）
 function buildCurveOption() {
   const cc = chartChrome()
   const r = result.value
@@ -168,7 +168,7 @@ function buildCurveOption() {
   }
 }
 
-// ── 图② 预测 vs 实际价格（96 点）──
+// 图② 预测 vs 实际价格（96 点）
 function buildPredictOption() {
   const cc = chartChrome()
   const r = result.value
@@ -223,7 +223,7 @@ function buildPredictOption() {
   }
 }
 
-// ── 图③ 竞价空间 96 点 + 陡段标注 ──
+// 图③ 竞价空间 96 点 + 陡段标注
 function buildBidSpaceOption() {
   const cc = chartChrome()
   const r = result.value
@@ -453,7 +453,7 @@ onRegionChange(() => {
   align-items: center;
   gap: 6px;
   color: #7c3aed;
-  font-size: 13px;
+  font-size: var(--font-md);
   font-weight: 650;
 }
 
@@ -489,7 +489,7 @@ onRegionChange(() => {
 
 .el-field > span {
   color: #50616e;
-  font-size: 12px;
+  font-size: var(--font-sm);
   font-weight: 650;
 }
 
@@ -533,23 +533,23 @@ onRegionChange(() => {
   align-items: center;
   gap: 5px;
   color: #50616e;
-  font-size: 12px;
+  font-size: var(--font-sm);
   font-weight: 650;
 }
 
 .kpi-value {
   color: #172b3a;
-  font-size: 24px;
+  font-size: var(--font-24);
   font-weight: 760;
 }
 
 .kpi-value.kpi-method {
-  font-size: 16px;
+  font-size: var(--font-16);
 }
 
 .kpi-sub {
   color: #687987;
-  font-size: 11px;
+  font-size: var(--font-xs);
   line-height: 1.4;
 }
 
@@ -563,7 +563,7 @@ onRegionChange(() => {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  font-size: 11px;
+  font-size: var(--font-xs);
   color: var(--muted, #909399);
 }
 
@@ -577,14 +577,14 @@ onRegionChange(() => {
 .el-notes h4 {
   margin: 0 0 8px;
   color: #172b3a;
-  font-size: 14px;
+  font-size: var(--font-lg);
 }
 
 .el-notes ul {
   margin: 0;
   padding-left: 18px;
   color: #5c6b76;
-  font-size: 12px;
+  font-size: var(--font-sm);
   line-height: 1.7;
 }
 

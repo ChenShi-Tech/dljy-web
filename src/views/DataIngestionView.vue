@@ -1,7 +1,8 @@
 <script setup lang="ts">
-// 数据摄取管理页（PR-2 可视化）：手动触发 POST /api/v1/ingest/:kind + 数据摄取链路说明。
-// 与 /yygl/import-hub（手录 CSV）+ /yygl/data-browser（回放）构成「手录 → 自动摄取 → 回放」数据链路闭环。
-// 定时自动摄取见 /system/schedules（data_ingestion kind）。
+// 数据摄取管理页（数据运维台 /ops/ingest）：手动触发 POST /api/v1/ingest/:kind。
+// 台内闭环：/ops/import-hub（手录 CSV）→ 本页（手动/自动摄取）→ 主前端 /yygl/data-browser（回放）。
+// 定时自动摄取在主前端「AI 工作室 → 定时任务」（/system/ai-studio?tab=schedules）。
+// 链接：本台 hash 路由仅注册 /ops/*；主前端页用同源 <a>（path 模式）跳转（#2215）。
 // 主题变量驱动，四档主题协调；遵循现有深色交易终端风格。
 import { reactive, ref } from 'vue'
 import { RouterLink } from 'vue-router'
@@ -17,25 +18,30 @@ interface KindMeta {
   icon: typeof Database
   paramsHint: string
   example: string
+  // 手动触发实际携带的参数（缺省 {} 保持既有 kind 行为）。中广核两个 kind 显式带
+  // 回看窗口，上游日前价 D+1~D+2 才发布，单拉「今天」会 404（#2203）。
+  params?: Record<string, unknown>
 }
 
 const KINDS: KindMeta[] = [
   { kind: 'weather-export', label: '云南气象', desc: 'Open-Meteo 气象要素 + 辐照 → yn_meteo / yn_irradiance', icon: CloudDownload, paramsHint: '无额外参数（自动从 Open-Meteo 拉取）', example: '{}' },
-  { kind: 'spot-export', label: '云南现货', desc: '节点电价 / 系统供需 / 厂站结算 / 损益 → yn_node_price 等', icon: Database, paramsHint: 'dir（导出包解压目录）', example: '{ "dir": "data/yunnan/source/plant-exports/exports_2026_05..." }' },
-  { kind: 'market-export', label: '市场经营分析', desc: '手录 CSV → market_analysis 公共 7 datasetKey', icon: Sunset, paramsHint: 'dir 或 file + dataset', example: '{ "dir": "/path/to/csv-dir", "region": "yunnan" }' }
+  { kind: 'spot-export', label: '云南现货月度导出包', desc: '交易中心月度导出包：厂站结算 / 损益 / 主数据 → yn_node_price 等', icon: Database, paramsHint: '无参数：自动选用 plant-exports 下最新解压目录（含 export_manifest.csv）；指定目录须服务器命令行', example: '{ }' },
+  { kind: 'market-export', label: '市场经营分析（山西目录）', desc: '手录 CSV → market_analysis 公共 7 datasetKey；注意默认 region=shanxi', icon: Sunset, paramsHint: '无参数：默认扫 capture-raw/shanxi/market_analysis/；云南数据须服务器命令行 --region yunnan', example: '{ }' },
+  { kind: 'cgn-yunnan-prices', label: '中广核云南电价', desc: '厂侧 API 节点/场站电价 → dljy_private 私有 PG（中广核专属）', icon: Database, paramsHint: 'lookbackDays + market + interval；未发布分区自动跳过', example: '{ "lookbackDays": 3, "market": "day_ahead", "interval": "15m" }', params: { lookbackDays: 3, market: 'day_ahead', interval: '15m' } },
+  { kind: 'cgn-yunnan-market', label: '中广核云南市场/披露', desc: '厂侧 API 11 条市场曲线 + 26 类公共披露 → dljy_private 私有 PG（中广核专属）', icon: Sunset, paramsHint: 'resource + lookbackDays（默认回看 3 日）', example: '{ "resource": "all", "lookbackDays": 3 }', params: { resource: 'all', lookbackDays: 3 } }
 ]
 
-// IngestKind 含 spot-ingest/forecast-etl（#885 向导一键生效），但本页 KINDS 仅展示前 3 个摄取入口；
-// 补齐 Record 全部 key 满足类型完整性（新增 kind 在本页不渲染、不触发，无副作用）。
-const busy = reactive<Record<IngestKind, boolean>>({ 'spot-export': false, 'weather-export': false, 'market-export': false, 'spot-ingest': false, 'forecast-etl': false })
-const last = ref<Record<IngestKind, IngestResult | null>>({ 'spot-export': null, 'weather-export': null, 'market-export': null, 'spot-ingest': null, 'forecast-etl': null })
-const errMsg = ref<Record<IngestKind, string>>({ 'spot-export': '', 'weather-export': '', 'market-export': '', 'spot-ingest': '', 'forecast-etl': '' })
+// IngestKind 含 spot-ingest/forecast-etl（#885 向导一键生效），本页 KINDS 展示 5 个摄取入口
+// （含中广核两个厂侧 API kind，#2203）；补齐 Record 全部 key 满足类型完整性（未列 kind 不渲染、不触发）。
+const busy = reactive<Record<IngestKind, boolean>>({ 'spot-export': false, 'weather-export': false, 'market-export': false, 'spot-ingest': false, 'forecast-etl': false, 'cgn-yunnan-prices': false, 'cgn-yunnan-market': false })
+const last = ref<Record<IngestKind, IngestResult | null>>({ 'spot-export': null, 'weather-export': null, 'market-export': null, 'spot-ingest': null, 'forecast-etl': null, 'cgn-yunnan-prices': null, 'cgn-yunnan-market': null })
+const errMsg = ref<Record<IngestKind, string>>({ 'spot-export': '', 'weather-export': '', 'market-export': '', 'spot-ingest': '', 'forecast-etl': '', 'cgn-yunnan-prices': '', 'cgn-yunnan-market': '' })
 
 async function run(meta: KindMeta) {
   busy[meta.kind] = true
   errMsg.value[meta.kind] = ''
   try {
-    const params = {}
+    const params = meta.params ?? {}
     last.value[meta.kind] = await triggerIngest(meta.kind, params)
   } catch (e) {
     errMsg.value[meta.kind] = (e as Error).message
@@ -44,7 +50,7 @@ async function run(meta: KindMeta) {
   }
 }
 
-// 摄取结果真伪判定（修 Codex P1-3：避免把合成兜底误标为可决策）。
+// 摄取结果真伪判定（避免把合成兜底误标为可决策）。
 // commitFamily source=IMPORT 默认 captured（operational）；但 weather-export 在 Open-Meteo
 // 失败/超时时后端会走合成兜底正常退出（exitCode 0），此时 ETL stdout 会打印 sourceType=MOCK /
 // (--synthetic 合成)（见 import-weather-export.mjs）。保守嗅探 stdout/stderr：出现
@@ -60,13 +66,13 @@ function basisFromResult(r: IngestResult): DataSourceBasis {
   <div class="ingest-page">
     <header class="page-head">
       <h1>数据摄取管理</h1>
-      <p class="lede">触发 ETL 摄取云南现货 / 气象 / 市场经营分析数据，落 capture-raw + capture.sqlite（双写）。</p>
+      <p class="lede">手动触发数据摄取与 ETL：现货月度导出包 / 气象 / 市场分析族写各自事实层与 capture 回放层；中广核云南厂侧 API 两族写中广核私有 PostgreSQL（dljy_private）。</p>
     </header>
 
     <section class="link-row">
-      <RouterLink to="/yygl/import-hub" class="link">← 手录导入（ImportHub）</RouterLink>
-      <RouterLink to="/yygl/data-browser" class="link">回放浏览（数据浏览器）→</RouterLink>
-      <RouterLink to="/system/schedules" class="link"><Workflow :size="13" /> 定时自动摄取</RouterLink>
+      <RouterLink to="/ops/import-hub" class="link">← 手录导入（导入融合台）</RouterLink>
+      <a href="/yygl/data-browser" class="link">回放浏览（数据浏览器，主前端）→</a>
+      <a href="/system/ai-studio?tab=schedules" class="link"><Workflow :size="13" /> 定时自动摄取（AI 工作室）</a>
     </section>
 
     <section class="kind-grid">
@@ -103,16 +109,16 @@ function basisFromResult(r: IngestResult): DataSourceBasis {
     </section>
 
     <section class="note">
-      <p class="muted">说明：气象导出默认从 Open-Meteo 拉取真实气象（成功时口径为真实采集、可决策；Open-Meteo 失败走合成兜底时口径为合成、仅供决策支持）；现货导出 / 市场导出 需在服务端提供 <code>dir</code>/<code>file</code>（目录/文件参数）（前端默认留空，端点会返回提示）。真伪按 ETL 输出动态标注（嗅探到模拟或合成数据时降级为仅供决策支持）。</p>
+      <p class="muted">说明：按钮参数固定（服务端白名单硬编码，不透传请求参数）——现货导出自动选用 plant-exports 最新解压目录（无目录时如实报错，指定目录须服务器命令行）；市场导出默认扫山西目录（region=shanxi），云南数据须服务器命令行 <code>--region yunnan</code>；气象默认从 Open-Meteo 拉取真实气象（失败走合成兜底时口径为合成、仅供决策支持）；中广核两族为真实厂侧外部 API（非电网官方接口），日前价上游 D+1~D+2 发布，回看窗口内未发布分区自动跳过。真伪按 ETL 输出动态标注（嗅探到模拟或合成数据时降级为仅供决策支持）。</p>
     </section>
   </div>
 </template>
 
 <style scoped>
 .ingest-page { padding: 18px 22px; max-width: 1180px; margin: 0 auto; }
-.page-head h1 { font-size: 22px; font-weight: 600; color: var(--text); margin: 0 0 4px; }
-.lede { color: var(--text-soft); font-size: 13.5px; margin: 0 0 14px; }
-.link-row { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 18px; font-size: 12.5px; }
+.page-head h1 { font-size: var(--font-22); font-weight: 600; color: var(--text); margin: 0 0 4px; }
+.lede { color: var(--text-soft); font-size: var(--font-13-5); margin: 0 0 14px; }
+.link-row { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 18px; font-size: var(--font-12-5); }
 .link { color: var(--primary); text-decoration: none; display: inline-flex; align-items: center; gap: 4px; }
 .link:hover { text-decoration: underline; }
 .kind-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 14px; }
@@ -122,15 +128,15 @@ function basisFromResult(r: IngestResult): DataSourceBasis {
 }
 .kind-head { display: flex; align-items: center; gap: 10px; }
 .kind-icon { color: var(--primary); flex: none; }
-.kind-title h3 { margin: 0; font-size: 15px; font-weight: 600; color: var(--text); }
-.kind-code { font-size: 11px; color: var(--muted); font-family: var(--ck-mono, ui-monospace, monospace); }
-.kind-desc { font-size: 12.5px; color: var(--text-body); margin: 0; line-height: 1.5; }
-.kind-params { font-size: 12px; color: var(--text-soft); margin: 0; }
+.kind-title h3 { margin: 0; font-size: var(--font-15); font-weight: 600; color: var(--text); }
+.kind-code { font-size: var(--font-xs); color: var(--muted); font-family: var(--ck-mono, ui-monospace, monospace); }
+.kind-desc { font-size: var(--font-12-5); color: var(--text-body); margin: 0; line-height: 1.5; }
+.kind-params { font-size: var(--font-sm); color: var(--text-soft); margin: 0; }
 .muted { color: var(--muted); }
 .kind-action { margin-top: 4px; }
 .trigger {
   display: inline-flex; align-items: center; gap: 6px; cursor: pointer;
-  padding: 7px 14px; border-radius: var(--radius-sm, 6px); font-size: 13px; font-weight: 500;
+  padding: 7px 14px; border-radius: var(--radius-sm, 6px); font-size: var(--font-md); font-weight: 500;
   border: 1px solid var(--primary); color: var(--primary); background: transparent;
   transition: background 0.15s;
 }
@@ -138,11 +144,11 @@ function basisFromResult(r: IngestResult): DataSourceBasis {
 .trigger:disabled { opacity: 0.6; cursor: progress; }
 .spin { animation: spin 0.9s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
-.result { margin-top: 6px; padding: 8px 10px; border-radius: var(--radius-sm, 6px); font-size: 12px; border: 1px solid; }
+.result { margin-top: 6px; padding: 8px 10px; border-radius: var(--radius-sm, 6px); font-size: var(--font-sm); border: 1px solid; }
 .result.ok { color: var(--success); border-color: color-mix(in srgb, var(--success) 35%, transparent); background: color-mix(in srgb, var(--success) 7%, transparent); }
 .result.fail, .result.err { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 35%, transparent); background: color-mix(in srgb, var(--danger) 7%, transparent); }
 .result-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 4px; font-weight: 500; }
-.stdout { margin: 4px 0 0; font-size: 11px; color: var(--text-soft); font-family: var(--ck-mono, ui-monospace, monospace); white-space: pre-wrap; word-break: break-all; max-height: 120px; overflow: auto; }
-.note { margin-top: 18px; font-size: 12px; line-height: 1.6; }
+.stdout { margin: 4px 0 0; font-size: var(--font-xs); color: var(--text-soft); font-family: var(--ck-mono, ui-monospace, monospace); white-space: pre-wrap; word-break: break-all; max-height: 120px; overflow: auto; }
+.note { margin-top: 18px; font-size: var(--font-sm); line-height: 1.6; }
 code { font-family: var(--ck-mono, ui-monospace, monospace); font-size: 0.92em; padding: 1px 4px; border-radius: 3px; background: color-mix(in srgb, var(--muted) 14%, transparent); }
 </style>

@@ -63,7 +63,7 @@ async function reload() {
 onMounted(reload)
 watch(selectedCompanyId, reload)
 
-/* ───────────────────────── 图表与表格增强 ───────────────────────── */
+/* 图表与表格增强*/
 
 // SparkBar 标尺上限：场站容量 / 机组额定容量各取列最大值(空表回退 1，避免除零)。
 const capMax = computed(() => maxBy(stations.value, 'capacity') || 1)
@@ -435,7 +435,7 @@ async function removeUnit(row: CompanyUnit) {
 
 <style scoped>
 .company-page { padding: 20px; }
-.page-title { margin: 0 0 16px; font-size: 20px; }
+.page-title { margin: 0 0 16px; font-size: var(--font-20); }
 .toolbar { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
-.readonly-hint { color: var(--el-text-color-secondary, #909399); font-size: 13px; }
+.readonly-hint { color: var(--el-text-color-secondary, #909399); font-size: var(--font-md); }
 </style>

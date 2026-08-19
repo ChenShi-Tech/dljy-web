@@ -3,7 +3,7 @@
 // （谁能登录 / 谁正登录着 / 能干什么），原先是三个并列菜单项，合并为单页 tab。
 //
 // 权限口径统一为 ADMIN-only（governance.ts::adminOnlyRoutes）：原 /system/sessions 未列入
-// adminOnlyRoutes、非管理员经 /system 组可见，合并后随本页收紧——方向是收紧，无越权风险。
+// adminOnlyRoutes、非管理员经 /system 组可见，合并后随本页收紧，方向是收紧，无越权风险。
 // 注意 SessionManagementView 内部另有 isAdminLevel 分支（非管理员只看自己的会话），
 // 该分支代码保留不动：页面级已挡在 ADMIN 之外，组件级判断作为纵深防御。
 //
@@ -72,14 +72,14 @@ function onTabChange(name: string | number) {
 
 .page-head h1 {
   margin: 0;
-  font-size: 20px;
+  font-size: var(--font-20);
   font-weight: 600;
   color: var(--el-text-color-primary);
 }
 
 .page-head .sub {
   margin: 4px 0 0;
-  font-size: 13px;
+  font-size: var(--font-md);
   color: var(--el-text-color-secondary);
 }
 

@@ -1,5 +1,5 @@
 // 智能体监控：从 harness 后端拉真实运行态（会话 / 工具），供运营中枢「智能体」面展示。
-// 替代原静态 mock 的 dataset.agents —— 反映 /api/agent 的真实能力面与活动。
+// 替代原静态 mock 的 dataset.agents：反映 /api/agent 的真实能力面与活动。
 import { AGENT_API_BASE, identityHeaders } from '@/services/agent/agentClient'
 import { timeoutSignal } from '@/services/api'
 import type { OpsMetric } from '@/services/operations'

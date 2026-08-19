@@ -42,7 +42,7 @@ function block(blockId: string, blockType: ReportBlockInstance['blockType'], tit
   return { blockId, blockType, title, data, provenance: provenance ?? { sourceType: 'MOCK', realDataConnected: false }, note }
 }
 
-// ── 确定性合成场景（不使用 Math.random，保证同参数可复现） ──
+// 确定性合成场景（不使用 Math.random，保证同参数可复现）
 function seedFrom(s: string): number {
   let h = 2166136261
   for (let i = 0; i < s.length; i++) {
@@ -117,7 +117,7 @@ async function fetchRealDayAhead(date: string | undefined, regionId: string | un
     const res = await fetchCaptured<{ data?: unknown } & Record<string, unknown>>('sdpt_zcqxhdl', 'listrs_full', { region: regionId })
     // provenance 守卫：仅真实采集（realDataConnected===true）才提取日前价。否则 /api/real 回退
     // mock-capture 的 dmx 行（{date,type,p1..p96}）会按 date 命中返回 96 点，把 RB-PRICE-STATS
-    // 误升 CAPTURE（违反 Mock 标注纪律）。与 spotPriceCore.replayPayload 同源（#687 codex P1）。
+    // 误升 CAPTURE（违反 Mock 标注纪律）。与 spotPriceCore.replayPayload 同源（#687）。
     const env = res as { code?: number; mock?: boolean; provenance?: { realDataConnected?: boolean }; data?: unknown }
     if (typeof env.code === 'number' && env.code >= 400) return null
     if (env.mock === true) return null
@@ -161,7 +161,7 @@ function toHourly(values: number[], mode: 'sum' | 'avg'): number[] {
 
 // AI 经营解读（RB-AI-SUMMARY）的 LLM 提示构造已统一迁到 src/prompts/reportInsight.ts
 //（buildReportInsightPrompt + ReportInsightMetrics）；指标仍由本报表确定性合成场景算出，
-// 与价格/结算区块同源——保证解读基于本报表已计算的真实数字，不让模型凭空编造。
+// 与价格/结算区块同源，保证解读基于本报表已计算的真实数字，不让模型凭空编造。
 
 const builders: Record<string, BlockBuilder> = {
   'RB-PRICE-STATS': async (params, ctx) => {
@@ -211,7 +211,7 @@ const builders: Record<string, BlockBuilder> = {
       title: '日前价持续曲线',
       series: [{ name: '日前价', key: 'price', unit: '元/MWh' }],
       basis: realHit ? 'captured' : 'synthetic',
-      // 溯源写真实取数路径而非未执行的 SQL（codex P2 3635805744）
+      // 溯源写真实取数路径而非未执行的 SQL（3635805744）
       sql: "取数路径：fetchCaptured('sdpt_zcqxhdl','listrs_full') 真实回放日前价，缺数据按地区特征合成（真伪见区块 provenance 标注）；口径对应语义层 v_system_forecast.da_user_price 降序即持续曲线",
     }
     const option = chartSpecToOption(spec, rows)
@@ -426,7 +426,7 @@ const builders: Record<string, BlockBuilder> = {
     // 结论溯源（#23）：附结论所依据的数据查询与口径，配合区块 provenance 的真伪标注；
     // 大模型不可用时降级为规则模板（note 已如实区分），溯源与降级路径保持不变。
     const sqlTrace = [
-      // 如实溯源：本区块日前价来自 synthScenario() 合成，未执行 SQL（codex P2 3635805744）
+      // 如实溯源：本区块日前价来自 synthScenario() 合成，未执行 SQL（3635805744）
       '日前价：synthScenario() 按地区特征合成的示意价格序列（未执行 SQL；真伪以区块 note 的 Mock 标注为准）',
       '结算：三部制结算规则计算（settlementFormula.ts，口径可验证）',
     ]
@@ -487,9 +487,9 @@ const builders: Record<string, BlockBuilder> = {
     ]
     return block('RB-GREEN-TRADE', 'METRIC', '绿电交易与环境价值', { kpis }, MOCK_NOTE)
   },
-  // ── issue #455 现货日报新增区块：结算三价 / 出力完成率 / 出力预测 MAPE（复用 synthScenario
+  // issue #455 现货日报新增区块：结算三价 / 出力完成率 / 出力预测 MAPE（复用 synthScenario
   // 与 settlementFormula 口径，sourceType=MOCK 如实标注；日前价走真实采集时 provenance 上调）。
-  // 使 RPT-DAILY-SPOT 一键生成即含三价/出力/MAPE 摘要，走确定性 reportEngine 不在 Dify 重造。──
+  //使 RPT-DAILY-SPOT 一键生成即含三价/出力/MAPE 摘要，走确定性 reportEngine 不在 Dify 重造。
   'RB-SETTLEMENT-PRICES': async (params, ctx) => {
     const { s, realHit } = await loadScenarioWithRealPrice(params, ctx)
     const da = round(s.pDayAhead.reduce((a, b) => a + b, 0) / s.points)

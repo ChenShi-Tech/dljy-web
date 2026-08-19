@@ -1,12 +1,10 @@
-// @vitest-environment happy-dom
-//
 // 同 YunnanNodePricePanel.provenance.component.spec.ts（#1791），这里锁的是驾驶舱
 // 现货 cockpit 页的节点价来源标注与数据基准徽章。
 //
 // 该页此前无条件渲染「厂侧 PG · 非电网官方」并把基准徽章写死成「实时真实数据」，而
-// 取数在无授权时会静默落到公共节点价端点——两条标注都与实际来源不符。
+// 取数在无授权时会静默落到公共节点价端点，两条标注都与实际来源不符。
 //
-// 正反两侧都断言：有授权时该出现，无授权时**必须不出现**。
+// 正反两侧都断言：有授权时该出现，无授权时必须不出现。
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 
 const entitled = vi.hoisted(() => ({ value: false }))
@@ -49,7 +47,7 @@ describe('现货 cockpit · 节点价来源标注', () => {
     const text = (await mountCockpit()).text()
     expect(text).toContain(PRIVATE_BADGE)
     expect(text).toContain(`节点价：${REALTIME_LABEL}`)
-    // 页脚此前写死「节点电价 DuckDB」——节点价早已改走 PG，这是同一处组件里的第三处
+    // 页脚此前写死「节点电价 DuckDB」，节点价早已改走 PG，这是同一处组件里的第三处
     // 陈旧来源陈述，一并纳入锁定。
     expect(text).toContain('节点电价中广核厂侧私有 PostgreSQL')
     expect(text).not.toContain('DuckDB')

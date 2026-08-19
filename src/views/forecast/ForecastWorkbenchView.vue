@@ -31,7 +31,7 @@ const TARGETS = [
   { id: 'zonal_spread', name: '区域价差(节点阻塞)' },
 ]
 
-// ── 共享任务栏 ──
+// 共享任务栏
 const regionId = ref(selectedRegionId.value || 'shanxi')
 const target = ref('price')
 const targetDate = ref('2026-06-04')
@@ -59,7 +59,7 @@ function buildCtx() {
   }
 }
 
-// ── 模式 A：单算法预测 ──
+// 模式 A：单算法预测
 const algoId = ref(targetProviders.value[0]?.id ?? 'platform')
 const params = ref<Record<string, unknown>>({})
 const result = ref<UnifiedForecastResult | null>(null)
@@ -80,7 +80,7 @@ function resetParams() {
   const p = currentProvider.value
   params.value = p ? defaultParams(p) : {}
 }
-// 页面级上下文世代（roborev job468）：切地区/目标即作废一切在飞异步请求——
+// 页面级上下文世代（#468）：切地区/目标即作废一切在飞异步请求
 // runCompare/决策动作/loadOverview 等在写入结果前校验，防旧上下文慢响应写回当前页面。
 // loading 复位不守卫（旧请求结束即收起，切换后新请求自会重新置起）。
 let contextGeneration = 0
@@ -107,11 +107,11 @@ let runGeneration = 0
 
 async function runSingle() {
   const p = currentProvider.value
-  if (!p || p.available === false) return  // 选中模型不可用（catalog 变动/过期）不发注定失败请求（roborev job570）
-  // 发起前快照本次预测上下文；await 期间用户可能切地区/目标/算法——返回后仅当
+  if (!p || p.available === false) return  // 选中模型不可用（catalog 变动/过期）不发注定失败请求（#570）
+  // 发起前快照本次预测上下文；await 期间用户可能切地区/目标/算法，返回后仅当
   // ① 本请求仍是最新一次（generation）且 ② 快照仍与当前控件一致（stillCurrent）
-  // 才写入结果，否则丢弃（roborev job463：旧请求结果不得贴上新地区/目标标签）。
-  // loading 复位只看 generation——切换控件而未重跑时旧请求结束仍需收起 loading。
+  // 才写入结果，否则丢弃（#463：旧请求结果不得贴上新地区/目标标签）。
+  // loading 复位只看 generation，切换控件而未重跑时旧请求结束仍需收起 loading。
   const generation = ++runGeneration
   const snapshot = { regionId: regionId.value, target: target.value, algoId: algoId.value }
   const ctx = buildCtx()
@@ -125,7 +125,7 @@ async function runSingle() {
     result.value = res
     // 登记本次实验上下文供同页「申报决策」tab 跟随（回放算法不携带 model）。
     // 用请求时快照 ctx 的日期/训练窗（await 期间控件可能被改，stillCurrent 不含这两项），
-    // 保证登记的是本次成功预测真实使用的上下文（codex P2 3621741658）。
+    // 保证登记的是本次成功预测真实使用的上下文（3621741658）。
     publishBenchContext({
       modelId: p.kind === 'compute' ? p.id : undefined,
       targetDate: ctx.targetDate ?? '',
@@ -149,8 +149,8 @@ const backtestLoadingA = ref(false)
 let backtestGeneration = 0
 async function runBacktestA() {
   const p = currentProvider.value
-  if (!p || p.kind !== 'compute' || p.available === false) return  // 不可用模型硬阻断（roborev job570）
-  // 与 runSingle 同款快照守卫（roborev job463 同构）：旧地区/目标的慢回测结果不得覆盖当前控件下的状态。
+  if (!p || p.kind !== 'compute' || p.available === false) return  // 不可用模型硬阻断（#570）
+  // 与 runSingle 同款快照守卫（#463 同构）：旧地区/目标的慢回测结果不得覆盖当前控件下的状态。
   const generation = ++backtestGeneration
   const snapshot = { regionId: regionId.value, target: target.value, algoId: p.id }
   const stillCurrent = () =>
@@ -170,7 +170,7 @@ async function runBacktestA() {
   }
 }
 
-// ── 模式 B：多算法对比 ──
+// 模式 B：多算法对比
 const compareIds = ref<string[]>([])
 const loadingB = ref(false)
 type Row = { id: string; name: string; mae: number | null; rmse: number | null; mase: number | null; improve: number | null; passes: boolean | null; basis: UnifiedForecastResult['basis']; rank: number }
@@ -209,7 +209,7 @@ async function runCompare() {
   } finally { loadingB.value = false }
 }
 
-// ── 模式 D：多目标总览（平台官方回放）──
+// 模式 D：多目标总览（平台官方回放）
 const OVERVIEW = [
   { id: 'price', name: '电价' }, { id: 'load', name: '系统负荷' }, { id: 'renewable', name: '新能源出力' },
   { id: 'bidding_space', name: '竞价空间' }, { id: 'thermal', name: '火电出力' },
@@ -242,7 +242,7 @@ async function loadOverview() {
   } finally { overviewLoading.value = false }
 }
 
-// ── 附 tab：模型台账（provider 元信息，available/reason 已由 catalog 注入 provider，#762）──
+// 附 tab：模型台账（provider 元信息，available/reason 已由 catalog 注入 provider，#762）
 const kindLabel = (k: ProviderKind) => (k === 'replay' ? '回放真实采集' : '后端实时计算')
 const ledger = computed(() => PROVIDERS.value.map((p) => ({
   id: p.id, name: p.name, kind: p.kind, tier: p.tier, targets: p.supportedTargets.length,
@@ -469,15 +469,15 @@ onMounted(() => { ensureForecastCatalog() })
 <style scoped>
 .workbench { padding: 12px; }
 .hdr { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
-.title { font-size: 16px; font-weight: 600; }
-.sub { color: var(--el-text-color-secondary); font-size: 12px; }
+.title { font-size: var(--font-16); font-weight: 600; }
+.sub { color: var(--el-text-color-secondary); font-size: var(--font-sm); }
 .controls { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
 .controls.shared { padding-bottom: 10px; border-bottom: 1px solid var(--el-border-color-lighter); }
-.lbl { color: var(--el-text-color-secondary); font-size: 13px; }
-.hint { color: var(--el-text-color-secondary); font-size: 12px; margin: 0 0 8px; }
+.lbl { color: var(--el-text-color-secondary); font-size: var(--font-md); }
+.hint { color: var(--el-text-color-secondary); font-size: var(--font-sm); margin: 0 0 8px; }
 .param-box { margin: 4px 0 12px; }
 .metrics { margin-top: 14px; }
 .ov-card { border: 1px solid var(--el-border-color-lighter); border-radius: 6px; padding: 10px 12px; margin-bottom: 12px; }
-.ov-hd { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-weight: 600; font-size: 14px; margin-bottom: 4px; }
+.ov-hd { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-weight: 600; font-size: var(--font-lg); margin-bottom: 4px; }
 :deep(.best-row) { background: var(--el-color-success-light-9); }
 </style>

@@ -6,11 +6,11 @@
 // 结果(win/loss)更新为后验 Beta(α0+wins, β0+losses)，后验均值即学习后的胜率，Kelly 据此下注。
 //
 // 设计纪律：
-//  - 纯数学(bayesianWinStats/summarizeOutcomes)不碰 localStorage，可被 verify 脚本裸 strip-types 跑；
-//    模块顶层不访问 localStorage（仅函数被调用时访问），保证导入安全。
-//  - 持久化用 localStorage 按地区隔离（用户选定的「学习用 localStorage 起步」方案），
-//    与会话历史的 Node SQLite 持久化正交；后续可升级为服务端。
-//  - 量化算法模块(quant.ts/tradingLab.ts)不 import 本模块（保持运行时自包含），由视图注入学习胜率。
+// - 纯数学(bayesianWinStats/summarizeOutcomes)不碰 localStorage，可被 verify 脚本裸 strip-types 跑；
+// 模块顶层不访问 localStorage（仅函数被调用时访问），保证导入安全。
+// - 持久化用 localStorage 按地区隔离（用户选定的「学习用 localStorage 起步」方案），
+// 与会话历史的 Node SQLite 持久化正交；后续可升级为服务端。
+// - 量化算法模块(quant.ts/tradingLab.ts)不 import 本模块（保持运行时自包含），由视图注入学习胜率。
 
 export type TradeOutcome = {
   /** 交易/执行日 YYYY-MM-DD */
@@ -98,7 +98,7 @@ export function summarizeOutcomes(outcomes: TradeOutcome[], prior: BetaPrior = D
   return stats
 }
 
-// ── localStorage 持久化层（仅浏览器/视图调用；纯数学不依赖此层）──────────────────
+// localStorage 持久化层（仅浏览器/视图调用；纯数学不依赖此层）
 
 const KEY_PREFIX = 'dljy.tradingMemory.'
 const MAX_OUTCOMES = 200

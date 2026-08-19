@@ -10,7 +10,6 @@ import type {
   AnalysisChartSeries,
   AnalysisChartSpec,
   AnalysisChartType,
-  AnalysisDashboard,
 } from '@dljy/contracts'
 import { axisTooltip } from './chartOptions'
 import { POWER, barSeries, divergingColors, lineSeries, palette, seqColors } from './chartStyle'

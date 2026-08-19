@@ -3,7 +3,7 @@
 // 协议：自由文本正文 + 末尾「@@NAV: 路径 | 理由 ;; 路径 | 理由」标记行
 // （比 JSON mode 健壮：正文含代码/长文本也不会解析崩）。
 // ⚠️ 解析契约硬约束（见 services/aiNavigator.ts::askAssistant 的正则）：
-//   标记前缀 `@@NAV:`、多项分隔 `;;`、字段分隔 `|`、独占一行——改动会让导航卡解析失效。
+// 标记前缀 `@@NAV:`、多项分隔 `;;`、字段分隔 `|`、独占一行，改动会让导航卡解析失效。
 
 /** 导航清单条目（结构等价于 aiNavigator.PageEntry，按结构匹配传入即可）。 */
 export type NavCatalogEntry = { path: string; title: string; group: string }

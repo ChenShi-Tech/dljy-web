@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // 通用「多类型 · 复选表格 + 多选联动折线」预测视图(cfg 驱动)。复用于:
-//  E2 价格预测(zptjg tag61,12类型)/ E5 公司新能源出力预测1(zxztqa,总风光)/ E6 公司新能源出力预测2(zgnrx,总风光)。
+// E2 价格预测(zptjg tag61,12类型)/ E5 公司新能源出力预测1(zxztqa,总风光)/ E6 公司新能源出力预测2(zgnrx,总风光)。
 // 经典款:运行日期区间 + 类型筛选 + 数据点(96/24);表格复选→下方图按勾选行显示曲线,图例随勾选实时显示。
 // cfg(route.meta.cfg): { family, match, dateField, typeField, dict?(系统字典名)|typeLabels?, totalField, valueLabel, unit }
 // NOTE(内部): 预测数值为模型输出,准确度后续优化;界面正常自信展示,勿在 UI 标注"不可信"。源: capture-raw/<family>/
@@ -29,7 +29,6 @@ const stationScoped = !!cfg.stationScoped
 const stationKind = (cfg.stationKind ?? 'zxztqa') as 'zxztqa' | 'zgnrx' | 'gsfhyc'
 const dateField = cfg.dateField || 'date'
 const typeField = cfg.typeField || 'type'
-const totalField = cfg.totalField || cfg.totalField || 'hj'
 const unit = cfg.unit || ''
 
 const L96 = Array.from({ length: 96 }, (_, i) => { const m = (i + 1) * 15; return `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}` })
@@ -119,8 +118,8 @@ function clearViewState() {
   rows.value = []
   selected.value = []
   range.value = null
-  // fType 是用户/深链筛选态（route.query.type 初始化），不随数据清空——
-  // 否则 /ycsj/jgyc?type=... 深链在首屏 load 即被重置（roborev job463）；
+  // fType 是用户/深链筛选态（route.query.type 初始化），不随数据清空
+  // 否则 /ycsj/jgyc?type=... 深链在首屏 load 即被重置（#463）；
   // 清空筛选只走用户点「重置」的 reset()。
   typeMap.value = { ...(cfg.typeLabels || {}) }
   tableRef.value?.clearSelection?.()
@@ -202,7 +201,7 @@ else onRegionChange(load)
     </el-card>
 
     <el-card shadow="never">
-      <template #header><span style="font-weight:600;font-size:13px">{{ cfg.valueLabel || '预测' }}曲线 · 已选 {{ selected.length }} 行（{{ npts }} 点）</span></template>
+      <template #header><span style="font-weight:600;font-size: var(--font-md)">{{ cfg.valueLabel || '预测' }}曲线 · 已选 {{ selected.length }} 行（{{ npts }} 点）</span></template>
       <div ref="chartRef" class="chart chart-host"></div>
     </el-card>
     <!-- 数据源(内部参考,勿对外展示)：真实数据： · 行 -->
@@ -212,13 +211,13 @@ else onRegionChange(load)
 <style scoped>
 .mt { padding: 12px 16px; background: var(--el-fill-color-light); min-height: calc(100vh - 90px); }
 .toolbar { display: flex; align-items: center; gap: 8px; background: var(--panel); padding: 10px 12px; border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,.04); flex-wrap: wrap; }
-.toolbar .lbl { font-size: 13px; color: var(--el-text-color-regular); font-weight: 600; }
+.toolbar .lbl { font-size: var(--font-md); color: var(--el-text-color-regular); font-weight: 600; }
 .toolbar .spacer { flex: 1; }
-.big :deep(.el-table__cell) { font-size: 13px; }
+.big :deep(.el-table__cell) { font-size: var(--font-md); }
 .big :deep(th .cell) { font-weight: 600; color: var(--el-text-color-primary); }
 .chart { height: 300px; width: 100%; }
 .mb { margin-bottom: 12px; }
-.src { color: var(--el-text-color-secondary); font-size: 12px; margin: 12px 0 0; }
+.src { color: var(--el-text-color-secondary); font-size: var(--font-sm); margin: 12px 0 0; }
 .src code { color: var(--el-color-primary); }
 /* 移动端:筛选条纵排,控件占满整行便于点按 */
 @media (max-width: 768px) {

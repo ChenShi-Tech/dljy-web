@@ -91,7 +91,7 @@ function scoreColor(score: number) {
 }
 .section-kicker {
   color: var(--primary);
-  font-size: 13px;
+  font-size: var(--font-md);
   font-weight: 650;
 }
 .subject-form {
@@ -104,7 +104,7 @@ function scoreColor(score: number) {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  font-size: 12px;
+  font-size: var(--font-sm);
   color: var(--text-soft);
 }
 .switch-row {
@@ -130,7 +130,7 @@ function scoreColor(score: number) {
   color: var(--text);
 }
 .score-num {
-  font-size: 20px;
+  font-size: var(--font-20);
   font-weight: 700;
 }
 .rationale {
@@ -149,7 +149,7 @@ function scoreColor(score: number) {
   border-radius: 6px;
   background: var(--surface-hover);
   color: var(--text-soft);
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 .links {
   display: flex;

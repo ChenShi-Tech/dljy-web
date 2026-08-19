@@ -1,15 +1,15 @@
 <script setup lang="ts">
-// S1 晨会复盘（08:00–08:30）—— 一天从收口昨日开始
+// S1 晨会复盘（08:00–08:30）， 一天从收口昨日开始
 //
-// 复盘对象是**昨天为「今天交割」申报的那张单**（标的日 = 今日作业标的日的前一天）：
+// 复盘对象是昨天为「今天交割」申报的那张单（标的日 = 今日作业标的日的前一天）：
 // 它的出清结果昨晚已出，是今早唯一有完整事实可对的循环。本面板把四件事摆在一起：
-//   ① 昨单的**中标情况**：申报 vs 出清（analyzeClearing 真算，前端纯函数）；
-//   ② 昨单的**执行偏差**：申报 vs 实际（后端 quant /review 权威实现，含考核电量与罚款估算）；
+// ① 昨单的中标情况：申报 vs 出清（analyzeClearing 真算，前端纯函数）；
+// ② 昨单的执行偏差：申报 vs 实际（后端 quant /review 权威实现，含考核电量与罚款估算）；
 //   ③ 昨日决策日志的条目调阅 + 填写率与 P10–P90 命中率（链上事实）；
-//   ④ 交易员写下偏差主因 + 今日不重犯要点 → 写回**今日**单据的 preflight.morningReview。
+// ④ 交易员写下偏差主因 + 今日不重犯要点 → 写回今日单据的 preflight.morningReview。
 // 没有昨单就如实说「无可复盘对象」，仍允许写要点（首个交易日也要开工）。
 //
-// ①②是**两个不同的量，不可互相替代**：中标率答「我报的量中了多少」，执行偏差答「我实际
+// ①②是两个不同的量，不可互相替代：中标率答「我报的量中了多少」，执行偏差答「我实际
 // 干的和我报的差多少、要交多少考核费」。只看中标率会漏掉「全中但执行跑偏」的那类亏损。
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
@@ -40,9 +40,12 @@ import {
 } from 'shared/trading-rules/morning-review.mjs'
 import { shiftIsoDate } from 'shared/trading-rules/trading-calendar.mjs'
 import { reviewFocusOf } from 'shared/trading-rules/position-review.mjs'
-import { activePosition } from '@/services/position/positionContext'
+import { activeStanceType } from '@/services/stance/stanceContext'
 import { onRegionChange } from '@/composables/useRegionReload'
 import AiAssistFill from '@/components/trading/AiAssistFill.vue'
+import ReviewThreeQuestions from './ReviewThreeQuestions.vue'
+import OvernightReportCard from './OvernightReportCard.vue'
+import ReviewTodoBadge from './ReviewTodoBadge.vue'
 import type { StageId } from '@/data/workflowStages'
 
 const props = defineProps<{ declaration: DeclarationOrder | null; targetDate: string }>()
@@ -56,7 +59,7 @@ const reviewedDate = computed(() => {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 })
 
-// ── 作业窗口提示（公司内控规范，非市场规则：只提示、不拦）───────────────────
+// 作业窗口提示（公司内控规范，非市场规则：只提示、不拦）
 const now = new Date()
 const windowState = morningWindowState(now.getHours() * 60 + now.getMinutes())
 
@@ -95,10 +98,10 @@ const analysis = computed<ClearingAnalysis | null>(() => {
   }
 })
 
-// ── ② 执行偏差：申报 vs 实际（后端权威实现）──────────────────────────────────
+// ② 执行偏差：申报 vs 实际（后端权威实现）
 // 口径与复盘中心 /xhjy/review 完全一致：申报侧传昨单曲线快照，实际侧由后端按
 // serving-route 的 actual_energy 路由取（Epic #1485：山西经 sdpt_zptqx type='2' 接入）。
-// **未登记路由的地区诚实空态**——不回落、不串读，云南的三段式结算口径是另一个端点。
+// 未登记路由的地区诚实空态，不回落、不串读，云南的三段式结算口径是另一个端点。
 // 前端不自算第二套偏差：口径分歧比没有数字更贵。
 const execReview = ref<ReviewResult | null>(null)
 const execFailure = ref<ReviewFailure | null>(null)
@@ -141,26 +144,26 @@ const execDeviationPct = computed<number | null>(() => {
   return r.deviation.total_abs_deviation_mwh / declaredTotal
 })
 
-// ── ③ 昨日决策日志：条目调阅（不只是两个统计数字）────────────────────────────
+// ③ 昨日决策日志：条目调阅（不只是两个统计数字）
 const log = loadLog()
 const logCoverage = computed(() => coverageOf(log, reviewedDate.value, 3))
 const logHits = computed(() => hitRate(log))
-/** 昨日标的日的条目，按序号排列——晨会要「回顾」，就得看得到写了什么。 */
+/** 昨日标的日的条目，按序号排列，晨会要「回顾」，就得看得到写了什么。 */
 const reviewedEntries = computed(() =>
   log.filter((e) => e.targetDate === reviewedDate.value).sort((a, b) => a.seq - b.seq)
 )
 const showEntries = ref(false)
 
-// ── ④ 复盘结论录入与写回 ────────────────────────────────────────────────────
+// ④ 复盘结论录入与写回
 // 主因分类权威在 shared/trading-rules/morning-review.mjs（前后端与 AI 提示词同一份）。
 const cause = ref<string>('')
 const lessons = ref('')
 const validation = computed(() => validateMorningReview({ cause: cause.value, lessons: lessons.value }))
 const causeHint = computed(() => DEVIATION_CAUSES.find((c) => c.id === cause.value) ?? null)
 
-// ── AI 辅助填报：偏差归因与今日要点是**人工经验判断**（不是取数）──────────────
+// AI 辅助填报：偏差归因与今日要点是人工经验判断（不是取数）
 // 注入的是已算好的事实：中标情况（analyzeClearing）+ 执行偏差（后端 review）+ 决策日志覆盖。
-// AI 据此判断「主因是什么、今天该注意什么」——这两个字段没有数据库可查，正是它该干的活。
+// AI 据此判断「主因是什么、今天该注意什么」，这两个字段没有数据库可查，正是它该干的活。
 const assistContext = computed(() => ({
   reviewedDate: reviewedDate.value,
   hasReviewedDeclaration: Boolean(reviewed.value),
@@ -210,12 +213,27 @@ const saveError = ref('')
 
 const written = computed(() => props.declaration?.preflight?.morningReview ?? null)
 
-// ── 立场复盘焦点（#2005）：同一张偏差表，三类身份问的问题不同 ────────────────
-const reviewFocus = computed(() => reviewFocusOf(activePosition.value))
+// 立场复盘焦点（#2005）：同一张偏差表，三类身份问的问题不同
+const reviewFocus = computed(() => reviewFocusOf(activeStanceType.value))
 
-// ── 异常分支（手册：当日未写日志 → 次日晨会强制补写）─────────────────────────
+// 复盘体系三件套（Epic #2033 · #2040，全部只读/跳转，零新写回口径）
+// 三问数字复用 ①② 既有取数；环比昨日读昨日晨会写回链（昨单 preflight.morningReview
+// 记录的正是昨日 S1 复盘的执行偏差）；回测收益取 execReview.backtest 段。
+const threeQuestionsPnl = computed(() =>
+  execReview.value
+    ? {
+        daRevenueYuan: execReview.value.backtest.da_revenue_yuan,
+        spreadPnlYuan: execReview.value.backtest.da_rt_spread_pnl_yuan ?? null
+      }
+    : null
+)
+/** 昨日晨会写回的执行偏差（挂在昨单 preflight 上，正是今天 reviewed 这张单）。 */
+const prevDeviationMwh = computed(() => reviewed.value?.preflight?.morningReview?.executionDeviationMwh ?? null)
+const prevReviewedDate = computed(() => shiftIsoDate(reviewedDate.value, -1))
+
+// 异常分支（手册：当日未写日志 → 次日晨会强制补写）
 // 判据：昨日有申报单可复盘（reviewed 存在）但决策日志链上没有归属昨日标的日的条目。
-// 拦截写回（不是提示完就算）——补写入口在 S7（日志归属日期切到昨日即补写模式）。
+// 拦截写回（不是提示完就算），补写入口在 S7（日志归属日期切到昨日即补写模式）。
 const yesterdayIso = computed(() => shiftIsoDate(props.targetDate, -1))
 const yesterdayLogMissing = computed(() => {
   if (!reviewed.value) return false
@@ -263,9 +281,29 @@ async function writeBack() {
   <div class="mr">
     <p class="mr-window" :class="`mr-window-${windowState}`">{{ MORNING_WINDOW_NOTE[windowState] }}</p>
 
+    <!-- 复盘体系三件套（#2040）：三问结论条 + 昨夜智能体报告卡 + 复盘待办徽标。
+         全部只读/跳转，不给 S1 增加任何填写负担（<5 分钟红线）。 -->
+    <section class="mr-system">
+      <ReviewThreeQuestions
+        :reviewed-date="reviewedDate"
+        :has-reviewed="!!reviewed"
+        :clear-rate="analysis?.clearRate ?? null"
+        :deviation-mwh="execReview?.deviation.total_abs_deviation_mwh ?? null"
+        :deviation-pct="execDeviationPct"
+        :prev-deviation-mwh="prevDeviationMwh"
+        :prev-reviewed-date="prevReviewedDate"
+        :pnl="threeQuestionsPnl"
+        :position="activeStanceType"
+      />
+      <div class="mr-system-row">
+        <div class="mr-report-slot"><OvernightReportCard /></div>
+        <ReviewTodoBadge />
+      </div>
+    </section>
+
     <!-- 立场复盘焦点：用户侧问「买没买到」、电源侧问「卖没卖掉」、储能问「窗口吃到没」 -->
     <section v-if="reviewFocus" class="mr-focus">
-      <strong>{{ activePosition === 'GENERATOR' ? '电厂侧' : activePosition === 'STORAGE' ? '储能' : '用户侧' }}复盘目标：{{ reviewFocus.goal }}</strong>
+      <strong>{{ activeStanceType === 'GENERATOR' ? '电厂侧' : activeStanceType === 'STORAGE' ? '储能' : '用户侧' }}复盘目标：{{ reviewFocus.goal }}</strong>
       <ul>
         <li v-for="(point, i) in reviewFocus.reviewPoints" :key="i">{{ point }}</li>
       </ul>
@@ -440,54 +478,59 @@ async function writeBack() {
 
 <style scoped>
 .mr { display: flex; flex-direction: column; gap: 12px; }
-.mr-backfill-block { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin: 0; padding: 7px 12px; border: 1px solid #f87171; border-radius: 8px; background: #fef2f2; color: #991b1b; font-size: 12px; line-height: 1.6; }
-.mr-jump { padding: 0; border: none; background: none; color: #1d4ed8; font: inherit; font-size: 12px; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
-.mr-focus { margin: 0; padding: 7px 12px; border: 1px solid #bfdbfe; border-radius: 8px; background: #f8fbff; font-size: 12px; }
+/* 复盘体系三件套（#2040） */
+.mr-system { display: flex; flex-direction: column; gap: 8px; }
+.mr-system-row { display: flex; gap: 10px; align-items: stretch; flex-wrap: wrap; }
+.mr-report-slot { flex: 1 1 320px; min-width: 0; display: flex; }
+.mr-report-slot > * { flex: 1; }
+.mr-backfill-block { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin: 0; padding: 7px 12px; border: 1px solid #f87171; border-radius: 8px; background: #fef2f2; color: #991b1b; font-size: var(--font-sm); line-height: 1.6; }
+.mr-jump { padding: 0; border: none; background: none; color: #1d4ed8; font: inherit; font-size: var(--font-sm); cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
+.mr-focus { margin: 0; padding: 7px 12px; border: 1px solid #bfdbfe; border-radius: 8px; background: #f8fbff; font-size: var(--font-sm); }
 .mr-focus strong { color: #075985; }
-.mr-focus ul { margin: 4px 0 0; padding-left: 18px; font-size: 11px; line-height: 1.7; color: #475569; }
-.mr-window { margin: 0; padding: 6px 12px; border-radius: 8px; font-size: 12px; }
+.mr-focus ul { margin: 4px 0 0; padding-left: 18px; font-size: var(--font-xs); line-height: 1.7; color: #475569; }
+.mr-window { margin: 0; padding: 6px 12px; border-radius: 8px; font-size: var(--font-sm); }
 .mr-window-within { background: #f0fdf4; color: #166534; }
 .mr-window-before { background: #f8fafc; color: #475569; }
 .mr-window-after { background: #fffbeb; color: #a16207; }
 .mr-panel { padding: 12px 14px; border: 1px solid var(--el-border-color-lighter, #ebeef5); border-radius: 10px; background: #fff; }
-.mr-panel h3 { display: flex; align-items: flex-start; gap: 10px; margin: 0 0 8px; font-size: 13px; flex-wrap: wrap; }
-.mr-muted { margin: 0; font-size: 12px; color: var(--el-text-color-secondary, #667); }
-.mr-detail { margin-top: 4px; font-family: ui-monospace, monospace; font-size: 11px; }
-.mr-err { margin: 0; padding: 6px 10px; border-radius: 6px; background: #fef2f2; color: #991b1b; font-size: 12px; }
-.mr-err-inline { font-size: 12px; color: #b91c1c; }
-.mr-empty { margin: 0 0 4px; padding: 6px 10px; border-radius: 6px; background: #f8fafc; color: #475569; font-size: 12px; }
-.mr-warn { margin: 6px 0 0; padding: 6px 10px; border-radius: 6px; background: #fffbeb; color: #a16207; font-size: 12px; }
-.mr-ok { font-size: 12px; color: #15803d; }
+.mr-panel h3 { display: flex; align-items: flex-start; gap: 10px; margin: 0 0 8px; font-size: var(--font-md); flex-wrap: wrap; }
+.mr-muted { margin: 0; font-size: var(--font-sm); color: var(--el-text-color-secondary, #667); }
+.mr-detail { margin-top: 4px; font-family: ui-monospace, monospace; font-size: var(--font-xs); }
+.mr-err { margin: 0; padding: 6px 10px; border-radius: 6px; background: #fef2f2; color: #991b1b; font-size: var(--font-sm); }
+.mr-err-inline { font-size: var(--font-sm); color: #b91c1c; }
+.mr-empty { margin: 0 0 4px; padding: 6px 10px; border-radius: 6px; background: #f8fafc; color: #475569; font-size: var(--font-sm); }
+.mr-warn { margin: 6px 0 0; padding: 6px 10px; border-radius: 6px; background: #fffbeb; color: #a16207; font-size: var(--font-sm); }
+.mr-ok { font-size: var(--font-sm); color: #15803d; }
 .mr-bad { color: #b91c1c; display: inline-flex; align-items: center; gap: 3px; }
-.mr-facts { display: flex; gap: 14px; flex-wrap: wrap; align-items: baseline; font-size: 12px; font-variant-numeric: tabular-nums; }
+.mr-facts { display: flex; gap: 14px; flex-wrap: wrap; align-items: baseline; font-size: var(--font-sm); font-variant-numeric: tabular-nums; }
 .mr-decl { font-family: ui-monospace, monospace; }
 .mr-decl em { font-style: normal; padding: 1px 7px; border-radius: 8px; background: #eff6ff; color: #1d4ed8; }
-.mr-summary { margin: 8px 0 0; font-size: 12px; line-height: 1.6; }
-.mr-table { width: 100%; border-collapse: collapse; font-size: 11px; font-variant-numeric: tabular-nums; margin-top: 6px; }
+.mr-summary { margin: 8px 0 0; font-size: var(--font-sm); line-height: 1.6; }
+.mr-table { width: 100%; border-collapse: collapse; font-size: var(--font-xs); font-variant-numeric: tabular-nums; margin-top: 6px; }
 .mr-table th, .mr-table td { padding: 3px 6px; border-bottom: 1px solid var(--el-border-color-lighter, #ebeef5); text-align: right; }
 .mr-table th:first-child, .mr-table td:first-child { text-align: left; }
 .mr-table th { color: var(--el-text-color-secondary, #667); font-weight: 600; }
 .mr-entries td, .mr-entries th { text-align: left; }
 .mr-wrap { max-width: 220px; white-space: normal; line-height: 1.5; }
-.mr-caveat { margin-top: 8px; font-size: 11px; color: #a16207; }
+.mr-caveat { margin-top: 8px; font-size: var(--font-xs); color: #a16207; }
 .mr-caveat summary { cursor: pointer; }
 .mr-caveat ul { margin: 6px 0 0; padding-left: 18px; line-height: 1.6; }
-.mr-log { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; }
-.mr-proto { margin: 8px 0 0; padding-top: 8px; border-top: 1px dashed var(--el-border-color-lighter, #ebeef5); font-size: 11px; line-height: 1.6; color: #a16207; }
-.mr-written { margin-bottom: 8px; padding: 6px 10px; border-radius: 6px; background: #f0fdf4; color: #166534; font-size: 12px; }
+.mr-log { display: flex; gap: 14px; flex-wrap: wrap; font-size: var(--font-sm); }
+.mr-proto { margin: 8px 0 0; padding-top: 8px; border-top: 1px dashed var(--el-border-color-lighter, #ebeef5); font-size: var(--font-xs); line-height: 1.6; color: #a16207; }
+.mr-written { margin-bottom: 8px; padding: 6px 10px; border-radius: 6px; background: #f0fdf4; color: #166534; font-size: var(--font-sm); }
 .mr-written em { font-style: normal; color: #4d7c0f; }
 .mr-pending { display: inline-block; margin-left: 8px; padding: 1px 7px; border-radius: 8px; background: #fffbeb; color: #a16207; font-weight: 600; }
 .mr-form { display: flex; gap: 10px; flex-wrap: wrap; }
-.mr-form label { display: flex; flex-direction: column; gap: 3px; font-size: 11px; color: var(--el-text-color-secondary, #667); }
+.mr-form label { display: flex; flex-direction: column; gap: 3px; font-size: var(--font-xs); color: var(--el-text-color-secondary, #667); }
 .mr-form .mr-full { flex: 1; min-width: 320px; }
-.mr-form select, .mr-form input { padding: 4px 7px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 5px; font-size: 12px; }
-.mr-hint { margin: 8px 0 0; font-size: 11px; line-height: 1.6; color: var(--el-text-color-secondary, #667); }
+.mr-form select, .mr-form input { padding: 4px 7px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 5px; font-size: var(--font-sm); }
+.mr-hint { margin: 8px 0 0; font-size: var(--font-xs); line-height: 1.6; color: var(--el-text-color-secondary, #667); }
 .mr-hint em { font-style: normal; color: #1d4ed8; }
 .mr-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 10px; }
-.mr-actions .primary { display: inline-flex; align-items: center; gap: 5px; padding: 5px 14px; border: 1px solid #2563eb; border-radius: 6px; background: #2563eb; color: #fff; font-size: 12px; cursor: pointer; }
+.mr-actions .primary { display: inline-flex; align-items: center; gap: 5px; padding: 5px 14px; border: 1px solid #2563eb; border-radius: 6px; background: #2563eb; color: #fff; font-size: var(--font-sm); cursor: pointer; }
 .mr-actions .primary:disabled { opacity: .45; cursor: not-allowed; }
-.mr-actions .ghost { padding: 5px 12px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 6px; background: #fff; font-size: 12px; cursor: pointer; }
-.mr-invalid { margin: 8px 0 0; padding-left: 18px; font-size: 11px; line-height: 1.7; color: #b91c1c; }
-.link { padding: 0; border: 0; background: none; color: #2563eb; font-size: 12px; cursor: pointer; }
-.mr-note { margin: 8px 0 0; font-size: 11px; line-height: 1.6; color: #a16207; }
+.mr-actions .ghost { padding: 5px 12px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 6px; background: #fff; font-size: var(--font-sm); cursor: pointer; }
+.mr-invalid { margin: 8px 0 0; padding-left: 18px; font-size: var(--font-xs); line-height: 1.7; color: #b91c1c; }
+.link { padding: 0; border: 0; background: none; color: #2563eb; font-size: var(--font-sm); cursor: pointer; }
+.mr-note { margin: 8px 0 0; font-size: var(--font-xs); line-height: 1.6; color: #a16207; }
 </style>

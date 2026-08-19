@@ -48,7 +48,7 @@ const question = computed(
 )
 const regionPayload = computed(() => packageRegionSummary() as unknown as Record<string, unknown>)
 
-// ── 历史侧栏协调（照 AgentWorkbenchView 范式）──
+// 历史侧栏协调（照 AgentWorkbenchView 范式）
 type PanelExpose = {
   ask: (q: string) => void
   newConversation: () => void
@@ -153,17 +153,17 @@ function onSessionReady(sessionId: string) {
   padding: 14px 18px; background: var(--panel, #fff);
   border: 1px solid var(--line-soft, #e5e7eb); border-radius: 14px;
 }
-.ps-title h2 { margin: 0; font-size: 19px; color: var(--text, #111); }
-.ps-sub { font-size: 12.5px; color: var(--muted, #667085); }
+.ps-title h2 { margin: 0; font-size: var(--font-19); color: var(--text, #111); }
+.ps-sub { font-size: var(--font-12-5); color: var(--muted, #667085); }
 .ps-form {
   display: flex; flex-wrap: wrap; align-items: flex-end; gap: 14px;
   padding: 12px 18px; background: var(--panel, #fff);
   border: 1px solid var(--line-soft, #e5e7eb); border-radius: 14px;
 }
-.ps-field { display: flex; flex-direction: column; gap: 6px; font-size: 12.5px; font-weight: 600; color: var(--text-body, #222); }
+.ps-field { display: flex; flex-direction: column; gap: 6px; font-size: var(--font-12-5); font-weight: 600; color: var(--text-body, #222); }
 .ps-grow { flex: 1; min-width: 240px; }
 .ps-field input {
-  padding: 7px 10px; font-size: 13px; font-weight: 400;
+  padding: 7px 10px; font-size: var(--font-md); font-weight: 400;
   border: 1px solid var(--line, #d0d5dd); border-radius: 8px; background: var(--panel, #fff); color: var(--text-body, #222);
 }
 /* 两列工作区：左历史侧栏 + 右对话面板 */
@@ -176,7 +176,7 @@ function onSessionReady(sessionId: string) {
   border-radius: 14px; overflow: hidden;
 }
 .ps-watermark {
-  padding: 7px 14px; font-size: 12px; line-height: 1.5;
+  padding: 7px 14px; font-size: var(--font-sm); line-height: 1.5;
   font-family: var(--ck-mono, 'SF Mono', ui-monospace, monospace);
   color: var(--warning, #b45309);
   background: color-mix(in srgb, var(--warning, #f59e0b) 10%, transparent);

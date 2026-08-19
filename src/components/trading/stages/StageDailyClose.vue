@@ -1,14 +1,14 @@
 <script setup lang="ts">
-// S7 日报收尾（16:30–17:30）—— 一日闭环的收口
+// S7 日报收尾（16:30–17:30）， 一日闭环的收口
 //
 // 两件事，缺一不可：
 //   ① 决策日志（T7，append-only + 哈希链）：当日每个决策点都必须留痕，填写率是一票否决 KPI。
-//      理由不在管理考核而在监管质询时它是唯一能自证报价形成过程的材料——所以记下去就改不了。
+// 理由不在管理考核而在监管质询时它是唯一能自证报价形成过程的材料，所以记下去就改不了。
 //   ② 当日日报：从各阶段写回产出自动汇总（市场判断 / 方向 / 中标 / 补仓），交易员补一句
-//      总体小结后写回 preflight.dailyClose——它把今日单据的七段产出盖一个收口戳。
+// 总体小结后写回 preflight.dailyClose，它把今日单据的七段产出盖一个收口戳。
 //
 // ⚠️ 决策日志为原型态：链存浏览器本地、哈希前端计算，能检出误改但不防蓄意篡改，
-// 也不具备 ≥5 年留存——这条限制常驻显示。生产化方向是服务端存储 + 服务端哈希。
+// 也不具备 ≥5 年留存，这条限制常驻显示。生产化方向是服务端存储 + 服务端哈希。
 import { computed, onMounted, reactive, ref } from 'vue'
 import { CalendarClock, ClipboardCopy, Download, NotebookPen, ShieldAlert, Link2, RefreshCw, Save, FileText } from 'lucide-vue-next'
 import { coverageOf, hitRate, validateDraft, verifyChain, type DecisionLogEntry } from 'shared/trading-rules/decision-log.mjs'
@@ -38,7 +38,7 @@ const emit = defineEmits<{ updated: [d: DeclarationOrder]; go: [stage: StageId] 
 const decl = computed(() => props.declaration)
 const pf = computed(() => decl.value?.preflight ?? {})
 
-// ── ① 决策日志 ──────────────────────────────────────────────────────────────
+// ① 决策日志
 const log = ref<DecisionLogEntry[]>([])
 const errorMsg = ref('')
 const expectedPoints = ref(3)
@@ -57,7 +57,7 @@ const form = reactive({
 
 /**
  * 日志归属标的日（手册异常分支：当日未写 → 次日晨会强制补写）。默认当前标的日；
- * 改成昨日即进入「补写模式」——写入的条目归属补写日，填写率按归属日统计。
+ * 改成昨日即进入「补写模式」，写入的条目归属补写日，填写率按归属日统计。
  */
 const logTargetDate = ref(props.targetDate)
 
@@ -124,7 +124,7 @@ function doBackfill() {
 
 function reset() { log.value = clearLog() }
 
-// ── AI 辅助填报：决策日志的判断/理由/概率分位全是**人工经验判断**──────────────
+// AI 辅助填报：决策日志的判断/理由/概率分位全是人工经验判断
 // 这是全链最典型的辅助场景：P10/P50/P90 是交易员对价格分布的主观估计（没有数据库
 // 可查），判断结论与理由要把当日各步产出串成一句话。AI 拿到当日全部已算好的产出
 // （S1–S6 写回 + 决策点名称），给出结构化建议；采纳后仍可手改，写入哈希链的是人确认的值。
@@ -153,7 +153,7 @@ const assistContext = computed(() => ({
   },
   constraint: 'P10 < P50 < P90 必须成立；分位是对该决策点标的价格分布的估计'
 }))
-/** 采纳的 AI 建议留痕 id——写入链后与日志条目关联，回填实际值时同步命中判断 */
+/** 采纳的 AI 建议留痕 id，写入链后与日志条目关联，回填实际值时同步命中判断 */
 let adoptedTraceId = ''
 function applyAssist(s: Record<string, unknown>, traceId?: string) {
   adoptedTraceId = traceId ?? ''
@@ -165,14 +165,14 @@ function applyAssist(s: Record<string, unknown>, traceId?: string) {
   }
 }
 
-// ── 市场概况（会议要求：总成交量/时段量价/开高低收）+ 口径诚实标注 ───────────
-// 全市场侧量价无活源（#1968/#1981）——用本单可得口径（出清优先，无出清用申报）
+// 市场概况（会议要求：总成交量/时段量价/开高低收）+ 口径诚实标注
+// 全市场侧量价无活源（#1968/#1981），用本单可得口径（出清优先，无出清用申报）
 // 给同构统计，sourceBasis 随日报呈现，不把本单口径冒充全市场。
 const marketDigest = computed(() =>
   buildMarketDigest(decl.value?.clearing?.clearedCurveMwh96, decl.value?.energyCurveMwh96, decl.value?.priceCurve96)
 )
 
-// ── ③ 明日提醒（手册 S7 步骤③）─────────────────────────────────────────────
+// ③ 明日提醒（手册 S7 步骤③）
 const customReminders = ref('')
 const tomorrowReminders = computed<string[]>(() => {
   const items: string[] = []
@@ -193,7 +193,7 @@ const tomorrowReminders = computed<string[]>(() => {
   return [...items, ...custom]
 })
 
-// ── ④ 日报导出（Markdown 落文件 + 剪贴板复制）───────────────────────────────
+// ④ 日报导出（Markdown 落文件 + 剪贴板复制）
 const reportMarkdown = computed(() => {
   const lines = [`# 交易日日报 ${props.targetDate}`, '', ...reportLines.value]
   const md = marketDigest.value
@@ -229,7 +229,7 @@ async function copyReport() {
   setTimeout(() => { copyState.value = '' }, 3000)
 }
 
-// ── ② 自动日报（从各阶段产出汇总）────────────────────────────────────────────
+// ② 自动日报（从各阶段产出汇总）
 const reportLines = computed<string[]>(() => {
   const lines: string[] = []
   const d = decl.value
@@ -262,7 +262,7 @@ const reportLines = computed<string[]>(() => {
   return lines
 })
 
-// ── 日报写回 ────────────────────────────────────────────────────────────────
+// 日报写回
 const summary = ref('')
 const summaryValid = computed(() => summary.value.trim().length >= 6)
 const saving = ref(false)
@@ -477,79 +477,79 @@ async function writeBack() {
 
 <style scoped>
 .dc7 { display: flex; flex-direction: column; gap: 12px; }
-.dc7-warning { display: flex; align-items: flex-start; gap: 6px; margin: 0; padding: 8px 12px; border: 1px dashed #f59e0b; border-radius: 8px; background: #fffbeb; font-size: 11px; line-height: 1.6; color: #92400e; }
+.dc7-warning { display: flex; align-items: flex-start; gap: 6px; margin: 0; padding: 8px 12px; border: 1px dashed #f59e0b; border-radius: 8px; background: #fffbeb; font-size: var(--font-xs); line-height: 1.6; color: #92400e; }
 
 .dc7-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 @media (max-width: 980px) { .dc7-grid { grid-template-columns: 1fr; } }
 
 .dc7-panel { padding: 12px 14px; border: 1px solid var(--el-border-color-lighter, #ebeef5); border-radius: 10px; background: #fff; }
 .dc7-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; flex-wrap: wrap; }
-.dc7-head h3 { display: flex; align-items: center; gap: 5px; margin: 0; font-size: 13px; }
-.dc7-panel h3 { display: flex; align-items: center; gap: 5px; margin: 10px 0 6px; font-size: 13px; }
+.dc7-head h3 { display: flex; align-items: center; gap: 5px; margin: 0; font-size: var(--font-md); }
+.dc7-panel h3 { display: flex; align-items: center; gap: 5px; margin: 10px 0 6px; font-size: var(--font-md); }
 .dc7-panel h3:first-of-type { margin-top: 0; }
-.dc7-stats { display: flex; gap: 10px; font-size: 11px; }
+.dc7-stats { display: flex; gap: 10px; font-size: var(--font-xs); }
 .dc7-stats span { display: inline-flex; align-items: center; gap: 3px; padding: 2px 8px; border-radius: 8px; background: #f1f5f9; }
 .dc7-stats .ok { background: #dcfce7; color: #15803d; }
 .dc7-stats .bad { background: #fee2e2; color: #991b1b; }
-.dc7-sub { margin: 4px 0 8px; font-size: 11px; color: var(--el-text-color-secondary, #667); }
-.dc7-broken { margin: 0 0 8px; padding: 6px 10px; border-radius: 6px; background: #fef2f2; color: #991b1b; font-size: 12px; }
+.dc7-sub { margin: 4px 0 8px; font-size: var(--font-xs); color: var(--el-text-color-secondary, #667); }
+.dc7-broken { margin: 0 0 8px; padding: 6px 10px; border-radius: 6px; background: #fef2f2; color: #991b1b; font-size: var(--font-sm); }
 
 .dc7-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(90px, 1fr)); gap: 6px 8px; }
-.dc7-form label { display: flex; flex-direction: column; gap: 2px; font-size: 10px; color: var(--el-text-color-secondary, #667); }
+.dc7-form label { display: flex; flex-direction: column; gap: 2px; font-size: var(--font-10); color: var(--el-text-color-secondary, #667); }
 .dc7-form label.full { grid-column: 1 / -1; }
-.dc7-form input { padding: 4px 6px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 4px; font-size: 12px; }
-.dc7-issues { margin: 6px 0 0; padding-left: 16px; font-size: 11px; color: #b45309; line-height: 1.7; }
-.dc7-error { margin: 6px 0 0; font-size: 12px; color: #b91c1c; }
+.dc7-form input { padding: 4px 6px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 4px; font-size: var(--font-sm); }
+.dc7-issues { margin: 6px 0 0; padding-left: 16px; font-size: var(--font-xs); color: #b45309; line-height: 1.7; }
+.dc7-error { margin: 6px 0 0; font-size: var(--font-sm); color: #b91c1c; }
 .dc7-actions { display: flex; gap: 8px; margin-top: 8px; align-items: center; flex-wrap: wrap; }
-.dc7-actions button { padding: 5px 14px; border: 1px solid #2563eb; border-radius: 6px; background: #2563eb; color: #fff; font-size: 12px; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; }
+.dc7-actions button { padding: 5px 14px; border: 1px solid #2563eb; border-radius: 6px; background: #2563eb; color: #fff; font-size: var(--font-sm); cursor: pointer; display: inline-flex; align-items: center; gap: 4px; }
 .dc7-actions button:disabled { opacity: .45; cursor: not-allowed; }
 .dc7-actions button.ghost { background: #fff; color: inherit; border-color: var(--el-border-color, #dcdfe6); }
-button.ghost { display: inline-flex; align-items: center; gap: 4px; padding: 3px 10px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 5px; background: #fff; color: inherit; font-size: 11px; cursor: pointer; }
+button.ghost { display: inline-flex; align-items: center; gap: 4px; padding: 3px 10px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 5px; background: #fff; color: inherit; font-size: var(--font-xs); cursor: pointer; }
 
 .dc7-backfill { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--el-border-color-lighter, #ebeef5); }
-.dc7-backfill select, .dc7-backfill input { padding: 4px 7px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 5px; font-size: 12px; }
-.dc7-backfill button { padding: 4px 14px; border: 1px solid #2563eb; border-radius: 5px; background: #eff6ff; color: #1d4ed8; font-size: 12px; cursor: pointer; }
+.dc7-backfill select, .dc7-backfill input { padding: 4px 7px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 5px; font-size: var(--font-sm); }
+.dc7-backfill button { padding: 4px 14px; border: 1px solid #2563eb; border-radius: 5px; background: #eff6ff; color: #1d4ed8; font-size: var(--font-sm); cursor: pointer; }
 .dc7-backfill button:disabled { opacity: .45; cursor: not-allowed; }
 
-.dc7-list-head { display: flex; justify-content: space-between; align-items: center; margin-top: 12px; padding-top: 10px; border-top: 1px dashed var(--el-border-color-lighter, #ebeef5); font-size: 12px; }
-.dc7-empty { padding: 8px 0; font-size: 12px; color: var(--el-text-color-secondary, #667); }
-.dc7-table { width: 100%; border-collapse: collapse; font-size: 11px; }
+.dc7-list-head { display: flex; justify-content: space-between; align-items: center; margin-top: 12px; padding-top: 10px; border-top: 1px dashed var(--el-border-color-lighter, #ebeef5); font-size: var(--font-sm); }
+.dc7-empty { padding: 8px 0; font-size: var(--font-sm); color: var(--el-text-color-secondary, #667); }
+.dc7-table { width: 100%; border-collapse: collapse; font-size: var(--font-xs); }
 .dc7-table th, .dc7-table td { padding: 4px 5px; border-bottom: 1px solid var(--el-border-color-lighter, #ebeef5); text-align: left; vertical-align: top; }
 .dc7-table th { color: var(--el-text-color-secondary, #667); font-weight: 600; }
 .dc7-table tr.correction { background: #fffbeb; }
 .dc7-judge { max-width: 140px; }
-.dc7-corr { display: block; font-style: normal; font-size: 10px; color: #b45309; }
+.dc7-corr { display: block; font-style: normal; font-size: var(--font-10); color: #b45309; }
 .hit { color: #15803d; }
 .miss { color: #b91c1c; }
 
-.dc7-report { padding: 10px 12px; border-radius: 8px; background: #f8fafc; font-size: 12px; line-height: 1.9; }
+.dc7-report { padding: 10px 12px; border-radius: 8px; background: #f8fafc; font-size: var(--font-sm); line-height: 1.9; }
 .dc7-report p { margin: 0; }
-.dc7-written { margin-bottom: 8px; padding: 6px 10px; border-radius: 6px; background: #f0fdf4; color: #166534; font-size: 12px; }
+.dc7-written { margin-bottom: 8px; padding: 6px 10px; border-radius: 6px; background: #f0fdf4; color: #166534; font-size: var(--font-sm); }
 .dc7-written em { font-style: normal; color: #4d7c0f; }
-.dc7-summary { width: 100%; padding: 6px 8px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 6px; font-size: 12px; font-family: inherit; resize: vertical; }
-.dc7-ok { font-size: 12px; color: #15803d; }
-.dc7-veto-warn { margin: 6px 0 0; font-size: 11px; color: #b45309; }
+.dc7-summary { width: 100%; padding: 6px 8px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 6px; font-size: var(--font-sm); font-family: inherit; resize: vertical; }
+.dc7-ok { font-size: var(--font-sm); color: #15803d; }
+.dc7-veto-warn { margin: 6px 0 0; font-size: var(--font-xs); color: #b45309; }
 
-.dc7-logdate { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 6px; font-size: 11px; }
+.dc7-logdate { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 6px; font-size: var(--font-xs); }
 .dc7-logdate label { display: flex; align-items: center; gap: 5px; color: var(--el-text-color-secondary, #667); }
-.dc7-logdate input { padding: 3px 6px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 4px; font-size: 11px; }
+.dc7-logdate input { padding: 3px 6px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 4px; font-size: var(--font-xs); }
 .dc7-logdate.backfill { padding: 5px 8px; border-radius: 6px; background: #fffbeb; }
-.dc7-logdate.backfill em { font-style: normal; color: #92400e; font-size: 11px; }
+.dc7-logdate.backfill em { font-style: normal; color: #92400e; font-size: var(--font-xs); }
 
 .dc7-market { margin-top: 10px; padding: 8px 10px; border: 1px solid var(--el-border-color-lighter, #ebeef5); border-radius: 8px; }
-.dc7-market h4 { margin: 0 0 6px; font-size: 12px; }
-.dc7-market-stats { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; font-variant-numeric: tabular-nums; }
+.dc7-market h4 { margin: 0 0 6px; font-size: var(--font-sm); }
+.dc7-market-stats { display: flex; gap: 14px; flex-wrap: wrap; font-size: var(--font-sm); font-variant-numeric: tabular-nums; }
 .dc7-market-hours { margin-top: 6px; }
-.dc7-market-hours summary { display: flex; align-items: center; gap: 8px; font-size: 11px; font-weight: 600; cursor: pointer; }
-.dc7-market-hours summary em { font-style: normal; font-weight: 400; font-size: 10px; color: #92400e; }
+.dc7-market-hours summary { display: flex; align-items: center; gap: 8px; font-size: var(--font-xs); font-weight: 600; cursor: pointer; }
+.dc7-market-hours summary em { font-style: normal; font-weight: 400; font-size: var(--font-10); color: #92400e; }
 .dc7-peak td { background: #fef2f2; }
 .dc7-valley td { background: #f0fdf4; }
 
 .dc7-reminders { margin-top: 10px; padding: 8px 10px; border: 1px solid #bfdbfe; border-radius: 8px; background: #f8fbff; }
-.dc7-reminders h4 { display: flex; align-items: center; gap: 5px; margin: 0 0 4px; font-size: 12px; }
-.dc7-reminders ul { margin: 0 0 6px; padding-left: 18px; font-size: 12px; line-height: 1.8; }
+.dc7-reminders h4 { display: flex; align-items: center; gap: 5px; margin: 0 0 4px; font-size: var(--font-sm); }
+.dc7-reminders ul { margin: 0 0 6px; padding-left: 18px; font-size: var(--font-sm); line-height: 1.8; }
 .dc7-empty-li { color: var(--el-text-color-secondary, #667); list-style: none; }
-.dc7-send-note { margin: 6px 0 0; font-size: 10px; color: var(--el-text-color-secondary, #889); }
+.dc7-send-note { margin: 6px 0 0; font-size: var(--font-10); color: var(--el-text-color-secondary, #889); }
 @media (max-width: 760px) {
   .dc7-table { display: block; overflow-x: auto; }
 }

@@ -1,4 +1,4 @@
-// 斜杠指令注册中心（类似 Claude Code / Codex 的 slash command）。
+// 斜杠指令注册中心。
 // 纯逻辑、无 Vue 依赖：宿主组件（AiAssistant / AgentChatPanel）通过 CommandContext
 // 注入各自的动作实现，输入框集成见 src/composables/useSlashInput.ts。
 import { buildCatalog } from '@/services/aiNavigator'
@@ -36,7 +36,7 @@ export type SlashCommand = {
   run: (ctx: CommandContext) => void | Promise<void>
 }
 
-// ── 工具函数 ──
+// 工具函数
 
 // 解析 "/nav 现货 价格" → { name: 'nav', args: '现货 价格' }；非斜杠输入返回 null
 export function parseSlashInput(text: string): { name: string; args: string } | null {
@@ -73,7 +73,7 @@ export function filterCommands(list: SlashCommand[], query: string): SlashComman
   return scored.sort((a, b) => b.score - a.score).map((x) => x.c)
 }
 
-// ── 内置指令 ──
+// 内置指令
 
 function helpText(host: CommandHost): string {
   const cmds = getCommands(host)

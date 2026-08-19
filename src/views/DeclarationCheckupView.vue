@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// 申报体检（#1527 PoC 第二切片）：pi harness 驱动的既有场景迁移验证——查行情 →
+// 申报体检（#1527 PoC 第二切片）：pi harness 驱动的既有场景迁移验证，查行情 →
 // 沙箱实算体检 → 业务语义审批卡 → 人批准后落库申报台 DRAFT（submit 永不可执行）。
 // AgentChatPanel 零改动接流（scenario→base 路由在 agentClient 服务层，/pi-api → 8100）。
 // 「自动执行授权」开关 = --dangerously-skip-permissions 类比：人亲手开启后 L1 业务写
@@ -8,7 +8,7 @@
 import { ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import AgentChatPanel from '@/components/agent/AgentChatPanel.vue'
-import { identityHeaders } from '@/services/agent/agentClient'
+import { setSessionAutoApprove } from '@/services/agent/piPocClient'
 
 const sessionId = ref('')
 const autoApprove = ref(false)
@@ -23,13 +23,7 @@ async function toggleAutoApprove(enabled: string | number | boolean) {
   if (!sessionId.value) return
   toggling.value = true
   try {
-    const res = await fetch(`/pi-api/agent/sessions/${encodeURIComponent(sessionId.value)}/auto-approve`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', ...identityHeaders() },
-      body: JSON.stringify({ enabled: enabled === true })
-    })
-    if (!res.ok) throw new Error(`HTTP ${res.status}`)
-    autoApprove.value = ((await res.json()) as { auto_approve?: boolean }).auto_approve === true
+    autoApprove.value = await setSessionAutoApprove(sessionId.value, enabled === true)
     ElMessage.success(autoApprove.value
       ? '已开启本会话自动执行授权：落库草稿不再逐次审批（对外提交仍永不自动）'
       : '已关闭自动执行授权：业务写操作恢复逐次审批')
@@ -78,8 +72,8 @@ async function toggleAutoApprove(enabled: string | number | boolean) {
 <style scoped>
 .declaration-checkup { display: flex; flex-direction: column; gap: 12px; height: 100%; }
 .page-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
-.page-head h2 { margin: 0 0 4px; font-size: 18px; }
-.page-head .sub { margin: 0; color: var(--el-text-color-secondary); font-size: 13px; }
+.page-head h2 { margin: 0 0 4px; font-size: var(--font-18); }
+.page-head .sub { margin: 0; color: var(--el-text-color-secondary); font-size: var(--font-md); }
 .auto-approve { display: flex; align-items: center; gap: 8px; white-space: nowrap; padding-top: 4px; }
-.aa-label { font-size: 13px; color: var(--el-text-color-secondary); cursor: help; }
+.aa-label { font-size: var(--font-md); color: var(--el-text-color-secondary); cursor: help; }
 </style>

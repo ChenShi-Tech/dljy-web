@@ -104,7 +104,7 @@ onMounted(load)
 
 onRegionChange(load)
 
-// ─────────── ECharts calendar 热力图：每日申报/交易标记密度 ───────────
+// ECharts calendar 热力图：每日申报/交易标记密度
 
 /**
  * 派生热力图数据：遍历 byDate 全量数据，
@@ -246,27 +246,27 @@ function buildCalendarOption(): Record<string, unknown> {
 <style scoped>
 .cal { padding: 16px 20px; background: var(--el-fill-color-light); min-height: calc(100vh - 90px); }
 .head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
-.title { font-size: 22px; font-weight: 700; color: var(--text); }
+.title { font-size: var(--font-22); font-weight: 700; color: var(--text); }
 .ops { display: flex; gap: 8px; }
 .degraded-card { border: 1px solid color-mix(in srgb, var(--warning, #d97706) 35%, var(--line)); background: color-mix(in srgb, var(--warning, #d97706) 8%, var(--panel)); border-radius: 8px; padding: 14px 16px; color: var(--text); }
-.degraded-title { font-size: 14px; font-weight: 700; margin-bottom: 6px; }
-.degraded-text { font-size: 13px; color: var(--muted); line-height: 1.6; }
+.degraded-title { font-size: var(--font-lg); font-weight: 700; margin-bottom: 6px; }
+.degraded-text { font-size: var(--font-md); color: var(--muted); line-height: 1.6; }
 .grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 8px; }
-.wd { text-align: center; font-size: 15px; font-weight: 600; color: var(--el-text-color-regular); padding: 6px 0; }
+.wd { text-align: center; font-size: var(--font-15); font-weight: 600; color: var(--el-text-color-regular); padding: 6px 0; }
 .cell { background: var(--panel); border-radius: 8px; min-height: 96px; padding: 8px 10px; box-shadow: 0 1px 3px rgba(0,0,0,.04); border: 1px solid transparent; }
 .cell.out { background: var(--panel-sub); }
 .cell.blue { border-color: var(--line); background: var(--panel-sub); }
 .cell.today { border-color: var(--el-color-primary); box-shadow: 0 0 0 2px rgba(64,158,255,.25); }
-.num { font-size: 18px; font-weight: 700; color: var(--el-text-color-primary); }
+.num { font-size: var(--font-18); font-weight: 700; color: var(--el-text-color-primary); }
 .cell.out .num { color: var(--el-text-color-disabled); }
 .num.blue { color: var(--el-color-primary); }
-.num.today { display: inline-block; background: var(--el-color-primary); color: #fff; border-radius: 50%; width: 28px; height: 28px; line-height: 28px; text-align: center; font-size: 15px; }
-.win { font-size: 13px; font-weight: 600; margin-top: 4px; line-height: 1.3; }
-.prod { font-size: 12px; margin-top: 2px; line-height: 1.3; }
+.num.today { display: inline-block; background: var(--el-color-primary); color: #fff; border-radius: 50%; width: 28px; height: 28px; line-height: 28px; text-align: center; font-size: var(--font-15); }
+.win { font-size: var(--font-md); font-weight: 600; margin-top: 4px; line-height: 1.3; }
+.prod { font-size: var(--font-sm); margin-top: 2px; line-height: 1.3; }
 .green { color: var(--success); }
 .grey { color: var(--el-text-color-disabled); }
 .mb { margin-bottom: 12px; }
-.src { color: var(--el-text-color-secondary); font-size: 12px; margin: 14px 0 0; }
+.src { color: var(--el-text-color-secondary); font-size: var(--font-sm); margin: 14px 0 0; }
 .src code { color: var(--el-color-primary); }
 .lg-blue { color: var(--line); } .lg-green { color: var(--success); } .lg-grey { color: var(--el-text-color-disabled); }
 
@@ -274,11 +274,11 @@ function buildCalendarOption(): Record<string, unknown> {
 @media (max-width: 768px) {
   .cal { padding: 10px 12px; }
   .head { flex-wrap: wrap; gap: 8px; }
-  .title { font-size: 18px; }
+  .title { font-size: var(--font-18); }
   .grid { min-width: 560px; }
   .cal { overflow-x: auto; }
   .cell { min-height: 72px; padding: 6px 6px; }
-  .num { font-size: 15px; }
-  .wd { font-size: 12px; }
+  .num { font-size: var(--font-15); }
+  .wd { font-size: var(--font-sm); }
 }
 </style>

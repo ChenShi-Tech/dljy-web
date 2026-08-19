@@ -1,6 +1,6 @@
 // 预测中心整合（P3：8 页 → 1 页多 tab，项目路线图既定项）。
 // cfg 在此单一维护：独立路由页（保留，深链/收藏不破坏）与整合页 tab 共用同一份配置。
-// 整合页按 canAccessPath(sourceRoute) 过滤 tab —— 不扩大任何角色的原有可见范围。
+// 整合页按 canAccessPath(sourceRoute) 过滤 tab：不扩大任何角色的原有可见范围。
 
 export type ForecastCfg = {
   family: string
@@ -51,7 +51,7 @@ export const FORECAST_HUB_TABS: ForecastHubTab[] = [
   { key: 'pricePrediction', title: '日滚动价格预测', kind: 'rolling', sourceRoute: '/ycsj/pricePrediction' },
   { key: 'jgyc', title: '价格预测', kind: 'multi', cfg: FORECAST_CFGS.jgyc, sourceRoute: '/ycsj/jgyc' },
   // 云南官方披露对照（epic #336 PR-B2）：南网官方 D-1 预测 vs 实际（yn_system_forecast 真实回放，
-  // captured 非模型输出）；sourceRoute 用披露明细权限路径——与云南工作台「披露明细」tab/
+  // captured 非模型输出）；sourceRoute 用披露明细权限路径，与云南工作台「披露明细」tab/
   // 首页披露侧卡同一细粒度门控（PLANT/STORAGE 等只有 hub 权限的角色不得经本 tab 绕过读披露）。
   { key: 'yn-disclosure', title: '云南披露对照', kind: 'yn-disclosure', sourceRoute: '/xhjy/yunnan/disclosure' },
   { key: 'gsfhyc', title: '负荷预测', kind: 'daily', cfg: FORECAST_CFGS.gsfhyc, sourceRoute: '/ycsj/gsfhyc' },

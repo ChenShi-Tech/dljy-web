@@ -39,11 +39,11 @@ const segments = computed<Seg[]>(() => {
 <style scoped>
 .mic-narr { border: 1px solid var(--line-soft, #e5e7eb); border-radius: 12px; background: var(--panel, #fff); padding: 14px; }
 header { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
-h3 { margin: 0; font-size: 15.5px; color: var(--text, #111827); }
-.sub { font-size: 11.5px; color: var(--muted, #667085); }
+h3 { margin: 0; font-size: var(--font-15-5); color: var(--text, #111827); }
+.sub { font-size: var(--font-11-5); color: var(--muted, #667085); }
 .segs { display: flex; flex-direction: column; gap: 12px; }
-.seg-h { display: flex; align-items: center; gap: 7px; font-size: 13px; font-weight: 600; color: var(--primary, #0f766e); margin-bottom: 4px; }
-.idx { width: 17px; height: 17px; border-radius: 50%; background: var(--primary-tint, rgba(34, 211, 238, .16)); color: var(--primary, #0891b2); font-size: 11px; display: inline-flex; align-items: center; justify-content: center; flex: none; }
-.seg-b { margin: 0; font-size: 13px; color: var(--text-body, #344054); line-height: 1.65; white-space: pre-wrap; }
-.empty { margin: 0; color: var(--muted, #98a2b3); font-size: 13px; }
+.seg-h { display: flex; align-items: center; gap: 7px; font-size: var(--font-md); font-weight: 600; color: var(--primary, #0f766e); margin-bottom: 4px; }
+.idx { width: 17px; height: 17px; border-radius: 50%; background: var(--primary-tint, rgba(34, 211, 238, .16)); color: var(--primary, #0891b2); font-size: var(--font-xs); display: inline-flex; align-items: center; justify-content: center; flex: none; }
+.seg-b { margin: 0; font-size: var(--font-md); color: var(--text-body, #344054); line-height: 1.65; white-space: pre-wrap; }
+.empty { margin: 0; color: var(--muted, #98a2b3); font-size: var(--font-md); }
 </style>

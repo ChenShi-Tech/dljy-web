@@ -22,6 +22,9 @@ import ElasticityCurveCard from './insight/ElasticityCurveCard.vue'
 import SpreadArbitrageCard from './insight/SpreadArbitrageCard.vue'
 import NodePriceHeatCard from './insight/NodePriceHeatCard.vue'
 import MarketNarrativeCard from './insight/MarketNarrativeCard.vue'
+// review（复盘体系 #2033：#2038 预留位，#2042/#2043 转正消费）
+import PnLWaterfall from './review/PnLWaterfall.vue'
+import DeviationAttribution from './review/DeviationAttribution.vue'
 import TrustWatermark from '@/components/common/TrustWatermark.vue'
 
 const props = defineProps<{ block: DljyUiArtifactBlock }>()
@@ -49,7 +52,10 @@ const COMPONENTS: Record<string, Component> = {
   ElasticityCurveCard,
   SpreadArbitrageCard,
   NodePriceHeatCard,
-  MarketNarrativeCard
+  MarketNarrativeCard,
+  // review（复盘体系 #2033）
+  PnLWaterfall,
+  DeviationAttribution
 }
 
 const resolved = computed(() => COMPONENTS[props.block.component])
@@ -75,6 +81,6 @@ const resolved = computed(() => COMPONENTS[props.block.component])
   border-radius: 8px;
   color: #b91c1c;
   background: rgba(254, 226, 226, 0.45);
-  font-size: 12.5px;
+  font-size: var(--font-12-5);
 }
 </style>

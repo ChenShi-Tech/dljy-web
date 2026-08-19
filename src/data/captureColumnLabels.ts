@@ -5,17 +5,22 @@
 // 并让 CSV 导出同样带中文列名。
 //
 // 语义权威来源：
-//   - docs/data/mock-data-virtualization.md §4（每个 family/match 的 res.data 字段与量纲）
-//   - shared/schema/entities/capture-families.mjs（ROW_SCHEMAS 各族列定义）
-//   - shared/data-quality/rules.mjs（CAPTURE_QUALITY_RULES.expectedPointsPerDay：族声明的全天点数）
+// - docs/data/mock-data-virtualization.md §4（每个 family/match 的 res.data 字段与量纲）
+// - shared/schema/entities/capture-families.mjs（ROW_SCHEMAS 各族列定义）
+// - shared/data-quality/rules.mjs（CAPTURE_QUALITY_RULES.expectedPointsPerDay：族声明的全天点数）
 // 若上述来源调整字段口径，请同步维护本表。
 // ----------------------------------------------------------------------------
 
 import { getQualityRule } from 'shared/data-quality/rules.mjs'
 
+// 数据族清单 re-export：视图层禁直接 import shared/schema/**（DEVELOPMENT.md 分层约定；
+// 通用数据浏览器此前是唯一违例）。data 层是 schema 信息面向视图的合法出口
+// family 清单与列语义本就同源（ROW_SCHEMAS），在此一并取用零额外链路。
+export { CAPTURE_FAMILIES, CAPTURE_FAMILY_CODES } from 'shared/schema/entities/capture-families.mjs'
+
 // 固定字段：跨数据族语义基本一致的拼音缩写列。
 const STATIC_LABELS: Record<string, string> = {
-  // —— 日期 / 时间类 ——
+  // 日期 / 时间类
   date: '日期',
   riqi: '日期',
   rq: '日期',
@@ -30,7 +35,7 @@ const STATIC_LABELS: Record<string, string> = {
   sj2: '交易品种',
   czsj: '操作时间',
 
-  // —— 统计汇总类 ——
+  // 统计汇总类
   jz: '均值',
   hj: '合计',
   hjz: '合计值',
@@ -40,7 +45,7 @@ const STATIC_LABELS: Record<string, string> = {
   total: '合计',
   heji: '合计',
 
-  // —— 类型 / 主体类 ——
+  // 类型 / 主体类
   provId: '省份ID',
   type: '类型',
   jylx: '交易类型',
@@ -48,18 +53,18 @@ const STATIC_LABELS: Record<string, string> = {
   sdgs: '售电公司',
   czry: '操作人员',
 
-  // —— 平台文档（zptwd） ——
+  // 平台文档（zptwd）
   id: '编号',
   wdmc: '文档名称',
   wdjb: '文档级别',
   wddx: '文档大小',
   downloadPath: '下载路径',
 
-  // —— 数据字典（system_dict） ——
+  // 数据字典（system_dict）
   dictValue: '字典值',
   dictLabel: '字典标签',
 
-  // —— ENSO ONI 三月滑动季（El Niño / La Niña，sdpt_elninolanina） ——
+  // ENSO ONI 三月滑动季（El Niño / La Niña，sdpt_elninolanina）
   djf: '12-1-2月', jfm: '1-2-3月', fma: '2-3-4月', mam: '3-4-5月',
   amj: '4-5-6月', mjj: '5-6-7月', jja: '6-7-8月', jas: '7-8-9月',
   aso: '8-9-10月', son: '9-10-11月', ond: '10-11-12月', ndj: '11-12-1月',

@@ -1,5 +1,5 @@
 // 影子对拍口径单测（#1848 第二部分）。
-// 这里守的是「对拍数字可信」——阈值在服务端，但**喂进阈值的布尔值对不对**在这一层。
+// 这里守的是「对拍数字可信」，阈值在服务端，但喂进阈值的布尔值对不对在这一层。
 // 三条最容易错的：形状不能带工具名（否则永久假红）、副作用取自审批门（跨底座唯一可比的写动作口径）、
 // 「都失败」也算可用性一致（一致地坏不是回归，把它记成差异会误封升级闸）。
 
@@ -186,8 +186,10 @@ describe('splitTurnPayload 默认地区上下文 vs 其余上下文', () => {
 })
 
 describe('isComparableTurn 可对拍判定', () => {
+  // 样例场景取仍在灰度中的 declaration_prep：chat 已随 #2158 出灰度表（切流完成、
+  // 旧路径已删），isRolloutScenario('chat') 现在是 false，拿它当样例会永远不可对拍。
   const ok = {
-    isFirstTurn: true, scenario: 'chat', scenarioDeclared: true,
+    isFirstTurn: true, scenario: 'declaration_prep', scenarioDeclared: true,
     isShadowSession: false, hasExtraContext: false,
   }
 
@@ -195,7 +197,7 @@ describe('isComparableTurn 可对拍判定', () => {
     expect(isComparableTurn(ok)).toBe(true)
   })
 
-  it('未显式声明场景的调用不对拍：工作室自定义图不传 scenario，缺省 chat 会污染 chat 报告', () => {
+  it('未显式声明场景的调用不对拍：工作室自定义图不传 scenario，缺省值会污染对应场景的报告', () => {
     expect(isComparableTurn({ ...ok, scenarioDeclared: false })).toBe(false)
   })
 

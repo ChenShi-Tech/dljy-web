@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// 公式 artifact：KaTeX 渲染。支持多公式——按 \[ \] \( \) $$ $ 分隔符逐段渲染，
+// 公式 artifact：KaTeX 渲染。支持多公式，按 \[ \] \( \) $$ $ 分隔符逐段渲染，
 // 容忍 agent 输出的杂乱/多段分隔符；throwOnError:false 时非法片段以红色提示而不整体崩。
 import { computed } from 'vue'
 import 'katex/dist/katex.min.css'

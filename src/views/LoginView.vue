@@ -11,6 +11,7 @@ import loginPosterSrc from '../assets/login/power-market-quant-dashboard.png'
 import { ApiError } from '@/services/api'
 import { changePassword, login, type AuthUser } from '@/services/auth'
 import { canAccessPath, firstAccessiblePath } from '@/services/governance'
+import { requiresStanceSelection } from '@/services/stance/stanceContext'
 
 const loginVideoModules = import.meta.glob('../assets/login/power-market-login-loop.mp4', {
   eager: true,
@@ -211,6 +212,11 @@ function onPasswordInput() {
 
 function resolveLoginTarget(roleUser: Awaited<ReturnType<typeof login>>['user']) {
   const redirect = typeof route.query.redirect === 'string' ? route.query.redirect : ''
+  // 多立场账号未选立场 → 先落立场选择页（#2193），回跳目标透传。
+  // login() 内部已随 persistAuthUser 同步过立场集合，此处读到的是最新状态。
+  if (requiresStanceSelection()) {
+    return { path: '/select-stance', query: redirect ? { redirect } : {} }
+  }
   if (redirect && canAccessPath(redirect, roleUser)) {
     return redirect
   }
@@ -227,7 +233,7 @@ async function validateLoginForm() {
   return true
 }
 
-// —— 滑块验证：pointer 拖动，直观可靠 ——
+// 滑块验证：pointer 拖动，直观可靠
 const trackRef = ref<HTMLElement | null>(null)
 const dragX = ref(0)
 const HANDLE_W = 44
@@ -796,11 +802,11 @@ function formatDate(value: string) {
   box-shadow: 0 10px 26px -10px oklch(0.74 0.12 183 / 0.8), inset 0 1px 0 oklch(1 0 0 / 0.4);
 }
 .lp-brand-id { display: flex; flex-direction: column; line-height: 1.2; }
-.lp-brand-name { font-size: 15px; font-weight: 650; letter-spacing: 0.5px; color: var(--ink); }
+.lp-brand-name { font-size: var(--font-15); font-weight: 650; letter-spacing: 0.5px; color: var(--ink); }
 .lp-brand-sub {
   margin-top: 3px;
   font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 10.5px;
+  font-size: var(--font-10-5);
   letter-spacing: 0.22em;
   color: var(--teal);
   text-transform: uppercase;
@@ -906,7 +912,7 @@ function formatDate(value: string) {
   justify-content: space-between;
   margin-bottom: 22px;
   font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 11px;
+  font-size: var(--font-xs);
   letter-spacing: 0.06em;
 }
 .lp-secure {
@@ -953,7 +959,7 @@ function formatDate(value: string) {
   display: block;
   margin-bottom: 7px;
   font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 11px;
+  font-size: var(--font-xs);
   font-weight: 500;
   letter-spacing: 0.1em;
   text-transform: uppercase;
@@ -1011,13 +1017,13 @@ function formatDate(value: string) {
   justify-content: space-between;
   margin: 4px 0 22px;
 }
-.lp-row :deep(.el-checkbox__label) { color: var(--ink-2); font-size: 13px; }
+.lp-row :deep(.el-checkbox__label) { color: var(--ink-2); font-size: var(--font-md); }
 .lp-row :deep(.el-checkbox__inner) {
   background: var(--s2);
   border-color: var(--line-2);
 }
 .lp-link {
-  font-size: 13px;
+  font-size: var(--font-md);
   color: var(--teal-2);
   text-decoration: none;
   transition: color 0.15s;
@@ -1035,7 +1041,7 @@ function formatDate(value: string) {
   border: 0;
   border-radius: 11px;
   color: oklch(0.17 0.03 190);
-  font-size: 15px;
+  font-size: var(--font-15);
   font-weight: 700;
   letter-spacing: 0.32em;
   text-indent: 0.32em;
@@ -1082,7 +1088,7 @@ function formatDate(value: string) {
   position: relative;
   padding: 0 12px;
   background: oklch(0.205 0.02 193);
-  font-size: 12px;
+  font-size: var(--font-sm);
   color: var(--muted);
 }
 .lp-alt { display: flex; justify-content: center; }
@@ -1095,7 +1101,7 @@ function formatDate(value: string) {
   border-radius: 10px;
   background: var(--s1);
   color: var(--ink-2);
-  font-size: 13px;
+  font-size: var(--font-md);
   cursor: pointer;
   transition: border-color 0.2s, color 0.2s, background 0.2s;
 }
@@ -1106,14 +1112,14 @@ function formatDate(value: string) {
   border-radius: 6px;
   background: var(--el-color-primary);
   color: #fff;
-  font-size: 13px;
+  font-size: var(--font-md);
   font-weight: 700;
 }
 
 .lp-foot {
   margin: 22px 0 0;
   text-align: center;
-  font-size: 11px;
+  font-size: var(--font-xs);
   letter-spacing: 0.02em;
   color: oklch(0.66 0.012 190);
 }
@@ -1133,7 +1139,7 @@ function formatDate(value: string) {
 .sc-text {
   position: absolute; inset: 0;
   display: flex; align-items: center; justify-content: center;
-  font-size: 13px; color: var(--muted, var(--muted)); pointer-events: none; z-index: 1; letter-spacing: 1px;
+  font-size: var(--font-md); color: var(--muted, var(--muted)); pointer-events: none; z-index: 1; letter-spacing: 1px;
 }
 .slide-captcha.done .sc-text { color: oklch(0.18 0.03 190); font-weight: 600; }
 .sc-handle {
@@ -1144,10 +1150,10 @@ function formatDate(value: string) {
   cursor: grab; z-index: 2; touch-action: none;
 }
 .sc-handle:active { cursor: grabbing; }
-.sc-icon { font-size: 22px; font-weight: 700; line-height: 1; color: var(--teal-2, var(--primary)); }
+.sc-icon { font-size: var(--font-22); font-weight: 700; line-height: 1; color: var(--teal-2, var(--primary)); }
 .slide-captcha.done .sc-handle { background: var(--teal, var(--primary)); border-color: var(--teal, var(--primary)); }
 .slide-captcha.done .sc-icon { color: oklch(0.18 0.03 190); }
-.sc-hint { margin: 12px 0 2px; text-align: center; font-size: 12px; color: var(--muted, var(--muted)); }
+.sc-hint { margin: 12px 0 2px; text-align: center; font-size: var(--font-sm); color: var(--muted, var(--muted)); }
 
 .pwd-user {
   display: flex;
@@ -1160,7 +1166,7 @@ function formatDate(value: string) {
   background: oklch(0.74 0.1 184 / 0.08);
 }
 .pwd-user strong { color: var(--teal-2, var(--primary)); }
-.pwd-user span { color: var(--muted, var(--muted)); font-size: 12px; }
+.pwd-user span { color: var(--muted, var(--muted)); font-size: var(--font-sm); }
 .pwd-form :deep(.el-form-item) { margin-bottom: 14px; }
 
 /* ===== 响应式 ===== */

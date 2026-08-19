@@ -177,7 +177,7 @@ function submitSub() {
 function onToggleSub(id: string) { toggleSubscription(id); loadSubs() }
 function onRemoveSub(id: string) { removeSubscription(id); loadSubs() }
 
-// ── 生成队列 / 导出归档：生成与导出动作写回后端异步任务（含审计 traceId） ──
+// 生成队列 / 导出归档：生成与导出动作写回后端异步任务（含审计 traceId）
 // 闭环 tab 展示 = 本会话本地态（可流转）+ 后端种子；状态流转为前端演示态（后端 transition 端点待后续）。
 const localJobs = ref<ReportGenerationJob[]>([])
 const localArtifacts = ref<ReportExportArtifact[]>([])
@@ -435,8 +435,8 @@ onMounted(() => { registerReportBlocks(); loadClosedLoop(); loadSubs() })
 <style scoped>
 .report-center { padding: 16px; }
 .page-banner { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 12px; }
-.page-banner h2 { margin: 0; font-size: 20px; }
-.page-banner .sub { margin: 4px 0 0; color: var(--el-text-color-secondary, #909399); font-size: 13px; }
+.page-banner h2 { margin: 0; font-size: var(--font-20); }
+.page-banner .sub { margin: 4px 0 0; color: var(--el-text-color-secondary, #909399); font-size: var(--font-md); }
 .banner-tags { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .mock-alert { margin-bottom: 12px; }
 .card-title { font-weight: 600; }
@@ -446,13 +446,13 @@ onMounted(() => { registerReportBlocks(); loadClosedLoop(); loadSubs() })
 .tpl-item.active { border-color: var(--el-color-primary, #409eff); background: var(--el-color-primary-light-9, #ecf5ff); }
 .tpl-name { font-weight: 600; margin-bottom: 6px; }
 .tpl-meta { display: flex; gap: 6px; margin-bottom: 6px; }
-.tpl-subj { font-size: 12px; color: var(--el-text-color-secondary, #909399); }
+.tpl-subj { font-size: var(--font-sm); color: var(--el-text-color-secondary, #909399); }
 .preview { margin-top: 4px; }
 .tpl-filter { margin-bottom: 12px; }
 .summary-card { margin-bottom: 16px; }
 .summary-grid { display: flex; flex-wrap: wrap; gap: 12px 28px; }
 .sm-item { display: flex; align-items: center; gap: 8px; }
-.sm-label { font-size: 12px; color: var(--el-text-color-secondary, #909399); }
+.sm-label { font-size: var(--font-sm); color: var(--el-text-color-secondary, #909399); }
 .sm-val { font-weight: 600; }
 @media print {
   .page-banner, .mock-alert, .tpl-filter, .param-card, .tpl-list { display: none !important; }
@@ -460,5 +460,5 @@ onMounted(() => { registerReportBlocks(); loadClosedLoop(); loadSubs() })
   .report-center { padding: 0; }
   .summary-card, .block-card { break-inside: avoid; }
 }
-.row-muted { font-size: 12px; color: var(--el-text-color-secondary, #909399); }
+.row-muted { font-size: var(--font-sm); color: var(--el-text-color-secondary, #909399); }
 </style>

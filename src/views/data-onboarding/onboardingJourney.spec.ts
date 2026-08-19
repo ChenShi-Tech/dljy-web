@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { aggregateFreshness, deriveJourneySteps } from './onboardingJourney'
 
-// 数据接入向导旅程状态推导回归锁（#885）：与 verify:page-help 互补——守卫校验路由/docPath，
+// 数据接入向导旅程状态推导回归锁（#885）：与 verify:page-help 互补，守卫校验路由/docPath，
 // 本单测校验「五步状态折算行为」，防止 deriveJourneySteps 把缺信号误判为 done（诚实红线）。
 
 describe('deriveJourneySteps 旅程状态推导', () => {

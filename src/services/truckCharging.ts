@@ -1,21 +1,21 @@
 // 重卡充换电投资测算（逐年现金流重构版）
 //
 // 审计修复要点（对应审计编号）：
-// - A1/A5/G3：以「逐年现金流表」为唯一事实源 —— 等额本息下利息随贷款余额逐年递减、贷款期满本息归零、
-//   折旧仅在折旧年限内计提、所得税逐年计算（亏损年为 0，亏损结转未建模，见 buildYearlyCashFlow 注释）；
-//   IRR/NPV/回收期/现金流明细全部由同一张表推出，不再用「同一 equityCashFlow 平推 N 年」。
-// - A2/A3/E3：收入门控 —— 自有车付给自有站的充电服务费/电费属内部交易，合并口径下收入侧不计
-//   （成本侧只计一次购电成本，二选一取「收入侧剔除」）；纯充电站电费收入无条件计（平进平出+服务费）；
-//   混合/挂靠/外委按非自有车比例计对外充电收入。
+// - A1/A5/G3：以「逐年现金流表」为唯一事实源：等额本息下利息随贷款余额逐年递减、贷款期满本息归零、
+// 折旧仅在折旧年限内计提、所得税逐年计算（亏损年为 0，亏损结转未建模，见 buildYearlyCashFlow 注释）；
+// IRR/NPV/回收期/现金流明细全部由同一张表推出，不再用「同一 equityCashFlow 平推 N 年」。
+// - A2/A3/E3：收入门控：自有车付给自有站的充电服务费/电费属内部交易，合并口径下收入侧不计
+// （成本侧只计一次购电成本，二选一取「收入侧剔除」）；纯充电站电费收入无条件计（平进平出+服务费）；
+// 混合/挂靠/外委按非自有车比例计对外充电收入。
 // - A4：土地不参与折旧，折旧基数 = 总投资 − 土地费用；期末残值 = 设备残值 + 土地原值回收（简化口径：
-//   土地按原值一次性收回，不建模增值/摊销）。
+// 土地按原值一次性收回，不建模增值/摊销）。
 // - A7：现金流表覆盖全项目期（0..project_life），期末年含残值回收列。
 // - E1：目标 IRR 反算运价改为对主模型资本金 IRR 的二分搜索（区间自适应扩张），天然与主模型同口径；
-//   不收敛返回 NaN + converged:false。
+// 不收敛返回 NaN + converged:false。
 // - G1/C1/D1：电池更换资本性支出、两部制基本电费、增值税及附加的最小接线（参数化，默认保守）。
 // - C2/C3/D2/D3/F：电耗单源（由 kWh/km 电耗参数派生公里电费成本与充电功率，删除 1.5/1.1 魔数）、
-//   回程带货率独立参数、除零守卫显式化（safeDiv 返回 0，不再用 Math.max(1,x) 静默替换合法小数值）、
-//   贷款比例 100% 返回显式提示而非伪数值、折现率 0% 合法、敏感性只列对当前模式生效的参数。
+// 回程带货率独立参数、除零守卫显式化（safeDiv 返回 0，不再用 Math.max(1,x) 静默替换合法小数值）、
+// 贷款比例 100% 返回显式提示而非伪数值、折现率 0% 合法、敏感性只列对当前模式生效的参数。
 
 export type TruckChargingProjectType = 'truck' | 'charging' | 'integrated'
 export type TruckChargingCalcMode = 'by_truck' | 'by_volume'
@@ -240,7 +240,7 @@ const DEFAULT_SEGMENTS: TruckRouteSegment[] = [
   }
 ]
 
-// —— 口径常数（集中声明，不在算式里散落魔数）——
+// 口径常数（集中声明，不在算式里散落魔数）
 /** 日有效充电小时数：充电总功率 = 日充电量 / (有效小时 × 功率利用率)，即由充电量反推功率（C2） */
 const CHARGING_HOURS_PER_DAY = 10
 /** 充电功率利用率 */
@@ -545,7 +545,7 @@ export function calculateDailyTotalCharging(form: TruckChargingForm) {
   if (form.route_mode !== 'multi_segment') {
     // 电耗单源：与 calculateAverageEnergyConsumption 同一加权口径（C2）。
     // 口径修复（审查问题1）：车队日充电量 = 综合电耗 × 实际日行驶总里程（daily_mileage，往返总里程）×车数，
-    // 不再固定按 avg_transport_distance×2 一个往返推——只改 daily_mileage 时充电量/站功率/购电成本同步变化。
+    // 不再固定按 avg_transport_distance×2 一个往返推，只改 daily_mileage 时充电量/站功率/购电成本同步变化。
     return calculateAverageEnergyConsumption(form) * form.daily_mileage * totalTrucks
   }
 
@@ -734,7 +734,7 @@ function calculateTransportRevenueAndCost(form: TruckChargingForm, allocation: T
     const annualTransportVolume = form.calc_mode === 'by_volume'
       ? form.daily_transport_volume * form.operating_days
       : form.annual_transport_volume * 10000
-    // 口径修复（审查问题3）：daily_mileage 为往返总里程，运费只在载货里程上产生——
+    // 口径修复（审查问题3）：daily_mileage 为往返总里程，运费只在载货里程上产生
     // 载货里程 = 去程(daily_mileage/2) + 回程(daily_mileage/2 × return_load_factor)，
     // 与 calculateTruckCount 的「daily_mileage/(avg_transport_distance×2)」往返口径一致；
     // 默认 return_load_factor=0（回程空驶）时只有一半里程产生运费收入。
@@ -820,7 +820,7 @@ function buildDriverAnalysis(
   add('年车辆贷款本金', Math.max(0, annualLoanPaymentPerTruck - annualLoanInterestPerTruck))
   add('年工资', form.driver_salary)
 
-  // 口径修复（审查问题3）：司机运费收入与主模型同口径——只按载货里程（去程 + 回程×带货率）计
+  // 口径修复（审查问题3）：司机运费收入与主模型同口径，只按载货里程（去程 + 回程×带货率）计
   const loadedDailyMileage = (form.daily_mileage / 2) * (1 + clamp(form.return_load_factor, 0, 100) / 100)
   const avgIncome = form.operation_mode === 'owned'
     ? safeDiv(allocation.owned * loadedDailyMileage * form.truck_capacity * (form.load_factor / 100) * effectiveFreightRate * form.operating_days / 10000, vehicleCount)
@@ -877,7 +877,7 @@ function buildLoanSchedule(loanAmount: number, ratePercent: number, termYears: n
     const interest = balance * rate
     // 贷款末年清偿余额（消化浮点尾差），保证本金合计 = 贷款额；
     // 口径修复（审查问题2）：贷款期超过项目期（termYears > projectLife）时，
-    // 剩余未偿本金在项目期末年一次性清偿计入现金流——债务不得在测算期外凭空消失（否则虚增 NPV/IRR）。
+    // 剩余未偿本金在项目期末年一次性清偿计入现金流，债务不得在测算期外凭空消失（否则虚增 NPV/IRR）。
     const principal = year === termYears || year === projectLife ? balance : Math.min(payment - interest, balance)
     balance -= principal
     schedule.push({ interest, principal })
@@ -927,7 +927,7 @@ export function calculateTruckChargingInvestment(form: TruckChargingForm): Truck
     if (amount > 0) costBreakdown.push({ item, amount, ratio: 0 })
   }
 
-  // —— 充电站侧收入/成本门控（A2/A3/E3）——
+  // 充电站侧收入/成本门控（A2/A3/E3）
   // 对外比例：纯充电站全部对外；一体化下自有车充电属内部交易（合并口径收入侧不计，
   // 成本侧只计一次购电成本），挂靠/外委/混合按非自有车比例计对外收入。
   const externalRatio = form.project_type === 'charging' ? 1 : safeDiv(allocation.affiliated + allocation.outsourced, totalTrucks)
@@ -939,7 +939,7 @@ export function calculateTruckChargingInvestment(form: TruckChargingForm): Truck
     const usedDailyChargingPerStation = form.project_type === 'charging' ? form.daily_charging : derived.daily_charging_per_station
     const annualChargingKwh = form.charging_station_count * usedDailyChargingPerStation * form.operating_days
     chargingServiceRevenue = annualChargingKwh * form.service_fee / 10000 * externalRatio
-    // A3：电费收入不再受 operation_mode 门控 —— 对外充电电费平进平出（挂靠/外委/混合按比例，纯站全额）
+    // A3：电费收入不再受 operation_mode 门控：对外充电电费平进平出（挂靠/外委/混合按比例，纯站全额）
     electricityRevenue = annualChargingKwh * form.electricity_price / 10000 * externalRatio
     electricityPurchaseCost = annualChargingKwh * form.electricity_price / 10000
     addRevenue('充电服务收入', chargingServiceRevenue)
@@ -973,7 +973,7 @@ export function calculateTruckChargingInvestment(form: TruckChargingForm): Truck
   // 此处 costBreakdown 仅含付现经营成本（含挂靠/外委支出），利息/本金/税金在逐年表内单列
   const operatingCost = costBreakdown.reduce((sum, row) => sum + row.amount, 0)
 
-  // —— 增值税及附加最小接线（D1）——
+  // 增值税及附加最小接线（D1）
   // 价税分离：运费类收入按 9% 销项、充电服务费/电费按 vat_rate（默认 13%）销项，
   // 购电成本按 vat_rate 进项抵扣；应纳增值税 = 销项 − 进项（为负不建模留抵结转，取 0）；
   // 附加税 = 增值税 × 12% 计入付现成本。vat_rate=0 视为不启用增值税链条。
@@ -988,7 +988,7 @@ export function calculateTruckChargingInvestment(form: TruckChargingForm): Truck
   const vatPayable = Math.max(0, outputVat - inputVat)
   const vatSurcharge = vatPayable * VAT_SURCHARGE_RATE
 
-  // —— 投资、融资与折旧口径 ——
+  // 投资、融资与折旧口径
   const loanAmount = totalInvestment * (form.loan_ratio / 100)
   const equity = totalInvestment - loanAmount
   const projectLife = Math.max(1, Math.round(form.project_life))
@@ -1009,7 +1009,7 @@ export function calculateTruckChargingInvestment(form: TruckChargingForm): Truck
   const batteryYear = Math.round(form.battery_replacement_year)
   const batteryCapexTotal = allocation.owned * form.battery_replacement_cost
 
-  // —— 逐年现金流表（A1/A5/G3 核心）：IRR/NPV/回收期/明细全部从这张表推出 ——
+  // 逐年现金流表（A1/A5/G3 核心）：IRR/NPV/回收期/明细全部从这张表推出
   // 各年收入与经营成本按首年水平平推（未建模增长率），逐年差异来自利息递减、本金偿还、
   // 折旧期限、所得税与电池更换资本性支出。
   const years: Array<{
@@ -1051,7 +1051,7 @@ export function calculateTruckChargingInvestment(form: TruckChargingForm): Truck
     })
   }
 
-  // —— 指标：全部由逐年表推出 ——
+  // 指标：全部由逐年表推出
   let equityIrr: number
   let npv: number
   let paybackPeriod: number
@@ -1083,7 +1083,7 @@ export function calculateTruckChargingInvestment(form: TruckChargingForm): Truck
     if (!Number.isFinite(paybackPeriod)) warnings.push('项目期内资本金未回收，回收期无定义')
   }
 
-  // —— 现金流明细表：覆盖全项目期（0..project_life），期末年含残值列（A7）——
+  // 现金流明细表：覆盖全项目期（0..project_life），期末年含残值列（A7）
   const cashFlow: TruckChargingCashFlowRow[] = []
   let cumulativeCashFlowTable = -equity
   cashFlow.push({
@@ -1106,7 +1106,7 @@ export function calculateTruckChargingInvestment(form: TruckChargingForm): Truck
     })
   })
 
-  // —— 首年口径的成本/利润快照（供指标卡与构成表展示）——
+  // 首年口径的成本/利润快照（供指标卡与构成表展示）
   const firstYear = years[0]
   if (firstYear.interest > 0) costBreakdown.push({ item: '贷款利息（首年）', amount: firstYear.interest, ratio: 0 })
   if (firstYear.principal > 0) costBreakdown.push({ item: '贷款本金（首年）', amount: firstYear.principal, ratio: 0 })

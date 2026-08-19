@@ -358,7 +358,7 @@ function onNodeInput(value: unknown) {
 
 .spot-filter-bar__field > span {
   color: #50616e;
-  font-size: 12px;
+  font-size: var(--font-sm);
   font-weight: 650;
 }
 

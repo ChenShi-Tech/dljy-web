@@ -1,21 +1,19 @@
-// ============================================================================
 // 地区隔离运行时矩阵（Epic #1431 S3 · ADR 裁决五 / 二轮评审 B3）
 // ----------------------------------------------------------------------------
 // 定位：静态声明快照只能证明「声明态没变」，证明不了「运行时没有跨地区/跨公司读取」。
-// 本矩阵是**运行时正反例**，完全自包含（纯函数 + 内联 fixture，不依赖任何私有数据、
-// 不起服务、不触网），因此绝不会因缺数据 SKIP——直接补上 verify-strict-region-replay
+// 本矩阵是运行时正反例，完全自包含（纯函数 + 内联 fixture，不依赖任何私有数据、
+// 不起服务、不触网），因此绝不会因缺数据 SKIP，直接补上 verify-strict-region-replay
 // 仅抽 4 个云南样本且可整体 SKIP 的缺口。
 //
-// 挂载：`npm run test:unit`（ci-local quick 档 + CI Quality Gate）⇒ **PR 合并前必跑**（B3 硬要求）。
+// 挂载：`npm run test:unit`（ci-local quick 档 + CI Quality Gate）⇒ PR 合并前必跑（B3 硬要求）。
 //
 // 六维覆盖（每维正反例）：
-//   ① crossRegion 正例（真·全国通用族允许跨地区）
-//   ② 同 gridScope 正例 + 跨电网负例（国网通用族不得服务南网地区）
-//   ③ company owner 正例 + 非归属负例（被拒不得回退 Mock）
-//   ④ 未知/未配置地区（serving-route 无路由 → 诚实空态，不回落基线）
-//   ⑤ 未登记 capability（fail-closed，不放行）
-//   ⑥ 切区后缓存失效（缓存键必须含地区，不得跨地区复用）
-// ============================================================================
+// ① crossRegion 正例（真·全国通用族允许跨地区）
+// ② 同 gridScope 正例 + 跨电网负例（国网通用族不得服务南网地区）
+// ③ company owner 正例 + 非归属负例（被拒不得回退 Mock）
+// ④ 未知/未配置地区（serving-route 无路由 → 诚实空态，不回落基线）
+// ⑤ 未登记 capability（fail-closed，不放行）
+// ⑥ 切区后缓存失效（缓存键必须含地区，不得跨地区复用）
 
 import { describe, expect, it } from 'vitest'
 import {
@@ -135,7 +133,7 @@ describe('⑤ 未登记 capability：fail-closed 不放行', () => {
   })
 })
 
-describe('⑦ 插槽渲染双闸：角色权限 × 地区能力（codex P1 回归锚）', () => {
+describe('⑦ 插槽渲染双闸：角色权限 × 地区能力（回归锚）', () => {
   // 插槽注册携带 capabilityPath 时，内核必须同时过 canAccessPath（RBAC）与
   // isPathAvailableInRegion（地区能力）。只查前者会让 ADMIN/BOSS 绕过地区闸门，
   // 也会让「甲省 capabilityPath 误注册给乙省」在乙省渲染出不该出现的面板。
@@ -153,9 +151,9 @@ describe('⑦ 插槽渲染双闸：角色权限 × 地区能力（codex P1 回�
 })
 
 describe('⑥ 切区缓存失效：缓存键必须含地区维度', () => {
-  // 直接断言**生产实现**（gridGeo 缓存模块导出、client.ts::cacheScope 唯一调用的
+  // 直接断言生产实现（gridGeo 缓存模块导出、client.ts::cacheScope 唯一调用的
   // key builder）：在测试里复制一份期望实现，会让生产函数漏掉地区/公司维度时依然
-  // 全绿（codex P1）。
+  // 全绿。
 
   it('同公司切地区 ⇒ 键不同，旧地区响应不会被复用', () => {
     expect(buildGridGeoCacheScope('yunnan', 'c1')).not.toBe(buildGridGeoCacheScope('shanxi', 'c1'))
@@ -177,7 +175,7 @@ describe('⑥ 切区缓存失效：缓存键必须含地区维度', () => {
   it('机制画像随地区变化（消费方切区必须重算，不得缓存跨地区结果）', () => {
     const yunnan = resolveMechanismProfile('yunnan', 'clearing_price')
     const shanxi = resolveMechanismProfile('shanxi', 'clearing_price')
-    // 原先用 daRtSeparated 作为差异证据，#1531 后两地区都是 true（山西也接上真分价了）——
+    // 原先用 daRtSeparated 作为差异证据，#1531 后两地区都是 true（山西也接上真分价了）
     // 改用仍然逐地区不同的字段：原生粒度（云南 60min / 山西 15min）与电网归属。
     expect(yunnan.granularityNative.value).not.toBe(shanxi.granularityNative.value)
     expect(yunnan.gridOperator.value).not.toBe(shanxi.gridOperator.value)

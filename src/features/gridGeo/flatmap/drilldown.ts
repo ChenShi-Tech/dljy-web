@@ -1,7 +1,7 @@
 // 地市州下钻的纯几何判定（#1424）。
 //
-// 下钻语义：点击地市州**不是**切到县区行政图，而是把省图收窄到该地州范围，并把资产、
-// 节点、网架要素筛成「落在该地州内」的子集——交易关心的是断面阻塞与节点价差，不是区县边界。
+// 下钻语义：点击地市州不是切到县区行政图，而是把省图收窄到该地州范围，并把资产、
+// 节点、网架要素筛成「落在该地州内」的子集，交易关心的是断面阻塞与节点价差，不是区县边界。
 //
 // 因此需要三件事：地州的经纬包围盒（定视角）、点是否在其多边形内（定归属）、
 // 以及包围盒转 bounds 查询串（收窄 topology 视口，复用 Cesium 那侧的 "w,s,e,n" 口径）。
@@ -32,7 +32,7 @@ function isRingList(value: unknown): value is Ring[] {
 
 /**
  * 把 Polygon / MultiPolygon 统一成「多边形列表」，每个多边形是环列表（首环为外环，其余为洞）。
- * 其他几何类型（行政边界不该出现的 Point/LineString）返回空——宁可判定为「无法归属」，
+ * 其他几何类型（行政边界不该出现的 Point/LineString）返回空，宁可判定为「无法归属」，
  * 也不猜一个包围盒出来。
  */
 function toPolygons(feature: BoundaryFeature): Ring[][] {
@@ -80,7 +80,7 @@ export function collectionBBox(features: BoundaryFeature[]): BBox | null {
 /**
  * 点是否落在该地州内。
  *
- * 按 GeoJSON 的 even-odd 规则对多边形的**所有**环累计射线交点：外环让状态翻进去、
+ * 按 GeoJSON 的 even-odd 规则对多边形的所有环累计射线交点：外环让状态翻进去、
  * 洞再翻出来，飞地（MultiPolygon）逐个多边形试。这样无需区分外环与洞的绕向，
  * 也能正确处理「地州内的插花地」。
  */
@@ -120,10 +120,10 @@ function topologyPositions(feature: GridTopologyFeature): Array<[number, number]
 }
 
 /**
- * 网架要素是否与该地州相关：**任一顶点**落在地州内即算。
+ * 网架要素是否与该地州相关：任一顶点落在地州内即算。
  *
  * 有意不用「全部顶点在内」：送出断面与联络线本身就是跨地州的，要求全包含会把下钻最想看的
- * 那批要素全滤掉——地州视图里「一头在本地州、另一头送出去」正是关注对象。
+ * 那批要素全滤掉，地州视图里「一头在本地州、另一头送出去」正是关注对象。
  */
 export function topologyFeatureInBoundary(feature: GridTopologyFeature, boundary: BoundaryFeature): boolean {
   return topologyPositions(feature).some(([longitude, latitude]) => pointInBoundary(boundary, longitude, latitude))

@@ -79,8 +79,8 @@ function update(key: string, value: unknown) {
 <style scoped>
 .param-panel { display: flex; flex-direction: column; gap: 10px; }
 .param-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.param-label { min-width: 168px; color: var(--el-text-color-regular); font-size: 13px; font-weight: 600; }
+.param-label { min-width: 168px; color: var(--el-text-color-regular); font-size: var(--font-md); font-weight: 600; }
 .param-slider { width: 280px; }
-.param-unit { color: var(--el-text-color-secondary); font-size: 12px; }
-.param-empty { color: var(--el-text-color-secondary); font-size: 13px; padding: 6px 0; }
+.param-unit { color: var(--el-text-color-secondary); font-size: var(--font-sm); }
+.param-empty { color: var(--el-text-color-secondary); font-size: var(--font-md); padding: 6px 0; }
 </style>

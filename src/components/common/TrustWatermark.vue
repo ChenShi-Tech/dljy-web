@@ -51,7 +51,7 @@ const text = computed(() => trustWatermark(props.basis))
   bottom: 0;
   z-index: 3;
   padding: 3px 10px;
-  font-size: 11px;
+  font-size: var(--font-xs);
   line-height: 1.4;
   font-family: var(--ck-mono, 'SF Mono', 'JetBrains Mono', ui-monospace, monospace);
   font-variant-numeric: tabular-nums;

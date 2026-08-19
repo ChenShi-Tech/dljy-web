@@ -233,7 +233,7 @@ function formatDate(value?: string | null) {
   align-items: center;
   gap: 6px;
   color: var(--primary);
-  font-size: 13px;
+  font-size: var(--font-md);
   font-weight: 650;
 }
 
@@ -271,12 +271,12 @@ function formatDate(value?: string | null) {
 
 .metric strong {
   color: var(--primary);
-  font-size: 20px;
+  font-size: var(--font-20);
 }
 
 .metric span {
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 .sessions-panel {

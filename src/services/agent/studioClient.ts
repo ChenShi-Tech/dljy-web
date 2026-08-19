@@ -23,7 +23,7 @@ function studioSignal(timeoutMs = STUDIO_TIMEOUT_MS): AbortSignal | undefined {
   return timeoutSignal(timeoutMs)
 }
 
-// ── GraphSpec 镜像（与后端 graph_spec.py 对齐） ──────────────────────────────
+// GraphSpec 镜像（与后端 graph_spec.py 对齐）
 export type NodeType = 'start' | 'end' | 'agent' | 'tool' | 'map' | 'report' | 'condition' | 'approval'
 
 export type GraphNodeSpec = {
@@ -137,7 +137,7 @@ export function roleMeta(role?: string | null): RoleMeta | undefined {
   return ROLE_META.find((r) => r.role === role)
 }
 
-// ── HTTP 辅助 ──────────────────────────────────────────────────────────────
+// HTTP 辅助
 async function jsonOrThrow<T>(res: Response): Promise<T> {
   if (!res.ok) {
     let detail = `${res.status}`
@@ -165,7 +165,7 @@ async function jsonOrThrow<T>(res: Response): Promise<T> {
   return (await res.json()) as T
 }
 
-// ── 模板 / 校验 ────────────────────────────────────────────────────────────
+// 模板 / 校验
 export async function fetchTemplates(): Promise<GraphSpec[]> {
   const data = await jsonOrThrow<{ templates: GraphSpec[] }>(
     await fetch(`${BASE}/graphs/templates`, { headers: ownerHeaders(), signal: studioSignal() })
@@ -207,7 +207,7 @@ export async function generateGraphFromNl(description: string, name = ''): Promi
   return (await res.json()) as NlGraphResult
 }
 
-// ── CRUD ───────────────────────────────────────────────────────────────────
+// CRUD
 export async function listGraphs(): Promise<GraphSummary[]> {
   const data = await jsonOrThrow<{ graphs: GraphSummary[] }>(
     await fetch(`${BASE}/graphs`, { headers: ownerHeaders(), signal: studioSignal() })
@@ -253,7 +253,7 @@ export async function deleteGraph(id: string): Promise<void> {
   )
 }
 
-// ── 运行：编译并开会话，返回 session id（运行流走 agentClient 的 SSE） ──────
+// 运行：编译并开会话，返回 session id（运行流走 agentClient 的 SSE）
 export async function createGraphRun(
   body: { spec?: GraphSpec; graph_id?: string; title?: string }
 ): Promise<GraphRunResult> {
@@ -267,7 +267,7 @@ export async function createGraphRun(
   )
 }
 
-// ── 工具目录（tool 节点用） ──────────────────────────────────────────────────
+// 工具目录（tool 节点用）
 export async function fetchToolCatalog(): Promise<ToolCatalogItem[]> {
   const data = await jsonOrThrow<{ tools: ToolCatalogItem[] }>(
     await fetch(`${BASE}/graphs/tool-catalog`, { headers: ownerHeaders(), signal: studioSignal() })
@@ -275,7 +275,7 @@ export async function fetchToolCatalog(): Promise<ToolCatalogItem[]> {
   return data.tools
 }
 
-// ── 运行历史 ────────────────────────────────────────────────────────────────
+// 运行历史
 export async function listRuns(limit = 50): Promise<RunSummary[]> {
   const data = await jsonOrThrow<{ runs: RunSummary[] }>(
     await fetch(`${BASE}/runs?limit=${encodeURIComponent(limit)}`, {

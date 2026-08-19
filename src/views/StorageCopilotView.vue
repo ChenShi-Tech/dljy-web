@@ -922,7 +922,7 @@ onRegionChange(() => {
   border-radius: 999px;
   background: rgba(15, 118, 110, 0.1);
   color: var(--primary, #0f766e);
-  font-size: 12px;
+  font-size: var(--font-sm);
   font-weight: 600;
   white-space: nowrap;
 }
@@ -956,13 +956,13 @@ onRegionChange(() => {
   border-radius: 999px;
   background: #fff;
   border: 1px solid var(--line-soft, #e5e7eb);
-  font-size: 12px;
+  font-size: var(--font-sm);
   color: var(--text-body, #344054);
 }
 
 .intent-patch em {
   color: var(--muted, #667085);
-  font-size: 12px;
+  font-size: var(--font-sm);
   font-style: normal;
 }
 
@@ -1014,12 +1014,12 @@ onRegionChange(() => {
 .section-heading h2 {
   margin: 0;
   color: var(--text, #111827);
-  font-size: 16px;
+  font-size: var(--font-16);
 }
 
 .section-heading span {
   color: var(--muted, #667085);
-  font-size: 12px;
+  font-size: var(--font-sm);
   text-align: right;
 }
 
@@ -1076,13 +1076,13 @@ onRegionChange(() => {
   gap: 8px;
   margin-bottom: 8px;
   color: var(--text-body);
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 .select-grid small,
 .storage-form-grid small {
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--font-sm);
   white-space: nowrap;
 }
 
@@ -1149,14 +1149,14 @@ li.error i {
 
 li strong {
   display: block;
-  font-size: 13px;
+  font-size: var(--font-md);
   color: var(--text, #111827);
 }
 
 li span,
 li em {
   display: block;
-  font-size: 12px;
+  font-size: var(--font-sm);
   color: var(--muted, #667085);
   font-style: normal;
   line-height: 1.45;
@@ -1216,13 +1216,13 @@ li em {
 .revenue-strip span {
   display: block;
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 .revenue-strip strong {
   display: block;
   margin-top: 6px;
-  font-size: 18px;
+  font-size: var(--font-18);
   overflow-wrap: anywhere;
 }
 
@@ -1259,7 +1259,7 @@ li em {
 .history-item strong {
   display: block;
   color: var(--text, #111827);
-  font-size: 13px;
+  font-size: var(--font-md);
   overflow-wrap: anywhere;
 }
 
@@ -1267,7 +1267,7 @@ li em {
   display: block;
   margin-top: 3px;
   color: var(--muted, #667085);
-  font-size: 12px;
+  font-size: var(--font-sm);
   line-height: 1.45;
 }
 
@@ -1291,7 +1291,7 @@ li em {
   min-height: 120px;
   padding: 18px;
   color: var(--muted, #667085);
-  font-size: 13px;
+  font-size: var(--font-md);
   text-align: center;
   line-height: 1.6;
 }

@@ -198,7 +198,7 @@ async function toggleEnabled(t: ScheduledTask, val: boolean) {
   }
 }
 
-// ── 执行历史 ──────────────────────────────────────────────────────────────
+// 执行历史
 const executions = ref<TaskExecution[]>([])
 let pollTimer: number | undefined
 
@@ -240,7 +240,7 @@ function stopPolling() {
   }
 }
 
-// ── 结果中心 ──────────────────────────────────────────────────────────────
+// 结果中心
 const reportType = ref('market_brief')
 const reportTypeOptions = [
   { value: 'market_brief', label: '交易晨报' },
@@ -291,7 +291,7 @@ onMounted(() => {
 })
 // KeepAlive 缓存下切走触发 onDeactivated（非 onBeforeUnmount）：runNow 启动的 4s 轮询须暂停，
 // 否则离开 /system/schedules 后服务端任务 running 期间仍持续打 getExecutions+refreshTasks（#1737）。
-// 不随 onActivated 自动恢复——轮询由 runNow 显式触发，切回可重新触发或刷新执行历史。
+// 不随 onActivated 自动恢复，轮询由 runNow 显式触发，切回可重新触发或刷新执行历史。
 onDeactivated(stopPolling)
 onBeforeUnmount(stopPolling)
 </script>
@@ -558,12 +558,12 @@ onBeforeUnmount(stopPolling)
 }
 .head h2 {
   margin: 0;
-  font-size: 18px;
+  font-size: var(--font-18);
 }
 .sub {
   margin: 4px 0 0;
   color: var(--el-text-color-secondary);
-  font-size: 13px;
+  font-size: var(--font-md);
 }
 .grid {
   display: grid;
@@ -598,11 +598,11 @@ onBeforeUnmount(stopPolling)
   border-radius: 4px;
   background: var(--el-color-primary-light-8);
   color: var(--el-color-primary);
-  font-size: 12px;
+  font-size: var(--font-sm);
   vertical-align: middle;
 }
 .row-title {
-  font-size: 12px;
+  font-size: var(--font-sm);
   color: var(--el-text-color-secondary);
   margin-top: 2px;
 }
@@ -612,7 +612,7 @@ onBeforeUnmount(stopPolling)
   gap: 6px;
 }
 .last-result {
-  font-size: 12px;
+  font-size: var(--font-sm);
   color: var(--el-text-color-secondary);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -621,7 +621,7 @@ onBeforeUnmount(stopPolling)
 }
 .field-hint {
   color: var(--el-text-color-secondary);
-  font-size: 12px;
+  font-size: var(--font-sm);
   margin-top: 4px;
 }
 .field-hint.inline {
@@ -630,19 +630,19 @@ onBeforeUnmount(stopPolling)
 }
 .muted {
   color: var(--el-text-color-secondary);
-  font-size: 13px;
+  font-size: var(--font-md);
 }
 .pad {
   padding: 16px;
 }
 .result-text {
-  font-size: 13px;
+  font-size: var(--font-md);
 }
 .log-pre {
   margin: 0;
   max-height: 320px;
   overflow: auto;
-  font-size: 12px;
+  font-size: var(--font-sm);
   white-space: pre-wrap;
   word-break: break-all;
 }
@@ -677,14 +677,14 @@ onBeforeUnmount(stopPolling)
 }
 .report-title {
   font-weight: 600;
-  font-size: 13px;
+  font-size: var(--font-md);
   margin-bottom: 4px;
 }
 .report-meta {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  font-size: 11px;
+  font-size: var(--font-xs);
   color: var(--el-text-color-secondary);
 }
 .report-view {
@@ -694,7 +694,7 @@ onBeforeUnmount(stopPolling)
 }
 .rv-title {
   margin: 0 0 12px;
-  font-size: 15px;
+  font-size: var(--font-15);
 }
 @media (max-width: 1100px) {
   .grid {

@@ -20,6 +20,15 @@ import {
 import { currentRegion, selectedRegionId, setCurrentRegionId } from '@/services/region/regionContext'
 import { resolveRegionSwitchRoute } from '@/services/region/regionNavigation'
 import {
+  activeStanceKey,
+  activeStanceType,
+  isMultiStance,
+  setActiveStance,
+  stanceKeyOf,
+  stances
+} from '@/services/stance/stanceContext'
+import { filterNavigationForStance, isPathAvailableInStance, resolveStanceSwitchRoute } from '@/services/stance/stanceNavigation'
+import {
   canAccessPath,
   filterNavigationForUser,
   firstAccessiblePath,
@@ -48,6 +57,8 @@ const isMobile = ref(false)
 const mobileMenuOpen = ref(false)
 const currentUser = ref<AuthUser>(getCurrentUser())
 const notices = ref<Notice[]>([])
+// 公告是否为模拟数据：由服务端 provenance 判定，不在前端写死。
+const noticesAreMock = ref(false)
 const accessRevision = ref(0)
 const companyOptionsLoading = ref(false)
 
@@ -69,8 +80,12 @@ const menuColors = computed(() => {
 
 const activePath = computed(() => route.path)
 const visibleNavigation = computed(() => {
-  accessRevision.value
-  return withCurrentRegionTradingTitle(filterNavigationForUser(navigation, currentUser.value, currentRegion.value.id))
+  // 订阅用：权限/地区 revision 变化时让本 computed 重算
+  const _accessRevision = accessRevision.value
+  // 立场视图层（#2196）：角色×地区过滤后，再按当前立场出工作台（共享页恒可见，
+  // 组合/集团视角全量；专职立场只看共享页 + 本立场专属页）。
+  const byRoleAndRegion = filterNavigationForUser(navigation, currentUser.value, currentRegion.value.id)
+  return withCurrentRegionTradingTitle(filterNavigationForStance(byRoleAndRegion, activeStanceType.value))
 })
 const currentGate = computed(() => getDecisionGateHint(route.path, currentUser.value))
 const subjectTypeLabel = computed(() => subjectTypeLabels[currentUser.value.subjectType])
@@ -95,7 +110,7 @@ async function signOut() {
   router.push('/login')
 }
 
-// 会话管理并入 ADMIN-only 的「用户与会话」后，本入口对非管理员只会被守卫弹回首页——
+// 会话管理并入 ADMIN-only 的「用户与会话」后，本入口对非管理员只会被守卫弹回首页
 // 故按同一套 canAccessPath 判定显隐，不再留一个点了没反应的菜单项（不硬编码角色）。
 const canOpenSecurityCenter = computed(() => canAccessPath('/system/accounts', currentUser.value))
 
@@ -119,6 +134,27 @@ function companyOptionLabel(company: CompanyOption) {
 function switchCompany(companyId: string) {
   if (!setCurrentCompanyId(companyId)) {
     ElMessage.warning('无权切换到该公司')
+  }
+}
+
+function stanceOptionLabel(stance: (typeof stances.value)[number]) {
+  const label = subjectTypeLabels[stance.subjectType] ?? stance.subjectType
+  return stance.crossView ? `${label}视角` : label
+}
+
+function switchStance(key: string) {
+  if (key === activeStanceKey.value) return
+  const next = stances.value.find((s) => stanceKeyOf(s) === key)
+  if (!next || !setActiveStance(key)) {
+    ElMessage.warning('该立场不在当前账号的允许集合内')
+    return
+  }
+  ElMessage.success(`已切换到${stanceOptionLabel(next)}`)
+  // 立场切换后的路由解析（#2196）：当前页在新立场仍可见则停留（共享页/系统页不踢人），
+  // 否则落该用户的默认工作台。
+  const nextPath = resolveStanceSwitchRoute(next.subjectType, currentUser.value, route.path)
+  if (nextPath !== route.path) {
+    router.replace(nextPath)
   }
 }
 
@@ -156,7 +192,11 @@ function closeMobileMenu() {
 function refreshAccessMatrix() {
   accessRevision.value += 1
   currentUser.value = getCurrentUser()
-  if (!canAccessPath(route.path, currentUser.value) || !isPathAvailableInRegion(route.path, currentRegion.value.id)) {
+  if (
+    !canAccessPath(route.path, currentUser.value)
+    || !isPathAvailableInRegion(route.path, currentRegion.value.id)
+    || !isPathAvailableInStance(route.path, activeStanceType.value)
+  ) {
     router.replace(firstAccessiblePath(currentUser.value, currentRegion.value.id))
   }
 }
@@ -194,6 +234,7 @@ onMounted(async () => {
     const [info, dashboard] = await Promise.all([getInfo(), getDashboard()])
     currentUser.value = info.user
     notices.value = dashboard.notices
+    noticesAreMock.value = dashboard.provenance?.realDataConnected === false
     await refreshTopbarCompanyOptions()
   } catch (error) {
     await logout()
@@ -325,6 +366,27 @@ watch(
         <div class="topbar-actions">
           <RegionSwitcher v-model="selectedRegionModel" />
           <el-select
+            v-if="isMultiStance"
+            class="stance-switcher"
+            :model-value="activeStanceKey"
+            title="切换作业立场（发电/售电/储能…）"
+            size="small"
+            @update:model-value="switchStance"
+          >
+            <el-option
+              v-for="stance in stances"
+              :key="stanceKeyOf(stance)"
+              :label="stanceOptionLabel(stance)"
+              :value="stanceKeyOf(stance)"
+            >
+              <span class="stance-option">
+                <span>{{ stanceOptionLabel(stance) }}</span>
+                <el-tag v-if="stance.crossView" size="small" type="warning" effect="plain">切换视角</el-tag>
+                <el-tag v-else size="small" type="success" effect="plain">主立场</el-tag>
+              </span>
+            </el-option>
+          </el-select>
+          <el-select
             v-if="topbarCompanySwitchable"
             class="company-switcher"
             :model-value="selectedCompanyId"
@@ -355,6 +417,9 @@ watch(
               <el-button class="icon-action" :icon="Bell" circle title="通知" />
             </template>
             <div class="notice-list">
+              <div v-if="noticesAreMock" class="notice-mock-hint">
+                模拟数据 · 平台公告源尚未接入，以下为示例内容
+              </div>
               <div v-for="notice in notices" :key="notice.id" class="notice-item">
                 <span>{{ notice.level }}</span>
                 <strong>{{ notice.title }}</strong>
@@ -456,6 +521,20 @@ watch(
   width: 170px;
 }
 
+/* 立场切换器（#2193）：比公司切换器窄一档，多立场账号才渲染 */
+.stance-switcher {
+  flex: 0 0 120px;
+  width: 120px;
+}
+
+.stance-option {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+}
+
 .company-option {
   display: inline-flex;
   align-items: center;
@@ -531,7 +610,7 @@ watch(
   border-radius: 7px;
   background: var(--primary);
   color: #fff;
-  font-size: 13px;
+  font-size: var(--font-tb-13);
   font-weight: 700;
 }
 .user-meta {
@@ -545,7 +624,7 @@ watch(
 }
 .user-meta strong {
   max-width: 100%;
-  font-size: 13px;
+  font-size: var(--font-tb-13);
   font-weight: 600;
   white-space: nowrap;
   overflow: hidden;
@@ -554,7 +633,7 @@ watch(
 .user-meta span {
   max-width: 100%;
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--font-tb-11);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -575,11 +654,11 @@ watch(
   border-bottom: 1px solid var(--line);
 }
 .user-card strong {
-  font-size: 13px;
+  font-size: var(--font-md);
   color: var(--text);
 }
 .user-card span {
-  font-size: 11.5px;
+  font-size: var(--font-11-5);
   color: var(--muted);
   line-height: 1.45;
 }
@@ -588,6 +667,11 @@ watch(
   display: flex;
   align-items: center;
   gap: 8px;
+  min-width: 0;
+}
+
+/* 空间吃紧时 tooltip 包裹层可收缩，由卡片内 ellipsis 兜底，防与动作区重叠 */
+.context-cards > * {
   min-width: 0;
 }
 
@@ -606,12 +690,12 @@ watch(
 
 .ctx-card small {
   color: var(--chip-label);
-  font-size: 10px;
+  font-size: var(--font-tb-10);
 }
 
 .ctx-card strong {
   color: var(--chip-text);
-  font-size: 12.5px;
+  font-size: var(--font-tb-12-5);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -622,7 +706,7 @@ watch(
   flex-direction: column;
   gap: 3px;
   max-width: 280px;
-  font-size: 12px;
+  font-size: var(--font-sm);
   line-height: 1.5;
 }
 
@@ -646,6 +730,13 @@ watch(
   .company-switcher {
     flex: 0 1 110px;
     max-width: 110px;
+    min-width: 0;
+  }
+
+  /* 立场切换器同步收缩（#2193），与公司切换器同节奏 */
+  .stance-switcher {
+    flex: 0 1 96px;
+    max-width: 96px;
     min-width: 0;
   }
 
@@ -676,9 +767,15 @@ watch(
   }
 }
 
-/* ≤850px：公司收缩后仍换行，藏掉保持动作区 1 行 */
-@media (max-width: 850px) {
+/* ≤955px：公司切换器提前隐藏防挤换行；集团切换器维持 ≤850px */
+@media (max-width: 955px) {
   .company-switcher {
+    display: none;
+  }
+}
+
+@media (max-width: 850px) {
+  .stance-switcher {
     display: none;
   }
 }
@@ -687,11 +784,16 @@ watch(
   .company-switcher {
     display: none;
   }
+
+  .stance-switcher {
+    display: none;
+  }
 }
 
 .topbar-ticker {
   display: flex;
   align-items: center;
-  min-width: 0;
+  /* 价带不参与收缩：防「峰段/平段/谷段」徽标竖排换行 */
+  flex: 0 0 auto;
 }
 </style>

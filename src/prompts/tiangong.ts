@@ -2,7 +2,7 @@
 //
 // 用于「天工」Demo：让大模型扮演调度中枢，按任务复杂度动态派遣 3-10 个专家智能体并汇总。
 // ⚠️ 输出契约硬约束：必须只返回 {"agents":[{char,name,role,task,finding}],
-//   "report":{summary,columns,rows,conclusion}} JSON——orchestrator.ts::normalize 据此解析。
+// "report":{summary,columns,rows,conclusion}} JSON，orchestrator.ts::normalize 据此解析。
 // 数据为演示性质（可合理虚构但须专业），未接大模型时回退内置示例（live:false）。
 
 export const TIANGONG_ORCHESTRATOR_SYSTEM = [

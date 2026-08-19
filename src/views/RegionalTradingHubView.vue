@@ -413,7 +413,7 @@ onUnmounted(() => {
   align-items: center;
   gap: 6px;
   color: var(--primary);
-  font-size: 13px;
+  font-size: var(--font-md);
   font-weight: 650;
 }
 
@@ -425,7 +425,7 @@ onUnmounted(() => {
 }
 
 .trading-hero h2 {
-  font-size: 28px;
+  font-size: var(--font-28);
   font-weight: 760;
 }
 
@@ -570,13 +570,13 @@ onUnmounted(() => {
 
 .coverage-metrics strong {
   color: var(--primary);
-  font-size: 24px;
+  font-size: var(--font-24);
 }
 
 .coverage-metrics span {
   margin-top: 4px;
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 .priority-region-grid {
@@ -687,7 +687,7 @@ onUnmounted(() => {
   border-radius: 6px;
   background: var(--panel-sub);
   color: var(--text-soft);
-  font-size: 12px;
+  font-size: var(--font-sm);
   line-height: 1.4;
 }
 
@@ -729,7 +729,7 @@ onUnmounted(() => {
   }
 
   .trading-hero h2 {
-    font-size: 22px;
+    font-size: var(--font-22);
   }
 
   .panel-head {

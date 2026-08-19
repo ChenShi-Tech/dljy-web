@@ -1,6 +1,6 @@
 // S3 方向判断的申报曲线生成：日总电量 × 形态 → 96 点曲线。
 //
-// 形态只决定**分布**，总量守恒是硬约束——生成的 96 点之和必须等于给定总量
+// 形态只决定分布，总量守恒是硬约束，生成的 96 点之和必须等于给定总量
 // （浮点误差内），否则「按 1000 MWh 报」实际报出 987 MWh，偏差凭空多 1.3%。
 // 形态是起点不是终点：生成后交易员可在 S4 逐点微调，这里只保证一个像样的出发点。
 
@@ -30,7 +30,7 @@ const HOURLY_WEIGHTS: Record<LoadShapeId, number[]> = {
 
 /**
  * 生成 96 点电量曲线（MWh/15min），总量守恒。
- * totalMwh 非正时返回全零曲线——没有电量就是没有电量，不编造默认值。
+ * totalMwh 非正时返回全零曲线，没有电量就是没有电量，不编造默认值。
  */
 export function buildLoadCurve96(totalMwh: number, shape: LoadShapeId): number[] {
   if (!(totalMwh > 0)) return new Array(96).fill(0)

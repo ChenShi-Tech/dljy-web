@@ -347,7 +347,6 @@ const renderedReport = computed(() => {
 
 // 统计指标
 const stats = computed(() => {
-  const now = Date.now()
   const todayStart = new Date().setHours(0, 0, 0, 0)
   const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1).getTime()
 
@@ -540,14 +539,14 @@ function exportMarkdown() {
 function exportWord() {
   if (!renderedReport.value) return
   const name = selectedTemplate.value?.name ?? '报告'
-  const wordHtml = `<!DOCTYPE html>\n<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40">\n<head><meta charset="utf-8"><title>${name}</title>\n<style>\nbody{font-family:"Microsoft YaHei",SimSun,sans-serif;font-size:14px;line-height:1.8;color:#333;padding:24px}\nh1{font-size:22px;border-bottom:2px solid #333;padding-bottom:8px}\nh2{font-size:18px;border-bottom:1px solid #ccc;padding-bottom:4px}\nh3{font-size:15px}\ntable{border-collapse:collapse;width:100%;margin:8px 0}td,th{border:1px solid #999;padding:6px 10px;font-size:13px}\n.meta{color:#888;font-size:12px;margin-bottom:16px}\n</style></head>\n<body>\n<div class="meta">生成时间：${reportMeta.time} | 模板：${name}</div>\n${renderedReport.value}\n</body></html>`
+  const wordHtml = `<!DOCTYPE html>\n<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40">\n<head><meta charset="utf-8"><title>${name}</title>\n<style>\nbody{font-family:"Microsoft YaHei",SimSun,sans-serif;font-size: var(--font-lg);line-height:1.8;color:#333;padding:24px}\nh1{font-size: var(--font-22);border-bottom:2px solid #333;padding-bottom:8px}\nh2{font-size: var(--font-18);border-bottom:1px solid #ccc;padding-bottom:4px}\nh3{font-size: var(--font-15)}\ntable{border-collapse:collapse;width:100%;margin:8px 0}td,th{border:1px solid #999;padding:6px 10px;font-size: var(--font-md)}\n.meta{color:#888;font-size: var(--font-sm);margin-bottom:16px}\n</style></head>\n<body>\n<div class="meta">生成时间：${reportMeta.time} | 模板：${name}</div>\n${renderedReport.value}\n</body></html>`
   downloadBlob(wordHtml, `report-${name}-${Date.now()}.doc`, 'application/msword')
 }
 
 function exportPDF() {
   if (!renderedReport.value) return
   const name = selectedTemplate.value?.name ?? '报告'
-  const html = `<!DOCTYPE html>\n<html><head><meta charset="utf-8"><title>${name}</title>\n<style>\nbody{font-family:"Microsoft YaHei",SimSun,sans-serif;font-size:14px;line-height:1.8;color:#333;padding:32px;max-width:800px;margin:0 auto}\nh1{font-size:22px;border-bottom:2px solid #333;padding-bottom:8px}\nh2{font-size:18px;border-bottom:1px solid #ccc;padding-bottom:4px}\nh3{font-size:15px}\ntable{border-collapse:collapse;width:100%;margin:8px 0}td,th{border:1px solid #999;padding:6px 10px;font-size:13px}\n.meta{color:#888;font-size:12px;margin-bottom:16px}\n@media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact}}\n</style></head>\n<body>\n<div class="meta">生成时间：${reportMeta.time} | 模板：${name}</div>\n${renderedReport.value}\n</body></html>`
+  const html = `<!DOCTYPE html>\n<html><head><meta charset="utf-8"><title>${name}</title>\n<style>\nbody{font-family:"Microsoft YaHei",SimSun,sans-serif;font-size: var(--font-lg);line-height:1.8;color:#333;padding:32px;max-width:800px;margin:0 auto}\nh1{font-size: var(--font-22);border-bottom:2px solid #333;padding-bottom:8px}\nh2{font-size: var(--font-18);border-bottom:1px solid #ccc;padding-bottom:4px}\nh3{font-size: var(--font-15)}\ntable{border-collapse:collapse;width:100%;margin:8px 0}td,th{border:1px solid #999;padding:6px 10px;font-size: var(--font-md)}\n.meta{color:#888;font-size: var(--font-sm);margin-bottom:16px}\n@media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact}}\n</style></head>\n<body>\n<div class="meta">生成时间：${reportMeta.time} | 模板：${name}</div>\n${renderedReport.value}\n</body></html>`
   const win = window.open('', '_blank', 'width=900,height=700')
   if (win) { win.document.write(html); win.document.close(); win.onload = () => win.print() }
 }
@@ -615,14 +614,14 @@ onMounted(() => {
 }
 
 .stat-value {
-  font-size: 22px;
+  font-size: var(--font-22);
   font-weight: 700;
   color: var(--el-color-primary);
   line-height: 1.2;
 }
 
 .stat-label {
-  font-size: 11px;
+  font-size: var(--font-xs);
   color: var(--el-text-color-secondary);
   margin-top: 2px;
 }
@@ -702,13 +701,13 @@ onMounted(() => {
 }
 
 .section-title {
-  font-size: 14px;
+  font-size: var(--font-lg);
   font-weight: 600;
   color: var(--el-text-color-primary);
 }
 
 .section-sub {
-  font-size: 12px;
+  font-size: var(--font-sm);
   color: var(--el-text-color-secondary);
 }
 
@@ -721,7 +720,7 @@ onMounted(() => {
 }
 
 .tab-chip {
-  font-size: 12px;
+  font-size: var(--font-sm);
   padding: 3px 10px;
   border-radius: 12px;
   cursor: pointer;
@@ -816,7 +815,7 @@ onMounted(() => {
 }
 
 .tc-name {
-  font-size: 13px;
+  font-size: var(--font-md);
   font-weight: 600;
   display: flex;
   align-items: center;
@@ -828,7 +827,7 @@ onMounted(() => {
 }
 
 .tc-desc {
-  font-size: 11.5px;
+  font-size: var(--font-11-5);
   color: var(--el-text-color-secondary);
   white-space: nowrap;
   overflow: hidden;
@@ -856,13 +855,13 @@ onMounted(() => {
 }
 
 .preset-label {
-  font-size: 12px;
+  font-size: var(--font-sm);
   color: var(--el-text-color-secondary);
   margin-right: 2px;
 }
 
 .preset-chip {
-  font-size: 11.5px;
+  font-size: var(--font-11-5);
   padding: 2px 10px;
   border-radius: 10px;
   border: 1px solid var(--el-border-color);
@@ -932,7 +931,7 @@ onMounted(() => {
 }
 
 .hi-icon {
-  font-size: 14px;
+  font-size: var(--font-lg);
   flex-shrink: 0;
 }
 
@@ -942,7 +941,7 @@ onMounted(() => {
 }
 
 .hi-name {
-  font-size: 12.5px;
+  font-size: var(--font-12-5);
   font-weight: 500;
   white-space: nowrap;
   overflow: hidden;
@@ -950,7 +949,7 @@ onMounted(() => {
 }
 
 .hi-meta {
-  font-size: 11px;
+  font-size: var(--font-xs);
   color: var(--el-text-color-placeholder);
 }
 
@@ -977,7 +976,7 @@ onMounted(() => {
 }
 
 .toolbar-title {
-  font-size: 14px;
+  font-size: var(--font-lg);
   font-weight: 600;
 }
 
@@ -989,7 +988,7 @@ onMounted(() => {
 }
 
 .font-size-label {
-  font-size: 11px;
+  font-size: var(--font-xs);
   color: var(--el-text-color-secondary);
   min-width: 30px;
   text-align: center;
@@ -1027,7 +1026,7 @@ onMounted(() => {
 }
 
 .paper-logo {
-  font-size: 16px;
+  font-size: var(--font-16);
   font-weight: 700;
   color: var(--el-color-primary);
   letter-spacing: 2px;
@@ -1036,7 +1035,7 @@ onMounted(() => {
 .paper-meta-line {
   display: flex;
   gap: 16px;
-  font-size: 11px;
+  font-size: var(--font-xs);
   color: var(--el-text-color-secondary);
   margin-top: 6px;
   flex-wrap: wrap;
@@ -1145,7 +1144,7 @@ onMounted(() => {
   padding-top: 12px;
   border-top: 1px solid var(--el-border-color-light);
   text-align: center;
-  font-size: 11px;
+  font-size: var(--font-xs);
   color: var(--el-text-color-placeholder);
 }
 
@@ -1170,14 +1169,14 @@ onMounted(() => {
 }
 
 .empty-title {
-  font-size: 17px;
+  font-size: var(--font-xl);
   font-weight: 600;
   color: var(--el-text-color-regular);
   margin-bottom: 6px;
 }
 
 .empty-desc {
-  font-size: 13px;
+  font-size: var(--font-md);
   color: var(--el-text-color-secondary);
   margin-bottom: 24px;
 }
@@ -1189,7 +1188,7 @@ onMounted(() => {
 }
 
 .tip-item {
-  font-size: 12.5px;
+  font-size: var(--font-12-5);
   color: var(--el-text-color-secondary);
   padding: 6px 14px;
   background: var(--el-fill-color-lighter);
@@ -1206,7 +1205,7 @@ onMounted(() => {
 /* ============================================================ */
 .empty-hint {
   color: var(--el-text-color-placeholder);
-  font-size: 12.5px;
+  font-size: var(--font-12-5);
   margin-top: 12px;
   text-align: center;
 }

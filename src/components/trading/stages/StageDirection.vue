@@ -1,13 +1,13 @@
 <script setup lang="ts">
-// S3 方向判断（09:30–10:30）—— 把 S2 的市场判断变成一个可执行的方向决策
+// S3 方向判断（09:30–10:30）， 把 S2 的市场判断变成一个可执行的方向决策
 //
-// 内在逻辑是一条**判据递进链**：
+// 内在逻辑是一条判据递进链：
 //   S2 市场判断（松紧+价格中枢）→ 预期价差 ΔP（人拍板，可参考 ML 价格预测）
 //   → R4 规则表（ΔP × 置信度 × S2 数据暴露系数）→ 偏置档位 → 申报曲线 = 预测负荷 × (1+偏置)。
 // 偏置档位不由人拍脑袋：S2 门禁落「可参考」时暴露系数 0.5，偏置自动减半；「仅展示」强制归零
-// ——上一步的数据口径**机械地**约束这一步敢押多大。
+// ，上一步的数据口径机械地约束这一步敢押多大。
 //
-// 曲线生成分两层（此前只有 ①，被指"固化"——正解是把 ② 接上，而非让 ① 更花哨）：
+// 曲线生成分两层（此前只有 ①，被指"固化"，正解是把 ② 接上，而非让 ① 更花哨）：
 //   ① 形态模板（双峰/平坦/夜间）：无预测数据时的兜底出发点，总量守恒；
 //   ② ML 价格预测参考 + AI 建议：复用申报工作台同一套 /agent-api 预测端点，
 //      预测数值先算好，AI 只解释"为什么这样建议"，采纳与否由人点按钮。
@@ -43,13 +43,13 @@ import type { StageId } from '@/data/workflowStages'
 const props = defineProps<{ declaration: DeclarationOrder | null; targetDate: string }>()
 const emit = defineEmits<{ updated: [d: DeclarationOrder]; go: [stage: StageId] }>()
 
-// ── 上游产出：S2 市场判断 ───────────────────────────────────────────────────
+// 上游产出：S2 市场判断
 const upstream = computed(() => props.declaration?.preflight?.dataGate ?? null)
 const exposureFactor = computed(() =>
   upstream.value ? exposureFactorOf(upstream.value.gate as Parameters<typeof exposureFactorOf>[0]) : 0.5
 )
 
-// ── 方向决策输入 ────────────────────────────────────────────────────────────
+// 方向决策输入
 type Direction = 'add' | 'reduce' | 'hold'
 const DIRECTION_LABEL: Record<Direction, string> = { add: '增持', reduce: '减持', hold: '观望' }
 const DIRECTION_NOTE: Record<Direction, string> = {
@@ -84,7 +84,7 @@ const bias = computed(() => {
   })
 })
 
-// ── 申报曲线生成 ────────────────────────────────────────────────────────────
+// 申报曲线生成
 const totalMwh = ref(960)
 const shape = ref<LoadShapeId>('double-peak')
 const SHAPES = Object.keys(LOAD_SHAPE_LABEL) as LoadShapeId[]
@@ -93,8 +93,8 @@ const baseCurve = computed(() => buildLoadCurve96(totalMwh.value, shape.value))
 const declaredCurve = computed(() => applyBias(baseCurve.value, bias.value.biasRatio))
 const declaredTotal = computed(() => declaredCurve.value.reduce((a, b) => a + b, 0))
 
-// ── ML 价格预测参考（复用申报工作台同一套 /agent-api 预测端点）─────────────
-// 用途：给「预期价差 ΔP」提供数值参照——预测的日内价格形态（峰谷分布、均值）是
+// ML 价格预测参考（复用申报工作台同一套 /agent-api 预测端点）
+// 用途：给「预期价差 ΔP」提供数值参照，预测的日内价格形态（峰谷分布、均值）是
 // 判断"实时会比日前高还是低"的输入之一。诚实标注：预测服务不在线/数据不可用时
 // 显示原因，不编数字。
 const forecast = ref<ForecastResult | null>(null)
@@ -139,7 +139,7 @@ const effectiveExposureFactor = computed(() =>
   drift.value.drifted ? Math.min(exposureFactor.value, 0.5) : exposureFactor.value
 )
 
-// ── 储能套利窗口清单（F2.4）+ P90 价差 vs 盈亏平衡自动比对 ──────────────────
+// 储能套利窗口清单（F2.4）+ P90 价差 vs 盈亏平衡自动比对
 // 资产参数取企业档案（同 S4），未建档用默认并如实标注；盈亏平衡用 R3 口径
 // （充电价参考取预测谷段 P50；容量收益未计 = 要求价差偏保守，标注说明）。
 const assets = ref<StorageAsset[]>([])
@@ -165,7 +165,7 @@ const requiredSpread = computed(() => {
     roundTripEfficiency: a?.etaRoundTrip ?? 0.87,
     chargeAdderYuanPerMwh: a?.chargeAdderYuanPerMwh ?? 71.56,
     cycleCostYuanPerMwh: a?.cycleCostYuanPerMwh ?? 110,
-    // 容量收益（R11）在 S4 计划块按档案容量电价核算，此处未计 → 要求价差偏保守（更高）
+    // 容量收益（R11）在 S4 计划块按档案容量电价核算，未计入 → 要求价差偏保守（更高）
     cCapYuanPerMwh: 0,
     cAsYuanPerMwh: 0
   })
@@ -194,7 +194,7 @@ const kellyCap = computed(() =>
   quantiles.value ? buildOodaDecision(hourlyPointsOf(quantiles.value), storageParams.value).kelly : null
 )
 
-// ── 日前 vs 中长期双曲线对比（#2006 · 会议 §5.1）─────────────────────────────
+// 日前 vs 中长期双曲线对比（#2006 · 会议 §5.1）
 // 中长期侧消费预测域 /midterm 日均价序列（模型活在预测域，本面板只消费结果）；
 // 需要显式拉取（中长期预测非每日必跑），拉不到诚实空态不编曲线。
 const midterm = ref<MidtermResult | null>(null)
@@ -265,9 +265,9 @@ const bandChart = computed(() => {
   return { W, H, band, p50: line(q.p50), p10: line(q.p10), p90: line(q.p90) }
 })
 
-// ── AI 建议（判据先算好，AI 解释与建议，人拍板采纳）──────────────────────────
+// AI 建议（判据先算好，AI 解释与建议，人拍板采纳）
 // 注入：S2 判断 + R4 规则表机制 + ML 预测摘要 + 当前人选方向。AI 给出「建议方向 +
-// 建议 ΔP 区间 + 理由」，人看后自己改输入框——AI 不直接改任何表单值。
+// 建议 ΔP 区间 + 理由」，人看后自己改输入框，AI 不直接改任何表单值。
 const aiOpen = ref(false)
 const aiContext = computed(() => ({
   targetDate: props.targetDate,
@@ -288,7 +288,7 @@ const aiContext = computed(() => ({
   biasRule: '偏置 = R4 规则表(ΔP×置信度) × 暴露系数(S2 门禁: 可申报1/可参考0.5/仅展示0，模型漂移时封顶0.5)，管理带 ±20%',
   exposureFactor: effectiveExposureFactor.value
 }))
-// ── AI 辅助填报：方向/ΔP/置信度/理由四项都是**人工经验判断**（无数据库可查）────
+// AI 辅助填报：方向/ΔP/置信度/理由四项都是人工经验判断（无数据库可查）
 // 复用同一份上下文（S2 判断 + ML 预测摘要 + R4 机制），产出结构化建议供一键采纳。
 const ASSIST_LABELS = {
   direction: '方向', priceSpread: '预期价差 ΔP', confidence: '置信度', rationale: '决策理由'
@@ -310,7 +310,7 @@ const aiQuestion = computed(() =>
   `你只建议，采纳与否由交易员自己改左侧输入框。`
 )
 
-// ── 写回 ────────────────────────────────────────────────────────────────────
+// 写回
 const saving = ref(false)
 const saveMsg = ref('')
 const saveError = ref('')
@@ -633,94 +633,94 @@ async function writeBack() {
 
 <style scoped>
 .dr { display: flex; flex-direction: column; gap: 12px; }
-.dr-upstream { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding: 8px 12px; border: 1px solid #bfdbfe; border-radius: 8px; background: #f8fbff; font-size: 12px; }
+.dr-upstream { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding: 8px 12px; border: 1px solid #bfdbfe; border-radius: 8px; background: #f8fbff; font-size: var(--font-sm); }
 .dr-upstream.warn { border-color: #fcd34d; background: #fffbeb; color: #92400e; }
 .dr-jump { padding: 0; border: none; background: none; color: #1d4ed8; font: inherit; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
 
 .dr-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); gap: 12px; }
 .dr-panel { padding: 12px 14px; border: 1px solid var(--el-border-color-lighter, #ebeef5); border-radius: 10px; background: #fff; }
-.dr-panel h3 { display: flex; align-items: flex-start; gap: 10px; flex-wrap: wrap; margin: 0 0 8px; font-size: 13px; }
+.dr-panel h3 { display: flex; align-items: flex-start; gap: 10px; flex-wrap: wrap; margin: 0 0 8px; font-size: var(--font-md); }
 
 .dr-directions { display: flex; gap: 8px; flex-wrap: wrap; }
-.dr-directions label { flex: 1; min-width: 150px; display: flex; flex-direction: column; gap: 2px; padding: 8px 10px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 8px; cursor: pointer; font-size: 12px; }
+.dr-directions label { flex: 1; min-width: 150px; display: flex; flex-direction: column; gap: 2px; padding: 8px 10px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 8px; cursor: pointer; font-size: var(--font-sm); }
 .dr-directions label.on { border-color: #2563eb; background: #eff6ff; }
 .dr-directions input { display: none; }
-.dr-directions em { font-style: normal; font-size: 10px; line-height: 1.5; color: var(--el-text-color-secondary, #667); }
+.dr-directions em { font-style: normal; font-size: var(--font-10); line-height: 1.5; color: var(--el-text-color-secondary, #667); }
 
 .dr-fields { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 10px; }
-.dr-fields label { display: flex; flex-direction: column; gap: 3px; font-size: 11px; color: var(--el-text-color-secondary, #667); }
-.dr-fields input, .dr-fields select { padding: 4px 7px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 5px; font-size: 12px; }
+.dr-fields label { display: flex; flex-direction: column; gap: 3px; font-size: var(--font-xs); color: var(--el-text-color-secondary, #667); }
+.dr-fields input, .dr-fields select { padding: 4px 7px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 5px; font-size: var(--font-sm); }
 
-.dr-conflict { margin: 8px 0 0; padding: 6px 10px; border-radius: 6px; background: #fef2f2; color: #991b1b; font-size: 12px; }
-.dr-rationale { display: flex; flex-direction: column; gap: 3px; margin-top: 10px; font-size: 11px; color: var(--el-text-color-secondary, #667); }
-.dr-rationale input { padding: 4px 7px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 5px; font-size: 12px; }
+.dr-conflict { margin: 8px 0 0; padding: 6px 10px; border-radius: 6px; background: #fef2f2; color: #991b1b; font-size: var(--font-sm); }
+.dr-rationale { display: flex; flex-direction: column; gap: 3px; margin-top: 10px; font-size: var(--font-xs); color: var(--el-text-color-secondary, #667); }
+.dr-rationale input { padding: 4px 7px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 5px; font-size: var(--font-sm); }
 
-.dr-bias { margin-top: 10px; padding: 8px 10px; border-radius: 8px; background: #eff6ff; font-size: 12px; }
+.dr-bias { margin-top: 10px; padding: 8px 10px; border-radius: 8px; background: #eff6ff; font-size: var(--font-sm); }
 .dr-bias.zero { background: #f8fafc; }
-.dr-bias em { display: block; margin-top: 2px; font-style: normal; font-size: 11px; color: var(--el-text-color-secondary, #667); }
+.dr-bias em { display: block; margin-top: 2px; font-style: normal; font-size: var(--font-xs); color: var(--el-text-color-secondary, #667); }
 
-.dr-curve-sum { margin: 8px 0; font-size: 12px; font-variant-numeric: tabular-nums; }
+.dr-curve-sum { margin: 8px 0; font-size: var(--font-sm); font-variant-numeric: tabular-nums; }
 .dr-spark { display: flex; align-items: flex-end; gap: 2px; height: 50px; padding: 2px 0; }
 .dr-bar { flex: 1; background: #93c5fd; border-radius: 1px 1px 0 0; }
-.dr-tip { margin: 6px 0 0; font-size: 11px; line-height: 1.6; color: var(--el-text-color-secondary, #667); }
+.dr-tip { margin: 6px 0 0; font-size: var(--font-xs); line-height: 1.6; color: var(--el-text-color-secondary, #667); }
 
-.dr-forecast { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; font-size: 12px; font-variant-numeric: tabular-nums; }
-.dr-fc-btn { padding: 4px 12px; border: 1px solid #059669; border-radius: 5px; background: #ecfdf5; color: #047857; font-size: 12px; cursor: pointer; }
+.dr-forecast { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; font-size: var(--font-sm); font-variant-numeric: tabular-nums; }
+.dr-fc-btn { padding: 4px 12px; border: 1px solid #059669; border-radius: 5px; background: #ecfdf5; color: #047857; font-size: var(--font-sm); cursor: pointer; }
 .dr-fc-btn:disabled { opacity: .5; cursor: wait; }
-.dr-muted { font-size: 11px; color: var(--el-text-color-secondary, #667); }
+.dr-muted { font-size: var(--font-xs); color: var(--el-text-color-secondary, #667); }
 
 /* 漂移横幅与策略速查 */
-.dr-drift { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding: 8px 12px; border: 1px solid #fca5a5; border-radius: 8px; background: #fef2f2; color: #991b1b; font-size: 12px; line-height: 1.6; }
-.dr-strategy { width: 100%; font-size: 11px; color: #075985; }
+.dr-drift { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding: 8px 12px; border: 1px solid #fca5a5; border-radius: 8px; background: #fef2f2; color: #991b1b; font-size: var(--font-sm); line-height: 1.6; }
+.dr-strategy { width: 100%; font-size: var(--font-xs); color: #075985; }
 
 /* 分布带状图 */
 .dr-band-chart { margin-top: 10px; }
 .dr-band-chart svg { width: 100%; height: auto; display: block; }
-.dr-band-legend { margin: 4px 0 0; font-size: 11px; line-height: 1.6; color: var(--el-text-color-secondary, #667); }
-.dr-band-note { font-size: 11px; color: #92400e; cursor: help; }
+.dr-band-legend { margin: 4px 0 0; font-size: var(--font-xs); line-height: 1.6; color: var(--el-text-color-secondary, #667); }
+.dr-band-note { font-size: var(--font-xs); color: #92400e; cursor: help; }
 
 /* 套利窗口清单 */
 .dr-arb { margin-top: 12px; padding-top: 10px; border-top: 1px dashed var(--el-border-color, #dcdfe6); }
-.dr-arb h4 { display: flex; align-items: center; gap: 5px; margin: 0 0 6px; font-size: 12px; }
-.dr-arb-note { margin: 0 0 6px; font-size: 11px; color: #b45309; }
-.dr-arb-table { width: 100%; border-collapse: collapse; font-size: 11px; font-variant-numeric: tabular-nums; }
+.dr-arb h4 { display: flex; align-items: center; gap: 5px; margin: 0 0 6px; font-size: var(--font-sm); }
+.dr-arb-note { margin: 0 0 6px; font-size: var(--font-xs); color: #b45309; }
+.dr-arb-table { width: 100%; border-collapse: collapse; font-size: var(--font-xs); font-variant-numeric: tabular-nums; }
 .dr-arb-table th, .dr-arb-table td { padding: 4px 6px; border-bottom: 1px solid var(--el-border-color-lighter, #ebeef5); text-align: right; }
 .dr-arb-table th:first-child, .dr-arb-table td:first-child, .dr-arb-table th:nth-child(2), .dr-arb-table td:nth-child(2) { text-align: left; }
 .dr-arb-table th { color: var(--el-text-color-secondary, #667); font-weight: 600; }
 .dr-arb-table tr.execute td:last-child { color: #15803d; font-weight: 600; }
 .dr-arb-table tr.needs_approval td:last-child { color: #92400e; }
 .dr-arb-table tr.skip td:last-child { color: #64748b; }
-.dr-arb-verdict { margin: 8px 0 0; padding: 6px 9px; border-radius: 6px; background: #f8fafc; font-size: 11px; line-height: 1.7; color: #475569; }
+.dr-arb-verdict { margin: 8px 0 0; padding: 6px 9px; border-radius: 6px; background: #f8fafc; font-size: var(--font-xs); line-height: 1.7; color: #475569; }
 .dr-arb-verdict.exec { background: #f0fdf4; color: #166534; }
-.dr-arb-empty { margin: 6px 0 0; font-size: 11px; color: var(--el-text-color-secondary, #667); }
+.dr-arb-empty { margin: 6px 0 0; font-size: var(--font-xs); color: var(--el-text-color-secondary, #667); }
 .dr-dual { margin-top: 12px; padding: 8px 12px; border: 1px solid var(--el-border-color-lighter, #ebeef5); border-radius: 8px; background: #fff; }
-.dr-dual h4 { margin: 0 0 6px; font-size: 12px; }
+.dr-dual h4 { margin: 0 0 6px; font-size: var(--font-sm); }
 .dr-dual-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .dr-dual-curves { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin-top: 8px; }
 .dr-dual-side { display: flex; flex-direction: column; gap: 2px; padding: 6px 12px; border: 1px solid var(--el-border-color-lighter, #ebeef5); border-radius: 8px; }
-.dr-dual-title { font-size: 10px; color: var(--el-text-color-secondary, #667); }
-.dr-dual-side strong { font-size: 18px; font-variant-numeric: tabular-nums; }
-.dr-dual-unit { font-size: 10px; color: var(--el-text-color-secondary, #889); }
+.dr-dual-title { font-size: var(--font-10); color: var(--el-text-color-secondary, #667); }
+.dr-dual-side strong { font-size: var(--font-18); font-variant-numeric: tabular-nums; }
+.dr-dual-unit { font-size: var(--font-10); color: var(--el-text-color-secondary, #889); }
 .dr-dual-spark { display: flex; align-items: flex-end; gap: 2px; height: 46px; }
 .dr-ms-bar { width: 8px; background: #a78bfa; border-radius: 1px 1px 0 0; }
-.dr-dual-verdict { margin: 8px 0 0; padding: 6px 10px; border-radius: 6px; font-size: 11px; line-height: 1.7; background: #f8fafc; }
+.dr-dual-verdict { margin: 8px 0 0; padding: 6px 10px; border-radius: 6px; font-size: var(--font-xs); line-height: 1.7; background: #f8fafc; }
 .dr-dual-verdict.v-prefer_spot { background: #f0fdf4; color: #166534; }
 .dr-dual-verdict.v-prefer_mlt { background: #eff6ff; color: #1d4ed8; }
 .dr-dual-verdict em { font-style: normal; margin-right: 6px; padding: 1px 8px; border-radius: 8px; font-weight: 600; }
 .dr-dual-verdict em.hi { background: #dcfce7; color: #15803d; }
 .dr-dual-verdict em.lo { background: #fef3c7; color: #92400e; }
-.dr-dual-note { display: block; margin-top: 2px; font-size: 10px; color: var(--el-text-color-secondary, #889); }
-.dr-kelly { margin: 8px 0 0; padding: 6px 9px; border-radius: 6px; background: #fffbeb; color: #92400e; font-size: 11px; line-height: 1.7; }
+.dr-dual-note { display: block; margin-top: 2px; font-size: var(--font-10); color: var(--el-text-color-secondary, #889); }
+.dr-kelly { margin: 8px 0 0; padding: 6px 9px; border-radius: 6px; background: #fffbeb; color: #92400e; font-size: var(--font-xs); line-height: 1.7; }
 
 .dr-ai { border: 1px solid var(--el-border-color-lighter, #ebeef5); border-radius: 10px; background: #fff; padding: 8px 12px; }
-.dr-ai summary { display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 600; cursor: pointer; flex-wrap: wrap; }
-.dr-ai summary em { font-style: normal; font-weight: 400; font-size: 10px; color: var(--el-text-color-secondary, #889); }
+.dr-ai summary { display: flex; align-items: center; gap: 8px; font-size: var(--font-sm); font-weight: 600; cursor: pointer; flex-wrap: wrap; }
+.dr-ai summary em { font-style: normal; font-weight: 400; font-size: var(--font-10); color: var(--el-text-color-secondary, #889); }
 .dr-ai[open] summary { margin-bottom: 8px; }
 
 .dr-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.dr-actions .primary { display: inline-flex; align-items: center; gap: 5px; padding: 5px 14px; border: 1px solid #2563eb; border-radius: 6px; background: #2563eb; color: #fff; font-size: 12px; cursor: pointer; }
+.dr-actions .primary { display: inline-flex; align-items: center; gap: 5px; padding: 5px 14px; border: 1px solid #2563eb; border-radius: 6px; background: #2563eb; color: #fff; font-size: var(--font-sm); cursor: pointer; }
 .dr-actions .primary:disabled { opacity: .45; cursor: not-allowed; }
-.dr-actions .ghost { padding: 5px 12px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 6px; background: #fff; font-size: 12px; cursor: pointer; }
-.dr-ok { font-size: 12px; color: #15803d; }
-.dr-err { font-size: 12px; color: #b91c1c; }
+.dr-actions .ghost { padding: 5px 12px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 6px; background: #fff; font-size: var(--font-sm); cursor: pointer; }
+.dr-ok { font-size: var(--font-sm); color: #15803d; }
+.dr-err { font-size: var(--font-sm); color: #b91c1c; }
 </style>

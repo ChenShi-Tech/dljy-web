@@ -28,7 +28,7 @@ const ionTokenConfigured = computed(() => String(import.meta.env.VITE_CESIUM_ION
 const flatMode = computed(() => props.viewMode === '2d')
 
 /**
- * 勾着但实际没加载上——晕渲源与 ArcGIS 影像同域，该域对部分出口 IP 整体 403。
+ * 勾着但实际没加载上，晕渲源与 ArcGIS 影像同域，该域对部分出口 IP 整体 403。
  * 不点破的话复选框看起来是生效的。
  */
 const hillshadeBroken = computed(() => !flatMode.value && hillshade.value && props.hillshadeAvailable === false)
@@ -87,14 +87,14 @@ const statusHint = computed(() => {
 </template>
 
 <style scoped>
-.terrain-control { padding: 9px 10px; border: 1px solid rgba(107, 194, 227, .16); border-radius: 11px; background: rgba(5, 21, 38, .78); backdrop-filter: blur(9px); font-size: 10px; }
+.terrain-control { padding: 9px 10px; border: 1px solid rgba(107, 194, 227, .16); border-radius: 11px; background: rgba(5, 21, 38, .78); backdrop-filter: blur(9px); font-size: var(--font-10); }
 .terrain-head { display: flex; margin-bottom: 7px; align-items: center; justify-content: space-between; gap: 8px; }
 .terrain-head span { display: inline-flex; align-items: center; gap: 5px; color: #9fd0e2; font-weight: 600; }
-.terrain-head small { padding: 1px 6px; border-radius: 6px; color: #7fe0c2; background: rgba(63, 190, 152, .13); font-size: 8.5px; }
+.terrain-head small { padding: 1px 6px; border-radius: 6px; color: #7fe0c2; background: rgba(63, 190, 152, .13); font-size: var(--font-8-5); }
 .terrain-head small.loading { color: #8fc7dd; background: rgba(96, 168, 200, .13); }
 .terrain-head small.fallback, .terrain-head small.error { color: #f1c66b; background: rgba(204, 150, 42, .14); }
 .terrain-head small.inactive { color: #8296a2; background: rgba(130, 150, 162, .12); }
-.terrain-control select { width: 100%; height: 31px; padding: 0 8px; color: #b9d8e5; border: 1px solid rgba(107, 194, 227, .18); border-radius: 8px; outline: 0; background: #071b2d; font-size: 9.5px; }
+.terrain-control select { width: 100%; height: 31px; padding: 0 8px; color: #b9d8e5; border: 1px solid rgba(107, 194, 227, .18); border-radius: 8px; outline: 0; background: #071b2d; font-size: var(--font-9-5); }
 .terrain-control label { display: flex; margin-top: 8px; flex-direction: column; gap: 4px; color: #8cb4c3; }
 .terrain-control label b { color: #72dbf7; font-weight: 600; }
 .hillshade-toggle { flex-direction: row !important; align-items: center; gap: 6px !important; }
@@ -102,8 +102,8 @@ const statusHint = computed(() => {
 .hillshade-toggle.unavailable span { color: #d8aa56; }
 .exaggeration input { accent-color: #48cdea; }
 .terrain-control :disabled { cursor: not-allowed; opacity: .45; }
-.terrain-hint { margin: 6px 0 0; color: #d8aa56; font-size: 8.5px; line-height: 1.45; }
+.terrain-hint { margin: 6px 0 0; color: #d8aa56; font-size: var(--font-8-5); line-height: 1.45; }
 .terrain-control.flat .terrain-hint { color: #8296a2; }
-.to-3d { width: 100%; height: 27px; margin-top: 7px; border: 1px solid rgba(99, 228, 255, .3); border-radius: 8px; color: #63e4ff; background: rgba(58, 174, 225, .12); cursor: pointer; font-size: 9.5px; }
+.to-3d { width: 100%; height: 27px; margin-top: 7px; border: 1px solid rgba(99, 228, 255, .3); border-radius: 8px; color: #63e4ff; background: rgba(58, 174, 225, .12); cursor: pointer; font-size: var(--font-9-5); }
 .to-3d:hover { background: rgba(58, 174, 225, .22); }
 </style>

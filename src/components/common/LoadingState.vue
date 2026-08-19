@@ -28,7 +28,7 @@ defineProps<{ text?: string }>()
   animation: ds-spin 0.8s linear infinite;
 }
 .ds-loading__text {
-  font-size: 13px;
+  font-size: var(--font-md);
 }
 @keyframes ds-spin {
   to {

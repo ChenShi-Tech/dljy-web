@@ -1,15 +1,15 @@
 <script setup lang="ts">
-// S6 中长期补仓（15:00–16:30，低频）—— 决策 + 行动
+// S6 中长期补仓（15:00–16:30，低频）， 决策 + 行动
 //
 // 现货日内的最后一块决策：中长期持仓覆盖到没有问题？口径为买方立场（售电/大用户），
-// 缺口敞在现货上结算。建议核心只有一句话——**缺口敞在贵的现货上要赶紧补，敞在便宜的
-// 现货上可以故意留着**；超签反过来。
+// 缺口敞在现货上结算。建议核心只有一句话，缺口敞在贵的现货上要赶紧补，敞在便宜的
+// 现货上可以故意留着；超签反过来。
 //
 // 三处上游产出自动喂进本面板：
 //   · S3 申报曲线合计 → 预测电量（缺则手填）；
 //   · S2 主导态势 → 现货贵不贵的判据；
 //   · S3 方向 → 两可情形下（现货便宜却判增持、现货贵却判减持）的拍板。
-// 三者缺席时按平衡市处理并在理由里写明——不假装有判断。结论写回 preflight.contract。
+// 三者缺席时按平衡市处理并在理由里写明，不假装有判断。结论写回 preflight.contract。
 import { computed, onMounted, ref, watch } from 'vue'
 import { Save, Wallet, ArrowDownUp, Database, ShieldAlert } from 'lucide-vue-next'
 import {
@@ -25,7 +25,7 @@ import {
 import { REGIME_LABEL } from 'shared/trading-rules/supply-demand.mjs'
 import { savePreflight, type DeclarationOrder } from '@/services/declarations'
 import { createContract, fetchContracts, type CompanyContract } from '@/services/company/companyApi'
-import { activePosition } from '@/services/position/positionContext'
+import { activeStanceType } from '@/services/stance/stanceContext'
 import AiAssistFill from '@/components/trading/AiAssistFill.vue'
 import type { StageId } from '@/data/workflowStages'
 
@@ -35,23 +35,23 @@ const emit = defineEmits<{ updated: [d: DeclarationOrder]; go: [stage: StageId] 
 const decl = computed(() => props.declaration)
 const pf = computed(() => decl.value?.preflight ?? {})
 
-// ── 上游产出 ────────────────────────────────────────────────────────────────
+// 上游产出
 const forecastFromS3 = computed(() =>
   pf.value.forecast ? pf.value.forecast.curveMwh96.reduce((a, b) => a + b, 0) : null
 )
 const regime = computed(() => (pf.value.dataGate?.regime ?? null) as string | null)
 const direction = computed(() => (pf.value.forecast?.direction ?? null) as 'add' | 'reduce' | 'hold' | null)
 
-// ── 输入（缺上游产出时手填）──────────────────────────────────────────────────
+// 输入（缺上游产出时手填）
 const forecastInput = ref<number>(0)
 const forecastMwh = computed(() => forecastFromS3.value ?? forecastInput.value)
 
-// ── 持仓视图（F4.2 联动）：日前中标量由 S5 写回自动喂入，不再人工填 ──────────
+// 持仓视图（F4.2 联动）：日前中标量由 S5 写回自动喂入，不再人工填
 const clearingPosition = computed(() => props.declaration?.preflight?.clearingReview?.positionUpdate ?? null)
 
-// ── 合约库联动（F1.6 · #1966）：月度持仓/年度均价/挂牌价参考自动取公司合同库 ──
+// 合约库联动（F1.6 · #1966）：月度持仓/年度均价/挂牌价参考自动取公司合同库
 // 月度持仓口径：覆盖标的月的生效中长期合同，总量按「重叠天数 ÷ 合同天数」折算到月
-// （年合同写的是全年总量，直接加总会把持仓放大 12 倍）——折算式随面板呈现。
+// （年合同写的是全年总量，直接加总会把持仓放大 12 倍），折算式随面板呈现。
 const MLT_MARKET_TYPES = new Set([
   'annual_bilateral', 'annual_centralized', 'monthly_bilateral', 'monthly_centralized',
   'provincial_green_annual', 'provincial_green_monthly', 'cross_provincial_green_annual', 'cross_provincial_green_monthly'
@@ -76,7 +76,7 @@ function overlapsMonth(c: CompanyContract, iso: string): number {
 
 /** 买方立场取 buyerPrice，卖方（发电/储能）取 sellerPrice。 */
 const priceOf = (c: CompanyContract): number | null => {
-  const v = activePosition.value === 'GENERATOR' || activePosition.value === 'STORAGE' ? c.sellerPrice : c.buyerPrice
+  const v = activeStanceType.value === 'GENERATOR' || activeStanceType.value === 'STORAGE' ? c.sellerPrice : c.buyerPrice
   return Number.isFinite(v) ? Number(v) : null
 }
 
@@ -146,7 +146,7 @@ async function loadContracts() {
 }
 onMounted(loadContracts)
 
-// ── 价格对比三件套：挂牌价 vs 年均价 / 分布判时机 / 波动守卫 ──────────────────
+// 价格对比三件套：挂牌价 vs 年均价 / 分布判时机 / 波动守卫
 const s3Quantile = computed(() => {
   const q = pf.value.forecast?.quantileDigest as { mean?: number; valley?: number; peak?: number } | undefined
   return q && Number.isFinite(q.mean) ? { mean: Number(q.mean), valley: Number(q.valley ?? q.mean), peak: Number(q.peak ?? q.mean) } : null
@@ -165,7 +165,7 @@ const kelly = computed(() =>
   })
 )
 
-// ── 执行登记到合约库（手册步骤④：执行后更新合约库，持仓自动前进）─────────────
+// 执行登记到合约库（手册步骤④：执行后更新合约库，持仓自动前进）
 const executedVolumeMwh = ref<number | null>(null)
 const executedPriceYuan = ref<number | null>(null)
 const registering = ref(false)
@@ -179,7 +179,7 @@ async function registerToLibrary() {
   registerMsg.value = ''
   registerError.value = ''
   try {
-    const sellSide = activePosition.value === 'GENERATOR' || activePosition.value === 'STORAGE'
+    const sellSide = activeStanceType.value === 'GENERATOR' || activeStanceType.value === 'STORAGE'
     const monthEnd = new Date(new Date(d.targetDate).getFullYear(), new Date(d.targetDate).getMonth() + 1, 0).toISOString().slice(0, 10)
     await createContract({
       contractNo: `S6-${d.targetDate}-${Date.now().toString().slice(-6)}`,
@@ -214,11 +214,11 @@ const assessment = computed(() =>
     regime: regime.value as Parameters<typeof assessContractGap>[0]['regime'],
     direction: direction.value,
     holdBand: holdBand.value,
-    position: activePosition.value
+    position: activeStanceType.value
   })
 )
 
-// ── 实际动作录入（建议是建议、执行是执行——分开记）──────────────────────────
+// 实际动作录入（建议是建议、执行是执行，分开记）
 const ACTION_PRESETS: Record<GapSuggestion, string> = {
   'buy-urgent': '紧急挂牌买入缺口电量',
   buy: '场内分批补仓',
@@ -233,10 +233,10 @@ watch(
   { immediate: true }
 )
 
-// ── AI 辅助填报：**只辅助"执行方式"这一项人工判断**────────────────────────────
+// AI 辅助填报：只辅助"执行方式"这一项人工判断
 // 边界拿捏：敞口量、敞口率、建议方向（急补/择机补/观望/转让）都是 assessContractGap
 // 规则引擎算出来的确定性结果，不需要也不应该让 AI 重判；真正需要经验的是
-// "具体怎么执行"——一次挂牌还是分批、挂什么价位区间、什么条件下暂停。
+// "具体怎么执行"，一次挂牌还是分批、挂什么价位区间、什么条件下暂停。
 const ASSIST_LABELS = { action: '执行动作' }
 const assistContext = computed(() => ({
   targetDate: props.targetDate,
@@ -254,7 +254,7 @@ function applyAssist(s: Record<string, unknown>) {
   if (typeof s.action === 'string' && s.action.trim()) action.value = s.action.trim()
 }
 
-// ── 写回 ────────────────────────────────────────────────────────────────────
+// 写回
 const saving = ref(false)
 const saveMsg = ref('')
 const saveError = ref('')
@@ -456,59 +456,59 @@ function gapClass(s: GapSuggestion) {
 
 <style scoped>
 .cg { display: flex; flex-direction: column; gap: 12px; }
-.cg-upstream { display: flex; gap: 14px; flex-wrap: wrap; align-items: center; padding: 8px 12px; border: 1px solid var(--el-border-color-lighter, #ebeef5); border-radius: 8px; background: #f8fafc; font-size: 12px; }
+.cg-upstream { display: flex; gap: 14px; flex-wrap: wrap; align-items: center; padding: 8px 12px; border: 1px solid var(--el-border-color-lighter, #ebeef5); border-radius: 8px; background: #f8fafc; font-size: var(--font-sm); }
 .cg-ok { color: #15803d; display: inline-flex; align-items: center; gap: 4px; }
 .cg-warn { color: #b45309; display: inline-flex; align-items: center; gap: 4px; }
-.cg-jump { padding: 0; border: none; background: none; color: #1d4ed8; font: inherit; font-size: 12px; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
+.cg-jump { padding: 0; border: none; background: none; color: #1d4ed8; font: inherit; font-size: var(--font-sm); cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
 
 .cg-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 12px; }
 .cg-panel { padding: 12px 14px; border: 1px solid var(--el-border-color-lighter, #ebeef5); border-radius: 10px; background: #fff; }
-.cg-panel h3 { display: flex; align-items: flex-start; gap: 10px; flex-wrap: wrap; margin: 0 0 8px; font-size: 13px; }
+.cg-panel h3 { display: flex; align-items: flex-start; gap: 10px; flex-wrap: wrap; margin: 0 0 8px; font-size: var(--font-md); }
 
 .cg-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 6px 10px; }
-.cg-fields label { display: flex; flex-direction: column; gap: 2px; font-size: 11px; color: var(--el-text-color-secondary, #667); }
-.cg-fields input { padding: 4px 7px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 5px; font-size: 12px; }
+.cg-fields label { display: flex; flex-direction: column; gap: 2px; font-size: var(--font-xs); color: var(--el-text-color-secondary, #667); }
+.cg-fields input { padding: 4px 7px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 5px; font-size: var(--font-sm); }
 .cg-fields input:disabled { background: #f1f5f9; color: #475569; }
-.cg-tip { margin: 8px 0 0; font-size: 11px; line-height: 1.6; color: var(--el-text-color-secondary, #667); }
+.cg-tip { margin: 8px 0 0; font-size: var(--font-xs); line-height: 1.6; color: var(--el-text-color-secondary, #667); }
 
 .cg-verdict { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; padding: 10px 12px; border-radius: 8px; border: 1px solid; }
 .cg-verdict.urgent { border-color: #fca5a5; background: #fef2f2; }
 .cg-verdict.buy { border-color: #fcd34d; background: #fffbeb; }
 .cg-verdict.sell { border-color: #c4b5fd; background: #f5f3ff; }
 .cg-verdict.hold { border-color: #86efac; background: #f0fdf4; }
-.cg-gap { font-size: 12px; color: var(--el-text-color-secondary, #667); }
-.cg-verdict strong { font-size: 22px; font-variant-numeric: tabular-nums; }
-.cg-pct { font-size: 12px; color: var(--el-text-color-secondary, #667); }
-.cg-sugg { margin-left: auto; padding: 3px 12px; border-radius: 9px; background: rgba(255,255,255,.7); font-style: normal; font-size: 13px; font-weight: 600; }
-.cg-reason { margin: 8px 0 0; font-size: 12px; line-height: 1.7; }
+.cg-gap { font-size: var(--font-sm); color: var(--el-text-color-secondary, #667); }
+.cg-verdict strong { font-size: var(--font-22); font-variant-numeric: tabular-nums; }
+.cg-pct { font-size: var(--font-sm); color: var(--el-text-color-secondary, #667); }
+.cg-sugg { margin-left: auto; padding: 3px 12px; border-radius: 9px; background: rgba(255,255,255,.7); font-style: normal; font-size: var(--font-md); font-weight: 600; }
+.cg-reason { margin: 8px 0 0; font-size: var(--font-sm); line-height: 1.7; }
 
-.cg-written { margin-bottom: 8px; padding: 6px 10px; border-radius: 6px; background: #f0fdf4; color: #166534; font-size: 12px; }
+.cg-written { margin-bottom: 8px; padding: 6px 10px; border-radius: 6px; background: #f0fdf4; color: #166534; font-size: var(--font-sm); }
 .cg-written em { font-style: normal; color: #4d7c0f; }
 .cg-action { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.cg-action input { flex: 1; min-width: 280px; padding: 5px 8px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 5px; font-size: 12px; }
-.cg-btn { padding: 5px 14px; border: 1px solid #2563eb; border-radius: 6px; background: #eff6ff; color: #1d4ed8; font-size: 12px; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; }
+.cg-action input { flex: 1; min-width: 280px; padding: 5px 8px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 5px; font-size: var(--font-sm); }
+.cg-btn { padding: 5px 14px; border: 1px solid #2563eb; border-radius: 6px; background: #eff6ff; color: #1d4ed8; font-size: var(--font-sm); cursor: pointer; display: inline-flex; align-items: center; gap: 4px; }
 .cg-btn.primary { background: #2563eb; color: #fff; }
 .cg-btn:disabled { opacity: .45; cursor: not-allowed; }
-.cg-ok { font-size: 12px; color: #15803d; }
-.cg-err { font-size: 12px; color: #b91c1c; }
-.cg-pos-auto { font-style: normal; font-size: 10px; color: #047857; }
-.cg-pos-none { font-style: normal; font-size: 10px; color: #b45309; }
-.cg-lib-btn { display: inline-flex; align-items: center; gap: 4px; padding: 3px 10px; border: 1px solid #7c3aed; border-radius: 5px; background: #f5f3ff; color: #6d28d9; font-size: 11px; cursor: pointer; }
+.cg-ok { font-size: var(--font-sm); color: #15803d; }
+.cg-err { font-size: var(--font-sm); color: #b91c1c; }
+.cg-pos-auto { font-style: normal; font-size: var(--font-10); color: #047857; }
+.cg-pos-none { font-style: normal; font-size: var(--font-10); color: #b45309; }
+.cg-lib-btn { display: inline-flex; align-items: center; gap: 4px; padding: 3px 10px; border: 1px solid #7c3aed; border-radius: 5px; background: #f5f3ff; color: #6d28d9; font-size: var(--font-xs); cursor: pointer; }
 .cg-lib-btn:disabled { opacity: .5; cursor: wait; }
-.cg-lib-badge { font-style: normal; font-size: 10px; color: #6d28d9; }
-.cg-lib-none { font-style: normal; font-size: 10px; color: #b45309; }
+.cg-lib-badge { font-style: normal; font-size: var(--font-10); color: #6d28d9; }
+.cg-lib-none { font-style: normal; font-size: var(--font-10); color: #b45309; }
 .cg-inline { display: inline-flex; align-items: center; gap: 5px; }
-.cg-src { font-style: normal; font-size: 10px; color: var(--el-text-color-secondary, #889); }
-.cg-compare { margin: 6px 0 0; padding: 6px 10px; border-radius: 6px; font-size: 12px; line-height: 1.6; background: #f8fafc; }
+.cg-src { font-style: normal; font-size: var(--font-10); color: var(--el-text-color-secondary, #889); }
+.cg-compare { margin: 6px 0 0; padding: 6px 10px; border-radius: 6px; font-size: var(--font-sm); line-height: 1.6; background: #f8fafc; }
 .cg-compare.below, .cg-compare.lock_now { background: #f0fdf4; color: #166534; }
 .cg-compare.above, .cg-compare.wait { background: #fffbeb; color: #92400e; }
 .cg-compare.comparable, .cg-compare.neutral { background: #f8fafc; color: #475569; }
-.cg-vol { display: flex; align-items: center; gap: 5px; margin: 8px 0 0; padding: 6px 10px; border-radius: 6px; font-size: 11px; background: #f8fafc; color: #475569; }
+.cg-vol { display: flex; align-items: center; gap: 5px; margin: 8px 0 0; padding: 6px 10px; border-radius: 6px; font-size: var(--font-xs); background: #f8fafc; color: #475569; }
 .cg-vol.paused { background: #fef2f2; color: #991b1b; font-weight: 600; }
-.cg-kelly { margin-left: auto; font-style: normal; font-size: 10px; color: #92400e; }
+.cg-kelly { margin-left: auto; font-style: normal; font-size: var(--font-10); color: #92400e; }
 .cg-register { margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--el-border-color, #dcdfe6); }
-.cg-register h4 { margin: 0 0 6px; font-size: 12px; }
-.cg-frame { margin-left: auto; font-style: normal; font-size: 10px; padding: 1px 8px; border-radius: 8px; }
+.cg-register h4 { margin: 0 0 6px; font-size: var(--font-sm); }
+.cg-frame { margin-left: auto; font-style: normal; font-size: var(--font-10); padding: 1px 8px; border-radius: 8px; }
 .cg-frame.buyer { background: #eff6ff; color: #1d4ed8; }
 .cg-frame.seller { background: #fef3c7; color: #92400e; }
 .cg-frame.storage { background: #f5f3ff; color: #6d28d9; }@media (max-width: 760px) {

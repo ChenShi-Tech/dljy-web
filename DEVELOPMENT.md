@@ -12,8 +12,10 @@
               │  代理（vite.config.ts server.proxy）
               ├── /api/*        ──► Node BFF        （DLJY_DEV_API_TARGET，默认 127.0.0.1:4174）
               │   /dify-*、/console、/_next 同走此面
-              └── /agent-api/*  ──► Python FastAPI  （DLJY_AGENT_API_TARGET，默认 127.0.0.1:8000）
-                  （路径会被 rewrite：/agent-api/xxx → /api/xxx）
+              ├── /agent-api/*  ──► Python FastAPI  （DLJY_AGENT_API_TARGET，默认 127.0.0.1:8000）
+              │   （路径会被 rewrite：/agent-api/xxx → /api/xxx）
+              └── /pi-api/*     ──► pi-poc 编排服务 （DLJY_PI_POC_TARGET，默认 127.0.0.1:8100；rewrite → /api）
+                  （仅战略问答 #1526 / 申报体检 #1527 两个 PoC 页使用）
 ```
 
 两个后端面的分工：
@@ -45,7 +47,8 @@ npm run dev                        # http://localhost:5174
 页面组件**不直接 `fetch`**，一律经 `src/services/`：
 
 - `src/services/api.ts` —— `/api` 面的统一出口：响应信封解析、Token 注入（`Authorization: Bearer`）、**自动注入 `x-region-id` 请求头**（全局地区上下文）。
-- `src/services/agentClient.ts` / `studioClient.ts` 等 —— `/agent-api` 面的出口，基址统一走 `AGENT_API_BASE` 常量（默认 `/agent-api`），**不得硬编码 `http://…:8000`**（生产会 404）。
+- `src/services/agent/` —— `/agent-api` 面的出口：`agentClient.ts`、`studioClient.ts` 等客户端与它们共用的 `httpClient.ts` 基座（`createAgentClient` 工厂）。基址统一走 `AGENT_API_BASE` 常量（默认 `/agent-api`），**不得硬编码 `http://…:8000`**（生产会 404）。
+- `src/services/agent/piPocClient.ts` —— `/pi-api` 面唯一出口（基址 `PI_AGENT_BASE`）；dev 经 vite 代理到 pi-poc 编排服务（默认 8100），见 §1 架构图。
 - `src/services/data/` —— 统一类型 + 数据口径（basis）归一的取数基座。
 
 ### 3.2 响应信封与真伪标注
@@ -67,6 +70,17 @@ npm run dev                        # http://localhost:5174
 
 `AgentChatPanel.vue` 多处复用；每个接入点必须给**静态且全仓唯一**的 `history-key`，且不得关闭历史持久化（`:persist-history="false"` 被门禁禁止）。
 
+### 3.5 API 对接指南（新增/收编端点时的 checklist）
+
+1. **先定归属面**：业务 CRUD/鉴权/采集回放 → `/api`（`apiGet`/`apiPost`）；智能体、预测、量化权威实现 → `/agent-api`（`createAgentClient` 工厂）；pi-poc 沙箱 → `piPocClient`。URL 只写相对路径，基址一律用常量（`API_BASE` / `AGENT_API_BASE` / `PI_AGENT_BASE`），显式 `/api|/agent-api|/dify-*` 前缀不会被叠加基址。
+2. **信封契约**：响应统一 `{ code, message, data, mock, sourceType, productionWrite }`。`unwrap` 的错误分类：`payload.code ≥ 400` 优先于 HTTP status；网关 HTML 错误页回落 `HTTP <status>` 文案；204 → `{ code: 204 }`；抛出的 `ApiError` 携带 `status/code/payload/lockedUntil/remainingAttempts`。
+3. **请求头自动注入**（不要在调用方手拼）：`apiGet`/`apiPost` 自动带 `Authorization`、`x-company-id`（与 `x-tenant-id` 同值）、`x-region-id`（全局地区上下文）；`apiPost` 自动 `content-type: application/json` + `idempotency-key`（幂等键）。agent 面的写方法额外带 `x-admin-token`，`postForm` **绝不手设 content-type**（multipart boundary 由浏览器生成）。
+4. **地区响应头**：`x-region-served` / `x-region-fallback` 驱动 `RegionDataBanner`；api.ts 内部有请求序号守卫，切区后旧地区的迟到响应不会覆盖新地区状态。
+5. **401 白名单**：`/auth/login`、`/auth/login-options`、`/qweather`、`/csg/disclosure` 之外的 401 会清登录态 + `auth-expired` 事件 + 跳 `/login?redirect=`。新端点若属「后端代理外部服务」性质，评估是否要加白名单（否则外部服务 401 会误触发全局登出）。
+6. **GET 退避重试**：502/503/504 自动重试最多 2 次（退避 400→800ms）；500/404 不重试；AbortError 直抛。新写 client 不要自己再包一层重试。
+7. **mock 标注透传**：收编/新写 client 时，信封的 `mock` 与 `mockFields` 必须原样透传给 UI 层（驾驶舱/工作台的 Mock 可见标注依赖它）；「缺数据返 null、失败不缓存、未知回落标 synthetic」是数据诚实性红线。
+8. **`/pi-api` 特例**：战略问答/申报体检 PoC 与智能体工作台（chat 已切流 #2158）共用，后端是 integrations/pi-poc 沙箱（`DLJY_PI_POC_TARGET`，默认 8100，代理 rewrite `/pi-api` → `/api`）；不跑该服务时代理目标不可达属正常。
+
 ## 4. 联调与排错
 
 常见响应状态判读（联调时先查这张表再报 bug）：
@@ -84,15 +98,22 @@ npm run dev                        # http://localhost:5174
 ## 5. 测试与本地门禁
 
 ```bash
-npm run check          # vue-tsc 类型检查（0 错误才能提 PR）
-npm run test:unit      # vitest：纯函数 *.spec.ts（node 环境）+ 组件 *.component.spec.ts（happy-dom）
-npm run test:coverage  # 覆盖率阈值门禁（lines 24 / functions 20 / statements 23 / branches 19）
-npm run build          # 生产构建（index + grid-geo 双入口）
+npm run lint          # ESLint：correctness 最小面 + 分层守卫（0 error 才能提 PR；no-explicit-any 为 warn，见技术债）
+npm run check         # vue-tsc 类型检查（0 错误才能提 PR）
+npm run test:unit     # vitest：纯函数 *.spec.ts（node 环境）+ 组件 *.component.spec.ts（happy-dom）
+npm run test:coverage # 覆盖率阈值门禁（lines 44 / functions 36 / statements 42 / branches 37）
+npm run build         # 生产构建（index + grid-geo 双入口）
 ```
 
-- 新增服务层逻辑应配套 `*.spec.ts`；组件测试用 `src/test/mount.ts` 辅助挂载。
-- 覆盖率阈值随上游仓同步，不要在本仓调低。
-- CI（GitHub Actions）跑同样四步 + mirror-guard，PR 必须全绿。
+### 5.1 测试策略
+
+- **双 project 分工**：`*.spec.ts` 跑 node project（纯函数/服务层逻辑）；`*.component.spec.ts` 跑 dom project（happy-dom + `vitest.setup.dom.ts`）。node project 里个别 spec 确需浏览器 API（localStorage 等）时，用文件头 `// @vitest-environment happy-dom` pragma 按文件切环境——这是**合法机制**，但仅限 node 文件；`*.component.spec.ts` 天然在 dom project，**不要**再加冗余 pragma（仓内已清理过一轮，勿回潮）。
+- **文件头三要素**：守什么不变量 / 坏掉的症状 / issue 号（如有）。新 spec 必须遵循（可参照 `src/services/agent/httpClient.spec.ts`）。
+- **断言纪律**：正反双侧断言（happy path + 错误路径都要锁）；边界穷举（NaN / ±Infinity / null / 空串 / 脏 localStorage）；金融数值手算对拍（不用「自身输出回读自身」的伪对拍）。
+- **mock 纪律**：`vi.hoisted` + 工厂模式；`vi.stubGlobal` 后必须 `vi.unstubAllGlobals()`；store/composable 的模块级单例用 `resetXxxForTest()` 或直接赋值归位。stub `fetch` 的实现签名带 `(url, init)` 两参，`mock.calls` 才能推导出元组类型。
+- **诚实语义红线**（spec 要专门锁这些）：缺数据返 `null` 而非 `0`；未知回落标 synthetic 不伪装 real；失败不缓存；`mock:true`/`sourceType!=='REAL'` 的私有数据必须 throw 而非放行。
+- **覆盖率口径**：只统计 `.ts/.js` 逻辑层（`.vue` 计入会稀释全局指标）；阈值 = floor(实测基线) − 2pp，**只升不降**。注意 Vitest 4 的 coverage include 会把未执行文件按 0% 拉进分母——`shared/` 的 19 个 .mjs 多数无覆盖，纳入会稀释约 10pp，故暂不纳管（技术债 §9）。
+- CI（GitHub Actions）跑 mirror-guard + lint + check + coverage + build，PR 必须全绿。
 
 ## 6. 目录与代码约定
 
@@ -107,9 +128,35 @@ npm run build          # 生产构建（index + grid-geo 双入口）
 | `vendor/**`、`shared/schema/generated/**` | 上游生成物镜像，**只读**（CI 会拒） |
 | 图表 | 真实呈现纪律：分时值用阶梯线（不做视觉平滑）、连续量直线、预测虚线/出清实线 |
 
-## 7. 任务与协作流
+## 7. ESLint 与分层守卫
+
+配置在 `eslint.config.ts`（flat config），设计取舍：
+
+- **只取 correctness 规则**（`typescript-eslint` recommended + `eslint-plugin-vue` flat/essential），不引 stylistic/格式类——格式统一交给编辑器，避免海量格式 diff 淹没真实问题。
+- **分层守卫是核心目的**（本配置存在的第一理由）：
+  - `src/views/**`、`src/components/**` 禁直接 `import shared/schema/**`——schema 是前后端同构契约，视图消费必须经 `src/data/` 出口（如 `captureColumnLabels.ts` 的 re-export）；
+  - `src/views/**`、`src/components/**` 禁直接 `fetch`——取数必须经 `src/services/`（散落取数无法统一治理，/pi-api 代理被误删后两页静默 404 即前车之鉴）。`features/` 不拦（geoJsonLoader 拉静态资源属合法），spec 文件不拦（mock fetch 是测试手段）。
+- **`no-explicit-any` 降为 warn**：存量 ~291 处（多为脏数据边界的手写守卫），列技术债渐进清零（§9），不在门禁里制造巨型 diff。
+- **`_` 前缀约定**：有意保留的占位参数/变量（接口位置参数、响应式订阅读值等）以 `_` 开头，不按未使用报错。
+- `vendor/`、`shared/`、`src/data/generated/`、构建产物不在 lint 范围（上游生成物由双主仓自己的门禁管）。
+
+## 8. 任务与协作流
 
 - **Issue 建在本仓**（dljy-web），会自动/由维护者纳入 org 看板「电力现货交易」统一排期；标题格式 `web: 一句话简述`。
 - 分支从 `main` 拉（`feat/…`、`fix/…`），PR 小而聚焦；本仓是镜像下游，合入的 PR 由维护者搬运回上游后经下一次同步回流（你的 commit 可能被 `sync: mirror from dljy@…` 提交覆盖重放，内容不丢）。
 - PR 说明写清：改了哪个页面/行为、怎么验证（截图/录屏欢迎）、是否碰了 `shared/`。
 - 遇到需要后端改动才能实现的功能：在 issue 里描述清楚需要的接口/字段，由维护者在上游仓排期，**不要在前端硬造假数据绕过**（违反 Mock 标注纪律）。
+
+## 9. 已知技术债（动到相关区域时顺手还，不专门开大工程）
+
+| # | 债 | 现状与方向 |
+|---|---|---|
+| 1 | **basis 归一双轨** | `src/services/dataBasis.ts`（根级）与 `src/services/data/contracts/*Adapter.ts` 各自实现一套口径归一；方向：以 `data/contracts` 为唯一权威，dataBasis.ts 收敛为薄引用 |
+| 2 | **云南面板双家园** | `src/features/regions/yunnan/panels/` 与 `src/views/yunnan/panels/` 并存（如结算价面板在 views 侧 1100+ 行）；方向：统一收进 features 侧，views 只留路由级页面 |
+| 3 | **services 根级扁平** | `src/services/` 根下 38 个 .ts 直接平铺；方向：按域收进子目录（agent/ 已示范），迁移需连动 import 与上游同步说明 |
+| 4 | **巨型 .vue** | 15 个超 1000 行（最大 DeclarationDeskView 1984 行）；方向：拆子组件/composable，新页面禁止再写巨石 |
+| 5 | **EP/ECharts 全量引入** | element-plus 与 echarts 未做按需引入（首包代价约 1MB gzip 前）；方向：unplugin 按需方案需评估与既有主题体系的兼容 |
+| 6 | **tsconfig 收紧路线** | `noUncheckedIndexedAccess`、`exactOptionalPropertyTypes` 未开；试跑：`npx tsc --noEmit --noUncheckedIndexedAccess`（当前存量报错即改造工作量清单） |
+| 7 | **DOM 重 composables 无测试** | `useEChart`（canvas + resize observer）等无 spec；方向：先抽纯函数（option 构造）再测 |
+| 8 | **shared/ 覆盖率未纳管** | Vitest 4 coverage include 会把未执行文件按 0% 计入分母，shared/ 19 个 .mjs 多数无覆盖，纳入约稀释 10pp；方向：shared/ 补测后再纳管 |
+| 9 | **no-explicit-any 存量** | ~291 处 warn（多为脏数据边界手写守卫）；方向：动到相关文件时顺手收敛，不专项批量改（避免无行为意义的大 diff） |

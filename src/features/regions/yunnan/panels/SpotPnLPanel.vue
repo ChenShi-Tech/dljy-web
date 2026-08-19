@@ -1,9 +1,9 @@
 <script setup lang="ts">
 // 云南现货损益归因 + 申报偏差分析面板（xhjy/yunnan/spot-pnl）：消费两个真实回放 family。
 // 三块展示：
-//   1) 损益归因瀑布图（yn_loss_attribution：策略/预测/电网损失 → 合计损益，正=损失红、负=收益绿）；
-//   2) 申报偏差分析（yn_spot_settlement：日前/实时 偏差电量 vs 偏差电费，按日双轴）；
-//   3) 厂站 P&L 排行/明细（按电厂聚合，DynamicTable + CSV 导出）。
+// 1) 损益归因瀑布图（yn_loss_attribution：策略/预测/电网损失 → 合计损益，正=损失红、负=收益绿）；
+// 2) 申报偏差分析（yn_spot_settlement：日前/实时 偏差电量 vs 偏差电费，按日双轴）；
+// 3) 厂站 P&L 排行/明细（按电厂聚合，DynamicTable + CSV 导出）。
 // 数据为真实导出（落 region=yunnan，云南严格地区不回退山西）；后端未摄取时给「请先摄取」友好空态，
 // 不标「模拟数据」（真实数据页）。数据走 /api/real（fetchCaptured），损益已预计算，前端仅聚合/求和/排序，
 // 不重算公式。金额口径：源单位为元；图表与明细统一换算为「万元」展示（除以 1e4），列名标注口径。
@@ -18,8 +18,8 @@ import { axisTooltip, chartToolbox, fmtNum, sliderZoom, emptyOverlay } from '@/s
 import { fetchCaptured } from '@/services/captured'
 import { capturedAtFromProvenance } from '@/services/data/freshness'
 
-// ── 行类型（来自数据层 capture-families.mjs 的 ROW_SCHEMAS）──
-// #1755：数值字段 number | null——数据层缺测诚实落 null（#1746），前端不得用 Number(null)=0
+// 行类型（来自数据层 capture-families.mjs 的 ROW_SCHEMAS）
+// #1755：数值字段 number | null，数据层缺测诚实落 null（#1746），前端不得用 Number(null)=0
 // 拉回假零（全空段显示 0 会误导损益瀑布与厂站 P&L）；null 由 fmtNum 显示为「-」。
 interface LossRow {
   id: string
@@ -59,27 +59,27 @@ interface SettlementRow {
 const ALL_PLANTS = '__all__'
 const WAN = 10000 // 元 → 万元
 
-// ── 控件状态 ──
+// 控件状态
 const selectedPlant = ref<string>(ALL_PLANTS)
 // 数据为 2026-05 全月；日期范围默认覆盖整月（按日聚合 / 排序）。
 const dateRange = ref<[string, string]>(['2026-05-01', '2026-05-31'])
 
-// ── 原始数据 ──
+// 原始数据
 const lossRows = ref<LossRow[]>([])
 const settleRows = ref<SettlementRow[]>([])
 // 数据时间：真实回放的采集/写入时刻（来自 provenance.capturedAt），非取数时刻。
-// 两族数据时间分开维护：损益归因图跟 yn_loss_attribution、申报偏差图跟 yn_spot_settlement——
+// 两族数据时间分开维护：损益归因图跟 yn_loss_attribution、申报偏差图跟 yn_spot_settlement
 // 共用一个时间会在两族独立导入/一族缺 provenance 时，用较新一族的时间掩盖另一族已过期。
 const lossUpdatedAt = ref<string | number | null>(null)
 const settleUpdatedAt = ref<string | number | null>(null)
 
-// ── 加载/错误态 ──
+// 加载/错误态
 const loading = ref(false)
 let reloadReqId = 0
 const errorMsg = ref('')
 const ingestHint = ref(false) // 后端未摄取两族时的友好提示
 
-// ── 工具：从 fetchCaptured 信封里取数组 ──
+// 工具：从 fetchCaptured 信封里取数组
 function pickRows<T>(body: unknown): T[] {
   if (Array.isArray(body)) return body as T[]
   const data = (body as { data?: unknown } | null)?.data
@@ -87,7 +87,7 @@ function pickRows<T>(body: unknown): T[] {
   return []
 }
 
-// #1755：求和跟踪器——null 不参与求和但计数；全部 null 时返回 null（诚实「无数据」，
+// #1755：求和跟踪器，null 不参与求和但计数；全部 null 时返回 null（诚实「无数据」，
 // 由 fmtNum 显示「-」），部分 null 时返回有效值之和（null 等价跳过，对 SUM 无害）。
 function trackedSum() {
   let sum = 0
@@ -98,12 +98,7 @@ function trackedSum() {
   }
 }
 
-function toNum(v: unknown): number {
-  const n = Number(v)
-  return Number.isFinite(n) ? n : 0
-}
-
-// ── 派生：电厂候选（两族 distinct plant 并集，按名排序）──
+// 派生：电厂候选（两族 distinct plant 并集，按名排序）
 const plantOptions = computed(() => {
   const set = new Set<string>()
   for (const r of lossRows.value) if (r.plant) set.add(r.plant)
@@ -130,7 +125,7 @@ const filteredSettle = computed(() =>
   settleRows.value.filter((r) => plantMatch(r.plant) && inDateRange(r.date))
 )
 
-// ── ① 损益归因瀑布（策略/预测/电网 → 合计）──
+// ① 损益归因瀑布（策略/预测/电网 → 合计）
 // #1755：整段全 null → 该段落 null（瀑布段不显示、表格显示「-」），不再按假零 0 展示。
 const lossBreakdown = computed(() => {
   const strategy = trackedSum()
@@ -151,7 +146,7 @@ const lossBreakdown = computed(() => {
 
 const hasLoss = computed(() => filteredLoss.value.length > 0)
 
-// ── ② 申报偏差（按日聚合）──
+// ② 申报偏差（按日聚合）
 // #1755：指标全 null → null（ECharts 断点，不显示为 0）。
 const deviationByDate = computed(() => {
   const map = new Map<string, { daDevEnergy: ReturnType<typeof trackedSum>; daDevFee: ReturnType<typeof trackedSum>; rtDevEnergy: ReturnType<typeof trackedSum>; rtDevFee: ReturnType<typeof trackedSum> }>()
@@ -173,8 +168,8 @@ const deviationByDate = computed(() => {
 
 const hasDeviation = computed(() => deviationByDate.value.length > 0)
 
-// ── ③ 厂站 P&L 排行/明细（按电厂聚合）──
-// #1755：数值字段 number | null——整段全 null 的指标落 null（表格显示「-」），
+// ③ 厂站 P&L 排行/明细（按电厂聚合）
+// #1755：数值字段 number | null，整段全 null 的指标落 null（表格显示「-」），
 // avgPrice 在 fee/energy 全 null 时落 null（不产出 0 均价、防 0 除）。
 interface PlantAgg {
   plant: string
@@ -273,14 +268,14 @@ const plantAggregation = computed<PlantAgg[]>(() => {
 
 const tableSummary = computed(() => {
   const rows = plantAggregation.value
-  // #1755（codex P2）：trackedSum 语义——全 null 时合计 null（fmtNum 显示「-」），
+  // #1755：trackedSum 语义，全 null 时合计 null（fmtNum 显示「-」），
   // 不把「缺测」reduce 成假零 0 的「合计损益 0 万元」。
   const sum = trackedSum()
   for (const r of rows) sum.add(r.lossTotal)
   return { count: rows.length, loss: sum.value() }
 })
 
-// ── 加载 ──
+// 加载
 function isEmptyResultError(message: string): boolean {
   return /未摄取|无数据|no data|暂无数据|not found|空|404/i.test(message)
 }
@@ -313,7 +308,7 @@ async function reloadAll() {
     if (reqId !== reloadReqId) return
     lossRows.value = []
     settleRows.value = []
-    // 清空数据时间——否则重载失败/切地区 404 后，ChartCard 仍显上一次（甚至上一地区）
+    // 清空数据时间，否则重载失败/切地区 404 后，ChartCard 仍显上一次（甚至上一地区）
     // 的数据时间与新鲜度，掩盖当前空态/失败状态（与 rows 同步置空）。
     lossUpdatedAt.value = null
     settleUpdatedAt.value = null
@@ -335,14 +330,14 @@ function onDateChange() {
   // 同上，computed 响应。
 }
 
-// ── 图表 option（buildOption 函数式，ChartCard 自动追踪响应式重绘）──
+// 图表 option（buildOption 函数式，ChartCard 自动追踪响应式重绘）
 const LOSS_RED = '#dc2626'
 const GAIN_GREEN = '#16a34a'
 
 function buildWaterfallOption() {
   const cc = chartChrome()
   const b = lossBreakdown.value
-  // #1755（codex P2）：空态判定含「全 null」——有行但三段全空时走空态，不渲染 0 柱。
+  // #1755：空态判定含「全 null」，有行但三段全空时走空态，不渲染 0 柱。
   const empty = !hasLoss.value || (b.strategy == null && b.forecast == null && b.grid == null)
   // 瀑布：三段分项 + 合计；用透明「占位柱」+ 「数值柱」实现升降台阶。
   // 单位换算为万元。
@@ -554,7 +549,7 @@ function buildDeviationOption() {
   }
 }
 
-// ── ③ 厂站 P&L 明细表（DynamicTable 列标签 + 行映射）──
+// ③ 厂站 P&L 明细表（DynamicTable 列标签 + 行映射）
 const plantLabels: Record<string, string> = {
   plant: '电厂',
   totalGenerationMwh: '总发电(MWh)',
@@ -715,7 +710,7 @@ onRegionChange(() => {
   align-items: center;
   gap: 6px;
   color: #0f766e;
-  font-size: 13px;
+  font-size: var(--font-md);
   font-weight: 650;
 }
 
@@ -745,7 +740,7 @@ onRegionChange(() => {
 
 .sp-field > span {
   color: #50616e;
-  font-size: 12px;
+  font-size: var(--font-sm);
   font-weight: 650;
 }
 
@@ -771,7 +766,7 @@ onRegionChange(() => {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  font-size: 11px;
+  font-size: var(--font-xs);
   color: var(--muted, #909399);
 }
 
@@ -796,12 +791,12 @@ onRegionChange(() => {
   gap: 6px;
   margin: 0;
   color: #172b3a;
-  font-size: 15px;
+  font-size: var(--font-15);
 }
 
 .sp-table-sub {
   color: #687987;
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 @media (max-width: 768px) {

@@ -1,20 +1,18 @@
-// ============================================================================
 // trustGate.ts — 决策可信度门禁（provenance/trust gate）
 // ----------------------------------------------------------------------------
 // 把数据真伪（DataSourceBasis，见 basis.ts）升级为「能否进真金白银决策」的判定，
 // 治理评估指出的「沉默的合成/占位传染」：合成/Mock 数据若被误用为申报/结算/外发依据，
-// 会产出不可信托的决策。本模块在决策输出边界设硬阻塞——凡 basis 低于 captured 的链路，
+// 会产出不可信托的决策。本模块在决策输出边界设硬阻塞，凡 basis 低于 captured 的链路，
 // 产出带不可移除水印 + 禁止进申报/结算/外发。
 //
 // 判定（保守）：
-//   basis ∈ {real, captured}                          → operational（可进决策/申报/结算/外发）
-//   basis ∈ {synthetic, illustrative, empty, user_saved} | 未知/缺失 → advisory_only（仅决策支持，禁进申报/结算/外发）
+// basis ∈ {real, captured}                          → operational（可进决策/申报/结算/外发）
+// basis ∈ {synthetic, illustrative, empty, user_saved} | 未知/缺失 → advisory_only（仅决策支持，禁进申报/结算/外发）
 //
 // 与 data-access-paradigm §3 真伪 quartet 的关系：basis 是 quartet 的语义视图（unifyBasis 归一），
 // 本模块把 basis 进一步二分为 decisionGrade，供决策边界（申报/结算/外发）硬判定。
-// 与 RiskLevel L2_EXTERNAL 的关系：L2 管「外发动作需人工审批」，trustGate 管「输入数据能否进决策」——
+// 与 RiskLevel L2_EXTERNAL 的关系：L2 管「外发动作需人工审批」，trustGate 管「输入数据能否进决策」
 // 正交且互补：L2 外发前应先过 trustGate（advisory_only 数据不得外发）。
-// ============================================================================
 
 import type { DataSourceBasis } from './types'
 

@@ -64,7 +64,7 @@ defineExpose({ instance: () => chart.instance(), exportPng })
   justify-content: center;
   min-height: 64px;
   padding: 14px 16px;
-  font-size: 12.5px;
+  font-size: var(--font-12-5);
   color: var(--muted, #909399);
   background: rgba(125, 125, 125, 0.05);
   border: 1px dashed rgba(125, 125, 125, 0.3);

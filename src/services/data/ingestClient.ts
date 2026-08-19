@@ -3,7 +3,7 @@
 // 端点返回非标准 envelope（{code, ok, kind, ...}），故用 fetch + requestHeaders（不走 apiPost 的 envelope 解包）。
 import { requestHeaders } from '@/services/api'
 
-// spot-ingest / forecast-etl：数据接入向导「一键生效」(#885)——T0/T1 模板投递后 UI 点按即跑 ETL，
+// spot-ingest / forecast-etl：数据接入向导「一键生效」(#885)，T0/T1 模板投递后 UI 点按即跑 ETL，
 // 与 import-hub DELIVERY_HINTS 同源命令。底层走 agent-python.mjs 桥（Python ETL），lockArgs 硬编码。
 export type IngestKind =
   | 'spot-export'
@@ -11,6 +11,8 @@ export type IngestKind =
   | 'market-export'
   | 'spot-ingest'
   | 'forecast-etl'
+  | 'cgn-yunnan-prices'
+  | 'cgn-yunnan-market'
 
 export interface IngestResult {
   code: number
@@ -50,7 +52,7 @@ function fnv1a32(input: string): string {
  * 摄取幂等键：由 (kind, params) 确定性派生。
  *
  * ⚠️ 不能用随机 UUID（#1406）：服务端 `buildDedupKey(actor, kind, idempotencyKey || contentHash)`
- * 在客户端键存在时**优先用客户端键**，随机键会让原本基于 contentHash 的双击/重发去重全部失效
+ * 在客户端键存在时优先用客户端键，随机键会让原本基于 contentHash 的双击/重发去重全部失效
  * （每次点击都真 spawn 一次 ETL）。用确定性键即等价于服务端 contentHash 语义：
  * 同 params 连点命中 in-flight/completed 去重，不同 params 互不命中。
  */

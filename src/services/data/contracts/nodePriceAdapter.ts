@@ -59,7 +59,7 @@ function contractMeta(meta: NodePriceEnvelopeMeta): ModuleContractMeta {
     basis: synthetic ? 'synthetic' : 'captured',
     sourceType: (meta.sourceType || 'MOCK') as ModuleContractMeta['sourceType'],
     // mock 与 basis 从同一 synthetic 判定派生：上游只给 sourceType:'MOCK' 而漏 mock 字段时，
-    // 也必须标 mock:true——否则 availability 误标 real、消费方（usableDaily 按 mock 过滤）
+    // 也必须标 mock:true，否则 availability 误标 real、消费方（usableDaily 按 mock 过滤）
     // 会把模拟数据放进指标且不显示 Mock 提示。
     mock: synthetic,
     productionWrite: false,
@@ -94,7 +94,7 @@ function toNode(nodeName: string, regionId: string): NodePriceNode {
   return { nodeName, regionId }
 }
 
-// 96 点点号从 time_point 的 HH:MM 推导（hour*4 + minute/15 + 1），而非数组下标——
+// 96 点点号从 time_point 的 HH:MM 推导（hour*4 + minute/15 + 1），而非数组下标
 // 序列缺中间时段时下标编号会把缺口后的点整体前移，破坏与出力/结算 96 点的对齐。
 // 无法解析的时点回退下标编号（不丢数据）。
 function pointFromTime(time: string, fallbackIndex: number): number {

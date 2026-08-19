@@ -2,15 +2,24 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { getCurrentUser } from '@/services/auth'
-import { hasCompanyAdmin } from '@/services/governance'
+import { hasCompanyAdmin, subjectTypeLabels, type SubjectType } from '@/services/governance'
 import { companyOptions, currentCompany, selectedCompanyId } from '@/services/company/companyContext'
-import { fetchProfile, saveProfile } from '@/services/company/companyApi'
+import { fetchCompanySubjectTypes, fetchProfile, saveCompanySubjectTypes, saveProfile } from '@/services/company/companyApi'
 import CompanyScopeBar from '@/components/company/CompanyScopeBar.vue'
 
 const canWrite = computed(() => hasCompanyAdmin(getCurrentUser()))
 
 const form = reactive({ contact: '', address: '', businessScope: '' })
 const loading = ref(false)
+// 注册立场（#2193）：公司在交易中心登记的市场主体类型集合，「本主体既买又卖」的
+// 登记处，也是 TRADER/GROUP 账号立场切换授权的服务端权威。仅 BOSS/ADMIN 可改。
+const registryLoading = ref(false)
+const registry = ref<string[]>([])
+
+const subjectTypeOptions = (Object.keys(subjectTypeLabels) as SubjectType[]).map((t) => ({
+  value: t,
+  label: subjectTypeLabels[t]
+}))
 
 async function reload() {
   loading.value = true
@@ -25,8 +34,18 @@ async function reload() {
     loading.value = false
   }
 }
-onMounted(reload)
-watch(selectedCompanyId, reload)
+async function reloadRegistry() {
+  registryLoading.value = true
+  try {
+    registry.value = await fetchCompanySubjectTypes(selectedCompanyId.value)
+  } catch {
+    registry.value = []
+  } finally {
+    registryLoading.value = false
+  }
+}
+onMounted(() => { void reload(); void reloadRegistry() })
+watch(selectedCompanyId, () => { void reload(); void reloadRegistry() })
 
 async function save() {
   try {
@@ -35,6 +54,16 @@ async function save() {
     await reload()
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '保存失败')
+  }
+}
+
+async function saveRegistry() {
+  try {
+    await saveCompanySubjectTypes(selectedCompanyId.value ?? '', registry.value)
+    ElMessage.success('注册立场已保存')
+    await reloadRegistry()
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '保存注册立场失败')
   }
 }
 </script>
@@ -71,7 +100,29 @@ async function save() {
       </el-col>
 
       <el-col :span="10" :xs="24">
-        <el-card shadow="never">
+        <el-card shadow="never" v-loading="registryLoading">
+          <template #header>
+            <div class="card-head">
+              <span>注册立场</span>
+              <el-tag size="small" type="warning" effect="plain">交易中心登记</el-tag>
+            </div>
+          </template>
+          <el-select
+            v-model="registry"
+            multiple
+            filterable
+            :disabled="!canWrite"
+            placeholder="未登记多立场"
+            style="width: 100%"
+          >
+            <el-option v-for="opt in subjectTypeOptions" :key="opt.value" :value="opt.value" :label="opt.label" />
+          </el-select>
+          <p class="hint">
+            公司在交易中心登记的市场主体类型。交易组合（TRADER）与集团（GROUP）账号可在登记立场间切换作业视角；其余主体单立场。清空即退回单立场。
+          </p>
+          <el-button v-if="canWrite" type="primary" size="small" style="margin-top: 8px" @click="saveRegistry">保存注册立场</el-button>
+        </el-card>
+        <el-card shadow="never" style="margin-top: 16px">
           <template #header>可见公司</template>
           <el-table :data="companyOptions" border stripe size="small">
             <el-table-column prop="name" label="公司名称" min-width="140" />
@@ -93,8 +144,8 @@ async function save() {
 
 <style scoped>
 .company-page { padding: 20px; }
-.page-title { margin: 0 0 16px; font-size: 20px; }
+.page-title { margin: 0 0 16px; font-size: var(--font-20); }
 .card-head { display: flex; align-items: center; justify-content: space-between; }
-.readonly-hint { color: var(--el-text-color-secondary, #909399); font-size: 13px; }
-.hint { margin: 10px 0 0; color: var(--el-text-color-secondary, #909399); font-size: 12px; }
+.readonly-hint { color: var(--el-text-color-secondary, #909399); font-size: var(--font-md); }
+.hint { margin: 10px 0 0; color: var(--el-text-color-secondary, #909399); font-size: var(--font-sm); }
 </style>

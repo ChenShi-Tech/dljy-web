@@ -58,9 +58,9 @@ function submit() {
 <style scoped>
 .form-body { padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; }
 .form-row { display: flex; flex-direction: column; gap: 3px; }
-.form-row label { font-size: 12px; opacity: 0.7; }
+.form-row label { font-size: var(--font-sm); opacity: 0.7; }
 .form-row input, .form-row select, .form-row textarea {
-  padding: 6px 9px; font-size: 13px; border: 1px solid rgba(125, 125, 125, 0.3); border-radius: 6px;
+  padding: 6px 9px; font-size: var(--font-md); border: 1px solid rgba(125, 125, 125, 0.3); border-radius: 6px;
   background: var(--panel-bg, #fff); color: inherit; outline: none; font-family: inherit;
 }
 .form-row input:focus, .form-row select:focus, .form-row textarea:focus {
@@ -69,7 +69,7 @@ function submit() {
 .form-row textarea { resize: vertical; }
 .submit-btn {
   margin-top: 4px; align-self: flex-start; display: inline-flex; align-items: center; gap: 5px;
-  padding: 6px 16px; font-size: 13px; font-weight: 600; border: none; border-radius: 7px; cursor: pointer;
+  padding: 6px 16px; font-size: var(--font-md); font-weight: 600; border: none; border-radius: 7px; cursor: pointer;
   background: var(--el-color-primary, #2563eb); color: #fff;
 }
 .submit-btn:disabled { opacity: 0.5; cursor: not-allowed; }

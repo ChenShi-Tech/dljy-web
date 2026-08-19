@@ -73,14 +73,14 @@ function companyWriteOptions(options?: CompanyWriteOptions) {
   return options?.idempotencyKey ? { headers: { 'Idempotency-Key': options.idempotencyKey } } : undefined
 }
 
-// 空态守卫（#668 规则 4 / roborev job346+job355+job361）：「请选择公司」空态下不得发单公司请求——
+// 空态守卫（#668 规则 4job355+job361）：「请选择公司」空态下不得发单公司请求
 // 空 company 会被后端回退到会话主公司，造成 UI 空态提示与实际读写数据不一致的静默访问。
-// 读写分治：**读**请求空态短路返回空结果（页面既有 selectedCompanyId watch 触发 reload 拿到
+// 读写分治：读请求空态短路返回空结果（页面既有 selectedCompanyId watch 触发 reload 拿到
 // 空数据即清空上一家公司的旧数据；若抛错，页面 catch 只提示、旧数据残留与空态提示并存）；
-// **写**请求 fail-fast 抛错（宁断不写错租户）。例外：显式 scope='group' 的集团汇总读不依赖
+// 写请求 fail-fast 抛错（宁断不写错租户）。例外：显式 scope='group' 的集团汇总读不依赖
 // 单公司选择，空态放行且省略 company 参数（服务端按会话 home + scope=group 计算授权范围）。
-// 「无效」= 空态，或已选公司是**其它地区**的专属公司（roborev job386）：currentCompanyId
-// 先从 localStorage 恢复，部分页面在 refreshCompanyOptions() 校准前就发请求——竞态窗口内
+// 「无效」= 空态，或已选公司是其它地区的专属公司：currentCompanyId
+// 先从 localStorage 恢复，部分页面在 refreshCompanyOptions() 校准前就发请求，竞态窗口内
 // 带 stale 跨地区公司会造成串读/误写，故与空态同等对待（GROUP 等无地区归属公司视为有效）。
 export function companyUnselected(): boolean {
   const company = selectedCompanyId.value
@@ -105,7 +105,7 @@ function withCompany(path: string, extra: Record<string, string> = {}): string {
 
 function listQuery(extra: Record<string, string | number | undefined> = {}) {
   // 无效上下文（空态/跨地区 stale）仅 scope=group 读路径可达（单公司读已在各 fetch 短路）：
-  // 省略 company，服务端按登录会话 home company + scope=group 计算授权范围（roborev job361/386）。
+  // 省略 company，服务端按登录会话 home company + scope=group 计算授权范围。
   return companyUnselected() ? { ...extra } : { company: selectedCompanyId.value, ...extra }
 }
 
@@ -119,6 +119,19 @@ export async function refreshCompanyOptions(): Promise<CompanyOption[]> {
   const options = await fetchCompanies()
   setCompanyOptions(options)
   return options
+}
+
+// ---- 公司注册立场（#2193 立场体系） ----
+// 立场授权的服务端权威在 companies.subject_types；读走可见公司列表（含 subjectTypes 字段），
+// 写走平台管理员端点（requireAdminSession，非管理员 403）。
+export async function fetchCompanySubjectTypes(companyId: string | null | undefined): Promise<string[]> {
+  if (!companyId) return []
+  const rows = await fetchCompanies()
+  return rows.find((row) => row.companyId === companyId)?.subjectTypes ?? []
+}
+
+export async function saveCompanySubjectTypes(companyId: string, subjectTypes: string[]): Promise<void> {
+  await apiPatch(`/company/companies/${encodeURIComponent(companyId)}`, { subjectTypes })
 }
 
 // ---- 场站 ----

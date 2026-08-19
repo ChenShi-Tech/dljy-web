@@ -65,7 +65,7 @@ const stationOptions = computed(() => {
 const selectedStation = computed(() => stations.value.find((s) => s.id === form.value.stationId) ?? null)
 
 // 站级隔离：偏差考核结算规则跟随厂站所属地区（与上方预测 region_id 同源，见 predict() line 113），
-// 不随全局地区切换器漂移——厂站是物理资产、归属地区固定；缺则降级"未参数化"，不静默套别省。
+// 不随全局地区切换器漂移，厂站是物理资产、归属地区固定；缺则降级"未参数化"，不静默套别省。
 const settlementRegionId = computed(() => String(selectedStation.value?.regionId || selectedRegionId.value))
 const settlementRule = computed(() => getSettlementRuleSpec(settlementRegionId.value))
 const tolerancePct = computed(() => settlementRule.value?.deviationTolerancePct ?? 3)
@@ -184,8 +184,8 @@ function render() {
   const cc = chartChrome()
   const primary = cssVar('--primary') || '#409eff'
   const warn = cssVar('--el-color-warning') || '#e6a23c'
-  const baselineColor = '#67c23a'   // 晴空基线（无云理论出力）——绿色虚线参照
-  const actualColor = '#f56c6c'     // 实际出力（历史实测）——红色实线参照
+  const baselineColor = '#67c23a'   // 晴空基线（无云理论出力），绿色虚线参照
+  const actualColor = '#f56c6c'     // 实际出力（历史实测），红色实线参照
   const r = result.value
   const hasData = !!r && r.points.length > 0
   const labels = hasData ? r!.points.map((p) => `${String(p.hour).padStart(2, '0')}:00`) : []
@@ -282,7 +282,7 @@ watch(selectedCompanyId, reloadStations)
     </div>
 
     <el-card shadow="never">
-      <template #header><span style="font-weight:600;font-size:13px">站级发电量预测 · 24h 出力曲线（晴空基线 / 实际 / 预测 三线对比 + 置信区间 + 装机上限）</span></template>
+      <template #header><span style="font-weight:600;font-size: var(--font-md)">站级发电量预测 · 24h 出力曲线（晴空基线 / 实际 / 预测 三线对比 + 置信区间 + 装机上限）</span></template>
       <div ref="chartRef" class="chart"></div>
       <div class="tri-hint">
         <span style="color:#67c23a">■</span> 晴空基线 = 无云理论出力（pvlib 晴空 GHI × 装机 × PR=0.8，非实测）；
@@ -295,7 +295,7 @@ watch(selectedCompanyId, reloadStations)
     <el-card shadow="never" class="mt" v-if="result">
       <template #header>
         <div class="adv-head">
-          <span style="font-weight:600;font-size:13px">发电侧申报建议 · 偏差考核风险（预测 → 申报区间 → 罚款期望/最坏）</span>
+          <span style="font-weight:600;font-size: var(--font-md)">发电侧申报建议 · 偏差考核风险（预测 → 申报区间 → 罚款期望/最坏）</span>
           <span class="rule-src" v-if="settlementRule">考核口径：{{ settlementRule.regionId }} · {{ settlementRule.version }}（容差 ±{{ tolerancePct }}%）</span>
           <span class="rule-src warn" v-else>当前地区结算规则未参数化，采用通用容差 ±{{ tolerancePct }}%（仅示意）</span>
         </div>
@@ -330,27 +330,27 @@ watch(selectedCompanyId, reloadStations)
 .sg { padding: 12px 16px; background: var(--el-fill-color-light); min-height: calc(100vh - 90px); }
 .mb { margin-bottom: 12px; }
 .mt { margin-top: 12px; }
-.mock-alert :deep(.el-alert__title) { font-size: 13px; }
+.mock-alert :deep(.el-alert__title) { font-size: var(--font-md); }
 .toolbar { display: flex; align-items: center; gap: 8px; background: var(--panel); padding: 10px 12px; border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,.04); flex-wrap: wrap; margin: 12px 0; }
-.toolbar .lbl { font-size: 13px; color: var(--el-text-color-regular); font-weight: 600; }
+.toolbar .lbl { font-size: var(--font-md); color: var(--el-text-color-regular); font-weight: 600; }
 .toolbar .spacer { flex: 1; }
-.toolbar .hint { font-size: 12px; color: var(--el-text-color-secondary); }
-.toolbar .unit { font-size: 12px; color: var(--el-text-color-secondary); }
+.toolbar .hint { font-size: var(--font-sm); color: var(--el-text-color-secondary); }
+.toolbar .unit { font-size: var(--font-sm); color: var(--el-text-color-secondary); }
 .adv-toolbar { margin: 0 0 12px; }
 .adv-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
-.rule-src { font-size: 12px; color: var(--el-text-color-secondary); font-weight: 400; }
+.rule-src { font-size: var(--font-sm); color: var(--el-text-color-secondary); font-weight: 400; }
 .rule-src.warn { color: var(--el-color-warning); }
-.adv-empty { font-size: 12px; color: var(--el-text-color-secondary); padding: 8px 2px; }
-.adv-note { font-size: 12px; color: var(--el-text-color-secondary); margin-top: 6px; }
+.adv-empty { font-size: var(--font-sm); color: var(--el-text-color-secondary); padding: 8px 2px; }
+.adv-note { font-size: var(--font-sm); color: var(--el-text-color-secondary); margin-top: 6px; }
 .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 12px; }
 .stat-card { background: var(--el-bg-color-overlay, #fff); border: 1px solid var(--el-border-color-lighter, #ebeef5); border-radius: 8px; padding: 12px 14px; }
 .stat-card.risk { border-color: var(--el-color-warning-light-5, #f3d19e); }
-.stat-label { color: var(--el-text-color-secondary, #909399); font-size: 12px; margin-bottom: 6px; }
-.stat-value { font-size: 22px; font-weight: 600; }
-.stat-value small { font-size: 12px; color: var(--el-text-color-secondary, #909399); font-weight: 400; }
-.stat-value.sm { font-size: 14px; }
+.stat-label { color: var(--el-text-color-secondary, #909399); font-size: var(--font-sm); margin-bottom: 6px; }
+.stat-value { font-size: var(--font-22); font-weight: 600; }
+.stat-value small { font-size: var(--font-sm); color: var(--el-text-color-secondary, #909399); font-weight: 400; }
+.stat-value.sm { font-size: var(--font-lg); }
 .chart { height: 320px; width: 100%; }
-.tri-hint { font-size: 12px; color: var(--el-text-color-secondary); margin-top: 8px; line-height: 1.6; }
+.tri-hint { font-size: var(--font-sm); color: var(--el-text-color-secondary); margin-top: 8px; line-height: 1.6; }
 @media (max-width: 768px) {
   .toolbar { flex-direction: column; align-items: stretch; }
   .toolbar .spacer { display: none; }

@@ -38,16 +38,16 @@ defineProps<{ title: string; subtitle?: string; kind: string; badge?: string }>(
   padding: 7px 10px;
   background: rgba(125, 125, 125, 0.06);
   border-bottom: 1px solid rgba(125, 125, 125, 0.16);
-  font-size: 12.5px;
+  font-size: var(--font-12-5);
 }
 .art-icon { display: inline-flex; opacity: 0.7; flex-shrink: 0; }
 .art-title {
   font-weight: 600;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-.art-sub { opacity: 0.55; font-size: 11.5px; white-space: nowrap; }
+.art-sub { opacity: 0.55; font-size: var(--font-11-5); white-space: nowrap; }
 .art-badge {
-  font-size: 10.5px; padding: 1px 6px; border-radius: 4px; font-weight: 600;
+  font-size: var(--font-10-5); padding: 1px 6px; border-radius: 4px; font-weight: 600;
   text-transform: uppercase; letter-spacing: 0.03em;
   color: var(--el-color-primary, #2563eb);
   background: var(--el-color-primary-light-9, rgba(37, 99, 235, 0.1));
@@ -58,7 +58,7 @@ defineProps<{ title: string; subtitle?: string; kind: string; badge?: string }>(
 /* 操作按钮统一样式（各子组件 slot 内用 .art-btn） */
 :deep(.art-btn) {
   display: inline-flex; align-items: center; gap: 3px;
-  padding: 3px 7px; font-size: 11.5px; line-height: 1;
+  padding: 3px 7px; font-size: var(--font-11-5); line-height: 1;
   border: 1px solid rgba(125, 125, 125, 0.25); border-radius: 6px;
   background: var(--panel-bg, #fff); color: inherit; cursor: pointer;
   transition: background 0.15s, border-color 0.15s, color 0.15s;

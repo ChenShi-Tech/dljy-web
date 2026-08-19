@@ -13,9 +13,9 @@ export type AgentHealth = 'unknown' | 'online' | 'offline'
 export interface UseAgentHealthReturn {
   /** 健康状态：unknown（未探活）/ online / offline */
   health: Ref<AgentHealth>
-  /** 是否在线（health === 'online'）—— 通过探活确认后端已起 */
+  /** 是否在线（health === 'online'），通过探活确认后端已起 */
   ready: ComputedRef<boolean>
-  /** 是否离线（health === 'offline'）—— 后端未起，应提示而非发首条 */
+  /** 是否离线（health === 'offline'），后端未起，应提示而非发首条 */
   offline: ComputedRef<boolean>
   /** 触发一次探活（默认沿用 pingAgentService 的 2.5s 超时） */
   check: (timeoutMs?: number) => Promise<void>

@@ -54,7 +54,7 @@ describe('isSingleTimeline', () => {
     expect(isSingleTimeline(NAME_LIST, ['2025年', '2026年'], [a, b])).toBe(false)
   })
 
-  it('低重叠但中间有半年缺口（2025 仅 12 月 + 2026 仅 6 月）判为逐年对比，不误拼连续（codex #1385 P2）', () => {
+  it('低重叠但中间有半年缺口（2025 仅 12 月 + 2026 仅 6 月）判为逐年对比，不误拼连续（#1385）', () => {
     const y2025 = Array<number | null>(366).fill(null)
     const y2026 = Array<number | null>(366).fill(null)
     for (let d = 1; d <= 31; d++) y2025[slotOf(12, d)] = 100 // 2025-12 整月
@@ -64,7 +64,7 @@ describe('isSingleTimeline', () => {
     expect(buildLoadPanelModel(NAME_LIST, ['2025年', '2026年'], [y2025, y2026], '均值').mode).toBe('overlay')
   })
 
-  it('上游增长略超一年（2026 多至 7/2，边界重叠 2 天）仍判连续，不突切逐年（codex #1385 P2 二审）', () => {
+  it('上游增长略超一年（2026 多至 7/2，边界重叠 2 天）仍判连续，不突切逐年（#1385 二审）', () => {
     const y2025 = Array<number | null>(366).fill(null)
     const y2026 = Array<number | null>(366).fill(null)
     for (let m = 7; m <= 12; m++) for (let d = 1; d <= MONTH_DAYS[m - 1]; d++) y2025[slotOf(m, d)] = 100
@@ -127,7 +127,7 @@ describe('buildLoadPanelModel · 连续线模式', () => {
     expect(model.lines[0].data.every((v) => v != null)).toBe(true)
   })
 
-  it('连续模式跳过非闰年 2/29，2/28→3/1 相邻不假断线（codex #1385 P2）', () => {
+  it('连续模式跳过非闰年 2/29，2/28→3/1 相邻不假断线（#1385）', () => {
     // 2025 下半年 + 2026(非闰年) 上半年，连续跨 2026 年 2 月
     const a = Array<number | null>(366).fill(null)
     const b = Array<number | null>(366).fill(null)
@@ -142,7 +142,7 @@ describe('buildLoadPanelModel · 连续线模式', () => {
     expect(m2.lines[0].data[m2.xData.indexOf('2026/3月1日')]).toBe(200)
   })
 
-  it('连续模式保留缺测日为 null（不压缩空槽，缺口可见）（codex #1385 P2）', () => {
+  it('连续模式保留缺测日为 null（不压缩空槽，缺口可见）（#1385）', () => {
     const a = Array<number | null>(366).fill(null)
     const b = Array<number | null>(366).fill(null)
     for (let m = 7; m <= 12; m++) for (let d = 1; d <= MONTH_DAYS[m - 1]; d++) a[slotOf(m, d)] = 100

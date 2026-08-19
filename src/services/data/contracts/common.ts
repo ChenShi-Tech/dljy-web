@@ -28,7 +28,7 @@ export type ModuleContractMeta = ModuleRegionMeta & {
   generated_at?: string
   /**
    * 市场机制画像（可选，Epic #1431 S2）：meta 的 basis/region 回答「数据真不真、哪个地区」，
-   * mechanism 回答「这份数据是什么标的、什么粒度、da/rt 能不能分」——即消费方该**怎么读**。
+   * mechanism 回答「这份数据是什么标的、什么粒度、da/rt 能不能分」，即消费方该怎么读。
    * 由 client 层注入（adapter 保持纯函数零运行时依赖）；存量契约不填即 undefined，零破坏。
    */
   mechanism?: MechanismProfile

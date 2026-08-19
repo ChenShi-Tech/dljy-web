@@ -1,14 +1,12 @@
-// @vitest-environment happy-dom
-//
-// 四川凭据卡片的展示不变量（Issue #1620 / codex #1886 P2 闭环；#1925 通用凭据层适配）。
+// 四川凭据卡片的展示不变量（Issue #1620 / #1886 闭环；#1925 通用凭据层适配）。
 //
 // 核心场景一：一次连通测试最长 20 秒，期间生效凭据可能被换掉。服务端此时会
-// 丢弃结论（recorded:false），但**光服务端丢弃不够**——组件若仍留着那份报告，
+// 丢弃结论（recorded:false），但光服务端丢弃不够，组件若仍留着那份报告，
 // 状态区会拿它渲染成绿色「凭据有效」+ 令牌有效期，旁边加一句警告压不住这种误导。
 // 这里断言的正是这条端到端闭环。
 //
 // 核心场景二（#1925）：凭据按录入账号分记录，生效的可能不是我。页面必须明示
-// 「当前生效的是谁录入的」——否则会出现「我改了却没生效」而无从察觉。
+// 「当前生效的是谁录入的」，否则会出现「我改了却没生效」而无从察觉。
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 
@@ -31,7 +29,7 @@ import SichuanCredentialCard from './SichuanCredentialCard.vue'
 const MASKED = {
   appId: 'test…7890(共19字符)',
   appSecret: 'test…4321(共23字符)',
-  // 掩码值必须是显然合成的（aaaa/bbbb…），不得从真实凭据的掩码输出复制——
+  // 掩码值必须是显然合成的（aaaa/bbbb…），不得从真实凭据的掩码输出复制，
   // 掩码首尾各 4 字符若来自真实密钥即构成部分泄露（web 镜像导出扫描会拦）。
   sm4Key: 'aaaa…bbbb(共32字符)',
   sm4Iv: 'cccc…dddd(共32字符)',
@@ -84,6 +82,13 @@ async function mountCard() {
   return wrapper
 }
 
+// 按文案定位按钮：nth-of-type 之类位置选择器会在按钮增删或调序时静默改指别的按钮。
+function button(wrapper: ReturnType<typeof mount>, label: string) {
+  const hit = wrapper.findAll('button').find((b) => b.text().includes(label))
+  if (!hit) throw new Error(`按钮不存在：${label}`)
+  return hit
+}
+
 describe('SichuanCredentialCard', () => {
   beforeEach(() => {
     fetchStatus.mockReset()
@@ -104,7 +109,7 @@ describe('SichuanCredentialCard', () => {
       notRecordedReason: '生效凭据在测试期间被更换，本次结论属于旧凭据，未写回——请对新凭据重新测试',
     })
 
-    await wrapper.find('button:nth-of-type(2)').trigger('click')
+    await button(wrapper, '测试连通').trigger('click')
     await new Promise((resolve) => setTimeout(resolve, 0))
     await wrapper.vm.$nextTick()
 
@@ -127,7 +132,7 @@ describe('SichuanCredentialCard', () => {
       recorded: true,
     })
 
-    await wrapper.find('button:nth-of-type(2)').trigger('click')
+    await button(wrapper, '测试连通').trigger('click')
     await new Promise((resolve) => setTimeout(resolve, 0))
     await wrapper.vm.$nextTick()
 

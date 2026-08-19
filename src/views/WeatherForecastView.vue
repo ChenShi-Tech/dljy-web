@@ -16,7 +16,7 @@ import { useEChart } from '../composables/useEChart'
 import { useQuerySync } from '../composables/useQuerySync'
 import { axisTooltip, bottomLayoutLegend, bottomToolbox, emptyOverlay } from '@/services/chart/chartOptions'
 import { debounce } from '../utils/timing'
-import { timeoutSignal } from '@/services/api'
+import { searchCityByOpenMeteo, reverseGeocode, fetchForecastBundle } from '@/services/weather'
 import ForecastIntro from '@/components/forecast/ForecastIntro.vue'
 
 type Loc = { name: string; lon: number; lat: number; admin1?: string }
@@ -139,10 +139,9 @@ async function searchCity(q: string) {
   const seq = ++searchSeq
   searchLoading.value = true
   try {
-    const r = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(kw)}&count=10&language=zh`, { signal: timeoutSignal(5000) })
-    const j = await r.json()
+    const found = await searchCityByOpenMeteo(kw)
     if (seq !== searchSeq) return
-    searchOptions.value = (j.results || []).map((x: any): Loc => ({ name: x.name, lon: x.longitude, lat: x.latitude, admin1: x.admin1 }))
+    searchOptions.value = found
   } catch {
     if (seq === searchSeq) { searchOptions.value = []; ElMessage.warning('城市搜索失败,请稍后重试') }
   } finally { if (seq === searchSeq) searchLoading.value = false }
@@ -157,12 +156,8 @@ function locate() {
     async (pos) => {
       const lat = pos.coords.latitude, lon = pos.coords.longitude
       let name = '我的位置', admin1 = ''
-      try {
-        const r = await fetch(`https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat}&longitude=${lon}&localityLanguage=zh`, { signal: timeoutSignal(5000) })
-        const j = await r.json()
-        name = j.city || j.locality || j.principalSubdivision || '我的位置'
-        admin1 = j.principalSubdivision || ''
-      } catch { /* 逆地理失败,仍用经纬度出天气 */ }
+      const hit = await reverseGeocode(lat, lon)
+      if (hit) { name = hit.name || name; admin1 = hit.admin1 }
       pickLoc({ name, lon, lat, admin1 })
       locating.value = false
     },
@@ -177,18 +172,8 @@ async function load() {
   trendChart.showLoading(); hourChart.showLoading()
   try {
     const c = loc.value
-    const da = ['weather_code', 'temperature_2m_max', 'temperature_2m_min', 'temperature_2m_mean',
-      'apparent_temperature_max', 'apparent_temperature_min', 'relative_humidity_2m_mean', 'precipitation_sum',
-      'rain_sum', 'snowfall_sum', 'precipitation_hours', 'wind_speed_10m_max', 'wind_gusts_10m_max',
-      'wind_direction_10m_dominant', 'shortwave_radiation_sum', 'sunshine_duration', 'sunrise', 'sunset'].join(',')
-    const ho = ['temperature_2m', 'apparent_temperature', 'relative_humidity_2m', 'precipitation', 'rain',
-      'wind_speed_10m', 'wind_direction_10m', 'wind_gusts_10m', 'cloud_cover', 'weather_code'].join(',')
-    const cu = ['temperature_2m', 'apparent_temperature', 'relative_humidity_2m', 'wind_speed_10m', 'weather_code'].join(',')
-    const url = `https://api.open-meteo.com/v1/forecast?latitude=${c.lat}&longitude=${c.lon}&daily=${da}&hourly=${ho}&current=${cu}&timezone=Asia%2FShanghai&forecast_days=15`
-    const res = await fetch(url, { signal: timeoutSignal(8000) })
-    if (!res.ok) throw new Error('Open-Meteo 请求失败 ' + res.status)
-    const j = await res.json()
-    cur.value = j.current; daily.value = j.daily; hourly.value = j.hourly; dayIdx.value = 0
+    const bundle = await fetchForecastBundle(c.lat, c.lon)
+    cur.value = bundle.current; daily.value = bundle.daily; hourly.value = bundle.hourly; dayIdx.value = 0
     await nextTick()
     renderTrend(); renderHour()
   } catch (e) {
@@ -357,45 +342,45 @@ watch(loc, load, { deep: true })
 <style scoped>
 .wf { padding: 12px 16px; background: var(--el-fill-color-light); min-height: calc(100vh - 90px); }
 .toolbar { display: flex; align-items: center; gap: 10px; background: var(--panel); padding: 10px 12px; border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,.04); }
-.toolbar .lbl { font-size: 13px; color: var(--el-text-color-regular); font-weight: 600; }
-.src-tag { font-size: 12px; color: var(--el-color-success); margin-left: auto; }
-.now { font-size: 13px; color: var(--el-text-color-primary); font-weight: 600; }
+.toolbar .lbl { font-size: var(--font-md); color: var(--el-text-color-regular); font-weight: 600; }
+.src-tag { font-size: var(--font-sm); color: var(--el-color-success); margin-left: auto; }
+.now { font-size: var(--font-md); color: var(--el-text-color-primary); font-weight: 600; }
 .now small { color: var(--el-text-color-secondary); font-weight: 400; }
 .hotbar { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; background: var(--panel); padding: 8px 12px; border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,.04); margin-top: 8px; }
-.hot-lbl { font-size: 12px; color: var(--el-text-color-secondary); margin-right: 4px; }
-.hot-c { font-size: 12.5px; color: var(--el-text-color-regular); padding: 3px 10px; border-radius: 12px; background: var(--el-fill-color-light); cursor: pointer; transition: all .15s; }
+.hot-lbl { font-size: var(--font-sm); color: var(--el-text-color-secondary); margin-right: 4px; }
+.hot-c { font-size: var(--font-12-5); color: var(--el-text-color-regular); padding: 3px 10px; border-radius: 12px; background: var(--el-fill-color-light); cursor: pointer; transition: all .15s; }
 .hot-c:hover { background: var(--primary-tint); color: var(--el-color-primary); }
 .hot-c.on { background: var(--el-color-primary); color: #fff; }
 .card { background: var(--panel); border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,.04); padding: 10px 14px; margin-top: 12px; }
-.ctitle { font-size: 13px; font-weight: 600; color: var(--el-text-color-primary); padding: 2px 0 8px; }
-.ctitle .hint { font-weight: 400; color: var(--el-text-color-disabled); font-size: 12px; }
+.ctitle { font-size: var(--font-md); font-weight: 600; color: var(--el-text-color-primary); padding: 2px 0 8px; }
+.ctitle .hint { font-weight: 400; color: var(--el-text-color-disabled); font-size: var(--font-sm); }
 .chart { height: 280px; width: 100%; }
 .cur { display: flex; align-items: center; justify-content: space-between; background: linear-gradient(120deg, var(--el-color-primary-light-9), var(--warning-tint)); }
 .cur-main { display: flex; align-items: center; gap: 16px; }
 .cur-icon :deep(.wsvg) { width: 64px; height: 64px; }
-.cur-temp { font-size: 38px; font-weight: 700; color: var(--text); line-height: 1; }
-.cur-name { font-size: 15px; color: var(--el-text-color-primary); margin-top: 4px; }
-.cur-app { font-size: 13px; color: var(--el-text-color-secondary); margin-top: 2px; }
+.cur-temp { font-size: var(--font-38); font-weight: 700; color: var(--text); line-height: 1; }
+.cur-name { font-size: var(--font-15); color: var(--el-text-color-primary); margin-top: 4px; }
+.cur-app { font-size: var(--font-md); color: var(--el-text-color-secondary); margin-top: 2px; }
 .cur-meta { display: flex; gap: 28px; padding-right: 16px; }
 .cur-meta div { text-align: center; }
-.cur-meta b { display: block; font-size: 18px; color: var(--el-text-color-primary); }
-.cur-meta span { font-size: 12px; color: var(--el-text-color-secondary); }
+.cur-meta b { display: block; font-size: var(--font-18); color: var(--el-text-color-primary); }
+.cur-meta span { font-size: var(--font-sm); color: var(--el-text-color-secondary); }
 .fc-row { display: flex; gap: 8px; overflow-x: auto; }
 .fc-cell { flex: 1 0 auto; min-width: 78px; text-align: center; padding: 8px 4px; border-radius: 8px; cursor: pointer; border: 1px solid transparent; }
 .fc-cell:hover { background: var(--el-fill-color-light); }
 .fc-cell.on { background: var(--primary-tint); border-color: var(--el-color-primary); }
-.fc-d { font-size: 13px; font-weight: 600; color: var(--el-text-color-primary); }
-.fc-w { font-size: 11px; color: var(--el-text-color-secondary); }
+.fc-d { font-size: var(--font-md); font-weight: 600; color: var(--el-text-color-primary); }
+.fc-w { font-size: var(--font-xs); color: var(--el-text-color-secondary); }
 .fc-i :deep(.wsvg) { width: 34px; height: 34px; margin: 4px 0; }
-.fc-n { font-size: 11px; color: var(--el-text-color-regular); }
-.fc-t { font-size: 12px; color: var(--el-text-color-secondary); margin-top: 2px; }
+.fc-n { font-size: var(--font-xs); color: var(--el-text-color-regular); }
+.fc-t { font-size: var(--font-sm); color: var(--el-text-color-secondary); margin-top: 2px; }
 .fc-t b { color: var(--danger); }
 .hr-row { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 8px; }
 .hr-cell { flex: 0 0 auto; width: 50px; text-align: center; }
-.hr-h { font-size: 11px; color: var(--el-text-color-secondary); }
+.hr-h { font-size: var(--font-xs); color: var(--el-text-color-secondary); }
 .hr-i :deep(.wsvg) { width: 26px; height: 26px; }
-.hr-t { font-size: 13px; font-weight: 600; color: var(--danger); }
-.hr-w { font-size: 11px; color: var(--el-color-primary); }
+.hr-t { font-size: var(--font-md); font-weight: 600; color: var(--danger); }
+.hr-w { font-size: var(--font-xs); color: var(--el-color-primary); }
 .mb { margin-bottom: 12px; }
 /* 移动端:工具条纵排,数据源标签不再右贴 */
 @media (max-width: 768px) {

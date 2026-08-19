@@ -45,11 +45,11 @@ const recentDecided = computed(() =>
     .slice(0, 20)
 )
 
-// 「全部申报单」区：不要求 approvalRecord —— 逾期作废的单从未进入审批环节，
+// 「全部申报单」区：不要求 approvalRecord，逾期作废的单从未进入审批环节，
 // approvalRecord 恒空，只有这一区能看到它们（历史申报单可见性的真正落点）。
 //
-// statusFilter 走**服务端**过滤（filteredRows 独立取数），不是在 all.value 上做客户端筛。
-// 客户端筛无法恢复任何被硬上限截断的数据——那样截断提示里"用状态筛选缩小范围"
+// statusFilter 走服务端过滤（filteredRows 独立取数），不是在 all.value 上做客户端筛。
+// 客户端筛无法恢复任何被硬上限截断的数据，那样截断提示里"用状态筛选缩小范围"
 // 就是句空话，选什么状态排序靠后的单都仍不可见。
 const statusFilter = ref<'' | DeclarationStatus>('')
 const filteredRows = ref<DeclarationOrder[] | null>(null)
@@ -88,7 +88,7 @@ async function fetchAllPages(params: DeclarationListParams = {}) {
   return { rows, truncated }
 }
 
-/** 「全部申报单」区按当前状态筛选**重新向服务端取数**；无筛选时复用 all.value 不额外请求。
+/** 「全部申报单」区按当前状态筛选重新向服务端取数；无筛选时复用 all.value 不额外请求。
  *
  * 世代守卫：快速连切筛选（PENDING_APPROVAL → EXPIRED）会并发多次 fetchAllPages，
  * 慢的旧请求若最后返回就会让下拉显示「已逾期」而表格列的是待审批单。
@@ -120,7 +120,7 @@ async function load() {
     const { rows, truncated } = await fetchAllPages()
     all.value = rows
     // 不静默截断：超出上限时明确告知，避免"看到的就是全部"的误解。
-    // 提示里的"状态筛选"确实能拿到新数据——它走服务端过滤（loadFilteredRows）。
+    // 提示里的"状态筛选"确实能拿到新数据，它走服务端过滤（loadFilteredRows）。
     errorMsg.value = truncated
       ? `申报单数量超过 ${PAGE_SIZE * MAX_PAGES} 条，上方列表仅显示前 ${rows.length} 条；用「全部申报单」区的状态筛选可按状态重新查询服务端`
       : ''
@@ -330,8 +330,8 @@ onRegionChange(load)
 </template>
 
 <style scoped>
-.muted { color: var(--muted); font-size: 12.5px; }
-.mono { font-family: ui-monospace, monospace; font-size: 13px; }
+.muted { color: var(--muted); font-size: var(--font-12-5); }
+.mono { font-family: ui-monospace, monospace; font-size: var(--font-md); }
 
 .approval-card {
   margin-top: 10px;
@@ -340,9 +340,9 @@ onRegionChange(load)
   border-radius: 8px;
 }
 .card-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.card-body { margin: 8px 0; font-size: 13px; }
+.card-body { margin: 8px 0; font-size: var(--font-md); }
 .card-body b { font-variant-numeric: tabular-nums; }
-.check-list { margin: 6px 0 0; padding-left: 16px; font-size: 12.5px; color: var(--muted); }
+.check-list { margin: 6px 0 0; padding-left: 16px; font-size: var(--font-12-5); color: var(--muted); }
 .check-list li { margin: 2px 0; }
 .check-list li[data-status='PASS'] b { color: var(--success); }
 .check-list li[data-status='FAIL'] b { color: #b91c1c; }

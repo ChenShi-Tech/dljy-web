@@ -66,7 +66,7 @@ async function loadModels() {
   const reqId = ++loadModelsReqId
   modelLoading.value = true
   // 切地区/目标时先清空目录：加载在途或失败时残留旧地区模型，predict 却发新 region，
-  // 会重现跨地区口径串读（#1168 竞态，codex P2 #3590941913）
+  // 会重现跨地区口径串读（#1168 竞态）
   models.value = []
   try {
     const response = await fetchForecastModels(props.target, activeRegionId.value)
@@ -158,7 +158,7 @@ onMounted(loadModels)
 
 <style scoped>
 .tslib-panel { margin: 12px 0; }
-.tslib-panel__head { display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 13px; }
+.tslib-panel__head { display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: var(--font-md); }
 .tslib-panel__toolbar {
   display: flex;
   align-items: center;
@@ -166,8 +166,8 @@ onMounted(loadModels)
   flex-wrap: wrap;
   margin-bottom: 10px;
 }
-.lbl { font-size: 12px; font-weight: 600; color: var(--el-text-color-regular); }
-.summary { color: var(--el-text-color-secondary); font-size: 12px; margin-left: auto; }
+.lbl { font-size: var(--font-sm); font-weight: 600; color: var(--el-text-color-regular); }
+.summary { color: var(--el-text-color-secondary); font-size: var(--font-sm); margin-left: auto; }
 .tslib-panel__warning { margin-top: 8px; }
 @media (max-width: 768px) {
   .tslib-panel__toolbar { align-items: stretch; flex-direction: column; }

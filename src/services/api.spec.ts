@@ -1,4 +1,4 @@
-// unwrap 请求序号守卫（#1350）：共享 fetch 层只应用「最新发起请求」响应的地区头——
+// unwrap 请求序号守卫（#1350）：共享 fetch 层只应用「最新发起请求」响应的地区头
 // 快速切换数据族/地区时较早的请求若最后返回，其过期地区头不得覆盖 RegionDataBanner 状态。
 import { describe, expect, it, vi } from 'vitest'
 
@@ -67,7 +67,7 @@ describe('unwrap 地区头 seq 守卫（#1350）', () => {
     expect(regionDataStatus.value.served).toBe('yunnan')
   })
 
-  it('无头请求不推进已应用序号：其后返回的旧带头响应仍生效（codex P1）', async () => {
+  it('无头请求不推进已应用序号：其后返回的旧带头响应仍生效', async () => {
     resetStatus()
     const seqA = nextRegionHeaderSeq() // 取数请求 A（带地区头）
     const seqB = nextRegionHeaderSeq() // 随后发起的无头请求 B（/auth/info）

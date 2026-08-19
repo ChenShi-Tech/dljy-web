@@ -38,8 +38,8 @@ const items = computed(() => [
   padding: 14px;
 }
 header { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
-h3 { margin: 0; font-size: 16px; color: var(--text, #111827); }
-header span { color: var(--muted, #667085); font-size: 12px; overflow-wrap: anywhere; text-align: right; }
+h3 { margin: 0; font-size: var(--font-16); color: var(--text, #111827); }
+header span { color: var(--muted, #667085); font-size: var(--font-sm); overflow-wrap: anywhere; text-align: right; }
 .summary-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
 article {
   min-width: 0;
@@ -49,9 +49,9 @@ article {
   padding: 10px;
 }
 svg { color: var(--primary, #0f766e); }
-article span { display: block; margin-top: 8px; color: var(--muted, #667085); font-size: 12px; }
-article strong { display: block; margin-top: 4px; color: var(--text, #111827); font-size: 18px; overflow-wrap: anywhere; }
-small { font-size: 12px; color: var(--muted, #667085); }
+article span { display: block; margin-top: 8px; color: var(--muted, #667085); font-size: var(--font-sm); }
+article strong { display: block; margin-top: 4px; color: var(--text, #111827); font-size: var(--font-18); overflow-wrap: anywhere; }
+small { font-size: var(--font-sm); color: var(--muted, #667085); }
 @media (max-width: 900px) {
   .summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }

@@ -4,6 +4,8 @@ import { resetCaptureAccessDenied } from '@/services/api'
 import { getCurrentUser, getToken } from '@/services/auth'
 import { canAccessPath, firstAccessiblePath, isPathAvailableInRegion } from '@/services/governance'
 import { getCurrentRegionSnapshot } from '@/services/region/regionContext'
+import { isMultiStance, activeStanceType, requiresStanceSelection } from '@/services/stance/stanceContext'
+import { isPathAvailableInStance } from '@/services/stance/stanceNavigation'
 
 const YUNNAN_TRADING_FEATURE_ENABLED = import.meta.env.VITE_DISABLE_YUNNAN_TRADING !== '1'
 const yunnanTradingRoutes = YUNNAN_TRADING_FEATURE_ENABLED
@@ -24,11 +26,11 @@ const DEMO_PAGES_ENABLED = import.meta.env.VITE_ENABLE_DEMO_PAGES === '1'
 // Routes rebuilt from the real production menu (getRouters), 6 blocks / 26 pages.
 // Each page carries `meta` describing its real endpoint + where the captured
 // real data lives + whether values are real/forecast — so the PlaceholderView
-// is self-documenting and Codex can build each page from .codex/data-inventory.md.
+// is self-documenting; each page's data source is described in its meta.
 // `kind`: 'real' | 'mixed' (real+forecast series) | 'forecast' (values unreliable).
 const placeholder = () => import('../views/PlaceholderView.vue')
 // Real-data views (built from captured data via /api/real). Others still use
-// the self-documenting placeholder until Codex builds them.
+// the self-documenting placeholder until they are built.
 const dailySystemLoad = () => import('../views/DailySystemLoadView.vue')
 const elNinoLaNina = () => import('../views/ElNinoLaNinaView.vue')
 const dataAnalysis = () => import('../views/DataAnalysisView.vue')
@@ -51,16 +53,15 @@ const truckChargingInvestment = () => import('../views/TruckChargingInvestmentVi
 const retailPriceCalculator = () => import('../views/RetailPriceCalculatorView.vue')
 const interprovincialPriceCalculator = () => import('../views/InterprovincialPriceCalculatorView.vue')
 const operationsWorkbench = () => import('../views/OperationsWorkbenchView.vue')
-const importHub = () => import('../views/ImportHubView.vue')
 const dataBrowser = () => import('../views/UniversalCapturedBrowserView.vue')
-const dataIngestion = () => import('../views/DataIngestionView.vue')
-const dataOnboarding = () => import('../views/DataOnboardingView.vue')
-const dataGovernance = () => import('../views/DataGovernanceView.vue')
+// #2174 P2-2b：六管理页迁独立数据运维台（ops-console.html + src/features/opsConsole/），
+// 主前端只留桥接页（旧路径 redirect 到此，跳 /ops-console.html#/ops/... 保深链）。
+const opsConsoleBridge = () => import('../views/ops/OpsConsoleBridge.vue')
 const regionRules = () => import('../views/RegionRulesView.vue')
 const regionalTradingHub = () => import('../views/RegionalTradingHubView.vue')
 // 申报工作台（重写原现货决策台：对齐 D-1 真实申报动线，嵌入 declaration_prep 智能体图）
 // 交易员一日作业台（v1.0 七步单页承载）：早间分析/晨检/放行清单/储能计划/决策日志五页已并入
-// 本台七步面板；原「交易台」（四线并行首页）也已删除——其"我现在该干哪一步"的职责由本台
+// 本台七步面板；原「交易台」（四线并行首页）也已删除，其"我现在该干哪一步"的职责由本台
 // 的线性七步 + 步进条完整取代（2026-08-11 用户拍板）。
 const tradingDay = () => import('../views/trading/TradingDayView.vue')
 // 交易台四条作业线的作业面：不进侧边栏，只从交易台深链进入（避免导航膨胀，
@@ -74,7 +75,6 @@ const reviewCenter = () => import('../views/ReviewCenterView.vue')
 const platformDocs = () => import('../views/PlatformDocsView.vue')
 // 预测中心把五个既有预测页面挂为一级 tab；原路由改 redirect 保持收藏链接。
 const forecastCenter = () => import('../views/forecast/ForecastCenterView.vue')
-const dataSourceSettings = () => import('../views/DataSourceSettingsView.vue')
 const agentWorkbench = () => import('../views/AgentWorkbenchView.vue')
 const strategicQA = () => import('../views/StrategicQAView.vue')
 const declarationCheckup = () => import('../views/DeclarationCheckupView.vue')
@@ -144,8 +144,11 @@ const router = createRouter({
   routes: [
     { path: '/', redirect: DEMO_PAGES_ENABLED ? '/demo/cgn-new-energy' : '/dashboard' },
     { path: '/login', name: 'Login', component: () => import('../views/LoginView.vue') },
+    // 登录后的工作立场选择页（#2193）：顶层平级、不进 AppLayout；与 /login 同款
+    // 「无 meta → 不进 feature-map/manifest」的顶层路由形态，守卫内显式特判。
+    { path: '/select-stance', name: 'SelectStance', component: () => import('../views/SelectStanceView.vue') },
 
-    // ── /demo/* 驾驶舱风格展示页(顶层全屏、隔离、不进侧边栏;守卫已放行)──
+    // /demo/* 驾驶舱风格展示页(顶层全屏、隔离、不进侧边栏;守卫已放行)
     // 冻结下架（简化 IA·PR-A）：整组由 VITE_ENABLE_DEMO_PAGES 门控、默认关闭；代码保留，需要演示时置 1 恢复。
     // 一键切换 6 套风格(暗:霓虹/玻璃/HUD,暖:暖纸/瑞士/柔彩)× 总览/AI 两视图。
     // 支持 ?style=&view= 深链,如 /demo/showcase?style=paper&view=ai
@@ -214,7 +217,7 @@ const router = createRouter({
         page('xhjy/approvals', 'ApprovalQueue', { block: '现货交易', title: '申报审批队列', code: 'approval-queue', endpoint: 'GET/POST /api/v1/trading/spot/declarations*', dataPath: 'spot_declarations', scope: '交易负责人/风控集中审批 PENDING_APPROVAL 申报单, approvalRecord 留痕', kind: 'real' }, approvalQueue),
         page('zcqjy/exposure', 'ExposureBoard', { block: '中长期交易', title: '中长期敞口看板', code: 'exposure-board', endpoint: 'POST /agent-api/agent/quant/exposure', dataPath: 'quant_direct', scope: '合同分解vs预计出力、逐时敞口、套保率、敞口热力、智能体解读', kind: 'mixed' }, exposureBoard),
         page('xhjy/monitor', 'SpotMonitor', { block: '现货交易', title: '实时监盘', code: 'spot-monitor', endpoint: 'POST /agent-api/agent/quant/monitor', dataPath: 'quant_direct', scope: 'D日动线: 实时vs日前价差、异动预警、AI异动解读(准实时/演示)', kind: 'mixed' }, spotMonitor),
-        page('xhjy/review', 'ReviewCenter', { block: '现货交易', title: '复盘中心', code: 'review-center', endpoint: 'POST /agent-api/agent/quant/review + daily_review场景', dataPath: 'quant_direct', scope: 'D+1动线: 偏差考核、申报回测、智能体复盘报告与历史列表', kind: 'mixed' }, reviewCenter),
+        page('xhjy/review', 'ReviewCenter', { block: '现货交易', title: '复盘中心', code: 'review-center', endpoint: 'POST /agent-api/agent/quant/{review,settlement-review,cvar} + GET /quant/reports(+/content) + 市场经营分析回放 + GET /agent/review/template-instances 探针(#2039未上线则降级)', dataPath: 'quant_direct', scope: '六维复盘驾驶舱(#2033): 指标卡/六维入口/待办箱/31项模板渲染 + 偏差周月聚合(#2042)/收益三层拆解(#2043)/月度市场归因(#2046)/风险事件与压力测试(#2047)/三主体驾驶舱(#2048)/情绪化识别与会议纪要(#2049)六维深入面板', kind: 'mixed' }, reviewCenter),
         page('xhjy/risk-center', 'RiskCenter', { block: '现货交易', title: '风控阈值面板', code: 'risk-center', endpoint: 'POST /agent-api/agent/quant/{exposure,review,monitor} + /agent-api/agent/alerts', dataPath: 'quant_direct', scope: '聚合敞口/偏差/价差/告警四类越限，统一 riskThresholds 红黄绿判级', kind: 'mixed' }, riskCenter),
         // What-If 模拟器(/xhjy/simulator)与批处理任务(/xhjy/jobs)已随 #1799 删除：
         // 前者能力与复盘中心+敞口看板重叠且假设输入为示意；后者后端仅注册 batch_report/test 两个 handler，
@@ -261,7 +264,7 @@ const router = createRouter({
         page('sjfx/elninolanina', 'ElNinoLaNina', { block: '数据分析', title: '厄尔尼诺拉尼娜', code: 'elninolanina', endpoint: 'GET /sdpt/elninolanina/list', dataPath: 'sdpt_elninolanina', scope: '77行(年)', kind: 'real', note: 'ENSO 指数 djf..ndj 12个滑动季' }, elNinoLaNina),
         page('sjfx/tqyb', 'WeatherForecast', { block: '数据分析', title: '天气预报', code: 'tqyb', endpoint: 'GET /weather/dayData|hourlyData|districtTree', dataPath: 'weather_dayData', scope: '11城市×15天日预报+24h时预报', kind: 'real', note: '气象台预报；11个山西地市 adcode' }, weatherForecast),
 
-        // 预测数据 /ycsj  —— ⚠️ 预测值，数值不可信，仅参考格式
+        // 预测数据 /ycsj ：⚠️ 预测值，数值不可信，仅参考格式
         page('ycsj/center', 'ForecastCenter', { block: '预测数据', title: '预测中心', code: 'forecast-center', endpoint: '聚合五模块同源接口（组件原样挂入，见各模块登记）', dataPath: 'sdpt_* 回放 + forecastProviders + agent_backend forecast 族', scope: '预测五页聚合单页: 官方回放、建模工作台、厂站预测、质量记分牌、申报决策；tab 按原路由权限过滤，?mod= 深链', kind: 'forecast' }, forecastCenter),
         { path: 'ycsj/hub', redirect: (to) => ({ path: '/ycsj/center', query: { ...to.query, mod: 'replay' } }) },
         { path: 'ycsj/workbench', redirect: (to) => ({ path: '/ycsj/center', query: { ...to.query, mod: 'bench' } }) },
@@ -296,11 +299,19 @@ const router = createRouter({
 
         // 运营管理 /yygl
         page('yygl/ops', 'OperationsWorkbench', { block: '运营管理', title: '运营中枢', code: 'operations', endpoint: 'local operations + planned /api/v1/stations|contracts|settlements|risks|statistics|retail-settlement-import|model-config|agents', dataPath: 'operations_backend', scope: '电站、合同、结算、风险、统计、数据导入、模型配置、智能体监控运营面迁移', kind: 'mixed' }, operationsWorkbench),
-        page('yygl/data-onboarding', 'DataOnboarding', { block: '数据管理', title: '数据接入向导', code: 'data-onboarding', endpoint: 'GET /api/v1/governance/catalog + /api/v1/import-templates/records + POST /api/v1/ingest/:kind', dataPath: 'governance_catalog + import_records + capture_sqlite', scope: '六类数据（现货节点电价T0/系统负荷水电T0T1/交易中心月度导出包/南网披露Cookie/气象全自动/结算零售交易）接入旅程总览：输入→校验→落位→生效→见数一键闭环', kind: 'real' }, dataOnboarding),
-        page('yygl/import-hub', 'ImportHub', { block: '数据管理', title: '数据导入融合台', code: 'import-hub', endpoint: 'local importHub + planned /api/v1/power/import|market/packages/retail/import|settlements/import|retail-settlement-import/upload|market/trades/import', dataPath: 'import_workflows', scope: '电量、零售套餐、结算、售电结算、市场交易导入迁移', kind: 'mixed' }, importHub),
         page('yygl/data-browser', 'DataBrowser', { block: '数据管理', title: '通用数据浏览器', code: 'data-browser', endpoint: 'GET /api/real?family=&match=&region=', dataPath: '*', scope: '任意已注册数据族归一化真实回放数据，动态列展示+筛选+CSV导出', kind: 'mixed' }, dataBrowser),
-        page('yygl/data-governance', 'DataGovernance', { block: '数据管理', title: '数据治理控制台', code: 'data-governance', endpoint: 'GET /api/v1/governance/{catalog,quality,backup}', dataPath: 'capture_sqlite + data/private/governance/quality-report.json + data/private-backups', scope: '数据资产目录、新鲜度、质量报告和备份 manifest 只读聚合；按 x-region-id 限定地区', kind: 'real' }, dataGovernance),
-        page('yygl/ingest', 'DataIngestion', { block: '数据管理', title: '数据摄取管理', code: 'ingest', endpoint: 'POST /api/v1/ingest/:kind', dataPath: 'capture_sqlite', scope: '触发 ETL 摄取(云南现货/气象/市场经营分析) 落 capture-raw+capture.sqlite', kind: 'mixed' }, dataIngestion),
+
+        // 数据运维 /data-ops（#2169 P1：上传中心独立路由域，P2 data-service 进程化时整组迁出主前端）
+
+
+        // 数据运维 /data-ops（#2174 P2-2b：六管理页已迁独立数据运维台，主前端保桥接深链）
+        page('data-ops/console', 'OpsConsoleBridge', { block: '数据运维', title: '数据运维台', code: 'ops-console', endpoint: 'external /ops-console.html（数据管理操作面，API 经 /data-svc → data-service :8190）', dataPath: 'ops_console', scope: '桥接跳转独立控制台：上传中心/导入融合台/接入向导/摄取管理/治理控制台/数据源接入六页', kind: 'real' }, opsConsoleBridge),
+        { path: 'yygl/data-onboarding', redirect: { path: '/data-ops/console', query: { to: '/ops/data-onboarding' } } },
+        { path: 'yygl/import-hub', redirect: { path: '/data-ops/console', query: { to: '/ops/import-hub' } } },
+        { path: 'yygl/data-governance', redirect: { path: '/data-ops/console', query: { to: '/ops/data-governance' } } },
+        { path: 'yygl/ingest', redirect: { path: '/data-ops/console', query: { to: '/ops/ingest' } } },
+        { path: 'data-ops/upload', redirect: { path: '/data-ops/console', query: { to: '/ops/upload' } } },
+        { path: 'data-source-settings', redirect: { path: '/data-ops/console', query: { to: '/ops/data-source-settings' } } },
 
         // 售电资料 /sdzl
         page('sdzl/region-rules', 'RegionRules', { block: '售电资料', title: '地区规则体系', code: 'region-rules', endpoint: 'local region rules', dataPath: 'local_rules', scope: '地区规则画像 + 主体角色关注矩阵', kind: 'real' }, regionRules),
@@ -308,13 +319,12 @@ const router = createRouter({
 
         // AI 模型设置（从 AI 导航助手进入，不在左侧菜单）
         aiStudioRedirect('ai-settings', 'models'),
-        page('data-source-settings', 'DataSourceSettings', { block: '系统', title: '数据源接入', code: 'data-source-settings', endpoint: 'GET /api/v1/grid-access/points; GET|PUT|DELETE /api/v1/grid-access/points/{id}/credentials + /api/v1/data-sources/cgn-yunnan + /api/v1/sichuan-ingest; POST */test + */trigger; GET */plant-bindings + */health', dataPath: 'data/private/credentials + external_sc.ingest_run + load_forecast + reservoir_plan', scope: '电网官方平台（接入点凭据按账号隔离 + 四川采集运维）+ 企业自建通道（中广核云南）+ 受控 Provider；仅服务端掩码存储，整页 ADMIN/BOSS', kind: 'real' }, dataSourceSettings),
         dataSourceSettingsRedirect('sichuan-access', 'official'),
         // 智能体工作台（交互式 Agent 对话，后端 /api/agent/* SSE）
         page('ai-agent', 'AgentWorkbench', { block: '系统', title: '智能体工作台', code: 'ai-agent', endpoint: '/agent-api/agent/*', dataPath: '', kind: 'real' }, agentWorkbench),
         // 战略问答 PoC（#1526）：pi harness 旗舰切片，后端 integrations/pi-poc（/pi-api → 8100）
         page('strategic-qa', 'StrategicQA', { block: '系统', title: '战略问答', code: 'strategic-qa', endpoint: '/pi-api/agent/*', dataPath: '', scope: 'pi PoC：取数走 /api/v1/spot 只读权威面；查不到的数据如实报缺口', kind: 'real' }, strategicQA),
-        // 申报体检 PoC（#1527）：pi 第二切片——沙箱实算体检 + 审批卡落库申报台（submit 永不可执行）
+        // 申报体检 PoC（#1527）：pi 第二切片，沙箱实算体检 + 审批卡落库申报台（submit 永不可执行）
         page('declaration-checkup', 'DeclarationCheckup', { block: '系统', title: '申报体检', code: 'declaration-checkup', endpoint: '/pi-api/agent/*', dataPath: '', scope: 'pi PoC：体检沙箱实算；落库申报台 DRAFT 经人工审批；对外提交硬禁', kind: 'real' }, declarationCheckup),
         // 技能工作室 / 子智能体工作室随「AI 工作室」tab 化收编，旧路径保留重定向。
         aiStudioRedirect('ai-skills', 'skills'),
@@ -335,7 +345,7 @@ router.beforeEach((to, from) => {
 router.afterEach((to, from) => {
   finishRouteProgress()
   // 无权限记账（capture 私有族 401/403）按页清账：新页面取数会重新记账，
-  // 避免上一页的拒绝横幅跨页粘滞（Sub-4 #520，roborev job144/145）。
+  // 避免上一页的拒绝横幅跨页粘滞（Sub-4 #520）。
   if (to.path !== from.path) resetCaptureAccessDenied()
 })
 router.onError(() => finishRouteProgress())
@@ -347,6 +357,18 @@ router.beforeEach((to) => {
   }
   if (to.path === '/login' && getToken()) {
     return '/dashboard'
+  }
+  // 立场选择（#2193）：多立场账号未选立场 → 一律先落选择页（透传回跳目标）；
+  // /select-stance 对单立场账号不可见（无选择可做，直接落默认工作台）。
+  if (to.path === '/select-stance') {
+    if (!isMultiStance.value) {
+      const user = getCurrentUser()
+      return firstAccessiblePath(user, getCurrentRegionSnapshot().id)
+    }
+    return true
+  }
+  if (to.path !== '/login' && requiresStanceSelection()) {
+    return { path: '/select-stance', query: { redirect: to.fullPath } }
   }
   if (to.path !== '/login') {
     const user = getCurrentUser()
@@ -362,6 +384,11 @@ router.beforeEach((to) => {
       return canAccessPath('/sdzl/region-rules', user) ? '/sdzl/region-rules' : firstAccessiblePath(user, regionId)
     }
     if (!canAccessPath(to.path, user)) {
+      return firstAccessiblePath(user, regionId)
+    }
+    // 立场视图层（#2196）：直链进不属于当前立场的专属页 → 落默认工作台（共享页与
+    // 组合/集团视角恒放行；豁免逻辑收敛在 isPathAvailableInStance 内）。
+    if (!isPathAvailableInStance(to.path, activeStanceType.value)) {
       return firstAccessiblePath(user, regionId)
     }
   }

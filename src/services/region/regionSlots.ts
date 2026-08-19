@@ -1,18 +1,16 @@
-// ============================================================================
 // 地区插槽注册表（Epic #1431 S3 第二段）
 // ----------------------------------------------------------------------------
-// 定位：通用内核与地区扩展包之间的**唯一契约面**。内核只认「插槽 id」，扩展包把自己的
+// 定位：通用内核与地区扩展包之间的唯一契约面。内核只认「插槽 id」，扩展包把自己的
 // 面板注册到插槽上；内核绝不 import 具体扩展包（`verify:region-isolation` 第三道守卫
 // 强制），从而实现「某地区可单独开发、增删该省面板不触碰内核与他省」。
 //
 // 与能力注册表的分工：
-//   - regionModules（能力）回答「该省这条路由/这个卡片**允不允许**看」；
-//   - 本注册表回答「该省这个插槽**用哪个组件**渲染」。
-//   渲染前两者都要过：能力 available 且插槽有注册，才渲染扩展面板。
+// - regionModules（能力）回答「该省这条路由/这个卡片允不允许看」；
+// - 本注册表回答「该省这个插槽用哪个组件渲染」。
+// 渲染前两者都要过：能力 available 且插槽有注册，才渲染扩展面板。
 //
 // 装配时机：`src/features/regions/index.ts` 在应用启动时统一 import 各扩展包的
 // `register.ts` 完成注册；内核 import 的是该聚合入口（不含具体省名），不违反守卫。
-// ============================================================================
 
 import type { Component } from 'vue'
 
@@ -38,7 +36,7 @@ export type RegionSlotRegistration = {
 const registry = new Map<RegionSlotId, Map<string, RegionSlotRegistration>>()
 
 /**
- * 注册地区面板到插槽。同一 (slotId, regionId) 重复注册会抛错——两个扩展包争抢同一插槽
+ * 注册地区面板到插槽。同一 (slotId, regionId) 重复注册会抛错，两个扩展包争抢同一插槽
  * 属于装配错误，必须显式暴露而非静默后者覆盖前者（沉默覆盖会让渲染结果依赖 import 顺序）。
  */
 export function registerRegionSlot(registration: RegionSlotRegistration): void {
@@ -58,7 +56,7 @@ export function resolveRegionSlot(slotId: RegionSlotId, regionId: string): Regio
   return registry.get(slotId)?.get(regionId) ?? null
 }
 
-/** 某地区已注册的全部插槽 id（排序）——供隔离快照与调试使用。 */
+/** 某地区已注册的全部插槽 id（排序），供隔离快照与调试使用。 */
 export function registeredSlotsForRegion(regionId: string): RegionSlotId[] {
   const out: RegionSlotId[] = []
   for (const [slotId, bySlot] of registry) {

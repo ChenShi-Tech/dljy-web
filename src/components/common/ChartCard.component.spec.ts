@@ -1,6 +1,6 @@
 // ChartCard 生命周期委托 + option 透传保真（Epic #1702 P1）：图表卡片把 echarts 生命周期全托给 useEChart，
 // 测试锁住 buildOption→setOption 透传不篡改（禁平滑/step 纪律的传输保真）、notMerge、brushStats 注入、
-// loading/png/freshness 委托。永不真 init echarts（happy-dom 无 canvas）——vi.mock useEChart 拦截。
+// loading/png/freshness 委托。永不真 init echarts（happy-dom 无 canvas），vi.mock useEChart 拦截。
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { nextTick } from 'vue'
 import { mount } from '@/test/mount'
@@ -41,7 +41,7 @@ describe('ChartCard（Epic #1702 P1）', () => {
     await nextTick()
     expect(chartSpies.setOption).toHaveBeenCalled()
     const [passed, opts] = chartSpies.setOption.mock.calls[0]
-    // 内容保真（非引用相等）：toBe(opt) 是平凡的 Object.is——paint 透传的是 buildOption() 返回值本体，
+    // 内容保真（非引用相等）：toBe(opt) 是平凡的 Object.is，paint 透传的是 buildOption() 返回值本体，
     // 引用恒等永远成立；若有人在 paint 内原地给 series[0].smooth=true / 删掉 step，同引用仍 true，
     // 抓不住「禁平滑/step 纪律」回归（正是本用例声称要锁的）。改用 toEqual 对比独立字面量，
     // 原地突变、增删字段都会失败。
@@ -66,7 +66,7 @@ describe('ChartCard（Epic #1702 P1）', () => {
   })
 
   it('pngExport 点击 → getDataURL(pixelRatio:2) + a 下载 .png', async () => {
-    // 只 mock 'a' tag——全量 mock createElement 会让 Vue 内部建 DOM 节点崩
+    // 只 mock 'a' tag，全量 mock createElement 会让 Vue 内部建 DOM 节点崩
     const realCreateElement = document.createElement.bind(document)
     const clickSpy = vi.fn()
     const anchor = { click: clickSpy, href: '', download: '' } as any

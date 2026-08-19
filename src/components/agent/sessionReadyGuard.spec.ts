@@ -1,8 +1,8 @@
 // 锁死 session-ready 的「渲染期捕获世代」语义。
 //
-// 这组用例的价值在于区分两种写法：**取处理器时**捕获世代（正确）vs **事件到达时**读当前值
+// 这组用例的价值在于区分两种写法：取处理器时捕获世代（正确）vs 事件到达时读当前值
 // （错误，内联箭头的默认行为）。后者在类型和运行时都不会报错，只会让被丢弃实例的会话 id
-// 悄悄覆盖当前会话——所以只能靠测试卡住。
+// 悄悄覆盖当前会话，所以只能靠测试卡住。
 import { describe, expect, it } from 'vitest'
 
 import { makeSessionReadyGuard } from '@/components/agent/sessionReadyGuard'

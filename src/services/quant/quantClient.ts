@@ -52,7 +52,7 @@ async function post<T>(path: string, body: unknown): Promise<T> {
   return (await res.json()) as T
 }
 
-// ── 中长期敞口 ──
+// 中长期敞口
 export type ExposurePoint = { datetime: string; contracted: number; expected: number; gap: number }
 export type ExposureResult = {
   month: string
@@ -77,7 +77,7 @@ export function fetchExposure(params: {
   return post('/exposure', { ...params, region: currentRegion.value.id })
 }
 
-// ── 现货监盘 ──
+// 现货监盘
 export type MonitorPoint = { time: string; da: number; rt: number; spread: number }
 export type MonitorAlert = { time: string; spread: number; direction: string }
 export type MonitorResult = {
@@ -142,7 +142,7 @@ export async function fetchMonitor(date: string, spreadThreshold = 80): Promise<
   return post('/monitor', { date, spread_threshold: spreadThreshold, region: currentRegion.value.id })
 }
 
-// ── 复盘 ──
+// 复盘
 export type ReviewDetailPoint = {
   datetime: string
   declared: number
@@ -159,12 +159,12 @@ export type ReviewResult = {
   /** 申报侧来源（回放族 / `declaration_order:<id>`）。 */
   declared_source?: string
   /**
-   * 实际侧来源。`client_provided:actual_mwh_96` 表示曲线由调用方提供、**服务端无法验证**，
-   * 不得据此声明整份复盘为真实采集数据（#1487 / codex PR#1496 P2）。
+   * 实际侧来源。`client_provided:actual_mwh_96` 表示曲线由调用方提供、服务端无法验证，
+   * 不得据此声明整份复盘为真实采集数据（#1487 / #1496）。
    */
   actual_source?: string
   /**
-   * 这份复盘**不能被当成什么**——由后端随响应下发，页面必须原样呈现。
+   * 这份复盘不能被当成什么，由后端随响应下发，页面必须原样呈现。
    * 数字本身不带口径：山西实际侧取的是平台「实时电量」，是否等同于偏差考核采信的
    * 实际结算电量尚未核实；罚款金额基于未核验的规则参数。把边界只留在文档里等于没写。
    */
@@ -194,10 +194,10 @@ export function fetchReview(params: {
   penalty_price?: number
   // P1-4：以申报单曲线为回测基准（96 点 MWh/15min），替代合成申报量
   declared_mwh_96?: number[]
-  // 实际上网电量曲线（96 点 MWh/15min）。**入参优先，不传不等于没有**：
+  // 实际上网电量曲线（96 点 MWh/15min）。入参优先，不传不等于没有：
   // #1487 拆掉悬空的 sdpt_settlement 后这里曾恒 503，但 Epic #1485 已把山西经
   // serving-route 的 actual_energy 路由接上（sdpt_zptqx type='2' 平台实时电量），
-  // 故不传时后端会自行取数；**未登记路由的地区**（含云南）才诚实 503
+  // 故不传时后端会自行取数；未登记路由的地区（含云南）才诚实 503
   // （source='not_onboarded'，detail 说明「尚未接入」而非「该日无数据」）。
   // 云南由 yn_spot_settlement 派生后传入的工作在 #1488。
   actual_mwh_96?: number[]
@@ -206,11 +206,11 @@ export function fetchReview(params: {
   return post('/review', { ...params, region: currentRegion.value.id })
 }
 
-// ── 结算口径日复盘（云南三段式）──
+// 结算口径日复盘（云南三段式）
 /**
- * 与 `fetchReview`（申报 vs 实际偏差考核）是**两套口径**，不可混用：
- * 本接口返回电网结算单口径——实际上网电量按「中长期 / 日前增量 / 实时增量」三段分解并逐段计价。
- * `daDevEnergy`/`rtDevEnergy` 是**增量电量**，不是「偏离申报被考核的量」，展示时不要写成偏差或罚款。
+ * 与 `fetchReview`（申报 vs 实际偏差考核）是两套口径，不可混用：
+ * 本接口返回电网结算单口径，实际上网电量按「中长期 / 日前增量 / 实时增量」三段分解并逐段计价。
+ * `daDevEnergy`/`rtDevEnergy` 是增量电量，不是「偏离申报被考核的量」，展示时不要写成偏差或罚款。
  * 目前仅云南接入；其他地区后端返回 503（`not_onboarded`）。
  */
 export type SettlementSegment = {
@@ -263,14 +263,14 @@ export function fetchSettlementReview(date: string): Promise<SettlementReviewRes
   return post('/settlement-review', { date, region: currentRegion.value.id })
 }
 
-// ── 量化权威计算 ──
+// 量化权威计算
 // 交易策略实验室（/xhjy/trading-lab）随 #1799 删除后，指向 agent-backend
 // /kelly /arbitrage /cvar /twap /milp 的五个客户端函数失去全部消费者，一并移除。
 // 后端端点保留，其科学性审查、参数可配置与 agent 工具化见 #1800。
 
-// ── PR-P1b 跨期套利：日前 vs 实时 联合储能套利（cvxpy LP）──
+// PR-P1b 跨期套利：日前 vs 实时 联合储能套利（cvxpy LP）
 // 后端 optimize_cross_period 在无可行解时只回 {is_feasible:false, status, note}（不含收益/
-// 计划字段），可行时才回完整字段。故用 is_feasible 判别联合精确建模契约——消费方须先收窄
+// 计划字段），可行时才回完整字段。故用 is_feasible 判别联合精确建模契约，消费方须先收窄
 // is_feasible===true 才能访问 objective_yuan/schedule 等，杜绝无可行解时 undefined 崩溃
 // （与全审查 B18 PatchtstResult.available 判别联合同口径，B18 为已修 P1）。
 export type CrossPeriodResult = {
@@ -297,7 +297,7 @@ export function fetchCrossPeriodArbitrage(params: {
   return post('/cross-period-arbitrage', params)
 }
 
-// ── PR-P1c 电力申报执行：申报曲线提交 + 撮合回执（替代股票 TWAP 拆单）──
+// PR-P1c 电力申报执行：申报曲线提交 + 撮合回执（替代股票 TWAP 拆单）
 export type BidSubmissionReceipt = {
   bid_id: string
   market: string
@@ -318,7 +318,7 @@ export function fetchBidSubmit(params: {
   return post('/bid-submit', params)
 }
 
-// ── PR-P2 回测：历史电价→储能峰谷套利→日损益→quantstats 绩效 ──
+// PR-P2 回测：历史电价→储能峰谷套利→日损益→quantstats 绩效
 export type BacktestMetrics = {
   sharpe: number
   sortino: number
@@ -354,7 +354,26 @@ export function fetchBacktest(params: {
   return post('/backtest', params)
 }
 
-// ── 历史报告 ──
+// 风险指标（CVaR 引擎权威计算，#2047 压力测试消费）
+export type CvarResult = {
+  var_95: number
+  var_99: number
+  cvar_95: number
+  cvar_99: number
+  max_drawdown: number
+  volatility: number
+  sharpe_ratio: number
+  sortino_ratio: number
+  tail_risk: number
+  policy_source?: string
+}
+
+/** 收益率/价差序列（分数口径）→ VaR/CVaR/波动率/最大回撤/夏普/索提诺（历史模拟法）。 */
+export function fetchCvar(returns: number[]): Promise<CvarResult> {
+  return post('/cvar', { returns })
+}
+
+// 历史报告
 export type ReportItem = { session_id: string; path: string; title: string; mtime: number }
 
 export async function fetchReports(reportType = 'daily_review'): Promise<ReportItem[]> {

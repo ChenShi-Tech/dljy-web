@@ -2,13 +2,13 @@
  * 地图底图（imagery）Provider 配置层
  * ------------------------------------------------------------------
  * Epic #938 第一子（#939）：把原先硬编码在 `CesiumPlantMap.vue` 里的底图
- * Provider（URL、attribution、图层视觉微调）抽象为**纯配置**，支持通过环境变量
+ * Provider（URL、attribution、图层视觉微调）抽象为纯配置，支持通过环境变量
  * `VITE_GRID_GEO_BASEMAP` 在多个底图源（免费/付费）之间切换。
  *
  * 设计原则：
- * - 本模块**不 import cesium**，保持纯函数、可被 vitest 直接单测。
+ * - 本模块不 import cesium，保持纯函数、可被 vitest 直接单测。
  *   由消费方（`CesiumPlantMap.vue` 内的工厂）把描述符翻译成真正的 Cesium ImageryProvider。
- * - 默认 Provider（`osm-dark`）与改造前行为逐字段一致 —— 零回归。
+ * - 默认 Provider（`osm-dark`）与改造前行为逐字段一致：零回归。
  *
  * 为后续子任务预留的扩展位：
  * - #940 视觉基线：每个 Provider 自带 `adjustment`（brightness/contrast/saturation/gamma/alpha），
@@ -21,10 +21,10 @@
 /** 底图源构造类型；决定工厂用哪个 Cesium ImageryProvider 构造。 */
 export type BaseMapProviderKind = 'osm' | 'url-template' | 'arcgis' | 'ion' | 'solid-color'
 
-/** 计费层级 —— #942 付费接缝的分类锚点。 */
+/** 计费层级：#942 付费接缝的分类锚点。 */
 export type BaseMapTier = 'free' | 'paid'
 
-/** 底图图层视觉微调 —— #940 视觉基线的调参锚点。 */
+/** 底图图层视觉微调：#940 视觉基线的调参锚点。 */
 export interface BaseMapLayerAdjustment {
   brightness: number
   contrast: number
@@ -48,13 +48,13 @@ export interface BaseMapProviderConfig {
   credit?: string
   /** `url-template` 的子域轮询（如 a,b,c,d），其它类型忽略。 */
   subdomains?: string[]
-  /** 是否需要访问 token（付费/受限源）—— #942 扩展位，默认 false。 */
+  /** 是否需要访问 token（付费/受限源）， #942 扩展位，默认 false。 */
   requiresToken?: boolean
-  /** token 所在的环境变量名 —— #942 扩展位。 */
+  /** token 所在的环境变量名：#942 扩展位。 */
   tokenEnvKey?: string
   /** `ion` 专用：Cesium ion 资产 id（如 Bing 影像 = 3）。 */
   ionAssetId?: number
-  /** 底图图层视觉微调 —— #940 扩展位。 */
+  /** 底图图层视觉微调：#940 扩展位。 */
   adjustment: BaseMapLayerAdjustment
 }
 
@@ -62,15 +62,15 @@ export const BASE_MAP_ERROR_THRESHOLD = 2
 
 /**
  * 底图 Provider 注册表。
- * 目前只登记**免费、可同步构造、无需 token** 的源；付费源（#942）后续追加。
+ * 目前只登记免费、可同步构造、无需 token 的源；付费源（#942）后续追加。
  */
 export const BASE_MAP_PROVIDERS: Record<string, BaseMapProviderConfig> = {
   // 默认底图：Carto Voyager（亮色）。实测并发 12 张全部 200、0.20–0.98s，快且稳，
-  // 且 adjustment 全中性——能过「默认底图不压暗」这条回归护栏。
+  // 且 adjustment 全中性，能过「默认底图不压暗」这条回归护栏。
   //
-  // 为什么不是 arcgis-imagery（原默认）：`arcgisonline.com` **整个域**对本项目出口 IP
+  // 为什么不是 arcgis-imagery（原默认）：`arcgisonline.com` 整个域对本项目出口 IP
   // 返回 403（卫星影像与 World Hillshade 晕渲一并被拒，连 MapServer?f=json 元信息都拒），
-  // 于是每次都靠降级链退到 OSM 街道图——三维地形之上盖一张街道图，地形白开。
+  // 于是每次都靠降级链退到 OSM 街道图，三维地形之上盖一张街道图，地形白开。
   // 为什么不是 carto-dark：它自带 brightness 0.72 / saturation 0.44 的压暗参数，
   // 实机上整片省域是一块死黑，正是护栏当年针对 osm-dark 要防的那种「地图暗淡」。
   // 为什么不是 opentopo（等高线+晕渲，观感最配三维地形）：其瓦片策略限流严格，
@@ -99,7 +99,7 @@ export const BASE_MAP_PROVIDERS: Record<string, BaseMapProviderConfig> = {
     adjustment: { brightness: 0.72, contrast: 1.12, saturation: 0.44, gamma: 0.9 },
   },
   // ArcGIS 世界影像（卫星）。免费、无需 token、瓦片本身就是明亮的高清影像，
-  // 且 adjustment 保持中性（全 1）——不做任何压暗。
+  // 且 adjustment 保持中性（全 1），不做任何压暗。
   //
   // 为什么换掉原默认 osm-dark：它的 adjustment 是 brightness 0.34 / saturation 0.26，
   // 等于把底图亮度压到三分之一、饱和度压到四分之一，这是「地图暗淡」的主因（影响
@@ -135,7 +135,7 @@ export const BASE_MAP_PROVIDERS: Record<string, BaseMapProviderConfig> = {
     credit: '© OpenStreetMap contributors',
     adjustment: { brightness: 0.34, contrast: 1.36, saturation: 0.26, gamma: 0.68 },
   },
-  // OpenTopoMap 等高线+晕渲地形图。观感最配三维地形，但**实测本机出口连续 15s 超时**
+  // OpenTopoMap 等高线+晕渲地形图。观感最配三维地形，但实测本机出口连续 15s 超时
   // （它的瓦片策略限流严格，Cesium 一屏几十上百张必然被限），因此只排在降级链末位，
   // 网络环境允许时可用 VITE_GRID_GEO_BASEMAP=opentopo 显式指定。
   'opentopo': {
@@ -150,9 +150,9 @@ export const BASE_MAP_PROVIDERS: Record<string, BaseMapProviderConfig> = {
   },
   // Cesium ion 卫星影像（Bing Maps Aerial with Labels，ion asset 3）。需 ion token。
   //
-  // 这是本项目网络下**唯一可用的卫星影像源**：Esri 影像整域 403、OpenTopoMap 限流，
+  // 这是本项目网络下唯一可用的卫星影像源：Esri 影像整域 403、OpenTopoMap 限流，
   // 而 ion 只是 401（缺凭据而非拒绝）。配上 VITE_CESIUM_ION_TOKEN 后它会顶替
-  // carto-voyager 成为首选底图——矢量街道图贴在三维地形上看不出地貌，卫星影像
+  // carto-voyager 成为首选底图，矢量街道图贴在三维地形上看不出地貌，卫星影像
   // 配 World Terrain 才能在放大时读出山脊、河谷与场站所处地形。
   //
   // requiresToken:true 使其被 resolveBaseMapFallbackSequence 排除在自动降级链外
@@ -204,7 +204,7 @@ export function listBaseMapProviders(): BaseMapProviderConfig[] {
 /** 当前选择优先，其次免费网络源，最后固定为不访问网络的内置底色。 */
 export function resolveBaseMapFallbackSequence(providerId?: string | null): BaseMapProviderConfig[] {
   const requested = resolveBaseMapProvider(providerId)
-  // 需 token 的源即便被显式传进来，也不能进**自动**降级链：无凭据时它必失败，
+  // 需 token 的源即便被显式传进来，也不能进自动降级链：无凭据时它必失败，
   // 只会白白拖慢真正可用底图的出现。要把它放首选走 resolveBaseMapSequenceWithPreferred。
   const preferred = requested.requiresToken ? BASE_MAP_PROVIDERS[DEFAULT_BASE_MAP_PROVIDER_ID] : requested
   if (preferred.kind === 'solid-color') return [preferred]
@@ -227,7 +227,7 @@ export function resolvePreferredBaseMapId(options: { explicitId?: string | null;
   return DEFAULT_BASE_MAP_PROVIDER_ID
 }
 
-/** 需要 token 的源不进自动降级链，但**首选**位置可以是它；后续降级仍走免费链。 */
+/** 需要 token 的源不进自动降级链，但首选位置可以是它；后续降级仍走免费链。 */
 export function resolveBaseMapSequenceWithPreferred(preferredId: string): BaseMapProviderConfig[] {
   const preferred = BASE_MAP_PROVIDERS[preferredId]
   if (!preferred || !preferred.requiresToken) return resolveBaseMapFallbackSequence(preferredId)

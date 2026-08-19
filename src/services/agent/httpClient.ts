@@ -44,9 +44,9 @@ export type SaveResult = { ok: boolean; msg?: string }
 
 /** agent/* 客户端工厂：返回绑定 base path + timeout 的 HTTP 方法集。 */
 export interface AgentHttpClient {
-  /** GET 读请求（带 identityHeaders，不带 adminToken）—— 业务读端点。非 2xx 抛 Error（含 detail）。 */
+  /** GET 读请求（带 identityHeaders，不带 adminToken）， 业务读端点。非 2xx 抛 Error（含 detail）。 */
   get<T>(path: string, init?: RequestInit): Promise<T>
-  /** GET 管理读请求（带 identityHeaders + adminToken）—— 调度/配置等需管理员鉴权的读端点。 */
+  /** GET 管理读请求（带 identityHeaders + adminToken）， 调度/配置等需管理员鉴权的读端点。 */
   getAdmin<T>(path: string, init?: RequestInit): Promise<T>
   /** POST 写请求（带 adminHeaders + identityHeaders + content-type）。非 2xx 抛 Error。 */
   post<T>(path: string, body?: unknown, init?: RequestInit): Promise<T>
@@ -71,9 +71,11 @@ export interface AgentHttpClient {
  * @param opts.timeoutMs 超时（默认 10s）
  * @param opts.rootBase true 时从 AGENT_API_BASE_ROOT（/agent-api）派生，供非 /agent 路由使用。
  */
-export function createAgentClient(basePath: string, opts: { timeoutMs?: number; rootBase?: boolean } = {}): AgentHttpClient {
+export function createAgentClient(basePath: string, opts: { timeoutMs?: number; rootBase?: boolean; rawBase?: boolean } = {}): AgentHttpClient {
   const timeoutMs = opts.timeoutMs ?? DEFAULT_AGENT_TIMEOUT_MS
-  const base = basePath.startsWith('http')
+  // rawBase（#2174 P2-2c-3）：basePath 即完整基址（如 /data-svc/api/v1/... 代理形态），
+  // 不再拼 AGENT_API_BASE，管理面端点改道 data-service 时零侵入复用本 factory。
+  const base = basePath.startsWith('http') || opts.rawBase
     ? basePath
     : `${opts.rootBase ? AGENT_API_BASE_ROOT : AGENT_API_BASE}${basePath}`
 
@@ -84,11 +86,18 @@ export function createAgentClient(basePath: string, opts: { timeoutMs?: number; 
   function readHeaders(): Record<string, string> {
     return identityHeaders()
   }
+  let writeSeq = 0
+  function idempotencyKey(): string {
+    writeSeq += 1
+    return globalThis.crypto?.randomUUID?.() ?? `agent-hc-${Date.now()}-${writeSeq}`
+  }
   function writeHeaders(): Record<string, string> {
-    return { 'content-type': 'application/json', ...identityHeaders(), ...adminHeaders() }
+    // Idempotency-Key（#2174 P2-2c-3）：经 /data-svc（data-service 网关）的写请求受平台
+    // 幂等门（缺键 428）；走 /agent-api 的旧路径多带此头无副作用。
+    return { 'content-type': 'application/json', 'idempotency-key': idempotencyKey(), ...identityHeaders(), ...adminHeaders() }
   }
   function formHeaders(): Record<string, string> {
-    return { ...identityHeaders(), ...adminHeaders() }
+    return { 'idempotency-key': idempotencyKey(), ...identityHeaders(), ...adminHeaders() }
   }
 
   // 硬请求：非 2xx 抛 Error（带 detail）；网络错误 rethrow

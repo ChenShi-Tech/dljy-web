@@ -1,12 +1,12 @@
 // 省级边界 GeoJSON 懒加载器。
 //
 // 数据由 `GET /api/v1/geo/boundary/:adcode` 提供（server/geo-boundary-api.mjs），
-// 落在 data/geo/boundary/，**不进前端构建产物**。34 省全量约 3 MB，单省 4 KB–190 KB，
+// 落在 data/geo/boundary/，不进前端构建产物。34 省全量约 3 MB，单省 4 KB–190 KB，
 // 只加载当前地区那一份。
 //
 // 为什么不放 Vite 的 public/：那里的文件会无条件复制进 dist，部署后即成为无需鉴权的
 // 公开下载链接。本数据集无审图号背书、仅限内部使用，公开提供会构成「未经审图向公众
-// 提供地图服务」——静态目录里的 manifest 声明约束不了这件事，必须由接口鉴权兜住。
+// 提供地图服务」，静态目录里的 manifest 声明约束不了这件事，必须由接口鉴权兜住。
 //
 // 数据来源与合规：阿里云 DataV.GeoAtlas，仅限内部使用。
 
@@ -64,7 +64,7 @@ function isBoundaryGeoJson(value: unknown): value is BoundaryGeoJson {
 
 /**
  * 按 adcode 取边界 GeoJSON（带缓存与并发去重）。
- * 失败抛错，由调用方决定降级展示——不返回空 FeatureCollection 冒充成功。
+ * 失败抛错，由调用方决定降级展示，不返回空 FeatureCollection 冒充成功。
  */
 export async function loadBoundaryByAdcode(adcode: string): Promise<BoundaryGeoJson> {
   const cached = cache.get(adcode)
@@ -118,7 +118,7 @@ export async function ensureBoundaryRegistered(adcode: string): Promise<string> 
 }
 
 /**
- * 按地区 id 取边界并注册。模板地区/未登记地区返回 null——调用方须显示空态，
+ * 按地区 id 取边界并注册。模板地区/未登记地区返回 null，调用方须显示空态，
  * 不得回退到其他省的地图（地区隔离纪律）。
  */
 export async function ensureBoundaryForRegion(regionId: string | null | undefined): Promise<

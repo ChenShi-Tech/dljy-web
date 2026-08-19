@@ -1,6 +1,6 @@
 // #1640：自 packages/platform-sdk/src/model-contract.ts 搬入（platform-sdk 包随拆仓归档删除，
-// 本文件是其唯一存续消费面——预测模型注册表契约类型，纯类型零运行时）。
-// Vendored from @chenshi-tech/dljy-contracts@1.5.0 —— 模型管理只读 DTO。
+// 本文件是其唯一存续消费面，预测模型注册表契约类型，纯类型零运行时）。
+// Vendored from @chenshi-tech/dljy-contracts@1.5.0：模型管理只读 DTO。
 //
 // 这里只保留 ModelRegistryEntry / ModelConfigDescriptor 及其直接依赖，不包含模型权重、
 // 特征清单、训练超参、LLM 网关或密钥。契约事实源仍是 dljy-contracts；本文件只是原仓

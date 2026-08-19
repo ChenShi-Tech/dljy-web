@@ -3,7 +3,7 @@
 // /api/v1/spot。所有前端 agent 客户端统一走该基址，避免生产 404。
 //
 // 端点契约（统一 BaseResponse{code,message,data,mock,sourceType,productionWrite}，data 解出后返回）：
-//   GET /v1/spot/elasticity?date=&market=&region=&segments=&window=
+// GET /v1/spot/elasticity?date=&market=&region=&segments=&window=
 //
 // 数据来源（真实）：竞价空间=zptsj（统调负荷−新能源，外送 0 占位）、出清价=节点电价系统均价。
 // kind=分析参考·非结算依据；严格地区 yunnan「真实或空」，缺真实数据 available=False（不臆造）。

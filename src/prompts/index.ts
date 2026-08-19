@@ -6,7 +6,7 @@
 // - tiangong       天工多智能体编排演示（动态派遣 JSON）
 // - pageKeys       Copilot 页面提示 key 常量（与后端 prompts/pages.py 白名单对齐）
 //
-// 说明：Copilot / 工作台等"专业协作层"的 supervisor 角色提示由**后端**白名单管理
+// Copilot / 工作台等"专业协作层"的 supervisor 角色提示由后端白名单管理
 // （前端只传 pageKeys 里的 key），不在本目录定义；本目录只放前端自管的轻量/演示提示。
 // 后端角色/页面/编排提示见 packages/agent-runtime/src/agent_runtime/prompts/。
 

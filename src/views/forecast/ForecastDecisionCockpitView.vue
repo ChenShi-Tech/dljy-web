@@ -3,7 +3,7 @@
 // 申报建议与决策概览端点。工作台可带上下文（?model/date/train_days）跳入。
 // 页面仅做前端装配，不写入申报单，不作为结算依据。
 import { computed, nextTick, onActivated, onMounted, ref, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { useRoute } from 'vue-router'
 import {
   Activity,
   ClipboardList,
@@ -72,7 +72,6 @@ const RISK_LEVEL_COLOR: Record<OptimizeBidFrontierPoint['risk_level'], string> =
 // 工作台「在驾驶舱中使用此上下文」跳入时经 query 带 model/date/train_days（setup 期一次性消费，
 // 避免 onMounted 里再赋值触发 watch 双发 loadCockpit）。非法值回退默认。
 const route = useRoute()
-const router = useRouter()
 function queryStr(key: string): string {
   const v = route.query[key]
   return typeof v === 'string' ? v : ''
@@ -80,7 +79,7 @@ function queryStr(key: string): string {
 const benchInit = latestBenchContext.value
 const modelType = ref(queryStr('model') || benchInit?.modelId || 'xgboost')
 // 空 = 首屏用后端最近可用交易日（省略 target_date）；用户可手动选历史日回溯。
-// 不预设未来日：/forecast/predict 对无基本面数据的未来日 raise ValueError→400（roborev job546）。
+// 不预设未来日：/forecast/predict 对无基本面数据的未来日 raise ValueError→400（#546）。
 const targetDate = ref(/^\d{4}-\d{2}-\d{2}$/.test(queryStr('date')) ? queryStr('date') : (benchInit?.targetDate ?? ''))
 const queryTrainDays = Number(queryStr('train_days'))
 const trainDays = ref(Number.isFinite(queryTrainDays) && queryTrainDays >= 30 && queryTrainDays <= 365 ? Math.round(queryTrainDays) : (benchInit && benchInit.trainDays >= 30 && benchInit.trainDays <= 365 ? benchInit.trainDays : 180))
@@ -118,12 +117,11 @@ const isSupportedRegion = computed(() => routeCapability.value?.status === 'avai
 const selectedPoint = computed(() => closestFrontierPoint(selectedLambda.value))
 const frontierPoints = computed(() => [...(optimizeResult.value?.optimize_bid.frontier ?? [])].sort((a, b) => a.lambda - b.lambda))
 // 「最近实际出清」是预测的对照基准，只有真实采集回放才有对照意义（#1459）：
-// 该日无真实出清数据时**不画线**，而非画一条合成曲线再挂角标——合成线一旦入图，
+// 该日无真实出清数据时不画线，而非画一条合成曲线再挂角标，合成线一旦入图，
 // 视觉上仍会被读成「实际值」，与「宁可不显示也不用错数据顶替」的纪律相悖。
 const actualIsCaptured = computed(() => actualCurve.value?.basis === 'captured')
 const actualMissing = computed(() => Boolean(actualCurveDate.value) && actualCurve.value !== null && !actualIsCaptured.value)
 const actualHourlySourced = computed(() => actualIsCaptured.value && actualCurve.value?.sourcePoints === 24)
-const priceBasis = computed(() => priceForecast.value?.basis ?? 'illustrative')
 const optimizeNote = computed(() => optimizeResult.value?.optimize_bid.note ?? '')
 const riskNote = computed(() => riskResult.value?.risk_quantification.note ?? '')
 // #764 校准标注：分位带来自 /predict（默认共形校准）；VaR/CVaR 来自 /risk-quantify（quantile_calibrated）
@@ -171,7 +169,7 @@ function cleanSeries(values?: unknown[]): Array<number | null> {
 
 function avg(values?: number[]): number {
   // 无有效值返回 NaN（非 0）：调用方用 Number.isFinite 区分「真零价」与「无数据」，
-  // 避免 `avg(...) || 400` 把合法 0 元/MWh 误判为缺失（roborev job550）。
+  // 避免 `avg(...) || 400` 把合法 0 元/MWh 误判为缺失（#550）。
   const finite = (values ?? []).filter((value) => Number.isFinite(value))
   return finite.length ? finite.reduce((sum, value) => sum + value, 0) / finite.length : NaN
 }
@@ -226,7 +224,7 @@ function isStale(gen: number, ctx: ReturnType<typeof snapshotContext>) {
 
 function resetViewModel() {
   // loading 一并清零：不支持地区分支在 resetViewModel 后直接 return（不设 loading），
-  // 而飞行中的旧请求 finally 因 isStale 跳过收敛，会让刷新按钮永久禁用（roborev job538）。
+  // 而飞行中的旧请求 finally 因 isStale 跳过收敛，会让刷新按钮永久禁用（#538）。
   // 支持地区分支随后立即重设 loading=true，此处清零安全。
   loading.value = false
   optimizeLoading.value = false
@@ -253,7 +251,7 @@ async function loadCockpit() {
   const ctx = snapshotContext()
   resetViewModel()
   if (!isSupportedRegion.value) return
-  // catalog 已加载但选中模型不可选（不可用/非 /predict/被移除）→ 不发注定失败的请求（roborev job570）。
+  // catalog 已加载但选中模型不可选（不可用/非 /predict/被移除）→ 不发注定失败的请求（#570）。
   const selectable = catalogModels.value.filter(modelSelectable)
   if (!selectable.length || !selectable.some((m) => m.modelId === ctx.modelType)) {
     errorMsg.value = selectable.length ? '当前预测模型不可用，请另选模型' : '当前地区没有可消费的模型目录产物'
@@ -310,7 +308,7 @@ async function recomputeFromControls() {
   const gen = ++loadGeneration
   const ctx = snapshotContext()
   // 接管重算：递增 loadGeneration 使飞行中的旧 loadCockpit 请求 stale，其 finally 会跳过
-  // loading 收敛，故此处显式清零，防刷新按钮长期禁用（roborev job550，同 job538 loading 语义）。
+  // loading 收敛，故此处显式清零，防刷新按钮长期禁用（#550，同 #538 loading 语义）。
   loading.value = false
   await recomputeOptimize(gen, ctx)
 }
@@ -364,7 +362,7 @@ async function recomputeRisk(gen: number, ctx: ReturnType<typeof snapshotContext
   if (!point || !quantityForecast) return
   riskLoading.value = true
   try {
-    // 真零价（0 元/MWh）合法，只有无数据才回退 400——用 Number.isFinite 判缺失，勿用 truthy。
+    // 真零价（0 元/MWh）合法，只有无数据才回退 400，用 Number.isFinite 判缺失，勿用 truthy。
     const meanPrice = avg(priceForecast.value?.points)
     const clearingPrice = Number.isFinite(meanPrice) ? Math.round(meanPrice * 100) / 100 : 400
     const result = await fetchRiskQuantify({
@@ -391,7 +389,7 @@ async function recomputeRisk(gen: number, ctx: ReturnType<typeof snapshotContext
   }
 }
 
-// ── 申报建议 / 决策概览（迁自工作台原「决策应用」tab，模型/目标日/训练窗口复用驾驶舱控件） ──
+// 申报建议 / 决策概览（迁自工作台原「决策应用」tab，模型/目标日/训练窗口复用驾驶舱控件）
 // 主体切换不重载整页（不进 isStale 上下文），结果写入用快照比对（含主体）丢弃跨上下文旧响应；
 // loading 复位用各自独立世代（同 runSingle/backtest 模式，job538/550 语义）：无论响应是否 stale
 // 都由最新一次请求收敛自己的 loading，杜绝切主体/改装机等旁路变更后按钮永久禁用。
@@ -466,7 +464,7 @@ const overviewCards = computed(() => {
 })
 
 // 原「下发到实验室」按钮（把 96 点电价预测重采样为 24 点送交易策略实验室）
-// 随该页删除一并移除（#1799）——目标页不存在，pendingPriceCurve 已无读取方。
+// 随该页删除一并移除（#1799），目标页不存在，pendingPriceCurve 已无读取方。
 
 function closestFrontierPoint(lambda: number): OptimizeBidFrontierPoint | null {
   const frontier = optimizeResult.value?.optimize_bid.frontier ?? []
@@ -652,7 +650,7 @@ function modelOptionLabel(m: ForecastModel): string {
   return (m.name ?? m.modelId) + (tags.length ? `（${tags.join('·')}）` : '')
 }
 
-// ── 预测中心同页上下文（#79，codex 3620694192/3620694219） ──
+// 预测中心同页上下文（#79，3620694192/3620694219）
 // dirty：用户在本 tab 手动改过模型/目标日/训练窗后不再被建模上下文覆盖（深链 query 仍优先）。
 let controlsDirty = false
 function markControlsDirty() { controlsDirty = true }
@@ -694,7 +692,7 @@ function applyBenchContext(): void {
 
 // 本页挂在预测中心 tab 内且中心页被 KeepAlive 缓存：setup 只跑一次。onActivated 只覆盖
 // 「从其他页面回到预测中心」（含旧路由深链 redirect）；同一中心实例内「建模再跑→切回
-// 决策 tab」不触发路由级激活，故建模上下文用 watch 即时跟随（codex P1 3621741656）。
+// 决策 tab」不触发路由级激活，故建模上下文用 watch 即时跟随（3621741656）。
 // dirty 用户手改后不覆盖、seq 防重复应用的语义两条路径共用。
 onActivated(() => {
   applyDeepLinkQuery()
@@ -927,7 +925,7 @@ onMounted(async () => {
 
 <style scoped>
 .decision-cockpit { gap: 14px; }
-.muted { color: var(--muted); font-size: 12.5px; }
+.muted { color: var(--muted); font-size: var(--font-12-5); }
 
 .cockpit-alert {
   display: flex;
@@ -947,13 +945,13 @@ onMounted(async () => {
 .alert-main h1 {
   margin: 0 0 2px;
   color: var(--text);
-  font-size: 18px;
+  font-size: var(--font-18);
   line-height: 1.25;
 }
 .alert-main p {
   margin: 0;
   color: var(--muted);
-  font-size: 12.5px;
+  font-size: var(--font-12-5);
 }
 .alert-badges {
   display: flex;
@@ -969,7 +967,7 @@ onMounted(async () => {
   align-items: center;
   padding: 2px 8px;
   border-radius: 10px;
-  font-size: 11px;
+  font-size: var(--font-xs);
   white-space: nowrap;
 }
 .source-chip {
@@ -1001,7 +999,7 @@ onMounted(async () => {
   display: grid;
   gap: 5px;
   min-width: 160px;
-  font-size: 12px;
+  font-size: var(--font-sm);
   color: var(--muted);
 }
 .field.compact { min-width: 140px; }
@@ -1038,7 +1036,7 @@ onMounted(async () => {
   border-radius: 8px;
   color: #b91c1c;
   background: #fef2f2;
-  font-size: 13px;
+  font-size: var(--font-md);
 }
 
 .cockpit-grid {
@@ -1067,7 +1065,7 @@ onMounted(async () => {
   align-items: center;
   gap: 6px;
   margin: 0;
-  font-size: 14px;
+  font-size: var(--font-lg);
   line-height: 1.4;
 }
 .panel-head .muted {
@@ -1098,7 +1096,7 @@ onMounted(async () => {
   border-radius: 10px;
   color: #2563eb;
   background: rgba(37, 99, 235, 0.1);
-  font-size: 12px;
+  font-size: var(--font-sm);
   font-weight: 700;
 }
 .frontier-summary {
@@ -1112,7 +1110,7 @@ onMounted(async () => {
   grid-template-columns: 1fr auto;
   align-items: center;
   gap: 8px;
-  font-size: 12.5px;
+  font-size: var(--font-12-5);
 }
 .frontier-summary span,
 .kv span {
@@ -1142,13 +1140,13 @@ onMounted(async () => {
 .risk-card span {
   display: block;
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 .risk-card b {
   display: block;
   margin-top: 10px;
   color: var(--text);
-  font-size: 19px;
+  font-size: var(--font-19);
   line-height: 1.1;
   font-variant-numeric: tabular-nums;
 }
@@ -1175,7 +1173,7 @@ onMounted(async () => {
   gap: 10px 16px;
   margin-top: 10px;
   color: var(--muted);
-  font-size: 12.5px;
+  font-size: var(--font-12-5);
 }
 .note {
   margin: 10px 0 0;
@@ -1183,7 +1181,7 @@ onMounted(async () => {
   border-left: 3px solid var(--warning);
   color: var(--muted);
   background: color-mix(in srgb, var(--warning) 7%, transparent);
-  font-size: 12.5px;
+  font-size: var(--font-12-5);
   line-height: 1.6;
 }
 .main-panel .panel-head .muted { margin-left: 0; }
@@ -1200,7 +1198,7 @@ onMounted(async () => {
   align-items: center;
   gap: 10px;
   margin: 12px 0 8px;
-  font-size: 13px;
+  font-size: var(--font-md);
 }
 .advice-grid {
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
