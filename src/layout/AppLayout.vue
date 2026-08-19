@@ -37,6 +37,7 @@ import {
   subjectTypeLabels
 } from '@/services/governance'
 import AiAssistant from '../components/AiAssistant.vue'
+import AiOrbLauncher from '../components/agent/AiOrbLauncher.vue'
 import { useAiPanel } from '../composables/useAiPanel'
 import PriceTicker from '../components/PriceTicker.vue'
 import RegionSwitcher from '@/components/region/RegionSwitcher.vue'
@@ -474,6 +475,8 @@ watch(
     </section>
 
     <AiAssistant />
+    <!-- 右下角液态玻璃 AI 球：点按开合上方 AI 面板（WebGPU 渲染，不支持时 CSS 降级） -->
+    <AiOrbLauncher />
     <RegionMigrationTip />
     <CommandPalette v-model="showCommandPalette" :user="currentUser" />
   </div>
