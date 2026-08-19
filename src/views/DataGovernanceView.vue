@@ -11,7 +11,8 @@ import { canAccessPath } from '@/services/governance'
 import { ageDaysOf, freshnessOf, type Freshness } from '@/services/data/freshness'
 import { onRegionChange } from '@/composables/useRegionReload'
 
-const ROUTE_PATH = '/yygl/data-governance'
+// 页面权限口径随宿主路由：本页现由数据运维工作台承载（ADMIN/BOSS，adminOnlyRoutes）。
+const ROUTE_PATH = '/data-ops/console'
 
 // 现货 S2/S3 新接入的 5 个 yn_* family（issue #384）。consumeNote 如实标注当前消费入口
 // 这 5 族 apiFamily=null（无独立 /api/v1 业务接口），主要经 /api/real 回放 + 本面板质量呈现。
@@ -615,7 +616,6 @@ function browserLink(alert: QualityAlert) {
   <div class="governance-page">
     <header class="governance-page__head">
       <div>
-        <h2>数据治理控制台</h2>
         <div class="governance-page__meta">
           <DataBasisBadge basis="captured" prefix="治理口径" />
           <span>不写生产（只读）</span>
@@ -921,7 +921,8 @@ function browserLink(alert: QualityAlert) {
 
 <style scoped>
 .governance-page {
-  padding: 16px 20px;
+  /* 页级内边距由 AppLayout 的 page-shell 统一给，本页不再自带（避免双重留白）。 */
+  min-width: 0;
 }
 
 .governance-page__head {
@@ -930,10 +931,6 @@ function browserLink(alert: QualityAlert) {
   justify-content: space-between;
   gap: 16px;
   margin-bottom: 12px;
-}
-
-.governance-page__head h2 {
-  margin: 0 0 6px;
 }
 
 .governance-page__meta {

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// 数据源接入设置（/data-source-settings）：外部数据源凭据与采集运维的统一入口（#1896）。
+// 数据源接入设置（数据运维工作台 /data-ops/console?panel=data-source）：外部数据源凭据与采集运维的统一入口（#1896）。
 //
 // 2026-08-10 用户拍板（Epic #1893）：原先散落的「四川开放平台凭据」（本页）与「四川接入服务」
 // （/sichuan-access，独立运维页）合并为单页多 tab，并拓展为「电网官方平台」通用框架
@@ -8,7 +8,8 @@
 //   企业自建通道 — 企业方自建透传接口（中广核云南首个实例）
 //   受控接入     — 授权网架 Provider 等需 Owner 交付的数据源
 //
-// tab 状态同步到 ?tab= query：/sichuan-access 旧路由重定向落到 official tab、刷新与深链保持位置。
+// tab 状态同步到 ?tab= query（宿主工作台用 ?panel= 另管一层，两级互不覆盖）：
+// /sichuan-access 旧路由经两级 redirect 落到 official tab、刷新与深链保持位置。
 // 子 tab 走 defineAsyncComponent + KeepAlive + v-if：进页只加载当前 tab 的 chunk，切走触发
 // onDeactivated（运维面板据此停轮询，守 #1736），切回保留状态。
 //
@@ -56,7 +57,6 @@ function onTabChange(name: string | number) {
 <template>
   <div class="ds-settings">
     <header class="page-head">
-      <h1>数据源接入</h1>
       <p class="sub">
         各数据源的凭据录入、连通测试与采集运维统一在此完成。凭据仅保存在服务端本地（data/private/，不入 git），
         接口只返回掩码，前端与仓库均不留明文；仅系统管理员(ADMIN/BOSS)可读写。
@@ -75,8 +75,7 @@ function onTabChange(name: string | number) {
 
 <style scoped>
 .ds-settings { display: flex; flex-direction: column; gap: 12px; }
-.page-head h1 { margin: 0; font-size: var(--font-20); font-weight: 600; color: var(--el-text-color-primary); }
-.page-head .sub { margin: 4px 0 0; font-size: var(--font-md); line-height: 1.7; color: var(--el-text-color-secondary); }
+.page-head .sub { margin: 0; font-size: var(--font-md); line-height: 1.7; color: var(--el-text-color-secondary); }
 /* 子 tab 自带 section/card 外距，tab 面板不再叠加内边距。 */
 .ds-tabs :deep(.el-tab-pane) { padding: 0; }
 </style>

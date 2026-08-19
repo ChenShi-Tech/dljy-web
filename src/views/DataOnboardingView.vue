@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// 数据接入向导（数据运维台 /ops/data-onboarding；#885 建，#2215 对齐真实通道）：
+// 数据接入向导（数据运维工作台 /data-ops/console?panel=onboarding；#885 建，#2215 对齐真实通道）：
 // 按「用户手里有什么数据」组织的旅程总览 + UI 内一键生效闭环。数据进入线现有五条：
 // 中广核厂侧 API 全自动 / 台账与模板手录 / 命令行 ETL / 定时 scheduler / 上传中心，
 // 收成一张「先做什么、再做什么、点哪里生效、去哪见数」的地图。
@@ -11,7 +11,7 @@
 //   ③ 交易中心月度导出包（离线包→命令行 import:spot-export，如实说明须服务器执行）
 //   ④ 气象全自动（scheduler 06:30 自动采→手动补采→天气/发电预测见数）
 //   ⑤ 结算/零售/交易记录（import-hub 台账录入即见数）
-// 上传中心（/ops/upload 五步流，Epic #2169 P1）承接结构化 Excel 批量入库。
+// 上传中心（?panel=upload 五步流，Epic #2169 P1）承接结构化 Excel 批量入库。
 //
 // 诚实红线：状态标签如实透传（freshness/台账/接入态），取数失败显示「未知」不猜；
 // 未生效数据绝不显示「已可见」；生效按钮结果如实回显（成功/失败 + stdout 摘要）。
@@ -47,8 +47,8 @@ type RecordsPayload = { rows: TemplateRecord[]; total: number } & Record<string,
 // 卡片配置
 type JourneyKind = 'template' | 'command' | 'auto' | 'ledger'
 type EffectAction = { kind: IngestKind; label: string }
-// external=true 指向主前端页面：本台 hash 路由仅注册 /ops/*，主前端 path 模式用同源 <a>（#2215）。
-type ConsumeLink = { to: string; label: string; external?: boolean }
+// 站内跳转统一 RouterLink：六页回到主平台后与消费页同属一个 SPA，不再需要整页刷新的 <a>。
+type ConsumeLink = { to: string; label: string }
 
 interface OnboardingCard {
   key: string
@@ -57,7 +57,7 @@ interface OnboardingCard {
   icon: Component
   what: string
   howText: string
-  howLink?: { to: string; label: string; external?: boolean }
+  howLink?: { to: string; label: string }
   howCommand?: { command: string; note: string }
   families: string[]
   templateIds: string[]
@@ -79,13 +79,13 @@ const CARDS: OnboardingCard[] = [
     icon: Network,
     what: '中广核云南专属厂侧数据 API（数据提供方部署，非电网官方接口）每日自动拉取：全网/场站节点电价（00:20，3 日回看）与 11 条市场曲线 + 26 类公共披露（00:50），写入中广核私有 PostgreSQL。日前价上游 D+1~D+2 发布，回看窗口自动补齐。',
     howText: '数据源接入页保存直连端点与 API Key、联通测试通过且三重启用后，调度任务全自动拉取；手动补拉入口在数据摄取管理页。',
-    howLink: { to: '/ops/data-source-settings', label: '查看数据源接入状态与联通测试' },
+    howLink: { to: '/data-ops/console?panel=data-source', label: '查看数据源接入状态与联通测试' },
     families: [],
     templateIds: [],
     consume: [
-      { to: '/dashboard', label: '交易驾驶舱', external: true },
-      { to: '/xhjy/monitor', label: '实时监盘', external: true },
-      { to: '/ops/ingest', label: '数据摄取管理（手动补拉）' }
+      { to: '/dashboard', label: '交易驾驶舱' },
+      { to: '/xhjy/monitor', label: '实时监盘' },
+      { to: '/data-ops/console?panel=ingest', label: '数据摄取管理（手动补拉）' }
     ],
     cadence: 'daily',
     journey: 'auto'
@@ -97,13 +97,13 @@ const CARDS: OnboardingCard[] = [
     icon: Network,
     what: '交易中心发布的日前节点电价（DLR），按节点×时段，是价格预测与申报决策的核心输入。',
     howText: '中广核云南集团：节点电价已由厂侧 API 每日自动入库（见上方全自动卡），本卡手录通道仅在无 API 接入时使用——下载 yn-t0-node-price 模板填报上传，校验通过即投递到清单协议目录。',
-    howLink: { to: '/ops/import-hub', label: '去数据导入融合台上传模板' },
+    howLink: { to: '/data-ops/console?panel=import-hub', label: '去数据导入融合台上传模板' },
     families: ['yn_node_price', 'yn_plant_nodal_price'],
     templateIds: ['yn-t0-node-price'],
     effect: { kind: 'spot-ingest', label: '一键生效（摄取节点电价）' },
     consume: [
-      { to: '/xhjy/yunnan/node-price', label: '节点电价分析', external: true },
-      { to: '/ycsj/workbench', label: 'ML 预测工作台', external: true }
+      { to: '/xhjy/yunnan/node-price', label: '节点电价分析' },
+      { to: '/ycsj/workbench', label: 'ML 预测工作台' }
     ],
     cadence: 'daily',
     journey: 'template'
@@ -115,13 +115,13 @@ const CARDS: OnboardingCard[] = [
     icon: Zap,
     what: '统调系统负荷（T0 实际/计划）与水电出力（T1），是负荷与发电预测的关键外生变量。',
     howText: '云南负荷/新能源/总出力等市场曲线已随厂侧 API 自动进入中广核私有库（见上方全自动卡）；本卡用于公共清单协议族（yn_system_supply）——下载 yn-t0-system-load（统调负荷）/ yn-t1-hydro（水电出力）模板填报上传，投递到清单协议目录。',
-    howLink: { to: '/ops/import-hub', label: '去数据导入融合台上传模板' },
+    howLink: { to: '/data-ops/console?panel=import-hub', label: '去数据导入融合台上传模板' },
     families: ['yn_system_supply'],
     templateIds: ['yn-t0-system-load', 'yn-t1-hydro'],
     effect: { kind: 'forecast-etl', label: '一键生效（跑预测 ETL）' },
     consume: [
-      { to: '/ycsj/workbench', label: 'ML 预测工作台', external: true },
-      { to: '/ycsj/station-generation', label: '厂站发电预测', external: true }
+      { to: '/ycsj/workbench', label: 'ML 预测工作台' },
+      { to: '/ycsj/station-generation', label: '厂站发电预测' }
     ],
     cadence: 'daily',
     journey: 'template'
@@ -140,8 +140,8 @@ const CARDS: OnboardingCard[] = [
     families: ['yn_spot_settlement', 'yn_settlement_detail', 'yn_dim_plant'],
     templateIds: [],
     consume: [
-      { to: '/xhjy/yunnan/settlement-price', label: '结算价分析', external: true },
-      { to: '/gsgl/output', label: '机组出力', external: true }
+      { to: '/xhjy/yunnan/settlement-price', label: '结算价分析' },
+      { to: '/gsgl/output', label: '机组出力' }
     ],
     cadence: 'monthly',
     journey: 'command'
@@ -153,13 +153,13 @@ const CARDS: OnboardingCard[] = [
     icon: CloudSun,
     what: 'Open-Meteo 公开气象（温度/湿度/风速/云量/降水 + GHI/DNI/DHI 辐照），驱动发电预测。',
     howText: '由定时任务每日 06:30 自动采集（data_ingestion kind），无需手录；缺数时可手动补采。',
-    howLink: { to: '/system/ai-studio?tab=schedules', label: '查看定时采集任务', external: true },
+    howLink: { to: '/system/ai-studio?tab=schedules', label: '查看定时采集任务' },
     families: ['yn_meteo', 'yn_irradiance'],
     templateIds: [],
     effect: { kind: 'weather-export', label: '手动补采气象' },
     consume: [
-      { to: '/sjfx/tqyb', label: '天气预报', external: true },
-      { to: '/ycsj/station-generation', label: '厂站发电预测', external: true }
+      { to: '/sjfx/tqyb', label: '天气预报' },
+      { to: '/ycsj/station-generation', label: '厂站发电预测' }
     ],
     cadence: 'daily',
     journey: 'auto'
@@ -171,12 +171,12 @@ const CARDS: OnboardingCard[] = [
     icon: Coins,
     what: '售电结算、零售套餐、市场交易等结构化台账数据，经数据导入融合台录入后直接进台账见数。',
     howText: '在数据导入融合台对应 tab 上传 CSV/Excel（投递型落 capture，台账型落 import-hub 台账）。',
-    howLink: { to: '/ops/import-hub', label: '去数据导入融合台录入' },
+    howLink: { to: '/data-ops/console?panel=import-hub', label: '去数据导入融合台录入' },
     families: [],
     templateIds: [],
     consume: [
-      { to: '/ops/import-hub', label: '导入台账与历史' },
-      { to: '/gsgl/trades', label: '历史交易', external: true }
+      { to: '/data-ops/console?panel=import-hub', label: '导入台账与历史' },
+      { to: '/gsgl/trades', label: '历史交易' }
     ],
     cadence: 'daily',
     journey: 'ledger'
@@ -301,7 +301,6 @@ onMounted(loadAll)
 <template>
   <div class="onboarding-page">
     <header class="page-head">
-      <h1>数据接入向导</h1>
       <p class="lede">
         从「你手里有什么数据」出发，按类别把数据进入系统的旅程一步步走通：先做什么、点哪里生效、去哪见数。
         云南现货主力数据已由中广核厂侧 API 每日自动入库（首卡）；手录模板 / 月度导出包 / 台账等通道按需使用。
@@ -310,10 +309,10 @@ onMounted(loadAll)
     </header>
 
     <section class="link-row">
-      <RouterLink to="/ops/upload" class="link"><CloudDownload :size="13" /> 数据上传中心</RouterLink>
-      <RouterLink to="/ops/import-hub" class="link"><FileText :size="13" /> 数据导入融合台</RouterLink>
-      <RouterLink to="/ops/ingest" class="link"><Workflow :size="13" /> 数据摄取管理</RouterLink>
-      <RouterLink to="/ops/data-governance" class="link"><Database :size="13" /> 数据治理控制台</RouterLink>
+      <RouterLink to="/data-ops/console?panel=upload" class="link"><CloudDownload :size="13" /> 数据上传中心</RouterLink>
+      <RouterLink to="/data-ops/console?panel=import-hub" class="link"><FileText :size="13" /> 数据导入融合台</RouterLink>
+      <RouterLink to="/data-ops/console?panel=ingest" class="link"><Workflow :size="13" /> 数据摄取管理</RouterLink>
+      <RouterLink to="/data-ops/console?panel=governance" class="link"><Database :size="13" /> 数据治理控制台</RouterLink>
     </section>
 
     <div v-if="loadErr" class="load-err">⚠ 状态取数失败（{{ loadErr }}）；卡片状态显示为「未知」，不影响生效操作。</div>
@@ -342,8 +341,7 @@ onMounted(loadAll)
         <div class="sect">
           <span class="sect-label">怎么接</span>
           <p class="sect-body">{{ card.howText }}</p>
-          <a v-if="card.howLink?.external" :href="card.howLink.to" class="link">{{ card.howLink.label }} →</a>
-          <RouterLink v-else-if="card.howLink" :to="card.howLink.to" class="link">{{ card.howLink.label }} →</RouterLink>
+          <RouterLink v-if="card.howLink" :to="card.howLink.to" class="link">{{ card.howLink.label }} →</RouterLink>
           <div v-if="card.howCommand" class="cmd-box">
             <code>{{ card.howCommand.command }}</code>
             <button class="copy" type="button" @click="copyCommand(card.howCommand.command)">复制</button>
@@ -391,10 +389,7 @@ onMounted(loadAll)
         <div class="sect">
           <span class="sect-label">去哪见数</span>
           <div class="consume-links">
-            <template v-for="c in card.consume" :key="c.to">
-              <a v-if="c.external" :href="c.to" class="consume-link">{{ c.label }} →</a>
-              <RouterLink v-else :to="c.to" class="consume-link">{{ c.label }} →</RouterLink>
-            </template>
+            <RouterLink v-for="c in card.consume" :key="c.to" :to="c.to" class="consume-link">{{ c.label }} →</RouterLink>
           </div>
         </div>
       </article>
@@ -411,8 +406,7 @@ onMounted(loadAll)
 </template>
 
 <style scoped>
-.onboarding-page { padding: 18px 22px; max-width: 1180px; margin: 0 auto; }
-.page-head h1 { font-size: var(--font-22); font-weight: 600; color: var(--text); margin: 0 0 4px; }
+.onboarding-page { max-width: 1180px; }
 .lede { color: var(--text-soft); font-size: var(--font-13-5); margin: 0 0 14px; line-height: 1.6; max-width: 880px; }
 .link-row { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 18px; font-size: var(--font-12-5); }
 .link { color: var(--primary); text-decoration: none; display: inline-flex; align-items: center; gap: 4px; }

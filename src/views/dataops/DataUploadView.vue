@@ -3,7 +3,6 @@
     <el-card shadow="never" class="header-card">
       <div class="header-row">
         <div>
-          <h2 class="page-title">数据上传中心</h2>
           <p class="page-sub">
             模板下载 → 上传 → 预检 → 确认落库 → 回执；格式由「数据集契约」统一管理，重复内容幂等拦截、误传可按批次撤销。
           </p>
@@ -383,7 +382,6 @@ function chipClass(col: { via: string | null }): string {
 .data-upload-view { display: flex; flex-direction: column; gap: 12px; }
 .header-card :deep(.el-card__body) { padding: 14px 18px; }
 .header-row { display: flex; align-items: center; justify-content: space-between; gap: 24px; flex-wrap: wrap; }
-.page-title { margin: 0 0 4px; font-size: var(--font-18); }
 .page-sub { margin: 0; color: var(--el-text-color-secondary); font-size: var(--font-sm); }
 .steps { max-width: 560px; }
 .hint { margin-bottom: 10px; }
