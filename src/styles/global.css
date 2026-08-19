@@ -5,10 +5,10 @@
   /* —— 字号档位（全站统一；新代码用 var(--font-*)，不写裸 px）——
      语义五档覆盖正文体系；其余按像素值命名。全局调字号只动这里。
      顶栏专用 --font-tb-* 钉在原值，不随放大档变化。 */
-  --font-xs: 11px;
-  --font-sm: 12px;
+  --font-xs: 11.5px;
+  --font-sm: 13px;
   --font-md: 13px;
-  --font-lg: 14px;
+  --font-lg: 15px;
   --font-xl: 17px;
 
   /* 顶栏专用档：钉在原值，不随全站放大档变化 */
@@ -30,8 +30,8 @@
   --font-9-5: 9.5px;
   --font-10: 10px;
   --font-10-5: 10.5px;
-  --font-11-5: 11.5px;
-  --font-12-5: 12.5px;
+  --font-11-5: 12px;
+  --font-12-5: 13px;
   --font-13-5: 13.5px;
   --font-14-5: 14.5px;
   --font-15: 15px;
