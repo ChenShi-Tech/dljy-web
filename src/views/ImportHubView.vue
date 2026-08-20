@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
+import TrustBadge from '@/components/common/TrustBadge.vue'
 import {
   getImportHubDataset,
+  type ImportMetric,
   listImportTemplateDeclarations,
   type ImportHubTab,
   type ExcelTemplateDeclaration
@@ -317,7 +319,22 @@ function downloadTemplate() {
 }
 
 const currentTask = computed(() => dataset.tasks.find((task) => task.type === activeTab.value) ?? dataset.tasks[0])
-const metrics = computed(() => dataset.metrics[activeTab.value])
+// 指标卡口径（#2355）：已实现的 tab 有真实导入记录，就按真实记录统计——原先无论哪个
+// tab 都从硬编码 history 统计，会出现「指标说导入过 1 次、有效 2298 行」而下面的真实
+// 记录表是空的这种自相矛盾。未实现的 tab 没有真实来源，沿用演示数据但在卡片上标「演示」。
+const metricsAreReal = computed(() => isImplemented.value && activeTab.value !== 'retailSettlement')
+const metrics = computed<ImportMetric[]>(() => {
+  if (!metricsAreReal.value) return dataset.metrics[activeTab.value]
+  const rows = realRecords.value
+  const sum = (pick: (r: RealImportRecord) => number | undefined) =>
+    rows.reduce((acc, r) => acc + (Number(pick(r)) || 0), 0)
+  return [
+    { label: '导入任务', value: rows.length, unit: '次', tone: 'blue' },
+    { label: '有效行数', value: sum((r) => r.validRows), unit: '行', tone: 'green' },
+    { label: '异常行数', value: sum((r) => r.invalidRows), unit: '行', tone: 'orange' },
+    { label: '可复用模板', value: currentTask.value?.reusable ? '是' : '否', unit: '', tone: 'purple' },
+  ]
+})
 const currentHistory = computed(() => dataset.history.filter((row) => row.type === activeTab.value))
 // marketOps 字段提示随 datasetKey 变化；其他类型用 task.requiredFields。
 const currentFields = computed(() => {
@@ -347,7 +364,7 @@ onMounted(() => {
       <article v-for="metric in metrics" :key="metric.label" class="metric-card">
         <span>{{ metric.label }}</span>
         <strong>{{ metric.value }} <small>{{ metric.unit }}</small></strong>
-        <em :class="metric.tone">导入</em>
+        <em :class="metric.tone">{{ metricsAreReal ? '导入' : '演示' }}</em>
       </article>
     </section>
 
@@ -547,7 +564,18 @@ onMounted(() => {
       <div class="panel-title compact">
         <h2>售电结算预览</h2>
         <span>合同、电能量、平衡账户、现货日前/实时与收益电费</span>
+        <TrustBadge basis="illustrative" prefix="数据口径" />
       </div>
+      <!-- #2355：本表是**结构示意**，行数据由前端固定公式生成（结算单元编号、月份、各项
+           费用金额全部是编的）。它的用途是让人看清导入后会得到哪些字段，不是任何一次真实
+           结算的结果。金额类内容尤其不能不标注——看着像一份月度结算明细。 -->
+      <el-alert
+        type="warning"
+        :closable="false"
+        show-icon
+        class="preview-notice"
+        title="示意数据：下表展示的是售电结算导入后的字段结构，行内金额为固定公式生成的样例，不是任何一次真实结算的结果，不可作为对账或结算依据。"
+      />
       <el-table :data="dataset.retailSettlementPreview" size="small">
         <el-table-column prop="settlementUnitId" label="结算单元ID" min-width="150" />
         <el-table-column prop="settlementUnitName" label="结算单元名称" min-width="150" />
@@ -569,6 +597,7 @@ onMounted(() => {
 </template>
 
 <style scoped>
+.preview-notice { margin-bottom: 10px; }
 .import-hub {
   gap: 18px;
 }
