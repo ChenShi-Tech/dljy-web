@@ -9,7 +9,7 @@ import { timeoutSignal } from '@/services/api'
 const PI_POC_TIMEOUT_MS = 10000
 
 // 数据缺口清单（#1782）：聚合 Markdown，用户复制转发给后端负责人。
-// 服务未启动/失败由调用方（StrategicQAView）给出友好提示。
+// 服务未启动/失败由调用方（工作台的战略问答入口挂件 StrategicQaGaps）给出友好提示。
 export async function fetchDataGaps(): Promise<string> {
   const res = await fetch(`${PI_AGENT_BASE}/data-gaps`, {
     headers: identityHeaders(),

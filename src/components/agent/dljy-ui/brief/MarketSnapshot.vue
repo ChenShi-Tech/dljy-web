@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // 市场快照（brief）：渲染 MorningBriefBundle.market 各序列的关键统计（确定性，不靠 LLM）。
 // 出清价/负荷/新能源摘要直接来自后端 summarize_series，按口径取均价/峰值/谷值。
-// 既可由 MorningBriefView 用 bundle.market 直接渲染，也可由 LLM 经 ```dljy-ui 围栏产出。
+// 既可由工作台晨报入口的预检栏用 bundle.market 直接渲染，也可由 LLM 经 ```dljy-ui 围栏产出。
 import { computed } from 'vue'
 import { fmt, num, obj, str } from '../storage/helpers'
 

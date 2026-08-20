@@ -76,14 +76,9 @@ const platformDocs = () => import('../views/PlatformDocsView.vue')
 // 预测中心把五个既有预测页面挂为一级 tab；原路由改 redirect 保持收藏链接。
 const forecastCenter = () => import('../views/forecast/ForecastCenterView.vue')
 const agentWorkbench = () => import('../views/AgentWorkbenchView.vue')
-const strategicQA = () => import('../views/StrategicQAView.vue')
-const declarationCheckup = () => import('../views/DeclarationCheckupView.vue')
-const morningBrief = () => import('../views/MorningBriefView.vue')
 const marketInsightCockpit = () => import('../views/MarketInsightCockpitView.vue')
 const reportWorkshop = () => import('../views/strategy/ReportWorkshopView.vue')
 const storageCopilot = () => import('../views/StorageCopilotView.vue')
-const preSubmitCheck = () => import('../views/PreSubmitCheckView.vue')
-const policyIntel = () => import('../views/PolicyIntelView.vue')
 // 两个 tab 容器页：各 tab 的子 View 由容器自身 defineAsyncComponent 懒加载，路由层不再单独登记。
 const aiStudio = () => import('../views/AiStudioView.vue')
 const accounts = () => import('../views/AccountsView.vue')
@@ -131,6 +126,14 @@ const aiStudioRedirect = (path: string, tab: string): RouteRecordRaw => ({
 const accountsRedirect = (path: string, tab: string): RouteRecordRaw => ({
   path,
   redirect: (to) => ({ path: '/system/accounts', query: { ...to.query, tab } })
+})
+
+// 被智能体工作台合并的五个对话入口（主仓 #2023/#2237）：路径保留为重定向，带 ?entry= 落到
+// 对应入口。这些条目不进导航、不带 meta，因此不会出现在 feature-map / manifest 的页面清单里。
+// 保留 to.query 是为了让 `?q=`（浮层助手移交的问题）穿过重定向不丢。
+const aiAgentRedirect = (path: string, entry: string): RouteRecordRaw => ({
+  path,
+  redirect: (to) => ({ path: '/ai-agent', query: { ...to.query, entry } })
 })
 
 // 「数据源接入」tab 化收编的旧页面：路径保留为重定向，落到合并页对应 tab（#1896）。
@@ -258,11 +261,11 @@ const router = createRouter({
         aiStudioRedirect('xhjy/ai-orchestration-studio', 'dify'),
         aiStudioRedirect('xhjy/dify-studio', 'dify'),
         aiStudioRedirect('xhjy/langgraph-studio', 'orchestration'),
-        page('xhjy/morning-brief', 'MorningBrief', { block: '智能实验室', title: '交易晨报', code: 'morning-brief', endpoint: 'POST /agent-api/agent/sessions + /sessions/{id}/messages (SSE)', dataPath: 'llm', scope: '多智能体协同生成今日现货行情研判·交易策略·风险提示晨报;数据为分析示意,合成项显式标注', kind: 'mixed' }, morningBrief),
+        aiAgentRedirect('xhjy/morning-brief', 'morning_brief'),
         page('gsgl/report-workshop', 'ReportWorkshop', { block: '公司管理', title: '报告工坊', code: 'report-workshop', endpoint: 'POST /dify-api/v1/workflows/run (Dify 工作流编排)', dataPath: 'dify', scope: '非技术人员自助构建报告工作流:选择模板→配置参数→生成图表报告;Dify离线自托管,社区100+模板可复用;Dify不可用时回退本地Mock模板', kind: 'mixed' }, reportWorkshop),
         page('xhjy/storage-copilot', 'StorageCopilot', { block: '智能实验室', title: '储能投资收益测算', code: 'storage-copilot', endpoint: 'POST /agent-api/v1/investment-assessment/runs + /intents/parse + /agent-api/agent/sessions + /sessions/{id}/messages (SSE)', dataPath: 'agent_backend', scope: '储能投资收益统一工作台:完整投资公式+套利/MILP调度+运行历史+智能体解释;示意/合成项显式标注', kind: 'mixed' }, storageCopilot),
-        page('xhjy/presubmit-check', 'PreSubmitCheck', { block: '智能实验室', title: '申报前体检', code: 'presubmit-check', endpoint: 'POST /agent-api/agent/sessions + /sessions/{id}/messages (SSE)', dataPath: 'llm', scope: '申报前体检评分卡:合规预检+偏差考核风险+出清博弈推演,给 go/no-go 三维评分;数据为分析示意', kind: 'mixed' }, preSubmitCheck),
-        page('xhjy/policy-intel', 'PolicyIntel', { block: '智能实验室', title: '政策情报官', code: 'policy-intel', endpoint: 'POST /agent-api/agent/sessions + /sessions/{id}/messages (SSE) + disclosure 工具', dataPath: 'llm', scope: '智能体汇集交易中心/国网/能源局披露与政策,按相关性打分并标注规则变更影响;数据为分析示意', kind: 'mixed' }, policyIntel),
+        aiAgentRedirect('xhjy/presubmit-check', 'pre_submit_check'),
+        aiAgentRedirect('xhjy/policy-intel', 'policy_intel'),
 
         // 数据分析 /sjfx
         page('insight/cockpit', 'MarketInsightCockpit', { block: '数据分析', title: '市场洞察驾驶舱', code: 'market-insight-cockpit', endpoint: 'GET /agent-api/v1/market-insight/bundle + agent sessions (SSE)', dataPath: 'market_insight', scope: '市场快照/价格弹性/价差套利/节点热力/异动雷达 一屏确定性渲染 + AI 解读(选中即问)', kind: 'mixed' }, marketInsightCockpit),
@@ -330,9 +333,9 @@ const router = createRouter({
         // 智能体工作台（交互式 Agent 对话，后端 /api/agent/* SSE）
         page('ai-agent', 'AgentWorkbench', { block: '系统', title: '智能体工作台', code: 'ai-agent', endpoint: '/agent-api/agent/*', dataPath: '', kind: 'real' }, agentWorkbench),
         // 战略问答 PoC（#1526）：pi harness 旗舰切片，后端 integrations/pi-poc（/pi-api → 8100）
-        page('strategic-qa', 'StrategicQA', { block: '系统', title: '战略问答', code: 'strategic-qa', endpoint: '/pi-api/agent/*', dataPath: '', scope: 'pi PoC：取数走 /api/v1/spot 只读权威面；查不到的数据如实报缺口', kind: 'real' }, strategicQA),
+        aiAgentRedirect('strategic-qa', 'strategic_qa'),
         // 申报体检 PoC（#1527）：pi 第二切片，沙箱实算体检 + 审批卡落库申报台（submit 永不可执行）
-        page('declaration-checkup', 'DeclarationCheckup', { block: '系统', title: '申报体检', code: 'declaration-checkup', endpoint: '/pi-api/agent/*', dataPath: '', scope: 'pi PoC：体检沙箱实算；落库申报台 DRAFT 经人工审批；对外提交硬禁', kind: 'real' }, declarationCheckup),
+        aiAgentRedirect('declaration-checkup', 'declaration_checkup'),
         // 技能工作室 / 子智能体工作室随「AI 工作室」tab 化收编，旧路径保留重定向。
         aiStudioRedirect('ai-skills', 'skills'),
         aiStudioRedirect('ai-sub-agents', 'sub-agents')

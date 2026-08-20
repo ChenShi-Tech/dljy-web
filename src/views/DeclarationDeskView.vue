@@ -207,7 +207,7 @@ const activePanel = computed(() => (agentMode.value === 'market' ? intelPanel.va
 const sessionIdByMode = reactive<Record<AgentMode, string | null>>({ market: null, draft: null })
 const activeSessionId = computed(() => sessionIdByMode[agentMode.value])
 
-// runQuestion + runKey 范式（照 PolicyIntelView）：常驻 initialQuestion 会在任何重挂时
+// runQuestion + runKey 范式（同智能体工作台）：常驻 initialQuestion 会在任何重挂时
 // 自动发送，与历史回放冲突（回放刚载入就被新问题覆盖）。改为平时留空 → 挂载走历史恢复；
 // 点清单项/协助起草时置值 + runKey++ 重挂 → 走「发送开新会话」。
 const marketRunQuestion = ref('')
@@ -222,7 +222,7 @@ function switchAgentMode(mode: AgentMode) {
   agentMode.value = mode
 }
 
-// 侧栏四回调（范式同 PolicyIntelView/MorningBrief/PreSubmitCheck）
+// 侧栏四回调（范式同智能体工作台 AgentWorkbenchView）
 function onSelectHistory(sessionId: string) {
   // 先清 runQuestion：否则后续任何重挂都会把待发问题重新发出去、覆盖刚载入的回放
   if (agentMode.value === 'market') marketRunQuestion.value = ''
