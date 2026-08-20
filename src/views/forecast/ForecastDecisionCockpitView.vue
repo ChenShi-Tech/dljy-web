@@ -39,7 +39,7 @@ import {
   type OptimizeBidResult,
   type RiskQuantifyResult
 } from '@/services/forecast/mlForecastClient'
-import { ensureForecastCatalog, forecastCatalogState, isPredictSupported } from '@/services/forecast/forecastProviders'
+import { ensureForecastCatalog, forecastCatalogState, isModelSelectableForTarget, isPredictSupported } from '@/services/forecast/forecastProviders'
 import { latestBenchContext } from '@/services/forecast/forecastBenchContext'
 import { loadClearingCurve, type SpotCurve } from '@/services/market/spotPrice'
 import { axisTooltip, chartToolbox, emptyOverlay, fmtNum, insideZoom } from '@/services/chart/chartOptions'
@@ -77,7 +77,14 @@ function queryStr(key: string): string {
   return typeof v === 'string' ? v : ''
 }
 const benchInit = latestBenchContext.value
-const modelType = ref(queryStr('model') || benchInit?.modelId || 'xgboost')
+// 价格腿与负荷腿各自选模型（#2324）：remote:* 真实模型多为单 target 上架
+// （只声明 price 或只声明 load），旧版一个 modelType 跑两腿把它们整体挡在选择之外。
+// `?model=` 深链仍认，同时设两腿（向后兼容，行为与旧版一致）。
+const priceModelType = ref(queryStr('priceModel') || queryStr('model') || benchInit?.modelId || 'xgboost')
+const loadModelType = ref(queryStr('loadModel') || queryStr('model') || benchInit?.modelId || 'xgboost')
+// 决策概览（/cockpit 聚合端点）后端用**同一个** model_type 跑 PRICE+LOAD 两腿，
+// 两腿选了不同模型时它无法如实表达——此时不发请求、页内明示，不拿一条腿的模型冒充两腿。
+const bothLegsSameModel = computed(() => priceModelType.value === loadModelType.value)
 // 空 = 首屏用后端最近可用交易日（省略 target_date）；用户可手动选历史日回溯。
 // 不预设未来日：/forecast/predict 对无基本面数据的未来日 raise ValueError→400（#546）。
 const targetDate = ref(/^\d{4}-\d{2}-\d{2}$/.test(queryStr('date')) ? queryStr('date') : (benchInit?.targetDate ?? ''))
@@ -205,7 +212,8 @@ function snapshotContext() {
   return {
     regionId: currentRegion.value.id,
     targetDate: targetDate.value,
-    modelType: modelType.value,
+    priceModelType: priceModelType.value,
+    loadModelType: loadModelType.value,
     trainDays: trainDays.value,
     capacityMw: capacityMw.value,
     alpha: alpha.value
@@ -216,7 +224,8 @@ function isStale(gen: number, ctx: ReturnType<typeof snapshotContext>) {
   return gen !== loadGeneration
     || ctx.regionId !== currentRegion.value.id
     || ctx.targetDate !== targetDate.value
-    || ctx.modelType !== modelType.value
+    || ctx.priceModelType !== priceModelType.value
+    || ctx.loadModelType !== loadModelType.value
     || ctx.trainDays !== trainDays.value
     || ctx.capacityMw !== capacityMw.value
     || ctx.alpha !== alpha.value
@@ -252,9 +261,19 @@ async function loadCockpit() {
   resetViewModel()
   if (!isSupportedRegion.value) return
   // catalog 已加载但选中模型不可选（不可用/非 /predict/被移除）→ 不发注定失败的请求（#570）。
-  const selectable = catalogModels.value.filter(modelSelectable)
-  if (!selectable.length || !selectable.some((m) => m.modelId === ctx.modelType)) {
-    errorMsg.value = selectable.length ? '当前预测模型不可用，请另选模型' : '当前地区没有可消费的模型目录产物'
+  // 两腿分别校验：价格腿只看 price 声明，负荷腿只看 load 声明。
+  const priceOk = catalogModels.value.filter((m) => modelSelectableFor(m, 'price'))
+  const loadOk = catalogModels.value.filter((m) => modelSelectableFor(m, 'load'))
+  if (!priceOk.length && !loadOk.length) {
+    errorMsg.value = '当前地区没有可消费的模型目录产物'
+    return
+  }
+  if (!priceOk.some((m) => m.modelId === ctx.priceModelType)) {
+    errorMsg.value = '当前价格预测模型不可用，请另选模型'
+    return
+  }
+  if (!loadOk.some((m) => m.modelId === ctx.loadModelType)) {
+    errorMsg.value = '当前负荷预测模型不可用，请另选模型'
     return
   }
   loading.value = true
@@ -267,7 +286,7 @@ async function loadCockpit() {
         region_id: ctx.regionId,
         target: 'price',
         target_date: ctx.targetDate || undefined,
-        model_type: ctx.modelType,
+        model_type: ctx.priceModelType,
         train_days: ctx.trainDays,
         probabilistic: true
       }),
@@ -328,7 +347,7 @@ async function recomputeOptimize(gen: number, ctx: ReturnType<typeof snapshotCon
       region_id: ctx.regionId,
       target: 'load',
       target_date: ctx.targetDate || undefined,
-      model_type: ctx.modelType,
+      model_type: ctx.loadModelType,
       train_days: ctx.trainDays,
       probabilistic: true,
       capacity_mw: ctx.capacityMw,
@@ -369,7 +388,7 @@ async function recomputeRisk(gen: number, ctx: ReturnType<typeof snapshotContext
       region_id: ctx.regionId,
       target: 'load',
       target_date: ctx.targetDate || undefined,
-      model_type: ctx.modelType,
+      model_type: ctx.loadModelType,
       train_days: ctx.trainDays,
       clearing_price: clearingPrice,
       n_scenarios: 1000,
@@ -407,7 +426,7 @@ async function runBidAdvice() {
       region_id: ctx.regionId,
       target: 'price',
       target_date: ctx.targetDate || undefined,
-      model_type: ctx.modelType,
+      model_type: ctx.priceModelType,
       train_days: ctx.trainDays,
       subject_type: subject
     })
@@ -427,13 +446,21 @@ async function runDecisionOverview() {
   const ctx = snapshotContext()
   const subject = subjectType.value
   const fresh = () => gen === loadGeneration && !isStale(gen, ctx) && subject === subjectType.value
+  // /cockpit 是聚合端点，后端拿同一个 model_type 跑 PRICE+LOAD 两腿。两腿选了不同模型时
+  // 传谁都是谎报（另一腿实际用的不是用户选的那个），故直接不发请求、页内明示原因——
+  // 「不静默回落」：宁可这一块空着并说清为什么，也不给一个口径对不上的聚合结论。
+  if (!bothLegsSameModel.value) {
+    decisionOverview.value = null
+    overviewLoading.value = false
+    return
+  }
   overviewLoading.value = true
   errorMsg.value = ''
   try {
     const result = await fetchCockpit({
       region_id: ctx.regionId,
       target_date: ctx.targetDate || undefined,
-      model_type: ctx.modelType,
+      model_type: ctx.priceModelType,
       train_days: ctx.trainDays,
       subject_type: subject
     })
@@ -622,7 +649,7 @@ function renderFrontierChart() {
   }, { notMerge: true })
 }
 
-watch([targetDate, modelType], () => {
+watch([targetDate, priceModelType, loadModelType], () => {
   void loadCockpit()
 })
 
@@ -634,13 +661,20 @@ onRegionChange(() => {
 // 失败诚实降级（列表空+提示，不回退假列表），默认 xgboost 仍可发请求（后端 core 模型稳定）。
 const { models: catalogModels, error: catalogError } = forecastCatalogState()
 // 驾驶舱模型下拉可选性：available（后端能力位）且 /predict 直算支持（排除 naive/fm 等选中必失败项）。
-// 另按 supportedTargets 排除目标专用模型（remote:/store: 单 target 绑定，#1461/#1898）：
-// 驾驶舱决策包拿同一 model_type 跑 PRICE+LOAD 两腿，声明不全覆盖两腿的选中后必 400。
-function modelSelectable(m: ForecastModel): boolean {
-  if (!m.available || !isPredictSupported(m)) return false
+// **按腿判 supportedTargets**（#2324）：价格腿只要求声明 price、负荷腿只要求声明 load。
+// 旧版要求同一模型两腿全覆盖，把 remote:*/store: 这类单 target 上架的真实模型整体挡在外面
+// （#1461/#1898）——那条限制来自 /cockpit 聚合端点的单 model_type，不该扩散到四个
+// 带显式 target 的调用点上。未声明 supportedTargets 的（core 模型）视为两腿都支持。
+const modelSelectableFor = isModelSelectableForTarget
+/** 下拉项 title：说清这一项为什么不能选（能选时给 unavailableReason 备注）。 */
+function modelOptionTitle(m: ForecastModel, target: 'price' | 'load'): string {
+  if (!m.available) return m.unavailableReason || '当前不可用'
+  if (!isPredictSupported(m)) return '非 /predict 直算端点（回测/专用端点）'
   const st = m.supportedTargets
-  if (st && (!st.includes('price') || !st.includes('load'))) return false
-  return true
+  if (st && !st.includes(target)) {
+    return `该模型按单一目标上架（声明：${st.join('/')}），不能用于${target === 'price' ? '价格' : '负荷'}腿`
+  }
+  return m.unavailableReason || ''
 }
 function modelOptionLabel(m: ForecastModel): string {
   const tags = [
@@ -662,9 +696,15 @@ function applyDeepLinkQuery(): boolean {
   const trainDaysNum = Number(queryStr('train_days'))
   let changed = false
   const dateValid = /^\d{4}-\d{2}-\d{2}$/.test(date)
-  const watchWillReload = (model !== '' && model !== modelType.value) || (dateValid && date !== targetDate.value)
+  // `?model=` 同时设两腿（旧深链语义不变）；`?priceModel=`/`?loadModel=` 可单独覆盖某一腿。
+  const priceModel = queryStr('priceModel') || model
+  const loadModel = queryStr('loadModel') || model
+  const watchWillReload = (priceModel !== '' && priceModel !== priceModelType.value)
+    || (loadModel !== '' && loadModel !== loadModelType.value)
+    || (dateValid && date !== targetDate.value)
   if (dateValid && date !== targetDate.value) { targetDate.value = date; changed = true }
-  if (model !== '' && model !== modelType.value) { modelType.value = model; changed = true }
+  if (priceModel !== '' && priceModel !== priceModelType.value) { priceModelType.value = priceModel; changed = true }
+  if (loadModel !== '' && loadModel !== loadModelType.value) { loadModelType.value = loadModel; changed = true }
   if (Number.isFinite(trainDaysNum) && trainDaysNum >= 30 && trainDaysNum <= 365
     && Math.round(trainDaysNum) !== trainDays.value) {
     trainDays.value = Math.round(trainDaysNum)
@@ -678,11 +718,16 @@ function applyBenchContext(): void {
   const ctx = latestBenchContext.value
   if (!ctx || ctx.seq === appliedBenchSeq || controlsDirty) return
   appliedBenchSeq = ctx.seq
-  const watchWillReload = (ctx.modelId !== undefined && ctx.modelId !== modelType.value)
-    || (ctx.targetDate !== targetDate.value)
+  // 建模台一次只产出一个模型上下文，无法区分腿：两腿同设（与合并前语义一致）。
+  const modelChanged = ctx.modelId !== undefined
+    && (ctx.modelId !== priceModelType.value || ctx.modelId !== loadModelType.value)
+  const watchWillReload = modelChanged || (ctx.targetDate !== targetDate.value)
   let trainDaysChanged = false
   if (ctx.targetDate !== targetDate.value) targetDate.value = ctx.targetDate
-  if (ctx.modelId !== undefined && ctx.modelId !== modelType.value) modelType.value = ctx.modelId
+  if (ctx.modelId !== undefined) {
+    if (ctx.modelId !== priceModelType.value) priceModelType.value = ctx.modelId
+    if (ctx.modelId !== loadModelType.value) loadModelType.value = ctx.modelId
+  }
   if (ctx.trainDays >= 30 && ctx.trainDays <= 365 && ctx.trainDays !== trainDays.value) {
     trainDays.value = ctx.trainDays
     trainDaysChanged = true
@@ -701,13 +746,20 @@ watch(latestBenchContext, () => { applyBenchContext() })
 
 onMounted(async () => {
   await ensureForecastCatalog()
-  // 归一默认模型：若默认 xgboost 不在 catalog 或不可选，切到第一个可选项（防首屏发失败请求）。
-  const selectable = catalogModels.value.filter(modelSelectable)
-  if (selectable.length && !selectable.some((m) => m.modelId === modelType.value)) {
-    modelType.value = selectable[0].modelId  // 触发 watch → loadCockpit（世代守卫处理并发）
-  } else {
-    void loadCockpit()
+  // 归一默认模型：若默认 xgboost 不在 catalog 或该腿不可选，切到该腿第一个可选项
+  // （防首屏发失败请求）。两腿分别归一，改动任一腿都会触发 watch → loadCockpit。
+  const priceOk = catalogModels.value.filter((m) => modelSelectableFor(m, 'price'))
+  const loadOk = catalogModels.value.filter((m) => modelSelectableFor(m, 'load'))
+  let normalized = false
+  if (priceOk.length && !priceOk.some((m) => m.modelId === priceModelType.value)) {
+    priceModelType.value = priceOk[0].modelId
+    normalized = true
   }
+  if (loadOk.length && !loadOk.some((m) => m.modelId === loadModelType.value)) {
+    loadModelType.value = loadOk[0].modelId
+    normalized = true
+  }
+  if (!normalized) void loadCockpit()  // 归一时由 watch 触发（世代守卫处理并发）
 })
 </script>
 
@@ -726,6 +778,10 @@ onMounted(async () => {
       <div class="alert-badges">
         <TrustBadge basis="illustrative" prefix="决策口径" />
         <DataBasisBadge v-if="priceForecast" :basis="priceForecast.basis" prefix="预测数据" />
+        <!-- 两腿模型不同时如实标注：结论由两个模型拼出来，不标注就等于让人以为是同一模型的一致口径 -->
+        <span v-if="!bothLegsSameModel" class="source-chip split-models">
+          两腿分选：价格 {{ priceModelType }} · 负荷 {{ loadModelType }}
+        </span>
         <span v-if="sourceSummary" class="source-chip">{{ sourceSummary }}</span>
       </div>
     </section>
@@ -739,17 +795,28 @@ onMounted(async () => {
           <input v-model="targetDate" type="date" title="留空=最近可用交易日；选未来日因无基本面数据会失败" @change="markControlsDirty" />
         </label>
         <label class="field">
-          <span>预测模型</span>
+          <span>价格模型</span>
           <!-- 模型清单从后端 /forecast/models（registry.catalog 单一权威）动态拉取（#762）：
-               新模型上线自动出现，available:false 禁用+reason；不再硬编码防漂移。 -->
-          <select v-model="modelType" @change="markControlsDirty">
+               新模型上线自动出现，available:false 禁用+reason；不再硬编码防漂移。
+               两腿各一个下拉（#2324）：单 target 上架的 remote:* 真实模型只会在它声明的那条腿里可选。 -->
+          <select v-model="priceModelType" @change="markControlsDirty">
             <option v-for="m in catalogModels" :key="m.modelId" :value="m.modelId"
-              :disabled="!modelSelectable(m)"
-              :title="!m.available ? (m.unavailableReason || '当前不可用') : (!isPredictSupported(m) ? '非 /predict 直算端点（回测/专用端点）' : (m.unavailableReason || ''))">
+              :disabled="!modelSelectableFor(m, 'price')"
+              :title="modelOptionTitle(m, 'price')">
               {{ modelOptionLabel(m) }}
             </option>
           </select>
           <span v-if="catalogError" class="model-catalog-error" :title="catalogError">⚠ 模型目录加载失败</span>
+        </label>
+        <label class="field">
+          <span>负荷模型</span>
+          <select v-model="loadModelType" @change="markControlsDirty">
+            <option v-for="m in catalogModels" :key="m.modelId" :value="m.modelId"
+              :disabled="!modelSelectableFor(m, 'load')"
+              :title="modelOptionTitle(m, 'load')">
+              {{ modelOptionLabel(m) }}
+            </option>
+          </select>
         </label>
         <label class="field compact">
           <span>训练窗口</span>
@@ -904,6 +971,20 @@ onMounted(async () => {
           </div>
         </template>
 
+        <div v-if="!bothLegsSameModel" class="overview-blocked">
+          <b>决策概览已暂停</b>
+          <p>
+            决策概览是后端一次聚合出来的（价格预测 + 申报建议 + 偏差风险 + 中长期趋势），
+            它只接受一个模型、用这一个模型跑价格与负荷两腿。当前价格腿用
+            「{{ priceModelType }}」、负荷腿用「{{ loadModelType }}」，
+            传任一个都会让另一腿实际用的模型与你选的不符，故本区块不出结果。
+          </p>
+          <p class="muted">
+            上方的价格预测、报价优化、偏差风险、申报建议四块不受影响——它们各自带目标，
+            已分别按你选的两个模型计算。要看决策概览，把两腿设成同一个模型即可。
+          </p>
+        </div>
+
         <template v-if="decisionOverview">
           <div class="advice-head">
             <b>决策概览（{{ decisionOverview.basis === 'captured' ? '真实' : '合成验证' }}）</b>
@@ -926,6 +1007,13 @@ onMounted(async () => {
 <style scoped>
 .decision-cockpit { gap: 14px; }
 .muted { color: var(--muted); font-size: var(--font-12-5); }
+.split-models { white-space: nowrap; }
+.overview-blocked {
+  border: 1px dashed var(--line, #d0d5dd); border-radius: 10px;
+  padding: 12px 14px; margin-top: 10px; background: color-mix(in srgb, var(--muted) 5%, transparent);
+}
+.overview-blocked b { display: block; margin-bottom: 6px; }
+.overview-blocked p { margin: 0 0 6px; font-size: var(--font-12-5); line-height: 1.6; }
 
 .cockpit-alert {
   display: flex;
