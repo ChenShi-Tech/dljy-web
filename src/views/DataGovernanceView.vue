@@ -1045,7 +1045,7 @@ function browserLink(alert: QualityAlert) {
 
 /* #2175 断流汇总卡：横幅置顶、健康表收边距 */
 .db-health-summary { margin-bottom: 12px; }
-.db-health-counts { margin-left: 8px; color: var(--el-text-color-secondary); font-size: var(--font-xs); }
+.db-health-counts { margin-left: 8px; color: var(--el-text-color-secondary); font-size: var(--font-sm); }
 .db-health-table { margin-top: 4px; }
 .stream-banner {
   margin-bottom: 10px;
