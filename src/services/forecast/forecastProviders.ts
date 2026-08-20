@@ -384,6 +384,25 @@ export function isPredictSupported(model: Pick<ForecastModel, 'modelId' | 'names
   return PREDICT_NAMESPACES.has(String(model.namespace ?? ''))
 }
 
+/**
+ * 申报决策驾驶舱的「某腿能不能选这个模型」判据（#2324）。
+ *
+ * 三道门：后端能力位 available、/predict 直算支持、**该腿的 target 被声明**。
+ * 第三道按腿判而不是要求一个模型两腿全覆盖——后者会把 remote: 与 store: 这类
+ * 单 target 上架的真实模型整体挡在选择之外（#1461/#1898 的原限制），而那条限制的
+ * 真实来源只是 /cockpit 聚合端点只收一个 model_type，不该扩散到四个带显式 target
+ * 的调用点上。未声明 supportedTargets 的（core 模型）视为两腿都支持。
+ */
+export function isModelSelectableForTarget(
+  model: Pick<ForecastModel, 'modelId' | 'namespace' | 'available' | 'supportedTargets'>,
+  target: 'price' | 'load'
+): boolean {
+  if (!model.available || !isPredictSupported(model)) return false
+  const declared = model.supportedTargets
+  if (declared && !declared.includes(target)) return false
+  return true
+}
+
 function makeMlProvider(model: ForecastModel): ForecastProvider {
   const isMock = model.provenance.mock === true
   const predictSupported = isPredictSupported(model)
