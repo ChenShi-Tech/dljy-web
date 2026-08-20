@@ -65,15 +65,15 @@ const intervention = ref('')
 </template>
 
 <style scoped>
-.emo { display: flex; flex-direction: column; gap: 7px; font-size: 12.5px; }
+.emo { display: flex; flex-direction: column; gap: 7px; font-size: var(--font-12-5); }
 .emo-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
-.emo-switch { display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; color: var(--el-text-color-secondary, #666); }
-.emo-banner { margin: 0; padding: 6px 9px; border-radius: 6px; background: #f8fbff; border: 1px solid #bfdbfe; color: #075985; font-size: 11.5px; line-height: 1.6; }
-.emo-list-title { margin: 0; font-size: 11.5px; color: var(--el-text-color-secondary, #666); }
-.emo-pattern { margin: 0; padding: 6px 9px; border-radius: 6px; background: #fffbeb; color: #92400e; font-size: 11.5px; line-height: 1.6; }
+.emo-switch { display: inline-flex; align-items: center; gap: 5px; font-size: var(--font-11-5); color: var(--el-text-color-secondary, #666); }
+.emo-banner { margin: 0; padding: 6px 9px; border-radius: 6px; background: #f8fbff; border: 1px solid #bfdbfe; color: #075985; font-size: var(--font-11-5); line-height: 1.6; }
+.emo-list-title { margin: 0; font-size: var(--font-11-5); color: var(--el-text-color-secondary, #666); }
+.emo-pattern { margin: 0; padding: 6px 9px; border-radius: 6px; background: #fffbeb; color: #92400e; font-size: var(--font-11-5); line-height: 1.6; }
 .emo-pattern b { margin-right: 6px; }
-.emo-muted { margin: 0; color: var(--el-text-color-secondary, #909399); font-size: 11.5px; }
-.emo-note { margin: 0; font-size: 11px; color: var(--el-text-color-secondary, #909399); line-height: 1.6; }
-.emo-intervention { display: flex; flex-direction: column; gap: 4px; font-size: 11.5px; color: var(--el-text-color-secondary, #666); }
-.emo-input { padding: 4px 7px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 6px; font-size: 11.5px; }
+.emo-muted { margin: 0; color: var(--el-text-color-secondary, #909399); font-size: var(--font-11-5); }
+.emo-note { margin: 0; font-size: var(--font-xs); color: var(--el-text-color-secondary, #909399); line-height: 1.6; }
+.emo-intervention { display: flex; flex-direction: column; gap: 4px; font-size: var(--font-11-5); color: var(--el-text-color-secondary, #666); }
+.emo-input { padding: 4px 7px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 6px; font-size: var(--font-11-5); }
 </style>
