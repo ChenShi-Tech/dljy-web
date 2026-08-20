@@ -264,9 +264,9 @@ export const pageHelpRegistry: Record<string, PageHelpEntry> = {
     title: '运营中枢',
     body: '多 tab 综合运营面：电站/合同/结算/风险/统计/导入任务/模型版本/智能体监控，每 tab 含指标卡 + 行表。数据来自本地 operations（计划后端 /api/v1/{stations,contracts,settlements,risks,statistics,...}），智能体监控来自 agentMonitor。当前为混合口径、结构化合成（计划后端未接时本地优先）。'
   },
-  OpsConsoleBridge: {
-    title: '数据运维台（桥接跳转）',
-    body: '数据管理操作面已收口独立数据运维台（/ops-console.html，API 经 /data-svc 代理 data-service :8190）：上传中心（Excel 五步流）/导入融合台/接入向导/数据摄取管理/治理控制台/数据源接入六页，ADMIN/BOSS 可用；云南现货主力数据由中广核厂侧 API 每日自动入库（接入向导首卡）。',
+  DataOpsConsole: {
+    title: '数据运维工作台',
+    body: '数据进入平台的全链路操作面，单页七面板：运维总览（链路四段状态 + 断流与质量告警 + 上传批次台账 + 最该补数的数据族，只读体检不写生产）+ 上传中心（Excel 五步流）/导入融合台/接入向导/摄取管理/治理控制台/数据源接入。数据管理路径族经 /data-svc 代理 data-service :8190，仅 ADMIN/BOSS 可用；云南现货主力数据由中广核厂侧 API 每日自动入库（接入向导首卡）。',
     docPath: 'docs/data/data-service.md'
   },
   DataBrowser: {

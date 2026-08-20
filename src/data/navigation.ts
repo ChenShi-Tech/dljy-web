@@ -20,7 +20,7 @@ import {
   Table2,
   ListChecks,
   Map as MapIcon,
-  Upload
+  Wrench
 } from 'lucide-vue-next'
 import { yunnanTradingNavigation } from '../features/yunnanTrading/navigation'
 import { REPORTS_FEATURE_ENABLED } from '../features/reports/config'
@@ -181,20 +181,11 @@ export const navigation: NavItem[] = [
     title: '数据管理',
     icon: Database,
     children: [
-      // 数据接入向导为数据管理组首项（#885）：从用户体验出发的六类数据旅程总览 + 一键生效闭环，
-      // 把散落 3 个导航组的数据进入线收成一张「先做什么、点哪生效、去哪见数」的地图。
-      // #2174 P2-2b：管理四页（向导/导入/摄取/治理）迁独立数据运维台，本组只留探查工具。
+      // 数据运维工作台：上传中心 / 导入融合台 / 接入向导 / 摄取管理 / 治理控制台 / 数据源接入
+      // 六页 + 运维总览的单页 tab 入口（原独立控制台收回主平台，见 DataOpsConsoleView 头注）。
+      // 仅 ADMIN/BOSS 可见（governance.adminOnlyRoutes 同口径），其余角色本组只看到浏览器。
+      { path: '/data-ops/console', title: '数据运维工作台', icon: Wrench },
       { path: '/yygl/data-browser', title: '通用数据浏览器', icon: Table2 }
-    ]
-  },
-  {
-    // 数据运维域（#2174 P2-2b）：六管理页已迁独立数据运维台（/ops-console.html），
-    // 主前端只留桥接入口；本组仅 ADMIN 可见（adminOnlyRoutes 同口径）。
-    path: '/data-ops',
-    title: '数据运维',
-    icon: Upload,
-    children: [
-      { path: '/data-ops/console', title: '数据运维台', icon: Upload }
     ]
   },
   {

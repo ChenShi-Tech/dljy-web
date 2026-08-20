@@ -1,8 +1,7 @@
 <script setup lang="ts">
-// 数据摄取管理页（数据运维台 /ops/ingest）：手动触发 POST /api/v1/ingest/:kind。
-// 台内闭环：/ops/import-hub（手录 CSV）→ 本页（手动/自动摄取）→ 主前端 /yygl/data-browser（回放）。
-// 定时自动摄取在主前端「AI 工作室 → 定时任务」（/system/ai-studio?tab=schedules）。
-// 链接：本台 hash 路由仅注册 /ops/*；主前端页用同源 <a>（path 模式）跳转（#2215）。
+// 数据摄取管理页（数据运维工作台 /data-ops/console?panel=ingest）：手动触发 POST /api/v1/ingest/:kind。
+// 链路闭环：?panel=import-hub（手录 CSV）→ 本页（手动/自动摄取）→ /yygl/data-browser（回放）。
+// 定时自动摄取在「AI 工作室 → 定时任务」（/system/ai-studio?tab=schedules）。
 // 主题变量驱动，四档主题协调；遵循现有深色交易终端风格。
 import { reactive, ref } from 'vue'
 import { RouterLink } from 'vue-router'
@@ -65,14 +64,13 @@ function basisFromResult(r: IngestResult): DataSourceBasis {
 <template>
   <div class="ingest-page">
     <header class="page-head">
-      <h1>数据摄取管理</h1>
       <p class="lede">手动触发数据摄取与 ETL：现货月度导出包 / 气象 / 市场分析族写各自事实层与 capture 回放层；中广核云南厂侧 API 两族写中广核私有 PostgreSQL（dljy_private）。</p>
     </header>
 
     <section class="link-row">
-      <RouterLink to="/ops/import-hub" class="link">← 手录导入（导入融合台）</RouterLink>
-      <a href="/yygl/data-browser" class="link">回放浏览（数据浏览器，主前端）→</a>
-      <a href="/system/ai-studio?tab=schedules" class="link"><Workflow :size="13" /> 定时自动摄取（AI 工作室）</a>
+      <RouterLink to="/data-ops/console?panel=import-hub" class="link">← 手录导入（导入融合台）</RouterLink>
+      <RouterLink to="/yygl/data-browser" class="link">回放浏览（通用数据浏览器）→</RouterLink>
+      <RouterLink to="/system/ai-studio?tab=schedules" class="link"><Workflow :size="13" /> 定时自动摄取（AI 工作室）</RouterLink>
     </section>
 
     <section class="kind-grid">
@@ -115,8 +113,7 @@ function basisFromResult(r: IngestResult): DataSourceBasis {
 </template>
 
 <style scoped>
-.ingest-page { padding: 18px 22px; max-width: 1180px; margin: 0 auto; }
-.page-head h1 { font-size: var(--font-22); font-weight: 600; color: var(--text); margin: 0 0 4px; }
+.ingest-page { max-width: 1180px; }
 .lede { color: var(--text-soft); font-size: var(--font-13-5); margin: 0 0 14px; }
 .link-row { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 18px; font-size: var(--font-12-5); }
 .link { color: var(--primary); text-decoration: none; display: inline-flex; align-items: center; gap: 4px; }
