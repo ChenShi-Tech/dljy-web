@@ -105,6 +105,8 @@ export type AgentSessionInfo = {
 // 后端 SSE 事件协议（packages/agent-runtime/src/agent_runtime/api/service.py）
 export type AgentEvent =
   | { type: 'token'; content: string }
+  // 承载底座（pi-poc，#2213）：已放出的文本被判定为工具调用前的过程叙述 → 撤掉当前正在流式的文本段
+  | { type: 'text_retract' }
   | { type: 'tool_call'; node?: string; name: string; args: Record<string, unknown> }
   | {
       type: 'tool_result'
