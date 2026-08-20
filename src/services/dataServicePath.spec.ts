@@ -26,10 +26,15 @@ describe('dataServicePath 数据管理路径族改道（#2169 P2-2a）', () => {
     expect(dataServicePath('/v1/data-sources/cgn-yunnan')).toBe(`${DATA_SVC_ROOT}/api/v1/data-sources/cgn-yunnan`)
   })
 
-  it('边界负例：交易页消费的读路径与无关路径不改道', () => {
-    // 复盘中心（ReviewCenterView）消费的导入台账读，读服务面留平台。
-    expect(dataServicePath('/v1/settlements')).toBeNull()
-    expect(dataServicePath('/api/v1/settlements')).toBeNull()
+  it('结算台账读（复盘中心消费）改道 data-service——平台侧处理器已退役', () => {
+    // 这条翻回 null 就意味着复盘中心结算台账读 404（平台 BFF 已无该域的处理器）。
+    expect(dataServicePath('/v1/settlements')).toBe(`${DATA_SVC_ROOT}/api/v1/settlements`)
+    expect(dataServicePath('/api/v1/settlements')).toBe(`${DATA_SVC_ROOT}/api/v1/settlements`)
+    // query 串不在判定内（由调用方以 params 传），带 query 的字面量不匹配 exact 集合。
+    expect(dataServicePath('/v1/settlements?month=2026-07')).toBeNull()
+  })
+
+  it('边界负例：无关读路径不改道', () => {
     // 普通业务域与 agent 域不受影响。
     expect(dataServicePath('/v1/market/list')).toBeNull()
     expect(dataServicePath('/api/v1/trading/spot/declarations')).toBeNull()

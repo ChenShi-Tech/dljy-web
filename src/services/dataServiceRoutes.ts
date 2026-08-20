@@ -1,13 +1,16 @@
 // #2169 P2-2a：数据管理路径族 → data-service（:8190）改道判定（纯函数，无 window 依赖）。
 // 与 server/data-service/index.mjs 的装配面对齐（上传中心/导入中心写链/摄取触发/
 // 治理只读三端点/grid-access/sichuan-ingest 转发/中广核数据源控制面）。
-// 刻意排除：`/v1/settlements`（台账读），复盘中心（交易页）消费，读服务面按边界留平台；
-// retailSettlement 走 /agent-api multipart 通道，收编在 P2-2b。
+// `/v1/settlements`（台账读，复盘中心交易页消费）：平台侧处理器已随 full-suite 演示域
+// 退役（#1642/Epic #1637），唯一处理器在 data-service 的 routeImportHub——不改道即落
+// 平台 BFF 的「/api/v1 下未匹配任何已注册域」404，故随六族一并走 /data-svc。
+// （本仓此前停留在「按边界留平台」的旧判断，与主仓 #2189 的修正不同步，实测复现 404。）
 export const DATA_SVC_ROOT = '/data-svc'
 
 const DATA_SVC_EXACT = new Set([
   '/v1/market/trades/import',
   '/v1/settlements/import',
+  '/v1/settlements',
   '/v1/power/import',
   '/v1/customer-load/import',
   '/v1/market-analysis/import',
