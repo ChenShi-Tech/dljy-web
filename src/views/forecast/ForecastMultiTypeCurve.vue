@@ -185,7 +185,7 @@ else onRegionChange(load)
 
     <TslibOnlineForecastPanel
       :target="onlineTarget"
-      :title="`${cfg.valueLabel || '预测'} · TSLib 在线预测`"
+      :title="`${cfg.valueLabel || '预测'} · 深度模型在线预测`"
     />
 
     <el-card shadow="never" class="mb">

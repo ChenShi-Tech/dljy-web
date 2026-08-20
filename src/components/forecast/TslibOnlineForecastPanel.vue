@@ -19,7 +19,7 @@ const props = withDefaults(defineProps<{
   targetDate?: string
   defaultTrainDays?: number
 }>(), {
-  title: 'TSLib 在线预测',
+  title: '深度模型在线预测',
   regionId: '',
   targetDate: '',
   defaultTrainDays: 180
@@ -33,10 +33,13 @@ const loading = ref(false)
 const modelLoading = ref(false)
 const result = ref<ForecastResult | null>(null)
 
-const tslibModels = computed(() => models.value.filter((model) =>
-  model.modelId.startsWith('tslib:') && model.available
+// 在线可选模型：`tslib:`（compat 占位）+ `remote:`（南洋 GPU 上的真实 Torch 网络，Epic #1898）。
+// 只收 available——tslib 占位中已有真实实现的 4 条被 superseded_by 置为不可用，
+// 故本列表实际呈现的是真实模型；保留 tslib: 前缀是为了将来补充无 remote 替代的新架构。
+const onlineModels = computed(() => models.value.filter((model) =>
+  (model.modelId.startsWith('tslib:') || model.modelId.startsWith('remote:')) && model.available
 ))
-const activeModel = computed(() => tslibModels.value.find((model) => model.modelId === modelType.value) ?? null)
+const activeModel = computed(() => onlineModels.value.find((model) => model.modelId === modelType.value) ?? null)
 const activeRegionId = computed(() => props.regionId || selectedRegionId.value || 'shanxi')
 const chartResults = computed(() => {
   const r = result.value
@@ -72,8 +75,8 @@ async function loadModels() {
     const response = await fetchForecastModels(props.target, activeRegionId.value)
     if (reqId !== loadModelsReqId) return // 较早请求晚返回则丢弃，防覆盖最新地区目录
     models.value = response.models
-    if (!tslibModels.value.some((model) => model.modelId === modelType.value)) {
-      modelType.value = tslibModels.value[0]?.modelId ?? ''
+    if (!onlineModels.value.some((model) => model.modelId === modelType.value)) {
+      modelType.value = onlineModels.value[0]?.modelId ?? ''
     }
   } catch (error) {
     if (reqId !== loadModelsReqId) return
@@ -85,7 +88,7 @@ async function loadModels() {
 
 async function runOnlineForecast() {
   if (!activeModel.value) {
-    ElMessage.warning('当前地区没有可用的 TSLib 模型目录产物')
+    ElMessage.warning('当前地区没有可用的在线深度模型（需远程推理服务可达）')
     return
   }
   loading.value = true
@@ -126,7 +129,7 @@ onMounted(loadModels)
       <el-tag size="small" type="info">{{ target }}</el-tag>
       <span class="lbl">模型</span>
       <el-select v-model="modelType" :loading="modelLoading" size="small" style="width: 210px">
-        <el-option v-for="model in tslibModels" :key="model.modelId" :label="model.name ?? model.modelId" :value="model.modelId" />
+        <el-option v-for="model in onlineModels" :key="model.modelId" :label="model.name ?? model.modelId" :value="model.modelId" />
       </el-select>
       <span class="lbl">训练窗口</span>
       <el-input-number v-model="trainDays" :min="30" :max="365" :step="30" size="small" controls-position="right" />
@@ -135,14 +138,14 @@ onMounted(loadModels)
         <el-option label="合成验证" value="synthetic" />
         <el-option label="自动回放" value="auto" />
       </el-select>
-      <el-button type="primary" size="small" :loading="loading" :disabled="!activeModel" @click="runOnlineForecast">运行 TSLib</el-button>
+      <el-button type="primary" size="small" :loading="loading" :disabled="!activeModel" @click="runOnlineForecast">运行在线预测</el-button>
       <span v-if="result" class="summary">
         MAE {{ result.metrics?.mae?.toFixed(2) ?? '-' }} / RMSE {{ result.metrics?.rmse?.toFixed(2) ?? '-' }}
       </span>
     </div>
 
     <UnifiedForecastChart v-if="result" :results="chartResults" :height="260" />
-    <el-empty v-else :description="tslibModels.length ? '选择 TSLib 模型后运行在线预测' : '当前地区没有可用的 TSLib 模型目录产物'" :image-size="72" />
+    <el-empty v-else :description="onlineModels.length ? '选择模型后运行在线预测' : '当前地区没有可用的在线深度模型（需远程推理服务可达）'" :image-size="72" />
 
     <el-alert
       v-for="(warning, index) in result?.warnings ?? []"
