@@ -7,11 +7,12 @@
 //   ② 当日日报：从各阶段写回产出自动汇总（市场判断 / 方向 / 中标 / 补仓），交易员补一句
 //      总体小结后写回 preflight.dailyClose——它把今日单据的七段产出盖一个收口戳。
 //
-// ⚠️ 决策日志为原型态：链存浏览器本地、哈希前端计算，能检出误改但不防蓄意篡改，
-// 也不具备 ≥5 年留存——这条限制常驻显示。生产化方向是服务端存储 + 服务端哈希。
+// ⚠️ 决策日志双模式（#2037 前端切换）：端点已部署时走服务端权威台账（追加写落库 +
+// 服务端 SHA-256 哈希链，决策人由登录身份落名）；端点不存在（404/405）时诚实回落
+// 浏览器原型（localStorage + FNV 哈希，警示常驻显示）——模式由探针决定，页面如实标注。
 import { computed, onMounted, reactive, ref } from 'vue'
-import { CalendarClock, ClipboardCopy, Download, NotebookPen, ShieldAlert, Link2, RefreshCw, Save, FileText } from 'lucide-vue-next'
-import { coverageOf, hitRate, validateDraft, verifyChain, type DecisionLogEntry } from 'shared/trading-rules/decision-log.mjs'
+import { CalendarClock, ClipboardCopy, Download, NotebookPen, ShieldAlert, Link2, RefreshCw, Save, FileText, Upload } from 'lucide-vue-next'
+import { coverageOf, hitRate, validateDraft, verifyChain, type ChainVerdict, type DecisionLogEntry } from 'shared/trading-rules/decision-log.mjs'
 import { REGIME_LABEL } from 'shared/trading-rules/supply-demand.mjs'
 import { getMarketTiming } from 'shared/trading-rules/market-timing.mjs'
 import { getTradingCalendar, shiftIsoDate, workdayView } from 'shared/trading-rules/trading-calendar.mjs'
@@ -20,12 +21,16 @@ import { backfillAssistActual, linkAssistToDecision, listAssistTrace } from '@/s
 import AssistTracePanel from '@/components/trading/AssistTracePanel.vue'
 import { currentRegion } from '@/services/region/regionContext'
 import {
-  PROTOTYPE_STORAGE_NOTICE,
-  appendAndPersist,
-  backfillAndPersist,
+  appendAndPersistAsync,
+  backfillAndPersistAsync,
   clearLog,
-  correctAndPersist,
-  loadLog
+  correctAndPersistAsync,
+  fetchServerVerdict,
+  importLocalPrototypeToServer,
+  loadLogAsync,
+  localPrototypeCount,
+  storageNoticeFor,
+  type DecisionLogMode
 } from '@/services/trading/decisionLogStore'
 import { savePreflight, STATUS_LABEL, type DeclarationOrder } from '@/services/declarations'
 import { GAP_SUGGESTION_LABEL } from '@/services/trading/contractGap'
@@ -42,6 +47,18 @@ const pf = computed(() => decl.value?.preflight ?? {})
 const log = ref<DecisionLogEntry[]>([])
 const errorMsg = ref('')
 const expectedPoints = ref(3)
+/** 存储模式（探针决定）：server=服务端权威台账；local=浏览器原型降级 */
+const mode = ref<DecisionLogMode>('local')
+const loadError = ref('')
+/** server 模式的链校验结论（SHA-256 服务端权威，前端不重算）；null=校验服务不可用 */
+const serverVerdict = ref<{ engine: string; verdict: ChainVerdict } | null>(null)
+/** 浏览器原型条数：server 模式下据此展示「导入原型」入口（导入是显式操作，不自动搬） */
+const localCount = ref(0)
+const importDone = ref(false)
+const importing = ref(false)
+const importMsg = ref('')
+const submitting = ref(false)
+const storageNotice = computed(() => storageNoticeFor(mode.value))
 
 const form = reactive({
   decisionPoint: '',
@@ -61,23 +78,47 @@ const form = reactive({
  */
 const logTargetDate = ref(props.targetDate)
 
-const chain = computed(() => verifyChain(log.value))
+/**
+ * 链完整性视图：local 模式本地 FNV 重算；server 模式取服务端 /verify 结论
+ * （浏览器没有 node:crypto，不重算 SHA-256）。unavailable=校验服务暂不可达，如实展示。
+ */
+type ChainView = { unavailable: boolean; intact: boolean; brokenAtSeq: number | null; reason: string | null }
+const chain = computed<ChainView>(() => {
+  if (mode.value === 'server') {
+    const v = serverVerdict.value?.verdict
+    return v ? { unavailable: false, ...v } : { unavailable: true, intact: false, brokenAtSeq: null, reason: null }
+  }
+  return { unavailable: false, ...verifyChain(log.value) }
+})
 const coverage = computed(() => coverageOf(log.value, props.targetDate, expectedPoints.value))
 const hits = computed(() => hitRate(log.value))
-const issues = computed(() =>
-  validateDraft({ at: new Date().toISOString(), targetDate: props.targetDate, ...form })
-)
+const issues = computed(() => {
+  let list = validateDraft({ at: new Date().toISOString(), targetDate: props.targetDate, ...form })
+  // server 模式决策人由会话身份落名（服务端强制）：本地 author 校验在此模式无意义
+  if (mode.value === 'server') list = list.filter((i) => i.field !== 'author')
+  return list
+})
 
-onMounted(() => { log.value = loadLog() })
+onMounted(async () => {
+  const snap = await loadLogAsync()
+  mode.value = snap.mode
+  log.value = snap.log
+  loadError.value = snap.error ?? ''
+  if (snap.mode === 'server') serverVerdict.value = await fetchServerVerdict(snap.mode)
+  localCount.value = localPrototypeCount()
+})
 
-function submit() {
+async function submit() {
+  if (submitting.value) return
   errorMsg.value = ''
+  submitting.value = true
   try {
     const { correctionOf, ...fields } = form
     const draft = { at: new Date().toISOString(), targetDate: logTargetDate.value, ...fields }
     log.value = correctionOf
-      ? correctAndPersist(correctionOf, draft)
-      : appendAndPersist({ ...draft, correctionOf: null })
+      ? await correctAndPersistAsync(correctionOf, draft)
+      : await appendAndPersistAsync({ ...draft, correctionOf: null })
+    if (mode.value === 'server') serverVerdict.value = await fetchServerVerdict(mode.value)
     form.decisionPoint = ''
     form.judgement = ''
     form.rationale = ''
@@ -90,6 +131,8 @@ function submit() {
     }
   } catch (e) {
     errorMsg.value = e instanceof Error ? e.message : '写入失败'
+  } finally {
+    submitting.value = false
   }
 }
 
@@ -108,9 +151,18 @@ const backfillTarget = ref('')
 const backfillValue = ref<number | null>(null)
 const backfillLesson = ref('')
 
-function doBackfill() {
-  if (!backfillTarget.value || backfillValue.value === null) return
-  log.value = backfillAndPersist(backfillTarget.value, backfillValue.value, backfillLesson.value || undefined)
+async function doBackfill() {
+  if (!backfillTarget.value || backfillValue.value === null || submitting.value) return
+  submitting.value = true
+  errorMsg.value = ''
+  try {
+    log.value = await backfillAndPersistAsync(backfillTarget.value, backfillValue.value, backfillLesson.value || undefined)
+  } catch (e) {
+    errorMsg.value = e instanceof Error ? e.message : '回填失败'
+    return
+  } finally {
+    submitting.value = false
+  }
   // 关联的 AI 建议同步回填实际值（回溯命中判断用）
   for (const t of listAssistTrace()) {
     if (t.decisionLogId === backfillTarget.value && t.kind === 'decision_log') {
@@ -123,6 +175,29 @@ function doBackfill() {
 }
 
 function reset() { log.value = clearLog() }
+
+/** 浏览器原型 → 服务端台账的一次性迁移（显式触发）。成功后禁用重导（追加链不可去重）。 */
+async function importLocal() {
+  if (importing.value || importDone.value) return
+  importing.value = true
+  importMsg.value = ''
+  try {
+    const outcome = await importLocalPrototypeToServer()
+    if (outcome.error) {
+      // 追加链无法去重：中断后点重试会把已导入条目再落一遍——明确劝止，先核对已落条目
+      importMsg.value = `导入中断：${outcome.error}（前 ${outcome.imported} 条已落链；追加链不可去重，请勿直接重试，先核对台账）`
+      return
+    }
+    importDone.value = true
+    log.value = outcome.log
+    serverVerdict.value = await fetchServerVerdict('server')
+    importMsg.value = `已导入 ${outcome.imported} 条（补回填 ${outcome.backfilled} 条）。本地原型保留，核对无误后可手动清空`
+  } catch (e) {
+    importMsg.value = e instanceof Error ? e.message : '导入失败'
+  } finally {
+    importing.value = false
+  }
+}
 
 // ── AI 辅助填报：决策日志的判断/理由/概率分位全是**人工经验判断**──────────────
 // 这是全链最典型的辅助场景：P10/P50/P90 是交易员对价格分布的主观估计（没有数据库
@@ -313,7 +388,8 @@ async function writeBack() {
 
 <template>
   <div class="dc7">
-    <p class="dc7-warning"><ShieldAlert :size="14" /> {{ PROTOTYPE_STORAGE_NOTICE }}</p>
+    <p class="dc7-warning" :class="{ server: mode === 'server' }"><ShieldAlert :size="14" /> {{ storageNotice }}</p>
+    <p v-if="loadError" class="dc7-broken">{{ loadError }}</p>
 
     <div class="dc7-grid">
       <!-- 决策日志 -->
@@ -322,7 +398,10 @@ async function writeBack() {
           <h3><NotebookPen :size="14" /> 决策日志（T7）</h3>
           <div class="dc7-stats">
             <span :class="coverage.meetsVeto ? 'ok' : 'bad'">{{ coverage.recorded }}/{{ coverage.expected }} 当日填写率</span>
-            <span :class="chain.intact ? 'ok' : 'bad'"><Link2 :size="12" /> 哈希链 {{ chain.intact ? '完整' : '已断' }}</span>
+            <span v-if="!chain.unavailable" :class="chain.intact ? 'ok' : 'bad'">
+              <Link2 :size="12" /> 哈希链 {{ chain.intact ? '完整' : '已断' }}（{{ mode === 'server' ? '服务端 SHA-256' : '原型 FNV' }}）
+            </span>
+            <span v-else class="bad"><Link2 :size="12" /> 哈希链校验服务不可用</span>
           </div>
         </div>
         <p class="dc7-sub">写后不可改，更正只能追加。填写率 100% 是一票否决 KPI。</p>
@@ -334,7 +413,7 @@ async function writeBack() {
           :disabled-reason="form.decisionPoint.trim() ? '' : '先填「决策点」——AI 需要知道给哪个决策写日志'"
           @apply="applyAssist"
         />
-        <p v-if="!chain.intact" class="dc7-broken">链在第 {{ chain.brokenAtSeq }} 条断开：{{ chain.reason }}</p>
+        <p v-if="!chain.unavailable && !chain.intact" class="dc7-broken">链在第 {{ chain.brokenAtSeq }} 条断开：{{ chain.reason }}</p>
 
         <div class="dc7-logdate" :class="{ backfill: logTargetDate !== targetDate }">
           <label>日志归属标的日<input v-model="logTargetDate" type="date" /></label>
@@ -351,15 +430,16 @@ async function writeBack() {
           <label>P50<input v-model.number="form.p50" type="number" /></label>
           <label>P90<input v-model.number="form.p90" type="number" /></label>
           <label>置信度<input v-model.number="form.confidence" type="number" min="0" max="100" /></label>
-          <label>决策人（不可代签）<input v-model="form.author" type="text" /></label>
+          <label v-if="mode === 'local'">决策人（不可代签）<input v-model="form.author" type="text" /></label>
+          <span v-else class="dc7-author-note">决策人：由登录身份落名（服务端强制，不可代签）</span>
         </div>
         <ul v-if="issues.length" class="dc7-issues">
           <li v-for="i in issues" :key="i.field">{{ i.message }}</li>
         </ul>
         <p v-if="errorMsg" class="dc7-error">{{ errorMsg }}</p>
         <div class="dc7-actions">
-          <button type="button" :disabled="issues.length > 0" @click="submit">
-            {{ form.correctionOf ? '追加更正' : '写入链' }}
+          <button type="button" :disabled="issues.length > 0 || submitting" @click="submit">
+            {{ submitting ? '写入中…' : form.correctionOf ? '追加更正' : '写入链' }}
           </button>
           <button v-if="form.correctionOf" type="button" class="ghost" @click="form.correctionOf = null">取消更正</button>
         </div>
@@ -378,8 +458,21 @@ async function writeBack() {
         <!-- 链上记录 -->
         <div class="dc7-list-head">
           <span>链上记录（{{ log.length }}）</span>
-          <button type="button" class="ghost" @click="reset"><RefreshCw :size="11" /> 清空（仅原型）</button>
+          <span class="dc7-list-tools">
+            <button
+              v-if="mode === 'server' && localCount > 0"
+              type="button"
+              class="ghost"
+              :disabled="importing || importDone"
+              :title="'把浏览器原型链按序落进服务端台账（作者改为当前登录身份，落链时间为准）'"
+              @click="importLocal"
+            >
+              <Upload :size="11" /> {{ importDone ? '已导入' : `导入浏览器原型（${localCount} 条）` }}
+            </button>
+            <button v-if="mode === 'local'" type="button" class="ghost" @click="reset"><RefreshCw :size="11" /> 清空（仅原型）</button>
+          </span>
         </div>
+        <p v-if="importMsg" class="dc7-import-msg">{{ importMsg }}</p>
         <p v-if="!log.length" class="dc7-empty">尚无记录。</p>
         <table v-else class="dc7-table">
           <thead><tr><th>#</th><th>决策点</th><th>判断</th><th>P10/50/90</th><th>置信</th><th>实际</th><th>命中</th><th></th></tr></thead>
@@ -478,6 +571,10 @@ async function writeBack() {
 <style scoped>
 .dc7 { display: flex; flex-direction: column; gap: 12px; }
 .dc7-warning { display: flex; align-items: flex-start; gap: 6px; margin: 0; padding: 8px 12px; border: 1px dashed #f59e0b; border-radius: 8px; background: #fffbeb; font-size: 11px; line-height: 1.6; color: #92400e; }
+.dc7-warning.server { border-color: #86efac; background: #f0fdf4; color: #166534; }
+.dc7-author-note { align-self: end; padding: 4px 0; font-size: 10.5px; color: #0369a1; line-height: 1.5; }
+.dc7-list-tools { display: inline-flex; gap: 6px; align-items: center; }
+.dc7-import-msg { margin: 6px 0 0; font-size: 11px; color: #166534; line-height: 1.6; }
 
 .dc7-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 @media (max-width: 980px) { .dc7-grid { grid-template-columns: 1fr; } }

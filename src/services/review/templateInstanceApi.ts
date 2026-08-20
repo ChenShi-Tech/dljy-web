@@ -1,8 +1,8 @@
 // 模板实例数据面 · 纯逻辑（Epic #2033 · M1 · #2038/#2040 消费端）
 // ---------------------------------------------------------------------------
-// 后端触发引擎（#2039）与模板实例端点（#2037）尚未动工：review.template_instances
-// 表已建（上游迁移 025）但 HTTP 面为空。本模块定义「能力探针」契约——前端按探针
-// 结果诚实降级（不合成、不拿假分母），端点上线后零改动出真数。
+// #2037/#2039 已上线：触发引擎按周期生成实例分母，端点经 Python 薄代理转发
+// Node BFF（/api/v1/review/template-instances）。探针契约保留——端点未部署的
+// 环境（404/405）仍诚实降级，不合成、不拿假分母。
 //
 // 纯逻辑独立成文件（沿用 reviewError.ts 惯例）：传输层模块链触 window，进不了
 // vitest node 环境；可测的分类/排序逻辑全部收在这里。
@@ -19,6 +19,8 @@ export type TemplateInstanceSummary = {
   /** 截止时限 ISO 8601；无时限为 null（排序沉底） */
   dueAt: string | null
   updatedAt: string | null
+  /** 人工字段草稿（human + 已采纳 ai 建议值，按 field key）；列表未带回时缺省 */
+  payload?: Record<string, unknown>
 }
 
 /**
@@ -37,15 +39,21 @@ export const FEED_ABSENT_NOTE =
 function coerceInstance(row: unknown): TemplateInstanceSummary | null {
   if (!row || typeof row !== 'object') return null
   const r = row as Record<string, unknown>
-  const id = typeof r.id === 'string' ? r.id : null
+  // 服务端（#2037 起）JSON 里 id 是数字；历史探针契约是 string——两种都收，统一出口 string
+  const rawId = typeof r.id === 'number' ? String(r.id) : typeof r.id === 'string' ? r.id : null
   const templateId = typeof r.template_id === 'string' ? r.template_id : typeof r.templateId === 'string' ? r.templateId : null
-  if (!id || !templateId) return null
+  if (!rawId || !templateId) return null
+  const id = rawId
   const status = r.status
   const periodKey = typeof r.period_key === 'string' ? r.period_key : typeof r.periodKey === 'string' ? r.periodKey : ''
   const dueAt = typeof r.due_at === 'string' ? r.due_at : typeof r.dueAt === 'string' ? r.dueAt : null
   const updatedAt = typeof r.updated_at === 'string' ? r.updated_at : typeof r.updatedAt === 'string' ? r.updatedAt : null
   if (status === 'pending' || status === 'draft' || status === 'submitted' || status === 'reviewed') {
-    return { id, templateId, periodKey, status, dueAt, updatedAt }
+    const payload =
+      r.payload && typeof r.payload === 'object' && !Array.isArray(r.payload)
+        ? (r.payload as Record<string, unknown>)
+        : undefined
+    return { id, templateId, periodKey, status, dueAt, updatedAt, payload }
   }
   return null
 }

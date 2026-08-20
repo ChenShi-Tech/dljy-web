@@ -46,6 +46,7 @@ import {
   type TemplateCard,
   type TodoRow
 } from '@/services/review/cockpitModel'
+import type { TemplateInstanceSummary } from '@/services/review/templateInstanceApi'
 import { getRegionWinStats } from '@/services/tradingMemory'
 
 const route = useRoute()
@@ -124,7 +125,7 @@ const pnlClass = computed(() =>
 
 // ── 六维驾驶舱 v1（Epic #2033 · #2038）──────────────────────────────────────
 // 两张真数指标卡之一：偏差率（总偏差/申报总量，quant /review 权威口径，仅覆盖区出数）；
-// 风险事件卡 M3 前占位空态；覆盖率/填写率不上（触发引擎无分母，不拿假数凑）。
+// 风险事件卡 M3 前占位空态；覆盖率/填写率不上（#2039 已有分母，KPI 面板接入归 M2，不提前凑数）。
 const dimensionCards = buildDimensionCards()
 const declaredTotalMwh = computed(() =>
   result.value?.detail.length ? result.value.detail.reduce((a, p) => a + (p.declared ?? 0), 0) : null
@@ -150,8 +151,13 @@ const subjectDaySummary = computed(() =>
     : null
 )
 
-// 模板抽屉：chip/待办行打开单模板；无锚点维度先看维度模板清单再进
-const templateDrawer = ref<{ mode: 'template'; templateId: string } | { mode: 'dimension'; dimension: DimensionCard['key'] } | null>(null)
+// 模板抽屉：chip/待办行打开单模板；无锚点维度先看维度模板清单再进。
+// 待办行带上实例（#2037）：表单直连服务端草稿/提交；模板 chip 直开仍是纯预览。
+const templateDrawer = ref<
+  | { mode: 'template'; templateId: string; instance?: TemplateInstanceSummary | null }
+  | { mode: 'dimension'; dimension: DimensionCard['key'] }
+  | null
+>(null)
 
 function openTemplate(t: TemplateCard) {
   templateDrawer.value = { mode: 'template', templateId: t.id }
@@ -161,7 +167,32 @@ function openTemplateById(id: string) {
   templateDrawer.value = { mode: 'template', templateId: id }
 }
 function openTodoInstance(row: TodoRow) {
-  templateDrawer.value = { mode: 'template', templateId: row.templateId }
+  // row 即实例摘要（id/status/payload）——不传实例表单只是预览，传了才能落库提交
+  templateDrawer.value = { mode: 'template', templateId: row.templateId, instance: toInstanceSummary(row) }
+}
+/** TodoRow（实例 + 模板元信息）→ 表单需要的实例摘要。 */
+function toInstanceSummary(row: TodoRow): TemplateInstanceSummary {
+  return {
+    id: row.id,
+    templateId: row.templateId,
+    periodKey: row.periodKey,
+    status: row.status,
+    dueAt: row.dueAt,
+    updatedAt: row.updatedAt,
+    payload: row.payload
+  }
+}
+/** 表单保存/提交成功：抽屉实例状态同步 + 待办箱强制重取（缓存已被 PATCH 作废）。 */
+const todoInboxRef = ref<InstanceType<typeof TodoInbox> | null>(null)
+async function refreshTodoFeed() {
+  await todoInboxRef.value?.reload()
+}
+async function onInstanceSaved(status: 'draft' | 'submitted') {
+  const d = templateDrawer.value
+  if (d?.mode === 'template' && d.instance) {
+    d.instance = { ...d.instance, status }
+  }
+  await refreshTodoFeed()
 }
 function onSelectDimension(card: DimensionCard) {
   if (card.anchor) {
@@ -548,7 +579,7 @@ onRegionChange(() => {
 
       <!-- 右：待办箱 + 智能体复盘 + 历史报告 -->
       <div class="right-col">
-        <TodoInbox @open-instance="openTodoInstance" />
+        <TodoInbox ref="todoInboxRef" @open-instance="openTodoInstance" />
 
         <section class="panel agent-block">
           <div class="block-title"><Sparkles :size="14" /> 智能体复盘（归因叙事 + 报告落盘）</div>
@@ -660,6 +691,8 @@ onRegionChange(() => {
             v-else-if="templateDrawer.mode === 'template'"
             :template-id="templateDrawer.templateId"
             :spec="settlementSpec"
+            :instance="templateDrawer.instance ?? null"
+            @saved="onInstanceSaved"
           />
         </div>
       </div>

@@ -41,6 +41,18 @@ describe('classifyInstanceResponse（能力探针四态）', () => {
     }
   })
 
+  it('服务端数字 id（#2037 Node 行映射 Number）也收，统一出口为 string', () => {
+    const row = { id: 42, templateId: 'T01', periodKey: '2026-W33', status: 'draft', payload: { judgement: '低充高放' } }
+    const feed = classifyInstanceResponse(200, { data: [row] })
+    expect(feed).toMatchObject({ available: true })
+    if (feed.available) {
+      expect(feed.instances[0].id).toBe('42')
+      expect(feed.instances[0].status).toBe('draft')
+      // 草稿随实例带回（重开 draft 实例不丢已填内容）
+      expect(feed.instances[0].payload).toEqual({ judgement: '低充高放' })
+    }
+  })
+
   it('200 + 空列表 = 引擎在线但无待办（不是未上线）', () => {
     const feed = classifyInstanceResponse(200, { data: [] })
     expect(feed).toEqual({ available: true, instances: [] })

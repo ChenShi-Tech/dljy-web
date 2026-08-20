@@ -1,11 +1,13 @@
 // 情绪化识别面板 + 会议纪要组件测试（#2049：停用无残留 / 识别呈现 / 归档提醒）
+// #2037 双模式切换后面板走 loadLogAsync（探针决定 server/local）——mock 它即可。
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { nextTick } from 'vue'
 
 vi.mock('vue-router', () => ({ useRouter: () => ({ push: vi.fn() }) }))
-vi.mock('@/services/trading/decisionLogStore', () => ({ loadLog: vi.fn() }))
+vi.mock('@/services/trading/decisionLogStore', () => ({ loadLogAsync: vi.fn() }))
 
-import { loadLog } from '@/services/trading/decisionLogStore'
+import { loadLogAsync } from '@/services/trading/decisionLogStore'
+import type { DecisionLogSnapshot } from '@/services/trading/decisionLogStore'
 import EmotionPatternPanel from './EmotionPatternPanel.vue'
 import MeetingMinutesForm from './MeetingMinutesForm.vue'
 import { mount } from '@/test/mount'
@@ -16,22 +18,29 @@ const entry = (over: Record<string, unknown> = {}) => ({
   judgement: '看涨', p10: 99, p50: 100, p90: 101, actual: 120, lesson: '', ...over
 })
 
+/** 面板只需快照形状：local 模式 + 给定条目（探针/网络不在组件测试范围）。 */
+const snap = (log: unknown[]): Promise<DecisionLogSnapshot> =>
+  Promise.resolve({ mode: 'local', log: log as DecisionLogSnapshot['log'], error: null })
+
 beforeEach(() => {
-  vi.mocked(loadLog).mockReset()
+  vi.mocked(loadLogAsync).mockReset()
   localStorage.removeItem(EMOTION_TOGGLE_KEY)
 })
 
 async function settle(wrapper: ReturnType<typeof mount>) {
-  await nextTick()
+  // loadLogAsync 是异步链：多轮 nextTick 等 promise 落定 + 重渲染
+  await nextTick(); await nextTick(); await nextTick()
   return wrapper
 }
 
 describe('EmotionPatternPanel', () => {
   it('识别结果呈现：文化红线横幅 + 过度自信/犹豫标注 + 覆盖说明（追涨杀跌不打标）', async () => {
-    vi.mocked(loadLog).mockReturnValue([
-      entry({ seq: 1, p10: 99, p50: 100, p90: 101, actual: 120 }),
-      entry({ seq: 2, id: 'b', decisionPoint: '晚高峰申报量' })
-    ] as never)
+    vi.mocked(loadLogAsync).mockImplementation(() =>
+      snap([
+        entry({ seq: 1, p10: 99, p50: 100, p90: 101, actual: 120 }),
+        entry({ seq: 2, id: 'b', decisionPoint: '晚高峰申报量' })
+      ] as never)
+    )
     const wrapper = await settle(mount(EmotionPatternPanel))
     const text = wrapper.text()
     expect(text).toContain('非考核依据')
@@ -42,7 +51,7 @@ describe('EmotionPatternPanel', () => {
   })
 
   it('整体停用：切换开关后识别内容零残留（只剩停用说明）', async () => {
-    vi.mocked(loadLog).mockReturnValue([entry()] as never)
+    vi.mocked(loadLogAsync).mockImplementation(() => snap([entry()] as never))
     const wrapper = await settle(mount(EmotionPatternPanel))
     await wrapper.find('.emo-switch input').setValue(true)
     const text = wrapper.text()
@@ -53,7 +62,7 @@ describe('EmotionPatternPanel', () => {
   })
 
   it('无高置信信号：宁缺勿滥文案（不打标不等于没有问题）', async () => {
-    vi.mocked(loadLog).mockReturnValue([] as never)
+    vi.mocked(loadLogAsync).mockImplementation(() => snap([] as never))
     const wrapper = await settle(mount(EmotionPatternPanel))
     expect(wrapper.text()).toContain('宁缺勿滥')
     expect(wrapper.text()).toContain('不打标不等于没有问题')
