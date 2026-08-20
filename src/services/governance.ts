@@ -124,12 +124,11 @@ export const adminLevelRoleCodes: RoleCode[] = ['BOSS', 'ADMIN']
 // - 原 /system/sessions 与 /xhjy/{dify-studio,langgraph-studio} 未列入、非管理员经 /system 与 /xhjy
 // 组可见，合并后随宿主页收紧。方向是收紧不是放开，无越权风险。
 // 旧路径已改为 redirect（不再是页面），故从本清单移除，重定向目标会再过一次本判定。
-// /data-ops/upload（#2169 P1 数据上传中心）：数据管理员操作面，收 ADMIN-only
-// 交易/分析角色不承载数据管理（与 /yygl/ingest、/data-source-settings 同口径）；
-// P2 data-service 独立运维台落地后再按数据运维岗另设角色。
-// #2169 P2-2a：三个数据管理页（导入融合台/接入向导/治理控制台）同口径收紧
-// 「用户前端不再管理数据」：TRADE_LEAD/SETTLEMENT 等业务角色的界面不再出现数据管理入口；
-// 结算专员的导入动线在 P2-2b 数据运维台独立前端恢复。
+// /data-ops/console（数据运维工作台）：上传中心/导入融合台/接入向导/摄取管理/治理控制台/
+// 数据源接入六页 + 运维总览合成的单页 tab，整页收 ADMIN-only——数据管理是数据管理员的操作面，
+// 交易/分析角色不承载（「用户前端不再管理数据」，#2169 P2-2a 起的口径）。六页原独立路径
+// （/yygl/ingest、/data-source-settings 等）已全部 redirect 到本页面板，重定向目标会再过一次本判定。
+// 结算专员等业务角色的导入动线待按数据运维岗另设角色后再开。
 export const adminOnlyRoutes = ['/system/ai-studio', '/system/accounts', '/data-ops/console']
 
 const regionalRoutesForRole = (roleCode: RoleCode) => getRegionModuleAccessRoutes(roleCode)

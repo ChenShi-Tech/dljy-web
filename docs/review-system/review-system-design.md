@@ -50,10 +50,26 @@
 
 | 缺口 | 归属 | 前端呈现 |
 |---|---|---|
-| `review.template_instances` 读写端点 | #2039 触发引擎 / #2037 | 待办箱：探针 404 →「触发引擎未上线」空态 |
-| 决策日志服务端化（SHA-256 链） | #2037 | S7 维持 localStorage 原型态 + PROTOTYPE_STORAGE_NOTICE |
+| ~~`review.template_instances` 读写端点~~ **已上线（#2037/#2039 M1）** | 触发引擎 + 实例读写 | 待办箱真数据；未部署环境探针 404 →「触发引擎未上线」空态 |
+| ~~决策日志服务端化（SHA-256 链）~~ **已上线（#2037 M1）** | Node BFF `/api/v1/review/decision-logs` | S7 双模式：server 台账优先，端点未部署回落 localStorage 原型 + PROTOTYPE_STORAGE_NOTICE |
 | 案例库 `review.cases` / 风险事件 / 改进措施 | #2045/#2047 | 列表位占位空态，data_gap 标注 |
 | weekly/monthly 复盘调度 kind | #2044 | 周月模板只读预览，不显示「已生成」 |
+
+**B2. #2037/#2039 M1 落地后的实际通道（双仓 PR 对齐）**
+
+| 端点（浏览器视角） | 实际链路 | 前端消费点 |
+|---|---|---|
+| `GET/PATCH /agent-api/agent/review/template-instances[/{id}]` | Python 薄代理 → Node BFF `/api/v1/review/template-instances` | TodoInbox、ReviewTemplateForm（存草稿/提交） |
+| `GET/POST /agent-api/agent/review/decision-logs[/{id}/backfill]` | 同上（决策日志权威存储在 Node，Python 无 PG 访问） | S7 决策日志双模式门面（decisionLogStore） |
+| `GET /agent-api/agent/review/decision-logs/verify` | 服务端 SHA-256 链校验结论（前端不重算） | S7 链完整性徽标 |
+| `POST /api/v1/review/trigger`（服务间） | scheduler `review_trigger` kind → X-Service-Token + Idempotency-Key | 待办分母生成（前端只读结果） |
+
+**B2 部署/联调备忘（M1 端到端实测踩坑，Phase 3 于 5175 双栈验证）**
+
+- `DLJY_REVIEW_SERVICE_TOKEN` 必须同时配在 Node BFF 与 Python agent 两个进程上（scheduler 携带、BFF 校验，不一致 fail-closed 403）。
+- Node 网关对「匿名 + X-Service-Token」的 `/api/v1/review/trigger` 有窄豁免（复用 #1407 摄取通道形态），否则服务令牌调用落 ANON 被粗矩阵拦死、调度器静默失败——豁免不覆盖其余 review 路径（人类会话调用必须过完整矩阵）。
+- Python 侧转发/触发一律 `httpx.Client(trust_env=False)`：Windows 注册表系统代理会把 `127.0.0.1` 的 BFF 请求拦成 502（与 authz.py/graphs.py 同款预防）。
+- 链为**字节级**校验：任何直接改库（含「改回去」）都会被判 `brokenAtSeq`——更正只能走追加写，这是特性不是缺陷。
 
 ## 3. 与 dljy 后端的结合与通讯契约（核心章节）
 
@@ -77,26 +93,26 @@
 //   | { available: false; reason: 'endpoint-absent' | 'unauthorized' | 'unreachable' }
 ```
 
-探针打 `GET /agent-api/agent/review/template-instances?status=pending`：
+探针打 `GET /agent-api/agent/review/template-instances`（#2037 后为真列表通道；不带 status 过滤——待办要 pending+draft 两态，draft 是填了一半的待办）：
 - 200 → available，渲染真待办；
 - 404/405 → `endpoint-absent`（触发引擎未上线，展示就绪度台账替代内容）；
 - 401/403 → `unauthorized`（提示权限）；
 - 网络错/5xx → `unreachable`（可重试）。
 
-会话内缓存探针结论（模块级 ref，5 分钟 TTL），避免每个组件重复打无效端点。**端点上线后前端零改动出数**——这是镜像仓等后端节奏的的标准姿势。
+会话内缓存探针结论（模块级 ref，5 分钟 TTL），避免每个组件重复打无效端点。**端点上线后前端零改动出数**——这是镜像仓等后端节奏的的标准姿势。决策日志同款探针（decisionLogStore.resolveDecisionLogMode）：**只有 endpoint-absent 才回落浏览器原型**；未授权/网络错按 server 模式走、把真实错误抛给页面——权威链存在时不允许伪造本地写入成功。
 
-### 3.3 提议的后端契约（给 #2037/#2039/#2045 实现者，前端按此预留）
+### 3.3 后端契约（#2037/#2039 M1 已按此落地；#2045 及之后仍为提议）
 
 | 端点 | 方法 | 用途 | 前端消费点 |
 |---|---|---|---|
-| `/agent-api/agent/review/template-instances?status=&region=&template_id=` | GET | 待办箱/驾驶舱实例列表（含 deadline、overdue 推导） | TodoInbox、六维入口徽标 |
-| `/agent-api/agent/review/template-instances` | POST | 触发引擎生成实例（幂等锚 template_id+period_key+company+region） | 驾驶舱手动触发（后端自管，前端只读结果） |
+| `/agent-api/agent/review/template-instances?status=&period_key=&template_id=` | GET | 待办箱/驾驶舱实例列表（含 deadline、overdue 推导）；**已上线** | TodoInbox、六维入口徽标 |
+| `/api/v1/review/trigger` | POST | 触发引擎生成实例（幂等锚 template_id+period_key+company+region；服务令牌专用，前端不直接调） | scheduler `review_trigger` kind（驾驶舱只读结果） |
 | `/agent-api/agent/review/template-instances/{id}` | GET/PATCH | 实例详情（autofill 快照）/人工字段提交（提交后锁定） | ReviewTemplateForm |
 | `/agent-api/agent/review/decision-logs` | GET/POST | 决策日志服务端化（SHA-256 链追加写） | S7 收编 #1967 原型 |
 | `/agent-api/agent/review/cases?visibility=&type=` | GET | 案例库（visibility 尊重 internal 默认） | 案例库列表（M3） |
 | `/agent-api/agent/review/improvement-actions?status=open` | GET | 上期未落实项自动带入 | 周月模板「上期回查」 |
 
-契约细节（信封、错误码语义）对齐 quant 面既有风格：失败 503 带 `detail.kind`（`not_onboarded` / `data_unavailable` / `unauthorized`），前端 `classifyReviewError` 同族分类。
+契约细节（#2037 已落地部分）：Node BFF 统一信封 `{code, msg, data}`（envelope + requestId），业务错 400（校验）/401（未登录）/403（权限·不可代签）/404（不存在）/409（状态机/重复回填）；Python 薄代理原样透传状态码与 JSON，网络故障 502 `{code:502, msg}`。前端 `templateInstanceApi`/`decisionLogApi` 的探针四态同族分类；案例库等 #2045 端点沿用 quant 面 `detail.kind` 风格待实现时对齐。
 
 ### 3.4 前端层数据流（M1 落地形态）
 
@@ -155,8 +171,11 @@ quant /reports ─┼─ cockpitModel.ts（纯函数） ─→ DimensionGrid / T
 |---|---|---|
 | `src/services/review/cockpitModel.ts` | 纯函数：六维卡模型（维度×模板聚合、就绪度计数、入口锚点）、待办排序/逾期推导、指标卡模型 | `cockpitModel.spec.ts`（node） |
 | `src/services/review/slots24.ts` | 纯函数：96 点→24 时段聚合、峰谷标识（读 SettlementRuleSpec，未参数化返回 null+提示） | `slots24.spec.ts`（node） |
-| `src/services/review/templateInstanceApi.ts` | 探针纯逻辑：响应→Feed 分类（available/endpoint-absent/unauthorized/unreachable） | `templateInstanceApi.spec.ts`（node） |
-| `src/services/review/templateInstanceClient.ts` | 传输层：探针请求 + 会话内 TTL 缓存（quantClient 同款 fetch 纪律） | —（传输层不进 node 测试，纯逻辑已覆盖） |
+| `src/services/review/templateInstanceApi.ts` | 探针纯逻辑：响应→Feed 分类（available/endpoint-absent/unauthorized/unreachable）、数字 id 容忍、payload 草稿透传 | `templateInstanceApi.spec.ts`（node） |
+| `src/services/review/templateInstanceClient.ts` | 传输层：实例列表 + PATCH 存草稿/提交（幂等键）+ 会话内 TTL 缓存（quantClient 同款 fetch 纪律） | —（传输层不进 node 测试，纯逻辑已覆盖） |
+| `src/services/trading/decisionLogApi.ts` | 决策日志服务端数据面纯逻辑：探针分类、服务端行→共享 DecisionLogEntry、SHA-256 verdict 透传、原型导入计划 | `decisionLogApi.spec.ts`（node） |
+| `src/services/trading/decisionLogClient.ts` | 传输层：GET 列表/verify、POST 追加/backfill（author 由会话落名，不代签） | —（同上） |
+| `src/services/trading/decisionLogStore.ts` | 双模式门面：探针决定 server/local，写路径按模式分发；原型→服务端显式导入 | —（纯逻辑在 decisionLogApi；localStorage 路径不进 node 测试） |
 | `src/components/review/DimensionGrid.vue` | 六维入口卡 | —（渲染逻辑在 cockpitModel，纯函数已测） |
 | `src/components/review/TodoInbox.vue` | 待办箱（探针四态） | `TodoInbox.component.spec.ts` |
 | `src/components/review/ReviewTemplateForm.vue` | schema 驱动模板渲染器 + slots24 聚合视图 | `ReviewTemplateForm.component.spec.ts` |

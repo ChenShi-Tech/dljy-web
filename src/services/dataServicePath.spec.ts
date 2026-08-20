@@ -20,6 +20,7 @@ describe('dataServicePath 数据管理路径族改道（#2169 P2-2a）', () => {
   it('摄取触发/治理只读/凭据与接入控制面', () => {
     expect(dataServicePath('/api/v1/ingest/weather-export')).toBe(`${DATA_SVC_ROOT}/api/v1/ingest/weather-export`)
     expect(dataServicePath('/v1/governance/catalog')).toBe(`${DATA_SVC_ROOT}/api/v1/governance/catalog`)
+    expect(dataServicePath('/v1/governance/db-health')).toBe(`${DATA_SVC_ROOT}/api/v1/governance/db-health`)
     expect(dataServicePath('/v1/grid-access/points')).toBe(`${DATA_SVC_ROOT}/api/v1/grid-access/points`)
     expect(dataServicePath('/v1/sichuan-ingest')).toBe(`${DATA_SVC_ROOT}/api/v1/sichuan-ingest`)
     expect(dataServicePath('/v1/data-sources/cgn-yunnan')).toBe(`${DATA_SVC_ROOT}/api/v1/data-sources/cgn-yunnan`)

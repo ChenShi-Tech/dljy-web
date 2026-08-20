@@ -27,8 +27,8 @@ import {
   type ReviewFailure,
   type ReviewResult
 } from '@/services/quant/quantClient'
-import { loadLog, PROTOTYPE_STORAGE_NOTICE } from '@/services/trading/decisionLogStore'
-import { coverageOf, hitRate } from 'shared/trading-rules/decision-log.mjs'
+import { loadLogAsync, storageNoticeFor, type DecisionLogMode } from '@/services/trading/decisionLogStore'
+import { coverageOf, hitRate, type DecisionLogEntry } from 'shared/trading-rules/decision-log.mjs'
 import {
   aggregatePeakFlatValley,
   causeIdOfLabel,
@@ -90,7 +90,13 @@ async function loadReviewed() {
     if (token === loadToken) loading.value = false
   }
 }
-onMounted(loadReviewed)
+onMounted(() => {
+  loadReviewed()
+  void loadLogAsync().then((snap) => {
+    logMode.value = snap.mode
+    log.value = snap.log
+  })
+})
 watch(reviewedDate, loadReviewed)
 
 /** ① 中标情况：申报 vs 出清。两条曲线都在才算，缺一如实标注。 */
@@ -151,12 +157,15 @@ const execDeviationPct = computed<number | null>(() => {
 })
 
 // ── ③ 昨日决策日志：条目调阅（不只是两个统计数字）────────────────────────────
-const log = loadLog()
-const logCoverage = computed(() => coverageOf(log, reviewedDate.value, 3))
-const logHits = computed(() => hitRate(log))
+// 双模式（#2037）：服务端台账优先，端点未部署回落浏览器原型——提示语随模式切换。
+const log = ref<DecisionLogEntry[]>([])
+const logMode = ref<DecisionLogMode>('local')
+const logNotice = computed(() => storageNoticeFor(logMode.value))
+const logCoverage = computed(() => coverageOf(log.value, reviewedDate.value, 3))
+const logHits = computed(() => hitRate(log.value))
 /** 昨日标的日的条目，按序号排列——晨会要「回顾」，就得看得到写了什么。 */
 const reviewedEntries = computed(() =>
-  log.filter((e) => e.targetDate === reviewedDate.value).sort((a, b) => a.seq - b.seq)
+  log.value.filter((e) => e.targetDate === reviewedDate.value).sort((a, b) => a.seq - b.seq)
 )
 const showEntries = ref(false)
 
@@ -255,7 +264,7 @@ const prevReviewedDate = computed(() => shiftIsoDate(reviewedDate.value, -1))
 const yesterdayIso = computed(() => shiftIsoDate(props.targetDate, -1))
 const yesterdayLogMissing = computed(() => {
   if (!reviewed.value) return false
-  return !loadLog().some((e) => e.targetDate === yesterdayIso.value)
+  return !log.value.some((e) => e.targetDate === yesterdayIso.value)
 })
 
 // ── 六维摘要（需求 5）：每维一行，数据从各面板 computed 汇总，不新增数据源 ────
@@ -786,7 +795,7 @@ async function writeBack() {
           </tbody>
         </table>
       </template>
-      <p class="mr-proto">{{ PROTOTYPE_STORAGE_NOTICE }}</p>
+      <p class="mr-proto" :class="{ server: logMode === 'server' }">{{ logNotice }}</p>
     </section>
 
     <section class="mr-panel">
@@ -897,6 +906,7 @@ async function writeBack() {
 .mr-caveat ul { margin: 6px 0 0; padding-left: 18px; line-height: 1.6; }
 .mr-log { display: flex; gap: 14px; flex-wrap: wrap; font-size: var(--font-sm); }
 .mr-proto { margin: 8px 0 0; padding-top: 8px; border-top: 1px dashed var(--el-border-color-lighter, #ebeef5); font-size: var(--font-xs); line-height: 1.6; color: #a16207; }
+.mr-proto.server { color: #166534; }
 .mr-written { margin-bottom: 8px; padding: 6px 10px; border-radius: 6px; background: #f0fdf4; color: #166534; font-size: var(--font-sm); }
 .mr-written em { font-style: normal; color: #4d7c0f; }
 .mr-pending { display: inline-block; margin-left: 8px; padding: 1px 7px; border-radius: 8px; background: #fffbeb; color: #a16207; font-weight: 600; }

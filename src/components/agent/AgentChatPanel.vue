@@ -669,6 +669,11 @@ async function onEvent(e: AgentEvent) {
   const msg = lastAssistant()
   if (e.type === 'token') {
     appendToken(e.content)
+  } else if (e.type === 'text_retract') {
+    // #2213：底座判定刚放出的文本是过程叙述（同一条消息随后发起了工具调用）——撤掉当前未定格的文本段。
+    // 只撤未 done 的尾段：已被 finishTextSegs 定格的历史文本是正式回答，不可回收。
+    const last = msg.segs[msg.segs.length - 1]
+    if (last && last.kind === 'text' && !last.done) msg.segs.pop()
   } else if (e.type === 'tool_call') {
     finishTextSegs(msg) // 文本段在工具调用前定格为 markdown
     // delegate_<role> 是 supervisor 给子智能体派活，不是普通工具，归并进该 role 的唯一折叠容器，

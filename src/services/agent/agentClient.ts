@@ -6,8 +6,6 @@
 import { apiGet, apiPost, apiPatch, apiDelete, timeoutSignal, AGENT_API_BASE_ROOT } from '@/services/api'
 import { currentRegion } from '@/services/region/regionContext'
 import { formatCreateSessionError, readErrorDetail } from '@/services/agent/sessionError'
-import { PI_AGENT_BASE, isShadowScenario, resolveServingBase } from '@/services/agent/rollout'
-import { createTurnObserver, isComparableTurn, splitTurnPayload, type TurnObserver } from '@/services/agent/shadowCompare'
 
 // 统一派生自 AGENT_API_BASE_ROOT（默认 /agent-api）：开发态 vite 代理、生产/现场部署 nginx 同源
 // 反代均落到 :8000 的 /api/agent。dev/prod 行为一致，不再按 import.meta.env.DEV 折叠。
@@ -15,18 +13,19 @@ export const AGENT_API_BASE = `${AGENT_API_BASE_ROOT}/agent`
 
 const BASE = AGENT_API_BASE
 
-// scenario→base 路由（#1526 PR-5，AgentChatPanel 零改动接流 pi-poc）
-// strategic_qa/declaration_checkup 走 pi-poc 编排服务（开发态 vite 代理 /pi-api → 8100，
-// 生产 nginx 同源同名）。#1848 起判定挪到 rollout.ts：PoC 专属场景恒 pi，四个生产场景
-// 由服务端灰度状态决定（canary 命中或 primary 才是 pi），前端不再持有静态映射表
-// 命中判定留在前端就等于用户改 localStorage 即可把自己切进未验证链路。
+// scenario→base 路由：**所有场景恒走 pi 底座**。灰度表与影子对拍设施随双栈退场删除
+// （主仓 #2231），前端不再有可选的第二个 base——旧图那侧的对话编排路径已经不存在，
+// 留一张表只剩「有人调回 off 就把主入口路由到不再服务该场景的后端」这一种用法，
+// 前端一次查询超时触发 fail-safe 也是同样后果。
+// 例外只有工作室自定义图（custom_graph）：它由 studioClient 的 /graph-runs 建在
+// agent-backend 侧，不经 createAgentSession，其 session id 既不在 sessionBaseById 也不在
+// PI_SESSIONS_KEY，baseForSession 自然回退到 BASE（legacy）——这正是它需要的。
 // 会话级路由仍在 createAgentSession 时登记（内存 Map + localStorage 双写，刷新后仍可
 // 把续聊/回放请求路由到正确后端）；persistHistory 走 #498 默认全开，归属登记由
 // pi-poc 服务端回调 Node bind（见 agent-poc-strategic-qa-design.md）。
+/** pi 底座（pi-poc 编排服务）基址：开发态 vite 代理 /pi-api → 8100，生产 nginx 同源同名。 */
+export const PI_AGENT_BASE = '/pi-api/agent'
 const sessionBaseById = new Map<string, string>()
-// 影子对拍会话（#1848）：由 baseOverride 建出，对用户不可见。单独记一份是为了
-// ① 不写进 localStorage 污染真实会话的路由表 ② sendAgentMessage 不对它再起一次影子（自递归）
-const ephemeralSessionIds = new Set<string>()
 // pi-poc 会话 id 落 localStorage：刷新后内存登记表清空，续聊/回放仍能路由到正确后端
 const PI_SESSIONS_KEY = 'dljy.piPocSessionIds'
 
@@ -72,25 +71,6 @@ export function identityHeaders(): Record<string, string> {
   return headers
 }
 
-/**
- * 身份指纹（令牌 + 公司 + 地区）。影子跑在用户那一轮结束之后才起，而 `identityHeaders()`
- * 是每次请求现读 localStorage 的，同一浏览器里 A 的首轮还在流式返回时退出登录换成 B，
- * 影子会话就会拿 B 的凭证去发 A 的问题、把台账写进 B 的租户，这是 DataScope 隔离回归。
- * 故用户那一轮开始时取一次快照，影子发起前与上报前各比对一次，任一项变了就整轮不跑。
- * 地区也计入：中途切地区会让两侧上下文不同，同样不可比。
- */
-export function identityFingerprint(): string {
-  try {
-    return [
-      localStorage.getItem(TOKEN_KEY) || '',
-      localStorage.getItem(COMPANY_KEY) || '',
-      currentRegion.value.id || '',
-    ].join('|')
-  } catch {
-    return '' // localStorage 不可用：返回稳定空值，比对结果恒相等，不额外阻断
-  }
-}
-
 export type AgentScenario = 'chat' | 'declaration_prep' | 'daily_review' | 'morning_brief' | 'strategic_qa' | 'declaration_checkup'
 export type AgentRunScenario = AgentScenario | 'custom_graph'
 
@@ -105,6 +85,8 @@ export type AgentSessionInfo = {
 // 后端 SSE 事件协议（packages/agent-runtime/src/agent_runtime/api/service.py）
 export type AgentEvent =
   | { type: 'token'; content: string }
+  // 承载底座（pi-poc，#2213）：已放出的文本被判定为工具调用前的过程叙述 → 撤掉当前正在流式的文本段
+  | { type: 'text_retract' }
   | { type: 'tool_call'; node?: string; name: string; args: Record<string, unknown> }
   | {
       type: 'tool_result'
@@ -185,11 +167,9 @@ export class AgentStreamDisconnectedError extends Error {
 export async function createAgentSession(
   scenario: AgentScenario = 'chat',
   title = '',
-  // baseOverride 只给影子对拍用（#1848）：强制把会话建在 pi 侧而不问灰度状态。
-  // 业务调用方一律不传，传了就等于绕过服务端的唯一权威判定。
-  opts?: { persist?: boolean; timeoutMs?: number; promptKey?: string; pageKey?: string; baseOverride?: string }
+  opts?: { persist?: boolean; timeoutMs?: number; promptKey?: string; pageKey?: string }
 ): Promise<AgentSessionInfo> {
-  const createBase = opts?.baseOverride || await resolveServingBase(scenario)
+  const createBase = PI_AGENT_BASE
   const res = await fetch(`${createBase}/sessions`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', ...identityHeaders() },
@@ -212,10 +192,7 @@ export async function createAgentSession(
   const info = (await res.json()) as AgentSessionInfo
   if (createBase !== BASE) {
     sessionBaseById.set(info.id, createBase)
-    // 影子会话只登记在内存路由表：它活不过本次页面，写进 localStorage 只会把
-    // 真实会话的路由表挤掉（那份表只保留最近 50 条）
-    if (opts?.baseOverride) ephemeralSessionIds.add(info.id)
-    else rememberPiSession(info.id)
+    rememberPiSession(info.id)
   }
   return info
 }
@@ -389,12 +366,6 @@ export async function stopAgentRun(sessionId: string, runId: string): Promise<bo
   return data?.stopped === true
 }
 
-// 影子对拍（#1848）：只影子首轮消息，pi 侧是新会话、没有旧图那边的历史，第二轮起
-// 两侧上下文不对等，继续对拍会产出「看起来能比、实际不可比」的数字。「是否首轮」记在这里
-// 而不是面板里：所有接入点都经本函数发消息，记在这一层才不会漏。集合随页面生命周期存活，
-// 上界是用户在一次页面加载里开过的会话数（几十条量级），无需淘汰。
-const sessionsWithSentMessage = new Set<string>()
-
 export async function sendAgentMessage(
   sessionId: string,
   content: string,
@@ -408,39 +379,6 @@ export async function sendAgentMessage(
     onCursor?: (cursor: number) => void
   }
 ): Promise<AgentStreamResult> {
-  const scenario = opts?.scenario ?? 'chat'
-  const isFirstTurn = !sessionsWithSentMessage.has(sessionId)
-  sessionsWithSentMessage.add(sessionId)
-  // 够不够格对拍由 isComparableTurn 单点判定（四个条件与理由见其文档）；不够格就连观测都不挂。
-  // 注意 AgentChatPanel 每条消息都带地区摘要，故判据是「有没有地区摘要之外的上下文」而不是
-  // 「有没有 payload」，后者会让四个生产场景一条影子都跑不起来，开了 shadow 也永远攒不到证据。
-  const { shadowPayload, hasExtraContext } = splitTurnPayload(opts?.payload)
-  const observer: TurnObserver | null = isComparableTurn({
-    isFirstTurn,
-    scenario,
-    scenarioDeclared: opts?.scenario != null,
-    isShadowSession: ephemeralSessionIds.has(sessionId),
-    hasExtraContext,
-  }) ? createTurnObserver() : null
-  // 身份快照取在这一轮开始时，供影子发起前比对（见 identityFingerprint 文档）
-  const identityAtTurn = observer ? identityFingerprint() : ''
-  const relay = observer
-    ? (event: AgentEvent) => { observer.observe(event); onEvent(event) }
-    : onEvent
-  // 用户那一轮结束之后才起影子，且完全脱离用户路径：先问灰度状态（命中缓存，不发请求），
-  // 关着就连 shadow 模块都不加载。任何异常都吞掉，影子失败只是少一条台账。
-  const launchShadow = () => {
-    if (!observer) return
-    const legacy = observer.result()
-    void (async () => {
-      try {
-        if (!(await isShadowScenario(scenario))) return
-        const shadow = await import('@/services/agent/shadow')
-        // 地区摘要一并转发：不带它影子侧就少一份旧图有的上下文，两侧又变回不对等
-        await shadow.maybeRunShadow({ scenario, sessionId, content, payload: shadowPayload, legacy, identityAtTurn })
-      } catch { /* 影子只记不抛 */ }
-    })()
-  }
   try {
     const res = await fetch(`${baseForSession(sessionId)}/sessions/${encodeURIComponent(sessionId)}/messages`, {
       method: 'POST',
@@ -465,20 +403,17 @@ export async function sendAgentMessage(
     if (runId) {
       opts?.onRunId?.(runId)
       try { await res.body?.cancel() } catch { /* ignore POST attach reader cancellation */ }
-      result = await attachRunStream(sessionId, runId, -1, relay, {
+      result = await attachRunStream(sessionId, runId, -1, onEvent, {
         signal: opts?.signal,
         onCursor: opts?.onCursor
       })
     } else {
-      result = await consumeSse(res, relay, {
+      result = await consumeSse(res, onEvent, {
         signal: opts?.signal,
         cursor: -1,
         onCursor: opts?.onCursor
       })
     }
-    // 只在这一轮真正走完时对拍：用户中途取消或流断了，旧图侧观测本身就是残的，
-    // 拿它去比只会往台账里灌噪音（而噪音会推高差异率、误封升级闸）
-    if (result.terminal) launchShadow()
     return result
   } catch (err) {
     if (opts?.signal?.aborted || isAbortError(err)) return { cursor: -1, terminal: false } // 主动取消：静默结束

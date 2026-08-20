@@ -1,11 +1,13 @@
 <script setup lang="ts">
 // 情绪化识别面板（Epic #2033 · M4 · #2049：模板十一，季度）
 // ---------------------------------------------------------------------------
-// 数据源 = 决策日志（localStorage 哈希链，前端真数据）+ 规则清单 v1（先规则后模型）。
+// 数据源 = 决策日志（#2037 起服务端台账优先，端点未部署回落 localStorage 原型链）
+// + 规则清单 v1（先规则后模型）。
 // 页面明示学习辅导定位、不做排名；可整体停用（配置开关）且停用时无残留展示。
-// 干预措施与效果跟踪（下季度逐人回查）落 improvement_actions，端点未上线本地草稿。
-import { computed, ref } from 'vue'
-import { loadLog } from '@/services/trading/decisionLogStore'
+// 干预措施与效果跟踪（下季度逐人回查）落 improvement_actions——端点未上线本地草稿。
+import { computed, onMounted, ref } from 'vue'
+import { loadLogAsync } from '@/services/trading/decisionLogStore'
+import type { DecisionLogEntry } from 'shared/trading-rules/decision-log.mjs'
 import {
   detectEmotionPatterns,
   EMOTION_NOTE,
@@ -18,7 +20,10 @@ function toggleDisabled() {
   localStorage.setItem(EMOTION_TOGGLE_KEY, disabled.value ? '1' : '0')
 }
 
-const entries = computed(() => loadLog())
+const entries = ref<DecisionLogEntry[]>([])
+onMounted(async () => {
+  entries.value = (await loadLogAsync()).log
+})
 const detection = computed(() => detectEmotionPatterns(entries.value))
 
 // 干预措施与效果跟踪（本地草稿，improvement_actions 端点未上线）

@@ -7,3 +7,6 @@ coverage/
 .DS_Store
 .vite/
 .omc/
+
+# worktree 根（全机纪律：worktree 建在本仓 .claude/worktrees/）——不进 git，否则残留目录污染主工作区状态
+/.claude/worktrees/

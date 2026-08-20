@@ -54,9 +54,9 @@ const retailPriceCalculator = () => import('../views/RetailPriceCalculatorView.v
 const interprovincialPriceCalculator = () => import('../views/InterprovincialPriceCalculatorView.vue')
 const operationsWorkbench = () => import('../views/OperationsWorkbenchView.vue')
 const dataBrowser = () => import('../views/UniversalCapturedBrowserView.vue')
-// #2174 P2-2b：六管理页迁独立数据运维台（ops-console.html + src/features/opsConsole/），
-// 主前端只留桥接页（旧路径 redirect 到此，跳 /ops-console.html#/ops/... 保深链）。
-const opsConsoleBridge = () => import('../views/ops/OpsConsoleBridge.vue')
+// 数据运维工作台：数据管理六页 + 运维总览的单页 tab 容器（原独立控制台 ops-console.html
+// 收回主平台，壳层与其余业务页统一；子页 query 用 ?panel= 区分，见该 View 头注）。
+const dataOpsConsole = () => import('../views/dataops/DataOpsConsoleView.vue')
 const regionRules = () => import('../views/RegionRulesView.vue')
 const regionalTradingHub = () => import('../views/RegionalTradingHubView.vue')
 // 申报工作台（重写原现货决策台：对齐 D-1 真实申报动线，嵌入 declaration_prep 智能体图）
@@ -138,6 +138,20 @@ const dataSourceSettingsRedirect = (path: string, tab: string): RouteRecordRaw =
   path,
   redirect: (to) => ({ path: '/data-source-settings', query: { ...to.query, tab } })
 })
+
+// 数据运维六页原独立路径 → 数据运维工作台对应面板（?panel=）。原查询参数原样带过去，
+// 「数据源接入」的子 tab（?tab=official 等）因此在两级 redirect 后仍然生效。
+const opsPanelRedirects: RouteRecordRaw[] = ([
+  ['yygl/data-onboarding', 'onboarding'],
+  ['yygl/import-hub', 'import-hub'],
+  ['yygl/data-governance', 'governance'],
+  ['yygl/ingest', 'ingest'],
+  ['data-ops/upload', 'upload'],
+  ['data-source-settings', 'data-source']
+] as const).map(([path, panel]) => ({
+  path,
+  redirect: (to) => ({ path: '/data-ops/console', query: { ...to.query, panel } })
+}))
 
 const router = createRouter({
   history: createWebHistory(),
@@ -301,17 +315,10 @@ const router = createRouter({
         page('yygl/ops', 'OperationsWorkbench', { block: '运营管理', title: '运营中枢', code: 'operations', endpoint: 'local operations + planned /api/v1/stations|contracts|settlements|risks|statistics|retail-settlement-import|model-config|agents', dataPath: 'operations_backend', scope: '电站、合同、结算、风险、统计、数据导入、模型配置、智能体监控运营面迁移', kind: 'mixed' }, operationsWorkbench),
         page('yygl/data-browser', 'DataBrowser', { block: '数据管理', title: '通用数据浏览器', code: 'data-browser', endpoint: 'GET /api/real?family=&match=&region=', dataPath: '*', scope: '任意已注册数据族归一化真实回放数据，动态列展示+筛选+CSV导出', kind: 'mixed' }, dataBrowser),
 
-        // 数据运维 /data-ops（#2169 P1：上传中心独立路由域，P2 data-service 进程化时整组迁出主前端）
-
-
-        // 数据运维 /data-ops（#2174 P2-2b：六管理页已迁独立数据运维台，主前端保桥接深链）
-        page('data-ops/console', 'OpsConsoleBridge', { block: '数据运维', title: '数据运维台', code: 'ops-console', endpoint: 'external /ops-console.html（数据管理操作面，API 经 /data-svc → data-service :8190）', dataPath: 'ops_console', scope: '桥接跳转独立控制台：上传中心/导入融合台/接入向导/摄取管理/治理控制台/数据源接入六页', kind: 'real' }, opsConsoleBridge),
-        { path: 'yygl/data-onboarding', redirect: { path: '/data-ops/console', query: { to: '/ops/data-onboarding' } } },
-        { path: 'yygl/import-hub', redirect: { path: '/data-ops/console', query: { to: '/ops/import-hub' } } },
-        { path: 'yygl/data-governance', redirect: { path: '/data-ops/console', query: { to: '/ops/data-governance' } } },
-        { path: 'yygl/ingest', redirect: { path: '/data-ops/console', query: { to: '/ops/ingest' } } },
-        { path: 'data-ops/upload', redirect: { path: '/data-ops/console', query: { to: '/ops/upload' } } },
-        { path: 'data-source-settings', redirect: { path: '/data-ops/console', query: { to: '/ops/data-source-settings' } } },
+        // 数据运维 /data-ops：数据管理操作面单一入口（导航里与「通用数据浏览器」同组）。
+        // 六个管理页 + 运维总览为同页 tab，旧独立路径全部 redirect 到对应 panel（收藏与深链不断）。
+        page('data-ops/console', 'DataOpsConsole', { block: '数据管理', title: '数据运维工作台', code: 'ops-console', endpoint: '/api/v1/governance/{catalog,quality,backup} + /api/v1/data-upload/* + /api/v1/ingest/*（数据管理路径族经 dataServicePath → /data-svc → data-service :8190）', dataPath: 'governance_catalog,upload_batches', scope: '运维总览（链路四段/告警/批次台账）+ 上传中心/导入融合台/接入向导/摄取管理/治理控制台/数据源接入六页', kind: 'real' }, dataOpsConsole),
+        ...opsPanelRedirects,
 
         // 售电资料 /sdzl
         page('sdzl/region-rules', 'RegionRules', { block: '售电资料', title: '地区规则体系', code: 'region-rules', endpoint: 'local region rules', dataPath: 'local_rules', scope: '地区规则画像 + 主体角色关注矩阵', kind: 'real' }, regionRules),

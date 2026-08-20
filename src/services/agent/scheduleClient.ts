@@ -20,6 +20,7 @@ export type ScheduleKind =
   | 'forecast_run'
   | 'bid_plan'
   | 'forecast_report'
+  | 'review_trigger'
 
 export type ScheduledTask = {
   id: string
@@ -183,6 +184,15 @@ export const SCHEDULE_KIND_META: ScheduleKindMeta[] = [
     params: [
       { key: 'region_id', label: '地区', type: 'region', hint: '留空=yunnan' },
       { key: 'weekday', label: '报告日(0=周一..6=周日)', type: 'number', hint: '留空=0（每周一）' }
+    ]
+  },
+  {
+    kind: 'review_trigger',
+    label: '复盘触发引擎',
+    char: '盘',
+    desc: '按日/周/月/季周期生成复盘模板实例分母（Epic #2033 · #2039：服务令牌调 Node /api/v1/review/trigger，幂等可重跑；待办箱/覆盖率据此出真数）',
+    params: [
+      { key: 'date', label: '触发日期', type: 'date', hint: '留空=当日（回补历史日显式指定）' }
     ]
   }
 ]
