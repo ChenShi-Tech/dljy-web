@@ -1,6 +1,6 @@
 // piPocClient 收编守卫（#1526/#1527）：pi-poc 两个 PoC 页的取数出口。
 // 守的不变量：
-// 1. 端点必须走 PI_AGENT_BASE（rollout.ts 单一定义），页面不得再散落硬编码 '/pi-api/...'
+// 1. 端点必须走 PI_AGENT_BASE（agentClient.ts 单一定义），页面不得再散落硬编码 '/pi-api/...'
 // 本仓代理被误删时两页静默 404 的根因正是散落取数无人治理；
 // 2. 请求必须带 identityHeaders 与超时 signal（与 agentClient 同档纪律）；
 // 3. setSessionAutoApprove 的返回以服务端 auto_approve === true 为准（授权状态以服务端为
@@ -8,15 +8,16 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 const identityHeaders = vi.hoisted(() => vi.fn(() => ({ 'x-user-id': 'u1' })))
-vi.mock('@/services/agent/agentClient', () => ({ identityHeaders }))
+// PI_AGENT_BASE 与 identityHeaders 同源（双栈退场后基址常量落在 agentClient），mock 需一并提供，
+// 否则被测模块拿到 undefined、断言会因「两边都是 undefined」而无区分力地通过。
+vi.mock('@/services/agent/agentClient', () => ({ identityHeaders, PI_AGENT_BASE: '/pi-api/agent' }))
 vi.mock('@/services/api', () => ({
   timeoutSignal: vi.fn(() => 'timeout-signal-stub'),
-  // rollout.ts 同样从该模块取基址常量（模块求值期访问），mock 需一并提供。
   AGENT_API_BASE_ROOT: '/agent-api'
 }))
 
 import { fetchDataGaps, setSessionAutoApprove } from './piPocClient'
-import { PI_AGENT_BASE } from './rollout'
+import { PI_AGENT_BASE } from './agentClient'
 
 const fetchMock = vi.fn()
 
