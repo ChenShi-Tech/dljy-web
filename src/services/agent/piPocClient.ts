@@ -1,10 +1,9 @@
 // pi-poc 专用端点的服务层收编（#1526/#1527 PoC 页取数出口统一）。
 // 页面原先直接 fetch('/pi-api/...')，违反「取数只经 services 层」纪律（DEVELOPMENT.md §3.1），
 // 散落的取数无法统一治理，/pi-api 代理在本仓被移除后两个页面静默 404 即其症状。
-// 收编后统一：走 rollout.ts 单一定义的 PI_AGENT_BASE、带 identityHeaders、有 10s 超时
+// 收编后统一：走 agentClient 单一定义的 PI_AGENT_BASE、带 identityHeaders、有 10s 超时
 // （与 agentClient 的 AGENT_REQUEST_TIMEOUT_MS 同档）。GET 补身份头为兼容增益，行为不变。
-import { identityHeaders } from '@/services/agent/agentClient'
-import { PI_AGENT_BASE } from '@/services/agent/rollout'
+import { identityHeaders, PI_AGENT_BASE } from '@/services/agent/agentClient'
 import { timeoutSignal } from '@/services/api'
 
 const PI_POC_TIMEOUT_MS = 10000

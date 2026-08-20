@@ -2,11 +2,10 @@
 // ↑ 勿删：本文件不是 *.component.spec.ts，vitest node project 默认不给 DOM；
 // 用例依赖 localStorage（身份头 / pi 会话路由登记），靠此 pragma 按文件切到 happy-dom。
 //
-// agentClient 契约回归（#1848 / STREAM-5/10 / #1631）：
-// 1. identityHeaders 三元组（token+company+region）与 identityFingerprint 快照
-// 影子对拍靠指纹防「A 的首轮还在流式返回时换登录 B，影子拿 B 的凭证跑 A 的问题」。
-// 2. pi 会话路由登记，服务端灰度命中的 pi 会话写 localStorage（刷新后仍路由正确）；
-// baseOverride 影子会话只进内存路由表（写 localStorage 会把真实会话路由表挤出前 50 条）。
+// agentClient 契约回归（STREAM-5/10 / #1631）：
+// 1. identityHeaders 三元组（token+company+region）。
+// 2. pi 会话路由登记：建会话恒走 pi 底座（双栈退场后无第二个 base），会话 id 写
+// localStorage（刷新后仍路由正确）；未经本函数建的会话（工作室自定义图）回退 legacy。
 // 3. SSE 流解析（核心），CRLF/LF 双分隔、心跳帧静默跳过、seq 游标取 max、
 // 尾帧无尾随分隔符仍消费（done 丢失 = 面板状态机悬挂，STREAM-5/10）、
 // 无终态帧抛 AgentStreamDisconnectedError、abort 静默返回。
@@ -17,8 +16,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 // 可变 hoisted 状态：mock 工厂引用，用例里改值
 const regionState = vi.hoisted(() => ({ id: 'yunnan' }))
-const rolloutState = vi.hoisted(() => ({ base: '/agent-api/agent' }))
-const comparableState = vi.hoisted(() => ({ comparable: false }))
 const timeoutSignalState = vi.hoisted(() => ({ signal: new AbortController().signal }))
 
 vi.mock('@/services/api', () => ({
@@ -29,18 +26,6 @@ vi.mock('@/services/api', () => ({
   apiPost: vi.fn(),
   apiPatch: vi.fn(),
   apiDelete: vi.fn(),
-}))
-vi.mock('@/services/agent/rollout', () => ({
-  PI_AGENT_BASE: '/pi-api/agent',
-  resolveServingBase: async () => rolloutState.base,
-  isShadowScenario: async () => false,
-}))
-vi.mock('@/services/agent/shadowCompare', () => ({
-  // hasExtraContext=false + comparable=false → sendAgentMessage 不挂观测器、不起影子，
-  // 本文件聚焦传输层（影子对拍语义由 shadowCompare.spec.ts 守）
-  splitTurnPayload: (payload: Record<string, unknown> | undefined) => ({ shadowPayload: payload, hasExtraContext: false }),
-  isComparableTurn: () => comparableState.comparable,
-  createTurnObserver: () => { throw new Error('本文件不应创建影子观测器') },
 }))
 vi.mock('@/services/region/regionContext', () => ({
   currentRegion: { get value() { return { id: regionState.id } } },
@@ -53,7 +38,6 @@ import {
   attachRunStream,
   createAgentSession,
   getActiveRun,
-  identityFingerprint,
   identityHeaders,
   sendAgentMessage,
   type AgentEvent,
@@ -98,15 +82,13 @@ async function collect(chunks: string[], opts: { cursor?: number } = {}) {
 beforeEach(() => {
   localStorage.clear()
   regionState.id = 'yunnan'
-  rolloutState.base = AGENT_API_BASE
-  comparableState.comparable = false
 })
 
 afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-describe('identityHeaders / identityFingerprint', () => {
+describe('identityHeaders', () => {
   it('三元组：token→authorization Bearer，company→x-company-id，region→x-region-id', () => {
     localStorage.setItem('dljy_restore_token', 'tok-1')
     localStorage.setItem('dljy.currentCompanyId', 'comp-1')
@@ -123,25 +105,10 @@ describe('identityHeaders / identityFingerprint', () => {
     expect(h).toEqual({ authorization: 'Bearer tok-1', 'x-region-id': 'yunnan' })
     expect(h).not.toHaveProperty('x-company-id')
   })
-
-  it('指纹：同状态稳定相等；token/company/region 任一变化即变（DataScope 隔离前提）', () => {
-    localStorage.setItem('dljy_restore_token', 'tok-1')
-    localStorage.setItem('dljy.currentCompanyId', 'comp-1')
-    const a = identityFingerprint()
-    expect(identityFingerprint()).toBe(a)
-    localStorage.setItem('dljy_restore_token', 'tok-2')
-    expect(identityFingerprint()).not.toBe(a)
-    localStorage.setItem('dljy_restore_token', 'tok-1')
-    regionState.id = 'shanxi'
-    expect(identityFingerprint()).not.toBe(a)
-    regionState.id = 'yunnan'
-    expect(identityFingerprint()).toBe(a)
-  })
 })
 
 describe('createAgentSession 会话级路由登记', () => {
-  it('灰度命中 pi：sessionId 写 localStorage dljy.piPocSessionIds（刷新后仍路由正确）', async () => {
-    rolloutState.base = PI_BASE
+  it('建会话恒走 pi：sessionId 写 localStorage dljy.piPocSessionIds（刷新后仍路由正确）', async () => {
     mockFetch(async () => jsonRes({ id: 'sess-pi', scenario: 'chat', title: '', status: 'idle' }))
     const info = await createAgentSession('chat')
     expect(info.id).toBe('sess-pi')
@@ -154,7 +121,6 @@ describe('createAgentSession 会话级路由登记', () => {
   })
 
   it('pi 会话登记保留去重且上限 50 条不无限膨胀', async () => {
-    rolloutState.base = PI_BASE
     localStorage.setItem(PI_KEY, JSON.stringify(Array.from({ length: 60 }, (_, i) => `old-${i}`)))
     mockFetch(async () => jsonRes({ id: 'sess-new', scenario: 'chat', title: '', status: 'idle' }))
     await createAgentSession('chat')
@@ -163,31 +129,21 @@ describe('createAgentSession 会话级路由登记', () => {
     expect(ids).toHaveLength(50) // slice(-50) 截断
   })
 
-  it('baseOverride 影子会话：不写 localStorage，只进内存路由表（对照测）', async () => {
-    mockFetch(async () => jsonRes({ id: 'sess-eph', scenario: 'chat', title: '', status: 'idle' }))
-    await createAgentSession('chat', '', { baseOverride: PI_BASE })
-    // localStorage 不含影子会话 id（不污染真实会话路由表）
-    const ids = JSON.parse(localStorage.getItem(PI_KEY) || '[]') as string[]
-    expect(ids).not.toContain('sess-eph')
-    // 但内存路由表生效：同 id 后续请求走 pi
+  it('未经 createAgentSession 建的会话回退 legacy base（工作室自定义图经 /graph-runs 建在 agent-backend）', async () => {
     mockFetch(async () => jsonRes(null))
-    await getActiveRun('sess-eph')
-    const url = (vi.mocked(fetch).mock.calls.at(-1) as unknown as [string])[0]
-    expect(url.startsWith(PI_BASE)).toBe(true)
-    // 对照：未登记的会话仍走默认 base
     await getActiveRun('sess-unknown')
-    const url2 = (vi.mocked(fetch).mock.calls.at(-1) as unknown as [string])[0]
-    expect(url2.startsWith(AGENT_API_BASE)).toBe(true)
-  })
-
-  it('默认 legacy 会话不写 localStorage 路由表', async () => {
-    mockFetch(async () => jsonRes({ id: 'sess-legacy', scenario: 'chat', title: '', status: 'idle' }))
+    const url = (vi.mocked(fetch).mock.calls.at(-1) as unknown as [string])[0]
+    expect(url.startsWith(AGENT_API_BASE)).toBe(true)
+    // 对照：经 createAgentSession 建的会话走 pi
+    mockFetch(async () => jsonRes({ id: 'sess-pi2', scenario: 'chat', title: '', status: 'idle' }))
     await createAgentSession('chat')
-    expect(localStorage.getItem(PI_KEY)).toBeNull()
+    mockFetch(async () => jsonRes(null))
+    await getActiveRun('sess-pi2')
+    const url2 = (vi.mocked(fetch).mock.calls.at(-1) as unknown as [string])[0]
+    expect(url2.startsWith(PI_BASE)).toBe(true)
   })
 
   it('POST body 带 persist/prompt_key/page_key 默认值（persist 默认 false）', async () => {
-    rolloutState.base = PI_BASE
     const spy = mockFetch(async () => jsonRes({ id: 'sess-body', scenario: 'chat', title: 't', status: 'idle' }))
     await createAgentSession('chat', 't', { persist: true, promptKey: 'desk', pageKey: 'cockpit' })
     const init = spy.mock.calls[0][1] as RequestInit

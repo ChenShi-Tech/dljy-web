@@ -112,7 +112,9 @@ export default defineConfig(({ mode }) => {
         '/_next': apiTarget
       },
       watch: {
-        ignored: ['**/node_modules/**', '**/dist/**']
+        // .claude/worktrees/ 是本仓 worktree 根（见 .gitignore）：不排除的话 chokidar 会把
+        // 每份 worktree 的完整仓库副本各遍历一遍，开几个分支就能吃满 CPU。
+        ignored: ['**/node_modules/**', '**/dist/**', '**/.claude/worktrees/**']
       }
     }
   }
