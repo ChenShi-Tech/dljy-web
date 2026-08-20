@@ -1,4 +1,4 @@
-// RelationExplorer 共享类型（从 SFC 抽出——<script setup> 不能 export 具名类型）。
+// RelationExplorer 共享类型（从 SFC 抽出，<script setup> 不能 export 具名类型）。
 
 /** 参考竖线配置（原页面按小时叠加的 xnyzd/xnyg/xnygd 竖线）。 */
 export interface RelationReferenceLine {

@@ -1,6 +1,6 @@
 // 缓存键必须包含服务端实施隔离的两个维度（地区 + 公司），避免切换后复用上一租户响应。
 // 定义在本零依赖模块而非 client.ts：client 引入 @/services/api → regionContext 会触达
-// window.localStorage，隔离门禁（node 环境）无法直接断言生产实现（codex P1：测试必须
+// window.localStorage，隔离门禁（node 环境）无法直接断言生产实现（测试必须
 // 验证生产函数，复制一份期望实现会让漏掉维度时依然全绿）。
 export function buildGridGeoCacheScope(regionId: string, companyId: string | null | undefined) {
   return `${regionId}:${companyId || 'no-company'}`

@@ -27,7 +27,7 @@ export const reportBlocks: ReportBlock[] = [
   { blockId: 'RB-STORAGE-ARBITRAGE', blockName: '储能峰谷套利', blockType: 'METRIC', sourceModules: ['trading', 'settlement'], metrics: ['峰谷价差', '度电套利', '循环次数', '日均收益'], refreshMode: '生成时刷新', dataLayer: 'mart', status: '已启用' },
   { blockId: 'RB-CONTRACT-PROGRESS', blockName: '合同执行跟踪', blockType: 'TABLE', sourceModules: ['trading'], metrics: ['合同电量', '已执行', '执行率', '到期预警'], refreshMode: '生成时刷新', dataLayer: 'mart', status: '已启用' },
   { blockId: 'RB-GREEN-TRADE', blockName: '绿电交易与环境价值', blockType: 'METRIC', sourceModules: ['trading', 'settlement'], metrics: ['绿电电量', '绿证', '环境溢价', '环境价值'], refreshMode: '生成时刷新', dataLayer: 'mart', status: '已启用' },
-  // ── issue #455 现货日报新增区块（结算三价 / 出力完成率 / 出力预测 MAPE）──
+  // issue #455 现货日报新增区块（结算三价 / 出力完成率 / 出力预测 MAPE）
   { blockId: 'RB-SETTLEMENT-PRICES', blockName: '结算三价', blockType: 'METRIC', sourceModules: ['market', 'settlement'], metrics: ['日前出清均价', '实时出清均价', '中长期合约均价', '价格口径'], refreshMode: '生成时刷新', dataLayer: 'mart', status: '已启用' },
   { blockId: 'RB-OUTPUT-COMPLETION', blockName: '出力完成率', blockType: 'METRIC', sourceModules: ['forecast', 'settlement'], metrics: ['日前计划出力', '实际出力', '完成率', '偏差电量'], refreshMode: '生成时刷新', dataLayer: 'mart', status: '已启用' },
   { blockId: 'RB-FORECAST-MAPE', blockName: '出力预测 MAPE', blockType: 'METRIC', sourceModules: ['forecast'], metrics: ['MAPE', '评估点数', '总偏差电量', '口径'], refreshMode: '生成时刷新', dataLayer: 'mart', status: '已启用' }

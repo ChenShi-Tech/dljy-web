@@ -58,10 +58,10 @@ const sub = computed(() => {
 .brief-summary.red { border-left-color: #dc2626; }
 header { display: flex; gap: 12px; align-items: flex-start; margin-bottom: 12px; }
 .brief-icon { width: 38px; height: 38px; border-radius: 8px; display: grid; place-items: center; background: rgba(15, 118, 110, 0.1); color: var(--primary, #0f766e); flex: none; }
-.brief-eyebrow { margin: 0 0 3px; font-size: 12px; color: var(--muted, #667085); }
-h3 { margin: 0; font-size: 18px; color: var(--text, #111827); line-height: 1.4; }
+.brief-eyebrow { margin: 0 0 3px; font-size: var(--font-sm); color: var(--muted, #667085); }
+h3 { margin: 0; font-size: var(--font-18); color: var(--text, #111827); line-height: 1.4; }
 .brief-sections { display: flex; flex-direction: column; gap: 12px; }
-.brief-sections article h4 { margin: 0 0 4px; font-size: 13px; color: var(--primary, #0f766e); }
-.brief-sections article p { margin: 0; font-size: 13.5px; color: var(--text-body, #344054); line-height: 1.6; white-space: pre-wrap; }
-.brief-empty { margin: 0; color: var(--muted, #98a2b3); font-size: 13px; }
+.brief-sections article h4 { margin: 0 0 4px; font-size: var(--font-md); color: var(--primary, #0f766e); }
+.brief-sections article p { margin: 0; font-size: var(--font-13-5); color: var(--text-body, #344054); line-height: 1.6; white-space: pre-wrap; }
+.brief-empty { margin: 0; color: var(--muted, #98a2b3); font-size: var(--font-md); }
 </style>

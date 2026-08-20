@@ -62,16 +62,16 @@ const gaps = computed(() => items.value.filter((i) => i.status === 'missing'))
   padding: 14px;
 }
 header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
-h3 { margin: 0; font-size: 16px; color: var(--text, #111827); }
-.dq-basis { font-size: 12px; padding: 2px 9px; border-radius: 999px; white-space: nowrap; }
+h3 { margin: 0; font-size: var(--font-16); color: var(--text, #111827); }
+.dq-basis { font-size: var(--font-sm); padding: 2px 9px; border-radius: 999px; white-space: nowrap; }
 .dq-basis.b-real { color: #15803d; background: rgba(22, 163, 74, 0.12); }
 .dq-basis.b-mock { color: #b45309; background: rgba(245, 158, 11, 0.14); }
 .dq-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 7px; }
-.dq-list li { display: flex; align-items: center; gap: 8px; font-size: 13px; min-width: 0; }
+.dq-list li { display: flex; align-items: center; gap: 8px; font-size: var(--font-md); min-width: 0; }
 .dq-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
 .dq-label { color: var(--text-body, #344054); flex: none; }
-.dq-status { font-size: 11.5px; padding: 1px 8px; border-radius: 999px; flex: none; }
-.dq-note { color: var(--muted, #98a2b3); font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dq-status { font-size: var(--font-11-5); padding: 1px 8px; border-radius: 999px; flex: none; }
+.dq-note { color: var(--muted, #98a2b3); font-size: var(--font-11-5); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .s-real { color: #15803d; }
 .dq-dot.s-real { background: #16a34a; }
 .dq-status.s-real { background: rgba(22, 163, 74, 0.14); }
@@ -84,5 +84,5 @@ h3 { margin: 0; font-size: 16px; color: var(--text, #111827); }
 .s-missing { color: #6b7280; }
 .dq-dot.s-missing { background: #9ca3af; }
 .dq-status.s-missing { background: rgba(107, 114, 128, 0.16); }
-.dq-gaps { margin: 10px 0 0; font-size: 12px; color: #b45309; }
+.dq-gaps { margin: 10px 0 0; font-size: var(--font-sm); color: #b45309; }
 </style>

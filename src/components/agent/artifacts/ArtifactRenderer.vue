@@ -59,15 +59,15 @@ const COMPONENTS: Record<string, Component> = {
 </template>
 
 <style scoped>
-.md { font-size: 14px; line-height: 1.7; }
+.md { font-size: var(--font-lg); line-height: 1.7; }
 .md :deep(p) { margin: 4px 0; }
 .md :deep(p:first-child) { margin-top: 0; }
 .md :deep(p:last-child) { margin-bottom: 0; }
 .md :deep(h3), .md :deep(h4), .md :deep(h5), .md :deep(h6) { margin: 10px 0 4px; font-weight: 600; line-height: 1.3; }
 .md :deep(code) {
-  background: rgba(125, 125, 125, 0.14); padding: 1px 5px; border-radius: 4px; font-size: 12.5px;
+  background: rgba(125, 125, 125, 0.14); padding: 1px 5px; border-radius: 4px; font-size: var(--font-12-5);
 }
-.md :deep(table) { border-collapse: collapse; margin: 6px 0; font-size: 12.5px; width: 100%; }
+.md :deep(table) { border-collapse: collapse; margin: 6px 0; font-size: var(--font-12-5); width: 100%; }
 .md :deep(th), .md :deep(td) { border: 1px solid rgba(125, 125, 125, 0.3); padding: 4px 9px; text-align: left; }
 .md :deep(th) { background: rgba(125, 125, 125, 0.08); font-weight: 600; }
 .md :deep(ul), .md :deep(ol) { padding-left: 20px; margin: 4px 0; }

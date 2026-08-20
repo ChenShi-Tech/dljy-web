@@ -221,14 +221,14 @@ onUnmounted(() => {
   align-items: center;
   gap: 6px;
   color: var(--primary);
-  font-size: 13px;
+  font-size: var(--font-md);
   font-weight: 650;
 }
 
 .hero-main h2 {
   margin: 7px 0 8px;
   color: var(--text);
-  font-size: 28px;
+  font-size: var(--font-28);
   font-weight: 760;
 }
 
@@ -266,7 +266,7 @@ onUnmounted(() => {
   align-items: center;
   gap: 6px;
   color: var(--text-body);
-  font-size: 13px;
+  font-size: var(--font-md);
   font-weight: 650;
 }
 
@@ -287,7 +287,7 @@ onUnmounted(() => {
   gap: 5px;
   padding: 6px 10px;
   border-radius: 6px;
-  font-size: 12px;
+  font-size: var(--font-sm);
   font-weight: 600;
 }
 
@@ -328,7 +328,7 @@ onUnmounted(() => {
 }
 
 .tab-group-label {
-  font-size: 11px;
+  font-size: var(--font-xs);
   font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -347,7 +347,7 @@ onUnmounted(() => {
   border-radius: 8px;
   background: var(--panel);
   color: var(--text-body);
-  font-size: 14px;
+  font-size: var(--font-lg);
   font-weight: 650;
   cursor: pointer;
 }
@@ -375,7 +375,7 @@ onUnmounted(() => {
   }
 
   .hero-main h2 {
-    font-size: 22px;
+    font-size: var(--font-22);
   }
 }
 </style>

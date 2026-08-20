@@ -48,7 +48,7 @@ const progress = computed(() => {
 </template>
 
 <style scoped>
-.steps-sum { font-size: 11.5px; opacity: 0.6; font-variant-numeric: tabular-nums; }
+.steps-sum { font-size: var(--font-11-5); opacity: 0.6; font-variant-numeric: tabular-nums; }
 .steps { list-style: none; margin: 0; padding: 12px 14px; }
 .step { position: relative; display: flex; gap: 10px; padding-bottom: 12px; }
 .step:last-child { padding-bottom: 0; }
@@ -62,16 +62,16 @@ const progress = computed(() => {
   flex-shrink: 0; width: 23px; height: 23px; border-radius: 50%;
   display: inline-flex; align-items: center; justify-content: center;
   background: rgba(125, 125, 125, 0.12); color: #6b7280;
-  font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums;
+  font-size: var(--font-sm); font-weight: 600; font-variant-numeric: tabular-nums;
 }
 .step.done .step-node { background: rgba(22, 163, 74, 0.14); color: #16a34a; }
 .step.doing .step-node { background: rgba(37, 99, 235, 0.14); color: var(--el-color-primary, #2563eb); box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1); }
 .step.blocked .step-node { background: rgba(220, 38, 38, 0.14); color: #dc2626; }
 .step-body { flex: 1; min-width: 0; padding-top: 2px; }
 .step-row { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
-.step-title { font-size: 13.5px; font-weight: 600; }
+.step-title { font-size: var(--font-13-5); font-weight: 600; }
 .step.done .step-title { opacity: 0.65; }
 .step.blocked .step-title { color: #dc2626; }
-.step-time { font-size: 11.5px; opacity: 0.5; flex-shrink: 0; font-variant-numeric: tabular-nums; }
-.step-desc { font-size: 12.5px; opacity: 0.72; margin-top: 2px; line-height: 1.5; white-space: pre-wrap; }
+.step-time { font-size: var(--font-11-5); opacity: 0.5; flex-shrink: 0; font-variant-numeric: tabular-nums; }
+.step-desc { font-size: var(--font-12-5); opacity: 0.72; margin-top: 2px; line-height: 1.5; white-space: pre-wrap; }
 </style>

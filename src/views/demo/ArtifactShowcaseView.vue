@@ -185,6 +185,6 @@ const blocks = parseArtifactBlocks(SAMPLE)
   max-width: 820px; margin: 0 auto; background: #fff;
   border-radius: 12px; padding: 24px 28px; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
 }
-h1 { font-size: 20px; margin: 0 0 4px; }
-.sub { opacity: 0.6; font-size: 13px; margin: 0 0 16px; }
+h1 { font-size: var(--font-20); margin: 0 0 4px; }
+.sub { opacity: 0.6; font-size: var(--font-md); margin: 0 0 16px; }
 </style>

@@ -28,16 +28,16 @@ defineProps<{ block: CiteArtifactBlock }>()
 
 <style scoped>
 .cite-list { margin: 0; padding: 8px 12px 8px 32px; }
-.cite-item { margin: 7px 0; font-size: 13px; }
+.cite-item { margin: 7px 0; font-size: var(--font-md); }
 .cite-title {
   font-weight: 600; color: var(--el-color-primary, #2563eb); text-decoration: none;
   display: inline-flex; align-items: center; gap: 3px;
 }
 .cite-title.plain { color: inherit; }
 .cite-title:not(.plain):hover { text-decoration: underline; }
-.cite-meta { font-size: 11.5px; opacity: 0.6; margin-top: 1px; }
+.cite-meta { font-size: var(--font-11-5); opacity: 0.6; margin-top: 1px; }
 .cite-snippet {
-  font-size: 12px; opacity: 0.8; margin-top: 3px; padding-left: 8px;
+  font-size: var(--font-sm); opacity: 0.8; margin-top: 3px; padding-left: 8px;
   border-left: 2px solid rgba(125, 125, 125, 0.25);
 }
 </style>

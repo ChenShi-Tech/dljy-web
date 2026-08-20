@@ -5,7 +5,7 @@
 // `src/data/regions.ts` 的 `requiredProvincialRegionIds`。
 //
 // 模板地区（generic / state-grid / china-southern-grid 等非省级 profile）没有对应行政区，
-// 一律返回 null 由调用方降级——不猜、不回退到任意省，避免串读他省地图。
+// 一律返回 null 由调用方降级，不猜、不回退到任意省，避免串读他省地图。
 
 import { requiredProvincialRegionIds } from '@/data/regions'
 

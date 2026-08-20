@@ -8,7 +8,7 @@ import { createAgentClient, type SaveResult } from '@/services/agent/httpClient'
 
 const http = createAgentClient('/llm', { timeoutMs: 10_000 })
 
-// ── 采样参数（temperature/max_tokens/top_p）──
+// 采样参数（temperature/max_tokens/top_p）
 export type SamplingParams = { temperature?: number; max_tokens?: number; top_p?: number }
 export type ParamsConfig = {
   fields: string[]
@@ -24,7 +24,7 @@ export function putParams(ref: string, params: SamplingParams): Promise<SaveResu
   return http.tryPut('/params', { ref, params })
 }
 
-// ── 角色→模型路由 ──
+// 角色→模型路由
 export type RoutingModel = { ref: string; tool_call: boolean; vision: boolean; tier: string }
 export type RoutingRole = {
   role: string
@@ -43,7 +43,7 @@ export function putRouting(role: string, modelRef: string | null): Promise<SaveR
   return http.tryPut('/routing', { role, model_ref: modelRef })
 }
 
-// ── 全局工作流参数 ──
+// 全局工作流参数
 export type WorkflowParam = { value: number; default: number; overridden: boolean }
 export type WorkflowConfig = { params: Record<string, WorkflowParam> }
 

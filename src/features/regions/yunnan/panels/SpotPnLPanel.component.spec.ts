@@ -1,5 +1,5 @@
 // #1755 真修复校验：SpotPnLPanel 对数据层缺测 null 的诚实展示（不拉回假零 0）。
-// 注：spec 随组件走 LEGACY_DIRECT_FETCH 豁免（region-isolation 门禁），仅 mock 取数、非新裸取数路径。
+// spec 随组件走 LEGACY_DIRECT_FETCH 豁免（region-isolation 门禁），仅 mock 取数、非新裸取数路径。
 // 走组件真实渲染路径：mock fetchCaptured 返回含 null 字段的行 → 断言聚合输出 null
 // （表格 fmtNum 显示「-」、瀑布段不显示），与全数值数据的对照。
 import { describe, it, expect, vi, beforeEach } from 'vitest'
@@ -70,7 +70,7 @@ describe('SpotPnLPanel 缺测 null 诚实展示（#1755）', () => {
     expect(row!.totalGenerationMwh).toBe('2,300.5')  // fmtNum 千分位
   })
 
-  it('全 null 损益段 → 瀑布空态（不渲染 0 柱，codex P2）', async () => {
+  it('全 null 损益段 → 瀑布空态（不渲染 0 柱）', async () => {
     // 三段全部 null（源 CSV 整段缺测）→ buildWaterfallOption 的 empty 应为 true
     const allNull = LOSS_ROWS_NULL.map((r) => ({ ...r, strategyLossTotal: null, forecastLossTotal: null, gridLossTotal: null, totalGenerationMwh: null, originalValueTotal: null }))
     vi.mocked(fetchCaptured)

@@ -198,7 +198,7 @@ function queryFamily() {
 .data-browser__sub {
   margin: 0 0 12px;
   color: var(--el-text-color-secondary);
-  font-size: 13px;
+  font-size: var(--font-md);
 }
 .data-browser__controls {
   display: flex;
@@ -209,7 +209,7 @@ function queryFamily() {
 }
 .data-browser__meta {
   color: var(--el-text-color-secondary);
-  font-size: 12px;
+  font-size: var(--font-sm);
   margin: 0 0 8px;
 }
 .family-select {

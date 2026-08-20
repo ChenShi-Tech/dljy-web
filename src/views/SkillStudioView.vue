@@ -102,7 +102,7 @@ async function removeSkill(s: SkillSummary) {
   }
 }
 
-// ── 编辑抽屉 ──
+// 编辑抽屉
 const drawerOpen = ref(false)
 const editing = ref<SkillDetail | null>(null)
 const editName = ref('')
@@ -148,7 +148,7 @@ async function saveEdit() {
   saving.value = false
 }
 
-// ── 附属文件（编辑抽屉内）──
+// 附属文件（编辑抽屉内）
 const fileOpen = ref(false)
 const filePath = ref('')
 const fileContent = ref('')
@@ -213,7 +213,7 @@ async function removeFile(path: string) {
   }
 }
 
-// ── 导入对话框 ──
+// 导入对话框
 const importOpen = ref(false)
 const importTab = ref<'zip' | 'paste'>('zip')
 const importFile = ref<File | null>(null)
@@ -427,16 +427,16 @@ async function doImport() {
   box-shadow: 0 12px 30px -22px rgba(16, 60, 60, 0.35);
 }
 .head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; margin-bottom: 20px; }
-.head h2 { display: flex; align-items: center; gap: 8px; margin: 0 0 8px; font-size: 20px; color: var(--text); }
-.sub { margin: 0; font-size: 13px; line-height: 1.7; color: var(--muted); max-width: 680px; }
+.head h2 { display: flex; align-items: center; gap: 8px; margin: 0 0 8px; font-size: var(--font-20); color: var(--text); }
+.sub { margin: 0; font-size: var(--font-md); line-height: 1.7; color: var(--muted); max-width: 680px; }
 .sub strong { color: var(--primary); }
 .sub code, .empty code { background: var(--surface-hover); padding: 1px 5px; border-radius: 4px; }
 .head-ops { display: flex; gap: 8px; flex: none; align-items: center; }
 .admin-row { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; }
-.admin-label { font-size: 12.5px; color: var(--muted); white-space: nowrap; }
+.admin-label { font-size: var(--font-12-5); color: var(--muted); white-space: nowrap; }
 .admin-input { max-width: 440px; }
 
-.empty { padding: 44px; text-align: center; color: var(--muted); font-size: 14px; }
+.empty { padding: 44px; text-align: center; color: var(--muted); font-size: var(--font-lg); }
 
 .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px; }
 .sk {
@@ -446,15 +446,15 @@ async function doImport() {
 .sk:hover { border-color: var(--primary-tint-border); }
 .sk.off { opacity: 0.58; }
 .sk-top { display: flex; align-items: center; gap: 8px; }
-.sk-name { font-weight: 650; font-size: 14px; color: var(--text); }
+.sk-name { font-weight: 650; font-size: var(--font-lg); color: var(--text); }
 .sk-src {
-  font-size: 11px; padding: 1px 8px; border-radius: 999px;
+  font-size: var(--font-xs); padding: 1px 8px; border-radius: 999px;
   border: 1px solid var(--line-soft); color: var(--el-text-color-secondary); background: var(--surface-hover);
 }
 .sk-src.user { color: var(--primary); background: var(--primary-tint); border-color: var(--primary-tint-border); }
-.sk-desc { font-size: 12.5px; color: var(--el-text-color-secondary); line-height: 1.6; flex: 1; min-height: 40px; }
+.sk-desc { font-size: var(--font-12-5); color: var(--el-text-color-secondary); line-height: 1.6; flex: 1; min-height: 40px; }
 .sk-foot { display: flex; align-items: center; gap: 8px; }
-.sk-state { font-size: 12px; color: var(--muted); }
+.sk-state { font-size: var(--font-sm); color: var(--muted); }
 .sk-ops { margin-left: auto; display: flex; gap: 2px; }
 .op {
   width: 28px; height: 28px; border: 0; border-radius: 7px; cursor: pointer;
@@ -463,26 +463,26 @@ async function doImport() {
 .op:hover { background: var(--surface-hover); color: var(--primary); }
 .op.danger:hover { background: var(--danger-tint); color: var(--danger); }
 .op:disabled { opacity: 0.35; cursor: not-allowed; }
-.stat { margin-top: 18px; font-size: 12px; color: var(--muted); }
+.stat { margin-top: 18px; font-size: var(--font-sm); color: var(--muted); }
 
 .field { margin-bottom: 16px; }
-.field label { display: block; margin-bottom: 7px; font-size: 13px; font-weight: 600; color: var(--text-body); }
-.muted { font-weight: 400; font-size: 12px; color: var(--el-text-color-secondary); }
+.field label { display: block; margin-bottom: 7px; font-size: var(--font-md); font-weight: 600; color: var(--text-body); }
+.muted { font-weight: 400; font-size: var(--font-sm); color: var(--el-text-color-secondary); }
 .mono :deep(textarea) {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 12.5px; line-height: 1.6;
+  font-size: var(--font-12-5); line-height: 1.6;
 }
 .fork-tip {
-  margin: -4px 0 14px; padding: 8px 12px; font-size: 12.5px; border-radius: 8px;
+  margin: -4px 0 14px; padding: 8px 12px; font-size: var(--font-12-5); border-radius: 8px;
   color: var(--primary); background: var(--primary-tint); border: 1px solid var(--primary-tint-border);
 }
 .files-head { display: flex; justify-content: space-between; align-items: center; }
 .files { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
 .files li { display: flex; align-items: center; gap: 8px; padding: 7px 11px; border: 1px solid var(--line-soft); border-radius: 8px; }
-.fname { flex: 1; font-size: 13px; color: var(--primary); cursor: pointer; font-family: ui-monospace, monospace; }
+.fname { flex: 1; font-size: var(--font-md); color: var(--primary); cursor: pointer; font-family: ui-monospace, monospace; }
 .fname:hover { text-decoration: underline; }
-.files-empty { margin-top: 8px; font-size: 12.5px; color: var(--muted); }
-.imp-tip { margin: 0 0 12px; font-size: 12.5px; color: var(--muted); line-height: 1.6; }
-.picked { margin-top: 10px; font-size: 13px; color: var(--primary); }
+.files-empty { margin-top: 8px; font-size: var(--font-12-5); color: var(--muted); }
+.imp-tip { margin: 0 0 12px; font-size: var(--font-12-5); color: var(--muted); line-height: 1.6; }
+.picked { margin-top: 10px; font-size: var(--font-md); color: var(--primary); }
 .ow { margin-top: 14px; display: block; }
 </style>

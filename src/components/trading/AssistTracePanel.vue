@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// AI 建议回溯面板（#1969）——建议 vs 实际的偏差可统计，判断该不该信它。
+// AI 建议回溯面板（#1969），建议 vs 实际的偏差可统计，判断该不该信它。
 //
 // 数据来自 assistTraceStore（AiAssistFill 建议到达即留痕、采纳回填 adopted）；
 // decision_log 类建议经 StageDailyClose 与日志条目关联后，T+2 回填实际值即出命中。
@@ -76,16 +76,16 @@ const stats = computed(() => {
 
 <style scoped>
 .atp { border: 1px solid var(--el-border-color-lighter, #ebeef5); border-radius: 8px; padding: 6px 10px; }
-.atp summary { display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 600; cursor: pointer; flex-wrap: wrap; }
-.atp summary em { font-style: normal; font-weight: 400; font-size: 10px; color: var(--el-text-color-secondary, #889); }
-.atp-refresh { padding: 1px 8px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 4px; background: #fff; font-size: 10px; cursor: pointer; }
+.atp summary { display: flex; align-items: center; gap: 8px; font-size: var(--font-sm); font-weight: 600; cursor: pointer; flex-wrap: wrap; }
+.atp summary em { font-style: normal; font-weight: 400; font-size: var(--font-10); color: var(--el-text-color-secondary, #889); }
+.atp-refresh { padding: 1px 8px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 4px; background: #fff; font-size: var(--font-10); cursor: pointer; }
 .atp[open] summary { margin-bottom: 6px; }
-.atp-note { margin: 0 0 6px; font-size: 10px; color: #b45309; }
-.atp-table { width: 100%; border-collapse: collapse; font-size: 11px; }
+.atp-note { margin: 0 0 6px; font-size: var(--font-10); color: #b45309; }
+.atp-table { width: 100%; border-collapse: collapse; font-size: var(--font-xs); }
 .atp-table th, .atp-table td { padding: 4px 5px; border-bottom: 1px solid var(--el-border-color-lighter, #ebeef5); text-align: left; vertical-align: top; }
 .atp-table th { color: var(--el-text-color-secondary, #667); font-weight: 600; }
-.atp-sugg { max-width: 200px; word-break: break-all; font-family: ui-monospace, monospace; font-size: 10px; }
+.atp-sugg { max-width: 200px; word-break: break-all; font-family: ui-monospace, monospace; font-size: var(--font-10); }
 .hit { color: #15803d; }
 .miss { color: #b91c1c; }
-.atp-empty { margin: 0; padding: 6px 0; font-size: 12px; color: var(--el-text-color-secondary, #667); }
+.atp-empty { margin: 0; padding: 6px 0; font-size: var(--font-sm); color: var(--el-text-color-secondary, #667); }
 </style>

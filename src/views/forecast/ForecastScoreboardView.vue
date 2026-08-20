@@ -2,12 +2,12 @@
 // 预测质量记分牌（#763 PR-2 用户可见层）：把 rolling_report 离线回测产物
 // （data/generated/forecast-report/<region>-*.json，由 `npm run report:forecast-yunnan` 生成）
 // 变成一屏可读的「每个模型相对基线到底好多少、能不能信」。
-//   · 模型×指标表：MAE/RMSE/MASE/skill vs LEAR/skill vs 季节朴素/过门禁/过 skill 门；
-//     打不败基线（passes_skill_gate=false）的模型行标红——不发「可升 production」假信号。
-//   · 概率指标卡：pinball/PICP/PINAW/CRPS≈/Winkler。
-//   · leakage_caveats：era5 实况 / gap 前视泄漏警示原文呈现（诚实标注，绝不吞）。
-//   · basis 标注：report.basis=synthetic → 显著「合成数据·不代表真实精度」横幅（DataBasisBadge）。
-//   · 近 N 日趋势：per_day 逐日 MASE/MAE 折线（图表纪律：不平滑、缺测断点 connectNulls=false）。
+// · 模型×指标表：MAE/RMSE/MASE/skill vs LEAR/skill vs 季节朴素/过门禁/过 skill 门；
+// 打不败基线（passes_skill_gate=false）的模型行标红，不发「可升 production」假信号。
+// · 概率指标卡：pinball/PICP/PINAW/CRPS≈/Winkler。
+// · leakage_caveats：era5 实况 / gap 前视泄漏警示原文呈现（诚实标注，绝不吞）。
+// · basis 标注：report.basis=synthetic → 显著「合成数据·不代表真实精度」横幅（DataBasisBadge）。
+// · 近 N 日趋势：per_day 逐日 MASE/MAE 折线（图表纪律：不平滑、缺测断点 connectNulls=false）。
 // 诚实边界：available=false（无产物）→ 空态提示先跑离线报告，绝不回退假数据。
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
@@ -88,7 +88,7 @@ function rowClass({ row }: { row: Row }): string {
   return row.passes_skill_gate ? '' : 'fail-skill-row'   // 打不败基线的模型标红
 }
 
-// 请求世代守卫（roborev job646 Medium）：快速切地区时旧响应可能覆盖新地区状态。
+// 请求世代守卫（#646）：快速切地区时旧响应可能覆盖新地区状态。
 // 发请求前抓 gen + region 快照，写入前断言仍是最新世代且地区未变，否则丢弃旧响应。
 let generation = 0
 async function load() {
@@ -102,7 +102,7 @@ async function load() {
     const keys = res.available && res.report ? Object.keys(res.report.runs) : []
     activeRun.value = keys.includes('full') ? 'full' : (keys[0] ?? 'full')
     // 图表容器 chartRef 在 v-else-if="report" 分支：数据刚赋值时该分支尚未挂载，chartRef 仍为 null。
-    // 必须等 DOM 打补丁后再 render，否则首载趋势图空白（roborev job641 Medium 渲染竞态）。
+    // 必须等 DOM 打补丁后再 render，否则首载趋势图空白（#641 渲染竞态）。
     await nextTick()
     if (gen !== generation || selectedRegionId.value !== regionId) return   // await 期间又切地区，丢弃
     render()
@@ -192,7 +192,7 @@ onMounted(load)
     <!-- 空态：无产物，诚实提示，不回退假数据 -->
     <el-empty v-if="!loading && !report"
       description="未找到滚动回测报告产物（该地区）">
-      <template #image><span style="font-size: 48px">📉</span></template>
+      <template #image><span style="font-size: var(--font-48)">📉</span></template>
       <div class="empty-hint">
         <p>在主仓库 agent-backend 环境下运行离线报告生成：</p>
         <p><code>npm run report:forecast-yunnan -- --gap 1 --min-train-days 12 --refit-every 5</code></p>
@@ -319,30 +319,30 @@ onMounted(load)
 <style scoped>
 .scoreboard { padding: 12px 16px; background: var(--el-fill-color-light); min-height: calc(100vh - 90px); }
 .mb { margin-bottom: 12px; }
-.scoreboard code { font-size: 12px; background: var(--el-fill-color); padding: 1px 5px; border-radius: 4px; }
-.head-meta { display: flex; flex-wrap: wrap; gap: 16px; font-size: 12px; color: var(--el-text-color-regular); margin: 8px 2px 12px; }
+.scoreboard code { font-size: var(--font-sm); background: var(--el-fill-color); padding: 1px 5px; border-radius: 4px; }
+.head-meta { display: flex; flex-wrap: wrap; gap: 16px; font-size: var(--font-sm); color: var(--el-text-color-regular); margin: 8px 2px 12px; }
 .head-meta .gen { color: var(--el-text-color-secondary); margin-left: auto; }
 .toolbar { display: flex; align-items: center; gap: 8px; background: var(--panel); padding: 10px 12px; border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,.04); flex-wrap: wrap; margin-bottom: 12px; }
-.toolbar .lbl { font-size: 13px; color: var(--el-text-color-regular); font-weight: 600; }
+.toolbar .lbl { font-size: var(--font-md); color: var(--el-text-color-regular); font-weight: 600; }
 .toolbar .spacer { flex: 1; }
-.toolbar .hint { font-size: 12px; color: var(--el-text-color-secondary); }
+.toolbar .hint { font-size: var(--font-sm); color: var(--el-text-color-secondary); }
 .caveat { margin-bottom: 10px; }
-.caveat :deep(.el-alert__title) { font-size: 12px; line-height: 1.5; }
+.caveat :deep(.el-alert__title) { font-size: var(--font-sm); line-height: 1.5; }
 .card { margin-bottom: 12px; }
 .card-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
-.ttl { font-weight: 600; font-size: 13px; }
-.note { font-size: 12px; color: var(--el-color-warning); font-weight: 400; }
+.ttl { font-weight: 600; font-size: var(--font-md); }
+.note { font-size: var(--font-sm); color: var(--el-color-warning); font-weight: 400; }
 .tag { margin-left: 6px; }
 .muted { color: var(--el-text-color-secondary); }
 .neg { color: var(--el-color-danger); font-weight: 600; }
-.legend-note { font-size: 12px; color: var(--el-text-color-secondary); margin-top: 8px; display: flex; gap: 10px; flex-wrap: wrap; }
+.legend-note { font-size: var(--font-sm); color: var(--el-text-color-secondary); margin-top: 8px; display: flex; gap: 10px; flex-wrap: wrap; }
 .legend-note .red { color: var(--el-color-danger); }
 .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 12px; }
 .stat-card { background: var(--el-bg-color-overlay, #fff); border: 1px solid var(--el-border-color-lighter, #ebeef5); border-radius: 8px; padding: 12px 14px; }
-.stat-label { color: var(--el-text-color-secondary, #909399); font-size: 12px; margin-bottom: 6px; }
-.stat-value { font-size: 20px; font-weight: 600; }
+.stat-label { color: var(--el-text-color-secondary, #909399); font-size: var(--font-sm); margin-bottom: 6px; }
+.stat-value { font-size: var(--font-20); font-weight: 600; }
 .chart { height: 320px; width: 100%; }
-.empty-hint { font-size: 12px; color: var(--el-text-color-secondary); text-align: left; max-width: 640px; }
+.empty-hint { font-size: var(--font-sm); color: var(--el-text-color-secondary); text-align: left; max-width: 640px; }
 .empty-hint p { margin: 4px 0; }
 :deep(.fail-skill-row) { background: var(--el-color-danger-light-9, #fef0f0); }
 :deep(.fail-skill-row:hover > td) { background: var(--el-color-danger-light-8, #fde2e2) !important; }

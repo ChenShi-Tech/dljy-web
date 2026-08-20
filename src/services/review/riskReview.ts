@@ -31,7 +31,7 @@ export const DEFAULT_THRESHOLD: ThresholdDefaults = {
 }
 
 /**
- * 价差序列（分数口径）：点级 (实时−日前)/日前，双价齐备才产出——喂 /quant/cvar
+ * 价差序列（分数口径）：点级 (实时−日前)/日前，双价齐备才产出，喂 /quant/cvar
  * 做压力测试（VaR/CVaR 权威引擎）。缺价点跳过，序列 <2 返回空（引擎 min_length=2）。
  */
 export function spreadReturns(detail: ReadonlyArray<{ da_price?: number; rt_price?: number }>): number[] {
@@ -120,7 +120,7 @@ export function thresholdFindings(input: {
   return { findings, thresholds: t }
 }
 
-/** near_miss（侥幸逃过）：独立附记——不计损失金额，但入案例库（方案原文）。 */
+/** near_miss（侥幸逃过）：独立附记，不计损失金额，但入案例库（方案原文）。 */
 export const NEAR_MISS_NOTE =
   'near_miss（侥幸逃过）不计入损失金额统计，但须入案例库沉淀——「这次没事」不等于「下次没事」。'
 

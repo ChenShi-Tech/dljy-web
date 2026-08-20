@@ -18,7 +18,7 @@ describe('检修/联络线披露的地区门', () => {
   it.each(['yunnan', 'guangdong', 'sichuan', 'gansu'])('%s 无信源 → 置灰并给出具体原因', (region) => {
     const cap = resolveIntelCapability('maintenance_disclosure', region)
     expect(cap.status).toBe('unsupported')
-    // 原因必须具体到"缺什么"，不能只说"暂不支持"——否则用户不知道能不能人工补
+    // 原因必须具体到"缺什么"，不能只说"暂不支持"，否则用户不知道能不能人工补
     expect(cap.reason).toContain('检修/联络线披露信源')
   })
 

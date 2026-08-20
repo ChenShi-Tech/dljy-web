@@ -1,10 +1,10 @@
 <script setup lang="ts">
-// review/DeviationAttribution —— 偏差归因分解（Epic #2033 · #2038 预留位 / #2042 转正消费）
+// review/DeviationAttribution ， 偏差归因分解（Epic #2033 · #2038 预留位 / #2042 转正消费）
 // ---------------------------------------------------------------------------
 // dljy-ui artifact 渲染件：偏差总量按成因分解（S1 业务成因四因子 / 周月责任归因二轴，
-// 两轴正交不合并——Epic 拍板）。数据由智能体按 quant /review 聚合下发；
+// 两轴正交不合并，Epic 拍板）。数据由智能体按 quant /review 聚合下发；
 // 占比合计应为 1，缺归因部分显式「未归因」，不摊到其它因子假装闭合。
-// 责任归因二轴仅周聚合人工补填（AI 只给映射建议）——本渲染件对二轴数据只读呈现。
+// 责任归因二轴仅周聚合人工补填（AI 只给映射建议），本渲染件对二轴数据只读呈现。
 import { computed } from 'vue'
 import { fmt, num, obj } from '../storage/helpers'
 
@@ -74,17 +74,17 @@ const axisNote = computed(() => (typeof props.data.axisNote === 'string' ? props
 <style scoped>
 .da-card { border: 1px solid var(--line-soft, #e5e7eb); border-radius: 8px; background: var(--panel, #fff); padding: 14px; }
 header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
-h3 { margin: 0; font-size: 16px; color: var(--text, #111827); }
-header span { font-size: 12px; color: var(--muted, #667085); font-variant-numeric: tabular-nums; }
-.da-empty { margin: 4px 0 2px; font-size: 12.5px; line-height: 1.7; color: var(--muted, #667085); }
+h3 { margin: 0; font-size: var(--font-16); color: var(--text, #111827); }
+header span { font-size: var(--font-sm); color: var(--muted, #667085); font-variant-numeric: tabular-nums; }
+.da-empty { margin: 4px 0 2px; font-size: var(--font-12-5); line-height: 1.7; color: var(--muted, #667085); }
 .da-bars { display: grid; gap: 8px; }
 .da-row { display: grid; grid-template-columns: 120px minmax(0, 1fr) 92px 48px; gap: 8px; align-items: center; }
-.da-label { font-size: 12px; color: var(--text-body, #344054); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.da-label { font-size: var(--font-sm); color: var(--text-body, #344054); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .da-track { height: 13px; background: rgba(148, 163, 184, 0.16); border-radius: 999px; overflow: hidden; }
 .da-bar { height: 100%; border-radius: inherit; }
 .da-bar.factor { background: #2563eb; }
 .da-bar.unatt { background: #d97706; }
-strong { text-align: right; font-size: 12px; color: var(--text, #111827); font-variant-numeric: tabular-nums; }
-em { font-style: normal; font-size: 11px; color: var(--muted, #667085); text-align: right; font-variant-numeric: tabular-nums; }
-.da-note { margin: 10px 0 0; font-size: 11px; line-height: 1.6; color: var(--muted, #667085); }
+strong { text-align: right; font-size: var(--font-sm); color: var(--text, #111827); font-variant-numeric: tabular-nums; }
+em { font-style: normal; font-size: var(--font-xs); color: var(--muted, #667085); text-align: right; font-variant-numeric: tabular-nums; }
+.da-note { margin: 10px 0 0; font-size: var(--font-xs); line-height: 1.6; color: var(--muted, #667085); }
 </style>

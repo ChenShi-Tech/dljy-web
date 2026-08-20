@@ -97,7 +97,7 @@ describe('resolveCompanyForRegion', () => {
   })
 })
 
-// companyUnselected（roborev job346/job355/job361/job386 反复回归的空态守卫）三态回归锁：
+// companyUnselected（job355/job361/job386 反复回归的空态守卫）三态回归锁：
 // 判定结果直接决定公司专属请求是被短路/拒绝还是带 company 参数放行，误判即串租户或误报空态。
 describe('companyUnselected', () => {
   beforeEach(() => {
@@ -128,7 +128,7 @@ describe('companyUnselected', () => {
   })
 })
 
-// setCompanyOptions（roborev job346/job355/job361 三轮回归修复的授权集校准入口）：授权集刷新后
+// setCompanyOptions（job355/job361 三轮回归修复的授权集校准入口）：授权集刷新后
 // 是否保留当前选择、是否触发四规则协调，直接决定切公司/切地区竞态窗口是否残留越权选择。
 describe('setCompanyOptions', () => {
   beforeEach(() => {

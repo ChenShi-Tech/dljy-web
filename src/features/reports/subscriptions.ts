@@ -1,6 +1,6 @@
 /**
  * 报表订阅（定时生成 + 推送）。Phase 3 为前端 localStorage 持久化的演示实现：
- * 配置可创建/启停/删除，但定时调度与推送是 Mock —— 不会实际触发生成或发送。
+ * 配置可创建/启停/删除，但定时调度与推送是 Mock，不会实际触发生成或发送。
  * 真实落地需后端 cron 调度 + 邮件/webhook 网关（明确标注，避免误判为已接入）。
  */
 export type SubscriptionFrequency = 'daily' | 'weekly' | 'monthly'

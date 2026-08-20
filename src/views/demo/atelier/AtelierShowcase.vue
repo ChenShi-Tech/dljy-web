@@ -85,22 +85,22 @@ onMounted(() => {
 .serif { font-family: 'Songti SC', 'STSong', 'Source Han Serif SC', Georgia, serif; }
 .toggle {
   border: none; cursor: pointer; background: rgba(201, 163, 91, .16); color: #F4EBD8;
-  font-size: 13px; padding: 7px 13px; border-radius: 8px; letter-spacing: 1px;
+  font-size: var(--font-md); padding: 7px 13px; border-radius: 8px; letter-spacing: 1px;
 }
 .toggle:hover { background: rgba(201, 163, 91, .28); }
-.series { color: #C9A35B; font-size: 13px; letter-spacing: 2px; padding: 0 2px; }
+.series { color: #C9A35B; font-size: var(--font-md); letter-spacing: 2px; padding: 0 2px; }
 
 .grp { display: flex; align-items: center; gap: 4px; }
 .sep { width: 1px; height: 22px; background: rgba(201, 163, 91, .22); margin: 0 3px; }
 
 .grp button {
   position: relative; border: none; cursor: pointer; background: transparent; color: rgba(244, 235, 216, .62);
-  font-size: 13px; padding: 7px 13px; border-radius: 8px; font-family: inherit; transition: all .18s; white-space: nowrap;
+  font-size: var(--font-md); padding: 7px 13px; border-radius: 8px; font-family: inherit; transition: all .18s; white-space: nowrap;
 }
 .grp button:hover:not(:disabled) { color: #fff; background: rgba(201, 163, 91, .12); }
 .grp button.on { background: #C9A35B; color: #1A1713; font-weight: 600; }
 .grp button:disabled { color: rgba(244, 235, 216, .3); cursor: not-allowed; }
-.grp button i { font-style: normal; font-size: 9px; margin-left: 5px; padding: 1px 5px; border-radius: 5px; background: rgba(244, 235, 216, .12); color: rgba(244, 235, 216, .5); vertical-align: middle; }
+.grp button i { font-style: normal; font-size: var(--font-9); margin-left: 5px; padding: 1px 5px; border-radius: 5px; background: rgba(244, 235, 216, .12); color: rgba(244, 235, 216, .5); vertical-align: middle; }
 
 .skin-enter-active, .skin-leave-active { transition: opacity .26s ease; }
 .skin-enter-from, .skin-leave-to { opacity: 0; }

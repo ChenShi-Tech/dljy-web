@@ -1,5 +1,5 @@
 // 山西现货结算规则规格（P2 结算规则参数化首省）。
-// 效力：industry-reference（行业转载待核验）—— 正式规则文本（山西电力现货市场
+// 效力：industry-reference（行业转载待核验）， 正式规则文本（山西电力现货市场
 // 结算实施细则最新版）接入后更新 version/effectiveness 与各参数；在此之前，
 // 本规格的价值是把散落在代码里的写死参数（复盘 tolerance 3%/penalty 100、
 // quant deviationPenaltyPct 12% 等）收口到带版本与效力标注的单一对象。

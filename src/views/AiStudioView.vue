@@ -64,7 +64,7 @@ function onTabChange(name: string | number) {
     <el-tabs v-model="activeTab" class="studio-tabs" @tab-change="onTabChange">
       <el-tab-pane v-for="tab in TABS" :key="tab.name" :label="tab.label" :name="tab.name">
         <!-- KeepAlive + v-if 而非 el-tab-pane 的 lazy：lazy 只延迟首次渲染，已渲染的面板会一直
-             挂着，切走后子组件既不 onBeforeUnmount 也不 onDeactivated——定时任务调度的 4s 轮询
+             挂着，切走后子组件既不 onBeforeUnmount 也不 onDeactivated，定时任务调度的 4s 轮询
              会在其它 tab 下继续打接口（#1737 后台轮询问题）。改成只渲染当前 tab、由 KeepAlive
              缓存已访问的：切走触发 onDeactivated（该组件正是按这个语义写的清理），
              切回仍保留画布/表单/iframe 状态。 -->
@@ -85,14 +85,14 @@ function onTabChange(name: string | number) {
 
 .page-head h1 {
   margin: 0;
-  font-size: 20px;
+  font-size: var(--font-20);
   font-weight: 600;
   color: var(--el-text-color-primary);
 }
 
 .page-head .sub {
   margin: 4px 0 0;
-  font-size: 13px;
+  font-size: var(--font-md);
   color: var(--el-text-color-secondary);
 }
 

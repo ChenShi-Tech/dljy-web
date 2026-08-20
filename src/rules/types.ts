@@ -60,7 +60,7 @@ export type RuleProfileContext = {
 
 export type RuleUser = Pick<GovernanceUser, 'roleCode' | 'subjectType'>
 
-// ── 可执行结算规则规格（P2 结算规则参数化）────────────────────────────────────
+// 可执行结算规则规格（P2 结算规则参数化）
 // 与档案型 RegionRuleProfile.settlementModel（文字条款）互补：本规格是消费点
 // （复盘考核、OODA/实验室默认参数、申报风控）直接读取的参数对象。
 // 数值必须带 version + effectiveness 效力标注；正式规则文本接入前用
@@ -85,7 +85,7 @@ export type SettlementRuleSpec = {
   /** 考核价兜底下限 元/MWh（基准价过低时按此计） */
   assessmentPriceFloor: number
   timeSegmentFactors: SettlementTimeSegmentFactor[]
-  // —— 三部制结算扩展（云南 §3.2.1/§5.1 + 两层偏差回收 §6.2/§6.3/§6.4；向后兼容 optional）——
+  // 三部制结算扩展（云南 §3.2.1/§5.1 + 两层偏差回收 §6.2/§6.3/§6.4；向后兼容 optional）
   // 正式数值（δ/u/v/h/Pd）待云南正式结算规则文本/报审稿填值，当前 consultation 占位。
   /** 结算模式：云南现货三部制（中长期全电量 + 日前偏差×日前价 + 实时偏差×实时价，§3.2.1/§5.1） */
   settlementMode?: 'three_part'

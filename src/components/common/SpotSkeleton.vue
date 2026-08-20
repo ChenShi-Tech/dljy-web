@@ -1,5 +1,4 @@
 <script setup lang="ts">
-// ============================================================================
 // SpotSkeleton — 现货面板通用骨架屏（共享状态 UI 基建，#450）
 // ----------------------------------------------------------------------------
 // 加载态占位：替代各面板手写的「el-table v-loading 转圈」/「空白 ChartCard」，
@@ -18,7 +17,6 @@
 //     <template #skeleton><SpotSkeleton variant="chart" :height="360" /></template>
 //     <MyChart :data="rows" />
 //   </DataState>
-// ============================================================================
 import { computed } from 'vue'
 
 const props = withDefaults(defineProps<{

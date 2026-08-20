@@ -1,10 +1,10 @@
 <script setup lang="ts">
-// S5 出清分析（出清结果公布后）—— 反馈环的当日中途站
+// S5 出清分析（出清结果公布后）， 反馈环的当日中途站
 //
-// 两段动作：① 登记出清结果（96 点出清曲线，手工粘贴或按申报全额速填——速填会如实
+// 两段动作：① 登记出清结果（96 点出清曲线，手工粘贴或按申报全额速填，速填会如实
 // 标注为「按申报假定」，它只是无偏差日的快捷键，不是数据来源）；② 偏差判读
 // （analyzeClearing 真算：中标率、最坏时段、是否需转实时调整），结论写回
-// preflight.clearingReview——S1 明晨复盘与 S7 今晚日报都读它。
+// preflight.clearingReview，S1 明晨复盘与 S7 今晚日报都读它。
 import { computed, reactive, ref } from 'vue'
 import { Activity, Save, Send, TriangleAlert } from 'lucide-vue-next'
 import {
@@ -27,7 +27,7 @@ const submitted = computed(() =>
 )
 const clearedCurve = computed(() => decl.value?.clearing?.clearedCurveMwh96 ?? null)
 
-// ── ① 登记出清结果 ──────────────────────────────────────────────────────────
+// ① 登记出清结果
 const clearedText = ref('')
 const parsedCleared = computed(() => {
   const parsed = clearedText.value
@@ -71,7 +71,7 @@ function registerFullAward() {
   )
 }
 
-// ── ② 偏差判读与写回 ────────────────────────────────────────────────────────
+// ② 偏差判读与写回
 const analysis = computed<ClearingAnalysis | null>(() => {
   if (!decl.value?.energyCurveMwh96?.length || !clearedCurve.value?.length) return null
   try {
@@ -83,9 +83,9 @@ const analysis = computed<ClearingAnalysis | null>(() => {
 
 const written = computed(() => decl.value?.preflight?.clearingReview ?? null)
 
-// ── ③ 实时调整指令草稿（手册 S5 步骤③：±10% 档 → 判断并下达指令）────────────
+// ③ 实时调整指令草稿（手册 S5 步骤③：±10% 档 → 判断并下达指令）
 // 指令先记录决策与理由；真实「实时市场申报通道」未接（数据活源 #1968/#2007），
-// 执行仍需交易平台人工操作——记录不冒充已执行。
+// 执行仍需交易平台人工操作，记录不冒充已执行。
 type AdjustAction = 'none' | 'increase' | 'decrease'
 const ADJUST_LABEL: Record<AdjustAction, string> = {
   none: '不调整（偏差可承受）',
@@ -98,11 +98,11 @@ const adjust = reactive<{ action: AdjustAction; volumeMwh: number | null; reason
   reason: ''
 })
 
-// ── ④ 严重偏离上报（手册：>±20% → 立即排查原因 + 上报主管）─────────────────
+// ④ 严重偏离上报（手册：>±20% → 立即排查原因 + 上报主管）
 const escalation = reactive<{ reason: string; reportedBy: string }>({ reason: '', reportedBy: '' })
 const escalationValid = computed(() => escalation.reason.trim().length >= 8 && escalation.reportedBy.trim().length > 0)
 
-// ── 外送出清量价与电站出勤记录（会议：按电站一条记录算清比例/出勤率）────────
+// 外送出清量价与电站出勤记录（会议：按电站一条记录算清比例/出勤率）
 type StationRow = { station: string; declaredMwh: number | null; clearedMwh: number | null; attendancePct: number | null }
 const stationRows = ref<StationRow[]>([])
 const exportClearing = reactive<{ volumeMwh: number | null; avgPriceYuanPerMwh: number | null }>({
@@ -323,32 +323,32 @@ async function writeBack() {
 
 <style scoped>
 .cl { display: flex; flex-direction: column; gap: 12px; }
-.cl-wait { padding: 14px; border: 1px dashed var(--el-border-color, #dcdfe6); border-radius: 10px; font-size: 12px; color: var(--el-text-color-secondary, #667); display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.cl-wait { padding: 14px; border: 1px dashed var(--el-border-color, #dcdfe6); border-radius: 10px; font-size: var(--font-sm); color: var(--el-text-color-secondary, #667); display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .cl-panel { padding: 12px 14px; border: 1px solid var(--el-border-color-lighter, #ebeef5); border-radius: 10px; background: #fff; }
-.cl-panel h3 { display: flex; align-items: center; gap: 6px; margin: 0 0 8px; font-size: 13px; }
-.cl-source { margin-left: auto; font-size: 10px; padding: 1px 8px; border-radius: 8px; background: #f1f5f9; color: #475569; }
-.cl-tip { margin: 0 0 6px; font-size: 12px; line-height: 1.6; color: var(--el-text-color-secondary, #667); }
-.cl-paste { width: 100%; font-family: ui-monospace, monospace; font-size: 11px; padding: 6px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 6px; }
+.cl-panel h3 { display: flex; align-items: center; gap: 6px; margin: 0 0 8px; font-size: var(--font-md); }
+.cl-source { margin-left: auto; font-size: var(--font-10); padding: 1px 8px; border-radius: 8px; background: #f1f5f9; color: #475569; }
+.cl-tip { margin: 0 0 6px; font-size: var(--font-sm); line-height: 1.6; color: var(--el-text-color-secondary, #667); }
+.cl-paste { width: 100%; font-family: ui-monospace, monospace; font-size: var(--font-xs); padding: 6px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 6px; }
 .cl-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 8px; }
-.cl-btn { padding: 4px 14px; border: 1px solid #2563eb; border-radius: 5px; background: #eff6ff; color: #1d4ed8; font-size: 12px; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; }
+.cl-btn { padding: 4px 14px; border: 1px solid #2563eb; border-radius: 5px; background: #eff6ff; color: #1d4ed8; font-size: var(--font-sm); cursor: pointer; display: inline-flex; align-items: center; gap: 4px; }
 .cl-btn.primary { background: #2563eb; color: #fff; }
 .cl-btn:disabled { opacity: .45; cursor: not-allowed; }
-.cl-jump { padding: 0; border: none; background: none; color: #1d4ed8; font-size: 12px; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
-.cl-muted { font-size: 11px; color: var(--el-text-color-secondary, #667); }
-.cl-good { font-size: 12px; color: #15803d; }
-.cl-err { margin: 0; padding: 6px 10px; border-radius: 6px; background: #fef2f2; color: #991b1b; font-size: 12px; }
+.cl-jump { padding: 0; border: none; background: none; color: #1d4ed8; font-size: var(--font-sm); cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
+.cl-muted { font-size: var(--font-xs); color: var(--el-text-color-secondary, #667); }
+.cl-good { font-size: var(--font-sm); color: #15803d; }
+.cl-err { margin: 0; padding: 6px 10px; border-radius: 6px; background: #fef2f2; color: #991b1b; font-size: var(--font-sm); }
 
 .cl-stats { display: flex; gap: 10px; flex-wrap: wrap; }
 .cl-stat { display: flex; flex-direction: column; align-items: center; padding: 8px 16px; border: 1px solid var(--el-border-color-lighter, #ebeef5); border-radius: 10px; }
-.cl-stat strong { font-size: 18px; font-variant-numeric: tabular-nums; }
-.cl-stat span { font-size: 10px; color: var(--el-text-color-secondary, #667); }
+.cl-stat strong { font-size: var(--font-18); font-variant-numeric: tabular-nums; }
+.cl-stat span { font-size: var(--font-10); color: var(--el-text-color-secondary, #667); }
 .cl-stat.ok { border-color: #86efac; background: #f0fdf4; }
 .cl-stat.bad { border-color: #fca5a5; background: #fef2f2; }
 
-.cl-summary { display: flex; align-items: flex-start; gap: 5px; margin: 8px 0; padding: 7px 10px; border-radius: 6px; background: #f8fafc; font-size: 12px; line-height: 1.6; }
+.cl-summary { display: flex; align-items: flex-start; gap: 5px; margin: 8px 0; padding: 7px 10px; border-radius: 6px; background: #f8fafc; font-size: var(--font-sm); line-height: 1.6; }
 .cl-summary.warn { background: #fef2f2; color: #991b1b; }
 
-.cl-table { width: 100%; border-collapse: collapse; font-size: 11px; font-variant-numeric: tabular-nums; }
+.cl-table { width: 100%; border-collapse: collapse; font-size: var(--font-xs); font-variant-numeric: tabular-nums; }
 .cl-table th, .cl-table td { padding: 4px 6px; border-bottom: 1px solid var(--el-border-color-lighter, #ebeef5); text-align: right; }
 .cl-table th:first-child, .cl-table td:first-child { text-align: left; }
 .cl-table th { color: var(--el-text-color-secondary, #667); font-weight: 600; }
@@ -360,24 +360,24 @@ async function writeBack() {
 }
 
 .cl-escalate { margin: 8px 0; padding: 8px 12px; border: 1px solid #f87171; border-radius: 8px; background: #fef2f2; }
-.cl-escalate h4 { display: flex; align-items: center; gap: 5px; margin: 0 0 4px; font-size: 12px; color: #991b1b; }
+.cl-escalate h4 { display: flex; align-items: center; gap: 5px; margin: 0 0 4px; font-size: var(--font-sm); color: #991b1b; }
 .cl-escalate-form { display: flex; gap: 8px; flex-wrap: wrap; }
-.cl-escalate-form input { flex: 1; min-width: 180px; padding: 4px 7px; border: 1px solid #fca5a5; border-radius: 5px; font-size: 12px; }
+.cl-escalate-form input { flex: 1; min-width: 180px; padding: 4px 7px; border: 1px solid #fca5a5; border-radius: 5px; font-size: var(--font-sm); }
 
 .cl-adjust { margin: 8px 0; padding: 8px 12px; border: 1px solid #bfdbfe; border-radius: 8px; background: #f8fbff; }
-.cl-adjust h4 { display: flex; align-items: center; gap: 5px; margin: 0 0 6px; font-size: 12px; }
+.cl-adjust h4 { display: flex; align-items: center; gap: 5px; margin: 0 0 6px; font-size: var(--font-sm); }
 .cl-adjust-form { display: flex; gap: 8px; flex-wrap: wrap; }
-.cl-adjust-form label { display: inline-flex; align-items: center; gap: 5px; padding: 4px 10px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 12px; font-size: 11px; cursor: pointer; background: #fff; }
+.cl-adjust-form label { display: inline-flex; align-items: center; gap: 5px; padding: 4px 10px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 12px; font-size: var(--font-xs); cursor: pointer; background: #fff; }
 .cl-adjust-form label.on { border-color: #2563eb; background: #eff6ff; color: #1d4ed8; }
 .cl-adjust-fields { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 8px; }
-.cl-adjust-fields label { display: flex; flex-direction: column; gap: 3px; font-size: 11px; color: var(--el-text-color-secondary, #667); flex: 1; min-width: 200px; }
-.cl-adjust-fields input { padding: 4px 7px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 5px; font-size: 12px; }
+.cl-adjust-fields label { display: flex; flex-direction: column; gap: 3px; font-size: var(--font-xs); color: var(--el-text-color-secondary, #667); flex: 1; min-width: 200px; }
+.cl-adjust-fields input { padding: 4px 7px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 5px; font-size: var(--font-sm); }
 
 .cl-stations { border: 1px solid var(--el-border-color-lighter, #ebeef5); border-radius: 8px; padding: 6px 10px; margin-top: 8px; }
-.cl-stations summary { display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 600; cursor: pointer; flex-wrap: wrap; }
-.cl-stations summary em { font-style: normal; font-weight: 400; font-size: 10px; color: var(--el-text-color-secondary, #889); }
+.cl-stations summary { display: flex; align-items: center; gap: 8px; font-size: var(--font-sm); font-weight: 600; cursor: pointer; flex-wrap: wrap; }
+.cl-stations summary em { font-style: normal; font-weight: 400; font-size: var(--font-10); color: var(--el-text-color-secondary, #889); }
 .cl-export-row { display: flex; gap: 14px; flex-wrap: wrap; margin: 8px 0; }
-.cl-export-row label { display: flex; flex-direction: column; gap: 3px; font-size: 11px; color: var(--el-text-color-secondary, #667); }
-.cl-export-row input, .cl-stations td input { padding: 3px 6px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 4px; font-size: 11px; }
+.cl-export-row label { display: flex; flex-direction: column; gap: 3px; font-size: var(--font-xs); color: var(--el-text-color-secondary, #667); }
+.cl-export-row input, .cl-stations td input { padding: 3px 6px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 4px; font-size: var(--font-xs); }
 .cl-stations td input[type='number'] { width: 76px; text-align: right; }
 </style>

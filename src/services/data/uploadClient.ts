@@ -148,7 +148,7 @@ export function readLocalFile(file: File): Promise<{ content: string; isBinary: 
   return new Promise((resolve, reject) => {
     const reader = new FileReader()
     if (/\.xlsx?$/i.test(file.name)) {
-      // readAsDataURL 形如 data:...;base64,<payload>——base64 不含逗号，取末段即纯载荷。
+      // readAsDataURL 形如 data:...;base64,<payload>，base64 不含逗号，取末段即纯载荷。
       reader.onload = () => resolve({ content: String(reader.result ?? '').split(',').pop() ?? '', isBinary: true, fileName: file.name })
       reader.onerror = () => reject(new Error('Excel 文件读取失败'))
       reader.readAsDataURL(file)

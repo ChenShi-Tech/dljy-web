@@ -2,8 +2,8 @@
 // 申报工作台（P1 申报闭环补芯 × main 智能体动线收拢的合并版）：
 // - 步骤条由申报单状态机驱动（/api/v1/trading/spot/declarations，不开智能体也能走完全流程）
 // - 智能体为可选协助：服务探活（离线给启动指引而非裸抛 502）、页内情报助手
-//   （清单项移交执行不离开本页、完成打勾）、申报准备面板 done 后刷新申报单列表
-//   （declaration_prep finalize 落库的 DRAFT 即时可见）
+// （清单项移交执行不离开本页、完成打勾）、申报准备面板 done 后刷新申报单列表
+// （declaration_prep finalize 落库的 DRAFT 即时可见）
 // ①草稿与策略 → ②风控与审批 → ③提交与回执 → ④出清跟踪
 import { computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -63,17 +63,17 @@ import { buildRehearsalNote, formatRehearsalStamp, parseRehearsalStartedAt } fro
 const router = useRouter()
 const route = useRoute()
 
-// ── 向导步骤（申报单状态驱动）──
+// 向导步骤（申报单状态驱动）
 const STEPS = ['草稿与策略', '风控与审批', '提交与回执', '出清跟踪'] as const
 
-// ── 智能体服务探活：离线时给出启动指引，而不是让面板裸抛 502 ──
+// 智能体服务探活：离线时给出启动指引，而不是让面板裸抛 502
 const harness = ref<'checking' | 'online' | 'offline'>('checking')
 async function checkHarness() {
   harness.value = 'checking'
   harness.value = (await pingAgentService()) ? 'online' : 'offline'
 }
 
-// ── 目标日与截止倒计时 ──
+// 目标日与截止倒计时
 function fmtDate(d: Date): string {
   const local = new Date(d.getTime() + 8 * 3600 * 1000)
   return local.toISOString().slice(0, 10)
@@ -89,20 +89,20 @@ const targetDate = ref(defaultTargetDate())
 // 目标日 ⇄ 路由 query：刷新/分享链接后还原同一申报日
 useQuerySync({ targetDate })
 
-// ── 申报模式（LIVE / REHEARSAL）──
+// 申报模式（LIVE / REHEARSAL）
 // 建单时可选；建单后由申报单自身的 mode 决定（服务端不接受改 mode）。
 const draftMode = ref<DeclarationMode>('LIVE')
 const currentMode = computed<DeclarationMode>(() =>
   current.value ? declarationModeOf(current.value) : draftMode.value
 )
 const isRehearsal = computed(() => currentMode.value === 'REHEARSAL')
-// 今日（+08:00）之前的目标日，真实申报窗口必然已关闭——此时默认建演练单更符合意图。
+// 今日（+08:00）之前的目标日，真实申报窗口必然已关闭，此时默认建演练单更符合意图。
 // 重算时机在 refresh() 末尾（current 落定之后），不能放在 targetDate 的 watch 里：
 // 那时 current 仍是旧目标日的单，切到无申报单的历史日期时不会切成 REHEARSAL，
 // 用户点创建就会拿到立即过期的 LIVE 单（反向亦会残留 REHEARSAL）。
 const todayLocal = computed(() => fmtDate(new Date(nowTick.value)))
 const isPastTargetDate = computed(() => targetDate.value < todayLocal.value)
-// 未来目标日但申报窗口已关闭：如今天 11:00 选明天——明天的截止是今天 10:30，已过。
+// 未来目标日但申报窗口已关闭：如今天 11:00 选明天，明天的截止是今天 10:30，已过。
 // 此时建 LIVE 单同样会立即作废，故与历史日一样需要提示（meta.deadline 由服务端给出）。
 const isLiveWindowClosed = computed(() => {
   if (isPastTargetDate.value) return false
@@ -143,11 +143,11 @@ const countdownText = computed(() => {
   return `${h}时${String(m).padStart(2, '0')}分${String(s).padStart(2, '0')}秒`
 })
 
-// ── 价格预测情报 ──
+// 价格预测情报
 const forecastBasis = ref<DataBasis>('synthetic')
 const forecastStats = ref({ mean: 0, spread: 0 })
 // 价格预测已改为多模型叠加对比（DeclarationForecastCompare），图表由该组件自持；
-// 此处只保留供「创建草稿」落库的口径与统计摘要。
+// 只保留供「创建草稿」落库的口径与统计摘要。
 
 type IntelStatus = 'idle' | 'running' | 'done' | 'failed'
 type IntelItem = {
@@ -188,7 +188,7 @@ const intelChecklist = reactive<IntelItem[]>([
   }
 ])
 
-// ── 智能体工作区：历史侧栏 + 情报清单 + 对话三栏同框，全程不离开工作台 ──
+// 智能体工作区：历史侧栏 + 情报清单 + 对话三栏同框，全程不离开工作台
 type PanelHandle = InstanceType<typeof AgentChatPanel>
 type SidebarHandle = InstanceType<typeof AgentHistorySidebar>
 type AgentMode = 'market' | 'draft'
@@ -230,26 +230,26 @@ function onSelectHistory(sessionId: string) {
   activePanel.value?.loadHistory(sessionId, { fromClick: true })
 }
 
-// session-ready 必须由**发出事件的面板实例**同时指定「归属模式」与「实例世代」：
-// ① 不能在回调里读 agentMode——情报面板的 loadHistory/挂载恢复仍在异步执行时若用户切到
-//    起草，旧面板迟到的事件会把 chat 会话 id 写进 draft 槽，下次重挂起草标签就恢复成
-//    chat 会话，「协助起草」不再跑 declaration_prep；
-// ② 只固定模式还不够——startDraftAssist 每次点击都递增 draftRunKey，首次会话仍在创建时
-//    再点一次就有两个同属 draft 的实例，旧实例的 createAgentSession 不受卸载 abort 控制，
-//    迟到的 session-ready 会用旧会话 id 覆盖新实例已登记的 id。
-// ③ 世代号必须在**渲染期**烘进闭包，不能在事件到达时读：模板内联箭头
-//    `(id) => onSessionReadyFor('draft', id, draftRunKey)` 里的 draftRunKey 编译成事件
-//    到达那一刻的 $setup 访问（即当前值），旧实例的迟到事件照样通过校验。改用工厂
-//    `sessionReadyHandler(mode, runKey)`：处理器表达式在渲染时求值，旧 vnode 保留携带
-//    旧世代的旧闭包，迟到事件被正确丢弃。语义与用例见 sessionReadyGuard.ts。
+// session-ready 必须由发出事件的面板实例同时指定「归属模式」与「实例世代」：
+// ① 不能在回调里读 agentMode，情报面板的 loadHistory/挂载恢复仍在异步执行时若用户切到
+// 起草，旧面板迟到的事件会把 chat 会话 id 写进 draft 槽，下次重挂起草标签就恢复成
+// chat 会话，「协助起草」不再跑 declaration_prep；
+// ② 只固定模式还不够，startDraftAssist 每次点击都递增 draftRunKey，首次会话仍在创建时
+// 再点一次就有两个同属 draft 的实例，旧实例的 createAgentSession 不受卸载 abort 控制，
+// 迟到的 session-ready 会用旧会话 id 覆盖新实例已登记的 id。
+// ③ 世代号必须在渲染期烘进闭包，不能在事件到达时读：模板内联箭头
+// `(id) => onSessionReadyFor('draft', id, draftRunKey)` 里的 draftRunKey 编译成事件
+// 到达那一刻的 $setup 访问（即当前值），旧实例的迟到事件照样通过校验。改用工厂
+// `sessionReadyHandler(mode, runKey)`：处理器表达式在渲染时求值，旧 vnode 保留携带
+// 旧世代的旧闭包，迟到事件被正确丢弃。语义与用例见 sessionReadyGuard.ts。
 const sessionReadyHandler = makeSessionReadyGuard<AgentMode>({
   currentRunKey: (mode) => (mode === 'market' ? marketRunKey.value : draftRunKey.value),
   commit: (mode, sessionId) => { sessionIdByMode[mode] = sessionId },
 })
-// 必须绑定**标识符**，不能写成带括号的调用式：Vue 把 `@evt="fn(a, b)"` 编译成内联语句
-// `$event => fn(a, b)`，事件到达时只创建并丢弃 fn 返回的内层闭包、从不执行它——会话 id
+// 必须绑定标识符，不能写成带括号的调用式：Vue 把 `@evt="fn(a, b)"` 编译成内联语句
+// `$event => fn(a, b)`，事件到达时只创建并丢弃 fn 返回的内层闭包、从不执行它，会话 id
 // 永远登记不上，侧栏高亮与 resume-session-id 精确恢复全部失效。用 computed 让闭包在
-// **渲染期**产出并作为监听器值绑定；runKey 变化 → computed 失效 → 新渲染产出携带新世代的
+// 渲染期产出并作为监听器值绑定；runKey 变化 → computed 失效 → 新渲染产出携带新世代的
 // 新闭包，旧 vnode 保留旧闭包，迟到事件因而被正确丢弃。
 // 两种错误写法均由 verify:agent-chat-invariants 静态拦截。
 const onMarketSessionReady = computed(() => sessionReadyHandler('market', marketRunKey.value))
@@ -275,7 +275,7 @@ function finishIntel(status: string) {
   const item = intelChecklist.find((candidate) => candidate.label === activeIntelLabel.value)
   if (item && item.status === 'running') {
     // idle（后端 service 正常收尾 done.status="idle"）/ completed（AgentChatPanel 流兜底补发）均视为核查成功；
-    // 仅明确失败/取消才标 failed，与 emit 的 'cancelled'/'error' 对齐——否则正常跑完被判 failed（codex P2）
+    // 仅明确失败/取消才标 failed，与 emit 的 'cancelled'/'error' 对齐，否则正常跑完被判 failed
     item.status = activeIntelHadError.value || /fail|error|cancel/i.test(status) ? 'failed' : 'done'
   }
   activeIntelLabel.value = null
@@ -332,7 +332,7 @@ function runIntel(item: IntelItem) {
 function onForecastSummary(summary: { basis: DataBasis; stats: { mean: number; spread: number } } | null) {
   if (!summary) {
     // 无可用预测（越界/全失败/未选模型）：必须清掉上一目标日的残留，否则新目标日标题下
-    // 仍显示旧均价，createDraft() 还会把旧口径写进新草稿。basis 回落 illustrative——
+    // 仍显示旧均价，createDraft() 还会把旧口径写进新草稿。basis 回落 illustrative
     // 契约 createPayload.basis 的缺省值就是它，表示"无真实预测支撑"，不谎报 captured。
     forecastBasis.value = 'illustrative'
     forecastStats.value = { mean: 0, spread: 0 }
@@ -342,7 +342,7 @@ function onForecastSummary(summary: { basis: DataBasis; stats: { mean: number; s
   forecastStats.value = summary.stats
 }
 
-// ── 申报单 ──
+// 申报单
 const list = ref<DeclarationOrder[]>([])
 const current = ref<DeclarationOrder | null>(null)
 const busy = ref(false)
@@ -386,7 +386,7 @@ function applyOptimizedCurve(point: OptimizeBidFrontierPoint) {
 // 创建表单
 const capacityMw = ref(50)
 /**
- * 报价依据摘要（契约 v3 起必填）。监管质询时它是自证报价形成过程的唯一材料——
+ * 报价依据摘要（契约 v3 起必填）。监管质询时它是自证报价形成过程的唯一材料，
  * 「无法解释的报价 = 高风险报价」，所以在建单这一步就要求写，而不是事后补。
  */
 const quoteRationale = ref('')
@@ -396,15 +396,15 @@ const riskNote = computed(
   () => `风险偏好 ${{ conservative: '保守（严控偏差考核）', balanced: '均衡', aggressive: '积极（接受更高敞口）' }[riskPreference.value]}`
 )
 
-// ── 申报决策包：retailer 走采购成本建议；/optimize-bid 仅在 generator 出力预测场景开放 ──
+// 申报决策包：retailer 走采购成本建议；/optimize-bid 仅在 generator 出力预测场景开放
 // 本页固定售电主体。曾试过加「主体类型」选择器让「一键生成最优申报曲线」可用，实测后撤回
-// ——那条路要动的是**主体隔离**，不是一个下拉框：
-//  ① 申报契约用大写 GENERATOR/RETAILER，而 cockpit 参数是小写；`server/spot-declarations-api.mjs`
-//     的 `fetchExposureFromHarness`(:155) 与 `evaluateRiskChecks`(:629) 都按 `['GENERATOR','STORAGE']`
-//     **精确大写**判卖出侧，小写值会让发电单按购入敞口取数与校验，风控结论与审批档位一起污染；
-//  ② 建单端点 `:562` 用请求体 `subjectType` **覆盖会话主体且不校验授权**，前端一开放，
-//     售电角色就能建出 GENERATOR 单（反向亦然）——属主体隔离回归，必须服务端先兜住。
-// 故本页维持售电口径；下方 optimizeUnavailableReason 会**在生成决策包之前**就说明该功能
+// 那条路要动的是主体隔离，不是一个下拉框：
+// ① 申报契约用大写 GENERATOR/RETAILER，而 cockpit 参数是小写；`server/spot-declarations-api.mjs`
+// 的 `fetchExposureFromHarness`(:155) 与 `evaluateRiskChecks`(:629) 都按 `['GENERATOR','STORAGE']`
+// 精确大写判卖出侧，小写值会让发电单按购入敞口取数与校验，风控结论与审批档位一起污染；
+// ② 建单端点 `:562` 用请求体 `subjectType` 覆盖会话主体且不校验授权，前端一开放，
+// 售电角色就能建出 GENERATOR 单（反向亦然），属主体隔离回归，必须服务端先兜住。
+// 故本页维持售电口径；下方 optimizeUnavailableReason 会在生成决策包之前就说明该功能
 // 仅对发电侧开放，而不是让按钮静默地点不动。开放发电侧另议（需服务端主体授权校验）。
 const declarationSubjectType = 'retailer' as const
 // 决策模型不再硬编码：由对比表的「设为决策模型」指定，占位模型被组件侧阻断。
@@ -412,12 +412,12 @@ const declarationSubjectType = 'retailer' as const
 // 空串 = 本批没有可作决策依据的模型（对比组件回吐），此时决策包不可生成。
 const decisionModel = ref('xgboost')
 // 本批预测是否已跑完并验真。首次挂载与切目标日/地区后的运行期间，decisionModel 还是初始或
-// 上一批的值——此时若允许生成，用户会拿到基于「最终会被判为合成/门禁失败」的模型算出的
+// 上一批的值，此时若允许生成，用户会拿到基于「最终会被判为合成/门禁失败」的模型算出的
 // 申报建议。故未就绪一律禁用生成。
 const forecastBatchReady = ref(false)
 // 新一批预测开始（就绪→未就绪）时必须清掉已生成的决策包：竞价空间/申报建议/偏差风险都是
 // 按上一批曲线算的，而「重跑」或增选模型并不会改变 decisionModel，不会触发 update 事件，
-// 于是旧决策包会一直与新曲线、新均价并列展示——同一屏上混着两批口径，用户无从分辨。
+// 于是旧决策包会一直与新曲线、新均价并列展示，同一屏上混着两批口径，用户无从分辨。
 function onForecastBatchReady(ready: boolean) {
   if (!ready && forecastBatchReady.value) resetDecisionPackage()
   forecastBatchReady.value = ready
@@ -432,7 +432,7 @@ const supportsOptimizeBid = computed(
   () => cockpit.value?.bid_advice.subject_type === 'generator' && !!cockpit.value.bid_advice.generator
 )
 const optimizeUnavailableReason = computed(() => {
-  // 未生成决策包时原先返回空串 —— 于是「一键生成最优申报曲线」既点不动、也不说为什么，
+  // 未生成决策包时原先返回空串，于是「一键生成最优申报曲线」既点不动、也不说为什么，
   // 成了一个纯粹的死按钮（用户实机反馈的正是这一点）。本页固定售电口径，这条限制在
   // 决策包生成之前就已成立，应当先讲清楚。
   if (declarationSubjectType === 'retailer') {
@@ -457,7 +457,7 @@ function isDecisionRequestCurrent(date: string, region: string, model: string): 
   return date === targetDate.value && region === currentRegion.value.id && model === decisionModel.value
 }
 
-// 加载锁必须由**请求世代**而非上下文相等性解除。上下文相等性只能决定"结果收不收"，
+// 加载锁必须由请求世代而非上下文相等性解除。上下文相等性只能决定"结果收不收"，
 // 不能决定"锁解不解"：决策包是按钮触发的，切了目标日/地区/模型之后未必会有新请求接手，
 // 那样 cockpitLoading 就永久为 true，生成按钮一直禁用，用户只能刷新页面。
 let cockpitRequest = 0
@@ -529,7 +529,7 @@ async function loadDecisionPackage() {
     decisionError.value = error instanceof Error ? error.message : '申报决策包生成失败'
   } finally {
     // 只按世代判断：本次仍是最新请求就解锁；被更新的请求或 resetDecisionPackage 取代了，
-    // 由接手方负责解锁——两条路径都保证锁最终会被解开。
+    // 由接手方负责解锁，两条路径都保证锁最终会被解开。
     if (requestId === cockpitRequest) cockpitLoading.value = false
   }
 }
@@ -591,7 +591,7 @@ const exposureLoading = ref(false)
 const exposureStatus = ref<'idle' | 'loading' | 'auto' | 'manual' | 'failed'>('idle')
 // 失败原因原文。后端对「该地区/该月无此品类采集数据」返回的是 503 + 明确 detail
 // （如「回放服务无该品类数据（sdpt_console，2026-07-01~2026-07-31）」），前端原先一律
-// 显示「敞口端点暂不可用」，把**数据缺失**说成了**服务故障**，用户无从判断该等还是该换日期。
+// 显示「敞口端点暂不可用」，把数据缺失说成了服务故障，用户无从判断该等还是该换日期。
 const exposureError = ref('')
 const exposureTouched = ref(false)
 const exposureSourceIsMock = computed(() => {
@@ -674,9 +674,9 @@ function applyBatch() {
 const totalMwh = computed(() => Math.round(hourlyMw.value.reduce((sum, mw) => sum + mw, 0) * 100) / 100)
 const maxMw = computed(() => Math.max(...hourlyMw.value, 0))
 
-// ── 审批可见性（UI 门，非安全边界）──
+// 审批可见性（UI 门，非安全边界）
 // 权威判定恒在服务端（spot-declarations-api.mjs 的 APPROVE_ROLES + 自审禁止，越权一律 403）。
-// 此处只负责不把「批准/驳回」按钮渲染给无权用户——此前模板仅判 status，导致交易员也看得到
+// 只负责不把「批准/驳回」按钮渲染给无权用户，此前模板仅判 status，导致交易员也看得到
 // 审批按钮、点了才吃 403，既是越权观感也是无效操作。两处角色集合须与服务端保持同步。
 const APPROVE_ROLES_UI = ['TRADE_LEAD', 'RISK', 'ADMIN', 'BOSS']
 const ELEVATED_ROLES_UI = ['ADMIN', 'BOSS']
@@ -722,7 +722,7 @@ function renderDeclChart() {
 }
 
 // 刷新世代守卫：切目标日会触发 watcher 的无 selectId 刷新，用户点历史行又会带 id 刷新，
-// 两个异步完成顺序不定——前者后返回就会用 list[0] 覆盖用户刚选中的历史单。
+// 两个异步完成顺序不定，前者后返回就会用 list[0] 覆盖用户刚选中的历史单。
 // 世代号让过期刷新自行丢弃；pendingSelectId 让「切日期 + 选中某单」只走一次刷新。
 let refreshGeneration = 0
 // 初值取路由 query：审批队列「去申报台」会带 declarationId，
@@ -743,7 +743,7 @@ async function refresh(selectId?: string) {
     meta.value = nextMeta
     list.value = nextList
     let target = wantedId ? list.value.find((d) => d.id === wantedId) : list.value[0]
-    // 该日申报单超过服务端默认分页上限时，待选单可能不在首页 rows 里——
+    // 该日申报单超过服务端默认分页上限时，待选单可能不在首页 rows 里
     // 此时直接取单资源接口，而不是 find 落空后把 current 置空（用户点了却打不开）。
     if (wantedId && !target) {
       const fetched = await getDeclaration(wantedId).catch(() => undefined)
@@ -764,7 +764,7 @@ async function refresh(selectId?: string) {
   void loadHistoryList()
 }
 
-// ── 历史申报单 ──
+// 历史申报单
 // 独立于 list（后者被 targetDate 精确过滤且驱动 current），避免污染 current 选取逻辑。
 // 申报台此前只按精确目标日查询，默认目标日是明天 → 几乎必然 0 条，历史单全不可见。
 const historyLoading = ref(false)
@@ -773,7 +773,7 @@ const historyCounts = ref<Record<DeclarationMode, number>>({ LIVE: 0, REHEARSAL:
 const historyModeFilter = ref<'' | DeclarationMode>('')
 const HISTORY_WINDOW_DAYS = 60
 // 服务端 list 上限 500。本区是申报台内的辅助视图（看全量走审批队列的「全部申报单」），
-// 故单次取到上限而非遍历分页，但**必须显式提示截断**——否则 counts 显示完整数量、
+// 故单次取到上限而非遍历分页，但必须显式提示截断，否则 counts 显示完整数量、
 // 表格只有前 N 行，读起来像「这就是全部」。
 const HISTORY_PAGE_LIMIT = 500
 const historyTotal = ref(0)
@@ -813,11 +813,11 @@ const historyTruncated = computed(() => historyTotal.value > historyRows.value.l
 watch(historyModeFilter, () => { void loadHistoryList() })
 
 // 点击历史行：切目标日并选中该单。
-// 跨目标日时只置 pendingSelectId 并改 targetDate——由 watcher 那一次刷新消费待选 id，
+// 跨目标日时只置 pendingSelectId 并改 targetDate，由 watcher 那一次刷新消费待选 id，
 // 不再自己额外发一次 refresh，避免两次并发刷新互相覆盖（世代守卫是第二道防线）。
 function openHistoryRow(row: DeclarationOrder) {
   // 历史列表与当前单动线现在是同一模块的两个互斥 tab：不切回去的话，点「查看」表面上
-  // 毫无反应——曲线、状态与操作区都在另一个 tab 里，用户只会以为按钮坏了。
+  // 毫无反应，曲线、状态与操作区都在另一个 tab 里，用户只会以为按钮坏了。
   declTab.value = 'current'
   if (row.targetDate !== targetDate.value) {
     pendingSelectId.value = row.id
@@ -842,21 +842,21 @@ async function act<T>(fn: () => Promise<T>, after?: (result: T) => void) {
 }
 
 // 终态单（已逾期 / 已出清 / 已驳回）无出边，页面上再没有任何可操作项。用户要「重新申报」时，
-// **不回退原单状态**——那等于让"过了 D-1 10:30 截止"这条真实市场约束变成可撤销的，账本上也
+// 不回退原单状态，那等于让"过了 D-1 10:30 截止"这条真实市场约束变成可撤销的，账本上也
 // 再看不出"这张单曾经逾期"。改为按同参数复制出一张 REHEARSAL 新单：原单保持终态，新单立刻
 // 可编辑、可走完整流程做回测。
-// note 里写清**被模拟的日期**与**发起模拟的时间**，两者缺一不可：只有目标日会让人分不清
+// note 里写清被模拟的日期与发起模拟的时间，两者缺一不可：只有目标日会让人分不清
 // 这是当年报的还是今天补跑的回测。
 // 申报单模块的两个 tab：当前单动线 / 历史单列表。历史单原本是页面底部另一个通栏面板，
 // 与申报单模块相隔一屏，看完历史再回来操作要来回滚。同框切页更贴合"同一件事的两个视角"。
 const declTab = ref<'current' | 'history'>('current')
 
-// 「无出边」必须**从契约状态机派生**，不能自己列一份：我手列的 EXPIRED/CLEARED/REJECTED
+// 「无出边」必须从契约状态机派生，不能自己列一份：我手列的 EXPIRED/CLEARED/REJECTED
 // 里，CLEARED 还能走 DEVIATION_TRACKING、REJECTED 还能回 DRAFT（页面甚至仍给它渲染曲线
-// 编辑器），而真正无出边的 REVIEWED 反倒漏了——文案说「不可再修改」与页面操作自相矛盾。
+// 编辑器），而真正无出边的 REVIEWED 反倒漏了，文案说「不可再修改」与页面操作自相矛盾。
 // 复制的主体口径必须与当前会话一致。不设这道门的话：同公司历史列表里能看到别的主体类型
-// 的终态单，复制时又（为避免矛盾记录而）不传 subjectType，服务端便按复制者的主体归类——
-// **原本的卖出侧曲线会被静默重新解释为售电侧申报**，敞口与风控口径整个反转，而页面上
+// 的终态单，复制时又（为避免矛盾记录而）不传 subjectType，服务端便按复制者的主体归类
+// 原本的卖出侧曲线会被静默重新解释为售电侧申报，敞口与风控口径整个反转，而页面上
 // 毫无提示。曲线可以复用，主体不能重新定义。
 const copySubjectMismatch = computed(() => {
   const src = current.value?.subjectType
@@ -872,7 +872,7 @@ const canCopyAsRehearsal = computed(() => {
   return !copySubjectMismatch.value
 })
 
-// 从 note 里取回「于 X 发起」——复制模拟单时写进去的发起时间。解析不出就不显示，
+// 从 note 里取回「于 X 发起」，复制模拟单时写进去的发起时间。解析不出就不显示，
 // 不拿 createdAt 之类的近似值顶替（那可能是服务端时间，与用户看到的"我什么时候点的"不是一回事）。
 const rehearsalStartedAt = computed(() => parseRehearsalStartedAt(current.value?.note))
 
@@ -881,8 +881,8 @@ function copyAsRehearsal() {
   if (!src) return
   const startedAt = formatRehearsalStamp(Date.now())
   act(
-    // **一次 POST 带齐**：create 本就接受两条曲线与主体口径。分两步写的话
-    // ① priceCurve96 会被建单默认成 null——"按同参数复制"的回测其实换了报价；
+    // 一次 POST 带齐：create 本就接受两条曲线与主体口径。分两步写的话
+    // ① priceCurve96 会被建单默认成 null，"按同参数复制"的回测其实换了报价；
     // ② 第二步失败会在服务端留下一张按 60% 平铺电量的半成品草稿，重试还会再生成一张。
     () => createDeclaration({
       targetDate: src.targetDate,
@@ -892,9 +892,9 @@ function copyAsRehearsal() {
       energyCurveMwh96: src.energyCurveMwh96?.length ? src.energyCurveMwh96 : undefined,
       priceCurve96: src.priceCurve96,
       strategySource: src.strategySource,
-      // **不带 src.subjectType**：历史列表只按公司+地区过滤，同公司里售电用户看得到发电单，
+      // 不带 src.subjectType：历史列表只按公司+地区过滤，同公司里售电用户看得到发电单，
       // 原样提交就会造出「subjectId 是自己（售电）、subjectType 却是 GENERATOR」的矛盾单，
-      // 风控随后按售出敞口算。模拟单归复制者自己——主体由服务端按会话身份填。
+      // 风控随后按售出敞口算。模拟单归复制者自己，主体由服务端按会话身份填。
       // 服务端亦已加 subjectTypeAuthorized 前置校验，前端不传只是不去撞那道门。
       basis: src.basis,
       note: buildRehearsalNote({
@@ -970,7 +970,7 @@ function decide(decision: 'approve' | 'reject') {
 async function doSubmit() {
   if (!current.value) return
   // Trust gate 硬阻塞：正式申报提交前，依赖数据 basis 必须 operational（real/captured）。
-  // advisory_only（合成/示意/未知）时禁止作为正式申报依据——本页为 MOCK 演示网关
+  // advisory_only（合成/示意/未知）时禁止作为正式申报依据，本页为 MOCK 演示网关
   // （回执标注「非真实申报」），故阻断后仅允许「演示模式」显式继续，杜绝沉默误用。
   const basis = current.value.basis
   try {
@@ -1004,7 +1004,7 @@ function goReview() {
   router.push({ path: '/xhjy/review', query: { date: targetDate.value, declarationId: current.value?.id ?? '' } })
 }
 
-// ── 智能体协助起草（可选）：面板 done 后刷新列表（finalize 落库的 DRAFT 即时可见）──
+// 智能体协助起草（可选）：面板 done 后刷新列表（finalize 落库的 DRAFT 即时可见）
 const constraints = computed(
   () => `可用容量 ${capacityMw.value} MW；${riskNote.value}${current.value ? `；申报单 ${current.value.id}` : ''}`
 )
@@ -1012,7 +1012,7 @@ function startDraftAssist() {
   if (harness.value !== 'online') return
   agentMode.value = 'draft'
   // 必须先清待恢复会话：AgentChatPanel 的挂载优先级是 resumeSessionId → ?q= → localStorage，
-  // 不清的话重挂后会走回放分支、跳过 initialQuestion——按钮点了只是回放上次对话，
+  // 不清的话重挂后会走回放分支、跳过 initialQuestion，按钮点了只是回放上次对话，
   // 不会为当前目标日启动新的 declaration_prep 流程。
   sessionIdByMode.draft = null
   draftRunQuestion.value = targetDate.value
@@ -1582,32 +1582,32 @@ onRegionChange(() => {
 </template>
 
 <style scoped>
-.rationale-field { display: flex; flex-direction: column; gap: 3px; margin: 8px 0; font-size: 12px; }
+.rationale-field { display: flex; flex-direction: column; gap: 3px; margin: 8px 0; font-size: var(--font-sm); }
 .rationale-field b { color: #b91c1c; }
-.rationale-field textarea { width: 100%; padding: 6px 8px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 6px; font-size: 12px; font-family: inherit; }
-.rationale-field small { font-size: 11px; color: var(--el-text-color-secondary, #667); }
+.rationale-field textarea { width: 100%; padding: 6px 8px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 6px; font-size: var(--font-sm); font-family: inherit; }
+.rationale-field small { font-size: var(--font-xs); color: var(--el-text-color-secondary, #667); }
 .rationale-field small.warn { color: #b45309; }
 .decl-desk { gap: 14px; }
-.muted { color: var(--muted); font-size: 12.5px; line-height: 1.7; }
-.mono { font-family: ui-monospace, monospace; font-size: 12px; }
+.muted { color: var(--muted); font-size: var(--font-12-5); line-height: 1.7; }
+.mono { font-family: ui-monospace, monospace; font-size: var(--font-sm); }
 
 /* 步骤条 */
 .steps-bar { display: flex; align-items: center; gap: 4px; padding: 12px 16px; flex-wrap: wrap; }
 .step { display: flex; align-items: center; gap: 7px; flex: 1; min-width: 0; }
 .step-no {
   width: 24px; height: 24px; border-radius: 50%; flex-shrink: 0;
-  display: grid; place-items: center; font-size: 12px; font-weight: 700;
+  display: grid; place-items: center; font-size: var(--font-sm); font-weight: 700;
   border: 1.5px solid var(--line); color: var(--muted);
 }
 .step.active .step-no { border-color: var(--primary); color: var(--primary); }
 .step.done .step-no { border-color: var(--success); color: var(--success); }
-.step-label { font-size: 13px; white-space: nowrap; color: var(--muted); }
+.step-label { font-size: var(--font-md); white-space: nowrap; color: var(--muted); }
 .step.active .step-label { color: var(--text); font-weight: 600; }
 .step-line { flex: 1; height: 1px; background: var(--line); margin: 0 8px; }
 .bar-right { display: flex; align-items: center; gap: 12px; }
 .deadline-chip {
   display: inline-flex; align-items: center; gap: 5px;
-  padding: 4px 10px; font-size: 12px; border-radius: 999px;
+  padding: 4px 10px; font-size: var(--font-sm); border-radius: 999px;
   border: 1px solid var(--line); color: var(--muted);
 }
 .deadline-chip.warn { border-color: #f59e0b; color: #b45309; background: rgba(245, 158, 11, 0.1); }
@@ -1617,35 +1617,35 @@ onRegionChange(() => {
 /* 历史模拟徽标：全链常驻，防止演练单被误当真实申报 */
 .rehearsal-chip {
   display: inline-flex; align-items: center; gap: 5px;
-  padding: 2px 8px; font-size: 11.5px; border-radius: 999px;
+  padding: 2px 8px; font-size: var(--font-11-5); border-radius: 999px;
   border: 1px solid #f59e0b; color: #b45309; background: rgba(245, 158, 11, 0.12);
   white-space: nowrap;
 }
-.rehearsal-chip.lg { padding: 4px 10px; font-size: 12px; }
+.rehearsal-chip.lg { padding: 4px 10px; font-size: var(--font-sm); }
 .rehearsal-hint {
   display: flex; align-items: flex-start; gap: 6px;
-  margin: 8px 0 0; padding: 8px 10px; font-size: 12.5px; line-height: 1.6;
+  margin: 8px 0 0; padding: 8px 10px; font-size: var(--font-12-5); line-height: 1.6;
   border-radius: 8px; border: 1px solid #f59e0b;
   color: #b45309; background: rgba(245, 158, 11, 0.08);
 }
 .rehearsal-hint.warn { border-color: #ef4444; color: #b91c1c; background: rgba(239, 68, 68, 0.08); }
 .rehearsal-hint b { font-weight: 600; }
-.approval-blocked { margin: 8px 0 0; font-size: 12.5px; }
+.approval-blocked { margin: 8px 0 0; font-size: var(--font-12-5); }
 .link-btn {
   background: none; border: none; padding: 0; font: inherit; cursor: pointer;
   color: var(--primary); text-decoration: underline;
 }
 
 /* 历史申报单表（申报单模块的历史 tab） */
-.history-table { width: 100%; border-collapse: collapse; font-size: 12.5px; margin-top: 8px; }
+.history-table { width: 100%; border-collapse: collapse; font-size: var(--font-12-5); margin-top: 8px; }
 .history-table th, .history-table td { padding: 6px 8px; text-align: left; border-bottom: 1px solid var(--line-faint); }
 .history-table th { color: var(--muted); font-weight: 500; }
 .history-table tr.active td { background: rgba(14, 165, 233, 0.08); }
 .history-table td.num { font-variant-numeric: tabular-nums; }
-.mode-tag { padding: 1px 7px; border-radius: 999px; font-size: 11.5px; border: 1px solid var(--line); color: var(--muted); }
+.mode-tag { padding: 1px 7px; border-radius: 999px; font-size: var(--font-11-5); border: 1px solid var(--line); color: var(--muted); }
 .mode-tag[data-mode='REHEARSAL'] { border-color: #f59e0b; color: #b45309; background: rgba(245, 158, 11, 0.12); }
 
-.target-date { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); }
+.target-date { display: flex; align-items: center; gap: 8px; font-size: var(--font-md); color: var(--muted); }
 .target-date input {
   padding: 4px 8px; border: 1px solid var(--line); border-radius: 8px;
   background: transparent; color: var(--text);
@@ -1662,23 +1662,23 @@ onRegionChange(() => {
 /* 智能体服务状态横幅 */
 .harness-banner {
   display: flex; align-items: center; gap: 8px;
-  padding: 10px 16px; font-size: 12.5px; line-height: 1.6;
+  padding: 10px 16px; font-size: var(--font-12-5); line-height: 1.6;
 }
 .harness-banner.offline { border-color: #f59e0b; color: var(--text); }
 .harness-banner.checking { color: var(--muted); }
 .harness-banner code {
   background: rgba(125, 125, 125, 0.12); padding: 1px 6px;
-  border-radius: 4px; font-size: 11.5px;
+  border-radius: 4px; font-size: var(--font-11-5);
 }
 .retry-btn {
-  margin-left: auto; flex-shrink: 0; padding: 4px 14px; font-size: 12.5px;
+  margin-left: auto; flex-shrink: 0; padding: 4px 14px; font-size: var(--font-12-5);
   border: 1px solid var(--primary); border-radius: 7px;
   background: transparent; color: var(--primary); cursor: pointer;
 }
 .retry-btn:hover { background: var(--primary); color: #fff; }
 
 .error-strip {
-  margin: 0; padding: 8px 12px; font-size: 12.5px; border-radius: 8px;
+  margin: 0; padding: 8px 12px; font-size: var(--font-12-5); border-radius: 8px;
   border: 1px solid #ef4444; color: #b91c1c; background: rgba(239, 68, 68, 0.08);
 }
 
@@ -1688,8 +1688,8 @@ onRegionChange(() => {
 
 .intel, .workflow { padding: 14px 16px; }
 .panel-head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; flex-wrap: wrap; }
-.panel-head h2 { display: flex; align-items: center; gap: 6px; font-size: 14px; margin: 0; }
-.stat-chips { margin-left: auto; display: flex; gap: 12px; font-size: 12px; color: var(--muted); }
+.panel-head h2 { display: flex; align-items: center; gap: 6px; font-size: var(--font-lg); margin: 0; }
+.stat-chips { margin-left: auto; display: flex; gap: 12px; font-size: var(--font-sm); color: var(--muted); }
 .stat-chips b { color: var(--text); font-variant-numeric: tabular-nums; }
 .forecast-chart { width: 100%; height: 240px; }
 .decl-chart { width: 100%; height: 200px; }
@@ -1699,7 +1699,7 @@ onRegionChange(() => {
 .curve-meta b { color: var(--text); }
 
 .status-chip {
-  padding: 2px 10px; font-size: 12px; border-radius: 999px;
+  padding: 2px 10px; font-size: var(--font-sm); border-radius: 999px;
   border: 1px solid var(--line); color: var(--muted);
 }
 .status-chip[data-status='PENDING_APPROVAL'] { border-color: #f59e0b; color: #b45309; }
@@ -1708,7 +1708,7 @@ onRegionChange(() => {
 /* 申报单模块的两个 tab */
 .decl-tabs { display: flex; gap: 4px; }
 .decl-tabs button {
-  display: inline-flex; align-items: center; gap: 4px; padding: 3px 10px; font-size: 13px;
+  display: inline-flex; align-items: center; gap: 4px; padding: 3px 10px; font-size: var(--font-md);
   border: 1px solid transparent; border-radius: 6px 6px 0 0; background: transparent;
   color: var(--el-text-color-regular); cursor: pointer;
 }
@@ -1717,14 +1717,14 @@ onRegionChange(() => {
   background: var(--el-fill-color-blank); color: var(--el-color-primary); font-weight: 600;
 }
 .tab-count {
-  min-width: 16px; padding: 0 4px; font-size: 11px; line-height: 16px; text-align: center;
+  min-width: 16px; padding: 0 4px; font-size: var(--font-xs); line-height: 16px; text-align: center;
   border-radius: 8px; background: var(--el-fill-color); color: var(--el-text-color-secondary);
 }
 .history-scope { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 /* 终态单出路 */
 .rehearsal-banner {
   display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 0 0 8px;
-  padding: 6px 10px; font-size: 12px; border-radius: 6px;
+  padding: 6px 10px; font-size: var(--font-sm); border-radius: 6px;
   border: 1px solid var(--el-color-warning); background: rgba(245, 158, 11, 0.08);
   color: var(--el-text-color-regular);
 }
@@ -1733,7 +1733,7 @@ onRegionChange(() => {
   border-radius: 6px; display: flex; flex-direction: column; gap: 6px;
 }
 .decl-select {
-  margin-left: auto; padding: 4px 8px; font-size: 12px;
+  margin-left: auto; padding: 4px 8px; font-size: var(--font-sm);
   border: 1px solid var(--line); border-radius: 8px; background: transparent; color: var(--text);
 }
 
@@ -1748,11 +1748,11 @@ onRegionChange(() => {
 }
 .decision-title, .frontier-head span:first-child {
   display: inline-flex; align-items: center; gap: 6px;
-  font-size: 13px; font-weight: 650;
+  font-size: var(--font-md); font-weight: 650;
 }
 .decision-head .mini { margin-left: auto; display: inline-flex; align-items: center; gap: 5px; }
 .decision-error {
-  margin: 6px 0 0; padding: 6px 8px; font-size: 12px; line-height: 1.5;
+  margin: 6px 0 0; padding: 6px 8px; font-size: var(--font-sm); line-height: 1.5;
   border: 1px solid #ef4444; border-radius: 8px;
   color: #b91c1c; background: rgba(239, 68, 68, 0.08);
 }
@@ -1767,10 +1767,10 @@ onRegionChange(() => {
 }
 .decision-metric.risk { border-color: rgba(239, 68, 68, 0.35); }
 .metric-label, .decision-metric small {
-  display: block; color: var(--muted); font-size: 11px; line-height: 1.5;
+  display: block; color: var(--muted); font-size: var(--font-xs); line-height: 1.5;
 }
 .decision-metric b {
-  display: block; color: var(--text); font-size: 18px; line-height: 1.45;
+  display: block; color: var(--text); font-size: var(--font-18); line-height: 1.45;
   font-variant-numeric: tabular-nums;
 }
 .optimize-entry { margin-top: 8px; }
@@ -1780,7 +1780,7 @@ onRegionChange(() => {
 .decision-note {
   margin: 6px 0 0;
   color: var(--muted);
-  font-size: 11.5px;
+  font-size: var(--font-11-5);
   line-height: 1.5;
 }
 .frontier-list {
@@ -1791,7 +1791,7 @@ onRegionChange(() => {
   width: 100%; align-items: center;
   padding: 7px 9px; border: 1px solid var(--line); border-radius: 8px;
   background: transparent; color: var(--text); cursor: pointer;
-  font-size: 12px; text-align: left;
+  font-size: var(--font-sm); text-align: left;
 }
 .frontier-row:hover:not(:disabled), .frontier-row.selected { border-color: var(--primary); }
 .frontier-row:disabled { opacity: 0.55; cursor: not-allowed; }
@@ -1803,17 +1803,17 @@ onRegionChange(() => {
 
 /* 情报清单（移交智能体执行，完成打勾） */
 .checklist { margin-top: 10px; }
-.checklist-title { display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; margin-bottom: 6px; flex-wrap: wrap; }
+.checklist-title { display: flex; align-items: center; gap: 6px; font-size: var(--font-md); font-weight: 600; margin-bottom: 6px; flex-wrap: wrap; }
 .agent-badge {
   display: inline-flex; align-items: center; gap: 4px;
   padding: 1px 7px; border-radius: 999px;
   border: 1px solid var(--line); color: var(--muted);
-  font-size: 11px; font-weight: 500;
+  font-size: var(--font-xs); font-weight: 500;
 }
-.checklist-hint { margin: 0 0 4px; color: var(--muted); font-size: 11.5px; }
+.checklist-hint { margin: 0 0 4px; color: var(--muted); font-size: var(--font-11-5); }
 .check-item {
   display: flex; align-items: center; gap: 8px; width: 100%;
-  padding: 7px 10px; margin-top: 5px; font-size: 12.5px;
+  padding: 7px 10px; margin-top: 5px; font-size: var(--font-12-5);
   border: 1px solid var(--line); border-radius: 8px;
   background: transparent; color: var(--text); cursor: pointer; text-align: left;
 }
@@ -1834,42 +1834,42 @@ onRegionChange(() => {
 }
 .check-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
 .check-label { font-weight: 500; }
-.check-desc { color: var(--muted); font-size: 11px; line-height: 1.4; }
+.check-desc { color: var(--muted); font-size: var(--font-xs); line-height: 1.4; }
 .check-item span { display: inline-flex; align-items: center; gap: 6px; }
 .agent-toggle { margin-top: 10px; }
 
-.field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px; font-size: 13px; }
-.field span { color: var(--muted); font-size: 12px; }
+.field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px; font-size: var(--font-md); }
+.field span { color: var(--muted); font-size: var(--font-sm); }
 .field input, .field select {
   padding: 7px 10px; border: 1px solid var(--line); border-radius: 8px;
-  background: transparent; color: var(--text); font-size: 13px;
+  background: transparent; color: var(--text); font-size: var(--font-md);
 }
 .launch {
   display: flex; align-items: center; justify-content: center; gap: 7px; width: 100%;
-  margin-top: 10px; padding: 10px; font-size: 14px; font-weight: 600;
+  margin-top: 10px; padding: 10px; font-size: var(--font-lg); font-weight: 600;
   border: none; border-radius: 10px; cursor: pointer;
   background: var(--primary); color: #fff;
   transition: filter 0.15s ease;
 }
-.launch.slim { padding: 8px; font-size: 13px; }
+.launch.slim { padding: 8px; font-size: var(--font-md); }
 .launch:hover { filter: brightness(1.1); }
 .launch:disabled { opacity: 0.5; cursor: not-allowed; }
 
-.batch-row { display: flex; align-items: center; gap: 6px; margin: 8px 0; font-size: 12.5px; flex-wrap: wrap; }
+.batch-row { display: flex; align-items: center; gap: 6px; margin: 8px 0; font-size: var(--font-12-5); flex-wrap: wrap; }
 .batch-row input {
   width: 72px; padding: 4px 6px; border: 1px solid var(--line); border-radius: 6px;
-  background: transparent; color: var(--text); font-size: 12.5px;
+  background: transparent; color: var(--text); font-size: var(--font-12-5);
 }
 .hour-grid { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 6px; }
 .hour-grid label { display: grid; grid-template-columns: 18px minmax(0, 1fr); align-items: center; gap: 3px; }
-.hour-grid span { color: var(--muted); font-size: 11px; text-align: right; }
+.hour-grid span { color: var(--muted); font-size: var(--font-xs); text-align: right; }
 .hour-grid input {
   width: 100%; padding: 3px 6px; border: 1px solid var(--line); border-radius: 6px;
-  background: transparent; color: var(--text); font-size: 12px;
+  background: transparent; color: var(--text); font-size: var(--font-sm);
 }
 .action-row { display: flex; align-items: center; gap: 10px; margin: 8px 0; }
 .mini {
-  padding: 5px 12px; font-size: 12.5px; border-radius: 8px; cursor: pointer;
+  padding: 5px 12px; font-size: var(--font-12-5); border-radius: 8px; cursor: pointer;
   border: 1px solid var(--line); background: transparent; color: var(--text);
 }
 .mini { display: inline-flex; align-items: center; gap: 5px; }
@@ -1877,7 +1877,7 @@ onRegionChange(() => {
 .mini.danger { border-color: #ef4444; color: #b91c1c; }
 .mini:disabled { opacity: 0.5; cursor: not-allowed; }
 .exposure-hint {
-  margin: -2px 0 6px; color: var(--muted); font-size: 11.5px; line-height: 1.6;
+  margin: -2px 0 6px; color: var(--muted); font-size: var(--font-11-5); line-height: 1.6;
 }
 .exposure-source {
   display: inline-flex;
@@ -1896,10 +1896,10 @@ onRegionChange(() => {
   background: rgba(245, 158, 11, 0.09);
 }
 
-.block-head { display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; margin: 10px 0 6px; }
-.gate-chip { padding: 1px 8px; font-size: 11px; border-radius: 999px; border: 1px solid var(--success); color: var(--success); }
+.block-head { display: flex; align-items: center; gap: 6px; font-size: var(--font-md); font-weight: 600; margin: 10px 0 6px; }
+.gate-chip { padding: 1px 8px; font-size: var(--font-xs); border-radius: 999px; border: 1px solid var(--success); color: var(--success); }
 .gate-chip.escalated { border-color: #f59e0b; color: #b45309; }
-.check-list { margin: 4px 0; padding-left: 16px; font-size: 12.5px; color: var(--muted); }
+.check-list { margin: 4px 0; padding-left: 16px; font-size: var(--font-12-5); color: var(--muted); }
 .check-list li { margin: 3px 0; }
 .check-list li[data-status='PASS'] b { color: var(--success); }
 .check-list li[data-status='FAIL'] b { color: #b91c1c; }
@@ -1907,22 +1907,22 @@ onRegionChange(() => {
 
 .approval-block textarea {
   width: 100%; padding: 7px 10px; border: 1px solid var(--line); border-radius: 8px;
-  background: transparent; color: var(--text); font-size: 12.5px; resize: vertical;
+  background: transparent; color: var(--text); font-size: var(--font-12-5); resize: vertical;
 }
 .mock-tag {
-  margin-left: 6px; padding: 1px 8px; font-size: 11px; border-radius: 999px;
+  margin-left: 6px; padding: 1px 8px; font-size: var(--font-xs); border-radius: 999px;
   background: rgba(245, 158, 11, 0.15); color: #b45309;
 }
 .card-action {
   display: inline-flex; align-items: center; gap: 5px;
-  margin-top: 8px; padding: 6px 14px; font-size: 13px;
+  margin-top: 8px; padding: 6px 14px; font-size: var(--font-md);
   border: 1px solid var(--primary); border-radius: 8px;
   background: transparent; color: var(--primary); cursor: pointer;
 }
 .card-action:hover { background: var(--primary); color: #fff; }
 
 /* 智能体工作区（历史侧栏 | 情报清单 | 对话）
-   注意：原 .prep-panel > :last-child { flex:1 } 已删除——它假定 panel 下唯一子元素就是
+   原 .prep-panel > :last-child { flex:1 } 已删除：它假定 panel 下唯一子元素就是
    chat panel，加侧栏后必然失效；改由 .aw-chat :deep(.agent-panel) 撑高。 */
 .agent-workspace { height: 620px; padding: 0; overflow: hidden; display: flex; }
 .aw-aside { width: 260px; flex-shrink: 0; transition: width 0.18s ease; }
@@ -1935,13 +1935,13 @@ onRegionChange(() => {
 .aw-tabs { display: flex; gap: 6px; }
 .aw-tab {
   display: inline-flex; align-items: center; gap: 5px;
-  padding: 4px 12px; font-size: 12.5px; cursor: pointer;
+  padding: 4px 12px; font-size: var(--font-12-5); cursor: pointer;
   border: 1px solid var(--line); border-radius: 999px;
   background: transparent; color: var(--muted);
 }
 .aw-tab:hover { border-color: var(--primary); color: var(--primary); }
 .aw-tab.active { border-color: var(--primary); color: var(--primary); background: rgba(14, 165, 233, 0.1); }
-.aw-head-hint { margin-left: auto; font-size: 12px; }
+.aw-head-hint { margin-left: auto; font-size: var(--font-sm); }
 .aw-body { flex: 1; min-height: 0; display: flex; }
 .aw-checklist {
   width: 240px; flex-shrink: 0; overflow-y: auto; padding: 10px;
@@ -1952,7 +1952,7 @@ onRegionChange(() => {
 .draft-entry { margin-top: 10px; border-color: var(--primary); color: var(--primary); }
 .checklist-moved {
   display: flex; align-items: flex-start; gap: 6px;
-  margin: 10px 0 0; font-size: 12px; line-height: 1.6;
+  margin: 10px 0 0; font-size: var(--font-sm); line-height: 1.6;
 }
 
 /* 窄屏：三栏竖排（沿用已接侧栏三页的 900px 断点约定） */
@@ -1961,7 +1961,7 @@ onRegionChange(() => {
   /* 只限制折叠态高度：展开态若也钉死 44px+hidden，rail-head 就占满、历史列表被整体裁掉，
      侧栏在手机/平板上等于不可用（既有三页 PolicyIntel/MorningBrief/PreSubmitCheck 同此问题，
      本 PR 只修申报台，共性修复另开）。 */
-  /* 必须给**确定** height 而非 max-height：子级 .history-rail 是 height:100%，父级
+  /* 必须给确定 height 而非 max-height：子级 .history-rail 是 height:100%，父级
      height:auto 时它解析不出确定高度，.rail-body 的 overflow-y:auto 就不形成滚动区，
      会话多时内容越过 260px 与下方清单/对话重叠。 */
   .aw-aside { width: 100%; height: 260px; overflow: hidden; }

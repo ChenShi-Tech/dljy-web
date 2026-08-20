@@ -61,7 +61,7 @@ function signedOutputDeviation(series: ReturnType<typeof buildPlantOutputSeries>
   }
 }
 
-// 契约可信可用（mock 数据不进指标计算，授权拒绝不进指标计算）——与 spatialCommand
+// 契约可信可用（mock 数据不进指标计算，授权拒绝不进指标计算），与 spatialCommand
 // trustedMarketMetrics 同口径：合成数据绝不向地图输出指标。
 function usableDaily(contract: NodePriceContract): NodePriceDailyAggregate[] {
   if (contract.mock || contract.access.accessDenied) return []

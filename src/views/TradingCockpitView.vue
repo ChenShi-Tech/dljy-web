@@ -31,7 +31,7 @@ import SpotCockpitCore from '@/components/spot/cockpit/SpotCockpitCore.vue'
 import CockpitRegionLockedCard from '@/components/spot/cockpit/CockpitRegionLockedCard.vue'
 import AgentChatPanel from '@/components/agent/AgentChatPanel.vue'
 import { PAGE_PROMPT_KEYS } from '@/prompts/pageKeys'
-// 地区增强层面板已全部迁入扩展包（features/regions/<省>/），经 regionSlots 装配——
+// 地区增强层面板已全部迁入扩展包（features/regions/<省>/），经 regionSlots 装配
 // 本内核不再 import 任何省份的面板组件；cockpit tab 复用上面的通用 SpotCockpitCore。
 import { onRegionChange } from '../composables/useRegionReload'
 import { resolveRegionSlot, type RegionSlotId } from '@/services/region/regionSlots'
@@ -54,7 +54,7 @@ import {
 const route = useRoute()
 const currentUser = ref<AuthUser>(getCurrentUser())
 
-// ── 云南身份区域（原云南交易工作台 hero：地区/电网/角色 + 市场阶段/主体类型/主体名 + 规则场景 + 核验状态）──
+// 云南身份区域（原云南交易工作台 hero：地区/电网/角色 + 市场阶段/主体类型/主体名 + 规则场景 + 核验状态）
 const yunnanProfile = getRuleProfile('yunnan')
 const verification = getYunnanRuleVerificationSummary()
 const selectedScenarioId = ref(yunnanScenarios[0].id)
@@ -62,7 +62,7 @@ const selectedScenario = computed(() => yunnanScenarios.find((item) => item.id =
 const roleLabel = computed(() => roleLabels[currentUser.value.roleCode])
 const subjectLabel = computed(() => subjectTypeLabels[currentUser.value.subjectType])
 
-// ── 市场披露摘要（云南 · yn_system_forecast 最新披露日关键数；真实回放，缺数空态）──
+// 市场披露摘要（云南 · yn_system_forecast 最新披露日关键数；真实回放，缺数空态）
 interface DisclosureSummary {
   date: string
   loadForecastMW: number | null      // 明日统调负荷预测（yn，日均）
@@ -71,10 +71,10 @@ interface DisclosureSummary {
 }
 const disclosure = ref<DisclosureSummary | null>(null)
 const disclosureLoading = ref(false)
-// 请求序号：地区切换/重复刷新期间旧 Promise 返回不得回写（否则非云南首页串显云南披露，codex P1）
+// 请求序号：地区切换/重复刷新期间旧 Promise 返回不得回写（否则非云南首页串显云南披露）
 let discReqSeq = 0
 // RBAC：披露关键数复用「披露明细」的细粒度授权（/dashboard 全角色开放，但披露数据只授
-// 交易/风控/量化/结算/售电等角色——PLANT/STORAGE 无权限角色不得经首页绕过取数，codex P1）。
+// 交易/风控/量化/结算/售电等角色，PLANT/STORAGE 无权限角色不得经首页绕过取数）。
 const canViewDisclosure = computed(() => canAccessPath('/xhjy/yunnan/disclosure', currentUser.value))
 
 async function loadDisclosureSummary() {
@@ -83,7 +83,7 @@ async function loadDisclosureSummary() {
   disclosureLoading.value = true
   try {
     // 尾部切片取最新披露：capture 按导出包回放，最新披露可能远早于浏览器今天，
-    // 「按今天回推窗口」在历史包场景整窗落空——limit 尾部（文件按日期升序拼接）即最新若干天。
+    // 「按今天回推窗口」在历史包场景整窗落空，limit 尾部（文件按日期升序拼接）即最新若干天。
     const filter = { limit: 2000 }
     const [loadB, neB, ipB] = await Promise.all([
       fetchCaptured<any>('yn_system_forecast', 'load_forecast', filter),
@@ -103,8 +103,8 @@ async function loadDisclosureSummary() {
       const vals = rows.filter((r) => dayOf(r) === latest && pick(r) && typeof r.value === 'number')
       return { date: latest, avg: vals.length ? +(vals.reduce((s, r) => s + r.value, 0) / vals.length).toFixed(0) : null }
     }
-    // 云南总送出：同一时点可能有多个含「云南」断面——先按 timePoint 合计各断面送出，再对
-    // 时点求日均（与弹性引擎口径一致；直接对断面行求均值会按断面数稀释外送规模，codex P2）。
+    // 云南总送出：同一时点可能有多个含「云南」断面，先按 timePoint 合计各断面送出，再对
+    // 时点求日均（与弹性引擎口径一致；直接对断面行求均值会按断面数稀释外送规模）。
     const latestSectionSum = (body: any): { date: string; avg: number | null } => {
       const rows: any[] = (Array.isArray(body?.data) ? body.data : []).filter(
         (r: any) => typeof r.region === 'string' && r.region.includes('云南')
@@ -132,7 +132,7 @@ async function loadDisclosureSummary() {
   }
 }
 
-// ── 当日报价方案入口卡（bid_plans 流水线产出摘要，epic #336 PR-D）──
+// 当日报价方案入口卡（bid_plans 流水线产出摘要，epic #336 PR-D）
 // 有当日 ok 方案才显示（skipped/error/无方案不显示卡，避免首页噪音）；权限复用申报 copilot
 // 细粒度路径；地区切换竞态守卫同披露侧卡（旧 Promise 不回写）。取数与归一在
 // forecast 服务层（bidPlanClient），视图只管竞态与展示。
@@ -166,9 +166,9 @@ function regionSlot(slotId: RegionSlotId) {
   const registration = resolveRegionSlot(slotId, currentRegion.value.id)
   if (!registration) return null
   if (!registration.capabilityPath) return registration.component
-  // 两道正交闸门缺一不可（codex P1）：
-  //   canAccessPath          → 角色权限（RBAC）
-  //   isPathAvailableInRegion → **地区能力**（hidden / not-configured 一律 fail-closed）
+  // 两道正交闸门缺一不可：
+  // canAccessPath → 角色权限（RBAC）
+  // isPathAvailableInRegion → 地区能力（hidden / not-configured 一律 fail-closed）
   // 只查前者时，ADMIN/BOSS 会绕过地区闸门；扩展包若把甲省 capabilityPath 误注册给乙省，
   // 也会在乙省渲染出本不该出现的面板。
   if (!canAccessPath(registration.capabilityPath, currentUser.value)) return null
@@ -185,7 +185,7 @@ const disclosureSlot = computed(() => regionSlot('cockpit.disclosure'))
 // PLANT_OPERATOR/STORAGE_OPERATOR 等无该权限角色不可绕过路由直接在首页读取全市场数据。
 const canViewCockpit = computed(() => canAccessPath('/xhjy/yunnan/cockpit', currentUser.value))
 
-// ── 云南增强层 tab 门控（原工作台 7 个真实数据 tab，按各自权限路径过滤）──
+// 云南增强层 tab 门控（原工作台 7 个真实数据 tab，按各自权限路径过滤）
 const canViewSpotPnL = computed(() => canAccessPath('/xhjy/yunnan/spot-pnl', currentUser.value))
 const canViewElasticity = computed(() => canAccessPath('/xhjy/yunnan/elasticity', currentUser.value))
 const canViewSpread = computed(() => canAccessPath('/xhjy/yunnan/spread', currentUser.value))
@@ -291,7 +291,7 @@ function riskLevelLabel(level: string): string {
   return ({ aggressive: '激进档', neutral: '中性档', conservative: '保守档' } as Record<string, string>)[level] ?? level
 }
 
-// ── 交易日程（D-1 申报日动线，时刻可按本省规则调整） ──
+// 交易日程（D-1 申报日动线，时刻可按本省规则调整）
 type Phase = { id: string; label: string; from: number; to: number; hint: string }
 const PHASES: Phase[] = [
   { id: 'intel', label: '情报收集', from: 0, to: 9, hint: '查看披露：负荷/新能源预测、检修与联络线计划' },
@@ -314,7 +314,7 @@ const countdown = computed(() => {
   return minutes >= 60 ? `${Math.floor(minutes / 60)}h${minutes % 60}m` : `${minutes}m`
 })
 
-// ── 价格主图：云南中广核为今日日前 vs 实时；其他地区保留昨日出清 vs 今日预测 ──
+// 价格主图：云南中广核为今日日前 vs 实时；其他地区保留昨日出清 vs 今日预测
 const chartEl = ref<HTMLElement | null>(null)
 const priceChart = useEChart(chartEl, { render: () => { void renderChart() } })
 const isDemo = ref(false)
@@ -464,7 +464,7 @@ function startPriceRefresh() {
   }, 60_000)
 }
 
-// ── 智能体快捷任务（总览 tab 内嵌，不离开驾驶舱） ──
+// 智能体快捷任务（总览 tab 内嵌，不离开驾驶舱）
 const tomorrow = computed(() => fmtDate(new Date(Date.now() + 86400000)))
 const quickTasks = computed(() => [
   { icon: Sparkles, label: '生成明日申报草稿', q: `为 ${tomorrow.value} 制定日前申报策略并生成草稿` },
@@ -749,7 +749,7 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .cockpit { gap: 14px; }
-.muted { color: var(--muted); font-size: 12.5px; }
+.muted { color: var(--muted); font-size: var(--font-12-5); }
 .persistent-header { display: flex; flex-direction: column; gap: 10px; }
 .schedule { padding: 12px 16px; }
 .schedule-track { display: flex; gap: 6px; }
@@ -757,66 +757,66 @@ onBeforeUnmount(() => {
 .phase.active { opacity: 1; border-color: var(--primary); background: color-mix(in srgb, var(--primary) 10%, transparent); }
 .phase.urgent { animation: cockpit-urgent 1.2s ease-in-out infinite; }
 @keyframes cockpit-urgent { 0%, 100% { box-shadow: none; } 50% { box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.25); border-color: #ef4444; } }
-.phase-label { display: block; font-size: 13px; font-weight: 600; }
-.phase-time { font-size: 11px; color: var(--muted); }
-.schedule-now { display: flex; align-items: center; gap: 8px; margin-top: 10px; font-size: 13px; }
+.phase-label { display: block; font-size: var(--font-md); font-weight: 600; }
+.phase-time { font-size: var(--font-xs); color: var(--muted); }
+.schedule-now { display: flex; align-items: center; gap: 8px; margin-top: 10px; font-size: var(--font-md); }
 .countdown { margin-left: auto; font-weight: 700; color: var(--primary); font-variant-numeric: tabular-nums; }
 .rule-strip { display: flex; align-items: center; gap: 14px; padding: 10px 14px; }
 .scenario-picker { display: flex; align-items: center; gap: 8px; min-width: min(100%, 430px); }
-.scenario-picker span { display: inline-flex; align-items: center; gap: 6px; color: var(--text-body); font-size: 13px; font-weight: 650; white-space: nowrap; }
+.scenario-picker span { display: inline-flex; align-items: center; gap: 6px; color: var(--text-body); font-size: var(--font-md); font-weight: 650; white-space: nowrap; }
 .scenario-picker .el-select { width: 220px; }
 .scenario-picker small { color: var(--muted); line-height: 1.5; white-space: nowrap; }
 .verify-chips { display: flex; flex-wrap: wrap; gap: 8px; }
-.verify-chips span { display: inline-flex; align-items: center; gap: 5px; padding: 6px 10px; border-radius: 6px; font-size: 12px; font-weight: 600; }
+.verify-chips span { display: inline-flex; align-items: center; gap: 5px; padding: 6px 10px; border-radius: 6px; font-size: var(--font-sm); font-weight: 600; }
 .verify-chips .ok { background: var(--primary-tint); color: var(--primary); }
 .verify-chips .warn { background: var(--warning-tint); color: var(--warning); }
 .verify-chips .frozen { background: var(--el-fill-color-light); color: var(--muted); }
 .tab-bar { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 10px 18px; margin: 2px 0 0; }
 .tab-group { display: flex; flex-direction: column; gap: 6px; padding-right: 18px; border-right: 1px solid var(--line); }
 .tab-group:last-child { padding-right: 0; border-right: none; }
-.tab-group-label { font-size: 11px; font-weight: 700; letter-spacing: 0.06em; color: var(--muted); }
+.tab-group-label { font-size: var(--font-xs); font-weight: 700; letter-spacing: 0.06em; color: var(--muted); }
 .tab-group-items { display: flex; flex-wrap: wrap; gap: 8px; }
-.tab-button { padding: 9px 14px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); color: var(--text-body); font-size: 13px; font-weight: 650; cursor: pointer; }
+.tab-button { padding: 9px 14px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); color: var(--text-body); font-size: var(--font-md); font-weight: 650; cursor: pointer; }
 .tab-button:hover:not(:disabled) { border-color: var(--primary); color: var(--primary); }
 .tab-button.active { border-color: var(--primary); background: var(--primary); color: #fff; }
 .tab-button.locked { color: var(--muted); cursor: not-allowed; opacity: 0.7; }
-.tab-lock { display: block; margin-top: 2px; font-size: 10px; font-weight: 500; }
+.tab-lock { display: block; margin-top: 2px; font-size: var(--font-10); font-weight: 500; }
 .price-content { display: flex; flex-direction: column; gap: 12px; }
-.overview-identity { display: flex; align-items: center; gap: 7px; min-height: 28px; color: var(--muted); font-size: 12.5px; }
+.overview-identity { display: flex; align-items: center; gap: 7px; min-height: 28px; color: var(--muted); font-size: var(--font-12-5); }
 .overview-identity svg { color: var(--primary); }
 .overview-kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
 .overview-kpis > div { display: flex; align-items: baseline; gap: 7px; padding: 11px 14px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); }
-.overview-kpis span { color: var(--muted); font-size: 12px; }
-.overview-kpis b { margin-left: auto; color: var(--text); font-size: 18px; font-variant-numeric: tabular-nums; }
-.overview-kpis small { color: var(--muted); font-size: 10px; white-space: nowrap; }
+.overview-kpis span { color: var(--muted); font-size: var(--font-sm); }
+.overview-kpis b { margin-left: auto; color: var(--text); font-size: var(--font-18); font-variant-numeric: tabular-nums; }
+.overview-kpis small { color: var(--muted); font-size: var(--font-10); white-space: nowrap; }
 .overview-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 .overview-card { min-height: 190px; padding: 14px 16px; }
 .panel-head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
-.panel-head h2 { display: flex; align-items: center; gap: 6px; font-size: 14px; margin: 0; }
+.panel-head h2 { display: flex; align-items: center; gap: 6px; font-size: var(--font-lg); margin: 0; }
 .panel-head > .muted { margin-left: auto; }
 .disc-rows { display: flex; flex-direction: column; gap: 6px; margin: 4px 0 8px; }
-.disc-row { display: flex; justify-content: space-between; gap: 8px; font-size: 12.5px; color: var(--text-2, #6b7a85); }
+.disc-row { display: flex; justify-content: space-between; gap: 8px; font-size: var(--font-12-5); color: var(--text-2, #6b7a85); }
 .disc-row b { color: var(--text, #22323c); font-variant-numeric: tabular-nums; }
-.disc-src { font-size: 11.5px; }
+.disc-src { font-size: var(--font-11-5); }
 .disc-mock, .plan-warning { color: #b45309; }
 .agent-access-hint { margin: 6px 0 0; }
 .agent-split { display: grid; grid-template-columns: minmax(0, 248px) minmax(0, 1fr); gap: 12px; align-items: start; }
 .agent-actions { padding: 14px 16px; }
-.agent-actions .task-btn { display: flex; align-items: center; gap: 8px; width: 100%; padding: 8px 10px; margin-top: 6px; font-size: 13px; border: 1px solid var(--line); border-radius: 8px; background: transparent; color: var(--text); cursor: pointer; transition: all 0.15s ease; }
+.agent-actions .task-btn { display: flex; align-items: center; gap: 8px; width: 100%; padding: 8px 10px; margin-top: 6px; font-size: var(--font-md); border: 1px solid var(--line); border-radius: 8px; background: transparent; color: var(--text); cursor: pointer; transition: all 0.15s ease; }
 .agent-actions .task-btn:hover:not(:disabled) { border-color: var(--primary); color: var(--primary); }
 .agent-actions .task-btn:disabled { opacity: 0.55; cursor: not-allowed; }
-.actions-hint { display: flex; align-items: flex-start; gap: 5px; margin: 10px 0 0; font-size: 11.5px; line-height: 1.5; }
+.actions-hint { display: flex; align-items: flex-start; gap: 5px; margin: 10px 0 0; font-size: var(--font-11-5); line-height: 1.5; }
 .actions-hint svg { flex: none; margin-top: 2px; }
 .task-arrow { margin-left: auto; color: var(--muted); }
 .agent-card { padding: 14px 16px; }
 .agent-card :deep(.agent-chat-panel) { min-height: 480px; }
 .chart-panel { padding: 14px 16px; }
-.demo-tag { font-size: 11px; padding: 1px 8px; border-radius: 999px; background: rgba(245, 158, 11, 0.15); color: #b45309; }
+.demo-tag { font-size: var(--font-xs); padding: 1px 8px; border-radius: 999px; background: rgba(245, 158, 11, 0.15); color: #b45309; }
 .price-refresh { margin-left: auto; display: inline-flex; align-items: center; gap: 5px; padding: 4px 9px; border: 1px solid var(--line); border-radius: 7px; background: transparent; color: var(--text); cursor: pointer; }
 .price-refresh:hover { border-color: var(--primary); color: var(--primary); }
-.price-error { margin: 6px 0 0; color: var(--warning); font-size: 12px; }
+.price-error { margin: 6px 0 0; color: var(--warning); font-size: var(--font-sm); }
 .main-chart { width: 100%; height: 420px; }
-.plan-meta { display: flex; flex-wrap: wrap; gap: 18px; margin-bottom: 8px; color: var(--muted); font-size: 13px; }
+.plan-meta { display: flex; flex-wrap: wrap; gap: 18px; margin-bottom: 8px; color: var(--muted); font-size: var(--font-md); }
 .plan-meta b { color: var(--text); }
 .plan-basis { margin: 6px 0 14px; }
 .frontier-table { width: 100%; }

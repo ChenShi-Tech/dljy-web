@@ -1,20 +1,17 @@
 // @vitest-environment happy-dom
 // ↑ 勿删：本文件不是 *.component.spec.ts，vitest node project 默认不给 DOM；store 经
 //   regionContext 读/写 localStorage（地区上下文），靠此 pragma 按文件切到 happy-dom。
-// ============================================================================
 // stores/analysisData.spec.ts — 分析用户产物 store 回归（Phase 6 PR-B）
-// ----------------------------------------------------------------------------
 // 守什么不变量：
-//   ① 用户产物按 (company, region) 隔离——切区即清空三列表 + inflight；请求挂起期间
+//   ① 用户产物按 (company, region) 隔离，切区即清空三列表 + inflight；请求挂起期间
 //      切区，旧地区响应 resolve 后不得写入（源码切区守卫，防「我的视图」抽屉串区）。
 //   ② loadViews inflight 去重：同 routePath+地区 并发只发一次 /api/v1/analysis/views，
 //      且两次调用合流同一 Promise。
 //   ③ saveView/saveSnapshot/saveAnnotation 置顶 + 同 id 去重，列表永不出现重复条目。
 // 坏掉的症状：抽屉里出现他省视图/快照/标注；快速双开面板重复打后端；保存后列表重复。
 //
-// 分层：analysisClient 整层 vi.mock（只测 store 编排）；regionContext 走真实模块——
+// 分层：analysisClient 整层 vi.mock（只测 store 编排）；regionContext 走真实模块
 // 切区用真实 setCurrentRegionId 动作触发，连带验证 store watch 挂在真实地区链路上。
-// ============================================================================
 import { nextTick } from 'vue'
 import { createPinia, setActivePinia } from 'pinia'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -151,8 +148,8 @@ describe('useAnalysisStore · loadViews', () => {
     const p2 = store.loadViews()
 
     expect(mocked.listViews).toHaveBeenCalledTimes(1)
-    // 注：loadViews 是 async 函数，即使内部 return 同一 inflight Promise，调用方拿到的
-    // 也是各自的包装 Promise——「合流」的可观测语义是只发一次请求且两 Promise 均完成。
+    // loadViews 是 async 函数，即使内部 return 同一 inflight Promise，调用方拿到的
+    // 也是各自的包装 Promise，「合流」的可观测语义是只发一次请求且两 Promise 均完成。
     d.resolve([makeView('v1')])
     await Promise.all([p1, p2])
     expect(store.views.map((v) => v.viewId)).toEqual(['v1'])
@@ -197,7 +194,7 @@ describe('useAnalysisStore · loadViews', () => {
     await p
 
     expect(store.views).toEqual([]) // 旧地区数据被守卫丢弃，不串区
-    // 现行为记录：守卫的 finally 仅在地区未变时复位 loading——切区丢弃后 loading 卡 true，
+    // 现行为记录：守卫的 finally 仅在地区未变时复位 loading，切区丢弃后 loading 卡 true，
     // 直到新地区下一次 loadViews 完成复位；且切区 watch 不清 loading/error。若未来补
     // 「切区清 loading」，此处断言需同步改为 toBe(false)。
     expect(store.loading).toBe(true)

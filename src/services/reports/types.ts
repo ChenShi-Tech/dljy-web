@@ -1,6 +1,6 @@
 // 报表引擎领域类型（原寄存在 src/services/fullSuite.ts，2026-07-01 拆出解耦）。
 // 报表中心（reportEngine / templates / ReportCenterView）只依赖这些类型，
-// 与「全功能闭环」(full-suite) 演示模块彻底脱钩——后者已于 #1642 全量下线。
+// 与「全功能闭环」(full-suite) 演示模块彻底脱钩，后者已于 #1642 全量下线。
 import type { Provenance } from '@/services/api'
 
 /**
@@ -46,7 +46,7 @@ export type ReportTemplate = {
   approvalGate: string
   status: string
   updatedAt: string
-  // —— 报表引擎扩展（Phase 0；均为可选，保持对既有 mock 的向后兼容）——
+  // 报表引擎扩展（Phase 0；均为可选，保持对既有 mock 的向后兼容）
   /** 业务域标签 A–H（如 'C-结算'） */
   domain?: string
   /** 优先级 */

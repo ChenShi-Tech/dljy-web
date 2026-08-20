@@ -25,7 +25,7 @@ const label = computed(() => (grade.value === 'operational' ? '可决策' : '仅
   gap: 5px;
   padding: 2px 9px;
   border-radius: 10px;
-  font-size: 11px;
+  font-size: var(--font-xs);
   line-height: 1.5;
   font-weight: 500;
   border: 1px solid;

@@ -68,7 +68,7 @@ describe('mapProviders 底图 Provider 配置层', () => {
   it('首选底图：显式指定 > ion token > 免费默认', () => {
     expect(resolvePreferredBaseMapId({})).toBe(DEFAULT_BASE_MAP_PROVIDER_ID)
     expect(resolvePreferredBaseMapId({ hasIonToken: true })).toBe('ion-aerial')
-    // 显式指定不被 token 状态篡改——这正是把它与 resolveBaseMapProvider 分开的理由
+    // 显式指定不被 token 状态篡改，这正是把它与 resolveBaseMapProvider 分开的理由
     expect(resolvePreferredBaseMapId({ explicitId: 'osm-dark', hasIonToken: true })).toBe('osm-dark')
     // 未知的显式值不该压过 token 判断
     expect(resolvePreferredBaseMapId({ explicitId: 'nope', hasIonToken: true })).toBe('ion-aerial')
@@ -158,7 +158,7 @@ describe('mapProviders 底图 Provider 配置层', () => {
   })
 })
 
-// #1346 视觉/性能/可访问性门禁 —— 降级链有界终止与 Provider 失败组合边界。
+// #1346 视觉/性能/可访问性门禁：降级链有界终止与 Provider 失败组合边界。
 describe('mapProviders 降级链有界终止与失败组合（#1346 视觉门禁）', () => {
   it('任意首选源（含未知/空 id）的降级序列必以不访问网络的 solid-color 收尾且无重复', () => {
     for (const preferred of ['osm-dark', 'carto-dark', 'solid-grid', '', 'does-not-exist', null, undefined]) {

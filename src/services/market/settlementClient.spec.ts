@@ -1,11 +1,11 @@
 // 结算价聚合回归（云南现货 S5）：周/月聚合与「真实或空」纪律。
 // 守住的不变量：
-//   1. weekKey 是 ISO 周一分组——2026-01-01（周四）必须归入 2025-12-29（周一）那周；
-//      偏一天就会把跨年周劈成两半，图上出现假拐点。
-//   2. null 缺测不进均值、组内全 null → null（缺测不连线、绝不拉回 0 元/MWh 假信号）。
-//   3. loadSettlementPrices 空态不抛：云南属严格地区，读不到真实数据 → hasData=false
-//      由页面渲染空态；mock 信封/网络错误若抛错 = 整个结算页崩。
-//   4. plantCount 跨日累加、组间按时间排序（x 轴时序）。
+// 1. weekKey 是 ISO 周一分组，2026-01-01（周四）必须归入 2025-12-29（周一）那周；
+// 偏一天就会把跨年周劈成两半，图上出现假拐点。
+// 2. null 缺测不进均值、组内全 null → null（缺测不连线、绝不拉回 0 元/MWh 假信号）。
+// 3. loadSettlementPrices 空态不抛：云南属严格地区，读不到真实数据 → hasData=false
+// 由页面渲染空态；mock 信封/网络错误若抛错 = 整个结算页崩。
+// 4. plantCount 跨日累加、组间按时间排序（x 轴时序）。
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 

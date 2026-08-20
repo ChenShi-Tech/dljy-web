@@ -2,7 +2,7 @@
 // 交易晨报（工作台）：确定性状态机 + dljy-ui 生成式工作台。
 // 左栏「数据预检」：fetchMorningBriefBundle 确定性装配 bundle，直接用 dljy-ui 组件
 //   （DataQualityPanel/MarketSnapshot/ForecastBandCard/RiskChecklist）确定性渲染一屏结构化
-//   数据——不依赖 LLM，点预检即有内容（前后端对齐：后端 bundle 7 类数据这里全部上屏）。
+//   数据，不依赖 LLM，点预检即有内容（前后端对齐：后端 bundle 7 类数据这里全部上屏）。
 // 右栏「晨报研判」：AgentChatPanel scenario="morning_brief" 驱动后端四角色并行确定性图
 //   （assemble→gap_check→四角色 fan-out→compose→confirm→finalize）；graph_status 进度、
 //   gap_check/confirm 两 interrupt 的 approval_request、compose 产出的 dljy-ui 围栏均自动渲染。
@@ -71,7 +71,7 @@ const briefPayload = computed(() => ({
   run_mode: 'interactive'
 }))
 
-// ── 历史侧栏协调（照 AgentWorkbenchView 范式）──
+// 历史侧栏协调（照 AgentWorkbenchView 范式）
 type PanelExpose = {
   ask: (q: string) => void
   newConversation: () => void
@@ -198,11 +198,11 @@ function onSessionReady(sessionId: string) {
   padding: 14px 18px; background: var(--panel, #fff);
   border: 1px solid var(--line-soft, #e5e7eb); border-radius: 14px;
 }
-.mb-title h2 { margin: 0; font-size: 19px; color: var(--text, #111); }
-.mb-sub { font-size: 12.5px; color: var(--muted, #667085); }
+.mb-title h2 { margin: 0; font-size: var(--font-19); color: var(--text, #111); }
+.mb-sub { font-size: var(--font-12-5); color: var(--muted, #667085); }
 .mb-ctrl { display: flex; align-items: center; gap: 10px; }
 .mb-date {
-  padding: 7px 10px; font-size: 13px; border: 1px solid var(--line, #d0d5dd);
+  padding: 7px 10px; font-size: var(--font-md); border: 1px solid var(--line, #d0d5dd);
   border-radius: 8px; background: var(--panel, #fff); color: var(--text-body, #222);
 }
 .mb-main { flex: 1; min-height: 0; display: flex; gap: 12px; }
@@ -212,10 +212,10 @@ function onSessionReady(sessionId: string) {
   width: 380px; flex: none; overflow-y: auto; padding-right: 2px;
   display: flex; flex-direction: column; gap: 12px;
 }
-.mb-rail-tag { font-size: 12px; padding: 5px 10px; border-radius: 8px; align-self: flex-start; }
+.mb-rail-tag { font-size: var(--font-sm); padding: 5px 10px; border-radius: 8px; align-self: flex-start; }
 .mb-rail-tag.t-real { color: #15803d; background: rgba(22, 163, 74, 0.12); }
 .mb-rail-tag.t-mock { color: #b45309; background: rgba(245, 158, 11, 0.14); }
-.mb-err { font-size: 13px; color: #dc2626; padding: 12px 16px; background: var(--panel, #fff); border: 1px solid var(--line-soft, #e5e7eb); border-radius: 14px; }
+.mb-err { font-size: var(--font-md); color: #dc2626; padding: 12px 16px; background: var(--panel, #fff); border: 1px solid var(--line-soft, #e5e7eb); border-radius: 14px; }
 .mb-stage {
   flex: 1; min-width: 0; min-height: 0;
   background: var(--panel, #fff); border: 1px solid var(--line-soft, #e5e7eb);

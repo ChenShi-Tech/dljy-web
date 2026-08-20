@@ -1,7 +1,7 @@
 // Copilot 页面提示 key 常量（统一前端 prompt 管理：页面白名单层）。
 //
 // 这些 key 必须与后端白名单严格一致：
-//   packages/agent-runtime/src/agent_runtime/prompts/pages.py::PAGE_PROMPTS
+// packages/agent-runtime/src/agent_runtime/prompts/pages.py::PAGE_PROMPTS
 // 前端只传 key、不传自由文本，后端按 key 解析固定 supervisor 上下文提示，防注入绕过安全基线。
 // 各 Copilot 视图从这里取常量传给 AgentChatPanel 的 prompt-key，避免散落的字符串字面量漂移。
 

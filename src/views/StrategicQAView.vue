@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// 战略问答（#1526 PoC）：pi harness 驱动的旗舰切片——一句战略方向 → 解读 →
+// 战略问答（#1526 PoC）：pi harness 驱动的旗舰切片，一句战略方向 → 解读 →
 // 取数 → 分析 → 图表落页。AgentChatPanel 零改动接流（scenario→base 路由在
 // agentClient 服务层），后端为 integrations/pi-poc 编排服务（/pi-api → 8100）。
 // 持久化走 #498 默认全开：pi-poc 服务端回调 Node 登记归属（需两端同配
@@ -50,8 +50,8 @@ async function loadGaps() {
 <style scoped>
 .strategic-qa { display: flex; flex-direction: column; gap: 12px; height: 100%; }
 .page-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
-.page-head h2 { margin: 0 0 4px; font-size: 18px; }
-.page-head .sub { margin: 0; color: var(--el-text-color-secondary); font-size: 13px; }
+.page-head h2 { margin: 0 0 4px; font-size: var(--font-18); }
+.page-head .sub { margin: 0; color: var(--el-text-color-secondary); font-size: var(--font-md); }
 .gaps-card { max-height: 240px; overflow: auto; }
-.gaps-md { margin: 0; white-space: pre-wrap; font-size: 12px; }
+.gaps-md { margin: 0; white-space: pre-wrap; font-size: var(--font-sm); }
 </style>

@@ -68,7 +68,7 @@ describe('R4 · 数据门禁裁剪偏置（与 S2/S16 联动）', () => {
   })
 })
 
-// ── L0 不对称回收 ───────────────────────────────────────────────────────────
+// L0 不对称回收
 
 function recovery(overrides: Partial<RecoveryInput> = {}) {
   return computeRecovery({

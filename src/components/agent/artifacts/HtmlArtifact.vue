@@ -1,8 +1,8 @@
 <script setup lang="ts">
 // 可交互 HTML artifact：沙箱 iframe 预览 / 源码切换 / 复制 / 全屏。
 // iframe 用 sandbox（不含 allow-same-origin）隔离：脚本可跑但无法访问父页面与同源资源。
-// 不提供「新窗口打开」——blob URL 会继承本应用 origin，脚本脱离 sandbox 后可读同源存储/
-// 发已登录请求（Codex P1）；全屏预览仍走 sandbox iframe。
+// 不提供「新窗口打开」，blob URL 会继承本应用 origin，脚本脱离 sandbox 后可读同源存储/
+// 发已登录请求；全屏预览仍走 sandbox iframe。
 import { computed, ref } from 'vue'
 import { AppWindow, Code2, Copy, Check, Maximize2, X } from 'lucide-vue-next'
 import hljs from 'highlight.js/lib/common'
@@ -21,7 +21,7 @@ const doc = computed(
     `<!doctype html><html><head><meta charset="utf-8">` +
     `<meta name="viewport" content="width=device-width,initial-scale=1">` +
     `<style>body{margin:12px;font-family:system-ui,-apple-system,'PingFang SC',sans-serif;` +
-    `color:#1f2937;font-size:14px;line-height:1.6}*{box-sizing:border-box}img{max-width:100%}` +
+    `color:#1f2937;font-size: var(--font-lg);line-height:1.6}*{box-sizing:border-box}img{max-width:100%}` +
     `</style></head><body>${props.block.code}</body></html>`
 )
 const codeHtml = computed(() => {
@@ -81,7 +81,7 @@ async function copy() {
 .html-code {
   margin: 0; padding: 12px 14px; max-height: 360px; overflow: auto;
   background: rgba(20, 24, 34, 0.96); color: #e5e7eb;
-  font-size: 12.5px; line-height: 1.55; white-space: pre;
+  font-size: var(--font-12-5); line-height: 1.55; white-space: pre;
   font-family: 'SFMono-Regular', Consolas, Menlo, monospace;
 }
 .html-code :deep(code) { background: none; padding: 0; font-family: inherit; }
@@ -93,12 +93,12 @@ async function copy() {
 }
 .html-fs-bar {
   display: flex; align-items: center; justify-content: space-between;
-  color: #fff; padding: 0 4px 10px; font-size: 14px; font-weight: 600;
+  color: #fff; padding: 0 4px 10px; font-size: var(--font-lg); font-weight: 600;
 }
 .html-fs iframe { flex: 1; width: 100%; border: 0; border-radius: 8px; background: #fff; }
 .fs-close {
   display: inline-flex; align-items: center; gap: 4px;
-  padding: 4px 12px; border-radius: 6px; cursor: pointer; font-size: 13px;
+  padding: 4px 12px; border-radius: 6px; cursor: pointer; font-size: var(--font-md);
   background: rgba(255, 255, 255, 0.14); color: #fff; border: 1px solid rgba(255, 255, 255, 0.35);
 }
 .fs-close:hover { background: rgba(255, 255, 255, 0.24); }

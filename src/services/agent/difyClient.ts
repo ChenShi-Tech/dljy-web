@@ -9,9 +9,7 @@
 import { apiPost, apiGet } from '@/services/api'
 import { getCurrentUser } from '@/services/auth'
 
-// ============================================================
 // 类型定义
-// ============================================================
 
 export interface ReportTemplate {
   id: string
@@ -55,9 +53,7 @@ export interface ReportHistoryItem {
   params: ReportParams
 }
 
-// ============================================================
 // 模板 id 映射：前端本地模板 id → Dify workflow 应用名（DIFY_APP_KEYS 的 key）
-// ============================================================
 const TEMPLATE_ID_TO_DIFY: Record<string, string> = {
   'daily-spot': 'daily-spot-report',
   'monthly-settlement': 'monthly-settlement',
@@ -71,9 +67,7 @@ export function toDifyTemplateName(localId: string): string {
   return TEMPLATE_ID_TO_DIFY[localId] || localId
 }
 
-// ============================================================
 // API 函数
-// ============================================================
 
 /**
  * 执行报告工作流（应用 API）

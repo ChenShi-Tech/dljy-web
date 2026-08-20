@@ -301,7 +301,7 @@ function estimateDownsideWan(points: PricePoint[], params: StorageParams, opport
 
 export function buildRiskMetrics(points: PricePoint[], opportunity: ArbitrageOpportunity | null): OodaRiskMetrics {
   // 相邻时点价差仅作日内波动代理（非策略损益分布）；时序差分截断到曲线末点，
-  // 不做环绕——23:00 与次日 00:00 不属于同一交易日，环绕会制造虚假价差样本。
+  // 不做环绕，23:00 与次日 00:00 不属于同一交易日，环绕会制造虚假价差样本。
   // P2 接入多日历史后改为“同充放时段组合”的策略损益样本。
   const spreads: number[] = []
   for (let i = 0; i < points.length - 1; i++) {

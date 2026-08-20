@@ -258,7 +258,6 @@ export function getMarketAnalysis(year = 2026): MarketAnalysisDataset {
   }
 }
 
-// ============================================================================
 // 链路 A：fetchCaptured 真实回放装配（P1）
 // ----------------------------------------------------------------------------
 // 设计依据：docs/data/market-ops-data-spec.md + docs/data/data-layer-unification.md
@@ -267,18 +266,17 @@ export function getMarketAnalysis(year = 2026): MarketAnalysisDataset {
 // 修复「MarketOps 缺 basis 标注」P1 红线（绝不冒充真实）。
 //
 // datasetKey ↔ MarketAnalysisDataset 字段映射：
-//   market_trade_summary → tradeSummary
-//   market_monthly_trend → monthlyTrend（跨 tab 共用）
-//   market_generation → powerTypes(category=powerType) + generationDetails(category=detail)
-//   market_sales → salesCompanies；market_storage → storageProjects
-//   market_packages → retailPackages；market_price → priceTrend（派生 deviation）
-//   market_metrics → overview/generation/sales/storage（public）；market_retail_package_metrics → packageMetrics（company）
-// ============================================================================
+// market_trade_summary → tradeSummary
+// market_monthly_trend → monthlyTrend（跨 tab 共用）
+// market_generation → powerTypes(category=powerType) + generationDetails(category=detail)
+// market_sales → salesCompanies；market_storage → storageProjects
+// market_packages → retailPackages；market_price → priceTrend（派生 deviation）
+// market_metrics → overview/generation/sales/storage（public）；market_retail_package_metrics → packageMetrics（company）
 
 // 落盘族名：与 scripts/etl/import-market-export.mjs::FAMILY、shared/schema/entities/capture-families.mjs
 // 注册的 `market_analysis` 族一致。fetchCaptured 第一参数是 family（/api/real → 受管回放根/<family>/），
-// 不是 datasetKey——此前误传 datasetKey 致 MarketOps 真实回放读不到、DataBasisBadge 恒回落 synthetic
-// （codex PR#238 P2 复审）。
+// 不是 datasetKey，此前误传 datasetKey 致 MarketOps 真实回放读不到、DataBasisBadge 恒回落 synthetic
+// （#238）。
 const MARKET_FAMILY = 'market_analysis' as const
 // #669：售电套餐经营口径独立为 company 私有族，从公共 market_analysis 族拆出，前端按 family 分流取数。
 const RETAIL_PACKAGE_FAMILY = 'market_retail_packages' as const
@@ -298,7 +296,7 @@ function pickMarketRows<T>(body: unknown): T[] {
 }
 
 // 并行取数；只采纳真实回放（_sourceType=CAPTURE/IMPORT/DB → captured），mock 兜底/404 不混入。
-// denied：company 私有族被回放层公司授权闸门拒绝（401/403，fetchCaptured 返回 accessDenied 空信封）——
+// denied：company 私有族被回放层公司授权闸门拒绝（401/403，fetchCaptured 返回 accessDenied 空信封）
 // 非归属公司据此走 synthetic 授权态（不泄漏他司经营数据）。
 async function safeFetchMarket<T>(key: string, family: string = MARKET_FAMILY):
   Promise<{ key: string; rows: T[]; real: boolean; denied: boolean }> {

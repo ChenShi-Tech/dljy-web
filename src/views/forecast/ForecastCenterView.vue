@@ -2,13 +2,13 @@
 // 预测中心（#79）：预测数据分组 5 页聚合为单页一级 tab，按工作流排序
 // 官方回放 → 建模工作台 → 厂站预测 → 质量记分牌 → 申报决策。
 // 设计约束：五个原视图组件原样挂入（懒挂载，hub 同款 visited 模式），内部逻辑零改动；
-// 页内不设任何跨页跳转入口——跨模块导航是侧边栏职责。
+// 页内不设任何跨页跳转入口，跨模块导航是侧边栏职责。
 // 一级 tab 用 ?mod= 深链；原 hub 内部 ?tab= 语义保留（chained redirect 透传），互不冲突。
 // 权限：tab 按 canAccessPath(原路由) 过滤，不扩大任何角色可见面；地区能力由各组件自管。
 import { computed, defineAsyncComponent, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
-// 异步加载保住原按路由分包（codex P2）：静态 import 会把五个模块的全部依赖并进
+// 异步加载保住原按路由分包：静态 import 会把五个模块的全部依赖并进
 // center 首包；懒挂载只延后请求不延后 JS 下载解析。
 const ForecastHubView = defineAsyncComponent(() => import('./ForecastHubView.vue'))
 const ForecastWorkbenchView = defineAsyncComponent(() => import('./ForecastWorkbenchView.vue'))
@@ -72,7 +72,7 @@ watch(() => route.query.mod, (q) => {
 <style scoped>
 .forecast-center { padding: 4px 8px 0; }
 .center-tabs :deep(> .el-tabs__header) { margin-bottom: 6px; padding: 0 12px; }
-.center-tabs :deep(> .el-tabs__header .el-tabs__item) { font-size: 14px; }
+.center-tabs :deep(> .el-tabs__header .el-tabs__item) { font-size: var(--font-lg); }
 .center-tabs :deep(.el-tabs__content) { overflow: visible; }
 </style>
 

@@ -5,8 +5,8 @@
 // ⚠️ 字段命名坑（来自 Java AdminController）：
 // - controller 手写顶层字段为驼峰：service/baseAddress/scheduleCron/credential/databaseAvailable/databaseError/menus
 // - SQL 列透出字段为下划线（datasets.*/recentRuns[]/lastSuccess[]）：
-//   records/latest_month/last_captured、run_id/menu_code/trigger_source/started_at/finished_at/
-//   status/pages_fetched/records_fetched/records_new/failure_kind/failure_detail
+// records/latest_month/last_captured、run_id/menu_code/trigger_source/started_at/finished_at/
+// status/pages_fetched/records_fetched/records_new/failure_kind/failure_detail
 // 同一响应两种风格混用，类型定义逐字保留，不做统一转换。
 //
 // 无 Mock 兜底：后端 502=服务不可达 / 503=库不可达部分响应 / 200=正常（含空数据诚实空态）。
@@ -37,7 +37,7 @@ export type SichuanDatasetSummary = {
 // 最近运行 / 最近成功：SQL 列名透出（下划线）。
 export type SichuanIngestRunStatus = 'running' | 'success' | 'failed'
 
-// 触发来源。'retry' 是 Issue #1622 引入的退避重试——一轮调度里可自愈的失败会隔一段时间
+// 触发来源。'retry' 是 Issue #1622 引入的退避重试，一轮调度里可自愈的失败会隔一段时间
 // 再采一次，每次尝试各留一行。分开记而不并进 'schedule'，运维才能区分
 // 「调度跑了 3 轮」与「跑了 1 轮、重试了 2 次」：前者说明调度配错，后者说明退避在正常工作。
 export type SichuanTriggerSource = 'schedule' | 'manual' | 'startup' | 'retry'
@@ -76,7 +76,7 @@ export type SichuanFailureKind = 'credential' | 'network' | 'contract_drift' | '
 
 // 连续失败告警（Issue #1622）。controller 手写（驼峰），时间为 ISO-8601 字符串。
 //
-// 口径是「自上次成功以来连续失败 N 次」，不是「最近 N 次里失败几次」——后者会把老失败
+// 口径是「自上次成功以来连续失败 N 次」，不是「最近 N 次里失败几次」，后者会把老失败
 // 算进今天的告警，也会在昨天刚成功过的情况下继续报警。
 export type SichuanAlertLevel = 'warning' | 'critical'
 
@@ -107,7 +107,7 @@ export type SichuanIngestStatus = {
   recentRuns?: SichuanRecentRun[]
   lastSuccess?: SichuanLastSuccess[]
   menus?: SichuanMenuMeta[]
-  // 告警（Issue #1622）。服务端在 200 响应里**总是**带这个键（无告警时为空数组）；
+  // 告警（Issue #1622）。服务端在 200 响应里总是带这个键（无告警时为空数组）；
   // 键缺失只可能是旧版服务或 503 部分响应，两者含义都不是「一切正常」，
   // 故前端不得把 undefined 当成空数组渲染成绿色。
   alerts?: SichuanIngestAlert[]
@@ -186,7 +186,7 @@ export const RUN_STATUS_TAG_TYPE: Record<SichuanIngestRunStatus, 'success' | 'da
   failed: 'danger',
 }
 
-// 触发来源中文标签。'retry' 必须能被一眼看懂——运维看到一串 retry 才知道
+// 触发来源中文标签。'retry' 必须能被一眼看懂，运维看到一串 retry 才知道
 // 「服务在自己重试」而不是「有人在反复点触发」。
 export const TRIGGER_SOURCE_LABEL: Record<SichuanTriggerSource, string> = {
   schedule: '定时调度',

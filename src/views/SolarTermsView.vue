@@ -151,7 +151,7 @@ onRegionChange(load)
 .toolbar { display: flex; align-items: center; gap: 8px; background: var(--panel); padding: 10px 12px; border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,.04); flex-wrap: wrap; }
 .grid { display: grid; grid-template-columns: 1fr; gap: 12px; margin-top: 12px; }
 .subplot { background: var(--panel); border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,.04); height: 260px; }
-.src { color: var(--el-text-color-secondary); font-size: 12px; margin: 12px 0 0; }
+.src { color: var(--el-text-color-secondary); font-size: var(--font-sm); margin: 12px 0 0; }
 .src code { color: var(--el-color-primary); }
 .mb { margin-bottom: 12px; }
 @media (min-width: 1500px) { .grid { grid-template-columns: 1fr 1fr; } }

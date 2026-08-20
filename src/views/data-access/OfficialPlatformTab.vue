@@ -9,7 +9,7 @@
 //
 // 当前仅四川开放凭据录入并绑定采集服务（sgcc-sichuan：credentialEntry + serviceBinding）；
 // 其余省的接入点已登记在册（就绪度用 2026-08-09 实测初始化），待 #1895 采集服务省份化后逐省打开。
-// 故「凭据卡片」与「运维面板」目前是四川专用组件——这里按 currentPoint.credentialEntry /
+// 故「凭据卡片」与「运维面板」目前是四川专用组件，这里按 currentPoint.credentialEntry /
 // serviceBinding 决定是否渲染，#1895 后它们泛化为按接入点驱动。
 import { computed, onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
@@ -46,7 +46,7 @@ const GRID_LABELS: Record<string, string> = {
 
 const officialPoints = computed(() => points.value.filter((p) => p.kind === 'official-platform'))
 
-// 当前地区的官方平台接入点。网区级占位条目 regionId 为 null，不匹配具体省份——
+// 当前地区的官方平台接入点。网区级占位条目 regionId 为 null，不匹配具体省份
 // 它们只进概览矩阵、不进聚焦面板。
 const currentPoint = computed(() =>
   officialPoints.value.find((p) => p.regionId === selectedRegionId.value) ?? null,
@@ -179,10 +179,10 @@ onMounted(load)
   gap: 14px;
 }
 .focus-head { display: flex; align-items: center; gap: 8px; }
-.focus-head h3 { margin: 0; font-size: 16px; font-weight: 600; color: var(--el-text-color-primary); }
-.focus-hint { margin-left: auto; font-size: 12px; color: var(--el-text-color-secondary); }
-.focus-todo { margin-top: 6px; font-size: 12.5px; color: var(--el-text-color-secondary); }
-.empty-sub { font-size: 12px; color: var(--el-text-color-secondary); }
+.focus-head h3 { margin: 0; font-size: var(--font-16); font-weight: 600; color: var(--el-text-color-primary); }
+.focus-hint { margin-left: auto; font-size: var(--font-sm); color: var(--el-text-color-secondary); }
+.focus-todo { margin-top: 6px; font-size: var(--font-12-5); color: var(--el-text-color-secondary); }
+.empty-sub { font-size: var(--font-sm); color: var(--el-text-color-secondary); }
 
 .matrix-panel {
   padding: 18px 20px;
@@ -191,11 +191,11 @@ onMounted(load)
   background: var(--el-bg-color);
 }
 .matrix-head { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; }
-.matrix-head h3 { margin: 0; font-size: 15px; font-weight: 600; color: var(--el-text-color-primary); }
-.matrix-hint { margin-left: auto; font-size: 12px; color: var(--el-text-color-secondary); }
+.matrix-head h3 { margin: 0; font-size: var(--font-15); font-weight: 600; color: var(--el-text-color-primary); }
+.matrix-hint { margin-left: auto; font-size: var(--font-sm); color: var(--el-text-color-secondary); }
 
 .op-group + .op-group { margin-top: 16px; }
-.op-label { font-size: 13px; font-weight: 600; color: var(--el-text-color-secondary); margin-bottom: 8px; }
+.op-label { font-size: var(--font-md); font-weight: 600; color: var(--el-text-color-secondary); margin-bottom: 8px; }
 .op-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 10px; }
 
 .op-cell {
@@ -210,7 +210,7 @@ onMounted(load)
   transition: border-color 0.15s;
 }
 .op-cell.current { border-color: var(--el-color-primary); box-shadow: 0 0 0 2px var(--el-color-primary-light-8); }
-.cell-name { font-size: 13px; font-weight: 600; color: var(--el-text-color-primary); }
-.cell-host { font-family: var(--el-font-family-mono, monospace); font-size: 11px; color: var(--el-text-color-placeholder); word-break: break-all; }
-.cell-owner { display: flex; align-items: center; gap: 4px; font-size: 11px; color: var(--el-text-color-secondary); }
+.cell-name { font-size: var(--font-md); font-weight: 600; color: var(--el-text-color-primary); }
+.cell-host { font-family: var(--el-font-family-mono, monospace); font-size: var(--font-xs); color: var(--el-text-color-placeholder); word-break: break-all; }
+.cell-owner { display: flex; align-items: center; gap: 4px; font-size: var(--font-xs); color: var(--el-text-color-secondary); }
 </style>

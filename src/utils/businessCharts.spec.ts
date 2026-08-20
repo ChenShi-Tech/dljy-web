@@ -1,6 +1,6 @@
 // 业务图表 builder 回归：agent 产出的语义 JSON → ECharts option。
-// 守的不变量：① 诚实降级——无法构成有效图表时返回 null（由解析器降级为 JSON 代码块），
-// 绝不产一张误导性的空图/错图；② 业务语义——申报价阶梯、预测带 stack、K 线涨红跌绿、
+// 守的不变量：① 诚实降级，无法构成有效图表时返回 null（由解析器降级为 JSON 代码块），
+// 绝不产一张误导性的空图/错图；② 业务语义，申报价阶梯、预测带 stack、K 线涨红跌绿、
 // 瀑布累计分解等结构约定，错一个字段图表就「能看但全错」（用户照图报错价）。
 // 深测 declaration/forecast/candle 三个代表，其余 builder 各守 smoke 两态。
 import { describe, expect, it } from 'vitest'
@@ -210,7 +210,7 @@ describe('buildCandleOption（电价 K 线）', () => {
   })
 })
 
-// ── 其余 builder：smoke 两态（脏输入 → null 不画误导图；最小合法 fixture → 非 null 且关键结构在） ──
+// 其余 builder：smoke 两态（脏输入 → null 不画误导图；最小合法 fixture → 非 null 且关键结构在）
 
 describe('buildPositionOption（持仓敞口）', () => {
   it('最小 fixture：中长期/现货堆叠 + 净敞口线', () => {
@@ -260,7 +260,7 @@ describe('buildArbitrageOption（套利窗口）', () => {
   it('现行为记录（源码可疑点）：buy 判定用 includes("charge")，"discharge" 含该子串 → 放电窗口也染充电绿', () => {
     // 源码 businessCharts.ts buildArbitrageOption:
     //   const buy = type.includes('charge') || type.includes('buy') || type.includes('谷') || type.includes('低')
-    // 'discharge'.includes('charge') === true —— 放电（卖出）窗口拿到买入色，套利方向读反。
+    // 'discharge'.includes('charge') === true，放电（卖出）窗口拿到买入色，套利方向读反。
     // 若日后修复（如改为词首匹配），本用例先行提示需同步更新。
     const opt = buildArbitrageOption({
       points: [{ t: '01', price: 1 }],

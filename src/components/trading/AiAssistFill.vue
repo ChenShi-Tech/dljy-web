@@ -1,18 +1,18 @@
 <script setup lang="ts">
-// AI 辅助填报按钮 —— 一日作业链中「人工经验判断」字段的填写协助（2026-08-11 用户拍板）
+// AI 辅助填报按钮 ， 一日作业链中「人工经验判断」字段的填写协助（2026-08-11 用户拍板）
 //
 // 设计契约（三条硬约束，决定了这个组件长什么样）：
-//   ① **只用在需要人工经验判断的字段**（偏差主因、方向、预期价差、置信度、决策理由、
-//      补仓动作、概率分位）。数据库能取的字段不用它——那些走确定性取数通道，
+// ① 只用在需要人工经验判断的字段（偏差主因、方向、预期价差、置信度、决策理由、
+// 补仓动作、概率分位）。数据库能取的字段不用它，那些走确定性取数通道，
 //      机械拉取即可，让 AI 去"判断"一个能查出来的数字是本末倒置。
-//   ② **AI 出建议，人点采纳才写入**。组件自己不改任何东西：它把建议渲染成卡片，
+// ② AI 出建议，人点采纳才写入。组件自己不改任何东西：它把建议渲染成卡片，
 //      用户点「采纳填入」时才 emit('apply', suggestion)，由父组件写进自己的表单 ref。
 //      这保证了「AI 负责判断与推理，人负责决策」的分工不被实现细节侵蚀。
-//   ③ **逐字段标依据**：每个建议值带 data（建立在注入的实际数据上）/ assumption
+// ③ 逐字段标依据：每个建议值带 data（建立在注入的实际数据上）/ assumption
 //      （模型的假设推断）徽章，外加整体置信度与 caveats（模型自陈会错的情形）。
-//      不看 caveats 就采纳等于放弃判断——所以 caveats 与建议值同屏、不折叠。
+// 不看 caveats 就采纳等于放弃判断，所以 caveats 与建议值同屏、不折叠。
 //
-// 上下文由父组件提供（已算好的规则引擎结果 / 上游步骤产出 / 历史事实）——本组件不取数。
+// 上下文由父组件提供（已算好的规则引擎结果 / 上游步骤产出 / 历史事实），本组件不取数。
 import { computed, ref } from 'vue'
 import { Sparkles, Check, X, TriangleAlert } from 'lucide-vue-next'
 import { BASIS_LABEL, requestAssist, type AssistKind, type AssistSuggestion } from '@/services/trading/assistClient'
@@ -54,7 +54,7 @@ async function ask() {
   result.value = null
   try {
     result.value = await requestAssist(props.kind, props.context)
-    // 建议到达即留痕（adopted=false）——「AI 给过什么建议、人采没采纳」都要可审计；
+    // 建议到达即留痕（adopted=false），「AI 给过什么建议、人采没采纳」都要可审计；
     // targetDate 从注入上下文取（各面板上下文均带）。
     if (result.value) {
       traceId = recordAssistSuggestion({
@@ -75,7 +75,7 @@ async function ask() {
 
 function apply() {
   if (!result.value) return
-  // 只把有值的字段交给父组件——null 字段保持用户原值，不被"我不知道"覆盖
+  // 只把有值的字段交给父组件，null 字段保持用户原值，不被"我不知道"覆盖
   const applied = Object.fromEntries(filledFields.value)
   const tid = traceId
   emit('apply', applied, tid)
@@ -152,34 +152,34 @@ function fmt(v: unknown): string {
 
 <style scoped>
 .aaf { display: inline-flex; flex-direction: column; gap: 6px; align-items: flex-start; }
-.aaf-btn { display: inline-flex; align-items: center; gap: 4px; padding: 3px 11px; border: 1px solid #7c3aed; border-radius: 12px; background: #faf5ff; color: #6d28d9; font-size: 11px; cursor: pointer; }
+.aaf-btn { display: inline-flex; align-items: center; gap: 4px; padding: 3px 11px; border: 1px solid #7c3aed; border-radius: 12px; background: #faf5ff; color: #6d28d9; font-size: var(--font-xs); cursor: pointer; }
 .aaf-btn:disabled { opacity: .45; cursor: not-allowed; }
-.aaf-hint { font-size: 10px; color: var(--el-text-color-secondary, #889); }
-.aaf-err { font-size: 11px; color: #b91c1c; max-width: 420px; line-height: 1.5; }
+.aaf-hint { font-size: var(--font-10); color: var(--el-text-color-secondary, #889); }
+.aaf-err { font-size: var(--font-xs); color: #b91c1c; max-width: 420px; line-height: 1.5; }
 
 .aaf-card { min-width: 320px; max-width: 560px; padding: 10px 12px; border: 1px solid #ddd6fe; border-radius: 10px; background: #faf5ff; }
-.aaf-card-head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; font-size: 12px; }
-.aaf-conf { padding: 1px 8px; border-radius: 9px; background: #ede9fe; color: #6d28d9; font-size: 10px; }
+.aaf-card-head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; font-size: var(--font-sm); }
+.aaf-conf { padding: 1px 8px; border-radius: 9px; background: #ede9fe; color: #6d28d9; font-size: var(--font-10); }
 .aaf-conf.low { background: #fef3c7; color: #92400e; }
 .aaf-x { margin-left: auto; border: none; background: none; cursor: pointer; color: #94a3b8; display: inline-flex; }
 
-.aaf-fields { width: 100%; border-collapse: collapse; font-size: 11px; }
+.aaf-fields { width: 100%; border-collapse: collapse; font-size: var(--font-xs); }
 .aaf-fields td { padding: 3px 4px; border-bottom: 1px solid #ede9fe; vertical-align: top; }
 .aaf-k { color: var(--el-text-color-secondary, #667); white-space: nowrap; width: 90px; }
 .aaf-v { font-weight: 600; word-break: break-all; }
 .aaf-b { width: 64px; text-align: right; }
-.aaf-b i { font-style: normal; font-size: 9px; padding: 1px 6px; border-radius: 7px; white-space: nowrap; }
+.aaf-b i { font-style: normal; font-size: var(--font-9); padding: 1px 6px; border-radius: 7px; white-space: nowrap; }
 .b-data { background: #dcfce7; color: #15803d; }
 .b-assume { background: #fef3c7; color: #92400e; }
 
-.aaf-empty { margin: 6px 0; font-size: 11px; color: #92400e; }
-.aaf-why { margin: 8px 0 4px; font-size: 11px; line-height: 1.7; }
-.aaf-caveats { margin: 4px 0 0; padding: 0 0 0 2px; list-style: none; font-size: 10px; line-height: 1.7; color: #92400e; }
+.aaf-empty { margin: 6px 0; font-size: var(--font-xs); color: #92400e; }
+.aaf-why { margin: 8px 0 4px; font-size: var(--font-xs); line-height: 1.7; }
+.aaf-caveats { margin: 4px 0 0; padding: 0 0 0 2px; list-style: none; font-size: var(--font-10); line-height: 1.7; color: #92400e; }
 .aaf-caveats li { display: flex; align-items: flex-start; gap: 4px; }
 
 .aaf-actions { display: flex; align-items: center; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
-.aaf-apply { display: inline-flex; align-items: center; gap: 4px; padding: 4px 12px; border: 1px solid #7c3aed; border-radius: 6px; background: #7c3aed; color: #fff; font-size: 11px; cursor: pointer; }
+.aaf-apply { display: inline-flex; align-items: center; gap: 4px; padding: 4px 12px; border: 1px solid #7c3aed; border-radius: 6px; background: #7c3aed; color: #fff; font-size: var(--font-xs); cursor: pointer; }
 .aaf-apply:disabled { opacity: .45; cursor: not-allowed; }
-.aaf-ignore { padding: 4px 10px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 6px; background: #fff; font-size: 11px; cursor: pointer; }
-.aaf-note { font-size: 10px; color: var(--el-text-color-secondary, #889); }
+.aaf-ignore { padding: 4px 10px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 6px; background: #fff; font-size: var(--font-xs); cursor: pointer; }
+.aaf-note { font-size: var(--font-10); color: var(--el-text-color-secondary, #889); }
 </style>

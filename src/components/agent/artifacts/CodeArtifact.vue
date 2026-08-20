@@ -56,7 +56,7 @@ async function copy() {
   display: flex;
   overflow-x: auto;
   background: rgba(20, 24, 34, 0.96);
-  font-size: 12.5px;
+  font-size: var(--font-12-5);
   line-height: 1.55;
   font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
 }

@@ -73,7 +73,7 @@ export type ReportItem = {
   mtime: number
 }
 
-// ── kind 展示元信息（label / 图标字 / 参数 schema），供编辑面板渲染动态参数表单 ──
+// kind 展示元信息（label / 图标字 / 参数 schema），供编辑面板渲染动态参数表单
 export type ScheduleParamField = {
   key: string
   label: string
@@ -204,7 +204,7 @@ export function scheduleKindMeta(kind?: string): ScheduleKindMeta | undefined {
 // （服务端未配 HARNESS_ADMIN_TOKEN 时返回空头，后端放行；与 skills/llm 写操作同款）。
 // httpClient 的 getAdmin/post/put/delete 自动带 adminHeaders（identity + token）。
 
-// ── 任务 CRUD ────────────────────────────────────────────────────────────────
+// 任务 CRUD
 export async function listSchedules(kind?: ScheduleKind): Promise<ScheduledTask[]> {
   const qs = kind ? `?kind=${encodeURIComponent(kind)}` : ''
   return http.getAdmin<ScheduledTask[]>(`/schedules${qs}`)
@@ -233,7 +233,7 @@ export async function getExecutions(id: string, limit = 50): Promise<TaskExecuti
   return data.executions
 }
 
-// ── 结果中心：复用既有报告端点（不新增后端） ────────────────────────────────
+// 结果中心：复用既有报告端点（不新增后端）
 export async function listReports(reportType: string, limit = 50): Promise<ReportItem[]> {
   const data = await http.get<{ report_type: string; reports: ReportItem[] }>(
     `/quant/reports?report_type=${encodeURIComponent(reportType)}&limit=${encodeURIComponent(limit)}`

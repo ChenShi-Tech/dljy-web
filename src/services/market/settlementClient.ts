@@ -1,16 +1,16 @@
 // 结算价分析取数服务（云南现货 S5）：日前-实时-结算三价对比 + 中长期价参照。
 //
 // 数据源（真实回放，非 Mock）：
-//   fetchCaptured('yn_spot_settlement', 'yn_settlement_daily')
-//     ← scripts/private-cache-adapters/yn-fact-pnl.mjs 把
-//       plant_spot_settlement/plant_daily_settlement_raw.csv 归一化进 family，
-//       **ETL 阶段已 filter result_type==='formal'**（temp 临时结算值不进 family），
-//       故前端读到的行天然全是 formal 权威结算（数据契约保证，无需再过滤）。
+// fetchCaptured('yn_spot_settlement', 'yn_settlement_daily')
+// ← scripts/private-cache-adapters/yn-fact-pnl.mjs 把
+// plant_spot_settlement/plant_daily_settlement_raw.csv 归一化进 family，
+// ETL 阶段已 filter result_type==='formal'（temp 临时结算值不进 family），
+// 故前端读到的行天然全是 formal 权威结算（数据契约保证，无需再过滤）。
 //
 // 字段口径（capture-families.mjs ynSpotSettlementSchema，中文列名→英文字段）：
-//   daPrice  = 日前结算电价    rtPrice = 实时结算电价
-//   avgPrice = 平均电价(综合结算) ltmPrice = 合计中长期电价
-//   daClearedEnergy/totalEnergy 等电量字段供加权（本处取等权均值，口径在注释标注）。
+// daPrice  = 日前结算电价    rtPrice = 实时结算电价
+// avgPrice = 平均电价(综合结算) ltmPrice = 合计中长期电价
+// daClearedEnergy/totalEnergy 等电量字段供加权（本处取等权均值，口径在注释标注）。
 //
 // 严格地区「真实或空」：fetchCaptured 自动带 currentRegion.id；云南在
 // REGION_STRICT_REAL_DATA 内，无真实数据走空态、不回退山西基线。失败/无数据 →

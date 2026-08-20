@@ -34,10 +34,10 @@ const ZPTQX: Record<string, string> = { '0': '中长期电量', '1': '日前电�
 const ZPTJG: Record<string, string> = { '0': '日前价出清', '1': '实时价出清', '8': '日前价回归', '30': '日前价电厂预测', '40': '日前价公司预测', '41': '日前价国能日新预测', '45': '日前价AI预测2', '61': '日前价AI预测1', '62': '实时价AI预测1', '11': '实时价公司预测' }
 // 组 → 轴/字典/类型/tooltip 单位
 // zcqjj：原标注「持仓比例 %」并挂 min:0/max:100 的固定轴，但逐日实测值域为 86~532
-// （4/15: 120~478.1、6/04: 86~531.8、6/10: 99.5~532.5），整条线恒被裁到轴外不可见——这是真 bug。
-// ⚠️ 但值域超 100 只能**证伪**「0~100 的比例轴」，不足以证明它是价格（拿元/MWh 量级去佐证是循环论证）；
+// （4/15: 120~478.1、6/04: 86~531.8、6/10: 99.5~532.5），整条线恒被裁到轴外不可见，这是真 bug。
+// ⚠️ 但值域超 100 只能证伪「0~100 的比例轴」，不足以证明它是价格（拿元/MWh 量级去佐证是循环论证）；
 // 平台未提供 zrqsb 分组字典，语义待核实（#1468）。故这里只修可见性、不臆断命名：
-// 保留原始字段名 `zcqjj` 作图例、不标单位，挂独立自适应轴（scale:true）——刻意不并入价格轴，
+// 保留原始字段名 `zcqjj` 作图例、不标单位，挂独立自适应轴（scale:true），刻意不并入价格轴，
 // 以免一个可能是持仓类的指标被读成电价而误导交易分析。
 const GROUPS = [
   { key: 'dl', axis: 0, dict: ZPTQX, base: '电量', kind: 'line', unit: 'MWh' },
@@ -56,7 +56,7 @@ const total = (r: any) => r.hj != null ? r.hj : +(curve(r).filter((x) => x != nu
 
 const loading = ref(true)
 const error = ref('')
-// 取数成功但内容为空时的诚实说明（区别于 error）。按**实际返回**判定，不依赖 ENERGY_LAST_DATE 硬编码，
+// 取数成功但内容为空时的诚实说明（区别于 error）。按实际返回判定，不依赖 ENERGY_LAST_DATE 硬编码，
 // 这样即使日后补采使常量过期，提示仍与真实数据一致。
 const notice = ref('')
 const route = useRoute()
@@ -192,7 +192,7 @@ function render() {
       { type: 'value', name: '价格', min: 0, max: 800, position: 'right', offset: 0, nameTextStyle: { color: cc.axisLabel, fontSize: 10 }, axisLabel: { color: cc.axisLabel, fontSize: 9 }, splitLine: { show: false } },
       { type: 'value', name: '价差', min: -800, max: 800, position: 'right', offset: 58, nameTextStyle: { color: cc.axisLabel, fontSize: 10 }, axisLabel: { color: cc.axisLabel, fontSize: 9 }, splitLine: { show: false } },
       { type: 'value', name: '策略', min: 0, max: 2, position: 'right', offset: 116, nameTextStyle: { color: cc.axisLabel, fontSize: 10 }, axisLabel: { color: cc.axisLabel, fontSize: 9 }, splitLine: { show: false } },
-      // zcqjj 专用轴：语义未定（#1468），故 scale 自适应而非写死量纲——原 min:0/max:100 正是曲线恒不可见的成因。
+      // zcqjj 专用轴：语义未定（#1468），故 scale 自适应而非写死量纲，原 min:0/max:100 正是曲线恒不可见的成因。
       { type: 'value', name: 'zcqjj', scale: true, position: 'right', offset: 174, nameTextStyle: { color: cc.axisLabel, fontSize: 10 }, axisLabel: { color: cc.axisLabel, fontSize: 9 }, splitLine: { show: false } }
     ],
     series
@@ -254,7 +254,7 @@ onRegionChange(async () => {
       <el-card shadow="never" class="mb">
         <template #header>
           <div class="card-head">
-            <span style="font-weight:600;font-size:13px">{{ runDate }} · 日前上报电量（合计 + 96 点）</span>
+            <span style="font-weight:600;font-size: var(--font-md)">{{ runDate }} · 日前上报电量（合计 + 96 点）</span>
             <el-button size="small" :disabled="!dlRows.length" @click="exportTable">导出CSV</el-button>
           </div>
         </template>
@@ -267,7 +267,7 @@ onRegionChange(async () => {
       </el-card>
 
       <el-card shadow="never">
-        <template #header><span style="font-weight:600;font-size:13px">日前上报曲线 · 电量(左) / 价格·价差·策略·zcqjj(右)</span></template>
+        <template #header><span style="font-weight:600;font-size: var(--font-md)">日前上报曲线 · 电量(左) / 价格·价差·策略·zcqjj(右)</span></template>
         <div ref="chartRef" class="chart chart-host"></div>
       </el-card>
     </template>
@@ -278,9 +278,9 @@ onRegionChange(async () => {
 <style scoped>
 .rep { padding: 12px 16px; background: var(--el-fill-color-light); min-height: calc(100vh - 90px); }
 .toolbar { display: flex; align-items: center; gap: 8px; background: var(--panel); padding: 10px 12px; border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,.04); }
-.toolbar .lbl { font-size: 13px; color: var(--el-text-color-regular); font-weight: 600; }
+.toolbar .lbl { font-size: var(--font-md); color: var(--el-text-color-regular); font-weight: 600; }
 /* 下拉里对「采集时属未来日、无申报电量」的运行日做可见标注（仍可选中查看其余分组） */
-.opt-tag { margin-left: 8px; font-size: 11px; color: var(--el-color-warning); }
+.opt-tag { margin-left: 8px; font-size: var(--font-xs); color: var(--el-color-warning); }
 .chart { height: 520px; width: 100%; }
 .card-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .mb { margin-bottom: 12px; }
@@ -288,6 +288,6 @@ onRegionChange(async () => {
 @media (max-width: 768px) {
   .toolbar { flex-direction: column; align-items: stretch; }
 }
-.src { color: var(--el-text-color-secondary); font-size: 12px; margin: 12px 0 0; }
+.src { color: var(--el-text-color-secondary); font-size: var(--font-sm); margin: 12px 0 0; }
 .src code { color: var(--el-color-primary); }
 </style>

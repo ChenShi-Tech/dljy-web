@@ -1,13 +1,13 @@
 // 场站出力客户端回归：96 点时刻映射 / 序列构建缺测纪律 / 异常检测阈值。
 // 守住的不变量：
-//   1. pointToTime 是 15min 一点的 96 点日历——point↔HH:mm 偏一点，整条曲线就横向
-//      错位一个时段，与实际功率曲线叠加时假偏差。
-//   2. buildPlantOutputSeries 缺测点必须落 null（不插 0）——插 0 会把「没回传」画成
-//      「停机」，异常检测跟着误报。
-//   3. 数据源优先级（子站回传>实际功率、最终下发>草稿、预测白名单序）——取错 dataType
-//      = 拿草稿计划当考核基准。
-//   4. detectPlantOutputAnomalies 双阈值（% 或 MW 任一命中）；坏掉的症状是全量误报或漏报。
-//   5. 取数层「真实或空」：mock 信封/网络错误 → rows 空不抛，meta 如实标注。
+// 1. pointToTime 是 15min 一点的 96 点日历，point↔HH:mm 偏一点，整条曲线就横向
+// 错位一个时段，与实际功率曲线叠加时假偏差。
+// 2. buildPlantOutputSeries 缺测点必须落 null（不插 0），插 0 会把「没回传」画成
+// 「停机」，异常检测跟着误报。
+// 3. 数据源优先级（子站回传>实际功率、最终下发>草稿、预测白名单序），取错 dataType
+// = 拿草稿计划当考核基准。
+// 4. detectPlantOutputAnomalies 双阈值（% 或 MW 任一命中）；坏掉的症状是全量误报或漏报。
+// 5. 取数层「真实或空」：mock 信封/网络错误 → rows 空不抛，meta 如实标注。
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -278,7 +278,7 @@ describe('detectPlantOutputAnomalies', () => {
 
 describe('summarizePlantOutput 数值对拍', () => {
   // 现行为注记：avg() 的过滤是 Number.isFinite(Number(v))，而 Number(null)===0 是
-  // finite——序列里的 null 缺测点**被当 0 计入均值**（分子分母都算）。这与
+  // finite，序列里的 null 缺测点被当 0 计入均值（分子分母都算）。这与
   // maxAbsDeviation/pointCount 的 `!== null` 判空不一致，疑似应同口径；本文件记录
   // 现行为不修源码（见报告）。
   it('maxAbsDeviation / pointCount 正确忽略 null；avg 现行为把 null 当 0 计入', () => {

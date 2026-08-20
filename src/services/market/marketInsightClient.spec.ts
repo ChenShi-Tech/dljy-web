@@ -1,13 +1,13 @@
 // @vitest-environment happy-dom
 // ↑ 勿删：本文件不是 *.component.spec.ts，vitest node project 默认不给 DOM；
-//   fetchMarketInsightBundle 用 new URL(base, window.location.origin) 拼绝对地址，
-//   依赖 window.location，靠此 pragma 按文件切到 happy-dom。
+// fetchMarketInsightBundle 用 new URL(base, window.location.origin) 拼绝对地址，
+// 依赖 window.location，靠此 pragma 按文件切到 happy-dom。
 //
 // 市场洞察 bundle 客户端回归。守住的不变量：
-//   1. URL 参数构造——date 必带；region/region_name/market 是可选维度，缺省**不进 query**
-//      （后端按缺省走默认地区，前端塞空串会让后端地区匹配失败）。
-//   2. readJson 错误文案必须含状态码 + 响应体前 180 字——驾驶舱预检失败时排障靠这截
-//      响应体定位（哪块数据缺、哪个服务 5xx）；坏掉的症状是只剩一个「预检失败」裸文案。
+// 1. URL 参数构造，date 必带；region/region_name/market 是可选维度，缺省不进 query
+// （后端按缺省走默认地区，前端塞空串会让后端地区匹配失败）。
+// 2. readJson 错误文案必须含状态码 + 响应体前 180 字，驾驶舱预检失败时排障靠这截
+// 响应体定位（哪块数据缺、哪个服务 5xx）；坏掉的症状是只剩一个「预检失败」裸文案。
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 

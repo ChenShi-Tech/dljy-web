@@ -216,17 +216,17 @@ p {
 .eyebrow {
   margin-bottom: 6px;
   color: #5c6f86;
-  font-size: 12px;
+  font-size: var(--font-sm);
   font-weight: 700;
 }
 
 h1 {
-  font-size: 26px;
+  font-size: var(--font-26);
   font-weight: 760;
 }
 
 h2 {
-  font-size: 15px;
+  font-size: var(--font-15);
   font-weight: 720;
 }
 
@@ -254,7 +254,7 @@ h2 {
   gap: 8px;
   min-width: 150px;
   color: #4f6074;
-  font-size: 13px;
+  font-size: var(--font-md);
 }
 
 .status-cell.wide {
@@ -311,7 +311,7 @@ h2 {
   border-radius: 6px;
   color: #40566f;
   background: #f8fbff;
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 .guard-list {
@@ -321,7 +321,7 @@ h2 {
   margin: 0;
   list-style: none;
   color: #52657a;
-  font-size: 13px;
+  font-size: var(--font-md);
   line-height: 1.45;
 }
 
@@ -397,7 +397,7 @@ h2 {
   border-radius: 6px;
   color: #43566c;
   background: #fbfdff;
-  font-size: 13px;
+  font-size: var(--font-md);
 }
 
 .diagnostic-actions {

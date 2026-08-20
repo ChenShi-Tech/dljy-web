@@ -40,7 +40,7 @@ function formatTime(value: string | null | undefined): string {
 </template>
 
 <style scoped>
-.cgn-price-status { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; color: var(--muted); font-size: 11px; }
+.cgn-price-status { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; color: var(--muted); font-size: var(--font-xs); }
 .cgn-price-status > span { padding: 2px 7px; border-radius: 999px; border: 1px solid var(--line); }
 .source { color: var(--success); border-color: color-mix(in srgb, var(--success) 42%, var(--line)) !important; }
 .non-official, .stale, .partial { color: var(--warning); }

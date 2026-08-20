@@ -22,28 +22,28 @@ export type SettlementPriceBasis = 'nodal' | 'unified' | 'zonal'
 export type RegionSettlementRule = {
   regionId: string
   label: string
-  // —— 限价（元/MWh；null 表示该省该项未公开 / 不适用）——
+  // 限价（元/MWh；null 表示该省该项未公开 / 不适用）
   declaredPriceFloor: number | null
   declaredPriceCap: number | null
   clearingPriceFloor: number | null
   clearingPriceCap: number | null
-  // —— 结算价口径开关 ——
+  // 结算价口径开关
   /** 发电侧结算价口径（多数节点市场为 nodal） */
   generatorPriceBasis: SettlementPriceBasis
   /** 用户侧结算价口径（多数为 unified 统一结算点价） */
   userPriceBasis: SettlementPriceBasis
   /** 中长期空间价值口径（广东「合约阻塞电费」≈ 山东「节点−参考点价差」，同机制不同表述） */
   mlSpaceValueModel: string
-  // —— 偏差与退补 ——
+  // 偏差与退补
   /** 偏差免考核带（比例，如 0.03 表示 ±3%）；多数省 3%~5%，部分未公开 */
   deviationTolerance: number
   /** 退补差错免考核阈值（如 0.02） */
   reconciliationTolerancePct: number
   /** 退补追溯月数上限 */
   reconciliationLookbackMonths: number
-  // —— 容量电价（元/kW·年；null 表示执行国家煤电统一标准）——
+  // 容量电价（元/kW·年；null 表示执行国家煤电统一标准）
   capacityPriceYuanPerKwYear: number | null
-  // —— 可信度护栏元数据 ——
+  // 可信度护栏元数据
   version: string
   /** 数据时点 YYYY-MM */
   asOf: string
@@ -241,7 +241,7 @@ export const regionSettlementRules: Record<string, RegionSettlementRule> = {
 }
 
 /**
- * 电网运营商词汇归一：仓内并存两套 ID——`src/data/regions.ts` 用
+ * 电网运营商词汇归一：仓内并存两套 ID，`src/data/regions.ts` 用
  * `state-grid/china-southern-grid`，`shared/region/constants.mjs` 用 `sgcc/csg`。
  * 两套都接受；蒙西（mengxi）/特殊区（other）不落国网/南网底座，返回 null 交调用方保守处理。
  */

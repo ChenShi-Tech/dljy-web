@@ -11,7 +11,7 @@
  *   3. 每个核心公式在文件末尾 SETTLEMENT_FORMULA_EXAMPLES 配套样例，被
  *      scripts/verify-report-formulas.mjs 断言，保证口径可复现、不漂移。
  *
- * 业务主线（贯穿全系统）——三部制双结算：
+ * 业务主线（贯穿全系统），三部制双结算：
  *   R电费 = Σ Q长·P长 + Σ(Q日前−Q长)·P日前 + Σ(Q实际−Q日前)·P实时
  *   含义：「中长期锁定 → 日前偏差预调 → 实时偏差兜底」，不重复结算、分阶段核算。
  *   发电侧 P 取机组节点电价 LMP，用户侧 P 取统一结算点电价（由调用方按地区口径传入），
@@ -55,9 +55,7 @@ function subtract(a: Numeric, b: Numeric): number[] {
   return out
 }
 
-// ───────────────────────────────────────────────────────────────────────────
 // 域 C / D：三部制双结算主公式（所有结算与收益报表的根）
-// ───────────────────────────────────────────────────────────────────────────
 
 export type ThreePartInput = {
   /** 中长期（净）合约分时电量 MWh */
@@ -106,9 +104,7 @@ export function threePartSettlement(input: ThreePartInput): ThreePartResult {
   }
 }
 
-// ───────────────────────────────────────────────────────────────────────────
 // 域 E：偏差考核（免考核带 + 超带按考核单价结算，单价为负置 0）
-// ───────────────────────────────────────────────────────────────────────────
 
 export type DeviationAssessmentInput = {
   /** 申报 / 合约电量 MWh（逐时段或汇总均可） */
@@ -153,9 +149,7 @@ export function deviationAssessment(input: DeviationAssessmentInput): DeviationA
   }
 }
 
-// ───────────────────────────────────────────────────────────────────────────
 // 域 B：节点电价 LMP 三分量分解（能量 + 阻塞 + 网损）
-// ───────────────────────────────────────────────────────────────────────────
 
 export type LmpComponents = { energy: number; congestion: number; loss: number }
 
@@ -167,9 +161,7 @@ export function decomposeLMP(c: LmpComponents): LmpComponents & { lmp: number } 
   return { energy: round(energy), congestion: round(congestion), loss: round(loss), lmp: round(energy + congestion + loss) }
 }
 
-// ───────────────────────────────────────────────────────────────────────────
 // 域 D / H：度电毛利、批零价差
-// ───────────────────────────────────────────────────────────────────────────
 
 export type UnitEnergyMarginInput = { revenue: number; cost: number; energyMwh: number }
 
@@ -212,9 +204,7 @@ export function retailSpread(input: RetailSpreadInput) {
   return result
 }
 
-// ───────────────────────────────────────────────────────────────────────────
 // 域 C：不平衡资金 / 市场盈余、容量电价
-// ───────────────────────────────────────────────────────────────────────────
 
 export type ImbalanceInput = {
   /** 用户侧按统一结算点电价支付的能量电费 */
@@ -285,9 +275,7 @@ export function monthlyCapacityRevenue(input: CapacityRevenueInput) {
   return { annualFee: round(annual), monthlyFee: round(annual / 12) }
 }
 
-// ───────────────────────────────────────────────────────────────────────────
 // 域 G：持仓覆盖 / 风险敞口、VaR / CVaR
-// ───────────────────────────────────────────────────────────────────────────
 
 /** 持仓覆盖率 = 已对冲电量 / 预测电量；未对冲敞口 = 预测 − 已对冲。 */
 export function hedgeCoverage(input: { contractedMwh: number; forecastMwh: number }) {
@@ -320,9 +308,7 @@ export function varCvar(pnl: number[], confidence = 0.95, minSample = 30): VarCv
   return { var: round(varVal, 4), cvar: round(cvar, 4), confidence, sampleCount: losses.length, insufficientSample: losses.length < minSample }
 }
 
-// ───────────────────────────────────────────────────────────────────────────
 // 域 B / F：中标率、价格统计（分位 / 峰谷价差 / 波动率 / 负电价）
-// ───────────────────────────────────────────────────────────────────────────
 
 /** 中标率 = 中标电量 / 申报电量。 */
 export function clearedRatio(input: { clearedMwh: Numeric; declaredMwh: Numeric }) {
@@ -381,9 +367,7 @@ export function priceStats(prices: number[]): PriceStatsResult {
   }
 }
 
-// ───────────────────────────────────────────────────────────────────────────
 // 域 D：收益归因（把盈亏拆段并校验合计，保证归因可加总）
-// ───────────────────────────────────────────────────────────────────────────
 
 export type AttributionLeg = { label: string; amount: number }
 
@@ -396,9 +380,7 @@ export function revenueAttribution(legs: AttributionLeg[]) {
   }
 }
 
-// ───────────────────────────────────────────────────────────────────────────
 // 样例（被 scripts/verify-report-formulas.mjs 断言，保证口径不漂移）
-// ───────────────────────────────────────────────────────────────────────────
 
 export type FormulaExample = {
   name: string

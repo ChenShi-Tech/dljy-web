@@ -46,8 +46,8 @@ function download(f: DownloadFile) {
 
 <style scoped>
 .dl-list { list-style: none; margin: 0; padding: 8px 12px; }
-.dl-item { display: flex; align-items: center; gap: 10px; padding: 5px 0; font-size: 13px; }
+.dl-item { display: flex; align-items: center; gap: 10px; padding: 5px 0; font-size: var(--font-md); }
 .dl-name { font-weight: 500; word-break: break-all; }
-.dl-size { font-size: 11.5px; opacity: 0.5; flex-shrink: 0; }
+.dl-size { font-size: var(--font-11-5); opacity: 0.5; flex-shrink: 0; }
 .dl-btn { margin-left: auto; flex-shrink: 0; }
 </style>

@@ -1,6 +1,6 @@
 // 节点名解析 L0 的确定性用例（Epic #1431 S4 · #1439）。
 // 样本全部取自南网五省节点电价真实数据（6,599 个唯一 nodeName，2026-08-06 全量抽样），
-// 不构造想象形态——解析器改错即直接影响节点管理补录的电压等级，故用可手算校验的用例锁死。
+// 不构造想象形态，解析器改错即直接影响节点管理补录的电压等级，故用可手算校验的用例锁死。
 import { describe, expect, it } from 'vitest'
 import { parseGridNodeName } from './nodeNameParser'
 
@@ -39,7 +39,7 @@ describe('parseGridNodeName · 站段为纯站名（B 型）', () => {
 })
 
 describe('parseGridNodeName · 两段电压不一致（实测 145 例，非脏数据）', () => {
-  // 220kV 变电站里的 110kV 母线节点：voltageLevelKv 描述**节点**，故取 110；
+  // 220kV 变电站里的 110kV 母线节点：voltageLevelKv 描述节点，故取 110；
   // 站级 220 单独保留在 stationVoltageKv，两者都不丢。
   it('取节点段电压，站级电压另存', () => {
     expect(parseGridNodeName('220kV三都站.110kV#1母')).toEqual({
@@ -62,7 +62,7 @@ describe('parseGridNodeName · 名称不含电压时诚实留空', () => {
   })
 
   it('不用同站其它节点的电压回填（站名相同也不猜）', () => {
-    // 与上一例同站，仍必须是 null——回填会把「未知」伪装成「已知」。
+    // 与上一例同站，仍必须是 null，回填会把「未知」伪装成「已知」。
     expect(parseGridNodeName('云峰村光伏电站.云峰村光伏电站另一回线').voltageLevelKv).toBeNull()
   })
 })

@@ -3,7 +3,6 @@
     <el-card shadow="never" class="header-card">
       <div class="header-row">
         <div>
-          <h2 class="page-title">数据上传中心</h2>
           <p class="page-sub">
             模板下载 → 上传 → 预检 → 确认落库 → 回执；格式由「数据集契约」统一管理，重复内容幂等拦截、误传可按批次撤销。
           </p>
@@ -182,7 +181,7 @@
 
 <script setup lang="ts">
 // 数据运维台·上传工作台（Epic #2169 P1 · #2173）：五步流 UI。
-// 纯交互层——校验/落库/幂等/撤销全部服务端权威（server/data/upload-pipeline.mjs），
+// 纯交互层，校验/落库/幂等/撤销全部服务端权威（server/data/upload-pipeline.mjs），
 // 本组件只组织步骤与呈现预检报告/回执。
 import { computed, onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -383,8 +382,7 @@ function chipClass(col: { via: string | null }): string {
 .data-upload-view { display: flex; flex-direction: column; gap: 12px; }
 .header-card :deep(.el-card__body) { padding: 14px 18px; }
 .header-row { display: flex; align-items: center; justify-content: space-between; gap: 24px; flex-wrap: wrap; }
-.page-title { margin: 0 0 4px; font-size: 18px; }
-.page-sub { margin: 0; color: var(--el-text-color-secondary); font-size: 12px; }
+.page-sub { margin: 0; color: var(--el-text-color-secondary); font-size: var(--font-sm); }
 .steps { max-width: 560px; }
 .hint { margin-bottom: 10px; }
 .format-desc { margin-bottom: 10px; }
@@ -393,7 +391,7 @@ function chipClass(col: { via: string | null }): string {
 .picked { margin-left: 10px; color: var(--el-text-color-secondary); }
 .report-row { margin-bottom: 12px; }
 .report-desc { margin-bottom: 10px; }
-.col-chip { display: inline-block; margin: 0 6px 4px 0; padding: 1px 8px; border-radius: 10px; font-size: 12px; }
+.col-chip { display: inline-block; margin: 0 6px 4px 0; padding: 1px 8px; border-radius: 10px; font-size: var(--font-sm); }
 .col-chip.ok { background: var(--el-color-success-light-9); color: var(--el-color-success); }
 .col-chip.warn { background: var(--el-color-warning-light-9); color: var(--el-color-warning); }
 .col-chip.bad { background: var(--el-color-danger-light-9); color: var(--el-color-danger); }

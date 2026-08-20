@@ -178,7 +178,7 @@ describe('口径守卫（D2/D3）', () => {
   })
 })
 
-describe('测算口径修复（codex 审查问题 1-4）', () => {
+describe('测算口径修复（审查问题 1-4）', () => {
   it('问题1：一体化下只改 daily_mileage 时充电量/站功率/购电成本同步缩放，IRR 单调变化', () => {
     const base = calculateTruckChargingInvestment(makeForm())
     const longer = calculateTruckChargingInvestment(makeForm({ daily_mileage: 720 }))

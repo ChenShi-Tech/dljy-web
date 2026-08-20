@@ -208,18 +208,18 @@ onRegionChange(loadMonth)
 <style scoped>
 .pos { padding: 12px 16px; background: var(--el-fill-color-light); min-height: calc(100vh - 90px); }
 .toolbar { display: flex; align-items: center; gap: 8px; background: var(--panel); padding: 10px 12px; border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,.04); }
-.toolbar .lbl { font-size: 13px; color: var(--el-text-color-regular); font-weight: 600; }
+.toolbar .lbl { font-size: var(--font-md); color: var(--el-text-color-regular); font-weight: 600; }
 .card { background: var(--panel); border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,.04); padding: 8px 12px; margin-top: 12px; }
-.ctitle { font-size: 13px; font-weight: 600; color: var(--el-text-color-primary); padding: 2px 0 6px; }
-.ctitle .hint { font-weight: 400; color: var(--el-text-color-secondary); font-size: 12px; }
+.ctitle { font-size: var(--font-md); font-weight: 600; color: var(--el-text-color-primary); padding: 2px 0 6px; }
+.ctitle .hint { font-weight: 400; color: var(--el-text-color-secondary); font-size: var(--font-sm); }
 .chart { height: 320px; width: 100%; }
-.src { color: var(--el-text-color-secondary); font-size: 12px; margin: 12px 0 0; }
+.src { color: var(--el-text-color-secondary); font-size: var(--font-sm); margin: 12px 0 0; }
 .src code { color: var(--el-color-primary); }
 .src .note { color: var(--warning); }
 .mb { margin-bottom: 12px; }
 .degraded-card { border: 1px solid color-mix(in srgb, var(--warning, #d97706) 35%, var(--line)); background: color-mix(in srgb, var(--warning, #d97706) 8%, var(--panel)); border-radius: 8px; padding: 14px 16px; color: var(--text); }
-.degraded-title { font-size: 14px; font-weight: 700; margin-bottom: 6px; }
-.degraded-text { font-size: 13px; color: var(--muted); line-height: 1.6; }
+.degraded-title { font-size: var(--font-lg); font-weight: 700; margin-bottom: 6px; }
+.degraded-text { font-size: var(--font-md); color: var(--muted); line-height: 1.6; }
 
 /* 移动端:筛选条纵向堆叠,控件占满整行便于点按 */
 @media (max-width: 768px) {

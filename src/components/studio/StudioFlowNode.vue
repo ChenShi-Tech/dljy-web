@@ -120,7 +120,7 @@ const runClass = computed(() => (runStatus.value ? `run-${runStatus.value}` : ''
   display: grid;
   place-items: center;
   border-radius: 7px;
-  font-size: 14px;
+  font-size: var(--font-lg);
   background: var(--primary-tint);
   color: var(--primary);
   font-family: var(--font-display);
@@ -130,7 +130,7 @@ const runClass = computed(() => (runStatus.value ? `run-${runStatus.value}` : ''
   flex: 1;
 }
 .sn-title {
-  font-size: 13px;
+  font-size: var(--font-md);
   font-weight: 600;
   color: var(--text);
   white-space: nowrap;
@@ -138,7 +138,7 @@ const runClass = computed(() => (runStatus.value ? `run-${runStatus.value}` : ''
   text-overflow: ellipsis;
 }
 .sn-sub {
-  font-size: 10.5px;
+  font-size: var(--font-10-5);
   color: var(--muted);
   margin-top: 1px;
   white-space: nowrap;
@@ -152,7 +152,7 @@ const runClass = computed(() => (runStatus.value ? `run-${runStatus.value}` : ''
   border-radius: 50%;
   background: var(--success);
   color: #fff;
-  font-size: 11px;
+  font-size: var(--font-xs);
   display: grid;
   place-items: center;
   font-style: normal;
@@ -161,7 +161,7 @@ const runClass = computed(() => (runStatus.value ? `run-${runStatus.value}` : ''
   flex: none;
   color: var(--muted);
   font-style: normal;
-  font-size: 14px;
+  font-size: var(--font-lg);
 }
 .sn-issue {
   flex: none;
@@ -169,7 +169,7 @@ const runClass = computed(() => (runStatus.value ? `run-${runStatus.value}` : ''
   height: 18px;
   border-radius: 50%;
   color: #fff;
-  font-size: 12px;
+  font-size: var(--font-sm);
   font-weight: 700;
   font-style: normal;
   display: grid;

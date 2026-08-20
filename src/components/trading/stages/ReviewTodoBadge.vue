@@ -2,7 +2,7 @@
 // 复盘待办徽标（Epic #2033 · M1 · #2040，S1 体系消费元素之三）
 // ---------------------------------------------------------------------------
 // 「今天应填 N 张复盘单」→ 跳驾驶舱待办箱。待办分母来自触发引擎（#2039）生成的
-// template_instances——引擎未上线前探针降级为「触发引擎未上线」态（诚实空态，
+// template_instances，引擎未上线前探针降级为「触发引擎未上线」态（诚实空态，
 // 不拿假分母）。点击在两种态下都跳 /xhjy/review?todo=1（待办箱有完整说明）。
 import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
@@ -49,12 +49,12 @@ function jump() {
 .rtb {
   display: inline-flex; align-items: center; gap: 7px;
   padding: 8px 12px; border: 1px solid var(--el-border-color-lighter, #ebeef5); border-radius: 10px;
-  background: #fff; color: var(--el-text-color-regular, #606266); font-size: 12px; cursor: pointer;
+  background: #fff; color: var(--el-text-color-regular, #606266); font-size: var(--font-sm); cursor: pointer;
   min-width: 0;
 }
 .rtb:hover { border-color: var(--el-color-primary, #2563eb); }
-.rtb b { font-size: 12.5px; color: var(--el-text-color-primary, #303133); }
-.rtb-sub { font-size: 11px; color: var(--el-text-color-secondary, #666); }
+.rtb b { font-size: var(--font-12-5); color: var(--el-text-color-primary, #303133); }
+.rtb-sub { font-size: var(--font-xs); color: var(--el-text-color-secondary, #666); }
 .rtb-on { border-color: #bfdbfe; background: #f8fbff; }
 .rtb-off { border-style: dashed; }
 </style>

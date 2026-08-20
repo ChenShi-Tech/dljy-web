@@ -1,8 +1,7 @@
 <script setup lang="ts">
-// 数据摄取管理页（数据运维台 /ops/ingest）：手动触发 POST /api/v1/ingest/:kind。
-// 台内闭环：/ops/import-hub（手录 CSV）→ 本页（手动/自动摄取）→ 主前端 /yygl/data-browser（回放）。
-// 定时自动摄取在主前端「AI 工作室 → 定时任务」（/system/ai-studio?tab=schedules）。
-// 链接注意：本台 hash 路由仅注册 /ops/*；主前端页用同源 <a>（path 模式）跳转（#2215）。
+// 数据摄取管理页（数据运维工作台 /data-ops/console?panel=ingest）：手动触发 POST /api/v1/ingest/:kind。
+// 链路闭环：?panel=import-hub（手录 CSV）→ 本页（手动/自动摄取）→ /yygl/data-browser（回放）。
+// 定时自动摄取在「AI 工作室 → 定时任务」（/system/ai-studio?tab=schedules）。
 // 主题变量驱动，四档主题协调；遵循现有深色交易终端风格。
 import { reactive, ref } from 'vue'
 import { RouterLink } from 'vue-router'
@@ -19,7 +18,7 @@ interface KindMeta {
   paramsHint: string
   example: string
   // 手动触发实际携带的参数（缺省 {} 保持既有 kind 行为）。中广核两个 kind 显式带
-  // 回看窗口——上游日前价 D+1~D+2 才发布，单拉「今天」会 404（#2203）。
+  // 回看窗口，上游日前价 D+1~D+2 才发布，单拉「今天」会 404（#2203）。
   params?: Record<string, unknown>
 }
 
@@ -50,7 +49,7 @@ async function run(meta: KindMeta) {
   }
 }
 
-// 摄取结果真伪判定（修 Codex P1-3：避免把合成兜底误标为可决策）。
+// 摄取结果真伪判定（避免把合成兜底误标为可决策）。
 // commitFamily source=IMPORT 默认 captured（operational）；但 weather-export 在 Open-Meteo
 // 失败/超时时后端会走合成兜底正常退出（exitCode 0），此时 ETL stdout 会打印 sourceType=MOCK /
 // (--synthetic 合成)（见 import-weather-export.mjs）。保守嗅探 stdout/stderr：出现
@@ -65,14 +64,13 @@ function basisFromResult(r: IngestResult): DataSourceBasis {
 <template>
   <div class="ingest-page">
     <header class="page-head">
-      <h1>数据摄取管理</h1>
       <p class="lede">手动触发数据摄取与 ETL：现货月度导出包 / 气象 / 市场分析族写各自事实层与 capture 回放层；中广核云南厂侧 API 两族写中广核私有 PostgreSQL（dljy_private）。</p>
     </header>
 
     <section class="link-row">
-      <RouterLink to="/ops/import-hub" class="link">← 手录导入（导入融合台）</RouterLink>
-      <a href="/yygl/data-browser" class="link">回放浏览（数据浏览器，主前端）→</a>
-      <a href="/system/ai-studio?tab=schedules" class="link"><Workflow :size="13" /> 定时自动摄取（AI 工作室）</a>
+      <RouterLink to="/data-ops/console?panel=import-hub" class="link">← 手录导入（导入融合台）</RouterLink>
+      <RouterLink to="/yygl/data-browser" class="link">回放浏览（通用数据浏览器）→</RouterLink>
+      <RouterLink to="/system/ai-studio?tab=schedules" class="link"><Workflow :size="13" /> 定时自动摄取（AI 工作室）</RouterLink>
     </section>
 
     <section class="kind-grid">
@@ -115,10 +113,9 @@ function basisFromResult(r: IngestResult): DataSourceBasis {
 </template>
 
 <style scoped>
-.ingest-page { padding: 18px 22px; max-width: 1180px; margin: 0 auto; }
-.page-head h1 { font-size: 22px; font-weight: 600; color: var(--text); margin: 0 0 4px; }
-.lede { color: var(--text-soft); font-size: 13.5px; margin: 0 0 14px; }
-.link-row { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 18px; font-size: 12.5px; }
+.ingest-page { max-width: 1180px; }
+.lede { color: var(--text-soft); font-size: var(--font-13-5); margin: 0 0 14px; }
+.link-row { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 18px; font-size: var(--font-12-5); }
 .link { color: var(--primary); text-decoration: none; display: inline-flex; align-items: center; gap: 4px; }
 .link:hover { text-decoration: underline; }
 .kind-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 14px; }
@@ -128,15 +125,15 @@ function basisFromResult(r: IngestResult): DataSourceBasis {
 }
 .kind-head { display: flex; align-items: center; gap: 10px; }
 .kind-icon { color: var(--primary); flex: none; }
-.kind-title h3 { margin: 0; font-size: 15px; font-weight: 600; color: var(--text); }
-.kind-code { font-size: 11px; color: var(--muted); font-family: var(--ck-mono, ui-monospace, monospace); }
-.kind-desc { font-size: 12.5px; color: var(--text-body); margin: 0; line-height: 1.5; }
-.kind-params { font-size: 12px; color: var(--text-soft); margin: 0; }
+.kind-title h3 { margin: 0; font-size: var(--font-15); font-weight: 600; color: var(--text); }
+.kind-code { font-size: var(--font-xs); color: var(--muted); font-family: var(--ck-mono, ui-monospace, monospace); }
+.kind-desc { font-size: var(--font-12-5); color: var(--text-body); margin: 0; line-height: 1.5; }
+.kind-params { font-size: var(--font-sm); color: var(--text-soft); margin: 0; }
 .muted { color: var(--muted); }
 .kind-action { margin-top: 4px; }
 .trigger {
   display: inline-flex; align-items: center; gap: 6px; cursor: pointer;
-  padding: 7px 14px; border-radius: var(--radius-sm, 6px); font-size: 13px; font-weight: 500;
+  padding: 7px 14px; border-radius: var(--radius-sm, 6px); font-size: var(--font-md); font-weight: 500;
   border: 1px solid var(--primary); color: var(--primary); background: transparent;
   transition: background 0.15s;
 }
@@ -144,11 +141,11 @@ function basisFromResult(r: IngestResult): DataSourceBasis {
 .trigger:disabled { opacity: 0.6; cursor: progress; }
 .spin { animation: spin 0.9s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
-.result { margin-top: 6px; padding: 8px 10px; border-radius: var(--radius-sm, 6px); font-size: 12px; border: 1px solid; }
+.result { margin-top: 6px; padding: 8px 10px; border-radius: var(--radius-sm, 6px); font-size: var(--font-sm); border: 1px solid; }
 .result.ok { color: var(--success); border-color: color-mix(in srgb, var(--success) 35%, transparent); background: color-mix(in srgb, var(--success) 7%, transparent); }
 .result.fail, .result.err { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 35%, transparent); background: color-mix(in srgb, var(--danger) 7%, transparent); }
 .result-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 4px; font-weight: 500; }
-.stdout { margin: 4px 0 0; font-size: 11px; color: var(--text-soft); font-family: var(--ck-mono, ui-monospace, monospace); white-space: pre-wrap; word-break: break-all; max-height: 120px; overflow: auto; }
-.note { margin-top: 18px; font-size: 12px; line-height: 1.6; }
+.stdout { margin: 4px 0 0; font-size: var(--font-xs); color: var(--text-soft); font-family: var(--ck-mono, ui-monospace, monospace); white-space: pre-wrap; word-break: break-all; max-height: 120px; overflow: auto; }
+.note { margin-top: 18px; font-size: var(--font-sm); line-height: 1.6; }
 code { font-family: var(--ck-mono, ui-monospace, monospace); font-size: 0.92em; padding: 1px 4px; border-radius: 3px; background: color-mix(in srgb, var(--muted) 14%, transparent); }
 </style>

@@ -1,7 +1,7 @@
 // mapWithConcurrency 并发上限回归：结果保序 + in-flight 峰值 ≤ limit。
 // 坏掉的症状（都来自真实场景）：现货面板整月拉取 ~31 个请求同时打后端把 agent 服务
 // 打挂（上限失效）；或为了限流改成顺序 await 后结果按完成顺序排列，日期列错位
-// （保序失效）——图表不报错，只把周三维的价格画到周四上。
+// （保序失效），图表不报错，只把周三维的价格画到周四上。
 import { describe, expect, it, vi } from 'vitest'
 import { mapWithConcurrency } from './concurrency'
 

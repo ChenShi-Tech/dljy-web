@@ -1,10 +1,9 @@
 <script setup lang="ts">
-// ============================================================================
 // DataQualityBadge — 通用 region 数据质量徽条（共享状态 UI 基建，#450）
 // ----------------------------------------------------------------------------
 // 面板顶部一行小徽条，标当前数据的「真实度 / 新鲜度 / 完整率 / 来源」，供 F4-F8
 // 现货面板统一调用。刻意只吃原子信号（basis/freshness/completeness/source...），
-// **不耦合任何 bundle 形状**——区别于 MarketInsightBundle 里与 InsightAvailabilityItem[]
+// 不耦合任何 bundle 形状，区别于 MarketInsightBundle 里与 InsightAvailabilityItem[]
 // 形状强绑定的 DataQualityPanel（耦合反例）。各字段全部可选：传哪个显哪个。
 //
 // 复用而非重造：
@@ -15,7 +14,6 @@
 // 用法：
 //   <DataQualityBadge :basis="meta.basis" :updated-at="meta.updatedAt" cadence="monthly"
 //                     :completeness="0.96" source="yn_spot_settlement" />
-// ============================================================================
 import { computed } from 'vue'
 import TrustBadge from './TrustBadge.vue'
 import { freshnessOf, ageDaysOf, type Freshness, type FreshnessCadence } from '@/services/data/freshness'
@@ -112,7 +110,7 @@ const completenessPct = computed(() => {
   gap: 5px;
   padding: 2px 9px;
   border-radius: 10px;
-  font-size: 11px;
+  font-size: var(--font-xs);
   line-height: 1.5;
   font-weight: 500;
   border: 1px solid;
@@ -180,7 +178,7 @@ const completenessPct = computed(() => {
 }
 
 .dq-badge__note {
-  font-size: 11px;
+  font-size: var(--font-xs);
   color: var(--muted, #909399);
 }
 </style>

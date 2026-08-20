@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// 数据接入向导（数据运维台 /ops/data-onboarding；#885 建，#2215 对齐真实通道）：
+// 数据接入向导（数据运维工作台 /data-ops/console?panel=onboarding；#885 建，#2215 对齐真实通道）：
 // 按「用户手里有什么数据」组织的旅程总览 + UI 内一键生效闭环。数据进入线现有五条：
 // 中广核厂侧 API 全自动 / 台账与模板手录 / 命令行 ETL / 定时 scheduler / 上传中心，
 // 收成一张「先做什么、再做什么、点哪里生效、去哪见数」的地图。
@@ -11,11 +11,11 @@
 //   ③ 交易中心月度导出包（离线包→命令行 import:spot-export，如实说明须服务器执行）
 //   ④ 气象全自动（scheduler 06:30 自动采→手动补采→天气/发电预测见数）
 //   ⑤ 结算/零售/交易记录（import-hub 台账录入即见数）
-// 上传中心（/ops/upload 五步流，Epic #2169 P1）承接结构化 Excel 批量入库。
+// 上传中心（?panel=upload 五步流，Epic #2169 P1）承接结构化 Excel 批量入库。
 //
 // 诚实红线：状态标签如实透传（freshness/台账/接入态），取数失败显示「未知」不猜；
 // 未生效数据绝不显示「已可见」；生效按钮结果如实回显（成功/失败 + stdout 摘要）。
-// 向导本身不产数据——它只消费 governance catalog / import-templates records /
+// 向导本身不产数据，它只消费 governance catalog / import-templates records /
 // 只读信号汇总，并复用既有 ingest 端点触发 ETL。
 import { onMounted, reactive, ref } from 'vue'
 import type { Component } from 'vue'
@@ -31,7 +31,7 @@ import { triggerIngest, type IngestKind, type IngestResult } from '@/services/da
 import type { DataSourceBasis } from '@/services/data/types'
 import { deriveJourneySteps, type JourneySteps } from './data-onboarding/onboardingJourney'
 
-// ─── 数据源信封类型（与后端 governance/import-hub 接口对齐）───────────────────
+// 数据源信封类型（与后端 governance/import-hub 接口对齐）
 type CatalogItem = {
   family: string
   dataTime: string | null
@@ -44,11 +44,11 @@ type TemplateRecord = {
 }
 type RecordsPayload = { rows: TemplateRecord[]; total: number } & Record<string, unknown>
 
-// ─── 卡片配置 ────────────────────────────────────────────────────────────────
+// 卡片配置
 type JourneyKind = 'template' | 'command' | 'auto' | 'ledger'
 type EffectAction = { kind: IngestKind; label: string }
-// external=true 指向主前端页面：本台 hash 路由仅注册 /ops/*，主前端 path 模式用同源 <a>（#2215）。
-type ConsumeLink = { to: string; label: string; external?: boolean }
+// 站内跳转统一 RouterLink：六页回到主平台后与消费页同属一个 SPA，不再需要整页刷新的 <a>。
+type ConsumeLink = { to: string; label: string }
 
 interface OnboardingCard {
   key: string
@@ -57,7 +57,7 @@ interface OnboardingCard {
   icon: Component
   what: string
   howText: string
-  howLink?: { to: string; label: string; external?: boolean }
+  howLink?: { to: string; label: string }
   howCommand?: { command: string; note: string }
   families: string[]
   templateIds: string[]
@@ -70,7 +70,7 @@ interface OnboardingCard {
 // 深链 path 全部核对真实路由（router/index.ts + features/*/routes.ts）。
 const CARDS: OnboardingCard[] = [
   {
-    // #2215：云南现货数据的主力通道（#2185/#2203 起每日自动）。向导此前只讲手录——
+    // #2215：云南现货数据的主力通道（#2185/#2203 起每日自动）。向导此前只讲手录
     // 那是无 API 通道时代的叙事，必须让自动通道排第一。私有库不在治理 catalog
     // （governance 只覆盖 capture 族），状态线不接 family 新鲜度，如实显示引导。
     key: 'cgn-auto',
@@ -79,13 +79,13 @@ const CARDS: OnboardingCard[] = [
     icon: Network,
     what: '中广核云南专属厂侧数据 API（数据提供方部署，非电网官方接口）每日自动拉取：全网/场站节点电价（00:20，3 日回看）与 11 条市场曲线 + 26 类公共披露（00:50），写入中广核私有 PostgreSQL。日前价上游 D+1~D+2 发布，回看窗口自动补齐。',
     howText: '数据源接入页保存直连端点与 API Key、联通测试通过且三重启用后，调度任务全自动拉取；手动补拉入口在数据摄取管理页。',
-    howLink: { to: '/ops/data-source-settings', label: '查看数据源接入状态与联通测试' },
+    howLink: { to: '/data-ops/console?panel=data-source', label: '查看数据源接入状态与联通测试' },
     families: [],
     templateIds: [],
     consume: [
-      { to: '/dashboard', label: '交易驾驶舱', external: true },
-      { to: '/xhjy/monitor', label: '实时监盘', external: true },
-      { to: '/ops/ingest', label: '数据摄取管理（手动补拉）' }
+      { to: '/dashboard', label: '交易驾驶舱' },
+      { to: '/xhjy/monitor', label: '实时监盘' },
+      { to: '/data-ops/console?panel=ingest', label: '数据摄取管理（手动补拉）' }
     ],
     cadence: 'daily',
     journey: 'auto'
@@ -97,13 +97,13 @@ const CARDS: OnboardingCard[] = [
     icon: Network,
     what: '交易中心发布的日前节点电价（DLR），按节点×时段，是价格预测与申报决策的核心输入。',
     howText: '中广核云南集团：节点电价已由厂侧 API 每日自动入库（见上方全自动卡），本卡手录通道仅在无 API 接入时使用——下载 yn-t0-node-price 模板填报上传，校验通过即投递到清单协议目录。',
-    howLink: { to: '/ops/import-hub', label: '去数据导入融合台上传模板' },
+    howLink: { to: '/data-ops/console?panel=import-hub', label: '去数据导入融合台上传模板' },
     families: ['yn_node_price', 'yn_plant_nodal_price'],
     templateIds: ['yn-t0-node-price'],
     effect: { kind: 'spot-ingest', label: '一键生效（摄取节点电价）' },
     consume: [
-      { to: '/xhjy/yunnan/node-price', label: '节点电价分析', external: true },
-      { to: '/ycsj/workbench', label: 'ML 预测工作台', external: true }
+      { to: '/xhjy/yunnan/node-price', label: '节点电价分析' },
+      { to: '/ycsj/workbench', label: 'ML 预测工作台' }
     ],
     cadence: 'daily',
     journey: 'template'
@@ -115,13 +115,13 @@ const CARDS: OnboardingCard[] = [
     icon: Zap,
     what: '统调系统负荷（T0 实际/计划）与水电出力（T1），是负荷与发电预测的关键外生变量。',
     howText: '云南负荷/新能源/总出力等市场曲线已随厂侧 API 自动进入中广核私有库（见上方全自动卡）；本卡用于公共清单协议族（yn_system_supply）——下载 yn-t0-system-load（统调负荷）/ yn-t1-hydro（水电出力）模板填报上传，投递到清单协议目录。',
-    howLink: { to: '/ops/import-hub', label: '去数据导入融合台上传模板' },
+    howLink: { to: '/data-ops/console?panel=import-hub', label: '去数据导入融合台上传模板' },
     families: ['yn_system_supply'],
     templateIds: ['yn-t0-system-load', 'yn-t1-hydro'],
     effect: { kind: 'forecast-etl', label: '一键生效（跑预测 ETL）' },
     consume: [
-      { to: '/ycsj/workbench', label: 'ML 预测工作台', external: true },
-      { to: '/ycsj/station-generation', label: '厂站发电预测', external: true }
+      { to: '/ycsj/workbench', label: 'ML 预测工作台' },
+      { to: '/ycsj/station-generation', label: '厂站发电预测' }
     ],
     cadence: 'daily',
     journey: 'template'
@@ -140,8 +140,8 @@ const CARDS: OnboardingCard[] = [
     families: ['yn_spot_settlement', 'yn_settlement_detail', 'yn_dim_plant'],
     templateIds: [],
     consume: [
-      { to: '/xhjy/yunnan/settlement-price', label: '结算价分析', external: true },
-      { to: '/gsgl/output', label: '机组出力', external: true }
+      { to: '/xhjy/yunnan/settlement-price', label: '结算价分析' },
+      { to: '/gsgl/output', label: '机组出力' }
     ],
     cadence: 'monthly',
     journey: 'command'
@@ -153,13 +153,13 @@ const CARDS: OnboardingCard[] = [
     icon: CloudSun,
     what: 'Open-Meteo 公开气象（温度/湿度/风速/云量/降水 + GHI/DNI/DHI 辐照），驱动发电预测。',
     howText: '由定时任务每日 06:30 自动采集（data_ingestion kind），无需手录；缺数时可手动补采。',
-    howLink: { to: '/system/ai-studio?tab=schedules', label: '查看定时采集任务', external: true },
+    howLink: { to: '/system/ai-studio?tab=schedules', label: '查看定时采集任务' },
     families: ['yn_meteo', 'yn_irradiance'],
     templateIds: [],
     effect: { kind: 'weather-export', label: '手动补采气象' },
     consume: [
-      { to: '/sjfx/tqyb', label: '天气预报', external: true },
-      { to: '/ycsj/station-generation', label: '厂站发电预测', external: true }
+      { to: '/sjfx/tqyb', label: '天气预报' },
+      { to: '/ycsj/station-generation', label: '厂站发电预测' }
     ],
     cadence: 'daily',
     journey: 'auto'
@@ -171,19 +171,19 @@ const CARDS: OnboardingCard[] = [
     icon: Coins,
     what: '售电结算、零售套餐、市场交易等结构化台账数据，经数据导入融合台录入后直接进台账见数。',
     howText: '在数据导入融合台对应 tab 上传 CSV/Excel（投递型落 capture，台账型落 import-hub 台账）。',
-    howLink: { to: '/ops/import-hub', label: '去数据导入融合台录入' },
+    howLink: { to: '/data-ops/console?panel=import-hub', label: '去数据导入融合台录入' },
     families: [],
     templateIds: [],
     consume: [
-      { to: '/ops/import-hub', label: '导入台账与历史' },
-      { to: '/gsgl/trades', label: '历史交易', external: true }
+      { to: '/data-ops/console?panel=import-hub', label: '导入台账与历史' },
+      { to: '/gsgl/trades', label: '历史交易' }
     ],
     cadence: 'daily',
     journey: 'ledger'
   }
 ]
 
-// ─── 状态：三路只读信号 ──────────────────────────────────────────────────────
+// 状态：三路只读信号
 const catalog = ref<CatalogPayload | null>(null)
 const recordsByTemplate = reactive<Record<string, TemplateRecord[]>>({})
 const loadErr = ref('')
@@ -219,7 +219,7 @@ async function loadAll() {
   }
 }
 
-// ─── 状态推导（纯函数消费）────────────────────────────────────────────────────
+// 状态推导（纯函数消费）
 // family → 最新新鲜度：从 catalog.items 取该 family 最晚 dataTime，按节律折算。
 function familyFreshness(families: string[], cadence: 'daily' | 'monthly'): Freshness {
   const items = catalog.value?.items
@@ -259,7 +259,7 @@ const STEP_LABELS = ['输入', '校验', '落位', '生效', '见数'] as const
 const STEP_KEYS: (keyof JourneySteps)[] = ['input', 'validate', 'deliver', 'effect', 'consume']
 
 
-// ─── 生效按钮：复用既有 ingest 端点（spot-ingest/forecast-etl/weather-export）──
+// 生效按钮：复用既有 ingest 端点（spot-ingest/forecast-etl/weather-export）
 async function runEffect(card: OnboardingCard) {
   if (!card.effect) return
   busy[card.key] = true
@@ -301,7 +301,6 @@ onMounted(loadAll)
 <template>
   <div class="onboarding-page">
     <header class="page-head">
-      <h1>数据接入向导</h1>
       <p class="lede">
         从「你手里有什么数据」出发，按类别把数据进入系统的旅程一步步走通：先做什么、点哪里生效、去哪见数。
         云南现货主力数据已由中广核厂侧 API 每日自动入库（首卡）；手录模板 / 月度导出包 / 台账等通道按需使用。
@@ -310,10 +309,10 @@ onMounted(loadAll)
     </header>
 
     <section class="link-row">
-      <RouterLink to="/ops/upload" class="link"><CloudDownload :size="13" /> 数据上传中心</RouterLink>
-      <RouterLink to="/ops/import-hub" class="link"><FileText :size="13" /> 数据导入融合台</RouterLink>
-      <RouterLink to="/ops/ingest" class="link"><Workflow :size="13" /> 数据摄取管理</RouterLink>
-      <RouterLink to="/ops/data-governance" class="link"><Database :size="13" /> 数据治理控制台</RouterLink>
+      <RouterLink to="/data-ops/console?panel=upload" class="link"><CloudDownload :size="13" /> 数据上传中心</RouterLink>
+      <RouterLink to="/data-ops/console?panel=import-hub" class="link"><FileText :size="13" /> 数据导入融合台</RouterLink>
+      <RouterLink to="/data-ops/console?panel=ingest" class="link"><Workflow :size="13" /> 数据摄取管理</RouterLink>
+      <RouterLink to="/data-ops/console?panel=governance" class="link"><Database :size="13" /> 数据治理控制台</RouterLink>
     </section>
 
     <div v-if="loadErr" class="load-err">⚠ 状态取数失败（{{ loadErr }}）；卡片状态显示为「未知」，不影响生效操作。</div>
@@ -342,8 +341,7 @@ onMounted(loadAll)
         <div class="sect">
           <span class="sect-label">怎么接</span>
           <p class="sect-body">{{ card.howText }}</p>
-          <a v-if="card.howLink?.external" :href="card.howLink.to" class="link">{{ card.howLink.label }} →</a>
-          <RouterLink v-else-if="card.howLink" :to="card.howLink.to" class="link">{{ card.howLink.label }} →</RouterLink>
+          <RouterLink v-if="card.howLink" :to="card.howLink.to" class="link">{{ card.howLink.label }} →</RouterLink>
           <div v-if="card.howCommand" class="cmd-box">
             <code>{{ card.howCommand.command }}</code>
             <button class="copy" type="button" @click="copyCommand(card.howCommand.command)">复制</button>
@@ -391,10 +389,7 @@ onMounted(loadAll)
         <div class="sect">
           <span class="sect-label">去哪见数</span>
           <div class="consume-links">
-            <template v-for="c in card.consume" :key="c.to">
-              <a v-if="c.external" :href="c.to" class="consume-link">{{ c.label }} →</a>
-              <RouterLink v-else :to="c.to" class="consume-link">{{ c.label }} →</RouterLink>
-            </template>
+            <RouterLink v-for="c in card.consume" :key="c.to" :to="c.to" class="consume-link">{{ c.label }} →</RouterLink>
           </div>
         </div>
       </article>
@@ -411,14 +406,13 @@ onMounted(loadAll)
 </template>
 
 <style scoped>
-.onboarding-page { padding: 18px 22px; max-width: 1180px; margin: 0 auto; }
-.page-head h1 { font-size: 22px; font-weight: 600; color: var(--text); margin: 0 0 4px; }
-.lede { color: var(--text-soft); font-size: 13.5px; margin: 0 0 14px; line-height: 1.6; max-width: 880px; }
-.link-row { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 18px; font-size: 12.5px; }
+.onboarding-page { max-width: 1180px; }
+.lede { color: var(--text-soft); font-size: var(--font-13-5); margin: 0 0 14px; line-height: 1.6; max-width: 880px; }
+.link-row { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 18px; font-size: var(--font-12-5); }
 .link { color: var(--primary); text-decoration: none; display: inline-flex; align-items: center; gap: 4px; }
 .link:hover { text-decoration: underline; }
-.muted { color: var(--muted); font-size: 12px; }
-.load-err { color: var(--danger); font-size: 12.5px; margin-bottom: 12px; }
+.muted { color: var(--muted); font-size: var(--font-sm); }
+.load-err { color: var(--danger); font-size: var(--font-12-5); margin-bottom: 12px; }
 
 .card-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); gap: 14px; }
 .journey-card {
@@ -428,17 +422,17 @@ onMounted(loadAll)
 .card-head { display: flex; align-items: center; gap: 10px; }
 .card-icon { color: var(--primary); flex: none; }
 .card-title { display: flex; flex-direction: column; gap: 1px; }
-.card-title .cat { font-size: 11px; color: var(--muted); }
-.card-title h3 { margin: 0; font-size: 15px; font-weight: 600; color: var(--text); }
+.card-title .cat { font-size: var(--font-xs); color: var(--muted); }
+.card-title h3 { margin: 0; font-size: var(--font-15); font-weight: 600; color: var(--text); }
 
 /* 五步旅程线 */
 .journey-line { list-style: none; display: flex; gap: 0; margin: 0; padding: 6px 0 2px; }
-.step { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px; position: relative; font-size: 11px; }
+.step { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px; position: relative; font-size: var(--font-xs); }
 .step::before { content: ''; position: absolute; top: 9px; left: -50%; width: 100%; height: 2px; background: var(--line); }
 .step:first-child::before { display: none; }
 .step-idx {
   width: 20px; height: 20px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center;
-  font-size: 11px; font-weight: 600; background: var(--line); color: var(--muted); z-index: 1;
+  font-size: var(--font-xs); font-weight: 600; background: var(--line); color: var(--muted); z-index: 1;
 }
 .step.done .step-idx { background: var(--success); color: #fff; }
 .step.done .step-label { color: var(--text); }
@@ -446,18 +440,18 @@ onMounted(loadAll)
 .step.unknown .step-idx { background: color-mix(in srgb, var(--muted) 30%, transparent); }
 .step-label { color: var(--muted); }
 
-.what { font-size: 12.5px; color: var(--text-body); margin: 0; line-height: 1.5; }
+.what { font-size: var(--font-12-5); color: var(--text-body); margin: 0; line-height: 1.5; }
 .sect { display: flex; flex-direction: column; gap: 3px; }
-.sect-label { font-size: 11px; color: var(--muted); font-weight: 600; }
-.sect-body { font-size: 12.5px; color: var(--text-soft); margin: 0; line-height: 1.5; }
+.sect-label { font-size: var(--font-xs); color: var(--muted); font-weight: 600; }
+.sect-body { font-size: var(--font-12-5); color: var(--text-soft); margin: 0; line-height: 1.5; }
 
-.cmd-box { background: color-mix(in srgb, var(--muted) 10%, transparent); border-radius: var(--radius-sm, 6px); padding: 6px 8px; font-size: 11.5px; position: relative; }
+.cmd-box { background: color-mix(in srgb, var(--muted) 10%, transparent); border-radius: var(--radius-sm, 6px); padding: 6px 8px; font-size: var(--font-11-5); position: relative; }
 .cmd-box code { font-family: var(--ck-mono, ui-monospace, monospace); color: var(--text); word-break: break-all; }
-.copy { float: right; cursor: pointer; border: none; background: transparent; color: var(--primary); font-size: 11px; }
+.copy { float: right; cursor: pointer; border: none; background: transparent; color: var(--primary); font-size: var(--font-xs); }
 .cmd-note { color: var(--muted); margin: 4px 0 0; line-height: 1.4; }
 
 .status-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.tag { font-size: 11px; padding: 2px 8px; border-radius: 10px; font-weight: 500; border: 1px solid; }
+.tag { font-size: var(--font-xs); padding: 2px 8px; border-radius: 10px; font-weight: 500; border: 1px solid; }
 .tag.fresh, .tag.ok { color: var(--success); border-color: color-mix(in srgb, var(--success) 40%, transparent); background: color-mix(in srgb, var(--success) 8%, transparent); }
 .tag.aging { color: var(--warning, #d97706); border-color: color-mix(in srgb, var(--warning, #d97706) 40%, transparent); background: color-mix(in srgb, var(--warning, #d97706) 8%, transparent); }
 .tag.stale, .tag.warn { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 40%, transparent); background: color-mix(in srgb, var(--danger) 8%, transparent); }
@@ -466,7 +460,7 @@ onMounted(loadAll)
 
 .effect-btn {
   display: inline-flex; align-items: center; gap: 6px; cursor: pointer;
-  padding: 7px 14px; border-radius: var(--radius-sm, 6px); font-size: 13px; font-weight: 500;
+  padding: 7px 14px; border-radius: var(--radius-sm, 6px); font-size: var(--font-md); font-weight: 500;
   border: 1px solid var(--primary); color: var(--primary); background: transparent;
 }
 .effect-btn:hover:not(:disabled) { background: color-mix(in srgb, var(--primary) 10%, transparent); }
@@ -474,15 +468,15 @@ onMounted(loadAll)
 .spin { animation: spin 0.9s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
-.result { margin-top: 6px; padding: 8px 10px; border-radius: var(--radius-sm, 6px); font-size: 12px; border: 1px solid; }
+.result { margin-top: 6px; padding: 8px 10px; border-radius: var(--radius-sm, 6px); font-size: var(--font-sm); border: 1px solid; }
 .result.ok { color: var(--success); border-color: color-mix(in srgb, var(--success) 35%, transparent); background: color-mix(in srgb, var(--success) 7%, transparent); }
 .result.fail, .result.err { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 35%, transparent); background: color-mix(in srgb, var(--danger) 7%, transparent); }
 .result-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 4px; font-weight: 500; }
-.stdout { margin: 4px 0 0; font-size: 11px; color: var(--text-soft); font-family: var(--ck-mono, ui-monospace, monospace); white-space: pre-wrap; word-break: break-all; max-height: 110px; overflow: auto; }
+.stdout { margin: 4px 0 0; font-size: var(--font-xs); color: var(--text-soft); font-family: var(--ck-mono, ui-monospace, monospace); white-space: pre-wrap; word-break: break-all; max-height: 110px; overflow: auto; }
 
 .consume-links { display: flex; gap: 12px; flex-wrap: wrap; }
-.consume-link { font-size: 12.5px; }
+.consume-link { font-size: var(--font-12-5); }
 
-.note { margin-top: 18px; font-size: 12px; line-height: 1.6; }
+.note { margin-top: 18px; font-size: var(--font-sm); line-height: 1.6; }
 code { font-family: var(--ck-mono, ui-monospace, monospace); font-size: 0.92em; padding: 1px 4px; border-radius: 3px; background: color-mix(in srgb, var(--muted) 14%, transparent); }
 </style>

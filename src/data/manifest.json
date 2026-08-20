@@ -32,11 +32,11 @@
   {
     "id": "ops-console",
     "path": "/data-ops/console",
-    "title": "数据运维台",
-    "domain": "数据运维",
+    "title": "数据运维工作台",
+    "domain": "数据管理",
     "kind": "real",
-    "endpoint": "external /ops-console.html（数据管理操作面，API 经 /data-svc → data-service :8190）",
-    "dataPath": "ops_console",
+    "endpoint": "/api/v1/governance/{catalog,quality,backup} + /api/v1/data-upload/* + /api/v1/ingest/*（数据管理路径族经 dataServicePath → /data-svc → data-service :8190）",
+    "dataPath": "governance_catalog,upload_batches",
     "nav": {
       "group": "/gsgl",
       "listed": true

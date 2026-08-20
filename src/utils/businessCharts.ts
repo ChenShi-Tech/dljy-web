@@ -1,7 +1,7 @@
 // 业务图表转换层：把电力交易语义 JSON 转成 ECharts option。
 // 让 agent 只产出业务字段（如申报点位、预测区间、敞口），无需手写复杂 option；
 // 解析器(artifactBlocks)用这些 builder 把对应围栏回落为 kind:'chart'，复用
-// ChartArtifact 渲染 —— 零新组件、零 ArtifactRenderer 改动。
+// ChartArtifact 渲染，零新组件、零 ArtifactRenderer 改动。
 //
 // 约定：builder 接收已 looseParseJson 的值，返回 ECharts option（Record）或 null
 // （无法构成有效图表时 null，由解析器降级为 JSON 代码块）。颜色用固定值，主题适配
@@ -24,7 +24,7 @@ function optS(v: unknown): string | undefined {
   return s === '' ? undefined : s
 }
 // 转义 tooltip/label 中拼接的模型字段：ECharts 自定义 formatter 返回原始 HTML 不二次转义，
-// agent 产出的 name/label 可能含 < > " 等，直接拼接会 XSS。Codex P1。
+// agent 产出的 name/label 可能含 < > " 等，直接拼接会 XSS。。
 function escapeHtml(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 }

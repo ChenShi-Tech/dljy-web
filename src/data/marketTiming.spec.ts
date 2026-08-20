@@ -15,7 +15,7 @@ function at(hhmm: string): Date {
 
 describe('未登记地区诚实返回 null', () => {
   it('云南（UI 默认地区）未登记市场时序，不回落他省时刻表', () => {
-    // 一个错的申报截止时刻比没有时刻更危险——交易员会照着它排班。
+    // 一个错的申报截止时刻比没有时刻更危险，交易员会照着它排班。
     expect(getMarketTiming('yunnan')).toBeNull()
   })
 
@@ -49,7 +49,7 @@ describe('申报死线紧迫度由 rulepack 的三级提醒时刻驱动', () => 
 
   it('换省只换数据、判级逻辑不动：山西 09:30 截止走同一套判级', () => {
     const sx = MARKET_TIMING.shanxi
-    // 同一个 08:41，新疆已进黄色预警，山西还在常态——证明时刻没有写死在逻辑里
+    // 同一个 08:41，新疆已进黄色预警，山西还在常态，证明时刻没有写死在逻辑里
     expect(bidDeadlineUrgency(xj, at('08:41'))).toBe('warning')
     expect(bidDeadlineUrgency(sx, at('08:41'))).toBe('normal')
     expect(bidDeadlineUrgency(sx, at('09:21'))).toBe('warning')

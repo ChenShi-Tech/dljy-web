@@ -55,13 +55,13 @@ function yesterday(): string {
   return new Date(Date.now() - 86400000).toISOString().slice(0, 10)
 }
 
-// P2：结算规则参数化——免考核带默认值改读当前地区 SettlementRuleSpec；
+// P2：结算规则参数化，免考核带默认值改读当前地区 SettlementRuleSpec；
 // 未沉淀规格的地区保留 3% 通用默认并显示"未参数化"提示（不静默借用别省参数）。
 const settlementSpec = computed(() => getSettlementRuleSpec(currentRegion.value.id))
 
-// 复盘默认日期是「昨天」，而真实采集是历史批次——默认值落在覆盖区外就永远空手而归。
+// 复盘默认日期是「昨天」，而真实采集是历史批次，默认值落在覆盖区外就永远空手而归。
 // 覆盖区间集中登记在 captureCoverage（原先只有云南一条硬编码在本文件；#1531 起山西的
-// 申报/价格也按日取真实数据，同样需要钳）。只钳**默认值**，不限制用户手选。
+// 申报/价格也按日取真实数据，同样需要钳）。只钳默认值，不限制用户手选。
 function defaultDateFor(regionId: string): string {
   return clampToCoverage(regionId, 'review', yesterday())
 }
@@ -86,7 +86,7 @@ const reviewFailure = ref<ReviewFailure | null>(null)
 const declarationId = ref(typeof route.query.declarationId === 'string' ? route.query.declarationId : '')
 const declaration = ref<DeclarationOrder | null>(null)
 
-// P2-4：结算对账——导入中心的结算台账（/api/v1/settlements）与自算考核对照
+// P2-4：结算对账，导入中心的结算台账（/api/v1/settlements）与自算考核对照
 type ImportedSettlementRow = { 结算月份: string; 结算对象: string; 电量: number; 电费: number; 偏差费用: number }
 const settlementRows = ref<ImportedSettlementRow[]>([])
 const reviewMonth = computed(() => date.value.slice(0, 7))
@@ -123,7 +123,7 @@ const pnlClass = computed(() =>
   (result.value?.backtest.da_rt_spread_pnl_yuan ?? 0) >= 0 ? 'good' : 'bad'
 )
 
-// ── 六维驾驶舱 v1（Epic #2033 · #2038）──────────────────────────────────────
+// 六维驾驶舱 v1（Epic #2033 · #2038）
 // 两张真数指标卡之一：偏差率（总偏差/申报总量，quant /review 权威口径，仅覆盖区出数）；
 // 风险事件卡 M3 前占位空态；覆盖率/填写率不上（#2039 已有分母，KPI 面板接入归 M2，不提前凑数）。
 const dimensionCards = buildDimensionCards()
@@ -220,7 +220,7 @@ function toggleDim(key: string, open: boolean) {
   openedDims.value = next
 }
 
-// 策略维度：胜率概览（tradingMemory 后验真数据；样本 <30 不出结论只标样本不足——T04 硬规则）
+// 策略维度：胜率概览（tradingMemory 后验真数据；样本 <30 不出结论只标样本不足，T04 硬规则）
 const winStats = computed(() => getRegionWinStats(currentRegion.value.id))
 
 async function load() {
@@ -310,7 +310,7 @@ function money(v: number | null): string {
 }
 
 // 请求序号：日期/地区连续切换时，先发出的请求可能后返回。只认最新一次的结果，
-// 否则旧响应会覆盖新参数的结果（codex PR#1502 P2）。
+// 否则旧响应会覆盖新参数的结果（#1502）。
 let settlementSeq = 0
 
 async function loadSettlementReview() {
@@ -430,7 +430,7 @@ onRegionChange(() => {
     </section>
 
     <!-- 结算口径日复盘（云南三段式）：与下方「申报 vs 实际偏差考核」是两套口径。
-         这里是电网结算单给出的结果——实际上网电量按中长期/日前增量/实时增量三段分解并逐段计价。 -->
+         这里是电网结算单给出的结果：实际上网电量按中长期/日前增量/实时增量三段分解并逐段计价。 -->
     <section v-if="isYunnan" class="panel settlement-review">
       <div class="block-title">
         结算口径复盘 · 三段式电量分解
@@ -522,7 +522,7 @@ onRegionChange(() => {
           <div ref="chartEl" class="main-chart chart-host" />
         </section>
 
-        <!-- 口径边界：后端随响应下发，原样呈现。数字本身不带口径——不显示等于把
+        <!-- 口径边界：后端随响应下发，原样呈现。数字本身不带口径：不显示等于把
              「按平台实时电量自算」悄悄当成了「电网结算结论」。 -->
         <section v-if="result?.caliber_caveats?.length" class="panel caliber-note">
           <div class="block-title">口径边界 · 这份复盘不能当作什么</div>
@@ -702,7 +702,7 @@ onRegionChange(() => {
 
 <style scoped>
 .review { gap: 14px; }
-.muted { color: var(--muted); font-size: 12.5px; }
+.muted { color: var(--muted); font-size: var(--font-12-5); }
 
 /* 六维驾驶舱 v1（#2038） */
 .cockpit { display: flex; flex-direction: column; gap: 10px; }
@@ -713,27 +713,27 @@ onRegionChange(() => {
 }
 .metric-card.placeholder { border-style: dashed; background: transparent; }
 .metric-card.empty { border-style: dashed; }
-.m-head { display: flex; align-items: center; gap: 8px; font-size: 12.5px; font-weight: 600; color: var(--text); }
-.m-src { font-size: 10.5px; font-weight: 400; color: var(--muted); border: 1px dashed var(--line); border-radius: 999px; padding: 0 7px; }
-.m-tag { font-size: 10px; font-weight: 400; color: #a16207; background: #fffbeb; border-radius: 999px; padding: 0 7px; }
-.m-value { font-size: 26px; font-variant-numeric: tabular-nums; color: var(--text); }
+.m-head { display: flex; align-items: center; gap: 8px; font-size: var(--font-12-5); font-weight: 600; color: var(--text); }
+.m-src { font-size: var(--font-10-5); font-weight: 400; color: var(--muted); border: 1px dashed var(--line); border-radius: 999px; padding: 0 7px; }
+.m-tag { font-size: var(--font-10); font-weight: 400; color: #a16207; background: #fffbeb; border-radius: 999px; padding: 0 7px; }
+.m-value { font-size: var(--font-26); font-variant-numeric: tabular-nums; color: var(--text); }
 .m-value.bad { color: #b91c1c; }
-.m-sub { font-size: 11.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
-.m-note { margin: 2px 0 0; font-size: 11.5px; line-height: 1.7; color: var(--muted); }
+.m-sub { font-size: var(--font-11-5); color: var(--muted); font-variant-numeric: tabular-nums; }
+.m-note { margin: 2px 0 0; font-size: var(--font-11-5); line-height: 1.7; color: var(--muted); }
 
 /* 六维深入面板区（M2–M4）：默认折叠，锚点由六维入口卡触发展开 */
 .dim-panels { display: flex; flex-direction: column; gap: 10px; }
 .dim-panel { padding: 0; }
 .dim-panel summary {
-  cursor: pointer; padding: 11px 16px; font-size: 13px; font-weight: 600;
+  cursor: pointer; padding: 11px 16px; font-size: var(--font-md); font-weight: 600;
   color: var(--text); list-style: revert;
 }
 .dim-panel[open] summary { border-bottom: 1px solid var(--line); }
 .dim-body { padding: 12px 16px; }
 .dim-stack { display: flex; flex-direction: column; gap: 14px; }
-.win-facts { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12.5px; font-variant-numeric: tabular-nums; }
-.win-facts b { font-size: 15px; }
-.dim-note { margin: 8px 0 0; font-size: 11.5px; line-height: 1.7; color: var(--muted); }
+.win-facts { display: flex; gap: 14px; flex-wrap: wrap; font-size: var(--font-12-5); font-variant-numeric: tabular-nums; }
+.win-facts b { font-size: var(--font-15); }
+.dim-note { margin: 8px 0 0; font-size: var(--font-11-5); line-height: 1.7; color: var(--muted); }
 
 /* 模板抽屉（沿用报告弹层的浮层模式） */
 .tpl-overlay {
@@ -754,48 +754,48 @@ onRegionChange(() => {
 .tpl-pick {
   display: flex; align-items: center; justify-content: space-between; gap: 10px;
   padding: 8px 12px; border: 1px solid var(--line); border-radius: 8px;
-  background: transparent; color: var(--text); font-size: 12.5px; cursor: pointer; text-align: left;
+  background: transparent; color: var(--text); font-size: var(--font-12-5); cursor: pointer; text-align: left;
 }
 .tpl-pick:hover { border-color: var(--primary); background: #f8fbff; }
-.tpl-pick i { font-style: normal; font-size: 10.5px; border-radius: 999px; padding: 0 7px; }
+.tpl-pick i { font-style: normal; font-size: var(--font-10-5); border-radius: 999px; padding: 0 7px; }
 .tpl-pick .rd-ready { background: #f0fdf4; color: #15803d; }
 .tpl-pick .rd-data_gap { background: #fffbeb; color: #a16207; }
 .tpl-pick .rd-deferred { background: #f1f5f9; color: #64748b; }
 .params {
   display: flex; flex-wrap: wrap; align-items: center; gap: 14px;
-  padding: 12px 16px; font-size: 13px;
+  padding: 12px 16px; font-size: var(--font-md);
 }
 .params label { display: flex; align-items: center; gap: 6px; color: var(--muted); }
 .params input {
   padding: 5px 9px; border: 1px solid var(--line); border-radius: 8px;
-  background: transparent; color: var(--text); font-size: 13px;
+  background: transparent; color: var(--text); font-size: var(--font-md);
 }
 .params input[type='number'] { width: 90px; }
 .demo-tag {
-  font-size: 11px; padding: 1px 8px; border-radius: 999px;
+  font-size: var(--font-xs); padding: 1px 8px; border-radius: 999px;
   background: rgba(245, 158, 11, 0.15); color: #b45309;
 }
 .baseline-tag {
-  font-size: 11px; padding: 1px 8px; border-radius: 999px;
+  font-size: var(--font-xs); padding: 1px 8px; border-radius: 999px;
   background: rgba(14, 165, 233, 0.12); color: #0369a1;
   font-family: ui-monospace, monospace;
 }
 .rule-tag {
-  font-size: 11px; padding: 1px 8px; border-radius: 999px;
+  font-size: var(--font-xs); padding: 1px 8px; border-radius: 999px;
   border: 1px dashed #0f766e; color: #0f766e; background: rgba(15, 118, 110, 0.06);
 }
-.error-tag { color: #ef4444; font-size: 12px; }
+.error-tag { color: #ef4444; font-size: var(--font-sm); }
 
 /* 结算口径复盘（云南三段式） */
 .settlement-review { padding: 14px 16px; }
 .basis-tag {
   margin-left: 8px; padding: 1px 7px; border-radius: 4px;
-  background: #e0f2fe; color: #0369a1; font-size: 11px; font-weight: 500;
+  background: #e0f2fe; color: #0369a1; font-size: var(--font-xs); font-weight: 500;
 }
-.plant-tag { margin-left: 6px; color: #64748b; font-size: 11px; font-weight: 400; }
+.plant-tag { margin-left: 6px; color: #64748b; font-size: var(--font-xs); font-weight: 400; }
 .coverage-hint {
   margin: 8px 0 0; padding: 8px 10px; border-radius: 6px;
-  background: #fffbeb; color: #92400e; font-size: 12px; line-height: 1.6;
+  background: #fffbeb; color: #92400e; font-size: var(--font-sm); line-height: 1.6;
 }
 .seg-row { display: flex; align-items: stretch; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
 .seg-card {
@@ -803,22 +803,22 @@ onRegionChange(() => {
   border: 1px solid #e2e8f0; border-radius: 8px; background: #f8fafc;
 }
 .seg-card.total { background: #f0f9ff; border-color: #bae6fd; }
-.seg-label { color: #64748b; font-size: 12px; }
-.seg-value { margin-top: 4px; font-size: 20px; font-weight: 600; color: #0f172a; }
-.seg-value i { margin-left: 3px; font-size: 11px; font-weight: 400; font-style: normal; color: #94a3b8; }
-.seg-fee { margin-top: 3px; color: #475569; font-size: 11px; }
-.seg-op { display: flex; align-items: center; color: #94a3b8; font-size: 18px; }
-.basis-note { margin: 10px 0 0; color: #64748b; font-size: 11px; line-height: 1.7; }
+.seg-label { color: #64748b; font-size: var(--font-sm); }
+.seg-value { margin-top: 4px; font-size: var(--font-20); font-weight: 600; color: #0f172a; }
+.seg-value i { margin-left: 3px; font-size: var(--font-xs); font-weight: 400; font-style: normal; color: #94a3b8; }
+.seg-fee { margin-top: 3px; color: #475569; font-size: var(--font-xs); }
+.seg-op { display: flex; align-items: center; color: #94a3b8; font-size: var(--font-18); }
+.basis-note { margin: 10px 0 0; color: #64748b; font-size: var(--font-xs); line-height: 1.7; }
 /* AGENTS.md Mock 红线：模拟结算单必须可见标注，不得伪装真实结算口径（#1562 P1） */
 .mock-banner {
   margin: 0 0 10px; padding: 8px 12px; border-radius: 6px;
   background: #fef3c7; border: 1px solid #f59e0b; color: #92400e;
-  font-size: 12px; line-height: 1.6;
+  font-size: var(--font-sm); line-height: 1.6;
 }
 .mock-banner strong { color: #b45309; }
 .plant-detail { margin-top: 10px; }
-.plant-detail summary { cursor: pointer; color: #475569; font-size: 12px; }
-.plant-table { width: 100%; margin-top: 8px; border-collapse: collapse; font-size: 12px; }
+.plant-detail summary { cursor: pointer; color: #475569; font-size: var(--font-sm); }
+.plant-table { width: 100%; margin-top: 8px; border-collapse: collapse; font-size: var(--font-sm); }
 .plant-table th, .plant-table td {
   padding: 5px 8px; border-bottom: 1px solid #f1f5f9; text-align: right; white-space: nowrap;
 }
@@ -839,22 +839,22 @@ onRegionChange(() => {
 .review-guidance strong { display: block; color: var(--text); }
 .review-guidance p { margin: 6px 0; color: var(--muted); }
 .review-guidance small { color: var(--muted); }
-.block-title { display: flex; align-items: center; gap: 6px; font-size: 13.5px; font-weight: 600; margin-bottom: 6px; }
+.block-title { display: flex; align-items: center; gap: 6px; font-size: var(--font-13-5); font-weight: 600; margin-bottom: 6px; }
 .main-chart { width: 100%; height: 320px; }
 
 .card-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
 @media (max-width: 700px) { .card-row { grid-template-columns: 1fr; } }
 .num-card { padding: 12px 14px; }
-.num-row { display: flex; justify-content: space-between; padding: 4px 0; font-size: 13px; color: var(--muted); }
+.num-row { display: flex; justify-content: space-between; padding: 4px 0; font-size: var(--font-md); color: var(--muted); }
 .num-row b { color: var(--text); font-variant-numeric: tabular-nums; }
 .num-row.main { border-top: 1px solid var(--line); margin-top: 4px; padding-top: 8px; }
 .num-row .good { color: #16a34a; }
 .num-row .bad { color: #ef4444; }
-.hint { font-size: 11.5px; color: var(--muted); margin: 6px 0 0; }
+.hint { font-size: var(--font-11-5); color: var(--muted); margin: 6px 0 0; }
 
 .agent-block { padding: 12px 14px; }
 .launch {
-  width: 100%; padding: 10px; font-size: 13.5px; font-weight: 600;
+  width: 100%; padding: 10px; font-size: var(--font-13-5); font-weight: 600;
   border: none; border-radius: 10px; cursor: pointer;
   background: var(--primary); color: #fff;
 }
@@ -869,8 +869,8 @@ onRegionChange(() => {
   background: transparent; color: var(--text); cursor: pointer;
 }
 .report-row:hover { border-color: var(--primary); }
-.report-title { font-size: 12.5px; font-weight: 600; }
-.report-meta { font-size: 11px; color: var(--muted); }
+.report-title { font-size: var(--font-12-5); font-weight: 600; }
+.report-meta { font-size: var(--font-xs); color: var(--muted); }
 
 .report-overlay {
   position: fixed; inset: 0; z-index: 50;
@@ -886,13 +886,13 @@ onRegionChange(() => {
   padding: 12px 16px; border-bottom: 1px solid var(--line);
 }
 .report-modal .close { border: none; background: transparent; cursor: pointer; color: var(--muted); }
-.report-body { padding: 14px 18px; overflow-y: auto; font-size: 13.5px; line-height: 1.8; }
-.md :deep(table) { border-collapse: collapse; font-size: 12.5px; }
+.report-body { padding: 14px 18px; overflow-y: auto; font-size: var(--font-13-5); line-height: 1.8; }
+.md :deep(table) { border-collapse: collapse; font-size: var(--font-12-5); }
 .md :deep(th), .md :deep(td) { border: 1px solid var(--line); padding: 3px 8px; }
 .md :deep(pre) { background: rgba(20, 24, 34, 0.92); color: #e5e7eb; padding: 10px; border-radius: 8px; overflow-x: auto; }
-/* 口径边界：警示但不报错——它说明的是「这份数据是什么」，不是「出了问题」 */
+/* 口径边界：警示但不报错，它说明的是「这份数据是什么」，不是「出了问题」 */
 .caliber-note { border-left: 3px solid var(--el-color-warning, #e6a23c); }
 .caliber-note ul { margin: 6px 0 0; padding-left: 18px; }
-.caliber-note li { font-size: 12px; line-height: 1.7; color: var(--el-text-color-regular, #606266); }
+.caliber-note li { font-size: var(--font-sm); line-height: 1.7; color: var(--el-text-color-regular, #606266); }
 .caliber-note li + li { margin-top: 4px; }
 </style>

@@ -75,20 +75,20 @@ watch(
 }
 .sm-main { flex: 1; min-width: 0; }
 .sm-title {
-  font-size: 13.5px;
+  font-size: var(--font-13-5);
   font-weight: 650;
   color: var(--text, #1f2937);
   font-family: var(--el-font-family, inherit);
 }
 .sm-hint {
   margin-left: 6px;
-  font-size: 12px;
+  font-size: var(--font-sm);
   font-weight: 400;
   color: var(--el-text-color-placeholder, #a8abb2);
 }
 .sm-desc {
   margin-top: 1px;
-  font-size: 12px;
+  font-size: var(--font-sm);
   color: var(--el-text-color-secondary, #909399);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -98,14 +98,14 @@ watch(
   flex: none;
   padding: 1px 7px;
   border-radius: 999px;
-  font-size: 11px;
+  font-size: var(--font-xs);
   color: var(--primary, #0f766e);
   background: var(--primary-tint, #e6f4f2);
   border: 1px solid var(--primary-tint-border, #19988b44);
 }
 .sm-foot {
   padding: 5px 12px;
-  font-size: 11px;
+  font-size: var(--font-xs);
   color: var(--el-text-color-placeholder, #a8abb2);
   border-top: 1px solid var(--line-faint, rgba(125, 125, 125, 0.12));
 }

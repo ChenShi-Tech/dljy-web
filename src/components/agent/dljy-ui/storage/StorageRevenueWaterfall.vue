@@ -47,8 +47,8 @@ const maxAbs = computed(() => Math.max(1, ...rows.value.map((r) => Math.abs(r.va
   padding: 14px;
 }
 header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
-h3 { margin: 0; font-size: 16px; color: var(--text, #111827); }
-header span { font-size: 12px; color: var(--muted, #667085); }
+h3 { margin: 0; font-size: var(--font-16); color: var(--text, #111827); }
+header span { font-size: var(--font-sm); color: var(--muted, #667085); }
 .bars { display: grid; gap: 8px; }
 .bar-row {
   display: grid;
@@ -56,11 +56,11 @@ header span { font-size: 12px; color: var(--muted, #667085); }
   gap: 10px;
   align-items: center;
 }
-.label { font-size: 12px; color: var(--text-body, #344054); }
+.label { font-size: var(--font-sm); color: var(--text-body, #344054); }
 .track { height: 13px; background: rgba(148, 163, 184, 0.16); border-radius: 999px; overflow: hidden; }
 .bar { height: 100%; border-radius: inherit; }
 .bar.gain { background: #16a34a; }
 .bar.cost { background: #dc2626; }
 .bar.total { background: #2563eb; }
-strong { text-align: right; font-size: 12.5px; color: var(--text, #111827); }
+strong { text-align: right; font-size: var(--font-12-5); color: var(--text, #111827); }
 </style>

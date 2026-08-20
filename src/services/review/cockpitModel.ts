@@ -94,7 +94,7 @@ export function deviationMetricOf(input: {
   return { deviationPct: pct, totalAbsDeviationMwh, estimatedPenaltyYuan }
 }
 
-/** 风险事件卡（M3 前占位空态——Epic 验收：M3 前不显示数字）。 */
+/** 风险事件卡（M3 前占位空态，Epic 验收：M3 前不显示数字）。 */
 export const RISK_CARD_NOTE =
   '风险事件库随 M3（#2047）上线：届时此处显示近 30 天高/中风险事件数与未闭环处置数。当前无数据源，不显示占位数字。'
 

@@ -37,6 +37,7 @@ import {
   subjectTypeLabels
 } from '@/services/governance'
 import AiAssistant from '../components/AiAssistant.vue'
+import AiOrbLauncher from '../components/agent/AiOrbLauncher.vue'
 import { useAiPanel } from '../composables/useAiPanel'
 import PriceTicker from '../components/PriceTicker.vue'
 import RegionSwitcher from '@/components/region/RegionSwitcher.vue'
@@ -56,6 +57,8 @@ const isMobile = ref(false)
 const mobileMenuOpen = ref(false)
 const currentUser = ref<AuthUser>(getCurrentUser())
 const notices = ref<Notice[]>([])
+// 公告是否为模拟数据：由服务端 provenance 判定，不在前端写死。
+const noticesAreMock = ref(false)
 const accessRevision = ref(0)
 const companyOptionsLoading = ref(false)
 
@@ -107,7 +110,7 @@ async function signOut() {
   router.push('/login')
 }
 
-// 会话管理并入 ADMIN-only 的「用户与会话」后，本入口对非管理员只会被守卫弹回首页——
+// 会话管理并入 ADMIN-only 的「用户与会话」后，本入口对非管理员只会被守卫弹回首页
 // 故按同一套 canAccessPath 判定显隐，不再留一个点了没反应的菜单项（不硬编码角色）。
 const canOpenSecurityCenter = computed(() => canAccessPath('/system/accounts', currentUser.value))
 
@@ -231,6 +234,7 @@ onMounted(async () => {
     const [info, dashboard] = await Promise.all([getInfo(), getDashboard()])
     currentUser.value = info.user
     notices.value = dashboard.notices
+    noticesAreMock.value = dashboard.provenance?.realDataConnected === false
     await refreshTopbarCompanyOptions()
   } catch (error) {
     await logout()
@@ -413,6 +417,9 @@ watch(
               <el-button class="icon-action" :icon="Bell" circle title="通知" />
             </template>
             <div class="notice-list">
+              <div v-if="noticesAreMock" class="notice-mock-hint">
+                模拟数据 · 平台公告源尚未接入，以下为示例内容
+              </div>
               <div v-for="notice in notices" :key="notice.id" class="notice-item">
                 <span>{{ notice.level }}</span>
                 <strong>{{ notice.title }}</strong>
@@ -468,6 +475,8 @@ watch(
     </section>
 
     <AiAssistant />
+    <!-- 右下角液态玻璃 AI 球：点按开合上方 AI 面板（WebGPU 渲染，不支持时 CSS 降级） -->
+    <AiOrbLauncher />
     <RegionMigrationTip />
     <CommandPalette v-model="showCommandPalette" :user="currentUser" />
   </div>
@@ -601,7 +610,7 @@ watch(
   border-radius: 7px;
   background: var(--primary);
   color: #fff;
-  font-size: 13px;
+  font-size: var(--font-tb-13);
   font-weight: 700;
 }
 .user-meta {
@@ -615,7 +624,7 @@ watch(
 }
 .user-meta strong {
   max-width: 100%;
-  font-size: 13px;
+  font-size: var(--font-tb-13);
   font-weight: 600;
   white-space: nowrap;
   overflow: hidden;
@@ -624,7 +633,7 @@ watch(
 .user-meta span {
   max-width: 100%;
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--font-tb-11);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -645,11 +654,11 @@ watch(
   border-bottom: 1px solid var(--line);
 }
 .user-card strong {
-  font-size: 13px;
+  font-size: var(--font-md);
   color: var(--text);
 }
 .user-card span {
-  font-size: 11.5px;
+  font-size: var(--font-11-5);
   color: var(--muted);
   line-height: 1.45;
 }
@@ -658,6 +667,11 @@ watch(
   display: flex;
   align-items: center;
   gap: 8px;
+  min-width: 0;
+}
+
+/* 空间吃紧时 tooltip 包裹层可收缩，由卡片内 ellipsis 兜底，防与动作区重叠 */
+.context-cards > * {
   min-width: 0;
 }
 
@@ -676,12 +690,12 @@ watch(
 
 .ctx-card small {
   color: var(--chip-label);
-  font-size: 10px;
+  font-size: var(--font-tb-10);
 }
 
 .ctx-card strong {
   color: var(--chip-text);
-  font-size: 12.5px;
+  font-size: var(--font-tb-12-5);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -692,7 +706,7 @@ watch(
   flex-direction: column;
   gap: 3px;
   max-width: 280px;
-  font-size: 12px;
+  font-size: var(--font-sm);
   line-height: 1.5;
 }
 
@@ -753,12 +767,14 @@ watch(
   }
 }
 
-/* ≤850px：公司收缩后仍换行，藏掉保持动作区 1 行 */
-@media (max-width: 850px) {
+/* ≤955px：公司切换器提前隐藏防挤换行；集团切换器维持 ≤850px */
+@media (max-width: 955px) {
   .company-switcher {
     display: none;
   }
+}
 
+@media (max-width: 850px) {
   .stance-switcher {
     display: none;
   }
@@ -777,6 +793,7 @@ watch(
 .topbar-ticker {
   display: flex;
   align-items: center;
-  min-width: 0;
+  /* 价带不参与收缩：防「峰段/平段/谷段」徽标竖排换行 */
+  flex: 0 0 auto;
 }
 </style>

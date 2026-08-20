@@ -1,7 +1,7 @@
 // 创建智能体会话失败的用户可读文案（#1631）。
 // 纯函数模块：无 window/localStorage 依赖，供 vitest 直接单测（模式同 quant/reviewError.ts）。
 // 服务端结构化 detail（如缺 API Key 的 424）优先透传；无 detail 时才回退按状态码
-// 猜测的兜底话术——404=harness 依赖组未装，5xx=后端进程没起/代理连不上。
+// 猜测的兜底话术，404=harness 依赖组未装，5xx=后端进程没起/代理连不上。
 
 export function formatCreateSessionError(status: number, detail = ''): string {
   const hint = detail

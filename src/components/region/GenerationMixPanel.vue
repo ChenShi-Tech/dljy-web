@@ -79,7 +79,7 @@ watch(
 }
 .section-kicker {
   color: var(--primary);
-  font-size: 13px;
+  font-size: var(--font-md);
   font-weight: 650;
 }
 .chart {

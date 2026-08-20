@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // 一问多维仪表盘 artifact（dljy-meta#18 / P2 #60）：渲染 dashboard_composer（#38）产出的
-// AnalysisDashboard —— 整屏网格布局，每个图表复用 AnalysisChartArtifact；如实标注失败/未成功维度。
+// AnalysisDashboard ， 整屏网格布局，每个图表复用 AnalysisChartArtifact；如实标注失败/未成功维度。
 import { computed, inject, ref } from 'vue'
 import { LayoutDashboard, Save } from 'lucide-vue-next'
 import ArtifactFrame from './ArtifactFrame.vue'
@@ -15,7 +15,7 @@ const dash = computed(() => props.block.dashboard)
 const ctx = inject(ARTIFACT_CONTEXT, undefined)
 
 /**
- * 保存前物化各子图数据（codex P1 3635805739）：dataRef 是会话内句柄，跨会话/重登后按新
+ * 保存前物化各子图数据：dataRef 是会话内句柄，跨会话/重登后按新
  * sessionId 拉旧句柄必 404。趁保存时原会话仍在，把每个 dataRef 解成内联数据快照再持久化；
  * 单图拉取失败则保留原 spec（预览行仍可渲染），不阻断整体保存。
  */
@@ -91,11 +91,11 @@ const failedDims = computed<string[]>(() => {
 
 <style scoped>
 .dash-body { padding: 8px 10px; }
-.dash-q { margin: 0 0 8px; font-size: 12px; color: var(--text-secondary, #666); }
-.dash-empty { padding: 24px; text-align: center; color: var(--text-secondary, #888); font-size: 13px; }
+.dash-q { margin: 0 0 8px; font-size: var(--font-sm); color: var(--text-secondary, #666); }
+.dash-empty { padding: 24px; text-align: center; color: var(--text-secondary, #888); font-size: var(--font-md); }
 .dash-grid.is-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 10px; }
 .dash-grid.is-stack { display: flex; flex-direction: column; gap: 10px; }
 .dash-cell { min-width: 0; }
-.dash-note { margin: 8px 0 0; font-size: 11px; color: #b45309; }
+.dash-note { margin: 8px 0 0; font-size: var(--font-xs); color: #b45309; }
 </style>
 

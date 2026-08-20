@@ -59,7 +59,7 @@ const text = computed(() => {
 .sparkbar__val {
   flex: 0 0 auto;
   font-variant-numeric: tabular-nums;
-  font-size: 12px;
+  font-size: var(--font-sm);
   color: var(--text-body, #344054);
 }
 </style>

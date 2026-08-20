@@ -47,7 +47,7 @@ export type ApprovalRecord = {
   decision: 'approve' | 'reject'
   gateLevel: string
   comment: string | null
-  /** 演练单创建人自批留痕（真实单永远缺席）——四眼原则豁免的审计标记 */
+  /** 演练单创建人自批留痕（真实单永远缺席），四眼原则豁免的审计标记 */
   rehearsalSelfApproval?: boolean
 }
 
@@ -82,8 +82,8 @@ export type DeclarationOrder = {
   quoteRationale?: string
   /**
    * 一日作业链各阶段产出（契约 v5，v1.0 七步动线）。每步做完写回这里，下一步与服务端
-   * 风控检查直接读——交易员不必在页面之间手抄结论。
-   * **是作业留痕而非权威判据**：服务端对能自算的硬字段（basis/capacity/报价精度）不看它。
+   * 风控检查直接读，交易员不必在页面之间手抄结论。
+   * 是作业留痕而非权威判据：服务端对能自算的硬字段（basis/capacity/报价精度）不看它。
    * 写入窗口由服务端按阶段把门：申报前判据限提交前，出清复盘限出清后，日终收口不限。
    */
   preflight?: {
@@ -94,9 +94,9 @@ export type DeclarationOrder = {
       /** ① 中标情况：申报 vs 出清的中标率 */
       clearRate: number | null
       /**
-       * 偏差主因 **id**，取值集合见 `shared/trading-rules/morning-review.mjs::DEVIATION_CAUSES`。
+       * 偏差主因 id，取值集合见 `shared/trading-rules/morning-review.mjs::DEVIATION_CAUSES`。
        * 改版前（按责任环节分类）的历史单据存的是中文标签，展示一律走 `causeLabelOf` 兜底，
-       * 命中不了原样显示——把当时真实写下的判断显示成「未知」等于抹掉它。
+       * 命中不了原样显示，把当时真实写下的判断显示成「未知」等于抹掉它。
        */
       cause: string
       /** 写入时的中文标签快照，便于不加载规则层也能读懂这条留痕 */
@@ -364,7 +364,7 @@ export async function createDeclaration(input: {
   capacityMw: number
   /**
    * 报价依据摘要（契约 v3 起必填）。须写明本次报价的成本锚或机会成本锚且可追溯到具体
-   * 数值——监管质询时这是自证报价形成过程的唯一材料，事后补写等于自证材料失效。
+   * 数值，监管质询时这是自证报价形成过程的唯一材料，事后补写等于自证材料失效。
    */
   quoteRationale: string
   energyCurveMwh96?: number[]

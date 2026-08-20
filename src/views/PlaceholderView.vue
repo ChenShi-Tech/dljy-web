@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // Handoff placeholder. Renders the real-page metadata defined on each route in
 // router/index.ts so the running app is a faithful, self-documenting map of the
-// production menu (from getRouters). Codex should replace these with real views
+// production menu (from getRouters). These placeholders should be replaced with real views
 // that load the captured data described here. See docs/data/data-inventory.md.
 import { computed } from 'vue'
 import { useRoute } from 'vue-router'
@@ -54,7 +54,7 @@ const kindTagType = computed(() => ({ real: 'success', forecast: 'danger', mixed
     </el-descriptions>
 
     <p class="ph-todo">
-      ⏳ 待 Codex 实现：按上方真实数据构建本页视图。页面映射全表见
+      ⏳ 待实现：按上方真实数据构建本页视图。页面映射全表见
       <code>docs/data/data-inventory.md</code>；预测逻辑见 <code>docs/forecast/forecast-logic.md</code>。
     </p>
   </div>
@@ -63,11 +63,11 @@ const kindTagType = computed(() => ({ real: 'success', forecast: 'danger', mixed
 <style scoped>
 .placeholder { padding: 24px; max-width: 920px; }
 .ph-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
-.ph-crumb { color: var(--el-text-color-secondary); font-size: 13px; }
-.ph-title { margin: 4px 0 0; font-size: 22px; }
+.ph-crumb { color: var(--el-text-color-secondary); font-size: var(--font-md); }
+.ph-title { margin: 4px 0 0; font-size: var(--font-22); }
 .ph-warn { margin-bottom: 16px; }
 .ph-desc { margin-bottom: 16px; }
-.ph-desc code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; }
-.ph-todo { color: var(--el-text-color-regular); font-size: 13px; background: var(--el-fill-color-light); padding: 12px 14px; border-radius: 6px; }
+.ph-desc code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: var(--font-md); }
+.ph-todo { color: var(--el-text-color-regular); font-size: var(--font-md); background: var(--el-fill-color-light); padding: 12px 14px; border-radius: 6px; }
 .ph-todo code { color: var(--el-color-primary); }
 </style>

@@ -1,13 +1,13 @@
-// 统一数据质量标志（P0-4）：归一项目里三套并存的真伪标注 ——
+// 统一数据质量标志（P0-4）：归一项目里三套并存的真伪标注
 // 服务端 mock/sourceType=MOCK、spotPrice 的 isDemo、地区画像的 dataSource/basis('curated'|'captured')。
 // 目标：从数据加载 → 算法入参 → 决策输出 → UI 角标全链路透传，合成降级必须在页面可见。
 //
 // 口径定义：
-//   real         生产实时接入（当前项目尚无此来源，预留）
-//   captured     真实采集回放（data/private/capture-raw）
-//   illustrative 策划示意 / 默认样例（地区画像 curated、内置默认曲线）
-//   synthetic    合成降级 / 演示生成（回放未命中时的 synth 曲线、纯 Mock 序列）
-//   empty        诚实空态（演示开通地区如四川缺真实采集、严格地区不回退时返回空 points）
+// real         生产实时接入（当前项目尚无此来源，预留）
+// captured     真实采集回放（data/private/capture-raw）
+// illustrative 策划示意 / 默认样例（地区画像 curated、内置默认曲线）
+// synthetic    合成降级 / 演示生成（回放未命中时的 synth 曲线、纯 Mock 序列）
+// empty        诚实空态（演示开通地区如四川缺真实采集、严格地区不回退时返回空 points）
 
 // DataBasis 单一权威定义上移至 services/data/types.ts（Phase 0 统一类型层），与
 // forecast/* 的 ForecastBasis 合并为 DataSourceBasis。此处 re-export 保持现有

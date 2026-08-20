@@ -1,9 +1,7 @@
 // @vitest-environment happy-dom
 // ↑ 勿删：本文件不是 *.component.spec.ts，vitest node project 默认不给 DOM；主题层
 //   读写 document.documentElement / localStorage / setTimeout，靠此 pragma 切 happy-dom。
-// ============================================================================
 // composables/useTheme.spec.ts — 主题适配层回归（权威源在 services/theme.ts）
-// ----------------------------------------------------------------------------
 // 守什么不变量：
 //   ① setTheme 是唯一写入口：同值/非法值 no-op（不触发过渡、不落盘）；
 //      生效切换必须同时更新 themeState + <html data-theme> + localStorage 持久化，
@@ -13,7 +11,6 @@
 //      取不到值时必须回退 '#ffffff'（空串会让 echarts 画透明底）。
 // 坏掉的症状：刷新后主题回弹；echarts 在暗色主题下画白底 tooltip；旧 key 残留导致
 // 双 key 竞争回弹。
-// ============================================================================
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { themeState, type ThemeName } from '../services/theme'
 import { THEME_OPTIONS, chartChrome, cssVar, initTheme, setTheme, useTheme } from './useTheme'
@@ -22,7 +19,7 @@ const LEGACY_KEY = 'dljy-theme'
 const THEME_KEY = 'dljy_theme'
 
 beforeEach(() => {
-  // 模块级单例（themeState）与 DOM/localStorage 状态在用例间共享——统一归位。
+  // 模块级单例（themeState）与 DOM/localStorage 状态在用例间共享，统一归位。
   localStorage.clear()
   themeState.theme = 'classic'
   delete (themeState as Partial<typeof themeState>).period // 不触碰：period 由真实时钟推导，不在本层验证
@@ -65,7 +62,7 @@ describe('setTheme', () => {
 
   it('同值 no-op：不触发过渡动画（无 theme-anim 类）', () => {
     setTheme('arc')
-    // 第一次切换会加 theme-anim（520ms 后自动移除）——先手动清掉，隔离观察第二次调用
+    // 第一次切换会加 theme-anim（520ms 后自动移除），先手动清掉，隔离观察第二次调用
     document.documentElement.classList.remove('theme-anim')
 
     setTheme('arc') // 当前已 arc

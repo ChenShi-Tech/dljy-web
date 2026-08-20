@@ -4,12 +4,12 @@
 // 双份漂移风险（WMO 码表、超时、回退顺序各一套）。收编后视图只留竞态守卫/缓存/防抖。
 //
 // 数据源纪律：
-//   - 和风走平台代理 apiGet('/qweather')（鉴权/配额由 Node 面管理，其 401 不触发全局
-//     登出——见 api.ts isBusinessProxy 白名单）；
-//   - Open-Meteo / bigdatacloud 为公网免费源，直接 fetch + 短超时，仅作和风故障时的
-//     外网回退链路；
-//   - 外部辅助数据**不参与 provenance 标注**（非平台回放数据，不进 mock/真实标注体系）；
-//   - 诚实空：全部源失败 → null / []，不合成「21°晴」类装饰值。
+// - 和风走平台代理 apiGet('/qweather')（鉴权/配额由 Node 面管理，其 401 不触发全局
+// 登出，见 api.ts isBusinessProxy 白名单）；
+// - Open-Meteo / bigdatacloud 为公网免费源，直接 fetch + 短超时，仅作和风故障时的
+// 外网回退链路；
+// - 外部辅助数据不参与 provenance 标注（非平台回放数据，不进 mock/真实标注体系）；
+// - 诚实空：全部源失败 → null / []，不合成「21°晴」类装饰值。
 import { apiGet, timeoutSignal } from '@/services/api'
 
 // Open-Meteo WMO 码 → 中文（仅外网回退链路用；展示图标分类在各视图自理）

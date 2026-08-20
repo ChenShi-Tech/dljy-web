@@ -15,7 +15,7 @@ const USER_KEY = 'dljy_governance_user'
 
 // 地区数据命中状态：记录最近一次数据请求「请求地区 / 实际服务地区 / 是否回退基线」。
 // 由 applyRegionHeaders 从响应头 x-region-served / x-region-fallback 写入，
-// 供 RegionDataBanner 决定是否显示「基线数据」提示。单例 ref——Node 后端单线程、
+// 供 RegionDataBanner 决定是否显示「基线数据」提示。单例 ref，Node 后端单线程、
 // 前端按页加载，以最近一次回放为准。放 api 层（而非 captured.ts）避免与
 // captured↔api 的循环依赖；captured.ts 与 quantClient.ts 共享同一份。
 export type RegionDataStatus = {
@@ -25,7 +25,7 @@ export type RegionDataStatus = {
   // 接口级 Mock 命中：本次取数走了 mockReplay 合成（响应头 x-data-mock），供 RegionDataBanner
   // 对任一地区（含真实数据地区缺某 family 时）诚实显「模拟数据」，不因地区整体标真实而漏标（#348 P1）。
   mock: boolean
-  // Sub-2(#518)：最近一次回放族的数据可见性分级（响应头 x-data-visibility）——
+  // Sub-2(#518)：最近一次回放族的数据可见性分级（响应头 x-data-visibility）
   // company=公司私有族（如中广核云南场站结算/损益），public=全网披露。
   visibility: 'public' | 'company' | null
   // 私有族访问被拒：401=未登录 / 403=账号无该公司授权。由 fetchCaptured 捕获拒绝响应后写入
@@ -36,11 +36,11 @@ export const regionDataStatus = ref<RegionDataStatus>({
   requested: null, served: null, fallback: false, mock: false, visibility: null, accessDenied: null
 })
 
-// #1350：请求序号守卫。发请求前取号，unwrap 只应用「序号不小于已应用序号」响应的地区头——
+// #1350：请求序号守卫。发请求前取号，unwrap 只应用「序号不小于已应用序号」响应的地区头
 // 快速切换数据族/地区时较早发起的请求若最后返回，其过期地区头会覆盖 RegionDataBanner 状态，
 // 使横幅描述的来源与当前展示数据不一致。与 PR shell#68 的请求序号守卫同模式，此处扩到
 // 共享 fetch 层（apiGet/apiPost/fetchCaptured 等全部取号路径）。
-// 仅「带地区头的响应」参与序号比较（codex P1）：无头请求（/auth、/dashboard 等）不应用
+// 仅「带地区头的响应」参与序号比较：无头请求（/auth、/dashboard 等）不应用
 // 也不推进已应用序号，不会作废更早的带地区头取数响应。
 let regionHeaderSeq = 0
 let lastAppliedRegionSeq = 0
@@ -70,16 +70,16 @@ export function applyRegionHeaders(res: Response) {
     fallback: fallback === 'true',
     mock: mock === 'true',
     visibility: visibility === 'company' || visibility === 'public' ? visibility : null,
-    // accessDenied 有独立生命周期（按被拒 family 记账，见下），成功响应不得直接清空——
-    // 混合面板（私有族 403 + 公共族成功）里后续成功请求会把无权限横幅冲掉（roborev job144/145）。
+    // accessDenied 有独立生命周期（按被拒 family 记账，见下），成功响应不得直接清空
+    // 混合面板（私有族 403 + 公共族成功）里后续成功请求会把无权限横幅冲掉。
     accessDenied: regionDataStatus.value.accessDenied
   }
 }
 
-// —— 无权限状态按被拒 family 记账（Sub-4 #520，roborev job144/145/146 Medium 修复）——
+// 无权限状态按被拒 family 记账（Sub-4 #520 Medium 修复）
 // 「最近一次请求」全局语义对混合面板/多 tab 工作台都不成立（公共请求冲掉私有拒绝、切 tab
 // 粘滞）。改为响应式记录「当前被拒的私有 family 集合」，由 RegionDataBanner 按自己关心的
-// family 过滤显示（opt-in，见组件）——无权限横幅严格等价于「你正在看的这块数据被拒」，
+// family 过滤显示（opt-in，见组件），无权限横幅严格等价于「你正在看的这块数据被拒」，
 // 不依赖任何清账时机。被拒入账、同 family 成功出账、切区/换路由统一清账。
 export const deniedCaptureFamilies = ref<string[]>([])
 
@@ -307,7 +307,7 @@ function isExplicitApiPath(path: string) {
     || path === '/dify-studio' || path.startsWith('/dify-studio/')
 }
 
-// ── #2169 P2-2a：数据管理路径族 → data-service（:8190）────────────────────────
+// #2169 P2-2a：数据管理路径族 → data-service（:8190）
 // 判定逻辑与路径族清单抽在 dataServiceRoutes.ts（纯函数，独立单测覆盖）。
 import { dataServicePath } from './dataServiceRoutes'
 export { DATA_SVC_ROOT, dataServicePath } from './dataServiceRoutes'
@@ -442,7 +442,7 @@ export async function unwrap<T>(response: Response, path: string, seq?: number):
   }
   // 成功响应统一记录地区命中（失败响应头不可靠，跳过）。使不走 fetchCaptured 的
   // 页面（走 apiGet/apiPost 的 declarations 等）的 RegionDataBanner 也能正确显示。
-  // #1350：seq 守卫——仅「序号不小于已应用序号」的带地区头响应应用；较早发起、较晚返回
+  // #1350：seq 守卫，仅「序号不小于已应用序号」的带地区头响应应用；较早发起、较晚返回
   // 的过期响应（快速切换数据族/地区时常见）不得覆盖横幅状态。无地区头请求不推进已应用
   // 序号（不会作废更早的有效取数响应）。seq 缺省（历史调用）则保持原行为。
   if (seq === undefined || (hasRegionHeaders(response) && seq >= lastAppliedRegionSeq)) {

@@ -10,7 +10,7 @@ import type { UnifiedForecastResult } from '@/services/forecast/forecastProvider
 
 const props = defineProps<{
   // untrustedTag：调用方算好的「这条曲线为何不可信」短标签（占位/合成/示意/未过门禁）。
-  // 有些不可信情形靠 result 本身看不出来——例如模型返回了 captured 数据但单日质量门禁
+  // 有些不可信情形靠 result 本身看不出来，例如模型返回了 captured 数据但单日质量门禁
   // 判负（metrics.passes_gate=false），若不由调用方告知，图层会把它画成普通实线，
   // 只看曲线的人会当它可信。
   results: { provider: string; result: UnifiedForecastResult; untrustedTag?: string }[]
@@ -68,16 +68,16 @@ function render() {
     )
   }
   // 电价类预测(单位含"元")按时段恒定→阶梯线；负荷/出力连续量→直线
-  // labelsFor 为时段起点标签(i*step，首点 00:00)，须用 step:'end' 让横段保持当前点值——'start' 会整体错位一格(codex #335 P2)
+  // labelsFor 为时段起点标签(i*step，首点 00:00)，须用 step:'end' 让横段保持当前点值，'start' 会整体错位一格(#335)
   const isPrice = /元/.test(String(unit))
   // 占位/示意结果必须一眼可辨：虚线 + 图例后缀「（占位）」。多算法同台时，若占位曲线与真实
-  // 曲线长得一模一样，用户只能靠记住自己勾了哪个来分辨——同台对比正是最容易看混的场景。
+  // 曲线长得一模一样，用户只能靠记住自己勾了哪个来分辨，同台对比正是最容易看混的场景。
   // 判据取「result.mock 或 basis 为 illustrative/synthetic」：真实模型在数据缺失时也会落到
   // 合成兜底（basis=synthetic 而 mock 仍为 false），那条线同样不可按真实精度读。
   items.forEach(({ provider, result, untrustedTag }, i) => {
     // 逐类精确标注，不一律写「占位」：mock=这个模型本身是假的；synthetic=模型真、但这次
     // 拿合成数据算的；illustrative=示意。混成一个词会让用户对不同性质的问题做同样的误判。
-    // 调用方给的 untrustedTag 优先——它能表达 result 本身看不出的情形（如门禁判负）。
+    // 调用方给的 untrustedTag 优先，它能表达 result 本身看不出的情形（如门禁判负）。
     const tag = untrustedTag || (result.mock === true ? '占位'
       : result.basis === 'synthetic' ? '合成'
         : result.basis === 'illustrative' ? '示意'
@@ -122,5 +122,5 @@ defineExpose({ resize: chart.resize })
 
 <style scoped>
 .unified-chart { width: 100%; }
-.band-caption { font-size: 12px; color: #909399; margin-bottom: 4px; }
+.band-caption { font-size: var(--font-sm); color: #909399; margin-bottom: 4px; }
 </style>

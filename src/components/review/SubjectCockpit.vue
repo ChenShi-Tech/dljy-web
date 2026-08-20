@@ -2,7 +2,7 @@
 // 三主体专属驾驶舱（Epic #2033 · M4 · #2048）
 // ---------------------------------------------------------------------------
 // 按数据可得性分批（注册表就绪度台账驱动，批次即验收顺序）：
-// 批1 售电先行（#2005「先做透用户侧」）——R1/R4 公司级日度行由 quant /review 真数
+// 批1 售电先行（#2005「先做透用户侧」），R1/R4 公司级日度行由 quant /review 真数
 // （山西覆盖区可端到端验证；分客户明细缺 D4 如实标注）；批2 新能源（N1 中广核云南
 // 场站真实试点）；批3 储能（E1 计划侧接事前测算，价格 illustrative 即 MOCK 须明示）。
 // 无数据模板诚实呈现「等待数据接入」，不空白不假数；台账翻转须写数据来源（验收）。
@@ -109,31 +109,31 @@ const templates = computed(() => templatesBySubject(active.value).map((t) => ({
 </template>
 
 <style scoped>
-.sc { display: flex; flex-direction: column; gap: 8px; font-size: 12.5px; }
+.sc { display: flex; flex-direction: column; gap: 8px; font-size: var(--font-12-5); }
 .sc-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
 .sc-tabs { display: inline-flex; gap: 4px; }
 .sc-tabs button {
   display: inline-flex; align-items: center; gap: 5px; padding: 3px 12px;
   border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 999px;
-  background: #fff; font-size: 12px; cursor: pointer;
+  background: #fff; font-size: var(--font-sm); cursor: pointer;
 }
 .sc-tabs button.on { border-color: var(--el-color-primary, #2563eb); color: var(--el-color-primary, #2563eb); }
-.sc-tabs i { font-style: normal; font-size: 10px; color: var(--el-text-color-secondary, #909399); }
-.sc-batch { margin: 0; font-size: 11.5px; color: var(--el-text-color-secondary, #666); line-height: 1.6; }
+.sc-tabs i { font-style: normal; font-size: var(--font-10); color: var(--el-text-color-secondary, #909399); }
+.sc-batch { margin: 0; font-size: var(--font-11-5); color: var(--el-text-color-secondary, #666); line-height: 1.6; }
 .sc-r1r4 { display: flex; flex-direction: column; gap: 4px; padding: 8px 10px; border: 1px solid #bfdbfe; border-radius: 8px; background: #f8fbff; }
-.sc-r1r4 b { font-size: 12px; color: #075985; }
-.sc-facts { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; font-variant-numeric: tabular-nums; }
+.sc-r1r4 b { font-size: var(--font-sm); color: #075985; }
+.sc-facts { display: flex; gap: 14px; flex-wrap: wrap; font-size: var(--font-sm); font-variant-numeric: tabular-nums; }
 .sc-facts .bad { color: #b91c1c; }
-.sc-note { margin: 0; font-size: 11px; color: var(--el-text-color-secondary, #909399); line-height: 1.6; }
-.sc-mock { margin: 0; padding: 6px 9px; border-radius: 6px; background: #fef3c7; border: 1px solid #f59e0b; color: #92400e; font-size: 11.5px; }
+.sc-note { margin: 0; font-size: var(--font-xs); color: var(--el-text-color-secondary, #909399); line-height: 1.6; }
+.sc-mock { margin: 0; padding: 6px 9px; border-radius: 6px; background: #fef3c7; border: 1px solid #f59e0b; color: #92400e; font-size: var(--font-11-5); }
 .sc-list { display: flex; flex-direction: column; gap: 4px; }
 .sc-tpl {
   display: flex; align-items: center; justify-content: space-between; gap: 8px;
   padding: 6px 10px; border: 1px solid var(--el-border-color-lighter, #ebeef5); border-radius: 8px;
-  background: #fff; font-size: 12px; cursor: pointer; text-align: left;
+  background: #fff; font-size: var(--font-sm); cursor: pointer; text-align: left;
 }
 .sc-tpl:hover { border-color: var(--el-color-primary, #2563eb); }
-.sc-tpl i { font-style: normal; font-size: 10.5px; border-radius: 999px; padding: 0 8px; white-space: nowrap; }
+.sc-tpl i { font-style: normal; font-size: var(--font-10-5); border-radius: 999px; padding: 0 8px; white-space: nowrap; }
 .sc-ready i { background: #f0fdf4; color: #15803d; }
 .sc-data_gap i { background: #fffbeb; color: #a16207; }
 .sc-deferred i { background: #f1f5f9; color: #64748b; }

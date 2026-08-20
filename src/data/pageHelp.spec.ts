@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { getPageHelp, pageHelpRegistry } from './pageHelp'
 
 // 页面说明注册表（#848）查找语义与结构完整性回归锁：
-// 与守卫 verify-page-help.mjs 互补——守卫校验「key 是真实路由 name + docPath 文件存在」，
+// 与守卫 verify-page-help.mjs 互补，守卫校验「key 是真实路由 name + docPath 文件存在」，
 // 本单测校验「运行时查找行为」与「每条 entry 结构」，防止 getPageHelp 回退/注册表被改空。
 
 describe('pageHelp 注册表结构', () => {

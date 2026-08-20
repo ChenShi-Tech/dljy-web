@@ -355,7 +355,7 @@ onMounted(runCalculation)
 
 .windsolar-section h3 {
   margin: 0 0 10px;
-  font-size: 14px;
+  font-size: var(--font-lg);
 }
 
 .windsolar-form-grid {
@@ -378,12 +378,12 @@ onMounted(runCalculation)
   gap: 8px;
   margin-bottom: 8px;
   color: var(--text-body);
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 .windsolar-form-grid small {
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 .windsolar-form-grid :deep(.el-input-number) {
@@ -412,13 +412,13 @@ onMounted(runCalculation)
 .asset-strip span {
   display: block;
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 .asset-strip strong {
   display: block;
   margin-top: 6px;
-  font-size: 18px;
+  font-size: var(--font-18);
   overflow-wrap: anywhere;
 }
 

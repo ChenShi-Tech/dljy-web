@@ -44,7 +44,7 @@ export async function saveAnalysisView(
 /** 列出命名分析视图（按 routePath，默认 /ai-agent）。 */
 export async function listAnalysisViews(routePath: string = ANALYSIS_VIEW_ROUTE): Promise<SavedAnalysisView[]> {
   // 服务端标准形状是 { code, data: { rows, total } }（server/analysis-api.mjs::envelope），
-  // 兼容顶层 rows / data 直接为数组的历史形状（codex P1 3635805735）。
+  // 兼容顶层 rows / data 直接为数组的历史形状（#3635805735）。
   const res = await apiGet<{ rows?: SavedAnalysisView[]; data?: { rows?: SavedAnalysisView[] } | SavedAnalysisView[] }>(VIEWS_PATH, { routePath })
   const nested = (res as { data?: { rows?: SavedAnalysisView[] } | SavedAnalysisView[] }).data
   const rows = (res as { rows?: SavedAnalysisView[] }).rows

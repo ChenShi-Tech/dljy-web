@@ -1,13 +1,13 @@
 // #538 阶段 1 基座回归：15 个 agent/* 子客户端共用的 HTTP factory 契约。
 // 守住的不变量：
-//   1. 头集矩阵——get 是业务读端点**不带** x-admin-token；写方法（getAdmin/post/put/
-//      patch/delete）必须带；postForm 绝不能手设 content-type（浏览器要自动生成
-//      multipart boundary，手动设会坏上传）。头集错一档 = 越权或上传全挂。
-//   2. errDetail 兜底链——FastAPI {detail} 提取不到时必须落到 `HTTP <status>`，
-//      否则用户看到的是空错误气泡。
-//   3. tryPut/tryPost 软失败——配置保存场景非 2xx/网络错误**不抛**（整页不崩），
-//      返回 {ok:false,msg}；坏掉的症状是保存失败却弹全局错误。
-//   4. timeout signal 必须真传进 fetch——丢了就退化成无限悬挂请求。
+// 1. 头集矩阵，get 是业务读端点不带 x-admin-token；写方法（getAdmin/post/put/
+// patch/delete）必须带；postForm 绝不能手设 content-type（浏览器要自动生成
+// multipart boundary，手动设会坏上传）。头集错一档 = 越权或上传全挂。
+// 2. errDetail 兜底链，FastAPI {detail} 提取不到时必须落到 `HTTP <status>`，
+// 否则用户看到的是空错误气泡。
+// 3. tryPut/tryPost 软失败，配置保存场景非 2xx/网络错误不抛（整页不崩），
+// 返回 {ok:false,msg}；坏掉的症状是保存失败却弹全局错误。
+// 4. timeout signal 必须真传进 fetch，丢了就退化成无限悬挂请求。
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 

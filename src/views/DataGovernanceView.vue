@@ -11,9 +11,10 @@ import { canAccessPath } from '@/services/governance'
 import { ageDaysOf, freshnessOf, type Freshness } from '@/services/data/freshness'
 import { onRegionChange } from '@/composables/useRegionReload'
 
-const ROUTE_PATH = '/yygl/data-governance'
+// 页面权限口径随宿主路由：本页现由数据运维工作台承载（ADMIN/BOSS，adminOnlyRoutes）。
+const ROUTE_PATH = '/data-ops/console'
 
-// 现货 S2/S3 新接入的 5 个 yn_* family（issue #384）。consumeNote 如实标注当前消费入口——
+// 现货 S2/S3 新接入的 5 个 yn_* family（issue #384）。consumeNote 如实标注当前消费入口
 // 这 5 族 apiFamily=null（无独立 /api/v1 业务接口），主要经 /api/real 回放 + 本面板质量呈现。
 const SPOT_QUALITY_FAMILIES = [
   { family: 'yn_user_price', label: '用户侧统一电价', consumeNote: '日前/实时用户侧电价 · /api/real 回放 + 本面板' },
@@ -79,7 +80,7 @@ type QualityCompleteness = {
   avgRatio?: number
   failingDayCount?: number
   // quality-scan.mjs::buildCompleteness 已产出的「未达标日」明细（前 50 条，每条带当日
-  // actual/expected/ratio）。前端原本只读 failingDayCount 计数——issue #455 下钻消费它画
+  // actual/expected/ratio）。前端原本只读 failingDayCount 计数，issue #455 下钻消费它画
   // 完整率趋势 + 缺点明细表。
   failingDays?: QualityFailingDay[]
 }
@@ -615,7 +616,6 @@ function browserLink(alert: QualityAlert) {
   <div class="governance-page">
     <header class="governance-page__head">
       <div>
-        <h2>数据治理控制台</h2>
         <div class="governance-page__meta">
           <DataBasisBadge basis="captured" prefix="治理口径" />
           <span>不写生产（只读）</span>
@@ -921,7 +921,8 @@ function browserLink(alert: QualityAlert) {
 
 <style scoped>
 .governance-page {
-  padding: 16px 20px;
+  /* 页级内边距由 AppLayout 的 page-shell 统一给，本页不再自带（避免双重留白）。 */
+  min-width: 0;
 }
 
 .governance-page__head {
@@ -932,17 +933,13 @@ function browserLink(alert: QualityAlert) {
   margin-bottom: 12px;
 }
 
-.governance-page__head h2 {
-  margin: 0 0 6px;
-}
-
 .governance-page__meta {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
   color: var(--el-text-color-secondary);
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 .metric-grid {
@@ -963,13 +960,13 @@ function browserLink(alert: QualityAlert) {
 .metric-cell span {
   display: block;
   color: var(--el-text-color-secondary);
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 .metric-cell strong {
   display: block;
   margin-top: 6px;
-  font-size: 20px;
+  font-size: var(--font-20);
   font-weight: 650;
 }
 
@@ -997,7 +994,7 @@ function browserLink(alert: QualityAlert) {
 
 .quality-section h3 {
   margin: 0 0 10px;
-  font-size: 14px;
+  font-size: var(--font-lg);
 }
 
 .alert-row {
@@ -1028,13 +1025,13 @@ function browserLink(alert: QualityAlert) {
 .alert-row p {
   margin: 8px 0;
   color: var(--el-text-color-regular);
-  font-size: 13px;
+  font-size: var(--font-md);
 }
 
 .alert-row__meta,
 .muted {
   color: var(--el-text-color-secondary);
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 .backup-layout {
@@ -1055,10 +1052,10 @@ function browserLink(alert: QualityAlert) {
   flex-wrap: wrap;
   align-items: center;
   gap: 16px;
-  font-size: 13px;
+  font-size: var(--font-md);
 }
 .spot-summary strong {
-  font-size: 15px;
+  font-size: var(--font-15);
   margin-left: 4px;
 }
 .spot-grid {
@@ -1083,10 +1080,10 @@ function browserLink(alert: QualityAlert) {
 }
 .spot-card__title strong {
   display: block;
-  font-size: 14px;
+  font-size: var(--font-lg);
 }
 .spot-card__title code {
-  font-size: 11px;
+  font-size: var(--font-xs);
 }
 .spot-metrics {
   list-style: none;
@@ -1095,7 +1092,7 @@ function browserLink(alert: QualityAlert) {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
   gap: 8px 14px;
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 .spot-metrics li {
   display: flex;
@@ -1108,15 +1105,15 @@ function browserLink(alert: QualityAlert) {
 }
 .spot-metrics li span {
   color: var(--el-text-color-secondary);
-  font-size: 11px;
+  font-size: var(--font-xs);
 }
 .spot-metrics li b {
   font-weight: 650;
-  font-size: 13px;
+  font-size: var(--font-md);
   word-break: break-all;
 }
 .spot-metrics small {
-  font-size: 10px;
+  font-size: var(--font-10);
 }
 .spot-warn-text {
   color: var(--el-color-warning);
@@ -1126,7 +1123,7 @@ function browserLink(alert: QualityAlert) {
 }
 .spot-empty {
   margin: 0;
-  font-size: 12px;
+  font-size: var(--font-sm);
   color: var(--el-text-color-secondary);
   font-style: italic;
 }
@@ -1134,7 +1131,7 @@ function browserLink(alert: QualityAlert) {
   margin: 0;
   padding-top: 8px;
   border-top: 1px dashed var(--el-border-color-lighter);
-  font-size: 11px;
+  font-size: var(--font-xs);
 }
 
 /* issue #455 质量下钻展开区 */
@@ -1146,7 +1143,7 @@ function browserLink(alert: QualityAlert) {
 .spot-drilldown__btn {
   align-self: flex-start;
   padding: 4px 10px;
-  font-size: 12px;
+  font-size: var(--font-sm);
   color: var(--el-color-primary);
   background: var(--el-color-primary-light-9);
   border: 1px solid var(--el-color-primary-light-7);
@@ -1169,7 +1166,7 @@ function browserLink(alert: QualityAlert) {
 }
 .drill-section h4 {
   margin: 0 0 8px;
-  font-size: 13px;
+  font-size: var(--font-md);
   display: flex;
   align-items: baseline;
   gap: 6px;
@@ -1178,11 +1175,11 @@ function browserLink(alert: QualityAlert) {
 .drill-section h4 small {
   font-weight: normal;
   color: var(--el-text-color-secondary);
-  font-size: 11px;
+  font-size: var(--font-xs);
 }
 .drill-empty {
   margin: 0;
-  font-size: 12px;
+  font-size: var(--font-sm);
   font-style: italic;
 }
 

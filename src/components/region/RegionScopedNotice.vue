@@ -64,14 +64,14 @@ const router = useRouter()
 
 .notice-copy span {
   color: var(--warning);
-  font-size: 13px;
+  font-size: var(--font-md);
   font-weight: 700;
 }
 
 .notice-copy h2 {
   margin: 7px 0 8px;
   color: var(--text);
-  font-size: 24px;
+  font-size: var(--font-24);
   letter-spacing: 0;
 }
 

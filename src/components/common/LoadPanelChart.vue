@@ -47,7 +47,7 @@ const heightStyle = computed(() =>
 )
 
 // 底部手柄拖拽：起点高度 + 纵向位移 → clamp 到 [280,1200] 后上抛。
-// 用 pointer events（非仅 mouse）统一鼠标/触屏/笔，满足移动端可用性（codex #1385 P2）。
+// 用 pointer events（非仅 mouse）统一鼠标/触屏/笔，满足移动端可用性（#1385）。
 const DRAG_MIN = 280
 const DRAG_MAX = 1200
 let dragStartY = 0

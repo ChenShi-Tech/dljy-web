@@ -52,7 +52,7 @@ type PeakValleyTrendPoint = {
   nodeCount: number
 }
 
-// ── 控件状态 ──
+// 控件状态
 // 三价序列默认演示月 2026-05（与现有云南 panel 一致；yn_spot_settlement 当前覆盖该月）。
 const DEFAULT_SETTLE_RANGE: DateRange = ['2026-05-01', '2026-05-31']
 const DEFAULT_NODE_DATE = '2026-05-31'
@@ -92,13 +92,13 @@ const marketOptions = [
   { value: 'rt' as SpotMarket, label: '实时' }
 ]
 
-// ── 数据 ──
+// 数据
 const settlePoints = ref<SettlementPricePoint[]>([])
 const settlePlantOptions = ref<string[]>([])
 const dailyItems = ref<DailySummaryItem[]>([])
 const peakValleyTrend = ref<PeakValleyTrendPoint[]>([])
 
-// ── 加载/错误态 ──
+// 加载/错误态
 const settleLoading = ref(false)
 const dailyLoading = ref(false)
 // 版本守卫：loadSettle/loadDaily 各自维护 seq，切日期/厂站/节点/market 旧响应丢弃（#405 同族，#545）
@@ -131,7 +131,7 @@ const hasDailySnapshot = computed(() => peakValleyRows.value.length > 0)
 const hasPeakValleyTrend = computed(() => peakValleyTrend.value.some((p) => p.spread !== null))
 const errorMsg = computed(() => settleErrorMsg.value || dailyErrorMsg.value)
 
-// ── KPI（当日跨节点聚合，单日快照）──
+// KPI（当日跨节点聚合，单日快照）
 const kpi = computed(() => {
   const items = dailyItems.value
   const maxs = items.map((i) => i.max).filter((v): v is number => v !== null && v !== undefined)
@@ -313,7 +313,7 @@ function priceExtremaMarkPoint(field: Exclude<PriceField, 'ltmPrice'>, color: st
   }
 }
 
-// ── 三价对比曲线（出清实线 + 中长期虚线）──
+// 三价对比曲线（出清实线 + 中长期虚线）
 function buildPriceOption() {
   const cc = chartChrome()
   const pts = aggregatedPoints.value
@@ -382,7 +382,7 @@ function buildPriceOption() {
   }
 }
 
-// ── 峰谷价差水位（当日 Top N 节点 min~max 范围 + 均价标点）──
+// 峰谷价差水位（当日 Top N 节点 min~max 范围 + 均价标点）
 // stack 水位柱：底层透明垫片=min，上层有色 range=max-min；scatter 叠加 avg。
 const TOP_NODES = 20
 const peakValleyRows = computed(() => {
@@ -601,7 +601,7 @@ function buildPeakValleyTrendOption() {
   }
 }
 
-// ── 明细表（按聚合粒度的三价 + 电厂数）──
+// 明细表（按聚合粒度的三价 + 电厂数）
 const settleLabels: Record<string, string> = {
   date: '日期',
   daPrice: '日前结算价(元/MWh)',
@@ -621,7 +621,7 @@ const settleRows = computed(() =>
   }))
 )
 
-// ── 加载 ──
+// 加载
 function isEmptyResultError(message: string): boolean {
   return /未摄取|parquet|no data|暂无数据|not found|空/i.test(message)
 }
@@ -1012,7 +1012,7 @@ onRegionChange(() => {
   align-items: center;
   gap: 6px;
   color: #0f766e;
-  font-size: 13px;
+  font-size: var(--font-md);
   font-weight: 650;
 }
 
@@ -1020,7 +1020,7 @@ onRegionChange(() => {
   margin: 8px 0 0;
   color: #5c6b76;
   line-height: 1.7;
-  font-size: 13px;
+  font-size: var(--font-md);
 }
 
 .sp-quality {
@@ -1041,7 +1041,7 @@ onRegionChange(() => {
 
 .sp-field > span {
   color: #50616e;
-  font-size: 12px;
+  font-size: var(--font-sm);
   font-weight: 650;
 }
 
@@ -1072,14 +1072,14 @@ onRegionChange(() => {
   align-items: center;
   gap: 5px;
   color: #50616e;
-  font-size: 12px;
+  font-size: var(--font-sm);
   font-weight: 650;
 }
 
 .sp-kpi-value {
   margin-top: 6px;
   color: #172b3a;
-  font-size: 24px;
+  font-size: var(--font-24);
   font-weight: 700;
   line-height: 1.2;
 }
@@ -1087,7 +1087,7 @@ onRegionChange(() => {
 .sp-kpi-unit {
   margin-top: 4px;
   color: #909399;
-  font-size: 11px;
+  font-size: var(--font-xs);
 }
 
 .sp-charts {
@@ -1100,7 +1100,7 @@ onRegionChange(() => {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  font-size: 11px;
+  font-size: var(--font-xs);
   color: var(--muted, #909399);
 }
 
@@ -1125,12 +1125,12 @@ onRegionChange(() => {
   gap: 6px;
   margin: 0;
   color: #172b3a;
-  font-size: 15px;
+  font-size: var(--font-15);
 }
 
 .sp-table-sub {
   color: #687987;
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 @media (max-width: 900px) {

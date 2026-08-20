@@ -50,11 +50,11 @@ const props = withDefaults(defineProps<{
 
 const WAN = 10000
 
-// ── 节点价来源标注（必须与实际取数路径同源）──────────────────────────────
+// 节点价来源标注（必须与实际取数路径同源）
 // spotClient 的改写规则是「云南 + /node-price/ + 账号属中广核云南」才走厂侧专属
-// 端点，否则**静默落到公共节点价端点**（刻意设计，避免向专属端点制造 403）。
+// 端点，否则静默落到公共节点价端点（刻意设计，避免向专属端点制造 403）。
 // 标注若写死成「厂侧 PG」，非中广核账号读到的是公共数据、页面却宣称是某家公司的
-// 私有经营数据——来源错标（#1791）。判定复用 spotClient 同一个谓词，不另立一套。
+// 私有经营数据，来源错标（#1791）。判定复用 spotClient 同一个谓词，不另立一套。
 const usesCgnPrivatePrice = computed(
   () => props.regionId === 'yunnan' && hasCgnYunnanPriceEntitlement(),
 )
@@ -62,7 +62,7 @@ const usesCgnPrivatePrice = computed(
 // 两者都是决策级口径，切换不改变任何权限或功能，只让标签说实话。
 const nodePriceBasis = computed<DataBasis>(() => (usesCgnPrivatePrice.value ? 'real' : 'captured'))
 
-// ── 控件状态 ──
+// 控件状态
 const date = ref(props.initialDate) // 默认 2026-05-01,宿主可经 initialDate 注入
 const market = ref<SpotMarket>(props.initialMarket)
 const marketOptions = [
@@ -70,14 +70,14 @@ const marketOptions = [
   { value: 'rt' as SpotMarket, label: '实时 RT' }
 ]
 
-// ── 数据 / 态 ──
+// 数据 / 态
 const data = ref<CockpitData | null>(null)
 const loading = ref(false)
 let reloadReqId = 0
 const errorMsg = ref('')
 const ingestHint = ref(false)
 
-// ── ECharts chrome（轴/网格/文字/tooltip）随当前主题 ──
+// ECharts chrome（轴/网格/文字/tooltip）随当前主题
 // 每个 builder 在 render 内调用 axisX/axisY/tt/ttfix，函数体内取 chartChrome()，故 useEChart
 // 主题切换 dispose 重建并重调 render 时自动拿到新色。数据系列语义色（青/琥珀/绿/红/金）不走此层。
 const baseGrid = { left: 46, right: 18, top: 18, bottom: 26 }
@@ -117,7 +117,7 @@ function ttfix() {
   return { backgroundColor: c.tooltipBg, borderColor: c.tooltipBorder, textStyle: { color: c.tooltipText, fontSize: 11 } }
 }
 
-// ── 图表容器 + 实例（每图一个 useEChart；主题切换由 useEChart dispose 重建 + 重调 render 跟随）──
+// 图表容器 + 实例（每图一个 useEChart；主题切换由 useEChart dispose 重建 + 重调 render 跟随）
 const heatmapEl = ref<HTMLElement | null>(null)
 const basisEl = ref<HTMLElement | null>(null)
 const negEl = ref<HTMLElement | null>(null)
@@ -170,7 +170,7 @@ function onArenaSourceChange() {
   renderDiag()
 }
 
-// ── ② 价格热力场（节点 × 时段，piecewise 发散配色）──
+// ② 价格热力场（节点 × 时段，piecewise 发散配色）
 function renderHeatmap() {
   const m = data.value?.heatmap
   if (!m || !m.hasData) {
@@ -241,7 +241,7 @@ function renderHeatmap() {
   )
 }
 
-// ── ③ 基差（选定节点价 vs 系统均价 + 面积 + 0 线）──
+// ③ 基差（选定节点价 vs 系统均价 + 面积 + 0 线）
 function renderBasis() {
   const b = data.value?.basis
   if (!b || !b.hasData) {
@@ -287,7 +287,7 @@ function renderBasis() {
   )
 }
 
-// ── ④ 负价雷达（红线 + markArea 高亮弃发窗口；移除与 markArea 冲突的 visualMap）──
+// ④ 负价雷达（红线 + markArea 高亮弃发窗口；移除与 markArea 冲突的 visualMap）
 function renderNeg() {
   const n = data.value?.negRadar
   if (!n || !n.hasData) {
@@ -334,7 +334,7 @@ function renderNeg() {
   )
 }
 
-// ── ⑤ 损益归因瀑布（transparent-stack；原始价值 → 减三段 → 实现）──
+// ⑤ 损益归因瀑布（transparent-stack；原始价值 → 减三段 → 实现）
 function renderWaterfall() {
   const w = data.value?.waterfall
   if (!w || !w.hasData) {
@@ -411,7 +411,7 @@ function renderWaterfall() {
   )
 }
 
-// ── ⑥ 申报偏差体检（双轴：偏差电量柱 + 偏差电费线）──
+// ⑥ 申报偏差体检（双轴：偏差电量柱 + 偏差电费线）
 function renderDeviation() {
   const dev = data.value?.deviation
   if (!dev || !dev.hasData) {
@@ -454,7 +454,7 @@ function renderDeviation() {
   )
 }
 
-// ── ⑦ 预测诊断分发（arena 厂站 8 源 MAPE 擂台 / loss 厂站损失排行）──
+// ⑦ 预测诊断分发（arena 厂站 8 源 MAPE 擂台 / loss 厂站损失排行）
 function renderDiag() {
   if (diagMode.value === 'arena') renderArena()
   else renderForecast()
@@ -486,7 +486,7 @@ async function ensureArena() {
   renderDiag()
 }
 
-// ── ⑦a 厂站 8 源 MAPE 擂台（柱：源排行；线：最佳预测源 vs 实际功率）──
+// ⑦a 厂站 8 源 MAPE 擂台（柱：源排行；线：最佳预测源 vs 实际功率）
 function renderArena() {
   const a = arena.value
   if (arenaLoading.value) {
@@ -625,7 +625,7 @@ function renderArena() {
   )
 }
 
-// ── ⑦b 预测损失诊断（横向条，大者红色靠前）──
+// ⑦b 预测损失诊断（横向条，大者红色靠前）
 function renderForecast() {
   const f = data.value?.forecastDiag
   if (!f || !f.hasData) {
@@ -665,7 +665,7 @@ function emptyTitle(text: string) {
   }
 }
 
-// ── 持仓敞口曲线（逐日敞口 + 套保率，captured 真实派生）──
+// 持仓敞口曲线（逐日敞口 + 套保率，captured 真实派生）
 function renderExposure() {
   const s = data.value?.exposureSeries ?? []
   if (!s.length) {
@@ -719,7 +719,7 @@ function renderAll() {
   renderExposure()
 }
 
-// ── 导出（CSV / XLSX；瀑布/申报偏差/敞口序列/预测损失排行四表，captured 真实数据）──
+// 导出（CSV / XLSX；瀑布/申报偏差/敞口序列/预测损失排行四表，captured 真实数据）
 function buildExportSheets() {
   const d = data.value
   const wf = d?.waterfall
@@ -805,7 +805,7 @@ function onExportCmd(c: string) {
   else if (c === 'zip') exportCockpitZip()
 }
 
-// ── KPI / 决策清单展示派生 ──
+// KPI / 决策清单展示派生
 const kpis = computed(() => data.value?.kpis ?? null)
 const decisions = computed<DecisionItem[]>(() => data.value?.decisions ?? [])
 const position = computed(() => data.value?.position ?? null)
@@ -822,7 +822,7 @@ const decisionIcon: Record<DecisionItem['kind'], string> = {
   audit: '⚖'
 }
 
-// ── 加载 ──
+// 加载
 async function reload() {
   const reqId = ++reloadReqId
   loading.value = true
@@ -1262,7 +1262,7 @@ onRegionChange(() => {
 
   background: var(--panel);
   color: var(--ck-txt);
-  font-size: 13px;
+  font-size: var(--font-md);
   -webkit-font-smoothing: antialiased;
   border: 1px solid var(--ck-border);
   border-radius: var(--radius, 12px);
@@ -1333,14 +1333,14 @@ onRegionChange(() => {
   box-shadow: 0 0 0 1px rgba(56, 189, 248, 0.35), 0 4px 14px rgba(14, 165, 233, 0.25);
 }
 .brand h1 {
-  font-size: 16px;
+  font-size: var(--font-16);
   letter-spacing: 0.5px;
   font-weight: 700;
   margin: 0;
   color: var(--ck-txt);
 }
 .brand .sub {
-  font-size: 10.5px;
+  font-size: var(--font-10-5);
   color: var(--ck-txt-3);
   letter-spacing: 2px;
   text-transform: uppercase;
@@ -1361,7 +1361,7 @@ onRegionChange(() => {
   border: 1px solid var(--ck-border-hi);
   border-radius: 10px;
   color: var(--ck-warn);
-  font-size: 11px;
+  font-size: var(--font-xs);
   white-space: nowrap;
 }
 .seg {
@@ -1376,7 +1376,7 @@ onRegionChange(() => {
   border: 0;
   color: var(--ck-txt-2);
   padding: 7px 14px;
-  font-size: 12px;
+  font-size: var(--font-sm);
   cursor: pointer;
   font-weight: 600;
 }
@@ -1392,7 +1392,7 @@ onRegionChange(() => {
   border-radius: 6px;
   background: var(--ck-panel-2);
   color: var(--ck-txt);
-  font-size: 11px;
+  font-size: var(--font-xs);
   padding: 0 8px;
 }
 .pill {
@@ -1401,14 +1401,14 @@ onRegionChange(() => {
   border: 1px solid var(--ck-border);
   border-radius: 8px;
   color: var(--ck-txt);
-  font-size: 12px;
+  font-size: var(--font-sm);
   display: inline-flex;
   gap: 8px;
   align-items: center;
 }
 .pill .k {
   color: var(--ck-txt-3);
-  font-size: 11px;
+  font-size: var(--font-xs);
 }
 .ck-date {
   width: 140px;
@@ -1435,7 +1435,7 @@ onRegionChange(() => {
   min-width: 0;
 }
 .kpi .lab {
-  font-size: 11px;
+  font-size: var(--font-xs);
   color: var(--ck-txt-3);
   letter-spacing: 0;
   margin-bottom: 6px;
@@ -1445,20 +1445,20 @@ onRegionChange(() => {
   flex-wrap: wrap;
 }
 .kpi .val {
-  font-size: 24px;
+  font-size: var(--font-24);
   font-weight: 700;
   line-height: 1;
   letter-spacing: 0;
   overflow-wrap: anywhere;
 }
 .kpi .val small {
-  font-size: 12px;
+  font-size: var(--font-sm);
   color: var(--ck-txt-3);
   font-weight: 500;
   margin-left: 3px;
 }
 .kpi .delta {
-  font-size: 11px;
+  font-size: var(--font-xs);
   margin-top: 6px;
   display: inline-flex;
   align-items: center;
@@ -1513,7 +1513,7 @@ onRegionChange(() => {
   background: var(--ck-da);
 }
 .panel > .head h3 {
-  font-size: 13.5px;
+  font-size: var(--font-13-5);
   font-weight: 700;
   letter-spacing: 0.3px;
   margin: 0;
@@ -1521,7 +1521,7 @@ onRegionChange(() => {
 }
 .panel > .head .meta {
   color: var(--ck-txt-3);
-  font-size: 11px;
+  font-size: var(--font-xs);
 }
 .panel > .head .right {
   margin-left: auto;
@@ -1530,7 +1530,7 @@ onRegionChange(() => {
   align-items: center;
 }
 .chip {
-  font-size: 10.5px;
+  font-size: var(--font-10-5);
   padding: 3px 8px;
   border-radius: 5px;
   border: 1px solid var(--ck-border-hi);
@@ -1560,11 +1560,11 @@ onRegionChange(() => {
 }
 .insight .ic {
   color: var(--ck-gold);
-  font-size: 15px;
+  font-size: var(--font-15);
   line-height: 1.2;
 }
 .insight .tx {
-  font-size: 12px;
+  font-size: var(--font-sm);
   color: var(--ck-txt);
   line-height: 1.55;
 }
@@ -1589,7 +1589,7 @@ onRegionChange(() => {
   cursor: pointer;
   padding: 10px 14px;
   color: var(--ck-txt-2);
-  font-size: 11.5px;
+  font-size: var(--font-11-5);
   user-select: none;
 }
 .arena-source-table-wrap {
@@ -1601,7 +1601,7 @@ onRegionChange(() => {
   width: 100%;
   border-collapse: collapse;
   min-width: 520px;
-  font-size: 11px;
+  font-size: var(--font-xs);
 }
 .arena-source-table th,
 .arena-source-table td {
@@ -1676,7 +1676,7 @@ onRegionChange(() => {
   border-radius: 6px;
   display: grid;
   place-items: center;
-  font-size: 12px;
+  font-size: var(--font-sm);
   flex: none;
 }
 .dec.risk .ico {
@@ -1696,25 +1696,25 @@ onRegionChange(() => {
   color: var(--ck-gold);
 }
 .dec .t {
-  font-size: 12.5px;
+  font-size: var(--font-12-5);
   font-weight: 700;
 }
 .dec .desc {
-  font-size: 11.5px;
+  font-size: var(--font-11-5);
   color: var(--ck-txt-2);
   line-height: 1.5;
 }
 .dec .impact {
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 .dec .impact b {
   font-family: var(--ck-mono);
-  font-size: 14px;
+  font-size: var(--font-lg);
 }
 .rail-empty {
   padding: 18px 16px;
   color: var(--ck-txt-3);
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 /* positions */
@@ -1731,16 +1731,16 @@ onRegionChange(() => {
   border-right: 0;
 }
 .pos-cell .l {
-  font-size: 11px;
+  font-size: var(--font-xs);
   color: var(--ck-txt-3);
   margin-bottom: 5px;
 }
 .pos-cell .v {
-  font-size: 18px;
+  font-size: var(--font-18);
   font-weight: 700;
 }
 .pos-cell .v small {
-  font-size: 11px;
+  font-size: var(--font-xs);
   color: var(--ck-txt-3);
   font-weight: 500;
 }
@@ -1759,7 +1759,7 @@ onRegionChange(() => {
 .ck-footer {
   text-align: center;
   color: var(--ck-txt-3);
-  font-size: 11px;
+  font-size: var(--font-xs);
   padding: 14px 16px 4px;
 }
 

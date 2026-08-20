@@ -1,11 +1,11 @@
 // 价差/弹性端点客户端回归（spread + elasticity 同构合一文件）。
 // 守住的不变量：
-//   1. 请求构造——URL 默认参数（window/threshold/segments）进 query、可选项缺省不进、
-//      **0 保留**（threshold=0 是「关阈值」的合法语义）；x-region-id 必带。
-//   2. 错误文案 message ?? detail 优先级，最终 `请求失败: <status>` 兜底——
-//      坏掉的症状是用户看到裸 502 而不知后端说了什么。
-//   3. 返回 body.data 解包（调用方拿业务体，不是信封）。
-//   4. timeout signal 传入 fetch。
+// 1. 请求构造，URL 默认参数（window/threshold/segments）进 query、可选项缺省不进、
+// 0 保留（threshold=0 是「关阈值」的合法语义）；x-region-id 必带。
+// 2. 错误文案 message ?? detail 优先级，最终 `请求失败: <status>` 兜底
+// 坏掉的症状是用户看到裸 502 而不知后端说了什么。
+// 3. 返回 body.data 解包（调用方拿业务体，不是信封）。
+// 4. timeout signal 传入 fetch。
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
