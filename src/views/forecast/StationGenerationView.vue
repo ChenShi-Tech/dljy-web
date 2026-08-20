@@ -22,15 +22,20 @@ import { chartChrome, cssVar } from '../../composables/useTheme'
 import { axisTooltip, chartToolbox, emptyOverlay, insideZoom, fmtNum } from '@/services/chart/chartOptions'
 import CompanyScopeBar from '@/components/company/CompanyScopeBar.vue'
 
+// 站级可选模型：只列 GenerationPredictionService 真实支持且非占位的本地模型。
+//
+// 原先此处硬编码了 8 条 `tslib:*`，标签写作「TSLib DLinear」等——但 tslib_adapter 的
+// compat 运行时实为 StandardScaler+Ridge 占位（mock=True/source_type=MOCK），标签却不带
+// 「占位·Ridge」后缀，正是 Mock 纪律（P1）要防的「前端选到占位、以为用的是真 PatchTST」。
+// 其中 4 条（DLinear/PatchTST/TimeXer/FEDformer）已 superseded_by 指向南洋 GPU 上的真实
+// Torch 模型而置为不可用，硬编码列表绕过 catalog 的 available 判定，选中即失败；余下 4 条
+// 虽仍可用，但运行时同为 Ridge 占位，对站级预测并无价值（本地 XGBoost/LightGBM 更强），
+// 故整体摘除而非逐条标注。
+//
+// 真实深度时序模型（remote:*，Epic #1898）是**云南区域级**、经 agent-backend 转发远程推理，
+// 而本页 /station-generation 走 GenerationPredictionService 本地训练路径（站级、按 station_id
+// 缓存模型），两者口径不同不可混用——需要真实深度模型请到「预测中心 · 建模工作台」。
 const MODELS = [
-  { value: 'tslib:DLinear', label: 'TSLib DLinear' },
-  { value: 'tslib:PatchTST', label: 'TSLib PatchTST' },
-  { value: 'tslib:iTransformer', label: 'TSLib iTransformer' },
-  { value: 'tslib:TimeXer', label: 'TSLib TimeXer' },
-  { value: 'tslib:TimesNet', label: 'TSLib TimesNet' },
-  { value: 'tslib:Autoformer', label: 'TSLib Autoformer' },
-  { value: 'tslib:Informer', label: 'TSLib Informer' },
-  { value: 'tslib:FEDformer', label: 'TSLib FEDformer' },
   { value: 'xgboost', label: 'XGBoost' },
   { value: 'lightgbm', label: 'LightGBM' },
   { value: 'random_forest', label: 'RandomForest' },

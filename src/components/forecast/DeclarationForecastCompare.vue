@@ -348,6 +348,15 @@ function decisionBlockReason(row: CompareRow): string {
   if (provider?.id?.startsWith('store:')) {
     return '外部训练模型绑定了目标（target），而决策包需同一模型再跑一次负荷预测，必然失败；可用于价格对比，不能作决策模型'
   }
+  // 与 declarationForecast.ts::canBeDecisionModel 的 supportedTargets 判据对齐（Epic #1898）：
+  // remote:* 远程推理模型按 target 单独上架（价格模型只声明 price），决策包的 LOAD 腿拿同一
+  // model_type 再跑一次必被后端「模型 target 与任务 target 不符」拒掉。此前本函数只拦 store:，
+  // 于是 remote 模型在表格里显示为可选、点选后 canBeDecisionModel 又不认，用户既选不动也
+  // 看不到原因——按同一判据挡下并给出可读理由。
+  const st = provider?.supportedTargets
+  if (st && !st.includes('load')) {
+    return '该模型按单一目标上架（未声明负荷），而决策包需同一模型再跑一次负荷预测，必然失败；可用于价格对比，不能作决策模型'
+  }
   if (provider?.mock) return '占位实现（StandardScaler+Ridge），不得作为申报决策依据'
   if (provider?.available === false) return provider.reason || '该模型当前不可用'
   if (row.error) return '本次运行失败，无结果可用于决策'
