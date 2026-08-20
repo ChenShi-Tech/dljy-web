@@ -14,6 +14,7 @@ const DATA_SVC_EXACT = new Set([
   '/v1/governance/catalog',
   '/v1/governance/quality',
   '/v1/governance/backup',
+  '/v1/governance/db-health',
   '/v1/sichuan-ingest',
   '/v1/sichuan-ingest/trigger',
   '/v1/sichuan-ingest/health',
