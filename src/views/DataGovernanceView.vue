@@ -161,6 +161,22 @@ type BackupPayload = {
   history: BackupLatest[]
 }
 
+type DbHealthCheck = { id: string; title: string; status: 'ok' | 'warn' | 'fail'; detail: string }
+type DbHealthPayload = {
+  available: boolean
+  file: string
+  message?: string
+  ageHours?: number | null
+  stale?: boolean
+  report: {
+    ok: boolean
+    at: string | null
+    host: string | null
+    doctor: { ok: boolean; summary: { fail: number; warn: number; ok: number } | null; checks: DbHealthCheck[] }
+    healthcheck: { ok: boolean; selected: number; failed: { number: number; title: string; error: string }[]; warned: { number: number; warnings: string[] }[] }
+  } | null
+}
+
 type QualityAlert = {
   status: 'warn' | 'fail'
   family: string
@@ -181,6 +197,10 @@ const error = ref('')
 const catalog = ref<CatalogPayload | null>(null)
 const quality = ref<QualityPayload | null>(null)
 const backup = ref<BackupPayload | null>(null)
+const dbHealth = ref<DbHealthPayload | null>(null)
+// 数据库单元巡检（主仓 Epic #2277 · 2.5.10）：只展示 patrol-last.json 的投影；fail/过期都在页内响
+const dbHealthFails = computed(() => (dbHealth.value?.report?.doctor.checks ?? []).filter((c) => c.status === 'fail'))
+const dbHealthRows = computed(() => dbHealth.value?.report?.doctor.checks ?? [])
 
 const catalogRows = computed<Array<Record<string, unknown>>>(() =>
   (catalog.value?.items ?? []).map((item) => ({
@@ -503,21 +523,24 @@ async function loadAll() {
     catalog.value = null
     quality.value = null
     backup.value = null
+    dbHealth.value = null
     return
   }
 
   loading.value = true
   error.value = ''
   try {
-    const [catalogRes, qualityRes, backupRes] = await Promise.all([
+    const [catalogRes, qualityRes, backupRes, dbHealthRes] = await Promise.all([
       apiGet<CatalogPayload>('/v1/governance/catalog'),
       apiGet<QualityPayload>('/v1/governance/quality'),
-      apiGet<BackupPayload>('/v1/governance/backup')
+      apiGet<BackupPayload>('/v1/governance/backup'),
+      apiGet<DbHealthPayload>('/v1/governance/db-health').catch(() => ({ data: null }))  // 旧 data-service 无此端点时不拖垮整页
     ])
     if (seq !== govGen) return // 期间切了用户/地区 → 丢弃旧结果
     catalog.value = catalogRes.data ?? null
     quality.value = qualityRes.data ?? null
     backup.value = backupRes.data ?? null
+    dbHealth.value = (dbHealthRes as { data?: DbHealthPayload | null }).data ?? null
   } catch (err) {
     error.value = err instanceof Error ? err.message : String(err)
   } finally {
@@ -867,6 +890,46 @@ function browserLink(alert: QualityAlert) {
           </div>
         </el-tab-pane>
 
+        <el-tab-pane label="数据库健康" name="db-health">
+          <DataState
+            :empty="!dbHealth?.available"
+            :empty-text="dbHealth?.message || '尚无数据库巡检报告'"
+          >
+            <el-alert
+              v-if="dbHealth?.stale"
+              type="warning"
+              :closable="false"
+              class="stream-banner"
+              :title="`巡检报告已 ${Math.round(dbHealth?.ageHours ?? 0)} 小时未更新（每日巡检应 < 30 小时）`"
+            />
+            <el-alert
+              v-if="dbHealthFails.length || dbHealth?.report?.healthcheck.failed.length"
+              type="error"
+              :closable="false"
+              class="stream-banner"
+              :title="`数据库巡检有 ${dbHealthFails.length + (dbHealth?.report?.healthcheck.failed.length ?? 0)} 项 fail`"
+              :description="[...dbHealthFails.map((c) => c.title), ...(dbHealth?.report?.healthcheck.failed ?? []).map((f) => `healthcheck 第 ${f.number} 节`)].join('、')"
+            />
+            <el-descriptions :column="3" border size="small" class="db-health-summary">
+              <el-descriptions-item label="巡检时间">{{ formatDateTime(dbHealth?.report?.at) }}</el-descriptions-item>
+              <el-descriptions-item label="主机">{{ dbHealth?.report?.host ?? '—' }}</el-descriptions-item>
+              <el-descriptions-item label="结果">
+                <el-tag size="small" :type="dbHealth?.report?.ok ? 'success' : 'danger'">{{ dbHealth?.report?.ok ? '无 fail' : '有 fail' }}</el-tag>
+                <span class="db-health-counts">doctor fail {{ dbHealth?.report?.doctor.summary?.fail ?? 0 }} / warn {{ dbHealth?.report?.doctor.summary?.warn ?? 0 }} / ok {{ dbHealth?.report?.doctor.summary?.ok ?? 0 }}；healthcheck {{ dbHealth?.report?.healthcheck.ok ? '✓' : '✗' }} {{ dbHealth?.report?.healthcheck.selected ?? 0 }} 节</span>
+              </el-descriptions-item>
+            </el-descriptions>
+            <el-table :data="dbHealthRows" size="small" border class="db-health-table">
+              <el-table-column label="状态" width="80">
+                <template #default="{ row }">
+                  <el-tag size="small" :type="row.status === 'fail' ? 'danger' : row.status === 'warn' ? 'warning' : 'success'">{{ row.status }}</el-tag>
+                </template>
+              </el-table-column>
+              <el-table-column prop="title" label="检查项" min-width="200" />
+              <el-table-column prop="detail" label="说明" min-width="320" show-overflow-tooltip />
+            </el-table>
+          </DataState>
+        </el-tab-pane>
+
         <el-tab-pane label="备份状态" name="backup">
           <DataState
             :empty="!backup?.available"
@@ -981,6 +1044,9 @@ function browserLink(alert: QualityAlert) {
 }
 
 /* #2175 断流汇总卡：横幅置顶、健康表收边距 */
+.db-health-summary { margin-bottom: 12px; }
+.db-health-counts { margin-left: 8px; color: var(--el-text-color-secondary); font-size: var(--font-xs); }
+.db-health-table { margin-top: 4px; }
 .stream-banner {
   margin-bottom: 10px;
 }
