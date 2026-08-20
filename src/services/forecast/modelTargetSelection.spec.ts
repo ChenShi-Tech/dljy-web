@@ -9,7 +9,7 @@
 // 那条限制的真实来源只是 /cockpit 聚合端点只收一个 model_type，不该扩散到四个带
 // 显式 target 的调用点上。判据放松后必须同时守住反向：没声明这条腿的不能选。
 import { describe, expect, it } from 'vitest'
-import { isModelSelectableForTarget } from './forecastProviders'
+import { isModelSelectableForTarget, predictBlockerReason } from './forecastProviders'
 
 type M = Parameters<typeof isModelSelectableForTarget>[0]
 const model = (over: Partial<M>): M => ({
@@ -59,5 +59,38 @@ describe('isModelSelectableForTarget', () => {
     const m = model({ modelId: 'remote:empty', namespace: 'remote', supportedTargets: [] })
     expect(isModelSelectableForTarget(m, 'price')).toBe(false)
     expect(isModelSelectableForTarget(m, 'load')).toBe(false)
+  })
+})
+
+describe('predictBlockerReason：拦住静默回落', () => {
+  // 不传 model_type 时后端会用它的默认模型——请求成功、页面出数字，但那不是用户选的模型。
+  // 这组用例守的是「宁可空着并说清原因，也不给一个来路不明的结果」。
+  const ok = { catalogError: '', selectable: [{ modelId: 'xgboost' }], selectedModelId: 'xgboost', targetLabel: '价格预测' }
+
+  it('一切正常时返回空串（可以发请求）', () => {
+    expect(predictBlockerReason(ok)).toBe('')
+  })
+
+  it('目录加载失败 → 拦住并带上原因（不退回后端默认模型）', () => {
+    const r = predictBlockerReason({ ...ok, catalogError: 'HTTP 503' })
+    expect(r).not.toBe('')
+    expect(r).toContain('HTTP 503')
+  })
+
+  it('目录为空 → 拦住并说清是没有可用模型，不是请求失败', () => {
+    const r = predictBlockerReason({ ...ok, selectable: [] })
+    expect(r).not.toBe('')
+    expect(r).toContain('价格预测')
+  })
+
+  it('选中项已不在可选集合（模型下架/转不可用）→ 拦住并提示另选', () => {
+    const r = predictBlockerReason({ ...ok, selectedModelId: 'remote:gone' })
+    expect(r).toBe('所选预测模型当前不可用，请另选模型')
+  })
+
+  it('目录加载失败优先于其它原因上报（根因在前，不报下游症状）', () => {
+    // 目录都没拉到时 selectable 必然为空，若先报「没有可用模型」会把人引向错误方向
+    const r = predictBlockerReason({ catalogError: '网络超时', selectable: [], selectedModelId: '', targetLabel: '价格预测' })
+    expect(r).toContain('网络超时')
   })
 })

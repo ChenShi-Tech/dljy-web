@@ -403,6 +403,25 @@ export function isModelSelectableForTarget(
   return true
 }
 
+/**
+ * 发预测请求前的「拦不拦」判定（#2326）：返回非空串即为拦截原因，空串表示可以发。
+ *
+ * 为什么要拦而不是让请求自己失败：不传 model_type 时后端会用它的默认模型，请求会成功、
+ * 页面会出数字——但那不是用户选的模型，属于静默回落。目录空 / 目录加载失败 / 选中项已
+ * 不在可选集合，三种情况都必须如实说，不能拿一个来路不明的默认结果冒充。
+ */
+export function predictBlockerReason(input: {
+  catalogError: string
+  selectable: ReadonlyArray<{ modelId: string }>
+  selectedModelId: string
+  targetLabel: string
+}): string {
+  if (input.catalogError) return `模型目录加载失败：${input.catalogError}`
+  if (!input.selectable.length) return `当前地区没有可用于${input.targetLabel}的模型（模型目录为空或全部不可用）`
+  if (!input.selectable.some((m) => m.modelId === input.selectedModelId)) return '所选预测模型当前不可用，请另选模型'
+  return ''
+}
+
 function makeMlProvider(model: ForecastModel): ForecastProvider {
   const isMock = model.provenance.mock === true
   const predictSupported = isPredictSupported(model)

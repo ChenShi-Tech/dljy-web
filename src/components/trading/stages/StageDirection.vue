@@ -23,6 +23,7 @@ import { breakevenSpread } from 'shared/trading-rules/storage-arbitrage.mjs'
 import { savePreflight, type DeclarationOrder } from '@/services/declarations'
 import { applyBias, buildLoadCurve96, LOAD_SHAPE_LABEL, type LoadShapeId } from '@/services/trading/loadShape'
 import { runForecastPredict, runMidterm, unavailableReasonOf, type ForecastResult, type MidtermResult } from '@/services/forecast/mlForecastClient'
+import { ensureForecastCatalog, forecastCatalogState, isModelSelectableForTarget, predictBlockerReason } from '@/services/forecast/forecastProviders'
 import { dualCurveDecision, type MidtermCurve } from '@/services/trading/priceDistribution'
 import {
   arbitrageWindowList,
@@ -101,15 +102,35 @@ const forecast = ref<ForecastResult | null>(null)
 const forecastLoading = ref(false)
 const forecastError = ref('')
 
+// 模型显式可选（#2326）：此前不传 model_type、走后端默认模型，远端真实模型（remote:*）
+// 接进来了却用不上。改为从目录取「价格腿可选」的模型列表让人自己选——不替用户判定
+// 「最优」（目录里没有可比的质量口径，替他选等于把一个没有依据的判断写死进代码）。
+// 默认取列表首项，与驾驶舱归一逻辑一致。
+const { models: catalogModels, error: catalogError } = forecastCatalogState()
+const priceModels = computed(() => catalogModels.value.filter((m) => isModelSelectableForTarget(m, 'price')))
+const modelType = ref('')
+
 async function loadForecast() {
   forecastLoading.value = true
   forecastError.value = ''
   forecast.value = null
   try {
+    // 目录空/加载失败/选中项已不可用 → 诚实报原因，不发请求、也不静默退回后端默认模型。
+    const blocker = predictBlockerReason({
+      catalogError: catalogError.value,
+      selectable: priceModels.value,
+      selectedModelId: modelType.value,
+      targetLabel: '价格预测',
+    })
+    if (blocker) {
+      forecastError.value = blocker
+      return
+    }
     const r = await runForecastPredict({
       region_id: currentRegion.value.id,
       target: 'price',
-      target_date: props.targetDate
+      target_date: props.targetDate,
+      model_type: modelType.value
     })
     if (r?.unavailable_reason || r?.unavailableReason) {
       forecastError.value = `预测不可用：${unavailableReasonOf(r)}`
@@ -145,6 +166,13 @@ const effectiveExposureFactor = computed(() =>
 const assets = ref<StorageAsset[]>([])
 const assetNote = ref('')
 onMounted(async () => {
+  // 目录用于模型下拉；失败不阻断本阶段其它功能（预测按钮点下去会如实报目录加载失败）。
+  try {
+    await ensureForecastCatalog()
+    if (priceModels.value.length && !priceModels.value.some((m) => m.modelId === modelType.value)) {
+      modelType.value = priceModels.value[0].modelId
+    }
+  } catch { /* catalogError 已记录，loadForecast 会如实提示 */ }
   try {
     assets.value = await listStorageAssets()
     if (!assets.value.length) assetNote.value = '企业储能档案未建档——套利窗口按默认参数评估，S4 建档后自动换用'
@@ -483,7 +511,15 @@ async function writeBack() {
         <!-- ML 价格预测参考：P10/P50/P90 概率分布上屏（Z1：看分布而非点价） -->
         <h3><LineChart :size="13" /> ML 价格概率分布（P10/P50/P90）</h3>
         <div class="dr-forecast">
-          <button type="button" class="dr-fc-btn" :disabled="forecastLoading" @click="loadForecast">
+          <label class="dr-model">
+            <span>模型</span>
+            <select v-model="modelType" :disabled="forecastLoading || !priceModels.length">
+              <option v-for="m in priceModels" :key="m.modelId" :value="m.modelId">
+                {{ m.name ?? m.modelId }}{{ m.provenance.mock ? '（占位）' : '' }}
+              </option>
+            </select>
+          </label>
+          <button type="button" class="dr-fc-btn" :disabled="forecastLoading || !priceModels.length" @click="loadForecast">
             {{ forecastLoading ? '预测中…' : `跑 ${targetDate} 价格预测` }}
           </button>
           <span v-if="forecastError" class="dr-err">{{ forecastError }}</span>
@@ -667,6 +703,9 @@ async function writeBack() {
 .dr-forecast { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; font-size: var(--font-sm); font-variant-numeric: tabular-nums; }
 .dr-fc-btn { padding: 4px 12px; border: 1px solid #059669; border-radius: 5px; background: #ecfdf5; color: #047857; font-size: var(--font-sm); cursor: pointer; }
 .dr-fc-btn:disabled { opacity: .5; cursor: wait; }
+.dr-model { display: inline-flex; align-items: center; gap: 5px; font-size: var(--font-sm); }
+.dr-model select { padding: 3px 6px; border: 1px solid var(--line, #d0d5dd); border-radius: 5px; background: var(--panel, #fff); font-size: var(--font-sm); max-width: 200px; }
+.dr-model select:disabled { opacity: .5; }
 .dr-muted { font-size: var(--font-xs); color: var(--el-text-color-secondary, #667); }
 
 /* 漂移横幅与策略速查 */
