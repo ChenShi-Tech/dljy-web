@@ -45,21 +45,6 @@
     "feature": null
   },
   {
-    "id": "declaration-checkup",
-    "path": "/declaration-checkup",
-    "title": "申报体检",
-    "domain": "系统",
-    "kind": "real",
-    "endpoint": "/pi-api/agent/*",
-    "dataPath": "",
-    "nav": {
-      "group": null,
-      "listed": false
-    },
-    "regions": [],
-    "feature": null
-  },
-  {
     "id": "interprovincial-price",
     "path": "/djcs/interprovincial-price",
     "title": "跨省跨区电价",
@@ -571,21 +556,6 @@
     "feature": null
   },
   {
-    "id": "strategic-qa",
-    "path": "/strategic-qa",
-    "title": "战略问答",
-    "domain": "系统",
-    "kind": "real",
-    "endpoint": "/pi-api/agent/*",
-    "dataPath": "",
-    "nav": {
-      "group": null,
-      "listed": false
-    },
-    "regions": [],
-    "feature": null
-  },
-  {
     "id": "system-accounts",
     "path": "/system/accounts",
     "title": "用户与会话",
@@ -698,51 +668,6 @@
     "kind": "mixed",
     "endpoint": "POST /agent-api/agent/quant/monitor",
     "dataPath": "quant_direct",
-    "nav": {
-      "group": null,
-      "listed": true
-    },
-    "regions": [],
-    "feature": null
-  },
-  {
-    "id": "morning-brief",
-    "path": "/xhjy/morning-brief",
-    "title": "交易晨报",
-    "domain": "智能实验室",
-    "kind": "mixed",
-    "endpoint": "POST /agent-api/agent/sessions + /sessions/{id}/messages (SSE)",
-    "dataPath": "llm",
-    "nav": {
-      "group": null,
-      "listed": true
-    },
-    "regions": [],
-    "feature": null
-  },
-  {
-    "id": "policy-intel",
-    "path": "/xhjy/policy-intel",
-    "title": "政策情报官",
-    "domain": "智能实验室",
-    "kind": "mixed",
-    "endpoint": "POST /agent-api/agent/sessions + /sessions/{id}/messages (SSE) + disclosure 工具",
-    "dataPath": "llm",
-    "nav": {
-      "group": null,
-      "listed": true
-    },
-    "regions": [],
-    "feature": null
-  },
-  {
-    "id": "presubmit-check",
-    "path": "/xhjy/presubmit-check",
-    "title": "申报前体检",
-    "domain": "智能实验室",
-    "kind": "mixed",
-    "endpoint": "POST /agent-api/agent/sessions + /sessions/{id}/messages (SSE)",
-    "dataPath": "llm",
     "nav": {
       "group": null,
       "listed": true
