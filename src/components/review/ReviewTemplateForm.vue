@@ -6,8 +6,9 @@
 //   （判断栏红线：永不挂建议入口）；ai_suggest 字段「建议→人点采纳」交互。
 // slots24 模板（E1–E3/N1）按 2026-08-13 拍板：底层 96 点、24 时段仅展示聚合；
 // 峰谷标识读 SettlementRuleSpec，未参数化省份显式提示（不借用他省）。
-// 提交端点随 #2037/#2039 上线：当前仅本地草稿，不落库、不显示「已提交」。
-import { computed, reactive } from 'vue'
+// 提交端点随 #2037/#2039 上线：传入 instance 时草稿落库、可提交锁定；
+// 未传 instance（端点未部署/纯模板预览）保持本地预览 + 诚实提示。
+import { computed, reactive, ref, watch } from 'vue'
 import {
   DIMENSIONS,
   SOURCE_CATALOG,
@@ -18,6 +19,8 @@ import type { ReviewTemplate, ReviewTemplateField } from 'shared/review-template
 import type { SettlementRuleSpec } from '@/rules/types'
 import { aggregate96to24, segmentLabelsOf, SEGMENT_UNPARAMETERIZED_NOTE } from '@/services/review/slots24'
 import { SUBMIT_PENDING_NOTE } from '@/services/review/cockpitModel'
+import { patchTemplateInstance } from '@/services/review/templateInstanceClient'
+import type { TemplateInstanceSummary } from '@/services/review/templateInstanceApi'
 
 const props = defineProps<{
   templateId: string
@@ -27,9 +30,20 @@ const props = defineProps<{
   autofill?: Record<string, unknown>
   /** ai_suggest 字段的建议文案（随 #2044 调度预填上线；缺省显示未生成占位） */
   aiSuggestions?: Record<string, string>
+  /** 服务端实例（#2037）：传了才可存草稿/提交；不传=端点未部署的本地预览 */
+  instance?: TemplateInstanceSummary | null
 }>()
 
+const emit = defineEmits<{ saved: [status: 'draft' | 'submitted'] }>()
+
 const template = computed<ReviewTemplate | null>(() => templateById(props.templateId))
+
+const STATUS_LABEL: Record<string, string> = {
+  pending: '待填报',
+  draft: '草稿（已动笔）',
+  submitted: '已提交（锁定）',
+  reviewed: '已复核（留档）'
+}
 
 const READINESS_BADGE: Record<string, { label: string; cls: string }> = {
   ready: { label: '就绪', cls: 'ok' },
@@ -51,9 +65,38 @@ const isSlots24 = computed(() => template.value?.slots24 === true)
 /** 判断栏红线：human 且 required 的字段是「依据/结论/改进」类，渲染上额外声明。 */
 const hasJudgementFields = computed(() => humanFields.value.some((f) => f.required))
 
-/** 本地草稿（human 字段 + 已采纳的 ai 建议）。提交端点未上线，仅存内存。 */
+/** 本地草稿（human 字段 + 已采纳的 ai 建议）；有实例时与服务端 payload 双向衔接。 */
 const draft = reactive<Record<string, string>>({})
 const adopted = reactive<Record<string, boolean>>({})
+
+/** 实例在且未锁定才可编辑；无实例（端点未部署）允许预览填写但不可提交。 */
+const instanceEditable = computed(
+  () => !props.instance || props.instance.status === 'pending' || props.instance.status === 'draft'
+)
+/** 必填 human 字段齐了才可提交（服务端仍会再校验状态机与权限）。 */
+const canSubmit = computed(
+  () =>
+    !!props.instance &&
+    instanceEditable.value &&
+    humanFields.value.filter((f) => f.required).every((f) => (draft[f.key] ?? '').trim() !== '')
+)
+const saving = ref(false)
+const saveError = ref('')
+const savedMsg = ref('')
+
+/** 实例草稿回填（重开 draft 实例不丢已填内容；ai 采纳过的一并还原为已采纳态）。 */
+function seedFromInstance(): void {
+  saveError.value = ''
+  savedMsg.value = ''
+  const payload = props.instance?.payload
+  if (!payload) return
+  for (const [key, value] of Object.entries(payload)) {
+    if (typeof value !== 'string') continue
+    draft[key] = value
+    if (aiFields.value.some((f) => f.key === key)) adopted[key] = true
+  }
+}
+watch(() => props.instance?.id, seedFromInstance, { immediate: true })
 
 function sourceDesc(f: ReviewTemplateField): string {
   const s = SOURCE_CATALOG.find((x) => x.id === f.source)
@@ -70,7 +113,35 @@ function adopt(fieldKey: string) {
   adopted[fieldKey] = true
 }
 
-// slots24 聚合视图
+/** 存草稿：只 PATCH payload；pending → draft 由服务端状态机自动迁移。 */
+async function saveDraft() {
+  await persist({ payload: { ...draft } }, 'draft', '草稿已保存')
+}
+/** 提交：payload + status 一并提交，服务端打提交戳（filledBy/submittedAt）并锁定。 */
+async function submitInstance() {
+  await persist({ payload: { ...draft }, status: 'submitted' }, 'submitted', '已提交并锁定——更正走追加记录')
+}
+async function persist(
+  patch: { payload: Record<string, unknown>; status?: 'submitted' },
+  status: 'draft' | 'submitted',
+  okMsg: string
+) {
+  if (!props.instance || !canSubmit.value || saving.value) return
+  saving.value = true
+  saveError.value = ''
+  savedMsg.value = ''
+  try {
+    await patchTemplateInstance(props.instance.id, patch)
+    savedMsg.value = okMsg
+    emit('saved', status)
+  } catch (e) {
+    saveError.value = e instanceof Error ? e.message : '保存失败'
+  } finally {
+    saving.value = false
+  }
+}
+
+// ── slots24 聚合视图 ─────────────────────────────────────────────────────────
 const segments = computed(() => segmentLabelsOf(props.spec))
 const slots24Columns = computed(() => autoFields.value.filter((f) => !isPeakFlag(f)))
 function isPeakFlag(f: ReviewTemplateField): boolean {
@@ -132,10 +203,10 @@ const hasAnyCurve = computed(() =>
         <template v-if="aiSuggestions?.[f.key]">
           <template v-if="!adopted[f.key]">
             <p class="rtf-suggestion">建议：{{ aiSuggestions[f.key] }}</p>
-            <button type="button" class="rtf-adopt" @click="adopt(f.key)">采纳</button>
+            <button type="button" class="rtf-adopt" :disabled="!instanceEditable" @click="adopt(f.key)">采纳</button>
           </template>
           <template v-else>
-            <input v-model="draft[f.key]" class="rtf-input" />
+            <input v-model="draft[f.key]" class="rtf-input" :disabled="!instanceEditable" />
             <i class="rtf-adopted">已采纳（可人工修改）</i>
           </template>
         </template>
@@ -176,14 +247,45 @@ const hasAnyCurve = computed(() =>
         <label class="rtf-label">
           {{ f.label }}<i v-if="f.required" class="rtf-req">必填</i>
         </label>
-        <textarea v-model="draft[f.key]" rows="2" class="rtf-input" :placeholder="f.required ? '人工判断，必填' : '选填'" />
+        <textarea
+          v-model="draft[f.key]"
+          rows="2"
+          class="rtf-input"
+          :disabled="!instanceEditable"
+          :placeholder="!instanceEditable ? '（实例已锁定，不可编辑）' : f.required ? '人工判断，必填' : '选填'"
+        />
       </div>
     </section>
 
     <footer class="rtf-foot">
-      <button type="button" class="rtf-submit" disabled>提交（实例端点未上线）</button>
-      <p class="rtf-pending">{{ SUBMIT_PENDING_NOTE }}</p>
-      <p class="rtf-lock">提交后锁定，更正走追加记录；审核为轻量两态（提交/复核，2026-08-13 拍板）。</p>
+      <!-- 有实例：草稿/提交直连服务端（#2037），状态机与权限由服务端校验 -->
+      <template v-if="instance && instanceEditable">
+        <div class="rtf-submit-row">
+          <button type="button" class="rtf-save" :disabled="!canSubmit || saving" @click="saveDraft">
+            {{ saving ? '保存中…' : '存草稿' }}
+          </button>
+          <button type="button" class="rtf-submit live" :disabled="!canSubmit || saving" @click="submitInstance">提交</button>
+        </div>
+        <p class="rtf-status">
+          实例 #{{ instance.id }} · 周期 {{ instance.periodKey || '—' }} · 当前状态：{{ STATUS_LABEL[instance.status] }}
+        </p>
+        <p v-if="saveError" class="rtf-error">{{ saveError }}</p>
+        <p v-if="savedMsg" class="rtf-saved">{{ savedMsg }}</p>
+        <p class="rtf-lock">提交后锁定，更正走追加记录；审核为轻量两态（提交/复核，2026-08-13 拍板）。</p>
+      </template>
+      <!-- 有实例但已提交/已复核：锁定态如实展示 -->
+      <template v-else-if="instance">
+        <p class="rtf-status">
+          实例 #{{ instance.id }} · 周期 {{ instance.periodKey || '—' }} · 状态：{{ STATUS_LABEL[instance.status] }}——
+          {{ instance.status === 'submitted' ? '待提权角色复核（ADMIN/BOSS）' : '复核通过，留档' }}，内容不可再编辑。
+        </p>
+      </template>
+      <!-- 无实例：端点未部署的诚实降级（原有行为） -->
+      <template v-else>
+        <button type="button" class="rtf-submit" disabled>提交（实例端点未上线）</button>
+        <p class="rtf-pending">{{ SUBMIT_PENDING_NOTE }}</p>
+        <p class="rtf-lock">提交后锁定，更正走追加记录；审核为轻量两态（提交/复核，2026-08-13 拍板）。</p>
+      </template>
     </footer>
   </div>
 </template>
@@ -229,6 +331,14 @@ const hasAnyCurve = computed(() =>
 .rtf-slots th:first-child, .rtf-slots td:first-child { text-align: left; }
 .rtf-foot { display: flex; flex-direction: column; gap: 4px; padding-top: 8px; border-top: 1px solid var(--el-border-color-lighter, #ebeef5); }
 .rtf-submit { align-self: flex-start; padding: 6px 18px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 8px; background: var(--el-fill-color-light, #f5f7fa); color: var(--el-text-color-placeholder, #a8abb2); font-size: var(--font-12-5); cursor: not-allowed; }
+.rtf-submit-row { display: flex; gap: 8px; align-items: center; }
+.rtf-submit.live { border-color: #2563eb; background: #2563eb; color: #fff; cursor: pointer; }
+.rtf-submit.live:disabled { opacity: .45; cursor: not-allowed; }
+.rtf-save { padding: 6px 14px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 8px; background: #fff; color: inherit; font-size: var(--font-12-5); cursor: pointer; }
+.rtf-save:disabled { opacity: .45; cursor: not-allowed; }
+.rtf-status { margin: 2px 0 0; font-size: var(--font-11-5); color: #0369a1; line-height: 1.6; }
+.rtf-error { margin: 2px 0 0; font-size: var(--font-11-5); color: #b91c1c; line-height: 1.6; }
+.rtf-saved { margin: 2px 0 0; font-size: var(--font-11-5); color: #15803d; line-height: 1.6; }
 .rtf-pending { margin: 0; font-size: var(--font-xs); color: var(--el-text-color-secondary, #909399); line-height: 1.6; }
 .rtf-lock { margin: 0; font-size: var(--font-xs); color: #a16207; line-height: 1.6; }
 </style>

@@ -1,15 +1,15 @@
 <script setup lang="ts">
-// S1 晨会复盘（08:00–08:30）， 一天从收口昨日开始
+// S1 晨会复盘（08:00–08:30）—— 一天从收口昨日开始
 //
-// 复盘对象是昨天为「今天交割」申报的那张单（标的日 = 今日作业标的日的前一天）：
+// 复盘对象是**昨天为「今天交割」申报的那张单**（标的日 = 今日作业标的日的前一天）：
 // 它的出清结果昨晚已出，是今早唯一有完整事实可对的循环。本面板把四件事摆在一起：
-// ① 昨单的中标情况：申报 vs 出清（analyzeClearing 真算，前端纯函数）；
-// ② 昨单的执行偏差：申报 vs 实际（后端 quant /review 权威实现，含考核电量与罚款估算）；
+//   ① 昨单的**中标情况**：申报 vs 出清（analyzeClearing 真算，前端纯函数）；
+//   ② 昨单的**执行偏差**：申报 vs 实际（后端 quant /review 权威实现，含考核电量与罚款估算）；
 //   ③ 昨日决策日志的条目调阅 + 填写率与 P10–P90 命中率（链上事实）；
-// ④ 交易员写下偏差主因 + 今日不重犯要点 → 写回今日单据的 preflight.morningReview。
+//   ④ 交易员写下偏差主因 + 今日不重犯要点 → 写回**今日**单据的 preflight.morningReview。
 // 没有昨单就如实说「无可复盘对象」，仍允许写要点（首个交易日也要开工）。
 //
-// ①②是两个不同的量，不可互相替代：中标率答「我报的量中了多少」，执行偏差答「我实际
+// ①②是**两个不同的量，不可互相替代**：中标率答「我报的量中了多少」，执行偏差答「我实际
 // 干的和我报的差多少、要交多少考核费」。只看中标率会漏掉「全中但执行跑偏」的那类亏损。
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
@@ -27,8 +27,8 @@ import {
   type ReviewFailure,
   type ReviewResult
 } from '@/services/quant/quantClient'
-import { loadLog, PROTOTYPE_STORAGE_NOTICE } from '@/services/trading/decisionLogStore'
-import { coverageOf, hitRate } from 'shared/trading-rules/decision-log.mjs'
+import { loadLogAsync, storageNoticeFor, type DecisionLogMode } from '@/services/trading/decisionLogStore'
+import { coverageOf, hitRate, type DecisionLogEntry } from 'shared/trading-rules/decision-log.mjs'
 import {
   causeIdOfLabel,
   causeLabelOf,
@@ -59,7 +59,7 @@ const reviewedDate = computed(() => {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 })
 
-// 作业窗口提示（公司内控规范，非市场规则：只提示、不拦）
+// ── 作业窗口提示（公司内控规范，非市场规则：只提示、不拦）───────────────────
 const now = new Date()
 const windowState = morningWindowState(now.getHours() * 60 + now.getMinutes())
 
@@ -84,7 +84,13 @@ async function loadReviewed() {
     if (token === loadToken) loading.value = false
   }
 }
-onMounted(loadReviewed)
+onMounted(() => {
+  loadReviewed()
+  void loadLogAsync().then((snap) => {
+    logMode.value = snap.mode
+    log.value = snap.log
+  })
+})
 watch(reviewedDate, loadReviewed)
 
 /** ① 中标情况：申报 vs 出清。两条曲线都在才算，缺一如实标注。 */
@@ -98,10 +104,10 @@ const analysis = computed<ClearingAnalysis | null>(() => {
   }
 })
 
-// ② 执行偏差：申报 vs 实际（后端权威实现）
+// ── ② 执行偏差：申报 vs 实际（后端权威实现）──────────────────────────────────
 // 口径与复盘中心 /xhjy/review 完全一致：申报侧传昨单曲线快照，实际侧由后端按
 // serving-route 的 actual_energy 路由取（Epic #1485：山西经 sdpt_zptqx type='2' 接入）。
-// 未登记路由的地区诚实空态，不回落、不串读，云南的三段式结算口径是另一个端点。
+// **未登记路由的地区诚实空态**——不回落、不串读，云南的三段式结算口径是另一个端点。
 // 前端不自算第二套偏差：口径分歧比没有数字更贵。
 const execReview = ref<ReviewResult | null>(null)
 const execFailure = ref<ReviewFailure | null>(null)
@@ -144,26 +150,29 @@ const execDeviationPct = computed<number | null>(() => {
   return r.deviation.total_abs_deviation_mwh / declaredTotal
 })
 
-// ③ 昨日决策日志：条目调阅（不只是两个统计数字）
-const log = loadLog()
-const logCoverage = computed(() => coverageOf(log, reviewedDate.value, 3))
-const logHits = computed(() => hitRate(log))
-/** 昨日标的日的条目，按序号排列，晨会要「回顾」，就得看得到写了什么。 */
+// ── ③ 昨日决策日志：条目调阅（不只是两个统计数字）────────────────────────────
+// 双模式（#2037）：服务端台账优先，端点未部署回落浏览器原型——提示语随模式切换。
+const log = ref<DecisionLogEntry[]>([])
+const logMode = ref<DecisionLogMode>('local')
+const logNotice = computed(() => storageNoticeFor(logMode.value))
+const logCoverage = computed(() => coverageOf(log.value, reviewedDate.value, 3))
+const logHits = computed(() => hitRate(log.value))
+/** 昨日标的日的条目，按序号排列——晨会要「回顾」，就得看得到写了什么。 */
 const reviewedEntries = computed(() =>
-  log.filter((e) => e.targetDate === reviewedDate.value).sort((a, b) => a.seq - b.seq)
+  log.value.filter((e) => e.targetDate === reviewedDate.value).sort((a, b) => a.seq - b.seq)
 )
 const showEntries = ref(false)
 
-// ④ 复盘结论录入与写回
+// ── ④ 复盘结论录入与写回 ────────────────────────────────────────────────────
 // 主因分类权威在 shared/trading-rules/morning-review.mjs（前后端与 AI 提示词同一份）。
 const cause = ref<string>('')
 const lessons = ref('')
 const validation = computed(() => validateMorningReview({ cause: cause.value, lessons: lessons.value }))
 const causeHint = computed(() => DEVIATION_CAUSES.find((c) => c.id === cause.value) ?? null)
 
-// AI 辅助填报：偏差归因与今日要点是人工经验判断（不是取数）
+// ── AI 辅助填报：偏差归因与今日要点是**人工经验判断**（不是取数）──────────────
 // 注入的是已算好的事实：中标情况（analyzeClearing）+ 执行偏差（后端 review）+ 决策日志覆盖。
-// AI 据此判断「主因是什么、今天该注意什么」，这两个字段没有数据库可查，正是它该干的活。
+// AI 据此判断「主因是什么、今天该注意什么」——这两个字段没有数据库可查，正是它该干的活。
 const assistContext = computed(() => ({
   reviewedDate: reviewedDate.value,
   hasReviewedDeclaration: Boolean(reviewed.value),
@@ -213,10 +222,10 @@ const saveError = ref('')
 
 const written = computed(() => props.declaration?.preflight?.morningReview ?? null)
 
-// 立场复盘焦点（#2005）：同一张偏差表，三类身份问的问题不同
+// ── 立场复盘焦点（#2005）：同一张偏差表，三类身份问的问题不同 ────────────────
 const reviewFocus = computed(() => reviewFocusOf(activeStanceType.value))
 
-// 复盘体系三件套（Epic #2033 · #2040，全部只读/跳转，零新写回口径）
+// ── 复盘体系三件套（Epic #2033 · #2040，全部只读/跳转，零新写回口径）──────────
 // 三问数字复用 ①② 既有取数；环比昨日读昨日晨会写回链（昨单 preflight.morningReview
 // 记录的正是昨日 S1 复盘的执行偏差）；回测收益取 execReview.backtest 段。
 const threeQuestionsPnl = computed(() =>
@@ -231,13 +240,13 @@ const threeQuestionsPnl = computed(() =>
 const prevDeviationMwh = computed(() => reviewed.value?.preflight?.morningReview?.executionDeviationMwh ?? null)
 const prevReviewedDate = computed(() => shiftIsoDate(reviewedDate.value, -1))
 
-// 异常分支（手册：当日未写日志 → 次日晨会强制补写）
+// ── 异常分支（手册：当日未写日志 → 次日晨会强制补写）─────────────────────────
 // 判据：昨日有申报单可复盘（reviewed 存在）但决策日志链上没有归属昨日标的日的条目。
-// 拦截写回（不是提示完就算），补写入口在 S7（日志归属日期切到昨日即补写模式）。
+// 拦截写回（不是提示完就算）——补写入口在 S7（日志归属日期切到昨日即补写模式）。
 const yesterdayIso = computed(() => shiftIsoDate(props.targetDate, -1))
 const yesterdayLogMissing = computed(() => {
   if (!reviewed.value) return false
-  return !loadLog().some((e) => e.targetDate === yesterdayIso.value)
+  return !log.value.some((e) => e.targetDate === yesterdayIso.value)
 })
 
 async function writeBack() {
@@ -416,7 +425,7 @@ async function writeBack() {
           </tr>
         </tbody>
       </table>
-      <p class="mr-proto">{{ PROTOTYPE_STORAGE_NOTICE }}</p>
+      <p class="mr-proto" :class="{ server: logMode === 'server' }">{{ logNotice }}</p>
     </section>
 
     <section class="mr-panel">
@@ -517,6 +526,7 @@ async function writeBack() {
 .mr-caveat ul { margin: 6px 0 0; padding-left: 18px; line-height: 1.6; }
 .mr-log { display: flex; gap: 14px; flex-wrap: wrap; font-size: var(--font-sm); }
 .mr-proto { margin: 8px 0 0; padding-top: 8px; border-top: 1px dashed var(--el-border-color-lighter, #ebeef5); font-size: var(--font-xs); line-height: 1.6; color: #a16207; }
+.mr-proto.server { color: #166534; }
 .mr-written { margin-bottom: 8px; padding: 6px 10px; border-radius: 6px; background: #f0fdf4; color: #166534; font-size: var(--font-sm); }
 .mr-written em { font-style: normal; color: #4d7c0f; }
 .mr-pending { display: inline-block; margin-left: 8px; padding: 1px 7px; border-radius: 8px; background: #fffbeb; color: #a16207; font-weight: 600; }

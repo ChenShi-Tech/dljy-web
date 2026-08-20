@@ -28,6 +28,9 @@ async function load(force = false) {
 
 onMounted(() => void load())
 
+/** 供父组件在实例保存/提交后强制重取（缓存已被 patchTemplateInstance 作废）。 */
+defineExpose({ reload: () => load(true) })
+
 const reason = computed(() => (feed.value && !feed.value.available ? feed.value.reason : null))
 const ledger = computed(() => readinessSummary())
 

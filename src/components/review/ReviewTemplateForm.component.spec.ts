@@ -1,9 +1,17 @@
 // 通用复盘模板渲染器组件测试（Epic #2033 · M1 · #2038 验收：覆盖模板渲染器主路径）
 // 红线断言：human 判断栏无 AI 建议入口；金额 caliber 标注；slots24 聚合与峰谷未参数化提示。
-import { describe, expect, it } from 'vitest'
+// #2037 前端切换：传 instance 时草稿/提交直连服务端（PATCH 传输层 mock 掉，只测组件逻辑）。
+import { describe, expect, it, vi, beforeEach } from 'vitest'
+
+vi.mock('@/services/review/templateInstanceClient', () => ({
+  patchTemplateInstance: vi.fn()
+}))
+
+import { patchTemplateInstance } from '@/services/review/templateInstanceClient'
 import ReviewTemplateForm from './ReviewTemplateForm.vue'
 import { mount } from '@/test/mount'
 import type { SettlementRuleSpec } from '@/rules/types'
+import type { TemplateInstanceSummary } from '@/services/review/templateInstanceApi'
 
 const spec = (timeSegmentFactors: SettlementRuleSpec['timeSegmentFactors']): SettlementRuleSpec =>
   ({
@@ -11,6 +19,26 @@ const spec = (timeSegmentFactors: SettlementRuleSpec['timeSegmentFactors']): Set
     assessmentPriceBasis: 'da', assessmentPriceFloor: 0, timeSegmentFactors,
     recycleSubjects: [], notes: [], references: []
   }) as SettlementRuleSpec
+
+const instance = (over: Partial<TemplateInstanceSummary> = {}): TemplateInstanceSummary => ({
+  id: '42',
+  templateId: 'T01',
+  periodKey: '2026-08-18',
+  status: 'pending',
+  dueAt: null,
+  updatedAt: null,
+  ...over
+})
+
+beforeEach(() => {
+  vi.mocked(patchTemplateInstance).mockReset()
+})
+
+/** PATCH 是异步链：点击后多轮 nextTick 等 promise 落定 + 重渲染。 */
+async function settle(): Promise<void> {
+  const { nextTick } = await import('vue')
+  await nextTick(); await nextTick(); await nextTick()
+}
 
 describe('ReviewTemplateForm（模板渲染器）', () => {
   it('未知模板 id → 诚实未知态', () => {
@@ -93,5 +121,82 @@ describe('ReviewTemplateForm（模板渲染器）', () => {
     expect(rows[0].text()).toContain('谷')
     expect(rows[15].text()).toContain('平')
     expect(rows[5].text()).toContain('4.00')
+  })
+})
+
+describe('ReviewTemplateForm（#2037 实例提交：草稿/提交直连服务端）', () => {
+  it('无实例（端点未部署）：保持预览态——提交禁用 + 未上线提示（回归）', () => {
+    const wrapper = mount(ReviewTemplateForm, { props: { templateId: 'T01', spec: null } })
+    expect(wrapper.find('.rtf-submit').attributes('disabled')).toBeDefined()
+    expect(wrapper.text()).toContain('当前仅本地预览')
+  })
+
+  it('pending 实例：必填未齐提交禁用；填齐后存草稿/提交各发 PATCH 并 emit saved', async () => {
+    vi.mocked(patchTemplateInstance).mockResolvedValue()
+    const wrapper = mount(ReviewTemplateForm, {
+      props: { templateId: 'T01', spec: null, instance: instance() }
+    })
+    // 实例状态行 + 必填未齐 → 两个按钮都禁用
+    expect(wrapper.text()).toContain('实例 #42')
+    expect(wrapper.text()).toContain('待填报')
+    expect(wrapper.find('.rtf-submit.live').attributes('disabled')).toBeDefined()
+    // 填齐全部人工字段（T01 8 个，其中 5 个必填）
+    for (const ta of wrapper.findAll('textarea')) await ta.setValue('人工判断内容')
+    expect(wrapper.find('.rtf-submit.live').attributes('disabled')).toBeUndefined()
+    // 存草稿：只发 payload（pending→draft 由服务端状态机迁移）
+    await wrapper.find('.rtf-save').trigger('click')
+    await settle()
+    expect(patchTemplateInstance).toHaveBeenCalledWith('42', { payload: expect.objectContaining({ basisInfo: '人工判断内容' }) })
+    expect(wrapper.emitted('saved')?.[0]).toEqual(['draft'])
+    // 提交：payload + status
+    await wrapper.find('.rtf-submit.live').trigger('click')
+    await settle()
+    expect(patchTemplateInstance).toHaveBeenLastCalledWith(
+      '42',
+      { payload: expect.objectContaining({ conclusionInfo: '人工判断内容' }), status: 'submitted' }
+    )
+    expect(wrapper.emitted('saved')?.[1]).toEqual(['submitted'])
+    expect(wrapper.text()).toContain('已提交并锁定')
+  })
+
+  it('draft 实例带 payload：重开回填已填内容（不丢草稿）', () => {
+    const wrapper = mount(ReviewTemplateForm, {
+      props: {
+        templateId: 'T01',
+        spec: null,
+        instance: instance({ status: 'draft', payload: { basisInfo: '昨日已填的依据', conclusionInfo: '结论草稿' } })
+      }
+    })
+    const values = wrapper.findAll('textarea').map((ta) => ta.element.value)
+    expect(values).toContain('昨日已填的依据')
+    expect(values).toContain('结论草稿')
+    expect(wrapper.text()).toContain('草稿（已动笔）')
+  })
+
+  it('submitted 实例：锁定只读（输入框禁用 + 状态行），不发 PATCH', async () => {
+    const wrapper = mount(ReviewTemplateForm, {
+      props: {
+        templateId: 'T01',
+        spec: null,
+        instance: instance({ status: 'submitted', payload: { basisInfo: '已提交内容' } })
+      }
+    })
+    expect(wrapper.findAll('textarea').every((ta) => ta.attributes('disabled') !== undefined)).toBe(true)
+    expect(wrapper.text()).toContain('已提交（锁定）')
+    expect(wrapper.text()).toContain('待提权角色复核')
+    expect(wrapper.find('.rtf-save').exists()).toBe(false)
+    expect(patchTemplateInstance).not.toHaveBeenCalled()
+  })
+
+  it('PATCH 失败（409/403 文案）如实展示，不 emit saved', async () => {
+    vi.mocked(patchTemplateInstance).mockRejectedValue(new Error('模板实例状态 submitted 不允许迁移到 submitted'))
+    const wrapper = mount(ReviewTemplateForm, {
+      props: { templateId: 'T01', spec: null, instance: instance() }
+    })
+    for (const ta of wrapper.findAll('textarea')) await ta.setValue('内容')
+    await wrapper.find('.rtf-save').trigger('click')
+    await settle()
+    expect(wrapper.text()).toContain('不允许迁移到 submitted')
+    expect(wrapper.emitted('saved')).toBeUndefined()
   })
 })
