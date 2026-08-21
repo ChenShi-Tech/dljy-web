@@ -18,6 +18,7 @@ import {
 } from '@/services/forecast/forecastProviders'
 import { fetchBacktest, type BacktestResult } from '@/services/forecast/mlForecastClient'
 import { publishBenchContext } from '@/services/forecast/forecastBenchContext'
+import { summarizeForecastFailures, type ForecastFailure } from '@/services/forecast/failureSummary'
 
 const REGION_IDS = ['shanxi', 'shandong', 'gansu', 'guangdong', 'sichuan', 'yunnan']
 const regionOptions = REGION_IDS.map((id) => ({ id, name: getRegionById(id).name }))
@@ -182,16 +183,33 @@ async function runCompare() {
   if (!compareIds.value.length) { error.value = '请至少选择一个算法'; return }
   const generation = contextGeneration
   loadingB.value = true; error.value = ''
+  // 逐算法失败原因（后端 detail 原样保留）：此前一律 .catch(() => null) 吞掉，全失败时
+  // 只报「后端不可达？」——把「这一天没有基本面数据」「该品种本地区无真实列」这类可执行
+  // 原因伪装成服务故障，用户无从下手。收集后由 summarizeForecastFailures 呈现。
+  const failures: ForecastFailure[] = []
   try {
     setCurrentRegionId(regionId.value)
     const settled = await Promise.all(compareIds.value.map((id) => {
       const p = targetProviders.value.find((provider) => provider.id === id)
       if (!p) return Promise.resolve(null)
-      return p.run(buildCtx(), defaultParams(p)).then((r) => ({ id, name: p.name, result: r })).catch(() => null)
+      // 目录标不可用的模型不发注定失败的请求（与 runSingle/runBacktestA 同守卫，roborev job570）：
+      // 例如 fm:Chronos* 缺可选依赖，后端 predict 直接 400 Unsupported forecast model。
+      if (p.available === false) {
+        failures.push({ name: p.name, reason: p.reason || '模型当前不可用' })
+        return Promise.resolve(null)
+      }
+      return p.run(buildCtx(), defaultParams(p))
+        .then((r) => ({ id, name: p.name, result: r }))
+        .catch((e) => { failures.push({ name: p.name, reason: (e as Error).message || '预测失败' }); return null })
     }))
     if (generation !== contextGeneration) return
     const ok = settled.filter((x): x is { id: string; name: string; result: UnifiedForecastResult } => x !== null)
-    if (!ok.length) { error.value = '所有算法预测均失败：后端不可达？'; return }
+    if (!ok.length) {
+      error.value = summarizeForecastFailures(failures) || '所有算法预测均失败：后端不可达？请确认 agent-backend(:8000) 已启动。'
+      return
+    }
+    // 部分成功也须报出失败项——否则少了几条曲线却无任何提示，看起来像"这些算法没被选中"。
+    if (failures.length) error.value = summarizeForecastFailures(failures)
     compareResults.value = ok.map((o) => ({ provider: o.name, result: o.result }))
     const rows: Row[] = ok.map((o) => ({
       id: o.id, name: o.name,
@@ -231,11 +249,16 @@ async function loadOverview() {
       error.value = '当前地区暂无平台官方真实采集预测总览'
       return
     }
+    // 与 runCompare 同款：逐目标失败原因不再吞掉——全失败时页面此前只是空白无提示，
+    // 看起来像"这个地区没有总览"，实则是后端给了可执行原因（日期超范围/缺列等）。
+    const failures: ForecastFailure[] = []
     const settled = await Promise.all(overviewTargets.map((t) =>
       platform.run({ regionId: region, target: t.id, targetDate: targetDate.value || undefined, granularity: granularity.value, historyDays: historyDays.value }, {})
-        .then((r) => ({ id: t.id, name: t.name, result: r })).catch(() => null)))
+        .then((r) => ({ id: t.id, name: t.name, result: r }))
+        .catch((e) => { failures.push({ name: t.name, reason: (e as Error).message || '取数失败' }); return null })))
     if (generation !== contextGeneration) return
     overviewResults.value = settled.filter((x): x is { id: string; name: string; result: UnifiedForecastResult } => x !== null)
+    if (failures.length) error.value = summarizeForecastFailures(failures)
   } catch (e) {
     if (generation !== contextGeneration) return
     error.value = (e as Error).message
