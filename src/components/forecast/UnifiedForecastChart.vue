@@ -18,10 +18,21 @@ const props = defineProps<{
 }>()
 
 const PALETTE = ['#409eff', '#67c23a', '#e6a23c', '#f56c6c', '#909399', '#9b59b6', '#1abc9c', '#3498db']
+// 真值与基线不参与 PALETTE 轮转：它们是**参照系**而非又一个算法，配色必须与所有算法都不同，
+// 否则多算法同台时用户会把「实际值」当成第 N 个模型（#2371）。
+const ACTUAL_COLOR = '#303133'   // 近墨：事实层，视觉上压过所有预测线
+const NAIVE_COLOR = '#C0C4CC'    // 浅灰：参照下限，退到背景
 
 // #764 区间带校准标注（仅单算法且有分位带时）：conformal=true → 标注名义覆盖率+共形校准；
 // false → 标注模型分位·未校准；metrics 缺字段（非概率预测）→ 无标注。覆盖率一律由 nominal_coverage
 // 计算，禁止硬编码 80%/90% 字样。
+// 有真值 = 目标日已发生 = 本次是历史回测（后端 target_date 必须落在已有数据范围内）。
+// 不标出来，用户容易把工作台的结果当成对未来的预测（#2371）。
+const backtestCaption = computed(() =>
+  props.results.some((r) => r.result.actual?.length && r.result.evaluationMode === 'backtest')
+    ? '实际值为目标日事后真值 · 本次为历史回测（目标日已发生），非对未来的预测'
+    : '')
+
 const bandCaption = computed(() => {
   const single = props.results.length === 1 ? props.results[0].result : null
   if (!single?.lower?.length || !single?.upper?.length) return ''
@@ -74,6 +85,27 @@ function render() {
   // 曲线长得一模一样，用户只能靠记住自己勾了哪个来分辨，同台对比正是最容易看混的场景。
   // 判据取「result.mock 或 basis 为 illustrative/synthetic」：真实模型在数据缺失时也会落到
   // 合成兜底（basis=synthetic 而 mock 仍为 false），那条线同样不可按真实精度读。
+  // 目标日事后真值（#2371）：先 push 保证图例排第一，z 抬高保证压在所有预测线之上。
+  // 只画一次——多算法同台时各算法的 actual 是同一条（同地区/目标/日期），画 N 次是重复墨迹。
+  const withActual = items.find((it) => it.result.actual?.length)
+  if (withActual) {
+    series.push({
+      name: '实际值', type: 'line', ...(isPrice ? { step: 'end' as const } : {}), showSymbol: false,
+      data: withActual.result.actual,
+      lineStyle: { width: 2.6, color: ACTUAL_COLOR }, itemStyle: { color: ACTUAL_COLOR }, z: 3,
+    })
+    // 单算法时附「昨日同时段」基线：模型有没有赢过「什么都不做」，这是最直观的一眼判据。
+    // 多算法同台不画——线已经够多，再加参照线会让主对比失焦。
+    const naive = items.length === 1 ? items[0].result.baselines?.naive : undefined
+    if (naive?.length) {
+      series.push({
+        name: '昨日同时段（基线）', type: 'line', ...(isPrice ? { step: 'end' as const } : {}), showSymbol: false,
+        data: naive,
+        lineStyle: { width: 1.5, type: 'dotted' as const, color: NAIVE_COLOR }, itemStyle: { color: NAIVE_COLOR }, z: 1,
+      })
+    }
+  }
+
   items.forEach(({ provider, result, untrustedTag }, i) => {
     // 逐类精确标注，不一律写「占位」：mock=这个模型本身是假的；synthetic=模型真、但这次
     // 拿合成数据算的；illustrative=示意。混成一个词会让用户对不同性质的问题做同样的误判。
@@ -116,6 +148,7 @@ defineExpose({ resize: chart.resize })
 </script>
 
 <template>
+  <div v-if="backtestCaption" class="band-caption">{{ backtestCaption }}</div>
   <div v-if="bandCaption" class="band-caption">{{ bandCaption }}</div>
   <div ref="el" class="unified-chart" :style="{ height: (height ?? 360) + 'px' }"></div>
 </template>

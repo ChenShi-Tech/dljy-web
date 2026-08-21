@@ -69,6 +69,14 @@ export interface UnifiedForecastResult {
     picp?: number
   }
   warnings?: string[]
+  // 目标日**事后真值**与基线曲线（#2371）。后端本就用它们算 metrics/baseline_metrics，
+  // 此前不返回，图上只有一条孤立的预测曲线——看图的人无从判断预测贴不贴、错在哪个时段。
+  // 只有后端计算型算法（/predict）有；平台官方回放等 replay provider 不产出，留空。
+  actual?: number[]
+  baselines?: { naive?: number[]; knn?: number[] }
+  // backtest = 目标日已发生、真值可得（工作台的「预测」本质是历史回测：target_date
+  // 必须落在已有数据范围内）。据此在界面上标明口径，避免被当成对未来的预测。
+  evaluationMode?: 'backtest'
 }
 
 export interface SharedTaskContext {
@@ -117,6 +125,15 @@ function applyGranularity(result: UnifiedForecastResult, granularity: 24 | 96): 
     points: aggregate96to24(result.points),
     lower: result.lower ? aggregate96to24(result.lower) : undefined,
     upper: result.upper ? aggregate96to24(result.upper) : undefined,
+    // 真值/基线同样要降采样——漏掉这里，24 点模式下它们仍是 96 点，与横轴逐点错位，
+    // 画出来是一条"看着像但对不上"的线，比不画更糟。
+    actual: result.actual ? aggregate96to24(result.actual) : undefined,
+    baselines: result.baselines
+      ? {
+          naive: result.baselines.naive ? aggregate96to24(result.baselines.naive) : undefined,
+          knn: result.baselines.knn ? aggregate96to24(result.baselines.knn) : undefined,
+        }
+      : undefined,
     granularity: 24,
   }
 }
@@ -367,6 +384,13 @@ function adaptMlResult(r: ForecastResult, modelId: string, granularity: 24 | 96)
         picp: r.metrics?.picp,
       },
       warnings: r.warnings,
+      // 后端缺字段（Core 转发模式、旧版本后端）时留空，图层据此不画真值线——
+      // 不用空数组占位，否则消费方分不清「没有真值」与「真值全 0」。
+      actual: r.actual?.length ? r.actual : undefined,
+      baselines: (r.baseline_curves?.naive?.length || r.baseline_curves?.knn?.length)
+        ? { naive: r.baseline_curves?.naive, knn: r.baseline_curves?.knn }
+        : undefined,
+      evaluationMode: r.evaluation_mode === 'backtest' ? 'backtest' : undefined,
     },
     granularity,
   )
