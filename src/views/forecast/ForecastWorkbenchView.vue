@@ -18,6 +18,8 @@ import {
 } from '@/services/forecast/forecastProviders'
 import { fetchBacktest, type BacktestResult } from '@/services/forecast/mlForecastClient'
 import { publishBenchContext } from '@/services/forecast/forecastBenchContext'
+import { fetchOfficialBaseline, officialMae, hasOfficialBaseline } from '@/services/forecast/officialBaseline'
+import { aggregate96to24 } from '@/services/forecast/forecastProviders'
 import { summarizeForecastFailures, type ForecastFailure } from '@/services/forecast/failureSummary'
 
 const REGION_IDS = ['shanxi', 'shandong', 'gansu', 'guangdong', 'sichuan', 'yunnan']
@@ -64,12 +66,22 @@ function buildCtx() {
 const algoId = ref(targetProviders.value[0]?.id ?? 'platform')
 const params = ref<Record<string, unknown>>({})
 const result = ref<UnifiedForecastResult | null>(null)
+// 官方日前预测的来源标签与对照误差（#2371 后续）。只有云南新能源有——口径经 targetDate
+// 显式声明，不靠推断；负荷的 targetDate 恒为 null、两段数据反推结论矛盾，故不接。
+const officialLabel = ref('')
+const officialCompare = computed(() => {
+  const r = result.value
+  const mae = officialMae(r?.baselines?.official, r?.actual)
+  if (mae == null || r?.metrics?.mae == null) return null
+  return { official: mae, model: r.metrics.mae, beats: r.metrics.mae < mae }
+})
 const loadingA = ref(false)
 const chartA = ref<InstanceType<typeof UnifiedForecastChart> | null>(null)
 const currentProvider = computed(() => targetProviders.value.find((p) => p.id === algoId.value))
 
 function clearForecastState() {
   error.value = ''
+  officialLabel.value = ''   // 不清会残留到没有官方基线的目标/地区上，标签指向一条不存在的线
   result.value = null
   backtestA.value = null
   compareRows.value = []
@@ -121,8 +133,19 @@ async function runSingle() {
   loadingA.value = true; error.value = ''
   try {
     setCurrentRegionId(snapshot.regionId)
-    const res = await p.run(ctx, params.value)
+    // 官方日前预测与本次预测并行取（互不依赖）：取不到就是没有，不阻断预测结果展示。
+    // 只有声明了官方数据源的地区+目标才发请求，避免对没有官方预测的组合空跑一次网络。
+    const officialTask = hasOfficialBaseline(ctx.regionId, ctx.target)
+      ? fetchOfficialBaseline(ctx.regionId, ctx.target, ctx.targetDate).catch(() => null)
+      : Promise.resolve(null)
+    const [res, official] = await Promise.all([p.run(ctx, params.value), officialTask])
     if (generation !== runGeneration || !stillCurrent()) return
+    if (official) {
+      // 96 点 → 当前粒度，复用 provider 同一套聚合；漏掉会让官方线与横轴错位
+      const pts = ctx.granularity === 24 ? aggregate96to24(official.points) : official.points
+      res.baselines = { ...(res.baselines ?? {}), official: pts }
+    }
+    officialLabel.value = official?.label ?? ''
     result.value = res
     // 登记本次实验上下文供同页「申报决策」tab 跟随（回放算法不携带 model）。
     // 用请求时快照 ctx 的日期/训练窗（await 期间控件可能被改，stillCurrent 不含这两项），
@@ -355,6 +378,13 @@ onMounted(() => { ensureForecastCatalog() })
                   <span v-else>—</span>
                 </el-descriptions-item>
                 <el-descriptions-item label="较 KNN 提升">{{ result.metrics.improve_vs_knn_pct?.toFixed(1) ?? '—' }}%</el-descriptions-item>
+                <!-- 官方日前预测对照：跑赢 naive/KNN 说明不了什么，跑赢官方才是能拿出去讲的结论 -->
+                <el-descriptions-item v-if="officialCompare" :label="`vs ${officialLabel}`">
+                  <el-tag :type="officialCompare.beats ? 'success' : 'danger'" size="small">
+                    {{ officialCompare.beats ? '优于' : '劣于' }}官方 {{ Math.abs(officialCompare.model - officialCompare.official).toFixed(1) }}
+                  </el-tag>
+                  <span class="official-note">官方 MAE {{ officialCompare.official.toFixed(1) }}</span>
+                </el-descriptions-item>
                 <!-- #764 区间覆盖率对照（probabilistic 时 prob_metrics 产出 picp）；名义覆盖率一律由 nominal_coverage 计算 -->
                 <el-descriptions-item v-if="result.metrics.picp != null" label="PICP 区间覆盖">
                   实测 {{ (result.metrics.picp * 100).toFixed(1) }}% / 名义 {{ result.metrics.nominal_coverage != null ? (result.metrics.nominal_coverage * 100).toFixed(0) : '—' }}%
@@ -490,6 +520,7 @@ onMounted(() => { ensureForecastCatalog() })
 </template>
 
 <style scoped>
+.official-note { margin-left: 8px; color: var(--el-text-color-secondary); font-size: var(--font-sm); }
 .workbench { padding: 12px; }
 .hdr { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .title { font-size: var(--font-16); font-weight: 600; }

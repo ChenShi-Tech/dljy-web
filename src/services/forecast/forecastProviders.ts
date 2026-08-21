@@ -73,7 +73,10 @@ export interface UnifiedForecastResult {
   // 此前不返回，图上只有一条孤立的预测曲线——看图的人无从判断预测贴不贴、错在哪个时段。
   // 只有后端计算型算法（/predict）有；平台官方回放等 replay provider 不产出，留空。
   actual?: number[]
-  baselines?: { naive?: number[]; knn?: number[] }
+  // official：官方发布的日前预测（由页面按地区/目标另行取数注入，非后端产出）。
+  // naive/knn 是「我们自己的最笨参照」，official 是「行业里已有的答案」——模型跑赢前者
+  // 说明不了什么，跑赢后者才是能拿出去讲的结论。
+  baselines?: { naive?: number[]; knn?: number[]; official?: number[] }
   // backtest = 目标日已发生、真值可得（工作台的「预测」本质是历史回测：target_date
   // 必须落在已有数据范围内）。据此在界面上标明口径，避免被当成对未来的预测。
   evaluationMode?: 'backtest'
@@ -109,7 +112,8 @@ const PTS = Array.from({ length: 96 }, (_, i) => `p${i + 1}`)
 
 // 24/96 粒度对齐：96 点 → 24 点（每 4 个 15min 槽聚合为 1 个整点，取均值）。
 // Phase 4 后端原生支持 granularity 后此前端聚合可下沉，contract 保持不变。
-function aggregate96to24(points: number[]): number[] {
+/** 96 点 → 24 点（时段内取均值）。导出供页面注入官方基线时复用同一套聚合，避免两处口径漂移。 */
+export function aggregate96to24(points: number[]): number[] {
   const out: number[] = []
   for (let h = 0; h < 24; h++) {
     const slice = points.slice(h * 4, h * 4 + 4).filter((v) => Number.isFinite(v))
@@ -132,6 +136,7 @@ function applyGranularity(result: UnifiedForecastResult, granularity: 24 | 96): 
       ? {
           naive: result.baselines.naive ? aggregate96to24(result.baselines.naive) : undefined,
           knn: result.baselines.knn ? aggregate96to24(result.baselines.knn) : undefined,
+          official: result.baselines.official ? aggregate96to24(result.baselines.official) : undefined,
         }
       : undefined,
     granularity: 24,
