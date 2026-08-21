@@ -22,6 +22,8 @@ const PALETTE = ['#409eff', '#67c23a', '#e6a23c', '#f56c6c', '#909399', '#9b59b6
 // 否则多算法同台时用户会把「实际值」当成第 N 个模型（#2371）。
 const ACTUAL_COLOR = '#303133'   // 近墨：事实层，视觉上压过所有预测线
 const NAIVE_COLOR = '#C0C4CC'    // 浅灰：参照下限，退到背景
+const OFFICIAL_COLOR = '#795548' // 棕：外部权威。刻意选 PALETTE 里没有的色系——官方预测是
+                                 // 对照基线而非又一个算法，配色撞上任何一个算法色都会被读错
 
 // #764 区间带校准标注（仅单算法且有分位带时）：conformal=true → 标注名义覆盖率+共形校准；
 // false → 标注模型分位·未校准；metrics 缺字段（非概率预测）→ 无标注。覆盖率一律由 nominal_coverage
@@ -94,6 +96,17 @@ function render() {
       data: withActual.result.actual,
       lineStyle: { width: 2.6, color: ACTUAL_COLOR }, itemStyle: { color: ACTUAL_COLOR }, z: 3,
     })
+    // 官方日前预测：单算法与多算法同台都画。它是**所有**算法共同的标尺——跑赢「昨日同时段」
+    // 说明不了什么，跑赢官方才是结论，所以它不该因为线多而被隐藏。
+    const official = withActual.result.baselines?.official
+    if (official?.length) {
+      series.push({
+        name: '官方日前预测', type: 'line', ...(isPrice ? { step: 'end' as const } : {}), showSymbol: false,
+        data: official,
+        // 虚线：它同样是「预测」而非事实，线型上必须与实际值区分开
+        lineStyle: { width: 2, type: 'dashed' as const, color: OFFICIAL_COLOR }, itemStyle: { color: OFFICIAL_COLOR }, z: 2,
+      })
+    }
     // 单算法时附「昨日同时段」基线：模型有没有赢过「什么都不做」，这是最直观的一眼判据。
     // 多算法同台不画——线已经够多，再加参照线会让主对比失焦。
     const naive = items.length === 1 ? items[0].result.baselines?.naive : undefined
