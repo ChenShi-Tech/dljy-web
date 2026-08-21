@@ -9,10 +9,16 @@
  * 纪律：只钳默认值，不限制用户手选。用户选到区间外，后端照旧诚实告知该日无数据
  * 这里不是权限也不是过滤器，只是让首屏落在有数据的地方。
  *
- * ⚠ 这是手工维护的事实镜像，不是自动推导：值来自对 `data/private/capture-raw/` 的实测
- * （见各条注释）。采集扩展到新月份后改这一处；漏改的后果是首屏落到空态，不会给出错误数字。
- * 长期方向是由后端暴露覆盖区间接口，前端不再镜像（未开 issue，见 #1531 讨论）。
+ * ⚠ 下表是手工维护的事实镜像，只服务**静态历史批次**的地区（山西等采集已停在固定区间）。
+ * 值来自对 `data/private/capture-raw/` 的实测（见各条注释）。
+ *
+ * 云南不再走这张表（#2375）：它的价格数据自 #2370 接上中广核厂侧 API 后**每日推进**，
+ * 手工镜像每天都会过时——改一次值只能撑一天，首屏照样落到空日期上。改由
+ * `fetchCaptureCoverage()` 向后端 `/api/real-coverage` 实时取真实区间。
+ * 这就是本文件原注释所说「长期方向是由后端暴露覆盖区间接口」的落地。
  */
+
+import { apiGet } from '@/services/api'
 
 export type DateRange = { start: string; end: string }
 
@@ -33,9 +39,11 @@ const COVERAGE: Record<string, Partial<Record<CoveragePurpose, DateRange>>> = {
     price: { start: '2022-07-01', end: '2026-06-02' },
     review: { start: '2026-04-01', end: '2026-05-30' }
   },
-  // 云南（实测）：
-  // 价格 yn_system_forecast 的 da/rt_user_price 2025-07-01~2026-07-01
-  // 结算 yn_spot_settlement 仅 2026-05（#1488；是否补采 6-7 月待定）
+  // 云南：
+  // ⚠ price 已改由后端实时提供（#2375），下面这个区间**只在接口不可用时兜底**，
+  //   不再随采集推进维护——真要用到它，说明后端没答，页面本来也取不到数。
+  //   接口正常时首屏用的是 fetchCaptureCoverage() 的返回值。
+  // 结算 yn_spot_settlement 仅 2026-05（#1488；是否补采 6-7 月待定），仍是静态批次
   yunnan: {
     price: { start: '2025-07-01', end: '2026-07-01' },
     review: { start: '2026-05-01', end: '2026-05-31' }
@@ -61,4 +69,52 @@ export function clampToCoverage(regionId: string, purpose: CoveragePurpose, date
   if (date > range.end) return range.end
   if (date < range.start) return range.start
   return date
+}
+
+// ---------------------------------------------------------------------------
+// 后端实时覆盖区间（#2375）
+// ---------------------------------------------------------------------------
+
+/** 采集族 → 该用途需要哪些 datasetKey 都有数据才算「这天可用」。 */
+const PRICE_DATASETS: Record<string, { family: string; datasetKeys: string[] } | undefined> = {
+  // 监盘要算日前 vs 实时价差，两条曲线缺一条那天就是空态——故取交集而非并集。
+  // 实测 2026-08-18 就是「有日前、无实时」，若按并集会把它当作可用日，首屏依旧空。
+  yunnan: { family: 'yn_system_forecast', datasetKeys: ['da_user_price', 'rt_user_price'] }
+}
+
+type CoverageResponse = {
+  code?: number
+  data?: { datasets?: Array<{ datasetKey: string; start: string | null; end: string | null }> }
+}
+
+/**
+ * 向后端取该地区该用途的真实覆盖区间。
+ *
+ * 只对已登记 PRICE_DATASETS 的地区发请求（当前仅云南——其余地区是静态历史批次，
+ * 手工表不会过时，没必要每次进页面多打一次请求）。接口失败或数据不全时返回 null，
+ * 调用方据此回落到同步表；这是「UI 默认日期取不到就用旧值」，与数据层面的
+ * fallbackPolicy 无关——不会让页面显示任何来源不明的数字。
+ */
+export async function fetchCaptureCoverage(
+  regionId: string,
+  purpose: CoveragePurpose
+): Promise<DateRange | null> {
+  const spec = purpose === 'price' ? PRICE_DATASETS[regionId] : undefined
+  if (!spec) return null
+  try {
+    const res = await apiGet<CoverageResponse>('/api/real-coverage', {
+      family: spec.family,
+      region: regionId
+    })
+    const datasets = res?.data?.datasets
+    if (!Array.isArray(datasets)) return null
+    const picked = spec.datasetKeys.map((key) => datasets.find((d) => d.datasetKey === key))
+    if (picked.some((d) => !d?.start || !d?.end)) return null
+    // 交集：最晚的 start ~ 最早的 end
+    const start = picked.map((d) => String(d!.start).slice(0, 10)).sort().at(-1)!
+    const end = picked.map((d) => String(d!.end).slice(0, 10)).sort().at(0)!
+    return start <= end ? { start, end } : null
+  } catch {
+    return null
+  }
 }

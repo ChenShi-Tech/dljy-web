@@ -14,7 +14,7 @@ import CgnYunnanPriceStatus from '@/components/spot/CgnYunnanPriceStatus.vue'
 import { currentRegion } from '@/services/region/regionContext'
 import { getCurrentUser, type AuthUser } from '@/services/auth'
 import { isCgnYunnanPriceCompany } from '@/services/market/cgnYunnanLivePrice'
-import { clampToCoverage, isOutOfCoverage } from '@/services/market/captureCoverage'
+import { clampToCoverage, fetchCaptureCoverage, isOutOfCoverage } from '@/services/market/captureCoverage'
 import {
   allowsDualPriceSeries,
   granularityBadgeText,
@@ -33,8 +33,10 @@ function shanghaiToday(): string {
   return `${part('year')}-${part('month')}-${part('day')}`
 }
 
-// 云南中广核监盘固定读取厂侧 PG 的上海时区当天价格；其他地区仍是历史批次，
-// 默认日期必须落进各自覆盖范围。只钳默认值，不限制用户手选日期。
+// 其他地区是静态历史批次，默认日期直接钳进各自覆盖范围。
+// 云南先落今天，挂载后由 syncCoverageDefault() 用后端实时区间校正——它的价格数据受
+// 上游发布节奏限制恒滞后数日（#2375 实测日前 3 天、实时 5 天），把「今天」当默认会让
+// 首屏必然空态，用户每次都得手动往前翻。只钳默认值，不限制用户手选日期。
 const date = ref(
   currentRegion.value.id === 'yunnan'
     ? shanghaiToday()
@@ -186,9 +188,23 @@ function setAuto(on: boolean) {
   if (on) timer = window.setInterval(load, 60_000)
 }
 
+// 用后端实时覆盖区间校正默认日期。取不到就保持现值——首屏顶多还是空态，
+// 与改动前一致，不会显示任何来源不明的数字。
+//
+// 只在日期还是初始默认值时校正：请求往返期间用户可能已经手选，把他选的日期再拉回
+// 「最后有数据的一天」是劫持操作，故 await 前后各判一次。
+const initialDate = date.value
+async function syncCoverageDefault() {
+  if (date.value !== initialDate) return
+  const range = await fetchCaptureCoverage(currentRegion.value.id, 'price')
+  if (!range || date.value !== initialDate) return
+  if (date.value !== range.end) date.value = range.end   // 变更由 watch 触发重载
+}
+
 onMounted(() => {
   window.addEventListener('governance-user-changed', reloadForIdentity)
   load()
+  void syncCoverageDefault()
   setAuto(autoRefresh.value)
 })
 watch([date, threshold], load)
