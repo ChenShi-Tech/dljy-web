@@ -101,6 +101,11 @@ export type ForecastResult = {
   // forecast_core_adapter.prediction_unavailable_envelope() 返回 HTTP 200 + available:false
   // + 空 points + unavailable_reason。不声明这两个字段，消费方就会把"服务不可用"当成一次
   // 成功预测（空曲线），既不显示真实原因也不触发空态出口。
+  // 目标日事后真值 + 基线曲线（#2371，snake_case 与后端 ForecastResult 字段一致）。
+  // 后端本就用它们算 metrics/baseline_metrics；Core 转发模式下可能缺，消费方须按可选处理。
+  actual?: number[]
+  baseline_curves?: { naive?: number[]; knn?: number[] }
+  evaluation_mode?: string
   available?: boolean
   // ⚠️ 字段名以 snake_case 为准：`prediction_envelope_to_legacy()` 输出的是
   // `unavailable_reason`（forecast_core_adapter.py:393）。camelCase 变体一并声明只为兼容，
