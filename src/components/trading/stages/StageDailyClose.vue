@@ -312,7 +312,7 @@ const reportLines = computed<string[]>(() => {
   lines.push(`标的日 ${d.targetDate}，状态 ${STATUS_LABEL[d.status]}，单据 ${d.id}。`)
   const mr = pf.value.morningReview
   lines.push(mr
-    ? `S1 复盘：${mr.cause}，今日要点「${mr.lessons}」。`
+    ? `S1 复盘：${mr.cause}${mr.responsibility ? `（责任归属 ${mr.responsibilityLabel ?? mr.responsibility}）` : ''}，今日要点「${mr.lessons}」。昨日偏差成本${mr.deviationCostYuan != null ? ` ${mr.deviationCostYuan.toFixed(0)} 元（偏差率 ${mr.deviationRate != null ? mr.deviationRate.toFixed(2) + '%' : '—'}）` : '未取到'}。`
     : 'S1 复盘：未写回。')
   const dg = pf.value.dataGate
   lines.push(dg?.regime

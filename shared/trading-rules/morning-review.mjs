@@ -82,6 +82,84 @@ export const DEVIATION_CAUSES = Object.freeze([
   })
 ])
 
+// ── 责任归属四分类（配套模板七）──────────────────────────────────────────────
+//
+// 与上面的 DEVIATION_CAUSES 是**两个维度**，不是两套重复分类：
+//   · DEVIATION_CAUSES 回答「偏差为什么发生」——可观测的物理量，决定今天盯什么；
+//   · DEVIATION_RESPONSIBILITY 回答「偏差谁该负责」——复盘会追责与改进分工的口径
+//     （配套模板七《偏差归因分析报告》的行类别）。写回时两者都填（需求文档 §三 3.2）。
+
+/**
+ * @typedef {'forecast'|'emergency'|'strategy'|'operation'} DeviationResponsibilityId
+ */
+
+/**
+ * @typedef {Object} DeviationResponsibility
+ * @property {DeviationResponsibilityId} id 存储值，存 id 不存中文
+ * @property {string} label 展示名（对齐模板七行名）
+ * @property {string} hint 什么情况选它
+ */
+
+/**
+ * 偏差责任归属分类表（模板七：预测不准/突发情况/策略失误/操作失误）。
+ *
+ * `cause='none'`（无明显偏差）时无责可归，允许不填；其余主因要求填写。
+ *
+ * @type {readonly DeviationResponsibility[]}
+ */
+export const DEVIATION_RESPONSIBILITY = Object.freeze([
+  Object.freeze({
+    id: 'forecast',
+    label: '预测不准',
+    hint: '负荷/新能源/价格预测误差导致申报偏离实际'
+  }),
+  Object.freeze({
+    id: 'emergency',
+    label: '突发情况',
+    hint: '设备故障、电网事件、天气突变等不可预见因素'
+  }),
+  Object.freeze({
+    id: 'strategy',
+    label: '策略失误',
+    hint: '申报策略选择错误（方向/价位/形态判断失误）'
+  }),
+  Object.freeze({
+    id: 'operation',
+    label: '操作失误',
+    hint: '人工填报或操作错误（量价录错、漏报、时限错过）'
+  })
+])
+
+/** @type {Record<DeviationResponsibilityId, string>} */
+export const RESPONSIBILITY_LABEL = Object.freeze(
+  Object.fromEntries(DEVIATION_RESPONSIBILITY.map((r) => [r.id, r.label]))
+)
+
+/** 可选责任归属 id 全集。 */
+export const RESPONSIBILITY_IDS = Object.freeze(DEVIATION_RESPONSIBILITY.map((r) => r.id))
+
+/**
+ * 判断某个存储值是不是合法责任归属 id。
+ * @param {unknown} value
+ * @returns {value is DeviationResponsibilityId}
+ */
+export function isResponsibilityId(value) {
+  return (
+    typeof value === 'string' &&
+    RESPONSIBILITY_IDS.includes(/** @type {DeviationResponsibilityId} */ (value))
+  )
+}
+
+/**
+ * 展示用：把责任归属存储值渲染成人话。命中不了原样返回（与 causeLabelOf 同一纪律）。
+ * @param {unknown} value
+ * @returns {string}
+ */
+export function responsibilityLabelOf(value) {
+  if (typeof value !== 'string' || !value) return '—'
+  return RESPONSIBILITY_LABEL[/** @type {DeviationResponsibilityId} */ (value)] ?? value
+}
+
 /** @type {Record<DeviationCauseId, string>} */
 export const CAUSE_LABEL = Object.freeze(
   Object.fromEntries(DEVIATION_CAUSES.map((c) => [c.id, c.label]))
@@ -148,18 +226,98 @@ export const LESSONS_MIN_LENGTH = 4
  * @property {string[]} errors 人话错误信息，可直接上屏
  */
 
+// ── 峰平谷聚合（需求 3 · 第二层「分时段」，对齐模板二/模板八的分时段口径）────────
+
+/**
+ * @typedef {Object} TimeSegmentDef
+ * @property {string} segment 段名（如「高峰」「平段」「低谷」）
+ * @property {number[]} hours 属于该段的整点小时（0–23；来源：地区规则包 timeSegmentFactors）
+ * @property {number} factor 系数（峰平谷拆分只用 hours，factor 仅为对齐规则包结构）
+ */
+
+/**
+ * @typedef {Object} PeakFlatValleyResult
+ * @property {string} segment 段名
+ * @property {number} slots 该段覆盖的 96 点时段数
+ * @property {number} totalMwh 该段电量合计（MWh）
+ * @property {number|null} sharePct 该段电量占比（%）；总量为 0 时 null（不用 0 冒充）
+ */
+
+/**
+ * 把 96 点序列按峰平谷时段定义聚合（需求 3 第二层）。
+ *
+ * 时段定义由调用方从**地区规则包**传入（如 src/rules/provinces/yunnan/settlement.ts
+ * 的 timeSegmentFactors）——峰平谷时段各省不同，规则层不硬编码。15 分钟点归属按
+ * 该点起始整点判断（点 i 属于小时 floor(i/4)）。未覆盖任何段的小时（定义残缺）
+ * 计入「未定义段」行，不静默丢弃。
+ *
+ * @param {readonly number[] | null | undefined} curve96 96 点电量序列（MWh/点）
+ * @param {readonly TimeSegmentDef[]} segments 峰平谷时段定义
+ * @returns {PeakFlatValleyResult[]}
+ */
+export function aggregatePeakFlatValley(curve96, segments) {
+  if (!Array.isArray(curve96) || curve96.length === 0) return []
+  // 预排序段名，输出稳定（不依赖传入顺序）
+  const defs = [...segments].sort((a, b) => a.segment.localeCompare(b.segment, 'zh-Hans'))
+  const acc = new Map(defs.map((d) => [d.segment, { segment: d.segment, slots: 0, totalMwh: 0 }]))
+  const undefinedRow = { segment: '未定义段', slots: 0, totalMwh: 0 }
+  const hourToSegment = new Map()
+  for (const d of defs) {
+    for (const h of d.hours) {
+      if (Number.isInteger(h) && h >= 0 && h <= 23) hourToSegment.set(h, d.segment)
+    }
+  }
+  let defined = false
+  curve96.forEach((v, i) => {
+    const hour = Math.floor(i / 4)
+    const seg = hourToSegment.get(hour)
+    const value = Number.isFinite(v) ? v : 0
+    if (seg) {
+      defined = true
+      const row = acc.get(seg)
+      row.slots += 1
+      row.totalMwh += value
+    } else {
+      undefinedRow.slots += 1
+      undefinedRow.totalMwh += value
+    }
+  })
+  const grand = [...acc.values()].reduce((s, r) => s + r.totalMwh, 0) + undefinedRow.totalMwh
+  const withShare = (r) => ({
+    ...r,
+    totalMwh: Number(r.totalMwh.toFixed(4)),
+    sharePct: grand > 0 ? Number(((r.totalMwh / grand) * 100).toFixed(1)) : null
+  })
+  const rows = [...acc.values()].map(withShare)
+  if (undefinedRow.slots > 0 && defined) rows.push(withShare(undefinedRow))
+  return rows
+}
+
 /**
  * 复盘结论能否写回。
  *
  * 注意 `pending` **同样要求写今日要点**：主因待查不等于今天没有该盯的事，缺了要点
  * 这条复盘对次日作业就是零输出。
  *
- * @param {MorningReviewDraft} draft
+ * 责任归属（需求 1）：主因非 `none` 时必填——「偏差为什么发生」与「偏差谁该负责」
+ * 两问都要有答案才能写回；`none` 无责可归，允许不填。
+ *
+ * @param {MorningReviewDraft & { responsibility?: unknown }} draft
  * @returns {MorningReviewValidation}
  */
 export function validateMorningReview(draft) {
   const errors = []
   if (!isCauseId(draft?.cause)) errors.push('请选择偏差主因（判不了就选「待分析」）')
+  // 责任归属（需求 1）：主因已判定（非 none/pending）时必填——「偏差为什么发生」与
+  // 「偏差谁该负责」两问都要有答案。none 无责可归；pending 主因未定，责任归属同样
+  // 未定（同为欠条，晨会补定后一起回填）——强填只会逼出随手选的假归因。
+  if (isCauseId(draft?.cause) && draft.cause !== 'none' && draft.cause !== 'pending') {
+    if (draft?.responsibility == null) {
+      errors.push('请选择责任归属（偏差谁该负责；主因「待分析」时随晨会讨论一并回填）')
+    } else if (!isResponsibilityId(draft.responsibility)) {
+      errors.push('责任归属不合法（预测不准/突发情况/策略失误/操作失误）')
+    }
+  }
   const lessons = typeof draft?.lessons === 'string' ? draft.lessons.trim() : ''
   if (lessons.length < LESSONS_MIN_LENGTH) {
     errors.push(`今日不重犯要点至少 ${LESSONS_MIN_LENGTH} 字，要具体到今天盯哪个量`)

@@ -25,7 +25,7 @@ export declare function causeLabelOf(value: unknown): string;
 export declare function isPendingCause(value: unknown): boolean;
 export declare const LESSONS_MIN_LENGTH: number;
 
-export type MorningReviewDraft = { cause: unknown; lessons: unknown };
+export type MorningReviewDraft = { cause: unknown; lessons: unknown; responsibility?: unknown };
 export type MorningReviewValidation = { ok: boolean; errors: string[] };
 /** 复盘结论能否写回；`pending` 同样要求写今日要点。 */
 export declare function validateMorningReview(draft: MorningReviewDraft): MorningReviewValidation;
@@ -35,3 +35,49 @@ export declare const MORNING_WINDOW: { startMinute: number; endMinute: number };
 export type MorningWindowState = 'before' | 'within' | 'after';
 export declare function morningWindowState(minuteOfDay: number): MorningWindowState;
 export declare const MORNING_WINDOW_NOTE: Record<MorningWindowState, string>;
+
+/** 偏差责任归属 id（配套模板七四分类：偏差「谁该负责」维度）。 */
+export type DeviationResponsibilityId = 'forecast' | 'emergency' | 'strategy' | 'operation';
+
+export type DeviationResponsibility = {
+    id: DeviationResponsibilityId;
+    label: string;
+    /** 什么情况选它 */
+    hint: string;
+};
+
+/** 责任归属分类表；与 DEVIATION_CAUSES（物理成因）是两个维度，写回时都填。 */
+export declare const DEVIATION_RESPONSIBILITY: readonly DeviationResponsibility[];
+export declare const RESPONSIBILITY_LABEL: Record<DeviationResponsibilityId, string>;
+export declare const RESPONSIBILITY_IDS: readonly DeviationResponsibilityId[];
+export declare function isResponsibilityId(value: unknown): value is DeviationResponsibilityId;
+/** 展示用；命中不了的值原样返回（与 causeLabelOf 同一纪律）。 */
+export declare function responsibilityLabelOf(value: unknown): string;
+
+/** 峰平谷时段定义（结构对齐地区规则包 timeSegmentFactors）。 */
+export type TimeSegmentDef = {
+    segment: string;
+    /** 属于该段的整点小时 0–23 */
+    hours: number[];
+    factor: number;
+};
+
+export type PeakFlatValleyResult = {
+    segment: string;
+    /** 该段覆盖的 96 点时段数 */
+    slots: number;
+    /** 该段电量合计（MWh） */
+    totalMwh: number;
+    /** 该段占比（%）；总量为 0 时 null（不用 0 冒充） */
+    sharePct: number | null;
+};
+
+/**
+ * 96 点序列按峰平谷时段定义聚合（需求 3 第二层）。
+ * 时段定义由调用方从地区规则包传入——峰平谷各省不同，规则层不硬编码。
+ * 未覆盖任何段的小时计入「未定义段」行，不静默丢弃。
+ */
+export declare function aggregatePeakFlatValley(
+    curve96: readonly number[] | null | undefined,
+    segments: readonly TimeSegmentDef[]
+): PeakFlatValleyResult[];
