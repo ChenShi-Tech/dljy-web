@@ -1,10 +1,10 @@
 // @vitest-environment happy-dom
 //
-// 连续视图与「实际值替代预测」的数据组装（#2387）。
+// 单日视图下真值与预测的数据组装（#2389）。
 //
 // 为什么必须是组件测试：这层逻辑的产物是喂给 ECharts 的 series 数组，错了不会报错，
-// 只会画出一条位置不对的线——横轴偏移半天、或该断开的地方连成一片。看图能发现，
-// 但没有任何自动信号，所以在这里把 setOption 拦下来直接断言数据本身。
+// 只会画出一条位置不对的线——该断开的地方连成一片、或该保留的预测被整段裁掉。
+// 看图能发现，但没有任何自动信号，所以在这里把 setOption 拦下来直接断言数据本身。
 import { describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
@@ -18,7 +18,11 @@ import UnifiedForecastChart from './UnifiedForecastChart.vue'
 import type { UnifiedForecastResult } from '@/services/forecast/forecastProviders'
 
 const N = 96
+const CLEARED = 40      // 已出清的时段数（约到 10:00）
 const seq = (base: number) => Array.from({ length: N }, (_, i) => base + i)
+/** 部分出清日的真值：前 CLEARED 个时段有值，其余尚未发生。 */
+const partialActual = (base: number): (number | null)[] =>
+  Array.from({ length: N }, (_, i) => (i < CLEARED ? base + i : null))
 
 function result(over: Partial<UnifiedForecastResult> = {}): UnifiedForecastResult {
   return {
@@ -44,64 +48,63 @@ const seriesNamed = (opt: ChartOption, name: string): SeriesLike => {
   return hit
 }
 
-describe('连续视图（过去实线 → 未来虚线）', () => {
-  it('未来日：横轴翻倍，历史落在前半段、预测落在后半段', async () => {
-    const opt = await render({
-      results: [{ provider: 'LightGBM', result: result({ history: seq(500), evaluationMode: 'forecast' }) }],
-      continuous: true,
-    })
-    expect(opt.xAxis.data).toHaveLength(N * 2)
-    const hist = seriesNamed(opt, '实际值')
-    const pred = seriesNamed(opt, 'LightGBM')
-    // 历史只占前半段，后半段留空——否则会被画成「未来也有实测」
-    expect(hist.data.slice(0, N)).toEqual(seq(500))
-    expect(hist.data.slice(N).every((v: unknown) => v === null)).toBe(true)
-    // 预测只占后半段：前半段留空，否则预测线会整体左移半天
-    expect(pred.data.slice(0, N).every((v: unknown) => v === null)).toBe(true)
-    expect(pred.data.slice(N)).toEqual(seq(1000))
+describe('横轴恒为目标日一天', () => {
+  it('无论有无真值，横轴都是 96 点——不把前一天铺进来占掉半屏', async () => {
+    for (const over of [{}, { actual: seq(300), evaluationMode: 'backtest' as const },
+      { evaluationMode: 'forecast' as const }]) {
+      const opt = await render({ results: [{ provider: 'LightGBM', result: result(over) }] })
+      expect(opt.xAxis.data).toHaveLength(N)
+      expect(seriesNamed(opt, 'LightGBM').data).toHaveLength(N)
+    }
   })
 
-  it('未来日的预测线必须是虚线——它不是事实，线型上要与实际值区分', async () => {
+  it('预测线不发生任何位移——偏移一格整条线的时段归属就全错了', async () => {
     const opt = await render({
-      results: [{ provider: 'LightGBM', result: result({ history: seq(500), evaluationMode: 'forecast' }) }],
-      continuous: true,
+      results: [{ provider: 'LightGBM', result: result({ actual: seq(300) }) }],
     })
-    expect(seriesNamed(opt, 'LightGBM').lineStyle?.type).toBe('dashed')
-    expect(seriesNamed(opt, '实际值').lineStyle?.type).toBeUndefined()
-  })
-
-  it('没有历史段时退回单日视图，不留半屏空白', async () => {
-    const opt = await render({
-      results: [{ provider: 'LightGBM', result: result() }],
-      continuous: true,
-    })
-    expect(opt.xAxis.data).toHaveLength(N)
-  })
-
-  it('未开连续视图时横轴与数据都不偏移', async () => {
-    const opt = await render({
-      results: [{ provider: 'LightGBM', result: result({ history: seq(500) }) }],
-    })
-    expect(opt.xAxis.data).toHaveLength(N)
     expect(seriesNamed(opt, 'LightGBM').data).toEqual(seq(1000))
   })
 })
 
+describe('部分出清日：实线只覆盖已发生的时段', () => {
+  it('真值原样透传，未出清的时段留 null 让实线自然断开', async () => {
+    const actual = partialActual(300)
+    const opt = await render({
+      results: [{ provider: 'LightGBM', result: result({ actual, evaluationMode: 'partial' }) }],
+    })
+    const line = seriesNamed(opt, '实际值')
+    expect(line.data).toEqual(actual)
+    expect(line.data.slice(CLEARED).every((v) => v === null)).toBe(true)
+  })
+
+  it('开启「实际值替代」只裁掉已出清的那段，未出清的预测必须留下', async () => {
+    const actual = partialActual(300)
+    const opt = await render({
+      results: [{ provider: 'LightGBM', result: result({ actual, evaluationMode: 'partial' }) }],
+      mergeActual: true,
+    })
+    const pred = seriesNamed(opt, 'LightGBM').data
+    expect(pred.slice(0, CLEARED).every((v) => v === null)).toBe(true)
+    // 这条是整个 AEMO 形态的关键：按「数组有长度」判有真值会把未出清的时段一起裁掉，
+    // 图上就只剩半天实线、右半边空白——恰好抹掉使用者唯一想看的那部分。
+    expect(pred.slice(CLEARED)).toEqual(seq(1000).slice(CLEARED))
+  })
+})
+
 describe('实际值替代该时段预测', () => {
-  it('开启后有真值的时段预测被裁掉（断开而非插值衔接）', async () => {
+  it('全出清日开启后预测被整条裁掉（断开而非插值衔接）', async () => {
     const actual = seq(300)
     const opt = await render({
       results: [{ provider: 'LightGBM', result: result({ actual, evaluationMode: 'backtest' }) }],
       mergeActual: true,
     })
-    expect(seriesNamed(opt, 'LightGBM').data.every((v: unknown) => v === null)).toBe(true)
+    expect(seriesNamed(opt, 'LightGBM').data.every((v) => v === null)).toBe(true)
     expect(seriesNamed(opt, '实际值').data).toEqual(actual)
   })
 
   it('关闭时两条线各画各的——建模工作台正是靠这个看模型贴不贴', async () => {
-    const actual = seq(300)
     const opt = await render({
-      results: [{ provider: 'LightGBM', result: result({ actual, evaluationMode: 'backtest' }) }],
+      results: [{ provider: 'LightGBM', result: result({ actual: seq(300), evaluationMode: 'backtest' }) }],
       mergeActual: false,
     })
     expect(seriesNamed(opt, 'LightGBM').data).toEqual(seq(1000))
@@ -113,5 +116,21 @@ describe('实际值替代该时段预测', () => {
       mergeActual: true,
     })
     expect(seriesNamed(opt, 'LightGBM').data).toEqual(seq(1000))
+  })
+})
+
+describe('线型区分事实与预测', () => {
+  it('未来日的预测线是虚线，实际值是实线', async () => {
+    const opt = await render({
+      results: [{ provider: 'LightGBM', result: result({ evaluationMode: 'forecast' }) }],
+    })
+    expect(seriesNamed(opt, 'LightGBM').lineStyle?.type).toBe('dashed')
+  })
+
+  it('有真值时实际值线不带虚线线型', async () => {
+    const opt = await render({
+      results: [{ provider: 'LightGBM', result: result({ actual: seq(300), evaluationMode: 'backtest' }) }],
+    })
+    expect(seriesNamed(opt, '实际值').lineStyle?.type).toBeUndefined()
   })
 })

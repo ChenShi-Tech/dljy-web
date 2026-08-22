@@ -69,12 +69,8 @@ const result = ref<UnifiedForecastResult | null>(null)
 // 官方日前预测的来源标签与对照误差（#2371 后续）。只有云南新能源有——口径经 targetDate
 // 显式声明，不靠推断；负荷的 targetDate 恒为 null、两段数据反推结论矛盾，故不接。
 const officialLabel = ref('')
-// AEMO 式连续视图（#2387）：横轴跨「目标日前一天 + 目标日」。默认开——目标日尚未出清时，
-// 这是唯一能同时看到「刚发生了什么」与「接下来预测什么」的形态；数据里没有历史段时
-// 图层自己会退回单日视图。
-const continuousView = ref(true)
-// 真实值替代预测：有真值的时段裁掉预测线。默认关——把两条线都画出来才看得出模型贴不贴，
-// 那正是建模工作台的用途；要 AEMO 那种「实线接虚线」的干净观感时再打开。
+// 真实值替代预测（#2389）：有真值的时段裁掉预测线，形成 AEMO 式「实线接虚线」。
+// 默认关——把两条线都画出来才看得出模型贴不贴，那正是建模工作台的用途。
 const mergeActual = ref(false)
 const officialCompare = computed(() => {
   const r = result.value
@@ -369,11 +365,10 @@ onMounted(() => { ensureForecastCatalog() })
           </div>
 
           <div class="view-toggles">
-            <el-checkbox v-model="continuousView" size="small">连续视图（含前一日实测）</el-checkbox>
             <el-checkbox v-model="mergeActual" size="small">实际值替代该时段预测</el-checkbox>
           </div>
           <UnifiedForecastChart ref="chartA" :results="chartResultsA" :height="360"
-            :continuous="continuousView" :merge-actual="mergeActual" v-loading="loadingA" />
+            :merge-actual="mergeActual" v-loading="loadingA" />
 
           <div v-if="result" class="metrics">
             <el-descriptions :column="4" border size="small"
