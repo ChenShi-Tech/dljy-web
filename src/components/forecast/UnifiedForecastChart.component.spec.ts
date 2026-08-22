@@ -66,8 +66,8 @@ describe('连续视图（过去实线 → 未来虚线）', () => {
       results: [{ provider: 'LightGBM', result: result({ history: seq(500), evaluationMode: 'forecast' }) }],
       continuous: true,
     })
-    expect(seriesNamed(opt, 'LightGBM').lineStyle.type).toBe('dashed')
-    expect(seriesNamed(opt, '实际值').lineStyle.type).toBeUndefined()
+    expect(seriesNamed(opt, 'LightGBM').lineStyle?.type).toBe('dashed')
+    expect(seriesNamed(opt, '实际值').lineStyle?.type).toBeUndefined()
   })
 
   it('没有历史段时退回单日视图，不留半屏空白', async () => {
