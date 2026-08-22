@@ -2,7 +2,7 @@
 // 驾驶舱主图与申报工作台共用；合成形态与后端 harness 合成逻辑同形，保证演示一致。
 import { fetchCaptured } from '@/services/captured'
 import { currentRegion } from '@/services/region/regionContext'
-import { createSpotPriceLoaders, curveStats } from '@/services/market/spotPriceCore'
+import { createSpotPriceLoaders, curveStats, timeAxis96 } from '@/services/market/spotPriceCore'
 import type { CurvePoint, SpotCurve } from '@/services/market/spotPriceCore'
 
 // 走 fetchCaptured：自动带当前地区 region + 写 regionDataStatus（使申报工作台等
@@ -13,5 +13,5 @@ import type { CurvePoint, SpotCurve } from '@/services/market/spotPriceCore'
 const loaders = createSpotPriceLoaders(fetchCaptured, { resolveRegion: () => currentRegion.value.id })
 
 export const { loadClearingCurve, loadForecastCurve } = loaders
-export { curveStats }
+export { curveStats, timeAxis96 }
 export type { CurvePoint, SpotCurve }

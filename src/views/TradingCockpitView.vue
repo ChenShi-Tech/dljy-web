@@ -23,10 +23,14 @@ import {
 } from 'lucide-vue-next'
 import { useEChart } from '../composables/useEChart'
 import { axisTooltip, bottomLayoutLegend, bottomToolbox, emptyOverlay, insideZoom } from '@/services/chart/chartOptions'
-import { curveStats, loadClearingCurve, loadForecastCurve, type SpotCurve } from '@/services/market/spotPrice'
+import { curveStats } from '@/services/market/spotPrice'
+import { fetchClearingPrice } from '@/services/market/regionClearingPrice'
+import { fetchCaptureCoverage } from '@/services/market/captureCoverage'
+import { fetchLatestForecast } from '@/services/forecast/latestForecast'
+import { buildPricePanel, resolvePanelDate } from '@/services/market/cockpitPricePanel'
 import RegionDataBanner from '@/components/region/RegionDataBanner.vue'
 import TrustBadge from '@/components/common/TrustBadge.vue'
-import { worstBasis, type DataBasis } from '@/services/dataBasis'
+import type { DataBasis } from '@/services/dataBasis'
 import SpotCockpitCore from '@/components/spot/cockpit/SpotCockpitCore.vue'
 import CockpitRegionLockedCard from '@/components/spot/cockpit/CockpitRegionLockedCard.vue'
 import AgentChatPanel from '@/components/agent/AgentChatPanel.vue'
@@ -331,12 +335,18 @@ const cgnPriceBundle = ref<CgnYunnanPriceBundle | null>(null)
 const priceError = ref('')
 let priceTimer: number | undefined
 
+// 通用路径的图标题带上**实际画的那一天**：云南价格受上游发布节奏限制恒滞后数日，
+// 写死「今日」会让人把几天前的行情当成今天的（#2392）。
+const pricePanelDate = ref('')
 const priceChartTitle = computed(() => usesCgnPrivatePrice.value
   ? '现货价格 · 今日日前 vs 今日实时'
-  : '现货价格 · 昨日出清 vs 今日预测')
+  : `现货价格 · ${pricePanelDate.value || '—'} 实况 vs 模型预测`)
+// 真实曲线的口径名由取数层给：云南是「日前用户侧电价」、山西是交易中心「实际出清」，
+// 两者口径不同却共用一个图例名就是误导。
+const clearingLabel = ref('实际出清')
 const priceLegend = computed<[string, string]>(() => usesCgnPrivatePrice.value
   ? ['今日日前', '今日实时']
-  : ['昨日出清', '今日预测'])
+  : [clearingLabel.value, '模型预测'])
 
 function reloadForGovernanceUser() {
   // 账号切换必须先让旧集团数据立即离开页面，再以新令牌重取；请求失败时保持空态。
@@ -375,7 +385,6 @@ async function renderChart() {
   priceError.value = ''
   try {
     const today = new Date()
-    const yesterday = new Date(today.getTime() - 86400000)
     let firstPoints: Array<{ time: string; value: number | null }>
     let secondPoints: Array<{ time: string; value: number | null }>
 
@@ -396,17 +405,27 @@ async function renderChart() {
       else if (bundle.availability === 'partial') priceError.value = '日前或实时价格部分缺失'
     } else {
       cgnPriceBundle.value = null
-      const [clearing, forecast]: SpotCurve[] = await Promise.all([
-        loadClearingCurve(fmtDate(yesterday)),
-        loadForecastCurve(fmtDate(today))
+      // 画哪一天由**真实覆盖区间**决定，不再写死「今天」：云南价格受上游发布节奏限制恒滞后
+      // 数日（今天 08-22 时节点电价最新到 08-18），钉在今天就永远落在无数据的日期上——
+      // 此前正是因此长期显示 synth96 合成的假曲线与编造的 KPI。
+      const region = currentRegion.value.id
+      const coverage = await fetchCaptureCoverage(region, 'clearing')
+      const date = resolvePanelDate(fmtDate(today), coverage)
+      const [clearing, forecast] = await Promise.all([
+        fetchClearingPrice(region, date),
+        fetchLatestForecast(region, 'price', date)
       ])
       if (seq !== chartSeq) return // 期间切了地区/重渲染 → 丢弃旧曲线
-      isDemo.value = clearing.isDemo || forecast.isDemo
-      priceBasis.value = worstBasis(clearing.basis, forecast.basis)
-      hourlySourced.value = clearing.sourcePoints === 24 || forecast.sourcePoints === 24
-      stats.value = curveStats(forecast.points)
-      firstPoints = clearing.points
-      secondPoints = forecast.points
+      const panel = buildPricePanel({ date, coverage, clearing, forecast })
+      pricePanelDate.value = date
+      clearingLabel.value = clearing.label
+      isDemo.value = false
+      hourlySourced.value = panel.hourlySourced
+      stats.value = panel.stats
+      priceBasis.value = panel.basis
+      priceError.value = panel.error
+      firstPoints = panel.realPoints
+      secondPoints = panel.forecastPoints
     }
     if (!chartEl.value) return
     const times = [...new Set([...firstPoints.map((point) => point.time), ...secondPoints.map((point) => point.time)])].sort()
@@ -594,10 +613,10 @@ onBeforeUnmount(() => {
         <el-tag size="small" type="success">{{ yunnanProfile.marketStage }}</el-tag>
       </div>
       <div class="overview-kpis" aria-label="实时价格摘要">
-        <div><span>{{ usesCgnPrivatePrice ? '实时均价' : '预测均价' }}</span><b>{{ formatStat(stats.mean) }}</b><small>元/MWh</small></div>
+        <div><span>{{ usesCgnPrivatePrice ? '实时均价' : '出清均价' }}</span><b>{{ formatStat(stats.mean) }}</b><small>元/MWh</small></div>
         <div><span>峰谷价差</span><b>{{ formatStat(stats.spread) }}</b><small>元/MWh</small></div>
-        <div><span>{{ usesCgnPrivatePrice ? '实时最高' : '预测最高' }}</span><b>{{ formatStat(stats.max) }}</b><small>元/MWh</small></div>
-        <div><span>{{ usesCgnPrivatePrice ? '实时最低' : '预测最低' }}</span><b>{{ formatStat(stats.min) }}</b><small>元/MWh</small></div>
+        <div><span>{{ usesCgnPrivatePrice ? '实时最高' : '出清最高' }}</span><b>{{ formatStat(stats.max) }}</b><small>元/MWh</small></div>
+        <div><span>{{ usesCgnPrivatePrice ? '实时最低' : '出清最低' }}</span><b>{{ formatStat(stats.min) }}</b><small>元/MWh</small></div>
       </div>
 
       <section class="panel chart-panel">

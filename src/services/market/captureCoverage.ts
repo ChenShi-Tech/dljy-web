@@ -23,7 +23,7 @@ import { apiGet } from '@/services/api'
 export type DateRange = { start: string; end: string }
 
 /** 用途：price=只需要价格序列（监盘）；review=需要申报 ∩ 价格 或结算口径（复盘）。 */
-export type CoveragePurpose = 'price' | 'review'
+export type CoveragePurpose = 'price' | 'review' | 'clearing'
 
 const COVERAGE: Record<string, Partial<Record<CoveragePurpose, DateRange>>> = {
   // 山西（实测 2026-08-01 / 2026-08-03）：
@@ -82,6 +82,12 @@ const PRICE_DATASETS: Record<string, { family: string; datasetKeys: string[] } |
   yunnan: { family: 'yn_system_forecast', datasetKeys: ['da_user_price', 'rt_user_price'] }
 }
 
+/** 出清价口径（驾驶舱主图）：只要日前那条。与监盘的差别正是 2026-08-18 那一天——
+ *  监盘取 da∩rt 会把它判成不可用，而只看出清的驾驶舱那天是有数据的。 */
+const CLEARING_DATASETS: Record<string, { family: string; datasetKeys: string[] } | undefined> = {
+  yunnan: { family: 'yn_system_forecast', datasetKeys: ['da_user_price'] }
+}
+
 type CoverageResponse = {
   code?: number
   data?: { datasets?: Array<{ datasetKey: string; start: string | null; end: string | null }> }
@@ -99,7 +105,9 @@ export async function fetchCaptureCoverage(
   regionId: string,
   purpose: CoveragePurpose
 ): Promise<DateRange | null> {
-  const spec = purpose === 'price' ? PRICE_DATASETS[regionId] : undefined
+  const spec = purpose === 'price' ? PRICE_DATASETS[regionId]
+    : purpose === 'clearing' ? CLEARING_DATASETS[regionId]
+      : undefined
   if (!spec) return null
   try {
     const res = await apiGet<CoverageResponse>('/api/real-coverage', {

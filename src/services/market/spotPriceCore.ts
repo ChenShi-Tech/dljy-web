@@ -148,7 +148,9 @@ function replayPayload(body: unknown, requestedRegion?: string | null): unknown 
   return 'data' in envelope ? envelope.data : body
 }
 
-const timeAxis96 = Array.from({ length: 96 }, (_, i) => {
+/** 96 点标准时间轴（00:00…23:45）。导出供消费方把纯数组曲线铺到同一横轴上——
+ *  各写一份迟早与出清曲线的时刻对不齐，那种错在图上看不出来。 */
+export const timeAxis96 = Array.from({ length: 96 }, (_, i) => {
   const h = String(Math.floor(i / 4)).padStart(2, '0')
   return `${h}:${String((i % 4) * 15).padStart(2, '0')}`
 })
@@ -285,10 +287,14 @@ export function curveStats(points: CurvePoint[]): { mean: number | null; max: nu
   // ±Infinity、mean 会被 max(1,0) 掩盖成 0，这里返回全 null，让消费方（KPI formatStat）显示「—」。
   if (vs.length === 0) return { mean: null, max: null, min: null, spread: null }
   const mean = vs.reduce((a, b) => a + b, 0) / vs.length
+  // 四个统计量统一保留一位小数。此前 max/min 原样返回，而真实电价带 8 位小数
+  // （实测 292.37200928 元/MWh）——KPI 卡片会把它整串打出来，撑破版式也没人读得出量级。
+  // 一直没暴露是因为这个面板此前显示的是合成数据，值本就是规整的（#2392）。
+  const round1 = (v: number) => Math.round(v * 10) / 10
   return {
-    mean: Math.round(mean * 10) / 10,
-    max: Math.max(...vs),
-    min: Math.min(...vs),
-    spread: Math.round((Math.max(...vs) - Math.min(...vs)) * 10) / 10
+    mean: round1(mean),
+    max: round1(Math.max(...vs)),
+    min: round1(Math.min(...vs)),
+    spread: round1(Math.max(...vs) - Math.min(...vs))
   }
 }

@@ -265,6 +265,19 @@ describe('curveStats 空序列兜底', () => {
     expect(curveStats([])).toEqual({ mean: null, max: null, min: null, spread: null })
   })
 
+  it('四个统计量都保留一位小数——真实电价带 8 位小数，KPI 卡片会整串打出来', () => {
+    // 实测的云南日前用户侧电价形态（#2392）：此前 max/min 原样返回，页面显示
+    // 「出清最高 292.37200928」。一直没暴露是因为这个面板显示的是合成数据。
+    const stats = curveStats([
+      { time: '00:00', value: 292.37200928 },
+      { time: '00:15', value: 196.71200562 }
+    ])
+    expect(stats.max).toBe(292.4)
+    expect(stats.min).toBe(196.7)
+    expect(stats.mean).toBe(244.5)
+    expect(stats.spread).toBe(95.7)
+  })
+
   it('正常序列算 mean/max/min/spread', () => {
     expect(curveStats([
       { time: '00:00', value: 10 },
