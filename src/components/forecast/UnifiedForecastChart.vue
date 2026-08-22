@@ -15,6 +15,17 @@ const props = defineProps<{
   // 只看曲线的人会当它可信。
   results: { provider: string; result: UnifiedForecastResult; untrustedTag?: string }[]
   height?: number
+  /**
+   * 连续视图（#2387）：横轴跨「目标日前一天 + 目标日」，过去段画真值、未来段画预测，
+   * 中间一条分界线。目标日尚未出清时，这是唯一能同时看到「刚发生了什么」与
+   * 「接下来预测什么」的形态。
+   */
+  continuous?: boolean
+  /**
+   * 真实值替代预测：有真值的时段把预测曲线裁掉（置 null 断开），只在没有真值的时段画预测。
+   * 关闭时两条线各画各的，用来看模型在已发生时段贴不贴。
+   */
+  mergeActual?: boolean
 }>()
 
 const PALETTE = ['#409eff', '#67c23a', '#e6a23c', '#f56c6c', '#909399', '#9b59b6', '#1abc9c', '#3498db']
@@ -30,10 +41,15 @@ const OFFICIAL_COLOR = '#795548' // 棕：外部权威。刻意选 PALETTE 里�
 // 计算，禁止硬编码 80%/90% 字样。
 // 有真值 = 目标日已发生 = 本次是历史回测（后端 target_date 必须落在已有数据范围内）。
 // 不标出来，用户容易把工作台的结果当成对未来的预测（#2371）。
-const backtestCaption = computed(() =>
-  props.results.some((r) => r.result.actual?.length && r.result.evaluationMode === 'backtest')
+const backtestCaption = computed(() => {
+  if (props.results.some((r) => r.result.evaluationMode === 'forecast')) {
+    // 无真值日：必须说清「没有实际值可比」，否则空荡荡的图会被当成「模型没算出来」
+    return '目标日尚未出清 · 无实际值可比，因此不给出任何精度指标'
+  }
+  return props.results.some((r) => r.result.actual?.length && r.result.evaluationMode === 'backtest')
     ? '实际值为目标日事后真值 · 本次为历史回测（目标日已发生），非对未来的预测'
-    : '')
+    : ''
+})
 
 const bandCaption = computed(() => {
   const single = props.results.length === 1 ? props.results[0].result : null
@@ -50,6 +66,12 @@ const bandCaption = computed(() => {
   return ''
 })
 
+/** 连续视图的横轴：前一日 96/24 点标「昨 HH:MM」，目标日照常。 */
+function continuousLabels(granularity: 24 | 96): string[] {
+  const base = labelsFor(granularity)
+  return [...base.map((t) => `昨 ${t}`), ...base]
+}
+
 function labelsFor(granularity: 24 | 96): string[] {
   const n = granularity
   const step = granularity === 96 ? 15 : 60
@@ -65,7 +87,14 @@ function render() {
   if (!el.value) return
   const items = props.results
   const granularity = (items[0]?.result.granularity ?? 96) as 24 | 96
-  const labels = labelsFor(granularity)
+  // 连续视图只在确有历史段时启用——没有 history 就退回单日视图，
+  // 否则横轴凭空多出半屏空白，看起来像「前半天数据丢了」。
+  const hist = props.continuous ? items.find((it) => it.result.history?.length)?.result.history : undefined
+  const continuous = Boolean(hist?.length)
+  const span = continuous ? granularity : 0
+  const labels = continuous ? continuousLabels(granularity) : labelsFor(granularity)
+  /** 单日序列 → 连续横轴：前半段留空，数据落在目标日那半。 */
+  const shift = (data: (number | null)[]) => (continuous ? [...Array(span).fill(null), ...data] : data)
   const unit = items[0]?.result.unit ?? ''
   const series: SeriesOption[] = []
 
@@ -93,7 +122,7 @@ function render() {
   if (withActual) {
     series.push({
       name: '实际值', type: 'line', ...(isPrice ? { step: 'end' as const } : {}), showSymbol: false,
-      data: withActual.result.actual,
+      data: shift(withActual.result.actual as number[]),
       lineStyle: { width: 2.6, color: ACTUAL_COLOR }, itemStyle: { color: ACTUAL_COLOR }, z: 3,
     })
     // 官方日前预测：单算法与多算法同台都画。它是**所有**算法共同的标尺——跑赢「昨日同时段」
@@ -102,7 +131,7 @@ function render() {
     if (official?.length) {
       series.push({
         name: '官方日前预测', type: 'line', ...(isPrice ? { step: 'end' as const } : {}), showSymbol: false,
-        data: official,
+        data: shift(official as number[]),
         // 虚线：它同样是「预测」而非事实，线型上必须与实际值区分开
         lineStyle: { width: 2, type: 'dashed' as const, color: OFFICIAL_COLOR }, itemStyle: { color: OFFICIAL_COLOR }, z: 2,
       })
@@ -113,10 +142,20 @@ function render() {
     if (naive?.length) {
       series.push({
         name: '昨日同时段（基线）', type: 'line', ...(isPrice ? { step: 'end' as const } : {}), showSymbol: false,
-        data: naive,
+        data: shift(naive as number[]),
         lineStyle: { width: 1.5, type: 'dotted' as const, color: NAIVE_COLOR }, itemStyle: { color: NAIVE_COLOR }, z: 1,
       })
     }
+  }
+
+  if (continuous && hist) {
+    // 过去段与目标日真值同色同线型——它们本来就是同一条「实际值」，只是分属两天。
+    // 单独一条 series 而不是拼进 actual：actual 为空（未来日）时这条仍要画。
+    series.push({
+      name: '实际值', type: 'line', ...(isPrice ? { step: 'end' as const } : {}), showSymbol: false,
+      data: [...hist, ...Array(span).fill(null)],
+      lineStyle: { width: 2.6, color: ACTUAL_COLOR }, itemStyle: { color: ACTUAL_COLOR }, z: 3,
+    })
   }
 
   items.forEach(({ provider, result, untrustedTag }, i) => {
@@ -131,9 +170,28 @@ function render() {
     series.push({
       name: illustrative ? `${provider}（${tag}）` : provider,
       type: 'line', ...(isPrice ? { step: 'end' as const } : {}), showSymbol: false,
-      data: result.points,
-      lineStyle: illustrative ? { width: 2, type: 'dashed' as const, opacity: 0.75 } : { width: 2 },
+      // mergeActual：有真值的时段把预测裁掉（置 null 断开），形成「实线接虚线」的 AEMO 观感。
+      // 不做插值衔接——两条线本就是不同性质的量，硬连会让人以为预测延续了实测。
+      data: shift(
+        props.mergeActual && result.actual?.length
+          ? result.points.map((v, idx) => (Number.isFinite(result.actual![idx]) ? null : v))
+          : result.points,
+      ),
+      // 未来日（无真值）的预测一律虚线：它不是事实，线型上必须与实际值区分开。
+      lineStyle: illustrative || result.evaluationMode === 'forecast'
+        ? { width: 2, type: 'dashed' as const, opacity: illustrative ? 0.75 : 1 }
+        : { width: 2 },
       color: PALETTE[i % PALETTE.length],
+      ...(continuous && i === 0
+        ? {
+            markLine: {
+              silent: true, symbol: 'none',
+              lineStyle: { color: '#909399', type: 'dashed' as const, width: 1 },
+              label: { formatter: '目标日起点', position: 'insideEndTop', fontSize: 11 },
+              data: [{ xAxis: span }],
+            },
+          }
+        : {}),
     })
   })
 

@@ -77,9 +77,11 @@ export interface UnifiedForecastResult {
   // naive/knn 是「我们自己的最笨参照」，official 是「行业里已有的答案」——模型跑赢前者
   // 说明不了什么，跑赢后者才是能拿出去讲的结论。
   baselines?: { naive?: number[]; knn?: number[]; official?: number[] }
-  // backtest = 目标日已发生、真值可得（工作台的「预测」本质是历史回测：target_date
-  // 必须落在已有数据范围内）。据此在界面上标明口径，避免被当成对未来的预测。
-  evaluationMode?: 'backtest'
+  // backtest = 目标日已发生、真值可得；forecast = 目标日尚未出清，没有真值，
+  // 因此后端不会给任何精度指标（#2387）。据此在界面上标明口径。
+  evaluationMode?: 'backtest' | 'forecast'
+  // 目标日前一天的真值：连续视图里「过去」那一段。后端未返回时为 undefined，不画。
+  history?: number[]
 }
 
 export interface SharedTaskContext {
@@ -132,6 +134,7 @@ function applyGranularity(result: UnifiedForecastResult, granularity: 24 | 96): 
     // 真值/基线同样要降采样——漏掉这里，24 点模式下它们仍是 96 点，与横轴逐点错位，
     // 画出来是一条"看着像但对不上"的线，比不画更糟。
     actual: result.actual ? aggregate96to24(result.actual) : undefined,
+    history: result.history ? aggregate96to24(result.history) : undefined,
     baselines: result.baselines
       ? {
           naive: result.baselines.naive ? aggregate96to24(result.baselines.naive) : undefined,
@@ -392,10 +395,12 @@ function adaptMlResult(r: ForecastResult, modelId: string, granularity: 24 | 96)
       // 后端缺字段（Core 转发模式、旧版本后端）时留空，图层据此不画真值线——
       // 不用空数组占位，否则消费方分不清「没有真值」与「真值全 0」。
       actual: r.actual?.length ? r.actual : undefined,
+      history: r.history?.length ? r.history : undefined,
       baselines: (r.baseline_curves?.naive?.length || r.baseline_curves?.knn?.length)
         ? { naive: r.baseline_curves?.naive, knn: r.baseline_curves?.knn }
         : undefined,
-      evaluationMode: r.evaluation_mode === 'backtest' ? 'backtest' : undefined,
+      evaluationMode: r.evaluation_mode === 'backtest' ? 'backtest'
+        : r.evaluation_mode === 'forecast' ? 'forecast' : undefined,
     },
     granularity,
   )
