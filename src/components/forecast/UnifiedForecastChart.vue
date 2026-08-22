@@ -186,7 +186,10 @@ const chart = useEChart(el, { render })
 onMounted(() => {
   render()
 })
-watch(() => props.results, () => nextTick(render), { deep: true })
+// mergeActual 也必须进 watch：它只影响 series 数据的组装，不触发 results 变化——
+// 漏掉它的症状是勾选框点了没反应（图纹丝不动），而组件测试每次都新 mount，
+// 恰好绕过了这条路径，一直是绿的。
+watch(() => [props.results, props.mergeActual], () => nextTick(render), { deep: true })
 
 defineExpose({ resize: chart.resize })
 </script>

@@ -119,6 +119,27 @@ describe('实际值替代该时段预测', () => {
   })
 })
 
+describe('切换开关必须重渲染', () => {
+  it('勾选「实际值替代」后图立即更新——每次新 mount 的测试抓不到这条', async () => {
+    setOption.mockClear()
+    const props = {
+      results: [{ provider: 'LightGBM', result: result({ actual: seq(300), evaluationMode: 'backtest' }) }],
+      mergeActual: false,
+    }
+    const wrapper = mount(UnifiedForecastChart, { props: props as never })
+    await nextTick()
+    const before = setOption.mock.calls.length
+
+    await wrapper.setProps({ mergeActual: true })
+    await nextTick()
+    await nextTick()      // render 走 nextTick，需多等一拍
+
+    expect(setOption.mock.calls.length).toBeGreaterThan(before)
+    const opt = setOption.mock.calls[setOption.mock.calls.length - 1][0] as ChartOption
+    expect(seriesNamed(opt, 'LightGBM').data.every((v) => v === null)).toBe(true)
+  })
+})
+
 describe('线型区分事实与预测', () => {
   it('未来日的预测线是虚线，实际值是实线', async () => {
     const opt = await render({
