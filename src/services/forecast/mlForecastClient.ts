@@ -106,6 +106,9 @@ export type ForecastResult = {
   actual?: number[]
   baseline_curves?: { naive?: number[]; knn?: number[] }
   evaluation_mode?: string
+  // 目标日前一天的真值 96 点（#2387）：画「过去实线 → 未来虚线」连续视图的过去那一段。
+  // 与 baseline_curves.naive 不是一回事——那是「拿前一天当预测」的基线曲线。
+  history?: number[]
   available?: boolean
   // ⚠️ 字段名以 snake_case 为准：`prediction_envelope_to_legacy()` 输出的是
   // `unavailable_reason`（forecast_core_adapter.py:393）。camelCase 变体一并声明只为兼容，
