@@ -102,8 +102,21 @@ export async function fetchOfficialBaseline(
 }
 
 /** 官方预测相对实际值的平均绝对误差；任一缺失返回 null（不以 0 冒充"无误差"）。 */
-export function officialMae(points: number[] | undefined, actual: number[] | undefined): number | null {
+export function officialMae(
+  points: number[] | undefined,
+  actual: (number | null)[] | undefined,
+): number | null {
   if (!points?.length || !actual?.length || points.length !== actual.length) return null
-  const sum = points.reduce((acc, p, i) => acc + Math.abs(p - actual[i]), 0)
-  return sum / points.length
+  // 只在有真值的时段上算，与后端 `_metrics` 同口径（#2389）。部分出清日的 actual 后半段
+  // 是 null，直接参与运算会被 JS 当成 0：`Math.abs(p - null)` === `Math.abs(p)`，
+  // 算出的 MAE 大得离谱却完全看不出是错的——比报 null 危险得多。
+  let sum = 0
+  let n = 0
+  points.forEach((p, i) => {
+    const a = actual[i]
+    if (a == null || !Number.isFinite(a) || !Number.isFinite(p)) return
+    sum += Math.abs(p - a)
+    n += 1
+  })
+  return n ? sum / n : null
 }

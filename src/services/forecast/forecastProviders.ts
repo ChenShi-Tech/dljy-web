@@ -72,16 +72,16 @@ export interface UnifiedForecastResult {
   // 目标日**事后真值**与基线曲线（#2371）。后端本就用它们算 metrics/baseline_metrics，
   // 此前不返回，图上只有一条孤立的预测曲线——看图的人无从判断预测贴不贴、错在哪个时段。
   // 只有后端计算型算法（/predict）有；平台官方回放等 replay provider 不产出，留空。
-  actual?: number[]
+  // 逐时段：已出清给数值、尚未出清给 null（#2389）。长度与 points 一致，null 不是「缺数据」
+  // 而是「这个时段还没发生」——图上据此让实线在当前边界处自然断开。
+  actual?: (number | null)[]
   // official：官方发布的日前预测（由页面按地区/目标另行取数注入，非后端产出）。
   // naive/knn 是「我们自己的最笨参照」，official 是「行业里已有的答案」——模型跑赢前者
   // 说明不了什么，跑赢后者才是能拿出去讲的结论。
   baselines?: { naive?: number[]; knn?: number[]; official?: number[] }
-  // backtest = 目标日已发生、真值可得；forecast = 目标日尚未出清，没有真值，
-  // 因此后端不会给任何精度指标（#2387）。据此在界面上标明口径。
-  evaluationMode?: 'backtest' | 'forecast'
-  // 目标日前一天的真值：连续视图里「过去」那一段。后端未返回时为 undefined，不画。
-  history?: number[]
+  // backtest = 目标日已完全出清、全天真值可得；partial = 只出清了一部分时段，指标只基于
+  // 那部分；forecast = 尚未出清、没有真值，后端不给任何精度指标（#2387 / #2389）。
+  evaluationMode?: 'backtest' | 'partial' | 'forecast'
 }
 
 export interface SharedTaskContext {
@@ -115,10 +115,12 @@ const PTS = Array.from({ length: 96 }, (_, i) => `p${i + 1}`)
 // 24/96 粒度对齐：96 点 → 24 点（每 4 个 15min 槽聚合为 1 个整点，取均值）。
 // Phase 4 后端原生支持 granularity 后此前端聚合可下沉，contract 保持不变。
 /** 96 点 → 24 点（时段内取均值）。导出供页面注入官方基线时复用同一套聚合，避免两处口径漂移。 */
-export function aggregate96to24(points: number[]): number[] {
+export function aggregate96to24(points: (number | null)[]): number[] {
   const out: number[] = []
   for (let h = 0; h < 24; h++) {
-    const slice = points.slice(h * 4, h * 4 + 4).filter((v) => Number.isFinite(v))
+    const slice = points.slice(h * 4, h * 4 + 4).filter((v): v is number => Number.isFinite(v))
+    // 整小时都没有真值（尚未出清）→ NaN，由图层画成断点。不补 0：一条贴地的实际值
+    // 曲线看起来像「这小时电价为零」，而不是「这小时还没发生」。
     out.push(slice.length ? slice.reduce((a, b) => a + b, 0) / slice.length : NaN)
   }
   return out
@@ -134,7 +136,6 @@ function applyGranularity(result: UnifiedForecastResult, granularity: 24 | 96): 
     // 真值/基线同样要降采样——漏掉这里，24 点模式下它们仍是 96 点，与横轴逐点错位，
     // 画出来是一条"看着像但对不上"的线，比不画更糟。
     actual: result.actual ? aggregate96to24(result.actual) : undefined,
-    history: result.history ? aggregate96to24(result.history) : undefined,
     baselines: result.baselines
       ? {
           naive: result.baselines.naive ? aggregate96to24(result.baselines.naive) : undefined,
@@ -395,12 +396,12 @@ function adaptMlResult(r: ForecastResult, modelId: string, granularity: 24 | 96)
       // 后端缺字段（Core 转发模式、旧版本后端）时留空，图层据此不画真值线——
       // 不用空数组占位，否则消费方分不清「没有真值」与「真值全 0」。
       actual: r.actual?.length ? r.actual : undefined,
-      history: r.history?.length ? r.history : undefined,
       baselines: (r.baseline_curves?.naive?.length || r.baseline_curves?.knn?.length)
         ? { naive: r.baseline_curves?.naive, knn: r.baseline_curves?.knn }
         : undefined,
       evaluationMode: r.evaluation_mode === 'backtest' ? 'backtest'
-        : r.evaluation_mode === 'forecast' ? 'forecast' : undefined,
+        : r.evaluation_mode === 'partial' ? 'partial'
+          : r.evaluation_mode === 'forecast' ? 'forecast' : undefined,
     },
     granularity,
   )
