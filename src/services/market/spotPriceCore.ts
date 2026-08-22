@@ -148,7 +148,9 @@ function replayPayload(body: unknown, requestedRegion?: string | null): unknown 
   return 'data' in envelope ? envelope.data : body
 }
 
-const timeAxis96 = Array.from({ length: 96 }, (_, i) => {
+/** 96 点标准时间轴（00:00…23:45）。导出供消费方把纯数组曲线铺到同一横轴上——
+ *  各写一份迟早与出清曲线的时刻对不齐，那种错在图上看不出来。 */
+export const timeAxis96 = Array.from({ length: 96 }, (_, i) => {
   const h = String(Math.floor(i / 4)).padStart(2, '0')
   return `${h}:${String((i % 4) * 15).padStart(2, '0')}`
 })
