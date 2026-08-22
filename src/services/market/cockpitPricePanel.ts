@@ -4,8 +4,9 @@
 // 只会在图上画出一条看起来完全正常的曲线：日期选错就是把几天前的行情当成今天的，
 // 合成兜底没拦住就是把编造的价格当成出清价，失败残留的预测被画出来就是把一次没跑成的
 // 预测当成结论。这类错必须由断言钉住，而组件层测不动。
-import type { CurvePoint, SpotCurve } from '@/services/market/spotPriceCore'
+import type { CurvePoint } from '@/services/market/spotPriceCore'
 import { curveStats, timeAxis96 } from '@/services/market/spotPriceCore'
+import type { ClearingPriceCurve } from '@/services/market/regionClearingPrice'
 import type { DataBasis } from '@/services/dataBasis'
 import type { LatestForecast, LatestForecastRun } from '@/services/forecast/latestForecast'
 
@@ -40,7 +41,8 @@ export function resolvePanelDate(today: string, coverage: DateRange | null): str
 export interface PricePanelInput {
   date: string
   coverage: DateRange | null
-  clearing: SpotCurve
+  /** 已由取数层清洗过：合成兜底在那一层就被挡成空曲线，这里拿到的要么真实要么空。 */
+  clearing: ClearingPriceCurve
   forecast: LatestForecast
 }
 
@@ -58,9 +60,7 @@ const EMPTY_STATS = { mean: null, spread: null, max: null, min: null }
 
 export function buildPricePanel(input: PricePanelInput): PricePanelResult {
   const { date, coverage, clearing, forecast } = input
-  // 合成兜底一律当作「没有数据」：loadClearingCurve 取不到真实曲线时会 synth96 编一条，
-  // 画出来与真实曲线毫无区别，KPI 也会照着它算——宁可空着。
-  const realPoints = clearing.basis === 'synthetic' ? [] : clearing.points
+  const realPoints = clearing.points
   const run = pickUsableRun(forecast)
   const forecastPoints: CurvePoint[] = run
     ? run.points.map((value, index) => ({ time: timeAxis96[index] ?? '', value }))
@@ -84,7 +84,7 @@ export function buildPricePanel(input: PricePanelInput): PricePanelResult {
     // 数字其实来自编造的曲线，比没有数字更误导。
     stats: realPoints.length ? curveStats(realPoints) : EMPTY_STATS,
     basis: realPoints.length ? clearing.basis : 'empty',
-    hourlySourced: clearing.sourcePoints === 24,
+    hourlySourced: clearing.hourly,
     error,
   }
 }

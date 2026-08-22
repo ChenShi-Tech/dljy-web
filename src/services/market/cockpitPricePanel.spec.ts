@@ -4,16 +4,19 @@
 // 钉在「不该出现的东西没有出现」上，而不只是「该出现的出现了」。
 import { describe, expect, it } from 'vitest'
 import { buildPricePanel, resolvePanelDate } from './cockpitPricePanel'
-import type { SpotCurve } from './spotPriceCore'
+import type { ClearingPriceCurve } from './regionClearingPrice'
 import type { LatestForecast } from '@/services/forecast/latestForecast'
 
 const N = 96
 const curve = (base: number) =>
   Array.from({ length: N }, (_, i) => ({ time: `t${i}`, value: base + i }))
 
-const clearing = (over: Partial<SpotCurve> = {}): SpotCurve => ({
-  points: curve(300), isDemo: false, basis: 'captured', ...over,
-} as SpotCurve)
+const clearing = (over: Partial<ClearingPriceCurve> = {}): ClearingPriceCurve => ({
+  points: curve(300), basis: 'captured', hourly: false, label: '实际出清', ...over,
+})
+/** 取数层拿不到真实曲线时返回的空态（合成兜底在那一层已被挡掉）。 */
+const emptyClearing = (): ClearingPriceCurve =>
+  ({ points: [], basis: 'empty', hourly: false, label: '实际出清' })
 
 const forecast = (over: Partial<LatestForecast> = {}): LatestForecast => ({
   available: true, targetDate: '2026-08-18',
@@ -41,11 +44,11 @@ describe('面板日期跟随真实覆盖区间', () => {
   })
 })
 
-describe('合成曲线一律当作没有数据', () => {
-  it('synth96 兜底不得进入图与 KPI——编造的价格比空面板危险得多', () => {
+describe('没有真实出清时的口径', () => {
+  it('取数层给的空曲线不得产生任何 KPI 数字', () => {
     const panel = buildPricePanel({
       date: '2026-08-22', coverage: COVERAGE,
-      clearing: clearing({ basis: 'synthetic', isDemo: true }),
+      clearing: emptyClearing(),
       forecast: forecast({ available: false, runs: [] }),
     })
     expect(panel.realPoints).toEqual([])
@@ -88,7 +91,7 @@ describe('失败或空的预测不得被画成结论', () => {
   it('预测在、出清还没出来 → 只画预测并说明该日尚未出清', () => {
     const panel = buildPricePanel({
       date: '2026-08-22', coverage: COVERAGE,
-      clearing: clearing({ basis: 'synthetic' }), forecast: forecast(),
+      clearing: emptyClearing(), forecast: forecast(),
     })
     expect(panel.forecastPoints).toHaveLength(N)
     expect(panel.realPoints).toEqual([])

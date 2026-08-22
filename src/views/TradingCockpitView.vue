@@ -23,7 +23,8 @@ import {
 } from 'lucide-vue-next'
 import { useEChart } from '../composables/useEChart'
 import { axisTooltip, bottomLayoutLegend, bottomToolbox, emptyOverlay, insideZoom } from '@/services/chart/chartOptions'
-import { curveStats, loadClearingCurve } from '@/services/market/spotPrice'
+import { curveStats } from '@/services/market/spotPrice'
+import { fetchClearingPrice } from '@/services/market/regionClearingPrice'
 import { fetchCaptureCoverage } from '@/services/market/captureCoverage'
 import { fetchLatestForecast } from '@/services/forecast/latestForecast'
 import { buildPricePanel, resolvePanelDate } from '@/services/market/cockpitPricePanel'
@@ -340,9 +341,12 @@ const pricePanelDate = ref('')
 const priceChartTitle = computed(() => usesCgnPrivatePrice.value
   ? '现货价格 · 今日日前 vs 今日实时'
   : `现货价格 · ${pricePanelDate.value || '—'} 实况 vs 模型预测`)
+// 真实曲线的口径名由取数层给：云南是「日前用户侧电价」、山西是交易中心「实际出清」，
+// 两者口径不同却共用一个图例名就是误导。
+const clearingLabel = ref('实际出清')
 const priceLegend = computed<[string, string]>(() => usesCgnPrivatePrice.value
   ? ['今日日前', '今日实时']
-  : ['实际出清', '模型预测'])
+  : [clearingLabel.value, '模型预测'])
 
 function reloadForGovernanceUser() {
   // 账号切换必须先让旧集团数据立即离开页面，再以新令牌重取；请求失败时保持空态。
@@ -381,7 +385,6 @@ async function renderChart() {
   priceError.value = ''
   try {
     const today = new Date()
-    const yesterday = new Date(today.getTime() - 86400000)
     let firstPoints: Array<{ time: string; value: number | null }>
     let secondPoints: Array<{ time: string; value: number | null }>
 
@@ -406,15 +409,16 @@ async function renderChart() {
       // 数日（今天 08-22 时节点电价最新到 08-18），钉在今天就永远落在无数据的日期上——
       // 此前正是因此长期显示 synth96 合成的假曲线与编造的 KPI。
       const region = currentRegion.value.id
-      const coverage = await fetchCaptureCoverage(region, 'price')
+      const coverage = await fetchCaptureCoverage(region, 'clearing')
       const date = resolvePanelDate(fmtDate(today), coverage)
       const [clearing, forecast] = await Promise.all([
-        loadClearingCurve(date),
+        fetchClearingPrice(region, date),
         fetchLatestForecast(region, 'price', date)
       ])
       if (seq !== chartSeq) return // 期间切了地区/重渲染 → 丢弃旧曲线
       const panel = buildPricePanel({ date, coverage, clearing, forecast })
       pricePanelDate.value = date
+      clearingLabel.value = clearing.label
       isDemo.value = false
       hourlySourced.value = panel.hourlySourced
       stats.value = panel.stats
