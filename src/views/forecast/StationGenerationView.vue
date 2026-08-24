@@ -63,6 +63,12 @@ const risk = ref<DeviationRiskResult | null>(null)
 const chartRef = ref<HTMLDivElement | null>(null)
 const chart = useEChart(chartRef, { render })
 
+// 请求世代守卫（dljy#2331，同 ForecastScoreboardView.load / PriceAnalysisView.loadGeneration 族）：
+// 切公司触发 reloadStations 重置上下文并递增世代；在飞请求（场站列表/预测）回来时世代已变即丢弃，
+// 防止旧公司慢响应覆盖新公司的场站列表、旧站预测曲线贴新站上下文、旧站 P10/P50/P90 按新站
+// 结算规则误算偏差罚款。
+let generation = 0
+
 const stationOptions = computed(() => {
   const rank = (t: string | null | undefined) => (t === '光伏' ? 0 : t === '风电' ? 1 : 2)
   return [...stations.value].sort((a, b) => rank(a.type) - rank(b.type))
@@ -88,9 +94,12 @@ const sourceTag = computed(() => {
 })
 
 async function reloadStations() {
+  const gen = ++generation
   loading.value = true
   try {
-    stations.value = await fetchStations()
+    const list = await fetchStations()
+    if (gen !== generation) return   // 公司已切换，丢弃旧响应（dljy#2331）
+    stations.value = list
     const firstSolar = stationOptions.value[0]
     form.value.stationId = firstSolar ? firstSolar.id : null
     result.value = null
@@ -98,9 +107,10 @@ async function reloadStations() {
     risk.value = null
     render()
   } catch (error) {
+    if (gen !== generation) return   // 陈旧请求的失败不打扰新上下文
     ElMessage.error(error instanceof Error ? error.message : '加载场站失败')
   } finally {
-    loading.value = false
+    if (gen === generation) loading.value = false   // 仅最新世代收尾 loading，避免旧请求提前清态
   }
 }
 
@@ -110,6 +120,7 @@ async function predict() {
     ElMessage.warning('请先选择场站')
     return
   }
+  const gen = generation   // dljy#2331：捕获当前世代，await 后公司已切换即丢弃
   predicting.value = true
   chart.showLoading()
   try {
@@ -131,7 +142,7 @@ async function predict() {
       // 真实气象不可用：不传 weather_points，后端合成典型日 + warning；前端如实提示
       ElMessage.info('真实气象暂不可用，使用合成典型日气象（pvlib 晴空）')
     }
-    result.value = await runStationGeneration({
+    const r = await runStationGeneration({
       station_id: String(station.id),
       installed_capacity: Number(station.capacity) || 100,
       station_type: station.type ?? '光伏',
@@ -140,12 +151,17 @@ async function predict() {
       data_source: 'auto',
       weather_points,
     })
+    // dljy#2331：公司已切换（世代变）或手动切站（所选站变），旧结果均不得写回新上下文
+    if (gen !== generation || selectedStation.value?.id !== station.id) return
+    result.value = r
     advice.value = null
     risk.value = null
     render()
   } catch (error) {
+    if (gen !== generation) return   // 陈旧请求的失败不打扰新上下文
     ElMessage.error(error instanceof Error ? error.message : '预测失败')
   } finally {
+    // UI 标志无条件复位（幂等）：陈旧请求若跳过会让按钮/图表永久处于 loading
     predicting.value = false
     chart.hideLoading()
   }
