@@ -21,6 +21,7 @@ import {
   type AgentModule
 } from '@/services/agent/subAgents'
 import { getAdminToken, setAdminToken } from '@/services/llm'
+import { IS_INTERNAL_EDITION } from '@/services/edition'
 
 const PROMPT_TEMPLATE = `你是（角色职责一句话）。
 
@@ -312,7 +313,8 @@ const moduleName = (key: string) => modules.value.find((m) => m.key === key)?.na
           </div>
           <div class="ag-desc">{{ a.description }}</div>
           <div class="ag-meta">
-            <span class="tag">{{ a.model_ref }}</span>
+            <!-- 交付档不显示模型路由（#2410）：后端已脱敏成 managed/default，前端连这个占位也不必露 -->
+            <span v-if="IS_INTERNAL_EDITION" class="tag">{{ a.model_ref }}</span>
             <span v-if="a.requires.length" class="tag dim">{{ a.requires.join('/') }}</span>
           </div>
           <div v-if="a.bound_modules.length" class="ag-bind">
@@ -378,7 +380,9 @@ const moduleName = (key: string) => modules.value.find((m) => m.key === key)?.na
         </div>
 
         <div class="field-grid">
-          <div class="field">
+          <!-- 交付档隐藏模型路由选择（#2410）：/sub-agents/models 在那一档也已 404，
+               选项拉不到；留着只会是个空下拉。模型仍由服务端 YAML 路由决定。 -->
+          <div v-if="IS_INTERNAL_EDITION" class="field">
             <label>模型路由</label>
             <el-select v-model="fModelRef" filterable class="w-full">
               <el-option

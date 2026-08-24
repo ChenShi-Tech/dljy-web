@@ -15,6 +15,12 @@ import { viteStaticCopy } from 'vite-plugin-static-copy'
 
 export default defineConfig(({ mode }) => {
   const env = { ...loadEnv(mode, fileURLToPath(new URL('.', import.meta.url)), ''), ...process.env }
+
+  // 客户交付档（主仓 Epic #2408 · #2410）：VITE_EDITION=customer 时，把模型配置页重定向
+  // 到占位组件。**必须在模块解析层做，不能只靠 v-if 或编译期常量分支**——rollup 对动态
+  // import 的 chunk 生成是保守的：即使引用它的分支被消除，chunk 照样产出，于是
+  // llmProviders.ts 里那份供应商清单仍躺在交付出去的 JS 里（实测过，两版产物一模一样）。
+  const isCustomerEdition = env.VITE_EDITION === 'customer'
   // 两个后端面必须是两个独立端点：/agent-api 会被 rewrite 成 /api，
   // 若与 4174 面共用同一 upstream 会路径撞车。
   const apiTarget = env.DLJY_DEV_API_TARGET || 'http://127.0.0.1:4174'
@@ -24,6 +30,18 @@ export default defineConfig(({ mode }) => {
 
   return {
     plugins: [
+      ...(isCustomerEdition
+        ? [{
+            name: 'dljy-customer-edition',
+            enforce: 'pre' as const,
+            resolveId(source: string) {
+              if (source.endsWith('/AiSettingsView.vue') || source.endsWith('./AiSettingsView.vue')) {
+                return fileURLToPath(new URL('./src/views/edition/EditionRemovedView.vue', import.meta.url))
+              }
+              return null
+            }
+          }]
+        : []),
       vue(),
       viteStaticCopy({
         targets: [

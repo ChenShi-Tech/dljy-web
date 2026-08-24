@@ -5,6 +5,7 @@ import { buildCatalog } from '@/services/aiNavigator'
 import { getCurrentUser } from '@/services/auth'
 import { isLlmConfigured, refreshLlmStatus } from '@/services/llm'
 import { llmProviders } from '@/data/llmProviders'
+import { IS_CUSTOMER_EDITION } from '@/services/edition'
 import { getAllSkills, renderSkill, splitDateArgs, todayISO, type Skill } from '@/services/skills'
 import type { AgentScenario } from '@/services/agent/agentClient'
 
@@ -231,7 +232,10 @@ const builtinCommands: SlashCommand[] = [
     source: 'builtin',
     run: (ctx) => ctx.navigate('/system/ai-studio?tab=models')
   },
-  {
+  // /model 会把各厂商与型号逐条打印进聊天框，/model 的参数补全同样列出型号——
+  // 交付档必须整条摘掉（#2410）。摘掉后 runModel/modelArgOptions 失去引用者，
+  // 它们 import 的 llmProviders 也随之被 tree-shake，供应商清单不进产物。
+  ...((IS_CUSTOMER_EDITION ? [] : [{
     name: 'model',
     aliases: ['模型'],
     description: '查看或切换大模型',
@@ -240,7 +244,7 @@ const builtinCommands: SlashCommand[] = [
     runOnArgSelect: true,
     getArgOptions: modelArgOptions,
     run: runModel
-  },
+  }]) as SlashCommand[]),
   {
     name: 'agent',
     aliases: ['workbench', '工作台'],
