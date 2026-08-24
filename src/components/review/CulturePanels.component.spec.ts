@@ -5,8 +5,15 @@ import { nextTick } from 'vue'
 
 vi.mock('vue-router', () => ({ useRouter: () => ({ push: vi.fn() }) }))
 vi.mock('@/services/trading/decisionLogStore', () => ({ loadLogAsync: vi.fn() }))
+vi.mock('@/services/review/reviewStoreClient', () => ({
+  fetchCarryOverActions: vi.fn(),
+  createImprovementAction: vi.fn(),
+  patchImprovementAction: vi.fn()
+}))
+import { createImprovementAction } from '@/services/review/reviewStoreClient'
 
 import { loadLogAsync } from '@/services/trading/decisionLogStore'
+import { fetchCarryOverActions } from '@/services/review/reviewStoreClient'
 import type { DecisionLogSnapshot } from '@/services/trading/decisionLogStore'
 import EmotionPatternPanel from './EmotionPatternPanel.vue'
 import MeetingMinutesForm from './MeetingMinutesForm.vue'
@@ -24,6 +31,9 @@ const snap = (log: unknown[]): Promise<DecisionLogSnapshot> =>
 
 beforeEach(() => {
   vi.mocked(loadLogAsync).mockReset()
+  vi.mocked(fetchCarryOverActions).mockReset()
+  vi.mocked(fetchCarryOverActions).mockResolvedValue({ available: false, reason: 'endpoint-absent' })
+  vi.mocked(createImprovementAction).mockReset()
   localStorage.removeItem(EMOTION_TOGGLE_KEY)
 })
 
@@ -67,6 +77,22 @@ describe('EmotionPatternPanel', () => {
     expect(wrapper.text()).toContain('宁缺勿滥')
     expect(wrapper.text()).toContain('不打标不等于没有问题')
   })
+
+  it('干预措施落库 improvement_actions（#2049：下季度回查载体）', async () => {
+    vi.mocked(loadLogAsync).mockImplementation(() => snap([entry()] as never))
+    vi.mocked(createImprovementAction).mockResolvedValue({
+      id: '9', action: '情绪化干预：高波动时段决策前强制二次确认', owner: null,
+      dueDate: null, status: 'open', updatedAt: null
+    })
+    const wrapper = await settle(mount(EmotionPatternPanel))
+    await wrapper.find('.emo-input').setValue('高波动时段决策前强制二次确认')
+    await wrapper.find('.emo-save').trigger('click')
+    for (let i = 0; i < 8; i++) await nextTick()
+    expect(createImprovementAction).toHaveBeenCalledWith({
+      action: '情绪化干预：高波动时段决策前强制二次确认', owner: null, dueDate: null
+    })
+    expect(wrapper.text()).toContain('已落库')
+  })
 })
 
 describe('MeetingMinutesForm', () => {
@@ -79,11 +105,27 @@ describe('MeetingMinutesForm', () => {
     expect(wrapper.text()).toContain('2026-08-12')
   })
 
-  it('上期回查诚实占位 + 案例库检索占位（不展示假案例）', async () => {
+  it('上期回查自动带入：服务端可用 → 未闭环项回显 + 断言通过（#2049）', async () => {
+    vi.mocked(fetchCarryOverActions).mockResolvedValue({
+      available: true,
+      actions: [
+        { id: '1', action: '关注晚高峰价格上限政策', owner: '张三', dueDate: '2026-08-20', status: 'open', updatedAt: null },
+        { id: '2', action: '月中复核申报口径', owner: null, dueDate: null, status: 'carried_over', updatedAt: null }
+      ]
+    })
+    const wrapper = await settle(mount(MeetingMinutesForm))
+    const text = wrapper.text()
+    expect(text).toContain('关注晚高峰价格上限政策')
+    expect(text).toContain('顺延下期')
+    expect(text).toContain('带入断言通过：2 项与服务端未闭环清单一致')
+  })
+
+  it('上期回查端点缺席：人工带入提示 + 案例库检索占位（不展示假案例）', async () => {
+    vi.mocked(fetchCarryOverActions).mockResolvedValue({ available: false, reason: 'endpoint-absent' })
     const wrapper = await settle(mount(MeetingMinutesForm))
     const text = wrapper.text()
     expect(text).toContain('上期改进措施回查')
-    expect(text).toContain('端点随服务端化上线')
+    expect(text).toContain('improvement_actions 读取端点未上线')
     expect(text).toContain('案例库检索强化')
     expect(text).toContain('不展示假案例')
   })

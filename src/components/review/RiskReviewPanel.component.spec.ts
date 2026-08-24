@@ -7,8 +7,14 @@ vi.mock('@/services/review/reviewPeriodClient', () => ({ fetchReviewRange: vi.fn
 vi.mock('@/services/quant/quantClient', () => ({ fetchCvar: vi.fn() }))
 vi.mock('@/services/tradingMemory', () => ({ getRegionWinStats: vi.fn() }))
 vi.mock('@/services/region/regionContext', () => ({ currentRegion: { value: { id: 'shanxi' } } }))
+vi.mock('@/services/review/reviewStoreClient', () => ({
+  fetchRiskEvents: vi.fn(),
+  registerRiskEvent: vi.fn(),
+  patchRiskEvent: vi.fn()
+}))
 
 import { fetchReviewRange, type PeriodReviewDay } from '@/services/review/reviewPeriodClient'
+import { fetchRiskEvents, patchRiskEvent, registerRiskEvent } from '@/services/review/reviewStoreClient'
 import { fetchCvar } from '@/services/quant/quantClient'
 import { getRegionWinStats } from '@/services/tradingMemory'
 import RiskReviewPanel from './RiskReviewPanel.vue'
@@ -34,6 +40,10 @@ beforeEach(() => {
   vi.mocked(fetchReviewRange).mockReset()
   vi.mocked(fetchCvar).mockReset()
   vi.mocked(getRegionWinStats).mockReset()
+  vi.mocked(fetchRiskEvents).mockReset()
+  vi.mocked(fetchRiskEvents).mockResolvedValue({ available: false, reason: 'endpoint-absent' })
+  vi.mocked(registerRiskEvent).mockReset()
+  vi.mocked(patchRiskEvent).mockReset()
 })
 
 async function settle(wrapper: ReturnType<typeof mount>) {
@@ -82,15 +92,47 @@ describe('RiskReviewPanel', () => {
     expect(wrapper.text()).toContain('止损仓位越限：待数据接入')
   })
 
-  it('near_miss 登记草稿确认不落库', async () => {
+  /** near_miss 服务端落库路径的登记回读样本（registerRiskEvent 成功响应）。 */
+  const registeredEvent = {
+    id: '7', eventTime: '2026-08-15T02:00:00.000Z', eventType: 'near_miss',
+    riskLevel: 'medium' as const, impactYuan: null, impactCaliber: null, nearMiss: true,
+    disposal: null, effective: null, lessons: '止盈信号犹豫但未触发实亏', updatedAt: '2026-08-15T02:05:00.000Z'
+  }
+
+  it('near_miss 登记主路径：服务端可用 → registerRiskEvent(near_miss 不计损失) + 处置回填 + 已落库', async () => {
     vi.mocked(fetchReviewRange).mockResolvedValue({ days: [], missingDays: [] })
     vi.mocked(getRegionWinStats).mockReturnValue({
       wins: 0, losses: 0, sampleSize: 0, priorWinRate: 0.5, posteriorWinRate: 0.5,
       credibleLow: 0.2, credibleHigh: 0.8, strength: 4, cumulativePnlWan: 0
     })
+    vi.mocked(fetchRiskEvents).mockResolvedValue({ available: true, events: [] })
+    vi.mocked(registerRiskEvent).mockResolvedValue(registeredEvent)
+    vi.mocked(patchRiskEvent).mockResolvedValue(registeredEvent)
+    const wrapper = await settle(mount(RiskReviewPanel, { props: { tolerancePct: 3, penaltyPrice: 100 } }))
+    await wrapper.find('input[type="datetime-local"]').setValue('2026-08-15T10:00')
+    await wrapper.find('.rrp-save').trigger('click')
+    await settle(wrapper)
+    expect(registerRiskEvent).toHaveBeenCalledTimes(1)
+    const draft = vi.mocked(registerRiskEvent).mock.calls[0][0]
+    expect(draft.nearMiss).toBe(true)
+    expect(draft.impactYuan ?? null).toBeNull() // #2047 红线：侥幸逃过不计损失金额
+    expect(patchRiskEvent).not.toHaveBeenCalled() // 未填处置 → 不回填（处置是登记后补）
+    expect(wrapper.text()).toContain('已落库')
+    expect(wrapper.text()).toContain('不计入损失金额统计')
+  })
+
+  it('near_miss 端点缺席：本地草稿确认不落库（诚实降级）', async () => {
+    vi.mocked(fetchReviewRange).mockResolvedValue({ days: [], missingDays: [] })
+    vi.mocked(getRegionWinStats).mockReturnValue({
+      wins: 0, losses: 0, sampleSize: 0, priorWinRate: 0.5, posteriorWinRate: 0.5,
+      credibleLow: 0.2, credibleHigh: 0.8, strength: 4, cumulativePnlWan: 0
+    })
+    vi.mocked(fetchRiskEvents).mockResolvedValue({ available: false, reason: 'endpoint-absent' })
     const wrapper = await settle(mount(RiskReviewPanel, { props: { tolerancePct: 3, penaltyPrice: 100 } }))
     await wrapper.find('.rrp-save').trigger('click')
+    await settle(wrapper)
+    expect(registerRiskEvent).not.toHaveBeenCalled()
     expect(wrapper.text()).toContain('已记为本地草稿')
-    expect(wrapper.text()).toContain('不计损失金额统计')
+    expect(wrapper.text()).toContain('不计入损失金额统计')
   })
 })
