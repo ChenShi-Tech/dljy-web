@@ -105,7 +105,9 @@
               <el-option v-for="r in ROLE_META" :key="r.role" :label="`${r.char} ${r.name}`" :value="r.role" />
             </el-select>
           </label>
-          <label v-if="hasRole(selNode.data.kind)" class="st-field">模型
+          <!-- 交付档隐藏节点级模型覆盖（#2410）：选项来自 /sub-agents/models，那一档已 404；
+               且 placeholder 里的「AI 设置」页在交付版根本不存在。节点仍走角色默认路由。 -->
+          <label v-if="IS_INTERNAL_EDITION && hasRole(selNode.data.kind)" class="st-field">模型
             <el-select v-model="selNode.data.modelRef" size="small" clearable filterable
               placeholder="角色默认（在 AI 设置全局配）" @change="syncNode" style="width:100%">
               <el-option v-for="m in availableModels" :key="m.ref" :label="`${m.ref}${m.vision ? ' · 视觉' : ''}`" :value="m.ref" />
@@ -312,6 +314,7 @@ import {
   type ToolCatalogItem, type RunSummary
 } from '@/services/agent/studioClient'
 import { sendAgentMessage, sendAgentApproval, pingAgentService, stopAgentRun, getActiveRun, type AgentEvent } from '@/services/agent/agentClient'
+import { IS_INTERNAL_EDITION } from '@/services/edition'
 import { getRouting, type RoutingModel } from '@/services/agent/agentConfig'
 import { packageRegionSummary } from '@/services/region/regionContext'
 

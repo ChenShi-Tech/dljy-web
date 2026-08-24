@@ -14,15 +14,24 @@
 // tab 状态同步到 ?tab= query：旧路由 redirect 落到对应 tab、刷新与深链保持位置。
 import { defineAsyncComponent, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { IS_CUSTOMER_EDITION } from '@/services/edition'
+
+// 「AI 模型设置」tab 在客户交付档整个摘掉（#2410）：它列出供应商、型号、密钥配置。
+// 用编译期常量做条件而非运行期 v-if——后者只是把界面藏起来，AiSettingsView 连同它
+// import 的 llmProviders.ts（deepseek/豆包/智谱的中文名与文档链接）照样在交付出去的
+// JS 里，devtools 搜一下就有。编译期常量让 rollup 把这个分支连同动态 import 一起消除。
+const MODEL_SETTINGS_TAB = IS_CUSTOMER_EDITION
+  ? []
+  : [{ name: 'models', label: 'AI 模型设置', component: defineAsyncComponent(() => import('./AiSettingsView.vue')) }]
 
 const TABS = [
-  { name: 'models', label: 'AI 模型设置', component: defineAsyncComponent(() => import('./AiSettingsView.vue')) },
+  ...MODEL_SETTINGS_TAB,
   { name: 'skills', label: '技能工作室', component: defineAsyncComponent(() => import('./SkillStudioView.vue')) },
   { name: 'sub-agents', label: '子智能体工作室', component: defineAsyncComponent(() => import('./SubAgentStudioView.vue')) },
   { name: 'dify', label: 'Dify 工作流工作室', component: defineAsyncComponent(() => import('./strategy/DifyWorkflowStudioView.vue')) },
   { name: 'orchestration', label: '高级智能体编排', component: defineAsyncComponent(() => import('./AgentOrchestrationStudioView.vue')) },
   { name: 'schedules', label: '定时任务调度', component: defineAsyncComponent(() => import('./ScheduleManagementView.vue')) },
-] as const
+]
 
 const TAB_NAMES = TABS.map((t) => t.name) as readonly string[]
 const DEFAULT_TAB = TABS[0].name

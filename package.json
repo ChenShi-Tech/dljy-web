@@ -14,7 +14,9 @@
     "test:unit": "vitest run --configLoader runner",
     "test:coverage": "vitest run --configLoader runner --coverage",
     "lint": "node scripts/check-font-tokens.mjs && eslint .",
-    "lint:fix": "eslint . --fix"
+    "lint:fix": "eslint . --fix",
+    "build:customer": "vite build --mode customer",
+    "verify:customer-edition-build": "node scripts/verify-customer-edition-build.mjs"
   },
   "dependencies": {
     "@element-plus/icons-vue": "^2.3.2",
