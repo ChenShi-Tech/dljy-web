@@ -8,10 +8,12 @@ import { AGENT_API_BASE, identityHeaders } from '@/services/agent/agentClient'
 import { timeoutSignal } from '@/services/api'
 import {
   classifyStoreResponse,
+  coerceCase,
   coerceImprovementAction,
   coerceRiskEvent,
   extractRows,
   isOpenForCarry,
+  type CaseSummary,
   type ImprovementActionSummary,
   type RiskEventSummary,
   type StoreFeed
@@ -76,12 +78,17 @@ export type RiskEventDraft = {
   positionSnapshot?: Record<string, unknown> | null
   nearMiss?: boolean
   lessons?: string | null
+  extremeValue?: number | null
+  durationHours?: number | null
 }
 
-export async function registerRiskEvent(draft: RiskEventDraft): Promise<RiskEventSummary> {
+export async function registerRiskEvent(
+  draft: RiskEventDraft,
+  idempotencyKey?: string
+): Promise<RiskEventSummary> {
   const res = await fetch(`${BASE}/risk-events`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json', ...identityHeaders(), 'idempotency-key': newIdempotencyKey() },
+    headers: { 'content-type': 'application/json', ...identityHeaders(), 'idempotency-key': idempotencyKey ?? newIdempotencyKey() },
     body: JSON.stringify(draft),
     signal: timeoutSignal(TIMEOUT_MS)
   })
@@ -182,4 +189,56 @@ export async function patchImprovementAction(
     throw new Error('行动项更新成功但响应形态不符——请刷新核对')
   }
   throw new Error(typeof body?.msg === 'string' && body.msg ? body.msg : `行动项更新失败（HTTP ${res.status}）`)
+}
+
+// ── 案例库（#2047 near_miss 入案例库；服务端 case_no 生成 AL-YYYYMMDD-NNN） ───
+
+export type CaseFeed =
+  | { available: true; cases: CaseSummary[] }
+  | ({ available: false } & Exclude<StoreFeed, { available: true }>)
+
+export async function fetchCases(caseType?: string): Promise<CaseFeed> {
+  const qs = caseType ? `?case_type=${encodeURIComponent(caseType)}` : ''
+  try {
+    const res = await fetch(`${BASE}/cases${qs}`, {
+      method: 'GET',
+      headers: identityHeaders(),
+      signal: timeoutSignal(TIMEOUT_MS)
+    })
+    const body: unknown = res.status === 204 ? [] : await res.json().catch(() => null)
+    const verdict = classifyStoreResponse(res.status, body)
+    if (!verdict.available) return verdict
+    const rows = extractRows(body) ?? []
+    const cases = rows.map(coerceCase).filter((c): c is CaseSummary => c !== null)
+    return { available: true, cases }
+  } catch {
+    return { available: false, reason: 'unreachable' }
+  }
+}
+
+export type CaseDraft = {
+  caseType: 'decision' | 'risk' | 'deviation'
+  title: string
+  background: string
+  conclusion: string
+  lessons: string
+  applicableScene?: string | null
+  visibility?: 'public' | 'internal'
+  sourceInstanceId?: number | null
+}
+
+export async function registerCase(draft: CaseDraft): Promise<CaseSummary> {
+  const res = await fetch(`${BASE}/cases`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', ...identityHeaders(), 'idempotency-key': newIdempotencyKey() },
+    body: JSON.stringify(draft),
+    signal: timeoutSignal(TIMEOUT_MS)
+  })
+  const body = await readEnvelope(res)
+  if (res.status >= 200 && res.status < 300) {
+    const c = coerceCase(body?.data ?? body)
+    if (c) return c
+    throw new Error('案例登记成功但响应形态不符——请到案例库核对，不重复提交')
+  }
+  throw new Error(typeof body?.msg === 'string' && body.msg ? body.msg : `案例登记失败（HTTP ${res.status}）`)
 }

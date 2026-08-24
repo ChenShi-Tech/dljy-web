@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import {
   broughtActionsViolations,
   classifyStoreResponse,
+  coerceCase,
   coerceImprovementAction,
   coerceRiskEvent,
   extractRows,
@@ -59,6 +60,18 @@ describe('classifyStoreResponse / extractRows（探针降级口径）', () => {
     expect(extractRows([])).toEqual([])
     expect(extractRows({ data: [1, 2] })).toEqual([1, 2])
     expect(extractRows({ msg: 'x' })).toBeNull()
+  })
+})
+
+
+describe('coerceCase（#2047 near_miss 入案例库）', () => {
+  it('camelCase/snake_case 双容忍，visibility 归一，caseType 非法拒收', () => {
+    const a = coerceCase({ id: 3, caseNo: 'AL-20260818-001', caseType: 'risk', title: '越限申报未卡热点', visibility: 'internal' })
+    expect(a).toMatchObject({ id: '3', caseNo: 'AL-20260818-001', caseType: 'risk', visibility: 'internal' })
+    const b = coerceCase({ id: '4', case_no: 'AL-20260818-002', case_type: 'risk', title: 't', visibility: 'public' })
+    expect(b).toMatchObject({ id: '4', caseNo: 'AL-20260818-002', visibility: 'public' })
+    expect(coerceCase({ id: 5, case_no: 'x', case_type: 'incident', title: 't' })).toBeNull()
+    expect(coerceCase({ id: 6, caseType: 'risk', title: 't' })).toBeNull() // 缺 case_no
   })
 })
 

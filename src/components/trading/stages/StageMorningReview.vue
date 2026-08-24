@@ -11,7 +11,7 @@
 //
 // ①②是**两个不同的量，不可互相替代**：中标率答「我报的量中了多少」，执行偏差答「我实际
 // 干的和我报的差多少、要交多少考核费」。只看中标率会漏掉「全中但执行跑偏」的那类亏损。
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { History, Save, Scale, TriangleAlert } from 'lucide-vue-next'
 import {
@@ -28,6 +28,7 @@ import {
   type ReviewResult
 } from '@/services/quant/quantClient'
 import { loadLogAsync, storageNoticeFor, type DecisionLogMode } from '@/services/trading/decisionLogStore'
+import { markS1Started, s1TimerView, type S1TimerView } from '@/services/trading/stageTimer'
 import { coverageOf, hitRate, type DecisionLogEntry } from 'shared/trading-rules/decision-log.mjs'
 import {
   aggregatePeakFlatValley,
@@ -96,8 +97,25 @@ onMounted(() => {
     logMode.value = snap.mode
     log.value = snap.log
   })
+  // #2040 S1 实机计时：进入即记时间戳（刷新不重计）；零写回（不进单据字段）
+  if (props.declaration) markS1Started(props.declaration.id, props.targetDate)
+  refreshS1View()
+  s1Ticker.value = window.setInterval(refreshS1View, 30_000)
 })
 watch(reviewedDate, loadReviewed)
+
+// ── S1 实机计时（#2040）：只呈现，不写回（U4 红线） ──────────────────────────
+const s1View = ref<S1TimerView>({ startedAt: null, elapsedMinutes: null, slow: false })
+const s1Ticker = ref<number | null>(null)
+const s1ElapsedFinal = ref<number | null>(null)
+function refreshS1View() {
+  s1View.value = props.declaration
+    ? s1TimerView(props.declaration.id, props.targetDate)
+    : { startedAt: null, elapsedMinutes: null, slow: false }
+}
+onBeforeUnmount(() => {
+  if (s1Ticker.value) window.clearInterval(s1Ticker.value)
+})
 
 /** ① 中标情况：申报 vs 出清。两条曲线都在才算，缺一如实标注。 */
 const analysis = computed<ClearingAnalysis | null>(() => {
@@ -500,6 +518,11 @@ async function writeBack() {
       `S1 晨会复盘：${causeLabelOf(cause.value)}`
     )
     emit('updated', updated)
+    // #2040 收口读数：writeBack 成功时的实机用时（>5 分钟黄标口径见 stageTimer）；
+    // 只呈现不写回（U4：实测数值不进单据字段）。
+    s1ElapsedFinal.value = props.declaration
+      ? s1TimerView(props.declaration.id, props.targetDate).elapsedMinutes
+      : null
     saveMsg.value = isPendingCause(cause.value)
       ? '已记为待分析并写回，晨会人工讨论后回填主因；可进入 S2'
       : '复盘结论已写回，进入 S2 早间分析'
@@ -853,6 +876,13 @@ async function writeBack() {
         <button type="button" class="ghost" @click="emit('go', 'market-analysis')">跳到 S2 早间分析</button>
         <span v-if="saveMsg" class="mr-ok">{{ saveMsg }}</span>
         <span v-if="saveError" class="mr-err-inline">{{ saveError }}</span>
+        <!-- #2040 S1 实机计时（呈现only，零写回） -->
+        <span v-if="s1ElapsedFinal !== null" class="mr-ok" :class="{ 'mr-s1-slow': s1View.slow }">
+          本次 S1 用时 {{ s1ElapsedFinal }} 分钟{{ s1View.slow ? '（超过 5 分钟，流程观察项——不影响写回）' : '' }}
+        </span>
+        <span v-else-if="s1View.elapsedMinutes !== null" class="mr-muted" :class="{ 'mr-s1-slow': s1View.slow }">
+          S1 已进行 {{ s1View.elapsedMinutes }} 分钟{{ s1View.slow ? '（超过 5 分钟）' : '' }}
+        </span>
       </div>
       <ul v-if="!validation.ok && (cause || lessons)" class="mr-invalid">
         <li v-for="(e, i) in validation.errors" :key="i">{{ e }}</li>
@@ -878,6 +908,8 @@ async function writeBack() {
 .mr-focus strong { color: #075985; }
 .mr-focus ul { margin: 4px 0 0; padding-left: 18px; font-size: var(--font-xs); line-height: 1.7; color: #475569; }
 .mr-window { margin: 0; padding: 6px 12px; border-radius: 8px; font-size: var(--font-sm); }
+.mr-muted { color: var(--el-text-color-secondary, #909399); font-size: var(--font-sm); }
+.mr-s1-slow { color: #b45309; }
 .mr-window-within { background: #f0fdf4; color: #166534; }
 .mr-window-before { background: #f8fafc; color: #475569; }
 .mr-window-after { background: #fffbeb; color: #a16207; }

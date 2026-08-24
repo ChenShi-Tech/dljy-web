@@ -3,8 +3,9 @@
 // ---------------------------------------------------------------------------
 // 阈值触发（月度 /review 真数据 + 前端胜率服务；止损仓位 data_gap 如实呈现）；
 // 风险事件库已接端点（review.risk_events）：登记落库 + 处置回填 + 事件回显；
-// 端点缺席环境回落本地草稿（探针降级）。near_miss 不计损失金额（三层红线），
-// 案例库沉淀待 review.cases 端点上线；
+// 越限触发自动生成事件库草稿（幂等双保险：确定性键 + GET 去重）；
+// near_miss 不计损失金额（三层红线），事件落库后自动沉淀案例库（review.cases，
+// case_no 回执；失败红字+重试，不静默）；端点缺席环境回落本地草稿（探针降级）；
 // 压力测试包装既有蒙特卡洛引擎 /quant/cvar（价差序列真算 VaR/CVaR/最大回撤），
 // 显著标注「决策参考，非结算依据」；承受能力评级人定，「弱」限期整改复测本地跟踪。
 // 站内不外发（C4 确认前，沿用四川采集告警先例）。
@@ -20,7 +21,13 @@ import {
 } from '@/services/review/riskReview'
 import { getRegionWinStats } from '@/services/tradingMemory'
 import { currentRegion } from '@/services/region/regionContext'
-import { fetchRiskEvents, patchRiskEvent, registerRiskEvent } from '@/services/review/reviewStoreClient'
+import {
+  fetchCases,
+  fetchRiskEvents,
+  patchRiskEvent,
+  registerCase,
+  registerRiskEvent
+} from '@/services/review/reviewStoreClient'
 import type { RiskEventSummary } from '@/services/review/reviewStoreApi'
 
 const props = defineProps<{ tolerancePct: number; penaltyPrice: number }>()
@@ -52,6 +59,7 @@ async function load() {
     loadError.value = e instanceof Error ? e.message : '月度取数失败'
   } finally {
     loading.value = false
+    void autoDraftFindings() // 取数落定后再判（loading 期间 findings 未稳，不抢跑）
   }
 }
 onMounted(load)
@@ -95,6 +103,34 @@ const nearMissError = ref('')
 const eventsAvailable = ref(false)
 const registeredEvents = ref<RiskEventSummary[]>([])
 
+// near_miss 案例库沉淀（#2047「侥幸逃过须入案例库」）：事件落库后自动 registerCase；
+// 失败红字 + 重试按钮（写路径不静默），成功给 case_no 回执。
+const casesAvailable = ref(false)
+const caseReceipt = ref('')
+const caseError = ref('')
+const caseRetryDraft = ref<Parameters<typeof registerCase>[0] | null>(null)
+
+async function loadCasesProbe() {
+  const feed = await fetchCases()
+  casesAvailable.value = feed.available
+}
+
+async function sinkCase(draft: Parameters<typeof registerCase>[0]) {
+  const created = await registerCase(draft)
+  caseReceipt.value = created.caseNo
+  caseError.value = ''
+  caseRetryDraft.value = null
+}
+
+async function retrySinkCase() {
+  if (!caseRetryDraft.value) return
+  try {
+    await sinkCase(caseRetryDraft.value)
+  } catch (e) {
+    caseError.value = e instanceof Error ? e.message : '案例沉淀失败'
+  }
+}
+
 async function loadEvents() {
   const feed = await fetchRiskEvents({ nearMiss: true })
   if (feed.available) {
@@ -105,6 +141,7 @@ async function loadEvents() {
   }
 }
 onMounted(loadEvents)
+onMounted(loadCasesProbe)
 
 async function saveNearMiss() {
   nearMissSaved.value = false
@@ -135,8 +172,63 @@ async function saveNearMiss() {
     }
     nearMissSaved.value = true
     await loadEvents()
+    // #2047 验收：near_miss 自动沉淀案例库（case_type=risk；公开是显式决定，缺省 internal）。
+    if (casesAvailable.value) {
+      const caseDraft = {
+        caseType: 'risk' as const,
+        title: `near_miss：${nearMiss.value.effectiveness || nearMiss.value.eventTime}`,
+        background: nearMiss.value.positionSnapshot || '（当时仓位未记录）',
+        conclusion: [nearMiss.value.handling, nearMiss.value.effectiveness].filter(Boolean).join('；') || '（处置与有效性未记录）',
+        lessons: nearMiss.value.effectiveness || '侥幸逃过待补评估（这次没事不等于下次没事）',
+        visibility: 'internal' as const
+      }
+      try {
+        await sinkCase(caseDraft)
+      } catch (e) {
+        // 事件已落库，案例沉淀失败不吞：红字 + 重试按钮（写路径不静默）
+        caseError.value = e instanceof Error ? e.message : '案例沉淀失败'
+        caseRetryDraft.value = caseDraft
+      }
+    }
   } catch (e) {
     nearMissError.value = e instanceof Error ? e.message : 'near_miss 登记失败'
+  }
+}
+
+// ── 阈值触发即事件库草稿（#2047「越限即预警型待办 + 事件库草稿」） ────────────
+// 幂等双保险：确定性 Idempotency-Key（trigger-{eventType}-{periodKey}）+
+// 服务端事实去重（GET 已存在同 eventType 不再 POST）；未越限不 POST（负例红线）。
+const autoDraftNotes = ref<string[]>([])
+const autoDraftedTypes = ref(new Set<string>())
+
+async function autoDraftFindings() {
+  autoDraftNotes.value = []
+  if (!eventsAvailable.value) return
+  const feed = await fetchRiskEvents()
+  if (!feed.available) return
+  const existingTypes = new Set(feed.events.map((e) => e.eventType))
+  for (const f of findings.value.findings) {
+    if (f.dataGap || autoDraftedTypes.value.has(f.id)) continue
+    const eventType = `trigger_${f.id.replace(/-/g, '_')}`
+    if (existingTypes.has(eventType)) {
+      autoDraftNotes.value.push(`「${f.title}」事件库草稿已存在（不重复登记）。`)
+      continue
+    }
+    try {
+      await registerRiskEvent(
+        {
+          eventTime: new Date().toISOString(),
+          eventType,
+          riskLevel: f.level === 'red' ? 'high' : 'medium',
+          lessons: `${f.title}——${f.detail}`
+        },
+        `trigger-${f.id}-${month.value}` // 确定性幂等键：同触发器同月重放同键
+      )
+      autoDraftedTypes.value.add(f.id)
+      autoDraftNotes.value.push(`「${f.title}」已生成事件库草稿（预警型待办）。`)
+    } catch {
+      autoDraftNotes.value.push(`「${f.title}」草稿登记失败（网络/端点异常，稍后重载月份可重试）。`)
+    }
   }
 }
 </script>
@@ -161,6 +253,7 @@ async function saveNearMiss() {
         <p v-if="!findings.findings.some((f) => !f.dataGap)" class="rrp-muted">
           本月无越限触发（负例：未越限不生成待办）——除 data_gap 项外监测均在跑。
         </p>
+        <p v-for="(n, i) in autoDraftNotes" :key="i" class="rrp-note">{{ n }}</p>
       </div>
 
       <!-- 压力测试（CVaR 真引擎） -->
@@ -225,8 +318,15 @@ async function saveNearMiss() {
         <button type="button" class="rrp-save" @click="saveNearMiss">登记 near_miss</button>
         <p v-if="nearMissError" class="rrp-warn">{{ nearMissError }}</p>
         <p v-else-if="nearMissSaved" class="rrp-ok">
-          {{ eventsAvailable ? '已落库（near_miss 不计入损失金额统计；案例库沉淀待 review.cases 端点上线后接入）。' : '已记为本地草稿（端点缺席环境，不落库）。' }}
+          {{ eventsAvailable ? '已落库（near_miss 不计入损失金额统计）。' : '已记为本地草稿（端点缺席环境，不落库）。' }}
         </p>
+        <template v-if="caseReceipt">
+          <p class="rrp-ok">已沉淀案例库：{{ caseReceipt }}（internal，near_miss 档案纪律）。</p>
+        </template>
+        <template v-else-if="caseError">
+          <p class="rrp-warn">{{ caseError }}（事件已落库，案例沉淀失败不静默）</p>
+          <button v-if="caseRetryDraft" type="button" class="rrp-save" @click="retrySinkCase">重试沉淀案例</button>
+        </template>
       </div>
     </template>
   </section>

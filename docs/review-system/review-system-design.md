@@ -53,7 +53,7 @@
 | ~~`review.template_instances` 读写端点~~ **已上线（#2037/#2039 M1）** | 触发引擎 + 实例读写 | 待办箱真数据；未部署环境探针 404 →「触发引擎未上线」空态 |
 | ~~决策日志服务端化（SHA-256 链）~~ **已上线（#2037 M1）** | Node BFF `/api/v1/review/decision-logs` | S7 双模式：server 台账优先，端点未部署回落 localStorage 原型 + PROTOTYPE_STORAGE_NOTICE |
 | ~~风险事件 / 改进措施端点~~ **已上线（#2046/#2047/#2049 接线）** | Node BFF `/api/v1/review/risk-events` + improvement-actions（经 agent 代理） | #2046 异常月登记入事件库；#2047 near_miss 落库+回显；#2049 纪要自动带入未闭环项+断言+行动项落库；端点缺席仍探针降级 |
-| 案例库 `review.cases` 列表 | #2045 | 列表位占位空态，data_gap 标注 |
+| ~~案例库 `review.cases` 端点~~ **已上线（#2047 验收残留：GET/GET{id}/POST）** | Node BFF `/api/v1/review/cases`（经 agent 代理） | near_miss 事件落库后自动沉淀案例（case_type=risk、visibility 缺省 internal、case_no 回执；失败红字+重试不静默） |
 | weekly/monthly 复盘调度 kind | #2044 | 周月模板只读预览，不显示「已生成」 |
 
 **B2. #2037/#2039 M1 落地后的实际通道（双仓 PR 对齐）**
@@ -221,6 +221,14 @@ quant /reports ─┼─ cockpitModel.ts（纯函数） ─→ DimensionGrid / T
   `reviewStoreClient.ts` 传输层，读探针降级/写抛错；后端契约见 dljy `docs/api/review-store-endpoints.md`）、
   案例库端点（#2045 部分）、胜率服务端化（#2045）、周月调度预填（#2044）——
   未上线项前端探针/占位均已就位，端点上线零改动或小改出数。
+- **验收残留清零（Epic #2033 收口，前后端对齐 PR）**：决策时点 `decisionTime`
+  （迁移 044 非哈希列；S7 决策日志表单选填）、追涨/杀跌 R3/R4 打标（决策时点小时价
+  较前一小时波动 ≥15% 且 judgement 同向；decisionTime/小时价/方向缺任一不打标——宁缺勿滥）、
+  阈值触发自动事件库草稿（幂等双保险：确定性键 `trigger-{eventType}-{periodKey}` + GET 去重；
+  未越限不 POST）、risk-events `extremeValue/durationHours`（#2046 结构化；月粒度数据无逐时
+  口径时如实 null+data_gap 注明）、S1 实机计时（`stageTimer.ts` 纯逻辑，sessionStorage per
+  申报单+日期；>5 分钟黄标只呈现，**零写回**——U4 红线，测量协议=进入 S1 记时戳 →
+  writeBack 成功读 elapsed）。
 - **前端侧已实现的口径注记**：单笔 Top5 以日为笔（逐笔归集待 S6 #1966）；
-  连续未达预期价差以「价差盈亏为负」为代理（正式定义待 P2）；追涨/杀跌待价格联动
-  数据接入后打标（宁缺勿滥）；节假日表未接入前归档提醒按周末顺延保守口径。
+  连续未达预期价差以「价差盈亏为负」为代理（正式定义待 P2）；追涨/杀跌已按
+  decisionTime×小时价联动打标（缺任一前置不打标，宁缺勿滥）；节假日表未接入前归档提醒按周末顺延保守口径。

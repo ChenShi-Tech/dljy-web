@@ -12,9 +12,11 @@ import type { DecisionLogEntry } from 'shared/trading-rules/decision-log.mjs'
 import {
   detectEmotionPatterns,
   EMOTION_NOTE,
-  EMOTION_TOGGLE_KEY
+  EMOTION_TOGGLE_KEY,
+  type HourlyPriceContext
 } from '@/services/review/emotionRules'
 import { createImprovementAction } from '@/services/review/reviewStoreClient'
+import { fetchReviewRange } from '@/services/review/reviewPeriodClient'
 
 const disabled = ref(typeof localStorage !== 'undefined' && localStorage.getItem(EMOTION_TOGGLE_KEY) === '1')
 function toggleDisabled() {
@@ -23,10 +25,39 @@ function toggleDisabled() {
 }
 
 const entries = ref<DecisionLogEntry[]>([])
+const hourlyPrices = ref<HourlyPriceContext>(null)
 onMounted(async () => {
   entries.value = (await loadLogAsync()).log
+  hourlyPrices.value = await loadHourlyPrices(entries.value)
 })
-const detection = computed(() => detectEmotionPatterns(entries.value))
+const detection = computed(() => detectEmotionPatterns(entries.value, { hourlyPrices: hourlyPrices.value }))
+
+/**
+ * R3/R4 价格上下文：决策日志各 targetDate 的 96 点日前价（/review 真取数），
+ * 每 4 点取均值归一到小时价（缺点不出半真值）。取数失败 → null（不打标，宁缺勿滥）。
+ */
+async function loadHourlyPrices(log: DecisionLogEntry[]): Promise<HourlyPriceContext> {
+  const dates = [...new Set(log.map((e) => e.targetDate))].sort()
+  if (!dates.length) return null
+  try {
+    const period = await fetchReviewRange(dates, { tolerancePct: 0.05, penaltyPrice: 0 })
+    const ctx: Record<string, (number | null)[]> = {}
+    for (const d of period.days) {
+      if (!d.ok) continue
+      const points = d.result.detail.map((p) => (typeof p.da_price === 'number' ? p.da_price : null))
+      const hours: (number | null)[] = []
+      for (let h = 0; h < 24; h += 1) {
+        const group = points.slice(h * 4, h * 4 + 4)
+        const vals = group.filter((v): v is number => v !== null)
+        hours.push(group.length === 4 && vals.length === 4 ? vals.reduce((a, b) => a + b, 0) / 4 : null)
+      }
+      ctx[d.date] = hours
+    }
+    return ctx
+  } catch {
+    return null
+  }
+}
 
 // 干预措施：落库 improvement_actions（#2049：下季度逐人回查的跟踪载体）
 const intervention = ref('')

@@ -19,6 +19,8 @@ export type RiskEventSummary = {
   disposal: string | null
   effective: boolean | null
   lessons: string | null
+  extremeValue: number | null
+  durationHours: number | null
   updatedAt: string | null
 }
 
@@ -62,7 +64,41 @@ export function coerceRiskEvent(row: unknown): RiskEventSummary | null {
     disposal: str(r.disposal),
     effective: r.effective == null ? null : r.effective === true,
     lessons: str(r.lessons),
+    extremeValue: numOrNull(r.extremeValue ?? r.extreme_value),
+    durationHours: numOrNull(r.durationHours ?? r.duration_hours),
     updatedAt: str(r.updatedAt) ?? str(r.updated_at),
+  }
+}
+
+/** 案例摘要（对齐 review.cases 关键列；#2047 near_miss 入案例库） */
+export type CaseSummary = {
+  id: string
+  caseNo: string
+  caseType: 'decision' | 'risk' | 'deviation'
+  title: string
+  visibility: 'public' | 'internal'
+  lessons: string
+  createdAt: string | null
+}
+
+export function coerceCase(row: unknown): CaseSummary | null {
+  if (!row || typeof row !== 'object') return null
+  const r = row as Record<string, unknown>
+  const id = typeof r.id === 'number' ? String(r.id) : typeof r.id === 'string' ? r.id : null
+  const caseNo = str(r.caseNo) ?? str(r.case_no)
+  const caseType = str(r.caseType) ?? str(r.case_type)
+  const title = str(r.title)
+  const visibility = str(r.visibility)
+  if (!id || !caseNo || !title) return null
+  if (caseType !== 'decision' && caseType !== 'risk' && caseType !== 'deviation') return null
+  return {
+    id,
+    caseNo,
+    caseType,
+    title,
+    visibility: visibility === 'public' ? 'public' : 'internal',
+    lessons: str(r.lessons) ?? '',
+    createdAt: str(r.createdAt) ?? str(r.created_at),
   }
 }
 

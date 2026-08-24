@@ -91,7 +91,10 @@ export async function fetchServerVerdict(
 
 // ── 写路径（按模式分发；错误向上抛，页面展示原因） ────────────────────────────
 
-export async function appendAndPersistAsync(draft: DecisionLogDraft): Promise<DecisionLogEntry[]> {
+export async function appendAndPersistAsync(
+  draft: DecisionLogDraft,
+  decisionTime?: string | null
+): Promise<DecisionLogEntry[]> {
   const mode = await resolveDecisionLogMode()
   if (mode === 'local') return appendAndPersist(draft)
   await postDecisionLog({
@@ -103,7 +106,9 @@ export async function appendAndPersistAsync(draft: DecisionLogDraft): Promise<De
     p50: draft.p50,
     p90: draft.p90,
     confidence: draft.confidence,
-    correctionOf: null
+    correctionOf: null,
+    // 决策时点（迁移 044 独立非哈希列，#2049 追涨/杀跌判定前置）：可选，缺省=时点未知
+    decisionTime: decisionTime ?? null
     // 刻意不传 author（服务端按会话身份落名）与 at（落链时点由服务端定，见导入同款口径）
   })
   return reloadServer(mode)

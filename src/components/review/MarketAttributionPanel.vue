@@ -146,7 +146,10 @@ async function registerAnomaly(m: string, devPct: number) {
       eventType: 'price_anomaly',
       riskLevel: Math.abs(devPct) >= 0.3 ? 'high' : 'medium',
       impactYuan: null,
-      lessons: `月粒度 2σ 规则识别：偏离年均 ${(devPct * 100).toFixed(1)}%`
+      // #2046 极值/持续时长：月粒度数据无逐时极值与持续口径——如实 null，lessons 注明 data_gap
+      extremeValue: null,
+      durationHours: null,
+      lessons: `月粒度 2σ 规则识别：偏离年均 ${(devPct * 100).toFixed(1)}%（data_gap：月内逐时极值与持续时长需 clearing_price 逐时数据，当前未记录）`
     })
     monthRiskEvents.value = [ev, ...monthRiskEvents.value]
   } catch (e) {
