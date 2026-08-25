@@ -13,6 +13,7 @@ import { selectedRegionId, setCurrentRegionId } from '@/services/region/regionCo
 import { getRegionById } from '../../data/regions'
 import {
   providersForTarget, platformTargetsForRegion, getProvider, defaultParams, PROVIDERS,
+  FORECAST_TARGET_OPTIONS, nativeSlotsForTarget, granularityForTarget,
   ensureForecastCatalog, forecastCatalogState,
   type UnifiedForecastResult, type ProviderKind, type ForecastProvider,
 } from '@/services/forecast/forecastProviders'
@@ -24,21 +25,16 @@ import { summarizeForecastFailures, type ForecastFailure } from '@/services/fore
 
 const REGION_IDS = ['shanxi', 'shandong', 'gansu', 'guangdong', 'sichuan', 'yunnan']
 const regionOptions = REGION_IDS.map((id) => ({ id, name: getRegionById(id).name }))
-const TARGETS = [
-  { id: 'price', name: '电价' },
-  { id: 'load', name: '系统负荷' },
-  { id: 'renewable', name: '新能源出力' },
-  { id: 'bidding_space', name: '竞价空间' },
-  { id: 'reg_price', name: '调频出清价' },
-  { id: 'reserve_price', name: '备用容量价' },
-  { id: 'zonal_spread', name: '区域价差(节点阻塞)' },
-]
+// 标的清单由注册表派生（dljy#2463）：中文名、原生粒度同源，不再各写一份
+const TARGETS = FORECAST_TARGET_OPTIONS
 
 // 共享任务栏
 const regionId = ref(selectedRegionId.value || 'shanxi')
 const target = ref('price')
 const targetDate = ref('2026-06-04')
 const granularity = ref<24 | 96>(96)
+// 标的原生点数：60 分钟标的（用户侧结算电价）原生 24 点，粒度控件隐藏、请求粒度恒 24（dljy#2463）
+const nativeSlots = computed(() => nativeSlotsForTarget(target.value))
 const historyDays = ref(180)
 const activeTab = ref('single')
 const error = ref('')
@@ -58,7 +54,7 @@ function providerOptionLabel(p: ForecastProvider): string {
 function buildCtx() {
   return {
     regionId: regionId.value, target: target.value, targetDate: targetDate.value || undefined,
-    granularity: granularity.value, historyDays: historyDays.value,
+    granularity: granularityForTarget(target.value, granularity.value), historyDays: historyDays.value,
   }
 }
 
@@ -279,7 +275,7 @@ async function loadOverview() {
     // 看起来像"这个地区没有总览"，实则是后端给了可执行原因（日期超范围/缺列等）。
     const failures: ForecastFailure[] = []
     const settled = await Promise.all(overviewTargets.map((t) =>
-      platform.run({ regionId: region, target: t.id, targetDate: targetDate.value || undefined, granularity: granularity.value, historyDays: historyDays.value }, {})
+      platform.run({ regionId: region, target: t.id, targetDate: targetDate.value || undefined, granularity: granularityForTarget(t.id, granularity.value), historyDays: historyDays.value }, {})
         .then((r) => ({ id: t.id, name: t.name, result: r }))
         .catch((e) => { failures.push({ name: t.name, reason: (e as Error).message || '取数失败' }); return null })))
     if (generation !== contextGeneration) return
@@ -334,10 +330,11 @@ onMounted(() => { ensureForecastCatalog() })
         <span class="lbl">预测日期</span>
         <el-date-picker v-model="targetDate" type="date" value-format="YYYY-MM-DD" size="small" style="width: 150px" />
         <span class="lbl">粒度</span>
-        <el-radio-group v-model="granularity" size="small">
+        <el-radio-group v-if="nativeSlots === 96" v-model="granularity" size="small">
           <el-radio-button :value="96">96 点</el-radio-button>
           <el-radio-button :value="24">24 点</el-radio-button>
         </el-radio-group>
+        <el-tag v-else size="small" type="info">{{ nativeSlots }} 点（标的原生粒度，不聚合）</el-tag>
         <span class="lbl">历史范围(天)</span>
         <el-input-number v-model="historyDays" :min="30" :max="365" :step="30" size="small" />
       </div>
