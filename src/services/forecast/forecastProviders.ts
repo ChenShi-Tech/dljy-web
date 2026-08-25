@@ -27,6 +27,10 @@ export type ProviderKind = 'replay' | 'compute' // 回放真实采集 | 后端�
 // ForecastBasis 单一权威定义在 services/data/types.ts（Phase 0 统一类型层，与
 // dataBasis.ts::DataBasis 合并为 DataSourceBasis）。此处 re-export 保持兼容。
 import type { ForecastBasis } from '../data/types'
+// 预测标的注册表（主仓 shared/forecast/target-registry.mjs 经 sync:web 单向推送，本仓只读；dljy#2463）：
+// 标的清单、中文名、原生粒度全部由它派生——此前 ML_TARGETS 与 Workbench TARGETS 各写一份 7 项硬编码，
+// 与后端目录漂移（hydro/temp/用户侧结算电价缺）。
+import { FORECAST_TARGETS, targetSlotsPerDay } from 'shared/forecast/target-registry.mjs'
 export type { ForecastBasis }
 
 export type ParamFieldType = 'number' | 'slider' | 'select' | 'switch' | 'weight-group' | 'daterange'
@@ -126,8 +130,27 @@ export function aggregate96to24(points: (number | null)[]): number[] {
   return out
 }
 
+/** 工作台可选标的：注册表里平台有取数路径、且是日内曲线（15/60 分钟）的标的。日频标的（中长期价）归中长期页。 */
+export const FORECAST_TARGET_OPTIONS: { id: string; name: string; slotsPerDay: number }[] = FORECAST_TARGETS
+  .filter((t) => t.dataSource.status === 'available' && (t.granularity === '15min' || t.granularity === '60min'))
+  .map((t) => ({ id: t.id, name: t.labelZh, slotsPerDay: targetSlotsPerDay(t.id) ?? 96 }))
+
+/** 标的原生每日点数（15 分钟 → 96、60 分钟 → 24）；未登记标的按 96 处理（旧行为）。 */
+export function nativeSlotsForTarget(target: string): number {
+  return targetSlotsPerDay(target) ?? 96
+}
+
+/**
+ * 请求粒度：15 分钟标的按用户选择（96 原生 / 24 聚合）；60 分钟标的原生就是 24 点，**不能再聚合**
+ * （dljy#2463：用户侧结算电价原生 24 点再走一次 96→24 聚合会被压成 6 点）。
+ */
+export function granularityForTarget(target: string, chosen: 24 | 96): 24 | 96 {
+  return nativeSlotsForTarget(target) === 96 ? chosen : 24
+}
+
 function applyGranularity(result: UnifiedForecastResult, granularity: 24 | 96): UnifiedForecastResult {
-  if (granularity === 96 || result.granularity === 24) return result
+  // 只有「结果是 96 点且要求 24 点」才聚合；结果本就是 24 点（60 分钟标的）或其它粒度一律原样返回
+  if (granularity === 96 || result.granularity !== 96) return result
   return {
     ...result,
     points: aggregate96to24(result.points),
@@ -295,7 +318,7 @@ export const knnProvider: ForecastProvider = {
       extra: { k: Number(params.k1 ?? 8), features: params.features },
     })
     assertUsableForecast(r)
-    return adaptMlResult(r, 'knn', ctx.granularity)
+    return adaptMlResult(r, 'knn', ctx.granularity, nativeSlotsForTarget(ctx.target))
   },
 }
 
@@ -366,10 +389,12 @@ function normalizeTier(tier: unknown): ForecastProvider['tier'] {
   return (t === 'official' || t === 'baseline' || t === 'core' || t === 'neural' || t === 'deep') ? t : 'core'
 }
 
-const ML_TARGETS = ['price', 'load', 'renewable', 'bidding_space', 'reg_price', 'reserve_price', 'zonal_spread']
+// 由注册表派生（顺序 = ForecastTarget 枚举顺序）；后端目录缺省 supportedTargets 时回退全集
+const ML_TARGETS = FORECAST_TARGET_OPTIONS.map((t) => t.id)
 
-function adaptMlResult(r: ForecastResult, modelId: string, granularity: 24 | 96): UnifiedForecastResult {
-  const hasBand = r.lower?.length === 96 && r.upper?.length === 96
+function adaptMlResult(r: ForecastResult, modelId: string, granularity: 24 | 96, nativeSlots = 96): UnifiedForecastResult {
+  // 区间带按本标的原生点数判齐全（此前写死 96：60 分钟标的的 24 点区间会被当成「没有区间」）
+  const hasBand = r.lower?.length === nativeSlots && r.upper?.length === nativeSlots
   return applyGranularity(
     {
       points: r.points,
@@ -378,7 +403,7 @@ function adaptMlResult(r: ForecastResult, modelId: string, granularity: 24 | 96)
       unit: r.unit,
       basis: r.basis,
       mock: r.mock,
-      granularity: 96,
+      granularity: (nativeSlots === 24 ? 24 : 96),
       modelId,
       metrics: {
         mae: r.metrics?.mae,
@@ -488,7 +513,7 @@ function makeMlProvider(model: ForecastModel): ForecastProvider {
         target_date: ctx.targetDate,
       })
       assertUsableForecast(r)
-      const out = adaptMlResult(r, model.modelId, ctx.granularity)
+      const out = adaptMlResult(r, model.modelId, ctx.granularity, nativeSlotsForTarget(ctx.target))
       if (isMock) {
         // 占位模型（tslib compat=Ridge）：前端兜底强制 illustrative + 占位警告，
         // 即便后端漏标也不会把占位结果当真实精度展示/下注。
