@@ -47,6 +47,16 @@ import {
   pendingPriceChanges,
   type PriceChangeRecord
 } from '@/services/trading/priceChangeStore'
+import { buildMarketDigest, type MarketDigest } from '@/services/trading/marketDigest'
+import { fetchFundamentals, type FundamentalEntry } from '@/services/trading/fundamentalsClient'
+import {
+  ATTRIBUTION_HINT_NOTE,
+  attributionHintOf,
+  fundamentalSnapshot,
+  marketDimSummary,
+  POLICY_DATA_GAP_NOTE,
+  priceAnomalyPoints
+} from '@/services/review/marketReview'
 import { markS1Started, s1TimerView, type S1TimerView } from '@/services/trading/stageTimer'
 import { coverageOf, hitRate, type DecisionLogEntry } from 'shared/trading-rules/decision-log.mjs'
 import {
@@ -186,7 +196,36 @@ function judgePc(id: string, verdict: PriceChangeVerdict) {
 }
 onMounted(() => {
   pcPending.value = pendingPriceChanges()
+  void loadFundamentalsSnapshot()
 })
+watch(reviewedDate, () => {
+  void loadFundamentalsSnapshot()
+})
+
+// ── 市场复盘（六维③ · #2012 第 2 期）──────────────────────────────────────
+// 价格侧复用 S7 同款 buildMarketDigest（本单口径，不另建数据源）；供需侧复用 S2
+// fundamentals（按复盘对象日期取）。归因只做关联提示，政策无源 → data_gap 人工行。
+const marketDigest = computed<MarketDigest | null>(() =>
+  buildMarketDigest(
+    reviewed.value?.clearing?.clearedCurveMwh96 ?? null,
+    reviewed.value?.energyCurveMwh96 ?? null,
+    reviewed.value?.priceCurve96 ?? null
+  )
+)
+const fundamentals = ref<FundamentalEntry[]>([])
+const fundamentalsError = ref('')
+async function loadFundamentalsSnapshot() {
+  fundamentalsError.value = ''
+  try {
+    fundamentals.value = await fetchFundamentals(currentRegion.value.id, reviewedDate.value)
+  } catch (e) {
+    fundamentals.value = []
+    fundamentalsError.value = e instanceof Error ? e.message : '基本面取数失败'
+  }
+}
+const marketSnapshot = computed(() => fundamentalSnapshot(fundamentals.value))
+const marketAnomalies = computed(() => priceAnomalyPoints(marketDigest.value))
+const marketDim = computed(() => marketDimSummary(marketDigest.value, marketSnapshot.value))
 
 // ── S1 实机计时（#2040）：只呈现，不写回（U4 红线） ──────────────────────────
 const s1View = ref<S1TimerView>({ startedAt: null, elapsedMinutes: null, slow: false })
@@ -370,8 +409,8 @@ const yesterdayLogMissing = computed(() => {
 })
 
 // ── 六维摘要（需求 5）：每维一行，数据从各面板 computed 汇总，不新增数据源 ────
-// 首期 ①④⑥ 有真实数据；②策略已接 trading-memory 胜率端点（#2016 第 2 期）；
-// ③市场/⑤风险 仍「待数据接入」占位（#2012/#2015）。
+// 首期 ①④⑥ 有真实数据；②策略已接 trading-memory 胜率端点（#2016 第 2 期）、
+// ③市场已接价格/基本面（#2012 第 2 期）；⑤风险仍「待数据接入」占位（#2015）。
 type SixDimState = { key: string; name: string; summary: string; ready: boolean; note?: string }
 
 // ── 需求 4：决策三问状态（面板③逐条填写，写回 decisionReview）────────────────
@@ -519,7 +558,13 @@ const sixDims = computed<SixDimState[]>(() => {
       ready: strategyDim.value.ready,
       note: strategyFeed.value.available ? undefined : '策略胜率服务未上线'
     },
-    { key: 'market', name: '③ 市场', summary: '待 S2/S7 数据联动', ready: false, note: '#2012（第 2 期）' },
+    {
+      key: 'market',
+      name: '③ 市场',
+      summary: marketDim.value.summary,
+      ready: marketDim.value.ready,
+      note: marketDigest.value ? undefined : '昨单价格缺失'
+    },
     {
       key: 'deviation',
       name: '④ 偏差',
@@ -540,7 +585,7 @@ const sixDims = computed<SixDimState[]>(() => {
 })
 /** 六维摘要行点击展开对应区块（滚动定位，区块本身常驻——不折叠已有面板，保持现有作业动线）。 */
 function jumpToDim(key: string) {
-  const map: Record<string, string> = { result: 'mr-panel-result', strategy: 'mr-panel-strategy', deviation: 'mr-panel-deviation', decision: 'mr-panel-decision' }
+  const map: Record<string, string> = { result: 'mr-panel-result', strategy: 'mr-panel-strategy', market: 'mr-panel-market', deviation: 'mr-panel-deviation', decision: 'mr-panel-decision' }
   const id = map[key]
   if (id) document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
 }
@@ -902,6 +947,50 @@ async function writeBack() {
       <p v-else class="mr-muted">昨单无申报曲线，执行偏差无基准。</p>
     </section>
 
+    <!-- 市场复盘（六维③ · #2012 第 2 期）：昨价高低点+异常标记（S7 同款口径）、供需快照
+         （S2 基本面，带来源可信度）、归因只做关联提示、政策 data_gap 人工行。 -->
+    <section id="mr-panel-market" class="mr-panel">
+      <h3>市场复盘 · 昨日价格与供需（六维③）</h3>
+      <template v-if="marketDigest">
+        <div class="mr-facts">
+          <span>加权均价 {{ marketDigest.weightedAvgYuanPerMwh ?? '—' }} 元/MWh</span>
+          <span>高 {{ marketDigest.highYuanPerMwh ?? '—' }}（{{ marketDigest.highHour !== null ? `${marketDigest.highHour}:00` : '—' }}）</span>
+          <span>低 {{ marketDigest.lowYuanPerMwh ?? '—' }}（{{ marketDigest.lowHour !== null ? `${marketDigest.lowHour}:00` : '—' }}）</span>
+          <span class="mr-muted">口径：{{ marketDigest.sourceBasis === 'cleared' ? '本单出清' : '本单申报' }}（全市场概况待数据活源）</span>
+        </div>
+        <template v-if="marketAnomalies.length">
+          <p class="mr-summary">异常点（偏离加权均值 ≥15%）：{{ marketAnomalies.length }} 个</p>
+          <ul class="mr-anomaly-list">
+            <li v-for="(p, i) in marketAnomalies" :key="i" :class="p.direction === 'high' ? 'mr-bad' : 'mr-ok'">
+              {{ attributionHintOf(p, marketSnapshot) }}
+            </li>
+          </ul>
+          <p class="mr-muted">{{ ATTRIBUTION_HINT_NOTE }}</p>
+        </template>
+        <p v-else class="mr-muted">昨日价格无明显异常点（各小时偏离加权均值低于 15%）。</p>
+      </template>
+      <p v-else class="mr-muted">昨单价格曲线缺失——市场段无基准（{{ reviewed ? '价格未登记' : '昨日无申报单' }}）。</p>
+
+      <table class="mr-table">
+        <thead><tr><th>供需基本面（{{ reviewedDate }}）</th><th>值（MW）</th><th>来源</th></tr></thead>
+        <tbody>
+          <tr v-for="row in marketSnapshot" :key="row.key">
+            <td>{{ row.label }}</td>
+            <td :class="row.valueMw === null ? 'mr-muted' : ''">
+              {{ row.valueMw === null ? '—' : row.valueMw.toLocaleString() }}{{ row.note ? `（${row.note}）` : '' }}
+            </td>
+            <td>{{ row.valueMw === null ? '无记录' : row.trusted ? `数据（${row.credibility ?? '—'} 档）` : '自报口径' }}</td>
+          </tr>
+        </tbody>
+      </table>
+      <p v-if="fundamentalsError" class="mr-err">{{ fundamentalsError }}——基本面快照缺席，价格侧不受影响。</p>
+      <p class="mr-muted">{{ POLICY_DATA_GAP_NOTE }}</p>
+      <div class="mr-actions">
+        <button type="button" class="ghost" @click="emit('go', 'market-analysis')">去 S2 看曲线与基本面</button>
+        <button type="button" class="ghost" @click="emit('go', 'daily-close')">去 S7 看市场概况</button>
+      </div>
+    </section>
+
     <section id="mr-panel-decision" class="mr-panel">
       <h3>
         ③ 昨日决策日志
@@ -1084,6 +1173,9 @@ async function writeBack() {
 .mr-pc-list { margin: 4px 0 0; padding-left: 18px; font-size: var(--font-sm); }
 .mr-pc-list li { margin: 3px 0; line-height: 1.6; }
 .mr-pc-actions { margin-left: 8px; white-space: nowrap; }
+/* 市场复盘（#2012）：异常点清单（.mr-actions 复用上方既有样式） */
+.mr-anomaly-list { margin: 4px 0 0; padding-left: 18px; font-size: var(--font-sm); }
+.mr-anomaly-list li { margin: 2px 0; line-height: 1.6; }
 .mr-ok { font-size: var(--font-sm); color: #15803d; }
 .mr-bad { color: #b91c1c; display: inline-flex; align-items: center; gap: 3px; }
 .mr-facts { display: flex; gap: 14px; flex-wrap: wrap; align-items: baseline; font-size: var(--font-sm); font-variant-numeric: tabular-nums; }
