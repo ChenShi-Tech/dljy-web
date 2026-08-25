@@ -4,15 +4,19 @@
 // 数据源 = 决策日志（#2037 起服务端台账优先，端点未部署回落 localStorage 原型链）
 // + 规则清单 v1（先规则后模型）。
 // 页面明示学习辅导定位、不做排名；可整体停用（配置开关）且停用时无残留展示。
-// 干预措施与效果跟踪（下季度逐人回查）落 improvement_actions——端点未上线本地草稿。
+// 干预措施与效果跟踪（下季度逐人回查）落 improvement_actions（写入端点已接通；
+// 失败保留本地草稿并提示，不静默丢弃）。
 import { computed, onMounted, ref } from 'vue'
 import { loadLogAsync } from '@/services/trading/decisionLogStore'
 import type { DecisionLogEntry } from 'shared/trading-rules/decision-log.mjs'
 import {
   detectEmotionPatterns,
   EMOTION_NOTE,
-  EMOTION_TOGGLE_KEY
+  EMOTION_TOGGLE_KEY,
+  type HourlyPriceContext
 } from '@/services/review/emotionRules'
+import { createImprovementAction } from '@/services/review/reviewStoreClient'
+import { fetchReviewRange } from '@/services/review/reviewPeriodClient'
 
 const disabled = ref(typeof localStorage !== 'undefined' && localStorage.getItem(EMOTION_TOGGLE_KEY) === '1')
 function toggleDisabled() {
@@ -21,13 +25,60 @@ function toggleDisabled() {
 }
 
 const entries = ref<DecisionLogEntry[]>([])
+const hourlyPrices = ref<HourlyPriceContext>(null)
 onMounted(async () => {
   entries.value = (await loadLogAsync()).log
+  hourlyPrices.value = await loadHourlyPrices(entries.value)
 })
-const detection = computed(() => detectEmotionPatterns(entries.value))
+const detection = computed(() => detectEmotionPatterns(entries.value, { hourlyPrices: hourlyPrices.value }))
 
-// 干预措施与效果跟踪（本地草稿，improvement_actions 端点未上线）
+/**
+ * R3/R4 价格上下文：决策日志各 targetDate 的 96 点日前价（/review 真取数），
+ * 每 4 点取均值归一到小时价（缺点不出半真值）。取数失败 → null（不打标，宁缺勿滥）。
+ */
+async function loadHourlyPrices(log: DecisionLogEntry[]): Promise<HourlyPriceContext> {
+  const dates = [...new Set(log.map((e) => e.targetDate))].sort()
+  if (!dates.length) return null
+  try {
+    const period = await fetchReviewRange(dates, { tolerancePct: 0.05, penaltyPrice: 0 })
+    const ctx: Record<string, (number | null)[]> = {}
+    for (const d of period.days) {
+      if (!d.ok) continue
+      const points = d.result.detail.map((p) => (typeof p.da_price === 'number' ? p.da_price : null))
+      const hours: (number | null)[] = []
+      for (let h = 0; h < 24; h += 1) {
+        const group = points.slice(h * 4, h * 4 + 4)
+        const vals = group.filter((v): v is number => v !== null)
+        hours.push(group.length === 4 && vals.length === 4 ? vals.reduce((a, b) => a + b, 0) / 4 : null)
+      }
+      ctx[d.date] = hours
+    }
+    return ctx
+  } catch {
+    return null
+  }
+}
+
+// 干预措施：落库 improvement_actions（#2049：下季度逐人回查的跟踪载体）
 const intervention = ref('')
+const interventionSaving = ref(false)
+const interventionSaved = ref(false)
+const interventionError = ref('')
+async function saveIntervention() {
+  const action = intervention.value.trim()
+  if (!action) return
+  interventionSaving.value = true
+  interventionSaved.value = false
+  interventionError.value = ''
+  try {
+    await createImprovementAction({ action: `情绪化干预：${action}`, owner: null, dueDate: null })
+    interventionSaved.value = true
+  } catch (e) {
+    interventionError.value = e instanceof Error ? e.message : '干预措施落库失败（保留本地草稿，可重试）'
+  } finally {
+    interventionSaving.value = false
+  }
+}
 </script>
 
 <template>
@@ -56,9 +107,16 @@ const intervention = ref('')
       <p class="emo-note">{{ detection.coverageNote }}</p>
 
       <label class="emo-intervention">
-        干预措施与效果跟踪（下季度逐人回查，落 improvement_actions——端点未上线为本地草稿）：
-        <input v-model="intervention" class="emo-input" placeholder="如：高波动时段决策前强制二次确认" />
+        干预措施与效果跟踪（下季度逐人回查，落 improvement_actions；失败时保留本地草稿并提示）：
+        <span class="emo-intervention-row">
+          <input v-model="intervention" class="emo-input" placeholder="如：高波动时段决策前强制二次确认" />
+          <button type="button" class="emo-save" :disabled="interventionSaving || !intervention.trim()" @click="saveIntervention">
+            {{ interventionSaving ? '落库中…' : '落库' }}
+          </button>
+        </span>
       </label>
+      <p v-if="interventionError" class="emo-warn">{{ interventionError }}</p>
+      <p v-else-if="interventionSaved" class="emo-ok">已落库：干预措施进入 improvement_actions，下季度纪要自动带入回查。</p>
     </template>
     <p v-else class="emo-muted">情绪化识别已整体停用（无残留展示；勾选上方开关可恢复）。</p>
   </section>
@@ -75,5 +133,9 @@ const intervention = ref('')
 .emo-muted { margin: 0; color: var(--el-text-color-secondary, #909399); font-size: var(--font-11-5); }
 .emo-note { margin: 0; font-size: var(--font-xs); color: var(--el-text-color-secondary, #909399); line-height: 1.6; }
 .emo-intervention { display: flex; flex-direction: column; gap: 4px; font-size: var(--font-11-5); color: var(--el-text-color-secondary, #666); }
-.emo-input { padding: 4px 7px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 6px; font-size: var(--font-11-5); }
+.emo-intervention-row { display: flex; gap: 6px; align-items: center; }
+.emo-input { flex: 1; padding: 4px 7px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 6px; font-size: var(--font-11-5); }
+.emo-save { padding: 4px 12px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 6px; background: #fff; font-size: var(--font-11-5); cursor: pointer; }
+.emo-warn { margin: 0; color: #b45309; font-size: var(--font-11-5); }
+.emo-ok { margin: 0; color: #15803d; font-size: var(--font-11-5); }
 </style>

@@ -72,6 +72,9 @@ const form = reactive({
   correctionOf: null as string | null
 })
 
+/** 决策时点（#2049 追涨/杀跌判定前置，迁移 044 非哈希列）：可空=时点未知不打标 */
+const decisionTime = ref('')
+
 /**
  * 日志归属标的日（手册异常分支：当日未写 → 次日晨会强制补写）。默认当前标的日；
  * 改成昨日即进入「补写模式」——写入的条目归属补写日，填写率按归属日统计。
@@ -117,12 +120,13 @@ async function submit() {
     const draft = { at: new Date().toISOString(), targetDate: logTargetDate.value, ...fields }
     log.value = correctionOf
       ? await correctAndPersistAsync(correctionOf, draft)
-      : await appendAndPersistAsync({ ...draft, correctionOf: null })
+      : await appendAndPersistAsync({ ...draft, correctionOf: null }, decisionTime.value || null)
     if (mode.value === 'server') serverVerdict.value = await fetchServerVerdict(mode.value)
     form.decisionPoint = ''
     form.judgement = ''
     form.rationale = ''
     form.correctionOf = null
+    decisionTime.value = ''
     // AI 建议采纳后写入链 → 留痕关联日志条目（T+2 回填时同步命中判断）
     if (adoptedTraceId) {
       const last = log.value[log.value.length - 1]
@@ -430,6 +434,9 @@ async function writeBack() {
           <label>P50<input v-model.number="form.p50" type="number" /></label>
           <label>P90<input v-model.number="form.p90" type="number" /></label>
           <label>置信度<input v-model.number="form.confidence" type="number" min="0" max="100" /></label>
+          <label>决策时点（选填，情绪化识别用）
+            <input v-model="decisionTime" type="datetime-local" title="不参与哈希链；缺省=时点未知（追涨/杀跌不打标）" />
+          </label>
           <label v-if="mode === 'local'">决策人（不可代签）<input v-model="form.author" type="text" /></label>
           <span v-else class="dc7-author-note">决策人：由登录身份落名（服务端强制，不可代签）</span>
         </div>

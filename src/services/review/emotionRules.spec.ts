@@ -12,6 +12,11 @@ const e = (over: Partial<EmotionEntryLike> = {}): EmotionEntryLike => ({
   p10: 90, p50: 100, p90: 110, actual: 105, ...over
 })
 
+/** 24 小时价格数组构造：未给小时为 null（缺价）。 */
+function hourPrices(spots: Record<number, number>): Array<number | null> {
+  return Array.from({ length: 24 }, (_, h) => (h in spots ? spots[h] : null))
+}
+
 describe('detectEmotionPatterns（先规则后模型 · 宁缺勿滥）', () => {
   it('过度自信候选：区间过窄（<中位 10%）且实际出区间', () => {
     const out = detectEmotionPatterns([
@@ -36,10 +41,46 @@ describe('detectEmotionPatterns（先规则后模型 · 宁缺勿滥）', () => 
     expect(hes!.seqs).toHaveLength(2)
   })
 
-  it('追涨/杀跌 v1 不打标（价格联动未接入，宁缺勿滥），覆盖说明如实呈现', () => {
-    const out = detectEmotionPatterns([e()])
+  it('追涨/杀跌：上下文缺席不打标（价格联动未接入，宁缺勿滥），覆盖说明如实呈现', () => {
+    const out = detectEmotionPatterns([e({ decisionTime: '2026-08-14T10:00:00Z', judgement: '看涨追价' })])
     expect(out.patterns.some((p) => p.kind === 'chase_up' || p.kind === 'panic_sell')).toBe(false)
     expect(out.coverageNote).toContain('价格波动上下文')
+    expect(out.coverageNote).toContain('宁缺勿滥')
+  })
+
+  it('R3 追涨：决策时点小时价较前一小时涨 ≥15% 且判断同向看涨 → 打标', () => {
+    const out = detectEmotionPatterns(
+      [e({ seq: 7, decisionTime: '2026-08-14T10:30:00Z', judgement: '看涨，追价申报' })],
+      { hourlyPrices: { '2026-08-14': hourPrices({ 9: 100, 10: 120 }) } }
+    )
+    const chase = out.patterns.find((p) => p.kind === 'chase_up')
+    expect(chase).toBeTruthy()
+    expect(chase!.seqs).toEqual([7])
+    expect(out.patterns.some((p) => p.kind === 'panic_sell')).toBe(false)
+  })
+
+  it('R4 杀跌：决策时点小时价较前一小时跌 ≥15% 且判断同向看跌 → 打标', () => {
+    const out = detectEmotionPatterns(
+      [e({ seq: 8, decisionTime: '2026-08-14T15:00:00Z', judgement: '看跌，卖出回避' })],
+      { hourlyPrices: { '2026-08-14': hourPrices({ 14: 100, 15: 80 }) } }
+    )
+    const panic = out.patterns.find((p) => p.kind === 'panic_sell')
+    expect(panic).toBeTruthy()
+    expect(panic!.seqs).toEqual([8])
+  })
+
+  it('R3/R4 三重前置缺一不打标：decisionTime 缺失 / 该小时缺价 / 方向不明 / 波动不足', () => {
+    const prices = { '2026-08-14': hourPrices({ 9: 100, 10: 120, 15: 95 }) }
+    const out = detectEmotionPatterns(
+      [
+        e({ seq: 1, judgement: '看涨追价' }), // 缺 decisionTime
+        e({ seq: 2, decisionTime: '2026-08-14T11:00:00Z', judgement: '看涨追价' }), // 11 时缺价
+        e({ seq: 3, decisionTime: '2026-08-14T10:00:00Z', judgement: '维持原样' }), // 方向不明
+        e({ seq: 4, decisionTime: '2026-08-14T15:00:00Z', judgement: '看涨追价' }) // 15 时价格跌但判断看涨（不同向）
+      ],
+      { hourlyPrices: prices }
+    )
+    expect(out.patterns.some((p) => p.kind === 'chase_up' || p.kind === 'panic_sell')).toBe(false)
     expect(out.coverageNote).toContain('宁缺勿滥')
   })
 
