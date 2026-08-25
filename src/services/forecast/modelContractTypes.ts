@@ -54,6 +54,53 @@ export interface ModelVersionInfo {
   trainedAt?: string | null
 }
 
+export interface ModelIoCovariate {
+  field: string
+  labelZh?: string
+  unit?: string
+  platformStatus: 'available' | 'blocked'
+  blockedReason?: string | null
+}
+
+export interface ModelIo {
+  intervalMinutes: number
+  seqLen?: number
+  predLen?: number
+  covariates: ModelIoCovariate[]
+  quantilesSupported: number[]
+}
+
+export interface ModelParamOption { value: unknown; label: string }
+
+/** dljy-web ParamField 的可序列化子集（无 visibleWhen 等函数） */
+export interface ModelParamField {
+  key: string
+  label: string
+  type: 'number' | 'slider' | 'switch' | 'select'
+  default: unknown
+  min?: number
+  max?: number
+  step?: number
+  unit?: string
+  noteZh?: string
+  options?: ModelParamOption[]
+}
+
+export interface ModelLineage {
+  version?: string
+  activeVersion?: string | null
+  versionCount?: number | null
+  bundleId?: string | null
+  checksum?: string | null
+  trainedAt?: string | null
+  trainWindow?: string[] | null
+  dataSeenThrough?: string | null
+  lineageNote?: string | null
+  evidenceLevel?: string | null
+  mock?: boolean
+  loaded?: boolean | null
+}
+
 export interface ModelRegistryEntry {
   modelId: string
   name?: string
@@ -70,6 +117,19 @@ export interface ModelRegistryEntry {
   version?: ModelVersionInfo
   /** 该模型实际支持的预测目标清单（#1461）。缺省=支持全部目标（向后兼容）。 */
   supportedTargets?: string[]
+  // ── dljy-contracts 2.1.0（dljy#2461）：模型 I/O × 平台供给、参数面、血统、单位、来源、架构 ──
+  /** 标的单位（平台标的注册表 quantity 派生） */
+  unit?: string
+  /** 架构路由键（远端自述，如 tslib/DLinear、bundle/Dynamic TMoE） */
+  framework?: string
+  /** local | remote:native | remote:bundle | remote:nf | remote:zeroshot */
+  source?: string
+  /** 模型自述的输入输出契约 × 平台供给状态（远端模型有） */
+  io?: ModelIo
+  /** 模型声明的推理期可调参数（远端模型有；缺省 []） */
+  paramsSchema?: ModelParamField[]
+  /** 远端自述的权重血统 */
+  lineage?: ModelLineage
   basisVersion: string
   provenance: Provenance
 }

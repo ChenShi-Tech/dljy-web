@@ -31,6 +31,7 @@ import type { ForecastBasis } from '../data/types'
 // 标的清单、中文名、原生粒度全部由它派生——此前 ML_TARGETS 与 Workbench TARGETS 各写一份 7 项硬编码，
 // 与后端目录漂移（hydro/temp/用户侧结算电价缺）。
 import { FORECAST_TARGETS, targetSlotsPerDay } from 'shared/forecast/target-registry.mjs'
+import type { ModelIo, ModelLineage, ModelParamField } from '@/services/forecast/modelContract'
 export type { ForecastBasis }
 
 export type ParamFieldType = 'number' | 'slider' | 'select' | 'switch' | 'weight-group' | 'daterange'
@@ -110,7 +111,36 @@ export interface ForecastProvider {
   basisVersion?: string
   supportedTargets: string[]
   paramsSchema: ParamField[]
+  // dljy#2464：模型自述（远端模型有）——输入门槛（协变量 × 平台供给）、血统、来源、架构、单位
+  io?: ModelIo
+  lineage?: ModelLineage
+  source?: string
+  framework?: string
+  unit?: string
   run(ctx: SharedTaskContext, params: Record<string, unknown>): Promise<UnifiedForecastResult>
+}
+
+/** 模型声明的 paramsSchema（可序列化子集）→ 面板控件；键与平台参数撞名时以平台为准（丢弃模型项并保留可见）。 */
+export function modelParamFields(schema: ModelParamField[] | undefined, reserved: ReadonlySet<string>): ParamField[] {
+  return (schema ?? []).filter((p) => !reserved.has(p.key)).map((p) => ({
+    key: p.key,
+    label: p.noteZh ? `${p.label}（${p.noteZh}）` : p.label,
+    type: p.type,
+    default: p.default,
+    ...(p.min !== undefined ? { min: p.min } : {}),
+    ...(p.max !== undefined ? { max: p.max } : {}),
+    ...(p.step !== undefined ? { step: p.step } : {}),
+    ...(p.unit ? { unit: p.unit } : {}),
+    ...(p.options ? { options: p.options.map((o) => ({ label: o.label, value: o.value })) } : {}),
+  }))
+}
+
+/** 只把模型声明过的键送进 /predict 的 extra.params（平台参数与未声明键不发——后端同样只转发声明键）。 */
+export function modelParamsFromInputs(schema: ModelParamField[] | undefined, params: Record<string, unknown>): Record<string, unknown> | undefined {
+  const keys = new Set((schema ?? []).map((p) => p.key))
+  if (!keys.size) return undefined
+  const out = Object.fromEntries(Object.entries(params).filter(([k, v]) => keys.has(k) && v !== undefined))
+  return Object.keys(out).length ? out : undefined
 }
 
 // 通用工具
@@ -323,6 +353,7 @@ export const knnProvider: ForecastProvider = {
 }
 
 // ML：6 个后端模型（compute）。包 mlForecastClient.runForecastPredict，适配 ForecastResult→统一契约。
+const ML_PARAM_KEYS: ReadonlySet<string> = new Set(['train_days', 'probabilistic', 'conformal'])
 const ML_PARAMS: ParamField[] = [
   { key: 'train_days', label: '训练回看(天)', type: 'number', default: 180, min: 30, max: 365, step: 30 },
   { key: 'probabilistic', label: '概率预测 P10–P90', type: 'switch', default: false },
@@ -500,8 +531,15 @@ function makeMlProvider(model: ForecastModel): ForecastProvider {
     // #1461：逐模型支持的目标清单以后端目录为准（physics_hybrid 仅 renewable 等）；
     // 后端缺省该字段时回退 ML_TARGETS（全集），保旧目录兼容。
     supportedTargets: model.supportedTargets ?? ML_TARGETS,
-    paramsSchema: ML_PARAMS,
+    // 平台参数（训练回看/概率/共形）+ 模型自己声明的可调参数（dljy#2464：按 paramsSchema 渲染，不再一套配所有）
+    paramsSchema: [...ML_PARAMS, ...modelParamFields(model.paramsSchema, ML_PARAM_KEYS)],
+    io: model.io,
+    lineage: model.lineage,
+    source: model.source,
+    framework: model.framework,
+    unit: model.unit,
     async run(ctx, params) {
+      const modelParams = modelParamsFromInputs(model.paramsSchema, params)
       const r = await runForecastPredict({
         region_id: ctx.regionId,
         target: ctx.target,
@@ -511,6 +549,7 @@ function makeMlProvider(model: ForecastModel): ForecastProvider {
         probabilistic: params.probabilistic === true,
         conformal: params.probabilistic === true && params.conformal === true,
         target_date: ctx.targetDate,
+        ...(modelParams ? { extra: { params: modelParams } } : {}),
       })
       assertUsableForecast(r)
       const out = adaptMlResult(r, model.modelId, ctx.granularity, nativeSlotsForTarget(ctx.target))

@@ -1,6 +1,10 @@
 import type {
   ModelCapabilities,
   ModelConfigDescriptor,
+  ModelIo,
+  ModelIoCovariate,
+  ModelLineage,
+  ModelParamField,
   ModelQuality,
   ModelRegistryEntry,
   ModelShadowGate,
@@ -23,6 +27,7 @@ export type {
 // 后端 /forecast/models 当前仍可能返回旧 snake_case catalog。客户端在唯一边界处白名单归一为
 // ModelRegistryEntry；页面和 provider 不再消费 legacy id/reason/source_type/quality 字段。
 export type ForecastModel = ModelRegistryEntry
+export type { ModelIo, ModelIoCovariate, ModelLineage, ModelParamField } from './modelContractTypes'
 
 export type ForecastModelCatalog = {
   target: string
@@ -153,6 +158,80 @@ function normalizeVersion(value: unknown): ModelVersionInfo | undefined {
   }
 }
 
+const PARAM_FIELD_TYPES = new Set(['number', 'slider', 'switch', 'select'])
+
+/** io（dljy#2461）：缺 intervalMinutes 或 covariates 非数组 → 整块缺席（不拿半截门槛冒充完整）。 */
+function normalizeIo(value: unknown): ModelIo | undefined {
+  const raw = asRecord(value)
+  const interval = raw.intervalMinutes
+  if (!Number.isInteger(interval) || Number(interval) < 1 || !Array.isArray(raw.covariates)) return undefined
+  const covariates: ModelIoCovariate[] = []
+  for (const item of raw.covariates) {
+    const c = asRecord(item)
+    const field = nonEmpty(c.field)
+    const status = c.platformStatus === 'blocked' ? 'blocked' : c.platformStatus === 'available' ? 'available' : null
+    if (!field || !status) continue
+    covariates.push({
+      field, platformStatus: status,
+      ...(nonEmpty(c.labelZh) ? { labelZh: nonEmpty(c.labelZh) } : {}),
+      ...(nonEmpty(c.unit) ? { unit: nonEmpty(c.unit) } : {}),
+      ...(status === 'blocked' ? { blockedReason: nullableText(c.blockedReason) ?? null } : {}),
+    })
+  }
+  const quantiles = Array.isArray(raw.quantilesSupported)
+    ? raw.quantilesSupported.filter((q): q is number => typeof q === 'number' && Number.isFinite(q)) : []
+  return {
+    intervalMinutes: Number(interval), covariates, quantilesSupported: quantiles,
+    ...(Number.isInteger(raw.seqLen) ? { seqLen: Number(raw.seqLen) } : {}),
+    ...(Number.isInteger(raw.predLen) ? { predLen: Number(raw.predLen) } : {}),
+  }
+}
+
+/** paramsSchema：逐项校验，不合法的项丢弃（一个坏声明不该让整个面板消失）。 */
+function normalizeParamsSchema(value: unknown): ModelParamField[] | undefined {
+  if (!Array.isArray(value)) return undefined
+  const out: ModelParamField[] = []
+  for (const item of value) {
+    const p = asRecord(item)
+    const key = nonEmpty(p.key); const label = nonEmpty(p.label); const type = nonEmpty(p.type)
+    if (!key || !label || !type || !PARAM_FIELD_TYPES.has(type) || !('default' in p)) continue
+    const options = Array.isArray(p.options)
+      ? p.options.map((o) => asRecord(o)).filter((o) => 'value' in o && nonEmpty(o.label))
+        .map((o) => ({ value: o.value, label: String(o.label) }))
+      : undefined
+    out.push({
+      key, label, type: type as ModelParamField['type'], default: p.default,
+      ...(typeof p.min === 'number' ? { min: p.min } : {}),
+      ...(typeof p.max === 'number' ? { max: p.max } : {}),
+      ...(typeof p.step === 'number' ? { step: p.step } : {}),
+      ...(nonEmpty(p.unit) ? { unit: nonEmpty(p.unit) } : {}),
+      ...(nonEmpty(p.noteZh) ? { noteZh: nonEmpty(p.noteZh) } : {}),
+      ...(options && options.length ? { options } : {}),
+    })
+  }
+  return out
+}
+
+function normalizeLineage(value: unknown): ModelLineage | undefined {
+  const raw = asRecord(value)
+  if (!Object.keys(raw).length) return undefined
+  const trainWindow = Array.isArray(raw.trainWindow) ? raw.trainWindow.map(String) : raw.trainWindow === null ? null : undefined
+  return {
+    ...(nonEmpty(raw.version) ? { version: nonEmpty(raw.version) } : {}),
+    ...('activeVersion' in raw ? { activeVersion: nullableText(raw.activeVersion) ?? null } : {}),
+    ...(Number.isInteger(raw.versionCount) || raw.versionCount === null ? { versionCount: raw.versionCount as number | null } : {}),
+    ...('bundleId' in raw ? { bundleId: nullableText(raw.bundleId) ?? null } : {}),
+    ...('checksum' in raw ? { checksum: nullableText(raw.checksum) ?? null } : {}),
+    ...('trainedAt' in raw ? { trainedAt: nullableText(raw.trainedAt) ?? null } : {}),
+    ...(trainWindow !== undefined ? { trainWindow } : {}),
+    ...('dataSeenThrough' in raw ? { dataSeenThrough: nullableText(raw.dataSeenThrough) ?? null } : {}),
+    ...('lineageNote' in raw ? { lineageNote: nullableText(raw.lineageNote) ?? null } : {}),
+    ...('evidenceLevel' in raw ? { evidenceLevel: nullableText(raw.evidenceLevel) ?? null } : {}),
+    ...(typeof raw.mock === 'boolean' ? { mock: raw.mock } : {}),
+    ...(typeof raw.loaded === 'boolean' || raw.loaded === null ? { loaded: raw.loaded as boolean | null } : {}),
+  }
+}
+
 export function normalizeModelRegistryEntry(
   input: unknown,
   context: { target: string; regionId: string },
@@ -191,6 +270,13 @@ export function normalizeModelRegistryEntry(
     quality: normalizeQuality(raw.quality),
     version: normalizeVersion(raw.version),
     supportedTargets: supportedTargets && supportedTargets.length ? supportedTargets : undefined,
+    // dljy-contracts 2.1.0（dljy#2461）：全部可选，缺省即缺席
+    unit: nonEmpty(raw.unit),
+    framework: nonEmpty(raw.framework),
+    source: nonEmpty(raw.source),
+    io: normalizeIo(raw.io),
+    paramsSchema: normalizeParamsSchema(raw.paramsSchema),
+    lineage: normalizeLineage(raw.lineage),
     basisVersion: nonEmpty(raw.basisVersion ?? raw.basis_version) ?? LEGACY_MODEL_BASIS_VERSION,
     provenance,
   }
