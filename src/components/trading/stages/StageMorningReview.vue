@@ -11,7 +11,7 @@
 //
 // ①②是**两个不同的量，不可互相替代**：中标率答「我报的量中了多少」，执行偏差答「我实际
 // 干的和我报的差多少、要交多少考核费」。只看中标率会漏掉「全中但执行跑偏」的那类亏损。
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { History, Save, Scale, TriangleAlert } from 'lucide-vue-next'
 import {
@@ -28,6 +28,25 @@ import {
   type ReviewResult
 } from '@/services/quant/quantClient'
 import { loadLogAsync, storageNoticeFor, type DecisionLogMode } from '@/services/trading/decisionLogStore'
+import {
+  fetchMemoryOutcomes,
+  fetchStrategyStats,
+  type MemoryOutcomeRow,
+  type StrategyStatsFeed
+} from '@/services/review/strategyReviewClient'
+import {
+  BEAT_MARKET_DATA_GAP_NOTE,
+  lossStreakOf,
+  staleStrategyFindings,
+  strategyDimSummary,
+  type PriceChangeVerdict
+} from '@/services/review/strategyReview'
+import {
+  addPriceChange,
+  judgePriceChange,
+  pendingPriceChanges,
+  type PriceChangeRecord
+} from '@/services/trading/priceChangeStore'
 import { markS1Started, s1TimerView, type S1TimerView } from '@/services/trading/stageTimer'
 import { coverageOf, hitRate, type DecisionLogEntry } from 'shared/trading-rules/decision-log.mjs'
 import {
@@ -97,12 +116,77 @@ onMounted(() => {
     logMode.value = snap.mode
     log.value = snap.log
   })
+  void loadStrategyReview()
   // #2040 S1 实机计时：进入即记时间戳（刷新不重计）；零写回（不进单据字段）
   if (props.declaration) markS1Started(props.declaration.id, props.targetDate)
   refreshS1View()
   s1Ticker.value = window.setInterval(refreshS1View, 30_000)
 })
 watch(reviewedDate, loadReviewed)
+
+// ── 策略复盘（六维② · #2016 第 2 期）──────────────────────────────────────
+// 区分「策略错了」（方向——连败过门禁→过时标记）与「执行错了」（纪律——偏差④维已覆盖）。
+// 数据：#2045 trading-memory 端点（服务端样本 <30 硬门禁）；跑赢率缺市场基准→data_gap。
+const strategyFeed = ref<StrategyStatsFeed>({ available: false, reason: 'endpoint-absent' })
+const memoryOutcomes = ref<MemoryOutcomeRow[]>([])
+
+async function loadStrategyReview() {
+  const [stats, outcomes] = await Promise.all([fetchStrategyStats(), fetchMemoryOutcomes()])
+  strategyFeed.value = stats
+  memoryOutcomes.value = outcomes.available ? outcomes.outcomes : []
+}
+
+const staleStrategy = computed(() =>
+  staleStrategyFindings(strategyFeed.value.available ? strategyFeed.value.stats : [], memoryOutcomes.value)
+)
+const strategyDim = computed(() =>
+  strategyDimSummary(strategyFeed.value, staleStrategy.value.findings.length)
+)
+/** 表格列用：逐策略连败期数（按日期排序取尾部连续亏损段）。 */
+const lossStreakByStrategy = computed<Record<string, number>>(() => {
+  const m: Record<string, number> = {}
+  if (!strategyFeed.value.available) return m
+  for (const s of strategyFeed.value.stats) {
+    m[s.strategyName] = lossStreakOf(memoryOutcomes.value.filter((o) => o.strategyName === s.strategyName))
+  }
+  return m
+})
+
+// 临场改价留痕（#2016 缺口二）：当日登记、次日回判「改对=可复制 / 改错=需修正」。
+const pcForm = reactive({
+  date: props.targetDate,
+  decisionPoint: '',
+  planPrice: null as number | null,
+  changedPrice: null as number | null,
+  rationale: ''
+})
+const pcPending = ref<PriceChangeRecord[]>([])
+const pcError = ref('')
+function submitPriceChange() {
+  pcError.value = ''
+  try {
+    addPriceChange({
+      date: pcForm.date,
+      decisionPoint: pcForm.decisionPoint,
+      planPrice: Number(pcForm.planPrice),
+      changedPrice: Number(pcForm.changedPrice),
+      rationale: pcForm.rationale
+    })
+    pcForm.decisionPoint = ''
+    pcForm.planPrice = null
+    pcForm.changedPrice = null
+    pcForm.rationale = ''
+    pcPending.value = pendingPriceChanges()
+  } catch (e) {
+    pcError.value = e instanceof Error ? e.message : '登记失败'
+  }
+}
+function judgePc(id: string, verdict: PriceChangeVerdict) {
+  if (judgePriceChange(id, verdict)) pcPending.value = pendingPriceChanges()
+}
+onMounted(() => {
+  pcPending.value = pendingPriceChanges()
+})
 
 // ── S1 实机计时（#2040）：只呈现，不写回（U4 红线） ──────────────────────────
 const s1View = ref<S1TimerView>({ startedAt: null, elapsedMinutes: null, slow: false })
@@ -286,7 +370,8 @@ const yesterdayLogMissing = computed(() => {
 })
 
 // ── 六维摘要（需求 5）：每维一行，数据从各面板 computed 汇总，不新增数据源 ────
-// 首期 ①④⑥ 有真实数据；②策略/③市场/⑤风险 显示「待数据接入」占位（第 2 期 #2016/#2012/#2015）。
+// 首期 ①④⑥ 有真实数据；②策略已接 trading-memory 胜率端点（#2016 第 2 期）；
+// ③市场/⑤风险 仍「待数据接入」占位（#2012/#2015）。
 type SixDimState = { key: string; name: string; summary: string; ready: boolean; note?: string }
 
 // ── 需求 4：决策三问状态（面板③逐条填写，写回 decisionReview）────────────────
@@ -427,7 +512,13 @@ const sixDims = computed<SixDimState[]>(() => {
       ready: Boolean(reviewed.value),
       note: reviewed.value ? undefined : '昨日无申报单'
     },
-    { key: 'strategy', name: '② 策略', summary: '待策略库接入', ready: false, note: '#2016（第 2 期）' },
+    {
+      key: 'strategy',
+      name: '② 策略',
+      summary: strategyDim.value.summary,
+      ready: strategyDim.value.ready,
+      note: strategyFeed.value.available ? undefined : '策略胜率服务未上线'
+    },
     { key: 'market', name: '③ 市场', summary: '待 S2/S7 数据联动', ready: false, note: '#2012（第 2 期）' },
     {
       key: 'deviation',
@@ -449,7 +540,7 @@ const sixDims = computed<SixDimState[]>(() => {
 })
 /** 六维摘要行点击展开对应区块（滚动定位，区块本身常驻——不折叠已有面板，保持现有作业动线）。 */
 function jumpToDim(key: string) {
-  const map: Record<string, string> = { result: 'mr-panel-result', deviation: 'mr-panel-deviation', decision: 'mr-panel-decision' }
+  const map: Record<string, string> = { result: 'mr-panel-result', strategy: 'mr-panel-strategy', deviation: 'mr-panel-deviation', decision: 'mr-panel-decision' }
   const id = map[key]
   if (id) document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
 }
@@ -711,6 +802,68 @@ async function writeBack() {
       </template>
     </section>
 
+    <!-- 策略复盘（六维② · #2016 第 2 期）：区分「策略错了」与「执行错了」。样本 <30
+         不出胜率（服务端硬门禁）；连败过门禁才标「过时」；跑赢率缺市场基准→data_gap。 -->
+    <section id="mr-panel-strategy" class="mr-panel">
+      <h3>策略复盘 · 近 N 期胜率与临场改价（六维②）</h3>
+      <p v-if="!strategyFeed.available" class="mr-muted">
+        策略胜率服务{{ strategyFeed.reason === 'endpoint-absent' ? '未上线' : '暂不可达' }}——本维保持占位，不合成假胜率。
+      </p>
+      <template v-else>
+        <p v-if="!strategyFeed.stats.length" class="mr-muted">
+          暂无策略交易记录（review.trading-memory 空）——逐笔结果积累后本维出数。
+        </p>
+        <table v-else class="mr-table">
+          <thead>
+            <tr><th>策略</th><th>样本</th><th>胜率（Beta-Binomial 后验）</th><th>累计损益（万）</th><th>连败</th></tr>
+          </thead>
+          <tbody>
+            <tr v-for="s in strategyFeed.stats" :key="s.strategyName">
+              <td>{{ s.strategyName }}</td>
+              <td>{{ s.sampleSize }}</td>
+              <td>{{ s.winRate === null ? '样本不足（<30 笔不出胜率）' : (s.winRate * 100).toFixed(1) + '%' }}</td>
+              <td>{{ s.cumulativePnlWan === null ? '—' : s.cumulativePnlWan.toFixed(1) }}</td>
+              <td :class="(lossStreakByStrategy[s.strategyName] ?? 0) >= 3 ? 'mr-bad' : ''">
+                {{ lossStreakByStrategy[s.strategyName] ?? 0 }} 期
+              </td>
+            </tr>
+          </tbody>
+        </table>
+        <p v-for="f in staleStrategy.findings" :key="f.strategyName" class="mr-warn">
+          「{{ f.strategyName }}」连败 {{ f.lossStreak }} 期且样本已过门禁（{{ f.sampleSize }} 笔）——
+          策略可能过时，需改逻辑（方向问题；执行纪律问题在④偏差维）。
+        </p>
+        <p class="mr-muted">{{ BEAT_MARKET_DATA_GAP_NOTE }}</p>
+      </template>
+
+      <details class="mr-pc">
+        <summary>临场改价留痕（{{ pcPending.length }} 条待判定）</summary>
+        <p class="mr-muted">
+          记录「计划价 → 临场改价」及依据；次日回判——改对=<b>可复制</b>（值得沉淀为规则）、
+          改错=<b>需修正</b>（纪律问题回到执行侧）。
+        </p>
+        <div class="mr-pc-form">
+          <label>日期<input v-model="pcForm.date" type="date" /></label>
+          <label>决策点<input v-model="pcForm.decisionPoint" type="text" placeholder="如：晚高峰申报价" /></label>
+          <label>计划价<input v-model.number="pcForm.planPrice" type="number" step="0.01" placeholder="如：0.35" /></label>
+          <label>改后价<input v-model.number="pcForm.changedPrice" type="number" step="0.01" placeholder="如：0.38" /></label>
+          <label class="mr-pc-why">依据<input v-model="pcForm.rationale" type="text" placeholder="当时看到了什么" /></label>
+          <button type="button" class="ghost" @click="submitPriceChange">登记</button>
+        </div>
+        <p v-if="pcError" class="mr-err">{{ pcError }}</p>
+        <ul v-if="pcPending.length" class="mr-pc-list">
+          <li v-for="r in pcPending" :key="r.id">
+            {{ r.date }} · {{ r.decisionPoint }}：计划 {{ r.planPrice }} → 改 {{ r.changedPrice }}（{{ r.rationale }}）
+            <span class="mr-pc-actions">
+              <button type="button" class="link" @click="judgePc(r.id, 'replicable')">改对（可复制）</button>
+              <button type="button" class="link" @click="judgePc(r.id, 'needs-fix')">改错（需修正）</button>
+            </span>
+          </li>
+        </ul>
+        <p v-else class="mr-muted">无待判定的临场改价。</p>
+      </details>
+    </section>
+
     <section id="mr-panel-deviation" class="mr-panel">
       <h3><Scale :size="14" /> ② 执行偏差 · 申报 vs 实际（考核口径）</h3>
       <p v-if="execLoading" class="mr-muted">取实际电量并计算偏差…</p>
@@ -921,6 +1074,16 @@ async function writeBack() {
 .mr-err-inline { font-size: var(--font-sm); color: #b91c1c; }
 .mr-empty { margin: 0 0 4px; padding: 6px 10px; border-radius: 6px; background: #f8fafc; color: #475569; font-size: var(--font-sm); }
 .mr-warn { margin: 6px 0 0; padding: 6px 10px; border-radius: 6px; background: #fffbeb; color: #a16207; font-size: var(--font-sm); }
+/* 临场改价留痕（#2016）：表单收进 details 折叠，保持 S1 <5 分钟动线 */
+.mr-pc { margin-top: 8px; border-top: 1px dashed var(--el-border-color-lighter, #ebeef5); padding-top: 6px; }
+.mr-pc summary { cursor: pointer; font-size: var(--font-sm); color: var(--el-text-color-primary, #303133); }
+.mr-pc-form { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; margin: 6px 0; font-size: var(--font-sm); }
+.mr-pc-form label { display: inline-flex; align-items: center; gap: 4px; color: var(--el-text-color-secondary, #667); }
+.mr-pc-form input { padding: 3px 6px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 6px; font-size: var(--font-sm); width: 96px; }
+.mr-pc-why { flex: 1 1 180px; } .mr-pc-why input { width: 100%; }
+.mr-pc-list { margin: 4px 0 0; padding-left: 18px; font-size: var(--font-sm); }
+.mr-pc-list li { margin: 3px 0; line-height: 1.6; }
+.mr-pc-actions { margin-left: 8px; white-space: nowrap; }
 .mr-ok { font-size: var(--font-sm); color: #15803d; }
 .mr-bad { color: #b91c1c; display: inline-flex; align-items: center; gap: 3px; }
 .mr-facts { display: flex; gap: 14px; flex-wrap: wrap; align-items: baseline; font-size: var(--font-sm); font-variant-numeric: tabular-nums; }
