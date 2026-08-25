@@ -361,6 +361,30 @@ onMounted(() => { ensureForecastCatalog() })
             <DynamicParamPanel :schema="currentProvider?.paramsSchema ?? []" v-model:params="params" />
           </div>
 
+          <!-- 模型输入门槛（dljy#2464）：远端模型自述的 I/O × 平台供给——用户选模型时就知道差什么，不用选了才撞 -->
+          <div v-if="currentProvider?.io" class="io-box">
+            <span class="lbl">输入门槛</span>
+            <el-tag size="small" type="info">{{ currentProvider.io.intervalMinutes }} 分钟</el-tag>
+            <el-tag v-if="currentProvider.io.seqLen" size="small" type="info">回看 {{ currentProvider.io.seqLen }} 点</el-tag>
+            <el-tag v-if="currentProvider.io.predLen" size="small" type="info">输出 {{ currentProvider.io.predLen }} 点</el-tag>
+            <el-tag v-if="currentProvider.io.quantilesSupported.length" size="small" type="info">分位 {{ currentProvider.io.quantilesSupported.join('/') }}</el-tag>
+            <template v-if="currentProvider.io.covariates.length">
+              <span class="lbl">协变量</span>
+              <el-tag v-for="c in currentProvider.io.covariates" :key="c.field" size="small"
+                :type="c.platformStatus === 'available' ? 'success' : 'danger'"
+                :title="c.platformStatus === 'available' ? c.field : `${c.field}：${c.blockedReason || '平台供不上'}`">
+                {{ c.labelZh || c.field }}{{ c.platformStatus === 'available' ? '' : '（缺）' }}
+              </el-tag>
+            </template>
+            <span v-else class="io-note">单变量（只用目标历史）</span>
+            <span v-if="currentProvider.lineage" class="io-note">
+              {{ currentProvider.source || '' }}
+              {{ currentProvider.lineage.activeVersion ? '· 版本 ' + currentProvider.lineage.activeVersion : (currentProvider.lineage.version ? '· 版本 ' + currentProvider.lineage.version : '') }}
+              {{ currentProvider.lineage.dataSeenThrough ? '· 数据见至 ' + currentProvider.lineage.dataSeenThrough : '' }}
+              {{ currentProvider.lineage.lineageNote ? '· ' + currentProvider.lineage.lineageNote : '' }}
+            </span>
+          </div>
+
           <div class="view-toggles">
             <el-checkbox v-model="mergeActual" size="small">实际值替代该时段预测</el-checkbox>
           </div>
@@ -539,4 +563,6 @@ onMounted(() => { ensureForecastCatalog() })
 .ov-card { border: 1px solid var(--el-border-color-lighter); border-radius: 6px; padding: 10px 12px; margin-bottom: 12px; }
 .ov-hd { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-weight: 600; font-size: var(--font-lg); margin-bottom: 4px; }
 :deep(.best-row) { background: var(--el-color-success-light-9); }
+.io-box { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 6px 0 10px; }
+.io-note { color: var(--el-text-color-secondary); font-size: var(--font-sm, 12px); }
 </style>
