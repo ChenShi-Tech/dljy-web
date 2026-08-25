@@ -287,6 +287,11 @@ export const pageHelpRegistry: Record<string, PageHelpEntry> = {
   },
 
   // 系统管理
+  SystemModels: {
+    title: '推理模型管理',
+    body: '南洋推理服务（dljy-infer）的唯一管理面（仅 ADMIN/BOSS）。顶部健康三态：连不上 / 连上了但平台凭据无效 / 在线（含契约版本与模型数）。表格列出南洋全部模型：标的、粒度与回看/输出点数、架构、来源（原生/外部交付/NeuralForecast/零样本）、版本槽位、可用状态与原因，以及「协变量供给」——模型声明的每个输入变量 × 平台协变量注册表，红色即平台供不上（hover 看原因与解锁 issue）。操作：停用/启用、查看版本槽位并切换、卸载/装载显存、重扫目录。全部经 agent-backend /agent-api/v1/forecast/remote/* 代理，写操作服务端按平台登录会话校验角色并记审计；南洋凭据只在服务端。',
+    docPath: 'docs/api/forecast-remote-admin.md'
+  },
   SystemAccounts: {
     title: '用户与权限',
     body: '账号、会话与权限三 tab（仅系统管理员可见）。用户管理：账号 CRUD + 角色/数据域 + 密码重置 + 启用停用，经 GET/POST/PATCH /api/auth/users。会话管理：会话列表 + 审计日志 + 撤销下线，经 GET/DELETE /api/auth/sessions。两者落 auth_sqlite，为真实数据。权限矩阵：角色 × 菜单路径 × 操作的授权维护，页内再分角色权限/地区入口/认证目录三段，路由开关按 block 折叠并支持筛选；读前端权限模型 services/governance.ts（local_governance，非后端库）。',

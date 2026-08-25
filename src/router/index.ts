@@ -82,6 +82,7 @@ const storageCopilot = () => import('../views/StorageCopilotView.vue')
 // 两个 tab 容器页：各 tab 的子 View 由容器自身 defineAsyncComponent 懒加载，路由层不再单独登记。
 const aiStudio = () => import('../views/AiStudioView.vue')
 const accounts = () => import('../views/AccountsView.vue')
+const systemModels = () => import('../views/SystemModelsView.vue')
 const companyProfile = () => import('../views/company/CompanyProfileView.vue')
 const companyOverview = () => import('../views/company/CompanyOverviewView.vue')
 const companyAssets = () => import('../views/company/CompanyAssetsView.vue')
@@ -204,6 +205,8 @@ const router = createRouter({
         page('system/ai-studio', 'SystemAiStudio', { block: '系统管理', title: 'AI 工作室', code: 'system-ai-studio', endpoint: '/agent-api/agent/{skills,sub-agents,graphs,schedules}/* + /dify-sso/session + ANY /dify-studio/*', dataPath: 'schedules_sqlite,dify,llm', scope: '技能(SKILL.md 增删改启停)/子智能体(CRUD 导入导出归属绑定)/Dify 原生 Studio 同源嵌入/LangGraph 画布编排/定时任务调度五 tab;任务产出真实落盘报告,画布数据为分析示意', kind: 'mixed' }, aiStudio),
         // 用户与会话：账号目录与登录会话两页 tab 化合并（ADMIN-only，原 /system/sessions 随之收紧）。
         page('system/accounts', 'SystemAccounts', { block: '系统管理', title: '用户与会话', code: 'system-accounts', endpoint: 'GET/POST/PATCH /api/auth/users + GET/DELETE /api/auth/sessions', dataPath: 'auth_sqlite', scope: '账号、角色、状态、数据域和密码重置 + 登录会话、撤销和审计日志两 tab', kind: 'real' }, accounts),
+        // 推理模型管理（dljy#2465）：南洋 dljy-infer 的唯一管理面，经 agent-backend 代理，服务端按平台 RBAC 校验 ADMIN/BOSS
+        page('system/models', 'SystemModels', { block: '系统管理', title: '推理模型管理', code: 'system-models', endpoint: 'GET /agent-api/v1/forecast/remote/{health,models,models/{id}/versions,fields} + POST /agent-api/v1/forecast/remote/models/{id}/{enable,disable,reload,unload,activate/{v}} + POST /agent-api/v1/forecast/remote/rescan', dataPath: 'remote-inference(8310)', scope: '南洋推理服务健康三态、模型清单（契约投影含 I/O × 平台供给交叉、血统）、启停/切版本/卸装显存/重扫目录', kind: 'real' }, systemModels),
         accountsRedirect('system/users', 'users'),
         accountsRedirect('system/sessions', 'sessions'),
         aiStudioRedirect('system/schedules', 'schedules'),

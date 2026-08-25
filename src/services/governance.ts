@@ -129,7 +129,7 @@ export const adminLevelRoleCodes: RoleCode[] = ['BOSS', 'ADMIN']
 // 交易/分析角色不承载（「用户前端不再管理数据」，#2169 P2-2a 起的口径）。六页原独立路径
 // （/yygl/ingest、/data-source-settings 等）已全部 redirect 到本页面板，重定向目标会再过一次本判定。
 // 结算专员等业务角色的导入动线待按数据运维岗另设角色后再开。
-export const adminOnlyRoutes = ['/system/ai-studio', '/system/accounts', '/data-ops/console']
+export const adminOnlyRoutes = ['/system/ai-studio', '/system/accounts', '/system/models', '/data-ops/console']
 
 const regionalRoutesForRole = (roleCode: RoleCode) => getRegionModuleAccessRoutes(roleCode)
 const adminActions = ['system.admin', 'menu.admin', 'role.admin', 'dataScope.admin', 'dashboard.view', 'trade.view', 'approval.final', 'risk.limit.view', 'settlement.view']
