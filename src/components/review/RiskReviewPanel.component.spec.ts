@@ -102,7 +102,7 @@ describe('RiskReviewPanel', () => {
     id: '7', eventTime: '2026-08-15T02:00:00.000Z', eventType: 'near_miss',
     riskLevel: 'medium' as const, impactYuan: null, impactCaliber: null, nearMiss: true,
     disposal: null, effective: null, lessons: '止盈信号犹豫但未触发实亏', updatedAt: '2026-08-15T02:05:00.000Z',
-    extremeValue: null, durationHours: null
+    extremeValue: null, durationHours: null, positionSnapshot: null
   }
 
   it('near_miss 登记主路径：服务端可用 → registerRiskEvent(near_miss 不计损失) + 处置回填 + 已落库', async () => {

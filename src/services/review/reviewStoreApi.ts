@@ -21,6 +21,8 @@ export type RiskEventSummary = {
   lessons: string | null
   extremeValue: number | null
   durationHours: number | null
+  /** 当时仓位快照（#2015 验收「仓位状态」：登记时留的持仓/敞口原文）；非对象/null → null */
+  positionSnapshot: Record<string, unknown> | null
   updatedAt: string | null
 }
 
@@ -66,6 +68,12 @@ export function coerceRiskEvent(row: unknown): RiskEventSummary | null {
     lessons: str(r.lessons),
     extremeValue: numOrNull(r.extremeValue ?? r.extreme_value),
     durationHours: numOrNull(r.durationHours ?? r.duration_hours),
+    positionSnapshot:
+      r.positionSnapshot != null && typeof r.positionSnapshot === 'object'
+        ? (r.positionSnapshot as Record<string, unknown>)
+        : r.position_snapshot != null && typeof r.position_snapshot === 'object'
+          ? (r.position_snapshot as Record<string, unknown>)
+          : null,
     updatedAt: str(r.updatedAt) ?? str(r.updated_at),
   }
 }

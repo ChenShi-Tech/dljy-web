@@ -64,6 +64,19 @@ describe('classifyStoreResponse / extractRows（探针降级口径）', () => {
 })
 
 
+describe('coerceRiskEvent positionSnapshot（#2015 验收「仓位状态」）', () => {
+  it('对象透传（camelCase/snake_case）；非对象/缺失 → null', () => {
+    const a = coerceRiskEvent({ id: 1, eventTime: '2026-08-25T09:00:00Z', eventType: 'x', positionSnapshot: { snapshot: '持仓 120MW' } })
+    expect(a?.positionSnapshot).toEqual({ snapshot: '持仓 120MW' })
+    const b = coerceRiskEvent({ id: 2, eventTime: '2026-08-25T09:00:00Z', eventType: 'x', position_snapshot: { pos: '敞口 50MWh' } })
+    expect(b?.positionSnapshot).toEqual({ pos: '敞口 50MWh' })
+    const c = coerceRiskEvent({ id: 3, eventTime: '2026-08-25T09:00:00Z', eventType: 'x', positionSnapshot: '文本不是对象' })
+    expect(c?.positionSnapshot).toBeNull()
+    const d = coerceRiskEvent({ id: 4, eventTime: '2026-08-25T09:00:00Z', eventType: 'x' })
+    expect(d?.positionSnapshot).toBeNull()
+  })
+})
+
 describe('coerceCase（#2047 near_miss 入案例库）', () => {
   it('camelCase/snake_case 双容忍，visibility 归一，caseType 非法拒收', () => {
     const a = coerceCase({ id: 3, caseNo: 'AL-20260818-001', caseType: 'risk', title: '越限申报未卡热点', visibility: 'internal' })
