@@ -68,7 +68,6 @@ const tradingDay = () => import('../views/trading/TradingDayView.vue')
 // 且它们本就是动线中的一步、不是独立功能模块）。
 const spotDecisionDesk = () => import('../views/DeclarationDeskView.vue')
 const approvalQueue = () => import('../views/ApprovalQueueView.vue')
-const regionCalibrationDesk = () => import('../views/RegionDecisionDeskView.vue')
 const exposureBoard = () => import('../views/ExposureBoardView.vue')
 const spotMonitor = () => import('../views/SpotMonitorView.vue')
 const reviewCenter = () => import('../views/ReviewCenterView.vue')
@@ -240,7 +239,6 @@ const router = createRouter({
         // 前者能力与复盘中心+敞口看板重叠且假设输入为示意；后者后端仅注册 batch_report/test 两个 handler，
         // 「根治 forecast 同步阻塞」的原目标从未落地，页面实为空架子。旧深链由 catchAll 落 /dashboard。
         page('xhjy/region', 'SpotRegionOverview', { block: '现货交易', title: '地区现货概览', code: 'spot-region-overview', endpoint: 'local regional trading registry', dataPath: 'local_region_trading', scope: '当前地区现货机制、价格画像、电源结构和通用底座', kind: 'mixed' }, regionalTradingHub),
-        page('xhjy/calibration', 'RegionCalibrationDesk', { block: '智能实验室', title: '地区决策标定', code: 'region-calibration', endpoint: 'local regionStrategyAdvisor', dataPath: 'region_spot_profiles', scope: '策略适配评分、收益风险快测、地区参数校准与一键下发交易策略实验室/日前上报', kind: 'mixed' }, regionCalibrationDesk),
 
         // 中长期交易 /zcqjy
         page('zcqjy/zccljk', 'PositionMonitor', { block: '中长期交易', title: '持仓量监控', code: 'zccljk', endpoint: 'GET /sdpt/zfsdjy/ccljkDay|ccljkTime|list', dataPath: 'sdpt_zfsdjy', scope: '2026-06，39行', kind: 'real' }, zfsdjyPosition),

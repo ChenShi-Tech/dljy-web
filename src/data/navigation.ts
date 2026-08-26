@@ -210,7 +210,6 @@ export const navigation: NavItem[] = [
         icon: MapIcon,
         children: [
           { path: '/xhjy/region', title: '地区现货概览', icon: LineChart },
-          { path: '/xhjy/calibration', title: '地区决策标定', icon: BrainCircuit },
           { path: '/sdzl/region-rules', title: '地区规则体系', icon: Network }
         ]
       }]

@@ -38,7 +38,6 @@ import {
 } from '@/services/governance'
 import AiAssistant from '../components/AiAssistant.vue'
 import AiOrbLauncher from '../components/agent/AiOrbLauncher.vue'
-import { useAiPanel } from '../composables/useAiPanel'
 import PriceTicker from '../components/PriceTicker.vue'
 import RegionSwitcher from '@/components/region/RegionSwitcher.vue'
 import RegionMigrationTip from '@/components/region/RegionMigrationTip.vue'
@@ -51,8 +50,8 @@ import { useTheme } from '../composables/useTheme'
 const router = useRouter()
 const route = useRoute()
 const collapsed = ref(false)
-// 全局统一 AI 面板单例：右上角「AI 导航」开导航模式；业务页「✨AI 解读」开 agent 模式。
-const { openNav } = useAiPanel()
+// AI 面板只剩「解读」一个模式（导航助手已下架，见 src/attic/ai-navigator-panel/）：
+// 面板由业务页「✨AI 解读」触发，顶栏这颗按钮改为直接进统一工作台。
 const isMobile = ref(false)
 const mobileMenuOpen = ref(false)
 const currentUser = ref<AuthUser>(getCurrentUser())
@@ -408,7 +407,7 @@ watch(
               </span>
             </el-option>
           </el-select>
-          <el-button class="ai-nav-btn" :icon="Sparkles" round @click="openNav()">AI 导航</el-button>
+          <el-button class="ai-nav-btn" :icon="Sparkles" round @click="router.push('/ai-agent')">AI 助手</el-button>
 
           <span class="action-divider" aria-hidden="true" />
 

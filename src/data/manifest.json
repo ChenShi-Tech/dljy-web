@@ -631,21 +631,6 @@
     "feature": null
   },
   {
-    "id": "region-calibration",
-    "path": "/xhjy/calibration",
-    "title": "地区决策标定",
-    "domain": "智能实验室",
-    "kind": "mixed",
-    "endpoint": "local regionStrategyAdvisor",
-    "dataPath": "region_spot_profiles",
-    "nav": {
-      "group": "/gsgl",
-      "listed": true
-    },
-    "regions": [],
-    "feature": null
-  },
-  {
     "id": "declaration-desk",
     "path": "/xhjy/desk",
     "title": "申报工作台",
