@@ -16,6 +16,7 @@ import { ElMessage } from 'element-plus'
 import { currentRegion } from '@/services/region/regionContext'
 import { getRegionCapabilityForPath } from '@/services/region/regionModules'
 import { fetchSpotDayAheadReportContract, SPOT_DAY_AHEAD_REPORT_FAMILY } from '@/services/data/contracts'
+import { DECLARATION_PRICE_TYPE_CODES, DECLARATION_QTY_TYPE_CODES } from '@/data/declarationCodes'
 import { fetchCapturedDates } from '@/services/captured'
 import { onRegionChange } from '../composables/useRegionReload'
 import RegionDataBanner from '@/components/region/RegionDataBanner.vue'
@@ -30,8 +31,11 @@ import { exportCsv } from '../utils/exportCsv'
 // 逐日核对 91 个采集文件得出（scripts 无常驻校验，改采集范围时同步本常量与上方注释）。
 const ENERGY_LAST_DATE = '2026-06-04'
 const hasEnergy = (date: string) => date <= ENERGY_LAST_DATE
-const ZPTQX: Record<string, string> = { '0': '中长期电量', '1': '日前电量', '2': '实时电量', '3': '实时电量加权', '4': '预估电量', '8': '主策略', '9': '小策略', '14': 'AI策略1', '15': '日前电量AI1', '16': 'AI策略2', '17': '日前电量AI2', '72': '执行策略' }
-const ZPTJG: Record<string, string> = { '0': '日前价出清', '1': '实时价出清', '8': '日前价回归', '30': '日前价电厂预测', '40': '日前价公司预测', '41': '日前价国能日新预测', '45': '日前价AI预测2', '61': '日前价AI预测1', '62': '实时价AI预测1', '11': '实时价公司预测' }
+// 宽表「type→口径」字典不再本页硬编码（#1529 病灶：取错 type 不报错只给错数字，#1498 实发）——
+// 唯一事实源 shared/schema/declaration-codes.mjs（主仓），经 src/data 出口消费（分层守卫），
+// 与 Python 侧 declaration_codes_gen.py 同源；改口径只改事实源。
+const ZPTQX = DECLARATION_QTY_TYPE_CODES
+const ZPTJG = DECLARATION_PRICE_TYPE_CODES
 // 组 → 轴/字典/类型/tooltip 单位
 // zcqjj：原标注「持仓比例 %」并挂 min:0/max:100 的固定轴，但逐日实测值域为 86~532
 // （4/15: 120~478.1、6/04: 86~531.8、6/10: 99.5~532.5），整条线恒被裁到轴外不可见，这是真 bug。
