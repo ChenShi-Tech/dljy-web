@@ -110,8 +110,8 @@ export type RoleAccessOverride = Partial<Pick<AccessRule, 'defaultRoute' | 'grou
 const enabledRegionGroups = getRegionModuleRoutePrefixes()
 // "地区交易"已并入现货交易：原 /regional-trading 块授权迁为对合并入口页的细粒度授权
 // （作为 group 前缀按 === / startsWith 匹配，恰好授权这些页，不会过度授予整个 /xhjy 块）。
-// /xhjy/calibration 为地区决策标定页（原 RegionDecisionDeskView 重新挂载），与 desk 同口径授权。
-const regionalTradingGroups = ['/xhjy/region', '/xhjy/desk', '/xhjy/calibration']
+// 地区决策标定 /xhjy/calibration 已下架（2026-08-26，代码存 src/attic/），其授权项随之摘除。
+const regionalTradingGroups = ['/xhjy/region', '/xhjy/desk']
 // 报表中心：全主体通用入口，所有业务角色可见；具体报表数据按 DataScope/subjectType 在数据层隔离。
 const reportsGroups = ['/report']
 // 电厂空间资产是 grid 只读域；仅给后端同样具备 grid 域的角色开放，售电/结算角色不进入。

@@ -30,5 +30,6 @@
     "shared/**/*.d.mts",
     "vendor/dljy-contracts/index.d.ts"
   ],
+  "exclude": ["src/attic/**"],
   "references": []
 }

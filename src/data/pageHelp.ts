@@ -126,12 +126,9 @@ export const pageHelpRegistry: Record<string, PageHelpEntry> = {
     docPath: 'docs/data/yunnan-actualload-derive.md'
   },
 
-  // 智能实验室（决策标定 + 智能体策略）
-  RegionCalibrationDesk: {
-    title: '地区决策标定',
-    body: '基于地区现货画像的策略标定台：三面板——策略适配评分（按主体类型 trader/容量/合约覆盖/有无储能）、收益/风险快测、地区参数校准，可一键下发到日前上报或申报工作台。数据来自本地 regionSpotProfiles 与 regionStrategyAdvisor。市场未启动地区显空态引导。属决策支持，非投资建议；以正式结算口径为准。',
-    docPath: 'docs/agent-harness/lab-quant-correctness.md'
-  },
+  // 智能实验室（智能体策略）
+  // 注：RegionCalibrationDesk（地区决策标定）已于 2026-08-26 下架，帮助条目随页面一并摘除；
+  //     代码存 src/attic/region-decision-desk/，恢复时连同本条目一起加回。
   MorningBrief: {
     title: '交易晨报',
     body: '多智能体协同生成的今日现货行情研判·交易策略·风险提示晨报：选日期→生成晨报→AgentChatPanel 流式输出三段式（行情研判/交易策略/风险提示）+ 子智能体冒泡 + 数据口径角标。经白名单 prompt key 走服务端固定 supervisor 提示，后端零改动。数据为分析示意，合成项显式标注。',
