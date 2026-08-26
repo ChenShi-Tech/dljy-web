@@ -57,6 +57,9 @@ import {
   POLICY_DATA_GAP_NOTE,
   priceAnomalyPoints
 } from '@/services/review/marketReview'
+import { fetchRiskEvents } from '@/services/review/reviewStoreClient'
+import type { RiskEventSummary } from '@/services/review/reviewStoreApi'
+import { beijingDayStartUtc, eventsInWindow, riskDimSummary, riskReviewReminder } from '@/services/review/morningRiskReview'
 import { markS1Started, s1TimerView, type S1TimerView } from '@/services/trading/stageTimer'
 import { coverageOf, hitRate, type DecisionLogEntry } from 'shared/trading-rules/decision-log.mjs'
 import {
@@ -82,6 +85,7 @@ import AiAssistFill from '@/components/trading/AiAssistFill.vue'
 import ReviewThreeQuestions from './ReviewThreeQuestions.vue'
 import OvernightReportCard from './OvernightReportCard.vue'
 import ReviewTodoBadge from './ReviewTodoBadge.vue'
+import MorningRiskPanel from './MorningRiskPanel.vue'
 import type { StageId } from '@/data/workflowStages'
 
 const props = defineProps<{ declaration: DeclarationOrder | null; targetDate: string }>()
@@ -197,9 +201,11 @@ function judgePc(id: string, verdict: PriceChangeVerdict) {
 onMounted(() => {
   pcPending.value = pendingPriceChanges()
   void loadFundamentalsSnapshot()
+  void loadYesterdayRiskEvents()
 })
 watch(reviewedDate, () => {
   void loadFundamentalsSnapshot()
+  void loadYesterdayRiskEvents()
 })
 
 // ── 市场复盘（六维③ · #2012 第 2 期）──────────────────────────────────────
@@ -226,6 +232,22 @@ async function loadFundamentalsSnapshot() {
 const marketSnapshot = computed(() => fundamentalSnapshot(fundamentals.value))
 const marketAnomalies = computed(() => priceAnomalyPoints(marketDigest.value))
 const marketDim = computed(() => marketDimSummary(marketDigest.value, marketSnapshot.value))
+
+// ── 风险复盘（六维⑤ · #2015 第 2 期）──────────────────────────────────────
+// 昨日窗口（复盘对象日）事件 + near_miss 标注 + 回顾提醒；面板抽成 MorningRiskPanel
+// 子组件（技术债 #4 顺手还一点），取数与探针降级留在这里。
+const riskFeedAvailable = ref(false)
+const yesterdayRiskEvents = ref<RiskEventSummary[]>([])
+async function loadYesterdayRiskEvents() {
+  // 「昨日」按北京日界取窗口（beijingDayStartUtc）——UTC 零点会把窗口后移 8 小时
+  const since = beijingDayStartUtc(reviewedDate.value)
+  const until = beijingDayStartUtc(props.targetDate)
+  const feed = await fetchRiskEvents({ since, until })
+  riskFeedAvailable.value = feed.available
+  yesterdayRiskEvents.value = feed.available ? eventsInWindow(feed.events, since, until) : []
+}
+const riskReminder = computed(() => riskReviewReminder(yesterdayRiskEvents.value))
+const riskDim = computed(() => riskDimSummary(riskFeedAvailable.value ? { available: true } : { available: false }, riskReminder.value))
 
 // ── S1 实机计时（#2040）：只呈现，不写回（U4 红线） ──────────────────────────
 const s1View = ref<S1TimerView>({ startedAt: null, elapsedMinutes: null, slow: false })
@@ -409,8 +431,8 @@ const yesterdayLogMissing = computed(() => {
 })
 
 // ── 六维摘要（需求 5）：每维一行，数据从各面板 computed 汇总，不新增数据源 ────
-// 首期 ①④⑥ 有真实数据；②策略已接 trading-memory 胜率端点（#2016 第 2 期）、
-// ③市场已接价格/基本面（#2012 第 2 期）；⑤风险仍「待数据接入」占位（#2015）。
+// 首期 ①④⑥ 有真实数据；②策略（#2016）、③市场（#2012）、⑤风险（#2015）均已接
+// 真实端点——六维摘要全维度真数据/真降级。
 type SixDimState = { key: string; name: string; summary: string; ready: boolean; note?: string }
 
 // ── 需求 4：决策三问状态（面板③逐条填写，写回 decisionReview）────────────────
@@ -574,7 +596,13 @@ const sixDims = computed<SixDimState[]>(() => {
           : '偏差 —（执行偏差未取到）',
       ready: devMwh != null
     },
-    { key: 'risk', name: '⑤ 风险', summary: '待风控事件库接入', ready: false, note: '#2015（第 2 期）' },
+    {
+      key: 'risk',
+      name: '⑤ 风险',
+      summary: riskDim.value.summary,
+      ready: riskDim.value.ready,
+      note: riskFeedAvailable.value ? undefined : '风险事件服务未上线'
+    },
     {
       key: 'decision',
       name: '⑥ 决策',
@@ -585,7 +613,7 @@ const sixDims = computed<SixDimState[]>(() => {
 })
 /** 六维摘要行点击展开对应区块（滚动定位，区块本身常驻——不折叠已有面板，保持现有作业动线）。 */
 function jumpToDim(key: string) {
-  const map: Record<string, string> = { result: 'mr-panel-result', strategy: 'mr-panel-strategy', market: 'mr-panel-market', deviation: 'mr-panel-deviation', decision: 'mr-panel-decision' }
+  const map: Record<string, string> = { result: 'mr-panel-result', strategy: 'mr-panel-strategy', market: 'mr-panel-market', risk: 'mr-panel-risk', deviation: 'mr-panel-deviation', decision: 'mr-panel-decision' }
   const id = map[key]
   if (id) document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
 }
@@ -990,6 +1018,16 @@ async function writeBack() {
         <button type="button" class="ghost" @click="emit('go', 'daily-close')">去 S7 看市场概况</button>
       </div>
     </section>
+
+    <!-- 风险复盘（六维⑤ · #2015 第 2 期）：昨日事件+仓位受损+near_miss 标注+回顾提醒；
+         子组件抽离还技术债 #4（自带面板样式与 mr-panel-risk 锚点）；两项无源监测
+         data_gap 口径在组件内常驻。 -->
+    <MorningRiskPanel
+      :events="yesterdayRiskEvents"
+      :available="riskFeedAvailable"
+      :window-label="`昨日 ${reviewedDate}`"
+      @go-risk-library="router.push('/xhjy/review')"
+    />
 
     <section id="mr-panel-decision" class="mr-panel">
       <h3>
