@@ -234,7 +234,9 @@ export const navigation: NavItem[] = [
       // 「智能实验室」组；「AI工作流中枢」作为它们的导航壳被 tab 栏取代，已删）。
       { path: '/system/ai-studio', title: 'AI 工作室', icon: Bot },
       // 用户与权限：账号目录、登录会话与权限矩阵 tab 化合并。
-      { path: '/system/accounts', title: '用户与权限', icon: Users }
+      { path: '/system/accounts', title: '用户与权限', icon: Users },
+      // 推理模型管理（dljy#2465）：南洋推理服务的唯一管理面，ADMIN/BOSS 可见
+      { path: '/system/models', title: '推理模型管理', icon: BrainCircuit }
     ]
   }
 ]
