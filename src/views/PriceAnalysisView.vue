@@ -215,7 +215,7 @@ function renderDateSlice() {
   }, { notMerge: true })
 }
 
-const { askPage } = usePageInsight(PAGE_PROMPT_KEYS.marketDataAnalysis)
+const { askPage, registerPageInsight } = usePageInsight(PAGE_PROMPT_KEYS.marketDataAnalysis)
 // 「✨ 解读本页」：当前日期区间 + 勾选价类 + 日前/实时逐日极值均值统计作摘要（勿传逐日96点全量）。
 function askInsight() {
   const dates = selectedDates()
@@ -242,6 +242,9 @@ function askInsight() {
     basis: 'captured'
   })
 }
+
+// 右下角悬浮球 = 本页解读入口：与上面「✨ 解读本页」按钮同一条链路、同一份切片。
+registerPageInsight(askInsight, '价格分析')
 
 // 3D 图(echarts-gl)保留手动 resize/dispose;两个切面图由 useEChart 托管
 function onResize() { d3Chart?.resize() }

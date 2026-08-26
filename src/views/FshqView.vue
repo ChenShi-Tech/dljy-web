@@ -214,7 +214,7 @@ function renderMain() {
   inst?.on('click', (p: any) => { if (p.dataIndex != null) { selectedIdx.value = p.dataIndex; renderMain(); loadBuySell(p.dataIndex) } })
 }
 
-const { askPage } = usePageInsight(PAGE_PROMPT_KEYS.marketDataAnalysis)
+const { askPage, registerPageInsight } = usePageInsight(PAGE_PROMPT_KEYS.marketDataAnalysis)
 // 「✨ 解读本页」：当前模式/日期 + 出清价均值极值 + 已有预测线列表作摘要交全局 AI 中心（勿传 96 点全量）。
 function askInsight() {
   const d = data.value || {}
@@ -234,6 +234,9 @@ function askInsight() {
     basis: 'captured'
   })
 }
+
+// 右下角悬浮球 = 本页解读入口：与上面「✨ 解读本页」按钮同一条链路、同一份切片。
+registerPageInsight(askInsight, '分时行情')
 
 onMounted(load)
 watch([mode, runDate, jyDate], load)

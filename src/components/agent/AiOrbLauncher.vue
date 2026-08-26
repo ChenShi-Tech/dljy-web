@@ -1,35 +1,42 @@
 <script setup lang="ts">
-// 全局 AI 球入口：右下角悬浮液态玻璃球，点按进统一智能体工作台 /ai-agent。
-// 原先它开的是浮窗「导航助手」模式，该模式已于 2026-08-26 下架（与工作台能力重叠，
-// 见 src/attic/ai-navigator-panel/）；解读面板仍由业务页「✨AI 解读」触发，
-// 面板打开期间球退场避让（贴右全高 640px 浮层，z-index 1500）。
-import { ref } from 'vue'
-import { useRouter } from 'vue-router'
+// 右下角悬浮液态玻璃球 = **本页解读**入口：点按对当前页做 AI 解读，等价于该页的
+// 「✨ 解读本页」按钮，走同一条 openAgent 链路、带同一份页面切片。
+//
+// **它跟着页面能力走，不是全局链接**：只在把解读触发器注册进 usePageInsight 注册表的页面
+// 出现；没有解读能力的页面不显示——「入口在但点了没用/点了乱答」比没有入口更糟。
+// 想直接对话去顶栏「AI 助手」（统一工作台 /ai-agent）。
+//
+// 历史：曾短暂改成「不分页面一律跳 /ai-agent」（#38），把一个跟页面走的入口降级成了到处
+// 一样的链接，已回退为本实现。面板打开期间球退场避让（贴右全高 640px 浮层，z-index 1500）。
+import { ref, computed } from 'vue'
 import { useAiPanel } from '@/composables/useAiPanel'
+import { usePageInsightTarget } from '@/composables/usePageInsight'
 import LiquidGlassOrb from '@/components/orb/LiquidGlassOrb.vue'
 import type { OrbPresetId } from '@/components/orb/orbPresets'
 
 const { state: aiPanel } = useAiPanel()
-const router = useRouter()
+const insight = usePageInsightTarget()
 const active = ref(false)
+const hintTitle = computed(() => (insight.value ? `解读本页：${insight.value.label}` : ''))
 
 // 蓝晶液滴：电光蓝主色与交易看板/弧光主题最贴合；要换观感改这里即可
 // （可选：siri/voiceWave/spectrum/aurora/frost/plasma/chrome/opal/violetEmber）
 const preset: OrbPresetId = 'blueDrop'
 
-function goWorkbench() {
-  void router.push('/ai-agent')
+function askCurrentPage() {
+  insight.value?.run()
 }
 </script>
 
 <template>
   <Transition name="ai-orb">
     <button
-      v-show="!aiPanel.open"
+      v-show="!aiPanel.open && !!insight"
       class="ai-orb-launcher"
       type="button"
-      aria-label="智能体工作台，点我进入"
-      @click="goWorkbench"
+      :aria-label="hintTitle"
+      :title="hintTitle"
+      @click="askCurrentPage"
       @mouseenter="active = true"
       @mouseleave="active = false"
       @focus="active = true"
@@ -38,7 +45,7 @@ function goWorkbench() {
       <span class="ai-orb-ball">
         <LiquidGlassOrb :preset="preset" :speed-scale="active ? 1.6 : 1" />
       </span>
-      <span class="ai-orb-hint" aria-hidden="true">AI 助手</span>
+      <span class="ai-orb-hint" aria-hidden="true">解读本页</span>
     </button>
   </Transition>
 </template>

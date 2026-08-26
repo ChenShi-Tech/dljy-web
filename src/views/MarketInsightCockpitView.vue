@@ -15,6 +15,7 @@ import { currentRegion } from '@/services/region/regionContext'
 import { PAGE_PROMPT_KEYS } from '@/prompts'
 import { fetchMarketInsightBundle, type MarketInsightBundle } from '@/services/market/marketInsightClient'
 import { useAiPanel } from '@/composables/useAiPanel'
+import { usePageInsight } from '@/composables/usePageInsight'
 
 function todayISO(): string {
   const d = new Date()
@@ -75,6 +76,10 @@ function askGlobal() {
     label: '市场洞察全局'
   })
 }
+
+// 右下角悬浮球 = 本页解读入口：本页是按卡片解读，悬浮球接「全局解读」那一支。
+const { registerPageInsight } = usePageInsight(promptKey)
+registerPageInsight(askGlobal, '市场洞察驾驶舱')
 </script>
 
 <template>

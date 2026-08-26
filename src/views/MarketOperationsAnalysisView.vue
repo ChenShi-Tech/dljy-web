@@ -249,7 +249,7 @@ function exportDetail() {
 watch(selectedYear, refreshData)
 watch(activeTab, () => nextTick(renderCharts))
 
-const { askPage } = usePageInsight(PAGE_PROMPT_KEYS.marketOperations)
+const { askPage, registerPageInsight } = usePageInsight(PAGE_PROMPT_KEYS.marketOperations)
 function askInsight() {
   const tabLabel = tabs.find((t) => t.value === activeTab.value)?.label ?? activeTab.value
   // #669：套餐 tab 用 visibleBasis（套餐真实性单独判定），其余 tab 用页面级 basis。
@@ -264,6 +264,9 @@ function askInsight() {
     caliber_note: displayedBasis === 'captured' ? '真实回放数据' : '当前为占位示例，仅供页面形态'
   }, `请基于本页「市场经营分析·${tabLabel}」做经营结构与趋势解读（数据已在上下文，注意 basis=${displayedBasis} 口径，勿臆造未取项）`)
 }
+
+// 右下角悬浮球 = 本页解读入口：与上面「✨ 解读本页」按钮同一条链路、同一份切片。
+registerPageInsight(askInsight, '市场经营分析')
 
 onMounted(refreshData)
 </script>
