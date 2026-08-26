@@ -32,12 +32,22 @@ const DATA_SVC_PREFIXES = [
   '/v1/data-sources/cgn-yunnan',
 ]
 
-/** 数据管理路径族判定：命中返回 /data-svc 代理形态完整路径，否则 null（走平台 BFF）。 */
+/**
+ * 数据管理路径族判定：命中返回 /data-svc 代理形态完整路径，否则 null（走平台 BFF）。
+ *
+ * 判定只看 pathname：`?query` / `#hash` 先剥掉、改道后原样带回。此前拿整串字面量查精确集合，
+ * `/v1/sichuan-ingest/trigger` 命中而 `/v1/sichuan-ingest/trigger?menuCode=…` 落空 → 单数据集
+ * 手动触发打到平台 BFF 已退役的 /api/v1 报 404（dljy#2501）。「query 由调用方走 params 传」只是
+ * 口头约定，缝本身必须对拼进字面量的 query 稳。
+ */
 export function dataServicePath(path: string): string | null {
-  const normalized = path.startsWith('/api/') ? path.slice(4) : path
+  const cut = path.search(/[?#]/)
+  const pathname = cut >= 0 ? path.slice(0, cut) : path
+  const suffix = cut >= 0 ? path.slice(cut) : ''
+  const normalized = pathname.startsWith('/api/') ? pathname.slice(4) : pathname
   if (!normalized.startsWith('/v1/')) return null
   if (DATA_SVC_EXACT.has(normalized) || DATA_SVC_PREFIXES.some((prefix) => normalized.startsWith(prefix))) {
-    return `${DATA_SVC_ROOT}/api${normalized}`
+    return `${DATA_SVC_ROOT}/api${normalized}${suffix}`
   }
   return null
 }
