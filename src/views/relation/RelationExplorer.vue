@@ -246,7 +246,7 @@ function renderAll() {
   renderSensitivity()
 }
 
-const { askPage } = usePageInsight(PAGE_PROMPT_KEYS.marketDataAnalysis)
+const { askPage, registerPageInsight } = usePageInsight(PAGE_PROMPT_KEYS.marketDataAnalysis)
 // 「✨ 解读本页」：筛选切片 + 当前视图 + KPI 摘要（勿传 xd 逐日逐时散点全量）。
 function askInsight() {
   const k = kpi.value
@@ -268,6 +268,9 @@ function askInsight() {
     basis: 'captured'
   })
 }
+
+// 右下角悬浮球 = 本页解读入口：与上面「✨ 解读本页」按钮同一条链路、同一份切片。
+registerPageInsight(askInsight, props.promptLabel)
 
 onMounted(loadData)
 watch(runDate, loadData)                       // 换运行日 → 重新取数

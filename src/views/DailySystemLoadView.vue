@@ -91,7 +91,7 @@ async function load() {
   }
 }
 
-const { askPage } = usePageInsight(PAGE_PROMPT_KEYS.marketDataAnalysis)
+const { askPage, registerPageInsight } = usePageInsight(PAGE_PROMPT_KEYS.marketDataAnalysis)
 // 「✨ 解读本页」：可用年份 + 系统负荷各年年均作摘要（勿传 6年×366天逐日矩阵全量）。
 function askInsight() {
   const sys = data.value?.sources.system
@@ -111,6 +111,9 @@ function askInsight() {
     basis: 'captured'
   })
 }
+
+// 右下角悬浮球 = 本页解读入口：与上面「✨ 解读本页」按钮同一条链路、同一份切片。
+registerPageInsight(askInsight, '逐日系统负荷')
 
 onMounted(load)
 

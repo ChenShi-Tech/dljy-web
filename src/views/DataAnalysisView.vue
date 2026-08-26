@@ -322,7 +322,7 @@ async function onSaveAnnotation() {
   } catch (e) { ElMessage.error(e instanceof Error ? e.message : '标注保存失败') }
 }
 
-const { askPage } = usePageInsight(PAGE_PROMPT_KEYS.marketDataAnalysis)
+const { askPage, registerPageInsight } = usePageInsight(PAGE_PROMPT_KEYS.marketDataAnalysis)
 // 「✨ 解读本页」：当前日期 + 已勾选分组 + 当日实绘序列的极值/均值作摘要（勿传 dayCache 96 点逐点）。
 function askInsight() {
   const day = dayCache.value[currentDate.value] || {}
@@ -343,6 +343,9 @@ function askInsight() {
     basis: 'captured'
   })
 }
+
+// 右下角悬浮球 = 本页解读入口：与上面「✨ 解读本页」按钮同一条链路、同一份切片。
+registerPageInsight(askInsight, '综合数据分析')
 
 onMounted(load)
 watch(selected, render, { deep: true })

@@ -201,7 +201,7 @@ function render() {
   }, { notMerge: true })
 }
 
-const { askPage } = usePageInsight(PAGE_PROMPT_KEYS.marketDataAnalysis)
+const { askPage, registerPageInsight } = usePageInsight(PAGE_PROMPT_KEYS.marketDataAnalysis)
 // 「✨ 解读本页」：当前运行区间/对比日 + 序列图例 + 区间天数作摘要（勿传全量 series）。
 function askInsight() {
   const d = clearing.value
@@ -220,6 +220,9 @@ function askInsight() {
     basis: dataBasis.value
   })
 }
+
+// 右下角悬浮球 = 本页解读入口：与上面「✨ 解读本页」按钮同一条链路、同一份切片。
+registerPageInsight(askInsight, '出清现货电量分析')
 
 onMounted(load)
 watch([runRange, compareDate, fixedAxis, hideAxis], render, { deep: true })
