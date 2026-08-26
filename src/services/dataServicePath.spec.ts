@@ -30,8 +30,20 @@ describe('dataServicePath 数据管理路径族改道（#2169 P2-2a）', () => {
     // 这条翻回 null 就意味着复盘中心结算台账读 404（平台 BFF 已无该域的处理器）。
     expect(dataServicePath('/v1/settlements')).toBe(`${DATA_SVC_ROOT}/api/v1/settlements`)
     expect(dataServicePath('/api/v1/settlements')).toBe(`${DATA_SVC_ROOT}/api/v1/settlements`)
-    // query 串不在判定内（由调用方以 params 传），带 query 的字面量不匹配 exact 集合。
-    expect(dataServicePath('/v1/settlements?month=2026-07')).toBeNull()
+    // query 只剥不判：改道后原样带回（此前这条被写成「不匹配」，正是 dljy#2501 单数据集触发 404 的根源）。
+    expect(dataServicePath('/v1/settlements?month=2026-07')).toBe(`${DATA_SVC_ROOT}/api/v1/settlements?month=2026-07`)
+  })
+
+  it('带 query / hash 的字面量按 pathname 判定，改道结果保留 query（dljy#2501）', () => {
+    // sichuanAccess.ts 把 menuCode 拼进路径字面量：单数据集触发必须与「触发全部」走同一条 /data-svc。
+    expect(dataServicePath('/api/v1/sichuan-ingest/trigger?menuCode=scpx_001_01'))
+      .toBe(`${DATA_SVC_ROOT}/api/v1/sichuan-ingest/trigger?menuCode=scpx_001_01`)
+    expect(dataServicePath('/v1/grid-access/points?region=sichuan#top'))
+      .toBe(`${DATA_SVC_ROOT}/api/v1/grid-access/points?region=sichuan#top`)
+    // 反向：query 不能把无关路径「带进」改道表。
+    expect(dataServicePath('/api/v1/market/list?menuCode=scpx_001_01')).toBeNull()
+    // 反向：query 里出现改道路径字面量也不算命中（只看 pathname）。
+    expect(dataServicePath('/api/v1/market/list?next=/v1/sichuan-ingest/trigger')).toBeNull()
   })
 
   it('边界负例：无关读路径不改道', () => {
