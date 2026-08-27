@@ -15,13 +15,14 @@ import {
   suggestResponsibility
 } from '@/services/review/deviationAggregate'
 import { FEED_ABSENT_NOTE } from '@/services/review/templateInstanceApi'
+import { todayBeijing } from '@/utils/beijingDate'
 
 const props = defineProps<{ tolerancePct: number; penaltyPrice: number }>()
 
 type Period = 'week' | 'month'
 const period = ref<Period>('week')
 /** 周期锚日：周=周一，月=当月 1 日（默认本周一 / 本月） */
-const anchor = ref(mondayOf(new Date().toISOString().slice(0, 10)))
+const anchor = ref(mondayOf(todayBeijing()))
 const loading = ref(false)
 const data = ref<PeriodReview | null>(null)
 
@@ -40,7 +41,7 @@ async function load() {
   loading.value = true
   data.value = null
   try {
-    const today = new Date().toISOString().slice(0, 10)
+    const today = todayBeijing()
     // 只取到今天为止（本周/本月未过的日子不进聚合，也不算缺数）
     const dates = daysOfPeriod(period.value, anchor.value).filter((d) => d <= today)
     data.value = await fetchReviewRange(dates, { tolerancePct: props.tolerancePct, penaltyPrice: props.penaltyPrice })

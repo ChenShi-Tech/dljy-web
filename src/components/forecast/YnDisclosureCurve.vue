@@ -12,6 +12,7 @@ import ChartCard from '../common/ChartCard.vue'
 import DataState from '../common/DataState.vue'
 import DataBasisBadge from '../DataBasisBadge.vue'
 import { fetchCaptured } from '@/services/captured'
+import { beijingDay } from '@/utils/beijingDate'
 import { axisTooltip, chartToolbox, fmtNum, insideZoom } from '@/services/chart/chartOptions'
 import { lineSeries, stepSeries } from '@/services/chart/chartStyle'
 
@@ -43,7 +44,7 @@ const cache = ref<Record<string, { forecast: Row[]; actual: Row[] }>>({})
 const current = computed(() => DATASETS.find((d) => d.key === datasetKey.value) ?? DATASETS[0])
 
 function isoDay(offset: number): string {
-  return new Date(Date.now() + offset * 24 * 3600 * 1000).toISOString().slice(0, 10)
+  return beijingDay(offset)
 }
 
 function shiftDay(base: string, offset: number): string {

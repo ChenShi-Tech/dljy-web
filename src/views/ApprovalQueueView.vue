@@ -16,6 +16,7 @@ import {
   type DeclarationStatus
 } from '@/services/declarations'
 import { exportCsv } from '../utils/exportCsv'
+import { todayBeijing } from '@/utils/beijingDate'
 import { onRegionChange } from '../composables/useRegionReload'
 import RegionDataBanner from '@/components/region/RegionDataBanner.vue'
 
@@ -178,7 +179,7 @@ function exportRecords() {
       last?.comment ?? ''
     ]
   })
-  exportCsv(`审批记录_${new Date().toISOString().slice(0, 10)}`, headers, body)
+  exportCsv(`审批记录_${todayBeijing()}`, headers, body)
 }
 
 function totalMwh(declaration: DeclarationOrder) {

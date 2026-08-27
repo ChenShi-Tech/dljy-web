@@ -5,6 +5,7 @@ import { useEChart } from '../composables/useEChart'
 import { useQuerySync } from '../composables/useQuerySync'
 import { axisTooltip, chartToolbox, emptyOverlay } from '@/services/chart/chartOptions'
 import { exportCsv } from '../utils/exportCsv'
+import { todayBeijing } from '@/utils/beijingDate'
 import {
   calculateToEndUser,
   calculateToSource,
@@ -141,7 +142,7 @@ function renderAnnualChart() {
 function exportBreakdown() {
   if (!result.value) return
   exportCsv(
-    `跨省跨区电价路径-${form.source_province}到${form.target_province}-${new Date().toISOString().slice(0, 10)}`,
+    `跨省跨区电价路径-${form.source_province}到${form.target_province}-${todayBeijing()}`,
     ['步', '项目', '说明', '本步单价(元/kWh)', '累计价(元/kWh)'],
     result.value.breakdown.map((row) => [row.step, row.item, row.description, row.unit_price, row.accumulated])
   )

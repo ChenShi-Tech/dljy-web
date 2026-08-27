@@ -8,6 +8,7 @@ import ChartCard from '../../components/common/ChartCard.vue'
 import PriceTicker from '../../components/PriceTicker.vue'
 import KpiCard from '@/components/company/KpiCard.vue'
 import { fetchCompanyDashboard, refreshCompanyOptions, type CompanyDashboard, type DashboardPeriod } from '@/services/company/companyApi'
+import { todayBeijing } from '@/utils/beijingDate'
 import { POWER, lineSeries, areaSeries, barSeries, grid, kpiOverlay, tooltipStyle, legend, catAxis, valueAxis } from '@/services/chart/chartStyle'
 import { cssVar } from '../../composables/useTheme'
 import { fmtNum } from '@/composables/useCountUp'
@@ -96,7 +97,7 @@ function buildQuery(override?: { from?: string; to?: string }): { period: Dashbo
 
 // 同比/环比：按 period 推「上一期」范围（month -30d / year -365d / 旬 -10d / 周 -7d / 日 -1d）。
 function prevRange(): { from: string; to: string } | null {
-  const toStr = (dateRange.value && dateRange.value[1]) || new Date().toISOString().slice(0, 10)
+  const toStr = (dateRange.value && dateRange.value[1]) || todayBeijing()
   const to = new Date(toStr)
   const fromStr = (dateRange.value && dateRange.value[0]) || (() => { const f = new Date(to); f.setDate(f.getDate() - 364); return f.toISOString().slice(0, 10) })()
   const spanDays = Math.round((+to - +new Date(fromStr)) / 864e5) + 1

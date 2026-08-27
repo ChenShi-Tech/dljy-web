@@ -11,6 +11,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { X } from 'lucide-vue-next'
 import { renderMarkdown } from '../utils/miniMarkdown'
+import { beijingDay } from '@/utils/beijingDate'
 import {
   fetchReportContent,
   fetchReports,
@@ -57,7 +58,7 @@ const route = useRoute()
 const router = useRouter()
 
 function yesterday(): string {
-  return new Date(Date.now() - 86400000).toISOString().slice(0, 10)
+  return beijingDay(-1)
 }
 
 // P2：结算规则参数化，免考核带默认值改读当前地区 SettlementRuleSpec；

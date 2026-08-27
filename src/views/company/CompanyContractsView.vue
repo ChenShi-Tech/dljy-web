@@ -11,6 +11,7 @@ import {
   type CompanyContract, type CompanyContractDetail, type CompanyStation, type CompanyTrade
 } from '@/services/company/companyApi'
 import { exportCsv } from '../../utils/exportCsv'
+import { todayBeijing } from '@/utils/beijingDate'
 import CompanyScopeBar from '@/components/company/CompanyScopeBar.vue'
 import SparkBar from '../../components/common/SparkBar.vue'
 import { fmtNum } from '@/services/chart/chartOptions'
@@ -377,7 +378,7 @@ function exportContractsCsv() {
     c.startDate, c.endDate, c.totalQuantity, c.buyerName, c.sellerName, c.buyerPrice, c.sellerPrice, c.totalFee,
     CONTRACT_STATUS_LABELS[c.status] ?? c.status, c.source === 'IMPORT' ? '导入' : '手动'
   ])
-  exportCsv(`合同_${new Date().toISOString().slice(0, 10)}`, headers, body)
+  exportCsv(`合同_${todayBeijing()}`, headers, body)
 }
 </script>
 

@@ -21,8 +21,9 @@ import {
   registerRiskEvent
 } from '@/services/review/reviewStoreClient'
 import type { ImprovementActionSummary, RiskEventSummary } from '@/services/review/reviewStoreApi'
+import { currentMonthBeijing } from '@/utils/beijingDate'
 
-const month = ref(new Date().toISOString().slice(0, 7))
+const month = ref(currentMonthBeijing())
 const loading = ref(false)
 const result = ref<MarketAnalysisResult | null>(null)
 const loadError = ref('')

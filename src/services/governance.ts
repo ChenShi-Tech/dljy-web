@@ -430,7 +430,8 @@ export const accessRules: Record<RoleCode, AccessRule> = {
       '/djcs/retail-price',
       '/djcs/interprovincial-price',
       '/yygl/ops',
-      '/yygl/import-hub',
+      // '/yygl/import-hub' 已删：该路径是数据运维台重定向壳，终点 /data-ops/console
+      // 属 adminOnlyRoutes，本角色点了必被守卫弹回 dashboard——留着是到不了目的地的死授权。
       '/sdzl/region-rules',
       '/sdzl/zptwd'
     ],
@@ -500,7 +501,7 @@ export const accessRules: Record<RoleCode, AccessRule> = {
       '/djcs/retail-price',
       '/djcs/interprovincial-price',
       '/yygl/ops',
-      '/yygl/import-hub',
+      // '/yygl/import-hub' 同 SETTLEMENT：重定向终点为 adminOnly 的 /data-ops/console，死授权已删。
       '/sdzl/region-rules',
       '/sdzl/zptwd'
     ],
@@ -782,8 +783,11 @@ function makeUser(input: {
 }
 
 function normalizePath(path: string) {
-  if (!path.startsWith('/')) return `/${path}`
-  return path
+  // 先剥 query/hash：授权面只看路径（守卫传 to.path 本就不含 query；登录/立场
+  // 回跳存的是 fullPath，routes 是全等清单，带 query 比对会把有权用户误判无权、丢深链）。
+  const pathOnly = path.split(/[?#]/)[0]
+  if (!pathOnly.startsWith('/')) return `/${pathOnly}`
+  return pathOnly
 }
 
 function withRulePermissions(profile: GovernanceUser): GovernanceUser {
