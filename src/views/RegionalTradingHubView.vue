@@ -12,7 +12,7 @@ import {
   Network,
   ShieldCheck
 } from 'lucide-vue-next'
-import { getRegionById, getRegionCoverageSummary, getRegionStatusLabel, provinceRegionProfiles, type RegionProfile } from '../data/regions'
+import { getRegionById, getRegionCoverageSummary, getRegionStatusLabel, isOpenRegion, provinceRegionProfiles, type RegionProfile } from '../data/regions'
 import { getCurrentUser, type AuthUser } from '@/services/auth'
 import { canAccessPath, isPathAvailableInRegion, roleLabels } from '@/services/governance'
 import { currentRegion, setCurrentRegionId } from '@/services/region/regionContext'
@@ -127,6 +127,25 @@ const priorityRegionRows = computed(() => priorityRegionIds
   .map((id) => provinceRegionProfiles.find((region) => region.id === id))
   .filter((region): region is RegionProfile => Boolean(region))
 )
+
+// 覆盖卡片主标签维持规则台账轴（该省现货实际阶段，本面板的核心信息量）；系统侧数据
+// 开通态不做卡片常驻标注（圆点、第二枚文案标签均过重），口径差只在点击未开卡时的
+// 气泡里如实交代——那里同时消除静默失败与「点了就能切进去」的错误预期。
+
+// 未开通省份点击不再静默吞掉（旧病灶）：不改当前地区，改弹框架说明。
+const frameworkDetail = ref<RegionProfile | null>(null)
+
+function closeFrameworkDetail() {
+  frameworkDetail.value = null
+}
+
+function onCoverageCardClick(region: RegionProfile) {
+  if (isOpenRegion(region.id)) {
+    switchToRegion(region.id)
+    return
+  }
+  frameworkDetail.value = region
+}
 
 function onGovernanceUserChanged(event: Event) {
   currentUser.value = (event as CustomEvent<AuthUser>).detail ?? getCurrentUser()
@@ -305,25 +324,43 @@ onUnmounted(() => {
         </div>
       </div>
       <div class="priority-region-grid">
+        <!-- 卡片主标签 = 该省现货市场实际阶段（规则框架台账，本面板本意），视觉与 main 一致。
+             已开通卡片点击切换当前地区；未开通卡片点击弹框架说明——修复旧版「点了被守卫
+             静默吞掉」，口径差在气泡里交代，不做常驻标注。 -->
         <button
           v-for="region in priorityRegionRows"
           :key="region.id"
           :class="['priority-region', { active: region.id === currentRegion.id }]"
           type="button"
-          @click="switchToRegion(region.id)"
+          @click="onCoverageCardClick(region)"
         >
           <span>
             <strong>{{ region.shortName }}</strong>
             <small>{{ region.gridLabel }} · {{ region.regionGroup }}</small>
           </span>
-          <el-tag
-            size="small"
-            :type="region.ruleSet.spotRuleStatus === 'active' ? 'success' : region.ruleSet.spotRuleStatus === 'trial' ? 'warning' : 'info'"
-          >
+          <el-tag size="small" :type="region.ruleSet.spotRuleStatus === 'active' ? 'success' : region.ruleSet.spotRuleStatus === 'trial' ? 'warning' : 'info'">
             {{ getRegionStatusLabel(region.ruleSet.spotRuleStatus) }}
           </el-tag>
         </button>
       </div>
+      <!-- 未开通省份点击说明：交代两轴口径，不给「能切进去」的错误预期 -->
+      <el-dialog
+        :model-value="frameworkDetail !== null"
+        :title="frameworkDetail ? `${frameworkDetail.name} · 规则框架` : ''"
+        width="420px"
+        append-to-body
+        @update:model-value="closeFrameworkDetail"
+      >
+        <template v-if="frameworkDetail">
+          <p><strong>规则状态：</strong>{{ getRegionStatusLabel(frameworkDetail.ruleSet.spotRuleStatus) }}</p>
+          <p><strong>规则框架：</strong>{{ frameworkDetail.ruleSet.marketScope }}；结算：{{ frameworkDetail.ruleSet.settlementModel }}</p>
+          <p><strong>本系统数据：</strong>暂未开通，顶部切换器不可进入。</p>
+        </template>
+        <template #footer>
+          <el-button @click="closeFrameworkDetail">知道了</el-button>
+          <el-button type="primary" @click="[closeFrameworkDetail(), switchToRegion('yunnan')]">先看云南</el-button>
+        </template>
+      </el-dialog>
     </section>
 
     <section class="split-grid">
