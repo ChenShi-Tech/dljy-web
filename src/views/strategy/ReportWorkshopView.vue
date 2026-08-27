@@ -213,7 +213,9 @@
               <div class="paper-meta-line">
                 <span>生成时间：{{ reportMeta.time }}</span>
                 <span>模板：{{ reportMeta.template }}</span>
-                <span>数据来源：{{ serviceStatus === 'available' ? 'Dify AI' : '模拟数据' }}</span>
+                <!-- 来源按「本次产物实际生成路径」标注，不读页级 serviceStatus：
+                     任一模板探活在线 ≠ 选中的模板在线，混部态下旧写法会把本地 Mock 报告标成 Dify AI -->
+                <span>数据来源：{{ reportMeta.source === 'dify' ? 'Dify AI' : '模拟数据' }}</span>
               </div>
             </div>
             <div class="paper-body markdown-body" v-html="renderedReport" />
@@ -309,7 +311,7 @@ const generating = ref(false)
 const reportContent = ref('')
 const reportError = ref('')
 const fontSize = ref(15)
-const reportMeta = reactive({ time: '', template: '' })
+const reportMeta = reactive({ time: '', template: '', source: '' as '' | 'dify' | 'mock' })
 const reportHistory = ref<HistoryEntry[]>([])
 const templateGridRef = ref<HTMLElement | null>(null)
 
@@ -413,6 +415,8 @@ function loadHistoryReport(item: HistoryEntry) {
   reportError.value = ''
   reportMeta.time = item.time
   reportMeta.template = item.templateName
+  // 历史条目本就记录了真伪（addHistory 第4参），回放时精确还原产物级来源
+  reportMeta.source = item.mock ? 'mock' : 'dify'
   // 还原参数
   if (item.params.dateRange) params.dateRange = item.params.dateRange
   if (item.params.marketType) params.marketType = item.params.marketType
@@ -464,6 +468,13 @@ function setPreset(preset: 'today' | 'week' | 'month') {
 // ============================================================
 // 报告生成
 // ============================================================
+// Mock 产物统一注入来源声明（红线：模拟内容必须自带可见标注，导出后仍可辨识）。
+// 正文前部已自带同义标注的模板（daily-spot）跳过注入，避免双重声明、字面量零改动。
+function withMockSourceNote(content: string): string {
+  if (/数据来源：模拟数据/.test(content.slice(0, 300))) return content
+  return `> 数据来源：模拟数据（Dify 未接通，本地模板生成）\n\n${content}`
+}
+
 async function generateReport() {
   if (!selectedTemplate.value) return
 
@@ -484,10 +495,11 @@ async function generateReport() {
     } else {
       // 模拟延迟让动画可见
       await new Promise(resolve => setTimeout(resolve, 800 + Math.random() * 700))
-      reportContent.value = generateMockReport(selectedTemplate.value)
+      reportContent.value = withMockSourceNote(generateMockReport(selectedTemplate.value))
     }
     reportMeta.time = new Date().toLocaleString('zh-CN')
     reportMeta.template = selectedTemplate.value.name
+    reportMeta.source = connected ? 'dify' : 'mock'
     addHistory(selectedTemplate.value.id, selectedTemplate.value.name, reportContent.value, !connected)
   } catch (err: any) {
     reportError.value = err?.message || '报告生成失败，请稍后重试'
@@ -539,14 +551,14 @@ function exportMarkdown() {
 function exportWord() {
   if (!renderedReport.value) return
   const name = selectedTemplate.value?.name ?? '报告'
-  const wordHtml = `<!DOCTYPE html>\n<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40">\n<head><meta charset="utf-8"><title>${name}</title>\n<style>\nbody{font-family:"Microsoft YaHei",SimSun,sans-serif;font-size: var(--font-lg);line-height:1.8;color:#333;padding:24px}\nh1{font-size: var(--font-22);border-bottom:2px solid #333;padding-bottom:8px}\nh2{font-size: var(--font-18);border-bottom:1px solid #ccc;padding-bottom:4px}\nh3{font-size: var(--font-15)}\ntable{border-collapse:collapse;width:100%;margin:8px 0}td,th{border:1px solid #999;padding:6px 10px;font-size: var(--font-md)}\n.meta{color:#888;font-size: var(--font-sm);margin-bottom:16px}\n</style></head>\n<body>\n<div class="meta">生成时间：${reportMeta.time} | 模板：${name}</div>\n${renderedReport.value}\n</body></html>`
+  const wordHtml = `<!DOCTYPE html>\n<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40">\n<head><meta charset="utf-8"><title>${name}</title>\n<style>\nbody{font-family:"Microsoft YaHei",SimSun,sans-serif;font-size: var(--font-lg);line-height:1.8;color:#333;padding:24px}\nh1{font-size: var(--font-22);border-bottom:2px solid #333;padding-bottom:8px}\nh2{font-size: var(--font-18);border-bottom:1px solid #ccc;padding-bottom:4px}\nh3{font-size: var(--font-15)}\ntable{border-collapse:collapse;width:100%;margin:8px 0}td,th{border:1px solid #999;padding:6px 10px;font-size: var(--font-md)}\n.meta{color:#888;font-size: var(--font-sm);margin-bottom:16px}\n</style></head>\n<body>\n<div class="meta">生成时间：${reportMeta.time} | 模板：${name}${reportMeta.source === 'mock' ? ' | 数据来源：模拟数据' : ''}</div>\n${renderedReport.value}\n</body></html>`
   downloadBlob(wordHtml, `report-${name}-${Date.now()}.doc`, 'application/msword')
 }
 
 function exportPDF() {
   if (!renderedReport.value) return
   const name = selectedTemplate.value?.name ?? '报告'
-  const html = `<!DOCTYPE html>\n<html><head><meta charset="utf-8"><title>${name}</title>\n<style>\nbody{font-family:"Microsoft YaHei",SimSun,sans-serif;font-size: var(--font-lg);line-height:1.8;color:#333;padding:32px;max-width:800px;margin:0 auto}\nh1{font-size: var(--font-22);border-bottom:2px solid #333;padding-bottom:8px}\nh2{font-size: var(--font-18);border-bottom:1px solid #ccc;padding-bottom:4px}\nh3{font-size: var(--font-15)}\ntable{border-collapse:collapse;width:100%;margin:8px 0}td,th{border:1px solid #999;padding:6px 10px;font-size: var(--font-md)}\n.meta{color:#888;font-size: var(--font-sm);margin-bottom:16px}\n@media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact}}\n</style></head>\n<body>\n<div class="meta">生成时间：${reportMeta.time} | 模板：${name}</div>\n${renderedReport.value}\n</body></html>`
+  const html = `<!DOCTYPE html>\n<html><head><meta charset="utf-8"><title>${name}</title>\n<style>\nbody{font-family:"Microsoft YaHei",SimSun,sans-serif;font-size: var(--font-lg);line-height:1.8;color:#333;padding:32px;max-width:800px;margin:0 auto}\nh1{font-size: var(--font-22);border-bottom:2px solid #333;padding-bottom:8px}\nh2{font-size: var(--font-18);border-bottom:1px solid #ccc;padding-bottom:4px}\nh3{font-size: var(--font-15)}\ntable{border-collapse:collapse;width:100%;margin:8px 0}td,th{border:1px solid #999;padding:6px 10px;font-size: var(--font-md)}\n.meta{color:#888;font-size: var(--font-sm);margin-bottom:16px}\n@media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact}}\n</style></head>\n<body>\n<div class="meta">生成时间：${reportMeta.time} | 模板：${name}${reportMeta.source === 'mock' ? ' | 数据来源：模拟数据' : ''}</div>\n${renderedReport.value}\n</body></html>`
   const win = window.open('', '_blank', 'width=900,height=700')
   if (win) { win.document.write(html); win.document.close(); win.onload = () => win.print() }
 }
