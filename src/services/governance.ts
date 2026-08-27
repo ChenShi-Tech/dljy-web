@@ -417,7 +417,9 @@ export const accessRules: Record<RoleCode, AccessRule> = {
     gate: { level: 'L2', label: '策略草稿', reviewer: '交易员确认', note: '可生成策略建议和模型方案，不直接提交申报。' }
   },
   SETTLEMENT: {
-    defaultRoute: '/yygl/import-hub',
+    // 原 defaultRoute 为 /yygl/import-hub，该路径现为数据运维台重定向壳且终点仅管理员可入，
+    // 结算专员登录即陷入守卫重定向循环，改落现货交易驾驶舱（与 #1799 删除页三处先例同款处置）。
+    defaultRoute: '/dashboard',
     routes: [
       '/dashboard',
       ...regionalRoutesForRole('SETTLEMENT'),
