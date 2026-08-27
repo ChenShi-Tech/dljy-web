@@ -180,7 +180,9 @@ async function registerToLibrary() {
   registerError.value = ''
   try {
     const sellSide = activeStanceType.value === 'GENERATOR' || activeStanceType.value === 'STORAGE'
-    const monthEnd = new Date(new Date(d.targetDate).getFullYear(), new Date(d.targetDate).getMonth() + 1, 0).toISOString().slice(0, 10)
+    // 月末按业务日期字符串锚定：本地午夜再 toISOString 在 UTC+8 会恒少一天（endDate 错）
+    const lastDay = new Date(Number(d.targetDate.slice(0, 4)), Number(d.targetDate.slice(5, 7)), 0).getDate()
+    const monthEnd = `${d.targetDate.slice(0, 7)}-${String(lastDay).padStart(2, '0')}`
     await createContract({
       contractNo: `S6-${d.targetDate}-${Date.now().toString().slice(-6)}`,
       contractName: `S6 补仓执行登记 ${d.targetDate}`,

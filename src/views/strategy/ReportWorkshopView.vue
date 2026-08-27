@@ -256,6 +256,7 @@ import {
 } from 'lucide-vue-next'
 import { pingDifyService, runReportWorkflow } from '@/services/agent/difyClient'
 import { renderMarkdown } from '../../utils/markdown'
+import { beijingDay, currentMonthBeijing, todayBeijing } from '@/utils/beijingDate'
 
 // ============================================================
 // 类型定义
@@ -450,17 +451,17 @@ function onTemplateSelected(templateId: string) {
 
 // 快捷预设
 function setPreset(preset: 'today' | 'week' | 'month') {
-  const now = new Date()
-  const fmt = (d: Date) => d.toISOString().slice(0, 10)
+  // 「今天/本月」按北京时区口径取日（裸 UTC 日期在 0–8 点会拿到昨天；本地月初再
+  // toISOString 则恒少一天），全站约定见 @/utils/beijingDate。
   switch (preset) {
     case 'today':
-      params.dateRange = [fmt(now), fmt(now)]
+      params.dateRange = [todayBeijing(), todayBeijing()]
       break
     case 'week':
-      params.dateRange = [fmt(new Date(now.getTime() - 6 * 86400000)), fmt(now)]
+      params.dateRange = [beijingDay(-6), todayBeijing()]
       break
     case 'month':
-      params.dateRange = [fmt(new Date(now.getFullYear(), now.getMonth(), 1)), fmt(now)]
+      params.dateRange = [`${currentMonthBeijing()}-01`, todayBeijing()]
       break
   }
 }

@@ -194,10 +194,9 @@ describe('useAnalysisStore · loadViews', () => {
     await p
 
     expect(store.views).toEqual([]) // 旧地区数据被守卫丢弃，不串区
-    // 现行为记录：守卫的 finally 仅在地区未变时复位 loading，切区丢弃后 loading 卡 true，
-    // 直到新地区下一次 loadViews 完成复位；且切区 watch 不清 loading/error。若未来补
-    // 「切区清 loading」，此处断言需同步改为 toBe(false)。
-    expect(store.loading).toBe(true)
+    // 切区 watch 现已同步复位 loading：在途请求的 finally 只在地区未变时落 false，
+    // 若无此复位，「我的视图」抽屉骨架屏会在切区后永久转圈（原卡 true 病灶）。
+    expect(store.loading).toBe(false)
   })
 
   it('切区守卫（失败路径）：挂起期间切区后 reject 不写错误态', async () => {

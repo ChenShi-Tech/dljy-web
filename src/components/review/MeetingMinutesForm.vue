@@ -7,6 +7,7 @@
 // （visibility 默认不公开）。
 import { computed, onMounted, ref } from 'vue'
 import { archiveDeadline, CASE_LIBRARY_NOTE, type MinutesActionRow } from '@/services/review/meetingMinutes'
+import { todayBeijing } from '@/utils/beijingDate'
 import {
   broughtActionsViolations,
   type ImprovementActionSummary
@@ -17,7 +18,7 @@ import {
   patchImprovementAction
 } from '@/services/review/reviewStoreClient'
 
-const meetingDate = ref(new Date().toISOString().slice(0, 10))
+const meetingDate = ref(todayBeijing())
 const agenda = ref('')
 const issues = ref<string[]>([])
 const issueInput = ref('')

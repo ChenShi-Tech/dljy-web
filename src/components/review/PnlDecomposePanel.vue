@@ -16,10 +16,11 @@ import {
   type DailyPnlDecompose
 } from '@/services/review/pnlDecompose'
 import type { SettlementRuleSpec } from '@/rules/types'
+import { currentMonthBeijing, todayBeijing } from '@/utils/beijingDate'
 
 const props = defineProps<{ spec: SettlementRuleSpec | null; tolerancePct: number; penaltyPrice: number }>()
 
-const month = ref(new Date().toISOString().slice(0, 7))
+const month = ref(currentMonthBeijing())
 const loading = ref(false)
 const curDays = ref<Array<{ date: string; d: DailyPnlDecompose | null; pnlYuan: number | null }>>([])
 const prevTotalYuan = ref<number | null>(null)
@@ -28,7 +29,7 @@ const prevLabel = ref('')
 function monthDays(ym: string, upToToday = false): string[] {
   const [y, m] = ym.split('-').map(Number)
   const last = new Date(y, m, 0).getDate()
-  const today = new Date().toISOString().slice(0, 10)
+  const today = todayBeijing()
   return Array.from({ length: last }, (_, i) => `${y}-${String(m).padStart(2, '0')}-${String(i + 1).padStart(2, '0')}`)
     .filter((d) => (upToToday ? d <= today : true))
 }

@@ -19,11 +19,22 @@ import { defaultRegionId } from '@/data/regions'
 const roles = Object.keys(accessRules) as RoleCode[]
 const REGION_RULES_FALLBACK = '/sdzl/region-rules'
 
-/** 跟随记录级 redirect 取守卫实际看到的终态路径 */
+/** 跟随记录级 redirect 取守卫实际看到的终态路径。
+ *  router.resolve 只做 matcher 解析、不追 redirect（redirect 在导航期 pushWithRedirect
+ *  才生效）；全局守卫收到的是 redirect 走完后的 to，这里手工补追等价链路——
+ *  否则对本函数是恒等变换，「白名单壳→禁入终点」的病灶配置在本网里永远测不出来。 */
 function terminalOf(path: string): string {
-  const resolved = router.resolve(path)
-  expect(resolved.matched.length, `${path} 应注册为路由`).toBeGreaterThan(0)
-  return resolved.path
+  let current = path
+  for (let hop = 0; hop < 10; hop++) {
+    const resolved = router.resolve(current)
+    expect(resolved.matched.length, `${current} 应注册为路由`).toBeGreaterThan(0)
+    const record = resolved.matched[resolved.matched.length - 1]
+    const redirect = (record as { redirect?: unknown }).redirect
+    if (!redirect) return resolved.path
+    const target = typeof redirect === 'function' ? redirect(resolved) : redirect
+    current = typeof target === 'string' ? target : router.resolve(target).path
+  }
+  throw new Error(`redirect 链超过 10 跳: ${path}`)
 }
 
 /** 复刻 router/index.ts 全局守卫的返回值逻辑（仅路径维度） */

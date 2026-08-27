@@ -9,6 +9,7 @@ import {
   type CompanyTrade
 } from '@/services/company/companyApi'
 import { exportCsv } from '../../utils/exportCsv'
+import { todayBeijing } from '@/utils/beijingDate'
 import CompanyScopeBar from '@/components/company/CompanyScopeBar.vue'
 import ChartCard from '../../components/common/ChartCard.vue'
 import SparkBar from '../../components/common/SparkBar.vue'
@@ -123,7 +124,7 @@ function exportTradesCsv() {
     t.tradeDate, t.contractCode ?? '', t.counterparty ?? '', t.type ?? '', t.direction ?? '',
     t.volume, t.price, t.status, t.source === 'IMPORT' ? '导入' : '手动'
   ])
-  exportCsv(`历史交易_${new Date().toISOString().slice(0, 10)}`, headers, body)
+  exportCsv(`历史交易_${todayBeijing()}`, headers, body)
 }
 
 /* 图表与表格增强*/

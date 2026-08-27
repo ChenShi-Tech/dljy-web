@@ -4,6 +4,7 @@ import { ElMessage } from 'element-plus'
 import { useEChart } from '../composables/useEChart'
 import { axisTooltip, chartToolbox, emptyOverlay } from '@/services/chart/chartOptions'
 import { exportCsv } from '../utils/exportCsv'
+import { todayBeijing } from '@/utils/beijingDate'
 import {
   applyTouRatios,
   applyVoltagePrices,
@@ -216,7 +217,7 @@ function renderPeriodChart() {
 
 function exportBreakdown() {
   exportCsv(
-    `售电电价构成-${activeMode.value === 'commercial' ? '工商业' : '国网代购'}-${new Date().toISOString().slice(0, 10)}`,
+    `售电电价构成-${activeMode.value === 'commercial' ? '工商业' : '国网代购'}-${todayBeijing()}`,
     ['项目', '单价', '金额', '占比(%)'],
     // 备注行（如售电公司利润）不参与占比
     breakdownRows.value.map((row) => [row.item, row.unit_price, row.amount, row.note ? '备注' : (row.ratio * 100).toFixed(2)])

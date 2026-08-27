@@ -27,6 +27,7 @@ import {
   type SpotMarket
 } from '@/services/market/spotClient'
 import { fetchCaptured } from '@/services/captured'
+import { todayBeijing } from '@/utils/beijingDate'
 import { hedgeCoverage } from '@/services/settlementFormula'
 import { loadSettlementPrices, SETTLEMENT_PRIVATE_FAMILIES, type SettlementPriceResult } from '@/services/market/settlementClient'
 import { loadPlantOutputPayload, PLANT_OUTPUT_PRIVATE_FAMILIES, type PlantOutputPayload, type PlantOutputRow } from '@/services/market/plantOutputClient'
@@ -977,8 +978,8 @@ export async function loadForecastArena(days = 14): Promise<ForecastArena> {
   const iso = (d: Date) => d.toISOString().slice(0, 10)
   // 窗口锚定库内最新披露日而非浏览器今天：capture 按导出包/月度回放，最新披露可能远早于
   // 当前日期，固定「今天回推」会让历史包场景整窗落空，先用 load_actual 尾部小切片探测
-  // 最新 operateDate，再回推 days 窗口；探测失败/无数据回退今天（真实或空）。
-  let anchor = iso(new Date())
+  // 最新 operateDate，再回推 days 窗口；探测失败/无数据回退今天（真实或空，北京口径）。
+  let anchor = todayBeijing()
   try {
     const probe = await fetchCaptured<any>('yn_system_forecast', 'load_actual', { limit: 8 })
     const probeRows: ForecastRow[] = Array.isArray(probe?.data) ? probe.data : []

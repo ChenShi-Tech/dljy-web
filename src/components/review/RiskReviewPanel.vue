@@ -29,10 +29,11 @@ import {
   registerRiskEvent
 } from '@/services/review/reviewStoreClient'
 import type { RiskEventSummary } from '@/services/review/reviewStoreApi'
+import { currentMonthBeijing, todayBeijing } from '@/utils/beijingDate'
 
 const props = defineProps<{ tolerancePct: number; penaltyPrice: number }>()
 
-const month = ref(new Date().toISOString().slice(0, 7))
+const month = ref(currentMonthBeijing())
 const loading = ref(false)
 const loadError = ref('')
 const daysOk = ref<ReadonlyArray<{ date: string; detail: Array<{ da_price?: number; rt_price?: number }>; spreadPnl: number | null }>>([])
@@ -48,7 +49,7 @@ async function load() {
   try {
     const [y, m] = month.value.split('-').map(Number)
     const last = new Date(y, m, 0).getDate()
-    const today = new Date().toISOString().slice(0, 10)
+    const today = todayBeijing()
     const dates = Array.from({ length: last }, (_, i) => `${y}-${String(m).padStart(2, '0')}-${String(i + 1).padStart(2, '0')}`).filter((d) => d <= today)
     const period = await fetchReviewRange(dates, { tolerancePct: props.tolerancePct, penaltyPrice: props.penaltyPrice })
     const ok = period.days.filter((d): d is Extract<typeof d, { ok: true }> => d.ok)

@@ -217,6 +217,8 @@ function resolveLoginTarget(roleUser: Awaited<ReturnType<typeof login>>['user'])
   if (requiresStanceSelection()) {
     return { path: '/select-stance', query: redirect ? { redirect } : {} }
   }
+  // 判权按路径（canAccessPath 的 normalizePath 自会剥 query/hash）：守卫存的 redirect 是
+  // fullPath（含 ?tab=/?mod= 等页面状态 query），路径有权即放行完整深链。
   if (redirect && canAccessPath(redirect, roleUser)) {
     return redirect
   }

@@ -4,6 +4,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { ChevronLeft, ChevronRight, DatabaseZap, LineChart, TableProperties } from 'lucide-vue-next'
 import DynamicTable from '@/components/common/DynamicTable.vue'
+import { todayBeijing } from '@/utils/beijingDate'
 import DataState from '@/components/common/DataState.vue'
 import RegionDataBanner from '@/components/region/RegionDataBanner.vue'
 import DataBasisBadge from '@/components/DataBasisBadge.vue'
@@ -526,7 +527,7 @@ onMounted(async () => {
       return
     }
   } catch { /* 历史包或空库探测失败时仍诚实回退到浏览器日期，后端缺数据即空态。 */ }
-  const today = new Date().toISOString().slice(0, 10)
+  const today = todayBeijing()
   applyWindow(getDisclosurePeriodWindow(today, granularity.value))
 })
 </script>

@@ -106,6 +106,9 @@ export const useAnalysisStore = defineStore('analysisData', () => {
       snapshots.value = []
       annotations.value = []
       inflight.value.clear()
+      // 在途 loadViews 的 finally 只在「地区未变」时复位 loading，切区后它不会落回
+      // false；这里同步复位，防「我的视图」抽屉骨架屏永久转圈。
+      loading.value = false
     }
   )
 
