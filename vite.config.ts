@@ -79,7 +79,6 @@ export default defineConfig(({ mode }) => {
             if (id.includes('echarts')) return 'vendor-echarts'
             if (id.includes('zrender')) return 'vendor-zrender'
             if (id.includes('element-plus')) return 'vendor-element-plus'
-            if (id.includes('@vue-flow')) return 'vendor-vueflow'
             if (id.includes('@vue') || id.includes('vue-router')) return 'vendor-vue'
             if (id.includes('lucide-vue-next')) return 'vendor-icons'
             if (id.includes('markdown-it') || id.includes('highlight.js') || id.includes('dompurify')) return 'vendor-markdown'
