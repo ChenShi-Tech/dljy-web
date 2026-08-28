@@ -74,9 +74,13 @@ function defaultDateFor(regionId: string): string {
   return clampToCoverage(regionId, 'review', yesterday())
 }
 
-const date = ref(
-  typeof route.query.date === 'string' ? route.query.date : defaultDateFor(currentRegion.value.id)
-)
+/** ?date= 形态守卫：非 YYYY-MM-DD（垃圾串/空值）一律回落采集覆盖区内默认——
+ *  否则 reviewMonth=NaN 污染对账分母、台账请求带着垃圾月份发出去。 */
+function dateFromQuery(q: unknown): string {
+  return typeof q === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(q) ? q : defaultDateFor(currentRegion.value.id)
+}
+
+const date = ref(dateFromQuery(route.query.date))
 const tab = ref<ShellTab>(parseDimQuery(route.query.dim))
 
 // 结算口径复盘（云南三段式）：与偏差考核是两套口径，各自独立加载、互不阻塞
@@ -301,6 +305,36 @@ watch(tab, (t) => {
 })
 watch(() => route.query.dim, (q) => { const t = parseDimQuery(q); if (t !== tab.value) tab.value = t })
 
+// 深链 ?date= / ?declarationId= 的同路由再导航（组件复用不重跑 setup）：query 变了要跟上
+watch(() => route.query.date, (q) => {
+  const d = dateFromQuery(q)
+  if (d !== date.value) date.value = d // 复用既有 [date,…] watch 触发重载
+})
+watch(() => route.query.declarationId, (q) => {
+  const id = typeof q === 'string' ? q : ''
+  if (id && id !== declarationId.value) {
+    declaration.value = null // 换基准单：旧申报曲线不可复用，load() 重新取
+    declarationId.value = id
+    void load()
+    void loadSettlementReview()
+  }
+})
+
+// 深链 ?todo=1（S1 待办徽标跳转落点，设计稿 U7「直开待办箱」）：滚动定位 + 短促高亮
+function focusTodoInbox(): void {
+  if (route.query.todo !== '1') return
+  void nextTick(() => {
+    const el = document.getElementById('review-todo')
+    if (!el) return
+    el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    el.classList.remove('todo-flash')
+    void el.offsetWidth // 重置动画：同会话二次深链也能再闪
+    el.classList.add('todo-flash')
+    window.setTimeout(() => el.classList.remove('todo-flash'), 1800)
+  })
+}
+watch(() => route.query.todo, focusTodoInbox, { immediate: true })
+
 onMounted(() => {
   load()
   void loadSettlementReview()
@@ -434,4 +468,11 @@ onRegionChange(() => {
 .tpl-drawer .close { border: none; background: transparent; cursor: pointer; color: var(--muted); display: grid; place-items: center; }
 .tpl-drawer .close:hover { color: var(--text); }
 .tpl-body { padding: 14px 18px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; }
+
+/* 深链 ?todo=1 落点：待办箱短促两闪高亮（用主题色，结束移除类不留常驻样式） */
+@keyframes todo-flash-kf {
+  0%, 100% { box-shadow: none; }
+  25%, 75% { box-shadow: 0 0 0 3px var(--el-color-primary-light-5); }
+}
+.todo-flash { animation: todo-flash-kf 0.8s ease-in-out 2; }
 </style>
