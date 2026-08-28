@@ -49,6 +49,7 @@ beforeEach(() => {
   vi.mocked(fetchCases).mockReset()
   vi.mocked(fetchCases).mockResolvedValue({ available: false, reason: 'endpoint-absent' })
   vi.mocked(registerCase).mockReset()
+  localStorage.removeItem('dljy.review.nearMissDraft')
 })
 
 async function settle(wrapper: ReturnType<typeof mount>) {
@@ -177,9 +178,62 @@ describe('RiskReviewPanel', () => {
       available: true,
       events: [{ ...registeredEvent, eventType: 'trigger_deviation_streak' }]
     })
-    const wrapper = await settle(mount(RiskReviewPanel, { props: { tolerancePct: 3, penaltyPrice: 100 } }))
+    const wrapper = mount(RiskReviewPanel, { props: { tolerancePct: 3, penaltyPrice: 100 } })
+    await wrapper.find('input[type="month"]').setValue('2026-08') // 对齐 mock 数据月份，去重按当月
+    await settle(wrapper)
     expect(registerRiskEvent).not.toHaveBeenCalled() // 已存在 → 不重复 POST
     expect(wrapper.text()).toContain('不重复登记')
+  })
+
+  it('阈值触发自动草稿：上月已登记同类触发，本月越限仍须重新登记（跨月不吞）', async () => {
+    vi.mocked(fetchReviewRange).mockResolvedValue({
+      days: [okDay('2026-08-01', 100, 0.06), okDay('2026-08-02', 100, 0.07)],
+      missingDays: []
+    })
+    vi.mocked(getRegionWinStats).mockReturnValue({
+      wins: 0, losses: 0, sampleSize: 0, priorWinRate: 0.5, posteriorWinRate: 0.5,
+      credibleLow: 0.2, credibleHigh: 0.8, strength: 4, cumulativePnlWan: 0
+    })
+    vi.mocked(fetchCvar).mockResolvedValue({
+      var_95: 0.05, var_99: 0.08, cvar_95: 0.07, cvar_99: 0.1, max_drawdown: 0.12,
+      volatility: 0.35, sharpe_ratio: 1.2, sortino_ratio: 1.5, tail_risk: 0.1
+    })
+    // 历史事件停留在上月（2026-08），当月（2026-09）查无同类 → 新越限须登记
+    vi.mocked(fetchRiskEvents).mockResolvedValue({
+      available: true,
+      events: [{ ...registeredEvent, eventType: 'trigger_deviation_streak' }]
+    })
+    vi.mocked(registerRiskEvent).mockResolvedValue(registeredEvent)
+    const wrapper = mount(RiskReviewPanel, { props: { tolerancePct: 3, penaltyPrice: 100 } })
+    await wrapper.find('input[type="month"]').setValue('2026-09')
+    await settle(wrapper)
+    expect(registerRiskEvent).toHaveBeenCalledTimes(1)
+    expect(vi.mocked(registerRiskEvent).mock.calls[0][1]).toBe('trigger-deviation-streak-2026-09')
+    expect(wrapper.text()).toContain('已生成事件库草稿')
+  })
+
+  it('near_miss 端点缺席：回落本地草稿（真持久化到本机），缺事件时间仍拦截', async () => {
+    vi.mocked(fetchReviewRange).mockResolvedValue({ days: [], missingDays: [] })
+    vi.mocked(getRegionWinStats).mockReturnValue({
+      wins: 0, losses: 0, sampleSize: 0, priorWinRate: 0.5, posteriorWinRate: 0.5,
+      credibleLow: 0.2, credibleHigh: 0.8, strength: 4, cumulativePnlWan: 0
+    })
+    vi.mocked(fetchRiskEvents).mockResolvedValue({ available: false, reason: 'endpoint-absent' })
+    const wrapper = await settle(mount(RiskReviewPanel, { props: { tolerancePct: 3, penaltyPrice: 100 } }))
+    // 缺席分支同口径校验：事件时间必填（不再跳过）
+    await wrapper.find('.rrp-save').trigger('click')
+    await settle(wrapper)
+    expect(wrapper.text()).toContain('事件时间必填')
+    expect(registerRiskEvent).not.toHaveBeenCalled()
+    // 填齐后：草稿真写入 localStorage（「回落本地草稿」承诺），文案如实
+    await wrapper.find('input[type="datetime-local"]').setValue('2026-08-15T10:00')
+    await wrapper.find('.rrp-save').trigger('click')
+    await settle(wrapper)
+    expect(registerRiskEvent).not.toHaveBeenCalled()
+    const raw = localStorage.getItem('dljy.review.nearMissDraft')
+    expect(raw).toBeTruthy()
+    expect(JSON.parse(raw!)).toMatchObject({ eventTime: '2026-08-15T10:00', riskLevel: 'medium' })
+    expect(wrapper.text()).toContain('已存本地草稿')
   })
 
   it('阈值触发自动草稿：未越限不 POST（负例红线）', async () => {
@@ -195,20 +249,5 @@ describe('RiskReviewPanel', () => {
     vi.mocked(fetchRiskEvents).mockResolvedValue({ available: true, events: [] })
     await settle(mount(RiskReviewPanel, { props: { tolerancePct: 3, penaltyPrice: 100 } }))
     expect(registerRiskEvent).not.toHaveBeenCalled()
-  })
-
-  it('near_miss 端点缺席：本地草稿确认不落库（诚实降级）', async () => {
-    vi.mocked(fetchReviewRange).mockResolvedValue({ days: [], missingDays: [] })
-    vi.mocked(getRegionWinStats).mockReturnValue({
-      wins: 0, losses: 0, sampleSize: 0, priorWinRate: 0.5, posteriorWinRate: 0.5,
-      credibleLow: 0.2, credibleHigh: 0.8, strength: 4, cumulativePnlWan: 0
-    })
-    vi.mocked(fetchRiskEvents).mockResolvedValue({ available: false, reason: 'endpoint-absent' })
-    const wrapper = await settle(mount(RiskReviewPanel, { props: { tolerancePct: 3, penaltyPrice: 100 } }))
-    await wrapper.find('.rrp-save').trigger('click')
-    await settle(wrapper)
-    expect(registerRiskEvent).not.toHaveBeenCalled()
-    expect(wrapper.text()).toContain('已记为本地草稿')
-    expect(wrapper.text()).toContain('不计入损失金额统计')
   })
 })
