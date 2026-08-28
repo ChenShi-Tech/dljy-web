@@ -1,4 +1,7 @@
 node_modules/
+# 也忽略同名符号链接：worktree 里 `ln -s <主仓>/node_modules` 是目录软链，`node_modules/` 只匹配目录、不匹配链接，
+# #50 曾把它当文件提交进 main，pull 时把主工作区真实 node_modules 顶掉成自指链接。
+node_modules
 dist/
 coverage/
 .env.local
