@@ -23,6 +23,7 @@ export const DECISION_GRADE_FROM_BASIS: Record<DataSourceBasis, DecisionGrade> =
   real: 'operational',
   captured: 'operational',
   synthetic: 'advisory_only',
+  provisional: 'advisory_only',  // 暂定口径：来源真实但未经结算验证，与示意同档不予决策级
   illustrative: 'advisory_only',
   empty: 'advisory_only',
   user_saved: 'advisory_only',

@@ -31,6 +31,11 @@ defineProps<{ basis: DataBasis; prefix?: string }>()
   background: #eff6ff;
 }
 
+.data-basis-badge.provisional {
+  color: #b45309;
+  background: #fffbeb;
+}
+
 .data-basis-badge.illustrative {
   color: #a16207;
   background: #fffaf0;
