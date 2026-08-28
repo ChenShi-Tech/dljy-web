@@ -21,6 +21,8 @@
 // ③ **数据基线是硬门禁**。`synthetic`（合成演示）绝不允许申报；`illustrative`
 //    （特征示意）当前是系统默认值，全拦会打死流程，故列为可放行——但要有人双签
 //    担责。`real`/`captured` 才是实盘决策级口径（与 `isDecisionGrade` 同口径）。
+//    `provisional`（暂定口径，#2556）介于两者之间：有工程依据（持仓分解 + 储能净
+//    放电叠加）但未经结算验证——不阻断，只给 warning 提醒核对持仓基线。
 // ============================================================================
 
 /**
@@ -206,6 +208,16 @@ export function evaluateDeclarationChecks(declaration, inputs = {}) {
       status: 'PASS',
       severity: 'hard',
       detail: `数据基线 ${basis}，属实盘决策级口径`
+    })
+  } else if (basis === 'provisional') {
+    // 暂定口径（#2556 申报链）：持仓分解基线 + 储能净放电叠加，有工程依据但未经
+    // 结算验证——不阻断流程，但必须提醒核对持仓基线（#2560 D2-a 口径）。
+    checks.push({
+      checkId: 'dataBasis',
+      name: '数据可信度门禁',
+      status: 'PASS',
+      severity: 'warning',
+      detail: '数据基线为暂定口径（provisional），建议核对持仓基线——未经结算验证，正式提交前须业务复核'
     })
   } else if (basis === 'synthetic') {
     checks.push({
