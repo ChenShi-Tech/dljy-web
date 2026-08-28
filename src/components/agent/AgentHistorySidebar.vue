@@ -32,7 +32,9 @@ const editingTitle = ref('')
 // Esc 取消重命名护栏：Esc → cancelRename 置位 → 移除 input 触发 @blur → commitRename 据此跳过（否则 Esc 仍会提交）
 let justCancelled = false
 
-const SCENARIO_LABELS: Record<AgentRunScenario, string> = {
+// key 放宽为 string：'custom_graph' 场景已删（主仓 #2582），但 Node 历史库里的存量会话
+// 仍带该 scenario 只读回放，词条保留让旧会话照常显示中文名而非裸 key。
+const SCENARIO_LABELS: Record<string, string> = {
   chat: '对话',
   declaration_prep: '申报准备',
   daily_review: '每日复盘',
@@ -42,7 +44,7 @@ const SCENARIO_LABELS: Record<AgentRunScenario, string> = {
   custom_graph: '自定义编排'
 }
 function scenarioLabel(s: string): string {
-  return SCENARIO_LABELS[s as AgentRunScenario] ?? '自定义编排'
+  return SCENARIO_LABELS[s] ?? '自定义编排'
 }
 
 // 来源接入点标签（#498 全入口持久化后区分会话来自哪个页面；与各接入点 history-key 一一对应）。

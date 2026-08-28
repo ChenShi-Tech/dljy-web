@@ -200,8 +200,9 @@ const router = createRouter({
           redirect: '/insight/cockpit'
         },
         accountsRedirect('system/permissions', 'permissions'),
-        // AI 工作室：技能/子智能体/Dify 工作流/高级编排/定时任务五页 tab 化合并（ADMIN-only）。
-        page('system/ai-studio', 'SystemAiStudio', { block: '系统管理', title: 'AI 工作室', code: 'system-ai-studio', endpoint: '/agent-api/agent/{skills,sub-agents,graphs,schedules}/* + /dify-sso/session + ANY /dify-studio/*', dataPath: 'schedules_sqlite,dify,llm', scope: '技能(SKILL.md 增删改启停)/子智能体(CRUD 导入导出归属绑定)/Dify 原生 Studio 同源嵌入/LangGraph 画布编排/定时任务调度五 tab;任务产出真实落盘报告,画布数据为分析示意', kind: 'mixed' }, aiStudio),
+        // AI 工作室：技能/子智能体/Dify 工作流/定时任务四页 tab 化合并（ADMIN-only）。
+        // 「高级智能体编排」tab 已随主仓 #2582 删 /agent-api/agent/graphs* 后端下线（#2540）。
+        page('system/ai-studio', 'SystemAiStudio', { block: '系统管理', title: 'AI 工作室', code: 'system-ai-studio', endpoint: '/agent-api/agent/{skills,sub-agents,schedules}/* + /dify-sso/session + ANY /dify-studio/*', dataPath: 'schedules_sqlite,dify,llm', scope: '技能(SKILL.md 增删改启停)/子智能体(CRUD 导入导出归属绑定)/Dify 原生 Studio 同源嵌入/定时任务调度四 tab;任务产出真实落盘报告', kind: 'mixed' }, aiStudio),
         // 用户与会话：账号目录与登录会话两页 tab 化合并（ADMIN-only，原 /system/sessions 随之收紧）。
         page('system/accounts', 'SystemAccounts', { block: '系统管理', title: '用户与会话', code: 'system-accounts', endpoint: 'GET/POST/PATCH /api/auth/users + GET/DELETE /api/auth/sessions', dataPath: 'auth_sqlite', scope: '账号、角色、状态、数据域和密码重置 + 登录会话、撤销和审计日志两 tab', kind: 'real' }, accounts),
         // 推理模型管理（dljy#2465）：南洋 dljy-infer 的唯一管理面，经 agent-backend 代理，服务端按平台 RBAC 校验 ADMIN/BOSS
@@ -256,12 +257,13 @@ const router = createRouter({
         // agent-backend 的 /api/v1/trading/{kelly,arbitrage,risk,twap,milp} 端点保留，工具化与可配置见 #1800。
         // 原“智能体编排分析”页仅做 supervisor 派工可视化，已由 /ai-agent 通用工作台承接；保留 redirect 兼容旧收藏。
         { path: 'xhjy/ai-orchestration', redirect: '/ai-agent' },
-        // AI 编排三页随「AI 工作室」（/system/ai-studio）tab 化收敛：原「AI工作流中枢」是这几页的
+        // AI 编排页随「AI 工作室」（/system/ai-studio）tab 化收敛：原「AI工作流中枢」是这几页的
         // 导航壳，tab 栏取代其职责后删除（其 Dify/工具桥状态展示已由各 tab 自身承载）。
         // 旧路径保留重定向落到对应 tab，外部书签与历史深链不失效。
         aiStudioRedirect('xhjy/ai-orchestration-studio', 'dify'),
         aiStudioRedirect('xhjy/dify-studio', 'dify'),
-        aiStudioRedirect('xhjy/langgraph-studio', 'orchestration'),
+        // xhjy/langgraph-studio（LangGraph 编排画布）已随主仓 #2582 删后端整体下线（#2540）：
+        // 无对应 tab 可落，旧深链由 catchAll 兜到 /dashboard（与 #1799 删页同法）。
         aiAgentRedirect('xhjy/morning-brief', 'morning_brief'),
         page('gsgl/report-workshop', 'ReportWorkshop', { block: '公司管理', title: '报告工坊', code: 'report-workshop', endpoint: 'POST /dify-api/v1/workflows/run (Dify 工作流编排)', dataPath: 'dify', scope: '非技术人员自助构建报告工作流:选择模板→配置参数→生成图表报告;Dify离线自托管,社区100+模板可复用;Dify不可用时回退本地Mock模板', kind: 'mixed' }, reportWorkshop),
         page('xhjy/storage-copilot', 'StorageCopilot', { block: '智能实验室', title: '储能投资收益测算', code: 'storage-copilot', endpoint: 'POST /agent-api/v1/investment-assessment/runs + /intents/parse + /agent-api/agent/sessions + /sessions/{id}/messages (SSE)', dataPath: 'agent_backend', scope: '储能投资收益统一工作台:完整投资公式+套利/MILP调度+运行历史+智能体解释;示意/合成项显式标注', kind: 'mixed' }, storageCopilot),

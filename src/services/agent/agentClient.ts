@@ -17,9 +17,6 @@ const BASE = AGENT_API_BASE
 // （主仓 #2231），前端不再有可选的第二个 base——旧图那侧的对话编排路径已经不存在，
 // 留一张表只剩「有人调回 off 就把主入口路由到不再服务该场景的后端」这一种用法，
 // 前端一次查询超时触发 fail-safe 也是同样后果。
-// 例外只有工作室自定义图（custom_graph）：它由 studioClient 的 /graph-runs 建在
-// agent-backend 侧，不经 createAgentSession，其 session id 既不在 sessionBaseById 也不在
-// PI_SESSIONS_KEY，baseForSession 自然回退到 BASE（legacy）——这正是它需要的。
 // 会话级路由仍在 createAgentSession 时登记（内存 Map + localStorage 双写，刷新后仍可
 // 把续聊/回放请求路由到正确后端）；persistHistory 走 #498 默认全开，归属登记由
 // pi-poc 服务端回调 Node bind（见 agent-poc-strategic-qa-design.md）。
@@ -63,16 +60,17 @@ export function identityHeaders(): Record<string, string> {
   if (token) headers.authorization = `Bearer ${token}`
   const company = localStorage.getItem(COMPANY_KEY)
   if (company) headers['x-company-id'] = company
-  // 统一地区下传：与 api.ts requestHeaders()/quantClient 对齐，给所有 agent/studio 请求注入
-  // x-region-id。后端会话据此把地区存入 run_context，使图内地区敏感工具默认按所选地区取数
-  // （studioClient.ownerHeaders 复用本函数，自定义图同样获得地区上下文）。
+  // 统一地区下传：与 api.ts requestHeaders()/quantClient 对齐，给所有 agent 请求注入
+  // x-region-id。后端会话据此把地区存入 run_context，使图内地区敏感工具默认按所选地区取数。
   const region = currentRegion.value.id
   if (region) headers['x-region-id'] = region
   return headers
 }
 
 export type AgentScenario = 'chat' | 'declaration_prep' | 'daily_review' | 'morning_brief' | 'strategic_qa' | 'declaration_checkup'
-export type AgentRunScenario = AgentScenario | 'custom_graph'
+// 「custom_graph」场景已随主仓 #2582 删除（#2540）；别名保留，历史会话元数据里可能仍
+// 出现该字符串（Node 侧存量只读回放），展示层自行兜底。
+export type AgentRunScenario = AgentScenario
 
 export type AgentSessionInfo = {
   id: string
@@ -101,10 +99,7 @@ export type AgentEvent =
   | { type: 'approval_request'; payload: Record<string, unknown> }
   | { type: 'todos'; items: { content: string; status: 'pending' | 'in_progress' | 'completed' }[] }
   | { type: 'graph_status'; node: string; status: string }
-  // 工作室动态图节点事件（dynamic_graph.py 经 get_stream_writer 发）
-  | { type: 'node_status'; node: string; status: 'running' | 'done' | 'skipped'; label?: string; role?: string; note?: string }
-  | { type: 'node_token'; node: string; content: string }
-  | { type: 'node_result'; node: string; label?: string; role?: string; output: string }
+  // 工作室动态图节点事件（node_status/node_token/node_result，dynamic_graph.py 发）已随主仓 #2582 删除。
   // 子智能体内部工具调用冒泡（深度流式）：role 为子智能体角色 key（如 market_analyst）
   | { type: 'subagent_tool_call'; role: string; name: string; args: Record<string, unknown> }
   | { type: 'subagent_tool_result'; role: string; name: string; summary: string }

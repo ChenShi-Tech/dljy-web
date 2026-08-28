@@ -303,7 +303,7 @@ export const pageHelpRegistry: Record<string, PageHelpEntry> = {
   },
   SystemAiStudio: {
     title: 'AI 工作室',
-    body: 'AI 编排与配置五 tab（仅系统管理员可见）。技能工作室：SKILL.md 技能网格 + 编辑抽屉 + 导入导出，启停/编辑对新建会话生效。子智能体工作室：角色与工具集 CRUD、归属绑定，供 supervisor 派发（写操作共用 HARNESS_ADMIN_TOKEN）。Dify 工作流工作室：经服务端 SSO 同源嵌入 Dify 原生画布，取数走 /api/dify-tools/* 工具桥，前端不持密钥。高级智能体编排：LangGraph 画布（8 类节点 + 并行/分支/审批/循环 + 递归护栏），SSE 流式运行，数据为分析示意。定时任务调度：任务 CRUD/启停/立即执行/执行历史/结果中心，落 schedules_sqlite，产出真实落盘报告。整体为混合口径。',
+    body: 'AI 编排与配置四 tab（仅系统管理员可见）。技能工作室：SKILL.md 技能网格 + 编辑抽屉 + 导入导出，启停/编辑对新建会话生效。子智能体工作室：角色与工具集 CRUD、归属绑定，供 supervisor 派发（写操作共用 HARNESS_ADMIN_TOKEN）。Dify 工作流工作室：经服务端 SSO 同源嵌入 Dify 原生画布，取数走 /api/dify-tools/* 工具桥，前端不持密钥。定时任务调度：任务 CRUD/启停/立即执行/执行历史/结果中心，落 schedules_sqlite，产出真实落盘报告。整体为混合口径。',
     docPath: 'docs/agent-harness/sub-agent-studio.md'
   },
 

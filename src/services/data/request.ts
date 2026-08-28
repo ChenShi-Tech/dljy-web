@@ -1,6 +1,6 @@
 // data/request.ts — 统一取数基座 agentRequest()（Phase 0）
 // ----------------------------------------------------------------------------
-// 收敛通道 C（spotClient / quantClient / mlForecastClient / studioClient）将各自手写的
+// 收敛通道 C（spotClient / quantClient / mlForecastClient）将各自手写的
 // header 注入 / 超时 / GET 重试 / applyRegionHeaders 到单一基座，复用 api.ts 的：
 // - requestHeaders()：统一身份 + 地区（x-region-id）+ token + governance 头
 // - timeoutSignal()：可中断的超时 AbortSignal
