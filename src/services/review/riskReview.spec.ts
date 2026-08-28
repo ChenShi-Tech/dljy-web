@@ -27,10 +27,10 @@ describe('thresholdFindings（阈值触发 · 负例红线）', () => {
 
   it('偏差率连续超标 → red 触发；价差连续为负 ≥N 日 → yellow 触发', () => {
     const out = thresholdFindings({
-      aggRows: [row('d1', 0.06), row('d2', 0.07), row('d3', 0.08)],
+      aggRows: [row('2026-08-24', 0.06), row('2026-08-25', 0.07), row('2026-08-26', 0.08)], // 真实日历日（连续按相邻日判定）
       dailySpreadPnl: [
-        { date: 'd1', pnlYuan: -100 }, { date: 'd2', pnlYuan: -50 },
-        { date: 'd3', pnlYuan: -80 }, { date: 'd4', pnlYuan: 10 }
+        { date: '2026-08-24', pnlYuan: -100 }, { date: '2026-08-25', pnlYuan: -50 },
+        { date: '2026-08-26', pnlYuan: -80 }, { date: '2026-08-27', pnlYuan: 10 }
       ],
       winRate: 0.6
     })
@@ -40,6 +40,34 @@ describe('thresholdFindings（阈值触发 · 负例红线）', () => {
     const spread = out.findings.find((f) => f.id === 'spread-streak')
     expect(spread?.level).toBe('yellow')
     expect(spread?.detail).toContain('代理口径')
+  })
+
+  it('价差连续为负按日历相邻：缺数跳日断链，不再虚报连续（与偏差 streak 同源）', () => {
+    // 08-24 / 08-26 / 08-28 各自孤立为负（中间跳日）→ 无 ≥3 连续段，不得虚报
+    const gap = thresholdFindings({
+      aggRows: [],
+      dailySpreadPnl: [
+        { date: '2026-08-24', pnlYuan: -100 },
+        { date: '2026-08-26', pnlYuan: -50 },
+        { date: '2026-08-28', pnlYuan: -80 }
+      ],
+      winRate: null
+    })
+    expect(gap.findings.some((f) => f.id === 'spread-streak')).toBe(false)
+    // 断链后重新起段：真实连续 3 日才触发，区间为实际起止日
+    const cont = thresholdFindings({
+      aggRows: [],
+      dailySpreadPnl: [
+        { date: '2026-08-24', pnlYuan: -100 },
+        { date: '2026-08-25', pnlYuan: -50 },
+        { date: '2026-08-26', pnlYuan: -80 }
+      ],
+      winRate: null
+    })
+    const spread = cont.findings.find((f) => f.id === 'spread-streak')
+    expect(spread).toBeTruthy()
+    expect(spread?.title).toContain('连续 3 日')
+    expect(spread?.detail).toContain('2026-08-24 ~ 2026-08-26')
   })
 
   it('胜率低于阈值触发；无样本（null）不触发不猜', () => {

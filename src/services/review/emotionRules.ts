@@ -59,6 +59,9 @@ function bandRatioOf(e: EmotionEntryLike): number | null {
 
 function actualOutOfBand(e: EmotionEntryLike): boolean {
   if (typeof e.p10 !== 'number' || typeof e.p90 !== 'number') return false
+  // actual 允许空（decisionLogApi 回填前/旧数据契约）：Number(null)/Number('') = 0 会
+  // 被当成「实际=0」恒判出区间（电价 P10>0）——缺数不打标（宁缺勿滥）。
+  if (e.actual === null || e.actual === undefined || e.actual === '') return false
   const a = typeof e.actual === 'number' ? e.actual : Number(e.actual)
   if (!Number.isFinite(a)) return false
   return a < e.p10 || a > e.p90

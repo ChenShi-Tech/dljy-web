@@ -5,7 +5,7 @@
 // 读路径探针降级（endpoint-absent 时空态+提示，不合成）；写路径直接抛 Error(msg)
 // ——事件登记与行动项宁可报错重试，不静默降级为本地草稿。
 import { AGENT_API_BASE, identityHeaders } from '@/services/agent/agentClient'
-import { timeoutSignal } from '@/services/api'
+import { idempotencyKeyOf, timeoutSignal } from '@/services/api'
 import {
   classifyStoreResponse,
   coerceCase,
@@ -21,12 +21,6 @@ import {
 
 const BASE = `${AGENT_API_BASE}/review`
 const TIMEOUT_MS = 8000
-
-/** crypto.randomUUID 需安全上下文，现场 http 部署没有——与 decisionLogClient 同款降级。 */
-function newIdempotencyKey(): string {
-  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') return crypto.randomUUID()
-  return `web-${Date.now()}-${Math.random().toString(16).slice(2)}`
-}
 
 async function readEnvelope(res: Response): Promise<Record<string, unknown> | null> {
   return (await res.json().catch(() => null)) as Record<string, unknown> | null
@@ -88,7 +82,9 @@ export async function registerRiskEvent(
 ): Promise<RiskEventSummary> {
   const res = await fetch(`${BASE}/risk-events`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json', ...identityHeaders(), 'idempotency-key': idempotencyKey ?? newIdempotencyKey() },
+    // 幂等键：调用方显式键（阈值触发的确定性键）优先；缺省按 draft 内容派生——
+    // 同一登记超时重试/双击同键可去重，不同内容不误伤（api.ts idempotencyKeyOf）。
+    headers: { 'content-type': 'application/json', ...identityHeaders(), 'idempotency-key': idempotencyKey ?? idempotencyKeyOf('re', draft) },
     body: JSON.stringify(draft),
     signal: timeoutSignal(TIMEOUT_MS)
   })
@@ -107,7 +103,7 @@ export async function patchRiskEvent(
 ): Promise<RiskEventSummary> {
   const res = await fetch(`${BASE}/risk-events/${encodeURIComponent(eventId)}`, {
     method: 'PATCH',
-    headers: { 'content-type': 'application/json', ...identityHeaders(), 'idempotency-key': newIdempotencyKey() },
+    headers: { 'content-type': 'application/json', ...identityHeaders(), 'idempotency-key': idempotencyKeyOf('rp', { eventId, patch }) },
     body: JSON.stringify(patch),
     signal: timeoutSignal(TIMEOUT_MS)
   })
@@ -159,7 +155,8 @@ export async function createImprovementAction(input: {
 }): Promise<ImprovementActionSummary> {
   const res = await fetch(`${BASE}/improvement-actions`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json', ...identityHeaders(), 'idempotency-key': newIdempotencyKey() },
+    // 幂等键按 {action, owner, dueDate} 内容派生：同一行动项超时重试/双击同键可去重
+    headers: { 'content-type': 'application/json', ...identityHeaders(), 'idempotency-key': idempotencyKeyOf('ia', input) },
     body: JSON.stringify(input),
     signal: timeoutSignal(TIMEOUT_MS)
   })
@@ -178,7 +175,7 @@ export async function patchImprovementAction(
 ): Promise<ImprovementActionSummary> {
   const res = await fetch(`${BASE}/improvement-actions/${encodeURIComponent(actionId)}`, {
     method: 'PATCH',
-    headers: { 'content-type': 'application/json', ...identityHeaders(), 'idempotency-key': newIdempotencyKey() },
+    headers: { 'content-type': 'application/json', ...identityHeaders(), 'idempotency-key': idempotencyKeyOf('ip', { actionId, patch }) },
     body: JSON.stringify(patch),
     signal: timeoutSignal(TIMEOUT_MS)
   })
@@ -230,7 +227,9 @@ export type CaseDraft = {
 export async function registerCase(draft: CaseDraft): Promise<CaseSummary> {
   const res = await fetch(`${BASE}/cases`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json', ...identityHeaders(), 'idempotency-key': newIdempotencyKey() },
+    // 幂等键按案例草稿内容派生：沉淀失败后的「重试沉淀案例」同内容同键——
+    // 首次实际已落库时重试不会产生重复案例（AL-YYYYMMDD-NNN 唯一回执的前提）。
+    headers: { 'content-type': 'application/json', ...identityHeaders(), 'idempotency-key': idempotencyKeyOf('case', draft) },
     body: JSON.stringify(draft),
     signal: timeoutSignal(TIMEOUT_MS)
   })

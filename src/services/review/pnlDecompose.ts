@@ -14,7 +14,7 @@ export type DetailPointLike = {
   rt_price?: number
 }
 
-/** datetime → 小时（0–23）；解析不出返回 null（该点不计入分时段层，进缺口计数）。 */
+/** datetime → 小时（0–23）；解析不出返回 null（该点不计入分时段层，进 segmentGapPoints 缺口计数）。 */
 export function hourOfDatetime(datetime: string): number | null {
   const m = /(\d{1,2}):\d{2}/.exec(String(datetime))
   if (!m) return null
@@ -37,6 +37,8 @@ export type DailyPnlDecompose = {
   totalYuan: number
   /** 价格缺失点数（da 或 rt 任一缺失；这些点不计入对应层，如实计数） */
   priceGapPoints: number
+  /** 有价但时点解析不出的点数：计入主合计、不计入分时段层（缺口如实披露） */
+  segmentGapPoints: number
   byVariety: VarietyLayer[]
   /** spec 未参数化 → null（调用方显式提示，不借用他省时段） */
   bySegment: SegmentLayerRow[] | null
@@ -47,27 +49,34 @@ export function decomposeDaily(detail: readonly DetailPointLike[], spec: Settlem
   let da = 0
   let rt = 0
   let priceGapPoints = 0
+  let segmentGapPoints = 0
   const segMap = new Map<string, number>()
   for (const p of detail) {
     const declared = Number.isFinite(p.declared) ? p.declared : 0
     const actual = Number.isFinite(p.actual) ? p.actual : 0
-    if (typeof p.da_price === 'number' && Number.isFinite(p.da_price)) {
-      da += declared * p.da_price
+    // 谓词同源：主合计与分时段层共用同一价判定——此前 pointRevenue 只判 typeof，
+    // ±Infinity 价会漏进分时段层，破坏「Σ分时段=总收益」恒等红线。
+    const daPrice = typeof p.da_price === 'number' && Number.isFinite(p.da_price) ? p.da_price : null
+    const rtPrice = typeof p.rt_price === 'number' && Number.isFinite(p.rt_price) ? p.rt_price : null
+    if (daPrice !== null) {
+      da += declared * daPrice
     } else {
       priceGapPoints += 1
     }
-    if (typeof p.rt_price === 'number' && Number.isFinite(p.rt_price)) {
-      rt += (actual - declared) * p.rt_price
+    if (rtPrice !== null) {
+      rt += (actual - declared) * rtPrice
     } else {
       priceGapPoints += 1
     }
     if (spec) {
       const h = hourOfDatetime(p.datetime)
-      if (h !== null) {
+      if (h === null) {
+        if (daPrice !== null || rtPrice !== null) segmentGapPoints += 1
+      } else {
         const seg = spec.timeSegmentFactors.find((s) => s.hours.includes(h))?.segment ?? '平'
         const pointRevenue =
-          (typeof p.da_price === 'number' ? declared * p.da_price : 0) +
-          (typeof p.rt_price === 'number' ? (actual - declared) * p.rt_price : 0)
+          (daPrice !== null ? declared * daPrice : 0) +
+          (rtPrice !== null ? (actual - declared) * rtPrice : 0)
         segMap.set(seg, (segMap.get(seg) ?? 0) + pointRevenue)
       }
     }
@@ -83,6 +92,7 @@ export function decomposeDaily(detail: readonly DetailPointLike[], spec: Settlem
     rtIncrementYuan: rt,
     totalYuan: total,
     priceGapPoints,
+    segmentGapPoints,
     byVariety: [
       { variety: '现货·日前', revenueYuan: da },
       { variety: '现货·实时增量', revenueYuan: rt },
@@ -100,6 +110,7 @@ export function rollupMonthly(daily: ReadonlyArray<{ date: string; d: DailyPnlDe
   totalYuan: number
   days: number
   priceGapPoints: number
+  segmentGapPoints: number
 } {
   const picked = daily.filter((x): x is { date: string; d: DailyPnlDecompose } => x.d !== null)
   const totalYuan = picked.reduce((a, x) => a + x.d.totalYuan, 0)
@@ -124,7 +135,8 @@ export function rollupMonthly(daily: ReadonlyArray<{ date: string; d: DailyPnlDe
     bySegment,
     totalYuan,
     days: picked.length,
-    priceGapPoints: picked.reduce((a, x) => a + x.d.priceGapPoints, 0)
+    priceGapPoints: picked.reduce((a, x) => a + x.d.priceGapPoints, 0),
+    segmentGapPoints: picked.reduce((a, x) => a + x.d.segmentGapPoints, 0)
   }
 }
 

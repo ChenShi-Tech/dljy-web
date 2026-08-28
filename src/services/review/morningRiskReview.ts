@@ -39,11 +39,14 @@ export function riskReviewReminder(events: readonly RiskEventSummary[]): RiskRev
   let disposalMissing = 0
   let effectivenessMissing = 0
   for (const e of events) {
-    if (e.nearMiss) {
-      if (e.effective === null) nearMissUnevaluated += 1
-    } else if (!e.disposal) {
-      disposalMissing += 1
-    } else if (e.effective === null) {
+    const evaluated = e.effective !== null
+    if (e.nearMiss && !evaluated) {
+      nearMissUnevaluated += 1
+      continue // 未评估的 near_miss 由其专属提醒覆盖，不重复计处置缺失（同一事件不叠加催办）
+    }
+    if (!e.disposal) {
+      disposalMissing += 1 // 处置为空（挂账未处置）：near_miss 也在内——已评估不等于已闭环
+    } else if (!evaluated) {
       effectivenessMissing += 1
     }
   }

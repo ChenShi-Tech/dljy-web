@@ -87,6 +87,8 @@ describe('ReviewTemplateForm（模板渲染器）', () => {
     await wrapper.find('.rtf-adopt').trigger('click')
     expect(wrapper.find('.rtf-ai-row input').exists()).toBe(true)
     expect(wrapper.text()).toContain('已采纳')
+    // 采纳即建议入框：输入框初始值是建议文本（可人工修改），不是空框
+    expect((wrapper.find('.rtf-ai-row input').element as HTMLInputElement).value).toBe('供需趋紧叠加高温负荷')
   })
 
   it('ai_suggest 无建议 → 「未生成」占位（#2044 未上线不装样子）', () => {

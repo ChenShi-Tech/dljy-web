@@ -8,7 +8,7 @@
 //   POST /decision-logs/{id}/backfill → {code:200, data: entry}（actual/lesson 不参与哈希）
 // 错误信封 {code, msg}：写入路径直接抛 Error(msg)——审计台账宁可报错重试，不静默降级。
 import { AGENT_API_BASE, identityHeaders } from '@/services/agent/agentClient'
-import { timeoutSignal } from '@/services/api'
+import { idempotencyKeyOf, timeoutSignal } from '@/services/api'
 import type { DecisionLogEntry } from 'shared/trading-rules/decision-log.mjs'
 import {
   classifyDecisionLogError,
@@ -21,12 +21,6 @@ import {
 
 const BASE = `${AGENT_API_BASE}/review/decision-logs`
 const TIMEOUT_MS = 8000
-
-/** 幂等键：crypto.randomUUID 需安全上下文，现场 http 部署没有——降级到时间戳+随机数。 */
-export function newIdempotencyKey(): string {
-  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') return crypto.randomUUID()
-  return `web-${Date.now()}-${Math.random().toString(16).slice(2)}`
-}
 
 export type DecisionLogFilters = {
   /** 按标的日过滤（coverageOf 同口径） */
@@ -77,24 +71,28 @@ async function readEntry(res: Response, fallbackMsg: string): Promise<DecisionLo
   throw new Error(msg)
 }
 
-/** 追加一条（服务端算 SHA-256 并接链）。draft 不带 author——服务端按会话身份落名。 */
+/**
+ * 追加一条（服务端算 SHA-256 并接链）。draft 不带 author——服务端按会话身份落名。
+ * 幂等键按 draft 内容派生：链是追加写，超时重试换随机键会产生重复台账条目——
+ * 同内容同键让服务端可去重（api.ts idempotencyKeyOf）。
+ */
 export async function postDecisionLog(
   draft: Record<string, unknown> & { correctionOf?: string | null }
 ): Promise<DecisionLogEntry> {
   const res = await fetch(`${BASE}`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json', ...identityHeaders(), 'idempotency-key': newIdempotencyKey() },
+    headers: { 'content-type': 'application/json', ...identityHeaders(), 'idempotency-key': idempotencyKeyOf('dl', draft) },
     body: JSON.stringify(draft),
     signal: timeoutSignal(TIMEOUT_MS)
   })
   return readEntry(res, '决策日志写入')
 }
 
-/** T+2 回填实际结果（actual/lesson 不参与哈希，不破坏链）。 */
+/** T+2 回填实际结果（actual/lesson 不参与哈希，不破坏链）。同 entry 同内容重试同键。 */
 export async function postBackfill(entryId: string, patch: { actual?: number; lesson?: string }): Promise<DecisionLogEntry> {
   const res = await fetch(`${BASE}/${encodeURIComponent(entryId)}/backfill`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json', ...identityHeaders(), 'idempotency-key': newIdempotencyKey() },
+    headers: { 'content-type': 'application/json', ...identityHeaders(), 'idempotency-key': idempotencyKeyOf('bf', { entryId, patch }) },
     body: JSON.stringify(patch),
     signal: timeoutSignal(TIMEOUT_MS)
   })

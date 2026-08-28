@@ -30,6 +30,15 @@ describe('detectEmotionPatterns（先规则后模型 · 宁缺勿滥）', () => 
     expect(oc!.evidence).toContain('#1')
   })
 
+  it('actual 缺数（null/空串，回填前契约）不参与区间比较——Number(null)=0 不得假阳性', () => {
+    const out = detectEmotionPatterns([
+      e({ seq: 1, p10: 99, p50: 100, p90: 101, actual: null }), // 窄区间 + actual 空
+      e({ seq: 2, p10: 99, p50: 100, p90: 101, actual: '' }),
+      e({ seq: 3, p10: 99, p50: 100, p90: 101, actual: undefined })
+    ])
+    expect(out.patterns.find((p) => p.kind === 'overconfidence')).toBeUndefined()
+  })
+
   it('犹豫候选：同标的日同决策点 ≥2 条（改判迹象）', () => {
     const out = detectEmotionPatterns([
       e({ seq: 1, decisionPoint: '晚高峰申报量' }),

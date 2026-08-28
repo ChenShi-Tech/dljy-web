@@ -109,7 +109,9 @@ function autoValue(f: ReviewTemplateField): string {
   return String(v)
 }
 function adopt(fieldKey: string) {
-  // 「建议→人点采纳」范式：点采纳才进草稿，AI 永不直写
+  // 「建议→人点采纳」范式：点采纳才进草稿（采纳本身是人的一次显式确认，AI 永不直写）。
+  // 建议文本随采纳落入草稿框——否则采纳后输入框为空，建议凭空消失、提交 payload 缺值。
+  draft[fieldKey] = props.aiSuggestions?.[fieldKey] ?? ''
   adopted[fieldKey] = true
 }
 

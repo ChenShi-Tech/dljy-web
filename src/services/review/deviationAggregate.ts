@@ -4,6 +4,7 @@
 // 责任归因二轴（预测不准/突发情况/策略失误/操作失误）仅周聚合人工补填，AI 只给
 // 业务成因→责任归因的映射建议、人确认，与 S1 业务成因四因子正交、不合并。
 // 两轴均存 id 不存中文（morning-review.mjs 教训）。
+import { nextDayOf } from '@/utils/calendarDate'
 import type { PeriodReviewDay } from './reviewPeriodClient'
 
 /** 责任归因第二轴（方案 §模板七；正交于业务成因四因子，不合并） */
@@ -116,12 +117,17 @@ export function consecutiveDeviationBreach(
   let best: { streak: number; from: string; to: string } | null = null
   let run: DailyAggRow[] = []
   for (const r of rows) {
-    if (r.deviationPct !== null && Math.abs(r.deviationPct) > thresholdPct) {
-      run.push(r)
-      if (!best || run.length > best.streak) best = { streak: run.length, from: run[0].date, to: r.date }
-    } else {
+    if (r.deviationPct === null || Math.abs(r.deviationPct) <= thresholdPct) {
       run = []
+      continue
     }
+    // 缺数日被调用方剔除时数组天然跳日（aggregateDeviation 只收 ok 日）——
+    // 「连续」必须校验日期相邻，否则缺数日被隐含当超标日计入，虚报连续天数
+    //（违背「缺数日不计入且如实列名」口径；与 riskReview 价差 streak 的缺数断链对齐）。
+    const prev = run[run.length - 1]
+    if (prev && nextDayOf(prev.date) !== r.date) run = []
+    run.push(r)
+    if (!best || run.length > best.streak) best = { streak: run.length, from: run[0].date, to: r.date }
   }
   return best && best.streak >= 2 ? best : null
 }

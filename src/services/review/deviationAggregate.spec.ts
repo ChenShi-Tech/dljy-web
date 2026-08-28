@@ -88,12 +88,30 @@ describe('consecutiveDeviationBreach（阈值连续超标占位）', () => {
   const row = (date: string, pct: number | null) => ({ date, deviationPct: pct, totalAbsDeviationMwh: 1, assessedMwh: 0, estimatedPenaltyYuan: 0, causeId: null, causeLabel: null })
 
   it('连续 ≥2 日超阈值成段；断档重新计', () => {
-    const out = consecutiveDeviationBreach([row('d1', 0.06), row('d2', 0.07), row('d3', 0.01), row('d4', 0.09)], 0.05)
-    expect(out).toMatchObject({ streak: 2, from: 'd1', to: 'd2' })
+    // 「连续」按日历相邻判定：fixture 须用真实日期（占位串会被按断链处理）
+    const out = consecutiveDeviationBreach(
+      [row('2026-08-24', 0.06), row('2026-08-25', 0.07), row('2026-08-26', 0.01), row('2026-08-27', 0.09)],
+      0.05
+    )
+    expect(out).toMatchObject({ streak: 2, from: '2026-08-24', to: '2026-08-25' })
   })
 
   it('仅 1 日或无超标 → null（不虚报）；null 偏差率日断段', () => {
     expect(consecutiveDeviationBreach([row('d1', 0.09)], 0.05)).toBeNull()
     expect(consecutiveDeviationBreach([row('d1', 0.06), row('d2', null), row('d3', 0.07)], 0.05)).toBeNull()
+  })
+
+  it('缺数跳日断链：缺数日不得隐含计为超标日（取数失败日被剔除后不再虚报连续）', () => {
+    // 周一/周三/周五各自孤立超标 → 无任何 ≥2 连续段（旧行为会虚报「连续 3 日」）
+    expect(
+      consecutiveDeviationBreach([row('2026-08-24', 0.06), row('2026-08-26', 0.07), row('2026-08-28', 0.08)], 0.05)
+    ).toBeNull()
+    // 断链后重新成段：取最长真实连续段
+    expect(
+      consecutiveDeviationBreach(
+        [row('2026-08-24', 0.06), row('2026-08-25', 0.07), row('2026-08-26', 0.08), row('2026-08-28', 0.09), row('2026-08-29', 0.1)],
+        0.05
+      )
+    ).toMatchObject({ streak: 3, from: '2026-08-24', to: '2026-08-26' })
   })
 })

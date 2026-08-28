@@ -3,9 +3,9 @@
 // ---------------------------------------------------------------------------
 // 阈值触发（月度 /review 真数据 + 前端胜率服务；止损仓位 data_gap 如实呈现）；
 // 风险事件库已接端点（review.risk_events）：登记落库 + 处置回填 + 事件回显；
-// 越限触发自动生成事件库草稿（幂等双保险：确定性键 + GET 去重）；
+// 越限触发自动生成事件库草稿（幂等双保险按月：确定性键 + 当月 GET 去重，跨月须重新登记）；
 // near_miss 不计损失金额（三层红线），事件落库后自动沉淀案例库（review.cases，
-// case_no 回执；失败红字+重试，不静默）；端点缺席环境回落本地草稿（探针降级）；
+// case_no 回执；失败红字+重试，不静默）；端点缺席环境回落本地草稿（真持久化到本机）；
 // 压力测试包装既有蒙特卡洛引擎 /quant/cvar（价差序列真算 VaR/CVaR/最大回撤），
 // 显著标注「决策参考，非结算依据」；承受能力评级人定，「弱」限期整改复测本地跟踪。
 // 站内不外发（C4 确认前，沿用四川采集告警先例）。
@@ -39,7 +39,12 @@ const loadError = ref('')
 const daysOk = ref<ReadonlyArray<{ date: string; detail: Array<{ da_price?: number; rt_price?: number }>; spreadPnl: number | null }>>([])
 const aggRows = ref<ReturnType<typeof aggregateDeviation>['rows']>([])
 
+// 请求序号守卫（设计稿 §3.1 通讯纪律「新组件沿用」）：切月后旧响应丢弃，
+// 防止旧月数字覆盖新月面板、旧月触发结论以新月幂等键落库。
+let loadSeq = 0
+
 async function load() {
+  const seq = ++loadSeq
   loading.value = true
   loadError.value = ''
   daysOk.value = []
@@ -52,15 +57,18 @@ async function load() {
     const today = todayBeijing()
     const dates = Array.from({ length: last }, (_, i) => `${y}-${String(m).padStart(2, '0')}-${String(i + 1).padStart(2, '0')}`).filter((d) => d <= today)
     const period = await fetchReviewRange(dates, { tolerancePct: props.tolerancePct, penaltyPrice: props.penaltyPrice })
+    if (seq !== loadSeq) return
     const ok = period.days.filter((d): d is Extract<typeof d, { ok: true }> => d.ok)
     daysOk.value = ok.map((d) => ({ date: d.date, detail: d.result.detail, spreadPnl: d.result.backtest.da_rt_spread_pnl_yuan ?? null }))
     aggRows.value = aggregateDeviation(period.days).rows
-    await runStress()
+    await runStress(seq)
   } catch (e) {
-    loadError.value = e instanceof Error ? e.message : '月度取数失败'
+    if (seq === loadSeq) loadError.value = e instanceof Error ? e.message : '月度取数失败'
   } finally {
-    loading.value = false
-    void autoDraftFindings() // 取数落定后再判（loading 期间 findings 未稳，不抢跑）
+    if (seq === loadSeq) {
+      loading.value = false
+      void autoDraftFindings(seq) // 取数落定后再判（loading 期间 findings 未稳，不抢跑）
+    }
   }
 }
 onMounted(load)
@@ -78,7 +86,7 @@ const findings = computed(() =>
 // 压力测试（/quant/cvar 真引擎）
 const cvar = ref<CvarResult | null>(null)
 const cvarError = ref('')
-async function runStress() {
+async function runStress(seq: number) {
   const returns = daysOk.value.flatMap((d) => spreadReturns(d.detail))
   if (returns.length < 2) {
     cvar.value = null
@@ -86,8 +94,11 @@ async function runStress() {
     return
   }
   try {
-    cvar.value = await fetchCvar(returns)
+    const result = await fetchCvar(returns)
+    if (seq !== loadSeq) return // 切月后旧 CVaR 不覆盖新月面板
+    cvar.value = result
   } catch (e) {
+    if (seq !== loadSeq) return
     cvar.value = null
     cvarError.value = e instanceof Error ? e.message : 'CVaR 引擎调用失败'
   }
@@ -97,12 +108,23 @@ async function runStress() {
 const stressGrade = ref('')
 const remediation = ref('')
 
-// near_miss 登记（#2047 端点上线：落 review.risk_events；端点缺席环境诚实降级草稿）
+// near_miss 登记（#2047 端点上线：落 review.risk_events；端点缺席环境回落本地草稿——
+// 草稿必须真持久化到本机，只置 saved 提示而不落盘＝假写入成功，刷新即丢）。
+const NEAR_MISS_DRAFT_KEY = 'dljy.review.nearMissDraft'
 const nearMiss = ref({ eventTime: '', riskLevel: 'medium' as 'high' | 'medium' | 'low', positionSnapshot: '', handling: '', effectiveness: '' })
 const nearMissSaved = ref(false)
+const nearMissDraftPersisted = ref(false)
+const nearMissSaving = ref(false)
 const nearMissError = ref('')
 const eventsAvailable = ref(false)
 const registeredEvents = ref<RiskEventSummary[]>([])
+
+const nearMissMessage = computed(() => {
+  if (eventsAvailable.value) return '已落库（near_miss 不计入损失金额统计）。'
+  return nearMissDraftPersisted.value
+    ? '已存本地草稿（端点缺席不落库；草稿存本机刷新不丢，端点上线后可重新登记落库）。'
+    : '端点缺席且本机存储不可用——表单未持久化（刷新即丢），请截图留痕。'
+})
 
 // near_miss 案例库沉淀（#2047「侥幸逃过须入案例库」）：事件落库后自动 registerCase；
 // 失败红字 + 重试按钮（写路径不静默），成功给 case_no 回执。
@@ -145,17 +167,32 @@ onMounted(loadEvents)
 onMounted(loadCasesProbe)
 
 async function saveNearMiss() {
+  if (nearMissSaving.value) return // 防双击：端点可用时两次点击＝两条 near_miss
   nearMissSaved.value = false
+  nearMissDraftPersisted.value = false
   nearMissError.value = ''
-  if (!eventsAvailable.value) {
-    nearMissSaved.value = true // 端点缺席：本地草稿确认，不落库（诚实降级）
-    return
-  }
+  // 必填校验前置：端点可用/缺席两分支同口径，缺席环境不降级校验
   if (!nearMiss.value.eventTime) {
     nearMissError.value = '事件时间必填'
     return
   }
+  nearMissSaving.value = true
   try {
+    if (!eventsAvailable.value) {
+      // 端点缺席：回落本地草稿（设计稿 M3「回落本地草稿」承诺）；本机存储不可用
+      // （隐私模式/配额）时如实告知未持久化，不谎报已保存。
+      try {
+        localStorage.setItem(
+          NEAR_MISS_DRAFT_KEY,
+          JSON.stringify({ savedAt: new Date().toISOString(), ...nearMiss.value })
+        )
+        nearMissDraftPersisted.value = true
+      } catch {
+        nearMissDraftPersisted.value = false
+      }
+      nearMissSaved.value = true
+      return
+    }
     // near_miss 红线：不计损失金额（不传 impactYuan，服务端也拒）
     const ev = await registerRiskEvent({
       eventTime: new Date(nearMiss.value.eventTime).toISOString(),
@@ -193,28 +230,38 @@ async function saveNearMiss() {
     }
   } catch (e) {
     nearMissError.value = e instanceof Error ? e.message : 'near_miss 登记失败'
+  } finally {
+    nearMissSaving.value = false
   }
 }
 
 // ── 阈值触发即事件库草稿（#2047「越限即预警型待办 + 事件库草稿」） ────────────
-// 幂等双保险：确定性 Idempotency-Key（trigger-{eventType}-{periodKey}）+
-// 服务端事实去重（GET 已存在同 eventType 不再 POST）；未越限不 POST（负例红线）。
+// 幂等双保险（按月粒度，与确定性键的 periodKey 粒度一致）：
+// 确定性 Idempotency-Key（trigger-{eventType}-{periodKey}）+ 当月 GET 去重——
+// 跨月同类触发是新的越限，必须重新登记（全局按 eventType 判重会吞掉后续月份）。
+// 未越限不 POST（负例红线）。
 const autoDraftNotes = ref<string[]>([])
-const autoDraftedTypes = ref(new Set<string>())
+const autoDraftedKeys = ref(new Set<string>())
 
-async function autoDraftFindings() {
+async function autoDraftFindings(seq: number) {
+  if (seq !== loadSeq) return
   autoDraftNotes.value = []
   if (!eventsAvailable.value) return
-  const feed = await fetchRiskEvents()
-  if (!feed.available) return
-  const existingTypes = new Set(feed.events.map((e) => e.eventType))
+  const monthAtStart = month.value // 键/去重/登记同源当月：切月后旧触发结论不再落库
+  const feed = await fetchRiskEvents({ since: `${monthAtStart}-01T00:00:00Z` })
+  if (!feed.available || seq !== loadSeq) return
+  // 服务端未按 since 过滤时本地兜底：只认当月已登记事件（eventTime 为 ISO 串，前 7 位即月）
+  const existingTypes = new Set(
+    feed.events.filter((e) => e.eventTime.slice(0, 7) === monthAtStart).map((e) => e.eventType)
+  )
   for (const f of findings.value.findings) {
-    if (f.dataGap || autoDraftedTypes.value.has(f.id)) continue
+    if (f.dataGap || autoDraftedKeys.value.has(`${f.id}|${monthAtStart}`)) continue
     const eventType = `trigger_${f.id.replace(/-/g, '_')}`
     if (existingTypes.has(eventType)) {
       autoDraftNotes.value.push(`「${f.title}」事件库草稿已存在（不重复登记）。`)
       continue
     }
+    if (seq !== loadSeq) return // 取数/登记期间已切月：旧月触发结论不再以新月键落库
     try {
       await registerRiskEvent(
         {
@@ -223,9 +270,9 @@ async function autoDraftFindings() {
           riskLevel: f.level === 'red' ? 'high' : 'medium',
           lessons: `${f.title}——${f.detail}`
         },
-        `trigger-${f.id}-${month.value}` // 确定性幂等键：同触发器同月重放同键
+        `trigger-${f.id}-${monthAtStart}` // 确定性幂等键：同触发器同月重放同键
       )
-      autoDraftedTypes.value.add(f.id)
+      autoDraftedKeys.value.add(`${f.id}|${monthAtStart}`)
       autoDraftNotes.value.push(`「${f.title}」已生成事件库草稿（预警型待办）。`)
     } catch {
       autoDraftNotes.value.push(`「${f.title}」草稿登记失败（网络/端点异常，稍后重载月份可重试）。`)
@@ -316,11 +363,9 @@ async function autoDraftFindings() {
           <label class="rrp-full">处置措施 <input v-model="nearMiss.handling" class="rrp-input" placeholder="当时怎么处理的" /></label>
           <label class="rrp-full">有效性评估 <input v-model="nearMiss.effectiveness" class="rrp-input" placeholder="处置是否有效、何处侥幸" /></label>
         </div>
-        <button type="button" class="rrp-save" @click="saveNearMiss">登记 near_miss</button>
+        <button type="button" class="rrp-save" :disabled="nearMissSaving" @click="saveNearMiss">登记 near_miss</button>
         <p v-if="nearMissError" class="rrp-warn">{{ nearMissError }}</p>
-        <p v-else-if="nearMissSaved" class="rrp-ok">
-          {{ eventsAvailable ? '已落库（near_miss 不计入损失金额统计）。' : '已记为本地草稿（端点缺席环境，不落库）。' }}
-        </p>
+        <p v-else-if="nearMissSaved" class="rrp-ok">{{ nearMissMessage }}</p>
         <template v-if="caseReceipt">
           <p class="rrp-ok">已沉淀案例库：{{ caseReceipt }}（internal，near_miss 档案纪律）。</p>
         </template>
