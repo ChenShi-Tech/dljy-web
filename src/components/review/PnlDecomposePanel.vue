@@ -83,7 +83,12 @@ const waterfallData = computed(() => {
     if (v.revenueYuan === null) continue // 中长期未接入不画假柱
     segs.push({ label: v.variety, valueYuan: v.revenueYuan, kind: v.revenueYuan >= 0 ? 'gain' : 'cost' })
   }
-  return { segments: segs, totalYuan: r.totalYuan, caliber: 'self-computed', note: `${r.days} 个数据日聚合；价格缺失点 ${r.priceGapPoints} 个未计入对应层` }
+  return {
+    segments: segs,
+    totalYuan: r.totalYuan,
+    caliber: 'self-computed',
+    note: `${r.days} 个数据日聚合；价格缺失点 ${r.priceGapPoints} 个未计入对应层${r.segmentGapPoints > 0 ? `；时点未解析 ${r.segmentGapPoints} 点未计入分时段` : ''}`
+  }
 })
 
 // 模板三 B 档：事实自动带入（下表），成因与经验人填（本地草稿，提交随 #2037）

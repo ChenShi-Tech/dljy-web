@@ -64,6 +64,29 @@ describe('decomposeDaily（三层拆解 · 恒等红线）', () => {
     expect(d.daRevenueYuan).toBeCloseTo(10 * 300) // 仅第二点有日前价：10×300
     expect(d.rtIncrementYuan).toBeCloseTo(0) // 第一点实际=申报 → 0×320=0
   })
+
+  it('非有限价（±Infinity/NaN）主合计与分时段层同判——Σ分时段=总收益恒等不破', () => {
+    const d = decomposeDaily(
+      [pt('00:15', 10, 12, Infinity, 310), pt('11:15', 20, 18, 500, Number.NaN)],
+      spec([{ segment: '峰', hours: [11], factor: 1.2 }, { segment: '谷', hours: [0], factor: 0.4 }])
+    )
+    expect(d.priceGapPoints).toBe(2) // 两点双双按缺口剔除
+    const segSum = (d.bySegment ?? []).reduce((a, r) => a + r.revenueYuan, 0)
+    expect(Number.isFinite(segSum)).toBe(true)
+    expect(segSum).toBeCloseTo(d.totalYuan)
+    expect((d.bySegment ?? []).reduce((a, r) => a + r.share, 0)).toBeCloseTo(1)
+  })
+
+  it('有价但时点解析不出：计入主合计、不计入分时段层，segmentGapPoints 如实披露', () => {
+    const bad = { datetime: '2026-08-14（无时点）', declared: 10, actual: 12, da_price: 300, rt_price: 310 }
+    const d = decomposeDaily([pt('00:15', 10, 10, 300, 300), bad], spec([{ segment: '谷', hours: [0], factor: 0.4 }]))
+    expect(d.segmentGapPoints).toBe(1)
+    // 坏点计入主合计：好点(10×300 + 0) + 坏点(10×300 + 2×310)
+    expect(d.totalYuan).toBeCloseTo(10 * 300 + (10 * 300 + 2 * 310))
+    const segSum = (d.bySegment ?? []).reduce((a, r) => a + r.revenueYuan, 0)
+    // 坏点不在分时段层：Σ分时段 = 总收益 − 缺口点贡献（缺口由 segmentGapPoints=1 披露）
+    expect(segSum).toBeCloseTo(d.totalYuan - (10 * 300 + 2 * 310))
+  })
 })
 
 describe('rollupMonthly + monthlyPnlTop + 环比强制归因', () => {
