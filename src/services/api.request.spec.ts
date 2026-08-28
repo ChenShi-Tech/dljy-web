@@ -635,3 +635,13 @@ describe('applyRegionHeaders 与 regionDataStatus 状态机', () => {
     }
   })
 })
+
+describe('idempotencyKeyOf（内容派生幂等键：重试同键可去重，异内容异键）', () => {
+  it('同内容同键；内容或前缀变化换键；格式 prefix-8位hex', () => {
+    const a = api.idempotencyKeyOf('re', { eventTime: '2026-08-27', level: 'high' })
+    expect(api.idempotencyKeyOf('re', { eventTime: '2026-08-27', level: 'high' })).toBe(a)
+    expect(api.idempotencyKeyOf('re', { eventTime: '2026-08-27', level: 'low' })).not.toBe(a)
+    expect(api.idempotencyKeyOf('case', { eventTime: '2026-08-27', level: 'high' })).not.toBe(a)
+    expect(a).toMatch(/^re-[0-9a-f]{8}$/)
+  })
+})

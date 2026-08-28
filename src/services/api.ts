@@ -188,6 +188,21 @@ export function timeoutSignal(timeoutMs: number): AbortSignal | undefined {
   return controller.signal
 }
 
+/**
+ * 内容派生幂等键（FNV-1a 32 位）：同一逻辑操作（同内容）跨重试/双击同键，服务端可去重；
+ * 内容不同则键不同，不误伤新操作。随机键做不到这点——超时重试会换键，双写防不住。
+ * canonical 为参与业务语义的字段（JSON 序列化后哈希），prefix 区分端点族。
+ */
+export function idempotencyKeyOf(prefix: string, canonical: unknown): string {
+  const s = JSON.stringify(canonical) ?? ''
+  let h = 0x811c9dc5
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i)
+    h = Math.imul(h, 0x01000193)
+  }
+  return `${prefix}-${(h >>> 0).toString(16).padStart(8, '0')}`
+}
+
 // GET 是幂等请求，对网络抖动（fetch 抛错）和网关瞬时故障（502/503/504）
 // 做有限次指数退避重试，避免偶发抖动直接把错误抛到页面。写请求不重试。
 const GET_RETRY_ATTEMPTS = 2

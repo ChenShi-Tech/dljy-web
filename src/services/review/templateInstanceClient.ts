@@ -8,7 +8,7 @@
 // RegionDataBanner。
 import { AGENT_API_BASE, identityHeaders } from '@/services/agent/agentClient'
 import { currentRegion } from '@/services/region/regionContext'
-import { timeoutSignal } from '@/services/api'
+import { idempotencyKeyOf, timeoutSignal } from '@/services/api'
 import { classifyInstanceError, classifyInstanceResponse, type TemplateInstanceFeed } from './templateInstanceApi'
 
 const BASE = `${AGENT_API_BASE}/review`
@@ -47,12 +47,6 @@ export function invalidateTemplateInstanceCache(): void {
   cache = null
 }
 
-/** 幂等键：crypto.randomUUID 需安全上下文，现场 http 部署没有——降级到时间戳+随机数。 */
-function newIdempotencyKey(): string {
-  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') return crypto.randomUUID()
-  return `web-${Date.now()}-${Math.random().toString(16).slice(2)}`
-}
-
 export type InstancePatch = {
   /** 人工字段草稿（human 字段 + 已采纳的 ai 建议值，按 field key） */
   payload?: Record<string, unknown>
@@ -63,11 +57,13 @@ export type InstancePatch = {
 /**
  * PATCH 实例（存草稿/提交/复核）。服务端校验状态机（409）与提权（403），错误信封
  * {code,msg} 直接抛 Error(msg)——表单如实展示，不静默吞。
+ * 幂等键按 {instanceId, patch} 内容派生（api.ts idempotencyKeyOf）：同一逻辑操作
+ * 超时重试/双击同键可去重，内容变了（下一笔编辑）自然换键。
  */
 export async function patchTemplateInstance(instanceId: string, patch: InstancePatch): Promise<void> {
   const res = await fetch(`${BASE}/template-instances/${encodeURIComponent(instanceId)}`, {
     method: 'PATCH',
-    headers: { 'content-type': 'application/json', ...identityHeaders(), 'idempotency-key': newIdempotencyKey() },
+    headers: { 'content-type': 'application/json', ...identityHeaders(), 'idempotency-key': idempotencyKeyOf('ti', { instanceId, patch }) },
     body: JSON.stringify(patch),
     signal: timeoutSignal(PROBE_TIMEOUT_MS)
   })
