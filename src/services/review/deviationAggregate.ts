@@ -4,6 +4,7 @@
 // 责任归因二轴（预测不准/突发情况/策略失误/操作失误）仅周聚合人工补填，AI 只给
 // 业务成因→责任归因的映射建议、人确认，与 S1 业务成因四因子正交、不合并。
 // 两轴均存 id 不存中文（morning-review.mjs 教训）。
+import { nextDayOf } from '@/utils/calendarDate'
 import type { PeriodReviewDay } from './reviewPeriodClient'
 
 /** 责任归因第二轴（方案 §模板七；正交于业务成因四因子，不合并） */
@@ -106,15 +107,6 @@ export function aggregateDeviation(days: readonly PeriodReviewDay[]): DeviationA
     },
     byCause: [...byCauseMap.entries()].map(([causeId, v]) => ({ causeId, ...v })).sort((a, b) => b.days - a.days)
   }
-}
-
-/** date（YYYY-MM-DD）→ 次日；形态不符返回 null（调用方按断链处理）。 */
-function nextDayOf(date: string): string | null {
-  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date)
-  if (!m) return null
-  const d = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])))
-  d.setUTCDate(d.getUTCDate() + 1)
-  return d.toISOString().slice(0, 10)
 }
 
 /** 阈值预警占位（#2042 范围只做标记；触发全量归 M3/#2047）：连续 |偏差率| 超标天数。 */

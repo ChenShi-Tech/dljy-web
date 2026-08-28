@@ -4,6 +4,7 @@
 // 阈值数值等梁总 P2 提供前用缺省并可配置；判级对齐风控阈值面板同源
 // （riskThresholds）。越限即预警型待办 + 事件库草稿；未越限不生成（负例红线）。
 // near_miss（侥幸逃过）独立附记：不计损失金额但入案例库（方案原文）。
+import { nextDayOf } from '@/utils/calendarDate'
 import { consecutiveDeviationBreach, type DailyAggRow } from './deviationAggregate'
 
 export type RiskFinding = {
@@ -77,16 +78,19 @@ export function thresholdFindings(input: {
   let best = 0
   let bestRange = { from: '', to: '' }
   for (const d of input.dailySpreadPnl) {
-    if (d.pnlYuan !== null && d.pnlYuan < 0) {
-      if (streak === 0) from = d.date
-      streak += 1
-      to = d.date
-      if (streak > best) {
-        best = streak
-        bestRange = { from, to }
-      }
-    } else {
+    if (d.pnlYuan === null || d.pnlYuan >= 0) {
       streak = 0
+      continue
+    }
+    // 「连续」按日历相邻判定（与 deviation streak 同源）：缺数日被调用方剔除后数组
+    // 跳日——跳日即断链，否则缺数日被隐含当负值日计入，虚报连续天数。
+    if (streak > 0 && nextDayOf(to) !== d.date) streak = 0
+    if (streak === 0) from = d.date
+    streak += 1
+    to = d.date
+    if (streak > best) {
+      best = streak
+      bestRange = { from, to }
     }
   }
   if (best >= t.spreadDays) {

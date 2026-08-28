@@ -12,6 +12,7 @@ import { ElMessage } from 'element-plus'
 import { X } from 'lucide-vue-next'
 import { renderMarkdown } from '../utils/miniMarkdown'
 import { beijingDay } from '@/utils/beijingDate'
+import { isRealCalendarDate } from '@/utils/calendarDate'
 import {
   fetchReportContent,
   fetchReports,
@@ -74,10 +75,10 @@ function defaultDateFor(regionId: string): string {
   return clampToCoverage(regionId, 'review', yesterday())
 }
 
-/** ?date= 形态守卫：非 YYYY-MM-DD（垃圾串/空值）一律回落采集覆盖区内默认——
- *  否则 reviewMonth=NaN 污染对账分母、台账请求带着垃圾月份发出去。 */
+/** ?date= 形态+语义双守卫：非 YYYY-MM-DD 或伪日期（2026-13-99 / 2026-02-30）一律回落
+ *  采集覆盖区内默认——reviewMonth 不污染对账分母、台账请求不带垃圾月份发出去。 */
 function dateFromQuery(q: unknown): string {
-  return typeof q === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(q) ? q : defaultDateFor(currentRegion.value.id)
+  return typeof q === 'string' && isRealCalendarDate(q) ? q : defaultDateFor(currentRegion.value.id)
 }
 
 const date = ref(dateFromQuery(route.query.date))
@@ -305,19 +306,19 @@ watch(tab, (t) => {
 })
 watch(() => route.query.dim, (q) => { const t = parseDimQuery(q); if (t !== tab.value) tab.value = t })
 
-// 深链 ?date= / ?declarationId= 的同路由再导航（组件复用不重跑 setup）：query 变了要跟上
+// 深链 ?date= / ?declarationId= 的同路由再导航（组件复用不重跑 setup）：query 变了要跟上。
+// declarationId 有值→空（参数被删）同样清空基准单，否则残留旧申报曲线继续当基准。
 watch(() => route.query.date, (q) => {
   const d = dateFromQuery(q)
   if (d !== date.value) date.value = d // 复用既有 [date,…] watch 触发重载
 })
 watch(() => route.query.declarationId, (q) => {
   const id = typeof q === 'string' ? q : ''
-  if (id && id !== declarationId.value) {
-    declaration.value = null // 换基准单：旧申报曲线不可复用，load() 重新取
-    declarationId.value = id
-    void load()
-    void loadSettlementReview()
-  }
+  if (id === declarationId.value) return
+  declaration.value = null // 换/清基准单：旧申报曲线不可复用，load() 重新取
+  declarationId.value = id
+  void load()
+  void loadSettlementReview()
 })
 
 // 深链 ?todo=1（S1 待办徽标跳转落点，设计稿 U7「直开待办箱」）：滚动定位 + 短促高亮
