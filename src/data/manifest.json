@@ -576,7 +576,7 @@
     "title": "AI 工作室",
     "domain": "系统管理",
     "kind": "mixed",
-    "endpoint": "/agent-api/agent/{skills,sub-agents,graphs,schedules}/* + /dify-sso/session + ANY /dify-studio/*",
+    "endpoint": "/agent-api/agent/{skills,sub-agents,schedules}/* + /dify-sso/session + ANY /dify-studio/*",
     "dataPath": "schedules_sqlite,dify,llm",
     "nav": {
       "group": "/system",

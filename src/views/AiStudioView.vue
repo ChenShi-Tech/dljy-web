@@ -1,15 +1,15 @@
 <script setup lang="ts">
-// AI 工作室（/system/ai-studio）：把原先散在系统管理菜单里的 5 个 AI 编排/配置页收敛为单页 tab。
+// AI 工作室（/system/ai-studio）：把原先散在系统管理菜单里的 AI 编排/配置页收敛为单页 tab。
 // 原「AI工作流中枢」（/xhjy/ai-orchestration-studio）是这几页的导航壳，tab 化后失去职责，随本页上线删除。
 //
 // 各 tab 内容仍是原 View 组件（零改造复用，只摘掉与 tab 标签重复的 h2 标题行）：
 //   AI 模型设置                → LLM 凭据/采样/路由/工具能力/用量，页内再按职责分 4 段
 //   技能工作室 / 子智能体工作室 → agent-backend /agent-api/agent/{skills,sub-agents}/*
 //   Dify 工作流工作室          → 同源嵌入 Dify 原生 Studio（/dify-sso + /dify-studio/*）
-//   高级智能体编排             → LangGraph 画布（/agent-api/agent/graphs）
 //   定时任务调度               → /agent-api/agent/schedules
+// 「高级智能体编排」（LangGraph 画布）tab 已随主仓 #2582 删后端 /agent-api/agent/graphs* 下线（#2540）。
 // 子组件走 defineAsyncComponent + el-tab-pane lazy：进页只加载当前 tab 的 chunk，
-// 不把 3500+ 行五个页面打进同一个首屏包（原本每页各自路由级懒加载，合并不得劣化）。
+// 不把 2000+ 行四个页面打进同一个首屏包（原本每页各自路由级懒加载，合并不得劣化）。
 //
 // tab 状态同步到 ?tab= query：旧路由 redirect 落到对应 tab、刷新与深链保持位置。
 import { defineAsyncComponent, ref, watch } from 'vue'
@@ -29,7 +29,6 @@ const TABS = [
   { name: 'skills', label: '技能工作室', component: defineAsyncComponent(() => import('./SkillStudioView.vue')) },
   { name: 'sub-agents', label: '子智能体工作室', component: defineAsyncComponent(() => import('./SubAgentStudioView.vue')) },
   { name: 'dify', label: 'Dify 工作流工作室', component: defineAsyncComponent(() => import('./strategy/DifyWorkflowStudioView.vue')) },
-  { name: 'orchestration', label: '高级智能体编排', component: defineAsyncComponent(() => import('./AgentOrchestrationStudioView.vue')) },
   { name: 'schedules', label: '定时任务调度', component: defineAsyncComponent(() => import('./ScheduleManagementView.vue')) },
 ]
 

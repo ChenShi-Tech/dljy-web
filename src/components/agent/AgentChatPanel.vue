@@ -1146,7 +1146,7 @@ async function attachRun(sessionId: string, runId?: string): Promise<boolean> {
   // 流世代作废已下沉到 loadHistory 内部，不再重复
   const loaded = await loadHistory(sessionId, { fromClick: true, allowEmpty: true })
   if (!loaded) {
-    // live-token-only 会话（工作室 custom_graph、历史绑定失败/首轮未落库）不在 Node 历史库：
+    // live-token-only 会话（历史绑定失败/首轮未落库）不在 Node 历史库：
     // transcript 不可得不应阻断 attach，降级用 live session 信息建最小本地状态续看。
     const info = await getAgentSession(sessionId).catch(() => null)
     if (!info) return false
