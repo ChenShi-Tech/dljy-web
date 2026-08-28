@@ -13,7 +13,8 @@
 //
 // ⚠️ 原型态限制（必须如实告知使用者）：本模块的哈希链用**非加密哈希**且在浏览器端计算、
 // 存浏览器本地。它能检出意外修改与顺序错乱，**防不住蓄意篡改**——真正的不可篡改需要
-// 服务端追加写 + 加密哈希 + 独立留痕。上线前必须替换，页面上也必须显式标注。
+// 服务端追加写 + 加密哈希 + 独立留痕。服务端形态见 decision-log-server.mjs（SHA-256，
+// #2037）；页面上也必须显式标注原型/服务端两种存储形态。
 // ============================================================================
 export const GENESIS_HASH = 'GENESIS';
 /**
@@ -29,8 +30,12 @@ export function chainHash(payload, prevHash) {
     }
     return h.toString(16).padStart(8, '0');
 }
-/** 参与哈希的字段序列化——**不含** actual/lesson，因为它们允许 T+2 回填。 */
-function payloadOf(e) {
+/**
+ * 参与哈希的字段序列化——**不含** actual/lesson，因为它们允许 T+2 回填。
+ * 服务端 SHA-256 链（#2037，decision-log-server.mjs）与本模块的 FNV 原型链共用这一份
+ * 字段序列化：同一份 payload、只有哈希函数不同，前后端链口径才不会各算各的。
+ */
+export function payloadOf(e) {
     return [
         e.seq,
         e.at,
@@ -111,8 +116,12 @@ export function appendEntry(log, draft, idSeed) {
 export function backfillActual(entry, actual, lesson) {
     return { ...entry, actual, lesson: lesson ?? entry.lesson };
 }
-/** 校验链完整性：逐条重算哈希并比对前后链接。 */
-export function verifyChain(log) {
+/**
+ * 校验链完整性：逐条重算哈希并比对前后链接。
+ * hashFn 缺省用本模块的 FNV 原型哈希；服务端传入 decision-log-server.mjs 的
+ * SHA-256 实现——校验逻辑（序号连续性/前后链接/内容重算）前后端只有一份。
+ */
+export function verifyChain(log, hashFn = chainHash) {
     let expectedPrev = GENESIS_HASH;
     for (let i = 0; i < log.length; i += 1) {
         const e = log[i];
@@ -122,7 +131,7 @@ export function verifyChain(log) {
         if (e.prevHash !== expectedPrev) {
             return { intact: false, brokenAtSeq: e.seq, reason: '前链哈希不匹配——中间有条目被删除或重排' };
         }
-        const recomputed = chainHash(payloadOf(e), e.prevHash);
+        const recomputed = hashFn(payloadOf(e), e.prevHash);
         if (recomputed !== e.hash) {
             return { intact: false, brokenAtSeq: e.seq, reason: '内容哈希不匹配——本条参与哈希的字段被改过' };
         }

@@ -88,3 +88,30 @@ export function regionGridOperator(region) {
 export function gridBaselineRegion(grid) {
   return GRID_BASELINE_REGION[grid] ?? null
 }
+
+// —— 地区 → IANA 时区 权威表（Issue #2495：remote 适配器时区硬编码治理） ——
+// 中国法定时间统一北京时间（UTC+8），电力交易/结算口径全程取北京时间；大陆各省
+// （含新疆、西藏）均映射 Asia/Shanghai——新疆 IANA 另有 Asia/Urumqi（UTC+6），但交易
+// 口径用北京时间，不采用。港澳台映射各自 IANA（均 UTC+8，行为与北京时间一致）。
+// 与 Python 侧 integrations/agent-backend/src/services/ml_prediction/adapters/region_timezone.py
+// 手动同步（仓库无 mjs→py 生成器）——改动须两端同步。
+export const REGION_TIMEZONE = {
+  beijing: 'Asia/Shanghai', tianjin: 'Asia/Shanghai', hebei: 'Asia/Shanghai',
+  shanxi: 'Asia/Shanghai', 'inner-mongolia': 'Asia/Shanghai', liaoning: 'Asia/Shanghai',
+  jilin: 'Asia/Shanghai', heilongjiang: 'Asia/Shanghai', shanghai: 'Asia/Shanghai',
+  jiangsu: 'Asia/Shanghai', zhejiang: 'Asia/Shanghai', anhui: 'Asia/Shanghai',
+  fujian: 'Asia/Shanghai', jiangxi: 'Asia/Shanghai', shandong: 'Asia/Shanghai',
+  henan: 'Asia/Shanghai', hubei: 'Asia/Shanghai', hunan: 'Asia/Shanghai',
+  guangdong: 'Asia/Shanghai', guangxi: 'Asia/Shanghai', hainan: 'Asia/Shanghai',
+  chongqing: 'Asia/Shanghai', sichuan: 'Asia/Shanghai', guizhou: 'Asia/Shanghai',
+  yunnan: 'Asia/Shanghai', tibet: 'Asia/Shanghai', shaanxi: 'Asia/Shanghai',
+  gansu: 'Asia/Shanghai', qinghai: 'Asia/Shanghai', ningxia: 'Asia/Shanghai',
+  xinjiang: 'Asia/Shanghai',
+  'hong-kong': 'Asia/Hong_Kong', macau: 'Asia/Macau', taiwan: 'Asia/Taipei'
+}
+
+// 取地区 IANA 时区名；未登记/空 → 回退 Asia/Shanghai（中国法定 UTC+8，不默认任何非东八区）。
+export function regionTimezone(region) {
+  if (typeof region !== 'string' || !region) return 'Asia/Shanghai'
+  return REGION_TIMEZONE[region] || 'Asia/Shanghai'
+}

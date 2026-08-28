@@ -838,7 +838,7 @@ const SOURCE_DECLARATIONS = {
     targets: [
       privatePgTarget({
         resourceKind: 'node_price',
-        factTable: 'dljy_private.fact_node_price',
+        factTable: 'dljy_private.fact_cgn_node_price',
         datasetRefs: listGridDatasetCodes('csg', 'node_price'),
         checkpointKeyShape: '<market>:<interval>',
         requiredFields: ['node_name', 'time_point', 'price'],
@@ -846,7 +846,7 @@ const SOURCE_DECLARATIONS = {
       }),
       privatePgTarget({
         resourceKind: 'plant_node_price',
-        factTable: 'dljy_private.fact_plant_node_price',
+        factTable: 'dljy_private.fact_cgn_plant_node_price',
         // 层 1 只登记上游 catalog 实际暴露的 38 个数据集；场站映射价需要 plant:node-price:read，
         // 当前密钥无此 scope（实测该端点 403），故上游 catalog 不返回它、层 1 也不登记。
         datasetRefs: null,

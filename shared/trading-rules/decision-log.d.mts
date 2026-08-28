@@ -41,6 +41,11 @@ export declare const GENESIS_HASH = "GENESIS";
  * 不具备抗碰撞性，不能作为对抗蓄意篡改的证据。生产须换服务端 SHA-256。
  */
 export declare function chainHash(payload: string, prevHash: string): string;
+/**
+ * 参与哈希的字段序列化——不含 actual/lesson（允许 T+2 回填）。
+ * 服务端 SHA-256 链（decision-log-server.mjs）与 FNV 原型链共用这一份序列化。
+ */
+export declare function payloadOf(e: DecisionLogEntry): string;
 export type ValidationIssue = {
     field: string;
     message: string;
@@ -64,8 +69,11 @@ export type ChainVerdict = {
     brokenAtSeq: number | null;
     reason: string | null;
 };
-/** 校验链完整性：逐条重算哈希并比对前后链接。 */
-export declare function verifyChain(log: DecisionLogEntry[]): ChainVerdict;
+/**
+ * 校验链完整性：逐条重算哈希并比对前后链接。
+ * hashFn 缺省用 FNV 原型哈希；服务端传 decision-log-server.mjs 的 SHA-256 实现。
+ */
+export declare function verifyChain(log: DecisionLogEntry[], hashFn?: (payload: string, prevHash: string) => string): ChainVerdict;
 /**
  * 更正：不修改原条目，追加一条指向它的更正记录。
  * 这样"错过什么、什么时候发现、改成什么"三件事都留在链上。
