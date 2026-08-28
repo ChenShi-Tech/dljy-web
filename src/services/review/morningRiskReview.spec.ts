@@ -74,6 +74,16 @@ describe('riskReviewReminder（回顾提醒判定）', () => {
     expect(r2.hasNearMiss).toBe(true) // 标注仍在（呈现在事件表），只是不催办
   })
 
+  it('near_miss 已评估但处置为空 → 处置缺失提醒（已评估≠已闭环，不再静默跳过）', () => {
+    const r = riskReviewReminder([ev({ id: '1', nearMiss: true, effective: false, disposal: null })])
+    expect(r.notes).toHaveLength(1)
+    expect(r.notes[0]).toContain('未填处置')
+    // 未评估的 near_miss 只出专属提醒，不叠加处置缺失（同一事件不催两次）
+    const r2 = riskReviewReminder([ev({ id: '2', nearMiss: true, effective: null, disposal: null })])
+    expect(r2.notes).toHaveLength(1)
+    expect(r2.notes[0]).toContain('侥幸逃过')
+  })
+
   it('常规事件：未填处置 / 处置已填有效性未回查 → 分别提醒；全闭环 → 零提醒', () => {
     const r = riskReviewReminder([
       ev({ id: '1', disposal: null }),

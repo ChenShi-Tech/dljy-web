@@ -108,6 +108,15 @@ export function aggregateDeviation(days: readonly PeriodReviewDay[]): DeviationA
   }
 }
 
+/** date（YYYY-MM-DD）→ 次日；形态不符返回 null（调用方按断链处理）。 */
+function nextDayOf(date: string): string | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date)
+  if (!m) return null
+  const d = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])))
+  d.setUTCDate(d.getUTCDate() + 1)
+  return d.toISOString().slice(0, 10)
+}
+
 /** 阈值预警占位（#2042 范围只做标记；触发全量归 M3/#2047）：连续 |偏差率| 超标天数。 */
 export function consecutiveDeviationBreach(
   rows: readonly DailyAggRow[],
@@ -116,12 +125,17 @@ export function consecutiveDeviationBreach(
   let best: { streak: number; from: string; to: string } | null = null
   let run: DailyAggRow[] = []
   for (const r of rows) {
-    if (r.deviationPct !== null && Math.abs(r.deviationPct) > thresholdPct) {
-      run.push(r)
-      if (!best || run.length > best.streak) best = { streak: run.length, from: run[0].date, to: r.date }
-    } else {
+    if (r.deviationPct === null || Math.abs(r.deviationPct) <= thresholdPct) {
       run = []
+      continue
     }
+    // 缺数日被调用方剔除时数组天然跳日（aggregateDeviation 只收 ok 日）——
+    // 「连续」必须校验日期相邻，否则缺数日被隐含当超标日计入，虚报连续天数
+    //（违背「缺数日不计入且如实列名」口径；与 riskReview 价差 streak 的缺数断链对齐）。
+    const prev = run[run.length - 1]
+    if (prev && nextDayOf(prev.date) !== r.date) run = []
+    run.push(r)
+    if (!best || run.length > best.streak) best = { streak: run.length, from: run[0].date, to: r.date }
   }
   return best && best.streak >= 2 ? best : null
 }

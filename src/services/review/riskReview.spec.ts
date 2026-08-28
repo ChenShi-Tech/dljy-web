@@ -27,10 +27,10 @@ describe('thresholdFindings（阈值触发 · 负例红线）', () => {
 
   it('偏差率连续超标 → red 触发；价差连续为负 ≥N 日 → yellow 触发', () => {
     const out = thresholdFindings({
-      aggRows: [row('d1', 0.06), row('d2', 0.07), row('d3', 0.08)],
+      aggRows: [row('2026-08-24', 0.06), row('2026-08-25', 0.07), row('2026-08-26', 0.08)], // 真实日历日（连续按相邻日判定）
       dailySpreadPnl: [
-        { date: 'd1', pnlYuan: -100 }, { date: 'd2', pnlYuan: -50 },
-        { date: 'd3', pnlYuan: -80 }, { date: 'd4', pnlYuan: 10 }
+        { date: '2026-08-24', pnlYuan: -100 }, { date: '2026-08-25', pnlYuan: -50 },
+        { date: '2026-08-26', pnlYuan: -80 }, { date: '2026-08-27', pnlYuan: 10 }
       ],
       winRate: 0.6
     })
