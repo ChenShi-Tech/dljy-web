@@ -21,10 +21,13 @@
  *   synthetic    合成降级 / 演示生成（回放未命中 synth、纯 Mock 序列）
  *   empty        诚实空态（演示开通地区如四川缺真实采集、严格地区不回退，返回空 points）
  *   user_saved   用户保存的分析产物（Phase 6 可写产物层；与回放数据区分，非决策级）
+ *   provisional  暂定口径（主仓申报契约 v6 / #2556：中长期持仓分解基线 + 储能净放电叠加，
+ *                来源真实但未经结算验证——比 captured 弱、比 illustrative 强，非决策级）
  */
 export type DataSourceBasis =
   | 'real'
   | 'captured'
+  | 'provisional'
   | 'illustrative'
   | 'synthetic'
   | 'empty'

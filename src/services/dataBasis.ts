@@ -18,6 +18,7 @@ export type { DataBasis }
 export const DATA_BASIS_LABEL: Record<DataBasis, string> = {
   real: '实时真实数据',
   captured: '真实采集回放',
+  provisional: '暂定口径（持仓分解基线，未经结算验证）',
   illustrative: '特征示意（非实时）',
   synthetic: '合成演示数据',
   empty: '暂无数据'
@@ -29,7 +30,7 @@ export function isDecisionGrade(basis: DataBasis): boolean {
 }
 
 // worstBasis 排序：empty 最弱（完全无数据，弱于 synthetic 合成降级）。
-const ORDER: DataBasis[] = ['real', 'captured', 'illustrative', 'synthetic', 'empty']
+const ORDER: DataBasis[] = ['real', 'captured', 'provisional', 'illustrative', 'synthetic', 'empty']
 
 /** 多个输入混合时取最弱口径（结果可信度由最不可信的输入决定）。 */
 export function worstBasis(...bases: DataBasis[]): DataBasis {
