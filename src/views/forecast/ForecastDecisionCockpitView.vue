@@ -262,8 +262,8 @@ async function loadCockpit() {
   if (!isSupportedRegion.value) return
   // catalog 已加载但选中模型不可选（不可用/非 /predict/被移除）→ 不发注定失败的请求（#570）。
   // 两腿分别校验：价格腿只看 price 声明，负荷腿只看 load 声明。
-  const priceOk = catalogModels.value.filter((m) => modelSelectableFor(m, 'price'))
-  const loadOk = catalogModels.value.filter((m) => modelSelectableFor(m, 'load'))
+  const priceOk = priceCatalogModels.value.filter((m) => modelSelectableFor(m, 'price'))
+  const loadOk = loadCatalogModels.value.filter((m) => modelSelectableFor(m, 'load'))
   if (!priceOk.length && !loadOk.length) {
     errorMsg.value = '当前地区没有可消费的模型目录产物'
     return
@@ -654,12 +654,16 @@ watch([targetDate, priceModelType, loadModelType], () => {
 })
 
 onRegionChange(() => {
-  void loadCockpit()
+  void ensureForecastCatalog(['price', 'load'], true).finally(() => { void loadCockpit() })
 })
 
 // #762：模型下拉从后端 /forecast/models catalog 动态渲染，available:false 禁用+reason；
 // 失败诚实降级（列表空+提示，不回退假列表），默认 xgboost 仍可发请求（后端 core 模型稳定）。
-const { models: catalogModels, error: catalogError } = forecastCatalogState()
+const priceCatalog = forecastCatalogState('price')
+const loadCatalog = forecastCatalogState('load')
+const priceCatalogModels = computed(() => priceCatalog.models.value)
+const loadCatalogModels = computed(() => loadCatalog.models.value)
+const catalogError = computed(() => [priceCatalog.error.value, loadCatalog.error.value].filter(Boolean).join('；'))
 // 驾驶舱模型下拉可选性：available（后端能力位）且 /predict 直算支持（排除 naive/fm 等选中必失败项）。
 // **按腿判 supportedTargets**（#2324）：价格腿只要求声明 price、负荷腿只要求声明 load。
 // 旧版要求同一模型两腿全覆盖，把 remote:*/store: 这类单 target 上架的真实模型整体挡在外面
@@ -745,11 +749,11 @@ onActivated(() => {
 watch(latestBenchContext, () => { applyBenchContext() })
 
 onMounted(async () => {
-  await ensureForecastCatalog()
+  await ensureForecastCatalog(['price', 'load'])
   // 归一默认模型：若默认 xgboost 不在 catalog 或该腿不可选，切到该腿第一个可选项
   // （防首屏发失败请求）。两腿分别归一，改动任一腿都会触发 watch → loadCockpit。
-  const priceOk = catalogModels.value.filter((m) => modelSelectableFor(m, 'price'))
-  const loadOk = catalogModels.value.filter((m) => modelSelectableFor(m, 'load'))
+  const priceOk = priceCatalogModels.value.filter((m) => modelSelectableFor(m, 'price'))
+  const loadOk = loadCatalogModels.value.filter((m) => modelSelectableFor(m, 'load'))
   let normalized = false
   if (priceOk.length && !priceOk.some((m) => m.modelId === priceModelType.value)) {
     priceModelType.value = priceOk[0].modelId
@@ -800,7 +804,7 @@ onMounted(async () => {
                新模型上线自动出现，available:false 禁用+reason；不再硬编码防漂移。
                两腿各一个下拉（#2324）：单 target 上架的 remote:* 真实模型只会在它声明的那条腿里可选。 -->
           <select v-model="priceModelType" @change="markControlsDirty">
-            <option v-for="m in catalogModels" :key="m.modelId" :value="m.modelId"
+            <option v-for="m in priceCatalogModels" :key="m.modelId" :value="m.modelId"
               :disabled="!modelSelectableFor(m, 'price')"
               :title="modelOptionTitle(m, 'price')">
               {{ modelOptionLabel(m) }}
@@ -811,7 +815,7 @@ onMounted(async () => {
         <label class="field">
           <span>负荷模型</span>
           <select v-model="loadModelType" @change="markControlsDirty">
-            <option v-for="m in catalogModels" :key="m.modelId" :value="m.modelId"
+            <option v-for="m in loadCatalogModels" :key="m.modelId" :value="m.modelId"
               :disabled="!modelSelectableFor(m, 'load')"
               :title="modelOptionTitle(m, 'load')">
               {{ modelOptionLabel(m) }}

@@ -12,7 +12,7 @@ import ForecastExtraPanel from '../../components/forecast/ForecastExtraPanel.vue
 import { selectedRegionId, setCurrentRegionId } from '@/services/region/regionContext'
 import { getRegionById } from '../../data/regions'
 import {
-  providersForTarget, platformTargetsForRegion, getProvider, defaultParams, PROVIDERS,
+  providersForTarget, platformTargetsForRegion, getProvider, defaultParams,
   FORECAST_TARGET_OPTIONS, nativeSlotsForTarget, granularityForTarget,
   ensureForecastCatalog, forecastCatalogState,
   type UnifiedForecastResult, type ProviderKind, type ForecastProvider,
@@ -40,7 +40,7 @@ const activeTab = ref('single')
 const error = ref('')
 
 const targetProviders = computed(() => providersForTarget(target.value, regionId.value))
-const { error: catalogError } = forecastCatalogState()
+const { error: catalogError } = forecastCatalogState(computed(() => target.value), computed(() => regionId.value))
 
 // 算法选项标签：附占位/不可用+原因（#762 available:false 禁用，原因随 label 与 title 可见）。
 function providerOptionLabel(p: ForecastProvider): string {
@@ -98,6 +98,7 @@ function resetParams() {
 let contextGeneration = 0
 watch([target, regionId], () => {
   contextGeneration++
+  void ensureForecastCatalog(target.value, false, regionId.value)
   if (!targetProviders.value.find((p) => p.id === algoId.value)) {
     algoId.value = targetProviders.value[0]?.id ?? ''
   }
@@ -289,7 +290,7 @@ async function loadOverview() {
 
 // 附 tab：模型台账（provider 元信息，available/reason 已由 catalog 注入 provider，#762）
 const kindLabel = (k: ProviderKind) => (k === 'replay' ? '回放真实采集' : '后端实时计算')
-const ledger = computed(() => PROVIDERS.value.map((p) => ({
+const ledger = computed(() => targetProviders.value.map((p) => ({
   id: p.id, name: p.name, kind: p.kind, tier: p.tier, targets: p.supportedTargets.length,
   mock: !!p.mock,
   available: p.kind === 'replay' ? true : (p.available ?? null),
@@ -303,7 +304,7 @@ const ledger = computed(() => PROVIDERS.value.map((p) => ({
 // 扩展预测子面板（迁自原 ML 实验室「扩展预测」tab）：tab 切回时需 resize 其内部 echarts。
 const extraPanel = ref<InstanceType<typeof ForecastExtraPanel> | null>(null)
 watch(activeTab, () => nextTick(() => { chartA.value?.resize(); chartB.value?.resize(); extraPanel.value?.resize() }))
-onMounted(() => { ensureForecastCatalog() })
+onMounted(() => { void ensureForecastCatalog(target.value, false, regionId.value) })
 </script>
 
 <template>
