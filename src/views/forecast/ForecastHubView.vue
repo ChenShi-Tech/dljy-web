@@ -61,6 +61,15 @@ function isTabDegraded(tabKey: string): boolean {
   return status === 'degraded' || status === 'not-configured'
 }
 
+function shouldRenderTabBody(tabKey: string): boolean {
+  const tab = tabs.value.find((item) => item.key === tabKey)
+  if (!tab) return false
+  // 云南预测中心部分 tab 仍沿用旧 captured/厂站口径，地区能力必须继续诚实标 degraded；
+  // 但这些页内已经嵌入可独立运行的在线预测面板，不应被整张降级卡完全挡住。
+  // hidden 仍在上游过滤；这里只让 degraded/not-configured 时继续挂载真实 tab 内容。
+  return tab.kind === 'multi' || tab.kind === 'daily'
+}
+
 // 决策口径（trustGate）：本 hub 为预测回放（路由 meta.kind='forecast'），预测值非结算事实，
 // 决策口径恒为 advisory_only，以 illustrative basis 显式标注「仅决策支持·非结算依据」。
 const decisionBasis = computed<DataSourceBasis>(() => (route.meta?.kind === 'forecast' ? 'illustrative' : 'captured'))
@@ -139,12 +148,18 @@ watch([tabs, () => route.query.tab, () => currentRegion.value.id], () => {
               :note="tabCapability(tab.key).note"
               :supports="tabCapability(tab.key).supports"
             />
-            <RenewableABCurve v-else-if="tab.kind === 'renewable-ab'" :source="renewableSource" />
-            <YnDisclosureCurve v-else-if="tab.kind === 'yn-disclosure'" />
-            <ForecastMultiTypeCurve v-else-if="tab.kind === 'multi'" :cfg="tab.cfg" />
-            <ForecastDailyCurve v-else-if="tab.kind === 'daily'" :cfg="tab.cfg" />
-            <RollingPricePredictionView v-else-if="tab.kind === 'rolling'" />
-            <CompanyWeatherPredictionView v-else />
+            <RenewableABCurve v-if="!isTabDegraded(tab.key) && tab.kind === 'renewable-ab'" :source="renewableSource" />
+            <YnDisclosureCurve v-else-if="!isTabDegraded(tab.key) && tab.kind === 'yn-disclosure'" />
+            <ForecastMultiTypeCurve
+              v-else-if="(shouldRenderTabBody(tab.key) || !isTabDegraded(tab.key)) && tab.kind === 'multi'"
+              :cfg="tab.cfg"
+            />
+            <ForecastDailyCurve
+              v-else-if="(shouldRenderTabBody(tab.key) || !isTabDegraded(tab.key)) && tab.kind === 'daily'"
+              :cfg="tab.cfg"
+            />
+            <RollingPricePredictionView v-else-if="!isTabDegraded(tab.key) && tab.kind === 'rolling'" />
+            <CompanyWeatherPredictionView v-else-if="!isTabDegraded(tab.key)" />
           </template>
         </el-tab-pane>
       </el-tabs>
