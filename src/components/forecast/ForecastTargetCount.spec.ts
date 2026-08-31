@@ -32,7 +32,30 @@ describe('ForecastTargetCount', () => {
     expect(wrapper.text()).toContain('不是输入协变量的数量')
   })
 
-  it('旧目录未声明支持目标时，不把兼容全集当作已确认能力', async () => {
+  it('单一已接入目标始终只计 1 个，不把协变量数量混进来', async () => {
+    const wrapper = mount(ForecastTargetCount, {
+      props: {
+        modelName: '单目标模型',
+        targets: ['price'],
+        declared: true,
+      },
+      global: {
+        stubs: {
+          ElButton: { props: ['ariaLabel'], emits: ['click'], template: '<button @click="$emit(\'click\')"><slot/></button>' },
+          ElDialog: slot,
+          ElEmpty: { props: ['description'], template: '<p>{{description}}</p>' },
+        },
+      },
+    })
+
+    expect(wrapper.text()).toContain('1')
+    await wrapper.find('button').trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).toContain('现货出清电价')
+    expect(wrapper.text()).toContain('不是输入协变量的数量')
+  })
+
+  it('旧目录未登记输出目标时，不把兼容全集当作已确认能力', async () => {
     const wrapper = mount(ForecastTargetCount, {
       props: {
         modelName: '旧模型',
@@ -48,9 +71,9 @@ describe('ForecastTargetCount', () => {
       },
     })
 
-    expect(wrapper.text()).toContain('未声明')
+    expect(wrapper.text()).toContain('未登记')
     await wrapper.find('button').trigger('click')
     await flushPromises()
-    expect(wrapper.text()).toContain('旧目录未声明支持目标')
+    expect(wrapper.text()).toContain('未登记输出目标的通用算法不视为已训练模型')
   })
 })

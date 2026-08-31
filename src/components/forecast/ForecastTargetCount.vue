@@ -10,17 +10,17 @@ watch(() => [props.modelName, props.targets, props.declared], () => { opened.val
 </script>
 
 <template>
-  <el-button class="target-count" link type="primary" :aria-label="`查看${modelName}的预测目标声明`" @click="opened = true">{{ declared ? details.length : '未声明' }}</el-button>
-  <el-dialog v-if="opened" v-model="opened" :title="`${modelName} · 支持的预测目标`" width="min(520px, 92vw)" append-to-body>
-    <p class="target-help">以下是这个算法可以预测的输出变量，不代表同时输出，也不是输入协变量的数量。具体日期是否可运行，还取决于该地区的数据和模型输入要求。</p>
+  <el-button class="target-count" link type="primary" :aria-label="`查看${modelName}的已接入输出目标`" @click="opened = true">{{ declared ? details.length : '未登记' }}</el-button>
+  <el-dialog v-if="opened" v-model="opened" :title="`${modelName} · 已接入的预测输出目标`" width="min(520px, 92vw)" append-to-body>
+    <p class="target-help">这里只列这个算法明确接入的预测输出，不代表同时输出，也不是输入协变量的数量。具体日期是否可运行，还取决于该地区的数据和模型输入要求。</p>
     <ul v-if="declared && details.length" class="target-details">
       <li v-for="item in details" :key="item.id">
         <span>{{ item.name }}</span>
         <small>{{ item.id }} · {{ item.unit }} · {{ item.interval }}</small>
       </li>
     </ul>
-    <el-empty v-else :description="declared ? '该算法声明的支持目标为空' : '旧目录未声明支持目标，不能把兼容选项当作已确认能力'" />
-    <p class="target-help">协变量是帮助预测的输入，例如温度、历史负荷、风速；支持目标数不能用来判断模型使用了多少协变量。</p>
+    <el-empty v-else :description="declared ? '该算法当前没有已接入输出目标' : '未登记输出目标的通用算法不视为已训练模型'" />
+    <p class="target-help">协变量是帮助预测的输入，例如温度、历史负荷、风速；已接入输出目标数不能用来判断模型使用了多少协变量。</p>
   </el-dialog>
 </template>
 

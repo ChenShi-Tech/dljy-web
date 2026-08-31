@@ -115,7 +115,7 @@ export interface ModelRegistryEntry {
   capabilities?: ModelCapabilities
   quality?: ModelQuality
   version?: ModelVersionInfo
-  /** 该模型实际支持的预测目标清单（#1461）。缺省=支持全部目标（向后兼容）。 */
+  /** 该模型实际支持的预测目标清单（#1461）。缺省/空 = 后端未登记真实输出绑定，前端不得补成全目标。 */
   supportedTargets?: string[]
   // ── dljy-contracts 2.1.0（dljy#2461）：模型 I/O × 平台供给、参数面、血统、单位、来源、架构 ──
   /** 标的单位（平台标的注册表 quantity 派生） */

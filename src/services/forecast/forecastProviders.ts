@@ -111,7 +111,7 @@ export interface ForecastProvider {
   quality?: ModelQuality
   basisVersion?: string
   supportedTargets: string[]
-  /** false=旧目录未声明，supportedTargets仅供兼容过滤，台账不能据此宣称全支持。 */
+  /** false=后端未登记输出目标；前端不得把它当成已训练模型的真实支持范围。 */
   supportedTargetsDeclared?: boolean
   paramsSchema: ParamField[]
   // dljy#2464：模型自述（远端模型有）——输入门槛（协变量 × 平台供给）、血统、来源、架构、单位
@@ -413,6 +413,20 @@ function readCatalogModels(regionId: string, target: string): ForecastModel[] {
   return catalogModelsByKey.value[catalogKey(regionId, target)] ?? []
 }
 
+export function catalogModelsForTarget(target: string, regionId?: string): ForecastModel[] {
+  return readCatalogModels(regionId ?? currentRegion.value.id, target)
+}
+
+export function isCatalogModelUsableForTarget(
+  model: Pick<ForecastModel, 'modelId' | 'namespace' | 'available' | 'supportedTargets'>,
+  target: string,
+): boolean {
+  return !!model.available
+    && isPredictSupported(model)
+    && Array.isArray(model.supportedTargets)
+    && model.supportedTargets.includes(target)
+}
+
 function loadedTargetsForRegion(regionId: string): string[] {
   const prefix = `${regionId}::`
   return Object.keys(catalogLoadedByKey)
@@ -547,9 +561,6 @@ function normalizeTier(tier: unknown): ForecastProvider['tier'] {
   return (t === 'official' || t === 'baseline' || t === 'core' || t === 'neural' || t === 'deep') ? t : 'core'
 }
 
-// 由注册表派生（顺序 = ForecastTarget 枚举顺序）；后端目录缺省 supportedTargets 时回退全集
-const ML_TARGETS = FORECAST_TARGET_OPTIONS.map((t) => t.id)
-
 export function adaptMlResult(r: ForecastResult, modelId: string, granularity: 24 | 96, nativeSlots = 96): UnifiedForecastResult {
   // 区间带按本标的原生点数判齐全（此前写死 96：60 分钟标的的 24 点区间会被当成「没有区间」）
   const hasBand = r.lower?.length === nativeSlots && r.upper?.length === nativeSlots
@@ -609,16 +620,13 @@ export function isPredictSupported(model: Pick<ForecastModel, 'modelId' | 'names
  * 第三道按腿判而不是要求一个模型两腿全覆盖——后者会把 remote: 与 store: 这类
  * 单 target 上架的真实模型整体挡在选择之外（#1461/#1898 的原限制），而那条限制的
  * 真实来源只是 /cockpit 聚合端点只收一个 model_type，不该扩散到四个带显式 target
- * 的调用点上。未声明 supportedTargets 的（core 模型）视为两腿都支持。
+ * 的调用点上。缺省/空 supportedTargets 都表示「没有登记这条腿的真实绑定」，不得放行。
  */
 export function isModelSelectableForTarget(
   model: Pick<ForecastModel, 'modelId' | 'namespace' | 'available' | 'supportedTargets'>,
   target: 'price' | 'load'
 ): boolean {
-  if (!model.available || !isPredictSupported(model)) return false
-  const declared = model.supportedTargets
-  if (declared && !declared.includes(target)) return false
-  return true
+  return isCatalogModelUsableForTarget(model, target)
 }
 
 /**
@@ -655,9 +663,9 @@ function makeMlProvider(model: ForecastModel): ForecastProvider {
     shadowGate: model.shadowGate,
     quality: model.quality,
     basisVersion: model.basisVersion,
-    // #1461：逐模型支持的目标清单以后端目录为准（physics_hybrid 仅 renewable 等）；
-    // 后端缺省该字段时回退 ML_TARGETS（全集），保旧目录兼容。
-    supportedTargets: model.supportedTargets ?? ML_TARGETS,
+    // #1461：逐模型支持的目标清单以后端目录为准（physics_hybrid 仅 renewable 等）。
+    // 缺省/空都视为「未登记真实输出绑定」，可以留在原始目录证据里，但不能进预测入口/台账计数。
+    supportedTargets: [...new Set(model.supportedTargets ?? [])],
     supportedTargetsDeclared: model.supportedTargets !== undefined,
     // 平台参数（训练回看/概率/共形）+ 模型自己声明的可调参数（dljy#2464：按 paramsSchema 渲染，不再一套配所有）
     paramsSchema: [...ML_PARAMS, ...modelParamFields(model.paramsSchema, ML_PARAM_KEYS)],

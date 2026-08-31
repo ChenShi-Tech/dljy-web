@@ -15,7 +15,7 @@ import DailyDisclosureOverview from '../../components/forecast/DailyDisclosureOv
 import { selectedRegionId, setCurrentRegionId } from '@/services/region/regionContext'
 import { getRegionById } from '../../data/regions'
 import {
-  providersForTarget, platformTargetsForRegion, getProvider, defaultParams,
+  providersForTarget, platformTargetsForRegion, getProvider, defaultParams, catalogModelsForTarget, isCatalogModelUsableForTarget,
   FORECAST_TARGET_OPTIONS, nativeSlotsForTarget, granularityForTarget,
   ensureForecastCatalog, forecastCatalogState,
   type UnifiedForecastResult, type ProviderKind, type ForecastProvider,
@@ -30,11 +30,11 @@ import { predictionModelExclusionReason } from '@/services/forecast/predictionMo
 
 const REGION_IDS = ['shanxi', 'shandong', 'gansu', 'guangdong', 'sichuan', 'yunnan']
 const regionOptions = REGION_IDS.map((id) => ({ id, name: getRegionById(id).name }))
-// 标的清单由注册表派生（dljy#2463）：中文名、原生粒度同源，不再各写一份
-const TARGETS = FORECAST_TARGET_OPTIONS
+// 标的发现仍从注册表全集出发，但工作台下拉只显示「当前地区有可见已接入模型」的目标。
+const DISCOVERABLE_TARGETS = FORECAST_TARGET_OPTIONS.map((item) => item.id)
 const route = useRoute()
 function targetFromQuery(value: unknown): string {
-  return typeof value === 'string' && TARGETS.some((item) => item.id === value) ? value : 'price'
+  return typeof value === 'string' && DISCOVERABLE_TARGETS.includes(value) ? value : ''
 }
 
 // 共享任务栏
@@ -47,16 +47,52 @@ const nativeSlots = computed(() => nativeSlotsForTarget(target.value))
 const historyDays = ref(180)
 const activeTab = ref('single')
 const error = ref('')
+const targetDiscoveryRequested = ref(false)
+const targetDiscoverySettled = ref(false)
+let targetDiscoveryGeneration = 0
 
-const targetProviders = computed(() => providersForTarget(target.value, regionId.value))
+function discoverTargetOptions(force: boolean, nextRegionId = regionId.value) {
+  const generation = ++targetDiscoveryGeneration
+  targetDiscoveryRequested.value = true
+  targetDiscoverySettled.value = false
+  void ensureForecastCatalog(DISCOVERABLE_TARGETS, force, nextRegionId).finally(() => {
+    if (generation !== targetDiscoveryGeneration) return
+    targetDiscoverySettled.value = true
+  })
+}
+
+const targetCatalog = forecastCatalogState(computed(() => DISCOVERABLE_TARGETS), computed(() => regionId.value))
+const currentTargetCatalog = forecastCatalogState(computed(() => target.value || 'price'), computed(() => regionId.value))
+const targetCatalogError = computed(() => targetCatalog.error.value)
+const targetOptionsLoading = computed(() => targetCatalog.loading.value)
+const targetOptions = computed(() => FORECAST_TARGET_OPTIONS.filter((item) =>
+  catalogModelsForTarget(item.id, regionId.value).some((model) =>
+    isCatalogModelUsableForTarget(model, item.id) && predictionModelExclusionReason(model) === null)))
+const targetProviders = computed(() => target.value ? providersForTarget(target.value, regionId.value) : [])
 const visibleTargetProviders = computed(() => targetProviders.value.filter((provider) =>
   predictionModelExclusionReason(provider) === null))
 const hasVisibleTargetProviders = computed(() => visibleTargetProviders.value.length > 0)
-const { error: catalogError } = forecastCatalogState(computed(() => target.value), computed(() => regionId.value))
-const singleModelEmptyText = computed(() => catalogError.value
+const catalogError = computed(() => target.value ? currentTargetCatalog.error.value : '')
+const targetCatalogNotice = computed(() => {
+  if (!targetDiscoveryRequested.value) return ''
+  if (targetOptionsLoading.value) return '预测目标目录加载中，请稍候…'
+  if (targetCatalogError.value && !targetOptions.value.length) return `预测目标目录加载失败：${targetCatalogError.value}`
+  if (targetCatalogError.value) return `部分预测目标目录加载失败：${targetCatalogError.value}`
+  if (!targetOptions.value.length) return '当前地区暂无已接入预测目标'
+  return ''
+})
+const singleModelEmptyText = computed(() => !targetDiscoveryRequested.value || !targetDiscoverySettled.value || targetOptionsLoading.value
+  ? '预测目标目录加载中，请稍候'
+  : !targetOptions.value.length
+    ? (targetCatalogError.value ? '预测目标目录加载失败，请先处理目录错误' : '当前地区暂无已接入预测目标')
+    : catalogError.value
   ? '模型目录加载失败，请先处理目录错误'
   : '当前预测中心没有可展示的模型（占位、未部署、原始零样本权重已隐藏）')
-const compareModelEmptyText = computed(() => catalogError.value
+const compareModelEmptyText = computed(() => !targetDiscoveryRequested.value || !targetDiscoverySettled.value || targetOptionsLoading.value
+  ? '预测目标目录加载中，请稍候'
+  : !targetOptions.value.length
+    ? (targetCatalogError.value ? '预测目标目录加载失败，请先处理目录错误' : '当前地区暂无已接入预测目标')
+    : catalogError.value
   ? '模型目录加载失败，请先处理目录错误'
   : '当前预测中心没有可用于对比的模型（占位、未部署、原始零样本权重已隐藏）')
 
@@ -114,9 +150,9 @@ function resetParams() {
 // runCompare/决策动作/loadOverview 等在写入结果前校验，防旧上下文慢响应写回当前页面。
 // 上下文切换会作废请求代次；每次finally只负责自己的加载状态。
 let contextGeneration = 0
-watch([target, regionId], () => {
+watch(target, () => {
   contextGeneration++
-  void ensureForecastCatalog(target.value, false, regionId.value)
+  if (target.value) void ensureForecastCatalog(target.value, false, regionId.value)
   if (!visibleTargetProviders.value.find((p) => p.id === algoId.value)) {
     algoId.value = visibleTargetProviders.value[0]?.id ?? ''
   }
@@ -124,6 +160,21 @@ watch([target, regionId], () => {
   clearForecastState()
   resetParams()
 })
+watch(regionId, (id) => {
+  contextGeneration++
+  discoverTargetOptions(true, id)
+  if (!visibleTargetProviders.value.find((p) => p.id === algoId.value)) {
+    algoId.value = visibleTargetProviders.value[0]?.id ?? ''
+  }
+  compareIds.value = compareIds.value.filter((id) => visibleTargetProviders.value.find((p) => p.id === id))
+  clearForecastState()
+  resetParams()
+})
+watch([targetOptions, targetOptionsLoading, targetDiscoverySettled, target], ([options, loading, settled]) => {
+  if (!targetDiscoveryRequested.value || !settled || loading) return
+  if (options.some((item) => item.id === target.value)) return
+  target.value = options[0]?.id ?? ''
+}, { immediate: true })
 let providerWatchReady = false
 // 目录异步返回后再选首个可用模型；不把上一个目标的选择留在新目录中。
 watch(visibleTargetProviders, (providers) => {
@@ -291,7 +342,7 @@ async function runCompare() {
 
 // 模式 D：多目标总览（平台官方回放）
 const overviewTargets = computed(() => platformTargetsForRegion(regionId.value).map((id) => ({
-  id, name: TARGETS.find((item) => item.id === id)?.name ?? id,
+  id, name: FORECAST_TARGET_OPTIONS.find((item) => item.id === id)?.name ?? id,
 })))
 const overviewResults = ref<{ id: string; name: string; result: UnifiedForecastResult }[]>([])
 const overviewLoading = ref(false)
@@ -332,7 +383,7 @@ async function loadOverview() {
 // 附 tab：模型台账（provider 元信息，available/reason 已由 catalog 注入 provider，#762）
 const kindLabel = (k: ProviderKind) => (k === 'replay' ? '回放真实采集' : '后端实时计算')
 // 台账也是业务界面：与选择器保持同一准入范围，清理明细仅留在独立审计报告。
-const ledger = computed(() => visibleTargetProviders.value.map((p) => ({
+const ledger = computed(() => visibleTargetProviders.value.filter((p) => p.id !== 'platform').map((p) => ({
   id: p.id, name: p.name, kind: p.kind, tier: p.tier, supportedTargets: [...new Set(p.supportedTargets)],
   supportedTargetsDeclared: p.supportedTargetsDeclared !== false,
   mock: !!p.mock,
@@ -366,7 +417,7 @@ watch(selectedRegionId, (id) => { if (id) regionId.value = id })
 watch(() => route.query.target, (value) => { target.value = targetFromQuery(value) })
 watch(() => route.query.date, (value) => { targetDate.value = typeof value === 'string' ? value : '' })
 onBeforeUnmount(invalidateRequests)
-onMounted(() => { void ensureForecastCatalog(target.value, false, regionId.value) })
+onMounted(() => { discoverTargetOptions(false, regionId.value) })
 </script>
 
 <template>
@@ -375,7 +426,7 @@ onMounted(() => { void ensureForecastCatalog(target.value, false, regionId.value
       <template #header>
         <div class="hdr">
           <span class="title">ML 预测工作台</span>
-          <span class="sub">选目标 → 选算法 → 配参数 → 统一结果 · 平台官方/KNN/ML 多模型同台：单算法(含回测)/对比/扩展预测/总览/台账</span>
+          <span class="sub">选目标 → 选算法 → 配参数 → 统一结果 · 已接入模型与官方对照：单算法(含回测)/对比/扩展预测/总览/台账</span>
           <DataBasisBadge v-if="result && activeTab === 'single'" :basis="result.basis" prefix="数据口径" />
         </div>
       </template>
@@ -387,8 +438,8 @@ onMounted(() => { void ensureForecastCatalog(target.value, false, regionId.value
           <el-option v-for="r in regionOptions" :key="r.id" :label="r.name" :value="r.id" />
         </el-select>
         <span v-if="!disclosureMode" class="lbl">预测目标</span>
-        <el-select v-if="!disclosureMode" v-model="target" style="width: 150px">
-          <el-option v-for="t in TARGETS" :key="t.id" :label="t.name" :value="t.id" />
+        <el-select v-if="!disclosureMode" v-model="target" style="width: 150px" :disabled="targetOptionsLoading || !targetOptions.length">
+          <el-option v-for="t in targetOptions" :key="t.id" :label="t.name" :value="t.id" />
         </el-select>
         <span class="lbl">{{ disclosureMode ? '披露记录日期' : '预测日期' }}</span>
         <el-date-picker v-model="targetDate" type="date" value-format="YYYY-MM-DD" size="small" style="width: 150px" />
@@ -404,6 +455,8 @@ onMounted(() => { void ensureForecastCatalog(target.value, false, regionId.value
         </template>
       </div>
 
+      <el-alert v-if="targetCatalogNotice" :title="targetCatalogNotice"
+        :type="targetCatalogError ? 'warning' : 'info'" :closable="false" show-icon style="margin: 8px 0" />
       <el-alert v-if="error" :title="error" type="error" :closable="false" show-icon style="margin: 8px 0" />
 
       <el-tabs v-model="activeTab" class="tabs">
@@ -579,7 +632,7 @@ onMounted(() => { void ensureForecastCatalog(target.value, false, regionId.value
 
         <!-- 附 tab：模型台账 -->
         <el-tab-pane label="模型台账" name="ledger">
-          <p class="hint">当前目标下的可用算法。点击支持目标数查看该算法声明的预测输出；这个数量不是输入协变量数量，也不保证每个目标日都有完整数据。</p>
+          <p class="hint">当前目标下的可用算法。点击已接入输出目标数查看该算法明确绑定的预测输出；不把协变量算进去。未登记输出目标的通用算法不视为已训练模型，不在这里计数；平台官方披露请到多目标总览或对照里查看。</p>
           <el-table :data="ledger" size="small" border>
             <el-table-column prop="name" label="算法" />
             <el-table-column label="运行时" width="120">
@@ -590,7 +643,7 @@ onMounted(() => { void ensureForecastCatalog(target.value, false, regionId.value
             </el-table-column>
             <el-table-column label="类别" width="150"><template #default="{ row }">{{ kindLabel(row.kind) }}</template></el-table-column>
             <el-table-column prop="tier" label="层级" width="110" />
-            <el-table-column label="支持目标数" width="110"><template #default="{ row }"><ForecastTargetCount :targets="row.supportedTargets" :declared="row.supportedTargetsDeclared" :model-name="row.name" /></template></el-table-column>
+            <el-table-column label="已接入输出目标数" width="140"><template #default="{ row }"><ForecastTargetCount :targets="row.supportedTargets" :declared="row.supportedTargetsDeclared" :model-name="row.name" /></template></el-table-column>
             <el-table-column label="后端可用" width="120">
               <template #default="{ row }">
                 <el-tag v-if="row.available === true" type="success" size="small">可用</el-tag>

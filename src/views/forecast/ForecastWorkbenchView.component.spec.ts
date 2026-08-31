@@ -12,8 +12,13 @@ vi.mock('vue-router', () => ({ useRoute: () => route }))
 vi.mock('@/services/forecast/forecastProviders', async (original) => ({
   ...await original<typeof import('@/services/forecast/forecastProviders')>(),
   providersForTarget: () => rows.value,
+  catalogModelsForTarget: (target: string) => rows.value
+    .filter((row) => row.supportedTargets.includes(target))
+    .map((row) => ({ modelId: row.id, namespace: 'remote', available: row.available ?? true, supportedTargets: row.supportedTargets })),
+  isCatalogModelUsableForTarget: (model: { available?: boolean; supportedTargets?: string[] }, target: string) =>
+    model.available === true && Array.isArray(model.supportedTargets) && model.supportedTargets.includes(target),
   ensureForecastCatalog: async () => { rows.value = await api.load() },
-  forecastCatalogState: () => ({ error: ref('') }),
+  forecastCatalogState: () => ({ error: ref(''), loading: ref(false), models: ref([]) }),
 }))
 vi.mock('@/services/forecast/officialBaseline', async (original) => ({
   ...await original<typeof import('@/services/forecast/officialBaseline')>(),

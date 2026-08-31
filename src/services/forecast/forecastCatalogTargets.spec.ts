@@ -127,6 +127,38 @@ describe('forecast catalog target buckets (#54)', () => {
     expect(mod.forecastCatalogState('price', 'yunnan').models.value).toHaveLength(2)
   })
 
+  it('缺省或空 supportedTargets 只保留原始目录证据，不得冒充已接入目标进入 provider', async () => {
+    const mod = await import('./forecastProviders')
+    const task = mod.ensureForecastCatalog(['price', 'load'], true, 'yunnan')
+    expect(fetchForecastModels).toHaveBeenNthCalledWith(1, 'price', 'yunnan')
+    expect(fetchForecastModels).toHaveBeenNthCalledWith(2, 'load', 'yunnan')
+
+    deferred.find((d) => d.target === 'price')!.resolve({
+      models: [
+        { ...catalogModel({ modelId: 'remote:missing-targets', target: 'price' }), supportedTargets: undefined },
+        { ...catalogModel({ modelId: 'remote:empty-targets', target: 'price' }), supportedTargets: [] },
+        catalogModel({ modelId: 'remote:bound-price', target: 'price', supportedTargets: ['price'] }),
+      ],
+    })
+    deferred.find((d) => d.target === 'load')!.resolve({
+      models: [
+        { ...catalogModel({ modelId: 'remote:missing-load', target: 'load' }), supportedTargets: undefined },
+      ],
+    })
+    await task
+
+    expect(mod.forecastCatalogState('price', 'yunnan').models.value.map((m) => m.modelId))
+      .toEqual(['remote:missing-targets', 'remote:empty-targets', 'remote:bound-price'])
+    expect(mod.providersForTarget('price', 'yunnan').map((p) => p.id))
+      .toContain('remote:bound-price')
+    expect(mod.providersForTarget('price', 'yunnan').map((p) => p.id))
+      .not.toContain('remote:missing-targets')
+    expect(mod.providersForTarget('price', 'yunnan').map((p) => p.id))
+      .not.toContain('remote:empty-targets')
+    expect(mod.providersForTarget('load', 'yunnan').map((p) => p.id))
+      .not.toContain('remote:missing-load')
+  })
+
   it('同地区同 target 旧请求晚归时不得覆盖新目录', async () => {
     const mod = await import('./forecastProviders')
     const state = mod.forecastCatalogState('price', 'yunnan')

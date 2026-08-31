@@ -11,7 +11,7 @@ describe('台账目标声明', () => {
     expect(rows[2].name).toContain('未登记目标')
   })
 
-  it('目录明确空目标与未声明不同，不能都视为全目标', () => {
+  it('目录明确空目标与未声明不同，但两者都不能视为全目标', () => {
     expect(normalizeModelRegistryEntry({ modelId: 'explicit-none', supportedTargets: [] }, { target: 'load', regionId: 'yunnan' })?.supportedTargets).toEqual([])
     expect(normalizeModelRegistryEntry({ modelId: 'legacy' }, { target: 'load', regionId: 'yunnan' })?.supportedTargets).toBeUndefined()
   })

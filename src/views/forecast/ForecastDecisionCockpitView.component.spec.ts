@@ -74,7 +74,7 @@ vi.mock('@/services/forecast/forecastProviders', () => ({
     : { models: state.loadModels, error: state.loadCatalogError },
   isPredictSupported: () => true,
   isModelSelectableForTarget: (model: MockForecastModel, target: ForecastLeg) =>
-    model.available !== false && (!model.supportedTargets || model.supportedTargets.includes(target)),
+    model.available !== false && Array.isArray(model.supportedTargets) && model.supportedTargets.includes(target),
 }))
 vi.mock('@/services/forecast/mlForecastClient', () => ({
   runForecastPredict: (...args: unknown[]) => api.predict(...args),
