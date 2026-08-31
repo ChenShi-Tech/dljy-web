@@ -310,11 +310,11 @@ const hasAnyCurve = computed(() =>
 .rtf-sec h4 { margin: 0; font-size: var(--font-12-5); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .rtf-hint { font-style: normal; font-size: var(--font-10-5); color: var(--el-text-color-secondary, #909399); font-weight: 400; }
 .rtf-auto-row, .rtf-ai-row, .rtf-human-row { display: grid; gap: 6px; align-items: start; }
-.rtf-auto-row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; }
+.rtf-auto-row { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .rtf-label { font-size: var(--font-sm); color: var(--el-text-color-regular, #606266); display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .rtf-value { font-weight: 600; color: var(--el-text-color-primary, #303133); font-variant-numeric: tabular-nums; }
 .rtf-value.empty { color: var(--el-text-color-secondary, #909399); font-weight: 400; }
-.rtf-source { font-style: normal; font-size: var(--font-10); color: #0369a1; background: #e0f2fe; border-radius: 4px; padding: 0 6px; cursor: help; white-space: nowrap; }
+.rtf-source { font-style: normal; font-size: var(--font-10); color: #0369a1; background: #e0f2fe; border-radius: 4px; padding: 0 6px; cursor: help; white-space: nowrap; justify-self: start; }
 .rtf-caliber { font-style: normal; font-size: var(--font-10); color: #a16207; background: #fffbeb; border-radius: 4px; padding: 0 6px; }
 .rtf-ai-row { grid-template-columns: minmax(0, 1fr); gap: 4px; }
 .rtf-suggestion { margin: 0; padding: 6px 9px; border-left: 3px solid #bfdbfe; background: #f8fbff; border-radius: 4px; font-size: var(--font-sm); color: #334155; line-height: 1.6; }
