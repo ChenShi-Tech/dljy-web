@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import {
+  HIDDEN_TABS,
   TAB_ORDER,
   TAB_SHORT,
+  VISIBLE_TABS,
   dimSignal,
   heatCells,
   hourOf,
@@ -36,6 +38,17 @@ describe('标签顺序与深链解析', () => {
     expect(isShellTab('decision')).toBe(true)
     expect(isShellTab('culture')).toBe(false)
     expect(isShellTab(3)).toBe(false)
+  })
+
+  it('风险/决策/主体藏而不删：tab 栏不渲染（VISIBLE_TABS），深链仍合法', () => {
+    expect(HIDDEN_TABS).toEqual(['risk', 'decision', 'subject'])
+    // 可见标签 = 全量顺序滤掉隐藏项，不能有遗漏/乱序/重复
+    expect(VISIBLE_TABS).toEqual(['deviation', 'result', 'market', 'strategy'])
+    expect(VISIBLE_TABS.every((t) => TAB_ORDER.includes(t))).toBe(true)
+    // 藏而不删的深链保底：?dim=risk 依旧解析为该维，不落回偏差默认
+    expect(parseDimQuery('risk')).toBe('risk')
+    expect(parseDimQuery('decision')).toBe('decision')
+    expect(parseDimQuery('subject')).toBe('subject')
   })
 })
 
