@@ -185,6 +185,7 @@ else onRegionChange(load)
 
     <TslibOnlineForecastPanel
       :target="onlineTarget"
+      :target-date="range?.[1] || (typeof route.query.date === 'string' ? route.query.date : '')"
       :title="`${cfg.valueLabel || '预测'} · 深度模型在线预测`"
     />
 

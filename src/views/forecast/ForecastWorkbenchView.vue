@@ -4,7 +4,8 @@
 // 模式 A 单算法预测、模式 B 多算法同台对比、扩展预测、模式 D 多目标总览、附 tab 模型台账。
 // 原模式 C「决策应用」与「下发实验室」能力位于预测中心「申报决策」一级 tab（同页切换）。
 // 全部经 forecastProviders 统一契约；数据口径 basis 全程标注，不伪装 Mock。
-import { ref, computed, watch, nextTick, onMounted } from 'vue'
+import { ref, computed, watch, nextTick, onMounted, onBeforeUnmount } from 'vue'
+import { useRoute } from 'vue-router'
 import DataBasisBadge from '../../components/DataBasisBadge.vue'
 import DynamicParamPanel from '../../components/forecast/DynamicParamPanel.vue'
 import UnifiedForecastChart from '../../components/forecast/UnifiedForecastChart.vue'
@@ -22,16 +23,21 @@ import { publishBenchContext } from '@/services/forecast/forecastBenchContext'
 import { fetchOfficialBaseline, officialMae, hasOfficialBaseline } from '@/services/forecast/officialBaseline'
 import { aggregate96to24 } from '@/services/forecast/forecastProviders'
 import { summarizeForecastFailures, type ForecastFailure } from '@/services/forecast/failureSummary'
+import { isForecastDate } from '@/services/forecast/onlineForecastResult'
 
 const REGION_IDS = ['shanxi', 'shandong', 'gansu', 'guangdong', 'sichuan', 'yunnan']
 const regionOptions = REGION_IDS.map((id) => ({ id, name: getRegionById(id).name }))
 // 标的清单由注册表派生（dljy#2463）：中文名、原生粒度同源，不再各写一份
 const TARGETS = FORECAST_TARGET_OPTIONS
+const route = useRoute()
+function targetFromQuery(value: unknown): string {
+  return typeof value === 'string' && TARGETS.some((item) => item.id === value) ? value : 'price'
+}
 
 // 共享任务栏
 const regionId = ref(selectedRegionId.value || 'shanxi')
-const target = ref('price')
-const targetDate = ref('2026-06-04')
+const target = ref(targetFromQuery(route.query.target))
+const targetDate = ref(typeof route.query.date === 'string' ? route.query.date : '')
 const granularity = ref<24 | 96>(96)
 // 标的原生点数：60 分钟标的（用户侧结算电价）原生 24 点，粒度控件隐藏、请求粒度恒 24（dljy#2463）
 const nativeSlots = computed(() => nativeSlotsForTarget(target.value))
@@ -94,7 +100,7 @@ function resetParams() {
 }
 // 页面级上下文世代（#468）：切地区/目标即作废一切在飞异步请求
 // runCompare/决策动作/loadOverview 等在写入结果前校验，防旧上下文慢响应写回当前页面。
-// loading 复位不守卫（旧请求结束即收起，切换后新请求自会重新置起）。
+// 上下文切换会作废请求代次；每次finally只负责自己的加载状态。
 let contextGeneration = 0
 watch([target, regionId], () => {
   contextGeneration++
@@ -107,6 +113,12 @@ watch([target, regionId], () => {
   resetParams()
 })
 let providerWatchReady = false
+// 目录异步返回后再选首个可用模型；不把上一个目标的选择留在新目录中。
+watch(targetProviders, (providers) => {
+  if (!providers.some((p) => p.id === algoId.value && p.available !== false)) {
+    algoId.value = providers.find((p) => p.available !== false)?.id ?? ''
+  }
+}, { immediate: true })
 watch(algoId, () => {
   if (providerWatchReady) {
     result.value = null
@@ -121,16 +133,19 @@ let runGeneration = 0
 async function runSingle() {
   const p = currentProvider.value
   if (!p || p.available === false) return  // 选中模型不可用（catalog 变动/过期）不发注定失败请求（#570）
+  if (!requireTargetDate()) return
   // 发起前快照本次预测上下文；await 期间用户可能切地区/目标/算法，返回后仅当
   // ① 本请求仍是最新一次（generation）且 ② 快照仍与当前控件一致（stillCurrent）
   // 才写入结果，否则丢弃（#463：旧请求结果不得贴上新地区/目标标签）。
   // loading 复位只看 generation，切换控件而未重跑时旧请求结束仍需收起 loading。
   const generation = ++runGeneration
+  const context = contextGeneration
   const snapshot = { regionId: regionId.value, target: target.value, algoId: algoId.value }
   const ctx = buildCtx()
   const stillCurrent = () =>
-    snapshot.regionId === regionId.value && snapshot.target === target.value && snapshot.algoId === algoId.value
+    context === contextGeneration && snapshot.regionId === regionId.value && snapshot.target === target.value && snapshot.algoId === algoId.value
   loadingA.value = true; error.value = ''
+  result.value = null; backtestA.value = null; officialLabel.value = ''
   try {
     setCurrentRegionId(snapshot.regionId)
     // 官方日前预测与本次预测并行取（互不依赖）：取不到就是没有，不阻断预测结果展示。
@@ -138,7 +153,7 @@ async function runSingle() {
     const officialTask = hasOfficialBaseline(ctx.regionId, ctx.target)
       ? fetchOfficialBaseline(ctx.regionId, ctx.target, ctx.targetDate).catch(() => null)
       : Promise.resolve(null)
-    const [res, official] = await Promise.all([p.run(ctx, params.value), officialTask])
+    const [res, official] = await Promise.all([p.run(ctx, { ...params.value, train_days: ctx.historyDays }), officialTask])
     if (generation !== runGeneration || !stillCurrent()) return
     if (official) {
       // 96 点 → 当前粒度，复用 provider 同一套聚合；漏掉会让官方线与横轴错位
@@ -148,7 +163,7 @@ async function runSingle() {
     officialLabel.value = official?.label ?? ''
     result.value = res
     // 登记本次实验上下文供同页「申报决策」tab 跟随（回放算法不携带 model）。
-    // 用请求时快照 ctx 的日期/训练窗（await 期间控件可能被改，stillCurrent 不含这两项），
+    // 用请求时快照 ctx 的日期/历史窗（await期间变化已由contextGeneration守卫），
     // 保证登记的是本次成功预测真实使用的上下文（3621741658）。
     publishBenchContext({
       modelId: p.kind === 'compute' ? p.id : undefined,
@@ -176,9 +191,10 @@ async function runBacktestA() {
   if (!p || p.kind !== 'compute' || p.available === false) return  // 不可用模型硬阻断（#570）
   // 与 runSingle 同款快照守卫（#463 同构）：旧地区/目标的慢回测结果不得覆盖当前控件下的状态。
   const generation = ++backtestGeneration
+  const context = contextGeneration
   const snapshot = { regionId: regionId.value, target: target.value, algoId: p.id }
   const stillCurrent = () =>
-    snapshot.regionId === regionId.value && snapshot.target === target.value && currentProvider.value?.id === snapshot.algoId
+    context === contextGeneration && snapshot.regionId === regionId.value && snapshot.target === target.value && currentProvider.value?.id === snapshot.algoId
   backtestLoadingA.value = true; error.value = ''
   try {
     setCurrentRegionId(snapshot.regionId)
@@ -201,11 +217,15 @@ type Row = { id: string; name: string; mae: number | null; rmse: number | null; 
 const compareRows = ref<Row[]>([])
 const compareResults = ref<{ provider: string; result: UnifiedForecastResult }[]>([])
 const chartB = ref<InstanceType<typeof UnifiedForecastChart> | null>(null)
+let compareGeneration = 0
 
 async function runCompare() {
   if (!compareIds.value.length) { error.value = '请至少选择一个算法'; return }
+  if (!requireTargetDate()) return
   const generation = contextGeneration
+  const requestId = ++compareGeneration
   loadingB.value = true; error.value = ''
+  compareRows.value = []; compareResults.value = []
   // 逐算法失败原因（后端 detail 原样保留）：此前一律 .catch(() => null) 吞掉，全失败时
   // 只报「后端不可达？」——把「这一天没有基本面数据」「该品种本地区无真实列」这类可执行
   // 原因伪装成服务故障，用户无从下手。收集后由 summarizeForecastFailures 呈现。
@@ -221,11 +241,11 @@ async function runCompare() {
         failures.push({ name: p.name, reason: p.reason || '模型当前不可用' })
         return Promise.resolve(null)
       }
-      return p.run(buildCtx(), defaultParams(p))
+      return p.run(buildCtx(), { ...defaultParams(p), train_days: historyDays.value })
         .then((r) => ({ id, name: p.name, result: r }))
         .catch((e) => { failures.push({ name: p.name, reason: (e as Error).message || '预测失败' }); return null })
     }))
-    if (generation !== contextGeneration) return
+    if (generation !== contextGeneration || requestId !== compareGeneration) return
     const ok = settled.filter((x): x is { id: string; name: string; result: UnifiedForecastResult } => x !== null)
     if (!ok.length) {
       error.value = summarizeForecastFailures(failures) || '所有算法预测均失败：后端不可达？请确认 agent-backend(:8000) 已启动。'
@@ -245,9 +265,9 @@ async function runCompare() {
     compareRows.value = rows
     await nextTick(); chartB.value?.resize()
   } catch (e) {
-    if (generation !== contextGeneration) return
+    if (generation !== contextGeneration || requestId !== compareGeneration) return
     error.value = (e as Error).message
-  } finally { loadingB.value = false }
+  } finally { if (requestId === compareGeneration) loadingB.value = false }
 }
 
 // 模式 D：多目标总览（平台官方回放）
@@ -257,10 +277,14 @@ const OVERVIEW = [
 ]
 const overviewResults = ref<{ id: string; name: string; result: UnifiedForecastResult }[]>([])
 const overviewLoading = ref(false)
+let overviewGeneration = 0
 async function loadOverview() {
+  if (!requireTargetDate()) return
   const generation = contextGeneration
+  const requestId = ++overviewGeneration
   const region = regionId.value
   overviewLoading.value = true; error.value = ''
+  overviewResults.value = []
   try {
     const platform = getProvider('platform')
     if (!platform) return
@@ -279,13 +303,13 @@ async function loadOverview() {
       platform.run({ regionId: region, target: t.id, targetDate: targetDate.value || undefined, granularity: granularityForTarget(t.id, granularity.value), historyDays: historyDays.value }, {})
         .then((r) => ({ id: t.id, name: t.name, result: r }))
         .catch((e) => { failures.push({ name: t.name, reason: (e as Error).message || '取数失败' }); return null })))
-    if (generation !== contextGeneration) return
+    if (generation !== contextGeneration || requestId !== overviewGeneration) return
     overviewResults.value = settled.filter((x): x is { id: string; name: string; result: UnifiedForecastResult } => x !== null)
     if (failures.length) error.value = summarizeForecastFailures(failures)
   } catch (e) {
-    if (generation !== contextGeneration) return
+    if (generation !== contextGeneration || requestId !== overviewGeneration) return
     error.value = (e as Error).message
-  } finally { overviewLoading.value = false }
+  } finally { if (requestId === overviewGeneration) overviewLoading.value = false }
 }
 
 // 附 tab：模型台账（provider 元信息，available/reason 已由 catalog 注入 provider，#762）
@@ -304,6 +328,23 @@ const ledger = computed(() => targetProviders.value.map((p) => ({
 // 扩展预测子面板（迁自原 ML 实验室「扩展预测」tab）：tab 切回时需 resize 其内部 echarts。
 const extraPanel = ref<InstanceType<typeof ForecastExtraPanel> | null>(null)
 watch(activeTab, () => nextTick(() => { chartA.value?.resize(); chartB.value?.resize(); extraPanel.value?.resize() }))
+function requireTargetDate(): boolean {
+  if (isForecastDate(targetDate.value)) return true
+  error.value = '请选择有效的预测日期；不会自动改算其他日期'
+  return false
+}
+
+function invalidateRequests() {
+  ++contextGeneration; ++runGeneration; ++backtestGeneration; ++compareGeneration; ++overviewGeneration
+  loadingA.value = false; backtestLoadingA.value = false; loadingB.value = false; overviewLoading.value = false
+  clearForecastState()
+}
+// 覆盖日期/窗口/显示粒度/算法参数，防旧日期响应贴到新日期标签，包括A→B→A。
+watch([target, regionId, targetDate, granularity, historyDays, params, compareIds], invalidateRequests, { deep: true, flush: 'sync' })
+watch(selectedRegionId, (id) => { if (id) regionId.value = id })
+watch(() => route.query.target, (value) => { target.value = targetFromQuery(value) })
+watch(() => route.query.date, (value) => { targetDate.value = typeof value === 'string' ? value : '' })
+onBeforeUnmount(invalidateRequests)
 onMounted(() => { void ensureForecastCatalog(target.value, false, regionId.value) })
 </script>
 
@@ -359,7 +400,8 @@ onMounted(() => { void ensureForecastCatalog(target.value, false, regionId.value
           </div>
 
           <div class="param-box">
-            <DynamicParamPanel :schema="currentProvider?.paramsSchema ?? []" v-model:params="params" />
+            <!-- 历史窗口只由共享任务栏决定，不能被算法表单中的默认180天静默覆盖。 -->
+            <DynamicParamPanel :schema="(currentProvider?.paramsSchema ?? []).filter((field) => field.key !== 'train_days')" v-model:params="params" />
           </div>
 
           <!-- 模型输入门槛（dljy#2464）：远端模型自述的 I/O × 平台供给——用户选模型时就知道差什么，不用选了才撞 -->

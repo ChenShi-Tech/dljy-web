@@ -536,7 +536,7 @@ function normalizeTier(tier: unknown): ForecastProvider['tier'] {
 // 由注册表派生（顺序 = ForecastTarget 枚举顺序）；后端目录缺省 supportedTargets 时回退全集
 const ML_TARGETS = FORECAST_TARGET_OPTIONS.map((t) => t.id)
 
-function adaptMlResult(r: ForecastResult, modelId: string, granularity: 24 | 96, nativeSlots = 96): UnifiedForecastResult {
+export function adaptMlResult(r: ForecastResult, modelId: string, granularity: 24 | 96, nativeSlots = 96): UnifiedForecastResult {
   // 区间带按本标的原生点数判齐全（此前写死 96：60 分钟标的的 24 点区间会被当成「没有区间」）
   const hasBand = r.lower?.length === nativeSlots && r.upper?.length === nativeSlots
   return applyGranularity(

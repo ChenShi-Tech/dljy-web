@@ -103,7 +103,8 @@ export type ForecastResult = {
   // 成功预测（空曲线），既不显示真实原因也不触发空态出口。
   // 目标日事后真值 + 基线曲线（#2371，snake_case 与后端 ForecastResult 字段一致）。
   // 后端本就用它们算 metrics/baseline_metrics；Core 转发模式下可能缺，消费方须按可选处理。
-  actual?: number[]
+  actual?: (number | null)[]
+  slots?: number[]
   baseline_curves?: { naive?: number[]; knn?: number[] }
   evaluation_mode?: string
   // 目标日前一天的真值 96 点（#2387）：画「过去实线 → 未来虚线」连续视图的过去那一段。
@@ -115,11 +116,12 @@ export type ForecastResult = {
   // 读取一律走 unavailableReasonOf() 归一，避免又出现"读了个永远不存在的字段"。
   unavailable_reason?: string | null
   unavailableReason?: string | null
+  reason?: string | null
 }
 
 /** 取 Core 不可用原因（兼容 snake_case / camelCase 两种形态）。 */
-export function unavailableReasonOf(r: Pick<ForecastResult, 'unavailable_reason' | 'unavailableReason'> | null | undefined): string {
-  return String(r?.unavailable_reason ?? r?.unavailableReason ?? '').trim()
+export function unavailableReasonOf(r: Pick<ForecastResult, 'unavailable_reason' | 'unavailableReason' | 'reason'> | null | undefined): string {
+  return [r?.unavailable_reason, r?.unavailableReason, r?.reason].map((value) => String(value ?? '').trim()).find(Boolean) ?? ''
 }
 
 export type ForecastRequest = {

@@ -91,6 +91,14 @@ npm run dev                        # http://localhost:5174
 - `ensureForecastCatalog(true)`、`PROVIDERS`、`getProvider(id)` 保留旧的默认 `price` 语义；新增非价格路径不得依赖它们推断模型状态。
 - 目录修复不等于远端可用：后端返回的 `available:false` 和不可用原因必须保留，不得为了显示模型而伪造数据、权重或授权状态。
 
+### 3.7 指定日期与在线模型入口（#54）
+
+- 工作台消费 `/ycsj/center?mod=bench&target=price_user_da_settlement&date=YYYY-MM-DD`，并跟随同页query变化。日期为空或非法时不自动改算固定历史日；模型目录异步加载后按当前目标选择可用模型。
+- 云南旧价格回放与厂站负荷tab仍遵循degraded/not-configured门控。新目标入口仅在账号有 `/ycsj/workbench` 权限且地区工作台能力为available时出现，切到同页建模工作台；区域负荷不是厂站负荷，用户结算价不是旧平台价格回放。
+- 在线面板默认 `data_source=auto`，显式选择合成验证才发送synthetic；缺数据原因常驻显示。日期/地区/目标/模型/窗口/参数改变即清空旧结果、作废在途请求，旧finally不得改变新请求状态。
+- `services/forecast/onlineForecastResult.ts`核对返回的地区/目标/模型/日期、原生24或96点与时隙。真实值中的null保留为空，不插值，不把小时价扩成96个时段。统一适配器透传实际值、基线、评价模式与mock标记；所有预测曲线为虚线、实际值为实线。
+- 组件测试只验证状态与图表参数，不等于实际网站、代理、登录和远端服务端到端验收。缺浏览器权限时不得声称网页已通过。
+
 ## 4. 联调与排错
 
 常见响应状态判读（联调时先查这张表再报 bug）：

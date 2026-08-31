@@ -4,7 +4,7 @@
 // - tab 按 canAccessPath(原路由) 过滤：不扩大任何角色原有可见范围
 // - 懒挂载：tab 首次激活才挂组件（9 套数据不同时加载）；已访问的保持挂载避免重复拉数
 import { computed, ref, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import ForecastMultiTypeCurve from './ForecastMultiTypeCurve.vue'
 import ForecastDailyCurve from './ForecastDailyCurve.vue'
 import RollingPricePredictionView from '../RollingPricePredictionView.vue'
@@ -18,6 +18,7 @@ import { getCurrentUser } from '@/services/auth'
 import { currentRegion } from '@/services/region/regionContext'
 import {
   getRegionSubCapability,
+  getRegionCapabilityForPath,
   type RegionCapabilityDataSupport,
   type RegionModuleCapabilityStatus,
 } from '@/services/region/regionModules'
@@ -25,6 +26,7 @@ import TrustBadge from '@/components/common/TrustBadge.vue'
 import type { DataSourceBasis } from '@/services/data/types'
 
 const route = useRoute()
+const router = useRouter()
 const user = getCurrentUser()
 const roleTabs = computed(() => FORECAST_HUB_TABS.filter((tab) => canAccessPath(tab.sourceRoute, user)))
 
@@ -55,19 +57,30 @@ function tabCapability(tabKey: string): TabCapabilityState {
 }
 
 function isTabDegraded(tabKey: string): boolean {
-  // not-configured=该地区未登记该子能力（fail-closed，ADR 裁决四）：与 degraded 同样带警示渲染，
+  // not-configured=该地区未登记该子能力（fail-closed，ADR 裁决四）：与 degraded 同样只显示说明，
   // 保持「暂未开通」可见诚实态而非整体隐藏（隐藏会让试点地区 hub 变空白页）。
   const status = tabCapability(tabKey).status
   return status === 'degraded' || status === 'not-configured'
 }
 
-function shouldRenderTabBody(tabKey: string): boolean {
-  const tab = tabs.value.find((item) => item.key === tabKey)
-  if (!tab) return false
-  // 云南预测中心部分 tab 仍沿用旧 captured/厂站口径，地区能力必须继续诚实标 degraded；
-  // 但这些页内已经嵌入可独立运行的在线预测面板，不应被整张降级卡完全挡住。
-  // hidden 仍在上游过滤；这里只让 degraded/not-configured 时继续挂载真实 tab 内容。
-  return tab.kind === 'multi' || tab.kind === 'daily'
+// 旧价格回放/厂站负荷与新模型标的不同，保留旧门控；入口沿用工作台自身权限与地区能力。
+const canOpenOnlineWorkbench = computed(() => currentRegion.value.id === 'yunnan'
+  && canAccessPath('/ycsj/workbench', user)
+  && getRegionCapabilityForPath('/ycsj/workbench', currentRegion.value.id)?.status === 'available')
+
+function onlineTargets(tabKey: string) {
+  if (!canOpenOnlineWorkbench.value) return []
+  if (tabKey === 'jgyc') return [
+    { target: 'price_user_da_settlement', label: '用户侧日前结算价预测' },
+    { target: 'price_user_rt_settlement', label: '用户侧实时结算价预测' },
+  ]
+  if (tabKey === 'gsfhyc') return [{ target: 'load', label: '云南区域负荷预测（非厂站）' }]
+  return []
+}
+
+function openOnlineWorkbench(tabKey: string, target: string) {
+  if (!onlineTargets(tabKey).some((item) => item.target === target)) return
+  void router.replace({ path: '/ycsj/center', query: { ...route.query, mod: 'bench', target } })
 }
 
 // 决策口径（trustGate）：本 hub 为预测回放（路由 meta.kind='forecast'），预测值非结算事实，
@@ -141,25 +154,31 @@ watch([tabs, () => route.query.tab, () => currentRegion.value.id], () => {
       <el-tabs v-else v-model="active" @tab-change="onTabChange">
         <el-tab-pane v-for="tab in tabs" :key="tab.key" :label="tab.title" :name="tab.key">
           <template v-if="visited.has(tab.key) || active === tab.key">
-            <CapabilityDegradedCard
-              v-if="isTabDegraded(tab.key)"
-              :title="`${tab.title}暂不可用`"
-              :region-name="currentRegion.name"
-              :note="tabCapability(tab.key).note"
-              :supports="tabCapability(tab.key).supports"
-            />
-            <RenewableABCurve v-if="!isTabDegraded(tab.key) && tab.kind === 'renewable-ab'" :source="renewableSource" />
-            <YnDisclosureCurve v-else-if="!isTabDegraded(tab.key) && tab.kind === 'yn-disclosure'" />
+            <div v-if="isTabDegraded(tab.key)">
+              <CapabilityDegradedCard
+                :title="`${tab.title}暂不可用`"
+                :region-name="currentRegion.name"
+                :note="tabCapability(tab.key).note"
+                :supports="tabCapability(tab.key).supports"
+              />
+              <div v-if="onlineTargets(tab.key).length" class="online-entry">
+                <p>上方说明针对旧回放或厂站数据。下方进入独立的模型预测目标，保留当前日期；模型是否可计算仍以真实输入与服务返回为准。</p>
+                <el-button v-for="item in onlineTargets(tab.key)" :key="item.target" type="primary"
+                  @click="openOnlineWorkbench(tab.key, item.target)">{{ item.label }}</el-button>
+              </div>
+            </div>
+            <RenewableABCurve v-else-if="tab.kind === 'renewable-ab'" :source="renewableSource" />
+            <YnDisclosureCurve v-else-if="tab.kind === 'yn-disclosure'" />
             <ForecastMultiTypeCurve
-              v-else-if="(shouldRenderTabBody(tab.key) || !isTabDegraded(tab.key)) && tab.kind === 'multi'"
+              v-else-if="tab.kind === 'multi'"
               :cfg="tab.cfg"
             />
             <ForecastDailyCurve
-              v-else-if="(shouldRenderTabBody(tab.key) || !isTabDegraded(tab.key)) && tab.kind === 'daily'"
+              v-else-if="tab.kind === 'daily'"
               :cfg="tab.cfg"
             />
-            <RollingPricePredictionView v-else-if="!isTabDegraded(tab.key) && tab.kind === 'rolling'" />
-            <CompanyWeatherPredictionView v-else-if="!isTabDegraded(tab.key)" />
+            <RollingPricePredictionView v-else-if="tab.kind === 'rolling'" />
+            <CompanyWeatherPredictionView v-else />
           </template>
         </el-tab-pane>
       </el-tabs>
@@ -168,6 +187,7 @@ watch([tabs, () => route.query.tab, () => currentRegion.value.id], () => {
 </template>
 
 <style scoped>
+.online-entry { margin-top: 12px; font-size: var(--font-sm); color: var(--el-text-color-regular); }
 :deep(.el-tabs__content) {
   overflow: visible;
 }
