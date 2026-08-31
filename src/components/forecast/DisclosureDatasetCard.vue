@@ -9,6 +9,7 @@ import { POWER, catAxis, grid, legend, lineSeries, stepSeries, tooltipStyle, val
 
 const props = defineProps<{
   dataset: DisclosureDatasetResult
+  displayTitle?: string
 }>()
 
 interface SeriesGroup {
@@ -30,6 +31,7 @@ const detailPage = ref(1)
 const pageSize = 20
 const activeGroupKey = ref('')
 const chart = useEChart(chartEl, { render: paint })
+const cardTitle = computed(() => props.displayTitle?.trim() || props.dataset.spec.title)
 
 function toGroupKey(series: DisclosureSeries): string {
   return JSON.stringify([series.scope, series.targetDate, series.unit])
@@ -180,7 +182,7 @@ function paint() {
       ...tooltipStyle(),
     },
     legend: legend(),
-    toolbox: chartToolbox(`${props.dataset.spec.title}-${group.scope}-${group.targetDate ?? props.dataset.date}`),
+    toolbox: chartToolbox(`${cardTitle.value}-${group.scope}-${group.targetDate ?? props.dataset.date}`),
     grid: grid({ legend: true, right: 20 }),
     xAxis: catAxis(group.labels, { boundaryGap: props.dataset.spec.nature === 'price' }),
     yAxis: valueAxis(group.unit, { scale: true }),
@@ -209,7 +211,7 @@ defineExpose({ resize })
   <article class="disclosure-card">
     <header class="disclosure-card__head">
       <div class="disclosure-card__title-wrap">
-        <h3 class="disclosure-card__title" :title="dataset.spec.title">{{ dataset.spec.title }}</h3>
+        <h3 class="disclosure-card__title" :title="cardTitle">{{ cardTitle }}</h3>
         <span class="disclosure-card__status" :class="`is-${dataset.status}`">
           {{ dataset.status === 'partial' ? '部分可用' : '已导入' }}
         </span>
@@ -239,26 +241,30 @@ defineExpose({ resize })
       <span>有效点数：{{ activeGroup ? `${activeGroup.validPoints}/${activeGroup.expectedPoints}` : '—' }}</span>
     </div>
 
-    <div class="disclosure-card__source">
-      <span>{{ dataset.sourceLabel }}</span>
-      <span v-if="dataset.capturedAt">采集时间：{{ dataset.capturedAt }}</span>
-      <span v-else-if="dataset.ingestedAt">导入时间：{{ dataset.ingestedAt }}</span>
+    <div v-if="hasActivePoints" class="disclosure-card__chart-shell">
+      <div ref="chartEl" class="disclosure-card__chart" />
     </div>
-
-    <p
-      v-for="(warning, index) in dataset.warnings"
-      :key="`${dataset.spec.id}-warning-${index}`"
-      class="disclosure-card__warning"
-    >
-      {{ warning }}
-    </p>
-
-    <div v-if="hasActivePoints" ref="chartEl" class="disclosure-card__chart" />
     <p v-else class="disclosure-card__warning">有原始记录，但没有可安全绘制的有效曲线；请点击“查看明细”核查。</p>
+
+    <details class="disclosure-card__details">
+      <summary>来源与口径</summary>
+      <div class="disclosure-card__source">
+        <span>{{ dataset.sourceLabel }}</span>
+        <span v-if="dataset.capturedAt">采集时间：{{ dataset.capturedAt }}</span>
+        <span v-else-if="dataset.ingestedAt">导入时间：{{ dataset.ingestedAt }}</span>
+      </div>
+      <p
+        v-for="(warning, index) in dataset.warnings"
+        :key="`${dataset.spec.id}-warning-${index}`"
+        class="disclosure-card__warning"
+      >
+        {{ warning }}
+      </p>
+    </details>
 
     <el-dialog
       v-model="detailVisible"
-      :title="`${dataset.spec.title} 原始明细`"
+      :title="`${cardTitle} 原始明细`"
       width="min(1120px, 92vw)"
       append-to-body
     >
@@ -315,7 +321,7 @@ defineExpose({ resize })
   display: flex;
   flex-direction: column;
   gap: 10px;
-  min-height: 0;
+  min-height: 100%;
   min-width: 0;
   padding: 16px;
   background: var(--panel, #fff);
@@ -387,6 +393,11 @@ defineExpose({ resize })
   font-size: var(--font-sm);
 }
 
+.disclosure-card__chart-shell {
+  flex: 0 0 auto;
+  min-height: 18rem;
+}
+
 .disclosure-card__source {
   padding: 8px 10px;
   background: color-mix(in srgb, var(--panel-sub, #f8fafc) 88%, #eff9f7 12%);
@@ -401,9 +412,27 @@ defineExpose({ resize })
 }
 
 .disclosure-card__chart {
-  margin-top: auto;
   width: 100%;
   height: 18rem;
+  flex-shrink: 0;
+}
+
+.disclosure-card__details {
+  margin-top: auto;
+}
+
+.disclosure-card__details summary {
+  width: fit-content;
+  color: var(--primary, #0f9d8a);
+  font-size: var(--font-sm);
+  line-height: 1.6;
+  cursor: pointer;
+}
+
+.disclosure-card__details[open] {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
 .disclosure-card__series-list {

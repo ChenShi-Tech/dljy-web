@@ -1,6 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { defineComponent } from 'vue'
+import { selectedCompanyId } from '@/services/company/companyContext'
+
+vi.mock('@/services/company/companyContext', async () => {
+  const { ref } = await import('vue')
+  return { selectedCompanyId: ref('company-a') }
+})
 
 const api = vi.hoisted(() => ({
   loadDailyDisclosure: vi.fn(),
@@ -113,6 +119,8 @@ async function render(props = { regionId: 'yunnan', date: '2026-06-25' }) {
 
 beforeEach(() => {
   api.loadDailyDisclosure.mockReset()
+  window.localStorage.clear()
+  selectedCompanyId.value = 'company-a'
 })
 
 afterEach(() => {
@@ -121,6 +129,80 @@ afterEach(() => {
 })
 
 describe('DailyDisclosureOverview', () => {
+  // 不变量：同一数据集的不同统计范围都能独立选择，不能只露出默认范围或用空卡占位。
+  it('逐曲线建立看板，勾选、全选与清空会立即更新图表', async () => {
+    const data = dataset('load_forecast', 'forecast')
+    data.series.push({ ...data.series[0], id: 'all', scope: 'all', scopeLabel: '南网全网' })
+    api.loadDailyDisclosure.mockResolvedValue([data, dataset('missing', 'actual', 'empty')])
+    const wrapper = await render()
+    expect(wrapper.findAll('.dataset-card')).toHaveLength(2)
+    expect(wrapper.findAll('input[type="checkbox"]')).toHaveLength(2)
+    expect(wrapper.text()).toContain('共 2 条可用曲线，已选择 2 条')
+    expect(wrapper.html().indexOf('dataset-card')).toBeLessThan(wrapper.html().indexOf('id="daily-disclosure-texts"'))
+    await wrapper.find('.daily-disclosure__board-head button').trigger('click')
+    expect(wrapper.find('.daily-disclosure__board-head button').attributes('aria-expanded')).toBe('true')
+    await wrapper.find('input[type="checkbox"]').setValue(false)
+    expect(wrapper.findAll('.dataset-card')).toHaveLength(1)
+    await wrapper.findAll('button').find((button) => button.text() === '清空选择')!.trigger('click')
+    expect(wrapper.findAll('.dataset-card')).toHaveLength(0)
+    expect(wrapper.text()).toContain('你尚未选择展示曲线')
+    expect(wrapper.text()).not.toContain('该日期没有可展示的已导入数值记录')
+    await wrapper.findAll('button').find((button) => button.text() === '显示全部曲线')!.trigger('click')
+    expect(wrapper.findAll('.dataset-card')).toHaveLength(2)
+  })
+
+  // 不变量：搜索不是取消选择，重载、重新打开和换日不丢个人选择，不保存曲线数值。
+  it('选择可记忆，搜索与换日不清空偏好', async () => {
+    const data = dataset('load_forecast', 'forecast')
+    data.series[0].id = JSON.stringify(['yn', '2026-06-26', 'load_forecast'])
+    api.loadDailyDisclosure.mockResolvedValue([data, dataset('da_user_price', 'price')])
+    const wrapper = await render()
+    const checkboxes = wrapper.findAll('input[type="checkbox"]')
+    await checkboxes.find((checkbox) => checkbox.attributes('aria-label')?.includes('load_forecast'))!.setValue(false)
+    await wrapper.find('.search-input').setValue('load_forecast')
+    expect(wrapper.findAll('.dataset-card')).toHaveLength(0)
+    expect(wrapper.text()).toContain('当前搜索条件下没有已选曲线')
+    await wrapper.find('.search-input').setValue('')
+    expect(wrapper.findAll('.dataset-card')).toHaveLength(1)
+    const next = { ...data, date: '2026-06-26', series: [{ ...data.series[0], targetDate: '2026-06-27', id: JSON.stringify(['yn', '2026-06-27', 'load_forecast']) }] }
+    api.loadDailyDisclosure.mockResolvedValue([next, dataset('da_user_price', 'price')])
+    await wrapper.setProps({ date: '2026-06-26' })
+    await flushPromises()
+    expect(wrapper.findAll('.dataset-card')).toHaveLength(1)
+    wrapper.unmount()
+    wrappers = []
+    const reopened = await render()
+    expect(reopened.findAll('.dataset-card')).toHaveLength(1)
+    expect(window.localStorage.getItem('dljy.disclosure-board.v1.yunnan.company-a')).not.toContain('points')
+  })
+
+  // 不变量：切公司即清空旧结果；其他公司的偏好或迟到响应不能串入当前看板。
+  it('公司切换隔离偏好并丢弃旧公司响应', async () => {
+    const pending = deferred<ReturnType<typeof dataset>[]>()
+    api.loadDailyDisclosure.mockResolvedValueOnce([dataset('load_actual', 'actual')]).mockReturnValueOnce(pending.promise)
+    const wrapper = await render()
+    await wrapper.find('input[type="checkbox"]').setValue(false)
+    selectedCompanyId.value = 'company-b'
+    await flushPromises()
+    expect(wrapper.findAll('.dataset-card')).toHaveLength(0)
+    api.loadDailyDisclosure.mockResolvedValueOnce([dataset('da_user_price', 'price')])
+    selectedCompanyId.value = 'company-c'
+    await flushPromises()
+    pending.resolve([dataset('load_actual', 'actual')])
+    await flushPromises()
+    expect(wrapper.findAll('.dataset-card')).toHaveLength(1)
+    expect(wrapper.find('.dataset-card').text()).toContain('da_user_price')
+    expect(wrapper.text()).not.toContain('load_actual-标题')
+  })
+
+  // 不变量：浏览器禁用或损坏存储时仍默认显示有效曲线，不能导致整页异常。
+  it('损坏的偏好不影响首屏曲线', async () => {
+    window.localStorage.setItem('dljy.disclosure-board.v1.yunnan.company-a', '{broken')
+    api.loadDailyDisclosure.mockResolvedValueOnce([dataset('load_actual', 'actual')])
+    const wrapper = await render()
+    expect(wrapper.findAll('.dataset-card')).toHaveLength(1)
+  })
+
   it('无日期时不发请求，并提示先选择日期', async () => {
     const wrapper = await render({ regionId: 'yunnan', date: '' })
     expect(api.loadDailyDisclosure).not.toHaveBeenCalled()

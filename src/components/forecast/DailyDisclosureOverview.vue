@@ -3,6 +3,8 @@ import { computed, onBeforeUnmount, onBeforeUpdate, ref, watch, type ComponentPu
 import DisclosureDatasetCard from './DisclosureDatasetCard.vue'
 import DailyDisclosureTexts from './DailyDisclosureTexts.vue'
 import { DISCLOSURE_GROUPS, loadDailyDisclosure, type DisclosureDatasetResult } from '@/services/forecast/dailyDisclosure'
+import { buildDisclosurePanels, matchesDisclosurePanel } from '@/services/forecast/disclosureDashboard'
+import { selectedCompanyId } from '@/services/company/companyContext'
 
 const props = defineProps<{
   regionId: string
@@ -29,6 +31,9 @@ const loadError = ref('')
 const search = ref('')
 const attempted = ref(false)
 const textReloadKey = ref(0)
+const hiddenCurves = ref<string[]>([])
+const selectionOpen = ref(false)
+const preferenceKey = computed(() => `dljy.disclosure-board.v1.${props.regionId}.${selectedCompanyId.value}`)
 let cardRefs: CardExpose[] = []
 let requestId = 0
 
@@ -69,8 +74,18 @@ async function reload() {
   }
 }
 
+// 只保存显示偏好，不保存业务数值；换日保留选择，切换公司/地区重新读取各自偏好。
+watch(preferenceKey, (key) => {
+  try {
+    const stored: unknown = JSON.parse(window.localStorage.getItem(key) ?? '[]')
+    hiddenCurves.value = Array.isArray(stored)
+      ? stored.filter((item): item is string => typeof item === 'string' && item.length <= 1024).slice(0, 256)
+      : []
+  } catch { hiddenCurves.value = [] }
+}, { immediate: true, flush: 'sync' })
+
 watch(
-  () => [props.regionId, props.date] as const,
+  () => [props.regionId, props.date, selectedCompanyId.value] as const,
   () => {
     invalidateRequest(true)
     if (canQuery.value) void reload()
@@ -98,15 +113,32 @@ function matchesSearch(result: DisclosureDatasetResult): boolean {
   return haystack.includes(searchKeyword.value)
 }
 
-function renderable(result: DisclosureDatasetResult): boolean {
-  return result.series.some((series) => series.validPoints > 0) || result.rows.length > 0
-}
-
 const filteredResults = computed(() => results.value.filter(matchesSearch))
+const panels = computed(() => buildDisclosurePanels(results.value))
+const filteredPanels = computed(() => panels.value.filter((panel) => matchesDisclosurePanel(panel, searchKeyword.value)))
+const selectedPanels = computed(() => panels.value.filter((panel) => !hiddenCurves.value.includes(panel.selectionKey)))
+const selectionGroups = computed(() => DISCLOSURE_GROUPS.map((group) => ({
+  ...group,
+  panels: filteredPanels.value.filter((panel) => panel.dataset.spec.group === group.id),
+})))
 const groupedCards = computed(() => DISCLOSURE_GROUPS.map((group) => ({
   ...group,
-  datasets: filteredResults.value.filter((result) => result.spec.group === group.id && renderable(result)),
+  panels: filteredPanels.value.filter((panel) => panel.dataset.spec.group === group.id && !hiddenCurves.value.includes(panel.selectionKey)),
 })))
+const rawOnlyResults = computed(() => filteredResults.value.filter((result) =>
+  ['ready', 'partial'].includes(result.status) && result.rows.length > 0
+  && !panels.value.some((panel) => panel.dataset.spec.id === result.spec.id),
+))
+
+function saveSelection(keys: string[]) {
+  hiddenCurves.value = [...new Set(keys)]
+  try { window.localStorage.setItem(preferenceKey.value, JSON.stringify(hiddenCurves.value)) } catch { /* 禁用存储时仍可在本页选择。 */ }
+}
+function toggleCurve(key: string) {
+  saveSelection(hiddenCurves.value.includes(key) ? hiddenCurves.value.filter((item) => item !== key) : [...hiddenCurves.value, key])
+}
+function selectAll() { saveSelection([]) }
+function clearSelection() { saveSelection([...hiddenCurves.value, ...panels.value.map((panel) => panel.selectionKey)]) }
 
 const coverageRows = computed<CoverageRow[]>(() => filteredResults.value.map((result) => {
   const scope = [...new Set(result.series.map((series) => series.scopeLabel))].filter(Boolean)
@@ -137,7 +169,7 @@ const coverageRows = computed<CoverageRow[]>(() => filteredResults.value.map((re
   }
 }))
 
-const hasVisibleCards = computed(() => groupedCards.value.some((group) => group.datasets.length > 0))
+const hasVisibleCards = computed(() => groupedCards.value.some((group) => group.panels.length > 0))
 const failureCount = computed(() => results.value.filter((result) => result.status === 'error' || result.status === 'rejected').length)
 const emptyCount = computed(() => results.value.filter((result) => result.status === 'empty').length)
 const latestAcquisition = computed(() => {
@@ -218,7 +250,39 @@ defineExpose({ resize })
       class="daily-disclosure__alert"
     />
 
-    <DailyDisclosureTexts :region-id="regionId" :date="date" :reload-key="textReloadKey" />
+    <section v-if="panels.length && !loading" class="daily-disclosure__selection" aria-label="曲线看板设置">
+      <div class="daily-disclosure__board-head">
+        <div>
+          <h3 class="daily-disclosure__group-title">曲线看板</h3>
+          <p class="daily-disclosure__board-summary" aria-live="polite">
+            共 {{ panels.length }} 条可用曲线，已选择 {{ selectedPanels.length }} 条；不同指标和统计范围分别展示。
+          </p>
+        </div>
+        <div class="daily-disclosure__board-actions">
+          <a href="#daily-disclosure-texts">检修与运行文本</a>
+          <button type="button" class="daily-disclosure__control" :aria-expanded="selectionOpen" aria-controls="disclosure-curve-options" @click="selectionOpen = !selectionOpen">
+            {{ selectionOpen ? '收起选择' : '选择展示曲线' }}
+          </button>
+        </div>
+      </div>
+      <div v-show="selectionOpen" id="disclosure-curve-options" class="daily-disclosure__options">
+        <div class="daily-disclosure__board-actions">
+          <button type="button" class="daily-disclosure__control" @click="selectAll">显示全部曲线</button>
+          <button type="button" class="daily-disclosure__control" @click="clearSelection">清空选择</button>
+          <span>选择会自动记住；上方搜索只过滤当前展示，不改变勾选。</span>
+        </div>
+        <fieldset v-for="group in selectionGroups.filter((item) => item.panels.length)" :key="group.id" class="daily-disclosure__choices">
+          <legend>{{ group.label }}</legend>
+          <div class="daily-disclosure__choice-grid">
+            <label v-for="panel in group.panels" :key="panel.id" class="daily-disclosure__choice" :title="`${panel.title} · ${panel.scopeLabel}`">
+              <input type="checkbox" :checked="!hiddenCurves.includes(panel.selectionKey)" :aria-label="`${panel.title} · ${panel.scopeLabel}`" @change="toggleCurve(panel.selectionKey)">
+              <span><strong>{{ panel.title }}</strong><small>{{ panel.scopeLabel }} · {{ panel.dataset.series[0].targetDate ?? '仅记录日' }}</small></span>
+            </label>
+          </div>
+        </fieldset>
+        <p v-if="!filteredPanels.length" class="daily-disclosure__board-summary">当前搜索未匹配曲线，清除上方搜索可查看全部选择。</p>
+      </div>
+    </section>
 
     <div v-if="loading" class="daily-disclosure__state">
       正在读取当日披露数据…
@@ -227,25 +291,33 @@ defineExpose({ resize })
     <template v-else-if="hasVisibleCards">
       <section
         v-for="group in groupedCards"
-        v-show="group.datasets.length"
+        v-show="group.panels.length"
         :key="group.id"
         class="daily-disclosure__group"
       >
         <div class="daily-disclosure__group-head">
           <h3 class="daily-disclosure__group-title">{{ group.label }}</h3>
-          <span class="daily-disclosure__group-count">{{ group.datasets.length }} 项有数据</span>
+          <span class="daily-disclosure__group-count">{{ group.panels.length }} 条曲线</span>
         </div>
 
         <div class="daily-disclosure__grid" :class="{ 'daily-disclosure__grid--price': group.id === 'price' }">
           <DisclosureDatasetCard
-            v-for="dataset in group.datasets"
-            :key="dataset.spec.id"
+            v-for="panel in group.panels"
+            :key="panel.id"
             :ref="setCardRef"
-            :dataset="dataset"
+            :dataset="panel.dataset"
+            :display-title="panel.title"
           />
         </div>
       </section>
     </template>
+    <div v-else-if="!loading && panels.length" class="daily-disclosure__state" role="status">
+      {{ selectedPanels.length ? '当前搜索条件下没有已选曲线，请清除搜索或调整曲线选择。' : '你尚未选择展示曲线。' }}
+      <button v-if="!selectedPanels.length" type="button" class="daily-disclosure__control" @click="selectAll">显示全部曲线</button>
+    </div>
+    <div v-else-if="rawOnlyResults.length" class="daily-disclosure__state" role="status">
+      当日有原始记录，但暂没有可安全绘制的数值曲线。请展开下方原始记录核查。
+    </div>
     <div
       v-else-if="attempted && !loadError && filteredResults.length"
       class="daily-disclosure__state"
@@ -257,6 +329,17 @@ defineExpose({ resize })
       class="daily-disclosure__state"
     >
       当前搜索条件下没有匹配的数据集。
+    </div>
+
+    <details v-if="rawOnlyResults.length" class="daily-disclosure__coverage">
+      <summary>有原始记录但暂不可绘图（{{ rawOnlyResults.length }} 个数据集）</summary>
+      <div class="daily-disclosure__grid">
+        <DisclosureDatasetCard v-for="dataset in rawOnlyResults" :key="dataset.spec.id" :dataset="dataset" />
+      </div>
+    </details>
+
+    <div id="daily-disclosure-texts">
+      <DailyDisclosureTexts :region-id="regionId" :date="date" :reload-key="textReloadKey" />
     </div>
 
     <section v-if="attempted && coverageRows.length" class="daily-disclosure__coverage">
@@ -324,6 +407,54 @@ defineExpose({ resize })
   width: 15rem;
 }
 
+.daily-disclosure__selection {
+  padding: 16px 20px;
+  background: var(--panel, #fff);
+  border: 1px solid var(--line, #d9e2ec);
+  border-radius: 6px;
+}
+
+.daily-disclosure__board-head,
+.daily-disclosure__board-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+}
+
+.daily-disclosure__board-head { justify-content: space-between; }
+.daily-disclosure__board-actions { font-size: var(--font-sm); color: var(--muted, #667085); }
+.daily-disclosure__board-actions a { color: var(--primary, #0f9d8a); text-underline-offset: 3px; }
+.daily-disclosure__board-summary { margin: 6px 0 0; font-size: var(--font-sm); color: var(--muted, #667085); line-height: 1.6; }
+
+.daily-disclosure__control {
+  padding: 7px 12px;
+  border: 1px solid var(--line, #d9e2ec);
+  border-radius: 4px;
+  background: var(--panel, #fff);
+  color: var(--primary, #0f9d8a);
+  font-family: inherit;
+  font-size: var(--font-sm);
+  font-weight: 600;
+  line-height: 1.4;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.daily-disclosure__control:hover { border-color: var(--primary, #0f9d8a); background: var(--panel-sub, #f8fafc); }
+.daily-disclosure__control:focus-visible,
+.daily-disclosure__choice:focus-within { outline: 2px solid var(--primary, #0f9d8a); outline-offset: 2px; }
+.daily-disclosure__options { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--line, #d9e2ec); }
+.daily-disclosure__choices { min-width: 0; border: 0; padding: 0; margin: 16px 0 0; }
+.daily-disclosure__choices legend { padding: 0 0 10px; font-size: var(--font-md); font-weight: 600; color: var(--text, #1f2a37); }
+.daily-disclosure__choice-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px 16px; }
+.daily-disclosure__choice { display: flex; align-items: center; min-width: 0; gap: 9px; padding: 8px; border-radius: 4px; cursor: pointer; }
+.daily-disclosure__choice:hover { background: var(--panel-sub, #f8fafc); }
+.daily-disclosure__choice input { flex: none; accent-color: var(--primary, #0f9d8a); width: 1rem; height: 1rem; }
+.daily-disclosure__choice span { display: flex; flex-direction: column; min-width: 0; gap: 3px; }
+.daily-disclosure__choice strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--font-sm); font-weight: 500; color: var(--text, #1f2a37); }
+.daily-disclosure__choice small { font-size: var(--font-xs); color: var(--muted, #667085); }
+#daily-disclosure-texts { scroll-margin-top: 20px; min-width: 0; }
+
 .daily-disclosure__alert,
 .daily-disclosure__state,
 .daily-disclosure__coverage,
@@ -390,5 +521,15 @@ defineExpose({ resize })
   .daily-disclosure__search {
     width: 100%;
   }
+
+  .daily-disclosure__choice-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@container (max-width: 28rem) {
+  .daily-disclosure__choice-grid { grid-template-columns: minmax(0, 1fr); }
+  .daily-disclosure__selection,
+  .daily-disclosure__group,
+  .daily-disclosure__coverage,
+  .daily-disclosure__hero { padding: 12px; }
 }
 </style>

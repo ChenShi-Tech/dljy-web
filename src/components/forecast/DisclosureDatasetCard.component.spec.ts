@@ -185,4 +185,15 @@ describe('DisclosureDatasetCard', () => {
     expect(wrapper.find('.dialog').exists()).toBe(true)
     expect(wrapper.text()).toContain('全部统计范围和原始字段')
   })
+
+  it('支持父级传入单曲线标题，并把来源说明折叠到图后', async () => {
+    const wrapper = mount(DisclosureDatasetCard, {
+      props: { dataset: buildDataset(), displayTitle: '统调负荷预测 · 云南省内' },
+      global: { stubs },
+    })
+    wrappers.push(wrapper)
+    expect(wrapper.find('.disclosure-card__title').text()).toBe('统调负荷预测 · 云南省内')
+    expect(wrapper.find('.disclosure-card__details').exists()).toBe(true)
+    expect(wrapper.find('.disclosure-card__details summary').text()).toBe('来源与口径')
+  })
 })
