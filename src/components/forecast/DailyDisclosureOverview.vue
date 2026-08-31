@@ -311,12 +311,12 @@ defineExpose({ resize })
         </div>
       </section>
     </template>
+    <div v-else-if="rawOnlyResults.length" class="daily-disclosure__state" role="status">
+      当日有原始记录，但暂没有可安全绘制的数值曲线。请展开下方原始记录核查。
+    </div>
     <div v-else-if="!loading && panels.length" class="daily-disclosure__state" role="status">
       {{ selectedPanels.length ? '当前搜索条件下没有已选曲线，请清除搜索或调整曲线选择。' : '你尚未选择展示曲线。' }}
       <button v-if="!selectedPanels.length" type="button" class="daily-disclosure__control" @click="selectAll">显示全部曲线</button>
-    </div>
-    <div v-else-if="rawOnlyResults.length" class="daily-disclosure__state" role="status">
-      当日有原始记录，但暂没有可安全绘制的数值曲线。请展开下方原始记录核查。
     </div>
     <div
       v-else-if="attempted && !loadError && filteredResults.length"

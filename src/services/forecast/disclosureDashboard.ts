@@ -40,6 +40,14 @@ function targetDateOf(series: DisclosureSeries): string {
   return parseSeriesParts(series.id)?.[1] || text(series.targetDate)
 }
 
+// 同一记录日可能同时披露D+1/D+2；按相对天数区分，既能独立勾选，也能跨日记忆。
+function horizonOf(dataset: DisclosureDatasetResult, series: DisclosureSeries): string {
+  const targetDate = targetDateOf(series)
+  if (!targetDate) return 'record-only'
+  const days = (Date.parse(`${targetDate}T00:00:00Z`) - Date.parse(`${dataset.date}T00:00:00Z`)) / 86400000
+  return Number.isFinite(days) ? `D${days >= 0 ? '+' : ''}${days}` : `target:${targetDate}`
+}
+
 function hasFinitePoint(series: DisclosureSeries): boolean {
   return series.validPoints > 0 && series.points.some((value) => typeof value === 'number' && Number.isFinite(value))
 }
@@ -57,7 +65,7 @@ export function buildDisclosurePanels(results: DisclosureDatasetResult[]): Discl
     for (const series of dataset.series) {
       if (!series || !hasFinitePoint(series)) continue
       const metric = metricOf(series)
-      const selectionKey = JSON.stringify([dataset.spec.id, text(series.scope), metric, text(series.unit)])
+      const selectionKey = JSON.stringify([dataset.spec.id, text(series.scope), metric, text(series.unit), horizonOf(dataset, series)])
       panels.push({
         id: JSON.stringify([dataset.spec.id, series.id, text(series.unit)]),
         selectionKey,

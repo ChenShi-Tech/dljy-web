@@ -118,6 +118,16 @@ describe('buildDisclosurePanels', () => {
     expect(panel.selectionKey).toContain('plain-id')
     expect(panel.title).toBe('统调负荷预测 · 云南统调')
   })
+
+  // 不变量：同一次披露含不同预测跨度时，每个目标日仍可独立勾选。
+  it('同源同范围的D+1/D+2曲线不共用选择键', () => {
+    const panels = buildDisclosurePanels([dataset({ date: '2026-06-25' }, [
+      series({ id: JSON.stringify(['yn', '2026-06-26', 'load_forecast']), targetDate: '2026-06-26' }),
+      series({ id: JSON.stringify(['yn', '2026-06-27', 'load_forecast']), targetDate: '2026-06-27' }),
+    ])])
+    expect(panels).toHaveLength(2)
+    expect(panels[0].selectionKey).not.toBe(panels[1].selectionKey)
+  })
 })
 
 describe('matchesDisclosurePanel', () => {

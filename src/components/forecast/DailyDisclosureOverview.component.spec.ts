@@ -171,7 +171,7 @@ describe('DailyDisclosureOverview', () => {
     expect(wrapper.findAll('.dataset-card')).toHaveLength(1)
     wrapper.unmount()
     wrappers = []
-    const reopened = await render()
+    const reopened = await render({ regionId: 'yunnan', date: '2026-06-26' })
     expect(reopened.findAll('.dataset-card')).toHaveLength(1)
     expect(window.localStorage.getItem('dljy.disclosure-board.v1.yunnan.company-a')).not.toContain('points')
   })
@@ -248,6 +248,17 @@ describe('DailyDisclosureOverview', () => {
     const wrapper = await render()
     expect(wrapper.findAll('.dataset-card')).toHaveLength(1)
     expect(wrapper.find('.coverage-table').exists()).toBe(true)
+  })
+
+  // 不变量：搜索命中原始行而非可绘图面板时，不能误报用户未勾选。
+  it('存在其他曲线时，搜索仅命中原始记录会解释不可绘图原因', async () => {
+    const rawOnly = { ...dataset('raw_only', 'actual', 'partial'), series: [], rows: [{ timePoint: 'bad', value: 12 }] }
+    api.loadDailyDisclosure.mockResolvedValueOnce([rawOnly, dataset('load_actual', 'actual')])
+    const wrapper = await render()
+    await wrapper.find('.search-input').setValue('raw_only')
+    expect(wrapper.text()).toContain('当日有原始记录，但暂没有可安全绘制')
+    expect(wrapper.text()).not.toContain('当前搜索条件下没有已选曲线')
+    expect(wrapper.findAll('details .dataset-card')).toHaveLength(1)
   })
 
   it('搜索卸载后 resize 仅调用当前卡片，清除搜索可恢复卡片', async () => {
