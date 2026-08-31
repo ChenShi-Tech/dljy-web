@@ -46,7 +46,7 @@ const slot = { template: '<div><slot/></div>' }
 const wrappers: VueWrapper[] = []
 async function render() {
   const wrapper = mount(Workbench, { global: { directives: { loading: () => {} }, stubs: {
-    ElCard: slot, ElTabs: slot, ElTabPane: slot, ElTag: slot, ElDescriptions: slot, ElDescriptionsItem: slot,
+    ElCard: slot, ElTabs: { name: 'ElTabs', props: ['modelValue'], emits: ['update:modelValue'], template: '<div><slot/></div>' }, ElTabPane: slot, ElTag: slot, ElDescriptions: slot, ElDescriptionsItem: slot,
     ElCheckboxGroup: { name: 'ElCheckboxGroup', props: ['modelValue'], emits: ['update:modelValue'], template: '<div><slot/></div>' },
     ElCheckbox: { name: 'ElCheckbox', props: ['modelValue', 'value', 'disabled', 'border', 'title'], template: '<label><slot/></label>' },
     ElRow: slot, ElCol: slot, ElRadioGroup: slot, ElRadioButton: slot,
@@ -58,6 +58,7 @@ async function render() {
     ElButton: { props: ['disabled', 'loading'], emits: ['click'], template: '<button :disabled="disabled || loading" @click="$emit(\'click\')"><slot/></button>' },
     ElAlert: { props: ['title'], template: '<p>{{title}}</p>' }, DataBasisBadge: true, DynamicParamPanel: true,
     ForecastExtraPanel: { template: '<div/>', methods: { resize: () => {} } },
+    DailyDisclosureOverview: { name: 'DailyDisclosureOverview', props: ['regionId', 'date'], template: '<div>当日披露总览</div>', methods: { resize: () => {} } },
     UnifiedForecastChart: { name: 'UnifiedForecastChart', props: ['results'], template: '<div/>', methods: { resize: () => {} } },
   } } })
   wrappers.push(wrapper)
@@ -87,6 +88,22 @@ beforeEach(() => {
 afterEach(() => { wrappers.splice(0).forEach((wrapper) => wrapper.unmount()) })
 
 describe('建模工作台的目标日上下文', () => {
+  it('云南多目标总览接入全部披露，日期标明源记录日，不再用预测目标过滤', async () => {
+    const wrapper = await render()
+    expect(wrapper.findComponent({ name: 'DailyDisclosureOverview' }).exists()).toBe(false)
+    wrapper.findComponent({ name: 'ElTabs' }).vm.$emit('update:modelValue', 'overview')
+    await flushPromises()
+    expect(wrapper.findComponent({ name: 'DailyDisclosureOverview' }).props()).toMatchObject({ regionId: 'yunnan', date: '2026-06-25' })
+    expect(wrapper.text()).toContain('披露记录日期')
+    expect(wrapper.find('.shared').text()).not.toContain('历史范围')
+    expect(wrapper.find('.shared').text()).not.toContain('预测目标')
+    expect(wrapper.text()).not.toContain('加载平台官方总览')
+    route.query.date = '2026-06-26'; await flushPromises()
+    expect(wrapper.findComponent({ name: 'DailyDisclosureOverview' }).props('date')).toBe('2026-06-26')
+    expect(api.run).not.toHaveBeenCalled()
+    wrapper.findComponent({ name: 'ElTabs' }).vm.$emit('update:modelValue', 'single'); await flushPromises()
+    expect(wrapper.find('.shared').text()).toContain('预测目标')
+  })
   it('多算法区使用等宽网格清单，名称保持单行省略且不再显示第二行运行类型', async () => {
     const longName = '云南日前统一结算电价 Dynamic TMoE 协变量训练版本'
     api.load.mockResolvedValueOnce([

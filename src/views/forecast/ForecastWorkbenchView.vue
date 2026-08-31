@@ -11,6 +11,7 @@ import DynamicParamPanel from '../../components/forecast/DynamicParamPanel.vue'
 import UnifiedForecastChart from '../../components/forecast/UnifiedForecastChart.vue'
 import ForecastExtraPanel from '../../components/forecast/ForecastExtraPanel.vue'
 import ForecastTargetCount from '../../components/forecast/ForecastTargetCount.vue'
+import DailyDisclosureOverview from '../../components/forecast/DailyDisclosureOverview.vue'
 import { selectedRegionId, setCurrentRegionId } from '@/services/region/regionContext'
 import { getRegionById } from '../../data/regions'
 import {
@@ -345,7 +346,9 @@ const ledger = computed(() => visibleTargetProviders.value.map((p) => ({
 
 // 扩展预测子面板（迁自原 ML 实验室「扩展预测」tab）：tab 切回时需 resize 其内部 echarts。
 const extraPanel = ref<InstanceType<typeof ForecastExtraPanel> | null>(null)
-watch(activeTab, () => nextTick(() => { chartA.value?.resize(); chartB.value?.resize(); extraPanel.value?.resize() }))
+const disclosurePanel = ref<InstanceType<typeof DailyDisclosureOverview> | null>(null)
+const disclosureMode = computed(() => activeTab.value === 'overview' && regionId.value === 'yunnan')
+watch(activeTab, () => nextTick(() => { chartA.value?.resize(); chartB.value?.resize(); extraPanel.value?.resize(); disclosurePanel.value?.resize() }))
 function requireTargetDate(): boolean {
   if (isForecastDate(targetDate.value)) return true
   error.value = '请选择有效的预测日期；不会自动改算其他日期'
@@ -383,12 +386,13 @@ onMounted(() => { void ensureForecastCatalog(target.value, false, regionId.value
         <el-select v-model="regionId" style="width: 120px">
           <el-option v-for="r in regionOptions" :key="r.id" :label="r.name" :value="r.id" />
         </el-select>
-        <span class="lbl">预测目标</span>
-        <el-select v-model="target" style="width: 150px">
+        <span v-if="!disclosureMode" class="lbl">预测目标</span>
+        <el-select v-if="!disclosureMode" v-model="target" style="width: 150px">
           <el-option v-for="t in TARGETS" :key="t.id" :label="t.name" :value="t.id" />
         </el-select>
-        <span class="lbl">预测日期</span>
+        <span class="lbl">{{ disclosureMode ? '披露记录日期' : '预测日期' }}</span>
         <el-date-picker v-model="targetDate" type="date" value-format="YYYY-MM-DD" size="small" style="width: 150px" />
+        <template v-if="!disclosureMode">
         <span class="lbl">粒度</span>
         <el-radio-group v-if="nativeSlots === 96" v-model="granularity" size="small">
           <el-radio-button :value="96">96 点</el-radio-button>
@@ -397,6 +401,7 @@ onMounted(() => { void ensureForecastCatalog(target.value, false, regionId.value
         <el-tag v-else size="small" type="info">{{ nativeSlots }} 点（标的原生粒度，不聚合）</el-tag>
         <span class="lbl">历史范围(天)</span>
         <el-input-number v-model="historyDays" :min="30" :max="365" :step="30" size="small" />
+        </template>
       </div>
 
       <el-alert v-if="error" :title="error" type="error" :closable="false" show-icon style="margin: 8px 0" />
@@ -555,11 +560,12 @@ onMounted(() => { void ensureForecastCatalog(target.value, false, regionId.value
 
         <!-- 模式 D：多目标总览 -->
         <el-tab-pane label="多目标总览" name="overview">
+          <DailyDisclosureOverview v-if="regionId === 'yunnan' && activeTab === 'overview'" ref="disclosurePanel" :region-id="regionId" :date="targetDate" />
+          <template v-else-if="regionId !== 'yunnan'">
           <div class="controls">
             <el-button type="primary" :loading="overviewLoading" @click="loadOverview">加载平台官方总览</el-button>
             <span class="hint">按共享预测日期加载已核实来源的官方预测；这是披露回放，不是南洋模型计算。</span>
           </div>
-          <p class="hint" v-if="regionId === 'yunnan'">云南已接入目标日明确的官方新能源预测。负荷预测的目标日期尚未核实；总发电披露是南网全网口径；电价、水电实际值不混充官方预测。</p>
           <el-row :gutter="12">
             <el-col v-for="o in overviewResults" :key="o.id" :span="12" :xs="24">
               <div class="ov-card">
@@ -568,6 +574,7 @@ onMounted(() => { void ensureForecastCatalog(target.value, false, regionId.value
               </div>
             </el-col>
           </el-row>
+          </template>
         </el-tab-pane>
 
         <!-- 附 tab：模型台账 -->
