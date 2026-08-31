@@ -1,0 +1,56 @@
+// @vitest-environment happy-dom
+import { describe, expect, it } from 'vitest'
+import { flushPromises, mount } from '@vue/test-utils'
+
+import ForecastTargetCount from './ForecastTargetCount.vue'
+
+const slot = { template: '<div><slot/></div>' }
+
+describe('ForecastTargetCount', () => {
+  it('点击支持目标数后展示输出目标说明，而不是协变量说明', async () => {
+    const wrapper = mount(ForecastTargetCount, {
+      props: {
+        modelName: '测试模型',
+        targets: ['price_user_da_settlement', 'load'],
+        declared: true,
+      },
+      global: {
+        stubs: {
+          ElButton: { props: ['ariaLabel'], emits: ['click'], template: '<button @click="$emit(\'click\')"><slot/></button>' },
+          ElDialog: slot,
+          ElEmpty: { props: ['description'], template: '<p>{{description}}</p>' },
+        },
+      },
+    })
+
+    expect(wrapper.text()).toContain('2')
+    await wrapper.find('button').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('用户侧日前统一结算电价')
+    expect(wrapper.text()).toContain('统调负荷')
+    expect(wrapper.text()).toContain('不是输入协变量的数量')
+  })
+
+  it('旧目录未声明支持目标时，不把兼容全集当作已确认能力', async () => {
+    const wrapper = mount(ForecastTargetCount, {
+      props: {
+        modelName: '旧模型',
+        targets: ['price', 'load'],
+        declared: false,
+      },
+      global: {
+        stubs: {
+          ElButton: { emits: ['click'], template: '<button @click="$emit(\'click\')"><slot/></button>' },
+          ElDialog: slot,
+          ElEmpty: { props: ['description'], template: '<p>{{description}}</p>' },
+        },
+      },
+    })
+
+    expect(wrapper.text()).toContain('未声明')
+    await wrapper.find('button').trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).toContain('旧目录未声明支持目标')
+  })
+})

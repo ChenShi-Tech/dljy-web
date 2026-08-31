@@ -10,6 +10,7 @@ import DataBasisBadge from '../../components/DataBasisBadge.vue'
 import DynamicParamPanel from '../../components/forecast/DynamicParamPanel.vue'
 import UnifiedForecastChart from '../../components/forecast/UnifiedForecastChart.vue'
 import ForecastExtraPanel from '../../components/forecast/ForecastExtraPanel.vue'
+import ForecastTargetCount from '../../components/forecast/ForecastTargetCount.vue'
 import { selectedRegionId, setCurrentRegionId } from '@/services/region/regionContext'
 import { getRegionById } from '../../data/regions'
 import {
@@ -288,10 +289,9 @@ async function runCompare() {
 }
 
 // 模式 D：多目标总览（平台官方回放）
-const OVERVIEW = [
-  { id: 'price', name: '电价' }, { id: 'load', name: '系统负荷' }, { id: 'renewable', name: '新能源出力' },
-  { id: 'bidding_space', name: '竞价空间' }, { id: 'thermal', name: '火电出力' },
-]
+const overviewTargets = computed(() => platformTargetsForRegion(regionId.value).map((id) => ({
+  id, name: TARGETS.find((item) => item.id === id)?.name ?? id,
+})))
 const overviewResults = ref<{ id: string; name: string; result: UnifiedForecastResult }[]>([])
 const overviewLoading = ref(false)
 let overviewGeneration = 0
@@ -306,9 +306,8 @@ async function loadOverview() {
     const platform = getProvider('platform')
     if (!platform) return
     setCurrentRegionId(region)
-    const supportedTargets = new Set(platformTargetsForRegion(region))
-    const overviewTargets = OVERVIEW.filter((t) => supportedTargets.has(t.id))
-    if (!overviewTargets.length) {
+    const selectedOverviewTargets = overviewTargets.value
+    if (!selectedOverviewTargets.length) {
       overviewResults.value = []
       error.value = '当前地区暂无平台官方真实采集预测总览'
       return
@@ -316,7 +315,7 @@ async function loadOverview() {
     // 与 runCompare 同款：逐目标失败原因不再吞掉——全失败时页面此前只是空白无提示，
     // 看起来像"这个地区没有总览"，实则是后端给了可执行原因（日期超范围/缺列等）。
     const failures: ForecastFailure[] = []
-    const settled = await Promise.all(overviewTargets.map((t) =>
+    const settled = await Promise.all(selectedOverviewTargets.map((t) =>
       platform.run({ regionId: region, target: t.id, targetDate: targetDate.value || undefined, granularity: granularityForTarget(t.id, granularity.value), historyDays: historyDays.value }, {})
         .then((r) => ({ id: t.id, name: t.name, result: r }))
         .catch((e) => { failures.push({ name: t.name, reason: (e as Error).message || '取数失败' }); return null })))
@@ -333,7 +332,8 @@ async function loadOverview() {
 const kindLabel = (k: ProviderKind) => (k === 'replay' ? '回放真实采集' : '后端实时计算')
 // 台账也是业务界面：与选择器保持同一准入范围，清理明细仅留在独立审计报告。
 const ledger = computed(() => visibleTargetProviders.value.map((p) => ({
-  id: p.id, name: p.name, kind: p.kind, tier: p.tier, targets: p.supportedTargets.length,
+  id: p.id, name: p.name, kind: p.kind, tier: p.tier, supportedTargets: [...new Set(p.supportedTargets)],
+  supportedTargetsDeclared: p.supportedTargetsDeclared !== false,
   mock: !!p.mock,
   available: p.kind === 'replay' ? true : (p.available ?? null),
   reason: p.reason ?? '',
@@ -505,15 +505,14 @@ onMounted(() => { void ensureForecastCatalog(target.value, false, regionId.value
             <el-checkbox-group v-model="compareIds" class="compare-checkboxes" aria-labelledby="compare-algorithm-label">
               <el-checkbox v-for="p in visibleTargetProviders" :key="p.id" :value="p.id" border class="compare-checkbox"
                 :disabled="loadingB || p.available === false"
-                :title="p.available === false ? (p.reason || '当前不可用') : ''">
+                :title="providerOptionLabel(p)">
                 <span class="compare-model-name">{{ p.name }}</span>
-                <span class="compare-model-kind">{{ p.kind === 'replay' ? '采集回放' : '实时计算' }}</span>
               </el-checkbox>
             </el-checkbox-group>
             <el-button type="primary" :loading="loadingB" :disabled="!hasVisibleTargetProviders" @click="runCompare">运行对比</el-button>
           </div>
           <el-empty v-if="!hasVisibleTargetProviders" :description="compareModelEmptyText" :image-size="72" />
-          <p class="hint">同地区/目标/日期/粒度下，对所选算法各自预测，叠加曲线；有评估指标的按 MAE 升序排名（平台官方/KNN 回放无监督指标，列为「—」）。</p>
+          <p class="hint">同地区/目标/日期/粒度下，对所选算法各自预测，叠加曲线；算法名保持单行省略、卡片等宽对齐。有评估指标的按 MAE 升序排名（平台官方/KNN 回放无监督指标，列为「—」）。</p>
 
           <UnifiedForecastChart ref="chartB" :results="compareResults" :height="360" v-loading="loadingB" />
 
@@ -551,15 +550,16 @@ onMounted(() => { void ensureForecastCatalog(target.value, false, regionId.value
 
         <!-- 扩展预测：超短期/中长期/偏差；独立PatchTST序列演示已按用户要求移除。 -->
         <el-tab-pane label="扩展预测" name="extra">
-          <ForecastExtraPanel ref="extraPanel" :region-id="regionId" :target="target" :train-days="historyDays" />
+          <ForecastExtraPanel ref="extraPanel" :region-id="regionId" :target="target" :train-days="historyDays" :target-date="targetDate" />
         </el-tab-pane>
 
         <!-- 模式 D：多目标总览 -->
         <el-tab-pane label="多目标总览" name="overview">
           <div class="controls">
             <el-button type="primary" :loading="overviewLoading" @click="loadOverview">加载平台官方总览</el-button>
-            <span class="hint">一屏概览平台官方采集的多目标日前预测曲线（真实采集回放，最可信，不可调参）。</span>
+            <span class="hint">按共享预测日期加载已核实来源的官方预测；这是披露回放，不是南洋模型计算。</span>
           </div>
+          <p class="hint" v-if="regionId === 'yunnan'">云南已接入目标日明确的官方新能源预测。负荷预测的目标日期尚未核实；总发电披露是南网全网口径；电价、水电实际值不混充官方预测。</p>
           <el-row :gutter="12">
             <el-col v-for="o in overviewResults" :key="o.id" :span="12" :xs="24">
               <div class="ov-card">
@@ -572,7 +572,7 @@ onMounted(() => { void ensureForecastCatalog(target.value, false, regionId.value
 
         <!-- 附 tab：模型台账 -->
         <el-tab-pane label="模型台账" name="ledger">
-          <p class="hint">当前已接入且符合运行条件的预测算法：类别、层级、支持目标与后端可用性。</p>
+          <p class="hint">当前目标下的可用算法。点击支持目标数查看该算法声明的预测输出；这个数量不是输入协变量数量，也不保证每个目标日都有完整数据。</p>
           <el-table :data="ledger" size="small" border>
             <el-table-column prop="name" label="算法" />
             <el-table-column label="运行时" width="120">
@@ -583,7 +583,7 @@ onMounted(() => { void ensureForecastCatalog(target.value, false, regionId.value
             </el-table-column>
             <el-table-column label="类别" width="150"><template #default="{ row }">{{ kindLabel(row.kind) }}</template></el-table-column>
             <el-table-column prop="tier" label="层级" width="110" />
-            <el-table-column label="支持目标数" width="110"><template #default="{ row }">{{ row.targets }}</template></el-table-column>
+            <el-table-column label="支持目标数" width="110"><template #default="{ row }"><ForecastTargetCount :targets="row.supportedTargets" :declared="row.supportedTargetsDeclared" :model-name="row.name" /></template></el-table-column>
             <el-table-column label="后端可用" width="120">
               <template #default="{ row }">
                 <el-tag v-if="row.available === true" type="success" size="small">可用</el-tag>
@@ -623,24 +623,20 @@ onMounted(() => { void ensureForecastCatalog(target.value, false, regionId.value
 .controls { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
 .compare-controls { display: grid; grid-template-columns: minmax(0, 1fr); align-items: start; gap: 12px; }
 .compare-controls > .el-button { justify-self: start; margin-left: 0; }
-.compare-checkboxes { columns: 3 240px; column-gap: 12px; width: 100%; min-width: 0; }
+.compare-checkboxes { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr)); gap: 8px 12px; width: 100%; min-width: 0; }
 .compare-checkboxes :deep(.el-checkbox.is-bordered) {
-  display: inline-flex; box-sizing: border-box; width: 100%; height: auto; min-height: 54px;
-  margin: 0 0 8px; padding: 10px 12px; break-inside: avoid; vertical-align: top;
-  align-items: flex-start; border-radius: 6px; background: var(--el-bg-color);
+  display: flex; box-sizing: border-box; width: 100%; min-width: 0; height: 40px;
+  margin: 0; padding: 0 10px;
+  align-items: center; border-radius: 6px; background: var(--el-bg-color);
 }
-.compare-checkboxes :deep(.el-checkbox__input) { flex: 0 0 auto; margin-top: 3px; }
-.compare-checkboxes :deep(.el-checkbox__label) { min-width: 0; padding-left: 10px; white-space: normal; text-align: left; }
-.compare-model-name { display: block; color: var(--el-text-color-primary); font-size: var(--font-md); line-height: 1.5; overflow-wrap: anywhere; }
-.compare-model-kind { display: block; margin-top: 3px; color: var(--el-text-color-secondary); font-size: var(--font-sm); line-height: 1.4; }
+.compare-checkboxes :deep(.el-checkbox__input) { flex: 0 0 auto; }
+.compare-checkboxes :deep(.el-checkbox__label) { min-width: 0; padding-left: 8px; white-space: nowrap; text-align: left; overflow: hidden; }
+.compare-model-name { display: block; color: var(--el-text-color-primary); font-size: var(--font-sm, 12px); line-height: 20px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .compare-checkboxes :deep(.el-checkbox.is-bordered:not(.is-disabled):hover) { border-color: var(--el-color-primary-light-5); background: var(--el-color-primary-light-9); }
 .compare-checkboxes :deep(.el-checkbox.is-bordered.is-checked) { border-color: var(--el-color-primary); background: var(--el-color-primary-light-9); }
 .compare-checkboxes :deep(.el-checkbox.is-checked) .compare-model-name { font-weight: 600; }
 .compare-checkboxes :deep(.el-checkbox.is-bordered:focus-within) { outline: 2px solid var(--el-color-primary); outline-offset: 2px; }
 .compare-checkboxes :deep(.el-checkbox.is-disabled) { background: var(--el-fill-color-light); }
-@media (min-width: 1600px) { .compare-checkboxes { column-count: 4; } }
-@media (max-width: 1100px) { .compare-checkboxes { column-count: 2; } }
-@media (max-width: 720px) { .compare-checkboxes { column-count: 1; } }
 .controls.shared { padding-bottom: 10px; border-bottom: 1px solid var(--el-border-color-lighter); }
 .lbl { color: var(--el-text-color-secondary); font-size: var(--font-md); }
 .hint { color: var(--el-text-color-secondary); font-size: var(--font-sm); margin: 0 0 8px; }

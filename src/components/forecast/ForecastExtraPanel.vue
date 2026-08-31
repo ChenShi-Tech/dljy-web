@@ -17,6 +17,7 @@ const props = defineProps<{
   regionId: string
   target: string
   trainDays: number
+  targetDate?: string
 }>()
 
 const timeLabels = Array.from({ length: 96 }, (_, i) => {
@@ -57,7 +58,7 @@ function ultraUnsupportedReason(target: string, slotsPerDay: number): string {
 const ultraBlockedReason = computed(() => ultraUnsupportedReason(props.target, ultraNativeSlots.value))
 const ultraHorizon = computed(() => (ultra.value && ultra.value.available !== false ? ultra.value.horizon : '—'))
 const ultraHint = computed(() => ultraBlockedReason.value
-  || `当前后端返回的是最新历史日的历史逐时段滚动检验，不读取共享预测日期，也不是实时未来整天曲线；horizon：${ultraHorizon.value}。`)
+  || `本地 XGBoost · ${props.targetDate || '最新完整历史日'} · 每步用之前的实际值预测下一15分钟，不是南洋日前模型或未来整天预测。步长：${ultraHorizon.value}。`)
 
 // echarts 实例管理（每图一个容器/实例，按需 init + 切换 resize）
 const elUltra = ref<HTMLDivElement | null>(null)
@@ -115,7 +116,7 @@ async function doUltra() {
   }
   try {
     setCurrentRegionId(props.regionId)
-    const r = await runUltraShort({ region_id: props.regionId, target: props.target, train_days: props.trainDays, data_source: 'auto' })
+    const r = await runUltraShort({ region_id: props.regionId, target: props.target, train_days: props.trainDays, data_source: 'auto', target_date: props.targetDate || undefined })
     if (gen !== ultraGen) return // 期间切了地区/目标 → 丢弃旧结果
     if (r.available === false) {
       ultraError.value = r.reason || '超短期结果当前不可用'
@@ -126,13 +127,28 @@ async function doUltra() {
       ultraError.value = (r.reason || '').trim() || '超短期暂无可展示的逐时段结果'
       return
     }
+    const actual = ultraFinitePoints(r.actual)
+    const persistence = ultraFinitePoints(r.persistence)
+    if (props.targetDate && (r.target_date !== props.targetDate || r.target !== props.target
+      || r.region_id !== props.regionId || r.mode !== 'historical_one_step_replay'
+      || r.interval_minutes !== 15 || points.length !== 96 || actual?.length !== 96
+      || persistence?.length !== 96 || r.slots?.length !== 96 || r.slots.some((slot, i) => slot !== i)
+      || !r.unit || !Number.isFinite(r.mae) || !Number.isFinite(r.persistence_mae))) {
+      ultraError.value = '返回的日期、地区或96点检验数据不完整，未展示错位曲线；请检查后端版本与数据。'
+      return
+    }
     ultra.value = { ...r, points }
     await nextTick()
     if (gen !== ultraGen) return
     paint('ultra', elUltra.value, {
-      tooltip: { trigger: 'axis' }, grid: { left: 56, right: 24, top: 24, bottom: 40 },
+      tooltip: { trigger: 'axis' }, legend: { top: 0 }, grid: { left: 64, right: 24, top: 50, bottom: 40 },
       xAxis: { type: 'category', data: ultraLabels(points.length), axisLabel: { interval: points.length === 96 ? 15 : 0 } },
-      yAxis: { type: 'value', scale: true }, series: [lineSeries('超短期滚动', points, '#67c23a')],
+      yAxis: { type: 'value', name: r.unit, scale: true },
+      series: [
+        { ...lineSeries('滚动预测', points, '#409eff'), lineStyle: { width: 2, type: 'dashed' } },
+        ...(actual?.length === points.length ? [lineSeries('实际值', actual, '#67c23a')] : []),
+        ...(persistence?.length === points.length ? [{ ...lineSeries('上一时段对照', persistence, '#909399'), lineStyle: { width: 1, type: 'dotted' as const } }] : []),
+      ],
     })
   } catch (e) {
     if (gen !== ultraGen) return
@@ -201,7 +217,7 @@ function invalidateExtraRequests() {
   clearDevState(true)
 }
 // 地区/目标/历史窗切换 → 作废全部 in-flight 请求并清空旧结果与图，避免旧上下文曲线/错误残留。
-watch(() => [props.regionId, props.target, props.trainDays], invalidateExtraRequests)
+watch(() => [props.regionId, props.target, props.trainDays, props.targetDate], invalidateExtraRequests)
 
 function resize() { Object.values(charts).forEach((c) => c?.resize()) }
 defineExpose({ resize })
@@ -216,7 +232,7 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="extra-panel">
-    <p class="hint">扩展预测能力由后端计算；各卡片独立运行。当前超短期只沿用共享任务栏的地区/目标/历史范围，不读取共享预测日期。</p>
+    <p class="hint">各卡片独立运行。超短期读取共享任务栏的地区、目标、日期和历史范围，展示所选历史日的逐步检验。</p>
     <el-row :gutter="12">
       <el-col :span="12" :xs="24">
         <div class="ext-card">
@@ -225,6 +241,12 @@ onBeforeUnmount(() => {
             <DataBasisBadge v-if="ultra && ultra.available !== false" :basis="ultra.basis" />
           </div>
           <p class="hint">{{ ultraHint }}</p>
+          <p v-if="ultra && ultra.available !== false && ultra.mae != null && ultra.persistence_mae != null" class="hint ultra-metrics">
+            {{ ultra.target_date }} · 平均绝对误差 {{ ultra.mae.toFixed(2) }} {{ ultra.unit }}
+            · 上一时段对照误差 {{ ultra.persistence_mae.toFixed(2) }} {{ ultra.unit }}
+            · {{ ultra.beats_persistence ? '本次优于对照' : '本次未优于对照' }}
+          </p>
+          <p v-if="ultra && ultra.available !== false && ultra.data_available_to" class="hint">实际数据截至 {{ ultra.data_available_to.replace('T', ' ') }}；历史检验不代表已接入当前实时数据。</p>
           <el-alert v-if="ultraError" :title="ultraError" type="error" :closable="false" show-icon style="margin: 4px 0 10px" />
           <div ref="elUltra" class="chart sm" v-loading="ultraLoading"></div>
         </div>

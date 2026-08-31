@@ -118,13 +118,47 @@ beforeEach(() => {
 afterEach(() => { wrappers.splice(0).forEach((wrapper) => wrapper.unmount()) })
 
 describe('ForecastExtraPanel', () => {
+  it('指定日传到后端并展示同日预测、实际、上一时段对照三条曲线和误差', async () => {
+    api.runUltraShort.mockResolvedValueOnce({
+      target: 'load', region_id: 'yunnan', target_date: '2026-06-25', basis: 'captured',
+      mode: 'historical_one_step_replay', interval_minutes: 15, unit: 'MW', horizon: '1-step',
+      points: Array(96).fill(101), actual: Array(96).fill(100), persistence: Array(96).fill(102),
+      slots: Array.from({ length: 96 }, (_, i) => i), mae: 1, persistence_mae: 2, beats_persistence: true,
+    })
+    const wrapper = await render({ target: 'load', targetDate: '2026-06-25' })
+    await clickUltra(wrapper)
+    expect(api.runUltraShort).toHaveBeenCalledWith(expect.objectContaining({ target_date: '2026-06-25', target: 'load', data_source: 'auto' }))
+    const option = chartState.instances[0].setOption.mock.calls[0][0]
+    expect(option.series.map((s: { name: string }) => s.name)).toEqual(['滚动预测', '实际值', '上一时段对照'])
+    expect(option.yAxis.name).toBe('MW')
+    expect(wrapper.text()).toContain('平均绝对误差 1.00 MW')
+  })
+
+  it('指定日不接受旧后端缺日期的结果', async () => {
+    const wrapper = await render({ targetDate: '2026-06-25' })
+    await clickUltra(wrapper)
+    expect(wrapper.text()).toContain('未展示错位曲线')
+    expect(chartState.init).not.toHaveBeenCalled()
+  })
+
+  it('日期变化即清空曲线并作废在途结果', async () => {
+    const pending = deferred<unknown>()
+    api.runUltraShort.mockReturnValueOnce(pending.promise)
+    const wrapper = await render({ targetDate: '2026-06-25' })
+    await wrapper.findAll('button')[0].trigger('click')
+    await wrapper.setProps({ targetDate: '2026-06-26' })
+    pending.resolve({ target: 'price', basis: 'captured', points: [1], horizon: 'late' })
+    await flushPromises()
+    expect(chartState.init).not.toHaveBeenCalled()
+    expect(wrapper.findComponent({ name: 'ElButton' }).props('loading')).toBe(false)
+  })
   it('扩展面板只保留三张卡，不再显示PatchTST序列入口或误差保证', async () => {
     const wrapper = await render()
     expect(wrapper.findAll('.ext-card')).toHaveLength(3)
     expect(wrapper.findAll('button')).toHaveLength(3)
     expect(wrapper.text()).not.toContain('PatchTST')
     expect(wrapper.text()).not.toContain('误差远低于')
-    expect(wrapper.text()).toContain('不读取共享预测日期')
+    expect(wrapper.text()).toContain('超短期读取共享任务栏')
   })
   it('小时结算价目标会禁用超短期入口并提前说明原因', async () => {
     const wrapper = await render({ target: 'price_user_da_settlement' })

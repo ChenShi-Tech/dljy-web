@@ -15,7 +15,10 @@ vi.mock('@/services/forecast/forecastProviders', async (original) => ({
   ensureForecastCatalog: async () => { rows.value = await api.load() },
   forecastCatalogState: () => ({ error: ref('') }),
 }))
-vi.mock('@/services/forecast/officialBaseline', () => ({ hasOfficialBaseline: () => false, officialMae: () => null, fetchOfficialBaseline: vi.fn() }))
+vi.mock('@/services/forecast/officialBaseline', async (original) => ({
+  ...await original<typeof import('@/services/forecast/officialBaseline')>(),
+  hasOfficialBaseline: () => false, officialMae: () => null, fetchOfficialBaseline: vi.fn(),
+}))
 vi.mock('@/services/forecast/forecastBenchContext', () => ({ publishBenchContext: vi.fn() }))
 import Workbench from './ForecastWorkbenchView.vue'
 import { setCurrentRegionId } from '@/services/region/regionContext'
@@ -84,7 +87,7 @@ beforeEach(() => {
 afterEach(() => { wrappers.splice(0).forEach((wrapper) => wrapper.unmount()) })
 
 describe('建模工作台的目标日上下文', () => {
-  it('多算法区使用纵向分列清单，名称与运行类型分行，长名称完整保留', async () => {
+  it('多算法区使用等宽网格清单，名称保持单行省略且不再显示第二行运行类型', async () => {
     const longName = '云南日前统一结算电价 Dynamic TMoE 协变量训练版本'
     api.load.mockResolvedValueOnce([
       provider({ id: 'remote:long-name', name: longName }),
@@ -95,7 +98,7 @@ describe('建模工作台的目标日上下文', () => {
     expect(group.attributes('aria-labelledby')).toBe('compare-algorithm-label')
     expect(wrapper.find('#compare-algorithm-label').text()).toBe('参与对比的算法')
     expect(group.findAll('.compare-model-name').map((item) => item.text())).toEqual([longName, '平台官方'])
-    expect(group.findAll('.compare-model-kind').map((item) => item.text())).toEqual(['实时计算', '采集回放'])
+    expect(group.findAll('.compare-model-kind')).toHaveLength(0)
     expect(wrapper.find('.compare-controls').findAll('button').map((item) => item.text())).toEqual(['运行对比'])
   })
   it('对比计算中锁定勾选，结束后恢复，避免当前选择与进行中的结果混淆', async () => {

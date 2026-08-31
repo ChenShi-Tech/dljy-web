@@ -20,6 +20,7 @@ import {
 import { FORECAST_CFGS, type ForecastCfg } from '@/data/forecastHubTabs'
 import { getRegionModuleCapabilities, type RegionCapabilityDataSupport } from '@/services/region/regionModules'
 import { currentRegion } from '@/services/region/regionContext'
+import { fetchOfficialBaseline, hasOfficialBaseline, officialTargetsForRegion } from './officialBaseline'
 
 // 契约
 export type ProviderKind = 'replay' | 'compute' // 回放真实采集 | 后端实时计算
@@ -110,6 +111,8 @@ export interface ForecastProvider {
   quality?: ModelQuality
   basisVersion?: string
   supportedTargets: string[]
+  /** false=旧目录未声明，supportedTargets仅供兼容过滤，台账不能据此宣称全支持。 */
+  supportedTargetsDeclared?: boolean
   paramsSchema: ParamField[]
   // dljy#2464：模型自述（远端模型有）——输入门槛（协变量 × 平台供给）、血统、来源、架构、单位
   io?: ModelIo
@@ -260,9 +263,10 @@ function platformTargetCfgForRegion(regionId: string | undefined, target: string
 }
 
 export function platformTargetsForRegion(regionId?: string): string[] {
-  return Object.entries(PLATFORM_TARGET_CFG)
+  const legacy = Object.entries(PLATFORM_TARGET_CFG)
     .filter(([, cfg]) => hasRealForecastFamilySupport(regionId, cfg.family))
     .map(([target]) => target)
+  return [...new Set([...legacy, ...officialTargetsForRegion(regionId ?? '')])]
 }
 
 export const platformProvider: ForecastProvider = {
@@ -273,6 +277,15 @@ export const platformProvider: ForecastProvider = {
   supportedTargets: Object.keys(PLATFORM_TARGET_CFG),
   paramsSchema: [], // 官方回放无可调参数
   async run(ctx) {
+    if (hasOfficialBaseline(ctx.regionId, ctx.target)) {
+      const official = await fetchOfficialBaseline(ctx.regionId, ctx.target, ctx.targetDate)
+      if (!official) throw new Error(`云南${ctx.targetDate ?? '所选日期'}未取得完整且无冲突的官方预测96点；未改用其他日期或合成数据`)
+      return applyGranularity({
+        points: official.points, unit: 'MW', basis: 'captured', mock: false,
+        granularity: 96, modelId: 'platform',
+        warnings: [`${official.label}；预测目标日：${official.targetDate}；官方披露回放，不是南洋模型计算`],
+      }, ctx.granularity)
+    }
     const cfg = platformTargetCfgForRegion(ctx.regionId, ctx.target)
     if (!cfg) {
       return {
@@ -645,6 +658,7 @@ function makeMlProvider(model: ForecastModel): ForecastProvider {
     // #1461：逐模型支持的目标清单以后端目录为准（physics_hybrid 仅 renewable 等）；
     // 后端缺省该字段时回退 ML_TARGETS（全集），保旧目录兼容。
     supportedTargets: model.supportedTargets ?? ML_TARGETS,
+    supportedTargetsDeclared: model.supportedTargets !== undefined,
     // 平台参数（训练回看/概率/共形）+ 模型自己声明的可调参数（dljy#2464：按 paramsSchema 渲染，不再一套配所有）
     paramsSchema: [...ML_PARAMS, ...modelParamFields(model.paramsSchema, ML_PARAM_KEYS)],
     io: model.io,
@@ -728,7 +742,8 @@ export function getProvider(id: string): ForecastProvider | undefined {
 // 某目标下可用的算法（用于工作台算法选择器按目标过滤）。available:false 模型仍返回（选择器禁用展示，不隐藏）。
 export function providersForTarget(target: string, regionId?: string): ForecastProvider[] {
   const activeRegionId = regionId ?? currentRegion.value.id
-  return providersFromCatalog(target, activeRegionId).filter((p) => {
+  return providersFromCatalog(target, activeRegionId).map((p) => p.id === 'platform'
+    ? { ...p, supportedTargets: platformTargetsForRegion(activeRegionId), supportedTargetsDeclared: true } : p).filter((p) => {
     if (!p.supportedTargets.includes(target)) return false
     if (p.id !== 'platform') return true
     return platformTargetsForRegion(activeRegionId).includes(target)

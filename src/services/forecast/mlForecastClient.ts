@@ -495,7 +495,7 @@ export function runForecastTrain(req: ForecastRequest): Promise<{
 
 // L2 扩展端点：超短期 / 中长期 / 偏差考核 / 序列预测（后端 forecast.py 已实现）
 
-// 超短期逐步滚动：本地实现检验最新历史日；可用性必须先判断，不预先承诺误差更低。
+// 超短期逐步滚动：本地按target_date检验历史日；旧服务字段可缺，但指定日展示须严格校验。
 export type UltraShortResult =
   | {
       available: false
@@ -510,6 +510,19 @@ export type UltraShortResult =
       basis: ForecastBasis
       horizon: string
       points: number[]
+      target_date?: string
+      region_id?: string
+      unit?: string
+      interval_minutes?: number
+      mode?: string
+      model_id?: string
+      actual?: number[]
+      persistence?: number[]
+      slots?: number[]
+      mae?: number
+      persistence_mae?: number
+      beats_persistence?: boolean
+      data_available_to?: string
       reason?: string | null
     }
 export function runUltraShort(req: ForecastRequest): Promise<UltraShortResult> {

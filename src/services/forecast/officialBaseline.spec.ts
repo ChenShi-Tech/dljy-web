@@ -7,7 +7,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const fetchCaptured = vi.fn()
 vi.mock('@/services/captured', () => ({ fetchCaptured }))
 
-const { fetchOfficialBaseline, officialMae, hasOfficialBaseline } = await import('./officialBaseline')
+const { fetchOfficialBaseline, officialMae, hasOfficialBaseline, officialTargetsForRegion } = await import('./officialBaseline')
 
 const hhmm = (slot: number) =>
   `${String(Math.floor(slot * 15 / 60)).padStart(2, '0')}:${String((slot * 15) % 60).padStart(2, '0')}`
@@ -23,12 +23,30 @@ describe('官方日前预测基线', () => {
   beforeEach(() => fetchCaptured.mockReset())
 
   it('只有声明了数据源的地区+目标才认为有官方基线', () => {
-    expect(hasOfficialBaseline('yunnan', 'renewable')).toBe(true)
-    // 负荷的 targetDate 恒 null、口径反推不出，刻意不接
     expect(hasOfficialBaseline('yunnan', 'load')).toBe(false)
+    expect(hasOfficialBaseline('yunnan', 'renewable')).toBe(true)
+    expect(hasOfficialBaseline('yunnan', 'generation')).toBe(false)
     // 云南平台不发布官方电价预测
     expect(hasOfficialBaseline('yunnan', 'price')).toBe(false)
     expect(hasOfficialBaseline('shanxi', 'renewable')).toBe(false)
+    expect(officialTargetsForRegion('yunnan')).toEqual(['renewable'])
+  })
+
+  it('负荷日期未核实，不能用operateDate冒充targetDate', async () => {
+    fetchCaptured.mockResolvedValue({ rows: dayRows('2026-08-20', '2099-01-01', 1000) })
+    const r = await fetchOfficialBaseline('yunnan', 'load', '2026-08-20')
+    expect(r).toBeNull()
+    expect(fetchCaptured).not.toHaveBeenCalled()
+  })
+
+  it('全网总发电不能当成云南省内官方预测', async () => {
+    fetchCaptured.mockResolvedValue({ rows: [
+      ...dayRows('2026-08-20', '2026-08-20', 1000, 'yn'),
+      ...dayRows('2026-08-20', '2026-08-20', 3000, 'all'),
+    ] })
+    const r = await fetchOfficialBaseline('yunnan', 'generation', '2026-08-20')
+    expect(r).toBeNull()
+    expect(fetchCaptured).not.toHaveBeenCalled()
   })
 
   it('按 targetDate 挑曲线，不被同批返回的他日预测带偏', async () => {
@@ -70,6 +88,33 @@ describe('官方日前预测基线', () => {
   it('无目标日期时不发请求', async () => {
     expect(await fetchOfficialBaseline('yunnan', 'renewable', undefined)).toBeNull()
     expect(fetchCaptured).not.toHaveBeenCalled()
+  })
+
+  it.each(['2026-02-30', '2026/06/25', 'junk'])('无效日期%s不发请求', async (date) => {
+    expect(await fetchOfficialBaseline('yunnan', 'renewable', date)).toBeNull()
+    expect(fetchCaptured).not.toHaveBeenCalled()
+  })
+
+  it.each([null, '', true, false, 'NaN', Infinity])('非法值%s不得变成零', async (value) => {
+    const rows: Record<string, unknown>[] = dayRows('2026-06-24', '2026-06-25', 1000)
+    rows[0].value = value
+    fetchCaptured.mockResolvedValue({ rows })
+    expect(await fetchOfficialBaseline('yunnan', 'renewable', '2026-06-25')).toBeNull()
+  })
+
+  it('相同重复值可去重，冲突重复值不可按顺序覆盖', async () => {
+    const rows = dayRows('2026-06-24', '2026-06-25', 1000)
+    fetchCaptured.mockResolvedValue({ rows: [...rows, { ...rows[0] }] })
+    expect((await fetchOfficialBaseline('yunnan', 'renewable', '2026-06-25'))?.points).toHaveLength(96)
+    fetchCaptured.mockResolvedValue({ rows: [...rows, { ...rows[0], value: 99 }] })
+    expect(await fetchOfficialBaseline('yunnan', 'renewable', '2026-06-25')).toBeNull()
+  })
+
+  it('非法时点00:60不能顶替01:00', async () => {
+    const rows = dayRows('2026-06-24', '2026-06-25', 1000)
+    rows[4].timePoint = '00:60'
+    fetchCaptured.mockResolvedValue({ rows })
+    expect(await fetchOfficialBaseline('yunnan', 'renewable', '2026-06-25')).toBeNull()
   })
 
   it('officialMae 在长度不一致或缺失时返回 null，不以 0 冒充「无误差」', () => {
