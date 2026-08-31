@@ -84,6 +84,31 @@ beforeEach(() => {
 afterEach(() => { wrappers.splice(0).forEach((wrapper) => wrapper.unmount()) })
 
 describe('建模工作台的目标日上下文', () => {
+  it('多算法区使用纵向分列清单，名称与运行类型分行，长名称完整保留', async () => {
+    const longName = '云南日前统一结算电价 Dynamic TMoE 协变量训练版本'
+    api.load.mockResolvedValueOnce([
+      provider({ id: 'remote:long-name', name: longName }),
+      provider({ id: 'platform', name: '平台官方', kind: 'replay' }),
+    ])
+    const wrapper = await render()
+    const group = wrapper.find('.compare-checkboxes')
+    expect(group.attributes('aria-labelledby')).toBe('compare-algorithm-label')
+    expect(wrapper.find('#compare-algorithm-label').text()).toBe('参与对比的算法')
+    expect(group.findAll('.compare-model-name').map((item) => item.text())).toEqual([longName, '平台官方'])
+    expect(group.findAll('.compare-model-kind').map((item) => item.text())).toEqual(['实时计算', '采集回放'])
+    expect(wrapper.find('.compare-controls').findAll('button').map((item) => item.text())).toEqual(['运行对比'])
+  })
+  it('对比计算中锁定勾选，结束后恢复，避免当前选择与进行中的结果混淆', async () => {
+    const pending = deferred<UnifiedForecastResult>()
+    api.run.mockReturnValueOnce(pending.promise)
+    const wrapper = await render()
+    await setCompareIds(wrapper, ['remote:test'])
+    await runCompare(wrapper)
+    expect(wrapper.find('.compare-checkboxes').findAllComponents({ name: 'ElCheckbox' }).map((item: VueWrapper) => item.props())).toEqual([expect.objectContaining({ disabled: true })])
+    pending.resolve(result()); await flushPromises()
+    expect(wrapper.find('.compare-checkboxes').findAllComponents({ name: 'ElCheckbox' }).map((item: VueWrapper) => item.props())).toEqual([expect.objectContaining({ disabled: false })])
+    expect(compareChart(wrapper).props('results')).toHaveLength(1)
+  })
   it('单算法、多算法和可见台账均不显示占位、未部署与原始零样本名称', async () => {
     api.load.mockResolvedValueOnce([
       provider({ id: 'tslib:DLinear', name: 'DLinear compat', mock: true }),

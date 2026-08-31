@@ -500,12 +500,15 @@ onMounted(() => { void ensureForecastCatalog(target.value, false, regionId.value
 
         <!-- 模式 B：多算法对比 -->
         <el-tab-pane label="多算法对比" name="compare">
-          <div class="controls">
-            <span class="lbl">参与对比的算法</span>
-            <el-checkbox-group v-model="compareIds" size="small">
-              <el-checkbox v-for="p in visibleTargetProviders" :key="p.id" :value="p.id" border
-                :disabled="p.available === false"
-                :title="p.available === false ? (p.reason || '当前不可用') : ''">{{ providerOptionLabel(p) }}</el-checkbox>
+          <div class="controls compare-controls">
+            <span id="compare-algorithm-label" class="lbl">参与对比的算法</span>
+            <el-checkbox-group v-model="compareIds" class="compare-checkboxes" aria-labelledby="compare-algorithm-label">
+              <el-checkbox v-for="p in visibleTargetProviders" :key="p.id" :value="p.id" border class="compare-checkbox"
+                :disabled="loadingB || p.available === false"
+                :title="p.available === false ? (p.reason || '当前不可用') : ''">
+                <span class="compare-model-name">{{ p.name }}</span>
+                <span class="compare-model-kind">{{ p.kind === 'replay' ? '采集回放' : '实时计算' }}</span>
+              </el-checkbox>
             </el-checkbox-group>
             <el-button type="primary" :loading="loadingB" :disabled="!hasVisibleTargetProviders" @click="runCompare">运行对比</el-button>
           </div>
@@ -546,7 +549,7 @@ onMounted(() => { void ensureForecastCatalog(target.value, false, regionId.value
           </el-table>
         </el-tab-pane>
 
-        <!-- 扩展预测（迁自原 ML 预测实验室「扩展预测」tab）：超短期/中长期/偏差/PatchTST 序列 -->
+        <!-- 扩展预测：超短期/中长期/偏差；独立PatchTST序列演示已按用户要求移除。 -->
         <el-tab-pane label="扩展预测" name="extra">
           <ForecastExtraPanel ref="extraPanel" :region-id="regionId" :target="target" :train-days="historyDays" />
         </el-tab-pane>
@@ -618,6 +621,26 @@ onMounted(() => { void ensureForecastCatalog(target.value, false, regionId.value
 .title { font-size: var(--font-16); font-weight: 600; }
 .sub { color: var(--el-text-color-secondary); font-size: var(--font-sm); }
 .controls { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
+.compare-controls { display: grid; grid-template-columns: minmax(0, 1fr); align-items: start; gap: 12px; }
+.compare-controls > .el-button { justify-self: start; margin-left: 0; }
+.compare-checkboxes { columns: 3 240px; column-gap: 12px; width: 100%; min-width: 0; }
+.compare-checkboxes :deep(.el-checkbox.is-bordered) {
+  display: inline-flex; box-sizing: border-box; width: 100%; height: auto; min-height: 54px;
+  margin: 0 0 8px; padding: 10px 12px; break-inside: avoid; vertical-align: top;
+  align-items: flex-start; border-radius: 6px; background: var(--el-bg-color);
+}
+.compare-checkboxes :deep(.el-checkbox__input) { flex: 0 0 auto; margin-top: 3px; }
+.compare-checkboxes :deep(.el-checkbox__label) { min-width: 0; padding-left: 10px; white-space: normal; text-align: left; }
+.compare-model-name { display: block; color: var(--el-text-color-primary); font-size: var(--font-md); line-height: 1.5; overflow-wrap: anywhere; }
+.compare-model-kind { display: block; margin-top: 3px; color: var(--el-text-color-secondary); font-size: var(--font-sm); line-height: 1.4; }
+.compare-checkboxes :deep(.el-checkbox.is-bordered:not(.is-disabled):hover) { border-color: var(--el-color-primary-light-5); background: var(--el-color-primary-light-9); }
+.compare-checkboxes :deep(.el-checkbox.is-bordered.is-checked) { border-color: var(--el-color-primary); background: var(--el-color-primary-light-9); }
+.compare-checkboxes :deep(.el-checkbox.is-checked) .compare-model-name { font-weight: 600; }
+.compare-checkboxes :deep(.el-checkbox.is-bordered:focus-within) { outline: 2px solid var(--el-color-primary); outline-offset: 2px; }
+.compare-checkboxes :deep(.el-checkbox.is-disabled) { background: var(--el-fill-color-light); }
+@media (min-width: 1600px) { .compare-checkboxes { column-count: 4; } }
+@media (max-width: 1100px) { .compare-checkboxes { column-count: 2; } }
+@media (max-width: 720px) { .compare-checkboxes { column-count: 1; } }
 .controls.shared { padding-bottom: 10px; border-bottom: 1px solid var(--el-border-color-lighter); }
 .lbl { color: var(--el-text-color-secondary); font-size: var(--font-md); }
 .hint { color: var(--el-text-color-secondary); font-size: var(--font-sm); margin: 0 0 8px; }
