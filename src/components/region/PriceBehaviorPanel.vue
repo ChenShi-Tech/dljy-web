@@ -4,7 +4,7 @@ import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import type { RegionSpotProfile, Volatility } from '../../data/regionSpotProfiles'
 import IllustrativeBadge from './IllustrativeBadge.vue'
 import { useEChart } from '../../composables/useEChart'
-import { axisTooltip, chartToolbox } from '@/services/chart/chartOptions'
+import { axisTooltip, bottomLayoutLegend, bottomToolbox } from '@/services/chart/chartOptions'
 
 const props = defineProps<{ profile: RegionSpotProfile }>()
 
@@ -23,9 +23,11 @@ function renderChart() {
   if (!chartEl.value || !hasCurve.value) return
   const curve = props.profile.priceProfile.typicalDayCurve
   chart.setOption({
-    grid: { left: 48, right: 18, top: 30, bottom: 30 },
+    // 底部布局（对齐月度趋势）：top/bottom 56 各让一行——上行图例、下行 y 轴 name，底部刻度与工具栏
+    grid: { left: 48, right: 18, top: 56, bottom: 56 },
     tooltip: axisTooltip({ unit: '元/MWh' }),
-    toolbox: chartToolbox('价格行为画像'),
+    legend: bottomLayoutLegend({ textStyle: { fontSize: 10 } }),
+    toolbox: bottomToolbox('价格行为画像', 8),
     xAxis: {
       type: 'category',
       data: curve.map((_, hour) => `${hour}:00`)
