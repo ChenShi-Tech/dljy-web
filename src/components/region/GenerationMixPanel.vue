@@ -3,7 +3,7 @@
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import type { RegionSpotProfile } from '../../data/regionSpotProfiles'
 import { useEChart } from '../../composables/useEChart'
-import { axisTooltip, chartToolbox } from '@/services/chart/chartOptions'
+import { axisTooltip, bottomLayoutLegend, bottomToolbox } from '@/services/chart/chartOptions'
 
 const props = defineProps<{ profile: RegionSpotProfile }>()
 
@@ -27,13 +27,16 @@ const hasMix = computed(() => mixRows.value.some((row) => row.value > 0))
 function renderChart() {
   if (!chartEl.value || !hasMix.value) return
   chart.setOption({
-    grid: { left: 56, right: 24, top: 30, bottom: 24 },
+    // 底部布局（对齐月度趋势）：top/bottom 56 各让一行——上行图例、下行 y 轴 name，底部刻度与工具栏
+    grid: { left: 56, right: 24, top: 56, bottom: 56 },
     tooltip: axisTooltip({ unit: '%', pointer: 'shadow' }),
-    toolbox: chartToolbox('电源结构'),
+    legend: bottomLayoutLegend({ data: ['装机占比'], textStyle: { fontSize: 10 } }),
+    toolbox: bottomToolbox('电源结构', 8),
     xAxis: { type: 'value', max: 100, axisLabel: { formatter: '{value}%' }, splitLine: { lineStyle: { color: '#e5edf4' } } },
     yAxis: { type: 'category', data: mixRows.value.map((row) => row.name), inverse: true },
     series: [
       {
+        name: '装机占比',
         type: 'bar',
         data: mixRows.value.map((row) => row.value),
         barWidth: 14,
