@@ -1640,7 +1640,7 @@ function approvalBrief(payload: Record<string, unknown>): { label: string; value
 /* 任务计划条 */
 .model-bar {
   display: flex; align-items: center; gap: 6px;
-  padding: 4px 12px; font-size: 12px;
+  padding: 4px 12px; font-size: var(--font-xs);
   color: var(--el-text-color-secondary);
   border-bottom: 1px solid var(--el-border-color-lighter);
   background: var(--el-fill-color-lighter);
