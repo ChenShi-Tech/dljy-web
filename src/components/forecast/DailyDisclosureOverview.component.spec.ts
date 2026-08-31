@@ -101,6 +101,7 @@ async function render(props = { regionId: 'yunnan', date: '2026-06-25' }) {
     global: {
       stubs: {
         ...stubs,
+        DailyDisclosureTexts: true,
         DisclosureDatasetCard: disclosureCardStub,
       },
     },
@@ -155,7 +156,7 @@ describe('DailyDisclosureOverview', () => {
     api.loadDailyDisclosure.mockResolvedValueOnce([dataset('load_actual', 'actual', 'empty')])
     const wrapper = await render()
     expect(wrapper.findAll('.dataset-card')).toHaveLength(0)
-    expect(wrapper.text()).toContain('该日期没有可展示的已导入记录')
+    expect(wrapper.text()).toContain('该日期没有可展示的已导入数值记录')
     expect(wrapper.text()).not.toContain('该日期存在已接披露记录')
   })
 
@@ -217,6 +218,7 @@ describe('DailyDisclosureOverview', () => {
       global: {
         stubs: {
           ...stubs,
+          DailyDisclosureTexts: true,
           DisclosureDatasetCard: disclosureCardStub,
         },
       },

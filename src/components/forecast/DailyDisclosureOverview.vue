@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onBeforeUpdate, ref, watch, type ComponentPublicInstance } from 'vue'
 import DisclosureDatasetCard from './DisclosureDatasetCard.vue'
+import DailyDisclosureTexts from './DailyDisclosureTexts.vue'
 import { DISCLOSURE_GROUPS, loadDailyDisclosure, type DisclosureDatasetResult } from '@/services/forecast/dailyDisclosure'
 
 const props = defineProps<{
@@ -27,6 +28,7 @@ const results = ref<DisclosureDatasetResult[]>([])
 const loadError = ref('')
 const search = ref('')
 const attempted = ref(false)
+const textReloadKey = ref(0)
 let cardRefs: CardExpose[] = []
 let requestId = 0
 
@@ -48,6 +50,7 @@ const disabledReason = computed(() => {
 
 async function reload() {
   if (!canQuery.value) return
+  textReloadKey.value += 1
   const currentRequest = ++requestId
   attempted.value = true
   loading.value = true
@@ -164,7 +167,7 @@ defineExpose({ resize })
       <div>
         <h2 class="daily-disclosure__title">当日披露总览</h2>
         <p class="daily-disclosure__subtitle">
-          已导入的官方披露，包含预测、实际与价格；不触发模型计算。
+          已导入的官方披露，包含预测、实际、价格与检修运行记录；不触发模型计算。
         </p>
       </div>
       <div class="daily-disclosure__toolbar">
@@ -200,7 +203,7 @@ defineExpose({ resize })
     />
     <el-alert
       v-if="failureCount || emptyCount"
-      :title="`本次共覆盖 ${results.length} 个已接数据集；${failureCount} 个读取失败或被拒绝，${emptyCount} 个在该日没有记录。可点击“加载当日披露”整体重试。`"
+      :title="`数值部分共覆盖 ${results.length} 个已接数据集；${failureCount} 个读取失败或被拒绝，${emptyCount} 个在该日没有记录。可点击“加载当日披露”整体重试。`"
       type="warning"
       :closable="false"
       show-icon
@@ -214,6 +217,8 @@ defineExpose({ resize })
       show-icon
       class="daily-disclosure__alert"
     />
+
+    <DailyDisclosureTexts :region-id="regionId" :date="date" :reload-key="textReloadKey" />
 
     <div v-if="loading" class="daily-disclosure__state">
       正在读取当日披露数据…
@@ -245,7 +250,7 @@ defineExpose({ resize })
       v-else-if="attempted && !loadError && filteredResults.length"
       class="daily-disclosure__state"
     >
-      该日期没有可展示的已导入记录；各数据集的读取结果已列在下方覆盖清单。
+      该日期没有可展示的已导入数值记录；各数据集的读取结果已列在下方覆盖清单。
     </div>
     <div
       v-else-if="attempted && !loadError && !filteredResults.length"
@@ -256,7 +261,7 @@ defineExpose({ resize })
 
     <section v-if="attempted && coverageRows.length" class="daily-disclosure__coverage">
       <div class="daily-disclosure__group-head">
-        <h3 class="daily-disclosure__group-title">数据覆盖清单</h3>
+        <h3 class="daily-disclosure__group-title">数值数据覆盖清单</h3>
         <span class="daily-disclosure__group-count">{{ coverageRows.length }} 项</span>
       </div>
 
