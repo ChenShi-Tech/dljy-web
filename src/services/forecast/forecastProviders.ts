@@ -114,6 +114,7 @@ export interface ForecastProvider {
   // dljy#2464：模型自述（远端模型有）——输入门槛（协变量 × 平台供给）、血统、来源、架构、单位
   io?: ModelIo
   lineage?: ModelLineage
+  capabilities?: ForecastModel['capabilities'] // 含 zeroShot：让入口能识别未做业务训练的基础权重
   source?: string
   framework?: string
   unit?: string
@@ -648,6 +649,7 @@ function makeMlProvider(model: ForecastModel): ForecastProvider {
     paramsSchema: [...ML_PARAMS, ...modelParamFields(model.paramsSchema, ML_PARAM_KEYS)],
     io: model.io,
     lineage: model.lineage,
+    capabilities: model.capabilities,
     source: model.source,
     framework: model.framework,
     unit: model.unit,

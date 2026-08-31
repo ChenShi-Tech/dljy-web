@@ -11,6 +11,7 @@ import {
 } from '@/services/forecast/mlForecastClient'
 import { FORECAST_TARGET_OPTIONS, type UnifiedForecastResult } from '@/services/forecast/forecastProviders'
 import { isForecastDate, toOnlineForecastResult } from '@/services/forecast/onlineForecastResult'
+import { predictionModelExclusionReason } from '@/services/forecast/predictionModelEligibility'
 
 const props = withDefaults(defineProps<{
   target: string
@@ -37,10 +38,10 @@ const unifiedResult = ref<UnifiedForecastResult | null>(null)
 const forecastError = ref('')
 const catalogError = ref('')
 
-// 在线可选模型：`tslib:`（compat 占位）+ `remote:`（南洋 GPU 上的真实 Torch 网络，Epic #1898）。
-// 不可用模型保留原因并禁选；不能把目录不可用误报成“没有模型”。
+// 与单算法/多算法入口使用同一准入规则；不再展示占位、不可用或原始零样本模型。
 const onlineModels = computed(() => models.value.filter((model) =>
-  model.modelId.startsWith('tslib:') || model.modelId.startsWith('remote:')
+  (model.modelId.startsWith('tslib:') || model.modelId.startsWith('remote:'))
+  && predictionModelExclusionReason(model) === null
 ))
 const activeModel = computed(() => !catalogError.value
   ? onlineModels.value.find((model) => model.modelId === modelType.value && model.available) ?? null : null)
@@ -160,7 +161,7 @@ onBeforeUnmount(() => { ++loadModelsReqId; ++forecastReqId })
     <el-alert v-if="dataSource === 'synthetic' || result?.mock" title="模拟或合成验证：只用于检查调用链路，不能作为真实预测效果" type="warning" :closable="false" show-icon />
     <el-alert v-if="result?.metrics?.passes_gate === false" title="本次历史样例未达到预测质量门槛；返回曲线不代表预测效果达标" type="warning" :closable="false" show-icon />
     <UnifiedForecastChart v-if="unifiedResult" :results="chartResults" :height="260" />
-    <el-empty v-else :description="onlineModels.length ? '选择模型后运行在线预测' : '当前地区没有可用的在线深度模型（需远程推理服务可达）'" :image-size="72" />
+    <el-empty v-else :description="onlineModels.length ? '选择模型后运行在线预测' : '当前地区与目标暂无符合条件的在线模型（占位、不可用及原始零样本模型已隐藏）'" :image-size="72" />
 
     <el-alert
       v-for="(warning, index) in result?.warnings ?? []"

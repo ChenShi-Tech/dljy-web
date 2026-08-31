@@ -24,6 +24,7 @@ import { fetchOfficialBaseline, officialMae, hasOfficialBaseline } from '@/servi
 import { aggregate96to24 } from '@/services/forecast/forecastProviders'
 import { summarizeForecastFailures, type ForecastFailure } from '@/services/forecast/failureSummary'
 import { isForecastDate } from '@/services/forecast/onlineForecastResult'
+import { predictionModelExclusionReason } from '@/services/forecast/predictionModelEligibility'
 
 const REGION_IDS = ['shanxi', 'shandong', 'gansu', 'guangdong', 'sichuan', 'yunnan']
 const regionOptions = REGION_IDS.map((id) => ({ id, name: getRegionById(id).name }))
@@ -46,7 +47,16 @@ const activeTab = ref('single')
 const error = ref('')
 
 const targetProviders = computed(() => providersForTarget(target.value, regionId.value))
+const visibleTargetProviders = computed(() => targetProviders.value.filter((provider) =>
+  predictionModelExclusionReason(provider) === null))
+const hasVisibleTargetProviders = computed(() => visibleTargetProviders.value.length > 0)
 const { error: catalogError } = forecastCatalogState(computed(() => target.value), computed(() => regionId.value))
+const singleModelEmptyText = computed(() => catalogError.value
+  ? '模型目录加载失败，请先处理目录错误'
+  : '当前预测中心没有可展示的模型（占位、未部署、原始零样本权重已隐藏）')
+const compareModelEmptyText = computed(() => catalogError.value
+  ? '模型目录加载失败，请先处理目录错误'
+  : '当前预测中心没有可用于对比的模型（占位、未部署、原始零样本权重已隐藏）')
 
 // 算法选项标签：附占位/不可用+原因（#762 available:false 禁用，原因随 label 与 title 可见）。
 function providerOptionLabel(p: ForecastProvider): string {
@@ -65,7 +75,7 @@ function buildCtx() {
 }
 
 // 模式 A：单算法预测
-const algoId = ref(targetProviders.value[0]?.id ?? 'platform')
+const algoId = ref(visibleTargetProviders.value[0]?.id ?? '')
 const params = ref<Record<string, unknown>>({})
 const result = ref<UnifiedForecastResult | null>(null)
 // 官方日前预测的来源标签与对照误差（#2371 后续）。只有云南新能源有——口径经 targetDate
@@ -82,7 +92,7 @@ const officialCompare = computed(() => {
 })
 const loadingA = ref(false)
 const chartA = ref<InstanceType<typeof UnifiedForecastChart> | null>(null)
-const currentProvider = computed(() => targetProviders.value.find((p) => p.id === algoId.value))
+const currentProvider = computed(() => visibleTargetProviders.value.find((p) => p.id === algoId.value))
 
 function clearForecastState() {
   error.value = ''
@@ -105,20 +115,25 @@ let contextGeneration = 0
 watch([target, regionId], () => {
   contextGeneration++
   void ensureForecastCatalog(target.value, false, regionId.value)
-  if (!targetProviders.value.find((p) => p.id === algoId.value)) {
-    algoId.value = targetProviders.value[0]?.id ?? ''
+  if (!visibleTargetProviders.value.find((p) => p.id === algoId.value)) {
+    algoId.value = visibleTargetProviders.value[0]?.id ?? ''
   }
-  compareIds.value = compareIds.value.filter((id) => targetProviders.value.find((p) => p.id === id))
+  compareIds.value = compareIds.value.filter((id) => visibleTargetProviders.value.find((p) => p.id === id))
   clearForecastState()
   resetParams()
 })
 let providerWatchReady = false
 // 目录异步返回后再选首个可用模型；不把上一个目标的选择留在新目录中。
-watch(targetProviders, (providers) => {
-  if (!providers.some((p) => p.id === algoId.value && p.available !== false)) {
-    algoId.value = providers.find((p) => p.available !== false)?.id ?? ''
+watch(visibleTargetProviders, (providers) => {
+  if (!providers.some((p) => p.id === algoId.value)) {
+    algoId.value = providers[0]?.id ?? ''
   }
 }, { immediate: true })
+watch(visibleTargetProviders, (providers) => {
+  const allowed = new Set(providers.map((provider) => provider.id))
+  const next = compareIds.value.filter((id) => allowed.has(id))
+  if (next.length !== compareIds.value.length) compareIds.value = next
+})
 watch(algoId, () => {
   if (providerWatchReady) {
     result.value = null
@@ -132,7 +147,10 @@ let runGeneration = 0
 
 async function runSingle() {
   const p = currentProvider.value
-  if (!p || p.available === false) return  // 选中模型不可用（catalog 变动/过期）不发注定失败请求（#570）
+  if (!p) {
+    error.value = singleModelEmptyText.value
+    return
+  }
   if (!requireTargetDate()) return
   // 发起前快照本次预测上下文；await 期间用户可能切地区/目标/算法，返回后仅当
   // ① 本请求仍是最新一次（generation）且 ② 快照仍与当前控件一致（stillCurrent）
@@ -188,7 +206,11 @@ const backtestLoadingA = ref(false)
 let backtestGeneration = 0
 async function runBacktestA() {
   const p = currentProvider.value
-  if (!p || p.kind !== 'compute' || p.available === false) return  // 不可用模型硬阻断（#570）
+  if (!p) {
+    error.value = singleModelEmptyText.value
+    return
+  }
+  if (p.kind !== 'compute') return
   // 与 runSingle 同款快照守卫（#463 同构）：旧地区/目标的慢回测结果不得覆盖当前控件下的状态。
   const generation = ++backtestGeneration
   const context = contextGeneration
@@ -220,6 +242,7 @@ const chartB = ref<InstanceType<typeof UnifiedForecastChart> | null>(null)
 let compareGeneration = 0
 
 async function runCompare() {
+  if (!visibleTargetProviders.value.length) { error.value = compareModelEmptyText.value; return }
   if (!compareIds.value.length) { error.value = '请至少选择一个算法'; return }
   if (!requireTargetDate()) return
   const generation = contextGeneration
@@ -233,14 +256,8 @@ async function runCompare() {
   try {
     setCurrentRegionId(regionId.value)
     const settled = await Promise.all(compareIds.value.map((id) => {
-      const p = targetProviders.value.find((provider) => provider.id === id)
+      const p = visibleTargetProviders.value.find((provider) => provider.id === id)
       if (!p) return Promise.resolve(null)
-      // 目录标不可用的模型不发注定失败的请求（与 runSingle/runBacktestA 同守卫，roborev job570）：
-      // 例如 fm:Chronos* 缺可选依赖，后端 predict 直接 400 Unsupported forecast model。
-      if (p.available === false) {
-        failures.push({ name: p.name, reason: p.reason || '模型当前不可用' })
-        return Promise.resolve(null)
-      }
       return p.run(buildCtx(), { ...defaultParams(p), train_days: historyDays.value })
         .then((r) => ({ id, name: p.name, result: r }))
         .catch((e) => { failures.push({ name: p.name, reason: (e as Error).message || '预测失败' }); return null })
@@ -314,7 +331,8 @@ async function loadOverview() {
 
 // 附 tab：模型台账（provider 元信息，available/reason 已由 catalog 注入 provider，#762）
 const kindLabel = (k: ProviderKind) => (k === 'replay' ? '回放真实采集' : '后端实时计算')
-const ledger = computed(() => targetProviders.value.map((p) => ({
+// 台账也是业务界面：与选择器保持同一准入范围，清理明细仅留在独立审计报告。
+const ledger = computed(() => visibleTargetProviders.value.map((p) => ({
   id: p.id, name: p.name, kind: p.kind, tier: p.tier, targets: p.supportedTargets.length,
   mock: !!p.mock,
   available: p.kind === 'replay' ? true : (p.available ?? null),
@@ -389,15 +407,16 @@ onMounted(() => { void ensureForecastCatalog(target.value, false, regionId.value
           <div class="controls">
             <span class="lbl">算法</span>
             <el-select v-model="algoId" style="width: 260px">
-              <el-option v-for="p in targetProviders" :key="p.id"
+              <el-option v-for="p in visibleTargetProviders" :key="p.id"
                 :label="providerOptionLabel(p)" :value="p.id"
                 :disabled="p.available === false"
                 :title="p.available === false ? (p.reason || '当前不可用') : (p.reason || '')" />
             </el-select>
             <span v-if="catalogError" class="catalog-error" :title="catalogError">⚠ 模型目录加载失败</span>
-            <el-button type="primary" :loading="loadingA" :disabled="currentProvider?.available === false" @click="runSingle">预测</el-button>
-            <el-button v-if="currentProvider?.kind === 'compute'" :loading="backtestLoadingA" :disabled="currentProvider?.available === false" @click="runBacktestA">回测</el-button>
+            <el-button type="primary" :loading="loadingA" :disabled="!currentProvider" @click="runSingle">预测</el-button>
+            <el-button v-if="currentProvider?.kind === 'compute'" :loading="backtestLoadingA" :disabled="!currentProvider" @click="runBacktestA">回测</el-button>
           </div>
+          <el-empty v-if="!hasVisibleTargetProviders" :description="singleModelEmptyText" :image-size="72" />
 
           <div class="param-box">
             <!-- 历史窗口只由共享任务栏决定，不能被算法表单中的默认180天静默覆盖。 -->
@@ -484,12 +503,13 @@ onMounted(() => { void ensureForecastCatalog(target.value, false, regionId.value
           <div class="controls">
             <span class="lbl">参与对比的算法</span>
             <el-checkbox-group v-model="compareIds" size="small">
-              <el-checkbox v-for="p in targetProviders" :key="p.id" :value="p.id" border
+              <el-checkbox v-for="p in visibleTargetProviders" :key="p.id" :value="p.id" border
                 :disabled="p.available === false"
                 :title="p.available === false ? (p.reason || '当前不可用') : ''">{{ providerOptionLabel(p) }}</el-checkbox>
             </el-checkbox-group>
-            <el-button type="primary" :loading="loadingB" @click="runCompare">运行对比</el-button>
+            <el-button type="primary" :loading="loadingB" :disabled="!hasVisibleTargetProviders" @click="runCompare">运行对比</el-button>
           </div>
+          <el-empty v-if="!hasVisibleTargetProviders" :description="compareModelEmptyText" :image-size="72" />
           <p class="hint">同地区/目标/日期/粒度下，对所选算法各自预测，叠加曲线；有评估指标的按 MAE 升序排名（平台官方/KNN 回放无监督指标，列为「—」）。</p>
 
           <UnifiedForecastChart ref="chartB" :results="compareResults" :height="360" v-loading="loadingB" />
@@ -549,7 +569,7 @@ onMounted(() => { void ensureForecastCatalog(target.value, false, regionId.value
 
         <!-- 附 tab：模型台账 -->
         <el-tab-pane label="模型台账" name="ledger">
-          <p class="hint">各预测算法的类别、层级、支持目标与后端可用性（预测模型中枢已下线，台账由 <code>/models</code> + provider 元信息直出）。</p>
+          <p class="hint">当前已接入且符合运行条件的预测算法：类别、层级、支持目标与后端可用性。</p>
           <el-table :data="ledger" size="small" border>
             <el-table-column prop="name" label="算法" />
             <el-table-column label="运行时" width="120">

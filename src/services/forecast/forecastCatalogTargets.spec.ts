@@ -110,6 +110,23 @@ describe('forecast catalog target buckets (#54)', () => {
     expect(loadProviders.some((p) => p.id === 'remote:price-only')).toBe(false)
   })
 
+  it('provider保留零样本证据，预测中心能隐藏原始权重但不修改全量目录', async () => {
+    const mod = await import('./forecastProviders')
+    const { predictionModelExclusionReason } = await import('./predictionModelEligibility')
+    const task = mod.ensureForecastCatalog('price', true, 'yunnan')
+    deferred[0].resolve({ models: [
+      { ...catalogModel({ modelId: 'remote:original', target: 'price' }),
+        capabilities: { supportsQuantiles: true, supportsCovariates: false, supportsMultivariate: false, horizon: 96, zeroShot: true } },
+      catalogModel({ modelId: 'remote:trained', target: 'price' }),
+    ] })
+    await task
+    const all = mod.providersForTarget('price', 'yunnan')
+    expect(all.find((model) => model.id === 'remote:original')?.capabilities?.zeroShot).toBe(true)
+    expect(all.filter((model) => predictionModelExclusionReason(model) === null).map((model) => model.id))
+      .toEqual(['knn', 'remote:trained'])
+    expect(mod.forecastCatalogState('price', 'yunnan').models.value).toHaveLength(2)
+  })
+
   it('同地区同 target 旧请求晚归时不得覆盖新目录', async () => {
     const mod = await import('./forecastProviders')
     const state = mod.forecastCatalogState('price', 'yunnan')
