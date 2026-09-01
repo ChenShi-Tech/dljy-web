@@ -55,10 +55,6 @@ const ratePill = computed(() => {
 const chartEl = ref<HTMLElement | null>(null)
 const chart = useEChart(chartEl, { render })
 
-// 热力条晚一帧显示：首帧布局未稳（canvas 首绘/字体度量）时它会闪现在卡片底缘，
-// 布局定型后出现即落在正确位置；只在首次显示前等待，后续重渲染不再闪烁。
-const stripReady = ref(false)
-
 function render() {
   const r = props.result
   if (!r || !chartEl.value) return
@@ -74,7 +70,6 @@ function render() {
   chart.setOption({
     ...emptyOverlay(!r.detail.length),
     tooltip: axisTooltip({ unit: 'MWh' }),
-    // 底部布局（对齐月度趋势）：top/bottom 56 各让一行——上行图例、下行刻度与工具栏
     legend: bottomLayoutLegend({ data: ['申报电量', '实际电量'], textStyle: { fontSize: 10 } }),
     toolbox: bottomToolbox('申报vs实际偏差', 8),
     grid: { left: 48, right: 16, top: 56, bottom: 56 },
@@ -99,13 +94,6 @@ function render() {
       }
     ]
   }, { replaceMerge: ['graphic', 'series'] }) // 空态 graphic 需整组替换才能在有数据时清掉
-  if (!stripReady.value) {
-    // 布局落定后再显示：双 rAF 等首绘两帧 + fonts.ready 等字体换装回流，300ms 兜底必显示
-    const reveal = () => { stripReady.value = true }
-    requestAnimationFrame(() => requestAnimationFrame(reveal))
-    document.fonts?.ready.then(reveal)
-    setTimeout(reveal, 300)
-  }
 }
 
 // 切回本维时 result 早已就绪、watch 不会触发——挂载后必须主动渲染一次
@@ -150,7 +138,7 @@ watch(() => props.loading, (v: boolean) => (v ? chart.showLoading() : chart.hide
     <section v-else class="panel chart">
       <div class="top"><h3>申报 vs 实际 · 96 点</h3></div>
       <div ref="chartEl" class="host chart-host" />
-      <DeviationHeatStrip v-if="cells.length && stripReady" :cells="cells" class="heat" />
+      <DeviationHeatStrip v-if="cells.length" :cells="cells" class="heat" />
     </section>
 
     <DeviationAggregatePanel :tolerance-pct="tolerancePct" :penalty-price="penaltyPrice" />
@@ -162,7 +150,8 @@ watch(() => props.loading, (v: boolean) => (v ? chart.showLoading() : chart.hide
 .dim { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
 .tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
 @media (max-width: 720px) { .tiles { grid-template-columns: repeat(2, 1fr); } }
-.chart { padding: 12px 14px 12px; display: flex; flex-direction: column; gap: 8px; }
+/* 对冲全局 .chart{height:360px}，否则热力条溢出卡片 */
+.chart { padding: 12px 14px 12px; display: flex; flex-direction: column; gap: 8px; height: auto; }
 .top h3 { margin: 0; font-size: var(--font-13-5); font-weight: 600; }
 .host { width: 100%; height: 300px; }
 .heat { margin-left: 48px; margin-right: 16px; }

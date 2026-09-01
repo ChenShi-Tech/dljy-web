@@ -140,7 +140,6 @@ function renderChart() {
   priceChart.setOption({
     ...emptyOverlay(!r.series.length),
     tooltip: axisTooltip({ unit: '元/MWh', digits: 1 }),
-    // 底部布局（对齐月度趋势）：图例顶部居中 + 工具栏底部右下角
     legend: bottomLayoutLegend({
       data: dualPriceSeries.value ? ['日前价', '实时价', '价差'] : ['出清价', '价差'],
       textStyle: { fontSize: 10 }
