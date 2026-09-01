@@ -6,7 +6,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useEChart } from '@/composables/useEChart'
 import { cssVar } from '@/composables/useTheme'
-import { axisTooltip, chartToolbox, emptyOverlay, insideZoom } from '@/services/chart/chartOptions'
+import { axisTooltip, bottomLayoutLegend, bottomToolbox, emptyOverlay, insideZoom } from '@/services/chart/chartOptions'
 import type { ReviewFailure, ReviewResult } from '@/services/quant/quantClient'
 import { heatCells } from '@/services/review/reviewDashboard'
 import { deviationMetricOf, type TemplateCard } from '@/services/review/cockpitModel'
@@ -70,9 +70,9 @@ function render() {
   chart.setOption({
     ...emptyOverlay(!r.detail.length),
     tooltip: axisTooltip({ unit: 'MWh' }),
-    legend: { data: ['申报电量', '实际电量'], top: 0, right: 100 },
-    toolbox: chartToolbox('申报vs实际偏差'),
-    grid: { left: 48, right: 16, top: 30, bottom: 26 },
+    legend: bottomLayoutLegend({ data: ['申报电量', '实际电量'], textStyle: { fontSize: 10 } }),
+    toolbox: bottomToolbox('申报vs实际偏差', 8),
+    grid: { left: 48, right: 16, top: 56, bottom: 56 },
     dataZoom: insideZoom(),
     xAxis: { type: 'category', data: r.detail.map((p) => String(p.datetime).slice(-5)) },
     yAxis: { type: 'value', name: 'MWh', scale: true },
@@ -150,7 +150,8 @@ watch(() => props.loading, (v: boolean) => (v ? chart.showLoading() : chart.hide
 .dim { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
 .tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
 @media (max-width: 720px) { .tiles { grid-template-columns: repeat(2, 1fr); } }
-.chart { padding: 12px 14px 12px; display: flex; flex-direction: column; gap: 8px; }
+/* 对冲全局 .chart{height:360px}，否则热力条溢出卡片 */
+.chart { padding: 12px 14px 12px; display: flex; flex-direction: column; gap: 8px; height: auto; }
 .top h3 { margin: 0; font-size: var(--font-13-5); font-weight: 600; }
 .host { width: 100%; height: 300px; }
 .heat { margin-left: 48px; margin-right: 16px; }

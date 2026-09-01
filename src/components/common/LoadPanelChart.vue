@@ -110,7 +110,7 @@ function render() {
     // 底部布局:工具栏右下角(保留 magicType);grid bottom 加大给 toolbox + sliderZoom 滑块共存让位
     toolbox: bottomEnhancedToolbox(`${props.colName}-${props.metricName}`, 8),
     tooltip: { ...axisTooltip({ unit: '万KWH' }), confine: true },
-    dataZoom: sliderZoom(), // 366 点长序列:滚轮 + 底部滑块
+    dataZoom: sliderZoom().map((z, i) => (i === 1 ? { ...z, bottom: 18, left: 26, right: 190 } : z)),
     grid: { left: 52, right: 16, top: 60, bottom: 64 },
     xAxis: {
       type: 'category', data: xData, boundaryGap: false,

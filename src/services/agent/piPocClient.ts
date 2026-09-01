@@ -31,3 +31,28 @@ export async function setSessionAutoApprove(sessionId: string, enabled: boolean)
   if (!res.ok) throw new Error(`HTTP ${res.status}`)
   return ((await res.json()) as { auto_approve?: boolean }).auto_approve === true
 }
+
+// 当前主对话模型（主仓 #2658）。auto 档下模型会随自建端点可用性自动切换，而此前
+// 这件事只写在服务端日志里——**演示时端点悄悄断掉、答案却照常出来**，屏幕前的人
+// 无从察觉。本函数取回这一事实供界面显示。
+//
+// 服务未启动/旧版后端（无此端点）时抛错，调用方按「不显示标签」降级——宁可不显示，
+// 也不能显示一个可能已经不对的模型名。
+export interface CurrentModelInfo {
+  provider: string
+  model: string
+  /** 是否跑在自建端点上——演示时最想让人看见的就是这一位。 */
+  selfHosted: boolean
+  label: string
+  /** 'auto' 时模型会自行切换，界面据此提示「自动」。 */
+  mode: string
+}
+
+export async function fetchCurrentModel(): Promise<CurrentModelInfo> {
+  const res = await fetch(`${PI_AGENT_BASE}/model`, {
+    headers: identityHeaders(),
+    signal: timeoutSignal(PI_POC_TIMEOUT_MS)
+  })
+  if (!res.ok) throw new Error(`HTTP ${res.status}`)
+  return (await res.json()) as CurrentModelInfo
+}

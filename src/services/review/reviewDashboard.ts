@@ -29,6 +29,17 @@ export const TAB_SHORT: Readonly<Record<ShellTab, string>> = Object.freeze({
   subject: '主体'
 })
 
+/** 暂不对外展示的标签（藏而不删）：tab 栏不渲染、维面组件与数据链路原样保留，
+ *  ?dim= 深链仍可直达（parseDimQuery 不改）。恢复可见只需清空本清单。 */
+export const HIDDEN_TABS: readonly ShellTab[] = Object.freeze([
+  'risk', 'decision', 'subject'
+]) as readonly ShellTab[]
+
+/** tab 栏实际渲染的标签 = TAB_ORDER − HIDDEN_TABS，保持既有顺序。 */
+export const VISIBLE_TABS: readonly ShellTab[] = Object.freeze(
+  TAB_ORDER.filter((t) => !(HIDDEN_TABS as readonly string[]).includes(t))
+) as readonly ShellTab[]
+
 export function isShellTab(value: unknown): value is ShellTab {
   return typeof value === 'string' && (TAB_ORDER as readonly string[]).includes(value)
 }

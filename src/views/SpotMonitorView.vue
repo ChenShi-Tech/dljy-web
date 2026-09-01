@@ -6,7 +6,7 @@ import { Activity, BellRing, RefreshCw } from 'lucide-vue-next'
 import AgentSidekick from '../components/agent/AgentSidekick.vue'
 import { useEChart } from '../composables/useEChart'
 import { useQuerySync } from '../composables/useQuerySync'
-import { axisTooltip, chartToolbox, emptyOverlay, insideZoom } from '@/services/chart/chartOptions'
+import { axisTooltip, bottomLayoutLegend, bottomToolbox, emptyOverlay, insideZoom } from '@/services/chart/chartOptions'
 import { fetchMonitor, type MonitorResult } from '@/services/quant/quantClient'
 import { onRegionChange } from '../composables/useRegionReload'
 import RegionDataBanner from '@/components/region/RegionDataBanner.vue'
@@ -140,9 +140,12 @@ function renderChart() {
   priceChart.setOption({
     ...emptyOverlay(!r.series.length),
     tooltip: axisTooltip({ unit: '元/MWh', digits: 1 }),
-    legend: { data: dualPriceSeries.value ? ['日前价', '实时价', '价差'] : ['出清价', '价差'], top: 0, right: 110 },
-    toolbox: chartToolbox('实时vs日前价差'),
-    grid: { left: 52, right: 16, top: 30, bottom: 26 },
+    legend: bottomLayoutLegend({
+      data: dualPriceSeries.value ? ['日前价', '实时价', '价差'] : ['出清价', '价差'],
+      textStyle: { fontSize: 10 }
+    }),
+    toolbox: bottomToolbox('实时vs日前价差', 8),
+    grid: { left: 52, right: 16, top: 56, bottom: 56 },
     dataZoom: insideZoom(),
     // X 轴时间标签：云南 24 点全显；基线 96 点太密，每 12 个显一个（约 2h 一个），
     // 避免 ECharts 默认 interval:'auto' 把标签全隐藏导致"X 轴空白"观感。

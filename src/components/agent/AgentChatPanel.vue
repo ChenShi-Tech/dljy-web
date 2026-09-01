@@ -5,6 +5,7 @@ import { computed, nextTick, onMounted, onBeforeUnmount, provide, ref, watch } f
 import { useRouter } from 'vue-router'
 import { Bot, ChevronDown, ChevronRight, Loader2, Send, Square, User, Wrench } from 'lucide-vue-next'
 import { useAgentHealth } from '@/composables/useAgentHealth'
+import { useCurrentModel } from '@/composables/useCurrentModel'
 import {
   AgentStreamDisconnectedError,
   AgentStreamHttpError,
@@ -1234,6 +1235,9 @@ onBeforeUnmount(() => {
 // 集中在共享面板处理，覆盖工作台/4 Copilot/复盘中心/Sidekick/申报台等全部 8 个接入点。
 const { offline: agentOffline, check: checkHealth } = useAgentHealth()
 
+// 当前主对话模型（主仓 #2658）：取不到就不显示，不猜——这个标签的价值全在可信。
+const { model: currentModel } = useCurrentModel()
+
 // 挂载恢复优先级：①侧栏指定回放会话 → attach 在途 run / 待审批态 → ②首条自动发送（仅在线）
 // → ③刷新恢复本接入点上次会话 → attach 在途 run / 待审批态。
 onMounted(async () => {
@@ -1327,6 +1331,15 @@ function approvalBrief(payload: Record<string, unknown>): { label: string; value
 
 <template>
   <div class="agent-panel">
+    <!-- 当前模型（主仓 #2658）：auto 档下模型随自建端点可用性自动切换，不显示的话
+         「端点断了、答案照常出来」无从察觉。取不到就不显示，不猜。 -->
+    <div v-if="currentModel" class="model-bar" :class="{ 'self-hosted': currentModel.selfHosted }">
+      <span class="model-dot" aria-hidden="true"></span>
+      <span class="model-label">{{ currentModel.label }}</span>
+      <span class="model-name">{{ currentModel.model }}</span>
+      <span v-if="currentModel.mode === 'auto'" class="model-mode" title="模型按端点可用性自动切换">自动</span>
+    </div>
+
     <!-- 任务计划（TodoListMiddleware 状态） -->
     <div v-if="todos.length" class="plan-bar">
       <span class="plan-title">任务计划</span>
@@ -1625,6 +1638,26 @@ function approvalBrief(payload: Record<string, unknown>): { label: string; value
 }
 
 /* 任务计划条 */
+.model-bar {
+  display: flex; align-items: center; gap: 6px;
+  padding: 4px 12px; font-size: var(--font-xs);
+  color: var(--el-text-color-secondary);
+  border-bottom: 1px solid var(--el-border-color-lighter);
+  background: var(--el-fill-color-lighter);
+}
+.model-dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--el-text-color-placeholder);
+}
+/* 自建端点是演示时最想让人一眼看见的状态，故给它唯一的高亮 */
+.model-bar.self-hosted { color: var(--el-color-success); background: var(--el-color-success-light-9); }
+.model-bar.self-hosted .model-dot { background: var(--el-color-success); }
+.model-name { font-family: var(--el-font-family-mono, monospace); opacity: 0.75; }
+.model-mode {
+  margin-left: auto; padding: 0 6px; border-radius: 8px;
+  background: var(--el-fill-color); color: var(--el-text-color-secondary);
+}
+
 .plan-bar {
   display: flex;
   flex-wrap: wrap;
