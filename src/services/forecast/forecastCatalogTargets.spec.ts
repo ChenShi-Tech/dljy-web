@@ -82,6 +82,18 @@ describe('forecast catalog target buckets (#54)', () => {
       .toEqual(['remote:user-da'])
   })
 
+  it('用户侧结算价目标下仍保留可运行的 KNN 固定入口，不因目录分桶被前端误隐藏', async () => {
+    const mod = await import('./forecastProviders')
+    const task = mod.ensureForecastCatalog('price_user_da_settlement', true, 'yunnan')
+    deferred[0].resolve({
+      models: [catalogModel({ modelId: 'remote:user-da', target: 'price_user_da_settlement' })],
+    })
+    await task
+
+    const hourlyProviders = mod.providersForTarget('price_user_da_settlement', 'yunnan')
+    expect(hourlyProviders.some((p) => p.id === 'knn')).toBe(true)
+  })
+
   it('同页 price/load 并存时，固定 provider 的 quality 不能串 target', async () => {
     const mod = await import('./forecastProviders')
     const task = mod.ensureForecastCatalog(['price', 'load'], true, 'yunnan')

@@ -339,7 +339,9 @@ export const knnProvider: ForecastProvider = {
   name: 'KNN 相似日（基线）',
   kind: 'compute',
   tier: 'baseline',
-  supportedTargets: ['price', 'load', 'renewable'],
+  // KNN 后端按 target 泛化运行；这里声明的是“前端允许进入算法选择器的真实目标绑定”。
+  // 若漏掉小时级用户侧结算价，页面会把 KNN 误隐藏成“像没接入一样”。
+  supportedTargets: ['price', 'load', 'renewable', 'price_user_da_settlement', 'price_user_rt_settlement'],
   paramsSchema: [
     { key: 'k1', label: '相似日数量 K1（价格区间）', type: 'slider', default: 8, min: 1, max: 30, step: 1 },
     { key: 'k2', label: '相似日数量 K2（火电出力）', type: 'slider', default: 3, min: 1, max: 30, step: 1 },
