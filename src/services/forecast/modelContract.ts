@@ -249,7 +249,7 @@ export function normalizeModelRegistryEntry(
   const shadowGate = normalizeShadowGate(raw.shadowGate ?? raw.shadow_gate ?? meta.shadowGate ?? meta.shadow_gate)
   const provenance = normalizeProvenance(raw.provenance) ?? legacyProvenance(raw, meta)
   // #1461：逐模型支持的目标清单。后端目录已按 target 过滤（不支持的不进目录），
-  // 此字段供前端保留它声明的真实输出范围（如 physics_hybrid 仅 renewable）。
+  // 此字段保留后端明确声明的目标能力：具体权重是实际输出绑定；runtime 算法是已验证可即时训练/计算的范围。
   // 非数组 / 缺省 = 未登记；显式空数组 = 明确没有绑定目标。两者都不得扩成兼容全集。
   const rawTargets = raw.supportedTargets ?? raw.supported_targets
   const supportedTargets = Array.isArray(rawTargets)

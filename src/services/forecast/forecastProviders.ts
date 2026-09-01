@@ -113,6 +113,8 @@ export interface ForecastProvider {
   supportedTargets: string[]
   /** false=后端未登记输出目标；前端不得把它当成已训练模型的真实支持范围。 */
   supportedTargetsDeclared?: boolean
+  /** deployed=具体权重的输出绑定；runtime=请求时用历史数据训练/计算的兼容目标。 */
+  targetCapabilityKind?: 'deployed' | 'runtime'
   paramsSchema: ParamField[]
   // dljy#2464：模型自述（远端模型有）——输入门槛（协变量 × 平台供给）、血统、来源、架构、单位
   io?: ModelIo
@@ -339,9 +341,10 @@ export const knnProvider: ForecastProvider = {
   name: 'KNN 相似日（基线）',
   kind: 'compute',
   tier: 'baseline',
-  // KNN 后端按 target 泛化运行；这里声明的是“前端允许进入算法选择器的真实目标绑定”。
-  // 若漏掉小时级用户侧结算价，页面会把 KNN 误隐藏成“像没接入一样”。
+  // KNN 按请求读取对应目标的真实历史数据；两条用户侧结算价走小时级 loader。
+  // 这里列的是经过取数→特征→预测回归验证的兼容目标，不是“已有固定权重”。
   supportedTargets: ['price', 'load', 'renewable', 'price_user_da_settlement', 'price_user_rt_settlement'],
+  targetCapabilityKind: 'runtime',
   paramsSchema: [
     { key: 'k1', label: '相似日数量 K1（价格区间）', type: 'slider', default: 8, min: 1, max: 30, step: 1 },
     { key: 'k2', label: '相似日数量 K2（火电出力）', type: 'slider', default: 3, min: 1, max: 30, step: 1 },
@@ -669,6 +672,8 @@ function makeMlProvider(model: ForecastModel): ForecastProvider {
     // 缺省/空都视为「未登记真实输出绑定」，可以留在原始目录证据里，但不能进预测入口/台账计数。
     supportedTargets: [...new Set(model.supportedTargets ?? [])],
     supportedTargetsDeclared: model.supportedTargets !== undefined,
+    targetCapabilityKind: ['base', 'baseline', 'neural', 'deep'].includes(model.namespace ?? '')
+      ? 'runtime' : 'deployed',
     // 平台参数（训练回看/概率/共形）+ 模型自己声明的可调参数（dljy#2464：按 paramsSchema 渲染，不再一套配所有）
     paramsSchema: [...ML_PARAMS, ...modelParamFields(model.paramsSchema, ML_PARAM_KEYS)],
     io: model.io,

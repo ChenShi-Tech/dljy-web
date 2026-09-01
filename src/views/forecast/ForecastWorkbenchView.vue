@@ -384,13 +384,14 @@ async function loadOverview() {
 }
 
 // 附 tab：模型台账（provider 元信息，available/reason 已由 catalog 注入 provider，#762）
-const kindLabel = (k: ProviderKind) => (k === 'replay' ? '回放真实采集' : '后端实时计算')
-// 台账与算法选择器分开：KNN/平台官方属于可运行入口，但不是“已接入输出目标”的具体模型。
-const ledger = computed(() => visibleTargetProviders.value
-  .filter((p) => p.id !== 'platform' && p.id !== 'knn' && p.supportedTargetsDeclared !== false)
-  .map((p) => ({
+const kindLabel = (k: ProviderKind, capabilityKind: 'deployed' | 'runtime') => capabilityKind === 'runtime'
+  ? '按请求训练/计算'
+  : (k === 'replay' ? '回放真实采集' : '已部署权重推理')
+// 台账也是业务界面：与选择器保持同一准入范围，清理明细仅留在独立审计报告。
+const ledger = computed(() => visibleTargetProviders.value.filter((p) => p.id !== 'platform').map((p) => ({
   id: p.id, name: p.name, kind: p.kind, tier: p.tier, supportedTargets: [...new Set(p.supportedTargets)],
   supportedTargetsDeclared: p.supportedTargetsDeclared !== false,
+  targetCapabilityKind: p.targetCapabilityKind ?? 'deployed',
   mock: !!p.mock,
   available: p.kind === 'replay' ? true : (p.available ?? null),
   reason: p.reason ?? '',
@@ -637,7 +638,7 @@ onMounted(() => { discoverTargetOptions(false, regionId.value) })
 
         <!-- 附 tab：模型台账 -->
         <el-tab-pane label="模型台账" name="ledger">
-          <p class="hint">当前目标下的可用算法。点击已接入输出目标数查看该算法明确绑定的预测输出；不把协变量算进去。未登记输出目标的通用算法不视为已训练模型，不在这里计数；平台官方披露请到多目标总览或对照里查看。</p>
+          <p class="hint">当前目标下的真实可运行算法分两类：已部署权重显示其固定输出；KNN、XGBoost、PatchTST 等按请求算法显示可读取真实历史数据并即时训练/计算的目标。后者不是已保存权重或历史训练次数。占位和原始零样本模型仍不展示，协变量不计入目标数。</p>
           <el-table :data="ledger" size="small" border>
             <el-table-column prop="name" label="算法" />
             <el-table-column label="运行时" width="120">
@@ -646,9 +647,9 @@ onMounted(() => { discoverTargetOptions(false, regionId.value) })
                 <el-tag v-else type="success" size="small">真实算法</el-tag>
               </template>
             </el-table-column>
-            <el-table-column label="类别" width="150"><template #default="{ row }">{{ kindLabel(row.kind) }}</template></el-table-column>
+            <el-table-column label="运行方式" width="150"><template #default="{ row }">{{ kindLabel(row.kind, row.targetCapabilityKind) }}</template></el-table-column>
             <el-table-column prop="tier" label="层级" width="110" />
-            <el-table-column label="已接入输出目标数" width="140"><template #default="{ row }"><ForecastTargetCount :targets="row.supportedTargets" :declared="row.supportedTargetsDeclared" :model-name="row.name" /></template></el-table-column>
+            <el-table-column label="目标能力" width="120"><template #default="{ row }"><ForecastTargetCount :targets="row.supportedTargets" :declared="row.supportedTargetsDeclared" :model-name="row.name" :capability-kind="row.targetCapabilityKind" /></template></el-table-column>
             <el-table-column label="后端可用" width="120">
               <template #default="{ row }">
                 <el-tag v-if="row.available === true" type="success" size="small">可用</el-tag>
