@@ -42,7 +42,8 @@ describe('现货 cockpit · 节点价来源标注', () => {
     vi.resetModules()
   })
 
-  it('中广核云南账号：显示厂侧标注，节点价基准为实时真实数据', async () => {
+  // 整组件挂载较重：全量套件并发跑时冷启动可超默认 5s（单跑 ~2s 即过），显式放宽避免抖动
+  it('中广核云南账号：显示厂侧标注，节点价基准为实时真实数据', { timeout: 20000 }, async () => {
     entitled.value = true
     const text = (await mountCockpit()).text()
     expect(text).toContain(PRIVATE_BADGE)
@@ -53,7 +54,7 @@ describe('现货 cockpit · 节点价来源标注', () => {
     expect(text).not.toContain('DuckDB')
   })
 
-  it('非中广核账号：**不得**出现厂侧标注，基准降为真实采集回放', async () => {
+  it('非中广核账号：**不得**出现厂侧标注，基准降为真实采集回放', { timeout: 20000 }, async () => {
     entitled.value = false
     const text = (await mountCockpit()).text()
     expect(text).not.toContain(PRIVATE_BADGE)

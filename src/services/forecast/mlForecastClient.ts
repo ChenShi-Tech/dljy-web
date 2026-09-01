@@ -115,11 +115,15 @@ export type ForecastResult = {
   // 读取一律走 unavailableReasonOf() 归一，避免又出现"读了个永远不存在的字段"。
   unavailable_reason?: string | null
   unavailableReason?: string | null
+  // /predict 的 B18 失败形态（无 torch/样本<30 必然命中）：{ available:false, reason }
+  reason?: string | null
 }
 
-/** 取 Core 不可用原因（兼容 snake_case / camelCase 两种形态）。 */
-export function unavailableReasonOf(r: Pick<ForecastResult, 'unavailable_reason' | 'unavailableReason'> | null | undefined): string {
-  return String(r?.unavailable_reason ?? r?.unavailableReason ?? '').trim()
+/** 取 Core 不可用原因（兼容 snake_case / camelCase / B18 reason 三种形态）。 */
+export function unavailableReasonOf(
+  r: Pick<ForecastResult, 'unavailable_reason' | 'unavailableReason' | 'reason'> | null | undefined,
+): string {
+  return String(r?.unavailable_reason ?? r?.unavailableReason ?? r?.reason ?? '').trim()
 }
 
 export type ForecastRequest = {
