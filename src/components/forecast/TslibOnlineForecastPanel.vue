@@ -38,9 +38,14 @@ const unifiedResult = ref<UnifiedForecastResult | null>(null)
 const forecastError = ref('')
 const catalogError = ref('')
 
-// 与单算法/多算法入口使用同一准入规则；不再展示占位、不可用或原始零样本模型。
+// 与单算法/多算法入口使用同一准入规则；按模型能力命名空间识别深度/远程模型，
+// 不再只认 tslib:/remote: 前缀，否则运行时 ID=patchtst 的真实模型会被误隐藏。
+// 前缀判断只保留给旧目录兼容；占位、不可用或原始零样本仍由统一准入规则移除。
+const ONLINE_MODEL_NAMESPACES = new Set(['neural', 'deep', 'tslib', 'remote'])
 const onlineModels = computed(() => models.value.filter((model) =>
-  (model.modelId.startsWith('tslib:') || model.modelId.startsWith('remote:'))
+  (ONLINE_MODEL_NAMESPACES.has(String(model.namespace ?? ''))
+    || model.modelId.startsWith('tslib:')
+    || model.modelId.startsWith('remote:'))
   && predictionModelExclusionReason(model) === null
 ))
 const activeModel = computed(() => !catalogError.value

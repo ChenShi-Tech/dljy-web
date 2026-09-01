@@ -672,7 +672,7 @@ function makeMlProvider(model: ForecastModel): ForecastProvider {
     // 缺省/空都视为「未登记真实输出绑定」，可以留在原始目录证据里，但不能进预测入口/台账计数。
     supportedTargets: [...new Set(model.supportedTargets ?? [])],
     supportedTargetsDeclared: model.supportedTargets !== undefined,
-    targetCapabilityKind: ['base', 'baseline', 'neural', 'deep'].includes(model.namespace ?? '')
+    targetCapabilityKind: ['base', 'baseline', 'neural', 'deep', 'tslib'].includes(model.namespace ?? '')
       ? 'runtime' : 'deployed',
     // 平台参数（训练回看/概率/共形）+ 模型自己声明的可调参数（dljy#2464：按 paramsSchema 渲染，不再一套配所有）
     paramsSchema: [...ML_PARAMS, ...modelParamFields(model.paramsSchema, ML_PARAM_KEYS)],

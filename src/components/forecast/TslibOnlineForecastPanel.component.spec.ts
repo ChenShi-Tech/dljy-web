@@ -141,6 +141,20 @@ describe('在线面板真实请求与响应', () => {
     expect(wrapper.findComponent({ name: 'ElButton' }).props('disabled')).toBe(true)
     expect(wrapper.findComponent(Chart).exists()).toBe(false)
   })
+  it('按能力命名空间保留无前缀的运行时 PatchTST', async () => {
+    const data = catalog()
+    data.models = [
+      { ...data.models[0], modelId: 'patchtst', name: 'PatchTST（运行时）', namespace: 'neural' },
+      { ...data.models[0], modelId: 'tslib:PatchTST', name: 'PatchTST（兼容占位）', namespace: 'tslib' },
+    ]
+    api.models.mockResolvedValueOnce(data)
+    const wrapper = await render()
+    const options = wrapper.findAllComponents({ name: 'ElOption' }).map((option) => option.props('value'))
+    expect(options).toContain('patchtst')
+    expect(options).not.toContain('tslib:PatchTST')
+    await run(wrapper)
+    expect(api.predict).toHaveBeenCalledWith(expect.objectContaining({ model_type: 'patchtst' }))
+  })
   it('改数据源立即清除旧曲线，合成标签持续可见', async () => {
     const wrapper = await render()
     await run(wrapper)
