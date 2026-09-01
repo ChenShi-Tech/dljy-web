@@ -25,7 +25,7 @@ import {
   type SettlementReviewResult
 } from '@/services/quant/quantClient'
 import { captureCoverage, clampToCoverage, isOutOfCoverage } from '@/services/market/captureCoverage'
-import { getDeclaration, type DeclarationOrder } from '@/services/declarations'
+import { declarationModeOf, getDeclaration, type DeclarationOrder } from '@/services/declarations'
 import { EFFECTIVENESS_LABEL, getSettlementRuleSpec } from '../rules/settlement'
 import { currentRegion } from '@/services/region/regionContext'
 import { onRegionChange } from '../composables/useRegionReload'
@@ -282,6 +282,16 @@ const badges = computed<HeaderBadge[]>(() => {
   const list: HeaderBadge[] = []
   if (declaration.value) list.push({ text: `基准 申报单 ${declaration.value.id}`, tone: 'info', title: '回测以该申报单曲线为基准' })
   else if (declarationId.value) list.push({ text: `申报单 ${declarationId.value} 不可达`, tone: 'warn', title: '已降级为合成基准' })
+  // 走查清单 #6：历史模拟单的申报曲线是演练口径（如 30MW 平铺），与实际负荷量级可能相差
+  // 悬殊，偏差率/考核费会得出看似荒谬的数值（实测 1111.7%、253 万）——不标注会被误读成
+  // 系统算错。徽标只标状态，解释放 title。
+  if (declaration.value && declarationModeOf(declaration.value) === 'REHEARSAL') {
+    list.push({
+      text: '演练基准 · 量级不可比',
+      tone: 'warn',
+      title: '基准为历史模拟单：申报曲线为演练口径，与实际负荷量级可能相差悬殊，偏差率/考核费等数值仅作流程演练演示，不构成真实考核口径。'
+    })
+  }
   if (result.value?.source === 'synthetic_mock') list.push({ text: '演示数据', tone: 'warn' })
   if (outOfCoverage.value && coverage.value) list.push({ text: `覆盖至 ${coverage.value.end}`, tone: 'off', title: `真实采集覆盖 ${coverage.value.start} ~ ${coverage.value.end}` })
   if (error.value) list.push({ text: error.value, tone: 'danger' })
