@@ -44,7 +44,8 @@ describe('节点电价分析页 · 来源标注', () => {
     vi.resetModules()
   })
 
-  it('中广核云南账号：标注厂侧私有来源，且不出现公共来源说法', async () => {
+  // 整组件挂载较重：全量套件并发跑时冷启动可超默认 5s（单跑 ~2s 即过），显式放宽避免抖动
+  it('中广核云南账号：标注厂侧私有来源，且不出现公共来源说法', { timeout: 20000 }, async () => {
     entitled.value = true
     const wrapper = await mountPanel()
     const text = wrapper.text()
@@ -53,7 +54,7 @@ describe('节点电价分析页 · 来源标注', () => {
     expect(text).not.toContain(PUBLIC_CLAIM)
   })
 
-  it('非中广核账号：如实标注公共来源，**绝不能**再宣称厂侧私有', async () => {
+  it('非中广核账号：如实标注公共来源，**绝不能**再宣称厂侧私有', { timeout: 20000 }, async () => {
     entitled.value = false
     const wrapper = await mountPanel()
     const text = wrapper.text()
