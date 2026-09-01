@@ -11,7 +11,7 @@ const rows = ref<ForecastProvider[]>([])
 vi.mock('vue-router', () => ({ useRoute: () => route }))
 vi.mock('@/services/forecast/forecastProviders', async (original) => ({
   ...await original<typeof import('@/services/forecast/forecastProviders')>(),
-  providersForTarget: () => rows.value,
+  providersForTarget: (target: string) => rows.value.filter((row) => row.supportedTargets.includes(target)),
   catalogModelsForTarget: (target: string) => rows.value
     .filter((row) => row.supportedTargets.includes(target))
     .map((row) => ({ modelId: row.id, namespace: 'remote', available: row.available ?? true, supportedTargets: row.supportedTargets })),
@@ -194,9 +194,23 @@ describe('建模工作台的目标日上下文', () => {
     ])
     const wrapper = await render()
     expect(api.run).not.toHaveBeenCalled()
-    expect(wrapper.text()).toContain('当前预测中心没有可展示的模型')
+    expect(wrapper.text()).toContain('当前地区暂无已接入预测目标')
     expect(wrapper.findAll('button').find((button) => button.text() === '预测')?.attributes('disabled')).toBeDefined()
     expect(wrapper.findAll('button').find((button) => button.text() === '运行对比')?.attributes('disabled')).toBeDefined()
+  })
+  it('没有目录绑定真模型时，KNN/平台官方这类可运行入口仍应保留目标下拉，不得误报当前地区暂无预测目标', async () => {
+    route.query.target = undefined as unknown as string
+    api.load.mockResolvedValue([
+      provider({ id: 'knn', name: 'KNN 相似日（基线）', supportedTargets: ['price', 'load'] }),
+      provider({ id: 'platform', name: '平台官方', kind: 'replay', tier: 'official', supportedTargets: ['price'] }),
+    ])
+    const wrapper = await render()
+    expect(wrapper.text()).not.toContain('当前地区暂无已接入预测目标')
+    await run(wrapper)
+    expect(api.run).toHaveBeenCalledWith(
+      expect.objectContaining({ regionId: 'yunnan', target: 'price', targetDate: '2026-06-25', granularity: 96 }),
+      expect.objectContaining({ train_days: 180 }),
+    )
   })
   it('同上下文目录变动后单算法旧模型会被清掉，迟到结果不能再回写，后续只执行新的可见模型', async () => {
     const pending = deferred<UnifiedForecastResult>()

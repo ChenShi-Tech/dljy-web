@@ -15,7 +15,7 @@ import DailyDisclosureOverview from '../../components/forecast/DailyDisclosureOv
 import { selectedRegionId, setCurrentRegionId } from '@/services/region/regionContext'
 import { getRegionById } from '../../data/regions'
 import {
-  providersForTarget, platformTargetsForRegion, getProvider, defaultParams, catalogModelsForTarget, isCatalogModelUsableForTarget,
+  providersForTarget, platformTargetsForRegion, getProvider, defaultParams,
   FORECAST_TARGET_OPTIONS, nativeSlotsForTarget, granularityForTarget,
   ensureForecastCatalog, forecastCatalogState,
   type UnifiedForecastResult, type ProviderKind, type ForecastProvider,
@@ -65,9 +65,12 @@ const targetCatalog = forecastCatalogState(computed(() => DISCOVERABLE_TARGETS),
 const currentTargetCatalog = forecastCatalogState(computed(() => target.value || 'price'), computed(() => regionId.value))
 const targetCatalogError = computed(() => targetCatalog.error.value)
 const targetOptionsLoading = computed(() => targetCatalog.loading.value)
+function hasVisibleProviderForTarget(targetId: string, activeRegionId: string): boolean {
+  return providersForTarget(targetId, activeRegionId).some((provider) =>
+    predictionModelExclusionReason(provider) === null)
+}
 const targetOptions = computed(() => FORECAST_TARGET_OPTIONS.filter((item) =>
-  catalogModelsForTarget(item.id, regionId.value).some((model) =>
-    isCatalogModelUsableForTarget(model, item.id) && predictionModelExclusionReason(model) === null)))
+  hasVisibleProviderForTarget(item.id, regionId.value)))
 const targetProviders = computed(() => target.value ? providersForTarget(target.value, regionId.value) : [])
 const visibleTargetProviders = computed(() => targetProviders.value.filter((provider) =>
   predictionModelExclusionReason(provider) === null))
@@ -382,8 +385,10 @@ async function loadOverview() {
 
 // 附 tab：模型台账（provider 元信息，available/reason 已由 catalog 注入 provider，#762）
 const kindLabel = (k: ProviderKind) => (k === 'replay' ? '回放真实采集' : '后端实时计算')
-// 台账也是业务界面：与选择器保持同一准入范围，清理明细仅留在独立审计报告。
-const ledger = computed(() => visibleTargetProviders.value.filter((p) => p.id !== 'platform').map((p) => ({
+// 台账与算法选择器分开：KNN/平台官方属于可运行入口，但不是“已接入输出目标”的具体模型。
+const ledger = computed(() => visibleTargetProviders.value
+  .filter((p) => p.id !== 'platform' && p.id !== 'knn' && p.supportedTargetsDeclared !== false)
+  .map((p) => ({
   id: p.id, name: p.name, kind: p.kind, tier: p.tier, supportedTargets: [...new Set(p.supportedTargets)],
   supportedTargetsDeclared: p.supportedTargetsDeclared !== false,
   mock: !!p.mock,
