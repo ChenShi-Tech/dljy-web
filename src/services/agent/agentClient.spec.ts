@@ -11,6 +11,10 @@
 // 无终态帧抛 AgentStreamDisconnectedError、abort 静默返回。
 // 4. x-run-id 响应头 → 转 attachRunStream 续流。
 // 5. getActiveRun 404 → null 不抛。
+// 6. 探活三态（probeAgentService）：2xx→online；超时拒绝（TimeoutError/AbortError，
+// AbortSignal.timeout 的规范拒绝原因）→timeout；否定答复（vite 代理对已宕 upstream 固定
+// 回 502、404 旧后端、TypeError 网络层）→unreachable。申报工作台横幅按 timeout/unreachable
+// 分流文案，并据 timeout 识别「同步重训占住后端」的探活假阳性（DEVELOPMENT.md §4）。
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -39,6 +43,8 @@ import {
   createAgentSession,
   getActiveRun,
   identityHeaders,
+  pingAgentService,
+  probeAgentService,
   sendAgentMessage,
   type AgentEvent,
 } from '@/services/agent/agentClient'
@@ -337,5 +343,49 @@ describe('getActiveRun', () => {
   it('其它非 2xx → AgentStreamHttpError', async () => {
     mockFetch(async () => new Response('oops', { status: 502 }))
     await expect(getActiveRun('sess-a')).rejects.toBeInstanceOf(AgentStreamHttpError)
+  })
+})
+
+describe('probeAgentService 探活三态', () => {
+  it('2xx → online；pingAgentService 包装为 true', async () => {
+    mockFetch(async () => new Response('[]', { status: 200 }))
+    await expect(probeAgentService()).resolves.toBe('online')
+    mockFetch(async () => new Response('[]', { status: 200 }))
+    await expect(pingAgentService()).resolves.toBe(true)
+  })
+
+  it('502 → unreachable 不抛错（vite 代理对已宕 upstream 固定回 502，「没起」走这条路）', async () => {
+    mockFetch(async () => new Response('Internal Server Error', { status: 502 }))
+    await expect(probeAgentService()).resolves.toBe('unreachable')
+    mockFetch(async () => new Response('Bad Gateway', { status: 502 }))
+    await expect(pingAgentService()).resolves.toBe(false)
+  })
+
+  it('404 → unreachable（后端版本过旧没有该路由，同样不是 timeout）', async () => {
+    mockFetch(async () => new Response('not found', { status: 404 }))
+    await expect(probeAgentService()).resolves.toBe('unreachable')
+  })
+
+  it('TimeoutError/AbortError 拒绝 → timeout（服务在但被同步重训占住，2.5s 内未应答）', async () => {
+    mockFetch(async () => {
+      throw new DOMException('The operation timed out.', 'TimeoutError')
+    })
+    await expect(probeAgentService()).resolves.toBe('timeout')
+    mockFetch(async () => {
+      throw new DOMException('The user aborted a request.', 'AbortError')
+    })
+    await expect(probeAgentService()).resolves.toBe('timeout')
+    mockFetch(async () => {
+      throw new DOMException('The operation timed out.', 'TimeoutError')
+    })
+    await expect(pingAgentService()).resolves.toBe(false)
+  })
+
+  it('TypeError（网络层失败）→ unreachable', async () => {
+    mockFetch(async () => {
+      throw new TypeError('Failed to fetch')
+    })
+    await expect(probeAgentService()).resolves.toBe('unreachable')
+    await expect(pingAgentService()).resolves.toBe(false)
   })
 })

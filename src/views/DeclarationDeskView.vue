@@ -17,7 +17,7 @@ import { resolveIntelCapability, type IntelCapability } from '../data/declaratio
 import { PAGE_PROMPT_KEYS } from '@/prompts/pageKeys'
 import DataBasisBadge from '../components/DataBasisBadge.vue'
 import TrustBadge from '../components/common/TrustBadge.vue'
-import { pingAgentService } from '@/services/agent/agentClient'
+import { probeAgentService } from '@/services/agent/agentClient'
 import {
   fetchCockpit,
   fetchOptimizeBid,
@@ -66,11 +66,45 @@ const route = useRoute()
 // 向导步骤（申报单状态驱动）
 const STEPS = ['草稿与策略', '风控与审批', '提交与回执', '出清跟踪'] as const
 
-// 智能体服务探活：离线时给出启动指引，而不是让面板裸抛 502
+// 智能体服务探活：离线时给出启动指引，而不是让面板裸抛 502。
+// 探活只在 mount 与手动重试时跑、keep-alive 切回不重挂，一次超时横幅就常驻
+//（DEVELOPMENT.md §4 登记过的「探活超时假阳性，刷新即恢复」病根）——offline 后
+// 按 5s→10s→15s 封顶退避静默重探，后端拉起/空闲后横幅自愈；端点是开放读轻量
+// GET（useAgentHealth.ts 同款），常驻轮询代价可忽略。
 const harness = ref<'checking' | 'online' | 'offline'>('checking')
-async function checkHarness() {
-  harness.value = 'checking'
-  harness.value = (await pingAgentService()) ? 'online' : 'offline'
+// 失败原因分流文案：timeout=服务在但 2.5s 未应答（典型：价格预测同步重训占住后端）；
+// unreachable=代理回 502/404 等否定答复（服务多半真没起）→ 才给 npm 启动指引。
+const harnessFailReason = ref<'timeout' | 'unreachable' | null>(null)
+const HARNESS_RETRY_DELAYS_MS = [5000, 10000, 15000] as const
+let harnessRetryTimer = 0
+let harnessRetryAttempt = 0
+// 世代守卫：手动重试/后台重探/切页作废互相竞态时，迟到结果不得覆盖新状态
+let harnessProbeGeneration = 0
+
+async function checkHarness(opts: { silent?: boolean } = {}) {
+  const generation = ++harnessProbeGeneration
+  window.clearTimeout(harnessRetryTimer)
+  // 后台重探不打断当前横幅（checking 文案每轮闪烁）；只有首探与手动重试才显示进行中
+  if (!opts.silent) harness.value = 'checking'
+  const result = await probeAgentService()
+  if (generation !== harnessProbeGeneration) return
+  if (result === 'online') {
+    harnessFailReason.value = null
+    harnessRetryAttempt = 0
+    harness.value = 'online'
+    return
+  }
+  harnessFailReason.value = result
+  harness.value = 'offline'
+  const delay = HARNESS_RETRY_DELAYS_MS[Math.min(harnessRetryAttempt, HARNESS_RETRY_DELAYS_MS.length - 1)]
+  harnessRetryAttempt += 1
+  harnessRetryTimer = window.setTimeout(() => {
+    void checkHarness({ silent: true })
+  }, delay)
+}
+
+function retryHarness() {
+  void checkHarness()
 }
 
 // 目标日与截止倒计时
@@ -1044,17 +1078,26 @@ watch(hourlyMw, () => {
   curveDirty.value = true
   void nextTick(renderDeclChart)
 }, { deep: true })
-// keep-alive：切走暂停 1s 倒计时 ticker，切回先校准再恢复
+// keep-alive：切走暂停 1s 倒计时 ticker 与后台探活重试，切回先校准再恢复
 onActivated(() => {
   window.clearInterval(ticker)
   nowTick.value = Date.now()
   ticker = window.setInterval(() => {
     nowTick.value = Date.now()
   }, 1000)
+  // 离线期间后端可能已被拉起（或从重训高峰空闲下来），切回立即静默重探
+  if (harness.value === 'offline') void checkHarness({ silent: true })
 })
-onDeactivated(() => window.clearInterval(ticker))
+onDeactivated(() => {
+  window.clearInterval(ticker)
+  // 作废在途探活结果并停掉退避重试（与 ticker 同一纪律），切回由 onActivated 拉起
+  harnessProbeGeneration += 1
+  window.clearTimeout(harnessRetryTimer)
+})
 onBeforeUnmount(() => {
   window.clearInterval(ticker)
+  harnessProbeGeneration += 1
+  window.clearTimeout(harnessRetryTimer)
 })
 onRegionChange(() => {
   resetDecisionPackage()
@@ -1095,17 +1138,26 @@ onRegionChange(() => {
       </div>
     </section>
 
-    <!-- 智能体服务状态：离线时给启动指引（避免面板里裸抛 502）；手动申报流程不受影响 -->
+    <!-- 智能体服务状态：避免面板里裸抛 502；手动申报流程不受影响。
+         timeout（服务在但探活超时，如同步重训占住后端）与 unreachable（多半真没起）分流
+         文案；offline 后每 5/10/15s 静默重探，后端恢复后横幅自愈，无需刷新。 -->
     <section v-if="harness !== 'online'" class="panel harness-banner" :class="harness">
       <PlugZap :size="15" />
       <template v-if="harness === 'checking'">正在连接智能体服务…</template>
+      <template v-else-if="harnessFailReason === 'timeout'">
+        <span>
+          <b>智能体服务响应超时</b> — 服务可达但探活 2.5 秒内未应答，可能正在训练价格预测模型，
+          稍后将自动重试；手动申报流程不受影响。
+        </span>
+        <button class="retry-btn" @click="retryHarness">立即重试</button>
+      </template>
       <template v-else>
         <span>
           <b>智能体服务未连接</b> — 情报问答与协助起草依赖 agent 后端（端口 8000），
           手动申报流程不受影响。需要时执行 <code>npm run install:agent-api</code>（首次）和
-          <code>npm run dev:agent-api</code> 后重试。
+          <code>npm run dev:agent-api</code>，服务拉起后本提示会自动消失。
         </span>
-        <button class="retry-btn" @click="checkHarness">重试连接</button>
+        <button class="retry-btn" @click="retryHarness">重试连接</button>
       </template>
     </section>
 

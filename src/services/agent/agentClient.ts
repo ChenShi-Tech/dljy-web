@@ -193,16 +193,29 @@ export async function createAgentSession(
 }
 
 // 探活：申报工作台等页面在挂载智能体面板前先确认 harness 在线
-export async function pingAgentService(timeoutMs = 2500): Promise<boolean> {
+// 探活三态：online=2xx；timeout=超时时限内未应答（后端可能在但被重活占住，如
+// /forecast/predict 同步重训）；unreachable=拿到否定答复。区分依据：
+// - AbortSignal.timeout 触发的 fetch 拒绝是 TimeoutError DOMException（MDN 规范行为），
+//   本探活没有用户取消入口，abort 只可能来自超时信号；
+// - 「连不上」在代理拓扑下不抛错：vite proxyMiddleware 的 error 处理对已宕 upstream
+//   回 HTTP 502（生产 nginx 同理 502/504），fetch 正常 resolve、只是 !res.ok。
+export type AgentProbeResult = 'online' | 'timeout' | 'unreachable'
+
+export async function probeAgentService(timeoutMs = 2500): Promise<AgentProbeResult> {
   try {
     const res = await fetch(`${BASE}/sessions`, {
       headers: identityHeaders(),
       signal: timeoutSignal(timeoutMs)
     })
-    return res.ok
-  } catch {
-    return false
+    return res.ok ? 'online' : 'unreachable'
+  } catch (err) {
+    const name = (err as { name?: string } | null)?.name
+    return name === 'TimeoutError' || isAbortError(err) ? 'timeout' : 'unreachable'
   }
+}
+
+export async function pingAgentService(timeoutMs = 2500): Promise<boolean> {
+  return (await probeAgentService(timeoutMs)) === 'online'
 }
 
 // 客户端主动取消（停止按钮 / 组件卸载 / 切换任务时 resetRun）触发的 abort：

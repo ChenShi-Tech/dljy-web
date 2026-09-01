@@ -92,7 +92,7 @@ npm run dev                        # http://localhost:5174
 | `/api/real?family=…` 404 | 该地区该数据族无真实采集 → 空态兜底 | 否（设计行为） |
 | 401 / 403 | 未登录 / RBAC 无权限（你的账号权限受限属正常） | 否 |
 | `/agent-api/agent/quant/*` 503 | Python 侧该子服务未就绪 | 否，报给维护者 |
-| 页面顶部「智能体服务未就绪」 | dev server 冷启动时探活超时的假阳性 | 刷新即恢复 |
+| 页面「智能体服务未连接/响应超时」横幅 | timeout=探活 2.5s 内未应答的假阳性（如 `/forecast/predict` 同步重训占住后端）；unreachable=服务真未起（vite 代理对已宕 upstream 固定回 502） | 否，offline 后每 5/10/15s 自动重探，服务恢复即自愈 |
 | 页面白屏 / 控制台异常 | 前端问题 | **是**，带控制台报错提 issue |
 
 ## 5. 测试与本地门禁
