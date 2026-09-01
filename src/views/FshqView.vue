@@ -163,7 +163,7 @@ function renderBuySell(d: any) {
       { type: 'value', name: '量 MW(买+/卖-)', nameTextStyle: { color: cc.axisLabel, fontSize: 10 }, axisLabel: { fontSize: 9, color: cc.axisLabel }, splitLine: { lineStyle: { color: cc.splitLine } } },
       { type: 'value', name: '价 元/MWh(买+/卖-)', nameTextStyle: { color: cc.axisLabel, fontSize: 10 }, axisLabel: { fontSize: 9, color: cc.axisLabel }, splitLine: { show: false } }
     ],
-    dataZoom: [{ type: 'inside' }, { type: 'slider', height: 14, bottom: 8, right: 100 }],
+    dataZoom: [{ type: 'inside' }, { type: 'slider', height: 14, bottom: 18, right: 100 }],
     series,
     ...emptyOverlay(!x.length)
   }, { notMerge: true })
@@ -202,7 +202,7 @@ function renderMain() {
       { scale: true, gridIndex: 0, name: '电价 元/MWh', nameLocation: 'middle', nameGap: 38, nameRotate: 90, nameTextStyle: { color: cc.axisLabel, fontSize: 11 }, axisLabel: { color: cc.axisLabel, fontSize: 10 }, splitLine: { lineStyle: { color: cc.splitLine } } },
       { scale: true, gridIndex: 1, name: '电量', nameLocation: 'middle', nameGap: 30, nameRotate: 90, nameTextStyle: { color: cc.axisLabel, fontSize: 11 }, axisLabel: { color: cc.axisLabel, fontSize: 10 }, splitLine: { show: false } }
     ],
-    dataZoom: [{ type: 'inside', xAxisIndex: [0, 1] }, { type: 'slider', xAxisIndex: [0, 1], height: 16, bottom: 6, right: 100, labelFormatter: (i: number) => markIdx[Math.round(i)] || '' }],
+    dataZoom: [{ type: 'inside', xAxisIndex: [0, 1] }, { type: 'slider', xAxisIndex: [0, 1], height: 16, bottom: 18, right: 100, labelFormatter: (i: number) => markIdx[Math.round(i)] || '' }],
     series: [
       { name: '日K', type: 'candlestick', xAxisIndex: 0, yAxisIndex: 0, data: kdata, itemStyle: { color: '#ef5350', color0: '#26a69a', borderColor: '#ef5350', borderColor0: '#26a69a' },
         markLine: selectedIdx.value >= 0 ? { silent: true, symbol: 'none', lineStyle: { color: '#ff9800', width: 1.5 }, label: { show: false }, data: [{ xAxis: selectedIdx.value }] } : undefined },
