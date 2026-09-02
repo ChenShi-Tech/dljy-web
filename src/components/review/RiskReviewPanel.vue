@@ -38,6 +38,7 @@ const loading = ref(false)
 const loadError = ref('')
 const daysOk = ref<ReadonlyArray<{ date: string; detail: Array<{ da_price?: number; rt_price?: number }>; spreadPnl: number | null }>>([])
 const aggRows = ref<ReturnType<typeof aggregateDeviation>['rows']>([])
+const rangeProgress = ref<{ done: number; total: number } | null>(null)
 
 // 请求序号守卫（设计稿 §3.1 通讯纪律「新组件沿用」）：切月后旧响应丢弃，
 // 防止旧月数字覆盖新月面板、旧月触发结论以新月幂等键落库。
@@ -56,7 +57,10 @@ async function load() {
     const last = new Date(y, m, 0).getDate()
     const today = todayBeijing()
     const dates = Array.from({ length: last }, (_, i) => `${y}-${String(m).padStart(2, '0')}-${String(i + 1).padStart(2, '0')}`).filter((d) => d <= today)
-    const period = await fetchReviewRange(dates, { tolerancePct: props.tolerancePct, penaltyPrice: props.penaltyPrice })
+    const period = await fetchReviewRange(dates, {
+      tolerancePct: props.tolerancePct, penaltyPrice: props.penaltyPrice,
+      onProgress: (done, total) => (rangeProgress.value = { done, total })
+    })
     if (seq !== loadSeq) return
     const ok = period.days.filter((d): d is Extract<typeof d, { ok: true }> => d.ok)
     daysOk.value = ok.map((d) => ({ date: d.date, detail: d.result.detail, spreadPnl: d.result.backtest.da_rt_spread_pnl_yuan ?? null }))
@@ -159,12 +163,44 @@ async function loadEvents() {
   if (feed.available) {
     eventsAvailable.value = true
     registeredEvents.value = feed.events
+    // 有效性未评估的行预置回填草稿（处置带入已登记值；有效性空起评，不预填结论）
+    for (const r of feed.events) {
+      if (r.effective === null && !backfillDrafts.value[r.id]) {
+        backfillDrafts.value[r.id] = { disposal: r.disposal ?? '', effective: '' }
+      }
+    }
   } else {
     eventsAvailable.value = false
   }
 }
 onMounted(loadEvents)
 onMounted(loadCasesProbe)
+
+// ── 既有事件行内回填（S1「去风险事件库补有效性评估」的落点） ──────────────────
+// PATCH 只收处置三列（disposal/effective/lessons），事实列不可改写——与登记后补处置
+// 是同一条常态流，此前只有登记时一条路，已入库事件的有效性回填没有入口。
+type BackfillDraft = { disposal: string; effective: '' | 'true' | 'false' }
+const backfillDrafts = ref<Record<string, BackfillDraft>>({})
+const backfillBusyId = ref('')
+const backfillErrorId = ref('')
+
+async function saveBackfill(r: RiskEventSummary) {
+  const draft = backfillDrafts.value[r.id]
+  if (!draft || backfillBusyId.value) return
+  backfillBusyId.value = r.id
+  backfillErrorId.value = ''
+  try {
+    const updated = await patchRiskEvent(r.id, {
+      disposal: draft.disposal || null,
+      effective: draft.effective === '' ? null : draft.effective === 'true'
+    })
+    registeredEvents.value = registeredEvents.value.map((e) => (e.id === r.id ? updated : e))
+  } catch (e) {
+    backfillErrorId.value = `${r.id}:${e instanceof Error ? e.message : '处置回填失败'}`
+  } finally {
+    backfillBusyId.value = ''
+  }
+}
 
 async function saveNearMiss() {
   if (nearMissSaving.value) return // 防双击：端点可用时两次点击＝两条 near_miss
@@ -288,7 +324,7 @@ async function autoDraftFindings(seq: number) {
       <input v-model="month" type="month" />
     </header>
 
-    <p v-if="loading" class="rrp-muted">月度取数与阈值判级中…</p>
+    <p v-if="loading" class="rrp-muted">月度取数与阈值判级中{{ rangeProgress ? `（已取 ${rangeProgress.done}/${rangeProgress.total} 天）` : '' }}…</p>
     <p v-else-if="loadError" class="rrp-warn">{{ loadError }}</p>
 
     <template v-else>
@@ -345,12 +381,32 @@ async function autoDraftFindings(seq: number) {
         <p class="rrp-note">{{ NEAR_MISS_NOTE }}</p>
         <template v-if="eventsAvailable && registeredEvents.length">
           <p class="rrp-note">已登记 near_miss（{{ registeredEvents.length }} 条）：</p>
-          <p v-for="r in registeredEvents" :key="r.id" class="rrp-finding yellow">
-            {{ r.eventTime.slice(0, 10) }} · {{ r.eventType }}{{ r.riskLevel ? ` · ${r.riskLevel}` : '' }}
-            <template v-if="r.disposal">· 处置：{{ r.disposal }}</template>
-            <template v-if="r.effective === true">· 处置有效</template>
-            <template v-else-if="r.effective === false">· 处置无效</template>
-          </p>
+          <div v-for="r in registeredEvents" :key="r.id">
+            <p class="rrp-finding yellow">
+              {{ r.eventTime.slice(0, 10) }} · {{ r.eventType }}{{ r.riskLevel ? ` · ${r.riskLevel}` : '' }}
+              <template v-if="r.disposal">· 处置：{{ r.disposal }}</template>
+              <template v-if="r.effective === true">· 处置有效</template>
+              <template v-else-if="r.effective === false">· 处置无效</template>
+              <!-- 极值/持续时长（#2046 结构化列）：有则带出；near_miss 恒无（红线） -->
+              <template v-if="r.extremeValue !== null">· 极值 {{ r.extremeValue }}</template>
+              <template v-if="r.durationHours !== null">· 持续 {{ r.durationHours }} 小时</template>
+            </p>
+            <!-- 有效性未评估的行给行内回填入口（处置带回已登记值；已评估行保持只读） -->
+            <div v-if="r.effective === null && backfillDrafts[r.id]" class="rrp-backfill">
+              <input v-model="backfillDrafts[r.id].disposal" class="rrp-input" placeholder="处置措施（补录）" />
+              <select v-model="backfillDrafts[r.id].effective" class="rrp-input">
+                <option value="">有效性未评估</option>
+                <option value="true">处置有效</option>
+                <option value="false">处置无效</option>
+              </select>
+              <button type="button" class="rrp-save" :disabled="backfillBusyId === r.id" @click="saveBackfill(r)">
+                {{ backfillBusyId === r.id ? '回填中…' : '回填' }}
+              </button>
+            </div>
+            <p v-if="backfillErrorId.startsWith(`${r.id}:`)" class="rrp-warn">
+              {{ backfillErrorId.slice(r.id.length + 1) }}
+            </p>
+          </div>
         </template>
         <div class="rrp-nm">
           <label>事件时间 <input v-model="nearMiss.eventTime" type="datetime-local" /></label>
@@ -398,6 +454,7 @@ async function autoDraftFindings(seq: number) {
 .rrp-input { padding: 4px 7px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 6px; font-size: var(--font-11-5); }
 .rrp-nm { display: flex; flex-wrap: wrap; gap: 8px; font-size: var(--font-11-5); align-items: center; }
 .rrp-nm label { display: flex; align-items: center; gap: 5px; color: var(--el-text-color-secondary, #666); }
+.rrp-backfill { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 4px 0 6px; padding-left: 9px; }
 .rrp-full { flex: 1 1 200px; }
 .rrp-save { align-self: flex-start; padding: 4px 14px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 6px; background: #fff; font-size: var(--font-11-5); cursor: pointer; }
 .rrp-ok { margin: 4px 0 0; font-size: var(--font-xs); color: #15803d; }

@@ -5,9 +5,14 @@
 // SettlementRuleSpec）/ 单笔 Top5（M2 以日为笔，逐笔归集待 S6 #1966）。
 // 与 #2042 共用 fetchReviewRange，Top5 与拆解表同一次 /review 聚合产出（同源同口径）。
 // 环比超 20% 强制归因（方案原文规则）；反事实定位「策略对比」视图=决策参考非结算依据。
+// Top5「入案例库」已接 review.cases 端点（registerCase）：勾选即以行内人填内容构造
+// 四要素落库（空壳服务端拒、前端前置拦截）；失败红字+重试（写路径不静默）。
 import { computed, onMounted, ref, watch } from 'vue'
 import PnLWaterfall from '@/components/agent/dljy-ui/review/PnLWaterfall.vue'
 import { fetchReviewRange, type PeriodReviewDay } from '@/services/review/reviewPeriodClient'
+import { fetchCases, registerCase, type CaseDraft } from '@/services/review/reviewStoreClient'
+import { fetchTemplateInstanceFeed, patchTemplateInstance } from '@/services/review/templateInstanceClient'
+import type { TemplateInstanceSummary } from '@/services/review/templateInstanceApi'
 import {
   decomposeDaily,
   momForcesAttribution,
@@ -38,13 +43,18 @@ function prevMonthOf(ym: string): string {
   return m === 1 ? `${y - 1}-12` : `${y}-${String(m - 1).padStart(2, '0')}`
 }
 
+const curProgress = ref<{ done: number; total: number } | null>(null)
 async function load() {
   loading.value = true
   curDays.value = []
   prevTotalYuan.value = null
+  curProgress.value = null
   try {
     const [cur, prev] = await Promise.all([
-      fetchReviewRange(monthDays(month.value, true), { tolerancePct: props.tolerancePct, penaltyPrice: props.penaltyPrice }),
+      fetchReviewRange(monthDays(month.value, true), {
+        tolerancePct: props.tolerancePct, penaltyPrice: props.penaltyPrice,
+        onProgress: (done, total) => (curProgress.value = { done, total })
+      }),
       fetchReviewRange(monthDays(prevMonthOf(month.value)), { tolerancePct: props.tolerancePct, penaltyPrice: props.penaltyPrice })
     ])
     curDays.value = cur.days.map((day: PeriodReviewDay) => {
@@ -64,6 +74,9 @@ async function load() {
   }
 }
 onMounted(load)
+onMounted(loadCasesProbe)
+onMounted(loadT03)
+watch(month, loadT03)
 watch(month, load)
 
 const rollup = computed(() => rollupMonthly(curDays.value))
@@ -91,10 +104,128 @@ const waterfallData = computed(() => {
   }
 })
 
-// 模板三 B 档：事实自动带入（下表），成因与经验人填（本地草稿，提交随 #2037）
+// 模板三 B 档：事实自动带入（下表），成因与经验人填——内容随模板三实例存草稿（#2037 链路：
+// PATCH payload.pnlTop5），提交/锁定在模板抽屉的表单里做；此处自动保存草稿，不做第二套提交入口。
 const topDraft = ref<Record<string, { mainCause: string; lesson: string; toCase: boolean }>>({})
 function draftOf(date: string) {
   return (topDraft.value[date] ??= { mainCause: '', lesson: '', toCase: false })
+}
+
+// ── 模板三实例接线：读实例回填人填内容，编辑防抖自动存草稿 ──────────────────────
+const t03Instance = ref<TemplateInstanceSummary | null>(null)
+const t03Available = ref(true)
+const t03Saving = ref(false)
+const t03SavedAt = ref('')
+const t03Error = ref('')
+const t03Locked = computed(() => t03Instance.value?.status === 'submitted' || t03Instance.value?.status === 'reviewed')
+let t03SaveTimer: number | undefined
+
+async function loadT03() {
+  t03Instance.value = null
+  t03Error.value = ''
+  t03SavedAt.value = ''
+  const feed = await fetchTemplateInstanceFeed()
+  t03Available.value = feed.available
+  if (!feed.available) return
+  // T03 为月度节奏：周期键按月前缀匹配（触发引擎按 公司×模板×周期键 幂等生成）
+  const inst = feed.instances.find((i) => i.templateId === 'T03' && (i.periodKey ?? '').startsWith(month.value)) ?? null
+  t03Instance.value = inst
+  // 已落库的人填内容回读（payload.pnlTop5: { [date]: { mainCause, lesson } }）；不覆盖本地未保存的编辑
+  const saved = inst?.payload?.pnlTop5 as Record<string, { mainCause?: string; lesson?: string }> | undefined
+  if (saved && typeof saved === 'object') {
+    for (const [date, v] of Object.entries(saved)) {
+      const d = draftOf(date)
+      if (!d.mainCause) d.mainCause = v.mainCause ?? ''
+      if (!d.lesson) d.lesson = v.lesson ?? ''
+    }
+  }
+}
+
+function serializeTop5() {
+  return Object.fromEntries(top5.value.map((t) => {
+    const d = topDraft.value[t.date]
+    return [t.date, { type: t.type, pnlYuan: t.pnlYuan, mainCause: d?.mainCause ?? '', lesson: d?.lesson ?? '', toCase: !!d?.toCase }]
+  }))
+}
+
+async function saveT03Draft() {
+  const inst = t03Instance.value
+  if (!inst || t03Locked.value || t03Saving.value) return
+  t03Saving.value = true
+  t03Error.value = ''
+  try {
+    const pnlTop5 = serializeTop5()
+    await patchTemplateInstance(inst.id, { payload: { ...inst.payload, pnlTop5 }, status: 'draft' })
+    t03Instance.value = { ...inst, payload: { ...inst.payload, pnlTop5 } }
+    t03SavedAt.value = new Date().toLocaleTimeString('zh-CN', { hour12: false })
+  } catch (e) {
+    t03Error.value = e instanceof Error ? e.message : '模板三草稿保存失败'
+  } finally {
+    t03Saving.value = false
+  }
+}
+
+// 人填内容变更 → 800ms 防抖自动存模板三草稿（有实例且未锁定时才落库）
+watch(topDraft, () => {
+  if (!t03Instance.value || t03Locked.value || !t03Available.value) return
+  if (t03SaveTimer) clearTimeout(t03SaveTimer)
+  t03SaveTimer = window.setTimeout(() => { void saveT03Draft() }, 800)
+}, { deep: true })
+
+// ── Top5「入案例库」→ review.cases（#2045/#2047 端点已上线） ────────────────────
+// 案例档案纪律：四要素必填不接受空壳沉淀、沉淀后不可改写、无 DELETE——故勾选即登记，
+// 登记前前置校验成因/经验已填；失败红字 + 重试（写路径不静默）；端点缺席保持本地勾选并如实提示。
+const casesAvailable = ref(false)
+const caseState = ref<Record<string, { status: 'idle' | 'sinking' | 'done' | 'error'; caseNo?: string; error?: string; retry?: CaseDraft }>>({})
+
+async function loadCasesProbe() {
+  const feed = await fetchCases()
+  casesAvailable.value = feed.available
+}
+
+function caseDraftOf(t: { date: string; type: string; pnlYuan: number }, draft: { mainCause: string; lesson: string }): CaseDraft {
+  return {
+    caseType: 'deviation',
+    title: `偏差Top5：${t.date} ${t.type} ${Math.round(t.pnlYuan).toLocaleString()} 元`,
+    background: `复盘月份 ${month.value}；当日申报回测偏差（自算口径，结算细则未核验）`,
+    conclusion: draft.mainCause,
+    lessons: draft.lesson
+  }
+}
+
+async function sinkTopCase(t: { date: string; type: string; pnlYuan: number }) {
+  const draft = draftOf(t.date)
+  const st = (caseState.value[t.date] ??= { status: 'idle' })
+  if (st.status === 'sinking') return
+  if (!draft.mainCause.trim() || !draft.lesson.trim()) {
+    // 不自动回弹勾选框（状态与 DOM 会失同步）：保持勾选 + 行内红字，用户自行取消
+    st.status = 'error'
+    st.error = '案例库不接受空壳沉淀：请先填写主要成因与可复制经验（未落库）'
+    return
+  }
+  st.status = 'sinking'
+  st.error = undefined
+  const payload = caseDraftOf(t, draft)
+  try {
+    const created = await registerCase(payload)
+    st.status = 'done'
+    st.caseNo = created.caseNo
+    st.error = undefined
+  } catch (e) {
+    st.status = 'error'
+    st.error = e instanceof Error ? e.message : '案例登记失败'
+  }
+}
+
+// 重试 = 重新执行登记：payload 按行内草稿现造，幂等键按内容派生（同内容同键天然去重）。
+function retrySinkTopCase(t: { date: string; type: string; pnlYuan: number }) {
+  void sinkTopCase(t)
+}
+
+function onToCaseChange(t: { date: string; type: string; pnlYuan: number }, checked: boolean) {
+  const st = (caseState.value[t.date] ??= { status: 'idle' })
+  if (st.status === 'done') return // 档案纪律：沉淀后不可撤回
+  if (checked) void sinkTopCase(t)
 }
 </script>
 
@@ -105,7 +236,7 @@ function draftOf(date: string) {
       <input v-model="month" type="month" />
     </header>
 
-    <p v-if="loading" class="pdp-muted">逐日取 quant /review 分解中（本月 + 上月环比基线）…</p>
+    <p v-if="loading" class="pdp-muted">逐日取 quant /review 分解中（本月 + 上月环比基线{{ curProgress ? `，本月已取 ${curProgress.done}/${curProgress.total} 天` : '' }}）…</p>
 
     <template v-else>
       <p v-if="!rollup.days" class="pdp-muted">{{ month }} 无可用数据日——诚实空态，不合成。</p>
@@ -145,7 +276,15 @@ function draftOf(date: string) {
         <!-- 第三层：单笔 Top5（M2 以日为笔） -->
         <div class="pdp-top">
           <b>单笔 Top5 盈亏榜 <i>（M2 以日为笔；逐笔成交归集待 S6 持仓线 #1966 接通后替换）</i></b>
-          <table class="pdp-table">
+          <p class="pdp-note" :class="{ 'pdp-warn': t03Error }">
+            <template v-if="!t03Available">模板实例端点未接入——人填内容暂存本机，不落库。</template>
+            <template v-else-if="t03Instance">
+              人填内容写入模板三实例 #{{ t03Instance.id }}（{{ t03Instance.periodKey }}）：
+              {{ t03Locked ? '实例已提交锁定，内容只读' : '编辑后自动存草稿' }}{{ t03SavedAt ? ` · 最近保存 ${t03SavedAt}` : '' }}<template v-if="t03Error"> · {{ t03Error }}</template>
+            </template>
+            <template v-else>本月无模板三实例（触发引擎未生成）——人填内容暂存本机，不落库。</template>
+          </p>
+          <table class="pdp-table pdp-top-table">
             <thead>
               <tr><th>#</th><th>日期</th><th>类型</th><th>盈亏 元</th><th>主要成因（人填）</th><th>可复制经验/改进点</th><th>入案例库</th></tr>
             </thead>
@@ -155,15 +294,31 @@ function draftOf(date: string) {
                 <td>{{ t.date }}</td>
                 <td :class="t.type === '亏损' ? 'bad' : 'good'">{{ t.type }}</td>
                 <td>{{ Math.round(t.pnlYuan).toLocaleString() }}</td>
-                <td><input v-model="draftOf(t.date).mainCause" class="pdp-input" placeholder="市场机会/策略有效/执行到位…" /></td>
-                <td><input v-model="draftOf(t.date).lesson" class="pdp-input" placeholder="可复制经验或改进点" /></td>
-                <td><input v-model="draftOf(t.date).toCase" type="checkbox" /></td>
+                <td><input v-model="draftOf(t.date).mainCause" class="pdp-input" :disabled="t03Locked" placeholder="市场机会/策略有效/执行到位…" /></td>
+                <td><input v-model="draftOf(t.date).lesson" class="pdp-input" :disabled="t03Locked" placeholder="可复制经验或改进点" /></td>
+                <td class="pdp-case">
+                  <input
+                    type="checkbox"
+                    :checked="draftOf(t.date).toCase"
+                    :disabled="casesAvailable && caseState[t.date]?.status === 'done'"
+                    :title="casesAvailable ? '勾选即登记案例库（沉淀后不可撤回）；需先填主要成因与可复制经验' : '案例库端点未接入：勾选仅本地记录，不落库'"
+                    @change="onToCaseChange(t, ($event.target as HTMLInputElement).checked)"
+                  />
+                  <span v-if="caseState[t.date]?.status === 'sinking'" class="pdp-case-note">登记中…</span>
+                  <span v-else-if="caseState[t.date]?.status === 'done'" class="pdp-case-ok">{{ caseState[t.date]?.caseNo }}</span>
+                  <span v-else-if="!casesAvailable" class="pdp-case-note" >本地</span>
+                  <template v-else-if="caseState[t.date]?.status === 'error'">
+                    <span class="pdp-case-err">{{ caseState[t.date]?.error }}</span>
+                    <button type="button" class="pdp-retry" @click="retrySinkTopCase(t)">重试</button>
+                  </template>
+                </td>
               </tr>
             </tbody>
           </table>
           <p class="pdp-note">
             Top5 与拆解表同源同口径（同一次 /review 聚合产出）；金额 self-computed。
-            「是否入库=是」自动登记案例库——案例库写入端点随 #2045 服务端化上线，当前为本地勾选不留库。
+            「是否入库=勾选」即登记案例库（review.cases，deviation 档案纪律：四要素必填、沉淀后不可改写、无 DELETE）；
+            端点缺席环境保持本地勾选并如实标注「本地」，不谎报已入库。
           </p>
         </div>
 
@@ -193,4 +348,10 @@ function draftOf(date: string) {
 .pdp-table .good { color: #15803d; }
 .pdp-table .bad { color: #b91c1c; }
 .pdp-input { width: 100%; min-width: 120px; padding: 2px 6px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 5px; font-size: var(--font-11-5); box-sizing: border-box; }
+.pdp-case { white-space: normal; min-width: 90px; }
+.pdp-case input { cursor: pointer; }
+.pdp-case-note { display: block; font-size: var(--font-10-5); color: var(--el-text-color-secondary, #909399); }
+.pdp-case-ok { display: block; font-size: var(--font-10-5); color: #15803d; font-variant-numeric: tabular-nums; }
+.pdp-case-err { display: block; font-size: var(--font-10-5); color: #b91c1c; line-height: 1.5; }
+.pdp-retry { border: 0; background: transparent; color: var(--el-color-primary, #2563eb); font: inherit; font-size: var(--font-10-5); cursor: pointer; padding: 0; text-decoration: underline; }
 </style>

@@ -3,8 +3,9 @@
 // ---------------------------------------------------------------------------
 // 周（默认）/月切换，逐日调 quant /review 聚合：合计与逐日之和恒等（缺数日如实
 // 列出不进合计）；按业务成因占比来自 S1 写回；责任归因二轴仅周聚合人工补填
-// （AI 只给映射建议）；「上期改进措施回查」依赖 improvement_actions 端点（未上线，
-// 诚实占位）；阈值连续超标为标记占位（触发全量归 #2047）。
+// （AI 只给映射建议）；「上期改进措施回查」接 improvement_actions 端点（已上线，
+// 自动带入 open/carried_over 未闭环项；回查结论回写走复盘会议纪要）；阈值连续
+// 超标的自动登记在风险维·风险事件库面板（#2047 触发即草稿），此处仅提示不登记。
 import { computed, onMounted, ref, watch } from 'vue'
 import { shiftIsoDate } from 'shared/trading-rules/trading-calendar.mjs'
 import { fetchReviewRange, type PeriodReview } from '@/services/review/reviewPeriodClient'
@@ -14,6 +15,7 @@ import {
   RESPONSIBILITY_AXES,
   suggestResponsibility
 } from '@/services/review/deviationAggregate'
+import { fetchCarryOverActions, type ImprovementActionFeed } from '@/services/review/reviewStoreClient'
 import { FEED_ABSENT_NOTE } from '@/services/review/templateInstanceApi'
 import { todayBeijing } from '@/utils/beijingDate'
 
@@ -37,20 +39,47 @@ function daysOfPeriod(p: Period, anchorIso: string): string[] {
   const last = new Date(y, m, 0).getDate()
   return Array.from({ length: last }, (_, i) => `${y}-${String(m).padStart(2, '0')}-${String(i + 1).padStart(2, '0')}`)
 }
+const rangeProgress = ref<{ done: number; total: number } | null>(null)
+const progressText = computed(() =>
+  rangeProgress.value ? `，已取 ${rangeProgress.value.done}/${rangeProgress.value.total} 天` : ''
+)
 async function load() {
   loading.value = true
   data.value = null
+  rangeProgress.value = null
   try {
     const today = todayBeijing()
     // 只取到今天为止（本周/本月未过的日子不进聚合，也不算缺数）
     const dates = daysOfPeriod(period.value, anchor.value).filter((d) => d <= today)
-    data.value = await fetchReviewRange(dates, { tolerancePct: props.tolerancePct, penaltyPrice: props.penaltyPrice })
+    data.value = await fetchReviewRange(dates, {
+      tolerancePct: props.tolerancePct,
+      penaltyPrice: props.penaltyPrice,
+      onProgress: (done, total) => (rangeProgress.value = { done, total })
+    })
   } finally {
     loading.value = false
   }
 }
-onMounted(load)
+onMounted(() => {
+  load()
+  void loadActions()
+})
 watch([period, anchor], load)
+
+// 上期改进措施回查（#2042）：improvement_actions 端点已上线，自动带入未闭环项
+// （open/carried_over）。回查结论（done/dropped/carried_over）的逐项回写走复盘
+// 会议纪要（MeetingMinutesForm），此处只读带入——两个入口写同一份服务端事实，
+// 各自重复一套回写 UI 迟早口径分叉。
+const actionsLoading = ref(false)
+const actionsFeed = ref<ImprovementActionFeed | null>(null)
+async function loadActions() {
+  actionsLoading.value = true
+  try {
+    actionsFeed.value = await fetchCarryOverActions()
+  } finally {
+    actionsLoading.value = false
+  }
+}
 
 const agg = computed(() => (data.value ? aggregateDeviation(data.value.days) : null))
 const breach = computed(() =>
@@ -82,7 +111,7 @@ const periodLabel = computed(() => (period.value === 'week' ? `周（${anchor.va
       </span>
     </header>
 
-    <p v-if="loading" class="dap-muted">逐日取 quant /review 聚合中（{{ periodLabel }}）…</p>
+    <p v-if="loading" class="dap-muted">逐日取 quant /review 聚合中（{{ periodLabel }}{{ progressText }}）…</p>
 
     <template v-else-if="agg">
       <p v-if="agg.missingDays.length" class="dap-warn">
@@ -138,16 +167,35 @@ const periodLabel = computed(() => (period.value === 'week' ? `周（${anchor.va
         <p class="dap-note">{{ responsibilityNote }}</p>
       </div>
 
-      <!-- 阈值预警占位 -->
+      <!-- 阈值预警：自动登记已由风险维实现（确定性幂等键 + 按月去重），此处仅提示不重复登记 -->
       <p v-if="breach" class="dap-warn">
-        连续超标标记（占位，触发全量归 #2047）：偏差率连续 {{ breach.streak }} 日超 5%
-        （{{ breach.from }} ~ {{ breach.to }}）。
+        偏差率连续 {{ breach.streak }} 日超 5%（{{ breach.from }} ~ {{ breach.to }}）——
+        越限即预警型待办，事件库草稿已在「风险」维·风险事件库面板自动登记（#2047）。
       </p>
 
-      <!-- 上期改进措施回查：improvement_actions 端点未上线，诚实占位 -->
+      <!-- 上期改进措施回查（#2042）：端点已上线，自动带入未闭环项；结论回写走会议纪要 -->
       <details class="dap-actions">
-        <summary>上期改进措施落实情况回查</summary>
-        <p class="dap-note">{{ FEED_ABSENT_NOTE }}改进措施库（review.improvement_actions）读取端点随服务端化上线；上线前上期未落实项需人工带入，不做假回查。</p>
+        <summary>上期改进措施落实情况回查（未闭环项自动带入）</summary>
+        <p v-if="actionsLoading" class="dap-note">改进措施库读取中…</p>
+        <template v-else-if="actionsFeed?.available">
+          <p v-if="!actionsFeed.actions.length" class="dap-note">
+            改进措施库无未闭环项（open/carried_over 均已闭环）——本期无待回查项。
+          </p>
+          <template v-else>
+            <ul class="dap-action-list">
+              <li v-for="a in actionsFeed.actions" :key="a.id">
+                {{ a.action }} · {{ a.status === 'carried_over' ? '已顺延' : '未落实' }}<template v-if="a.owner"> · 责任人 {{ a.owner }}</template><template v-if="a.dueDate"> · 时限 {{ a.dueDate }}</template>
+              </li>
+            </ul>
+            <p class="dap-note">
+              共 {{ actionsFeed.actions.length }} 项未闭环。回查结论（done/dropped/carried_over）在
+              「风险」维·复盘会议纪要中逐项回写，此处只读带入，不做两套回写入口。
+            </p>
+          </template>
+        </template>
+        <p v-else class="dap-note">
+          {{ FEED_ABSENT_NOTE }}改进措施库读取端点未接入/不可达——上期未落实项需人工带入，不做假回查。
+        </p>
       </details>
     </template>
   </section>
@@ -176,4 +224,5 @@ const periodLabel = computed(() => (period.value === 'week' ? `周（${anchor.va
 .dap-axis label { display: flex; align-items: center; gap: 8px; font-size: var(--font-sm); flex-wrap: wrap; }
 .dap-axis select { padding: 3px 7px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 6px; font-size: var(--font-sm); }
 .dap-actions summary { cursor: pointer; font-size: var(--font-11-5); color: var(--el-text-color-secondary, #666); }
+.dap-action-list { margin: 4px 0; padding-left: 18px; font-size: var(--font-11-5); line-height: 1.8; color: var(--el-text-color-regular, #444); }
 </style>

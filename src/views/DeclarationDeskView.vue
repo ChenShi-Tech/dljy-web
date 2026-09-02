@@ -848,6 +848,24 @@ const historyTruncated = computed(() => historyTotal.value > historyRows.value.l
 
 watch(historyModeFilter, () => { void loadHistoryList() })
 
+// 复制历史曲线（declaration-workflow §2 快捷操作）：把时间窗内历史申报单的 96 点曲线
+// 带入当前草稿编辑器为底稿。只落到 hourlyMw 并置 curveDirty，仍需「保存曲线」→ 重新
+// 风控——与手工编辑同一条保存纪律，不做绕过风控的直达写回。
+const copySourceId = ref('')
+const copyableHistory = computed(() => historyRows.value.filter((r) => r.id !== current.value?.id))
+function applyCopyHistory() {
+  if (!canEditCurrentCurve.value) return
+  const src = historyRows.value.find((r) => r.id === copySourceId.value)
+  if (!src) return
+  const energy = src.energyCurveMwh96
+  hourlyMw.value = Array.from({ length: 24 }, (_, h) => {
+    const quarters = energy.slice(h * 4, h * 4 + 4)
+    const avgMwh = quarters.reduce((sum, v) => sum + v, 0) / Math.max(quarters.length, 1)
+    return Math.round(avgMwh * 4 * 100) / 100
+  })
+  curveDirty.value = true
+}
+
 // 点击历史行：切目标日并选中该单。
 // 跨目标日时只置 pendingSelectId 并改 targetDate，由 watcher 那一次刷新消费待选 id，
 // 不再自己额外发一次 refresh，避免两次并发刷新互相覆盖（世代守卫是第二道防线）。
@@ -1362,6 +1380,19 @@ onRegionChange(() => {
               <span>MW</span>
               <button class="mini" @click="applyBatch">应用</button>
             </div>
+            <!-- 复制历史曲线（declaration-workflow §2 快捷操作）：带入近 60 天窗口内历史单的
+                 96 点曲线为底稿；只落编辑器并置脏，与手工编辑同一条「保存曲线→重新风控」纪律 -->
+            <div v-if="copyableHistory.length" class="batch-row">
+              <span class="muted">复制历史曲线</span>
+              <select v-model="copySourceId" title="选择时间窗内的历史申报单，应用其 96 点曲线为底稿">
+                <option value="">选择历史申报单…</option>
+                <option v-for="r in copyableHistory" :key="r.id" :value="r.id">
+                  {{ r.targetDate }} · {{ r.id }}（{{ STATUS_LABEL[r.status] }}）
+                </option>
+              </select>
+              <button class="mini" :disabled="!copySourceId || busy" @click="applyCopyHistory">应用</button>
+            </div>
+            <p class="pending-note">「导入预测曲线」还没做：要先确认两件事——导入哪条预测曲线（价格还是负荷出力）、按什么规则换算成申报电量。已列入问题清单，确认后开发。</p>
             <div class="hour-grid">
               <label v-for="(_, h) in hourlyMw" :key="h">
                 <span>{{ h }}</span>
@@ -1909,6 +1940,7 @@ onRegionChange(() => {
 .launch:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .batch-row { display: flex; align-items: center; gap: 6px; margin: 8px 0; font-size: var(--font-12-5); flex-wrap: wrap; }
+.pending-note { margin: 0; font-size: var(--font-11-5); color: var(--muted); line-height: 1.6; }
 .batch-row input {
   width: 72px; padding: 4px 6px; border: 1px solid var(--line); border-radius: 6px;
   background: transparent; color: var(--text); font-size: var(--font-12-5);

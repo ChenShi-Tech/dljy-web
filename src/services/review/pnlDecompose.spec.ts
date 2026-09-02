@@ -38,7 +38,7 @@ describe('decomposeDaily（三层拆解 · 恒等红线）', () => {
     const d = decomposeDaily(detail, null)
     const ltm = d.byVariety.find((v) => v.variety === '中长期')!
     expect(ltm.revenueYuan).toBeNull()
-    expect(ltm.note).toContain('S6')
+    expect(ltm.note).toContain('算不了') // 大白话口径说明：缺的是计算方法（基准价/月份归集），不是数据
   })
 
   it('分时段读 SettlementRuleSpec：峰谷归属+占比；未命中小时归「平」', () => {
