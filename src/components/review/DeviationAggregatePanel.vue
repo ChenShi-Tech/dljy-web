@@ -70,7 +70,11 @@ const periodLabel = computed(() => (period.value === 'week' ? `周（${anchor.va
 <template>
   <section class="dap">
     <header class="dap-head">
-      <b>偏差周/月聚合（模板七 · 偏差归因 / 模板八 · 偏差成本核算）</b>
+      <b>
+        <el-tooltip content="独立于上方复盘日期，默认本周/本月" placement="top" :show-after="150">
+          <span class="dap-title">偏差周/月聚合（模板七 · 偏差归因 / 模板八 · 偏差成本核算）</span>
+        </el-tooltip>
+      </b>
       <span class="dap-ctrl">
         <button type="button" :class="{ on: period === 'week' }" @click="period = 'week'">周</button>
         <button type="button" :class="{ on: period === 'month' }" @click=" period = 'month'">月</button>
@@ -152,6 +156,7 @@ const periodLabel = computed(() => (period.value === 'week' ? `周（${anchor.va
 <style scoped>
 .dap { display: flex; flex-direction: column; gap: 8px; font-size: var(--font-12-5); }
 .dap-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.dap-title { cursor: help; }
 .dap-ctrl { display: inline-flex; gap: 4px; align-items: center; }
 .dap-ctrl button { padding: 2px 10px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 6px; background: #fff; font-size: var(--font-11-5); cursor: pointer; }
 .dap-ctrl button.on { border-color: var(--el-color-primary, #2563eb); color: var(--el-color-primary, #2563eb); }
