@@ -250,4 +250,39 @@ describe('RiskReviewPanel', () => {
     await settle(mount(RiskReviewPanel, { props: { tolerancePct: 3, penaltyPrice: 100 } }))
     expect(registerRiskEvent).not.toHaveBeenCalled()
   })
+
+  it('既有事件行内回填：有效性未评估行出补录控件，PATCH 处置+有效性后行刷新', async () => {
+    vi.mocked(fetchReviewRange).mockResolvedValue({ days: [], missingDays: [] })
+    vi.mocked(getRegionWinStats).mockReturnValue({
+      wins: 0, losses: 0, sampleSize: 0, priorWinRate: 0.5, posteriorWinRate: 0.5,
+      credibleLow: 0.2, credibleHigh: 0.8, strength: 4, cumulativePnlWan: 0
+    })
+    // 一条已评估（只读）+ 一条未评估（出回填控件）+ 一条带极值/时长（结构化列带出）
+    vi.mocked(fetchRiskEvents).mockResolvedValue({
+      available: true,
+      events: [
+        { id: '8', eventTime: '2026-08-01T02:00:00.000Z', eventType: 'near_miss', riskLevel: 'low', impactYuan: null, impactCaliber: null, nearMiss: true, disposal: '已复盘', effective: true, lessons: '', extremeValue: null, durationHours: null, positionSnapshot: null, updatedAt: null },
+        { id: '9', eventTime: '2026-08-10T02:00:00.000Z', eventType: 'near_miss', riskLevel: 'medium', impactYuan: null, impactCaliber: null, nearMiss: true, disposal: null, effective: null, lessons: '', extremeValue: null, durationHours: null, positionSnapshot: null, updatedAt: null },
+        { id: '10', eventTime: '2026-08-12T02:00:00.000Z', eventType: 'price_anomaly', riskLevel: 'high', impactYuan: null, impactCaliber: null, nearMiss: false, disposal: null, effective: null, lessons: '', extremeValue: 412.5, durationHours: 3, positionSnapshot: null, updatedAt: null }
+      ]
+    })
+    vi.mocked(patchRiskEvent).mockResolvedValue({
+      id: '9', eventTime: '2026-08-10T02:00:00.000Z', eventType: 'near_miss', riskLevel: 'medium', impactYuan: null, impactCaliber: null, nearMiss: true, disposal: '盘中口头止损', effective: true, lessons: '', extremeValue: null, durationHours: null, positionSnapshot: null, updatedAt: null
+    })
+    const wrapper = await settle(mount(RiskReviewPanel, { props: { tolerancePct: 3, penaltyPrice: 100 } }))
+    // 结构化列带出：极值/持续时长只在有值的事件行出现
+    expect(wrapper.text()).toContain('极值 412.5')
+    expect(wrapper.text()).toContain('持续 3 小时')
+    // 有效性未评估的行（9/10 两条）出回填控件；已评估行（8）不出
+    expect(wrapper.findAll('.rrp-backfill').length).toBe(2)
+    const draft = wrapper.find('.rrp-backfill')
+    await draft.find('input').setValue('盘中口头止损')
+    await draft.find('select').setValue('true')
+    await draft.find('.rrp-save').trigger('click')
+    await settle(wrapper)
+    expect(patchRiskEvent).toHaveBeenCalledWith('9', { disposal: '盘中口头止损', effective: true })
+    // 回填后行刷新为「处置有效」，补录控件随之消失
+    expect(wrapper.text()).toContain('盘中口头止损')
+    expect(wrapper.findAll('.rrp-backfill').length).toBe(1)
+  })
 })
