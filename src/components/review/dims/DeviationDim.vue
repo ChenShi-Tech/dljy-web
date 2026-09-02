@@ -126,6 +126,12 @@ watch(() => props.loading, (v: boolean) => (v ? chart.showLoading() : chart.hide
       />
     </div>
 
+    <!-- 待口径确认的功能入口（大白话提示）：覆盖率/填写率两个指标还没上线 -->
+    <p class="pending-note">
+      复盘覆盖率 / 填写率两个指标还没上线：要先定统计口径——覆盖率按天算还是按模板算？填写率里哪些单算“该填的”？
+      口径确认后开发，不拿假数字先凑。
+    </p>
+
     <section v-if="failure" class="panel guidance" :class="`state-${failure.kind}`">
       <el-empty :image-size="72">
         <template #description>
@@ -156,6 +162,7 @@ watch(() => props.loading, (v: boolean) => (v ? chart.showLoading() : chart.hide
 .host { width: 100%; height: 300px; }
 .heat { margin-left: 48px; margin-right: 16px; }
 .guidance { padding: 12px 16px; }
+.pending-note { margin: 0; padding: 8px 12px; font-size: var(--font-12-5, 12px); color: var(--muted); border: 1px dashed var(--el-border-color, #dcdfe6); border-radius: 6px; line-height: 1.6; }
 .guidance strong { display: block; color: var(--text); }
 .guidance p { margin: 6px 0; color: var(--muted); }
 .guidance small { color: var(--muted); }
