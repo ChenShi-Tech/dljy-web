@@ -806,6 +806,8 @@ const historyRows = ref<DeclarationOrder[]>([])
 const historyCounts = ref<Record<DeclarationMode, number>>({ LIVE: 0, REHEARSAL: 0 })
 const historyModeFilter = ref<'' | DeclarationMode>('')
 const HISTORY_WINDOW_DAYS = 60
+// 窗口不对称是设计口径（docs/features/declaration-rehearsal-mode.md「±60/7 天」）：
+const HISTORY_FORWARD_DAYS = 7
 // 服务端 list 上限 500。本区是申报台内的辅助视图（看全量走审批队列的「全部申报单」），
 // 故单次取到上限而非遍历分页，但必须显式提示截断，否则 counts 显示完整数量、
 // 表格只有前 N 行，读起来像「这就是全部」。
@@ -823,7 +825,7 @@ async function loadHistoryList() {
     const anchor = new Date(`${targetDate.value}T00:00:00+08:00`).getTime()
     const page = await listDeclarationsPage({
       dateFrom: fmtDate(new Date(anchor - HISTORY_WINDOW_DAYS * 86400000)),
-      dateTo: fmtDate(new Date(anchor + 7 * 86400000)),
+      dateTo: fmtDate(new Date(anchor + HISTORY_FORWARD_DAYS * 86400000)),
       mode: historyModeFilter.value || undefined,
       limit: HISTORY_PAGE_LIMIT
     })
@@ -1313,8 +1315,7 @@ onRegionChange(() => {
           </label>
           <p v-if="draftMode === 'REHEARSAL'" class="rehearsal-hint">
             <FlaskConical :size="13" />
-            历史模拟单不受申报截止约束、可自批走完整流程，回执为本地 Mock 网关（<b>非真实申报</b>），
-            在列表中与真实申报分开统计。模式创建后不可修改。
+            <span>历史模拟单不受申报截止约束、可自批走完整流程，回执为本地 Mock 网关（<b>非真实申报</b>），在列表中与真实申报分开统计。模式创建后不可修改。</span>
           </p>
           <p v-else-if="isPastTargetDate || isLiveWindowClosed" class="rehearsal-hint warn">
             <AlarmClock :size="13" />
@@ -1486,7 +1487,7 @@ onRegionChange(() => {
         <template v-else>
           <p class="muted history-scope">
             <span>
-          目标日 {{ targetDate }} 前后 {{ HISTORY_WINDOW_DAYS }} 天内 ·
+          目标日 {{ targetDate }} 前 {{ HISTORY_WINDOW_DAYS }} 天 / 后 {{ HISTORY_FORWARD_DAYS }} 天内 ·
           真实申报 {{ historyCounts.LIVE }} / 历史模拟 {{ historyCounts.REHEARSAL }}
             </span>
             <select v-model="historyModeFilter" class="decl-select" style="margin-left: auto">
@@ -1675,7 +1676,7 @@ onRegionChange(() => {
 }
 .rehearsal-chip.lg { padding: 4px 10px; font-size: var(--font-sm); }
 .rehearsal-hint {
-  display: flex; align-items: flex-start; gap: 6px;
+  display: flex; align-items: center; gap: 6px;
   margin: 8px 0 0; padding: 8px 10px; font-size: var(--font-12-5); line-height: 1.6;
   border-radius: 8px; border: 1px solid #f59e0b;
   color: #b45309; background: rgba(245, 158, 11, 0.08);
