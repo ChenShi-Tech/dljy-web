@@ -3,9 +3,7 @@
 // 注入各自的动作实现，输入框集成见 src/composables/useSlashInput.ts。
 import { buildCatalog } from '@/services/aiNavigator'
 import { getCurrentUser } from '@/services/auth'
-import { isLlmConfigured, refreshLlmStatus } from '@/services/llm'
-import { llmProviders } from '@/data/llmProviders'
-import { IS_CUSTOMER_EDITION } from '@/services/edition'
+import { getCachedTiers, isLlmConfigured, refreshLlmStatus } from '@/services/llm'
 import { getAllSkills, renderSkill, splitDateArgs, todayISO, type Skill } from '@/services/skills'
 import type { AgentScenario } from '@/services/agent/agentClient'
 
@@ -124,32 +122,31 @@ function runNav(ctx: CommandContext) {
 }
 
 async function runModel(ctx: CommandContext) {
-  // agent-backend：模型与密钥已收口到服务端，前端不再 localStorage 切换模型，
-  // 统一在「AI 设置」页管理。这里展示状态 + 各厂商可选模型，切换引导去 /settings。
+  // 模型档位与密钥都收口在服务端（#2668）：前端不持供应商 / 型号，只展示模型服务给出的档位
+  // （中文标签 + 能力位），切换引导去「AI 设置」页。
   if (ctx.args.trim()) {
-    ctx.postSystemNote('模型与密钥已收口到服务端，切换请到「AI 设置」页（/settings）。')
+    ctx.postSystemNote('模型档位统一在「AI 设置」页选择（/settings），这里不做切换。')
     return
   }
-  const list = llmProviders
-    .filter((p) => p.models.length)
-    .map((p) => `· ${p.name}：${p.models.join('、')}`)
-    .join('\n')
   const configured = isLlmConfigured() || await refreshLlmStatus()
+  const tiers = getCachedTiers()
+  const list = tiers.length
+    ? tiers
+      .map((t) => `· ${t.label}${t.enabled && t.available ? '' : '（未启用）'}：${t.description || t.capabilities.join(' / ')}`)
+      .join('\n')
+    : '（模型服务暂不可用）'
   ctx.postSystemNote(
-    `${configured ? '大模型已在服务端配置' : '尚未配置大模型'}。` +
-      `模型与密钥统一在「AI 设置」页管理（/settings）。\n\n各厂商可选模型：\n${list}`
+    `${configured ? '大模型已就绪' : '大模型尚未就绪'}。` +
+      `模型档位与角色路由统一在「AI 设置」页管理（/settings）。\n\n可用档位：\n${list}`
   )
 }
 
 function modelArgOptions(query: string): ArgOption[] {
   const q = query.trim().toLowerCase()
   const out: ArgOption[] = []
-  for (const p of llmProviders) {
-    for (const m of p.models) {
-      if (!p.models.length) continue
-      if (q && !m.toLowerCase().includes(q) && !p.name.toLowerCase().includes(q)) continue
-      out.push({ label: m, value: m, meta: p.name })
-    }
+  for (const t of getCachedTiers()) {
+    if (q && !t.label.toLowerCase().includes(q) && !t.id.toLowerCase().includes(q)) continue
+    out.push({ label: t.label, value: t.id, meta: t.capabilities.join(' / ') })
   }
   return out.slice(0, 12)
 }
@@ -228,23 +225,23 @@ const builtinCommands: SlashCommand[] = [
   {
     name: 'settings',
     aliases: ['config', '设置'],
-    description: '打开 AI 设置（模型 / API Key / 技能管理）',
+    description: '打开 AI 设置（模型服务 / 技能管理）',
     source: 'builtin',
     run: (ctx) => ctx.navigate('/system/ai-studio?tab=models')
   },
-  // /model 会把各厂商与型号逐条打印进聊天框，/model 的参数补全同样列出型号——
-  // 交付档必须整条摘掉（#2410）。摘掉后 runModel/modelArgOptions 失去引用者，
-  // 它们 import 的 llmProviders 也随之被 tree-shake，供应商清单不进产物。
-  ...((IS_CUSTOMER_EDITION ? [] : [{
+  // /model 只列模型服务给出的档位（中文标签 + 能力位），不含任何供应商 / 型号信息，
+  // 两个档都保留（#2668）。#2410 时它打印的是供应商清单，所以曾在交付档整条摘掉；
+  // 清单本身已随 #2668 删除，摘的理由不复存在。
+  {
     name: 'model',
     aliases: ['模型'],
-    description: '查看或切换大模型',
-    argHint: '[模型名]',
+    description: '查看模型服务档位',
+    argHint: '[档位]',
     source: 'builtin',
     runOnArgSelect: true,
     getArgOptions: modelArgOptions,
     run: runModel
-  }]) as SlashCommand[]),
+  },
   {
     name: 'agent',
     aliases: ['workbench', '工作台'],

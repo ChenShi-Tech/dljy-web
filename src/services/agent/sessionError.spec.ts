@@ -4,8 +4,8 @@ import { formatCreateSessionError, readErrorDetail } from './sessionError'
 
 describe('formatCreateSessionError', () => {
   it('服务端 detail 优先透传，不再谎报「后端未启动」（#1631）', () => {
-    const msg = formatCreateSessionError(424, '缺少 deepseek 的 API Key：请在「AI 设置」配置，或设环境变量 DEEPSEEK_API_KEY')
-    expect(msg).toContain('缺少 deepseek 的 API Key')
+    const msg = formatCreateSessionError(424, '缺少 vendor-a 的 API Key：请在「AI 设置」配置，或设环境变量 VENDOR_A_API_KEY')
+    expect(msg).toContain('缺少 vendor-a 的 API Key')
     expect(msg).not.toContain('后端未启动')
   })
 

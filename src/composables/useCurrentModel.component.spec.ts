@@ -73,7 +73,7 @@ describe('useCurrentModel', () => {
 
   it('多个面板共用一份状态与一个定时器，不各问各的', async () => {
     mockFetch.mockResolvedValue({
-      provider: 'deepseek', model: 'deepseek-v4-flash', selfHosted: false, label: '云端 DeepSeek', mode: 'auto'
+      provider: 'cloud-a', model: 'cloud-model-x', selfHosted: false, label: '云端模型', mode: 'auto'
     })
     vi.useFakeTimers()
     const a = mount(Host)
@@ -89,7 +89,7 @@ describe('useCurrentModel', () => {
 
   it('最后一个面板卸载后停表，不在后台空转', async () => {
     mockFetch.mockResolvedValue({
-      provider: 'deepseek', model: 'deepseek-v4-flash', selfHosted: false, label: '云端 DeepSeek', mode: 'deepseek'
+      provider: 'cloud-a', model: 'cloud-model-x', selfHosted: false, label: '云端模型', mode: 'cloud-a'
     })
     vi.useFakeTimers()
     const w = mount(Host)

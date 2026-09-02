@@ -159,8 +159,8 @@ describe('createAgentSession 会话级路由登记', () => {
   })
 
   it('非 2xx：服务端 detail 优先透传，无 detail 落状态码兜底（#1631）', async () => {
-    mockFetch(async () => new Response(JSON.stringify({ detail: '缺少 deepseek 的 API Key' }), { status: 424 }))
-    await expect(createAgentSession('chat')).rejects.toThrow('缺少 deepseek 的 API Key')
+    mockFetch(async () => new Response(JSON.stringify({ detail: '缺少 vendor-a 的 API Key' }), { status: 424 }))
+    await expect(createAgentSession('chat')).rejects.toThrow('缺少 vendor-a 的 API Key')
     mockFetch(async () => new Response('oops', { status: 500 }))
     await expect(createAgentSession('chat')).rejects.toThrow('智能体后端未启动')
   })
