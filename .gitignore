@@ -13,3 +13,5 @@ coverage/
 
 # worktree 根（全机纪律：worktree 建在本仓 .claude/worktrees/）——不进 git，否则残留目录污染主工作区状态
 /.claude/worktrees/
+# verify:customer-edition-build 不传 --dist 时自建的扫描产物（与 dist/ 同性质）
+dist-customer-verify/

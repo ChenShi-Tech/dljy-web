@@ -1,20 +1,77 @@
+import { execFileSync } from 'node:child_process'
+import { mkdirSync, writeFileSync } from 'node:fs'
+import path from 'node:path'
 import { fileURLToPath, URL } from 'node:url'
 import { defineConfig, loadEnv } from 'vite'
+import type { Plugin, ResolvedConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import { viteStaticCopy } from 'vite-plugin-static-copy'
+import { listSharedFiles, sharedFingerprint, SHARED_FINGERPRINT_ALGORITHM } from './scripts/shared-fingerprint.mjs'
+
+const repoRoot = fileURLToPath(new URL('.', import.meta.url))
+
+// dljy#2454：所有 mode 的构建都往产物根目录写 build-info.json（字段与用途见
+// docs/customer-edition.md「构建信息文件 build-info.json」一节）。主仓出包
+// （build-release.mjs --web-dist）用同一套算法对自己的 shared/ 算指纹，与这里的
+// shared.hash 比对——不等即拒绝出包，堵住「交付包里前端与后端契约面不同代」。
+// 文件是给出包脚本读的、不给浏览器（主仓拷镜像前会删掉），本仓不用处理 nginx。
+function dljyBuildInfoPlugin(edition: 'customer' | 'internal', viteMode: string): Plugin {
+  let outDir = ''
+  return {
+    name: 'dljy-build-info',
+    apply: 'build',
+    configResolved(resolved: ResolvedConfig) {
+      // resolved.build.outDir 是绝对路径（--outDir 相对值已被 resolve），以它为准。
+      outDir = resolved.build.outDir
+    },
+    closeBundle() {
+      let gitSha: string | null = null
+      let gitDirty = true
+      try {
+        gitSha = execFileSync('git', ['rev-parse', 'HEAD'], {
+          cwd: repoRoot,
+          encoding: 'utf8',
+          stdio: ['ignore', 'pipe', 'ignore']
+        }).trim()
+        gitDirty = execFileSync('git', ['status', '--porcelain'], {
+          cwd: repoRoot,
+          encoding: 'utf8',
+          stdio: ['ignore', 'pipe', 'ignore']
+        }).trim().length > 0
+      } catch {
+        // git 不可用（如源码包直接构建）：sha 置 null；dirty 未知按脏处理——
+        // 这个字段只用于出包侧排查展示，取不到时保守值不会误导比对。
+      }
+      const shared = sharedFingerprint(repoRoot, listSharedFiles(repoRoot))
+      const info = {
+        repo: 'dljy-web',
+        edition,
+        viteMode,
+        gitSha,
+        gitDirty,
+        builtAt: new Date().toISOString(),
+        shared: { hash: shared.hash, fileCount: shared.fileCount, algorithm: SHARED_FINGERPRINT_ALGORITHM }
+      }
+      mkdirSync(outDir, { recursive: true })
+      writeFileSync(path.join(outDir, 'build-info.json'), JSON.stringify(info, null, 2) + '\n')
+      console.log(`[dljy-build-info] ${path.join(path.relative(repoRoot, outDir) || '.', 'build-info.json')}  shared=${shared.hash.slice(0, 12)}… (${shared.fileCount} files)`)
+    }
+  }
+}
 
 // dljy-web 是 dljy 原仓前端的保密镜像下游（见 CONTRIBUTING.md）。
 // 本文件为「新仓自有」：同步脚本不覆盖它，改动直接在本仓维护。
-// 与原仓 vite.config.ts 的刻意差异只有三处：
+// 与原仓 vite.config.ts 的刻意差异只有四处：
 //   1. 代理目标经 loadEnv 读取（原仓只读 process.env；协作者把托管 dev API 地址
 //      写进 .env.local 即生效，无需导出 shell 环境变量）。
 //   2. watch 不排 data/* 与 worktree（对应目录不在本仓），只排 node_modules/dist。
 //   3. /pi-api 与 /data-svc 代理目标同样经 loadEnv 读取（原仓硬编码端口）。
+//   4. dljy-build-info 插件（dljy#2454）：构建产物写入 build-info.json。
 // 其余（分包、双入口、cesium 静态拷贝、5174 strictPort）与原仓保持一致，
 // 保证「原仓构建绿 ⇒ 本仓构建绿」。
 
 export default defineConfig(({ mode }) => {
-  const env = { ...loadEnv(mode, fileURLToPath(new URL('.', import.meta.url)), ''), ...process.env }
+  const env = { ...loadEnv(mode, repoRoot, ''), ...process.env }
 
   // 客户交付档（主仓 Epic #2408 · #2410）：VITE_EDITION=customer 时，把模型配置页重定向
   // 到占位组件。**必须在模块解析层做，不能只靠 v-if 或编译期常量分支**——rollup 对动态
@@ -31,6 +88,7 @@ export default defineConfig(({ mode }) => {
 
   return {
     plugins: [
+      dljyBuildInfoPlugin(isCustomerEdition ? 'customer' : 'internal', mode),
       ...(isCustomerEdition
         ? [{
             name: 'dljy-customer-edition',
