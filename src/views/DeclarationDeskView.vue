@@ -1631,18 +1631,18 @@ onRegionChange(() => {
         <!-- 历史申报单 tab：按目标日范围查询（此前只按精确目标日查，默认取明天 → 历史单全不可见） -->
         <template v-else>
           <p class="muted history-scope">
-            <span :title="`目标日 ${targetDate} 前后各推的窗口 · 真实申报 ${historyCounts.LIVE} 张 / 历史模拟 ${historyCounts.REHEARSAL} 张`">距目标日前{{ HISTORY_WINDOW_DAYS }}天/后{{ HISTORY_FORWARD_DAYS }}天，真实{{ historyCounts.LIVE }}/模拟{{ historyCounts.REHEARSAL }}</span>
+            <span>目标日 {{ targetDate }} 前 {{ HISTORY_WINDOW_DAYS }} 天 / 后 {{ HISTORY_FORWARD_DAYS }} 天内 · 真实申报 {{ historyCounts.LIVE }} / 历史模拟 {{ historyCounts.REHEARSAL }}</span>
             <span class="history-ops">
               <select v-model="historyModeFilter" class="decl-select">
           <option value="">全部模式</option>
           <option value="LIVE">仅真实申报</option>
               <option value="REHEARSAL">仅历史模拟</option>
               </select>
-              <!-- 导出当日明细：日期独立可选（默认跟随目标日），单日期 96 点长表 -->
-              <input v-model="exportDate" type="date" class="decl-select" title="导出哪一天的 96 点明细" />
-              <button class="mini" :disabled="exportBusy || !exportDate" :title="`导出 ${exportDate} 当天的 96 点申报明细`" @click="exportHistoryCsv">
-                导出 {{ exportDate.slice(5) }}
-              </button>
+              <!-- 导出按钮与日期筛选拼为一体化控件：左半选日期、右半执行导出 -->
+              <span class="export-group" title="左侧选日期，点右侧导出该日 96 点申报明细">
+                <input v-model="exportDate" type="date" class="decl-select" />
+                <button class="mini" :disabled="exportBusy || !exportDate" @click="exportHistoryCsv">导出</button>
+              </span>
             </span>
           </p>
           <p v-if="historyLoading" class="muted">加载中…</p>
@@ -1933,9 +1933,12 @@ onRegionChange(() => {
   border-radius: 8px; background: var(--el-fill-color); color: var(--el-text-color-secondary);
 }
 .history-scope { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: space-between; }
-.history-scope > span:first-child { white-space: nowrap; }
-/* 右侧操作组：模式下拉 + 导出日期 + 导出按钮，分列同容器排布 */
-.history-ops { display: inline-flex; align-items: center; gap: 5px; flex-wrap: wrap; justify-content: flex-end; }
+/* 右侧操作组：模式下拉 + [日期|导出] 合体控件，两个按钮位 */
+.history-ops { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+.history-ops .decl-select { margin-left: 0; }
+.export-group { display: inline-flex; align-items: stretch; }
+.export-group > input[type="date"].decl-select { margin-left: 0; border-radius: 8px 0 0 8px; }
+.export-group > .mini { border-radius: 0 8px 8px 0; border-left: none; }
 /* 终态单出路 */
 .rehearsal-banner {
   display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 0 0 8px;
