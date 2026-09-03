@@ -11,6 +11,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import PnLWaterfall from '@/components/agent/dljy-ui/review/PnLWaterfall.vue'
 import { fetchReviewRange, type PeriodReviewDay } from '@/services/review/reviewPeriodClient'
 import { fetchCases, registerCase, type CaseDraft } from '@/services/review/reviewStoreClient'
+import type { CaseSummary } from '@/services/review/reviewStoreApi'
 import { fetchTemplateInstanceFeed, patchTemplateInstance } from '@/services/review/templateInstanceClient'
 import type { TemplateInstanceSummary } from '@/services/review/templateInstanceApi'
 import {
@@ -177,16 +178,41 @@ watch(topDraft, () => {
 // 登记前前置校验成因/经验已填；失败红字 + 重试（写路径不静默）；端点缺席保持本地勾选并如实提示。
 const casesAvailable = ref(false)
 const caseState = ref<Record<string, { status: 'idle' | 'sinking' | 'done' | 'error'; caseNo?: string; error?: string; retry?: CaseDraft }>>({})
+const registeredCases = ref<CaseSummary[]>([])
 
 async function loadCasesProbe() {
-  const feed = await fetchCases()
+  const feed = await fetchCases('deviation')
   casesAvailable.value = feed.available
+  if (feed.available) registeredCases.value = feed.cases
 }
+
+// 已登记案例回读水合：刷新/换月后把命中行恢复为「已入库 + 案号」，防止重复登记——
+// 幂等键一字不差才去重，案例库无 DELETE，重登即产生一条永不可删的重复档案。
+function hydrateRegisteredCases() {
+  if (!casesAvailable.value) return
+  for (const t of top5.value) {
+    const st = caseState.value[t.date]
+    if (st?.status === 'done' || st?.status === 'sinking') continue
+    const hit = registeredCases.value.find((c) => c.title.startsWith(TOP5_CASE_TITLE_PREFIX)
+      && c.title.slice(TOP5_CASE_TITLE_PREFIX.length, TOP5_CASE_TITLE_PREFIX.length + 10) === t.date)
+    if (!hit) continue
+    caseState.value[t.date] = { status: 'done', caseNo: hit.caseNo }
+    const d = draftOf(t.date)
+    // 空栏回填案例内容（成因在案例列表接口不返回，留空如实）；不覆盖本地未保存的编辑
+    if (!d.lesson) d.lesson = hit.lessons ?? ''
+    d.toCase = true
+  }
+}
+watch(top5, hydrateRegisteredCases)
+watch(registeredCases, hydrateRegisteredCases)
+
+// 案例标题规则即回读主键：`偏差Top5：{日期} …`（前 10 位即 ISO 日期）。两侧必须同源。
+const TOP5_CASE_TITLE_PREFIX = '偏差Top5：'
 
 function caseDraftOf(t: { date: string; type: string; pnlYuan: number }, draft: { mainCause: string; lesson: string }): CaseDraft {
   return {
     caseType: 'deviation',
-    title: `偏差Top5：${t.date} ${t.type} ${Math.round(t.pnlYuan).toLocaleString()} 元`,
+    title: `${TOP5_CASE_TITLE_PREFIX}${t.date} ${t.type} ${Math.round(t.pnlYuan).toLocaleString()} 元`,
     background: `复盘月份 ${month.value}；当日申报回测偏差（自算口径，结算细则未核验）`,
     conclusion: draft.mainCause,
     lessons: draft.lesson
@@ -277,12 +303,12 @@ function onToCaseChange(t: { date: string; type: string; pnlYuan: number }, chec
         <div class="pdp-top">
           <b>单笔 Top5 盈亏榜 <i>（M2 以日为笔；逐笔成交归集待 S6 持仓线 #1966 接通后替换）</i></b>
           <p class="pdp-note" :class="{ 'pdp-warn': t03Error }">
-            <template v-if="!t03Available">模板实例端点未接入——人填内容暂存本机，不落库。</template>
+            <template v-if="!t03Available">模板实例端点未接入——成因/经验不会自动保存，仅本机暂存；勾选「入案例库」仍会立即登记入库（不可撤回）。</template>
             <template v-else-if="t03Instance">
               人填内容写入模板三实例 #{{ t03Instance.id }}（{{ t03Instance.periodKey }}）：
               {{ t03Locked ? '实例已提交锁定，内容只读' : '编辑后自动存草稿' }}{{ t03SavedAt ? ` · 最近保存 ${t03SavedAt}` : '' }}<template v-if="t03Error"> · {{ t03Error }}</template>
             </template>
-            <template v-else>本月无模板三实例（触发引擎未生成）——人填内容暂存本机，不落库。</template>
+            <template v-else>本月无模板三实例（触发引擎未生成）——成因/经验不会自动保存，仅本机暂存；勾选「入案例库」仍会立即登记入库（不可撤回）。</template>
           </p>
           <table class="pdp-table pdp-top-table">
             <thead>
@@ -294,12 +320,18 @@ function onToCaseChange(t: { date: string; type: string; pnlYuan: number }, chec
                 <td>{{ t.date }}</td>
                 <td :class="t.type === '亏损' ? 'bad' : 'good'">{{ t.type }}</td>
                 <td>{{ Math.round(t.pnlYuan).toLocaleString() }}</td>
-                <td><input v-model="draftOf(t.date).mainCause" class="pdp-input" :disabled="t03Locked" placeholder="市场机会/策略有效/执行到位…" /></td>
-                <td><input v-model="draftOf(t.date).lesson" class="pdp-input" :disabled="t03Locked" placeholder="可复制经验或改进点" /></td>
+                <td><input v-model="draftOf(t.date).mainCause" class="pdp-input"
+                  :disabled="t03Locked || caseState[t.date]?.status === 'done'"
+                  :title="caseState[t.date]?.status === 'done' ? `已沉淀至案例库（${caseState[t.date]?.caseNo ?? ''}）：档案不可改写，如需更正请登记新案例` : undefined"
+                  placeholder="市场机会/策略有效/执行到位…" /></td>
+                <td><input v-model="draftOf(t.date).lesson" class="pdp-input"
+                  :disabled="t03Locked || caseState[t.date]?.status === 'done'"
+                  :title="caseState[t.date]?.status === 'done' ? `已沉淀至案例库（${caseState[t.date]?.caseNo ?? ''}）：档案不可改写，如需更正请登记新案例` : undefined"
+                  placeholder="可复制经验或改进点" /></td>
                 <td class="pdp-case">
                   <input
                     type="checkbox"
-                    :checked="draftOf(t.date).toCase"
+                    :checked="draftOf(t.date).toCase || caseState[t.date]?.status === 'done'"
                     :disabled="casesAvailable && caseState[t.date]?.status === 'done'"
                     :title="casesAvailable ? '勾选即登记案例库（沉淀后不可撤回）；需先填主要成因与可复制经验' : '案例库端点未接入：勾选仅本地记录，不落库'"
                     @change="onToCaseChange(t, ($event.target as HTMLInputElement).checked)"
