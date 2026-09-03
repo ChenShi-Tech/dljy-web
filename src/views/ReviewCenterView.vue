@@ -346,6 +346,31 @@ function focusTodoInbox(): void {
 }
 watch(() => route.query.todo, focusTodoInbox, { immediate: true })
 
+// 深链 ?report={session}（S1 夜间报告卡「点击看全文」落点）：按 session_id 在报告库
+// 匹配并直开阅读器。匹配不到如实提示（报告可能未生成/不属于当前公司数据范围），不静默吞。
+// 用后即清参数：刷新/分享落地页不再反复弹层。
+watch(() => route.query.report, async (q) => {
+  const sid = typeof q === 'string' ? q : ''
+  if (!sid) return
+  try {
+    if (!reports.value.length) reports.value = await fetchReports('daily_review')
+    const hit = reports.value.find((r) => r.session_id === sid)
+    if (hit) await openReport(hit)
+    else ElMessage.warning('未在报告库找到该会话的报告：可能尚未生成，或不属于当前公司数据范围')
+  } catch {
+    ElMessage.warning('报告库读取失败，请稍后在右侧报告列表中重试')
+  } finally {
+    if (route.query.report !== undefined) void router.replace({ query: { ...route.query, report: undefined } })
+  }
+}, { immediate: true })
+
+// 深链 ?run=1（S1 夜间报告卡「去复盘中心手动生成」落点）：直开生成弹层
+watch(() => route.query.run, (q) => {
+  if (q !== '1') return
+  generating.value = true
+  void router.replace({ query: { ...route.query, run: undefined } })
+}, { immediate: true })
+
 onMounted(() => {
   load()
   void loadSettlementReview()

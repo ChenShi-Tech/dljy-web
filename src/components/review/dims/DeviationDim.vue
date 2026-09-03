@@ -6,8 +6,9 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useEChart } from '@/composables/useEChart'
 import { cssVar } from '@/composables/useTheme'
-import { axisTooltip, bottomLayoutLegend, bottomToolbox, emptyOverlay, insideZoom } from '@/services/chart/chartOptions'
-import type { ReviewFailure, ReviewResult } from '@/services/quant/quantClient'
+import { axisTooltip, bottomLayoutLegend, bottomToolbox, emptyOverlay, sliderZoom } from '@/services/chart/chartOptions'
+import { classifyReviewError, fetchReview, type ReviewFailure, type ReviewResult } from '@/services/quant/quantClient'
+import { shiftIsoDate } from 'shared/trading-rules/trading-calendar.mjs'
 import { heatCells } from '@/services/review/reviewDashboard'
 import { deviationMetricOf, type TemplateCard } from '@/services/review/cockpitModel'
 import MetricTile from '../MetricTile.vue'
@@ -55,6 +56,44 @@ const ratePill = computed(() => {
 const chartEl = ref<HTMLElement | null>(null)
 const chart = useEChart(chartEl, { render })
 
+// ── 对比日叠加（清单 R1）：叠另一天的实际电量曲线（灰虚线），「跟可比日比」是复盘第一诉求 ──
+// 切主日期即清空对比（定一种行为：旧对比日在新主日期语境下未必可比，宁空勿错）。
+// 对比日只取实际侧（不传申报曲线），失败/覆盖窗外如实提示，不落任何合计。
+const cmpDate = ref('')
+const cmpLoading = ref(false)
+const cmpError = ref('')
+const cmpDetail = ref<ReviewResult['detail']>([])
+let cmpSeq = 0
+const cmpDayPrev = computed(() => (props.result ? shiftIsoDate(props.result.date, -1) : ''))
+const cmpDayPrevWeek = computed(() => (props.result ? shiftIsoDate(props.result.date, -7) : ''))
+
+async function loadCompare() {
+  const seq = ++cmpSeq
+  const target = cmpDate.value
+  cmpDetail.value = []
+  cmpError.value = ''
+  if (!target || !props.result || target === props.result.date) return
+  cmpLoading.value = true
+  try {
+    const out = await fetchReview({
+      date: target,
+      tolerance_pct: props.tolerancePct,
+      penalty_price: props.penaltyPrice
+    })
+    if (seq !== cmpSeq) return
+    cmpDetail.value = out.detail
+  } catch (e) {
+    if (seq !== cmpSeq) return
+    const f = classifyReviewError(e)
+    cmpError.value = f.detail || f.description || f.title
+  } finally {
+    if (seq === cmpSeq) cmpLoading.value = false
+  }
+}
+watch(cmpDate, loadCompare)
+watch([() => props.tolerancePct, () => props.penaltyPrice], loadCompare)
+watch(() => props.result?.date, () => { cmpDate.value = '' })
+
 function render() {
   const r = props.result
   if (!r || !chartEl.value) return
@@ -67,13 +106,40 @@ function render() {
   const primary = cssVar('--primary') || '#0f766e'
   const ink = cssVar('--text') || '#1f2a37'
   const danger = cssVar('--danger') || '#dc2626'
+  const amber = '#d97706'
+  // 对比日实际曲线：按主图 96 点长度对齐（对比日个别时点缺数补 null，不出假点）
+  const cmpActual = cmpDetail.value.length
+    ? Array.from({ length: declared.length }, (_, i) => cmpDetail.value[i]?.actual ?? null)
+    : []
+  const cmpName = `对比日实际 ${cmpDate.value}`
+  const legendData = cmpActual.length ? ['申报电量', '实际电量', cmpName] : ['申报电量', '实际电量']
+  // 极值标注（清单 R2）：申报/实际各自最高最低点描点标值；最差点保持红色大标
+  const extremumMarks = (color: string) => {
+    const data: Record<string, unknown>[] = [{ type: 'max' }, { type: 'min' }]
+    return {
+      symbol: 'circle', symbolSize: 6,
+      itemStyle: { color: 'transparent', borderColor: color, borderWidth: 1.5 },
+      label: { show: true, position: 'top', fontSize: 10, color, formatter: (p: { value: unknown }) => `${p.value}` },
+      data
+    }
+  }
+  const actualMarks = extremumMarks(amber)
+  if (worstIdx >= 0) {
+    actualMarks.data.push({
+      coord: [worstIdx, actual[worstIdx]],
+      symbolSize: 10,
+      itemStyle: { color: 'transparent', borderColor: danger, borderWidth: 2 },
+      label: { show: true, position: 'top', color: danger, fontWeight: 600, fontSize: 11, formatter: () => `${worstLabel.value} ${worstDev.value > 0 ? '+' : ''}${worstDev.value}` }
+    })
+  }
   chart.setOption({
     ...emptyOverlay(!r.detail.length),
     tooltip: axisTooltip({ unit: 'MWh' }),
-    legend: bottomLayoutLegend({ data: ['申报电量', '实际电量'], textStyle: { fontSize: 10 } }),
+    legend: bottomLayoutLegend({ data: legendData, textStyle: { fontSize: 10 } }),
     toolbox: bottomToolbox('申报vs实际偏差', 8),
-    grid: { left: 48, right: 16, top: 56, bottom: 56 },
-    dataZoom: insideZoom(),
+    // 滑块沉底与 toolbox 共存（LoadPanelChart 同款让位法）：grid 底部给图例/滑块/工具栏三层让位
+    grid: { left: 48, right: 16, top: 56, bottom: 86 },
+    dataZoom: sliderZoom().map((z, i) => (i === 1 ? { ...z, bottom: 24, left: 48, right: 16 } : z)),
     xAxis: { type: 'category', data: r.detail.map((p) => String(p.datetime).slice(-5)) },
     yAxis: { type: 'value', name: 'MWh', scale: true },
     series: [
@@ -81,17 +147,17 @@ function render() {
       { name: '_band_lo', type: 'line', step: 'end', stack: 'band', showSymbol: false, silent: true, data: lower, lineStyle: { opacity: 0 }, areaStyle: { opacity: 0 }, tooltip: { show: false }, emphasis: { disabled: true } },
       { name: '_band', type: 'line', step: 'end', stack: 'band', showSymbol: false, silent: true, data: bandHeight, lineStyle: { opacity: 0 }, areaStyle: { color: primary, opacity: 0.12 }, tooltip: { show: false }, emphasis: { disabled: true } },
       // 分时电量按时段恒定，阶梯线真实呈现；申报为决策值虚线、实际计量实线加粗
-      { name: '申报电量', type: 'line', step: 'end', showSymbol: false, data: declared, lineStyle: { width: 1.6, type: 'dashed', color: primary }, itemStyle: { color: primary } },
+      { name: '申报电量', type: 'line', step: 'end', showSymbol: false, data: declared, lineStyle: { width: 1.6, type: 'dashed', color: primary }, itemStyle: { color: primary }, markPoint: extremumMarks(primary) },
       {
         name: '实际电量', type: 'line', step: 'end', showSymbol: false, data: actual,
         lineStyle: { width: 2, color: ink }, itemStyle: { color: ink },
-        markPoint: worstIdx >= 0 ? {
-          symbol: 'circle', symbolSize: 10,
-          itemStyle: { color: 'transparent', borderColor: danger, borderWidth: 2 },
-          label: { show: true, position: 'top', color: danger, fontWeight: 600, fontSize: 11, formatter: () => `${worstLabel.value} ${worstDev.value > 0 ? '+' : ''}${worstDev.value}` },
-          data: [{ coord: [worstIdx, actual[worstIdx]] }]
-        } : undefined
-      }
+        markPoint: actualMarks
+      },
+      // 对比日实际（清单 R1）：灰虚线弱化呈现，图例可开关
+      ...(cmpActual.length ? [{
+        name: cmpName, type: 'line', step: 'end', showSymbol: false, data: cmpActual,
+        lineStyle: { width: 1.4, type: 'dashed', color: '#94a3b8' }, itemStyle: { color: '#94a3b8' }
+      }] : [])
     ]
   }, { replaceMerge: ['graphic', 'series'] }) // 空态 graphic 需整组替换才能在有数据时清掉
 }
@@ -142,7 +208,20 @@ watch(() => props.loading, (v: boolean) => (v ? chart.showLoading() : chart.hide
       </el-empty>
     </section>
     <section v-else class="panel chart">
-      <div class="top"><h3>申报 vs 实际 · 96 点</h3></div>
+      <div class="top">
+        <h3>申报 vs 实际 · 96 点</h3>
+        <div class="cmp">
+          <span class="muted">对比日</span>
+          <select v-model="cmpDate" class="cmp-select" title="叠加另一天的实际电量曲线（灰虚线）对比">
+            <option value="">无</option>
+            <option v-if="cmpDayPrev" :value="cmpDayPrev">前一日（{{ cmpDayPrev }}）</option>
+            <option v-if="cmpDayPrevWeek" :value="cmpDayPrevWeek">上周同星期（{{ cmpDayPrevWeek }}）</option>
+          </select>
+          <input v-model="cmpDate" type="date" class="cmp-date" title="或任选对比日期（采集覆盖区内）" />
+          <span v-if="cmpLoading" class="muted">取对比日…</span>
+          <span v-else-if="cmpError" class="cmp-err" :title="cmpError">对比日不可比，悬停看原因</span>
+        </div>
+      </div>
       <div ref="chartEl" class="host chart-host" />
       <DeviationHeatStrip v-if="cells.length" :cells="cells" class="heat" />
     </section>
@@ -158,7 +237,11 @@ watch(() => props.loading, (v: boolean) => (v ? chart.showLoading() : chart.hide
 @media (max-width: 720px) { .tiles { grid-template-columns: repeat(2, 1fr); } }
 /* 对冲全局 .chart{height:360px}，否则热力条溢出卡片 */
 .chart { padding: 12px 14px 12px; display: flex; flex-direction: column; gap: 8px; height: auto; }
+.top { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
 .top h3 { margin: 0; font-size: var(--font-13-5); font-weight: 600; }
+.cmp { display: inline-flex; align-items: center; gap: 6px; font-size: var(--font-11-5); }
+.cmp-select, .cmp-date { padding: 2px 6px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 6px; font-size: var(--font-11-5); background: #fff; }
+.cmp-err { color: #b45309; cursor: help; }
 .host { width: 100%; height: 300px; }
 .heat { margin-left: 48px; margin-right: 16px; }
 .guidance { padding: 12px 16px; }
