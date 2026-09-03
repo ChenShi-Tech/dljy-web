@@ -162,6 +162,11 @@ const fillView = computed<TileView>(() => {
   return { value: pctText(c.fillPct), unit: '%', tone: 'default', sub: `已提交 ${c.instancesSubmitted}/${c.instancesTotal}`, info: FILL_INFO }
 })
 
+// 两张完成度卡仅在实例端点可用（有真实分母）时渲染：端点缺席期间不占指标区
+// 黄金位置出死数（0%/— 常驻属视觉噪音，且月周期指标与日周期指标混排易误读）。
+// 引擎接入后自动出现，无需改代码。
+const showCompletionTiles = computed(() => completionLoaded.value && completion.value?.feedAvailable === true)
+
 function render() {
   const r = props.result
   if (!r || !chartEl.value) return
@@ -237,7 +242,7 @@ watch(() => props.loading, (v: boolean) => (v ? chart.showLoading() : chart.hide
 
 <template>
   <div class="dim">
-    <div class="tiles">
+    <div class="tiles" :class="{ 'tiles-6': showCompletionTiles }">
       <MetricTile
         label="偏差率" :value="ratePct === null ? '—' : String(ratePct)" :unit="ratePct === null ? '' : '%'"
         :tone="ratePct === null ? 'muted' : 'default'" :pill="ratePill"
@@ -257,15 +262,17 @@ watch(() => props.loading, (v: boolean) => (v ? chart.showLoading() : chart.hide
         label="最差时点" :value="worstLabel" :tone="result ? 'default' : 'muted'"
         :sub="result ? `${worstDev > 0 ? '+' : ''}${worstDev} MWh` : ''"
       />
-      <MetricTile
-        label="复盘覆盖率" :value="coverageView.value" :unit="coverageView.unit"
-        :tone="coverageView.tone" :sub="completionMonth !== '' ? `${completionMonth} · ${coverageView.sub}` : coverageView.sub"
-        :info="coverageView.info"
-      />
-      <MetricTile
-        label="复盘填写率" :value="fillView.value" :unit="fillView.unit"
-        :tone="fillView.tone" :sub="fillView.sub" :info="fillView.info"
-      />
+      <template v-if="showCompletionTiles">
+        <MetricTile
+          label="复盘覆盖率" :value="coverageView.value" :unit="coverageView.unit"
+          :tone="coverageView.tone" :sub="`${completionMonth} · ${coverageView.sub}`"
+          :info="coverageView.info"
+        />
+        <MetricTile
+          label="复盘填写率" :value="fillView.value" :unit="fillView.unit"
+          :tone="fillView.tone" :sub="fillView.sub" :info="fillView.info"
+        />
+      </template>
     </div>
 
     <section v-if="failure" class="panel guidance" :class="`state-${failure.kind}`">
@@ -303,9 +310,11 @@ watch(() => props.loading, (v: boolean) => (v ? chart.showLoading() : chart.hide
 
 <style scoped>
 .dim { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
-.tiles { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 12px; }
-@media (max-width: 1100px) { .tiles { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
-@media (max-width: 720px) { .tiles { grid-template-columns: repeat(2, 1fr); } }
+.tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+/* 完成度两张卡仅在实例端点可用时出现（tiles-6）；缺席期指标区保持原 4 张 */
+.tiles.tiles-6 { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+@media (max-width: 1100px) { .tiles, .tiles.tiles-6 { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 720px) { .tiles, .tiles.tiles-6 { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 /* 对冲全局 .chart{height:360px}，否则热力条溢出卡片 */
 .chart { padding: 12px 14px 12px; display: flex; flex-direction: column; gap: 8px; height: auto; }
 .top { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
