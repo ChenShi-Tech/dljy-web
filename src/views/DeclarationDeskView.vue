@@ -839,6 +839,8 @@ async function refresh(selectId?: string) {
   } catch (error) {
     errorMsg.value = error instanceof Error ? error.message : String(error)
   }
+  // 目标日变化时跟随新窗口（用户手选过区间则尊重手选，不覆盖）
+  resetHistoryWindowIfUntouched()
   void loadHistoryList()
 }
 
@@ -858,6 +860,26 @@ const HISTORY_FORWARD_DAYS = 7
 const HISTORY_PAGE_LIMIT = 500
 const historyTotal = ref(0)
 
+// 查询区间（可手选，2026-09-03 验收反馈）：默认跟随目标日窗口（前 60/后 7 天），
+// 用户手改后以手选区间为准（不再随目标日变化），列表与导出共用同一区间。
+const historyWindowTouched = ref(false)
+function defaultHistoryWindow(): { from: string; to: string } {
+  const anchor = new Date(`${targetDate.value}T00:00:00+08:00`).getTime()
+  return {
+    from: fmtDate(new Date(anchor - HISTORY_WINDOW_DAYS * 86400000)),
+    to: fmtDate(new Date(anchor + HISTORY_FORWARD_DAYS * 86400000))
+  }
+}
+const defaultHistoryWin = defaultHistoryWindow()
+const historyFrom = ref(defaultHistoryWin.from)
+const historyTo = ref(defaultHistoryWin.to)
+function resetHistoryWindowIfUntouched() {
+  if (historyWindowTouched.value) return
+  const win = defaultHistoryWindow()
+  historyFrom.value = win.from
+  historyTo.value = win.to
+}
+
 // 世代守卫（与 refresh 同构）：切目标日或模式筛选会并发多次 loadHistoryList，
 // 旧请求晚归会覆盖 rows/counts/total，造成表头是当前日期/模式、表体来自上一个时间窗。
 let historyGeneration = 0
@@ -866,10 +888,11 @@ async function loadHistoryList() {
   const generation = ++historyGeneration
   historyLoading.value = true
   try {
-    const anchor = new Date(`${targetDate.value}T00:00:00+08:00`).getTime()
+    // 起止倒置时静默交换（用户少一次纠错点击），不改动输入框本身
+    const [effFrom, effTo] = [historyFrom.value, historyTo.value].sort()
     const page = await listDeclarationsPage({
-      dateFrom: fmtDate(new Date(anchor - HISTORY_WINDOW_DAYS * 86400000)),
-      dateTo: fmtDate(new Date(anchor + HISTORY_FORWARD_DAYS * 86400000)),
+      dateFrom: effFrom,
+      dateTo: effTo,
       mode: historyModeFilter.value || undefined,
       limit: HISTORY_PAGE_LIMIT
     })
@@ -890,7 +913,7 @@ async function loadHistoryList() {
 
 const historyTruncated = computed(() => historyTotal.value > historyRows.value.length)
 
-// 导出当前筛选结果（清单 D2）：与列表同源同筛选；500 条截断时导出含已加载行，
+// 导出当前区间+筛选结果（清单 D2）：与列表同源同筛选；500 条截断时导出含已加载行，
 // 提示文案在截断提示里注明。UTF-8 BOM 保 Excel 中文不乱码（DynamicTable 同惯例）。
 function exportHistoryCsv() {
   if (!historyRows.value.length) return
@@ -913,12 +936,13 @@ function exportHistoryCsv() {
   const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8;' }))
   const a = document.createElement('a')
   a.href = url
-  a.download = `申报单列表-${targetDate.value}.csv`
+  a.download = `申报单列表-${historyFrom.value}_to_${historyTo.value}.csv`
   a.click()
   URL.revokeObjectURL(url)
 }
 
-watch(historyModeFilter, () => { void loadHistoryList() })
+// 区间/模式任一变化即重查（世代守卫兜底并发时序）
+watch([historyFrom, historyTo, historyModeFilter], () => { void loadHistoryList() })
 
 // 复制历史曲线（declaration-workflow §2 快捷操作）：把时间窗内历史申报单的 96 点曲线
 // 带入当前草稿编辑器为底稿。只落到 hourlyMw 并置 curveDirty，仍需「保存曲线」→ 重新
@@ -1610,16 +1634,17 @@ onRegionChange(() => {
         <!-- 历史申报单 tab：按目标日范围查询（此前只按精确目标日查，默认取明天 → 历史单全不可见） -->
         <template v-else>
           <p class="muted history-scope">
-            <span>
-          目标日 {{ targetDate }} 前 {{ HISTORY_WINDOW_DAYS }} 天 / 后 {{ HISTORY_FORWARD_DAYS }} 天内 ·
-          真实申报 {{ historyCounts.LIVE }} / 历史模拟 {{ historyCounts.REHEARSAL }}
-            </span>
+            <span>查询区间</span>
+            <input v-model="historyFrom" type="date" class="decl-select" title="起始日（含）。默认跟随目标日窗口，可手选任意区间" @input="historyWindowTouched = true" />
+            <span>~</span>
+            <input v-model="historyTo" type="date" class="decl-select" title="结束日（含）" @input="historyWindowTouched = true" />
+            <span>· 真实申报 {{ historyCounts.LIVE }} / 历史模拟 {{ historyCounts.REHEARSAL }}</span>
             <select v-model="historyModeFilter" class="decl-select" style="margin-left: auto">
           <option value="">全部模式</option>
           <option value="LIVE">仅真实申报</option>
               <option value="REHEARSAL">仅历史模拟</option>
             </select>
-            <!-- 导出当前筛选结果（清单 D2）：与列表同源同筛选，500 条截断时含已加载行 -->
+            <!-- 导出当前区间+筛选结果（清单 D2）：与列表同源同筛选，500 条截断时含已加载行 -->
             <button class="mini" style="margin-left: 6px" :disabled="!historyRows.length" @click="exportHistoryCsv">导出 CSV</button>
           </p>
           <p v-if="historyLoading" class="muted">加载中…</p>
