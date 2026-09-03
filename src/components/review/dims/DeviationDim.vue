@@ -126,24 +126,41 @@ const completion = computed<ReviewCompletion | null>(() => {
   })
 })
 const pctText = (v: number | null) => (v === null ? '—' : `${Math.round(v * 1000) / 10}%`)
-const completionText = computed(() => {
+
+const COVERAGE_INFO =
+  '口径：当月有已提交复盘实例的天数 ÷ 当月可回测天数（采集覆盖窗内已过天）。' +
+  '产出以日锚实例（如 T08 日档）的提交状态计，全部来自复盘模板实例库真实数据，不合成。'
+const FILL_INFO =
+  '口径：已提交（submitted/reviewed）实例 ÷ 触发引擎生成的当月应填实例。' +
+  '应填清单由引擎按周期生成（#2037），分母为 0 或实例端点缺席时不出数，不拿假数字凑。'
+
+type TileView = { value: string; unit: string; tone: 'good' | 'bad' | 'muted' | 'default'; sub: string; info: string }
+const coverageView = computed<TileView>(() => {
   const c = completion.value
-  if (!c) return null
+  if (!c) return { value: '—', unit: '', tone: 'muted', sub: '读取实例库…', info: COVERAGE_INFO }
   if (c.reviewableDays === 0) {
-    return `复盘完成度（${completionMonth.value}）：本月不在采集覆盖窗内，无可复盘天。`
+    return { value: '—', unit: '', tone: 'muted', sub: '本月不在采集覆盖窗内', info: COVERAGE_INFO + ' 本月无可复盘天：采集覆盖窗不含当月已过天。' }
   }
-  const cov = `覆盖率 ${pctText(c.coveragePct)}（产出 ${c.producedDays}/${c.reviewableDays} 天）`
-  const fill = !c.feedAvailable
-    ? '填写率 —（应填清单由触发引擎生成，当前环境实例端点未部署）'
-    : c.instancesTotal === 0
-      ? '填写率 —（本月无应填实例）'
-      : `填写率 ${pctText(c.fillPct)}（已提交 ${c.instancesSubmitted}/${c.instancesTotal}）`
-  return `复盘完成度（${completionMonth.value}）：${cov} · ${fill}`
+  if (!c.feedAvailable) {
+    return {
+      value: pctText(c.coveragePct), unit: '%', tone: 'default',
+      sub: `产出 ${c.producedDays}/${c.reviewableDays} 天 · 实例端点未部署`,
+      info: COVERAGE_INFO + ' 当前实例端点未部署，产出按真实 0 计；端点接入后自动出真数。'
+    }
+  }
+  return { value: pctText(c.coveragePct), unit: '%', tone: 'default', sub: `产出 ${c.producedDays}/${c.reviewableDays} 天`, info: COVERAGE_INFO }
 })
-const completionTitle
-  = '口径：覆盖率＝当月有已提交复盘实例的天数 ÷ 当月可回测天数（采集覆盖窗内已过天）；'
-    + '填写率＝已提交实例 ÷ 触发引擎生成的当月应填实例。产出与提交均来自复盘模板实例库真实数据，'
-    + '实例端点未部署期间产出按 0 计、填写率不出数，不拿假数字凑。'
+const fillView = computed<TileView>(() => {
+  const c = completion.value
+  if (!c) return { value: '—', unit: '', tone: 'muted', sub: '读取实例库…', info: FILL_INFO }
+  if (!c.feedAvailable) {
+    return { value: '—', unit: '', tone: 'muted', sub: '实例端点未部署', info: FILL_INFO + ' 当前环境实例端点未部署（代理 404），部署后自动出数。' }
+  }
+  if (c.instancesTotal === 0) {
+    return { value: '—', unit: '', tone: 'muted', sub: '本月无应填实例', info: FILL_INFO }
+  }
+  return { value: pctText(c.fillPct), unit: '%', tone: 'default', sub: `已提交 ${c.instancesSubmitted}/${c.instancesTotal}`, info: FILL_INFO }
+})
 
 function render() {
   const r = props.result
@@ -240,11 +257,16 @@ watch(() => props.loading, (v: boolean) => (v ? chart.showLoading() : chart.hide
         label="最差时点" :value="worstLabel" :tone="result ? 'default' : 'muted'"
         :sub="result ? `${worstDev > 0 ? '+' : ''}${worstDev} MWh` : ''"
       />
+      <MetricTile
+        label="复盘覆盖率" :value="coverageView.value" :unit="coverageView.unit"
+        :tone="coverageView.tone" :sub="completionMonth !== '' ? `${completionMonth} · ${coverageView.sub}` : coverageView.sub"
+        :info="coverageView.info"
+      />
+      <MetricTile
+        label="复盘填写率" :value="fillView.value" :unit="fillView.unit"
+        :tone="fillView.tone" :sub="fillView.sub" :info="fillView.info"
+      />
     </div>
-
-    <!-- 复盘完成度（口径 2026-09-03 拍板，替代原"待口径"提示）：数据全部来自实例库与采集覆盖窗 -->
-    <p v-if="!completionLoaded" class="pending-note">复盘完成度统计中（读取复盘模板实例库）…</p>
-    <p v-else-if="completionText" class="pending-note" :title="completionTitle">{{ completionText }}</p>
 
     <section v-if="failure" class="panel guidance" :class="`state-${failure.kind}`">
       <el-empty :image-size="72">
@@ -281,7 +303,8 @@ watch(() => props.loading, (v: boolean) => (v ? chart.showLoading() : chart.hide
 
 <style scoped>
 .dim { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
-.tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.tiles { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 12px; }
+@media (max-width: 1100px) { .tiles { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 @media (max-width: 720px) { .tiles { grid-template-columns: repeat(2, 1fr); } }
 /* 对冲全局 .chart{height:360px}，否则热力条溢出卡片 */
 .chart { padding: 12px 14px 12px; display: flex; flex-direction: column; gap: 8px; height: auto; }
