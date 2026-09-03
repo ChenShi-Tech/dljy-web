@@ -913,42 +913,36 @@ async function loadHistoryList() {
 
 const historyTruncated = computed(() => historyTotal.value > historyRows.value.length)
 
-// 导出当前区间+筛选结果（清单 D2 + 验收反馈）：汇总列之外附每张单的 96 点申报
-// 电量曲线（MWh/15min，列头=时点），与列表同源同筛选；500 条截断时导出含已加载行，
-// 提示文案在截断提示里注明。UTF-8 BOM 保 Excel 中文不乱码（DynamicTable 同惯例）。
-const CURVE_TIME_LABELS = Array.from({ length: 96 }, (_, i) => {
+// 导出当日申报明细（清单 D2 + 验收反馈二轮：对齐参考系统出清结算单的单日期长表格式）
+// 范围 = 顶部目标日那一天；行 = 96 时点 × 该日每张申报单；列 = 目标日/时点/申报单/模式/状态/电量。
+// 与列表同源同筛选（historyRows 已按区间查出，此处再按目标日精确取当日单）。
+const curvePointLabel = (i: number) => {
   const h = Math.floor((i + 1) / 4)
   const m = ((i + 1) % 4) * 15
-  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}(MWh)`
-})
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
+}
+const hasCurrentDayRows = computed(() => historyRows.value.some((r) => r.targetDate === targetDate.value))
 function exportHistoryCsv() {
-  if (!historyRows.value.length) return
+  const dayRows = historyRows.value.filter((r) => r.targetDate === targetDate.value)
+  if (!dayRows.length) return
   const escape = (v: unknown) => {
     const s = String(v ?? '').replaceAll('"', '""')
     return /[",\n]/.test(s) ? `"${s}"` : s
   }
-  const header = ['申报单', '目标日', '模式', '状态', '总量(MWh)', '创建人', ...CURVE_TIME_LABELS].join(',')
-  const body = historyRows.value
-    .map((row) => {
-      const base = [
-        row.id,
-        row.targetDate,
-        DECLARATION_MODE_LABEL[declarationModeOf(row)],
-        STATUS_LABEL[row.status],
-        Math.round(row.energyCurveMwh96.reduce((s, v) => s + v, 0) * 10) / 10,
-        row.createdBy
-      ].map(escape)
-      const curve = Array.from({ length: 96 }, (_, i) =>
-        Math.round((row.energyCurveMwh96[i] ?? 0) * 10000) / 10000
-      )
-      return [...base, ...curve].join(',')
-    })
-    .join('\n')
-  const csv = `\uFEFF${header}\n${body}\n`
+  const header = '目标日,时点,申报单,模式,状态,申报电量(MWh)'
+  const body: string[] = []
+  for (const row of dayRows) {
+    const base = [targetDate.value, row.id, DECLARATION_MODE_LABEL[declarationModeOf(row)], STATUS_LABEL[row.status]].map(escape)
+    for (let i = 0; i < 96; i++) {
+      const mwh = Math.round((row.energyCurveMwh96[i] ?? 0) * 10000) / 10000
+      body.push([base[0], curvePointLabel(i), base[1], base[2], base[3], mwh].join(','))
+    }
+  }
+  const csv = `\uFEFF${header}\n${body.join('\n')}\n`
   const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8;' }))
   const a = document.createElement('a')
   a.href = url
-  a.download = `申报单列表-${historyFrom.value}_to_${historyTo.value}.csv`
+  a.download = `申报单明细-${targetDate.value}.csv`
   a.click()
   URL.revokeObjectURL(url)
 }
@@ -1656,8 +1650,10 @@ onRegionChange(() => {
           <option value="LIVE">仅真实申报</option>
               <option value="REHEARSAL">仅历史模拟</option>
             </select>
-            <!-- 导出当前区间+筛选结果（清单 D2）：与列表同源同筛选，500 条截断时含已加载行 -->
-            <button class="mini" style="margin-left: 6px" :disabled="!historyRows.length" @click="exportHistoryCsv">导出 CSV</button>
+            <!-- 导出当日申报明细（单日期长表，格式对齐参考系统出清结算单）：日期跟随顶部目标日 -->
+            <button class="mini" style="margin-left: 6px" :disabled="!hasCurrentDayRows" @click="exportHistoryCsv">
+              导出当日明细（{{ targetDate }}）
+            </button>
           </p>
           <p v-if="historyLoading" class="muted">加载中…</p>
           <p v-else-if="!historyRows.length" class="muted">该时间窗内没有申报单。调整目标日或放宽筛选后重试。</p>
