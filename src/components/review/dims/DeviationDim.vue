@@ -8,7 +8,6 @@ import { useEChart } from '@/composables/useEChart'
 import { cssVar } from '@/composables/useTheme'
 import { axisTooltip, bottomLayoutLegend, bottomToolbox, emptyOverlay, insideZoom } from '@/services/chart/chartOptions'
 import { classifyReviewError, fetchReview, type ReviewFailure, type ReviewResult } from '@/services/quant/quantClient'
-import { shiftIsoDate } from 'shared/trading-rules/trading-calendar.mjs'
 import { heatCells } from '@/services/review/reviewDashboard'
 import { deviationMetricOf, type TemplateCard } from '@/services/review/cockpitModel'
 import { reviewCompletionOf, type ReviewCompletion } from '@/services/review/reviewCompletion'
@@ -70,8 +69,6 @@ const cmpLoading = ref(false)
 const cmpError = ref('')
 const cmpDetail = ref<ReviewResult['detail']>([])
 let cmpSeq = 0
-const cmpDayPrev = computed(() => (props.result ? shiftIsoDate(props.result.date, -1) : ''))
-const cmpDayPrevWeek = computed(() => (props.result ? shiftIsoDate(props.result.date, -7) : ''))
 
 async function loadCompare() {
   const seq = ++cmpSeq
@@ -292,13 +289,8 @@ watch(() => props.loading, (v: boolean) => (v ? chart.showLoading() : chart.hide
       <div class="top">
         <h3>申报 vs 实际 · 96 点</h3>
         <div class="cmp">
-          <span class="muted">对比日</span>
-          <select v-model="cmpDate" class="cmp-select" title="叠加另一天的实际电量曲线（灰虚线）对比">
-            <option value="">无</option>
-            <option v-if="cmpDayPrev" :value="cmpDayPrev">前一日（{{ cmpDayPrev }}）</option>
-            <option v-if="cmpDayPrevWeek" :value="cmpDayPrevWeek">上周同星期（{{ cmpDayPrevWeek }}）</option>
-          </select>
-          <input v-model="cmpDate" type="date" class="cmp-date" title="或任选对比日期（采集覆盖区内）" />
+          <span class="muted" title="对比日说明：叠加所选日期的实际电量曲线（灰色虚线）与当天对比；清空日期即取消对比。日期需在采集覆盖窗内，否则如实提示不可比。">对比日</span>
+          <input v-model="cmpDate" type="date" class="cmp-date" title="任选对比日期（采集覆盖区内）" />
           <span v-if="cmpLoading" class="muted">取对比日…</span>
           <span v-else-if="cmpError" class="cmp-err" :title="cmpError">对比日不可比，悬停看原因</span>
         </div>
