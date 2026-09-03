@@ -107,6 +107,32 @@ describe('ModelServicesPanel', () => {
     w.unmount()
   })
 
+  it('关掉最后一个已启用档位：拦下不 PUT（服务端把空集合当「全部启用」），回读复位', async () => {
+    getServices.mockResolvedValue(OK)
+    const w = mount(ModelServicesPanel)
+    await flushPromises()
+    await w.findAll('.tier-card')[0].find('.el-switch').trigger('click')
+    await flushPromises()
+    expect(putServices).not.toHaveBeenCalled()
+    expect(getServices).toHaveBeenCalledTimes(2)
+    expect(w.findAll('.tier-card')[0].find('.el-switch').classes()).toContain('is-checked')
+    w.unmount()
+  })
+
+  it('角色当前档位未启用时下拉显示中文标签 +「未启用」而不是原始 id', async () => {
+    getServices.mockResolvedValue({
+      ...OK,
+      tiers: TIERS.map((t) => ({ ...t, enabled: t.id === 'dljy-fast' })),
+      roles: [{ role: 'market_analyst', default_tier: 'dljy-standard', tier: 'dljy-standard', override: false, requires: ['tool_call'] }]
+    })
+    const w = mount(ModelServicesPanel)
+    await flushPromises()
+    const row = w.find('.roles-block .route-row')
+    expect(row.text()).toContain('标准（未启用）')
+    expect(row.text()).not.toContain('dljy-standard')
+    w.unmount()
+  })
+
   it('测试连接只发档位 id，结果原样上屏', async () => {
     getServices.mockResolvedValue(OK)
     testService.mockResolvedValue({ ok: false, msg: '模型服务网关未提供档位 dljy-fast' })

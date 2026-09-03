@@ -57,6 +57,24 @@ function tiersForRole(role: LlmServiceRole): LlmServiceTier[] {
   return enabledTiers.value.filter((t) => role.requires.every((cap) => t.capabilities.includes(cap)))
 }
 
+type RoleOption = { id: string; label: string; selectable: boolean }
+/**
+ * 下拉选项 = 可选档位；若角色当前生效的档位不在可选集里（默认档位未启用 / 未开通），仍把它列进去
+ * 但标「未启用」且不可选——否则 el-select 只能显示原始 id（实测 `dljy-standard` 直接上屏）。
+ */
+function optionsForRole(role: LlmServiceRole): RoleOption[] {
+  const out: RoleOption[] = tiersForRole(role).map((t) => ({
+    id: t.id,
+    label: t.label + (t.id === role.default_tier ? '（默认）' : ''),
+    selectable: true
+  }))
+  if (role.tier && !out.some((o) => o.id === role.tier)) {
+    const t = services.value?.tiers.find((x) => x.id === role.tier)
+    out.unshift({ id: role.tier, label: `${t?.label ?? role.tier}（${t?.available ? '未启用' : '未开通'}）`, selectable: false })
+  }
+  return out
+}
+
 function formatContext(n: number | null): string {
   if (!n) return ''
   return n >= 1000 ? `${Math.round(n / 1000)}k 上下文` : `${n} 上下文`
@@ -100,6 +118,13 @@ function onToggleTier(tier: LlmServiceTier, on: boolean) {
   const current = new Set(enabledTiers.value.map((t) => t.id))
   if (on) current.add(tier.id)
   else current.delete(tier.id)
+  if (current.size === 0) {
+    // 服务端把空集合当作「清空选择 → 可用即启用」，关掉最后一个档位会变成全部启用（实机踩过）。
+    // 这里直接拦下，并回读让开关弹回真实状态。
+    ElMessage.warning('至少保留一个已启用的档位')
+    void load()
+    return
+  }
   void apply({ enabled: [...current] }, on ? `已启用「${tier.label}」` : `已停用「${tier.label}」`)
 }
 
@@ -200,10 +225,11 @@ async function doTest(tier: LlmServiceTier) {
               @change="(v: string) => onRoleChange(role, v)"
             >
               <el-option
-                v-for="t in tiersForRole(role)"
-                :key="t.id"
-                :label="t.label + (t.id === role.default_tier ? '（默认）' : '')"
-                :value="t.id"
+                v-for="o in optionsForRole(role)"
+                :key="o.id"
+                :label="o.label"
+                :value="o.id"
+                :disabled="!o.selectable"
               />
             </el-select>
             <span v-if="role.override" class="muted-tag">已覆盖</span>
