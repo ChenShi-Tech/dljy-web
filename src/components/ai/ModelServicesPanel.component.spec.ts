@@ -80,7 +80,7 @@ describe('ModelServicesPanel', () => {
   it('已配置但网关不可达：仍显示「模型服务暂不可用」而不是引导语', async () => {
     getServices.mockResolvedValue({
       available: false, gateway: true, reason: '网关不可达', tiers: [], roles: [],
-      credential: { configured: true, source: 'env', url: 'https://gw.example.internal/v1', key_hint: 'abcd', updated_at: null }
+      credential: { configured: true, source: 'env', url: 'https://gw.example.internal/v1', key_hint: '****abcd', updated_at: null }
     })
     const w = mount(ModelServicesPanel)
     await flushPromises()
@@ -202,7 +202,7 @@ describe('ModelServicesPanel', () => {
     })
     const after = {
       ...OK,
-      credential: { configured: true, source: 'ui', url: 'https://gw.example.internal/v1', key_hint: 'abcd', updated_at: '2026-09-03T08:00:00+08:00' }
+      credential: { configured: true, source: 'ui', url: 'https://gw.example.internal/v1', key_hint: '****abcd', updated_at: '2026-09-03T08:00:00+08:00' }
     }
     putCredential.mockResolvedValue({ ok: true, services: after })
     const w = mount(ModelServicesPanel)
@@ -247,7 +247,7 @@ describe('ModelServicesPanel', () => {
   it('credential.source 为 env（安装预置）时不显示「清除」——界面不清除预置凭据', async () => {
     getServices.mockResolvedValue({
       ...OK,
-      credential: { configured: true, source: 'env', url: 'https://gw.example.internal/v1', key_hint: 'abcd', updated_at: null }
+      credential: { configured: true, source: 'env', url: 'https://gw.example.internal/v1', key_hint: '****abcd', updated_at: null }
     })
     const w = mount(ModelServicesPanel)
     await flushPromises()

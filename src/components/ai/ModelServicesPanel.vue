@@ -57,7 +57,7 @@ const credentialSourceLabel = computed(() => {
 const credentialStatusLine = computed(() => {
   if (!credentialConfigured.value) return '未配置'
   const parts = [`已配置 · 来源：${credentialSourceLabel.value}`]
-  if (credential.value?.key_hint) parts.push(`尾号 ****${credential.value.key_hint}`)
+  if (credential.value?.key_hint) parts.push(`尾号 ${credential.value.key_hint}`)  // 服务端已按「****+末4位」给出，这里不再叠加星号
   if (credential.value?.updated_at) parts.push(`更新于 ${formatLocalTime(credential.value.updated_at)}`)
   return parts.join(' · ')
 })
