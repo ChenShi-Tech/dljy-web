@@ -11,6 +11,12 @@ import { classifyReviewError, fetchReview, type ReviewFailure, type ReviewResult
 import { shiftIsoDate } from 'shared/trading-rules/trading-calendar.mjs'
 import { heatCells } from '@/services/review/reviewDashboard'
 import { deviationMetricOf, type TemplateCard } from '@/services/review/cockpitModel'
+import { reviewCompletionOf, type ReviewCompletion } from '@/services/review/reviewCompletion'
+import { fetchTemplateInstanceFeed } from '@/services/review/templateInstanceClient'
+import type { TemplateInstanceFeed } from '@/services/review/templateInstanceApi'
+import { captureCoverage } from '@/services/market/captureCoverage'
+import { currentRegion } from '@/services/region/regionContext'
+import { todayBeijing } from '@/utils/beijingDate'
 import MetricTile from '../MetricTile.vue'
 import DeviationHeatStrip from '../DeviationHeatStrip.vue'
 import DeviationAggregatePanel from '../DeviationAggregatePanel.vue'
@@ -95,6 +101,49 @@ watch([() => props.tolerancePct, () => props.penaltyPrice], loadCompare)
 watch(() => props.result?.date, () => { cmpDate.value = '' })
 // 对比数据就绪/清空后必须重渲染：render 只监听主 result 不会感知 cmpDetail 变化
 watch(cmpDetail, () => { if (props.result) render() }, { flush: 'post' })
+
+// ── 复盘完成度（清单附录 B1 口径，2026-09-03 拍板）：覆盖率按天、填写率按实例提交 ──
+// 覆盖率 = 当月有已提交日锚实例的天数 ÷ 当月可回测天数（采集覆盖窗∩已过天，真实分母）；
+// 填写率 = 当月已提交实例 ÷ 触发引擎生成的当月应填实例（分母由引擎生成，缺席不出 %）。
+// 实例端点缺席时产出按 0 计（真实：已知提交为 0）并标注原因，不伪造数字。
+const completionFeed = ref<TemplateInstanceFeed | null>(null)
+const completionLoaded = ref(false)
+async function loadCompletionFeed() {
+  completionFeed.value = await fetchTemplateInstanceFeed()
+  completionLoaded.value = true
+}
+onMounted(loadCompletionFeed)
+watch(() => currentRegion.value.id, () => { void loadCompletionFeed() })
+
+const completionMonth = computed(() => (props.result?.date ?? todayBeijing()).slice(0, 7))
+const completion = computed<ReviewCompletion | null>(() => {
+  if (!completionFeed.value) return null
+  return reviewCompletionOf({
+    month: completionMonth.value,
+    today: todayBeijing(),
+    coverage: captureCoverage(currentRegion.value.id, 'review'),
+    feed: completionFeed.value
+  })
+})
+const pctText = (v: number | null) => (v === null ? '—' : `${Math.round(v * 1000) / 10}%`)
+const completionText = computed(() => {
+  const c = completion.value
+  if (!c) return null
+  if (c.reviewableDays === 0) {
+    return `复盘完成度（${completionMonth.value}）：本月不在采集覆盖窗内，无可复盘天。`
+  }
+  const cov = `覆盖率 ${pctText(c.coveragePct)}（产出 ${c.producedDays}/${c.reviewableDays} 天）`
+  const fill = !c.feedAvailable
+    ? '填写率 —（应填清单由触发引擎生成，当前环境实例端点未部署）'
+    : c.instancesTotal === 0
+      ? '填写率 —（本月无应填实例）'
+      : `填写率 ${pctText(c.fillPct)}（已提交 ${c.instancesSubmitted}/${c.instancesTotal}）`
+  return `复盘完成度（${completionMonth.value}）：${cov} · ${fill}`
+})
+const completionTitle
+  = '口径：覆盖率＝当月有已提交复盘实例的天数 ÷ 当月可回测天数（采集覆盖窗内已过天）；'
+    + '填写率＝已提交实例 ÷ 触发引擎生成的当月应填实例。产出与提交均来自复盘模板实例库真实数据，'
+    + '实例端点未部署期间产出按 0 计、填写率不出数，不拿假数字凑。'
 
 function render() {
   const r = props.result
@@ -193,11 +242,9 @@ watch(() => props.loading, (v: boolean) => (v ? chart.showLoading() : chart.hide
       />
     </div>
 
-    <!-- 待口径确认的功能入口（大白话提示）：覆盖率/填写率两个指标还没上线 -->
-    <p class="pending-note">
-      复盘覆盖率 / 填写率两个指标还没上线：要先定统计口径——覆盖率按天算还是按模板算？填写率里哪些单算“该填的”？
-      口径确认后开发，不拿假数字先凑。
-    </p>
+    <!-- 复盘完成度（口径 2026-09-03 拍板，替代原"待口径"提示）：数据全部来自实例库与采集覆盖窗 -->
+    <p v-if="!completionLoaded" class="pending-note">复盘完成度统计中（读取复盘模板实例库）…</p>
+    <p v-else-if="completionText" class="pending-note" :title="completionTitle">{{ completionText }}</p>
 
     <section v-if="failure" class="panel guidance" :class="`state-${failure.kind}`">
       <el-empty :image-size="72">
