@@ -28,7 +28,7 @@ import {
 import { fetchExposure, type ExposureResult } from '@/services/quant/quantClient'
 import { useEChart } from '../composables/useEChart'
 import { useQuerySync } from '../composables/useQuerySync'
-import { axisTooltip, bottomToolbox, sliderZoom } from '@/services/chart/chartOptions'
+import { axisTooltip, bottomToolbox } from '@/services/chart/chartOptions'
 import { DATA_BASIS_LABEL, type DataBasis } from '@/services/dataBasis'
 import { assertOperational } from '@/services/data/trustGate'
 import { getCurrentUser } from '@/services/auth'
@@ -738,8 +738,7 @@ const declChartEl = ref<HTMLElement | null>(null)
 const declChart = useEChart(declChartEl, { render: renderDeclChart })
 function renderDeclChart() {
   if (!declChartEl.value) return
-  // 极值标注 + 底部滑块/工具栏（清单 D1）：最高/最低功率直接标在柱上；滑块沉底与
-  // toolbox 共存（LoadPanelChart 同款让位法），容量 markLine 保持不变
+  // 极值标注（清单 D1）：最高/最低功率直接标在柱上；工具栏沉底右下，容量 markLine 保持不变
   const mwMark = (color: string) => ({
     symbol: 'circle', symbolSize: 6,
     itemStyle: { color: 'transparent', borderColor: color, borderWidth: 1.5 },
@@ -750,8 +749,7 @@ function renderDeclChart() {
     tooltip: axisTooltip({ unit: 'MW', pointer: 'shadow' }),
     legend: { show: false },
     toolbox: bottomToolbox('申报功率曲线', 8),
-    grid: { left: 44, right: 14, top: 24, bottom: 64 },
-    dataZoom: sliderZoom().map((z, i) => (i === 1 ? { ...z, bottom: 20, left: 44, right: 14 } : z)),
+    grid: { left: 44, right: 14, top: 24, bottom: 36 },
     xAxis: { type: 'category', data: hourlyMw.value.map((_, h) => `${h}:00`) },
     yAxis: { type: 'value', name: 'MW' },
     series: [{

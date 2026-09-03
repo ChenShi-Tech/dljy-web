@@ -6,7 +6,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useEChart } from '@/composables/useEChart'
 import { cssVar } from '@/composables/useTheme'
-import { axisTooltip, bottomLayoutLegend, bottomToolbox, emptyOverlay, sliderZoom } from '@/services/chart/chartOptions'
+import { axisTooltip, bottomLayoutLegend, bottomToolbox, emptyOverlay, insideZoom } from '@/services/chart/chartOptions'
 import { classifyReviewError, fetchReview, type ReviewFailure, type ReviewResult } from '@/services/quant/quantClient'
 import { shiftIsoDate } from 'shared/trading-rules/trading-calendar.mjs'
 import { heatCells } from '@/services/review/reviewDashboard'
@@ -93,6 +93,8 @@ async function loadCompare() {
 watch(cmpDate, loadCompare)
 watch([() => props.tolerancePct, () => props.penaltyPrice], loadCompare)
 watch(() => props.result?.date, () => { cmpDate.value = '' })
+// 对比数据就绪/清空后必须重渲染：render 只监听主 result 不会感知 cmpDetail 变化
+watch(cmpDetail, () => { if (props.result) render() }, { flush: 'post' })
 
 function render() {
   const r = props.result
@@ -137,9 +139,8 @@ function render() {
     tooltip: axisTooltip({ unit: 'MWh' }),
     legend: bottomLayoutLegend({ data: legendData, textStyle: { fontSize: 10 } }),
     toolbox: bottomToolbox('申报vs实际偏差', 8),
-    // 滑块沉底与 toolbox 共存（LoadPanelChart 同款让位法）：grid 底部给图例/滑块/工具栏三层让位
-    grid: { left: 48, right: 16, top: 56, bottom: 86 },
-    dataZoom: sliderZoom().map((z, i) => (i === 1 ? { ...z, bottom: 24, left: 48, right: 16 } : z)),
+    grid: { left: 48, right: 16, top: 56, bottom: 56 },
+    dataZoom: insideZoom(),
     xAxis: { type: 'category', data: r.detail.map((p) => String(p.datetime).slice(-5)) },
     yAxis: { type: 'value', name: 'MWh', scale: true },
     series: [
