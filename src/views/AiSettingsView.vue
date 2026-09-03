@@ -7,6 +7,7 @@ import {
   saveSearchConfig,
   deleteSearchConfig,
   testSearchConfig,
+  testSearchService,
   getAdminToken,
   setAdminToken,
   getDenylist,
@@ -34,6 +35,23 @@ const savingWorkflow = ref(false)
 const gatewayActive = ref(false)
 function onServicesLoaded(s: LlmServices) {
   gatewayActive.value = s.available
+}
+
+// 网关模式下联网搜索由模型服务统一提供（#2701）：本地搜索引擎配置不生效，只剩连通测试
+const gatewaySearchTesting = ref(false)
+const gatewaySearchOk = ref<boolean | null>(null)
+const gatewaySearchMsg = ref('')
+async function doGatewaySearchTest() {
+  if (gatewaySearchTesting.value) return
+  gatewaySearchTesting.value = true
+  gatewaySearchOk.value = null
+  gatewaySearchMsg.value = ''
+  // 与其它写操作一致：先持久化当前输入的管理令牌，避免加固配置下 403
+  setAdminToken(adminToken.value)
+  const r = await testSearchService()
+  gatewaySearchOk.value = r.ok
+  gatewaySearchMsg.value = r.msg
+  gatewaySearchTesting.value = false
 }
 
 // LLM 用量统计（后端按角色过滤：管理员全站+按公司，用户本公司；数据源 model_calls 表）
@@ -391,7 +409,7 @@ const section = ref<string>('access')
     <el-segmented v-model="section" :options="SETTING_SECTIONS" class="section-nav" />
 
     <div v-show="section === 'access'" class="pane">
-      <p class="pane-desc">模型服务的档位启用与角色路由——全站智能体能力的总开关。密钥随安装预置在服务端，前端不持密钥、不持供应商清单。</p>
+      <p class="pane-desc">模型服务的档位启用与角色路由——全站智能体能力的总开关。密钥由供应方提供，在「接入凭据」处填写或随安装预置，前端不持密钥、不持供应商清单。</p>
       <div class="pane-body cols-main-aside">
         <ModelServicesPanel @loaded="onServicesLoaded" />
 
@@ -514,33 +532,43 @@ const section = ref<string>('access')
         <section class="card">
           <div class="card-head">
             <h2>联网搜索</h2>
-            <span v-if="searchCfg?.has_key" class="badge-ok"><CheckCircle2 :size="14" /> 已配置</span>
+            <span v-if="!gatewayActive && searchCfg?.has_key" class="badge-ok"><CheckCircle2 :size="14" /> 已配置</span>
           </div>
-          <p class="sub">
-            为 <code>web_search</code> 工具配置搜索引擎 + API Key，使智能体能联网查询最新政策/新闻/价格。
-            Key 保存在服务端（不入库、不上传 git）。支持 Serper / 博查 / Bing / Tavily / 火山引擎。
-          </p>
-          <div class="field">
-            <label>搜索引擎</label>
-            <el-select v-model="searchProvider" class="w-full">
-              <el-option v-for="p in SEARCH_PROVIDERS" :key="p.id" :label="p.name" :value="p.id" />
-            </el-select>
-          </div>
-          <div v-if="searchProvider === 'volcengine'" class="field">
-            <label>接入点 <span class="muted-tag">（该引擎在方舟侧的接入点名，需已开通联网搜索）</span></label>
-            <el-input v-model="searchModel" placeholder="接入点名" />
-            <span class="muted-tag">火山引擎需方舟 <code>ark-</code> 前缀 API Key（控制台 → API Key 管理创建）。</span>
-          </div>
-          <div class="field">
-            <label>API Key <span v-if="searchSaved" class="muted-tag">（留空则沿用已保存的）</span></label>
-            <el-input v-model="searchApiKey" type="password" show-password placeholder="搜索 API Key" />
-          </div>
-          <div class="actions">
-            <el-button :loading="searchTesting" @click="doTestSearch">测试连接</el-button>
-            <el-button type="primary" class="save-btn" :loading="savingSearch" @click="doSaveSearch">保存到服务端</el-button>
-            <el-button v-if="searchCfg?.has_key" text class="del-btn" @click="doClearSearch">清除配置</el-button>
-            <span v-if="searchTestMsg" class="test-msg" :class="{ ok: searchTestOk, bad: searchTestOk === false }">{{ searchTestMsg }}</span>
-          </div>
+          <!-- 网关模式（#2701）：搜索由模型服务统一提供，本地供应商配置整体不生效，只留连通测试 -->
+          <template v-if="gatewayActive">
+            <div class="actions gateway-search-row">
+              <span class="muted-tag">网关模式下联网搜索由模型服务统一提供，本地供应商配置不生效</span>
+              <el-button :loading="gatewaySearchTesting" @click="doGatewaySearchTest">测试</el-button>
+              <span v-if="gatewaySearchMsg" class="test-msg" :class="{ ok: gatewaySearchOk, bad: gatewaySearchOk === false }">{{ gatewaySearchMsg }}</span>
+            </div>
+          </template>
+          <template v-else>
+            <p class="sub">
+              为 <code>web_search</code> 工具配置搜索引擎 + API Key，使智能体能联网查询最新政策/新闻/价格。
+              Key 保存在服务端（不入库、不上传 git）。支持 Serper / 博查 / Bing / Tavily / 火山引擎。
+            </p>
+            <div class="field">
+              <label>搜索引擎</label>
+              <el-select v-model="searchProvider" class="w-full">
+                <el-option v-for="p in SEARCH_PROVIDERS" :key="p.id" :label="p.name" :value="p.id" />
+              </el-select>
+            </div>
+            <div v-if="searchProvider === 'volcengine'" class="field">
+              <label>接入点 <span class="muted-tag">（该引擎在方舟侧的接入点名，需已开通联网搜索）</span></label>
+              <el-input v-model="searchModel" placeholder="接入点名" />
+              <span class="muted-tag">火山引擎需方舟 <code>ark-</code> 前缀 API Key（控制台 → API Key 管理创建）。</span>
+            </div>
+            <div class="field">
+              <label>API Key <span v-if="searchSaved" class="muted-tag">（留空则沿用已保存的）</span></label>
+              <el-input v-model="searchApiKey" type="password" show-password placeholder="搜索 API Key" />
+            </div>
+            <div class="actions">
+              <el-button :loading="searchTesting" @click="doTestSearch">测试连接</el-button>
+              <el-button type="primary" class="save-btn" :loading="savingSearch" @click="doSaveSearch">保存到服务端</el-button>
+              <el-button v-if="searchCfg?.has_key" text class="del-btn" @click="doClearSearch">清除配置</el-button>
+              <span v-if="searchTestMsg" class="test-msg" :class="{ ok: searchTestOk, bad: searchTestOk === false }">{{ searchTestMsg }}</span>
+            </div>
+          </template>
         </section>
 
         <!-- 出网访问黑名单 -->

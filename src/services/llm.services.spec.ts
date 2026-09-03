@@ -1,6 +1,8 @@
-// 模型服务客户端（主仓 Epic #2661 · #2668）：前端「选服务」面唯一的取数 / 写入出口。
+// 模型服务客户端（主仓 Epic #2661 · #2668 · #2701）：前端「选服务」面唯一的取数 / 写入出口。
 // 守的不变量：
-// 1. 请求只打 /llm/services 与 /llm/test，且**任何请求体里都没有密钥字段**——前端不持密钥；
+// 1. 请求只打 /llm/services、/llm/test 与 /llm/services/credential、/llm/services/usage、
+//    /llm/services/search/test，且**除「保存凭据」这一次 PUT 外任何请求体里都没有密钥字段**——
+//    密钥明文只在粘贴保存那一次直传服务端，之后任何请求都不再携带；
 // 2. 写请求带我方管理令牌头（存本机浏览器）；
 // 3. 「大模型是否就绪」= 网关档位可用，或（未配网关的内部档）服务端任一供应商已有 key；
 //    交付档下供应商端点 404 → 诚实 false，不伪造就绪。
@@ -13,12 +15,16 @@ vi.mock('@/services/agent/agentClient', () => ({
 vi.mock('@/services/api', () => ({ timeoutSignal: () => undefined }))
 
 import {
+  deleteCredential,
   getCachedTiers,
   getServices,
+  getServicesUsage,
   isLlmConfigured,
+  putCredential,
   putServices,
   refreshLlmStatus,
   setAdminToken,
+  testSearchService,
   testService
 } from './llm'
 
@@ -105,6 +111,135 @@ describe('putServices', () => {
     const r = await putServices({ enabled: [] })
     expect(r.ok).toBe(false)
     expect(r.msg).toBe('fetch failed')
+  })
+})
+
+describe('putCredential / deleteCredential', () => {
+  it('保存凭据打 PUT /llm/services/credential，body 只含 url / key，带管理令牌头', async () => {
+    setAdminToken('tok-1')
+    fetchMock.mockResolvedValueOnce(json({ ...SERVICES, available: true }))
+    const r = await putCredential({ url: 'https://gw.example.internal/v1', key: 'sk-test-0000' })
+    const c = lastCall()
+    expect(c.url).toBe('/agent-api/agent/llm/services/credential')
+    expect(c.init.method).toBe('PUT')
+    expect(c.headers['x-admin-token']).toBe('tok-1')
+    expect(c.headers['x-user-id']).toBe('u1')
+    // body 只有两个字段：明文密钥只出现在这一次请求里
+    expect(Object.keys(c.body).sort()).toEqual(['key', 'url'])
+    expect(c.body).toEqual({ url: 'https://gw.example.internal/v1', key: 'sk-test-0000' })
+    expect(r.ok).toBe(true)
+    expect(r.services?.available).toBe(true)
+  })
+
+  it('保存成功用回传的 services 更新模块级缓存（档位与就绪位随之刷新）', async () => {
+    fetchMock.mockResolvedValueOnce(json({ ...SERVICES, tiers: SERVICES.tiers.map((t) => ({ ...t, enabled: true })) }))
+    await putCredential({ key: 'sk-test-0000' })
+    expect(getCachedTiers().every((t) => t.enabled)).toBe(true)
+    expect(isLlmConfigured()).toBe(true)
+    // 未传 url 时 body 里没有空串 url 字段
+    expect(Object.keys(lastCall().body)).toEqual(['key'])
+  })
+
+  it('服务端拒绝（密钥错误）时把 detail 原样带回，页面据此在表单下方红字提示', async () => {
+    fetchMock.mockResolvedValueOnce(json({ detail: '密钥校验失败：模型服务返回 401' }, 400))
+    const r = await putCredential({ key: 'sk-bad' })
+    expect(r).toEqual({ ok: false, msg: '密钥校验失败：模型服务返回 401' })
+  })
+
+  it('清除凭据走 DELETE 同一路径，成功回传最新 services 并刷新缓存', async () => {
+    setAdminToken('tok-1')
+    fetchMock.mockResolvedValueOnce(json({ ...SERVICES, available: false, credential: { configured: false, source: null, url: '', key_hint: '', updated_at: null } }))
+    const r = await deleteCredential()
+    const c = lastCall()
+    expect(c.url).toBe('/agent-api/agent/llm/services/credential')
+    expect(c.init.method).toBe('DELETE')
+    expect(c.headers['x-admin-token']).toBe('tok-1')
+    expect(c.init.body).toBeUndefined()
+    expect(r.ok).toBe(true)
+    expect(r.services?.credential?.configured).toBe(false)
+    expect(isLlmConfigured()).toBe(false)
+  })
+
+  it('清除被拒（安装预置的凭据不允许界面清除）时带回原因', async () => {
+    fetchMock.mockResolvedValueOnce(json({ detail: '安装预置的凭据不能在界面清除' }, 409))
+    const r = await deleteCredential()
+    expect(r).toEqual({ ok: false, msg: '安装预置的凭据不能在界面清除' })
+  })
+})
+
+describe('getServicesUsage', () => {
+  it('GET /llm/services/usage 解析额度，from/to 走查询参数', async () => {
+    fetchMock.mockResolvedValueOnce(json({
+      available: true,
+      usage: {
+        today: { day: '2026-09-03', requests: 12, total_tokens: 3456, usage_unknown: 1 },
+        quota: { requests_per_day: 100, tokens_per_day: null },
+        remaining: { requests: 88, tokens: null },
+        resets_at: '2026-09-04T00:00:00+08:00',
+        rows: [{ day: '2026-09-03', tier: 'dljy-standard', requests: 12, failed: 0, total_tokens: 3456 }]
+      }
+    }))
+    const r = await getServicesUsage('2026-09-01', '2026-09-03')
+    expect(lastCall().url).toBe('/agent-api/agent/llm/services/usage?from=2026-09-01&to=2026-09-03')
+    expect(r.available).toBe(true)
+    expect(r.usage?.today.requests).toBe(12)
+    expect(r.usage?.quota.tokens_per_day).toBeNull()
+    expect(r.usage?.rows[0].tier).toBe('dljy-standard')
+  })
+
+  it('available:false（服务端暂时给不出额度）时 reason 透传、usage 缺省', async () => {
+    fetchMock.mockResolvedValueOnce(json({ available: false, reason: '凭据未配置，无法统计用量' }))
+    const r = await getServicesUsage()
+    expect(lastCall().url).toBe('/agent-api/agent/llm/services/usage')
+    expect(r).toEqual({ available: false, reason: '凭据未配置，无法统计用量' })
+  })
+})
+
+describe('testSearchService', () => {
+  it('POST /llm/services/search/test，头同写请求，body 为空且不带任何供应商 / 密钥字段', async () => {
+    setAdminToken('tok-1')
+    fetchMock.mockResolvedValueOnce(json({ ok: true, msg: '联网搜索可用' }))
+    const r = await testSearchService()
+    const c = lastCall()
+    expect(c.url).toBe('/agent-api/agent/llm/services/search/test')
+    expect(c.init.method).toBe('POST')
+    expect(c.headers['content-type']).toBe('application/json')
+    expect(c.headers['x-admin-token']).toBe('tok-1')
+    expect(c.body).toEqual({})
+    expect(r).toEqual({ ok: true, msg: '联网搜索可用' })
+  })
+
+  it('失败时 detail / msg 原样带回（页面据此显示暂时不可用的原因）', async () => {
+    fetchMock.mockResolvedValueOnce(json({ ok: false, detail: '搜索服务超时' }, 504))
+    expect(await testSearchService()).toEqual({ ok: false, msg: '搜索服务超时' })
+  })
+})
+
+describe('密钥字段不出现在凭据保存之外的请求里（不变量 1，#2701 收窄）', () => {
+  it('遍历一次会话里的所有请求：除 PUT /services/credential 外，任何请求体都没有密钥字段', async () => {
+    fetchMock
+      .mockResolvedValueOnce(json(SERVICES))                    // getServices
+      .mockResolvedValueOnce(json(SERVICES))                    // putServices
+      .mockResolvedValueOnce(json({ ok: true, msg: '' }))       // testService
+      .mockResolvedValueOnce(json({ ok: true, msg: '' }))       // testSearchService
+      .mockResolvedValueOnce(json({ available: false }))        // getServicesUsage
+      .mockResolvedValueOnce(json({ ...SERVICES, available: true })) // putCredential（唯一允许带密钥的）
+    await getServices()
+    await putServices({ enabled: ['dljy-standard'] })
+    await testService('dljy-standard')
+    await testSearchService()
+    await getServicesUsage()
+    await putCredential({ url: 'https://gw.example.internal/v1', key: 'sk-test-0000' })
+
+    const offenders = fetchMock.mock.calls
+      .map(([url, init]) => ({ url: String(url), init: (init ?? {}) as RequestInit }))
+      .filter(({ url, init }) => {
+        if (init.method === 'PUT' && url.endsWith('/llm/services/credential')) return false
+        if (!init.body) return false
+        const keys = Object.keys(JSON.parse(String(init.body)))
+        return keys.some((k) => /key|secret|token|password/i.test(k))
+      })
+    expect(offenders).toEqual([])
   })
 })
 

@@ -1,24 +1,30 @@
 <script setup lang="ts">
-// 模型服务「选服务」面（主仓 Epic #2661 · #2668）。
+// 模型服务「选服务」面（主仓 Epic #2661 · #2668 · #2701）。
 //
-// 前端不再持有供应商 / 型号 / 密钥：档位清单来自服务端 GET /llm/services（网关模式下由
-// dljy-llm-gateway 的 /v1/models 换算而来，只剩中文标签与能力位），用户只做两件事——
-// 勾选启用哪些档位、把角色路由到已启用档位。密钥在安装时预置在服务端，页面上没有密钥输入。
+// 前端不持有供应商 / 型号，也不落密钥明文：档位清单来自服务端 GET /llm/services（网关模式下由
+// dljy-llm-gateway 的 /v1/models 换算而来，只剩中文标签与能力位），用户只做三件事——
+// 在「接入凭据」处粘贴供应方下发的密钥（明文只随 PUT 直传服务端，页面只回显尾号）、
+// 勾选启用哪些档位、把角色路由到已启用档位。密钥也可由我方在安装时预置（source==='env'）。
 //
 // 网关不可达 / 未配网关 → 服务端诚实返回 available:false + reason，这里原样显示
-// 「模型服务暂不可用」并禁用编辑，不伪造清单、不静默降级。
+// （未配置时引导用户去填凭据）并禁用编辑，不伪造清单、不静默降级。
 //
 // 本组件同时服务两个档：内部档嵌在「AI 模型设置」页的「模型接入」分段里；交付档作为
 // AI 工作室的「模型服务」tab 单独出现——它不含任何品牌信息，所以能进交付产物
 // （产物由 verify:customer-edition-build 扫，源码由 edition.brand-keywords.spec 扫）。
 import { computed, onMounted, ref } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { CheckCircle2, RefreshCw } from 'lucide-vue-next'
 import {
+  deleteCredential,
   getServices,
+  getServicesUsage,
+  putCredential,
   putServices,
+  testSearchService,
   testService,
   type LlmServices,
+  type LlmServicesUsage,
   type LlmServiceRole,
   type LlmServiceTier
 } from '@/services/llm'
@@ -32,6 +38,47 @@ const loadError = ref('')
 const saving = ref(false)
 const testing = ref<string>('')
 const testResult = ref<Record<string, { ok: boolean; msg: string }>>({})
+
+// ---- 接入凭据（#2701）----
+const credentialUrl = ref('')
+const credentialKey = ref('')
+const credentialSaving = ref(false)
+const credentialError = ref('')
+
+const credential = computed(() => services.value?.credential ?? null)
+const credentialConfigured = computed(() => credential.value?.configured === true)
+const credentialSourceLabel = computed(() => {
+  const s = credential.value?.source
+  if (s === 'ui') return '界面填写'
+  if (s === 'env') return '安装预置'
+  return ''
+})
+// 状态行：已配置 · 来源：界面填写 / 安装预置 · 尾号 ****abcd · 更新于 …
+const credentialStatusLine = computed(() => {
+  if (!credentialConfigured.value) return '未配置'
+  const parts = [`已配置 · 来源：${credentialSourceLabel.value}`]
+  if (credential.value?.key_hint) parts.push(`尾号 ****${credential.value.key_hint}`)
+  if (credential.value?.updated_at) parts.push(`更新于 ${formatLocalTime(credential.value.updated_at)}`)
+  return parts.join(' · ')
+})
+// 服务端说不可用时：已配置 → 原告警；未配置 → 先引导去填凭据（description 仍显示服务端原因）
+const unavailableTitle = computed(() => {
+  if (services.value && !credentialConfigured.value) return '请填写供应方提供的模型服务地址与密钥'
+  return '模型服务暂不可用'
+})
+
+// ---- 用量与额度（#2701）----
+const usage = ref<{ loading: boolean; data: LlmServicesUsage | null; hint: string }>({
+  loading: false,
+  data: null,
+  hint: ''
+})
+
+// ---- 联网搜索（#2701，网关统一提供）----
+const searchGranted = computed(() => services.value?.search?.granted === true)
+const searchAvailable = computed(() => services.value?.search?.available === true)
+const searchTesting = ref(false)
+const searchResult = ref<{ ok: boolean; msg: string } | null>(null)
 
 /** 能力位 → 中文（未知能力位原样显示，不吞） */
 const CAP_LABELS: Record<string, string> = {
@@ -80,12 +127,38 @@ function formatContext(n: number | null): string {
   return n >= 1000 ? `${Math.round(n / 1000)}k 上下文` : `${n} 上下文`
 }
 
+/** ISO 时间 → 本地时间展示；无效值原样返回（服务端脏数据不致显示 Invalid Date） */
+function formatLocalTime(iso: string | null): string {
+  if (!iso) return ''
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return iso
+  return d.toLocaleString()
+}
+
+async function refreshUsage() {
+  usage.value = { ...usage.value, loading: true, hint: '' }
+  try {
+    const r = await getServicesUsage()
+    if (r.available && r.usage) {
+      usage.value = { loading: false, data: r.usage, hint: '' }
+    } else {
+      // 服务端暂时给不出额度（如凭据未配置）：灰字说明，不弹错误
+      usage.value = { loading: false, data: null, hint: r.reason || '额度信息暂不可用' }
+    }
+  } catch (e) {
+    usage.value = { loading: false, data: null, hint: e instanceof Error ? `无法获取用量：${e.message}` : '无法获取用量' }
+  }
+}
+
 async function load() {
   loading.value = true
   loadError.value = ''
   try {
     services.value = await getServices()
+    // 地址输入框回服务端真实值（刷新即回真相，与档位开关失败回读同一纪律）
+    credentialUrl.value = services.value?.credential?.url ?? ''
     emit('loaded', services.value)
+    if (services.value?.available) void refreshUsage()
   } catch (e) {
     services.value = null
     loadError.value = e instanceof Error ? `无法连接智能体后端：${e.message}` : '无法连接智能体后端'
@@ -94,6 +167,72 @@ async function load() {
   }
 }
 onMounted(load)
+
+async function onSaveCredential() {
+  if (credentialSaving.value) return
+  if (!credentialKey.value) {
+    credentialError.value = '请粘贴供应方提供的密钥'
+    return
+  }
+  credentialSaving.value = true
+  credentialError.value = ''
+  try {
+    const url = credentialUrl.value.trim()
+    const r = await putCredential({ ...(url ? { url } : {}), key: credentialKey.value })
+    if (r.ok && r.services) {
+      // 成功用服务端回传的 services 刷新整页：档位卡随之出现，凭据状态行换回回显形态
+      services.value = r.services
+      credentialUrl.value = r.services.credential?.url ?? ''
+      credentialKey.value = ''
+      emit('loaded', r.services)
+      ElMessage.success('凭据已保存，模型服务已连接')
+      void refreshUsage()
+    } else {
+      // 服务端拒绝（密钥错 / 校验失败）：红字显示在表单下方，不清空已输入的地址
+      credentialError.value = r.msg || '保存失败'
+    }
+  } finally {
+    credentialSaving.value = false
+  }
+}
+
+async function onClearCredential() {
+  if (credentialSaving.value) return
+  try {
+    await ElMessageBox.confirm('清除后模型服务将回到未配置状态，需要重新填写密钥才能使用。', '清除接入凭据', {
+      type: 'warning',
+      confirmButtonText: '清除',
+      cancelButtonText: '取消'
+    })
+  } catch {
+    return // 用户取消
+  }
+  credentialSaving.value = true
+  credentialError.value = ''
+  try {
+    const r = await deleteCredential()
+    if (r.ok && r.services) {
+      services.value = r.services
+      credentialUrl.value = r.services.credential?.url ?? ''
+      emit('loaded', r.services)
+      ElMessage.success('已清除界面填写的凭据')
+    } else {
+      ElMessage.error(`清除失败：${r.msg ?? '未知错误'}`)
+    }
+  } finally {
+    credentialSaving.value = false
+  }
+}
+
+async function doSearchTest() {
+  if (searchTesting.value) return
+  searchTesting.value = true
+  try {
+    searchResult.value = await testSearchService()
+  } finally {
+    searchTesting.value = false
+  }
+}
 
 async function apply(body: { enabled?: string[]; roles?: Record<string, string> }, okMsg: string) {
   if (saving.value) return
@@ -159,8 +298,39 @@ async function doTest(tier: LlmServiceTier) {
     </div>
     <p class="sub">
       智能体使用的大模型由<strong>模型服务</strong>统一提供，按能力分为若干<strong>档位</strong>。
-      这里只需勾选启用哪些档位、并为各智能体角色指定档位；密钥已随安装预置在服务端，页面不涉及任何密钥。
+      这里只需勾选启用哪些档位、并为各智能体角色指定档位；密钥由供应方提供，在下方「接入凭据」处填写一次即可；页面不显示密钥明文。
     </p>
+
+    <!-- 接入凭据（始终显示）：明文只随 PUT 直传服务端，这里只有地址输入与尾号回显 -->
+    <section class="credential-card">
+      <div class="cred-head">
+        <span class="cred-title">接入凭据</span>
+        <span class="cred-status" :class="{ ok: credentialConfigured }">{{ credentialStatusLine }}</span>
+      </div>
+      <p class="cred-sub">由供应方统一提供网关地址与密钥；填一次即可，更换时在此粘贴新密钥。</p>
+      <div class="cred-form">
+        <div class="cred-field">
+          <label>模型服务地址</label>
+          <el-input v-model="credentialUrl" placeholder="供应方提供的模型服务地址" :disabled="credentialSaving" />
+        </div>
+        <div class="cred-field">
+          <label>模型服务密钥</label>
+          <el-input
+            v-model="credentialKey"
+            type="password"
+            show-password
+            placeholder="粘贴供应方提供的密钥"
+            :disabled="credentialSaving"
+            @keyup.enter="onSaveCredential"
+          />
+        </div>
+        <div class="cred-actions">
+          <el-button type="primary" :loading="credentialSaving" @click="onSaveCredential">验证并保存</el-button>
+          <el-button v-if="credential?.source === 'ui'" :disabled="credentialSaving" @click="onClearCredential">清除</el-button>
+          <span v-if="credentialError" class="cred-error">{{ credentialError }}</span>
+        </div>
+      </div>
+    </section>
 
     <el-alert
       v-if="!available"
@@ -168,7 +338,7 @@ async function doTest(tier: LlmServiceTier) {
       :closable="false"
       show-icon
       class="unavailable"
-      title="模型服务暂不可用"
+      :title="unavailableTitle"
       :description="unavailableReason"
     />
 
@@ -236,6 +406,61 @@ async function doTest(tier: LlmServiceTier) {
           </div>
         </div>
       </div>
+
+      <!-- 用量与额度（available 时显示；服务端给不出时灰字说明、不弹错误） -->
+      <section class="sub-card usage-card">
+        <div class="sub-card-title">用量与额度</div>
+        <template v-if="usage.data">
+          <div class="usage-grid">
+            <div class="usage-item">
+              <span class="usage-label">今日请求</span>
+              <span class="usage-val">已用 {{ usage.data.today.requests }} / 上限 {{ usage.data.quota.requests_per_day ?? '不限' }}</span>
+              <span class="usage-remain">剩余 {{ usage.data.remaining.requests ?? '不限' }}</span>
+            </div>
+            <div class="usage-item">
+              <span class="usage-label">今日 Token</span>
+              <span class="usage-val">已用 {{ usage.data.today.total_tokens }} / 上限 {{ usage.data.quota.tokens_per_day ?? '不限' }}</span>
+              <span class="usage-remain">剩余 {{ usage.data.remaining.tokens ?? '不限' }}</span>
+            </div>
+          </div>
+          <p class="usage-reset">额度于 {{ formatLocalTime(usage.data.resets_at) }} 重置</p>
+          <p v-if="usage.data.today.usage_unknown > 0" class="usage-hint">
+            另有 {{ usage.data.today.usage_unknown }} 次调用未计入用量。
+          </p>
+          <table v-if="usage.data.rows.length" class="usage-table">
+            <thead>
+              <tr><th>日期</th><th>档位</th><th>请求数</th><th>失败</th><th>Token</th></tr>
+            </thead>
+            <tbody>
+              <tr v-for="(row, i) in usage.data.rows" :key="`${row.day}-${row.tier}-${i}`">
+                <td>{{ row.day }}</td>
+                <td>{{ tierLabel(row.tier) }}</td>
+                <td>{{ row.requests }}</td>
+                <td>{{ row.failed }}</td>
+                <td>{{ row.total_tokens }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </template>
+        <p v-else class="usage-hint">{{ usage.loading ? '正在获取用量…' : usage.hint }}</p>
+      </section>
+
+      <!-- 联网搜索（available 时显示；开通状态由模型服务统一给出） -->
+      <section class="sub-card search-card">
+        <div class="sub-card-title">联网搜索</div>
+        <template v-if="searchGranted && searchAvailable">
+          <div class="search-row">
+            <span class="badge-ok"><CheckCircle2 :size="14" /> 已开通 · 由模型服务统一提供</span>
+            <el-button text size="small" :loading="searchTesting" @click="doSearchTest">测试</el-button>
+            <span v-if="searchResult" class="test-msg" :class="{ ok: searchResult.ok, bad: !searchResult.ok }">{{ searchResult.msg }}</span>
+          </div>
+        </template>
+        <template v-else-if="searchGranted">
+          <p class="search-note">暂时不可用</p>
+          <p class="usage-hint">{{ services.search?.reason || '稍后再试' }}</p>
+        </template>
+        <p v-else class="search-note bad">未开通——请联系供应方</p>
+      </section>
     </template>
   </section>
 </template>
@@ -289,6 +514,43 @@ async function doTest(tier: LlmServiceTier) {
 .route-name { min-width: 180px; font-size: var(--font-md); font-weight: 600; color: var(--text-body); display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .route-select { flex: 1; max-width: 320px; }
 .muted-tag { font-weight: 400; font-size: var(--font-sm); color: var(--el-text-color-secondary); }
+
+/* 接入凭据（#2701）：服务状态 + 地址/密钥表单；样式对齐 tier-card 的子卡观感 */
+.credential-card {
+  margin-bottom: 18px;
+  padding: 14px 16px;
+  border: 1px solid var(--line-soft);
+  border-radius: 12px;
+  background: var(--panel);
+}
+.cred-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.cred-title { font-size: var(--font-15); font-weight: 600; color: var(--text); }
+.cred-status { font-size: var(--font-sm); color: var(--el-text-color-secondary); }
+.cred-status.ok { color: var(--primary); }
+.cred-sub { margin: 4px 0 12px; font-size: var(--font-12-5); line-height: 1.6; color: var(--muted); }
+.cred-form { display: flex; gap: 14px; align-items: flex-end; flex-wrap: wrap; }
+.cred-field { display: flex; flex-direction: column; gap: 5px; flex: 1; min-width: 220px; }
+.cred-field label { font-size: var(--font-12-5); font-weight: 600; color: var(--text-body); }
+.cred-actions { display: flex; align-items: center; gap: 10px; }
+.cred-error { font-size: var(--font-sm); color: var(--danger); }
+
+/* 用量与额度 / 联网搜索（#2701）：与 roles-block 同级的收尾子卡 */
+.sub-card { margin-top: 22px; padding-top: 16px; border-top: 1px solid var(--line-faint); }
+.sub-card-title { font-size: var(--font-md); font-weight: 600; color: var(--text-body); margin-bottom: 10px; }
+.usage-grid { display: flex; gap: 32px; flex-wrap: wrap; }
+.usage-item { display: flex; flex-direction: column; gap: 4px; }
+.usage-label { font-size: var(--font-12-5); font-weight: 600; color: var(--text-body); }
+.usage-val { font-size: var(--font-15); color: var(--text); }
+.usage-remain { font-size: var(--font-sm); color: var(--el-text-color-secondary); }
+.usage-reset { margin: 10px 0 0; font-size: var(--font-sm); color: var(--muted); }
+.usage-hint { margin: 6px 0 0; font-size: var(--font-sm); color: var(--el-text-color-secondary); }
+.usage-table { margin-top: 12px; border-collapse: collapse; font-size: var(--font-sm); }
+.usage-table th, .usage-table td { padding: 5px 14px 5px 0; text-align: left; color: var(--text-body); border-bottom: 1px solid var(--line-faint); }
+.usage-table th { font-weight: 600; color: var(--el-text-color-secondary); }
+
+.search-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.search-note { margin: 0; font-size: var(--font-md); color: var(--text-body); }
+.search-note.bad { color: var(--el-text-color-secondary); }
 
 @media (max-width: 1180px) {
   .route-name { min-width: 120px; }
