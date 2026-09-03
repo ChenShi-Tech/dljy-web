@@ -68,6 +68,7 @@ export const ROLE_LABELS: Record<string, string> = {
   arbitrage_optimizer: '套利储能专员',
   settlement_auditor: '结算校核专员',
   bidding_game_analyst: '报价博弈分析师',
+  data_analyst: '数据分析师',
   compliance_officer: '合规规则专员',
   browser_operator: '浏览器操作员'
 }

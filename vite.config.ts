@@ -18,8 +18,9 @@ export default defineConfig(({ mode }) => {
 
   // 客户交付档（主仓 Epic #2408 · #2410）：VITE_EDITION=customer 时，把模型配置页重定向
   // 到占位组件。**必须在模块解析层做，不能只靠 v-if 或编译期常量分支**——rollup 对动态
-  // import 的 chunk 生成是保守的：即使引用它的分支被消除，chunk 照样产出，于是
-  // llmProviders.ts 里那份供应商清单仍躺在交付出去的 JS 里（实测过，两版产物一模一样）。
+  // import 的 chunk 生成是保守的：即使引用它的分支被消除，chunk 照样产出，于是内部档
+  // 专属的配置页仍躺在交付出去的 JS 里（#2410 实测过，两版产物一模一样；当时泄露的是
+  // 前端那份供应商清单，#2668 起前端已无该清单，但内部档配置页仍不该进交付产物）。
   const isCustomerEdition = env.VITE_EDITION === 'customer'
   // 两个后端面必须是两个独立端点：/agent-api 会被 rewrite 成 /api，
   // 若与 4174 面共用同一 upstream 会路径撞车。
