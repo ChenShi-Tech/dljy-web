@@ -7,7 +7,7 @@
 // ①草稿与策略 → ②风控与审批 → ③提交与回执 → ④出清跟踪
 import { computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessageBox } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { AlarmClock, ArrowRight, Bot, CheckCircle2, FileSearch, FlaskConical, History, LineChart, Loader2, PlugZap, ShieldCheck, Sparkles, Stamp, XCircle } from 'lucide-vue-next'
 import AgentChatPanel from '../components/agent/AgentChatPanel.vue'
 import AgentHistorySidebar from '../components/agent/AgentHistorySidebar.vue'
@@ -839,8 +839,6 @@ async function refresh(selectId?: string) {
   } catch (error) {
     errorMsg.value = error instanceof Error ? error.message : String(error)
   }
-  // 目标日变化时跟随新窗口（用户手选过区间则尊重手选，不覆盖）
-  resetHistoryWindowIfUntouched()
   void loadHistoryList()
 }
 
@@ -860,26 +858,6 @@ const HISTORY_FORWARD_DAYS = 7
 const HISTORY_PAGE_LIMIT = 500
 const historyTotal = ref(0)
 
-// 查询区间（可手选，2026-09-03 验收反馈）：默认跟随目标日窗口（前 60/后 7 天），
-// 用户手改后以手选区间为准（不再随目标日变化），列表与导出共用同一区间。
-const historyWindowTouched = ref(false)
-function defaultHistoryWindow(): { from: string; to: string } {
-  const anchor = new Date(`${targetDate.value}T00:00:00+08:00`).getTime()
-  return {
-    from: fmtDate(new Date(anchor - HISTORY_WINDOW_DAYS * 86400000)),
-    to: fmtDate(new Date(anchor + HISTORY_FORWARD_DAYS * 86400000))
-  }
-}
-const defaultHistoryWin = defaultHistoryWindow()
-const historyFrom = ref(defaultHistoryWin.from)
-const historyTo = ref(defaultHistoryWin.to)
-function resetHistoryWindowIfUntouched() {
-  if (historyWindowTouched.value) return
-  const win = defaultHistoryWindow()
-  historyFrom.value = win.from
-  historyTo.value = win.to
-}
-
 // 世代守卫（与 refresh 同构）：切目标日或模式筛选会并发多次 loadHistoryList，
 // 旧请求晚归会覆盖 rows/counts/total，造成表头是当前日期/模式、表体来自上一个时间窗。
 let historyGeneration = 0
@@ -888,11 +866,10 @@ async function loadHistoryList() {
   const generation = ++historyGeneration
   historyLoading.value = true
   try {
-    // 起止倒置时静默交换（用户少一次纠错点击），不改动输入框本身
-    const [effFrom, effTo] = [historyFrom.value, historyTo.value].sort()
+    const anchor = new Date(`${targetDate.value}T00:00:00+08:00`).getTime()
     const page = await listDeclarationsPage({
-      dateFrom: effFrom,
-      dateTo: effTo,
+      dateFrom: fmtDate(new Date(anchor - HISTORY_WINDOW_DAYS * 86400000)),
+      dateTo: fmtDate(new Date(anchor + HISTORY_FORWARD_DAYS * 86400000)),
       mode: historyModeFilter.value || undefined,
       limit: HISTORY_PAGE_LIMIT
     })
@@ -914,41 +891,55 @@ async function loadHistoryList() {
 const historyTruncated = computed(() => historyTotal.value > historyRows.value.length)
 
 // 导出当日申报明细（清单 D2 + 验收反馈二轮：对齐参考系统出清结算单的单日期长表格式）
-// 范围 = 顶部目标日那一天；行 = 96 时点 × 该日每张申报单；列 = 目标日/时点/申报单/模式/状态/电量。
-// 与列表同源同筛选（historyRows 已按区间查出，此处再按目标日精确取当日单）。
+// 导出日期独立可选（默认跟随目标日），按所选日期精确取当天申报单，不受列表窗口限制；
+// 行 = 96 时点 × 当天每张申报单，列 = 目标日/时点/申报单/模式/状态/申报电量(MWh)。
 const curvePointLabel = (i: number) => {
   const h = Math.floor((i + 1) / 4)
   const m = ((i + 1) % 4) * 15
   return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
 }
-const hasCurrentDayRows = computed(() => historyRows.value.some((r) => r.targetDate === targetDate.value))
+const exportDate = ref(targetDate.value)
+watch(targetDate, (d) => { exportDate.value = d })
+const exportBusy = ref(false)
 function exportHistoryCsv() {
-  const dayRows = historyRows.value.filter((r) => r.targetDate === targetDate.value)
-  if (!dayRows.length) return
-  const escape = (v: unknown) => {
-    const s = String(v ?? '').replaceAll('"', '""')
-    return /[",\n]/.test(s) ? `"${s}"` : s
-  }
-  const header = '目标日,时点,申报单,模式,状态,申报电量(MWh)'
-  const body: string[] = []
-  for (const row of dayRows) {
-    const base = [targetDate.value, row.id, DECLARATION_MODE_LABEL[declarationModeOf(row)], STATUS_LABEL[row.status]].map(escape)
-    for (let i = 0; i < 96; i++) {
-      const mwh = Math.round((row.energyCurveMwh96[i] ?? 0) * 10000) / 10000
-      body.push([base[0], curvePointLabel(i), base[1], base[2], base[3], mwh].join(','))
+  if (exportBusy.value || !exportDate.value) return
+  exportBusy.value = true
+  void (async () => {
+    try {
+      const dayRows = await listDeclarations({ date: exportDate.value })
+      if (!dayRows.length) {
+        ElMessage.warning(`${exportDate.value} 当天没有申报单`)
+        return
+      }
+      const escape = (v: unknown) => {
+        const s = String(v ?? '').replaceAll('"', '""')
+        return /[",\n]/.test(s) ? `"${s}"` : s
+      }
+      const header = '目标日,时点,申报单,模式,状态,申报电量(MWh)'
+      const body: string[] = []
+      for (const row of dayRows) {
+        const base = [exportDate.value, row.id, DECLARATION_MODE_LABEL[declarationModeOf(row)], STATUS_LABEL[row.status]].map(escape)
+        for (let i = 0; i < 96; i++) {
+          const mwh = Math.round((row.energyCurveMwh96[i] ?? 0) * 10000) / 10000
+          body.push([base[0], curvePointLabel(i), base[1], base[2], base[3], mwh].join(','))
+        }
+      }
+      const csv = `\uFEFF${header}\n${body.join('\n')}\n`
+      const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8;' }))
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `申报单明细-${exportDate.value}.csv`
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch (e) {
+      ElMessage.error(e instanceof Error ? e.message : '导出失败')
+    } finally {
+      exportBusy.value = false
     }
-  }
-  const csv = `\uFEFF${header}\n${body.join('\n')}\n`
-  const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8;' }))
-  const a = document.createElement('a')
-  a.href = url
-  a.download = `申报单明细-${targetDate.value}.csv`
-  a.click()
-  URL.revokeObjectURL(url)
+  })()
 }
 
-// 区间/模式任一变化即重查（世代守卫兜底并发时序）
-watch([historyFrom, historyTo, historyModeFilter], () => { void loadHistoryList() })
+watch(historyModeFilter, () => { void loadHistoryList() })
 
 // 复制历史曲线（declaration-workflow §2 快捷操作）：把时间窗内历史申报单的 96 点曲线
 // 带入当前草稿编辑器为底稿。只落到 hourlyMw 并置 curveDirty，仍需「保存曲线」→ 重新
@@ -1640,19 +1631,19 @@ onRegionChange(() => {
         <!-- 历史申报单 tab：按目标日范围查询（此前只按精确目标日查，默认取明天 → 历史单全不可见） -->
         <template v-else>
           <p class="muted history-scope">
-            <span>查询区间</span>
-            <input v-model="historyFrom" type="date" class="decl-select" title="起始日（含）。默认跟随目标日窗口，可手选任意区间" @input="historyWindowTouched = true" />
-            <span>~</span>
-            <input v-model="historyTo" type="date" class="decl-select" title="结束日（含）" @input="historyWindowTouched = true" />
-            <span>· 真实申报 {{ historyCounts.LIVE }} / 历史模拟 {{ historyCounts.REHEARSAL }}</span>
+            <span>
+          目标日 {{ targetDate }} 前 {{ HISTORY_WINDOW_DAYS }} 天 / 后 {{ HISTORY_FORWARD_DAYS }} 天内 ·
+          真实申报 {{ historyCounts.LIVE }} / 历史模拟 {{ historyCounts.REHEARSAL }}
+            </span>
             <select v-model="historyModeFilter" class="decl-select" style="margin-left: auto">
           <option value="">全部模式</option>
           <option value="LIVE">仅真实申报</option>
               <option value="REHEARSAL">仅历史模拟</option>
             </select>
-            <!-- 导出当日申报明细（单日期长表，格式对齐参考系统出清结算单）：日期跟随顶部目标日 -->
-            <button class="mini" style="margin-left: 6px" :disabled="!hasCurrentDayRows" @click="exportHistoryCsv">
-              导出当日明细（{{ targetDate }}）
+            <!-- 导出当日明细：日期独立可选（默认跟随目标日），单日期 96 点长表 -->
+            <input v-model="exportDate" type="date" class="decl-select" style="margin-left: 6px" title="导出哪一天的 96 点明细" />
+            <button class="mini" style="margin-left: 6px" :disabled="exportBusy || !exportDate" @click="exportHistoryCsv">
+              导出当日明细（{{ exportDate }}）
             </button>
           </p>
           <p v-if="historyLoading" class="muted">加载中…</p>
