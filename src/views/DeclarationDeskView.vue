@@ -913,24 +913,36 @@ async function loadHistoryList() {
 
 const historyTruncated = computed(() => historyTotal.value > historyRows.value.length)
 
-// 导出当前区间+筛选结果（清单 D2）：与列表同源同筛选；500 条截断时导出含已加载行，
+// 导出当前区间+筛选结果（清单 D2 + 验收反馈）：汇总列之外附每张单的 96 点申报
+// 电量曲线（MWh/15min，列头=时点），与列表同源同筛选；500 条截断时导出含已加载行，
 // 提示文案在截断提示里注明。UTF-8 BOM 保 Excel 中文不乱码（DynamicTable 同惯例）。
+const CURVE_TIME_LABELS = Array.from({ length: 96 }, (_, i) => {
+  const h = Math.floor((i + 1) / 4)
+  const m = ((i + 1) % 4) * 15
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}(MWh)`
+})
 function exportHistoryCsv() {
   if (!historyRows.value.length) return
   const escape = (v: unknown) => {
     const s = String(v ?? '').replaceAll('"', '""')
     return /[",\n]/.test(s) ? `"${s}"` : s
   }
-  const header = '申报单,目标日,模式,状态,总量(MWh),创建人'
+  const header = ['申报单', '目标日', '模式', '状态', '总量(MWh)', '创建人', ...CURVE_TIME_LABELS].join(',')
   const body = historyRows.value
-    .map((row) => [
-      row.id,
-      row.targetDate,
-      DECLARATION_MODE_LABEL[declarationModeOf(row)],
-      STATUS_LABEL[row.status],
-      Math.round(row.energyCurveMwh96.reduce((s, v) => s + v, 0) * 10) / 10,
-      row.createdBy
-    ].map(escape).join(','))
+    .map((row) => {
+      const base = [
+        row.id,
+        row.targetDate,
+        DECLARATION_MODE_LABEL[declarationModeOf(row)],
+        STATUS_LABEL[row.status],
+        Math.round(row.energyCurveMwh96.reduce((s, v) => s + v, 0) * 10) / 10,
+        row.createdBy
+      ].map(escape)
+      const curve = Array.from({ length: 96 }, (_, i) =>
+        Math.round((row.energyCurveMwh96[i] ?? 0) * 10000) / 10000
+      )
+      return [...base, ...curve].join(',')
+    })
     .join('\n')
   const csv = `\uFEFF${header}\n${body}\n`
   const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8;' }))
