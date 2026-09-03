@@ -162,10 +162,14 @@ const fillView = computed<TileView>(() => {
   return { value: pctText(c.fillPct), unit: '%', tone: 'default', sub: `已提交 ${c.instancesSubmitted}/${c.instancesTotal}`, info: FILL_INFO }
 })
 
-// 两张完成度卡仅在实例端点可用（有真实分母）时渲染：端点缺席期间不占指标区
-// 黄金位置出死数（0%/— 常驻属视觉噪音，且月周期指标与日周期指标混排易误读）。
-// 引擎接入后自动出现，无需改代码。
-const showCompletionTiles = computed(() => completionLoaded.value && completion.value?.feedAvailable === true)
+// 两张完成度卡仅在「实例端点可用且引擎已生成应填实例」时渲染：
+// - 端点缺席：没有产出数据源，0% 是噪音；
+// - 端点在但 0 实例：没有任何"该填的"义务被生成，拿可回测天数当分母算出 0%
+//   属于无义务假分母（比假数字更隐蔽的误导），同样不渲染。
+// 引擎生成首批实例后两卡自动出现，无需改代码。
+const showCompletionTiles = computed(
+  () => completionLoaded.value && completion.value?.feedAvailable === true && completion.value.instancesTotal > 0
+)
 
 function render() {
   const r = props.result
