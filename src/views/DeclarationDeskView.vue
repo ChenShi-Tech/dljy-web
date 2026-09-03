@@ -1631,17 +1631,19 @@ onRegionChange(() => {
         <!-- 历史申报单 tab：按目标日范围查询（此前只按精确目标日查，默认取明天 → 历史单全不可见） -->
         <template v-else>
           <p class="muted history-scope">
-            <span :title="`目标日 ${targetDate} 前${HISTORY_WINDOW_DAYS}天/后${HISTORY_FORWARD_DAYS}天窗口 · 真实申报 ${historyCounts.LIVE} 张 / 历史模拟 ${historyCounts.REHEARSAL} 张`">前{{ HISTORY_WINDOW_DAYS }}/后{{ HISTORY_FORWARD_DAYS }}天·真{{ historyCounts.LIVE }}/模{{ historyCounts.REHEARSAL }}</span>
-            <select v-model="historyModeFilter" class="decl-select" style="margin-left: auto">
+            <span :title="`目标日 ${targetDate} 前后各推的窗口 · 真实申报 ${historyCounts.LIVE} 张 / 历史模拟 ${historyCounts.REHEARSAL} 张`">距目标日前{{ HISTORY_WINDOW_DAYS }}天/后{{ HISTORY_FORWARD_DAYS }}天，真实{{ historyCounts.LIVE }}/模拟{{ historyCounts.REHEARSAL }}</span>
+            <span class="history-ops">
+              <select v-model="historyModeFilter" class="decl-select">
           <option value="">全部模式</option>
           <option value="LIVE">仅真实申报</option>
               <option value="REHEARSAL">仅历史模拟</option>
-            </select>
-            <!-- 导出当日明细：日期独立可选（默认跟随目标日），单日期 96 点长表 -->
-            <input v-model="exportDate" type="date" class="decl-select" title="导出哪一天的 96 点明细" />
-            <button class="mini" :disabled="exportBusy || !exportDate" :title="`导出 ${exportDate} 当天的 96 点申报明细`" @click="exportHistoryCsv">
-              导出 {{ exportDate.slice(5) }}
-            </button>
+              </select>
+              <!-- 导出当日明细：日期独立可选（默认跟随目标日），单日期 96 点长表 -->
+              <input v-model="exportDate" type="date" class="decl-select" title="导出哪一天的 96 点明细" />
+              <button class="mini" :disabled="exportBusy || !exportDate" :title="`导出 ${exportDate} 当天的 96 点申报明细`" @click="exportHistoryCsv">
+                导出 {{ exportDate.slice(5) }}
+              </button>
+            </span>
           </p>
           <p v-if="historyLoading" class="muted">加载中…</p>
           <p v-else-if="!historyRows.length" class="muted">该时间窗内没有申报单。调整目标日或放宽筛选后重试。</p>
@@ -1930,8 +1932,10 @@ onRegionChange(() => {
   min-width: 16px; padding: 0 4px; font-size: var(--font-xs); line-height: 16px; text-align: center;
   border-radius: 8px; background: var(--el-fill-color); color: var(--el-text-color-secondary);
 }
-.history-scope { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; }
-.history-scope > span { white-space: nowrap; }
+.history-scope { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: space-between; }
+.history-scope > span:first-child { white-space: nowrap; }
+/* 右侧操作组：模式下拉 + 导出日期 + 导出按钮，分列同容器排布 */
+.history-ops { display: inline-flex; align-items: center; gap: 5px; flex-wrap: wrap; justify-content: flex-end; }
 /* 终态单出路 */
 .rehearsal-banner {
   display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 0 0 8px;
