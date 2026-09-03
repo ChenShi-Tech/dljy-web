@@ -1631,7 +1631,7 @@ onRegionChange(() => {
         <!-- 历史申报单 tab：按目标日范围查询（此前只按精确目标日查，默认取明天 → 历史单全不可见） -->
         <template v-else>
           <p class="muted history-scope">
-            <span>前{{ HISTORY_WINDOW_DAYS }}/后{{ HISTORY_FORWARD_DAYS }}天·真实{{ historyCounts.LIVE }}/模拟{{ historyCounts.REHEARSAL }}</span>
+            <span :title="`目标日 ${targetDate} 前${HISTORY_WINDOW_DAYS}天/后${HISTORY_FORWARD_DAYS}天窗口 · 真实申报 ${historyCounts.LIVE} 张 / 历史模拟 ${historyCounts.REHEARSAL} 张`">前{{ HISTORY_WINDOW_DAYS }}/后{{ HISTORY_FORWARD_DAYS }}天·真{{ historyCounts.LIVE }}/模{{ historyCounts.REHEARSAL }}</span>
             <select v-model="historyModeFilter" class="decl-select" style="margin-left: auto">
           <option value="">全部模式</option>
           <option value="LIVE">仅真实申报</option>
@@ -1930,7 +1930,8 @@ onRegionChange(() => {
   min-width: 16px; padding: 0 4px; font-size: var(--font-xs); line-height: 16px; text-align: center;
   border-radius: 8px; background: var(--el-fill-color); color: var(--el-text-color-secondary);
 }
-.history-scope { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.history-scope { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; }
+.history-scope > span { white-space: nowrap; }
 /* 终态单出路 */
 .rehearsal-banner {
   display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 0 0 8px;
