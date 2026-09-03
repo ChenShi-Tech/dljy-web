@@ -1631,10 +1631,7 @@ onRegionChange(() => {
         <!-- 历史申报单 tab：按目标日范围查询（此前只按精确目标日查，默认取明天 → 历史单全不可见） -->
         <template v-else>
           <p class="muted history-scope">
-            <span>
-          目标日 {{ targetDate }} 前 {{ HISTORY_WINDOW_DAYS }} 天 / 后 {{ HISTORY_FORWARD_DAYS }} 天内 ·
-          真实申报 {{ historyCounts.LIVE }} / 历史模拟 {{ historyCounts.REHEARSAL }}
-            </span>
+            <span>前{{ HISTORY_WINDOW_DAYS }}天 ~ 后{{ HISTORY_FORWARD_DAYS }}天 · 真实 {{ historyCounts.LIVE }} / 模拟 {{ historyCounts.REHEARSAL }}</span>
             <select v-model="historyModeFilter" class="decl-select" style="margin-left: auto">
           <option value="">全部模式</option>
           <option value="LIVE">仅真实申报</option>
@@ -1643,7 +1640,7 @@ onRegionChange(() => {
             <!-- 导出当日明细：日期独立可选（默认跟随目标日），单日期 96 点长表 -->
             <input v-model="exportDate" type="date" class="decl-select" style="margin-left: 6px" title="导出哪一天的 96 点明细" />
             <button class="mini" style="margin-left: 6px" :disabled="exportBusy || !exportDate" @click="exportHistoryCsv">
-              导出当日明细（{{ exportDate }}）
+              导出 {{ exportDate }}
             </button>
           </p>
           <p v-if="historyLoading" class="muted">加载中…</p>
