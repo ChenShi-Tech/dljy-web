@@ -13,8 +13,9 @@
     "check": "vue-tsc --noEmit",
     "test:unit": "vitest run --configLoader runner",
     "test:coverage": "vitest run --configLoader runner --coverage",
-    "lint": "node scripts/check-font-tokens.mjs && eslint .",
+    "lint": "node scripts/check-font-tokens.mjs && eslint . && node --test scripts/shared-fingerprint.test.mjs",
     "lint:fix": "eslint . --fix",
+    "test:scripts": "node --test scripts/shared-fingerprint.test.mjs",
     "build:customer": "vite build --mode customer",
     "verify:customer-edition-build": "node scripts/verify-customer-edition-build.mjs"
   },

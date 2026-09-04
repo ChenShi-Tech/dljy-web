@@ -1,7 +1,8 @@
 # 客户交付版前端（`VITE_EDITION=customer`）
 
-> 配套实现：`src/services/edition.ts` · `vite.config.ts`（`dljy-customer-edition` 插件）·
+> 配套实现：`src/services/edition.ts` · `vite.config.ts`（`dljy-customer-edition` / `dljy-build-info` 插件）·
 > `src/views/edition/EditionRemovedView.vue` · `scripts/verify-customer-edition-build.mjs` · `.env.customer`
+> `scripts/shared-fingerprint.mjs`（#2454）
 >
 > 上游：主仓 Epic #2408 · 子任务 #2410（后端侧见主仓 #2409）
 
@@ -20,7 +21,7 @@ npm run verify:customer-edition-build   # 扫产物，确认零泄露
 
 | 面 | 处置 |
 |---|---|
-| 「AI 模型设置」tab | 换成「模型服务」面（#2668）：只有档位启用 + 角色路由，零品牌信息；内部档的完整设置页（联网搜索密钥、管理令牌、采样 / 工作流参数）被替换成占位 |
+| 「AI 模型设置」tab | 换成「模型服务」面（#2668 · #2701）：**接入凭据**（填供应方下发的网关地址与密钥，明文只随保存直传服务端、页面只回显尾号）+ 档位启用与角色路由 + **用量与额度**（今日已用 / 上限 / 剩余 / 重置时间，上限不限显示「不限」）+ **联网搜索**（开通状态与连通测试），零品牌信息；内部档的完整设置页（联网搜索密钥、管理令牌、采样 / 工作流参数）被替换成占位，且网关模式下其搜索卡只剩提示与测试——本地供应商配置不生效 |
 | `/model`（`/模型`）斜杠命令 | 保留（#2668 起只列模型服务档位，不再打印供应商 / 型号；#2410 时因打印清单而摘掉） |
 | 子智能体卡片的模型路由标签 | 不显示 |
 | 子智能体编辑表单的模型选择 | 不显示 |
@@ -65,3 +66,44 @@ npm run verify:customer-edition-build   # 扫产物，确认零泄露
 后端（主仓 #2409）在交付档下把 `/llm/*` 对无 admin token 者返回 404。所以前端摘掉这些入口不只是「藏起来」——那些接口在交付档本来也调不通，留着只会是空白页面和空下拉。
 
 两侧是同一件事的两半，缺一不可：只做前端，客户能直接打接口；只做后端，客户能从 JS 里读到供应商清单。
+
+## 构建信息文件 build-info.json（dljy#2454，两仓版本绑定的 web 半边）
+
+主仓出包（`scripts/release/build-release.mjs --web-dist <dljy-web 的 dist>`）把本仓产物装进交付包，但没有任何机制保证这份产物与主仓的 `shared/` 契约面**同代**——本仓 `shared/` 是主仓经 `sync:web` 单向镜像的只读副本，产物一旦是在上一次 sync 之前构建的，装包后就是「新后端 + 旧契约前端」。
+
+机制：每次构建（**所有 mode**，不只交付档）收尾时，`vite.config.ts` 的 `dljy-build-info` 插件把 `build-info.json` 写进产物根目录；主仓出包时用**同一套算法**（`scripts/shared-fingerprint.mjs`，主仓逐字复制一份）对自己的 `shared/` 白名单算指纹比对，`algorithm` 串或 `hash` 不等即拒绝出包。
+
+```json
+{
+  "repo": "dljy-web",
+  "edition": "customer",
+  "viteMode": "customer",
+  "gitSha": "<git rev-parse HEAD，git 不可用时 null>",
+  "gitDirty": false,
+  "builtAt": "<UTC ISO>",
+  "shared": { "hash": "<64 位小写 hex>", "fileCount": 37, "algorithm": "sha256-path0content-v1" }
+}
+```
+
+| 字段 | 含义 |
+|---|---|
+| `edition` | `customer`（`--mode customer`）/ `internal`（其余构建） |
+| `viteMode` | 构建时的 vite mode 原值 |
+| `gitSha` / `gitDirty` | 构建时的源码状态，出包侧排查用；git 不可用时 `sha=null`、dirty 保守记 `true` |
+| `shared.hash` | 仓库 `shared/` 全部文件的内容指纹（排除 `README*` 与点文件） |
+| `shared.fileCount` | 参与指纹的文件数（当前 37），比对前的第一道快速判据 |
+| `shared.algorithm` | 算法版本串，主仓比对前先核对它，不等直接拒绝并提示两侧算法代差 |
+
+**指纹算法口径**（`scripts/shared-fingerprint.mjs` 头注释是权威）：relPaths POSIX 分隔符、UTF-16 码元序升序；每文件 `sha256(relPath + "\0" + 原始字节)`；总指纹 = `sha256(各文件 hex 以 "\n" 连接)`。内容**不做换行归一**（sync 是字节级拷贝）。
+
+**改算法必须两仓同改**：本文件被主仓逐字复制，动任何一条规则（分隔符、排序、哈希输入、拼接方式）都要同时改主仓那份并升级 `SHARED_FINGERPRINT_ALGORITHM` 串——只改一边，主仓比对会全部拒绝出包（`algorithm` 串兜底不至于错配放行）。
+
+本仓侧的两道配套门禁：
+
+| 门禁 | 守什么 |
+|---|---|
+| `npm run test:scripts`（也接在 `lint` 尾部） | 指纹算法本身的契约（排序、路径参与哈希、字节级敏感、单文件退化口径），期望值按规格独立手算写死 |
+| `verify:customer-edition-build` 后半段 | 交付档产物携带的 `shared.hash` / `fileCount` / `algorithm` 与当下仓库 `shared/` 现算一致——shared/ 在构建之后被动过（sync 回流等）即红，重新构建即可 |
+
+`build-info.json` 是给出包脚本读的，**不给浏览器**：主仓拷产物进镜像前会删掉它，本仓 nginx 不用处理。
+

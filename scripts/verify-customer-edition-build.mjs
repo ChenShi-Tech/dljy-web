@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 // ============================================================================
-// verify:customer-edition-build —— 交付版产物不得泄露大模型信息
+// verify:customer-edition-build —— 交付版产物不得泄露大模型信息 + shared 指纹同代
 // ----------------------------------------------------------------------------
-// 主仓 Epic #2408 · 子任务 #2410；判据来源改造见 Epic #2661 · #2668。
+// 主仓 Epic #2408 · 子任务 #2410；判据来源改造见 Epic #2661 · #2668；
+// shared 指纹门禁见 dljy#2448 · #2454（本脚本后半段）。
 //
 //   node scripts/verify-customer-edition-build.mjs [--dist <目录>]
 //
@@ -28,6 +29,7 @@ import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { BRAND_KEYWORDS } from './llm-brand-keywords.mjs'
+import { listSharedFiles, sharedFingerprint, SHARED_FINGERPRINT_ALGORITHM } from './shared-fingerprint.mjs'
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 
@@ -111,4 +113,38 @@ if (hits.length) {
   process.exit(1)
 }
 
-console.log(`✓ verify:customer-edition-build 通过（${keywords.length} 个关键词零命中）`)
+// ============================================================================
+// build-info.json 门禁（dljy#2454）：交付档产物必须携带 shared/ 指纹，且与当下
+// 仓库里的 shared/ 同代。品牌词门禁守「产物不泄密」，这条守「产物与契约面对齐」：
+// build:customer 与本门禁之间若有人动了 shared/（sync 回流、手工改动），旧产物的
+// shared.hash 就对不上现算值——红，重新构建即可。主仓出包时还会用同一算法再比一次。
+// ============================================================================
+const buildInfoPath = path.join(distDir, 'build-info.json')
+if (!existsSync(buildInfoPath)) {
+  console.error(`✗ ${path.relative(repoRoot, buildInfoPath)} 不存在——vite.config.ts 的 dljy-build-info 插件没生效？拒绝报绿`)
+  process.exit(1)
+}
+const info = JSON.parse(readFileSync(buildInfoPath, 'utf8'))
+const sharedFiles = listSharedFiles(repoRoot)
+const expectedShared = sharedFingerprint(repoRoot, sharedFiles)
+const buildInfoProblems = []
+if (info.edition !== 'customer') {
+  buildInfoProblems.push(`edition 应为 "customer"，实际 ${JSON.stringify(info.edition ?? null)}`)
+}
+if (info.shared?.algorithm !== SHARED_FINGERPRINT_ALGORITHM) {
+  buildInfoProblems.push(`shared.algorithm 应为 "${SHARED_FINGERPRINT_ALGORITHM}"，实际 ${JSON.stringify(info.shared?.algorithm ?? null)}——算法升级了两仓没同改？`)
+}
+if (info.shared?.fileCount !== sharedFiles.length) {
+  buildInfoProblems.push(`shared.fileCount 应为 ${sharedFiles.length}（当前仓库 shared/ 实数），实际 ${JSON.stringify(info.shared?.fileCount ?? null)}`)
+}
+if (info.shared?.hash !== expectedShared.hash) {
+  buildInfoProblems.push(`shared.hash 与当前仓库 shared/ 现算不一致（产物 ${info.shared?.hash ?? null} ≠ 现算 ${expectedShared.hash}）——产物是 shared/ 变动前构建的，重新 build:customer`)
+}
+if (buildInfoProblems.length) {
+  console.error(`✗ ${path.relative(repoRoot, buildInfoPath)} 门禁不过：`)
+  for (const p of buildInfoProblems) console.error(`    - ${p}`)
+  process.exit(1)
+}
+console.log(`  build-info.json：edition=customer · git=${(info.gitSha ?? 'null').slice(0, 12)} · shared ${info.shared.fileCount} 文件 ${info.shared.hash.slice(0, 12)}… 与仓库 shared/ 同代`)
+
+console.log(`✓ verify:customer-edition-build 通过（${keywords.length} 个关键词零命中 + build-info 指纹一致）`)

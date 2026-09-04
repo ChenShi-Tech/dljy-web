@@ -1,5 +1,6 @@
 // 收益三层拆解面板组件测试（#2043 主路径：瀑布真数据 / 分时段 / 环比强制归因 / Top5 人填；
-// 入案例库接线：勾选即落库、空壳前置拦截、失败重试、端点缺席本地勾选）
+// 入案例库接线：勾选即落库、空壳前置拦截、失败重试、端点缺席本地勾选；
+// 案例回读水合：已登记行恢复案号+勾选态+锁行，防重复登记；「不落库」文案主语限定）
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { nextTick } from 'vue'
 
@@ -78,6 +79,9 @@ describe('PnlDecomposePanel', () => {
     expect(text).toContain('决策参考，非结算依据')
     // 中长期层的大白话口径说明（F3 升级：等计算方法拍板，数据在合同库里）
     expect(text).toContain('暂时算不了')
+    // F4：无模板单时「不落库」文案必须限定主语——手填文字的自动保存，与案例入库链路区分
+    expect(text).toContain('成因/经验不会自动保存，仅本机暂存')
+    expect(text).toContain('仍会立即登记入库')
   })
 
   it('环比超 20% → 强制归因提示；上期无数据 → 不强制', async () => {
@@ -132,6 +136,34 @@ describe('PnlDecomposePanel', () => {
     expect(wrapper.text()).toContain('AL-20260902-001')
     // 档案纪律：已入库行勾选框禁用（沉淀后不可撤回）
     expect((row.find('input[type="checkbox"]').element as HTMLInputElement).disabled).toBe(true)
+    // F1：入库后行内成因/经验一并锁死——页面不得与不可改写档案分叉
+    expect((inputs[0].element as HTMLInputElement).disabled).toBe(true)
+    expect((inputs[1].element as HTMLInputElement).disabled).toBe(true)
+  })
+
+  it('已登记案例回读水合：案号回显、勾选框回显且禁用、空经验栏回填、不产生新登记', async () => {
+    vi.mocked(fetchReviewRange)
+      .mockResolvedValueOnce({ days: [okDay('2026-08-01', 300, 250)], missingDays: [] })
+      .mockResolvedValueOnce({ days: [okDay('2026-07-01', 300, 310)], missingDays: [] })
+    vi.mocked(fetchCases).mockResolvedValue({
+      available: true,
+      cases: [{
+        id: '9', caseNo: 'AL-20260801-007', caseType: 'deviation',
+        title: '偏差Top5：2026-08-01 盈利 12,345 元', visibility: 'internal', lessons: '已入库的经验', createdAt: null
+      }]
+    })
+    const wrapper = await settle(mount(PnlDecomposePanel, { props: { spec, tolerancePct: 3, penaltyPrice: 100 } }))
+    const row = wrapper.find('.pdp-top-table tbody tr')
+    expect(wrapper.text()).toContain('AL-20260801-007') // 案号回显
+    const checkbox = row.find('input[type="checkbox"]').element as HTMLInputElement
+    expect(checkbox.checked).toBe(true)   // 已入库状态回显
+    expect(checkbox.disabled).toBe(true)
+    const inputs = row.findAll('.pdp-input')
+    expect((inputs[0].element as HTMLInputElement).disabled).toBe(true)
+    expect((inputs[1].element as HTMLInputElement).disabled).toBe(true)
+    expect((inputs[1].element as HTMLInputElement).value).toBe('已入库的经验') // 空栏回填案例经验
+    expect((inputs[0].element as HTMLInputElement).value).toBe('')            // 成因列表接口不返回，留空如实
+    expect(registerCase).not.toHaveBeenCalled()                               // 水合不产生新登记
   })
 
   it('人填内容自动存模板三草稿（payload.pnlTop5）并保留实例既有结构化键', async () => {
