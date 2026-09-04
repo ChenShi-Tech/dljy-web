@@ -72,6 +72,22 @@ export function shiftDate(date: string, days: number): string {
   return new Date(t).toISOString().slice(0, 10)
 }
 
+/**
+ * 报告库按归档日期区间过滤（清单 R4「全部报告」列表）：mtime → 北京日期
+ * （+08:00，与后端报告 sidecar 的日期命名口径一致），闭区间；边界空串表示不限。
+ * 坏掉的症状：UTC 晚 8 点后的报告被归到前一天，区间两端各差一天。
+ */
+export function filterReportsByRange<T extends { mtime: number }>(
+  reports: ReadonlyArray<T>,
+  start: string,
+  end: string
+): T[] {
+  return reports.filter((r) => {
+    const d = new Date(r.mtime * 1000 + 8 * 3_600_000).toISOString().slice(0, 10)
+    return (!start || d >= start) && (!end || d <= end)
+  })
+}
+
 /** 96 格热力条：over=实际高于申报（用多了）/ under=低于（用少了）/ flat=申报为 0 无法算比。 */
 export type HeatCell = {
   label: string

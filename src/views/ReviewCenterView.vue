@@ -26,6 +26,8 @@ import {
 } from '@/services/quant/quantClient'
 import { captureCoverage, clampToCoverage, isOutOfCoverage } from '@/services/market/captureCoverage'
 import { declarationModeOf, getDeclaration, type DeclarationOrder } from '@/services/declarations'
+import { filterReportsByRange } from '@/services/review/reviewDashboard'
+import { fetchTemplateInstanceFeed, invalidateTemplateInstanceCache } from '@/services/review/templateInstanceClient'
 import { EFFECTIVENESS_LABEL, getSettlementRuleSpec } from '../rules/settlement'
 import { currentRegion } from '@/services/region/regionContext'
 import { onRegionChange } from '../composables/useRegionReload'
@@ -168,8 +170,22 @@ const subjectDaySummary = computed(() =>
 // 待办行带上实例（#2037）：表单直连服务端草稿/提交；模板 chip 直开仍是纯预览。
 const templateDrawer = ref<{ templateId: string; instance?: TemplateInstanceSummary | null } | null>(null)
 
+// chip 直开也可提交（清单闭环）：引擎（#2037）已按周期生成实例时，chip 自动挂上该模板
+// 最早截止的可编辑实例（pending/draft），与待办行进入同一填报链；无实例才落纯预览。
+const instanceFeed = ref<Awaited<ReturnType<typeof fetchTemplateInstanceFeed>> | null>(null)
+async function loadInstanceFeed() {
+  instanceFeed.value = await fetchTemplateInstanceFeed()
+}
+function findOpenInstance(templateId: string): TemplateInstanceSummary | null {
+  const feed = instanceFeed.value
+  if (!feed?.available) return null
+  const editable = feed.instances
+    .filter((i) => i.templateId === templateId && (i.status === 'pending' || i.status === 'draft'))
+    .sort((a, b) => (a.dueAt ?? '9999-12-31').localeCompare(b.dueAt ?? '9999-12-31'))
+  return editable[0] ?? null
+}
 function openTemplate(t: TemplateCard) {
-  templateDrawer.value = { templateId: t.id }
+  templateDrawer.value = { templateId: t.id, instance: findOpenInstance(t.id) }
 }
 /** 三主体驾驶舱等按 id 直开模板渲染器。 */
 function openTemplateById(id: string) {
@@ -201,6 +217,7 @@ async function onInstanceSaved(status: 'draft' | 'submitted') {
   if (d?.instance) {
     d.instance = { ...d.instance, status }
   }
+  invalidateTemplateInstanceCache() // 实例状态已变：chip 直开的实例匹配下次取真数
   await refreshTodoFeed()
 }
 
@@ -264,8 +281,26 @@ async function loadReports() {
 
 function onReportDone() {
   // 智能体复盘流结束 → 刷新历史报告列表（done emit，无需轮询）
+  void onReportDoneChecked()
+}
+
+// 生成结束对拍报告库快照：本轮没有新增报告 = 运行空返回（实测根因：LLM 接入凭据失效时
+// 底座 200ms 空收尾，面板来不及看就被关）——如实提示并指向自助修复入口，不做无声闪退。
+let reportsMaxMtimeAtStart = 0
+watch(generating, (v) => {
+  if (v) reportsMaxMtimeAtStart = reports.value.reduce((m, r) => Math.max(m, r.mtime), 0)
+})
+async function onReportDoneChecked() {
   generating.value = false
-  loadReports()
+  await loadReports()
+  const produced = reports.value.some((r) => r.mtime > reportsMaxMtimeAtStart)
+  if (!produced) {
+    ElMessage.warning({
+      message: '本轮运行未产出新报告——智能体返回了空结果（常见原因：模型接入凭据失效或当日数据缺失）。'
+        + '可在「系统管理 → AI 工作室 · 模型服务」更新接入凭据后重试。',
+      duration: 3000
+    })
+  }
 }
 
 async function openReport(item: ReportItem) {
@@ -318,6 +353,18 @@ async function downloadReports(items: ReportItem[]) {
   }
   if (failed) ElMessage.warning(`${failed} 份报告下载失败，可从列表单份重试`)
 }
+
+// ── 全部报告弹层（清单 R4 列表管理，对齐参考系统「复盘报表」页的归档日期区间+列表）：
+// 右栏「全部 ›」此前是有 emit 无监听的死入口；弹层复用 ReportsRail（阅读/下载/批量全量继承），
+// 只新增按归档日期（北京日）区间过滤。区间空串=不限。
+const allReportsOpen = ref(false)
+const reportRangeStart = ref('')
+const reportRangeEnd = ref('')
+const filteredReports = computed(() =>
+  filterReportsByRange(reports.value, reportRangeStart.value, reportRangeEnd.value)
+)
+// maxReports 取全量（0 份时给 1 让空态照常渲染），弹层内不再出现「全部 ›」二级入口
+const allReportsMax = computed(() => Math.max(filteredReports.value.length, 1))
 
 // ── 头部徽标：只放状态，不放说明 ──
 const badges = computed<HeaderBadge[]>(() => {
@@ -418,6 +465,7 @@ onMounted(() => {
   void loadSettlementReview()
   loadReports()
   loadSettlements()
+  void loadInstanceFeed()
 })
 watch(reviewMonth, loadSettlements)
 // 地区切换：按新地区 SettlementRuleSpec 更新容差并重载；regionSwitching 守卫避免穿透到参数 watch 造成双重 load
@@ -438,6 +486,7 @@ onRegionChange(() => {
   void load()
   void loadSettlementReview()
   void loadReports()  // 报告 sidecar 带 region_id，后端按地区过滤
+  void loadInstanceFeed()  // 实例 feed 按地区缓存，切区后重取
   nextTick(() => { regionSwitching = false })
 })
 </script>
@@ -502,6 +551,7 @@ onRegionChange(() => {
           @open-report="openReport"
           @download-report="downloadReports([$event])"
           @download-reports="downloadReports"
+          @all-reports="allReportsOpen = true"
         />
       </aside>
     </div>
@@ -527,6 +577,33 @@ onRegionChange(() => {
 
     <ReportGenerateDialog v-model:open="generating" :date="date" @done="onReportDone" />
     <ReportReaderModal :report="readingReport" @close="readingReport = null" />
+
+    <!-- 全部报告（清单 R4 列表管理）：归档日期区间过滤 + 全量列表，阅读/下载/批量复用右栏同一套链路 -->
+    <el-dialog
+      v-model="allReportsOpen"
+      title="全部复盘报告"
+      width="min(680px, 94vw)"
+      top="6vh"
+      append-to-body
+      class="reports-all-dialog"
+    >
+      <div class="rep-filter">
+        <span>归档日期</span>
+        <input v-model="reportRangeStart" type="date" aria-label="归档开始日期" />
+        <span>~</span>
+        <input v-model="reportRangeEnd" type="date" aria-label="归档结束日期" />
+        <button v-if="reportRangeStart || reportRangeEnd" type="button" class="rep-clear" @click="reportRangeStart = ''; reportRangeEnd = ''">清除</button>
+        <span class="rep-count">共 {{ filteredReports.length }} 份</span>
+      </div>
+      <div class="rep-list">
+        <ReportsRail
+          :reports="filteredReports" :max-reports="allReportsMax" :downloading="downloadingReports"
+          @open-report="openReport"
+          @download-report="downloadReports([$event])"
+          @download-reports="downloadReports"
+        />
+      </div>
+    </el-dialog>
   </div>
 </template>
 
@@ -558,4 +635,11 @@ onRegionChange(() => {
   25%, 75% { box-shadow: 0 0 0 3px var(--el-color-primary-light-5); }
 }
 .todo-flash { animation: todo-flash-kf 0.8s ease-in-out 2; }
+
+/* 全部报告弹层：区间过滤行 + 可滚动列表（ReportsRail 复用，内部自带批量下载条） */
+.rep-filter { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: var(--font-12-5); color: var(--muted); padding-bottom: 10px; }
+.rep-filter input { padding: 2px 6px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 6px; font-size: var(--font-11-5); background: #fff; }
+.rep-clear { border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 6px; background: #fff; font: inherit; font-size: var(--font-11-5); padding: 2px 8px; cursor: pointer; }
+.rep-count { margin-left: auto; font-variant-numeric: tabular-nums; }
+.rep-list { max-height: 58vh; overflow-y: auto; }
 </style>
