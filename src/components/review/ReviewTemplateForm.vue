@@ -286,9 +286,9 @@ const hasAnyCurve = computed(() =>
           {{ instance.status === 'submitted' ? '待提权角色复核（ADMIN/BOSS）' : '复核通过，留档' }}，内容不可再编辑。
         </p>
       </template>
-      <!-- 无实例：端点未部署的诚实降级（原有行为） -->
+      <!-- 无实例：chip 直开的纯预览（实例由触发引擎按周期生成，从待办箱进入才可提交落库） -->
       <template v-else>
-        <button type="button" class="rtf-submit" disabled>提交（实例端点未上线）</button>
+        <button type="button" class="rtf-submit" disabled>提交（预览 · 未挂引擎实例）</button>
         <p class="rtf-pending">{{ SUBMIT_PENDING_NOTE }}</p>
         <p class="rtf-lock">提交后锁定，更正走追加记录；审核为轻量两态（提交/复核，2026-08-13 拍板）。</p>
       </template>

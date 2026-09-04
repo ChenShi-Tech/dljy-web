@@ -4,6 +4,7 @@
 import { ref } from 'vue'
 import { ChevronLeft, ChevronRight, Settings2, Sparkles } from 'lucide-vue-next'
 import { shiftDate } from '@/services/review/reviewDashboard'
+import ReviewWeatherChip from './ReviewWeatherChip.vue'
 
 export type HeaderBadge = { text: string; tone: 'ok' | 'warn' | 'info' | 'danger' | 'off'; title?: string }
 
@@ -54,6 +55,9 @@ function onNumber(ev: Event, key: 'tolerancePct' | 'penaltyPrice') {
       <input class="d" type="date" :value="date" aria-label="复盘日期" @change="onDateInput" />
       <button type="button" aria-label="后一天" @click="step(1)"><ChevronRight :size="14" /></button>
     </span>
+
+    <!-- 复盘日期天气 chip（清单 R7a）：外生参考纯展示，无数据/不支持地区整体隐藏 -->
+    <ReviewWeatherChip :date="date" />
 
     <!-- 周/月聚合随 M2（#2042）上线；此处先占位置、禁用不假装 -->
     <span class="seg" role="group" aria-label="周期">

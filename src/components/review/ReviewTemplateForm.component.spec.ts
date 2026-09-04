@@ -69,7 +69,7 @@ describe('ReviewTemplateForm（模板渲染器）', () => {
     expect(text).toContain('提交后锁定，更正走追加记录')
     const submit = wrapper.find('.rtf-submit')
     expect(submit.attributes('disabled')).toBeDefined()
-    expect(text).toContain('当前仅本地预览')
+    expect(text).toContain('未挂引擎实例')
   })
 
   it('T03 金额字段带 caliber 口径标注', () => {
@@ -127,10 +127,10 @@ describe('ReviewTemplateForm（模板渲染器）', () => {
 })
 
 describe('ReviewTemplateForm（#2037 实例提交：草稿/提交直连服务端）', () => {
-  it('无实例（端点未部署）：保持预览态——提交禁用 + 未上线提示（回归）', () => {
+  it('无实例（chip 直开纯预览）：提交禁用 + 指引从待办箱填报（回归）', () => {
     const wrapper = mount(ReviewTemplateForm, { props: { templateId: 'T01', spec: null } })
     expect(wrapper.find('.rtf-submit').attributes('disabled')).toBeDefined()
-    expect(wrapper.text()).toContain('当前仅本地预览')
+    expect(wrapper.text()).toContain('未挂引擎实例')
   })
 
   it('pending 实例：必填未齐提交禁用；填齐后存草稿/提交各发 PATCH 并 emit saved', async () => {

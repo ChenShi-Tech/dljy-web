@@ -5,6 +5,7 @@ import {
   TAB_SHORT,
   VISIBLE_TABS,
   deviationDetailRows,
+  filterReportsByRange,
   dimSignal,
   heatCells,
   hourOf,
@@ -200,5 +201,29 @@ describe('偏差 96 点明细行', () => {
     ], 5)
     expect(rows[0].assessedMwh).toBe(1.5)
     expect(rows[1].assessedMwh).toBe(0)
+  })
+})
+
+// 报告库归档区间过滤（清单 R4「全部报告」列表）：mtime → 北京日期（+08:00），
+// 闭区间、边界空串不限。坏掉的症状：UTC 晚 8 点后的报告被归到前一天。
+describe('报告库归档区间过滤', () => {
+  const rep = (id: string, beijingIso: string) =>
+    ({ session_id: id, path: 'p', title: id, mtime: new Date(`${beijingIso}+08:00`).getTime() / 1000 })
+  const reports = [
+    rep('a', '2026-05-30 07:00'), // UTC 05-29 23:00 —— 北京日期必须算成 05-30
+    rep('b', '2026-05-31 12:00'),
+    rep('c', '2026-06-02 09:00')
+  ]
+
+  it('按北京日期落区间，闭区间两端都含', () => {
+    expect(filterReportsByRange(reports, '2026-05-30', '2026-05-31').map((r) => r.session_id)).toEqual(['a', 'b'])
+    expect(filterReportsByRange(reports, '2026-05-31', '2026-05-31').map((r) => r.session_id)).toEqual(['b'])
+  })
+
+  it('边界空串表示不限；无命中返回空数组', () => {
+    expect(filterReportsByRange(reports, '', '2026-05-31').map((r) => r.session_id)).toEqual(['a', 'b'])
+    expect(filterReportsByRange(reports, '2026-06-01', '').map((r) => r.session_id)).toEqual(['c'])
+    expect(filterReportsByRange(reports, '', '')).toHaveLength(3)
+    expect(filterReportsByRange(reports, '2020-01-01', '2020-12-31')).toEqual([])
   })
 })

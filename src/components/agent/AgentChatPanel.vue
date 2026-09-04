@@ -25,6 +25,7 @@ import {
   type HistoryTurn
 } from '@/services/agent/agentClient'
 import { createAsyncGenerations } from './asyncGenerations'
+import { resolveDoneOutcome } from './doneOutcome'
 import { parseArtifactBlocks, splitStreamingArtifacts, type ArtifactBlock } from '../../utils/artifactBlocks'
 import { useSlashInput } from '../../composables/useSlashInput'
 import type { CommandContext } from '@/services/slashCommands'
@@ -184,6 +185,14 @@ const reconnectAttempt = ref(0)
 let sawDone = false
 // 用户主动点「停止」标志：据此把 abort 中止识别为合法 cancelled 终态（不渲染成 ⚠️ 错误段）。
 let cancelled = false
+// 终局解释状态（doneOutcome.resolveDoneOutcome 消费）：本轮是否出现过 error 事件 /
+// 任何内容事件（token/工具/审批…）。零内容正常收尾 = 底座吞错后的空跑，补诚实说明。
+let sawErrorEvent = false
+let assistantContentSeen = false
+function beginRunOutcomeTracking() {
+  sawErrorEvent = false
+  assistantContentSeen = false
+}
 // 流世代号：每次开启新流（send/decide/attach）自增。切换会话时旧流 promise 可能晚于新流
 // settle，其 finally 里的 finalizeStreamAfterRun 若不校验世代会清掉新流的共享状态（清
 // currentRunId / 补发 done / 刷新历史覆盖正在续看的内容），stale 世代直接跳过收尾。
@@ -667,6 +676,9 @@ function displayBlocks(seg: TextSeg): ArtifactBlock[] {
 }
 
 async function onEvent(e: AgentEvent) {
+  // 除终局 done 外的任何事件都算「本轮有内容」：空结果兜底只针对全程零事件、
+  // 被底座吞成正常收尾的空跑（LLM 凭据失效实测形态），不误伤只出工具/图表的合法轮次。
+  if (e.type !== 'done') assistantContentSeen = true
   const msg = lastAssistant()
   if (e.type === 'token') {
     appendToken(e.content)
@@ -775,6 +787,7 @@ async function onEvent(e: AgentEvent) {
     emit('approval', e.payload)
   } else if (e.type === 'error') {
     finishTextSegs(msg)
+    sawErrorEvent = true
     const errText = `⚠️ ${e.message}`
     msg.segs.push({ kind: 'text', chunks: [errText], done: true, blocks: parseArtifactBlocks(errText) })
     emit('error', e.message)
@@ -783,9 +796,21 @@ async function onEvent(e: AgentEvent) {
     sawDone = true
     lastDoneStatus = e.status
     if (session.value) session.value.status = e.status === 'awaiting_approval' ? 'awaiting_approval' : 'idle'
+    noteRunOutcome(e.status)
     emit('done', e.status)
   }
   scrollBottom()
+}
+
+// 终局解释（doneOutcome）：done 收尾时若本轮是失败或零内容空跑，往消息流补一段可见
+// 说明——不让「底座吞错后的正常收尾」看起来像模型没说话。放在 emit('done') 之前，
+// 宿主的 done 回调（如生成报告弹层关闭）晚于说明入列。
+function noteRunOutcome(status: string) {
+  const outcome = resolveDoneOutcome(status, sawErrorEvent, { hasAssistantContent: assistantContentSeen })
+  if (!outcome.errorText) return
+  ensureAttachPlaceholder()
+  const msg = lastAssistant()
+  msg.segs.push({ kind: 'text', chunks: [outcome.errorText], done: true, blocks: parseArtifactBlocks(outcome.errorText) })
 }
 
 function isAbortLike(err: unknown): boolean {
@@ -878,6 +903,7 @@ async function finalizeStreamAfterRun(fallbackStatus: string, gen?: number) {
   if (!sawDone) {
     sawDone = true
     lastDoneStatus = fallbackStatus
+    noteRunOutcome(fallbackStatus)
     emit('done', fallbackStatus)
   }
   currentRunId = null
@@ -928,6 +954,7 @@ async function attachActiveRunIfAny(initialCursor = -1): Promise<boolean> {
   sawDone = false
   lastDoneStatus = ''
   cancelled = false
+  beginRunOutcomeTracking()
   const ac = new AbortController()
   abort = ac
   scrollBottom(true)
@@ -989,6 +1016,7 @@ async function send() {
   sawDone = false
   lastDoneStatus = ''
   cancelled = false
+  beginRunOutcomeTracking()
   reconnecting.value = false
   reconnectAttempt.value = 0
   currentRunId = null
@@ -1043,6 +1071,7 @@ async function decide(seg: ApprovalSeg, action: 'approve' | 'reject') {
   sawDone = false
   lastDoneStatus = ''
   cancelled = false
+  beginRunOutcomeTracking()
   reconnecting.value = false
   reconnectAttempt.value = 0
   currentRunId = null
@@ -1116,6 +1145,7 @@ async function attachRunById(sessionId: string, runId: string, initialCursor = -
   sawDone = false
   lastDoneStatus = ''
   cancelled = false
+  beginRunOutcomeTracking()
   reconnecting.value = false
   reconnectAttempt.value = 0
   currentRunId = runId
