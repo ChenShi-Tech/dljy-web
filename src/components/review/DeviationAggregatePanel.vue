@@ -18,6 +18,9 @@ import {
 import { fetchCarryOverActions, type ImprovementActionFeed } from '@/services/review/reviewStoreClient'
 import { FEED_ABSENT_NOTE } from '@/services/review/templateInstanceApi'
 import { todayBeijing } from '@/utils/beijingDate'
+import { useEChart } from '@/composables/useEChart'
+import { cssVar } from '@/composables/useTheme'
+import { axisTooltip } from '@/services/chart/chartOptions'
 
 const props = defineProps<{ tolerancePct: number; penaltyPrice: number }>()
 
@@ -86,6 +89,49 @@ const breach = computed(() =>
   agg.value ? consecutiveDeviationBreach(agg.value.rows, 0.05) : null
 )
 
+// ── 逐日柱状可视化（清单 R3）：偏差率柱（±5% 容差线，超带红柱）+ 考核费柱（右轴）──
+// 数据与下方表格同源（agg.rows），缺数日不出柱（null，诚实纪律）；超标判定与表格
+// `.bad` 同一阈值（5%），不另起一套口径。
+const aggChartEl = ref<HTMLElement | null>(null)
+const aggChart = useEChart(aggChartEl, { render: renderAggChart })
+function renderAggChart() {
+  const rows = agg.value?.rows ?? []
+  if (!aggChartEl.value || !rows.length) return
+  const tolPct = 5
+  const danger = '#b91c1c'
+  const primary = cssVar('--primary') || '#0f766e'
+  const amber = '#d97706'
+  const rateBars = rows.map((r) =>
+    r.deviationPct === null
+      ? null
+      : { value: Math.round(r.deviationPct * 10000) / 100, itemStyle: { color: Math.abs(r.deviationPct) > tolPct / 100 ? danger : primary } }
+  )
+  const feeBars = rows.map((r) => Math.round(r.estimatedPenaltyYuan * 100) / 100)
+  aggChart.setOption({
+    tooltip: axisTooltip({ units: { '偏差率': '%', '估算考核费': '元' }, pointer: 'shadow' }),
+    legend: { top: 0, textStyle: { fontSize: 10 } },
+    grid: { left: 44, right: 52, top: 28, bottom: 22 },
+    xAxis: { type: 'category', data: rows.map((r) => r.date.slice(5)) },
+    yAxis: [
+      { type: 'value', name: '偏差率%', scale: true },
+      { type: 'value', name: '考核费元', splitLine: { show: false } }
+    ],
+    series: [
+      {
+        name: '偏差率', type: 'bar', data: rateBars, barMaxWidth: 18,
+        markLine: {
+          silent: true, symbol: 'none',
+          lineStyle: { type: 'dashed', color: danger, opacity: 0.7 },
+          label: { fontSize: 10, formatter: '容差 ±5%' },
+          data: [{ yAxis: tolPct }, { yAxis: -tolPct }]
+        }
+      },
+      { name: '估算考核费', type: 'bar', yAxisIndex: 1, data: feeBars, itemStyle: { color: amber, opacity: 0.55 }, barMaxWidth: 18 }
+    ]
+  })
+}
+watch(agg, () => { if (agg.value) renderAggChart() }, { flush: 'post' })
+
 // 责任归因二轴：仅周聚合人工补填；存 id 不存中文
 const responsibility = ref('')
 const responsibilityNote = computed(() => {
@@ -119,6 +165,9 @@ const periodLabel = computed(() => (period.value === 'week' ? `周（${anchor.va
         {{ agg.missingDays.join('、') }}
       </p>
       <p v-if="!agg.totals.days" class="dap-muted">本周期无可用数据日——诚实空态，不合成。</p>
+
+      <!-- 逐日柱状可视化（清单 R3）：与下方表格同源同口径，缺数日不出柱 -->
+      <div v-if="agg.rows.length" ref="aggChartEl" class="dap-chart" />
 
       <table v-if="agg.rows.length" class="dap-table">
         <thead>
@@ -211,6 +260,7 @@ const periodLabel = computed(() => (period.value === 'week' ? `周（${anchor.va
 .dap-ctrl input { padding: 2px 6px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 6px; font-size: var(--font-11-5); }
 .dap-muted { margin: 0; color: var(--el-text-color-secondary, #909399); }
 .dap-warn { margin: 0; padding: 6px 9px; border-radius: 6px; background: #fffbeb; color: #92400e; font-size: var(--font-11-5); line-height: 1.6; }
+.dap-chart { width: 100%; height: 210px; }
 .dap-table { width: 100%; border-collapse: collapse; font-size: var(--font-11-5); font-variant-numeric: tabular-nums; }
 .dap-table th, .dap-table td { padding: 3px 7px; border-bottom: 1px solid var(--el-border-color-lighter, #ebeef5); text-align: right; white-space: nowrap; }
 .dap-table th:first-child, .dap-table td:first-child { text-align: left; }
