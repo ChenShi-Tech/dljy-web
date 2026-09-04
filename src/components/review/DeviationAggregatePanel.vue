@@ -18,6 +18,13 @@ import {
 import { fetchCarryOverActions, type ImprovementActionFeed } from '@/services/review/reviewStoreClient'
 import { FEED_ABSENT_NOTE } from '@/services/review/templateInstanceApi'
 import { todayBeijing } from '@/utils/beijingDate'
+import { currentRegion } from '@/services/region/regionContext'
+import {
+  fetchDailyWeather,
+  regionWeatherCity,
+  weatherCellText,
+  type DayWeather
+} from '@/services/review/reviewWeather'
 import { useEChart } from '@/composables/useEChart'
 import { cssVar } from '@/composables/useTheme'
 import { axisTooltip } from '@/services/chart/chartOptions'
@@ -140,6 +147,35 @@ const responsibilityNote = computed(() => {
   return s ? `映射建议（AI 建议、人确认）：${s.label}——依据本周主要业务成因推导，可改选。` : '本周无已判定的业务成因，不建议默认项——数据不够时逼答第二问只会得到假归因。'
 })
 const periodLabel = computed(() => (period.value === 'week' ? `周（${anchor.value} 起）` : `月（${anchor.value.slice(0, 7)}）`))
+
+// ── 逐日「天气」列（清单 R7b）：偏差解释的第一外生变量，纯展示不进任何考核口径 ──
+// 数据=Open-Meteo Archive 历史再分析（真实观测级数据，非合成），覆盖窗内日期可回溯；
+// 默认关闭，打开才发一次区间请求；缺日（再分析近 2~5 天延迟）留空、整体失败给提示，不合成。
+const weatherOn = ref(false)
+const weatherMap = ref<Map<string, DayWeather> | null>(null)
+const weatherFailed = ref(false)
+let weatherSeq = 0
+async function loadWeather() {
+  const s = ++weatherSeq
+  weatherMap.value = null
+  weatherFailed.value = false
+  if (!weatherOn.value) return
+  const rows = agg.value?.rows ?? []
+  if (!rows.length) return
+  const city = regionWeatherCity(currentRegion.value.id)
+  if (!city) {
+    weatherFailed.value = true
+    return
+  }
+  const dates = rows.map((r) => r.date)
+  const start = dates.reduce((a, b) => (a < b ? a : b))
+  const end = dates.reduce((a, b) => (a > b ? a : b))
+  const map = await fetchDailyWeather(city, start, end)
+  if (s !== weatherSeq) return
+  weatherMap.value = map
+  weatherFailed.value = !map
+}
+watch([weatherOn, agg, () => currentRegion.value.id], () => { void loadWeather() })
 </script>
 
 <template>
@@ -154,6 +190,11 @@ const periodLabel = computed(() => (period.value === 'week' ? `周（${anchor.va
         <button type="button" :class="{ on: period === 'week' }" @click="period = 'week'">周</button>
         <button type="button" :class="{ on: period === 'month' }" @click=" period = 'month'">月</button>
         <input v-model="anchor" type="date" :title="period === 'week' ? '周锚日（自动取周一）' : '月锚日'" />
+        <button
+          type="button" :class="{ on: weatherOn }"
+          title="叠加逐日天气列（Open-Meteo 历史再分析，纯展示参考，不进任何考核计算；缺日留空不合成）"
+          @click="weatherOn = !weatherOn"
+        >天气</button>
       </span>
     </header>
 
@@ -165,13 +206,18 @@ const periodLabel = computed(() => (period.value === 'week' ? `周（${anchor.va
         {{ agg.missingDays.join('、') }}
       </p>
       <p v-if="!agg.totals.days" class="dap-muted">本周期无可用数据日——诚实空态，不合成。</p>
+      <p v-if="weatherOn && !agg.totals.days" class="dap-muted">天气列无对象可标：本周期没有可复盘数据日。</p>
 
       <!-- 逐日柱状可视化（清单 R3）：与下方表格同源同口径，缺数日不出柱 -->
       <div v-if="agg.rows.length" ref="aggChartEl" class="dap-chart" />
 
       <table v-if="agg.rows.length" class="dap-table">
         <thead>
-          <tr><th>日期</th><th>偏差率</th><th>总偏差 MWh</th><th>受考核 MWh</th><th>考核费估算 元</th><th>S1 业务成因</th></tr>
+          <tr>
+            <th>日期</th><th>偏差率</th><th>总偏差 MWh</th><th>受考核 MWh</th><th>考核费估算 元</th>
+            <th v-if="weatherOn" title="当日天气（太原·Open-Meteo 历史再分析；纯展示参考，不进考核口径；缺日留空）">天气</th>
+            <th>S1 业务成因</th>
+          </tr>
         </thead>
         <tbody>
           <tr v-for="r in agg.rows" :key="r.date">
@@ -182,6 +228,7 @@ const periodLabel = computed(() => (period.value === 'week' ? `周（${anchor.va
             <td>{{ r.totalAbsDeviationMwh.toFixed(2) }}</td>
             <td>{{ r.assessedMwh.toFixed(2) }}</td>
             <td>{{ r.estimatedPenaltyYuan.toLocaleString() }}</td>
+            <td v-if="weatherOn">{{ weatherCellText(weatherMap?.get(r.date)) }}</td>
             <td>{{ r.causeLabel ?? '未判定' }}</td>
           </tr>
           <tr class="dap-total">
@@ -190,10 +237,14 @@ const periodLabel = computed(() => (period.value === 'week' ? `周（${anchor.va
             <td>{{ agg.totals.deviationMwh.toFixed(2) }}</td>
             <td>{{ agg.totals.assessedMwh.toFixed(2) }}</td>
             <td>{{ agg.totals.penaltyYuan.toLocaleString() }}</td>
+            <td v-if="weatherOn" />
             <td>—</td>
           </tr>
         </tbody>
       </table>
+      <p v-if="weatherOn && weatherFailed" class="dap-muted">
+        天气数据不可用（该地区无天气参考点，或外部历史天气源失败）——本列留空，不合成。
+      </p>
       <p class="dap-note">合计与逐日之和恒等；金额为自算口径（caliber: self-computed，结算细则未核验）。</p>
 
       <!-- 按业务成因占比（第一轴：负荷/新能源/通道/价格，S1 写回） -->
