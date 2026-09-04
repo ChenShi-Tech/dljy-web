@@ -8,7 +8,8 @@ import { useEChart } from '@/composables/useEChart'
 import { cssVar } from '@/composables/useTheme'
 import { axisTooltip, bottomLayoutLegend, bottomToolbox, emptyOverlay, insideZoom } from '@/services/chart/chartOptions'
 import { classifyReviewError, fetchReview, type ReviewFailure, type ReviewResult } from '@/services/quant/quantClient'
-import { heatCells } from '@/services/review/reviewDashboard'
+import { deviationDetailRows, heatCells, type DeviationDetailRow } from '@/services/review/reviewDashboard'
+import { exportCsv } from '@/utils/exportCsv'
 import { deviationMetricOf, type TemplateCard } from '@/services/review/cockpitModel'
 import { reviewCompletionOf, type ReviewCompletion } from '@/services/review/reviewCompletion'
 import { fetchTemplateInstanceFeed } from '@/services/review/templateInstanceClient'
@@ -49,6 +50,28 @@ const worstLabel = computed(() => String(props.result?.deviation.worst_point.dat
 const worstDev = computed(() => props.result?.deviation.worst_point.deviation ?? 0)
 const caveatText = computed(() => (props.result?.caliber_caveats ?? []).join('\n'))
 const cells = computed(() => heatCells(props.result?.detail ?? []))
+
+// ── 偏差 96 点逐时明细表（清单 R8）：图-表同屏，数据直接用响应 detail（零新增取数）──
+// 带内外判定与主图容差带同口径（deviationDetailRows）；合计行受考核电量与 KPI 卡同源。
+const showDetail = ref(false)
+const detailRows = computed<DeviationDetailRow[]>(() =>
+  props.result ? deviationDetailRows(props.result.detail, props.tolerancePct) : []
+)
+const detailTotals = computed(() => ({
+  declared: detailRows.value.reduce((s, r) => s + r.declared, 0),
+  actual: detailRows.value.reduce((s, r) => s + r.actual, 0),
+  assessed: detailRows.value.reduce((s, r) => s + r.assessedMwh, 0)
+}))
+const fmt2 = (n: number) => n.toLocaleString('zh-CN', { maximumFractionDigits: 2, minimumFractionDigits: 2 })
+
+function exportDetailCsv() {
+  const r = props.result
+  if (!r || !detailRows.value.length) return
+  exportCsv(`偏差明细-${r.date}.csv`, ['时点', '申报(MWh)', '实际(MWh)', '偏差(MWh)', '考核电量(MWh)', '是否带内'], [
+    ...detailRows.value.map((row) => [row.label, row.declared, row.actual, row.deviation, row.assessedMwh, row.inBand ? '带内' : '超带']),
+    ['合计', detailTotals.value.declared, detailTotals.value.actual, '', detailTotals.value.assessed, '']
+  ])
+}
 
 // 偏差率状态 pill：以当前容差带为目标——超出容差即「超带」。
 // 不出「达标」字样：偏差率目标值待管理要求给定（Epic #2033 待确认项 P2），此处只陈述与容差的关系。
@@ -293,10 +316,47 @@ watch(() => props.loading, (v: boolean) => (v ? chart.showLoading() : chart.hide
           <input v-model="cmpDate" type="date" class="cmp-date" title="任选对比日期（采集覆盖区内）" />
           <span v-if="cmpLoading" class="muted">取对比日…</span>
           <span v-else-if="cmpError" class="cmp-err" :title="cmpError">对比日不可比，悬停看原因</span>
+          <button v-if="result && detailRows.length" type="button" class="detail-toggle" @click="showDetail = !showDetail">
+            {{ showDetail ? '收起明细' : '96 点明细' }}
+          </button>
         </div>
       </div>
       <div ref="chartEl" class="host chart-host" />
       <DeviationHeatStrip v-if="cells.length" :cells="cells" class="heat" />
+      <!-- 逐时明细（清单 R8）：与主图/热力条同源同口径，合计受考核电量 = KPI 卡 -->
+      <div v-if="showDetail && detailRows.length" class="detail96">
+        <div class="detail96-bar">
+          <span class="muted">逐时明细 · 与图上数据同源，带内判定同容差带（±{{ result?.deviation.tolerance_pct }}%）</span>
+          <button type="button" class="detail-toggle" @click="exportDetailCsv">导出 CSV</button>
+        </div>
+        <div class="detail96-scroll">
+          <table>
+            <thead>
+              <tr><th>时点</th><th>申报 MWh</th><th>实际 MWh</th><th>偏差 MWh</th><th>考核电量 MWh</th><th>带内</th></tr>
+            </thead>
+            <tbody>
+              <tr v-for="row in detailRows" :key="row.label">
+                <td class="mono">{{ row.label }}</td>
+                <td class="num">{{ fmt2(row.declared) }}</td>
+                <td class="num">{{ fmt2(row.actual) }}</td>
+                <td class="num" :class="row.tone">{{ (row.deviation > 0 ? '+' : '') + fmt2(row.deviation) }}</td>
+                <td class="num">{{ fmt2(row.assessedMwh) }}</td>
+                <td :class="row.inBand ? 'in' : 'out'">{{ row.inBand ? '带内' : '超带' }}</td>
+              </tr>
+            </tbody>
+            <tfoot>
+              <tr>
+                <td>合计</td>
+                <td class="num">{{ fmt2(detailTotals.declared) }}</td>
+                <td class="num">{{ fmt2(detailTotals.actual) }}</td>
+                <td />
+                <td class="num" title="与上方「受考核电量」指标卡同口径">{{ fmt2(detailTotals.assessed) }}</td>
+                <td />
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
     </section>
 
     <DeviationAggregatePanel :tolerance-pct="tolerancePct" :penalty-price="penaltyPrice" />
@@ -320,6 +380,25 @@ watch(() => props.loading, (v: boolean) => (v ? chart.showLoading() : chart.hide
 .cmp-err { color: #b45309; cursor: help; }
 .host { width: 100%; height: 300px; }
 .heat { margin-left: 48px; margin-right: 16px; }
+/* 96 点逐时明细表（清单 R8）：可折叠、窄高滚动，与热力条同方向着色 */
+.detail-toggle { border: 1px solid var(--line); border-radius: 6px; background: #fff; font: inherit; font-size: var(--font-11-5); padding: 2px 8px; cursor: pointer; color: var(--text-body); }
+.detail-toggle:hover { border-color: var(--primary); color: var(--primary); }
+.detail96 { display: flex; flex-direction: column; gap: 6px; }
+.detail96-bar { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: var(--font-11-5); }
+.detail96-scroll { max-height: 260px; overflow-y: auto; border: 1px solid var(--line-soft); border-radius: 6px; }
+.detail96 table { width: 100%; border-collapse: collapse; font-size: var(--font-11-5); }
+.detail96 th, .detail96 td { border-bottom: 1px solid var(--line-soft); padding: 3px 10px; text-align: right; white-space: nowrap; }
+.detail96 th:first-child, .detail96 td:first-child { text-align: left; }
+.detail96 thead th { position: sticky; top: 0; background: var(--panel-sub, #f7f8fa); font-weight: 600; z-index: 1; }
+.detail96 tfoot td { position: sticky; bottom: 0; background: var(--panel-sub, #f7f8fa); font-weight: 600; border-bottom: 0; }
+.detail96 tfoot td:first-child { text-align: left; }
+.detail96 .mono { font-family: ui-monospace, monospace; }
+.detail96 .num { font-variant-numeric: tabular-nums; }
+.detail96 td.over { color: #b45309; }
+.detail96 td.under { color: #0369a1; }
+.detail96 td.flat { color: var(--muted); }
+.detail96 td.in { color: var(--muted); }
+.detail96 td.out { color: #b45309; font-weight: 600; }
 .guidance { padding: 12px 16px; }
 .pending-note { margin: 0; padding: 8px 12px; font-size: var(--font-12-5, 12px); color: var(--muted); border: 1px dashed var(--el-border-color, #dcdfe6); border-radius: 6px; line-height: 1.6; }
 .guidance strong { display: block; color: var(--text); }

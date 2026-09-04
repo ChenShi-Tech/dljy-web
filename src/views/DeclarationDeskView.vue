@@ -8,7 +8,7 @@
 import { computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { AlarmClock, ArrowRight, Bot, CheckCircle2, FileSearch, FlaskConical, History, LineChart, Loader2, PlugZap, ShieldCheck, Sparkles, Stamp, XCircle } from 'lucide-vue-next'
+import { AlarmClock, ArrowRight, Bot, CheckCircle2, ChevronLeft, ChevronRight, FileSearch, FlaskConical, History, LineChart, Loader2, PlugZap, ShieldCheck, Sparkles, Stamp, XCircle } from 'lucide-vue-next'
 import AgentChatPanel from '../components/agent/AgentChatPanel.vue'
 import AgentHistorySidebar from '../components/agent/AgentHistorySidebar.vue'
 import DeclarationForecastCompare from '../components/forecast/DeclarationForecastCompare.vue'
@@ -28,7 +28,8 @@ import {
 import { fetchExposure, type ExposureResult } from '@/services/quant/quantClient'
 import { useEChart } from '../composables/useEChart'
 import { useQuerySync } from '../composables/useQuerySync'
-import { axisTooltip } from '@/services/chart/chartOptions'
+import { axisTooltip, bottomLayoutLegend, bottomToolbox, emptyOverlay, insideZoom } from '@/services/chart/chartOptions'
+import { shiftDate } from '@/services/review/reviewDashboard'
 import { DATA_BASIS_LABEL, type DataBasis } from '@/services/dataBasis'
 import { assertOperational } from '@/services/data/trustGate'
 import { getCurrentUser } from '@/services/auth'
@@ -122,6 +123,11 @@ function defaultTargetDate(): string {
 const targetDate = ref(defaultTargetDate())
 // 目标日 ⇄ 路由 query：刷新/分享链接后还原同一申报日
 useQuerySync({ targetDate })
+// 目标日 ±1 天快捷步进（清单 C-2，复盘中心头部同款交互）：改目标日即走既有 refresh 链，
+// 列表/预测/决策包自动跟随；前向申报仍受窗口规则约束（窗口关闭由既有提示与演练降级兜底）。
+function stepTargetDate(days: number) {
+  targetDate.value = shiftDate(targetDate.value, days)
+}
 
 // 申报模式（LIVE / REHEARSAL）
 // 建单时可选；建单后由申报单自身的 mode 决定（服务端不接受改 mode）。
@@ -798,6 +804,60 @@ function exportCurveCsv() {
   URL.revokeObjectURL(url)
 }
 
+// ── 决策包「逐时价格预测带」（清单 D3a）：数据即决策包同一份 /cockpit 响应（points=P50，
+// lower/upper=P10/P90），与上方竞价空间卡同源同 basis，不另发请求。逐时展开让交易员
+// 看清"哪个时段价高/价低"，而不是只盯全天均值（清单五件套：极值标注＋图例＋工具栏）。
+const priceBandEl = ref<HTMLElement | null>(null)
+const priceBandChart = useEChart(priceBandEl, { render: renderPriceBand })
+
+/** 96 点 15min 时点标签（与 96 点明细表同规）；非 96 点长度退回序号，不硬凑时刻。 */
+function priceSlotLabel(i: number, n: number): string {
+  if (n === 96) {
+    const h = Math.floor(i / 4)
+    const m = (i % 4) * 15
+    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
+  }
+  return `#${i + 1}`
+}
+
+function renderPriceBand() {
+  const pf = cockpit.value?.price_forecast
+  if (!pf || !priceBandEl.value) return
+  const n = pf.points.length
+  const bandHeight = pf.upper.map((v, i) => Math.max(v - (pf.lower[i] ?? 0), 0))
+  priceBandChart.setOption({
+    ...emptyOverlay(!n),
+    tooltip: axisTooltip({ unit: pf.unit || '元/MWh' }),
+    legend: bottomLayoutLegend({ data: ['P50 预测价', 'P10–P90 带宽'], textStyle: { fontSize: 10 } }),
+    toolbox: bottomToolbox('逐时价格预测带', 8),
+    grid: { left: 48, right: 16, top: 28, bottom: 56 },
+    dataZoom: insideZoom(),
+    xAxis: { type: 'category', data: pf.points.map((_, i) => priceSlotLabel(i, n)) },
+    yAxis: { type: 'value', name: pf.unit || '元/MWh', scale: true },
+    series: [
+      // 置信带 stack 技法：下界透明 + 高度带色（与复盘偏差容差带同法），tooltip 不出现
+      { name: '_pf_lo', type: 'line', stack: 'pf-band', showSymbol: false, silent: true, data: pf.lower, lineStyle: { opacity: 0 }, areaStyle: { opacity: 0 }, tooltip: { show: false }, emphasis: { disabled: true } },
+      { name: 'P10–P90 带宽', type: 'line', stack: 'pf-band', showSymbol: false, silent: true, data: bandHeight, lineStyle: { opacity: 0 }, areaStyle: { color: '#0ea5e9', opacity: 0.14 }, tooltip: { show: false }, emphasis: { disabled: true } },
+      {
+        name: 'P50 预测价',
+        type: 'line',
+        showSymbol: false,
+        data: pf.points,
+        lineStyle: { width: 1.8, color: '#0369a1' },
+        itemStyle: { color: '#0369a1' },
+        // 极值标注（五件套①）：最高/最低预测价直接描点标值
+        markPoint: {
+          symbol: 'circle', symbolSize: 6,
+          itemStyle: { color: 'transparent', borderColor: '#0369a1', borderWidth: 1.5 },
+          label: { show: true, position: 'top', fontSize: 10, color: '#0369a1', formatter: (p: { value: unknown }) => `${p.value}` },
+          data: [{ type: 'max' }, { type: 'min' }]
+        }
+      }
+    ]
+  }, { replaceMerge: ['graphic', 'series'] })
+}
+watch(cockpit, () => { void nextTick(renderPriceBand) })
+
 // 刷新世代守卫：切目标日会触发 watcher 的无 selectId 刷新，用户点历史行又会带 id 刷新，
 // 两个异步完成顺序不定，前者后返回就会用 list[0] 覆盖用户刚选中的历史单。
 // 世代号让过期刷新自行丢弃；pendingSelectId 让「切日期 + 选中某单」只走一次刷新。
@@ -1245,7 +1305,12 @@ onRegionChange(() => {
         </span>
         <span class="target-date">
           目标日
-          <input v-model="targetDate" type="date" />
+          <!-- 步进器样式对齐复盘中心头部（ReviewHeader .stepper）：一体式容器 ‹ | 日期 | › -->
+          <span class="stepper">
+            <button type="button" aria-label="前一日" title="目标日前一天" @click="stepTargetDate(-1)"><ChevronLeft :size="14" /></button>
+            <input v-model="targetDate" type="date" aria-label="申报目标日" />
+            <button type="button" aria-label="后一日" title="目标日后一天" @click="stepTargetDate(1)"><ChevronRight :size="14" /></button>
+          </span>
         </span>
       </div>
     </section>
@@ -1333,6 +1398,14 @@ onRegionChange(() => {
               <b>{{ fmt0(cockpit.deviation_risk.worst_penalty_yuan) }}</b>
               <small>最坏考核 · {{ cockpit.deviation_risk.high_risk_slots }} 个高风险点</small>
             </div>
+          </div>
+          <!-- 逐时价格预测带（清单 D3a）：与决策包同源同 basis 的 96 点展开，高低峰一目了然 -->
+          <div v-if="cockpit" class="price-band">
+            <div class="price-band-head">
+              <span>逐时价格预测带</span>
+              <small class="muted">P50 · P10–P90 带宽 · 与上方决策包同源（{{ priceSlotLabel(0, cockpit.price_forecast.points.length) }}~{{ priceSlotLabel(cockpit.price_forecast.points.length - 1, cockpit.price_forecast.points.length) }}，{{ cockpit.price_forecast.points.length }} 点）</small>
+            </div>
+            <div ref="priceBandEl" class="price-band-host" />
           </div>
           <button class="check-item optimize-entry" :disabled="optimizeLoading || !canOptimizeDraftCurve" @click="optimizeDraftCurve">
             <span><Sparkles :size="13" /> 一键生成最优申报曲线</span>
@@ -1847,9 +1920,21 @@ onRegionChange(() => {
 .mode-tag[data-mode='REHEARSAL'] { border-color: #f59e0b; color: #b45309; background: rgba(245, 158, 11, 0.12); }
 
 .target-date { display: flex; align-items: center; gap: 8px; font-size: var(--font-md); color: var(--muted); }
-.target-date input {
-  padding: 4px 8px; border: 1px solid var(--line); border-radius: 8px;
-  background: transparent; color: var(--text);
+/* 目标日 ±1 天步进（清单 C-2）：样式与复盘中心头部步进器（ReviewHeader .stepper）一致——
+   一体式容器 28px 高，两枚无边框透明按钮夹日期输入，输入左右以软分隔线相接，日期用等宽字体 */
+.stepper {
+  height: 28px; display: inline-flex; overflow: hidden;
+  border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--panel);
+}
+.stepper button {
+  width: 28px; border: 0; background: transparent; color: var(--muted);
+  display: grid; place-items: center; cursor: pointer;
+}
+.stepper button:hover { background: var(--panel-sub); color: var(--text); }
+.stepper input {
+  border: 0; border-left: 1px solid var(--line-soft); border-right: 1px solid var(--line-soft);
+  padding: 0 8px; background: transparent; color: var(--text); font: inherit;
+  font-size: var(--font-12-5); font-family: ui-monospace, monospace; height: 100%;
 }
 /* 移动端：步骤条与截止信息纵排，避免横向挤压 */
 @media (max-width: 768px) {
@@ -1990,6 +2075,11 @@ onRegionChange(() => {
   display: block; color: var(--text); font-size: var(--font-18); line-height: 1.45;
   font-variant-numeric: tabular-nums;
 }
+/* 逐时价格预测带（清单 D3a）：决策包三卡下方的 96 点展开图 */
+.price-band { margin-top: 10px; border-top: 1px dashed var(--line-soft); padding-top: 8px; }
+.price-band-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; font-size: var(--font-12-5); font-weight: 600; color: var(--text); }
+.price-band-head small { font-weight: 400; }
+.price-band-host { width: 100%; height: 220px; }
 .optimize-entry { margin-top: 8px; }
 .optimize-entry > span:first-child, .optimize-state {
   display: inline-flex; align-items: center; gap: 6px;

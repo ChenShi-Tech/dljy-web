@@ -277,6 +277,48 @@ async function openReport(item: ReportItem) {
   }
 }
 
+// ── 报告文件交付（清单 R4 文件半边 + C-1 批量下载）：正文取服务层受控端点，落 Blob 逐份触发下载。
+// 文件名含报告日期（标题形如「日复盘报告YYYY-MM-DD」；标题无日期时补 mtime 日期），
+// 失败计数如实提示不静默；逐份间隔触发，缓解浏览器对连续多文件下载的拦截。
+const downloadingReports = ref(false)
+
+function reportFileName(item: ReportItem): string {
+  const dateInTitle = /(\d{4}-\d{2}-\d{2})/.exec(item.title)?.[1]
+  const datePart = dateInTitle ?? new Date(item.mtime * 1000).toISOString().slice(0, 10)
+  const safeTitle = item.title.replace(/[\\/:*?"<>|\s]+/g, '-').replace(/^-+|-+$/g, '')
+  return `${safeTitle || '复盘报告'}-${datePart}.md`
+}
+
+function triggerDownload(item: ReportItem, content: string) {
+  const blob = new Blob([content], { type: 'text/markdown;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = reportFileName(item)
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
+async function downloadReports(items: ReportItem[]) {
+  if (!items.length || downloadingReports.value) return
+  downloadingReports.value = true
+  let failed = 0
+  try {
+    for (const item of items) {
+      try {
+        triggerDownload(item, await fetchReportContent(item.session_id, item.path))
+      } catch {
+        failed += 1
+      }
+      // 逐份小间隔：同会话连续 anchor 下载过快会被浏览器拦截（C-1 提示语已注明授权弹窗属正常）
+      if (items.length > 1) await new Promise((resolve) => setTimeout(resolve, 300))
+    }
+  } finally {
+    downloadingReports.value = false
+  }
+  if (failed) ElMessage.warning(`${failed} 份报告下载失败，可从列表单份重试`)
+}
+
 // ── 头部徽标：只放状态，不放说明 ──
 const badges = computed<HeaderBadge[]>(() => {
   const list: HeaderBadge[] = []
@@ -455,7 +497,12 @@ onRegionChange(() => {
 
       <aside class="rail">
         <TodoInbox ref="todoInboxRef" @open-instance="openTodoInstance" />
-        <ReportsRail :reports="reports" @open-report="openReport" />
+        <ReportsRail
+          :reports="reports" :downloading="downloadingReports"
+          @open-report="openReport"
+          @download-report="downloadReports([$event])"
+          @download-reports="downloadReports"
+        />
       </aside>
     </div>
 
