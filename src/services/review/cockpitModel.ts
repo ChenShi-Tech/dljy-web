@@ -119,4 +119,4 @@ export function enrichTodos(todos: readonly TodoView[]): TodoRow[] {
 
 /** S1/驾驶舱共用的实例摘要写入方向提示（提交端点未上线，#2037 落地前只读）。 */
 export const SUBMIT_PENDING_NOTE =
-  '模板实例提交端点随服务端化（#2037）上线：当前仅本地预览，不落库、不留「已提交」痕迹。'
+  '此打开方式未挂引擎实例（纯预览，不落库）。实例由触发引擎按周期生成——请从「待办箱」的对应待办进入，即可填报、存草稿并提交。'
