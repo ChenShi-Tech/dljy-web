@@ -12,10 +12,14 @@ import { fetchReviewRange, type PeriodReview } from '@/services/review/reviewPer
 import {
   aggregateDeviation,
   consecutiveDeviationBreach,
+  isoWeekKeyOf,
+  responsibilityLabelOf,
   RESPONSIBILITY_AXES,
   suggestResponsibility
 } from '@/services/review/deviationAggregate'
 import { fetchCarryOverActions, type ImprovementActionFeed } from '@/services/review/reviewStoreClient'
+import { fetchTemplateInstanceFeed, invalidateTemplateInstanceCache, patchTemplateInstance } from '@/services/review/templateInstanceClient'
+import type { TemplateInstanceSummary } from '@/services/review/templateInstanceApi'
 import { FEED_ABSENT_NOTE } from '@/services/review/templateInstanceApi'
 import { todayBeijing } from '@/utils/beijingDate'
 import { currentRegion } from '@/services/region/regionContext'
@@ -73,8 +77,17 @@ async function load() {
 onMounted(() => {
   load()
   void loadActions()
+  void loadInstanceFeed()
+  restoreLocalResp()
 })
 watch([period, anchor], load)
+// 换周/换模式 = 换归因语境：清掉上一周的暂存选择与回显，恢复新周的本机暂存（如有）
+watch([period, anchor], () => {
+  respDirty.value = false
+  respOutcome.value = { kind: 'idle', text: '' }
+  responsibility.value = ''
+  restoreLocalResp()
+})
 
 // 上期改进措施回查（#2042）：improvement_actions 端点已上线，自动带入未闭环项
 // （open/carried_over）。回查结论（done/dropped/carried_over）的逐项回写走复盘
@@ -139,13 +152,104 @@ function renderAggChart() {
 }
 watch(agg, () => { if (agg.value) renderAggChart() }, { flush: 'post' })
 
-// 责任归因二轴：仅周聚合人工补填；存 id 不存中文
+// 责任归因二轴：仅周聚合人工补填；存 id 不存中文。
+// 补全（清单 #2042 断链修复）：选择写入锚定周 T07 实例的 causeCategory 字段
+// （模板七的必填人工字段），并回显落库结果；无实例时如实说明未落库。
 const responsibility = ref('')
+const respDirty = ref(false) // 用户本轮已手选：实例 feed 刷新不回灌覆盖
+const respSaving = ref(false)
+const respOutcome = ref<{ kind: 'idle' | 'saved' | 'locked' | 'missing' | 'error'; text: string }>({
+  kind: 'idle',
+  text: ''
+})
 const responsibilityNote = computed(() => {
   const suggestion = agg.value?.rows.find((r) => r.causeId)?.causeId ?? null
   const s = suggestResponsibility(suggestion)
   return s ? `映射建议（AI 建议、人确认）：${s.label}——依据本周主要业务成因推导，可改选。` : '本周无已判定的业务成因，不建议默认项——数据不够时逼答第二问只会得到假归因。'
 })
+
+// 锚定周的 T07 实例（引擎生成）：责任归因选择落它的 causeCategory 字段
+const instanceFeed = ref<Awaited<ReturnType<typeof fetchTemplateInstanceFeed>> | null>(null)
+const t07Weekly = computed<TemplateInstanceSummary | null>(() => {
+  const feed = instanceFeed.value
+  if (!feed?.available || period.value !== 'week') return null
+  const key = isoWeekKeyOf(anchor.value)
+  return feed.instances.find((i) => i.templateId === 'T07' && i.periodKey === key) ?? null
+})
+async function loadInstanceFeed() {
+  instanceFeed.value = await fetchTemplateInstanceFeed()
+}
+
+// 本机暂存（无实例时选择不丢失）：按周键存 localStorage（RiskReviewPanel near_miss 同款
+// 「暂存本机」模式）。实例 payload 是落库权威——有实例时由 payload 回灌，本机暂存让位。
+const RESP_DRAFT_STORAGE_KEY = 'dljy.review.respDraft'
+function loadLocalRespDrafts(): Record<string, string> {
+  try {
+    return JSON.parse(localStorage.getItem(RESP_DRAFT_STORAGE_KEY) ?? '{}') ?? {}
+  } catch {
+    return {}
+  }
+}
+function saveLocalRespDraft(weekKey: string, id: string) {
+  try {
+    const map = loadLocalRespDrafts()
+    map[weekKey] = id
+    localStorage.setItem(RESP_DRAFT_STORAGE_KEY, JSON.stringify(map))
+  } catch {
+    /* 隐私模式/配额满：暂存失败不阻塞选择本身，仅刷新后丢失 */
+  }
+}
+function restoreLocalResp() {
+  if (respDirty.value || t07Weekly.value) return // 实例 payload 权威，由其回灌
+  const id = loadLocalRespDrafts()[isoWeekKeyOf(anchor.value)]
+  if (id) responsibility.value = id
+}
+// 回填：实例 payload 已有责任归因且用户本轮未手选 → 按中文标签反查 id 回灌选择框
+watch(t07Weekly, (inst) => {
+  if (respDirty.value || !inst) return
+  const v = inst.payload?.causeCategory
+  if (typeof v !== 'string' || !v) return
+  const id = RESPONSIBILITY_AXES.find((a) => a.label === v)?.id
+  if (id) responsibility.value = id
+})
+async function onResponsibilityChange() {
+  respDirty.value = true
+  const id = responsibility.value
+  if (!id) {
+    respOutcome.value = { kind: 'idle', text: '' }
+    return
+  }
+  const label = responsibilityLabelOf(id) ?? id
+  const inst = t07Weekly.value
+  if (!inst) {
+    // 无实例：本机按周键暂存（刷新保留），如实标注未落库——不冒充已提交
+    saveLocalRespDraft(isoWeekKeyOf(anchor.value), id)
+    respOutcome.value = {
+      kind: 'missing',
+      text: `已暂存选择：${label}（本机暂存，刷新保留；本周未生成 T07 实例，未落库）`
+    }
+    return
+  }
+  if (inst.status === 'submitted' || inst.status === 'reviewed') {
+    respOutcome.value = { kind: 'locked', text: `T07 实例 #${inst.id} 已提交锁定，责任归因不可再改（更正走追加记录）` }
+    return
+  }
+  respSaving.value = true
+  try {
+    await patchTemplateInstance(inst.id, {
+      payload: { ...(inst.payload ?? {}), causeCategory: label }
+    })
+    respOutcome.value = {
+      kind: 'saved',
+      text: `已记录责任归因：${label}（写入 T07 周报实例 #${inst.id}，周期 ${inst.periodKey}）`
+    }
+    invalidateTemplateInstanceCache()
+  } catch (e) {
+    respOutcome.value = { kind: 'error', text: `责任归因写入失败：${e instanceof Error ? e.message : '未知错误'}` }
+  } finally {
+    respSaving.value = false
+  }
+}
 const periodLabel = computed(() => (period.value === 'week' ? `周（${anchor.value} 起）` : `月（${anchor.value.slice(0, 7)}）`))
 
 // ── 逐日「天气」列（清单 R7b）：偏差解释的第一外生变量，纯展示不进任何考核口径 ──
@@ -259,12 +363,15 @@ watch([weatherOn, agg, () => currentRegion.value.id], () => { void loadWeather()
       <div v-if="period === 'week'" class="dap-axis">
         <label>
           责任归因（第二轴 · 仅周聚合人工补填，与第一轴正交不合并）
-          <select v-model="responsibility">
+          <select v-model="responsibility" :disabled="respSaving" @change="onResponsibilityChange">
             <option value="">选择…</option>
             <option v-for="a in RESPONSIBILITY_AXES" :key="a.id" :value="a.id">{{ a.label }}</option>
           </select>
         </label>
         <p class="dap-note">{{ responsibilityNote }}</p>
+        <p v-if="respOutcome.text" class="dap-note" :class="{ 'dap-resp-ok': respOutcome.kind === 'saved', 'dap-resp-err': respOutcome.kind === 'error' }">
+          {{ respOutcome.text }}
+        </p>
       </div>
 
       <!-- 阈值预警：自动登记已由风险维实现（确定性幂等键 + 按月去重），此处仅提示不重复登记 -->
@@ -324,6 +431,8 @@ watch([weatherOn, agg, () => currentRegion.value.id], () => { void loadWeather()
 .dap-chip { font-size: var(--font-xs); border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 999px; padding: 1px 8px; }
 .dap-axis label { display: flex; align-items: center; gap: 8px; font-size: var(--font-sm); flex-wrap: wrap; }
 .dap-axis select { padding: 3px 7px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 6px; font-size: var(--font-sm); }
+.dap-resp-ok { color: #15803d; }
+.dap-resp-err { color: #b91c1c; }
 .dap-actions summary { cursor: pointer; font-size: var(--font-11-5); color: var(--el-text-color-secondary, #666); }
 .dap-action-list { margin: 4px 0; padding-left: 18px; font-size: var(--font-11-5); line-height: 1.8; color: var(--el-text-color-regular, #444); }
 </style>

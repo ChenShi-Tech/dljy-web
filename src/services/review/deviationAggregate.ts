@@ -41,6 +41,28 @@ export function suggestResponsibility(causeId: string | null): { id: Responsibil
   return id ? { id, label: responsibilityLabelOf(id) ?? id } : null
 }
 
+/**
+ * ISO 周键（与 Node review-api.mjs `periodKeysForDate().weekly` 完全同口径：
+ * 周一为一周之始、第 1 周含当年首个周四；用正午 12:00+08:00 取日期，边界日不漂移），
+ * 如 2026-W36。聚合面板的责任归因按它匹配锚定周的 T07 实例。
+ */
+export function isoWeekKeyOf(dateIso: string): string {
+  const d = new Date(`${dateIso}T12:00:00+08:00`)
+  if (Number.isNaN(d.getTime())) return ''
+  const year = d.getUTCFullYear()
+  const target = new Date(Date.UTC(year, d.getUTCMonth(), d.getUTCDate()))
+  const dayNr = (target.getUTCDay() + 6) % 7
+  target.setUTCDate(target.getUTCDate() - dayNr + 3)
+  const weekYear = target.getUTCFullYear()
+  const jan1 = new Date(Date.UTC(weekYear, 0, 1))
+  const jan1DayNr = (jan1.getUTCDay() + 6) % 7
+  const firstThursday = new Date(jan1)
+  firstThursday.setUTCDate(1 + ((3 - jan1DayNr + 7) % 7))
+  const week = 1 + Math.round((target.getTime() - firstThursday.getTime()) / (7 * 24 * 3600 * 1000))
+  const pad = (v: number) => String(v).padStart(2, '0')
+  return `${weekYear}-W${pad(week)}`
+}
+
 export type DailyAggRow = {
   date: string
   deviationPct: number | null
