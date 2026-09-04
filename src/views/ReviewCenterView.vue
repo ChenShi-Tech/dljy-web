@@ -465,6 +465,7 @@ onRegionChange(() => {
           v-if="tab === 'deviation'"
           :result="result" :failure="reviewFailure" :loading="loading"
           :tolerance-pct="tolerancePct" :penalty-price="penaltyPrice"
+          :review-date="date"
           :templates="templatesOf('deviation')" @open-template="openTemplate"
         />
         <ResultDim
@@ -484,7 +485,7 @@ onRegionChange(() => {
           :penalty-price="penaltyPrice"
           :templates="templatesOf('result')" @open-template="openTemplate"
         />
-        <MarketDim v-else-if="tab === 'market'" :result="result" :templates="templatesOf('market')" @open-template="openTemplate" />
+        <MarketDim v-else-if="tab === 'market'" :result="result" :review-month="reviewMonth" :templates="templatesOf('market')" @open-template="openTemplate" />
         <StrategyDim v-else-if="tab === 'strategy'" :templates="templatesOf('strategy')" @open-template="openTemplate" />
         <RiskDim
           v-else-if="tab === 'risk'"

@@ -29,6 +29,7 @@ const props = defineProps<{
   templates: TemplateCard[]
   tolerancePct: number
   penaltyPrice: number
+  reviewDate?: string
 }>()
 const emit = defineEmits<{ (e: 'open-template', template: TemplateCard): void }>()
 
@@ -359,7 +360,7 @@ watch(() => props.loading, (v: boolean) => (v ? chart.showLoading() : chart.hide
       </div>
     </section>
 
-    <DeviationAggregatePanel :tolerance-pct="tolerancePct" :penalty-price="penaltyPrice" />
+    <DeviationAggregatePanel :tolerance-pct="tolerancePct" :penalty-price="penaltyPrice" :review-date="reviewDate" />
     <TemplateChips :templates="templates" label="偏差复盘模板" @open-template="emit('open-template', $event)" />
   </div>
 </template>

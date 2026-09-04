@@ -22,12 +22,14 @@ import { useEChart } from '@/composables/useEChart'
 import { cssVar } from '@/composables/useTheme'
 import { axisTooltip } from '@/services/chart/chartOptions'
 
-const props = defineProps<{ tolerancePct: number; penaltyPrice: number }>()
+const props = defineProps<{ tolerancePct: number; penaltyPrice: number; reviewDate?: string }>()
 
 type Period = 'week' | 'month'
 const period = ref<Period>('week')
-/** 周期锚日：周=周一，月=当月 1 日（默认本周一 / 本月） */
-const anchor = ref(mondayOf(todayBeijing()))
+/** 周期锚日：周=周一，月=当月 1 日。默认锚随复盘日期（深链 ?date=… 的周/月），
+ * 而不是固定本周一——否则从申报台回测深链进来，聚合面板锚在当前周、
+ * 与同页日级出数割裂，读起来像面板坏了（走查 K2-2）。 */
+const anchor = ref(mondayOf(props.reviewDate || todayBeijing()))
 const loading = ref(false)
 const data = ref<PeriodReview | null>(null)
 
@@ -36,6 +38,12 @@ function mondayOf(iso: string): string {
   const dow = (d.getDay() + 6) % 7 // 周一=0
   return shiftIsoDate(iso, -dow)
 }
+// 复盘日期变化（深链切换/头部翻日）时锚跟随该日期所在周期；用户仍可手动改锚
+watch(() => props.reviewDate, (d) => {
+  if (!d) return
+  const next = mondayOf(d)
+  if (next !== anchor.value) anchor.value = next
+})
 function daysOfPeriod(p: Period, anchorIso: string): string[] {
   if (p === 'week') return Array.from({ length: 7 }, (_, i) => shiftIsoDate(anchorIso, i))
   const [y, m] = anchorIso.split('-').map(Number)

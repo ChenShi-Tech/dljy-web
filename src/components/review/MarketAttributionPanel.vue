@@ -23,7 +23,13 @@ import {
 import type { ImprovementActionSummary, RiskEventSummary } from '@/services/review/reviewStoreApi'
 import { currentMonthBeijing } from '@/utils/beijingDate'
 
-const month = ref(currentMonthBeijing())
+const props = defineProps<{ reviewMonth?: string }>()
+// 默认归因复盘日期所在月（走查 K2-3 同族）：锚死当前月会让月度归因四行
+// 与页面复盘日期各说各话；用户仍可手动切月。
+const month = ref(props.reviewMonth || currentMonthBeijing())
+watch(() => props.reviewMonth, (m) => {
+  if (m && m !== month.value) month.value = m
+})
 const loading = ref(false)
 const result = ref<MarketAnalysisResult | null>(null)
 const loadError = ref('')

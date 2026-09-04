@@ -12,7 +12,7 @@ import MarketAttributionPanel from '../MarketAttributionPanel.vue'
 import TemplateChips from '../TemplateChips.vue'
 import type { TemplateCard } from '@/services/review/cockpitModel'
 
-const props = defineProps<{ result: ReviewResult | null; templates: TemplateCard[] }>()
+const props = defineProps<{ result: ReviewResult | null; templates: TemplateCard[]; reviewMonth?: string }>()
 const emit = defineEmits<{ (e: 'open-template', template: TemplateCard): void }>()
 
 const stats = computed(() => (props.result ? priceStats(props.result.detail) : null))
@@ -62,7 +62,7 @@ watch(() => props.result, () => render(), { flush: 'post' })
       <div class="top"><h3>日前 vs 实时价格 · 96 点</h3></div>
       <div ref="chartEl" class="host chart-host" />
     </section>
-    <MarketAttributionPanel />
+    <MarketAttributionPanel :review-month="reviewMonth" />
     <TemplateChips :templates="templates" label="市场复盘模板" @open-template="emit('open-template', $event)" />
   </div>
 </template>
