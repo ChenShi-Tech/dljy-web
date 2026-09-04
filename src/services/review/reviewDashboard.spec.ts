@@ -4,6 +4,7 @@ import {
   TAB_ORDER,
   TAB_SHORT,
   VISIBLE_TABS,
+  deviationDetailRows,
   dimSignal,
   heatCells,
   hourOf,
@@ -162,5 +163,42 @@ describe('市场价格统计', () => {
   it('一个双侧点都没有 → null（不出全 0）', () => {
     expect(priceStats([pt(300, undefined), pt(undefined, 320)])).toBeNull()
     expect(priceStats([])).toBeNull()
+  })
+})
+
+// 偏差 96 点逐时明细行（清单 R8）：图-表同源——带内判定与主图容差带同口径，
+// 合计受考核电量与 KPI 卡同口径。坏掉的症状：表合计 ≠ KPI、带内外判定与图上带矛盾。
+describe('偏差 96 点明细行', () => {
+  const pt = (datetime: string, declared: number, actual: number, assessed = 0) =>
+    ({ datetime, declared, actual, deviation: actual - declared, assessed_mwh: assessed }) as ReviewDetailPoint
+
+  it('label 取 datetime 尾部、tone 与热力条同规则（over/under/申报0为flat）', () => {
+    const rows = deviationDetailRows([
+      pt('2026-05-18 00:00', 100, 110, 2),
+      pt('2026-05-18 00:15', 100, 90, 2),
+      pt('2026-05-18 00:30', 0, 5, 1)
+    ], 3)
+    expect(rows.map((r) => r.label)).toEqual(['00:00', '00:15', '00:30'])
+    expect(rows.map((r) => r.tone)).toEqual(['over', 'under', 'flat'])
+  })
+
+  it('带内按 |actual−declared| ≤ declared×容差%：容差带边界内/外两侧', () => {
+    // 容差 5%、申报 100 → 带宽 ±5：104 带内、106 超带
+    const rows = deviationDetailRows([pt('2026-05-18 00:00', 100, 104), pt('2026-05-18 00:15', 100, 106)], 5)
+    expect(rows.map((r) => r.inBand)).toEqual([true, false])
+  })
+
+  it('申报为 0：actual=0 记带内、actual>0 记超带（与图上零高度带一致，不出第三种口径）', () => {
+    const rows = deviationDetailRows([pt('2026-05-18 00:00', 0, 0), pt('2026-05-18 00:15', 0, 3)], 3)
+    expect(rows.map((r) => r.inBand)).toEqual([true, false])
+  })
+
+  it('assessedMwh 原样透传供合计对拍 KPI；非有限数值折 0 不污染求和', () => {
+    const rows = deviationDetailRows([
+      pt('2026-05-18 00:00', 100, 104, 1.5),
+      { datetime: '2026-05-18 00:15', declared: 100, actual: 106, deviation: 6, assessed_mwh: Number.NaN } as unknown as ReviewDetailPoint
+    ], 5)
+    expect(rows[0].assessedMwh).toBe(1.5)
+    expect(rows[1].assessedMwh).toBe(0)
   })
 })
