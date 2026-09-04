@@ -1304,10 +1304,13 @@ onRegionChange(() => {
           <AlarmClock :size="13" /> D-1 10:30 截止 · {{ countdownText }}
         </span>
         <span class="target-date">
-          <button type="button" class="date-step" aria-label="前一日" title="目标日前一天" @click="stepTargetDate(-1)"><ChevronLeft :size="13" /></button>
           目标日
-          <input v-model="targetDate" type="date" />
-          <button type="button" class="date-step" aria-label="后一日" title="目标日后一天" @click="stepTargetDate(1)"><ChevronRight :size="13" /></button>
+          <!-- 步进器样式对齐复盘中心头部（ReviewHeader .stepper）：一体式容器 ‹ | 日期 | › -->
+          <span class="stepper">
+            <button type="button" aria-label="前一日" title="目标日前一天" @click="stepTargetDate(-1)"><ChevronLeft :size="14" /></button>
+            <input v-model="targetDate" type="date" aria-label="申报目标日" />
+            <button type="button" aria-label="后一日" title="目标日后一天" @click="stepTargetDate(1)"><ChevronRight :size="14" /></button>
+          </span>
         </span>
       </div>
     </section>
@@ -1917,16 +1920,22 @@ onRegionChange(() => {
 .mode-tag[data-mode='REHEARSAL'] { border-color: #f59e0b; color: #b45309; background: rgba(245, 158, 11, 0.12); }
 
 .target-date { display: flex; align-items: center; gap: 8px; font-size: var(--font-md); color: var(--muted); }
-.target-date input {
-  padding: 4px 8px; border: 1px solid var(--line); border-radius: 8px;
-  background: transparent; color: var(--text);
+/* 目标日 ±1 天步进（清单 C-2）：样式与复盘中心头部步进器（ReviewHeader .stepper）一致——
+   一体式容器 28px 高，两枚无边框透明按钮夹日期输入，输入左右以软分隔线相接，日期用等宽字体 */
+.stepper {
+  height: 28px; display: inline-flex; overflow: hidden;
+  border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--panel);
 }
-/* 目标日 ±1 天步进（清单 C-2）：与复盘中心头部步进器同款的小方按钮 */
-.date-step {
-  width: 24px; height: 24px; border: 1px solid var(--line); border-radius: 6px;
-  background: transparent; color: var(--muted); display: grid; place-items: center; cursor: pointer;
+.stepper button {
+  width: 28px; border: 0; background: transparent; color: var(--muted);
+  display: grid; place-items: center; cursor: pointer;
 }
-.date-step:hover { border-color: var(--primary); color: var(--primary); }
+.stepper button:hover { background: var(--panel-sub); color: var(--text); }
+.stepper input {
+  border: 0; border-left: 1px solid var(--line-soft); border-right: 1px solid var(--line-soft);
+  padding: 0 8px; background: transparent; color: var(--text); font: inherit;
+  font-size: var(--font-12-5); font-family: ui-monospace, monospace; height: 100%;
+}
 /* 移动端：步骤条与截止信息纵排，避免横向挤压 */
 @media (max-width: 768px) {
   .steps-bar { flex-direction: column; align-items: stretch; }
