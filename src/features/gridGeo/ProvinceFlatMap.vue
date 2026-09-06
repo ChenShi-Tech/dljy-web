@@ -139,6 +139,16 @@ const locatedNodes = computed(() =>
   ),
 )
 
+/**
+ * 节点展示策略判定：displayPolicy 优先；缺省（历史数据或未经 API 校验的直写）按
+ * locationStatus 推——approximate 一律画不确定性光圈。与 CesiumPlantMap 的
+ * node-uncertainty 实体同口径，2D/3D 换视图不会改变「哪个点是近似」的判断。
+ */
+function nodeDisplayPolicy(node: GridGeoNode): 'exact-marker' | 'uncertainty-halo' {
+  if (node.location?.displayPolicy) return node.location.displayPolicy
+  return node.locationStatus === 'approximate' ? 'uncertainty-halo' : 'exact-marker'
+}
+
 const activeTopology = computed(() => (props.showTopology ? props.topologyFeatures ?? [] : []))
 
 // 下钻筛选：省域全景返回全集，地州焦点态只留落在该地州内的要素
@@ -403,6 +413,51 @@ function buildOption(): echarts.EChartsOption | null {
 
   // L4 节点电价点
   const located = visibleNodes.value
+
+  // L4a 节点不确定性光圈：与 L2 电厂光圈同一画法（custom series 按 uncertaintyMeters
+  // 画真实地理半径，缩放不失真）。色调用节点点色（accent）而非电厂光圈的 warning——
+  // 光圈形状与虚线已承载「不确定」语义，颜色用来归属图层，两类光圈同图时可分清是谁的。
+  const haloNodes = located.filter(
+    (node) => nodeDisplayPolicy(node) === 'uncertainty-halo' && Number(node.location!.uncertaintyMeters) > 0,
+  )
+  if (haloNodes.length) {
+    series.push({
+      type: 'custom',
+      name: '节点位置不确定范围',
+      coordinateSystem: 'geo',
+      geoIndex: 0,
+      silent: true,
+      z: 4,
+      data: haloNodes.map((node) => [
+        node.location!.longitude,
+        node.location!.latitude,
+        Number(node.location!.uncertaintyMeters),
+        node.nodeId,
+      ]),
+      renderItem: (_params, api) => {
+        const lon = Number(api.value(0))
+        const lat = Number(api.value(1))
+        const meters = Number(api.value(2))
+        const center = api.coord([lon, lat])
+        const metersPerLon = 111_320 * Math.cos((lat * Math.PI) / 180)
+        if (!Number.isFinite(center[0]) || !metersPerLon) return { type: 'group', children: [] }
+        const edge = api.coord([lon + meters / metersPerLon, lat])
+        const radius = Math.abs(edge[0] - center[0])
+        if (!Number.isFinite(radius) || radius <= 0) return { type: 'group', children: [] }
+        return {
+          type: 'circle',
+          shape: { cx: center[0], cy: center[1], r: radius },
+          style: {
+            fill: echarts.color.modifyAlpha(accent, 0.08),
+            stroke: echarts.color.modifyAlpha(accent, 0.4),
+            lineWidth: 1,
+            lineDash: [3, 3],
+          },
+        }
+      },
+    })
+  }
+
   if (located.length) {
     series.push({
       type: 'scatter',
@@ -462,7 +517,20 @@ function buildOption(): echarts.EChartsOption | null {
           }
           return rows.join('<br/>')
         }
-        if (item.seriesName === '节点') return `<strong>${escapeHtml(item.name)}</strong><br/>定价节点`
+        if (item.seriesName === '节点') {
+          const node = visibleNodes.value.find((candidate) => candidate.nodeId === item.data?.nodeId)
+          if (!node?.location) return `<strong>${escapeHtml(item.name)}</strong><br/>定价节点`
+          const rows = [
+            `<strong>${escapeHtml(node.nodeName)}</strong>`,
+            `定价节点${node.voltageLevelKv ? `　电压：${escapeHtml(node.voltageLevelKv)} kV` : ''}`,
+            `位置：${escapeHtml(node.location.locationLabel || '—')}`,
+            // 与场站同一纪律：近似就写明近似，并给出实际不确定半径。
+            nodeDisplayPolicy(node) === 'uncertainty-halo'
+              ? `<em>位置为${escapeHtml(node.location.accuracyLevel)}级近似，不确定半径约 ${Math.round(Number(node.location.uncertaintyMeters))} m</em>`
+              : '位置：精确点位',
+          ]
+          return rows.join('<br/>')
+        }
         return escapeHtml(item.name)
       },
     },

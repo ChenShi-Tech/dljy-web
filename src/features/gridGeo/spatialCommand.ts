@@ -53,6 +53,23 @@ export function commandNodesFromResponse(response: GridGeoNodeListResponse) {
   }
 }
 
+/**
+ * 合并多次分页/分档拉取的节点结果（驾驶舱 located + approximate 两档合并入图）。
+ * 任一档为 Mock 即整体拒绝——「一半真实一半模拟」的合并结果不能当成真实数据画。
+ */
+export function mergeCommandNodeResults(
+  ...results: Array<Pick<ReturnType<typeof commandNodesFromResponse>, 'nodes' | 'total' | 'truncatedByPage' | 'excludedInvalidCoordinates'> & { mock: boolean; productionWrite: boolean }>
+) {
+  return {
+    nodes: results.flatMap((result) => result.nodes),
+    total: results.reduce((sum, result) => sum + result.total, 0),
+    truncatedByPage: results.some((result) => result.truncatedByPage),
+    excludedInvalidCoordinates: results.reduce((sum, result) => sum + result.excludedInvalidCoordinates, 0),
+    mock: results.some((result) => result.mock),
+    productionWrite: results.some((result) => result.productionWrite),
+  }
+}
+
 export function weatherItemSupportsLayer(item: GridGeoWeatherSnapshot, layer: GridGeoWeatherLayer) {
   if (layer === 'none') return false
   if (layer === 'wind') return Number.isFinite(item.windSpeedMs) && Number.isFinite(item.windDirectionDeg)
