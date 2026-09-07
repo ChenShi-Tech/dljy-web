@@ -1166,6 +1166,7 @@ function saveCurve() {
       current.value = declaration
       syncHourlyFromDeclaration()
       void nextTick(renderDeclChart)
+      void loadHistoryList() // 列表展示申报总量，保存后同步，避免停留创建时快照
     }
   )
 }
@@ -1181,9 +1182,15 @@ function runRisk() {
   )
 }
 
+// 状态流转（送审/审批/提交/出清）只回写 current 的话，历史申报单列表停留在上一次
+// loadHistoryList 的快照——走查实测：列表状态列停在「草稿」而卡片已是「回执确认」。
+// 流转成功后同步重取列表，保证两处状态一致。
 function sendForApproval() {
   if (!current.value) return
-  act(() => submitDeclarationForApproval(current.value!.id), (declaration) => { current.value = declaration })
+  act(() => submitDeclarationForApproval(current.value!.id), (declaration) => {
+    current.value = declaration
+    void loadHistoryList()
+  })
 }
 
 function decide(decision: 'approve' | 'reject') {
@@ -1193,6 +1200,7 @@ function decide(decision: 'approve' | 'reject') {
     (declaration) => {
       current.value = declaration
       approvalComment.value = ''
+      void loadHistoryList()
     }
   )
 }
@@ -1221,13 +1229,19 @@ async function doSubmit() {
   }
   act(
     () => submitDeclaration(current.value!.id, `${current.value!.id}-submit`),
-    (declaration) => { current.value = declaration }
+    (declaration) => {
+      current.value = declaration
+      void loadHistoryList()
+    }
   )
 }
 
 function clearMark() {
   if (!current.value) return
-  act(() => markDeclarationCleared(current.value!.id), (declaration) => { current.value = declaration })
+  act(() => markDeclarationCleared(current.value!.id), (declaration) => {
+    current.value = declaration
+    void loadHistoryList()
+  })
 }
 
 function goReview() {

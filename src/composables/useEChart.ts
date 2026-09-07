@@ -160,6 +160,21 @@ export function useEChart(el: Ref<HTMLElement | null>, options: UseEChartOptions
     }
   )
 
+  // 容器被 v-if 重建（ref 换绑到新元素）：旧 ResizeObserver 绑在已脱离 DOM 的
+  // 旧节点上，不主动换绑的话图表永久空白，直到某个动作恰好触发 setOption
+  // （申报台「申报单↔历史申报单」页签切换实测症状）。换绑观察，并在新容器
+  // 有尺寸时立即恢复内容；无尺寸（还藏着）则走延迟初始化等它出现。
+  watch(el, (dom) => {
+    if (!dom || dom === chart?.getDom()) return
+    observe(dom)
+    if (hasRenderableSize(dom)) {
+      if (lastOption) setOption(lastOption)
+      else if (loading) ensure()
+    } else {
+      scheduleDeferredInit(dom)
+    }
+  })
+
   // keep-alive 页面切回时容器尺寸可能已变化，补一次 resize。
   onActivated(() => resize())
 

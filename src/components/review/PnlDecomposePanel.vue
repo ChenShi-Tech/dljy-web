@@ -24,9 +24,14 @@ import {
 import type { SettlementRuleSpec } from '@/rules/types'
 import { currentMonthBeijing, todayBeijing } from '@/utils/beijingDate'
 
-const props = defineProps<{ spec: SettlementRuleSpec | null; tolerancePct: number; penaltyPrice: number }>()
+const props = defineProps<{ spec: SettlementRuleSpec | null; tolerancePct: number; penaltyPrice: number; reviewMonth?: string }>()
 
-const month = ref(currentMonthBeijing())
+// 默认看复盘日期所在月（深链 ?date=… / 头部翻日），而不是固定当前月——
+// 看 5 月复盘还得手动切月读起来像面板与页面脱节（走查 K2-3）；用户仍可手动改月。
+const month = ref(props.reviewMonth || currentMonthBeijing())
+watch(() => props.reviewMonth, (m) => {
+  if (m && m !== month.value) month.value = m
+})
 const loading = ref(false)
 const curDays = ref<Array<{ date: string; d: DailyPnlDecompose | null; pnlYuan: number | null }>>([])
 const prevTotalYuan = ref<number | null>(null)
