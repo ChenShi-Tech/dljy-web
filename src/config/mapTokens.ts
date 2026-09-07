@@ -28,6 +28,18 @@ export const MAP_TOKEN_CHANGE_EVENT = 'dljy:map-token-change'
 /** 凭据来源，供 UI 如实说明「这个 token 是哪来的」。 */
 export type IonTokenSource = 'runtime' | 'build' | 'none'
 
+/**
+ * 本会话内的凭据值，用于 localStorage 写不进去时兜底。
+ *
+ * `null` = 本会话没设过，一切以存储/构建期为准；`''` = 用户在本会话显式清除过
+ * （应回落构建期值，而不是把存储里的残留读回来）。两者必须分开，用一个空串表达
+ * 不了「没设过」和「设成了空」的区别。
+ *
+ * 没有这一层的话，隐私模式/嵌入式部署里 setItem 抛异常时 `writeIonToken` 会立刻
+ * 重读存储并把刚填的 token 丢掉——而那恰恰是这条容错分支唯一要服务的环境。
+ */
+let sessionToken: string | null = null
+
 function readStorage(): string {
   // 隐私模式/禁用存储时 localStorage 取值会抛；拿不到凭据可接受，页面崩溃不可接受。
   try {
@@ -44,12 +56,14 @@ function readBuildTime(): string {
 
 /** 当前生效的 ion token；无凭据时返回空串（调用方据此判断是否可用）。 */
 export function resolveIonToken(): string {
+  if (sessionToken !== null) return sessionToken || readBuildTime()
   return readStorage() || readBuildTime()
 }
 
 /** 当前 token 的来源，用于面板文案区分「你填的」与「打包时带的」。 */
 export function resolveIonTokenSource(): IonTokenSource {
-  if (readStorage()) return 'runtime'
+  const runtime = sessionToken !== null ? sessionToken : readStorage()
+  if (runtime) return 'runtime'
   if (readBuildTime()) return 'build'
   return 'none'
 }
@@ -64,13 +78,15 @@ export function hasIonToken(): boolean {
  */
 export function writeIonToken(token: string): string {
   const value = String(token ?? '').trim()
+  // 先记会话值再落盘：落盘失败时这一层仍然生效，本次会话按新值走（跨会话才丢）。
+  sessionToken = value
   try {
     if (typeof localStorage !== 'undefined') {
       if (value) localStorage.setItem(ION_TOKEN_STORAGE_KEY, value)
       else localStorage.removeItem(ION_TOKEN_STORAGE_KEY)
     }
   } catch {
-    // 写失败只意味着这次改动不被记住，本次会话内仍应按新值走，故不中断。
+    // 写失败只意味着跨会话不被记住，不中断本次保存。
   }
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new CustomEvent(MAP_TOKEN_CHANGE_EVENT))
