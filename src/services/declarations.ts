@@ -453,6 +453,30 @@ export async function updateDeclarationCurve(id: string, input: {
   return (res.data ?? res) as unknown as DeclarationOrder
 }
 
+/**
+ * 申报曲线编辑器是否相对已保存曲线存在未保存修改（脏标记的派生口径）。
+ * 对比口径与保存链一致：编辑器 24 点每小时映射 4 个 15min 恒等点，点电量 = MW/4（4 位舍入）。
+ * 用派生值而非「watch 置 true / 同步置 false」的标志位：deep watch 异步 flush，
+ * 「赋新数组 → 同步置 false」的序列会被迟到的 watcher 改回 true，造成加载/保存后
+ * 恒报「含未保存修改」、无修改也可点保存（服务端会把 RISK_CHECKED 打回 DRAFT）。
+ */
+export function isCurveEdited(hourlyMw: number[], savedCurve96?: number[] | null): boolean {
+  if (!Array.isArray(savedCurve96) || savedCurve96.length !== 96) return false
+  return hourlyMw.some((mw, h) => {
+    const point = Math.round((mw / 4) * 10000) / 10000
+    return savedCurve96.slice(h * 4, h * 4 + 4).some((v) => Math.abs(v - point) > 1e-6)
+  })
+}
+
+/**
+ * 风控/敞口的中长期合约总量入参归一：输入框被清空/误输（''、非数、0、负数）时
+ * 不把垃圾值发给风控与敞口端点，兜底为 1 MWh。服务端虽会优雅拒绝，但前端
+ * 不发垃圾本身是口径（正常值原样透传，含小数）。
+ */
+export function normalizeExposureTotalMwh(value: unknown): number {
+  return Math.max(1, Number(value) || 1)
+}
+
 export async function runDeclarationRiskCheck(id: string, input: {
   // 当月中长期合约总电量（MWh），服务端据此调 harness 敞口端点
   exposureTotalMwh?: number
