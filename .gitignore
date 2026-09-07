@@ -4,6 +4,8 @@ node_modules/
 node_modules
 dist/
 coverage/
+# 环境变量文件含本地密钥/端点配置，一律不入库（.env.local 与 .env.*.local 既有，.env 是根目录缺口）
+.env
 .env.local
 .env.*.local
 *.log
