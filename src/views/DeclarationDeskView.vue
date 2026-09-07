@@ -56,7 +56,7 @@ import {
   updateDeclarationCurve,
   isCurveEdited,
   editorMwOf,
-  invalidHourIndexesOf,
+  invalidPointIndexesOf,
   normalizeExposureTotalMwh,
   type DeclarationMeta,
   type DeclarationMode,
@@ -425,7 +425,7 @@ function applyOptimizedCurve(point: OptimizeBidFrontierPoint) {
     (declaration) => {
       current.value = declaration
       selectedLambda.value = point.lambda
-      syncHourlyFromDeclaration()
+      syncPointsFromDeclaration()
       void nextTick(renderDeclChart)
     }
   )
@@ -704,46 +704,47 @@ async function refreshExposure(force = false) {
 // 审批表单
 const approvalComment = ref('')
 
-// 24 小时功率编辑器（每小时映射 4 个 15min 点；存储口径 MWh/点 = MW/4）
+// 96 点功率编辑器（每点一个 15min 时点，时段起点 00:00~23:45；存储口径 MWh/点 = MW/4）
 // 值类型含 ''：v-model.number 在输入框被清空/半输入时回填空串，运行时就是它
-const hourlyMw = ref<Array<number | ''>>(Array.from({ length: 24 }, () => 0))
-const batch = ref({ from: 0, to: 23, mw: 30 })
+const POINT_COUNT = 96
+const pointMw = ref<Array<number | ''>>(Array.from({ length: POINT_COUNT }, () => 0))
+const batch = ref({ from: 0, to: POINT_COUNT - 1, mw: 30 })
 // 编辑器数值视图：未填/非数/负数归一为 NaN 的原始口径，与「展示用按 0 折算」口径分离。
 // 归一必须发生在求和/保存之前——此前 '' 参与求和退化成字符串拼接（总量显示成拼接数字）、
-// 保存链上 ''/4 把该小时静默归零（工作台审查 P2）。
-const hourlyMwNumeric = computed(() =>
-  hourlyMw.value.map((v) => {
+// 保存链上 ''/4 把该时点静默归零（工作台审查 P2）。
+const pointMwNumeric = computed(() =>
+  pointMw.value.map((v) => {
     const mw = editorMwOf(v)
     return Number.isNaN(mw) ? 0 : mw
   })
 )
-const invalidHourIndexes = computed(() => invalidHourIndexesOf(hourlyMw.value))
-const invalidHoursText = computed(() => invalidHourIndexes.value.map((h) => `${h}:00`).join('、'))
+const invalidPointIndexes = computed(() => invalidPointIndexesOf(pointMw.value))
+const invalidPointsText = computed(() => invalidPointIndexes.value.map((i) => pointStartLabel(i)).join('、'))
 // 脏标记 = 编辑器值与已保存曲线的派生比较（isCurveEdited）。
 // 不能用「watch 置 true / 同步置 false」的标志位：deep watch 异步 flush，
-// refresh/保存后的 syncHourlyFromDeclaration 会被迟到的 watcher 改回 true，
+// refresh/保存后的 syncPointsFromDeclaration 会被迟到的 watcher 改回 true，
 // 造成加载/保存后恒报「含未保存修改」、无修改也可点保存（服务端打回 DRAFT）。
-const curveDirty = computed(() => isCurveEdited(hourlyMwNumeric.value, current.value?.energyCurveMwh96))
+const curveDirty = computed(() => isCurveEdited(pointMwNumeric.value, current.value?.energyCurveMwh96))
 
-function syncHourlyFromDeclaration() {
+/** 保存曲线（MWh/15min 点）→ 编辑器功率口径（MW = MWh×4，2 位舍入与服务端 round2 精度对齐）。 */
+function pointMwFromEnergy96(energy: number[]): Array<number | ''> {
+  return Array.from({ length: POINT_COUNT }, (_, i) => Math.round((energy[i] ?? 0) * 4 * 100) / 100)
+}
+
+function syncPointsFromDeclaration() {
   if (!current.value) return
-  const energy = current.value.energyCurveMwh96
-  hourlyMw.value = Array.from({ length: 24 }, (_, h) => {
-    const quarters = energy.slice(h * 4, h * 4 + 4)
-    const avgMwh = quarters.reduce((sum, v) => sum + v, 0) / Math.max(quarters.length, 1)
-    return Math.round(avgMwh * 4 * 100) / 100
-  })
+  pointMw.value = pointMwFromEnergy96(current.value.energyCurveMwh96)
 }
 
 function applyBatch() {
-  const from = Math.max(0, Math.min(23, Math.floor(batch.value.from)))
-  const to = Math.max(from, Math.min(23, Math.floor(batch.value.to)))
-  for (let h = from; h <= to; h++) hourlyMw.value[h] = batch.value.mw
+  const from = Math.max(0, Math.min(POINT_COUNT - 1, Math.floor(batch.value.from)))
+  const to = Math.max(from, Math.min(POINT_COUNT - 1, Math.floor(batch.value.to)))
+  for (let i = from; i <= to; i++) pointMw.value[i] = batch.value.mw
   // 置脏由 curveDirty 派生（批量值与已保存曲线不同 → 自动为 true）
 }
 
-const totalMwh = computed(() => Math.round(hourlyMwNumeric.value.reduce((sum, mw) => sum + mw, 0) * 100) / 100)
-const maxMw = computed(() => Math.max(...hourlyMwNumeric.value, 0))
+const totalMwh = computed(() => Math.round(pointMwNumeric.value.reduce((sum, mw) => sum + mw / 4, 0) * 100) / 100)
+const maxMw = computed(() => Math.max(...pointMwNumeric.value, 0))
 
 // 审批可见性（UI 门，非安全边界）
 // 权威判定恒在服务端（spot-declarations-api.mjs 的 APPROVE_ROLES + 自审禁止，越权一律 403）。
@@ -773,6 +774,19 @@ const approvalBlockedReason = computed(() => {
 
 const declChartEl = ref<HTMLElement | null>(null)
 const declChart = useEChart(declChartEl, { render: renderDeclChart })
+
+/**
+ * 96 点编辑器/主图的时点标签（时段起点 00:00~23:45）。与批量段设置共用；
+ * 96 点明细表与导出 CSV 用的是时段段末口径（00:15~24:00），两套口径各自注明，不混用。
+ */
+function pointStartLabel(i: number | '' | undefined): string {
+  const n = Number(i)
+  if (!Number.isFinite(n) || n < 0 || n > POINT_COUNT - 1) return '—'
+  const h = Math.floor(n / 4)
+  const m = (n % 4) * 15
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
+}
+
 function renderDeclChart() {
   if (!declChartEl.value) return
   // 极值标注（清单 D1）：最高/最低功率直接标在柱上，容量 markLine 保持不变
@@ -786,12 +800,17 @@ function renderDeclChart() {
     tooltip: axisTooltip({ unit: 'MW', pointer: 'shadow' }),
     legend: { show: false },
     grid: { left: 44, right: 32, top: 24, bottom: 36 },
-    xAxis: { type: 'category', data: hourlyMw.value.map((_, h) => `${h}:00`) },
+    // 96 点时点轴：96 个标签全排会互相重叠，每 3 小时（interval=11 → 00:00/03:00/…）出一个刻度
+    xAxis: {
+      type: 'category',
+      data: pointMw.value.map((_, i) => pointStartLabel(i)),
+      axisLabel: { interval: 11 }
+    },
     yAxis: { type: 'value', name: 'MW' },
     series: [{
       name: '申报功率',
       type: 'bar',
-      data: hourlyMwNumeric.value,
+      data: pointMwNumeric.value,
       itemStyle: { color: '#0ea5e9' },
       markPoint: mwMark('#0369a1'),
       markLine: current.value
@@ -801,17 +820,44 @@ function renderDeclChart() {
   })
 }
 
+// ── 主图滚轮逐点微调（96 点直编的快捷入口）：光标悬停柱体滚动滚轮 = 该 15min 时点
+// 功率 ±1 MW（Shift ±0.1），上滚增、下滚减；只在可编辑状态生效。定位不走 mousemove
+// 悬停缓存——96 根柱的类别槽只有几个像素，光标落在柱间空隙时 move 事件不触发，
+// 缓存下标会调错点；直接把滚轮事件的像素坐标 convertFromPixel 回时点下标才可靠。
+// 上下限与批量段输入同一口径：[0, 容量×2]。
+function onDeclChartWheel(e: WheelEvent) {
+  if (!canEditCurrentCurve.value) return
+  const chart = declChart.instance()
+  const el = declChartEl.value
+  if (!chart || chart.isDisposed() || !el) return
+  const rect = el.getBoundingClientRect()
+  const pixel: [number, number] = [e.clientX - rect.left, e.clientY - rect.top]
+  if (!chart.containPixel('grid', pixel)) return
+  const coord = chart.convertFromPixel('grid', pixel)
+  const index = coord ? Math.round(coord[0]) : Number.NaN
+  if (!Number.isFinite(index)) return
+  const pointIndex = Math.max(0, Math.min(POINT_COUNT - 1, index))
+  const step = e.shiftKey ? 0.1 : 1
+  const raw = editorMwOf(pointMw.value[pointIndex])
+  const base = Number.isNaN(raw) ? 0 : raw
+  const capCeiling = (current.value?.capacityMw ?? capacityMw.value) * 2
+  const next = Math.min(capCeiling, Math.max(0, base + (e.deltaY < 0 ? step : -step)))
+  pointMw.value[pointIndex] = Math.round(next * 100) / 100
+  // 本次滚动已被图表消费：不再让页面跟着滚；并把 tooltip 钉到正调的时点，滚了多少看得见
+  e.preventDefault()
+  chart.dispatchAction({ type: 'showTip', seriesIndex: 0, dataIndex: pointIndex })
+}
+
 // ── 96 点明细与导出（清单 D1）：明细数值与底稿同源 ──
 // 编辑中（脏）以编辑器实时值为准并注明；否则读已保存的申报单曲线。
-// 存储口径：96 点为 MWh/15min，功率 MW = MWh×4；24 点编辑器每小时 4 点恒等。
+// 存储口径：96 点为 MWh/15min，功率 MW = MWh×4；编辑器每点即一个 15min 时点。
 const detail96 = computed(() => {
   if (!current.value) return [] as { label: string; mw: string; mwh: string }[]
   const saved = current.value.energyCurveMwh96
   const editing = ['DRAFT', 'RISK_CHECKED', 'REJECTED'].includes(current.value.status)
-  return Array.from({ length: 96 }, (_, i) => {
-    const h = Math.floor(i / 4)
+  return Array.from({ length: POINT_COUNT }, (_, i) => {
     const mw = editing
-      ? Math.round((hourlyMwNumeric.value[h] ?? 0) * 100) / 100
+      ? Math.round((pointMwNumeric.value[i] ?? 0) * 100) / 100
       : Math.round((saved[i] ?? 0) * 4 * 100) / 100
     const mwh = editing ? Math.round((mw / 4) * 10000) / 10000 : Math.round((saved[i] ?? 0) * 10000) / 10000
     return {
@@ -924,7 +970,7 @@ async function refresh(selectId?: string) {
     current.value = target ?? null
     // current 落定后再定草稿模式（见 syncDraftModeToTargetDate 注释）
     syncDraftModeToTargetDate()
-    if (current.value) syncHourlyFromDeclaration()
+    if (current.value) syncPointsFromDeclaration()
     await nextTick()
     renderDeclChart()
   } catch (error) {
@@ -1038,7 +1084,7 @@ function exportHistoryCsv() {
 watch(historyModeFilter, () => { void loadHistoryList() })
 
 // 复制历史曲线（declaration-workflow §2 快捷操作）：把时间窗内历史申报单的 96 点曲线
-// 带入当前草稿编辑器为底稿。只落到 hourlyMw 并置 curveDirty，仍需「保存曲线」→ 重新
+// 带入当前草稿编辑器为底稿。只落到 pointMw 并置 curveDirty，仍需「保存曲线」→ 重新
 // 风控——与手工编辑同一条保存纪律，不做绕过风控的直达写回。
 const copySourceId = ref('')
 const copyableHistory = computed(() => historyRows.value.filter((r) => r.id !== current.value?.id))
@@ -1046,12 +1092,7 @@ function applyCopyHistory() {
   if (!canEditCurrentCurve.value) return
   const src = historyRows.value.find((r) => r.id === copySourceId.value)
   if (!src) return
-  const energy = src.energyCurveMwh96
-  hourlyMw.value = Array.from({ length: 24 }, (_, h) => {
-    const quarters = energy.slice(h * 4, h * 4 + 4)
-    const avgMwh = quarters.reduce((sum, v) => sum + v, 0) / Math.max(quarters.length, 1)
-    return Math.round(avgMwh * 4 * 100) / 100
-  })
+  pointMw.value = pointMwFromEnergy96(src.energyCurveMwh96)
   // 置脏由 curveDirty 派生（复制值与已保存曲线不同 → 自动为 true），不再手动置位
 }
 
@@ -1173,17 +1214,17 @@ function createDraft() {
 
 function saveCurve() {
   if (!current.value) return
-  // 保存门：未填/负数时段不得静默落库（此前 '' 会被 ''/4=0 归零、总量显示成拼接数字）
-  if (invalidHourIndexes.value.length) {
-    errorMsg.value = `申报曲线第 ${invalidHoursText.value} 小时未填或为负数，请补全后再保存`
+  // 保存门：未填/负数时点不得静默落库（此前 '' 会被 ''/4=0 归零、总量显示成拼接数字）
+  if (invalidPointIndexes.value.length) {
+    errorMsg.value = `申报曲线时点 ${invalidPointsText.value} 未填或为负数，请补全后再保存`
     return
   }
-  const energy = hourlyMwNumeric.value.flatMap((mw) => Array.from({ length: 4 }, () => Math.round((mw / 4) * 10000) / 10000))
+  const energy = pointMwNumeric.value.map((mw) => Math.round((mw / 4) * 10000) / 10000)
   act(
     () => updateDeclarationCurve(current.value!.id, { energyCurveMwh96: energy }),
     (declaration) => {
       current.value = declaration
-      syncHourlyFromDeclaration()
+      syncPointsFromDeclaration()
       void nextTick(renderDeclChart)
       void loadHistoryList() // 列表展示申报总量，保存后同步，避免停留创建时快照
     }
@@ -1309,7 +1350,7 @@ watch(targetDate, (d) => {
   exposureTouched.value = false
   void refreshExposure()
 })
-watch(hourlyMw, () => {
+watch(pointMw, () => {
   void nextTick(renderDeclChart)
 }, { deep: true })
 // keep-alive：切走暂停 1s 倒计时 ticker 与后台探活重试，切回先校准再恢复
@@ -1589,10 +1630,12 @@ onRegionChange(() => {
 
         <!-- 有申报单：曲线 + 流程动作 -->
         <template v-else>
-          <div ref="declChartEl" class="decl-chart chart-host" />
+          <!-- 96 点主图（编辑态支持滚轮逐点微调：悬停柱体上滚增/下滚减） -->
+          <div ref="declChartEl" class="decl-chart chart-host" @wheel="onDeclChartWheel" />
           <div class="curve-meta muted">
             申报总量 <b>{{ totalMwh }}</b> MWh · 最大功率 <b>{{ maxMw }}</b> MW / 容量 {{ current.capacityMw }} MW
             <DataBasisBadge :basis="current.basis" />
+            <span v-if="canEditCurrentCurve" class="wheel-hint">图表可调：悬停柱体滚动滚轮 ±1 MW（Shift ±0.1）</span>
           </div>
 
           <!-- 96 点明细（清单 D1）：编辑中以编辑器实时值为准并注明；导出 CSV（UTF-8 BOM） -->
@@ -1620,10 +1663,12 @@ onRegionChange(() => {
           <template v-if="['DRAFT', 'RISK_CHECKED', 'REJECTED'].includes(current.status)">
             <div class="batch-row">
               <span class="muted">批量段设置</span>
-              <input v-model.number="batch.from" type="number" min="0" max="23" title="起始时点" />
-              <span>:00 ~</span>
-              <input v-model.number="batch.to" type="number" min="0" max="23" title="结束时点" />
-              <span>:00 =</span>
+              <input v-model.number="batch.from" type="number" min="0" max="95" title="起始时点（15min 序号 0~95）" />
+              <span class="muted">{{ pointStartLabel(batch.from) }}</span>
+              <span>~</span>
+              <input v-model.number="batch.to" type="number" min="0" max="95" title="结束时点（15min 序号 0~95）" />
+              <span class="muted">{{ pointStartLabel(batch.to) }}</span>
+              <span>=</span>
               <input v-model.number="batch.mw" type="number" min="0" :max="current.capacityMw * 2" title="功率 MW" />
               <span>MW</span>
               <button class="mini" @click="applyBatch">应用</button>
@@ -1641,15 +1686,15 @@ onRegionChange(() => {
               <button class="mini" :disabled="!copySourceId || busy" @click="applyCopyHistory">应用</button>
             </div>
             <p class="pending-note">「导入预测曲线」还没做：要先确认两件事——导入哪条预测曲线（价格还是负荷出力）、按什么规则换算成申报电量。已列入问题清单，确认后开发。</p>
-            <div class="hour-grid">
-              <label v-for="(_, h) in hourlyMw" :key="h">
-                <span>{{ h }}</span>
-                <input v-model.number="hourlyMw[h]" type="number" min="0" step="1" />
+            <div class="hour-grid point-grid">
+              <label v-for="(_, i) in pointMw" :key="i">
+                <span>{{ pointStartLabel(i) }}</span>
+                <input v-model.number="pointMw[i]" type="number" min="0" step="0.5" />
               </label>
             </div>
             <div class="action-row">
-              <button class="mini primary" :disabled="busy || !curveDirty || invalidHourIndexes.length > 0" @click="saveCurve">保存曲线</button>
-              <span v-if="invalidHourIndexes.length" class="muted curve-invalid">第 {{ invalidHoursText }} 小时未填或为负数，补全后才能保存</span>
+              <button class="mini primary" :disabled="busy || !curveDirty || invalidPointIndexes.length > 0" @click="saveCurve">保存曲线</button>
+              <span v-if="invalidPointIndexes.length" class="muted curve-invalid">时点 {{ invalidPointsText }} 未填或为负数，补全后才能保存</span>
               <span v-else-if="curveDirty" class="muted">曲线已修改，保存后需重新风控检查</span>
             </div>
           </template>
@@ -2016,7 +2061,7 @@ onRegionChange(() => {
   .steps-bar { flex-direction: column; align-items: stretch; }
   .step-line { display: none; }
   .bar-right { flex-wrap: wrap; }
-  /* 24时段价格表：6列→3列，避免每格仅约55px导致输入框溢出 */
+  /* 96 点时序网格：6列→3列，避免每格仅约55px导致输入框溢出 */
   .hour-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 
@@ -2249,6 +2294,17 @@ onRegionChange(() => {
 .hour-grid input {
   width: 100%; padding: 3px 6px; border: 1px solid var(--line); border-radius: 6px;
   background: transparent; color: var(--text); font-size: var(--font-sm);
+}
+/* 96 点编辑网格：时点标签「HH:MM」比小时序号宽，标签列加宽为等宽字体；
+   96 行高输入超过一屏，限高内滚（主图滚轮微调是主路径，网格只是精确兜底） */
+.point-grid { max-height: 340px; overflow-y: auto; padding-right: 2px; }
+.point-grid label { grid-template-columns: 40px minmax(0, 1fr); }
+.point-grid span { font-family: ui-monospace, monospace; }
+/* 主图滚轮微调提示（仅编辑态渲染） */
+.wheel-hint {
+  display: inline-flex; align-items: center;
+  padding: 1px 8px; border: 1px dashed var(--primary); border-radius: 999px;
+  color: var(--primary); font-size: var(--font-11-5);
 }
 .action-row { display: flex; align-items: center; gap: 10px; margin: 8px 0; }
 .mini {

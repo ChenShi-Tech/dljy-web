@@ -471,16 +471,16 @@ export async function updateDeclarationCurve(id: string, input: {
 
 /**
  * 申报曲线编辑器是否相对已保存曲线存在未保存修改（脏标记的派生口径）。
- * 对比口径与保存链一致：编辑器 24 点每小时映射 4 个 15min 恒等点，点电量 = MW/4（4 位舍入）。
+ * 对比口径与保存链一致：编辑器 96 点每点即一个 15min 时点，点电量 = MW/4（4 位舍入）。
  * 用派生值而非「watch 置 true / 同步置 false」的标志位：deep watch 异步 flush，
  * 「赋新数组 → 同步置 false」的序列会被迟到的 watcher 改回 true，造成加载/保存后
  * 恒报「含未保存修改」、无修改也可点保存（服务端会把 RISK_CHECKED 打回 DRAFT）。
  */
-export function isCurveEdited(hourlyMw: number[], savedCurve96?: number[] | null): boolean {
+export function isCurveEdited(pointMw96: number[], savedCurve96?: number[] | null): boolean {
   if (!Array.isArray(savedCurve96) || savedCurve96.length !== 96) return false
-  return hourlyMw.some((mw, h) => {
+  return pointMw96.some((mw, i) => {
     const point = Math.round((mw / 4) * 10000) / 10000
-    return savedCurve96.slice(h * 4, h * 4 + 4).some((v) => Math.abs(v - point) > 1e-6)
+    return Math.abs(savedCurve96[i] - point) > 1e-6
   })
 }
 
@@ -500,9 +500,9 @@ export function editorMwOf(value: unknown): number {
   return Number.isFinite(n) && n >= 0 ? n : Number.NaN
 }
 
-/** 编辑器 24 点中非法（未填/非数/负数）的小时下标，供保存门与「第 N 时未填」提示。 */
-export function invalidHourIndexesOf(hourlyMw: Array<unknown>): number[] {
-  return hourlyMw.flatMap((value, hour) => (Number.isNaN(editorMwOf(value)) ? [hour] : []))
+/** 编辑器 96 点中非法（未填/非数/负数）的时点下标，供保存门与「时点 HH:MM 未填」提示。 */
+export function invalidPointIndexesOf(points: Array<unknown>): number[] {
+  return points.flatMap((value, index) => (Number.isNaN(editorMwOf(value)) ? [index] : []))
 }
 
 /**
