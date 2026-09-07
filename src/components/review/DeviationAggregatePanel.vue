@@ -13,6 +13,7 @@ import {
   aggregateDeviation,
   consecutiveDeviationBreach,
   isoWeekKeyOf,
+  mondayOfIso,
   responsibilityLabelOf,
   RESPONSIBILITY_AXES,
   suggestResponsibility
@@ -37,16 +38,12 @@ const props = defineProps<{ tolerancePct: number; penaltyPrice: number }>()
 
 type Period = 'week' | 'month'
 const period = ref<Period>('week')
-/** 周期锚日：周=周一，月=当月 1 日（默认本周一 / 本月） */
-const anchor = ref(mondayOf(todayBeijing()))
+/** 周期锚日：周=周一，月=当月 1 日（默认本周一 / 本月）。mondayOfIso 为 TZ 安全口径
+ *  （本地 getDay 在 UTC 机器上会把 +08 锚定日算错星期，周锚点漂 6 天，见 mondayOfIso 注） */
+const anchor = ref(mondayOfIso(todayBeijing()))
 const loading = ref(false)
 const data = ref<PeriodReview | null>(null)
 
-function mondayOf(iso: string): string {
-  const d = new Date(`${iso}T00:00:00+08:00`)
-  const dow = (d.getDay() + 6) % 7 // 周一=0
-  return shiftIsoDate(iso, -dow)
-}
 function daysOfPeriod(p: Period, anchorIso: string): string[] {
   if (p === 'week') return Array.from({ length: 7 }, (_, i) => shiftIsoDate(anchorIso, i))
   const [y, m] = anchorIso.split('-').map(Number)
