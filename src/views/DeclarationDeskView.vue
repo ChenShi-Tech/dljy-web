@@ -55,6 +55,8 @@ import {
   submitDeclarationForApproval,
   updateDeclarationCurve,
   isCurveEdited,
+  editorMwOf,
+  invalidHourIndexesOf,
   normalizeExposureTotalMwh,
   type DeclarationMeta,
   type DeclarationMode,
@@ -703,13 +705,25 @@ async function refreshExposure(force = false) {
 const approvalComment = ref('')
 
 // 24 小时功率编辑器（每小时映射 4 个 15min 点；存储口径 MWh/点 = MW/4）
-const hourlyMw = ref<number[]>(Array.from({ length: 24 }, () => 0))
+// 值类型含 ''：v-model.number 在输入框被清空/半输入时回填空串，运行时就是它
+const hourlyMw = ref<Array<number | ''>>(Array.from({ length: 24 }, () => 0))
 const batch = ref({ from: 0, to: 23, mw: 30 })
+// 编辑器数值视图：未填/非数/负数归一为 NaN 的原始口径，与「展示用按 0 折算」口径分离。
+// 归一必须发生在求和/保存之前——此前 '' 参与求和退化成字符串拼接（总量显示成拼接数字）、
+// 保存链上 ''/4 把该小时静默归零（工作台审查 P2）。
+const hourlyMwNumeric = computed(() =>
+  hourlyMw.value.map((v) => {
+    const mw = editorMwOf(v)
+    return Number.isNaN(mw) ? 0 : mw
+  })
+)
+const invalidHourIndexes = computed(() => invalidHourIndexesOf(hourlyMw.value))
+const invalidHoursText = computed(() => invalidHourIndexes.value.map((h) => `${h}:00`).join('、'))
 // 脏标记 = 编辑器值与已保存曲线的派生比较（isCurveEdited）。
 // 不能用「watch 置 true / 同步置 false」的标志位：deep watch 异步 flush，
 // refresh/保存后的 syncHourlyFromDeclaration 会被迟到的 watcher 改回 true，
 // 造成加载/保存后恒报「含未保存修改」、无修改也可点保存（服务端打回 DRAFT）。
-const curveDirty = computed(() => isCurveEdited(hourlyMw.value, current.value?.energyCurveMwh96))
+const curveDirty = computed(() => isCurveEdited(hourlyMwNumeric.value, current.value?.energyCurveMwh96))
 
 function syncHourlyFromDeclaration() {
   if (!current.value) return
@@ -728,8 +742,8 @@ function applyBatch() {
   // 置脏由 curveDirty 派生（批量值与已保存曲线不同 → 自动为 true）
 }
 
-const totalMwh = computed(() => Math.round(hourlyMw.value.reduce((sum, mw) => sum + mw, 0) * 100) / 100)
-const maxMw = computed(() => Math.max(...hourlyMw.value, 0))
+const totalMwh = computed(() => Math.round(hourlyMwNumeric.value.reduce((sum, mw) => sum + mw, 0) * 100) / 100)
+const maxMw = computed(() => Math.max(...hourlyMwNumeric.value, 0))
 
 // 审批可见性（UI 门，非安全边界）
 // 权威判定恒在服务端（spot-declarations-api.mjs 的 APPROVE_ROLES + 自审禁止，越权一律 403）。
@@ -777,7 +791,7 @@ function renderDeclChart() {
     series: [{
       name: '申报功率',
       type: 'bar',
-      data: hourlyMw.value,
+      data: hourlyMwNumeric.value,
       itemStyle: { color: '#0ea5e9' },
       markPoint: mwMark('#0369a1'),
       markLine: current.value
@@ -797,7 +811,7 @@ const detail96 = computed(() => {
   return Array.from({ length: 96 }, (_, i) => {
     const h = Math.floor(i / 4)
     const mw = editing
-      ? Math.round((hourlyMw.value[h] ?? 0) * 100) / 100
+      ? Math.round((hourlyMwNumeric.value[h] ?? 0) * 100) / 100
       : Math.round((saved[i] ?? 0) * 4 * 100) / 100
     const mwh = editing ? Math.round((mw / 4) * 10000) / 10000 : Math.round((saved[i] ?? 0) * 10000) / 10000
     return {
@@ -1159,7 +1173,12 @@ function createDraft() {
 
 function saveCurve() {
   if (!current.value) return
-  const energy = hourlyMw.value.flatMap((mw) => Array.from({ length: 4 }, () => Math.round((mw / 4) * 10000) / 10000))
+  // 保存门：未填/负数时段不得静默落库（此前 '' 会被 ''/4=0 归零、总量显示成拼接数字）
+  if (invalidHourIndexes.value.length) {
+    errorMsg.value = `申报曲线第 ${invalidHoursText.value} 小时未填或为负数，请补全后再保存`
+    return
+  }
+  const energy = hourlyMwNumeric.value.flatMap((mw) => Array.from({ length: 4 }, () => Math.round((mw / 4) * 10000) / 10000))
   act(
     () => updateDeclarationCurve(current.value!.id, { energyCurveMwh96: energy }),
     (declaration) => {
@@ -1198,6 +1217,10 @@ function decide(decision: 'approve' | 'reject') {
   act(
     () => approveDeclaration(current.value!.id, decision, approvalComment.value || undefined),
     (declaration) => {
+      // L3 双签第一签：服务端只落签不转态，单据仍是待审批——明示而不是让人以为已批准
+      if (declaration.awaitingSecondSignature) {
+        ElMessage.warning('L3 双签：第一签已记录，需第二位审批人批准后本单才进入已审批')
+      }
       current.value = declaration
       approvalComment.value = ''
       void loadHistoryList()
@@ -1625,8 +1648,9 @@ onRegionChange(() => {
               </label>
             </div>
             <div class="action-row">
-              <button class="mini primary" :disabled="busy || !curveDirty" @click="saveCurve">保存曲线</button>
-              <span v-if="curveDirty" class="muted">曲线已修改，保存后需重新风控检查</span>
+              <button class="mini primary" :disabled="busy || !curveDirty || invalidHourIndexes.length > 0" @click="saveCurve">保存曲线</button>
+              <span v-if="invalidHourIndexes.length" class="muted curve-invalid">第 {{ invalidHoursText }} 小时未填或为负数，补全后才能保存</span>
+              <span v-else-if="curveDirty" class="muted">曲线已修改，保存后需重新风控检查</span>
             </div>
           </template>
 
@@ -1664,15 +1688,25 @@ onRegionChange(() => {
             </ul>
           </div>
 
-          <!-- 送审 -->
+          <!-- 送审：最新风控被硬约束拦下（blocked 结果照常落库但单据停在 RISK_CHECKED）
+               时禁用并说明——服务端送审门同样拒绝（工作台审查 P1） -->
           <div v-if="current.status === 'RISK_CHECKED'" class="action-row">
-            <button class="launch slim" :disabled="busy" @click="sendForApproval">送审（进入审批队列）</button>
+            <button
+              class="launch slim"
+              :disabled="busy || current.riskCheck?.blocked === true"
+              :title="current.riskCheck?.blocked ? '最新风控检查被硬约束拦下，须调整后重新风控通过' : ''"
+              @click="sendForApproval"
+            >送审（进入审批队列）</button>
+            <span v-if="current.riskCheck?.blocked" class="muted curve-invalid">最新风控检查未通过（硬约束），须重新风控通过后才能送审</span>
           </div>
 
           <!-- 审批表单：仅对有审批权且非创建人（演练单与 ADMIN/BOSS 豁免）渲染 -->
           <div v-if="canApproveCurrent" class="approval-block">
             <div class="block-head">
               <Stamp :size="14" /> 人工审批（创建人不可审批本人申报单）
+              <span v-if="current.l3Signatures?.length" class="gate-chip escalated" :title="`第一签：${current.l3Signatures.map((s) => s.approver).join('、')}`">
+                L3 已有一签 · 待第二签
+              </span>
               <span v-if="isRehearsal && isSelfDeclaration" class="rehearsal-chip">演练自批 · 将留痕</span>
             </div>
             <textarea v-model="approvalComment" rows="2" placeholder="审批意见（写入 approvalRecord 审计留痕）" />
@@ -1710,7 +1744,7 @@ onRegionChange(() => {
           <div v-if="current.approvalRecord.length" class="audit-block">
             <div class="block-head">审批记录</div>
             <p v-for="r in current.approvalRecord" :key="r.at" class="muted">
-              {{ r.at.slice(0, 19).replace('T', ' ') }} · {{ r.approver }}（{{ r.role }}）{{ r.decision === 'approve' ? '批准' : '驳回' }}
+              {{ r.at.slice(0, 19).replace('T', ' ') }} · {{ r.approver }}（{{ r.role }}）{{ r.decision === 'approve' ? (r.dualSignPending ? '批准（L3 双签·第一签，待第二签）' : '批准') : '驳回' }}
               {{ r.comment ? `：${r.comment}` : '' }}（{{ r.gateLevel }}）
             </p>
           </div>
@@ -1897,6 +1931,8 @@ onRegionChange(() => {
 <style scoped>
 .rationale-field { display: flex; flex-direction: column; gap: 3px; margin: 8px 0; font-size: var(--font-sm); }
 .rationale-field b { color: #b91c1c; }
+/* 保存门/送审门的阻断说明（未填时段、硬约束拦下） */
+.curve-invalid { color: #b91c1c; }
 .rationale-field textarea { width: 100%; padding: 6px 8px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 6px; font-size: var(--font-sm); font-family: inherit; }
 .rationale-field small { font-size: var(--font-xs); color: var(--el-text-color-secondary, #667); }
 .rationale-field small.warn { color: #b45309; }

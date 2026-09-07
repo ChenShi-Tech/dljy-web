@@ -24,15 +24,21 @@ export const DECLARATION_MODE_LABEL: Record<DeclarationMode, string> = {
 }
 
 export type RiskCheckItem = {
-  checkId: 'capacity' | 'priceCap' | 'exposure'
+  // 契约已扩为手册 T4 十项（capacity/priceCap/quotePrecision/exposure/bias/dataBasis/
+  // quoteRationale/redLine/socTrajectory/breakeven），此处只作展示用途，放宽为 string
+  checkId: string
   name: string
   status: 'PASS' | 'FAIL' | 'UNAVAILABLE'
+  severity?: 'hard' | 'overridable' | 'warning'
   detail: string
 }
 
 export type RiskCheckResult = {
   checks: RiskCheckItem[]
   passed: boolean
+  /** 硬约束不通过：结果照常落库但状态转移被拦（送审门据此拒绝） */
+  blocked?: boolean
+  blockers?: RiskCheckItem[]
   gateLevel: 'L2' | 'L3'
   totalMwh: number
   maxMw: number
@@ -49,6 +55,8 @@ export type ApprovalRecord = {
   comment: string | null
   /** 演练单创建人自批留痕（真实单永远缺席），四眼原则豁免的审计标记 */
   rehearsalSelfApproval?: boolean
+  /** L3 双签：本条只是第一签，单据尚未批准（第二签批准后另有正式记录） */
+  dualSignPending?: boolean
 }
 
 export type DeclarationAuditEntry = {
@@ -292,6 +300,14 @@ export type DeclarationOrder = {
   note: string | null
   riskCheck: RiskCheckResult | null
   approvalRecord: ApprovalRecord[]
+  /**
+   * L3 双签在途的第一签（工作台审查 P1 修复）：gateLevel=L3 的真实单须两位不同审批人
+   * 先后批准才迁移 APPROVED。送审与批准完成后服务端都会清空本数组，故非空即「已有一签、
+   * 待第二签」。
+   */
+  l3Signatures?: Array<{ approver: string; role: string; at: string; comment: string | null }>
+  /** 瞬态响应标记（不落库）：本次 approve 只完成 L3 第一签，等待第二位审批人 */
+  awaitingSecondSignature?: boolean
   receipt: {
     receiptId: string
     gateway: string
@@ -466,6 +482,27 @@ export function isCurveEdited(hourlyMw: number[], savedCurve96?: number[] | null
     const point = Math.round((mw / 4) * 10000) / 10000
     return savedCurve96.slice(h * 4, h * 4 + 4).some((v) => Math.abs(v - point) > 1e-6)
   })
+}
+
+/**
+ * 申报曲线编辑器单格原始输入 → 数值 MW。清空/半输入态（v-model.number 得 ''）、
+ * 非数与负数（input min 挡不住键入）一律返回 NaN，由调用方禁用保存并明示，
+ * 不再静默按 0 处理——此前 '' 参与求和会退化成字符串拼接（总量显示成拼接数字）、
+ * 保存链上 ''/4 会把该小时静默归零。
+ */
+export function editorMwOf(value: unknown): number {
+  // Number('') === 0、Number(null) === 0：空输入必须先于数值转换判定，
+  // 否则清空一格会被静默折算成 0（本次修复要消灭的正是这个行为）
+  if (value === null || value === undefined || (typeof value === 'string' && value.trim() === '')) {
+    return Number.NaN
+  }
+  const n = Number(value)
+  return Number.isFinite(n) && n >= 0 ? n : Number.NaN
+}
+
+/** 编辑器 24 点中非法（未填/非数/负数）的小时下标，供保存门与「第 N 时未填」提示。 */
+export function invalidHourIndexesOf(hourlyMw: Array<unknown>): number[] {
+  return hourlyMw.flatMap((value, hour) => (Number.isNaN(editorMwOf(value)) ? [hour] : []))
 }
 
 /**

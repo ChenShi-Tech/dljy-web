@@ -55,3 +55,37 @@ describe('normalizeExposureTotalMwh', () => {
     expect(normalizeExposureTotalMwh('3000')).toBe(3000)
   })
 })
+
+// 曲线编辑器输入归一（工作台审查 P2）：清空/半输入态（v-model.number 得 ''）、非数与
+// 负数必须是「可见的非法」（禁用保存+明示），而不是 ''/4=0 静默归零、'' 参与求和退化成
+// 字符串拼接把总量显示成拼接数字。
+import { editorMwOf, invalidHourIndexesOf } from './declarations'
+
+describe('editorMwOf', () => {
+  it('合法数值（含小数、数字串）原样透传', () => {
+    expect(editorMwOf(30)).toBe(30)
+    expect(editorMwOf(12.5)).toBe(12.5)
+    expect(editorMwOf('45')).toBe(45)
+    expect(editorMwOf(0)).toBe(0)
+  })
+
+  it('未填/非数/负数 → NaN（非法，由保存门拦截）', () => {
+    for (const bad of ['', ' ', 'abc', -1, Number.NaN, null, undefined]) {
+      expect(Number.isNaN(editorMwOf(bad))).toBe(true)
+    }
+  })
+})
+
+describe('invalidHourIndexesOf', () => {
+  it('只标记非法的小时，合法值（含数字串）不误报', () => {
+    const hourly: Array<number | ''> = Array.from({ length: 24 }, () => 30)
+    hourly[3] = ''
+    hourly[7] = -5
+    hourly[11] = 'abc' as unknown as number
+    expect(invalidHourIndexesOf(hourly)).toEqual([3, 7, 11])
+  })
+
+  it('全部合法 → 空数组（保存门放行）', () => {
+    expect(invalidHourIndexesOf(Array.from({ length: 24 }, (_, h) => h))).toEqual([])
+  })
+})
