@@ -39,6 +39,11 @@ const form = ref({
   rememberMe: false
 })
 const loading = ref(false)
+// 开发期跳过滑块验证：dev server 下默认关（每次 agent/自动化登录都会被滑块挡住），
+// 生产构建默认开；任何模式下显式置 VITE_DISABLE_LOGIN_CAPTCHA=1 也可关闭。
+// 后端不校验 captchaVerification（纯前端演示门），跳过不影响鉴权。
+const LOGIN_CAPTCHA_DISABLED =
+  import.meta.env.DEV || import.meta.env.VITE_DISABLE_LOGIN_CAPTCHA === '1'
 const showCaptcha = ref(false)
 const captchaPassed = ref(false)
 const showChangePassword = ref(false)
@@ -282,6 +287,11 @@ async function openCaptcha() {
     return
   }
   resetCaptcha()
+  if (LOGIN_CAPTCHA_DISABLED) {
+    captchaPassed.value = true
+    await submitLogin()
+    return
+  }
   showCaptcha.value = true
 }
 
