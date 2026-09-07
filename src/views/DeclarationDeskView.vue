@@ -848,6 +848,22 @@ function onDeclChartWheel(e: WheelEvent) {
   chart.dispatchAction({ type: 'showTip', seriesIndex: 0, dataIndex: pointIndex })
 }
 
+// 时点输入格的滚轮 = 该点功率 ±1 MW（Shift ±0.1），与主图滚轮微调同一步长；
+// preventDefault 同时拦掉原生 number 输入按 step 属性的步进。仅在输入框已聚焦时
+// 接管：未聚焦时放行默认滚动——96 格网格限高内滚，悬停滚轮必须留给网格滚动用。
+// 非法态（''/非数/负）按 0 起步，上下限与主图/批量输入同口径 [0, 容量×2]。
+function onPointInputWheel(e: WheelEvent, index: number) {
+  const input = e.currentTarget as HTMLInputElement | null
+  if (!input || document.activeElement !== input || input.readOnly || input.disabled) return
+  const raw = editorMwOf(pointMw.value[index])
+  const base = Number.isNaN(raw) ? 0 : raw
+  const step = e.shiftKey ? 0.1 : 1
+  const capCeiling = (current.value?.capacityMw ?? capacityMw.value) * 2
+  const next = Math.min(capCeiling, Math.max(0, base + (e.deltaY < 0 ? step : -step)))
+  pointMw.value[index] = Math.round(next * 100) / 100
+  e.preventDefault()
+}
+
 // ── 96 点明细与导出（清单 D1）：明细数值与底稿同源 ──
 // 编辑中（脏）以编辑器实时值为准并注明；否则读已保存的申报单曲线。
 // 存储口径：96 点为 MWh/15min，功率 MW = MWh×4；编辑器每点即一个 15min 时点。
@@ -1635,7 +1651,7 @@ onRegionChange(() => {
           <div class="curve-meta muted">
             申报总量 <b>{{ totalMwh }}</b> MWh · 最大功率 <b>{{ maxMw }}</b> MW / 容量 {{ current.capacityMw }} MW
             <DataBasisBadge :basis="current.basis" />
-            <span v-if="canEditCurrentCurve" class="wheel-hint">图表可调：悬停柱体滚动滚轮 ±1 MW（Shift ±0.1）</span>
+            <span v-if="canEditCurrentCurve" class="wheel-hint">滚轮微调：悬停柱体 ±1 MW（Shift ±0.1）· 时点输入聚焦后同调</span>
           </div>
 
           <!-- 96 点明细（清单 D1）：编辑中以编辑器实时值为准并注明；导出 CSV（UTF-8 BOM） -->
@@ -1689,7 +1705,7 @@ onRegionChange(() => {
             <div class="hour-grid point-grid">
               <label v-for="(_, i) in pointMw" :key="i">
                 <span>{{ pointStartLabel(i) }}</span>
-                <input v-model.number="pointMw[i]" type="number" min="0" step="0.5" />
+                <input v-model.number="pointMw[i]" type="number" min="0" step="1" @wheel="onPointInputWheel($event, i)" />
               </label>
             </div>
             <div class="action-row">
