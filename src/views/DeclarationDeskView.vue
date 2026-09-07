@@ -54,12 +54,15 @@ import {
   submitDeclaration,
   submitDeclarationForApproval,
   updateDeclarationCurve,
+  isCurveEdited,
+  normalizeExposureTotalMwh,
   type DeclarationMeta,
   type DeclarationMode,
   type DeclarationOrder,
 } from '@/services/declarations'
 import { DECLARATION_TRANSITIONS } from '@/services/contracts/spotDeclarationContract.gen'
 import { buildRehearsalNote, formatRehearsalStamp, parseRehearsalStartedAt } from '@/services/declarationRehearsal'
+import { isRealCalendarDate } from '@/utils/calendarDate'
 
 const router = useRouter()
 const route = useRoute()
@@ -126,6 +129,8 @@ useQuerySync({ targetDate })
 // 目标日 ±1 天快捷步进（清单 C-2，复盘中心头部同款交互）：改目标日即走既有 refresh 链，
 // 列表/预测/决策包自动跟随；前向申报仍受窗口规则约束（窗口关闭由既有提示与演练降级兜底）。
 function stepTargetDate(days: number) {
+  // 清空/半输入态下步进：shiftDate 对非法串会抛 RangeError，直接忽略本次步进
+  if (!isRealCalendarDate(targetDate.value)) return
   targetDate.value = shiftDate(targetDate.value, days)
 }
 
@@ -141,7 +146,8 @@ const isRehearsal = computed(() => currentMode.value === 'REHEARSAL')
 // 那时 current 仍是旧目标日的单，切到无申报单的历史日期时不会切成 REHEARSAL，
 // 用户点创建就会拿到立即过期的 LIVE 单（反向亦会残留 REHEARSAL）。
 const todayLocal = computed(() => fmtDate(new Date(nowTick.value)))
-const isPastTargetDate = computed(() => targetDate.value < todayLocal.value)
+// 清空/半输入态（''）会被 '' < 今日 判成「历史日」，触发误导性警告与 REHEARSAL 预选——非法值不参与判定
+const isPastTargetDate = computed(() => isRealCalendarDate(targetDate.value) && targetDate.value < todayLocal.value)
 // 未来目标日但申报窗口已关闭：如今天 11:00 选明天，明天的截止是今天 10:30，已过。
 // 此时建 LIVE 单同样会立即作废，故与历史日一样需要提示（meta.deadline 由服务端给出）。
 const isLiveWindowClosed = computed(() => {
@@ -657,19 +663,26 @@ function markExposureManual() {
   exposureStatus.value = 'manual'
 }
 
+// 竞态守卫：快速切目标日/连点刷新时，旧敞口响应晚归会覆盖新月份数据（月份口径错位）
+let exposureGeneration = 0
+
 async function refreshExposure(force = false) {
   const month = targetDate.value.slice(0, 7)
   if (!month) return
   exposureLoading.value = true
   exposureStatus.value = 'loading'
+  exposureError.value = '' // 清上一轮失败残留（渲染处另有 status 条件，双保险）
+  // 竞态守卫：快速切目标日/连点刷新时，旧敞口响应晚归会覆盖新月份数据（月份口径错位）
+  const generation = ++exposureGeneration
   try {
     if (force) exposureTouched.value = false
     const result = await fetchExposure({
       month,
-      total_mwh: Math.max(1, Number(exposureTotalMwh.value) || 1),
+      total_mwh: normalizeExposureTotalMwh(exposureTotalMwh.value),
       mode: 'peak_valley',
       expected_source: 'renewable'
     })
+    if (generation !== exposureGeneration) return
     exposure.value = result
     if (!exposureTouched.value) {
       exposureTotalMwh.value = Math.round(result.total_mwh * 100) / 100
@@ -678,10 +691,11 @@ async function refreshExposure(force = false) {
       exposureStatus.value = 'manual'
     }
   } catch (error) {
+    if (generation !== exposureGeneration) return
     exposureStatus.value = 'failed'
     exposureError.value = error instanceof Error ? error.message : ''
   } finally {
-    exposureLoading.value = false
+    if (generation === exposureGeneration) exposureLoading.value = false
   }
 }
 
@@ -691,7 +705,11 @@ const approvalComment = ref('')
 // 24 小时功率编辑器（每小时映射 4 个 15min 点；存储口径 MWh/点 = MW/4）
 const hourlyMw = ref<number[]>(Array.from({ length: 24 }, () => 0))
 const batch = ref({ from: 0, to: 23, mw: 30 })
-const curveDirty = ref(false)
+// 脏标记 = 编辑器值与已保存曲线的派生比较（isCurveEdited）。
+// 不能用「watch 置 true / 同步置 false」的标志位：deep watch 异步 flush，
+// refresh/保存后的 syncHourlyFromDeclaration 会被迟到的 watcher 改回 true，
+// 造成加载/保存后恒报「含未保存修改」、无修改也可点保存（服务端打回 DRAFT）。
+const curveDirty = computed(() => isCurveEdited(hourlyMw.value, current.value?.energyCurveMwh96))
 
 function syncHourlyFromDeclaration() {
   if (!current.value) return
@@ -701,14 +719,13 @@ function syncHourlyFromDeclaration() {
     const avgMwh = quarters.reduce((sum, v) => sum + v, 0) / Math.max(quarters.length, 1)
     return Math.round(avgMwh * 4 * 100) / 100
   })
-  curveDirty.value = false
 }
 
 function applyBatch() {
   const from = Math.max(0, Math.min(23, Math.floor(batch.value.from)))
   const to = Math.max(from, Math.min(23, Math.floor(batch.value.to)))
   for (let h = from; h <= to; h++) hourlyMw.value[h] = batch.value.mw
-  curveDirty.value = true
+  // 置脏由 curveDirty 派生（批量值与已保存曲线不同 → 自动为 true）
 }
 
 const totalMwh = computed(() => Math.round(hourlyMw.value.reduce((sum, mw) => sum + mw, 0) * 100) / 100)
@@ -784,7 +801,8 @@ const detail96 = computed(() => {
       : Math.round((saved[i] ?? 0) * 4 * 100) / 100
     const mwh = editing ? Math.round((mw / 4) * 10000) / 10000 : Math.round((saved[i] ?? 0) * 10000) / 10000
     return {
-      label: `${String(h).padStart(2, '0')}:${String((i % 4) * 15).padStart(2, '0')}`,
+      // 时点标注与「导出当日明细」同一口径（15min 时段段末 00:15~24:00），同页两处不各说各话
+      label: curvePointLabel(i),
       mw: mw.toFixed(2),
       mwh: mwh.toFixed(4)
     }
@@ -958,7 +976,12 @@ const curvePointLabel = (i: number) => {
   return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
 }
 const exportDate = ref(targetDate.value)
-watch(targetDate, (d) => { exportDate.value = d })
+watch(targetDate, (d) => {
+  // native date input 清空/半输入态会给空串或非法值——此时不发请求链、不改导出日期，
+  // 页面保留上一个有效目标日的数据；等用户补全成真实日期后再走刷新
+  if (!isRealCalendarDate(d)) return
+  exportDate.value = d
+})
 const exportBusy = ref(false)
 function exportHistoryCsv() {
   if (exportBusy.value || !exportDate.value) return
@@ -1015,7 +1038,7 @@ function applyCopyHistory() {
     const avgMwh = quarters.reduce((sum, v) => sum + v, 0) / Math.max(quarters.length, 1)
     return Math.round(avgMwh * 4 * 100) / 100
   })
-  curveDirty.value = true
+  // 置脏由 curveDirty 派生（复制值与已保存曲线不同 → 自动为 true），不再手动置位
 }
 
 // 点击历史行：切目标日并选中该单。
@@ -1151,7 +1174,8 @@ function saveCurve() {
 function runRisk() {
   if (!current.value) return
   act(
-    () => runDeclarationRiskCheck(current.value!.id, { exposureTotalMwh: exposureTotalMwh.value, priceCap: regionPriceCap.value }),
+    // 与 refreshExposure 同一归一口径：输入被清空/误输时不把垃圾值发给风控
+    () => runDeclarationRiskCheck(current.value!.id, { exposureTotalMwh: normalizeExposureTotalMwh(exposureTotalMwh.value), priceCap: regionPriceCap.value }),
     (declaration) => {
       current.value = declaration
     }
@@ -1254,14 +1278,15 @@ onMounted(() => {
     nowTick.value = Date.now()
   }, 1000)
 })
-watch(targetDate, () => {
+watch(targetDate, (d) => {
+  // 同上：非法日期不发刷新链（meta/列表/敞口/决策包全部依赖合法目标日）
+  if (!isRealCalendarDate(d)) return
   resetDecisionPackage()
   void refresh()
   exposureTouched.value = false
   void refreshExposure()
 })
 watch(hourlyMw, () => {
-  curveDirty.value = true
   void nextTick(renderDeclChart)
 }, { deep: true })
 // keep-alive：切走暂停 1s 倒计时 ticker 与后台探活重试，切回先校准再恢复
