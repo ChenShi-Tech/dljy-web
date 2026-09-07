@@ -47,6 +47,9 @@ import type {
   GridTopologyReadinessItem,
 } from './types'
 
+type MapExpose = { flyTerrainTour?: () => void }
+const mapRef = ref<MapExpose | null>(null)
+
 const loading = ref(true)
 const error = ref('')
 const plants = shallowRef<GridGeoPlant[]>([])
@@ -251,6 +254,7 @@ watch(selectedEvidenceSourceId, () => {
 
     <div class="topology-stage" :aria-busy="loading">
       <CesiumPlantMap
+        ref="mapRef"
         :plants="plants"
         :view-mode="viewMode"
         :selected-plant-id="selectedPlantId"
@@ -281,6 +285,7 @@ watch(selectedEvidenceSourceId, () => {
         :view-mode="viewMode"
         :hillshade-available="hillshadeAvailable"
         @request-3d="viewMode = '3d'"
+        @request-terrain-tour="mapRef?.flyTerrainTour?.()"
       />
       <div class="stage-vignette" aria-hidden="true" />
       <div class="stage-grid" aria-hidden="true" />
@@ -475,7 +480,10 @@ watch(selectedEvidenceSourceId, () => {
 .spinning { animation: spin 1s linear infinite; }
 
 .topology-stage { position: relative; min-height: 720px; overflow: hidden; border: 1px solid rgba(87, 182, 220, .22); border-radius: 20px; background: #020811; box-shadow: 0 24px 72px rgba(0, 5, 16, .42); isolation: isolate; }
-.stage-vignette { position: absolute; z-index: 1; inset: 0; pointer-events: none; box-shadow: inset 0 0 170px rgba(0, 4, 15, .82); }
+/* 暗角：纯装饰。原值把地图四周压到近黑，与「看清地形起伏」直接冲突——
+   卫星影像 + 山体阴影的明暗差本来就细，再罩一层暗角等于把刚找回来的立体感抹掉一圈。
+   保留氛围但让强度退到不吃画面（不透明度砍半、扩散收窄）。 */
+.stage-vignette { position: absolute; z-index: 1; inset: 0; pointer-events: none; box-shadow: inset 0 0 104px rgba(0, 4, 15, .34); }
 .stage-grid { position: absolute; z-index: 2; inset: 0; pointer-events: none; opacity: .11; background-image: linear-gradient(rgba(93, 206, 232, .26) 1px, transparent 1px), linear-gradient(90deg, rgba(93, 206, 232, .26) 1px, transparent 1px); background-size: 52px 52px; mask-image: radial-gradient(circle at center, #000, transparent 79%); }
 .stage-content { position: relative; z-index: 4; display: grid; min-height: 720px; grid-template-rows: auto 1fr auto; gap: 16px; padding: 17px; pointer-events: none; }
 .stage-topbar, .provider-dock, .stage-bottom { pointer-events: auto; }

@@ -14,9 +14,10 @@ import {
 describe('mapProviders 底图 Provider 配置层', () => {
   it('默认 Provider 为实测可达的免费网络源', () => {
     const def = resolveBaseMapProvider(DEFAULT_BASE_MAP_PROVIDER_ID)
-    // 由 arcgis-imagery 换来：arcgisonline.com 整域对本项目出口 IP 恒 403，实机上永远降级成
-    // OSM 街道图，三维地形被街道图盖住等于白开。carto-dark 实测 0.24-0.73s、上千次请求零失败。
-    expect(def.id).toBe('carto-voyager')
+    // 换回 arcgis-imagery：此前断言「arcgisonline.com 整域 403」只对 `services.` 子域成立，
+    // `server.` 子域实测 12 并发 0.71–1.87s 全 200。卫星影像是唯一能和三维地形互相成就的
+    // 底图——矢量街道图铺在地形上读不出地貌，等于地形白开。
+    expect(def.id).toBe('arcgis-imagery')
     expect(def.kind).toBe('url-template')
     expect(def.tier).toBe('free')
     expect(def.requiresToken ?? false).toBe(false)
@@ -105,9 +106,9 @@ describe('mapProviders 底图 Provider 配置层', () => {
       'solid-grid',
     ])
     expect(resolveBaseMapFallbackSequence('does-not-exist').map((item) => item.id)).toEqual([
+      'arcgis-imagery',
       'carto-voyager',
       'carto-dark',
-      'arcgis-imagery',
       'osm-bright',
       'osm-dark',
       'opentopo',
@@ -116,6 +117,14 @@ describe('mapProviders 底图 Provider 配置层', () => {
     expect(resolveBaseMapFallbackSequence('solid-grid').map((item) => item.id)).toEqual([
       'solid-grid',
     ])
+  })
+
+  it('注册表不得再指向实测不可达的 services.arcgisonline.com 子域', () => {
+    // 这条钉死一次教训：Esri 的 `services.` 与 `server.` 两个子域一堵一通，而当年把整域
+    // 判死后，卫星底图与晕渲图层被一起弃用了近一个月。以后谁再引 Esri 服务都得走可达那个。
+    for (const provider of listBaseMapProviders()) {
+      expect(provider.url).not.toContain('services.arcgisonline.com')
+    }
   })
 
   it('默认底图必须是网络可达的瓦片源，不能是纯色兜底', () => {

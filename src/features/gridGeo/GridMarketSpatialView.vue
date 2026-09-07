@@ -14,6 +14,9 @@ import { fetchGridGeoManifest, fetchGridGeoPlants } from './client'
 import { loadGridMarketSpatialSnapshot, type GridMarketSpatialSnapshot } from './marketSpatial'
 import type { GridGeoPlant, GridGeoSelection, GridGeoTerrainStatus, GridGeoViewMode, GridMarketLayer, GridMarketMetric, GridOperatorProfile } from './types'
 
+type MapExpose = { flyTerrainTour?: () => void }
+const mapRef = ref<MapExpose | null>(null)
+
 const plants = shallowRef<GridGeoPlant[]>([])
 const snapshot = shallowRef<GridMarketSpatialSnapshot | null>(null)
 const loading = ref(true)
@@ -212,6 +215,7 @@ watch(selectedCompanyId, resetMarketScope)
       -->
       <component
         :is="viewMode === '2d' ? ProvinceFlatMap : CesiumPlantMap"
+        ref="mapRef"
         :plants="plants"
         :view-mode="viewMode"
         :selected-plant-id="selectedPlantId"
@@ -255,6 +259,7 @@ watch(selectedCompanyId, resetMarketScope)
         :view-mode="viewMode"
         :hillshade-available="hillshadeAvailable"
         @request-3d="viewMode = '3d'"
+        @request-terrain-tour="mapRef?.flyTerrainTour?.()"
       />
       </div>
 
