@@ -81,6 +81,24 @@ npm run dev                        # http://localhost:5174
 7. **mock 标注透传**：收编/新写 client 时，信封的 `mock` 与 `mockFields` 必须原样透传给 UI 层（驾驶舱/工作台的 Mock 可见标注依赖它）；「缺数据返 null、失败不缓存、未知回落标 synthetic」是数据诚实性红线。
 8. **`/pi-api` 特例**：战略问答/申报体检 PoC 与智能体工作台（chat 已切流 #2158）共用，后端是 integrations/pi-poc 沙箱（`DLJY_PI_POC_TARGET`，默认 8100，代理 rewrite `/pi-api` → `/api`）；不跑该服务时代理目标不可达属正常。
 
+### 3.6 三维地图：底图、地形与凭据（改 `src/features/gridGeo/**` 前必读）
+
+「空间资产」下 5 个页面共用 `CesiumPlantMap.vue`，三层是**互相独立**的，排障时先分清坏在哪一层：
+
+| 层 | 配置位置 | 现状 |
+|---|---|---|
+| 底图影像 | `src/config/mapProviders.ts` 注册表 + `VITE_GRID_GEO_BASEMAP` | 默认 `arcgis-imagery`（卫星），失败按降级链退到矢量图、最终退内置底色 |
+| 地形高程 | `TerrainControlPanel` 下拉 + `VITE_GRID_GEO_TERRAIN_PROVIDER` | 默认 ArcGIS Terrain 3D（免 token）；Cesium World Terrain 需 ion token |
+| 山体阴影 | 晕渲图层（`applyHillshade`）+ `VITE_GRID_GEO_HILLSHADE_URL` | 默认走 `server.arcgisonline.com` 降级链 |
+
+三条容易踩空的事实：
+
+1. **`server.arcgisonline.com` 通，`services.arcgisonline.com` 不通。** 同一家 Esri 的两个子域，后者对本项目出口 IP 15s 超时无响应。历史上把整域判死，导致卫星底图与晕渲被一起弃用。新引 Esri 服务一律用 `server.`（`mapProviders.spec.ts` 有回归护栏钉死这条）。
+2. **ArcGIS Terrain 3D 没有顶点法线**（Cesium 里 `hasVertexNormals` 恒为 `false`），所以它的地形**几何是真的、山体阴影是没有的**——光照算不出明暗，起伏全靠晕渲图层勾勒。要真山体明暗只能用 Cesium World Terrain（quantized-mesh + `requestVertexNormals`）。
+3. **`globe.enableLighting` 不能简单关掉。** 关掉能治「夜半球全黑」，但地表明暗 100% 来自光照，关掉等于把地形摁成一张平贴图。现在的做法是保留光照、把光源换成跟随相机的 `DirectionalLight`（见 `applyLighting`）：相机看到的永远是受光面，地形明暗照常。
+
+**ion token 是运行时凭据**（`src/config/mapTokens.ts`）：localStorage 优先、`VITE_CESIUM_ION_TOKEN` 兜底。用户在「地形环境」面板里就能填，填完立即生效、无需重新构建——现场交付拿到的是构建产物，没有这条路径就永远开不了带山体阴影的那一档。它是前端可见的第三方地图凭据（随每个瓦片请求发出），不属于需要保密的后端密钥。
+
 ## 4. 联调与排错
 
 常见响应状态判读（联调时先查这张表再报 bug）：
@@ -154,7 +172,7 @@ npm run build         # 生产构建（index + grid-geo 双入口）
 | 1 | **basis 归一双轨** | `src/services/dataBasis.ts`（根级）与 `src/services/data/contracts/*Adapter.ts` 各自实现一套口径归一；方向：以 `data/contracts` 为唯一权威，dataBasis.ts 收敛为薄引用 |
 | 2 | **云南面板双家园** | `src/features/regions/yunnan/panels/` 与 `src/views/yunnan/panels/` 并存（如结算价面板在 views 侧 1100+ 行）；方向：统一收进 features 侧，views 只留路由级页面 |
 | 3 | **services 根级扁平** | `src/services/` 根下 38 个 .ts 直接平铺；方向：按域收进子目录（agent/ 已示范），迁移需连动 import 与上游同步说明 |
-| 4 | **巨型 .vue** | 15 个超 1000 行（最大 DeclarationDeskView 1984 行）；方向：拆子组件/composable，新页面禁止再写巨石 |
+| 4 | **巨型 .vue** | 15 个超 1000 行（最大 DeclarationDeskView 1984 行）；其中 `features/gridGeo/CesiumPlantMap.vue`（1800+ 行）被 5 个页面共用，爆炸半径最大，已单列 `ChenShi-Tech/dljy` 的 Tech Debt issue；方向：拆子组件/composable，新页面禁止再写巨石 |
 | 5 | **EP/ECharts 全量引入** | element-plus 与 echarts 未做按需引入（首包代价约 1MB gzip 前）；方向：unplugin 按需方案需评估与既有主题体系的兼容 |
 | 6 | **tsconfig 收紧路线** | `noUncheckedIndexedAccess`、`exactOptionalPropertyTypes` 未开；试跑：`npx tsc --noEmit --noUncheckedIndexedAccess`（当前存量报错即改造工作量清单） |
 | 7 | **DOM 重 composables 无测试** | `useEChart`（canvas + resize observer）等无 spec；方向：先抽纯函数（option 构造）再测 |

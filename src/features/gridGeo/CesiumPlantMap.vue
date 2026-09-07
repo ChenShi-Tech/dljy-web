@@ -11,6 +11,7 @@ import {
   Color,
   ColorMaterialProperty,
   ConstantProperty,
+  DirectionalLight,
   DistanceDisplayCondition,
   EllipsoidTerrainProvider,
   GeoJsonDataSource,
@@ -47,6 +48,11 @@ import {
   shouldFallbackBaseMap,
   type BaseMapProviderConfig,
 } from '../../config/mapProviders'
+import {
+  MAP_TOKEN_CHANGE_EVENT,
+  resolveArcgisToken,
+  resolveIonToken,
+} from '../../config/mapTokens'
 import type {
   GridGeoPlant,
   GridGeoMapSelection,
@@ -94,6 +100,22 @@ const props = defineProps<{
   ariaLabel?: string
   ariaDescribedby?: string
 }>()
+
+/**
+ * 晕渲（山体阴影）源降级链。
+ *
+ * 原默认是 `services.arcgisonline.com/.../World_Hillshade_Dark`，实测该子域对本项目
+ * 出口 IP 15s 超时无响应，于是「叠加多向地形晕渲」这个默认勾选的复选框长期恒失败——
+ * 而它恰恰是免 token 档唯一能让人看出地形起伏的视觉线索（ArcGIS Terrain 3D 没有
+ * 顶点法线，光照算不出山体明暗）。
+ *
+ * 换到可达的 `server.` 子域后实测：World_Hillshade 12 并发全 200、0.90–2.89s。
+ * 保留第二档 World_Shaded_Relief（同域、更快、观感偏柔和）以防单个服务抖动。
+ */
+const HILLSHADE_URL_FALLBACKS = [
+  'https://server.arcgisonline.com/ArcGIS/rest/services/Elevation/World_Hillshade/MapServer',
+  'https://server.arcgisonline.com/ArcGIS/rest/services/World_Shaded_Relief/MapServer',
+] as const
 
 const emit = defineEmits<{
   select: [selection: GridGeoSelection | null]
@@ -909,7 +931,7 @@ function selectBaseMap(id: string) {
 function baseMapCredentialReady(config: BaseMapProviderConfig) {
   if (!config.requiresToken) return true
   if (config.tokenEnvKey === 'VITE_CESIUM_ION_TOKEN') {
-    return String(import.meta.env.VITE_CESIUM_ION_TOKEN ?? '').trim().length > 0
+    return resolveIonToken().length > 0
   }
   return false
 }
@@ -995,8 +1017,7 @@ function applyViewMode(mode: GridGeoViewMode) {
   if (mode === '2d') viewer.scene.morphTo2D(duration)
   else if (mode === '2.5d') viewer.scene.morphToColumbusView(duration)
   else viewer.scene.morphTo3D(duration)
-  // 恒关光照：夜半球全黑对看资产分布没有价值（与初始化处一致）。
-  viewer.scene.globe.enableLighting = false
+  applyLighting(mode)
   viewer.scene.fog.enabled = mode !== '2d'
   if (viewer.scene.skyAtmosphere) viewer.scene.skyAtmosphere.show = mode === '3d'
   if (viewer.scene.sun) viewer.scene.sun.show = mode === '3d'
@@ -1011,6 +1032,60 @@ function applyViewMode(mode: GridGeoViewMode) {
   }, 900)
 }
 
+/**
+ * 地表光照：跟随相机的偏移方向光。
+ *
+ * 【为什么不是关掉光照】历史上为治「地图太暗」把 `globe.enableLighting` 写死成 false。
+ * 那确实治好了「夜半球全黑」，但同时把地形立体感一并砍掉了——Cesium 的地表明暗
+ * 100% 来自光照对地表法线的着色，关掉之后无论加载的是多精细的地形，屏幕上都是一张
+ * 平的贴图。「切了 3D 地形却看不出 3D」的第一根因就在这里。
+ *
+ * 【为什么不是直接打开】默认光源是 SunLight（跟真太阳走），打开就会把地球分昼夜，
+ * 当地夜里进页面就是一片黑——正是当年关掉它的理由，不能原样退回去。
+ *
+ * 【本方案】改用 DirectionalLight，方向锁定在「相机的左上后方」并逐帧跟随相机：
+ * 相机看到的地表永远在受光面（不会有夜半球），而地表法线随山坡朝向变化仍产生明暗，
+ * 山脊亮、背坡暗，立体感回来了。偏移量是关键——若光方向正好等于相机朝向（headlight），
+ * 各处入射角趋同，明暗被抹平，等于白开。
+ */
+let sceneLight: DirectionalLight | null = null
+let removePreRender: (() => void) | null = null
+const lightDirectionScratch = new Cartesian3()
+const lightOffsetScratch = new Cartesian3()
+
+/** 光相对相机的偏移：向右 0.45、向下 0.62，即光源位于相机左上方。 */
+const LIGHT_RIGHT_BIAS = 0.45
+const LIGHT_UP_BIAS = 0.62
+
+function updateSceneLight() {
+  if (!viewer || !sceneLight) return
+  const camera = viewer.camera
+  const direction = Cartesian3.clone(camera.directionWC, lightDirectionScratch)
+  Cartesian3.multiplyByScalar(camera.rightWC, LIGHT_RIGHT_BIAS, lightOffsetScratch)
+  Cartesian3.add(direction, lightOffsetScratch, direction)
+  Cartesian3.multiplyByScalar(camera.upWC, LIGHT_UP_BIAS, lightOffsetScratch)
+  Cartesian3.subtract(direction, lightOffsetScratch, direction)
+  Cartesian3.normalize(direction, direction)
+  sceneLight.direction = Cartesian3.clone(direction, sceneLight.direction)
+}
+
+/**
+ * 按视图模式与地形档位调光。
+ *
+ * 2D（平面地图）下地表法线全部朝向观察者，光照只会平白压暗底图，故关闭。
+ * 三维下开启；`arcgis-terrain` 因为没有顶点法线拿不到山体明暗（阴影靠晕渲图层补），
+ * 但开着光照仍有价值——地球曲率造成的边缘渐暗会让球体读起来更立体。
+ */
+function applyLighting(mode: GridGeoViewMode) {
+  if (!viewer) return
+  const globe = viewer.scene.globe
+  globe.enableLighting = mode !== '2d'
+  // 提高漫反射系数、压低阴影下限，让山脊/背坡的明暗差拉开又不至于死黑。
+  globe.lambertDiffuseMultiplier = 1.45
+  globe.vertexShadowDarkness = 0.32
+  updateSceneLight()
+}
+
 function terrainLabel(kind: GridGeoTerrainProvider) {
   if (kind === 'arcgis-terrain') return 'ArcGIS Terrain 3D'
   if (kind === 'cesium-world-terrain') return 'Cesium World Terrain'
@@ -1021,12 +1096,15 @@ async function createTerrainProvider(kind: GridGeoTerrainProvider): Promise<Terr
   if (kind === 'ellipsoid') return new EllipsoidTerrainProvider()
   if (kind === 'arcgis-terrain') {
     const url = String(import.meta.env.VITE_GRID_GEO_ARCGIS_TERRAIN_URL ?? 'https://elevation3d.arcgis.com/arcgis/rest/services/WorldElevation3D/Terrain3D/ImageServer').trim()
-    const token = String(import.meta.env.VITE_GRID_GEO_ARCGIS_TOKEN ?? '').trim()
+    const token = resolveArcgisToken()
     return ArcGISTiledElevationTerrainProvider.fromUrl(url, token ? { token } : undefined)
   }
-  const token = String(import.meta.env.VITE_CESIUM_ION_TOKEN ?? '').trim()
-  if (!token) throw new Error('未配置 VITE_CESIUM_ION_TOKEN')
+  const token = resolveIonToken()
+  if (!token) throw new Error('未配置 Cesium ion token')
   Ion.defaultAccessToken = token
+  // 顶点法线是这一档存在的全部理由：只有它能让 globe 光照算出山体明暗。
+  // ArcGIS Terrain 3D（LERC 高程）的 hasVertexNormals 在 Cesium 里恒为 false，
+  // 几何起伏是真的、山坡阴影是没有的，靠晕渲图层补（见 applyHillshade）。
   return createWorldTerrainAsync({ requestVertexNormals: true, requestWaterMask: true })
 }
 
@@ -1077,21 +1155,35 @@ async function applyHillshade(enabled: boolean) {
     hillshadeLayer = null
   }
   if (!enabled) return
+  const explicit = String(import.meta.env.VITE_GRID_GEO_HILLSHADE_URL ?? '').trim()
+  const candidates = explicit ? [explicit] : [...HILLSHADE_URL_FALLBACKS]
+  let lastError: unknown = null
   try {
-    const url = String(import.meta.env.VITE_GRID_GEO_HILLSHADE_URL ?? 'https://services.arcgisonline.com/arcgis/rest/services/Elevation/World_Hillshade_Dark/MapServer').trim()
-    const provider = await ArcGisMapServerImageryProvider.fromUrl(url)
-    if (!viewer || requestId !== hillshadeRequestId || !props.hillshadeEnabled) return
-    hillshadeLayer = viewer.imageryLayers.addImageryProvider(provider)
-    hillshadeLayer.alpha = 0.28
-    // brightness<1 是在压暗底图；山体阴影只需勾勒地形起伏，不该让整幅图变黑。
-    hillshadeLayer.brightness = 1.06
-    hillshadeLayer.contrast = 1.12
-    viewer.scene.requestRender()
-    emit('hillshade', { available: true })
+    for (const url of candidates) {
+      try {
+        const provider = await ArcGisMapServerImageryProvider.fromUrl(url)
+        if (!viewer || requestId !== hillshadeRequestId || !props.hillshadeEnabled) return
+        hillshadeLayer = viewer.imageryLayers.addImageryProvider(provider)
+        // 参数是配着卫星影像底图调的，实测过两个失败方向：
+        //   alpha 0.28（原值，配矢量街道图）→ 山形几乎看不出来
+        //   alpha 0.52 + contrast 1.28      → 灰度晕渲把影像洗成灰白，植被/裸岩的颜色全没了
+        // 0.36 是「山脊河谷读得出、影像本色还在」的位置；brightness 略压让阴影侧沉下去，
+        // 阴影本来就该是这一层的全部贡献。
+        hillshadeLayer.alpha = 0.36
+        hillshadeLayer.brightness = 0.94
+        hillshadeLayer.contrast = 1.18
+        viewer.scene.requestRender()
+        emit('hillshade', { available: true })
+        return
+      } catch (attemptError) {
+        lastError = attemptError
+        if (!viewer || requestId !== hillshadeRequestId) return
+      }
+    }
+    throw lastError ?? new Error('晕渲源全部不可用')
   } catch (error) {
-    // 只 console.warn 的话，面板上复选框还勾着、用户以为晕渲生效了。实测
-    // services.arcgisonline.com 整域对部分出口 IP 返回 403（影像底图一并被拒），
-    // 这条路径是常态而非罕见异常，必须让 UI 可见。
+    // 只 console.warn 的话，面板上复选框还勾着、用户以为晕渲生效了。
+    // 失败仍属可能（换域后实测可达，但外网抖动、企业代理仍会拦），必须让 UI 可见。
     const message = error instanceof Error ? error.message : String(error)
     console.warn('[grid-geo] ArcGIS World Hillshade 不可用，保留当前底图', error)
     emit('hillshade', { available: false, error: message })
@@ -1104,8 +1196,8 @@ async function applyHillshade(enabled: boolean) {
 function createBaseImageryProvider(config: BaseMapProviderConfig): ImageryProvider | Promise<ImageryProvider> | null {
   if (config.kind === 'solid-color') return null
   if (config.kind === 'ion') {
-    const token = String(import.meta.env.VITE_CESIUM_ION_TOKEN ?? '').trim()
-    if (!token) throw new Error(`${config.label} 需要 VITE_CESIUM_ION_TOKEN`)
+    const token = resolveIonToken()
+    if (!token) throw new Error(`${config.label} 需要 Cesium ion token`)
     Ion.defaultAccessToken = token
     return IonImageryProvider.fromAssetId(Number(config.ionAssetId))
   }
@@ -1320,7 +1412,7 @@ async function createViewer() {
   coarsePointer = window.matchMedia?.('(pointer: coarse)').matches === true
   baseMapSequence = resolveBaseMapSequenceWithPreferred(resolvePreferredBaseMapId({
     explicitId: import.meta.env.VITE_GRID_GEO_BASEMAP,
-    hasIonToken: String(import.meta.env.VITE_CESIUM_ION_TOKEN ?? '').trim().length > 0,
+    hasIonToken: resolveIonToken().length > 0,
   }))
 
   viewer = new Viewer(container.value, {
@@ -1346,9 +1438,12 @@ async function createViewer() {
   // 地球基色决定「影像未加载处」的观感。原 #0a2233 过深，未贴图区域近乎纯黑，
   // 整个地球显脏；抬到中蓝后低层级瓦片与缝隙仍能看清轮廓。
   viewer.scene.globe.baseColor = Color.fromCssColorString('#16405f')
-  // 真实光照让地球分昼夜，夜半球完全黑掉，对「看资产分布」没有价值，只制造暗淡。
-  // 关闭后全球均匀受光，是这次「太暗」最主要的一处根因。
-  viewer.scene.globe.enableLighting = false
+  // 地表光照：用跟随相机的方向光取代太阳，既有山体明暗又不会出现夜半球（见 applyLighting）。
+  sceneLight = new DirectionalLight({ direction: Cartesian3.clone(Cartesian3.UNIT_Z), intensity: 2.6 })
+  viewer.scene.light = sceneLight
+  applyLighting(props.viewMode)
+  // 相机一动就要重算光向，否则转到另一侧时明暗关系会僵在原处。
+  removePreRender = viewer.scene.preRender.addEventListener(updateSceneLight)
   viewer.scene.globe.dynamicAtmosphereLighting = false
   viewer.scene.globe.dynamicAtmosphereLightingFromSun = false
   viewer.scene.globe.atmosphereLightIntensity = 20
@@ -1362,6 +1457,7 @@ async function createViewer() {
   motionPreference?.addEventListener('change', onRuntimePreferenceChange)
   connectionPreference = (navigator as Navigator & { connection?: EventTarget & { effectiveType?: string; saveData?: boolean } }).connection ?? null
   connectionPreference?.addEventListener('change', onRuntimePreferenceChange)
+  window.addEventListener(MAP_TOKEN_CHANGE_EVENT, onMapTokenChange)
   viewer.scene.verticalExaggeration = props.verticalExaggeration
   viewer.scene.fog.enabled = true
   viewer.scene.fog.density = 0.00015
@@ -1530,6 +1626,10 @@ onBeforeUnmount(() => {
   connectionPreference?.removeEventListener('change', onRuntimePreferenceChange)
   removeBaseMapErrorListener?.()
   removeCameraMoveEnd?.()
+  removePreRender?.()
+  removePreRender = null
+  sceneLight = null
+  window.removeEventListener(MAP_TOKEN_CHANGE_EVENT, onMapTokenChange)
   clickHandler?.destroy()
   viewer?.destroy()
   viewer = null
@@ -1553,7 +1653,54 @@ onBeforeUnmount(() => {
 
 watch(selectedRegionId, () => void syncRegionBoundary())
 
-defineExpose({ focusPlant, focusNode, resetView })
+/**
+ * 地形巡视镜头：飞到本次可见资产里高差最大的一段，用贴近地表的低视角看地形。
+ *
+ * 省域默认镜头在 245 万米高、俯角 -37°，云南 6000m 的高差在这个视距下只有约 0.7%
+ * 的凹凸——地形加载得再对，肉眼也读不出立体感。「地形是不是真的生效了」这个问题
+ * 不该靠用户自己拖拽找角度来回答，给一个按钮直接把镜头放到能看见山的地方。
+ */
+function flyTerrainTour() {
+  if (!viewer) return
+  if (viewResetTimer !== null) {
+    window.clearTimeout(viewResetTimer)
+    viewResetTimer = null
+  }
+  const located = props.plants.filter((plant) => Number.isFinite(plant.location.longitude) && Number.isFinite(plant.location.latitude))
+  const camera = props.defaultCamera ?? { longitude: 102.15, latitude: 24.85, heightM: 2_450_000 }
+  // 优先挑海拔最高的场站——它周边一定是山区，是最能体现地形的取景点。
+  const peak = located.reduce<GridGeoPlant | null>((best, plant) => {
+    const elevation = Number(plant.location.elevationM ?? Number.NaN)
+    if (!Number.isFinite(elevation)) return best
+    const bestElevation = Number(best?.location.elevationM ?? Number.NEGATIVE_INFINITY)
+    return elevation > bestElevation ? plant : best
+  }, null)
+  const target = peak
+    ? Cartesian3.fromDegrees(peak.location.longitude, peak.location.latitude, Number(peak.location.elevationM ?? 0))
+    : Cartesian3.fromDegrees(camera.longitude, camera.latitude, 1800)
+  viewer.camera.flyToBoundingSphere(new BoundingSphere(target, 12_000), {
+    duration: reduceMotionEnabled ? 0 : 1.6,
+    // 俯角 -26°、视距 120km：实测 78km 时山体占满整屏、一个场站图标都露不出来，
+    // 「巡视」得同时看得见地形和资产才算数。再平就只剩天际线，再远又退回看不出起伏。
+    offset: new HeadingPitchRange(-0.42, -0.46, 120_000),
+  })
+}
+
+/**
+ * ion token 在面板里被改过：底图与地形都可能因此从「不可用」变成「可用」，
+ * 两者都要重建。不重建的话用户填完 token 得刷新页面才看得到效果。
+ */
+function onMapTokenChange() {
+  if (!viewer) return
+  const preferredId = resolvePreferredBaseMapId({
+    explicitId: import.meta.env.VITE_GRID_GEO_BASEMAP,
+    hasIonToken: resolveIonToken().length > 0,
+  })
+  if (preferredId !== activeBaseMapId.value) selectBaseMap(preferredId)
+  void applyTerrain(props.terrainProvider)
+}
+
+defineExpose({ focusPlant, focusNode, resetView, flyTerrainTour })
 </script>
 
 <template>

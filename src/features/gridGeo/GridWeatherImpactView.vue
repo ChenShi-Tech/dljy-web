@@ -14,6 +14,9 @@ import { loadWeatherImpact, type WeatherImpactResult } from './weatherImpact'
 import type { WeatherTrackId } from './weatherTracks'
 import type { GridGeoPlant, GridGeoSelection, GridGeoTerrainStatus, GridGeoViewMode, GridOperatorProfile } from './types'
 
+type MapExpose = { flyTerrainTour?: () => void }
+const mapRef = ref<MapExpose | null>(null)
+
 const plants = shallowRef<GridGeoPlant[]>([])
 const selectedPlantId = ref('')
 const date = ref('2026-05-01')
@@ -121,6 +124,7 @@ watch(selectedCompanyId, resetDataScope)
     <main>
       <div class="map-pane">
         <CesiumPlantMap
+          ref="mapRef"
           :plants="plants" :view-mode="viewMode" :selected-plant-id="selectedPlantId"
           :terrain-provider="terrainProvider" :vertical-exaggeration="verticalExaggeration" :hillshade-enabled="hillshadeEnabled"
           weather-layer="none" :weather-items="[]" :default-camera="operatorProfile?.defaultCamera"
@@ -136,6 +140,7 @@ watch(selectedCompanyId, resetDataScope)
           :view-mode="viewMode"
           :hillshade-available="hillshadeAvailable"
           @request-3d="viewMode = '3d'"
+          @request-terrain-tour="mapRef?.flyTerrainTour?.()"
         />
         <div v-if="result" class="map-badge"><Orbit :size="14" /><span><b>{{ selectedPlant?.standardName }}</b><small>最近气象站 {{ result.stationId || '未匹配' }} · 节点 {{ result.nodeName || '未绑定' }}</small></span></div>
       </div>
