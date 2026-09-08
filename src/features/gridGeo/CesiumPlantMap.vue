@@ -972,7 +972,7 @@ function focusPlant(plantId: string) {
   const entity = viewer.entities.getById(`plant:${plantId}`)
   const plant = props.plants.find((item) => item.plantId === plantId)
   if (!entity && !plant) return
-  const range = props.viewMode === '2d' ? 520000 : props.viewMode === '2.5d' ? 260000 : 190000
+  const range = props.viewMode === '2d' ? 520000 : 190000
   if (!entity && plant) {
     viewer.camera.flyToBoundingSphere(
       new BoundingSphere(Cartesian3.fromDegrees(plant.location.longitude, plant.location.latitude), 2_000),
@@ -999,7 +999,7 @@ function focusNode(nodeId: string) {
   const node = (props.nodes ?? []).find((item) => item.nodeId === nodeId)
   const entity = node ? viewer.entities.getById(`node:${node.assetId || node.nodeId}`) : null
   if (!entity) return
-  const range = props.viewMode === '2d' ? 420000 : props.viewMode === '2.5d' ? 220000 : 150000
+  const range = props.viewMode === '2d' ? 420000 : 150000
   void viewer.flyTo(entity, {
     duration: reduceMotionEnabled ? 0 : 1.05,
     offset: new HeadingPitchRange(0, props.viewMode === '2d' ? -Math.PI / 2 : -0.62, range),
@@ -1015,7 +1015,6 @@ function applyViewMode(mode: GridGeoViewMode) {
   if (viewer.scene.mode === SceneMode.MORPHING) viewer.scene.completeMorph()
   const duration = reduceMotionEnabled ? 0 : 0.85
   if (mode === '2d') viewer.scene.morphTo2D(duration)
-  else if (mode === '2.5d') viewer.scene.morphToColumbusView(duration)
   else viewer.scene.morphTo3D(duration)
   applyLighting(mode)
   viewer.scene.fog.enabled = mode !== '2d'

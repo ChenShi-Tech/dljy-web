@@ -1,4 +1,6 @@
-export type GridGeoViewMode = '2d' | '2.5d' | '3d'
+// 2.5D（Cesium 的 Columbus View）已于 2026-09-08 下线：它既没有 2D 的取数轻量，
+// 也没有 3D 的地形表现，实际使用中只是三档里被跳过的那一档。
+export type GridGeoViewMode = '2d' | '3d'
 export type GridGeoTerrainProvider = 'arcgis-terrain' | 'cesium-world-terrain' | 'ellipsoid'
 export type GridGeoTerrainStatus = {
   kind: GridGeoTerrainProvider

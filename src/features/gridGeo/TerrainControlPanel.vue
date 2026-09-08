@@ -81,7 +81,7 @@ const statusText = computed(() => {
 })
 
 const statusHint = computed(() => {
-  if (flatMode.value) return '当前是平面地图，地形参数不参与渲染。切到 2.5D 或 3D 后生效。'
+  if (flatMode.value) return '当前是平面地图，地形参数不参与渲染。切到 3D 后生效。'
   if (props.status.status === 'fallback') return `${props.status.fallbackFrom ? '外部地形异常，' : ''}已回退到「${props.status.label}」。`
   if (props.status.status === 'error') return props.status.error || '地形加载失败，已回退到椭球体。'
   return ''

@@ -147,7 +147,6 @@ const dockHeadline = computed(() => {
 
 const modeOptions: Array<{ value: GridGeoViewMode; label: string }> = [
   { value: '2d', label: '2D' },
-  { value: '2.5d', label: '2.5D' },
   { value: '3d', label: '3D' },
 ]
 

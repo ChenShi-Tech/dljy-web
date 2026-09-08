@@ -14,7 +14,6 @@ import {
   Factory,
   Focus,
   History,
-  Layers3,
   Map,
   Mountain,
   Orbit,
@@ -114,7 +113,6 @@ watch(filteredPlants, (items) => {
 
 const modeOptions: Array<{ value: GridGeoViewMode; label: string; icon: typeof Map }> = [
   { value: '2d', label: '2D', icon: Map },
-  { value: '2.5d', label: '2.5D', icon: Layers3 },
   { value: '3d', label: '3D', icon: Orbit },
 ]
 
