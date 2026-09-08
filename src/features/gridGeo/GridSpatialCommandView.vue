@@ -5,7 +5,6 @@ import {
   Activity,
   AlertTriangle,
   ArrowRight,
-  Building2,
   CalendarDays,
   CheckCircle2,
   CloudRain,
@@ -31,6 +30,10 @@ import { onRegionChange } from '@/composables/useRegionReload'
 import { currentCompany, selectedCompanyId } from '@/services/company/companyContext'
 import { currentRegion } from '@/services/region/regionContext'
 import ProvinceFlatMap from './ProvinceFlatMap.vue'
+import PlantCatalogPanel from './PlantCatalogPanel.vue'
+import PlantDetailDrawer from './PlantDetailDrawer.vue'
+import PlantAssetGovernance from './PlantAssetGovernance.vue'
+import { clampCardOffset, drawerAvoidanceShift } from './draggableCard'
 import TerrainControlPanel from './TerrainControlPanel.vue'
 import { useGridGeoViewPreference } from './useViewPreference'
 // Cesium 约 4 MiB；切到 2D 时用不到，按需拉取。
@@ -38,6 +41,7 @@ const CesiumPlantMap = defineAsyncComponent(() => import('./CesiumPlantMap.vue')
 import {
   fetchGridDisclosureEvents,
   fetchGridGeoNodes,
+  fetchGridGeoManifest,
   fetchGridGeoPlants,
   fetchGridGeoWeather,
   fetchGridOperatorProfile,
@@ -120,6 +124,27 @@ const { viewMode, terrainProvider, hillshadeEnabled, verticalExaggeration } =
   useGridGeoViewPreference('command', { verticalExaggeration: 1.3 })
 const topologyViewNotice = ref('')
 const weatherLayer = ref<GridGeoWeatherLayer>('wind')
+// 「电厂地理空间」并入后新增的一组状态：目录筛选结果、完整信息抽屉、治理弹窗与写权限。
+// catalogFiltered 单独存一份而不是直接用 plants，是因为地图上要绘制的点必须与目录里
+// 列出的一致——否则会出现「列表里搜到了、图上找不到」。
+// 选中卡片的拖动与让位。默认位置写死在 CSS 里，这两个常量必须与之一致——算钳制范围
+// 要用到它们，读 DOM 拿不到「默认位置」（此刻卡片可能正被 transform 推着）。
+const SELECTION_CARD_RIGHT = 382
+const SELECTION_CARD_BOTTOM = 58
+const DETAIL_DRAWER_WIDTH = 580
+
+const stageRef = ref<HTMLElement | null>(null)
+const selectionCardRef = ref<HTMLElement | null>(null)
+const cardOffset = ref({ x: 0, y: 0 })
+let cardDragStart: { pointerX: number; pointerY: number; offsetX: number; offsetY: number } | null = null
+
+const catalogFiltered = ref<GridGeoPlant[]>([])
+const detailOpen = ref(false)
+const governanceOpen = ref(false)
+const governanceMode = ref<'edit' | 'history'>('edit')
+const canWrite = ref(false)
+const catalogStats = ref<{ locatedPlantCount: number; totalPlantCountInCurrentDim: number; unresolvedPlantCount: number | null } | null>(null)
+
 const marketLayer = ref<GridMarketLayer>('risk')
 const marketDate = ref(COMMAND_MARKET_REPLAY_DATE)
 const selectedPlantId = ref<string | null>(null)
@@ -271,6 +296,48 @@ function setLayerState(id: SpatialCommandScene, state: SpatialLayerState) {
   layerStates.value = { ...layerStates.value, [id]: state }
 }
 
+/** 抽屉一开就把卡片让开，否则用户刚点的那个电厂正好被抽屉压住。 */
+const cardAvoidShift = computed(() => drawerAvoidanceShift(detailOpen.value, DETAIL_DRAWER_WIDTH, SELECTION_CARD_RIGHT))
+
+const selectionCardStyle = computed(() => ({
+  transform: `translate(${-(cardOffset.value.x + cardAvoidShift.value)}px, ${-cardOffset.value.y}px)`,
+}))
+
+function onCardPointerDown(event: PointerEvent) {
+  // 卡片里的按钮和链接要能正常点，不能被拖动吞掉
+  if ((event.target as HTMLElement | null)?.closest('button, a, input, select')) return
+  cardDragStart = { pointerX: event.clientX, pointerY: event.clientY, offsetX: cardOffset.value.x, offsetY: cardOffset.value.y }
+  ;(event.currentTarget as HTMLElement).setPointerCapture(event.pointerId)
+}
+
+function onCardPointerMove(event: PointerEvent) {
+  if (!cardDragStart) return
+  const stage = stageRef.value?.getBoundingClientRect()
+  const card = selectionCardRef.value?.getBoundingClientRect()
+  if (!stage || !card) return
+  cardOffset.value = clampCardOffset(
+    {
+      // 向左/向上为正，与 CSS 的右下角锚定一致
+      x: cardDragStart.offsetX + (cardDragStart.pointerX - event.clientX),
+      y: cardDragStart.offsetY + (cardDragStart.pointerY - event.clientY),
+    },
+    { width: card.width, height: card.height },
+    { width: stage.width, height: stage.height },
+    SELECTION_CARD_RIGHT,
+    SELECTION_CARD_BOTTOM,
+  )
+}
+
+function onCardPointerUp(event: PointerEvent) {
+  if (!cardDragStart) return
+  cardDragStart = null
+  ;(event.currentTarget as HTMLElement).releasePointerCapture?.(event.pointerId)
+}
+
+function onPlantSaved(plant: GridGeoPlant) {
+  plants.value = plants.value.map((item) => item.plantId === plant.plantId ? plant : item)
+}
+
 function isAbort(error: unknown) {
   return error instanceof DOMException && error.name === 'AbortError'
 }
@@ -356,10 +423,13 @@ async function loadBase() {
   setLayerState('overview', { status: 'loading', reason: '正在读取公司空间资产' })
   setLayerState('topology', { status: 'loading', reason: '正在读取 Provider 清单，不请求 snapshot' })
   const signal = baseController.signal
-  const [profileResult, plantResult, topologyResult] = await Promise.allSettled([
+  const [profileResult, plantResult, topologyResult, manifestResult] = await Promise.allSettled([
     fetchGridOperatorProfile(currentRegion.value.id, { signal }),
     fetchGridGeoPlants({ signal }),
     fetchGridTopologyManifest({ signal }),
+    // 目录的「已上屏 / 总数」与「编辑」按钮的可用性都来自 manifest；拿不到就退化成
+    // 只读 + 用实际加载数当分母，不阻塞主图层。
+    fetchGridGeoManifest({ signal }),
   ])
   if (requestId !== scopeRequestId || signal.aborted) return
 
@@ -372,6 +442,7 @@ async function loadBase() {
       baseError.value = '空间资产返回了不允许进入驾驶舱的 Mock 数据。'
     } else {
       plants.value = response.data?.items ?? []
+      catalogStats.value = response.data?.catalog ?? null
       plantSource.value = { sourceType: response.sourceType ?? 'DB', mock: Boolean(response.mock), productionWrite: Boolean(response.productionWrite) }
       setLayerState('overview', {
         status: plants.value.length ? 'available' : 'empty',
@@ -382,6 +453,13 @@ async function loadBase() {
     plants.value = []
     setLayerState('overview', { status: 'error', reason: plantResult.reason instanceof Error ? plantResult.reason.message : '空间资产加载失败' })
     baseError.value = '空间资产主图层加载失败；其他受控图层仍可按需尝试。'
+  }
+
+  // 写权限来自 manifest，目录统计来自电厂接口自身的 catalog 字段——两者不同源。
+  if (manifestResult.status === 'fulfilled') {
+    canWrite.value = Boolean(manifestResult.value?.capabilities.canWrite)
+  } else if (!isAbort(manifestResult.reason)) {
+    canWrite.value = false
   }
 
   if (topologyResult.status === 'fulfilled') {
@@ -671,6 +749,8 @@ function onKeydown(event: KeyboardEvent) {
 watch(selectedCompanyId, resetForScopeChange)
 watch(weatherLayer, () => { if (scene.value === 'weather') clearSelection() })
 watch(marketLayer, () => { if (scene.value === 'market') clearSelection() })
+// 换了选中对象就复位手动位移：新卡片带着上一次的偏移出现，看起来像是自己跳走了。
+watch([selectedPlantId, selectedNodeId, selectedEventId], () => { cardOffset.value = { x: 0, y: 0 } })
 // 气象格点仍只有三维实现；停在 2D 会让侧栏报告图层已生效而地图纹丝不动，
 // 故自动切到能画的视图并告知。
 // 授权网架自 #1424 起平面图也绘制（断面/联络线走 lines、变电站走点层），不再强制切 3D
@@ -736,7 +816,7 @@ onBeforeUnmount(() => {
       </div>
     </header>
 
-    <main class="command-stage" :aria-busy="stageLoading">
+    <main ref="stageRef" class="command-stage" :aria-busy="stageLoading">
       <!--
         2D 走省级平面地图，3D 走 Cesium 地球；两者 props/emits 契约一致，
         故只切组件、数据流不动。授权网架只有三维实现，见下方 watch(scene) 强制切换。
@@ -744,7 +824,7 @@ onBeforeUnmount(() => {
       <component
         :is="viewMode === '2d' ? ProvinceFlatMap : CesiumPlantMap"
         ref="mapRef"
-        :plants="plants"
+        :plants="scene === 'overview' ? catalogFiltered : plants"
         :nodes="visibleNodes"
         :show-located-nodes="scene === 'nodes'"
         :selected-plant-id="selectedPlantId"
@@ -843,12 +923,22 @@ onBeforeUnmount(() => {
             <article><strong>{{ scopedPlants.filter((item) => item.location.confidence === "verified").length }}</strong><small>范围已核验</small></article>
             <article><strong>{{ operatorProfile?.dataAvailability.weather.status ?? '—' }}</strong><small>天气能力</small></article>
           </div>
-          <h3>键盘等价资产列表</h3>
-          <div class="asset-list">
-            <button v-for="plant in scopedPlants" :key="plant.plantId" type="button" :class="{ selected: selectedPlantId === plant.plantId }" @click="selectPlant(plant)">
-              <Building2 :size="15" aria-hidden="true" /><span><strong>{{ plant.standardName }}</strong><small>{{ plant.location.locationLabel }}</small></span><ArrowRight :size="13" aria-hidden="true" />
-            </button>
-          </div>
+          <h3>场站目录</h3>
+          <!--
+            「电厂地理空间」并入后，这里从一份只读列表升级成带检索与筛选的场站目录。
+            输入用 scopedPlants 而非全量：下钻到地市州后目录也应该只列该范围内的场站，
+            否则会出现「图上只剩一个州、列表还是全省」。
+          -->
+          <PlantCatalogPanel
+            variant="embedded"
+            :plants="scopedPlants"
+            :selected-plant-id="selectedPlantId"
+            :total-count="catalogStats?.totalPlantCountInCurrentDim ?? null"
+            :located-count="catalogStats?.locatedPlantCount ?? null"
+            :unresolved-count="catalogStats?.unresolvedPlantCount ?? null"
+            @select="selectPlant"
+            @update:filtered="catalogFiltered = $event"
+          />
         </template>
 
         <template v-else-if="scene === 'nodes'">
@@ -956,15 +1046,15 @@ onBeforeUnmount(() => {
 
       <TopologyFeatureCard v-if="selectedTopologyFeature && topology" :feature="selectedTopologyFeature" :manifest="topology" :source-type="topologySourceType" @close="clearSelection" />
 
-      <article v-else-if="selectedPlant" class="selection-card">
+      <article v-else-if="selectedPlant" ref="selectionCardRef" class="selection-card" :style="selectionCardStyle" @pointerdown="onCardPointerDown" @pointermove="onCardPointerMove" @pointerup="onCardPointerUp" @pointercancel="onCardPointerUp">
         <button type="button" class="close" aria-label="关闭选择卡片" @click="clearSelection"><X :size="15" aria-hidden="true" /></button>
         <small>AUTHORIZED PLANT</small><h2>{{ selectedPlant.standardName }}</h2>
         <p><MapPinned :size="14" aria-hidden="true" />{{ selectedPlant.location.locationLabel }} · {{ selectedPlant.location.confidence }}</p>
         <div><span><small>装机容量</small><strong>{{ selectedPlant.capacityMw?.toLocaleString('zh-CN') ?? '缺测' }} MW</strong></span><span v-if="scene === 'weather'"><small>{{ weatherOptions.find((item) => item.value === weatherLayer)?.label }}</small><strong>{{ weatherValue(selectedWeather) }}</strong></span><span v-if="scene === 'market'"><small>{{ gridMarketLayerOption(marketLayer)?.label }}</small><strong>{{ marketValueText(selectedMarket) }}</strong></span></div>
-        <a class="deep-link" href="/grid-assets/plants" @click="navigate($event, '/grid-assets/plants')">查看资产详情<ArrowRight :size="13" aria-hidden="true" /></a>
+        <button type="button" class="deep-link" @click="detailOpen = true">完整信息<ArrowRight :size="13" aria-hidden="true" /></button>
       </article>
 
-      <article v-else-if="selectedNode" class="selection-card">
+      <article v-else-if="selectedNode" ref="selectionCardRef" class="selection-card" :style="selectionCardStyle" @pointerdown="onCardPointerDown" @pointermove="onCardPointerMove" @pointerup="onCardPointerUp" @pointercancel="onCardPointerUp">
         <button type="button" class="close" aria-label="关闭选择卡片" @click="clearSelection"><X :size="15" aria-hidden="true" /></button>
         <small>LOCATED NODE</small><h2>{{ selectedNode.nodeName }}</h2>
         <p><Waypoints :size="14" aria-hidden="true" />{{ selectedNode.location?.locationLabel }} · {{ selectedNode.locationStatus }}</p>
@@ -972,7 +1062,7 @@ onBeforeUnmount(() => {
         <a class="deep-link" href="/grid-assets/nodes" @click="navigate($event, '/grid-assets/nodes')">进入节点资产台<ArrowRight :size="13" aria-hidden="true" /></a>
       </article>
 
-      <article v-else-if="selectedEvent" class="selection-card event-card">
+      <article v-else-if="selectedEvent" ref="selectionCardRef" class="selection-card event-card" :style="selectionCardStyle" @pointerdown="onCardPointerDown" @pointermove="onCardPointerMove" @pointerup="onCardPointerUp" @pointercancel="onCardPointerUp">
         <button type="button" class="close" aria-label="关闭选择卡片" @click="clearSelection"><X :size="15" aria-hidden="true" /></button>
         <small>{{ disclosureCategoryLabel[selectedEvent.category] }} · {{ formatDate(selectedEvent.effectiveAt, true) }}</small><h2>{{ selectedEvent.title }}</h2>
         <p><FileSearch :size="14" aria-hidden="true" />{{ selectedEvent.spatialBinding.label }} · 坐标未提供</p>
@@ -990,6 +1080,25 @@ onBeforeUnmount(() => {
       <div v-else-if="baseError" class="stage-state error" role="alert"><AlertTriangle :size="24" aria-hidden="true" /><strong>{{ baseError }}</strong><button type="button" @click="loadBase">重试</button></div>
       <div class="visually-hidden" aria-live="polite">{{ selectionAnnouncement }}</div>
     </main>
+
+    <!--
+      「电厂地理空间」并入后的两块：完整信息抽屉与资产治理弹窗。都挂在 .command-stage
+      之外——stage 有 `isolation: isolate`，放里面会被它的层叠上下文裁掉。
+    -->
+    <PlantDetailDrawer
+      v-model:open="detailOpen"
+      :plant="selectedPlant"
+      :weather="selectedWeather"
+      :can-write="canWrite"
+      @governance="(mode) => { governanceMode = mode; governanceOpen = true }"
+    />
+    <PlantAssetGovernance
+      v-model:open="governanceOpen"
+      :plant="selectedPlant"
+      :can-write="canWrite"
+      :start-mode="governanceMode"
+      @saved="onPlantSaved"
+    />
   </section>
 </template>
 
@@ -1025,7 +1134,9 @@ onBeforeUnmount(() => {
 .segmented-options{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:5px;margin:10px 0}.segmented-options button{display:flex;min-height:34px;align-items:center;justify-content:center;gap:5px;color:#779eac;border:1px solid rgba(89,179,209,.12);border-radius:7px;background:rgba(2,15,26,.34);font-size: var(--font-15);cursor:pointer}.segmented-options button.active{color:#03131c;border-color:transparent;background:linear-gradient(135deg,var(--command-accent),var(--command-secondary))}.segmented-options.market{grid-template-columns:1fr}.market-controls{display:flex;gap:6px;margin:10px 0}.market-controls label,.market-controls>button{display:flex;min-height:34px;align-items:center;gap:5px;padding:0 8px;color:#90b4c1;border:1px solid rgba(89,180,211,.14);border-radius:7px;background:rgba(2,14,25,.35);font-size: var(--font-15)}.market-controls label{flex:1}.market-controls input{width:100%;color:#bfe0e7;border:0;outline:0;background:transparent;color-scheme:dark}.market-controls>button{cursor:pointer}
 .timeline-list button{display:grid;grid-template-columns:10px minmax(0,1fr);gap:7px;padding:8px;color:#83a4b1;border:1px solid rgba(87,172,201,.1);border-radius:8px;background:rgba(2,14,25,.28);text-align:left;cursor:pointer}.timeline-list button:hover,.timeline-list button.selected{border-color:rgba(88,207,229,.3);background:rgba(29,105,128,.12)}.timeline-list button>i{width:8px;height:8px;margin-top:5px;border-radius:50%;background:#5ed8f3}.timeline-list button.maintenance>i{background:#62dfb0}.timeline-list button.outage>i{background:#ef7a70}.timeline-list button.congestion>i,.timeline-list button.constraint>i{background:#eab65c}.timeline-list span{display:flex;min-width:0;flex-direction:column;gap:3px}.timeline-list small{color:#668995;font-size: var(--font-15)}.timeline-list strong{overflow:hidden;color:#cde5eb;font-size: var(--font-15);text-overflow:ellipsis;white-space:nowrap}.timeline-list em{color:#7897a2;font-size: var(--font-15);font-style:normal}
 .topology-status{display:flex;margin:14px 0;padding:14px;flex-direction:column;align-items:center;text-align:center;border:1px solid rgba(208,161,62,.18);border-radius:12px;background:radial-gradient(circle at 50% 0,rgba(209,160,55,.12),transparent 58%),rgba(2,14,25,.35)}.topology-lock{display:grid;width:48px;height:48px;margin-bottom:9px;place-items:center;color:#e2bb68;border:1px solid rgba(220,174,74,.3);border-radius:14px;background:rgba(147,95,18,.13)}.topology-status>small{color:#8a744d;font-size: var(--font-lg)}.topology-status>strong{margin-top:4px;color:#e6d3a9;font-size: var(--font-16)}.topology-status>p{margin:6px 0 0;color:#85765b;font-size: var(--font-15);line-height:1.5}.readiness-mini{display:grid;grid-template-columns:1fr 1fr;gap:5px}.readiness-mini span{display:flex;min-height:33px;align-items:center;gap:5px;padding:6px;color:#728d99;border:1px solid rgba(87,172,201,.1);border-radius:7px;font-size: var(--font-lg)}.readiness-mini span.ready{color:#62dcb1}.list-budget-note{margin:7px 0;color:#718f9b;font-size: var(--font-lg);line-height:1.5}.deep-link{display:inline-flex;min-height:34px;align-items:center;justify-content:center;gap:6px;padding:0 10px;color:#06151d;border:0;border-radius:8px;background:linear-gradient(135deg,var(--command-accent),var(--command-secondary));font-size: var(--font-15);font-weight:750;text-decoration:none;cursor:pointer}.intel-dock>.deep-link{box-sizing:border-box;width:100%;margin-top:10px}
-.selection-card{position:absolute;z-index:10;right:382px;bottom:58px;width:min(410px,calc(100% - 640px));padding:14px;border:1px solid color-mix(in srgb,var(--command-accent) 27%,transparent);border-radius:14px;background:linear-gradient(145deg,rgba(5,28,44,.95),rgba(2,14,25,.92));box-shadow:0 25px 65px rgba(0,4,14,.5);backdrop-filter:blur(20px)}.selection-card>.close{position:absolute;top:9px;right:9px;display:grid;width:28px;height:28px;place-items:center;color:#789ba8;border:0;border-radius:7px;background:rgba(75,130,149,.1);cursor:pointer}.selection-card>small{color:var(--command-accent);font-size: var(--font-lg);font-weight:800;letter-spacing:.13em}.selection-card h2{margin:4px 28px 4px 0;font-size: var(--font-20)}.selection-card>p{display:flex;margin:0;align-items:flex-start;gap:5px;color:#779aa8;font-size: var(--font-15);line-height:1.45}.selection-card>div{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin:10px 0}.selection-card>div span{display:flex;padding:8px;flex-direction:column;gap:2px;border-radius:8px;background:rgba(2,14,25,.4)}.selection-card>div small{color:#5f808c;font-size: var(--font-lg)}.selection-card>div strong{overflow:hidden;color:#d6edf2;font-size: var(--font-15);text-overflow:ellipsis;white-space:nowrap}.selection-card.event-card{border-color:rgba(221,175,75,.25)}
+.selection-card{position:absolute;z-index:10;right:382px;bottom:58px;cursor:move;touch-action:none;transition:transform .22s ease;user-select:none;width:min(410px,calc(100% - 640px));padding:14px;border:1px solid color-mix(in srgb,var(--command-accent) 27%,transparent);border-radius:14px;background:linear-gradient(145deg,rgba(5,28,44,.95),rgba(2,14,25,.92));box-shadow:0 25px 65px rgba(0,4,14,.5);backdrop-filter:blur(20px)}.selection-card>.close{position:absolute;top:9px;right:9px;display:grid;width:28px;height:28px;place-items:center;color:#789ba8;border:0;border-radius:7px;background:rgba(75,130,149,.1);cursor:pointer}.selection-card>small{color:var(--command-accent);font-size: var(--font-lg);font-weight:800;letter-spacing:.13em}.selection-card h2{margin:4px 28px 4px 0;font-size: var(--font-20)}.selection-card>p{display:flex;margin:0;align-items:flex-start;gap:5px;color:#779aa8;font-size: var(--font-15);line-height:1.45}.selection-card>div{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin:10px 0}.selection-card>div span{display:flex;padding:8px;flex-direction:column;gap:2px;border-radius:8px;background:rgba(2,14,25,.4)}.selection-card>div small{color:#5f808c;font-size: var(--font-lg)}.selection-card>div strong{overflow:hidden;color:#d6edf2;font-size: var(--font-15);text-overflow:ellipsis;white-space:nowrap}.selection-card.event-card{border-color:rgba(221,175,75,.25)}
+/* 卡片内的文字仍可选中；只有空白区域用来拖 */
+.selection-card h2,.selection-card>p,.selection-card>div strong{user-select:text}
 .truth-console{position:absolute;z-index:7;right:16px;bottom:10px;left:16px;display:flex;min-height:35px;align-items:center;gap:16px;padding:7px 11px;color:#7399a6;border:1px solid rgba(84,176,207,.14);border-radius:9px;background:rgba(3,17,29,.82);font-size: var(--font-10-5);backdrop-filter:blur(14px)}.truth-console span{display:flex;align-items:center;gap:5px}.truth-console span:last-child{margin-left:auto;color:#69cbaa}
 .command-stage :deep(.cesium-viewer-bottom){right:382px!important;bottom:56px!important;left:auto!important;z-index:9}
 /* ProvinceFlatMap 的浮层安全区。子组件看不到宿主在它上面盖了什么，由这里按本视图
