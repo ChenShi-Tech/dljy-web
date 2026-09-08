@@ -11,7 +11,7 @@
 
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
 import * as echarts from 'echarts'
-import { ChevronRight, CornerUpLeft, Crosshair } from 'lucide-vue-next'
+import { ChevronRight, CornerUpLeft, Crosshair, Layers } from 'lucide-vue-next'
 import { cssVar, useTheme } from '@/composables/useTheme'
 import { currentRegion, selectedRegionId } from '@/services/region/regionContext'
 import { ensureBoundaryForRegion, type BoundaryFeature } from './flatmap/geoJsonLoader'
@@ -25,6 +25,10 @@ import {
   pointInBoundary,
   topologyFeatureInBoundary,
 } from './flatmap/drilldown'
+import { createTileBasemap } from './flatmap/tileBasemap'
+import { DEFAULT_TIANDITU_LAYER, listTiandituLayers, resolveTiandituLayer, type TiandituLayerId } from './flatmap/tiandituLayers'
+import { MERCATOR_PROJECTION, projectMercator } from './flatmap/webMercator'
+import { MAP_TOKEN_CHANGE_EVENT, resolveTiandituToken, resolveTiandituTokenSource, writeTiandituToken } from '@/config/mapTokens'
 import { topologyFeatureLabel, topologyVisualStyle } from './topology/topologyStyle'
 import type { TopologyViewportQuery } from './topology/topologyViewportLoader'
 import type {
@@ -97,6 +101,50 @@ const emit = defineEmits<{
 
 const container = ref<HTMLDivElement | null>(null)
 const chart = shallowRef<echarts.ECharts | null>(null)
+
+/* ---- 天地图底图层 -------------------------------------------------
+ * 在线底图是**增强项不是前提**：交付现场是否有外网尚未确认，且 tk 可能没配。
+ * 任一条件不成立时本层什么都不画，ECharts 政区图照常工作（见 tileBasemap.ts）。
+ * `basemapActive` 驱动政区面的两套配色——有影像时几乎透明，无影像时是实心冷蓝。
+ * -------------------------------------------------------------------- */
+type TileBasemap = ReturnType<typeof createTileBasemap>
+let basemap: TileBasemap | null = null
+const basemapActive = ref(false)
+const basemapLayerId = ref<TiandituLayerId>(DEFAULT_TIANDITU_LAYER)
+const basemapNote = ref('')
+const basemapPanelOpen = ref(false)
+const basemapTokenDraft = ref('')
+const basemapTokenSource = ref(resolveTiandituTokenSource())
+const basemapLayerLabel = computed(() => resolveTiandituLayer(basemapLayerId.value).label)
+const basemapLayerOptions = listTiandituLayers()
+const basemapTokenConfigured = computed(() => basemapTokenSource.value !== 'none')
+
+function openBasemapPanel() {
+  basemapTokenDraft.value = basemapTokenSource.value === 'runtime' ? resolveTiandituToken() : ''
+  basemapPanelOpen.value = !basemapPanelOpen.value
+}
+
+function saveBasemapToken() {
+  writeTiandituToken(basemapTokenDraft.value)
+  basemapTokenSource.value = resolveTiandituTokenSource()
+  basemapPanelOpen.value = false
+  // writeTiandituToken 会广播 MAP_TOKEN_CHANGE_EVENT，onMapTokenChange 负责 reset
+}
+
+function clearBasemapToken() {
+  writeTiandituToken('')
+  basemapTokenSource.value = resolveTiandituTokenSource()
+  basemapTokenDraft.value = ''
+}
+
+// 换底图图层要清掉瓦片缓存与失败态：不同图层的可用性彼此独立，
+// 一个图层挂了不代表另一个也挂。
+watch(basemapLayerId, () => {
+  basemap?.destroy()
+  basemap = null
+  basemapActive.value = false
+  refreshBasemap()
+})
 const { theme } = useTheme()
 
 const mapName = ref<string | null>(null)
@@ -284,8 +332,12 @@ function buildOption(): echarts.EChartsOption | null {
           type: 'circle',
           shape: { cx: center[0], cy: center[1], r: radius },
           style: {
-            fill: echarts.color.modifyAlpha(cssVar('--warning') || '#f59e0b', 0.1),
-            stroke: echarts.color.modifyAlpha(cssVar('--warning') || '#f59e0b', 0.35),
+            // 光圈表达「厂址只精确到这个范围」，语义上该用警示色而不是随底图的冷色，
+            // 否则读者会把它当成又一个业务图层。但 0.1 的暖色填充在深色底上会糊成
+            // 一片灰饼——半径大的能盖住小半个地州，反而看不出圈心在哪。
+            // 改为几乎只留虚线描边：范围仍然读得出，视觉重量交还给点层。
+            fill: echarts.color.modifyAlpha(cssVar('--warning') || '#f59e0b', 0.045),
+            stroke: echarts.color.modifyAlpha(cssVar('--warning') || '#f59e0b', 0.46),
             lineWidth: 1,
             lineDash: [3, 3],
           },
@@ -475,18 +527,29 @@ function buildOption(): echarts.EChartsOption | null {
       bottom: 16,
       left: 16,
       right: 16,
-      // 默认 0.75 会把地图横向压掉 1/4，省域看起来被拉窄。省级尺度下按中心纬度的
-      // cos 值做横向压缩才接近真实形状（云南中心约 25°N → 0.9）。
-      aspectScale: 0.9,
-      itemStyle: {
-        // 0.07 在深色主题下几乎等于纯黑，分块看不出来。0.16 能让每块自身可辨，
-        // 又不至于抢过点层，底图要「看得见」，不要「看得重」。
-        areaColor: echarts.color.modifyAlpha(accent, 0.16),
-        borderColor: areaBorder,
-        borderWidth: 1.1,
-        shadowBlur: 12,
-        shadowColor: echarts.color.modifyAlpha(accent, 0.18),
-      },
+      // Web Mercator。原先走 ECharts 默认投影（经纬度直接当平面坐标）再用
+      // aspectScale 手工压经度方向，那只是观感近似，与任何在线地图瓦片都对不上。
+      // 换成 Mercator 后瓦片贴上来是轴对齐矩形，且省域形状本身也更接近真实。
+      projection: MERCATOR_PROJECTION,
+      itemStyle: basemapActive.value
+        ? {
+            // 底图在下面透出来，政区面只留一层极淡的冷色蒙版压住影像杂色；边界线
+            // 相应提亮——白细线在卫星影像上比在暗底上更容易被地物淹没。
+            areaColor: 'rgba(10, 32, 54, 0.18)',
+            borderColor: 'rgba(150, 220, 255, 0.62)',
+            borderWidth: 1.3,
+            shadowBlur: 0,
+          }
+        : {
+            // 降级态（无底图）。原先用 `--primary` 的 16% alpha——驾驶舱主题的
+            // primary 是暖橙红，压在深蓝底上叠出一块发脏的棕色，正是「地图太丑」的
+            // 直接来源。改用与深色主题同族的冷蓝灰，不再跟随会变暖的品牌色。
+            areaColor: 'rgba(24, 58, 88, 0.62)',
+            borderColor: 'rgba(126, 194, 231, 0.5)',
+            borderWidth: 1,
+            shadowBlur: 18,
+            shadowColor: 'rgba(64, 150, 205, 0.22)',
+          },
       label: {
         show: true,
         color: labelColor,
@@ -497,18 +560,26 @@ function buildOption(): echarts.EChartsOption | null {
         formatter: ({ name }: { name: string }) => shortSubdivisionName(name),
       },
       emphasis: {
-        itemStyle: { areaColor: echarts.color.modifyAlpha(accent, 0.22) },
-        label: { color: cssVar('--text') || '#0f172a', fontWeight: 'bold' },
+        itemStyle: {
+          areaColor: basemapActive.value ? 'rgba(72, 190, 240, 0.16)' : 'rgba(46, 96, 140, 0.72)',
+        },
+        label: { color: '#eaf7ff', fontWeight: 'bold' },
       },
       select: {
-        itemStyle: { areaColor: echarts.color.modifyAlpha(accent, 0.3) },
-        label: { color: cssVar('--text') || '#0f172a' },
+        itemStyle: {
+          areaColor: basemapActive.value ? 'rgba(72, 190, 240, 0.24)' : 'rgba(58, 118, 168, 0.8)',
+        },
+        label: { color: '#eaf7ff' },
       },
       // 选中态完全由 focusedAdcode 驱动 regions 样式：notMerge 重建 option 会丢掉
       // ECharts 自己维护的 select 状态，两套来源并存会让高亮与下钻态对不上。
       selectedMode: false,
       // 下钻态：视角收到该地州，其余地州压暗留作地理参照，移除它们会让人失去方位感。
-      ...(focusView.value ? { center: focusView.value.center, zoom: focusView.value.zoom } : {}),
+      // 用了 projection 之后 `center` 必须是**投影后**坐标（ECharts geo 的约定），
+      // 而 focusViewport 算出来的是经纬度，这里投一次再交给 ECharts。
+      ...(focusView.value
+        ? { center: projectMercator(focusView.value.center), zoom: focusView.value.zoom }
+        : {}),
       regions: focusedAdcode.value
         ? subdivisions.value.map((feature) => {
             const isFocused = String(feature.properties.adcode) === focusedAdcode.value
@@ -544,10 +615,16 @@ function render() {
   if (!chart.value) {
     chart.value = echarts.init(dom)
     chart.value.on('click', onChartClick)
+    // roam 改变 geo 变换，瓦片必须跟着重贴；tileBasemap 内部按帧合并，
+    // 拖拽期间的高频事件不会变成高频重绘。
+    chart.value.on('georoam', refreshBasemap)
   }
   const option = buildOption()
   if (!option) return
   chart.value.setOption(option, { notMerge: true })
+  // setOption 之后 geo 变换才是最终值（下钻改 center/zoom 时尤其如此），
+  // 放在这里刷新才拿得到正确的视口。
+  refreshBasemap()
 }
 
 function onChartClick(params: unknown) {
@@ -700,6 +777,7 @@ function buildRuntimeStatus(): GridGeoRuntimeStatus {
 
 function resize() {
   chart.value?.resize()
+  refreshBasemap()
 }
 
 /** 与 Cesium 版本同名的对外方法，宿主可无差别调用。 */
@@ -733,6 +811,58 @@ function resetView() {
   else render()
 }
 
+/**
+ * 建立或复用瓦片层。必须在 chart 实例存在之后调用——本层的坐标换算完全依赖
+ * ECharts geo 的当前变换（`convertToPixel` / `convertFromPixel` 接收的是原始
+ * 经纬度，投影由 ECharts 内部按 geo.projection 处理，调用方不必自己投）。
+ */
+function ensureBasemap() {
+  if (!container.value || !chart.value) return
+  if (basemap) return
+  basemap = createTileBasemap(
+    {
+      container: container.value,
+      toPixel: (lngLat) => {
+        const px = chart.value?.convertToPixel({ geoIndex: 0 }, lngLat) as number[] | undefined
+        return px && Number.isFinite(px[0]) && Number.isFinite(px[1]) ? [px[0], px[1]] : null
+      },
+      toLngLat: (pixel) => {
+        const ll = chart.value?.convertFromPixel({ geoIndex: 0 }, pixel) as number[] | undefined
+        return ll && Number.isFinite(ll[0]) && Number.isFinite(ll[1]) ? [ll[0], ll[1]] : null
+      },
+    },
+    {
+      layerId: basemapLayerId.value,
+      token: () => resolveTiandituToken(),
+      onStatus: (status) => {
+        const active = status.state === 'ready' || status.state === 'loading'
+        basemapNote.value = status.state === 'error'
+          ? (status.reason ?? '底图不可用')
+          : status.state === 'off'
+            ? (status.reason ?? '')
+            : ''
+        // 只有「有没有底图」这件事翻转时才重绘 option：政区面配色依赖它，而
+        // loading↔ready 之间来回切不该把整张图重建一遍。
+        if (active !== basemapActive.value) {
+          basemapActive.value = active
+          if (loadState.value === 'ready') nextTick(render)
+        }
+      },
+    },
+  )
+}
+
+/** geo 视口变化后重贴瓦片；tileBasemap 内部按帧合并，高频调用是安全的。 */
+function refreshBasemap() {
+  ensureBasemap()
+  basemap?.render()
+}
+
+/** tk 或图层换了：清缓存与失败态重来，否则失败判定会一直粘着。 */
+function onMapTokenChange() {
+  basemap?.reset()
+}
+
 defineExpose({ focusPlant, focusNode, resetView })
 
 onMounted(() => {
@@ -744,10 +874,11 @@ onMounted(() => {
     resizeObserver = new ResizeObserver(() => {
       if (!container.value?.clientWidth || !container.value?.clientHeight) return
       if (!chart.value) render()
-      else chart.value.resize()
+      else { chart.value.resize(); refreshBasemap() }
     })
     resizeObserver.observe(container.value)
   }
+  window.addEventListener(MAP_TOKEN_CHANGE_EVENT, onMapTokenChange)
   emit('runtime', buildRuntimeStatus())
   emit('terrain', { kind: 'ellipsoid', status: 'ready', label: '平面省图 · 无地形' })
   void loadBoundary(selectedRegionId.value)
@@ -784,8 +915,11 @@ watch([visiblePlants, visibleNodes, visibleTopology], () => {
 onBeforeUnmount(() => {
   window.removeEventListener('resize', resize)
   window.removeEventListener('keydown', onWindowKeydown)
+  window.removeEventListener(MAP_TOKEN_CHANGE_EVENT, onMapTokenChange)
   resizeObserver?.disconnect()
   resizeObserver = null
+  basemap?.destroy()
+  basemap = null
   chart.value?.dispose()
   chart.value = null
 })
@@ -829,7 +963,55 @@ onBeforeUnmount(() => {
       <Crosshair :size="16" /> {{ focusedAdcode ? '返回省域' : '复位' }}
     </button>
 
-    <p class="source-note">底图数据：阿里云 DataV.GeoAtlas · 仅限内部使用</p>
+    <div v-if="loadState === 'ready'" class="basemap-control">
+      <button
+        type="button"
+        class="basemap-toggle"
+        :class="{ active: basemapActive }"
+        :title="basemapActive ? `当前底图：${basemapLayerLabel}` : '配置在线底图'"
+        @click="openBasemapPanel"
+      >
+        <Layers :size="15" aria-hidden="true" /> {{ basemapActive ? basemapLayerLabel : '底图' }}
+      </button>
+
+      <div v-if="basemapPanelOpen" class="basemap-panel">
+        <label>
+          <span>底图图层</span>
+          <select v-model="basemapLayerId" aria-label="天地图底图图层">
+            <option v-for="item in basemapLayerOptions" :key="item.id" :value="item.id">{{ item.label }}</option>
+          </select>
+        </label>
+
+        <label>
+          <span>天地图 tk</span>
+          <input
+            v-model="basemapTokenDraft"
+            type="text"
+            autocomplete="off"
+            spellcheck="false"
+            :placeholder="basemapTokenConfigured ? '已配置，留空则不改动' : '在 tianditu.gov.cn 免费申请'"
+            aria-label="天地图访问令牌"
+            @keyup.enter="saveBasemapToken"
+          />
+        </label>
+        <p class="basemap-hint">
+          保存在本机浏览器，立即生效、无需重新构建。未配置或现场无外网时自动退回本地政区图。
+        </p>
+        <p v-if="basemapNote" class="basemap-hint warn">{{ basemapNote }}</p>
+
+        <div class="basemap-buttons">
+          <button type="button" class="primary" @click="saveBasemapToken">保存并启用</button>
+          <button v-if="basemapTokenSource === 'runtime'" type="button" @click="clearBasemapToken">清除</button>
+          <button type="button" @click="basemapPanelOpen = false">关闭</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 天地图要求显示来源标注，这是使用条件而非可选项；无底图时退回原有说明。 -->
+    <p class="source-note">
+      <template v-if="basemapActive">底图：© 天地图 · 国家地理信息公共服务平台 | 行政区划：阿里云 DataV.GeoAtlas</template>
+      <template v-else>底图数据：阿里云 DataV.GeoAtlas · 仅限内部使用</template>
+    </p>
   </div>
 </template>
 
@@ -878,4 +1060,21 @@ onBeforeUnmount(() => {
   position: absolute; right: 10px; bottom: 8px; margin: 0;
   font-size: var(--font-xs); color: var(--muted, var(--text-soft)); opacity: .75; pointer-events: none;
 }
+
+/* 底图控件。与 .reset-view 同族的悬浮小控件，收在左下角避开右下的复位按钮。 */
+.basemap-control { position: absolute; z-index: 6; bottom: 34px; left: 12px; }
+.basemap-toggle { display: inline-flex; height: 30px; padding: 0 10px; align-items: center; gap: 5px; color: #9fd0e2; border: 1px solid rgba(107, 194, 227, .22); border-radius: 9px; background: rgba(5, 21, 38, .82); backdrop-filter: blur(9px); cursor: pointer; font-size: var(--font-9-5); }
+.basemap-toggle:hover { color: #63e4ff; border-color: rgba(99, 228, 255, .38); }
+.basemap-toggle.active { color: #63e4ff; border-color: rgba(99, 228, 255, .34); background: rgba(58, 174, 225, .16); }
+.basemap-panel { position: absolute; bottom: 38px; left: 0; width: 264px; padding: 11px; border: 1px solid rgba(107, 194, 227, .2); border-radius: 11px; background: rgba(5, 21, 38, .94); box-shadow: 0 18px 44px rgba(0, 7, 18, .5); backdrop-filter: blur(14px); }
+.basemap-panel label { display: flex; margin-bottom: 9px; flex-direction: column; gap: 4px; color: #8cb4c3; font-size: var(--font-9); }
+.basemap-panel select,
+.basemap-panel input { width: 100%; height: 29px; padding: 0 8px; color: #dff5ff; border: 1px solid rgba(107, 194, 227, .22); border-radius: 7px; outline: 0; background: #061a2c; font-size: var(--font-9); }
+.basemap-panel input:focus, .basemap-panel select:focus { border-color: rgba(99, 228, 255, .55); }
+.basemap-hint { margin: 0 0 8px; color: #7fa2b3; font-size: var(--font-8-5); line-height: 1.5; }
+.basemap-hint.warn { color: #d8aa56; }
+.basemap-buttons { display: flex; gap: 6px; }
+.basemap-buttons button { height: 26px; flex: 1; border: 1px solid rgba(107, 194, 227, .22); border-radius: 7px; color: #9fd0e2; background: rgba(107, 194, 227, .08); cursor: pointer; font-size: var(--font-9); }
+.basemap-buttons .primary { color: #63e4ff; border-color: rgba(99, 228, 255, .34); background: rgba(58, 174, 225, .16); }
+.basemap-buttons button:hover { background: rgba(58, 174, 225, .24); }
 </style>

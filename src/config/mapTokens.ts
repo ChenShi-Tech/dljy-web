@@ -22,6 +22,9 @@
 /** localStorage 键；与 `useViewPreference` 的 `dljy.grid-geo.*` 前缀同族。 */
 export const ION_TOKEN_STORAGE_KEY = 'dljy.grid-geo.ion-token'
 
+/** 天地图 tk 的 localStorage 键；与 ion token 同一套「运行时优先、构建期兜底」语义。 */
+export const TIANDITU_TOKEN_STORAGE_KEY = 'dljy.grid-geo.tianditu-token'
+
 /** 凭据变更事件名：地图组件监听它以重建 imagery/terrain，无需刷新页面。 */
 export const MAP_TOKEN_CHANGE_EVENT = 'dljy:map-token-change'
 
@@ -97,4 +100,65 @@ export function writeIonToken(token: string): string {
 /** ArcGIS 影像/高程服务的可选 token（免费源不需要；企业版 ArcGIS Online 才用）。 */
 export function resolveArcgisToken(): string {
   return String(import.meta.env.VITE_GRID_GEO_ARCGIS_TOKEN ?? '').trim()
+}
+
+/* ------------------------------------------------------------------ *
+ * 天地图（国家地理信息公共服务平台）访问令牌
+ *
+ * 二维平面图的底图源。与 ion token 同样是「前端可见的第三方地图凭据」——它随每个
+ * 瓦片请求以 query 参数发出，任何人 F12 都能看到，不属于需要保密的后端密钥。
+ *
+ * 单独一套解析函数而不是把 ion 的泛型化：两者的缺省语义不同（ion 缺失只是少一档
+ * 地形，天地图缺失要整层底图降级），各自的调用方也不同，合并只会让两边都难读。
+ * ------------------------------------------------------------------ */
+
+let sessionTiandituToken: string | null = null
+
+function readTiandituStorage(): string {
+  try {
+    if (typeof localStorage === 'undefined') return ''
+    return String(localStorage.getItem(TIANDITU_TOKEN_STORAGE_KEY) ?? '').trim()
+  } catch {
+    return ''
+  }
+}
+
+function readTiandituBuildTime(): string {
+  return String(import.meta.env.VITE_TIANDITU_TOKEN ?? '').trim()
+}
+
+/** 当前生效的天地图 tk；无凭据时返回空串（调用方据此决定是否降级到无底图）。 */
+export function resolveTiandituToken(): string {
+  if (sessionTiandituToken !== null) return sessionTiandituToken || readTiandituBuildTime()
+  return readTiandituStorage() || readTiandituBuildTime()
+}
+
+export function resolveTiandituTokenSource(): IonTokenSource {
+  const runtime = sessionTiandituToken !== null ? sessionTiandituToken : readTiandituStorage()
+  if (runtime) return 'runtime'
+  if (readTiandituBuildTime()) return 'build'
+  return 'none'
+}
+
+export function hasTiandituToken(): boolean {
+  return resolveTiandituToken().length > 0
+}
+
+/** 写入运行时 tk；传空串表示清除运行时值、回落构建期值。返回写入后实际生效的值。 */
+export function writeTiandituToken(token: string): string {
+  const value = String(token ?? '').trim()
+  // 与 ion 同一条教训：先记会话值再落盘，落盘失败时本次会话仍按新值走（PR #80 codex P2）。
+  sessionTiandituToken = value
+  try {
+    if (typeof localStorage !== 'undefined') {
+      if (value) localStorage.setItem(TIANDITU_TOKEN_STORAGE_KEY, value)
+      else localStorage.removeItem(TIANDITU_TOKEN_STORAGE_KEY)
+    }
+  } catch {
+    // 写失败只意味着跨会话不被记住，不中断本次保存。
+  }
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent(MAP_TOKEN_CHANGE_EVENT))
+  }
+  return resolveTiandituToken()
 }
