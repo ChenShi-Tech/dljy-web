@@ -1,5 +1,7 @@
 # 交易复盘体系 · 前端设计稿（review-system-design）
 
+> **2026-09-08 新设计入口**：[交易复盘工作台 v2](review-workbench-v2.md) 与[可操作设计稿](design/review-workbench.html)。用户要求明确前端表征、完整功能落位、简洁布局，并禁止数据库字段名进入用户界面。v2 是下一阶段实施依据，本文保留 v1 历史实现记录；v2 尚未替换生产页面。前端权威现归 dljy-web，议题统一归 ChenShi-Tech/dljy，以下“镜像搬运”属于历史约定。
+
 > Epic [#2033](https://github.com/ChenShi-Tech/dljy/issues/2033)「web: 交易复盘体系（六维框架+模板+触发+案例库）」的前端权威设计稿。
 > 按 Epic 约定随 M1 首 PR 落盘。本仓（dljy-web）为上游镜像仓：本文档先在本仓评审合入，
 > 由维护者搬运回上游 `docs/review-system/` 并登记 `docs/docs-index.md`。
