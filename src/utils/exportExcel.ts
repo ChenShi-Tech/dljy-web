@@ -10,6 +10,8 @@ export type ExcelSheet = {
   name: string
   /** 二维数组（首行通常为表头）；数值保持 number 类型以便 Excel 计算 */
   rows: (string | number)[][]
+  /** 各列字符宽（xlsx !cols/wch）。日期、长单号这类宽列不给宽时，Excel 默认列宽放不下会显示成「####」。 */
+  colWidths?: number[]
 }
 
 /** Excel sheet 名约束：≤31 字符、不含 : \ / ? * [ ]、工作簿内唯一。 */
@@ -29,6 +31,8 @@ export function exportWorkbook(filename: string, sheets: ExcelSheet[]): void {
   const used = new Set<string>()
   for (let i = 0; i < sheets.length; i++) {
     const ws = XLSX.utils.aoa_to_sheet(sheets[i].rows)
+    const colWidths = sheets[i].colWidths
+    if (colWidths) ws['!cols'] = colWidths.map((wch) => ({ wch }))
     XLSX.utils.book_append_sheet(wb, ws, safeSheetName(sheets[i].name, i, used))
   }
   const name = filename.endsWith('.xlsx') ? filename : `${filename}.xlsx`
