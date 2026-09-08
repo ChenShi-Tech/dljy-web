@@ -1049,6 +1049,8 @@ const historyTruncated = computed(() => historyTotal.value > historyRows.value.l
 // 导出当日申报明细（清单 D2 + 验收反馈二轮：对齐参考系统出清结算单的单日期长表格式）
 // 导出日期独立可选（默认跟随目标日），按所选日期精确取当天申报单，不受列表窗口限制；
 // 行 = 96 时点 × 当天每张申报单，列 = 目标日/时点/申报单/模式/状态/申报电量(MWh)。
+// 用 xlsx 而非 CSV：`YYYY-MM-DD` 目标日在 CSV 里被 Excel 解析成日期值，默认列宽放不下
+// 就显示「####」；xlsx 由 colWidths 显式定宽且日期按文本保留，打开即所见。
 const curvePointLabel = (i: number) => {
   const h = Math.floor((i + 1) / 4)
   const m = ((i + 1) % 4) * 15
@@ -1062,42 +1064,38 @@ watch(targetDate, (d) => {
   exportDate.value = d
 })
 const exportBusy = ref(false)
-function exportHistoryCsv() {
+async function exportHistoryExcel() {
   if (exportBusy.value || !exportDate.value) return
   exportBusy.value = true
-  void (async () => {
-    try {
-      const dayRows = await listDeclarations({ date: exportDate.value })
-      if (!dayRows.length) {
-        ElMessage.warning(`${exportDate.value} 当天没有申报单`)
-        return
-      }
-      const escape = (v: unknown) => {
-        const s = String(v ?? '').replaceAll('"', '""')
-        return /[",\n]/.test(s) ? `"${s}"` : s
-      }
-      const header = '目标日,时点,申报单,模式,状态,申报电量(MWh)'
-      const body: string[] = []
-      for (const row of dayRows) {
-        const base = [exportDate.value, row.id, DECLARATION_MODE_LABEL[declarationModeOf(row)], STATUS_LABEL[row.status]].map(escape)
-        for (let i = 0; i < 96; i++) {
-          const mwh = Math.round((row.energyCurveMwh96[i] ?? 0) * 10000) / 10000
-          body.push([base[0], curvePointLabel(i), base[1], base[2], base[3], mwh].join(','))
-        }
-      }
-      const csv = `\uFEFF${header}\n${body.join('\n')}\n`
-      const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8;' }))
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `申报单明细-${exportDate.value}.csv`
-      a.click()
-      URL.revokeObjectURL(url)
-    } catch (e) {
-      ElMessage.error(e instanceof Error ? e.message : '导出失败')
-    } finally {
-      exportBusy.value = false
+  try {
+    const dayRows = await listDeclarations({ date: exportDate.value })
+    if (!dayRows.length) {
+      ElMessage.warning(`${exportDate.value} 当天没有申报单`)
+      return
     }
-  })()
+    const rows: (string | number)[][] = [['目标日', '时点', '申报单', '模式', '状态', '申报电量(MWh)']]
+    for (const row of dayRows) {
+      for (let i = 0; i < 96; i++) {
+        // 六列就地展开与表头一一对应（此前抽 base 数组漏插时点列，导致整列错位）
+        rows.push([
+          exportDate.value,
+          curvePointLabel(i),
+          row.id,
+          DECLARATION_MODE_LABEL[declarationModeOf(row)],
+          STATUS_LABEL[row.status],
+          Math.round((row.energyCurveMwh96[i] ?? 0) * 10000) / 10000
+        ])
+      }
+    }
+    const { exportWorkbook } = await import('../utils/exportExcel')
+    exportWorkbook(`申报单明细-${exportDate.value}.xlsx`, [
+      { name: `申报明细 ${exportDate.value}`, rows, colWidths: [12, 8, 36, 10, 10, 16] }
+    ])
+  } catch (e) {
+    ElMessage.error(e instanceof Error ? e.message : '导出失败')
+  } finally {
+    exportBusy.value = false
+  }
 }
 
 watch(historyModeFilter, () => { void loadHistoryList() })
@@ -1875,7 +1873,7 @@ onRegionChange(() => {
               <!-- 导出按钮与日期筛选拼为一体化控件：左半选日期、右半执行导出 -->
               <span class="export-group" title="左侧选日期，点右侧导出该日 96 点申报明细">
                 <input v-model="exportDate" type="date" class="decl-select" />
-                <button class="mini" :disabled="exportBusy || !exportDate" @click="exportHistoryCsv">导出</button>
+                <button class="mini" :disabled="exportBusy || !exportDate" @click="exportHistoryExcel">导出</button>
               </span>
             </span>
           </p>
