@@ -85,3 +85,27 @@ export function buildTiandituTileUrl(
   ].join('&')
   return `https://${subdomain}.tianditu.gov.cn/${code}_w/wmts?${query}`
 }
+
+/**
+ * 图层选择的持久化。底图选哪一层是长期偏好而不是一次性操作——用户切到「矢量政区」
+ * 是因为他这段时间要看行政边界，刷新一次就被打回卫星影像等于这个选择白做。
+ * 读写都吞异常：隐私模式或禁用站点数据时 localStorage 会抛，那种情况下退回默认层
+ * 继续用，不该让一个偏好把整张图带崩。
+ */
+const BASEMAP_LAYER_STORAGE_KEY = 'dljy.grid-geo.basemap-layer'
+
+export function readBasemapLayerPreference(): TiandituLayerId {
+  try {
+    return resolveTiandituLayer(localStorage.getItem(BASEMAP_LAYER_STORAGE_KEY)).id
+  } catch {
+    return DEFAULT_TIANDITU_LAYER
+  }
+}
+
+export function writeBasemapLayerPreference(id: TiandituLayerId): void {
+  try {
+    localStorage.setItem(BASEMAP_LAYER_STORAGE_KEY, resolveTiandituLayer(id).id)
+  } catch {
+    /* 存不下就只在本次会话生效 */
+  }
+}

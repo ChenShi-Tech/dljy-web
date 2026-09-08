@@ -1,11 +1,22 @@
-import { describe, expect, it } from 'vitest'
+/**
+ * @vitest-environment happy-dom
+ *
+ * 图层偏好读写 localStorage，node 环境跑不了。文件级 docblock 优先于 vitest.config
+ * 里 node project 的 environment 设置（同 `src/config/mapTokens.spec.ts`），不必为它
+ * 改名成 `*.component.spec.ts`——那个后缀是给组件测试用的，名实不符。
+ * 注记：happy-dom 的 storage 不经原型链派发，spy 必须打在实例上（`localStorage.setItem`），
+ * 打 `Storage.prototype` 拦不到，会得到一条永远不失败的空测试。
+ */
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import {
   DEFAULT_TIANDITU_LAYER,
   TIANDITU_SUBDOMAINS,
   buildTiandituTileUrl,
   listTiandituLayers,
+  readBasemapLayerPreference,
   resolveTiandituLayer,
+  writeBasemapLayerPreference,
 } from './tiandituLayers'
 
 describe('天地图图层注册表', () => {
@@ -74,5 +85,42 @@ describe('天地图瓦片 URL', () => {
     const url = buildTiandituTileUrl('img', 8, 200, 109, 'a&b=c d') as string
     expect(url).not.toContain('a&b=c d')
     expect(new URL(url).searchParams.get('tk')).toBe('a&b=c d')
+  })
+})
+
+describe('底图图层偏好持久化', () => {
+  afterEach(() => {
+    localStorage.clear()
+    vi.restoreAllMocks()
+  })
+
+  it('写入后读回同一图层', () => {
+    writeBasemapLayerPreference('ter')
+    expect(readBasemapLayerPreference()).toBe('ter')
+  })
+
+  it('未写入过时回落默认图层', () => {
+    expect(readBasemapLayerPreference()).toBe(DEFAULT_TIANDITU_LAYER)
+  })
+
+  it('存了非法值也回落默认图层，不把脏值透给渲染层', () => {
+    localStorage.setItem('dljy.grid-geo.basemap-layer', 'satellite-pro')
+    expect(readBasemapLayerPreference()).toBe(DEFAULT_TIANDITU_LAYER)
+  })
+
+  it('localStorage 读抛异常时回落默认图层而不是把整张图带崩', () => {
+    const spy = vi.spyOn(localStorage, 'getItem').mockImplementation(() => {
+      throw new DOMException('denied', 'SecurityError')
+    })
+    expect(readBasemapLayerPreference()).toBe(DEFAULT_TIANDITU_LAYER)
+    expect(spy).toHaveBeenCalled()
+  })
+
+  it('localStorage 写抛异常时静默吞掉，本次会话仍能继续用图', () => {
+    const spy = vi.spyOn(localStorage, 'setItem').mockImplementation(() => {
+      throw new DOMException('quota', 'QuotaExceededError')
+    })
+    expect(() => writeBasemapLayerPreference('vec')).not.toThrow()
+    expect(spy).toHaveBeenCalled()
   })
 })

@@ -136,6 +136,9 @@ export function topologyFeatureInBoundary(feature: GridTopologyFeature, boundary
  * （取小值保证地州完整落在视野内，不被裁掉）。上限 8 倍：再放大对参考精度的坐标没有意义，
  * 反而会让不确定性光圈铺满屏幕。
  */
+/** 下钻视口的留白系数：0.88 ≈ 四周各留 6% 的上下文。 */
+const FOCUS_PADDING = 0.88
+
 export function focusViewport(subdivision: BBox, province: BBox, preferredCenter?: [number, number]): { center: [number, number]; zoom: number } {
   const center: [number, number] = preferredCenter && isPosition(preferredCenter)
     ? preferredCenter
@@ -145,7 +148,17 @@ export function focusViewport(subdivision: BBox, province: BBox, preferredCenter
   const provinceWidth = province[2] - province[0]
   const provinceHeight = province[3] - province[1]
   if (subWidth <= 0 || subHeight <= 0 || provinceWidth <= 0 || provinceHeight <= 0) return { center, zoom: 1 }
-  const zoom = Math.min(provinceWidth / subWidth, provinceHeight / subHeight)
+  // 跨度要按「以 center 为心」量，不能直接用 bbox 宽高：DataV 给的 center 是行政
+  // 驻地而非几何中心，楚雄州府就压在州域南部。拿偏心的 center 配上刚好装下 bbox 的
+  // zoom，画面必然裁掉远离驻地的那半个州——底图是纯色块时看不出来，铺上卫星影像后
+  // 一眼就是「下钻完只剩半个州」。取到两侧的较大距离再乘二，视口才一定包得住全域。
+  const spanWidth = Math.max(center[0] - subdivision[0], subdivision[2] - center[0]) * 2
+  const spanHeight = Math.max(center[1] - subdivision[1], subdivision[3] - center[1]) * 2
+  if (spanWidth <= 0 || spanHeight <= 0) return { center, zoom: 1 }
+  // 再留一圈余量。刚好填满可用区域时州界会紧贴视口边缘，一半被地图上方的浮层与
+  // 底部状态条压掉，也看不到与相邻州的接壤关系——下钻是为了看局部，不是为了把
+  // 局部裁成孤岛。
+  const zoom = Math.min(provinceWidth / spanWidth, provinceHeight / spanHeight) * FOCUS_PADDING
   return { center, zoom: Math.max(1, Math.min(8, zoom)) }
 }
 

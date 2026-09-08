@@ -51,6 +51,9 @@ export interface TileBasemapOptions {
   onStatus?: (status: TileBasemapStatus) => void
 }
 
+/** 亮底图层之上的暗色蒙版。取值以「地物仍可辨认、但不再压过覆盖物」为准。 */
+const LIGHT_TONE_SCRIM = 'rgba(8, 20, 34, 0.46)'
+
 /** 一屏最多贴多少张。超出说明层级选过头了，宁可降一级也不要发几百个请求。 */
 const MAX_TILES_PER_FRAME = 160
 /** 连续失败多少张就判定这条链路不通，停止请求并降级。 */
@@ -188,6 +191,14 @@ export function createTileBasemap(host: TileBasemapHost, options: TileBasemapOpt
           painted += 1
         }
       }
+    }
+
+    // 亮底图层（矢量政区 / 地形晕渲）必须压暗才能和深色驾驶舱主题共存：不压的话
+    // 整块亮绿贴在深色 UI 里像开了个洞，覆盖物的浅色描边也会一起糊掉。draw 每次
+    // 都是全量重绘（上面先 clearRect），所以这层蒙版不会随重绘次数越叠越黑。
+    if (painted > 0 && layer.tone === 'light') {
+      ctx.fillStyle = LIGHT_TONE_SCRIM
+      ctx.fillRect(0, 0, width, height)
     }
 
     report(pending > 0 ? { state: 'loading' } : { state: 'ready', tiles: painted })
