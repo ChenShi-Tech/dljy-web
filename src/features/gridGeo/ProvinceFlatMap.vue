@@ -34,6 +34,7 @@ import {
   type TiandituLayerId,
 } from './flatmap/tiandituLayers'
 import { MERCATOR_PROJECTION, projectMercator, unprojectMercator } from './flatmap/webMercator'
+import { mercatorAspect, pickGeoBoxLayout, type GeoBoxLayout } from './flatmap/geoLayout'
 import { MAP_TOKEN_CHANGE_EVENT, resolveTiandituToken, resolveTiandituTokenSource, writeTiandituToken } from '@/config/mapTokens'
 import { topologyFeatureLabel, topologyVisualStyle } from './topology/topologyStyle'
 import type { TopologyViewportQuery } from './topology/topologyViewportLoader'
@@ -528,12 +529,14 @@ function buildOption(): echarts.EChartsOption | null {
     geo: {
       map: mapName.value,
       roam: true,
-      // 用 top/left/right/bottom 让 ECharts 自适应铺满容器；layoutCenter+layoutSize 会
-      // 把地图钉死在一个较小的正方框内，省域形状越扁浪费越多。
-      top: 16,
-      bottom: 16,
-      left: 16,
-      right: 16,
+      // ⚠️ 四边（top/left/right/bottom）不能同时给。ECharts 的 getLayoutRect 只在宽或高
+      // 有一个「算不出来」时才应用 aspect 做等比换算；四边齐全时宽高都被定死，aspect
+      // 分支根本不进，地图被**非等比拉伸**铺满容器。云南真实宽高比 0.85（竖高），在
+      // 1.9 的宽容器里会被横向拉到两倍宽——底图是纯色多边形时看不出来，铺上卫星影像
+      // 一眼就是变形的。（原实现的 `aspectScale: 0.9` 就是为补偿这个拉伸手调出来的，
+      // 不是投影校正。）
+      // 故按「谁是瓶颈」二选一：容器比地图宽 → 钉上下、水平居中；反之钉左右、垂直居中。
+      ...geoBoxLayout(),
       // Web Mercator。原先走 ECharts 默认投影（经纬度直接当平面坐标）再用
       // aspectScale 手工压经度方向，那只是观感近似，与任何在线地图瓦片都对不上。
       // 换成 Mercator 后瓦片贴上来是轴对齐矩形，且省域形状本身也更接近真实。
@@ -846,6 +849,18 @@ function emitTerrainState() {
     status: 'ready',
     label: basemapActive.value ? `平面省图 · ${basemapLayerLabel.value}` : '平面省图 · 无底图',
   })
+}
+
+/**
+ * geo 的盒式布局参数。判据用整省 bbox 而非下钻后的州：geo 的 boundingRect 始终是整份
+ * 地图数据的范围，下钻靠 center/zoom 实现、不改数据。算法与「为什么不能四边全给」的
+ * 来龙去脉见 `flatmap/geoLayout.ts`。
+ */
+function geoBoxLayout(): GeoBoxLayout {
+  const dom = container.value
+  const bbox = provinceBBox.value
+  if (!dom || !bbox) return pickGeoBoxLayout(Number.NaN, 0, 0)
+  return pickGeoBoxLayout(mercatorAspect(bbox, projectMercator), dom.clientWidth, dom.clientHeight)
 }
 
 /**
