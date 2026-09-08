@@ -961,6 +961,9 @@ let refreshGeneration = 0
 const pendingSelectId = ref<string | null>(
   typeof route.query.declarationId === 'string' && route.query.declarationId ? route.query.declarationId : null
 )
+// 上面 setup 已消费过这份 query（挂载后 refresh 会选中它）；本页在 KeepAlive 下首次
+// 挂载也会触发 onActivated，这个标记让首次激活跳过重复消费，之后每次切回都消费新 query。
+let skipNextActivationQuery = pendingSelectId.value !== null
 
 async function refresh(selectId?: string) {
   const generation = ++refreshGeneration
@@ -1378,7 +1381,32 @@ onActivated(() => {
   }, 1000)
   // 离线期间后端可能已被拉起（或从重训高峰空闲下来），切回立即静默重探
   if (harness.value === 'offline') void checkHarness({ silent: true })
+  consumeDeskQuery()
 })
+
+// keep-alive 复用下 setup 不重跑：审批队列第二次起「去申报台」带来的新 query（targetDate +
+// declarationId）无人消费，页面停在上一张单上——用户视角就是「点了历史单，申报台打不开它」。
+// 消费方式与 openHistoryRow 同款：置 pendingSelectId 并切日期由既有 watcher 链一次刷新；
+// 同日则直接带 id 刷新。选中的是「当前申报单」动线，若用户上次停在历史 tab 会看不到曲线，
+// 故同样强制切回 current。
+function consumeDeskQuery() {
+  if (skipNextActivationQuery) {
+    skipNextActivationQuery = false
+    return
+  }
+  const qId = typeof route.query.declarationId === 'string' ? route.query.declarationId : ''
+  const qDate = typeof route.query.targetDate === 'string' ? route.query.targetDate : ''
+  if (!qId) return
+  if (!qDate || !isRealCalendarDate(qDate)) return // 无有效目标日无法安全定位（同 id 属于确切目标日），不消费
+  declTab.value = 'current'
+  if (qId === current.value?.id && qDate === targetDate.value) return // 已是这张单，不必刷新
+  if (qDate !== targetDate.value) {
+    pendingSelectId.value = qId
+    targetDate.value = qDate
+    return
+  }
+  void refresh(qId)
+}
 onDeactivated(() => {
   window.clearInterval(ticker)
   // 作废在途探活结果并停掉退避重试（与 ticker 同一纪律），切回由 onActivated 拉起
