@@ -11,7 +11,7 @@
 
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
 import * as echarts from 'echarts'
-import { ChevronRight, CornerUpLeft, Crosshair } from 'lucide-vue-next'
+import { ChevronRight, CornerUpLeft, Crosshair, Layers } from 'lucide-vue-next'
 import { cssVar, useTheme } from '@/composables/useTheme'
 import { currentRegion, selectedRegionId } from '@/services/region/regionContext'
 import { ensureBoundaryForRegion, type BoundaryFeature } from './flatmap/geoJsonLoader'
@@ -25,6 +25,17 @@ import {
   pointInBoundary,
   topologyFeatureInBoundary,
 } from './flatmap/drilldown'
+import { createTileBasemap } from './flatmap/tileBasemap'
+import {
+  listTiandituLayers,
+  readBasemapLayerPreference,
+  resolveTiandituLayer,
+  writeBasemapLayerPreference,
+  type TiandituLayerId,
+} from './flatmap/tiandituLayers'
+import { MERCATOR_PROJECTION, projectMercator, unprojectMercator } from './flatmap/webMercator'
+import { mercatorAspect, pickGeoBoxLayout, type GeoBoxLayout } from './flatmap/geoLayout'
+import { MAP_TOKEN_CHANGE_EVENT, resolveTiandituToken, resolveTiandituTokenSource, writeTiandituToken } from '@/config/mapTokens'
 import { topologyFeatureLabel, topologyVisualStyle } from './topology/topologyStyle'
 import type { TopologyViewportQuery } from './topology/topologyViewportLoader'
 import type {
@@ -97,6 +108,51 @@ const emit = defineEmits<{
 
 const container = ref<HTMLDivElement | null>(null)
 const chart = shallowRef<echarts.ECharts | null>(null)
+
+/* ---- 天地图底图层 -------------------------------------------------
+ * 在线底图是**增强项不是前提**：交付现场是否有外网尚未确认，且 tk 可能没配。
+ * 任一条件不成立时本层什么都不画，ECharts 政区图照常工作（见 tileBasemap.ts）。
+ * `basemapActive` 驱动政区面的两套配色——有影像时几乎透明，无影像时是实心冷蓝。
+ * -------------------------------------------------------------------- */
+type TileBasemap = ReturnType<typeof createTileBasemap>
+let basemap: TileBasemap | null = null
+const basemapActive = ref(false)
+const basemapLayerId = ref<TiandituLayerId>(readBasemapLayerPreference())
+const basemapNote = ref('')
+const basemapPanelOpen = ref(false)
+const basemapTokenDraft = ref('')
+const basemapTokenSource = ref(resolveTiandituTokenSource())
+const basemapLayerLabel = computed(() => resolveTiandituLayer(basemapLayerId.value).label)
+const basemapLayerOptions = listTiandituLayers()
+const basemapTokenConfigured = computed(() => basemapTokenSource.value !== 'none')
+
+function openBasemapPanel() {
+  basemapTokenDraft.value = basemapTokenSource.value === 'runtime' ? resolveTiandituToken() : ''
+  basemapPanelOpen.value = !basemapPanelOpen.value
+}
+
+function saveBasemapToken() {
+  writeTiandituToken(basemapTokenDraft.value)
+  basemapTokenSource.value = resolveTiandituTokenSource()
+  basemapPanelOpen.value = false
+  // writeTiandituToken 会广播 MAP_TOKEN_CHANGE_EVENT，onMapTokenChange 负责 reset
+}
+
+function clearBasemapToken() {
+  writeTiandituToken('')
+  basemapTokenSource.value = resolveTiandituTokenSource()
+  basemapTokenDraft.value = ''
+}
+
+// 换底图图层要清掉瓦片缓存与失败态：不同图层的可用性彼此独立，
+// 一个图层挂了不代表另一个也挂。
+watch(basemapLayerId, (layerId) => {
+  writeBasemapLayerPreference(layerId)
+  basemap?.destroy()
+  basemap = null
+  basemapActive.value = false
+  refreshBasemap()
+})
 const { theme } = useTheme()
 
 const mapName = ref<string | null>(null)
@@ -284,8 +340,12 @@ function buildOption(): echarts.EChartsOption | null {
           type: 'circle',
           shape: { cx: center[0], cy: center[1], r: radius },
           style: {
-            fill: echarts.color.modifyAlpha(cssVar('--warning') || '#f59e0b', 0.1),
-            stroke: echarts.color.modifyAlpha(cssVar('--warning') || '#f59e0b', 0.35),
+            // 光圈表达「厂址只精确到这个范围」，语义上该用警示色而不是随底图的冷色，
+            // 否则读者会把它当成又一个业务图层。但 0.1 的暖色填充在深色底上会糊成
+            // 一片灰饼——半径大的能盖住小半个地州，反而看不出圈心在哪。
+            // 改为几乎只留虚线描边：范围仍然读得出，视觉重量交还给点层。
+            fill: echarts.color.modifyAlpha(cssVar('--warning') || '#f59e0b', 0.045),
+            stroke: echarts.color.modifyAlpha(cssVar('--warning') || '#f59e0b', 0.46),
             lineWidth: 1,
             lineDash: [3, 3],
           },
@@ -469,24 +529,40 @@ function buildOption(): echarts.EChartsOption | null {
     geo: {
       map: mapName.value,
       roam: true,
-      // 用 top/left/right/bottom 让 ECharts 自适应铺满容器；layoutCenter+layoutSize 会
-      // 把地图钉死在一个较小的正方框内，省域形状越扁浪费越多。
-      top: 16,
-      bottom: 16,
-      left: 16,
-      right: 16,
-      // 默认 0.75 会把地图横向压掉 1/4，省域看起来被拉窄。省级尺度下按中心纬度的
-      // cos 值做横向压缩才接近真实形状（云南中心约 25°N → 0.9）。
-      aspectScale: 0.9,
-      itemStyle: {
-        // 0.07 在深色主题下几乎等于纯黑，分块看不出来。0.16 能让每块自身可辨，
-        // 又不至于抢过点层，底图要「看得见」，不要「看得重」。
-        areaColor: echarts.color.modifyAlpha(accent, 0.16),
-        borderColor: areaBorder,
-        borderWidth: 1.1,
-        shadowBlur: 12,
-        shadowColor: echarts.color.modifyAlpha(accent, 0.18),
-      },
+      // ⚠️ 四边（top/left/right/bottom）不能同时给。ECharts 的 getLayoutRect 只在宽或高
+      // 有一个「算不出来」时才应用 aspect 做等比换算；四边齐全时宽高都被定死，aspect
+      // 分支根本不进，地图被**非等比拉伸**铺满容器。云南真实宽高比 0.85（竖高），在
+      // 1.9 的宽容器里会被横向拉到两倍宽——底图是纯色多边形时看不出来，铺上卫星影像
+      // 一眼就是变形的。（原实现的 `aspectScale: 0.9` 就是为补偿这个拉伸手调出来的，
+      // 不是投影校正。）
+      // 故按「谁是瓶颈」二选一：容器比地图宽 → 钉上下、水平居中；反之钉左右、垂直居中。
+      ...geoBoxLayout(),
+      // Web Mercator。原先走 ECharts 默认投影（经纬度直接当平面坐标）再用
+      // aspectScale 手工压经度方向，那只是观感近似，与任何在线地图瓦片都对不上。
+      // 换成 Mercator 后瓦片贴上来是轴对齐矩形，且省域形状本身也更接近真实。
+      projection: MERCATOR_PROJECTION,
+      itemStyle: basemapActive.value
+        ? {
+            // 底图在下面透出来，政区面只留一层极淡的冷色蒙版压住影像杂色；边界线
+            // 相应提亮——白细线在卫星影像上比在暗底上更容易被地物淹没。
+            areaColor: 'rgba(10, 32, 54, 0.18)',
+            borderColor: 'rgba(190, 238, 255, 0.95)',
+            borderWidth: 1.8,
+            // 暗色投影当外描边用：亮细线压在卫星影像上时，遇到雪山、云、城区这类
+            // 高亮地物会整段消失。垫一圈暗影后，边界在任何底色上都分得出来。
+            shadowBlur: 8,
+            shadowColor: 'rgba(6, 18, 30, 0.95)',
+          }
+        : {
+            // 降级态（无底图）。原先用 `--primary` 的 16% alpha——驾驶舱主题的
+            // primary 是暖橙红，压在深蓝底上叠出一块发脏的棕色，正是「地图太丑」的
+            // 直接来源。改用与深色主题同族的冷蓝灰，不再跟随会变暖的品牌色。
+            areaColor: 'rgba(24, 58, 88, 0.62)',
+            borderColor: 'rgba(126, 194, 231, 0.5)',
+            borderWidth: 1,
+            shadowBlur: 18,
+            shadowColor: 'rgba(64, 150, 205, 0.22)',
+          },
       label: {
         show: true,
         color: labelColor,
@@ -497,28 +573,46 @@ function buildOption(): echarts.EChartsOption | null {
         formatter: ({ name }: { name: string }) => shortSubdivisionName(name),
       },
       emphasis: {
-        itemStyle: { areaColor: echarts.color.modifyAlpha(accent, 0.22) },
-        label: { color: cssVar('--text') || '#0f172a', fontWeight: 'bold' },
+        itemStyle: {
+          areaColor: basemapActive.value ? 'rgba(72, 190, 240, 0.16)' : 'rgba(46, 96, 140, 0.72)',
+        },
+        label: { color: '#eaf7ff', fontWeight: 'bold' },
       },
       select: {
-        itemStyle: { areaColor: echarts.color.modifyAlpha(accent, 0.3) },
-        label: { color: cssVar('--text') || '#0f172a' },
+        itemStyle: {
+          areaColor: basemapActive.value ? 'rgba(72, 190, 240, 0.24)' : 'rgba(58, 118, 168, 0.8)',
+        },
+        label: { color: '#eaf7ff' },
       },
       // 选中态完全由 focusedAdcode 驱动 regions 样式：notMerge 重建 option 会丢掉
       // ECharts 自己维护的 select 状态，两套来源并存会让高亮与下钻态对不上。
       selectedMode: false,
       // 下钻态：视角收到该地州，其余地州压暗留作地理参照，移除它们会让人失去方位感。
-      ...(focusView.value ? { center: focusView.value.center, zoom: focusView.value.zoom } : {}),
+      // 用了 projection 之后 `center` 必须是**投影后**坐标（ECharts geo 的约定），
+      // 而 focusViewport 算出来的是经纬度，这里投一次再交给 ECharts。
+      ...(focusView.value
+        ? { center: projectMercator(focusView.value.center), zoom: focusView.value.zoom }
+        : {}),
       regions: focusedAdcode.value
         ? subdivisions.value.map((feature) => {
             const isFocused = String(feature.properties.adcode) === focusedAdcode.value
             return {
               name: feature.properties.name,
+              // 两档 alpha：有底图时必须让影像透出来，34% 的强调色足以把整块地物盖成
+              // 一片橙，下钻后反而看不见自己钻进了哪儿；无底图时沿用原值，那时面色
+              // 是唯一的焦点提示。
               itemStyle: isFocused
-                ? { areaColor: echarts.color.modifyAlpha(accent, 0.34), borderColor: selectedColor, borderWidth: 1.8 }
+                ? {
+                    areaColor: echarts.color.modifyAlpha(accent, basemapActive.value ? 0.16 : 0.34),
+                    borderColor: selectedColor,
+                    borderWidth: 1.8,
+                  }
                 // 0.06/0.4 实测把分块边界压得完全看不见，整张图只剩一块高亮孤悬
                 // 压暗是为了让焦点跳出来，不是为了抹掉地理参照。
-                : { areaColor: echarts.color.modifyAlpha(accent, 0.1), borderColor: echarts.color.modifyAlpha(areaBorder, 0.75) },
+                : {
+                    areaColor: echarts.color.modifyAlpha(accent, basemapActive.value ? 0.04 : 0.1),
+                    borderColor: echarts.color.modifyAlpha(areaBorder, 0.75),
+                  },
               label: { show: isFocused, color: cssVar('--text') || '#0f172a', fontWeight: 'bold' as const },
             }
           })
@@ -531,6 +625,11 @@ function buildOption(): echarts.EChartsOption | null {
 /** 清空已渲染的图元，但保留 chart 实例（避免重复 init 与闪烁）。 */
 function clearChart() {
   chart.value?.clear()
+  // 底图是独立于 ECharts 的一张 canvas，`chart.clear()` 碰不到它。切地区时不一并
+  // 清掉，新地区的空态/错误提示就会压在上一个地区的瓦片上——与 loadBoundary 里
+  // 那条「跨地区数据串显」是同一条红线。reset 同时作废在途请求，避免旧地区的瓦片
+  // 回来后又画到新地区的画布上。
+  basemap?.reset()
 }
 
 function render() {
@@ -544,10 +643,16 @@ function render() {
   if (!chart.value) {
     chart.value = echarts.init(dom)
     chart.value.on('click', onChartClick)
+    // roam 改变 geo 变换，瓦片必须跟着重贴；tileBasemap 内部按帧合并，
+    // 拖拽期间的高频事件不会变成高频重绘。
+    chart.value.on('georoam', refreshBasemap)
   }
   const option = buildOption()
   if (!option) return
   chart.value.setOption(option, { notMerge: true })
+  // setOption 之后 geo 变换才是最终值（下钻改 center/zoom 时尤其如此），
+  // 放在这里刷新才拿得到正确的视口。
+  refreshBasemap()
 }
 
 function onChartClick(params: unknown) {
@@ -700,6 +805,7 @@ function buildRuntimeStatus(): GridGeoRuntimeStatus {
 
 function resize() {
   chart.value?.resize()
+  refreshBasemap()
 }
 
 /** 与 Cesium 版本同名的对外方法，宿主可无差别调用。 */
@@ -733,6 +839,108 @@ function resetView() {
   else render()
 }
 
+/**
+ * 平面图没有三维地形，但底部状态栏那一格是用户判断「现在看的是什么图」的唯一位置，
+ * 所以把在线底图的接入状态借这个通道报上去，而不是恒定显示「无地形」。
+ */
+function emitTerrainState() {
+  emit('terrain', {
+    kind: 'ellipsoid',
+    status: 'ready',
+    label: basemapActive.value ? `平面省图 · ${basemapLayerLabel.value}` : '平面省图 · 无底图',
+  })
+}
+
+/**
+ * geo 的盒式布局参数。判据用整省 bbox 而非下钻后的州：geo 的 boundingRect 始终是整份
+ * 地图数据的范围，下钻靠 center/zoom 实现、不改数据。算法与「为什么不能四边全给」的
+ * 来龙去脉见 `flatmap/geoLayout.ts`。
+ */
+function geoBoxLayout(): GeoBoxLayout {
+  const dom = container.value
+  const bbox = provinceBBox.value
+  if (!dom || !bbox) return pickGeoBoxLayout(Number.NaN, 0, 0)
+  return pickGeoBoxLayout(mercatorAspect(bbox, projectMercator), dom.clientWidth, dom.clientHeight)
+}
+
+/**
+ * 由像素反推经纬度。
+ *
+ * ⚠️ 不能用 `convertFromPixel`：geo 开启 projection 后它的返回值不可用（实测
+ * echarts 6.1，容器四角反推出 606° 经度、纬度跨度只剩 0.9°，x/y 映射双双错乱）。
+ * 它算错时不会抛错，瓦片请求照样全部 200，只是一张都落不进视口——排查极具迷惑性。
+ *
+ * `convertToPixel` 是准的（接收原始经纬度，内部替你投影）。而 geo 的
+ * 「投影坐标 → 像素」本身是仿射变换（等比缩放 + 平移），所以取两个已知参考点
+ * 正推出像素即可解出系数，自己做逆变换。roam 缩放平移后系数随之改变，故每次调用
+ * 都重解——一帧只调两次，开销可忽略。
+ */
+const PIXEL_REF_A = [98, 22]
+const PIXEL_REF_B = [105, 28]
+
+function pixelToLngLat(pixel: number[]): [number, number] | null {
+  const instance = chart.value
+  if (!instance) return null
+  const pa = instance.convertToPixel({ geoIndex: 0 }, PIXEL_REF_A) as number[] | undefined
+  const pb = instance.convertToPixel({ geoIndex: 0 }, PIXEL_REF_B) as number[] | undefined
+  if (!pa || !pb || !Number.isFinite(pa[0]) || !Number.isFinite(pb[0])) return null
+  const ma = projectMercator(PIXEL_REF_A)
+  const mb = projectMercator(PIXEL_REF_B)
+  const dxPixel = pb[0] - pa[0]
+  const dyPixel = pb[1] - pa[1]
+  if (Math.abs(dxPixel) < 1e-6 || Math.abs(dyPixel) < 1e-6) return null
+  const mx = ma[0] + ((pixel[0] - pa[0]) / dxPixel) * (mb[0] - ma[0])
+  const my = ma[1] + ((pixel[1] - pa[1]) / dyPixel) * (mb[1] - ma[1])
+  const lngLat = unprojectMercator([mx, my])
+  return Number.isFinite(lngLat[0]) && Number.isFinite(lngLat[1]) ? [lngLat[0], lngLat[1]] : null
+}
+
+/** 建立或复用瓦片层。必须在 chart 实例存在之后调用。 */
+function ensureBasemap() {
+  if (!container.value || !chart.value) return
+  if (basemap) return
+  basemap = createTileBasemap(
+    {
+      container: container.value,
+      toPixel: (lngLat) => {
+        const px = chart.value?.convertToPixel({ geoIndex: 0 }, lngLat) as number[] | undefined
+        return px && Number.isFinite(px[0]) && Number.isFinite(px[1]) ? [px[0], px[1]] : null
+      },
+      toLngLat: (pixel) => pixelToLngLat(pixel),
+    },
+    {
+      layerId: basemapLayerId.value,
+      token: () => resolveTiandituToken(),
+      onStatus: (status) => {
+        const active = status.state === 'ready' || status.state === 'loading'
+        basemapNote.value = status.state === 'error'
+          ? (status.reason ?? '底图不可用')
+          : status.state === 'off'
+            ? (status.reason ?? '')
+            : ''
+        // 只有「有没有底图」这件事翻转时才重绘 option：政区面配色依赖它，而
+        // loading↔ready 之间来回切不该把整张图重建一遍。
+        if (active !== basemapActive.value) {
+          basemapActive.value = active
+          emitTerrainState()
+          if (loadState.value === 'ready') nextTick(render)
+        }
+      },
+    },
+  )
+}
+
+/** geo 视口变化后重贴瓦片；tileBasemap 内部按帧合并，高频调用是安全的。 */
+function refreshBasemap() {
+  ensureBasemap()
+  basemap?.render()
+}
+
+/** tk 或图层换了：清缓存与失败态重来，否则失败判定会一直粘着。 */
+function onMapTokenChange() {
+  basemap?.reset()
+}
+
 defineExpose({ focusPlant, focusNode, resetView })
 
 onMounted(() => {
@@ -744,12 +952,13 @@ onMounted(() => {
     resizeObserver = new ResizeObserver(() => {
       if (!container.value?.clientWidth || !container.value?.clientHeight) return
       if (!chart.value) render()
-      else chart.value.resize()
+      else { chart.value.resize(); refreshBasemap() }
     })
     resizeObserver.observe(container.value)
   }
+  window.addEventListener(MAP_TOKEN_CHANGE_EVENT, onMapTokenChange)
   emit('runtime', buildRuntimeStatus())
-  emit('terrain', { kind: 'ellipsoid', status: 'ready', label: '平面省图 · 无地形' })
+  emitTerrainState()
   void loadBoundary(selectedRegionId.value)
 })
 
@@ -784,8 +993,11 @@ watch([visiblePlants, visibleNodes, visibleTopology], () => {
 onBeforeUnmount(() => {
   window.removeEventListener('resize', resize)
   window.removeEventListener('keydown', onWindowKeydown)
+  window.removeEventListener(MAP_TOKEN_CHANGE_EVENT, onMapTokenChange)
   resizeObserver?.disconnect()
   resizeObserver = null
+  basemap?.destroy()
+  basemap = null
   chart.value?.dispose()
   chart.value = null
 })
@@ -829,12 +1041,68 @@ onBeforeUnmount(() => {
       <Crosshair :size="16" /> {{ focusedAdcode ? '返回省域' : '复位' }}
     </button>
 
-    <p class="source-note">底图数据：阿里云 DataV.GeoAtlas · 仅限内部使用</p>
+    <div v-if="loadState === 'ready'" class="basemap-control">
+      <button
+        type="button"
+        class="basemap-toggle"
+        :class="{ active: basemapActive }"
+        :title="basemapActive ? `当前底图：${basemapLayerLabel}` : '配置在线底图'"
+        @click="openBasemapPanel"
+      >
+        <Layers :size="15" aria-hidden="true" /> {{ basemapActive ? basemapLayerLabel : '底图' }}
+      </button>
+
+      <div v-if="basemapPanelOpen" class="basemap-panel">
+        <label>
+          <span>底图图层</span>
+          <select v-model="basemapLayerId" aria-label="天地图底图图层">
+            <option v-for="item in basemapLayerOptions" :key="item.id" :value="item.id">{{ item.label }}</option>
+          </select>
+        </label>
+
+        <label>
+          <span>天地图 tk</span>
+          <input
+            v-model="basemapTokenDraft"
+            type="text"
+            autocomplete="off"
+            spellcheck="false"
+            :placeholder="basemapTokenConfigured ? '已配置，留空则不改动' : '在 tianditu.gov.cn 免费申请'"
+            aria-label="天地图访问令牌"
+            @keyup.enter="saveBasemapToken"
+          />
+        </label>
+        <p class="basemap-hint">
+          保存在本机浏览器，立即生效、无需重新构建。未配置或现场无外网时自动退回本地政区图。
+        </p>
+        <p v-if="basemapNote" class="basemap-hint warn">{{ basemapNote }}</p>
+
+        <div class="basemap-buttons">
+          <button type="button" class="primary" @click="saveBasemapToken">保存并启用</button>
+          <button v-if="basemapTokenSource === 'runtime'" type="button" @click="clearBasemapToken">清除</button>
+          <button type="button" @click="basemapPanelOpen = false">关闭</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 天地图要求显示来源标注，这是使用条件而非可选项；无底图时退回原有说明。 -->
+    <p class="source-note">
+      <template v-if="basemapActive">底图：© 天地图 · 国家地理信息公共服务平台 | 行政区划：阿里云 DataV.GeoAtlas</template>
+      <template v-else>底图数据：阿里云 DataV.GeoAtlas · 仅限内部使用</template>
+    </p>
   </div>
 </template>
 
 <style scoped>
-.province-flat-map { position: relative; width: 100%; height: 100%; }
+.province-flat-map { position: relative; width: 100%; height: 100%;
+  /* 浮层安全区：本组件不知道宿主在它上面盖了什么，默认按「无遮挡」取 0，由宿主
+     用同名变量声明自己压住了哪几条边（见 GridSpatialCommandView 的 .command-stage）。
+     写死一套桌面端数值的话，另一个宿主 GridMarketSpatialView 的布局不同，浮层会
+     凭空内缩一大截。 */
+  --map-safe-bottom: 0px;
+  --map-safe-left: 0px;
+  --map-safe-right: 0px;
+}
 .canvas { width: 100%; height: 100%; }
 .state {
   position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
@@ -846,7 +1114,7 @@ onBeforeUnmount(() => {
   /* 底部居中：实测左上会被驾驶舱的情景导轨压住（它从地图顶部一直延伸到底部），
      顶部中间又是 signal-strip；两个宿主唯一都空着的是底部中段。
      z-index 高于情报舱（8），否则窄视口下仍会被盖。 */
-  position: absolute; bottom: 34px; left: 50%; transform: translateX(-50%); z-index: 9;
+  position: absolute; bottom: calc(var(--map-safe-bottom) + 34px); left: 50%; transform: translateX(-50%); z-index: 9;
   display: flex; align-items: center; gap: 6px; max-width: calc(100% - 32px);
   box-shadow: 0 8px 24px rgba(0, 8, 20, .28);
   padding: 6px 10px; border-radius: 8px; font-size: var(--font-md);
@@ -862,12 +1130,15 @@ onBeforeUnmount(() => {
 .crumb-counts { margin-left: 4px; font-size: var(--font-sm); color: var(--text-soft); }
 .crumb-back { margin-left: 6px; border-left: 1px solid var(--line) !important; border-radius: 0 !important; padding-left: 10px !important; }
 .drill-hint {
-  position: absolute; bottom: 36px; left: 50%; transform: translateX(-50%); z-index: 2; margin: 0;
-  font-size: var(--font-sm); color: var(--text-soft); opacity: .8; pointer-events: none; white-space: nowrap;
+  position: absolute; bottom: calc(var(--map-safe-bottom) + 36px); left: 50%; transform: translateX(-50%); z-index: 2; margin: 0;
+  font-size: var(--font-sm); color: var(--text-soft); pointer-events: none; white-space: nowrap;
+  /* 卫星影像底图上裸文字会被地物纹理彻底吃掉（纯色底图时不加也读得出，所以此前
+     一直没暴露）。垫一层半透明深色而不是继续调 opacity——降透明度只会更糊。 */
+  padding: 3px 9px; border-radius: 6px; background: rgba(4, 16, 28, .58); backdrop-filter: blur(3px);
 }
 .reset-view {
   /* 右上角是宿主的 2D/2.5D/3D 模式切换，这里避到右下、来源声明上方 */
-  position: absolute; right: 12px; bottom: 32px;
+  position: absolute; right: calc(var(--map-safe-right) + 12px); bottom: calc(var(--map-safe-bottom) + 32px);
   display: flex; align-items: center; gap: 6px;
   padding: 7px 12px; font-size: var(--font-lg); cursor: pointer;
   color: var(--text-body); border: 1px solid var(--line); border-radius: 8px;
@@ -875,7 +1146,25 @@ onBeforeUnmount(() => {
 }
 .reset-view:hover { color: var(--primary); border-color: var(--primary); }
 .source-note {
-  position: absolute; right: 10px; bottom: 8px; margin: 0;
+  position: absolute; left: calc(var(--map-safe-left) + 12px); bottom: calc(var(--map-safe-bottom) + 8px); margin: 0;
+  padding: 3px 9px; border-radius: 6px; background: rgba(4, 16, 28, .58); backdrop-filter: blur(3px);
   font-size: var(--font-xs); color: var(--muted, var(--text-soft)); opacity: .75; pointer-events: none;
 }
+
+/* 底图控件。与 .reset-view 同族的悬浮小控件，收在左下角避开右下的复位按钮。 */
+.basemap-control { position: absolute; z-index: 6; bottom: calc(var(--map-safe-bottom) + 34px); left: calc(var(--map-safe-left) + 12px); }
+.basemap-toggle { display: inline-flex; height: 30px; padding: 0 10px; align-items: center; gap: 5px; color: #9fd0e2; border: 1px solid rgba(107, 194, 227, .22); border-radius: 9px; background: rgba(5, 21, 38, .82); backdrop-filter: blur(9px); cursor: pointer; font-size: var(--font-9-5); }
+.basemap-toggle:hover { color: #63e4ff; border-color: rgba(99, 228, 255, .38); }
+.basemap-toggle.active { color: #63e4ff; border-color: rgba(99, 228, 255, .34); background: rgba(58, 174, 225, .16); }
+.basemap-panel { position: absolute; bottom: 38px; left: 0; width: 264px; padding: 11px; border: 1px solid rgba(107, 194, 227, .2); border-radius: 11px; background: rgba(5, 21, 38, .94); box-shadow: 0 18px 44px rgba(0, 7, 18, .5); backdrop-filter: blur(14px); }
+.basemap-panel label { display: flex; margin-bottom: 9px; flex-direction: column; gap: 4px; color: #8cb4c3; font-size: var(--font-9); }
+.basemap-panel select,
+.basemap-panel input { width: 100%; height: 29px; padding: 0 8px; color: #dff5ff; border: 1px solid rgba(107, 194, 227, .22); border-radius: 7px; outline: 0; background: #061a2c; font-size: var(--font-9); }
+.basemap-panel input:focus, .basemap-panel select:focus { border-color: rgba(99, 228, 255, .55); }
+.basemap-hint { margin: 0 0 8px; color: #7fa2b3; font-size: var(--font-8-5); line-height: 1.5; }
+.basemap-hint.warn { color: #d8aa56; }
+.basemap-buttons { display: flex; gap: 6px; }
+.basemap-buttons button { height: 26px; flex: 1; border: 1px solid rgba(107, 194, 227, .22); border-radius: 7px; color: #9fd0e2; background: rgba(107, 194, 227, .08); cursor: pointer; font-size: var(--font-9); }
+.basemap-buttons .primary { color: #63e4ff; border-color: rgba(99, 228, 255, .34); background: rgba(58, 174, 225, .16); }
+.basemap-buttons button:hover { background: rgba(58, 174, 225, .24); }
 </style>
