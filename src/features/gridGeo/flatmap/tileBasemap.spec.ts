@@ -211,6 +211,92 @@ describe('链路不通时停手', () => {
   })
 })
 
+describe('换 tk / 换图层（reset）', () => {
+  it('旧 tk 的在途请求被作废，其失败不算到新 tk 头上', () => {
+    const basemap = mount()
+    basemap.render(); flush()
+    const stale = created.slice(0, 6)
+    basemap.reset(); flush()
+    // 回调被断开后，迟到的失败响应根本进不来——不断开的话这 6 张正好够
+    // FAILURE_THRESHOLD，会把刚换上的 tk 直接判成「链路不通」降级掉。
+    for (const img of stale) {
+      expect(img.onerror).toBeNull()
+      expect(img.onload).toBeNull()
+    }
+  })
+
+  it('reset 后重新请求瓦片，不再吃旧缓存', () => {
+    const basemap = mount()
+    basemap.render(); flush()
+    const before = created.length
+    basemap.reset(); flush()
+    expect(created.length).toBeGreaterThan(before)
+  })
+})
+
+describe('单张瓦片失败后的重试', () => {
+  it('重试间隔内不重发，避免把失败刷成风暴', () => {
+    const basemap = mount()
+    basemap.render(); flush()
+    created[0].onerror?.()
+    const before = created.length
+    vi.advanceTimersByTime(3_000)
+    basemap.render(); flush()
+    expect(created).toHaveLength(before)
+  })
+
+  it('过了重试间隔重新发一次，那块地方不会永远是个洞', () => {
+    const basemap = mount()
+    basemap.render(); flush()
+    const failedUrl = created[0].src
+    created[0].onerror?.()
+    const before = created.length
+    vi.advanceTimersByTime(9_000)
+    basemap.render(); flush()
+    expect(created.length).toBeGreaterThan(before)
+    expect(created.slice(before).map((img) => img.src)).toContain(failedUrl)
+  })
+
+  it('重试会作废上一次的请求，迟到的响应不再把失败计数清零', () => {
+    const basemap = mount()
+    basemap.render(); flush()
+    const stale = created[0]
+    stale.onerror?.()
+    vi.advanceTimersByTime(9_000)
+    basemap.render(); flush()
+    expect(stale.onload).toBeNull()
+    expect(stale.onerror).toBeNull()
+  })
+})
+
+describe('缓存上限', () => {
+  /**
+   * roam 能走遍任意经纬度与层级，缓存不设上限就是一路涨的内存占用。这里以「走远
+   * 之后回到起点，起点瓦片被重新请求」间接观察淘汰确实发生了——JS 里测不到内存
+   * 本身。变异验证：把 MAX_CACHED_TILES 调到极大，本例即转红。
+   */
+  it('roam 走远后回到起点，被淘汰的瓦片会重新请求', () => {
+    const basemap = mount()
+    const home = { west: 101.4, east: 102.4, south: 24.8, north: 25.5 }
+    Object.assign(YUNNAN_VIEW, home)
+    basemap.render(); flush()
+    const homeUrls = new Set(created.map((img) => img.src))
+    expect(homeUrls.size).toBeGreaterThan(0)
+
+    // 每站约 80 张（底图 + 注记），5 站足以越过 320 的上限
+    for (let step = 1; step <= 5; step += 1) {
+      Object.assign(YUNNAN_VIEW, { west: 101.4 + step * 3, east: 102.4 + step * 3, south: 24.8, north: 25.5 })
+      basemap.render(); flush()
+    }
+
+    Object.assign(YUNNAN_VIEW, home)
+    const before = created.length
+    basemap.render(); flush()
+    const refetched = created.slice(before).filter((img) => homeUrls.has(img.src))
+    expect(refetched.length).toBeGreaterThan(0)
+  })
+})
+
 describe('销毁', () => {
   it('destroy 后移除 canvas，且不再发新请求', () => {
     const basemap = mount()

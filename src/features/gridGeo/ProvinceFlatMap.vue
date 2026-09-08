@@ -622,6 +622,11 @@ function buildOption(): echarts.EChartsOption | null {
 /** 清空已渲染的图元，但保留 chart 实例（避免重复 init 与闪烁）。 */
 function clearChart() {
   chart.value?.clear()
+  // 底图是独立于 ECharts 的一张 canvas，`chart.clear()` 碰不到它。切地区时不一并
+  // 清掉，新地区的空态/错误提示就会压在上一个地区的瓦片上——与 loadBoundary 里
+  // 那条「跨地区数据串显」是同一条红线。reset 同时作废在途请求，避免旧地区的瓦片
+  // 回来后又画到新地区的画布上。
+  basemap?.reset()
 }
 
 function render() {
@@ -1075,16 +1080,13 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .province-flat-map { position: relative; width: 100%; height: 100%;
-  /* 宿主 GridSpatialCommandView 把「资产 DB · mock=false | …」那条状态栏覆盖在本
-     容器底部约 41px 上（实测容器 bottom=1003、状态栏 968–983）。底部浮层若按 0
-     起算就会被压在它下面——来源声明整条落进状态栏里，下钻提示和按钮各被切掉一截。
-     统一从这个安全区起算，宿主状态栏高度变了只改这一处。 */
-  --map-safe-bottom: 46px;
-  /* 同理，宿主的图层面板盖在容器左侧 0–240px（实测面板 271–495、容器 left 255）
-     且一直垂到底部 948，左下角浮层必须整体避到它右边，否则会被压掉一半。 */
-  --map-safe-left: 240px;
-  /* 右侧 ACTIVE SCENE 面板占容器右侧约 361px 且垂到底部，右下角同样没有净空。 */
-  --map-safe-right: 361px;
+  /* 浮层安全区：本组件不知道宿主在它上面盖了什么，默认按「无遮挡」取 0，由宿主
+     用同名变量声明自己压住了哪几条边（见 GridSpatialCommandView 的 .command-stage）。
+     写死一套桌面端数值的话，另一个宿主 GridMarketSpatialView 的布局不同，浮层会
+     凭空内缩一大截。 */
+  --map-safe-bottom: 0px;
+  --map-safe-left: 0px;
+  --map-safe-right: 0px;
 }
 .canvas { width: 100%; height: 100%; }
 .state {
@@ -1097,7 +1099,7 @@ onBeforeUnmount(() => {
   /* 底部居中：实测左上会被驾驶舱的情景导轨压住（它从地图顶部一直延伸到底部），
      顶部中间又是 signal-strip；两个宿主唯一都空着的是底部中段。
      z-index 高于情报舱（8），否则窄视口下仍会被盖。 */
-  position: absolute; bottom: calc(var(--map-safe-bottom) + 6px); left: 50%; transform: translateX(-50%); z-index: 9;
+  position: absolute; bottom: calc(var(--map-safe-bottom) + 34px); left: 50%; transform: translateX(-50%); z-index: 9;
   display: flex; align-items: center; gap: 6px; max-width: calc(100% - 32px);
   box-shadow: 0 8px 24px rgba(0, 8, 20, .28);
   padding: 6px 10px; border-radius: 8px; font-size: var(--font-md);
@@ -1113,7 +1115,7 @@ onBeforeUnmount(() => {
 .crumb-counts { margin-left: 4px; font-size: var(--font-sm); color: var(--text-soft); }
 .crumb-back { margin-left: 6px; border-left: 1px solid var(--line) !important; border-radius: 0 !important; padding-left: 10px !important; }
 .drill-hint {
-  position: absolute; bottom: calc(var(--map-safe-bottom) + 8px); left: 50%; transform: translateX(-50%); z-index: 2; margin: 0;
+  position: absolute; bottom: calc(var(--map-safe-bottom) + 36px); left: 50%; transform: translateX(-50%); z-index: 2; margin: 0;
   font-size: var(--font-sm); color: var(--text-soft); pointer-events: none; white-space: nowrap;
   /* 卫星影像底图上裸文字会被地物纹理彻底吃掉（纯色底图时不加也读得出，所以此前
      一直没暴露）。垫一层半透明深色而不是继续调 opacity——降透明度只会更糊。 */
@@ -1121,7 +1123,7 @@ onBeforeUnmount(() => {
 }
 .reset-view {
   /* 右上角是宿主的 2D/2.5D/3D 模式切换，这里避到右下、来源声明上方 */
-  position: absolute; right: calc(var(--map-safe-right) + 12px); bottom: calc(var(--map-safe-bottom) + 6px);
+  position: absolute; right: calc(var(--map-safe-right) + 12px); bottom: calc(var(--map-safe-bottom) + 32px);
   display: flex; align-items: center; gap: 6px;
   padding: 7px 12px; font-size: var(--font-lg); cursor: pointer;
   color: var(--text-body); border: 1px solid var(--line); border-radius: 8px;
@@ -1129,13 +1131,13 @@ onBeforeUnmount(() => {
 }
 .reset-view:hover { color: var(--primary); border-color: var(--primary); }
 .source-note {
-  position: absolute; left: calc(var(--map-safe-left) + 12px); bottom: calc(var(--map-safe-bottom) + 42px); margin: 0;
+  position: absolute; left: calc(var(--map-safe-left) + 12px); bottom: calc(var(--map-safe-bottom) + 8px); margin: 0;
   padding: 3px 9px; border-radius: 6px; background: rgba(4, 16, 28, .58); backdrop-filter: blur(3px);
   font-size: var(--font-xs); color: var(--muted, var(--text-soft)); opacity: .75; pointer-events: none;
 }
 
 /* 底图控件。与 .reset-view 同族的悬浮小控件，收在左下角避开右下的复位按钮。 */
-.basemap-control { position: absolute; z-index: 6; bottom: calc(var(--map-safe-bottom) + 6px); left: calc(var(--map-safe-left) + 12px); }
+.basemap-control { position: absolute; z-index: 6; bottom: calc(var(--map-safe-bottom) + 34px); left: calc(var(--map-safe-left) + 12px); }
 .basemap-toggle { display: inline-flex; height: 30px; padding: 0 10px; align-items: center; gap: 5px; color: #9fd0e2; border: 1px solid rgba(107, 194, 227, .22); border-radius: 9px; background: rgba(5, 21, 38, .82); backdrop-filter: blur(9px); cursor: pointer; font-size: var(--font-9-5); }
 .basemap-toggle:hover { color: #63e4ff; border-color: rgba(99, 228, 255, .38); }
 .basemap-toggle.active { color: #63e4ff; border-color: rgba(99, 228, 255, .34); background: rgba(58, 174, 225, .16); }
