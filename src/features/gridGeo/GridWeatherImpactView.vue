@@ -130,7 +130,7 @@ watch(selectedCompanyId, resetDataScope)
           weather-layer="none" :weather-items="[]" :default-camera="operatorProfile?.defaultCamera"
           @select="onMapSelect" @terrain="terrainStatus = $event" @hillshade="hillshadeAvailable = $event.available"
         />
-        <div class="mode"><button v-for="mode in (['2d','2.5d','3d'] as GridGeoViewMode[])" :key="mode" :class="{ active:viewMode===mode }" @click="viewMode=mode">{{ mode.toUpperCase() }}</button></div>
+        <div class="mode"><button v-for="mode in (['2d','3d'] as GridGeoViewMode[])" :key="mode" :class="{ active:viewMode===mode }" @click="viewMode=mode">{{ mode.toUpperCase() }}</button></div>
         <TerrainControlPanel
           v-model:provider="terrainProvider"
           v-model:hillshade="hillshadeEnabled"

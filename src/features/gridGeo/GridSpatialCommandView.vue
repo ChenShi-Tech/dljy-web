@@ -54,6 +54,13 @@ import {
 import { topologyFeatureLabel } from './topology/topologyStyle'
 import { loadGridMarketSpatialSnapshot, type GridMarketSpatialSnapshot } from './marketSpatial'
 import {
+  GRID_MARKET_LAYER_OPTIONS,
+  gridMarketLayerOption,
+  gridMarketTone,
+  gridMarketValueText,
+  rankGridMarketMetrics,
+} from './marketSpatialLayers'
+import {
   COMMAND_MARKET_REPLAY_DATE,
   COMMAND_NODE_PAGE_SIZE,
   commandNodesFromResponse,
@@ -162,12 +169,6 @@ const weatherOptions: Array<{ value: GridGeoWeatherLayer; label: string; icon: C
   { value: 'cloud', label: '云层', icon: Layers3 },
 ]
 
-const marketOptions: Array<{ value: GridMarketLayer; label: string }> = [
-  { value: 'priceSpread', label: '实时-日前价差' },
-  { value: 'outputDeviation', label: '出力偏差' },
-  { value: 'risk', label: '综合关注' },
-]
-
 const profileStyle = computed(() => operatorProfile.value ? {
   '--command-accent': operatorProfile.value.visual.accent,
   '--command-secondary': operatorProfile.value.visual.secondary,
@@ -230,13 +231,10 @@ const activeSourceSummary = computed(() => {
     ? `${topologySourceType.value} · ${topology.value?.topologyVersion ?? '版本缺失'} · ${topologyFeatures.value.length}/${topologyTotal.value} · 预算：${topologyTransport.value.budgetStatus ?? '—'} · 非模拟数据`
     : `${topologySourceType.value} · 非模拟数据 · 不写生产 · snapshot 未请求`
 })
-const marketRank = computed(() => {
-  const scope = focusedSubdivision.value
-  const allowed = scope ? new Set(scope.plantIds) : null
-  return [...visibleMarketMetrics.value]
-    .filter((metric) => marketValue(metric) !== null && (!allowed || allowed.has(metric.plantId)))
-    .sort((left, right) => Math.abs(Number(marketValue(right))) - Math.abs(Number(marketValue(left))))
-})
+const marketRank = computed(() =>
+  rankGridMarketMetrics(visibleMarketMetrics.value, marketLayer.value, focusedSubdivision.value?.plantIds))
+/** 当前图层的口径说明。指标名（「综合关注」）本身不解释它是怎么算的。 */
+const marketLayerHint = computed(() => gridMarketLayerOption(marketLayer.value)?.description ?? '')
 const disclosureCategoryCounts = computed(() => disclosures.value.reduce<Record<string, number>>((counts, event) => {
   counts[event.category] = (counts[event.category] ?? 0) + 1
   return counts
@@ -277,18 +275,14 @@ function isAbort(error: unknown) {
   return error instanceof DOMException && error.name === 'AbortError'
 }
 
-function marketValue(metric: GridMarketMetric) {
-  if (marketLayer.value === 'priceSpread') return metric.priceSpread
-  if (marketLayer.value === 'outputDeviation') return metric.outputDeviationPercent
-  if (marketLayer.value === 'risk') return metric.riskScore
-  return null
+// 取值、格式化与分档口径统一在 `marketSpatialLayers.ts`——原先驾驶舱与「电力市场空间
+// 态势」页各写一份，同一个电厂在两处可能显示成不同的档位颜色。
+function marketValueText(metric: GridMarketMetric | null) {
+  return gridMarketValueText(metric, marketLayer.value)
 }
 
-function marketValueText(metric: GridMarketMetric | null) {
-  const value = metric ? marketValue(metric) : null
-  if (value === null) return '缺测'
-  if (marketLayer.value === 'risk') return `${value.toFixed(0)} 分`
-  return `${value > 0 ? '+' : ''}${value.toFixed(1)}${marketLayer.value === 'priceSpread' ? ' 元/MWh' : '%'}`
+function marketTone(metric: GridMarketMetric) {
+  return gridMarketTone(metric, marketLayer.value)
 }
 
 function weatherValue(item: GridGeoWeatherSnapshot | null) {
@@ -695,7 +689,7 @@ watch(
     }
   },
 )
-// Cesium 没有地市州下钻，切到 2.5D/3D 时平面图被卸载、下钻态随之失效
+// Cesium 没有地市州下钻，切到 3D 时平面图被卸载、下钻态随之失效
 // 不清空的话侧栏会继续显示「已下钻到某地州」而三维地图是全省视角。
 watch(viewMode, (mode) => {
   if (mode !== '2d') focusedSubdivision.value = null
@@ -744,7 +738,7 @@ onBeforeUnmount(() => {
 
     <main class="command-stage" :aria-busy="stageLoading">
       <!--
-        2D 走省级平面地图，2.5D/3D 走 Cesium 地球；两者 props/emits 契约一致，
+        2D 走省级平面地图，3D 走 Cesium 地球；两者 props/emits 契约一致，
         故只切组件、数据流不动。授权网架只有三维实现，见下方 watch(scene) 强制切换。
       -->
       <component
@@ -800,7 +794,7 @@ onBeforeUnmount(() => {
       </nav>
 
       <div class="view-switch" role="group" aria-label="地图视图模式">
-        <button v-for="mode in (['2d', '2.5d', '3d'] as GridGeoViewMode[])" :key="mode" type="button" :class="{ active: viewMode === mode }" :aria-pressed="viewMode === mode" @click="viewMode = mode">{{ mode.toUpperCase() }}</button>
+        <button v-for="mode in (['2d', '3d'] as GridGeoViewMode[])" :key="mode" type="button" :class="{ active: viewMode === mode }" :aria-pressed="viewMode === mode" @click="viewMode = mode">{{ mode.toUpperCase() }}</button>
       </div>
 
       <TerrainControlPanel
@@ -896,8 +890,9 @@ onBeforeUnmount(() => {
             <button type="button" @click="loadMarket(true)">加载日期</button>
           </div>
           <div class="segmented-options market" role="group" aria-label="市场空间图层">
-            <button v-for="option in marketOptions" :key="option.value" type="button" :aria-pressed="marketLayer === option.value" :class="{ active: marketLayer === option.value }" @click="marketLayer = option.value">{{ option.label }}</button>
+            <button v-for="option in GRID_MARKET_LAYER_OPTIONS" :key="option.value" type="button" :aria-pressed="marketLayer === option.value" :class="{ active: marketLayer === option.value }" @click="marketLayer = option.value">{{ option.label }}</button>
           </div>
+          <p class="layer-hint">{{ marketLayerHint }}</p>
           <div class="dock-kpis">
             <article><strong>{{ marketSnapshot?.summary.pricedPlants ?? '—' }}</strong><small>价格覆盖</small></article>
             <article><strong>{{ marketSnapshot?.summary.outputPlants ?? '—' }}</strong><small>出力覆盖</small></article>
@@ -905,7 +900,7 @@ onBeforeUnmount(() => {
           </div>
           <div class="truth-callout warning"><AlertTriangle :size="15" aria-hidden="true" />历史市场回放不与当前天气合成“实时风险”，关注分也不是潮流或阻塞成因。</div>
           <div class="asset-list">
-            <button v-for="metric in marketRank" :key="metric.plantId" type="button" :class="{ selected: selectedPlantId === metric.plantId }" @click="selectPlantById(metric.plantId)">
+            <button v-for="metric in marketRank" :key="metric.plantId" type="button" :class="[`tone-${marketTone(metric)}`, { selected: selectedPlantId === metric.plantId }]" @click="selectPlantById(metric.plantId)">
               <Gauge :size="15" aria-hidden="true" /><span><strong>{{ plants.find((plant) => plant.plantId === metric.plantId)?.standardName ?? metric.plantId }}</strong><small>{{ metric.nodeName || '节点未绑定' }}</small></span><b>{{ marketValueText(metric) }}</b>
             </button>
           </div>
@@ -965,7 +960,7 @@ onBeforeUnmount(() => {
         <button type="button" class="close" aria-label="关闭选择卡片" @click="clearSelection"><X :size="15" aria-hidden="true" /></button>
         <small>AUTHORIZED PLANT</small><h2>{{ selectedPlant.standardName }}</h2>
         <p><MapPinned :size="14" aria-hidden="true" />{{ selectedPlant.location.locationLabel }} · {{ selectedPlant.location.confidence }}</p>
-        <div><span><small>装机容量</small><strong>{{ selectedPlant.capacityMw?.toLocaleString('zh-CN') ?? '缺测' }} MW</strong></span><span v-if="scene === 'weather'"><small>{{ weatherOptions.find((item) => item.value === weatherLayer)?.label }}</small><strong>{{ weatherValue(selectedWeather) }}</strong></span><span v-if="scene === 'market'"><small>{{ marketOptions.find((item) => item.value === marketLayer)?.label }}</small><strong>{{ marketValueText(selectedMarket) }}</strong></span></div>
+        <div><span><small>装机容量</small><strong>{{ selectedPlant.capacityMw?.toLocaleString('zh-CN') ?? '缺测' }} MW</strong></span><span v-if="scene === 'weather'"><small>{{ weatherOptions.find((item) => item.value === weatherLayer)?.label }}</small><strong>{{ weatherValue(selectedWeather) }}</strong></span><span v-if="scene === 'market'"><small>{{ gridMarketLayerOption(marketLayer)?.label }}</small><strong>{{ marketValueText(selectedMarket) }}</strong></span></div>
         <a class="deep-link" href="/grid-assets/plants" @click="navigate($event, '/grid-assets/plants')">查看资产详情<ArrowRight :size="13" aria-hidden="true" /></a>
       </article>
 
@@ -1018,6 +1013,15 @@ onBeforeUnmount(() => {
 .drill-scope{display:flex;flex-wrap:wrap;align-items:baseline;gap:5px;margin:0 0 11px;padding:8px 10px;color:#8cc6d8;border:1px solid rgba(84,177,207,.22);border-radius:8px;background:rgba(24,86,116,.18);font-size: var(--font-lg);line-height:1.5}.drill-scope svg{color:var(--command-accent)}.drill-scope strong{color:#d6ecf5}
 .source-ribbon{display:flex;min-width:0;align-items:flex-start;gap:6px;padding:8px;color:#6e919e;border:1px solid rgba(84,177,207,.11);border-radius:8px;background:rgba(2,14,25,.32);font-size: var(--font-15);line-height:1.45}.source-ribbon svg{flex:0 0 auto;margin-top:1px;color:var(--command-accent)}.source-ribbon span{min-width:0;overflow-wrap:anywhere}.source-ribbon time{flex:0 0 auto;margin-left:auto;color:#8bb1bd;white-space:nowrap}
 .dock-kpis{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px;margin:11px 0}.dock-kpis article{display:flex;min-width:0;padding:9px 7px;flex-direction:column;gap:3px;border:1px solid rgba(88,179,210,.12);border-radius:9px;background:rgba(2,14,25,.38)}.dock-kpis strong{overflow:hidden;color:#d8f3f8;font-size: var(--font-18);text-overflow:ellipsis;white-space:nowrap}.dock-kpis small{color:#6e919f;font-size: var(--font-15)}.intel-dock h3{margin:14px 0 7px;color:#a9d1dc;font-size: var(--font-15)}.asset-list,.timeline-list{display:grid;gap:6px}.asset-list>button{display:grid;width:100%;min-height:48px;grid-template-columns:22px minmax(0,1fr) auto;align-items:center;gap:7px;padding:7px 8px;color:#7ba3b2;border:1px solid rgba(86,174,204,.1);border-radius:8px;background:rgba(2,14,25,.28);text-align:left;cursor:pointer;content-visibility:auto;contain-intrinsic-size:auto 48px}.asset-list>button:hover,.asset-list>button.selected{color:#d9f6fb;border-color:color-mix(in srgb,var(--command-accent) 30%,transparent);background:color-mix(in srgb,var(--command-accent) 9%,rgba(2,14,25,.45))}.asset-list button>svg{color:var(--command-accent)}.asset-list button span{display:flex;min-width:0;flex-direction:column;gap:2px}.asset-list button strong{overflow:hidden;font-size: var(--font-15);text-overflow:ellipsis;white-space:nowrap}.asset-list button small{overflow:hidden;color:#668995;font-size: var(--font-15);text-overflow:ellipsis;white-space:nowrap}.asset-list button>b{color:#e6c374;font-size: var(--font-15);text-align:right}.truth-callout{display:flex;margin:10px 0;padding:9px;align-items:flex-start;gap:7px;color:#91b7c2;border:1px solid rgba(78,194,169,.15);border-radius:8px;background:rgba(34,132,107,.08);font-size: var(--font-15);line-height:1.55}.truth-callout svg{flex:0 0 auto;color:#58d8ad}.truth-callout.warning{color:#ceb477;border-color:rgba(208,157,59,.16);background:rgba(161,105,21,.08)}.truth-callout.warning svg{color:#e2b757}
+/* 市场排行的分档着色，口径来自 marketSpatialLayers.gridMarketTone。原「电力市场空间
+   态势」页靠这层颜色一眼分出高关注资产，并入驾驶舱时一并带过来；色值取驾驶舱既有的
+   告警/正常色，不引第三套。 */
+.asset-list>button.tone-hot>b{color:#ef8f80}
+.asset-list>button.tone-warm>b{color:#e6c374}
+.asset-list>button.tone-cool>b{color:#58d8ad}
+.asset-list>button.tone-missing>b{color:#6d8a95}
+/* 图层口径说明：指标名本身不解释它是怎么算的，「综合关注」尤其如此。 */
+.layer-hint{margin:7px 0 0;color:#6e919f;font-size:var(--font-15);line-height:1.5}
 .segmented-options{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:5px;margin:10px 0}.segmented-options button{display:flex;min-height:34px;align-items:center;justify-content:center;gap:5px;color:#779eac;border:1px solid rgba(89,179,209,.12);border-radius:7px;background:rgba(2,15,26,.34);font-size: var(--font-15);cursor:pointer}.segmented-options button.active{color:#03131c;border-color:transparent;background:linear-gradient(135deg,var(--command-accent),var(--command-secondary))}.segmented-options.market{grid-template-columns:1fr}.market-controls{display:flex;gap:6px;margin:10px 0}.market-controls label,.market-controls>button{display:flex;min-height:34px;align-items:center;gap:5px;padding:0 8px;color:#90b4c1;border:1px solid rgba(89,180,211,.14);border-radius:7px;background:rgba(2,14,25,.35);font-size: var(--font-15)}.market-controls label{flex:1}.market-controls input{width:100%;color:#bfe0e7;border:0;outline:0;background:transparent;color-scheme:dark}.market-controls>button{cursor:pointer}
 .timeline-list button{display:grid;grid-template-columns:10px minmax(0,1fr);gap:7px;padding:8px;color:#83a4b1;border:1px solid rgba(87,172,201,.1);border-radius:8px;background:rgba(2,14,25,.28);text-align:left;cursor:pointer}.timeline-list button:hover,.timeline-list button.selected{border-color:rgba(88,207,229,.3);background:rgba(29,105,128,.12)}.timeline-list button>i{width:8px;height:8px;margin-top:5px;border-radius:50%;background:#5ed8f3}.timeline-list button.maintenance>i{background:#62dfb0}.timeline-list button.outage>i{background:#ef7a70}.timeline-list button.congestion>i,.timeline-list button.constraint>i{background:#eab65c}.timeline-list span{display:flex;min-width:0;flex-direction:column;gap:3px}.timeline-list small{color:#668995;font-size: var(--font-15)}.timeline-list strong{overflow:hidden;color:#cde5eb;font-size: var(--font-15);text-overflow:ellipsis;white-space:nowrap}.timeline-list em{color:#7897a2;font-size: var(--font-15);font-style:normal}
 .topology-status{display:flex;margin:14px 0;padding:14px;flex-direction:column;align-items:center;text-align:center;border:1px solid rgba(208,161,62,.18);border-radius:12px;background:radial-gradient(circle at 50% 0,rgba(209,160,55,.12),transparent 58%),rgba(2,14,25,.35)}.topology-lock{display:grid;width:48px;height:48px;margin-bottom:9px;place-items:center;color:#e2bb68;border:1px solid rgba(220,174,74,.3);border-radius:14px;background:rgba(147,95,18,.13)}.topology-status>small{color:#8a744d;font-size: var(--font-lg)}.topology-status>strong{margin-top:4px;color:#e6d3a9;font-size: var(--font-16)}.topology-status>p{margin:6px 0 0;color:#85765b;font-size: var(--font-15);line-height:1.5}.readiness-mini{display:grid;grid-template-columns:1fr 1fr;gap:5px}.readiness-mini span{display:flex;min-height:33px;align-items:center;gap:5px;padding:6px;color:#728d99;border:1px solid rgba(87,172,201,.1);border-radius:7px;font-size: var(--font-lg)}.readiness-mini span.ready{color:#62dcb1}.list-budget-note{margin:7px 0;color:#718f9b;font-size: var(--font-lg);line-height:1.5}.deep-link{display:inline-flex;min-height:34px;align-items:center;justify-content:center;gap:6px;padding:0 10px;color:#06151d;border:0;border-radius:8px;background:linear-gradient(135deg,var(--command-accent),var(--command-secondary));font-size: var(--font-15);font-weight:750;text-decoration:none;cursor:pointer}.intel-dock>.deep-link{box-sizing:border-box;width:100%;margin-top:10px}
