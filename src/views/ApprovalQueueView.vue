@@ -293,7 +293,13 @@ onRegionChange(load)
             {{ declarationModeOf(d) === 'REHEARSAL' ? '批准（演练）' : (d.l3Signatures?.length ? '批准（第二签）' : '批准') }}
           </el-button>
           <el-button size="small" type="danger" :loading="busyId === d.id" :disabled="!!approvalDeniedReason(d)" :title="approvalDeniedReason(d)" @click="decide(d, 'reject')">驳回</el-button>
-          <el-button size="small" text @click="router.push({ path: '/xhjy/desk' })">去申报台查看</el-button>
+          <!-- 与「全部申报单」区行按钮同参数：不带 declarationId 申报台只按日期默认选 list[0]；
+               演练单目标日多为历史日期，连 targetDate 都不带时申报台停在默认未来日，单完全不可见 -->
+          <el-button
+            size="small"
+            text
+            @click="router.push({ path: '/xhjy/desk', query: { targetDate: d.targetDate, declarationId: d.id } })"
+          >去申报台查看</el-button>
           <span v-if="approvalDeniedReason(d)" class="muted">{{ approvalDeniedReason(d) }}，按钮已置灰</span>
         </div>
       </div>
