@@ -88,6 +88,11 @@ const modeCounts = computed(() =>
     { LIVE: 0, REHEARSAL: 0 } as Record<DeclarationMode, number>
   )
 )
+// 勾选框文案拆两个数：「共 N」是全库历史模拟单存量（含已决/逾期，与下方「全部申报单」区同口径），
+// 「待审 M」才对应上方卡片队列（仅 PENDING_APPROVAL）——只写总数会让人以为勾上会出现 N 张卡。
+const rehearsalPendingCount = computed(
+  () => all.value.filter((d) => declarationModeOf(d) === 'REHEARSAL' && d.status === 'PENDING_APPROVAL').length
+)
 
 // 服务端 list 默认 limit=200、上限 500。本页要在客户端算待审批/模式计数/全部申报单，
 // 只取首批会在总量 >200 时静默截断，排序靠后的待审批与历史单永远不可见（与本页
@@ -250,7 +255,7 @@ onRegionChange(load)
         <h2>申报审批队列</h2>
         <span>待审批申报单集中处理（DecisionGate 档位与风控结论随单展示，审批留痕 approvalRecord）</span>
         <el-checkbox v-model="showRehearsal" size="small" style="margin-left: auto">
-          显示历史模拟单（{{ modeCounts.REHEARSAL }}）
+          显示历史模拟单（共 {{ modeCounts.REHEARSAL }} · 待审 {{ rehearsalPendingCount }}）
         </el-checkbox>
         <el-button size="small" :loading="loading" @click="load">刷新</el-button>
       </div>
