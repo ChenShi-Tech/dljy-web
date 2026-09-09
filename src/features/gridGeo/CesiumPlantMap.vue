@@ -26,6 +26,7 @@ import {
   Math as CesiumMath,
   NearFarScalar,
   OpenStreetMapImageryProvider,
+  RequestScheduler,
   PolylineArrowMaterialProperty,
   Rectangle,
   SceneMode,
@@ -45,14 +46,18 @@ import {
   BASE_MAP_PROVIDERS,
   resolveBaseMapSequenceWithPreferred,
   resolvePreferredBaseMapId,
+  isThrottledTileError,
   shouldFallbackBaseMap,
+  TIANDITU_REQUESTS_PER_SERVER,
   type BaseMapProviderConfig,
 } from '../../config/mapProviders'
 import {
   MAP_TOKEN_CHANGE_EVENT,
   resolveArcgisToken,
   resolveIonToken,
+  resolveTiandituToken,
 } from '../../config/mapTokens'
+import { TIANDITU_SUBDOMAINS, buildTiandituTemplateUrl } from './flatmap/tiandituLayers'
 import type {
   GridGeoPlant,
   GridGeoMapSelection,
@@ -930,12 +935,29 @@ function selectBaseMap(id: string) {
 }
 
 /** 该源所需凭据是否已就位；无 tokenEnvKey 的源视为无需凭据。 */
+/**
+ * 该底图源的凭据是否已就位（决定它在底图菜单里可不可选）。
+ *
+ * 按 `tokenEnvKey` 分派而不是「除 ion 外一律 false」：新增一个需凭据的源时若忘了在这里
+ * 加分支，它会在菜单里永远置灰——用户配好了 tk 也选不了，且没有任何提示说明为什么。
+ * 天地图就踩过这一条（codex 审查发现）。
+ */
 function baseMapCredentialReady(config: BaseMapProviderConfig) {
   if (!config.requiresToken) return true
-  if (config.tokenEnvKey === 'VITE_CESIUM_ION_TOKEN') {
-    return resolveIonToken().length > 0
+  switch (config.tokenEnvKey) {
+    case 'VITE_CESIUM_ION_TOKEN':
+      return resolveIonToken().length > 0
+    case 'VITE_TIANDITU_TOKEN':
+      return resolveTiandituToken().length > 0
+    default:
+      return false
   }
-  return false
+}
+
+/** 凭据缺失时的提示。天地图 tk 可在页面上配，指向 env 变量名会把人引到错的地方。 */
+function baseMapCredentialHint(config: BaseMapProviderConfig): string {
+  if (config.tokenEnvKey === 'VITE_TIANDITU_TOKEN') return '需先配置天地图 tk（平面图左下角「底图」按钮，或构建期 VITE_TIANDITU_TOKEN）'
+  return `需配置 ${config.tokenEnvKey}`
 }
 
 function resetView(duration = 1.2) {
@@ -1226,6 +1248,23 @@ function createBaseImageryProvider(config: BaseMapProviderConfig): ImageryProvid
     Ion.defaultAccessToken = token
     return IonImageryProvider.fromAssetId(Number(config.ionAssetId))
   }
+  if (config.kind === 'tianditu') {
+    // tk 与二维平面图共用同一份运行时凭据；没配就抛错，交给外层的降级链换下一个源。
+    const url = buildTiandituTemplateUrl(config.tiandituLayer ?? 'img', resolveTiandituToken())
+    if (!url) throw new Error(`${config.label} 需要天地图 tk`)
+    // 压低每子域并发：Cesium 默认 6，乘 8 个子域就是 48 路齐发，天地图的配额扛不住，
+    // 表现为一开图就一片 429。调度器按 "host:port" 记账，逐个子域设。
+    for (const subdomain of TIANDITU_SUBDOMAINS) {
+      RequestScheduler.requestsByServer[`${subdomain}.tianditu.gov.cn:443`] = TIANDITU_REQUESTS_PER_SERVER
+    }
+    return new UrlTemplateImageryProvider({
+      url,
+      credit: config.credit,
+      // 天地图开放 t0–t7 八个子域，分散浏览器对单域名的并发连接上限
+      subdomains: [...TIANDITU_SUBDOMAINS],
+      maximumLevel: 18,
+    })
+  }
   if (config.kind === 'url-template') {
     return new UrlTemplateImageryProvider({
       url: config.url,
@@ -1308,8 +1347,12 @@ async function switchBaseMap(index: number, reason = '') {
 
   const layer = viewer.imageryLayers.addImageryProvider(provider)
   applyLayerAdjustment(layer, config)
-  removeBaseMapErrorListener = provider.errorEvent.addEventListener(() => {
+  removeBaseMapErrorListener = provider.errorEvent.addEventListener((error) => {
     if (!viewer || baseMapSwitching || baseMapSequence[activeBaseMapIndex]?.id !== config.id) return
+    // 429 是**限流**不是服务不可用。三维一帧要的瓦片数远多于二维，天地图这类有 QPS
+    // 配额的源很容易撞到；把它计成故障会在瓦片最密的那几秒把底图换掉，用户看到的是
+    // 「刚打开就掉到备用源」。Cesium 自己会重试这类瓦片，这里放行不计数。
+    if (isThrottledTileError(error)) return
     baseMapErrorCount += 1
     baseMapStatus.value = {
       state: 'degraded',
@@ -1757,7 +1800,7 @@ defineExpose({ focusPlant, focusNode, resetView, flyTerrainTour })
               type="button"
               :class="{ active: option.id === activeBaseMapId }"
               :disabled="!baseMapCredentialReady(option)"
-              :title="baseMapCredentialReady(option) ? undefined : `需配置 ${option.tokenEnvKey}`"
+              :title="baseMapCredentialReady(option) ? undefined : baseMapCredentialHint(option)"
               @click="selectBaseMap(option.id)"
             >
               {{ option.label }}{{ baseMapCredentialReady(option) ? '' : ' · 未配置 token' }}

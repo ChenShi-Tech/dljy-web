@@ -8,6 +8,7 @@ import {
   listBaseMapProviders,
   resolveBaseMapFallbackSequence,
   resolveBaseMapProvider,
+  isThrottledTileError,
   shouldFallbackBaseMap,
 } from './mapProviders'
 
@@ -220,10 +221,19 @@ describe('mapProviders 降级链有界终止与失败组合（#1346 视觉门禁
         continue
       }
       expect(typeof provider.credit === 'string' && provider.credit.length > 0).toBe(true)
-      // 端点可以是瓦片 URL，也可以是 ion assetId；两者都没有就是不可定位的死配置。
-      const locatable = provider.url.length > 0 || Number.isFinite(provider.ionAssetId)
+      // 端点有三种形态：瓦片 URL、ion assetId、天地图服务代号（后者的完整 URL 要在运行时
+      // 拼上 tk 才成立，所以配置里存不下）。一种都没有就是不可定位的死配置。
+      const locatable = provider.url.length > 0
+        || Number.isFinite(provider.ionAssetId)
+        || Boolean(provider.tiandituLayer)
       expect(locatable).toBe(true)
       if (provider.kind === 'ion') expect(Number.isFinite(provider.ionAssetId)).toBe(true)
+      else if (provider.kind === 'tianditu') {
+        expect(provider.tiandituLayer).toBeTruthy()
+        // 天地图的 URL 必须留空：把带 tk 的地址写进配置就等于把凭据编译进产物
+        expect(provider.url).toBe('')
+        expect(provider.requiresToken).toBe(true)
+      }
       else expect(provider.url.length).toBeGreaterThan(0)
     }
   })
@@ -234,5 +244,82 @@ describe('mapProviders 降级链有界终止与失败组合（#1346 视觉门禁
     expect(terminal.url).toBe('')
     expect(terminal.tier).toBe('free')
     expect(terminal.adjustment).toEqual({ brightness: 1, contrast: 1, saturation: 1, gamma: 1 })
+  })
+})
+
+describe('天地图底图', () => {
+  it('注册了影像与地形晕渲两档，都声明需要 tk', () => {
+    for (const id of ['tianditu-imagery', 'tianditu-terrain-shading']) {
+      const provider = resolveBaseMapProvider(id)
+      expect(provider.kind).toBe('tianditu')
+      expect(provider.requiresToken).toBe(true)
+      expect(provider.tiandituLayer).toBeTruthy()
+    }
+  })
+
+  /**
+   * 二维平面图已经走天地图；三维不跟上的话，切 2D/3D 时地物、色调、注记全变，
+   * 用户的原话是「换了个星球」。所以有 tk 时它必须排在 ion 之前。
+   */
+  /**
+   * 天地图**不**进自动首选。2026-09-09 实测三维下 400 张瓦片里 96 张 429（24%）——
+   * 一次视角变化就是几百张，免费配额扛不住；二维一屏几十张则没有这个问题。
+   * 自动切过去只会让三维一开图就掉备用源，比不切更糟。
+   */
+  it('天地图只能显式指定，不因持有 tk 而自动成为首选', () => {
+    expect(resolvePreferredBaseMapId({})).toBe(DEFAULT_BASE_MAP_PROVIDER_ID)
+    expect(resolvePreferredBaseMapId({ hasIonToken: true })).toBe('ion-aerial')
+    expect(resolvePreferredBaseMapId({ explicitId: 'tianditu-imagery' })).toBe('tianditu-imagery')
+  })
+
+  it('显式指定最高优先——token 状态不得篡改显式配置', () => {
+    expect(resolvePreferredBaseMapId({ explicitId: 'carto-dark', hasIonToken: true })).toBe('carto-dark')
+  })
+
+  /**
+   * 需 token 的源不能进自动降级链：无凭据时它必失败，只会拖慢真正可用底图的出现。
+   */
+  it('天地图不出现在自动降级链里', () => {
+    const ids = resolveBaseMapFallbackSequence('carto-voyager').map((item) => item.id)
+    expect(ids).not.toContain('tianditu-imagery')
+    expect(ids).not.toContain('tianditu-terrain-shading')
+  })
+
+  it('把天地图设为首选时，后续降级仍走免费链并以离线底色收尾', () => {
+    const ids = resolveBaseMapSequenceWithPreferred('tianditu-imagery').map((item) => item.id)
+    expect(ids[0]).toBe('tianditu-imagery')
+    expect(ids.at(-1)).toBe('solid-grid')
+    expect(ids.filter((id) => id.startsWith('tianditu'))).toHaveLength(1)
+  })
+})
+
+describe('isThrottledTileError', () => {
+  /**
+   * 限流与「源不可用」必须分开：三维一帧要的瓦片远多于二维，天地图这类有配额的源很容易
+   * 撞 429。把它当故障计数，会在瓦片最密的那几秒把底图换掉——用户看到的是「刚打开就
+   * 掉到备用源」，而那个源其实好好的。
+   */
+  it('429 / 418 判为限流', () => {
+    expect(isThrottledTileError({ statusCode: 429 })).toBe(true)
+    expect(isThrottledTileError({ statusCode: 418 })).toBe(true)
+    expect(isThrottledTileError({ error: { statusCode: 429 } })).toBe(true)
+  })
+
+  it('状态码缺失时退回读错误文本', () => {
+    expect(isThrottledTileError({ message: 'Request has failed. Status Code: 429' })).toBe(true)
+    expect(isThrottledTileError({ message: 'failed with 418' })).toBe(true)
+  })
+
+  it('真故障不被误判成限流——否则底图坏了也不会降级', () => {
+    expect(isThrottledTileError({ statusCode: 404 })).toBe(false)
+    expect(isThrottledTileError({ statusCode: 500 })).toBe(false)
+    expect(isThrottledTileError({ message: 'Failed to obtain image tile X: 3 Y: 1 Level: 4' })).toBe(false)
+    expect(isThrottledTileError(null)).toBe(false)
+    expect(isThrottledTileError(undefined)).toBe(false)
+  })
+
+  it('数字嵌在别的数里不算——瓦片坐标里出现 429 是常事', () => {
+    expect(isThrottledTileError({ message: 'tile X: 1429 Y: 2 Level: 8' })).toBe(false)
+    expect(isThrottledTileError({ message: 'tile X: 4291 Y: 2' })).toBe(false)
   })
 })
