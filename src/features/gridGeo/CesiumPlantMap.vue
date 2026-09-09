@@ -935,12 +935,29 @@ function selectBaseMap(id: string) {
 }
 
 /** 该源所需凭据是否已就位；无 tokenEnvKey 的源视为无需凭据。 */
+/**
+ * 该底图源的凭据是否已就位（决定它在底图菜单里可不可选）。
+ *
+ * 按 `tokenEnvKey` 分派而不是「除 ion 外一律 false」：新增一个需凭据的源时若忘了在这里
+ * 加分支，它会在菜单里永远置灰——用户配好了 tk 也选不了，且没有任何提示说明为什么。
+ * 天地图就踩过这一条（codex 审查发现）。
+ */
 function baseMapCredentialReady(config: BaseMapProviderConfig) {
   if (!config.requiresToken) return true
-  if (config.tokenEnvKey === 'VITE_CESIUM_ION_TOKEN') {
-    return resolveIonToken().length > 0
+  switch (config.tokenEnvKey) {
+    case 'VITE_CESIUM_ION_TOKEN':
+      return resolveIonToken().length > 0
+    case 'VITE_TIANDITU_TOKEN':
+      return resolveTiandituToken().length > 0
+    default:
+      return false
   }
-  return false
+}
+
+/** 凭据缺失时的提示。天地图 tk 可在页面上配，指向 env 变量名会把人引到错的地方。 */
+function baseMapCredentialHint(config: BaseMapProviderConfig): string {
+  if (config.tokenEnvKey === 'VITE_TIANDITU_TOKEN') return '需先配置天地图 tk（平面图左下角「底图」按钮，或构建期 VITE_TIANDITU_TOKEN）'
+  return `需配置 ${config.tokenEnvKey}`
 }
 
 function resetView(duration = 1.2) {
@@ -1783,7 +1800,7 @@ defineExpose({ focusPlant, focusNode, resetView, flyTerrainTour })
               type="button"
               :class="{ active: option.id === activeBaseMapId }"
               :disabled="!baseMapCredentialReady(option)"
-              :title="baseMapCredentialReady(option) ? undefined : `需配置 ${option.tokenEnvKey}`"
+              :title="baseMapCredentialReady(option) ? undefined : baseMapCredentialHint(option)"
               @click="selectBaseMap(option.id)"
             >
               {{ option.label }}{{ baseMapCredentialReady(option) ? '' : ' · 未配置 token' }}
