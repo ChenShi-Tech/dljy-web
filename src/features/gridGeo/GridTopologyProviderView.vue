@@ -24,6 +24,7 @@ import { ApiError } from '@/services/api'
 import { currentCompany, selectedCompanyId } from '@/services/company/companyContext'
 import { isAdminLevelRole } from '@/services/governance'
 import { onRegionChange } from '@/composables/useRegionReload'
+import ProvinceFlatMap from './ProvinceFlatMap.vue'
 import CesiumPlantMap from './CesiumPlantMap.vue'
 import TerrainControlPanel from './TerrainControlPanel.vue'
 import { useGridGeoViewPreference } from './useViewPreference'
@@ -252,7 +253,13 @@ watch(selectedEvidenceSourceId, () => {
     </header>
 
     <div class="topology-stage" :aria-busy="loading">
-      <CesiumPlantMap
+      <!--
+        2D 走省级平面地图（天地图底图、可下钻地市州），3D 走 Cesium 地球。两者 props/emits
+        契约一致，故只切组件、数据流不动——平面图本身就支持网架要素渲染与下钻过滤。
+        （此前本页 2D/3D 都走 Cesium，所谓 2D 是 Cesium 自己的平面模式，底图仍是境外影像。）
+      -->
+      <component
+        :is="viewMode === '2d' ? ProvinceFlatMap : CesiumPlantMap"
         ref="mapRef"
         :plants="plants"
         :view-mode="viewMode"
@@ -479,6 +486,11 @@ watch(selectedEvidenceSourceId, () => {
 .spinning { animation: spin 1s linear infinite; }
 
 .topology-stage { position: relative; min-height: 720px; overflow: hidden; border: 1px solid rgba(87, 182, 220, .22); border-radius: 20px; background: #020811; box-shadow: 0 24px 72px rgba(0, 5, 16, .42); isolation: isolate; }
+/* 平面图用 `height:100%` 撑高，而本容器只有 min-height、实际高度由内容决定——
+   `height:100%` 对 auto 高度的父级解析成 0，组件挂上去就是一条 1631×0 的空壳，
+   连 canvas 都不会创建。Cesium 那边是 `position:absolute; inset:0` 才没暴露这个坑。
+   在这里把平面图也拉成绝对定位，两个组件的撑高方式就一致了。 */
+.topology-stage > :deep(.province-flat-map) { position: absolute; inset: 0; }
 /* 暗角：纯装饰。原值把地图四周压到近黑，与「看清地形起伏」直接冲突——
    卫星影像 + 山体阴影的明暗差本来就细，再罩一层暗角等于把刚找回来的立体感抹掉一圈。
    保留氛围但让强度退到不吃画面（不透明度砍半、扩散收窄）。 */
