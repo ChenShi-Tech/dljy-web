@@ -38,13 +38,24 @@ describe('useGridGeoViewPreference', () => {
     const storage = memoryStorage()
     vi.stubGlobal('localStorage', storage)
     const { viewMode, terrainProvider } = useGridGeoViewPreference('assets')
-    viewMode.value = '2.5d'
+    viewMode.value = '2d'
     terrainProvider.value = 'ellipsoid'
     await nextTick()
     expect(JSON.parse(storage.snapshot()[KEY('assets')])).toMatchObject({
-      viewMode: '2.5d',
+      viewMode: '2d',
       terrainProvider: 'ellipsoid',
     })
+  })
+
+  it('存量的 2.5d 偏好回落到页面默认档，而不是把已下线的模式透给 Cesium', () => {
+    // 2.5D 于 2026-09-08 下线。老用户本机存着 '2.5d'，取值不过白名单即回默认——
+    // 靠的就是这条闸，所以没有额外写迁移代码，那这条闸必须有测试钉住。
+    vi.stubGlobal('localStorage', memoryStorage({
+      [KEY('command')]: JSON.stringify({ viewMode: '2.5d' }),
+      [KEY('weather')]: JSON.stringify({ viewMode: '2.5d' }),
+    }))
+    expect(useGridGeoViewPreference('command', { viewMode: '2d' }).viewMode.value).toBe('2d')
+    expect(useGridGeoViewPreference('weather').viewMode.value).toBe('3d')
   })
 
   it('非法存量取值回默认，不把脏数据透给 Cesium', () => {

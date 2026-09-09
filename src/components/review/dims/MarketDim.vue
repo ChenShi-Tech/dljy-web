@@ -4,7 +4,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useEChart } from '@/composables/useEChart'
 import { cssVar } from '@/composables/useTheme'
-import { axisTooltip, chartToolbox, emptyOverlay, insideZoom } from '@/services/chart/chartOptions'
+import { axisTooltip, bottomLayoutLegend, bottomToolbox, emptyOverlay, insideZoom } from '@/services/chart/chartOptions'
 import type { ReviewResult } from '@/services/quant/quantClient'
 import { priceStats } from '@/services/review/reviewDashboard'
 import MetricTile from '../MetricTile.vue'
@@ -12,7 +12,7 @@ import MarketAttributionPanel from '../MarketAttributionPanel.vue'
 import TemplateChips from '../TemplateChips.vue'
 import type { TemplateCard } from '@/services/review/cockpitModel'
 
-const props = defineProps<{ result: ReviewResult | null; templates: TemplateCard[] }>()
+const props = defineProps<{ result: ReviewResult | null; templates: TemplateCard[]; reviewMonth?: string }>()
 const emit = defineEmits<{ (e: 'open-template', template: TemplateCard): void }>()
 
 const stats = computed(() => (props.result ? priceStats(props.result.detail) : null))
@@ -33,9 +33,9 @@ function render() {
   chart.setOption({
     ...emptyOverlay(!stats.value, '本日无日前/实时价格'),
     tooltip: axisTooltip({ unit: '元/MWh' }),
-    legend: { data: ['日前价', '实时价'], top: 0, right: 100 },
-    toolbox: chartToolbox('日前vs实时价格'),
-    grid: { left: 56, right: 16, top: 30, bottom: 26 },
+    legend: bottomLayoutLegend({ data: ['日前价', '实时价'], textStyle: { fontSize: 10 } }),
+    toolbox: bottomToolbox('日前vs实时价格', 8),
+    grid: { left: 56, right: 16, top: 56, bottom: 56 },
     dataZoom: insideZoom(),
     xAxis: { type: 'category', data: pts.map((p) => String(p.datetime).slice(-5)) },
     yAxis: { type: 'value', name: '元/MWh', scale: true },
@@ -62,7 +62,7 @@ watch(() => props.result, () => render(), { flush: 'post' })
       <div class="top"><h3>日前 vs 实时价格 · 96 点</h3></div>
       <div ref="chartEl" class="host chart-host" />
     </section>
-    <MarketAttributionPanel />
+    <MarketAttributionPanel :review-month="reviewMonth" />
     <TemplateChips :templates="templates" label="市场复盘模板" @open-template="emit('open-template', $event)" />
   </div>
 </template>
@@ -71,7 +71,8 @@ watch(() => props.result, () => render(), { flush: 'post' })
 .dim { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
 .tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
 @media (max-width: 720px) { .tiles { grid-template-columns: repeat(2, 1fr); } }
-.chart { padding: 12px 14px 8px; display: flex; flex-direction: column; gap: 6px; }
+/* 对冲全局 .chart{height:360px}，卡片按内容自适应 */
+.chart { padding: 12px 14px 8px; display: flex; flex-direction: column; gap: 6px; height: auto; }
 .top h3 { margin: 0; font-size: var(--font-13-5); font-weight: 600; }
 .host { width: 100%; height: 300px; }
 </style>

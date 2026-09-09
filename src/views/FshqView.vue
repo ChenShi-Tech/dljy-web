@@ -14,7 +14,7 @@ import RegionDataBanner from '@/components/region/RegionDataBanner.vue'
 import CapabilityDegradedCard from '../components/CapabilityDegradedCard.vue'
 import { chartChrome } from '../composables/useTheme'
 import { useEChart } from '../composables/useEChart'
-import { axisTooltip, chartToolbox, emptyOverlay } from '@/services/chart/chartOptions'
+import { axisTooltip, bottomLayoutLegend, bottomToolbox, emptyOverlay } from '@/services/chart/chartOptions'
 import { usePageInsight } from '../composables/usePageInsight'
 import { PAGE_PROMPT_KEYS } from '@/prompts'
 
@@ -153,15 +153,17 @@ function renderBuySell(d: any) {
     ? { name: s.name, type: 'bar', stack: s.key[2] === 'r' ? '买量' : '卖量', yAxisIndex: 0, barMaxWidth: 7, itemStyle: { color: s.color }, data: dm[s.key] }
     : { name: s.name, type: 'line', step: 'start', yAxisIndex: 1, showSymbol: false, connectNulls: true, lineStyle: { width: s.key === 'zxjg' ? 2.4 : 1, color: s.color }, itemStyle: { color: s.color }, data: dm[s.key] })
   bsHandle.setOption({
-    legend: { top: 4, type: 'scroll', textStyle: { fontSize: 11 } },
+    // 底部布局(对齐月度趋势):图例顶部居中 + 工具栏右下角;缩放滑块上移让位
+    legend: bottomLayoutLegend({ textStyle: { fontSize: 11 } }),
     tooltip: { ...axisTooltip({ units: BS_UNITS }), confine: true },
-    grid: { left: 56, right: 62, top: 40, bottom: 44 },
+    toolbox: bottomToolbox('买卖盘逐笔', 8),
+    grid: { left: 56, right: 62, top: 56, bottom: 56 },
     xAxis: { type: 'category', data: x, axisLabel: { fontSize: 9, color: cc.axisLabel, interval: Math.max(0, Math.floor(x.length / 12)) } },
     yAxis: [
       { type: 'value', name: '量 MW(买+/卖-)', nameTextStyle: { color: cc.axisLabel, fontSize: 10 }, axisLabel: { fontSize: 9, color: cc.axisLabel }, splitLine: { lineStyle: { color: cc.splitLine } } },
       { type: 'value', name: '价 元/MWh(买+/卖-)', nameTextStyle: { color: cc.axisLabel, fontSize: 10 }, axisLabel: { fontSize: 9, color: cc.axisLabel }, splitLine: { show: false } }
     ],
-    dataZoom: [{ type: 'inside' }, { type: 'slider', height: 14, bottom: 8 }],
+    dataZoom: [{ type: 'inside' }, { type: 'slider', height: 14, bottom: 18, right: 100 }],
     series,
     ...emptyOverlay(!x.length)
   }, { notMerge: true })
@@ -183,14 +185,14 @@ function renderMain() {
     .map((k) => ({ name: LINES[k].name, type: 'line', xAxisIndex: 0, yAxisIndex: 0, smooth: false, showSymbol: false, connectNulls: true, sampling: 'lttb', lineStyle: { width: 1.5, color: LINES[k].color }, itemStyle: { color: LINES[k].color }, data: d[k] }))
 
   mainHandle.setOption({
-    // 顶部布局:① 图例靠最顶(top:0)独占第一行;② 工具栏紧跟图例下方(top:26)第二行,在 grid(top:48)上方=绘图区外
-    legend: { top: 0, type: 'scroll', left: 8, right: 24, data: ['日K', ...lineSeries.map((s) => s.name)], textStyle: { fontSize: 12 } },
-    toolbox: { ...chartToolbox('分时行情'), top: 26 },
+    // 底部布局(对齐月度趋势):图例顶部居中独占一行;工具栏移至容器右下角
+    legend: bottomLayoutLegend({ data: ['日K', ...lineSeries.map((s) => s.name)], textStyle: { fontSize: 12 } }),
+    toolbox: bottomToolbox('分时行情', 8),
     axisPointer: { link: [{ xAxisIndex: 'all' }], label: { backgroundColor: '#777' } },
     // 日K 系列值为 OHLC 数组,统一单位 formatter 不适用,保留原生 axis tooltip
     tooltip: { trigger: 'axis', axisPointer: { type: 'cross' }, confine: true },
-    // grid top:48 让出 图例(0~24) + 工具栏(26~40) 两行;left:60 给纵向 Y 轴 name 留宽度
-    grid: [{ left: 60, right: 56, top: 48, height: '52%' }, { left: 60, right: 56, top: '72%', height: '18%' }],
+    // grid top:56 让出图例一行(0~14);left:60 给纵向 Y 轴 name 留宽度;Y 轴 name 纵向不占顶部空间
+    grid: [{ left: 60, right: 56, top: 56, height: '52%' }, { left: 60, right: 56, top: '72%', height: '18%' }],
     xAxis: [
       { type: 'category', data: idx, gridIndex: 0, boundaryGap: true, axisLabel: { formatter: (_v: string, i: number) => markIdx[i] || '', interval: 0, fontSize: 10, color: cc.axisLabel }, axisLine: { lineStyle: { color: cc.splitLine } } },
       { type: 'category', data: idx, gridIndex: 1, boundaryGap: true, axisLabel: { show: false }, axisLine: { lineStyle: { color: cc.splitLine } } }
@@ -200,7 +202,7 @@ function renderMain() {
       { scale: true, gridIndex: 0, name: '电价 元/MWh', nameLocation: 'middle', nameGap: 38, nameRotate: 90, nameTextStyle: { color: cc.axisLabel, fontSize: 11 }, axisLabel: { color: cc.axisLabel, fontSize: 10 }, splitLine: { lineStyle: { color: cc.splitLine } } },
       { scale: true, gridIndex: 1, name: '电量', nameLocation: 'middle', nameGap: 30, nameRotate: 90, nameTextStyle: { color: cc.axisLabel, fontSize: 11 }, axisLabel: { color: cc.axisLabel, fontSize: 10 }, splitLine: { show: false } }
     ],
-    dataZoom: [{ type: 'inside', xAxisIndex: [0, 1] }, { type: 'slider', xAxisIndex: [0, 1], height: 16, bottom: 6, labelFormatter: (i: number) => markIdx[Math.round(i)] || '' }],
+    dataZoom: [{ type: 'inside', xAxisIndex: [0, 1] }, { type: 'slider', xAxisIndex: [0, 1], height: 16, bottom: 18, right: 100, labelFormatter: (i: number) => markIdx[Math.round(i)] || '' }],
     series: [
       { name: '日K', type: 'candlestick', xAxisIndex: 0, yAxisIndex: 0, data: kdata, itemStyle: { color: '#ef5350', color0: '#26a69a', borderColor: '#ef5350', borderColor0: '#26a69a' },
         markLine: selectedIdx.value >= 0 ? { silent: true, symbol: 'none', lineStyle: { color: '#ff9800', width: 1.5 }, label: { show: false }, data: [{ xAxis: selectedIdx.value }] } : undefined },

@@ -81,7 +81,25 @@ npm run dev                        # http://localhost:5174
 7. **mock 标注透传**：收编/新写 client 时，信封的 `mock` 与 `mockFields` 必须原样透传给 UI 层（驾驶舱/工作台的 Mock 可见标注依赖它）；「缺数据返 null、失败不缓存、未知回落标 synthetic」是数据诚实性红线。
 8. **`/pi-api` 特例**：战略问答/申报体检 PoC 与智能体工作台（chat 已切流 #2158）共用，后端是 integrations/pi-poc 沙箱（`DLJY_PI_POC_TARGET`，默认 8100，代理 rewrite `/pi-api` → `/api`）；不跑该服务时代理目标不可达属正常。
 
-### 3.6 预测模型目录必须带目标上下文（#54）
+### 3.6 三维地图：底图、地形与凭据（改 `src/features/gridGeo/**` 前必读）
+
+「空间资产」下 5 个页面共用 `CesiumPlantMap.vue`，三层是**互相独立**的，排障时先分清坏在哪一层：
+
+| 层 | 配置位置 | 现状 |
+|---|---|---|
+| 底图影像 | `src/config/mapProviders.ts` 注册表 + `VITE_GRID_GEO_BASEMAP` | 默认 `arcgis-imagery`（卫星），失败按降级链退到矢量图、最终退内置底色 |
+| 地形高程 | `TerrainControlPanel` 下拉 + `VITE_GRID_GEO_TERRAIN_PROVIDER` | 默认 ArcGIS Terrain 3D（免 token）；Cesium World Terrain 需 ion token |
+| 山体阴影 | 晕渲图层（`applyHillshade`）+ `VITE_GRID_GEO_HILLSHADE_URL` | 默认走 `server.arcgisonline.com` 降级链 |
+
+三条容易踩空的事实：
+
+1. **`server.arcgisonline.com` 通，`services.arcgisonline.com` 不通。** 同一家 Esri 的两个子域，后者对本项目出口 IP 15s 超时无响应。历史上把整域判死，导致卫星底图与晕渲被一起弃用。新引 Esri 服务一律用 `server.`（`mapProviders.spec.ts` 有回归护栏钉死这条）。
+2. **ArcGIS Terrain 3D 没有顶点法线**（Cesium 里 `hasVertexNormals` 恒为 `false`），所以它的地形**几何是真的、山体阴影是没有的**——光照算不出明暗，起伏全靠晕渲图层勾勒。要真山体明暗只能用 Cesium World Terrain（quantized-mesh + `requestVertexNormals`）。
+3. **`globe.enableLighting` 不能简单关掉。** 关掉能治「夜半球全黑」，但地表明暗 100% 来自光照，关掉等于把地形摁成一张平贴图。现在的做法是保留光照、把光源换成跟随相机的 `DirectionalLight`（见 `applyLighting`）：相机看到的永远是受光面，地形明暗照常。
+
+**ion token 是运行时凭据**（`src/config/mapTokens.ts`）：localStorage 优先、`VITE_CESIUM_ION_TOKEN` 兜底。用户在「地形环境」面板里就能填，填完立即生效、无需重新构建——现场交付拿到的是构建产物，没有这条路径就永远开不了带山体阴影的那一档。它是前端可见的第三方地图凭据（随每个瓦片请求发出），不属于需要保密的后端密钥。
+
+### 3.7 预测模型目录必须带目标上下文（#54）
 
 `src/services/forecast/forecastProviders.ts` 按 `(regionId, target)` 分开保存目录、加载状态与错误；
 不同目标的同名模型可能有不同的可用性和质量，不能借用普通电价 `price` 的目录。
@@ -91,7 +109,7 @@ npm run dev                        # http://localhost:5174
 - `ensureForecastCatalog(true)`、`PROVIDERS`、`getProvider(id)` 保留旧的默认 `price` 语义；新增非价格路径不得依赖它们推断模型状态。
 - 目录修复不等于远端可用：后端返回的 `available:false` 和不可用原因必须保留，不得为了显示模型而伪造数据、权重或授权状态。
 
-### 3.7 指定日期与在线模型入口（#54）
+### 3.8 指定日期与在线模型入口（#54）
 
 - 工作台消费 `/ycsj/center?mod=bench&target=price_user_da_settlement&date=YYYY-MM-DD`，并跟随同页query变化。日期为空或非法时不自动改算固定历史日；模型目录异步加载后按当前目标选择可用模型。
 - 云南旧价格回放与厂站负荷tab仍遵循degraded/not-configured门控。新目标入口仅在账号有 `/ycsj/workbench` 权限且地区工作台能力为available时出现，切到同页建模工作台；区域负荷不是厂站负荷，用户结算价不是旧平台价格回放。
@@ -110,7 +128,7 @@ npm run dev                        # http://localhost:5174
 | `/api/real?family=…` 404 | 该地区该数据族无真实采集 → 空态兜底 | 否（设计行为） |
 | 401 / 403 | 未登录 / RBAC 无权限（你的账号权限受限属正常） | 否 |
 | `/agent-api/agent/quant/*` 503 | Python 侧该子服务未就绪 | 否，报给维护者 |
-| 页面顶部「智能体服务未就绪」 | dev server 冷启动时探活超时的假阳性 | 刷新即恢复 |
+| 页面「智能体服务未连接/响应超时」横幅 | timeout=探活 2.5s 内未应答的假阳性（如 `/forecast/predict` 同步重训占住后端）；unreachable=服务真未起（vite 代理对已宕 upstream 固定回 502） | 否，offline 后每 5/10/15s 自动重探，服务恢复即自愈 |
 | 页面白屏 / 控制台异常 | 前端问题 | **是**，带控制台报错提 issue |
 
 ## 5. 测试与本地门禁
@@ -172,7 +190,7 @@ npm run build         # 生产构建（index + grid-geo 双入口）
 | 1 | **basis 归一双轨** | `src/services/dataBasis.ts`（根级）与 `src/services/data/contracts/*Adapter.ts` 各自实现一套口径归一；方向：以 `data/contracts` 为唯一权威，dataBasis.ts 收敛为薄引用 |
 | 2 | **云南面板双家园** | `src/features/regions/yunnan/panels/` 与 `src/views/yunnan/panels/` 并存（如结算价面板在 views 侧 1100+ 行）；方向：统一收进 features 侧，views 只留路由级页面 |
 | 3 | **services 根级扁平** | `src/services/` 根下 38 个 .ts 直接平铺；方向：按域收进子目录（agent/ 已示范），迁移需连动 import 与上游同步说明 |
-| 4 | **巨型 .vue** | 15 个超 1000 行（最大 DeclarationDeskView 1984 行）；方向：拆子组件/composable，新页面禁止再写巨石 |
+| 4 | **巨型 .vue** | 15 个超 1000 行（最大 DeclarationDeskView 1984 行）；其中 `features/gridGeo/CesiumPlantMap.vue`（1800+ 行）被 5 个页面共用，爆炸半径最大，已单列 `ChenShi-Tech/dljy` 的 Tech Debt issue；方向：拆子组件/composable，新页面禁止再写巨石 |
 | 5 | **EP/ECharts 全量引入** | element-plus 与 echarts 未做按需引入（首包代价约 1MB gzip 前）；方向：unplugin 按需方案需评估与既有主题体系的兼容 |
 | 6 | **tsconfig 收紧路线** | `noUncheckedIndexedAccess`、`exactOptionalPropertyTypes` 未开；试跑：`npx tsc --noEmit --noUncheckedIndexedAccess`（当前存量报错即改造工作量清单） |
 | 7 | **DOM 重 composables 无测试** | `useEChart`（canvas + resize observer）等无 spec；方向：先抽纯函数（option 构造）再测 |

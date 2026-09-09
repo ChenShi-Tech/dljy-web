@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // 六维标签栏（#2038）：一行六个镜头，切换只换主体区。圆点 = 就绪度信号
 // （live 绿 / gap 橙 / pending 灰），角标 = 该维待处理数（决策维待填单）。
-import { TAB_ORDER, TAB_SHORT, type DimSignal, type ShellTab } from '@/services/review/reviewDashboard'
+import { VISIBLE_TABS, TAB_SHORT, type DimSignal, type ShellTab } from '@/services/review/reviewDashboard'
 
 const props = withDefaults(
   defineProps<{
@@ -23,7 +23,7 @@ function select(dim: ShellTab) {
 <template>
   <div class="dims" role="tablist" aria-label="复盘视角">
     <button
-      v-for="dim in TAB_ORDER"
+      v-for="dim in VISIBLE_TABS"
       :key="dim"
       type="button"
       role="tab"

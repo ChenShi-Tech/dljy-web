@@ -1,23 +1,25 @@
 #!/usr/bin/env node
 // ============================================================================
-// verify:customer-edition-build —— 交付版产物不得泄露大模型信息
+// verify:customer-edition-build —— 交付版产物不得泄露大模型信息 + shared 指纹同代
 // ----------------------------------------------------------------------------
-// 主仓 Epic #2408 · 子任务 #2410（后端侧见主仓 #2409）。
+// 主仓 Epic #2408 · 子任务 #2410；判据来源改造见 Epic #2661 · #2668；
+// shared 指纹门禁见 dljy#2448 · #2454（本脚本后半段）。
 //
 //   node scripts/verify-customer-edition-build.mjs [--dist <目录>]
 //
 // 不传 --dist 时会自己构建一份交付版产物再扫描。
 //
-// ## 判据为什么必须从 llmProviders.ts 动态提取
+// ## 判据：scripts/llm-brand-keywords.mjs 的内联关键词表
 //
-// 硬编码一份品牌名清单的话，新增供应商时门禁不会跟着覆盖——那种门禁会一直报绿，
-// 直到某天客户在界面上看见了型号。这里从 `src/data/llmProviders.ts` 现场解析出
-// id / name / baseURL 里的关键词，新增供应商自动纳入判据。
+// #2410 时判据从前端那份供应商清单（llmProviders.ts）现场解析。#2668 起前端**不再持有任何
+// 供应商 / 型号信息**（清单已删，档位来自网关 /llm/services），判据来源没了，关键词表就是
+// 判据本身——它是回归绊线：列出本仓历史上出现过的品牌 / 型号词，谁把它们写回前端就红。
+// 同一张表也被 src/services/edition.brand-keywords.spec.ts 拿去扫源码，两处判据只维护一处。
 //
 // ## 为什么必须扫产物而不是扫源码
 //
-// 源码里当然有这些名字（内部版要用）。真正的问题是「交付版构建出来的 JS 里还有没有」，
-// 而这取决于 tree-shaking 有没有真的生效——实测踩过两次：
+// 源码扫描（那条 spec）守的是「前端不写品牌」；本门禁守的是另一件事——「交付版构建出来的
+// JS 里还有没有内部档专属的东西」，而这取决于 tree-shaking 有没有真的生效——实测踩过两次：
 //   ① 只把 tab 用编译期常量摘掉 → rollup 照样为动态 import 生成 chunk，两版产物一模一样
 //   ② 页面 chunk 消掉了 → `/model` 斜杠命令仍 import 供应商清单，把型号打印进聊天框
 // 两次都是「源码看着改对了、产物里还在」。所以判据只能是产物。
@@ -26,78 +28,19 @@ import { execFileSync } from 'node:child_process'
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { BRAND_KEYWORDS } from './llm-brand-keywords.mjs'
+import { listSharedFiles, sharedFingerprint, SHARED_FINGERPRINT_ALGORITHM } from './shared-fingerprint.mjs'
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 
-/**
- * 供应商主机名里那些**不是厂商标识**的段。分了三类是因为它们的来源不同，将来要加
- * 的时候得知道往哪一类里放：
- *   - 服务前缀：api / console / platform 这类，任何厂商都可能有
- *   - 通用后缀：com / cn / ai 这类顶级或功能域
- *   - 地域段：ark.cn-beijing.volces.com 里的 cn-beijing
- * 不把它们剔掉的话，`console` 会在几乎每个 JS 产物里命中，门禁直接变成噪音（实测过）。
- */
-const TOO_GENERIC_IDS = new Set([
-  // 这两个确实是 llmProviders 里的 id，但作为判据没有意义：`custom` 是「自定义接入」
-  // 模板、`spark` 是个到处都有的英文词（实测在 LoginView、ArtifactRenderer 等十几个
-  // 无关产物里命中）。它们泄不出「用的是哪家模型」这个信息，而中文厂商名（见下）
-  // 把这一档补上了——「星火」出现在产物里才是真泄露。
-  'custom', 'spark'
-])
-
-/**
- * 中文名里那些不是厂商标识的词。它们来自「自定义（任意 OpenAI 兼容）」这类模板条目，
- * 以及厂商名后缀里的通用修饰（「海外」「聚合多模型」）——在无关产物里到处命中。
- */
-const CHINESE_NOISE = new Set([
-  '自定义', '任意', '海外', '聚合', '多模型', '兼容', '通用', '模型', '接入'
-])
-
-const HOSTNAME_NOISE = new Set([
-  'api', 'www', 'open', 'platform', 'console', 'cloud', 'chat', 'ark', 'bigmodel',
-  'com', 'cn', 'net', 'io', 'ai', 'co', 'org', 'v1',
-  'cn-beijing', 'cn-hangzhou', 'us-east'
-])
-
-/**
- * 从 llmProviders.ts 解析出应当被清除的关键词。
- *
- * 判据必须跟着数据源走：硬编码一份清单的话，新增供应商时门禁不会跟着覆盖——那种门禁
- * 会一直报绿，直到某天客户在界面上看见了型号。
- *
- * 只取两处：`id` 字段（最准确的厂商标识）与 baseURL 主机名里剔除噪音后剩下的段。
- * **刻意不从型号名提取**——`step-1-8k` 会被切出 `step` 这种三四字母的通用词，
- * 在无关依赖里到处命中。厂商标识基本都能被 id 覆盖，不差型号名这一路。
- */
-function extractBrandKeywords() {
-  const file = path.join(repoRoot, 'src', 'data', 'llmProviders.ts')
-  if (!existsSync(file)) {
-    console.error(`✗ 找不到 ${path.relative(repoRoot, file)}——判据来源缺失，拒绝报绿`)
+/** 关键词表被清空 / 结构被改坏时拒绝报绿——判据失效时报绿的门禁比没有门禁更糟。 */
+function brandKeywords() {
+  const words = [...BRAND_KEYWORDS].filter((w) => typeof w === 'string' && w.length >= 4)
+  if (words.length === 0) {
+    console.error('✗ 关键词表为空——scripts/llm-brand-keywords.mjs 判据失效，拒绝报绿')
     process.exit(1)
   }
-  const text = readFileSync(file, 'utf8')
-  const words = new Set()
-  for (const m of text.matchAll(/\bid:\s*["']([a-z0-9-]+)["']/gi)) {
-    const id = m[1].toLowerCase()
-    if (!TOO_GENERIC_IDS.has(id)) words.add(id)
-  }
-  // 中文厂商名：不会像英文短词那样误报，正好补上被 TOO_GENERIC_IDS 放掉的那一档。
-  // 「星火」「豆包」出现在交付产物里就是真泄露，不存在巧合。
-  for (const m of text.matchAll(/\bname:\s*["']([^"']+)["']/gi)) {
-    for (const cn of m[1].matchAll(/[\u4e00-\u9fa5]{2,}/g)) {
-      if (!CHINESE_NOISE.has(cn[0])) words.add(cn[0])
-    }
-  }
-  for (const m of text.matchAll(/https?:\/\/([a-z0-9.-]+)/gi)) {
-    for (const seg of m[1].toLowerCase().split('.')) {
-      if (seg.length >= 4 && !HOSTNAME_NOISE.has(seg)) words.add(seg)
-    }
-  }
-  if (words.size === 0) {
-    console.error('✗ 一个关键词都没解析出来——llmProviders.ts 结构变了，判据失效，拒绝报绿')
-    process.exit(1)
-  }
-  return [...words].sort()
+  return words
 }
 
 function walkJs(dir, acc = []) {
@@ -137,7 +80,7 @@ if (!existsSync(assetsDir)) {
   process.exit(1)
 }
 
-const keywords = extractBrandKeywords()
+const keywords = brandKeywords()
 const files = walkJs(assetsDir)
 if (files.length === 0) {
   console.error('✗ 产物里一个 .js 都没有，构建异常')
@@ -145,7 +88,7 @@ if (files.length === 0) {
 }
 
 console.log(`verify:customer-edition-build`)
-console.log(`  判据关键词 ${keywords.length} 个（自 llmProviders.ts 解析）`)
+console.log(`  判据关键词 ${keywords.length} 个（scripts/llm-brand-keywords.mjs 内联表）`)
 console.log(`  扫描 ${files.length} 个 JS 产物`)
 console.log('')
 
@@ -170,4 +113,38 @@ if (hits.length) {
   process.exit(1)
 }
 
-console.log(`✓ verify:customer-edition-build 通过（${keywords.length} 个关键词零命中）`)
+// ============================================================================
+// build-info.json 门禁（dljy#2454）：交付档产物必须携带 shared/ 指纹，且与当下
+// 仓库里的 shared/ 同代。品牌词门禁守「产物不泄密」，这条守「产物与契约面对齐」：
+// build:customer 与本门禁之间若有人动了 shared/（sync 回流、手工改动），旧产物的
+// shared.hash 就对不上现算值——红，重新构建即可。主仓出包时还会用同一算法再比一次。
+// ============================================================================
+const buildInfoPath = path.join(distDir, 'build-info.json')
+if (!existsSync(buildInfoPath)) {
+  console.error(`✗ ${path.relative(repoRoot, buildInfoPath)} 不存在——vite.config.ts 的 dljy-build-info 插件没生效？拒绝报绿`)
+  process.exit(1)
+}
+const info = JSON.parse(readFileSync(buildInfoPath, 'utf8'))
+const sharedFiles = listSharedFiles(repoRoot)
+const expectedShared = sharedFingerprint(repoRoot, sharedFiles)
+const buildInfoProblems = []
+if (info.edition !== 'customer') {
+  buildInfoProblems.push(`edition 应为 "customer"，实际 ${JSON.stringify(info.edition ?? null)}`)
+}
+if (info.shared?.algorithm !== SHARED_FINGERPRINT_ALGORITHM) {
+  buildInfoProblems.push(`shared.algorithm 应为 "${SHARED_FINGERPRINT_ALGORITHM}"，实际 ${JSON.stringify(info.shared?.algorithm ?? null)}——算法升级了两仓没同改？`)
+}
+if (info.shared?.fileCount !== sharedFiles.length) {
+  buildInfoProblems.push(`shared.fileCount 应为 ${sharedFiles.length}（当前仓库 shared/ 实数），实际 ${JSON.stringify(info.shared?.fileCount ?? null)}`)
+}
+if (info.shared?.hash !== expectedShared.hash) {
+  buildInfoProblems.push(`shared.hash 与当前仓库 shared/ 现算不一致（产物 ${info.shared?.hash ?? null} ≠ 现算 ${expectedShared.hash}）——产物是 shared/ 变动前构建的，重新 build:customer`)
+}
+if (buildInfoProblems.length) {
+  console.error(`✗ ${path.relative(repoRoot, buildInfoPath)} 门禁不过：`)
+  for (const p of buildInfoProblems) console.error(`    - ${p}`)
+  process.exit(1)
+}
+console.log(`  build-info.json：edition=customer · git=${(info.gitSha ?? 'null').slice(0, 12)} · shared ${info.shared.fileCount} 文件 ${info.shared.hash.slice(0, 12)}… 与仓库 shared/ 同代`)
+
+console.log(`✓ verify:customer-edition-build 通过（${keywords.length} 个关键词零命中 + build-info 指纹一致）`)

@@ -68,6 +68,9 @@ const hasJudgementFields = computed(() => humanFields.value.some((f) => f.requir
 /** 本地草稿（human 字段 + 已采纳的 ai 建议）；有实例时与服务端 payload 双向衔接。 */
 const draft = reactive<Record<string, string>>({})
 const adopted = reactive<Record<string, boolean>>({})
+/** 非字符串的既有 payload 键（表格/面板写入的结构化数据，如收益拆解面板的 pnlTop5）：
+ *  表单只渲染字符串字段，但保存/提交必须原样保留这些键，否则面板写入的数据会被表单覆盖丢失。 */
+const extraPayload = reactive<Record<string, unknown>>({})
 
 /** 实例在且未锁定才可编辑；无实例（端点未部署）允许预览填写但不可提交。 */
 const instanceEditable = computed(
@@ -88,10 +91,11 @@ const savedMsg = ref('')
 function seedFromInstance(): void {
   saveError.value = ''
   savedMsg.value = ''
+  for (const k of Object.keys(extraPayload)) delete extraPayload[k]
   const payload = props.instance?.payload
   if (!payload) return
   for (const [key, value] of Object.entries(payload)) {
-    if (typeof value !== 'string') continue
+    if (typeof value !== 'string') { extraPayload[key] = value; continue }
     draft[key] = value
     if (aiFields.value.some((f) => f.key === key)) adopted[key] = true
   }
@@ -115,13 +119,13 @@ function adopt(fieldKey: string) {
   adopted[fieldKey] = true
 }
 
-/** 存草稿：只 PATCH payload；pending → draft 由服务端状态机自动迁移。 */
+/** 存草稿：PATCH payload = 既有结构化键 + 表单字符串草稿（后者覆盖同名字段）。 */
 async function saveDraft() {
-  await persist({ payload: { ...draft } }, 'draft', '草稿已保存')
+  await persist({ payload: { ...extraPayload, ...draft } }, 'draft', '草稿已保存')
 }
 /** 提交：payload + status 一并提交，服务端打提交戳（filledBy/submittedAt）并锁定。 */
 async function submitInstance() {
-  await persist({ payload: { ...draft }, status: 'submitted' }, 'submitted', '已提交并锁定——更正走追加记录')
+  await persist({ payload: { ...extraPayload, ...draft }, status: 'submitted' }, 'submitted', '已提交并锁定——更正走追加记录')
 }
 async function persist(
   patch: { payload: Record<string, unknown>; status?: 'submitted' },
@@ -282,9 +286,9 @@ const hasAnyCurve = computed(() =>
           {{ instance.status === 'submitted' ? '待提权角色复核（ADMIN/BOSS）' : '复核通过，留档' }}，内容不可再编辑。
         </p>
       </template>
-      <!-- 无实例：端点未部署的诚实降级（原有行为） -->
+      <!-- 无实例：chip 直开的纯预览（实例由触发引擎按周期生成，从待办箱进入才可提交落库） -->
       <template v-else>
-        <button type="button" class="rtf-submit" disabled>提交（实例端点未上线）</button>
+        <button type="button" class="rtf-submit" disabled>提交（预览 · 未挂引擎实例）</button>
         <p class="rtf-pending">{{ SUBMIT_PENDING_NOTE }}</p>
         <p class="rtf-lock">提交后锁定，更正走追加记录；审核为轻量两态（提交/复核，2026-08-13 拍板）。</p>
       </template>
@@ -310,11 +314,11 @@ const hasAnyCurve = computed(() =>
 .rtf-sec h4 { margin: 0; font-size: var(--font-12-5); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .rtf-hint { font-style: normal; font-size: var(--font-10-5); color: var(--el-text-color-secondary, #909399); font-weight: 400; }
 .rtf-auto-row, .rtf-ai-row, .rtf-human-row { display: grid; gap: 6px; align-items: start; }
-.rtf-auto-row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; }
+.rtf-auto-row { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .rtf-label { font-size: var(--font-sm); color: var(--el-text-color-regular, #606266); display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .rtf-value { font-weight: 600; color: var(--el-text-color-primary, #303133); font-variant-numeric: tabular-nums; }
 .rtf-value.empty { color: var(--el-text-color-secondary, #909399); font-weight: 400; }
-.rtf-source { font-style: normal; font-size: var(--font-10); color: #0369a1; background: #e0f2fe; border-radius: 4px; padding: 0 6px; cursor: help; white-space: nowrap; }
+.rtf-source { font-style: normal; font-size: var(--font-10); color: #0369a1; background: #e0f2fe; border-radius: 4px; padding: 0 6px; cursor: help; white-space: nowrap; justify-self: start; }
 .rtf-caliber { font-style: normal; font-size: var(--font-10); color: #a16207; background: #fffbeb; border-radius: 4px; padding: 0 6px; }
 .rtf-ai-row { grid-template-columns: minmax(0, 1fr); gap: 4px; }
 .rtf-suggestion { margin: 0; padding: 6px 9px; border-left: 3px solid #bfdbfe; background: #f8fbff; border-radius: 4px; font-size: var(--font-sm); color: #334155; line-height: 1.6; }

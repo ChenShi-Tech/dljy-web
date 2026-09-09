@@ -5,6 +5,7 @@ import { computed, nextTick, onMounted, onBeforeUnmount, provide, ref, watch } f
 import { useRouter } from 'vue-router'
 import { Bot, ChevronDown, ChevronRight, Loader2, Send, Square, User, Wrench } from 'lucide-vue-next'
 import { useAgentHealth } from '@/composables/useAgentHealth'
+import { useCurrentModel } from '@/composables/useCurrentModel'
 import {
   AgentStreamDisconnectedError,
   AgentStreamHttpError,
@@ -24,6 +25,7 @@ import {
   type HistoryTurn
 } from '@/services/agent/agentClient'
 import { createAsyncGenerations } from './asyncGenerations'
+import { resolveDoneOutcome } from './doneOutcome'
 import { parseArtifactBlocks, splitStreamingArtifacts, type ArtifactBlock } from '../../utils/artifactBlocks'
 import { useSlashInput } from '../../composables/useSlashInput'
 import type { CommandContext } from '@/services/slashCommands'
@@ -78,14 +80,17 @@ const props = withDefaults(
     promptKey?: string
     // B3 上下文感知 AI：调用方注入的选中数据/行/路由上下文。走 untrusted_external_content 语义
     // （前端只组装不执行），随消息 payload 下发，agent 据此回答带选中上下文。
+    restoreLastSession?: boolean
+    businessOnly?: boolean
     contextPayload?: Record<string, unknown> | null
   }>(),
-  { scenario: 'chat', initialQuestion: '', payload: null, resumeSessionId: null, persistHistory: true, historyKey: '', promptKey: '', contextPayload: null }
+  { scenario: 'chat', initialQuestion: '', payload: null, resumeSessionId: null, persistHistory: true, historyKey: '', promptKey: '', contextPayload: null, restoreLastSession: true, businessOnly: false }
 )
 
 const router = useRouter()
 const emit = defineEmits<{
   done: [status: string]
+  answer: [text: string]
   error: [message: string]
   approval: [payload: Record<string, unknown>]
   // 会话发生持久化变更（注册/新增轮次/恢复），工作台据此刷新历史侧栏
@@ -183,6 +188,14 @@ const reconnectAttempt = ref(0)
 let sawDone = false
 // 用户主动点「停止」标志：据此把 abort 中止识别为合法 cancelled 终态（不渲染成 ⚠️ 错误段）。
 let cancelled = false
+// 终局解释状态（doneOutcome.resolveDoneOutcome 消费）：本轮是否出现过 error 事件 /
+// 任何内容事件（token/工具/审批…）。零内容正常收尾 = 底座吞错后的空跑，补诚实说明。
+let sawErrorEvent = false
+let assistantContentSeen = false
+function beginRunOutcomeTracking() {
+  sawErrorEvent = false
+  assistantContentSeen = false
+}
 // 流世代号：每次开启新流（send/decide/attach）自增。切换会话时旧流 promise 可能晚于新流
 // settle，其 finally 里的 finalizeStreamAfterRun 若不校验世代会清掉新流的共享状态（清
 // currentRunId / 补发 done / 刷新历史覆盖正在续看的内容），stale 世代直接跳过收尾。
@@ -666,6 +679,9 @@ function displayBlocks(seg: TextSeg): ArtifactBlock[] {
 }
 
 async function onEvent(e: AgentEvent) {
+  // 除终局 done 外的任何事件都算「本轮有内容」：空结果兜底只针对全程零事件、
+  // 被底座吞成正常收尾的空跑（LLM 凭据失效实测形态），不误伤只出工具/图表的合法轮次。
+  if (e.type !== 'done') assistantContentSeen = true
   const msg = lastAssistant()
   if (e.type === 'token') {
     appendToken(e.content)
@@ -774,7 +790,8 @@ async function onEvent(e: AgentEvent) {
     emit('approval', e.payload)
   } else if (e.type === 'error') {
     finishTextSegs(msg)
-    const errText = `⚠️ ${e.message}`
+    sawErrorEvent = true
+    const errText = props.businessOnly ? '分析暂未完成，请重试。已整理的资料与人工草稿仍可使用。' : `⚠️ ${e.message}`
     msg.segs.push({ kind: 'text', chunks: [errText], done: true, blocks: parseArtifactBlocks(errText) })
     emit('error', e.message)
   } else if (e.type === 'done') {
@@ -782,9 +799,26 @@ async function onEvent(e: AgentEvent) {
     sawDone = true
     lastDoneStatus = e.status
     if (session.value) session.value.status = e.status === 'awaiting_approval' ? 'awaiting_approval' : 'idle'
+    noteRunOutcome(e.status)
+    const outcome = resolveDoneOutcome(e.status, sawErrorEvent, { hasAssistantContent: assistantContentSeen })
+    if (!outcome.errorText && !sawErrorEvent && ['idle', 'completed', 'done'].includes(e.status)) {
+      const answer = msg.segs.filter((seg): seg is TextSeg => seg.kind === 'text').map(seg => seg.chunks.join('')).join('\n\n')
+      if (answer.trim()) emit('answer', answer)
+    }
     emit('done', e.status)
   }
   scrollBottom()
+}
+
+// 终局解释（doneOutcome）：done 收尾时若本轮是失败或零内容空跑，往消息流补一段可见
+// 说明——不让「底座吞错后的正常收尾」看起来像模型没说话。放在 emit('done') 之前，
+// 宿主的 done 回调（如生成报告弹层关闭）晚于说明入列。
+function noteRunOutcome(status: string) {
+  const outcome = resolveDoneOutcome(status, sawErrorEvent, { hasAssistantContent: assistantContentSeen })
+  if (!outcome.errorText) return
+  ensureAttachPlaceholder()
+  const msg = lastAssistant()
+  msg.segs.push({ kind: 'text', chunks: [props.businessOnly ? '本次分析未完成，请重试。' : outcome.errorText], done: true, blocks: parseArtifactBlocks(props.businessOnly ? '本次分析未完成，请重试。' : outcome.errorText) })
 }
 
 function isAbortLike(err: unknown): boolean {
@@ -877,6 +911,7 @@ async function finalizeStreamAfterRun(fallbackStatus: string, gen?: number) {
   if (!sawDone) {
     sawDone = true
     lastDoneStatus = fallbackStatus
+    noteRunOutcome(fallbackStatus)
     emit('done', fallbackStatus)
   }
   currentRunId = null
@@ -927,6 +962,7 @@ async function attachActiveRunIfAny(initialCursor = -1): Promise<boolean> {
   sawDone = false
   lastDoneStatus = ''
   cancelled = false
+  beginRunOutcomeTracking()
   const ac = new AbortController()
   abort = ac
   scrollBottom(true)
@@ -988,6 +1024,7 @@ async function send() {
   sawDone = false
   lastDoneStatus = ''
   cancelled = false
+  beginRunOutcomeTracking()
   reconnecting.value = false
   reconnectAttempt.value = 0
   currentRunId = null
@@ -1042,6 +1079,7 @@ async function decide(seg: ApprovalSeg, action: 'approve' | 'reject') {
   sawDone = false
   lastDoneStatus = ''
   cancelled = false
+  beginRunOutcomeTracking()
   reconnecting.value = false
   reconnectAttempt.value = 0
   currentRunId = null
@@ -1115,6 +1153,7 @@ async function attachRunById(sessionId: string, runId: string, initialCursor = -
   sawDone = false
   lastDoneStatus = ''
   cancelled = false
+  beginRunOutcomeTracking()
   reconnecting.value = false
   reconnectAttempt.value = 0
   currentRunId = runId
@@ -1234,6 +1273,9 @@ onBeforeUnmount(() => {
 // 集中在共享面板处理，覆盖工作台/4 Copilot/复盘中心/Sidekick/申报台等全部 8 个接入点。
 const { offline: agentOffline, check: checkHealth } = useAgentHealth()
 
+// 当前主对话模型（主仓 #2658）：取不到就不显示，不猜——这个标签的价值全在可信。
+const { model: currentModel } = useCurrentModel()
+
 // 挂载恢复优先级：①侧栏指定回放会话 → attach 在途 run / 待审批态 → ②首条自动发送（仅在线）
 // → ③刷新恢复本接入点上次会话 → attach 在途 run / 待审批态。
 onMounted(async () => {
@@ -1248,7 +1290,7 @@ onMounted(async () => {
     if (props.initialQuestion.trim() && !agentOffline.value) {
       input.value = props.initialQuestion.trim()
       await send()
-    } else if (props.persistHistory) {
+    } else if (props.persistHistory && props.restoreLastSession) {
       // 刷新/切页恢复：启用历史的面板（默认全部）按本接入点 localStorage 指针恢复上次会话；
       // key 已按 historyKey 隔离，不同接入点互不串台（#498）。
       const saved = readLocalSession()
@@ -1327,6 +1369,15 @@ function approvalBrief(payload: Record<string, unknown>): { label: string; value
 
 <template>
   <div class="agent-panel">
+    <!-- 当前模型（主仓 #2658）：auto 档下模型随自建端点可用性自动切换，不显示的话
+         「端点断了、答案照常出来」无从察觉。取不到就不显示，不猜。 -->
+    <div v-if="currentModel" class="model-bar" :class="{ 'self-hosted': currentModel.selfHosted }">
+      <span class="model-dot" aria-hidden="true"></span>
+      <span class="model-label">{{ currentModel.label }}</span>
+      <span class="model-name">{{ currentModel.model }}</span>
+      <span v-if="currentModel.mode === 'auto'" class="model-mode" title="模型按端点可用性自动切换">自动</span>
+    </div>
+
     <!-- 任务计划（TodoListMiddleware 状态） -->
     <div v-if="todos.length" class="plan-bar">
       <span class="plan-title">任务计划</span>
@@ -1348,7 +1399,7 @@ function approvalBrief(payload: Record<string, unknown>): { label: string; value
       <div v-if="agentOffline" class="empty-hint">
         <div class="empty-logo offline"><Bot :size="28" /></div>
         <p class="empty-title">智能体服务未就绪</p>
-        <p class="sub">请启动智能体后端（npm run dev:agent-api）后重试</p>
+        <p class="sub">{{ businessOnly ? '暂时无法连接分析服务，可继续整理资料和编辑草稿。' : '请启动智能体后端（npm run dev:agent-api）后重试' }}</p>
         <button class="empty-retry" @click="checkHealth()">重试连接</button>
       </div>
       <div v-else-if="!messages.length" class="empty-hint">
@@ -1393,7 +1444,9 @@ function approvalBrief(payload: Record<string, unknown>): { label: string; value
 
               <!-- 顶层工具组：连续顶层工具归为一组，折叠只显统计，展开逐条看指令 -->
               <div
-                v-else-if="seg.kind === 'tool' && !seg.subRole && isToolGroupStart(msg.segs, si)"
+                v-else-if="businessOnly && (seg.kind === 'tool' || seg.kind === 'subagent-group')" class="muted"
+              >资料核实过程<DataBasisBadge v-if="seg.kind === 'tool' && seg.basis" :basis="seg.basis" /></div>
+              <div v-else-if="seg.kind === 'tool' && !seg.subRole && isToolGroupStart(msg.segs, si)"
                 class="tool-group"
                 :class="{ error: toolGroupSummary(toolGroupOf(msg.segs, si)).error }"
               >
@@ -1625,6 +1678,26 @@ function approvalBrief(payload: Record<string, unknown>): { label: string; value
 }
 
 /* 任务计划条 */
+.model-bar {
+  display: flex; align-items: center; gap: 6px;
+  padding: 4px 12px; font-size: var(--font-xs);
+  color: var(--el-text-color-secondary);
+  border-bottom: 1px solid var(--el-border-color-lighter);
+  background: var(--el-fill-color-lighter);
+}
+.model-dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--el-text-color-placeholder);
+}
+/* 自建端点是演示时最想让人一眼看见的状态，故给它唯一的高亮 */
+.model-bar.self-hosted { color: var(--el-color-success); background: var(--el-color-success-light-9); }
+.model-bar.self-hosted .model-dot { background: var(--el-color-success); }
+.model-name { font-family: var(--el-font-family-mono, monospace); opacity: 0.75; }
+.model-mode {
+  margin-left: auto; padding: 0 6px; border-radius: 8px;
+  background: var(--el-fill-color); color: var(--el-text-color-secondary);
+}
+
 .plan-bar {
   display: flex;
   flex-wrap: wrap;

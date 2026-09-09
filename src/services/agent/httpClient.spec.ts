@@ -148,8 +148,8 @@ describe('头集矩阵', () => {
 
 describe('errDetail', () => {
   it('提取 FastAPI HTTPException 的 {detail}', async () => {
-    const res = new Response(JSON.stringify({ detail: '缺少 deepseek 的 API Key' }), { status: 424 })
-    expect(await errDetail(res)).toBe('缺少 deepseek 的 API Key')
+    const res = new Response(JSON.stringify({ detail: '缺少 vendor-a 的 API Key' }), { status: 424 })
+    expect(await errDetail(res)).toBe('缺少 vendor-a 的 API Key')
   })
 
   it('JSON 但无 detail 字段 → 空串（由调用方落 `HTTP <status>` 兜底）', async () => {

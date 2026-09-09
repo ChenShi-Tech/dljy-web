@@ -96,7 +96,7 @@ export function decomposeDaily(detail: readonly DetailPointLike[], spec: Settlem
     byVariety: [
       { variety: '现货·日前', revenueYuan: da },
       { variety: '现货·实时增量', revenueYuan: rt },
-      { variety: '中长期', revenueYuan: null, note: '未接入：中长期品种收益待 S6 持仓线（#1966）接通后补列' }
+      { variety: '中长期', revenueYuan: null, note: '暂时算不了：要先定计算方法——合同电量有了（公司合同库），但用哪个市场价当基准、跨月合约电量算进哪个月还没定。定好后自动从合同库取数补上' }
     ],
     bySegment,
     segmentUnparameterized: !spec
@@ -130,7 +130,7 @@ export function rollupMonthly(daily: ReadonlyArray<{ date: string; d: DailyPnlDe
     byVariety: [
       { variety: '现货·日前', revenueYuan: da },
       { variety: '现货·实时增量', revenueYuan: rt },
-      { variety: '中长期', revenueYuan: null, note: '未接入：待 S6 持仓线（#1966）' }
+      { variety: '中长期', revenueYuan: null, note: '暂时算不了：等确定计算方法（基准价用哪个、跨月合约算哪个月）后，从公司合同库取数补上' }
     ],
     bySegment,
     totalYuan,

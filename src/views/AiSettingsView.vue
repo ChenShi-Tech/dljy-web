@@ -1,71 +1,57 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
-import { CheckCircle2, ExternalLink, Sparkles, Trash2 } from 'lucide-vue-next'
-import { llmProviders, findProvider } from '../data/llmProviders'
+import { CheckCircle2, Sparkles, Trash2 } from 'lucide-vue-next'
 import {
-  listProviders,
-  saveProviderKey,
-  deleteProviderKey,
-  testProviderKey,
   getSearchConfig,
   saveSearchConfig,
   deleteSearchConfig,
   testSearchConfig,
+  testSearchService,
   getAdminToken,
   setAdminToken,
   getDenylist,
   addDenylist,
   removeDenylist,
-  type LlmProviderInfo,
+  type LlmServices,
   type SearchConfig,
   type Denylist
 } from '@/services/llm'
+import ModelServicesPanel from '../components/ai/ModelServicesPanel.vue'
 import { fetchUsage, type UsageRow } from '@/services/agent/usageClient'
 import { getVoiceConfig, saveVoiceConfig } from '@/services/voice'
 import McpServersPanel from '../components/McpServersPanel.vue'
 import NotifyPanel from '../components/NotifyPanel.vue'
 
-// 服务端可用 provider/model + 是否已配 key（model_providers.yaml + 服务端 KeyStore）
-const serverProviders = ref<LlmProviderInfo[]>([])
-const providerId = ref('deepseek')
-const apiKey = ref('')
-const baseURL = ref('')
-const model = ref('')
+// 我方运维令牌（服务端 HARNESS_ADMIN_TOKEN）：写配置时随请求头发送，存本机浏览器。交付档不需要它。
 const adminToken = ref(getAdminToken())
-const testing = ref(false)
-const testOk = ref<boolean | null>(null)
-const testMsg = ref('')
-const loading = ref(false)
 // 保存按钮防抖：避免连点重复请求（写操作幂等性高，但仍应去重）
-const savingKey = ref(false)
 const savingSearch = ref(false)
 const savingParams = ref(false)
 const savingWorkflow = ref(false)
 
-// 当前 provider 的服务端信息（真实可用模型 + 是否已配）
-const serverInfo = computed(() => serverProviders.value.find((p) => p.provider === providerId.value))
-// 前端静态元数据（中文名 / 文档链接 / 备注）
-const meta = computed(() => findProvider(providerId.value))
-const models = computed(() => serverInfo.value?.models.map((m) => m.model) ?? meta.value?.models ?? [])
-// 已在服务端配置了 key 的 provider
-const savedProviders = computed(() => serverProviders.value.filter((p) => p.has_key))
-const currentSaved = computed(() => serverInfo.value?.has_key ?? false)
-
-function providerName(pid: string) {
-  return findProvider(pid)?.name ?? pid
+// 模型服务是否可用（网关模式，#2668）：可用时角色路由归「模型服务」面管，旧的 provider/model
+// 路由卡片隐藏——否则那张卡能把角色路由到未启用的档位，绕开「只能从已启用集合中选」这条约束。
+const gatewayActive = ref(false)
+function onServicesLoaded(s: LlmServices) {
+  gatewayActive.value = s.available
 }
 
-async function load() {
-  loading.value = true
-  try {
-    serverProviders.value = await listProviders()
-  } catch {
-    serverProviders.value = []
-    ElMessage.warning('无法连接智能体后端：请先启动后端（npm run dev:agent-api）')
-  }
-  loading.value = false
-  if (!model.value && models.value.length) model.value = models.value[0]
+// 网关模式下联网搜索由模型服务统一提供（#2701）：本地搜索引擎配置不生效，只剩连通测试
+const gatewaySearchTesting = ref(false)
+const gatewaySearchOk = ref<boolean | null>(null)
+const gatewaySearchMsg = ref('')
+async function doGatewaySearchTest() {
+  if (gatewaySearchTesting.value) return
+  gatewaySearchTesting.value = true
+  gatewaySearchOk.value = null
+  gatewaySearchMsg.value = ''
+  // 与其它写操作一致：先持久化当前输入的管理令牌，避免加固配置下 403
+  setAdminToken(adminToken.value)
+  const r = await testSearchService()
+  gatewaySearchOk.value = r.ok
+  gatewaySearchMsg.value = r.msg
+  gatewaySearchTesting.value = false
 }
 
 // LLM 用量统计（后端按角色过滤：管理员全站+按公司，用户本公司；数据源 model_calls 表）
@@ -89,74 +75,7 @@ async function loadUsage() {
   usageIsAdmin.value = data.is_admin
   usageScopeCompany.value = data.scope_company_id
 }
-onMounted(() => {
-  load()
-  loadUsage()
-})
-
-function onProviderChange() {
-  model.value = models.value[0] ?? ''
-  apiKey.value = ''
-  baseURL.value = ''
-  testOk.value = null
-  testMsg.value = ''
-}
-
-async function doTest() {
-  if (!apiKey.value && !currentSaved.value) {
-    ElMessage.warning('请先填写 API Key')
-    return
-  }
-  if (!model.value) {
-    ElMessage.warning('请选择模型')
-    return
-  }
-  testing.value = true
-  testOk.value = null
-  testMsg.value = ''
-  const r = await testProviderKey({
-    provider: providerId.value,
-    model: model.value,
-    apiKey: apiKey.value,
-    baseUrl: baseURL.value
-  })
-  testOk.value = r.ok
-  testMsg.value = r.msg
-  testing.value = false
-}
-
-async function doSave() {
-  if (savingKey.value) return
-  if (!apiKey.value) {
-    ElMessage.warning('请填写 API Key')
-    return
-  }
-  savingKey.value = true
-  setAdminToken(adminToken.value)
-  try {
-    const r = await saveProviderKey(providerId.value, apiKey.value, baseURL.value)
-    if (r.ok) {
-      ElMessage.success('已保存到服务端，现在各页 AI 功能可用')
-      apiKey.value = ''
-      await load()
-    } else {
-      ElMessage.error(r.msg ? `保存失败：${r.msg}` : '保存失败：后端未运行，或服务端要求的管理令牌不正确')
-    }
-  } finally {
-    savingKey.value = false
-  }
-}
-
-async function doDelete(pid: string) {
-  setAdminToken(adminToken.value)
-  try {
-    await deleteProviderKey(pid)
-    ElMessage.success(`已移除 ${providerName(pid)} 的密钥`)
-    await load()
-  } catch (err) {
-    ElMessage.error(err instanceof Error ? `移除失败：${err.message}` : '移除失败')
-  }
-}
+onMounted(loadUsage)
 
 // 采样参数 / 角色路由 / 全局工作流（运行期可调，落服务端）
 import {
@@ -186,10 +105,8 @@ const ovParams = ref<SamplingParams>({})
 // 工作流参数可编辑副本 {name: value}
 const workflowEdit = ref<Record<string, number>>({})
 
-// 所有可选模型 ref（provider/model），供「按模型覆盖」下拉
-const allModelRefs = computed(() =>
-  serverProviders.value.flatMap((p) => p.models.map((m) => m.ref))
-)
+// 所有可选模型 ref，供「按模型覆盖」下拉——取自路由表（网关模式下就是档位 ref），前端不另持清单
+const allModelRefs = computed(() => routingCfg.value?.models.map((m) => m.ref) ?? [])
 
 async function loadConfig() {
   const [p, r, w] = await Promise.allSettled([getParams(), getRouting(), getWorkflow()])
@@ -299,12 +216,12 @@ const SEARCH_PROVIDERS = [
   { id: 'bocha', name: '博查 Bocha（国内 AI 搜索）', doc: 'https://open.bochaai.com' },
   { id: 'bing', name: 'Bing Web Search', doc: 'https://www.microsoft.com/bing/apis' },
   { id: 'tavily', name: 'Tavily（LLM 检索）', doc: 'https://tavily.com' },
-  { id: 'volcengine', name: '火山引擎（豆包联网搜索）', doc: 'https://www.volcengine.com/docs/82379/1338552' }
+  { id: 'volcengine', name: '火山引擎联网搜索', doc: 'https://www.volcengine.com/docs/82379/1338552' }
 ]
 const searchCfg = ref<SearchConfig | null>(null)
 const searchProvider = ref('serper')
 const searchApiKey = ref('')
-const searchModel = ref('')   // 火山引擎 doubao 模型名（仅 volcengine 用）
+const searchModel = ref('')   // 火山引擎联网搜索需附带的接入点名（仅该引擎用）
 const searchTesting = ref(false)
 const searchTestOk = ref<boolean | null>(null)
 const searchTestMsg = ref('')
@@ -492,91 +409,25 @@ const section = ref<string>('access')
     <el-segmented v-model="section" :options="SETTING_SECTIONS" class="section-nav" />
 
     <div v-show="section === 'access'" class="pane">
-      <p class="pane-desc">大模型 API 凭据与默认模型——全站智能体能力的总开关。Key 保存在服务端，前端不持密钥。</p>
+      <p class="pane-desc">模型服务的档位启用与角色路由——全站智能体能力的总开关。密钥由供应方提供，在「接入凭据」处填写或随安装预置，前端不持密钥、不持供应商清单。</p>
       <div class="pane-body cols-main-aside">
-        <section class="card form-card">
-          <div class="card-head">
-            <h2>AI 模型设置</h2>
-            <span v-if="currentSaved" class="badge-ok"><CheckCircle2 :size="14" /> 当前已配置</span>
-            <router-link :to="{ query: { tab: 'skills' } }" class="skills-link"><Sparkles :size="14" /> 技能工作室</router-link>
-          </div>
-          <p class="sub">
-            为智能体后端配置大模型 API，驱动「AI 智能导航」「智能体编排」等功能。
-            支持市面上大部分国产模型（OpenAI 兼容接口）。
-            <strong>API Key 保存在服务端（不入库、不上传 git），由后端统一调用，前端不再持密钥</strong>。
-          </p>
-
-          <div class="field">
-            <label>模型厂商</label>
-            <el-select v-model="providerId" @change="onProviderChange" class="w-full" :loading="loading">
-              <el-option v-for="p in llmProviders" :key="p.id" :label="p.name" :value="p.id">
-                <span>{{ p.name }}</span>
-                <span
-                  v-if="serverProviders.find((s) => s.provider === p.id)?.has_key"
-                  class="opt-tag"
-                >已配置</span>
-              </el-option>
-            </el-select>
-            <small v-if="meta?.note" class="hint">{{ meta.note }}</small>
-          </div>
-
-          <div class="field">
-            <label>API Key <span v-if="currentSaved" class="muted-tag">（留空则沿用已保存的）</span></label>
-            <el-input v-model="apiKey" type="password" show-password placeholder="sk-..." />
-          </div>
-
-          <div class="field">
-            <label>接口地址 baseURL <span class="muted-tag">（可选，留空用默认）</span></label>
-            <el-input v-model="baseURL" :placeholder="serverInfo?.base_url || 'https://.../v1'" />
-          </div>
-
-          <div class="field">
-            <label>管理令牌 <span class="muted-tag">（可选，仅当服务端设置了 HARNESS_ADMIN_TOKEN 时需要）</span></label>
-            <el-input v-model="adminToken" type="password" show-password placeholder="x-admin-token" />
-          </div>
-
-          <div class="field">
-            <label>模型 model</label>
-            <el-select
-              v-if="models.length"
-              v-model="model"
-              class="w-full"
-              allow-create
-              filterable
-              default-first-option
-            >
-              <el-option v-for="m in models" :key="m" :label="m" :value="m" />
-            </el-select>
-            <el-input v-else v-model="model" placeholder="模型名 / 接入点 ID" />
-          </div>
-
-          <div class="actions">
-            <el-button :loading="testing" @click="doTest">测试连接</el-button>
-            <el-button type="primary" class="save-btn" :loading="savingKey" @click="doSave">保存到服务端</el-button>
-            <span v-if="testMsg" class="test-msg" :class="{ ok: testOk, bad: testOk === false }">{{ testMsg }}</span>
-          </div>
-
-          <div v-if="savedProviders.length" class="saved-list">
-            <div class="saved-title">已配置的厂商</div>
-            <div v-for="p in savedProviders" :key="p.provider" class="saved-row">
-              <span class="saved-name"><CheckCircle2 :size="13" /> {{ providerName(p.provider) }}</span>
-              <span class="saved-models">{{ p.models.length }} 个模型</span>
-              <el-button text size="small" class="del-btn" @click="doDelete(p.provider)">
-                <Trash2 :size="13" /> 移除
-              </el-button>
-            </div>
-          </div>
-        </section>
+        <ModelServicesPanel @loaded="onServicesLoaded" />
 
         <section class="card tip-card">
-          <h3>去哪拿 API Key？</h3>
-          <ul class="provider-links">
-            <li v-for="p in llmProviders.filter((x) => x.docUrl)" :key="p.id">
-              <span>{{ p.name }}</span>
-              <a :href="p.docUrl" target="_blank" rel="noreferrer">{{ p.docUrl }} <ExternalLink :size="12" /></a>
-            </li>
+          <div class="card-head">
+            <h3>说明</h3>
+            <router-link :to="{ query: { tab: 'skills' } }" class="skills-link"><Sparkles :size="14" /> 技能工作室</router-link>
+          </div>
+          <ul class="tip-list">
+            <li><strong>档位</strong>按能力划分（标准 / 快速 / 深度推理 / 视觉 / 长上下文…），具体由哪家模型承担在服务端决定，随时可换、页面无感。</li>
+            <li><strong>未开通</strong>的档位不能启用，需要时联系供应方为本套系统开通。</li>
+            <li><strong>角色路由</strong>只能选已启用且具备该角色所需能力的档位；选回默认即恢复。</li>
+            <li>用量与调用明细见「运行观测」分段。</li>
           </ul>
-          <p class="tip-foot">推荐 DeepSeek：注册即送额度、中文好、便宜，适合「意图→选页面」这种轻任务。</p>
+          <div class="field admin-field">
+            <label>管理令牌 <span class="muted-tag">（我方运维用；仅当服务端设置了 HARNESS_ADMIN_TOKEN 时需要）</span></label>
+            <el-input v-model="adminToken" type="password" show-password placeholder="x-admin-token" @change="setAdminToken(adminToken)" />
+          </div>
         </section>
       </div>
     </div>
@@ -618,7 +469,7 @@ const section = ref<string>('access')
               </div>
             </div>
             <div class="ov-add">
-              <el-select v-model="ovRef" filterable placeholder="选择模型 provider/model" class="ov-select">
+              <el-select v-model="ovRef" filterable placeholder="选择模型" class="ov-select">
                 <el-option v-for="r in allModelRefs" :key="r" :label="r" :value="r" />
               </el-select>
               <el-input-number v-model="ovParams.temperature" :min="0" :max="2" :step="0.1" :precision="2" placeholder="temp" controls-position="right" />
@@ -629,8 +480,8 @@ const section = ref<string>('access')
           </div>
         </section>
 
-        <!-- 角色 → 模型路由 -->
-        <section class="card">
+        <!-- 角色 → 模型路由（直连模式）；网关模式下归「模型服务」面管（#2668） -->
+        <section v-if="!gatewayActive" class="card">
           <h3>角色 → 模型路由</h3>
           <p class="sub2">为每个智能体角色指定使用的模型（覆盖默认路由）。仅列出满足该角色能力要求（tool_call/vision）的模型；选回「默认」即恢复。</p>
           <div v-if="routingCfg" class="route-table">
@@ -681,33 +532,43 @@ const section = ref<string>('access')
         <section class="card">
           <div class="card-head">
             <h2>联网搜索</h2>
-            <span v-if="searchCfg?.has_key" class="badge-ok"><CheckCircle2 :size="14" /> 已配置</span>
+            <span v-if="!gatewayActive && searchCfg?.has_key" class="badge-ok"><CheckCircle2 :size="14" /> 已配置</span>
           </div>
-          <p class="sub">
-            为 <code>web_search</code> 工具配置搜索引擎 + API Key，使智能体能联网查询最新政策/新闻/价格。
-            Key 保存在服务端（不入库、不上传 git）。支持 Serper / 博查 / Bing / Tavily / 火山引擎。
-          </p>
-          <div class="field">
-            <label>搜索引擎</label>
-            <el-select v-model="searchProvider" class="w-full">
-              <el-option v-for="p in SEARCH_PROVIDERS" :key="p.id" :label="p.name" :value="p.id" />
-            </el-select>
-          </div>
-          <div v-if="searchProvider === 'volcengine'" class="field">
-            <label>模型 <span class="muted-tag">（火山方舟 doubao 模型，需已开通联网搜索）</span></label>
-            <el-input v-model="searchModel" placeholder="如 doubao-seed-1-6-250615" />
-            <span class="muted-tag">火山引擎需方舟 <code>ark-</code> 前缀 API Key（控制台 → API Key 管理创建）。</span>
-          </div>
-          <div class="field">
-            <label>API Key <span v-if="searchSaved" class="muted-tag">（留空则沿用已保存的）</span></label>
-            <el-input v-model="searchApiKey" type="password" show-password placeholder="搜索 API Key" />
-          </div>
-          <div class="actions">
-            <el-button :loading="searchTesting" @click="doTestSearch">测试连接</el-button>
-            <el-button type="primary" class="save-btn" :loading="savingSearch" @click="doSaveSearch">保存到服务端</el-button>
-            <el-button v-if="searchCfg?.has_key" text class="del-btn" @click="doClearSearch">清除配置</el-button>
-            <span v-if="searchTestMsg" class="test-msg" :class="{ ok: searchTestOk, bad: searchTestOk === false }">{{ searchTestMsg }}</span>
-          </div>
+          <!-- 网关模式（#2701）：搜索由模型服务统一提供，本地供应商配置整体不生效，只留连通测试 -->
+          <template v-if="gatewayActive">
+            <div class="actions gateway-search-row">
+              <span class="muted-tag">网关模式下联网搜索由模型服务统一提供，本地供应商配置不生效</span>
+              <el-button :loading="gatewaySearchTesting" @click="doGatewaySearchTest">测试</el-button>
+              <span v-if="gatewaySearchMsg" class="test-msg" :class="{ ok: gatewaySearchOk, bad: gatewaySearchOk === false }">{{ gatewaySearchMsg }}</span>
+            </div>
+          </template>
+          <template v-else>
+            <p class="sub">
+              为 <code>web_search</code> 工具配置搜索引擎 + API Key，使智能体能联网查询最新政策/新闻/价格。
+              Key 保存在服务端（不入库、不上传 git）。支持 Serper / 博查 / Bing / Tavily / 火山引擎。
+            </p>
+            <div class="field">
+              <label>搜索引擎</label>
+              <el-select v-model="searchProvider" class="w-full">
+                <el-option v-for="p in SEARCH_PROVIDERS" :key="p.id" :label="p.name" :value="p.id" />
+              </el-select>
+            </div>
+            <div v-if="searchProvider === 'volcengine'" class="field">
+              <label>接入点 <span class="muted-tag">（该引擎在方舟侧的接入点名，需已开通联网搜索）</span></label>
+              <el-input v-model="searchModel" placeholder="接入点名" />
+              <span class="muted-tag">火山引擎需方舟 <code>ark-</code> 前缀 API Key（控制台 → API Key 管理创建）。</span>
+            </div>
+            <div class="field">
+              <label>API Key <span v-if="searchSaved" class="muted-tag">（留空则沿用已保存的）</span></label>
+              <el-input v-model="searchApiKey" type="password" show-password placeholder="搜索 API Key" />
+            </div>
+            <div class="actions">
+              <el-button :loading="searchTesting" @click="doTestSearch">测试连接</el-button>
+              <el-button type="primary" class="save-btn" :loading="savingSearch" @click="doSaveSearch">保存到服务端</el-button>
+              <el-button v-if="searchCfg?.has_key" text class="del-btn" @click="doClearSearch">清除配置</el-button>
+              <span v-if="searchTestMsg" class="test-msg" :class="{ ok: searchTestOk, bad: searchTestOk === false }">{{ searchTestMsg }}</span>
+            </div>
+          </template>
         </section>
 
         <!-- 出网访问黑名单 -->
@@ -888,10 +749,6 @@ const section = ref<string>('access')
 .muted-tag { font-weight: 400; font-size: var(--font-sm); color: var(--el-text-color-secondary); }
 .w-full { width: 100%; }
 .hint { display: block; margin-top: 6px; font-size: var(--font-sm); color: var(--el-text-color-secondary); }
-.opt-tag {
-  float: right; font-size: var(--font-xs); color: var(--primary);
-  background: var(--primary-tint); padding: 0 7px; border-radius: 999px;
-}
 
 .actions { display: flex; align-items: center; gap: 10px; margin-top: 6px; }
 .tag-list { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
@@ -900,26 +757,13 @@ const section = ref<string>('access')
 .test-msg.ok { color: var(--primary); }
 .test-msg.bad { color: var(--danger); }
 
-.saved-list { margin-top: 22px; padding-top: 16px; border-top: 1px solid var(--line-faint); }
 .saved-title { font-size: var(--font-md); font-weight: 600; color: var(--text-body); margin-bottom: 10px; }
-.saved-row {
-  display: flex; align-items: center; gap: 12px; padding: 7px 0;
-  font-size: var(--font-md); border-bottom: 1px solid var(--line-faint);
-}
-.saved-name { display: inline-flex; align-items: center; gap: 5px; color: var(--text-body); font-weight: 600; }
-.saved-models { color: var(--el-text-color-secondary); font-size: var(--font-sm); }
 .del-btn { margin-left: auto; color: var(--danger); }
 
-.tip-card h3 { margin: 0 0 14px; font-size: var(--font-15); color: var(--text); }
-.provider-links { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 11px; }
-.provider-links li { display: flex; flex-direction: column; gap: 2px; font-size: var(--font-md); }
-.provider-links span { color: var(--text-body); font-weight: 600; }
-.provider-links a {
-  display: inline-flex; align-items: center; gap: 4px;
-  color: var(--primary); text-decoration: none; font-size: var(--font-sm); word-break: break-all;
-}
-.provider-links a:hover { text-decoration: underline; }
-.tip-foot { margin: 18px 0 0; padding-top: 14px; border-top: 1px solid var(--line-faint); font-size: var(--font-12-5); color: var(--el-text-color-secondary); line-height: 1.6; }
+.tip-card h3 { margin: 0; font-size: var(--font-15); color: var(--text); }
+.tip-list { margin: 14px 0 0; padding-left: 18px; display: flex; flex-direction: column; gap: 9px; font-size: var(--font-md); line-height: 1.6; color: var(--muted); }
+.tip-list strong { color: var(--text-body); }
+.admin-field { margin: 18px 0 0; padding-top: 14px; border-top: 1px solid var(--line-faint); }
 
 /* 卡片内小标题（采样参数 / 路由 / 工作流 / 记忆等用 h3 而非 h2） */
 .card h3 { margin: 0 0 6px; font-size: var(--font-16); color: var(--text); }

@@ -7,8 +7,8 @@
 // ①草稿与策略 → ②风控与审批 → ③提交与回执 → ④出清跟踪
 import { computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessageBox } from 'element-plus'
-import { AlarmClock, ArrowRight, Bot, CheckCircle2, FileSearch, FlaskConical, History, LineChart, Loader2, PlugZap, ShieldCheck, Sparkles, Stamp, XCircle } from 'lucide-vue-next'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { AlarmClock, ArrowRight, Bot, CheckCircle2, ChevronLeft, ChevronRight, FileSearch, FlaskConical, History, LineChart, Loader2, PlugZap, ShieldCheck, Sparkles, Stamp, XCircle } from 'lucide-vue-next'
 import AgentChatPanel from '../components/agent/AgentChatPanel.vue'
 import AgentHistorySidebar from '../components/agent/AgentHistorySidebar.vue'
 import DeclarationForecastCompare from '../components/forecast/DeclarationForecastCompare.vue'
@@ -17,7 +17,7 @@ import { resolveIntelCapability, type IntelCapability } from '../data/declaratio
 import { PAGE_PROMPT_KEYS } from '@/prompts/pageKeys'
 import DataBasisBadge from '../components/DataBasisBadge.vue'
 import TrustBadge from '../components/common/TrustBadge.vue'
-import { pingAgentService } from '@/services/agent/agentClient'
+import { probeAgentService } from '@/services/agent/agentClient'
 import {
   fetchCockpit,
   fetchOptimizeBid,
@@ -28,7 +28,8 @@ import {
 import { fetchExposure, type ExposureResult } from '@/services/quant/quantClient'
 import { useEChart } from '../composables/useEChart'
 import { useQuerySync } from '../composables/useQuerySync'
-import { axisTooltip } from '@/services/chart/chartOptions'
+import { axisTooltip, bottomLayoutLegend, bottomToolbox, emptyOverlay, insideZoom } from '@/services/chart/chartOptions'
+import { shiftDate } from '@/services/review/reviewDashboard'
 import { DATA_BASIS_LABEL, type DataBasis } from '@/services/dataBasis'
 import { assertOperational } from '@/services/data/trustGate'
 import { getCurrentUser } from '@/services/auth'
@@ -53,12 +54,17 @@ import {
   submitDeclaration,
   submitDeclarationForApproval,
   updateDeclarationCurve,
+  isCurveEdited,
+  editorMwOf,
+  invalidPointIndexesOf,
+  normalizeExposureTotalMwh,
   type DeclarationMeta,
   type DeclarationMode,
   type DeclarationOrder,
 } from '@/services/declarations'
 import { DECLARATION_TRANSITIONS } from '@/services/contracts/spotDeclarationContract.gen'
 import { buildRehearsalNote, formatRehearsalStamp, parseRehearsalStartedAt } from '@/services/declarationRehearsal'
+import { isRealCalendarDate } from '@/utils/calendarDate'
 
 const router = useRouter()
 const route = useRoute()
@@ -66,11 +72,45 @@ const route = useRoute()
 // 向导步骤（申报单状态驱动）
 const STEPS = ['草稿与策略', '风控与审批', '提交与回执', '出清跟踪'] as const
 
-// 智能体服务探活：离线时给出启动指引，而不是让面板裸抛 502
+// 智能体服务探活：离线时给出启动指引，而不是让面板裸抛 502。
+// 探活只在 mount 与手动重试时跑、keep-alive 切回不重挂，一次超时横幅就常驻
+//（DEVELOPMENT.md §4 登记过的「探活超时假阳性，刷新即恢复」病根）——offline 后
+// 按 5s→10s→15s 封顶退避静默重探，后端拉起/空闲后横幅自愈；端点是开放读轻量
+// GET（useAgentHealth.ts 同款），常驻轮询代价可忽略。
 const harness = ref<'checking' | 'online' | 'offline'>('checking')
-async function checkHarness() {
-  harness.value = 'checking'
-  harness.value = (await pingAgentService()) ? 'online' : 'offline'
+// 失败原因分流文案：timeout=服务在但 2.5s 未应答（典型：价格预测同步重训占住后端）；
+// unreachable=代理回 502/404 等否定答复（服务多半真没起）→ 才给 npm 启动指引。
+const harnessFailReason = ref<'timeout' | 'unreachable' | null>(null)
+const HARNESS_RETRY_DELAYS_MS = [5000, 10000, 15000] as const
+let harnessRetryTimer = 0
+let harnessRetryAttempt = 0
+// 世代守卫：手动重试/后台重探/切页作废互相竞态时，迟到结果不得覆盖新状态
+let harnessProbeGeneration = 0
+
+async function checkHarness(opts: { silent?: boolean } = {}) {
+  const generation = ++harnessProbeGeneration
+  window.clearTimeout(harnessRetryTimer)
+  // 后台重探不打断当前横幅（checking 文案每轮闪烁）；只有首探与手动重试才显示进行中
+  if (!opts.silent) harness.value = 'checking'
+  const result = await probeAgentService()
+  if (generation !== harnessProbeGeneration) return
+  if (result === 'online') {
+    harnessFailReason.value = null
+    harnessRetryAttempt = 0
+    harness.value = 'online'
+    return
+  }
+  harnessFailReason.value = result
+  harness.value = 'offline'
+  const delay = HARNESS_RETRY_DELAYS_MS[Math.min(harnessRetryAttempt, HARNESS_RETRY_DELAYS_MS.length - 1)]
+  harnessRetryAttempt += 1
+  harnessRetryTimer = window.setTimeout(() => {
+    void checkHarness({ silent: true })
+  }, delay)
+}
+
+function retryHarness() {
+  void checkHarness()
 }
 
 // 目标日与截止倒计时
@@ -88,6 +128,13 @@ function defaultTargetDate(): string {
 const targetDate = ref(defaultTargetDate())
 // 目标日 ⇄ 路由 query：刷新/分享链接后还原同一申报日
 useQuerySync({ targetDate })
+// 目标日 ±1 天快捷步进（清单 C-2，复盘中心头部同款交互）：改目标日即走既有 refresh 链，
+// 列表/预测/决策包自动跟随；前向申报仍受窗口规则约束（窗口关闭由既有提示与演练降级兜底）。
+function stepTargetDate(days: number) {
+  // 清空/半输入态下步进：shiftDate 对非法串会抛 RangeError，直接忽略本次步进
+  if (!isRealCalendarDate(targetDate.value)) return
+  targetDate.value = shiftDate(targetDate.value, days)
+}
 
 // 申报模式（LIVE / REHEARSAL）
 // 建单时可选；建单后由申报单自身的 mode 决定（服务端不接受改 mode）。
@@ -101,7 +148,8 @@ const isRehearsal = computed(() => currentMode.value === 'REHEARSAL')
 // 那时 current 仍是旧目标日的单，切到无申报单的历史日期时不会切成 REHEARSAL，
 // 用户点创建就会拿到立即过期的 LIVE 单（反向亦会残留 REHEARSAL）。
 const todayLocal = computed(() => fmtDate(new Date(nowTick.value)))
-const isPastTargetDate = computed(() => targetDate.value < todayLocal.value)
+// 清空/半输入态（''）会被 '' < 今日 判成「历史日」，触发误导性警告与 REHEARSAL 预选——非法值不参与判定
+const isPastTargetDate = computed(() => isRealCalendarDate(targetDate.value) && targetDate.value < todayLocal.value)
 // 未来目标日但申报窗口已关闭：如今天 11:00 选明天，明天的截止是今天 10:30，已过。
 // 此时建 LIVE 单同样会立即作废，故与历史日一样需要提示（meta.deadline 由服务端给出）。
 const isLiveWindowClosed = computed(() => {
@@ -377,7 +425,7 @@ function applyOptimizedCurve(point: OptimizeBidFrontierPoint) {
     (declaration) => {
       current.value = declaration
       selectedLambda.value = point.lambda
-      syncHourlyFromDeclaration()
+      syncPointsFromDeclaration()
       void nextTick(renderDeclChart)
     }
   )
@@ -617,19 +665,26 @@ function markExposureManual() {
   exposureStatus.value = 'manual'
 }
 
+// 竞态守卫：快速切目标日/连点刷新时，旧敞口响应晚归会覆盖新月份数据（月份口径错位）
+let exposureGeneration = 0
+
 async function refreshExposure(force = false) {
   const month = targetDate.value.slice(0, 7)
   if (!month) return
   exposureLoading.value = true
   exposureStatus.value = 'loading'
+  exposureError.value = '' // 清上一轮失败残留（渲染处另有 status 条件，双保险）
+  // 竞态守卫：快速切目标日/连点刷新时，旧敞口响应晚归会覆盖新月份数据（月份口径错位）
+  const generation = ++exposureGeneration
   try {
     if (force) exposureTouched.value = false
     const result = await fetchExposure({
       month,
-      total_mwh: Math.max(1, Number(exposureTotalMwh.value) || 1),
+      total_mwh: normalizeExposureTotalMwh(exposureTotalMwh.value),
       mode: 'peak_valley',
       expected_source: 'renewable'
     })
+    if (generation !== exposureGeneration) return
     exposure.value = result
     if (!exposureTouched.value) {
       exposureTotalMwh.value = Math.round(result.total_mwh * 100) / 100
@@ -638,41 +693,58 @@ async function refreshExposure(force = false) {
       exposureStatus.value = 'manual'
     }
   } catch (error) {
+    if (generation !== exposureGeneration) return
     exposureStatus.value = 'failed'
     exposureError.value = error instanceof Error ? error.message : ''
   } finally {
-    exposureLoading.value = false
+    if (generation === exposureGeneration) exposureLoading.value = false
   }
 }
 
 // 审批表单
 const approvalComment = ref('')
 
-// 24 小时功率编辑器（每小时映射 4 个 15min 点；存储口径 MWh/点 = MW/4）
-const hourlyMw = ref<number[]>(Array.from({ length: 24 }, () => 0))
-const batch = ref({ from: 0, to: 23, mw: 30 })
-const curveDirty = ref(false)
-
-function syncHourlyFromDeclaration() {
-  if (!current.value) return
-  const energy = current.value.energyCurveMwh96
-  hourlyMw.value = Array.from({ length: 24 }, (_, h) => {
-    const quarters = energy.slice(h * 4, h * 4 + 4)
-    const avgMwh = quarters.reduce((sum, v) => sum + v, 0) / Math.max(quarters.length, 1)
-    return Math.round(avgMwh * 4 * 100) / 100
+// 96 点功率编辑器（每点一个 15min 时点，时段起点 00:00~23:45；存储口径 MWh/点 = MW/4）
+// 值类型含 ''：v-model.number 在输入框被清空/半输入时回填空串，运行时就是它
+const POINT_COUNT = 96
+const pointMw = ref<Array<number | ''>>(Array.from({ length: POINT_COUNT }, () => 0))
+const batch = ref({ from: 0, to: POINT_COUNT - 1, mw: 30 })
+// 编辑器数值视图：未填/非数/负数归一为 NaN 的原始口径，与「展示用按 0 折算」口径分离。
+// 归一必须发生在求和/保存之前——此前 '' 参与求和退化成字符串拼接（总量显示成拼接数字）、
+// 保存链上 ''/4 把该时点静默归零（工作台审查 P2）。
+const pointMwNumeric = computed(() =>
+  pointMw.value.map((v) => {
+    const mw = editorMwOf(v)
+    return Number.isNaN(mw) ? 0 : mw
   })
-  curveDirty.value = false
+)
+const invalidPointIndexes = computed(() => invalidPointIndexesOf(pointMw.value))
+const invalidPointsText = computed(() => invalidPointIndexes.value.map((i) => pointStartLabel(i)).join('、'))
+// 脏标记 = 编辑器值与已保存曲线的派生比较（isCurveEdited）。
+// 不能用「watch 置 true / 同步置 false」的标志位：deep watch 异步 flush，
+// refresh/保存后的 syncPointsFromDeclaration 会被迟到的 watcher 改回 true，
+// 造成加载/保存后恒报「含未保存修改」、无修改也可点保存（服务端打回 DRAFT）。
+const curveDirty = computed(() => isCurveEdited(pointMwNumeric.value, current.value?.energyCurveMwh96))
+
+/** 保存曲线（MWh/15min 点）→ 编辑器功率口径（MW = MWh×4，2 位舍入与服务端 round2 精度对齐）。 */
+function pointMwFromEnergy96(energy: number[]): Array<number | ''> {
+  return Array.from({ length: POINT_COUNT }, (_, i) => Math.round((energy[i] ?? 0) * 4 * 100) / 100)
+}
+
+function syncPointsFromDeclaration() {
+  if (!current.value) return
+  pointMw.value = pointMwFromEnergy96(current.value.energyCurveMwh96)
 }
 
 function applyBatch() {
-  const from = Math.max(0, Math.min(23, Math.floor(batch.value.from)))
-  const to = Math.max(from, Math.min(23, Math.floor(batch.value.to)))
-  for (let h = from; h <= to; h++) hourlyMw.value[h] = batch.value.mw
-  curveDirty.value = true
+  const from = Math.max(0, Math.min(POINT_COUNT - 1, Math.floor(batch.value.from)))
+  const to = Math.max(from, Math.min(POINT_COUNT - 1, Math.floor(batch.value.to)))
+  for (let i = from; i <= to; i++) pointMw.value[i] = batch.value.mw
+  // 置脏由 curveDirty 派生（批量值与已保存曲线不同 → 自动为 true）
 }
 
-const totalMwh = computed(() => Math.round(hourlyMw.value.reduce((sum, mw) => sum + mw, 0) * 100) / 100)
-const maxMw = computed(() => Math.max(...hourlyMw.value, 0))
+const totalMwh = computed(() => Math.round(pointMwNumeric.value.reduce((sum, mw) => sum + mw / 4, 0) * 100) / 100)
+const maxMw = computed(() => Math.max(...pointMwNumeric.value, 0))
 
 // 审批可见性（UI 门，非安全边界）
 // 权威判定恒在服务端（spot-declarations-api.mjs 的 APPROVE_ROLES + 自审禁止，越权一律 403）。
@@ -702,24 +774,183 @@ const approvalBlockedReason = computed(() => {
 
 const declChartEl = ref<HTMLElement | null>(null)
 const declChart = useEChart(declChartEl, { render: renderDeclChart })
+
+/**
+ * 96 点编辑器/主图的时点标签（时段起点 00:00~23:45）。与批量段设置共用；
+ * 96 点明细表与导出 CSV 用的是时段段末口径（00:15~24:00），两套口径各自注明，不混用。
+ */
+function pointStartLabel(i: number | '' | undefined): string {
+  const n = Number(i)
+  if (!Number.isFinite(n) || n < 0 || n > POINT_COUNT - 1) return '—'
+  const h = Math.floor(n / 4)
+  const m = (n % 4) * 15
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
+}
+
 function renderDeclChart() {
   if (!declChartEl.value) return
+  // 极值标注（清单 D1）：最高/最低功率直接标在柱上，容量 markLine 保持不变
+  const mwMark = (color: string) => ({
+    symbol: 'circle', symbolSize: 6,
+    itemStyle: { color: 'transparent', borderColor: color, borderWidth: 1.5 },
+    label: { show: true, position: 'top', fontSize: 10, color, formatter: (p: { value: unknown }) => `${p.value}` },
+    data: [{ type: 'max' }, { type: 'min' }]
+  })
   declChart.setOption({
     tooltip: axisTooltip({ unit: 'MW', pointer: 'shadow' }),
-    grid: { left: 44, right: 14, top: 18, bottom: 22 },
-    xAxis: { type: 'category', data: hourlyMw.value.map((_, h) => `${h}:00`) },
+    legend: { show: false },
+    grid: { left: 44, right: 32, top: 24, bottom: 36 },
+    // 96 点时点轴：96 个标签全排会互相重叠，每 3 小时（interval=11 → 00:00/03:00/…）出一个刻度
+    xAxis: {
+      type: 'category',
+      data: pointMw.value.map((_, i) => pointStartLabel(i)),
+      axisLabel: { interval: 11 }
+    },
     yAxis: { type: 'value', name: 'MW' },
     series: [{
       name: '申报功率',
       type: 'bar',
-      data: hourlyMw.value,
+      data: pointMwNumeric.value,
       itemStyle: { color: '#0ea5e9' },
+      markPoint: mwMark('#0369a1'),
       markLine: current.value
         ? { silent: true, symbol: 'none', data: [{ yAxis: current.value.capacityMw, name: '可用容量' }], lineStyle: { color: '#ef4444' }, label: { formatter: '容量 {c} MW' } }
         : undefined
     }]
   })
 }
+
+// ── 主图滚轮逐点微调（96 点直编的快捷入口）：光标悬停柱体滚动滚轮 = 该 15min 时点
+// 功率 ±1 MW（Shift ±0.1），上滚增、下滚减；只在可编辑状态生效。定位不走 mousemove
+// 悬停缓存——96 根柱的类别槽只有几个像素，光标落在柱间空隙时 move 事件不触发，
+// 缓存下标会调错点；直接把滚轮事件的像素坐标 convertFromPixel 回时点下标才可靠。
+// 上下限与批量段输入同一口径：[0, 容量×2]。
+function onDeclChartWheel(e: WheelEvent) {
+  if (!canEditCurrentCurve.value) return
+  const chart = declChart.instance()
+  const el = declChartEl.value
+  if (!chart || chart.isDisposed() || !el) return
+  const rect = el.getBoundingClientRect()
+  const pixel: [number, number] = [e.clientX - rect.left, e.clientY - rect.top]
+  if (!chart.containPixel('grid', pixel)) return
+  const coord = chart.convertFromPixel('grid', pixel)
+  const index = coord ? Math.round(coord[0]) : Number.NaN
+  if (!Number.isFinite(index)) return
+  const pointIndex = Math.max(0, Math.min(POINT_COUNT - 1, index))
+  const step = e.shiftKey ? 0.1 : 1
+  const raw = editorMwOf(pointMw.value[pointIndex])
+  const base = Number.isNaN(raw) ? 0 : raw
+  const capCeiling = (current.value?.capacityMw ?? capacityMw.value) * 2
+  const next = Math.min(capCeiling, Math.max(0, base + (e.deltaY < 0 ? step : -step)))
+  pointMw.value[pointIndex] = Math.round(next * 100) / 100
+  // 本次滚动已被图表消费：不再让页面跟着滚；并把 tooltip 钉到正调的时点，滚了多少看得见
+  e.preventDefault()
+  chart.dispatchAction({ type: 'showTip', seriesIndex: 0, dataIndex: pointIndex })
+}
+
+// 时点输入格的滚轮 = 该点功率 ±1 MW（Shift ±0.1），与主图滚轮微调同一步长；
+// preventDefault 同时拦掉原生 number 输入按 step 属性的步进。仅在输入框已聚焦时
+// 接管：未聚焦时放行默认滚动——96 格网格限高内滚，悬停滚轮必须留给网格滚动用。
+// 非法态（''/非数/负）按 0 起步，上下限与主图/批量输入同口径 [0, 容量×2]。
+function onPointInputWheel(e: WheelEvent, index: number) {
+  const input = e.currentTarget as HTMLInputElement | null
+  if (!input || document.activeElement !== input || input.readOnly || input.disabled) return
+  const raw = editorMwOf(pointMw.value[index])
+  const base = Number.isNaN(raw) ? 0 : raw
+  const step = e.shiftKey ? 0.1 : 1
+  const capCeiling = (current.value?.capacityMw ?? capacityMw.value) * 2
+  const next = Math.min(capCeiling, Math.max(0, base + (e.deltaY < 0 ? step : -step)))
+  pointMw.value[index] = Math.round(next * 100) / 100
+  e.preventDefault()
+}
+
+// ── 96 点明细与导出（清单 D1）：明细数值与底稿同源 ──
+// 编辑中（脏）以编辑器实时值为准并注明；否则读已保存的申报单曲线。
+// 存储口径：96 点为 MWh/15min，功率 MW = MWh×4；编辑器每点即一个 15min 时点。
+const detail96 = computed(() => {
+  if (!current.value) return [] as { label: string; mw: string; mwh: string }[]
+  const saved = current.value.energyCurveMwh96
+  const editing = ['DRAFT', 'RISK_CHECKED', 'REJECTED'].includes(current.value.status)
+  return Array.from({ length: POINT_COUNT }, (_, i) => {
+    const mw = editing
+      ? Math.round((pointMwNumeric.value[i] ?? 0) * 100) / 100
+      : Math.round((saved[i] ?? 0) * 4 * 100) / 100
+    const mwh = editing ? Math.round((mw / 4) * 10000) / 10000 : Math.round((saved[i] ?? 0) * 10000) / 10000
+    return {
+      // 时点标注与「导出当日明细」同一口径（15min 时段段末 00:15~24:00），同页两处不各说各话
+      label: curvePointLabel(i),
+      mw: mw.toFixed(2),
+      mwh: mwh.toFixed(4)
+    }
+  })
+})
+
+function exportCurveCsv() {
+  if (!current.value || !detail96.value.length) return
+  const header = '时点,功率(MW),电量(MWh)'
+  const body = detail96.value.map((r) => `${r.label},${r.mw},${r.mwh}`).join('\n')
+  const csv = `\uFEFF${header}\n${body}\n合计(96点),,${totalMwh.value}\n`
+  const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8;' }))
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `申报曲线-${current.value.targetDate}-${current.value.id}.csv`
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
+// ── 决策包「逐时价格预测带」（清单 D3a）：数据即决策包同一份 /cockpit 响应（points=P50，
+// lower/upper=P10/P90），与上方竞价空间卡同源同 basis，不另发请求。逐时展开让交易员
+// 看清"哪个时段价高/价低"，而不是只盯全天均值（清单五件套：极值标注＋图例＋工具栏）。
+const priceBandEl = ref<HTMLElement | null>(null)
+const priceBandChart = useEChart(priceBandEl, { render: renderPriceBand })
+
+/** 96 点 15min 时点标签（与 96 点明细表同规）；非 96 点长度退回序号，不硬凑时刻。 */
+function priceSlotLabel(i: number, n: number): string {
+  if (n === 96) {
+    const h = Math.floor(i / 4)
+    const m = (i % 4) * 15
+    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
+  }
+  return `#${i + 1}`
+}
+
+function renderPriceBand() {
+  const pf = cockpit.value?.price_forecast
+  if (!pf || !priceBandEl.value) return
+  const n = pf.points.length
+  const bandHeight = pf.upper.map((v, i) => Math.max(v - (pf.lower[i] ?? 0), 0))
+  priceBandChart.setOption({
+    ...emptyOverlay(!n),
+    tooltip: axisTooltip({ unit: pf.unit || '元/MWh' }),
+    legend: bottomLayoutLegend({ data: ['P50 预测价', 'P10–P90 带宽'], textStyle: { fontSize: 10 } }),
+    toolbox: bottomToolbox('逐时价格预测带', 8),
+    grid: { left: 48, right: 16, top: 28, bottom: 56 },
+    dataZoom: insideZoom(),
+    xAxis: { type: 'category', data: pf.points.map((_, i) => priceSlotLabel(i, n)) },
+    yAxis: { type: 'value', name: pf.unit || '元/MWh', scale: true },
+    series: [
+      // 置信带 stack 技法：下界透明 + 高度带色（与复盘偏差容差带同法），tooltip 不出现
+      { name: '_pf_lo', type: 'line', stack: 'pf-band', showSymbol: false, silent: true, data: pf.lower, lineStyle: { opacity: 0 }, areaStyle: { opacity: 0 }, tooltip: { show: false }, emphasis: { disabled: true } },
+      { name: 'P10–P90 带宽', type: 'line', stack: 'pf-band', showSymbol: false, silent: true, data: bandHeight, lineStyle: { opacity: 0 }, areaStyle: { color: '#0ea5e9', opacity: 0.14 }, tooltip: { show: false }, emphasis: { disabled: true } },
+      {
+        name: 'P50 预测价',
+        type: 'line',
+        showSymbol: false,
+        data: pf.points,
+        lineStyle: { width: 1.8, color: '#0369a1' },
+        itemStyle: { color: '#0369a1' },
+        // 极值标注（五件套①）：最高/最低预测价直接描点标值
+        markPoint: {
+          symbol: 'circle', symbolSize: 6,
+          itemStyle: { color: 'transparent', borderColor: '#0369a1', borderWidth: 1.5 },
+          label: { show: true, position: 'top', fontSize: 10, color: '#0369a1', formatter: (p: { value: unknown }) => `${p.value}` },
+          data: [{ type: 'max' }, { type: 'min' }]
+        }
+      }
+    ]
+  }, { replaceMerge: ['graphic', 'series'] })
+}
+watch(cockpit, () => { void nextTick(renderPriceBand) })
 
 // 刷新世代守卫：切目标日会触发 watcher 的无 selectId 刷新，用户点历史行又会带 id 刷新，
 // 两个异步完成顺序不定，前者后返回就会用 list[0] 覆盖用户刚选中的历史单。
@@ -730,6 +961,9 @@ let refreshGeneration = 0
 const pendingSelectId = ref<string | null>(
   typeof route.query.declarationId === 'string' && route.query.declarationId ? route.query.declarationId : null
 )
+// 上面 setup 已消费过这份 query（挂载后 refresh 会选中它）；本页在 KeepAlive 下首次
+// 挂载也会触发 onActivated，这个标记让首次激活跳过重复消费，之后每次切回都消费新 query。
+let skipNextActivationQuery = pendingSelectId.value !== null
 
 async function refresh(selectId?: string) {
   const generation = ++refreshGeneration
@@ -755,7 +989,7 @@ async function refresh(selectId?: string) {
     current.value = target ?? null
     // current 落定后再定草稿模式（见 syncDraftModeToTargetDate 注释）
     syncDraftModeToTargetDate()
-    if (current.value) syncHourlyFromDeclaration()
+    if (current.value) syncPointsFromDeclaration()
     await nextTick()
     renderDeclChart()
   } catch (error) {
@@ -772,6 +1006,8 @@ const historyRows = ref<DeclarationOrder[]>([])
 const historyCounts = ref<Record<DeclarationMode, number>>({ LIVE: 0, REHEARSAL: 0 })
 const historyModeFilter = ref<'' | DeclarationMode>('')
 const HISTORY_WINDOW_DAYS = 60
+// 窗口不对称是设计口径（docs/features/declaration-rehearsal-mode.md「±60/7 天」）：
+const HISTORY_FORWARD_DAYS = 7
 // 服务端 list 上限 500。本区是申报台内的辅助视图（看全量走审批队列的「全部申报单」），
 // 故单次取到上限而非遍历分页，但必须显式提示截断，否则 counts 显示完整数量、
 // 表格只有前 N 行，读起来像「这就是全部」。
@@ -789,7 +1025,7 @@ async function loadHistoryList() {
     const anchor = new Date(`${targetDate.value}T00:00:00+08:00`).getTime()
     const page = await listDeclarationsPage({
       dateFrom: fmtDate(new Date(anchor - HISTORY_WINDOW_DAYS * 86400000)),
-      dateTo: fmtDate(new Date(anchor + 7 * 86400000)),
+      dateTo: fmtDate(new Date(anchor + HISTORY_FORWARD_DAYS * 86400000)),
       mode: historyModeFilter.value || undefined,
       limit: HISTORY_PAGE_LIMIT
     })
@@ -810,7 +1046,72 @@ async function loadHistoryList() {
 
 const historyTruncated = computed(() => historyTotal.value > historyRows.value.length)
 
+// 导出当日申报明细（清单 D2 + 验收反馈二轮：对齐参考系统出清结算单的单日期长表格式）
+// 导出日期独立可选（默认跟随目标日），按所选日期精确取当天申报单，不受列表窗口限制；
+// 行 = 96 时点 × 当天每张申报单，列 = 目标日/时点/申报单/模式/状态/申报电量(MWh)。
+// 用 xlsx 而非 CSV：`YYYY-MM-DD` 目标日在 CSV 里被 Excel 解析成日期值，默认列宽放不下
+// 就显示「####」；xlsx 由 colWidths 显式定宽且日期按文本保留，打开即所见。
+const curvePointLabel = (i: number) => {
+  const h = Math.floor((i + 1) / 4)
+  const m = ((i + 1) % 4) * 15
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
+}
+const exportDate = ref(targetDate.value)
+watch(targetDate, (d) => {
+  // native date input 清空/半输入态会给空串或非法值——此时不发请求链、不改导出日期，
+  // 页面保留上一个有效目标日的数据；等用户补全成真实日期后再走刷新
+  if (!isRealCalendarDate(d)) return
+  exportDate.value = d
+})
+const exportBusy = ref(false)
+async function exportHistoryExcel() {
+  if (exportBusy.value || !exportDate.value) return
+  exportBusy.value = true
+  try {
+    const dayRows = await listDeclarations({ date: exportDate.value })
+    if (!dayRows.length) {
+      ElMessage.warning(`${exportDate.value} 当天没有申报单`)
+      return
+    }
+    const rows: (string | number)[][] = [['目标日', '时点', '申报单', '模式', '状态', '申报电量(MWh)']]
+    for (const row of dayRows) {
+      for (let i = 0; i < 96; i++) {
+        // 六列就地展开与表头一一对应（此前抽 base 数组漏插时点列，导致整列错位）
+        rows.push([
+          exportDate.value,
+          curvePointLabel(i),
+          row.id,
+          DECLARATION_MODE_LABEL[declarationModeOf(row)],
+          STATUS_LABEL[row.status],
+          Math.round((row.energyCurveMwh96[i] ?? 0) * 10000) / 10000
+        ])
+      }
+    }
+    const { exportWorkbook } = await import('../utils/exportExcel')
+    exportWorkbook(`申报单明细-${exportDate.value}.xlsx`, [
+      { name: `申报明细 ${exportDate.value}`, rows, colWidths: [12, 8, 36, 10, 10, 16] }
+    ])
+  } catch (e) {
+    ElMessage.error(e instanceof Error ? e.message : '导出失败')
+  } finally {
+    exportBusy.value = false
+  }
+}
+
 watch(historyModeFilter, () => { void loadHistoryList() })
+
+// 复制历史曲线（declaration-workflow §2 快捷操作）：把时间窗内历史申报单的 96 点曲线
+// 带入当前草稿编辑器为底稿。只落到 pointMw 并置 curveDirty，仍需「保存曲线」→ 重新
+// 风控——与手工编辑同一条保存纪律，不做绕过风控的直达写回。
+const copySourceId = ref('')
+const copyableHistory = computed(() => historyRows.value.filter((r) => r.id !== current.value?.id))
+function applyCopyHistory() {
+  if (!canEditCurrentCurve.value) return
+  const src = historyRows.value.find((r) => r.id === copySourceId.value)
+  if (!src) return
+  pointMw.value = pointMwFromEnergy96(src.energyCurveMwh96)
+  // 置脏由 curveDirty 派生（复制值与已保存曲线不同 → 自动为 true），不再手动置位
+}
 
 // 点击历史行：切目标日并选中该单。
 // 跨目标日时只置 pendingSelectId 并改 targetDate，由 watcher 那一次刷新消费待选 id，
@@ -930,13 +1231,19 @@ function createDraft() {
 
 function saveCurve() {
   if (!current.value) return
-  const energy = hourlyMw.value.flatMap((mw) => Array.from({ length: 4 }, () => Math.round((mw / 4) * 10000) / 10000))
+  // 保存门：未填/负数时点不得静默落库（此前 '' 会被 ''/4=0 归零、总量显示成拼接数字）
+  if (invalidPointIndexes.value.length) {
+    errorMsg.value = `申报曲线时点 ${invalidPointsText.value} 未填或为负数，请补全后再保存`
+    return
+  }
+  const energy = pointMwNumeric.value.map((mw) => Math.round((mw / 4) * 10000) / 10000)
   act(
     () => updateDeclarationCurve(current.value!.id, { energyCurveMwh96: energy }),
     (declaration) => {
       current.value = declaration
-      syncHourlyFromDeclaration()
+      syncPointsFromDeclaration()
       void nextTick(renderDeclChart)
+      void loadHistoryList() // 列表展示申报总量，保存后同步，避免停留创建时快照
     }
   )
 }
@@ -944,16 +1251,23 @@ function saveCurve() {
 function runRisk() {
   if (!current.value) return
   act(
-    () => runDeclarationRiskCheck(current.value!.id, { exposureTotalMwh: exposureTotalMwh.value, priceCap: regionPriceCap.value }),
+    // 与 refreshExposure 同一归一口径：输入被清空/误输时不把垃圾值发给风控
+    () => runDeclarationRiskCheck(current.value!.id, { exposureTotalMwh: normalizeExposureTotalMwh(exposureTotalMwh.value), priceCap: regionPriceCap.value }),
     (declaration) => {
       current.value = declaration
     }
   )
 }
 
+// 状态流转（送审/审批/提交/出清）只回写 current 的话，历史申报单列表停留在上一次
+// loadHistoryList 的快照——走查实测：列表状态列停在「草稿」而卡片已是「回执确认」。
+// 流转成功后同步重取列表，保证两处状态一致。
 function sendForApproval() {
   if (!current.value) return
-  act(() => submitDeclarationForApproval(current.value!.id), (declaration) => { current.value = declaration })
+  act(() => submitDeclarationForApproval(current.value!.id), (declaration) => {
+    current.value = declaration
+    void loadHistoryList()
+  })
 }
 
 function decide(decision: 'approve' | 'reject') {
@@ -961,8 +1275,13 @@ function decide(decision: 'approve' | 'reject') {
   act(
     () => approveDeclaration(current.value!.id, decision, approvalComment.value || undefined),
     (declaration) => {
+      // L3 双签第一签：服务端只落签不转态，单据仍是待审批——明示而不是让人以为已批准
+      if (declaration.awaitingSecondSignature) {
+        ElMessage.warning('L3 双签：第一签已记录，需第二位审批人批准后本单才进入已审批')
+      }
       current.value = declaration
       approvalComment.value = ''
+      void loadHistoryList()
     }
   )
 }
@@ -991,13 +1310,19 @@ async function doSubmit() {
   }
   act(
     () => submitDeclaration(current.value!.id, `${current.value!.id}-submit`),
-    (declaration) => { current.value = declaration }
+    (declaration) => {
+      current.value = declaration
+      void loadHistoryList()
+    }
   )
 }
 
 function clearMark() {
   if (!current.value) return
-  act(() => markDeclarationCleared(current.value!.id), (declaration) => { current.value = declaration })
+  act(() => markDeclarationCleared(current.value!.id), (declaration) => {
+    current.value = declaration
+    void loadHistoryList()
+  })
 }
 
 function goReview() {
@@ -1034,27 +1359,62 @@ onMounted(() => {
     nowTick.value = Date.now()
   }, 1000)
 })
-watch(targetDate, () => {
+watch(targetDate, (d) => {
+  // 同上：非法日期不发刷新链（meta/列表/敞口/决策包全部依赖合法目标日）
+  if (!isRealCalendarDate(d)) return
   resetDecisionPackage()
   void refresh()
   exposureTouched.value = false
   void refreshExposure()
 })
-watch(hourlyMw, () => {
-  curveDirty.value = true
+watch(pointMw, () => {
   void nextTick(renderDeclChart)
 }, { deep: true })
-// keep-alive：切走暂停 1s 倒计时 ticker，切回先校准再恢复
+// keep-alive：切走暂停 1s 倒计时 ticker 与后台探活重试，切回先校准再恢复
 onActivated(() => {
   window.clearInterval(ticker)
   nowTick.value = Date.now()
   ticker = window.setInterval(() => {
     nowTick.value = Date.now()
   }, 1000)
+  // 离线期间后端可能已被拉起（或从重训高峰空闲下来），切回立即静默重探
+  if (harness.value === 'offline') void checkHarness({ silent: true })
+  consumeDeskQuery()
 })
-onDeactivated(() => window.clearInterval(ticker))
+
+// keep-alive 复用下 setup 不重跑：审批队列第二次起「去申报台」带来的新 query（targetDate +
+// declarationId）无人消费，页面停在上一张单上——用户视角就是「点了历史单，申报台打不开它」。
+// 消费方式与 openHistoryRow 同款：置 pendingSelectId 并切日期由既有 watcher 链一次刷新；
+// 同日则直接带 id 刷新。选中的是「当前申报单」动线，若用户上次停在历史 tab 会看不到曲线，
+// 故同样强制切回 current。
+function consumeDeskQuery() {
+  if (skipNextActivationQuery) {
+    skipNextActivationQuery = false
+    return
+  }
+  const qId = typeof route.query.declarationId === 'string' ? route.query.declarationId : ''
+  const qDate = typeof route.query.targetDate === 'string' ? route.query.targetDate : ''
+  if (!qId) return
+  if (!qDate || !isRealCalendarDate(qDate)) return // 无有效目标日无法安全定位（同 id 属于确切目标日），不消费
+  declTab.value = 'current'
+  if (qId === current.value?.id && qDate === targetDate.value) return // 已是这张单，不必刷新
+  if (qDate !== targetDate.value) {
+    pendingSelectId.value = qId
+    targetDate.value = qDate
+    return
+  }
+  void refresh(qId)
+}
+onDeactivated(() => {
+  window.clearInterval(ticker)
+  // 作废在途探活结果并停掉退避重试（与 ticker 同一纪律），切回由 onActivated 拉起
+  harnessProbeGeneration += 1
+  window.clearTimeout(harnessRetryTimer)
+})
 onBeforeUnmount(() => {
   window.clearInterval(ticker)
+  harnessProbeGeneration += 1
+  window.clearTimeout(harnessRetryTimer)
 })
 onRegionChange(() => {
   resetDecisionPackage()
@@ -1090,22 +1450,36 @@ onRegionChange(() => {
         </span>
         <span class="target-date">
           目标日
-          <input v-model="targetDate" type="date" />
+          <!-- 步进器样式对齐复盘中心头部（ReviewHeader .stepper）：一体式容器 ‹ | 日期 | › -->
+          <span class="stepper">
+            <button type="button" aria-label="前一日" title="目标日前一天" @click="stepTargetDate(-1)"><ChevronLeft :size="14" /></button>
+            <input v-model="targetDate" type="date" aria-label="申报目标日" />
+            <button type="button" aria-label="后一日" title="目标日后一天" @click="stepTargetDate(1)"><ChevronRight :size="14" /></button>
+          </span>
         </span>
       </div>
     </section>
 
-    <!-- 智能体服务状态：离线时给启动指引（避免面板里裸抛 502）；手动申报流程不受影响 -->
+    <!-- 智能体服务状态：避免面板里裸抛 502；手动申报流程不受影响。
+         timeout（服务在但探活超时，如同步重训占住后端）与 unreachable（多半真没起）分流
+         文案；offline 后每 5/10/15s 静默重探，后端恢复后横幅自愈，无需刷新。 -->
     <section v-if="harness !== 'online'" class="panel harness-banner" :class="harness">
       <PlugZap :size="15" />
       <template v-if="harness === 'checking'">正在连接智能体服务…</template>
+      <template v-else-if="harnessFailReason === 'timeout'">
+        <span>
+          <b>智能体服务响应超时</b> — 服务可达但探活 2.5 秒内未应答，可能正在训练价格预测模型，
+          稍后将自动重试；手动申报流程不受影响。
+        </span>
+        <button class="retry-btn" @click="retryHarness">立即重试</button>
+      </template>
       <template v-else>
         <span>
           <b>智能体服务未连接</b> — 情报问答与协助起草依赖 agent 后端（端口 8000），
           手动申报流程不受影响。需要时执行 <code>npm run install:agent-api</code>（首次）和
-          <code>npm run dev:agent-api</code> 后重试。
+          <code>npm run dev:agent-api</code>，服务拉起后本提示会自动消失。
         </span>
-        <button class="retry-btn" @click="checkHarness">重试连接</button>
+        <button class="retry-btn" @click="retryHarness">重试连接</button>
       </template>
     </section>
 
@@ -1169,6 +1543,14 @@ onRegionChange(() => {
               <b>{{ fmt0(cockpit.deviation_risk.worst_penalty_yuan) }}</b>
               <small>最坏考核 · {{ cockpit.deviation_risk.high_risk_slots }} 个高风险点</small>
             </div>
+          </div>
+          <!-- 逐时价格预测带（清单 D3a）：与决策包同源同 basis 的 96 点展开，高低峰一目了然 -->
+          <div v-if="cockpit" class="price-band">
+            <div class="price-band-head">
+              <span>逐时价格预测带</span>
+              <small class="muted">P50 · P10–P90 带宽 · 与上方决策包同源（{{ priceSlotLabel(0, cockpit.price_forecast.points.length) }}~{{ priceSlotLabel(cockpit.price_forecast.points.length - 1, cockpit.price_forecast.points.length) }}，{{ cockpit.price_forecast.points.length }} 点）</small>
+            </div>
+            <div ref="priceBandEl" class="price-band-host" />
           </div>
           <button class="check-item optimize-entry" :disabled="optimizeLoading || !canOptimizeDraftCurve" @click="optimizeDraftCurve">
             <span><Sparkles :size="13" /> 一键生成最优申报曲线</span>
@@ -1261,8 +1643,7 @@ onRegionChange(() => {
           </label>
           <p v-if="draftMode === 'REHEARSAL'" class="rehearsal-hint">
             <FlaskConical :size="13" />
-            历史模拟单不受申报截止约束、可自批走完整流程，回执为本地 Mock 网关（<b>非真实申报</b>），
-            在列表中与真实申报分开统计。模式创建后不可修改。
+            <span>历史模拟单不受申报截止约束、可自批走完整流程，回执为本地 Mock 网关（<b>非真实申报</b>），在列表中与真实申报分开统计。模式创建后不可修改。</span>
           </p>
           <p v-else-if="isPastTargetDate || isLiveWindowClosed" class="rehearsal-hint warn">
             <AlarmClock :size="13" />
@@ -1291,33 +1672,72 @@ onRegionChange(() => {
 
         <!-- 有申报单：曲线 + 流程动作 -->
         <template v-else>
-          <div ref="declChartEl" class="decl-chart chart-host" />
+          <!-- 96 点主图（编辑态支持滚轮逐点微调：悬停柱体上滚增/下滚减） -->
+          <div ref="declChartEl" class="decl-chart chart-host" @wheel="onDeclChartWheel" />
           <div class="curve-meta muted">
             申报总量 <b>{{ totalMwh }}</b> MWh · 最大功率 <b>{{ maxMw }}</b> MW / 容量 {{ current.capacityMw }} MW
             <DataBasisBadge :basis="current.basis" />
+            <span v-if="canEditCurrentCurve" class="wheel-hint">滚轮微调：悬停柱体 ±1 MW（Shift ±0.1）· 时点输入聚焦后同调</span>
           </div>
+
+          <!-- 96 点明细（清单 D1）：编辑中以编辑器实时值为准并注明；导出 CSV（UTF-8 BOM） -->
+          <details class="detail96">
+            <summary>
+              96 点明细（{{ curveDirty ? '含未保存修改，以编辑器为准' : '当前保存曲线' }}）
+            </summary>
+            <div class="detail96-bar">
+              <button class="mini" :disabled="!detail96.length" @click="exportCurveCsv">导出 CSV</button>
+              <span class="muted">共 96 点（每 15 分钟）· 合计 {{ totalMwh }} MWh</span>
+            </div>
+            <div class="detail96-scroll">
+              <table>
+                <thead><tr><th>时点</th><th>功率 MW</th><th>电量 MWh</th></tr></thead>
+                <tbody>
+                  <tr v-for="r in detail96" :key="r.label">
+                    <td>{{ r.label }}</td><td class="num">{{ r.mw }}</td><td class="num">{{ r.mwh }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </details>
 
           <!-- 曲线编辑（草稿/驳回可改）-->
           <template v-if="['DRAFT', 'RISK_CHECKED', 'REJECTED'].includes(current.status)">
             <div class="batch-row">
               <span class="muted">批量段设置</span>
-              <input v-model.number="batch.from" type="number" min="0" max="23" title="起始时点" />
-              <span>:00 ~</span>
-              <input v-model.number="batch.to" type="number" min="0" max="23" title="结束时点" />
-              <span>:00 =</span>
+              <input v-model.number="batch.from" type="number" min="0" max="95" title="起始时点（15min 序号 0~95）" />
+              <span class="muted">{{ pointStartLabel(batch.from) }}</span>
+              <span>~</span>
+              <input v-model.number="batch.to" type="number" min="0" max="95" title="结束时点（15min 序号 0~95）" />
+              <span class="muted">{{ pointStartLabel(batch.to) }}</span>
+              <span>=</span>
               <input v-model.number="batch.mw" type="number" min="0" :max="current.capacityMw * 2" title="功率 MW" />
               <span>MW</span>
               <button class="mini" @click="applyBatch">应用</button>
             </div>
-            <div class="hour-grid">
-              <label v-for="(_, h) in hourlyMw" :key="h">
-                <span>{{ h }}</span>
-                <input v-model.number="hourlyMw[h]" type="number" min="0" step="1" />
+            <!-- 复制历史曲线（declaration-workflow §2 快捷操作）：带入近 60 天窗口内历史单的
+                 96 点曲线为底稿；只落编辑器并置脏，与手工编辑同一条「保存曲线→重新风控」纪律 -->
+            <div v-if="copyableHistory.length" class="batch-row">
+              <span class="muted">复制历史曲线</span>
+              <select v-model="copySourceId" title="选择时间窗内的历史申报单，应用其 96 点曲线为底稿">
+                <option value="">选择历史申报单…</option>
+                <option v-for="r in copyableHistory" :key="r.id" :value="r.id">
+                  {{ r.targetDate }} · {{ r.id }}（{{ STATUS_LABEL[r.status] }}）
+                </option>
+              </select>
+              <button class="mini" :disabled="!copySourceId || busy" @click="applyCopyHistory">应用</button>
+            </div>
+            <p class="pending-note">「导入预测曲线」还没做：要先确认两件事——导入哪条预测曲线（价格还是负荷出力）、按什么规则换算成申报电量。已列入问题清单，确认后开发。</p>
+            <div class="hour-grid point-grid">
+              <label v-for="(_, i) in pointMw" :key="i">
+                <span>{{ pointStartLabel(i) }}</span>
+                <input v-model.number="pointMw[i]" type="number" min="0" step="1" @wheel="onPointInputWheel($event, i)" />
               </label>
             </div>
             <div class="action-row">
-              <button class="mini primary" :disabled="busy || !curveDirty" @click="saveCurve">保存曲线</button>
-              <span v-if="curveDirty" class="muted">曲线已修改，保存后需重新风控检查</span>
+              <button class="mini primary" :disabled="busy || !curveDirty || invalidPointIndexes.length > 0" @click="saveCurve">保存曲线</button>
+              <span v-if="invalidPointIndexes.length" class="muted curve-invalid">时点 {{ invalidPointsText }} 未填或为负数，补全后才能保存</span>
+              <span v-else-if="curveDirty" class="muted">曲线已修改，保存后需重新风控检查</span>
             </div>
           </template>
 
@@ -1355,15 +1775,25 @@ onRegionChange(() => {
             </ul>
           </div>
 
-          <!-- 送审 -->
+          <!-- 送审：最新风控被硬约束拦下（blocked 结果照常落库但单据停在 RISK_CHECKED）
+               时禁用并说明——服务端送审门同样拒绝（工作台审查 P1） -->
           <div v-if="current.status === 'RISK_CHECKED'" class="action-row">
-            <button class="launch slim" :disabled="busy" @click="sendForApproval">送审（进入审批队列）</button>
+            <button
+              class="launch slim"
+              :disabled="busy || current.riskCheck?.blocked === true"
+              :title="current.riskCheck?.blocked ? '最新风控检查被硬约束拦下，须调整后重新风控通过' : ''"
+              @click="sendForApproval"
+            >送审（进入审批队列）</button>
+            <span v-if="current.riskCheck?.blocked" class="muted curve-invalid">最新风控检查未通过（硬约束），须重新风控通过后才能送审</span>
           </div>
 
           <!-- 审批表单：仅对有审批权且非创建人（演练单与 ADMIN/BOSS 豁免）渲染 -->
           <div v-if="canApproveCurrent" class="approval-block">
             <div class="block-head">
               <Stamp :size="14" /> 人工审批（创建人不可审批本人申报单）
+              <span v-if="current.l3Signatures?.length" class="gate-chip escalated" :title="`第一签：${current.l3Signatures.map((s) => s.approver).join('、')}`">
+                L3 已有一签 · 待第二签
+              </span>
               <span v-if="isRehearsal && isSelfDeclaration" class="rehearsal-chip">演练自批 · 将留痕</span>
             </div>
             <textarea v-model="approvalComment" rows="2" placeholder="审批意见（写入 approvalRecord 审计留痕）" />
@@ -1401,7 +1831,7 @@ onRegionChange(() => {
           <div v-if="current.approvalRecord.length" class="audit-block">
             <div class="block-head">审批记录</div>
             <p v-for="r in current.approvalRecord" :key="r.at" class="muted">
-              {{ r.at.slice(0, 19).replace('T', ' ') }} · {{ r.approver }}（{{ r.role }}）{{ r.decision === 'approve' ? '批准' : '驳回' }}
+              {{ r.at.slice(0, 19).replace('T', ' ') }} · {{ r.approver }}（{{ r.role }}）{{ r.decision === 'approve' ? (r.dualSignPending ? '批准（L3 双签·第一签，待第二签）' : '批准') : '驳回' }}
               {{ r.comment ? `：${r.comment}` : '' }}（{{ r.gateLevel }}）
             </p>
           </div>
@@ -1433,15 +1863,19 @@ onRegionChange(() => {
         <!-- 历史申报单 tab：按目标日范围查询（此前只按精确目标日查，默认取明天 → 历史单全不可见） -->
         <template v-else>
           <p class="muted history-scope">
-            <span>
-          目标日 {{ targetDate }} 前后 {{ HISTORY_WINDOW_DAYS }} 天内 ·
-          真实申报 {{ historyCounts.LIVE }} / 历史模拟 {{ historyCounts.REHEARSAL }}
-            </span>
-            <select v-model="historyModeFilter" class="decl-select" style="margin-left: auto">
+            <span>目标日 {{ targetDate }} 前 {{ HISTORY_WINDOW_DAYS }} 天 / 后 {{ HISTORY_FORWARD_DAYS }} 天内 · 真实申报 {{ historyCounts.LIVE }} / 历史模拟 {{ historyCounts.REHEARSAL }}</span>
+            <span class="history-ops">
+              <select v-model="historyModeFilter" class="decl-select">
           <option value="">全部模式</option>
           <option value="LIVE">仅真实申报</option>
               <option value="REHEARSAL">仅历史模拟</option>
-            </select>
+              </select>
+              <!-- 导出按钮与日期筛选拼为一体化控件：左半选日期、右半执行导出 -->
+              <span class="export-group" title="左侧选日期，点右侧导出该日 96 点申报明细">
+                <input v-model="exportDate" type="date" class="decl-select" />
+                <button class="mini" :disabled="exportBusy || !exportDate" @click="exportHistoryExcel">导出</button>
+              </span>
+            </span>
           </p>
           <p v-if="historyLoading" class="muted">加载中…</p>
           <p v-else-if="!historyRows.length" class="muted">该时间窗内没有申报单。调整目标日或放宽筛选后重试。</p>
@@ -1584,6 +2018,8 @@ onRegionChange(() => {
 <style scoped>
 .rationale-field { display: flex; flex-direction: column; gap: 3px; margin: 8px 0; font-size: var(--font-sm); }
 .rationale-field b { color: #b91c1c; }
+/* 保存门/送审门的阻断说明（未填时段、硬约束拦下） */
+.curve-invalid { color: #b91c1c; }
 .rationale-field textarea { width: 100%; padding: 6px 8px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 6px; font-size: var(--font-sm); font-family: inherit; }
 .rationale-field small { font-size: var(--font-xs); color: var(--el-text-color-secondary, #667); }
 .rationale-field small.warn { color: #b45309; }
@@ -1623,7 +2059,7 @@ onRegionChange(() => {
 }
 .rehearsal-chip.lg { padding: 4px 10px; font-size: var(--font-sm); }
 .rehearsal-hint {
-  display: flex; align-items: flex-start; gap: 6px;
+  display: flex; align-items: center; gap: 6px;
   margin: 8px 0 0; padding: 8px 10px; font-size: var(--font-12-5); line-height: 1.6;
   border-radius: 8px; border: 1px solid #f59e0b;
   color: #b45309; background: rgba(245, 158, 11, 0.08);
@@ -1646,16 +2082,28 @@ onRegionChange(() => {
 .mode-tag[data-mode='REHEARSAL'] { border-color: #f59e0b; color: #b45309; background: rgba(245, 158, 11, 0.12); }
 
 .target-date { display: flex; align-items: center; gap: 8px; font-size: var(--font-md); color: var(--muted); }
-.target-date input {
-  padding: 4px 8px; border: 1px solid var(--line); border-radius: 8px;
-  background: transparent; color: var(--text);
+/* 目标日 ±1 天步进（清单 C-2）：样式与复盘中心头部步进器（ReviewHeader .stepper）一致——
+   一体式容器 28px 高，两枚无边框透明按钮夹日期输入，输入左右以软分隔线相接，日期用等宽字体 */
+.stepper {
+  height: 28px; display: inline-flex; overflow: hidden;
+  border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--panel);
+}
+.stepper button {
+  width: 28px; border: 0; background: transparent; color: var(--muted);
+  display: grid; place-items: center; cursor: pointer;
+}
+.stepper button:hover { background: var(--panel-sub); color: var(--text); }
+.stepper input {
+  border: 0; border-left: 1px solid var(--line-soft); border-right: 1px solid var(--line-soft);
+  padding: 0 8px; background: transparent; color: var(--text); font: inherit;
+  font-size: var(--font-12-5); font-family: ui-monospace, monospace; height: 100%;
 }
 /* 移动端：步骤条与截止信息纵排，避免横向挤压 */
 @media (max-width: 768px) {
   .steps-bar { flex-direction: column; align-items: stretch; }
   .step-line { display: none; }
   .bar-right { flex-wrap: wrap; }
-  /* 24时段价格表：6列→3列，避免每格仅约55px导致输入框溢出 */
+  /* 96 点时序网格：6列→3列，避免每格仅约55px导致输入框溢出 */
   .hour-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 
@@ -1692,11 +2140,21 @@ onRegionChange(() => {
 .stat-chips { margin-left: auto; display: flex; gap: 12px; font-size: var(--font-sm); color: var(--muted); }
 .stat-chips b { color: var(--text); font-variant-numeric: tabular-nums; }
 .forecast-chart { width: 100%; height: 240px; }
-.decl-chart { width: 100%; height: 200px; }
+.decl-chart { width: 100%; height: 240px; }
 .spin { animation: spin 1s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 .curve-meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 4px 0 8px; }
 .curve-meta b { color: var(--text); }
+
+/* 96 点明细折叠表（清单 D1）：滚动容器限高，数值等宽对齐 */
+.detail96 { margin: 0 0 8px; border: 1px solid var(--line-faint); border-radius: 8px; padding: 6px 10px; }
+.detail96 summary { cursor: pointer; font-size: var(--font-sm); color: var(--muted); user-select: none; }
+.detail96-bar { display: flex; align-items: center; gap: 8px; margin: 6px 0 4px; }
+.detail96-scroll { max-height: 220px; overflow-y: auto; }
+.detail96-scroll table { width: 100%; border-collapse: collapse; font-size: var(--font-11-5); }
+.detail96-scroll th, .detail96-scroll td { padding: 2px 8px; text-align: left; border-bottom: 1px solid var(--line-faint); }
+.detail96-scroll th { color: var(--muted); font-weight: 500; position: sticky; top: 0; background: var(--panel, #fff); }
+.detail96-scroll td.num { font-variant-numeric: tabular-nums; text-align: right; }
 
 .status-chip {
   padding: 2px 10px; font-size: var(--font-sm); border-radius: 999px;
@@ -1720,7 +2178,13 @@ onRegionChange(() => {
   min-width: 16px; padding: 0 4px; font-size: var(--font-xs); line-height: 16px; text-align: center;
   border-radius: 8px; background: var(--el-fill-color); color: var(--el-text-color-secondary);
 }
-.history-scope { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.history-scope { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: space-between; }
+/* 右侧操作组：模式下拉 + [日期|导出] 合体控件，两个按钮位 */
+.history-ops { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+.history-ops .decl-select { margin-left: 0; }
+.export-group { display: inline-flex; align-items: stretch; }
+.export-group > input[type="date"].decl-select { margin-left: 0; border-radius: 8px 0 0 8px; }
+.export-group > .mini { border-radius: 0 8px 8px 0; border-left: none; }
 /* 终态单出路 */
 .rehearsal-banner {
   display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 0 0 8px;
@@ -1773,6 +2237,11 @@ onRegionChange(() => {
   display: block; color: var(--text); font-size: var(--font-18); line-height: 1.45;
   font-variant-numeric: tabular-nums;
 }
+/* 逐时价格预测带（清单 D3a）：决策包三卡下方的 96 点展开图 */
+.price-band { margin-top: 10px; border-top: 1px dashed var(--line-soft); padding-top: 8px; }
+.price-band-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; font-size: var(--font-12-5); font-weight: 600; color: var(--text); }
+.price-band-head small { font-weight: 400; }
+.price-band-host { width: 100%; height: 220px; }
 .optimize-entry { margin-top: 8px; }
 .optimize-entry > span:first-child, .optimize-state {
   display: inline-flex; align-items: center; gap: 6px;
@@ -1856,6 +2325,7 @@ onRegionChange(() => {
 .launch:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .batch-row { display: flex; align-items: center; gap: 6px; margin: 8px 0; font-size: var(--font-12-5); flex-wrap: wrap; }
+.pending-note { margin: 0; font-size: var(--font-11-5); color: var(--muted); line-height: 1.6; }
 .batch-row input {
   width: 72px; padding: 4px 6px; border: 1px solid var(--line); border-radius: 6px;
   background: transparent; color: var(--text); font-size: var(--font-12-5);
@@ -1866,6 +2336,17 @@ onRegionChange(() => {
 .hour-grid input {
   width: 100%; padding: 3px 6px; border: 1px solid var(--line); border-radius: 6px;
   background: transparent; color: var(--text); font-size: var(--font-sm);
+}
+/* 96 点编辑网格：时点标签「HH:MM」比小时序号宽，标签列加宽为等宽字体；
+   96 行高输入超过一屏，限高内滚（主图滚轮微调是主路径，网格只是精确兜底） */
+.point-grid { max-height: 340px; overflow-y: auto; padding-right: 2px; }
+.point-grid label { grid-template-columns: 40px minmax(0, 1fr); }
+.point-grid span { font-family: ui-monospace, monospace; }
+/* 主图滚轮微调提示（仅编辑态渲染） */
+.wheel-hint {
+  display: inline-flex; align-items: center;
+  padding: 1px 8px; border: 1px dashed var(--primary); border-radius: 999px;
+  color: var(--primary); font-size: var(--font-11-5);
 }
 .action-row { display: flex; align-items: center; gap: 10px; margin: 8px 0; }
 .mini {

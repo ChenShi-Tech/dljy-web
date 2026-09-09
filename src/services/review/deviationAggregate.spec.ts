@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest'
 import {
   aggregateDeviation,
   consecutiveDeviationBreach,
+  isoWeekKeyOf,
   RESPONSIBILITY_AXES,
   suggestResponsibility
 } from './deviationAggregate'
@@ -113,5 +114,24 @@ describe('consecutiveDeviationBreach（阈值连续超标占位）', () => {
         0.05
       )
     ).toMatchObject({ streak: 3, from: '2026-08-24', to: '2026-08-26' })
+  })
+})
+
+// ISO 周键（与 Node review-api periodKeysForDate().weekly 同口径）：
+// 责任归因按它匹配锚定周的 T07 实例。坏掉的症状：周一/周日算进两个不同周键、
+// 年边界日（如 2024-12-30）算出上一年周键，责任归因落错周的实例。
+describe('isoWeekKeyOf', () => {
+  it('同一周的周一与周日产出同一周键', () => {
+    expect(isoWeekKeyOf('2026-08-31')).toBe('2026-W36') // 周一
+    expect(isoWeekKeyOf('2026-09-06')).toBe('2026-W36') // 当周周日
+  })
+
+  it('ISO 年边界：2024-12-30（周一）属于 2025-W01，不是 2024-Wxx', () => {
+    expect(isoWeekKeyOf('2024-12-30')).toBe('2025-W01')
+    expect(isoWeekKeyOf('2025-01-01')).toBe('2025-W01')
+  })
+
+  it('非法日期返回空串（调用方按无实例处理，不抛）', () => {
+    expect(isoWeekKeyOf('2026-13-99')).toBe('')
   })
 })

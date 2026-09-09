@@ -167,15 +167,22 @@ describe('focusViewport', () => {
   const province: BBox = [97, 21, 106, 29]
 
   it('zooms by the tighter of the two span ratios', () => {
-    // 地州跨度 3×2，省域 9×8 → min(3, 4) = 3
+    // 地州跨度 3×2，省域 9×8 → min(3, 4) = 3，再乘 0.88 的留白系数
     const { center, zoom } = focusViewport([100, 24, 103, 26], province)
-    expect(zoom).toBeCloseTo(3, 6)
+    expect(zoom).toBeCloseTo(2.64, 6)
     expect(center).toEqual([101.5, 25])
   })
 
   it('prefers the DataV label centre when provided', () => {
     const { center } = focusViewport([100, 24, 103, 26], province, [102.7, 25.05])
     expect(center).toEqual([102.7, 25.05])
+  })
+
+  it('shrinks zoom so an off-centre label centre still contains the whole subdivision', () => {
+    // 驻地贴在 bbox 西缘：以它为心要装下全域，东西跨度得按 3×2=6 算而不是 3。
+    // 不收 zoom 的话（min(9/3,8/2)=3）东边那半个州会被裁出视口。
+    const { zoom } = focusViewport([100, 24, 103, 26], province, [100, 25])
+    expect(zoom).toBeCloseTo(1.32, 6)
   })
 
   it('caps zoom at 8 for tiny subdivisions', () => {

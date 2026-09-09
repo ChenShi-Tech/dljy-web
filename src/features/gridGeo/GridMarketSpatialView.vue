@@ -12,7 +12,16 @@ const CesiumPlantMap = defineAsyncComponent(() => import('./CesiumPlantMap.vue')
 import GridOperatorProfileBanner from './GridOperatorProfileBanner.vue'
 import { fetchGridGeoManifest, fetchGridGeoPlants } from './client'
 import { loadGridMarketSpatialSnapshot, type GridMarketSpatialSnapshot } from './marketSpatial'
+import {
+  GRID_MARKET_LAYER_OPTIONS,
+  gridMarketTone,
+  gridMarketValueText,
+  rankGridMarketMetrics,
+} from './marketSpatialLayers'
 import type { GridGeoPlant, GridGeoSelection, GridGeoTerrainStatus, GridGeoViewMode, GridMarketLayer, GridMarketMetric, GridOperatorProfile } from './types'
+
+type MapExpose = { flyTerrainTour?: () => void }
+const mapRef = ref<MapExpose | null>(null)
 
 const plants = shallowRef<GridGeoPlant[]>([])
 const snapshot = shallowRef<GridMarketSpatialSnapshot | null>(null)
@@ -92,12 +101,8 @@ const selectedPlant = computed(() => plants.value.find((plant) => plant.plantId 
 const selectedMetric = computed(() => snapshot.value?.metrics.find((metric) => metric.plantId === selectedPlantId.value) ?? null)
 /** 平面图下钻到的地市州（#1424）；id 集合由地图给出，这里不自行判定几何归属。 */
 const focusedSubdivision = ref<{ adcode: string; name: string; plantIds: string[] } | null>(null)
-const rankedMetrics = computed(() => {
-  const allowed = focusedSubdivision.value ? new Set(focusedSubdivision.value.plantIds) : null
-  return [...(snapshot.value?.metrics ?? [])]
-    .filter((metric) => metricValue(metric) !== null && (!allowed || allowed.has(metric.plantId)))
-    .sort((a, b) => Math.abs(Number(metricValue(b))) - Math.abs(Number(metricValue(a))))
-})
+const rankedMetrics = computed(() =>
+  rankGridMarketMetrics(snapshot.value?.metrics ?? [], layer.value, focusedSubdivision.value?.plantIds))
 
 function onSubdivisionSelect(selection: { adcode: string; name: string; plantIds: string[] } | null) {
   const changed = selection?.adcode !== focusedSubdivision.value?.adcode
@@ -112,32 +117,24 @@ watch(viewMode, (mode) => {
   if (mode !== '2d') focusedSubdivision.value = null
 })
 
-const layerOptions: Array<{ value: GridMarketLayer; label: string; unit: string; icon: typeof Zap; description: string }> = [
-  { value: 'priceSpread', label: '实时-日前价差', unit: '元/MWh', icon: TrendingUp, description: '正值表示实时均价高于日前均价' },
-  { value: 'outputDeviation', label: '出力偏差', unit: '%', icon: Activity, description: '实际均值相对计划/预测目标的偏差' },
-  { value: 'risk', label: '综合关注', unit: '分', icon: Gauge, description: '价差与出力偏差的描述性关注指数' },
-]
-
-function metricValue(metric: GridMarketMetric) {
-  if (layer.value === 'priceSpread') return metric.priceSpread
-  if (layer.value === 'outputDeviation') return metric.outputDeviationPercent
-  if (layer.value === 'risk') return metric.riskScore
-  return null
+// 图标是 UI 层的选择，口径（单位、含义、分档阈值）统一取自 marketSpatialLayers。
+// 并入驾驶舱前这里另有一份实现，且**两份的显示本就不一致**——这边把关注分写成
+// 「66.0 分」、百分号前多一个空格，驾驶舱是「66 分」「+5.7%」。同一个指标两个页面
+// 两种写法，正是重复实现必然长出来的漂移，故一并统一到共享口径。
+const LAYER_ICONS: Record<string, typeof Zap> = {
+  priceSpread: TrendingUp,
+  outputDeviation: Activity,
+  risk: Gauge,
 }
 
+const layerOptions = GRID_MARKET_LAYER_OPTIONS.map((option) => ({ ...option, icon: LAYER_ICONS[option.value] ?? Zap }))
+
 function valueText(metric: GridMarketMetric | null) {
-  const value = metric ? metricValue(metric) : null
-  if (value === null) return '缺测'
-  const prefix = layer.value !== 'risk' && value > 0 ? '+' : ''
-  return `${prefix}${value.toFixed(1)} ${layerOptions.find((item) => item.value === layer.value)?.unit ?? ''}`
+  return gridMarketValueText(metric, layer.value)
 }
 
 function tone(metric: GridMarketMetric) {
-  const value = metricValue(metric)
-  if (value === null) return 'missing'
-  if (layer.value === 'risk') return value >= 70 ? 'hot' : value >= 40 ? 'warm' : 'cool'
-  const magnitude = Math.abs(value)
-  return magnitude >= (layer.value === 'priceSpread' ? 80 : 15) ? 'hot' : magnitude >= (layer.value === 'priceSpread' ? 20 : 5) ? 'warm' : 'cool'
+  return gridMarketTone(metric, layer.value)
 }
 
 function plantFor(metric: GridMarketMetric) {
@@ -182,7 +179,7 @@ function resetMarketScope() {
   selectedPlantId.value = null
   operatorProfile.value = null
   // 旧地州的 plantIds 会把新地区的排行全筛错。平面图切地区时也会发 null，
-  // 但在 2.5D/3D 下它根本没挂载、发不出事件，所以这里必须自己兜住。
+  // 但在 3D 下它根本没挂载、发不出事件，所以这里必须自己兜住。
   focusedSubdivision.value = null
   error.value = ''
   loading.value = true
@@ -207,11 +204,12 @@ watch(selectedCompanyId, resetMarketScope)
 
     <main class="map-stage">
       <!--
-        2D 走省级平面地图（轻量、按地区换省、可下钻地市州），2.5D/3D 走 Cesium 地球。
+        2D 走省级平面地图（轻量、按地区换省、可下钻地市州），3D 走 Cesium 地球。
         两者 props/emits 契约一致，故此处只切组件、不改数据流。
       -->
       <component
         :is="viewMode === '2d' ? ProvinceFlatMap : CesiumPlantMap"
+        ref="mapRef"
         :plants="plants"
         :view-mode="viewMode"
         :selected-plant-id="selectedPlantId"
@@ -230,7 +228,7 @@ watch(selectedCompanyId, resetMarketScope)
       />
 
       <div class="mode-switch glass">
-        <button v-for="mode in (['2d', '2.5d', '3d'] as GridGeoViewMode[])" :key="mode" :class="{ active: viewMode === mode }" @click="viewMode = mode"><Layers3 :size="13" /> {{ mode.toUpperCase() }}</button>
+        <button v-for="mode in (['2d', '3d'] as GridGeoViewMode[])" :key="mode" :class="{ active: viewMode === mode }" @click="viewMode = mode"><Layers3 :size="13" /> {{ mode.toUpperCase() }}</button>
       </div>
 
       <div class="left-rail">
@@ -255,6 +253,7 @@ watch(selectedCompanyId, resetMarketScope)
         :view-mode="viewMode"
         :hillshade-available="hillshadeAvailable"
         @request-3d="viewMode = '3d'"
+        @request-terrain-tour="mapRef?.flyTerrainTour?.()"
       />
       </div>
 

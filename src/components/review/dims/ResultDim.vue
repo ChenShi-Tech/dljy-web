@@ -5,7 +5,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useEChart } from '@/composables/useEChart'
 import { cssVar } from '@/composables/useTheme'
-import { axisTooltip, chartToolbox, emptyOverlay } from '@/services/chart/chartOptions'
+import { axisTooltip, bottomLayoutLegend, bottomToolbox, emptyOverlay } from '@/services/chart/chartOptions'
 import type { ReviewResult, SettlementReviewResult } from '@/services/quant/quantClient'
 import { hourlySpreadPnl } from '@/services/review/reviewDashboard'
 import MetricTile from '../MetricTile.vue'
@@ -61,8 +61,9 @@ function render() {
   chart.setOption({
     ...emptyOverlay(!hasPriceBars.value, emptyText),
     tooltip: axisTooltip({ unit: '元', digits: 0, pointer: 'shadow' }),
-    toolbox: chartToolbox('分时价差盈亏'),
-    grid: { left: 56, right: 16, top: 24, bottom: 26 },
+    legend: bottomLayoutLegend({ textStyle: { fontSize: 10 } }),
+    toolbox: bottomToolbox('分时价差盈亏', 8),
+    grid: { left: 56, right: 16, top: 56, bottom: 56 },
     xAxis: { type: 'category', data: hours.map((_, h) => `${String(h).padStart(2, '0')}:00`) },
     yAxis: { type: 'value', name: '元' },
     series: [{
@@ -150,7 +151,7 @@ watch(pnl24, () => render(), { flush: 'post' })
       </div>
       <div ref="chartEl" class="host chart-host" />
     </section>
-    <PnlDecomposePanel :spec="spec" :tolerance-pct="tolerancePct" :penalty-price="penaltyPrice" />
+    <PnlDecomposePanel :spec="spec" :tolerance-pct="tolerancePct" :penalty-price="penaltyPrice" :review-month="reviewMonth" />
     <TemplateChips :templates="templates" label="结果复盘模板" @open-template="emit('open-template', $event)" />
   </div>
 </template>
@@ -167,7 +168,8 @@ watch(pnl24, () => render(), { flush: 'post' })
 
 .top { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .top h3 { margin: 0; font-size: var(--font-13-5); font-weight: 600; }
-.chart { padding: 12px 14px 8px; display: flex; flex-direction: column; gap: 6px; }
+/* 对冲全局 .chart{height:360px}，卡片按内容自适应 */
+.chart { padding: 12px 14px 8px; display: flex; flex-direction: column; gap: 6px; height: auto; }
 .host { width: 100%; height: 240px; }
 .legend { margin-left: auto; font-size: var(--font-sm); color: var(--muted); display: inline-flex; align-items: center; gap: 4px; }
 .legend i { width: 9px; height: 9px; border-radius: 2px; display: inline-block; margin-left: 8px; }

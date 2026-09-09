@@ -40,4 +40,41 @@ describe('ReportsRail', () => {
     expect(w.find('.all').exists()).toBe(true)
     expect(mount(ReportsRail, { props: { reports } }).find('.all').exists()).toBe(false)
   })
+
+  // 报告文件交付（清单 R4 文件半边 + C-1 批量下载）：勾选驱动批量、未勾选置灰、单份 emit 原条目
+  it('未勾选时批量下载置灰；勾选后 emit download-reports 只带勾选条目', async () => {
+    const w = mount(ReportsRail, { props: { reports } })
+    const bulk = w.find('.bulk-btn')
+    expect((bulk.element as HTMLButtonElement).disabled).toBe(true)
+    const boxes = w.findAll('.li input[type="checkbox"]')
+    await boxes[1].setValue(true)
+    expect((bulk.element as HTMLButtonElement).disabled).toBe(false)
+    expect(bulk.text()).toContain('1')
+    await bulk.trigger('click')
+    const emitted = w.emitted('download-reports')!
+    expect(emitted[0][0]).toEqual([reports[1]])
+  })
+
+  it('全选/取消全选切换所有行；下载中（downloading）禁用下载控件', async () => {
+    const w = mount(ReportsRail, { props: { reports, downloading: false } })
+    await w.find('.pick-all input').setValue(true)
+    expect(w.findAll('.li input[type="checkbox"]:checked')).toHaveLength(2)
+    await w.find('.pick-all input').setValue(false)
+    expect(w.findAll('.li input[type="checkbox"]:checked')).toHaveLength(0)
+
+    const busy = mount(ReportsRail, { props: { reports, downloading: true } })
+    expect((busy.find('.bulk-btn').element as HTMLButtonElement).disabled).toBe(true)
+    const row0Buttons = busy.findAll('.li')[0].findAll('button')
+    expect(row0Buttons[row0Buttons.length - 1].text()).toBe('下载') // 下载按钮仍在但禁用
+    expect((row0Buttons[row0Buttons.length - 1].element as HTMLButtonElement).disabled).toBe(true)
+    await row0Buttons[row0Buttons.length - 1].trigger('click')
+    expect(busy.emitted('download-report')).toBeUndefined()
+  })
+
+  it('行内「下载」emit download-report 带原条目', async () => {
+    const w = mount(ReportsRail, { props: { reports } })
+    const rowButtons = w.findAll('.li')[0].findAll('button')
+    await rowButtons[rowButtons.length - 1].trigger('click')
+    expect(w.emitted('download-report')![0][0]).toMatchObject({ session_id: 'sched_1', path: 'r1.md' })
+  })
 })
