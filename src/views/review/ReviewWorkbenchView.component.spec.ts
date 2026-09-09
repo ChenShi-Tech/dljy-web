@@ -44,6 +44,7 @@ describe('真实接口复盘工作流', () => {
   })
   it('单笔仅显示自己出清曲线，不把公司结算或平台实际量挂到这笔交易', async () => {
     const { wrapper, router } = await open('&declarationId=a')
+    expect(getDeclaration).toHaveBeenCalledWith('a', 'company-a'); expect(listDeclarationsPage).toHaveBeenCalledWith(expect.any(Object), 'company-a')
     expect(wrapper.text()).toContain('分时核验'); expect(wrapper.text()).toContain('可比较 96 / 96')
     expect(wrapper.text()).not.toContain('结算资料核验')
     expect(wrapper.text()).toContain('实际电量尚未与这笔申报逐时段关联')

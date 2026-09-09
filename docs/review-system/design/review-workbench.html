@@ -22,7 +22,7 @@ const state={page:'overview',analysis:'经营结果',archive:'待办与改进',s
 const initialMode={empty:'无数据',error:'读取失败',denied:'无权限',revised:'资料更新'}[new URLSearchParams(location.search).get('state')];
 if(initialMode)state.mode=initialMode;
 state.date='2026-09-07';state.form={};state.appearance=new URLSearchParams(location.search).get('theme')==='dark'?'深色':'跟随系统';
-const formKey=id=>[state.detail||state.page,state.detail==='template'?state.template:'',id].join('|');
+const formKey=id=>[state.detail||state.page,state.detail==='template'?state.template:state.detail==='action'?(state.existingAction?'existing':'new'):'',id].join('|');
 const pages={overview:'复盘总览',analysis:'交易分析',settlement:'结算核对',replay:'决策回放',archive:'复盘档案'};
 const groups={通用:['决策复盘单','月度收益拆解报告','典型交易分析表','策略胜率分析报告','执行偏差分析表','月度市场归因报告','偏差归因分析报告','偏差成本核算表','月度风险事件报告','极端情景压力测试报告','情绪化决策分析报告','复盘会议纪要','复盘案例库登记表'],储能:['峰谷套利复盘表','辅助服务收益复盘表','充放电计划执行偏差复盘表','储能容量利用率与荷电状态复盘表','储能投资决策复盘单'],售电:['代理购电偏差复盘表','零售套餐履约复盘表','用户用电结构与售电收益拆解表','售电偏差考核成本核算表','售电侧月度综合复盘报告'],新能源:['出力预测准确率复盘表','新能源偏差考核复盘表','弃电率复盘表','中长期签约策略复盘表','功率预测模型评估表'],时段工具:['24时段充放电策略编排表','24时段充放电执行与偏差复盘表','24时段电价与套利复盘表']};
 const rows=Array.from({length:96},(_,i)=>({i,time:String(Math.floor(i/4)).padStart(2,'0')+':'+String(i%4*15).padStart(2,'0'),actual:10,cleared:8,baseline:9,da:300,rt:i>=72&&i<=74?800:300}));
@@ -82,7 +82,8 @@ else if(d==='import'){heading='导入并核对账单';body=`<div class="rw-steps
 else if(d==='import-preview'){heading='导入预览 · 示例账单';body=`<p>示例电力公司 · 山西 · 2026 年 8 月</p><p>3 项费用，共 512,120 元；2 项已匹配，月度分摊仍有 120 元差异。</p><p class="rw-muted">存在同月示例版本，正式导入应保留旧版并新增修订版。</p>${button('确认示例导入','import-confirm','rw-primary')}`;}
 else if(d==='meeting'){heading='晨会复盘提纲';body=`<div class="rw-timeline"><article><strong>1 分钟 · 资料与结果</strong><p>确认资料范围与哪些数字暂不能算。</p></article><article><strong>2 分钟 · 重点交易</strong><p>定位晚高峰 3 个时段，查看当时判断。</p></article><article><strong>1 分钟 · 回查</strong><p>检查昨日改进是否执行，验证是否到期。</p></article><article><strong>1 分钟 · 分工</strong><p>确定每个待办的处理人和截止时间。</p></article></div>${button('开始填写纪要','template:复盘会议纪要','rw-primary')}`;}
 return `<section class="rw-drawer" aria-label="${heading}"><div class="rw-row rw-between"><h2>${heading}</h2>${button('关闭详情','close')}</div>${body}</section>`;}
-function openDetail(d){state.detail=d;render();root.querySelector('#rw-detail').scrollIntoView({behavior:'smooth',block:'nearest'});root.querySelector('#rw-detail button')?.focus({preventScroll:true});}
+let detailTrigger='';
+function openDetail(d){detailTrigger=document.activeElement?.getAttribute('data-action')||'';state.detail=d;render();root.querySelector('#rw-detail').scrollIntoView({behavior:'smooth',block:'nearest'});root.querySelector('#rw-detail button')?.focus({preventScroll:true});}
 function read(id){return root.querySelector('#'+id)?.value.trim()||'';}
 function saveTemplate(){state.reason=read('rw-reason');state.conclusion=read('rw-conclusion');state.measure=read('rw-measure');}
 function feedback(s){state.notice=s;render();}
@@ -94,7 +95,7 @@ else if(a==='analysis'||a==='archive'){state.page=a;state[a]=v;state.detail=null
 else if(a==='event'){if(v==='cost'){state.point=72;openDetail('point');}else openDetail(v);}
 else if(a==='point'||a==='hour'){state.point=a==='hour'?Number(v)*4:Number(v);openDetail('point');}
 else if(a==='all'){state.showAll=!state.showAll;render();}
-else if(a==='close'){state.detail=null;render();}
+else if(a==='close'){state.detail=null;render();Array.from(root.querySelectorAll('button[data-action]')).find(b=>b.dataset.action===detailTrigger)?.focus({preventScroll:true});}
 else if(a==='blind'){state.blind=!state.blind;state.detail=null;render();}
 else if(a==='step'){state.step=Number(v);state.detail=null;render();}
 else if(a==='template'){state.template=v;state.submitted=false;state.reason='';state.conclusion='';state.measure='';openDetail('template');}

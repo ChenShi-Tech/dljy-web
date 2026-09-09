@@ -21,6 +21,15 @@ describe('改进记录持久化交互', () => {
     expect(createImprovementAction).toHaveBeenCalledWith(expect.objectContaining({ action: expect.stringContaining('18:15'), dueDate: '2026-06-05', owner: '测试负责人' }))
     expect(w.text()).toContain('改进措施已保存'); expect(w.text()).toContain('待落实')
     expect(patchImprovementAction).not.toHaveBeenCalled()
+    expect(w.emitted('draft')?.at(-1)?.[0]).toEqual(['', '', '', ''])
+  })
+  it('读取尚未结束时阻止写入，避免旧快照覆盖刚保存的记录', async () => {
+    let resolve!: (value: never) => void
+    vi.mocked(fetchImprovementActions).mockReturnValue(new Promise(r => { resolve = r }))
+    const w = await open(); await fill(w); await w.find('form').trigger('submit')
+    expect(createImprovementAction).not.toHaveBeenCalled()
+    resolve({ available: true, actions: [] } as never); await flushPromises()
+    expect(w.find('button[type=submit]').attributes('disabled')).toBeUndefined()
   })
   it('接口失败不伪成功，保留输入，隐藏技术错误', async () => {
     vi.mocked(createImprovementAction).mockRejectedValue(new Error('review.improvement_actions.owner denied'))

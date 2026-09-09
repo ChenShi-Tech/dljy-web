@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import { PAGE_PROMPT_KEYS } from '@/prompts/pageKeys'
 import AgentChatPanel from '@/components/agent/AgentChatPanel.vue'
 import { evidencePayload, evidenceReport, type ReviewEvidenceSnapshot, type ReviewReportKind } from '@/services/review/reviewEvidence'
 
 const props = defineProps<{ snapshot: ReviewEvidenceSnapshot; mode: 'analysis' | 'report'; savedDraft?: string }>()
-const emit = defineEmits<{ draft: [value: string, scope: ReviewEvidenceSnapshot] }>()
+const emit = defineEmits<{ draft: [value: string, scope: ReviewEvidenceSnapshot]; downloaded: [scope: ReviewEvidenceSnapshot] }>()
 const kind = ref<ReviewReportKind>('object')
 const draft = ref(props.savedDraft ?? evidenceReport(props.snapshot, kind.value))
 const candidate = ref(''), confirmed = ref(false), started = ref(false), feedback = ref('')
@@ -25,7 +26,7 @@ function download() {
 
 `
   const url = URL.createObjectURL(new Blob([metadata, draft.value], { type: 'text/markdown;charset=utf-8' }))
-  const a = document.createElement('a'); a.href = url; a.download = `复盘草稿-${props.snapshot.scope.day}.md`; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000)
+  const a = document.createElement('a'); a.href = url; a.download = `复盘草稿-${props.snapshot.scope.day}.md`; a.click(); emit('downloaded', props.snapshot); setTimeout(() => URL.revokeObjectURL(url), 1000)
 }
 function archive() {
   if (!confirmed.value || !draft.value.trim() || !chat.value) return
@@ -55,7 +56,7 @@ ${draft.value}`)
       </section>
       <section class="analysis">
         <div v-if="!started" class="start"><h3>{{ mode === 'report' ? '辅助撰写' : '分析当前对象' }}</h3><p>围绕现有事实提出解释与验证办法。分析建议不会覆盖人工草稿。</p><button type="button" @click="start">{{ mode === 'report' ? '请助手拟写建议' : '开始分析' }}</button></div>
-        <AgentChatPanel v-else ref="chat" scenario="daily_review" history-key="review_object_assistant" prompt-key="reviewCenter" :initial-question="question" :context-payload="payload" :restore-last-session="false" business-only @answer="candidate = $event" />
+        <AgentChatPanel v-else ref="chat" scenario="daily_review" history-key="review_object_assistant" :prompt-key="PAGE_PROMPT_KEYS.reviewCenter" :initial-question="question" :context-payload="payload" :restore-last-session="false" business-only @answer="candidate = $event" />
       </section>
     </div>
   </div>

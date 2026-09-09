@@ -24,7 +24,7 @@ const statusLabels: Record<string, string> = {
 }
 export function declarationLabel(order: DeclarationOrder): string {
   const time = order.createdAt ? new Date(order.createdAt).toLocaleTimeString('zh-CN', { timeZone: 'Asia/Shanghai', hour: '2-digit', minute: '2-digit', hour12: false }) : ''
-  return `${time} 日前申报 · ${statusLabels[order.status] ?? '待核实状态'}${order.mode === 'REHEARSAL' || order.receipt?.mock || ['synthetic', 'illustrative'].includes(order.basis) ? ' · 模拟演练' : ''}`
+  return `${time} 日前申报 · ${statusLabels[order.status] ?? '待核实状态'}${order.mode === 'REHEARSAL' || order.receipt?.mode === 'REHEARSAL' || order.receipt?.mock || ['synthetic', 'illustrative'].includes(order.basis) ? ' · 模拟演练' : ''}`
 }
 export function matchesReviewScope(order: DeclarationOrder, date: string, region: string, company?: string): boolean {
   // 旧单地区为空时不猜归属；由原页面核实，不用于新的跨模块拼接。
