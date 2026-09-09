@@ -31,7 +31,7 @@ afterEach(() => { wrappers.splice(0).forEach(w => w.unmount()) })
 async function open(query = '', standaloneTopics = false) {
   const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/xhjy/review', component: ReviewWorkbenchView }, { path: '/xhjy/desk', component: { template: '<div>申报台</div>' } }] })
   await router.push(`/xhjy/review?layout=decisions&date=2026-05-31${query}`); await router.isReady()
-  const wrapper = mount(ReviewWorkbenchView, { props: { standaloneTopics }, global: { plugins: [router], stubs: { RegionDataBanner: true, ReviewTopicWorkspace: true } } }); wrappers.push(wrapper)
+  const wrapper = mount(ReviewWorkbenchView, { props: { standaloneTopics }, global: { plugins: [router], stubs: { RegionDataBanner: true, ReviewTopicWorkspace: true, ReportArchivePanel: true } } }); wrappers.push(wrapper)
   await flushPromises(); return { wrapper, router }
 }
 describe('真实接口复盘工作流', () => {
@@ -52,10 +52,13 @@ describe('真实接口复盘工作流', () => {
     expect(fetchSettlementReview).not.toHaveBeenCalled()
     expect(wrapper.findComponent({ name: 'ReviewTopicWorkspace' }).exists()).toBe(false)
   })
-  it('历史专题使用显式旧版入口并保留日期', async () => {
+  it('先打开新报告目录，旧报告保留独立入口与日期', async () => {
     const { wrapper, router } = await open()
-    const button = wrapper.findAll('button').find(b => b.text().includes('历史专题'))!
-    await button.trigger('click'); await flushPromises()
+    await wrapper.findAll('button').find(b => b.text().includes('报告目录'))!.trigger('click'); await flushPromises()
+    expect(router.currentRoute.value.query.layout).toBe('decisions')
+    const archive = wrapper.findComponent({ name: 'ReportArchivePanel' })
+    expect(archive.props()).toMatchObject({ company: 'company-a', region: 'yunnan' })
+    archive.vm.$emit('legacy'); await flushPromises()
     expect(router.currentRoute.value.query).toMatchObject({ layout: 'classic', date: '2026-05-31' })
   })
   it('云南有结算即展示；偏差缺源不挡整页，也不请求已知未接入的曲线', async () => {

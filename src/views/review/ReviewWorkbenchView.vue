@@ -20,6 +20,7 @@ import IntervalEvidencePanel from '@/components/review/workbench/IntervalEvidenc
 import SettlementEvidencePanel from '@/components/review/workbench/SettlementEvidencePanel.vue'
 import ImprovementWorkbench from '@/components/review/workbench/ImprovementWorkbench.vue'
 import ReviewAssistantWorkbench from '@/components/review/workbench/ReviewAssistantWorkbench.vue'
+import ReportArchivePanel from '@/components/review/workbench/ReportArchivePanel.vue'
 import ReportWorkpaperEditor from '@/components/review/workbench/ReportWorkpaperEditor.vue'
 import type { ReportEvidence } from '@/services/review/workpapers'
 import ReviewTopicWorkspace from '@/components/review/workbench/ReviewTopicWorkspace.vue'
@@ -128,7 +129,9 @@ function investigate(label: string) { focus.value = label; setTask('improvement'
 function openOriginal() {
   if (selectedOrder.value) void router.push({ path: '/xhjy/desk', query: { declarationId: selectedOrder.value.id, targetDate: selectedOrder.value.targetDate } })
 }
-function openArchive() { void router.push({ path: '/xhjy/review', query: { ...route.query, layout: 'classic', task: undefined, decisionId: undefined } }) }
+const archiveVisible = ref(false)
+function openArchive() { archiveVisible.value = true }
+function openLegacyArchive() { void router.push({ path: '/xhjy/review', query: { ...route.query, layout: 'classic', task: undefined, decisionId: undefined } }) }
 let scopeSequence = 0, selectionSequence = 0, pageSequence = 0
 async function loadOrders(seq: number, day: string, rid: string, offset = 0) {
   const page = ++pageSequence, company = selectedCompanyId.value
@@ -205,7 +208,7 @@ async function saveLesson() {
 <template>
   <div class="review-workbench page-stack">
     <RegionDataBanner />
-    <header class="heading"><div class="title"><h1>{{ props.standaloneTopics ? '复盘专题分析' : '复盘中心' }}</h1><span>{{ currentRegion.shortName || currentRegion.name }}</span></div><div class="date-control"><button type="button" aria-label="前一天" @click="changeDate(shiftDate(date, -1))"><ArrowLeft :size="14" /></button><input type="date" aria-label="复盘交易日" :value="date" @change="changeDate(($event.target as HTMLInputElement).value)" /><button type="button" aria-label="后一天" @click="changeDate(shiftDate(date, 1))"><ArrowRight :size="14" /></button></div><div class="header-actions"><button v-if="props.standaloneTopics" type="button" @click="router.push({ path: '/xhjy/review', query: { ...route.query, layout: undefined } })">返回本次复盘</button><button v-else type="button" :disabled="!selectedCompanyId" @click="openTopic">专题分析</button><button type="button" :disabled="!canAnalyze" @click="openAssistant('analysis')">分析本次复盘</button><button type="button" :disabled="!canAnalyze" @click="openWorkpaper()">本次底稿</button><button type="button" @click="openArchive"><FileText :size="14" />报告与历史专题</button><button type="button" @click="reload"><RefreshCw :size="14" />刷新</button></div></header>
+    <header class="heading"><div class="title"><h1>{{ props.standaloneTopics ? '复盘专题分析' : '复盘中心' }}</h1><span>{{ currentRegion.shortName || currentRegion.name }}</span></div><div class="date-control"><button type="button" aria-label="前一天" @click="changeDate(shiftDate(date, -1))"><ArrowLeft :size="14" /></button><input type="date" aria-label="复盘交易日" :value="date" @change="changeDate(($event.target as HTMLInputElement).value)" /><button type="button" aria-label="后一天" @click="changeDate(shiftDate(date, 1))"><ArrowRight :size="14" /></button></div><div class="header-actions"><button v-if="props.standaloneTopics" type="button" @click="router.push({ path: '/xhjy/review', query: { ...route.query, layout: undefined } })">返回本次复盘</button><button v-else type="button" :disabled="!selectedCompanyId" @click="openTopic">专题分析</button><button type="button" :disabled="!canAnalyze" @click="openAssistant('analysis')">分析本次复盘</button><button type="button" :disabled="!canAnalyze" @click="openWorkpaper()">本次底稿</button><button type="button" @click="openArchive"><FileText :size="14" />报告目录</button><button type="button" @click="reload"><RefreshCw :size="14" />刷新</button></div></header>
     <p v-if="!selectedCompanyId" class="notice" role="alert">请先在顶部选择有权查看的公司，再进行复盘。</p>
     <p v-else-if="topicScopeMismatch" class="notice" role="alert">此专题链接的公司或地区与当前选择不一致。请先切换到原公司和地区，再查看同一份复盘资料。</p>
     <template v-else>
@@ -232,6 +235,7 @@ async function saveLesson() {
     <section v-else class="panel compact-gap"><h2>请先核实复盘对象</h2><p>指定记录尚不可用，不能将改进措施挂到其他对象。</p></section>
     </template>
     </template>
+    <el-dialog v-model="archiveVisible" title="复盘报告目录" width="min(1120px, 96vw)" destroy-on-close><ReportArchivePanel v-if="archiveVisible" :company="selectedCompanyId" :region="region" @legacy="archiveVisible = false; openLegacyArchive()" /></el-dialog>
     <el-dialog v-model="topicVisible" title="专题分析" width="min(1180px, 96vw)" :close-on-click-modal="false" :before-close="closeTopic" destroy-on-close><ReviewTopicWorkspace v-if="topicVisible" v-model:view="businessView" v-model:topic="topicMode" v-model:selection="periodSelection" v-model:price-selection="priceSelection" :snapshot="topicSnapshot" :company="selectedCompanyId" :company-label="currentCompany?.name || '当前公司'" :region="region" :date="date" :busy="maintenanceBusy" @busy="maintenanceBusy = $event" @material="acceptTopicMaterial" @independent="openIndependentTopics" /></el-dialog>
     <el-dialog v-model="workpaperVisible" title="复盘图文底稿" width="min(1380px, 98vw)" :close-on-click-modal="false" :before-close="closeWorkpaper" destroy-on-close><ReportWorkpaperEditor v-if="workpaperSnapshot && workpaperVisible" :snapshot="workpaperSnapshot" :material="workpaperMaterial" @dirty="workpaperDirty = $event" /></el-dialog>
     <el-dialog v-model="assistantVisible" :title="assistant?.mode === 'report' ? '复盘报告草稿' : '复盘分析'" width="min(1180px, 96vw)" :close-on-click-modal="false">
