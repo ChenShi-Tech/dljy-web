@@ -140,6 +140,8 @@ let viewer: Viewer | null = null
 let clickHandler: ScreenSpaceEventHandler | null = null
 let resizeObserver: ResizeObserver | null = null
 let viewResetTimer: number | null = null
+/** morphComplete 的取消订阅句柄；切换过快时要先撤掉上一次的。 */
+let morphCompleteHandle: (() => void) | null = null
 let clouds: CloudCollection | null = null
 let terrainRequestId = 0
 let hillshadeRequestId = 0
@@ -1025,10 +1027,34 @@ function applyViewMode(mode: GridGeoViewMode) {
     resetView(0)
     return
   }
+  // morphTo2D/3D 会把相机拉到全球视角，必须在变形结束后重新框住省域，否则用户点一下
+  // 2D/3D 就看见整个地球。此前用 900ms 定时器兜——morph 本身 0.85s，两者卡在边缘，
+  // 变形尚未结束时发出的 flyTo 会被丢弃，于是相机就停在全球视角上。
+  // 改由 morphComplete 驱动；定时器保留为兜底（该事件在某些降级路径下不触发）。
+  if (morphCompleteHandle) {
+    morphCompleteHandle()
+    morphCompleteHandle = null
+  }
+  const scene = viewer.scene
+  morphCompleteHandle = scene.morphComplete.addEventListener(() => {
+    if (morphCompleteHandle) {
+      morphCompleteHandle()
+      morphCompleteHandle = null
+    }
+    if (viewResetTimer !== null) {
+      window.clearTimeout(viewResetTimer)
+      viewResetTimer = null
+    }
+    resetView(0.7)
+  })
   viewResetTimer = window.setTimeout(() => {
     viewResetTimer = null
+    if (morphCompleteHandle) {
+      morphCompleteHandle()
+      morphCompleteHandle = null
+    }
     resetView(0.7)
-  }, 900)
+  }, 1600)
 }
 
 /**
@@ -1618,6 +1644,8 @@ onMounted(() => {
 })
 onBeforeUnmount(() => {
   if (viewResetTimer !== null) window.clearTimeout(viewResetTimer)
+  // 未触发的 morphComplete 订阅要一并撤掉，否则 viewer 销毁后回调仍会跑到 resetView
+  if (morphCompleteHandle) { morphCompleteHandle(); morphCompleteHandle = null }
   resizeObserver?.disconnect()
   viewer?.scene.canvas.removeEventListener('webglcontextlost', onWebglContextLost)
   viewer?.scene.canvas.removeEventListener('webglcontextrestored', onWebglContextRestored)

@@ -1,7 +1,9 @@
-import { CloudSun, FileSearch, GitBranch, LayoutDashboard, MapPinned, Network, Orbit, Waypoints } from 'lucide-vue-next'
+import { CloudSun, FileSearch, GitBranch, LayoutDashboard, Network, Orbit, Waypoints } from 'lucide-vue-next'
 import type { NavItem } from '@/data/navigation'
 import { GRID_GEO_REGION_IDS } from './config'
 
+// 「电厂地理空间」（/grid-assets/plants）于 2026-09-09 摘出侧栏：场站目录、完整信息
+// 抽屉与资产治理都已并入驾驶舱的「空间总览」场景，两页并存只剩重复的地图。
 // 「电力市场空间态势」（/grid-assets/market）于 2026-09-08 摘出侧栏，功能已并入
 // 「空间联动驾驶舱」的市场回放场景——驾驶舱那边本就有同一份数据加载器、图层切换、
 // 排行榜与单厂详情，且多了日期选择，两页并存只是让用户在两个入口间猜哪个更全。
@@ -17,12 +19,6 @@ export const gridGeoNavigation: NavItem = {
       path: '/grid-assets/command',
       title: '空间联动驾驶舱',
       icon: LayoutDashboard,
-      regionIds: GRID_GEO_REGION_IDS,
-    },
-    {
-      path: '/grid-assets/plants',
-      title: '电厂地理空间',
-      icon: MapPinned,
       regionIds: GRID_GEO_REGION_IDS,
     },
     {
