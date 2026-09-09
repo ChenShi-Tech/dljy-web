@@ -4,9 +4,12 @@
 // 2) /yygl/import-hub 死授权回归网——该路径是 adminOnly 数据运维台的重定向壳，
 //    保留授权只会让 SETTLEMENT/RETAIL_MANAGER 点了必被弹回 dashboard。
 import { describe, expect, it } from 'vitest'
-import { canAccessPath } from '@/services/governance'
+import { canAccessPath, roleLabels, type RoleCode } from '@/services/governance'
 
 describe('canAccessPath 判权只看路径（query/hash 不影响）', () => {
+  it('独立专题对所有角色严格沿用复盘中心权限', () => {
+    for (const roleCode of Object.keys(roleLabels) as RoleCode[]) expect(canAccessPath('/xhjy/review/analysis?date=2026-05-31', { roleCode })).toBe(canAccessPath('/xhjy/review', { roleCode }))
+  })
   const quant = { roleCode: 'QUANT' as const }
 
   it('精确清单路径带 query 仍有权（登录回跳深链场景）', () => {

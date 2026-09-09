@@ -28,13 +28,30 @@ beforeEach(() => {
   vi.mocked(fetchSettlementReview).mockResolvedValue(settlement)
 })
 afterEach(() => { wrappers.splice(0).forEach(w => w.unmount()) })
-async function open(query = '') {
+async function open(query = '', standaloneTopics = false) {
   const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/xhjy/review', component: ReviewWorkbenchView }, { path: '/xhjy/desk', component: { template: '<div>申报台</div>' } }] })
   await router.push(`/xhjy/review?layout=decisions&date=2026-05-31${query}`); await router.isReady()
-  const wrapper = mount(ReviewWorkbenchView, { global: { plugins: [router], stubs: { RegionDataBanner: true } } }); wrappers.push(wrapper)
+  const wrapper = mount(ReviewWorkbenchView, { props: { standaloneTopics }, global: { plugins: [router], stubs: { RegionDataBanner: true, ReviewTopicWorkspace: true } } }); wrappers.push(wrapper)
   await flushPromises(); return { wrapper, router }
 }
 describe('真实接口复盘工作流', () => {
+  it('独立专题沿用单笔资料加载，并保留业务视角和对象', async () => {
+    const { wrapper } = await open('&declarationId=a&view=retail&topic=price&companyId=company-a&region=yunnan', true)
+    expect(wrapper.text()).toContain('复盘专题分析')
+    expect(wrapper.find('nav.tasks').exists()).toBe(false)
+    const workspace = wrapper.findComponent({ name: 'ReviewTopicWorkspace' })
+    expect(workspace.props('view')).toBe('retail')
+    expect(workspace.props('topic')).toBe('price')
+    expect(workspace.props('snapshot').scope.objectKey).toBe('order:a')
+    expect(workspace.props('snapshot').scope.businessView).toBe('retail')
+  })
+  it('独立链接公司不匹配时不加载或替换成当前公司的统计', async () => {
+    const { wrapper } = await open('&companyId=other&declarationId=a', true)
+    expect(wrapper.text()).toContain('公司或地区与当前选择不一致')
+    expect(getDeclaration).not.toHaveBeenCalled()
+    expect(fetchSettlementReview).not.toHaveBeenCalled()
+    expect(wrapper.findComponent({ name: 'ReviewTopicWorkspace' }).exists()).toBe(false)
+  })
   it('历史专题使用显式旧版入口并保留日期', async () => {
     const { wrapper, router } = await open()
     const button = wrapper.findAll('button').find(b => b.text().includes('历史专题'))!

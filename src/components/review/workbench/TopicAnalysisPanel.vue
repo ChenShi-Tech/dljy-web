@@ -6,11 +6,12 @@ import { comparisonLabels, previewTopicAnalysis, type AnalysisThresholds, type C
 import { captureReportEvidence, workpaperError, type ReportEvidence } from '@/services/review/workpapers'
 import type { ReviewEvidenceSnapshot } from '@/services/review/reviewEvidence'
 
-const props = defineProps<{ snapshot: ReviewEvidenceSnapshot }>()
+const props = defineProps<{ snapshot: ReviewEvidenceSnapshot; activeTopic?: 'energy' | 'price'; bases?: ComparisonBasis[] }>()
 const emit = defineEmits<{ material: [value: ReportEvidence] }>()
 const capturing = ref(false)
-const topic = ref<'energy' | 'price'>('energy')
-const basis = ref<ComparisonBasis>(props.snapshot.scope.objectKey.startsWith('order:') ? 'declared_cleared' : 'forecast_actual')
+const topic = ref<'energy' | 'price'>(props.activeTopic ?? 'energy')
+const basis = ref<ComparisonBasis>(props.bases?.[0] ?? (props.snapshot.scope.objectKey.startsWith('order:') ? 'declared_cleared' : 'forecast_actual'))
+const basisOptions = computed(() => props.bases ?? Object.keys(comparisonLabels) as ComparisonBasis[])
 const full = ref<TopicAnalysisResult | null>(null), current = ref<TopicAnalysisResult | null>(null)
 const selected = ref<string[]>([]), loading = ref(false), error = ref(''), threshold = ref('')
 const chartEl = ref<HTMLElement | null>(null)
@@ -90,9 +91,9 @@ onBeforeUnmount(() => { sequence++; controller?.abort() })
 <template>
   <section class="topic-analysis">
     <p>{{ snapshot.scope.day }} · {{ snapshot.scope.objectLabel }} <strong v-if="snapshot.simulated">模拟演练</strong></p>
-    <div class="controls" role="group" aria-label="分析主题"><button type="button" :aria-pressed="topic === 'energy'" @click="topic = 'energy'">电量偏差</button><button type="button" :aria-pressed="topic === 'price'" @click="topic = 'price'">价格与市场</button></div>
+    <div v-if="!activeTopic" class="controls" role="group" aria-label="分析主题"><button type="button" :aria-pressed="topic === 'energy'" @click="topic = 'energy'">电量偏差</button><button type="button" :aria-pressed="topic === 'price'" @click="topic = 'price'">价格与市场</button></div>
     <div class="controls">
-      <label v-if="topic === 'energy'">比较基准 <select v-model="basis"><option v-for="(names, key) in comparisonLabels" :key="key" :value="key">{{ names.join('与') }}</option></select></label>
+      <label v-if="topic === 'energy'">比较基准 <select v-model="basis"><option v-for="key in basisOptions" :key="key" :value="key">{{ comparisonLabels[key].join('与') }}</option></select></label>
       <label>{{ topic === 'price' ? '价差门槛（元/MWh）' : '差异门槛（MWh）' }} <input v-model="threshold" type="number" min="0" step="any" placeholder="不限" /></label>
       <button type="button" @click="load()">重新统计</button><button type="button" :disabled="!current || loading || capturing" @click="capture">{{ capturing ? '正在保存材料…' : '保存材料并加入底稿' }}</button>
       <button v-if="selected.length" type="button" @click="selected = []; load()">清除选区</button>

@@ -6,7 +6,7 @@ import ReportWorkpaperEditor from './ReportWorkpaperEditor.vue'
 import type { ReviewEvidenceSnapshot } from '@/services/review/reviewEvidence'
 
 vi.mock('@/services/review/workpapers', async original => ({ ...await original<typeof import('@/services/review/workpapers')>(), addReportComment: vi.fn(), createWorkpaper: vi.fn(), getWorkpaper: vi.fn(), listReportPublications: vi.fn(), listReportComments: vi.fn(), listWorkpapers: vi.fn(), publishWorkpaper: vi.fn(), saveWorkpaper: vi.fn() }))
-vi.mock('@/services/stance/stanceContext', () => ({ currentStanceHeader: () => 'retail' }))
+vi.mock('@/services/stance/stanceContext', () => ({ activeStanceType: { value: 'RETAILER' } }))
 const snapshot: ReviewEvidenceSnapshot = { scope: { company: 'a', region: 'yunnan', day: '2026-05-31', objectKey: '', objectLabel: '公司总览', version: 'v1' }, capturedAt: '2026-06-01T00:00:00Z', simulated: false, focus: '', entries: [], intervals: [], limitations: [] }
 const paper = (): Workpaper => ({ id: '00000000-0000-4000-8000-000000000001', title: '已有底稿', scope: { region: 'yunnan', view: 'retail', objectId: 'company-overview', objectLabel: '公司总览', startDate: '2026-05-31', endDate: '2026-05-31' }, authorId: '主笔', revision: 1, blocks: [{ id: '00000000-0000-4000-8000-000000000002', kind: 'text', title: '原有事实', text: '已保存正文' }], summary: '', updatedAt: '2026-06-01', canEdit: true, evidence: [] })
 const wrappers: ReturnType<typeof mount>[] = []

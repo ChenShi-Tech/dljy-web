@@ -5,13 +5,15 @@ import { ApiError } from '@/services/api'
 import { formatValue } from '@/services/review/decisionWorkbench'
 import { fetchSettlementAnalysis, type SettlementAnalysis, type SettlementAnalysisInput } from '@/services/review/settlementAnalysis'
 import { captureSettlementReportEvidence, type ReportEvidence } from '@/services/review/workpapers'
+import type { SettlementSelection } from '@/services/review/reviewTopics'
 
-const props = defineProps<{ company: string; region: string; date: string; companyLabel?: string }>()
-const emit = defineEmits<{ material: [value: ReportEvidence] }>()
+const props = defineProps<{ company: string; region: string; date: string; companyLabel?: string; selection?: SettlementSelection }>()
+const emit = defineEmits<{ material: [value: ReportEvidence]; selection: [value: SettlementSelection] }>()
 const capturing = ref(false), lastInput = ref<SettlementAnalysisInput | null>(null)
-const date = ref(props.date), cadence = ref<'day' | 'week' | 'month'>('day')
-const manual = ref(false), referenceStart = ref(''), referenceEnd = ref('')
-const plants = ref<string[]>([]), availablePlants = ref<string[]>([])
+const date = ref(props.selection?.date ?? props.date), cadence = ref<'day' | 'week' | 'month'>(props.selection?.cadence ?? 'day')
+const manual = ref(props.selection?.manual ?? false), referenceStart = ref(props.selection?.referenceStart ?? ''), referenceEnd = ref(props.selection?.referenceEnd ?? '')
+const plants = ref<string[]>([...(props.selection?.plants ?? [])]), availablePlants = ref<string[]>([])
+watch([date, cadence, manual, referenceStart, referenceEnd, plants], () => emit('selection', { date: date.value, cadence: cadence.value, manual: manual.value, referenceStart: referenceStart.value, referenceEnd: referenceEnd.value, plants: [...plants.value] }), { deep: true })
 const result = ref<SettlementAnalysis | null>(null), loading = ref(false), error = ref('')
 const el = ref<HTMLElement | null>(null), chart = useEChart(el, { render })
 let sequence = 0, controller: AbortController | null = null

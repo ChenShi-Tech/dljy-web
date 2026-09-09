@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { currentStanceHeader } from '@/services/stance/stanceContext'
+import { activeStanceType } from '@/services/stance/stanceContext'
 import { addReportComment, createWorkpaper, getWorkpaper, getReportPublication, listReportPublications, listReportComments, listWorkpapers, publishWorkpaper, saveWorkpaper, workpaperError, type Publication, type ReportBlock, type ReportComment, type ReportEvidence, type Workpaper, type WorkpaperScope } from '@/services/review/workpapers'
 import type { ReviewEvidenceSnapshot } from '@/services/review/reviewEvidence'
 import PublishedReportReader from './PublishedReportReader.vue'
@@ -15,8 +15,7 @@ const comments = ref<ReportComment[]>([]), publication = ref<Publication | null>
 const listMore = ref(false), commentsMore = ref(false), loading = ref(false), saving = ref(false), publishing = ref(false)
 const dirty = ref(false), confirmed = ref(false), error = ref(''), status = ref(''), commentText = ref(''), commentTarget = ref('')
 const creationId = ref(crypto.randomUUID()), commentId = ref(crypto.randomUUID())
-const stance = currentStanceHeader() ?? ''
-const view = ref<WorkpaperScope['view']>(/retail|售电/i.test(stance) ? 'retail' : /storage|储能/i.test(stance) ? 'storage' : 'generator')
+const view = ref<WorkpaperScope['view']>(props.snapshot.scope.businessView ?? (activeStanceType.value === 'RETAILER' ? 'retail' : activeStanceType.value === 'STORAGE' ? 'storage' : 'generator'))
 const canEdit = computed(() => draft.value?.canEdit === true)
 const blockNames: Record<ReportBlock['kind'], string> = { text: '事实与说明', chart: '图表与统计', reason: '原因与判断', question: '待核实问题', action: '改进措施' }
 let alive = true, suppress = false, editVersion = 0, timer: ReturnType<typeof setTimeout> | null = null, savingTask: Promise<boolean> | null = null
