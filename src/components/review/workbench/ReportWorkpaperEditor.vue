@@ -5,6 +5,8 @@ import { addReportComment, createWorkpaper, getWorkpaper, getReportPublication, 
 import type { ReviewEvidenceSnapshot } from '@/services/review/reviewEvidence'
 import PublishedReportReader from './PublishedReportReader.vue'
 import ReportEvidenceChart from './ReportEvidenceChart.vue'
+import ReportWritingAssistant from './ReportWritingAssistant.vue'
+import { reportEvidenceCaption } from '@/services/review/reportPresentation'
 
 const props = defineProps<{ snapshot: ReviewEvidenceSnapshot; material?: ReportEvidence | null }>()
 const emit = defineEmits<{ dirty: [value: boolean] }>()
@@ -17,6 +19,31 @@ const dirty = ref(false), confirmed = ref(false), error = ref(''), status = ref(
 const creationId = ref(crypto.randomUUID()), commentId = ref(crypto.randomUUID())
 const view = ref<WorkpaperScope['view']>(props.snapshot.scope.businessView ?? (activeStanceType.value === 'RETAILER' ? 'retail' : activeStanceType.value === 'STORAGE' ? 'storage' : 'generator'))
 const canEdit = computed(() => draft.value?.canEdit === true)
+const writingTarget = ref('')
+const writingInput = computed(() => {
+  const paper = draft.value, target = paper?.blocks.find(block => block.id === writingTarget.value)
+  if (!paper || (!target && writingTarget.value !== 'summary')) return null
+  return { scope: `${props.snapshot.scope.companyLabel || '当前公司'} · ${props.snapshot.scope.regionLabel || '当前地区'} · ${paper.scope.startDate}—${paper.scope.endDate} · ${paper.scope.objectLabel}`,
+    title: target ? target.title || '当前段落' : '管理层摘要', text: target?.text ?? paper.summary,
+    evidence: [...evidence.value.filter(item => paper.blocks.some(block => block.evidenceId === item.id)).map(item => {
+      const range = item.content.result.periods.current
+      const primary = item.content.input.scope.objectId === paper.scope.objectId && range.start >= paper.scope.startDate && range.end <= paper.scope.endDate
+      return `${primary ? '本次对象材料' : '比较材料（其他对象或周期），不可视为本次结果'}；${item.content.labels.join('与')}；${range.start}—${range.end}；${reportEvidenceCaption(item)}`
+    }),
+      ...(writingTarget.value === 'summary' ? paper.blocks.filter(block => block.text.trim()).map(block => `人工记录：${block.title}；${block.state === 'confirmed' ? '交易员已核实' : '原文仍需判断'}。${block.text}`) : [])],
+  }
+})
+function adoptWriting(text: string, append: boolean) {
+  if (!draft.value || !canEdit.value || publishing.value) return
+  const block = draft.value.blocks.find(item => item.id === writingTarget.value)
+  const original = writingTarget.value === 'summary' ? draft.value.summary : block?.text
+  if (original === undefined) return
+  const next = append && original.trim() ? `${original}\n\n${text}` : text
+  if (next.length > 20000) { error.value = '采纳后文字过长，请先精简候选内容或拆分段落'; return }
+  if (writingTarget.value === 'summary') draft.value.summary = next
+  else if (block) { block.text = next; if (block.kind === 'reason') block.state = 'pending' }
+  writingTarget.value = ''; status.value = '建议已加入底稿，原因仍需交易员核实'
+}
 const blockNames: Record<ReportBlock['kind'], string> = { text: '事实与说明', chart: '图表与统计', reason: '原因与判断', question: '待核实问题', action: '改进措施' }
 let alive = true, suppress = false, editVersion = 0, timer: ReturnType<typeof setTimeout> | null = null, savingTask: Promise<boolean> | null = null
 const commenting = ref(false)
@@ -29,6 +56,7 @@ watch(draft, () => {
   timer = setTimeout(() => { void save() }, 900)
 }, { deep: true, flush: 'sync' })
 function assignPaper(value: Workpaper) {
+  writingTarget.value = ''
   comments.value = []; commentsMore.value = false; commentTarget.value = ''; commentText.value = ''; commentId.value = crypto.randomUUID()
   suppress = true; draft.value = value; evidence.value = value.evidence ?? []; suppress = false
   dirty.value = false; versions.value = []; error.value = ''; status.value = '底稿已读取'; publication.value = null; confirmed.value = false
@@ -137,12 +165,15 @@ onBeforeUnmount(() => { alive = false; if (timer) clearTimeout(timer); emit('dir
         <fieldset :disabled="!canEdit || publishing || loading">
           <label>报告标题<input v-model="draft.title" maxlength="200" /></label>
           <label>管理层摘要<textarea v-model="draft.summary" rows="3" placeholder="从同一份证据底稿提炼重点、风险与建议" /></label>
+          <button type="button" @click="writingTarget = 'summary'">辅助提炼摘要</button>
+          <ReportWritingAssistant v-if="writingInput" :key="`${draft.id}:${writingTarget}`" :input="writingInput" :company-id="company" :region="region" :initial-mode="writingTarget === 'summary' ? 'summary' : 'polish'" @adopt="adoptWriting" @close="writingTarget = ''" />
           <div class="toolbar"><button v-for="kind in (['text', 'reason', 'question', 'action'] as const)" :key="kind" type="button" @click="add(kind)">添加{{ blockNames[kind] }}</button></div>
           <article v-for="(block, index) in draft.blocks" :key="block.id" class="block">
             <header><b>{{ index + 1 }} · {{ blockNames[block.kind] }}</b><div><button type="button" :disabled="index === 0" aria-label="上移内容块" @click="move(index, -1)">上移</button><button type="button" :disabled="index === draft.blocks.length - 1" aria-label="下移内容块" @click="move(index, 1)">下移</button><button type="button" @click="duplicate(block)">复制</button><button type="button" @click="draft.blocks.splice(index, 1)">移除</button></div></header>
             <input v-model="block.title" aria-label="内容块标题" maxlength="200" />
             <template v-if="block.evidenceId"><ReportEvidenceChart v-if="evidence.find(row => row.id === block.evidenceId)" :evidence="evidence.find(row => row.id === block.evidenceId)!" /><label>材料用途<select v-model="block.evidenceRole"><option value="primary">本次依据</option><option value="comparison">比较依据</option></select></label></template>
             <textarea v-model="block.text" :aria-label="blockNames[block.kind]" rows="3" placeholder="补充事实、解释或人工判断" />
+            <button type="button" @click="writingTarget = block.id">辅助撰写这段</button>
             <template v-if="block.kind === 'reason'"><label>核实状态<select v-model="block.state"><option value="pending">待核实的可能原因</option><option value="confirmed">交易员已核实</option></select></label><label>支持证据<textarea v-model="block.supports" rows="2" /></label><label>反对证据<textarea v-model="block.refutes" rows="2" /></label></template>
           </article>
           <p v-if="!draft.blocks.length">从专题分析加入图表，或添加事实、原因和措施开始撰写。</p>

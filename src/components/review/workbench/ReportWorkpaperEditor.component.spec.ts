@@ -30,6 +30,15 @@ async function open() {
 function button(wrapper: ReturnType<typeof mount>, text: string) { return wrapper.findAll('button').find(node => node.text() === text)! }
 
 describe('图文底稿交付', () => {
+  it('采纳原因建议后恢复待核实，通过既有自动保存落库，不自动发布', async () => {
+    vi.mocked(getWorkpaper).mockResolvedValue({ ...paper(), blocks: [{ ...paper().blocks[0], kind: 'reason', state: 'confirmed' }] })
+    const wrapper = await open()
+    await button(wrapper, '辅助撰写这段').trigger('click')
+    wrapper.findComponent({ name: 'ReportWritingAssistant' }).vm.$emit('adopt', '新的待核实解释', false)
+    await flushPromises(); await vi.advanceTimersByTimeAsync(1000); await flushPromises()
+    expect(saveWorkpaper).toHaveBeenCalledWith('a', expect.objectContaining({ blocks: [expect.objectContaining({ text: '新的待核实解释', state: 'pending' })] }))
+    expect(publishWorkpaper).not.toHaveBeenCalled()
+  })
   it('读取服务器底稿，编辑自动保存，服务器慢响应不覆盖继续输入的内容', async () => {
     const wrapper = await open()
     expect(wrapper.get<HTMLTextAreaElement>('textarea[aria-label="事实与说明"]').element.value).toBe('已保存正文')
