@@ -51,6 +51,7 @@ function download() {
 <template>
   <section class="evidence panel">
     <header><div><h2>分时核验</h2><p>{{ basis === 'order' ? '对照这笔申报的出清结果，定位需要解释的时段。' : '按平台实时电量口径核查当日偏差；不作为正式结算或考核结论。' }}</p></div><button type="button" @click="download">导出明细</button></header>
+    <p v-if="basis === 'order' && !forecastAvailable" class="notice">本单未留存完整预测曲线，暂不能比较预测与申报；不会用事后重跑结果补齐。</p>
     <div v-if="simulated" class="notice">模拟数据 · 仅供流程演练</div>
     <div class="view-switch"><span>可比较 {{ comparable }} / 96 个时段</span><div><button v-if="forecastAvailable" type="button" :aria-pressed="mode === 'forecast'" @click="mode = 'forecast'">预测与申报</button><button type="button" :aria-pressed="mode === 'energy'" @click="mode = 'energy'">{{ basis === 'order' ? '申报与出清' : '申报与实际' }}</button><button v-if="priceAvailable" type="button" :aria-pressed="mode === 'price'" @click="mode = 'price'">电价</button></div></div>
     <div ref="chartEl" class="plot" role="img" :aria-label="mode === 'price' ? '日前与实时电价曲线，下方可打开明细表' : '申报与结果电量曲线，下方可选择时段或打开明细表'" />
