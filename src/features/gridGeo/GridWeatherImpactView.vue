@@ -4,15 +4,14 @@ import { selectedCompanyId } from '@/services/company/companyContext'
 import { currentRegion } from '@/services/region/regionContext'
 import { Activity, AlertTriangle, ArrowRight, CloudRain, Gauge, Orbit, RefreshCw, Wind, Zap } from 'lucide-vue-next'
 import { onRegionChange } from '@/composables/useRegionReload'
-import CesiumPlantMap from './CesiumPlantMap.vue'
-import TerrainControlPanel from './TerrainControlPanel.vue'
-import { useGridGeoViewPreference } from './useViewPreference'
+import ProvinceFlatMap from './ProvinceFlatMap.vue'
+import PlantCatalogPanel from './PlantCatalogPanel.vue'
 import GridOperatorProfileBanner from './GridOperatorProfileBanner.vue'
 import WeatherTrackTimeline from './WeatherTrackTimeline.vue'
 import { fetchGridGeoManifest, fetchGridGeoPlants } from './client'
 import { loadWeatherImpact, type WeatherImpactResult } from './weatherImpact'
 import type { WeatherTrackId } from './weatherTracks'
-import type { GridGeoPlant, GridGeoSelection, GridGeoTerrainStatus, GridGeoViewMode, GridOperatorProfile } from './types'
+import type { GridGeoPlant, GridGeoSelection, GridOperatorProfile } from './types'
 
 type MapExpose = { flyTerrainTour?: () => void }
 const mapRef = ref<MapExpose | null>(null)
@@ -24,11 +23,10 @@ const decisionHour = ref(12)
 const result = shallowRef<WeatherImpactResult | null>(null)
 const loading = ref(true)
 const error = ref('')
-const { viewMode, terrainProvider, hillshadeEnabled, verticalExaggeration } =
-  useGridGeoViewPreference('weather', { verticalExaggeration: 1.35 })
-const terrainStatus = ref<GridGeoTerrainStatus>({ kind: terrainProvider.value, status: 'loading', label: '正在加载高程地形' })
-// 晕渲图层与 ArcGIS 影像同域，该域对部分出口 IP 整体 403；失败必须让面板可见。
-const hillshadeAvailable = ref<boolean | null>(null)
+// 本页只有平面图：2026-09-09 用户拍板取消三维。气象影响看的是「哪个场站、哪一小时」
+// 的时序关系，地形起伏对这件事没有信息量，一套三维只是多一份加载与操作成本。
+const catalogFiltered = ref<GridGeoPlant[]>([])
+const catalogStats = ref<{ locatedPlantCount: number; totalPlantCountInCurrentDim: number; unresolvedPlantCount: number | null } | null>(null)
 const operatorProfile = ref<GridOperatorProfile | null>(null)
 const selectedTrackId = ref<WeatherTrackId>('d1')
 const cursorHour = ref(12)
@@ -74,6 +72,7 @@ async function load() {
     const [response, manifest] = await Promise.all([fetchGridGeoPlants(), fetchGridGeoManifest()])
     if (requestId !== loadRequestId) return
     plants.value = response.data?.items ?? []
+    catalogStats.value = response.data?.catalog ?? null
     operatorProfile.value = manifest.operatorProfile
     if (!plants.value.some((plant) => plant.plantId === selectedPlantId.value)) selectedPlantId.value = plants.value[0]?.plantId ?? ''
     await loadImpact()
@@ -123,24 +122,21 @@ watch(selectedCompanyId, resetDataScope)
 
     <main>
       <div class="map-pane">
-        <CesiumPlantMap
+        <ProvinceFlatMap
           ref="mapRef"
-          :plants="plants" :view-mode="viewMode" :selected-plant-id="selectedPlantId"
-          :terrain-provider="terrainProvider" :vertical-exaggeration="verticalExaggeration" :hillshade-enabled="hillshadeEnabled"
-          weather-layer="none" :weather-items="[]" :default-camera="operatorProfile?.defaultCamera"
-          @select="onMapSelect" @terrain="terrainStatus = $event" @hillshade="hillshadeAvailable = $event.available"
+          :plants="catalogFiltered" view-mode="2d" :selected-plant-id="selectedPlantId"
+          weather-layer="none" :weather-items="[]"
+          @select="onMapSelect"
         />
-        <div class="mode"><button v-for="mode in (['2d','2.5d','3d'] as GridGeoViewMode[])" :key="mode" :class="{ active:viewMode===mode }" @click="viewMode=mode">{{ mode.toUpperCase() }}</button></div>
-        <TerrainControlPanel
-          v-model:provider="terrainProvider"
-          v-model:hillshade="hillshadeEnabled"
-          v-model:exaggeration="verticalExaggeration"
-          class="terrain-dock"
-          :status="terrainStatus"
-          :view-mode="viewMode"
-          :hillshade-available="hillshadeAvailable"
-          @request-3d="viewMode = '3d'"
-          @request-terrain-tour="mapRef?.flyTerrainTour?.()"
+        <!-- 场站目录与驾驶舱同一个组件：这一页选场站原本只能在图上戳，35 个点里找一个很难 -->
+        <PlantCatalogPanel
+          :plants="plants"
+          :selected-plant-id="selectedPlantId"
+          :total-count="catalogStats?.totalPlantCountInCurrentDim ?? null"
+          :located-count="catalogStats?.locatedPlantCount ?? null"
+          :unresolved-count="catalogStats?.unresolvedPlantCount ?? null"
+          @select="(plant) => onMapSelect({ plantId: plant.plantId } as GridGeoSelection)"
+          @update:filtered="catalogFiltered = $event"
         />
         <div v-if="result" class="map-badge"><Orbit :size="14" /><span><b>{{ selectedPlant?.standardName }}</b><small>最近气象站 {{ result.stationId || '未匹配' }} · 节点 {{ result.nodeName || '未绑定' }}</small></span></div>
       </div>

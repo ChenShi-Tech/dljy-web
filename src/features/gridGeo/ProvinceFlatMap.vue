@@ -1137,7 +1137,7 @@ onBeforeUnmount(() => {
   padding: 3px 9px; border-radius: 6px; background: rgba(4, 16, 28, .58); backdrop-filter: blur(3px);
 }
 .reset-view {
-  /* 右上角是宿主的 2D/2.5D/3D 模式切换，这里避到右下、来源声明上方 */
+  /* 右上角是宿主的 2D/3D 模式切换，这里避到右下、来源声明上方 */
   position: absolute; right: calc(var(--map-safe-right) + 12px); bottom: calc(var(--map-safe-bottom) + 32px);
   display: flex; align-items: center; gap: 6px;
   padding: 7px 12px; font-size: var(--font-lg); cursor: pointer;

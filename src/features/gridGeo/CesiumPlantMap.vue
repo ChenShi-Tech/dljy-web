@@ -140,6 +140,8 @@ let viewer: Viewer | null = null
 let clickHandler: ScreenSpaceEventHandler | null = null
 let resizeObserver: ResizeObserver | null = null
 let viewResetTimer: number | null = null
+/** morphComplete 的取消订阅句柄；切换过快时要先撤掉上一次的。 */
+let morphCompleteHandle: (() => void) | null = null
 let clouds: CloudCollection | null = null
 let terrainRequestId = 0
 let hillshadeRequestId = 0
@@ -972,7 +974,7 @@ function focusPlant(plantId: string) {
   const entity = viewer.entities.getById(`plant:${plantId}`)
   const plant = props.plants.find((item) => item.plantId === plantId)
   if (!entity && !plant) return
-  const range = props.viewMode === '2d' ? 520000 : props.viewMode === '2.5d' ? 260000 : 190000
+  const range = props.viewMode === '2d' ? 520000 : 190000
   if (!entity && plant) {
     viewer.camera.flyToBoundingSphere(
       new BoundingSphere(Cartesian3.fromDegrees(plant.location.longitude, plant.location.latitude), 2_000),
@@ -999,7 +1001,7 @@ function focusNode(nodeId: string) {
   const node = (props.nodes ?? []).find((item) => item.nodeId === nodeId)
   const entity = node ? viewer.entities.getById(`node:${node.assetId || node.nodeId}`) : null
   if (!entity) return
-  const range = props.viewMode === '2d' ? 420000 : props.viewMode === '2.5d' ? 220000 : 150000
+  const range = props.viewMode === '2d' ? 420000 : 150000
   void viewer.flyTo(entity, {
     duration: reduceMotionEnabled ? 0 : 1.05,
     offset: new HeadingPitchRange(0, props.viewMode === '2d' ? -Math.PI / 2 : -0.62, range),
@@ -1015,7 +1017,6 @@ function applyViewMode(mode: GridGeoViewMode) {
   if (viewer.scene.mode === SceneMode.MORPHING) viewer.scene.completeMorph()
   const duration = reduceMotionEnabled ? 0 : 0.85
   if (mode === '2d') viewer.scene.morphTo2D(duration)
-  else if (mode === '2.5d') viewer.scene.morphToColumbusView(duration)
   else viewer.scene.morphTo3D(duration)
   applyLighting(mode)
   viewer.scene.fog.enabled = mode !== '2d'
@@ -1026,10 +1027,34 @@ function applyViewMode(mode: GridGeoViewMode) {
     resetView(0)
     return
   }
+  // morphTo2D/3D 会把相机拉到全球视角，必须在变形结束后重新框住省域，否则用户点一下
+  // 2D/3D 就看见整个地球。此前用 900ms 定时器兜——morph 本身 0.85s，两者卡在边缘，
+  // 变形尚未结束时发出的 flyTo 会被丢弃，于是相机就停在全球视角上。
+  // 改由 morphComplete 驱动；定时器保留为兜底（该事件在某些降级路径下不触发）。
+  if (morphCompleteHandle) {
+    morphCompleteHandle()
+    morphCompleteHandle = null
+  }
+  const scene = viewer.scene
+  morphCompleteHandle = scene.morphComplete.addEventListener(() => {
+    if (morphCompleteHandle) {
+      morphCompleteHandle()
+      morphCompleteHandle = null
+    }
+    if (viewResetTimer !== null) {
+      window.clearTimeout(viewResetTimer)
+      viewResetTimer = null
+    }
+    resetView(0.7)
+  })
   viewResetTimer = window.setTimeout(() => {
     viewResetTimer = null
+    if (morphCompleteHandle) {
+      morphCompleteHandle()
+      morphCompleteHandle = null
+    }
     resetView(0.7)
-  }, 900)
+  }, 1600)
 }
 
 /**
@@ -1619,6 +1644,8 @@ onMounted(() => {
 })
 onBeforeUnmount(() => {
   if (viewResetTimer !== null) window.clearTimeout(viewResetTimer)
+  // 未触发的 morphComplete 订阅要一并撤掉，否则 viewer 销毁后回调仍会跑到 resetView
+  if (morphCompleteHandle) { morphCompleteHandle(); morphCompleteHandle = null }
   resizeObserver?.disconnect()
   viewer?.scene.canvas.removeEventListener('webglcontextlost', onWebglContextLost)
   viewer?.scene.canvas.removeEventListener('webglcontextrestored', onWebglContextRestored)

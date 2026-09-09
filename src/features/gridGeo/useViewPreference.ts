@@ -10,7 +10,9 @@ import { ref, watch, type Ref } from 'vue'
 
 import type { GridGeoTerrainProvider, GridGeoViewMode } from './types'
 
-const VIEW_MODES: readonly GridGeoViewMode[] = ['2d', '2.5d', '3d']
+// 白名单同时承担旧值迁移：本机存过 '2.5d' 的浏览器取值不过闸，自然回落到页面默认档，
+// 不需要额外的迁移代码。
+const VIEW_MODES: readonly GridGeoViewMode[] = ['2d', '3d']
 const TERRAIN_PROVIDERS: readonly GridGeoTerrainProvider[] = ['arcgis-terrain', 'cesium-world-terrain', 'ellipsoid']
 
 /**
