@@ -28,6 +28,10 @@ describe('同对象复盘取材', () => {
     expect(executionEvidence(source).find(e => e.id === 'receipt')?.text).toBe('未留存回执。')
     expect(executionEvidence(source).find(e => e.id === 'risk')?.text).toContain('资料不足')
   })
+  it('只有回执演练标记时仍判定为模拟', () => {
+    const source = { ...order(), mode: undefined, receipt: { mode: 'REHEARSAL', mock: false } } as DeclarationOrder
+    expect(buildReviewEvidence({ ...scope, order: source }).simulated).toBe(true)
+  })
   it('平台模拟性质传入报告，零电量保留', () => {
     const snapshot = buildReviewEvidence({ ...scope, objectKey: '', simulated: true, points: [{ slot: 0, label: '00:00', declared: 0, actual: null, cleared: null, delta: null, daPrice: -1, rtPrice: 0 }] })
     expect(snapshot.simulated).toBe(true); expect(snapshot.intervals[0]).toMatchObject({ declared: 0, rtPrice: 0 })

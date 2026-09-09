@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest'
 import { mount } from '@/test/mount'
 import { buildReviewEvidence } from '@/services/review/reviewEvidence'
 import ReviewAssistantWorkbench from './ReviewAssistantWorkbench.vue'
-vi.mock('@/components/agent/AgentChatPanel.vue', () => ({ default: { props: ['initialQuestion', 'contextPayload', 'restoreLastSession'], emits: ['answer'], template: '<div>智能助手</div>' } }))
+vi.mock('@/components/agent/AgentChatPanel.vue', () => ({ default: { props: ['initialQuestion', 'contextPayload', 'restoreLastSession', 'promptKey'], emits: ['answer'], template: '<div>智能助手</div>' } }))
 const snapshot = () => buildReviewEvidence({ company: 'a', region: 'yunnan', day: '2026-06-06', objectKey: '', objectLabel: '当日资料总览', simulated: true })
 describe('报告人工核验流程', () => {
   it('无需模型即可编辑，分析建议不自动覆盖，编辑后撤销核对勾选', async () => {
@@ -21,6 +21,7 @@ describe('报告人工核验流程', () => {
     expect((field.element as HTMLTextAreaElement).value).toContain('建议补充出清资料')
     expect((w.get('input[type=checkbox]').element as HTMLInputElement).checked).toBe(false)
     expect(assistant.props('restoreLastSession')).toBe(false)
+    expect(assistant.props('promptKey')).toBe('review_center')
     w.unmount()
   })
 })

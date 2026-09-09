@@ -14,10 +14,11 @@ const filter = ref('open'), search = ref('')
 const validating = ref<ImprovementActionSummary | null>(null), evidence = ref('')
 const verdict = ref<'observe' | 'met' | 'unmet'>('observe')
 const verdictLabels = { observe: '证据不足，继续回查', met: '达到预期，结束回查', unmet: '未达预期，结束本措施并另行改进' }
-const canSave = computed(() => change.value.trim().length >= 8 && owner.value.trim() && isRealCalendarDate(due.value) && verification.value.trim().length >= 8)
+const canSave = computed(() => !loading.value && change.value.trim().length >= 8 && owner.value.trim() && isRealCalendarDate(due.value) && verification.value.trim().length >= 8)
 const shown = computed(() => actions.value.filter(a => (filter.value === 'all' || (filter.value === 'open' ? ['open', 'carried_over'].includes(a.status) : a.status === 'done')) && `${a.action} ${a.owner ?? ''}`.includes(search.value.trim())))
 const statusLabel = { open: '待落实', carried_over: '继续跟进', done: '已记录验证', dropped: '已撤回' }
 async function load() {
+  if (loading.value || saving.value) return
   loading.value = true; loaded.value = false; error.value = ''; actions.value = []
   const feed = await fetchImprovementActions()
   if (feed.available) { actions.value = feed.actions; loaded.value = true }
@@ -30,12 +31,12 @@ async function save() {
   try {
     const saved = await createImprovementAction({ action: `复盘对象：${props.context}${props.focus ? `；关注时段：${props.focus}` : ''}\n改进措施：${change.value.trim()}\n验证办法：${verification.value.trim()}`, owner: owner.value.trim(), dueDate: due.value })
     actions.value = [saved, ...actions.value.filter(a => a.id !== saved.id)]
-    change.value = ''; verification.value = ''; feedback.value = '改进措施已保存。后续完成时，需要补充实际验证记录。'
+    change.value = ''; verification.value = ''; owner.value = ''; due.value = ''; feedback.value = '改进措施已保存。后续完成时，需要补充实际验证记录。'
   } catch { error.value = '保存结果暂未确认，请刷新记录核实后重试。填写内容仍保留。' }
   finally { saving.value = false }
 }
 async function complete() {
-  if (!validating.value || evidence.value.trim().length < 8 || saving.value) return
+  if (!validating.value || evidence.value.trim().length < 8 || saving.value || loading.value) return
   saving.value = true; error.value = ''
   try {
     const a = validating.value
@@ -58,7 +59,7 @@ onMounted(load)
       <p v-if="loading">正在读取改进记录…</p><p v-else-if="loaded && !shown.length">当前筛选下没有改进记录。</p>
       <article v-for="a in shown" :key="a.id"><div class="meta"><b>{{ statusLabel[a.status] }}</b><span>{{ a.owner || '未指定负责人' }}</span><span>回查日期 {{ a.dueDate || '未指定' }}</span></div><p class="content">{{ a.action }}</p><button v-if="['open', 'carried_over'].includes(a.status)" type="button" @click="validating = a; evidence = ''; verdict = 'observe'">补充验证记录</button></article>
     </section>
-    <el-dialog :model-value="!!validating" title="记录实际验证情况" width="min(620px, 94vw)" @close="validating = null"><p>说明做了什么、使用了哪些实际结果，以及通过或未通过的原因。证据不足时，请继续跟进。</p><label>验证记录<textarea v-model="evidence" rows="5" placeholder="例如：复核了调整后的交易日，附比较口径、观察到的变化及仍不能解释的问题。" /></label><label>验证结论<select v-model="verdict"><option v-for="(text, value) in verdictLabels" :key="value" :value="value">{{ text }}</option></select></label><p v-if="error" role="alert">{{ error }}</p><template #footer><button type="button" :disabled="saving" @click="validating = null">继续跟进</button><button class="primary" type="button" :disabled="saving || evidence.trim().length < 8" @click="complete">保存验证记录</button></template></el-dialog>
+    <el-dialog :model-value="!!validating" title="记录实际验证情况" width="min(620px, 94vw)" @close="validating = null"><p>说明做了什么、使用了哪些实际结果，以及通过或未通过的原因。证据不足时，请继续跟进。</p><label>验证记录<textarea v-model="evidence" rows="5" placeholder="例如：复核了调整后的交易日，附比较口径、观察到的变化及仍不能解释的问题。" /></label><label>验证结论<select v-model="verdict"><option v-for="(text, value) in verdictLabels" :key="value" :value="value">{{ text }}</option></select></label><p v-if="error" role="alert">{{ error }}</p><template #footer><button type="button" :disabled="saving" @click="validating = null">继续跟进</button><button class="primary" type="button" :disabled="saving || loading || evidence.trim().length < 8" @click="complete">保存验证记录</button></template></el-dialog>
   </div>
 </template>
 <style scoped>

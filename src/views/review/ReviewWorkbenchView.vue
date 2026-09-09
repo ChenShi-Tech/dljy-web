@@ -19,7 +19,7 @@ import IntervalEvidencePanel from '@/components/review/workbench/IntervalEvidenc
 import SettlementEvidencePanel from '@/components/review/workbench/SettlementEvidencePanel.vue'
 import ImprovementWorkbench from '@/components/review/workbench/ImprovementWorkbench.vue'
 import ReviewAssistantWorkbench from '@/components/review/workbench/ReviewAssistantWorkbench.vue'
-import { buildReviewEvidence, executionEvidence, type ReviewEvidenceSnapshot } from '@/services/review/reviewEvidence'
+import { buildReviewEvidence, executionEvidence, simulatedOrder, type ReviewEvidenceSnapshot } from '@/services/review/reviewEvidence'
 import RegionDataBanner from '@/components/region/RegionDataBanner.vue'
 
 const route = useRoute(), router = useRouter()
@@ -38,16 +38,19 @@ const selectedDecision = computed(() => selectedKey.value.startsWith('decision:'
 const objectLabel = computed(() => selectedOrder.value ? declarationLabel(selectedOrder.value) : selectedDecision.value ? selectedDecision.value.decisionPoint : selectedKey.value ? '指定记录待核实' : '当日资料总览')
 const context = computed(() => `${date.value} · ${objectLabel.value}${selectedOrder.value ? `（申报编号 ${selectedOrder.value.id}）` : selectedDecision.value ? `（决策记录 ${selectedDecision.value.seq}）` : ''}`)
 const points = computed(() => selectedOrder.value ? orderIntervals(selectedOrder.value) : selectedKey.value ? [] : platformIntervals(result.value, date.value))
-const simulated = computed(() => selectedOrder.value ? selectedOrder.value.mode === 'REHEARSAL' || !!selectedOrder.value.receipt?.mock || ['synthetic', 'illustrative'].includes(selectedOrder.value.basis) : /mock|synthetic/i.test(result.value?.source ?? ''))
+const simulated = computed(() => selectedOrder.value ? simulatedOrder(selectedOrder.value) : /mock|synthetic/i.test(result.value?.source ?? ''))
 const evidence = computed(() => selectedOrder.value ? executionEvidence(selectedOrder.value) : [])
 const focus = ref(''), lesson = ref(''), savingLesson = ref(false)
 const assistant = ref<{ snapshot: ReviewEvidenceSnapshot; mode: 'analysis' | 'report'; key: string } | null>(null)
 const assistantVisible = ref(false)
 const reportDrafts = new Map<string, string>()
+const dirtyReports = new Set<string>()
 const improvementDrafts = new Map<string, string[]>()
 const draftKey = computed(() => `${selectedCompanyId.value}:${region.value}:${date.value}:${selectedKey.value}`)
-const hasDraft = () => reportDrafts.size > 0 || [...improvementDrafts.values()].some(values => values.some(Boolean)) || lesson.value !== (selectedDecision.value?.lesson ?? '')
-function storeReportDraft(value: string, snapshot: ReviewEvidenceSnapshot) { reportDrafts.set(`${snapshot.scope.company}:${snapshot.scope.region}:${snapshot.scope.day}:${snapshot.scope.objectKey}`, value) }
+const hasDraft = () => dirtyReports.size > 0 || [...improvementDrafts.values()].some(values => values.some(Boolean)) || lesson.value !== (selectedDecision.value?.lesson ?? '')
+function reportKey(snapshot: ReviewEvidenceSnapshot) { return `${snapshot.scope.company}:${snapshot.scope.region}:${snapshot.scope.day}:${snapshot.scope.objectKey}` }
+function storeReportDraft(value: string, snapshot: ReviewEvidenceSnapshot) { const key = reportKey(snapshot); reportDrafts.set(key, value); if (value.trim()) dirtyReports.add(key); else dirtyReports.delete(key) }
+function markReportDownloaded(snapshot: ReviewEvidenceSnapshot) { dirtyReports.delete(reportKey(snapshot)) }
 function storeImprovementDraft(value: string[], key: string) { improvementDrafts.set(key, value) }
 function warnBeforeUnload(event: BeforeUnloadEvent) { if (hasDraft()) { event.preventDefault(); event.returnValue = '' } }
 onMounted(() => window.addEventListener('beforeunload', warnBeforeUnload))
@@ -81,7 +84,7 @@ async function loadOrders(seq: number, day: string, rid: string, offset = 0) {
   const page = ++pageSequence, company = selectedCompanyId.value
   orderLoading.value = true; orderError.value = ''
   try {
-    const out = await listDeclarationsPage({ date: day, limit: 50, offset })
+    const out = await listDeclarationsPage({ date: day, limit: 50, offset }, company)
     if (seq !== scopeSequence || page !== pageSequence) return
     orders.value = out.rows.filter(o => matchesReviewScope(o, day, rid, company))
     orderTotal.value = out.total; orderOffset.value = offset
@@ -93,7 +96,7 @@ async function loadSelection() {
   extraOrder.value = null; selectionError.value = ''; selectionLoading.value = key.startsWith('order:')
   if (!key.startsWith('order:') || !company) { selectionLoading.value = false; return }
   try {
-    const order = await getDeclaration(key.slice(6))
+    const order = await getDeclaration(key.slice(6), company)
     if (seq !== selectionSequence) return
     if (!matchesReviewScope(order, day, rid, company)) { selectionError.value = '这笔申报的公司、交易日或地区与当前范围不一致，请重新选择。'; return }
     extraOrder.value = order
@@ -175,7 +178,7 @@ async function saveLesson() {
     <section v-else class="panel compact-gap"><h2>请先核实复盘对象</h2><p>指定记录尚不可用，不能将改进措施挂到其他对象。</p></section>
     </template>
     <el-dialog v-model="assistantVisible" :title="assistant?.mode === 'report' ? '复盘报告草稿' : '复盘分析'" width="min(1180px, 96vw)" :close-on-click-modal="false">
-      <ReviewAssistantWorkbench v-if="assistant" :key="assistant.snapshot.capturedAt" :snapshot="assistant.snapshot" :mode="assistant.mode" :saved-draft="reportDrafts.get(assistant.key)" @draft="storeReportDraft" />
+      <ReviewAssistantWorkbench v-if="assistant" :key="assistant.snapshot.capturedAt" :snapshot="assistant.snapshot" :mode="assistant.mode" :saved-draft="reportDrafts.get(assistant.key)" @draft="storeReportDraft" @downloaded="markReportDownloaded" />
     </el-dialog>
   </div>
 </template>
