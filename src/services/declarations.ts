@@ -386,7 +386,7 @@ export async function listDeclarations(params: DeclarationListParams = {}): Prom
  * 服务端未回 counts/total 时按 rows 兜底推导，避免旧后端下 UI 整块空白。
  */
 export async function listDeclarationsPage(params: DeclarationListParams = {}, companyId?: string): Promise<DeclarationListPage> {
-  const res = await apiGet<{ data: DeclarationListPage }>(BASE, params, companyId ? { headers: { 'x-company-id': companyId } } : undefined)
+  const res = await apiGet<{ data: DeclarationListPage }>(BASE, params, companyId ? { headers: { 'x-company-id': companyId, 'x-tenant-id': companyId } } : undefined)
   const data = (res.data ?? res) as unknown as Partial<DeclarationListPage>
   const rows = data.rows ?? []
   const counts = data.counts ?? rows.reduce(
@@ -410,7 +410,7 @@ export async function listDeclarationsPage(params: DeclarationListParams = {}, c
 }
 
 export async function getDeclaration(id: string, companyId?: string): Promise<DeclarationOrder> {
-  const res = await apiGet<{ data: DeclarationOrder }>(`${BASE}/${encodeURIComponent(id)}`, undefined, companyId ? { headers: { 'x-company-id': companyId } } : undefined)
+  const res = await apiGet<{ data: DeclarationOrder }>(`${BASE}/${encodeURIComponent(id)}`, undefined, companyId ? { headers: { 'x-company-id': companyId, 'x-tenant-id': companyId } } : undefined)
   return (res.data ?? res) as unknown as DeclarationOrder
 }
 
