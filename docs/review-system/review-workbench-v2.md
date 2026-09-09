@@ -1,5 +1,7 @@
 # 交易复盘工作台 v2：表征、交互与前端实施设计
 
+> **2026-09-09 已被新基线取代**：[复盘中心重建：以真实决策为对象](review-center-foundation.md)。下文五页面与全量模板迁移不再作为实施约束；保留本文仅供追溯。新的可操作设计使用 dljy-web 的 Vue 代码和已有接口，入口 `/xhjy/review?layout=decisions`。
+
 > 2026-09-08 · Epic [ChenShi-Tech/dljy#2033](https://github.com/ChenShi-Tech/dljy/issues/2033)。本稿描述待建设目标，不代表生产页面已改造。
 > 可操作设计：[工作台完整设计稿](design/review-workbench.html)。长期消费者：前端实现、后端契约联调、交易员试用验收。
 > 前端权威归 dljy-web；后端计划归 dljy 的 `docs/review-system/review-system-build-plan.md`，接口草案归 `docs/api/review-v2-contract-plan.md`。议题统一归 dljy。
