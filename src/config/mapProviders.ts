@@ -19,7 +19,7 @@
  */
 
 /** 底图源构造类型；决定工厂用哪个 Cesium ImageryProvider 构造。 */
-export type BaseMapProviderKind = 'osm' | 'url-template' | 'arcgis' | 'ion' | 'solid-color'
+export type BaseMapProviderKind = 'osm' | 'url-template' | 'arcgis' | 'ion' | 'solid-color' | 'tianditu'
 
 /** 计费层级：#942 付费接缝的分类锚点。 */
 export type BaseMapTier = 'free' | 'paid'
@@ -38,6 +38,12 @@ export interface BaseMapLayerAdjustment {
 export interface BaseMapProviderConfig {
   /** 稳定 id，同时作为 `VITE_GRID_GEO_BASEMAP` 的取值。 */
   id: string
+  /**
+   * `kind: 'tianditu'` 专用：天地图服务代号（img / vec / ter）。
+   * URL 不写在这里——tk 是运行时值（localStorage 优先、构建期 env 兜底），而本模块是
+   * 纯配置、不读浏览器状态，故由消费方拼接。
+   */
+  tiandituLayer?: string
   /** 人类可读标签，供底图选择器展示（#941）。 */
   label: string
   kind: BaseMapProviderKind
@@ -164,6 +170,40 @@ export const BASE_MAP_PROVIDERS: Record<string, BaseMapProviderConfig> = {
     credit: '© Microsoft Bing Maps · Cesium ion',
     adjustment: { brightness: 1, contrast: 1, saturation: 1, gamma: 1 },
   },
+  // 天地图影像。二维平面图用的就是它，三维接上后两个视图不再「换了个星球」。
+  //
+  // 选它的理由与二维同源：CGCS2000 与 WGS84 差异 < 1 米可直接用（高德 GCJ-02 会让
+  // WGS84 场站点位偏 300–600 米）、服务器在境内合《地图管理条例》第三十四条、标准
+  // WMTS 是设计内用法。境外区域分辨率不如 ArcGIS，但本系统的观察范围是云南省域。
+  //
+  // ⚠️ 需要运行时 tk，拿不到时由消费方回落到 arcgis-imagery——它免 token，是无凭据
+  // 环境下唯一能同时满足「卫星影像 + 无需配置」的源。
+  'tianditu-imagery': {
+    id: 'tianditu-imagery',
+    label: '天地图 · 卫星影像',
+    kind: 'tianditu',
+    tiandituLayer: 'img',
+    tier: 'free',
+    url: '',
+    requiresToken: true,
+    tokenEnvKey: 'VITE_TIANDITU_TOKEN',
+    credit: '© 天地图 · 国家地理信息公共服务平台',
+    adjustment: { brightness: 1, contrast: 1, saturation: 1, gamma: 1 },
+  },
+  // 天地图地形晕渲。注意它是**画好的阴影影像**而非高程数据：贴在三维地形上能强化地貌
+  // 观感，但自身不产生任何起伏——起伏仍由 terrainProvider（ArcGIS Terrain 3D 等）提供。
+  'tianditu-terrain-shading': {
+    id: 'tianditu-terrain-shading',
+    label: '天地图 · 地形晕渲',
+    kind: 'tianditu',
+    tiandituLayer: 'ter',
+    tier: 'free',
+    url: '',
+    requiresToken: true,
+    tokenEnvKey: 'VITE_TIANDITU_TOKEN',
+    credit: '© 天地图 · 国家地理信息公共服务平台',
+    adjustment: { brightness: 0.92, contrast: 1.06, saturation: 0.9, gamma: 1 },
+  },
   // 最终兜底不请求任何网络瓦片。Cesium globe baseColor、经纬网和业务图元仍可用，
   // 从而避免外部 Provider 同时失败时出现空白或黑屏。
   'solid-grid': {
@@ -217,9 +257,16 @@ export function resolveBaseMapFallbackSequence(providerId?: string | null): Base
  * 不把这个判断塞进 `resolveBaseMapProvider`，是因为它同时服务「解析任意 id」和
  * 「决定首选」两种语义，混在一起会让显式 `VITE_GRID_GEO_BASEMAP` 被 token 状态篡改。
  */
-export function resolvePreferredBaseMapId(options: { explicitId?: string | null; hasIonToken?: boolean } = {}): string {
+export function resolvePreferredBaseMapId(options: {
+  explicitId?: string | null
+  hasIonToken?: boolean
+} = {}): string {
   const explicit = (options.explicitId ?? '').trim()
   if (explicit && BASE_MAP_PROVIDERS[explicit]) return explicit
+  // ⚠️ 有 tk 也**不**自动切天地图。2026-09-09 实测：三维一次视角变化要几百张瓦片，
+  // 天地图免费配额扛不住，实测 400 张里 96 张返回 429（24%），比 ArcGIS 差得多——
+  // 二维不会有这个问题（一屏几十张）。要用天地图三维底图请显式指定
+  // `VITE_GRID_GEO_BASEMAP=tianditu-imagery`，并确认该 key 有足够配额。
   if (options.hasIonToken) return 'ion-aerial'
   return DEFAULT_BASE_MAP_PROVIDER_ID
 }
@@ -234,3 +281,22 @@ export function resolveBaseMapSequenceWithPreferred(preferredId: string): BaseMa
 export function shouldFallbackBaseMap(consecutiveErrors: number): boolean {
   return Number.isFinite(consecutiveErrors) && consecutiveErrors >= BASE_MAP_ERROR_THRESHOLD
 }
+
+/**
+ * 判断一次瓦片错误是不是被**限流**（HTTP 429 / 418），而非服务不可用。
+ *
+ * 三维一帧要的瓦片数远多于二维，天地图这类有 QPS 配额的源很容易撞到 429；把它计成
+ * 故障会在瓦片最密的那几秒把底图换掉，用户看到的是「刚打开就掉到备用源」。天地图无 tk
+ * 时返回 418，同样属于「换个条件就好」而不是「这个源坏了」。
+ *
+ * Cesium 的 TileProviderError 不保证带状态码，故同时看 `statusCode` 与错误文本。
+ */
+export function isThrottledTileError(error: unknown): boolean {
+  const detail = error as { statusCode?: number; error?: { statusCode?: number }; message?: string } | null
+  const status = detail?.statusCode ?? detail?.error?.statusCode
+  if (status === 429 || status === 418) return true
+  return /(^|\D)(429|418)(\D|$)/.test(String(detail?.message ?? ''))
+}
+
+/** 天地图单子域并发上限。默认 6 × 8 个子域 = 48 并发，是撞 429 的直接原因。 */
+export const TIANDITU_REQUESTS_PER_SERVER = 3

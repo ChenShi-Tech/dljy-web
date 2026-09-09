@@ -12,6 +12,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   DEFAULT_TIANDITU_LAYER,
   TIANDITU_SUBDOMAINS,
+  buildTiandituTemplateUrl,
   buildTiandituTileUrl,
   listTiandituLayers,
   readBasemapLayerPreference,
@@ -122,5 +123,34 @@ describe('底图图层偏好持久化', () => {
     })
     expect(() => writeBasemapLayerPreference('vec')).not.toThrow()
     expect(spy).toHaveBeenCalled()
+  })
+})
+
+describe('Cesium 用的模板地址', () => {
+  const TK = 'demo-token'
+  it('坐标位留给 Cesium 自己填，不预先算死', () => {
+    const url = buildTiandituTemplateUrl('img', TK) as string
+    expect(url).toContain('TILEMATRIX={z}')
+    expect(url).toContain('TILEROW={y}')
+    expect(url).toContain('TILECOL={x}')
+    expect(url).toContain('{s}.tianditu.gov.cn')
+  })
+
+  it('图层代号同时进 LAYER 与服务路径', () => {
+    const url = buildTiandituTemplateUrl('ter', TK) as string
+    expect(url).toContain('LAYER=ter')
+    expect(url).toContain('/ter_w/wmts?')
+  })
+
+  it('空 tk / 空代号返回 null，交给调用方降级而不是发必然被拒的请求', () => {
+    expect(buildTiandituTemplateUrl('img', '')).toBeNull()
+    expect(buildTiandituTemplateUrl('img', '   ')).toBeNull()
+    expect(buildTiandituTemplateUrl('', TK)).toBeNull()
+  })
+
+  it('tk 做 URL 编码', () => {
+    const url = buildTiandituTemplateUrl('img', 'a&b=c d') as string
+    expect(url).not.toContain('a&b=c d')
+    expect(url).toContain(`tk=${encodeURIComponent('a&b=c d')}`)
   })
 })
