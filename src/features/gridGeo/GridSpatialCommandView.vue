@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, defineAsyncComponent, inject, onBeforeUnmount, onMounted, ref, shallowRef, watch, type Component } from 'vue'
+import { computed, defineAsyncComponent, inject, onBeforeUnmount, onMounted, ref, shallowRef, watch, type Component, nextTick} from 'vue'
 import { routerKey } from 'vue-router'
 import {
   Activity,
@@ -127,11 +127,23 @@ const weatherLayer = ref<GridGeoWeatherLayer>('wind')
 // 「电厂地理空间」并入后新增的一组状态：目录筛选结果、完整信息抽屉、治理弹窗与写权限。
 // catalogFiltered 单独存一份而不是直接用 plants，是因为地图上要绘制的点必须与目录里
 // 列出的一致——否则会出现「列表里搜到了、图上找不到」。
-// 选中卡片的拖动与让位。默认位置写死在 CSS 里，这两个常量必须与之一致——算钳制范围
-// 要用到它们，读 DOM 拿不到「默认位置」（此刻卡片可能正被 transform 推着）。
-const SELECTION_CARD_RIGHT = 382
-const SELECTION_CARD_BOTTOM = 58
+// 选中卡片的拖动与让位。锚点取自实际 CSS 而非写死值：窄屏断点会改 .selection-card 的
+// right/bottom，用桌面端数值算钳制范围会把卡片允许拖到不可见处。computed style 读到的
+// 是声明值（不含 transform），正是我们要的「默认位置」。常量只作为读不到时的兜底。
+const SELECTION_CARD_RIGHT_FALLBACK = 382
+const SELECTION_CARD_BOTTOM_FALLBACK = 58
 const DETAIL_DRAWER_WIDTH = 580
+
+function selectionCardAnchors(element: HTMLElement | null) {
+  if (!element) return { right: SELECTION_CARD_RIGHT_FALLBACK, bottom: SELECTION_CARD_BOTTOM_FALLBACK }
+  const style = getComputedStyle(element)
+  const right = Number.parseFloat(style.right)
+  const bottom = Number.parseFloat(style.bottom)
+  return {
+    right: Number.isFinite(right) ? right : SELECTION_CARD_RIGHT_FALLBACK,
+    bottom: Number.isFinite(bottom) ? bottom : SELECTION_CARD_BOTTOM_FALLBACK,
+  }
+}
 
 const stageRef = ref<HTMLElement | null>(null)
 const selectionCardRef = ref<HTMLElement | null>(null)
@@ -297,7 +309,14 @@ function setLayerState(id: SpatialCommandScene, state: SpatialLayerState) {
 }
 
 /** 抽屉一开就把卡片让开，否则用户刚点的那个电厂正好被抽屉压住。 */
-const cardAvoidShift = computed(() => drawerAvoidanceShift(detailOpen.value, DETAIL_DRAWER_WIDTH, SELECTION_CARD_RIGHT))
+const cardAvoidShift = computed(() => drawerAvoidanceShift(
+  detailOpen.value,
+  DETAIL_DRAWER_WIDTH,
+  // 依赖 cardAnchorRight 而非常量：窄屏下卡片本就更靠右/更靠边，让位量随之不同
+  cardAnchorRight.value,
+))
+/** 卡片当前的 CSS 锚点。窗口尺寸变化会跨断点改写它，故随 resize 重算。 */
+const cardAnchorRight = ref(SELECTION_CARD_RIGHT_FALLBACK)
 
 const selectionCardStyle = computed(() => ({
   transform: `translate(${-(cardOffset.value.x + cardAvoidShift.value)}px, ${-cardOffset.value.y}px)`,
@@ -315,6 +334,7 @@ function onCardPointerMove(event: PointerEvent) {
   const stage = stageRef.value?.getBoundingClientRect()
   const card = selectionCardRef.value?.getBoundingClientRect()
   if (!stage || !card) return
+  const anchors = selectionCardAnchors(selectionCardRef.value)
   cardOffset.value = clampCardOffset(
     {
       // 向左/向上为正，与 CSS 的右下角锚定一致
@@ -323,8 +343,8 @@ function onCardPointerMove(event: PointerEvent) {
     },
     { width: card.width, height: card.height },
     { width: stage.width, height: stage.height },
-    SELECTION_CARD_RIGHT,
-    SELECTION_CARD_BOTTOM,
+    anchors.right,
+    anchors.bottom,
   )
 }
 
@@ -750,7 +770,10 @@ watch(selectedCompanyId, resetForScopeChange)
 watch(weatherLayer, () => { if (scene.value === 'weather') clearSelection() })
 watch(marketLayer, () => { if (scene.value === 'market') clearSelection() })
 // 换了选中对象就复位手动位移：新卡片带着上一次的偏移出现，看起来像是自己跳走了。
-watch([selectedPlantId, selectedNodeId, selectedEventId], () => { cardOffset.value = { x: 0, y: 0 } })
+watch([selectedPlantId, selectedNodeId, selectedEventId], () => {
+  cardOffset.value = { x: 0, y: 0 }
+  void nextTick(() => { cardAnchorRight.value = selectionCardAnchors(selectionCardRef.value).right })
+})
 // 气象格点仍只有三维实现；停在 2D 会让侧栏报告图层已生效而地图纹丝不动，
 // 故自动切到能画的视图并告知。
 // 授权网架自 #1424 起平面图也绘制（断面/联络线走 lines、变电站走点层），不再强制切 3D
@@ -938,6 +961,7 @@ onBeforeUnmount(() => {
             :unresolved-count="catalogStats?.unresolvedPlantCount ?? null"
             @select="selectPlant"
             @update:filtered="catalogFiltered = $event"
+            @selection-filtered-out="clearSelection"
           />
         </template>
 

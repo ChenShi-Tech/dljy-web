@@ -40,6 +40,12 @@ const props = withDefaults(defineProps<{
 const emit = defineEmits<{
   select: [plant: GridGeoPlant]
   'update:filtered': [plants: GridGeoPlant[]]
+  /**
+   * 当前选中项被筛选条件排除了。是否响应由宿主决定：驾驶舱要清选中（否则地图上会一直
+   * 高亮着一个列表里根本找不到的点、浮动卡也还开着）；气象页则不该清——那里的选中项是
+   * 正在分析的对象，清掉会让下方整块时序分析空掉，比不一致更糟。
+   */
+  'selection-filtered-out': []
 }>()
 
 const keyword = ref('')
@@ -53,7 +59,13 @@ const filteredPlants = computed(() => filterPlantCatalog(props.plants, {
 }))
 
 // immediate：宿主挂载后就要拿到初始集合，否则首屏地图是空的。
-watch(filteredPlants, (items) => emit('update:filtered', items), { immediate: true })
+watch(filteredPlants, (items) => {
+  emit('update:filtered', items)
+  // 选中项被筛掉了：地图上的点已经不画了，但高亮与浮动卡还挂着上一次的选择，
+  // 用户看到的是一个「列表里没有、图上也没有、卡片却开着」的幽灵资产。
+  const selected = props.selectedPlantId
+  if (selected && !items.some((item) => item.plantId === selected)) emit('selection-filtered-out')
+}, { immediate: true })
 
 function typeIcon(plant: GridGeoPlant) {
   return plant.plantType === 'wind' ? Wind : plant.plantType === 'solar' ? Sun : Factory
@@ -148,5 +160,7 @@ defineExpose({ filteredPlants })
 .capacity { color: #8db6c7; font-size: var(--font-11-5); font-variant-numeric: tabular-nums; }
 .empty-list { padding: 30px 8px; color: #7293a1; text-align: center; font-size: var(--font-xs); }
 .coverage-note { display: flex; align-items: flex-start; gap: 8px; margin-top: 8px; padding: 9px; border-radius: 9px; color: #7ea8b8; background: rgba(25, 86, 107, .17); font-size: var(--font-11-5); line-height: 1.45; }
-@media (max-width: 900px) { .asset-panel { display: none; } }
+/* 窄屏只收起浮动版（它盖在地图上、小屏里挡的比给的多）。嵌入版活在宿主自己的侧栏
+   里，宿主会决定那块面板怎么折叠——在这里一并隐藏会让窄屏下的驾驶舱连目录都没有。 */
+@media (max-width: 900px) { .asset-panel:not(.embedded) { display: none; } }
 </style>
