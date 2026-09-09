@@ -8,7 +8,7 @@ export type WorkpaperScope = { region: string; view: 'generator' | 'retail' | 's
 export type ReportBlock = { id: string; kind: 'text' | 'chart' | 'reason' | 'question' | 'action'; title: string; text: string; evidenceId?: string; evidenceRole?: 'primary' | 'comparison'; state?: 'pending' | 'confirmed'; supports?: string; refutes?: string }
 export type ReportEvidence = {
   id: string; region: string; authorId: string; createdAt: string; sourceKind: string; contentHash: string
-  content: { labels: [string, string]; capturedAt: string; sourceNotice: string; input: { scope: { objectId: string; companyId?: string; region?: string }; period: { date: string } } } & (
+  content: { labels: [string, string]; capturedAt: string; sourceNotice: string; objectLabel?: string; input: { scope: { objectId: string; companyId?: string; region?: string }; period: { date: string } } } & (
     { topic?: 'energy' | 'price'; result: TopicAnalysisResult & { periods: { current: { start: string; end: string } } } } |
     { topic: 'settlement'; result: SettlementAnalysis }
   )

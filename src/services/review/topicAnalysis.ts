@@ -19,6 +19,7 @@ export type TopicAnalysisResult = {
   energy: { baselineMwh: number | null; actualMwh: number | null; netDeviationMwh: number | null; absoluteDeviationMwh: number | null; absoluteDeviationPct: number | null }
   prices: { daAverage: number | null; rtAverage: number | null; comparableMinutes: number; da?: PriceSummary; rt?: PriceSummary; spreadAverage?: number | null }
   notice: string; methodology: string; simulated: boolean | null
+  comparison?: { coverage: { priceMinutes: number }; changes: { daPrice: number | null; rtPrice: number | null; spread: number | null }; current: { prices: TopicAnalysisResult['prices'] }; reference: { prices: TopicAnalysisResult['prices'] } }
 }
 
 /** 仅投影已读取副本，不拼接其他对象或在浏览器重新计算经营指标。 */

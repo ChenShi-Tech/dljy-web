@@ -35,7 +35,8 @@ export function reportEvidenceCaption(evidence: ReportEvidence): string {
   const metrics = topic === 'price'
     ? `同口径日前减实时 ${formatValue(result.prices.spreadAverage)} 元/MWh；可比较 ${result.prices.comparableMinutes} 分钟`
     : `净差异 ${formatValue(result.energy.netDeviationMwh)} MWh；绝对差异 ${formatValue(result.energy.absoluteDeviationMwh)} MWh；可比较 ${result.coverage.comparableMinutes} 分钟`
-  return `${result.simulated ? '模拟演练。' : ''}${metrics}。${sourceNotice}`
+  const history = topic === 'price' && result.comparison ? `历史共同覆盖比较：日前均价变化 ${formatValue(result.comparison.changes.daPrice)} 元/MWh，实时均价变化 ${formatValue(result.comparison.changes.rtPrice)} 元/MWh，价差可比 ${result.comparison.coverage.priceMinutes} 分钟。` : ''
+  return `${result.simulated ? '模拟演练。' : ''}${metrics}。${history}${sourceNotice}`
 }
 export type ReportPart = { kind: 'title' | 'heading' | 'paragraph'; text: string } | { kind: 'chart'; evidence: ReportEvidence }
 export function reportParts(publication: Publication, brief = false): ReportPart[] {

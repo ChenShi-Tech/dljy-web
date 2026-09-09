@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { reviewBusinessViews, reviewTopic, reviewView, settlementSelectionFromQuery, settlementSelectionQuery, type SettlementSelection } from './reviewTopics'
+import { priceSelectionFromQuery, priceSelectionQuery, reviewBusinessViews, reviewTopic, reviewView, settlementSelectionFromQuery, settlementSelectionQuery, type SettlementSelection } from './reviewTopics'
 describe('专题业务视角与深链接', () => {
   it('周期、人工参考期、厂站多选展开后保留，关闭人工参考清除旧范围', () => {
     const selection: SettlementSelection = { date: '2026-05-31', cadence: 'month', manual: true, referenceStart: '2026-03-01', referenceEnd: '2026-03-31', plants: ['厂站一', '厂站二'] }
@@ -7,6 +7,11 @@ describe('专题业务视角与深链接', () => {
     const query = settlementSelectionQuery({ ...selection, manual: false })
     expect(query.referenceStart).toBeUndefined()
     expect(query.referenceEnd).toBeUndefined()
+  })
+  it('价格专题展开保留节点、周期、门槛和异常多选', () => {
+    const state = priceSelectionFromQuery({ priceDate: '2026-05-31', priceCadence: 'month', pricePlant: '厂站甲', priceNode: '节点一', priceThreshold: '0', priceIntervals: ['2026-05-31T00:00:00+08:00'], priceReferenceStart: '2026-03-01', priceReferenceEnd: '2026-03-31' }, '2026-06-01')
+    expect(priceSelectionFromQuery(priceSelectionQuery(state), '2026-06-01')).toEqual(state)
+    expect(priceSelectionQuery({ ...state, manual: false }).priceReferenceStart).toBeUndefined()
   })
   it('三业务视角保留全部比较口径，未知主题不成为任意模块入口', () => {
     for (const view of Object.values(reviewBusinessViews)) expect(new Set(view.bases).size).toBe(3)

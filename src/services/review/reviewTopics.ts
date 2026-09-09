@@ -24,3 +24,12 @@ export function prioritizeAvailableBases(snapshot: ReviewEvidenceSnapshot | null
   }) ?? false
   return [...bases].sort((a, b) => Number(hasPair(b)) - Number(hasPair(a)))
 }
+
+export type PriceSelection = { date: string; cadence: 'day' | 'week' | 'month'; manual: boolean; referenceStart: string; referenceEnd: string; plant: string; node: string; threshold: string; intervals: string[] }
+export function priceSelectionQuery(value: PriceSelection) {
+  return { priceDate: value.date, priceCadence: value.cadence, priceReferenceStart: value.manual ? value.referenceStart : undefined, priceReferenceEnd: value.manual ? value.referenceEnd : undefined, pricePlant: value.plant || undefined, priceNode: value.node || undefined, priceThreshold: value.threshold || undefined, priceIntervals: value.intervals }
+}
+export function priceSelectionFromQuery(query: Record<string, unknown>, date: string): PriceSelection {
+  const text = (key: string) => typeof query[key] === 'string' ? query[key] as string : ''
+  return { date: text('priceDate') || date, cadence: query.priceCadence === 'week' || query.priceCadence === 'month' ? query.priceCadence : 'day', manual: !!(text('priceReferenceStart') || text('priceReferenceEnd')), referenceStart: text('priceReferenceStart'), referenceEnd: text('priceReferenceEnd'), plant: text('pricePlant'), node: text('priceNode'), threshold: text('priceThreshold'), intervals: (Array.isArray(query.priceIntervals) ? query.priceIntervals : query.priceIntervals ? [query.priceIntervals] : []).filter((value): value is string => typeof value === 'string') }
+}
