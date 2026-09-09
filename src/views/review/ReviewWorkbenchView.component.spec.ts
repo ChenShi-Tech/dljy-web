@@ -35,6 +35,12 @@ async function open(query = '') {
   await flushPromises(); return { wrapper, router }
 }
 describe('真实接口复盘工作流', () => {
+  it('历史专题使用显式旧版入口并保留日期', async () => {
+    const { wrapper, router } = await open()
+    const button = wrapper.findAll('button').find(b => b.text().includes('历史专题'))!
+    await button.trigger('click'); await flushPromises()
+    expect(router.currentRoute.value.query).toMatchObject({ layout: 'classic', date: '2026-05-31' })
+  })
   it('云南有结算即展示；偏差缺源不挡整页，也不请求已知未接入的曲线', async () => {
     const { wrapper } = await open()
     expect(wrapper.text()).toContain('600'); expect(wrapper.text()).toContain('结算资料核验')

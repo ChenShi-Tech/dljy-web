@@ -80,7 +80,7 @@ function investigate(label: string) { focus.value = label; setTask('improvement'
 function openOriginal() {
   if (selectedOrder.value) void router.push({ path: '/xhjy/desk', query: { declarationId: selectedOrder.value.id, targetDate: selectedOrder.value.targetDate } })
 }
-function openArchive() { void router.push({ query: { ...route.query, layout: undefined, task: undefined, decisionId: undefined } }) }
+function openArchive() { void router.push({ query: { ...route.query, layout: 'classic', task: undefined, decisionId: undefined } }) }
 let scopeSequence = 0, selectionSequence = 0, pageSequence = 0
 async function loadOrders(seq: number, day: string, rid: string, offset = 0) {
   const page = ++pageSequence, company = selectedCompanyId.value
