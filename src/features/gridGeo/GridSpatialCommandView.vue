@@ -842,7 +842,9 @@ onBeforeUnmount(() => {
     <main ref="stageRef" class="command-stage" :aria-busy="stageLoading">
       <!--
         2D 走省级平面地图，3D 走 Cesium 地球；两者 props/emits 契约一致，
-        故只切组件、数据流不动。授权网架只有三维实现，见下方 watch(scene) 强制切换。
+        故只切组件、数据流不动。平面图同样能画网架要素，各场景在 2D/3D 下都可用。
+        （此处曾写「授权网架只有三维实现，见下方 watch(scene) 强制切换」——那段强制
+        切换的代码早已不在，注释没跟着删，会让人以为 2D 下网架画不出来。）
       -->
       <component
         :is="viewMode === '2d' ? ProvinceFlatMap : CesiumPlantMap"
