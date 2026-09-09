@@ -17,3 +17,9 @@ coverage/
 /.claude/worktrees/
 # verify:customer-edition-build 不传 --dist 时自建的扫描产物（与 dist/ 同性质）
 dist-customer-verify/
+
+# 本地个人/工具产物，不入库
+.claude/
+.firecrawl/
+CLAUDE.md
+graphify-out/
