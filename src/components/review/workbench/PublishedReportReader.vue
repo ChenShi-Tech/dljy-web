@@ -6,18 +6,21 @@ import ReportEvidenceChart from './ReportEvidenceChart.vue'
 const props = defineProps<{ publication: Publication }>()
 const brief = ref(false)
 const exporting = ref(false), exportError = ref('')
-async function exportWord() {
+async function exportReport(format: 'word' | 'print') {
   if (exporting.value) return
   exporting.value = true; exportError.value = ''
   const version = props.publication, summary = brief.value
-  try { const { downloadReportWord } = await import('@/services/review/reportWordExport'); await downloadReportWord(version, summary) }
+  try {
+    if (format === 'word') { const { downloadReportWord } = await import('@/services/review/reportWordExport'); await downloadReportWord(version, summary) }
+    else { const { printPublishedReport } = await import('@/services/review/reportPrintExport'); await printPublishedReport(version, summary) }
+  }
   catch { exportError.value = '导出未完成，请重试。已发布版本仍保存在服务器。' }
   finally { exporting.value = false }
 }
 </script>
 <template>
   <section class="published-reader">
-    <header><b>已发布报告 · 第 {{ publication.revision }} 版</b><label><input v-model="brief" type="checkbox" />只看管理层摘要</label><button type="button" :disabled="exporting" @click="exportWord">{{ exporting ? '正在导出…' : '导出 Word' }}</button></header>
+    <header><b>已发布报告 · 第 {{ publication.revision }} 版</b><label><input v-model="brief" type="checkbox" />只看管理层摘要</label><button type="button" :disabled="exporting" @click="exportReport('word')">导出 Word</button><button type="button" :disabled="exporting" @click="exportReport('print')">打印 / 保存 PDF</button><span v-if="exporting" role="status">正在准备报告…</span></header>
     <p v-if="exportError" role="alert">{{ exportError }}</p>
     <h2>{{ publication.content.title }}</h2>
     <p>{{ publication.content.scope.objectLabel }} · {{ publication.content.scope.startDate }}—{{ publication.content.scope.endDate }} · 主笔 {{ publication.content.authorId }}</p>

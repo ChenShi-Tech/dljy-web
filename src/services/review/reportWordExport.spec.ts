@@ -4,6 +4,7 @@ import JSZip from 'jszip'
 import { buildReportWord } from './reportWordExport'
 import { reportChartOption } from './reportPresentation'
 import type { Publication, ReportEvidence } from './workpapers'
+import type { SettlementAnalysis, SettlementSummary } from './settlementAnalysis'
 
 const material: ReportEvidence = {
   id: 'material', region: 'yunnan', authorId: '主笔', createdAt: '', sourceKind: 'client_provided', contentHash: 'hash',
@@ -44,5 +45,17 @@ describe('冻结报告的 Word 导出', () => {
   it('图表材料缺失时失败，不生成看似完整的报告', async () => {
     await expect(buildReportWord({ ...publication, content: { ...publication.content, evidence: [] } })).rejects.toThrow('材料不完整')
     expect(reportChartOption(material).yAxis).toMatchObject({ name: '元/MWh' })
+  })
+  it('公司周期结算图表和共同覆盖统计随报告导出', async () => {
+    const summary: SettlementSummary = { energyMwh: 100, feeYuan: 20000, averagePrice: 200, longTermMwh: 60, dayAheadIncrementMwh: 30, realTimeIncrementMwh: 10, coverage: { records: 1, energy: 1, fee: 1, paired: 1, longTerm: 1, dayAhead: 1, realTime: 1 }, expectedPlantDays: 31, daily: [], plants: [] }
+    const result: SettlementAnalysis = { periods: { current: { start: '2026-05-01', end: '2026-05-31' }, reference: { start: '2026-04-01', end: '2026-04-30' }, incomplete: false }, current: summary, reference: summary, availablePlants: ['厂站'], selectedPlants: ['厂站'], comparison: { matchedPlantDays: 1, currentEnergyMwh: 100, referenceEnergyMwh: 90, currentFeeYuan: 20000, referenceFeeYuan: 18000 }, source: { type: 'business_source', version: 'v1', mock: false, productionWrite: false }, notice: '结算电费不等于利润' }
+    const evidence: ReportEvidence = { ...material, content: { ...material.content, topic: 'settlement', labels: ['结算电量', '结算电费'], sourceNotice: '已入库结算资料，电费不等于利润', result } }
+    const blob = await buildReportWord({ ...publication, content: { ...publication.content, evidence: [evidence] } }, false, vi.fn().mockResolvedValue(pixel))
+    const xml = await (await JSZip.loadAsync(await blob.arrayBuffer())).file('word/document.xml')!.async('string')
+    expect(xml).toContain('结算电费 20,000 元')
+    expect(xml).toContain('有效 1/31 厂站日')
+    expect(xml).toContain('共同覆盖 1 厂站日')
+    expect(xml).not.toContain('净差异')
+    expect(reportChartOption(evidence).yAxis).toEqual([{ type: 'value', name: 'MWh' }, { type: 'value', name: '元' }])
   })
 })

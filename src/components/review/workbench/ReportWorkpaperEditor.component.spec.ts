@@ -81,4 +81,9 @@ describe('图文底稿交付', () => {
     expect(wrapper.text()).not.toContain('仅属于旧报告的批注')
     expect(wrapper.get<HTMLSelectElement>('select[aria-label="批注位置"]').element.value).toBe('')
   })
+  it('公司周期底稿保留完整起止日，不缩成单日', async () => {
+    const wrapper = mount(ReportWorkpaperEditor, { props: { snapshot: { ...snapshot, scope: { ...snapshot.scope, period: { start: '2026-05-01', end: '2026-05-31' } } } }, global: { stubs: { ReportEvidenceChart: true } } }); wrappers.push(wrapper)
+    await flushPromises(); await button(wrapper, '新建本次底稿').trigger('click'); await flushPromises()
+    expect(createWorkpaper).toHaveBeenCalledWith('a', expect.objectContaining({ startDate: '2026-05-01', endDate: '2026-05-31' }), expect.any(String), expect.any(String))
+  })
 })

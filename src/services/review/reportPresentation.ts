@@ -5,6 +5,13 @@ import { formatValue } from './decisionWorkbench'
 
 /** 网页和导出共用冻结材料，任何一端都不重新计算交易指标。 */
 export function reportChartOption(evidence: ReportEvidence): EChartsOption {
+  if (evidence.content.topic === 'settlement') {
+    const rows = evidence.content.result.current.daily
+    return { animation: false, tooltip: { trigger: 'axis' }, legend: { data: ['结算电量', '结算电费'] }, grid: { left: 75, right: 80, top: 50, bottom: 55 },
+      xAxis: { type: 'category', data: rows.map(row => row.date) }, yAxis: [{ type: 'value', name: 'MWh' }, { type: 'value', name: '元' }],
+      series: [{ name: '结算电量', type: 'bar', data: rows.map(row => row.energyMwh) }, { name: '结算电费', type: 'line', yAxisIndex: 1, connectNulls: false, data: rows.map(row => row.feeYuan) }],
+    }
+  }
   const { labels, result, topic } = evidence.content, price = topic === 'price'
   const rows = displayAnalysisIntervals(result.intervals)
   return {
@@ -20,6 +27,10 @@ export function reportChartOption(evidence: ReportEvidence): EChartsOption {
   }
 }
 export function reportEvidenceCaption(evidence: ReportEvidence): string {
+  if (evidence.content.topic === 'settlement') {
+    const { current, comparison } = evidence.content.result
+    return `结算电量 ${formatValue(current.energyMwh)} MWh；结算电费 ${formatValue(current.feeYuan)} 元；有效 ${current.coverage.records}/${current.expectedPlantDays} 厂站日。共同覆盖 ${comparison.matchedPlantDays} 厂站日：本期电费 ${formatValue(comparison.currentFeeYuan)} 元，参考期 ${formatValue(comparison.referenceFeeYuan)} 元。${evidence.content.sourceNotice}`
+  }
   const { result, topic, sourceNotice } = evidence.content
   const metrics = topic === 'price'
     ? `同口径日前减实时 ${formatValue(result.prices.spreadAverage)} 元/MWh；可比较 ${result.prices.comparableMinutes} 分钟`

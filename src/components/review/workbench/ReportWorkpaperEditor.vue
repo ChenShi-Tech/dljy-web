@@ -57,7 +57,7 @@ async function open(id: string) {
 }
 async function create() {
   if (pending.value) { error.value = '请先保存当前底稿和批注'; return }
-  const scope: WorkpaperScope = { region, view: view.value, objectId: props.snapshot.scope.objectKey || 'company-overview', objectLabel: props.snapshot.scope.objectLabel, startDate: props.snapshot.scope.day, endDate: props.snapshot.scope.day }
+  const scope: WorkpaperScope = { region, view: view.value, objectId: props.snapshot.scope.objectKey || 'company-overview', objectLabel: props.snapshot.scope.objectLabel, startDate: props.snapshot.scope.period?.start || props.snapshot.scope.day, endDate: props.snapshot.scope.period?.end || props.snapshot.scope.day }
   loading.value = true
   try {
     const value = await createWorkpaper(company, scope, creationId.value, `${scope.startDate} ${scope.objectLabel}复盘`)
