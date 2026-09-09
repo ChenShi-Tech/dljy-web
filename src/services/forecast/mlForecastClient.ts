@@ -116,12 +116,23 @@ export type ForecastResult = {
   // 读取一律走 unavailableReasonOf() 归一，避免又出现"读了个永远不存在的字段"。
   unavailable_reason?: string | null
   unavailableReason?: string | null
+  // /predict 的 B18 失败形态（无 torch/样本<30 必然命中）：{ available:false, reason }
   reason?: string | null
 }
 
-/** 取 Core 不可用原因（兼容 snake_case / camelCase 两种形态）。 */
-export function unavailableReasonOf(r: Pick<ForecastResult, 'unavailable_reason' | 'unavailableReason' | 'reason'> | null | undefined): string {
-  return [r?.unavailable_reason, r?.unavailableReason, r?.reason].map((value) => String(value ?? '').trim()).find(Boolean) ?? ''
+/**
+ * 取 Core 不可用原因（兼容 snake_case / camelCase / B18 reason 三种形态）。
+ *
+ * 用 `find(Boolean)` 而不是 `??` 链：`??` 只跳过 null/undefined，遇到空字符串就停下。
+ * 上游把 `unavailable_reason` 置成 `''`、真实原因放在 `reason` 里时，`??` 链会返回空串，
+ * 页面上就成了「不可用，但不说为什么」。
+ */
+export function unavailableReasonOf(
+  r: Pick<ForecastResult, 'unavailable_reason' | 'unavailableReason' | 'reason'> | null | undefined,
+): string {
+  return [r?.unavailable_reason, r?.unavailableReason, r?.reason]
+    .map((value) => String(value ?? '').trim())
+    .find(Boolean) ?? ''
 }
 
 export type ForecastRequest = {

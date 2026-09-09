@@ -4,6 +4,8 @@ node_modules/
 node_modules
 dist/
 coverage/
+# 环境变量文件含本地密钥/端点配置，一律不入库（.env.local 与 .env.*.local 既有，.env 是根目录缺口）
+.env
 .env.local
 .env.*.local
 *.log
@@ -13,3 +15,11 @@ coverage/
 
 # worktree 根（全机纪律：worktree 建在本仓 .claude/worktrees/）——不进 git，否则残留目录污染主工作区状态
 /.claude/worktrees/
+# verify:customer-edition-build 不传 --dist 时自建的扫描产物（与 dist/ 同性质）
+dist-customer-verify/
+
+# 本地个人/工具产物，不入库
+.claude/
+.firecrawl/
+CLAUDE.md
+graphify-out/

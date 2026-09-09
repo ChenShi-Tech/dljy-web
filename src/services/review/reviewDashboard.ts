@@ -72,6 +72,22 @@ export function shiftDate(date: string, days: number): string {
   return new Date(t).toISOString().slice(0, 10)
 }
 
+/**
+ * 报告库按归档日期区间过滤（清单 R4「全部报告」列表）：mtime → 北京日期
+ * （+08:00，与后端报告 sidecar 的日期命名口径一致），闭区间；边界空串表示不限。
+ * 坏掉的症状：UTC 晚 8 点后的报告被归到前一天，区间两端各差一天。
+ */
+export function filterReportsByRange<T extends { mtime: number }>(
+  reports: ReadonlyArray<T>,
+  start: string,
+  end: string
+): T[] {
+  return reports.filter((r) => {
+    const d = new Date(r.mtime * 1000 + 8 * 3_600_000).toISOString().slice(0, 10)
+    return (!start || d >= start) && (!end || d <= end)
+  })
+}
+
 /** 96 格热力条：over=实际高于申报（用多了）/ under=低于（用少了）/ flat=申报为 0 无法算比。 */
 export type HeatCell = {
   label: string
@@ -100,6 +116,48 @@ export function hourOf(datetime: unknown): number | null {
   if (!m) return null
   const h = Number(m[1])
   return h >= 0 && h < 24 ? h : null
+}
+
+/** 偏差 96 点逐时明细行（清单 R8）：数据直接来自 /review 响应 detail，与主图/热力条同源。 */
+export type DeviationDetailRow = {
+  /** 时点 HH:MM（取 datetime 尾部，与主图 x 轴一致）。 */
+  label: string
+  declared: number
+  actual: number
+  /** actual − declared（正=多用，负=少用），MWh。 */
+  deviation: number
+  /** 服务端该点计入考核的电量，MWh；合计与 KPI 卡「受考核电量」同口径。 */
+  assessedMwh: number
+  /** 方向着色与热力条同规则：over=实际高于申报 / under=低于 / flat=申报为 0 无法算比。 */
+  tone: 'over' | 'under' | 'flat'
+  /** 是否带内按主图容差带同口径：|actual−declared| ≤ declared×容差%。申报为 0 时带宽为 0，
+   *  actual=0 记带内、否则超带（与图上零高度带视觉一致），不冒充「无法判定」。 */
+  inBand: boolean
+}
+
+/**
+ * 偏差 96 点逐时明细行推导（清单 R8，零新增取数——detail 随 /review 响应下发）。
+ * 坏掉的症状：明细表合计 ≠ KPI 卡受考核电量、或带内外判定与主图容差带观感矛盾。
+ */
+export function deviationDetailRows(
+  detail: ReadonlyArray<Pick<ReviewDetailPoint, 'datetime' | 'declared' | 'actual' | 'assessed_mwh'>>,
+  tolerancePct: number
+): DeviationDetailRow[] {
+  const tol = Number.isFinite(tolerancePct) ? Math.max(tolerancePct, 0) / 100 : 0
+  return detail.map((p) => {
+    const declared = Number.isFinite(p.declared) ? p.declared : 0
+    const actual = Number.isFinite(p.actual) ? p.actual : 0
+    const deviation = actual - declared
+    return {
+      label: String(p.datetime ?? '').slice(-5),
+      declared,
+      actual,
+      deviation,
+      assessedMwh: Number.isFinite(p.assessed_mwh) ? p.assessed_mwh : 0,
+      tone: declared === 0 ? 'flat' : deviation >= 0 ? 'over' : 'under',
+      inBand: Math.abs(deviation) <= declared * tol
+    }
+  })
 }
 
 /**

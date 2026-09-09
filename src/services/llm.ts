@@ -1,4 +1,4 @@
-// 大模型调用：统一走服务端 gateway（/api/agent/llm/*），API Key 落服务端（不再存浏览器）。
+// 大模型调用：统一走服务端 gateway（/api/agent/llm/*）。前端不持密钥、不持供应商与型号清单（#2668）。
 // 开发态经 vite 代理 /agent-api → :8000，生产态 /api/agent（基址与 agentClient 同源）。
 import { AGENT_API_BASE, identityHeaders } from '@/services/agent/agentClient'
 import { timeoutSignal } from '@/services/api'
@@ -10,23 +10,68 @@ const LLM_CHAT_TIMEOUT_MS = 45000
 
 export type ChatMessage = { role: 'system' | 'user' | 'assistant'; content: string }
 
-export type LlmModelInfo = { model: string; ref: string; tier?: string; vision?: boolean }
-export type LlmProviderInfo = {
-  provider: string
-  base_url: string
-  models: LlmModelInfo[]
-  has_key: boolean
-  base_url_override?: string | null
+// ---------------------------------------------------------------------------
+// 模型服务（Epic #2661 · #2668 · #2701）：前端不持有供应商 / 型号，也不落密钥明文。
+// 后端网关模式下 GET /llm/services 给出「能力档位」清单（中文标签 + 能力位），用户只做三件事：
+// 在「接入凭据」处填写供应方下发的网关地址与密钥（明文只随 PUT 直传服务端，GET 只回显尾号）、
+// 勾选启用哪些档位、把角色路由到已启用档位。密钥也可由我方在安装时预置（source === 'env'）。
+// ---------------------------------------------------------------------------
+export type LlmServiceTier = {
+  id: string
+  label: string
+  description: string
+  capabilities: string[]
+  context_window: number | null
+  available: boolean
+  enabled: boolean
+}
+export type LlmServiceRole = {
+  role: string
+  default_tier: string
+  tier: string | null
+  override: boolean
+  requires: string[]
+}
+// 接入凭据状态（GET 只回显：是否已配、来源、网关地址、密钥尾号——**明文永不回传**）
+export type LlmCredential = {
+  configured: boolean
+  source: 'ui' | 'env' | null
+  url: string
+  key_hint: string
+  updated_at: string | null
+}
+// 联网搜索开通状态（网关统一提供，前端不再自己配搜索引擎）
+export type LlmSearchStatus = {
+  granted: boolean
+  available: boolean
+  reason: string | null
+}
+export type LlmServices = {
+  available: boolean
+  gateway: boolean
+  reason: string | null
+  tiers: LlmServiceTier[]
+  roles: LlmServiceRole[]
+  credential?: LlmCredential
+  search?: LlmSearchStatus
 }
 
-// 模块级缓存：是否已有任一 provider 在服务端配了 key（供同步 isLlmConfigured 读取）。
+// 模块级缓存：大模型是否可用（网关档位可用，或内部档直连已配 key），供同步 isLlmConfigured 读取；
+// 档位快照供斜杠命令 /model 同步列出（它的参数补全是同步函数）。
 let _configured = false
+let _tiers: LlmServiceTier[] = []
 
 export function isLlmConfigured(): boolean {
   return _configured
 }
 
-// 管理令牌：仅当服务端设置了 HARNESS_ADMIN_TOKEN 时，写/删密钥才需要（存本机浏览器）。
+/** 最近一次 refreshLlmStatus / getServices 拿到的档位快照（可能为空） */
+export function getCachedTiers(): LlmServiceTier[] {
+  return _tiers
+}
+
+// 管理令牌：我方运维令牌（服务端 HARNESS_ADMIN_TOKEN），写配置时随请求头发送；存本机浏览器。
+// 交付档下写端点也接受登录态里的 ADMIN/BOSS，客户管理员不需要这个令牌。
 const ADMIN_TOKEN_KEY = 'dljy_llm_admin_token'
 export function getAdminToken(): string {
   try {
@@ -48,83 +93,196 @@ function adminHeaders(): Record<string, string> {
   return t ? { 'x-admin-token': t } : {}
 }
 
-export async function refreshLlmStatus(): Promise<boolean> {
-  try {
-    _configured = (await listProviders()).some((p) => p.has_key)
-  } catch {
-    _configured = false
-  }
-  return _configured
-}
-
-export async function listProviders(): Promise<LlmProviderInfo[]> {
-  const res = await fetch(`${LLM_BASE}/providers`, {
+export async function getServices(): Promise<LlmServices> {
+  const res = await fetch(`${LLM_BASE}/services`, {
     headers: identityHeaders(),
     signal: timeoutSignal(LLM_CONFIG_TIMEOUT_MS)
   })
-  if (!res.ok) throw new Error(`providers ${res.status}`)
-  const data = await res.json()
-  return (data?.providers ?? []) as LlmProviderInfo[]
+  if (!res.ok) throw new Error(`services ${res.status}`)
+  const data = (await res.json()) as Partial<LlmServices>
+  const out: LlmServices = {
+    available: !!data.available,
+    gateway: !!data.gateway,
+    reason: data.reason ?? null,
+    tiers: Array.isArray(data.tiers) ? data.tiers : [],
+    roles: Array.isArray(data.roles) ? data.roles : []
+  }
+  // 凭据 / 搜索状态是 #2700 起新增的 OPTIONAL 字段：老后端不给时不造空对象，
+  // 保留 undefined 让 UI 落「未配置 / 未开通」分支，接口对不上时也不误导。
+  const c = data.credential
+  if (c) {
+    out.credential = {
+      configured: !!c.configured,
+      source: c.source ?? null,
+      url: c.url ?? '',
+      key_hint: c.key_hint ?? '',
+      updated_at: c.updated_at ?? null
+    }
+  }
+  if (data.search) {
+    out.search = {
+      granted: !!data.search.granted,
+      available: !!data.search.available,
+      reason: data.search.reason ?? null
+    }
+  }
+  _tiers = out.tiers
+  return out
 }
 
-export async function saveProviderKey(
-  provider: string,
-  apiKey: string,
-  baseUrl = ''
-): Promise<{ ok: boolean; msg?: string }> {
-  // 失败原因区分：403=管理令牌错误、400=未知 provider、网络异常=后端未运行。
-  // 此前只返回 boolean，丢失后端 detail，UI 永远显示「后端未运行/令牌不正确」误导用户。
+/** 勾选启用档位 / 角色→档位路由。`roles` 里值为空串 = 恢复该角色默认路由。 */
+export async function putServices(body: {
+  enabled?: string[]
+  roles?: Record<string, string>
+}): Promise<{ ok: boolean; msg?: string; services?: LlmServices }> {
   try {
-    const res = await fetch(`${LLM_BASE}/keys`, {
-      method: 'POST',
+    const res = await fetch(`${LLM_BASE}/services`, {
+      method: 'PUT',
       headers: { 'content-type': 'application/json', ...identityHeaders(), ...adminHeaders() },
-      body: JSON.stringify({ provider, api_key: apiKey, base_url: baseUrl }),
+      body: JSON.stringify(body),
       signal: timeoutSignal(LLM_WRITE_TIMEOUT_MS)
     })
     if (!res.ok) {
-      const body = (await res.json().catch(() => ({}))) as { detail?: string }
-      return { ok: false, msg: body.detail || `HTTP ${res.status}` }
+      const err = (await res.json().catch(() => ({}))) as { detail?: string }
+      return { ok: false, msg: err.detail || `HTTP ${res.status}` }
     }
-    await refreshLlmStatus()
-    return { ok: true }
+    const data = (await res.json()) as LlmServices
+    _tiers = Array.isArray(data.tiers) ? data.tiers : []
+    _configured = !!data.available
+    return { ok: true, services: data }
   } catch (e) {
     return { ok: false, msg: e instanceof Error ? e.message : '网络错误（后端未运行？）' }
   }
 }
 
-export async function deleteProviderKey(provider: string): Promise<boolean> {
-  const res = await fetch(`${LLM_BASE}/keys/${encodeURIComponent(provider)}`, {
-    method: 'DELETE',
-    headers: { ...identityHeaders(), ...adminHeaders() },
-    signal: timeoutSignal(LLM_WRITE_TIMEOUT_MS)
-  })
-  await refreshLlmStatus()
-  return res.ok
+/**
+ * 保存接入凭据（供应方下发的网关地址 + 密钥）：明文只随这次 PUT 直传服务端，浏览器不落盘、
+ * 之后任何 GET / 列表请求都不再携带。成功时服务端回传最新 services，据此刷新整页。
+ */
+export async function putCredential(body: {
+  url?: string
+  key: string
+}): Promise<{ ok: boolean; msg?: string; services?: LlmServices }> {
+  try {
+    const res = await fetch(`${LLM_BASE}/services/credential`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json', ...identityHeaders(), ...adminHeaders() },
+      body: JSON.stringify(body),
+      signal: timeoutSignal(LLM_WRITE_TIMEOUT_MS)
+    })
+    if (!res.ok) {
+      const err = (await res.json().catch(() => ({}))) as { detail?: string }
+      return { ok: false, msg: err.detail || `HTTP ${res.status}` }
+    }
+    const data = (await res.json()) as LlmServices
+    _tiers = Array.isArray(data.tiers) ? data.tiers : []
+    _configured = !!data.available
+    return { ok: true, services: data }
+  } catch (e) {
+    return { ok: false, msg: e instanceof Error ? e.message : '网络错误（后端未运行？）' }
+  }
 }
 
-export async function testProviderKey(args: {
-  provider: string
-  model: string
-  apiKey?: string
-  baseUrl?: string
-}): Promise<{ ok: boolean; msg: string }> {
+/** 清除「界面填写」的凭据（安装预置的 source==='env' 由服务端拒绝，前端也不给它出口）。 */
+export async function deleteCredential(): Promise<{ ok: boolean; msg?: string; services?: LlmServices }> {
+  try {
+    const res = await fetch(`${LLM_BASE}/services/credential`, {
+      method: 'DELETE',
+      headers: { ...identityHeaders(), ...adminHeaders() },
+      signal: timeoutSignal(LLM_WRITE_TIMEOUT_MS)
+    })
+    if (!res.ok) {
+      const err = (await res.json().catch(() => ({}))) as { detail?: string }
+      return { ok: false, msg: err.detail || `HTTP ${res.status}` }
+    }
+    const data = (await res.json()) as LlmServices
+    _tiers = Array.isArray(data.tiers) ? data.tiers : []
+    _configured = !!data.available
+    return { ok: true, services: data }
+  } catch (e) {
+    return { ok: false, msg: e instanceof Error ? e.message : '网络错误（后端未运行？）' }
+  }
+}
+
+// 模型服务额度（服务端透出，前端只做展示）。available:false = 服务端暂时给不出额度（如未配凭据），
+// reason 里给原因；UI 显示灰字、不弹错误。
+export type LlmServicesUsage = {
+  today: { day: string; requests: number; total_tokens: number; usage_unknown: number }
+  quota: { requests_per_day: number | null; tokens_per_day: number | null }
+  remaining: { requests: number | null; tokens: number | null }
+  resets_at: string
+  rows: Array<{ day: string; tier: string; requests: number; failed: number; total_tokens: number }>
+}
+
+export async function getServicesUsage(
+  from?: string,
+  to?: string
+): Promise<{ available: boolean; reason?: string; usage?: LlmServicesUsage }> {
+  const qs = new URLSearchParams()
+  if (from) qs.set('from', from)
+  if (to) qs.set('to', to)
+  const suffix = qs.toString() ? `?${qs.toString()}` : ''
+  const res = await fetch(`${LLM_BASE}/services/usage${suffix}`, {
+    headers: identityHeaders(),
+    signal: timeoutSignal(LLM_CONFIG_TIMEOUT_MS)
+  })
+  if (!res.ok) throw new Error(`services usage ${res.status}`)
+  return (await res.json()) as { available: boolean; reason?: string; usage?: LlmServicesUsage }
+}
+
+/** 联网搜索连通测试（网关统一提供的搜索，不需要前端带任何供应商 / 密钥参数）。 */
+export async function testSearchService(): Promise<{ ok: boolean; msg: string }> {
+  try {
+    const res = await fetch(`${LLM_BASE}/services/search/test`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', ...identityHeaders(), ...adminHeaders() },
+      body: JSON.stringify({}),
+      signal: timeoutSignal(LLM_WRITE_TIMEOUT_MS)
+    })
+    const data = (await res.json().catch(() => ({}))) as { ok?: boolean; msg?: string; detail?: string }
+    return { ok: !!data.ok, msg: data.detail || data.msg || (res.ok ? '' : `HTTP ${res.status}`) }
+  } catch (e) {
+    return { ok: false, msg: e instanceof Error ? e.message : '网络错误' }
+  }
+}
+
+/** 对某个档位做一次最小连通测试（经服务端网关，前端不持任何密钥）。 */
+export async function testService(tier: string): Promise<{ ok: boolean; msg: string }> {
   try {
     const res = await fetch(`${LLM_BASE}/test`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', ...identityHeaders() },
-      body: JSON.stringify({
-        provider: args.provider,
-        model: args.model,
-        api_key: args.apiKey ?? '',
-        base_url: args.baseUrl ?? ''
-      }),
+      // provider 字段是接口契约上的必填位；网关模式下服务端忽略它，只认 model（档位 id）。
+      body: JSON.stringify({ provider: 'gateway', model: tier }),
       signal: timeoutSignal(LLM_WRITE_TIMEOUT_MS)
     })
-    const data = await res.json().catch(() => ({}))
+    const data = (await res.json().catch(() => ({}))) as { ok?: boolean; msg?: string }
     return { ok: !!data.ok, msg: data.msg ?? (res.ok ? '' : `HTTP ${res.status}`) }
   } catch (e) {
     return { ok: false, msg: e instanceof Error ? e.message : '网络错误' }
   }
+}
+
+// 内部档直连（未配网关）时，「已配置」= 服务端任一供应商已有 key。只问 has_key 这一位，
+// 不把供应商清单带进前端；交付档下该端点 404，自然落为 false。
+async function anyProviderKeyed(): Promise<boolean> {
+  const res = await fetch(`${LLM_BASE}/providers`, {
+    headers: identityHeaders(),
+    signal: timeoutSignal(LLM_CONFIG_TIMEOUT_MS)
+  })
+  if (!res.ok) return false
+  const data = (await res.json().catch(() => ({}))) as { providers?: { has_key?: boolean }[] }
+  return (data.providers ?? []).some((p) => !!p.has_key)
+}
+
+export async function refreshLlmStatus(): Promise<boolean> {
+  try {
+    const svc = await getServices()
+    _configured = svc.available || (!svc.gateway && (await anyProviderKeyed()))
+  } catch {
+    _configured = false
+  }
+  return _configured
 }
 
 type ChatResult = { ok?: boolean; content?: string; msg?: string; detail?: string }
@@ -158,7 +316,7 @@ export type SearchConfig = {
   has_key: boolean
   env_keyed: boolean
   supported: string[]
-  model?: string   // volcengine 等：doubao 模型名（UI 回显）
+  model?: string   // 部分搜索引擎需要附带模型 / 接入点名（UI 回显）
 }
 
 export async function getSearchConfig(): Promise<SearchConfig> {

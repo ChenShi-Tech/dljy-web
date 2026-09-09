@@ -151,7 +151,7 @@ watch(pnl24, () => render(), { flush: 'post' })
       </div>
       <div ref="chartEl" class="host chart-host" />
     </section>
-    <PnlDecomposePanel :spec="spec" :tolerance-pct="tolerancePct" :penalty-price="penaltyPrice" />
+    <PnlDecomposePanel :spec="spec" :tolerance-pct="tolerancePct" :penalty-price="penaltyPrice" :review-month="reviewMonth" />
     <TemplateChips :templates="templates" label="结果复盘模板" @open-template="emit('open-template', $event)" />
   </div>
 </template>

@@ -42,18 +42,22 @@ async function fetchOneDay(date: string, tolerancePct: number, penaltyPrice: num
   }
 }
 
-/** 逐日取 /review（4 并发分批，顺序保持）。失败日入 missingDays，不阻断其它日。 */
+/** 逐日取 /review（4 并发分批，顺序保持）。失败日入 missingDays，不阻断其它日。
+ *  onProgress：按批回报进度（已完成天数/总天数）——整月真算约 20-30s，调用方须给出可感知的进度。 */
 export async function fetchReviewRange(
   dates: readonly string[],
-  opts: { tolerancePct?: number; penaltyPrice?: number } = {}
+  opts: { tolerancePct?: number; penaltyPrice?: number; onProgress?: (done: number, total: number) => void } = {}
 ): Promise<PeriodReview> {
-  const { tolerancePct = 3.0, penaltyPrice = 100 } = opts
+  const { tolerancePct = 3.0, penaltyPrice = 100, onProgress } = opts
   const days: PeriodReviewDay[] = []
   const batch = 4
+  let done = 0
   for (let i = 0; i < dates.length; i += batch) {
     const chunk = dates.slice(i, i + batch)
     const rows = await Promise.all(chunk.map((d) => fetchOneDay(d, tolerancePct, penaltyPrice)))
     days.push(...rows)
+    done += rows.length
+    onProgress?.(done, dates.length)
   }
   return { days, missingDays: days.filter((d): d is Extract<PeriodReviewDay, { ok: false }> => !d.ok).map((d) => d.date) }
 }

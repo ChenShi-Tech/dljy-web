@@ -41,6 +41,45 @@ export function suggestResponsibility(causeId: string | null): { id: Responsibil
   return id ? { id, label: responsibilityLabelOf(id) ?? id } : null
 }
 
+/**
+ * ISO 周键（与 Node review-api.mjs `periodKeysForDate().weekly` 完全同口径：
+ * 周一为一周之始、第 1 周含当年首个周四；用正午 12:00+08:00 取日期，边界日不漂移），
+ * 如 2026-W36。聚合面板的责任归因按它匹配锚定周的 T07 实例。
+ */
+export function isoWeekKeyOf(dateIso: string): string {
+  const d = new Date(`${dateIso}T12:00:00+08:00`)
+  if (Number.isNaN(d.getTime())) return ''
+  const year = d.getUTCFullYear()
+  const target = new Date(Date.UTC(year, d.getUTCMonth(), d.getUTCDate()))
+  const dayNr = (target.getUTCDay() + 6) % 7
+  target.setUTCDate(target.getUTCDate() - dayNr + 3)
+  const weekYear = target.getUTCFullYear()
+  const jan1 = new Date(Date.UTC(weekYear, 0, 1))
+  const jan1DayNr = (jan1.getUTCDay() + 6) % 7
+  const firstThursday = new Date(jan1)
+  firstThursday.setUTCDate(1 + ((3 - jan1DayNr + 7) % 7))
+  const week = 1 + Math.round((target.getTime() - firstThursday.getTime()) / (7 * 24 * 3600 * 1000))
+  const pad = (v: number) => String(v).padStart(2, '0')
+  return `${weekYear}-W${pad(week)}`
+}
+
+/**
+ * 所在周的周一日期（TZ 安全版 mondayOf）：星期直接按日期串算（Sakamoto 算法），
+ * 不经本地 `getDay()`——CI 的 UTC 时区曾把「+08:00 锚定 Date」的 getDay 算成周日，
+ * 周锚点错位 6 天、T07 实例匹配落空（2026-09-07 实测）。非法输入返回空串。
+ */
+export function mondayOfIso(dateIso: string): string {
+  const [y, m, d] = dateIso.split('-').map(Number)
+  if (!y || !m || !d) return ''
+  const t = [0, 3, 2, 5, 0, 3, 5, 1, 4, 6, 2, 4]
+  const yy = m < 3 ? y - 1 : y
+  const dowSun0 =
+    (yy + Math.floor(yy / 4) - Math.floor(yy / 100) + Math.floor(yy / 400) + t[m - 1] + d) % 7
+  const mondayShift = (dowSun0 + 6) % 7 // 周一=0
+  const mondayMs = Date.UTC(y, m - 1, d) - mondayShift * 86_400_000
+  return new Date(mondayMs).toISOString().slice(0, 10)
+}
+
 export type DailyAggRow = {
   date: string
   deviationPct: number | null

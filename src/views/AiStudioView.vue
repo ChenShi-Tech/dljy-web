@@ -16,12 +16,13 @@ import { defineAsyncComponent, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { IS_CUSTOMER_EDITION } from '@/services/edition'
 
-// 「AI 模型设置」tab 在客户交付档整个摘掉（#2410）：它列出供应商、型号、密钥配置。
-// 用编译期常量做条件而非运行期 v-if——后者只是把界面藏起来，AiSettingsView 连同它
-// import 的 llmProviders.ts（deepseek/豆包/智谱的中文名与文档链接）照样在交付出去的
-// JS 里，devtools 搜一下就有。编译期常量让 rollup 把这个分支连同动态 import 一起消除。
+// 「模型接入」tab 按档分流（#2410 → #2668）：内部档是完整的「AI 模型设置」页（联网搜索密钥、
+// 我方管理令牌、采样参数、工作流参数……）；交付档只有「模型服务」面（档位启用 + 角色路由），
+// 它不含任何供应商 / 型号 / 密钥信息，所以可以进交付产物。
+// 用编译期常量做条件而非运行期 v-if——后者只是把界面藏起来，完整设置页照样在交付出去的 JS 里，
+// devtools 搜一下就有。编译期常量 + vite.config 里的模块解析层重定向让那个页面根本不进模块图。
 const MODEL_SETTINGS_TAB = IS_CUSTOMER_EDITION
-  ? []
+  ? [{ name: 'models', label: '模型服务', component: defineAsyncComponent(() => import('@/components/ai/ModelServicesPanel.vue')) }]
   : [{ name: 'models', label: 'AI 模型设置', component: defineAsyncComponent(() => import('./AiSettingsView.vue')) }]
 
 const TABS = [

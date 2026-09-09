@@ -14,7 +14,6 @@ import {
   Factory,
   Focus,
   History,
-  Layers3,
   Map,
   Mountain,
   Orbit,
@@ -49,7 +48,7 @@ import type {
   GridOperatorProfile,
 } from './types'
 
-type MapExpose = { focusPlant: (plantId: string) => void; resetView: () => void }
+type MapExpose = { focusPlant: (plantId: string) => void; resetView: () => void; flyTerrainTour?: () => void }
 
 const PlantBusinessAttributes = defineAsyncComponent(() => import('./PlantBusinessAttributes.vue'))
 
@@ -114,7 +113,6 @@ watch(filteredPlants, (items) => {
 
 const modeOptions: Array<{ value: GridGeoViewMode; label: string; icon: typeof Map }> = [
   { value: '2d', label: '2D', icon: Map },
-  { value: '2.5d', label: '2.5D', icon: Layers3 },
   { value: '3d', label: '3D', icon: Orbit },
 ]
 
@@ -416,6 +414,7 @@ onActivated(() => window.dispatchEvent(new Event('resize')))
         <button title="恢复全省视角" @click="resetMap"><RotateCcw :size="15" /></button>
       </div>
 
+      <div class="side-stack">
       <TerrainControlPanel
         v-model:provider="terrainProvider"
         v-model:hillshade="hillshadeEnabled"
@@ -425,6 +424,7 @@ onActivated(() => window.dispatchEvent(new Event('resize')))
         :view-mode="viewMode"
         :hillshade-available="hillshadeAvailable"
         @request-3d="viewMode = '3d'"
+        @request-terrain-tour="mapRef?.flyTerrainTour?.()"
       />
 
       <div class="weather-control glass-panel">
@@ -456,6 +456,7 @@ onActivated(() => window.dispatchEvent(new Event('resize')))
           <span>{{ weatherMeta?.provider?.name ?? 'Open-Meteo' }} · {{ formatWeatherTime(weatherFetchedAt) }}</span>
           <span>接口来源 · 口径：真实 · 非场站实测</span>
         </div>
+      </div>
       </div>
 
       <div class="legend glass-panel">
@@ -661,8 +662,12 @@ onActivated(() => window.dispatchEvent(new Event('resize')))
 .header-pills .terrain-fallback, .header-pills .terrain-error, .header-pills .weather-warning { color: #efc873; border-color: rgba(239, 193, 95, .28); }
 
 .geo-stage { position: relative; min-width: 0; min-height: 0; flex: 1; overflow: hidden; isolation: isolate; }
-.map-vignette { position: absolute; z-index: 2; inset: 0; pointer-events: none; box-shadow: inset 0 0 130px rgba(0, 5, 16, .74); }
-.grid-overlay { position: absolute; z-index: 2; inset: 0; pointer-events: none; opacity: .1; background-image: linear-gradient(rgba(83, 191, 225, .22) 1px, transparent 1px), linear-gradient(90deg, rgba(83, 191, 225, .22) 1px, transparent 1px); background-size: 48px 48px; mask-image: linear-gradient(90deg, #000, transparent 46%); }
+/* 暗角：纯装饰。原值把地图四周压到近黑，与「看清地形起伏」直接冲突——
+   卫星影像 + 山体阴影的明暗差本来就细，再罩一层暗角等于把刚找回来的立体感抹掉一圈。
+   保留氛围但让强度退到不吃画面（不透明度砍半、扩散收窄）。 */
+.map-vignette { position: absolute; z-index: 2; inset: 0; pointer-events: none; box-shadow: inset 0 0 92px rgba(0, 5, 16, .34); }
+/* 装饰网格：三维下会和地形纹理抢读数，压到几乎只剩氛围。 */
+.grid-overlay { position: absolute; z-index: 2; inset: 0; pointer-events: none; opacity: .05; background-image: linear-gradient(rgba(83, 191, 225, .22) 1px, transparent 1px), linear-gradient(90deg, rgba(83, 191, 225, .22) 1px, transparent 1px); background-size: 48px 48px; mask-image: linear-gradient(90deg, #000, transparent 46%); }
 .rain-overlay { position: absolute; z-index: 3; inset: -20%; pointer-events: none; opacity: .3; background-image: repeating-linear-gradient(108deg, transparent 0 17px, rgba(127, 201, 255, .42) 18px, transparent 20px 30px); background-size: 120px 160px; mask-image: linear-gradient(90deg, transparent 18%, #000 50%, #000 100%); animation: rain-drift .75s linear infinite; }
 @keyframes rain-drift { to { transform: translate3d(-32px, 92px, 0); } }
 .glass-panel { border: 1px solid rgba(109, 200, 239, .2); background: linear-gradient(145deg, rgba(5, 23, 40, .88), rgba(3, 14, 28, .72)); box-shadow: 0 18px 44px rgba(0, 7, 18, .38), inset 0 1px rgba(255, 255, 255, .04); backdrop-filter: blur(18px) saturate(1.2); }
@@ -707,9 +712,14 @@ onActivated(() => window.dispatchEvent(new Event('resize')))
 .mode-control button:hover { color: #dff8ff; }
 .mode-control button.active { color: #02121c; background: linear-gradient(135deg, #63e4ff, #3aaee1); box-shadow: 0 5px 18px rgba(58, 190, 235, .25); }
 .control-divider { width: 1px; margin: 5px 3px; background: rgba(115, 190, 219, .16); }
-.environment-control { position: absolute; z-index: 7; top: 62px; right: 16px; width: 268px; }
+/* 右侧控件纵向堆叠。
+   原先地形面板 top:62px、天气面板 top:218px 各自绝对定位，等于给地形面板写死了
+   156px 的净空——面板一旦多一行说明或多一个按钮就被天气卡片从下面盖住，而 DOM 里
+   按钮还在、点得到，只是看不见。改成流式堆叠后谁高谁占位，以后加内容不会再互相压。 */
+.side-stack { position: absolute; z-index: 7; top: 62px; right: 16px; display: flex; width: 268px; max-height: calc(100% - 92px); flex-direction: column; gap: 10px; overflow-y: auto; overscroll-behavior: contain; }
+.environment-control { flex: none; }
 
-.weather-control { position: absolute; z-index: 7; top: 218px; right: 16px; width: 268px; padding: 12px; border-radius: 13px; color: #d8f2fb; }
+.weather-control { flex: none; padding: 12px; border-radius: 13px; color: #d8f2fb; }
 .weather-head { display: flex; align-items: center; justify-content: space-between; }
 .weather-head > div { display: flex; flex-direction: column; gap: 2px; }
 .weather-head small { color: #5ebfda; font-size: var(--font-7-5); letter-spacing: .12em; }
@@ -822,12 +832,10 @@ onActivated(() => window.dispatchEvent(new Event('resize')))
   .mode-control { top: 12px; right: 12px; }
   .mode-control button { min-height: 40px; }
   .legend { display: none; }
-  .environment-control { top: 68px; right: 12px; width: 230px; }
+  .side-stack { top: 68px; right: 12px; width: 230px; max-height: calc(100% - 96px); }
   .environment-control :deep(label), .environment-control :deep(.terrain-hint) { display: none; }
-  .weather-control { top: 179px; right: 12px; width: 280px; }
   .weather-control > p { display: none; }
-  .geo-stage.has-selection .environment-control,
-  .geo-stage.has-selection .weather-control { display: none; }
+  .geo-stage.has-selection .side-stack { display: none; }
   .plant-float-card {
     top: auto !important;
     right: 12px;
@@ -850,8 +858,9 @@ onActivated(() => window.dispatchEvent(new Event('resize')))
   .hud-stats { display: none; }
   .mode-control { top: 8px; right: 8px; }
   .mode-control button { min-width: 42px; height: 40px; padding: 0 6px; }
+  .side-stack { top: 58px; right: 8px; left: 8px; width: auto; max-height: calc(100% - 74px); }
   .environment-control { display: none; }
-  .weather-control { top: 58px; right: 8px; left: 8px; width: auto; padding: 9px; }
+  .weather-control { padding: 9px; }
   .weather-head small { display: none; }
   .weather-tabs { margin-top: 7px; }
   .geo-stage.has-selection .weather-control { display: none; }

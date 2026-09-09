@@ -7,6 +7,7 @@
 // review.improvement_actions（写入端点上线，端点缺席环境仍诚实降级本地清单）。
 import { computed, onMounted, ref, watch } from 'vue'
 import { loadMarketAnalysis, type MarketAnalysisResult } from '@/services/market/marketAnalysis'
+import PanelFetchLoading from '@/components/review/PanelFetchLoading.vue'
 import { DATA_BASIS_LABEL } from '@/services/dataBasis'
 import {
   anomalyMonths,
@@ -23,7 +24,13 @@ import {
 import type { ImprovementActionSummary, RiskEventSummary } from '@/services/review/reviewStoreApi'
 import { currentMonthBeijing } from '@/utils/beijingDate'
 
-const month = ref(currentMonthBeijing())
+const props = defineProps<{ reviewMonth?: string }>()
+// 默认归因复盘日期所在月（走查 K2-3 同族）：锚死当前月会让月度归因四行
+// 与页面复盘日期各说各话；用户仍可手动切月。
+const month = ref(props.reviewMonth || currentMonthBeijing())
+watch(() => props.reviewMonth, (m) => {
+  if (m && m !== month.value) month.value = m
+})
 const loading = ref(false)
 const result = ref<MarketAnalysisResult | null>(null)
 const loadError = ref('')
@@ -168,13 +175,16 @@ async function registerAnomaly(m: string, devPct: number) {
       <input v-model="month" type="month" />
     </header>
 
-    <p v-if="loading" class="map-muted">读市场经营分析取数（9 数据集回放）…</p>
+    <!-- 单次取数无分批进度：进度条走 indeterminate 慢滑，骨架同款 -->
+    <PanelFetchLoading v-if="loading" text="读市场经营分析取数（9 数据集回放）…" />
     <p v-else-if="loadError" class="map-warn">取数失败：{{ loadError }}——四行不出数，不合成。</p>
 
     <template v-else-if="ds">
-      <p class="map-basis">
-        数据基线：{{ basisLabel }}<template v-if="result?.basis === 'synthetic'">（无真实回放时演示兜底——<b>不可作为复盘依据</b>）</template>
-      </p>
+      <!-- 内容卡片化：四行归因主表 + 下月关注点各成卡片（白底+细边+浅阴影，与系统调性一致） -->
+      <div class="map-card">
+        <p class="map-basis">
+          数据基线：{{ basisLabel }}<template v-if="result?.basis === 'synthetic'">（无真实回放时演示兜底——<b>不可作为复盘依据</b>）</template>
+        </p>
 
       <table class="map-table">
         <thead><tr><th>归因行</th><th>自动预填（A 档）</th><th>口径说明</th></tr></thead>
@@ -237,7 +247,9 @@ async function registerAnomaly(m: string, devPct: number) {
         异常事件与风险事件库双向引用已接通（review.risk_events 读写端点）；
         端点未部署的环境保持只读识别，不合成登记记录。
       </p>
+      </div>
 
+      <div class="map-card">
       <!-- 下月关注点 → 行动项 -->
       <div class="map-focus">
         <b>下月关注点 → 行动项（纳入月度策略会讨论）</b>
@@ -262,12 +274,22 @@ async function registerAnomaly(m: string, devPct: number) {
             : actionsNote }}
         </p>
       </div>
+      </div>
     </template>
   </section>
 </template>
 
 <style scoped>
 .map { display: flex; flex-direction: column; gap: 8px; font-size: var(--font-12-5); }
+/* 内容卡片化：白底 + 细边 + 浅阴影，与系统卡片调性一致（--radius/--shadow 主题化） */
+.map-card {
+  display: flex; flex-direction: column; gap: 8px;
+  padding: 12px 14px;
+  border: 1px solid var(--line, #d9e2ec);
+  border-radius: var(--radius, 6px);
+  background: var(--panel, #fff);
+  box-shadow: var(--shadow, 0 1px 2px rgba(15, 23, 42, 0.04));
+}
 .map-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
 .map-head input { padding: 2px 6px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 6px; font-size: var(--font-11-5); }
 .map-muted { margin: 0; color: var(--el-text-color-secondary, #909399); }
