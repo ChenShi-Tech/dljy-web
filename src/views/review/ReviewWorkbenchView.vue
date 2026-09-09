@@ -23,6 +23,7 @@ import ReportWorkpaperEditor from '@/components/review/workbench/ReportWorkpaper
 import type { ReportEvidence } from '@/services/review/workpapers'
 import TopicAnalysisPanel from '@/components/review/workbench/TopicAnalysisPanel.vue'
 import SettlementAnalysisPanel from '@/components/review/workbench/SettlementAnalysisPanel.vue'
+import ReviewDataMaintenance from '@/components/review/workbench/ReviewDataMaintenance.vue'
 import { buildReviewEvidence, executionEvidence, simulatedOrder, type ReviewEvidenceSnapshot } from '@/services/review/reviewEvidence'
 import RegionDataBanner from '@/components/region/RegionDataBanner.vue'
 
@@ -61,7 +62,9 @@ function openCompanyWorkpaper(material: ReportEvidence) {
   workpaperSnapshot.value = snapshot; workpaperMaterial.value = material; workpaperVisible.value = true; topicVisible.value = false
 }
 function closeWorkpaper(done: () => void) { if (!workpaperDirty.value || window.confirm('当前底稿或批注尚未保存，确定关闭吗？')) done() }
-const topicMode = ref<'interval' | 'settlement'>('interval')
+const topicMode = ref<'interval' | 'settlement' | 'maintenance'>('interval')
+const maintenanceBusy = ref(false)
+function closeTopic(done: () => void) { if (maintenanceBusy.value) ElMessage.warning('资料正在导入，请等待结果后关闭'); else done() }
 const topicVisible = ref(false), topicSnapshot = ref<ReviewEvidenceSnapshot | null>(null)
 const reportDrafts = new Map<string, string>()
 const dirtyReports = new Set<string>()
@@ -72,10 +75,10 @@ function reportKey(snapshot: ReviewEvidenceSnapshot) { return `${snapshot.scope.
 function storeReportDraft(value: string, snapshot: ReviewEvidenceSnapshot) { const key = reportKey(snapshot); reportDrafts.set(key, value); if (value.trim()) dirtyReports.add(key); else dirtyReports.delete(key) }
 function markReportDownloaded(snapshot: ReviewEvidenceSnapshot) { dirtyReports.delete(reportKey(snapshot)) }
 function storeImprovementDraft(value: string[], key: string) { improvementDrafts.set(key, value) }
-function warnBeforeUnload(event: BeforeUnloadEvent) { if (hasDraft()) { event.preventDefault(); event.returnValue = '' } }
+function warnBeforeUnload(event: BeforeUnloadEvent) { if (hasDraft() || maintenanceBusy.value) { event.preventDefault(); event.returnValue = '' } }
 onMounted(() => window.addEventListener('beforeunload', warnBeforeUnload))
 onBeforeUnmount(() => window.removeEventListener('beforeunload', warnBeforeUnload))
-onBeforeRouteLeave(() => !hasDraft() || window.confirm('离开复盘中心会丢失尚未保存或下载的草稿，确定离开吗？'))
+onBeforeRouteLeave(() => { if (maintenanceBusy.value) { ElMessage.warning('资料正在导入，请等待结果后离开'); return false }; return !hasDraft() || window.confirm('离开复盘中心会丢失尚未保存或下载的草稿，确定离开吗？') })
 const canAnalyze = computed(() => !!selectedCompanyId.value && (selectedKey.value ? !!selectedOrder.value || !!selectedDecision.value : !!settlement.value || points.value.length > 0))
 function currentSnapshot(interval = '') {
   return buildReviewEvidence({ company: selectedCompanyId.value, companyLabel: currentCompany.value?.name || '当前授权公司', region: region.value, regionLabel: currentRegion.value.name || currentRegion.value.shortName, day: date.value, objectKey: selectedKey.value, objectLabel: objectLabel.value, order: selectedOrder.value, decision: selectedDecision.value, settlement: settlement.value, points: points.value, simulated: simulated.value, focus: interval })
@@ -201,7 +204,7 @@ async function saveLesson() {
     <ImprovementWorkbench v-else-if="!selectedKey || selectedOrder || selectedDecision" :key="`${selectedCompanyId}:${region}:${date}:${selectedKey}`" :context="context" :focus="focus" :saved-draft="improvementDrafts.get(draftKey)" :draft-key="draftKey" @draft="storeImprovementDraft" />
     <section v-else class="panel compact-gap"><h2>请先核实复盘对象</h2><p>指定记录尚不可用，不能将改进措施挂到其他对象。</p></section>
     </template>
-    <el-dialog v-model="topicVisible" title="专题分析" width="min(1180px, 96vw)" :close-on-click-modal="false" destroy-on-close><div class="header-actions"><button type="button" :disabled="!topicSnapshot" @click="topicMode = 'interval'">本次分时分析</button><button type="button" @click="topicMode = 'settlement'">公司周期与结算</button></div><TopicAnalysisPanel v-if="topicSnapshot && topicVisible && topicMode === 'interval'" :snapshot="topicSnapshot" @material="openWorkpaper" /><SettlementAnalysisPanel v-if="topicVisible && topicMode === 'settlement'" :company="selectedCompanyId" :company-label="currentCompany?.name" :region="region" :date="date" @material="openCompanyWorkpaper" /></el-dialog>
+    <el-dialog v-model="topicVisible" title="专题分析" width="min(1180px, 96vw)" :close-on-click-modal="false" :before-close="closeTopic" destroy-on-close><div class="header-actions"><button type="button" :disabled="!topicSnapshot || maintenanceBusy" @click="topicMode = 'interval'">本次分时分析</button><button type="button" :disabled="maintenanceBusy" @click="topicMode = 'settlement'">公司周期与结算</button><button type="button" :disabled="maintenanceBusy" @click="topicMode = 'maintenance'">维护资料</button></div><TopicAnalysisPanel v-if="topicSnapshot && topicVisible && topicMode === 'interval'" :snapshot="topicSnapshot" @material="openWorkpaper" /><SettlementAnalysisPanel v-if="topicVisible && topicMode === 'settlement'" :company="selectedCompanyId" :company-label="currentCompany?.name" :region="region" :date="date" @material="openCompanyWorkpaper" /><ReviewDataMaintenance v-if="topicVisible && topicMode === 'maintenance'" :company-id="selectedCompanyId" :company-label="currentCompany?.name || '当前公司'" :region="region" @busy="maintenanceBusy = $event" /></el-dialog>
     <el-dialog v-model="workpaperVisible" title="复盘图文底稿" width="min(1380px, 98vw)" :close-on-click-modal="false" :before-close="closeWorkpaper" destroy-on-close><ReportWorkpaperEditor v-if="workpaperSnapshot && workpaperVisible" :snapshot="workpaperSnapshot" :material="workpaperMaterial" @dirty="workpaperDirty = $event" /></el-dialog>
     <el-dialog v-model="assistantVisible" :title="assistant?.mode === 'report' ? '复盘报告草稿' : '复盘分析'" width="min(1180px, 96vw)" :close-on-click-modal="false">
       <ReviewAssistantWorkbench v-if="assistant" :key="assistant.snapshot.capturedAt" :snapshot="assistant.snapshot" :mode="assistant.mode" :saved-draft="reportDrafts.get(assistant.key)" @draft="storeReportDraft" @downloaded="markReportDownloaded" />

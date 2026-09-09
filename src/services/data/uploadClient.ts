@@ -15,7 +15,7 @@ export interface UploadContractColumn {
 export interface UploadContractSummary {
   dataset: string
   title: string
-  kind: 'checklist-delivery' | 'capture-family'
+  kind: 'checklist-delivery' | 'capture-family' | 'cgn-mapping' | 'cgn-spot-export'
   regionPolicy: 'fixed' | 'choose'
   region: string | null
   granularity: string
@@ -23,6 +23,7 @@ export interface UploadContractSummary {
   key: string[]
   overlap: string
   notes: string
+  review?: { purpose: string; canWrite: boolean } | null
   columns: UploadContractColumn[]
   batchCount: number
   lastBatch: { id: string; createdAt: string; rowsValid: number; status: string } | null
@@ -77,6 +78,11 @@ export interface CommitResult {
   precheck?: PrecheckReport
 }
 
+export interface UploadScope { companyId: string; region: string }
+function scopedOptions(scope?: UploadScope) {
+  return scope ? { headers: { 'x-company-id': scope.companyId, 'x-tenant-id': scope.companyId, 'x-region-id': scope.region } } : undefined
+}
+
 function newIdempotencyKey(): string {
   return globalThis.crypto?.randomUUID?.() ?? `data-upload-${Date.now()}-${Math.random()}`
 }
@@ -93,15 +99,15 @@ function unwrapData<T>(res: { data?: T }): T | undefined {
   return res?.data
 }
 
-export async function fetchUploadContracts(): Promise<UploadContractSummary[]> {
-  const res = await apiGet<{ contracts: UploadContractSummary[] }>('/api/v1/data-upload/contracts')
+export async function fetchUploadContracts(scope?: UploadScope): Promise<UploadContractSummary[]> {
+  const res = await apiGet<{ contracts: UploadContractSummary[] }>('/api/v1/data-upload/contracts', scope ? { companyId: scope.companyId } : undefined, scopedOptions(scope))
   return unwrapData(res)?.contracts ?? []
 }
 
-export async function fetchUploadTemplate(dataset: string, format: 'xlsx' | 'csv' = 'xlsx'): Promise<{ fileName: string; contentBase64?: string; content?: string }> {
+export async function fetchUploadTemplate(dataset: string, format: 'xlsx' | 'csv' = 'xlsx', scope?: UploadScope): Promise<{ fileName: string; contentBase64?: string; content?: string }> {
   const res = await apiGet<{ fileName: string; contentBase64?: string; content?: string }>(
     `/api/v1/data-upload/template/${dataset}`,
-    { format }
+    { format, ...(scope ? { companyId: scope.companyId } : {}) }, scopedOptions(scope)
   )
   const data = unwrapData(res)
   if (!data?.fileName) throw new Error('模板响应缺 fileName（服务端信封形状异常）')
@@ -114,10 +120,10 @@ export async function precheckUpload(payload: {
   content: string
   isBinary: boolean
   region?: string
-}): Promise<PrecheckReport & { msg?: string }> {
+}, scope?: UploadScope): Promise<PrecheckReport & { msg?: string }> {
   // 服务端把报告字段 spread 进 data；msg 留在信封顶层，两处合并后交页面。
-  const res = await apiPost<PrecheckReport>('/api/v1/data-upload/precheck', payload, {
-    headers: { 'Idempotency-Key': newIdempotencyKey() }
+  const res = await apiPost<PrecheckReport>('/api/v1/data-upload/precheck', { ...payload, ...(scope ? { companyId: scope.companyId } : {}) }, {
+    headers: { ...scopedOptions(scope)?.headers, 'Idempotency-Key': newIdempotencyKey() }
   })
   const data = unwrapData(res)
   if (!data) throw new Error(res?.msg ?? '预检响应缺 data（服务端信封形状异常）')
@@ -130,18 +136,18 @@ export async function commitUpload(payload: {
   content: string
   isBinary: boolean
   region?: string
-}): Promise<CommitResult> {
+}, scope?: UploadScope): Promise<CommitResult> {
   // commit 的 data 就是完整 result（含 code/batch/delivered/msg）。
-  const res = await apiPost<CommitResult>('/api/v1/data-upload/commit', payload, {
-    headers: { 'Idempotency-Key': newIdempotencyKey() }
+  const res = await apiPost<CommitResult>('/api/v1/data-upload/commit', { ...payload, ...(scope ? { companyId: scope.companyId } : {}) }, {
+    headers: { ...scopedOptions(scope)?.headers, 'Idempotency-Key': newIdempotencyKey() }
   })
   const data = unwrapData(res)
   if (!data) throw new Error(res?.msg ?? '提交响应缺 data（服务端信封形状异常）')
   return data
 }
 
-export async function fetchUploadBatches(dataset?: string): Promise<UploadBatchRow[]> {
-  const res = await apiGet<{ rows: UploadBatchRow[] }>('/api/v1/data-upload/batches', dataset ? { dataset } : undefined)
+export async function fetchUploadBatches(dataset?: string, scope?: UploadScope): Promise<UploadBatchRow[]> {
+  const res = await apiGet<{ rows: UploadBatchRow[] }>('/api/v1/data-upload/batches', { ...(dataset ? { dataset } : {}), ...(scope ? { companyId: scope.companyId } : {}) }, scopedOptions(scope))
   return unwrapData(res)?.rows ?? []
 }
 
