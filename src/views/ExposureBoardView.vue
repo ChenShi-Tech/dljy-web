@@ -6,7 +6,7 @@ import { Calculator, Gauge, TrendingDown, TrendingUp } from 'lucide-vue-next'
 import AgentSidekick from '../components/agent/AgentSidekick.vue'
 import { useEChart } from '../composables/useEChart'
 import { useQuerySync, type QuerySyncValue } from '../composables/useQuerySync'
-import { axisTooltip, chartToolbox, emptyOverlay } from '@/services/chart/chartOptions'
+import { axisTooltip, bottomLayoutLegend, bottomToolbox, emptyOverlay } from '@/services/chart/chartOptions'
 import { fetchExposure, type ExposureResult } from '@/services/quant/quantClient'
 import {
   EXPOSURE_PRIVATE_FAMILIES,
@@ -117,10 +117,11 @@ function renderCharts() {
     mainChart.setOption({
       ...emptyOverlay(!r.series.length),
       tooltip: axisTooltip({ unit: 'MWh/h' }),
-      legend: { data: ['合同分解', '预计出力', '敞口 gap'], top: 0, right: 110 },
-      toolbox: chartToolbox('中长期敞口'),
-      grid: { left: 52, right: 16, top: 30, bottom: 40 },
-      dataZoom: [{ type: 'slider', height: 16, bottom: 8 }],
+      // 底部布局对齐分时行情(fshq)日K主图：图例顶部居中独占一行、工具栏右下角、inside+slider 缩放
+      legend: bottomLayoutLegend({ data: ['合同分解', '预计出力', '敞口 gap'], textStyle: { fontSize: 12 } }),
+      toolbox: bottomToolbox('中长期敞口', 8),
+      grid: { left: 52, right: 16, top: 56, bottom: 56 },
+      dataZoom: [{ type: 'inside' }, { type: 'slider', height: 16, bottom: 18, right: 100 }],
       xAxis: { type: 'category', data: r.series.map((p) => p.datetime) },
       yAxis: { type: 'value', name: 'MWh/h', scale: true },
       series: [
