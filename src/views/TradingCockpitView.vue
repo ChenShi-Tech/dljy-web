@@ -657,7 +657,10 @@ onBeforeUnmount(() => {
             <p class="muted disc-src">源：南网官方披露（真实回放）；明细见「披露明细」标签页。</p>
           </template>
           <p v-else-if="!canViewDisclosure" class="muted">当前角色无披露数据权限。</p>
-          <p v-else class="muted">{{ disclosureLoading ? '读取披露…' : '云南地区展示最新披露关键数（缺数据时为空，不合成）。' }}</p>
+          <!-- 空态拆两支：云南本区缺数 vs 非云南无数据源；共用一句「云南地区展示…」会被误读成选山西却在报云南 -->
+          <p v-else-if="disclosureLoading" class="muted">读取披露…</p>
+          <p v-else-if="isYunnan" class="muted">云南暂无披露数据（缺数据时为空，不合成）。</p>
+          <p v-else class="muted">披露关键数仅接云南披露源（南网官方披露，真实回放）；{{ currentRegion.shortName }}地区无对应数据源，保持空态不合成。</p>
         </section>
 
         <section class="panel overview-card">
