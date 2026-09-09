@@ -1,13 +1,15 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { createImprovementAction, fetchImprovementActions, patchImprovementAction } from '@/services/review/reviewStoreClient'
 import type { ImprovementActionSummary } from '@/services/review/reviewStoreApi'
 import { isRealCalendarDate } from '@/utils/calendarDate'
-const props = defineProps<{ context: string; focus: string }>()
+const props = defineProps<{ context: string; focus: string; savedDraft?: string[]; draftKey?: string }>()
 const actions = ref<ImprovementActionSummary[]>([])
 const loaded = ref(false), loading = ref(false), saving = ref(false)
 const error = ref(''), feedback = ref('')
-const change = ref(''), owner = ref(''), due = ref(''), verification = ref('')
+const emit = defineEmits<{ draft: [value: string[], key: string] }>()
+const change = ref(props.savedDraft?.[0] ?? ''), owner = ref(props.savedDraft?.[1] ?? ''), due = ref(props.savedDraft?.[2] ?? ''), verification = ref(props.savedDraft?.[3] ?? '')
+watch([change, owner, due, verification], values => emit('draft', values, props.draftKey ?? props.context))
 const filter = ref('open'), search = ref('')
 const validating = ref<ImprovementActionSummary | null>(null), evidence = ref('')
 const verdict = ref<'observe' | 'met' | 'unmet'>('observe')

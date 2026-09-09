@@ -1,11 +1,11 @@
 <script setup lang="ts">
 // 接现有真实接口的设计验证版；不把公司汇总数据拼成单笔交易结果。
-import { computed, ref, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { computed, ref, watch, onMounted, onBeforeUnmount } from 'vue'
+import { useRoute, useRouter, onBeforeRouteLeave } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { ArrowLeft, ArrowRight, FileText, RefreshCw, ArrowUpRight } from 'lucide-vue-next'
 import { currentRegion } from '@/services/region/regionContext'
-import { selectedCompanyId } from '@/services/company/companyContext'
+import { selectedCompanyId, currentCompany } from '@/services/company/companyContext'
 import { getDeclaration, listDeclarationsPage, type DeclarationOrder } from '@/services/declarations'
 import { fetchDecisionLogFeed, postBackfill } from '@/services/trading/decisionLogClient'
 import type { DecisionLogEntry } from 'shared/trading-rules/decision-log.mjs'
@@ -14,10 +14,12 @@ import { clampToCoverage } from '@/services/market/captureCoverage'
 import { beijingDay } from '@/utils/beijingDate'
 import { isRealCalendarDate } from '@/utils/calendarDate'
 import { shiftDate } from '@/services/review/reviewDashboard'
-import { declarationLabel, matchesReviewScope, orderIntervals, platformIntervals, orderDecisionEvidence, reviewGap, reviewTaskOf } from '@/services/review/decisionWorkbench'
+import { declarationLabel, matchesReviewScope, orderIntervals, platformIntervals, reviewGap, reviewTaskOf } from '@/services/review/decisionWorkbench'
 import IntervalEvidencePanel from '@/components/review/workbench/IntervalEvidencePanel.vue'
 import SettlementEvidencePanel from '@/components/review/workbench/SettlementEvidencePanel.vue'
 import ImprovementWorkbench from '@/components/review/workbench/ImprovementWorkbench.vue'
+import ReviewAssistantWorkbench from '@/components/review/workbench/ReviewAssistantWorkbench.vue'
+import { buildReviewEvidence, executionEvidence, type ReviewEvidenceSnapshot } from '@/services/review/reviewEvidence'
 import RegionDataBanner from '@/components/region/RegionDataBanner.vue'
 
 const route = useRoute(), router = useRouter()
@@ -37,8 +39,29 @@ const objectLabel = computed(() => selectedOrder.value ? declarationLabel(select
 const context = computed(() => `${date.value} · ${objectLabel.value}${selectedOrder.value ? `（申报编号 ${selectedOrder.value.id}）` : selectedDecision.value ? `（决策记录 ${selectedDecision.value.seq}）` : ''}`)
 const points = computed(() => selectedOrder.value ? orderIntervals(selectedOrder.value) : selectedKey.value ? [] : platformIntervals(result.value, date.value))
 const simulated = computed(() => selectedOrder.value ? selectedOrder.value.mode === 'REHEARSAL' || !!selectedOrder.value.receipt?.mock || ['synthetic', 'illustrative'].includes(selectedOrder.value.basis) : /mock|synthetic/i.test(result.value?.source ?? ''))
-const evidence = computed(() => selectedOrder.value ? orderDecisionEvidence(selectedOrder.value) : [])
+const evidence = computed(() => selectedOrder.value ? executionEvidence(selectedOrder.value) : [])
 const focus = ref(''), lesson = ref(''), savingLesson = ref(false)
+const assistant = ref<{ snapshot: ReviewEvidenceSnapshot; mode: 'analysis' | 'report'; key: string } | null>(null)
+const assistantVisible = ref(false)
+const reportDrafts = new Map<string, string>()
+const improvementDrafts = new Map<string, string[]>()
+const draftKey = computed(() => `${selectedCompanyId.value}:${region.value}:${date.value}:${selectedKey.value}`)
+const hasDraft = () => reportDrafts.size > 0 || [...improvementDrafts.values()].some(values => values.some(Boolean)) || lesson.value !== (selectedDecision.value?.lesson ?? '')
+function storeReportDraft(value: string, snapshot: ReviewEvidenceSnapshot) { reportDrafts.set(`${snapshot.scope.company}:${snapshot.scope.region}:${snapshot.scope.day}:${snapshot.scope.objectKey}`, value) }
+function storeImprovementDraft(value: string[], key: string) { improvementDrafts.set(key, value) }
+function warnBeforeUnload(event: BeforeUnloadEvent) { if (hasDraft()) { event.preventDefault(); event.returnValue = '' } }
+onMounted(() => window.addEventListener('beforeunload', warnBeforeUnload))
+onBeforeUnmount(() => window.removeEventListener('beforeunload', warnBeforeUnload))
+onBeforeRouteLeave(() => !hasDraft() || window.confirm('离开复盘中心会丢失尚未保存或下载的草稿，确定离开吗？'))
+const canAnalyze = computed(() => !!selectedCompanyId.value && (selectedKey.value ? !!selectedOrder.value || !!selectedDecision.value : !!settlement.value || points.value.length > 0))
+function openAssistant(mode: 'analysis' | 'report', interval = '') {
+  if (!canAnalyze.value) return
+  const snapshot = buildReviewEvidence({ company: selectedCompanyId.value, companyLabel: currentCompany.value?.name || '当前授权公司', region: region.value, regionLabel: currentRegion.value.name || currentRegion.value.shortName, day: date.value, objectKey: selectedKey.value, objectLabel: objectLabel.value, order: selectedOrder.value, decision: selectedDecision.value, settlement: settlement.value, points: points.value, simulated: simulated.value, focus: interval })
+  assistant.value = { snapshot, mode, key: `${selectedCompanyId.value}:${region.value}:${date.value}:${selectedKey.value}` }
+  assistantVisible.value = true
+}
+watch([date, region, selectedCompanyId, selectedKey], () => { assistantVisible.value = false; assistant.value = null })
+
 watch(selectedKey, () => { focus.value = ''; lesson.value = '' })
 watch(selectedDecision, d => { lesson.value = d?.lesson ?? '' })
 function changeDate(value: string) {
@@ -128,7 +151,7 @@ async function saveLesson() {
 <template>
   <div class="review-workbench page-stack">
     <RegionDataBanner />
-    <header class="heading"><div class="title"><h1>复盘中心</h1><span>{{ currentRegion.shortName || currentRegion.name }}</span></div><div class="date-control"><button type="button" aria-label="前一天" @click="changeDate(shiftDate(date, -1))"><ArrowLeft :size="14" /></button><input type="date" aria-label="复盘交易日" :value="date" @change="changeDate(($event.target as HTMLInputElement).value)" /><button type="button" aria-label="后一天" @click="changeDate(shiftDate(date, 1))"><ArrowRight :size="14" /></button></div><div class="header-actions"><button type="button" @click="openArchive"><FileText :size="14" />报告与历史专题</button><button type="button" @click="reload"><RefreshCw :size="14" />刷新</button></div></header>
+    <header class="heading"><div class="title"><h1>复盘中心</h1><span>{{ currentRegion.shortName || currentRegion.name }}</span></div><div class="date-control"><button type="button" aria-label="前一天" @click="changeDate(shiftDate(date, -1))"><ArrowLeft :size="14" /></button><input type="date" aria-label="复盘交易日" :value="date" @change="changeDate(($event.target as HTMLInputElement).value)" /><button type="button" aria-label="后一天" @click="changeDate(shiftDate(date, 1))"><ArrowRight :size="14" /></button></div><div class="header-actions"><button type="button" :disabled="!canAnalyze" @click="openAssistant('analysis')">分析本次复盘</button><button type="button" :disabled="!canAnalyze" @click="openAssistant('report')">生成报告草稿</button><button type="button" @click="openArchive"><FileText :size="14" />报告与历史专题</button><button type="button" @click="reload"><RefreshCw :size="14" />刷新</button></div></header>
     <p v-if="!selectedCompanyId" class="notice" role="alert">请先在顶部选择有权查看的公司，再进行复盘。</p>
     <template v-else>
     <section class="object-bar panel"><div><label for="review-object">复盘对象</label><select id="review-object" :value="selectedKey" @change="choose(($event.target as HTMLSelectElement).value)"><option value="">当日资料总览</option><option v-if="selectedKey && !selectedOrder && !selectedDecision" :value="selectedKey">指定记录待核实</option><option v-if="extraOrder && !orders.some(o => o.id === extraOrder?.id)" :value="`order:${extraOrder.id}`">{{ declarationLabel(extraOrder) }}</option><optgroup v-if="orders.length" label="申报记录"><option v-for="o in orders" :key="o.id" :value="`order:${o.id}`">{{ declarationLabel(o) }}</option></optgroup><optgroup v-if="decisions.length" label="决策日志"><option v-for="d in decisions" :key="d.id" :value="`decision:${d.id}`">{{ d.decisionPoint }} · {{ d.author || '决策记录' }}</option></optgroup></select></div><span v-if="orderLoading" class="muted">正在读取记录…</span><span v-else class="muted">沿同一对象查看依据与结果。</span><button v-if="selectedOrder" type="button" @click="openOriginal">打开这笔申报 <ArrowUpRight :size="14" /></button><div v-if="orderTotal > 50" class="pagination"><button type="button" :disabled="orderOffset === 0 || orderLoading" @click="loadOrders(scopeSequence, date, region, orderOffset - 50)">上一批</button><span>{{ orderOffset + 1 }}–{{ Math.min(orderOffset + 50, orderTotal) }} / {{ orderTotal }}</span><button type="button" :disabled="orderOffset + 50 >= orderTotal || orderLoading" @click="loadOrders(scopeSequence, date, region, orderOffset + 50)">下一批</button></div></section>
@@ -138,19 +161,22 @@ async function saveLesson() {
       <section v-if="selectedKey" class="panel object-summary"><div><span class="eyebrow">当前复盘对象</span><h2>{{ objectLabel }}</h2><p>{{ selectedOrder ? '申报、出清与作业留痕来自同一笔记录。' : selectedDecision ? '这是一条决策判断记录；目前未与具体成交及结算逐笔关联。' : '正在核实指定记录，其他对象的数据不会补到这里。' }}</p></div><div v-if="selectedOrder" class="summary-facts"><span>交易日 <b>{{ selectedOrder.targetDate }}</b></span><span>申报时段 <b>{{ selectedOrder.energyCurveMwh96.length }} 个</b></span><span>{{ simulated ? '模拟演练' : '单据留存记录' }}</span></div><button v-if="selectedOrder || selectedDecision" class="primary" type="button" @click="setTask('decision')">查看当时依据</button></section>
       <SettlementEvidencePanel v-if="!selectedKey && settlement" :settlement="settlement" />
       <p v-if="!selectedKey && settlementError" class="notice" role="alert">{{ settlementError }}</p>
-      <IntervalEvidencePanel v-if="points.length" :points="points" :basis="selectedOrder ? 'order' : 'platform'" :date="date" :simulated="simulated" @investigate="investigate" />
+      <IntervalEvidencePanel v-if="points.length" :points="points" :basis="selectedOrder ? 'order' : 'platform'" :date="date" :simulated="simulated" :forecast-curve="selectedOrder?.preflight?.forecast?.curveMwh96" :forecast-at="selectedOrder?.preflight?.forecast?.writtenAt" @investigate="investigate" @analyze="openAssistant('analysis', $event)" />
       <section v-else-if="!selectedKey" class="panel compact-gap"><h2>分时偏差核验</h2><p>{{ evidenceLoading ? '正在核实本日可用资料…' : reviewGap(failure) }}</p><p>结算增量不能替代实际分时电量。选择有出清记录的申报，仍可核查申报与出清差异。</p></section>
       <section v-if="!selectedKey" class="panel next"><div><h2>从结果进入具体决策</h2><p>选中申报或决策日志，还原当时的理由；也可以针对结算资料记录待核实的问题。</p></div><button type="button" @click="setTask('decision')">查看决策记录</button><button type="button" @click="setTask('improvement')">记录改进事项</button></section>
     </template>
     <template v-else-if="task === 'decision'">
       <section v-if="!selectedKey" class="panel decision-list"><p v-if="orderLoading || decisionLoading">正在读取当天决策记录…</p><header><h2>当天留下了哪些决策</h2><p>一次申报与一次判断分别作为复盘对象；同一天不代表已建立逐笔关联。</p></header><p v-if="!orderLoading && !decisionLoading && !orders.length && !decisions.length">{{ orderError || decisionError ? '记录暂不可读，不能确认当天是否留存了决策。' : '当天尚无可查看的申报或决策日志。可先核验结算资料，再记录需补证的问题。' }}</p><button v-for="o in orders" :key="o.id" type="button" class="decision-row" @click="choose(`order:${o.id}`)"><span><b>{{ declarationLabel(o) }}</b><small>{{ o.quoteRationale || '未留存报价依据' }}</small></span><ArrowUpRight :size="16" /></button><button v-for="d in decisions" :key="d.id" type="button" class="decision-row" @click="choose(`decision:${d.id}`)"><span><b>{{ d.decisionPoint }}</b><small>{{ d.judgement || '未记录判断摘要' }}</small></span><ArrowUpRight :size="16" /></button></section>
-      <section v-else-if="selectedOrder" class="panel decision-detail"><header><h2>{{ objectLabel }}</h2><button type="button" @click="openOriginal">核对原始申报 <ArrowUpRight :size="14" /></button></header><p class="notice">以下为单据当前保存的作业留痕。尚无完整的事前版本验证，不能把后补记录当作决策时已知信息，也不按最终盈亏给当时的决策打分。</p><ol class="timeline"><li v-for="e in evidence" :key="e.title"><div><h3>{{ e.title }}</h3><time v-if="e.recordedAt">留存于 {{ new Date(e.recordedAt).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false }) }}</time><span v-else class="muted">留存时点未核实</span></div><p>{{ e.text }}</p></li></ol><div class="next"><p>需补证或改变申报方法时，写清下一次的触发条件与验证办法。</p><button class="primary" type="button" @click="setTask('improvement')">形成改进措施</button></div></section>
+      <section v-else-if="selectedOrder" class="panel decision-detail"><header><h2>{{ objectLabel }}</h2><button type="button" @click="openOriginal">核对原始申报 <ArrowUpRight :size="14" /></button></header><p class="notice">以下为单据当前保存的作业留痕。尚无完整的事前版本验证，不能把后补记录当作决策时已知信息，也不按最终盈亏给当时的决策打分。</p><ol class="timeline"><li v-for="e in evidence" :key="e.id"><div><h3>{{ e.title }}</h3><time v-if="e.at">留存于 {{ new Date(e.at).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false }) }}</time><span v-else class="muted">留存时点未核实</span></div><p>{{ e.text }}</p></li></ol><div class="next"><p>需补证或改变申报方法时，写清下一次的触发条件与验证办法。</p><button class="primary" type="button" @click="setTask('improvement')">形成改进措施</button></div></section>
       <section v-else-if="selectedDecision" class="panel decision-detail"><h2>{{ selectedDecision.decisionPoint }}</h2><p class="notice">原始判断与复盘结论分开展示。当前尚未关联具体申报和结算，不显示单笔收益或胜率。</p><div class="original"><h3>当时的判断</h3><p>{{ selectedDecision.judgement || '未记录' }}</p><h3>判断依据</h3><p>{{ selectedDecision.rationale || '未记录' }}</p><span class="muted">{{ selectedDecision.author || '作者未记录' }} · 留存于 {{ selectedDecision.at ? new Date(selectedDecision.at).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false }) : '时点未核实' }}</span></div><form @submit.prevent="saveLesson"><label>这次判断应保留或改进什么<textarea v-model="lesson" rows="5" placeholder="分别说明：当时信息是否充分、推理是否合理、哪些结论仍需验证。不要仅用事后涨跌评价判断。" /></label><div class="form-actions"><button type="button" @click="setTask('improvement')">形成改进措施</button><button class="primary" type="submit" :disabled="savingLesson || !lesson.trim()">{{ savingLesson ? '保存中…' : '保存复盘结论' }}</button></div></form></section>
       <section v-else class="panel compact-gap"><h2>{{ selectionLoading ? '正在读取记录' : '该记录暂不可用' }}</h2><p>请核实交易日与当前授权，或重新选择复盘对象。</p></section>
     </template>
-    <ImprovementWorkbench v-else-if="!selectedKey || selectedOrder || selectedDecision" :key="`${selectedCompanyId}:${region}:${date}:${selectedKey}`" :context="context" :focus="focus" />
+    <ImprovementWorkbench v-else-if="!selectedKey || selectedOrder || selectedDecision" :key="`${selectedCompanyId}:${region}:${date}:${selectedKey}`" :context="context" :focus="focus" :saved-draft="improvementDrafts.get(draftKey)" :draft-key="draftKey" @draft="storeImprovementDraft" />
     <section v-else class="panel compact-gap"><h2>请先核实复盘对象</h2><p>指定记录尚不可用，不能将改进措施挂到其他对象。</p></section>
     </template>
+    <el-dialog v-model="assistantVisible" :title="assistant?.mode === 'report' ? '复盘报告草稿' : '复盘分析'" width="min(1180px, 96vw)" :close-on-click-modal="false">
+      <ReviewAssistantWorkbench v-if="assistant" :key="assistant.snapshot.capturedAt" :snapshot="assistant.snapshot" :mode="assistant.mode" :saved-draft="reportDrafts.get(assistant.key)" @draft="storeReportDraft" />
+    </el-dialog>
   </div>
 </template>
 

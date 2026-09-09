@@ -10,7 +10,7 @@ import { currentRegion } from '@/services/region/regionContext'
 import { selectedCompanyId } from '@/services/company/companyContext'
 
 vi.mock('@/services/region/regionContext', async () => ({ currentRegion: (await import('vue')).ref({ id: 'yunnan', shortName: '云南' }) }))
-vi.mock('@/services/company/companyContext', async () => ({ selectedCompanyId: (await import('vue')).ref('company-a') }))
+vi.mock('@/services/company/companyContext', async () => ({ selectedCompanyId: (await import('vue')).ref('company-a'), currentCompany: (await import('vue')).ref({ name: '核验公司' }) }))
 vi.mock('@/services/declarations', () => ({ getDeclaration: vi.fn(), listDeclarationsPage: vi.fn() }))
 vi.mock('@/services/quant/quantClient', () => ({ fetchReview: vi.fn(), fetchSettlementReview: vi.fn(), classifyReviewError: vi.fn(() => ({ kind: 'load-failed' })) }))
 vi.mock('@/services/trading/decisionLogClient', () => ({ fetchDecisionLogFeed: vi.fn(), postBackfill: vi.fn() }))
