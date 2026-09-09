@@ -109,3 +109,31 @@ export function writeBasemapLayerPreference(id: TiandituLayerId): void {
     /* 存不下就只在本次会话生效 */
   }
 }
+
+/**
+ * 拼一个供 Cesium `UrlTemplateImageryProvider` 消费的模板地址。
+ *
+ * 与 `buildTiandituTileUrl` 的区别：那个给二维瓦片层用，调用方自己算好 z/x/y；这个把
+ * 坐标位留成 `{z}/{x}/{y}`、子域留成 `{s}` 交给 Cesium 自己填。天地图是标准 WMTS，
+ * 层级/行列的语义与 Cesium 的 `WebMercatorTilingScheme` 一致，不需要任何换算。
+ *
+ * ⚠️ 这里出来的字符串**含明文 tk**，只用于构造 provider，不要写日志或上报。
+ */
+export function buildTiandituTemplateUrl(code: string, token: string): string | null {
+  const tk = String(token ?? '').trim()
+  if (!tk || !code) return null
+  const query = [
+    'SERVICE=WMTS',
+    'REQUEST=GetTile',
+    'VERSION=1.0.0',
+    `LAYER=${encodeURIComponent(code)}`,
+    'STYLE=default',
+    'TILEMATRIXSET=w',
+    'FORMAT=tiles',
+    'TILEMATRIX={z}',
+    'TILEROW={y}',
+    'TILECOL={x}',
+    `tk=${encodeURIComponent(tk)}`,
+  ].join('&')
+  return `https://{s}.tianditu.gov.cn/${code}_w/wmts?${query}`
+}
