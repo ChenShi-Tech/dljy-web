@@ -23,6 +23,8 @@ type EChartsOption = Parameters<echarts.ECharts['setOption']>[0]
 type SetOptionOpts = Parameters<echarts.ECharts['setOption']>[1]
 
 export interface UseEChartOptions {
+  /** 每次实例真正创建时绑定事件，包括延迟布局与主题重建。 */
+  onInit?: (instance: echarts.ECharts) => void
   /** echarts.connect 分组名：同组图表 tooltip / dataZoom 联动。 */
   group?: string
   /** 渲染回调：主题切换重建实例后自动调用以恢复图表内容。 */
@@ -102,6 +104,7 @@ export function useEChart(el: Ref<HTMLElement | null>, options: UseEChartOptions
     }
     if (!chart || chart.isDisposed()) {
       chart = echarts.init(dom, activeChartTheme(), options.initOpts)
+      options.onInit?.(chart)
       if (options.group) {
         chart.group = options.group
         echarts.connect(options.group)
