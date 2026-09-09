@@ -80,14 +80,17 @@ const props = withDefaults(
     promptKey?: string
     // B3 上下文感知 AI：调用方注入的选中数据/行/路由上下文。走 untrusted_external_content 语义
     // （前端只组装不执行），随消息 payload 下发，agent 据此回答带选中上下文。
+    restoreLastSession?: boolean
+    businessOnly?: boolean
     contextPayload?: Record<string, unknown> | null
   }>(),
-  { scenario: 'chat', initialQuestion: '', payload: null, resumeSessionId: null, persistHistory: true, historyKey: '', promptKey: '', contextPayload: null }
+  { scenario: 'chat', initialQuestion: '', payload: null, resumeSessionId: null, persistHistory: true, historyKey: '', promptKey: '', contextPayload: null, restoreLastSession: true, businessOnly: false }
 )
 
 const router = useRouter()
 const emit = defineEmits<{
   done: [status: string]
+  answer: [text: string]
   error: [message: string]
   approval: [payload: Record<string, unknown>]
   // 会话发生持久化变更（注册/新增轮次/恢复），工作台据此刷新历史侧栏
@@ -788,7 +791,7 @@ async function onEvent(e: AgentEvent) {
   } else if (e.type === 'error') {
     finishTextSegs(msg)
     sawErrorEvent = true
-    const errText = `⚠️ ${e.message}`
+    const errText = props.businessOnly ? '分析暂未完成，请重试。已整理的资料与人工草稿仍可使用。' : `⚠️ ${e.message}`
     msg.segs.push({ kind: 'text', chunks: [errText], done: true, blocks: parseArtifactBlocks(errText) })
     emit('error', e.message)
   } else if (e.type === 'done') {
@@ -797,6 +800,11 @@ async function onEvent(e: AgentEvent) {
     lastDoneStatus = e.status
     if (session.value) session.value.status = e.status === 'awaiting_approval' ? 'awaiting_approval' : 'idle'
     noteRunOutcome(e.status)
+    const outcome = resolveDoneOutcome(e.status, sawErrorEvent, { hasAssistantContent: assistantContentSeen })
+    if (!outcome.errorText && !sawErrorEvent && ['idle', 'completed', 'done'].includes(e.status)) {
+      const answer = msg.segs.filter((seg): seg is TextSeg => seg.kind === 'text').map(seg => seg.chunks.join('')).join('\n\n')
+      if (answer.trim()) emit('answer', answer)
+    }
     emit('done', e.status)
   }
   scrollBottom()
@@ -810,7 +818,7 @@ function noteRunOutcome(status: string) {
   if (!outcome.errorText) return
   ensureAttachPlaceholder()
   const msg = lastAssistant()
-  msg.segs.push({ kind: 'text', chunks: [outcome.errorText], done: true, blocks: parseArtifactBlocks(outcome.errorText) })
+  msg.segs.push({ kind: 'text', chunks: [props.businessOnly ? '本次分析未完成，请重试。' : outcome.errorText], done: true, blocks: parseArtifactBlocks(props.businessOnly ? '本次分析未完成，请重试。' : outcome.errorText) })
 }
 
 function isAbortLike(err: unknown): boolean {
@@ -1282,7 +1290,7 @@ onMounted(async () => {
     if (props.initialQuestion.trim() && !agentOffline.value) {
       input.value = props.initialQuestion.trim()
       await send()
-    } else if (props.persistHistory) {
+    } else if (props.persistHistory && props.restoreLastSession) {
       // 刷新/切页恢复：启用历史的面板（默认全部）按本接入点 localStorage 指针恢复上次会话；
       // key 已按 historyKey 隔离，不同接入点互不串台（#498）。
       const saved = readLocalSession()
@@ -1391,7 +1399,7 @@ function approvalBrief(payload: Record<string, unknown>): { label: string; value
       <div v-if="agentOffline" class="empty-hint">
         <div class="empty-logo offline"><Bot :size="28" /></div>
         <p class="empty-title">智能体服务未就绪</p>
-        <p class="sub">请启动智能体后端（npm run dev:agent-api）后重试</p>
+        <p class="sub">{{ businessOnly ? '暂时无法连接分析服务，可继续整理资料和编辑草稿。' : '请启动智能体后端（npm run dev:agent-api）后重试' }}</p>
         <button class="empty-retry" @click="checkHealth()">重试连接</button>
       </div>
       <div v-else-if="!messages.length" class="empty-hint">
@@ -1436,7 +1444,9 @@ function approvalBrief(payload: Record<string, unknown>): { label: string; value
 
               <!-- 顶层工具组：连续顶层工具归为一组，折叠只显统计，展开逐条看指令 -->
               <div
-                v-else-if="seg.kind === 'tool' && !seg.subRole && isToolGroupStart(msg.segs, si)"
+                v-else-if="businessOnly && (seg.kind === 'tool' || seg.kind === 'subagent-group')" class="muted"
+              >资料核实过程<DataBasisBadge v-if="seg.kind === 'tool' && seg.basis" :basis="seg.basis" /></div>
+              <div v-else-if="seg.kind === 'tool' && !seg.subRole && isToolGroupStart(msg.segs, si)"
                 class="tool-group"
                 :class="{ error: toolGroupSummary(toolGroupOf(msg.segs, si)).error }"
               >
