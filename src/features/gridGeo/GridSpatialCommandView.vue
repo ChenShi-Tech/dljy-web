@@ -28,6 +28,7 @@ import {
 } from 'lucide-vue-next'
 import { onRegionChange } from '@/composables/useRegionReload'
 import { currentCompany, selectedCompanyId } from '@/services/company/companyContext'
+import { isMockActive } from '@/services/mock/session'
 import { currentRegion } from '@/services/region/regionContext'
 import ProvinceFlatMap from './ProvinceFlatMap.vue'
 import PlantCatalogPanel from './PlantCatalogPanel.vue'
@@ -96,6 +97,9 @@ type MapExpose = { focusPlant: (plantId: string) => void; focusNode: (nodeId: st
 
 const appRouter = inject(routerKey, null)
 const mapRef = ref<MapExpose | null>(null)
+// 演示会话（PRD R1/R4）：驾驶舱各图层的「mock 数据拒绝」治理门只在真实账号生效；
+// 演示账号全部数据本就是合成来源，按来源接受，图上仍以 mock 标注诚实展示。
+const demoSession = isMockActive()
 const baseLoading = ref(true)
 const baseError = ref('')
 const plants = shallowRef<GridGeoPlant[]>([])
@@ -217,7 +221,7 @@ const selectedNode = computed(() => nodes.value.find((item) => item.nodeId === s
 const selectedEvent = computed(() => disclosures.value.find((item) => item.eventId === selectedEventId.value) ?? null)
 const selectedTopologyFeature = computed(() => topologyFeatures.value.find((item) => item.featureId === selectedTopologyFeatureId.value) ?? null)
 const selectedWeather = computed(() => weatherItems.value.find((item) => item.plantId === selectedPlantId.value) ?? null)
-const trustedMetrics = computed(() => trustedMarketMetrics(marketSnapshot.value))
+const trustedMetrics = computed(() => trustedMarketMetrics(marketSnapshot.value, { allowMock: demoSession }))
 const selectedMarket = computed(() => trustedMetrics.value.find((item) => item.plantId === selectedPlantId.value) ?? null)
 const visibleWeatherItems = computed(() => scene.value === 'weather' ? commandWeatherItems(weatherItems.value, weatherLayer.value) : [])
 const visibleMarketMetrics = computed(() => scene.value === 'market' ? trustedMetrics.value : [])
@@ -456,7 +460,7 @@ async function loadBase() {
   if (profileResult.status === 'fulfilled') operatorProfile.value = profileResult.value
   if (plantResult.status === 'fulfilled') {
     const response = plantResult.value
-    if ((response as { mock?: boolean }).mock === true) {
+    if ((response as { mock?: boolean }).mock === true && !demoSession) {
       plants.value = []
       setLayerState('overview', { status: 'error', reason: 'Mock 空间资产被驾驶舱拒绝' })
       baseError.value = '空间资产返回了不允许进入驾驶舱的 Mock 数据。'
@@ -516,13 +520,13 @@ async function loadNodes(force = false) {
     const response = await fetchGridGeoNodes({ locationStatus: 'located', page: 1, pageSize: COMMAND_NODE_PAGE_SIZE }, { signal: request.signal })
     if (!layerRequestCurrent(request.requestId, request.scopeId, request.signal)) return
     const result = commandNodesFromResponse(response)
-    nodes.value = result.mock ? [] : result.nodes
+    nodes.value = result.mock && !demoSession ? [] : result.nodes
     nodeTotal.value = result.total
     nodeTruncated.value = result.truncatedByPage
     nodeExcludedInvalid.value = result.excludedInvalidCoordinates
     setLayerState('nodes', {
       status: nodes.value.length ? 'available' : 'empty',
-      reason: result.mock
+      reason: result.mock && !demoSession
         ? 'Mock 节点被驾驶舱拒绝'
         : nodes.value.length
           ? `绘制 ${nodes.value.length}/${result.total} 个权威 WGS84 节点${result.truncatedByPage ? '（分页性能预算截断）' : ''}${result.excludedInvalidCoordinates ? `；剔除 ${result.excludedInvalidCoordinates} 个无效坐标` : ''}`
@@ -540,12 +544,12 @@ async function loadWeather(force = false) {
     const response = await fetchGridGeoWeather(undefined, { signal: request.signal })
     if (!layerRequestCurrent(request.requestId, request.scopeId, request.signal)) return
     weatherResponse.value = response
-    weatherItems.value = (response as { mock?: boolean }).mock === true ? [] : response.data.items
+    weatherItems.value = (response as { mock?: boolean }).mock === true && !demoSession ? [] : response.data.items
     const availability = response.data.dataAvailability
     const degraded = availability.status === 'stale' || availability.fallback
     setLayerState('weather', {
       status: degraded ? 'degraded' : weatherItems.value.length ? 'available' : 'empty',
-      reason: (response as { mock?: boolean }).mock === true
+      reason: (response as { mock?: boolean }).mock === true && !demoSession
         ? 'Mock 天气被驾驶舱拒绝'
         : availability.reason || (degraded ? '天气缓存已标记过期/降级' : `已加载 ${weatherItems.value.length} 个当前格点`),
       updatedAt: response.data.fetchedAt,
@@ -556,7 +560,7 @@ async function loadWeather(force = false) {
 }
 
 async function loadMarket(force = false) {
-  if (currentRegion.value.id !== 'yunnan') {
+  if (currentRegion.value.id !== 'yunnan' && !demoSession) {
     marketSnapshot.value = null
     setLayerState('market', { status: 'not-configured', reason: '当前复合市场回放只登记云南 exact-only 数据链；未跨地区回退' })
     return
@@ -570,11 +574,11 @@ async function loadMarket(force = false) {
     })
     if (!layerRequestCurrent(request.requestId, request.scopeId)) return
     marketSnapshot.value = snapshot
-    const metrics = trustedMarketMetrics(snapshot)
+    const metrics = trustedMarketMetrics(snapshot, { allowMock: demoSession })
     const degraded = snapshot.sources.nodePrice.status === 'error' || ['error', 'not-configured'].includes(snapshot.sources.output.status)
     setLayerState('market', {
       status: degraded ? 'degraded' : metrics.some((item) => item.riskScore !== null) ? 'available' : 'empty',
-      reason: snapshot.sources.nodePrice.mock || snapshot.sources.output.mock
+      reason: (snapshot.sources.nodePrice.mock || snapshot.sources.output.mock) && !demoSession
         ? 'Mock 市场来源已从地图指标中剔除'
         : degraded
           ? snapshot.sources.output.reason ?? '部分市场来源失败；仅展示仍有证据的独立指标'
@@ -592,7 +596,7 @@ async function loadDisclosures(force = false) {
   try {
     const response = await fetchGridDisclosureEvents({ page: 1, pageSize: 24 }, { signal: request.signal })
     if (!layerRequestCurrent(request.requestId, request.scopeId, request.signal)) return
-    disclosures.value = response.items.filter((item) => item.source.mock === false)
+    disclosures.value = response.items.filter((item) => item.source.mock === false || demoSession)
     disclosureTotal.value = response.total
     const notConfigured = response.dataAvailability.status === 'not-configured'
     setLayerState('disclosure', {
@@ -626,7 +630,7 @@ async function loadTopology(viewport = lastTopologyViewport, force = false) {
       { maxPages: weakNetwork ? 1 : viewport.lod === 0 ? 1 : 2 },
     )
     if (!result) return
-    if ((result.response as { mock?: boolean }).mock === true) throw new Error('Mock 网架快照被驾驶舱拒绝')
+    if ((result.response as { mock?: boolean }).mock === true && !demoSession) throw new Error('Mock 网架快照被驾驶舱拒绝')
     const snapshot = result.response.data
     topology.value = snapshot
     topologySourceType.value = result.response.sourceType

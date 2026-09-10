@@ -187,11 +187,18 @@ export default defineConfig(({ mode }) => {
         '/console': apiTarget,
         '/_next': apiTarget
       },
-      watch: {
+      watch: (() => {
         // .claude/worktrees/ 是本仓 worktree 根（见 .gitignore）：不排除的话 chokidar 会把
         // 每份 worktree 的完整仓库副本各遍历一遍，开几个分支就能吃满 CPU。
-        ignored: ['**/node_modules/**', '**/dist/**', '**/.claude/worktrees/**']
-      }
+        // 例外：dev server 本身就跑在 worktree 里时（root 即 worktree），不能排除自己；
+        // 且 Windows 下 chokidar 对该路径的事件监听实测不可靠（改动后 transform 缓存不失效），
+        // worktree 模式改用轮询保证 HMR 可用。
+        const inWorktree = process.cwd().includes('.claude/worktrees')
+        if (inWorktree) {
+          return { usePolling: true, interval: 1500, ignored: ['**/node_modules/**', '**/dist/**'] }
+        }
+        return { ignored: ['**/node_modules/**', '**/dist/**', '**/.claude/worktrees/**'] }
+      })()
     }
   }
 })

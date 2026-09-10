@@ -1,3 +1,5 @@
+import { isMockActive } from '@/services/mock/session'
+
 export type WeatherTrackId = 'd2' | 'd1' | 'intraday' | 'actual'
 
 export type WeatherAsOfRow = {
@@ -151,7 +153,13 @@ export function selectWeatherRowsAsOf(rows: WeatherAsOfRow[], input: {
       rejected.scopeMismatch += 1
       continue
     }
-    if (row.mock === true || !REAL_SOURCE_TYPES.has(String(row.sourceType ?? '').toUpperCase()) || String(row.basis ?? '').toLowerCase() !== 'captured') {
+    // 「真实来源」as-of 门约束真实账号；演示会话（PRD R1/R4）放行演示行，
+    // 行内 sourceType/basis 仍如实标注 MOCK/demo，轨迹证据卡可见。
+    if (
+      (row.mock === true
+        || !REAL_SOURCE_TYPES.has(String(row.sourceType ?? '').toUpperCase())
+        || String(row.basis ?? '').toLowerCase() !== 'captured') && !isMockActive()
+    ) {
       rejected.nonReal += 1
       continue
     }

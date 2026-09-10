@@ -10,6 +10,7 @@ import {
 } from '@/services/market/plantOutputClient'
 import { fetchGridGeoPlantIntegrations } from './client'
 import { mappingMatchesScope, resolveScopedOutputSources } from './marketSpatialScope'
+import { isMockActive } from '@/services/mock/session'
 import { gridMarketRiskScore } from './marketSpatialMath'
 import type { GridGeoPlant, GridMarketMetric } from './types'
 
@@ -62,9 +63,10 @@ function signedOutputDeviation(series: ReturnType<typeof buildPlantOutputSeries>
 }
 
 // 契约可信可用（mock 数据不进指标计算，授权拒绝不进指标计算），与 spatialCommand
-// trustedMarketMetrics 同口径：合成数据绝不向地图输出指标。
+// trustedMarketMetrics 同口径：合成数据绝不向地图输出指标。演示会话例外（PRD R1/R4）：
+// 全链路本就是演示数据，按 mock 接受，来源徽章如实显示。
 function usableDaily(contract: NodePriceContract): NodePriceDailyAggregate[] {
-  if (contract.mock || contract.access.accessDenied) return []
+  if ((contract.mock || contract.access.accessDenied) && !isMockActive()) return []
   return contract.daily
 }
 

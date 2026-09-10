@@ -1,5 +1,6 @@
 import { fetchCaptured } from '@/services/captured'
 import { capturedAtFromProvenance } from '@/services/data/freshness'
+import { isMockActive } from '@/services/mock/session'
 
 export const PLANT_OUTPUT_FAMILY = 'yn_plant_output'
 export const PLANT_OUTPUT_DATASET = 'yn_plant_output'
@@ -177,7 +178,9 @@ export async function loadPlantOutputSourcePayload(
     })
     const meta = envelopeMeta(body)
     return {
-      rows: meta.hasRealData && !meta.mock ? pickRows<PlantOutputRow>(body) : [],
+      // 「hasRealData 且非 mock」是真实账号的 fail-closed 门；演示会话（PRD R1/R4）
+      // 数据源本就是 mock router 合成行，按会话放行，可信度徽章仍如实展示。
+      rows: (meta.hasRealData && !meta.mock) || isMockActive() ? pickRows<PlantOutputRow>(body) : [],
       plants: [],
       nodes: [],
       meta,

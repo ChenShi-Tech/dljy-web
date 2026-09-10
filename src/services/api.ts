@@ -328,6 +328,8 @@ import { dataServicePath } from './dataServiceRoutes'
 export { DATA_SVC_ROOT, dataServicePath } from './dataServiceRoutes'
 // 立场切换意图（#2193）：服务端校验 ∈ 允许集合，缺头=home；未选择/未登录不发。
 import { currentStanceHeader } from './stance/stanceContext'
+// mock 演示会话缓存清理（401 踢出路径），与 auth.ts 的登出清理同口径（PRD 边界 5）。
+import { resetSessionScopedCaches } from './mock/session'
 
 // 统一身份 + 地区请求头构造（Phase 0 起导出）：data/request.ts 的 agentRequest() 基座
 // 复用此函数，收敛通道 C（agentClient/quantClient/spotClient/mlForecastClient）各自手写的
@@ -513,4 +515,6 @@ function isBusinessProxy(path: string) {
 function clearLocalAuthState() {
   localStorage.removeItem(TOKEN_KEY)
   localStorage.removeItem(USER_KEY)
+  // mock 演示数据与跨账号数据面缓存一并清空（PRD 边界 5）：401 踢出后浏览器内不残留演示数据。
+  resetSessionScopedCaches()
 }

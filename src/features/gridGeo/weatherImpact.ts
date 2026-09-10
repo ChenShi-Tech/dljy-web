@@ -12,6 +12,7 @@ import {
 } from './marketSpatialScope'
 import { hourlyAverage, optionalCaptureOnNotFound, pearsonCorrelation } from './weatherImpactMath'
 import { buildWeatherTracks, type WeatherAsOfRow } from './weatherTracks'
+import { isMockActive } from '@/services/mock/session'
 import type { GridGeoPlant } from './types'
 
 type MeteoRow = { date: string; time: string; stationId: string; lat: number; lon: number; temp: number | null; humidity: number | null; windSpeed100: number | null; precipitation: number | null; cloudCover: number | null }
@@ -20,7 +21,9 @@ type Envelope = { data?: unknown; rows?: unknown; mock?: boolean; sourceType?: s
 
 function rows<T>(body: unknown): T[] {
   const envelope = body as Envelope
-  if (envelope.mock || envelope.provenance?.sourceType === 'MOCK' || envelope.provenance?.realDataConnected !== true) return []
+  // 「来源必须证明真实」的治理门只约束真实账号；演示会话（PRD R1/R4）数据本就是
+  // 合成来源，按 mock 接受，页面可信度徽章仍如实显示 mock。
+  if (!isMockActive() && (envelope.mock || envelope.provenance?.sourceType === 'MOCK' || envelope.provenance?.realDataConnected !== true)) return []
   if (Array.isArray(envelope.data)) return envelope.data as T[]
   if (Array.isArray(envelope.rows)) return envelope.rows as T[]
   return []
@@ -80,6 +83,7 @@ export async function loadWeatherImpact(
   decisionHour = 12,
 ) {
   if (!scope.companyId || !scope.regionId) throw new Error('当前公司或地区上下文缺失，已停止气象影响取数')
+  const demoSession = isMockActive()
   const mapping = await fetchGridGeoPlantIntegrations(plant.plantId)
   if (!mappingMatchesScope(mapping, scope.companyId, scope.regionId)) {
     throw new Error('场站映射与当前公司或地区不一致，已拒绝跨域取数')
@@ -90,7 +94,7 @@ export async function loadWeatherImpact(
   const unavailableWeather = { rows: [], data: [], sourceType: 'NOT_CONFIGURED', mock: false }
   const unavailablePrice = { data: { series: [], points: 0 }, sourceType: 'NOT_CONFIGURED', mock: false, productionWrite: false } satisfies SpotDataResult<NodePriceSeries>
   const [asOfBody, meteoBody, irradianceBody, output, daResult, rtResult] = await Promise.all([
-    scope.regionId === 'yunnan'
+    scope.regionId === 'yunnan' || demoSession
       ? optionalCaptureOnNotFound(fetchCaptured<unknown>('weather_asof', 'open_meteo_previous_runs_hourly', { region: scope.regionId, dateFrom: date, dateTo: date }), unavailableWeather)
       : Promise.resolve(unavailableWeather),
     weatherSource
@@ -118,8 +122,8 @@ export async function loadWeatherImpact(
   const outputSeries = buildPlantOutputSeries(outputRows)
   const actualOutput = hourlyAverage(outputSeries.actual)
   const targetOutput = hourlyAverage(outputSeries.target)
-  const daPrice = hourlyAverage((daResult.mock ? [] : daResult.data.series).map((point) => point.price))
-  const rtPrice = hourlyAverage((rtResult.mock ? [] : rtResult.data.series).map((point) => point.price))
+  const daPrice = hourlyAverage((daResult.mock && !demoSession ? [] : daResult.data.series).map((point) => point.price))
+  const rtPrice = hourlyAverage((rtResult.mock && !demoSession ? [] : rtResult.data.series).map((point) => point.price))
   const wind = byHour(stationMeteo, 'windSpeed100')
   const temperature = byHour(stationMeteo, 'temp')
   const precipitation = byHour(stationMeteo, 'precipitation')

@@ -1,5 +1,6 @@
 import { AREA_LABEL_BY_REGION } from 'shared/region/constants.mjs'
 import { resolveCaptureOwner } from 'shared/schema/entities/capture-families.mjs'
+import { isMockActive } from '@/services/mock/session'
 import type { PlantOutputCaptureSource } from '@/services/market/plantOutputClient'
 import type { GridGeoPlantIntegrations } from './types'
 
@@ -32,7 +33,15 @@ export function resolveGridSpatialPriceRegion(regionId: string): string | null {
 
 // 当前 capture registry 只登记了云南公共气象族。其他地区即使属于同一电网，也不能
 // 借用云南站点；必须等本地区来源显式注册后才会返回可读取配置。
+// 演示会话（PRD R1/R4）不受真实 registry 约束：任意地区给出演示气象族（mock router 供数）。
 export function resolveGridSpatialWeatherSource(regionId: string): WeatherCaptureSource | null {
+  if (isMockActive()) {
+    return {
+      region: regionId,
+      meteo: { family: 'mock_grid_meteo', dataset: 'mock_grid_meteo_hourly' },
+      irradiance: { family: 'mock_grid_irradiance', dataset: 'mock_grid_irradiance_hourly' },
+    }
+  }
   return WEATHER_CAPTURE_SOURCE_BY_REGION[regionId] ?? null
 }
 
@@ -62,7 +71,9 @@ export function resolveScopedOutputSources(
     const output = mapping.domains.output
     if (!mappingMatchesScope(mapping, companyId, regionId)) continue
     if (output.status !== 'configured' || !output.family || !output.dataset) continue
-    if (resolveCaptureOwner(output.family, regionId, output.dataset) !== companyId) continue
+    // capture owner registry 是真实账号的归属核验（fail-closed）；演示公司不在登记内，
+    // 演示会话跳过该核验（R1/R4），真实账号行为零改动（R2/R3）。
+    if (resolveCaptureOwner(output.family, regionId, output.dataset) !== companyId && !isMockActive()) continue
     const source = { family: output.family, dataset: output.dataset, region: regionId }
     sources.set(`${source.region}:${source.family}:${source.dataset}`, source)
   }

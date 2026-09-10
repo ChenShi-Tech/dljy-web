@@ -47,6 +47,9 @@ import ThemeSwitcher from '../components/ThemeSwitcher.vue'
 import CommandPalette from '../components/CommandPalette.vue'
 import PageHelpTip from '../components/common/PageHelpTip.vue'
 import { useTheme } from '../composables/useTheme'
+// Mock 演示账号（PRD：docs/product/mock-demo-account-prd.md）：顶栏常驻「演示模式」徽标，
+// 红线要求 mock 数据必须可见标注（P1）；AppLayout 在登录后挂载，setup 期读取一次即可。
+import { isMockActive } from '@/services/mock/session'
 
 const router = useRouter()
 const route = useRoute()
@@ -61,6 +64,8 @@ const notices = ref<Notice[]>([])
 const noticesAreMock = ref(false)
 const accessRevision = ref(0)
 const companyOptionsLoading = ref(false)
+// 演示模式徽标：mock 账号登录后常驻顶栏（合规红线：mock 必须可见标注）。
+const mockDemoActive = isMockActive()
 
 // 侧边栏 el-menu 颜色需随主题变化(el-menu 吃 prop 而非 CSS 变量)。
 // classic 档取值与改造前 props 完全一致,保证原版像素不变。
@@ -366,6 +371,13 @@ watch(
         </div>
 
         <div class="topbar-actions">
+          <div
+            v-if="mockDemoActive"
+            class="mock-demo-badge"
+            title="当前为 Mock 演示账号：全部数据为前端演示数据，不接任何真实数据"
+          >
+            演示模式
+          </div>
           <RegionSwitcher v-model="selectedRegionModel" />
           <el-select
             v-if="isMultiStance"
@@ -797,5 +809,20 @@ watch(
   align-items: center;
   /* 价带不参与收缩：防「峰段/平段/谷段」徽标竖排换行 */
   flex: 0 0 auto;
+}
+
+/* 演示模式徽标（Mock 演示账号专用，合规红线：mock 必须可见标注） */
+.mock-demo-badge {
+  flex: 0 0 auto;
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: var(--font-tb-11-5);
+  font-weight: 600;
+  letter-spacing: 1px;
+  color: #0b7a3e;
+  background: rgba(22, 163, 74, 0.12);
+  border: 1px solid rgba(22, 163, 74, 0.45);
+  cursor: help;
+  white-space: nowrap;
 }
 </style>

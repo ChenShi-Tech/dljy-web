@@ -66,8 +66,11 @@ export function commandWeatherItems(items: GridGeoWeatherSnapshot[], layer: Grid
   return items.filter((item) => weatherItemSupportsLayer(item, layer))
 }
 
-export function trustedMarketMetrics(snapshot: GridMarketSpatialSnapshot | null): GridMarketMetric[] {
+export function trustedMarketMetrics(
+  snapshot: GridMarketSpatialSnapshot | null,
+  options: { allowMock?: boolean } = {},
+): GridMarketMetric[] {
   if (!snapshot) return []
-  if (snapshot.sources.nodePrice.mock || snapshot.sources.output.mock) return []
+  if ((snapshot.sources.nodePrice.mock || snapshot.sources.output.mock) && !options.allowMock) return []
   return snapshot.metrics
 }

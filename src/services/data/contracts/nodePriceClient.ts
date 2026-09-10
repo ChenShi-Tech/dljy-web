@@ -13,6 +13,7 @@ import {
 } from './nodePriceAdapter'
 import { resolveMechanismProfile } from '@/services/region/mechanismProfile'
 import { resolveServingRoute } from './servingRoutes.gen'
+import { isMockActive } from '@/services/mock/session'
 
 // 数据链路：serving-route-registry（node_price 数据集）门控 → agent-backend
 // /agent-api/v1/spot/node-price/*（DuckDB 读云南 derived Parquet，BaseResponse 信封）。
@@ -31,8 +32,10 @@ function withMechanism(contract: NodePriceContract, regionId: string): NodePrice
 }
 
 // 注册表门控 + 地区中文名解析（节点价 API 以业务地区中文名下传；未知地区诚实空态）。
+// 演示会话（PRD R1/R4）不受 serving-route-registry 约束：未登记地区（如山西）也放行，
+// 由 mock fetch 守卫供数；真实账号门控行为零改动（R2/R3）。
 function gate(regionId: string): GateResult {
-  if (!resolveServingRoute('node_price', regionId)) {
+  if (!resolveServingRoute('node_price', regionId) && !isMockActive()) {
     return {
       ok: false,
       contract: withMechanism(toNodePriceEmptyContract({

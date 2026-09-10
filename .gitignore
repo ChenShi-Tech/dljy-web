@@ -23,3 +23,8 @@ dist-customer-verify/
 .firecrawl/
 CLAUDE.md
 graphify-out/
+
+# 演示数据 fixtures（PRD C.19：真实采集回放件，仅本地演示 worktree 携带，永不提交/推送）
+src/services/mock/fixtures/
+src/services/mock/fixtures-index.json
+src/services/mock/geo-boundary/

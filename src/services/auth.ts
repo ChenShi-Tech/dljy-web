@@ -12,6 +12,7 @@ import {
 import { regionIdForAreaCode } from '@/data/regions'
 import { setCurrentRegionId } from '@/services/region/regionContext'
 import { clearStanceContext, syncStancesFromSession } from '@/services/stance/stanceContext'
+import { resetSessionScopedCaches } from '@/services/mock/session'
 
 const TOKEN_KEY = 'dljy_restore_token'
 const USER_KEY = 'dljy_governance_user'
@@ -145,6 +146,9 @@ function clearAuthState() {
   localStorage.removeItem(USER_KEY)
   // 立场随会话清空（#2193）：防下一个登录账号继承上一个账号的作业立场。
   clearStanceContext()
+  // mock 演示数据 + 跨账号数据面缓存一并清空（PRD 边界 5）：真实账号登出后
+  // 浏览器内不残留任何 `dljy.mock.*` 演示数据。
+  resetSessionScopedCaches()
 }
 
 // Sub-4(#520)：登录成功后默认地区随账号归属（YN→yunnan、SX→shanxi）。只在显式登录
@@ -162,6 +166,9 @@ export async function login(payload: LoginPayload) {
   }
   localStorage.setItem(TOKEN_KEY, response.token)
   const user = persistAuthUser(response, payload.username)
+  // 账号切换缓存清理（PRD 边界 5）：上一账号（无论真实/演示）的 mock 数据与公司/会话
+  // 缓存在显式登录时清空；刷新恢复（getInfo）不走这里，会话内数据得以保留。
+  resetSessionScopedCaches()
   applyAccountRegionPreference(user)
   return {
     token: response.token,

@@ -1,6 +1,7 @@
 import { computed, ref, watch } from 'vue'
 import { getCurrentUser } from '@/services/auth'
 import type { GovernanceUser } from '@/services/governance'
+import { isMockDemoUser } from '@/services/mock/session'
 import { selectedRegionId } from '@/services/region/regionContext'
 import { companyRegionId, regionHomeCompanyId } from '@/services/region/regionCompany'
 
@@ -32,6 +33,9 @@ function homeCompanyId(): string {
 
 function readInitialCompanyId(): string {
   const home = homeCompanyId()
+  // 演示账号直接落自身演示公司：localStorage 可能残留真实账号的地区公司选择，
+  // 而演示公司不在 COMPANY_REGION 真实登记内，走四规则会被误判清空（见 coordinate 注释）。
+  if (isMockDemoUser(getCurrentUser())) return home
   const stored = window.localStorage.getItem(storageKey)
   // 仅当能切换且存储值有效时采用存储值，否则回退自身公司（防普通用户残留越权选择）。
   if (stored && canSwitchCompany(getCurrentUser())) return stored
@@ -128,6 +132,15 @@ export function resolveCompanyForRegion(args: {
 // 把当前公司上下文协调到 regionId（切地区 / 授权集首次加载后调用）。
 // 授权集未加载时跳过（待 setCompanyOptions 再协调），避免误清空。
 function coordinateCompanyForRegion(regionId: string) {
+  // 演示账号（PRD R1/R4）：合成公司集不在 COMPANY_REGION 真实登记内，四规则会把
+  // 「演示集团 + 任意地区」判成「该地区无授权公司」并清空上下文，所有公司门控页面
+  // （空间资产驾驶舱等）全部落空态。演示会话锁定本账号公司、任何地区都有公司上下文；
+  // 真实账号不进此分支，治理行为零改动（R2/R3）。
+  if (isMockDemoUser(getCurrentUser())) {
+    const home = homeCompanyId()
+    if (currentCompanyId.value !== home) currentCompanyId.value = home
+    return
+  }
   const user = getCurrentUser()
   if (!canSwitchCompany(user)) {
     // 不可切换用户锁定自身公司：残留他值（上一账号 localStorage 继承等）时强制归位，
