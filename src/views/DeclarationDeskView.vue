@@ -264,6 +264,8 @@ const draftRunQuestion = ref('')
 const draftRunKey = ref(0)
 
 const sidebarCollapsed = ref(localStorage.getItem('agent_history_collapsed_declaration_desk') === '1')
+// 智能体工作区默认折叠为一行标题（验收反馈：底部工作区默认收起），点标题行展开
+const agentWsOpen = ref(false)
 watch(sidebarCollapsed, (v) => localStorage.setItem('agent_history_collapsed_declaration_desk', v ? '1' : '0'))
 
 function switchAgentMode(mode: AgentMode) {
@@ -1911,8 +1913,17 @@ onRegionChange(() => {
     </div>
 
 
-    <!-- 智能体工作区：历史侧栏 | 情报清单 | 对话（单框三栏，两个挂载点按模式互斥） -->
-    <section class="panel agent-workspace">
+    <!-- 智能体工作区：历史侧栏 | 情报清单 | 对话（单框三栏，两个挂载点按模式互斥）。
+         默认折叠只留标题行（新建对话/情报问询/协助起草都在内），点标题行展开；
+         内容 v-show 不销毁：会话恢复、情报核查进度在收起展开间不丢。 -->
+    <section class="panel agent-workspace agent-ws-fold">
+      <button class="aw-fold-head" type="button" :aria-expanded="agentWsOpen" @click="agentWsOpen = !agentWsOpen">
+        <Bot :size="14" />
+        <span>智能体工作区</span>
+        <span class="muted aw-fold-hint">情报问询 · 协助起草 · 历史对话（点击{{ agentWsOpen ? '收起' : '展开' }}）</span>
+        <ChevronRight :size="15" class="aw-fold-chev" :class="{ open: agentWsOpen }" />
+      </button>
+      <div v-show="agentWsOpen" class="aw-layout">
       <aside class="aw-aside" :class="{ collapsed: sidebarCollapsed }">
         <AgentHistorySidebar
           ref="sidebarRef"
@@ -2010,6 +2021,7 @@ onRegionChange(() => {
             />
           </div>
         </div>
+      </div>
       </div>
     </section>
   </div>
@@ -2406,6 +2418,22 @@ onRegionChange(() => {
    原 .prep-panel > :last-child { flex:1 } 已删除：它假定 panel 下唯一子元素就是
    chat panel，加侧栏后必然失效；改由 .aw-chat :deep(.agent-panel) 撑高。 */
 .agent-workspace { height: 620px; padding: 0; overflow: hidden; display: flex; }
+/* 折叠壳（默认收起）：标题行常驻，展开后 .aw-layout 接管原三栏布局与高度 */
+.agent-workspace.agent-ws-fold { height: auto; flex-direction: column; }
+.aw-fold-head {
+  display: flex; align-items: center; gap: 8px; width: 100%;
+  padding: 11px 14px; border: none; background: transparent;
+  color: var(--text); font-size: var(--font-md); font-weight: 600; cursor: pointer; text-align: left;
+}
+.aw-fold-head:hover > span:first-of-type { color: var(--primary); }
+.aw-fold-hint { font-weight: 400; }
+.aw-fold-chev { margin-left: auto; flex-shrink: 0; transition: transform 0.15s ease; color: var(--muted); }
+.aw-fold-chev.open { transform: rotate(90deg); }
+.aw-layout { display: flex; height: 620px; min-height: 0; }
+/* 左侧历史轨道底色原为 var(--panel-sub)（浅灰 rgb(248,250,252)），与工作区内容区
+   var(--panel)（纯白）不一致，整条统一成 --panel；新建对话按钮透明化随之融入 */
+.aw-aside :deep(.history-rail) { background: var(--panel); }
+.aw-aside :deep(.new-btn) { background: transparent; }
 .aw-aside { width: 260px; flex-shrink: 0; transition: width 0.18s ease; }
 .aw-aside.collapsed { width: 48px; }
 .aw-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
@@ -2439,6 +2467,7 @@ onRegionChange(() => {
 /* 窄屏：三栏竖排（沿用已接侧栏三页的 900px 断点约定） */
 @media (max-width: 900px) {
   .agent-workspace { height: auto; flex-direction: column; }
+  .aw-layout { height: auto; flex-direction: column; }
   /* 只限制折叠态高度：展开态若也钉死 44px+hidden，rail-head 就占满、历史列表被整体裁掉，
      侧栏在手机/平板上等于不可用（既有三页 PolicyIntel/MorningBrief/PreSubmitCheck 同此问题，
      本 PR 只修申报台，共性修复另开）。 */

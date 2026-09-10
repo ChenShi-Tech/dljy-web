@@ -14,6 +14,7 @@ import {
   Bot,
   CalendarClock,
   ClipboardCheck,
+  ChevronRight,
   FileSearch,
   Landmark,
   LineChart,
@@ -483,6 +484,8 @@ function startPriceRefresh() {
   }, 60_000)
 }
 
+// 快捷动作 + 智能体任务台合并为一卡（验收反馈：两张卡占屏过多），默认折叠只留标题行
+const agentMergedOpen = ref(false)
 // 智能体快捷任务（总览 tab 内嵌，不离开驾驶舱）
 const tomorrow = computed(() => fmtDate(new Date(Date.now() + 86400000)))
 const quickTasks = computed(() => [
@@ -679,10 +682,17 @@ onBeforeUnmount(() => {
         </section>
       </div>
 
-      <!-- 底部分栏：左侧边栏聚合全部动作按钮（原风控哨兵/披露/报价方案卡内按钮 + 快捷任务），右侧智能体对话框常驻。 -->
-      <div class="agent-split">
-        <aside class="panel agent-actions" aria-label="智能体动作">
-          <div class="panel-head"><h2><Bot :size="15" /> 快捷动作</h2></div>
+      <!-- 底部合并卡：快捷动作 + 智能体任务台同卡（原两张卡），默认折叠、点标题行展开。
+           内容 v-show 而非 v-if：AgentChatPanel 挂载即恢复持久化会话，收起不销毁、展开即用。 -->
+      <section class="panel agent-merged">
+        <button class="am-fold-head" type="button" :aria-expanded="agentMergedOpen" @click="agentMergedOpen = !agentMergedOpen">
+          <Bot :size="14" />
+          <span>智能体任务台 · 快捷动作</span>
+          <span class="muted am-fold-hint">dashboard-overview · 会话历史已持久化（点击{{ agentMergedOpen ? '收起' : '展开' }}）</span>
+          <ChevronRight :size="15" class="am-fold-chev" :class="{ open: agentMergedOpen }" />
+        </button>
+        <div v-show="agentMergedOpen" class="agent-split">
+        <aside class="agent-actions" aria-label="智能体动作">
           <p v-if="!canUseAgent" class="muted agent-access-hint">当前角色无智能体使用权限。</p>
           <button
             v-for="t in quickTasks"
@@ -704,8 +714,8 @@ onBeforeUnmount(() => {
           <p class="muted actions-hint"><ShieldAlert :size="12" /> 风控巡检由智能体执行：核查价格异动、CVaR 与持仓敞口，异常产出分级预警。</p>
         </aside>
 
-        <section v-if="canUseAgent" ref="agentPanelHost" class="panel agent-card">
-          <div class="panel-head"><h2><Bot :size="15" /> 智能体任务台</h2><span class="muted">dashboard-overview · 会话历史已持久化</span></div>
+        <section v-if="canUseAgent" ref="agentPanelHost" class="agent-card">
+          <div class="panel-head"><h2><Bot :size="15" /> 智能体任务台</h2></div>
           <AgentChatPanel
             ref="agentPanelRef"
             scenario="chat"
@@ -714,11 +724,12 @@ onBeforeUnmount(() => {
             @ready="onAgentPanelReady"
           />
         </section>
-        <section v-else class="panel agent-card agent-card-locked">
+        <section v-else class="agent-card agent-card-locked">
           <div class="panel-head"><h2><Bot :size="15" /> 智能体任务台</h2></div>
           <p class="muted">当前角色无智能体使用权限，对话框不可用。</p>
         </section>
-      </div>
+        </div>
+      </section>
     </section>
 
     <SpotCockpitCore
@@ -822,16 +833,30 @@ onBeforeUnmount(() => {
 .disc-src { font-size: var(--font-11-5); }
 .disc-mock, .plan-warning { color: #b45309; }
 .agent-access-hint { margin: 6px 0 0; }
-.agent-split { display: grid; grid-template-columns: minmax(0, 248px) minmax(0, 1fr); gap: 12px; align-items: start; }
-.agent-actions { padding: 14px 16px; }
+/* 展开内部参照申报工作台 .aw-layout：全出血双栏 + 内部细分隔线（左侧动作栏定宽可滚动、
+   右侧栏头带下边框、对话面板撑满剩余高度），替代原来两块各带边框的浮动小卡 */
+.agent-split { display: flex; height: 620px; min-height: 0; border-top: 1px solid var(--line-faint); }
+.agent-merged { padding: 0; }
+.am-fold-head {
+  display: flex; align-items: center; gap: 8px; width: 100%;
+  padding: 11px 14px; border: none; background: transparent;
+  color: var(--text); font-size: var(--font-md); font-weight: 600; cursor: pointer; text-align: left;
+}
+.am-fold-head:hover > span:first-of-type { color: var(--primary); }
+.am-fold-hint { font-weight: 400; }
+.am-fold-chev { margin-left: auto; flex-shrink: 0; transition: transform 0.15s ease; color: var(--muted); }
+.am-fold-chev.open { transform: rotate(90deg); }
+.agent-actions { width: 248px; flex-shrink: 0; overflow-y: auto; padding: 12px; border-right: 1px solid var(--line-faint); }
 .agent-actions .task-btn { display: flex; align-items: center; gap: 8px; width: 100%; padding: 8px 10px; margin-top: 6px; font-size: var(--font-md); border: 1px solid var(--line); border-radius: 8px; background: transparent; color: var(--text); cursor: pointer; transition: all 0.15s ease; }
 .agent-actions .task-btn:hover:not(:disabled) { border-color: var(--primary); color: var(--primary); }
 .agent-actions .task-btn:disabled { opacity: 0.55; cursor: not-allowed; }
 .actions-hint { display: flex; align-items: flex-start; gap: 5px; margin: 10px 0 0; font-size: var(--font-11-5); line-height: 1.5; }
 .actions-hint svg { flex: none; margin-top: 2px; }
 .task-arrow { margin-left: auto; color: var(--muted); }
-.agent-card { padding: 14px 16px; }
-.agent-card :deep(.agent-chat-panel) { min-height: 480px; }
+.agent-card { flex: 1; min-width: 0; display: flex; flex-direction: column; padding: 0; }
+.agent-card > .panel-head { padding: 8px 12px; border-bottom: 1px solid var(--line); margin-bottom: 0; flex-shrink: 0; }
+.agent-card :deep(.agent-chat-panel) { flex: 1; min-height: 0; }
+.agent-card-locked > p { padding: 12px; }
 .chart-panel { padding: 14px 16px; }
 .demo-tag { font-size: var(--font-xs); padding: 1px 8px; border-radius: 999px; background: rgba(245, 158, 11, 0.15); color: #b45309; }
 .price-refresh { margin-left: auto; display: inline-flex; align-items: center; gap: 5px; padding: 4px 9px; border: 1px solid var(--line); border-radius: 7px; background: transparent; color: var(--text); cursor: pointer; }
@@ -842,7 +867,7 @@ onBeforeUnmount(() => {
 .plan-meta b { color: var(--text); }
 .plan-basis { margin: 6px 0 14px; }
 .frontier-table { width: 100%; }
-@media (max-width: 1100px) { .agent-split { grid-template-columns: 1fr; } }
+@media (max-width: 1100px) { .agent-split { flex-direction: column; height: auto; } .agent-actions { width: 100%; } }
 @media (max-width: 900px) { .overview-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } .rule-strip { align-items: flex-start; flex-direction: column; } .scenario-picker { width: 100%; } }
 @media (max-width: 768px) { .schedule-track { flex-wrap: wrap; } .phase { flex: 1 1 30%; } .schedule-now { flex-wrap: wrap; } .countdown { margin-left: 0; } .panel-head { flex-wrap: wrap; } .overview-grid { grid-template-columns: 1fr; } .overview-kpis > div { flex-wrap: wrap; } .overview-kpis b { margin-left: 0; } .scenario-picker { align-items: flex-start; flex-wrap: wrap; } .scenario-picker .el-select { width: min(100%, 280px); } .main-chart { height: 360px; } }
 </style>
