@@ -58,7 +58,7 @@ async function reload() {
     limitations.value = catalog.limitations ?? []
     selected.value = catalog.datasets[0]?.id ?? ''
     let next = 0
-    // 六类原文分两路读取，不让大文件扫描占满本地服务。
+    // 五类数据库事件分两路读取，避免一次性占满本地服务连接。
     await Promise.all(Array.from({ length: Math.min(2, catalog.datasets.length) }, async () => {
       while (next < catalog.datasets.length && current === generation) {
         const spec = catalog.datasets[next++]!
@@ -66,12 +66,12 @@ async function reload() {
           const data = await loadDisclosureRecordPage(region, date, spec.id, {}, options)
           if (current === generation) pages.value[spec.id] = data
         } catch (error) {
-          if (current === generation) errors.value[spec.id] = error instanceof Error ? error.message : '原文读取失败'
+          if (current === generation) errors.value[spec.id] = error instanceof Error ? error.message : '事件读取失败'
         }
       }
     }))
   } catch (error) {
-    if (current === generation) loadError.value = error instanceof Error ? error.message : '文本来源目录读取失败'
+    if (current === generation) loadError.value = error instanceof Error ? error.message : '披露事件类别读取失败'
   } finally {
     if (current === generation) loading.value = false
   }
@@ -92,7 +92,7 @@ async function queryPage(page = 1) {
     const data = await loadDisclosureRecordPage(props.regionId, props.date, id, { page, keyword: submittedKeyword.value }, { signal: pageController.signal, timeoutMs: 60_000 })
     if (current === pageGeneration && currentBoard === generation) pages.value[id] = data
   } catch (error) {
-    if (current === pageGeneration && currentBoard === generation) errors.value[id] = error instanceof Error ? error.message : '原文读取失败'
+    if (current === pageGeneration && currentBoard === generation) errors.value[id] = error instanceof Error ? error.message : '事件读取失败'
   } finally {
     if (current === pageGeneration && currentBoard === generation) pageLoading.value = false
   }
@@ -113,19 +113,27 @@ function search() {
   void queryPage()
 }
 
-function heading(row: Record<string, string>) {
-  return ['设备名称', '名称', '电厂名称', '机组名称', '送电类别名称']
-    .map((key) => row[key]).filter(Boolean).join(' · ') || '披露记录'
+function dateTime(value: string | null) {
+  if (!value) return '未提供'
+  const parsed = new Date(value)
+  if (Number.isNaN(parsed.getTime())) return value
+  return new Intl.DateTimeFormat('zh-CN', {
+    timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false,
+  }).format(parsed)
 }
-function fieldLabel(key: string) {
-  return ({ operate_date: '记录日期', source_file: '原始文件', imported_at: '导入时间' } as Record<string, string>)[key] ?? key
+function categoryLabel(id: string) {
+  return datasets.value.find((item) => item.id === id)?.title ?? id
+}
+function spatialKindLabel(kind: string) {
+  return ({ region: '地区', grid: '电网', section: '断面' } as Record<string, string>)[kind] ?? kind
 }
 function categoryState(id: string) {
   if (errors.value[id]) return '读取失败'
   const page = pages.value[id]
   if (!page) return loading.value || (selected.value === id && pageLoading.value) ? '读取中' : '待重试'
-  if (page.dataAvailability.status === 'missing') return '源文件缺失'
-  return `${Object.values(page.scopeCounts).reduce((sum, count) => sum + count, 0)} 条当日记录`
+  if (page.dataAvailability.status === 'missing') return '当日无事件'
+  return `${page.total} 条当日事件`
 }
 
 watch(() => [props.regionId, props.date, selectedCompanyId.value, props.reloadKey], () => {
@@ -142,13 +150,13 @@ onBeforeUnmount(clear)
     <header class="disclosure-texts__header">
       <div>
         <h3 id="disclosure-texts-title">检修与运行记录</h3>
-        <p>按顶部记录日期查看已导入原文；计划时间、实际时间与记录日期分别保留，不参与模型计算。</p>
+        <p>按顶部日期查看 PostgreSQL 中已导入的规范化披露事件；这些事件仅供总览查阅，不参与模型计算。</p>
       </div>
-      <el-button :loading="loading" :disabled="regionId !== 'yunnan' || !date" @click="reload">刷新文本</el-button>
+      <el-button :loading="loading" :disabled="regionId !== 'yunnan' || !date" @click="reload">刷新事件</el-button>
     </header>
     <p v-if="!date || regionId !== 'yunnan'" class="disclosure-texts__state">请选择云南地区和有效记录日期。</p>
     <el-alert v-else-if="loadError" :title="loadError" type="error" :closable="false" show-icon />
-    <p v-else-if="loading && !datasets.length" class="disclosure-texts__state" role="status">正在读取文本来源目录…</p>
+    <p v-else-if="loading && !datasets.length" class="disclosure-texts__state" role="status">正在读取披露事件类别…</p>
     <div v-else-if="datasets.length" class="disclosure-texts__layout">
       <nav class="disclosure-texts__nav" aria-label="文本记录类别">
         <button
@@ -163,36 +171,49 @@ onBeforeUnmount(clear)
         <div class="disclosure-texts__tools">
           <p>{{ activeSpec?.description }}</p>
           <form class="disclosure-texts__search" @submit.prevent="search">
-            <el-input v-model="keyword" aria-label="搜索当前类别原文" placeholder="搜索设备、机组或原因" :maxlength="100" clearable />
+            <el-input v-model="keyword" aria-label="搜索当前类别事件" placeholder="搜索标题、摘要或空间范围" :maxlength="100" clearable />
             <el-button native-type="submit" :disabled="loading || pageLoading">搜索</el-button>
           </form>
         </div>
         <el-alert v-if="errors[selected]" :title="errors[selected]" type="error" :closable="false" show-icon />
-        <p v-else-if="!active || pageLoading" class="disclosure-texts__state" role="status">正在读取原始记录…</p>
+        <p v-else-if="!active || pageLoading" class="disclosure-texts__state" role="status">正在读取规范化事件…</p>
         <template v-else>
           <div class="disclosure-texts__summary">
-            <span>{{ date }} · {{ active.total }} 条{{ submittedKeyword ? '匹配记录' : '记录' }}</span>
-            <span>当日范围{{ submittedKeyword ? '（未按关键词过滤）' : '' }}：{{ Object.entries(active.scopeCounts).map(([scope, count]) => `${scope} ${count} 条`).join('；') || '无符合范围的记录' }}</span>
+            <span>{{ date }} · {{ active.total }} 条{{ submittedKeyword ? '匹配事件' : '事件' }}</span>
+            <span>来源：PostgreSQL · grid.disclosure_events · 不跨地区、不跨日期回退</span>
           </div>
           <p v-if="active.dataAvailability.reason" class="disclosure-texts__note">{{ active.dataAvailability.reason }}</p>
           <p v-if="!active.items.length" class="disclosure-texts__state">
-            {{ submittedKeyword ? '当前关键词没有匹配记录。' : '该日期没有可展示记录；不以其他省份或其他日期补齐。' }}
+            {{ submittedKeyword ? '当前关键词没有匹配事件。' : '该日期没有可展示事件；不以其他省份或其他日期补齐。' }}
           </p>
-          <ol v-else class="disclosure-texts__records" tabindex="0" aria-label="原始披露记录列表" :start="(active.page - 1) * active.pageSize + 1">
-            <li v-for="(row, index) in active.items" :key="`${selected}-${active.page}-${index}`">
+          <ol v-else class="disclosure-texts__records" tabindex="0" aria-label="规范化披露事件列表" :start="(active.page - 1) * active.pageSize + 1">
+            <li v-for="event in active.items" :key="event.eventId">
               <article>
                 <div class="disclosure-texts__record-head">
-                  <h4>{{ heading(row) }}</h4>
-                  <span>{{ row['统计范围'] }}<template v-if="row['必开/必停']"> · {{ row['必开/必停'] }}</template></span>
+                  <h4>{{ event.title }}</h4>
+                  <span>{{ categoryLabel(event.category) }} · {{ event.regionId === 'csg' ? '南网全网' : '云南' }}</span>
                 </div>
-                <p v-if="row['干预原因'] || row['限值原因']" class="disclosure-texts__reason">{{ row['干预原因'] || row['限值原因'] }}</p>
-                <p v-if="row['计划停电日期'] || row['计划复电时间']" class="disclosure-texts__note">计划停电：{{ row['计划停电日期'] || '未填写' }}；计划复电：{{ row['计划复电时间'] || '未填写' }}</p>
+                <p class="disclosure-texts__reason">{{ event.summary || '该规范化事件未提供摘要。' }}</p>
+                <dl class="disclosure-texts__event-meta">
+                  <div><dt>类别</dt><dd>{{ categoryLabel(event.category) }}（{{ event.category }}）</dd></div>
+                  <div><dt>空间范围</dt><dd>{{ event.spatialBinding.label }} · {{ spatialKindLabel(event.spatialBinding.kind) }}<template v-if="event.spatialBinding.ref"> · {{ event.spatialBinding.ref }}</template></dd></div>
+                  <div><dt>生效时间</dt><dd>{{ dateTime(event.effectiveAt) }}</dd></div>
+                  <div><dt>失效时间</dt><dd>{{ dateTime(event.expiresAt) }}</dd></div>
+                  <div><dt>披露时间</dt><dd>{{ dateTime(event.publishedAt) }}</dd></div>
+                  <div><dt>源表</dt><dd>{{ event.source.sourceTable }}</dd></div>
+                  <div><dt>源文件</dt><dd>{{ event.source.file }}</dd></div>
+                  <div><dt>源记录 ID</dt><dd>{{ event.source.recordId }}</dd></div>
+                </dl>
                 <details>
-                  <summary>查看原始字段与来源</summary>
+                  <summary>查看事件与导入溯源</summary>
                   <dl>
-                    <template v-for="column in active.columns" :key="column">
-                      <dt>{{ fieldLabel(column) }}</dt><dd>{{ row[column] || '未填写' }}</dd>
-                    </template>
+                    <div><dt>事件 ID</dt><dd>{{ event.eventId }}</dd></div>
+                    <div><dt>Provider</dt><dd>{{ event.providerId }}</dd></div>
+                    <div><dt>导入时间</dt><dd>{{ dateTime(event.importedAt) }}</dd></div>
+                    <div><dt>可信级别</dt><dd>{{ event.confidence }}</dd></div>
+                    <div><dt>来源类型</dt><dd>{{ event.source.sourceType }} / DB</dd></div>
+                    <div><dt>来源许可</dt><dd>{{ event.source.license || '未提供' }}</dd></div>
+                    <div><dt>原始链接</dt><dd>{{ event.source.url || event.source.originalLinkStatus || '未提供' }}</dd></div>
                   </dl>
                 </details>
               </article>
@@ -206,15 +227,14 @@ onBeforeUnmount(clear)
             </div>
           </footer>
           <details class="disclosure-texts__source">
-            <summary>数据范围与来源说明</summary>
-            <p>源表：{{ active.source.sourceTable }}；原表共 {{ active.sourceRowCount }} 行。覆盖：{{ active.coverage.from || '无记录' }} 至 {{ active.coverage.to || '无记录' }}。</p>
-            <p>当日已排除其他或未知地区 {{ active.excludedRegionCount }} 条。{{ active.source.license }}</p>
-            <p>源文件：{{ active.source.sourceFiles.join('、') || '未提供' }}</p>
+            <summary>数据口径说明</summary>
+            <p>{{ active.dataAvailability.reason }}</p>
+            <p>本区只展示 grid.disclosure_events 的规范化字段及逐事件溯源；不伪装成原始表全字段，也不会直接读取本地 CSV。</p>
           </details>
         </template>
       </div>
     </div>
-    <p v-else class="disclosure-texts__state">当前没有已接入的文本来源类别；未生成占位记录。</p>
+    <p v-else class="disclosure-texts__state">当前没有后端返回的披露事件类别；未生成占位记录。</p>
     <p v-for="note in limitations" :key="note" class="disclosure-texts__limitation">{{ note }}</p>
   </section>
 </template>
@@ -246,8 +266,10 @@ onBeforeUnmount(clear)
 .disclosure-texts__reason { white-space: pre-wrap; overflow-wrap: anywhere; font-size: var(--font-md); }
 .disclosure-texts summary { display: list-item; width: fit-content; cursor: pointer; color: var(--primary, #0f9d8a); font-size: var(--font-sm); line-height: 1.8; }
 .disclosure-texts dl { display: grid; grid-template-columns: 140px minmax(0, 1fr); font-size: var(--font-sm); margin: 12px 0 0; }
+.disclosure-texts dl > div { display: contents; }
 .disclosure-texts dt, .disclosure-texts dd { margin: 0; padding: 6px 10px; border-bottom: 1px solid var(--line, #d9e2ec); overflow-wrap: anywhere; white-space: pre-wrap; line-height: 1.7; }
 .disclosure-texts dt { color: var(--muted, #667085); }
+.disclosure-texts__event-meta { margin-top: 10px; padding: 4px 10px; border-radius: 6px; background: var(--surface-soft, #f7f9fb); }
 .disclosure-texts__footer { margin: 16px 0; flex-wrap: wrap; font-size: var(--font-sm); }
 .disclosure-texts__source p { overflow-wrap: anywhere; }
 .disclosure-texts__state { color: var(--muted, #667085); padding: 20px 0; font-size: var(--font-md); }
