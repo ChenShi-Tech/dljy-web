@@ -38,7 +38,8 @@ import {
 } from '@/services/governance'
 import AiAssistant from '../components/AiAssistant.vue'
 import AiOrbLauncher from '../components/agent/AiOrbLauncher.vue'
-import PriceTicker from '../components/PriceTicker.vue'
+// 价带卡（峰/平/谷徽标 + 参考价）按验收反馈先隐藏；恢复时解开此处与模板中的 topbar-ticker 块
+// import PriceTicker from '../components/PriceTicker.vue'
 import RegionSwitcher from '@/components/region/RegionSwitcher.vue'
 import RegionMigrationTip from '@/components/region/RegionMigrationTip.vue'
 import AlertCenter from '../components/AlertCenter.vue'
@@ -329,9 +330,11 @@ watch(
               <PageHelpTip />
             </div>
           </div>
+          <!-- 价带卡先隐藏（验收反馈），恢复时解开本块并还原上方 import
           <div class="topbar-ticker">
             <PriceTicker />
           </div>
+          -->
           <div class="context-cards governance-strip">
             <el-tooltip placement="bottom-start" effect="light">
               <template #content>
