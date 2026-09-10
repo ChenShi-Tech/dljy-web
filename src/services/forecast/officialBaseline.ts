@@ -1,13 +1,9 @@
 // 官方发布的日前预测，作为模型预测的对照基线（#2371 后续）。
 //
-// 为什么只有新能源：云南平台发布的几条曲线里，只有 `new_energy_forecast_d1` 带**显式
-// `targetDate`**（= `operateDate + 1`，真·D-1 日前预测），口径不用猜。`load_forecast` 的
-// `targetDate` 恒为 null，只能靠「与实际值误差最小」反推日期对齐，而实测两段数据结论互相矛盾：
-// 早期南网 CSV 段指向 D-1（56%），#2373 补入的中广核 API 段指向 D+0（46%），都不干净。
-// 口径不明的基线比没有基线更危险——用户会据此判断模型赢了还是输了，实际却是错位比较。
-// 因此负荷暂不接，待向数据方确认 `load_forecast` 的 targetDate 语义后再开。
+// 云南仅新能源有明确targetDate。负荷capture原始日期语义尚有冲突，
+// 不能用另一个PG数据层的注释替代证据；全网总发电也不能当云南省内预测。
 //
-// 电价则是另一回事：云南平台**不发布**官方电价预测（`da_user_price` 是日前用户侧结算价，
+// 电价则是另一回事：云南平台**不发布**官方电价预测（`da_user_price` 是用户侧统一结算价，
 // 不是预测），所以电价没有官方基线可叠，只有实际值（已由后端 actual 提供）。
 import { fetchCaptured } from '@/services/captured'
 
@@ -28,7 +24,7 @@ const OFFICIAL_SOURCES: Record<string, Record<string, OfficialSource>> = {
       family: 'yn_system_forecast',
       match: 'new_energy_forecast_d1',
       rowRegion: 'yn',
-      label: '官方日前预测',
+      label: '官方日前新能源预测',
     },
   },
 }
@@ -37,10 +33,16 @@ export function hasOfficialBaseline(regionId: string, target: string): boolean {
   return Boolean(OFFICIAL_SOURCES[regionId]?.[target])
 }
 
+/** 已核实来源与日期语义的地区官方目标，总览与单模型对照共用。 */
+export function officialTargetsForRegion(regionId: string): string[] {
+  return Object.keys(OFFICIAL_SOURCES[regionId] ?? {})
+}
+
 /** 'HH:MM' → 0–95 的时段序号；非法值返回 null（丢弃该行，不静默当成 0 点）。 */
 function slotOf(timePoint: unknown): number | null {
   const m = /^(\d{1,2}):(\d{2})$/.exec(String(timePoint ?? ''))
   if (!m) return null
+  if (Number(m[1]) > 23 || Number(m[2]) > 59) return null
   const slot = (Number(m[1]) * 60 + Number(m[2])) / 15
   return Number.isInteger(slot) && slot >= 0 && slot < SLOTS_PER_DAY ? slot : null
 }
@@ -54,7 +56,7 @@ function prevDay(date: string): string {
 
 /** 回放行的最小形状：字段一律按 unknown 收，取值时再校验——上游多源共存（南网 CSV / 中广核 API），
  *  不同 feed 的字段完整度不同，声明成确定类型等于替上游打包票。 */
-type OfficialRow = { region?: unknown; targetDate?: unknown; timePoint?: unknown; value?: unknown }
+type OfficialRow = { region?: unknown; targetDate?: unknown; operateDate?: unknown; timePoint?: unknown; value?: unknown }
 type OfficialEnvelope = { rows?: OfficialRow[]; data?: OfficialRow[] }
 
 export type OfficialBaseline = { points: number[]; label: string; targetDate: string }
@@ -62,9 +64,7 @@ export type OfficialBaseline = { points: number[]; label: string; targetDate: st
 /**
  * 取某地区某目标在指定交易日的官方日前预测（96 点）。
  *
- * 取数按 `operateDate`（回放层唯一支持切片的字段）拉 D-1..D 两天，再按 `targetDate === date`
- * 精确挑出那条曲线——**不能只按 operateDate 认**，`operateDate` 是发布日、比交易日早一天，
- * 直接拿会整体错一天（本仓 `drrq` 已有同款教训）。
+ * 取数按operateDate做窗口切片，再严格按targetDate挑曲线，不猜测日期。
  *
  * 无数据 / 点数不全 → 返回 null，调用方不画线；绝不补零或插值凑满 96 点。
  */
@@ -75,6 +75,9 @@ export async function fetchOfficialBaseline(
 ): Promise<OfficialBaseline | null> {
   const src = OFFICIAL_SOURCES[regionId]?.[target]
   if (!src || !date) return null
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return null
+  const parsedDate = new Date(`${date}T00:00:00Z`)
+  if (!Number.isFinite(parsedDate.getTime()) || parsedDate.toISOString().slice(0, 10) !== date) return null
 
   const body = await fetchCaptured<OfficialEnvelope>(src.family, src.match, {
     region: regionId,
@@ -90,8 +93,12 @@ export async function fetchOfficialBaseline(
     if (String(r?.region ?? '') !== src.rowRegion) continue
     if (String(r?.targetDate ?? '') !== date) continue
     const slot = slotOf(r?.timePoint)
-    const value = Number(r?.value)
+    const rawValue = r?.value
+    const value = typeof rawValue === 'number' ? rawValue
+      : typeof rawValue === 'string' && rawValue.trim() ? Number(rawValue) : NaN
     if (slot === null || !Number.isFinite(value)) continue
+    // 同日同槽出现矛盾值不能凭返回顺序挑一个，避免混合发布批次冒充确定曲线。
+    if (Number.isFinite(points[slot]) && points[slot] !== value) return null
     if (Number.isNaN(points[slot])) filled += 1
     points[slot] = value
   }

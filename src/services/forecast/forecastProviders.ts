@@ -20,6 +20,7 @@ import {
 import { FORECAST_CFGS, type ForecastCfg } from '@/data/forecastHubTabs'
 import { getRegionModuleCapabilities, type RegionCapabilityDataSupport } from '@/services/region/regionModules'
 import { currentRegion } from '@/services/region/regionContext'
+import { fetchOfficialBaseline, hasOfficialBaseline, officialTargetsForRegion } from './officialBaseline'
 
 // 契约
 export type ProviderKind = 'replay' | 'compute' // 回放真实采集 | 后端实时计算
@@ -110,10 +111,15 @@ export interface ForecastProvider {
   quality?: ModelQuality
   basisVersion?: string
   supportedTargets: string[]
+  /** false=后端未登记输出目标；前端不得把它当成已训练模型的真实支持范围。 */
+  supportedTargetsDeclared?: boolean
+  /** deployed=具体权重的输出绑定；runtime=请求时用历史数据训练/计算的兼容目标。 */
+  targetCapabilityKind?: 'deployed' | 'runtime'
   paramsSchema: ParamField[]
   // dljy#2464：模型自述（远端模型有）——输入门槛（协变量 × 平台供给）、血统、来源、架构、单位
   io?: ModelIo
   lineage?: ModelLineage
+  capabilities?: ForecastModel['capabilities'] // 含 zeroShot：让入口能识别未做业务训练的基础权重
   source?: string
   framework?: string
   unit?: string
@@ -259,9 +265,10 @@ function platformTargetCfgForRegion(regionId: string | undefined, target: string
 }
 
 export function platformTargetsForRegion(regionId?: string): string[] {
-  return Object.entries(PLATFORM_TARGET_CFG)
+  const legacy = Object.entries(PLATFORM_TARGET_CFG)
     .filter(([, cfg]) => hasRealForecastFamilySupport(regionId, cfg.family))
     .map(([target]) => target)
+  return [...new Set([...legacy, ...officialTargetsForRegion(regionId ?? '')])]
 }
 
 export const platformProvider: ForecastProvider = {
@@ -272,6 +279,15 @@ export const platformProvider: ForecastProvider = {
   supportedTargets: Object.keys(PLATFORM_TARGET_CFG),
   paramsSchema: [], // 官方回放无可调参数
   async run(ctx) {
+    if (hasOfficialBaseline(ctx.regionId, ctx.target)) {
+      const official = await fetchOfficialBaseline(ctx.regionId, ctx.target, ctx.targetDate)
+      if (!official) throw new Error(`云南${ctx.targetDate ?? '所选日期'}未取得完整且无冲突的官方预测96点；未改用其他日期或合成数据`)
+      return applyGranularity({
+        points: official.points, unit: 'MW', basis: 'captured', mock: false,
+        granularity: 96, modelId: 'platform',
+        warnings: [`${official.label}；预测目标日：${official.targetDate}；官方披露回放，不是南洋模型计算`],
+      }, ctx.granularity)
+    }
     const cfg = platformTargetCfgForRegion(ctx.regionId, ctx.target)
     if (!cfg) {
       return {
@@ -325,7 +341,10 @@ export const knnProvider: ForecastProvider = {
   name: 'KNN 相似日（基线）',
   kind: 'compute',
   tier: 'baseline',
-  supportedTargets: ['price', 'load', 'renewable'],
+  // KNN 按请求读取对应目标的真实历史数据；两条用户侧结算价走小时级 loader。
+  // 这里列的是经过取数→特征→预测回归验证的兼容目标，不是“已有固定权重”。
+  supportedTargets: ['price', 'load', 'renewable', 'price_user_da_settlement', 'price_user_rt_settlement'],
+  targetCapabilityKind: 'runtime',
   paramsSchema: [
     { key: 'k1', label: '相似日数量 K1（价格区间）', type: 'slider', default: 8, min: 1, max: 30, step: 1 },
     { key: 'k2', label: '相似日数量 K2（火电出力）', type: 'slider', default: 3, min: 1, max: 30, step: 1 },
@@ -397,6 +416,20 @@ function omitCatalogEntry<T>(source: Record<string, T>, key: string): Record<str
 
 function readCatalogModels(regionId: string, target: string): ForecastModel[] {
   return catalogModelsByKey.value[catalogKey(regionId, target)] ?? []
+}
+
+export function catalogModelsForTarget(target: string, regionId?: string): ForecastModel[] {
+  return readCatalogModels(regionId ?? currentRegion.value.id, target)
+}
+
+export function isCatalogModelUsableForTarget(
+  model: Pick<ForecastModel, 'modelId' | 'namespace' | 'available' | 'supportedTargets'>,
+  target: string,
+): boolean {
+  return !!model.available
+    && isPredictSupported(model)
+    && Array.isArray(model.supportedTargets)
+    && model.supportedTargets.includes(target)
 }
 
 function loadedTargetsForRegion(regionId: string): string[] {
@@ -533,9 +566,6 @@ function normalizeTier(tier: unknown): ForecastProvider['tier'] {
   return (t === 'official' || t === 'baseline' || t === 'core' || t === 'neural' || t === 'deep') ? t : 'core'
 }
 
-// 由注册表派生（顺序 = ForecastTarget 枚举顺序）；后端目录缺省 supportedTargets 时回退全集
-const ML_TARGETS = FORECAST_TARGET_OPTIONS.map((t) => t.id)
-
 export function adaptMlResult(r: ForecastResult, modelId: string, granularity: 24 | 96, nativeSlots = 96): UnifiedForecastResult {
   // 区间带按本标的原生点数判齐全（此前写死 96：60 分钟标的的 24 点区间会被当成「没有区间」）
   const hasBand = r.lower?.length === nativeSlots && r.upper?.length === nativeSlots
@@ -595,16 +625,13 @@ export function isPredictSupported(model: Pick<ForecastModel, 'modelId' | 'names
  * 第三道按腿判而不是要求一个模型两腿全覆盖——后者会把 remote: 与 store: 这类
  * 单 target 上架的真实模型整体挡在选择之外（#1461/#1898 的原限制），而那条限制的
  * 真实来源只是 /cockpit 聚合端点只收一个 model_type，不该扩散到四个带显式 target
- * 的调用点上。未声明 supportedTargets 的（core 模型）视为两腿都支持。
+ * 的调用点上。缺省/空 supportedTargets 都表示「没有登记这条腿的真实绑定」，不得放行。
  */
 export function isModelSelectableForTarget(
   model: Pick<ForecastModel, 'modelId' | 'namespace' | 'available' | 'supportedTargets'>,
   target: 'price' | 'load'
 ): boolean {
-  if (!model.available || !isPredictSupported(model)) return false
-  const declared = model.supportedTargets
-  if (declared && !declared.includes(target)) return false
-  return true
+  return isCatalogModelUsableForTarget(model, target)
 }
 
 /**
@@ -641,13 +668,17 @@ function makeMlProvider(model: ForecastModel): ForecastProvider {
     shadowGate: model.shadowGate,
     quality: model.quality,
     basisVersion: model.basisVersion,
-    // #1461：逐模型支持的目标清单以后端目录为准（physics_hybrid 仅 renewable 等）；
-    // 后端缺省该字段时回退 ML_TARGETS（全集），保旧目录兼容。
-    supportedTargets: model.supportedTargets ?? ML_TARGETS,
+    // #1461：逐模型支持的目标清单以后端目录为准（physics_hybrid 仅 renewable 等）。
+    // 缺省/空都视为「未登记真实输出绑定」，可以留在原始目录证据里，但不能进预测入口/台账计数。
+    supportedTargets: [...new Set(model.supportedTargets ?? [])],
+    supportedTargetsDeclared: model.supportedTargets !== undefined,
+    targetCapabilityKind: ['base', 'baseline', 'neural', 'deep', 'tslib'].includes(model.namespace ?? '')
+      ? 'runtime' : 'deployed',
     // 平台参数（训练回看/概率/共形）+ 模型自己声明的可调参数（dljy#2464：按 paramsSchema 渲染，不再一套配所有）
     paramsSchema: [...ML_PARAMS, ...modelParamFields(model.paramsSchema, ML_PARAM_KEYS)],
     io: model.io,
     lineage: model.lineage,
+    capabilities: model.capabilities,
     source: model.source,
     framework: model.framework,
     unit: model.unit,
@@ -726,7 +757,8 @@ export function getProvider(id: string): ForecastProvider | undefined {
 // 某目标下可用的算法（用于工作台算法选择器按目标过滤）。available:false 模型仍返回（选择器禁用展示，不隐藏）。
 export function providersForTarget(target: string, regionId?: string): ForecastProvider[] {
   const activeRegionId = regionId ?? currentRegion.value.id
-  return providersFromCatalog(target, activeRegionId).filter((p) => {
+  return providersFromCatalog(target, activeRegionId).map((p) => p.id === 'platform'
+    ? { ...p, supportedTargets: platformTargetsForRegion(activeRegionId), supportedTargetsDeclared: true } : p).filter((p) => {
     if (!p.supportedTargets.includes(target)) return false
     if (p.id !== 'platform') return true
     return platformTargetsForRegion(activeRegionId).includes(target)
