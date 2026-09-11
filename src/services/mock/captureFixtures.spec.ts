@@ -135,9 +135,10 @@ describe.skipIf(!hasAnyFixture())('市场洞察 golden 契约等价（fixtures=�
       expect(series.length, '曲线组非空').toBeGreaterThan(0)
       for (const points of series) expect(points).toHaveLength(96)
     }
-    // golden 是平台全量序列（60 组），合成器是四序列子集——序列名不要求相等，只锁「双侧
-    // 都出多序列 96 点」的形状；真实载荷为裸 {date,series}（无 data 容器），适配器同径消化。
-    expect(Object.keys(goldenVm.series).length).toBeGreaterThanOrEqual(Object.keys(mockVm.series).length)
+    // 真实件是平台全量序列（63 组），演示合成按 meta 全量类型逐名生成（C.25 九项补数轮：
+    // 「其他数据项选中也有演示数据」）——任选日期合成覆盖 ⊇ 任一真实日；序列名不要求相等，
+    // 只锁「双侧都出多序列 96 点」的形状；真实载荷为裸 {date,series}（无 data 容器），适配器同径消化。
+    expect(Object.keys(mockVm.series).length).toBeGreaterThanOrEqual(Object.keys(goldenVm.series).length)
   })
 
   it('洞察驾驶舱 getCorpNewEnergyChart：双侧 dateList 与 6 类出力序列等长', async () => {

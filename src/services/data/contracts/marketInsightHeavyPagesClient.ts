@@ -54,12 +54,16 @@ async function fetchReplay(params: {
   match: string
   region: string
   timeoutMs?: number
+  dateFrom?: string
+  dateTo?: string
 }) {
   const res = await agentRequest('/api', '/real', {
     query: {
       family: params.family,
       match: params.match,
-      region: params.region
+      region: params.region,
+      ...(params.dateFrom ? { dateFrom: params.dateFrom } : {}),
+      ...(params.dateTo ? { dateTo: params.dateTo } : {})
     },
     timeoutMs: params.timeoutMs ?? 20000
   })
@@ -143,6 +147,8 @@ export async function fetchMarketInsightPriceAnalysisContract(params: {
 export async function fetchMarketInsightClearingSpotContract(params: {
   region: string
   timeoutMs?: number
+  dateFrom?: string
+  dateTo?: string
 }): Promise<MarketInsightClearingSpotContract> {
   if (!capabilityAllowsRequest(ROUTES.clearing, params.region)) {
     return toMarketInsightClearingSpotContract({
@@ -154,7 +160,9 @@ export async function fetchMarketInsightClearingSpotContract(params: {
     family: MARKET_INSIGHT_PRICE_FAMILY,
     match: MARKET_INSIGHT_CLEARING_MATCH,
     region: params.region,
-    timeoutMs: params.timeoutMs
+    timeoutMs: params.timeoutMs,
+    dateFrom: params.dateFrom,
+    dateTo: params.dateTo
   })
   return toMarketInsightClearingSpotContract({
     payload: body,

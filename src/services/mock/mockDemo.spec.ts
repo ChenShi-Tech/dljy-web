@@ -161,11 +161,11 @@ describe('确定性生成器', () => {
 
   it('外部气象源演示应答（天气预报页 Open-Meteo 直连，C.24）', async () => {
     const { mockExternalWeatherResponse } = await import('./externalWeather')
-    const fc = await jsonOf(await mockExternalWeatherResponse(new URL('https://api.open-meteo.com/v1/forecast?latitude=37.87&longitude=112.55&daily=weather_code&timezone=Asia%2FShanghai')) as Response)
+    const fc = await jsonOf(await mockExternalWeatherResponse(new URL('https://api.open-meteo.com/v1/forecast?latitude=37.87&longitude=112.55&daily=weather_code&timezone=Asia%2FShanghai')) as Response) as { current: { temperature_2m: unknown }; daily: { time: unknown[] }; hourly: { time: unknown[] } }
     expect(fc.current.temperature_2m).toBeTypeOf('number')
-    expect(fc.daily.time as unknown[]).toHaveLength(15)
-    expect(fc.hourly.time as unknown[]).toHaveLength(360)
-    const geo = await jsonOf(await mockExternalWeatherResponse(new URL('https://geocoding-api.open-meteo.com/v1/search?name=%E5%A4%AA%E5%8E%9F&count=10')) as Response)
+    expect(fc.daily.time).toHaveLength(15)
+    expect(fc.hourly.time).toHaveLength(360)
+    const geo = await jsonOf(await mockExternalWeatherResponse(new URL('https://geocoding-api.open-meteo.com/v1/search?name=%E5%A4%AA%E5%8E%9F&count=10')) as Response) as { results: Array<{ name: string }> }
     expect(geo.results[0].name).toBe('太原')
     expect(await mockExternalWeatherResponse(new URL('https://api.example.com/other'))).toBeNull()
   })

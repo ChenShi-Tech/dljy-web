@@ -11,6 +11,7 @@ import {
   type MarketInsightClearingSpotBlock
 } from '@/services/data/contracts'
 import { onRegionChange } from '../composables/useRegionReload'
+import { isMockActive } from '@/services/mock/session'
 import RegionDataBanner from '@/components/region/RegionDataBanner.vue'
 import CapabilitySupportBadge from '../components/CapabilitySupportBadge.vue'
 import { chartChrome } from '../composables/useTheme'
@@ -60,14 +61,18 @@ const dateOf = (s: string) => String(s).slice(0, 10)
 // 防止切地区时旧地区慢响应覆盖新地区出清状态（#415）。
 let loadGeneration = 0
 
-async function load() {
+async function load(range?: { dateFrom?: string; dateTo?: string }) {
   const generation = ++loadGeneration
   loading.value = true; error.value = ''
   clearViewState()
   renderEmptyChart()
   mainChart.showLoading()
   try {
-    const contract = await fetchMarketInsightClearingSpotContract({ region: currentRegion.value.id })
+    const contract = await fetchMarketInsightClearingSpotContract({
+      region: currentRegion.value.id,
+      dateFrom: range?.dateFrom,
+      dateTo: range?.dateTo
+    })
     if (generation !== loadGeneration) return
     dataBasis.value = contract.basis
     clearing.value = contract.blocks.clearing_spot
@@ -78,10 +83,14 @@ async function load() {
     }
     const ds = Array.from(new Set(clearing.value.timePoints.map(dateOf))).sort() as string[]
     allDates.value = ds
-    // 默认展示最近 14 天
-    const endD = ds[ds.length - 1]
-    const startD = ds[Math.max(0, ds.length - 14)]
-    runRange.value = urlRange ?? [startD, endD]
+    // 默认展示最近 14 天；按所选区间重取时保留用户选择
+    if (range?.dateFrom && range?.dateTo) {
+      runRange.value = [range.dateFrom, range.dateTo]
+    } else if (!range) {
+      const endD = ds[ds.length - 1]
+      const startD = ds[Math.max(0, ds.length - 14)]
+      runRange.value = urlRange ?? [startD, endD]
+    }
     await nextTick()
     if (generation !== loadGeneration) return
     render()
@@ -110,10 +119,28 @@ function renderEmptyChart(text = '暂无数据') {
 }
 
 function disabledOut(date: Date) {
+  // 演示会话：日期不限于采集窗——窗外区间由合成分支按 dateFrom/dateTo 补数
+  if (isMockActive()) return false
   if (!allDates.value.length) return false
   const s = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
   return s < allDates.value[0] || s > allDates.value[allDates.value.length - 1]
 }
+
+// 演示会话：所选运行区间/对比日超出当前数据覆盖时，按区间向 mock 重取
+// （__list__ 合成分支按 dateFrom/dateTo 生成，单次上限 90 天，超宽向前钳制）
+watch([runRange, compareDate], () => {
+  if (!isMockActive()) return
+  const picks = [runRange.value?.[0], runRange.value?.[1], compareDate.value || ''].filter(Boolean) as string[]
+  if (!picks.length || !allDates.value.length) return
+  const lo = picks.reduce((a, b) => (b < a ? b : a))
+  const hi = picks.reduce((a, b) => (b > a ? b : a))
+  if (lo >= allDates.value[0] && hi <= allDates.value[allDates.value.length - 1]) return
+  const fmt = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  const end = new Date(`${hi}T00:00:00`)
+  const start = new Date(`${lo}T00:00:00`)
+  const clamped = new Date(end.getTime() - 85 * 86400000)
+  void load({ dateFrom: fmt(start < clamped ? clamped : start), dateTo: hi })
+})
 
 function render() {
   if (!clearing.value) return

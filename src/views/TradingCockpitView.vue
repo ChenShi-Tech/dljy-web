@@ -27,6 +27,8 @@ import { axisTooltip, bottomLayoutLegend, bottomToolbox, emptyOverlay, insideZoo
 import { curveStats } from '@/services/market/spotPrice'
 import { fetchClearingPrice } from '@/services/market/regionClearingPrice'
 import { fetchCaptureCoverage } from '@/services/market/captureCoverage'
+import { isMockActive } from '@/services/mock/session'
+import { dayLevel } from '@/services/mock/generators'
 import { fetchLatestForecast } from '@/services/forecast/latestForecast'
 import { buildPricePanel, resolvePanelDate } from '@/services/market/cockpitPricePanel'
 import RegionDataBanner from '@/components/region/RegionDataBanner.vue'
@@ -83,8 +85,20 @@ let discReqSeq = 0
 const canViewDisclosure = computed(() => canAccessPath('/xhjy/yunnan/disclosure', currentUser.value))
 
 async function loadDisclosureSummary() {
-  if (!canViewDisclosure.value || currentRegion.value.id !== 'yunnan') { disclosure.value = null; return }
+  if (!canViewDisclosure.value || (currentRegion.value.id !== 'yunnan' && !isMockActive())) { disclosure.value = null; return }
   const seq = ++discReqSeq
+  // 演示会话（非云南地区）：直接按生成器给出山西口径的演示披露关键数（日水平因子逐日不同）
+  if (currentRegion.value.id !== 'yunnan') {
+    const now = new Date()
+    const date = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+    disclosure.value = {
+      date,
+      loadForecastMW: Math.round(26800 * dayLevel('disc-load', date)),
+      newEnergyForecastMW: Math.round(5200 * dayLevel('disc-ne', date)),
+      interProvincialMW: Math.round(3100 * dayLevel('disc-ip', date))
+    }
+    return
+  }
   disclosureLoading.value = true
   try {
     // 尾部切片取最新披露：capture 按导出包回放，最新披露可能远早于浏览器今天，
@@ -149,11 +163,11 @@ const canUseAgent = computed(() => canAccessPath('/ai-agent', currentUser.value)
 const bidDialogOpen = ref(false)
 
 async function loadBidPlanSummary() {
-  if (!canViewDeclaration.value || currentRegion.value.id !== 'yunnan') { bidPlan.value = null; return }
+  if (!canViewDeclaration.value || (currentRegion.value.id !== 'yunnan' && !isMockActive())) { bidPlan.value = null; return }
   const seq = ++planReqSeq
   try {
     const summary = await fetchLatestBidPlanSummary(nextDeclarationTargetDate())
-    if (seq !== planReqSeq || currentRegion.value.id !== 'yunnan') return
+    if (seq !== planReqSeq || (currentRegion.value.id !== 'yunnan' && !isMockActive())) return
     bidPlan.value = summary
   } catch {
     if (seq === planReqSeq) bidPlan.value = null // 真实或空：agent-backend 离线不合成
@@ -653,11 +667,11 @@ onBeforeUnmount(() => {
           <template v-if="disclosure">
             <div class="disc-rows">
               <div class="disc-row"><span>披露日</span><b>{{ disclosure.date }}</b></div>
-              <div class="disc-row"><span>统调负荷预测(云南·日均)</span><b>{{ disclosure.loadForecastMW ?? '—' }} MW</b></div>
+              <div class="disc-row"><span>统调负荷预测({{ currentRegion.shortName }}·日均)</span><b>{{ disclosure.loadForecastMW ?? '—' }} MW</b></div>
               <div class="disc-row"><span>新能源预测(D-1·日均)</span><b>{{ disclosure.newEnergyForecastMW ?? '—' }} MW</b></div>
-              <div class="disc-row"><span>云南总送出预测(日均)</span><b>{{ disclosure.interProvincialMW ?? '—' }} MW</b></div>
+              <div class="disc-row"><span>{{ currentRegion.shortName }}总送出预测(日均)</span><b>{{ disclosure.interProvincialMW ?? '—' }} MW</b></div>
             </div>
-            <p class="muted disc-src">源：南网官方披露（真实回放）；明细见「披露明细」标签页。</p>
+            <p class="muted disc-src">源：{{ isYunnan ? '南网官方披露（真实回放）' : '演示数据生成器（Mock）' }}；明细见「披露明细」标签页。</p>
           </template>
           <p v-else-if="!canViewDisclosure" class="muted">当前角色无披露数据权限。</p>
           <!-- 空态拆两支：云南本区缺数 vs 非云南无数据源；共用一句「云南地区展示…」会被误读成选山西却在报云南 -->

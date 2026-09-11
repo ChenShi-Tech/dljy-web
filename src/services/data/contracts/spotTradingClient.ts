@@ -56,12 +56,16 @@ async function fetchReplay(params: {
   match: string
   region: string
   timeoutMs?: number
+  dateFrom?: string
+  dateTo?: string
 }): Promise<{ res: Response; body: unknown; denied: boolean }> {
   const res = await agentRequest('/api', '/real', {
     query: {
       family: params.family,
       match: params.match,
-      region: params.region
+      region: params.region,
+      ...(params.dateFrom ? { dateFrom: params.dateFrom } : {}),
+      ...(params.dateTo ? { dateTo: params.dateTo } : {})
     },
     timeoutMs: params.timeoutMs ?? 20000
   })
@@ -118,6 +122,8 @@ export async function fetchSpotDayAheadReportContract(params: {
 export async function fetchSpotDayAheadEnergyContract(params: {
   region: string
   timeoutMs?: number
+  dateFrom?: string
+  dateTo?: string
 }): Promise<SpotDayAheadEnergyContract> {
   if (!capabilityAllowsRequest(ROUTES.energy, params.region)) {
     return toSpotDayAheadEnergyContract({
@@ -130,7 +136,9 @@ export async function fetchSpotDayAheadEnergyContract(params: {
     family: SPOT_DAY_AHEAD_ENERGY_FAMILY,
     match: SPOT_DAY_AHEAD_ENERGY_MATCH,
     region: params.region,
-    timeoutMs: params.timeoutMs
+    timeoutMs: params.timeoutMs,
+    dateFrom: params.dateFrom,
+    dateTo: params.dateTo
   })
   return toSpotDayAheadEnergyContract({
     payload: body,

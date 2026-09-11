@@ -5,7 +5,7 @@
 // 绝不回源真实后端（隔离硬保证，PRD 边界 1）。后续轮次按覆盖矩阵逐域补 handler。
 
 import { mockEmptyEnvelopeResponse, mockEnvelopeResponse, mockJsonResponse, mockPipelineEnvelopeResponse } from './envelope'
-import { curve96, dateStr, dayLevel, hourlyPrice24, mulberry32, seedOf, TIME_AXIS_96, type CurveKind } from './generators'
+import { curve96, dateStr, dayLevel, hourlyMean24, hourlyPrice24, mulberry32, seedOf, TIME_AXIS_96, type CurveKind } from './generators'
 import { fixtureFileList, loadFixturePayload, loadRealDayCurve } from './fixtures'
 import { mockAgentSessionId, mockAgentStreamResponse } from './agentScript'
 import { resolveGridOperatorProfile } from 'shared/region/grid-operator-profiles.mjs'
@@ -317,29 +317,61 @@ function capturedPayload(ctx: MockContext): Record<string, unknown> {
 
   // —— 市场洞察重页契约（sdpt_zcqxhdl 按 match 分派，形状对齐 marketInsightHeavyPages 适配器）——
   if (family === 'sdpt_zcqxhdl') {
-    // 出清现货电量分析（__list__ 连续序列：timePoints=运行日期区间，series 与 legend 平行的逐日数组）
+    // 出清现货电量分析（__list__ 连续序列）：对齐真实 list 件形状——96 时点 × 天数 ×
+    // 10 序列（此前 6 序列×日粒度 31 点，数据量骤减、价格差柱成粗块）。图例/轴配置/
+    // 时点格式（00:15..24:00）与真实件同构；各序列量纲按真实件中位数固化标定。
     if (match.includes('__list__')) {
-      const daily = (kind: CurveKind, salt: string) => dates.map((d) => {
-        const c = curve96(kind, `${salt}:${d}`, d)
-        return Math.round((c.reduce((s, v) => s + v, 0) / 96) * 10) / 10
-      })
-      const daDaily = daily('price', 'clear-da')
-      const rtDaily = daily('price', 'clear-rt')
-      const energyDaily = dates.map((d, i) => Math.round(daily('renewable', 'clear-e')[i] * 24))
-      const loadDaily = daily('load', 'clear-l')
-      return {
-        nameList: dates,
-        legend: ['日前价出清', '实时价出清', '日前出清现货电量', '日前负荷预测', '系统负荷实际值', '价格差'],
-        yAxisIndexList: [0, 0, 1, 1, 1, 2],
-        series: [
-          daDaily,
-          rtDaily,
-          energyDaily,
-          loadDaily,
-          loadDaily.map((v) => Math.round(v * 103) / 100),
-          rtDaily.map((v, i) => Math.round((v - daDaily[i]) * 10) / 10)
-        ]
+      const legend = ['日前价出清', '实时价出清', '主策略', '日前出清现货电量', '实时出清现货电量', '日前负荷预测', '系统负荷实际值', '市场日前申报策略', '实际与负荷比值', '价格差']
+      const yAxisIndexList = [1, 1, 2, 0, 0, 0, 0, 2, 2, 3]
+      const da: number[] = []
+      const rt: number[] = []
+      const qtyDa: number[] = []
+      const qtyRt: number[] = []
+      const loadFc: number[] = []
+      const loadAct: number[] = []
+      for (const d of dates) {
+        const cDa = curve96('price', `clear-da:${d}`, d)
+        const cRt = boundedFollow(cDa, curve96('price', `clear-rt:${d}`, d))
+        const cQd = curve96('output', `clear-qd:${d}`, d)
+        const cQr = curve96('output', `clear-qr:${d}`, d)
+        const cLf = curve96('load', `clear-lf:${d}`, d)
+        const cLa = curve96('load', `clear-la:${d}`, d)
+        for (let s = 0; s < 96; s++) {
+          da.push(cDa[s]); rt.push(cRt[s]); qtyDa.push(cQd[s]); qtyRt.push(cQr[s]); loadFc.push(cLf[s]); loadAct.push(cLa[s])
+        }
       }
+      const strat: number[] = []
+      const decl: number[] = []
+      const ratio: number[] = []
+      for (const d of dates) {
+        const rs = mulberry32(seedOf(`clear-strat:${d}`))
+        const stratBase = 0.72 + rs() * 0.4
+        const declBase = 0.88 + rs() * 0.24
+        const ratioBase = 1.05 + rs() * 0.3
+        for (let s = 0; s < 96; s++) {
+          strat.push(Math.round((stratBase + rs() * 0.08) * 100) / 100)
+          decl.push(Math.round((declBase + rs() * 0.06) * 100) / 100)
+          ratio.push(Math.round((ratioBase + rs() * 0.1) * 100) / 100)
+        }
+      }
+      const norm = (arr: number[], target: number) => {
+        const sorted = arr.map(Math.abs).sort((a, b) => a - b)
+        const m = sorted[sorted.length >> 1] || 1
+        return arr.map((v) => Math.round((v * target) / m * 10) / 10)
+      }
+      const gap = rt.map((v, i) => v - da[i])
+      const series = [
+        norm(da, 281), norm(rt, 278.7), norm(strat, 0.9), norm(qtyDa, 7878.8), norm(qtyRt, 7676.4),
+        norm(loadFc, 6456.9), norm(loadAct, 6425), norm(decl, 1), norm(ratio, 1.2), norm(gap, 10.3)
+      ]
+      const timePoints: string[] = []
+      for (const d of dates) {
+        for (let s = 1; s <= 96; s++) {
+          const total = s * 15
+          timePoints.push(`${d} ${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`)
+        }
+      }
+      return { nameList: timePoints, legend, yAxisIndexList, series }
     }
     // 逐日系统负荷（query__）：真实形状 = 366 日序标签 × 近 6 年矩阵（golden 对齐）
     if (match.startsWith('query__')) {
@@ -350,16 +382,22 @@ function capturedPayload(ctx: MockContext): Record<string, unknown> {
     // list24 线容器 xnyzd/xnyg/xnygd(+xnyz)，fhlist24 仅 xnyzd(+xnyz)；rqdj=30 日滚动 24 点价。
     if (/^_?list24__|^fhlist24__/.test(match)) {
       const isLoad = match.startsWith('fhlist24')
-      const day = match.split('__')[1] ?? dateFrom
-      const price = curve96('price', `rel-p:${day}`, day)
-      const metric = curve96(isLoad ? 'load' : 'renewable', `rel-m:${day}`, day)
-      const xdRow: Record<string, unknown> = { date: day }
-      for (let h = 1; h <= 24; h++) {
-        xdRow[`p${h}`] = [Math.round(metric[h * 4 - 2] * (isLoad ? 3.4 : 6.5)), Math.round(price[h * 4 - 2] * 10) / 10]
-      }
+      const day = match.match(/\d{4}-\d{2}-\d{2}/)?.[0] ?? match.split('__')[1] ?? dateFrom
+      // xd = 30 日滚动散点行（每行 24 个 [指标值, 价格] 对）——此前只给运行日 1 行，
+      // 散点矩阵/敏感度概览仅有一天样本（「缺乏不同日期数据」的根因）
+      const xdRows = Array.from({ length: 30 }, (_, i) => {
+        const d = addDays(day, -29 + i)
+        const cM = curve96(isLoad ? 'load' : 'renewable', `rel-xm:${d}`, d)
+        const cP = curve96('price', `rel-xp:${d}`, d)
+        const row: Record<string, unknown> = { id: i + 1, prov_id: 1, date: d, type: isLoad ? '1' : '0' }
+        for (let h = 1; h <= 24; h++) {
+          row[`p${h}`] = [Math.round(cM[h * 4 - 2] * (isLoad ? 3.4 : 6.5)), Math.round(cP[h * 4 - 2] * 10) / 10]
+        }
+        return row
+      })
       const lineRow = (kind: CurveKind, salt: string, scale: number, lineDay: string, type: string, id: number) => {
         const curve = curve96(kind, `rel-${salt}:${lineDay}`, lineDay)
-        const hourly = Array.from({ length: 24 }, (_, h) => Math.round(curve[h * 4] * scale))
+        const hourly = hourlyMean24(curve).map((v) => Math.round(v * scale))
         return {
           id,
           prov_id: 1,
@@ -374,7 +412,7 @@ function capturedPayload(ctx: MockContext): Record<string, unknown> {
       const rolling = (salt: string) => Array.from({ length: 30 }, (_, i) => {
         const d = addDays(day, -29 + i)
         const curve = curve96('price', `rel-rqdj:${salt}:${d}`, d)
-        const hourly = Array.from({ length: 24 }, (_, h) => Math.round(curve[h * 4] * 10) / 10)
+        const hourly = hourlyMean24(curve).map((v) => Math.round(v * 10) / 10)
         return {
           id: i + 1,
           prov_id: 1,
@@ -390,7 +428,7 @@ function capturedPayload(ctx: MockContext): Record<string, unknown> {
         return {
           rqdj: rolling('fh'),
           xnyzd: [lineRow('load', 'zd', 3.4, day, '3', 1)],
-          xd: [xdRow],
+          xd: xdRows,
           xnyz: [lineRow('load', 'zz', 3.1, day, '4', 2)]
         }
       }
@@ -398,7 +436,7 @@ function capturedPayload(ctx: MockContext): Record<string, unknown> {
         rqdj: rolling('xny'),
         xnyzd: [lineRow('renewable', 'zd', 6.8, day, '3', 1)],
         xnyg: [lineRow('renewable', 'zg', 5.9, day, '2', 2)],
-        xd: [xdRow],
+        xd: xdRows,
         xnygd: [0, 1, 2, 3, 4].map((i) => lineRow('renewable', `gd${i}`, 2.4 + i * 0.3, addDays(day, -i), String(5 + i), i + 1)),
         xnyz: [lineRow('renewable', 'zz', 5.6, day, '1', 3)]
       }
@@ -484,13 +522,23 @@ function capturedPayload(ctx: MockContext): Record<string, unknown> {
     }
     if (match.startsWith('zsjfx_day__')) {
       const day = match.slice('zsjfx_day__'.length)
+      // 量纲按真实件中位数标定（新能源 ~7493 MW / 负荷 ~26547 MW）。
+      // 基准取「峰值 5% 以上」核心段中位数——新能源钟形夜间零值会拉穿全序列中位数，
+      // 缩放系数爆炸（golden 量纲护栏抓获 6.67e6），与 zrqsb scaledCurve 同解法。
+      const scaleTo = (arr: number[], target: number) => {
+        const peak = Math.max(...arr.map(Math.abs))
+        const core = arr.map(Math.abs).filter((v) => v > peak * 0.05).sort((a, b) => a - b)
+        const m = core[Math.floor(core.length / 2)] || 1
+        return arr.map((v) => Math.round((v * target) / m * 10) / 10)
+      }
       return {
         date: day,
         series: {
-          日前出清价: curve96('price', `zsjfx-da:${day}`, day),
-          实时出清价: curve96('price', `zsjfx-rt:${day}`, day),
-          系统负荷: curve96('load', `zsjfx-l:${day}`, day),
-          新能源出力: curve96('renewable', `zsjfx-r:${day}`, day)
+          // 序列名对齐真实 meta 的默认勾选项，窗外日期切过去即有图（此前名字错位 →「未勾选数据项」）
+          '日前新能源预测-总': scaleTo(curve96('renewable', `zsjfx-r:${day}`, day), 7493.5),
+          '日前负荷预测': scaleTo(curve96('load', `zsjfx-l:${day}`, day), 26546.8),
+          '日前价出清': curve96('price', `zsjfx-da:${day}`, day),
+          '实时价出清': curve96('price', `zsjfx-rt:${day}`, day)
         }
       }
     }
@@ -530,24 +578,32 @@ function capturedPayload(ctx: MockContext): Record<string, unknown> {
       // renderBuySell 门槛：d.dataMap + d.nameList 非空；chartConfigMap 与真实件同形（量程配置）
       return { data: { title: '买卖盘逐笔（演示）', nameList, dataMap, chartConfigMap: { min: -480, max: 480, interval: 96 } } };
     }
-    const day = match.split('__')[1] ?? dateFrom
+    // 窗外日期 match 形如 data__rqlx0__<date>，split('__')[1] 会取到 'rqlx0'——
+    // 优先正则取日期，标签/extendMap 才不会出现「rqlx0 ( NaN号 )」
+    const day = match.match(/\d{4}-\d{2}-\d{2}/)?.[0] ?? match.split('__')[1] ?? dateFrom
     const rq = curve96('price', `fshq-rq:${day}`, day)
     const ss = curve96('price', `fshq-ss:${day}`, day)
     // 主图 opData 行结构：[时间标签, 开, 收, 低, 高, 成交量]（kdata 取 r[1..4]，vol 取 r[5]；
     // [0] 与真实件同为字符串标签）
     const dayNum = Number(day.slice(-2))
+    // 成交量（C.25 视觉形态轮）：解析正弦（300+|sin(i/7)|×500，四个等高钟形一眼假）改
+    // 播种随机过程——偏低偏少的量柱为主、开盘与晚峰放大、偶发缩量，日水平因子控总量级
+    const vrand = mulberry32(seedOf(`fshq-vol:${day}`))
+    const vLevel = dayLevel('fshq-vol', day)
     const opData = ss.map((close, i) => {
       const open = i === 0 ? close : ss[i - 1]
       const low = Math.round(Math.min(open, close) * 0.98 * 10) / 10
       const high = Math.round(Math.max(open, close) * 1.02 * 10) / 10
       const hour = Math.floor(i / 4)
+      const vBoost = (i < 6 ? 1.5 : 1) * (i >= 64 && i < 82 ? 1.5 : 1) * (vrand() < 0.08 ? 0.35 : 1)
+      const volume = Math.max(60, Math.min(850, Math.round((200 + Math.pow(vrand(), 1.6) * 480) * vBoost * vLevel)))
       return [
         `${day} ${hour}:00 ( ${dayNum}号 ) `,
         Math.round(open * 10) / 10,
         Math.round(close * 10) / 10,
         low,
         high,
-        Math.round(300 + Math.abs(Math.sin(i / 7)) * 500)
+        volume
       ]
     })
     // markLineList = 整点竖线标记（真实件 rqlx0 24 条 / rqlx1 20 条，此处统一 24 条）
@@ -723,10 +779,12 @@ function capturedPayload(ctx: MockContext): Record<string, unknown> {
   if (family === 'market_analysis' || family === 'market_retail_packages') {
     return { data: [], rows: [] }
   }
-  // 日前电量预估（sdpt_zptqx/list：rows 过滤 type=4 行 → 表格 + 96 点曲线）
+  // 日前电量预估（sdpt_zptqx/list：rows 过滤 type=4 行 → 表格 + 96 点曲线）。
+  // 每个查询日一行（此前只给 dateFrom 单日 3 行，窗外月份无数据）
   if (family === 'sdpt_zptqx') {
-    const rows = ['日前电量预估', '修正电量预估', '上月同日预估'].map((label, t) => {
-      const c = curve96('output', `zptqx:${label}:${t}:${dateFrom}`, dateFrom)
+    const weekNames = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
+    const rows = dates.map((date, t) => {
+      const c = curve96('output', `zptqx:${date}`, date)
       const hj = Math.round((c.reduce((s, v) => s + v, 0) / 4) * 100) / 100
       return {
         id: t + 1,
@@ -734,14 +792,14 @@ function capturedPayload(ctx: MockContext): Record<string, unknown> {
         sdgs: '山西演示发电集团',
         sdgsId: 1,
         khlx: '1',
-        week: '周一',
+        week: weekNames[new Date(`${date}T00:00:00`).getDay()],
         czry: '演示交易员',
-        czsj: `${dateFrom} 09:30:00`,
+        czsj: `${date} 09:30:00`,
         total: hj,
         beizhu: '',
         type: '4',
-        date: dateFrom,
-        label,
+        date,
+        label: '日前电量预估',
         hj,
         ...pFields(c, 96)
       }
@@ -763,9 +821,23 @@ function capturedPayload(ctx: MockContext): Record<string, unknown> {
       queryDate: day,
       ...extra
     })
-    const groupRows = (kind: CurveKind, salt: string, scale: number, withTypes: number[]) =>
+    // 各组量纲按真实件 pFields 中位数标定（C.25 审计·量级衔接）：dl~90 / jg~280 /
+    // zcqjj~335，jq/jq2/cl/zxcl 为归一化小量（~1），jgc 为近零价差噪声（±12 内）。
+    // 基准取「峰值的 5% 以上」核心段中位数：新能源钟形曲线夜间大片 0 值会拉穿
+    // 全序列中位数，导致缩放系数爆炸（golden 量纲护栏抓到 2.2e10）。
+    const coreMed = (xs: number[]): number => {
+      const peak = Math.max(...xs.map(Math.abs))
+      const core = xs.map(Math.abs).filter((v) => v > peak * 0.05).sort((a, b) => a - b)
+      return core[Math.floor(core.length / 2)] || 1e-6
+    }
+    const scaledCurve = (kind: CurveKind, salt: string, target: number): number[] => {
+      const c = curve96(kind, salt, day)
+      const k = target / coreMed(c)
+      return c.map((v) => Math.round(v * k * 1000) / 1000)
+    }
+    const groupRows = (kind: CurveKind, salt: string, target: number, withTypes: number[]) =>
       withTypes.map((t, gi) => {
-        const c = curve96(kind, `zrqsb:${salt}:${t}:${day}`, day)
+        const c = scaledCurve(kind, `zrqsb:${salt}:${t}:${day}`, target)
         return {
           id: gi + 1,
           type: String(t),
@@ -774,19 +846,20 @@ function capturedPayload(ctx: MockContext): Record<string, unknown> {
           ...pFields(c, 96)
         }
       })
-    const daPrice = curve96('price', `zrqsb-da:${day}`, day)
-    const rtPrice = curve96('price', `zrqsb-rt:${day}`, day)
-    const jgcRow = (() => {
-      const c = rtPrice.map((v, i) => Math.round((v - daPrice[i]) * 10) / 10)
-      return {
-        id: 1,
-        type: '0',
-        heji: Math.round(c.reduce((s, v) => s + v, 0) * 100) / 100,
-        hj: Math.round((c.reduce((s, v) => s + Math.abs(v), 0) / 96) * 100) / 100,
-        ...pFields(c, 96)
-      }
+    // jgc = 实时-日前价差：真实件为宽幅噪声（核心段中位 ~120-170），不是两条形态曲线的差
+    const jgcCurve = (() => {
+      const jr = mulberry32(seedOf(`zrqsb-jgc:${day}`))
+      return Array.from({ length: 96 }, () => Math.round((jr() - 0.5) * 800 * 10) / 10)
     })()
+    const jgcRow = {
+      id: 1,
+      type: '0',
+      heji: Math.round(jgcCurve.reduce((s, v) => s + v, 0) * 100) / 100,
+      hj: Math.round((jgcCurve.reduce((s, v) => s + Math.abs(v), 0) / 96) * 100) / 100,
+      ...pFields(jgcCurve, 96)
+    }
     // ccbl = 出清比例（96 点 4 段重复的小时值），audioRQSB = 上报音频标志位（真实件 "0"/"1"）
+    const daPrice = scaledCurve('price', `zrqsb-da:${day}`, 280)
     const ccblValue = daPrice.map((v, i) => Math.round((80 + (i % 4) * 3.2 + (v % 37)) * 100) / 100)
     return {
       data: {
@@ -797,9 +870,9 @@ function capturedPayload(ctx: MockContext): Record<string, unknown> {
         },
         xjfw: [],
         clqx: '1',
-        dl: groupRows('output', 'dl', 1, [0, 1]),
+        dl: groupRows('output', 'dl', 90, [0, 1]),
         jg: [0, 1].map((t, gi) => {
-          const c = curve96('price', `zrqsb-jg:${t}:${day}`, day)
+          const c = scaledCurve('price', `zrqsb-jg:${t}:${day}`, 280)
           return {
             id: gi + 1,
             type: String(t),
@@ -815,7 +888,7 @@ function capturedPayload(ctx: MockContext): Record<string, unknown> {
         }),
         jgc: [jgcRow],
         zcqjj: [(() => {
-          const c = curve96('load', `zrqsj-zcqjj:${day}`, day)
+          const c = scaledCurve('load', `zrqsj-zcqjj:${day}`, 335)
           return {
             id: 1,
             type: '0',
@@ -828,10 +901,10 @@ function capturedPayload(ctx: MockContext): Record<string, unknown> {
             ...pFields(c, 96)
           }
         })()],
-        jq: groupRows('price', 'jq', 1, [0, 1]),
-        jq2: groupRows('price', 'jq2', 1, [0]),
-        cl: groupRows('load', 'cl', 1, [0]),
-        zxcl: groupRows('renewable', 'zxcl', 1, [0])
+        jq: groupRows('price', 'jq', 1.0, [0, 1]),
+        jq2: groupRows('price', 'jq2', 1.0, [0]),
+        cl: groupRows('load', 'cl', 0.9, [0]),
+        zxcl: groupRows('renewable', 'zxcl', 1.0, [0])
       }
     }
   }
@@ -841,7 +914,7 @@ function capturedPayload(ctx: MockContext): Record<string, unknown> {
     // 分时段交易台账（list）：13 个交易日 × 成交电量/出清电价/持仓电量 = 39 行，24 点
     if (match === 'list') {
       const companies = ['山西演示售电有限公司', '演示售电二号公司', '演示售电三号公司']
-      const jylxByDay = ['11', '12', '170', '52', '191', '11', '12', '170', '52', '191', '11', '12', '170']
+      const jylxCycle = ['11', '12', '170', '52', '191']
       const sjlxRows = [
         { sjlx: '23', kind: 'output' as CurveKind, scale: 1 },
         { sjlx: '24', kind: 'price' as CurveKind, scale: 1 },
@@ -849,21 +922,21 @@ function capturedPayload(ctx: MockContext): Record<string, unknown> {
       ]
       const rows: Array<Record<string, unknown>> = []
       let idx = 0
-      for (let d = 0; d < 13; d++) {
-        const jyrq = dateStr(-45 + d * 2)
+      // 覆盖整个查询窗（默认近 60 天 × 3 类型）：此前固定 13 天，多个日期无数据
+      for (const [di, jyrq] of dates.entries()) {
         for (const spec of sjlxRows) {
           idx++
-          const curve = curve96(spec.kind, `zfsdjy:${d}:${spec.sjlx}`, jyrq)
-          // 行水平因子（C.22）：每笔成交相对基准曲线有 ±14% 的日间起伏
-          const rowLevel = dayLevel(`zfsdjy:${spec.sjlx}`, `${jyrq}:${d}`)
-          const hourly = Array.from({ length: 24 }, (_, h) => Math.round(curve[h * 4] * spec.scale * rowLevel * 10) / 10)
+          const curve = curve96(spec.kind, `zfsdjy:${jyrq}:${spec.sjlx}`, jyrq)
+          // 行水平因子（C.22）：每笔成交相对基准曲线有 ±14% 的日间起伏；小时取 4 段均值
+          const rowLevel = dayLevel(`zfsdjy:${spec.sjlx}`, `${jyrq}:${di}`)
+          const hourly = hourlyMean24(curve).map((v) => Math.round(v * spec.scale * rowLevel * 10) / 10)
           const sum = hourly.reduce((s, v) => s + v, 0)
           rows.push({
-            sdgs: companies[d % 3],
+            sdgs: companies[di % 3],
             jyrq,
             bdrq1: jyrq,
             bdrq2: addDays(jyrq, 1),
-            jylx: jylxByDay[d],
+            jylx: jylxCycle[di % jylxCycle.length],
             sjlx: spec.sjlx,
             czry: '演示交易员',
             czsj: `${jyrq} 09:3${idx % 10}:00`,
@@ -931,7 +1004,7 @@ function capturedPayload(ctx: MockContext): Record<string, unknown> {
           value05: seriesObj('日滚动预估', rg.map((v) => Math.round(v * (0.97 + rand() * 0.06) * 10) / 10)),
           value06: seriesObj('持仓均价', (() => {
             const c = curve96('price', `ccljkt-jj:${day}`, day)
-            return Array.from({ length: 24 }, (_, h) => Math.round(c[h * 4] * 10) / 10)
+            return hourlyMean24(c).map((v) => Math.round(v * 10) / 10)
           })())
         }
       }
@@ -1038,13 +1111,277 @@ export function synthesizeCapturedPayload(family: string, match: string): Record
   })
 }
 
+/** 价格分析（sdpt_zcqxhdl/listrs*）窗外补行：真实件只覆盖到采集截止日（2026-06），运行日期
+ *  选到七月及以后时 3D 电价图/日期切面无行可显。按真实件末行续造到「今天」——真实行一字
+ *  不动，仅追加同形状行（曲线96 带逐日漂移+呼吸，随机性三标准达标；量级与真实件同族标定）。 */
+function extendListrsPayload(payload: Record<string, unknown>): Record<string, unknown> {
+  try {
+    // fixtures 保留采集件原信封（{code,msg,data,success}），行在 data 里；兼容无信封形状
+    const inner = payload.data && typeof payload.data === 'object' && !Array.isArray(payload.data)
+      ? (payload.data as Record<string, unknown>)
+      : payload
+    const dmx = Array.isArray(inner.dmx) ? (inner.dmx as Array<Record<string, unknown>>) : []
+    const rjz = Array.isArray(inner.rjz) ? (inner.rjz as Array<Record<string, unknown>>) : []
+    const rmx = Array.isArray(inner.rmx) ? (inner.rmx as Array<Record<string, unknown>>) : []
+    if (!dmx.length) return payload
+    const last = dmx.map((r) => String(r.date ?? '')).sort().pop() ?? ''
+    const today = dateStr(0)
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(last) || last >= today) return payload
+    const extra: string[] = []
+    for (let d = addDays(last, 1); d <= today && extra.length < 400; d = addDays(d, 1)) extra.push(d)
+    // 响应瘦身（C.25 加载时长）：真实件含 2022 起全历史（7k+ 行/6.5MB），演示口径裁到
+    // 近 400 天（覆盖默认首屏与任意近期区间），历史纵深不需要逐日回放
+    const cut = dateStr(-400)
+    const inWindow = (r: Record<string, unknown>) => String(r.date ?? '') >= cut
+    const dmxBase = dmx.filter(inWindow)
+    const rjzBase = rjz.filter(inWindow)
+    const rmxBase = rmx.filter(inWindow)
+    const lastId = typeof dmxBase[dmxBase.length - 1]?.id === 'number' ? (dmxBase[dmxBase.length - 1].id as number) : dmxBase.length
+    const extDmx = extra.map((date, i) => {
+      const curve = curve96('price', `listrs-ext:${date}`, date)
+      const total = curve.reduce((s, v) => s + v, 0)
+      return {
+        id: lastId + i + 1,
+        provId: 1,
+        date,
+        drrq: addDays(date, 1),
+        type: '0',
+        hj: Math.round(total * 100) / 100,
+        jz: Math.round((total / 96) * 100) / 100,
+        ...pFields(curve, 96)
+      }
+    })
+    const extJz: Array<Record<string, unknown>> = []
+    const extRmx: Array<Record<string, unknown>> = []
+    for (const date of extra) {
+      for (const [type, key] of [['0', 'da'], ['1', 'rt']] as const) {
+        const c = curve96('price', `listrs-ext:${key}:${date}`, date)
+        const total = c.reduce((s, v) => s + v, 0)
+        const max = Math.round(Math.max(...c) * 10) / 10
+        const min = Math.round(Math.min(...c) * 10) / 10
+        const avg = Math.round((total / 96) * 10) / 10
+        extJz.push({ id: null, provId: 1, date, drrq: addDays(date, 1), type, hj: Math.round(total * 100) / 100, jz: avg, ...pFields(c, 96) })
+        const tail: Record<string, unknown> = {}
+        for (let p = 4; p <= 96; p++) tail[`p${p}`] = null
+        extRmx.push({ id: null, provId: 1, date, drrq: addDays(date, 1), type, hj: null, jz: null, p1: max, p2: min, p3: avg, ...tail })
+      }
+    }
+    const nextInner = { ...inner, dmx: [...dmxBase, ...extDmx], rjz: [...rjzBase, ...extJz], rmx: [...rmxBase, ...extRmx] }
+    return inner === payload ? nextInner : { ...payload, data: nextInner }
+  } catch {
+    return payload
+  }
+}
+
+/** 交易月历（sdpt_zjyap/calendar）窗外补行：真实件交易日只到 2026-06-28，切换七月及
+ *  以后月份为空。按工作日节奏续造到次月末（真实行一字不动，仅追加；sj1 为申报窗口文案）。 */
+function extendZjyapCalendarPayload(payload: Record<string, unknown>): Record<string, unknown> {
+  try {
+    const rows = Array.isArray(payload.rows)
+      ? (payload.rows as Array<Record<string, unknown>>)
+      : Array.isArray(payload.data)
+        ? (payload.data as Array<Record<string, unknown>>)
+        : []
+    if (!rows.length) return payload
+    const last = rows.map((r) => String(r.jyrq ?? '')).sort().pop() ?? ''
+    const today = dateStr(0)
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(last) || last >= today) return payload
+    const [ty, tm] = today.split('-').map(Number)
+    const endY = tm === 12 ? ty + 1 : ty
+    const endM = tm === 12 ? 1 : tm + 1
+    const endStr = `${endY}-${String(endM).padStart(2, '0')}-${String(new Date(endY, endM, 0).getDate()).padStart(2, '0')}`
+    let id = typeof rows[rows.length - 1]?.id === 'number' ? (rows[rows.length - 1].id as number) : rows.length
+    const ext: Array<Record<string, unknown>> = []
+    // 品种轮换 + 申报窗口 1~3 日区间：卡片与热力图密度逐日有别（随机性三标准②③）
+    const products = ['中长期双边协商', '月内集中竞价', '挂牌交易', '绿电交易', '分时段滚动交易']
+    const vr = mulberry32(seedOf(`zjyap-ext:${last}`))
+    for (let d = addDays(last, 1); d <= endStr; d = addDays(d, 1)) {
+      const dow = new Date(`${d}T00:00:00`).getDay()
+      if (dow === 0 || dow === 6) continue
+      id += 1
+      const [, m, dd] = d.split('-')
+      const dayNum = Number(dd)
+      const daysInMonth = new Date(Number(d.slice(0, 4)), Number(m), 0).getDate()
+      const winEnd = Math.min(dayNum + 1 + Math.floor(vr() * 2), daysInMonth)
+      const sj1 = winEnd > dayNum ? `${Number(m)}月${dayNum}-${winEnd}日` : `${Number(m)}月${dayNum}日`
+      const pCount = 1 + Math.floor(vr() * 2)
+      const sj2 = Array.from({ length: pCount }, (_, k) => products[(Math.floor(vr() * products.length) + k) % products.length]).join('、')
+      ext.push({ id, provId: 1, areaName: null, jyrq: d, sj1, sj2 })
+    }
+    if (!ext.length) return payload
+    const nextRows = [...rows, ...ext]
+    return payload.rows ? { ...payload, rows: nextRows } : { ...payload, data: nextRows }
+  } catch {
+    return payload
+  }
+}
+
+/** 综合数据分析（sdpt_zsjfx_idx/zsjfx_meta）日期扩展：真实件日期只到 2026-06-30，
+ *  日历切到七月及以后无可选日。真实元数据一字不动，dates/goodDates 续列到「今天」。 */
+function extendZsjfxMetaPayload(payload: Record<string, unknown>): Record<string, unknown> {
+  try {
+    const dates = Array.isArray(payload.dates) ? (payload.dates as string[]) : []
+    const goodDates = Array.isArray(payload.goodDates) ? (payload.goodDates as string[]) : []
+    if (!dates.length) return payload
+    const last = [...dates].sort().pop() ?? ''
+    const today = dateStr(0)
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(last) || last >= today) return payload
+    const extra: string[] = []
+    for (let d = addDays(last, 1); d <= today && extra.length < 400; d = addDays(d, 1)) extra.push(d)
+    return { ...payload, dates: [...dates, ...extra].sort(), goodDates: [...goodDates, ...extra].sort() }
+  } catch {
+    return payload
+  }
+}
+
+/** zsjfx_day 量纲模板：数据项名称关键词 → 曲线种类 + 兜底中位数（MW/元/MWh/比率）。
+ *  曲线96 带逐日漂移/呼吸——同名同日恒同、跨日与跨项满足随机性三标准。 */
+function zsjfxSeriesFor(name: string, day: string): { curve: number[]; target: number } {
+  if (/频率/.test(name)) {
+    const r = mulberry32(seedOf(`zsjfx:${name}:${day}`))
+    return { curve: Array.from({ length: 96 }, () => 49.94 + r() * 0.1), target: 50 }
+  }
+  if (/上限|下限/.test(name)) return { curve: curve96('load', `zsjfx-limit:${name}:${day}`, day), target: 281 }
+  // 曲线语义按序列名区分：风电/水电/总量类夜间非零（output 平缓形状），
+  // 纯光伏为午间钟形（夜间 0 属实）。总量序列（新能源-总）真实件夜间不为零，
+  // 不能用纯钟形——否则序列中位数塌陷、量级衔接断裂。量纲取真实件逐名中位数。
+  if (/风光/.test(name)) return { curve: curve96('output', `zsjfx:${name}:${day}`, day), target: 3113 }
+  if (/光伏|光\d/.test(name)) return { curve: curve96('renewable', `zsjfx:${name}:${day}`, day), target: 1961 }
+  if (/风电|风\d/.test(name)) return { curve: curve96('output', `zsjfx:${name}:${day}`, day), target: 7391 }
+  if (/水电/.test(name)) return { curve: curve96('output', `zsjfx:${name}:${day}`, day), target: 332 }
+  if (/新能源/.test(name)) return { curve: curve96('output', `zsjfx:${name}:${day}`, day), target: 623 }
+  if (/负荷/.test(name)) return { curve: curve96('load', `zsjfx:${name}:${day}`, day), target: 27787 }
+  if (/火电/.test(name)) return { curve: curve96('load', `zsjfx:${name}:${day}`, day), target: 74 }
+  if (/外送|省间/.test(name)) return { curve: curve96('output', `zsjfx:${name}:${day}`, day), target: 1862 }
+  if (/备用|容量/.test(name)) return { curve: curve96('output', `zsjfx:${name}:${day}`, day), target: 13245 }
+  if (/电量|空间/.test(name)) return { curve: curve96('output', `zsjfx:${name}:${day}`, day), target: 8292 }
+  if (/价/.test(name)) return { curve: curve96('price', `zsjfx:${name}:${day}`, day), target: 340 }
+  if (/策略|比值|比例/.test(name)) return { curve: curve96('output', `zsjfx:${name}:${day}`, day), target: 105 }
+  return { curve: curve96('output', `zsjfx:${name}:${day}`, day), target: 5000 }
+}
+
+/** 序列量纲标定：按「峰值 5% 以上核心段中位数」缩放到目标（零值游程不拉穿基准）。 */
+function scaleSeriesTo(arr: number[], target: number): number[] {
+  const peak = Math.max(...arr.map(Math.abs))
+  const core = arr.map(Math.abs).filter((v) => v > peak * 0.05).sort((a, b) => a - b)
+  const m = core[Math.floor(core.length / 2)] || 1
+  return arr.map((v) => Math.round((v * target) / m * 10) / 10)
+}
+
+/** 逐数据项的真实量纲表：从 zsjfx 日件均匀抽 10 天，按名累计中位数（进程内缓存一次）。
+ *  关键词模板只是兜底——真实采集里同名序列的量纲/单位五花八门（比率、MW、标幺），
+ *  以真实件为准才能保证补窗与真实窗量级衔接。 */
+let zsjfxTargetCache: Map<string, number> | null = null
+async function zsjfxNameTargets(): Promise<Map<string, number>> {
+  if (zsjfxTargetCache) return zsjfxTargetCache
+  const acc = new Map<string, Map<string, number[]>>() // name → month → 各采样日中位数
+  const median = (xs: number[]) => {
+    const s = xs.map(Math.abs).filter(Number.isFinite).sort((a, b) => a - b)
+    return s.length ? s[s.length >> 1] : null
+  }
+  try {
+    const metaHit = await loadFixturePayload('sdpt_zsjfx_idx', 'zsjfx_meta')
+    const metaRaw = (metaHit?.payload ?? {}) as Record<string, unknown>
+    const metaInner = (metaRaw.data && typeof metaRaw.data === 'object' && !Array.isArray(metaRaw.data) ? metaRaw.data : metaRaw) as Record<string, unknown>
+    const allDates = (Array.isArray(metaInner.goodDates) && metaInner.goodDates.length ? metaInner.goodDates : metaInner.dates) as string[] | undefined
+    if (allDates?.length) {
+      const byMonth = new Map<string, string[]>()
+      for (const d of allDates) {
+        const m = d.slice(0, 7)
+        const list = byMonth.get(m) ?? []
+        list.push(d)
+        byMonth.set(m, list)
+      }
+      for (const [, ds] of byMonth) {
+        for (let i = 0; i < ds.length; i++) {
+          const hit = await loadFixturePayload('sdpt_zsjfx_idx', `zsjfx_day__${ds[i]}`)
+          if (!hit) continue
+          const raw = (hit.payload.data && typeof hit.payload.data === 'object' ? hit.payload.data : hit.payload) as Record<string, unknown>
+          const series = (raw.series && typeof raw.series === 'object' && !Array.isArray(raw.series) ? raw.series : {}) as Record<string, unknown>
+          for (const [name, vals] of Object.entries(series)) {
+            const vArr = Array.isArray(vals) ? (vals as Array<number | null>) : []
+            const m = median(vArr.filter((v): v is number => typeof v === 'number'))
+            if (m == null) continue
+            const monthMap = acc.get(name) ?? new Map<string, number[]>()
+            const list = monthMap.get(ds[i].slice(0, 7)) ?? []
+            list.push(m)
+            monthMap.set(ds[i].slice(0, 7), list)
+            acc.set(name, monthMap)
+          }
+        }
+      }
+    }
+  } catch { /* 无 meta/日件时落关键词兜底 */ }
+  const out = new Map<string, number>()
+  for (const [name, monthMap] of acc) {
+    // 取「各月最大日中位数再取月间最大」：稀疏序列（公司预测类在采集尾月退化为 ~1，
+    // 偶发大值日）也能取到有效业务量级，窗外补数不再塌成直线
+    let best = 0
+    for (const [, meds] of monthMap) {
+      const mx = Math.max(...meds)
+      if (Number.isFinite(mx) && mx > best) best = mx
+    }
+    if (best > 0) out.set(name, best)
+  }
+  zsjfxTargetCache = out
+  return out
+}
 async function handleCaptured(ctx: MockContext): Promise<Response> {
   const family = ctx.url.searchParams.get('family') ?? ''
   const match = ctx.url.searchParams.get('match') ?? ''
+  // 综合数据分析（zsjfx_day）：按 meta 全量数据项生成当日各序列——此前仅 4 条固定序列且
+  // 与默认勾选项名字错位，换日期/勾选其他数据项均无数据
+  if (family === 'sdpt_zsjfx_idx' && match.startsWith('zsjfx_day__')) {
+    const day = match.slice('zsjfx_day__'.length)
+    const targets = await zsjfxNameTargets()
+    const metaHit = await loadFixturePayload('sdpt_zsjfx_idx', 'zsjfx_meta')
+    const metaRaw = (metaHit?.payload ?? {}) as Record<string, unknown>
+    const metaInner = (metaRaw.data && typeof metaRaw.data === 'object' && !Array.isArray(metaRaw.data) ? metaRaw.data : metaRaw) as Record<string, unknown>
+    const groups = (metaInner.groups && typeof metaInner.groups === 'object' && !Array.isArray(metaInner.groups) ? metaInner.groups : {}) as Record<string, string[]>
+    const names = [...new Set(Object.values(groups).flat())]
+    const series: Record<string, number[]> = {}
+    for (const name of names) {
+      const gen = zsjfxSeriesFor(name, day)
+      series[name] = scaleSeriesTo(gen.curve, targets.get(name) ?? gen.target)
+    }
+    return mockPipelineEnvelopeResponse({
+      date: day,
+      series,
+      family,
+      datasetKey: match,
+      capturedAt: `${dateStr(0)}T00:00:00+08:00`
+    })
+  }
+  // 出清现货电量分析（__list__）：演示会话按所选区间重取时带显式 dateFrom/dateTo——
+  // 跳过 fixture（其覆盖 Apr–Jun），走合成分支生成所选区间；无区间参数仍 fixtures-first
+  if (family === 'sdpt_zcqxhdl' && match.includes('__list__') && ctx.url.searchParams.get('dateFrom') && ctx.url.searchParams.get('dateTo')) {
+    const synth = capturedPayload(ctx)
+    return mockPipelineEnvelopeResponse({
+      ...synth,
+      family,
+      datasetKey: match,
+      capturedAt: `${dateStr(0)}T00:00:00+08:00`
+    })
+  }
+  // 日前电量预估（zptqx/list）：演示会话按所选区间重取时带显式 dateFrom/dateTo——
+  // 跳过 fixture（其只覆盖 2026-05 中旬），走合成分支逐日生成；无区间参数仍 fixtures-first
+  if (family === 'sdpt_zptqx' && ctx.url.searchParams.get('dateFrom') && ctx.url.searchParams.get('dateTo')) {
+    const synth = capturedPayload(ctx)
+    return mockPipelineEnvelopeResponse({
+      ...synth,
+      family,
+      datasetKey: match,
+      capturedAt: `${dateStr(0)}T00:00:00+08:00`
+    })
+  }
   const fixture = await loadFixturePayload(family, match)
   if (fixture) {
+    let merged = fixture.payload
+    if (family === 'sdpt_zcqxhdl' && match.startsWith('listrs')) merged = extendListrsPayload(merged)
+    else if (family === 'sdpt_zjyap') merged = extendZjyapCalendarPayload(merged)
+    else if (family === 'sdpt_zsjfx_idx' && match.includes('zsjfx_meta')) merged = extendZsjfxMetaPayload(merged)
     return mockPipelineEnvelopeResponse({
-      ...fixture.payload,
+      ...merged,
       family,
       datasetKey: match,
       ...(fixture.entry.capturedAt ? { capturedAt: fixture.entry.capturedAt } : {})
@@ -1120,44 +1457,96 @@ function quantExposure(ctx: MockContext): Response {
   const [y, m] = month.split('-').map(Number)
   const days = new Date(y, m, 0).getDate()
   const monthDates = Array.from({ length: days }, (_, i) => `${month}-${String(i + 1).padStart(2, '0')}`)
-  const contractWeight = (h: number) => {
-    if (mode === 'uniform') return 1
-    if (mode === 'solar_shaped') return 1 + 1.35 * Math.exp(-((h - 13) ** 2) / 9)
-    return h >= 8 && h < 21 ? 1.45 : 0.66 // peak_valley：峰段 08–21 时
-  }
   const expectedShape = (h: number) => {
     if (expectedSource === 'load') {
       return 0.72 + 0.5 * Math.exp(-((h - 11) ** 2) / 14) + 0.35 * Math.exp(-((h - 20) ** 2) / 8)
     }
     return Math.max(0.02, Math.sin(((h - 6.5) / 13) * Math.PI)) // 新能源：午间单峰
   }
-  // 各自按 24h 均值归一，小时基准电量 = 月合同总量 / (天数×24)
+  // 出力形状按 24h 均值归一（合同侧改逐日三层分量自归一，见日循环内 wMean），小时基准电量 = 月合同总量 / (天数×24)
   const mean = (fn: (h: number) => number) => Array.from({ length: 24 }, (_, h) => fn(h)).reduce((s, v) => s + v, 0) / 24
-  const cwNorm = 1 / mean(contractWeight)
   const esNorm = 1 / mean(expectedShape)
   const baseHour = contractTotal / (days * 24)
   const rand = mulberry32(seedOf(`exposure:${month}:${mode}:${expectedSource}`))
   const jitter = () => 1 + (rand() - 0.5) * 0.08
+  const jitterC = () => 1 + (rand() - 0.5) * 0.12 // 合同分解逐点抖动 ±6%（层内不恒平）
   const series: Array<{ datetime: string; contracted: number; expected: number; gap: number }> = []
   let contractedSum = 0
   let expectedSum = 0
   let sellExposure = 0
   let buyExposure = 0
+  // —— 逐日天气型态（C.25「一眼假」治理）：出力侧按月播种抽晴/多云/阴雨三型——晴日满
+  // 钟形、多云日幅度 55–90% 且午间随机凹陷、阴雨日仅 10–25% 残出力并逐时参差，打破
+  // 「每天同一口钟」的节拍器感；合同侧峰谷起止时刻逐日漂移（7–9 时起、20–22 时止）+
+  // 周末 −22%，不再是边界天天对齐的理想方波。
+  const regimeOf = (date: string): { amp: number; ragged: number; dip: number; dipH: number } => {
+    if (expectedSource !== 'renewable') return { amp: 1, ragged: 1, dip: 0, dipH: 12 }
+    const wr = mulberry32(seedOf(`exp-regime:${month}:${date}`))
+    const roll = wr()
+    if (roll < 0.18) return { amp: 0.1 + wr() * 0.15, ragged: 0.55 + wr() * 0.9, dip: 0, dipH: 12 }
+    if (roll < 0.48) return { amp: 0.55 + wr() * 0.35, ragged: 0.72 + wr() * 0.56, dip: 0.2 + wr() * 0.35, dipH: 9 + wr() * 6 }
+    return { amp: 0.9 + wr() * 0.25, ragged: 0.88 + wr() * 0.2, dip: 0, dipH: 12 }
+  }
   for (const date of monthDates) {
     const level = dayLevel(`exp:${expectedSource}`, date)
-    const cloud = expectedSource === 'renewable' ? 0.78 + rand() * 0.5 : 1
+    const cLevel = dayLevel('exp-contract', date)
+    const { amp, ragged, dip, dipH } = regimeOf(date)
+    const weekday = new Date(`${date}T00:00:00`).getDay()
+    const weekendK = weekday === 0 || weekday === 6 ? 0.78 : 1
+    const hStart = 6 + Math.floor(rand() * 5)
+    const hEnd = 19 + Math.floor(rand() * 5)
+    // 峰位/窗口位移放大到 ±2.5h：热力图的日×时红带位置逐日游移，不再钉死同一组列
+    const shapeShift = expectedSource === 'renewable' ? (rand() - 0.5) * 5 : 0
+    // 合同 = 基荷 + 峰段 + （约半数天的）午间光伏块 三层分量，逐日占比独立抽样——
+    // 单一二值台阶（峰 1.45/谷 0.66）仍是理想方波；三层混合后夜间/白天/午间三个
+    // 台阶的高度天天不同，才是多份合同叠加的真实形态
+    const baseShare = 0.45 + rand() * 0.2
+    const peakAmp = (0.9 - baseShare) * (0.8 + rand() * 0.5)
+    const solarBlock = rand() < 0.45 ? 0.12 + rand() * 0.3 : 0
+    const solarH = 11.5 + (rand() - 0.5) * 2
+    // 梯形过渡 + 低频摆动（C.25 视觉形态轮）：块间边界在 1–2.5h 内爬坡而非垂直跳变，
+    // 层内叠加逐日随机相位的慢波——合同分解不再「层内恒平、整点垂直跳」
+    const ramp = 1 + rand() * 1.5
+    const bAmp = 0.03 + rand() * 0.04
+    const bK = rand() < 0.5 ? 1 : 2
+    const bPhase = rand() * Math.PI * 2
+    const wRaw = Array.from({ length: 24 }, (_, h) => {
+      const wobble = 1 + bAmp * Math.sin(bPhase + (h / 24) * bK * 2 * Math.PI)
+      if (mode === 'uniform') return wobble
+      if (mode === 'solar_shaped') return (1 + 1.35 * Math.exp(-((h - 13) ** 2) / 9)) * wobble
+      const night = baseShare
+      const day = baseShare + peakAmp
+      const up = Math.min(1, Math.max(0, (h - hStart + 0.5) / ramp))
+      const down = Math.min(1, Math.max(0, (hEnd - 0.5 - h) / ramp))
+      let w = night + (day - night) * Math.min(up, down)
+      w += solarBlock * Math.exp(-((h - solarH) ** 2) / 8)
+      return w * wobble
+    })
+    const wMean = wRaw.reduce((s, v) => s + v, 0) / 24
     for (let h = 0; h < 24; h++) {
-      const contracted = Math.max(0, baseHour * contractWeight(h) * cwNorm * jitter())
-      const expected = Math.max(0, baseHour * expectedShape(h) * esNorm * level * cloud * jitter())
+      const contracted = Math.max(0, baseHour * (wRaw[h] / wMean) * cLevel * weekendK * jitterC())
+      const cloud = 1 - dip * Math.exp(-((h - dipH) ** 2) / 6)
+      const expected = Math.max(0, baseHour * expectedShape(h + shapeShift) * esNorm * level * amp * ragged * cloud * jitter())
       const gap = Math.round((expected - contracted) * 10) / 10
       const c = Math.round(contracted * 10) / 10
       const e = Math.round(expected * 10) / 10
       contractedSum += c
       expectedSum += e
-      if (gap >= 0) sellExposure += gap
-      else buyExposure -= gap
       series.push({ datetime: `${date} ${String(h).padStart(2, '0')}:00`, contracted: c, expected: e, gap })
     }
+  }
+  // 套保率锚定健康区间（0.95–1.10）：天气型态会整体压低出力电量，按目标套保率对出力侧
+  // 做一次性全局缩放——日间/逐时形态差异全保留，只校准总量口径，避免 KPI 落「过保」告警
+  const targetHedge = 0.95 + rand() * 0.15
+  const hedgeK = contractedSum / targetHedge / Math.max(1, expectedSum)
+  expectedSum = 0
+  for (const p of series) {
+    const e = Math.round(p.expected * hedgeK * 10) / 10
+    p.expected = e
+    p.gap = Math.round((e - p.contracted) * 10) / 10
+    expectedSum += e
+    if (p.gap >= 0) sellExposure += p.gap
+    else buyExposure -= p.gap
   }
   const round1 = (v: number) => Math.round(v * 10) / 10
   return mockJsonResponse({
@@ -2048,10 +2437,11 @@ function spotNodePriceHeatmap(ctx: MockContext): Response {
   const date = ctx.url.searchParams.get('date') ?? dateStr(0)
   const nodes = GRID_PLANT_SPECS.map((spec) => spec.node)
   const timePoints = TIME_AXIS_96.filter((_, i) => i % 4 === 0)
-  const matrix = nodes.map((node) => timePoints.map((_, slot) => {
+  const matrix = nodes.map((node) => {
     const curve = curve96('price', `np:${node}:${date}`, date)
-    return Math.round(curve[slot * 4] * 10) / 10
-  }))
+    // 热力格 = 小时均价（4 段均值，C.25）：点采样会把偶发限价尖峰整格抬高
+    return hourlyMean24(curve).map((v) => Math.round(v * 10) / 10)
+  })
   return mockJsonResponse({ code: 200, message: 'ok', data: { nodes, time_points: timePoints, matrix }, mock: true, sourceType: 'MOCK', productionWrite: false })
 }
 
@@ -2291,7 +2681,14 @@ const ROUTES: MockRoute[] = [
 
   // —— 空间资产 gridGeo（PRD R4：8 子页演示数据；前缀序 = 特化在前，防 startsWith 误吞）——
   { method: 'GET', prefix: '/api/v1/grid/geo-assets/manifest', handler: (ctx) => mockEnvelopeResponse({ data: gridDemoManifest(ctx) }) },
-  { method: 'GET', prefix: '/api/v1/grid/geo-assets/operator-profile', handler: (ctx) => mockEnvelopeResponse({ data: resolveGridOperatorProfile(ctx.url.searchParams.get('region') || gridDemoRegionId()) ?? resolveGridOperatorProfile('shanxi') }) },
+  { method: 'GET', prefix: '/api/v1/grid/geo-assets/operator-profile', handler: (ctx) => {
+    // 演示画像：真实源可用性映射改写为演示面实际供数状态（gridDemo* 全部可绘/可查，标注
+    // Mock）——否则空间驾驶舱「天气能力」等卡片显示原始 missing，与演示页有数据自相矛盾
+    const profile = resolveGridOperatorProfile(ctx.url.searchParams.get('region') || gridDemoRegionId()) ?? resolveGridOperatorProfile('shanxi')
+    if (!profile) return mockEnvelopeResponse({ data: null })
+    const demo = { status: 'available', reason: '演示数据面供数（Mock）' }
+    return mockEnvelopeResponse({ data: { ...profile, dataAvailability: { assets: demo, nodes: demo, topology: demo, disclosure: demo, weather: demo, marketTimeseries: demo } } })
+  } },
   { method: 'GET', prefix: '/api/v1/grid/geo-assets/plants/location-registry', handler: (ctx) => {
     const items = gridDemoPlants(ctx).map((plant) => ({
       sourcePlantId: plant.plantId,
@@ -2443,10 +2840,26 @@ const ROUTES: MockRoute[] = [
     return mockEnvelopeResponse({ data: { event, overlays: [] } })
   } },
   { method: 'GET', prefix: '/api/v1/grid/geo-assets/disclosures/events', handler: (ctx) => {
-    const items = gridDemoDisclosureEvents(ctx)
-    const categories = [...new Set(items.map((item) => item.category))]
+    const all = gridDemoDisclosureEvents(ctx)
+    // 与真实后端同径：category/keyword/from/to 过滤 + page/pageSize 分页，
+    // 否则演示账号上披露类型筛选只亮 chip 不动列表
+    const q = ctx.url.searchParams
+    const category = q.get('category') ?? ''
+    const keyword = (q.get('keyword') ?? '').trim()
+    const from = q.get('from') ?? ''
+    const to = q.get('to') ?? ''
+    let items = all
+    if (category) items = items.filter((item) => item.category === category)
+    if (keyword) items = items.filter((item) => `${item.title}${item.summary}`.includes(keyword))
+    if (from) items = items.filter((item) => String(item.effectiveAt) >= from)
+    if (to) items = items.filter((item) => String(item.effectiveAt) <= to)
+    const page = Math.max(1, Number(q.get('page') ?? '1') || 1)
+    const pageSize = Math.min(100, Math.max(1, Number(q.get('pageSize') ?? String(items.length)) || items.length))
+    const start = (page - 1) * pageSize
+    const paged = items.slice(start, start + pageSize)
+    const categories = [...new Set(all.map((item) => item.category))]
     return mockEnvelopeResponse({
-      data: { items, total: items.length, page: 1, pageSize: items.length, categories, dataAvailability: { status: 'available', reason: '演示披露事件（Mock）', fallback: false } }
+      data: { items: paged, total: items.length, page, pageSize, categories, dataAvailability: { status: 'available', reason: '演示披露事件（Mock）', fallback: false } }
     })
   } },
   { method: 'GET', prefix: '/agent-api/v1/spot/node-price/daily', handler: spotNodePriceDaily },
@@ -2533,32 +2946,34 @@ const ROUTES: MockRoute[] = [
   { method: 'GET', prefix: '/agent-api/agent/quant/', handler: (ctx) => {
     const date = ctx.url.searchParams.get('date') ?? dateStr(0)
     const curve = curve96('price', `quant:${ctx.url.pathname}:${date}`, date)
+    const rt = boundedFollow(curve, curve96('price', `quant-rt:${ctx.url.pathname}:${date}`, date))
     return mockJsonResponse({
       mock: true,
       source: 'mock-demo',
       note: '演示模式（Mock 演示账号，不接真实数据）',
       total: curve.length,
       points: curve,
-      series: TIME_AXIS_96.map((time, i) => ({ time, value: curve[i], da: curve[i], rt: Math.round(curve[i] * 1.05 * 10) / 10, spread: Math.round(curve[i] * 0.05 * 10) / 10 }))
+      series: TIME_AXIS_96.map((time, i) => ({ time, value: curve[i], da: curve[i], rt: rt[i], spread: Math.round((rt[i] - curve[i]) * 10) / 10 }))
     })
   } },
   { method: 'POST', prefix: '/agent-api/agent/quant/', handler: (ctx) => {
     const date = String(ctx.body.date ?? dateStr(0))
     const curve = curve96('price', `quant:${ctx.url.pathname}:${date}`, date)
+    const rt = boundedFollow(curve, curve96('price', `quant-rt:${ctx.url.pathname}:${date}`, date))
     return mockJsonResponse({
       mock: true,
       source: 'mock-demo',
       note: '演示模式（Mock 演示账号，不接真实数据）',
       total: curve.length,
       points: curve,
-      series: TIME_AXIS_96.map((time, i) => ({ time, value: curve[i], da: curve[i], rt: Math.round(curve[i] * 1.05 * 10) / 10, spread: Math.round(curve[i] * 0.05 * 10) / 10 }))
+      series: TIME_AXIS_96.map((time, i) => ({ time, value: curve[i], da: curve[i], rt: rt[i], spread: Math.round((rt[i] - curve[i]) * 10) / 10 }))
     })
   } },
   { method: 'GET', prefix: '/agent-api/v1/market-insight/bundle', handler: (ctx) => {
     const date = ctx.url.searchParams.get('date') ?? dateStr(0)
     const region = ctx.url.searchParams.get('region') ?? 'shanxi'
     const da = curve96('price', `insight-da:${date}`, date)
-    const rt = curve96('price', `insight-rt:${date}`, date)
+    const rt = boundedFollow(da, curve96('price', `insight-rt:${date}`, date))
     const elasticityCurve = curve96('price', `elasticity:${date}`, date).map((v) => ({ x: Math.round((v % 300) + 50), y: Math.round((v % 200) + 20) }))
     return mockJsonResponse({
       meta: { schema_version: 1, date, region, region_name: ctx.url.searchParams.get('region_name') ?? '山西', market: ctx.url.searchParams.get('market') ?? '山西电力市场', generated_at: new Date().toISOString() },

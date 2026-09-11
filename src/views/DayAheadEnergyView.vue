@@ -4,7 +4,7 @@
 //  表格:复选/序号/售电公司/日期/类型/合计/96点;日期·合计·各时点可排序。
 //  图表:勾选行→对应预估电量折线(96点),多选多条,纵轴自适应。
 // 数据:GET /sdpt/zptqx/list(最大文件含全类型 888 行,前端按 type='4' 过滤=65天)。源 capture-raw/sdpt_zptqx/。
-import { computed, onMounted, ref, nextTick } from 'vue'
+import { computed, onMounted, ref, nextTick, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { currentRegion } from '@/services/region/regionContext'
 import { getRegionCapabilityForPath } from '@/services/region/regionModules'
@@ -64,7 +64,11 @@ async function load() {
   }
   energyChart.showLoading()
   try {
-    const contract = await fetchSpotDayAheadEnergyContract({ region: currentRegion.value.id })
+    const contract = await fetchSpotDayAheadEnergyContract({
+      region: currentRegion.value.id,
+      dateFrom: range.value?.[0],
+      dateTo: range.value?.[1]
+    })
     if (generation !== loadGeneration) return
     rows.value = contract.blocks.day_ahead_energy.rows
       .sort((a: any, b: any) => (a.date < b.date ? 1 : -1))
@@ -126,6 +130,9 @@ function render() {
 }
 
 onMounted(() => { load() })
+
+// 改运行日期区间 → 按区间重取（mock 合成分支按 dateFrom/dateTo 逐日生成）
+watch(range, () => { load() })
 
 onRegionChange(load)
 </script>

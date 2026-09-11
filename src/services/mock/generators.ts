@@ -57,16 +57,38 @@ const PRICE_PROFILE_96: number[] = [
 /**
  * 96 点日曲线。price：真实形态标定（鸭子曲线 + 日间/周末因子 + 限价尖峰）；
  * load：白天高原夜晚低谷；renewable/output：午间单峰。
+ * 逐日形态漂移（C.25 随机性审计）：峰位/峰宽/幅度按 (seedKey,date) 独立抽样——
+ * 不同日期曲线不再是只差抖动的平行复制（跨日相关 r 从 ~0.999 压到 <0.995）。
  */
 export function curve96(kind: CurveKind, seedKey: string, date: string): number[] {
   const rand = mulberry32(seedOf(`${kind}:${seedKey}:${date}`))
   const jitter = () => 1 + (rand() - 0.5) * 0.12
+  const warp = mulberry32(seedOf(`warp:${kind}:${seedKey}:${date}`))
+  const shift = (warp() - 0.5) * (kind === 'price' ? 5 : 2.6) // price ±2.5 slot / 其余 ±1.3h
+  const widthK = kind === 'price' ? 1 : 0.78 + warp() * 0.54
+  const ampK = 0.9 + warp() * 0.2
+  const dipK = 0.85 + warp() * 0.27 // 午间深谷深度逐日伸缩（打破跨日平行复制）
+  // 低频呼吸因子：逐日随机相位/波数（全日 1~2 个慢波）的 ±4%~10% 慢波调制全曲线。
+  // 只靠深谷伸缩时鸭子形态仍主导跨日 Pearson（r~0.996「轮回感」），慢波相位差把
+  // r 压到 <0.99；量级漂移 ≤±10%，鸭子形态与峰谷窗口关系保留。
+  const breathAmp = 0.04 + warp() * 0.06
+  const breathK = warp() < 0.5 ? 1 : 2
+  const breathPhase = warp() * Math.PI * 2
+  const breath = (slot: number) => 1 + breathAmp * Math.sin(breathPhase + (slot / 96) * breathK * Math.PI * 2)
   if (kind === 'price') {
     let dayFactor = 0.82 + rand() * 0.42
     const weekday = new Date(`${date}T00:00:00`).getDay()
     if (weekday === 0 || weekday === 6) dayFactor *= 0.93
+    const at = (slot: number): number => {
+      const i = Math.max(0, Math.min(94, slot))
+      const lo = Math.floor(i)
+      return PRICE_PROFILE_96[lo] * (1 - i + lo) + PRICE_PROFILE_96[Math.min(95, lo + 1)] * (i - lo)
+    }
     return Array.from({ length: 96 }, (_, slot) => {
-      let value = PRICE_PROFILE_96[slot] * dayFactor * jitter()
+      const profile = at(slot + shift)
+      // 深谷只压/抬 250 以下段（午间光伏承压区），夜间平台与傍晚尖峰保持标定形态
+      const shaped = profile < 250 ? 250 + (profile - 250) * dipK : profile
+      let value = shaped * dayFactor * ampK * breath(slot) * jitter()
       // 偶发限价尖峰收敛到 ~800（C.22）：1500 限价针会把 y 轴拉满、其余曲线被压扁；
       // 与 fixtures 软化上限（softenPriceValue：1500→814）观感一致。
       if (rand() < 0.004) value = 560 + rand() * 240
@@ -74,15 +96,26 @@ export function curve96(kind: CurveKind, seedKey: string, date: string): number[
     })
   }
   return Array.from({ length: 96 }, (_, slot) => {
-    const hour = slot / 4
+    const hour = slot / 4 - shift
     const base =
       kind === 'load'
-        ? 5200 + 2600 * Math.exp(-((hour - 11) ** 2) / 14) + 1800 * Math.exp(-((hour - 20) ** 2) / 8)
+        ? 5200 + 2600 * Math.exp(-(((hour - 11) / widthK) ** 2)) + 1800 * Math.exp(-(((hour - 20) / widthK) ** 2))
         : kind === 'renewable'
-          ? 820 * Math.max(0, Math.sin(((hour - 6.5) / 13) * Math.PI))
-          : 430 + 90 * Math.sin(((hour - 6) / 12) * Math.PI)
-    const value = Math.max(0, base * jitter())
+          ? 820 * Math.max(0, Math.sin(((hour - 6.5) / (13 * widthK)) * Math.PI))
+          : 430 + 90 * Math.sin(((hour - 6) / (12 * widthK)) * Math.PI)
+    const value = Math.max(0, base * ampK * breath(slot) * jitter())
     return Math.round(value * 10) / 10
+  })
+}
+
+/**
+ * 96 点曲线 → 24 点小时均值（小时均价/小时电量语义）。替代 4× 步距点采样：
+ * 点采样把 15 分钟级爬坡放大成小时锯齿（审计 ①步长超带），均值才是小时粒度的正确聚合。
+ */
+export function hourlyMean24(curve: number[]): number[] {
+  return Array.from({ length: 24 }, (_, h) => {
+    const q = curve.slice(h * 4, h * 4 + 4)
+    return q.reduce((s, v) => s + v, 0) / 4
   })
 }
 

@@ -126,16 +126,10 @@ const calendarData = computed<[string, number][]>(() => {
 })
 
 /**
- * 计算 byDate 数据涵盖的年月范围（取 min 和 max 日期的年月）。
- * calendar range 支持 ['YYYY-MM', 'YYYY-MM'] 跨月展示。
+ * 热力图只渲染当前展示月（随「上/下个月」切换而变化）；单月直接给 'YYYY-MM'。
+ * 此前恒为全量数据的首~尾月跨区，切月份图形纹丝不动，被误读为数据不随月变化。
  */
-const calendarRange = computed<string | [string, string]>(() => {
-  const dates = Object.keys(byDate.value).filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d)).sort()
-  if (!dates.length) return `${cur.value.y}-${String(cur.value.m).padStart(2, '0')}`
-  const minYM = dates[0].slice(0, 7)
-  const maxYM = dates[dates.length - 1].slice(0, 7)
-  return minYM === maxYM ? minYM : [minYM, maxYM]
-})
+const calendarRange = computed<string>(() => `${cur.value.y}-${String(cur.value.m).padStart(2, '0')}`)
 
 /** 构建 ECharts calendar 热力图 option（byDate 变化时 watchEffect 自动重绘）。 */
 function buildCalendarOption(): Record<string, unknown> {

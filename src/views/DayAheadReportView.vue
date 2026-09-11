@@ -18,6 +18,7 @@ import { getRegionCapabilityForPath } from '@/services/region/regionModules'
 import { fetchSpotDayAheadReportContract, SPOT_DAY_AHEAD_REPORT_FAMILY } from '@/services/data/contracts'
 import { DECLARATION_PRICE_TYPE_CODES, DECLARATION_QTY_TYPE_CODES } from '@/data/declarationCodes'
 import { fetchCapturedDates } from '@/services/captured'
+import { isMockActive } from '@/services/mock/session'
 import { onRegionChange } from '../composables/useRegionReload'
 import RegionDataBanner from '@/components/region/RegionDataBanner.vue'
 import CapabilitySupportBadge from '../components/CapabilitySupportBadge.vue'
@@ -98,7 +99,8 @@ async function load() {
     loading.value = false
     return
   }
-  if (dates.value.length && !dates.value.includes(runDate.value)) {
+  // 演示会话：合成数据全域供数，清单外日期照常取数，不告警
+  if (dates.value.length && !isMockActive() && !dates.value.includes(runDate.value)) {
     ElMessage.warning('该运行日期未采集')
     renderEmptyChart('该运行日期未采集')
     loading.value = false
@@ -206,6 +208,21 @@ function render() {
 async function loadDates() {
   try {
     dates.value = await fetchCapturedDates(SPOT_DAY_AHEAD_REPORT_FAMILY, currentRegion.value.id)
+    // 演示会话：采集窗外日期由合成分支按日补数——日期清单续造到「今天+15 天」供下拉选择
+    if (isMockActive()) {
+      const fmt = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+      const existing = new Set(dates.value)
+      const horizon = fmt(new Date(Date.now() + 15 * 86400000))
+      let cursor = dates.value[dates.value.length - 1] ?? fmt(new Date())
+      while (cursor < horizon) {
+        cursor = fmt(new Date(Date.parse(`${cursor}T00:00:00`) + 86400000))
+        if (!existing.has(cursor)) {
+          existing.add(cursor)
+          dates.value.push(cursor)
+        }
+      }
+      dates.value.sort()
+    }
   } catch {
     // 清单取不到不阻断主取数：下拉退化为空、日期仍可由 URL/默认值直取（服务端按日期索引选文件）
     dates.value = []

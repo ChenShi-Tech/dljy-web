@@ -19,6 +19,7 @@
  */
 
 import { apiGet } from '@/services/api'
+import { isMockActive } from '@/services/mock/session'
 
 export type DateRange = { start: string; end: string }
 
@@ -55,15 +56,19 @@ export function captureCoverage(regionId: string, purpose: CoveragePurpose): Dat
   return COVERAGE[regionId]?.[purpose] ?? null
 }
 
-/** date 是否落在覆盖区外（未登记覆盖的地区恒返回 false，不知道就不声称越界）。 */
+/** date 是否落在覆盖区外（未登记覆盖的地区恒返回 false，不知道就不声称越界）。
+ *  演示会话恒 false：合成数据全域覆盖，任意日期都有数。 */
 export function isOutOfCoverage(regionId: string, purpose: CoveragePurpose, date: string): boolean {
+  if (isMockActive()) return false
   const range = captureCoverage(regionId, purpose)
   if (!range || !date) return false
   return date < range.start || date > range.end
 }
 
-/** 把候选日期钳进覆盖区间；未登记覆盖的地区原样返回。 */
+/** 把候选日期钳进覆盖区间；未登记覆盖的地区原样返回。
+ *  演示会话不钳制：合成分支对任意日期供数，钳回采集窗会让「换日期内容不变」。 */
 export function clampToCoverage(regionId: string, purpose: CoveragePurpose, date: string): string {
+  if (isMockActive()) return date
   const range = captureCoverage(regionId, purpose)
   if (!range || !date) return date
   if (date > range.end) return range.end
