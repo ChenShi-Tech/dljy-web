@@ -2,7 +2,7 @@
 // 申报决策驾驶舱（#77 唯一决策出口）：消费 agent-backend 预测、风险量化、mean-CVaR 报价优化、
 // 申报建议与决策概览端点。工作台可带上下文（?model/date/train_days）跳入。
 // 页面仅做前端装配，不写入申报单，不作为结算依据。
-import { computed, nextTick, onActivated, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onActivated, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import {
   Activity,
@@ -656,15 +656,22 @@ watch([targetDate, priceModelType, loadModelType], () => {
 })
 
 const catalogBatchReady = ref(false)
+let catalogGeneration = 0
 
-onRegionChange(() => {
+// 首载与切区共享代次；地区相同也可能是 A→B→A 的旧请求，不能只比较地区 ID。
+async function loadRegionCatalog(force = false) {
+  const generation = ++catalogGeneration
+  const regionId = currentRegion.value.id
   catalogBatchReady.value = false
-  void ensureForecastCatalog(['price', 'load'], true).finally(() => {
-    catalogBatchReady.value = true
-    const normalized = normalizeSelectedModels({ allowEmptyClear: true })
-    if (!normalized) void loadCockpit()
-  })
-})
+  // 常规取数失败由目录服务写入对应地区/目标的错误状态，完成后仍须经过本页代次守卫。
+  await ensureForecastCatalog(['price', 'load'], force, regionId)
+  if (generation !== catalogGeneration || regionId !== currentRegion.value.id) return
+  catalogBatchReady.value = true
+  const normalized = normalizeSelectedModels({ allowEmptyClear: true })
+  if (!normalized) void loadCockpit()  // 归一时由 watch 触发，不额外重跑。
+}
+
+onRegionChange(() => loadRegionCatalog(true))
 
 // #762：模型下拉从后端 /forecast/models catalog 动态渲染；
 // 当前页只展示“当前腿可执行的真实模型”。目录刷新未完成前不提前清空用户指定模型，
@@ -793,12 +800,10 @@ watch([priceCatalogModels, loadCatalogModels], () => {
   normalizeSelectedModels({ allowEmptyClear: catalogBatchReady.value })
 }, { immediate: true })
 
-onMounted(async () => {
+onMounted(() => loadRegionCatalog())
+onBeforeUnmount(() => {
+  ++catalogGeneration
   catalogBatchReady.value = false
-  await ensureForecastCatalog(['price', 'load'])
-  catalogBatchReady.value = true
-  const normalized = normalizeSelectedModels({ allowEmptyClear: true })
-  if (!normalized) void loadCockpit()  // 归一时由 watch 触发（世代守卫处理并发）
 })
 </script>
 

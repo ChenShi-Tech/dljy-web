@@ -1,4 +1,5 @@
 // 申报决策驾驶舱必须只展示当前页可执行的真实模型；旧 deep link / 建模残留的隐藏模型 ID 不得继续运行。
+// 首载/切区目录的旧完成回调不能清空新地区模型或重复预测；覆盖 A→B→A 与卸载后的晚到响应。
 // 组件测试只验证前端状态与传参，不访问真实网站、服务或浏览器。
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { computed } from 'vue'
@@ -18,6 +19,12 @@ type MockForecastModel = {
   framework?: string
   capabilities?: { zeroShot?: boolean }
 }
+type RegionCatalog = {
+  price: MockForecastModel[]
+  load: MockForecastModel[]
+  priceError?: string
+  loadError?: string
+}
 
 const state = await vi.hoisted(async () => {
   const { ref } = await import('vue')
@@ -29,6 +36,7 @@ const state = await vi.hoisted(async () => {
     loadModels: ref<MockForecastModel[]>([]),
     priceCatalogError: ref(''),
     loadCatalogError: ref(''),
+    regionCatalogs: ref<Record<string, RegionCatalog>>({}),
   }
 })
 const api = vi.hoisted(() => ({
@@ -50,9 +58,7 @@ vi.mock('@/services/forecast/forecastBenchContext', () => ({
 vi.mock('@/services/region/regionContext', () => ({
   currentRegion: computed(() => ({ id: state.currentRegionId.value, name: state.currentRegionId.value })),
 }))
-vi.mock('@/composables/useRegionReload', () => ({
-  onRegionChange: vi.fn(),
-}))
+// 保留真实 onRegionChange 的 Vue watch，确保切区会走页面的真实目录重载流程。
 vi.mock('@/services/region/regionModules', () => ({
   getRegionCapabilityForPath: () => ({ status: 'available' }),
 }))
@@ -69,9 +75,12 @@ vi.mock('@/services/market/spotPrice', () => ({
 }))
 vi.mock('@/services/forecast/forecastProviders', () => ({
   ensureForecastCatalog: (...args: unknown[]) => api.ensureCatalog(...args),
-  forecastCatalogState: (target: string) => target === 'price'
-    ? { models: state.priceModels, error: state.priceCatalogError }
-    : { models: state.loadModels, error: state.loadCatalogError },
+  forecastCatalogState: (target: ForecastLeg) => ({
+    models: computed(() => state.regionCatalogs.value[state.currentRegionId.value]?.[target]
+      ?? (target === 'price' ? state.priceModels.value : state.loadModels.value)),
+    error: computed(() => state.regionCatalogs.value[state.currentRegionId.value]?.[`${target}Error`]
+      ?? (target === 'price' ? state.priceCatalogError.value : state.loadCatalogError.value)),
+  }),
   isPredictSupported: () => true,
   isModelSelectableForTarget: (model: MockForecastModel, target: ForecastLeg) =>
     model.available !== false && Array.isArray(model.supportedTargets) && model.supportedTargets.includes(target),
@@ -180,6 +189,23 @@ function requestUsesModel(input: unknown, modelType: string): boolean {
   return (input as MockForecastRequest).model_type === modelType
 }
 
+// 跨地区共有的真实模型排在第二项，防止修复时以“自动选首项”掩盖原选择被清空。
+function sharedRuntimeCatalog(): RegionCatalog {
+  const models = [
+    model({ modelId: 'ridge', name: '线性基线' }),
+    model({ modelId: 'xgboost', name: '跨地区真实算法' }),
+  ]
+  return { price: models, load: models }
+}
+
+function prepareRegionCatalogs() {
+  state.route.value = { model: 'xgboost', date: '2026-06-25' }
+  state.regionCatalogs.value = {
+    yunnan: { price: [], load: [] },
+    shanxi: { price: [], load: [] },
+  }
+}
+
 const wrappers: VueWrapper[] = []
 async function render() {
   const wrapper = mount(Cockpit, {
@@ -206,6 +232,7 @@ beforeEach(() => {
   state.currentRegionId.value = 'yunnan'
   state.priceCatalogError.value = ''
   state.loadCatalogError.value = ''
+  state.regionCatalogs.value = {}
   state.priceModels.value = [model({ modelId: 'remote:price-ok', name: '价格真模型', supportedTargets: ['price'] })]
   state.loadModels.value = [model({ modelId: 'remote:load-ok', name: '负荷真模型', supportedTargets: ['load'] })]
   api.ensureCatalog.mockReset().mockResolvedValue(undefined)
@@ -344,5 +371,100 @@ describe('申报决策驾驶舱模型入口清理', () => {
     expect(wrapper.text()).toContain('价格模型 B')
     expect(wrapper.text()).toContain('负荷模型 B')
     expect(wrapper.text()).not.toContain('当前价格预测模型不可用，请另选模型')
+  })
+})
+
+describe('地区模型目录的完成回调隔离', () => {
+  it('A 首载晚到时不清空仍在加载的 B 选择，B 就绪后只运行原选模型', async () => {
+    prepareRegionCatalogs()
+    const first = deferred<void>()
+    const latest = deferred<void>()
+    api.ensureCatalog.mockReset().mockReturnValueOnce(first.promise).mockReturnValueOnce(latest.promise)
+    const wrapper = await render()
+    state.currentRegionId.value = 'shanxi'
+    await flushPromises()
+    expect(api.ensureCatalog).toHaveBeenCalledTimes(2)
+    state.regionCatalogs.value.yunnan = sharedRuntimeCatalog()
+    first.resolve()
+    await flushPromises()
+    expect(api.predict).not.toHaveBeenCalled()
+
+    state.regionCatalogs.value.shanxi = sharedRuntimeCatalog()
+    latest.resolve()
+    await flushPromises()
+    expect(wrapper.findAll('select')[0]?.element.value).toBe('xgboost')
+    expect(wrapper.findAll('select')[1]?.element.value).toBe('xgboost')
+    expect(api.predict).toHaveBeenCalledTimes(1)
+    expect(api.predict).toHaveBeenCalledWith(expect.objectContaining({ region_id: 'shanxi', target: 'price', model_type: 'xgboost' }))
+    expect(api.optimize).toHaveBeenCalledWith(expect.objectContaining({ region_id: 'shanxi', target: 'load', model_type: 'xgboost' }))
+    expect(wrapper.text()).not.toContain('当前价格预测模型不可用')
+    expect(api.ensureCatalog).toHaveBeenNthCalledWith(1, ['price', 'load'], false, 'yunnan')
+    expect(api.ensureCatalog).toHaveBeenNthCalledWith(2, ['price', 'load'], true, 'shanxi')
+  })
+
+  it('A→B→A 期间旧 A 和旧 B 完成都不能把最新 A 提前标成就绪', async () => {
+    prepareRegionCatalogs()
+    const first = deferred<void>()
+    const middle = deferred<void>()
+    const latest = deferred<void>()
+    api.ensureCatalog.mockReset()
+      .mockReturnValueOnce(first.promise).mockReturnValueOnce(middle.promise).mockReturnValueOnce(latest.promise)
+    const wrapper = await render()
+    state.currentRegionId.value = 'shanxi'
+    await flushPromises()
+    state.currentRegionId.value = 'yunnan'
+    await flushPromises()
+    // 同地区旧批次数据由服务层丢弃，此处只让旧页面回调结束，最新目录仍在等待。
+    first.resolve()
+    middle.resolve()
+    await flushPromises()
+    expect(api.predict).not.toHaveBeenCalled()
+
+    state.regionCatalogs.value.yunnan = sharedRuntimeCatalog()
+    latest.resolve()
+    await flushPromises()
+    expect(wrapper.findAll('select')[0]?.element.value).toBe('xgboost')
+    expect(wrapper.findAll('select')[1]?.element.value).toBe('xgboost')
+    expect(api.predict).toHaveBeenCalledTimes(1)
+    expect(api.predict).toHaveBeenCalledWith(expect.objectContaining({ region_id: 'yunnan', model_type: 'xgboost' }))
+    expect(api.ensureCatalog).toHaveBeenNthCalledWith(3, ['price', 'load'], true, 'yunnan')
+  })
+
+  it('旧 A 目录失败晚到不覆盖 B 的成功状态，也不重复触发 B 预测', async () => {
+    prepareRegionCatalogs()
+    const first = deferred<void>()
+    const latest = deferred<void>()
+    api.ensureCatalog.mockReset().mockReturnValueOnce(first.promise).mockReturnValueOnce(latest.promise)
+    const wrapper = await render()
+    state.currentRegionId.value = 'shanxi'
+    await flushPromises()
+    state.regionCatalogs.value.shanxi = sharedRuntimeCatalog()
+    latest.resolve()
+    await flushPromises()
+    expect(api.predict).toHaveBeenCalledTimes(1)
+
+    // ensureForecastCatalog 将取数失败写入对应地区的响应式错误状态，再正常完成 Promise。
+    state.regionCatalogs.value.yunnan = { price: [], load: [], priceError: '旧地区目录读取失败', loadError: '旧地区目录读取失败' }
+    first.resolve()
+    await flushPromises()
+    expect(api.predict).toHaveBeenCalledTimes(1)
+    expect(api.optimize).toHaveBeenCalledTimes(1)
+    expect(wrapper.findAll('select')[0]?.element.value).toBe('xgboost')
+    expect(wrapper.text()).not.toContain('旧地区目录读取失败')
+    expect(wrapper.text()).not.toContain('当前价格预测模型不可用')
+  })
+
+  it('卸载后目录才完成，不再触发预测或后续报价优化', async () => {
+    prepareRegionCatalogs()
+    const pending = deferred<void>()
+    api.ensureCatalog.mockReset().mockReturnValueOnce(pending.promise)
+    const wrapper = await render()
+    wrapper.unmount()
+    wrappers.splice(wrappers.indexOf(wrapper), 1)
+    state.regionCatalogs.value.yunnan = sharedRuntimeCatalog()
+    pending.resolve()
+    await flushPromises()
+    expect(api.predict).not.toHaveBeenCalled()
+    expect(api.optimize).not.toHaveBeenCalled()
   })
 })
