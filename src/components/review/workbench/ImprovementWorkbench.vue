@@ -3,6 +3,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { createImprovementAction, fetchImprovementActions, patchImprovementAction } from '@/services/review/reviewStoreClient'
 import type { ImprovementActionSummary } from '@/services/review/reviewStoreApi'
 import { isRealCalendarDate } from '@/utils/calendarDate'
+import SpotSkeleton from '../../../components/common/SpotSkeleton.vue'
 const props = defineProps<{ context: string; focus: string; savedDraft?: string[]; draftKey?: string }>()
 const actions = ref<ImprovementActionSummary[]>([])
 const loaded = ref(false), loading = ref(false), saving = ref(false)
@@ -56,7 +57,7 @@ onMounted(load)
     </section>
     <p v-if="error" role="alert" class="notice">{{ error }}</p><p v-if="feedback" role="status" class="notice">{{ feedback }}</p>
     <section class="panel list"><header><div><h2>跟进与回查</h2><p>当前账号可见的公司改进记录，覆盖历史复盘对象。</p></div><button type="button" :disabled="loading || saving" @click="load">刷新记录</button></header><div class="filters"><label>状态 <select v-model="filter"><option value="open">待落实与继续跟进</option><option value="done">已记录验证</option><option value="all">全部</option></select></label><input v-model="search" type="search" aria-label="搜索改进记录" placeholder="搜索措施、对象或负责人" /></div>
-      <p v-if="loading">正在读取改进记录…</p><p v-else-if="loaded && !shown.length">当前筛选下没有改进记录。</p>
+      <p v-if="loading">正在读取改进记录…</p><SpotSkeleton v-if="loading" variant="rows" :rows="3" :title="false" :card="false" /><p v-else-if="loaded && !shown.length">当前筛选下没有改进记录。</p>
       <article v-for="a in shown" :key="a.id"><div class="meta"><b>{{ statusLabel[a.status] }}</b><span>{{ a.owner || '未指定负责人' }}</span><span>回查日期 {{ a.dueDate || '未指定' }}</span></div><p class="content">{{ a.action }}</p><button v-if="['open', 'carried_over'].includes(a.status)" type="button" @click="validating = a; evidence = ''; verdict = 'observe'">补充验证记录</button></article>
     </section>
     <el-dialog :model-value="!!validating" title="记录实际验证情况" width="min(620px, 94vw)" @close="validating = null"><p>说明做了什么、使用了哪些实际结果，以及通过或未通过的原因。证据不足时，请继续跟进。</p><label>验证记录<textarea v-model="evidence" rows="5" placeholder="例如：复核了调整后的交易日，附比较口径、观察到的变化及仍不能解释的问题。" /></label><label>验证结论<select v-model="verdict"><option v-for="(text, value) in verdictLabels" :key="value" :value="value">{{ text }}</option></select></label><p v-if="error" role="alert">{{ error }}</p><template #footer><button type="button" :disabled="saving" @click="validating = null">继续跟进</button><button class="primary" type="button" :disabled="saving || loading || evidence.trim().length < 8" @click="complete">保存验证记录</button></template></el-dialog>
@@ -64,4 +65,6 @@ onMounted(load)
 </template>
 <style scoped>
 .actions-workbench { display: grid; gap: 16px; } .action-form, .list { padding: 20px; } header { display: flex; justify-content: space-between; flex-wrap: wrap; align-items: start; gap: 12px; } .action-form header { display: block; } h2 { font-size: var(--font-lg); margin: 0; } p { color: var(--muted); font-size: var(--font-sm); line-height: 1.7; } form { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; } label { display: flex; flex-direction: column; gap: 8px; font-size: var(--font-sm); } .wide { grid-column: 1 / -1; } input, textarea, select, button { font: inherit; font-size: var(--font-sm); color: var(--text); border: 1px solid var(--line); background: var(--panel); border-radius: 6px; padding: 9px 12px; } textarea { resize: vertical; width: 100%; box-sizing: border-box; line-height: 1.7; } button { cursor: pointer; } button:disabled { opacity: .5; cursor: default; } .primary { background: var(--primary); border-color: var(--primary); color: white; } .submit { display: flex; align-items: center; justify-content: space-between; gap: 12px; } .submit p { flex: 1; } .filters { display: flex; gap: 12px; flex-wrap: wrap; align-items: end; margin: 10px 0; } .filters label { flex-direction: row; align-items: center; } article { padding: 16px 0; border-top: 1px solid var(--line); } .meta { display: flex; flex-wrap: wrap; gap: 16px; font-size: var(--font-sm); } .content { white-space: pre-wrap; color: var(--text); overflow-wrap: anywhere; } .notice { padding: 12px; background: var(--panel-sub); border-radius: 8px; } @media(max-width: 600px) { form { grid-template-columns: 1fr; } .submit { align-items: stretch; flex-direction: column; } }
+/* 骨架扫光对齐复盘中心等待态的既定慢节奏（同 PanelFetchLoading 的 4.8s「安静不催促」） */
+.list :deep(.sk-bar) { animation-duration: 4.8s; }
 </style>
