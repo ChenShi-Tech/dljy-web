@@ -45,3 +45,10 @@ export function reviewAnalysisSources(view: ReviewBusinessView, topic: ReviewTop
     { id: 'decision' as const, label: '本次决策留存资料' },
   ]
 }
+
+export function hasDecisionTopicData(snapshot: ReviewEvidenceSnapshot | null, topic: ReviewTopic) {
+  const valid = (value: unknown) => typeof value === 'number' && Number.isFinite(value)
+  return snapshot?.intervals.some(point => topic === 'price'
+    ? valid(point.daPrice) || valid(point.rtPrice)
+    : topic === 'energy' && ((valid(point.forecast) && valid(point.actual)) || (valid(point.declared) && (valid(point.actual) || valid(point.cleared))))) ?? false
+}

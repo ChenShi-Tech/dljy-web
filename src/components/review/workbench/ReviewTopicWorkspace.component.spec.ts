@@ -76,4 +76,24 @@ describe('专题页面与弹窗共用工作区', () => {
     wrapper.unmount()
   })
 
+  it('申报仅有电量时不默认打开空价格副本，单边零价格也算可用', async () => {
+    const energyOnly = { ...snapshot, scope: { ...snapshot.scope, objectKey: 'declaration-a' }, intervals: [{ ...snapshot.intervals[0], daPrice: null, rtPrice: null }] }
+    const wrapper = mount(ReviewTopicWorkspace, { props: { ...props, snapshot: energyOnly }, global: { stubs } })
+    expect(wrapper.findComponent({ name: 'TopicAnalysisPanel' }).exists()).toBe(true)
+    await wrapper.setProps({ topic: 'price' as never })
+    expect(wrapper.findComponent({ name: 'MarketPriceAnalysisPanel' }).exists()).toBe(true)
+    expect(wrapper.findComponent({ name: 'TopicAnalysisPanel' }).exists()).toBe(false)
+    await wrapper.setProps({ snapshot: { ...energyOnly, scope: { ...energyOnly.scope, objectKey: 'declaration-b' }, intervals: [{ ...energyOnly.intervals[0], daPrice: 0 }] } })
+    expect(wrapper.findComponent({ name: 'TopicAnalysisPanel' }).exists()).toBe(true)
+    wrapper.unmount()
+  })
+  it('补充资料跨专题重新挂载，撤去之前的对象和目录', async () => {
+    const wrapper = mount(ReviewTopicWorkspace, { props: { ...props, view: 'retail' }, global: { stubs } })
+    const energyPanel = wrapper.findComponent({ name: 'ImportedIntervalPanel' }).vm
+    await wrapper.setProps({ topic: 'price' as never })
+    expect(wrapper.findComponent({ name: 'ImportedIntervalPanel' }).vm).not.toBe(energyPanel)
+    expect(wrapper.findComponent({ name: 'ImportedIntervalPanel' }).props('topic')).toBe('price')
+    wrapper.unmount()
+  })
+
 })
