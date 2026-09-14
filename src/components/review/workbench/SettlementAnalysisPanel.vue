@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useEChart } from '@/composables/useEChart'
 import { ApiError } from '@/services/api'
 import { formatValue } from '@/services/review/decisionWorkbench'
@@ -15,6 +15,7 @@ const manual = ref(props.selection?.manual ?? false), referenceStart = ref(props
 const plants = ref<string[]>([...(props.selection?.plants ?? [])]), availablePlants = ref<string[]>([])
 watch([date, cadence, manual, referenceStart, referenceEnd, plants], () => emit('selection', { date: date.value, cadence: cadence.value, manual: manual.value, referenceStart: referenceStart.value, referenceEnd: referenceEnd.value, plants: [...plants.value] }), { deep: true })
 const result = ref<SettlementAnalysis | null>(null), loading = ref(false), error = ref('')
+const hasPlot = computed(() => result.value?.current.daily.some(row => row.coverage.energy > 0 || row.coverage.fee > 0) ?? false)
 const el = ref<HTMLElement | null>(null), chart = useEChart(el, { render })
 let sequence = 0, controller: AbortController | null = null
 function render() {
@@ -61,6 +62,8 @@ onBeforeUnmount(() => { sequence++; controller?.abort() })
     <p>{{ companyLabel || '当前公司' }} · 公司周期复盘 · 结算与历史比较</p>
     <div class="controls"><label>周期<select v-model="cadence" aria-label="分析周期"><option value="day">日</option><option value="week">周</option><option value="month">月</option></select></label><label>日期<input v-model="date" type="date" aria-label="分析日期" /></label><label><input v-model="manual" type="checkbox" />指定参考期</label><template v-if="manual"><label>参考起日<input v-model="referenceStart" type="date" /></label><label>参考止日<input v-model="referenceEnd" type="date" /></label></template><button type="button" :disabled="loading" @click="load">{{ loading ? '正在统计…' : '重新统计' }}</button><button v-if="plants.length" type="button" @click="plants = []; load()">查看全部已入库厂站</button></div>
     <details v-if="availablePlants.length"><summary>选择厂站（未勾选表示全部已入库厂站）</summary><div class="plant-picker"><label v-for="plant in availablePlants" :key="plant"><input v-model="plants" type="checkbox" :value="plant" />{{ plant }}</label></div></details>
+    <p v-if="loading" role="status">正在统计结算资料…</p>
+    <p v-if="result && !hasPlot" role="status">所选周期没有可绘制的结算电量或电费。可调整日期或通过维护资料补充。</p>
     <p v-if="error" role="alert">{{ error }}</p>
     <button v-if="result?.current.coverage.records" type="button" :disabled="capturing || loading" @click="capture">{{ capturing ? '正在保存材料…' : '保存材料并加入底稿' }}</button>
     <template v-if="result">
@@ -68,7 +71,7 @@ onBeforeUnmount(() => { sequence++; controller?.abort() })
       <div class="metrics"><span>结算电量<b>{{ formatValue(result.current.energyMwh) }} MWh</b><small>有效 {{ result.current.coverage.energy }} 条</small></span><span>结算电费<b>{{ formatValue(result.current.feeYuan) }} 元</b><small>有效 {{ result.current.coverage.fee }} 条</small></span><span>电量加权均价<b>{{ formatValue(result.current.averagePrice) }} 元/MWh</b><small>电量、电费齐全 {{ result.current.coverage.paired }} 条</small></span><span>资料覆盖<b>{{ result.current.coverage.records }} / {{ result.current.expectedPlantDays }} 厂站日</b><small>已入库范围 {{ result.selectedPlants.length }} 座</small></span></div>
       <p>中长期 {{ formatValue(result.current.longTermMwh) }} MWh（{{ result.current.coverage.longTerm }} 条） · 日前增量 {{ formatValue(result.current.dayAheadIncrementMwh) }} MWh（{{ result.current.coverage.dayAhead }} 条） · 实时增量 {{ formatValue(result.current.realTimeIncrementMwh) }} MWh（{{ result.current.coverage.realTime }} 条）。各项按有值记录汇总。</p>
     </template>
-    <div ref="el" class="plot" role="img" aria-label="所选周期逐日结算电量与电费" />
+    <div v-show="hasPlot" ref="el" class="plot" role="img" aria-label="所选周期逐日结算电量与电费" />
     <template v-if="result">
       <h3>共同覆盖下的历史比较</h3><p>仅比较同厂站、相同日序且电量和电费均齐全的 {{ result.comparison.matchedPlantDays }} 个厂站日。</p>
       <div class="table-scroll"><table><thead><tr><th>指标</th><th>本期共同范围</th><th>参考期共同范围</th></tr></thead><tbody><tr><th>结算电量（MWh）</th><td>{{ formatValue(result.comparison.currentEnergyMwh) }}</td><td>{{ formatValue(result.comparison.referenceEnergyMwh) }}</td></tr><tr><th>结算电费（元）</th><td>{{ formatValue(result.comparison.currentFeeYuan) }}</td><td>{{ formatValue(result.comparison.referenceFeeYuan) }}</td></tr></tbody></table></div>
