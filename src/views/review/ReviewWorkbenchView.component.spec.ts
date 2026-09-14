@@ -29,12 +29,30 @@ beforeEach(() => {
 })
 afterEach(() => { wrappers.splice(0).forEach(w => w.unmount()) })
 async function open(query = '', standaloneTopics = false) {
-  const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/xhjy/review', component: ReviewWorkbenchView }, { path: '/xhjy/desk', component: { template: '<div>申报台</div>' } }] })
+  const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/xhjy/review', component: ReviewWorkbenchView }, { path: '/xhjy/review/analysis', component: ReviewWorkbenchView }, { path: '/xhjy/desk', component: { template: '<div>申报台</div>' } }] })
   await router.push(`/xhjy/review?layout=decisions&date=2026-05-31${query}`); await router.isReady()
   const wrapper = mount(ReviewWorkbenchView, { props: { standaloneTopics }, global: { plugins: [router], stubs: { RegionDataBanner: true, ReviewTopicWorkspace: true, ReportArchivePanel: true } } }); wrappers.push(wrapper)
   await flushPromises(); return { wrapper, router }
 }
 describe('真实接口复盘工作流', () => {
+  it('周期申报回查保存全部专题筛选并跳到申报实际交易日', async () => {
+    const { wrapper, router } = await open('&topic=settlement&cadence=week&periodDate=2026-05-31&plants=甲厂&priceIntervals=2026-05-30T00:00:00%2B08:00', true)
+    const workspace = wrapper.findComponent({ name: 'ReviewTopicWorkspace' })
+    workspace.vm.$emit('decision', { ...order('b'), targetDate: '2026-05-30' })
+    await flushPromises()
+    expect(router.currentRoute.value.query).toMatchObject({ date: '2026-05-30', declarationId: 'b', task: 'decision' })
+    const back = router.resolve(String(router.currentRoute.value.query.analysisReturn))
+    expect(back.path).toBe('/xhjy/review/analysis')
+    expect(back.query).toMatchObject({ date: '2026-05-31', periodDate: '2026-05-31', cadence: 'week', plants: '甲厂', companyId: 'company-a', region: 'yunnan' })
+    expect(back.query.priceIntervals).toBe('2026-05-30T00:00:00+08:00')
+    expect(wrapper.text()).toContain('返回原周期专题分析')
+  })
+  it('不同公司或地区的返回链接不展示', async () => {
+    const back = encodeURIComponent('/xhjy/review/analysis?companyId=other&region=yunnan')
+    const { wrapper } = await open('&analysisReturn=' + back)
+    expect(wrapper.text()).not.toContain('返回原周期专题分析')
+  })
+
   it('独立专题沿用单笔资料加载，并保留业务视角和对象', async () => {
     const { wrapper } = await open('&declarationId=a&view=retail&topic=price&companyId=company-a&region=yunnan', true)
     expect(wrapper.text()).toContain('复盘专题分析')

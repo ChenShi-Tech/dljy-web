@@ -6,11 +6,13 @@ import { formatValue } from '@/services/review/decisionWorkbench'
 import { dailyEnergySelectionFromQuery, type DailyEnergySelection, captureDailyEnergy, fetchDailyEnergy, type DailyEnergyAnalysis, type DailyEnergyInput } from '@/services/review/dailyEnergy'
 import type { ReportEvidence } from '@/services/review/workpapers'
 const props = defineProps<{ company: string; region: string; date: string; selection?: DailyEnergySelection }>()
-const emit = defineEmits<{ material: [value: ReportEvidence]; maintenance: []; selection: [value: DailyEnergySelection] }>()
+const emit = defineEmits<{ period: [value: { start: string; end: string } | null]; material: [value: ReportEvidence]; maintenance: []; selection: [value: DailyEnergySelection] }>()
 const initial = props.selection ?? dailyEnergySelectionFromQuery({},props.date)
 const periodDate = ref(initial.date), cadence = ref(initial.cadence), basis = ref(initial.basis), actual = ref(initial.actual)
 const manual = ref(initial.manual), referenceStart = ref(initial.referenceStart), referenceEnd = ref(initial.referenceEnd), plants = ref<string[]>([...initial.plants]), availablePlants = ref<string[]>([]), days = ref<string[]>([...initial.days])
 const result = ref<DailyEnergyAnalysis | null>(null), loading = ref(false), capturing = ref(false), error = ref(''), chartEl = ref<HTMLElement | null>(null)
+watch(result, value => emit('period', value?.periods.current ?? null), { flush: 'sync' })
+
 let generation = 0, controller: AbortController | null = null, completed: DailyEnergyInput | null = null
 const chart = useEChart(chartEl, { render, onInit(instance) { instance.on('brushEnd', (event: unknown) => {
   const areas = (event as { areas?: Array<{ coordRange?: number[] }> }).areas ?? []

@@ -9,7 +9,7 @@ import { captureMarketPrices, fetchMarketPrices, type MarketPriceInput, type Mar
 import { priceSelectionFromQuery, type PriceSelection } from '@/services/review/reviewTopics'
 import type { ReportEvidence } from '@/services/review/workpapers'
 const props = defineProps<{ company: string; region: string; date: string; selection?: PriceSelection }>()
-const emit = defineEmits<{ material: [value: ReportEvidence]; selection: [value: PriceSelection] }>()
+const emit = defineEmits<{ period: [value: { start: string; end: string } | null]; material: [value: ReportEvidence]; selection: [value: PriceSelection] }>()
 const initial = props.selection ?? priceSelectionFromQuery({}, props.date)
 const periodDate = ref(initial.date), cadence = ref(initial.cadence), subject = ref(initial.plant && initial.node ? JSON.stringify({ plant: initial.plant, node: initial.node }) : ''), threshold = ref(initial.threshold)
 const manual = ref(initial.manual), referenceStart = ref(initial.referenceStart), referenceEnd = ref(initial.referenceEnd)
@@ -29,6 +29,8 @@ const chart = useEChart(el, { render, onInit(instance) { instance.on('brushEnd',
   selected.value = displayAnalysisIntervals(full.value?.analysis?.intervals ?? []).flatMap((row, index) => row && areas.some(area => area.coordRange?.length === 2 && area.coordRange.every(Number.isFinite) && index >= Math.min(...area.coordRange) && index <= Math.max(...area.coordRange)) ? [row.start] : [])
   void load()
 }) } })
+watch(current, value => emit('period', value?.periods.current ?? null), { flush: 'sync' })
+
 let sequence = 0, controller: AbortController | null = null, lastInput: MarketPriceInput | null = null
 const time = (value: string) => new Date(value).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false })
 function render() {
