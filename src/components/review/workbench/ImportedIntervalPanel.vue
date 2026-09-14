@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { analyzeImportedIntervals, captureImportedIntervals, type ImportedChoice, type ImportedInput, type ImportedResult } from '@/services/review/importedIntervals'
 import type { ReportEvidence } from '@/services/review/workpapers'
 import ReportEvidenceChart from './ReportEvidenceChart.vue'
-const props = defineProps<{ company: string; region: string; view: ImportedInput['view']; date: string; topic: 'energy' | 'price' }>()
+const props = defineProps<{ company: string; region: string; view: ImportedInput['view']; date: string; topic: 'energy' | 'price'; expanded?: boolean }>()
 const emit = defineEmits<{ material: [value: ReportEvidence]; maintenance: []; period: [value: { start: string; end: string } | null] }>()
 const opened = ref(false), simulated = ref(false), cadence = ref<ImportedInput['period']['cadence']>('day'), date = ref(props.date)
 const deviationThreshold = ref<number | ''>(''), priceThreshold = ref<number | ''>('')
@@ -22,6 +22,7 @@ watch([deviationThreshold, priceThreshold], () => { invalidate(); selected.value
 watch(choice, () => { invalidate(); selected.value = [] })
 watch(() => props.topic, () => { invalidate(); selected.value = [] })
 onBeforeUnmount(() => ++sequence)
+onMounted(() => { if (props.expanded) { opened.value = true; void load() } })
 async function load() {
   if (loading.value || saving.value) return
   invalidate(); if (threshold.value !== '' && (!Number.isFinite(Number(threshold.value)) || Number(threshold.value) < 0)) { error.value = '筛选门槛须为非负数字。'; return } if (manualReference.value && (!referenceStart.value || !referenceEnd.value || referenceEnd.value < referenceStart.value)) { error.value = '请填写完整且顺序正确的参考日期。'; return } const ticket = sequence, query = input(); loading.value = true
@@ -46,7 +47,7 @@ const time = (value: string) => new Date(value).toLocaleString('zh-CN', { timeZo
 function toggle(event: Event) { const next = (event.target as HTMLDetailsElement).open; if (opened.value === next) return; opened.value = next; if (next) void load() }
 </script>
 <template>
-  <details class="imported-analysis" @toggle="toggle"><summary>分析交易员补充的分时资料</summary>
+  <details class="imported-analysis" :open="expanded" @toggle="toggle"><summary>分析交易员补充的分时资料</summary>
     <div class="controls"><label>资料性质<select v-model="simulated" :disabled="loading || saving"><option :value="false">业务资料</option><option :value="true">模拟演练</option></select></label><label>周期<select v-model="cadence" :disabled="loading || saving"><option value="day">日</option><option value="week">周</option><option value="month">月</option></select></label><label>日期<input v-model="date" type="date" :disabled="loading || saving" /></label><button :disabled="loading || saving" @click="load">{{ loading ? '正在统计…' : '重新统计' }}</button><button :disabled="saving" @click="emit('maintenance')">补充资料</button></div>
     <details><summary>历史比较设置</summary><label><input v-model="manualReference" type="checkbox" :disabled="loading || saving" />自行选择参考期</label><template v-if="manualReference"><label>参考开始<input v-model="referenceStart" type="date" :disabled="loading || saving" /></label><label>参考结束<input v-model="referenceEnd" type="date" :disabled="loading || saving" /></label></template><p v-else>日对上周同日，周、月对上一周期；未结束周期按相同进度比较。</p></details>
     <details><summary>时段筛选</summary><label v-if="topic === 'energy'">绝对偏差率至少（%）<input v-model="deviationThreshold" type="number" min="0" step="0.1" :disabled="loading || saving" placeholder="留空查看全部可比较时段" /></label><label v-else>日前实时价差绝对值至少（元/MWh）<input v-model="priceThreshold" type="number" min="0" step="0.1" :disabled="loading || saving" placeholder="留空查看全部价格时段" /></label><p>设置后点击重新统计。门槛仅筛选待核查时段，不代表原因已确认，也不改变全周期指标。勾选后入报告才统计所选时段。</p></details>

@@ -33,3 +33,22 @@ export function priceSelectionFromQuery(query: Record<string, unknown>, date: st
   const text = (key: string) => typeof query[key] === 'string' ? query[key] as string : ''
   return { date: text('priceDate') || date, cadence: query.priceCadence === 'week' || query.priceCadence === 'month' ? query.priceCadence : 'day', manual: !!(text('priceReferenceStart') || text('priceReferenceEnd')), referenceStart: text('priceReferenceStart'), referenceEnd: text('priceReferenceEnd'), plant: text('pricePlant'), node: text('priceNode'), threshold: text('priceThreshold'), intervals: (Array.isArray(query.priceIntervals) ? query.priceIntervals : query.priceIntervals ? [query.priceIntervals] : []).filter((value): value is string => typeof value === 'string') }
 }
+
+export type ReviewAnalysisSource = 'daily' | 'market' | 'settlement' | 'imported' | 'decision'
+/** 来源的业务适用性由当前已接通的资料定义，不能将厂站统计换标题冒充售电或储能。 */
+export function reviewAnalysisSources(view: ReviewBusinessView, topic: ReviewTopic) {
+  if (topic === 'maintenance') return []
+  if (topic === 'settlement') return view === 'generator' ? [{ id: 'settlement' as const, label: '公司与厂站结算' }] : []
+  return [
+    ...(view === 'generator' ? [{ id: topic === 'energy' ? 'daily' as const : 'market' as const, label: topic === 'energy' ? '公司与厂站日报' : '厂站节点价格' }] : []),
+    { id: 'imported' as const, label: view === 'retail' ? '客户与组合分时资料' : view === 'storage' ? '充放电分时资料' : '补充分时资料' },
+    { id: 'decision' as const, label: '本次决策留存资料' },
+  ]
+}
+
+export function hasDecisionTopicData(snapshot: ReviewEvidenceSnapshot | null, topic: ReviewTopic) {
+  const valid = (value: unknown) => typeof value === 'number' && Number.isFinite(value)
+  return snapshot?.intervals.some(point => topic === 'price'
+    ? valid(point.daPrice) || valid(point.rtPrice)
+    : topic === 'energy' && ((valid(point.forecast) && valid(point.actual)) || (valid(point.declared) && (valid(point.actual) || valid(point.cleared))))) ?? false
+}
