@@ -24,7 +24,7 @@ export function executionEvidence(order: DeclarationOrder): EvidenceEntry[] {
 }
 
 export type ReviewEvidenceSnapshot = {
-  scope: { company: string; region: string; companyLabel?: string; regionLabel?: string; day: string; objectKey: string; objectLabel: string; version: string }
+  scope: { company: string; region: string; companyLabel?: string; regionLabel?: string; day: string; period?: { start: string; end: string }; businessView?: 'generator' | 'retail' | 'storage'; objectKey: string; objectLabel: string; version: string }
   capturedAt: string
   simulated: boolean
   focus: string

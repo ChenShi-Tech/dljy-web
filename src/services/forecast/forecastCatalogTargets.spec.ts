@@ -30,13 +30,14 @@ function catalogModel(input: {
   supportedTargets?: string[]
   available?: boolean
   qualitySource?: 'full' | 'lag_only'
+  namespace?: string
 }) {
   return {
     modelId: input.modelId,
     name: input.name ?? input.modelId,
     target: input.target,
     regionId: input.regionId ?? 'yunnan',
-    namespace: 'remote',
+    namespace: input.namespace ?? 'remote',
     tier: 'core',
     available: input.available ?? true,
     supportedTargets: input.supportedTargets ?? [input.target],
@@ -82,6 +83,25 @@ describe('forecast catalog target buckets (#54)', () => {
       .toEqual(['remote:user-da'])
   })
 
+  it('用户侧两类结算价保留真实可运行的 KNN 入口，且明确标为按请求计算', async () => {
+    const mod = await import('./forecastProviders')
+    const task = mod.ensureForecastCatalog(['price_user_da_settlement', 'price_user_rt_settlement'], true, 'yunnan')
+    deferred.find((d) => d.target === 'price_user_da_settlement')!.resolve({ models: [
+      catalogModel({ modelId: 'knn', target: 'price_user_da_settlement', namespace: 'baseline',
+        supportedTargets: ['price', 'load', 'renewable', 'price_user_da_settlement', 'price_user_rt_settlement'] }),
+    ] })
+    deferred.find((d) => d.target === 'price_user_rt_settlement')!.resolve({ models: [
+      catalogModel({ modelId: 'knn', target: 'price_user_rt_settlement', namespace: 'baseline',
+        supportedTargets: ['price', 'load', 'renewable', 'price_user_da_settlement', 'price_user_rt_settlement'] }),
+    ] })
+    await task
+
+    for (const target of ['price_user_da_settlement', 'price_user_rt_settlement']) {
+      const knn = mod.providersForTarget(target, 'yunnan').find((item) => item.id === 'knn')
+      expect(knn?.targetCapabilityKind).toBe('runtime')
+    }
+  })
+
   it('同页 price/load 并存时，固定 provider 的 quality 不能串 target', async () => {
     const mod = await import('./forecastProviders')
     const task = mod.ensureForecastCatalog(['price', 'load'], true, 'yunnan')
@@ -108,6 +128,73 @@ describe('forecast catalog target buckets (#54)', () => {
     expect(loadProviders.find((p) => p.id === 'knn')?.quality?.sourceRun).toBe('lag_only')
     expect(priceProviders.some((p) => p.id === 'remote:load-only')).toBe(false)
     expect(loadProviders.some((p) => p.id === 'remote:price-only')).toBe(false)
+  })
+
+  it('provider保留零样本证据，预测中心能隐藏原始权重但不修改全量目录', async () => {
+    const mod = await import('./forecastProviders')
+    const { predictionModelExclusionReason } = await import('./predictionModelEligibility')
+    const task = mod.ensureForecastCatalog('price', true, 'yunnan')
+    deferred[0].resolve({ models: [
+      { ...catalogModel({ modelId: 'remote:original', target: 'price' }),
+        capabilities: { supportsQuantiles: true, supportsCovariates: false, supportsMultivariate: false, horizon: 96, zeroShot: true } },
+      catalogModel({ modelId: 'remote:trained', target: 'price' }),
+    ] })
+    await task
+    const all = mod.providersForTarget('price', 'yunnan')
+    expect(all.find((model) => model.id === 'remote:original')?.capabilities?.zeroShot).toBe(true)
+    expect(all.filter((model) => predictionModelExclusionReason(model) === null).map((model) => model.id))
+      .toEqual(['knn', 'remote:trained'])
+    expect(mod.forecastCatalogState('price', 'yunnan').models.value).toHaveLength(2)
+  })
+
+  it('区分即时训练算法与具体部署权重，二者都能进入真实目标选择', async () => {
+    const mod = await import('./forecastProviders')
+    const task = mod.ensureForecastCatalog('renewable', true, 'yunnan')
+    deferred[0].resolve({ models: [
+      catalogModel({ modelId: 'patchtst', target: 'renewable', namespace: 'neural',
+        supportedTargets: ['price', 'load', 'renewable', 'price_user_da_settlement', 'price_user_rt_settlement'] }),
+      catalogModel({ modelId: 'remote:yunnan-renewable-patchtst-20260729', target: 'renewable',
+        supportedTargets: ['renewable'] }),
+    ] })
+    await task
+
+    const providers = mod.providersForTarget('renewable', 'yunnan')
+    expect(providers.find((item) => item.id === 'knn')?.targetCapabilityKind).toBe('runtime')
+    expect(providers.find((item) => item.id === 'patchtst')?.targetCapabilityKind).toBe('runtime')
+    expect(providers.find((item) => item.id === 'remote:yunnan-renewable-patchtst-20260729')?.targetCapabilityKind)
+      .toBe('deployed')
+  })
+
+  it('缺省或空 supportedTargets 只保留原始目录证据，不得冒充已接入目标进入 provider', async () => {
+    const mod = await import('./forecastProviders')
+    const task = mod.ensureForecastCatalog(['price', 'load'], true, 'yunnan')
+    expect(fetchForecastModels).toHaveBeenNthCalledWith(1, 'price', 'yunnan')
+    expect(fetchForecastModels).toHaveBeenNthCalledWith(2, 'load', 'yunnan')
+
+    deferred.find((d) => d.target === 'price')!.resolve({
+      models: [
+        { ...catalogModel({ modelId: 'remote:missing-targets', target: 'price' }), supportedTargets: undefined },
+        { ...catalogModel({ modelId: 'remote:empty-targets', target: 'price' }), supportedTargets: [] },
+        catalogModel({ modelId: 'remote:bound-price', target: 'price', supportedTargets: ['price'] }),
+      ],
+    })
+    deferred.find((d) => d.target === 'load')!.resolve({
+      models: [
+        { ...catalogModel({ modelId: 'remote:missing-load', target: 'load' }), supportedTargets: undefined },
+      ],
+    })
+    await task
+
+    expect(mod.forecastCatalogState('price', 'yunnan').models.value.map((m) => m.modelId))
+      .toEqual(['remote:missing-targets', 'remote:empty-targets', 'remote:bound-price'])
+    expect(mod.providersForTarget('price', 'yunnan').map((p) => p.id))
+      .toContain('remote:bound-price')
+    expect(mod.providersForTarget('price', 'yunnan').map((p) => p.id))
+      .not.toContain('remote:missing-targets')
+    expect(mod.providersForTarget('price', 'yunnan').map((p) => p.id))
+      .not.toContain('remote:empty-targets')
+    expect(mod.providersForTarget('load', 'yunnan').map((p) => p.id))
+      .not.toContain('remote:missing-load')
   })
 
   it('同地区同 target 旧请求晚归时不得覆盖新目录', async () => {

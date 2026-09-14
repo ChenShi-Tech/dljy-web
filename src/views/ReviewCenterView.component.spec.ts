@@ -3,10 +3,19 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import ReviewCenterView from './ReviewCenterView.vue'
 
-vi.mock('./review/ReviewWorkbenchView.vue', () => ({ __esModule: true, default: { template: '<div>决策复盘工作台</div>' } }))
+vi.mock('./review/ReviewWorkbenchView.vue', () => ({ __esModule: true, default: { props: ['standaloneTopics'], template: '<div>{{ standaloneTopics ? "独立专题页面" : "决策复盘工作台" }}</div>' } }))
 vi.mock('./ReviewClassicView.vue', () => ({ __esModule: true, default: { template: '<div>历史专题内容</div>' } }))
 
 describe('复盘中心默认入口', () => {
+  it('独立路径实际渲染专题模式，旧版参数不会把它变回模板页', async () => {
+    const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/xhjy/review/analysis', component: ReviewCenterView }] })
+    await router.push('/xhjy/review/analysis?layout=classic')
+    const wrapper = mount(ReviewCenterView, { global: { plugins: [router] } })
+    await flushPromises()
+    expect(wrapper.text()).toContain('独立专题页面')
+    expect(wrapper.text()).not.toContain('历史专题内容')
+    wrapper.unmount()
+  })
   it.each(['', '?layout=decisions', '?layout=unknown'])('普通地址与兼容链接进入新版 %s', async query => {
     const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/xhjy/review', component: ReviewCenterView }] })
     await router.push(`/xhjy/review${query}`)

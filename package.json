@@ -22,6 +22,7 @@
   "dependencies": {
     "@element-plus/icons-vue": "^2.3.2",
     "cesium": "^1.144.0",
+    "docx": "^9.7.1",
     "dompurify": "^3.4.13",
     "echarts": "^6.1.0",
     "echarts-gl": "^2.1.0",

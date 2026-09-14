@@ -106,7 +106,7 @@ describe('在线面板真实请求与响应', () => {
     expect(wrapper.findComponent(Chart).exists()).toBe(true)
     expect(wrapper.findComponent({ name: 'ElButton' }).props('loading')).toBe(false)
   })
-  it('地区目录迟到不能覆盖新目录，不可用模型原因仍可见', async () => {
+  it('地区目录迟到不能覆盖新目录，不可用模型不留下选项', async () => {
     const pending = deferred<ForecastModelCatalog>()
     api.models.mockReturnValueOnce(pending.promise).mockResolvedValueOnce(catalog('shanxi', 'remote:new', false))
     const wrapper = await render()
@@ -114,9 +114,46 @@ describe('在线面板真实请求与响应', () => {
     await flushPromises()
     pending.resolve(catalog())
     await flushPromises()
-    expect(wrapper.text()).toContain('缺权重')
+    expect(wrapper.text()).toContain('暂无符合条件的在线模型')
+    expect(wrapper.text()).not.toContain('remote:new')
     expect(wrapper.text()).not.toContain('remote:test')
     expect(wrapper.findComponent({ name: 'ElButton' }).props('disabled')).toBe(true)
+  })
+  it('在线面板隐藏占位和可运行的原始权重，仅向保留的真实模型发送请求', async () => {
+    const data = catalog()
+    data.models.push(
+      { ...data.models[0], modelId: 'tslib:TimesNet' },
+      { ...data.models[0], modelId: 'remote:raw-weights', source: 'remote:zeroshot' },
+      { ...data.models[0], modelId: 'remote:missing', available: false },
+    )
+    data.models.forEach((model) => { model.name = model.modelId })
+    api.models.mockResolvedValueOnce(data)
+    const wrapper = await render()
+    const options = wrapper.findAllComponents({ name: 'ElOption' }).map((option) => option.props('value'))
+    expect(options).toContain('remote:test')
+    expect(options).not.toContain('tslib:TimesNet')
+    expect(options).not.toContain('remote:raw-weights')
+    expect(options).not.toContain('remote:missing')
+    await run(wrapper)
+    expect(api.predict).toHaveBeenCalledWith(expect.objectContaining({ model_type: 'remote:test' }))
+    wrapper.findAllComponents({ name: 'ElSelect' })[0].vm.$emit('update:modelValue', 'tslib:TimesNet')
+    await flushPromises()
+    expect(wrapper.findComponent({ name: 'ElButton' }).props('disabled')).toBe(true)
+    expect(wrapper.findComponent(Chart).exists()).toBe(false)
+  })
+  it('按能力命名空间保留无前缀的运行时 PatchTST', async () => {
+    const data = catalog()
+    data.models = [
+      { ...data.models[0], modelId: 'patchtst', name: 'PatchTST（运行时）', namespace: 'neural' },
+      { ...data.models[0], modelId: 'tslib:PatchTST', name: 'PatchTST（兼容占位）', namespace: 'tslib' },
+    ]
+    api.models.mockResolvedValueOnce(data)
+    const wrapper = await render()
+    const options = wrapper.findAllComponents({ name: 'ElOption' }).map((option) => option.props('value'))
+    expect(options).toContain('patchtst')
+    expect(options).not.toContain('tslib:PatchTST')
+    await run(wrapper)
+    expect(api.predict).toHaveBeenCalledWith(expect.objectContaining({ model_type: 'patchtst' }))
   })
   it('改数据源立即清除旧曲线，合成标签持续可见', async () => {
     const wrapper = await render()

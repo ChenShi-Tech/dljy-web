@@ -289,11 +289,11 @@ type ChatResult = { ok?: boolean; content?: string; msg?: string; detail?: strin
 
 export async function chatCompletion(
   messages: ChatMessage[],
-  opts?: { json?: boolean; signal?: AbortSignal; modelRef?: string; timeoutMs?: number }
+  opts?: { json?: boolean; signal?: AbortSignal; modelRef?: string; timeoutMs?: number; scope?: { companyId: string; region: string } }
 ): Promise<string> {
   const res = await fetch(`${LLM_BASE}/chat`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json', ...identityHeaders() },
+    headers: { 'content-type': 'application/json', ...identityHeaders(), ...(opts?.scope ? { 'x-company-id': opts.scope.companyId, 'x-tenant-id': opts.scope.companyId, 'x-region-id': opts.scope.region } : {}) },
     body: JSON.stringify({
       messages,
       json_mode: opts?.json ?? false,
