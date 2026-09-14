@@ -1,11 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { ApiError } from '@/services/api'
-import { addReportComment, createWorkpaper, getWorkpaper, listReportPublications, listReportComments, listWorkpapers, publishWorkpaper, saveWorkpaper, type Workpaper } from '@/services/review/workpapers'
+import { addReportComment, createWorkpaper, getWorkpaper, getReportPublication, listReportPublications, listReportComments, listWorkpapers, publishWorkpaper, saveWorkpaper, type Workpaper } from '@/services/review/workpapers'
 import ReportWorkpaperEditor from './ReportWorkpaperEditor.vue'
 import type { ReviewEvidenceSnapshot } from '@/services/review/reviewEvidence'
 
-vi.mock('@/services/review/workpapers', async original => ({ ...await original<typeof import('@/services/review/workpapers')>(), addReportComment: vi.fn(), createWorkpaper: vi.fn(), getWorkpaper: vi.fn(), listReportPublications: vi.fn(), listReportComments: vi.fn(), listWorkpapers: vi.fn(), publishWorkpaper: vi.fn(), saveWorkpaper: vi.fn() }))
+vi.mock('@/services/review/workpapers', async original => ({ ...await original<typeof import('@/services/review/workpapers')>(), addReportComment: vi.fn(), createWorkpaper: vi.fn(), getWorkpaper: vi.fn(), getReportPublication: vi.fn(), listReportPublications: vi.fn(), listReportComments: vi.fn(), listWorkpapers: vi.fn(), publishWorkpaper: vi.fn(), saveWorkpaper: vi.fn() }))
 vi.mock('@/services/stance/stanceContext', () => ({ activeStanceType: { value: 'RETAILER' } }))
 const snapshot: ReviewEvidenceSnapshot = { scope: { company: 'a', region: 'yunnan', day: '2026-05-31', objectKey: '', objectLabel: '公司总览', version: 'v1' }, capturedAt: '2026-06-01T00:00:00Z', simulated: false, focus: '', entries: [], intervals: [], limitations: [] }
 const paper = (): Workpaper => ({ id: '00000000-0000-4000-8000-000000000001', title: '已有底稿', scope: { region: 'yunnan', view: 'retail', objectId: 'company-overview', objectLabel: '公司总览', startDate: '2026-05-31', endDate: '2026-05-31' }, authorId: '主笔', revision: 1, blocks: [{ id: '00000000-0000-4000-8000-000000000002', kind: 'text', title: '原有事实', text: '已保存正文' }], summary: '', updatedAt: '2026-06-01', canEdit: true, evidence: [] })
@@ -30,6 +30,20 @@ async function open() {
 function button(wrapper: ReturnType<typeof mount>, text: string) { return wrapper.findAll('button').find(node => node.text() === text)! }
 
 describe('图文底稿交付', () => {
+  it('切换底稿后丢弃旧出版物的慢响应，不能显示或导出错误报告', async () => {
+    const other = { ...paper(), id: '00000000-0000-4000-8000-000000000003', title: '另一份底稿' }
+    vi.mocked(listWorkpapers).mockResolvedValue({ rows: [paper(), other], hasMore: false, offset: 0 })
+    vi.mocked(listReportPublications).mockResolvedValueOnce({ rows: [{ id: 'old-publication', draftId: paper().id, createdAt: '', revision: 1, title: '旧报告' }], hasMore: false, offset: 0 })
+    let finish!: (value: Awaited<ReturnType<typeof getReportPublication>>) => void
+    vi.mocked(getReportPublication).mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+    const wrapper = await open()
+    await button(wrapper, '查看正文第 1 版').trigger('click')
+    vi.mocked(getWorkpaper).mockResolvedValueOnce(other)
+    await wrapper.findAll('select')[1].setValue(other.id); await flushPromises()
+    finish({ id: 'old-publication', draftId: paper().id, revision: 1, createdAt: '', contentHash: '', content: { ...paper(), evidence: [], publishedAt: '', notice: '旧报告' } }); await flushPromises()
+    expect(wrapper.findComponent({ name: 'PublishedReportReader' }).exists()).toBe(false)
+    expect(wrapper.get<HTMLInputElement>('input[maxlength="200"]').element.value).toBe('另一份底稿')
+  })
   it('采纳原因建议后恢复待核实，通过既有自动保存落库，不自动发布', async () => {
     vi.mocked(getWorkpaper).mockResolvedValue({ ...paper(), blocks: [{ ...paper().blocks[0], kind: 'reason', state: 'confirmed' }] })
     const wrapper = await open()

@@ -69,14 +69,14 @@ function openCompanyWorkpaper(material: ReportEvidence) {
 }
 function closeWorkpaper(done: () => void) { if (!workpaperDirty.value || window.confirm('当前底稿或批注尚未保存，确定关闭吗？')) done() }
 const energySelection = ref(dailyEnergySelectionFromQuery(route.query,date.value))
-watch(energySelection,value=>{if(props.standaloneTopics)void router.replace({query:{...route.query,...dailyEnergySelectionQuery(value)}})})
 const priceSelection = ref(priceSelectionFromQuery(route.query, date.value))
-watch(priceSelection, value => { if (props.standaloneTopics) void router.replace({ query: { ...route.query, ...priceSelectionQuery(value) } }) })
 const periodSelection = ref(settlementSelectionFromQuery(route.query, date.value))
-watch(periodSelection, value => { if (props.standaloneTopics) void router.replace({ query: { ...route.query, ...settlementSelectionQuery(value) } }) })
 const topicMode = ref<ReviewTopic>(reviewTopic(route.query.topic, !!selectedKey.value))
 watch(() => route.query.topic, value => { topicMode.value = reviewTopic(value, !!selectedKey.value) })
-watch(topicMode, value => { if (props.standaloneTopics && route.query.topic !== value) void router.replace({ query: { ...route.query, topic: value } }) })
+// Batch synchronous filter resets into a single navigation so one topic cannot overwrite another.
+watch([energySelection, priceSelection, periodSelection, topicMode], () => {
+  if (props.standaloneTopics) void router.replace({ query: { ...route.query, ...dailyEnergySelectionQuery(energySelection.value), ...priceSelectionQuery(priceSelection.value), ...settlementSelectionQuery(periodSelection.value), topic: topicMode.value } })
+})
 const liveTopicSnapshot = computed(() => canAnalyze.value ? currentSnapshot() : null)
 function openIndependentTopics() { void router.push({ path: '/xhjy/review/analysis', query: { ...route.query, layout: undefined, ...settlementSelectionQuery(periodSelection.value), ...priceSelectionQuery(priceSelection.value), ...dailyEnergySelectionQuery(energySelection.value), topic: topicMode.value, view: businessView.value, companyId: selectedCompanyId.value, region: region.value } }) }
 function acceptTopicMaterial(material: ReportEvidence) {

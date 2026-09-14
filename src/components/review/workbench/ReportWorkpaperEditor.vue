@@ -46,6 +46,7 @@ function adoptWriting(text: string, append: boolean) {
 }
 const blockNames: Record<ReportBlock['kind'], string> = { text: '事实与说明', chart: '图表与统计', reason: '原因与判断', question: '待核实问题', action: '改进措施' }
 let alive = true, suppress = false, editVersion = 0, timer: ReturnType<typeof setTimeout> | null = null, savingTask: Promise<boolean> | null = null
+let paperGeneration = 0, publicationRequest = 0
 const commenting = ref(false)
 const pending = computed(() => dirty.value || saving.value || publishing.value || commenting.value || !!commentText.value.trim())
 watch(pending, value => emit('dirty', value), { immediate: true })
@@ -56,6 +57,7 @@ watch(draft, () => {
   timer = setTimeout(() => { void save() }, 900)
 }, { deep: true, flush: 'sync' })
 function assignPaper(value: Workpaper) {
+  paperGeneration++; publicationRequest++
   writingTarget.value = ''
   comments.value = []; commentsMore.value = false; commentTarget.value = ''; commentText.value = ''; commentId.value = crypto.randomUUID()
   suppress = true; draft.value = value; evidence.value = value.evidence ?? []; suppress = false
@@ -76,6 +78,7 @@ async function list(more = false) {
 }
 async function open(id: string) {
   if (pending.value && !window.confirm('切换底稿会放弃未保存的文字或批注，确定切换吗？')) return
+  paperGeneration++; publicationRequest++; publication.value = null
   if (savingTask) await savingTask
   if (timer) clearTimeout(timer)
   loading.value = true; error.value = ''; comments.value = []; commentText.value = ''
@@ -84,6 +87,7 @@ async function open(id: string) {
 }
 async function create() {
   if (pending.value) { error.value = '请先保存当前底稿和批注'; return }
+  paperGeneration++; publicationRequest++; publication.value = null
   const scope: WorkpaperScope = { region, view: view.value, objectId: props.snapshot.scope.objectKey || 'company-overview', objectLabel: props.snapshot.scope.objectLabel, startDate: props.snapshot.scope.period?.start || props.snapshot.scope.day, endDate: props.snapshot.scope.period?.end || props.snapshot.scope.day }
   loading.value = true
   try {
@@ -130,17 +134,22 @@ async function publish() {
 }
 async function loadVersions(more = false) {
   if (!draft.value) return
-  try { const page = await listReportPublications(company, region, draft.value.id, more ? versions.value.length : 0); if (alive) { versions.value = more ? [...versions.value, ...page.rows] : page.rows; versionsMore.value = page.hasMore } }
-  catch (e) { if (alive) error.value = workpaperError(e) }
+  const generation = paperGeneration
+  try { const page = await listReportPublications(company, region, draft.value.id, more ? versions.value.length : 0); if (alive && generation === paperGeneration) { versions.value = more ? [...versions.value, ...page.rows] : page.rows; versionsMore.value = page.hasMore } }
+  catch (e) { if (alive && generation === paperGeneration) error.value = workpaperError(e) }
 }
 async function readVersion(id: string) {
-  try { const result = await getReportPublication(company, region, id); if (alive) publication.value = result }
-  catch (e) { if (alive) error.value = workpaperError(e) }
+  const generation = paperGeneration, request = ++publicationRequest
+  publication.value = null
+  const current = () => alive && generation === paperGeneration && request === publicationRequest
+  try { const result = await getReportPublication(company, region, id); if (current()) publication.value = result }
+  catch (e) { if (current()) error.value = workpaperError(e) }
 }
 async function loadComments(more = false) {
   if (!draft.value) return
-  try { const page = await listReportComments(company, region, draft.value.id, more ? comments.value.length : 0); if (alive) { comments.value = more ? [...comments.value, ...page.rows] : page.rows; commentsMore.value = page.hasMore } }
-  catch (e) { if (alive) error.value = workpaperError(e) }
+  const generation = paperGeneration
+  try { const page = await listReportComments(company, region, draft.value.id, more ? comments.value.length : 0); if (alive && generation === paperGeneration) { comments.value = more ? [...comments.value, ...page.rows] : page.rows; commentsMore.value = page.hasMore } }
+  catch (e) { if (alive && generation === paperGeneration) error.value = workpaperError(e) }
 }
 async function comment() {
   if (!draft.value || !commentText.value.trim() || commenting.value) return

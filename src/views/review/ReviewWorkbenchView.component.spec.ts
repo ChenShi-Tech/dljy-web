@@ -45,6 +45,15 @@ describe('真实接口复盘工作流', () => {
     expect(workspace.props('snapshot').scope.objectKey).toBe('order:a')
     expect(workspace.props('snapshot').scope.businessView).toBe('retail')
   })
+  it('切日期一次重置全部专题链接，重新打开不会恢复旧范围', async () => {
+    const { wrapper, router } = await open('&energyDate=2026-05-20&energyPlants=old&priceDate=2026-05-21&pricePlant=old&periodDate=2026-05-22&plants=old', true)
+    await router.replace({ query: { ...router.currentRoute.value.query, date: '2026-06-01' } }); await flushPromises()
+    expect(router.currentRoute.value.query).toMatchObject({ date: '2026-06-01', energyDate: '2026-06-01', priceDate: '2026-06-01', periodDate: '2026-06-01' })
+    expect(router.currentRoute.value.query.energyPlants).toEqual([])
+    expect(router.currentRoute.value.query.pricePlant).toBeUndefined()
+    expect(router.currentRoute.value.query.plants).toEqual([])
+    expect(wrapper.findComponent({ name: 'ReviewTopicWorkspace' }).exists()).toBe(true)
+  })
   it('独立链接公司不匹配时不加载或替换成当前公司的统计', async () => {
     const { wrapper } = await open('&companyId=other&declarationId=a', true)
     expect(wrapper.text()).toContain('公司或地区与当前选择不一致')
