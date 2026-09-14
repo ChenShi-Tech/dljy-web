@@ -14,7 +14,7 @@ const Classic = defineAsyncComponent(() => import('./ReviewClassicView.vue'))
     <div class="archive-navigation"><span>历史专题与报告</span><button type="button" @click="openWorkbench">返回复盘中心</button></div>
     <Classic />
   </template>
-  <Workbench v-else :standalone-topics="route.path === '/xhjy/review/analysis'" />
+  <Workbench v-else :key="route.path" :standalone-topics="route.path === '/xhjy/review/analysis'" />
 </template>
 <style scoped>
 .archive-navigation { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 20px; color: var(--muted); font-size: var(--font-sm); }

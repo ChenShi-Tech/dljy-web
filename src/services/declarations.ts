@@ -385,8 +385,8 @@ export async function listDeclarations(params: DeclarationListParams = {}): Prom
  * 带分页元信息的列表查询（历史申报单区块用）。
  * 服务端未回 counts/total 时按 rows 兜底推导，避免旧后端下 UI 整块空白。
  */
-export async function listDeclarationsPage(params: DeclarationListParams = {}, companyId?: string): Promise<DeclarationListPage> {
-  const res = await apiGet<{ data: DeclarationListPage }>(BASE, params, companyId ? { headers: { 'x-company-id': companyId, 'x-tenant-id': companyId } } : undefined)
+export async function listDeclarationsPage(params: DeclarationListParams = {}, companyId?: string, region?: string): Promise<DeclarationListPage> {
+  const res = await apiGet<{ data: DeclarationListPage }>(BASE, params, companyId ? { headers: { 'x-company-id': companyId, 'x-tenant-id': companyId, ...(region ? { 'x-region-id': region } : {}) } } : undefined)
   const data = (res.data ?? res) as unknown as Partial<DeclarationListPage>
   const rows = data.rows ?? []
   const counts = data.counts ?? rows.reduce(

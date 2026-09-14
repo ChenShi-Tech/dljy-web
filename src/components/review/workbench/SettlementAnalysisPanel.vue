@@ -8,7 +8,7 @@ import { captureSettlementReportEvidence, type ReportEvidence } from '@/services
 import type { SettlementSelection } from '@/services/review/reviewTopics'
 
 const props = defineProps<{ company: string; region: string; date: string; companyLabel?: string; selection?: SettlementSelection }>()
-const emit = defineEmits<{ material: [value: ReportEvidence]; selection: [value: SettlementSelection] }>()
+const emit = defineEmits<{ period: [value: { start: string; end: string } | null]; material: [value: ReportEvidence]; selection: [value: SettlementSelection] }>()
 const capturing = ref(false), lastInput = ref<SettlementAnalysisInput | null>(null)
 const date = ref(props.selection?.date ?? props.date), cadence = ref<'day' | 'week' | 'month'>(props.selection?.cadence ?? 'day')
 const manual = ref(props.selection?.manual ?? false), referenceStart = ref(props.selection?.referenceStart ?? ''), referenceEnd = ref(props.selection?.referenceEnd ?? '')
@@ -17,6 +17,8 @@ watch([date, cadence, manual, referenceStart, referenceEnd, plants], () => emit(
 const result = ref<SettlementAnalysis | null>(null), loading = ref(false), error = ref('')
 const hasPlot = computed(() => result.value?.current.daily.some(row => row.coverage.energy > 0 || row.coverage.fee > 0) ?? false)
 const el = ref<HTMLElement | null>(null), chart = useEChart(el, { render })
+watch(result, value => emit('period', value?.periods.current ?? null), { flush: 'sync' })
+
 let sequence = 0, controller: AbortController | null = null
 function render() {
   const rows = result.value?.current.daily ?? []

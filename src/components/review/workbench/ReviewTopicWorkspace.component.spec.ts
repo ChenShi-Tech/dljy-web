@@ -6,8 +6,17 @@ import { buildReviewEvidence } from '@/services/review/reviewEvidence'
 const snapshot = buildReviewEvidence({ company: 'a', region: 'yunnan', day: '2026-05-31', objectKey: '', objectLabel: '当前资料' })
 snapshot.intervals = [{ time: '00:00', forecast: 10, declared: 9, actual: 8, cleared: 9, adjustment: -1, difference: -1, daPrice: 100, rtPrice: 120 }]
 const props = { company: 'a', companyLabel: '公司', region: 'yunnan', date: '2026-05-31', snapshot, view: 'generator' as const, topic: 'energy' as const, busy: false }
-const stubs = { TopicAnalysisPanel: true, SettlementAnalysisPanel: true, ReviewDataMaintenance: true, DailyEnergyAnalysisPanel: true, MarketPriceAnalysisPanel: true }
+const stubs = { PeriodDecisionPanel: true, TopicAnalysisPanel: true, SettlementAnalysisPanel: true, ReviewDataMaintenance: true, DailyEnergyAnalysisPanel: true, MarketPriceAnalysisPanel: true }
 describe('专题页面与弹窗共用工作区', () => {
+  it('只有统计成功的周期才能回查，换专题撤去旧范围', async () => {
+    const wrapper = mount(ReviewTopicWorkspace, { props, global: { stubs } })
+    expect(wrapper.findComponent({ name: 'PeriodDecisionPanel' }).exists()).toBe(false)
+    wrapper.findComponent({ name: 'DailyEnergyAnalysisPanel' }).vm.$emit('period', { start: '2026-05-25', end: '2026-05-31' })
+    await wrapper.vm.$nextTick()
+    expect(wrapper.findComponent({ name: 'PeriodDecisionPanel' }).props('period')).toEqual({ start: '2026-05-25', end: '2026-05-31' })
+    await wrapper.setProps({ topic: 'price' as never })
+    expect(wrapper.findComponent({ name: 'PeriodDecisionPanel' }).exists()).toBe(false)
+  })
   it('有申报出清、无实际量时先选可比较基准，零值也算有效数据', () => {
     const partial = { ...snapshot, intervals: [{ ...snapshot.intervals[0], forecast: null, actual: null, declared: 0, cleared: 0 }] }
     const wrapper = mount(ReviewTopicWorkspace, { props: { ...props, snapshot: partial }, global: { stubs } })
