@@ -24,6 +24,19 @@ async function openAndCheck() {
   return wrapper
 }
 describe('交易员共用统一资料维护', () => {
+  it('分时资料提交带预检版本，改口径后预检作废', async () => {
+    api.fetchUploadContracts.mockResolvedValue([{ ...contract, dataset: 'review-intervals', kind: 'review-intervals' }])
+    api.precheckUpload.mockResolvedValue({ ...report, expectedToken: 'version-one' })
+    const wrapper = await openAndCheck()
+    await wrapper.get('input[type=checkbox]').setValue(true)
+    await wrapper.findAll('button').find(button => button.text() === '确认导入')!.trigger('click'); await flushPromises()
+    expect(api.commitUpload).toHaveBeenCalledWith(expect.objectContaining({ expectedToken: 'version-one', confirmed: true, review: expect.objectContaining({ view: 'generator', simulated: false }) }), { companyId: 'child', region: 'yunnan' })
+    wrapper.unmount()
+    const another = await openAndCheck()
+    await another.get('input[placeholder="例如：日前申报电量"]').setValue('预测电量')
+    expect(another.find('[aria-label="导入预检"]').exists()).toBe(false)
+    another.unmount()
+  })
   it('预检不提交，确认后用同一个公司和文件导入并读取同公司批次', async () => {
     const wrapper = await openAndCheck()
     const button = wrapper.findAll('button').find(item => item.text() === '确认导入')!

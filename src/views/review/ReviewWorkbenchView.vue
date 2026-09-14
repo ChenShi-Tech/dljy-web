@@ -96,10 +96,10 @@ function openPeriodDecision(order: DeclarationOrder) {
 }
 function acceptTopicMaterial(material: ReportEvidence) {
   if (material.content.topic === 'settlement') { openCompanyWorkpaper(material); return }
-  if (material.sourceKind === 'business_source') {
+  if (material.sourceKind === 'business_source' || material.sourceKind === 'imported') {
     if (material.content.input.scope.companyId !== selectedCompanyId.value || material.region !== region.value) { ElMessage.warning('当前公司或地区已切换，请在原范围查看材料'); return }
     const period = material.content.result.periods.current
-    const snapshot = buildReviewEvidence({ company: selectedCompanyId.value, companyLabel: currentCompany.value?.name || '当前公司', region: region.value, regionLabel: currentRegion.value.name, day: period.start, objectKey: material.content.input.scope.objectId, objectLabel: material.content.objectLabel || '厂站节点价格', capturedAt: material.content.capturedAt })
+    const snapshot = buildReviewEvidence({ company: selectedCompanyId.value, companyLabel: currentCompany.value?.name || '当前公司', region: region.value, regionLabel: currentRegion.value.name, day: period.start, objectKey: material.content.input.scope.objectId, objectLabel: material.content.objectLabel || '复盘业务对象', simulated: material.content.topic !== 'daily_energy' && material.content.result.simulated === true, capturedAt: material.content.capturedAt })
     snapshot.scope.period = period; snapshot.scope.businessView = businessView.value
     workpaperSnapshot.value = snapshot; workpaperMaterial.value = material; workpaperVisible.value = true; topicVisible.value = false
   } else openWorkpaper(material)

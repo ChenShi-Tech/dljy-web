@@ -15,7 +15,7 @@ export interface UploadContractColumn {
 export interface UploadContractSummary {
   dataset: string
   title: string
-  kind: 'checklist-delivery' | 'capture-family' | 'cgn-mapping' | 'cgn-spot-export'
+  kind: 'checklist-delivery' | 'capture-family' | 'cgn-mapping' | 'cgn-spot-export' | 'review-intervals'
   regionPolicy: 'fixed' | 'choose'
   region: string | null
   granularity: string
@@ -30,6 +30,9 @@ export interface UploadContractSummary {
 }
 
 export interface PrecheckReport {
+  expectedToken?: string | null
+  rowErrors?: { row: number; message: string }[]
+  notice?: string
   ok: boolean
   fatal?: string
   dataset: string
@@ -38,6 +41,7 @@ export interface PrecheckReport {
   rows: { total: number; valid: number; invalid: number; errors: string[] }
   keyDupes: { count: number; samples: string[] }
   overlap: {
+    count?: number
     supported: boolean
     strategy?: string
     note?: string
@@ -79,6 +83,7 @@ export interface CommitResult {
 }
 
 export interface UploadScope { companyId: string; region: string }
+export interface ReviewImportMetadata { view: 'generator' | 'retail' | 'storage'; simulated: boolean; basisLabel: string; actualLabel: string; sourceLabel: string; sourceVersion: string }
 function scopedOptions(scope?: UploadScope) {
   return scope ? { headers: { 'x-company-id': scope.companyId, 'x-tenant-id': scope.companyId, 'x-region-id': scope.region } } : undefined
 }
@@ -115,6 +120,7 @@ export async function fetchUploadTemplate(dataset: string, format: 'xlsx' | 'csv
 }
 
 export async function precheckUpload(payload: {
+  review?: ReviewImportMetadata
   dataset: string
   fileName: string
   content: string
@@ -131,6 +137,9 @@ export async function precheckUpload(payload: {
 }
 
 export async function commitUpload(payload: {
+  review?: ReviewImportMetadata
+  expectedToken?: string | null
+  confirmed?: boolean
   dataset: string
   fileName: string
   content: string
@@ -162,7 +171,7 @@ export function downloadTemplateFile(fileName: string, contentBase64?: string, c
   const byteChars = contentBase64 ? atob(contentBase64) : (content ?? '')
   const bytes = new Uint8Array(byteChars.length)
   for (let i = 0; i < byteChars.length; i++) bytes[i] = byteChars.charCodeAt(i)
-  const blob = new Blob([bytes], contentBase64 ? { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' } : { type: 'text/csv' })
+  const blob = new Blob([contentBase64 ? bytes : content ?? ''], contentBase64 ? { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' } : { type: 'text/csv;charset=utf-8' })
   const url = URL.createObjectURL(blob)
   const anchor = document.createElement('a')
   anchor.href = url

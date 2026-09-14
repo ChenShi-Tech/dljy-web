@@ -1,19 +1,30 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import ReviewImportFields from './ReviewImportFields.vue'
+import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
+import { fetchUploadTemplate, downloadTemplateFile, type ReviewImportMetadata } from '@/services/data/uploadClient'
 import { fetchUploadContracts, fetchUploadBatches, readLocalFile, precheckUpload, commitUpload, type UploadContractSummary, type UploadBatchRow, type PrecheckReport, type UploadScope } from '@/services/data/uploadClient'
 
-const props = defineProps<{ companyId: string; companyLabel: string; region: string; preferredDataset?: string }>()
+const props = defineProps<{ companyId: string; companyLabel: string; region: string; preferredDataset?: string; view?: ReviewImportMetadata['view'] }>()
 const emit = defineEmits<{ busy: [value: boolean]; saved: [] }>()
 const contracts = ref<UploadContractSummary[]>([]), dataset = ref(''), batches = ref<UploadBatchRow[]>([])
 const selected = computed(() => contracts.value.find(item => item.dataset === dataset.value))
+const isInterval = computed(() => selected.value?.kind === 'review-intervals')
+const metadata = reactive<ReviewImportMetadata>({ view: props.view ?? 'generator', simulated: false, basisLabel: '', actualLabel: '', sourceLabel: '', sourceVersion: '' })
 const file = ref<File | null>(null), report = ref<PrecheckReport | null>(null), accepted = ref(false)
 const loading = ref(false), checking = ref(false), committing = ref(false), message = ref(''), error = ref('')
 let generation = 0
 let catalogGeneration = 0
 onBeforeUnmount(() => { ++generation; ++catalogGeneration; emit('busy', false) })
-let checked: { payload: Awaited<ReturnType<typeof readLocalFile>> & { dataset: string; region: string }; scope: UploadScope } | null = null
+let checked: { payload: Awaited<ReturnType<typeof readLocalFile>> & { dataset: string; region: string; review?: ReviewImportMetadata; expectedToken?: string | null; confirmed?: boolean }; scope: UploadScope } | null = null
 const scope = (): UploadScope => ({ companyId: props.companyId, region: props.region })
 function invalidate() { report.value = null; checked = null; accepted.value = false; message.value = ''; error.value = '' }
+watch(metadata, () => { ++generation; invalidate() }, { deep: true, flush: 'sync' })
+watch(() => props.view, value => { metadata.view = value ?? 'generator' })
+async function downloadFormat() {
+  const ticket = generation
+  try { const template = await fetchUploadTemplate(dataset.value, 'xlsx', scope()); if (ticket === generation) downloadTemplateFile('复盘分时资料.xlsx', template.contentBase64, template.content) }
+  catch { if (ticket === generation) error.value = '填报格式暂时无法下载，请稍后重试。' }
+}
 watch(() => [props.companyId, props.region], async () => {
   ++generation
   const ticket = ++catalogGeneration, requestScope = scope()
@@ -39,13 +50,14 @@ async function checkFile() {
   const ticket = generation, source = file.value, requestScope = scope(), target = dataset.value
   invalidate(); checking.value = true
   try {
-    const payload = { ...await readLocalFile(source), dataset: target, region: requestScope.region }
+    const review = isInterval.value ? { ...metadata } : undefined
+    const payload = { ...await readLocalFile(source), dataset: target, region: requestScope.region, ...(review ? { review } : {}) }
     if (ticket !== generation) return
     const result = await precheckUpload(payload, requestScope)
     if (ticket !== generation) return
     if (!result.ok || !result.rows) { error.value = '文件格式未通过校验，请核对资料类型，并使用该业务系统的原始导出文件。'; return }
     report.value = result
-    if (result.canCommit) checked = { payload, scope: requestScope }
+    if (result.canCommit) checked = { payload: { ...payload, ...(review ? { expectedToken: result.expectedToken } : {}) }, scope: requestScope }
   } catch { if (ticket === generation) error.value = '预检未完成，请核对文件、公司和资料类型后重试。' }
   finally { checking.value = false }
 }
@@ -54,7 +66,7 @@ async function saveFile() {
   const input = checked, ticket = generation
   committing.value = true; emit('busy', true); error.value = ''
   try {
-    const result = await commitUpload(input.payload, input.scope)
+    const result = await commitUpload({ ...input.payload, ...(input.payload.review ? { confirmed: accepted.value } : {}) }, input.scope)
     if (ticket !== generation) return
     if (result.code !== 200) { error.value = '导入未完成，服务器重新校验后未确认成功，请重新预检。'; checked = null; accepted.value = false; return }
     invalidate(); file.value = null
@@ -74,11 +86,13 @@ async function saveFile() {
     <p v-else-if="!contracts.length">当前公司尚未配置可在此维护的资料通道，请通过统一数据维护完善接入。</p>
     <template v-else>
       <label>资料类型 <select v-model="dataset" :disabled="checking || committing"><option v-for="item in contracts" :key="item.dataset" :value="item.dataset">{{ item.review?.purpose }}</option></select></label>
+      <template v-if="isInterval"><ReviewImportFields :model-value="metadata" :disabled="checking || committing" fixed-view @update:model-value="Object.assign(metadata, $event)" /><button :disabled="checking || committing" @click="downloadFormat">下载中文填报格式</button></template>
       <p v-if="!selected?.review?.canWrite" class="muted">你可以查看并预检当前公司的资料，但没有提交权限。</p>
       <div class="file-row"><input :key="dataset + companyId" aria-label="选择原始资料文件" type="file" accept=".csv,.xlsx" :disabled="checking || committing" @change="chooseFile" /><button :disabled="!file || checking || committing" @click="checkFile">{{ checking ? '正在校验…' : '预检文件' }}</button></div>
       <section v-if="report" class="preview" aria-label="导入预检">
         <p>共 {{ report.rows.total }} 行 · 有效 {{ report.rows.valid }} 行 · 待修正 {{ report.rows.invalid }} 行 · 文件内重复 {{ report.keyDupes?.count ?? 0 }} 项</p>
         <p v-if="report.rows.invalid || report.header.missingRequired.length">存在不符合格式的内容，请核对原始导出文件，补齐所选资料类型要求的数据后重新预检。</p>
+        <template v-if="isInterval"><p>{{ report.notice }}</p><p>将更新已有时段 {{ report.overlap.count ?? 0 }} 条；原版本保留。</p><ul v-if="report.rowErrors?.length"><li v-for="(item,index) in report.rowErrors.slice(0,50)" :key="index">第 {{ item.row }} 行：{{ item.message }}</li></ul><p v-if="(report.rowErrors?.length ?? 0) > 50">仅展示前 50 项，请修正后重新预检。</p></template>
         <p v-if="report.overlap.window">涉及日期：{{ report.overlap.window.from }}—{{ report.overlap.window.to }}</p>
         <p>相同日期重新导入，按本资料通道的更新规则处理；其他来源资料和历史报告版本保留。</p>
         <label v-if="report.canCommit && selected?.review?.canWrite"><input v-model="accepted" type="checkbox" :disabled="committing" />我已核对公司、文件与预检结果，同意更新本次涉及的资料。</label>
