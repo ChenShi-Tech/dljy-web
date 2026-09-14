@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useEChart } from '@/composables/useEChart'
+import { displayAnalysisIntervals } from '@/services/review/reportPresentation'
 import { formatValue } from '@/services/review/decisionWorkbench'
 import { comparisonLabels, previewTopicAnalysis, type AnalysisThresholds, type ComparisonBasis, type TopicAnalysisResult } from '@/services/review/topicAnalysis'
 import { captureReportEvidence, workpaperError, type ReportEvidence } from '@/services/review/workpapers'
@@ -22,28 +23,28 @@ const timeLabel = (time: string) => new Date(time).toLocaleTimeString('zh-CN', {
 const chart = useEChart(chartEl, { render, onInit(instance) {
   instance.on('brushEnd', (event: unknown) => {
     const areas = (event as { areas?: Array<{ coordRange?: number[] }> }).areas ?? []
-    const rows = full.value?.intervals ?? []
-    selected.value = rows.filter((_row, index) => areas.some(area => {
+    const rows = displayAnalysisIntervals(full.value?.intervals ?? [])
+    selected.value = rows.flatMap((row, index) => row && areas.some(area => {
       const range = area.coordRange
       return range?.length === 2 && range.every(Number.isFinite) && index >= Math.min(...range) && index <= Math.max(...range)
-    })).map(row => row.start)
+    }) ? [row.start] : [])
     void load()
   })
 } })
 let sequence = 0, controller: AbortController | null = null
 function render() {
-  const rows = full.value?.intervals ?? []
+  const rows = displayAnalysisIntervals(full.value?.intervals ?? [])
   chart.setOption({
     tooltip: { trigger: 'axis' }, legend: { data: labels.value },
     brush: { xAxisIndex: 0, brushMode: 'multiple', toolbox: ['lineX', 'clear'] },
     toolbox: { feature: { brush: { type: ['lineX', 'clear'], title: { lineX: '框选时段', clear: '清除框选' } } } },
     grid: { left: 65, right: 20, top: 45, bottom: 65 },
     dataZoom: [{ type: 'inside' }, { type: 'slider', bottom: 0 }],
-    xAxis: { type: 'category', data: rows.map(row => timeLabel(row.start)) },
+    xAxis: { type: 'category', data: rows.map(row => row ? timeLabel(row.start) : '缺资料时段') },
     yAxis: { type: 'value', name: topic.value === 'price' ? '元/MWh' : 'MWh' },
     series: [
-      { name: labels.value[0], type: 'line', step: 'end', connectNulls: false, data: rows.map(row => topic.value === 'price' ? row.daPrice : row.baselineMwh) },
-      { name: labels.value[1], type: 'line', step: 'end', connectNulls: false, data: rows.map(row => topic.value === 'price' ? row.rtPrice : row.actualMwh) },
+      { name: labels.value[0], type: 'line', step: 'end', connectNulls: false, data: rows.map(row => row ? (topic.value === 'price' ? row.daPrice : row.baselineMwh) : null) },
+      { name: labels.value[1], type: 'line', step: 'end', connectNulls: false, data: rows.map(row => row ? (topic.value === 'price' ? row.rtPrice : row.actualMwh) : null) },
     ],
   }, { replaceMerge: ['series'] })
 }

@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { fetchUploadContracts, fetchUploadBatches, readLocalFile, precheckUpload, commitUpload, type UploadContractSummary, type UploadBatchRow, type PrecheckReport, type UploadScope } from '@/services/data/uploadClient'
 
-const props = defineProps<{ companyId: string; companyLabel: string; region: string }>()
+const props = defineProps<{ companyId: string; companyLabel: string; region: string; preferredDataset?: string }>()
 const emit = defineEmits<{ busy: [value: boolean]; saved: [] }>()
 const contracts = ref<UploadContractSummary[]>([]), dataset = ref(''), batches = ref<UploadBatchRow[]>([])
 const selected = computed(() => contracts.value.find(item => item.dataset === dataset.value))
@@ -22,7 +22,7 @@ watch(() => [props.companyId, props.region], async () => {
     const result = await fetchUploadContracts(requestScope)
     if (ticket !== catalogGeneration) return
     contracts.value = result.filter(item => item.review && (!item.region || item.region === requestScope.region))
-    dataset.value = contracts.value[0]?.dataset ?? ''
+    dataset.value = contracts.value.find(item => item.dataset === props.preferredDataset)?.dataset ?? contracts.value[0]?.dataset ?? ''
   } catch { if (ticket === catalogGeneration) error.value = '资料目录暂时无法读取，请稍后重试。' }
   finally { if (ticket === catalogGeneration) loading.value = false }
 }, { immediate: true })

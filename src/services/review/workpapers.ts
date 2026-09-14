@@ -1,3 +1,4 @@
+import type { DailyEnergyAnalysis } from './dailyEnergy'
 import { apiGet, apiPatch, apiPost, ApiError } from '@/services/api'
 import type { TopicAnalysisResult, ComparisonBasis, AnalysisThresholds } from './topicAnalysis'
 import { topicAnalysisRequest } from './topicAnalysis'
@@ -10,7 +11,8 @@ export type ReportEvidence = {
   id: string; region: string; authorId: string; createdAt: string; sourceKind: string; contentHash: string
   content: { labels: [string, string]; capturedAt: string; sourceNotice: string; objectLabel?: string; input: { scope: { objectId: string; companyId?: string; region?: string }; period: { date: string } } } & (
     { topic?: 'energy' | 'price'; result: TopicAnalysisResult & { periods: { current: { start: string; end: string } } } } |
-    { topic: 'settlement'; result: SettlementAnalysis }
+    { topic: 'settlement'; result: SettlementAnalysis } |
+    { topic: 'daily_energy'; result: DailyEnergyAnalysis }
   )
 }
 export type Workpaper = { id: string; title: string; scope: WorkpaperScope; authorId: string; revision: number; blocks: ReportBlock[]; summary: string; updatedAt: string; canEdit?: boolean; evidence?: ReportEvidence[] }

@@ -58,6 +58,13 @@ describe('电量偏差分析交互', () => {
     chartEvents.handlers.brushEnd({ areas: [{ coordRange: [0, 0] }, { coordRange: [0, 0] }] }); await flushPromises()
     expect(previewTopicAnalysis).toHaveBeenLastCalledWith(snapshot, 'declared_cleared', [point.start], {}, expect.any(AbortSignal))
   })
+  it('交互图中的缺测断点不占用真实时段，断点之后框选仍取正确时段', async () => {
+    const later={...point,start:'2026-05-30T17:00:00.000Z',end:'2026-05-30T17:15:00.000Z'}
+    vi.mocked(previewTopicAnalysis).mockResolvedValue({...result,intervals:[point,later]})
+    await open()
+    chartEvents.handlers.brushEnd({areas:[{coordRange:[2,2]}]});await flushPromises()
+    expect(previewTopicAnalysis).toHaveBeenLastCalledWith(snapshot,'declared_cleared',[later.start],{},expect.any(AbortSignal))
+  })
   it('非连续选区在报告曲线中留断点，不插补统计值', () => {
     const later = { ...point, start: '2026-05-30T17:00:00.000Z', end: '2026-05-30T17:15:00.000Z' }
     expect(displayAnalysisIntervals([point, later])).toEqual([point, null, later])

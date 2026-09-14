@@ -5,6 +5,10 @@ import { formatValue } from './decisionWorkbench'
 
 /** 网页和导出共用冻结材料，任何一端都不重新计算交易指标。 */
 export function reportChartOption(evidence: ReportEvidence): EChartsOption {
+  if (evidence.content.topic === 'daily_energy') {
+    const { daily, labels } = evidence.content.result
+    return { animation: false, tooltip: { trigger: 'axis' }, legend: { data: labels }, grid: { left: 75, right: 25, top: 45, bottom: 55 }, xAxis: { type: 'category', data: daily.map(row => row.date) }, yAxis: { type: 'value', name: 'MWh' }, series: [{ name: labels[0], type: 'line', connectNulls: false, data: daily.map(row => row.baselineMwh) }, { name: labels[1], type: 'line', connectNulls: false, data: daily.map(row => row.actualMwh) }] }
+  }
   if (evidence.content.topic === 'settlement') {
     const rows = evidence.content.result.current.daily
     return { animation: false, tooltip: { trigger: 'axis' }, legend: { data: ['结算电量', '结算电费'] }, grid: { left: 75, right: 80, top: 50, bottom: 55 },
@@ -27,6 +31,10 @@ export function reportChartOption(evidence: ReportEvidence): EChartsOption {
   }
 }
 export function reportEvidenceCaption(evidence: ReportEvidence): string {
+  if (evidence.content.topic === 'daily_energy') {
+    const { current, comparison, periods, labels, selectedDays } = evidence.content.result
+    return `${labels.join('与')}。净偏差 ${formatValue(current.netDeviationMwh)} MWh；逐厂站日绝对偏差 ${formatValue(current.absoluteDeviationMwh)} MWh；有效 ${current.coverage.paired} 厂站日。${selectedDays ? `所选日期：${selectedDays.join('、')}；图表保留完整周期供定位。` : ''}参考期 ${periods.reference.start}—${periods.reference.end}，共同 ${comparison.matchedPlantDays} 厂站日。${evidence.content.sourceNotice}`
+  }
   if (evidence.content.topic === 'settlement') {
     const { current, comparison } = evidence.content.result
     return `结算电量 ${formatValue(current.energyMwh)} MWh；结算电费 ${formatValue(current.feeYuan)} 元；有效 ${current.coverage.records}/${current.expectedPlantDays} 厂站日。共同覆盖 ${comparison.matchedPlantDays} 厂站日：本期电费 ${formatValue(comparison.currentFeeYuan)} 元，参考期 ${formatValue(comparison.referenceFeeYuan)} 元。${evidence.content.sourceNotice}`
