@@ -160,10 +160,8 @@ function render() {
       data: props.mergeActual && result.actual?.length
         ? result.points.map((v, idx) => (result.actual![idx] != null ? null : v))
         : result.points,
-      // 未来日（无真值）的预测一律虚线：它不是事实，线型上必须与实际值区分开。
-      lineStyle: illustrative || result.evaluationMode === 'forecast'
-        ? { width: 2, type: 'dashed' as const, opacity: illustrative ? 0.75 : 1 }
-        : { width: 2 },
+      // 历史回测里的模型输出同样是预测，不能画成与实际值相同的实线。
+      lineStyle: { width: 2, type: 'dashed' as const, opacity: illustrative ? 0.75 : 1 },
       color: PALETTE[i % PALETTE.length],
     })
   })

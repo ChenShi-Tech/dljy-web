@@ -31,6 +31,18 @@ function result(over: Partial<UnifiedForecastResult> = {}): UnifiedForecastResul
   } as UnifiedForecastResult
 }
 
+it('小时电价的24点覆盖00到23时，历史预测虚线与实际实线不同', async () => {
+  const points = Array.from({ length: 24 }, (_, i) => 100 + i)
+  const opt = await render({ results: [{ provider: '小时模型', result: result({ points, actual: points.map((v) => v + 1), granularity: 24, evaluationMode: 'backtest' }) }] })
+  const xAxis = (opt as ChartOption & { xAxis: { data: string[] } }).xAxis
+  expect(xAxis.data).toHaveLength(24)
+  expect(xAxis.data[0]).toBe('00:00')
+  expect(xAxis.data[23]).toBe('23:00')
+  expect(seriesNamed(opt, '小时模型').data).toEqual(points)
+  expect(seriesNamed(opt, '小时模型').lineStyle?.type).toBe('dashed')
+  expect(seriesNamed(opt, '实际值').lineStyle?.type).toBeUndefined()
+})
+
 async function render(props: Record<string, unknown>): Promise<ChartOption> {
   setOption.mockClear()
   mount(UnifiedForecastChart, { props: props as never })

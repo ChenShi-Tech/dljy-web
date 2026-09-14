@@ -99,6 +99,31 @@ npm run dev                        # http://localhost:5174
 
 **ion token 是运行时凭据**（`src/config/mapTokens.ts`）：localStorage 优先、`VITE_CESIUM_ION_TOKEN` 兜底。用户在「地形环境」面板里就能填，填完立即生效、无需重新构建——现场交付拿到的是构建产物，没有这条路径就永远开不了带山体阴影的那一档。它是前端可见的第三方地图凭据（随每个瓦片请求发出），不属于需要保密的后端密钥。
 
+### 3.7 预测模型目录必须带目标上下文（#54）
+
+`src/services/forecast/forecastProviders.ts` 按 `(regionId, target)` 分开保存目录、加载状态与错误；
+不同目标的同名模型可能有不同的可用性和质量，不能借用普通电价 `price` 的目录。
+
+- 单目标工作台：调用 `ensureForecastCatalog(target, false, regionId)`，用 `forecastCatalogState(targetRef, regionRef)` 读取响应式状态，用 `providersForTarget(target, regionId)` 读取对应模型。
+- 价格/负荷共页：可并行调用 `ensureForecastCatalog(['price', 'load'])`，但两个选择器分别读取各自的 `forecastCatalogState`，不要按模型ID合并可用性或质量。
+- 申报决策页 `ForecastDecisionCockpitView.vue` 的首载和切区共用目录请求代次，并显式传递地区快照。只有当前代次可标记就绪、校验模型选择或启动预测；A→B→A 的旧完成/失败及卸载后回调均不得改动当前状态，不以自动换模型掩盖选择丢失。
+- `ensureForecastCatalog(true)`、`PROVIDERS`、`getProvider(id)` 保留旧的默认 `price` 语义；新增非价格路径不得依赖它们推断模型状态。
+- 目录修复不等于远端可用：后端返回的 `available:false` 和不可用原因必须保留，不得为了显示模型而伪造数据、权重或授权状态。
+
+### 3.8 指定日期与在线模型入口（#54）
+
+- 工作台消费 `/ycsj/center?mod=bench&target=price_user_da_settlement&date=YYYY-MM-DD`，并跟随同页query变化。日期为空或非法时不自动改算固定历史日；模型目录异步加载后按当前目标选择可用模型。
+- 云南旧价格回放与厂站负荷tab仍遵循degraded/not-configured门控。新目标入口仅在账号有 `/ycsj/workbench` 权限且地区工作台能力为available时出现，切到同页建模工作台；区域负荷不是厂站负荷，用户结算价不是旧平台价格回放。
+- 在线面板默认 `data_source=auto`，显式选择合成验证才发送synthetic；缺数据原因常驻显示。日期/地区/目标/模型/窗口/参数改变即清空旧结果、作废在途请求，旧finally不得改变新请求状态。
+- `services/forecast/onlineForecastResult.ts`核对返回的地区/目标/模型/日期、原生24或96点与时隙。真实值中的null保留为空，不插值，不把小时价扩成96个时段。统一适配器透传实际值、基线、评价模式与mock标记；所有预测曲线为虚线、实际值为实线。
+- 组件测试只验证状态与图表参数，不等于实际网站、代理、登录和远端服务端到端验收。缺浏览器权限时不得声称网页已通过。
+
+### 3.9 预测输出目标的台账真值（2026-08-31）
+
+- `supportedTargets` 只表示后端**明确登记**的目标能力：具体权重是已接入输出，runtime 算法是经过真实取数链验证的即时训练/计算范围；缺省或空数组都不能被前端补成“全目标支持”。
+- 建模工作台区分两类目标能力：remote/store具体权重显示“已部署输出”，base/neural/deep及KNN显示“即时训练目标”（请求时用真实历史数据拟合/计算，不代表已有持久化权重或历史训练次数）。缺省/空目标不回退全集；平台官方回放不计为训练模型，输入协变量不计入目标数字。
+- 工作台目标下拉可先用注册表全集触发目录发现，但最终只显示“当前地区有可见已接入模型”的目标；目录加载中不能当作该目标无模型。
+
 ## 4. 联调与排错
 
 常见响应状态判读（联调时先查这张表再报 bug）：
