@@ -27,7 +27,7 @@
         <el-table-column label="类型" width="120">
           <template #default="{ row }">
             <el-tag size="small" :type="row.kind === 'capture-family' ? 'success' : 'info'">
-              {{ row.kind === 'capture-family' ? '直落数据库' : '清单投递' }}
+              {{ row.kind === 'review-intervals' ? '版本留存' : row.kind === 'capture-family' ? '直落数据库' : '清单投递' }}
             </el-tag>
           </template>
         </el-table-column>
@@ -81,6 +81,7 @@
           <template #default="{ row }">{{ row.aliases.length ? row.aliases.join(' / ') : '—' }}</template>
         </el-table-column>
       </el-table>
+      <ReviewImportFields v-if="activeContract?.kind === 'review-intervals'" :model-value="metadata" :disabled="prechecking || committing" @update:model-value="Object.assign(metadata, $event)" />
       <el-form label-width="90px" class="upload-form">
         <el-form-item v-if="activeContract?.regionPolicy === 'choose'" label="数据地区">
           <el-input v-model="regionInput" placeholder="地区 id（如 shanxi / yunnan）" style="max-width: 240px" />
@@ -97,7 +98,7 @@
 
     <!-- ③ 预检报告 -->
     <el-card v-if="step === 'precheck' && report" shadow="never" class="step-card">
-      <template #header><span>预检报告（只读，未落任何数据）</span></template>
+      <template #header><span>预检报告（只读，未落任何数据）</span></template><p v-if="activeContract?.kind === 'review-intervals'">{{ report.notice }} 将更新已有时段 {{ report.overlap.count ?? 0 }} 条，确认导入表示同意本次更新，历史版本保留。</p>
       <el-result
         :icon="report.canCommit ? 'success' : 'error'"
         :title="report.canCommit ? '预检通过，可确认落库' : '预检未通过，请修正后重新上传'"
@@ -183,7 +184,9 @@
 // 数据运维台·上传工作台（Epic #2169 P1 · #2173）：五步流 UI。
 // 纯交互层，校验/落库/幂等/撤销全部服务端权威（server/data/upload-pipeline.mjs），
 // 本组件只组织步骤与呈现预检报告/回执。
-import { computed, onMounted, ref } from 'vue'
+import ReviewImportFields from '@/components/review/workbench/ReviewImportFields.vue'
+import type { ReviewImportMetadata } from '@/services/data/uploadClient'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   commitUpload,
@@ -201,6 +204,7 @@ import {
 } from '@/services/data/uploadClient'
 
 type Step = 'select' | 'upload' | 'precheck' | 'receipt'
+const metadata = reactive<ReviewImportMetadata>({ view: 'generator', simulated: false, basisLabel: '', actualLabel: '', sourceLabel: '', sourceVersion: '' })
 const step = ref<Step>('select')
 const stepIndex = computed(() => ({ select: 0, upload: 1, precheck: 2, receipt: 4 }[step.value]))
 
@@ -295,6 +299,7 @@ async function runPrecheck() {
   try {
     report.value = await precheckUpload({
       dataset: activeContract.value.dataset,
+      ...(activeContract.value.kind === 'review-intervals' ? { review: { ...metadata } } : {}),
       fileName: pickedPayload.fileName,
       content: pickedPayload.content,
       isBinary: pickedPayload.isBinary,
@@ -314,7 +319,9 @@ async function runCommit() {
   committing.value = true
   try {
     receipt.value = await commitUpload({
+      ...(activeContract.value.kind === 'review-intervals' ? { expectedToken: report.value?.expectedToken, confirmed: true } : {}),
       dataset: activeContract.value.dataset,
+      ...(activeContract.value.kind === 'review-intervals' ? { review: { ...metadata } } : {}),
       fileName: pickedPayload.fileName,
       content: pickedPayload.content,
       isBinary: pickedPayload.isBinary,

@@ -23,7 +23,7 @@ vi.mock('@/services/api', () => ({
 }))
 
 const {
-  fetchUploadContracts, fetchUploadTemplate, fetchUploadBatches, precheckUpload, commitUpload
+  fetchUploadContracts, fetchUploadTemplate, fetchUploadBatches, precheckUpload, commitUpload, downloadTemplateFile
 } = await import('./uploadClient')
 
 /** 与 server/data-upload-api.mjs::envelope 逐字同形：载荷恒在 data 下。 */
@@ -31,6 +31,17 @@ const envelope = <T,>(data: T, extra: Record<string, unknown> = {}) =>
   ({ code: 200, msg: 'ok', traceId: 'REQ-test', data, ...extra })
 
 beforeEach(() => { apiGet.mockReset(); apiPost.mockReset() })
+
+it('中文CSV填报格式下载保留UTF-8文本', async () => {
+  let saved!: Blob
+  const create = vi.spyOn(URL, 'createObjectURL').mockImplementation(blob => { saved = blob as Blob; return 'blob:test' })
+  const revoke = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {})
+  const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+  try {
+    downloadTemplateFile('分时资料.csv', undefined, '\uFEFF业务对象,日期\n风场甲,2026-05-31')
+    expect(await saved.text()).toContain('业务对象,日期\n风场甲,2026-05-31')
+  } finally { create.mockRestore(); revoke.mockRestore(); click.mockRestore() }
+})
 
 it('复盘维护在载荷与请求头固定同一公司，不依赖稍后变化的全局选择', async () => {
   const scope = { companyId: 'child', region: 'yunnan' }
