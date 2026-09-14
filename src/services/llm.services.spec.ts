@@ -15,6 +15,7 @@ vi.mock('@/services/agent/agentClient', () => ({
 vi.mock('@/services/api', () => ({ timeoutSignal: () => undefined }))
 
 import {
+  chatCompletion,
   deleteCredential,
   getCachedTiers,
   getServices,
@@ -29,6 +30,15 @@ import {
 } from './llm'
 
 const fetchMock = vi.fn()
+
+it('复盘文字辅助固定公司地区，只发送文字消息而不启动工具会话', async () => {
+  fetchMock.mockResolvedValueOnce(json({ ok: true, content: '候选文字' }))
+  await expect(chatCompletion([{ role: 'user', content: '归纳已有资料' }], { scope: { companyId: 'child', region: 'yunnan' } })).resolves.toBe('候选文字')
+  const [url, options] = fetchMock.mock.calls[0]
+  expect(url).toBe('/agent-api/agent/llm/chat')
+  expect(options.headers).toMatchObject({ 'x-user-id': 'u1', 'x-company-id': 'child', 'x-tenant-id': 'child', 'x-region-id': 'yunnan' })
+  expect(JSON.parse(options.body)).not.toHaveProperty('tools')
+})
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })

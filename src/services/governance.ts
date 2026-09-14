@@ -656,7 +656,9 @@ export function resolveGovernanceUser(username?: string, base?: Partial<Governan
 
 export function canAccessPath(path: string, user: Pick<GovernanceUser, 'roleCode'> | null | undefined) {
   if (!path || path === '/login') return true
-  const normalized = normalizePath(path)
+  const rawPath = normalizePath(path)
+  // 专题是复盘中心的展开页面，沿用同一角色权限，不能因新增路径扩大访问范围。
+  const normalized = rawPath === '/xhjy/review/analysis' ? '/xhjy/review' : rawPath
   const roleCode = user?.roleCode ?? getDefaultGovernanceUser().roleCode
   if (isAdminLevelRole(roleCode)) return true
   if (adminOnlyRoutes.includes(normalized)) return false

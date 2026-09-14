@@ -28,17 +28,54 @@ beforeEach(() => {
   vi.mocked(fetchSettlementReview).mockResolvedValue(settlement)
 })
 afterEach(() => { wrappers.splice(0).forEach(w => w.unmount()) })
-async function open(query = '') {
+async function open(query = '', standaloneTopics = false) {
   const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/xhjy/review', component: ReviewWorkbenchView }, { path: '/xhjy/desk', component: { template: '<div>申报台</div>' } }] })
   await router.push(`/xhjy/review?layout=decisions&date=2026-05-31${query}`); await router.isReady()
-  const wrapper = mount(ReviewWorkbenchView, { global: { plugins: [router], stubs: { RegionDataBanner: true } } }); wrappers.push(wrapper)
+  const wrapper = mount(ReviewWorkbenchView, { props: { standaloneTopics }, global: { plugins: [router], stubs: { RegionDataBanner: true, ReviewTopicWorkspace: true, ReportArchivePanel: true } } }); wrappers.push(wrapper)
   await flushPromises(); return { wrapper, router }
 }
 describe('真实接口复盘工作流', () => {
-  it('历史专题使用显式旧版入口并保留日期', async () => {
+  it('独立专题沿用单笔资料加载，并保留业务视角和对象', async () => {
+    const { wrapper } = await open('&declarationId=a&view=retail&topic=price&companyId=company-a&region=yunnan', true)
+    expect(wrapper.text()).toContain('复盘专题分析')
+    expect(wrapper.find('nav.tasks').exists()).toBe(false)
+    const workspace = wrapper.findComponent({ name: 'ReviewTopicWorkspace' })
+    expect(workspace.props('view')).toBe('retail')
+    expect(workspace.props('topic')).toBe('price')
+    expect(workspace.props('snapshot').scope.objectKey).toBe('order:a')
+    expect(workspace.props('snapshot').scope.businessView).toBe('retail')
+  })
+  it('切日期一次重置全部专题链接，重新打开不会恢复旧范围', async () => {
+    const { wrapper, router } = await open('&energyDate=2026-05-20&energyPlants=old&priceDate=2026-05-21&pricePlant=old&periodDate=2026-05-22&plants=old', true)
+    await router.replace({ query: { ...router.currentRoute.value.query, date: '2026-06-01' } }); await flushPromises()
+    expect(router.currentRoute.value.query).toMatchObject({ date: '2026-06-01', energyDate: '2026-06-01', priceDate: '2026-06-01', periodDate: '2026-06-01' })
+    expect(router.currentRoute.value.query.energyPlants).toEqual([])
+    expect(router.currentRoute.value.query.pricePlant).toBeUndefined()
+    expect(router.currentRoute.value.query.plants).toEqual([])
+    expect(wrapper.findComponent({ name: 'ReviewTopicWorkspace' }).exists()).toBe(true)
+  })
+  it('公司切换同时清空单笔和专题范围，不能被筛选同步恢复旧单笔', async () => {
+    const { router } = await open('&declarationId=a&energyPlants=old&pricePlant=old&plants=old', true)
+    selectedCompanyId.value = 'company-b'; await flushPromises()
+    expect(router.currentRoute.value.query.declarationId).toBeUndefined()
+    expect(router.currentRoute.value.query.energyPlants).toEqual([])
+    expect(router.currentRoute.value.query.pricePlant).toBeUndefined()
+    expect(router.currentRoute.value.query.plants).toEqual([])
+  })
+  it('独立链接公司不匹配时不加载或替换成当前公司的统计', async () => {
+    const { wrapper } = await open('&companyId=other&declarationId=a', true)
+    expect(wrapper.text()).toContain('公司或地区与当前选择不一致')
+    expect(getDeclaration).not.toHaveBeenCalled()
+    expect(fetchSettlementReview).not.toHaveBeenCalled()
+    expect(wrapper.findComponent({ name: 'ReviewTopicWorkspace' }).exists()).toBe(false)
+  })
+  it('先打开新报告目录，旧报告保留独立入口与日期', async () => {
     const { wrapper, router } = await open()
-    const button = wrapper.findAll('button').find(b => b.text().includes('历史专题'))!
-    await button.trigger('click'); await flushPromises()
+    await wrapper.findAll('button').find(b => b.text().includes('报告目录'))!.trigger('click'); await flushPromises()
+    expect(router.currentRoute.value.query.layout).toBe('decisions')
+    const archive = wrapper.findComponent({ name: 'ReportArchivePanel' })
+    expect(archive.props()).toMatchObject({ company: 'company-a', region: 'yunnan' })
+    archive.vm.$emit('legacy'); await flushPromises()
     expect(router.currentRoute.value.query).toMatchObject({ layout: 'classic', date: '2026-05-31' })
   })
   it('云南有结算即展示；偏差缺源不挡整页，也不请求已知未接入的曲线', async () => {

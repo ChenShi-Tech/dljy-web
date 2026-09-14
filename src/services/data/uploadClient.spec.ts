@@ -32,6 +32,16 @@ const envelope = <T,>(data: T, extra: Record<string, unknown> = {}) =>
 
 beforeEach(() => { apiGet.mockReset(); apiPost.mockReset() })
 
+it('复盘维护在载荷与请求头固定同一公司，不依赖稍后变化的全局选择', async () => {
+  const scope = { companyId: 'child', region: 'yunnan' }
+  apiPost.mockResolvedValue(envelope({ ok: true, canCommit: true }))
+  await precheckUpload({ dataset: 'series', fileName: '资料.csv', content: 'data', isBinary: false, region: 'yunnan' }, scope)
+  expect(apiPost).toHaveBeenCalledWith('/api/v1/data-upload/precheck', expect.objectContaining({ companyId: 'child' }), expect.objectContaining({ headers: expect.objectContaining({ 'x-company-id': 'child', 'x-tenant-id': 'child', 'x-region-id': 'yunnan', 'Idempotency-Key': expect.any(String) }) }))
+  apiGet.mockResolvedValue(envelope({ rows: [] }))
+  await fetchUploadBatches('series', scope)
+  expect(apiGet).toHaveBeenCalledWith('/api/v1/data-upload/batches', { dataset: 'series', companyId: 'child' }, expect.objectContaining({ headers: expect.objectContaining({ 'x-company-id': 'child' }) }))
+})
+
 describe('uploadClient 从信封的 data 层取载荷', () => {
   it('契约清单：读 data.contracts，不是顶层 contracts', async () => {
     apiGet.mockResolvedValue(envelope({ contracts: [{ dataset: 'yn-t0-node-price' }, { dataset: 'forecast_reserve' }] }))
