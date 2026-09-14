@@ -54,6 +54,14 @@ describe('真实接口复盘工作流', () => {
     expect(router.currentRoute.value.query.plants).toEqual([])
     expect(wrapper.findComponent({ name: 'ReviewTopicWorkspace' }).exists()).toBe(true)
   })
+  it('公司切换同时清空单笔和专题范围，不能被筛选同步恢复旧单笔', async () => {
+    const { router } = await open('&declarationId=a&energyPlants=old&pricePlant=old&plants=old', true)
+    selectedCompanyId.value = 'company-b'; await flushPromises()
+    expect(router.currentRoute.value.query.declarationId).toBeUndefined()
+    expect(router.currentRoute.value.query.energyPlants).toEqual([])
+    expect(router.currentRoute.value.query.pricePlant).toBeUndefined()
+    expect(router.currentRoute.value.query.plants).toEqual([])
+  })
   it('独立链接公司不匹配时不加载或替换成当前公司的统计', async () => {
     const { wrapper } = await open('&companyId=other&declarationId=a', true)
     expect(wrapper.text()).toContain('公司或地区与当前选择不一致')

@@ -68,6 +68,7 @@ function openCompanyWorkpaper(material: ReportEvidence) {
   workpaperSnapshot.value = snapshot; workpaperMaterial.value = material; workpaperVisible.value = true; topicVisible.value = false
 }
 function closeWorkpaper(done: () => void) { if (!workpaperDirty.value || window.confirm('当前底稿或批注尚未保存，确定关闭吗？')) done() }
+let clearTopicObject = false
 const energySelection = ref(dailyEnergySelectionFromQuery(route.query,date.value))
 const priceSelection = ref(priceSelectionFromQuery(route.query, date.value))
 const periodSelection = ref(settlementSelectionFromQuery(route.query, date.value))
@@ -75,7 +76,9 @@ const topicMode = ref<ReviewTopic>(reviewTopic(route.query.topic, !!selectedKey.
 watch(() => route.query.topic, value => { topicMode.value = reviewTopic(value, !!selectedKey.value) })
 // Batch synchronous filter resets into a single navigation so one topic cannot overwrite another.
 watch([energySelection, priceSelection, periodSelection, topicMode], () => {
-  if (props.standaloneTopics) void router.replace({ query: { ...route.query, ...dailyEnergySelectionQuery(energySelection.value), ...priceSelectionQuery(priceSelection.value), ...settlementSelectionQuery(periodSelection.value), topic: topicMode.value } })
+  const objectReset = clearTopicObject ? { declarationId: undefined, decisionId: undefined } : {}
+  clearTopicObject = false
+  if (props.standaloneTopics) void router.replace({ query: { ...route.query, ...objectReset, ...dailyEnergySelectionQuery(energySelection.value), ...priceSelectionQuery(priceSelection.value), ...settlementSelectionQuery(periodSelection.value), topic: topicMode.value } })
 })
 const liveTopicSnapshot = computed(() => canAnalyze.value ? currentSnapshot() : null)
 function openIndependentTopics() { void router.push({ path: '/xhjy/review/analysis', query: { ...route.query, layout: undefined, ...settlementSelectionQuery(periodSelection.value), ...priceSelectionQuery(priceSelection.value), ...dailyEnergySelectionQuery(energySelection.value), topic: topicMode.value, view: businessView.value, companyId: selectedCompanyId.value, region: region.value } }) }
@@ -195,7 +198,10 @@ async function reload() {
   if (seq === scopeSequence) evidenceLoading.value = false
 }
 watch([date, region, selectedCompanyId, topicScopeMismatch], (_next, previous) => {
-  if (previous?.length && (previous[1] !== region.value || previous[2] !== selectedCompanyId.value) && selectedKey.value) choose('')
+  if (previous?.length && (previous[1] !== region.value || previous[2] !== selectedCompanyId.value) && selectedKey.value) {
+    if (props.standaloneTopics) clearTopicObject = true
+    else choose('')
+  }
   if (previous?.length) { periodSelection.value = settlementSelectionFromQuery({}, date.value); priceSelection.value = priceSelectionFromQuery({}, date.value); energySelection.value = dailyEnergySelectionFromQuery({},date.value) }
   focus.value = ''; void reload()
 }, { immediate: true })
