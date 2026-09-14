@@ -31,10 +31,19 @@ afterEach(() => { wrappers.splice(0).forEach(w => w.unmount()); vi.restoreAllMoc
 async function open(query = '', standaloneTopics = false) {
   const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/xhjy/review', component: ReviewWorkbenchView }, { path: '/xhjy/review/analysis', component: ReviewWorkbenchView }, { path: '/xhjy/desk', component: { template: '<div>申报台</div>' } }] })
   await router.push(`/xhjy/review?layout=decisions&date=2026-05-31${query}`); await router.isReady()
-  const wrapper = mount(ReviewWorkbenchView, { props: { standaloneTopics }, global: { plugins: [router], stubs: { RegionDataBanner: true, ReviewTopicWorkspace: true, ReportArchivePanel: true } } }); wrappers.push(wrapper)
+  const wrapper = mount(ReviewWorkbenchView, { props: { standaloneTopics }, global: { plugins: [router], stubs: { RegionDataBanner: true, ReviewTopicWorkspace: true, ReportArchivePanel: true, ReportWorkpaperEditor: true } } }); wrappers.push(wrapper)
   await flushPromises(); return { wrapper, router }
 }
 describe('真实接口复盘工作流', () => {
+  it('导入材料以自身对象和完整周期建立底稿，不借用当前申报对象', async () => {
+    const { wrapper } = await open('&declarationId=a', true)
+    const material = { sourceKind: 'imported', region: 'yunnan', content: { topic: 'energy', objectLabel: '补充用电组合', capturedAt: '2026-06-01T00:00:00Z', input: { scope: { companyId: 'company-a', objectId: 'imported:object' } }, result: { simulated: true, periods: { current: { start: '2026-05-25', end: '2026-05-31' } } } } }
+    wrapper.findComponent({ name: 'ReviewTopicWorkspace' }).vm.$emit('material', material); await flushPromises()
+    const snapshot = wrapper.findComponent({ name: 'ReportWorkpaperEditor' }).props('snapshot')
+    expect(snapshot.scope.objectKey).toBe('imported:object')
+    expect(snapshot.scope.period).toEqual({ start: '2026-05-25', end: '2026-05-31' })
+    expect(snapshot.simulated).toBe(true)
+  })
   it.each([true, false])('真实路由返回有草稿时只确认一次，确认结果为 %s', async accepted => {
     const confirm = vi.fn(() => accepted)
     vi.stubGlobal('confirm', confirm)

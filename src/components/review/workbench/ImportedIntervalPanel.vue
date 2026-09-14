@@ -28,8 +28,8 @@ async function load() {
 async function save() {
   if (!result.value?.analysis || loading.value || saving.value) return
   const ticket = sequence, query = input(); saving.value = true
-  try { const material = await captureImportedIntervals(props.company, query); if (ticket === sequence) emit('material', material) }
-  catch { if (ticket === sequence) error.value = '材料尚未确认保存，请稍后重试。' }
+  try { const material = await captureImportedIntervals(props.company, { ...query, expectedVersion: result.value.source.version }); if (ticket === sequence) emit('material', material) }
+  catch { if (ticket === sequence) error.value = '材料未保存，资料可能已有修订。请重新统计并核对图表后再取材。' }
   finally { saving.value = false }
 }
 const chartMaterial = computed<ReportEvidence | null>(() => {

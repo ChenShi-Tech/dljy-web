@@ -10,7 +10,7 @@ export async function analyzeImportedIntervals(company: string, input: ImportedI
   if (!response.data) throw new Error('分析响应不完整')
   return response.data
 }
-export async function captureImportedIntervals(company: string, input: ImportedInput) {
+export async function captureImportedIntervals(company: string, input: ImportedInput & { expectedVersion?: string }) {
   const response = await apiPost<ReportEvidence>('/api/v1/review/evidence', { ...input, kind: 'imported_intervals' }, options(company, input.region))
   if (!response.data) throw new Error('材料尚未确认保存')
   return response.data
