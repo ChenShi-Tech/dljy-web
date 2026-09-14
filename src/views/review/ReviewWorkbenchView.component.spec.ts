@@ -27,7 +27,7 @@ beforeEach(() => {
   vi.mocked(fetchDecisionLogFeed).mockResolvedValue({ available: true, entries: [] })
   vi.mocked(fetchSettlementReview).mockResolvedValue(settlement)
 })
-afterEach(() => { wrappers.splice(0).forEach(w => w.unmount()) })
+afterEach(() => { wrappers.splice(0).forEach(w => w.unmount()); vi.restoreAllMocks(); vi.unstubAllGlobals() })
 async function open(query = '', standaloneTopics = false) {
   const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/xhjy/review', component: ReviewWorkbenchView }, { path: '/xhjy/review/analysis', component: ReviewWorkbenchView }, { path: '/xhjy/desk', component: { template: '<div>申报台</div>' } }] })
   await router.push(`/xhjy/review?layout=decisions&date=2026-05-31${query}`); await router.isReady()
@@ -35,6 +35,34 @@ async function open(query = '', standaloneTopics = false) {
   await flushPromises(); return { wrapper, router }
 }
 describe('真实接口复盘工作流', () => {
+  it.each([true, false])('真实路由返回有草稿时只确认一次，确认结果为 %s', async accepted => {
+    const confirm = vi.fn(() => accepted)
+    vi.stubGlobal('confirm', confirm)
+    const router = createRouter({ history: createMemoryHistory(), routes: [
+      { path: '/xhjy/review', component: ReviewWorkbenchView },
+      { path: '/xhjy/review/analysis', component: { template: '<div>已返回专题</div>' } }
+    ] })
+    const back = '/xhjy/review/analysis?companyId=company-a&region=yunnan&cadence=week'
+    await router.push({ path: '/xhjy/review', query: { date: '2026-05-31', task: 'improvement', analysisReturn: back } })
+    const wrapper = mount({ template: '<router-view />' }, { global: { plugins: [router], stubs: { RegionDataBanner: true, ImprovementWorkbench: true, ReviewTopicWorkspace: true, ReportArchivePanel: true } } }); wrappers.push(wrapper)
+    await flushPromises()
+    wrapper.findComponent({ name: 'ImprovementWorkbench' }).vm.$emit('draft', ['尚未保存的措施'], 'test-draft')
+    await wrapper.findAll('button').find(b => b.text() === '返回原周期专题分析')!.trigger('click')
+    await flushPromises()
+    expect(confirm).toHaveBeenCalledTimes(1)
+    expect(router.currentRoute.value.path).toBe(accepted ? '/xhjy/review/analysis' : '/xhjy/review')
+  })
+
+  it.each([true, false])('同页专题弹窗切换对象也只确认一次，确认结果为 %s', async accepted => {
+    const confirm = vi.fn(() => accepted); vi.stubGlobal('confirm', confirm)
+    const { wrapper, router } = await open('&task=improvement')
+    wrapper.findComponent({ name: 'ImprovementWorkbench' }).vm.$emit('draft', ['尚未保存的措施'], 'same-page')
+    await wrapper.findAll('button').find(b => b.text() === '专题分析')!.trigger('click'); await flushPromises()
+    wrapper.findComponent({ name: 'ReviewTopicWorkspace' }).vm.$emit('decision', order('a'))
+    await flushPromises()
+    expect(confirm).toHaveBeenCalledTimes(1)
+    expect(router.currentRoute.value.query.declarationId).toBe(accepted ? 'a' : undefined)
+  })
   it('周期申报回查保存全部专题筛选并跳到申报实际交易日', async () => {
     const { wrapper, router } = await open('&topic=settlement&cadence=week&periodDate=2026-05-31&plants=甲厂&priceIntervals=2026-05-30T00:00:00%2B08:00', true)
     const workspace = wrapper.findComponent({ name: 'ReviewTopicWorkspace' })

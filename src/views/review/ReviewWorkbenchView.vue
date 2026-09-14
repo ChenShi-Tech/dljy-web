@@ -85,10 +85,11 @@ const liveTopicSnapshot = computed(() => canAnalyze.value ? currentSnapshot() : 
 function analysisLocation() { return { path: '/xhjy/review/analysis', query: { ...route.query, layout: undefined, analysisReturn: undefined, ...settlementSelectionQuery(periodSelection.value), ...priceSelectionQuery(priceSelection.value), ...dailyEnergySelectionQuery(energySelection.value), topic: topicMode.value, view: businessView.value, companyId: selectedCompanyId.value, region: region.value } } }
 function openIndependentTopics() { void router.push(analysisLocation()) }
 const analysisReturn = computed(() => safeAnalysisReturn(route.query.analysisReturn, selectedCompanyId.value, region.value))
-function returnToAnalysis() { if (analysisReturn.value && (!hasDraft() || window.confirm('当前有未保存的内容，确定返回周期分析吗？'))) void router.push(analysisReturn.value) }
+function returnToAnalysis() { if (analysisReturn.value) void router.push(analysisReturn.value) }
 function openPeriodDecision(order: DeclarationOrder) {
   if (!matchesReviewScope(order, order.targetDate, region.value, selectedCompanyId.value) || maintenanceBusy.value) return
-  if (hasDraft() && !window.confirm('当前有未保存的内容，确定切换到这笔申报吗？')) return
+  // Cross-route navigation uses the leave guard; only same-route modal navigation needs this check.
+  if (route.path === '/xhjy/review' && hasDraft() && !window.confirm('当前有未保存的内容，确定切换到这笔申报吗？')) return
   const back = router.resolve(analysisLocation()).fullPath
   topicVisible.value = false
   void router.push({ path: '/xhjy/review', query: { date: order.targetDate, declarationId: order.id, task: 'decision', view: businessView.value, analysisReturn: back } })
