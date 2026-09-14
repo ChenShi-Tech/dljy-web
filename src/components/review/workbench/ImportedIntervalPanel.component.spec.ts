@@ -13,6 +13,17 @@ const create = () => mount(ImportedIntervalPanel, { props, global: { stubs: { Re
 async function open(wrapper: ReturnType<typeof create>) { (wrapper.get('details').element as HTMLDetailsElement).open = true; await wrapper.get('details').trigger('toggle'); await flushPromises() }
 beforeEach(() => { vi.resetAllMocks(); api.analyzeImportedIntervals.mockResolvedValue(catalog) })
 describe('已导入分时资料分析', () => {
+  it('人工参考期必须完整，填写后随统计请求提交', async () => {
+    const wrapper = create(); await open(wrapper)
+    await wrapper.findAll('input[type=checkbox]')[0]!.setValue(true)
+    await wrapper.findAll('button').find(button => button.text() === '重新统计')!.trigger('click')
+    expect(wrapper.text()).toContain('请填写完整且顺序正确的参考日期')
+    const dates = wrapper.findAll('input[type=date]')
+    await dates[1]!.setValue('2026-05-01'); await dates[2]!.setValue('2026-05-07')
+    await wrapper.findAll('button').find(button => button.text() === '重新统计')!.trigger('click'); await flushPromises()
+    expect(api.analyzeImportedIntervals).toHaveBeenLastCalledWith('one', expect.objectContaining({ referencePeriod: { start: '2026-05-01', end: '2026-05-07' } }))
+    wrapper.unmount()
+  })
   it('按当前公司读取目录，选择对象后重新统计，所选时段通过服务端取材', async () => {
     const wrapper = create(); expect(api.analyzeImportedIntervals).not.toHaveBeenCalled()
     await open(wrapper)
@@ -21,7 +32,7 @@ describe('已导入分时资料分析', () => {
     api.analyzeImportedIntervals.mockResolvedValue(data)
     await wrapper.findAll('button').find(button => button.text() === '重新统计')!.trigger('click'); await flushPromises()
     expect(wrapper.text()).toContain('净偏差 -1')
-    await wrapper.get('input[type=checkbox]').setValue(true)
+    await wrapper.findAll('input[type=checkbox]').at(-1)!.setValue(true)
     api.captureImportedIntervals.mockResolvedValue({ id: 'material' })
     await wrapper.findAll('button').find(button => button.text().includes('加入报告'))!.trigger('click'); await flushPromises()
     expect(api.captureImportedIntervals).toHaveBeenCalledWith('one', expect.objectContaining({ seriesKey: choice.seriesKey, objectId: choice.objectId, selections: [point.start] }))
