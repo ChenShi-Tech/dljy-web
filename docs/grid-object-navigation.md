@@ -157,14 +157,6 @@ node node_modules/vitest/vitest.mjs run --coverage
 
 鲁西背对背直流也已通过真实页面联动：从约束事件打开通道详情，再进入相关披露后，自动选择该对象的“输电断面双向限值”。`2026-07-01` 的正向限值为 3000 MW、反向限值为真实零值，分别保持 96/96 个 15 分钟样本；列表和统计均为 2 条该通道记录。通道空间几何未披露，详情保留未定位状态。
 
-已留存以下真实页面截图，不在本文抄录授权内部坐标：
-
-- [同站默认折叠 1920 宽度](../output/playwright/station-groups-collapsed-1920.png)
-- [富宁换流站展开 1440 宽度](../output/playwright/station-group-expanded-1440.png)
-- [大绿山场站对象抽屉](../output/playwright/object-plant-drawer.png)
-- [按站筛选并展开 760 宽度](../output/playwright/station-group-expanded-760.png)
-- [笔记页 760 宽度](../output/playwright/object-notes-760.png)
-- [大朝山机组对象详情](../output/playwright/object-unit-drawer.png)
-- [鲁西通道对象与限值曲线联动](../output/playwright/object-channel-curve.png)
+真实页面验收覆盖同站默认折叠（1920）、站内展开（1440）、场站和机组详情、窄屏表格与笔记（760）、通道限值联动。截图作为本地交付证据保留，不随源码提交，避免传播授权内部坐标。
 
 上述真实操作与截图补充单测证据，不扩展为所有对象、日期及数据源均已验收。

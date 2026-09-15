@@ -269,7 +269,8 @@ const spotTargets = [
     ownerCompanyId: CGN_YUNNAN_COMPANY_ID,
     requiredFields: ['id', 'date', 'timePoint', 'plant', 'nodeName', 'dataType'],
     valueFields: ['price'],
-    expectedPointsPerDay: 96,
+    // 月包原始 hour_slot=0..23，yn-fact-special 同源归一 HH:00；不得扩成96点。
+    expectedPointsPerDay: 24,
     capturedAtField: 'date',
     qualityRules: { guardEmpty: true }
   }),
