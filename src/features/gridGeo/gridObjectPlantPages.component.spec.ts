@@ -280,6 +280,8 @@ describe('plant detail wrapper and business date', () => {
     expect(calls.prices).toHaveBeenCalledWith('2026-07-02', '定价节点B', 'rt', '云南')
     expect(wrapper.text()).toContain('0.0')
     const links = wrapper.findAllComponents({ name: 'RouterLink' })
+    for (const path of ['/grid-assets/nodes', '/grid-assets/disclosures']) expect(links.map(item => item.props('to'))).toContainEqual({ path, query: { objectKind: 'plant', objectId: 'b', objectRegion: 'yunnan', objectCompany: 'comp-cgn-yunnan', objectDate: '2026-07-02' } })
+    expect(links.some(item => item.props('to').path.startsWith('/xhjy/'))).toBe(false)
     expect(links.map(item => item.props('to'))).toContainEqual({ path: '/grid-assets/market', query: { objectKind: 'plant', objectId: 'b', objectRegion: 'yunnan', objectCompany: 'comp-cgn-yunnan', objectDate: '2026-07-02' } })
     await wrapper.setProps({ date: '2026-07-03' }); await flushPromises()
     expect(calls.prices).toHaveBeenLastCalledWith('2026-07-03', '定价节点B', 'rt', '云南')

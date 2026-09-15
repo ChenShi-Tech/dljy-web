@@ -310,10 +310,10 @@ onBeforeUnmount(() => { loadRequestId += 1 })
 
       <div class="risk-disclaimer"><CircleAlert :size="15" /><span>偏差仅是运行关注信号，不是结算结果或金额预测；本模块不执行潮流、拓扑或电价求解。</span></div>
       <nav v-if="mapping" class="business-links" aria-label="业务详情入口">
-        <RouterLink :to="businessLocation(mapping.navigation.nodePrice)"><Zap :size="13" /> 节点电价 <ArrowUpRight :size="12" /></RouterLink>
+        <RouterLink :to="businessLocation('/grid-assets/nodes')"><Zap :size="13" /> 关联节点 <ArrowUpRight :size="12" /></RouterLink>
         <RouterLink :to="businessLocation('/grid-assets/market')"><BarChart3 :size="13" /> 出力分析 <ArrowUpRight :size="12" /></RouterLink>
         <RouterLink :to="businessLocation('/grid-assets/weather-impact')"><Activity :size="13" /> 气象与预测 <ArrowUpRight :size="12" /></RouterLink>
-        <RouterLink :to="businessLocation(mapping.navigation.settlement)"><WalletCards :size="13" /> 结算分析 <ArrowUpRight :size="12" /></RouterLink>
+        <RouterLink :to="businessLocation('/grid-assets/disclosures')"><WalletCards :size="13" /> 相关披露 <ArrowUpRight :size="12" /></RouterLink>
       </nav>
     </template>
   </section>

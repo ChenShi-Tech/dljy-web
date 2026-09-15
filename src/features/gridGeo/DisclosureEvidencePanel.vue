@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { Bookmark, Check, Clock3, ExternalLink, FileText, MapPinned, Save, ShieldCheck, X } from 'lucide-vue-next'
 import { fetchGridDisclosureEvent, fetchGridGeoManifest, saveGridDisclosureOverlay } from './client'
 import type { GridDisclosureEvent, GridDisclosureOverlay } from './types'
+import { parseDisclosureTime } from './disclosureTime'
 
 const props = defineProps<{ event: GridDisclosureEvent; scopeKey: string }>()
 const emit = defineEmits<{ close: []; 'open-object': []; 'favorite-change': [update: { eventId: string; favorite: boolean }] }>()
@@ -47,8 +48,8 @@ const timeIssues = computed(() => [...new Set((detail.value.timeQuality?.issues 
 const legacyTimeIssues = computed(() => [...new Set((detail.value.timeQuality?.issues ?? []).filter((issue) => issue.startsWith('legacy-')).map((issue) => /publish|import/.test(issue) ? '旧记录的发布时间字段实际保存入库时间，不能作为公开发布时间。' : '业务日期由旧记录推定，具体生效时刻仍待来源核验。'))])
 function dateText(value: string | null | undefined) {
   if (!value) return '未提供'
-  const date = new Date(value)
-  return Number.isNaN(date.getTime()) ? value : new Intl.DateTimeFormat('zh-CN', { timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false }).format(date)
+  const time = parseDisclosureTime(value, true)
+  return time === null ? value : new Intl.DateTimeFormat('zh-CN', { timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false }).format(time)
 }
 function syncOverlay() {
   note.value = currentOverlay.value?.note ?? ''

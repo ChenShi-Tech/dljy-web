@@ -1,4 +1,5 @@
 import type { GridDisclosureEvent } from './types'
+import { parseDisclosureTime as timestamp } from './disclosureTime'
 
 export type MaintenanceTimingFilter = 'all' | 'starts-in-window' | 'ends-in-window' | 'covers-window' | 'incomplete'
 export type MaintenanceSort = 'default' | 'start-asc' | 'end-asc' | 'duration-desc'
@@ -32,15 +33,6 @@ export function maintenanceListSummary(event: GridDisclosureEvent): string {
   return match[1]
 }
 
-/** 不接受只有日期的字符串，也不让 Date.parse 自动归一化非法日期。无时区源时刻按页面北京时间解释。 */
-function timestamp(value: string | null): number | null {
-  const match = /^(\d{4}-\d{2}-\d{2})[T ](\d{2}):(\d{2})(?::(\d{2})(?:\.(\d{1,3}))?)?(Z|[+-]\d{2}:\d{2})?$/.exec(value ?? '')
-  if (!match || Number(match[2]) > 23 || Number(match[3]) > 59 || Number(match[4] ?? 0) > 59) return null
-  const date = Date.parse(`${match[1]}T00:00:00Z`)
-  if (!Number.isFinite(date) || new Date(date).toISOString().slice(0, 10) !== match[1]) return null
-  const result = Date.parse(`${match[1]}T${match[2]}:${match[3]}:${match[4] ?? '00'}${match[5] ? `.${match[5]}` : ''}${match[6] ?? '+08:00'}`)
-  return Number.isFinite(result) ? result : null
-}
 export function formatMaintenanceDuration(minutes: number): string {
   if (!Number.isFinite(minutes) || minutes < 0) return '未提供'
   if (minutes === 0) return '0 分钟'

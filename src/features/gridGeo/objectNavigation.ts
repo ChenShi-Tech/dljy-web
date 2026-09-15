@@ -52,7 +52,7 @@ export function readGridObjectWindow(query: Query) {
 }
 export function safeGridReturnPath(value: unknown): string | undefined {
   const path = queryText(value)
-  if (!/^\/grid-assets\/(command|nodes|topology|disclosures|market|weather-impact)(?:\?|$)/.test(path) || /[\\\u0000-\u001f]/.test(path) || path.length > 4000) return undefined
+  if (!/^\/grid-assets\/(command|plants|nodes|topology|disclosures|market|weather-impact)(?:\?|$)/.test(path) || /[\\\u0000-\u001f]/.test(path) || path.length > 4000) return undefined
   return path
 }
 export function clearGridObjectQuery(query: Query) {

@@ -4,6 +4,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { Crosshair } from 'lucide-vue-next'
 import type { GridDisclosureCategory, GridDisclosureOverview } from './types'
 import type { DeskFact, DeskSeries } from './disclosureDeskData'
+import { parseDisclosureTime } from './disclosureTime'
 
 const props = defineProps<{
   series: DeskSeries[]
@@ -41,7 +42,7 @@ const temporalSeries = computed(() => props.series.filter((series) => series.nat
 const scalarRecords = computed(() => props.series.filter((series) => series.nativeMinutes === null).flatMap((series) => series.points.filter((point) => point.value !== null).map((point) => ({ ...point, id: series.id, label: series.label, unit: series.unit }))))
 const hasCurve = computed(() => temporalSeries.value.some((series) => series.points.some((point) => point.value !== null)))
 function stamp(value: string) {
-  return new Date(value.includes('T') ? value : `${value.replace(' ', 'T')}${value.length === 10 ? 'T00:00:00' : ':00'}+08:00`).getTime()
+  return parseDisclosureTime(value, true) ?? NaN
 }
 function iso(value: number) { return `${new Date(value + 8 * 3600_000).toISOString().slice(0, 19)}+08:00` }
 function displayTime(value: number, dayOnly = false) {
@@ -167,8 +168,9 @@ function render() {
   const grid = css('--line-soft', '#233247')
   const colors = [css('--primary', '#2dd4bf'), css('--warning', '#f4bf61'), css('--accent', '#8294ff')]
   const selectedArea = props.selection ? { silent: true, itemStyle: { color: css('--primary-tint', 'rgba(45,212,191,.1)') }, data: [[{ xAxis: stamp(props.selection.from) }, { xAxis: stamp(props.selection.to) }]] } : undefined
-  const eventArea = props.eventWindow?.to ? { silent: true, itemStyle: { color: css('--warning-tint', 'rgba(245,158,11,.1)') }, data: [[{ xAxis: stamp(props.eventWindow.from) }, { xAxis: stamp(props.eventWindow.to) }]] } : undefined
-  const eventLine = props.eventWindow ? { silent: true, symbol: 'none', label: { formatter: '选中事件', color: css('--warning', '#f5b04e') }, lineStyle: { color: css('--warning', '#f5b04e'), type: 'dashed' }, data: [{ xAxis: stamp(props.eventWindow.from) }] } : undefined
+  const eventFrom = parseDisclosureTime(props.eventWindow?.from), eventTo = parseDisclosureTime(props.eventWindow?.to)
+  const eventArea = eventFrom !== null && eventTo !== null && eventTo >= eventFrom ? { silent: true, itemStyle: { color: css('--warning-tint', 'rgba(245,158,11,.1)') }, data: [[{ xAxis: eventFrom }, { xAxis: eventTo }]] } : undefined
+  const eventLine = eventFrom !== null ? { silent: true, symbol: 'none', label: { formatter: '选中事件', color: css('--warning', '#f5b04e') }, lineStyle: { color: css('--warning', '#f5b04e'), type: 'dashed' }, data: [{ xAxis: eventFrom }] } : undefined
   const min = stamp(props.dateFrom)
   const max = stamp(props.dateTo) + 86_400_000 - 1
   chart.setOption({

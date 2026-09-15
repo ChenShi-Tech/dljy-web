@@ -27,6 +27,7 @@ describe('对象导航契约', () => {
     expect(readGridObjectWindow({ objectFrom: '2026-07-02T00:00:00Z', objectTo: '2026-07-01T00:00:00Z' })).toBeNull()
   })
   it('返回只允许既有空间页面，清除关联不清除业务筛选', () => {
+    expect(safeGridReturnPath('/grid-assets/plants?keyword=甲厂')).toBe('/grid-assets/plants?keyword=甲厂')
     for (const path of ['//evil.test', 'https://evil.test', '/grid-assets/nodes\\evil', '/grid-assets/nodes-evil', '/admin']) expect(safeGridReturnPath(path)).toBeUndefined()
     expect(clearGridObjectQuery({ objectId: 'a', objectKind: 'node', objectRegion: 'yunnan', objectCompany: 'a', objectDate: '2026-07-01', returnTo: '/grid-assets/command', keyword: '设备', page: '3' })).toEqual({ keyword: '设备', page: '3' })
   })

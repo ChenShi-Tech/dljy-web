@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { parseDisclosureTime } from './disclosureTime'
 import { computed, defineAsyncComponent, inject, onBeforeUnmount, onMounted, ref, shallowRef, watch, type Component, nextTick} from 'vue'
 import { routeLocationKey, routerKey } from 'vue-router'
 import {
@@ -397,11 +398,11 @@ function weatherValue(item: GridGeoWeatherSnapshot | null) {
 
 function formatDate(value: string | null | undefined, withTime = false) {
   if (!value) return '时间缺失'
-  const parsed = new Date(value)
-  if (Number.isNaN(parsed.getTime())) return value
-  return new Intl.DateTimeFormat('zh-CN', withTime
+  const parsed = parseDisclosureTime(value, true)
+  if (parsed === null) return value
+  return new Intl.DateTimeFormat('zh-CN', { timeZone: 'Asia/Shanghai', ...(withTime
     ? { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false }
-    : { year: 'numeric', month: '2-digit', day: '2-digit' }).format(parsed)
+    : { year: 'numeric', month: '2-digit', day: '2-digit' }) }).format(parsed)
 }
 
 function clearSelection() {
@@ -605,7 +606,7 @@ async function loadDisclosures(force = false) {
   if (!force && ['available', 'empty', 'not-configured'].includes(layerStates.value.disclosure.status)) return
   const request = beginLayerRequest('disclosure')
   try {
-    const response = await fetchGridDisclosureEvents({ page: 1, pageSize: 24 }, { signal: request.signal })
+    const response = await fetchGridDisclosureEvents({ region: currentRegion.value.id, page: 1, pageSize: 24 }, { signal: request.signal })
     if (!layerRequestCurrent(request.requestId, request.scopeId, request.signal)) return
     disclosures.value = response.items.filter((item) => item.source.mock === false)
     disclosureTotal.value = response.total

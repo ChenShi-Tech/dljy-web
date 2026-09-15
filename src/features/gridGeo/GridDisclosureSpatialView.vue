@@ -4,6 +4,8 @@ import { Activity, ArrowRight, ArrowDownUp, CalendarDays, Check, ChevronLeft, Ch
 import { currentRegion } from '@/services/region/regionContext'
 import { selectedCompanyId } from '@/services/company/companyContext'
 import { todayBeijing } from '@/utils/beijingDate'
+import { isRealCalendarDate } from '@/utils/calendarDate'
+import { disclosureEventWindow, disclosureMinuteText as minuteText, parseDisclosureTime } from './disclosureTime'
 import { getGridDataset } from 'shared/schema/grid-dataset-catalog.mjs'
 import { fetchGridDisclosureEvents, fetchGridDisclosureGroups, fetchGridDisclosureOverview, fetchGridDisclosureProviders } from './client'
 import { DISCLOSURE_DESK_METRICS, DISCLOSURE_DESK_THEMES, getDisclosureDeskMetric, findDisclosureDeskPointAt, loadDisclosureDeskSeries, loadDisclosureDeskThemeAvailability, summarizeDisclosureDeskSeries, type DeskDataResult, type DeskThemeId, type DeskThemeAvailability } from './disclosureDeskData'
@@ -117,7 +119,7 @@ const channelPlaceholder = computed(() => curveLoading.value ? '正在读取可�
 const curveEmptyTitle = computed(() => curveLoading.value ? '正在读取指标' : curve.value?.status === 'selection-required' ? `请先选择${channelLabel.value}` : curve.value?.status === 'not-configured' ? '当前指标尚未接入' : curve.value?.status === 'unauthorized' ? '当前账号无读取权限' : curveError.value || curve.value?.status === 'error' ? '指标读取失败' : undefined)
 const activeCategories = computed(() => categoryFilter.value ? [categoryFilter.value] : currentTheme.value.categories)
 const categoryOptions = computed(() => currentTheme.value.categories.length ? currentTheme.value.categories : Object.keys(categoryLabels) as GridDisclosureCategory[])
-const validDate = computed(() => /^\d{4}-\d{2}-\d{2}$/.test(date.value) && Number.isFinite(Date.parse(`${date.value}T00:00:00Z`)))
+const validDate = computed(() => isRealCalendarDate(date.value))
 const visibleThemes = DISCLOSURE_DESK_THEMES.filter((theme) => theme.id !== 'price')
 const totalPages = computed(() => Math.max(1, Math.ceil(eventLayout.value === 'groups' ? groupTotal.value / groupPageSize : eventTotal.value / pageSize)))
 const activeProvider = computed(() => providers.value.find((provider) => provider.regionIds.includes(currentRegion.value.id)))
@@ -127,7 +129,7 @@ const availablePoints = computed(() => selectedSummary.value.reduce((sum, series
 const hoverValues = computed(() => hoveredAt.value ? (curve.value?.series ?? []).map((series) => ({ ...series, point: findDisclosureDeskPointAt(series, hoveredAt.value!) })) : [])
 const visibleFacts = computed(() => (curve.value?.facts ?? []).filter((fact) => !selection.value || (fact.time >= minuteText(selection.value.from).slice(0, 10) && fact.time <= minuteText(selection.value.to).slice(0, 10))))
 const dailyCards = computed(() => (currentMetric.value.dailyFacts ? [] : curve.value?.series ?? []).flatMap((series) => [...new Set(series.points.map((point) => point.time.slice(0, 10)))].map((day) => ({ ...summarizeDisclosureDeskSeries(series, `${day} 00:00`, `${day} 23:59`), date: day }))))
-const selectedEventWindow = computed(() => selected.value?.effectiveAt && selected.value.timeQuality?.effective !== 'business-date' ? { from: selected.value.effectiveAt, to: selected.value.expiresAt } : null)
+const selectedEventWindow = computed(() => disclosureEventWindow(selected.value))
 const eventCards = computed(() => events.value.map((event) => ({ event, timing: eventTiming(event) })))
 const eventGroupQuery = computed(() => ({ ...baseQuery(), ...(activeCategories.value.length ? { category: activeCategories.value.join(',') } : {}), ...(eventSort.value !== 'default' ? { sort: eventSort.value } : {}) }))
 const hasEventRows = computed(() => eventLayout.value === 'groups' ? eventGroups.value.length > 0 : events.value.length > 0)
@@ -140,7 +142,6 @@ const themeDescriptions = { load: '负荷 / 非市场化电源', 'new-energy': '
 const statusLabels: Record<string, string> = { available: '数据可用', partial: '部分缺测', missing: '暂无数据', 'not-configured': '尚未接入', error: '读取失败', unauthorized: '权限受限', 'selection-required': '待选对象' }
 
 function shiftDate(value: string, days: number) { const time = Date.parse(`${value}T00:00:00Z`); return Number.isFinite(time) ? new Date(time + days * 86_400_000).toISOString().slice(0, 10) : value }
-function minuteText(value: string) { const time = Date.parse(value); return Number.isFinite(time) ? new Date(time + 8 * 3600_000).toISOString().slice(0, 16).replace('T', ' ') : value.slice(0, 16).replace('T', ' ') }
 function shortTime(value: string | null | undefined) { return value ? minuteText(value).slice(5) : '未提供' }
 function numberText(value: number | null | undefined) { return value === null || value === undefined || !Number.isFinite(value) ? '—' : value.toLocaleString('zh-CN', { maximumFractionDigits: 2 }) }
 function categoryCount(categories: GridDisclosureCategory[]) { return categories.reduce((sum, category) => sum + (overview.value?.countsByCategory[category] ?? 0), 0) }
@@ -172,7 +173,7 @@ function eventDate(event: GridDisclosureEvent) { return event.businessDate ?? (e
 function eventTiming(event: GridDisclosureEvent) {
   const equipment = event.category === 'maintenance' || event.category === 'outage'
   const sourceTime = event.timeQuality?.effective !== 'business-date' && event.timeQuality?.effective !== 'unknown'
-  const timestamp = (value: string | null | undefined) => sourceTime && value && Number.isFinite(Date.parse(value)) ? minuteText(value) : '未提供'
+  const timestamp = (value: string | null | undefined) => sourceTime && value && parseDisclosureTime(value) !== null ? minuteText(value) : '未提供'
   const start = timestamp(event.effectiveAt), end = timestamp(event.expiresAt)
   const basis = sourceTime ? event.timeQuality?.intervalBasis : undefined
   const prefix = basis === 'actual' ? '实际' : basis === 'planned' ? '计划' : ''

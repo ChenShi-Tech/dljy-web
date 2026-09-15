@@ -59,6 +59,17 @@ beforeEach(() => {
 afterEach(() => { vi.useRealTimers() })
 
 describe('公开披露交易台上下文联动', () => {
+  it('非法日历日期不能归一化后进入事件、统计与曲线请求', async () => {
+    const wrapper = view()
+    await flushPromises()
+    for (const mock of [calls.events, calls.overview, calls.series, calls.themeAvailability]) mock.mockClear()
+    const input = wrapper.get('[data-testid="desk-date"]')
+    input.element.setAttribute('type', 'text')
+    await input.setValue('2026-02-30'); await flushPromises()
+    for (const mock of [calls.events, calls.overview, calls.series, calls.themeAvailability]) expect(mock).not.toHaveBeenCalled()
+    expect(wrapper.findComponent({ name: 'DeskChartStub' }).exists()).toBe(false)
+    wrapper.unmount()
+  })
   it('指标选择器接收市场与主题分组，选择指标联动主题并保留交易日和原选区', async () => {
     const wrapper = view()
     await wrapper.get('[data-testid="desk-date"]').setValue('2026-07-01')
