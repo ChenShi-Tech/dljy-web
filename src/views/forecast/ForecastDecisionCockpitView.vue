@@ -2,7 +2,7 @@
 // 申报决策驾驶舱（#77 唯一决策出口）：消费 agent-backend 预测、风险量化、mean-CVaR 报价优化、
 // 申报建议与决策概览端点。工作台可带上下文（?model/date/train_days）跳入。
 // 页面仅做前端装配，不写入申报单，不作为结算依据。
-import { computed, nextTick, onActivated, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onActivated, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import {
   Activity,
@@ -41,6 +41,7 @@ import {
 } from '@/services/forecast/mlForecastClient'
 import { ensureForecastCatalog, forecastCatalogState, isModelSelectableForTarget, isPredictSupported } from '@/services/forecast/forecastProviders'
 import { latestBenchContext } from '@/services/forecast/forecastBenchContext'
+import { predictionModelExclusionReason } from '@/services/forecast/predictionModelEligibility'
 import { loadClearingCurve, type SpotCurve } from '@/services/market/spotPrice'
 import { axisTooltip, chartToolbox, emptyOverlay, fmtNum, insideZoom } from '@/services/chart/chartOptions'
 import {
@@ -260,10 +261,11 @@ async function loadCockpit() {
   const ctx = snapshotContext()
   resetViewModel()
   if (!isSupportedRegion.value) return
+  if (!catalogBatchReady.value) return
   // catalog 已加载但选中模型不可选（不可用/非 /predict/被移除）→ 不发注定失败的请求（#570）。
   // 两腿分别校验：价格腿只看 price 声明，负荷腿只看 load 声明。
-  const priceOk = catalogModels.value.filter((m) => modelSelectableFor(m, 'price'))
-  const loadOk = catalogModels.value.filter((m) => modelSelectableFor(m, 'load'))
+  const priceOk = priceCatalogModels.value.filter((m) => modelSelectableFor(m, 'price'))
+  const loadOk = loadCatalogModels.value.filter((m) => modelSelectableFor(m, 'load'))
   if (!priceOk.length && !loadOk.length) {
     errorMsg.value = '当前地区没有可消费的模型目录产物'
     return
@@ -653,19 +655,44 @@ watch([targetDate, priceModelType, loadModelType], () => {
   void loadCockpit()
 })
 
-onRegionChange(() => {
-  void loadCockpit()
-})
+const catalogBatchReady = ref(false)
+let catalogGeneration = 0
 
-// #762：模型下拉从后端 /forecast/models catalog 动态渲染，available:false 禁用+reason；
-// 失败诚实降级（列表空+提示，不回退假列表），默认 xgboost 仍可发请求（后端 core 模型稳定）。
-const { models: catalogModels, error: catalogError } = forecastCatalogState()
+// 首载与切区共享代次；地区相同也可能是 A→B→A 的旧请求，不能只比较地区 ID。
+async function loadRegionCatalog(force = false) {
+  const generation = ++catalogGeneration
+  const regionId = currentRegion.value.id
+  catalogBatchReady.value = false
+  // 常规取数失败由目录服务写入对应地区/目标的错误状态，完成后仍须经过本页代次守卫。
+  await ensureForecastCatalog(['price', 'load'], force, regionId)
+  if (generation !== catalogGeneration || regionId !== currentRegion.value.id) return
+  catalogBatchReady.value = true
+  const normalized = normalizeSelectedModels({ allowEmptyClear: true })
+  if (!normalized) void loadCockpit()  // 归一时由 watch 触发，不额外重跑。
+}
+
+onRegionChange(() => loadRegionCatalog(true))
+
+// #762：模型下拉从后端 /forecast/models catalog 动态渲染；
+// 当前页只展示“当前腿可执行的真实模型”。目录刷新未完成前不提前清空用户指定模型，
+// 目录就绪后若该模型被移除/判为占位或原始零样本，则清空选择并提示用户重选，而不是回退默认项。
+const priceCatalog = forecastCatalogState('price')
+const loadCatalog = forecastCatalogState('load')
+const priceCatalogModels = computed(() => priceCatalog.models.value.filter((model) =>
+  predictionModelExclusionReason(model) === null && modelSelectableFor(model, 'price')))
+const loadCatalogModels = computed(() => loadCatalog.models.value.filter((model) =>
+  predictionModelExclusionReason(model) === null && modelSelectableFor(model, 'load')))
+const catalogError = computed(() => [priceCatalog.error.value, loadCatalog.error.value].filter(Boolean).join('；'))
 // 驾驶舱模型下拉可选性：available（后端能力位）且 /predict 直算支持（排除 naive/fm 等选中必失败项）。
 // **按腿判 supportedTargets**（#2324）：价格腿只要求声明 price、负荷腿只要求声明 load。
 // 旧版要求同一模型两腿全覆盖，把 remote:*/store: 这类单 target 上架的真实模型整体挡在外面
 // （#1461/#1898）——那条限制来自 /cockpit 聚合端点的单 model_type，不该扩散到四个
 // 带显式 target 的调用点上。未声明 supportedTargets 的（core 模型）视为两腿都支持。
 const modelSelectableFor = isModelSelectableForTarget
+const selectedPriceModel = computed(() => priceCatalogModels.value.find((model) => model.modelId === priceModelType.value) ?? null)
+const selectedLoadModel = computed(() => loadCatalogModels.value.find((model) => model.modelId === loadModelType.value) ?? null)
+const priceModelDisplay = computed(() => selectedPriceModel.value?.name ?? selectedPriceModel.value?.modelId ?? '')
+const loadModelDisplay = computed(() => selectedLoadModel.value?.name ?? selectedLoadModel.value?.modelId ?? '')
 /** 下拉项 title：说清这一项为什么不能选（能选时给 unavailableReason 备注）。 */
 function modelOptionTitle(m: ForecastModel, target: 'price' | 'load'): string {
   if (!m.available) return m.unavailableReason || '当前不可用'
@@ -682,6 +709,30 @@ function modelOptionLabel(m: ForecastModel): string {
     !m.available ? `不可用${m.unavailableReason ? '·' + m.unavailableReason : ''}` : (!isPredictSupported(m) ? '非直算端点' : ''),
   ].filter(Boolean)
   return (m.name ?? m.modelId) + (tags.length ? `（${tags.join('·')}）` : '')
+}
+function normalizeSelectedModels(options?: { allowEmptyClear?: boolean }): boolean {
+  if (!catalogBatchReady.value) return false
+  const allowEmptyClear = options?.allowEmptyClear === true
+  let changed = false
+  if (priceCatalogModels.value.length) {
+    if (priceModelType.value !== '' && !selectedPriceModel.value) {
+      priceModelType.value = ''
+      changed = true
+    }
+  } else if (allowEmptyClear && priceModelType.value !== '') {
+    priceModelType.value = ''
+    changed = true
+  }
+  if (loadCatalogModels.value.length) {
+    if (loadModelType.value !== '' && !selectedLoadModel.value) {
+      loadModelType.value = ''
+      changed = true
+    }
+  } else if (allowEmptyClear && loadModelType.value !== '') {
+    loadModelType.value = ''
+    changed = true
+  }
+  return changed
 }
 
 // 预测中心同页上下文（#79，3620694192/3620694219）
@@ -705,6 +756,7 @@ function applyDeepLinkQuery(): boolean {
   if (dateValid && date !== targetDate.value) { targetDate.value = date; changed = true }
   if (priceModel !== '' && priceModel !== priceModelType.value) { priceModelType.value = priceModel; changed = true }
   if (loadModel !== '' && loadModel !== loadModelType.value) { loadModelType.value = loadModel; changed = true }
+  if (normalizeSelectedModels()) changed = true
   if (Number.isFinite(trainDaysNum) && trainDaysNum >= 30 && trainDaysNum <= 365
     && Math.round(trainDaysNum) !== trainDays.value) {
     trainDays.value = Math.round(trainDaysNum)
@@ -728,6 +780,7 @@ function applyBenchContext(): void {
     if (ctx.modelId !== priceModelType.value) priceModelType.value = ctx.modelId
     if (ctx.modelId !== loadModelType.value) loadModelType.value = ctx.modelId
   }
+  normalizeSelectedModels()
   if (ctx.trainDays >= 30 && ctx.trainDays <= 365 && ctx.trainDays !== trainDays.value) {
     trainDays.value = ctx.trainDays
     trainDaysChanged = true
@@ -743,23 +796,14 @@ onActivated(() => {
   applyDeepLinkQuery()
 })
 watch(latestBenchContext, () => { applyBenchContext() })
+watch([priceCatalogModels, loadCatalogModels], () => {
+  normalizeSelectedModels({ allowEmptyClear: catalogBatchReady.value })
+}, { immediate: true })
 
-onMounted(async () => {
-  await ensureForecastCatalog()
-  // 归一默认模型：若默认 xgboost 不在 catalog 或该腿不可选，切到该腿第一个可选项
-  // （防首屏发失败请求）。两腿分别归一，改动任一腿都会触发 watch → loadCockpit。
-  const priceOk = catalogModels.value.filter((m) => modelSelectableFor(m, 'price'))
-  const loadOk = catalogModels.value.filter((m) => modelSelectableFor(m, 'load'))
-  let normalized = false
-  if (priceOk.length && !priceOk.some((m) => m.modelId === priceModelType.value)) {
-    priceModelType.value = priceOk[0].modelId
-    normalized = true
-  }
-  if (loadOk.length && !loadOk.some((m) => m.modelId === loadModelType.value)) {
-    loadModelType.value = loadOk[0].modelId
-    normalized = true
-  }
-  if (!normalized) void loadCockpit()  // 归一时由 watch 触发（世代守卫处理并发）
+onMounted(() => loadRegionCatalog())
+onBeforeUnmount(() => {
+  ++catalogGeneration
+  catalogBatchReady.value = false
 })
 </script>
 
@@ -779,8 +823,8 @@ onMounted(async () => {
         <TrustBadge basis="illustrative" prefix="决策口径" />
         <DataBasisBadge v-if="priceForecast" :basis="priceForecast.basis" prefix="预测数据" />
         <!-- 两腿模型不同时如实标注：结论由两个模型拼出来，不标注就等于让人以为是同一模型的一致口径 -->
-        <span v-if="!bothLegsSameModel" class="source-chip split-models">
-          两腿分选：价格 {{ priceModelType }} · 负荷 {{ loadModelType }}
+        <span v-if="!bothLegsSameModel && priceModelDisplay && loadModelDisplay" class="source-chip split-models">
+          两腿分选：价格 {{ priceModelDisplay }} · 负荷 {{ loadModelDisplay }}
         </span>
         <span v-if="sourceSummary" class="source-chip">{{ sourceSummary }}</span>
       </div>
@@ -800,8 +844,8 @@ onMounted(async () => {
                新模型上线自动出现，available:false 禁用+reason；不再硬编码防漂移。
                两腿各一个下拉（#2324）：单 target 上架的 remote:* 真实模型只会在它声明的那条腿里可选。 -->
           <select v-model="priceModelType" @change="markControlsDirty">
-            <option v-for="m in catalogModels" :key="m.modelId" :value="m.modelId"
-              :disabled="!modelSelectableFor(m, 'price')"
+            <option disabled value="">请选择模型</option>
+            <option v-for="m in priceCatalogModels" :key="m.modelId" :value="m.modelId"
               :title="modelOptionTitle(m, 'price')">
               {{ modelOptionLabel(m) }}
             </option>
@@ -811,8 +855,8 @@ onMounted(async () => {
         <label class="field">
           <span>负荷模型</span>
           <select v-model="loadModelType" @change="markControlsDirty">
-            <option v-for="m in catalogModels" :key="m.modelId" :value="m.modelId"
-              :disabled="!modelSelectableFor(m, 'load')"
+            <option disabled value="">请选择模型</option>
+            <option v-for="m in loadCatalogModels" :key="m.modelId" :value="m.modelId"
               :title="modelOptionTitle(m, 'load')">
               {{ modelOptionLabel(m) }}
             </option>
@@ -976,7 +1020,7 @@ onMounted(async () => {
           <p>
             决策概览是后端一次聚合出来的（价格预测 + 申报建议 + 偏差风险 + 中长期趋势），
             它只接受一个模型、用这一个模型跑价格与负荷两腿。当前价格腿用
-            「{{ priceModelType }}」、负荷腿用「{{ loadModelType }}」，
+            「{{ priceModelDisplay || '未选模型' }}」、负荷腿用「{{ loadModelDisplay || '未选模型' }}」，
             传任一个都会让另一腿实际用的模型与你选的不符，故本区块不出结果。
           </p>
           <p class="muted">

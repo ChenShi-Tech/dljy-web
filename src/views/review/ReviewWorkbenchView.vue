@@ -4,6 +4,7 @@ import { computed, ref, watch, onMounted, onBeforeUnmount } from 'vue'
 import { useRoute, useRouter, onBeforeRouteLeave } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { ArrowLeft, ArrowRight, FileText, RefreshCw, ArrowUpRight } from 'lucide-vue-next'
+import { activeStanceType } from '@/services/stance/stanceContext'
 import { currentRegion } from '@/services/region/regionContext'
 import { selectedCompanyId, currentCompany } from '@/services/company/companyContext'
 import { getDeclaration, listDeclarationsPage, type DeclarationOrder } from '@/services/declarations'
@@ -19,11 +20,22 @@ import IntervalEvidencePanel from '@/components/review/workbench/IntervalEvidenc
 import SettlementEvidencePanel from '@/components/review/workbench/SettlementEvidencePanel.vue'
 import ImprovementWorkbench from '@/components/review/workbench/ImprovementWorkbench.vue'
 import ReviewAssistantWorkbench from '@/components/review/workbench/ReviewAssistantWorkbench.vue'
+import { safeAnalysisReturn } from '@/services/review/periodDecisions'
+import { dailyEnergySelectionFromQuery, dailyEnergySelectionQuery } from '@/services/review/dailyEnergy'
+import ReportArchivePanel from '@/components/review/workbench/ReportArchivePanel.vue'
+import ReportWorkpaperEditor from '@/components/review/workbench/ReportWorkpaperEditor.vue'
+import type { ReportEvidence } from '@/services/review/workpapers'
+import ReviewTopicWorkspace from '@/components/review/workbench/ReviewTopicWorkspace.vue'
+import { reviewTopic, reviewView, priceSelectionFromQuery, priceSelectionQuery, settlementSelectionFromQuery, settlementSelectionQuery, type ReviewTopic } from '@/services/review/reviewTopics'
+import SpotSkeleton from '../../components/common/SpotSkeleton.vue'
 import { buildReviewEvidence, executionEvidence, simulatedOrder, type ReviewEvidenceSnapshot } from '@/services/review/reviewEvidence'
 import RegionDataBanner from '@/components/region/RegionDataBanner.vue'
 
+const props = defineProps<{ standaloneTopics?: boolean }>()
 const route = useRoute(), router = useRouter()
+const businessView = computed({ get: () => reviewView(route.query.view ?? (activeStanceType.value === 'RETAILER' ? 'retail' : activeStanceType.value === 'STORAGE' ? 'storage' : 'generator')), set: value => { void router.replace({ query: { ...route.query, view: value } }) } })
 const region = computed(() => currentRegion.value.id)
+const topicScopeMismatch = computed(() => props.standaloneTopics && ((typeof route.query.companyId === 'string' && route.query.companyId !== selectedCompanyId.value) || (typeof route.query.region === 'string' && route.query.region !== region.value)))
 const date = computed(() => typeof route.query.date === 'string' && isRealCalendarDate(route.query.date) ? route.query.date : clampToCoverage(region.value, 'review', beijingDay(-1)))
 const task = computed(() => reviewTaskOf(route.query.task ?? (['strategy', 'decision'].includes(String(route.query.dim)) ? 'decision' : route.query.todo === '1' ? 'improvement' : 'result')))
 const selectedKey = computed(() => typeof route.query.declarationId === 'string' && route.query.declarationId ? `order:${route.query.declarationId}` : typeof route.query.decisionId === 'string' && route.query.decisionId ? `decision:${route.query.decisionId}` : '')
@@ -45,27 +57,88 @@ const retainedEvidence = computed(() => evidence.value.filter(e => !missingEvide
 const focus = ref(''), lesson = ref(''), savingLesson = ref(false)
 const assistant = ref<{ snapshot: ReviewEvidenceSnapshot; mode: 'analysis' | 'report'; key: string } | null>(null)
 const assistantVisible = ref(false)
+const workpaperVisible = ref(false), workpaperDirty = ref(false), workpaperSnapshot = ref<ReviewEvidenceSnapshot | null>(null), workpaperMaterial = ref<ReportEvidence | null>(null)
+function openWorkpaper(material: ReportEvidence | null = null) { workpaperSnapshot.value = currentSnapshot(); workpaperMaterial.value = material; workpaperVisible.value = true; topicVisible.value = false }
+function openCompanyWorkpaper(material: ReportEvidence) {
+  if (material.content.topic !== 'settlement') return
+  if (material.content.input.scope.companyId !== selectedCompanyId.value || material.region !== region.value) { ElMessage.warning('当前公司或地区已切换，请在原范围中查看保存的材料'); return }
+  const period = material.content.result.periods.current, plants = material.content.result.selectedPlants
+  const objectId = material.content.input.scope.objectId
+  const snapshot = buildReviewEvidence({ company: selectedCompanyId.value, companyLabel: currentCompany.value?.name || '当前授权公司', region: region.value, regionLabel: currentRegion.value.name, day: period.start, objectKey: objectId === 'company-overview' ? '' : objectId, objectLabel: plants.length === 1 ? plants[0] : '所选厂站组合', capturedAt: material.content.capturedAt })
+  snapshot.scope.period = period; snapshot.scope.businessView = businessView.value
+  workpaperSnapshot.value = snapshot; workpaperMaterial.value = material; workpaperVisible.value = true; topicVisible.value = false
+}
+function closeWorkpaper(done: () => void) { if (!workpaperDirty.value || window.confirm('当前底稿或批注尚未保存，确定关闭吗？')) done() }
+let clearTopicObject = false
+const energySelection = ref(dailyEnergySelectionFromQuery(route.query,date.value))
+const priceSelection = ref(priceSelectionFromQuery(route.query, date.value))
+const periodSelection = ref(settlementSelectionFromQuery(route.query, date.value))
+const topicMode = ref<ReviewTopic>(reviewTopic(route.query.topic, !!selectedKey.value))
+watch(() => route.query.topic, value => { topicMode.value = reviewTopic(value, !!selectedKey.value) })
+// Batch synchronous filter resets into a single navigation so one topic cannot overwrite another.
+watch([energySelection, priceSelection, periodSelection, topicMode], () => {
+  const objectReset = clearTopicObject ? { declarationId: undefined, decisionId: undefined } : {}
+  clearTopicObject = false
+  if (props.standaloneTopics) void router.replace({ query: { ...route.query, ...objectReset, ...dailyEnergySelectionQuery(energySelection.value), ...priceSelectionQuery(priceSelection.value), ...settlementSelectionQuery(periodSelection.value), topic: topicMode.value } })
+})
+const liveTopicSnapshot = computed(() => canAnalyze.value ? currentSnapshot() : null)
+function analysisLocation() { return { path: '/xhjy/review/analysis', query: { ...route.query, layout: undefined, analysisReturn: undefined, ...settlementSelectionQuery(periodSelection.value), ...priceSelectionQuery(priceSelection.value), ...dailyEnergySelectionQuery(energySelection.value), topic: topicMode.value, view: businessView.value, companyId: selectedCompanyId.value, region: region.value } } }
+function openIndependentTopics() { void router.push(analysisLocation()) }
+const analysisReturn = computed(() => safeAnalysisReturn(route.query.analysisReturn, selectedCompanyId.value, region.value))
+function returnToAnalysis() { if (analysisReturn.value) void router.push(analysisReturn.value) }
+function openPeriodDecision(order: DeclarationOrder) {
+  if (!matchesReviewScope(order, order.targetDate, region.value, selectedCompanyId.value) || maintenanceBusy.value) return
+  // Cross-route navigation uses the leave guard; only same-route modal navigation needs this check.
+  if (route.path === '/xhjy/review' && hasDraft() && !window.confirm('当前有未保存的内容，确定切换到这笔申报吗？')) return
+  const back = router.resolve(analysisLocation()).fullPath
+  topicVisible.value = false
+  void router.push({ path: '/xhjy/review', query: { date: order.targetDate, declarationId: order.id, task: 'decision', view: businessView.value, analysisReturn: back } })
+}
+function acceptTopicMaterial(material: ReportEvidence) {
+  if (material.content.topic === 'settlement') { openCompanyWorkpaper(material); return }
+  if (material.sourceKind === 'business_source' || material.sourceKind === 'imported') {
+    if (material.content.input.scope.companyId !== selectedCompanyId.value || material.region !== region.value) { ElMessage.warning('当前公司或地区已切换，请在原范围查看材料'); return }
+    const period = material.content.result.periods.current
+    const snapshot = buildReviewEvidence({ company: selectedCompanyId.value, companyLabel: currentCompany.value?.name || '当前公司', region: region.value, regionLabel: currentRegion.value.name, day: period.start, objectKey: material.content.input.scope.objectId, objectLabel: material.content.objectLabel || '复盘业务对象', simulated: material.content.topic !== 'daily_energy' && material.content.result.simulated === true, capturedAt: material.content.capturedAt })
+    snapshot.scope.period = period; snapshot.scope.businessView = businessView.value
+    workpaperSnapshot.value = snapshot; workpaperMaterial.value = material; workpaperVisible.value = true; topicVisible.value = false
+  } else openWorkpaper(material)
+}
+const maintenanceBusy = ref(false)
+function closeTopic(done: () => void) { if (maintenanceBusy.value) ElMessage.warning('资料正在导入，请等待结果后关闭'); else done() }
+const topicVisible = ref(false), topicSnapshot = ref<ReviewEvidenceSnapshot | null>(null)
 const reportDrafts = new Map<string, string>()
 const dirtyReports = new Set<string>()
 const improvementDrafts = new Map<string, string[]>()
 const draftKey = computed(() => `${selectedCompanyId.value}:${region.value}:${date.value}:${selectedKey.value}`)
-const hasDraft = () => dirtyReports.size > 0 || [...improvementDrafts.values()].some(values => values.some(Boolean)) || lesson.value !== (selectedDecision.value?.lesson ?? '')
+const hasDraft = () => workpaperDirty.value || dirtyReports.size > 0 || [...improvementDrafts.values()].some(values => values.some(Boolean)) || lesson.value !== (selectedDecision.value?.lesson ?? '')
 function reportKey(snapshot: ReviewEvidenceSnapshot) { return `${snapshot.scope.company}:${snapshot.scope.region}:${snapshot.scope.day}:${snapshot.scope.objectKey}` }
 function storeReportDraft(value: string, snapshot: ReviewEvidenceSnapshot) { const key = reportKey(snapshot); reportDrafts.set(key, value); if (value.trim()) dirtyReports.add(key); else dirtyReports.delete(key) }
 function markReportDownloaded(snapshot: ReviewEvidenceSnapshot) { dirtyReports.delete(reportKey(snapshot)) }
 function storeImprovementDraft(value: string[], key: string) { improvementDrafts.set(key, value) }
-function warnBeforeUnload(event: BeforeUnloadEvent) { if (hasDraft()) { event.preventDefault(); event.returnValue = '' } }
+function warnBeforeUnload(event: BeforeUnloadEvent) { if (hasDraft() || maintenanceBusy.value) { event.preventDefault(); event.returnValue = '' } }
 onMounted(() => window.addEventListener('beforeunload', warnBeforeUnload))
 onBeforeUnmount(() => window.removeEventListener('beforeunload', warnBeforeUnload))
-onBeforeRouteLeave(() => !hasDraft() || window.confirm('离开复盘中心会丢失尚未保存或下载的草稿，确定离开吗？'))
+onBeforeRouteLeave(() => { if (maintenanceBusy.value) { ElMessage.warning('资料正在导入，请等待结果后离开'); return false }; return !hasDraft() || window.confirm('离开复盘中心会丢失尚未保存或下载的草稿，确定离开吗？') })
 const canAnalyze = computed(() => !!selectedCompanyId.value && (selectedKey.value ? !!selectedOrder.value || !!selectedDecision.value : !!settlement.value || points.value.length > 0))
+function currentSnapshot(interval = '') {
+  const snapshot = buildReviewEvidence({ company: selectedCompanyId.value, companyLabel: currentCompany.value?.name || '当前授权公司', region: region.value, regionLabel: currentRegion.value.name || currentRegion.value.shortName, day: date.value, objectKey: selectedKey.value, objectLabel: objectLabel.value, order: selectedOrder.value, decision: selectedDecision.value, settlement: settlement.value, points: points.value, simulated: simulated.value, focus: interval })
+  snapshot.scope.businessView = businessView.value
+  return snapshot
+}
+function openTopic() { if (selectedCompanyId.value) { topicSnapshot.value = canAnalyze.value ? currentSnapshot() : null; topicMode.value = reviewTopic(route.query.topic, !!selectedKey.value && canAnalyze.value); topicVisible.value = true } }
+/** 等待态骨架占位（防整页抖动）：切日期会同步清空旧数据，若让成品面板直接卸载，
+ *  内容高度会在「取数塌缩→数据回弹」间跳变并钳掉滚动位置。等待期改用与成品面板
+ *  等量的骨架屏撑住布局；云南平台分时本就不返回（结算面板等待态单独撑位）。 */
+const evidenceHold = computed(() => selectionLoading.value || (evidenceLoading.value && !selectedKey.value && region.value !== 'yunnan'))
+const settlementLoading = computed(() => evidenceLoading.value && !selectedKey.value && region.value === 'yunnan')
 function openAssistant(mode: 'analysis' | 'report', interval = '') {
   if (!canAnalyze.value) return
-  const snapshot = buildReviewEvidence({ company: selectedCompanyId.value, companyLabel: currentCompany.value?.name || '当前授权公司', region: region.value, regionLabel: currentRegion.value.name || currentRegion.value.shortName, day: date.value, objectKey: selectedKey.value, objectLabel: objectLabel.value, order: selectedOrder.value, decision: selectedDecision.value, settlement: settlement.value, points: points.value, simulated: simulated.value, focus: interval })
+  const snapshot = currentSnapshot(interval)
   assistant.value = { snapshot, mode, key: `${selectedCompanyId.value}:${region.value}:${date.value}:${selectedKey.value}` }
   assistantVisible.value = true
 }
-watch([date, region, selectedCompanyId, selectedKey], () => { assistantVisible.value = false; assistant.value = null })
+watch([date, region, selectedCompanyId, selectedKey], () => { assistantVisible.value = false; assistant.value = null; topicVisible.value = false; topicSnapshot.value = null })
 
 watch(selectedKey, () => { focus.value = ''; lesson.value = '' })
 watch(selectedDecision, d => { lesson.value = d?.lesson ?? '' })
@@ -80,7 +153,9 @@ function investigate(label: string) { focus.value = label; setTask('improvement'
 function openOriginal() {
   if (selectedOrder.value) void router.push({ path: '/xhjy/desk', query: { declarationId: selectedOrder.value.id, targetDate: selectedOrder.value.targetDate } })
 }
-function openArchive() { void router.push({ query: { ...route.query, layout: 'classic', task: undefined, decisionId: undefined } }) }
+const archiveVisible = ref(false)
+function openArchive() { archiveVisible.value = true }
+function openLegacyArchive() { void router.push({ path: '/xhjy/review', query: { ...route.query, layout: 'classic', task: undefined, decisionId: undefined } }) }
 let scopeSequence = 0, selectionSequence = 0, pageSequence = 0
 async function loadOrders(seq: number, day: string, rid: string, offset = 0) {
   const page = ++pageSequence, company = selectedCompanyId.value
@@ -96,7 +171,7 @@ async function loadOrders(seq: number, day: string, rid: string, offset = 0) {
 async function loadSelection() {
   const seq = ++selectionSequence, key = selectedKey.value, day = date.value, rid = region.value, company = selectedCompanyId.value
   extraOrder.value = null; selectionError.value = ''; selectionLoading.value = key.startsWith('order:')
-  if (!key.startsWith('order:') || !company) { selectionLoading.value = false; return }
+  if (!key.startsWith('order:') || !company || topicScopeMismatch.value) { selectionLoading.value = false; return }
   try {
     const order = await getDeclaration(key.slice(6), company)
     if (seq !== selectionSequence) return
@@ -110,7 +185,7 @@ async function reload() {
   result.value = null; failure.value = null; settlement.value = null; settlementError.value = ''
   decisions.value = []; orders.value = []; extraOrder.value = null; orderTotal.value = 0; decisionError.value = ''; orderError.value = ''; selectionError.value = ''
   ++selectionSequence
-  if (!selectedCompanyId.value) { evidenceLoading.value = false; decisionLoading.value = false; orderLoading.value = false; selectionLoading.value = false; return }
+  if (!selectedCompanyId.value || topicScopeMismatch.value) { evidenceLoading.value = false; decisionLoading.value = false; orderLoading.value = false; selectionLoading.value = false; return }
   evidenceLoading.value = true; decisionLoading.value = true
   void loadOrders(seq, day, rid); void loadSelection()
   void fetchDecisionLogFeed({ targetDate: day }).then(feed => {
@@ -134,8 +209,12 @@ async function reload() {
   ])
   if (seq === scopeSequence) evidenceLoading.value = false
 }
-watch([date, region, selectedCompanyId], (_next, previous) => {
-  if (previous?.length && (previous[1] !== region.value || previous[2] !== selectedCompanyId.value) && selectedKey.value) choose('')
+watch([date, region, selectedCompanyId, topicScopeMismatch], (_next, previous) => {
+  if (previous?.length && (previous[1] !== region.value || previous[2] !== selectedCompanyId.value) && selectedKey.value) {
+    if (props.standaloneTopics) clearTopicObject = true
+    else choose('')
+  }
+  if (previous?.length) { periodSelection.value = settlementSelectionFromQuery({}, date.value); priceSelection.value = priceSelectionFromQuery({}, date.value); energySelection.value = dailyEnergySelectionFromQuery({},date.value) }
   focus.value = ''; void reload()
 }, { immediate: true })
 watch(selectedKey, loadSelection)
@@ -156,22 +235,35 @@ async function saveLesson() {
 <template>
   <div class="review-workbench page-stack">
     <RegionDataBanner />
-    <header class="heading"><div class="title"><h1>复盘中心</h1><span>{{ currentRegion.shortName || currentRegion.name }}</span></div><div class="date-control"><button type="button" aria-label="前一天" @click="changeDate(shiftDate(date, -1))"><ArrowLeft :size="14" /></button><input type="date" aria-label="复盘交易日" :value="date" @change="changeDate(($event.target as HTMLInputElement).value)" /><button type="button" aria-label="后一天" @click="changeDate(shiftDate(date, 1))"><ArrowRight :size="14" /></button></div><div class="header-actions"><button type="button" :disabled="!canAnalyze" @click="openAssistant('analysis')">分析本次复盘</button><button type="button" :disabled="!canAnalyze" @click="openAssistant('report')">生成报告草稿</button><button type="button" @click="openArchive"><FileText :size="14" />报告与历史专题</button><button type="button" @click="reload"><RefreshCw :size="14" />刷新</button></div></header>
+    <header class="heading"><div class="title"><h1>{{ props.standaloneTopics ? '复盘专题分析' : '复盘中心' }}</h1><span>{{ currentRegion.shortName || currentRegion.name }}</span></div><div class="date-control"><button type="button" aria-label="前一天" @click="changeDate(shiftDate(date, -1))"><ArrowLeft :size="14" /></button><input type="date" aria-label="复盘交易日" :value="date" @change="changeDate(($event.target as HTMLInputElement).value)" /><button type="button" aria-label="后一天" @click="changeDate(shiftDate(date, 1))"><ArrowRight :size="14" /></button></div><div class="header-actions"><button v-if="props.standaloneTopics" type="button" @click="router.push({ path: '/xhjy/review', query: { ...route.query, layout: undefined } })">返回本次复盘</button><button v-else type="button" :disabled="!selectedCompanyId" @click="openTopic">专题分析</button><button type="button" :disabled="!canAnalyze" @click="openAssistant('analysis')">分析本次复盘</button><button type="button" :disabled="!canAnalyze" @click="openWorkpaper()">本次底稿</button><button type="button" @click="openArchive"><FileText :size="14" />报告目录</button><button type="button" @click="reload"><RefreshCw :size="14" />刷新</button></div></header>
+    <div v-if="analysisReturn" class="notice"><button type="button" @click="returnToAnalysis">返回原周期专题分析</button><span> 返回时恢复原日期、参考期、厂站和图表选区。</span></div>
     <p v-if="!selectedCompanyId" class="notice" role="alert">请先在顶部选择有权查看的公司，再进行复盘。</p>
+    <p v-else-if="topicScopeMismatch" class="notice" role="alert">此专题链接的公司或地区与当前选择不一致。请先切换到原公司和地区，再查看同一份复盘资料。</p>
     <template v-else>
     <section class="object-bar panel"><div><label for="review-object">复盘对象</label><select id="review-object" :value="selectedKey" @change="choose(($event.target as HTMLSelectElement).value)"><option value="">当日资料总览</option><option v-if="selectedKey && !selectedOrder && !selectedDecision" :value="selectedKey">指定记录待核实</option><option v-if="extraOrder && !orders.some(o => o.id === extraOrder?.id)" :value="`order:${extraOrder.id}`">{{ declarationLabel(extraOrder) }}</option><optgroup v-if="orders.length" label="申报记录"><option v-for="o in orders" :key="o.id" :value="`order:${o.id}`">{{ declarationLabel(o) }}</option></optgroup><optgroup v-if="decisions.length" label="决策日志"><option v-for="d in decisions" :key="d.id" :value="`decision:${d.id}`">{{ d.decisionPoint }} · {{ d.author || '决策记录' }}</option></optgroup></select></div><span v-if="orderLoading" class="muted">正在读取记录…</span><span v-else class="muted">沿同一对象查看依据与结果。</span><button v-if="selectedOrder" type="button" @click="openOriginal">打开这笔申报 <ArrowUpRight :size="14" /></button><div v-if="orderTotal > 50" class="pagination"><button type="button" :disabled="orderOffset === 0 || orderLoading" @click="loadOrders(scopeSequence, date, region, orderOffset - 50)">上一批</button><span>{{ orderOffset + 1 }}–{{ Math.min(orderOffset + 50, orderTotal) }} / {{ orderTotal }}</span><button type="button" :disabled="orderOffset + 50 >= orderTotal || orderLoading" @click="loadOrders(scopeSequence, date, region, orderOffset + 50)">下一批</button></div></section>
     <p v-if="orderError || decisionError || selectionError" class="notice" role="alert">{{ [orderError, decisionError, selectionError].filter(Boolean).join(' ') }}</p>
+    <ReviewTopicWorkspace v-if="props.standaloneTopics" v-model:view="businessView" v-model:topic="topicMode" v-model:selection="periodSelection" v-model:price-selection="priceSelection" v-model:energy-selection="energySelection" :snapshot="liveTopicSnapshot" :company="selectedCompanyId" :company-label="currentCompany?.name || '当前公司'" :region="region" :date="date" :busy="maintenanceBusy" standalone @busy="maintenanceBusy = $event" @decision="openPeriodDecision" @material="acceptTopicMaterial" />
+    <template v-else>
     <nav class="tasks" aria-label="复盘任务"><button v-for="item in [{ key: 'result', title: '结果核验', question: '发生了什么' }, { key: 'decision', title: '决策评价', question: '当时为什么这样做' }, { key: 'improvement', title: '改进验证', question: '下一次如何改进' }]" :key="item.key" type="button" :aria-pressed="task === item.key" @click="setTask(item.key)"><b>{{ item.title }}</b><span>{{ item.question }}</span></button></nav>
     <template v-if="task === 'result'">
       <section v-if="selectedKey" class="panel object-summary"><div><span class="eyebrow">当前复盘对象</span><h2>{{ objectLabel }}</h2><p>{{ selectedOrder ? '申报、出清与作业留痕来自同一笔记录。' : selectedDecision ? '这是一条决策判断记录；目前未与具体成交及结算逐笔关联。' : '正在核实指定记录，其他对象的数据不会补到这里。' }}</p></div><div v-if="selectedOrder" class="summary-facts"><span>交易日 <b>{{ selectedOrder.targetDate }}</b></span><span>申报时段 <b>{{ selectedOrder.energyCurveMwh96.length }} 个</b></span><span>{{ simulated ? '模拟演练' : '单据留存记录' }}</span></div><button v-if="selectedOrder || selectedDecision" class="primary" type="button" @click="setTask('decision')">查看当时依据</button></section>
       <SettlementEvidencePanel v-if="!selectedKey && settlement" :settlement="settlement" />
+      <section v-else-if="settlementLoading" class="panel sk-panel" role="status">
+        <header class="sk-head"><h2>结算资料核验</h2><span class="sk-status"><span class="sk-spinner" aria-hidden="true" />正在读取本日结算资料…</span></header>
+        <SpotSkeleton variant="rows" :rows="9" :title="false" :card="false" />
+      </section>
       <p v-if="!selectedKey && settlementError" class="notice" role="alert">{{ settlementError }}</p>
       <IntervalEvidencePanel v-if="points.length" :points="points" :basis="selectedOrder ? 'order' : 'platform'" :date="date" :simulated="simulated" :forecast-curve="selectedOrder?.preflight?.forecast?.curveMwh96" :forecast-at="selectedOrder?.preflight?.forecast?.writtenAt" @investigate="investigate" @analyze="openAssistant('analysis', $event)" />
+      <section v-else-if="evidenceHold" class="panel sk-panel" role="status">
+        <header class="sk-head"><h2>分时偏差核验</h2><span class="sk-status"><span class="sk-spinner" aria-hidden="true" />正在核实本日可用资料…</span></header>
+        <SpotSkeleton variant="chart" :height="260" :title="false" :card="false" />
+        <SpotSkeleton variant="rows" :rows="11" :title="false" :card="false" />
+      </section>
       <section v-else-if="!selectedKey" class="panel compact-gap"><h2>分时偏差核验</h2><p>{{ evidenceLoading ? '正在核实本日可用资料…' : reviewGap(failure) }}</p><p>结算增量不能替代实际分时电量。选择有出清记录的申报，仍可核查申报与出清差异。</p></section>
       <section v-if="!selectedKey" class="panel next"><div><h2>从结果进入具体决策</h2><p>选中申报或决策日志，还原当时的理由；也可以针对结算资料记录待核实的问题。</p></div><button type="button" @click="setTask('decision')">查看决策记录</button><button type="button" @click="setTask('improvement')">记录改进事项</button></section>
     </template>
     <template v-else-if="task === 'decision'">
-      <section v-if="!selectedKey" class="panel decision-list"><p v-if="orderLoading || decisionLoading">正在读取当天决策记录…</p><header><h2>当天留下了哪些决策</h2><p>一次申报与一次判断分别作为复盘对象；同一天不代表已建立逐笔关联。</p></header><p v-if="!orderLoading && !decisionLoading && !orders.length && !decisions.length">{{ orderError || decisionError ? '记录暂不可读，不能确认当天是否留存了决策。' : '当天尚无可查看的申报或决策日志。可先核验结算资料，再记录需补证的问题。' }}</p><button v-for="o in orders" :key="o.id" type="button" class="decision-row" @click="choose(`order:${o.id}`)"><span><b>{{ declarationLabel(o) }}</b><small>{{ o.quoteRationale || '未留存报价依据' }}</small></span><ArrowUpRight :size="16" /></button><button v-for="d in decisions" :key="d.id" type="button" class="decision-row" @click="choose(`decision:${d.id}`)"><span><b>{{ d.decisionPoint }}</b><small>{{ d.judgement || '未记录判断摘要' }}</small></span><ArrowUpRight :size="16" /></button></section>
+      <section v-if="!selectedKey" class="panel decision-list"><p v-if="orderLoading || decisionLoading">正在读取当天决策记录…</p><SpotSkeleton v-if="orderLoading || decisionLoading" variant="rows" :rows="4" :title="false" :card="false" /><header><h2>当天留下了哪些决策</h2><p>一次申报与一次判断分别作为复盘对象；同一天不代表已建立逐笔关联。</p></header><p v-if="!orderLoading && !decisionLoading && !orders.length && !decisions.length">{{ orderError || decisionError ? '记录暂不可读，不能确认当天是否留存了决策。' : '当天尚无可查看的申报或决策日志。可先核验结算资料，再记录需补证的问题。' }}</p><button v-for="o in orders" :key="o.id" type="button" class="decision-row" @click="choose(`order:${o.id}`)"><span><b>{{ declarationLabel(o) }}</b><small>{{ o.quoteRationale || '未留存报价依据' }}</small></span><ArrowUpRight :size="16" /></button><button v-for="d in decisions" :key="d.id" type="button" class="decision-row" @click="choose(`decision:${d.id}`)"><span><b>{{ d.decisionPoint }}</b><small>{{ d.judgement || '未记录判断摘要' }}</small></span><ArrowUpRight :size="16" /></button></section>
       <section v-else-if="selectedOrder" class="panel decision-detail"><header><h2>{{ objectLabel }}</h2><button type="button" @click="openOriginal">核对原始申报 <ArrowUpRight :size="14" /></button></header><p class="notice">以下为单据当前保存的作业留痕。尚无完整的事前版本验证，不能把后补记录当作决策时已知信息，也不按最终盈亏给当时的决策打分。</p><ol class="timeline"><li v-for="e in retainedEvidence" :key="e.id"><div><h3>{{ e.title }}</h3><time v-if="e.at">留存于 {{ new Date(e.at).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false }) }}</time><span v-else class="muted">留存时点未核实</span></div><p>{{ e.text }}</p></li></ol><details v-if="missingEvidence.length"><summary>尚缺 {{ missingEvidence.length }} 项资料，可展开核对</summary><p v-for="e in missingEvidence" :key="e.id"><b>{{ e.title }}：</b>{{ e.text }}</p></details><div class="next"><p>需补证或改变申报方法时，写清下一次的触发条件与验证办法。</p><button class="primary" type="button" @click="setTask('improvement')">形成改进措施</button></div></section>
       <section v-else-if="selectedDecision" class="panel decision-detail"><h2>{{ selectedDecision.decisionPoint }}</h2><p class="notice">原始判断与复盘结论分开展示。当前尚未关联具体申报和结算，不显示单笔收益或胜率。</p><div class="original"><h3>当时的判断</h3><p>{{ selectedDecision.judgement || '未记录' }}</p><h3>判断依据</h3><p>{{ selectedDecision.rationale || '未记录' }}</p><span class="muted">{{ selectedDecision.author || '作者未记录' }} · 留存于 {{ selectedDecision.at ? new Date(selectedDecision.at).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false }) : '时点未核实' }}</span></div><form @submit.prevent="saveLesson"><label>这次判断应保留或改进什么<textarea v-model="lesson" rows="5" placeholder="分别说明：当时信息是否充分、推理是否合理、哪些结论仍需验证。不要仅用事后涨跌评价判断。" /></label><div class="form-actions"><button type="button" @click="setTask('improvement')">形成改进措施</button><button class="primary" type="submit" :disabled="savingLesson || !lesson.trim()">{{ savingLesson ? '保存中…' : '保存复盘结论' }}</button></div></form></section>
       <section v-else class="panel compact-gap"><h2>{{ selectionLoading ? '正在读取记录' : '该记录暂不可用' }}</h2><p>请核实交易日与当前授权，或重新选择复盘对象。</p></section>
@@ -179,6 +271,10 @@ async function saveLesson() {
     <ImprovementWorkbench v-else-if="!selectedKey || selectedOrder || selectedDecision" :key="`${selectedCompanyId}:${region}:${date}:${selectedKey}`" :context="context" :focus="focus" :saved-draft="improvementDrafts.get(draftKey)" :draft-key="draftKey" @draft="storeImprovementDraft" />
     <section v-else class="panel compact-gap"><h2>请先核实复盘对象</h2><p>指定记录尚不可用，不能将改进措施挂到其他对象。</p></section>
     </template>
+    </template>
+    <el-dialog v-model="archiveVisible" title="复盘报告目录" width="min(1120px, 96vw)" destroy-on-close><ReportArchivePanel v-if="archiveVisible" :company="selectedCompanyId" :region="region" @legacy="archiveVisible = false; openLegacyArchive()" /></el-dialog>
+    <el-dialog v-model="topicVisible" title="专题分析" width="min(1180px, 96vw)" :close-on-click-modal="false" :before-close="closeTopic" destroy-on-close><ReviewTopicWorkspace v-if="topicVisible" v-model:view="businessView" v-model:topic="topicMode" v-model:selection="periodSelection" v-model:price-selection="priceSelection" v-model:energy-selection="energySelection" :snapshot="topicSnapshot" :company="selectedCompanyId" :company-label="currentCompany?.name || '当前公司'" :region="region" :date="date" :busy="maintenanceBusy" @busy="maintenanceBusy = $event" @decision="openPeriodDecision" @material="acceptTopicMaterial" @independent="openIndependentTopics" /></el-dialog>
+    <el-dialog v-model="workpaperVisible" title="复盘图文底稿" width="min(1380px, 98vw)" :close-on-click-modal="false" :before-close="closeWorkpaper" destroy-on-close><ReportWorkpaperEditor v-if="workpaperSnapshot && workpaperVisible" :snapshot="workpaperSnapshot" :material="workpaperMaterial" @dirty="workpaperDirty = $event" /></el-dialog>
     <el-dialog v-model="assistantVisible" :title="assistant?.mode === 'report' ? '复盘报告草稿' : '复盘分析'" width="min(1180px, 96vw)" :close-on-click-modal="false">
       <ReviewAssistantWorkbench v-if="assistant" :key="assistant.snapshot.capturedAt" :snapshot="assistant.snapshot" :mode="assistant.mode" :saved-draft="reportDrafts.get(assistant.key)" @draft="storeReportDraft" @downloaded="markReportDownloaded" />
     </el-dialog>
@@ -192,5 +288,16 @@ async function saveLesson() {
 .object-bar { padding: 14px 18px; } .object-bar > div:first-child { display: flex; align-items: center; gap: 12px; min-width: 0; } .object-bar label { font-size: var(--font-sm); font-weight: 600; white-space: nowrap; } .object-bar select { width: min(430px, 58vw); } .object-bar > button { margin-left: auto; } .pagination { font-size: var(--font-sm); } .muted, .eyebrow { color: var(--muted); font-size: var(--font-sm); } .notice { padding: 12px 16px; border-radius: 8px; background: var(--panel-sub); margin: 0; font-size: var(--font-sm); color: var(--muted); line-height: 1.75; } .tasks { display: grid; grid-template-columns: repeat(3, 1fr); border-bottom: 1px solid var(--line); } .tasks button { justify-content: flex-start; padding: 14px 18px; border: 0; border-radius: 8px 8px 0 0; background: transparent; gap: 12px; border-bottom: 2px solid transparent; } .tasks button span { color: var(--muted); font-size: var(--font-sm); } .tasks button[aria-pressed=true] { border-bottom-color: var(--primary); background: var(--primary-tint); color: var(--primary); }
 h2 { font-size: var(--font-lg); margin: 0; } h3 { font-size: var(--font-md); margin: 0; } p { line-height: 1.75; font-size: var(--font-sm); color: var(--muted); } .object-summary, .compact-gap, .decision-list, .decision-detail { padding: 20px; } .object-summary > div:first-child { flex: 1; min-width: 230px; } .object-summary h2 { margin-top: 8px; } .object-summary p { margin-bottom: 0; } .summary-facts { font-size: var(--font-sm); gap: 18px; } .summary-facts b { display: block; margin-top: 6px; } .next { justify-content: space-between; } section.next { padding: 20px; } .next > div, .next > p { flex: 1; min-width: 250px; } header { justify-content: space-between; } .decision-list header { display: block; } .decision-row { padding: 16px 0; width: 100%; justify-content: space-between; text-align: left; border: 0; border-top: 1px solid var(--line); border-radius: 0; } .decision-row span { min-width: 0; } .decision-row b, .decision-row small { display: block; } .decision-row small { font-size: var(--font-sm); color: var(--muted); margin-top: 6px; line-height: 1.6; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .decision-detail .notice { margin-top: 16px; } .timeline { list-style: none; padding: 0; margin: 20px 0; } .timeline li { position: relative; padding: 0 0 20px 24px; border-left: 1px solid var(--line); margin-left: 5px; } .timeline li::before { content: ''; position: absolute; width: 8px; height: 8px; border-radius: 50%; background: var(--primary); left: -4px; top: 5px; } .timeline li > div { display: flex; flex-wrap: wrap; align-items: baseline; gap: 14px; } .timeline time { color: var(--muted); font-size: var(--font-xs); } .timeline p, .original p { white-space: pre-wrap; overflow-wrap: anywhere; color: var(--text); } .original { padding: 20px 0; } form { margin-top: 20px; padding-top: 20px; border-top: 1px solid var(--line); } form label { display: flex; flex-direction: column; gap: 10px; } textarea { resize: vertical; line-height: 1.7; } .form-actions { justify-content: flex-end; margin-top: 12px; }
+/* 等待态骨架容器：与成品面板同框同内边距，头部保留真实标题 + 慢速等待行（沿用
+   PanelFetchLoading 的节奏约定：安静不催促，prefers-reduced-motion 下停用动效）。 */
+.sk-panel { padding: 18px; display: flex; flex-direction: column; gap: 12px; }
+.sk-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.sk-status { display: inline-flex; align-items: center; gap: 8px; color: var(--muted); font-size: var(--font-sm); }
+.sk-spinner { flex: none; width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--line-soft); border-top-color: var(--primary); animation: review-sk-spin 0.9s linear infinite; }
+@keyframes review-sk-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .sk-spinner { animation: none; } }
+/* 骨架扫光对齐复盘中心等待态的既定慢节奏（同 PanelFetchLoading 的 4.8s「安静不催促」；
+   只覆盖本页骨架，不改 SpotSkeleton 共享组件在其他页面的节奏） */
+.sk-panel :deep(.sk-bar), .sk-panel :deep(.sk-block), .decision-list :deep(.sk-bar) { animation-duration: 4.8s; }
 @media(max-width: 850px) { .tasks button { flex-direction: column; align-items: flex-start; gap: 4px; padding: 12px; } .heading { gap: 10px; } .object-bar > button { margin-left: 0; } } @media(max-width: 520px) { .header-actions { margin-left: 0; } .tasks button span { display: none; } .object-bar > div:first-child { flex-direction: column; align-items: stretch; width: 100%; } .object-bar select { width: 100%; } .date-control input { max-width: 155px; } .decision-row { gap: 16px; } }
 </style>
