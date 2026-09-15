@@ -3,20 +3,42 @@ import { computed, onMounted, onUnmounted, reactive, ref, shallowRef, watch } fr
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { ApiError } from '@/services/api'
 import { selectedCompanyId } from '@/services/company/companyContext'
+import { currentRegion } from '@/services/region/regionContext'
 import { parseGridNodeName } from '@/services/gridGeo/nodeNameParser'
-import { onRegionChange } from '@/composables/useRegionReload'
-import { Clock3, Crosshair, Database, History, LocateFixed, MapPinned, Pencil, Plus, RefreshCw, RotateCcw, Search, Waypoints, X } from 'lucide-vue-next'
+import { Clock3, Crosshair, History, LocateFixed, MapPinned, Pencil, Plus, RefreshCw, RotateCcw, Search, Waypoints, X } from 'lucide-vue-next'
 import GridOperatorProfileBanner from './GridOperatorProfileBanner.vue'
+import GridGeoNodeTable from './GridGeoNodeTable.vue'
+import GridGeoStationTable from './GridGeoStationTable.vue'
+import GridObjectDrawer from './GridObjectDrawer.vue'
+import GridObjectContextBar from './GridObjectContextBar.vue'
+import { useGridObjectContext } from './useGridObjectContext'
+import { nodeListStatistics } from './nodeTable'
 import {
   createGridGeoNode, fetchGridGeoManifest, fetchGridGeoNodeRevisions, fetchGridGeoNodes,
   revertGridGeoNode, updateGridGeoNode,
 } from './client'
-import type { GridGeoLocationStatus, GridGeoNode, GridGeoNodeKind, GridGeoRevision, GridGeoVisibility, GridOperatorProfile } from './types'
+import type { GridGeoLocationStatus, GridGeoNode, GridGeoNodeKind, GridGeoNodeListResponse, GridGeoNodeStationGroup, GridGeoRevision, GridGeoVisibility, GridOperatorProfile } from './types'
 
 const loading = ref(false)
+const objectContext = useGridObjectContext()
 const saving = ref(false)
 const nodes = shallowRef<GridGeoNode[]>([])
+const stationGroups = shallowRef<GridGeoNodeStationGroup[]>([])
+const totalStations = ref<number | null>(null)
 const canWrite = ref(false)
+const error = ref('')
+const historyError = ref('')
+const historyLoading = ref(false)
+const listSource = ref('')
+const dataMissing = ref(false)
+const listSummary = ref<GridGeoNodeListResponse['data']['summary'] | null>(null)
+const layout = ref<'table' | 'cards'>('table')
+const grouped = ref(true)
+const stationMode = computed(() => layout.value === 'table' && grouped.value)
+const detailOpen = ref(false)
+const detailNode = ref<GridGeoNode | null>(null)
+const detailObject = computed(() => detailNode.value ? { kind: 'node' as const, id: detailNode.value.nodeId, regionId: detailNode.value.regionId, gridOperator: detailNode.value.gridOperator } : null)
+const scopeKey = computed(() => `${currentRegion.value.id}:${selectedCompanyId.value ?? ''}`)
 const operatorProfile = ref<GridOperatorProfile | null>(null)
 const keyword = ref('')
 const kindFilter = ref<'all' | GridGeoNodeKind>('all')
@@ -27,12 +49,14 @@ const editing = ref<GridGeoNode | null>(null)
 const history = shallowRef<GridGeoRevision<GridGeoNode>[]>([])
 const historyNode = ref<GridGeoNode | null>(null)
 const page = ref(1)
-const pageSize = ref(60)
-const total = ref(0)
+const pageSize = computed(() => stationMode.value ? 20 : 60)
+const total = ref<number | null>(null)
 const totalPages = ref(1)
 let filterTimer: ReturnType<typeof setTimeout> | null = null
 let loadRequestId = 0
 let detailRequestId = 0
+let writeRequestId = 0
+let active = true
 
 const kinds = computed<Array<{ value: GridGeoNodeKind; label: string }>>(() => [
   { value: 'pricing', label: operatorProfile.value?.terminology.pricingNode ?? '定价节点' }, { value: 'bus', label: '母线节点' },
@@ -77,37 +101,72 @@ const applyParsedVoltage = () => {
 }
 
 const filtered = computed(() => nodes.value)
-const summary = computed(() => ({
-  total: total.value,
-  located: filtered.value.filter((node) => node.locationStatus === 'located').length,
-  approximate: filtered.value.filter((node) => node.locationStatus === 'approximate').length,
-  unresolved: filtered.value.filter((node) => node.locationStatus === 'unresolved').length,
-}))
+const nodeQuery = computed((): Record<string, string | number> => {
+  const query: Record<string, string | number> = {}
+  const object = objectContext.reference.value
+  if (object) { query.objectKind = object.kind; query.objectId = object.id }
+  if (keyword.value.trim()) query.keyword = keyword.value.trim()
+  if (kindFilter.value !== 'all') query.nodeKind = kindFilter.value
+  if (locationFilter.value !== 'all') query.locationStatus = locationFilter.value
+  return query
+})
+const stationScopeKey = computed(() => JSON.stringify([scopeKey.value, nodeQuery.value]))
+const hasRows = computed(() => stationMode.value ? stationGroups.value.length > 0 : filtered.value.length > 0)
+const pageNodeCount = computed(() => stationMode.value ? stationGroups.value.reduce((sum, group) => sum + group.nodeCount, 0) : filtered.value.length)
+const summary = computed(() => nodeListStatistics(listSummary.value, total.value))
+const formatCount = (value: number | null) => value === null ? '未提供' : value.toLocaleString('zh-CN')
 
 function kindLabel(value: GridGeoNodeKind) { return kinds.value.find((item) => item.value === value)?.label ?? value }
 function statusLabel(value: GridGeoLocationStatus) { return locationStates.find((item) => item.value === value)?.label ?? value }
-function formatTime(value: string) { return new Date(value).toLocaleString('zh-CN', { hour12: false }) }
+function formatTime(value: string | null | undefined) {
+  if (!value || !Number.isFinite(Date.parse(value))) return '未提供'
+  return new Date(value).toLocaleString('zh-CN', { hour12: false, timeZone: 'Asia/Shanghai' })
+}
 
 async function load() {
+  if (filterTimer) { clearTimeout(filterTimer); filterTimer = null }
   const requestId = ++loadRequestId
+  const requestScope = scopeKey.value
   loading.value = true
+  error.value = ''
+  nodes.value = []
+  stationGroups.value = []
+  totalStations.value = null
+  listSummary.value = null
+  total.value = null
+  listSource.value = ''
+  dataMissing.value = false
+  const object = objectContext.reference.value
+  if (objectContext.hasContext.value && !object) {
+    error.value = '对象关联与当前公司或地区不一致，请清除关联后查看。'
+    canWrite.value = false
+    loading.value = false
+    return
+  }
   try {
     const [list, manifest] = await Promise.all([fetchGridGeoNodes({
-      page: page.value, pageSize: pageSize.value,
-      ...(keyword.value.trim() ? { keyword: keyword.value.trim() } : {}),
-      ...(kindFilter.value !== 'all' ? { nodeKind: kindFilter.value } : {}),
-      ...(locationFilter.value !== 'all' ? { locationStatus: locationFilter.value } : {}),
+      ...nodeQuery.value, page: page.value, pageSize: pageSize.value,
+      ...(stationMode.value ? { groupBy: 'station' } : {}),
     }), fetchGridGeoManifest().catch(() => null)])
-    if (requestId !== loadRequestId) return
+    if (!active || requestId !== loadRequestId || requestScope !== scopeKey.value) return
+    if (stationMode.value && !Array.isArray(list.data?.groups)) throw new Error('尚未取得完整站级分组，请重试读取。')
     nodes.value = list.data?.items ?? []
-    total.value = list.data?.pagination?.total ?? list.total ?? 0
+    stationGroups.value = list.data?.groups ?? []
+    total.value = stationMode.value ? list.data?.totalNodes ?? null : list.data?.pagination?.total ?? list.total ?? null
+    totalStations.value = stationMode.value ? list.data?.pagination?.total ?? null : null
+    listSummary.value = list.data?.summary ?? null
+    listSource.value = list.mock ? '模拟数据' : list.sourceType === 'DB' ? '资产资料' : '来源未确认'
+    dataMissing.value = list.data?.dataAvailability?.status === 'missing'
     totalPages.value = list.data?.pagination?.totalPages ?? 1
     canWrite.value = Boolean(manifest?.capabilities.canWrite)
   } catch (cause) {
-    if (requestId !== loadRequestId) return
-    ElMessage.error(cause instanceof Error ? cause.message : '节点资产加载失败')
-  } finally { if (requestId === loadRequestId) loading.value = false }
+    if (!active || requestId !== loadRequestId || requestScope !== scopeKey.value) return
+    canWrite.value = false
+    error.value = cause instanceof ApiError && cause.status === 403 ? '当前公司或地区无节点资产查看权限' : cause instanceof Error ? cause.message : '节点资产加载失败'
+  } finally { if (active && requestId === loadRequestId && requestScope === scopeKey.value) loading.value = false }
 }
+
+function openDetail(node: GridGeoNode) { detailNode.value = node; detailOpen.value = true }
 
 function resetForm() {
   Object.assign(form, {
@@ -118,8 +177,9 @@ function resetForm() {
   })
 }
 
-function openCreate() { editing.value = null; resetForm(); editorOpen.value = true }
+function openCreate() { if (!canWrite.value) return; editing.value = null; resetForm(); editorOpen.value = true }
 function openEdit(node: GridGeoNode) {
+  if (!canWrite.value) return
   editing.value = node
   Object.assign(form, {
     nodeId: node.nodeId, nodeName: node.nodeName, aliasesText: node.aliases.join('、'), nodeKind: node.nodeKind,
@@ -152,11 +212,14 @@ function locationPayload() {
 }
 
 async function save() {
+  if (!canWrite.value || saving.value) return
   if (!form.nodeName.trim()) return ElMessage.warning('请填写节点名称')
   if (!editing.value && !/^[a-z0-9][a-z0-9-]{2,80}$/.test(form.nodeId)) return ElMessage.warning('ID 请使用 3-81 位小写字母、数字或连字符')
   if (form.locationStatus !== 'unresolved' && (!Number.isFinite(Number(form.longitude)) || !Number.isFinite(Number(form.latitude)))) return ElMessage.warning('请在空间拾取区点选坐标')
   if (!form.reason.trim()) return ElMessage.warning('请填写本次变更原因')
   saving.value = true
+  const requestId = ++writeRequestId
+  const requestScope = scopeKey.value
   const aliases = form.aliasesText.split(/[、,\n]/).map((item) => item.trim()).filter(Boolean)
   const location = locationPayload()
   const base = {
@@ -169,87 +232,134 @@ async function save() {
     if (editing.value) {
       const changes = { ...base, ...(location ? { location } : {}) }
       await updateGridGeoNode(editing.value.nodeId, { expectedVersion: editing.value.version, changes, reason: form.reason.trim(), evidence: location?.evidence ?? [] })
+      if (!active || requestId !== writeRequestId || requestScope !== scopeKey.value) return
       ElMessage.success('节点资产已更新')
     } else {
       await createGridGeoNode({ nodeId: form.nodeId, ...base, location, visibility: form.visibility, reason: form.reason.trim(), evidence: location?.evidence ?? [] })
+      if (!active || requestId !== writeRequestId || requestScope !== scopeKey.value) return
       ElMessage.success('节点资产已创建')
     }
     editorOpen.value = false
+    detailOpen.value = false
+    detailNode.value = null
     await load()
   } catch (cause) {
+    if (!active || requestId !== writeRequestId || requestScope !== scopeKey.value) return
     if (cause instanceof ApiError && cause.status === 409) {
       ElMessage.warning('资产版本已变化，已刷新最新数据，请重新确认后保存')
       editorOpen.value = false
+      detailOpen.value = false
+      detailNode.value = null
       await load()
     } else ElMessage.error(cause instanceof Error ? cause.message : '保存失败')
-  } finally { saving.value = false }
+  } finally { if (active && requestId === writeRequestId && requestScope === scopeKey.value) saving.value = false }
 }
 
 async function openHistory(node: GridGeoNode) {
   const requestId = ++detailRequestId
+  const requestScope = scopeKey.value
   historyNode.value = node; historyOpen.value = true; history.value = []
+  historyLoading.value = true
+  historyError.value = ''
   try {
     const rows = (await fetchGridGeoNodeRevisions(node.nodeId)).rows
-    if (requestId === detailRequestId) history.value = rows
+    if (active && requestId === detailRequestId && requestScope === scopeKey.value) history.value = rows
   }
-  catch (cause) { ElMessage.error(cause instanceof Error ? cause.message : '历史加载失败') }
+  catch (cause) { if (active && requestId === detailRequestId && requestScope === scopeKey.value) historyError.value = cause instanceof Error ? cause.message : '历史加载失败' }
+  finally { if (active && requestId === detailRequestId && requestScope === scopeKey.value) historyLoading.value = false }
 }
 
 async function revert(revision: GridGeoRevision<GridGeoNode>) {
-  if (!historyNode.value || !revision.before) return
+  if (!canWrite.value || !historyNode.value || !revision.before) return
   const targetNode = historyNode.value
-  const targetCompanyId = selectedCompanyId.value
+  const targetScope = scopeKey.value
+  const requestId = ++writeRequestId
   const reason = await ElMessageBox.prompt('请说明回退原因，操作将形成新版本。', `回退至 v${revision.assetVersion - 1}`, { inputPattern: /\S+/, inputErrorMessage: '回退原因不能为空', confirmButtonText: '确认回退', cancelButtonText: '取消' }).catch(() => null)
   if (!reason) return
-  if (targetCompanyId !== selectedCompanyId.value) {
-    ElMessage.warning('公司作用域已切换，本次回退已取消')
+  if (!active || targetScope !== scopeKey.value || requestId !== writeRequestId) {
+    if (active) ElMessage.warning('公司或地区已切换，本次回退已取消')
     return
   }
   try {
     await revertGridGeoNode(targetNode.nodeId, revision.revisionId, targetNode.version, reason.value)
+    if (!active || targetScope !== scopeKey.value || requestId !== writeRequestId) return
     ElMessage.success('已生成回退版本')
     historyOpen.value = false
+    detailOpen.value = false
+    detailNode.value = null
     await load()
-  } catch (cause) { ElMessage.error(cause instanceof Error ? cause.message : '回退失败') }
+  } catch (cause) {
+    if (!active || targetScope !== scopeKey.value || requestId !== writeRequestId) return
+    if (cause instanceof ApiError && cause.status === 409) {
+      ElMessage.warning('资产版本已变化，请查看最新历史后重新确认')
+      historyOpen.value = false
+      detailOpen.value = false
+      detailNode.value = null
+      await load()
+    } else ElMessage.error(cause instanceof Error ? cause.message : '回退失败')
+  }
 }
 
-onMounted(load)
-onRegionChange(() => {
+const contextStamp = () => JSON.stringify([scopeKey.value, objectContext.hasContext.value, objectContext.reference.value])
+let lastContextStamp = ''
+onMounted(() => { lastContextStamp = contextStamp(); void load() })
+function resetScope() {
+  if (filterTimer) { clearTimeout(filterTimer); filterTimer = null }
   loadRequestId += 1
   detailRequestId += 1
+  writeRequestId += 1
   nodes.value = []
-  total.value = 0
+  stationGroups.value = []
+  totalStations.value = null
+  listSummary.value = null
+  total.value = null
+  totalPages.value = 1
   page.value = 1
   editing.value = null
   editorOpen.value = false
   historyOpen.value = false
   historyNode.value = null
   history.value = []
-  return load()
-})
-watch(selectedCompanyId, () => {
-  loadRequestId += 1
-  detailRequestId += 1
-  nodes.value = []
-  total.value = 0
-  page.value = 1
-  editing.value = null
-  editorOpen.value = false
-  historyOpen.value = false
-  historyNode.value = null
-  history.value = []
+  historyError.value = ''
+  historyLoading.value = false
+  detailOpen.value = false
+  detailNode.value = null
+  saving.value = false
   canWrite.value = false
   void load()
+}
+watch([scopeKey, () => objectContext.active.value, () => objectContext.hasContext.value, () => JSON.stringify(objectContext.reference.value)], () => {
+  if (!objectContext.active.value) {
+    loadRequestId += 1; detailRequestId += 1; writeRequestId += 1
+    if (filterTimer) { clearTimeout(filterTimer); filterTimer = null }
+    detailOpen.value = false; editorOpen.value = false; historyOpen.value = false; saving.value = false
+    return
+  }
+  const nextContextStamp = contextStamp()
+  if (nextContextStamp === lastContextStamp) { if (loading.value) void load(); return }
+  lastContextStamp = nextContextStamp
+  resetScope()
 })
+watch(stationMode, () => { page.value = 1; detailOpen.value = false; detailNode.value = null; void load() })
 watch([keyword, kindFilter, locationFilter], () => {
+  loadRequestId += 1
+  nodes.value = []
+  stationGroups.value = []
+  totalStations.value = null
+  total.value = null
+  listSummary.value = null
+  error.value = ''
+  loading.value = true
+  detailOpen.value = false
+  detailNode.value = null
   page.value = 1
   if (filterTimer) clearTimeout(filterTimer)
   filterTimer = setTimeout(load, 250)
 })
-onUnmounted(() => { if (filterTimer) clearTimeout(filterTimer) })
+onUnmounted(() => { active = false; loadRequestId += 1; detailRequestId += 1; writeRequestId += 1; if (filterTimer) clearTimeout(filterTimer) })
 
 function changePage(next: number) {
-  if (next < 1 || next > totalPages.value || next === page.value) return
+  if (loading.value || next < 1 || next > totalPages.value || next === page.value) return
   page.value = next
   void load()
 }
@@ -259,36 +369,58 @@ function changePage(next: number) {
   <section class="node-page">
     <GridOperatorProfileBanner compact @profile="operatorProfile = $event" />
     <header class="hero">
-      <div><span class="eyebrow">GRID SPATIAL ASSET REGISTRY</span><h1>{{ operatorProfile?.terminology.pricingNode ?? '节点' }}空间资产台</h1><p>管理{{ operatorProfile?.terminology.pricingNode ?? '定价节点' }}、母线与变电站的物理位置；未定位资产保留身份，不以伪造坐标补位。</p></div>
-      <div class="hero-actions"><button @click="load"><RefreshCw :size="15" />刷新</button><button class="primary" :disabled="!canWrite" @click="openCreate"><Plus :size="16" />新建节点</button></div>
+      <div><h1>{{ operatorProfile?.terminology.pricingNode ?? '节点' }}空间资产</h1><p>{{ currentRegion.shortName }} · 按站与电压查阅节点，打开详情查看关联信息或维护资料。</p></div>
+      <div class="hero-actions"><button :disabled="loading" @click="load"><RefreshCw :size="15" />刷新</button><button class="primary" :disabled="!canWrite" @click="openCreate"><Plus :size="16" />新建节点</button></div>
     </header>
+    <GridObjectContextBar />
 
-    <div class="metrics">
-      <article><Waypoints /><span><small>可见节点</small><strong>{{ summary.total }}</strong></span></article>
-      <article class="located"><LocateFixed /><span><small>本页已定位</small><strong>{{ summary.located }}</strong></span></article>
-      <article class="approx"><MapPinned /><span><small>本页近似位置</small><strong>{{ summary.approximate }}</strong></span></article>
-      <article class="unresolved"><Crosshair /><span><small>本页待补录</small><strong>{{ summary.unresolved }}</strong></span></article>
+    <div class="metrics" aria-label="完整筛选范围统计" :aria-busy="loading">
+      <article><Waypoints :size="19" /><span><small>匹配节点</small><strong>{{ loading ? '…' : formatCount(summary.total) }}</strong></span></article>
+      <article class="located"><LocateFixed :size="19" /><span><small>已定位</small><strong>{{ loading ? '…' : formatCount(summary.located) }}</strong></span></article>
+      <article class="approx"><MapPinned :size="19" /><span><small>近似位置</small><strong>{{ loading ? '…' : formatCount(summary.approximate) }}</strong></span></article>
+      <article class="unresolved"><Crosshair :size="19" /><span><small>未定位</small><strong>{{ loading ? '…' : formatCount(summary.unresolved) }}</strong></span></article>
     </div>
+    <p class="statistics-note">完整筛选范围统计 · 位置状态仅反映定位资料，未定位不代表停运。<span v-if="!loading && !error && summary.located === null"> 位置统计暂未提供。</span></p>
 
     <div class="toolbar">
-      <label class="search"><Search :size="16" /><input v-model="keyword" placeholder="搜索节点名称、别名或 ID" /></label>
-      <select v-model="kindFilter"><option value="all">全部类型</option><option v-for="item in kinds" :key="item.value" :value="item.value">{{ item.label }}</option></select>
-      <select v-model="locationFilter"><option value="all">全部位置状态</option><option v-for="item in locationStates" :key="item.value" :value="item.value">{{ item.label }}</option></select>
-      <span class="truth"><Database :size="14" />DB 版本化资产 · 非模拟数据</span>
+      <label class="search"><Search :size="16" /><input v-model="keyword" aria-label="搜索节点名称、所属站、别名或 ID" placeholder="搜索节点名称、所属站、别名或 ID" /></label>
+      <select v-model="kindFilter" aria-label="节点类型"><option value="all">全部类型</option><option v-for="item in kinds" :key="item.value" :value="item.value">{{ item.label }}</option></select>
+      <select v-model="locationFilter" aria-label="节点位置状态"><option value="all">全部位置状态</option><option v-for="item in locationStates" :key="item.value" :value="item.value">{{ item.label }}</option></select>
+      <span v-if="listSource" class="truth" :class="{ simulated: listSource === '模拟数据' }">{{ listSource }}</span>
     </div>
 
-    <div v-loading="loading" class="node-grid">
+    <div class="view-tools">
+      <div role="group" aria-label="节点展示方式"><button :aria-pressed="layout === 'table'" @click="layout = 'table'">紧凑表格</button><button :aria-pressed="layout === 'cards'" @click="layout = 'cards'">资产卡片</button></div>
+      <label v-if="layout === 'table'" class="group-switch"><input v-model="grouped" type="checkbox" />同站节点合并</label>
+      <span>{{ stationMode ? '默认一站一行，点击展开节点；筛选后只汇总匹配节点。' : '所属站及标注“名称解析”的电压来自名称，仅供查阅。' }}</span>
+    </div>
+
+    <div v-if="error" class="load-error" role="alert"><strong>节点资产读取失败</strong><span>{{ error }}</span><button @click="load">重试</button></div>
+    <div v-else-if="loading" class="empty" role="status">正在读取节点资产…</div>
+    <div v-else-if="!hasRows" class="empty"><Crosshair :size="28" /><strong>{{ dataMissing ? '当前范围的节点资产尚未接入' : objectContext.hasContext.value ? '当前对象没有匹配的关联节点' : '没有匹配的节点资产' }}</strong><span>{{ dataMissing ? '节点资料可用后再查阅，暂不显示其他范围的数据。' : '可调整名称、类型或位置状态筛选。' }}{{ objectContext.hasContext.value ? '清除对象关联后可查看完整目录。' : '' }}</span></div>
+    <GridGeoStationTable v-else-if="stationMode" :groups="stationGroups" :query="nodeQuery" :scope-key="stationScopeKey" :selected-id="detailOpen ? detailNode?.nodeId : null" @select="openDetail" />
+    <GridGeoNodeTable v-else-if="layout === 'table'" :nodes="filtered" :grouped="grouped" :selected-id="detailOpen ? detailNode?.nodeId : null" @select="openDetail" />
+    <div v-else class="node-grid">
       <article v-for="node in filtered" :key="node.nodeId" class="node-card" :class="node.locationStatus">
         <div class="card-glow" />
         <header><span class="node-icon"><Waypoints :size="19" /></span><div><small>{{ kindLabel(node.nodeKind) }} · {{ node.voltageLevelKv ? `${node.voltageLevelKv} kV` : '电压待补' }}</small><h3>{{ node.nodeName }}</h3></div><span class="location-badge">{{ statusLabel(node.locationStatus) }}</span></header>
-        <p class="id">{{ node.nodeId }}</p>
         <div class="location-line"><MapPinned :size="15" /><span v-if="node.location"><strong>{{ node.location.locationLabel || '已定位' }}</strong><small>{{ node.location.longitude.toFixed(5) }}, {{ node.location.latitude.toFixed(5) }}</small></span><span v-else><strong>坐标待治理</strong><small>可先与价格、披露字段绑定</small></span></div>
-        <div class="chips"><span>{{ node.gridOperator.toUpperCase() }}</span><span>v{{ node.version }}</span><span v-if="node.overrideState.hasOverrides">已修订 {{ node.overrideState.count }}</span><span>{{ node.visibility }}</span></div>
-        <footer><button @click="openHistory(node)"><History :size="14" />历史</button><button :disabled="!canWrite" class="primary" @click="openEdit(node)"><Pencil :size="14" />编辑卡片</button></footer>
+        <footer><button class="primary" :aria-label="`查看${node.nodeName}详情`" @click="openDetail(node)">查看详情</button></footer>
       </article>
       <div v-if="!loading && !filtered.length" class="empty"><Crosshair :size="34" /><strong>没有匹配的节点资产</strong><span>可调整筛选，或创建一个未定位节点后逐步补录。</span></div>
     </div>
-    <footer v-if="totalPages > 1" class="pager"><button :disabled="page <= 1" @click="changePage(page - 1)">上一页</button><span>第 {{ page }} / {{ totalPages }} 页 · {{ total.toLocaleString('zh-CN') }} 个节点</span><button :disabled="page >= totalPages" @click="changePage(page + 1)">下一页</button></footer>
+    <footer v-if="!error && total !== null" class="pager"><button :disabled="loading || page <= 1" aria-label="上一页节点" @click="changePage(page - 1)">上一页</button><span>第 {{ page }} / {{ totalPages }} 页 · <template v-if="stationMode">本页 {{ stationGroups.length }} 个站组（{{ pageNodeCount }} 个匹配节点） / 共 {{ formatCount(totalStations) }} 个站组</template><template v-else>本页 {{ filtered.length }} 条 / 共 {{ formatCount(total) }} 个节点</template></span><button :disabled="loading || page >= totalPages" aria-label="下一页节点" @click="changePage(page + 1)">下一页</button></footer>
+
+    <GridObjectDrawer v-model="detailOpen" :object="detailObject" :date="objectContext.date.value" :from="objectContext.timeWindow.value?.from" :to="objectContext.timeWindow.value?.to">
+      <template #management>
+        <section v-if="detailNode" class="node-management">
+          <h3>资产资料维护</h3>
+          <p v-if="!canWrite">当前账号可查阅资料和历史；编辑需相应权限。</p>
+          <dl><div><dt>节点 ID</dt><dd>{{ detailNode.nodeId }}</dd></div><div><dt>当前版本</dt><dd>v{{ detailNode.version }}</dd></div><div><dt>可见范围</dt><dd>{{ { company: '公司', user: '个人', public: '公共' }[detailNode.visibility] }}</dd></div><div><dt>更新日期</dt><dd>{{ formatTime(detailNode.storageMeta.updatedAt) }}</dd></div></dl>
+          <div><button @click="openHistory(detailNode)"><History :size="14" />版本历史</button><button :disabled="!canWrite" class="primary" @click="openEdit(detailNode)"><Pencil :size="14" />编辑资料</button></div>
+        </section>
+      </template>
+    </GridObjectDrawer>
 
     <el-drawer v-model="editorOpen" size="min(580px, 96vw)" append-to-body :with-header="false">
       <div class="editor">
@@ -317,7 +449,7 @@ function changePage(next: number) {
     </el-drawer>
 
     <el-drawer v-model="historyOpen" size="min(520px, 96vw)" append-to-body :with-header="false">
-      <div class="history-panel"><header><div><small>IMMUTABLE AUDIT TRAIL</small><h2>版本历史</h2><p>{{ historyNode?.nodeName }} · 当前 v{{ historyNode?.version }}</p></div><button class="icon-btn" @click="historyOpen = false"><X /></button></header><div class="timeline"><article v-for="revision in history" :key="revision.revisionId"><span class="dot"><Clock3 /></span><div><header><strong>v{{ revision.assetVersion }} · {{ revision.operation }}</strong><time>{{ formatTime(revision.createdAt) }}</time></header><p>{{ revision.reason || '系统建档' }}</p><small>{{ revision.actor.userId }} · {{ revision.actor.role }}</small><button v-if="revision.before && revision.operation !== 'REVERT' && canWrite" @click="revert(revision)"><RotateCcw :size="13" />回退到本次变更前</button></div></article></div></div>
+      <div class="history-panel"><header><div><small>资产变更记录</small><h2>版本历史</h2><p>{{ historyNode?.nodeName }} · 当前 v{{ historyNode?.version }}</p></div><button class="icon-btn" aria-label="关闭版本历史" @click="historyOpen = false"><X /></button></header><p v-if="historyLoading" role="status">正在读取历史…</p><p v-else-if="historyError" role="alert">{{ historyError }}</p><p v-else-if="!history.length">暂无版本历史</p><div v-else class="timeline"><article v-for="revision in history" :key="revision.revisionId"><span class="dot"><Clock3 /></span><div><header><strong>v{{ revision.assetVersion }} · {{ revision.operation }}</strong><time>{{ formatTime(revision.createdAt) }}</time></header><p>{{ revision.reason || '系统建档' }}</p><small>{{ revision.actor.userId }} · {{ revision.actor.role }}</small><button v-if="revision.before && revision.operation !== 'REVERT' && canWrite" @click="revert(revision)"><RotateCcw :size="13" />回退到本次变更前</button></div></article></div></div>
     </el-drawer>
   </section>
 </template>
@@ -335,4 +467,13 @@ button { display: inline-flex; align-items: center; justify-content: center; gap
 .pager { display: flex; align-items: center; justify-content: center; gap: 12px; margin: 18px 0 4px; color: #6f8994; font-size: var(--font-xs); }
 @media (max-width: 900px) { .node-page { padding: 12px; }.hero { align-items: start; flex-direction: column; gap: 16px; }.metrics { grid-template-columns: 1fr 1fr; }.toolbar { align-items: stretch; flex-direction: column; }.truth { padding: 4px; } }
 @media (max-width: 560px) { .metrics { grid-template-columns: 1fr; }.form-grid { grid-template-columns: 1fr; }.wide { grid-column: auto; }.state-switch { grid-template-columns: 1fr; } }
+.node-page { padding: 16px 20px; background: var(--surface-muted, #f3f6f8); }
+.hero { align-items: center; padding: 14px 18px; border-radius: 12px; box-shadow: none; background: #103943; }.hero h1 { margin: 0 0 4px; font-size: var(--font-22, 22px); }.hero p { color: #c2dce1; font-size: var(--font-sm, 14px); }
+.metrics { gap: 10px; margin: 12px 0 6px; }.metrics article { gap: 10px; padding: 9px 14px; border-radius: 9px; box-shadow: none; }.metrics article span { flex: 1; flex-direction: row; align-items: center; justify-content: space-between; gap: 10px; }.metrics small { color: #607681; }.metrics strong { font-size: var(--font-20, 20px); }.statistics-note { margin: 0 0 10px; color: #617984; font-size: var(--font-xs, 12px); line-height: 1.5; }
+.toolbar { padding: 9px 10px; border-radius: 9px; }.view-tools { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; padding: 12px 0; color: #627985; font-size: var(--font-xs, 12px); }.view-tools [role="group"] { display: flex; gap: 4px; }.view-tools button { padding: 6px 11px; }.view-tools button[aria-pressed="true"] { color: #087f79; border-color: #65b2a5; background: #e9f7f2; }.group-switch { display: flex; align-items: center; gap: 6px; }.group-switch input { accent-color: #087f79; }
+.load-error { display: flex; min-height: 170px; flex-direction: column; align-items: center; justify-content: center; gap: 10px; padding: 16px; border: 1px solid #e5c9c1; border-radius: 10px; background: #fff6f2; color: #9a452b; }.empty { min-height: 170px; padding: 15px; text-align: center; }.simulated { color: #9a6617; font-weight: 600; }.pager { flex-wrap: wrap; }.node-card footer { margin-top: 12px; }
+.node-management { padding: 16px; border: 1px solid #d8e4e9; border-radius: 10px; color: #294550; }.node-management h3 { margin: 0 0 12px; }.node-management p { color: #617985; font-size: var(--font-xs, 12px); }.node-management dl > div { display: grid; grid-template-columns: 90px 1fr; gap: 10px; margin: 10px 0; }.node-management dt { color: #617985; }.node-management dd { margin: 0; overflow-wrap: anywhere; }.node-management > div { display: flex; flex-wrap: wrap; gap: 8px; }
+button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 2px solid #148b8c; outline-offset: 3px; }
+@media (max-width: 900px) { .node-page { padding: 10px; }.hero { align-items: stretch; gap: 10px; }.hero-actions { justify-content: flex-end; }.toolbar { gap: 8px; }.metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }.metrics article { padding: 9px; }.view-tools > span { flex-basis: 100%; }.search { min-width: 0; } }
+@media (max-width: 420px) { .metrics article > svg { display: none; }.metrics article span { align-items: flex-start; flex-direction: column; gap: 3px; }.hero h1 { font-size: var(--font-20, 20px); } }
 </style>

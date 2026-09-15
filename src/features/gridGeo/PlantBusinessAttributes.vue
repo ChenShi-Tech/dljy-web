@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, inject, onBeforeUnmount, ref, watch } from 'vue'
+import { routeLocationKey } from 'vue-router'
 import { Activity, ArrowUpRight, BarChart3, CircleAlert, Gauge, RefreshCw, WalletCards, Zap } from 'lucide-vue-next'
 import { selectedCompanyId } from '@/services/company/companyContext'
 import { resolveCaptureOwner } from 'shared/schema/entities/capture-families.mjs'
@@ -16,13 +17,16 @@ import { loadSettlementPrices, type SettlementPricePoint } from '@/services/mark
 import { fetchGridGeoPlantIntegrations } from './client'
 import { mappingMatchesScope, resolveGridSpatialPriceRegion, resolveScopedOutputSources } from './marketSpatialScope'
 import type { GridGeoPlant, GridGeoPlantIntegrations } from './types'
+import { buildGridObjectLocation, validObjectDate } from './objectNavigation'
+import { todayBeijing } from '@/utils/beijingDate'
 
-const props = defineProps<{ plant: GridGeoPlant }>()
+const props = defineProps<{ plant: GridGeoPlant; date?: string }>()
+const route = inject(routeLocationKey, null)
 
 type PriceSummary = { average: number | null; minimum: number | null; maximum: number | null; spread: number | null; negativeShare: number | null; points: number }
 type LoadState = 'idle' | 'loading' | 'ready' | 'empty' | 'error'
 
-const tradeDate = ref('2026-05-01')
+const tradeDate = ref(props.date ?? todayBeijing())
 const mapping = ref<GridGeoPlantIntegrations | null>(null)
 const loading = ref(false)
 const mappingError = ref('')
@@ -209,6 +213,7 @@ async function loadAll() {
   outputMeta.value = null
   settlementPoint.value = null
   settlementMeta.value = null
+  if (!validObjectDate(tradeDate.value)) { mappingError.value = '请选择有效的交易日期'; loading.value = false; return }
   try {
     const config = await fetchGridGeoPlantIntegrations(props.plant.plantId)
     if (!requestCurrent(requestId)) return
@@ -227,8 +232,12 @@ async function loadAll() {
   }
 }
 
-watch(() => props.plant.plantId, loadAll, { immediate: true })
-watch(selectedCompanyId, loadAll)
+function businessLocation(path: string) {
+  return buildGridObjectLocation(path, { kind: 'plant', id: props.plant.plantId, regionId: props.plant.regionId, gridOperator: props.plant.gridOperator }, { companyId: selectedCompanyId.value ?? '', date: tradeDate.value, returnTo: route?.fullPath })
+}
+watch(() => props.date, (value) => { if (value !== undefined) tradeDate.value = value })
+watch(() => [props.plant.plantId, props.plant.regionId, selectedCompanyId.value, tradeDate.value], loadAll, { immediate: true })
+onBeforeUnmount(() => { loadRequestId += 1 })
 </script>
 
 <template>
@@ -301,10 +310,10 @@ watch(selectedCompanyId, loadAll)
 
       <div class="risk-disclaimer"><CircleAlert :size="15" /><span>偏差仅是运行关注信号，不是结算结果或金额预测；本模块不执行潮流、拓扑或电价求解。</span></div>
       <nav v-if="mapping" class="business-links" aria-label="业务详情入口">
-        <RouterLink :to="mapping.navigation.nodePrice"><Zap :size="13" /> 节点电价 <ArrowUpRight :size="12" /></RouterLink>
-        <RouterLink :to="mapping.navigation.output"><BarChart3 :size="13" /> 出力分析 <ArrowUpRight :size="12" /></RouterLink>
-        <RouterLink :to="mapping.navigation.forecast"><Activity :size="13" /> 发电预测 <ArrowUpRight :size="12" /></RouterLink>
-        <RouterLink :to="mapping.navigation.settlement"><WalletCards :size="13" /> 结算分析 <ArrowUpRight :size="12" /></RouterLink>
+        <RouterLink :to="businessLocation('/grid-assets/nodes')"><Zap :size="13" /> 关联节点 <ArrowUpRight :size="12" /></RouterLink>
+        <RouterLink :to="businessLocation('/grid-assets/market')"><BarChart3 :size="13" /> 出力分析 <ArrowUpRight :size="12" /></RouterLink>
+        <RouterLink :to="businessLocation('/grid-assets/weather-impact')"><Activity :size="13" /> 气象与预测 <ArrowUpRight :size="12" /></RouterLink>
+        <RouterLink :to="businessLocation('/grid-assets/disclosures')"><WalletCards :size="13" /> 相关披露 <ArrowUpRight :size="12" /></RouterLink>
       </nav>
     </template>
   </section>

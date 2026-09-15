@@ -2,9 +2,10 @@ import { apiGet, apiPatch, apiPost, apiPut, fetchRaw, type ApiRequestOptions } f
 import { selectedCompanyId } from '@/services/company/companyContext'
 import { companyRegionId } from '@/services/region/regionCompany'
 import { currentRegion, selectedRegionId } from '@/services/region/regionContext'
-import type { GridDisclosureEvent, GridDisclosureOverlay, GridDisclosureProvider, GridGeoListResponse, GridGeoManifest, GridGeoNode, GridGeoNodeListResponse, GridGeoPlant, GridGeoPlantIntegrations, GridGeoPlantLocationRegistryItem, GridGeoRevision, GridGeoWeatherResponse, GridOperatorProfile, GridTopologyManifestResponse, GridTopologySnapshotResponse } from './types'
+import type { GridDisclosureEvent, GridDisclosureGroup, GridDisclosureOverlay, GridDisclosureOverview, GridDisclosureProvider, GridGeoListResponse, GridGeoManifest, GridGeoNode, GridGeoNodeListResponse, GridGeoPlant, GridGeoPlantIntegrations, GridGeoPlantLocationRegistryItem, GridGeoRevision, GridGeoWeatherResponse, GridOperatorProfile, GridTopologyManifestResponse, GridTopologySnapshotResponse } from './types'
 import type { GridTopologyEvidenceResponse } from './topology/gridEvidence'
 import { buildGridGeoCacheScope, gridGeoCached, invalidateGridGeoCache } from './cache'
+import type { GridObjectDetail, GridObjectReference } from './objectNavigation'
 
 const BASE = '/v1/grid/geo-assets'
 
@@ -179,6 +180,28 @@ export async function fetchGridDisclosureProviders(options?: ApiRequestOptions) 
 
 export async function fetchGridDisclosureEvents(params: Record<string, string | number> = {}, options?: ApiRequestOptions) {
   const response = await apiGet<{ code: number; data: { items: GridDisclosureEvent[]; total: number; page: number; pageSize: number; categories: string[]; dataAvailability: { status: 'available' | 'missing' | 'not-configured'; reason: string; fallback: false } } }>(`${BASE}/disclosures/events`, scopedQuery(params), options)
+  return response.data
+}
+
+export async function fetchGridObject(reference: GridObjectReference, options?: ApiRequestOptions) {
+  if (reference.regionId !== currentRegion.value.id) throw new Error('对象不属于当前地区')
+  const response = await apiGet<{ code: number; data: GridObjectDetail }>(`${BASE}/objects/${reference.kind}/${encodeURIComponent(reference.id)}`, scopedQuery(), options)
+  return response.data
+}
+
+export async function saveGridObjectOverlay(reference: GridObjectReference, body: { scope: 'company' | 'user'; favorite: boolean; note: string; tags: string[]; expectedVersion: number }) {
+  if (reference.regionId !== currentRegion.value.id) throw new Error('对象不属于当前地区')
+  const response = await apiPut<{ code: number; data: { overlay: GridDisclosureOverlay } }>(scopedPath(`${BASE}/objects/${reference.kind}/${encodeURIComponent(reference.id)}/overlay`), body)
+  return response.data.overlay
+}
+
+export async function fetchGridDisclosureOverview(params: Record<string, string | number> = {}, options?: ApiRequestOptions) {
+  const response = await apiGet<{ code: number; data: GridDisclosureOverview }>(`${BASE}/disclosures/overview`, scopedQuery(params), options)
+  return response.data
+}
+
+export async function fetchGridDisclosureGroups(params: Record<string, string | number> = {}, options?: ApiRequestOptions) {
+  const response = await apiGet<{ code: number; data: { items: GridDisclosureGroup[]; total: number; groupTotal: number; page: number; pageSize: number; categories: string[]; dataAvailability: { status: 'available' | 'missing' | 'not-configured'; reason: string; fallback: false } } }>(`${BASE}/disclosures/groups`, scopedQuery(params), options)
   return response.data
 }
 
