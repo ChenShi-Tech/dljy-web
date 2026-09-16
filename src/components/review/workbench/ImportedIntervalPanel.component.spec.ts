@@ -111,4 +111,40 @@ describe('已导入分时资料分析', () => {
     expect(wrapper.text()).not.toContain('合计多个对象')
     wrapper.unmount()
   })
+
+  it('有资料目录时不显示「没有补充资料」，目录为空时才显示', async () => {
+    // 单对象目录：合计入口不出现，但这不等于没有资料。
+    const wrapper = create(); await open(wrapper)
+    expect(wrapper.text()).not.toContain('当前范围没有补充资料')
+    wrapper.unmount()
+    api.analyzeImportedIntervals.mockResolvedValue({ ...catalog, choices: [] })
+    const empty = create(); await open(empty)
+    expect(empty.text()).toContain('当前范围没有补充资料')
+    empty.unmount()
+  })
+  it('下拉框选中的对象恒在合计集合内，不能取消', async () => {
+    api.analyzeImportedIntervals.mockResolvedValue(multiCatalog)
+    const wrapper = create(); await open(wrapper)
+    await wrapper.findAll('select').at(-1)!.setValue(JSON.stringify([choice.seriesKey, choice.objectId]))
+    await flushPromises()
+    const anchor = wrapper.findAll('input[type=checkbox]').find(box => (box.element as HTMLInputElement).value === choice.objectId)!
+    expect((anchor.element as HTMLInputElement).disabled).toBe(true)
+    expect((anchor.element as HTMLInputElement).checked).toBe(true)
+    wrapper.unmount()
+  })
+  it('覆盖表列出参考期的有效基准与有效实际，说明为何没进跨期比较', async () => {
+    const rollup = { objectIds: [choice.objectId, choiceB.objectId],
+      current: { matchedIntervals: 4, observedIntervals: 4, objects: [{ objectId: choice.objectId, intervals: 4, baselineIntervals: 4, actualIntervals: 4 }, { objectId: choiceB.objectId, intervals: 4, baselineIntervals: 4, actualIntervals: 4 }] },
+      reference: { matchedIntervals: 0, observedIntervals: 4, objects: [{ objectId: choice.objectId, intervals: 4, baselineIntervals: 4, actualIntervals: 4 }, { objectId: choiceB.objectId, intervals: 4, baselineIntervals: 3, actualIntervals: 0 }] } }
+    api.analyzeImportedIntervals.mockResolvedValueOnce(multiCatalog).mockResolvedValue({ ...data, choices: multiCatalog.choices, rollup })
+    const wrapper = create(); await open(wrapper)
+    await wrapper.findAll('select').at(-1)!.setValue(JSON.stringify([choice.seriesKey, choice.objectId]))
+    await wrapper.findAll('button').find(button => button.text() === '重新统计')!.trigger('click'); await flushPromises()
+    const header = wrapper.findAll('th').map(node => node.text())
+    expect(header).toContain('参考期有效基准')
+    expect(header).toContain('参考期有效实际')
+    const row = wrapper.findAll('tr').find(node => node.text().startsWith(choiceB.objectId))!
+    expect(row.findAll('td').map(node => node.text())).toEqual(['4', '4', '4', '4', '3', '0'])
+    wrapper.unmount()
+  })
 })
