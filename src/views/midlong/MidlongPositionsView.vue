@@ -15,6 +15,7 @@ import { selectedCompanyId } from '@/services/company/companyContext'
 import { fetchStations, type CompanyStation } from '@/services/company/companyApi'
 import { currentRegion } from '@/services/region/regionContext'
 import { cssVar } from '@/composables/useTheme'
+import { withAlpha } from '@/services/chart/chartStyle'
 import {
   CompanyNotSelectedError, exportPositions, fetchCapabilities, fetchPositions, fetchSubjects, midlongFailureOf,
 } from '@/services/midlong/midlongApi'
@@ -158,9 +159,10 @@ function buildOption(): Record<string, unknown> {
         data: months.map((m) => (m.incomplete ? null : Number(m.formalQuantity))),
       },
       {
-        // 含未分解合同的月份：柱体只代表已明确到该月的部分，另有电量在跨期未分解池中，用警示色区分。
+        // 含未分解合同的月份：柱体高度仍是已明确到该月的正式分解电量（半透明实心，避免空框被读成「无数据」），
+        // 虚线警示边框表示另有电量在跨期未分解池中、该月不是完整持仓。
         name: '含未分解合同的月份', type: 'bar', stack: 'qty',
-        itemStyle: { color: 'transparent', borderColor: warning, borderWidth: 2, borderType: 'dashed' },
+        itemStyle: { color: withAlpha(accent, 0.35), borderColor: warning, borderWidth: 2, borderType: 'dashed' },
         data: months.map((m) => (m.incomplete ? Number(m.formalQuantity) : null)),
       },
       {
