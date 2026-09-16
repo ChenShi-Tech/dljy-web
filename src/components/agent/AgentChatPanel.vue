@@ -103,6 +103,8 @@ const emit = defineEmits<{
   sessionReady: [sessionId: string]
   // 挂载初始化（探活、历史恢复/首问处理）完成后通知宿主
   ready: []
+  // 会话被清空重置（/clear 或宿主调用 newConversation）：下一次发送将新建会话，宿主可据此复位会话属性
+  conversationReset: []
 }>()
 
 // 消息模型：assistant 消息由有序「段」组成，事件流逐段构建
@@ -674,6 +676,7 @@ function newConversation() {
   reconnecting.value = false
   reconnectAttempt.value = 0
   clearLocalSession()
+  emit('conversationReset')
 }
 
 // 渲染用块：完成后用整体解析结果，流式中用稳定段增量结果（同一 ArtifactRenderer 节点，

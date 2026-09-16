@@ -26,8 +26,13 @@ const route = useRoute()
 const activePage = activeAiPage()
 
 const agentScenario: AgentScenario = 'chat'
-// 解读角色只走页面提示词白名单 key：页面发起的提问用页面声明的 key，自由对话用通用对话 key。
-const promptKey = computed(() => sidebar.request?.promptKey ?? PAGE_PROMPT_KEYS.workbench)
+// 解读角色只走页面提示词白名单 key：页面发起的提问用页面声明的 key；会话被清空重置后复位为通用对话 key，
+// 避免之后自由提问新建的会话沿用上一页的解读角色（codex 审查 P1）。已建成的会话角色由服务端锁定，
+// 切页后在原会话里继续提问沿用原角色是规格 SS-01 的既定行为。
+const promptKey = ref<string>(PAGE_PROMPT_KEYS.workbench)
+function onConversationReset() {
+  promptKey.value = PAGE_PROMPT_KEYS.workbench
+}
 // 业务上下文（地区）：与原「解读本页」链路一致随每轮下发
 const regionPayload = computed(() => ({ region_id: currentRegion.value.id, region_name: currentRegion.value.name }))
 
@@ -58,6 +63,7 @@ watch(() => sidebar.open, (open) => { if (open) agentEverOpened.value = true }, 
 watch(() => sidebar.request?.seq, async (seq) => {
   if (!seq || !sidebar.request) return
   const question = sidebar.request.question
+  promptKey.value = sidebar.request.promptKey
   agentEverOpened.value = true
   await nextTick() // 首次：等 AgentChatPanel 挂载出 ref
   await nextTick() // 等 promptKey 随 request 更新到 props 后再发
@@ -227,6 +233,7 @@ function goConfig() {
           history-key="ai_center"
           :context-payload-for="contextFor"
           :payload="regionPayload"
+          @conversation-reset="onConversationReset"
           @done="() => refreshActiveRuns()"
           @history-changed="refreshActiveRuns"
         />
