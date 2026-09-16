@@ -2,7 +2,7 @@
 import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import type { DecisionReference, Publication } from '@/services/review/workpapers'
-import { decisionReferenceCaption, reportEvidenceCaption, segmentCaption } from '@/services/review/reportPresentation'
+import { decisionReferenceCaption, hasChartFor, reportEvidenceCaption, segmentCaption } from '@/services/review/reportPresentation'
 import DecisionReferenceCard from './DecisionReferenceCard.vue'
 import ReportEvidenceChart from './ReportEvidenceChart.vue'
 const props = defineProps<{ publication: Publication }>()
@@ -40,7 +40,7 @@ async function exportReport(format: 'word' | 'print') {
     <h3>管理层摘要</h3><p class="text">{{ publication.content.summary || '本版本未单独撰写摘要，请查看正文。' }}</p>
     <p v-for="item in brief ? publication.content.evidence : []" :key="item.id" class="notice">{{ reportEvidenceCaption(item) }}</p>
     <p v-for="item in brief ? decisionCaptions : []" :key="item.id" class="notice">{{ item.text }}</p>
-    <template v-if="!brief"><article v-for="block in publication.content.blocks" :key="block.id"><h3>{{ block.title }}</h3><p v-if="block.segments?.length" class="text">{{ segmentCaption(block, publication.content.evidence.find(item => item.id === block.evidenceId)) }}</p><template v-else-if="block.evidenceId"><p>{{ block.evidenceRole === 'comparison' ? '比较依据' : '本次依据' }}</p><ReportEvidenceChart v-if="publication.content.evidence.find(item => item.id === block.evidenceId)" :evidence="publication.content.evidence.find(item => item.id === block.evidenceId)!" /></template><DecisionReferenceCard v-if="block.kind === 'decision' && block.reference" :reference="block.reference" @open="openDeclaration" /><p class="text">{{ block.text }}</p><template v-if="block.kind === 'reason'"><p>{{ block.state === 'confirmed' ? '交易员已核实' : '待核实的可能原因' }}</p><p class="text">支持证据：{{ block.supports || '未记录' }}</p><p class="text">反对证据：{{ block.refutes || '未记录' }}</p></template></article></template>
+    <template v-if="!brief"><article v-for="block in publication.content.blocks" :key="block.id"><h3>{{ block.title }}</h3><p v-if="block.segments?.length" class="text">{{ segmentCaption(block, publication.content.evidence.find(item => item.id === block.evidenceId)) }}</p><template v-if="block.evidenceId && (!block.segments?.length || !hasChartFor(publication.content.blocks, block.evidenceId))"><p>{{ block.evidenceRole === 'comparison' ? '比较依据' : '本次依据' }}</p><ReportEvidenceChart v-if="publication.content.evidence.find(item => item.id === block.evidenceId)" :evidence="publication.content.evidence.find(item => item.id === block.evidenceId)!" /></template><DecisionReferenceCard v-if="block.kind === 'decision' && block.reference" :reference="block.reference" @open="openDeclaration" /><p class="text">{{ block.text }}</p><template v-if="block.kind === 'reason'"><p>{{ block.state === 'confirmed' ? '交易员已核实' : '待核实的可能原因' }}</p><p class="text">支持证据：{{ block.supports || '未记录' }}</p><p class="text">反对证据：{{ block.refutes || '未记录' }}</p></template></article></template>
   </section>
 </template>
 <style scoped>.published-reader{padding:20px;border:1px solid var(--line);border-radius:8px;margin-top:18px}header{display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap}.text{white-space:pre-wrap;overflow-wrap:anywhere}p{line-height:1.8;font-size:var(--font-sm)}.notice{color:var(--muted)}h2{font-size:var(--font-xl)}h3{font-size:var(--font-lg)}article{padding-top:12px;border-top:1px solid var(--line)}</style>

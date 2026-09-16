@@ -10,7 +10,7 @@ import EvidenceSegmentPicker from './EvidenceSegmentPicker.vue'
 import PublishedReportReader from './PublishedReportReader.vue'
 import ReportEvidenceChart from './ReportEvidenceChart.vue'
 import ReportWritingAssistant from './ReportWritingAssistant.vue'
-import { reportEvidenceCaption, segmentCaption } from '@/services/review/reportPresentation'
+import { hasChartFor, reportEvidenceCaption, segmentCaption } from '@/services/review/reportPresentation'
 
 const props = defineProps<{ snapshot: ReviewEvidenceSnapshot; material?: ReportEvidence | null }>()
 const emit = defineEmits<{ dirty: [value: boolean] }>()
@@ -218,7 +218,7 @@ onBeforeUnmount(() => { alive = false; if (timer) clearTimeout(timer); emit('dir
           <article v-for="(block, index) in draft.blocks" :key="block.id" class="block">
             <header><b>{{ index + 1 }} · {{ blockNames[block.kind] }}</b><div><button type="button" :disabled="index === 0" aria-label="上移内容块" @click="move(index, -1)">上移</button><button type="button" :disabled="index === draft.blocks.length - 1" aria-label="下移内容块" @click="move(index, 1)">下移</button><button v-if="block.kind !== 'decision'" type="button" @click="duplicate(block)">复制</button><button type="button" @click="draft.blocks.splice(index, 1)">移除</button></div></header>
             <input v-model="block.title" aria-label="内容块标题" maxlength="200" />
-            <p v-if="block.segments?.length" class="segments">{{ segmentCaption(block, materialOf(block)) }}</p><template v-else-if="block.evidenceId"><ReportEvidenceChart v-if="materialOf(block)" :evidence="materialOf(block)!" /><label>材料用途<select v-model="block.evidenceRole"><option value="primary">本次依据</option><option value="comparison">比较依据</option></select></label><template v-if="block.kind === 'chart' && materialOf(block)"><button v-if="segmentTarget !== block.id" type="button" @click="segmentTarget = block.id">针对其中时段写原因</button><EvidenceSegmentPicker v-else :evidence="materialOf(block)!" @pick="addSegmentReason(block, $event)" @close="segmentTarget = ''" /></template></template>
+            <p v-if="block.segments?.length" class="segments">{{ segmentCaption(block, materialOf(block)) }}</p><template v-if="block.evidenceId"><ReportEvidenceChart v-if="materialOf(block) && (!block.segments?.length || !hasChartFor(draft.blocks, block.evidenceId))" :evidence="materialOf(block)!" /><label>材料用途<select v-model="block.evidenceRole"><option value="primary">本次依据</option><option value="comparison">比较依据</option></select></label><template v-if="block.kind === 'chart' && materialOf(block)"><button v-if="segmentTarget !== block.id" type="button" @click="segmentTarget = block.id">针对其中时段写原因</button><EvidenceSegmentPicker v-else :evidence="materialOf(block)!" @pick="addSegmentReason(block, $event)" @close="segmentTarget = ''" /></template></template>
             <DecisionReferenceCard v-if="block.kind === 'decision' && block.reference" :reference="block.reference" @open="openDeclaration" />
             <textarea v-model="block.text" :aria-label="block.kind === 'decision' ? '关联依据' : blockNames[block.kind]" rows="3" :placeholder="block.kind === 'decision' ? '写清为什么把这笔申报作为本次复盘的依据' : '补充事实、解释或人工判断'" />
             <button type="button" @click="writingTarget = block.id">辅助撰写这段</button>

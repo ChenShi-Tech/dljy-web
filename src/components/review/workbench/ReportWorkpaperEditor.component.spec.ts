@@ -135,7 +135,14 @@ describe('图文底稿交付', () => {
     expect(blocks[1].text()).toContain('针对 1 个时段：05/31 18:15—18:30')
     expect(blocks[1].text()).toContain('比较依据')
     expect(blocks[1].findComponent({ name: 'ReportEvidenceChart' }).exists()).toBe(false)
-    expect((blocks[1].find('select').element as HTMLSelectElement).value).toBe('pending')
+    const selects = blocks[1].findAll('select').map(node => (node.element as HTMLSelectElement).value)
+    // 材料用途仍可编辑：图表改了用途，原因也能跟着改，不会在发布版本里永久标错。
+    expect(selects).toContain('comparison')
+    expect(selects).toContain('pending')
+    // 删掉原图表块后，原因自己把材料补回来，不至于只剩一句时段说明。
+    await blocks[0].findAll('button').find(node => node.text() === '移除')!.trigger('click')
+    await flushPromises()
+    expect(wrapper.findAll('article.block')[0].findComponent({ name: 'ReportEvidenceChart' }).exists()).toBe(true)
   })
   it('关联决策块不提供复制，避免绕开预览再建一个关联', async () => {
     // 复制会克隆申报版本却不走 decision-preview：申报变过就在自动保存时冲突且无法在该块上重新核对，

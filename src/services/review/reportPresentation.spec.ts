@@ -70,7 +70,7 @@ describe('关联决策的报告呈现', () => {
 
 describe('原因对应到材料里的时段', () => {
   const intervals = [{ start: '2026-05-31T10:00:00.000Z', end: '2026-05-31T10:15:00.000Z' }, { start: '2026-05-31T10:15:00.000Z', end: '2026-05-31T10:30:00.000Z' }]
-  const energy = { id: 'm1', content: { topic: 'energy', labels: ['申报电量', '实际电量'], result: { intervals } } } as unknown as ReportEvidence
+  const energy = { id: 'm1', content: { topic: 'energy', labels: ['申报电量', '实际电量'], sourceNotice: '交易员提供的资料副本', result: { intervals, simulated: false, energy: { netDeviationMwh: -1, absoluteDeviationMwh: 2 }, coverage: { comparableMinutes: 30 } } } } as unknown as ReportEvidence
   it('分时材料按时段、日报与结算按日列出可对应的时段，与服务端核对口径一致', () => {
     expect(evidenceSegments(energy)).toEqual(intervals)
     // 5/30 是缺日占位行（没有来源记录），不可选。
@@ -88,11 +88,16 @@ describe('原因对应到材料里的时段', () => {
     expect(text).not.toContain('2026-05-13')
     expect(text).toContain('依据：申报电量与实际电量，比较依据')
   })
-  it('导出时落到时段上的原因只交代时段，不重复画图', () => {
-    const pub = publication([{ id: 'r1', kind: 'reason', title: '晚高峰原因', text: '疑为出力预测偏高', state: 'pending', evidenceId: 'm1', evidenceRole: 'primary', segments: [intervals[0]] }])
-    pub.content.evidence = [energy]
+  it('正文已有同一材料的图表时，时段原因只交代时段不重复画图；图表被删后原因自己补上材料', () => {
+    const reason = { id: 'r1', kind: 'reason' as const, title: '晚高峰原因', text: '疑为出力预测偏高', state: 'pending' as const, evidenceId: 'm1', evidenceRole: 'primary' as const, segments: [intervals[0]] }
+    const withChart = publication([{ id: 'c1', kind: 'chart', title: '偏差图', text: '', evidenceId: 'm1', evidenceRole: 'primary' }, reason])
+    withChart.content.evidence = [energy]
+    expect(reportParts(withChart).filter(part => part.kind === 'chart')).toHaveLength(1)
+    const orphan = publication([reason])
+    orphan.content.evidence = [energy]
+    expect(reportParts(orphan).filter(part => part.kind === 'chart')).toHaveLength(1)
+    const pub = orphan
     const parts = reportParts(pub)
-    expect(parts.some(part => part.kind === 'chart')).toBe(false)
     expect(parts.map(part => ('text' in part ? part.text : '')).join('\n')).toContain('针对 1 个时段：05/31 18:00—18:15')
   })
 })

@@ -81,6 +81,10 @@ export function segmentCaption(block: ReportBlock, evidence?: ReportEvidence): s
   const source = evidence ? `（依据：${evidence.content.labels.join('与')}，${block.evidenceRole === 'comparison' ? '比较依据' : '本次依据'}）` : ''
   return `针对 ${segments.length} 个时段：${listed}${more}${source}`
 }
+/** 正文里是否还有引用同一材料的图表块——带时段的原因据此决定要不要自己把图补上。 */
+export function hasChartFor(blocks: ReportBlock[], evidenceId?: string): boolean {
+  return !!evidenceId && blocks.some(block => block.kind === 'chart' && block.evidenceId === evidenceId)
+}
 export type ReportPart = { kind: 'title' | 'heading' | 'paragraph'; text: string } | { kind: 'chart'; evidence: ReportEvidence }
 export function reportParts(publication: Publication, brief = false): ReportPart[] {
   const content = publication.content
@@ -109,9 +113,10 @@ export function reportParts(publication: Publication, brief = false): ReportPart
     if (block.evidenceId) {
       const evidence = content.evidence.find(item => item.id === block.evidenceId)
       if (!evidence) throw new Error('发布版本的材料不完整，不能导出')
-      // 落到时段上的原因只交代针对哪些时段，不再重复画同一张图——图在它所解释的图表块里。
       if (block.segments?.length) parts.push({ kind: 'paragraph', text: segmentCaption(block, evidence) })
-      else parts.push({ kind: 'paragraph', text: block.evidenceRole === 'comparison' ? '比较依据' : '本次依据' }, { kind: 'chart', evidence }, { kind: 'paragraph', text: reportEvidenceCaption(evidence) })
+      // 落到时段上的原因只在正文里确实还有同一材料的图表时才省略重复画图；原图表块被删后，
+      // 这里必须把材料补回来，否则导出的原因失去了支撑它的依据。
+      if (!block.segments?.length || !hasChartFor(content.blocks, block.evidenceId)) parts.push({ kind: 'paragraph', text: block.evidenceRole === 'comparison' ? '比较依据' : '本次依据' }, { kind: 'chart', evidence }, { kind: 'paragraph', text: reportEvidenceCaption(evidence) })
     }
     // 关联决策必须随报告一起交付：只导出交易员写的理由，读者看不出依据的是哪一笔申报。
     if (block.kind === 'decision') {
