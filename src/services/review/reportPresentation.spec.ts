@@ -1,6 +1,6 @@
 // 守关联决策在报告与导出中的呈现：关联不能只留理由不留依据，也不能把内部标识写进交付物。dljy#2872。
 import { describe, expect, it } from 'vitest'
-import { decisionReferenceCaption, evidenceSegments, reportParts, segmentCaption, segmentLabel } from './reportPresentation'
+import { decisionReferenceCaption, evidenceSegments, reportChartOption, reportParts, segmentCaption, segmentLabel } from './reportPresentation'
 import type { DecisionReference, Publication, ReportEvidence } from './workpapers'
 import type { DeclarationOrder } from '@/services/declarations'
 
@@ -109,3 +109,13 @@ describe('原因对应到材料里的时段', () => {
     expect(parts.map(part => ('text' in part ? part.text : '')).join('\n')).toContain('针对 1 个时段：05/31 18:00—18:15')
   })
 })
+
+describe('报告图表的数值呈现', () => {
+  it('结算图表提示框格式化电费，不显示浮点累加尾数', () => {
+    const evidence = { id: 's1', content: { topic: 'settlement', result: { current: { daily: [{ date: '2026-05-31', energyMwh: 11888.601, feeYuan: 2638471.9800000004 }] } } } } as unknown as ReportEvidence
+    const option = reportChartOption(evidence) as { tooltip: { valueFormatter?: (value: unknown) => string } }
+    expect(option.tooltip.valueFormatter?.(2638471.9800000004)).toBe('2,638,471.98')
+    expect(option.tooltip.valueFormatter?.(null)).toBe('—')
+  })
+})
+
