@@ -25,7 +25,7 @@ const pct = (v: number) => (v * 100).toFixed(1)
         :unit="stats.sampleSize ? '%' : ''"
         :tone="stats.sampleSize ? 'default' : 'muted'"
         :pill="enough ? null : { text: '样本不足', tone: 'off' }"
-        info="Beta-Binomial 后验估计。T04 方案硬规则：样本 <30 不出胜率结论，此处数字仅为后验分布参考，不可作为策略优劣判据。"
+        info="按历史成交结果估计的胜率。样本不足 30 笔时不下胜率结论，此处数字仅作参考，不能据此判断策略优劣。"
         :sub="enough ? '样本已达结论门槛' : '满 30 笔出结论'"
       />
       <MetricTile label="样本量" :value="String(stats.sampleSize)" unit="笔" :sub="`门槛 30 笔`" />

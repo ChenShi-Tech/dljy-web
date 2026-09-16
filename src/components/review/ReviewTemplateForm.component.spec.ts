@@ -43,7 +43,8 @@ async function settle(): Promise<void> {
 describe('ReviewTemplateForm（模板渲染器）', () => {
   it('未知模板 id → 诚实未知态', () => {
     const wrapper = mount(ReviewTemplateForm, { props: { templateId: 'X99', spec: null } })
-    expect(wrapper.text()).toContain('未知模板')
+    expect(wrapper.text()).toContain('已下线或链接已过期')
+    expect(wrapper.text()).not.toContain('注册表')
   })
 
   it('T01 决策复盘单主路径：auto 只读带来源徽章 / human 必填可编辑 / 判断栏红线 / 提交禁用', () => {
@@ -54,27 +55,31 @@ describe('ReviewTemplateForm（模板渲染器）', () => {
     // 头部元信息
     expect(text).toContain('决策复盘单')
     expect(text).toContain('决策复盘 · 通用')
-    expect(text).toContain('B 档：系统预填事实、人补判断')
+    expect(text).toContain('系统预填事实、人工补充判断')
+    expect(text).not.toMatch(/[ABC] 档|TRADE_LEAD|TRADER|STORAGE_OPERATOR|\bdaily\b|\bmonthly\b/)
     // auto 字段值 + 来源徽章
     expect(text).toContain('JC-20260814-001')
-    expect(wrapper.find('.rtf-source').text()).toBe('review_pg')
-    // 未喂数的 auto 字段诚实显示
-    expect(text).toContain('待喂数')
+    expect(wrapper.find('.rtf-source').text()).toBe('复盘台账')
+    // 缺数据的 auto 字段诚实显示
+    expect(text).toContain('暂无数据')
+    // 页面不得出现数据源代号或模板编号
+    expect(text).not.toMatch(/review_pg|quant_[a-z_]+|declaration_record|manual_entry|\bT\d{2}\b/)
     // human 必填字段：有输入框且带必填标
     const labels = wrapper.findAll('.rtf-label').map((l) => l.text())
     expect(labels.some((l) => l.includes('决策依据—信息') && l.includes('必填'))).toBe(true)
     expect(wrapper.findAll('textarea')).toHaveLength(8) // T01 全部 8 个人工字段
     // 判断栏红线 + 提交锁定说明
     expect(text).toContain('判断栏严禁系统代填')
-    expect(text).toContain('提交后锁定，更正走追加记录')
+    expect(text).toContain('提交后锁定，如需更正请追加记录')
     const submit = wrapper.find('.rtf-submit')
     expect(submit.attributes('disabled')).toBeDefined()
-    expect(text).toContain('未挂引擎实例')
+    expect(text).toContain('当前是预览，内容不会保存')
   })
 
   it('T03 金额字段带 caliber 口径标注', () => {
     const wrapper = mount(ReviewTemplateForm, { props: { templateId: 'T03', spec: null } })
-    expect(wrapper.text()).toContain('口径 self-computed')
+    expect(wrapper.text()).toContain('系统自算，非正式结算')
+    expect(wrapper.text()).not.toContain('self-computed')
   })
 
   it('T06 ai_suggest 字段：建议→采纳交互（不点采纳不进草稿）', async () => {
@@ -102,8 +107,8 @@ describe('ReviewTemplateForm（模板渲染器）', () => {
     const text = wrapper.text()
     expect(text).toContain('24 时段视图')
     expect(text).toContain('底层 96 点')
-    expect(text).toContain('峰谷时段未参数化')
-    expect(text).toContain('不借用他省')
+    expect(text).toContain('峰谷时段尚未配置')
+    expect(text).toContain('不借用其他省份')
     // 24 行 + 无曲线诚实「—」
     expect(wrapper.findAll('.rtf-slots tbody tr')).toHaveLength(24)
     expect(text).toContain('时段曲线未喂数')
@@ -130,7 +135,7 @@ describe('ReviewTemplateForm（#2037 实例提交：草稿/提交直连服务端
   it('无实例（chip 直开纯预览）：提交禁用 + 指引从待办箱填报（回归）', () => {
     const wrapper = mount(ReviewTemplateForm, { props: { templateId: 'T01', spec: null } })
     expect(wrapper.find('.rtf-submit').attributes('disabled')).toBeDefined()
-    expect(wrapper.text()).toContain('未挂引擎实例')
+    expect(wrapper.text()).toContain('当前是预览，内容不会保存')
   })
 
   it('pending 实例：必填未齐提交禁用；填齐后存草稿/提交各发 PATCH 并 emit saved', async () => {
@@ -139,7 +144,7 @@ describe('ReviewTemplateForm（#2037 实例提交：草稿/提交直连服务端
       props: { templateId: 'T01', spec: null, instance: instance() }
     })
     // 实例状态行 + 必填未齐 → 两个按钮都禁用
-    expect(wrapper.text()).toContain('实例 #42')
+    expect(wrapper.text()).not.toContain('#42')
     expect(wrapper.text()).toContain('待填报')
     expect(wrapper.find('.rtf-submit.live').attributes('disabled')).toBeDefined()
     // 填齐全部人工字段（T01 8 个，其中 5 个必填）
@@ -185,7 +190,8 @@ describe('ReviewTemplateForm（#2037 实例提交：草稿/提交直连服务端
     })
     expect(wrapper.findAll('textarea').every((ta) => ta.attributes('disabled') !== undefined)).toBe(true)
     expect(wrapper.text()).toContain('已提交（锁定）')
-    expect(wrapper.text()).toContain('待提权角色复核')
+    expect(wrapper.text()).toContain('待管理员或公司负责人复核')
+    expect(wrapper.text()).not.toMatch(/ADMIN|BOSS|拍板/)
     expect(wrapper.find('.rtf-save').exists()).toBe(false)
     expect(patchTemplateInstance).not.toHaveBeenCalled()
   })
