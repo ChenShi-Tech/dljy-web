@@ -66,9 +66,20 @@ npm run dev                        # http://localhost:5174
 - **「真实或空」纪律**：除山西（基线）外，任何地区缺自身真实数据时只返回按地区合成的 Mock（标 `mock:true`）或空态，**绝不串读山西数据**。所以切到无数据省份看到空页面是设计行为，不是 bug。
 - 前端可切换地区由 `REAL_DATA_REGION_IDS`（真实：yunnan/shanxi）与演示开通地区（sichuan）控制。
 
-### 3.4 智能体聊天面板
+### 3.4 AI 侧边栏与智能体聊天面板
 
-`AgentChatPanel.vue` 多处复用；每个接入点必须给**静态且全仓唯一**的 `history-key`，且不得关闭历史持久化（`:persist-history="false"` 被门禁禁止）。
+**业务页接入 AI 只走 `@/features/aiSidebar`**（统一 AI 侧边栏，规格见工作区 OpenSpec 变更 `unify-ai-sidebar`）：
+
+- **声明页面**：在页面 setup 里调用 `defineAiPage({ label, promptKey, interpret?, presets? })`。
+  - `promptKey` 只能取 `PAGE_PROMPT_KEYS` 白名单里的值，类型层会拒绝自由文本。
+  - `interpret.context` 和预制问题的 `context` 都是函数，在点击那一刻求值，只返回当前筛选的摘要，不要传整页原始数据。
+  - 声明跟随 KeepAlive 的激活与失活自动生效或失效，不需要手动清理。
+- **发起提问**：`useAiSidebar().interpret()` 按当前页声明解读本页；`ask(question, { context })` 用于快捷任务、单卡解读和选中即问。
+  - 数据切片只随发起解读的那一轮发送；页面背景（页面名、路由、地区、公司）由侧边栏每轮自动附带。
+- **不要在业务视图里直接内嵌 `AgentChatPanel.vue`**，ESLint 会报错。确实属于流程步骤的内嵌对话（一日作业台、申报台、储能测算、复盘写作）要登记到 `eslint.config.js` 的 `EMBEDDED_CHAT_ALLOWLIST`。
+- **侧边栏和智能体工作台 `/ai-agent` 平级**，共用 `components/agent` 对话内核。工作台支持 `?entry=&session=` 续接侧边栏里的会话。
+
+`AgentChatPanel.vue` 的内嵌接入点必须给**静态且全仓唯一**的 `history-key`，且不得关闭历史持久化（不得出现 `:persist-history="false"`）。这两条由单测 `src/components/agent/historyKeyInvariants.spec.ts` 守护，边界 lint 的自测见 `src/features/aiSidebar/boundaryLint.spec.ts`。
 
 ### 3.5 API 对接指南（新增/收编端点时的 checklist）
 

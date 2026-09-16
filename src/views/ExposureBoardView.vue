@@ -3,7 +3,8 @@
 // 数据走 /api/agent/quant/exposure 直调端点（与智能体共用同一套确定性引擎）。
 import { computed, nextTick, onMounted, ref, type Ref } from 'vue'
 import { Calculator, Gauge, TrendingDown, TrendingUp } from 'lucide-vue-next'
-import AgentSidekick from '../components/agent/AgentSidekick.vue'
+import { defineAiPage } from '@/features/aiSidebar'
+import { PAGE_PROMPT_KEYS } from '@/prompts/pageKeys'
 import { useEChart } from '../composables/useEChart'
 import { useQuerySync, type QuerySyncValue } from '../composables/useQuerySync'
 import { axisTooltip, bottomLayoutLegend, bottomToolbox, emptyOverlay } from '@/services/chart/chartOptions'
@@ -69,22 +70,30 @@ async function loadSettle() {
   }
 }
 
-const chips = computed(() => [
-  {
-    label: '解读敞口结构与风险',
-    question: `对 ${month.value} 月、合同总量 ${totalMwh.value} MWh、${mode.value} 分解、预计${
-      expectedSource.value === 'renewable' ? '出力' : '用电'
-    }口径做中长期敞口解读：套保率、双向敞口的风险方向与量级`
-  },
-  {
-    label: '给出补仓/平仓建议',
-    question: `基于 ${month.value} 月合同 ${totalMwh.value} MWh（${mode.value} 分解）的敞口情况，给出分时段补仓/平仓建议与目标套保率`
-  },
-  {
-    label: '对比三种分解模式',
-    question: `对 ${month.value} 月合同总量 ${totalMwh.value} MWh，对比 uniform/peak_valley/solar_shaped 三种分解模式的敞口差异，推荐最适合的模式`
-  }
-])
+// 页面接入 AI 侧边栏（统一 AI 侧边栏 EN-02，原独立右侧栏 AgentSidekick 已移除）：
+// 快捷问题在点击时刻插入当前月份/合同总量/分解模式；首条标记为本页解读，悬浮球点击即发送它。
+// 原侧栏不传解读角色（走通用助手），这里沿用通用对话角色。
+defineAiPage({
+  label: '中长期敞口看板',
+  promptKey: PAGE_PROMPT_KEYS.workbench,
+  presets: [
+    {
+      label: '解读敞口结构与风险',
+      interpret: true,
+      question: () => `对 ${month.value} 月、合同总量 ${totalMwh.value} MWh、${mode.value} 分解、预计${
+        expectedSource.value === 'renewable' ? '出力' : '用电'
+      }口径做中长期敞口解读：套保率、双向敞口的风险方向与量级`
+    },
+    {
+      label: '给出补仓/平仓建议',
+      question: () => `基于 ${month.value} 月合同 ${totalMwh.value} MWh（${mode.value} 分解）的敞口情况，给出分时段补仓/平仓建议与目标套保率`
+    },
+    {
+      label: '对比三种分解模式',
+      question: () => `对 ${month.value} 月合同总量 ${totalMwh.value} MWh，对比 uniform/peak_valley/solar_shaped 三种分解模式的敞口差异，推荐最适合的模式`
+    }
+  ]
+})
 
 async function calc() {
   loading.value = true
@@ -284,7 +293,6 @@ onRegionChange(() => {
       <div ref="heatEl" class="heat-chart chart-host" />
     </section>
 
-    <AgentSidekick title="敞口分析智能体" history-key="sidekick_exposure" :chips="chips" />
   </div>
 </template>
 

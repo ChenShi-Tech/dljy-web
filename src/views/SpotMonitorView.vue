@@ -3,7 +3,8 @@
 // 云南中广核账号使用厂侧私有 PostgreSQL 实时价；其他地区仍按各自 serving route 回放。
 import { computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from 'vue'
 import { Activity, BellRing, RefreshCw } from 'lucide-vue-next'
-import AgentSidekick from '../components/agent/AgentSidekick.vue'
+import { defineAiPage, useAiSidebar } from '@/features/aiSidebar'
+import { PAGE_PROMPT_KEYS } from '@/prompts/pageKeys'
 import { useEChart } from '../composables/useEChart'
 import { useQuerySync } from '../composables/useQuerySync'
 import { axisTooltip, bottomLayoutLegend, bottomToolbox, emptyOverlay, insideZoom } from '@/services/chart/chartOptions'
@@ -79,21 +80,27 @@ const granularityText = computed(() => {
 // 监盘日期/异动阈值 ⇄ 路由 query：刷新或分享链接后筛选状态可还原
 useQuerySync({ date, threshold })
 
-const sidekick = ref<InstanceType<typeof AgentSidekick> | null>(null)
-
-const chips = computed(() => [
-  {
-    label: '今日整体偏离评估',
-    question: `评估 ${date.value} 实时价相对日前价的整体偏离：方向、幅度、主要时段，并解释可能驱动因素`
-  },
-  {
-    label: '峰谷价差解读',
-    question: `解读 ${date.value} 的峰谷价差水平（峰均 ${result.value?.peak_valley.avg_price.peak ?? '-'} / 谷均 ${result.value?.peak_valley.avg_price.valley ?? '-'} 元/MWh），与近期相比处于什么水位`
-  }
-])
+// 页面接入 AI 侧边栏（统一 AI 侧边栏 EN-02，原独立右侧栏 AgentSidekick 已移除）：
+// 快捷问题在点击时刻插入当前日期与峰谷均价；价差异动解读改为唤出侧边栏发送同样的问题。
+// 原侧栏不传解读角色（走通用助手），这里沿用通用对话角色。
+defineAiPage({
+  label: '实时监盘',
+  promptKey: PAGE_PROMPT_KEYS.workbench,
+  presets: [
+    {
+      label: '今日整体偏离评估',
+      question: () => `评估 ${date.value} 实时价相对日前价的整体偏离：方向、幅度、主要时段，并解释可能驱动因素`
+    },
+    {
+      label: '峰谷价差解读',
+      question: () => `解读 ${date.value} 的峰谷价差水平（峰均 ${result.value?.peak_valley.avg_price.peak ?? '-'} / 谷均 ${result.value?.peak_valley.avg_price.valley ?? '-'} 元/MWh），与近期相比处于什么水位`
+    }
+  ]
+})
+const ai = useAiSidebar()
 
 function explainAlert(time: string, spread: number) {
-  sidekick.value?.ask(
+  ai.ask(
     `解读 ${date.value} ${time} 时段的价差异动：实时较日前${spread > 0 ? '高' : '低'} ${Math.abs(spread).toFixed(1)} 元/MWh，分析可能原因（负荷/新能源/检修等）与应对`
   )
 }
@@ -327,7 +334,6 @@ onRegionChange(() => {
       </div>
     </div>
 
-    <AgentSidekick ref="sidekick" title="监盘解读智能体" history-key="sidekick_spot" :chips="chips" />
   </div>
 </template>
 
