@@ -1215,17 +1215,21 @@ async function attachRun(sessionId: string, runId?: string): Promise<boolean> {
   }
   // 流世代作废已下沉到 loadHistory 内部，不再重复
   const loaded = await loadHistory(sessionId, { fromClick: true, allowEmpty: true })
-  if (!loaded) {
-    // live-token-only 会话（历史绑定失败/首轮未落库）不在 Node 历史库：
-    // transcript 不可得不应阻断 attach，降级用 live session 信息建最小本地状态续看。
-    const info = await getAgentSession(sessionId).catch(() => null)
-    if (!info) return false
-    abort?.abort()
-    messages.value = []
-    todos.value = []
-    session.value = { id: info.id, scenario: info.scenario, title: info.title ?? '', status: 'idle' }
-  }
+  if (!loaded && !(await adoptLiveSession(sessionId))) return false
   return runId ? attachRunById(sessionId, runId, -1) : attachActiveRunIfAny(-1)
+}
+
+// live-token-only 会话（历史绑定失败/首轮未落库）不在 Node 历史库：transcript 不可得不应阻断续看，
+// 降级用 live session 信息建最小本地状态。与载历史共用世代：等待期间用户已发新消息或切走，就不再写回。
+async function adoptLiveSession(sessionId: string): Promise<boolean> {
+  const generation = gens.beginHistoryLoad()
+  const info = await getAgentSession(sessionId).catch(() => null)
+  if (!info || gens.isHistoryStale(generation)) return false
+  abort?.abort()
+  messages.value = []
+  todos.value = []
+  session.value = { id: info.id, scenario: info.scenario, title: info.title ?? '', status: 'idle' }
+  return true
 }
 
 // ── 审批卡上的会话级自动执行授权（统一 AI 侧边栏 EC-04，design D10）──
@@ -1366,9 +1370,11 @@ onMounted(async () => {
   if (props.resumeSessionId && props.resumeRunId) {
     await attachRun(props.resumeSessionId, props.resumeRunId)
   } else if (props.resumeSessionId) {
-    if (await loadHistory(props.resumeSessionId, { allowEmpty: true })) {
-      await attachActiveRunIfAny(-1)
-    }
+    // 历史回放拿不到（live-token-only）时同样降级续看，并附着在途 run——工作台 `?session=`、
+    // 侧边栏刷新恢复都走这里，不能因回放失败开出空白面板、run 在后台继续却看不见（dljy-web#119 审查 P2）
+    const resumed = await loadHistory(props.resumeSessionId, { allowEmpty: true })
+      || await adoptLiveSession(props.resumeSessionId)
+    if (resumed) await attachActiveRunIfAny(-1)
   } else {
     // 首条自动发送依赖 agent-backend SSE：离线时跳过（由模板「未就绪」提示引导），避免首条即报错。
     if (props.initialQuestion.trim() && !agentOffline.value) {

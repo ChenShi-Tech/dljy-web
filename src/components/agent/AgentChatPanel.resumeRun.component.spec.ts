@@ -1,9 +1,10 @@
 // 对话内核「挂载即续接」的两条宿主契约（统一 AI 侧边栏，dljy-web#119 审查 P2）。
 //
-// 守什么：宿主同时给会话 id 与 run id 时，挂载就附着到这个 run——即便该会话的历史回放还拿不到
-// （live-token-only 会话不在 Node 历史库），也按 live 会话信息降级续看；只给会话 id 时照旧先回放历史。
-// 会话就绪事件带上会话标题，宿主据此显示头部标题。
-// 坏掉的症状：从「运行中」点开正在跑的会话是一片空白、run 在后台继续却看不见；侧边栏标题恒为「历史对话」。
+// 守什么：宿主同时给会话 id 与 run id 时，挂载就附着到这个 run；只给会话 id 时先回放历史、再附着在途 run。
+// 两条路径在历史回放拿不到时（live-token-only 会话不在 Node 历史库）都按 live 会话信息降级续看；
+// pi 也不认识这个会话时不附着、不留下半个会话。会话就绪事件带上会话标题，宿主据此显示头部标题。
+// 坏掉的症状：从「运行中」点开、或「在工作台打开」正在跑的会话是一片空白，run 在后台继续却看不见；
+// 侧边栏标题恒为「历史对话」。
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 
@@ -31,20 +32,24 @@ vi.mock('@/services/agent/agentClient', async (importOriginal) => {
     getActiveRun: vi.fn(async () => null),
     getAgentSession: vi.fn(async () => null),
     attachRunStream: vi.fn(() => new Promise(() => {})), // 永不结束：保持附着中
+    createAgentSession: vi.fn(async () => ({ id: 's_new', scenario: 'chat', title: '新问题', status: 'idle' })),
+    sendAgentMessage: vi.fn(() => new Promise(() => {})),
     pingAgentService: vi.fn(async () => true),
     probeAgentService: vi.fn(async () => 'online')
   }
 })
 
 import AgentChatPanel from './AgentChatPanel.vue'
-import { attachRunStream, fetchHistoryTranscript, getAgentSession } from '@/services/agent/agentClient'
+import { attachRunStream, fetchHistoryTranscript, getActiveRun, getAgentSession, sendAgentMessage } from '@/services/agent/agentClient'
 
 const wrappers: Array<{ unmount: () => void }> = []
 afterEach(() => { wrappers.splice(0).forEach((w) => w.unmount()) })
 beforeEach(() => {
   vi.mocked(attachRunStream).mockClear()
+  vi.mocked(sendAgentMessage).mockClear()
   vi.mocked(fetchHistoryTranscript).mockReset()
   vi.mocked(getAgentSession).mockReset().mockResolvedValue(null)
+  vi.mocked(getActiveRun).mockReset().mockResolvedValue(null)
 })
 
 async function mountPanel(props: Record<string, unknown>) {
@@ -66,11 +71,38 @@ describe('AgentChatPanel · 挂载续接', () => {
     expect(vi.mocked(attachRunStream).mock.calls[0].slice(0, 2)).toEqual(['s_live', 'r_live'])
   })
 
-  it('只给会话 id：历史回放拿不到就不附着（保持原有续接行为）', async () => {
+  it('只给会话 id（工作台 ?session=、刷新恢复）：历史回放拿不到时同样降级，并附着该会话在途的 run', async () => {
     vi.mocked(fetchHistoryTranscript).mockRejectedValue(new Error('404'))
     vi.mocked(getAgentSession).mockResolvedValue({ id: 's_live', scenario: 'chat', title: '在跑的会话', status: 'running' })
+    vi.mocked(getActiveRun).mockResolvedValue({ run_id: 'r_active', status: 'running' } as Awaited<ReturnType<typeof getActiveRun>>)
     await mountPanel({ resumeSessionId: 's_live' })
+    expect(attachRunStream).toHaveBeenCalledTimes(1)
+    expect(vi.mocked(attachRunStream).mock.calls[0].slice(0, 2)).toEqual(['s_live', 'r_active'])
+  })
+
+  it('历史回放拿不到、pi 也不认识这个会话：不附着，面板保持空白新对话', async () => {
+    vi.mocked(fetchHistoryTranscript).mockRejectedValue(new Error('404'))
+    await mountPanel({ resumeSessionId: 's_gone' })
+    expect(getActiveRun).not.toHaveBeenCalled()
     expect(attachRunStream).not.toHaveBeenCalled()
+  })
+
+  it('降级等待 live 会话信息期间用户已发新消息：迟到的结果不覆盖新会话与消息', async () => {
+    vi.mocked(fetchHistoryTranscript).mockRejectedValue(new Error('404'))
+    let resolveLive: (v: Awaited<ReturnType<typeof getAgentSession>>) => void = () => {}
+    vi.mocked(getAgentSession).mockImplementation(() => new Promise((r) => { resolveLive = r }))
+    const w = mount(AgentChatPanel, { props: { historyKey: 'test_resume_run', restoreLastSession: false, resumeSessionId: 's_live' } })
+    wrappers.push(w)
+    await flushPromises()
+    expect(getAgentSession).toHaveBeenCalledTimes(1)
+    ;(w.vm as unknown as { ask: (q: string) => boolean }).ask('新问题')
+    await flushPromises()
+    expect(sendAgentMessage).toHaveBeenCalledTimes(1)
+    resolveLive({ id: 's_live', scenario: 'chat', title: '在跑的会话', status: 'running' })
+    await flushPromises()
+    expect(w.text()).toContain('新问题')
+    expect(getActiveRun).not.toHaveBeenCalled()
+    expect(vi.mocked(sendAgentMessage).mock.calls[0][0]).toBe('s_new')
   })
 
   it('会话就绪事件携带会话标题', async () => {

@@ -114,9 +114,16 @@ function dispatch(request: Omit<AiAskRequest, 'seq'>, slice: Record<string, unkn
   state.open = true
 }
 
-/** 内核发送某条问题时取走其数据切片（只取一次；问题文本不匹配则不附带）。 */
+/**
+ * 内核发送某条问题时取走其数据切片（只取一次；问题文本不匹配则不附带）。
+ * 这次发送没有取到切片时，同时忘掉上一次取走的：409 重发只能恢复真正撞上 409 的那条请求的切片，
+ * 否则在输入框里重打同样的文字撞 409，会把早先别的页面的数据带进新会话（dljy-web#119 审查 P2）。
+ */
 export function takeSliceFor(question: string): Record<string, unknown> | null {
-  if (!pending || pending.question !== question.trim()) return null
+  if (!pending || pending.question !== question.trim()) {
+    lastTaken = null
+    return null
+  }
   const { slice } = pending
   lastTaken = pending
   pending = null
@@ -139,6 +146,7 @@ export function bindUser(username: string): void {
   state.session = loadSession(owner)
   state.request = null
   pending = null
+  lastTaken = null
   state.mountKey += 1
 }
 

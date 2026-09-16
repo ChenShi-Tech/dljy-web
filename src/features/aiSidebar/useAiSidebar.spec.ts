@@ -8,7 +8,7 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import { PAGE_PROMPT_KEYS } from '@/prompts/pageKeys'
 import { activatePage, activeAiPage, deactivatePage, resolveInterpret, type AiPageDefinition } from './pageRegistry'
 import { buildPageContext, composeMessageContext } from './pageContext'
-import { resetAiSidebarForTest, takeSliceFor, useAiSidebar } from './useAiSidebar'
+import { bindUser, resetAiSidebarForTest, restoreSliceFor, takeSliceFor, useAiSidebar } from './useAiSidebar'
 
 const PAGE = buildPageContext({
   routePath: '/sjfx/fshq',
@@ -45,6 +45,30 @@ describe('useAiSidebar · 发问与切片', () => {
     expect(followUp).toEqual({ page_context: PAGE })
     // 同一问题也只取一次
     expect(takeSliceFor(question)).toBeNull()
+  })
+
+  it('409 重发只恢复真正撞上 409 的那条请求的切片（dljy-web#119 审查 P2）', () => {
+    const ai = useAiSidebar()
+    ai.ask('解读这一行', { context: { row: '甲页面的敏感行' } })
+    expect(takeSliceFor('解读这一行')).toEqual({ row: '甲页面的敏感行' })
+    // 该轮撞 409：恢复后新会话首轮照样附带
+    restoreSliceFor('解读这一行')
+    expect(takeSliceFor('解读这一行')).toEqual({ row: '甲页面的敏感行' })
+
+    // 之后在输入框里重打同样的文字（没有待发请求）再撞 409：不能把早先的切片带回来
+    expect(takeSliceFor('解读这一行')).toBeNull()
+    restoreSliceFor('解读这一行')
+    expect(takeSliceFor('解读这一行')).toBeNull()
+  })
+
+  it('换账号后，上一账号取走的切片不能被 409 重发恢复', () => {
+    bindUser('trader')
+    const ai = useAiSidebar()
+    ai.ask('解读这一行', { context: { row: 'trader 的数据' } })
+    expect(takeSliceFor('解读这一行')).toEqual({ row: 'trader 的数据' })
+    bindUser('risk')
+    restoreSliceFor('解读这一行')
+    expect(takeSliceFor('解读这一行')).toBeNull()
   })
 
   it('无解读能力的页面 interpret 只打开侧边栏、不发问', () => {
