@@ -7,6 +7,8 @@ import { useRouter } from 'vue-router'
 import DecisionLinkPanel from './DecisionLinkPanel.vue'
 import DecisionReferenceCard from './DecisionReferenceCard.vue'
 import EvidenceSegmentPicker from './EvidenceSegmentPicker.vue'
+import ImprovementLookbackPanel from './ImprovementLookbackPanel.vue'
+import { createImprovementAction } from '@/services/review/reviewStoreClient'
 import PublishedReportReader from './PublishedReportReader.vue'
 import ReportEvidenceChart from './ReportEvidenceChart.vue'
 import ReportWritingAssistant from './ReportWritingAssistant.vue'
@@ -65,11 +67,13 @@ function openDeclaration(reference: DecisionReference) {
 }
 let alive = true, suppress = false, editVersion = 0, timer: ReturnType<typeof setTimeout> | null = null, savingTask: Promise<boolean> | null = null
 let paperGeneration = 0, publicationRequest = 0
-const commenting = ref(false), linkPending = ref(false)
-const pending = computed(() => dirty.value || saving.value || publishing.value || commenting.value || linkPending.value || !!commentText.value.trim())
+const commenting = ref(false), linkPending = ref(false), lookbackPending = ref(false)
+// 报告内登记改进措施的表单状态；需先于 pending 声明，pending 会立即求值。
+const registerTarget = ref(''), registerOwner = ref(''), registerDue = ref(''), registering = ref(false)
+const pending = computed(() => dirty.value || saving.value || publishing.value || commenting.value || linkPending.value || lookbackPending.value || !!registerTarget.value || !!commentText.value.trim())
 watch(pending, value => emit('dirty', value), { immediate: true })
 // 发布确认必须覆盖全部待定内容：勾选「已核对」之后再写关联依据，旧的勾选不能代表新内容已核对。
-watch(linkPending, value => { if (value) confirmed.value = false })
+watch([linkPending, lookbackPending], values => { if (values.some(Boolean)) confirmed.value = false })
 watch(draft, () => {
   if (suppress || !draft.value || !canEdit.value) return
   editVersion++; dirty.value = true; confirmed.value = false; publication.value = null
@@ -144,6 +148,29 @@ function move(index: number, offset: number) {
 // 关联块不能复制：复制出的新块带着旧的申报版本却没经过预览，申报一旦变过就会在自动保存时
 // 冲突且无法在该块上重新核对；没变则等于绕开预览又建了一个关联。
 const segmentTarget = ref('')
+/** 回查结论已由面板写回改进记录，这里把同一次回查放进报告正文，发布后可追溯。 */
+function recordLookback(block: ReportBlock) {
+  if (!draft.value || !canEdit.value) return
+  draft.value.blocks.push(block)
+}
+const REGISTERED = '已登记为改进记录'
+/**
+ * 报告里写的改进措施登记进公司改进记录，后续复盘到期时才会被带出来回查。
+ * 登记后在正文追加标记，避免同一段措施被重复登记。
+ */
+async function registerAction(block: ReportBlock) {
+  const paper = draft.value
+  if (!paper || !canEdit.value || registering.value || block.text.includes(REGISTERED) || block.text.trim().length < 8 || !registerOwner.value.trim() || !registerDue.value) return
+  const paperId = paper.id, owner = registerOwner.value.trim(), dueDate = registerDue.value
+  registering.value = true; error.value = ''
+  try {
+    await createImprovementAction({ action: `来源报告：${paper.title}（${paper.scope.startDate}—${paper.scope.endDate}）\n改进措施：${block.text.trim()}`, owner, dueDate })
+    if (!alive || draft.value?.id !== paperId) return
+    block.text = `${block.text.trim()}\n（${REGISTERED}：负责人 ${owner}，回查日期 ${dueDate}）`
+    registerTarget.value = ''; status.value = '改进措施已登记，到回查日期时会出现在后续复盘报告里'
+  } catch { if (alive) error.value = '改进记录登记结果未确认，请到改进验证页刷新核实后再试。填写内容仍保留。' }
+  finally { if (alive) registering.value = false }
+}
 const materialOf = (block: ReportBlock) => block.evidenceId ? evidence.value.find(item => item.id === block.evidenceId) : undefined
 /**
  * 从图表块出发为其中几个时段写原因：新原因紧跟在图表后面，继承它引用的材料与材料用途，
@@ -215,6 +242,7 @@ onBeforeUnmount(() => { alive = false; if (timer) clearTimeout(timer); emit('dir
           <ReportWritingAssistant v-if="writingInput" :key="`${draft.id}:${writingTarget}`" :input="writingInput" :company-id="company" :region="region" :initial-mode="writingTarget === 'summary' ? 'summary' : 'polish'" @adopt="adoptWriting" @close="writingTarget = ''" />
           <div class="toolbar"><button v-for="kind in (['text', 'reason', 'question', 'action'] as const)" :key="kind" type="button" @click="add(kind)">添加{{ blockNames[kind] }}</button></div>
           <DecisionLinkPanel v-if="canEdit" :company="company" :draft="draft" :disabled="publishing || loading" @link="linkDecision" @open="openDeclaration" @dirty="linkPending = $event" />
+          <ImprovementLookbackPanel v-if="canEdit" :draft="draft" :disabled="publishing || loading" @record="recordLookback" @dirty="lookbackPending = $event" />
           <article v-for="(block, index) in draft.blocks" :key="block.id" class="block">
             <header><b>{{ index + 1 }} · {{ blockNames[block.kind] }}</b><div><button type="button" :disabled="index === 0" aria-label="上移内容块" @click="move(index, -1)">上移</button><button type="button" :disabled="index === draft.blocks.length - 1" aria-label="下移内容块" @click="move(index, 1)">下移</button><button v-if="block.kind !== 'decision'" type="button" @click="duplicate(block)">复制</button><button type="button" @click="draft.blocks.splice(index, 1)">移除</button></div></header>
             <input v-model="block.title" aria-label="内容块标题" maxlength="200" />
@@ -222,6 +250,7 @@ onBeforeUnmount(() => { alive = false; if (timer) clearTimeout(timer); emit('dir
             <DecisionReferenceCard v-if="block.kind === 'decision' && block.reference" :reference="block.reference" @open="openDeclaration" />
             <textarea v-model="block.text" :aria-label="block.kind === 'decision' ? '关联依据' : blockNames[block.kind]" rows="3" :placeholder="block.kind === 'decision' ? '写清为什么把这笔申报作为本次复盘的依据' : '补充事实、解释或人工判断'" />
             <button type="button" @click="writingTarget = block.id">辅助撰写这段</button>
+            <template v-if="block.kind === 'action' && block.title !== '改进措施回查'"><p v-if="block.text.includes(REGISTERED)" class="registered">这条措施已登记到改进记录。</p><button v-else-if="registerTarget !== block.id" type="button" :disabled="block.text.trim().length < 8" @click="registerTarget = block.id; registerOwner = ''; registerDue = ''">登记到改进记录</button><div v-else class="register"><label>负责人<input v-model="registerOwner" maxlength="100" /></label><label>回查日期<input v-model="registerDue" type="date" /></label><button type="button" :disabled="registering || !registerOwner.trim() || !registerDue" @click="registerAction(block)">{{ registering ? '正在登记…' : '登记' }}</button><button type="button" :disabled="registering" @click="registerTarget = ''">取消</button></div></template>
             <template v-if="block.kind === 'reason'"><label>核实状态<select v-model="block.state"><option value="pending">待核实的可能原因</option><option value="confirmed">交易员已核实</option></select></label><label>支持证据<textarea v-model="block.supports" rows="2" /></label><label>反对证据<textarea v-model="block.refutes" rows="2" /></label></template>
           </article>
           <p v-if="!draft.blocks.length">从专题分析加入图表，或添加事实、原因和措施开始撰写。</p>
@@ -240,5 +269,5 @@ onBeforeUnmount(() => { alive = false; if (timer) clearTimeout(timer); emit('dir
 </template>
 
 <style scoped>
-.scope,p{color:var(--muted);font-size:var(--font-sm);line-height:1.7}.toolbar,.publish,header,header>div{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.workspace{display:grid;grid-template-columns:minmax(0,1fr) 280px;gap:22px;margin-top:18px}.workspace>section,aside{min-width:0}fieldset{border:0;padding:0;margin:0}label{display:block;font-size:var(--font-sm);margin:10px 0}input:not([type=checkbox]),textarea{box-sizing:border-box;width:100%;display:block;margin-top:7px}button,input,textarea,select{font:inherit;font-size:var(--font-sm);color:var(--text);background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:8px}textarea{resize:vertical;line-height:1.6}button{cursor:pointer}button:disabled{opacity:.5;cursor:default}.block{border:1px solid var(--line);border-radius:8px;padding:14px;margin:16px 0}.block header{justify-content:space-between}.material,aside article{border-bottom:1px solid var(--line);padding:12px 0}.publish{margin-top:16px}.segments{color:var(--text)}.publish label{display:flex;align-items:center;gap:6px}h3{font-size:var(--font-lg)}button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-visible{outline:2px solid var(--primary);outline-offset:2px}@media(max-width:850px){.workspace{grid-template-columns:1fr}.toolbar{align-items:stretch}.toolbar label{width:100%}}
+.scope,p{color:var(--muted);font-size:var(--font-sm);line-height:1.7}.toolbar,.publish,header,header>div{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.workspace{display:grid;grid-template-columns:minmax(0,1fr) 280px;gap:22px;margin-top:18px}.workspace>section,aside{min-width:0}fieldset{border:0;padding:0;margin:0}label{display:block;font-size:var(--font-sm);margin:10px 0}input:not([type=checkbox]),textarea{box-sizing:border-box;width:100%;display:block;margin-top:7px}button,input,textarea,select{font:inherit;font-size:var(--font-sm);color:var(--text);background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:8px}textarea{resize:vertical;line-height:1.6}button{cursor:pointer}button:disabled{opacity:.5;cursor:default}.block{border:1px solid var(--line);border-radius:8px;padding:14px;margin:16px 0}.block header{justify-content:space-between}.material,aside article{border-bottom:1px solid var(--line);padding:12px 0}.publish{margin-top:16px}.segments{color:var(--text)}.register{display:flex;gap:10px;align-items:end;flex-wrap:wrap}.register label{margin:0}.registered{color:var(--muted)}.publish label{display:flex;align-items:center;gap:6px}h3{font-size:var(--font-lg)}button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-visible{outline:2px solid var(--primary);outline-offset:2px}@media(max-width:850px){.workspace{grid-template-columns:1fr}.toolbar{align-items:stretch}.toolbar label{width:100%}}
 </style>
