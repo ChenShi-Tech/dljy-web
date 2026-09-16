@@ -110,6 +110,8 @@ const emit = defineEmits<{
   streamingChange: [streaming: boolean]
   // 发送被服务端以 409 拒绝（该会话已有进行中的 run）：宿主可改在新会话里重发这条问题
   sessionBusy: [question: string]
+  // 会话被清空重置（/clear 或宿主调用 newConversation）：下一次发送将新建会话，宿主可据此复位会话属性
+  conversationReset: []
 }>()
 
 // 消息模型：assistant 消息由有序「段」组成，事件流逐段构建
@@ -682,6 +684,7 @@ function newConversation() {
   reconnecting.value = false
   reconnectAttempt.value = 0
   clearLocalSession()
+  emit('conversationReset')
 }
 
 // 渲染用块：完成后用整体解析结果，流式中用稳定段增量结果（同一 ArtifactRenderer 节点，

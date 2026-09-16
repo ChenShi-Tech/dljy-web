@@ -110,6 +110,13 @@ function onSessionReady(sessionId: string) {
 function onStreamingChange(value: boolean) {
   busy.value = value
 }
+// 内核里的会话被清空（/clear）：视同新建对话——切到空白记录，下一次提问按通用对话角色建会话，
+// 不沿用上一页的解读角色与来源页（dljy-web#118 codex 审查 P1）
+function onConversationReset() {
+  if (!state.session) return
+  busy.value = false
+  switchSession(null)
+}
 // 服务端 409：该会话已有进行中的 run（如在工作台里同时在跑）——改在新会话里重发一次
 async function onSessionBusy(question: string) {
   if (retriedQuestion === question) return
@@ -321,6 +328,7 @@ function goConfig() {
           @session-ready="onSessionReady"
           @streaming-change="onStreamingChange"
           @session-busy="onSessionBusy"
+          @conversation-reset="onConversationReset"
           @done="() => refreshActiveRuns()"
           @history-changed="onHistoryChanged"
         >
