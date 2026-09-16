@@ -122,3 +122,16 @@ describe('公司私有族在无源地区 hidden', () => {
     }
   })
 })
+
+describe('中长期售电合同入口仅云南开通（dljy#2939）', () => {
+  it('列表、详情子路径与月度持仓在云南可用，其余已登记地区 hidden；前缀相似路径不被详情规则覆盖', () => {
+    for (const path of ['/zcqjy/contracts', '/zcqjy/contracts/123', '/zcqjy/positions']) {
+      expect(isRegionRouteAvailable(path, 'yunnan')).toBe(true)
+      for (const region of ['shanxi', 'guangdong', 'sichuan']) {
+        expect(getRegionCapabilityForPath(path, region)?.status).toBe('hidden')
+        expect(isRegionRouteAvailable(path, region)).toBe(false)
+      }
+    }
+    expect(getRegionCapabilityForPath('/zcqjy/contracts-export', 'shanxi')?.route).toBeNull()
+  })
+})

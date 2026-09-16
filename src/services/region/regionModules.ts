@@ -41,6 +41,8 @@ export type RegionCapabilityDataSupport = {
 
 export type RegionRouteCapability = {
   path: string
+  /** 为 true 时同样覆盖 `${path}/…` 子路径（如详情页 /zcqjy/contracts/:id），否则只精确匹配。 */
+  includeSubpaths?: boolean
   statusByRegion?: Record<string, RegionModuleCapabilityStatus>
   dataSupportByRegion?: Record<string, RegionCapabilityDataSupport[]>
   note?: string
@@ -344,6 +346,7 @@ export const regionModuleCapabilities: RegionModuleCapability[] = [
       // 云南中长期售电 P1（dljy#2939）：试点只开通云南；其他地区不展示入口，也不回退读取任何地区的合同底账。
       {
         path: '/zcqjy/contracts',
+        includeSubpaths: true,
         statusByRegion: { yunnan: 'available', shanxi: 'hidden', guangdong: 'hidden', sichuan: 'hidden' },
         note: '中长期售电合同底账（company.midlong_*），P1 仅云南试点；后端对其他地区返回未开通。'
       },
@@ -629,7 +632,10 @@ export function getRegionModuleAccessRoutes(roleCode: RoleCode) {
 export function getRegionCapabilityForPath(path: string, regionId?: string) {
   const module = getRegionModuleCapabilityForPath(path)
   if (!module || !regionId) return null
-  const route = module.routeCapabilities?.find((item) => normalizePath(item.path) === normalizePath(path))
+  const normalized = normalizePath(path)
+  // 精确匹配优先；声明了 includeSubpaths 的能力项再覆盖其子路径，避免详情页回落到模块整体状态而在未开通地区放行。
+  const route = module.routeCapabilities?.find((item) => normalizePath(item.path) === normalized)
+    ?? module.routeCapabilities?.find((item) => item.includeSubpaths && normalized.startsWith(`${normalizePath(item.path)}/`))
   // 覆盖面内但该地区未登记 → not-configured（fail-closed），不再返回 null 造成上游按「未覆盖」放行。
   const status = route?.statusByRegion?.[regionId] ?? module.statusByRegion[regionId] ?? 'not-configured'
   return { module, route: route ?? null, status }

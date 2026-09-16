@@ -147,7 +147,15 @@ const isTestData = (ns: string) => /^TEST/i.test(ns)
 const hasTestData = computed(() => (result.value?.rows ?? []).some((r) => isTestData(r.sourceNamespace)))
 
 onMounted(load)
-watch([selectedCompanyId, () => currentRegion.value.id], () => { page.value = 1; void load() })
+// 交易主体、场站的编号只在所属公司/地区内有意义：切换后清掉这两项筛选并同步地址栏，
+// 否则新公司会被旧编号筛成「没有合同」，或误筛到恰好复用同一编号的对象。
+watch([selectedCompanyId, () => currentRegion.value.id], () => {
+  filters.subjectId = ''
+  filters.stationId = ''
+  page.value = 1
+  syncUrl()
+  void load()
+})
 </script>
 
 <template>

@@ -13,10 +13,12 @@ const hoisted = vi.hoisted(() => ({
   region: { value: { id: 'yunnan' } },
   fetchContracts: vi.fn(),
   fetchCapabilities: vi.fn(),
+  routeQuery: {} as Record<string, string>,
+  replace: vi.fn(),
 }))
 
 vi.mock('element-plus', async (orig) => ({ ...(await orig<typeof import('element-plus')>()), ElMessage: { success: vi.fn(), error: vi.fn(), warning: vi.fn() } }))
-vi.mock('vue-router', () => ({ useRoute: () => ({ query: {} }), useRouter: () => ({ replace: vi.fn(), push: vi.fn() }), RouterLink: { template: '<a><slot /></a>' } }))
+vi.mock('vue-router', () => ({ useRoute: () => ({ query: hoisted.routeQuery }), useRouter: () => ({ replace: hoisted.replace, push: vi.fn() }), RouterLink: { template: '<a><slot /></a>' } }))
 vi.mock('@/services/company/companyContext', async () => {
   const { ref: vueRef } = await import('vue')
   const selectedCompanyId = vueRef('comp-a')
@@ -75,6 +77,7 @@ function listOf(rows: MidlongContractSummary[]): MidlongContractListResult {
 
 afterEach(() => {
   vi.clearAllMocks()
+  hoisted.routeQuery = {}
 })
 
 describe('中长期售电合同列表', () => {
@@ -94,6 +97,27 @@ describe('中长期售电合同列表', () => {
     await flushPromises()
     expect(w.text()).toContain('B-公司合同')
     expect(w.text()).not.toContain('A-公司合同')
+  })
+
+  it('切换公司：清掉属于原公司的交易主体/场站筛选并同步地址栏，其余筛选保留', async () => {
+    hoisted.routeQuery = { subjectId: '5', stationId: '9', keyword: 'TEST' }
+    hoisted.fetchCapabilities.mockResolvedValue(caps())
+    hoisted.fetchContracts.mockResolvedValue(listOf([]))
+    mount(MidlongContractsView, { global: { stubs: STUBS } })
+    await flushPromises()
+    expect(hoisted.fetchContracts.mock.calls[0][0]).toMatchObject({ subjectId: '5', stationId: '9', keyword: 'TEST' })
+    const companyRef = (hoisted as unknown as { companyRef: { value: string } }).companyRef
+    companyRef.value = companyRef.value === 'comp-a' ? 'comp-b' : 'comp-a'
+    await nextTick()
+    await flushPromises()
+    const lastQuery = hoisted.fetchContracts.mock.calls.at(-1)![0]
+    expect(lastQuery.subjectId).toBeUndefined()
+    expect(lastQuery.stationId).toBeUndefined()
+    expect(lastQuery.keyword).toBe('TEST')
+    const urlQuery = hoisted.replace.mock.calls.at(-1)![0].query
+    expect(urlQuery).not.toHaveProperty('subjectId')
+    expect(urlQuery).not.toHaveProperty('stationId')
+    expect(urlQuery.keyword).toBe('TEST')
   })
 
   it('非试点地区显示「未开通」，不展示空列表', async () => {

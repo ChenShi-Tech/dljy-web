@@ -4,14 +4,19 @@
 // 坏掉的症状：全年 12000 MWh 无分解的合同被画成每月 0 或每月 1000；含税与未核对绿电价被揉成一个均价。
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises } from '@vue/test-utils'
+import { nextTick } from 'vue'
 import { mount } from '@/test/mount'
 import type { MidlongCapabilities, MidlongPositionReport, MidlongPriceSummary } from '@/services/midlong/midlongTypes'
 
-const hoisted = vi.hoisted(() => ({ fetchPositions: vi.fn(), fetchCapabilities: vi.fn() }))
+const hoisted = vi.hoisted(() => ({ fetchPositions: vi.fn(), fetchCapabilities: vi.fn(), routeQuery: {} as Record<string, string>, replace: vi.fn(), companyRef: null as null | { value: string } }))
 
 vi.mock('element-plus', async (orig) => ({ ...(await orig<typeof import('element-plus')>()), ElMessage: { success: vi.fn(), error: vi.fn() } }))
-vi.mock('vue-router', () => ({ useRoute: () => ({ query: {} }), useRouter: () => ({ replace: vi.fn() }) }))
-vi.mock('@/services/company/companyContext', async () => ({ selectedCompanyId: (await import('vue')).ref('comp-a') }))
+vi.mock('vue-router', () => ({ useRoute: () => ({ query: hoisted.routeQuery }), useRouter: () => ({ replace: hoisted.replace }) }))
+vi.mock('@/services/company/companyContext', async () => {
+  const selectedCompanyId = (await import('vue')).ref('comp-a')
+  hoisted.companyRef = selectedCompanyId
+  return { selectedCompanyId }
+})
 vi.mock('@/services/region/regionContext', async () => ({ currentRegion: (await import('vue')).ref({ id: 'yunnan' }) }))
 vi.mock('@/services/company/companyApi', () => ({ fetchStations: vi.fn(async () => []) }))
 vi.mock('@/composables/useTheme', () => ({ cssVar: () => '' }))
@@ -54,7 +59,10 @@ function report(o: Partial<MidlongPositionReport> = {}): MidlongPositionReport {
   }
 }
 
-afterEach(() => vi.clearAllMocks())
+afterEach(() => {
+  vi.clearAllMocks()
+  hoisted.routeQuery = {}
+})
 
 describe('中长期售电月度持仓', () => {
   it('缺分解月份不显示成 0 持仓；未分解池只列一次合同', async () => {
@@ -85,6 +93,25 @@ describe('中长期售电月度持仓', () => {
     expect(w.text()).toContain('价格口径不可合并')
     expect(w.text()).toContain('口径不可比（见分组）')
     expect(w.text()).not.toContain('315')
+  })
+
+  it('切换公司：清掉交易主体/场站筛选并同步地址栏，新公司不按旧编号取数', async () => {
+    hoisted.routeQuery = { fromMonth: '2027-01', toMonth: '2027-02', subjectId: '5', stationId: '9', productKind: 'ANNUAL' }
+    hoisted.fetchCapabilities.mockResolvedValue(caps)
+    hoisted.fetchPositions.mockResolvedValue(report())
+    mount(MidlongPositionsView, { global: { stubs: STUBS } })
+    await flushPromises()
+    expect(hoisted.fetchPositions.mock.calls[0][0]).toMatchObject({ subjectId: '5', stationId: '9' })
+    hoisted.companyRef!.value = hoisted.companyRef!.value === 'comp-a' ? 'comp-b' : 'comp-a'
+    await nextTick()
+    await flushPromises()
+    const lastQuery = hoisted.fetchPositions.mock.calls.at(-1)![0]
+    expect(lastQuery.subjectId).toBeUndefined()
+    expect(lastQuery.stationId).toBeUndefined()
+    expect(lastQuery.productKind).toBe('ANNUAL')
+    const urlQuery = hoisted.replace.mock.calls.at(-1)![0].query
+    expect(urlQuery).not.toHaveProperty('subjectId')
+    expect(urlQuery).not.toHaveProperty('stationId')
   })
 
   it('历史认知时点视图给出说明', async () => {

@@ -64,6 +64,23 @@ export function actionKey(action: string, canonical: unknown): string {
   return `${idempotencyKeyOf(`midlong-${action}`, scoped)}-${length.toString(36)}`
 }
 
+/**
+ * 完整内容指纹（cyrb53，公有领域算法，53 位）：逐字符覆盖全部内容，只改文件中间也会得到不同指纹。
+ * 不用 crypto.subtle——它只在 HTTPS/localhost 安全上下文可用，内网 HTTP 部署下会让上传直接失败。
+ */
+export function contentFingerprint(text: string): string {
+  let h1 = 0xdeadbeef
+  let h2 = 0x41c6ce57
+  for (let i = 0; i < text.length; i++) {
+    const ch = text.charCodeAt(i)
+    h1 = Math.imul(h1 ^ ch, 2654435761)
+    h2 = Math.imul(h2 ^ ch, 1597334677)
+  }
+  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909)
+  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909)
+  return `${(h2 >>> 0).toString(16).padStart(8, '0')}${(h1 >>> 0).toString(16).padStart(8, '0')}`
+}
+
 function withKey(key: string) {
   return { headers: { 'Idempotency-Key': key } }
 }
@@ -143,7 +160,7 @@ export async function voidContract(contractId: number, body: { expectedRowVersio
 export type EvidenceUpload = { fileName: string; contentBase64: string; documentType: Exclude<EvidenceDocumentType, 'IMPORT_SOURCE_FILE'>; note?: string; mediaType?: string }
 export async function addEvidence(contractId: number, body: EvidenceUpload): Promise<MidlongEvidence> {
   const res = await apiPost<Envelope<{ evidence: MidlongEvidence }>>(writePath(`${BASE}/contracts/${contractId}/evidence`), body,
-    withKey(actionKey('evidence', [contractId, body.documentType, body.fileName, body.note ?? '', body.contentBase64.length, body.contentBase64.slice(0, 256), body.contentBase64.slice(-256)])))
+    withKey(actionKey('evidence', [contractId, body.documentType, body.fileName, body.note ?? '', body.contentBase64.length, contentFingerprint(body.contentBase64)])))
   return dataOf(res).evidence
 }
 

@@ -119,7 +119,13 @@ async function doExport() {
 }
 
 onMounted(load)
-watch([selectedCompanyId, () => currentRegion.value.id], () => { filters.monthRange = []; void load() })
+// 切换公司/地区：交易主体、场站编号属于原公司，清掉后同步地址栏再取数（同合同列表页）。
+watch([selectedCompanyId, () => currentRegion.value.id], () => {
+  filters.monthRange = []
+  filters.subjectId = ''
+  filters.stationId = ''
+  apply()
+})
 
 const totals = computed(() => report.value?.totals ?? null)
 const drillRows = computed(() => (report.value?.contributions ?? []).filter((c) => c.month === drillMonth.value))
