@@ -19,9 +19,12 @@ import {
 import { ElMessage } from 'element-plus'
 import AgentChatPanel from '@/components/agent/AgentChatPanel.vue'
 import AgentHistorySidebar from '@/components/agent/AgentHistorySidebar.vue'
+import MorningBriefRail from '@/components/agent/workbench/MorningBriefRail.vue'
+import StrategicQaGaps from '@/components/agent/workbench/StrategicQaGaps.vue'
+import { trustWatermark } from '@/services/data/trustGate'
 import { historySourceLabel } from '@/components/agent/historySources'
 import { listRuns, stopAgentRun, type AgentRunSummary, type AgentScenario } from '@/services/agent/agentClient'
-import { entryForSession } from '@/services/agent/workbenchEntries'
+import { entryForSession, findEntry } from '@/services/agent/workbenchEntries'
 import { currentRegion } from '@/services/region/regionContext'
 import { currentCompany } from '@/services/company/companyContext'
 import { canAccessPath } from '@/services/governance'
@@ -30,6 +33,7 @@ import { useAiSidebar, takeSliceFor, switchSession, adoptSessionId, bindUser, BL
 import { activeAiPage, resolveQuestion, type AiPagePreset } from './pageRegistry'
 import { buildPageContext, composeMessageContext } from './pageContext'
 import { decideSession } from './sessionPolicy'
+import { createExpertCommands } from './expertCommands'
 
 const sidebar = useAiSidebar()
 const { state } = sidebar
@@ -63,6 +67,23 @@ function contextFor(question: string) {
   return composeMessageContext(pageContext.value, takeSliceFor(question))
 }
 const presets = computed<AiPagePreset[]>(() => activePage.value?.presets ?? [])
+
+// 专家命令：由工作台入口声明生成；无工作台权限时隐藏（手动输入提示无权）
+const expertCommands = computed(() =>
+  createExpertCommands({
+    canUse: canUseWorkbench.value,
+    regionName: () => currentRegion.value.name,
+    launch: (launch) => sidebar.startExpert(launch)
+  })
+)
+// 会话前置卡片（不入库）：晨报预检卡按命令给的目标日；申报前体检结论加不可移除的合成数据水印
+const currentEntry = computed(() => findEntry(record.value.entryKey))
+const briefDate = computed(() => record.value.meta?.date ?? '')
+const conclusionWatermark = computed(() =>
+  currentEntry.value?.watermarkBasis ? trustWatermark(currentEntry.value.watermarkBasis) : ''
+)
+type BriefRailRef = { ensureLoaded: () => Promise<void> }
+const briefRailRef = ref<BriefRailRef | null>(null)
 function askPreset(p: AiPagePreset) {
   sidebar.ask(resolveQuestion(p.question), { context: p.context ?? null, label: p.label })
 }
@@ -80,6 +101,9 @@ async function askInKernel(question: string) {
   agentEverOpened.value = true
   await nextTick() // 首次/重挂：等 AgentChatPanel 挂载出 ref
   await nextTick() // 等会话属性随 record 更新到 props 后再发
+  if (!question.trim()) return // 专家会话不带问题：只开会话、等用户输入
+  // 晨报：先装配数据预检（确定性，不依赖模型），再发目标日启动研判——与工作台「生成晨报」一致
+  if (record.value.entryKey === 'morning_brief' && briefRailRef.value) await briefRailRef.value.ensureLoaded()
   agentPanelRef.value?.ask(question)
 }
 
@@ -99,7 +123,8 @@ watch(() => state.request?.seq, async (seq) => {
       promptKey: req.promptKey,
       sourceRoute: req.kind === 'page' ? route.path : '',
       entryKey: req.entryKey ?? entryForSession(req.scenario, req.promptKey).key,
-      title: req.title
+      title: req.title,
+      ...(req.meta ? { meta: req.meta } : {})
     })
   }
   retriedQuestion = null
@@ -144,6 +169,7 @@ const onKernelSessionReady = forCurrentKernel(onSessionReady)
 const onKernelStreamingChange = forCurrentKernel(onStreamingChange)
 const onKernelSessionBusy = forCurrentKernel(onSessionBusy)
 const onKernelConversationReset = forCurrentKernel(onConversationReset)
+const onKernelOpenScenario = forCurrentKernel((question: string, scenario: AgentScenario) => sidebar.openScenario(question, scenario))
 
 // ── 头部：新建 / 历史 / 在工作台打开 ──
 const historyOpen = ref(false)
@@ -344,6 +370,10 @@ function goConfig() {
           :context-payload-for="contextFor"
           :payload="regionPayload"
           message-actions
+          command-host="sidebar"
+          :extra-commands="expertCommands"
+          approval-auto-approve
+          @open-scenario="onKernelOpenScenario"
           @session-ready="onKernelSessionReady"
           @streaming-change="onKernelStreamingChange"
           @session-busy="onKernelSessionBusy"
@@ -351,6 +381,13 @@ function goConfig() {
           @done="() => refreshActiveRuns()"
           @history-changed="onHistoryChanged"
         >
+          <template #conversation-top>
+            <div v-if="briefDate && record.entryKey === 'morning_brief'" class="ai-brief-card" data-testid="ai-brief-card">
+              <MorningBriefRail ref="briefRailRef" :date="briefDate" />
+            </div>
+            <StrategicQaGaps v-if="record.entryKey === 'strategic_qa'" class="ai-gaps-card" data-testid="ai-gaps-card" />
+            <div v-if="conclusionWatermark" class="ai-watermark" data-testid="ai-watermark">{{ conclusionWatermark }}</div>
+          </template>
           <template #composer-top>
             <div class="ai-context">
               <div class="ai-context-line" data-testid="ai-page-context">
@@ -492,6 +529,14 @@ function goConfig() {
 .active-runs-head {
   display: flex; align-items: center; justify-content: space-between;
   padding: 6px 8px 2px; font-size: var(--font-xs); color: var(--muted);
+}
+/* 会话前置卡片：晨报预检卡（覆盖工作台里的固定列宽）/ 数据缺口清单 / 结论水印 */
+.ai-brief-card { margin: 4px 0 10px; }
+.ai-brief-card :deep(.mb-rail) { width: auto; max-height: 40vh; }
+.ai-gaps-card { margin: 4px 0 10px; }
+.ai-watermark {
+  margin: 4px 0 10px; padding: 6px 10px; border-radius: 6px;
+  background: var(--warning-tint, rgba(245, 158, 11, 0.12)); color: var(--warning, #b45309); font-size: var(--font-xs);
 }
 /* 输入框上方：页面背景条 + 本页快捷问题 */
 .ai-context { padding: 6px 12px 4px; border-top: 1px solid var(--line-faint); }

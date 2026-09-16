@@ -48,6 +48,8 @@ import {
 import DataBasisBadge from '../DataBasisBadge.vue'
 import type { DataBasis } from '@/services/dataBasis'
 import { ElMessage } from 'element-plus'
+import { setSessionAutoApprove } from '@/services/agent/piPocClient'
+import type { SlashCommand } from '@/services/slashCommands'
 
 // 从工具结果文本识别数据口径：贴合本项目「合成降级必须页面可见」的标注纪律，
 // 让 agent 调用工具时是否用到真实采集/合成数据一目了然。
@@ -90,8 +92,14 @@ const props = withDefaults(
     contextPayloadFor?: ((question: string) => Record<string, unknown> | null) | null
     // 每条已完成的助手回复下方显示「复制 / 重新提问」（统一 AI 侧边栏开启；其它宿主默认关闭，界面不变）
     messageActions?: boolean
+    // 斜杠指令宿主：sidebar 下跨场景技能不跳转工作台，改发 openScenario 由宿主就地新开会话
+    commandHost?: 'agent' | 'sidebar'
+    // 宿主注入的额外斜杠指令（统一 AI 侧边栏的专家命令）
+    extraCommands?: SlashCommand[]
+    // 申报体检会话的业务写入（L1）审批卡上提供「本会话内自动执行」开关（统一 AI 侧边栏开启）
+    approvalAutoApprove?: boolean
   }>(),
-  { scenario: 'chat', initialQuestion: '', payload: null, resumeSessionId: null, persistHistory: true, historyKey: '', promptKey: '', contextPayload: null, contextPayloadFor: null, restoreLastSession: true, businessOnly: false, messageActions: false }
+  { scenario: 'chat', initialQuestion: '', payload: null, resumeSessionId: null, persistHistory: true, historyKey: '', promptKey: '', contextPayload: null, contextPayloadFor: null, restoreLastSession: true, businessOnly: false, messageActions: false, commandHost: 'agent', extraCommands: () => [], approvalAutoApprove: false }
 )
 
 const router = useRouter()
@@ -112,6 +120,8 @@ const emit = defineEmits<{
   sessionBusy: [question: string]
   // 会话被清空重置（/clear 或宿主调用 newConversation）：下一次发送将新建会话，宿主可据此复位会话属性
   conversationReset: []
+  // commandHost=sidebar 时跨场景的技能/移交：由宿主在对应场景新开会话（问题可能为空）
+  openScenario: [question: string, scenario: AgentScenario]
 }>()
 
 // 消息模型：assistant 消息由有序「段」组成，事件流逐段构建
@@ -1215,6 +1225,36 @@ async function attachRun(sessionId: string, runId?: string): Promise<boolean> {
   return runId ? attachRunById(sessionId, runId, -1) : attachActiveRunIfAny(-1)
 }
 
+// ── 审批卡上的会话级自动执行授权（统一 AI 侧边栏 EC-04，design D10）──
+// 只在宿主开启、会话场景为申报体检、且该卡是 L1 业务写入时提供；缺 level 字段（旧账本卡片）一律不提供，
+// 对外提交（submit_declaration，L2）恒不提供。授权按会话生效、不持久，由服务端留痕。
+const autoApproveOn = ref(false)
+const autoApproveToggling = ref(false)
+watch(() => session.value?.id, () => { autoApproveOn.value = false })
+function canOfferAutoApprove(seg: ApprovalSeg): boolean {
+  const payload = seg.payload as Record<string, unknown>
+  return props.approvalAutoApprove
+    && session.value?.scenario === 'declaration_checkup'
+    && payload.level === 'L1'
+    && payload.tool !== 'submit_declaration'
+}
+async function toggleAutoApprove(enabled: boolean) {
+  const sessionId = session.value?.id
+  if (!sessionId) return
+  autoApproveToggling.value = true
+  try {
+    autoApproveOn.value = await setSessionAutoApprove(sessionId, enabled)
+    ElMessage.success(autoApproveOn.value
+      ? '已开启本会话自动执行授权：落库草稿不再逐次审批（对外提交仍永不自动）'
+      : '已关闭自动执行授权：业务写操作恢复逐次审批')
+  } catch (exc) {
+    autoApproveOn.value = !enabled
+    ElMessage.error(`授权切换失败：${String(exc)}`)
+  } finally {
+    autoApproveToggling.value = false
+  }
+}
+
 async function copyMessage(msg: ChatMsg) {
   const text = assistantPlainText(msg)
   try {
@@ -1244,8 +1284,9 @@ provide(ARTIFACT_CONTEXT, { submit: (text: string) => ask(text), sessionId: () =
 // 斜杠指令（/help、/clear、技能… 输入 / 唤起菜单）
 function makeContext(args: string): CommandContext {
   return {
-    host: 'agent',
+    host: props.commandHost,
     args,
+    extraCommands: props.extraCommands,
     navigate: (path) => { void router.push(path) },
     postSystemNote: (text) => {
       messages.value.push({
@@ -1260,6 +1301,7 @@ function makeContext(args: string): CommandContext {
     // （审批挂起时还会被拒），与下方 openWorkbench 的场景逃逸一致（修复 PR #46 review）
     sendToChat: (text) => {
       if (props.scenario === 'chat') { ask(text); return }
+      if (props.commandHost === 'sidebar') { emit('openScenario', text, 'chat'); return }
       void router.push({ path: '/ai-agent', query: { q: text } })
     },
     // 仅当技能场景与当前会话场景一致时才同会话发送（保持上下文）；否则一律按目标
@@ -1270,6 +1312,11 @@ function makeContext(args: string): CommandContext {
       const target: AgentScenario = scenario ?? 'chat'
       if (target === props.scenario) {
         if (q) ask(q)
+        return
+      }
+      // 侧边栏：就地新开目标场景会话，不离开当前页（统一 AI 侧边栏 EC-02）
+      if (props.commandHost === 'sidebar') {
+        emit('openScenario', q ?? '', target)
         return
       }
       const query: Record<string, string> = {}
@@ -1283,7 +1330,7 @@ function makeContext(args: string): CommandContext {
   }
 }
 const { menuOpen, menuItems, activeIndex, onKeydown: onSlashKeydown, trySlash, pushHistory, selectItem } =
-  useSlashInput({ input, host: 'agent', makeContext })
+  useSlashInput({ input, host: props.commandHost, makeContext })
 
 function onInputKeydown(e: KeyboardEvent) {
   if (e.isComposing || e.keyCode === 229) return // 中文输入法组词中放行
@@ -1428,6 +1475,8 @@ function approvalBrief(payload: Record<string, unknown>): { label: string; value
     </div>
 
     <div ref="bodyRef" class="panel-body" @scroll="onBodyScroll">
+      <!-- 会话前置区域（宿主插槽，不入库）：统一 AI 侧边栏放晨报预检卡、数据缺口清单、结论水印 -->
+      <slot name="conversation-top" />
       <div v-if="agentOffline" class="empty-hint">
         <div class="empty-logo offline"><Bot :size="28" /></div>
         <p class="empty-title">智能体服务未就绪</p>
@@ -1644,6 +1693,15 @@ function approvalBrief(payload: Record<string, unknown>): { label: string; value
                   <span class="k">{{ row.label }}</span><span class="v">{{ row.value }}</span>
                 </div>
                 <template v-if="!seg.resolved && !seg.readonly">
+                  <label v-if="canOfferAutoApprove(seg)" class="approval-auto" data-testid="approval-auto-approve">
+                    <input
+                      type="checkbox"
+                      :checked="autoApproveOn"
+                      :disabled="autoApproveToggling"
+                      @change="toggleAutoApprove(($event.target as HTMLInputElement).checked)"
+                    />
+                    <span>本会话内自动执行业务写入（对外提交永不自动、执行仍被硬禁）</span>
+                  </label>
                   <input v-model="seg.note" class="approval-note" placeholder="审批备注（可选）" />
                   <div class="approval-actions">
                     <button class="btn approve" @click="decide(seg, 'approve')">批准</button>
@@ -1821,6 +1879,7 @@ function approvalBrief(payload: Record<string, unknown>): { label: string; value
 }
 .msg.user .bubble { background: var(--primary); color: #fff; }
 .msg-actions { display: flex; gap: 4px; margin-top: 6px; }
+.approval-auto { display: flex; align-items: center; gap: 6px; margin: 6px 0; font-size: var(--font-xs); color: var(--el-text-color-secondary); }
 .msg-act {
   display: inline-flex; align-items: center; gap: 3px;
   padding: 2px 6px; border: 0; border-radius: 6px; background: transparent;

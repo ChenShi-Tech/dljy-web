@@ -23,15 +23,17 @@ vi.mock('@/components/agent/AgentChatPanel.vue', async () => {
       props: {
         scenario: String, promptKey: String, resumeSessionId: { type: String, default: null },
         restoreLastSession: { type: Boolean, default: true }, messageActions: { type: Boolean, default: false },
-        contextPayloadFor: Function, historyKey: String, payload: Object
+        contextPayloadFor: Function, historyKey: String, payload: Object,
+        commandHost: { type: String, default: 'agent' }, extraCommands: { type: Array, default: () => [] },
+        approvalAutoApprove: { type: Boolean, default: false }
       },
-      emits: ['sessionReady', 'streamingChange', 'sessionBusy', 'done', 'historyChanged'],
+      emits: ['sessionReady', 'streamingChange', 'sessionBusy', 'conversationReset', 'openScenario', 'done', 'historyChanged'],
       setup(props, { emit, expose, slots }) {
         const rec: KernelRec = { props: props as Record<string, unknown>, asks: [], unmounted: false, emit: emit as KernelRec['emit'] }
         ;(globalThis as unknown as { __kernels: KernelRec[] }).__kernels.push(rec)
         onUnmounted(() => { rec.unmounted = true })
         expose({ ask: (q: string) => { rec.asks.push(q); return true }, newConversation: () => {} })
-        return () => h('div', { class: 'kernel-stub' }, slots['composer-top']?.())
+        return () => h('div', { class: 'kernel-stub' }, [slots['conversation-top']?.(), slots['composer-top']?.()])
       }
     })
   }
@@ -54,6 +56,24 @@ vi.mock('@/components/agent/AgentHistorySidebar.vue', async () => {
   }
 })
 vi.mock('@/services/agent/agentClient', () => ({ listRuns: vi.fn(async () => []), stopAgentRun: vi.fn(async () => true) }))
+vi.mock('@/components/agent/workbench/MorningBriefRail.vue', async () => {
+  const { defineComponent, h } = await import('vue')
+  return {
+    default: defineComponent({
+      name: 'MorningBriefRailStub',
+      props: { date: String },
+      setup(props, { expose }) {
+        const g = globalThis as unknown as { __briefOrder: string[] }
+        expose({ ensureLoaded: async () => { g.__briefOrder.push(`ensureLoaded:${props.date}`) } })
+        return () => h('div', { class: 'brief-stub' }, props.date)
+      }
+    })
+  }
+})
+vi.mock('@/components/agent/workbench/StrategicQaGaps.vue', async () => {
+  const { defineComponent, h } = await import('vue')
+  return { default: defineComponent({ name: 'GapsStub', setup: () => () => h('div', { class: 'gaps-stub' }) }) }
+})
 vi.mock('@/services/governance', () => ({ canAccessPath: vi.fn(() => (globalThis as unknown as { __canWorkbench: boolean }).__canWorkbench) }))
 vi.mock('@/services/auth', () => ({ getCurrentUser: vi.fn(() => (globalThis as unknown as { __user: unknown }).__user) }))
 vi.mock('@/services/region/regionContext', async () => {
@@ -71,6 +91,8 @@ import { listRuns } from '@/services/agent/agentClient'
 import { PAGE_PROMPT_KEYS } from '@/prompts/pageKeys'
 import { activatePage, activeAiPage, deactivatePage, type AiPageDefinition } from './pageRegistry'
 import { resetAiSidebarForTest, switchSession, useAiSidebar } from './useAiSidebar'
+import { buildExpertLaunch } from './expertCommands'
+import { findEntry } from '@/services/agent/workbenchEntries'
 
 const Empty = { template: '<div />' }
 function makeRouter() {
@@ -373,5 +395,83 @@ describe('AiSidebar · 头部与输入区', () => {
     useAiSidebar().open()
     await settle()
     expect(live()[0].props.messageActions).toBe(true)
+  })
+})
+
+describe('AiSidebar · 专家命令（EC-01/02/03）', () => {
+  beforeEach(() => {
+    g.__kernels = []
+    g.__canWorkbench = true
+    g.__user = { roleCode: 'TRADER', username: 'trader' }
+    ;(globalThis as unknown as { __briefOrder: string[] }).__briefOrder = []
+    window.localStorage.clear()
+    resetAiSidebarForTest()
+    vi.mocked(listRuns).mockReset().mockResolvedValue([])
+  })
+
+  it('/晨报：就地新开晨报会话（场景/角色/入口），先装配预检卡再发目标日，页面不跳转', async () => {
+    const { w, router } = await setup()
+    const push = vi.spyOn(router, 'push')
+    const order = (globalThis as unknown as { __briefOrder: string[] }).__briefOrder
+    useAiSidebar().startExpert(buildExpertLaunch(findEntry('morning_brief')!, '2026-09-17', '云南省'))
+    await settle()
+    const k = live()[0]
+    expect(k.props.scenario).toBe('morning_brief')
+    expect(k.props.promptKey).toBe('morning_brief')
+    expect(useAiSidebar().state.session?.entryKey).toBe('morning_brief')
+    expect(w.find('[data-testid="ai-brief-card"]').text()).toContain('2026-09-17')
+    expect(order).toEqual(['ensureLoaded:2026-09-17'])
+    expect(k.asks).toEqual(['2026-09-17'])
+    expect(w.find('.ai-title-text').text()).toBe('交易晨报 · 2026-09-17')
+    expect(push).not.toHaveBeenCalled()
+  })
+
+  it('/战略问答 不带问题：新开会话但不发问，对话内可查看数据缺口清单', async () => {
+    const { w } = await setup()
+    useAiSidebar().startExpert(buildExpertLaunch(findEntry('strategic_qa')!, '', '云南省'))
+    await settle()
+    expect(live()[0].props.scenario).toBe('strategic_qa')
+    expect(live()[0].asks).toEqual([])
+    expect(w.find('[data-testid="ai-gaps-card"]').exists()).toBe(true)
+  })
+
+  it('/申报前体检：结论区带不可移除的合成数据水印', async () => {
+    const { w } = await setup()
+    useAiSidebar().startExpert(buildExpertLaunch(findEntry('pre_submit_check')!, '', '云南省'))
+    await settle()
+    const mark = w.find('[data-testid="ai-watermark"]')
+    expect(mark.text()).toContain('advisory_only')
+    expect(mark.find('button').exists()).toBe(false)
+  })
+
+  it('内核发出跨场景 openScenario（如复盘技能）：侧边栏就地新开该场景会话并发问', async () => {
+    await setup()
+    useAiSidebar().open()
+    await settle()
+    const first = live()[0]
+    first.emit('openScenario', '2026-09-15', 'daily_review')
+    await settle()
+    expect(first.unmounted).toBe(true)
+    expect(live()[0].props.scenario).toBe('daily_review')
+    expect(live()[0].asks).toEqual(['2026-09-15'])
+  })
+
+  it('专家命令注入内核：有工作台权限可见；无权限全部隐藏', async () => {
+    const allowed = await setup()
+    useAiSidebar().open()
+    await settle()
+    const visible = (live()[0].props.extraCommands as Array<{ name: string; hidden?: boolean }>).filter((c) => !c.hidden).map((c) => c.name)
+    expect(visible.sort()).toEqual(['战略问答', '晨报', '申报体检', '申报前体检'].sort())
+    expect(live()[0].props.commandHost).toBe('sidebar')
+    expect(live()[0].props.approvalAutoApprove).toBe(true)
+    allowed.w.unmount()
+
+    g.__kernels = []
+    g.__canWorkbench = false
+    resetAiSidebarForTest()
+    await setup()
+    useAiSidebar().open()
+    await settle()
+    expect((live()[0].props.extraCommands as Array<{ hidden?: boolean }>).every((c) => c.hidden)).toBe(true)
   })
 })
