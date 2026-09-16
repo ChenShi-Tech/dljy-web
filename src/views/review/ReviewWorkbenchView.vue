@@ -24,7 +24,9 @@ import { safeAnalysisReturn } from '@/services/review/periodDecisions'
 import { dailyEnergySelectionFromQuery, dailyEnergySelectionQuery } from '@/services/review/dailyEnergy'
 import ReportArchivePanel from '@/components/review/workbench/ReportArchivePanel.vue'
 import ReportWorkpaperEditor from '@/components/review/workbench/ReportWorkpaperEditor.vue'
-import type { ReportEvidence } from '@/services/review/workpapers'
+import DecisionLinkedReviews from '@/components/review/workbench/DecisionLinkedReviews.vue'
+import PublishedReportReader from '@/components/review/workbench/PublishedReportReader.vue'
+import { getReportPublication, workpaperError, type LinkedReview, type Publication, type ReportEvidence } from '@/services/review/workpapers'
 import ReviewTopicWorkspace from '@/components/review/workbench/ReviewTopicWorkspace.vue'
 import { reviewTopic, reviewView, priceSelectionFromQuery, priceSelectionQuery, settlementSelectionFromQuery, settlementSelectionQuery, type ReviewTopic } from '@/services/review/reviewTopics'
 import SpotSkeleton from '../../components/common/SpotSkeleton.vue'
@@ -155,6 +157,21 @@ function openOriginal() {
 }
 const archiveVisible = ref(false)
 function openArchive() { archiveVisible.value = true }
+// 从一笔申报回查到的已发布报告。读取期间切换对象、日期或公司时，晚到的响应必须丢弃。
+const linkedPublication = ref<Publication | null>(null), linkedVisible = ref(false), linkedError = ref('')
+let linkedSequence = 0
+async function openLinkedPublication(row: LinkedReview) {
+  const ticket = ++linkedSequence, company = selectedCompanyId.value, rid = region.value, object = selectedKey.value, day = date.value
+  linkedPublication.value = null; linkedError.value = ''; linkedVisible.value = true
+  // 浏览器前进后退也会在请求途中换掉复盘对象，只比公司和地区拦不住它。
+  const current = () => ticket === linkedSequence && company === selectedCompanyId.value && rid === region.value && object === selectedKey.value && day === date.value
+  try {
+    const result = await getReportPublication(company, rid, row.id)
+    if (current()) linkedPublication.value = result
+  } catch (e) { if (current()) linkedError.value = workpaperError(e) }
+}
+// 已经读出来的报告同样不能跨对象停留：切走即作废，不让上一笔申报的报告盖在新对象上。
+watch([selectedKey, date, selectedCompanyId, region], () => { linkedSequence++; linkedPublication.value = null; linkedError.value = ''; linkedVisible.value = false })
 function openLegacyArchive() { void router.push({ path: '/xhjy/review', query: { ...route.query, layout: 'classic', task: undefined, decisionId: undefined } }) }
 let scopeSequence = 0, selectionSequence = 0, pageSequence = 0
 async function loadOrders(seq: number, day: string, rid: string, offset = 0) {
@@ -264,7 +281,7 @@ async function saveLesson() {
     </template>
     <template v-else-if="task === 'decision'">
       <section v-if="!selectedKey" class="panel decision-list"><p v-if="orderLoading || decisionLoading">正在读取当天决策记录…</p><SpotSkeleton v-if="orderLoading || decisionLoading" variant="rows" :rows="4" :title="false" :card="false" /><header><h2>当天留下了哪些决策</h2><p>一次申报与一次判断分别作为复盘对象；同一天不代表已建立逐笔关联。</p></header><p v-if="!orderLoading && !decisionLoading && !orders.length && !decisions.length">{{ orderError || decisionError ? '记录暂不可读，不能确认当天是否留存了决策。' : '当天尚无可查看的申报或决策日志。可先核验结算资料，再记录需补证的问题。' }}</p><button v-for="o in orders" :key="o.id" type="button" class="decision-row" @click="choose(`order:${o.id}`)"><span><b>{{ declarationLabel(o) }}</b><small>{{ o.quoteRationale || '未留存报价依据' }}</small></span><ArrowUpRight :size="16" /></button><button v-for="d in decisions" :key="d.id" type="button" class="decision-row" @click="choose(`decision:${d.id}`)"><span><b>{{ d.decisionPoint }}</b><small>{{ d.judgement || '未记录判断摘要' }}</small></span><ArrowUpRight :size="16" /></button></section>
-      <section v-else-if="selectedOrder" class="panel decision-detail"><header><h2>{{ objectLabel }}</h2><button type="button" @click="openOriginal">核对原始申报 <ArrowUpRight :size="14" /></button></header><p class="notice">以下为单据当前保存的作业留痕。尚无完整的事前版本验证，不能把后补记录当作决策时已知信息，也不按最终盈亏给当时的决策打分。</p><ol class="timeline"><li v-for="e in retainedEvidence" :key="e.id"><div><h3>{{ e.title }}</h3><time v-if="e.at">留存于 {{ new Date(e.at).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false }) }}</time><span v-else class="muted">留存时点未核实</span></div><p>{{ e.text }}</p></li></ol><details v-if="missingEvidence.length"><summary>尚缺 {{ missingEvidence.length }} 项资料，可展开核对</summary><p v-for="e in missingEvidence" :key="e.id"><b>{{ e.title }}：</b>{{ e.text }}</p></details><div class="next"><p>需补证或改变申报方法时，写清下一次的触发条件与验证办法。</p><button class="primary" type="button" @click="setTask('improvement')">形成改进措施</button></div></section>
+      <section v-else-if="selectedOrder" class="panel decision-detail"><header><h2>{{ objectLabel }}</h2><button type="button" @click="openOriginal">核对原始申报 <ArrowUpRight :size="14" /></button></header><p class="notice">以下为单据当前保存的作业留痕。尚无完整的事前版本验证，不能把后补记录当作决策时已知信息，也不按最终盈亏给当时的决策打分。</p><ol class="timeline"><li v-for="e in retainedEvidence" :key="e.id"><div><h3>{{ e.title }}</h3><time v-if="e.at">留存于 {{ new Date(e.at).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false }) }}</time><span v-else class="muted">留存时点未核实</span></div><p>{{ e.text }}</p></li></ol><details v-if="missingEvidence.length"><summary>尚缺 {{ missingEvidence.length }} 项资料，可展开核对</summary><p v-for="e in missingEvidence" :key="e.id"><b>{{ e.title }}：</b>{{ e.text }}</p></details><DecisionLinkedReviews :key="`${selectedCompanyId}:${region}:${selectedOrder.id}`" :company="selectedCompanyId" :region="region" :declaration-id="selectedOrder.id" @publication="openLinkedPublication" /><div class="next"><p>需补证或改变申报方法时，写清下一次的触发条件与验证办法。</p><button class="primary" type="button" @click="setTask('improvement')">形成改进措施</button></div></section>
       <section v-else-if="selectedDecision" class="panel decision-detail"><h2>{{ selectedDecision.decisionPoint }}</h2><p class="notice">原始判断与复盘结论分开展示。当前尚未关联具体申报和结算，不显示单笔收益或胜率。</p><div class="original"><h3>当时的判断</h3><p>{{ selectedDecision.judgement || '未记录' }}</p><h3>判断依据</h3><p>{{ selectedDecision.rationale || '未记录' }}</p><span class="muted">{{ selectedDecision.author || '作者未记录' }} · 留存于 {{ selectedDecision.at ? new Date(selectedDecision.at).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false }) : '时点未核实' }}</span></div><form @submit.prevent="saveLesson"><label>这次判断应保留或改进什么<textarea v-model="lesson" rows="5" placeholder="分别说明：当时信息是否充分、推理是否合理、哪些结论仍需验证。不要仅用事后涨跌评价判断。" /></label><div class="form-actions"><button type="button" @click="setTask('improvement')">形成改进措施</button><button class="primary" type="submit" :disabled="savingLesson || !lesson.trim()">{{ savingLesson ? '保存中…' : '保存复盘结论' }}</button></div></form></section>
       <section v-else class="panel compact-gap"><h2>{{ selectionLoading ? '正在读取记录' : '该记录暂不可用' }}</h2><p>请核实交易日与当前授权，或重新选择复盘对象。</p></section>
     </template>
@@ -275,6 +292,7 @@ async function saveLesson() {
     <el-dialog v-model="archiveVisible" title="复盘报告目录" width="min(1120px, 96vw)" destroy-on-close><ReportArchivePanel v-if="archiveVisible" :company="selectedCompanyId" :region="region" @legacy="archiveVisible = false; openLegacyArchive()" /></el-dialog>
     <el-dialog v-model="topicVisible" title="专题分析" width="min(1180px, 96vw)" :close-on-click-modal="false" :before-close="closeTopic" destroy-on-close><ReviewTopicWorkspace v-if="topicVisible" v-model:view="businessView" v-model:topic="topicMode" v-model:selection="periodSelection" v-model:price-selection="priceSelection" v-model:energy-selection="energySelection" :snapshot="topicSnapshot" :company="selectedCompanyId" :company-label="currentCompany?.name || '当前公司'" :region="region" :date="date" :busy="maintenanceBusy" @busy="maintenanceBusy = $event" @decision="openPeriodDecision" @material="acceptTopicMaterial" @independent="openIndependentTopics" /></el-dialog>
     <el-dialog v-model="workpaperVisible" title="复盘图文底稿" width="min(1380px, 98vw)" :close-on-click-modal="false" :before-close="closeWorkpaper" destroy-on-close><ReportWorkpaperEditor v-if="workpaperSnapshot && workpaperVisible" :snapshot="workpaperSnapshot" :material="workpaperMaterial" @dirty="workpaperDirty = $event" /></el-dialog>
+    <el-dialog v-model="linkedVisible" title="关联这笔申报的已发布报告" width="min(1120px, 96vw)" destroy-on-close><p v-if="linkedError" class="notice" role="alert">{{ linkedError }}</p><PublishedReportReader v-if="linkedPublication" :publication="linkedPublication" /><p v-else-if="!linkedError" class="notice" role="status">正在读取已发布报告…</p></el-dialog>
     <el-dialog v-model="assistantVisible" :title="assistant?.mode === 'report' ? '复盘报告草稿' : '复盘分析'" width="min(1180px, 96vw)" :close-on-click-modal="false">
       <ReviewAssistantWorkbench v-if="assistant" :key="assistant.snapshot.capturedAt" :snapshot="assistant.snapshot" :mode="assistant.mode" :saved-draft="reportDrafts.get(assistant.key)" @draft="storeReportDraft" @downloaded="markReportDownloaded" />
     </el-dialog>

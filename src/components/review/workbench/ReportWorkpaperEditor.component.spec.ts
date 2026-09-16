@@ -104,6 +104,33 @@ describe('图文底稿交付', () => {
     expect(wrapper.text()).not.toContain('仅属于旧报告的批注')
     expect(wrapper.get<HTMLSelectElement>('select[aria-label="批注位置"]').element.value).toBe('')
   })
+  it('关联面板里未确认的理由计入底稿未保存状态，离开守卫才看得见', async () => {
+    const wrapper = await open()
+    expect(wrapper.emitted('dirty')!.at(-1)).toEqual([false])
+    wrapper.findComponent({ name: 'DecisionLinkPanel' }).vm.$emit('dirty', true)
+    await flushPromises()
+    expect(wrapper.emitted('dirty')!.at(-1)).toEqual([true])
+  })
+  it('有未确认的关联依据时不能发布，已勾选的核对确认随之失效', async () => {
+    const wrapper = await open()
+    await wrapper.find('.publish input[type="checkbox"]').setValue(true)
+    wrapper.findComponent({ name: 'DecisionLinkPanel' }).vm.$emit('dirty', true)
+    await flushPromises()
+    expect((wrapper.find('.publish input[type="checkbox"]').element as HTMLInputElement).checked).toBe(false)
+    expect(button(wrapper, '发布报告').attributes('disabled')).toBeDefined()
+    expect(publishWorkpaper).not.toHaveBeenCalled()
+  })
+  it('关联决策块不提供复制，避免绕开预览再建一个关联', async () => {
+    // 复制会克隆申报版本却不走 decision-preview：申报变过就在自动保存时冲突且无法在该块上重新核对，
+    // 没变过则等于凭空多出一个未经交易员核对的关联。
+    const linked = { ...paper(), blocks: [...paper().blocks, { id: '00000000-0000-4000-8000-000000000009', kind: 'decision' as const, title: '2026-05-31 交易日申报', text: '这笔申报定了当日报量区间', declarationId: 'decl-0f1e2d3c', decisionVersion: 'v-9a8b7c', reference: { declarationId: 'decl-0f1e2d3c', targetDate: '2026-05-31', simulated: false, version: 'v-9a8b7c', capturedAt: '2026-06-01T02:00:00.000Z', snapshot: {} as never, notice: '由交易员明确关联。' } }] }
+    vi.mocked(getWorkpaper).mockResolvedValue(linked)
+    const wrapper = await open()
+    const blocks = wrapper.findAll('article.block')
+    expect(blocks).toHaveLength(2)
+    expect(blocks[0].findAll('button').some(node => node.text() === '复制')).toBe(true)
+    expect(blocks[1].findAll('button').some(node => node.text() === '复制')).toBe(false)
+  })
   it('公司周期底稿保留完整起止日，不缩成单日', async () => {
     const wrapper = mount(ReportWorkpaperEditor, { props: { snapshot: { ...snapshot, scope: { ...snapshot.scope, period: { start: '2026-05-01', end: '2026-05-31' } } } }, global: { stubs: { ReportEvidenceChart: true } } }); wrappers.push(wrapper)
     await flushPromises(); await button(wrapper, '新建本次底稿').trigger('click'); await flushPromises()

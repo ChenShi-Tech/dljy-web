@@ -1,5 +1,5 @@
 import type { EChartsOption } from 'echarts'
-import type { Publication, ReportEvidence } from './workpapers'
+import type { DecisionReference, Publication, ReportEvidence } from './workpapers'
 import type { AnalysisPoint } from './topicAnalysis'
 import { formatValue } from './decisionWorkbench'
 
@@ -46,6 +46,17 @@ export function reportEvidenceCaption(evidence: ReportEvidence): string {
   const history = topic === 'price' && result.comparison ? `历史共同覆盖比较：日前均价变化 ${formatValue(result.comparison.changes.daPrice)} 元/MWh，实时均价变化 ${formatValue(result.comparison.changes.rtPrice)} 元/MWh，价差可比 ${result.comparison.coverage.priceMinutes} 分钟。` : result.comparison?.coverage.energyMinutes !== undefined ? `历史共同覆盖 ${result.comparison.coverage.energyMinutes} 分钟：净差异变化 ${formatValue(result.comparison.changes.netDeviationMwh)} MWh，绝对差异变化 ${formatValue(result.comparison.changes.absoluteDeviationMwh)} MWh。` : ''
   return `${result.simulated ? '模拟演练。' : ''}${metrics}。${history}${sourceNotice}`
 }
+/**
+ * 网页、Word 与打印共用的关联决策说明。读的是关联当时冻结的申报副本，源申报后续修改
+ * 不会改写它；关联是交易员明确建立的关系，不作因果认定。
+ */
+export function decisionReferenceCaption(reference: DecisionReference): string {
+  const order = reference.snapshot, curve = order?.energyCurveMwh96
+  // 缺点位或含非有限值时不给合计：半条曲线加出来的数会被当成申报总量。
+  const energy = Array.isArray(curve) && curve.length === 96 && curve.every(value => Number.isFinite(value)) ? `全天申报电量 ${formatValue(curve.reduce((sum, value) => sum + value, 0))} MWh；` : ''
+  const capacity = Number.isFinite(order?.capacityMw) ? `申报容量 ${formatValue(order.capacityMw)} MW；` : ''
+  return `${reference.targetDate} 交易日申报（${reference.simulated ? '历史模拟' : '真实申报'}）。${capacity}${energy}报价依据：${order?.quoteRationale || '未留存，需回到原申报核实'}。${reference.notice}`
+}
 export type ReportPart = { kind: 'title' | 'heading' | 'paragraph'; text: string } | { kind: 'chart'; evidence: ReportEvidence }
 export function reportParts(publication: Publication, brief = false): ReportPart[] {
   const content = publication.content
@@ -59,6 +70,14 @@ export function reportParts(publication: Publication, brief = false): ReportPart
   if (brief) {
     // 摘要也必须保留资料性质，不能把模拟或未认证的依据变成无条件事实。
     for (const evidence of content.evidence) parts.push({ kind: 'paragraph', text: reportEvidenceCaption(evidence) })
+    // 关联申报同理：摘要保留了其他依据的说明，唯独丢掉关联依据，会让申报相关的结论在
+    // 管理层版本里失去出处，连「不代表因果关系」那句提示也一并消失。
+    // 残缺的关联块与详版一样拒绝导出——静默跳过会产出一份「成功但没有依据」的摘要。
+    for (const block of content.blocks) {
+      if (block.kind !== 'decision') continue
+      if (!block.reference) throw new Error('发布版本的关联申报不完整，不能导出')
+      parts.push({ kind: 'paragraph', text: decisionReferenceCaption(block.reference) })
+    }
     return parts
   }
   for (const block of content.blocks) {
@@ -67,6 +86,11 @@ export function reportParts(publication: Publication, brief = false): ReportPart
       const evidence = content.evidence.find(item => item.id === block.evidenceId)
       if (!evidence) throw new Error('发布版本的材料不完整，不能导出')
       parts.push({ kind: 'paragraph', text: block.evidenceRole === 'comparison' ? '比较依据' : '本次依据' }, { kind: 'chart', evidence }, { kind: 'paragraph', text: reportEvidenceCaption(evidence) })
+    }
+    // 关联决策必须随报告一起交付：只导出交易员写的理由，读者看不出依据的是哪一笔申报。
+    if (block.kind === 'decision') {
+      if (!block.reference) throw new Error('发布版本的关联申报不完整，不能导出')
+      parts.push({ kind: 'paragraph', text: decisionReferenceCaption(block.reference) })
     }
     parts.push({ kind: 'paragraph', text: block.text })
     if (block.kind === 'reason') parts.push(
