@@ -149,9 +149,13 @@ export function switchSession(record: AiSessionRecord | null): void {
   saveSession(state.session)
 }
 
-/** 内核建好会话后回填 id（不重挂内核）。 */
-export function adoptSessionId(sessionId: string): void {
-  state.session = state.session ? { ...state.session, sessionId } : { ...BLANK_SESSION, sessionId }
+/**
+ * 内核建好/恢复会话后回填 id（不重挂内核）。标题只在记录还没有时采用服务端的：空白对话首问建会话、
+ * 从历史打开时记录里没有标题（dljy-web#119 审查 P2）；页面请求自带的标题不被覆盖。
+ */
+export function adoptSessionId(sessionId: string, title = ''): void {
+  const base = state.session ?? BLANK_SESSION
+  state.session = { ...base, sessionId, title: base.title || title.trim() }
   saveSession(state.session)
 }
 
