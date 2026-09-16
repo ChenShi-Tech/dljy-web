@@ -1,5 +1,5 @@
 import type { EChartsOption } from 'echarts'
-import type { DecisionReference, Publication, ReportBlock, ReportEvidence, ReviewSegment } from './workpapers'
+import type { DecisionReference, Publication, ReportBlock, ReportEvidence, ReviewSegment, Workpaper, WorkpaperScope } from './workpapers'
 import type { AnalysisPoint } from './topicAnalysis'
 import { formatValue } from './decisionWorkbench'
 
@@ -50,6 +50,29 @@ export function reportEvidenceCaption(evidence: ReportEvidence): string {
  * 网页、Word 与打印共用的关联决策说明。读的是关联当时冻结的申报副本，源申报后续修改
  * 不会改写它；关联是交易员明确建立的关系，不作因果认定。
  */
+/** 卡片自带「某日交易日申报」标题；块标题没改过时阅读视图不再重复一遍。 */
+export function repeatsDecisionHeading(block: ReportBlock): boolean {
+  return block.kind === 'decision' && !!block.reference && block.title.trim() === `${block.reference.targetDate} 交易日申报`
+}
+/** 新建底稿的默认标题按覆盖周期写：月度底稿写成起始日会被当成单日复盘。 */
+export function workpaperDefaultTitle(scope: Pick<WorkpaperScope, 'startDate' | 'endDate' | 'objectLabel'>): string {
+  const { startDate: start, endDate: end, objectLabel: label } = scope
+  if (start === end) return `${start} ${label}复盘`
+  const [year, month, day] = start.split('-')
+  if (day === '01' && end.slice(0, 7) === start.slice(0, 7)) {
+    const last = new Date(Date.UTC(Number(year), Number(month), 0)).getUTCDate()
+    const monthLabel = `${Number(year)}年${Number(month)}月`
+    return Number(end.slice(8)) === last ? `${monthLabel} ${label}月度复盘` : `${monthLabel}（截至${Number(end.slice(8))}日） ${label}复盘`
+  }
+  return `${start}—${end} ${label}复盘`
+}
+const viewNames: Record<WorkpaperScope['view'], string> = { generator: '发电', retail: '售电', storage: '储能' }
+/** 同名底稿靠视角、周期与更新时间区分；标题由交易员自拟，不能指望它唯一。 */
+export function workpaperOptionLabel(paper: Pick<Workpaper, 'title' | 'scope' | 'revision' | 'updatedAt'>): string {
+  const range = paper.scope.startDate === paper.scope.endDate ? paper.scope.startDate : `${paper.scope.startDate}—${paper.scope.endDate}`
+  const updated = Number.isFinite(Date.parse(paper.updatedAt)) ? ` · 更新于 ${new Date(paper.updatedAt).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false, month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}` : ''
+  return `${paper.title} · ${viewNames[paper.scope.view] ?? ''} · ${range} · 第 ${paper.revision} 版${updated}`
+}
 export function decisionReferenceCaption(reference: DecisionReference): string {
   const order = reference.snapshot, curve = order?.energyCurveMwh96
   // 缺点位或含非有限值时不给合计：半条曲线加出来的数会被当成申报总量。

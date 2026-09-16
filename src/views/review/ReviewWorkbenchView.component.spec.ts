@@ -72,6 +72,21 @@ describe('真实接口复盘工作流', () => {
     expect(confirm).toHaveBeenCalledTimes(1)
     expect(router.currentRoute.value.query.declarationId).toBe(accepted ? 'a' : undefined)
   })
+  it('专题资料来源同一范围内重开沿用，换日期、公司或业务视角后不再带回', async () => {
+    const { wrapper, router } = await open()
+    const openTopic = async () => { await wrapper.findAll('button').find(b => b.text() === '专题分析')!.trigger('click'); await flushPromises(); return wrapper.findComponent({ name: 'ReviewTopicWorkspace' }) }
+    const choose = async () => { (await openTopic()).vm.$emit('update:analysisSource', 'imported'); await flushPromises(); expect((await openTopic()).props('analysisSource')).toBe('imported') }
+    await choose()
+    await router.replace({ query: { ...router.currentRoute.value.query, date: '2026-05-30' } }); await flushPromises()
+    expect((await openTopic()).props('analysisSource')).toBeUndefined()
+    await choose()
+    selectedCompanyId.value = 'company-b'; await flushPromises()
+    selectedCompanyId.value = 'company-a'; await flushPromises()
+    expect((await openTopic()).props('analysisSource')).toBeUndefined()
+    await choose()
+    await router.replace({ query: { ...router.currentRoute.value.query, view: 'storage' } }); await flushPromises()
+    expect((await openTopic()).props('analysisSource')).toBeUndefined()
+  })
   it('周期申报回查保存全部专题筛选并跳到申报实际交易日', async () => {
     const { wrapper, router } = await open('&topic=settlement&cadence=week&periodDate=2026-05-31&plants=甲厂&priceIntervals=2026-05-30T00:00:00%2B08:00', true)
     const workspace = wrapper.findComponent({ name: 'ReviewTopicWorkspace' })
