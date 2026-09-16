@@ -217,6 +217,9 @@ describe('按会话续接（?session=）', () => {
     await nextTick()
     await nextTick()
     expect(w.find('.stub-panel').attributes('data-resume')).toBe('')
+    // 地址栏也不再指向旧会话：刷新/分享链接打开的是当前任务（dljy-web#119 审查 P2）
+    expect(currentRoute().query.session).toBeUndefined()
+    expect(currentRoute().query.entry).toBe('morning_brief')
   })
 
   it('工作台已停在别的入口时，同一次导航换入口并带 session：续接目标不被换入口清掉', async () => {
