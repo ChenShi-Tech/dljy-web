@@ -9,7 +9,7 @@ import {
   type MidlongImportBatch, type MidlongImportIssue, type MidlongImportMapping, type MidlongImportPreview, type MidlongImportRowReport,
 } from '@/services/midlong/midlongTypes'
 import { commitImport, createImportPreview, fetchImportTemplate, midlongFailureOf, type ImportFileInput } from '@/services/midlong/midlongApi'
-import { downloadBase64, downloadCsv, fileToBase64, fmtPrice, fmtQuantity } from '@/services/midlong/midlongFormat'
+import { downloadBase64, downloadCsv, fileToBase64, fmtPrice, fmtQuantity, oversizeUploadMessage } from '@/services/midlong/midlongFormat'
 
 const props = defineProps<{ modelValue: boolean }>()
 const emit = defineEmits<{ 'update:modelValue': [boolean]; committed: [MidlongImportBatch] }>()
@@ -39,7 +39,15 @@ watch(() => props.modelValue, (open) => {
 
 function onFile(role: 'workbook' | 'contracts' | 'allocations', event: Event) {
   const input = event.target as HTMLInputElement
-  files[role] = input.files?.[0] ?? null
+  const file = input.files?.[0] ?? null
+  const oversize = file ? oversizeUploadMessage(file) : null
+  if (oversize) {
+    problem.value = { tone: 'danger', title: '文件过大', message: oversize }
+    files[role] = null
+    input.value = ''
+    return
+  }
+  files[role] = file
 }
 
 const ready = computed(() => (format.value === 'xlsx' ? Boolean(files.workbook) : Boolean(files.contracts)))
@@ -177,12 +185,16 @@ function close() {
           <div class="ml-tile warn"><span>内容冲突</span><b>{{ preview.summary.conflictCount }}</b></div>
           <div class="ml-tile bad"><span>错误行</span><b>{{ preview.summary.errorRowCount }}</b></div>
           <div class="ml-tile"><span>文件级问题</span><b>{{ preview.summary.fileErrorCount }}</b></div>
+          <div class="ml-tile warn"><span>提示</span><b>{{ preview.summary.warningCount }}</b></div>
         </div>
         <MidlongNotice v-if="preview.summary.conflictCount" tone="warn" title="存在同编号不同内容的合同">
           冲突合同不会被导入覆盖，也不会另建第二份有效合同。请打开原合同核对差异，确需修改时走「录入更正」；核对无误后可从文件中去掉这些行再导入。
         </MidlongNotice>
         <MidlongNotice v-if="preview.fileErrors.length" tone="danger" title="文件级问题">
           <div v-for="(e, i) in preview.fileErrors" :key="i">{{ issueLocation(e) }}：{{ e.message }}</div>
+        </MidlongNotice>
+        <MidlongNotice v-if="preview.fileWarnings.length" tone="warn" title="整份文件的提示（不阻止提交，提交前请确认）">
+          <div v-for="(e, i) in preview.fileWarnings" :key="i">{{ issueLocation(e) }}：{{ e.message }}</div>
         </MidlongNotice>
         <div v-if="preview.columns" class="ml-columns">
           列映射：<span v-for="c in preview.columns.contracts" :key="c.name" class="ml-col">{{ c.header }}<template v-if="c.via === 'alias'">→{{ c.name }}</template><template v-if="c.unitFromHeader">（{{ c.unitFromHeader }}）</template></span>
@@ -257,7 +269,7 @@ function close() {
 .ml-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px 14px; }
 .ml-field { display: flex; flex-direction: column; gap: 4px; font-size: var(--font-md); color: var(--muted); }
 .ml-field :deep(.el-select) { width: 100%; }
-.ml-tiles { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 10px; }
+.ml-tiles { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 10px; }
 .ml-tile { border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; display: flex; flex-direction: column; gap: 2px; }
 .ml-tile span { font-size: var(--font-sm); color: var(--muted); }
 .ml-tile b { font-size: var(--font-24); font-variant-numeric: tabular-nums; }

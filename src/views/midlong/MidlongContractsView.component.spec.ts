@@ -120,6 +120,17 @@ describe('中长期售电合同列表', () => {
     expect(urlQuery.keyword).toBe('TEST')
   })
 
+  it('「有质量缺口」只展示数量，不是会清空筛选的按钮', async () => {
+    hoisted.fetchCapabilities.mockResolvedValue(caps())
+    hoisted.fetchContracts.mockResolvedValue(listOf([row({ qualityFlags: ['MISSING_PRICE'] })]))
+    const w = mount(MidlongContractsView, { global: { stubs: STUBS } })
+    await flushPromises()
+    const gapTile = w.findAll('.ml-tile').find((t) => t.text().includes('有质量缺口'))!
+    expect(gapTile.element.tagName).not.toBe('BUTTON')
+    expect(gapTile.text()).toContain('按类型查看请用「质量缺口」筛选')
+    expect(w.findAll('button.ml-tile').map((b) => b.text()).join('|')).not.toContain('有质量缺口')
+  })
+
   it('非试点地区显示「未开通」，不展示空列表', async () => {
     hoisted.fetchCapabilities.mockResolvedValue(caps({ regionId: 'shanxi', regionSupported: false, reason: '地区 shanxi 尚未开通中长期售电模块' }))
     const w = mount(MidlongContractsView, { global: { stubs: STUBS } })

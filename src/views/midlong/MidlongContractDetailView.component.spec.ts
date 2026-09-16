@@ -7,7 +7,7 @@ import { flushPromises } from '@vue/test-utils'
 import { mount } from '@/test/mount'
 import type { MidlongContractDetail, MidlongRevision } from '@/services/midlong/midlongTypes'
 
-const hoisted = vi.hoisted(() => ({ fetchContract: vi.fn(), correctContract: vi.fn() }))
+const hoisted = vi.hoisted(() => ({ fetchContract: vi.fn(), correctContract: vi.fn(), addEvidence: vi.fn(), fileToBase64: vi.fn(async () => 'Zg==') }))
 
 vi.mock('element-plus', async (orig) => ({ ...(await orig<typeof import('element-plus')>()), ElMessage: { success: vi.fn(), error: vi.fn() } }))
 vi.mock('vue-router', () => ({ useRoute: () => ({ params: { id: '7' }, query: {} }), useRouter: () => ({ replace: vi.fn(), push: vi.fn() }) }))
@@ -20,9 +20,11 @@ vi.mock('@/services/midlong/midlongApi', () => ({
   fetchContract: hoisted.fetchContract,
   fetchSubjects: vi.fn(async () => []),
   correctContract: hoisted.correctContract,
-  verifyContract: vi.fn(), voidContract: vi.fn(), addEvidence: vi.fn(), linkAlias: vi.fn(), fetchEvidenceContent: vi.fn(),
+  verifyContract: vi.fn(), voidContract: vi.fn(), addEvidence: hoisted.addEvidence, linkAlias: vi.fn(), fetchEvidenceContent: vi.fn(),
   midlongFailureOf: (e: unknown) => (e as { failure: unknown }).failure,
 }))
+
+vi.mock('@/services/midlong/midlongFormat', async (orig) => ({ ...(await orig<typeof import('@/services/midlong/midlongFormat')>()), fileToBase64: hoisted.fileToBase64 }))
 
 import MidlongContractDetailView from './MidlongContractDetailView.vue'
 
@@ -83,6 +85,27 @@ describe('中长期售电合同详情', () => {
     expect(hoisted.correctContract).toHaveBeenCalledWith(7, expect.objectContaining({ expectedRowVersion: 3, changeType: 'CORRECTION' }))
     expect(w.text()).toContain('合同已被他人更新')
     expect(w.text()).toContain('经济版本 2')
+  })
+
+  it('补充资料超过 20 MB：选择后立即提示，不读入内存也不上传', async () => {
+    hoisted.fetchContract.mockResolvedValue(detail({ confirmationStatus: 'PENDING_VERIFICATION' }))
+    const w = mount(MidlongContractDetailView, { global: { stubs: STUBS } })
+    await flushPromises()
+    await w.findAll('.ml-actions button').find((b) => b.text() === '补充资料')!.trigger('click')
+    await flushPromises()
+    const input = w.find('input[data-testid="ml-evidence-file"]')
+    const huge = new File(['x'], '大文件.zip')
+    Object.defineProperty(huge, 'size', { value: 25 * 1024 * 1024 })
+    Object.defineProperty(input.element, 'files', { value: [huge], configurable: true })
+    await input.trigger('change')
+    await flushPromises()
+    expect(w.text()).toContain('超过 20 MB 上限，未读取也未上传')
+    const upload = w.findAll('.el-dialog__footer button').find((b) => b.text() === '上传')!
+    expect(upload.attributes('disabled')).toBeDefined()
+    await upload.trigger('click')
+    await flushPromises()
+    expect(hoisted.fileToBase64).not.toHaveBeenCalled()
+    expect(hoisted.addEvidence).not.toHaveBeenCalled()
   })
 
   it('待核对合同缺依据：核验前明确提示需补齐', async () => {

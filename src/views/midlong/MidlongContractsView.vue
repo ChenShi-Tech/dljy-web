@@ -183,7 +183,8 @@ watch([selectedCompanyId, () => currentRegion.value.id], () => {
         <button class="ml-tile warn" type="button" @click="quickFilter('PENDING_VERIFICATION')"><span>待核对</span><b>{{ result.stats.byStatus.PENDING_VERIFICATION }}</b><small>核验确认后计入持仓</small></button>
         <button class="ml-tile" type="button" @click="quickFilter('DRAFT')"><span>草稿</span><b>{{ result.stats.byStatus.DRAFT }}</b><small>未确认</small></button>
         <button class="ml-tile ok" type="button" @click="quickFilter('CONFIRMED')"><span>已确认电量合同</span><b>{{ fmtQuantity(result.stats.confirmedObligationQuantity) }}<i>MWh</i></b><small>{{ result.stats.byStatus.CONFIRMED }} 份</small></button>
-        <button class="ml-tile" type="button" @click="quickFilter('', '')"><span>有质量缺口</span><b>{{ result.stats.withQualityGaps }}</b><small>缺价/缺分解等不影响已证明义务</small></button>
+        <!-- 质量缺口有多种类型，没有「任一缺口」的聚合筛选：这张卡只展示数量，按类型查看用上方「质量缺口」筛选。 -->
+        <div class="ml-tile static"><span>有质量缺口</span><b>{{ result.stats.withQualityGaps }}</b><small>按类型查看请用「质量缺口」筛选</small></div>
       </div>
 
       <MidlongNotice tone="info">
@@ -307,6 +308,8 @@ watch([selectedCompanyId, () => currentRegion.value.id], () => {
   padding: 12px 14px; border: 1px solid var(--line); border-radius: var(--radius, 8px); background: var(--panel);
 }
 .ml-tile:hover { border-color: var(--accent); }
+.ml-tile.static { cursor: default; }
+.ml-tile.static:hover { border-color: var(--line); }
 .ml-tile span { font-size: var(--font-sm); color: var(--muted); }
 .ml-tile b { font-size: var(--font-24); font-weight: 650; font-variant-numeric: tabular-nums; font-family: var(--font-display); }
 .ml-tile b i { font-style: normal; font-size: var(--font-sm); color: var(--muted); margin-left: 4px; font-weight: 500; }

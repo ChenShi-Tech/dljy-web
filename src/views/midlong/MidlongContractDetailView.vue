@@ -25,7 +25,7 @@ import {
 } from '@/services/midlong/midlongTypes'
 import { draftFromRevision, toEconomicsInput, type EconomicsDraft } from '@/services/midlong/economicsDraft'
 import {
-  confirmationTag, createLoadGuard, downloadBase64, fileToBase64, fmtPrice, fmtQuantity, progressTag, qualityTags,
+  confirmationTag, createLoadGuard, downloadBase64, fileToBase64, fmtPrice, fmtQuantity, oversizeUploadMessage, progressTag, qualityTags,
 } from '@/services/midlong/midlongFormat'
 
 const route = useRoute()
@@ -187,12 +187,22 @@ function openEvidence() {
   openAction('evidence')
 }
 function onEvidenceFile(event: Event) {
-  evidenceForm.file = (event.target as HTMLInputElement).files?.[0] ?? null
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0] ?? null
+  const oversize = file ? oversizeUploadMessage(file) : null
+  actionError.value = oversize ? { status: 413, errorCode: 'VALIDATION_FAILED', message: oversize, details: null } : null
+  if (oversize) input.value = ''
+  evidenceForm.file = oversize ? null : file
 }
 async function submitEvidence() {
   const d = detail.value
   const file = evidenceForm.file
   if (!d || !file) return
+  const oversize = oversizeUploadMessage(file)
+  if (oversize) {
+    actionError.value = { status: 413, errorCode: 'VALIDATION_FAILED', message: oversize, details: null }
+    return
+  }
   const contentBase64 = await fileToBase64(file)
   void runAction('evidence', () => addEvidence(d.contractId, { fileName: file.name, contentBase64, documentType: evidenceForm.documentType, note: evidenceForm.note || undefined, mediaType: file.type || undefined }), '资料已补充（不改变合同电量）')
 }

@@ -122,6 +122,15 @@ export function downloadBase64(fileName: string, contentBase64: string, mediaTyp
   URL.revokeObjectURL(url)
 }
 
+/** 单个上传文件上限，与后端解码上限一致（资料与导入文件都受此限）。 */
+export const MAX_UPLOAD_BYTES = 20 * 1024 * 1024
+
+/** 超限文件在读入内存之前就拒绝，避免误选大文件时整份读入并膨胀成 base64 把页面拖死。 */
+export function oversizeUploadMessage(file: { name: string; size: number }): string | null {
+  if (file.size <= MAX_UPLOAD_BYTES) return null
+  return `文件「${file.name}」大小 ${(file.size / 1024 / 1024).toFixed(1)} MB，超过 ${MAX_UPLOAD_BYTES / 1024 / 1024} MB 上限，未读取也未上传`
+}
+
 /** File → base64（不含 data: 前缀）。 */
 export async function fileToBase64(file: Blob): Promise<string> {
   const buffer = new Uint8Array(await file.arrayBuffer())

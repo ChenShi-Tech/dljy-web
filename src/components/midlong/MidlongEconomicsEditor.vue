@@ -2,7 +2,7 @@
 // 中长期合同经济内容编辑器（dljy#2939）：电量与单位、售电价格与口径、交割期、月度分解。
 // 草稿录入与录入更正共用；用与后端同一份 shared/midlong 规则实时预校验（提交时仍以后端为准）。
 // 数值一律以字符串编辑，不经过浮点数：输入框里的 1000.123456 原样送到后端。
-import { computed } from 'vue'
+import { computed, watch } from 'vue'
 import {
   ENERGY_UNIT_FACTORS, EVIDENCE_BASES, EVIDENCE_BASIS_LABELS, PRICE_COMPONENTS, PRICE_COMPONENT_LABELS, PRICE_TYPES,
   PRICE_TYPE_LABELS, PRICE_UNIT_FACTORS, TAX_BASES, TAX_BASIS_LABELS, deliveryMonths, normalizeEconomics,
@@ -20,6 +20,11 @@ const priceUnits = Object.keys(PRICE_UNIT_FACTORS)
 function patch(partial: Partial<EconomicsDraft>) {
   emit('update:modelValue', { ...props.modelValue, ...partial })
 }
+
+// 环境价值只属于绿电：切到常规电能时清空（字段随之隐藏，不能留一个看不见也改不了的值被提交；后端同样拒绝）。
+watch(() => props.energyAttribute, (value) => {
+  if (value !== 'GREEN' && props.modelValue.environmentPrice) patch({ environmentPrice: '' })
+}, { immediate: true })
 
 function patchRow(uid: number, partial: Partial<AllocationRow>) {
   patch({ allocations: props.modelValue.allocations.map((row) => (row.uid === uid ? { ...row, ...partial } : row)) })

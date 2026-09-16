@@ -7,7 +7,7 @@ import { flushPromises } from '@vue/test-utils'
 import { mount } from '@/test/mount'
 import type { MidlongImportPreview, MidlongImportRowReport } from '@/services/midlong/midlongTypes'
 
-const hoisted = vi.hoisted(() => ({ createImportPreview: vi.fn(), commitImport: vi.fn() }))
+const hoisted = vi.hoisted(() => ({ createImportPreview: vi.fn(), commitImport: vi.fn(), fileToBase64: vi.fn(async () => 'Y3N2') }))
 
 vi.mock('element-plus', async (orig) => ({ ...(await orig<typeof import('element-plus')>()), ElMessage: { success: vi.fn(), error: vi.fn() } }))
 vi.mock('@/services/midlong/midlongApi', () => ({
@@ -16,7 +16,7 @@ vi.mock('@/services/midlong/midlongApi', () => ({
   fetchImportTemplate: vi.fn(),
   midlongFailureOf: (e: unknown) => (e as { failure: unknown }).failure,
 }))
-vi.mock('@/services/midlong/midlongFormat', async (orig) => ({ ...(await orig<typeof import('@/services/midlong/midlongFormat')>()), fileToBase64: vi.fn(async () => 'Y3N2') }))
+vi.mock('@/services/midlong/midlongFormat', async (orig) => ({ ...(await orig<typeof import('@/services/midlong/midlongFormat')>()), fileToBase64: hoisted.fileToBase64 }))
 
 import MidlongImportDialog from './MidlongImportDialog.vue'
 
@@ -90,6 +90,37 @@ describe('中长期合同导入', () => {
     expect(w.text()).toContain('预览已失效，整批未入库')
     expect(w.text()).toContain('同内容跳过')
     expect(commitButton().attributes('disabled')).toBeDefined()
+  })
+
+  it('整份文件的提示在提交前可见，并计入提示数', async () => {
+    const p = preview([row({ op: 'CREATE' })], true)
+    p.fileWarnings = [{ sheet: '合同主表', rowNumber: null, column: '售电价格', code: 'PRICE_UNIT_FROM_MAPPING', message: '价格单位来自导入映射声明，文件中未注明' }]
+    p.summary.warningCount = 1
+    hoisted.createImportPreview.mockResolvedValue(p)
+    const { w, commitButton } = await openAndPreview()
+    expect(w.text()).toContain('整份文件的提示')
+    expect(w.text()).toContain('价格单位来自导入映射声明，文件中未注明')
+    expect(w.findAll('.ml-tile').some((t) => t.text().replace(/\s+/g, '') === '提示1')).toBe(true)
+    expect(commitButton().attributes('disabled')).toBeUndefined()
+  })
+
+  it('选择超过 20 MB 的文件：立即提示，不读入内存、不生成预览', async () => {
+    const w = mount(MidlongImportDialog, { props: { modelValue: false }, global: { stubs: STUBS } })
+    await w.setProps({ modelValue: true })
+    await flushPromises()
+    await w.findAll('.el-radio-button').find((b) => b.text().includes('CSV'))!.find('input').setValue(true)
+    await flushPromises()
+    const input = w.find('input[data-testid="ml-import-contracts"]')
+    const huge = new File(['a'], 'contracts.csv')
+    Object.defineProperty(huge, 'size', { value: 21 * 1024 * 1024 })
+    Object.defineProperty(input.element, 'files', { value: [huge], configurable: true })
+    await input.trigger('change')
+    await flushPromises()
+    expect(w.text()).toContain('超过 20 MB 上限，未读取也未上传')
+    const previewButton = w.findAll('.el-dialog__footer button').find((b) => b.text() === '生成预览')!
+    expect(previewButton.attributes('disabled')).toBeDefined()
+    expect(hoisted.fileToBase64).not.toHaveBeenCalled()
+    expect(hoisted.createImportPreview).not.toHaveBeenCalled()
   })
 
   it('提交成功只登记为待核对', async () => {
