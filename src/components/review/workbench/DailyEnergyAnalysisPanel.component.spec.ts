@@ -1,4 +1,5 @@
 import { flushPromises, mount } from '@vue/test-utils'
+import { metricTile } from '@/test/metricTile'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import DailyEnergyAnalysisPanel from './DailyEnergyAnalysisPanel.vue'
 const api=vi.hoisted(()=>({fetchDailyEnergy:vi.fn(),captureDailyEnergy:vi.fn(),setOption:vi.fn()}))
@@ -11,7 +12,7 @@ const open=()=>mount(DailyEnergyAnalysisPanel,{props:{company:'company-a',region
 describe('公司周期电量分析',()=>{
   it('首次加载真实周期、显示净与绝对偏差，取材固定已完成范围',async()=>{
     const wrapper=open();await flushPromises()
-    expect(wrapper.text()).toContain('净偏差');expect(wrapper.text()).toContain('逐厂站日绝对偏差');expect(wrapper.text()).toContain('10 MWh')
+    expect(wrapper.text()).toContain('净偏差');expect(wrapper.text()).toContain('逐厂站日绝对偏差');expect(metricTile(wrapper, '逐厂站日绝对偏差')).toEqual({ value: '10', unit: 'MWh' })
     expect(api.fetchDailyEnergy).toHaveBeenCalledWith('company-a',expect.objectContaining({basis:'forecast',actual:'market'}),expect.any(AbortSignal))
     await wrapper.findAll('button').find(b=>b.text()==='加入复盘底稿')!.trigger('click');await flushPromises()
     expect(api.captureDailyEnergy).toHaveBeenCalledWith('company-a',expect.objectContaining({period:expect.objectContaining({date:'2026-05-31'})}))

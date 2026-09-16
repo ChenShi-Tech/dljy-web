@@ -1,4 +1,5 @@
 import { mount, flushPromises } from '@vue/test-utils'
+import { metricTile } from '@/test/metricTile'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import ImportedIntervalPanel from './ImportedIntervalPanel.vue'
 const api = vi.hoisted(() => ({ analyzeImportedIntervals: vi.fn(), captureImportedIntervals: vi.fn() }))
@@ -54,7 +55,8 @@ describe('已导入分时资料分析', () => {
   it('模拟模式醒目标记且不沿用业务资料目录', async () => {
     const wrapper = create(); await open(wrapper)
     await wrapper.findAll('select')[0]!.setValue('true')
-    expect(wrapper.text()).toContain('模拟数据，仅供演练')
+    expect(wrapper.find('.review-callout.mock').text()).toContain('模拟数据')
+    expect(wrapper.find('.review-callout.mock').text()).toContain('仅供演练')
     expect(wrapper.text()).not.toContain('测试对象')
     wrapper.unmount()
   })
@@ -65,8 +67,8 @@ describe('已导入分时资料分析', () => {
     api.analyzeImportedIntervals.mockResolvedValue({ ...data, analysis: { ...data.analysis, energy: { netDeviationMwh: -11.800000000000004, absoluteDeviationMwh: 15.659999999999993 } } })
     await wrapper.findAll('button').find(button => button.text() === '重新统计')!.trigger('click'); await flushPromises()
     expect(api.analyzeImportedIntervals).toHaveBeenLastCalledWith('one', expect.objectContaining({ thresholds: { absolutePct: 10 } }))
-    expect(wrapper.text()).toContain('净偏差 -11.8 MWh')
-    expect(wrapper.text()).toContain('绝对偏差 15.66 MWh')
+    expect(metricTile(wrapper, '净偏差')).toEqual({ value: '-11.8', unit: 'MWh' })
+    expect(metricTile(wrapper, '绝对偏差')).toEqual({ value: '15.66', unit: 'MWh' })
     expect(wrapper.text()).not.toContain('000000000004')
     expect(wrapper.text()).toContain('待核查时段')
     api.captureImportedIntervals.mockResolvedValue({ id: 'material' })
@@ -145,6 +147,16 @@ describe('已导入分时资料分析', () => {
     expect(header).toContain('参考期有效实际')
     const row = wrapper.findAll('tr').find(node => node.text().startsWith(choiceB.objectId))!
     expect(row.findAll('td').map(node => node.text())).toEqual(['4', '4', '4', '4', '3', '0'])
+    wrapper.unmount()
+  })
+
+  it('待核查时段用北京时间短格式呈现，不带秒和重复日期', async () => {
+    api.analyzeImportedIntervals.mockResolvedValueOnce(catalog).mockResolvedValue(data)
+    const wrapper = create(); await open(wrapper)
+    await wrapper.findAll('select').at(-1)!.setValue(JSON.stringify([choice.seriesKey, choice.objectId]))
+    await wrapper.findAll('button').find(button => button.text() === '重新统计')!.trigger('click'); await flushPromises()
+    const label = wrapper.findAll('details').find(node => node.find('summary').text().startsWith('选择待核查时段'))!.find('label').text()
+    expect(label).toBe('05/31 00:00—00:15')
     wrapper.unmount()
   })
 })

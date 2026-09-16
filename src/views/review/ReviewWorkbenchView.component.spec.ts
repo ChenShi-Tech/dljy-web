@@ -14,7 +14,7 @@ vi.mock('@/services/company/companyContext', async () => ({ selectedCompanyId: (
 vi.mock('@/services/declarations', () => ({ getDeclaration: vi.fn(), listDeclarationsPage: vi.fn() }))
 vi.mock('@/services/quant/quantClient', () => ({ fetchReview: vi.fn(), fetchSettlementReview: vi.fn(), classifyReviewError: vi.fn(() => ({ kind: 'load-failed' })) }))
 vi.mock('@/services/trading/decisionLogClient', () => ({ fetchDecisionLogFeed: vi.fn(), postBackfill: vi.fn() }))
-vi.mock('@/services/review/reviewStoreClient', () => ({ fetchImprovementActions: vi.fn(async () => ({ available: true, actions: [] })), createImprovementAction: vi.fn(), patchImprovementAction: vi.fn() }))
+vi.mock('@/services/review/reviewStoreClient', () => ({ fetchImprovementActions: vi.fn(async () => ({ available: true, actions: [] })), fetchAllImprovementActions: vi.fn(async () => ({ available: true, actions: [] })), createImprovementAction: vi.fn(), patchImprovementAction: vi.fn() }))
 vi.mock('@/composables/useEChart', () => ({ useEChart: () => ({ setOption: vi.fn(), instance: () => null }) }))
 
 const settlement = { date: '2026-05-31', region: 'yunnan', mock: false, sourceType: 'REAL', plant_count: 1, summary: { ltmEnergy: 30, daDevEnergy: 20, rtDevEnergy: 10, actualOnGridEnergy: 60, totalFee: 600, avgPrice: 10 }, plants: [{ plant: '核验用厂站', actualOnGridEnergy: 60, totalFee: 600, avgPrice: 10 }] } as SettlementReviewResult
