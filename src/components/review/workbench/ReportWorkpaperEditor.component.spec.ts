@@ -183,9 +183,17 @@ describe('图文底稿交付', () => {
     const wrapper = await open()
     const registered = () => wrapper.findAll('article.block').map(block => block.text().includes('这条措施已登记到改进记录'))
     expect(registered()).toEqual([true, true])
+    // 服务端不允许移除已登记的块，页面上也不提供移除；旧字样块没有服务端约束，照常可移除
+    const hasRemove = (index: number) => wrapper.findAll('article.block')[index].findAll('button').some(node => node.text() === '移除')
+    expect([hasRemove(0), hasRemove(1)]).toEqual([false, true])
     await wrapper.findAll('article.block')[0].findAll('button').find(node => node.text() === '复制')!.trigger('click')
     expect(registered()).toEqual([true, true, false])
     expect(wrapper.findAll('article.block')[2].findAll('button').some(node => node.text() === '登记到改进记录')).toBe(true)
+    expect(hasRemove(2)).toBe(true)
+    // 复制旧底稿的措施：去掉登记字样，复制出的块显示为未登记
+    await wrapper.findAll('article.block')[1].findAll('button').find(node => node.text() === '复制')!.trigger('click')
+    expect(registered()).toEqual([true, true, false, false])
+    expect((wrapper.findAll('article.block')[3].find('textarea').element as HTMLTextAreaElement).value).toBe('晚高峰前复核预测')
   })
   it('登记成功后到登记编号保存确认前保持进行中，正文冻结、不能切换底稿', async () => {
     let finish: () => void = () => {}

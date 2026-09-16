@@ -205,8 +205,13 @@ function addSegmentReason(chart: ReportBlock, segments: ReviewSegment[]) {
   segmentTarget.value = ''
   status.value = `已为 ${segments.length} 个时段添加待核实原因`
 }
-// 复制出的是一条新措施：不带登记编号，需要的话单独登记。
-function duplicate(block: ReportBlock) { if (block.kind === 'decision') return; const { improvementActionId: _registered, ...copy } = block; draft.value?.blocks.push({ ...copy, id: crypto.randomUUID() }) }
+// 复制出的是一条新措施：不带登记编号，旧底稿正文里的登记字样也一并去掉，需要的话单独登记。
+function duplicate(block: ReportBlock) {
+  if (block.kind === 'decision') return
+  const { improvementActionId: _registered, ...copy } = block
+  const text = copy.kind === 'action' ? copy.text.replace(new RegExp(`\\n?（${LEGACY_REGISTERED}[^）]*）`, 'g'), '') : copy.text
+  draft.value?.blocks.push({ ...copy, text, id: crypto.randomUUID() })
+}
 function attach(material: ReportEvidence, role: 'primary' | 'comparison') { if (draft.value && canEdit.value) draft.value.blocks.push({ id: crypto.randomUUID(), kind: 'chart', title: material.content.labels.join('与'), text: '', evidenceId: material.id, evidenceRole: role }) }
 async function publish() {
   if (!draft.value || !confirmed.value) return
@@ -268,13 +273,13 @@ onBeforeUnmount(() => { alive = false; if (timer) clearTimeout(timer); emit('dir
           <DecisionLinkPanel v-if="canEdit" :company="company" :draft="draft" :disabled="publishing || loading" @link="linkDecision" @open="openDeclaration" @dirty="linkPending = $event" />
           <ImprovementLookbackPanel v-if="canEdit" :draft="draft" :disabled="publishing || loading" @record="recordLookback" @dirty="lookbackPending = $event" @busy="lookbackBusy = $event" />
           <article v-for="(block, index) in draft.blocks" :key="block.id" class="block">
-            <header><b>{{ index + 1 }} · {{ blockNames[block.kind] }}</b><div><button type="button" :disabled="index === 0" aria-label="上移内容块" @click="move(index, -1)">上移</button><button type="button" :disabled="index === draft.blocks.length - 1" aria-label="下移内容块" @click="move(index, 1)">下移</button><button v-if="block.kind !== 'decision'" type="button" @click="duplicate(block)">复制</button><button type="button" @click="draft.blocks.splice(index, 1)">移除</button></div></header>
+            <header><b>{{ index + 1 }} · {{ blockNames[block.kind] }}</b><div><button type="button" :disabled="index === 0" aria-label="上移内容块" @click="move(index, -1)">上移</button><button type="button" :disabled="index === draft.blocks.length - 1" aria-label="下移内容块" @click="move(index, 1)">下移</button><button v-if="block.kind !== 'decision'" type="button" @click="duplicate(block)">复制</button><button v-if="!block.improvementActionId" type="button" @click="draft.blocks.splice(index, 1)">移除</button></div></header>
             <input v-model="block.title" aria-label="内容块标题" maxlength="200" />
             <p v-if="block.segments?.length" class="segments">{{ segmentCaption(block, materialOf(block)) }}</p><template v-if="block.evidenceId"><ReportEvidenceChart v-if="materialOf(block) && rendersMaterial(draft.blocks, block)" :evidence="materialOf(block)!" /><label>材料用途<select v-model="block.evidenceRole"><option value="primary">本次依据</option><option value="comparison">比较依据</option></select></label><template v-if="block.kind === 'chart' && materialOf(block)"><button v-if="segmentTarget !== block.id" type="button" @click="segmentTarget = block.id">针对其中时段写原因</button><EvidenceSegmentPicker v-else :evidence="materialOf(block)!" @pick="addSegmentReason(block, $event)" @close="segmentTarget = ''" /></template></template>
             <DecisionReferenceCard v-if="block.kind === 'decision' && block.reference" :reference="block.reference" @open="openDeclaration" />
             <textarea v-model="block.text" :aria-label="block.kind === 'decision' ? '关联依据' : blockNames[block.kind]" rows="3" :placeholder="block.kind === 'decision' ? '写清为什么把这笔申报作为本次复盘的依据' : '补充事实、解释或人工判断'" />
             <button type="button" @click="writingTarget = block.id">辅助撰写这段</button>
-            <template v-if="block.kind === 'action' && block.origin !== 'improvement_lookback'"><p v-if="isRegistered(block)" class="registered">这条措施已登记到改进记录。</p><button v-else-if="registerTarget !== block.id" type="button" :disabled="block.text.trim().length < 8" @click="registerTarget = block.id; registerOwner = ''; registerDue = ''">登记到改进记录</button><div v-else class="register"><label>负责人<input v-model="registerOwner" maxlength="100" /></label><label>回查日期<input v-model="registerDue" type="date" /></label><button type="button" :disabled="registering || !registerOwner.trim() || !registerDue" @click="registerAction(block)">{{ registering ? '正在登记…' : '登记' }}</button><button type="button" :disabled="registering" @click="registerTarget = ''">取消</button></div></template>
+            <template v-if="block.kind === 'action' && block.origin !== 'improvement_lookback'"><p v-if="isRegistered(block)" class="registered">这条措施已登记到改进记录。<template v-if="block.improvementActionId">不能从报告中移除；措施不再执行，请在改进验证里调整记录状态。</template></p><button v-else-if="registerTarget !== block.id" type="button" :disabled="block.text.trim().length < 8" @click="registerTarget = block.id; registerOwner = ''; registerDue = ''">登记到改进记录</button><div v-else class="register"><label>负责人<input v-model="registerOwner" maxlength="100" /></label><label>回查日期<input v-model="registerDue" type="date" /></label><button type="button" :disabled="registering || !registerOwner.trim() || !registerDue" @click="registerAction(block)">{{ registering ? '正在登记…' : '登记' }}</button><button type="button" :disabled="registering" @click="registerTarget = ''">取消</button></div></template>
             <template v-if="block.kind === 'reason'"><label>核实状态<select v-model="block.state"><option value="pending">待核实的可能原因</option><option value="confirmed">交易员已核实</option></select></label><label>支持证据<textarea v-model="block.supports" rows="2" /></label><label>反对证据<textarea v-model="block.refutes" rows="2" /></label></template>
           </article>
           <p v-if="!draft.blocks.length">从专题分析加入图表，或添加事实、原因和措施开始撰写。</p>
