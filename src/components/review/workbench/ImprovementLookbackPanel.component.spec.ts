@@ -41,8 +41,12 @@ describe('报告内回查改进措施', () => {
     expect(patch.status).toBe('done')
     expect(patch.action).toContain('回查报告：晴川周复盘（2026-05-25—2026-05-31）')
     expect(patch.action).toContain('验证结论：达到预期，结束回查')
-    const [block] = wrapper.emitted('record')![0] as [{ kind: string; text: string }]
+    const [block] = wrapper.emitted('record')![0] as [{ kind: string; text: string; origin?: string }]
     expect(block.kind).toBe('action')
+    // 回查段带不可编辑的来源标识，改标题也不会被当成新措施登记。
+    expect(block.origin).toBe('improvement_lookback')
+    // 保存期间对外报「进行中」，完成后撤销。
+    expect(wrapper.emitted('busy')!.map(([value]) => value)).toEqual([true, false])
     expect(block.text).toContain('验证记录：对照本周偏差图')
   })
   it('列表与回查记录取「改进措施」那一行，而不是首行元信息', async () => {

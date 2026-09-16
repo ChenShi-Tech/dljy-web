@@ -15,7 +15,7 @@ import ReportWritingAssistant from './ReportWritingAssistant.vue'
 import { rendersMaterial, reportEvidenceCaption, segmentCaption } from '@/services/review/reportPresentation'
 
 const props = defineProps<{ snapshot: ReviewEvidenceSnapshot; material?: ReportEvidence | null }>()
-const emit = defineEmits<{ dirty: [value: boolean] }>()
+const emit = defineEmits<{ dirty: [value: boolean]; busy: [value: boolean] }>()
 const company = props.snapshot.scope.company, region = props.snapshot.scope.region
 const papers = ref<Workpaper[]>([]), draft = ref<Workpaper | null>(null), evidence = ref<ReportEvidence[]>([])
 const versions = ref<Array<{ id: string; revision: number; title: string }>>([]), versionsMore = ref(false)
@@ -67,7 +67,7 @@ function openDeclaration(reference: DecisionReference) {
 }
 let alive = true, suppress = false, editVersion = 0, timer: ReturnType<typeof setTimeout> | null = null, savingTask: Promise<boolean> | null = null
 let paperGeneration = 0, publicationRequest = 0
-const commenting = ref(false), linkPending = ref(false), lookbackPending = ref(false)
+const commenting = ref(false), linkPending = ref(false), lookbackPending = ref(false), lookbackBusy = ref(false)
 // 报告内登记改进措施的表单状态；需先于 pending 声明，pending 会立即求值。
 const registerTarget = ref(''), registerOwner = ref(''), registerDue = ref(''), registering = ref(false)
 const pending = computed(() => dirty.value || saving.value || publishing.value || commenting.value || linkPending.value || lookbackPending.value || !!registerTarget.value || !!commentText.value.trim())
@@ -75,6 +75,9 @@ watch(pending, value => emit('dirty', value), { immediate: true })
 // 发布确认必须覆盖全部待定内容：勾选「已核对」之后再写关联依据，旧的勾选不能代表新内容已核对。
 // 任何未落进正文的输入都会被发布版本漏掉：未确认的关联依据、未保存的回查记录、打开着的措施登记表单。
 const publishBlocked = computed(() => linkPending.value || lookbackPending.value || !!registerTarget.value)
+// 改进记录的写入已发出、结果未回：此时不允许切换底稿、新建或离开，否则写成功的记录找不到它该落回的报告。
+const operationBusy = computed(() => lookbackBusy.value || registering.value)
+watch(operationBusy, value => emit('busy', value), { immediate: true })
 watch(publishBlocked, value => { if (value) confirmed.value = false })
 watch(draft, () => {
   if (suppress || !draft.value || !canEdit.value) return
@@ -104,6 +107,7 @@ async function list(more = false) {
   catch (e) { if (alive) error.value = workpaperError(e) } finally { if (alive) loading.value = false }
 }
 async function open(id: string) {
+  if (operationBusy.value) { status.value = '正在保存改进措施记录，完成后再切换底稿'; return }
   if (pending.value && !window.confirm('切换底稿会放弃未保存的文字或批注，确定切换吗？')) return
   paperGeneration++; publicationRequest++; publication.value = null
   if (savingTask) await savingTask
@@ -113,6 +117,7 @@ async function open(id: string) {
   catch (e) { if (alive) error.value = workpaperError(e) } finally { if (alive) loading.value = false }
 }
 async function create() {
+  if (operationBusy.value) { status.value = '正在保存改进措施记录，完成后再新建底稿'; return }
   if (pending.value) { error.value = '请先保存当前底稿和批注'; return }
   paperGeneration++; publicationRequest++; publication.value = null
   const scope: WorkpaperScope = { region, view: view.value, objectId: props.snapshot.scope.objectKey || 'company-overview', objectLabel: props.snapshot.scope.objectLabel, startDate: props.snapshot.scope.period?.start || props.snapshot.scope.day, endDate: props.snapshot.scope.period?.end || props.snapshot.scope.day }
@@ -229,13 +234,13 @@ async function comment() {
   finally { if (alive) commenting.value = false }
 }
 onMounted(() => { void list() })
-onBeforeUnmount(() => { alive = false; if (timer) clearTimeout(timer); emit('dirty', false) })
+onBeforeUnmount(() => { alive = false; if (timer) clearTimeout(timer); emit('dirty', false); emit('busy', false) })
 </script>
 
 <template>
   <div class="workpaper-editor">
     <p class="scope">{{ snapshot.scope.companyLabel || '当前公司' }} · {{ snapshot.scope.regionLabel || '当前地区' }} · {{ snapshot.scope.day }} · {{ snapshot.scope.objectLabel }}</p>
-    <div class="toolbar"><label>业务视角 <select v-model="view" :disabled="!!draft"><option value="generator">发电</option><option value="retail">售电</option><option value="storage">储能</option></select></label><button type="button" :disabled="loading || pending || publishing" @click="create">新建本次底稿</button><label>已有底稿 <select :value="draft?.id || ''" :disabled="loading || saving || publishing" @change="open(($event.target as HTMLSelectElement).value)"><option value="" disabled>选择底稿</option><option v-for="paper in papers" :key="paper.id" :value="paper.id">{{ paper.title }} · 第 {{ paper.revision }} 版</option></select></label><button v-if="listMore" type="button" @click="list(true)">加载更多底稿</button></div>
+    <div class="toolbar"><label>业务视角 <select v-model="view" :disabled="!!draft"><option value="generator">发电</option><option value="retail">售电</option><option value="storage">储能</option></select></label><button type="button" :disabled="loading || pending || publishing || operationBusy" @click="create">新建本次底稿</button><label>已有底稿 <select :value="draft?.id || ''" :disabled="loading || saving || publishing || operationBusy" @change="open(($event.target as HTMLSelectElement).value)"><option value="" disabled>选择底稿</option><option v-for="paper in papers" :key="paper.id" :value="paper.id">{{ paper.title }} · 第 {{ paper.revision }} 版</option></select></label><button v-if="listMore" type="button" @click="list(true)">加载更多底稿</button></div>
     <p v-if="loading" role="status">正在读取报告资料…</p><p v-if="error" role="alert">{{ error }}</p><p v-if="status" role="status">{{ saving ? '正在保存…' : status }}</p>
     <div v-if="draft" class="workspace">
       <section>
@@ -247,7 +252,7 @@ onBeforeUnmount(() => { alive = false; if (timer) clearTimeout(timer); emit('dir
           <ReportWritingAssistant v-if="writingInput" :key="`${draft.id}:${writingTarget}`" :input="writingInput" :company-id="company" :region="region" :initial-mode="writingTarget === 'summary' ? 'summary' : 'polish'" @adopt="adoptWriting" @close="writingTarget = ''" />
           <div class="toolbar"><button v-for="kind in (['text', 'reason', 'question', 'action'] as const)" :key="kind" type="button" @click="add(kind)">添加{{ blockNames[kind] }}</button></div>
           <DecisionLinkPanel v-if="canEdit" :company="company" :draft="draft" :disabled="publishing || loading" @link="linkDecision" @open="openDeclaration" @dirty="linkPending = $event" />
-          <ImprovementLookbackPanel v-if="canEdit" :draft="draft" :disabled="publishing || loading" @record="recordLookback" @dirty="lookbackPending = $event" />
+          <ImprovementLookbackPanel v-if="canEdit" :draft="draft" :disabled="publishing || loading" @record="recordLookback" @dirty="lookbackPending = $event" @busy="lookbackBusy = $event" />
           <article v-for="(block, index) in draft.blocks" :key="block.id" class="block">
             <header><b>{{ index + 1 }} · {{ blockNames[block.kind] }}</b><div><button type="button" :disabled="index === 0" aria-label="上移内容块" @click="move(index, -1)">上移</button><button type="button" :disabled="index === draft.blocks.length - 1" aria-label="下移内容块" @click="move(index, 1)">下移</button><button v-if="block.kind !== 'decision'" type="button" @click="duplicate(block)">复制</button><button type="button" @click="draft.blocks.splice(index, 1)">移除</button></div></header>
             <input v-model="block.title" aria-label="内容块标题" maxlength="200" />
@@ -255,7 +260,7 @@ onBeforeUnmount(() => { alive = false; if (timer) clearTimeout(timer); emit('dir
             <DecisionReferenceCard v-if="block.kind === 'decision' && block.reference" :reference="block.reference" @open="openDeclaration" />
             <textarea v-model="block.text" :aria-label="block.kind === 'decision' ? '关联依据' : blockNames[block.kind]" rows="3" :placeholder="block.kind === 'decision' ? '写清为什么把这笔申报作为本次复盘的依据' : '补充事实、解释或人工判断'" />
             <button type="button" @click="writingTarget = block.id">辅助撰写这段</button>
-            <template v-if="block.kind === 'action' && block.title !== '改进措施回查'"><p v-if="block.text.includes(REGISTERED)" class="registered">这条措施已登记到改进记录。</p><button v-else-if="registerTarget !== block.id" type="button" :disabled="block.text.trim().length < 8" @click="registerTarget = block.id; registerOwner = ''; registerDue = ''">登记到改进记录</button><div v-else class="register"><label>负责人<input v-model="registerOwner" maxlength="100" /></label><label>回查日期<input v-model="registerDue" type="date" /></label><button type="button" :disabled="registering || !registerOwner.trim() || !registerDue" @click="registerAction(block)">{{ registering ? '正在登记…' : '登记' }}</button><button type="button" :disabled="registering" @click="registerTarget = ''">取消</button></div></template>
+            <template v-if="block.kind === 'action' && block.origin !== 'improvement_lookback'"><p v-if="block.text.includes(REGISTERED)" class="registered">这条措施已登记到改进记录。</p><button v-else-if="registerTarget !== block.id" type="button" :disabled="block.text.trim().length < 8" @click="registerTarget = block.id; registerOwner = ''; registerDue = ''">登记到改进记录</button><div v-else class="register"><label>负责人<input v-model="registerOwner" maxlength="100" /></label><label>回查日期<input v-model="registerDue" type="date" /></label><button type="button" :disabled="registering || !registerOwner.trim() || !registerDue" @click="registerAction(block)">{{ registering ? '正在登记…' : '登记' }}</button><button type="button" :disabled="registering" @click="registerTarget = ''">取消</button></div></template>
             <template v-if="block.kind === 'reason'"><label>核实状态<select v-model="block.state"><option value="pending">待核实的可能原因</option><option value="confirmed">交易员已核实</option></select></label><label>支持证据<textarea v-model="block.supports" rows="2" /></label><label>反对证据<textarea v-model="block.refutes" rows="2" /></label></template>
           </article>
           <p v-if="!draft.blocks.length">从专题分析加入图表，或添加事实、原因和措施开始撰写。</p>

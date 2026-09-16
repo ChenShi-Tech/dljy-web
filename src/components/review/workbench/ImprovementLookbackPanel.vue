@@ -5,7 +5,7 @@ import type { ImprovementActionSummary } from '@/services/review/reviewStoreApi'
 import type { ReportBlock, Workpaper } from '@/services/review/workpapers'
 
 const props = defineProps<{ draft: Workpaper; disabled?: boolean }>()
-const emit = defineEmits<{ record: [value: ReportBlock]; dirty: [value: boolean] }>()
+const emit = defineEmits<{ record: [value: ReportBlock]; dirty: [value: boolean]; busy: [value: boolean] }>()
 
 const verdictLabels = { observe: '证据不足，继续回查', met: '达到预期，结束回查', unmet: '未达预期，结束本措施并另行改进' } as const
 type Verdict = keyof typeof verdictLabels
@@ -26,6 +26,9 @@ const measureOf = (text: string) => {
   return measure ? measure.slice('改进措施：'.length).trim() : (lines[0] ?? text)
 }
 watch(() => !!evidence.value.trim(), value => emit('dirty', value), { immediate: true })
+// 保存进行中必须让外层拦住切换底稿与离开：服务端可能已把措施改成完成/继续跟进，
+// 此时切走会丢掉本该写进原报告的回查段，留下一条「状态变了却无报告记录」的回查。
+watch(saving, value => emit('busy', value))
 
 async function load() {
   const ticket = ++generation
@@ -57,7 +60,7 @@ async function confirm() {
     const saved = await patchImprovementAction(action.id, { action: `${action.action}\n回查报告：${report}\n验证记录：${text}\n验证结论：${verdictLabels[conclusion]}`, status: conclusion === 'observe' ? 'carried_over' : 'done' })
     if (ticket !== generation) return
     actions.value = actions.value.map(row => (row.id === saved.id ? saved : row))
-    emit('record', { id: crypto.randomUUID(), kind: 'action', title: '改进措施回查', text: `措施：${measureOf(action.action)}\n负责人：${action.owner || '未指定'}；回查日期：${action.dueDate}\n验证记录：${text}\n验证结论：${verdictLabels[conclusion]}` })
+    emit('record', { id: crypto.randomUUID(), kind: 'action', origin: 'improvement_lookback', title: '改进措施回查', text: `措施：${measureOf(action.action)}\n负责人：${action.owner || '未指定'}；回查日期：${action.dueDate}\n验证记录：${text}\n验证结论：${verdictLabels[conclusion]}` })
     target.value = null; evidence.value = ''
     status.value = conclusion === 'observe' ? '回查已记录，措施继续跟进；报告中已加入这次回查。' : '回查已记录，报告中已加入这次回查。这是人工结论，不代表已量化改进收益。'
   } catch {
@@ -66,7 +69,7 @@ async function confirm() {
   } finally { if (ticket === generation) saving.value = false }
 }
 watch(() => props.draft.id, () => { generation++; actions.value = []; target.value = null; evidence.value = ''; loading.value = false; saving.value = false; error.value = ''; status.value = ''; if (open.value) void load() })
-onBeforeUnmount(() => { generation++; emit('dirty', false) })
+onBeforeUnmount(() => { generation++; emit('dirty', false); emit('busy', false) })
 </script>
 
 <template>
