@@ -221,4 +221,11 @@ describe('ReviewTemplateForm（#2037 实例提交：草稿/提交直连服务端
     expect(wrapper.text()).not.toContain('本表的价格')
     expect(mount(ReviewTemplateForm, { props: { templateId: 'T01' } }).text()).not.toContain('模拟数据')
   })
+
+  it('资料缺口说明保留业务规则：套餐连续亏损须评估停售或调价，缺口编号不出现', () => {
+    const wrapper = mount(ReviewTemplateForm, { props: { templateId: 'R2' } })
+    expect(wrapper.text()).toContain('连续两个季度亏损的套餐应评估停售或调价')
+    expect(wrapper.text()).toContain('暂缺的字段不会以零或估算值代替')
+    expect(wrapper.text()).not.toMatch(/\bD3\b/)
+  })
 })
