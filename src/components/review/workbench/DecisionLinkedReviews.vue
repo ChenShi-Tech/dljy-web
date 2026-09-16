@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onBeforeUnmount, ref, watch } from 'vue'
-import { decisionLinkError, listDecisionReferences, type LinkedReview } from '@/services/review/workpapers'
+import { decisionLookupError, listDecisionReferences, type LinkedReview } from '@/services/review/workpapers'
 
 const props = defineProps<{ company: string; region: string; declarationId: string }>()
 const emit = defineEmits<{ publication: [value: LinkedReview] }>()
@@ -19,7 +19,7 @@ async function load(page = 0) {
     const result = await listDecisionReferences(props.company, props.region, props.declarationId, page)
     if (ticket !== generation) return
     rows.value = result.rows; hasMore.value = result.hasMore
-  } catch (e) { if (ticket === generation) error.value = decisionLinkError(e) }
+  } catch (e) { if (ticket === generation) error.value = decisionLookupError(e) }
   finally { if (ticket === generation) loading.value = false }
 }
 function when(row: LinkedReview) { return new Date(row.kind === 'publication' ? row.createdAt : row.updatedAt).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false }) }

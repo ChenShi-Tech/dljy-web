@@ -2,7 +2,7 @@
 // @vitest-environment happy-dom
 // services/api 在模块加载期就读 localStorage 取地区，纯 node 环境下 import 即崩。
 import { describe, expect, it } from 'vitest'
-import { decisionLinkError, workpaperError } from './workpapers'
+import { decisionLinkError, decisionLookupError, workpaperError } from './workpapers'
 import { ApiError } from '@/services/api'
 
 const apiError = (code: number, msg?: string) => new ApiError(msg ?? `API request failed: ${code}`, { status: code, code, payload: { code, msg } })
@@ -27,6 +27,14 @@ describe('底稿与关联的错误文案', () => {
   it('服务端给了业务文案就按原文呈现', () => {
     expect(workpaperError(apiError(400, '业务申报与模拟演练不能作为同一复盘的本次依据，请分别建稿'))).toBe('业务申报与模拟演练不能作为同一复盘的本次依据，请分别建稿')
     expect(decisionLinkError(apiError(404, '当前范围内没有这笔明确归属的申报'))).toBe('当前范围内没有这笔明确归属的申报')
+  })
+  it('回查失败不说成「没有关联」，也不提根本不存在的依据输入框', () => {
+    const text = decisionLookupError(apiError(503))
+    expect(text).toContain('不表示没有复盘关联过这笔申报')
+    expect(text).not.toContain('关联依据')
+    expect(text).not.toContain('API request failed')
+    // 服务端给了业务文案仍按原文呈现。
+    expect(decisionLookupError(apiError(403, '当前账号没有所选公司的操作权限'))).toBe('当前账号没有所选公司的操作权限')
   })
   it('关联失败缺业务文案时说明依据仍在，不让交易员重写理由', () => {
     const text = decisionLinkError(apiError(503))

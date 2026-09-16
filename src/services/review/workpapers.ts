@@ -74,6 +74,14 @@ function serverDetail(error: unknown) {
 export function decisionLinkError(error: unknown) {
   return serverDetail(error) || '申报资料暂时无法读取，关联尚未建立。已填写的关联依据仍然保留，请稍后重试。'
 }
+/**
+ * 回查失败与「没有复盘关联过这笔申报」必须分开。
+ * 借用建立关联的文案会说成「关联尚未建立、已填写的依据仍保留」——回查页面既不建立关联
+ * 也没有依据输入框，交易员会把读取失败当成确实没有关联。
+ */
+export function decisionLookupError(error: unknown) {
+  return serverDetail(error) || '关联复盘暂时读不出来，请稍后重试。这不表示没有复盘关联过这笔申报。'
+}
 export function workpaperError(error: unknown) {
   if (error instanceof ApiError) {
     // 服务端文案已是业务语言，且把 409 分成了底稿版本冲突、申报版本冲突与材料标识冲突三种，
