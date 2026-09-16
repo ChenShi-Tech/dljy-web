@@ -28,6 +28,9 @@ describe('复盘模板的业务名称', () => {
     expect(missing).toEqual([])
     for (const note of Object.values(TEMPLATE_GAP_NOTES)) expect(note).not.toMatch(/#\d|\b[TRNESCD]\d{1,2}\b|[a-z_]{4,}|MOCK|illustrative|P[123]\b/)
   })
+  it('准确率缺省标准保留百分比口径，不把 MAPE 错写成平均绝对误差', () => {
+    expect(TEMPLATE_NOTES.N1).toContain('平均绝对百分比误差不超过 10%')
+  })
   it('未登记的来源与口径不回显代号', () => {
     expect(sourceLabel('some_new_source')).toBe('系统来源')
     expect(sourceLabel(undefined)).toBe('系统来源')
