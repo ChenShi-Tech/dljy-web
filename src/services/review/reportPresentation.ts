@@ -81,9 +81,16 @@ export function segmentCaption(block: ReportBlock, evidence?: ReportEvidence): s
   const source = evidence ? `（依据：${evidence.content.labels.join('与')}，${block.evidenceRole === 'comparison' ? '比较依据' : '本次依据'}）` : ''
   return `针对 ${segments.length} 个时段：${listed}${more}${source}`
 }
-/** 正文里是否还有引用同一材料的图表块——带时段的原因据此决定要不要自己把图补上。 */
-export function hasChartFor(blocks: ReportBlock[], evidenceId?: string): boolean {
-  return !!evidenceId && blocks.some(block => block.kind === 'chart' && block.evidenceId === evidenceId)
+/**
+ * 这个块是否要把所引材料（依据说明、图表、材料说明）画出来。
+ * 普通引用材料的块照常画；带时段的原因只在正文里已没有同一材料的图表块时补画，
+ * 且同一材料只由第一条时段原因补——拆成多条的原因不会各自重复同一张图。
+ */
+export function rendersMaterial(blocks: ReportBlock[], block: ReportBlock): boolean {
+  if (!block.evidenceId) return false
+  if (!block.segments?.length) return true
+  if (blocks.some(item => item.kind === 'chart' && item.evidenceId === block.evidenceId)) return false
+  return blocks.find(item => item.segments?.length && item.evidenceId === block.evidenceId)?.id === block.id
 }
 export type ReportPart = { kind: 'title' | 'heading' | 'paragraph'; text: string } | { kind: 'chart'; evidence: ReportEvidence }
 export function reportParts(publication: Publication, brief = false): ReportPart[] {
@@ -114,9 +121,8 @@ export function reportParts(publication: Publication, brief = false): ReportPart
       const evidence = content.evidence.find(item => item.id === block.evidenceId)
       if (!evidence) throw new Error('发布版本的材料不完整，不能导出')
       if (block.segments?.length) parts.push({ kind: 'paragraph', text: segmentCaption(block, evidence) })
-      // 落到时段上的原因只在正文里确实还有同一材料的图表时才省略重复画图；原图表块被删后，
-      // 这里必须把材料补回来，否则导出的原因失去了支撑它的依据。
-      if (!block.segments?.length || !hasChartFor(content.blocks, block.evidenceId)) parts.push({ kind: 'paragraph', text: block.evidenceRole === 'comparison' ? '比较依据' : '本次依据' }, { kind: 'chart', evidence }, { kind: 'paragraph', text: reportEvidenceCaption(evidence) })
+      // 原图表块被删后必须有人把材料补回来，否则导出的原因失去支撑它的依据；规则见 rendersMaterial。
+      if (rendersMaterial(content.blocks, block)) parts.push({ kind: 'paragraph', text: block.evidenceRole === 'comparison' ? '比较依据' : '本次依据' }, { kind: 'chart', evidence }, { kind: 'paragraph', text: reportEvidenceCaption(evidence) })
     }
     // 关联决策必须随报告一起交付：只导出交易员写的理由，读者看不出依据的是哪一笔申报。
     if (block.kind === 'decision') {

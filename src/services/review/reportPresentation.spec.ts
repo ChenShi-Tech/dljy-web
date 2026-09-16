@@ -96,6 +96,10 @@ describe('原因对应到材料里的时段', () => {
     const orphan = publication([reason])
     orphan.content.evidence = [energy]
     expect(reportParts(orphan).filter(part => part.kind === 'chart')).toHaveLength(1)
+    // 同一材料拆成两条时段原因：只补一张图，不各画一遍。
+    const split = publication([reason, { ...reason, id: 'r2', segments: [intervals[1]] }])
+    split.content.evidence = [energy]
+    expect(reportParts(split).filter(part => part.kind === 'chart')).toHaveLength(1)
     const pub = orphan
     const parts = reportParts(pub)
     expect(parts.map(part => ('text' in part ? part.text : '')).join('\n')).toContain('针对 1 个时段：05/31 18:00—18:15')
