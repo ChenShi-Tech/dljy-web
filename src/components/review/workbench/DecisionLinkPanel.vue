@@ -46,7 +46,14 @@ function confirm() {
   emit('link', { reference: preview.value, text: basis.value.trim() })
   preview.value = null; basis.value = ''; open.value = false; reset()
 }
-watch(() => [props.company, props.draft.id, props.draft.scope.startDate, props.draft.scope.endDate, mode.value], () => { preview.value = null; void load() }, { flush: 'sync' })
+watch(() => [props.company, props.draft.id, props.draft.scope.startDate, props.draft.scope.endDate, mode.value], (next, previous) => {
+  preview.value = null
+  // 同一份底稿内重试保留已写的理由（重填一遍是纯返工），但换了底稿、公司或复盘范围就必须
+  // 清掉：否则上一份报告的关联依据会预填在新报告里，并可能被确认进错误的报告。
+  // 筛选条件（mode）变化不算，那只是换了看哪一批申报。
+  if (previous && [0, 1, 2, 3].some(index => next[index] !== previous[index])) basis.value = ''
+  void load()
+}, { flush: 'sync' })
 onBeforeUnmount(reset)
 </script>
 
