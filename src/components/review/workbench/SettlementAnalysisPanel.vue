@@ -6,6 +6,8 @@ import { formatValue } from '@/services/review/decisionWorkbench'
 import { fetchSettlementAnalysis, type SettlementAnalysis, type SettlementAnalysisInput } from '@/services/review/settlementAnalysis'
 import { captureSettlementReportEvidence, type ReportEvidence } from '@/services/review/workpapers'
 import type { SettlementSelection } from '@/services/review/reviewTopics'
+import ReviewCallout from './ReviewCallout.vue'
+import MetricTile from '../MetricTile.vue'
 
 const props = defineProps<{ company: string; region: string; date: string; companyLabel?: string; selection?: SettlementSelection }>()
 const emit = defineEmits<{ period: [value: { start: string; end: string } | null]; material: [value: ReportEvidence]; selection: [value: SettlementSelection] }>()
@@ -22,7 +24,8 @@ watch(result, value => emit('period', value?.periods.current ?? null), { flush: 
 let sequence = 0, controller: AbortController | null = null
 function render() {
   const rows = result.value?.current.daily ?? []
-  chart.setOption({ animation: false, tooltip: { trigger: 'axis' }, legend: { data: ['结算电量', '结算电费'] },
+  // tooltip 统一走 formatValue：电费是浮点累加结果，直接显示会出现 2,638,471.9800000004 这种尾数。
+  chart.setOption({ animation: false, tooltip: { trigger: 'axis', valueFormatter: (value: unknown) => formatValue(value) }, legend: { data: ['结算电量', '结算电费'] },
     grid: { left: 75, right: 80, top: 50, bottom: 65 },
     xAxis: { type: 'category', data: rows.map(row => row.date) },
     yAxis: [{ type: 'value', name: 'MWh' }, { type: 'value', name: '元' }],
@@ -70,18 +73,18 @@ onBeforeUnmount(() => { sequence++; controller?.abort() })
     <button v-if="result?.current.coverage.records" type="button" :disabled="capturing || loading" @click="capture">{{ capturing ? '正在保存材料…' : '保存材料并加入底稿' }}</button>
     <template v-if="result">
       <p>本期 {{ result.periods.current.start }}—{{ result.periods.current.end }} · 参考期 {{ result.periods.reference.start }}—{{ result.periods.reference.end }}<span v-if="result.periods.incomplete"> · 本期尚未结束</span></p>
-      <div class="metrics"><span>结算电量<b>{{ formatValue(result.current.energyMwh) }} MWh</b><small>有效 {{ result.current.coverage.energy }} 条</small></span><span>结算电费<b>{{ formatValue(result.current.feeYuan) }} 元</b><small>有效 {{ result.current.coverage.fee }} 条</small></span><span>电量加权均价<b>{{ formatValue(result.current.averagePrice) }} 元/MWh</b><small>电量、电费齐全 {{ result.current.coverage.paired }} 条</small></span><span>资料覆盖<b>{{ result.current.coverage.records }} / {{ result.current.expectedPlantDays }} 厂站日</b><small>已入库范围 {{ result.selectedPlants.length }} 座</small></span></div>
-      <p>中长期 {{ formatValue(result.current.longTermMwh) }} MWh（{{ result.current.coverage.longTerm }} 条） · 日前增量 {{ formatValue(result.current.dayAheadIncrementMwh) }} MWh（{{ result.current.coverage.dayAhead }} 条） · 实时增量 {{ formatValue(result.current.realTimeIncrementMwh) }} MWh（{{ result.current.coverage.realTime }} 条）。各项按有值记录汇总。</p>
+      <div class="metric-grid"><MetricTile label="结算电量" :value="formatValue(result.current.energyMwh)" unit="MWh" :sub="`有效 ${result.current.coverage.energy} 条`" /><MetricTile label="结算电费" :value="formatValue(result.current.feeYuan)" unit="元" :sub="`有效 ${result.current.coverage.fee} 条`" /><MetricTile label="电量加权均价" :value="formatValue(result.current.averagePrice)" unit="元/MWh" :sub="`电量、电费齐全 ${result.current.coverage.paired} 条`" /><MetricTile label="资料覆盖" :value="`${result.current.coverage.records} / ${result.current.expectedPlantDays}`" unit="厂站日" :sub="`已入库范围 ${result.selectedPlants.length} 座`" /><MetricTile label="中长期" :value="formatValue(result.current.longTermMwh)" unit="MWh" :sub="`${result.current.coverage.longTerm} 条`" /><MetricTile label="日前增量" :value="formatValue(result.current.dayAheadIncrementMwh)" unit="MWh" :sub="`${result.current.coverage.dayAhead} 条`" /><MetricTile label="实时增量" :value="formatValue(result.current.realTimeIncrementMwh)" unit="MWh" :sub="`${result.current.coverage.realTime} 条`" /></div>
+      <ReviewCallout>各项按有值记录汇总；结算电费不等于交易净收益。</ReviewCallout>
     </template>
     <div v-show="hasPlot" ref="el" class="plot" role="img" aria-label="所选周期逐日结算电量与电费" />
     <template v-if="result">
-      <h3>共同覆盖下的历史比较</h3><p>仅比较同厂站、相同日序且电量和电费均齐全的 {{ result.comparison.matchedPlantDays }} 个厂站日。</p>
+      <h3>共同覆盖下的历史比较</h3><ReviewCallout>仅比较同厂站、相同日序且电量和电费均齐全的 <b>{{ result.comparison.matchedPlantDays }}</b> 个厂站日。</ReviewCallout>
       <div class="table-scroll"><table><thead><tr><th>指标</th><th>本期共同范围</th><th>参考期共同范围</th></tr></thead><tbody><tr><th>结算电量（MWh）</th><td>{{ formatValue(result.comparison.currentEnergyMwh) }}</td><td>{{ formatValue(result.comparison.referenceEnergyMwh) }}</td></tr><tr><th>结算电费（元）</th><td>{{ formatValue(result.comparison.currentFeeYuan) }}</td><td>{{ formatValue(result.comparison.referenceFeeYuan) }}</td></tr></tbody></table></div>
       <details><summary>厂站明细与下钻</summary><div class="table-scroll"><table><thead><tr><th>厂站</th><th>结算电量（MWh）</th><th>结算电费（元）</th><th>有效记录</th><th>分析</th></tr></thead><tbody><tr v-for="plant in result.current.plants" :key="plant.plant"><td>{{ plant.plant }}</td><td>{{ formatValue(plant.energyMwh) }}</td><td>{{ formatValue(plant.feeYuan) }}</td><td>{{ plant.coverage.records }}</td><td><button type="button" @click="choosePlant(plant.plant)">查看厂站</button></td></tr></tbody></table></div></details>
-      <p v-if="!result.current.coverage.records">所选范围没有可用结算记录，缺失资料未按零统计。</p><details><summary>资料范围与计算口径</summary><p>{{ result.notice }}</p></details>
+      <ReviewCallout v-if="!result.current.coverage.records" tone="warn">所选范围没有可用结算记录，缺失资料未按零统计。</ReviewCallout><details><summary>资料范围与计算口径</summary><p>{{ result.notice }}</p></details>
     </template>
   </section>
 </template>
 <style scoped>
-.controls,.metrics,.plant-picker{display:flex;gap:16px;flex-wrap:wrap}.controls{align-items:center}.controls label{display:flex;align-items:center;gap:8px}.metrics{margin:18px 0}.metrics b,.metrics small{display:block;margin-top:6px}.plot{height:310px}p,small,summary{color:var(--muted);line-height:1.7}p,label,button,select,input,table{font-size:var(--font-sm)}button,select,input{font-family:inherit;color:var(--text);background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:8px}button,summary{cursor:pointer}details{padding:12px 0;border-top:1px solid var(--line)}.table-scroll{overflow:auto}table{border-collapse:collapse;width:100%;text-align:left}th,td{padding:10px;border-bottom:1px solid var(--line)}h3{font-size:var(--font-lg)}button:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid var(--primary);outline-offset:2px}.plant-picker{margin-top:12px}.plant-picker label{display:flex;align-items:center;gap:6px}@media(max-width:700px){.controls label{width:100%}.plot{height:260px}}
+.controls,.metrics,.plant-picker{display:flex;gap:16px;flex-wrap:wrap}.metric-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:10px;margin:14px 0}.review-callout{margin:10px 0}.controls{align-items:center}.controls label{display:flex;align-items:center;gap:8px}.metrics{margin:18px 0}.metrics b,.metrics small{display:block;margin-top:6px}.plot{height:310px}p,small,summary{color:var(--muted);line-height:1.7}p,label,button,select,input,table{font-size:var(--font-sm)}button,select,input{font-family:inherit;color:var(--text);background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:8px}button,summary{cursor:pointer}details{padding:12px 0;border-top:1px solid var(--line)}.table-scroll{overflow:auto}table{border-collapse:collapse;width:100%;text-align:left}th,td{padding:10px;border-bottom:1px solid var(--line)}h3{font-size:var(--font-lg)}button:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid var(--primary);outline-offset:2px}.plant-picker{margin-top:12px}.plant-picker label{display:flex;align-items:center;gap:6px}@media(max-width:700px){.controls label{width:100%}.plot{height:260px}}
 </style>

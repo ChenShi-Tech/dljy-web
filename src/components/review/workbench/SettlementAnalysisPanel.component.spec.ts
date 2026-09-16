@@ -1,5 +1,6 @@
 // 守周期/厂站筛选确实重查且不显示过期统计；公司结果不能冒充单笔。dljy#2875。
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { metricTile } from '@/test/metricTile'
 import { flushPromises, mount } from '@vue/test-utils'
 import SettlementAnalysisPanel from './SettlementAnalysisPanel.vue'
 import { fetchSettlementAnalysis, type SettlementAnalysis, type SettlementMetrics } from '@/services/review/settlementAnalysis'
@@ -17,7 +18,7 @@ const button = (wrapper: ReturnType<typeof mount>, text: string) => wrapper.find
 describe('公司周期与结算专题', () => {
   it('切周月后旧结果立即隐藏，重新统计向服务端提交新周期', async () => {
     const wrapper = await open()
-    expect(wrapper.text()).toContain('结算电量100 MWh')
+    expect(metricTile(wrapper, '结算电量')).toEqual({ value: '100', unit: 'MWh' })
     await wrapper.get('select[aria-label="分析周期"]').setValue('month')
     expect(wrapper.find('.metrics').exists()).toBe(false)
     expect(wrapper.get<HTMLElement>('.plot').element.style.display).toBe('none')
@@ -38,7 +39,7 @@ describe('公司周期与结算专题', () => {
     const wrapper = await open()
     await button(wrapper, '查看厂站').trigger('click'); await flushPromises()
     expect(fetchSettlementAnalysis).toHaveBeenLastCalledWith('a', expect.objectContaining({ plants: ['测试厂站'] }), expect.any(AbortSignal))
-    expect(wrapper.find('.metrics').exists()).toBe(true)
+    expect(metricTile(wrapper, '结算电量')).not.toBeNull()
   })
   it('切换公司后的旧响应不能覆盖新上下文', async () => {
     let finish!: (value: SettlementAnalysis) => void

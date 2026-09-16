@@ -6,6 +6,8 @@ import { formatValue } from '@/services/review/decisionWorkbench'
 import { comparisonLabels, previewTopicAnalysis, type AnalysisThresholds, type ComparisonBasis, type TopicAnalysisResult } from '@/services/review/topicAnalysis'
 import { captureReportEvidence, workpaperError, type ReportEvidence } from '@/services/review/workpapers'
 import type { ReviewEvidenceSnapshot } from '@/services/review/reviewEvidence'
+import ReviewCallout from './ReviewCallout.vue'
+import MetricTile from '../MetricTile.vue'
 
 const props = defineProps<{ snapshot: ReviewEvidenceSnapshot; activeTopic?: 'energy' | 'price'; bases?: ComparisonBasis[] }>()
 const emit = defineEmits<{ material: [value: ReportEvidence] }>()
@@ -35,7 +37,7 @@ let sequence = 0, controller: AbortController | null = null
 function render() {
   const rows = displayAnalysisIntervals(full.value?.intervals ?? [])
   chart.setOption({
-    tooltip: { trigger: 'axis' }, legend: { data: labels.value },
+    tooltip: { trigger: 'axis', valueFormatter: (value: unknown) => formatValue(value) }, legend: { data: labels.value },
     brush: { xAxisIndex: 0, brushMode: 'multiple', toolbox: ['lineX', 'clear'] },
     toolbox: { feature: { brush: { type: ['lineX', 'clear'], title: { lineX: '框选时段', clear: '清除框选' } } } },
     grid: { left: 65, right: 20, top: 45, bottom: 65 },
@@ -101,16 +103,17 @@ onBeforeUnmount(() => { sequence++; controller?.abort() })
     </div>
     <p v-if="loading" role="status">正在统计{{ selected.length ? `所选 ${selected.length} 个时段` : '完整资料范围' }}…</p>
     <p v-if="error" role="alert">{{ error }}</p>
-    <div v-if="current && topic === 'energy'" class="metrics">
-      <span>净差异 <b>{{ formatValue(current.energy.netDeviationMwh) }} MWh</b></span>
-      <span>绝对差异 <b>{{ formatValue(current.energy.absoluteDeviationMwh) }} MWh</b></span>
-      <span>绝对差异率 <b>{{ formatValue(current.energy.absoluteDeviationPct) }}%</b></span>
-      <span>可比较时长 <b>{{ current.coverage.comparableMinutes }} / {{ current.coverage.expectedMinutes }} 分钟</b></span>
+    <ReviewCallout v-if="snapshot.simulated" tone="mock">本次决策留存资料为模拟演练，统计与图表不代表真实业务。</ReviewCallout>
+    <div v-if="current && topic === 'energy'" class="metric-grid">
+      <MetricTile label="净差异" :value="formatValue(current.energy.netDeviationMwh)" unit="MWh" />
+      <MetricTile label="绝对差异" :value="formatValue(current.energy.absoluteDeviationMwh)" unit="MWh" />
+      <MetricTile label="绝对差异率" :value="formatValue(current.energy.absoluteDeviationPct)" unit="%" />
+      <MetricTile label="可比较时长" :value="`${current.coverage.comparableMinutes} / ${current.coverage.expectedMinutes}`" unit="分钟" />
     </div>
-    <div v-if="current && topic === 'price'" class="metrics"><span>日前均价 <b>{{ formatValue(current.prices.daAverage) }} 元/MWh</b><small>有价 {{ current.prices.da?.minutes ?? 0 }} 分钟</small></span><span>实时均价 <b>{{ formatValue(current.prices.rtAverage) }} 元/MWh</b><small>有价 {{ current.prices.rt?.minutes ?? 0 }} 分钟</small></span><span>同口径日前减实时 <b>{{ formatValue(current.prices.spreadAverage) }} 元/MWh</b><small>共同覆盖 {{ current.prices.comparableMinutes }} / {{ current.coverage.expectedMinutes }} 分钟</small></span><span>实时负价时长 <b>{{ current.prices.rt?.negativeMinutes ?? 0 }} 分钟</b></span></div>
+    <div v-if="current && topic === 'price'" class="metric-grid"><MetricTile label="日前均价" :value="formatValue(current.prices.daAverage)" unit="元/MWh" :sub="`有价 ${current.prices.da?.minutes ?? 0} 分钟`" /><MetricTile label="实时均价" :value="formatValue(current.prices.rtAverage)" unit="元/MWh" :sub="`有价 ${current.prices.rt?.minutes ?? 0} 分钟`" /><MetricTile label="同口径日前减实时" :value="formatValue(current.prices.spreadAverage)" unit="元/MWh" :sub="`共同覆盖 ${current.prices.comparableMinutes} / ${current.coverage.expectedMinutes} 分钟`" /><MetricTile label="实时负价时长" :value="String(current.prices.rt?.negativeMinutes ?? 0)" unit="分钟" /></div>
     <div ref="chartEl" class="plot" role="img" :aria-label="`${labels.join('与')}分时对比图`" />
     <p>可用图右上角框选多个时段，也可在下方勾选。缩放只改变显示范围；选区会重新统计。</p>
-    <p v-if="current && !(topic === 'price' ? current.prices.comparableMinutes : current.coverage.comparableMinutes)">当前基准缺少可比较资料，请选择其他基准或补充对应数据。缺失时段未按零计算。</p>
+    <ReviewCallout v-if="current && !(topic === 'price' ? current.prices.comparableMinutes : current.coverage.comparableMinutes)" tone="warn">当前基准缺少可比较资料，请选择其他基准或补充对应数据。缺失时段未按零计算。</ReviewCallout>
     <details v-if="segments.length"><summary>连续同向偏离（{{ segments.length }} 段）</summary><div class="interval-list"><button v-for="segment in segments" :key="segment.start" type="button" @click="selected = [...new Set([...selected, ...segment.starts])]; load()">{{ timeLabel(segment.start) }}—{{ timeLabel(segment.end) }} · {{ segment.minutes }} 分钟 · {{ topic === 'price' ? '平均价差' : '累计偏差' }} {{ formatValue(topic === 'price' ? segment.average : segment.total) }} {{ topic === 'price' ? '元/MWh' : 'MWh' }} · 加入选区</button></div></details>
     <details v-if="full"><summary>选择异常时段（{{ selected.length }} 项已选）</summary><div class="interval-list"><label v-for="row in anomalies" :key="row.start"><input type="checkbox" :checked="selected.includes(row.start)" @change="selectInterval(row.start)" />{{ timeLabel(row.start) }}—{{ timeLabel(row.end) }}　{{ topic === 'price' ? '价差' : '差异' }} {{ formatValue(topic === 'price' ? (row.daPrice ?? 0) - (row.rtPrice ?? 0) : row.differenceMwh) }} {{ topic === 'price' ? '元/MWh' : 'MWh' }}</label><p v-if="!anomalies.length">当前没有符合筛选条件的可比较时段。</p></div></details>
     <details v-if="current"><summary>计算口径与资料范围</summary><p>{{ current.methodology }}</p><p>{{ current.notice }}</p></details>
@@ -118,5 +121,7 @@ onBeforeUnmount(() => { sequence++; controller?.abort() })
 </template>
 
 <style scoped>
+.metric-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:10px;margin:12px 0}
+.review-callout{margin:10px 0}
 .topic-analysis{min-width:0}.controls,.metrics{display:flex;gap:16px;flex-wrap:wrap;align-items:center}.controls label{display:flex;gap:8px;align-items:center}.metrics{padding:16px 0}.metrics b{display:block;margin-top:6px}.plot{height:320px}p,summary,label,button,select,input{font-size:var(--font-sm)}p{color:var(--muted);line-height:1.7}button,select,input{font-family:inherit;color:var(--text);background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:8px}button,summary{cursor:pointer}details{padding:12px 0;border-top:1px solid var(--line)}.interval-list{max-height:240px;overflow:auto;display:grid;gap:8px;padding:12px 0}.interval-list label{display:flex;align-items:center;gap:8px}button:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid var(--primary);outline-offset:2px}@media(max-width:720px){.controls label{width:100%}.plot{height:260px}}
 </style>

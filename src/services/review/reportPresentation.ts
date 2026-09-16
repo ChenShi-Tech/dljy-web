@@ -7,11 +7,11 @@ import { formatValue } from './decisionWorkbench'
 export function reportChartOption(evidence: ReportEvidence): EChartsOption {
   if (evidence.content.topic === 'daily_energy') {
     const { daily, labels } = evidence.content.result
-    return { animation: false, tooltip: { trigger: 'axis' }, legend: { data: labels }, grid: { left: 75, right: 25, top: 45, bottom: 55 }, xAxis: { type: 'category', data: daily.map(row => row.date) }, yAxis: { type: 'value', name: 'MWh' }, series: [{ name: labels[0], type: 'line', connectNulls: false, data: daily.map(row => row.baselineMwh) }, { name: labels[1], type: 'line', connectNulls: false, data: daily.map(row => row.actualMwh) }] }
+    return { animation: false, tooltip: { trigger: 'axis', valueFormatter: (value: unknown) => formatValue(value) }, legend: { data: labels }, grid: { left: 75, right: 25, top: 45, bottom: 55 }, xAxis: { type: 'category', data: daily.map(row => row.date) }, yAxis: { type: 'value', name: 'MWh' }, series: [{ name: labels[0], type: 'line', connectNulls: false, data: daily.map(row => row.baselineMwh) }, { name: labels[1], type: 'line', connectNulls: false, data: daily.map(row => row.actualMwh) }] }
   }
   if (evidence.content.topic === 'settlement') {
     const rows = evidence.content.result.current.daily
-    return { animation: false, tooltip: { trigger: 'axis' }, legend: { data: ['结算电量', '结算电费'] }, grid: { left: 75, right: 80, top: 50, bottom: 55 },
+    return { animation: false, tooltip: { trigger: 'axis', valueFormatter: (value: unknown) => formatValue(value) }, legend: { data: ['结算电量', '结算电费'] }, grid: { left: 75, right: 80, top: 50, bottom: 55 },
       xAxis: { type: 'category', data: rows.map(row => row.date) }, yAxis: [{ type: 'value', name: 'MWh' }, { type: 'value', name: '元' }],
       series: [{ name: '结算电量', type: 'bar', data: rows.map(row => row.energyMwh) }, { name: '结算电费', type: 'line', yAxisIndex: 1, connectNulls: false, data: rows.map(row => row.feeYuan) }],
     }
@@ -20,7 +20,7 @@ export function reportChartOption(evidence: ReportEvidence): EChartsOption {
   const rows = displayAnalysisIntervals(result.intervals)
   return {
     animation: false,
-    tooltip: { trigger: 'axis' }, legend: { data: labels },
+    tooltip: { trigger: 'axis', valueFormatter: (value: unknown) => formatValue(value) }, legend: { data: labels },
     grid: { left: 75, right: 25, top: 45, bottom: 55 },
     xAxis: { type: 'category', data: rows.map(row => row ? new Date(row.start).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false }) : '时段间隔') },
     yAxis: { type: 'value', name: price ? '元/MWh' : 'MWh' },
