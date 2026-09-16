@@ -251,4 +251,14 @@ describe('图文底稿交付', () => {
     await flushPromises(); await button(wrapper, '新建本次底稿').trigger('click'); await flushPromises()
     expect(createWorkpaper).toHaveBeenCalledWith('a', expect.objectContaining({ startDate: '2026-05-01', endDate: '2026-05-31' }), expect.any(String), expect.any(String))
   })
+  it('带着材料进入时提示选好底稿后自动加入；月度范围的新底稿按月份命名', async () => {
+    const material = { id: '00000000-0000-4000-8000-0000000000ab', region: 'yunnan', authorId: '主笔', createdAt: '', sourceKind: 'imported', contentHash: 'h', content: { topic: 'energy', labels: ['申报电量', '实际电量'], capturedAt: '', sourceNotice: '', input: { scope: { objectId: 'company-overview' }, period: { date: '2026-05-31' } }, result: { periods: { current: { start: '2026-05-01', end: '2026-05-31' } }, intervals: [] } } }
+    const monthly = { ...snapshot, scope: { ...snapshot.scope, period: { start: '2026-05-01', end: '2026-05-31' } } }
+    const wrapper = mount(ReportWorkpaperEditor, { props: { snapshot: monthly, material: material as never }, global: { stubs: { ReportEvidenceChart: true } } }); wrappers.push(wrapper)
+    await flushPromises()
+    expect(wrapper.text()).toContain('新建本次底稿或选择已有底稿后，这份材料会自动加入正文')
+    await wrapper.findAll('button').find(button => button.text() === '新建本次底稿')!.trigger('click'); await flushPromises()
+    expect(createWorkpaper).toHaveBeenCalledWith('a', expect.objectContaining({ startDate: '2026-05-01', endDate: '2026-05-31' }), expect.any(String), '2026年5月 公司总览月度复盘')
+    expect(wrapper.text()).not.toContain('这份材料会自动加入正文')
+  })
 })

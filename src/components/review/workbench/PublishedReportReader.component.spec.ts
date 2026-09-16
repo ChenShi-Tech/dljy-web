@@ -31,6 +31,14 @@ describe('已发布报告的关联呈现', () => {
     expect(wrapper.text()).toContain('真实申报')
     expect(wrapper.text()).toContain('这笔申报定了当日报量区间')
     expect(wrapper.find('.decision-card').exists()).toBe(true)
+    // 卡片已写明「某日交易日申报」，块标题没改过就不再重复一遍。
+    expect(wrapper.text().split('2026-05-31 交易日申报').length - 1).toBe(1)
+  })
+  it('交易员改过的关联块标题照常显示', () => {
+    const renamed = { ...publication, content: { ...publication.content, blocks: [{ ...publication.content.blocks[0], title: '晚高峰减报的那笔申报' }] } }
+    const wrapper = mount(PublishedReportReader, { props: { publication: renamed }, global: { stubs: { ReportEvidenceChart: true } } })
+    wrappers.push(wrapper)
+    expect(wrapper.findAll('article h3').map(heading => heading.text())).toEqual(['晚高峰减报的那笔申报'])
   })
   it('关联副本残缺时明确提示，不当作完整报告', () => {
     const broken = { ...publication, content: { ...publication.content, blocks: [{ ...publication.content.blocks[0], reference: undefined }] } }

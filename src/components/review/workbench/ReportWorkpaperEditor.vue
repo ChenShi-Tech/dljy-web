@@ -12,7 +12,8 @@ import { createImprovementAction } from '@/services/review/reviewStoreClient'
 import PublishedReportReader from './PublishedReportReader.vue'
 import ReportEvidenceChart from './ReportEvidenceChart.vue'
 import ReportWritingAssistant from './ReportWritingAssistant.vue'
-import { rendersMaterial, reportEvidenceCaption, segmentCaption } from '@/services/review/reportPresentation'
+import { rendersMaterial, reportEvidenceCaption, segmentCaption, workpaperDefaultTitle, workpaperOptionLabel } from '@/services/review/reportPresentation'
+import ReviewCallout from './ReviewCallout.vue'
 
 const props = defineProps<{ snapshot: ReviewEvidenceSnapshot; material?: ReportEvidence | null }>()
 const emit = defineEmits<{ dirty: [value: boolean]; busy: [value: boolean] }>()
@@ -125,7 +126,7 @@ async function create() {
   const scope: WorkpaperScope = { region, view: view.value, objectId: props.snapshot.scope.objectKey || 'company-overview', objectLabel: props.snapshot.scope.objectLabel, startDate: props.snapshot.scope.period?.start || props.snapshot.scope.day, endDate: props.snapshot.scope.period?.end || props.snapshot.scope.day }
   loading.value = true
   try {
-    const value = await createWorkpaper(company, scope, creationId.value, `${scope.startDate} ${scope.objectLabel}复盘`)
+    const value = await createWorkpaper(company, scope, creationId.value, workpaperDefaultTitle(scope))
     if (alive) { assignPaper({ ...value, canEdit: true }); creationId.value = crypto.randomUUID(); papers.value = [value, ...papers.value.filter(row => row.id !== value.id)] }
   } catch (e) { if (alive) error.value = workpaperError(e) } finally { if (alive) loading.value = false }
 }
@@ -245,7 +246,8 @@ onBeforeUnmount(() => { alive = false; if (timer) clearTimeout(timer); emit('dir
 <template>
   <div class="workpaper-editor">
     <p class="scope">{{ snapshot.scope.companyLabel || '当前公司' }} · {{ snapshot.scope.regionLabel || '当前地区' }} · {{ snapshot.scope.day }} · {{ snapshot.scope.objectLabel }}</p>
-    <div class="toolbar"><label>业务视角 <select v-model="view" :disabled="!!draft"><option value="generator">发电</option><option value="retail">售电</option><option value="storage">储能</option></select></label><button type="button" :disabled="loading || pending || publishing || operationBusy" @click="create">新建本次底稿</button><label>已有底稿 <select :value="draft?.id || ''" :disabled="loading || saving || publishing || operationBusy" @change="open(($event.target as HTMLSelectElement).value)"><option value="" disabled>选择底稿</option><option v-for="paper in papers" :key="paper.id" :value="paper.id">{{ paper.title }} · 第 {{ paper.revision }} 版</option></select></label><button v-if="listMore" type="button" @click="list(true)">加载更多底稿</button></div>
+    <div class="toolbar"><label>业务视角 <select v-model="view" :disabled="!!draft"><option value="generator">发电</option><option value="retail">售电</option><option value="storage">储能</option></select></label><button type="button" :disabled="loading || pending || publishing || operationBusy" @click="create">新建本次底稿</button><label>已有底稿 <select :value="draft?.id || ''" :disabled="loading || saving || publishing || operationBusy" @change="open(($event.target as HTMLSelectElement).value)"><option value="" disabled>选择底稿</option><option v-for="paper in papers" :key="paper.id" :value="paper.id">{{ workpaperOptionLabel(paper) }}</option></select></label><button v-if="listMore" type="button" @click="list(true)">加载更多底稿</button></div>
+    <ReviewCallout v-if="material && !draft" title="材料已保存，等待放入底稿">新建本次底稿或选择已有底稿后，这份材料会自动加入正文；底稿的对象或周期与材料不同时，会提示改为比较依据。</ReviewCallout>
     <p v-if="loading" role="status">正在读取报告资料…</p><p v-if="error" role="alert">{{ error }}</p><p v-if="status" role="status">{{ saving ? '正在保存…' : status }}</p>
     <div v-if="draft" class="workspace">
       <section>
