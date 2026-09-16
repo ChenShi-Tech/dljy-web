@@ -57,11 +57,15 @@ function writePath(path: string): string {
   return `${path}?${new URLSearchParams({ company: selectedCompanyId.value })}`
 }
 
-/** 内容派生幂等键：动作 + 公司 + 内容。 */
+/**
+ * 内容派生幂等键：动作 + 公司 + 内容。
+ * 公共 idempotencyKeyOf 只有 32 位（FNV-1a），同长度的不同内容可能撞键，被服务端当成重放或「同键不同内容」拒绝；
+ * 这里再拼上对同一份规范内容的 53 位指纹，键的有效位数不再被压回 32 位。
+ */
 export function actionKey(action: string, canonical: unknown): string {
   const scoped = [selectedCompanyId.value, canonical]
-  const length = (JSON.stringify(scoped) ?? '').length
-  return `${idempotencyKeyOf(`midlong-${action}`, scoped)}-${length.toString(36)}`
+  const json = JSON.stringify(scoped) ?? ''
+  return `${idempotencyKeyOf(`midlong-${action}`, scoped)}-${json.length.toString(36)}-${contentFingerprint(json)}`
 }
 
 /**

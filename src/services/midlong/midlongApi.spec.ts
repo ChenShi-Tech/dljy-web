@@ -5,16 +5,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const hoisted = vi.hoisted(() => ({ apiPost: vi.fn() }))
 
-// 真实 api.ts 在 node 环境会读 window；这里用直接拼接规范内容的替身，断言针对「哪些内容参与了键派生」。
-vi.mock('@/services/api', () => ({
-  ApiError: class extends Error {},
-  apiGet: vi.fn(),
-  apiPatch: vi.fn(),
-  apiPost: hoisted.apiPost,
-  idempotencyKeyOf: (prefix: string, canonical: unknown) => `${prefix}:${JSON.stringify(canonical)}`,
-}))
+// 使用真实 api.ts 的键派生（32 位 FNV-1a），只替换发请求的函数；api.ts 依赖的地区上下文在 node 环境会读 window，换成常量。
+vi.mock('@/services/region/regionContext', async () => ({ currentRegion: (await import('vue')).ref({ id: 'yunnan' }), currentRegionId: (await import('vue')).ref('yunnan') }))
+vi.mock('@/services/api', async (orig) => ({ ...(await orig<typeof import('@/services/api')>()), apiPost: hoisted.apiPost }))
 vi.mock('@/services/company/companyApi', () => ({ companyUnselected: () => false }))
-vi.mock('@/services/company/companyContext', async () => ({ selectedCompanyId: (await import('vue')).ref('comp-a') }))
+vi.mock('@/services/company/companyContext', async () => ({ selectedCompanyId: (await import('vue')).ref('comp') }))
 
 import { addEvidence, contentFingerprint } from './midlongApi'
 
@@ -37,6 +32,14 @@ describe('补充资料幂等键', () => {
     const [first, revised, retry] = hoisted.apiPost.mock.calls.map(keyOf)
     expect(revised).not.toBe(first)
     expect(retry).toBe(first)
+  })
+
+  it('键不被压回 32 位：审查给出的 32 位 FNV 碰撞样例（同长度内容 00000bpb / 00001ld5）得到不同的键', async () => {
+    const same = { fileName: 'same.bin', documentType: 'OTHER' as const }
+    await addEvidence(1, { ...same, contentBase64: '00000bpb' })
+    await addEvidence(1, { ...same, contentBase64: '00001ld5' })
+    const [a, b] = hoisted.apiPost.mock.calls.map(keyOf)
+    expect(a).not.toBe(b)
   })
 
   it('指纹覆盖全部字符：任意位置的单字符差异都会改变指纹', () => {
