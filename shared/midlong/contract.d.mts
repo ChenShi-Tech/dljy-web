@@ -105,6 +105,7 @@ export interface ImportColumnDeclaration {
   choices?: Readonly<Record<string, string | boolean>>
 }
 export declare const DEFERRED_PRODUCT_KEYWORDS: readonly string[]
+export declare function deferredProductKeywordOf(name: unknown): string | null
 export declare const IMPORT_CONTRACT_COLUMNS: readonly ImportColumnDeclaration[]
 export declare const IMPORT_ALLOCATION_COLUMNS: readonly ImportColumnDeclaration[]
 export declare const IMPORT_SHEETS: Readonly<{ contracts: string; allocations: string }>

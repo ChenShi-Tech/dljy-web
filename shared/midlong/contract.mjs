@@ -233,6 +233,12 @@ export function classifyLegacyContract(row) {
     reasons.push('现货（日前/实时）交易类型')
     return { category: 'SPOT', reasons }
   }
+  const deferredKeyword = deferredProductKeywordOf(row?.contractName ?? row?.contract_name)
+  if (deferredKeyword) {
+    // 合约转让/回购/置换的义务方向要凭核验单据确定（MA-02），不能按普通售电合同纳管。
+    reasons.push(`交易名称含「${deferredKeyword}」，属于后续阶段（成交确认与转让调整）品种，义务方向未核实`)
+    return { category: 'UNKNOWN', reasons }
+  }
   if (LEGACY_MIDLONG_MARKET_TYPES.includes(marketType)) {
     reasons.push('中长期交易类型；是否为电源侧售电需人工确认')
     return { category: 'MIDLONG_CANDIDATE', reasons }
@@ -260,6 +266,12 @@ const EVIDENCE_BASIS_CHOICES = { 正式资料: 'FORMAL', 内部估算: 'INTERNAL
 const YES_NO_CHOICES = { 是: true, 否: false }
 /** 出现这些字样的交易名称属于 P4（合约转让等），P1 拒绝导入而不是自动映射。 */
 export const DEFERRED_PRODUCT_KEYWORDS = Object.freeze(['合约转让', '合同转让', '转让交易', '回购', '置换'])
+
+/** 合同/交易名称命中的后续阶段品种关键词；未命中返回 null。导入、手工录入与存量盘点共用同一判据。 */
+export function deferredProductKeywordOf(name) {
+  const text = String(name ?? '')
+  return DEFERRED_PRODUCT_KEYWORDS.find((kw) => text.includes(kw)) ?? null
+}
 
 export const IMPORT_CONTRACT_COLUMNS = Object.freeze([
   { key: 'externalObligationId', name: '外部合同编号', aliases: ['合同编号', '确认单编号', '合同号', 'contractId'], required: true },
