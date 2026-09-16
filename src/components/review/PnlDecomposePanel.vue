@@ -320,7 +320,7 @@ function onToCaseChange(t: { date: string; type: string; pnlYuan: number }, chec
           <p class="pdp-note" :class="{ 'pdp-warn': t03Error }">
             <template v-if="!t03Available">模板实例端点未接入——成因/经验不会自动保存，仅本机暂存；勾选「入案例库」仍会立即登记入库（不可撤回）。</template>
             <template v-else-if="t03Instance">
-              人填内容写入模板三实例 #{{ t03Instance.id }}（{{ t03Instance.periodKey }}）：
+              人工填写的内容将保存到本期典型交易复盘（{{ t03Instance.periodKey }}）：
               {{ t03Locked ? '实例已提交锁定，内容只读' : '编辑后自动存草稿' }}{{ t03SavedAt ? ` · 最近保存 ${t03SavedAt}` : '' }}<template v-if="t03Error"> · {{ t03Error }}</template>
             </template>
             <template v-else>本月无模板三实例（触发引擎未生成）——成因/经验不会自动保存，仅本机暂存；勾选「入案例库」仍会立即登记入库（不可撤回）。</template>
@@ -363,7 +363,7 @@ function onToCaseChange(t: { date: string; type: string; pnlYuan: number }, chec
             </tbody>
           </table>
           <p class="pdp-note">
-            Top5 与拆解表同源同口径（同一次 /review 聚合产出）；金额 self-computed。
+            Top5 与拆解表来自同一次计算、同一口径；金额为系统自算，不作为正式结算依据。
             「是否入库=勾选」即登记案例库（review.cases，deviation 档案纪律：四要素必填、沉淀后不可改写、无 DELETE）；
             端点缺席环境保持本地勾选并如实标注「本地」，不谎报已入库。
           </p>
