@@ -26,7 +26,7 @@ import { currentRegion } from '@/services/region/regionContext'
 import { currentCompany } from '@/services/company/companyContext'
 import { canAccessPath } from '@/services/governance'
 import { getCurrentUser } from '@/services/auth'
-import { useAiSidebar, takeSliceFor, switchSession, adoptSessionId, bindUser, BLANK_SESSION } from './useAiSidebar'
+import { useAiSidebar, takeSliceFor, restoreSliceFor, switchSession, adoptSessionId, bindUser, BLANK_SESSION } from './useAiSidebar'
 import { activeAiPage, resolveQuestion, type AiPagePreset } from './pageRegistry'
 import { buildPageContext, composeMessageContext } from './pageContext'
 import { decideSession } from './sessionPolicy'
@@ -124,6 +124,8 @@ async function onSessionBusy(question: string) {
   if (retriedQuestion === question) return
   retriedQuestion = question
   busy.value = false
+  // 被拒的那一轮从未被处理：把它的数据切片装回，新会话首轮照样附带（dljy-web#119 审查 P2）
+  restoreSliceFor(question)
   switchSession({ ...record.value, sessionId: null })
   await askInKernel(question)
 }

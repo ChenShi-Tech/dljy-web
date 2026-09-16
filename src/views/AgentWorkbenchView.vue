@@ -109,12 +109,21 @@ const payload = computed<Record<string, unknown> | undefined>(() => {
   }
 })
 
+// 续接目标一旦被放弃（开始新任务/新建/选历史），同步去掉地址栏里的 ?session=，
+// 否则刷新或分享链接会重新打开那个旧会话（dljy-web#119 审查 P2）
+function dropSessionQuery() {
+  if (typeof route.query.session !== 'string') return
+  const { session: _session, ...rest } = route.query
+  void router.replace({ path: '/ai-agent', query: rest })
+}
+
 async function start() {
   if (entry.value.key === 'morning_brief') await briefRailRef.value?.ensureLoaded()
   runQuestion.value = entry.value.buildQuestion
     ? entry.value.buildQuestion({ values: values.value, regionName: currentRegion.value.name })
     : ''
   resumeTarget.value = ''
+  dropSessionQuery()
   runKey.value++
   hasRun.value = true
   activeSessionId.value = null
@@ -154,12 +163,14 @@ function setCollapsed(v: boolean) {
 
 function onSelectHistory(sessionId: string) {
   runQuestion.value = '' // 防御：清待发送启动问，杜绝未来重挂 onMounted 误发覆盖已回放历史
+  dropSessionQuery()
   void panelRef.value?.loadHistory(sessionId, { fromClick: true })
   hasRun.value = true
 }
 function onNewChat() {
   runQuestion.value = ''
   resumeTarget.value = ''
+  dropSessionQuery()
   panelRef.value?.newConversation()
   activeSessionId.value = null
 }

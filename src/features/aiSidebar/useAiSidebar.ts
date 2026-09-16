@@ -80,6 +80,8 @@ function saveSession(record: AiSessionRecord | null): void {
 const state = reactive<AiSidebarState>({ open: false, request: null, owner: null, session: null, mountKey: 0 })
 let seq = 0
 let pending: { question: string; slice: Record<string, unknown> | null } | null = null
+// 最近一次被内核取走的切片：发送若被服务端 409 拒绝、改在新会话重发时需要重新附带（该轮从未被处理）
+let lastTaken: { question: string; slice: Record<string, unknown> | null } | null = null
 
 /** 空白新对话使用的会话属性（首次发送时由内核按这些属性建会话）。 */
 export const BLANK_SESSION: Readonly<AiSessionRecord> = {
@@ -109,8 +111,14 @@ function dispatch(request: Omit<AiAskRequest, 'seq'>, slice: Record<string, unkn
 export function takeSliceFor(question: string): Record<string, unknown> | null {
   if (!pending || pending.question !== question.trim()) return null
   const { slice } = pending
+  lastTaken = pending
   pending = null
   return slice
+}
+
+/** 409 重发前恢复该问题的切片（仅当它就是最近一次被取走的那条），供新会话首轮再次附带。 */
+export function restoreSliceFor(question: string): void {
+  if (lastTaken && lastTaken.question === question.trim()) pending = lastTaken
 }
 
 /**
@@ -149,6 +157,7 @@ export function resetAiSidebarForTest(): void {
   state.mountKey = 0
   seq = 0
   pending = null
+  lastTaken = null
 }
 
 export function useAiSidebar() {

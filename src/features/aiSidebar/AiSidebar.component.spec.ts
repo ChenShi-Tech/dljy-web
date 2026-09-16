@@ -9,7 +9,7 @@ import { nextTick } from 'vue'
 import { mount, flushPromises } from '@vue/test-utils'
 import { createRouter, createMemoryHistory } from 'vue-router'
 
-type KernelRec = { props: Record<string, unknown>; asks: string[]; unmounted: boolean; emit: (e: string, ...a: unknown[]) => void }
+type KernelRec = { props: Record<string, unknown>; asks: string[]; contexts: unknown[]; unmounted: boolean; emit: (e: string, ...a: unknown[]) => void }
 const g = globalThis as unknown as { __kernels: KernelRec[]; __canWorkbench: boolean; __user: { roleCode: string; username: string } }
 g.__kernels = []
 g.__canWorkbench = true
@@ -27,10 +27,19 @@ vi.mock('@/components/agent/AgentChatPanel.vue', async () => {
       },
       emits: ['sessionReady', 'streamingChange', 'sessionBusy', 'done', 'historyChanged'],
       setup(props, { emit, expose, slots }) {
-        const rec: KernelRec = { props: props as Record<string, unknown>, asks: [], unmounted: false, emit: emit as KernelRec['emit'] }
+        const rec: KernelRec = { props: props as Record<string, unknown>, asks: [], contexts: [], unmounted: false, emit: emit as KernelRec['emit'] }
         ;(globalThis as unknown as { __kernels: KernelRec[] }).__kernels.push(rec)
         onUnmounted(() => { rec.unmounted = true })
-        expose({ ask: (q: string) => { rec.asks.push(q); return true }, newConversation: () => {} })
+        // 与真实内核一致：发送时按问题取本轮附带信息（会取走待发切片）
+        expose({
+          ask: (q: string) => {
+            rec.asks.push(q)
+            const f = (props as { contextPayloadFor?: (q: string) => unknown }).contextPayloadFor
+            if (typeof f === 'function') rec.contexts.push(f(q))
+            return true
+          },
+          newConversation: () => {}
+        })
         return () => h('div', { class: 'kernel-stub' }, slots['composer-top']?.())
       }
     })
@@ -174,17 +183,19 @@ describe('AiSidebar · 会话规则', () => {
     expect(live()[0].asks).toEqual(['再看看峰谷价差'])
   })
 
-  it('服务端 409：改在新会话里重发一次，同一问题不无限重试', async () => {
+  it('服务端 409：改在新会话里重发一次（仍附带原数据切片），同一问题不无限重试', async () => {
     await setup()
     const ai = useAiSidebar()
-    ai.ask('这条会撞 409')
+    ai.ask('这条会撞 409', { context: { row: 7 } })
     await settle()
     const first = live()[0]
+    expect((first.contexts[0] as { slice?: unknown }).slice).toEqual({ row: 7 })
     first.emit('sessionBusy', '这条会撞 409')
     await settle()
     const second = live()[0]
     expect(second).not.toBe(first)
     expect(second.asks).toEqual(['这条会撞 409'])
+    expect((second.contexts[0] as { slice?: unknown }).slice).toEqual({ row: 7 })
     second.emit('sessionBusy', '这条会撞 409')
     await settle()
     expect(live()[0]).toBe(second)
