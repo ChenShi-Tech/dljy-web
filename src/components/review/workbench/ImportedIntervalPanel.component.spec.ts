@@ -5,7 +5,10 @@ const api = vi.hoisted(() => ({ analyzeImportedIntervals: vi.fn(), captureImport
 vi.mock('@/services/review/importedIntervals', () => api)
 const choice = { seriesKey: 'a'.repeat(64), objectId: '测试对象', basisLabel: '申报电量', actualLabel: '实际电量' }
 const periods = { current: { start: '2026-05-31', end: '2026-05-31' }, reference: { start: '2026-05-24', end: '2026-05-24' } }
+const choiceB = { ...choice, objectId: '第二个对象' }
+const otherSeries = { seriesKey: 'b'.repeat(64), objectId: '别的口径对象', basisLabel: '综合预测电量', actualLabel: '实际电量' }
 const catalog = { choices: [choice], periods, source: { mock: false, version: '一' }, notice: '人工资料', analysis: null }
+const multiCatalog = { ...catalog, choices: [choice, choiceB, otherSeries] }
 const point = { start: '2026-05-30T16:00:00Z', end: '2026-05-30T16:15:00Z' }
 const data = { ...catalog, input: { scope: { objectId: 'imported:one' }, period: { date: '2026-05-31' } }, labels: ['申报电量', '实际电量'], analysis: { periods, energy: { netDeviationMwh: -1, absoluteDeviationMwh: 1 }, coverage: { comparableMinutes: 15, expectedMinutes: 1440 }, anomalies: [point], prices: {} } }
 const props = { company: 'one', region: 'yunnan', view: 'generator' as const, date: '2026-05-31', topic: 'energy' as const }
@@ -78,4 +81,34 @@ describe('已导入分时资料分析', () => {
     wrapper.unmount()
   })
 
+
+  it('同口径的多个对象可合计，请求改传对象集合', async () => {
+    api.analyzeImportedIntervals.mockResolvedValue(multiCatalog)
+    const wrapper = create(); await open(wrapper)
+    const objectSelect = wrapper.findAll('select').at(-1)!
+    await objectSelect.setValue(JSON.stringify([choice.seriesKey, choice.objectId]))
+    await flushPromises()
+    // 勾上同口径的第二个对象；不同口径的对象不出现在可合计清单里。
+    const boxes = wrapper.findAll('input[type=checkbox]')
+    const rollupBox = boxes.find(box => (box.element as HTMLInputElement).value === choiceB.objectId)!
+    expect(boxes.some(box => (box.element as HTMLInputElement).value === otherSeries.objectId)).toBe(false)
+    await rollupBox.setValue(true)
+    await wrapper.findAll('button').find(button => button.text() === '重新统计')!.trigger('click')
+    await flushPromises()
+    const last = api.analyzeImportedIntervals.mock.calls.at(-1)![1]
+    expect(last.objectIds).toEqual([choice.objectId, choiceB.objectId])
+    expect(last.objectId).toBeUndefined()
+    wrapper.unmount()
+  })
+  it('价格专题不开放跨对象合计', async () => {
+    api.analyzeImportedIntervals.mockResolvedValue(multiCatalog)
+    const wrapper = mount(ImportedIntervalPanel, { props: { ...props, topic: 'price' as const }, global: { stubs: { ReportEvidenceChart: true } } })
+    await open(wrapper as never)
+    const objectSelect = wrapper.findAll('select').at(-1)!
+    await objectSelect.setValue(JSON.stringify([choice.seriesKey, choice.objectId]))
+    await flushPromises()
+    // 多个对象的分时价格既不能相加也不该等权平均，合计入口不出现。
+    expect(wrapper.text()).not.toContain('合计多个对象')
+    wrapper.unmount()
+  })
 })
