@@ -11,6 +11,8 @@ const editedText = ref(''), keptUncertainties = ref<number[]>([])
 const requestInput = computed(() => ({ ...props.input, evidence: props.input.evidence.filter((_item, index) => selectedSources.value.includes(index)) }))
 let sequence = 0, controller: AbortController | null = null
 function clear() { ++sequence; controller?.abort(); loading.value = false; candidate.value = null; confirmed.value = false; error.value = ''; editedText.value = ''; keptUncertainties.value = [] }
+// 「已核对」针对的是当前这版文字与事项：改了文字或增减待核实事项都要重新核对，不能沿用改动前的勾选。
+watch([editedText, keptUncertainties], () => { confirmed.value = false }, { deep: true })
 function resetEdits() { if (!candidate.value) return; editedText.value = candidate.value.text; keptUncertainties.value = candidate.value.uncertainties.map((_item, index) => index) }
 watch(() => JSON.stringify(props.input.evidence), () => { selectedSources.value = props.input.evidence.map((_item, index) => index) })
 watch(() => JSON.stringify([requestInput.value, props.companyId, props.region, mode.value]), clear)
