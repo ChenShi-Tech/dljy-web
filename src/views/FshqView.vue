@@ -15,7 +15,7 @@ import CapabilityDegradedCard from '../components/CapabilityDegradedCard.vue'
 import { chartChrome } from '../composables/useTheme'
 import { useEChart } from '../composables/useEChart'
 import { axisTooltip, bottomLayoutLegend, bottomToolbox, emptyOverlay } from '@/services/chart/chartOptions'
-import { usePageInsight } from '../composables/usePageInsight'
+import { defineAiPage, useAiSidebar } from '@/features/aiSidebar'
 import { PAGE_PROMPT_KEYS } from '@/prompts'
 
 const LINES: Record<string, { name: string; color: string }> = {
@@ -216,16 +216,16 @@ function renderMain() {
   inst?.on('click', (p: any) => { if (p.dataIndex != null) { selectedIdx.value = p.dataIndex; renderMain(); loadBuySell(p.dataIndex) } })
 }
 
-const { askPage, registerPageInsight } = usePageInsight(PAGE_PROMPT_KEYS.marketDataAnalysis)
+const ai = useAiSidebar()
 // 「✨ 解读本页」：当前模式/日期 + 出清价均值极值 + 已有预测线列表作摘要交全局 AI 中心（勿传 96 点全量）。
-function askInsight() {
+function insightContext(): Record<string, unknown> {
   const d = data.value || {}
   const nums = (a: any[]) => (a || []).filter((v: any) => typeof v === 'number')
   const avg = (a: number[]) => (a.length ? Math.round(a.reduce((s, x) => s + x, 0) / a.length) : null)
   const range = (a: number[]) => (a.length ? { min: Math.round(Math.min(...a)), max: Math.round(Math.max(...a)) } : null)
   const ss = nums(d.ssjcqList)
   const rq = nums(d.rqjcqList)
-  askPage('分时行情', {
+  return {
     page: '分时行情 (fshq)',
     mode: mode.value === 'rq' ? '运行日期·按小时' : '交易日期·各运行日@01:00',
     date: mode.value === 'rq' ? runDate.value : jyDate.value,
@@ -234,11 +234,14 @@ function askInsight() {
     dayahead_clearing: { avg: avg(rq), range: range(rq), unit: '元/MWh' },
     forecast_lines: Object.keys(LINES).filter((k) => Array.isArray(d[k]) && d[k].some((x: any) => x != null)).map((k) => LINES[k].name),
     basis: 'captured'
-  })
+  }
 }
 
-// 右下角悬浮球 = 本页解读入口：与上面「✨ 解读本页」按钮同一条链路、同一份切片。
-registerPageInsight(askInsight, '分时行情')
+// 页面接入 AI 侧边栏：悬浮球、「✨ 解读本页」按钮共用这份声明与切片（点击时刻求值）。
+defineAiPage({ label: '分时行情', promptKey: PAGE_PROMPT_KEYS.marketDataAnalysis, interpret: { context: insightContext } })
+function askInsight() {
+  ai.interpret()
+}
 
 onMounted(load)
 watch([mode, runDate, jyDate], load)

@@ -1,5 +1,6 @@
 <script setup lang="ts">
-// 全局 AI 解读面板：业务页「✨AI 解读」/「选中即问」的宿主，嵌 AgentChatPanel 流式研判。
+// 全局 AI 侧边栏：工作台的简化界面（只保留对话），也是业务页「解读本页」「选中即问」的宿主。
+// 业务页不直接引用本组件，统一经 `@/features/aiSidebar` 的 useAiSidebar / defineAiPage 接入。
 //
 // **原「导航助手」模式已于 2026-08-26 下架**（前端直连大模型 Key 做页面推荐，与统一工作台
 // /ai-agent 能力重叠，且不经 /agent-api、不入审计、不受工具审批约束）。完整旧实现存
@@ -8,37 +9,59 @@ import { ref, nextTick, watch, computed, onBeforeUnmount } from 'vue'
 import { useRouter } from 'vue-router'
 import { Sparkles, Settings, X, Square, Radio, RefreshCw, PlayCircle, Loader2 } from 'lucide-vue-next'
 import { listRuns, stopAgentRun, type AgentRunSummary, type AgentScenario } from '@/services/agent/agentClient'
-import AgentChatPanel from './agent/AgentChatPanel.vue'
-import { useAiPanel } from '../composables/useAiPanel'
-import { PAGE_PROMPT_KEYS } from '@/prompts'
+import { useRoute } from 'vue-router'
+import AgentChatPanel from '@/components/agent/AgentChatPanel.vue'
+import { PAGE_PROMPT_KEYS } from '@/prompts/pageKeys'
+import { currentRegion } from '@/services/region/regionContext'
+import { currentCompany } from '@/services/company/companyContext'
 import { ElMessage } from 'element-plus'
+import { useAiSidebar, takeSliceFor } from './useAiSidebar'
+import { activeAiPage } from './pageRegistry'
+import { buildPageContext, composeMessageContext } from './pageContext'
 
-const { state: aiPanel, close: closePanel } = useAiPanel()
+const { state: sidebar, close: closePanel } = useAiSidebar()
 const ACTIVE_RUNS_POLL_MS = 5000
 const router = useRouter()
+const route = useRoute()
+const activePage = activeAiPage()
 
-const agentScenario = computed<AgentScenario>(() => (aiPanel.agentCtx?.scenario as AgentScenario) || 'chat')
-// 动态宿主键：业务页经 openAgent 注入 promptKey（类型 PagePromptKey），缺省兜底到驾驶舱 key。
-// 经 PAGE_PROMPT_KEYS 兜底常量满足主仓 verify:agent-chat-invariants 守卫（防自由文本绕过白名单）。
-const insightPromptKey = computed(() => aiPanel.agentCtx?.promptKey ?? PAGE_PROMPT_KEYS.marketInsightCockpit)
+const agentScenario: AgentScenario = 'chat'
+// 解读角色只走页面提示词白名单 key：页面发起的提问用页面声明的 key，自由对话用通用对话 key。
+const promptKey = computed(() => sidebar.request?.promptKey ?? PAGE_PROMPT_KEYS.workbench)
+// 业务上下文（地区）：与原「解读本页」链路一致随每轮下发
+const regionPayload = computed(() => ({ region_id: currentRegion.value.id, region_name: currentRegion.value.name }))
 
-// 「保活续聊」：首次 openAgent 后常驻挂载（v-show 切换而非 v-if remount），之后业务页再点
-// 「✨AI 解读」/ 跳转回来重开，都把问题送进【现有】会话续聊，而不是开新对话。
-// agentKey 自增作「来了新问题」信号，不做 :key remount。
+// 页面背景：每轮都附带「用户正在看什么」；数据切片只随发起它的那一轮（见 pageContext.ts）
+const pageContext = computed(() =>
+  buildPageContext({
+    routePath: route.path,
+    routeTitle: typeof route.meta?.title === 'string' ? route.meta.title : null,
+    pageLabel: activePage.value?.label ?? null,
+    region: currentRegion.value,
+    company: currentCompany.value
+  })
+)
+function contextFor(question: string) {
+  return composeMessageContext(pageContext.value, takeSliceFor(question))
+}
+
+// 首次打开即常驻挂载对话内核（v-show 切换而非 remount）：关闭侧边栏不中断进行中的回复。
+// request.seq 自增是「页面发来新问题」的信号。
 type AgentPanelRef = {
-  ask: (q: string) => void
+  ask: (q: string) => boolean
   newConversation: () => void
   attachRun: (sessionId: string, runId?: string) => Promise<boolean>
 }
 const agentPanelRef = ref<AgentPanelRef | null>(null)
 const agentEverOpened = ref(false)
-watch(() => aiPanel.agentKey, async () => {
-  if (aiPanel.agentKey === 0) return
+watch(() => sidebar.open, (open) => { if (open) agentEverOpened.value = true }, { immediate: true })
+watch(() => sidebar.request?.seq, async (seq) => {
+  if (!seq || !sidebar.request) return
+  const question = sidebar.request.question
   agentEverOpened.value = true
   await nextTick() // 首次：等 AgentChatPanel 挂载出 ref
-  await nextTick() // 等 contextPayload / payload 随 agentCtx 更新到 props 后再发
-  const q = aiPanel.agentCtx?.initialQuestion?.trim()
-  if (q) agentPanelRef.value?.ask(q)
+  await nextTick() // 等 promptKey 随 request 更新到 props 后再发
+  agentPanelRef.value?.ask(question)
 })
 
 // 运行中会话（后台 running run）
@@ -48,7 +71,7 @@ const runsLoading = ref(false)
 const stoppingRunIds = ref<Set<string>>(new Set())
 let runsTimer: ReturnType<typeof setInterval> | null = null
 
-watch(() => aiPanel.open, (open) => {
+watch(() => sidebar.open, (open) => {
   if (open) {
     void refreshActiveRuns()
     runsTimer = setInterval(() => { void refreshActiveRuns() }, ACTIVE_RUNS_POLL_MS)
@@ -106,7 +129,7 @@ function setStopping(runId: string, value: boolean) {
 }
 
 async function refreshActiveRuns() {
-  if (!aiPanel.open) return
+  if (!sidebar.open) return
   runsLoading.value = true
   try {
     activeRuns.value = await listRuns('running')
@@ -153,10 +176,10 @@ function goConfig() {
 </script>
 
 <template>
-  <aside class="ai-dock" :class="{ open: aiPanel.open }">
+  <aside class="ai-dock" :class="{ open: sidebar.open }">
     <div class="ai-panel">
       <header class="ai-head">
-        <div class="ai-title"><span class="ai-ico"><Sparkles :size="17" /></span> AI 解读</div>
+        <div class="ai-title"><span class="ai-ico"><Sparkles :size="17" /></span> AI 助手</div>
         <div class="ai-head-right">
           <button class="ai-tool" title="模型设置" @click="goConfig"><Settings :size="15" /></button>
           <button class="ai-tool" title="关闭" @click="close"><X :size="17" /></button>
@@ -200,17 +223,17 @@ function goConfig() {
           v-if="agentEverOpened"
           ref="agentPanelRef"
           :scenario="agentScenario"
-          :prompt-key="insightPromptKey"
+          :prompt-key="promptKey"
           history-key="ai_center"
-          :context-payload="aiPanel.agentCtx?.contextPayload ?? null"
-          :payload="aiPanel.agentCtx?.payload ?? null"
+          :context-payload-for="contextFor"
+          :payload="regionPayload"
           @done="() => refreshActiveRuns()"
           @history-changed="refreshActiveRuns"
         />
         <div v-else class="ai-agent-empty">
           <div class="ai-welcome-ico"><Sparkles :size="26" /></div>
-          <p class="ai-welcome-t">智能解读</p>
-          <p class="ai-welcome-s">在「市场洞察驾驶舱」等页点卡片「✨AI 解读」，即可在此基于本页已装配数据流式研判。<br />想直接对话请去「智能体工作台」。</p>
+          <p class="ai-welcome-t">AI 助手</p>
+          <p class="ai-welcome-s">在页面点「✨ 解读本页」可基于本页数据直接解读，也可以在这里直接提问。</p>
         </div>
       </div>
     </div>

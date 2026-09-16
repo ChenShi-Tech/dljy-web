@@ -14,8 +14,7 @@ import HomeConsoleView from './HomeConsoleView.vue'
 import { currentRegion } from '@/services/region/regionContext'
 import { PAGE_PROMPT_KEYS } from '@/prompts'
 import { fetchMarketInsightBundle, type MarketInsightBundle } from '@/services/market/marketInsightClient'
-import { useAiPanel } from '@/composables/useAiPanel'
-import { usePageInsight } from '@/composables/usePageInsight'
+import { defineAiPage, useAiSidebar } from '@/features/aiSidebar'
 
 function todayISO(): string {
   const d = new Date()
@@ -51,35 +50,29 @@ async function runPrecheck() {
   }
 }
 
-// 选中即问：把某区块作 contextPayload 交「全局统一 AI 面板」的 agent 模式流式解读
-// （驾驶舱不再自带右栏，复用右上角加宽面板，避免两个 AI 入口重叠）。
-const { openAgent } = useAiPanel()
-const chatPayload = computed(() => ({ region_id: currentRegion.value.id, region_name: currentRegion.value.name }))
+// 选中即问：单卡解读把该区块作切片交 AI 侧边栏；悬浮球与「✨ AI 综合解读」走全局解读那一支。
+// 切片在点击时刻求值，只随发起解读的那一轮下发。
+const ai = useAiSidebar()
 
 function ask(name: string, blockKey: string) {
-  openAgent({
-    promptKey,
-    scenario: 'chat',
-    initialQuestion: `请解读本页「${name}」并给出关键判断（数据已在上下文，勿臆造缺失项）`,
-    contextPayload: { block_name: name, block: blocks.value[blockKey] ?? null },
-    payload: chatPayload.value,
-    label: name
-  })
-}
-function askGlobal() {
-  openAgent({
-    promptKey,
-    scenario: 'chat',
-    initialQuestion: `请综合解读今日市场态势（${date.value}）：行情 / 弹性 / 价差 / 节点 / 异动，给出三段式判断`,
-    contextPayload: { block_name: '市场洞察全局', data_availability: bundle.value?.data_availability ?? null },
-    payload: chatPayload.value,
-    label: '市场洞察全局'
+  ai.ask(`请解读本页「${name}」并给出关键判断（数据已在上下文，勿臆造缺失项）`, {
+    context: () => ({ block_name: name, block: blocks.value[blockKey] ?? null }),
+    label: name,
+    promptKey
   })
 }
 
-// 右下角悬浮球 = 本页解读入口：本页是按卡片解读，悬浮球接「全局解读」那一支。
-const { registerPageInsight } = usePageInsight(promptKey)
-registerPageInsight(askGlobal, '市场洞察驾驶舱')
+defineAiPage({
+  label: '市场洞察驾驶舱',
+  promptKey,
+  interpret: {
+    context: () => ({ block_name: '市场洞察全局', data_availability: bundle.value?.data_availability ?? null }),
+    question: () => `请综合解读今日市场态势（${date.value}）：行情 / 弹性 / 价差 / 节点 / 异动，给出三段式判断`
+  }
+})
+function askGlobal() {
+  ai.interpret()
+}
 </script>
 
 <template>

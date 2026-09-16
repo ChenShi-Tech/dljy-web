@@ -1,5 +1,5 @@
 // 斜杠指令输入集成：菜单状态机 + 键盘处理 + 输入历史。
-// 宿主组件（AiAssistant / AgentChatPanel）把输入 ref 与 CommandContext 工厂传进来，
+// 宿主组件（AgentChatPanel 等）把输入 ref 与 CommandContext 工厂传进来，
 // 模板里挂 <SlashCommandMenu>，keydown 时先问本 composable 是否消费了按键。
 import { ref, watch, type Ref } from 'vue'
 import {

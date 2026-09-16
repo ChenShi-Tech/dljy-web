@@ -15,7 +15,7 @@ import {
 import type { DataBasis } from '@/services/dataBasis'
 import DataBasisBadge from '@/components/DataBasisBadge.vue'
 import RegionDataBanner from '@/components/region/RegionDataBanner.vue'
-import { usePageInsight } from '../composables/usePageInsight'
+import { defineAiPage, useAiSidebar } from '@/features/aiSidebar'
 import { PAGE_PROMPT_KEYS } from '@/prompts'
 
 const selectedYear = ref(2026)
@@ -249,12 +249,14 @@ function exportDetail() {
 watch(selectedYear, refreshData)
 watch(activeTab, () => nextTick(renderCharts))
 
-const { askPage, registerPageInsight } = usePageInsight(PAGE_PROMPT_KEYS.marketOperations)
-function askInsight() {
-  const tabLabel = tabs.find((t) => t.value === activeTab.value)?.label ?? activeTab.value
-  // #669：套餐 tab 用 visibleBasis（套餐真实性单独判定），其余 tab 用页面级 basis。
-  const displayedBasis = visibleBasis.value ?? 'synthetic'
-  askPage('市场经营分析', {
+const ai = useAiSidebar()
+const insightTabLabel = () => tabs.find((t) => t.value === activeTab.value)?.label ?? activeTab.value
+// #669：套餐 tab 用 visibleBasis（套餐真实性单独判定），其余 tab 用页面级 basis。
+const insightBasis = () => visibleBasis.value ?? 'synthetic'
+function insightContext(): Record<string, unknown> {
+  const tabLabel = insightTabLabel()
+  const displayedBasis = insightBasis()
+  return {
     page: '市场经营分析 (market-ops)',
     year: selectedYear.value,
     active_tab: tabLabel,
@@ -262,11 +264,23 @@ function askInsight() {
     top_categories: categoryRows.value.slice(0, 10).map((r) => ({ name: r.name, quantity: r.quantity, avgPrice: r.avgPrice, percentage: r.percentage })),
     basis: displayedBasis,
     caliber_note: displayedBasis === 'captured' ? '真实回放数据' : '当前为占位示例，仅供页面形态'
-  }, `请基于本页「市场经营分析·${tabLabel}」做经营结构与趋势解读（数据已在上下文，注意 basis=${displayedBasis} 口径，勿臆造未取项）`)
+  }
 }
 
-// 右下角悬浮球 = 本页解读入口：与上面「✨ 解读本页」按钮同一条链路、同一份切片。
-registerPageInsight(askInsight, '市场经营分析')
+// 页面接入 AI 侧边栏：悬浮球、「✨ 解读本页」按钮共用这份声明与切片（点击时刻求值）。
+// 开场问题随当前 tab 与数据口径变化，故传函数。
+defineAiPage({
+  label: '市场经营分析',
+  promptKey: PAGE_PROMPT_KEYS.marketOperations,
+  interpret: {
+    context: insightContext,
+    question: () =>
+      `请基于本页「市场经营分析·${insightTabLabel()}」做经营结构与趋势解读（数据已在上下文，注意 basis=${insightBasis()} 口径，勿臆造未取项）`
+  }
+})
+function askInsight() {
+  ai.interpret()
+}
 
 onMounted(refreshData)
 </script>
