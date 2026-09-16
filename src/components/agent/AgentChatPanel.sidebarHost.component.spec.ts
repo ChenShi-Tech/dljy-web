@@ -125,9 +125,12 @@ describe('AgentChatPanel · 审批卡自动执行开关', () => {
     expect(setSessionAutoApprove).toHaveBeenCalledWith('s_chk', true)
   })
 
-  it('对外提交（L2）卡片不显示开关', async () => {
+  it('对外提交（L2）卡片不显示开关；按风险级别判断，不只认工具名', async () => {
     const w = await withApproval({ ...L1, tool: 'submit_declaration', level: 'L2' }, 'declaration_checkup', true)
     expect(w.find('[data-testid="approval-auto-approve"]').exists()).toBe(false)
+    // 日后新增的其它 L2 工具同样不显示：开关只给 L1
+    const otherL2 = await withApproval({ ...L1, tool: 'withdraw_declaration', level: 'L2' }, 'declaration_checkup', true)
+    expect(otherL2.find('[data-testid="approval-auto-approve"]').exists()).toBe(false)
   })
 
   it('缺 level 字段的旧卡片不显示（fail-closed）', async () => {
