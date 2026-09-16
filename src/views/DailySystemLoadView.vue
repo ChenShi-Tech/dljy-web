@@ -21,7 +21,7 @@ import { useQuerySync } from '../composables/useQuerySync'
 import RegionDataBanner from '@/components/region/RegionDataBanner.vue'
 import CapabilitySupportBadge from '../components/CapabilitySupportBadge.vue'
 import LoadPanelChart from '../components/common/LoadPanelChart.vue'
-import { usePageInsight } from '../composables/usePageInsight'
+import { defineAiPage, useAiSidebar } from '@/features/aiSidebar'
 import { PAGE_PROMPT_KEYS } from '@/prompts'
 
 // 列定义：系统负荷实际值 / 错位负荷实际值
@@ -91,9 +91,9 @@ async function load() {
   }
 }
 
-const { askPage, registerPageInsight } = usePageInsight(PAGE_PROMPT_KEYS.marketDataAnalysis)
+const ai = useAiSidebar()
 // 「✨ 解读本页」：可用年份 + 系统负荷各年年均作摘要（勿传 6年×366天逐日矩阵全量）。
-function askInsight() {
+function insightContext(): Record<string, unknown> {
   const sys = data.value?.sources.system
   const years = sys?.years || []
   const average = sys?.metrics.average || []
@@ -101,7 +101,7 @@ function askInsight() {
     const nums = (arr || []).filter((v: any) => typeof v === 'number')
     return nums.length ? Math.round(nums.reduce((s, x) => s + x, 0) / nums.length) : null
   }
-  askPage('逐日系统负荷', {
+  return {
     page: '逐日系统负荷实际值 (actualLoad)',
     years,
     panels: '系统/错位负荷 × 均值/最小/最大（6 子图）',
@@ -109,11 +109,14 @@ function askInsight() {
     unit: '万KWH',
     note: '逐日 366 点 × 6 年；本摘要仅给系统负荷各年年均，逐日明细未传',
     basis: 'captured'
-  })
+  }
 }
 
-// 右下角悬浮球 = 本页解读入口：与上面「✨ 解读本页」按钮同一条链路、同一份切片。
-registerPageInsight(askInsight, '逐日系统负荷')
+// 页面接入 AI 侧边栏：悬浮球、「✨ 解读本页」按钮共用这份声明与切片（点击时刻求值）。
+defineAiPage({ label: '逐日系统负荷', promptKey: PAGE_PROMPT_KEYS.marketDataAnalysis, interpret: { context: insightContext } })
+function askInsight() {
+  ai.interpret()
+}
 
 onMounted(load)
 

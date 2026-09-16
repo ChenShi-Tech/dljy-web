@@ -83,8 +83,12 @@ const props = withDefaults(
     restoreLastSession?: boolean
     businessOnly?: boolean
     contextPayload?: Record<string, unknown> | null
+    // 按问题取本轮不可信上下文（统一 AI 侧边栏）：给了就优先于 contextPayload，在发送开始、
+    // 任何 await 之前按本轮问题求值一次——侧边栏据此只在发起解读的那一轮附带数据切片，
+    // 之后的自由追问只带页面背景。其它宿主不传，行为不变。
+    contextPayloadFor?: ((question: string) => Record<string, unknown> | null) | null
   }>(),
-  { scenario: 'chat', initialQuestion: '', payload: null, resumeSessionId: null, persistHistory: true, historyKey: '', promptKey: '', contextPayload: null, restoreLastSession: true, businessOnly: false }
+  { scenario: 'chat', initialQuestion: '', payload: null, resumeSessionId: null, persistHistory: true, historyKey: '', promptKey: '', contextPayload: null, contextPayloadFor: null, restoreLastSession: true, businessOnly: false }
 )
 
 const router = useRouter()
@@ -99,6 +103,8 @@ const emit = defineEmits<{
   sessionReady: [sessionId: string]
   // 挂载初始化（探活、历史恢复/首问处理）完成后通知宿主
   ready: []
+  // 会话被清空重置（/clear 或宿主调用 newConversation）：下一次发送将新建会话，宿主可据此复位会话属性
+  conversationReset: []
 }>()
 
 // 消息模型：assistant 消息由有序「段」组成，事件流逐段构建
@@ -670,6 +676,7 @@ function newConversation() {
   reconnecting.value = false
   reconnectAttempt.value = 0
   clearLocalSession()
+  emit('conversationReset')
 }
 
 // 渲染用块：完成后用整体解析结果，流式中用稳定段增量结果（同一 ArtifactRenderer 节点，
@@ -1016,6 +1023,8 @@ async function send() {
   }
   pushHistory(content)
   input.value = ''
+  // 本轮不可信上下文在任何 await 之前定稿：宿主随后改动 props 不影响已发出的这一轮
+  const turnContext = props.contextPayloadFor ? props.contextPayloadFor(content) : props.contextPayload
   messages.value.push({ role: 'user', text: content, segs: [] })
   // 立即压入空助手气泡占位：动态指示（思考/计时/token）即刻出现，不必等首个事件才「弹框」
   messages.value.push({ role: 'assistant', segs: [] })
@@ -1051,7 +1060,7 @@ async function send() {
         ...packageRegionSummary(),
         ...(props.payload ?? {}),
         // B3 选中即问：上下文走 untrusted_external_content（agent 视为不可信外部内容，只引用不执行）
-        ...(props.contextPayload ? { untrusted_external_content: props.contextPayload } : {}),
+        ...(turnContext ? { untrusted_external_content: turnContext } : {}),
       },
       scenario: s.scenario,
       // 续聊重传页面提示白名单 key：harness 重启后懒重建会话需据此恢复角色与安全基线（服务端不持久化）。

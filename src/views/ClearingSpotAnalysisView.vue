@@ -17,7 +17,7 @@ import { chartChrome } from '../composables/useTheme'
 import { useEChart } from '../composables/useEChart'
 import { useQuerySync } from '../composables/useQuerySync'
 import { axisTooltip, bottomLayoutLegend, bottomToolbox, emptyOverlay } from '@/services/chart/chartOptions'
-import { usePageInsight } from '../composables/usePageInsight'
+import { defineAiPage, useAiSidebar } from '@/features/aiSidebar'
 import { PAGE_PROMPT_KEYS } from '@/prompts'
 import TrustBadge from '@/components/common/TrustBadge.vue'
 import type { DataSourceBasis } from '@/services/data/types'
@@ -201,15 +201,15 @@ function render() {
   }, { notMerge: true })
 }
 
-const { askPage, registerPageInsight } = usePageInsight(PAGE_PROMPT_KEYS.marketDataAnalysis)
+const ai = useAiSidebar()
 // 「✨ 解读本页」：当前运行区间/对比日 + 序列图例 + 区间天数作摘要（勿传全量 series）。
-function askInsight() {
+function insightContext(): Record<string, unknown> {
   const d = clearing.value
   const names = d?.series.map((item) => item.name) || []
   const dates = allDates.value
   let inRange = dates.length
   if (runRange.value) { const [s, e] = runRange.value; inRange = dates.filter((x) => x >= s && x <= e).length }
-  askPage('出清现货电量分析', {
+  return {
     page: '出清现货电量分析 (zcqxhdl)',
     run_range: runRange.value,
     compare_date: compareDate.value || null,
@@ -218,11 +218,14 @@ function askInsight() {
     axes: ['电量(MWh)', '价格(元/MWh)', '实际/负荷比值', '价格差(元/MWh)'],
     axis_mode: fixedAxis.value ? '坐标固定' : '坐标自动',
     basis: dataBasis.value
-  })
+  }
 }
 
-// 右下角悬浮球 = 本页解读入口：与上面「✨ 解读本页」按钮同一条链路、同一份切片。
-registerPageInsight(askInsight, '出清现货电量分析')
+// 页面接入 AI 侧边栏：悬浮球、「✨ 解读本页」按钮共用这份声明与切片（点击时刻求值）。
+defineAiPage({ label: '出清现货电量分析', promptKey: PAGE_PROMPT_KEYS.marketDataAnalysis, interpret: { context: insightContext } })
+function askInsight() {
+  ai.interpret()
+}
 
 onMounted(load)
 watch([runRange, compareDate, fixedAxis, hideAxis], render, { deep: true })
