@@ -80,7 +80,8 @@ const periodSelection = ref(settlementSelectionFromQuery(route.query, date.value
 const topicMode = ref<ReviewTopic>(reviewTopic(route.query.topic, !!selectedKey.value))
 // 专题窗口关闭即销毁，资料来源与补充分时资料的筛选由这里保留，重新打开时恢复。
 const topicSource = ref<ReviewAnalysisSource>(), importedSelection = ref<ImportedSelection>()
-watch(selectedKey, () => { topicSource.value = undefined })
+// 资料来源只在同一复盘范围内沿用：换对象、日期、地区、公司或业务视角后回到新范围的默认来源。
+watch(() => [selectedKey.value, date.value, region.value, selectedCompanyId.value, businessView.value], () => { topicSource.value = undefined })
 watch(() => route.query.topic, value => { topicMode.value = reviewTopic(value, !!selectedKey.value) })
 // Batch synchronous filter resets into a single navigation so one topic cannot overwrite another.
 watch([energySelection, priceSelection, periodSelection, topicMode], () => {
