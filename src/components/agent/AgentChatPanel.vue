@@ -3,7 +3,7 @@
 // 事件协议见 src/services/agentClient.ts 与后端 packages/agent-runtime/src/agent_runtime/api/service.py。
 import { computed, nextTick, onMounted, onBeforeUnmount, provide, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { Bot, ChevronDown, ChevronRight, Loader2, Send, Square, User, Wrench } from 'lucide-vue-next'
+import { Bot, ChevronDown, ChevronRight, Copy, Loader2, RotateCcw, Send, Square, User, Wrench } from 'lucide-vue-next'
 import { useAgentHealth } from '@/composables/useAgentHealth'
 import { useCurrentModel } from '@/composables/useCurrentModel'
 import {
@@ -25,6 +25,7 @@ import {
   type HistoryTurn
 } from '@/services/agent/agentClient'
 import { createAsyncGenerations } from './asyncGenerations'
+import { assistantPlainText, previousUserText } from './messageActions'
 import { resolveDoneOutcome } from './doneOutcome'
 import { parseArtifactBlocks, splitStreamingArtifacts, type ArtifactBlock } from '../../utils/artifactBlocks'
 import { useSlashInput } from '../../composables/useSlashInput'
@@ -67,6 +68,9 @@ const props = withDefaults(
     payload?: Record<string, unknown> | null
     // 历史侧栏选中会话时由工作台传入：挂载即回放该会话 transcript（不自动发 initialQuestion）
     resumeSessionId?: string | null
+    // 与 resumeSessionId 同给（统一 AI 侧边栏「运行中」切换）：挂载即附着这个 run；该会话的 transcript
+    // 还不可得（live-token-only）时降级按 live 会话信息续看，同 attachRun，不因回放失败而开出空白面板
+    resumeRunId?: string | null
     // 是否启用聊天历史持久化（注册/每轮存档/刷新恢复）。默认开启（#498 反转）：所有接入点
     // 的对话都绑定登录用户、落 Node SQLite、切页/刷新可恢复。旧设计担心的「共用 localStorage
     // 同场景 key 串台」由 historyKey 按接入点隔离解决。
@@ -87,8 +91,10 @@ const props = withDefaults(
     // 任何 await 之前按本轮问题求值一次——侧边栏据此只在发起解读的那一轮附带数据切片，
     // 之后的自由追问只带页面背景。其它宿主不传，行为不变。
     contextPayloadFor?: ((question: string) => Record<string, unknown> | null) | null
+    // 每条已完成的助手回复下方显示「复制 / 重新提问」（统一 AI 侧边栏开启；其它宿主默认关闭，界面不变）
+    messageActions?: boolean
   }>(),
-  { scenario: 'chat', initialQuestion: '', payload: null, resumeSessionId: null, persistHistory: true, historyKey: '', promptKey: '', contextPayload: null, contextPayloadFor: null, restoreLastSession: true, businessOnly: false }
+  { scenario: 'chat', initialQuestion: '', payload: null, resumeSessionId: null, resumeRunId: null, persistHistory: true, historyKey: '', promptKey: '', contextPayload: null, contextPayloadFor: null, restoreLastSession: true, businessOnly: false, messageActions: false }
 )
 
 const router = useRouter()
@@ -99,10 +105,14 @@ const emit = defineEmits<{
   approval: [payload: Record<string, unknown>]
   // 会话发生持久化变更（注册/新增轮次/恢复），工作台据此刷新历史侧栏
   historyChanged: []
-  // 当前会话就绪（创建或恢复），携带 session_id 供侧栏高亮
-  sessionReady: [sessionId: string]
+  // 当前会话就绪（创建或恢复），携带 session_id 供侧栏高亮，另附会话标题（统一 AI 侧边栏据此回填头部标题）
+  sessionReady: [sessionId: string, title: string]
   // 挂载初始化（探活、历史恢复/首问处理）完成后通知宿主
   ready: []
+  // 流式生成开始/结束（统一 AI 侧边栏据此判断「当前会话是否在生成」）
+  streamingChange: [streaming: boolean]
+  // 发送被服务端以 409 拒绝（该会话已有进行中的 run）：宿主可改在新会话里重发这条问题
+  sessionBusy: [question: string]
   // 会话被清空重置（/clear 或宿主调用 newConversation）：下一次发送将新建会话，宿主可据此复位会话属性
   conversationReset: []
 }>()
@@ -178,6 +188,7 @@ const messages = ref<ChatMsg[]>([])
 const todos = ref<Todo[]>([])
 const input = ref('')
 const streaming = ref(false)
+watch(streaming, (v) => emit('streamingChange', v))
 const session = ref<AgentSessionInfo | null>(null)
 const bodyRef = ref<HTMLElement | null>(null)
 const inputRef = ref<HTMLTextAreaElement | null>(null)
@@ -595,7 +606,7 @@ async function refreshHistoryFromServer() {
     todos.value = []
     session.value = { id: t.session_id, scenario: t.scenario, title: t.title, status: 'idle' }
     saveLocalSession(t.session_id)
-    emit('sessionReady', t.session_id)
+    emit('sessionReady', t.session_id, t.title ?? '')
     emit('historyChanged')
     scrollBottom(true)
   } catch (err) {
@@ -631,7 +642,7 @@ async function loadHistory(sessionId: string, opts?: { fromClick?: boolean; allo
         session.value = { id: t.session_id, scenario: t.scenario, title: t.title, status: 'idle' }
         if (props.persistHistory) {
           saveLocalSession(t.session_id)
-          emit('sessionReady', t.session_id)
+          emit('sessionReady', t.session_id, t.title ?? '')
         }
         return true
       }
@@ -647,7 +658,7 @@ async function loadHistory(sessionId: string, opts?: { fromClick?: boolean; allo
     session.value = { id: t.session_id, scenario: t.scenario, title: t.title, status: 'idle' }
     if (props.persistHistory) {
       saveLocalSession(t.session_id)
-      emit('sessionReady', t.session_id)
+      emit('sessionReady', t.session_id, t.title ?? '')
     }
     scrollBottom(true)
     return true
@@ -1006,7 +1017,7 @@ async function ensureSession() {
     )
     if (props.persistHistory) {
       saveLocalSession(session.value.id)
-      emit('sessionReady', session.value.id)
+      emit('sessionReady', session.value.id, session.value.title ?? '')
       emit('historyChanged')
     }
   }
@@ -1070,6 +1081,7 @@ async function send() {
     // 用户主动停止（cancelled / AbortError）不是错误：不渲染 ⚠️ 错误段，按 cancelled 终态收尾。
     const aborted = cancelled || (err as Error)?.name === 'AbortError' || ac.signal.aborted
       || gens.isStreamStale(gen)
+    if (!aborted && err instanceof AgentStreamHttpError && err.status === 409) emit('sessionBusy', content)
     if (!aborted && s && await recoverDisconnectedRun(err, s.id, gen, ac.signal)) {
       // 已通过 attach 重连续读到终态。
     } else if (!aborted) {
@@ -1206,7 +1218,21 @@ async function attachRun(sessionId: string, runId?: string): Promise<boolean> {
   return runId ? attachRunById(sessionId, runId, -1) : attachActiveRunIfAny(-1)
 }
 
-// 供外部（AgentSidekick chips 等）直接发问
+async function copyMessage(msg: ChatMsg) {
+  const text = assistantPlainText(msg)
+  try {
+    await navigator.clipboard.writeText(text)
+    ElMessage.success('已复制')
+  } catch {
+    ElMessage.error('复制失败，请手动选择文本复制')
+  }
+}
+function regenerate(assistantIndex: number) {
+  const question = previousUserText(messages.value, assistantIndex)
+  if (question) ask(question)
+}
+
+// 供外部（侧边栏发问、快捷任务等）直接发问
 function ask(question: string) {
   if (streaming.value || !question.trim()) return false
   input.value = question.trim()
@@ -1290,7 +1316,9 @@ const { model: currentModel } = useCurrentModel()
 onMounted(async () => {
   // resume/刷新恢复读 Node 历史（/api/agent-history），不依赖 agent-backend 在线；探活仅用于门控首条。
   await checkHealth()
-  if (props.resumeSessionId) {
+  if (props.resumeSessionId && props.resumeRunId) {
+    await attachRun(props.resumeSessionId, props.resumeRunId)
+  } else if (props.resumeSessionId) {
     if (await loadHistory(props.resumeSessionId, { allowEmpty: true })) {
       await attachActiveRunIfAny(-1)
     }
@@ -1633,6 +1661,21 @@ function approvalBrief(payload: Record<string, unknown>): { label: string; value
               </div>
             </template>
 
+            <!-- 消息级操作（宿主开启 messageActions）：复制整条正文；重新提问=在当前会话重发对应的用户问题 -->
+            <div
+              v-if="messageActions && !(streaming && mi === messages.length - 1) && assistantPlainText(msg)"
+              class="msg-actions"
+            >
+              <button type="button" class="msg-act" title="复制整条回复" @click="copyMessage(msg)"><Copy :size="12" /> 复制</button>
+              <button
+                type="button"
+                class="msg-act"
+                title="以同一问题重新提问"
+                :disabled="streaming || !previousUserText(messages, mi)"
+                @click="regenerate(mi)"
+              ><RotateCcw :size="12" /> 重新提问</button>
+            </div>
+
             <!-- 动态「在工作」指示：流式期间常驻，阶段(思考/调工具/生成) + 计时 + token 活动 -->
             <div v-if="streaming && mi === messages.length - 1" class="stream-meter">
               <span class="sm-dot" :class="streamPhase" />
@@ -1650,6 +1693,9 @@ function approvalBrief(payload: Record<string, unknown>): { label: string; value
         <ChevronDown :size="15" /> 回到底部
       </button>
     </Transition>
+
+    <!-- 输入框上方的宿主插槽（统一 AI 侧边栏放页面背景条与本页快捷问题） -->
+    <slot name="composer-top" />
 
     <div class="panel-input">
       <SlashCommandMenu
@@ -1779,6 +1825,14 @@ function approvalBrief(payload: Record<string, unknown>): { label: string; value
   background: var(--panel-sub);
 }
 .msg.user .bubble { background: var(--primary); color: #fff; }
+.msg-actions { display: flex; gap: 4px; margin-top: 6px; }
+.msg-act {
+  display: inline-flex; align-items: center; gap: 3px;
+  padding: 2px 6px; border: 0; border-radius: 6px; background: transparent;
+  color: var(--el-text-color-secondary); font-size: var(--font-xs); cursor: pointer;
+}
+.msg-act:hover:not(:disabled) { background: var(--el-fill-color-light); color: var(--primary); }
+.msg-act:disabled { opacity: 0.45; cursor: default; }
 
 /* 渐变生成：每个 token 块淡入上浮 */
 /* 顶层工具组：折叠只显统计，展开逐条（形态复刻 .sa-head） */

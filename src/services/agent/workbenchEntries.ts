@@ -193,6 +193,21 @@ export function resolveEntry(query: { entry?: unknown; scenario?: unknown }): {
   return { entry: fallback, scenario: fallback.scenario }
 }
 
+/**
+ * 会话 → 工作台入口（统一 AI 侧边栏「在工作台打开」与历史会话续接用）。
+ * 场景唯一对应的入口直接命中；chat 场景按页面提示词 key 区分通用对话/申报前体检/政策情报官；
+ * 其余（页面解读 key、未知 key、历史会话缺 key）落通用对话入口——对话内容照常续接，只是标签取通用。
+ */
+export function entryForSession(scenario: string, promptKey?: string | null): WorkbenchEntry {
+  const byScenario = WORKBENCH_ENTRIES.find((e) => e.scenario === scenario && e.scenario !== 'chat')
+  if (byScenario) return byScenario
+  if (scenario === 'chat' && promptKey) {
+    const byKey = WORKBENCH_ENTRIES.find((e) => e.scenario === 'chat' && e.promptKey === promptKey)
+    if (byKey) return byKey
+  }
+  return findEntry(DEFAULT_ENTRY_KEY) as WorkbenchEntry
+}
+
 /** 入口的输入控件初值（date 类一律取今天，text 类空串）。 */
 export function initialInputValues(entry: WorkbenchEntry): Record<string, string> {
   const out: Record<string, string> = {}
