@@ -70,6 +70,9 @@ const props = withDefaults(
     payload?: Record<string, unknown> | null
     // 历史侧栏选中会话时由工作台传入：挂载即回放该会话 transcript（不自动发 initialQuestion）
     resumeSessionId?: string | null
+    // 与 resumeSessionId 同给（统一 AI 侧边栏「运行中」切换）：挂载即附着这个 run；该会话的 transcript
+    // 还不可得（live-token-only）时降级按 live 会话信息续看，同 attachRun，不因回放失败而开出空白面板
+    resumeRunId?: string | null
     // 是否启用聊天历史持久化（注册/每轮存档/刷新恢复）。默认开启（#498 反转）：所有接入点
     // 的对话都绑定登录用户、落 Node SQLite、切页/刷新可恢复。旧设计担心的「共用 localStorage
     // 同场景 key 串台」由 historyKey 按接入点隔离解决。
@@ -99,7 +102,7 @@ const props = withDefaults(
     // 申报体检会话的业务写入（L1）审批卡上提供「本会话内自动执行」开关（统一 AI 侧边栏开启）
     approvalAutoApprove?: boolean
   }>(),
-  { scenario: 'chat', initialQuestion: '', payload: null, resumeSessionId: null, persistHistory: true, historyKey: '', promptKey: '', contextPayload: null, contextPayloadFor: null, restoreLastSession: true, businessOnly: false, messageActions: false, commandHost: 'agent', extraCommands: () => [], approvalAutoApprove: false }
+  { scenario: 'chat', initialQuestion: '', payload: null, resumeSessionId: null, resumeRunId: null, persistHistory: true, historyKey: '', promptKey: '', contextPayload: null, contextPayloadFor: null, restoreLastSession: true, businessOnly: false, messageActions: false, commandHost: 'agent', extraCommands: () => [], approvalAutoApprove: false }
 )
 
 const router = useRouter()
@@ -110,8 +113,8 @@ const emit = defineEmits<{
   approval: [payload: Record<string, unknown>]
   // 会话发生持久化变更（注册/新增轮次/恢复），工作台据此刷新历史侧栏
   historyChanged: []
-  // 当前会话就绪（创建或恢复），携带 session_id 供侧栏高亮
-  sessionReady: [sessionId: string]
+  // 当前会话就绪（创建或恢复），携带 session_id 供侧栏高亮，另附会话标题（统一 AI 侧边栏据此回填头部标题）
+  sessionReady: [sessionId: string, title: string]
   // 挂载初始化（探活、历史恢复/首问处理）完成后通知宿主
   ready: []
   // 流式生成开始/结束（统一 AI 侧边栏据此判断「当前会话是否在生成」）
@@ -613,7 +616,7 @@ async function refreshHistoryFromServer() {
     todos.value = []
     session.value = { id: t.session_id, scenario: t.scenario, title: t.title, status: 'idle' }
     saveLocalSession(t.session_id)
-    emit('sessionReady', t.session_id)
+    emit('sessionReady', t.session_id, t.title ?? '')
     emit('historyChanged')
     scrollBottom(true)
   } catch (err) {
@@ -649,7 +652,7 @@ async function loadHistory(sessionId: string, opts?: { fromClick?: boolean; allo
         session.value = { id: t.session_id, scenario: t.scenario, title: t.title, status: 'idle' }
         if (props.persistHistory) {
           saveLocalSession(t.session_id)
-          emit('sessionReady', t.session_id)
+          emit('sessionReady', t.session_id, t.title ?? '')
         }
         return true
       }
@@ -665,7 +668,7 @@ async function loadHistory(sessionId: string, opts?: { fromClick?: boolean; allo
     session.value = { id: t.session_id, scenario: t.scenario, title: t.title, status: 'idle' }
     if (props.persistHistory) {
       saveLocalSession(t.session_id)
-      emit('sessionReady', t.session_id)
+      emit('sessionReady', t.session_id, t.title ?? '')
     }
     scrollBottom(true)
     return true
@@ -1024,7 +1027,7 @@ async function ensureSession() {
     )
     if (props.persistHistory) {
       saveLocalSession(session.value.id)
-      emit('sessionReady', session.value.id)
+      emit('sessionReady', session.value.id, session.value.title ?? '')
       emit('historyChanged')
     }
   }
@@ -1360,7 +1363,9 @@ const { model: currentModel } = useCurrentModel()
 onMounted(async () => {
   // resume/刷新恢复读 Node 历史（/api/agent-history），不依赖 agent-backend 在线；探活仅用于门控首条。
   await checkHealth()
-  if (props.resumeSessionId) {
+  if (props.resumeSessionId && props.resumeRunId) {
+    await attachRun(props.resumeSessionId, props.resumeRunId)
+  } else if (props.resumeSessionId) {
     if (await loadHistory(props.resumeSessionId, { allowEmpty: true })) {
       await attachActiveRunIfAny(-1)
     }
