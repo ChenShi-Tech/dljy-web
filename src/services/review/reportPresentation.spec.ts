@@ -76,11 +76,15 @@ describe('原因对应到材料里的时段', () => {
     // 5/30 是缺日占位行（没有来源记录），不可选。
     const day = (date: string, records: number) => ({ date, coverage: { records } })
     expect(evidenceSegments({ content: { topic: 'daily_energy', result: { daily: [day('2026-05-30', 0), day('2026-05-31', 3)] } } } as unknown as ReportEvidence)).toEqual([{ start: '2026-05-31', end: '2026-05-31' }])
+    // 取材时选了日期：只能引用所选日期，完整周期里的其它日子只用于画图定位。
+    expect(evidenceSegments({ content: { topic: 'daily_energy', result: { selectedDays: ['2026-05-29'], daily: [day('2026-05-29', 2), day('2026-05-31', 3)] } } } as unknown as ReportEvidence)).toEqual([{ start: '2026-05-29', end: '2026-05-29' }])
     expect(evidenceSegments({ content: { topic: 'settlement', result: { current: { daily: [day('2026-05-30', 0), day('2026-05-31', 1)] } } } } as unknown as ReportEvidence)).toEqual([{ start: '2026-05-31', end: '2026-05-31' }])
   })
   it('时段用北京时间呈现，按日的只写日期；时段过多只列前 12 个并给出总数', () => {
     expect(segmentLabel(intervals[0])).toBe('05/31 18:00—18:15')
     expect(segmentLabel({ start: '2026-05-31', end: '2026-05-31' })).toBe('2026-05-31')
+    // 跨午夜的最后一段要写出结束日，不写成像倒序的「23:45—00:00」。
+    expect(segmentLabel({ start: '2026-05-31T15:45:00.000Z', end: '2026-05-31T16:00:00.000Z' })).toBe('05/31 23:45—06/01 00:00')
     const many = Array.from({ length: 15 }, (_, i) => ({ start: `2026-05-${String(i + 1).padStart(2, '0')}`, end: `2026-05-${String(i + 1).padStart(2, '0')}` }))
     const text = segmentCaption({ id: 'r', kind: 'reason', title: '', text: '', segments: many, evidenceRole: 'comparison' }, energy)
     expect(text).toContain('针对 15 个时段')

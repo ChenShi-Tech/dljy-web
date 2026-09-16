@@ -64,14 +64,23 @@ export function decisionReferenceCaption(reference: DecisionReference): string {
 const recordedDays = (rows: Array<{ date: string; coverage: { records: number } }>) => rows.filter(row => row.coverage.records > 0).map(row => ({ start: row.date, end: row.date }))
 export function evidenceSegments(evidence: ReportEvidence): ReviewSegment[] {
   const content = evidence.content
-  if (content.topic === 'daily_energy') return recordedDays(content.result.daily)
+  if (content.topic === 'daily_energy') {
+    // 取材时选了日期的，统计与取材只针对所选日期；逐日数组保留完整周期只为画图定位，不能被引用。
+    const chosen = content.result.selectedDays ? new Set(content.result.selectedDays) : null
+    return recordedDays(content.result.daily).filter(segment => !chosen || chosen.has(segment.start))
+  }
   if (content.topic === 'settlement') return recordedDays(content.result.current.daily)
   return content.result.intervals.map(row => ({ start: row.start, end: row.end }))
 }
 const shanghai = (value: string, withDay: boolean) => new Date(value).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', ...(withDay ? { month: '2-digit', day: '2-digit' } : {}), hour: '2-digit', minute: '2-digit', hour12: false })
-/** 按日的时段起止相同，只写日期；分时时段写「月/日 时:分—时:分」。 */
+const shanghaiDay = (value: string) => new Date(value).toLocaleDateString('sv-SE', { timeZone: 'Asia/Shanghai' })
+/**
+ * 按日的时段起止相同，只写日期；分时时段写「月/日 时:分—时:分」。
+ * 跨午夜的时段（如 23:45 起的最后一段）结束日要写出来，否则「23:45—00:00」读起来像倒序。
+ */
 export function segmentLabel(segment: ReviewSegment): string {
-  return segment.start === segment.end ? segment.start : `${shanghai(segment.start, true)}—${shanghai(segment.end, false)}`
+  if (segment.start === segment.end) return segment.start
+  return `${shanghai(segment.start, true)}—${shanghai(segment.end, shanghaiDay(segment.start) !== shanghaiDay(segment.end))}`
 }
 /** 解释针对哪些时段、依据哪份材料。时段多时只列前 12 个，避免把报告正文变成时刻表。 */
 export function segmentCaption(block: ReportBlock, evidence?: ReportEvidence): string {
