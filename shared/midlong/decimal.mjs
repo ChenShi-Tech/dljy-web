@@ -7,6 +7,8 @@
 
 export const SCALE = 18
 const SCALE_FACTOR = 10n ** BigInt(SCALE)
+/** 整数部分最多位数：合同电量/价格/金额远用不到；更长的输入按超出范围拒绝，而不是无界展开。 */
+export const MAX_INTEGER_DIGITS = 30
 
 const PLAIN_RE = /^([+-])?(\d+)(?:\.(\d*))?$/
 const LEADING_DOT_RE = /^([+-])?\.(\d+)$/
@@ -17,7 +19,7 @@ const EXP_RE = /^([+-])?(\d+)(?:\.(\d*))?[eE]([+-]?\d+)$/
  * 解析用户或文件给出的数值。
  * @param {unknown} input 字符串或 number；空串、null、undefined 视为「未提供」而不是 0。
  * @param {{ maxScale?: number, allowNegative?: boolean }} [options]
- * @returns {{ ok: true, value: string, scale: number } | { ok: false, code: 'EMPTY'|'NOT_A_NUMBER'|'NEGATIVE'|'PRECISION_EXCEEDED', scale?: number }}
+ * @returns {{ ok: true, value: string, scale: number } | { ok: false, code: 'EMPTY'|'NOT_A_NUMBER'|'NEGATIVE'|'PRECISION_EXCEEDED'|'OUT_OF_RANGE', scale?: number }}
  */
 export function parseDecimal(input, { maxScale = null, allowNegative = false } = {}) {
   if (input === null || input === undefined) return { ok: false, code: 'EMPTY' }
@@ -50,7 +52,15 @@ export function parseDecimal(input, { maxScale = null, allowNegative = false } =
     const digits = `${match[2]}${match[3] ?? ''}`
     const exponent = Number(match[4]) - (match[3] ?? '').length
     sign = match[1] ?? ''
-    if (exponent >= 0) {
+    // 先按结果位数定界再展开：「1e100000000」这类短输入若直接 repeat/padStart 会分配上亿字符，卡死页面或服务进程。
+    const significant = digits.replace(/^0+/, '')
+    if (significant === '') {
+      intPart = '0'
+    } else if (exponent >= 0 && significant.length + exponent > MAX_INTEGER_DIGITS) {
+      return { ok: false, code: 'OUT_OF_RANGE' }
+    } else if (exponent < 0 && -exponent - (significant.length - significant.replace(/0+$/, '').length) > SCALE) {
+      return { ok: false, code: 'PRECISION_EXCEEDED', scale: -exponent - (significant.length - significant.replace(/0+$/, '').length) }
+    } else if (exponent >= 0) {
       intPart = `${digits}${'0'.repeat(exponent)}`
     } else {
       const padded = digits.padStart(-exponent + 1, '0')
@@ -66,6 +76,7 @@ export function parseDecimal(input, { maxScale = null, allowNegative = false } =
   if (scale > SCALE) return { ok: false, code: 'PRECISION_EXCEEDED', scale }
   if (maxScale !== null && scale > maxScale) return { ok: false, code: 'PRECISION_EXCEEDED', scale }
   intPart = intPart.replace(/^0+(?=\d)/, '')
+  if (intPart.length > MAX_INTEGER_DIGITS) return { ok: false, code: 'OUT_OF_RANGE' }
   const isZero = /^0*$/.test(intPart) && fracPart === ''
   if (sign === '-' && !isZero && !allowNegative) return { ok: false, code: 'NEGATIVE' }
   const value = `${sign === '-' && !isZero ? '-' : ''}${intPart || '0'}${fracPart ? `.${fracPart}` : ''}`

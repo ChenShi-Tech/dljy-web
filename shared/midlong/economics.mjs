@@ -14,7 +14,7 @@ import {
   EVIDENCE_BASES, MAX_IMPORT_DECIMALS, PRICE_COMPONENTS, PRICE_TYPES, PRICE_UNIT_FACTORS, TAX_BASES,
 } from './contract.mjs'
 import {
-  decimalCompare, decimalIsZero, decimalMul, decimalRound, decimalSub, decimalSum, parseDecimal,
+  MAX_INTEGER_DIGITS, decimalCompare, decimalIsZero, decimalMul, decimalRound, decimalSub, decimalSum, parseDecimal,
 } from './decimal.mjs'
 import { deliveryMonths, isIsoDate, monthKeyOf, monthLastDay, normalizeDate, normalizeMonth } from './dates.mjs'
 
@@ -22,6 +22,7 @@ const NUMBER_ERROR_MESSAGES = {
   NOT_A_NUMBER: '不是有效数字',
   NEGATIVE: '不能为负数',
   PRECISION_EXCEEDED: `小数位超过 ${MAX_IMPORT_DECIMALS} 位，请确认是否按 ${MAX_IMPORT_DECIMALS} 位四舍五入保存`,
+  OUT_OF_RANGE: `数值超出可处理范围（整数部分最多 ${MAX_INTEGER_DIGITS} 位），请核对单位或是否多录了位数`,
 }
 
 function issue(field, code, message, extra = {}) {
