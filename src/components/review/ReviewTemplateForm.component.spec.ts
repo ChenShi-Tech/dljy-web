@@ -207,4 +207,18 @@ describe('ReviewTemplateForm（#2037 实例提交：草稿/提交直连服务端
     expect(wrapper.text()).toContain('不允许迁移到 submitted')
     expect(wrapper.emitted('saved')).toBeUndefined()
   })
+
+  it('模板备注只显示业务规则：险情须入案例库等规则保留，议题号与实现说明不出现', () => {
+    const wrapper = mount(ReviewTemplateForm, { props: { templateId: 'T09' } })
+    expect(wrapper.text()).toContain('侥幸逃过的险情单独附记')
+    expect(wrapper.text()).toContain('须登记到复盘案例库')
+    expect(wrapper.text()).not.toMatch(/near_miss|#20\d\d/)
+  })
+  it('模拟提示点名来自演示价格测算的字段，不笼统说本表价格', () => {
+    const wrapper = mount(ReviewTemplateForm, { props: { templateId: 'S3' } })
+    expect(wrapper.text()).toContain('模拟数据')
+    expect(wrapper.text()).toContain('计划充电量 MWh')
+    expect(wrapper.text()).not.toContain('本表的价格')
+    expect(mount(ReviewTemplateForm, { props: { templateId: 'T01' } }).text()).not.toContain('模拟数据')
+  })
 })

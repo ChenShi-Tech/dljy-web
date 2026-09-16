@@ -19,7 +19,7 @@ import type { SettlementRuleSpec } from '@/rules/types'
 import { aggregate96to24, segmentLabelsOf, SEGMENT_UNPARAMETERIZED_NOTE } from '@/services/review/slots24'
 import { SUBMIT_PENDING_NOTE } from '@/services/review/cockpitModel'
 import { patchTemplateInstance } from '@/services/review/templateInstanceClient'
-import { MOCK_PRICE_SOURCES, cadenceLabel, caliberLabel, roleLabel, sourceLabel } from '@/services/review/templateLabels'
+import { MOCK_PRICE_SOURCES, TEMPLATE_NOTES, cadenceLabel, caliberLabel, roleLabel, sourceLabel } from '@/services/review/templateLabels'
 import type { TemplateInstanceSummary } from '@/services/review/templateInstanceApi'
 
 const props = defineProps<{
@@ -103,7 +103,8 @@ function seedFromInstance(): void {
 watch(() => props.instance?.id, seedFromInstance, { immediate: true })
 
 
-const usesMockPrice = computed(() => autoFields.value.some(field => field.source !== undefined && MOCK_PRICE_SOURCES.has(field.source)))
+// 点名具体来自演示价格测算的字段：不能笼统说「本表的价格」——有的表没有价格字段，有的价格来自出清价。
+const mockPlanFields = computed(() => autoFields.value.filter(field => field.source !== undefined && MOCK_PRICE_SOURCES.has(field.source)).map(field => field.label))
 function autoValue(f: ReviewTemplateField): string {
   const v = props.autofill?.[f.key]
   if (v === undefined || v === null || v === '') return ''
@@ -184,9 +185,10 @@ const hasAnyCurve = computed(() =>
       <p class="rtf-meta">
         触发：{{ template.trigger }} · 时限：{{ template.deadline }}
       </p>
-      <!-- 注册表的 gapNote/notes 是写给开发与验收的（缺口编号、议题号、实现说明），不原样上屏。 -->
+      <!-- 注册表的 gapNote/notes 混有写给开发与验收的内容（缺口编号、议题号、实现说明），只显示整理后的业务说明。 -->
       <p v-if="template.gapNote" class="rtf-gapnote">部分资料尚未接入，接入后将自动填充对应字段；暂缺的字段不会以零或估算值代替。</p>
-      <p v-if="usesMockPrice" class="rtf-gapnote">模拟数据：本表的价格默认是演示值，仅供测算演示，不能用于实盘编排；接入真实价格后方可用于实盘。</p>
+      <p v-if="mockPlanFields.length" class="rtf-gapnote">模拟数据：本表中「{{ mockPlanFields.join('、') }}」来自储能充放电测算，测算默认使用演示价格，结果仅供演示，不能用于实盘编排；接入真实价格后方可用于实盘。</p>
+      <p v-if="TEMPLATE_NOTES[template.id]" class="rtf-notes">{{ TEMPLATE_NOTES[template.id] }}</p>
     </header>
 
     <!-- 自动字段：只读 + 来源徽章 -->
