@@ -36,13 +36,16 @@ const rollupSet = computed(() => {
 })
 const rollingUp = computed(() => canRollup.value && rollupSet.value.length > 1)
 function input(): ImportedInput { const item = currentChoice.value; return { region: props.region, view: props.view, simulated: simulated.value, period: { date: date.value, cadence: cadence.value, asOf: new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Shanghai' }) }, ...(item ? { seriesKey: item.seriesKey, ...(rollingUp.value ? { objectIds: [...rollupSet.value] } : { objectId: item.objectId }) } : {}), topic: props.topic, ...(threshold.value !== '' ? { thresholds: props.topic === 'energy' ? { absolutePct: Number(threshold.value) } : { spreadYuan: Number(threshold.value) } } : {}), ...(manualReference.value ? { referencePeriod: { start: referenceStart.value, end: referenceEnd.value } } : {}), ...(selected.value.length ? { selections: [...selected.value] } : {}) } }
+// 待恢复的勾选留到统计成功才套用：恢复时那次统计临时失败，交易员点「重新统计」成功后仍能找回，不会被空勾选覆盖。
+let pendingSelected: string[] | null = null
+function clearSelected() { selected.value = []; pendingSelected = null }
 function invalidate() { ++sequence; result.value = null; error.value = ''; emit('period', null) }
-watch(() => [props.company, props.region, props.view, props.date], () => { restore = null; invalidate(); choices.value = []; choice.value = ''; selected.value = []; rollupIds.value = []; date.value = props.date })
-watch([date, cadence, simulated, manualReference, referenceStart, referenceEnd], () => { restore = null; invalidate(); choices.value = []; choice.value = ''; selected.value = []; rollupIds.value = [] })
-watch([deviationThreshold, priceThreshold], () => { invalidate(); selected.value = [] })
-watch(rollupIds, () => { invalidate(); selected.value = [] }, { deep: true })
-watch(choice, () => { invalidate(); selected.value = []; rollupIds.value = currentChoice.value ? [currentChoice.value.objectId] : [] })
-watch(() => props.topic, () => { invalidate(); selected.value = []; if (props.topic !== 'energy') rollupIds.value = currentChoice.value ? [currentChoice.value.objectId] : [] })
+watch(() => [props.company, props.region, props.view, props.date], () => { restore = null; invalidate(); choices.value = []; choice.value = ''; clearSelected(); rollupIds.value = []; date.value = props.date })
+watch([date, cadence, simulated, manualReference, referenceStart, referenceEnd], () => { restore = null; invalidate(); choices.value = []; choice.value = ''; clearSelected(); rollupIds.value = [] })
+watch([deviationThreshold, priceThreshold], () => { invalidate(); clearSelected() })
+watch(rollupIds, () => { invalidate(); clearSelected() }, { deep: true })
+watch(choice, () => { invalidate(); clearSelected(); rollupIds.value = currentChoice.value ? [currentChoice.value.objectId] : [] })
+watch(() => props.topic, () => { invalidate(); clearSelected(); if (props.topic !== 'energy') rollupIds.value = currentChoice.value ? [currentChoice.value.objectId] : [] })
 onBeforeUnmount(() => ++sequence)
 onMounted(() => { if (props.expanded) { opened.value = true; void load() } })
 // 对象、合计勾选与待核查时段要等对象清单读回后才能恢复；恢复期间的中间状态不回写上层，中途关窗也不会冲掉保存值。
@@ -60,16 +63,26 @@ async function applyRestore(pending: NonNullable<typeof restore>) {
     if (!item) return
     choice.value = choiceKey(item); await nextTick()
     rollupIds.value = pending.rollupIds; await nextTick()
+    pendingSelected = pending.selected
     await load()
-    // 资料已修订、待核查时段不在新结果里时不勾选，宁可让交易员重新挑，也不带着对不上的时段取材。
-    const available = new Set(anomalies.value.map(point => point.start))
-    if (result.value?.analysis && pending.selected.every(start => available.has(start))) selected.value = pending.selected
-  } finally { restoring = false; emit('selection', currentSelection()) }
+  } finally {
+    restoring = false
+    // 统计没成功时不回写：上层保存值原样保留，重试成功后由 load 套用勾选再回写。
+    if (pendingSelected === null) emit('selection', currentSelection())
+  }
 }
 async function load() {
   if (loading.value || saving.value) return
   invalidate(); if (threshold.value !== '' && (!Number.isFinite(Number(threshold.value)) || Number(threshold.value) < 0)) { error.value = '筛选门槛须为非负数字。'; return } if (manualReference.value && (!referenceStart.value || !referenceEnd.value || referenceEnd.value < referenceStart.value)) { error.value = '请填写完整且顺序正确的参考日期。'; return } const ticket = sequence, query = input(); loading.value = true
-  try { const data = await analyzeImportedIntervals(props.company, query); if (ticket !== sequence) return; if (!query.seriesKey) choices.value = data.choices; result.value = data; emit('period', data.periods.current) }
+  try {
+    const data = await analyzeImportedIntervals(props.company, query); if (ticket !== sequence) return; if (!query.seriesKey) choices.value = data.choices; result.value = data; emit('period', data.periods.current)
+    if (pendingSelected && query.seriesKey && data.analysis) {
+      // 资料已修订、待核查时段不在新结果里时不勾选，宁可让交易员重新挑，也不带着对不上的时段取材。
+      const available = new Set(anomalies.value.map(point => point.start)), restored = pendingSelected
+      pendingSelected = null
+      if (restored.every(start => available.has(start))) selected.value = restored
+    }
+  }
   catch { if (ticket === sequence) error.value = '补充资料暂时无法统计，请核对所选范围或先维护资料。' }
   finally { loading.value = false }
   if (restore && !query.seriesKey && choices.value.length) { const pending = restore; restore = null; await applyRestore(pending) }

@@ -186,4 +186,21 @@ describe('已导入分时资料分析', () => {
     expect(wrapper.emitted('selection')?.at(-1)?.[0]).toMatchObject({ objectId: choice.objectId, selected: [] })
     wrapper.unmount()
   })
+  it('恢复时统计临时失败不覆盖保存的勾选，重新统计成功后找回', async () => {
+    const saved = { context: JSON.stringify(['one', 'yunnan', 'generator', '2026-05-31']), topic: 'energy' as const, simulated: false, cadence: 'day' as const, date: '2026-05-31', manual: false, referenceStart: '', referenceEnd: '', deviationThreshold: '' as const, priceThreshold: '' as const, seriesKey: choice.seriesKey, objectId: choice.objectId, rollupIds: [choice.objectId], selected: [point.start] }
+    let failOnce = true
+    api.analyzeImportedIntervals.mockImplementation(async (_company: string, input: { seriesKey?: string }) => {
+      if (!input.seriesKey) return catalog
+      if (failOnce) { failOnce = false; throw new Error('暂时不可用') }
+      return data
+    })
+    const wrapper = mount(ImportedIntervalPanel, { props: { ...props, expanded: true, selection: saved }, global: { stubs: { ReportEvidenceChart: true } } })
+    await flushPromises()
+    expect(wrapper.text()).toContain('补充资料暂时无法统计')
+    expect(wrapper.emitted('selection')).toBeUndefined()
+    await wrapper.findAll('button').find(button => button.text() === '重新统计')!.trigger('click'); await flushPromises()
+    expect((wrapper.findAll('input[type=checkbox]').at(-1)!.element as HTMLInputElement).checked).toBe(true)
+    expect(wrapper.emitted('selection')?.at(-1)?.[0]).toEqual(saved)
+    wrapper.unmount()
+  })
 })
