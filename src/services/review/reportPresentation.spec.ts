@@ -1,7 +1,7 @@
 // 守关联决策在报告与导出中的呈现：关联不能只留理由不留依据，也不能把内部标识写进交付物。dljy#2872。
 import { describe, expect, it } from 'vitest'
-import { decisionReferenceCaption, reportParts } from './reportPresentation'
-import type { DecisionReference, Publication } from './workpapers'
+import { decisionReferenceCaption, evidenceSegments, reportParts, segmentCaption, segmentLabel } from './reportPresentation'
+import type { DecisionReference, Publication, ReportEvidence } from './workpapers'
 import type { DeclarationOrder } from '@/services/declarations'
 
 const order = (patch: Partial<DeclarationOrder> = {}) => ({
@@ -65,5 +65,47 @@ describe('关联决策的报告呈现', () => {
     expect(() => reportParts(broken)).toThrow('关联申报不完整')
     // 摘要分支静默跳过的话，会产出一份「导出成功但没有依据」的管理层报告。
     expect(() => reportParts(broken, true)).toThrow('关联申报不完整')
+  })
+})
+
+describe('原因对应到材料里的时段', () => {
+  const intervals = [{ start: '2026-05-31T10:00:00.000Z', end: '2026-05-31T10:15:00.000Z' }, { start: '2026-05-31T10:15:00.000Z', end: '2026-05-31T10:30:00.000Z' }]
+  const energy = { id: 'm1', content: { topic: 'energy', labels: ['申报电量', '实际电量'], sourceNotice: '交易员提供的资料副本', result: { intervals, simulated: false, energy: { netDeviationMwh: -1, absoluteDeviationMwh: 2 }, coverage: { comparableMinutes: 30 } } } } as unknown as ReportEvidence
+  it('分时材料按时段、日报与结算按日列出可对应的时段，与服务端核对口径一致', () => {
+    expect(evidenceSegments(energy)).toEqual(intervals)
+    // 5/30 是缺日占位行（没有来源记录），不可选。
+    const day = (date: string, records: number) => ({ date, coverage: { records } })
+    expect(evidenceSegments({ content: { topic: 'daily_energy', result: { daily: [day('2026-05-30', 0), day('2026-05-31', 3)] } } } as unknown as ReportEvidence)).toEqual([{ start: '2026-05-31', end: '2026-05-31' }])
+    // 取材时选了日期：只能引用所选日期，完整周期里的其它日子只用于画图定位。
+    expect(evidenceSegments({ content: { topic: 'daily_energy', result: { selectedDays: ['2026-05-29'], daily: [day('2026-05-29', 2), day('2026-05-31', 3)] } } } as unknown as ReportEvidence)).toEqual([{ start: '2026-05-29', end: '2026-05-29' }])
+    expect(evidenceSegments({ content: { topic: 'settlement', result: { current: { daily: [day('2026-05-30', 0), day('2026-05-31', 1)] } } } } as unknown as ReportEvidence)).toEqual([{ start: '2026-05-31', end: '2026-05-31' }])
+  })
+  it('时段用北京时间呈现，按日的只写日期；时段过多只列前 12 个并给出总数', () => {
+    expect(segmentLabel(intervals[0])).toBe('05/31 18:00—18:15')
+    expect(segmentLabel({ start: '2026-05-31', end: '2026-05-31' })).toBe('2026-05-31')
+    // 跨午夜的最后一段要写出结束日，不写成像倒序的「23:45—00:00」。
+    expect(segmentLabel({ start: '2026-05-31T15:45:00.000Z', end: '2026-05-31T16:00:00.000Z' })).toBe('05/31 23:45—06/01 00:00')
+    const many = Array.from({ length: 15 }, (_, i) => ({ start: `2026-05-${String(i + 1).padStart(2, '0')}`, end: `2026-05-${String(i + 1).padStart(2, '0')}` }))
+    const text = segmentCaption({ id: 'r', kind: 'reason', title: '', text: '', segments: many, evidenceRole: 'comparison' }, energy)
+    expect(text).toContain('针对 15 个时段')
+    expect(text).toContain('共 15 个时段')
+    expect(text).not.toContain('2026-05-13')
+    expect(text).toContain('依据：申报电量与实际电量，比较依据')
+  })
+  it('正文已有同一材料的图表时，时段原因只交代时段不重复画图；图表被删后原因自己补上材料', () => {
+    const reason = { id: 'r1', kind: 'reason' as const, title: '晚高峰原因', text: '疑为出力预测偏高', state: 'pending' as const, evidenceId: 'm1', evidenceRole: 'primary' as const, segments: [intervals[0]] }
+    const withChart = publication([{ id: 'c1', kind: 'chart', title: '偏差图', text: '', evidenceId: 'm1', evidenceRole: 'primary' }, reason])
+    withChart.content.evidence = [energy]
+    expect(reportParts(withChart).filter(part => part.kind === 'chart')).toHaveLength(1)
+    const orphan = publication([reason])
+    orphan.content.evidence = [energy]
+    expect(reportParts(orphan).filter(part => part.kind === 'chart')).toHaveLength(1)
+    // 同一材料拆成两条时段原因：只补一张图，不各画一遍。
+    const split = publication([reason, { ...reason, id: 'r2', segments: [intervals[1]] }])
+    split.content.evidence = [energy]
+    expect(reportParts(split).filter(part => part.kind === 'chart')).toHaveLength(1)
+    const pub = orphan
+    const parts = reportParts(pub)
+    expect(parts.map(part => ('text' in part ? part.text : '')).join('\n')).toContain('针对 1 个时段：05/31 18:00—18:15')
   })
 })

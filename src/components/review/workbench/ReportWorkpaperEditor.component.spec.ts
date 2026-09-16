@@ -120,6 +120,30 @@ describe('图文底稿交付', () => {
     expect(button(wrapper, '发布报告').attributes('disabled')).toBeDefined()
     expect(publishWorkpaper).not.toHaveBeenCalled()
   })
+  it('从图表挑出时段写原因：原因紧跟图表、继承材料、默认待核实，且不再重复画图', async () => {
+    const material = { id: '00000000-0000-4000-8000-0000000000aa', region: 'yunnan', authorId: '主笔', createdAt: '', sourceKind: 'client_provided', contentHash: 'h', content: { topic: 'energy', labels: ['申报电量', '实际电量'], capturedAt: '', sourceNotice: '', input: { scope: { objectId: 'company-overview' }, period: { date: '2026-05-31' } }, result: { periods: { current: { start: '2026-05-31', end: '2026-05-31' } }, intervals: [{ start: '2026-05-31T10:00:00.000Z', end: '2026-05-31T10:15:00.000Z' }, { start: '2026-05-31T10:15:00.000Z', end: '2026-05-31T10:30:00.000Z' }] } } }
+    const withChart = { ...paper(), blocks: [{ id: '00000000-0000-4000-8000-0000000000b1', kind: 'chart' as const, title: '偏差图', text: '', evidenceId: material.id, evidenceRole: 'comparison' as const }, ...paper().blocks], evidence: [material as never] }
+    vi.mocked(getWorkpaper).mockResolvedValue(withChart)
+    const wrapper = await open()
+    await button(wrapper, '针对其中时段写原因').trigger('click')
+    await wrapper.findAll('.segment-picker input[type=checkbox]')[1].setValue(true)
+    await button(wrapper, '为所选时段添加原因').trigger('click')
+    await flushPromises()
+    const blocks = wrapper.findAll('article.block')
+    expect(blocks).toHaveLength(3)
+    expect(blocks[1].text()).toContain('原因与判断')
+    expect(blocks[1].text()).toContain('针对 1 个时段：05/31 18:15—18:30')
+    expect(blocks[1].text()).toContain('比较依据')
+    expect(blocks[1].findComponent({ name: 'ReportEvidenceChart' }).exists()).toBe(false)
+    const selects = blocks[1].findAll('select').map(node => (node.element as HTMLSelectElement).value)
+    // 材料用途仍可编辑：图表改了用途，原因也能跟着改，不会在发布版本里永久标错。
+    expect(selects).toContain('comparison')
+    expect(selects).toContain('pending')
+    // 删掉原图表块后，原因自己把材料补回来，不至于只剩一句时段说明。
+    await blocks[0].findAll('button').find(node => node.text() === '移除')!.trigger('click')
+    await flushPromises()
+    expect(wrapper.findAll('article.block')[0].findComponent({ name: 'ReportEvidenceChart' }).exists()).toBe(true)
+  })
   it('关联决策块不提供复制，避免绕开预览再建一个关联', async () => {
     // 复制会克隆申报版本却不走 decision-preview：申报变过就在自动保存时冲突且无法在该块上重新核对，
     // 没变过则等于凭空多出一个未经交易员核对的关联。
