@@ -172,6 +172,46 @@ describe('图文底稿交付', () => {
     expect(input).toMatchObject({ owner: '李四', dueDate: '2026-06-07' })
     expect(wrapper.text()).toContain('这条措施已登记到改进记录')
     expect(wrapper.findAll('button').some(node => node.text() === '登记到改进记录')).toBe(false)
+    // 登记状态落在记录编号上并立即保存，正文不再追加标记文字
+    expect(saveWorkpaper).toHaveBeenLastCalledWith('a', expect.objectContaining({ blocks: [expect.objectContaining({ improvementActionId: '9', text: '晚高峰前复核预测区间再定申报量' })] }))
+  })
+  it('登记状态只看记录编号：改写正文仍是已登记，复制出的块未登记，旧底稿的登记字样继续兼容', async () => {
+    vi.mocked(getWorkpaper).mockResolvedValue({ ...paper(), blocks: [
+      { id: '00000000-0000-4000-8000-0000000000f1', kind: 'action' as const, title: '已登记措施', text: '改写过、也删掉了登记说明的措施', improvementActionId: '12' },
+      { id: '00000000-0000-4000-8000-0000000000f2', kind: 'action' as const, title: '旧底稿措施', text: '晚高峰前复核预测\n（已登记为改进记录：负责人 李四，回查日期 2026-06-07）' },
+    ] })
+    const wrapper = await open()
+    const registered = () => wrapper.findAll('article.block').map(block => block.text().includes('这条措施已登记到改进记录'))
+    expect(registered()).toEqual([true, true])
+    // 服务端不允许移除已登记的块，页面上也不提供移除；旧字样块没有服务端约束，照常可移除
+    const hasRemove = (index: number) => wrapper.findAll('article.block')[index].findAll('button').some(node => node.text() === '移除')
+    expect([hasRemove(0), hasRemove(1)]).toEqual([false, true])
+    await wrapper.findAll('article.block')[0].findAll('button').find(node => node.text() === '复制')!.trigger('click')
+    expect(registered()).toEqual([true, true, false])
+    expect(wrapper.findAll('article.block')[2].findAll('button').some(node => node.text() === '登记到改进记录')).toBe(true)
+    expect(hasRemove(2)).toBe(true)
+    // 复制旧底稿的措施：去掉登记字样，复制出的块显示为未登记
+    await wrapper.findAll('article.block')[1].findAll('button').find(node => node.text() === '复制')!.trigger('click')
+    expect(registered()).toEqual([true, true, false, false])
+    expect((wrapper.findAll('article.block')[3].find('textarea').element as HTMLTextAreaElement).value).toBe('晚高峰前复核预测')
+  })
+  it('登记成功后到登记编号保存确认前保持进行中，正文冻结、不能切换底稿', async () => {
+    let finish: () => void = () => {}
+    vi.mocked(createImprovementAction).mockResolvedValue({ id: '9', action: 'x', owner: '李四', dueDate: '2026-06-07', status: 'open', updatedAt: null })
+    vi.mocked(getWorkpaper).mockResolvedValue({ ...paper(), blocks: [{ id: '00000000-0000-4000-8000-0000000000c9', kind: 'action' as const, title: '改进措施', text: '晚高峰前复核预测区间再定申报量' }] })
+    const wrapper = await open()
+    vi.mocked(saveWorkpaper).mockClear().mockImplementation(async (_company, draft) => new Promise(resolve => { finish = () => resolve({ ...draft, revision: draft.revision + 1 }) }))
+    await button(wrapper, '登记到改进记录').trigger('click')
+    const inputs = wrapper.findAll('.register input')
+    await inputs[0].setValue('李四'); await inputs[1].setValue('2026-06-07')
+    await button(wrapper, '登记').trigger('click'); await flushPromises()
+    expect(saveWorkpaper).toHaveBeenCalledTimes(1)
+    expect((wrapper.find('fieldset').element as HTMLFieldSetElement).disabled).toBe(true)
+    expect((wrapper.findAll('select')[1].element as HTMLSelectElement).disabled).toBe(true)
+    expect(wrapper.emitted('busy')?.at(-1)).toEqual([true])
+    finish(); await flushPromises()
+    expect((wrapper.find('fieldset').element as HTMLFieldSetElement).disabled).toBe(false)
+    expect((wrapper.findAll('select')[1].element as HTMLSelectElement).disabled).toBe(false)
   })
   it('回查记录未保存或登记表单打开时不能发布；删掉措施块后登记表单状态不残留', async () => {
     const withAction = { ...paper(), blocks: [{ id: '00000000-0000-4000-8000-0000000000c2', kind: 'action' as const, title: '改进措施', text: '晚高峰前复核预测区间再定申报量' }] }
@@ -250,5 +290,15 @@ describe('图文底稿交付', () => {
     const wrapper = mount(ReportWorkpaperEditor, { props: { snapshot: { ...snapshot, scope: { ...snapshot.scope, period: { start: '2026-05-01', end: '2026-05-31' } } } }, global: { stubs: { ReportEvidenceChart: true } } }); wrappers.push(wrapper)
     await flushPromises(); await button(wrapper, '新建本次底稿').trigger('click'); await flushPromises()
     expect(createWorkpaper).toHaveBeenCalledWith('a', expect.objectContaining({ startDate: '2026-05-01', endDate: '2026-05-31' }), expect.any(String), expect.any(String))
+  })
+  it('带着材料进入时提示选好底稿后自动加入；月度范围的新底稿按月份命名', async () => {
+    const material = { id: '00000000-0000-4000-8000-0000000000ab', region: 'yunnan', authorId: '主笔', createdAt: '', sourceKind: 'imported', contentHash: 'h', content: { topic: 'energy', labels: ['申报电量', '实际电量'], capturedAt: '', sourceNotice: '', input: { scope: { objectId: 'company-overview' }, period: { date: '2026-05-31' } }, result: { periods: { current: { start: '2026-05-01', end: '2026-05-31' } }, intervals: [] } } }
+    const monthly = { ...snapshot, scope: { ...snapshot.scope, period: { start: '2026-05-01', end: '2026-05-31' } } }
+    const wrapper = mount(ReportWorkpaperEditor, { props: { snapshot: monthly, material: material as never }, global: { stubs: { ReportEvidenceChart: true } } }); wrappers.push(wrapper)
+    await flushPromises()
+    expect(wrapper.text()).toContain('新建本次底稿或选择已有底稿后，这份材料会自动加入正文')
+    await wrapper.findAll('button').find(button => button.text() === '新建本次底稿')!.trigger('click'); await flushPromises()
+    expect(createWorkpaper).toHaveBeenCalledWith('a', expect.objectContaining({ startDate: '2026-05-01', endDate: '2026-05-31' }), expect.any(String), '2026年5月 公司总览月度复盘')
+    expect(wrapper.text()).not.toContain('这份材料会自动加入正文')
   })
 })

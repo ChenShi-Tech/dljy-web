@@ -23,7 +23,7 @@ import { axisTooltip, insideZoom, bottomToolbox, bottomLayoutLegend, emptyOverla
 import { useAnalysisStore } from '../stores/analysisData'
 import DataState from '../components/common/DataState.vue'
 import type { AnalysisView, ViewConfig } from '@/services/analysisClient'
-import { usePageInsight } from '../composables/usePageInsight'
+import { defineAiPage, useAiSidebar } from '@/features/aiSidebar'
 import { PAGE_PROMPT_KEYS } from '@/prompts'
 
 const POINTS_96 = Array.from({ length: 96 }, (_, i) => {
@@ -322,9 +322,9 @@ async function onSaveAnnotation() {
   } catch (e) { ElMessage.error(e instanceof Error ? e.message : '标注保存失败') }
 }
 
-const { askPage, registerPageInsight } = usePageInsight(PAGE_PROMPT_KEYS.marketDataAnalysis)
+const ai = useAiSidebar()
 // 「✨ 解读本页」：当前日期 + 已勾选分组 + 当日实绘序列的极值/均值作摘要（勿传 dayCache 96 点逐点）。
-function askInsight() {
+function insightContext(): Record<string, unknown> {
   const day = dayCache.value[currentDate.value] || {}
   const drawn = selected.value.filter((t) => day[t] && day[t].some((v: any) => v != null))
   const stat = (arr: any[]) => {
@@ -332,7 +332,7 @@ function askInsight() {
     if (!nums.length) return null
     return { min: Math.round(Math.min(...nums)), max: Math.round(Math.max(...nums)), avg: Math.round(nums.reduce((s, x) => s + x, 0) / nums.length) }
   }
-  askPage('综合数据分析', {
+  return {
     page: '综合数据分析 (singleZsjfx)',
     current_date: currentDate.value,
     active_groups: activeGroups.value,
@@ -341,11 +341,14 @@ function askInsight() {
     axis_mode: fixedAxis.value ? '坐标固定' : '坐标自动',
     note: '本页可叠加 63 类型曲线；摘要仅含当日已勾选且有数据的序列统计，96 点逐点未传',
     basis: 'captured'
-  })
+  }
 }
 
-// 右下角悬浮球 = 本页解读入口：与上面「✨ 解读本页」按钮同一条链路、同一份切片。
-registerPageInsight(askInsight, '综合数据分析')
+// 页面接入 AI 侧边栏：悬浮球、「✨ 解读本页」按钮共用这份声明与切片（点击时刻求值）。
+defineAiPage({ label: '综合数据分析', promptKey: PAGE_PROMPT_KEYS.marketDataAnalysis, interpret: { context: insightContext } })
+function askInsight() {
+  ai.interpret()
+}
 
 onMounted(load)
 watch(selected, render, { deep: true })

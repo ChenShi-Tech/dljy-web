@@ -1,5 +1,5 @@
 // 斜杠指令注册中心。
-// 纯逻辑、无 Vue 依赖：宿主组件（AiAssistant / AgentChatPanel）通过 CommandContext
+// 纯逻辑、无 Vue 依赖：宿主组件（AgentChatPanel 等）通过 CommandContext
 // 注入各自的动作实现，输入框集成见 src/composables/useSlashInput.ts。
 import { buildCatalog } from '@/services/aiNavigator'
 import { getCurrentUser } from '@/services/auth'

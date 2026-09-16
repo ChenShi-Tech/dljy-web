@@ -36,8 +36,7 @@ import {
   isPathAvailableInRegion,
   subjectTypeLabels
 } from '@/services/governance'
-import AiAssistant from '../components/AiAssistant.vue'
-import AiOrbLauncher from '../components/agent/AiOrbLauncher.vue'
+import { AiSidebar, AiOrbLauncher } from '@/features/aiSidebar'
 // 价带卡（峰/平/谷徽标 + 参考价）按验收反馈先隐藏；恢复时解开此处与模板中的 topbar-ticker 块
 // import PriceTicker from '../components/PriceTicker.vue'
 import RegionSwitcher from '@/components/region/RegionSwitcher.vue'
@@ -476,8 +475,8 @@ watch(
       </main>
     </section>
 
-    <AiAssistant />
-    <!-- 右下角液态玻璃 AI 球：点按开合上方 AI 面板（WebGPU 渲染，不支持时 CSS 降级） -->
+    <AiSidebar />
+    <!-- 右下角液态玻璃 AI 球：全站 AI 侧边栏入口，有解读能力的页面直接解读本页（WebGPU 渲染，不支持时 CSS 降级） -->
     <AiOrbLauncher />
     <RegionMigrationTip />
     <CommandPalette v-model="showCommandPalette" :user="currentUser" />

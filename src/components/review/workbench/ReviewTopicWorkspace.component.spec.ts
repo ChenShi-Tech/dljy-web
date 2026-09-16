@@ -96,4 +96,18 @@ describe('专题页面与弹窗共用工作区', () => {
     wrapper.unmount()
   })
 
+  it('重新打开时回到上次的资料来源，并把补充资料的筛选交给上层保存', async () => {
+    const wrapper = mount(ReviewTopicWorkspace, { props: { ...props, analysisSource: 'imported' as const }, global: { stubs } })
+    expect(wrapper.findComponent({ name: 'ImportedIntervalPanel' }).exists()).toBe(true)
+    const selection = { context: 'x' }
+    wrapper.findComponent({ name: 'ImportedIntervalPanel' }).vm.$emit('selection', selection)
+    expect(wrapper.emitted('update:importedSelection')?.[0]).toEqual([selection])
+    await wrapper.get('[aria-label=分析资料来源]').findAll('button').find(button => button.text() === '本次决策留存资料')!.trigger('click')
+    expect(wrapper.emitted('update:analysisSource')?.at(-1)).toEqual(['decision'])
+    // 保存的来源对当前视角不适用（售电没有厂站日报）时退回默认来源，不把发电侧面板带进售电视角。
+    const retail = mount(ReviewTopicWorkspace, { props: { ...props, view: 'retail' as const, analysisSource: 'daily' as const }, global: { stubs } })
+    expect(retail.findComponent({ name: 'DailyEnergyAnalysisPanel' }).exists()).toBe(false)
+    expect(retail.findComponent({ name: 'ImportedIntervalPanel' }).exists()).toBe(true)
+    wrapper.unmount(); retail.unmount()
+  })
 })

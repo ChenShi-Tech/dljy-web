@@ -20,7 +20,7 @@ import CapabilitySupportBadge from '../components/CapabilitySupportBadge.vue'
 import { chartChrome } from '../composables/useTheme'
 import { useEChart } from '../composables/useEChart'
 import { axisTooltip, bottomToolbox, emptyOverlay, insideZoom } from '@/services/chart/chartOptions'
-import { usePageInsight } from '../composables/usePageInsight'
+import { defineAiPage, useAiSidebar } from '@/features/aiSidebar'
 import { PAGE_PROMPT_KEYS } from '@/prompts'
 
 const POINTS_96 = Array.from({ length: 96 }, (_, i) => {
@@ -215,9 +215,9 @@ function renderDateSlice() {
   }, { notMerge: true })
 }
 
-const { askPage, registerPageInsight } = usePageInsight(PAGE_PROMPT_KEYS.marketDataAnalysis)
+const ai = useAiSidebar()
 // 「✨ 解读本页」：当前日期区间 + 勾选价类 + 日前/实时逐日极值均值统计作摘要（勿传逐日96点全量）。
-function askInsight() {
+function insightContext(): Record<string, unknown> {
   const dates = selectedDates()
   const set = new Set(dates)
   const summarize = (type: PriceMarket) => {
@@ -232,7 +232,7 @@ function askInsight() {
       unit: '元/MWh'
     }
   }
-  askPage('价格分析', {
+  return {
     page: '价格分析 (zrsjg)',
     date_range: dateRange.value,
     days_selected: dates.length,
@@ -240,11 +240,14 @@ function askInsight() {
     dayahead_price: showRq.value ? summarize(TYPE.rq) : null,
     realtime_price: showSs.value ? summarize(TYPE.ss) : null,
     basis: 'captured'
-  })
+  }
 }
 
-// 右下角悬浮球 = 本页解读入口：与上面「✨ 解读本页」按钮同一条链路、同一份切片。
-registerPageInsight(askInsight, '价格分析')
+// 页面接入 AI 侧边栏：悬浮球、「✨ 解读本页」按钮共用这份声明与切片（点击时刻求值）。
+defineAiPage({ label: '价格分析', promptKey: PAGE_PROMPT_KEYS.marketDataAnalysis, interpret: { context: insightContext } })
+function askInsight() {
+  ai.interpret()
+}
 
 // 3D 图(echarts-gl)保留手动 resize/dispose;两个切面图由 useEChart 托管
 function onResize() { d3Chart?.resize() }
