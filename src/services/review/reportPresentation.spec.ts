@@ -52,6 +52,14 @@ describe('关联决策的报告呈现', () => {
     expect(texts.join('\n')).not.toContain('decl-0f1e2d3c')
     expect(texts.join('\n')).not.toContain('v-9a8b7c')
   })
+  it('管理层摘要同样保留关联依据，不让申报相关结论失去出处', () => {
+    const parts = reportParts(publication([{ id: 'd1', kind: 'decision', title: '2026-05-31 交易日申报', text: '这笔申报定了当日报量区间', declarationId: 'decl-0f1e2d3c', decisionVersion: 'v-9a8b7c', reference: reference() }]), true)
+    const texts = parts.filter(part => part.kind !== 'chart').map(part => (part as { text: string }).text).join('\n')
+    expect(texts).toContain('全天申报电量 120 MWh')
+    expect(texts).toContain('不代表因果关系')
+    // 摘要不带正文，但依据必须在。
+    expect(texts).not.toContain('这笔申报定了当日报量区间')
+  })
   it('关联副本缺失时拒绝导出，不交付只有理由没有依据的报告', () => {
     expect(() => reportParts(publication([{ id: 'd1', kind: 'decision', title: '关联决策', text: '理由', declarationId: 'decl-0f1e2d3c' }]))).toThrow('关联申报不完整')
   })

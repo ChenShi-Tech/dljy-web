@@ -57,19 +57,29 @@ export async function listDecisionReferences(company: string, region: string, de
   return unwrap(await apiGet<Page<LinkedReview>>(`${base}/decision-references/${encodeURIComponent(declarationId)}`, { offset }, options(company, region)))
 }
 /**
- * 关联失败一律透传服务端文案：底稿版本冲突与申报版本冲突同为 409，但处置方式完全不同
+ * 服务端给的业务文案，没有则空。
+ *
+ * `ApiError.message` 永远非空——网关或旧后端不返回 `msg` 时，api.ts 会兜一句英文传输错误。
+ * 那不是业务文案，透传给交易员等于把 `API request failed: 404` 摆到页面上。
+ */
+function serverDetail(error: unknown) {
+  if (!(error instanceof ApiError)) return ''
+  const raw = error.message.trim()
+  return raw && !/^API request failed:/i.test(raw) ? raw : ''
+}
+/**
+ * 关联失败优先透传服务端文案：底稿版本冲突与申报版本冲突同为 409，但处置方式完全不同
  * （前者要重新读取底稿、后者要重新核对申报），统一成一句话会把交易员引向错误的动作。
  */
 export function decisionLinkError(error: unknown) {
-  if (error instanceof ApiError && error.message.trim()) return error.message
-  return '申报资料暂时无法读取，关联尚未建立。已填写的关联依据仍然保留，请稍后重试。'
+  return serverDetail(error) || '申报资料暂时无法读取，关联尚未建立。已填写的关联依据仍然保留，请稍后重试。'
 }
 export function workpaperError(error: unknown) {
   if (error instanceof ApiError) {
     // 服务端文案已是业务语言，且把 409 分成了底稿版本冲突、申报版本冲突与材料标识冲突三种，
     // 各自的处置动作不同，压成一句通用话会让交易员去做错的补救。但「内容没丢」这句安抚
     // 必须始终在场——只回一句「申报已经更新」，主笔会以为刚写的正文已经作废。
-    const detail = error.message.trim()
+    const detail = serverDetail(error)
     if (error.code === 409) return `${detail ? (/[。！？]$/.test(detail) ? detail : `${detail}。`) : '底稿已有更新或请求发生冲突。'}当前文字已保留，请复制未保存内容并重新读取后合并。`
     if (detail) return detail
     if (error.code === 403) return '当前账号不能修改这份报告。主笔可编辑发布，同事可添加批注。'

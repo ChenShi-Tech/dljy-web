@@ -70,6 +70,9 @@ export function reportParts(publication: Publication, brief = false): ReportPart
   if (brief) {
     // 摘要也必须保留资料性质，不能把模拟或未认证的依据变成无条件事实。
     for (const evidence of content.evidence) parts.push({ kind: 'paragraph', text: reportEvidenceCaption(evidence) })
+    // 关联申报同理：摘要保留了其他依据的说明，唯独丢掉关联依据，会让申报相关的结论在
+    // 管理层版本里失去出处，连「不代表因果关系」那句提示也一并消失。
+    for (const block of content.blocks) if (block.kind === 'decision' && block.reference) parts.push({ kind: 'paragraph', text: decisionReferenceCaption(block.reference) })
     return parts
   }
   for (const block of content.blocks) {

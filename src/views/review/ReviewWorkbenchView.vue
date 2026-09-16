@@ -157,17 +157,21 @@ function openOriginal() {
 }
 const archiveVisible = ref(false)
 function openArchive() { archiveVisible.value = true }
-// 从一笔申报回查到的已发布报告。读取期间切换对象或公司时，晚到的响应必须丢弃。
+// 从一笔申报回查到的已发布报告。读取期间切换对象、日期或公司时，晚到的响应必须丢弃。
 const linkedPublication = ref<Publication | null>(null), linkedVisible = ref(false), linkedError = ref('')
 let linkedSequence = 0
 async function openLinkedPublication(row: LinkedReview) {
-  const ticket = ++linkedSequence, company = selectedCompanyId.value, rid = region.value
+  const ticket = ++linkedSequence, company = selectedCompanyId.value, rid = region.value, object = selectedKey.value, day = date.value
   linkedPublication.value = null; linkedError.value = ''; linkedVisible.value = true
+  // 浏览器前进后退也会在请求途中换掉复盘对象，只比公司和地区拦不住它。
+  const current = () => ticket === linkedSequence && company === selectedCompanyId.value && rid === region.value && object === selectedKey.value && day === date.value
   try {
     const result = await getReportPublication(company, rid, row.id)
-    if (ticket === linkedSequence && company === selectedCompanyId.value && rid === region.value) linkedPublication.value = result
-  } catch (e) { if (ticket === linkedSequence) linkedError.value = workpaperError(e) }
+    if (current()) linkedPublication.value = result
+  } catch (e) { if (current()) linkedError.value = workpaperError(e) }
 }
+// 已经读出来的报告同样不能跨对象停留：切走即作废，不让上一笔申报的报告盖在新对象上。
+watch([selectedKey, date, selectedCompanyId, region], () => { linkedSequence++; linkedPublication.value = null; linkedError.value = ''; linkedVisible.value = false })
 function openLegacyArchive() { void router.push({ path: '/xhjy/review', query: { ...route.query, layout: 'classic', task: undefined, decisionId: undefined } }) }
 let scopeSequence = 0, selectionSequence = 0, pageSequence = 0
 async function loadOrders(seq: number, day: string, rid: string, offset = 0) {
