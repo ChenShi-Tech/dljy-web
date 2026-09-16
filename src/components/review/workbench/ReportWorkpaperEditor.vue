@@ -73,7 +73,9 @@ const registerTarget = ref(''), registerOwner = ref(''), registerDue = ref(''), 
 const pending = computed(() => dirty.value || saving.value || publishing.value || commenting.value || linkPending.value || lookbackPending.value || !!registerTarget.value || !!commentText.value.trim())
 watch(pending, value => emit('dirty', value), { immediate: true })
 // 发布确认必须覆盖全部待定内容：勾选「已核对」之后再写关联依据，旧的勾选不能代表新内容已核对。
-watch([linkPending, lookbackPending], values => { if (values.some(Boolean)) confirmed.value = false })
+// 任何未落进正文的输入都会被发布版本漏掉：未确认的关联依据、未保存的回查记录、打开着的措施登记表单。
+const publishBlocked = computed(() => linkPending.value || lookbackPending.value || !!registerTarget.value)
+watch(publishBlocked, value => { if (value) confirmed.value = false })
 watch(draft, () => {
   if (suppress || !draft.value || !canEdit.value) return
   editVersion++; dirty.value = true; confirmed.value = false; publication.value = null
@@ -82,6 +84,7 @@ watch(draft, () => {
 }, { deep: true, flush: 'sync' })
 function assignPaper(value: Workpaper) {
   paperGeneration++; publicationRequest++
+  registerTarget.value = ''
   writingTarget.value = ''
   comments.value = []; commentsMore.value = false; commentTarget.value = ''; commentText.value = ''; commentId.value = crypto.randomUUID()
   suppress = true; draft.value = value; evidence.value = value.evidence ?? []; suppress = false
@@ -148,6 +151,8 @@ function move(index: number, offset: number) {
 // 关联块不能复制：复制出的新块带着旧的申报版本却没经过预览，申报一旦变过就会在自动保存时
 // 冲突且无法在该块上重新核对；没变则等于绕开预览又建了一个关联。
 const segmentTarget = ref('')
+// 登记表单对应的措施块被移除后，表单随之消失、取消按钮也没了；残留的目标会让底稿一直处于未保存状态。
+watch(() => draft.value?.blocks.map(block => block.id).join('|'), () => { if (registerTarget.value && !draft.value?.blocks.some(block => block.id === registerTarget.value)) registerTarget.value = '' })
 /** 回查结论已由面板写回改进记录，这里把同一次回查放进报告正文，发布后可追溯。 */
 function recordLookback(block: ReportBlock) {
   if (!draft.value || !canEdit.value) return
@@ -188,7 +193,7 @@ function attach(material: ReportEvidence, role: 'primary' | 'comparison') { if (
 async function publish() {
   if (!draft.value || !confirmed.value) return
   // 未确认的关联依据不在底稿里，此时发布出去的不可变版本会少掉作者以为已写入的内容。
-  if (linkPending.value) { error.value = '还有未确认的关联依据：请先确认加入报告，或清空后再发布。'; return }
+  if (publishBlocked.value) { error.value = '还有未落入正文的内容（关联依据、改进措施回查或登记）：请先完成或取消后再发布。'; return }
   publishing.value = true
   try {
     if (!await save() || !draft.value) { status.value = '请先完成保存，再发布'; return }
@@ -255,7 +260,7 @@ onBeforeUnmount(() => { alive = false; if (timer) clearTimeout(timer); emit('dir
           </article>
           <p v-if="!draft.blocks.length">从专题分析加入图表，或添加事实、原因和措施开始撰写。</p>
         </fieldset>
-        <div v-if="canEdit" class="publish"><button type="button" :disabled="saving || publishing || !dirty" @click="save">保存底稿</button><label><input v-model="confirmed" type="checkbox" :disabled="publishing" />我已核对正文和资料性质</label><button type="button" :disabled="!confirmed || saving || publishing || linkPending" @click="publish">{{ publishing ? '正在发布…' : '发布报告' }}</button></div>
+        <div v-if="canEdit" class="publish"><button type="button" :disabled="saving || publishing || !dirty" @click="save">保存底稿</button><label><input v-model="confirmed" type="checkbox" :disabled="publishing" />我已核对正文和资料性质</label><button type="button" :disabled="!confirmed || saving || publishing || publishBlocked" @click="publish">{{ publishing ? '正在发布…' : '发布报告' }}</button></div>
         <PublishedReportReader v-if="publication" :publication="publication" />
       </section>
       <aside>

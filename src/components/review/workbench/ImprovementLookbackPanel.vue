@@ -16,7 +16,15 @@ let generation = 0
 
 // 回查日期落在本报告周期结束日之前、仍在跟进的措施，才是这份报告该回查的。没有回查日期的不强塞进来。
 const due = computed(() => actions.value.filter(action => ['open', 'carried_over'].includes(action.status) && !!action.dueDate && action.dueDate <= props.draft.scope.endDate))
-const firstLine = (text: string) => text.split(/\r?\n/).find(line => line.trim())?.trim() ?? text
+/**
+ * 措施正文里往往先是元信息（「复盘对象：…」「来源报告：…」），真正的措施在「改进措施：」那一行。
+ * 只取首行会让回查记录丢掉措施本身、同一来源的多条措施也无法区分。
+ */
+const measureOf = (text: string) => {
+  const lines = text.split(/\r?\n/).map(line => line.trim()).filter(Boolean)
+  const measure = lines.find(line => line.startsWith('改进措施：'))
+  return measure ? measure.slice('改进措施：'.length).trim() : (lines[0] ?? text)
+}
 watch(() => !!evidence.value.trim(), value => emit('dirty', value), { immediate: true })
 
 async function load() {
@@ -49,7 +57,7 @@ async function confirm() {
     const saved = await patchImprovementAction(action.id, { action: `${action.action}\n回查报告：${report}\n验证记录：${text}\n验证结论：${verdictLabels[conclusion]}`, status: conclusion === 'observe' ? 'carried_over' : 'done' })
     if (ticket !== generation) return
     actions.value = actions.value.map(row => (row.id === saved.id ? saved : row))
-    emit('record', { id: crypto.randomUUID(), kind: 'action', title: '改进措施回查', text: `措施：${firstLine(action.action)}\n负责人：${action.owner || '未指定'}；回查日期：${action.dueDate}\n验证记录：${text}\n验证结论：${verdictLabels[conclusion]}` })
+    emit('record', { id: crypto.randomUUID(), kind: 'action', title: '改进措施回查', text: `措施：${measureOf(action.action)}\n负责人：${action.owner || '未指定'}；回查日期：${action.dueDate}\n验证记录：${text}\n验证结论：${verdictLabels[conclusion]}` })
     target.value = null; evidence.value = ''
     status.value = conclusion === 'observe' ? '回查已记录，措施继续跟进；报告中已加入这次回查。' : '回查已记录，报告中已加入这次回查。这是人工结论，不代表已量化改进收益。'
   } catch {
@@ -71,7 +79,7 @@ onBeforeUnmount(() => { generation++; emit('dirty', false) })
       <p v-else-if="!due.length">本报告周期内没有到期待回查的改进措施。</p>
       <p v-if="status" role="status">{{ status }}</p>
       <article v-for="action in due" :key="action.id">
-        <div><b>{{ firstLine(action.action) }}</b><p>{{ action.status === 'carried_over' ? '继续跟进' : '待落实' }} · 负责人 {{ action.owner || '未指定' }} · 回查日期 {{ action.dueDate }}</p></div>
+        <div><b>{{ measureOf(action.action) }}</b><p>{{ action.status === 'carried_over' ? '继续跟进' : '待落实' }} · 负责人 {{ action.owner || '未指定' }} · 回查日期 {{ action.dueDate }}</p></div>
         <button v-if="target?.id !== action.id" type="button" :disabled="disabled || saving" @click="begin(action)">在本报告中回查</button>
         <div v-else class="form">
           <label>验证记录<textarea v-model="evidence" rows="4" :disabled="disabled || saving" placeholder="说明依据本报告的哪些材料、观察到什么变化、还有什么解释不了。至少 8 个字。" /></label>
