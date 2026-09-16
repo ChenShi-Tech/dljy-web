@@ -79,14 +79,16 @@ describe('中长期合同导入', () => {
 
   it('提交时预览已失效：提示整批未入库、刷新结果并禁用提交', async () => {
     hoisted.createImportPreview.mockResolvedValue(preview([row({ op: 'CREATE' })], true))
-    const fresh = preview([row({ op: 'CONFLICT', contractId: 5, diffs: [{ field: 'totalQuantity', existing: '1000', incoming: '1200' }] })], false)
+    // 刷新结果即使服务端标「可提交」（例如别人刚把同一合同导入、此行已变为跳过），旧预览也不能再提交：
+    // 预览绑定的底账版本已失效，必须重新预览生成新的预览标识。
+    const fresh = preview([row({ op: 'SKIP', contractId: 5 })], true)
     hoisted.commitImport.mockRejectedValue({ failure: { status: 409, errorCode: 'PREVIEW_STALE', message: '预览之后合同底账已发生变化', details: { report: fresh } } })
     const { w, commitButton } = await openAndPreview()
     expect(commitButton().attributes('disabled')).toBeUndefined()
     await commitButton().trigger('click')
     await flushPromises()
     expect(w.text()).toContain('预览已失效，整批未入库')
-    expect(w.text()).toContain('内容冲突')
+    expect(w.text()).toContain('同内容跳过')
     expect(commitButton().attributes('disabled')).toBeDefined()
   })
 
