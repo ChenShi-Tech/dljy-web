@@ -3,10 +3,12 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { ApiError } from '@/services/api'
 import { addReportComment, createWorkpaper, getWorkpaper, getReportPublication, listReportPublications, listReportComments, listWorkpapers, publishWorkpaper, saveWorkpaper, type Workpaper } from '@/services/review/workpapers'
 import ReportWorkpaperEditor from './ReportWorkpaperEditor.vue'
+import { createImprovementAction } from '@/services/review/reviewStoreClient'
 import type { ReviewEvidenceSnapshot } from '@/services/review/reviewEvidence'
 
 vi.mock('@/services/review/workpapers', async original => ({ ...await original<typeof import('@/services/review/workpapers')>(), addReportComment: vi.fn(), createWorkpaper: vi.fn(), getWorkpaper: vi.fn(), getReportPublication: vi.fn(), listReportPublications: vi.fn(), listReportComments: vi.fn(), listWorkpapers: vi.fn(), publishWorkpaper: vi.fn(), saveWorkpaper: vi.fn() }))
 vi.mock('@/services/stance/stanceContext', () => ({ activeStanceType: { value: 'RETAILER' } }))
+vi.mock('@/services/review/reviewStoreClient', () => ({ createImprovementAction: vi.fn(), fetchAllImprovementActions: vi.fn(), patchImprovementAction: vi.fn() }))
 const snapshot: ReviewEvidenceSnapshot = { scope: { company: 'a', region: 'yunnan', day: '2026-05-31', objectKey: '', objectLabel: '公司总览', version: 'v1' }, capturedAt: '2026-06-01T00:00:00Z', simulated: false, focus: '', entries: [], intervals: [], limitations: [] }
 const paper = (): Workpaper => ({ id: '00000000-0000-4000-8000-000000000001', title: '已有底稿', scope: { region: 'yunnan', view: 'retail', objectId: 'company-overview', objectLabel: '公司总览', startDate: '2026-05-31', endDate: '2026-05-31' }, authorId: '主笔', revision: 1, blocks: [{ id: '00000000-0000-4000-8000-000000000002', kind: 'text', title: '原有事实', text: '已保存正文' }], summary: '', updatedAt: '2026-06-01', canEdit: true, evidence: [] })
 const wrappers: ReturnType<typeof mount>[] = []
@@ -154,6 +156,95 @@ describe('图文底稿交付', () => {
     expect(blocks).toHaveLength(2)
     expect(blocks[0].findAll('button').some(node => node.text() === '复制')).toBe(true)
     expect(blocks[1].findAll('button').some(node => node.text() === '复制')).toBe(false)
+  })
+  it('报告里的改进措施可登记到改进记录，登记后不能重复登记', async () => {
+    vi.mocked(createImprovementAction).mockResolvedValue({ id: '9', action: 'x', owner: '李四', dueDate: '2026-06-07', status: 'open', updatedAt: null })
+    const withAction = { ...paper(), title: '晴川周复盘', blocks: [{ id: '00000000-0000-4000-8000-0000000000c1', kind: 'action' as const, title: '改进措施', text: '晚高峰前复核预测区间再定申报量' }] }
+    vi.mocked(getWorkpaper).mockResolvedValue(withAction)
+    const wrapper = await open()
+    await button(wrapper, '登记到改进记录').trigger('click')
+    const inputs = wrapper.findAll('.register input')
+    await inputs[0].setValue('李四'); await inputs[1].setValue('2026-06-07')
+    await button(wrapper, '登记').trigger('click'); await flushPromises()
+    const input = vi.mocked(createImprovementAction).mock.calls[0][0]
+    expect(input.action).toContain('来源报告：晴川周复盘')
+    expect(input.action).toContain('改进措施：晚高峰前复核预测区间再定申报量')
+    expect(input).toMatchObject({ owner: '李四', dueDate: '2026-06-07' })
+    expect(wrapper.text()).toContain('这条措施已登记到改进记录')
+    expect(wrapper.findAll('button').some(node => node.text() === '登记到改进记录')).toBe(false)
+  })
+  it('回查记录未保存或登记表单打开时不能发布；删掉措施块后登记表单状态不残留', async () => {
+    const withAction = { ...paper(), blocks: [{ id: '00000000-0000-4000-8000-0000000000c2', kind: 'action' as const, title: '改进措施', text: '晚高峰前复核预测区间再定申报量' }] }
+    vi.mocked(getWorkpaper).mockResolvedValue(withAction)
+    const wrapper = await open()
+    const checkbox = () => wrapper.find('.publish input[type="checkbox"]')
+    await checkbox().setValue(true)
+    wrapper.findComponent({ name: 'ImprovementLookbackPanel' }).vm.$emit('dirty', true); await flushPromises()
+    expect((checkbox().element as HTMLInputElement).checked).toBe(false)
+    expect(button(wrapper, '发布报告').attributes('disabled')).toBeDefined()
+    wrapper.findComponent({ name: 'ImprovementLookbackPanel' }).vm.$emit('dirty', false); await flushPromises()
+    await button(wrapper, '登记到改进记录').trigger('click')
+    await checkbox().setValue(true)
+    expect(button(wrapper, '发布报告').attributes('disabled')).toBeDefined()
+    await wrapper.findAll('article.block')[0].findAll('button').find(node => node.text() === '移除')!.trigger('click'); await flushPromises()
+    await checkbox().setValue(true)
+    expect(button(wrapper, '发布报告').attributes('disabled')).toBeUndefined()
+    expect(publishWorkpaper).not.toHaveBeenCalled()
+  })
+  it('改进记录写入进行中不能切换或新建底稿，并对外报「进行中」', async () => {
+    const wrapper = await open()
+    wrapper.findComponent({ name: 'ImprovementLookbackPanel' }).vm.$emit('busy', true); await flushPromises()
+    expect(wrapper.emitted('busy')!.at(-1)).toEqual([true])
+    expect((wrapper.findAll('select')[1].element as HTMLSelectElement).disabled).toBe(true)
+    expect(button(wrapper, '新建本次底稿').attributes('disabled')).toBeDefined()
+    wrapper.findComponent({ name: 'ImprovementLookbackPanel' }).vm.$emit('busy', false); await flushPromises()
+    expect(wrapper.emitted('busy')!.at(-1)).toEqual([false])
+    expect((wrapper.findAll('select')[1].element as HTMLSelectElement).disabled).toBe(false)
+  })
+  it('措施登记请求未回时不能切换底稿', async () => {
+    let finish: (value: never) => void = () => {}
+    vi.mocked(createImprovementAction).mockReturnValue(new Promise(resolve => { finish = resolve as never }))
+    vi.mocked(getWorkpaper).mockResolvedValue({ ...paper(), blocks: [{ id: '00000000-0000-4000-8000-0000000000c3', kind: 'action' as const, title: '改进措施', text: '晚高峰前复核预测区间再定申报量' }] })
+    const wrapper = await open()
+    await button(wrapper, '登记到改进记录').trigger('click')
+    const inputs = wrapper.findAll('.register input')
+    await inputs[0].setValue('李四'); await inputs[1].setValue('2026-06-07')
+    await button(wrapper, '登记').trigger('click'); await flushPromises()
+    expect((wrapper.findAll('select')[1].element as HTMLSelectElement).disabled).toBe(true)
+    finish({ id: '9', action: 'x', owner: '李四', dueDate: '2026-06-07', status: 'open', updatedAt: null } as never); await flushPromises()
+    expect((wrapper.findAll('select')[1].element as HTMLSelectElement).disabled).toBe(false)
+  })
+  it('回查段加入正文后立即保存，保存确认前保持进行中，不能切换底稿', async () => {
+    let finish: (value: Workpaper) => void = () => {}
+    const wrapper = await open()
+    vi.mocked(saveWorkpaper).mockClear().mockImplementation(async (_company, draft) => new Promise(resolve => { finish = () => resolve({ ...draft, revision: draft.revision + 1 }) }))
+    wrapper.findComponent({ name: 'ImprovementLookbackPanel' }).vm.$emit('record', { id: '00000000-0000-4000-8000-0000000000e1', kind: 'action', origin: 'improvement_lookback', title: '改进措施回查', text: '措施：…' })
+    await flushPromises()
+    // 不等防抖计时器就已发出保存
+    expect(saveWorkpaper).toHaveBeenCalledTimes(1)
+    expect((wrapper.findAll('select')[1].element as HTMLSelectElement).disabled).toBe(true)
+    finish(paper()); await flushPromises()
+    expect((wrapper.findAll('select')[1].element as HTMLSelectElement).disabled).toBe(false)
+  })
+  it('措施登记请求进行中冻结正文，源措施块不能被修改或移除', async () => {
+    vi.mocked(createImprovementAction).mockReturnValue(new Promise(() => {}))
+    vi.mocked(getWorkpaper).mockResolvedValue({ ...paper(), blocks: [{ id: '00000000-0000-4000-8000-0000000000c4', kind: 'action' as const, title: '改进措施', text: '晚高峰前复核预测区间再定申报量' }] })
+    const wrapper = await open()
+    await button(wrapper, '登记到改进记录').trigger('click')
+    const inputs = wrapper.findAll('.register input')
+    await inputs[0].setValue('李四'); await inputs[1].setValue('2026-06-07')
+    await button(wrapper, '登记').trigger('click'); await flushPromises()
+    expect((wrapper.find('fieldset').element as HTMLFieldSetElement).disabled).toBe(true)
+  })
+  it('按来源标识而不是可编辑标题决定措施能否登记', async () => {
+    vi.mocked(getWorkpaper).mockResolvedValue({ ...paper(), blocks: [
+      { id: '00000000-0000-4000-8000-0000000000d1', kind: 'action' as const, origin: 'improvement_lookback' as const, title: '改了名的回查', text: '措施：晚高峰前复核预测区间' },
+      { id: '00000000-0000-4000-8000-0000000000d2', kind: 'action' as const, title: '改进措施回查', text: '交易员自己写的一条措施，碰巧用了这个标题' },
+    ] })
+    const wrapper = await open()
+    const blocks = wrapper.findAll('article.block')
+    expect(blocks[0].findAll('button').some(node => node.text() === '登记到改进记录')).toBe(false)
+    expect(blocks[1].findAll('button').some(node => node.text() === '登记到改进记录')).toBe(true)
   })
   it('公司周期底稿保留完整起止日，不缩成单日', async () => {
     const wrapper = mount(ReportWorkpaperEditor, { props: { snapshot: { ...snapshot, scope: { ...snapshot.scope, period: { start: '2026-05-01', end: '2026-05-31' } } } }, global: { stubs: { ReportEvidenceChart: true } } }); wrappers.push(wrapper)

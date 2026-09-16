@@ -139,6 +139,20 @@ export async function fetchImprovementActions(status?: string): Promise<Improvem
   }
 }
 
+/**
+ * 全部状态的改进记录。后端一次只按一个状态查询、缺省只回 open；只取缺省值会让「继续跟进」
+ * 「已记录验证」「已撤回」的措施从回查清单里消失，回查闭环在第一次登记验证后就断了。
+ * 任一状态读不到即整体报不可用，不拿残缺清单冒充完整结果。
+ */
+export async function fetchAllImprovementActions(): Promise<ImprovementActionFeed> {
+  const feeds = await Promise.all((['open', 'carried_over', 'done', 'dropped'] as const).map(status => fetchImprovementActions(status)))
+  const failed = feeds.find(feed => !feed.available)
+  if (failed) return failed
+  const seen = new Set<string>()
+  const actions = feeds.flatMap(feed => (feed.available ? feed.actions : [])).filter(action => !seen.has(action.id) && (seen.add(action.id), true))
+  return { available: true, actions }
+}
+
 /** 未闭环清单（open + carried_over）：纪要「上期改进措施回查」的自动带入源。 */
 export async function fetchCarryOverActions(): Promise<ImprovementActionFeed> {
   const feed = await fetchImprovementActions('open')

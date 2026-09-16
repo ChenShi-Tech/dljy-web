@@ -13,7 +13,7 @@ export type ReviewSegment = { start: string; end: string }
  * `segments` 只出现在原因与待核实问题上，把一条人工判断落到 `evidenceId` 所指材料的具体时段。
  * 服务端保存时会核对每个时段确实在那份冻结材料里，浏览器不能凭空写时段。
  */
-export type ReportBlock = { id: string; kind: 'text' | 'chart' | 'reason' | 'question' | 'action' | 'decision'; title: string; text: string; evidenceId?: string; evidenceRole?: 'primary' | 'comparison'; state?: 'pending' | 'confirmed'; supports?: string; refutes?: string; declarationId?: string; decisionVersion?: string; reference?: DecisionReference; segments?: ReviewSegment[] }
+export type ReportBlock = { id: string; kind: 'text' | 'chart' | 'reason' | 'question' | 'action' | 'decision'; title: string; text: string; evidenceId?: string; evidenceRole?: 'primary' | 'comparison'; state?: 'pending' | 'confirmed'; supports?: string; refutes?: string; declarationId?: string; decisionVersion?: string; reference?: DecisionReference; segments?: ReviewSegment[]; origin?: 'improvement_lookback' }
 /**
  * 关联申报时服务端重读并冻结的副本。浏览器提交的副本一律被丢弃，已保存的引用也不会随
  * 说明文字改动而刷新——要换成新版本必须重新预览并新建一个关联块。

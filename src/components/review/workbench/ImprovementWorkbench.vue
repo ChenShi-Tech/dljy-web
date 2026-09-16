@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
-import { createImprovementAction, fetchImprovementActions, patchImprovementAction } from '@/services/review/reviewStoreClient'
+import { createImprovementAction, fetchAllImprovementActions, patchImprovementAction } from '@/services/review/reviewStoreClient'
 import type { ImprovementActionSummary } from '@/services/review/reviewStoreApi'
 import { isRealCalendarDate } from '@/utils/calendarDate'
 import SpotSkeleton from '../../../components/common/SpotSkeleton.vue'
@@ -21,7 +21,7 @@ const statusLabel = { open: '待落实', carried_over: '继续跟进', done: '�
 async function load() {
   if (loading.value || saving.value) return
   loading.value = true; loaded.value = false; error.value = ''; actions.value = []
-  const feed = await fetchImprovementActions()
+  const feed = await fetchAllImprovementActions()
   if (feed.available) { actions.value = feed.actions; loaded.value = true }
   else error.value = feed.reason === 'unauthorized' ? '当前账号无权查看改进记录。' : '改进记录暂时无法读取，请重试。当前不能确认待办数量。'
   loading.value = false
