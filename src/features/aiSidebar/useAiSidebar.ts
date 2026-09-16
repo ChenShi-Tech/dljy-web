@@ -29,18 +29,25 @@ export interface AiAskRequest {
 interface AiSidebarState {
   open: boolean
   request: AiAskRequest | null
+  /** 会话记录归属的登录用户；换账号时重新绑定，不继承上一账号的会话（dljy-web#119 审查 P2） */
+  owner: string | null
   /** 当前会话记录；null = 从未使用或已新建空白对话 */
   session: AiSessionRecord | null
   /** 切换会话时自增，侧边栏据此重挂对话内核 */
   mountKey: number
 }
 
-const STORAGE_KEY = 'dljy.aiSidebar.session'
+const STORAGE_KEY_PREFIX = 'dljy.aiSidebar.session:'
 
-function loadSession(): AiSessionRecord | null {
+function storageKey(owner: string): string {
+  return `${STORAGE_KEY_PREFIX}${owner}`
+}
+
+function loadSession(owner: string | null): AiSessionRecord | null {
+  if (!owner) return null
   try {
     if (typeof window === 'undefined') return null
-    const raw = window.localStorage.getItem(STORAGE_KEY)
+    const raw = window.localStorage.getItem(storageKey(owner))
     if (!raw) return null
     const parsed = JSON.parse(raw) as Partial<AiSessionRecord>
     if (typeof parsed?.sessionId !== 'string' || typeof parsed.scenario !== 'string') return null
@@ -58,17 +65,19 @@ function loadSession(): AiSessionRecord | null {
 }
 
 function saveSession(record: AiSessionRecord | null): void {
+  const owner = state.owner
+  if (!owner) return
   try {
     if (typeof window === 'undefined') return
     // 只持久化已建成的会话；空白新对话无需恢复
-    if (record?.sessionId) window.localStorage.setItem(STORAGE_KEY, JSON.stringify(record))
-    else window.localStorage.removeItem(STORAGE_KEY)
+    if (record?.sessionId) window.localStorage.setItem(storageKey(owner), JSON.stringify(record))
+    else window.localStorage.removeItem(storageKey(owner))
   } catch {
     // 隐私模式/存储被禁用：刷新后不恢复，但不影响本次使用
   }
 }
 
-const state = reactive<AiSidebarState>({ open: false, request: null, session: loadSession(), mountKey: 0 })
+const state = reactive<AiSidebarState>({ open: false, request: null, owner: null, session: null, mountKey: 0 })
 let seq = 0
 let pending: { question: string; slice: Record<string, unknown> | null } | null = null
 
@@ -104,6 +113,20 @@ export function takeSliceFor(question: string): Record<string, unknown> | null {
   return slice
 }
 
+/**
+ * 绑定当前登录用户（侧边栏挂载时调用）：换了账号就丢弃内存中的会话记录与待发请求，
+ * 改读该账号自己的存储记录——同一浏览器换账号登录不继承上一账号的会话、标题与解读角色。
+ */
+export function bindUser(username: string): void {
+  const owner = username || null
+  if (state.owner === owner) return
+  state.owner = owner
+  state.session = loadSession(owner)
+  state.request = null
+  pending = null
+  state.mountKey += 1
+}
+
 /** 切换到指定会话（null = 空白新对话）并重挂内核。 */
 export function switchSession(record: AiSessionRecord | null): void {
   state.session = record ? { ...record } : null
@@ -117,11 +140,12 @@ export function adoptSessionId(sessionId: string): void {
   saveSession(state.session)
 }
 
-/** 测试用：复位模块级状态（可选择重新从存储读取会话记录，模拟刷新）。 */
-export function resetAiSidebarForTest(opts: { reloadFromStorage?: boolean } = {}): void {
+/** 测试用：复位模块级状态（模拟整页刷新：内存清空，挂载时由 bindUser 从存储读回）。 */
+export function resetAiSidebarForTest(): void {
   state.open = false
   state.request = null
-  state.session = opts.reloadFromStorage ? loadSession() : null
+  state.owner = null
+  state.session = null
   state.mountKey = 0
   seq = 0
   pending = null

@@ -10,9 +10,10 @@ import { mount, flushPromises } from '@vue/test-utils'
 import { createRouter, createMemoryHistory } from 'vue-router'
 
 type KernelRec = { props: Record<string, unknown>; asks: string[]; unmounted: boolean; emit: (e: string, ...a: unknown[]) => void }
-const g = globalThis as unknown as { __kernels: KernelRec[]; __canWorkbench: boolean }
+const g = globalThis as unknown as { __kernels: KernelRec[]; __canWorkbench: boolean; __user: { roleCode: string; username: string } }
 g.__kernels = []
 g.__canWorkbench = true
+g.__user = { roleCode: 'TRADER', username: 'trader' }
 
 vi.mock('@/components/agent/AgentChatPanel.vue', async () => {
   const { defineComponent, h, onUnmounted } = await import('vue')
@@ -54,7 +55,7 @@ vi.mock('@/components/agent/AgentHistorySidebar.vue', async () => {
 })
 vi.mock('@/services/agent/agentClient', () => ({ listRuns: vi.fn(async () => []), stopAgentRun: vi.fn(async () => true) }))
 vi.mock('@/services/governance', () => ({ canAccessPath: vi.fn(() => (globalThis as unknown as { __canWorkbench: boolean }).__canWorkbench) }))
-vi.mock('@/services/auth', () => ({ getCurrentUser: vi.fn(() => ({ roleCode: 'TRADER' })) }))
+vi.mock('@/services/auth', () => ({ getCurrentUser: vi.fn(() => (globalThis as unknown as { __user: unknown }).__user) }))
 vi.mock('@/services/region/regionContext', async () => {
   const { ref } = await import('vue')
   return { currentRegion: ref({ id: 'yunnan', name: '云南省' }) }
@@ -69,7 +70,7 @@ import AiSidebar from './AiSidebar.vue'
 import { listRuns } from '@/services/agent/agentClient'
 import { PAGE_PROMPT_KEYS } from '@/prompts/pageKeys'
 import { activatePage, activeAiPage, deactivatePage, type AiPageDefinition } from './pageRegistry'
-import { resetAiSidebarForTest, useAiSidebar } from './useAiSidebar'
+import { resetAiSidebarForTest, switchSession, useAiSidebar } from './useAiSidebar'
 
 const Empty = { template: '<div />' }
 function makeRouter() {
@@ -114,6 +115,7 @@ describe('AiSidebar · 会话规则', () => {
   beforeEach(() => {
     g.__kernels = []
     g.__canWorkbench = true
+    g.__user = { roleCode: 'TRADER', username: 'trader' }
     window.localStorage.clear()
     resetAiSidebarForTest()
     vi.mocked(listRuns).mockReset().mockResolvedValue([])
@@ -199,7 +201,7 @@ describe('AiSidebar · 会话规则', () => {
     // 模拟刷新：旧页面整体销毁、模块状态只能从存储读回
     before.w.unmount()
     g.__kernels = []
-    resetAiSidebarForTest({ reloadFromStorage: true })
+    resetAiSidebarForTest()
     const { w } = await setup()
     useAiSidebar().open()
     await settle()
@@ -218,6 +220,53 @@ describe('AiSidebar · 会话规则', () => {
     expect(setItem).toHaveBeenCalled()
     expect(live()[0].asks).toHaveLength(1)
     setItem.mockRestore()
+  })
+
+  it('切换会话后、旧内核卸载前的窗口里，旧内核发出的事件被丢弃（dljy-web#119 审查 P1）', async () => {
+    // Vue 3.5 会丢弃已卸载组件的 emit；真正的风险窗口是 switchSession 同步改了会话记录、
+    // 而重挂内核的渲染刷新尚未发生——此时旧内核仍挂载，其在途建会话若恰好返回会发出 sessionReady。
+    await setup()
+    const ai = useAiSidebar()
+    ai.interpret()
+    await settle()
+    const stale = live()[0]
+
+    switchSession({ sessionId: 's_brief', scenario: 'morning_brief', promptKey: '', sourceRoute: '', entryKey: 'morning_brief', title: '' })
+    stale.emit('sessionReady', 's_stale')
+    stale.emit('conversationReset')
+    stale.emit('sessionBusy', '迟到的问题')
+    await settle()
+
+    expect(stale.unmounted).toBe(true)
+    expect(useAiSidebar().state.session?.sessionId).toBe('s_brief')
+    expect(live()).toHaveLength(1)
+    expect(live()[0].props.resumeSessionId).toBe('s_brief')
+    expect(live()[0].asks).toEqual([])
+  })
+
+  it('换账号登录不继承上一账号的会话；切回原账号仍能恢复自己的会话（dljy-web#119 审查 P2）', async () => {
+    const first = await setup()
+    useAiSidebar().interpret()
+    await settle()
+    live()[0].emit('sessionReady', 's_trader')
+    await settle()
+    first.w.unmount()
+
+    g.__kernels = []
+    g.__user = { roleCode: 'RISK', username: 'risk' }
+    const other = await setup()
+    useAiSidebar().open()
+    await settle()
+    expect(live()[0].props.resumeSessionId).toBeNull()
+    expect(useAiSidebar().state.session).toBeNull()
+    other.w.unmount()
+
+    g.__kernels = []
+    g.__user = { roleCode: 'TRADER', username: 'trader' }
+    await setup()
+    useAiSidebar().open()
+    await settle()
+    expect(live()[0].props.resumeSessionId).toBe('s_trader')
   })
 
   it('关闭侧边栏不卸载内核，再打开是同一个会话实例', async () => {

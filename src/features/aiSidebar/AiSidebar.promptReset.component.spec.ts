@@ -39,7 +39,7 @@ vi.mock('@/components/agent/AgentHistorySidebar.vue', async () => {
 })
 vi.mock('@/services/agent/agentClient', () => ({ listRuns: vi.fn(async () => []), stopAgentRun: vi.fn(async () => true) }))
 vi.mock('@/services/governance', () => ({ canAccessPath: vi.fn(() => true) }))
-vi.mock('@/services/auth', () => ({ getCurrentUser: vi.fn(() => ({ roleCode: 'TRADER' })) }))
+vi.mock('@/services/auth', () => ({ getCurrentUser: vi.fn(() => ({ roleCode: 'TRADER', username: 'trader' })) }))
 vi.mock('@/services/region/regionContext', async () => {
   const { ref } = await import('vue')
   return { currentRegion: ref({ id: 'yunnan', name: '云南省' }) }

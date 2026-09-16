@@ -26,13 +26,15 @@ import { currentRegion } from '@/services/region/regionContext'
 import { currentCompany } from '@/services/company/companyContext'
 import { canAccessPath } from '@/services/governance'
 import { getCurrentUser } from '@/services/auth'
-import { useAiSidebar, takeSliceFor, switchSession, adoptSessionId, BLANK_SESSION } from './useAiSidebar'
+import { useAiSidebar, takeSliceFor, switchSession, adoptSessionId, bindUser, BLANK_SESSION } from './useAiSidebar'
 import { activeAiPage, resolveQuestion, type AiPagePreset } from './pageRegistry'
 import { buildPageContext, composeMessageContext } from './pageContext'
 import { decideSession } from './sessionPolicy'
 
 const sidebar = useAiSidebar()
 const { state } = sidebar
+// 会话记录按登录用户隔离：挂载即绑定当前用户（登出再登录时 AppLayout 重挂，这里随之重新绑定）
+bindUser(getCurrentUser()?.username ?? '')
 const ACTIVE_RUNS_POLL_MS = 5000
 const router = useRouter()
 const route = useRoute()
@@ -125,6 +127,23 @@ async function onSessionBusy(question: string) {
   switchSession({ ...record.value, sessionId: null })
   await askInKernel(question)
 }
+
+// 内核事件按「发出它的内核实例」过滤（dljy-web#119 审查 P1）：切换会话会重挂内核，旧实例在途的
+// 建会话/恢复可能在卸载后才发出 sessionReady 等事件，若照单全收会把旧会话 id 写进新会话记录、
+// 或把正在生成的新会话误标为空闲。世代号必须在渲染期烘进闭包（computed 产出、模板按标识符绑定），
+// 不能写成 `@evt="fn(state.mountKey)"` 调用式——那会在事件到达时读当前值，旧事件照样通过（同 DeclarationDeskView）。
+function forCurrentKernel<A extends unknown[]>(fn: (...args: A) => unknown) {
+  return computed(() => {
+    const key = state.mountKey
+    return (...args: A) => {
+      if (key === state.mountKey) void fn(...args)
+    }
+  })
+}
+const onKernelSessionReady = forCurrentKernel(onSessionReady)
+const onKernelStreamingChange = forCurrentKernel(onStreamingChange)
+const onKernelSessionBusy = forCurrentKernel(onSessionBusy)
+const onKernelConversationReset = forCurrentKernel(onConversationReset)
 
 // ── 头部：新建 / 历史 / 在工作台打开 ──
 const historyOpen = ref(false)
@@ -325,10 +344,10 @@ function goConfig() {
           :context-payload-for="contextFor"
           :payload="regionPayload"
           message-actions
-          @session-ready="onSessionReady"
-          @streaming-change="onStreamingChange"
-          @session-busy="onSessionBusy"
-          @conversation-reset="onConversationReset"
+          @session-ready="onKernelSessionReady"
+          @streaming-change="onKernelStreamingChange"
+          @session-busy="onKernelSessionBusy"
+          @conversation-reset="onKernelConversationReset"
           @done="() => refreshActiveRuns()"
           @history-changed="onHistoryChanged"
         >
