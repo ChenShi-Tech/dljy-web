@@ -1,5 +1,5 @@
 import type { EChartsOption } from 'echarts'
-import type { DecisionReference, Publication, ReportEvidence } from './workpapers'
+import type { DecisionReference, Publication, ReportBlock, ReportEvidence, ReviewSegment } from './workpapers'
 import type { AnalysisPoint } from './topicAnalysis'
 import { formatValue } from './decisionWorkbench'
 
@@ -57,6 +57,30 @@ export function decisionReferenceCaption(reference: DecisionReference): string {
   const capacity = Number.isFinite(order?.capacityMw) ? `申报容量 ${formatValue(order.capacityMw)} MW；` : ''
   return `${reference.targetDate} 交易日申报（${reference.simulated ? '历史模拟' : '真实申报'}）。${capacity}${energy}报价依据：${order?.quoteRationale || '未留存，需回到原申报核实'}。${reference.notice}`
 }
+/**
+ * 与服务端核对口径一致：分时材料按其时段（带选区取材时只含所选时段），日报电量与结算按有来源记录的日期。
+ * 逐日数组为画完整周期保留的缺日占位行不可选——服务端会拒绝，也不该让原因绑到没有资料的日子上。
+ */
+const recordedDays = (rows: Array<{ date: string; coverage: { records: number } }>) => rows.filter(row => row.coverage.records > 0).map(row => ({ start: row.date, end: row.date }))
+export function evidenceSegments(evidence: ReportEvidence): ReviewSegment[] {
+  const content = evidence.content
+  if (content.topic === 'daily_energy') return recordedDays(content.result.daily)
+  if (content.topic === 'settlement') return recordedDays(content.result.current.daily)
+  return content.result.intervals.map(row => ({ start: row.start, end: row.end }))
+}
+const shanghai = (value: string, withDay: boolean) => new Date(value).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', ...(withDay ? { month: '2-digit', day: '2-digit' } : {}), hour: '2-digit', minute: '2-digit', hour12: false })
+/** 按日的时段起止相同，只写日期；分时时段写「月/日 时:分—时:分」。 */
+export function segmentLabel(segment: ReviewSegment): string {
+  return segment.start === segment.end ? segment.start : `${shanghai(segment.start, true)}—${shanghai(segment.end, false)}`
+}
+/** 解释针对哪些时段、依据哪份材料。时段多时只列前 12 个，避免把报告正文变成时刻表。 */
+export function segmentCaption(block: ReportBlock, evidence?: ReportEvidence): string {
+  const segments = block.segments ?? []
+  const listed = segments.slice(0, 12).map(segmentLabel).join('、')
+  const more = segments.length > 12 ? ` 等，共 ${segments.length} 个时段` : ''
+  const source = evidence ? `（依据：${evidence.content.labels.join('与')}，${block.evidenceRole === 'comparison' ? '比较依据' : '本次依据'}）` : ''
+  return `针对 ${segments.length} 个时段：${listed}${more}${source}`
+}
 export type ReportPart = { kind: 'title' | 'heading' | 'paragraph'; text: string } | { kind: 'chart'; evidence: ReportEvidence }
 export function reportParts(publication: Publication, brief = false): ReportPart[] {
   const content = publication.content
@@ -85,7 +109,9 @@ export function reportParts(publication: Publication, brief = false): ReportPart
     if (block.evidenceId) {
       const evidence = content.evidence.find(item => item.id === block.evidenceId)
       if (!evidence) throw new Error('发布版本的材料不完整，不能导出')
-      parts.push({ kind: 'paragraph', text: block.evidenceRole === 'comparison' ? '比较依据' : '本次依据' }, { kind: 'chart', evidence }, { kind: 'paragraph', text: reportEvidenceCaption(evidence) })
+      // 落到时段上的原因只交代针对哪些时段，不再重复画同一张图——图在它所解释的图表块里。
+      if (block.segments?.length) parts.push({ kind: 'paragraph', text: segmentCaption(block, evidence) })
+      else parts.push({ kind: 'paragraph', text: block.evidenceRole === 'comparison' ? '比较依据' : '本次依据' }, { kind: 'chart', evidence }, { kind: 'paragraph', text: reportEvidenceCaption(evidence) })
     }
     // 关联决策必须随报告一起交付：只导出交易员写的理由，读者看不出依据的是哪一笔申报。
     if (block.kind === 'decision') {

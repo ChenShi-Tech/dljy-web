@@ -1,7 +1,7 @@
 // 守关联决策在报告与导出中的呈现：关联不能只留理由不留依据，也不能把内部标识写进交付物。dljy#2872。
 import { describe, expect, it } from 'vitest'
-import { decisionReferenceCaption, reportParts } from './reportPresentation'
-import type { DecisionReference, Publication } from './workpapers'
+import { decisionReferenceCaption, evidenceSegments, reportParts, segmentCaption, segmentLabel } from './reportPresentation'
+import type { DecisionReference, Publication, ReportEvidence } from './workpapers'
 import type { DeclarationOrder } from '@/services/declarations'
 
 const order = (patch: Partial<DeclarationOrder> = {}) => ({
@@ -65,5 +65,34 @@ describe('关联决策的报告呈现', () => {
     expect(() => reportParts(broken)).toThrow('关联申报不完整')
     // 摘要分支静默跳过的话，会产出一份「导出成功但没有依据」的管理层报告。
     expect(() => reportParts(broken, true)).toThrow('关联申报不完整')
+  })
+})
+
+describe('原因对应到材料里的时段', () => {
+  const intervals = [{ start: '2026-05-31T10:00:00.000Z', end: '2026-05-31T10:15:00.000Z' }, { start: '2026-05-31T10:15:00.000Z', end: '2026-05-31T10:30:00.000Z' }]
+  const energy = { id: 'm1', content: { topic: 'energy', labels: ['申报电量', '实际电量'], result: { intervals } } } as unknown as ReportEvidence
+  it('分时材料按时段、日报与结算按日列出可对应的时段，与服务端核对口径一致', () => {
+    expect(evidenceSegments(energy)).toEqual(intervals)
+    // 5/30 是缺日占位行（没有来源记录），不可选。
+    const day = (date: string, records: number) => ({ date, coverage: { records } })
+    expect(evidenceSegments({ content: { topic: 'daily_energy', result: { daily: [day('2026-05-30', 0), day('2026-05-31', 3)] } } } as unknown as ReportEvidence)).toEqual([{ start: '2026-05-31', end: '2026-05-31' }])
+    expect(evidenceSegments({ content: { topic: 'settlement', result: { current: { daily: [day('2026-05-30', 0), day('2026-05-31', 1)] } } } } as unknown as ReportEvidence)).toEqual([{ start: '2026-05-31', end: '2026-05-31' }])
+  })
+  it('时段用北京时间呈现，按日的只写日期；时段过多只列前 12 个并给出总数', () => {
+    expect(segmentLabel(intervals[0])).toBe('05/31 18:00—18:15')
+    expect(segmentLabel({ start: '2026-05-31', end: '2026-05-31' })).toBe('2026-05-31')
+    const many = Array.from({ length: 15 }, (_, i) => ({ start: `2026-05-${String(i + 1).padStart(2, '0')}`, end: `2026-05-${String(i + 1).padStart(2, '0')}` }))
+    const text = segmentCaption({ id: 'r', kind: 'reason', title: '', text: '', segments: many, evidenceRole: 'comparison' }, energy)
+    expect(text).toContain('针对 15 个时段')
+    expect(text).toContain('共 15 个时段')
+    expect(text).not.toContain('2026-05-13')
+    expect(text).toContain('依据：申报电量与实际电量，比较依据')
+  })
+  it('导出时落到时段上的原因只交代时段，不重复画图', () => {
+    const pub = publication([{ id: 'r1', kind: 'reason', title: '晚高峰原因', text: '疑为出力预测偏高', state: 'pending', evidenceId: 'm1', evidenceRole: 'primary', segments: [intervals[0]] }])
+    pub.content.evidence = [energy]
+    const parts = reportParts(pub)
+    expect(parts.some(part => part.kind === 'chart')).toBe(false)
+    expect(parts.map(part => ('text' in part ? part.text : '')).join('\n')).toContain('针对 1 个时段：05/31 18:00—18:15')
   })
 })

@@ -1,15 +1,16 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { activeStanceType } from '@/services/stance/stanceContext'
-import { addReportComment, createWorkpaper, getWorkpaper, getReportPublication, listReportPublications, listReportComments, listWorkpapers, publishWorkpaper, saveWorkpaper, workpaperError, type DecisionReference, type Publication, type ReportBlock, type ReportComment, type ReportEvidence, type Workpaper, type WorkpaperScope } from '@/services/review/workpapers'
+import { addReportComment, createWorkpaper, getWorkpaper, getReportPublication, listReportPublications, listReportComments, listWorkpapers, publishWorkpaper, saveWorkpaper, workpaperError, type DecisionReference, type Publication, type ReportBlock, type ReportComment, type ReportEvidence, type ReviewSegment, type Workpaper, type WorkpaperScope } from '@/services/review/workpapers'
 import type { ReviewEvidenceSnapshot } from '@/services/review/reviewEvidence'
 import { useRouter } from 'vue-router'
 import DecisionLinkPanel from './DecisionLinkPanel.vue'
 import DecisionReferenceCard from './DecisionReferenceCard.vue'
+import EvidenceSegmentPicker from './EvidenceSegmentPicker.vue'
 import PublishedReportReader from './PublishedReportReader.vue'
 import ReportEvidenceChart from './ReportEvidenceChart.vue'
 import ReportWritingAssistant from './ReportWritingAssistant.vue'
-import { reportEvidenceCaption } from '@/services/review/reportPresentation'
+import { reportEvidenceCaption, segmentCaption } from '@/services/review/reportPresentation'
 
 const props = defineProps<{ snapshot: ReviewEvidenceSnapshot; material?: ReportEvidence | null }>()
 const emit = defineEmits<{ dirty: [value: boolean] }>()
@@ -28,7 +29,7 @@ const writingInput = computed(() => {
   if (!paper || (!target && writingTarget.value !== 'summary')) return null
   return { scope: `${props.snapshot.scope.companyLabel || '当前公司'} · ${props.snapshot.scope.regionLabel || '当前地区'} · ${paper.scope.startDate}—${paper.scope.endDate} · ${paper.scope.objectLabel}`,
     title: target ? target.title || '当前段落' : '管理层摘要', text: target?.text ?? paper.summary,
-    evidence: [...evidence.value.filter(item => paper.blocks.some(block => block.evidenceId === item.id)).map(item => {
+    evidence: [...(target?.segments?.length ? [`这段解释针对的时段：${segmentCaption(target, evidence.value.find(item => item.id === target.evidenceId))}`] : []),...evidence.value.filter(item => paper.blocks.some(block => block.evidenceId === item.id)).map(item => {
       const range = item.content.result.periods.current
       const primary = item.content.input.scope.objectId === paper.scope.objectId && range.start >= paper.scope.startDate && range.end <= paper.scope.endDate
       return `${primary ? '本次对象材料' : '比较材料（其他对象或周期），不可视为本次结果'}；${item.content.labels.join('与')}；${range.start}—${range.end}；${reportEvidenceCaption(item)}`
@@ -142,6 +143,19 @@ function move(index: number, offset: number) {
 }
 // 关联块不能复制：复制出的新块带着旧的申报版本却没经过预览，申报一旦变过就会在自动保存时
 // 冲突且无法在该块上重新核对；没变则等于绕开预览又建了一个关联。
+const segmentTarget = ref('')
+const materialOf = (block: ReportBlock) => block.evidenceId ? evidence.value.find(item => item.id === block.evidenceId) : undefined
+/**
+ * 从图表块出发为其中几个时段写原因：新原因紧跟在图表后面，继承它引用的材料与材料用途，
+ * 默认「待核实」——时段挑出来只是缩小范围，不代表原因已经成立。
+ */
+function addSegmentReason(chart: ReportBlock, segments: ReviewSegment[]) {
+  if (!draft.value || !canEdit.value || !chart.evidenceId || !segments.length) return
+  const index = draft.value.blocks.findIndex(block => block.id === chart.id)
+  draft.value.blocks.splice(index + 1, 0, { id: crypto.randomUUID(), kind: 'reason', title: '时段原因', text: '', state: 'pending', supports: '', refutes: '', evidenceId: chart.evidenceId, evidenceRole: chart.evidenceRole ?? 'primary', segments: segments.map(segment => ({ ...segment })) })
+  segmentTarget.value = ''
+  status.value = `已为 ${segments.length} 个时段添加待核实原因`
+}
 function duplicate(block: ReportBlock) { if (block.kind === 'decision') return; draft.value?.blocks.push({ ...block, id: crypto.randomUUID() }) }
 function attach(material: ReportEvidence, role: 'primary' | 'comparison') { if (draft.value && canEdit.value) draft.value.blocks.push({ id: crypto.randomUUID(), kind: 'chart', title: material.content.labels.join('与'), text: '', evidenceId: material.id, evidenceRole: role }) }
 async function publish() {
@@ -204,7 +218,7 @@ onBeforeUnmount(() => { alive = false; if (timer) clearTimeout(timer); emit('dir
           <article v-for="(block, index) in draft.blocks" :key="block.id" class="block">
             <header><b>{{ index + 1 }} · {{ blockNames[block.kind] }}</b><div><button type="button" :disabled="index === 0" aria-label="上移内容块" @click="move(index, -1)">上移</button><button type="button" :disabled="index === draft.blocks.length - 1" aria-label="下移内容块" @click="move(index, 1)">下移</button><button v-if="block.kind !== 'decision'" type="button" @click="duplicate(block)">复制</button><button type="button" @click="draft.blocks.splice(index, 1)">移除</button></div></header>
             <input v-model="block.title" aria-label="内容块标题" maxlength="200" />
-            <template v-if="block.evidenceId"><ReportEvidenceChart v-if="evidence.find(row => row.id === block.evidenceId)" :evidence="evidence.find(row => row.id === block.evidenceId)!" /><label>材料用途<select v-model="block.evidenceRole"><option value="primary">本次依据</option><option value="comparison">比较依据</option></select></label></template>
+            <p v-if="block.segments?.length" class="segments">{{ segmentCaption(block, materialOf(block)) }}</p><template v-else-if="block.evidenceId"><ReportEvidenceChart v-if="materialOf(block)" :evidence="materialOf(block)!" /><label>材料用途<select v-model="block.evidenceRole"><option value="primary">本次依据</option><option value="comparison">比较依据</option></select></label><template v-if="block.kind === 'chart' && materialOf(block)"><button v-if="segmentTarget !== block.id" type="button" @click="segmentTarget = block.id">针对其中时段写原因</button><EvidenceSegmentPicker v-else :evidence="materialOf(block)!" @pick="addSegmentReason(block, $event)" @close="segmentTarget = ''" /></template></template>
             <DecisionReferenceCard v-if="block.kind === 'decision' && block.reference" :reference="block.reference" @open="openDeclaration" />
             <textarea v-model="block.text" :aria-label="block.kind === 'decision' ? '关联依据' : blockNames[block.kind]" rows="3" :placeholder="block.kind === 'decision' ? '写清为什么把这笔申报作为本次复盘的依据' : '补充事实、解释或人工判断'" />
             <button type="button" @click="writingTarget = block.id">辅助撰写这段</button>
@@ -226,5 +240,5 @@ onBeforeUnmount(() => { alive = false; if (timer) clearTimeout(timer); emit('dir
 </template>
 
 <style scoped>
-.scope,p{color:var(--muted);font-size:var(--font-sm);line-height:1.7}.toolbar,.publish,header,header>div{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.workspace{display:grid;grid-template-columns:minmax(0,1fr) 280px;gap:22px;margin-top:18px}.workspace>section,aside{min-width:0}fieldset{border:0;padding:0;margin:0}label{display:block;font-size:var(--font-sm);margin:10px 0}input:not([type=checkbox]),textarea{box-sizing:border-box;width:100%;display:block;margin-top:7px}button,input,textarea,select{font:inherit;font-size:var(--font-sm);color:var(--text);background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:8px}textarea{resize:vertical;line-height:1.6}button{cursor:pointer}button:disabled{opacity:.5;cursor:default}.block{border:1px solid var(--line);border-radius:8px;padding:14px;margin:16px 0}.block header{justify-content:space-between}.material,aside article{border-bottom:1px solid var(--line);padding:12px 0}.publish{margin-top:16px}.publish label{display:flex;align-items:center;gap:6px}h3{font-size:var(--font-lg)}button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-visible{outline:2px solid var(--primary);outline-offset:2px}@media(max-width:850px){.workspace{grid-template-columns:1fr}.toolbar{align-items:stretch}.toolbar label{width:100%}}
+.scope,p{color:var(--muted);font-size:var(--font-sm);line-height:1.7}.toolbar,.publish,header,header>div{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.workspace{display:grid;grid-template-columns:minmax(0,1fr) 280px;gap:22px;margin-top:18px}.workspace>section,aside{min-width:0}fieldset{border:0;padding:0;margin:0}label{display:block;font-size:var(--font-sm);margin:10px 0}input:not([type=checkbox]),textarea{box-sizing:border-box;width:100%;display:block;margin-top:7px}button,input,textarea,select{font:inherit;font-size:var(--font-sm);color:var(--text);background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:8px}textarea{resize:vertical;line-height:1.6}button{cursor:pointer}button:disabled{opacity:.5;cursor:default}.block{border:1px solid var(--line);border-radius:8px;padding:14px;margin:16px 0}.block header{justify-content:space-between}.material,aside article{border-bottom:1px solid var(--line);padding:12px 0}.publish{margin-top:16px}.segments{color:var(--text)}.publish label{display:flex;align-items:center;gap:6px}h3{font-size:var(--font-lg)}button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-visible{outline:2px solid var(--primary);outline-offset:2px}@media(max-width:850px){.workspace{grid-template-columns:1fr}.toolbar{align-items:stretch}.toolbar label{width:100%}}
 </style>
