@@ -30,11 +30,11 @@ describe('TemplateChips', () => {
     expect(chips[0].find('.h24').exists()).toBe(false)
   })
 
-  it('缺口说明进 title 悬浮而非落在页面文字里', () => {
+  it('资料缺口用业务说明悬浮提示，不暴露缺口编号或模板编号', () => {
     const w = mount(TemplateChips, { props: { templates: cards } })
     const gapChip = w.findAll('.chip')[1]
-    expect(gapChip.attributes('title')).toContain('缺 D4 分客户考核明细')
-    expect(gapChip.text()).not.toContain('缺 D4 分客户考核明细')
+    expect(gapChip.attributes('title')).toContain('部分资料尚未接入')
+    for (const shown of [gapChip.attributes('title') ?? '', w.text()]) expect(shown).not.toMatch(/\bD\d\b|\b[TRNE]\d{1,2}\b/)
   })
 
   it('点击 chip emit open-template 带原模板', async () => {

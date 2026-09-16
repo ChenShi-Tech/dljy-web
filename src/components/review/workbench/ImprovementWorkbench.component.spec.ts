@@ -2,8 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises } from '@vue/test-utils'
 import { mount } from '@/test/mount'
 import ImprovementWorkbench from './ImprovementWorkbench.vue'
-import { createImprovementAction, fetchImprovementActions, patchImprovementAction } from '@/services/review/reviewStoreClient'
-vi.mock('@/services/review/reviewStoreClient', () => ({ createImprovementAction: vi.fn(), fetchImprovementActions: vi.fn(), patchImprovementAction: vi.fn() }))
+import { createImprovementAction, fetchAllImprovementActions as fetchImprovementActions, patchImprovementAction } from '@/services/review/reviewStoreClient'
+vi.mock('@/services/review/reviewStoreClient', () => ({ createImprovementAction: vi.fn(), fetchAllImprovementActions: vi.fn(), patchImprovementAction: vi.fn() }))
 const wrappers: ReturnType<typeof mount>[] = []
 beforeEach(() => { vi.clearAllMocks(); vi.mocked(fetchImprovementActions).mockResolvedValue({ available: true, actions: [] }) })
 afterEach(() => wrappers.splice(0).forEach(w => w.unmount()))

@@ -1,6 +1,6 @@
 // 守关联决策在报告与导出中的呈现：关联不能只留理由不留依据，也不能把内部标识写进交付物。dljy#2872。
 import { describe, expect, it } from 'vitest'
-import { decisionReferenceCaption, evidenceSegments, reportParts, segmentCaption, segmentLabel } from './reportPresentation'
+import { decisionReferenceCaption, evidenceSegments, repeatsDecisionHeading, reportChartOption, reportParts, segmentCaption, segmentLabel, workpaperDefaultTitle, workpaperOptionLabel } from './reportPresentation'
 import type { DecisionReference, Publication, ReportEvidence } from './workpapers'
 import type { DeclarationOrder } from '@/services/declarations'
 
@@ -107,5 +107,39 @@ describe('原因对应到材料里的时段', () => {
     const pub = orphan
     const parts = reportParts(pub)
     expect(parts.map(part => ('text' in part ? part.text : '')).join('\n')).toContain('针对 1 个时段：05/31 18:00—18:15')
+  })
+})
+
+describe('报告图表的数值呈现', () => {
+  it('结算图表提示框格式化电费，不显示浮点累加尾数', () => {
+    const evidence = { id: 's1', content: { topic: 'settlement', result: { current: { daily: [{ date: '2026-05-31', energyMwh: 11888.601, feeYuan: 2638471.9800000004 }] } } } } as unknown as ReportEvidence
+    const option = reportChartOption(evidence) as { tooltip: { valueFormatter?: (value: unknown) => string } }
+    expect(option.tooltip.valueFormatter?.(2638471.9800000004)).toBe('2,638,471.98')
+    expect(option.tooltip.valueFormatter?.(null)).toBe('—')
+  })
+})
+
+describe('底稿标题与列表区分', () => {
+  const label = '晴川风电场'
+  it('默认标题按覆盖周期写，月度底稿不写成起始日', () => {
+    expect(workpaperDefaultTitle({ startDate: '2026-05-31', endDate: '2026-05-31', objectLabel: label })).toBe('2026-05-31 晴川风电场复盘')
+    expect(workpaperDefaultTitle({ startDate: '2026-05-01', endDate: '2026-05-31', objectLabel: label })).toBe('2026年5月 晴川风电场月度复盘')
+    expect(workpaperDefaultTitle({ startDate: '2028-02-01', endDate: '2028-02-29', objectLabel: label })).toBe('2028年2月 晴川风电场月度复盘')
+    expect(workpaperDefaultTitle({ startDate: '2026-06-01', endDate: '2026-06-16', objectLabel: label })).toBe('2026年6月（截至16日） 晴川风电场复盘')
+    expect(workpaperDefaultTitle({ startDate: '2026-05-25', endDate: '2026-05-31', objectLabel: label })).toBe('2026-05-25—2026-05-31 晴川风电场复盘')
+  })
+  it('同名底稿在下拉里靠视角、周期和更新时间区分', () => {
+    const scope = { region: 'yunnan', view: 'generator' as const, objectId: 'a', objectLabel: label, startDate: '2026-05-01', endDate: '2026-05-31' }
+    const first = workpaperOptionLabel({ title: '月度复盘', scope, revision: 3, updatedAt: '2026-06-01T02:05:00.000Z' })
+    const second = workpaperOptionLabel({ title: '月度复盘', scope: { ...scope, view: 'retail', startDate: '2026-05-31', endDate: '2026-05-31' }, revision: 3, updatedAt: '2026-06-02T09:30:00.000Z' })
+    expect(first).toBe('月度复盘 · 发电 · 2026-05-01—2026-05-31 · 第 3 版 · 更新于 06/01 10:05')
+    expect(second).toBe('月度复盘 · 售电 · 2026-05-31 · 第 3 版 · 更新于 06/02 17:30')
+    expect(workpaperOptionLabel({ title: '无时间', scope, revision: 1, updatedAt: '' })).not.toContain('更新于')
+  })
+  it('关联申报块标题没改过时与卡片标题重复，改过的保留', () => {
+    const reference = { targetDate: '2026-05-05' } as DecisionReference
+    expect(repeatsDecisionHeading({ id: 'd', kind: 'decision', title: '2026-05-05 交易日申报', text: '', reference })).toBe(true)
+    expect(repeatsDecisionHeading({ id: 'd', kind: 'decision', title: '晚高峰减报的那笔申报', text: '', reference })).toBe(false)
+    expect(repeatsDecisionHeading({ id: 'd', kind: 'decision', title: '2026-05-05 交易日申报', text: '' })).toBe(false)
   })
 })

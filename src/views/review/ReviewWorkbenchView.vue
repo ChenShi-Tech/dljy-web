@@ -28,7 +28,8 @@ import DecisionLinkedReviews from '@/components/review/workbench/DecisionLinkedR
 import PublishedReportReader from '@/components/review/workbench/PublishedReportReader.vue'
 import { getReportPublication, workpaperError, type LinkedReview, type Publication, type ReportEvidence } from '@/services/review/workpapers'
 import ReviewTopicWorkspace from '@/components/review/workbench/ReviewTopicWorkspace.vue'
-import { reviewTopic, reviewView, priceSelectionFromQuery, priceSelectionQuery, settlementSelectionFromQuery, settlementSelectionQuery, type ReviewTopic } from '@/services/review/reviewTopics'
+import { reviewTopic, reviewView, priceSelectionFromQuery, priceSelectionQuery, settlementSelectionFromQuery, settlementSelectionQuery, type ReviewAnalysisSource, type ReviewTopic } from '@/services/review/reviewTopics'
+import type { ImportedSelection } from '@/services/review/importedIntervals'
 import SpotSkeleton from '../../components/common/SpotSkeleton.vue'
 import { buildReviewEvidence, executionEvidence, simulatedOrder, type ReviewEvidenceSnapshot } from '@/services/review/reviewEvidence'
 import RegionDataBanner from '@/components/region/RegionDataBanner.vue'
@@ -59,7 +60,7 @@ const retainedEvidence = computed(() => evidence.value.filter(e => !missingEvide
 const focus = ref(''), lesson = ref(''), savingLesson = ref(false)
 const assistant = ref<{ snapshot: ReviewEvidenceSnapshot; mode: 'analysis' | 'report'; key: string } | null>(null)
 const assistantVisible = ref(false)
-const workpaperVisible = ref(false), workpaperDirty = ref(false), workpaperSnapshot = ref<ReviewEvidenceSnapshot | null>(null), workpaperMaterial = ref<ReportEvidence | null>(null)
+const workpaperVisible = ref(false), workpaperDirty = ref(false), workpaperBusy = ref(false), workpaperSnapshot = ref<ReviewEvidenceSnapshot | null>(null), workpaperMaterial = ref<ReportEvidence | null>(null)
 function openWorkpaper(material: ReportEvidence | null = null) { workpaperSnapshot.value = currentSnapshot(); workpaperMaterial.value = material; workpaperVisible.value = true; topicVisible.value = false }
 function openCompanyWorkpaper(material: ReportEvidence) {
   if (material.content.topic !== 'settlement') return
@@ -70,12 +71,17 @@ function openCompanyWorkpaper(material: ReportEvidence) {
   snapshot.scope.period = period; snapshot.scope.businessView = businessView.value
   workpaperSnapshot.value = snapshot; workpaperMaterial.value = material; workpaperVisible.value = true; topicVisible.value = false
 }
-function closeWorkpaper(done: () => void) { if (!workpaperDirty.value || window.confirm('当前底稿或批注尚未保存，确定关闭吗？')) done() }
+// 改进记录写入进行中不能关闭：服务端可能已改了措施状态，关掉会丢掉本该写进报告的回查段。
+function closeWorkpaper(done: () => void) { if (workpaperBusy.value) { ElMessage.warning('正在保存改进措施记录，请等待完成后再关闭'); return } if (!workpaperDirty.value || window.confirm('当前底稿或批注尚未保存，确定关闭吗？')) done() }
 let clearTopicObject = false
 const energySelection = ref(dailyEnergySelectionFromQuery(route.query,date.value))
 const priceSelection = ref(priceSelectionFromQuery(route.query, date.value))
 const periodSelection = ref(settlementSelectionFromQuery(route.query, date.value))
 const topicMode = ref<ReviewTopic>(reviewTopic(route.query.topic, !!selectedKey.value))
+// 专题窗口关闭即销毁，资料来源与补充分时资料的筛选由这里保留，重新打开时恢复。
+const topicSource = ref<ReviewAnalysisSource>(), importedSelection = ref<ImportedSelection>()
+// 资料来源只在同一复盘范围内沿用：换对象、日期、地区、公司或业务视角后回到新范围的默认来源。
+watch(() => [selectedKey.value, date.value, region.value, selectedCompanyId.value, businessView.value], () => { topicSource.value = undefined })
 watch(() => route.query.topic, value => { topicMode.value = reviewTopic(value, !!selectedKey.value) })
 // Batch synchronous filter resets into a single navigation so one topic cannot overwrite another.
 watch([energySelection, priceSelection, periodSelection, topicMode], () => {
@@ -121,7 +127,7 @@ function storeImprovementDraft(value: string[], key: string) { improvementDrafts
 function warnBeforeUnload(event: BeforeUnloadEvent) { if (hasDraft() || maintenanceBusy.value) { event.preventDefault(); event.returnValue = '' } }
 onMounted(() => window.addEventListener('beforeunload', warnBeforeUnload))
 onBeforeUnmount(() => window.removeEventListener('beforeunload', warnBeforeUnload))
-onBeforeRouteLeave(() => { if (maintenanceBusy.value) { ElMessage.warning('资料正在导入，请等待结果后离开'); return false }; return !hasDraft() || window.confirm('离开复盘中心会丢失尚未保存或下载的草稿，确定离开吗？') })
+onBeforeRouteLeave(() => { if (maintenanceBusy.value) { ElMessage.warning('资料正在导入，请等待结果后离开'); return false }; if (workpaperBusy.value) { ElMessage.warning('正在保存改进措施记录，请等待完成后离开'); return false }; return !hasDraft() || window.confirm('离开复盘中心会丢失尚未保存或下载的草稿，确定离开吗？') })
 const canAnalyze = computed(() => !!selectedCompanyId.value && (selectedKey.value ? !!selectedOrder.value || !!selectedDecision.value : !!settlement.value || points.value.length > 0))
 function currentSnapshot(interval = '') {
   const snapshot = buildReviewEvidence({ company: selectedCompanyId.value, companyLabel: currentCompany.value?.name || '当前授权公司', region: region.value, regionLabel: currentRegion.value.name || currentRegion.value.shortName, day: date.value, objectKey: selectedKey.value, objectLabel: objectLabel.value, order: selectedOrder.value, decision: selectedDecision.value, settlement: settlement.value, points: points.value, simulated: simulated.value, focus: interval })
@@ -231,7 +237,7 @@ watch([date, region, selectedCompanyId, topicScopeMismatch], (_next, previous) =
     if (props.standaloneTopics) clearTopicObject = true
     else choose('')
   }
-  if (previous?.length) { periodSelection.value = settlementSelectionFromQuery({}, date.value); priceSelection.value = priceSelectionFromQuery({}, date.value); energySelection.value = dailyEnergySelectionFromQuery({},date.value) }
+  if (previous?.length) { periodSelection.value = settlementSelectionFromQuery({}, date.value); priceSelection.value = priceSelectionFromQuery({}, date.value); energySelection.value = dailyEnergySelectionFromQuery({},date.value); importedSelection.value = undefined }
   focus.value = ''; void reload()
 }, { immediate: true })
 watch(selectedKey, loadSelection)
@@ -259,7 +265,7 @@ async function saveLesson() {
     <template v-else>
     <section class="object-bar panel"><div><label for="review-object">复盘对象</label><select id="review-object" :value="selectedKey" @change="choose(($event.target as HTMLSelectElement).value)"><option value="">当日资料总览</option><option v-if="selectedKey && !selectedOrder && !selectedDecision" :value="selectedKey">指定记录待核实</option><option v-if="extraOrder && !orders.some(o => o.id === extraOrder?.id)" :value="`order:${extraOrder.id}`">{{ declarationLabel(extraOrder) }}</option><optgroup v-if="orders.length" label="申报记录"><option v-for="o in orders" :key="o.id" :value="`order:${o.id}`">{{ declarationLabel(o) }}</option></optgroup><optgroup v-if="decisions.length" label="决策日志"><option v-for="d in decisions" :key="d.id" :value="`decision:${d.id}`">{{ d.decisionPoint }} · {{ d.author || '决策记录' }}</option></optgroup></select></div><span v-if="orderLoading" class="muted">正在读取记录…</span><span v-else class="muted">沿同一对象查看依据与结果。</span><button v-if="selectedOrder" type="button" @click="openOriginal">打开这笔申报 <ArrowUpRight :size="14" /></button><div v-if="orderTotal > 50" class="pagination"><button type="button" :disabled="orderOffset === 0 || orderLoading" @click="loadOrders(scopeSequence, date, region, orderOffset - 50)">上一批</button><span>{{ orderOffset + 1 }}–{{ Math.min(orderOffset + 50, orderTotal) }} / {{ orderTotal }}</span><button type="button" :disabled="orderOffset + 50 >= orderTotal || orderLoading" @click="loadOrders(scopeSequence, date, region, orderOffset + 50)">下一批</button></div></section>
     <p v-if="orderError || decisionError || selectionError" class="notice" role="alert">{{ [orderError, decisionError, selectionError].filter(Boolean).join(' ') }}</p>
-    <ReviewTopicWorkspace v-if="props.standaloneTopics" v-model:view="businessView" v-model:topic="topicMode" v-model:selection="periodSelection" v-model:price-selection="priceSelection" v-model:energy-selection="energySelection" :snapshot="liveTopicSnapshot" :company="selectedCompanyId" :company-label="currentCompany?.name || '当前公司'" :region="region" :date="date" :busy="maintenanceBusy" standalone @busy="maintenanceBusy = $event" @decision="openPeriodDecision" @material="acceptTopicMaterial" />
+    <ReviewTopicWorkspace v-if="props.standaloneTopics" v-model:view="businessView" v-model:topic="topicMode" v-model:selection="periodSelection" v-model:price-selection="priceSelection" v-model:energy-selection="energySelection" v-model:analysis-source="topicSource" v-model:imported-selection="importedSelection" :snapshot="liveTopicSnapshot" :company="selectedCompanyId" :company-label="currentCompany?.name || '当前公司'" :region="region" :date="date" :busy="maintenanceBusy" standalone @busy="maintenanceBusy = $event" @decision="openPeriodDecision" @material="acceptTopicMaterial" />
     <template v-else>
     <nav class="tasks" aria-label="复盘任务"><button v-for="item in [{ key: 'result', title: '结果核验', question: '发生了什么' }, { key: 'decision', title: '决策评价', question: '当时为什么这样做' }, { key: 'improvement', title: '改进验证', question: '下一次如何改进' }]" :key="item.key" type="button" :aria-pressed="task === item.key" @click="setTask(item.key)"><b>{{ item.title }}</b><span>{{ item.question }}</span></button></nav>
     <template v-if="task === 'result'">
@@ -290,8 +296,8 @@ async function saveLesson() {
     </template>
     </template>
     <el-dialog v-model="archiveVisible" title="复盘报告目录" width="min(1120px, 96vw)" destroy-on-close><ReportArchivePanel v-if="archiveVisible" :company="selectedCompanyId" :region="region" @legacy="archiveVisible = false; openLegacyArchive()" /></el-dialog>
-    <el-dialog v-model="topicVisible" title="专题分析" width="min(1180px, 96vw)" :close-on-click-modal="false" :before-close="closeTopic" destroy-on-close><ReviewTopicWorkspace v-if="topicVisible" v-model:view="businessView" v-model:topic="topicMode" v-model:selection="periodSelection" v-model:price-selection="priceSelection" v-model:energy-selection="energySelection" :snapshot="topicSnapshot" :company="selectedCompanyId" :company-label="currentCompany?.name || '当前公司'" :region="region" :date="date" :busy="maintenanceBusy" @busy="maintenanceBusy = $event" @decision="openPeriodDecision" @material="acceptTopicMaterial" @independent="openIndependentTopics" /></el-dialog>
-    <el-dialog v-model="workpaperVisible" title="复盘图文底稿" width="min(1380px, 98vw)" :close-on-click-modal="false" :before-close="closeWorkpaper" destroy-on-close><ReportWorkpaperEditor v-if="workpaperSnapshot && workpaperVisible" :snapshot="workpaperSnapshot" :material="workpaperMaterial" @dirty="workpaperDirty = $event" /></el-dialog>
+    <el-dialog v-model="topicVisible" title="专题分析" width="min(1180px, 96vw)" :close-on-click-modal="false" :before-close="closeTopic" destroy-on-close><ReviewTopicWorkspace v-if="topicVisible" v-model:view="businessView" v-model:topic="topicMode" v-model:selection="periodSelection" v-model:price-selection="priceSelection" v-model:energy-selection="energySelection" v-model:analysis-source="topicSource" v-model:imported-selection="importedSelection" :snapshot="topicSnapshot" :company="selectedCompanyId" :company-label="currentCompany?.name || '当前公司'" :region="region" :date="date" :busy="maintenanceBusy" @busy="maintenanceBusy = $event" @decision="openPeriodDecision" @material="acceptTopicMaterial" @independent="openIndependentTopics" /></el-dialog>
+    <el-dialog v-model="workpaperVisible" title="复盘图文底稿" width="min(1380px, 98vw)" :close-on-click-modal="false" :before-close="closeWorkpaper" destroy-on-close><ReportWorkpaperEditor v-if="workpaperSnapshot && workpaperVisible" :snapshot="workpaperSnapshot" :material="workpaperMaterial" @dirty="workpaperDirty = $event" @busy="workpaperBusy = $event" /></el-dialog>
     <el-dialog v-model="linkedVisible" title="关联这笔申报的已发布报告" width="min(1120px, 96vw)" destroy-on-close><p v-if="linkedError" class="notice" role="alert">{{ linkedError }}</p><PublishedReportReader v-if="linkedPublication" :publication="linkedPublication" /><p v-else-if="!linkedError" class="notice" role="status">正在读取已发布报告…</p></el-dialog>
     <el-dialog v-model="assistantVisible" :title="assistant?.mode === 'report' ? '复盘报告草稿' : '复盘分析'" width="min(1180px, 96vw)" :close-on-click-modal="false">
       <ReviewAssistantWorkbench v-if="assistant" :key="assistant.snapshot.capturedAt" :snapshot="assistant.snapshot" :mode="assistant.mode" :saved-draft="reportDrafts.get(assistant.key)" @draft="storeReportDraft" @downloaded="markReportDownloaded" />

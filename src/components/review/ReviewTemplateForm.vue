@@ -11,7 +11,6 @@
 import { computed, reactive, ref, watch } from 'vue'
 import {
   DIMENSIONS,
-  SOURCE_CATALOG,
   SUBJECTS,
   templateById
 } from 'shared/review-templates/registry.mjs'
@@ -20,6 +19,7 @@ import type { SettlementRuleSpec } from '@/rules/types'
 import { aggregate96to24, segmentLabelsOf, SEGMENT_UNPARAMETERIZED_NOTE } from '@/services/review/slots24'
 import { SUBMIT_PENDING_NOTE } from '@/services/review/cockpitModel'
 import { patchTemplateInstance } from '@/services/review/templateInstanceClient'
+import { MOCK_PRICE_SOURCES, TEMPLATE_GAP_NOTES, TEMPLATE_NOTES, cadenceLabel, caliberLabel, roleLabel, sourceLabel } from '@/services/review/templateLabels'
 import type { TemplateInstanceSummary } from '@/services/review/templateInstanceApi'
 
 const props = defineProps<{
@@ -51,9 +51,9 @@ const READINESS_BADGE: Record<string, { label: string; cls: string }> = {
   deferred: { label: '后置', cls: 'deferred' }
 }
 const AUTOMATION_DESC: Record<string, string> = {
-  A: 'A 档：系统生成、人审签发',
-  B: 'B 档：系统预填事实、人补判断',
-  C: 'C 档：纯人工填报'
+  A: '系统生成、人工审签',
+  B: '系统预填事实、人工补充判断',
+  C: '人工填报'
 }
 
 const fields = computed(() => template.value?.fields ?? [])
@@ -102,10 +102,9 @@ function seedFromInstance(): void {
 }
 watch(() => props.instance?.id, seedFromInstance, { immediate: true })
 
-function sourceDesc(f: ReviewTemplateField): string {
-  const s = SOURCE_CATALOG.find((x) => x.id === f.source)
-  return s ? `${s.id} · ${s.desc}` : (f.source ?? '未登记来源')
-}
+
+// 点名具体来自演示价格测算的字段：不能笼统说「本表的价格」——有的表没有价格字段，有的价格来自出清价。
+const mockPlanFields = computed(() => autoFields.value.filter(field => field.source !== undefined && MOCK_PRICE_SOURCES.has(field.source)).map(field => field.label))
 function autoValue(f: ReviewTemplateField): string {
   const v = props.autofill?.[f.key]
   if (v === undefined || v === null || v === '') return ''
@@ -167,37 +166,38 @@ const hasAnyCurve = computed(() =>
 
 <template>
   <div v-if="!template" class="rtf-unknown">
-    未知模板 <code>{{ templateId }}</code>：不在注册表（31 项）中，可能是链接过期或注册表未同步。
+    这份复盘表单已下线或链接已过期，请回到复盘中心重新打开。
   </div>
 
   <div v-else class="rtf">
     <header class="rtf-head">
       <div class="rtf-title">
         <b>{{ template.name }}</b>
-        <code>{{ template.id }}</code>
         <i class="rtf-badge" :class="READINESS_BADGE[template.readiness].cls">
           {{ READINESS_BADGE[template.readiness].label }}
         </i>
       </div>
       <p class="rtf-meta">
         {{ DIMENSIONS[template.dimension] }} · {{ SUBJECTS[template.subject] }} ·
-        {{ AUTOMATION_DESC[template.automation] }} · 周期 {{ template.cadences.join('/') }} ·
-        填报 {{ template.roles.fill }} / 复核 {{ template.roles.review }} · 留存 {{ template.retentionYears }} 年
+        {{ AUTOMATION_DESC[template.automation] }} · {{ template.cadences.map(cadenceLabel).join('、') }} ·
+        填报 {{ roleLabel(template.roles.fill) }} / 复核 {{ roleLabel(template.roles.review) }} · 留存 {{ template.retentionYears }} 年
       </p>
       <p class="rtf-meta">
         触发：{{ template.trigger }} · 时限：{{ template.deadline }}
       </p>
-      <p v-if="template.gapNote" class="rtf-gapnote">数据缺口：{{ template.gapNote }}</p>
-      <p v-if="template.notes" class="rtf-notes">{{ template.notes }}</p>
+      <!-- 注册表的 gapNote/notes 混有写给开发与验收的内容（缺口编号、议题号、实现说明），只显示整理后的业务说明。 -->
+      <p v-if="template.gapNote" class="rtf-gapnote">{{ TEMPLATE_GAP_NOTES[template.id] ?? '部分资料尚未接入，接入后将自动填充对应字段。' }}暂缺的字段不会以零或估算值代替。</p>
+      <p v-if="mockPlanFields.length" class="rtf-gapnote">模拟数据：本表中「{{ mockPlanFields.join('、') }}」来自储能充放电测算，测算默认使用演示价格，结果仅供演示，不能用于实盘编排；接入真实价格后方可用于实盘。</p>
+      <p v-if="TEMPLATE_NOTES[template.id]" class="rtf-notes">{{ TEMPLATE_NOTES[template.id] }}</p>
     </header>
 
     <!-- 自动字段：只读 + 来源徽章 -->
     <section v-if="autoFields.length" class="rtf-sec">
       <h4>系统自动字段（只读 · 来源随字段标注）</h4>
       <div v-for="f in autoFields" :key="f.key" class="rtf-auto-row">
-        <span class="rtf-label">{{ f.label }}<i v-if="f.caliber" class="rtf-caliber">口径 {{ f.caliber }}</i></span>
-        <b class="rtf-value" :class="{ empty: !autoValue(f) }">{{ autoValue(f) || '待喂数' }}</b>
-        <i class="rtf-source" :title="sourceDesc(f)">{{ f.source }}</i>
+        <span class="rtf-label">{{ f.label }}<i v-if="f.caliber" class="rtf-caliber">{{ caliberLabel(f.caliber) }}</i></span>
+        <b class="rtf-value" :class="{ empty: !autoValue(f) }">{{ autoValue(f) || '暂无数据' }}</b>
+        <i class="rtf-source">{{ sourceLabel(f.source) }}</i>
       </div>
     </section>
 
@@ -222,7 +222,7 @@ const hasAnyCurve = computed(() =>
 
     <!-- 24 时段聚合视图（slots24 模板）：底层 96 点、24 时段仅展示聚合 -->
     <section v-if="isSlots24" class="rtf-sec">
-      <h4>24 时段视图 <i class="rtf-hint">底层 96 点 · 展示按小时聚合（2026-08-13 拍板）</i></h4>
+      <h4>24 时段视图 <i class="rtf-hint">底层 96 点 · 展示按小时聚合</i></h4>
       <p v-if="!segments.parameterized" class="rtf-warn">{{ segments.note ?? SEGMENT_UNPARAMETERIZED_NOTE }}</p>
       <p v-if="!hasAnyCurve" class="rtf-warn">时段曲线未喂数：自动列显示「—」，不用 0 冒充。</p>
       <table class="rtf-slots">
@@ -273,24 +273,24 @@ const hasAnyCurve = computed(() =>
           <button type="button" class="rtf-submit live" :disabled="!canSubmit || saving" @click="submitInstance">提交</button>
         </div>
         <p class="rtf-status">
-          实例 #{{ instance.id }} · 周期 {{ instance.periodKey || '—' }} · 当前状态：{{ STATUS_LABEL[instance.status] }}
+          周期 {{ instance.periodKey || '—' }} · 当前状态：{{ STATUS_LABEL[instance.status] }}
         </p>
         <p v-if="saveError" class="rtf-error">{{ saveError }}</p>
         <p v-if="savedMsg" class="rtf-saved">{{ savedMsg }}</p>
-        <p class="rtf-lock">提交后锁定，更正走追加记录；审核为轻量两态（提交/复核，2026-08-13 拍板）。</p>
+        <p class="rtf-lock">提交后锁定，如需更正请追加记录；提交后由负责人复核。</p>
       </template>
       <!-- 有实例但已提交/已复核：锁定态如实展示 -->
       <template v-else-if="instance">
         <p class="rtf-status">
-          实例 #{{ instance.id }} · 周期 {{ instance.periodKey || '—' }} · 状态：{{ STATUS_LABEL[instance.status] }}——
-          {{ instance.status === 'submitted' ? '待提权角色复核（ADMIN/BOSS）' : '复核通过，留档' }}，内容不可再编辑。
+          周期 {{ instance.periodKey || '—' }} · 状态：{{ STATUS_LABEL[instance.status] }}——
+          {{ instance.status === 'submitted' ? '待管理员或公司负责人复核' : '复核通过，留档' }}，内容不可再编辑。
         </p>
       </template>
       <!-- 无实例：chip 直开的纯预览（实例由触发引擎按周期生成，从待办箱进入才可提交落库） -->
       <template v-else>
         <button type="button" class="rtf-submit" disabled>提交（预览 · 未挂引擎实例）</button>
         <p class="rtf-pending">{{ SUBMIT_PENDING_NOTE }}</p>
-        <p class="rtf-lock">提交后锁定，更正走追加记录；审核为轻量两态（提交/复核，2026-08-13 拍板）。</p>
+        <p class="rtf-lock">提交后锁定，如需更正请追加记录；提交后由负责人复核。</p>
       </template>
     </footer>
   </div>
