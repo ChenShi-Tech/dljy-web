@@ -1,8 +1,11 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { activeStanceType } from '@/services/stance/stanceContext'
-import { addReportComment, createWorkpaper, getWorkpaper, getReportPublication, listReportPublications, listReportComments, listWorkpapers, publishWorkpaper, saveWorkpaper, workpaperError, type Publication, type ReportBlock, type ReportComment, type ReportEvidence, type Workpaper, type WorkpaperScope } from '@/services/review/workpapers'
+import { addReportComment, createWorkpaper, getWorkpaper, getReportPublication, listReportPublications, listReportComments, listWorkpapers, publishWorkpaper, saveWorkpaper, workpaperError, type DecisionReference, type Publication, type ReportBlock, type ReportComment, type ReportEvidence, type Workpaper, type WorkpaperScope } from '@/services/review/workpapers'
 import type { ReviewEvidenceSnapshot } from '@/services/review/reviewEvidence'
+import { useRouter } from 'vue-router'
+import DecisionLinkPanel from './DecisionLinkPanel.vue'
+import DecisionReferenceCard from './DecisionReferenceCard.vue'
 import PublishedReportReader from './PublishedReportReader.vue'
 import ReportEvidenceChart from './ReportEvidenceChart.vue'
 import ReportWritingAssistant from './ReportWritingAssistant.vue'
@@ -44,7 +47,21 @@ function adoptWriting(text: string, append: boolean) {
   else if (block) { block.text = next; if (block.kind === 'reason') block.state = 'pending' }
   writingTarget.value = ''; status.value = '建议已加入底稿，原因仍需交易员核实'
 }
-const blockNames: Record<ReportBlock['kind'], string> = { text: '事实与说明', chart: '图表与统计', reason: '原因与判断', question: '待核实问题', action: '改进措施' }
+const blockNames: Record<ReportBlock['kind'], string> = { text: '事实与说明', chart: '图表与统计', reason: '原因与判断', question: '待核实问题', action: '改进措施', decision: '关联决策' }
+const router = useRouter()
+/**
+ * 关联块只在这里新建：申报副本由服务端在保存时重新读取并冻结，这里放的 reference 仅供
+ * 交易员当场核对。已保存的关联不会随源申报变化而更新，要换版本必须重新核对再建一块。
+ */
+function linkDecision({ reference, text }: { reference: DecisionReference; text: string }) {
+  if (!draft.value || !canEdit.value) return
+  draft.value.blocks.push({ id: crypto.randomUUID(), kind: 'decision', title: `${reference.targetDate} 交易日申报`, text, declarationId: reference.declarationId, decisionVersion: reference.version, reference })
+  status.value = '已加入关联决策，保存后由服务端核对申报版本'
+}
+/** 跨路由跳转交给父级的离开守卫拦未保存内容，这里不重复确认。 */
+function openDeclaration(reference: DecisionReference) {
+  void router.push({ path: '/xhjy/desk', query: { declarationId: reference.declarationId, targetDate: reference.targetDate } })
+}
 let alive = true, suppress = false, editVersion = 0, timer: ReturnType<typeof setTimeout> | null = null, savingTask: Promise<boolean> | null = null
 let paperGeneration = 0, publicationRequest = 0
 const commenting = ref(false)
@@ -177,11 +194,13 @@ onBeforeUnmount(() => { alive = false; if (timer) clearTimeout(timer); emit('dir
           <button type="button" @click="writingTarget = 'summary'">辅助提炼摘要</button>
           <ReportWritingAssistant v-if="writingInput" :key="`${draft.id}:${writingTarget}`" :input="writingInput" :company-id="company" :region="region" :initial-mode="writingTarget === 'summary' ? 'summary' : 'polish'" @adopt="adoptWriting" @close="writingTarget = ''" />
           <div class="toolbar"><button v-for="kind in (['text', 'reason', 'question', 'action'] as const)" :key="kind" type="button" @click="add(kind)">添加{{ blockNames[kind] }}</button></div>
+          <DecisionLinkPanel v-if="canEdit" :company="company" :draft="draft" :disabled="publishing || loading" @link="linkDecision" @open="openDeclaration" />
           <article v-for="(block, index) in draft.blocks" :key="block.id" class="block">
             <header><b>{{ index + 1 }} · {{ blockNames[block.kind] }}</b><div><button type="button" :disabled="index === 0" aria-label="上移内容块" @click="move(index, -1)">上移</button><button type="button" :disabled="index === draft.blocks.length - 1" aria-label="下移内容块" @click="move(index, 1)">下移</button><button type="button" @click="duplicate(block)">复制</button><button type="button" @click="draft.blocks.splice(index, 1)">移除</button></div></header>
             <input v-model="block.title" aria-label="内容块标题" maxlength="200" />
             <template v-if="block.evidenceId"><ReportEvidenceChart v-if="evidence.find(row => row.id === block.evidenceId)" :evidence="evidence.find(row => row.id === block.evidenceId)!" /><label>材料用途<select v-model="block.evidenceRole"><option value="primary">本次依据</option><option value="comparison">比较依据</option></select></label></template>
-            <textarea v-model="block.text" :aria-label="blockNames[block.kind]" rows="3" placeholder="补充事实、解释或人工判断" />
+            <DecisionReferenceCard v-if="block.kind === 'decision' && block.reference" :reference="block.reference" @open="openDeclaration" />
+            <textarea v-model="block.text" :aria-label="block.kind === 'decision' ? '关联依据' : blockNames[block.kind]" rows="3" :placeholder="block.kind === 'decision' ? '写清为什么把这笔申报作为本次复盘的依据' : '补充事实、解释或人工判断'" />
             <button type="button" @click="writingTarget = block.id">辅助撰写这段</button>
             <template v-if="block.kind === 'reason'"><label>核实状态<select v-model="block.state"><option value="pending">待核实的可能原因</option><option value="confirmed">交易员已核实</option></select></label><label>支持证据<textarea v-model="block.supports" rows="2" /></label><label>反对证据<textarea v-model="block.refutes" rows="2" /></label></template>
           </article>
