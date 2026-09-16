@@ -64,8 +64,8 @@ function openDeclaration(reference: DecisionReference) {
 }
 let alive = true, suppress = false, editVersion = 0, timer: ReturnType<typeof setTimeout> | null = null, savingTask: Promise<boolean> | null = null
 let paperGeneration = 0, publicationRequest = 0
-const commenting = ref(false)
-const pending = computed(() => dirty.value || saving.value || publishing.value || commenting.value || !!commentText.value.trim())
+const commenting = ref(false), linkPending = ref(false)
+const pending = computed(() => dirty.value || saving.value || publishing.value || commenting.value || linkPending.value || !!commentText.value.trim())
 watch(pending, value => emit('dirty', value), { immediate: true })
 watch(draft, () => {
   if (suppress || !draft.value || !canEdit.value) return
@@ -196,7 +196,7 @@ onBeforeUnmount(() => { alive = false; if (timer) clearTimeout(timer); emit('dir
           <button type="button" @click="writingTarget = 'summary'">辅助提炼摘要</button>
           <ReportWritingAssistant v-if="writingInput" :key="`${draft.id}:${writingTarget}`" :input="writingInput" :company-id="company" :region="region" :initial-mode="writingTarget === 'summary' ? 'summary' : 'polish'" @adopt="adoptWriting" @close="writingTarget = ''" />
           <div class="toolbar"><button v-for="kind in (['text', 'reason', 'question', 'action'] as const)" :key="kind" type="button" @click="add(kind)">添加{{ blockNames[kind] }}</button></div>
-          <DecisionLinkPanel v-if="canEdit" :company="company" :draft="draft" :disabled="publishing || loading" @link="linkDecision" @open="openDeclaration" />
+          <DecisionLinkPanel v-if="canEdit" :company="company" :draft="draft" :disabled="publishing || loading" @link="linkDecision" @open="openDeclaration" @dirty="linkPending = $event" />
           <article v-for="(block, index) in draft.blocks" :key="block.id" class="block">
             <header><b>{{ index + 1 }} · {{ blockNames[block.kind] }}</b><div><button type="button" :disabled="index === 0" aria-label="上移内容块" @click="move(index, -1)">上移</button><button type="button" :disabled="index === draft.blocks.length - 1" aria-label="下移内容块" @click="move(index, 1)">下移</button><button v-if="block.kind !== 'decision'" type="button" @click="duplicate(block)">复制</button><button type="button" @click="draft.blocks.splice(index, 1)">移除</button></div></header>
             <input v-model="block.title" aria-label="内容块标题" maxlength="200" />

@@ -68,6 +68,14 @@ describe('关联依据的归属', () => {
     await flushPromises()
     expect(wrapper.get<HTMLTextAreaElement>('textarea').element.value).toBe('')
   })
+  it('写了未确认的理由即上报为未保存内容，清空后撤销', async () => {
+    const wrapper = await openPanel(paper('draft-1'))
+    await pickAndType(wrapper, '这笔申报定了当日报量区间')
+    expect(wrapper.emitted('dirty')!.at(-1)).toEqual([true])
+    await wrapper.setProps({ draft: paper('draft-2') })
+    await flushPromises()
+    expect(wrapper.emitted('dirty')!.at(-1)).toEqual([false])
+  })
   it('只切换记录类型筛选不清空理由', async () => {
     const wrapper = await openPanel(paper('draft-1'))
     await pickAndType(wrapper, '这笔申报定了当日报量区间')

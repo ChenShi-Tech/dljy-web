@@ -7,7 +7,7 @@ import type { DeclarationMode, DeclarationOrder } from '@/services/declarations'
 import DecisionReferenceCard from './DecisionReferenceCard.vue'
 
 const props = defineProps<{ company: string; draft: Workpaper; disabled?: boolean }>()
-const emit = defineEmits<{ link: [value: { reference: DecisionReference; text: string }]; open: [value: DecisionReference] }>()
+const emit = defineEmits<{ link: [value: { reference: DecisionReference; text: string }]; open: [value: DecisionReference]; dirty: [value: boolean] }>()
 
 const open = ref(false), loading = ref(false), previewing = ref(false), error = ref(''), mode = ref<'' | DeclarationMode>('')
 const rows = ref<DeclarationOrder[]>([]), offset = ref(0), nextOffset = ref<number | null>(null), omitted = ref(0)
@@ -17,6 +17,9 @@ const basis = ref('')
 // 上一次核对的是哪一笔申报。换一笔（含先点「换一笔」清掉预览再选另一笔）必须清理由，
 // 否则新申报一打开就带着上一笔的理由且确认键可用，理由会挂到错误的申报上。
 const lastDeclarationId = ref('')
+// 未确认的关联依据要算进底稿的未保存内容：它只活在这个组件里，父级的离开守卫与切换底稿的确认
+// 都只看得见上报的状态——不上报，关弹窗或点「打开这笔申报」时理由会被静默丢掉。
+watch(() => !!basis.value.trim(), value => emit('dirty', value), { immediate: true })
 let generation = 0
 
 function reset() { ++generation; rows.value = []; nextOffset.value = null; omitted.value = 0; error.value = ''; loading.value = false; previewing.value = false }
@@ -60,7 +63,7 @@ watch(() => [props.company, props.draft.id, props.draft.scope.startDate, props.d
   if (previous && [0, 1, 2, 3].some(index => next[index] !== previous[index])) { basis.value = ''; lastDeclarationId.value = '' }
   void load()
 }, { flush: 'sync' })
-onBeforeUnmount(reset)
+onBeforeUnmount(() => { reset(); emit('dirty', false) })
 </script>
 
 <template>

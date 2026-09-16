@@ -104,6 +104,13 @@ describe('图文底稿交付', () => {
     expect(wrapper.text()).not.toContain('仅属于旧报告的批注')
     expect(wrapper.get<HTMLSelectElement>('select[aria-label="批注位置"]').element.value).toBe('')
   })
+  it('关联面板里未确认的理由计入底稿未保存状态，离开守卫才看得见', async () => {
+    const wrapper = await open()
+    expect(wrapper.emitted('dirty')!.at(-1)).toEqual([false])
+    wrapper.findComponent({ name: 'DecisionLinkPanel' }).vm.$emit('dirty', true)
+    await flushPromises()
+    expect(wrapper.emitted('dirty')!.at(-1)).toEqual([true])
+  })
   it('关联决策块不提供复制，避免绕开预览再建一个关联', async () => {
     // 复制会克隆申报版本却不走 decision-preview：申报变过就在自动保存时冲突且无法在该块上重新核对，
     // 没变过则等于凭空多出一个未经交易员核对的关联。
