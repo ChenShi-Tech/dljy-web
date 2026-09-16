@@ -5,7 +5,10 @@ const api = vi.hoisted(() => ({ analyzeImportedIntervals: vi.fn(), captureImport
 vi.mock('@/services/review/importedIntervals', () => api)
 const choice = { seriesKey: 'a'.repeat(64), objectId: '测试对象', basisLabel: '申报电量', actualLabel: '实际电量' }
 const periods = { current: { start: '2026-05-31', end: '2026-05-31' }, reference: { start: '2026-05-24', end: '2026-05-24' } }
+const choiceB = { ...choice, objectId: '第二个对象' }
+const otherSeries = { seriesKey: 'b'.repeat(64), objectId: '别的口径对象', basisLabel: '综合预测电量', actualLabel: '实际电量' }
 const catalog = { choices: [choice], periods, source: { mock: false, version: '一' }, notice: '人工资料', analysis: null }
+const multiCatalog = { ...catalog, choices: [choice, choiceB, otherSeries] }
 const point = { start: '2026-05-30T16:00:00Z', end: '2026-05-30T16:15:00Z' }
 const data = { ...catalog, input: { scope: { objectId: 'imported:one' }, period: { date: '2026-05-31' } }, labels: ['申报电量', '实际电量'], analysis: { periods, energy: { netDeviationMwh: -1, absoluteDeviationMwh: 1 }, coverage: { comparableMinutes: 15, expectedMinutes: 1440 }, anomalies: [point], prices: {} } }
 const props = { company: 'one', region: 'yunnan', view: 'generator' as const, date: '2026-05-31', topic: 'energy' as const }
@@ -78,4 +81,70 @@ describe('已导入分时资料分析', () => {
     wrapper.unmount()
   })
 
+
+  it('同口径的多个对象可合计，请求改传对象集合', async () => {
+    api.analyzeImportedIntervals.mockResolvedValue(multiCatalog)
+    const wrapper = create(); await open(wrapper)
+    const objectSelect = wrapper.findAll('select').at(-1)!
+    await objectSelect.setValue(JSON.stringify([choice.seriesKey, choice.objectId]))
+    await flushPromises()
+    // 勾上同口径的第二个对象；不同口径的对象不出现在可合计清单里。
+    const boxes = wrapper.findAll('input[type=checkbox]')
+    const rollupBox = boxes.find(box => (box.element as HTMLInputElement).value === choiceB.objectId)!
+    expect(boxes.some(box => (box.element as HTMLInputElement).value === otherSeries.objectId)).toBe(false)
+    await rollupBox.setValue(true)
+    await wrapper.findAll('button').find(button => button.text() === '重新统计')!.trigger('click')
+    await flushPromises()
+    const last = api.analyzeImportedIntervals.mock.calls.at(-1)![1]
+    expect(last.objectIds).toEqual([choice.objectId, choiceB.objectId])
+    expect(last.objectId).toBeUndefined()
+    wrapper.unmount()
+  })
+  it('价格专题不开放跨对象合计', async () => {
+    api.analyzeImportedIntervals.mockResolvedValue(multiCatalog)
+    const wrapper = mount(ImportedIntervalPanel, { props: { ...props, topic: 'price' as const }, global: { stubs: { ReportEvidenceChart: true } } })
+    await open(wrapper as never)
+    const objectSelect = wrapper.findAll('select').at(-1)!
+    await objectSelect.setValue(JSON.stringify([choice.seriesKey, choice.objectId]))
+    await flushPromises()
+    // 多个对象的分时价格既不能相加也不该等权平均，合计入口不出现。
+    expect(wrapper.text()).not.toContain('合计多个对象')
+    wrapper.unmount()
+  })
+
+  it('有资料目录时不显示「没有补充资料」，目录为空时才显示', async () => {
+    // 单对象目录：合计入口不出现，但这不等于没有资料。
+    const wrapper = create(); await open(wrapper)
+    expect(wrapper.text()).not.toContain('当前范围没有补充资料')
+    wrapper.unmount()
+    api.analyzeImportedIntervals.mockResolvedValue({ ...catalog, choices: [] })
+    const empty = create(); await open(empty)
+    expect(empty.text()).toContain('当前范围没有补充资料')
+    empty.unmount()
+  })
+  it('下拉框选中的对象恒在合计集合内，不能取消', async () => {
+    api.analyzeImportedIntervals.mockResolvedValue(multiCatalog)
+    const wrapper = create(); await open(wrapper)
+    await wrapper.findAll('select').at(-1)!.setValue(JSON.stringify([choice.seriesKey, choice.objectId]))
+    await flushPromises()
+    const anchor = wrapper.findAll('input[type=checkbox]').find(box => (box.element as HTMLInputElement).value === choice.objectId)!
+    expect((anchor.element as HTMLInputElement).disabled).toBe(true)
+    expect((anchor.element as HTMLInputElement).checked).toBe(true)
+    wrapper.unmount()
+  })
+  it('覆盖表列出参考期的有效基准与有效实际，说明为何没进跨期比较', async () => {
+    const rollup = { objectIds: [choice.objectId, choiceB.objectId],
+      current: { matchedIntervals: 4, observedIntervals: 4, objects: [{ objectId: choice.objectId, intervals: 4, baselineIntervals: 4, actualIntervals: 4 }, { objectId: choiceB.objectId, intervals: 4, baselineIntervals: 4, actualIntervals: 4 }] },
+      reference: { matchedIntervals: 0, observedIntervals: 4, objects: [{ objectId: choice.objectId, intervals: 4, baselineIntervals: 4, actualIntervals: 4 }, { objectId: choiceB.objectId, intervals: 4, baselineIntervals: 3, actualIntervals: 0 }] } }
+    api.analyzeImportedIntervals.mockResolvedValueOnce(multiCatalog).mockResolvedValue({ ...data, choices: multiCatalog.choices, rollup })
+    const wrapper = create(); await open(wrapper)
+    await wrapper.findAll('select').at(-1)!.setValue(JSON.stringify([choice.seriesKey, choice.objectId]))
+    await wrapper.findAll('button').find(button => button.text() === '重新统计')!.trigger('click'); await flushPromises()
+    const header = wrapper.findAll('th').map(node => node.text())
+    expect(header).toContain('参考期有效基准')
+    expect(header).toContain('参考期有效实际')
+    const row = wrapper.findAll('tr').find(node => node.text().startsWith(choiceB.objectId))!
+    expect(row.findAll('td').map(node => node.text())).toEqual(['4', '4', '4', '4', '3', '0'])
+    wrapper.unmount()
+  })
 })
