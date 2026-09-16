@@ -111,6 +111,15 @@ describe('图文底稿交付', () => {
     await flushPromises()
     expect(wrapper.emitted('dirty')!.at(-1)).toEqual([true])
   })
+  it('有未确认的关联依据时不能发布，已勾选的核对确认随之失效', async () => {
+    const wrapper = await open()
+    await wrapper.find('.publish input[type="checkbox"]').setValue(true)
+    wrapper.findComponent({ name: 'DecisionLinkPanel' }).vm.$emit('dirty', true)
+    await flushPromises()
+    expect((wrapper.find('.publish input[type="checkbox"]').element as HTMLInputElement).checked).toBe(false)
+    expect(button(wrapper, '发布报告').attributes('disabled')).toBeDefined()
+    expect(publishWorkpaper).not.toHaveBeenCalled()
+  })
   it('关联决策块不提供复制，避免绕开预览再建一个关联', async () => {
     // 复制会克隆申报版本却不走 decision-preview：申报变过就在自动保存时冲突且无法在该块上重新核对，
     // 没变过则等于凭空多出一个未经交易员核对的关联。

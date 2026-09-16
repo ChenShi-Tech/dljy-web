@@ -9,6 +9,8 @@ const props = defineProps<{ publication: Publication }>()
 const router = useRouter()
 // 摘要模式只出说明文字（与证据说明同形态），但关联依据不能因此消失：
 // 管理层版本里申报相关的结论同样需要出处与「不代表因果关系」的提示。
+// 关联块缺冻结副本只可能是数据残缺；静默过滤会让读者把一份不完整的报告当成完整的读，导出也已拒绝同样的版本。
+const incompleteDecisions = computed(() => props.publication.content.blocks.some(block => block.kind === 'decision' && !block.reference))
 const decisionCaptions = computed(() => props.publication.content.blocks.filter(block => block.kind === 'decision' && block.reference).map(block => ({ id: block.id, text: decisionReferenceCaption(block.reference!) })))
 function openDeclaration(reference: DecisionReference) {
   void router.push({ path: '/xhjy/desk', query: { declarationId: reference.declarationId, targetDate: reference.targetDate } })
@@ -31,6 +33,7 @@ async function exportReport(format: 'word' | 'print') {
   <section class="published-reader">
     <header><b>已发布报告 · 第 {{ publication.revision }} 版</b><label><input v-model="brief" type="checkbox" />只看管理层摘要</label><button type="button" :disabled="exporting" @click="exportReport('word')">导出 Word</button><button type="button" :disabled="exporting" @click="exportReport('print')">打印 / 保存 PDF</button><span v-if="exporting" role="status">正在准备报告…</span></header>
     <p v-if="exportError" role="alert">{{ exportError }}</p>
+    <p v-if="incompleteDecisions" role="alert">这份发布版本的关联申报资料不完整，不能当作完整报告阅读或导出，请联系主笔重新发布。</p>
     <h2>{{ publication.content.title }}</h2>
     <p>{{ publication.content.scope.objectLabel }} · {{ publication.content.scope.startDate }}—{{ publication.content.scope.endDate }} · 主笔 {{ publication.content.authorId }}</p>
     <p class="notice">{{ publication.content.notice }}</p>

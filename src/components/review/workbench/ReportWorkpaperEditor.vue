@@ -67,6 +67,8 @@ let paperGeneration = 0, publicationRequest = 0
 const commenting = ref(false), linkPending = ref(false)
 const pending = computed(() => dirty.value || saving.value || publishing.value || commenting.value || linkPending.value || !!commentText.value.trim())
 watch(pending, value => emit('dirty', value), { immediate: true })
+// 发布确认必须覆盖全部待定内容：勾选「已核对」之后再写关联依据，旧的勾选不能代表新内容已核对。
+watch(linkPending, value => { if (value) confirmed.value = false })
 watch(draft, () => {
   if (suppress || !draft.value || !canEdit.value) return
   editVersion++; dirty.value = true; confirmed.value = false; publication.value = null
@@ -144,6 +146,8 @@ function duplicate(block: ReportBlock) { if (block.kind === 'decision') return; 
 function attach(material: ReportEvidence, role: 'primary' | 'comparison') { if (draft.value && canEdit.value) draft.value.blocks.push({ id: crypto.randomUUID(), kind: 'chart', title: material.content.labels.join('与'), text: '', evidenceId: material.id, evidenceRole: role }) }
 async function publish() {
   if (!draft.value || !confirmed.value) return
+  // 未确认的关联依据不在底稿里，此时发布出去的不可变版本会少掉作者以为已写入的内容。
+  if (linkPending.value) { error.value = '还有未确认的关联依据：请先确认加入报告，或清空后再发布。'; return }
   publishing.value = true
   try {
     if (!await save() || !draft.value) { status.value = '请先完成保存，再发布'; return }
@@ -208,7 +212,7 @@ onBeforeUnmount(() => { alive = false; if (timer) clearTimeout(timer); emit('dir
           </article>
           <p v-if="!draft.blocks.length">从专题分析加入图表，或添加事实、原因和措施开始撰写。</p>
         </fieldset>
-        <div v-if="canEdit" class="publish"><button type="button" :disabled="saving || publishing || !dirty" @click="save">保存底稿</button><label><input v-model="confirmed" type="checkbox" :disabled="publishing" />我已核对正文和资料性质</label><button type="button" :disabled="!confirmed || saving || publishing" @click="publish">{{ publishing ? '正在发布…' : '发布报告' }}</button></div>
+        <div v-if="canEdit" class="publish"><button type="button" :disabled="saving || publishing || !dirty" @click="save">保存底稿</button><label><input v-model="confirmed" type="checkbox" :disabled="publishing" />我已核对正文和资料性质</label><button type="button" :disabled="!confirmed || saving || publishing || linkPending" @click="publish">{{ publishing ? '正在发布…' : '发布报告' }}</button></div>
         <PublishedReportReader v-if="publication" :publication="publication" />
       </section>
       <aside>

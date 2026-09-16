@@ -65,7 +65,10 @@ export async function listDecisionReferences(company: string, region: string, de
 function serverDetail(error: unknown) {
   if (!(error instanceof ApiError)) return ''
   const raw = error.message.trim()
-  return raw && !/^API request failed:/i.test(raw) ? raw : ''
+  // 响应体为空或不是 JSON 时，api.ts 用 HTTP 状态文本（如 Forbidden）或「接口响应无法解析」合成 msg。
+  // 服务端业务文案一律是中文；不含中文的必是状态文本，连同那句合成文案一起排除。
+  if (!raw || /^API request failed:/i.test(raw) || raw === '接口响应无法解析' || !/[\u4e00-\u9fff]/.test(raw)) return ''
+  return raw
 }
 /**
  * 关联失败优先透传服务端文案：底稿版本冲突与申报版本冲突同为 409，但处置方式完全不同

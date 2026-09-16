@@ -32,6 +32,13 @@ describe('已发布报告的关联呈现', () => {
     expect(wrapper.text()).toContain('这笔申报定了当日报量区间')
     expect(wrapper.find('.decision-card').exists()).toBe(true)
   })
+  it('关联副本残缺时明确提示，不当作完整报告', () => {
+    const broken = { ...publication, content: { ...publication.content, blocks: [{ ...publication.content.blocks[0], reference: undefined }] } }
+    const wrapper = mount(PublishedReportReader, { props: { publication: broken }, global: { stubs: { ReportEvidenceChart: true } } })
+    wrappers.push(wrapper)
+    expect(wrapper.text()).toContain('关联申报资料不完整')
+    expect(open().text()).not.toContain('关联申报资料不完整')
+  })
   it('只看管理层摘要时仍保留关联依据与免责提示', async () => {
     const wrapper = open()
     await wrapper.get('input[type="checkbox"]').setValue(true)

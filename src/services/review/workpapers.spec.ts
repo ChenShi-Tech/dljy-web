@@ -24,6 +24,12 @@ describe('底稿与关联的错误文案', () => {
     expect(workpaperError(apiError(409))).toContain('底稿已有更新或请求发生冲突')
     for (const code of [400, 403, 404, 409]) expect(workpaperError(apiError(code))).not.toContain('API request failed')
   })
+  it('非 JSON 响应合成的状态文本不当作业务文案', () => {
+    expect(workpaperError(apiError(403, 'Forbidden'))).toBe('当前账号不能修改这份报告。主笔可编辑发布，同事可添加批注。')
+    expect(workpaperError(apiError(404, '接口响应无法解析'))).toBe('当前公司和地区内没有找到这份报告或资料。')
+    expect(decisionLinkError(apiError(502, 'Bad Gateway'))).toContain('关联依据仍然保留')
+    expect(decisionLookupError(apiError(502, 'Bad Gateway'))).toContain('不表示没有复盘关联过这笔申报')
+  })
   it('服务端给了业务文案就按原文呈现', () => {
     expect(workpaperError(apiError(400, '业务申报与模拟演练不能作为同一复盘的本次依据，请分别建稿'))).toBe('业务申报与模拟演练不能作为同一复盘的本次依据，请分别建稿')
     expect(decisionLinkError(apiError(404, '当前范围内没有这笔明确归属的申报'))).toBe('当前范围内没有这笔明确归属的申报')
