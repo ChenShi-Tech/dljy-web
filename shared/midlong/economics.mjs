@@ -140,6 +140,10 @@ export function normalizeEconomics(input, { acceptPrecisionRounding = false, con
     field: 'environmentPrice', unit: src.priceUnit, kind: 'price', acceptPrecisionRounding,
   })
   all.push(...environment.issues)
+  // 环境价值只属于绿电：常规电能合同带着环境价值价格会在持仓里被单列成环境价值金额，属于口径错误，直接拒绝而不是静默保留。
+  if (environment.value !== null && src.energyAttribute && src.energyAttribute !== 'GREEN') {
+    all.push(issue('environmentPrice', 'ENVIRONMENT_PRICE_NOT_GREEN', '环境价值价格只适用于绿电合同；常规电能合同请清空该项'))
+  }
 
   const priceKnown = price.value !== null
   const priceType = enumOrIssue(src.priceType || null, PRICE_TYPES, 'priceType', { fallback: priceKnown ? 'FIXED' : null })
