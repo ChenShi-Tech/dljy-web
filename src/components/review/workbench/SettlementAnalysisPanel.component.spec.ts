@@ -20,7 +20,7 @@ describe('公司周期与结算专题', () => {
     const wrapper = await open()
     expect(metricTile(wrapper, '结算电量')).toEqual({ value: '100', unit: 'MWh' })
     await wrapper.get('select[aria-label="分析周期"]').setValue('month')
-    expect(wrapper.find('.metrics').exists()).toBe(false)
+    expect(wrapper.find('.metric-grid').exists()).toBe(false)
     expect(wrapper.get<HTMLElement>('.plot').element.style.display).toBe('none')
     await button(wrapper, '重新统计').trigger('click'); await flushPromises()
     expect(fetchSettlementAnalysis).toHaveBeenLastCalledWith('a', expect.objectContaining({ period: expect.objectContaining({ date: '2026-05-31', cadence: 'month' }) }), expect.any(AbortSignal))
@@ -47,7 +47,7 @@ describe('公司周期与结算专题', () => {
     const wrapper = await open()
     await wrapper.setProps({ company: 'b' })
     finish(result); await flushPromises()
-    expect(wrapper.find('.metrics').exists()).toBe(false)
+    expect(wrapper.find('.metric-grid').exists()).toBe(false)
   })
   it('失败保留业务提示，不显示内部错误或旧经营数字', async () => {
     const wrapper = await open()
@@ -56,7 +56,7 @@ describe('公司周期与结算专题', () => {
     expect(wrapper.get<HTMLElement>('.plot').element.style.display).toBe('none')
     expect(wrapper.text()).toContain('结算统计未完成')
     expect(wrapper.text()).not.toContain('internal_field')
-    expect(wrapper.find('.metrics').exists()).toBe(false)
+    expect(wrapper.find('.metric-grid').exists()).toBe(false)
   })
   it('按已完成统计的范围保存材料，换日期后不允许取用旧图', async () => {
     const material = { id: 'saved', region: 'yunnan', authorId: '主笔', createdAt: '', sourceKind: 'business_source', contentHash: 'hash', content: { topic: 'settlement' as const, labels: ['结算电量', '结算电费'] as [string, string], capturedAt: '', sourceNotice: '已入库资料', input: { scope: { objectId: 'plant:测试厂站', companyId: 'a' }, period: { date: '2026-05-31' } }, result } }

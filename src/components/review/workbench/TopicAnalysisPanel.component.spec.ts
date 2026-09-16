@@ -44,7 +44,7 @@ describe('电量偏差分析交互', () => {
     await wrapper.get('select').setValue('declared_actual'); await flushPromises()
     expect(wrapper.text()).toContain('分析暂未完成')
     expect(wrapper.text()).not.toContain('internal_column')
-    expect(wrapper.find('.metrics').exists()).toBe(false)
+    expect(wrapper.find('.metric-grid').exists()).toBe(false)
   })
   it('价格专题在电量缺失时独立展示同口径价差', async () => {
     vi.mocked(previewTopicAnalysis).mockResolvedValue({ ...result, energy: { baselineMwh: null, actualMwh: null, netDeviationMwh: null, absoluteDeviationMwh: null, absoluteDeviationPct: null }, prices: { daAverage: 550, rtAverage: 80, spreadAverage: 20, comparableMinutes: 15 }, priceAnomalies: [{ ...point, daPrice: 100, rtPrice: 80, differenceMwh: null }] })
