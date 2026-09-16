@@ -21,7 +21,7 @@ vi.mock('@/components/agent/AgentChatPanel.vue', async () => {
     default: defineComponent({
       name: 'AgentChatPanelStub',
       props: {
-        scenario: String, promptKey: String, resumeSessionId: { type: String, default: null },
+        scenario: String, promptKey: String, resumeSessionId: { type: String, default: null }, resumeRunId: { type: String, default: null },
         restoreLastSession: { type: Boolean, default: true }, messageActions: { type: Boolean, default: false },
         contextPayloadFor: Function, historyKey: String, payload: Object
       },
@@ -341,6 +341,55 @@ describe('AiSidebar · 头部与输入区', () => {
     await w.find('button[title="在工作台打开"]').trigger('click')
     expect(push).toHaveBeenCalledWith({ path: '/ai-agent', query: { entry: 'workbench', session: 's_open' } })
     expect(useAiSidebar().state.open).toBe(false)
+  })
+
+  it('从「运行中」切过去：内核拿到会话与 run id；之后换到别的会话，run id 不再带过去（dljy-web#119 审查 P2）', async () => {
+    vi.mocked(listRuns).mockResolvedValue([
+      { run_id: 'r_live', session_id: 's_live', turn_seq: 0, status: 'running', created_at: 1, updated_at: 1, last_seq: 3, session_title: '在跑的会话', page_key: 'ai_center', scenario: 'chat' }
+    ])
+    const { w } = await setup()
+    useAiSidebar().open()
+    await settle()
+    await w.find('.ai-runs-badge').trigger('click')
+    await settle()
+    await w.find('.run-main').trigger('click')
+    await settle()
+    expect(live()).toHaveLength(1)
+    expect(live()[0].props.resumeSessionId).toBe('s_live')
+    expect(live()[0].props.resumeRunId).toBe('r_live')
+
+    await w.find('.ai-title').trigger('click')
+    await w.find('.pick-brief').trigger('click')
+    await settle()
+    expect(live()[0].props.resumeSessionId).toBe('s_brief')
+    expect(live()[0].props.resumeRunId).toBeNull()
+  })
+
+  it('会话标题：空白对话和从历史打开时采用内核回报的标题；页面请求自带的标题不被覆盖（dljy-web#119 审查 P2）', async () => {
+    const { w } = await setup()
+    useAiSidebar().open()
+    await settle()
+    expect(w.find('.ai-title-text').text()).toBe('新对话')
+    live()[0].emit('sessionReady', 's_blank', '今天日前电价怎么样')
+    await settle()
+    expect(w.find('.ai-title-text').text()).toBe('今天日前电价怎么样')
+    expect(useAiSidebar().state.session?.title).toBe('今天日前电价怎么样')
+
+    await w.find('.ai-title').trigger('click')
+    await w.find('.pick-brief').trigger('click')
+    await settle()
+    live()[0].emit('sessionReady', 's_brief', '09-16 晨报')
+    await settle()
+    expect(w.find('.ai-title-text').text()).toBe('09-16 晨报')
+
+    const ai = useAiSidebar()
+    ai.interpret()
+    await settle()
+    const pageTitle = useAiSidebar().state.session?.title
+    expect(pageTitle).toBeTruthy()
+    live()[0].emit('sessionReady', 's_page', '服务端按首问生成的标题')
+    await settle()
+    expect(useAiSidebar().state.session?.title).toBe(pageTitle)
   })
 
   it('从历史打开晨报会话：重挂内核续接该会话并按晨报场景；新建回到空白对话', async () => {

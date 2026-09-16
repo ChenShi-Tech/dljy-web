@@ -106,8 +106,8 @@ watch(() => state.request?.seq, async (seq) => {
   await askInKernel(req.question)
 })
 
-function onSessionReady(sessionId: string) {
-  adoptSessionId(sessionId)
+function onSessionReady(sessionId: string, title?: string) {
+  adoptSessionId(sessionId, title ?? '')
 }
 function onStreamingChange(value: boolean) {
   busy.value = value
@@ -176,6 +176,12 @@ function openInWorkbench() {
 
 // ── 运行中会话（后台 running run，数据源 pi GET /runs）──
 const activeRuns = ref<AgentRunSummary[]>([])
+// 从「运行中」切过去时要附着的 run：只交给切换产生的那一代内核（按 mountKey 绑定），之后任何会话切换都自动作废，
+// 免得旧 run id 被带进别的会话；只给会话 id 时，transcript 还不可得的会话会开出空白面板（dljy-web#119 审查 P2）
+const runToAttach = ref<{ mountKey: number; runId: string } | null>(null)
+const resumeRunId = computed(() =>
+  runToAttach.value && runToAttach.value.mountKey === state.mountKey ? runToAttach.value.runId : null
+)
 const runsOpen = ref(false)
 const runsLoading = ref(false)
 const stoppingRunIds = ref<Set<string>>(new Set())
@@ -254,6 +260,7 @@ function attachActiveRun(run: AgentRunSummary) {
     entryKey: entryForSession(scenario, '').key,
     title: run.session_title?.trim() || ''
   })
+  runToAttach.value = { mountKey: state.mountKey, runId: run.run_id }
 }
 async function stopActiveRun(run: AgentRunSummary) {
   setStopping(run.run_id, true)
@@ -342,6 +349,7 @@ function goConfig() {
           :prompt-key="record.promptKey"
           history-key="ai_center"
           :resume-session-id="record.sessionId"
+          :resume-run-id="resumeRunId"
           :restore-last-session="false"
           :context-payload-for="contextFor"
           :payload="regionPayload"
