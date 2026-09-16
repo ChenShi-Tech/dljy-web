@@ -138,7 +138,9 @@ function move(index: number, offset: number) {
   if (!draft.value || index + offset < 0 || index + offset >= draft.value.blocks.length) return
   const [block] = draft.value.blocks.splice(index, 1); draft.value.blocks.splice(index + offset, 0, block)
 }
-function duplicate(block: ReportBlock) { draft.value?.blocks.push({ ...block, id: crypto.randomUUID() }) }
+// 关联块不能复制：复制出的新块带着旧的申报版本却没经过预览，申报一旦变过就会在自动保存时
+// 冲突且无法在该块上重新核对；没变则等于绕开预览又建了一个关联。
+function duplicate(block: ReportBlock) { if (block.kind === 'decision') return; draft.value?.blocks.push({ ...block, id: crypto.randomUUID() }) }
 function attach(material: ReportEvidence, role: 'primary' | 'comparison') { if (draft.value && canEdit.value) draft.value.blocks.push({ id: crypto.randomUUID(), kind: 'chart', title: material.content.labels.join('与'), text: '', evidenceId: material.id, evidenceRole: role }) }
 async function publish() {
   if (!draft.value || !confirmed.value) return
@@ -196,7 +198,7 @@ onBeforeUnmount(() => { alive = false; if (timer) clearTimeout(timer); emit('dir
           <div class="toolbar"><button v-for="kind in (['text', 'reason', 'question', 'action'] as const)" :key="kind" type="button" @click="add(kind)">添加{{ blockNames[kind] }}</button></div>
           <DecisionLinkPanel v-if="canEdit" :company="company" :draft="draft" :disabled="publishing || loading" @link="linkDecision" @open="openDeclaration" />
           <article v-for="(block, index) in draft.blocks" :key="block.id" class="block">
-            <header><b>{{ index + 1 }} · {{ blockNames[block.kind] }}</b><div><button type="button" :disabled="index === 0" aria-label="上移内容块" @click="move(index, -1)">上移</button><button type="button" :disabled="index === draft.blocks.length - 1" aria-label="下移内容块" @click="move(index, 1)">下移</button><button type="button" @click="duplicate(block)">复制</button><button type="button" @click="draft.blocks.splice(index, 1)">移除</button></div></header>
+            <header><b>{{ index + 1 }} · {{ blockNames[block.kind] }}</b><div><button type="button" :disabled="index === 0" aria-label="上移内容块" @click="move(index, -1)">上移</button><button type="button" :disabled="index === draft.blocks.length - 1" aria-label="下移内容块" @click="move(index, 1)">下移</button><button v-if="block.kind !== 'decision'" type="button" @click="duplicate(block)">复制</button><button type="button" @click="draft.blocks.splice(index, 1)">移除</button></div></header>
             <input v-model="block.title" aria-label="内容块标题" maxlength="200" />
             <template v-if="block.evidenceId"><ReportEvidenceChart v-if="evidence.find(row => row.id === block.evidenceId)" :evidence="evidence.find(row => row.id === block.evidenceId)!" /><label>材料用途<select v-model="block.evidenceRole"><option value="primary">本次依据</option><option value="comparison">比较依据</option></select></label></template>
             <DecisionReferenceCard v-if="block.kind === 'decision' && block.reference" :reference="block.reference" @open="openDeclaration" />

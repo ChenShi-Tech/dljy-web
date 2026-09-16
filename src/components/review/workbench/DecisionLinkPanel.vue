@@ -14,6 +14,9 @@ const rows = ref<DeclarationOrder[]>([]), offset = ref(0), nextOffset = ref<numb
 const preview = ref<DecisionReference | null>(null)
 // 关联依据由交易员自己写，预览失败或版本冲突都不清空：重填一遍理由是纯粹的返工。
 const basis = ref('')
+// 上一次核对的是哪一笔申报。换一笔（含先点「换一笔」清掉预览再选另一笔）必须清理由，
+// 否则新申报一打开就带着上一笔的理由且确认键可用，理由会挂到错误的申报上。
+const lastDeclarationId = ref('')
 let generation = 0
 
 function reset() { ++generation; rows.value = []; nextOffset.value = null; omitted.value = 0; error.value = ''; loading.value = false; previewing.value = false }
@@ -32,6 +35,9 @@ async function load(page = 0) {
 }
 async function choose(order: DeclarationOrder) {
   const ticket = generation
+  // 同一笔申报重新核对版本走的是同一个 id，理由保留；换了 id 就清。
+  if (lastDeclarationId.value && lastDeclarationId.value !== order.id) basis.value = ''
+  lastDeclarationId.value = order.id
   previewing.value = true; error.value = ''; preview.value = null
   try {
     const result = await previewDecisionReference(props.company, props.draft, order.id)
@@ -44,14 +50,14 @@ async function recheck() { if (preview.value) await choose(preview.value.snapsho
 function confirm() {
   if (!preview.value || !basis.value.trim()) return
   emit('link', { reference: preview.value, text: basis.value.trim() })
-  preview.value = null; basis.value = ''; open.value = false; reset()
+  preview.value = null; basis.value = ''; lastDeclarationId.value = ''; open.value = false; reset()
 }
 watch(() => [props.company, props.draft.id, props.draft.scope.startDate, props.draft.scope.endDate, mode.value], (next, previous) => {
   preview.value = null
   // 同一份底稿内重试保留已写的理由（重填一遍是纯返工），但换了底稿、公司或复盘范围就必须
   // 清掉：否则上一份报告的关联依据会预填在新报告里，并可能被确认进错误的报告。
   // 筛选条件（mode）变化不算，那只是换了看哪一批申报。
-  if (previous && [0, 1, 2, 3].some(index => next[index] !== previous[index])) basis.value = ''
+  if (previous && [0, 1, 2, 3].some(index => next[index] !== previous[index])) { basis.value = ''; lastDeclarationId.value = '' }
   void load()
 }, { flush: 'sync' })
 onBeforeUnmount(reset)

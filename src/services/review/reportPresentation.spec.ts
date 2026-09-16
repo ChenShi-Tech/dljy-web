@@ -61,6 +61,9 @@ describe('关联决策的报告呈现', () => {
     expect(texts).not.toContain('这笔申报定了当日报量区间')
   })
   it('关联副本缺失时拒绝导出，不交付只有理由没有依据的报告', () => {
-    expect(() => reportParts(publication([{ id: 'd1', kind: 'decision', title: '关联决策', text: '理由', declarationId: 'decl-0f1e2d3c' }]))).toThrow('关联申报不完整')
+    const broken = publication([{ id: 'd1', kind: 'decision', title: '关联决策', text: '理由', declarationId: 'decl-0f1e2d3c' }])
+    expect(() => reportParts(broken)).toThrow('关联申报不完整')
+    // 摘要分支静默跳过的话，会产出一份「导出成功但没有依据」的管理层报告。
+    expect(() => reportParts(broken, true)).toThrow('关联申报不完整')
   })
 })

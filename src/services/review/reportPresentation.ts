@@ -72,7 +72,12 @@ export function reportParts(publication: Publication, brief = false): ReportPart
     for (const evidence of content.evidence) parts.push({ kind: 'paragraph', text: reportEvidenceCaption(evidence) })
     // 关联申报同理：摘要保留了其他依据的说明，唯独丢掉关联依据，会让申报相关的结论在
     // 管理层版本里失去出处，连「不代表因果关系」那句提示也一并消失。
-    for (const block of content.blocks) if (block.kind === 'decision' && block.reference) parts.push({ kind: 'paragraph', text: decisionReferenceCaption(block.reference) })
+    // 残缺的关联块与详版一样拒绝导出——静默跳过会产出一份「成功但没有依据」的摘要。
+    for (const block of content.blocks) {
+      if (block.kind !== 'decision') continue
+      if (!block.reference) throw new Error('发布版本的关联申报不完整，不能导出')
+      parts.push({ kind: 'paragraph', text: decisionReferenceCaption(block.reference) })
+    }
     return parts
   }
   for (const block of content.blocks) {
