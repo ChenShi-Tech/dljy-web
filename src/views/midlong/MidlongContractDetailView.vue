@@ -1,0 +1,502 @@
+<script setup lang="ts">
+// 中长期售电合同详情（/zcqjy/contracts/:id，dljy#2939，MC-03..06 / MA-01/04）。
+// 原始量与当前有效量、月度分解、版本历史、资料、事件分区展示；操作按确认状态开放：
+// 草稿/待核对 → 修改、补资料、核验确认；已确认 → 录入更正（生成新版本）、整笔纠错作废；不提供物理删除。
+// 所有有状态写入带 rowVersion：他人先改过时提示刷新核对差异，不静默覆盖。
+import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
+import { ElMessage } from 'element-plus'
+import CompanyScopeBar from '@/components/company/CompanyScopeBar.vue'
+import MidlongNotice from '@/components/midlong/MidlongNotice.vue'
+import MidlongContractFormDialog from '@/components/midlong/MidlongContractFormDialog.vue'
+import MidlongEconomicsEditor from '@/components/midlong/MidlongEconomicsEditor.vue'
+import { selectedCompanyId } from '@/services/company/companyContext'
+import { fetchStations, type CompanyStation } from '@/services/company/companyApi'
+import { currentRegion } from '@/services/region/regionContext'
+import {
+  CompanyNotSelectedError, addEvidence, correctContract, fetchCapabilities, fetchContract, fetchEvidenceContent, fetchSubjects,
+  linkAlias, midlongFailureOf, verifyContract, voidContract, type EvidenceUpload, type MidlongFailure,
+} from '@/services/midlong/midlongApi'
+import {
+  DELIVERY_CYCLE_LABELS, DOCUMENT_KIND_LABELS, ENERGY_ATTRIBUTE_LABELS, EVENT_TYPE_LABELS, EVIDENCE_BASIS_LABELS,
+  EVIDENCE_DOCUMENT_TYPES, EVIDENCE_DOCUMENT_TYPE_LABELS, MARKET_SCOPE_LABELS, PRICE_COMPONENT_LABELS, PRICE_TYPE_LABELS,
+  PRODUCT_KIND_LABELS, REVISION_KIND_LABELS, TAX_BASIS_LABELS, TRADE_METHOD_LABELS, VERIFICATION_EVIDENCE_TYPES,
+  type MidlongCapabilities, type MidlongContractDetail, type MidlongRevision, type MidlongSubject,
+} from '@/services/midlong/midlongTypes'
+import { draftFromRevision, toEconomicsInput, type EconomicsDraft } from '@/services/midlong/economicsDraft'
+import {
+  confirmationTag, createLoadGuard, downloadBase64, fileToBase64, fmtPrice, fmtQuantity, progressTag, qualityTags,
+} from '@/services/midlong/midlongFormat'
+
+const route = useRoute()
+const contractId = computed(() => Number(route.params.id))
+
+type LoadState = 'loading' | 'ready' | 'no-company' | 'unsupported' | 'disabled' | 'not-found' | 'failed'
+const state = ref<LoadState>('loading')
+const failureText = ref('')
+const capabilities = ref<MidlongCapabilities | null>(null)
+const detail = ref<MidlongContractDetail | null>(null)
+const subjects = ref<MidlongSubject[]>([])
+const stations = ref<CompanyStation[]>([])
+const guard = createLoadGuard()
+const contextKey = () => `${selectedCompanyId.value}|${currentRegion.value.id}|${contractId.value}`
+
+async function load() {
+  const token = guard.begin(contextKey())
+  state.value = 'loading'
+  try {
+    const caps = await fetchCapabilities()
+    if (!guard.isCurrent(token, contextKey())) return
+    capabilities.value = caps
+    if (!caps.enabled) { state.value = 'disabled'; return }
+    if (!caps.regionSupported) { state.value = 'unsupported'; return }
+    const [d, subjectRows, stationRows] = await Promise.all([fetchContract(contractId.value), fetchSubjects(), fetchStations()])
+    if (!guard.isCurrent(token, contextKey())) return
+    detail.value = d
+    subjects.value = subjectRows
+    stations.value = stationRows
+    state.value = 'ready'
+  } catch (error) {
+    if (!guard.isCurrent(token, contextKey())) return
+    detail.value = null
+    if (error instanceof CompanyNotSelectedError) { state.value = 'no-company'; return }
+    const f = midlongFailureOf(error)
+    state.value = f.status === 404 ? 'not-found' : 'failed'
+    failureText.value = f.message
+  }
+}
+
+onMounted(load)
+watch([selectedCompanyId, () => currentRegion.value.id, contractId], () => void load())
+
+const canWrite = computed(() => Boolean(capabilities.value?.canWrite))
+const status = computed(() => detail.value?.confirmationStatus)
+const isEditable = computed(() => status.value === 'DRAFT' || status.value === 'PENDING_VERIFICATION')
+const current = computed(() => detail.value?.currentRevision ?? null)
+const blockingGaps = computed(() => qualityTags(detail.value?.qualityFlags ?? []).filter((t) => t.blocksVerification))
+const hintGaps = computed(() => qualityTags(detail.value?.qualityFlags ?? []).filter((t) => !t.blocksVerification))
+const isTestData = computed(() => /^TEST/i.test(detail.value?.sourceNamespace ?? ''))
+const stationName = (id: number | null) => (id ? stations.value.find((s) => s.id === id)?.name ?? `#${id}` : '未分配（主体统签）')
+const subjectLabel = computed(() => {
+  const d = detail.value
+  if (!d?.subjectId) return '待补'
+  return `${d.subjectName}（${d.subjectKey}${d.subjectUnitCode ? ` · 单元 ${d.subjectUnitCode}` : ' · 单元代码待补'}）`
+})
+const futureEffective = computed(() => {
+  const at = current.value?.businessEffectiveAt
+  return at && new Date(at).getTime() > Date.now() ? at : null
+})
+const evidenceById = computed(() => new Map((detail.value?.evidence ?? []).map((e) => [e.id, e])))
+
+function allocationPrice(rev: MidlongRevision, a: MidlongRevision['allocations'][number]) {
+  if (a.priceStatus === 'KNOWN') return `${fmtPrice(a.price)}（月分解）`
+  if (rev.priceType !== 'TIME_OF_USE' && rev.priceStatus === 'KNOWN') return `${fmtPrice(rev.sellerPrice)}（合同固定价）`
+  return '待核对'
+}
+
+// ── 操作对话框 ────────────────────────────────────────────────────────────────
+const dialogs = reactive({ form: false, verify: false, correct: false, void: false, alias: false, evidence: false })
+const busy = ref(false)
+const actionError = ref<MidlongFailure | null>(null)
+
+function openAction(name: keyof typeof dialogs) {
+  actionError.value = null
+  dialogs[name] = true
+}
+
+async function runAction(name: keyof typeof dialogs, action: () => Promise<unknown>, success: string) {
+  if (busy.value) return
+  busy.value = true
+  actionError.value = null
+  try {
+    await action()
+    ElMessage.success(success)
+    dialogs[name] = false
+    await load()
+  } catch (error) {
+    actionError.value = midlongFailureOf(error)
+  } finally {
+    busy.value = false
+  }
+}
+
+// 核验确认
+const verifyForm = reactive({ evidenceIds: [] as number[], note: '' })
+const verifiableEvidence = computed(() => (detail.value?.evidence ?? []).filter((e) => VERIFICATION_EVIDENCE_TYPES.includes(e.documentType)))
+function openVerify() {
+  verifyForm.evidenceIds = verifiableEvidence.value.map((e) => e.id)
+  verifyForm.note = ''
+  openAction('verify')
+}
+function submitVerify() {
+  const d = detail.value
+  if (!d) return
+  void runAction('verify', () => verifyContract(d.contractId, { expectedRowVersion: d.rowVersion, evidenceIds: verifyForm.evidenceIds, note: verifyForm.note || undefined }), '已核验确认，合同将按确认版本计入月度持仓')
+}
+
+// 录入更正
+const correctForm = reactive({ reason: '', evidenceIds: [] as number[], businessEffectiveAt: '' })
+const correctEconomics = ref<EconomicsDraft | null>(null)
+const correctEditor = ref<InstanceType<typeof MidlongEconomicsEditor> | null>(null)
+const correctionEvidence = computed(() => (detail.value?.evidence ?? []).filter((e) => [...VERIFICATION_EVIDENCE_TYPES, 'SUPPLEMENT_SCAN'].includes(e.documentType)))
+function openCorrect() {
+  if (!current.value) return
+  correctEconomics.value = draftFromRevision(current.value)
+  Object.assign(correctForm, { reason: '', evidenceIds: [], businessEffectiveAt: '' })
+  openAction('correct')
+}
+function submitCorrect() {
+  const d = detail.value
+  const draft = correctEconomics.value
+  if (!d || !draft) return
+  void runAction('correct', () => correctContract(d.contractId, {
+    expectedRowVersion: d.rowVersion, changeType: 'CORRECTION', reason: correctForm.reason.trim(), evidenceIds: correctForm.evidenceIds,
+    businessEffectiveAt: correctForm.businessEffectiveAt || null, economics: toEconomicsInput(draft),
+  }), '已生成更正版本，原版本保留可查')
+}
+
+// 作废
+const voidForm = reactive({ reason: '', evidenceIds: [] as number[] })
+function openVoid() {
+  Object.assign(voidForm, { reason: '', evidenceIds: [] })
+  openAction('void')
+}
+function submitVoid() {
+  const d = detail.value
+  if (!d) return
+  void runAction('void', () => voidContract(d.contractId, { expectedRowVersion: d.rowVersion, reason: voidForm.reason.trim(), evidenceIds: voidForm.evidenceIds }), '合同已作废，历史版本保留')
+}
+
+// 关联外部编号
+const aliasForm = reactive({ sourceNamespace: '', externalObligationId: '', verificationNote: '' })
+function openAlias() {
+  Object.assign(aliasForm, { sourceNamespace: '', externalObligationId: '', verificationNote: '' })
+  openAction('alias')
+}
+function submitAlias() {
+  const d = detail.value
+  if (!d) return
+  void runAction('alias', () => linkAlias(d.contractId, { expectedRowVersion: d.rowVersion, ...aliasForm }), '已关联外部编号')
+}
+
+// 补充资料
+const evidenceForm = reactive({ documentType: 'ELECTRONIC_CONFIRMATION' as EvidenceUpload['documentType'], note: '', file: null as File | null })
+const uploadableTypes = EVIDENCE_DOCUMENT_TYPES.filter((t) => t !== 'IMPORT_SOURCE_FILE') as EvidenceUpload['documentType'][]
+function openEvidence() {
+  Object.assign(evidenceForm, { documentType: 'ELECTRONIC_CONFIRMATION', note: '', file: null })
+  openAction('evidence')
+}
+function onEvidenceFile(event: Event) {
+  evidenceForm.file = (event.target as HTMLInputElement).files?.[0] ?? null
+}
+async function submitEvidence() {
+  const d = detail.value
+  const file = evidenceForm.file
+  if (!d || !file) return
+  const contentBase64 = await fileToBase64(file)
+  void runAction('evidence', () => addEvidence(d.contractId, { fileName: file.name, contentBase64, documentType: evidenceForm.documentType, note: evidenceForm.note || undefined, mediaType: file.type || undefined }), '资料已补充（不改变合同电量）')
+}
+
+async function downloadEvidence(evidenceId: number) {
+  const d = detail.value
+  if (!d) return
+  try {
+    const { evidence, contentBase64 } = await fetchEvidenceContent(d.contractId, evidenceId)
+    downloadBase64(evidence.originalFileName, contentBase64, evidence.mediaType ?? undefined)
+  } catch (error) {
+    ElMessage.error(`资料读取失败：${midlongFailureOf(error).message}`)
+  }
+}
+
+const conflictDetails = computed(() => {
+  if (actionError.value?.errorCode !== 'VERSION_CONFLICT') return null
+  return actionError.value.details as { currentRowVersion?: number; currentRevisionNo?: number } | null
+})
+const missingBasis = computed(() => (actionError.value?.errorCode === 'INCOMPLETE_BASIS' ? ((actionError.value.details as { missing?: string[] } | null)?.missing ?? []) : []))
+</script>
+
+<template>
+  <div class="ml-page">
+    <div class="ml-head">
+      <router-link to="/zcqjy/contracts" class="ml-link">← 售电合同</router-link>
+    </div>
+    <CompanyScopeBar />
+
+    <div v-if="state === 'loading' && !detail" v-loading="true" class="ml-placeholder" />
+    <MidlongNotice v-else-if="state === 'no-company'" tone="warn" title="请选择公司">当前地区尚未选择有效公司。</MidlongNotice>
+    <MidlongNotice v-else-if="state === 'unsupported'" tone="info" title="当前地区未开通中长期售电模块">{{ capabilities?.reason }}</MidlongNotice>
+    <MidlongNotice v-else-if="state === 'disabled'" tone="warn" title="模块已暂停使用">已确认合同的版本与写保护保持不变。</MidlongNotice>
+    <MidlongNotice v-else-if="state === 'not-found'" tone="warn" title="合同不存在或不属于当前公司">请确认公司切换器中的公司，或返回列表重新查找。</MidlongNotice>
+    <MidlongNotice v-else-if="state === 'failed'" tone="danger" title="合同加载失败">{{ failureText }} <el-button link type="primary" @click="load">重试</el-button></MidlongNotice>
+
+    <template v-if="detail && (state === 'ready' || state === 'loading')">
+      <div class="ml-titlebar">
+        <div>
+          <h2 class="ml-title">{{ detail.contractName }}</h2>
+          <div class="ml-tags">
+            <span class="ml-mono">{{ detail.externalContractNo }}</span>
+            <el-tag :type="confirmationTag(detail.confirmationStatus).type">{{ confirmationTag(detail.confirmationStatus).label }}</el-tag>
+            <el-tag :type="progressTag(detail.deliveryProgress).type" effect="plain">{{ progressTag(detail.deliveryProgress).label }}</el-tag>
+            <el-tag effect="plain">版本 {{ detail.currentRevisionNo }}</el-tag>
+            <el-tag v-if="isTestData" type="warning" effect="plain">测试数据</el-tag>
+          </div>
+        </div>
+        <div v-if="canWrite" class="ml-actions">
+          <template v-if="isEditable">
+            <el-button @click="openAction('form')">修改草稿</el-button>
+            <el-button type="primary" @click="openVerify">核验确认</el-button>
+          </template>
+          <el-button v-if="status === 'CONFIRMED'" type="primary" @click="openCorrect">录入更正</el-button>
+          <template v-if="status !== 'VOIDED'">
+            <el-button @click="openEvidence">补充资料</el-button>
+            <el-button @click="openAlias">关联外部编号</el-button>
+            <el-button type="danger" plain @click="openVoid">{{ status === 'CONFIRMED' ? '整笔纠错作废' : '作废草稿' }}</el-button>
+          </template>
+        </div>
+      </div>
+
+      <MidlongNotice v-if="status === 'VOIDED'" tone="warn" title="已作废">
+        {{ detail.voidReason }}（{{ detail.voidedBy }} · {{ detail.voidedAt ? new Date(detail.voidedAt).toLocaleString('zh-CN') : '' }}）。作废合同不计入持仓，全部历史版本保留可查。
+      </MidlongNotice>
+      <MidlongNotice v-if="isTestData" tone="warn">该合同来源为 {{ detail.sourceNamespace }}，是工程测试数据，不代表真实合同，不作为业务验收依据。</MidlongNotice>
+      <MidlongNotice v-if="isEditable && blockingGaps.length" tone="danger" title="核验确认前需补齐">
+        {{ blockingGaps.map((g) => g.label).join('、') }}。
+      </MidlongNotice>
+      <MidlongNotice v-if="hintGaps.length" tone="warn" title="质量提示（不阻止确认，已证明的义务照常计入）">
+        {{ hintGaps.map((g) => g.label).join('、') }}。
+      </MidlongNotice>
+      <MidlongNotice v-if="futureEffective" tone="info">当前版本预定于 {{ new Date(futureEffective).toLocaleString('zh-CN') }} 生效，生效前月度持仓仍使用上一确认版本。</MidlongNotice>
+
+      <div class="ml-tiles">
+        <div class="ml-tile"><span>当前有效电量</span><b>{{ fmtQuantity(current?.totalQuantity) }}<i>MWh</i></b><small>版本 {{ detail.currentRevisionNo }}</small></div>
+        <div class="ml-tile"><span>原始录入电量</span><b>{{ fmtQuantity(detail.originalQuantity) }}<i>MWh</i></b><small>版本 1</small></div>
+        <div class="ml-tile"><span>售电价格</span><b>{{ current?.priceStatus === 'KNOWN' ? fmtPrice(current?.sellerPrice) : '待核对' }}<i v-if="current?.priceStatus === 'KNOWN'">元/MWh</i></b><small>{{ current?.priceType ? PRICE_TYPE_LABELS[current.priceType] : '价格类型未定' }} · {{ current ? TAX_BASIS_LABELS[current.taxBasis] : '' }}</small></div>
+        <div class="ml-tile"><span>月度分解</span><b>{{ { COMPLETE: '完整', PARTIAL: '不完整', NONE: '无' }[current?.allocationCompleteness ?? 'NONE'] }}</b><small>{{ current?.allocations.filter((a) => a.evidenceBasis === 'FORMAL').length ?? 0 }} 个月正式分解</small></div>
+        <div class="ml-tile"><span>关联成交电量</span><b>{{ fmtQuantity(detail.linkedTrades.volume) }}<i>MWh</i></b><small>{{ detail.linkedTrades.tradeCount }} 笔 · 非实际交割量/履约率</small></div>
+      </div>
+
+      <div class="ml-panel">
+        <h3>合同信息</h3>
+        <el-descriptions :column="3" border size="small">
+          <el-descriptions-item label="文件类型">{{ DOCUMENT_KIND_LABELS[detail.documentKind] }}</el-descriptions-item>
+          <el-descriptions-item label="交易品种周期">{{ detail.productKind ? PRODUCT_KIND_LABELS[detail.productKind] : '待核对' }}</el-descriptions-item>
+          <el-descriptions-item label="交割周期">{{ detail.deliveryCycle ? DELIVERY_CYCLE_LABELS[detail.deliveryCycle] : '—' }}</el-descriptions-item>
+          <el-descriptions-item label="交易方式">{{ detail.tradeMethod ? TRADE_METHOD_LABELS[detail.tradeMethod] : '待核对' }}</el-descriptions-item>
+          <el-descriptions-item label="市场范围">{{ detail.marketScope ? MARKET_SCOPE_LABELS[detail.marketScope] : '待核对' }}</el-descriptions-item>
+          <el-descriptions-item label="电能属性">{{ detail.energyAttribute ? ENERGY_ATTRIBUTE_LABELS[detail.energyAttribute] : '待核对' }}</el-descriptions-item>
+          <el-descriptions-item label="交易主体">{{ subjectLabel }}</el-descriptions-item>
+          <el-descriptions-item label="场站">{{ stationName(detail.stationId) }}</el-descriptions-item>
+          <el-descriptions-item label="购电方">{{ detail.counterpartyName ?? '—' }}</el-descriptions-item>
+          <el-descriptions-item label="交割期">{{ current?.deliveryStart ?? '—' }} ~ {{ current?.deliveryEnd ?? '—' }}</el-descriptions-item>
+          <el-descriptions-item label="签订日期">{{ detail.signedDate ?? '—' }}</el-descriptions-item>
+          <el-descriptions-item label="价格构成">{{ current ? PRICE_COMPONENT_LABELS[current.priceComponent] : '—' }}</el-descriptions-item>
+          <el-descriptions-item label="来源">{{ detail.sourceNamespace }}（{{ { MANUAL: '人工录入', IMPORT: '文件导入', ONBOARDING: '存量纳管' }[detail.origin] }}）</el-descriptions-item>
+          <el-descriptions-item label="首次确认">{{ detail.firstConfirmedAt ? `${new Date(detail.firstConfirmedAt).toLocaleString('zh-CN')} · ${detail.firstConfirmedBy}` : '未确认' }}</el-descriptions-item>
+          <el-descriptions-item label="导入批次">{{ detail.importBatchId ?? '—' }}</el-descriptions-item>
+        </el-descriptions>
+      </div>
+
+      <div class="ml-panel">
+        <h3>当前版本月度分解</h3>
+        <el-table v-if="current" :data="current.allocations" border size="small">
+          <el-table-column prop="deliveryMonth" label="交割月" width="110" />
+          <el-table-column label="电量(MWh)" width="140" align="right"><template #default="{ row }">{{ fmtQuantity(row.quantity) }}</template></el-table-column>
+          <el-table-column label="售电价格(元/MWh)" min-width="180"><template #default="{ row }">{{ allocationPrice(current!, row) }}</template></el-table-column>
+          <el-table-column label="依据" width="120">
+            <template #default="{ row }"><el-tag size="small" :type="row.evidenceBasis === 'FORMAL' ? 'success' : 'info'" effect="plain">{{ EVIDENCE_BASIS_LABELS[row.evidenceBasis as 'FORMAL'] }}</el-tag></template>
+          </el-table-column>
+          <el-table-column label="来源" min-width="160"><template #default="{ row }">{{ row.derivation === 'SINGLE_MONTH_TERMS' ? '单月交割期（由合同条款确定）' : row.sourceQuantity ?? '分解明细' }}</template></el-table-column>
+          <template #empty>无月度分解：合同电量计入月度持仓的「跨期未分解」，不按月均摊。</template>
+        </el-table>
+        <p v-if="current?.allocations.some((a) => a.evidenceBasis === 'INTERNAL_ESTIMATE')" class="ml-muted">内部估算分解仅供参考，不计入正式持仓。</p>
+      </div>
+
+      <div class="ml-panel">
+        <h3>版本历史（{{ detail.revisions.length }}）</h3>
+        <el-timeline>
+          <el-timeline-item v-for="rev in [...detail.revisions].reverse()" :key="rev.id" :timestamp="new Date(rev.recordedAt).toLocaleString('zh-CN')" placement="top" :type="rev.revisionNo === detail.currentRevisionNo ? 'primary' : undefined">
+            <div class="ml-rev">
+              <div class="ml-rev-head">
+                <b>版本 {{ rev.revisionNo }}</b>
+                <el-tag size="small" effect="plain">{{ REVISION_KIND_LABELS[rev.revisionKind] }}</el-tag>
+                <el-tag size="small" :type="rev.status === 'CONFIRMED' ? 'success' : 'info'" effect="plain">{{ rev.status === 'CONFIRMED' ? '已确认（不可覆盖）' : '草稿' }}</el-tag>
+                <span class="ml-muted">录入 {{ rev.recordedBy ?? '—' }}<template v-if="rev.confirmedAt"> · 确认 {{ rev.confirmedBy }} {{ new Date(rev.confirmedAt).toLocaleString('zh-CN') }}</template></span>
+              </div>
+              <div>电量 {{ fmtQuantity(rev.totalQuantity) }} MWh · 售电价 {{ rev.priceStatus === 'KNOWN' ? `${fmtPrice(rev.sellerPrice)} 元/MWh` : '待核对' }} · 交割期 {{ rev.deliveryStart ?? '—' }} ~ {{ rev.deliveryEnd ?? '—' }} · 分解 {{ rev.allocations.length }} 行</div>
+              <div v-if="rev.changeReason">更正原因：{{ rev.changeReason }}<template v-if="rev.affectedMonths.length">；受影响月份 {{ rev.affectedMonths.join('、') }}</template></div>
+              <div v-if="rev.evidenceIds.length" class="ml-muted">依据：{{ rev.evidenceIds.map((id) => evidenceById.get(id)?.originalFileName ?? `#${id}`).join('、') }}</div>
+            </div>
+          </el-timeline-item>
+        </el-timeline>
+      </div>
+
+      <div class="ml-panel">
+        <h3>资料（{{ detail.evidence.length }}）</h3>
+        <el-table :data="detail.evidence" border size="small">
+          <el-table-column label="类型" width="150"><template #default="{ row }">{{ EVIDENCE_DOCUMENT_TYPE_LABELS[row.documentType as 'OTHER'] }}</template></el-table-column>
+          <el-table-column prop="originalFileName" label="文件" min-width="200" show-overflow-tooltip />
+          <el-table-column label="大小" width="90" align="right"><template #default="{ row }">{{ (row.byteSize / 1024).toFixed(1) }} KB</template></el-table-column>
+          <el-table-column label="上传" width="200"><template #default="{ row }">{{ row.uploadedBy ?? '—' }} · {{ new Date(row.uploadedAt).toLocaleDateString('zh-CN') }}</template></el-table-column>
+          <el-table-column prop="note" label="说明" min-width="160" show-overflow-tooltip />
+          <el-table-column label="校验值" width="110"><template #default="{ row }"><span class="ml-mono">{{ row.sha256.slice(0, 10) }}</span></template></el-table-column>
+          <el-table-column label="" width="80"><template #default="{ row }"><el-button link type="primary" @click="downloadEvidence(row.id)">下载</el-button></template></el-table-column>
+          <template #empty>暂无资料。核验确认需要至少一份电子交易确认单、纸质合同或交易中心系统导出。</template>
+        </el-table>
+      </div>
+
+      <div class="ml-panel ml-split">
+        <div>
+          <h3>业务事件</h3>
+          <el-timeline>
+            <el-timeline-item v-for="ev in [...detail.events].reverse()" :key="ev.id" :timestamp="new Date(ev.occurredAt).toLocaleString('zh-CN')">
+              {{ EVENT_TYPE_LABELS[ev.eventType] }}<template v-if="ev.revisionNo"> · 版本 {{ ev.revisionNo }}</template> · {{ ev.actor ?? '—' }}
+              <div v-if="ev.reason" class="ml-muted">{{ ev.reason }}</div>
+            </el-timeline-item>
+          </el-timeline>
+        </div>
+        <div>
+          <h3>外部编号</h3>
+          <el-table :data="detail.aliases" border size="small">
+            <el-table-column prop="sourceNamespace" label="来源" width="140" />
+            <el-table-column prop="externalObligationId" label="编号" min-width="150" />
+            <el-table-column label="类型" width="110"><template #default="{ row }">{{ row.aliasKind === 'PRIMARY' ? '主编号' : '已核对别名' }}</template></el-table-column>
+          </el-table>
+        </div>
+      </div>
+    </template>
+
+    <MidlongContractFormDialog v-model="dialogs.form" :detail="detail" :subjects="subjects" :stations="stations" @saved="load" />
+
+    <el-dialog v-model="dialogs.verify" title="核验确认" width="620px">
+      <div class="ml-dialog">
+        <MidlongNotice tone="info">确认后经济内容以不可覆盖版本保存，按确认版本计入月度持仓；价格或分解缺失不阻止确认，但会持续提示。</MidlongNotice>
+        <div class="ml-field">
+          <span>核验依据（至少一份电子交易确认单、纸质合同或交易中心系统导出）</span>
+          <el-checkbox-group v-model="verifyForm.evidenceIds">
+            <el-checkbox v-for="e in verifiableEvidence" :key="e.id" :value="e.id">{{ EVIDENCE_DOCUMENT_TYPE_LABELS[e.documentType] }} · {{ e.originalFileName }}</el-checkbox>
+          </el-checkbox-group>
+          <span v-if="!verifiableEvidence.length" class="ml-muted">尚无可作为依据的资料，请先「补充资料」。</span>
+        </div>
+        <label class="ml-field"><span>核验说明（可空）</span><el-input v-model="verifyForm.note" type="textarea" :rows="2" /></label>
+        <MidlongNotice v-if="actionError" tone="danger" :title="missingBasis.length ? '核验依据不完整' : '未能确认'">
+          <template v-if="missingBasis.length">缺：{{ missingBasis.join('、') }}</template>
+          <template v-else>{{ actionError.message }}</template>
+          <el-button v-if="conflictDetails" link type="primary" @click="load">刷新合同</el-button>
+        </MidlongNotice>
+      </div>
+      <template #footer>
+        <el-button @click="dialogs.verify = false">取消</el-button>
+        <el-button type="primary" :loading="busy" @click="submitVerify">确认该义务</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog v-model="dialogs.correct" title="录入更正（生成新版本）" width="960px" top="5vh">
+      <div v-if="correctEconomics && detail" class="ml-dialog">
+        <MidlongNotice tone="info">
+          更正用于纠正录入错误：基于当前版本 {{ detail.currentRevisionNo }} 生成版本 {{ detail.currentRevisionNo + 1 }}，原版本与依据保留可查。
+          外部转让、部分终止等业务变更属于后续阶段，不能用更正代替；不做按比例缩放。
+        </MidlongNotice>
+        <MidlongEconomicsEditor ref="correctEditor" v-model="correctEconomics" :document-kind="detail.documentKind" :energy-attribute="detail.energyAttribute ?? 'CONVENTIONAL'" />
+        <div class="ml-grid">
+          <label class="ml-field ml-wide"><span>更正原因（必填）</span><el-input v-model="correctForm.reason" placeholder="如：原确认单为 1000 MWh，系统误录为 1100 MWh" /></label>
+          <label class="ml-field"><span>业务生效时间（可空 = 立即）</span><el-date-picker v-model="correctForm.businessEffectiveAt" type="datetime" value-format="YYYY-MM-DDTHH:mm:ssZ" /></label>
+        </div>
+        <div class="ml-field">
+          <span>更正依据（至少一份）</span>
+          <el-checkbox-group v-model="correctForm.evidenceIds">
+            <el-checkbox v-for="e in correctionEvidence" :key="e.id" :value="e.id">{{ EVIDENCE_DOCUMENT_TYPE_LABELS[e.documentType] }} · {{ e.originalFileName }}</el-checkbox>
+          </el-checkbox-group>
+        </div>
+        <MidlongNotice v-if="actionError" tone="danger" :title="conflictDetails ? '合同已被他人更新' : '未能生成更正版本'">
+          <template v-if="conflictDetails">
+            你基于的版本已过期（当前修订号 {{ conflictDetails.currentRowVersion }}、经济版本 {{ conflictDetails.currentRevisionNo }}）。请刷新核对最新版本后重新填写，本次内容未保存。
+            <el-button link type="primary" @click="dialogs.correct = false; load()">刷新合同</el-button>
+          </template>
+          <template v-else>{{ actionError.message }}</template>
+        </MidlongNotice>
+      </div>
+      <template #footer>
+        <el-button @click="dialogs.correct = false">取消</el-button>
+        <el-button type="primary" :loading="busy" :disabled="!correctForm.reason.trim() || !correctForm.evidenceIds.length || Boolean(correctEditor?.check.errors.length)" @click="submitCorrect">生成更正版本</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog v-model="dialogs.void" :title="status === 'CONFIRMED' ? '整笔纠错作废' : '作废草稿'" width="580px">
+      <div class="ml-dialog">
+        <MidlongNotice tone="warn">作废后该合同不再计入持仓，记录与全部历史版本保留、不可恢复为有效；部分终止不能用作废处理。</MidlongNotice>
+        <label class="ml-field"><span>作废原因（必填）</span><el-input v-model="voidForm.reason" type="textarea" :rows="2" /></label>
+        <div v-if="status === 'CONFIRMED'" class="ml-field">
+          <span>作废依据（已确认合同必填）</span>
+          <el-checkbox-group v-model="voidForm.evidenceIds">
+            <el-checkbox v-for="e in correctionEvidence" :key="e.id" :value="e.id">{{ EVIDENCE_DOCUMENT_TYPE_LABELS[e.documentType] }} · {{ e.originalFileName }}</el-checkbox>
+          </el-checkbox-group>
+        </div>
+        <MidlongNotice v-if="actionError" tone="danger">{{ actionError.message }}</MidlongNotice>
+      </div>
+      <template #footer>
+        <el-button @click="dialogs.void = false">取消</el-button>
+        <el-button type="danger" :loading="busy" :disabled="!voidForm.reason.trim() || (status === 'CONFIRMED' && !voidForm.evidenceIds.length)" @click="submitVoid">确认作废</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog v-model="dialogs.alias" title="关联外部编号" width="560px">
+      <div class="ml-dialog">
+        <MidlongNotice tone="info">用于「不同来源的同一份确认单」：人工核对为同一售电义务后建立关联，之后从该来源导入会识别为同一合同，持仓只计一次。</MidlongNotice>
+        <label class="ml-field"><span>来源</span><el-input v-model="aliasForm.sourceNamespace" placeholder="如 交易中心" /></label>
+        <label class="ml-field"><span>该来源下的编号</span><el-input v-model="aliasForm.externalObligationId" /></label>
+        <label class="ml-field"><span>核对说明（必填）</span><el-input v-model="aliasForm.verificationNote" type="textarea" :rows="2" /></label>
+        <MidlongNotice v-if="actionError" tone="danger">{{ actionError.message }}</MidlongNotice>
+      </div>
+      <template #footer>
+        <el-button @click="dialogs.alias = false">取消</el-button>
+        <el-button type="primary" :loading="busy" :disabled="!aliasForm.sourceNamespace.trim() || !aliasForm.externalObligationId.trim() || !aliasForm.verificationNote.trim()" @click="submitAlias">建立关联</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog v-model="dialogs.evidence" title="补充资料" width="560px">
+      <div class="ml-dialog">
+        <MidlongNotice tone="info">补充资料只留痕，不改变合同电量，也不新增义务。</MidlongNotice>
+        <label class="ml-field"><span>资料类型</span>
+          <el-select v-model="evidenceForm.documentType"><el-option v-for="t in uploadableTypes" :key="t" :label="EVIDENCE_DOCUMENT_TYPE_LABELS[t]" :value="t" /></el-select>
+        </label>
+        <label class="ml-field"><span>文件（≤ 20 MB）</span><input type="file" data-testid="ml-evidence-file" @change="onEvidenceFile" /></label>
+        <label class="ml-field"><span>说明（可空）</span><el-input v-model="evidenceForm.note" /></label>
+        <MidlongNotice v-if="actionError" tone="danger">{{ actionError.message }}</MidlongNotice>
+      </div>
+      <template #footer>
+        <el-button @click="dialogs.evidence = false">取消</el-button>
+        <el-button type="primary" :loading="busy" :disabled="!evidenceForm.file" @click="submitEvidence">上传</el-button>
+      </template>
+    </el-dialog>
+  </div>
+</template>
+
+<style scoped>
+.ml-page { padding: 20px; display: flex; flex-direction: column; gap: 14px; }
+.ml-head { display: flex; gap: 12px; }
+.ml-placeholder { min-height: 200px; }
+.ml-titlebar { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-wrap: wrap; }
+.ml-title { margin: 0 0 6px; font-size: var(--font-20); }
+.ml-tags { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.ml-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.ml-tiles { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; }
+.ml-tile { display: flex; flex-direction: column; gap: 3px; padding: 12px 14px; border: 1px solid var(--line); border-radius: var(--radius, 8px); background: var(--panel); }
+.ml-tile span { font-size: var(--font-sm); color: var(--muted); }
+.ml-tile b { font-size: var(--font-24); font-weight: 650; font-variant-numeric: tabular-nums; font-family: var(--font-display); }
+.ml-tile b i { font-style: normal; font-size: var(--font-sm); color: var(--muted); margin-left: 4px; font-weight: 500; }
+.ml-tile small { font-size: var(--font-xs); color: var(--muted); }
+.ml-panel { border: 1px solid var(--line); border-radius: var(--radius, 8px); padding: 14px 16px; background: var(--panel); }
+.ml-panel h3 { margin: 0 0 10px; font-size: var(--font-16); }
+.ml-split { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; }
+.ml-rev { display: flex; flex-direction: column; gap: 3px; font-size: var(--font-md); }
+.ml-rev-head { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.ml-link { color: var(--accent); text-decoration: none; }
+.ml-muted { color: var(--muted); font-size: var(--font-sm); }
+.ml-mono { font-family: var(--font-mono, monospace); }
+.ml-dialog { display: flex; flex-direction: column; gap: 12px; }
+.ml-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 14px; }
+.ml-field { display: flex; flex-direction: column; gap: 6px; font-size: var(--font-md); color: var(--muted); }
+.ml-field :deep(.el-select), .ml-field :deep(.el-date-editor) { width: 100%; }
+.ml-wide { grid-column: span 2; }
+@media (max-width: 1100px) { .ml-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); } .ml-split { grid-template-columns: 1fr; } }
+</style>
