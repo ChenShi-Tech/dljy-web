@@ -67,7 +67,7 @@ function openDeclaration(reference: DecisionReference) {
 }
 let alive = true, suppress = false, editVersion = 0, timer: ReturnType<typeof setTimeout> | null = null, savingTask: Promise<boolean> | null = null
 let paperGeneration = 0, publicationRequest = 0
-const commenting = ref(false), linkPending = ref(false), lookbackPending = ref(false), lookbackBusy = ref(false)
+const commenting = ref(false), linkPending = ref(false), lookbackPending = ref(false), lookbackBusy = ref(false), persistingLookback = ref(false)
 // 报告内登记改进措施的表单状态；需先于 pending 声明，pending 会立即求值。
 const registerTarget = ref(''), registerOwner = ref(''), registerDue = ref(''), registering = ref(false)
 const pending = computed(() => dirty.value || saving.value || publishing.value || commenting.value || linkPending.value || lookbackPending.value || !!registerTarget.value || !!commentText.value.trim())
@@ -76,7 +76,9 @@ watch(pending, value => emit('dirty', value), { immediate: true })
 // 任何未落进正文的输入都会被发布版本漏掉：未确认的关联依据、未保存的回查记录、打开着的措施登记表单。
 const publishBlocked = computed(() => linkPending.value || lookbackPending.value || !!registerTarget.value)
 // 改进记录的写入已发出、结果未回：此时不允许切换底稿、新建或离开，否则写成功的记录找不到它该落回的报告。
-const operationBusy = computed(() => lookbackBusy.value || registering.value)
+// 回查段写进正文后要等报告真正保存成功才算完成：改进记录那边已经改了状态，这段若没落库就被切走，会留下无报告记录的回查。
+const operationBusy = computed(() => lookbackBusy.value || registering.value || persistingLookback.value)
+watch(dirty, value => { if (!value) persistingLookback.value = false })
 watch(operationBusy, value => emit('busy', value), { immediate: true })
 watch(publishBlocked, value => { if (value) confirmed.value = false })
 watch(draft, () => {
@@ -162,6 +164,9 @@ watch(() => draft.value?.blocks.map(block => block.id).join('|'), () => { if (re
 function recordLookback(block: ReportBlock) {
   if (!draft.value || !canEdit.value) return
   draft.value.blocks.push(block)
+  // 不等 900ms 防抖：立即保存，并在保存确认前保持「进行中」，期间不能切换、新建或离开。
+  persistingLookback.value = true
+  void save().then(ok => { if (!ok && alive) error.value = '回查已写入改进记录，但报告尚未保存成功。请点击「保存底稿」，保存完成前不要离开。' })
 }
 const REGISTERED = '已登记为改进记录'
 /**
@@ -245,7 +250,7 @@ onBeforeUnmount(() => { alive = false; if (timer) clearTimeout(timer); emit('dir
     <div v-if="draft" class="workspace">
       <section>
         <p>主笔：{{ draft.authorId }} · {{ draft.scope.objectLabel }} · {{ draft.scope.startDate }}—{{ draft.scope.endDate }}<span v-if="!canEdit"> · 正文只读，可在右侧批注</span></p>
-        <fieldset :disabled="!canEdit || publishing || loading">
+        <fieldset :disabled="!canEdit || publishing || loading || registering">
           <label>报告标题<input v-model="draft.title" maxlength="200" /></label>
           <label>管理层摘要<textarea v-model="draft.summary" rows="3" placeholder="从同一份证据底稿提炼重点、风险与建议" /></label>
           <button type="button" @click="writingTarget = 'summary'">辅助提炼摘要</button>

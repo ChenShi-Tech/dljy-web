@@ -20,10 +20,15 @@ const due = computed(() => actions.value.filter(action => ['open', 'carried_over
  * 措施正文里往往先是元信息（「复盘对象：…」「来源报告：…」），真正的措施在「改进措施：」那一行。
  * 只取首行会让回查记录丢掉措施本身、同一来源的多条措施也无法区分。
  */
+const METADATA = /^(复盘对象|来源报告|关注时段|验证办法|验证记录|验证结论|回查报告|负责人)：/
 const measureOf = (text: string) => {
-  const lines = text.split(/\r?\n/).map(line => line.trim()).filter(Boolean)
-  const measure = lines.find(line => line.startsWith('改进措施：'))
-  return measure ? measure.slice('改进措施：'.length).trim() : (lines[0] ?? text)
+  const lines = text.split(/\r?\n/)
+  const start = lines.findIndex(line => line.trim().startsWith('改进措施：'))
+  if (start < 0) return lines.map(line => line.trim()).find(Boolean) ?? text
+  // 措施可以写多行：从「改进措施：」起一直取到下一个元信息行，不只取一行。
+  const body = [lines[start].trim().slice('改进措施：'.length)]
+  for (const line of lines.slice(start + 1)) { if (METADATA.test(line.trim())) break; body.push(line) }
+  return body.join('\n').trim()
 }
 watch(() => !!evidence.value.trim(), value => emit('dirty', value), { immediate: true })
 // 保存进行中必须让外层拦住切换底稿与离开：服务端可能已把措施改成完成/继续跟进，
@@ -82,8 +87,8 @@ onBeforeUnmount(() => { generation++; emit('dirty', false); emit('busy', false) 
       <p v-else-if="!due.length">本报告周期内没有到期待回查的改进措施。</p>
       <p v-if="status" role="status">{{ status }}</p>
       <article v-for="action in due" :key="action.id">
-        <div><b>{{ measureOf(action.action) }}</b><p>{{ action.status === 'carried_over' ? '继续跟进' : '待落实' }} · 负责人 {{ action.owner || '未指定' }} · 回查日期 {{ action.dueDate }}</p></div>
-        <button v-if="target?.id !== action.id" type="button" :disabled="disabled || saving" @click="begin(action)">在本报告中回查</button>
+        <div><b class="measure">{{ measureOf(action.action) }}</b><p>{{ action.status === 'carried_over' ? '继续跟进' : '待落实' }} · 负责人 {{ action.owner || '未指定' }} · 回查日期 {{ action.dueDate }}</p></div>
+        <button v-if="target?.id !== action.id" type="button" :disabled="disabled || saving || (!!target && !!evidence.trim())" :title="target && evidence.trim() ? '请先保存或取消正在填写的回查' : ''" @click="begin(action)">在本报告中回查</button>
         <div v-else class="form">
           <label>验证记录<textarea v-model="evidence" rows="4" :disabled="disabled || saving" placeholder="说明依据本报告的哪些材料、观察到什么变化、还有什么解释不了。至少 8 个字。" /></label>
           <label>验证结论<select v-model="verdict" :disabled="disabled || saving"><option v-for="(label, value) in verdictLabels" :key="value" :value="value">{{ label }}</option></select></label>

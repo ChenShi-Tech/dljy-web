@@ -214,6 +214,28 @@ describe('图文底稿交付', () => {
     finish({ id: '9', action: 'x', owner: '李四', dueDate: '2026-06-07', status: 'open', updatedAt: null } as never); await flushPromises()
     expect((wrapper.findAll('select')[1].element as HTMLSelectElement).disabled).toBe(false)
   })
+  it('回查段加入正文后立即保存，保存确认前保持进行中，不能切换底稿', async () => {
+    let finish: (value: Workpaper) => void = () => {}
+    const wrapper = await open()
+    vi.mocked(saveWorkpaper).mockClear().mockImplementation(async (_company, draft) => new Promise(resolve => { finish = () => resolve({ ...draft, revision: draft.revision + 1 }) }))
+    wrapper.findComponent({ name: 'ImprovementLookbackPanel' }).vm.$emit('record', { id: '00000000-0000-4000-8000-0000000000e1', kind: 'action', origin: 'improvement_lookback', title: '改进措施回查', text: '措施：…' })
+    await flushPromises()
+    // 不等防抖计时器就已发出保存
+    expect(saveWorkpaper).toHaveBeenCalledTimes(1)
+    expect((wrapper.findAll('select')[1].element as HTMLSelectElement).disabled).toBe(true)
+    finish(paper()); await flushPromises()
+    expect((wrapper.findAll('select')[1].element as HTMLSelectElement).disabled).toBe(false)
+  })
+  it('措施登记请求进行中冻结正文，源措施块不能被修改或移除', async () => {
+    vi.mocked(createImprovementAction).mockReturnValue(new Promise(() => {}))
+    vi.mocked(getWorkpaper).mockResolvedValue({ ...paper(), blocks: [{ id: '00000000-0000-4000-8000-0000000000c4', kind: 'action' as const, title: '改进措施', text: '晚高峰前复核预测区间再定申报量' }] })
+    const wrapper = await open()
+    await button(wrapper, '登记到改进记录').trigger('click')
+    const inputs = wrapper.findAll('.register input')
+    await inputs[0].setValue('李四'); await inputs[1].setValue('2026-06-07')
+    await button(wrapper, '登记').trigger('click'); await flushPromises()
+    expect((wrapper.find('fieldset').element as HTMLFieldSetElement).disabled).toBe(true)
+  })
   it('按来源标识而不是可编辑标题决定措施能否登记', async () => {
     vi.mocked(getWorkpaper).mockResolvedValue({ ...paper(), blocks: [
       { id: '00000000-0000-4000-8000-0000000000d1', kind: 'action' as const, origin: 'improvement_lookback' as const, title: '改了名的回查', text: '措施：晚高峰前复核预测区间' },

@@ -62,6 +62,20 @@ describe('报告内回查改进措施', () => {
     expect(block.text).toContain('措施：晚高峰前复核风速预测再定申报量')
     expect(block.text).not.toContain('来源报告')
   })
+  it('正在填写一条回查时，其它措施不能开始回查，避免静默清空已写内容', async () => {
+    const wrapper = await openPanel()
+    await button(wrapper, '在本报告中回查').trigger('click')
+    await wrapper.get('textarea').setValue('已经写了一半的验证记录')
+    const others = wrapper.findAll('button').filter(node => node.text() === '在本报告中回查')
+    expect(others.length).toBeGreaterThan(0)
+    for (const other of others) expect(other.attributes('disabled')).toBeDefined()
+    expect(wrapper.get<HTMLTextAreaElement>('textarea').element.value).toBe('已经写了一半的验证记录')
+  })
+  it('多行措施完整保留，到下一个元信息行为止', async () => {
+    vi.mocked(fetchAllImprovementActions).mockResolvedValue({ available: true, actions: [action('8', 'open', '2026-05-30', '复盘对象：晴川\n改进措施：晚高峰前复核风速预测\n再按区间下限申报\n验证办法：对照下周晚高峰偏差')] })
+    const wrapper = await openPanel()
+    expect(wrapper.find('article b').text()).toBe('晚高峰前复核风速预测\n再按区间下限申报')
+  })
   it('证据不足时措施继续跟进，不被关闭', async () => {
     vi.mocked(patchImprovementAction).mockImplementation(async (id, patch) => ({ ...action(id, patch.status as 'carried_over', '2026-05-30'), action: patch.action! }))
     const wrapper = await openPanel()
