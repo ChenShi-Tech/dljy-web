@@ -131,12 +131,21 @@ export async function fetchContract(contractId: number): Promise<MidlongContract
   return dataOf(await apiGet<Envelope<MidlongContractDetail>>(`${BASE}/contracts/${contractId}`, readQuery()))
 }
 
-export async function createDraft(input: MidlongContractInput): Promise<{ contractId: number; warnings: unknown[] }> {
-  return dataOf(await apiPost<Envelope<{ contractId: number; warnings: unknown[] }>>(writePath(`${BASE}/contracts`), input, withKey(actionKey('create', input))))
+/** 草稿保存的提示（不阻止保存）；PREVIOUSLY_VOIDED 表示该外部编号曾随作废释放，contractIds 为作废的合同。 */
+export interface DraftWarning {
+  field?: string
+  code: string
+  message: string
+  severity?: 'warning'
+  contractIds?: number[]
 }
 
-export async function updateDraft(contractId: number, input: MidlongContractInput & { expectedRowVersion: number }): Promise<{ contractId: number }> {
-  return dataOf(await apiPatch<Envelope<{ contractId: number }>>(writePath(`${BASE}/contracts/${contractId}`), input, withKey(actionKey('update', [contractId, input]))))
+export async function createDraft(input: MidlongContractInput): Promise<{ contractId: number; warnings: DraftWarning[] }> {
+  return dataOf(await apiPost<Envelope<{ contractId: number; warnings: DraftWarning[] }>>(writePath(`${BASE}/contracts`), input, withKey(actionKey('create', input))))
+}
+
+export async function updateDraft(contractId: number, input: MidlongContractInput & { expectedRowVersion: number }): Promise<{ contractId: number; warnings: DraftWarning[] }> {
+  return dataOf(await apiPatch<Envelope<{ contractId: number; warnings: DraftWarning[] }>>(writePath(`${BASE}/contracts/${contractId}`), input, withKey(actionKey('update', [contractId, input]))))
 }
 
 export async function verifyContract(contractId: number, body: { expectedRowVersion: number; evidenceIds: number[]; note?: string }): Promise<{ contractId: number; confirmedAt: string }> {
@@ -159,8 +168,8 @@ export async function fetchRevisions(contractId: number): Promise<MidlongRevisio
   return dataOf(await apiGet<Envelope<{ rows: MidlongRevision[] }>>(`${BASE}/contracts/${contractId}/revisions`, readQuery())).rows
 }
 
-export async function voidContract(contractId: number, body: { expectedRowVersion: number; reason: string; evidenceIds: number[] }): Promise<{ contractId: number }> {
-  return dataOf(await apiPost<Envelope<{ contractId: number }>>(writePath(`${BASE}/contracts/${contractId}/void`), body, withKey(actionKey('void', [contractId, body]))))
+export async function voidContract(contractId: number, body: { expectedRowVersion: number; reason: string; evidenceIds: number[] }): Promise<{ contractId: number; releasedKeys: Array<{ sourceNamespace: string; externalObligationId: string }> }> {
+  return dataOf(await apiPost<Envelope<{ contractId: number; releasedKeys: Array<{ sourceNamespace: string; externalObligationId: string }> }>>(writePath(`${BASE}/contracts/${contractId}/void`), body, withKey(actionKey('void', [contractId, body]))))
 }
 
 export type EvidenceUpload = { fileName: string; contentBase64: string; documentType: Exclude<EvidenceDocumentType, 'IMPORT_SOURCE_FILE'>; note?: string; mediaType?: string }

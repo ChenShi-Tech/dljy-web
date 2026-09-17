@@ -127,6 +127,22 @@ describe('中长期售电合同列表', () => {
     expect(urlQuery.keyword).toBe('TEST')
   })
 
+  it('按框架协议筛选：地址栏参数带入查询并显示可取消的筛选标签；切换公司时清掉（#2961）', async () => {
+    hoisted.routeQuery = { frameworkContractId: '5' }
+    hoisted.fetchCapabilities.mockResolvedValue(caps())
+    hoisted.fetchContracts.mockResolvedValue(listOf([]))
+    const w = mount(MidlongContractsView, { global: { stubs: STUBS } })
+    await flushPromises()
+    expect(hoisted.fetchContracts.mock.calls[0][0]).toMatchObject({ frameworkContractId: '5' })
+    expect(w.find('[data-testid="ml-framework-filter"]').text()).toContain('框架协议 #5 下的合同')
+    const companyRef = (hoisted as unknown as { companyRef: { value: string } }).companyRef
+    companyRef.value = companyRef.value === 'comp-a' ? 'comp-b' : 'comp-a'
+    await nextTick()
+    await flushPromises()
+    expect(hoisted.fetchContracts.mock.calls.at(-1)![0].frameworkContractId).toBeUndefined()
+    expect(hoisted.replace.mock.calls.at(-1)![0].query).not.toHaveProperty('frameworkContractId')
+  })
+
   it('「有质量缺口」只展示数量，不是会清空筛选的按钮', async () => {
     hoisted.fetchCapabilities.mockResolvedValue(caps())
     hoisted.fetchContracts.mockResolvedValue(listOf([row({ qualityFlags: ['MISSING_PRICE'] })]))

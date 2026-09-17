@@ -283,6 +283,21 @@ export interface MidlongAlias {
   verificationNote: string | null
   createdAt: string
   createdBy: string | null
+  /** 合同作废时释放外部编号的时刻；非空表示该编号已可重新登记（迁移 056）。 */
+  releasedAt: string | null
+  releasedReason: string | null
+}
+
+/** 框架协议关系中的对方合同。 */
+export interface MidlongRelatedContract {
+  contractId: number
+  contractName: string
+  externalContractNo: string
+  documentKind: DocumentKind
+  confirmationStatus: ConfirmationStatus
+  totalQuantity: string | null
+  deliveryStart: string | null
+  deliveryEnd: string | null
 }
 
 export interface MidlongContractDetail extends MidlongContractSummary {
@@ -292,6 +307,10 @@ export interface MidlongContractDetail extends MidlongContractSummary {
   evidence: MidlongEvidence[]
   events: MidlongEvent[]
   aliases: MidlongAlias[]
+  /** 电量合同所属的框架协议；未关联为 null。 */
+  framework: MidlongRelatedContract | null
+  /** 框架协议下关联的合同（含已作废）；电量合同恒为空数组。 */
+  linkedContracts: MidlongRelatedContract[]
   linkedTrades: { label: string; tradeCount: number; volume: string }
 }
 
@@ -318,6 +337,7 @@ export interface MidlongContractQuery {
   deliveryFrom?: string
   deliveryTo?: string
   subjectId?: number | string
+  frameworkContractId?: number | string
   stationId?: number | 'UNALLOCATED' | string
   documentKind?: DocumentKind
   productKind?: ProductKind
@@ -390,6 +410,8 @@ export interface MidlongImportRowReport {
   conflictReason: 'CONTENT_DIFFERS' | 'EXISTING_VOIDED' | 'AMBIGUOUS_SUBJECT' | null
   diffs: MidlongImportDiff[]
   candidateDuplicates: Array<{ contractId: number; externalContractNo: string; sourceNamespace: string }>
+  /** 同一业务键曾随作废释放的合同：本行仍可新增，预览给出 PREVIOUSLY_VOIDED 提示。 */
+  previouslyVoided: Array<{ contractId: number; voidedAt: string; voidReason: string | null }>
   externalObligationId: string
   contractName: string
   documentKind: DocumentKind | null
@@ -572,9 +594,11 @@ export interface MidlongCsvExport {
   content: string
 }
 
-export interface MidlongOnboardingRecord {
+/** 可展示明细的盘点记录（合同归属规则已命中）。 */
+export interface MidlongOnboardingVisibleRecord {
   contractId: number
   companyId: string
+  ownershipBlocked: false
   contractNo: string | null
   contractName: string | null
   marketType: string | null
@@ -589,10 +613,36 @@ export interface MidlongOnboardingRecord {
   detailCount: number
 }
 
+/** 归属未确定的盘点记录：与旧合同接口同口径只给合同 ID，不含业务明细（MW-03）。 */
+export interface MidlongOnboardingMaskedRecord {
+  contractId: number
+  companyId: string
+  ownershipBlocked: true
+  category: 'UNKNOWN'
+  reasons: string[]
+  duplicateContractIds: []
+  gaps: []
+  detailCount: null
+}
+
+export type MidlongOnboardingRecord = MidlongOnboardingVisibleRecord | MidlongOnboardingMaskedRecord
+
 export interface MidlongOnboardingPreview {
   generatedAt: string
   readOnly: true
-  summary: { total: number; alreadyManaged: number; MIDLONG_CANDIDATE: number; SPOT: number; RETAIL: number; UNKNOWN: number; duplicateGroups: number }
+  summary: {
+    total: number
+    alreadyManaged: number
+    MIDLONG_CANDIDATE: number
+    SPOT: number
+    RETAIL: number
+    UNKNOWN: number
+    /** 其中归属未确定、只给合同 ID 的记录数。 */
+    ownershipBlocked: number
+    /** 绑定其他地区场站、未列入本地区盘点的旧合同数。 */
+    outOfRegion: number
+    duplicateGroups: number
+  }
   records: MidlongOnboardingRecord[]
   note: string
 }

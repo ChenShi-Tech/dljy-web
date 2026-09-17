@@ -220,6 +220,10 @@ function close() {
                   疑似同一义务（不同来源，需人工核对后关联）：
                   <router-link v-for="c in row.candidateDuplicates" :key="c.contractId" :to="`/zcqjy/contracts/${c.contractId}`" class="ml-link" target="_blank">{{ c.externalContractNo }}（{{ c.sourceNamespace }}）</router-link>
                 </div>
+                <div v-if="row.previouslyVoided?.length">
+                  该编号曾登记后作废（本行仍会新增，请确认不是重复录入）：
+                  <router-link v-for="v in row.previouslyVoided" :key="v.contractId" :to="`/zcqjy/contracts/${v.contractId}`" class="ml-link" target="_blank">合同 #{{ v.contractId }}</router-link>
+                </div>
                 <div v-if="!row.errors.length && !row.warnings.length && !row.diffs.length && !row.candidateDuplicates.length" class="ml-muted">无问题</div>
               </div>
             </template>

@@ -50,6 +50,7 @@ const filters = reactive({
   energyAttribute: q('energyAttribute'),
   subjectId: q('subjectId'),
   stationId: q('stationId'),
+  frameworkContractId: q('frameworkContractId'),
 })
 const page = ref(Number(q('page')) || 1)
 const pageSize = ref(20)
@@ -66,6 +67,7 @@ const query = computed<MidlongContractQuery>(() => {
   if (filters.energyAttribute) out.energyAttribute = filters.energyAttribute as MidlongContractQuery['energyAttribute']
   if (filters.subjectId) out.subjectId = filters.subjectId
   if (filters.stationId) out.stationId = filters.stationId
+  if (filters.frameworkContractId) out.frameworkContractId = filters.frameworkContractId
   return out
 })
 
@@ -117,7 +119,7 @@ function applyFilters() {
 }
 
 function resetFilters() {
-  Object.assign(filters, { keyword: '', deliveryRange: [], confirmationStatus: '', deliveryProgress: '', qualityFlag: '', productKind: '', tradeMethod: '', energyAttribute: '', subjectId: '', stationId: '' })
+  Object.assign(filters, { keyword: '', deliveryRange: [], confirmationStatus: '', deliveryProgress: '', qualityFlag: '', productKind: '', tradeMethod: '', energyAttribute: '', subjectId: '', stationId: '', frameworkContractId: '' })
   applyFilters()
 }
 
@@ -156,11 +158,12 @@ const isTestData = (ns: string) => /^TEST/i.test(ns)
 const hasTestData = computed(() => (result.value?.rows ?? []).some((r) => isTestData(r.sourceNamespace)))
 
 onMounted(load)
-// 交易主体、场站的编号只在所属公司/地区内有意义：切换后清掉这两项筛选并同步地址栏，
+// 交易主体、场站、框架协议的编号只在所属公司/地区内有意义：切换后清掉这些筛选并同步地址栏，
 // 否则新公司会被旧编号筛成「没有合同」，或误筛到恰好复用同一编号的对象。
 watch([selectedCompanyId, () => currentRegion.value.id], () => {
   filters.subjectId = ''
   filters.stationId = ''
+  filters.frameworkContractId = ''
   page.value = 1
   syncUrl()
   void load()
@@ -240,6 +243,7 @@ watch([selectedCompanyId, () => currentRegion.value.id], () => {
           <el-option label="未分配场站" value="UNALLOCATED" />
           <el-option v-for="s in stations" :key="s.id" :label="s.name" :value="String(s.id)" />
         </el-select>
+        <el-tag v-if="filters.frameworkContractId" closable data-testid="ml-framework-filter" @close="filters.frameworkContractId = ''; applyFilters()">框架协议 #{{ filters.frameworkContractId }} 下的合同</el-tag>
         <el-button type="primary" @click="applyFilters">查询</el-button>
         <el-button @click="resetFilters">重置</el-button>
       </div>

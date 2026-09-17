@@ -25,7 +25,7 @@ const STUBS = { 'router-link': { template: '<a><slot /></a>' } }
 function row(o: Partial<MidlongImportRowReport>): MidlongImportRowReport {
   return {
     rowId: 'C2', location: { sheet: '合同主表', rowNumber: 2, allocationRowNumbers: [] }, op: 'CREATE', contractId: null, confirmationStatus: null,
-    conflictReason: null, diffs: [], candidateDuplicates: [], externalObligationId: 'T-1', contractName: '测试合同', documentKind: 'OBLIGATION',
+    conflictReason: null, diffs: [], candidateDuplicates: [], previouslyVoided: [], externalObligationId: 'T-1', contractName: '测试合同', documentKind: 'OBLIGATION',
     productKind: 'ANNUAL', subjectKey: null, stationName: null, sourceNamespace: 'TEST', deliveryStart: '2027-01-01', deliveryEnd: '2027-12-31',
     totalQuantity: '1000', sellerPrice: null, priceStatus: 'UNKNOWN', allocationCompleteness: 'NONE', unallocatedQuantity: '1000', allocationCount: 0,
     errors: [], warnings: [], ...o,
@@ -105,6 +105,20 @@ describe('中长期合同导入', () => {
     expect(w.text()).toContain('价格单位来自导入映射声明，文件中未注明')
     expect(w.findAll('.ml-tile').some((t) => t.text().replace(/\s+/g, '') === '提示1')).toBe(true)
     expect(commitButton().attributes('disabled')).toBeUndefined()
+  })
+
+  it('同号合同曾作废：该行仍可新增，展开可见曾作废提示与原合同链接（#2961）', async () => {
+    hoisted.createImportPreview.mockResolvedValue(preview([row({
+      op: 'CREATE', previouslyVoided: [{ contractId: 42, voidedAt: '2026-09-17T01:00:00.000Z', voidReason: '交易方式录错' }],
+      warnings: [{ sheet: '合同主表', rowNumber: 2, column: '外部合同编号', code: 'PREVIOUSLY_VOIDED', message: '外部合同编号「T-1」曾登记为合同 42（作废原因：交易方式录错），本次登记为新的合同', severity: 'warning' }],
+    })], true))
+    const { w, commitButton } = await openAndPreview()
+    expect(commitButton().attributes('disabled')).toBeUndefined()
+    await w.findAll('.el-table__expand-icon')[0].trigger('click')
+    await flushPromises()
+    expect(w.text()).toContain('曾登记为合同 42')
+    expect(w.text()).toContain('该编号曾登记后作废')
+    expect(w.text()).toContain('合同 #42')
   })
 
   it('选择超过 20 MB 的文件：立即提示，不读入内存、不生成预览', async () => {

@@ -89,10 +89,7 @@ const subjectLabel = computed(() => {
   if (!d?.subjectId) return '待补'
   return `${d.subjectName}（${d.subjectKey}${d.subjectUnitCode ? ` · 单元 ${d.subjectUnitCode}` : ' · 单元代码待补'}）`
 })
-const futureEffective = computed(() => {
-  const at = current.value?.businessEffectiveAt
-  return at && new Date(at).getTime() > Date.now() ? at : null
-})
+const releasedAliases = computed(() => (detail.value?.aliases ?? []).filter((a) => a.releasedAt))
 const evidenceById = computed(() => new Map((detail.value?.evidence ?? []).map((e) => [e.id, e])))
 
 function allocationPrice(rev: MidlongRevision, a: MidlongRevision['allocations'][number]) {
@@ -152,10 +149,17 @@ function openCorrect() {
   Object.assign(correctForm, { reason: '', evidenceIds: [], businessEffectiveAt: '' })
   openAction('correct')
 }
+// 录入更正纠正的是已发生的事实：生效时间不能晚于当前，未来生效的合同变更属于后续调整功能（服务端同样拒绝）。
+const isFutureMoment = (date: Date) => date.getTime() > Date.now()
+const correctEffectiveInFuture = computed(() => Boolean(correctForm.businessEffectiveAt) && isFutureMoment(new Date(correctForm.businessEffectiveAt)))
 function submitCorrect() {
   const d = detail.value
   const draft = correctEconomics.value
   if (!d || !draft) return
+  if (correctEffectiveInFuture.value) {
+    actionError.value = { status: 422, errorCode: 'VALIDATION_FAILED', message: '业务生效时间不能晚于当前时间；未来生效的合同变更属于后续调整功能', details: { field: 'businessEffectiveAt' } }
+    return
+  }
   void runAction('correct', () => correctContract(d.contractId, {
     expectedRowVersion: d.rowVersion, changeType: 'CORRECTION', reason: correctForm.reason.trim(), evidenceIds: correctForm.evidenceIds,
     businessEffectiveAt: correctForm.businessEffectiveAt || null, economics: toEconomicsInput(draft),
@@ -282,7 +286,9 @@ const missingBasis = computed(() => (actionError.value?.errorCode === 'INCOMPLET
       <MidlongNotice v-if="hintGaps.length" tone="warn" title="质量提示（不阻止确认，已证明的义务照常计入）">
         {{ hintGaps.map((g) => g.label).join('、') }}。
       </MidlongNotice>
-      <MidlongNotice v-if="futureEffective" tone="info">当前版本预定于 {{ new Date(futureEffective).toLocaleString('zh-CN') }} 生效，生效前月度持仓仍使用上一确认版本。</MidlongNotice>
+      <MidlongNotice v-if="status === 'VOIDED' && releasedAliases.length" tone="info">
+        外部编号 {{ releasedAliases.map((a) => a.externalObligationId).join('、') }} 已随作废释放，可以按正确内容重新登记（重新登记时会提示曾作废）。
+      </MidlongNotice>
 
       <div class="ml-tiles">
         <div class="ml-tile"><span>当前有效电量</span><b>{{ fmtQuantity(current?.totalQuantity) }}<i>MWh</i></b><small>版本 {{ detail.currentRevisionNo }}</small></div>
@@ -310,7 +316,28 @@ const missingBasis = computed(() => (actionError.value?.errorCode === 'INCOMPLET
           <el-descriptions-item label="来源">{{ detail.sourceNamespace }}（{{ { MANUAL: '人工录入', IMPORT: '文件导入', ONBOARDING: '存量纳管' }[detail.origin] }}）</el-descriptions-item>
           <el-descriptions-item label="首次确认">{{ detail.firstConfirmedAt ? `${new Date(detail.firstConfirmedAt).toLocaleString('zh-CN')} · ${detail.firstConfirmedBy}` : '未确认' }}</el-descriptions-item>
           <el-descriptions-item label="导入批次">{{ detail.importBatchId ?? '—' }}</el-descriptions-item>
+          <el-descriptions-item v-if="detail.documentKind === 'OBLIGATION'" label="所属框架协议">
+            <template v-if="detail.framework">
+              <router-link :to="`/zcqjy/contracts/${detail.framework.contractId}`" class="ml-link">{{ detail.framework.contractName }}（{{ detail.framework.externalContractNo }}）</router-link>
+              <el-tag v-if="detail.framework.confirmationStatus === 'VOIDED'" size="small" type="info" effect="plain" class="ml-gap">框架协议已作废（保留历史关联）</el-tag>
+            </template>
+            <template v-else>未关联</template>
+          </el-descriptions-item>
         </el-descriptions>
+      </div>
+
+      <div v-if="detail.documentKind === 'FRAMEWORK'" class="ml-panel">
+        <h3>框架下的合同（{{ detail.linkedContracts.length }}）</h3>
+        <el-table :data="detail.linkedContracts" border size="small">
+          <el-table-column label="合同" min-width="220">
+            <template #default="{ row }"><router-link :to="`/zcqjy/contracts/${row.contractId}`" class="ml-link">{{ row.contractName }}</router-link> <span class="ml-mono ml-muted">{{ row.externalContractNo }}</span></template>
+          </el-table-column>
+          <el-table-column label="确认状态" width="110"><template #default="{ row }"><el-tag size="small" :type="confirmationTag(row.confirmationStatus).type">{{ confirmationTag(row.confirmationStatus).label }}</el-tag></template></el-table-column>
+          <el-table-column label="电量(MWh)" width="130" align="right"><template #default="{ row }">{{ fmtQuantity(row.totalQuantity) }}</template></el-table-column>
+          <el-table-column label="交割期" width="210"><template #default="{ row }">{{ row.deliveryStart ?? '—' }} ~ {{ row.deliveryEnd ?? '—' }}</template></el-table-column>
+          <template #empty>尚无合同关联到该框架协议。框架协议本身不产生正式持仓。</template>
+        </el-table>
+        <router-link v-if="detail.linkedContracts.length" :to="{ path: '/zcqjy/contracts', query: { frameworkContractId: String(detail.contractId) } }" class="ml-link ml-muted">在合同列表中查看</router-link>
       </div>
 
       <div class="ml-panel">
@@ -377,6 +404,7 @@ const missingBasis = computed(() => (actionError.value?.errorCode === 'INCOMPLET
             <el-table-column prop="sourceNamespace" label="来源" width="140" />
             <el-table-column prop="externalObligationId" label="编号" min-width="150" />
             <el-table-column label="类型" width="110"><template #default="{ row }">{{ row.aliasKind === 'PRIMARY' ? '主编号' : '已核对别名' }}</template></el-table-column>
+            <el-table-column label="状态" width="130"><template #default="{ row }">{{ row.releasedAt ? '已随作废释放' : '占用中' }}</template></el-table-column>
           </el-table>
         </div>
       </div>
@@ -416,7 +444,7 @@ const missingBasis = computed(() => (actionError.value?.errorCode === 'INCOMPLET
         <MidlongEconomicsEditor ref="correctEditor" v-model="correctEconomics" :document-kind="detail.documentKind" :energy-attribute="detail.energyAttribute ?? 'CONVENTIONAL'" />
         <div class="ml-grid">
           <label class="ml-field ml-wide"><span>更正原因（必填）</span><el-input v-model="correctForm.reason" placeholder="如：原确认单为 1000 MWh，系统误录为 1100 MWh" /></label>
-          <label class="ml-field"><span>业务生效时间（可空 = 立即）</span><el-date-picker v-model="correctForm.businessEffectiveAt" type="datetime" value-format="YYYY-MM-DDTHH:mm:ssZ" /></label>
+          <label class="ml-field"><span>业务生效时间（可空 = 立即；不能晚于当前）</span><el-date-picker v-model="correctForm.businessEffectiveAt" type="datetime" value-format="YYYY-MM-DDTHH:mm:ssZ" :disabled-date="isFutureMoment" /></label>
         </div>
         <div class="ml-field">
           <span>更正依据（至少一份）</span>
@@ -440,7 +468,7 @@ const missingBasis = computed(() => (actionError.value?.errorCode === 'INCOMPLET
 
     <el-dialog v-model="dialogs.void" :title="status === 'CONFIRMED' ? '整笔纠错作废' : '作废草稿'" width="580px">
       <div class="ml-dialog">
-        <MidlongNotice tone="warn">作废后该合同不再计入持仓，记录与全部历史版本保留、不可恢复为有效；部分终止不能用作废处理。</MidlongNotice>
+        <MidlongNotice tone="warn">作废后该合同不再计入持仓，记录与全部历史版本保留、不可恢复为有效；部分终止不能用作废处理。外部编号随作废释放，录错品种、交易方式或场站时可按正确内容重新登记。</MidlongNotice>
         <label class="ml-field"><span>作废原因（必填）</span><el-input v-model="voidForm.reason" type="textarea" :rows="2" /></label>
         <div v-if="status === 'CONFIRMED'" class="ml-field">
           <span>作废依据（已确认合同必填）</span>
@@ -510,6 +538,7 @@ const missingBasis = computed(() => (actionError.value?.errorCode === 'INCOMPLET
 .ml-link { color: var(--accent); text-decoration: none; }
 .ml-muted { color: var(--muted); font-size: var(--font-sm); }
 .ml-mono { font-family: var(--font-mono, monospace); }
+.ml-gap { margin-left: 6px; }
 .ml-dialog { display: flex; flex-direction: column; gap: 12px; }
 .ml-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 14px; }
 .ml-field { display: flex; flex-direction: column; gap: 6px; font-size: var(--font-md); color: var(--muted); }
