@@ -26,10 +26,7 @@ import type { AnalysisView, ViewConfig } from '@/services/analysisClient'
 import { defineAiPage, useAiSidebar } from '@/features/aiSidebar'
 import { PAGE_PROMPT_KEYS } from '@/prompts'
 
-const POINTS_96 = Array.from({ length: 96 }, (_, i) => {
-  const m = (i + 1) * 15
-  return `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`
-})
+import { POINTS_96 } from '@/utils/spotPoints96'
 
 const loading = ref(true)
 const error = ref('')

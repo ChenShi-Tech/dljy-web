@@ -45,7 +45,7 @@ import { getYunnanRuleVerificationSummary, yunnanScenarios } from '@/services/yu
 import CgnYunnanPriceStatus from '@/components/spot/CgnYunnanPriceStatus.vue'
 import {
   fetchCgnYunnanPriceBundle,
-  isCgnYunnanPriceCompany,
+  hasCgnYunnanPriceEntitlement,
   type CgnYunnanPriceBundle,
   type CgnPricePoint
 } from '@/services/market/cgnYunnanLivePrice'
@@ -156,7 +156,10 @@ async function loadBidPlanSummary() {
 
 // 云南现货数据区仅云南有真实节点电价/损益/结算；非云南降级为空态卡（诚实标注，不伪装）。
 const isYunnan = computed(() => currentRegion.value.id === 'yunnan')
-const cgnPriceEntitled = computed(() => isCgnYunnanPriceCompany(currentUser.value.companyId))
+// CGN 私有价判定收口到服务谓词（spot-trading-module-hygiene）：hasCgnYunnanPriceEntitlement
+// 内部按「选中公司 || 登录账号」判定（公司切换/平台超管场景），替代本页 setup 时的
+// 一次性 currentUser 快照口径——与 spotClient/SpotCockpitCore 的实际取数路径同源。
+const cgnPriceEntitled = computed(() => hasCgnYunnanPriceEntitlement())
 const usesCgnPrivatePrice = computed(() => isYunnan.value && cgnPriceEntitled.value)
 
 // 地区扩展插槽（Epic #1431 S3）：内核只认插槽 id，不 import 任何具体省份的面板；

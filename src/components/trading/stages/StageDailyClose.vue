@@ -33,6 +33,7 @@ import {
   type DecisionLogMode
 } from '@/services/trading/decisionLogStore'
 import { savePreflight, STATUS_LABEL, type DeclarationOrder } from '@/services/declarations'
+import { useSaveState } from '@/composables/useSaveState'
 import { GAP_SUGGESTION_LABEL } from '@/services/trading/contractGap'
 import AiAssistFill from '@/components/trading/AiAssistFill.vue'
 import type { StageId } from '@/data/workflowStages'
@@ -344,19 +345,16 @@ const reportLines = computed<string[]>(() => {
 // ── 日报写回 ────────────────────────────────────────────────────────────────
 const summary = ref('')
 const summaryValid = computed(() => summary.value.trim().length >= 6)
-const saving = ref(false)
-const saveMsg = ref('')
-const saveError = ref('')
+// 写回三态走 useSaveState 单源（spot-trading-module-hygiene 收口六份逐字副本）
+const { saving, saveMsg, saveError, runSave } = useSaveState()
 const written = computed(() => pf.value.dailyClose ?? null)
 
 async function writeBack() {
   if (!decl.value || !summaryValid.value) return
-  saving.value = true
-  saveMsg.value = ''
-  saveError.value = ''
-  try {
+  const declaration = decl.value
+  await runSave(async () => {
     const updated = await savePreflight(
-      decl.value.id,
+      declaration.id,
       'dailyClose',
       {
         reportSummary: summary.value.trim(),
@@ -381,12 +379,8 @@ async function writeBack() {
       `S7 日报收尾：${coverage.value.meetsVeto ? '决策日志达标' : '决策日志未达标'}`
     )
     emit('updated', updated)
-    saveMsg.value = '日报已收口，一日闭环完成'
-  } catch (e) {
-    saveError.value = e instanceof Error ? e.message : '写回失败'
-  } finally {
-    saving.value = false
-  }
+    return '日报已收口，一日闭环完成'
+  })
 }
 </script>
 

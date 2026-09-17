@@ -21,6 +21,7 @@ import { exposureFactorOf, USAGE_GATE_LABEL } from 'shared/trading-rules/data-in
 import { DEFAULT_REGIME_BANDS, REGIME_LABEL } from 'shared/trading-rules/supply-demand.mjs'
 import { breakevenSpread } from 'shared/trading-rules/storage-arbitrage.mjs'
 import { savePreflight, type DeclarationOrder } from '@/services/declarations'
+import { useSaveState } from '@/composables/useSaveState'
 import { applyBias, buildLoadCurve96, LOAD_SHAPE_LABEL, type LoadShapeId } from '@/services/trading/loadShape'
 import { runForecastPredict, runMidterm, unavailableReasonOf, type ForecastResult, type MidtermResult } from '@/services/forecast/mlForecastClient'
 import { ensureForecastCatalog, forecastCatalogState, isModelSelectableForTarget, predictBlockerReason } from '@/services/forecast/forecastProviders'
@@ -339,19 +340,16 @@ const aiQuestion = computed(() =>
 )
 
 // 写回
-const saving = ref(false)
-const saveMsg = ref('')
-const saveError = ref('')
+// 写回三态走 useSaveState 单源（spot-trading-module-hygiene 收口六份逐字副本）
+const { saving, saveMsg, saveError, runSave } = useSaveState()
 const written = computed(() => props.declaration?.preflight?.forecast ?? null)
 
 async function writeBack() {
   if (!props.declaration || !rationaleValid.value || signConflict.value) return
-  saving.value = true
-  saveMsg.value = ''
-  saveError.value = ''
-  try {
+  const declaration = props.declaration
+  await runSave(async () => {
     const updated = await savePreflight(
-      props.declaration.id,
+      declaration.id,
       'forecast',
       {
         curveMwh96: declaredCurve.value,
@@ -393,12 +391,8 @@ async function writeBack() {
       `S3 方向判断：${DIRECTION_LABEL[direction.value]}（置信 ${confidence.value}），偏置 ${(bias.value.biasRatio * 100).toFixed(1)}%`
     )
     emit('updated', updated)
-    saveMsg.value = '方向与申报曲线已写回，S4 申报执行可一键套用'
-  } catch (e) {
-    saveError.value = e instanceof Error ? e.message : '写回失败'
-  } finally {
-    saving.value = false
-  }
+    return '方向与申报曲线已写回，S4 申报执行可一键套用'
+  })
 }
 </script>
 

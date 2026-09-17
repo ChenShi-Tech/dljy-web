@@ -27,6 +27,7 @@ import {
   approveDeclaration,
   declarationModeOf,
   runDeclarationRiskCheck,
+  EDITABLE_DRAFT_STATUSES,
   STATUS_LABEL,
   submitDeclaration,
   submitDeclarationForApproval,
@@ -93,7 +94,7 @@ const curveMatchesForecast = computed(() => {
   return a.length === b.length && a.every((v, i) => Math.abs(v - b[i]) < 0.0001)
 })
 const canEditCurve = computed(() =>
-  decl.value ? ['DRAFT', 'RISK_CHECKED', 'REJECTED'].includes(decl.value.status) : false
+  decl.value ? EDITABLE_DRAFT_STATUSES.includes(decl.value.status) : false
 )
 
 // ①' 分段价量报价草稿（F3.4 · 手册 S4 步骤①：检查「分几段、每段什么价」）
