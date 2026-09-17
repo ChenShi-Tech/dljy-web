@@ -121,7 +121,11 @@ async function askInKernel(question: string) {
   // 等这一代内核初始化完成再发；等待期间又切换了会话（新的切换自己会发问），这条作废
   if (!(await kernelReadyFor(key))) return
   // 晨报：先装配数据预检（确定性，不依赖模型），再发目标日启动研判——与工作台「生成晨报」一致
-  if (record.value.entryKey === 'morning_brief' && briefRailRef.value) await briefRailRef.value.ensureLoaded()
+  if (record.value.entryKey === 'morning_brief' && briefRailRef.value) {
+    await briefRailRef.value.ensureLoaded()
+    // 预检取数可能很慢：期间用户又发起了别的会话，这条晨报启动作废，不能把日期发进新会话（dljy-web#121 审查 P1）
+    if (state.mountKey !== key) return
+  }
   agentPanelRef.value?.ask(question)
 }
 

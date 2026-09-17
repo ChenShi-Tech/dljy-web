@@ -105,6 +105,25 @@ describe('AgentChatPanel · 挂载续接', () => {
     expect(vi.mocked(sendAgentMessage).mock.calls[0][0]).toBe('s_new')
   })
 
+  it('历史回放在途时用户已发新消息：回放随后失败也不再降级，不覆盖新会话与消息（dljy-web#121 审查 P1）', async () => {
+    let rejectHistory: (e: Error) => void = () => {}
+    vi.mocked(fetchHistoryTranscript).mockImplementation(() => new Promise((_r, reject) => { rejectHistory = reject }))
+    vi.mocked(getAgentSession).mockResolvedValue({ id: 's_live', scenario: 'chat', title: '在跑的会话', status: 'running' })
+    const w = mount(AgentChatPanel, { props: { historyKey: 'test_resume_run', restoreLastSession: false, resumeSessionId: 's_live' } })
+    wrappers.push(w)
+    await flushPromises()
+    expect(fetchHistoryTranscript).toHaveBeenCalledTimes(1)
+    ;(w.vm as unknown as { ask: (q: string) => boolean }).ask('新问题')
+    await flushPromises()
+    expect(sendAgentMessage).toHaveBeenCalledTimes(1)
+    rejectHistory(new Error('404'))
+    await flushPromises()
+    expect(getAgentSession).not.toHaveBeenCalled()
+    expect(getActiveRun).not.toHaveBeenCalled()
+    expect(w.text()).toContain('新问题')
+    expect(vi.mocked(sendAgentMessage).mock.calls[0][0]).toBe('s_new')
+  })
+
   it('会话就绪事件携带会话标题', async () => {
     vi.mocked(fetchHistoryTranscript).mockResolvedValue({
       session_id: 's_hist', scenario: 'chat', title: '09-16 晨报', archived: false,
