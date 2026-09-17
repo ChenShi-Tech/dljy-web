@@ -9,7 +9,9 @@ import { mount } from '@/test/mount'
 import type { MidlongCapabilities } from '@/services/midlong/midlongTypes'
 import type { StationPositionReport } from '@/services/midlong/midlongP2Types'
 
-const hoisted = vi.hoisted(() => ({ fetchCapabilities: vi.fn(), fetchStationPositions: vi.fn(), companyRef: null as null | { value: string } }))
+const hoisted = vi.hoisted(() => ({
+  fetchCapabilities: vi.fn(), fetchStationPositions: vi.fn(), exportStationPositions: vi.fn(), downloadCsv: vi.fn(), companyRef: null as null | { value: string },
+}))
 
 vi.mock('element-plus', async (orig) => ({ ...(await orig<typeof import('element-plus')>()), ElMessage: { success: vi.fn(), error: vi.fn(), warning: vi.fn() } }))
 vi.mock('vue-router', () => ({ useRoute: () => ({ query: {} }), useRouter: () => ({ replace: vi.fn() }) }))
@@ -18,6 +20,7 @@ vi.mock('@/services/company/companyContext', async () => {
   hoisted.companyRef = selectedCompanyId
   return { selectedCompanyId }
 })
+vi.mock('@/services/midlong/midlongFormat', async (orig) => ({ ...(await orig<typeof import('@/services/midlong/midlongFormat')>()), downloadCsv: hoisted.downloadCsv }))
 vi.mock('@/services/region/regionContext', async () => ({ currentRegion: (await import('vue')).ref({ id: 'yunnan' }) }))
 vi.mock('@/services/midlong/midlongApi', () => ({
   CompanyNotSelectedError: class extends Error {},
@@ -28,7 +31,7 @@ vi.mock('@/services/midlong/midlongApi', () => ({
 vi.mock('@/services/midlong/midlongP2Api', async (orig) => ({
   p2ModuleOn: (await orig<typeof import('@/services/midlong/midlongP2Api')>()).p2ModuleOn,
   fetchStationPositions: hoisted.fetchStationPositions,
-  exportStationPositions: vi.fn(),
+  exportStationPositions: hoisted.exportStationPositions,
 }))
 
 import MidlongStationPositionsView from './MidlongStationPositionsView.vue'
@@ -113,6 +116,24 @@ describe('中长期售电场站维度持仓', () => {
     expect(w.text()).not.toContain('测试风电场A')
     expect(w.text()).not.toContain('主体合计 1,000')
     hoisted.companyRef!.value = 'comp-a'
+  })
+
+  it('导出用页面当前结果的查询（含服务端采用的月份）：改了筛选但没点「查询」时，导出参数仍是上一次查询的', async () => {
+    hoisted.fetchCapabilities.mockResolvedValue(caps())
+    hoisted.fetchStationPositions.mockResolvedValue(report())
+    hoisted.exportStationPositions.mockResolvedValue({ fileName: 'TEST.csv', contentType: 'text/csv', content: 'x', status: 'complete' })
+    const w = mount(MidlongStationPositionsView, { global: { stubs: STUBS } })
+    await flushPromises()
+    expect(hoisted.fetchStationPositions.mock.calls[0][0]).toEqual({ allocationKind: 'FORMAL_TRADING' })
+    const filters = (w.vm as unknown as { filters: { monthRange: string[]; allocationKind: string; subjectId: string } }).filters
+    filters.monthRange = ['2028-01', '2028-03']
+    filters.allocationKind = 'INTERNAL_OPERATING'
+    filters.subjectId = '99'
+    await w.findAll('button').find((b) => b.text() === '导出')!.trigger('click')
+    await flushPromises()
+    expect(hoisted.exportStationPositions).toHaveBeenCalledTimes(1)
+    expect(hoisted.exportStationPositions.mock.calls[0][0]).toEqual({ allocationKind: 'FORMAL_TRADING', fromMonth: '2027-06', toMonth: '2027-07' })
+    expect(hoisted.downloadCsv).toHaveBeenCalledWith('TEST.csv', 'x')
   })
 
   it('能力未开通时不取数', async () => {

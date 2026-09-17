@@ -60,6 +60,8 @@ const query = computed<IntervalPositionQuery>(() => {
 })
 
 const guard = createLoadGuard()
+// 页面上这份 report 所用的查询：导出用它，而不是控件里尚未点「查询」的值，保证下载的文件与页面一致。
+const reportQuery = ref<IntervalPositionQuery | null>(null)
 const contextKey = () => `${selectedCompanyId.value}|${currentRegion.value.id}|${JSON.stringify(query.value)}`
 const scopeKey = () => `${selectedCompanyId.value}|${currentRegion.value.id}`
 let loadedScope = ''
@@ -77,14 +79,17 @@ async function load() {
     if (!caps.enabled) { state.value = 'disabled'; return }
     if (!caps.regionSupported) { state.value = 'unsupported'; return }
     if (!p2ModuleOn(caps, 'curves')) { state.value = 'module-off'; return }
-    const [positions, subjectRows] = await Promise.all([fetchIntervalPositions(query.value), fetchSubjects()])
+    const requested = { ...query.value }
+    const [positions, subjectRows] = await Promise.all([fetchIntervalPositions(requested), fetchSubjects()])
     if (!guard.isCurrent(token, contextKey())) return
     report.value = positions
+    reportQuery.value = requested
     subjects.value = subjectRows
     state.value = 'ready'
   } catch (error) {
     if (!guard.isCurrent(token, contextKey())) return
     report.value = null
+    reportQuery.value = null
     if (error instanceof CompanyNotSelectedError) { state.value = 'no-company'; return }
     const f = midlongFailureOf(error)
     state.value = f.status === 401 || f.status === 403 ? 'denied' : 'failed'
@@ -100,10 +105,11 @@ function apply() {
 }
 
 async function doExport() {
+  if (!reportQuery.value) return
   exporting.value = true
   const scope = scopeKey()
   try {
-    const file = await exportIntervalPositions(query.value)
+    const file = await exportIntervalPositions(reportQuery.value)
     if (scope !== scopeKey()) { ElMessage.warning('公司或地区已切换，已丢弃切换前发起的导出'); return }
     downloadCsv(file.fileName, file.content)
   } catch (error) {
@@ -214,7 +220,7 @@ function buildOption(): Record<string, unknown> {
           <el-option v-for="k in ENERGY_ATTRIBUTES" :key="k" :label="ENERGY_ATTRIBUTE_LABELS[k]" :value="k" />
         </el-select>
         <el-button type="primary" @click="apply">查询</el-button>
-        <el-button :loading="exporting" @click="doExport">导出</el-button>
+        <el-button :loading="exporting" :disabled="!reportQuery" title="导出当前页面显示的查询结果（未点「查询」的筛选改动不计入）" @click="doExport">导出</el-button>
         <router-link to="/zcqjy/positions" class="ml-link">月度持仓 →</router-link>
       </div>
 

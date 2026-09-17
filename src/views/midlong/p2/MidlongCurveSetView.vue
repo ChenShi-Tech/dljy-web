@@ -4,6 +4,7 @@
 // - 校验报告逐项列出缺段、重叠、越界、跨月、月/日不守恒；有阻断问题的草稿不能确认，超出容差只提示核对、不缩放。
 // - 确认：正式资料必须选依据（或上传时已把曲线文件声明为交易中心导出 / 电子确认单）；内部估算必须写依据说明，确认后仍不计入正式持仓。
 // - 合同已更正（草稿不是当前版本）或期间他人确认了重叠的分解集时，给出可操作提示，不静默覆盖。
+// - 旧版本上的草稿不能再确认，但有写权限时仍可废弃，不会永远停在草稿。
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
@@ -74,7 +75,9 @@ function openDate(date: string | null) {
 
 const validation = computed(() => detail.value?.validation ?? null)
 const blocking = computed(() => Boolean(detail.value && (detail.value.blockingIssueCount > 0 || validation.value?.blocking)))
-const canAct = computed(() => Boolean(capabilities.value?.canWrite && detail.value?.status === 'DRAFT' && detail.value.isCurrentRevision))
+// 确认要求草稿仍绑定合同当前版本；废弃不要求——合同更正后旧版本上的草稿只能废弃，否则永远停在草稿。
+const canConfirm = computed(() => Boolean(capabilities.value?.canWrite && detail.value?.status === 'DRAFT' && detail.value.isCurrentRevision))
+const canDiscard = computed(() => Boolean(capabilities.value?.canWrite && detail.value?.status === 'DRAFT'))
 const sourceIsFormal = computed(() => {
   const p = detail.value?.provenance
   return Boolean(p && !p.copiedFrom && (p.sourceFiles?.length ?? 0) > 0 && (p.sourceDocumentType === 'TRADING_CENTER_EXPORT' || p.sourceDocumentType === 'ELECTRONIC_CONFIRMATION'))
@@ -169,7 +172,9 @@ function submitDiscard() {
 
     <template v-if="detail && validation && (state === 'ready' || state === 'loading')">
       <MidlongNotice v-if="!detail.isCurrentRevision" tone="warn" title="绑定的不是合同当前版本">
-        本分解集绑定合同版本 v{{ detail.revisionNo }}，合同当前为 v{{ detail.contract.currentRevisionNo }}：它只用于该版本生效期间的历史视图，不会自动沿用到当前版本。
+        本分解集绑定合同版本 v{{ detail.revisionNo }}，合同当前为 v{{ detail.contract.currentRevisionNo }}。
+        <template v-if="detail.status === 'DRAFT'">草稿不能再确认，请按当前版本重新登记；不再需要时可以废弃。</template>
+        <template v-else>未受更正影响且月量不变的月份在当前版本沿用（合同详情标「沿用 v{{ detail.revisionNo }}」），受影响月份不再采用。</template>
       </MidlongNotice>
       <MidlongNotice v-if="detail.evidenceBasis === 'INTERNAL_ESTIMATE'" tone="warn" title="内部估算">
         由估算工具或内部资料生成，确认后也不计入正式分时持仓，不覆盖正式资料。
@@ -179,8 +184,8 @@ function submitDiscard() {
       </MidlongNotice>
 
       <div class="ml-actions">
-        <el-button v-if="canAct" type="primary" :disabled="blocking" @click="openConfirm">确认</el-button>
-        <el-button v-if="canAct" @click="openDiscard">废弃草稿</el-button>
+        <el-button v-if="canConfirm" type="primary" :disabled="blocking" @click="openConfirm">确认</el-button>
+        <el-button v-if="canDiscard" @click="openDiscard">废弃草稿</el-button>
       </div>
 
       <div class="ml-panel">
