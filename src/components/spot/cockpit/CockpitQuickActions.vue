@@ -63,7 +63,12 @@ function runTask(q: string) {
 </template>
 
 <style scoped>
+/* 标题行与说明文字的样式原在驾驶舱页面的 scoped 样式里；抽成组件后父级 scoped 选择器够不到子组件内部，需在此自带 */
 .cockpit-quick-actions { padding: 12px 14px; }
+.muted { color: var(--muted); font-size: var(--font-12-5); }
+.panel-head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+.panel-head h2 { display: flex; align-items: center; gap: 6px; font-size: var(--font-lg); margin: 0; }
+.panel-head > .muted { margin-left: auto; }
 .qa-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
 .task-btn {
   display: inline-flex; align-items: center; gap: 8px; padding: 8px 12px;
@@ -75,4 +80,5 @@ function runTask(q: string) {
 .task-arrow { opacity: 0.6; }
 .actions-hint { display: flex; align-items: flex-start; gap: 5px; margin: 10px 0 0; font-size: var(--font-11-5); line-height: 1.5; }
 .actions-hint svg { flex: none; margin-top: 2px; }
+@media (max-width: 768px) { .panel-head { flex-wrap: wrap; } }
 </style>
