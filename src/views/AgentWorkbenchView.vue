@@ -62,7 +62,17 @@ function setValue(inputKey: string, v: string) {
 const runKey = ref(0)
 const runQuestion = ref('')
 const hasRun = ref(false)
-const activeSessionId = ref<string | null>(null)
+const activeSessionId = ref<string | null>(typeof route.query.session === 'string' ? route.query.session : null)
+// 续接指定会话（统一 AI 侧边栏「在工作台打开」经 ?session= 传入）：只作用于进入后的第一次挂载，
+// 用户随后开始新任务/新建/切入口时清掉，避免面板重挂时又被恢复成这个会话。
+const resumeTarget = ref<string>(typeof route.query.session === 'string' ? route.query.session : '')
+watch(() => route.query.session, (v) => {
+  resumeTarget.value = typeof v === 'string' ? v : ''
+  if (resumeTarget.value) {
+    activeSessionId.value = resumeTarget.value
+    runKey.value++
+  }
+})
 
 const briefRailRef = ref<{ ensureLoaded: () => Promise<void> } | null>(null)
 
@@ -77,7 +87,11 @@ const conclusionWatermark = computed(() =>
 watch(() => entry.value.key, () => {
   runQuestion.value = ''
   hasRun.value = false
-  activeSessionId.value = null
+  // 同一次导航可能同时换入口并带 ?session=（侧边栏「在工作台打开」，工作台页被缓存时）：以路由为准，
+  // 不能无条件清空，否则先执行的 session watch 刚设好的续接目标会被这里抹掉
+  const session = typeof route.query.session === 'string' ? route.query.session : ''
+  resumeTarget.value = session
+  activeSessionId.value = session || null
   collapsed.value = readCollapsed()
   runKey.value++
 })
@@ -95,11 +109,21 @@ const payload = computed<Record<string, unknown> | undefined>(() => {
   }
 })
 
+// 续接目标一旦被放弃（开始新任务/新建/选历史），同步去掉地址栏里的 ?session=，
+// 否则刷新或分享链接会重新打开那个旧会话（dljy-web#119 审查 P2）
+function dropSessionQuery() {
+  if (typeof route.query.session !== 'string') return
+  const { session: _session, ...rest } = route.query
+  void router.replace({ path: '/ai-agent', query: rest })
+}
+
 async function start() {
   if (entry.value.key === 'morning_brief') await briefRailRef.value?.ensureLoaded()
   runQuestion.value = entry.value.buildQuestion
     ? entry.value.buildQuestion({ values: values.value, regionName: currentRegion.value.name })
     : ''
+  resumeTarget.value = ''
+  dropSessionQuery()
   runKey.value++
   hasRun.value = true
   activeSessionId.value = null
@@ -139,11 +163,14 @@ function setCollapsed(v: boolean) {
 
 function onSelectHistory(sessionId: string) {
   runQuestion.value = '' // 防御：清待发送启动问，杜绝未来重挂 onMounted 误发覆盖已回放历史
+  dropSessionQuery()
   void panelRef.value?.loadHistory(sessionId, { fromClick: true })
   hasRun.value = true
 }
 function onNewChat() {
   runQuestion.value = ''
+  resumeTarget.value = ''
+  dropSessionQuery()
   panelRef.value?.newConversation()
   activeSessionId.value = null
 }
@@ -238,6 +265,7 @@ function onSessionReady(sessionId: string) {
           :key="entry.key + '|' + scenario + '|' + runKey + '|' + initialQuestion"
           :scenario="scenario"
           :initial-question="runQuestion || initialQuestion"
+          :resume-session-id="resumeTarget || null"
           :payload="payload"
           :prompt-key="entry.promptKey"
           :history-key="entry.key"
