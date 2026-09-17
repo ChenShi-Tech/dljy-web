@@ -136,6 +136,34 @@ describe('中长期售电场站维度持仓', () => {
     expect(hoisted.downloadCsv).toHaveBeenCalledWith('TEST.csv', 'x')
   })
 
+  it('查询请求途中改了筛选（没点查询）：不卡在加载中，响应照常显示，请求参数是点查询时的值', async () => {
+    hoisted.fetchCapabilities.mockResolvedValue(caps())
+    hoisted.fetchStationPositions.mockResolvedValueOnce(report())
+    const w = mount(MidlongStationPositionsView, { global: { stubs: STUBS } })
+    await flushPromises()
+    const vm = w.vm as unknown as { state: string; filters: { monthRange: string[]; allocationKind: string } }
+    let resolveCaps: (v: MidlongCapabilities) => void = () => {}
+    let resolvePositions: (v: StationPositionReport) => void = () => {}
+    hoisted.fetchCapabilities.mockImplementationOnce(() => new Promise((resolve) => { resolveCaps = resolve }))
+    hoisted.fetchStationPositions.mockImplementationOnce(() => new Promise((resolve) => { resolvePositions = resolve }))
+    await w.findAll('button').find((b) => b.text() === '查询')!.trigger('click')
+    expect(vm.state).toBe('loading')
+    vm.filters.allocationKind = 'INTERNAL_OPERATING'
+    await flushPromises()
+    resolveCaps(caps())
+    await flushPromises()
+    expect(hoisted.fetchStationPositions.mock.calls[1][0]).toEqual({ allocationKind: 'FORMAL_TRADING', fromMonth: '2027-06', toMonth: '2027-07' })
+    vm.filters.monthRange = ['2028-01', '2028-02']
+    await flushPromises()
+    const base = report()
+    resolvePositions(report({ stations: [{ stationId: 1, stationName: 'TEST-途中改筛选后', quantity: '400' }, base.stations[1]] }))
+    await flushPromises()
+    expect(vm.state).toBe('ready')
+    expect(w.text()).toContain('TEST-途中改筛选后')
+    // 用户途中选的月份不被回填覆盖。
+    expect(vm.filters.monthRange).toEqual(['2028-01', '2028-02'])
+  })
+
   it('点月份范围的清除按钮（值变为 null）后再查询：不报错，按服务端默认月份查询', async () => {
     hoisted.fetchCapabilities.mockResolvedValue(caps())
     hoisted.fetchStationPositions.mockResolvedValue(report())

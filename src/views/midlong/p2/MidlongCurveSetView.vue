@@ -21,6 +21,7 @@ import {
 } from '@/services/midlong/midlongP2Types'
 import { createLoadGuard, fmtQuantity } from '@/services/midlong/midlongFormat'
 import { basisTag, curveSetStatusTag, issueLocation } from '@/services/midlong/midlongP2Format'
+import { createDialogSession } from '@/services/midlong/midlongP2Session'
 
 const route = useRoute()
 const router = useRouter()
@@ -68,6 +69,11 @@ async function load() {
 
 onMounted(load)
 watch([selectedCompanyId, () => currentRegion.value.id, setId, selectedDate], () => void load())
+watch(setId, () => {
+  actionSession.renew()
+  dialogs.confirm = false
+  dialogs.discard = false
+})
 
 function openDate(date: string | null) {
   void router.replace({ query: date ? { ...route.query, date } : { ...route.query, date: undefined } })
@@ -91,7 +97,11 @@ const discardForm = reactive({ reason: '' })
 const busy = ref(false)
 const actionError = ref<MidlongFailure | null>(null)
 
+// 操作会话：确认 / 废弃返回前换到另一个分解集或重新打开对话框时，旧操作的关闭与报错不作用到新会话。
+const actionSession = createDialogSession()
+
 function openConfirm() {
+  actionSession.renew()
   actionError.value = null
   confirmForm.evidenceIds = [...(detail.value?.evidenceIds ?? [])]
   confirmForm.note = detail.value?.note ?? ''
@@ -99,6 +109,7 @@ function openConfirm() {
 }
 
 function openDiscard() {
+  actionSession.renew()
   actionError.value = null
   discardForm.reason = ''
   dialogs.discard = true
@@ -122,15 +133,18 @@ const ACTION_HINTS: Record<string, string> = {
 
 async function run(name: 'confirm' | 'discard', action: () => Promise<unknown>, success: string) {
   if (busy.value) return
+  const token = actionSession.begin(String(setId.value))
+  const current = () => actionSession.isCurrent(token, String(setId.value))
   busy.value = true
   actionError.value = null
   try {
     await action()
     ElMessage.success(success)
+    if (!current()) return
     dialogs[name] = false
     await load()
   } catch (error) {
-    actionError.value = midlongFailureOf(error)
+    if (current()) actionError.value = midlongFailureOf(error)
   } finally {
     busy.value = false
   }

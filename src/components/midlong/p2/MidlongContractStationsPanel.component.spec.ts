@@ -5,16 +5,16 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { enableAutoUnmount, flushPromises } from '@vue/test-utils'
 import { mount } from '@/test/mount'
-import type { ContractStationAllocationsOverview, StationSegment } from '@/services/midlong/midlongP2Types'
+import type { ContractStationAllocationsOverview, StationAllocationSet, StationSegment } from '@/services/midlong/midlongP2Types'
 
-const hoisted = vi.hoisted(() => ({ fetchContractStationAllocations: vi.fn() }))
+const hoisted = vi.hoisted(() => ({ fetchContractStationAllocations: vi.fn(), confirmStationAllocationSet: vi.fn() }))
 
 vi.mock('element-plus', async (orig) => ({ ...(await orig<typeof import('element-plus')>()), ElMessage: { success: vi.fn(), error: vi.fn() } }))
 vi.mock('@/services/company/companyContext', async () => ({ selectedCompanyId: (await import('vue')).ref('comp-a') }))
 vi.mock('@/services/region/regionContext', async () => ({ currentRegion: (await import('vue')).ref({ id: 'yunnan' }) }))
 vi.mock('@/services/midlong/midlongApi', () => ({ midlongFailureOf: (e: unknown) => ({ status: 500, errorCode: 'STORAGE_UNAVAILABLE', message: (e as Error).message, details: null }) }))
 vi.mock('@/services/midlong/midlongP2Api', () => ({
-  fetchContractStationAllocations: hoisted.fetchContractStationAllocations, confirmStationAllocationSet: vi.fn(), discardStationAllocationSet: vi.fn(),
+  fetchContractStationAllocations: hoisted.fetchContractStationAllocations, confirmStationAllocationSet: hoisted.confirmStationAllocationSet, discardStationAllocationSet: vi.fn(),
 }))
 
 import MidlongContractStationsPanel from './MidlongContractStationsPanel.vue'
@@ -40,6 +40,13 @@ function overview(o: Partial<ContractStationAllocationsOverview> = {}): Contract
     ...o,
   }
 }
+
+const draftSet = (id: number, o: Partial<StationAllocationSet> = {}) => ({
+  id, contractId: 7, revisionId: 1, revisionNo: 1, setNo: id, basedOnSetNo: 1, status: 'DRAFT' as const, allocationKind: 'FORMAL_TRADING' as const, segmentMode: 'MONTHLY' as const,
+  basisNote: null, evidenceIds: [5], blockingIssueCount: 0, recordedAt: '', recordedBy: null, confirmedAt: null, confirmedBy: null, discardedAt: null, discardedBy: null, discardReason: null,
+  rows: [], isCurrentRevision: true, validation: { blocking: false, blockingCount: 0, warningCount: 0, summary: [], issues: [], truncated: false, segments: [] },
+  ...o,
+})
 
 afterEach(() => { vi.clearAllMocks() })
 enableAutoUnmount(afterEach)
@@ -68,6 +75,29 @@ describe('合同场站分配区', () => {
     await flushPromises()
     expect(hoisted.fetchContractStationAllocations).toHaveBeenCalledTimes(2)
     expect(w.find('.stub-dialog').attributes('data-revision')).toBe('2')
+  })
+
+  it('确认返回前关闭并对另一份草稿打开确认：旧确认不关闭新对话框、不把忙碌或报错带到新会话', async () => {
+    hoisted.fetchContractStationAllocations.mockResolvedValue(overview({
+      sets: [draftSet(2), draftSet(3, { allocationKind: 'INTERNAL_OPERATING', basisNote: '【测试】内部口径', evidenceIds: [] })] as ContractStationAllocationsOverview['sets'],
+    }))
+    const w = mount(MidlongContractStationsPanel, { props: { contractId: 7, rowVersion: 3, canWrite: true, evidence: [], stations: [] }, global: { stubs: STUBS } })
+    await flushPromises()
+    const confirming = () => (w.vm as unknown as { confirming: { open: boolean; busy: boolean; set: { id: number } | null; error: unknown } }).confirming
+    const draftConfirmButtons = () => w.findAll('.ml-draft button').filter((b) => b.text() === '确认')
+    let rejectFirst: (e: unknown) => void = () => {}
+    hoisted.confirmStationAllocationSet.mockImplementationOnce(() => new Promise((_, reject) => { rejectFirst = reject }))
+    await draftConfirmButtons()[0].trigger('click')
+    await flushPromises()
+    await w.findAll('.el-dialog__footer button').find((b) => b.text() === '确认')!.trigger('click')
+    expect(confirming().busy).toBe(true)
+    confirming().open = false
+    await flushPromises()
+    await draftConfirmButtons()[1].trigger('click')
+    await flushPromises()
+    rejectFirst(new Error('草稿创建后已有他人确认'))
+    await flushPromises()
+    expect([confirming().open, confirming().set?.id, confirming().busy, confirming().error]).toEqual([true, 3, false, null])
   })
 
   it('沿用更正前版本的分配标「沿用 v1」且不出现兜底提示；更正影响只列失效片段', async () => {

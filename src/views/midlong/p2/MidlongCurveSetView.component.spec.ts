@@ -8,10 +8,13 @@ import { mount } from '@/test/mount'
 import type { MidlongCapabilities } from '@/services/midlong/midlongTypes'
 import type { CurveSetDetail } from '@/services/midlong/midlongP2Types'
 
-const hoisted = vi.hoisted(() => ({ fetchCurveSet: vi.fn(), confirmCurveSet: vi.fn(), discardCurveSet: vi.fn(), routeQuery: {} as Record<string, string> }))
+const hoisted = vi.hoisted(() => ({ fetchCurveSet: vi.fn(), confirmCurveSet: vi.fn(), discardCurveSet: vi.fn(), routeQuery: {} as Record<string, string>, params: null as null | { id: string } }))
 
 vi.mock('element-plus', async (orig) => ({ ...(await orig<typeof import('element-plus')>()), ElMessage: { success: vi.fn(), error: vi.fn() } }))
-vi.mock('vue-router', () => ({ useRoute: () => ({ params: { id: '31' }, query: hoisted.routeQuery }), useRouter: () => ({ replace: vi.fn() }) }))
+vi.mock('vue-router', async () => {
+  hoisted.params = (await import('vue')).reactive({ id: '31' })
+  return { useRoute: () => ({ params: hoisted.params, query: hoisted.routeQuery }), useRouter: () => ({ replace: vi.fn() }) }
+})
 vi.mock('@/services/company/companyContext', async () => ({ selectedCompanyId: (await import('vue')).ref('comp-a') }))
 vi.mock('@/services/region/regionContext', async () => ({ currentRegion: (await import('vue')).ref({ id: 'yunnan' }) }))
 const caps: MidlongCapabilities = {
@@ -56,7 +59,7 @@ function detail(o: Partial<CurveSetDetail> = {}): CurveSetDetail {
   }
 }
 
-afterEach(() => { vi.clearAllMocks(); hoisted.routeQuery = {} })
+afterEach(() => { vi.clearAllMocks(); hoisted.routeQuery = {}; hoisted.params!.id = '31' })
 enableAutoUnmount(afterEach)
 
 describe('分时分解集详情', () => {
@@ -101,6 +104,28 @@ describe('分时分解集详情', () => {
     const current = mount(MidlongCurveSetView, { global: { stubs: STUBS } })
     await flushPromises()
     expect(current.findAll('.ml-actions button').map((b) => b.text())).toEqual(['确认', '废弃草稿'])
+  })
+
+  it('确认返回前切到另一个分解集并打开废弃对话框：旧确认的失败不关闭、不污染新页面的对话框', async () => {
+    hoisted.fetchCurveSet.mockImplementation(async (id: number) => detail({ id, setNo: id }))
+    let rejectConfirm: (e: unknown) => void = () => {}
+    hoisted.confirmCurveSet.mockImplementationOnce(() => new Promise((_, reject) => { rejectConfirm = reject }))
+    const w = mount(MidlongCurveSetView, { global: { stubs: STUBS } })
+    await flushPromises()
+    const vm = w.vm as unknown as { dialogs: { confirm: boolean; discard: boolean }; confirmForm: { evidenceIds: number[] }; actionError: unknown }
+    await w.findAll('.ml-actions button').find((b) => b.text() === '确认')!.trigger('click')
+    vm.confirmForm.evidenceIds = [5]
+    await flushPromises()
+    await w.findAll('.el-dialog__footer button').find((b) => b.text() === '确认')!.trigger('click')
+    hoisted.params!.id = '32'
+    await flushPromises()
+    expect(hoisted.fetchCurveSet).toHaveBeenLastCalledWith(32, null)
+    await w.findAll('.ml-actions button').find((b) => b.text() === '废弃草稿')!.trigger('click')
+    await flushPromises()
+    rejectConfirm({ failure: { status: 409, errorCode: 'VERSION_CONFLICT', message: '已有他人确认', details: null } })
+    await flushPromises()
+    expect([vm.dialogs.discard, vm.actionError]).toEqual([true, null])
+    expect(w.text()).toContain('分时分解集 #32')
   })
 
   it('有阻断问题的草稿不能确认，并列出问题定位', async () => {

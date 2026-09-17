@@ -98,6 +98,40 @@ describe('场站分配对话框', () => {
     })
   })
 
+  it('保存草稿返回前关闭并重开到另一份合同：旧草稿不出现在新会话（不能被误确认）；确认返回前重开，旧确认不关闭新会话', async () => {
+    const draftResult = (setNo: number) => ({ allocationSetId: 20 + setNo, setNo, status: 'DRAFT' as const, revisionNo: 1, validation: { blocking: false, blockingCount: 0, warningCount: 0, summary: [], completeness: null, segments: [segment()] } })
+    let resolveSave: (v: unknown) => void = () => {}
+    hoisted.createStationAllocationDraft.mockImplementationOnce(() => new Promise((resolve) => { resolveSave = resolve }))
+    const w = await open()
+    const button = (text: string) => w.findAll('button').find((b) => b.text() === text)
+    await button('保存草稿并校验')!.trigger('click')
+    await w.setProps({ modelValue: false })
+    await w.setProps({ modelValue: true, overview: { ...overview, contractId: 8 } })
+    await nextTick()
+    resolveSave(draftResult(2))
+    await flushPromises()
+    expect(button('确认分配')).toBeUndefined()
+    expect(w.text()).not.toContain('草稿 #2 已保存')
+    expect(w.emitted('changed')).toHaveLength(1)
+
+    hoisted.createStationAllocationDraft.mockResolvedValueOnce(draftResult(3))
+    await button('保存草稿并校验')!.trigger('click')
+    await flushPromises()
+    expect(hoisted.createStationAllocationDraft).toHaveBeenLastCalledWith(8, expect.anything())
+    ;(w.vm as unknown as { form: { evidenceIds: number[] } }).form.evidenceIds = [5]
+    await nextTick()
+    let resolveConfirm: (v: unknown) => void = () => {}
+    hoisted.confirmStationAllocationSet.mockImplementationOnce(() => new Promise((resolve) => { resolveConfirm = resolve }))
+    await button('确认分配')!.trigger('click')
+    await w.setProps({ modelValue: false })
+    await w.setProps({ modelValue: true })
+    await nextTick()
+    resolveConfirm({ allocationSetId: 23, setNo: 3, status: 'CONFIRMED', confirmedAt: '', segments: [] })
+    await flushPromises()
+    expect(w.emitted('update:modelValue')).toBeUndefined()
+    expect(button('保存草稿并校验')).toBeDefined()
+  })
+
   it('服务端拒绝超额确认：提示原分配不变与当前可分配余额；正式交易分解未选依据时确认按钮禁用', async () => {
     hoisted.createStationAllocationDraft.mockResolvedValue({ allocationSetId: 10, setNo: 2, status: 'DRAFT', revisionNo: 1, validation: { blocking: false, blockingCount: 0, warningCount: 0, summary: [], completeness: null, segments: [segment()] } })
     hoisted.confirmStationAllocationSet.mockRejectedValue({ failure: {

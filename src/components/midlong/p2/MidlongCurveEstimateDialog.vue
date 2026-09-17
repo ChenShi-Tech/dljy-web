@@ -11,6 +11,7 @@ import {
   type CurveDraftResult, type CurveEstimateMethod,
 } from '@/services/midlong/midlongP2Types'
 import { parseProfileWeights, rangeValue } from '@/services/midlong/midlongP2Format'
+import { createDialogSession } from '@/services/midlong/midlongP2Session'
 
 const props = defineProps<{ modelValue: boolean; contractId: number; revisionNo: number; deliveryStart: string | null }>()
 const emit = defineEmits<{ 'update:modelValue': [boolean]; created: [CurveDraftResult] }>()
@@ -21,7 +22,11 @@ const busy = ref(false)
 const failure = ref<MidlongFailure | null>(null)
 const result = ref<CurveDraftResult | null>(null)
 
+const session = createDialogSession()
+const targetKey = () => `${props.contractId}|${props.revisionNo}`
+
 watch(() => props.modelValue, (open) => {
+  session.renew()
   if (!open) return
   Object.assign(form, { method: 'FLAT', granularityMinutes: 60, profileText: '', note: '' })
   form.coverage = props.deliveryStart ? [props.deliveryStart.slice(0, 7), props.deliveryStart.slice(0, 7)] : []
@@ -40,10 +45,12 @@ const blockedReason = computed(() => {
 
 async function submit() {
   if (blockedReason.value || busy.value) return
+  // 写请求前没有 await，请求体同步取自当前会话；返回较慢时对话框可能已关闭或重开到另一份合同，结果只回到发起它的会话。
+  const token = session.begin(targetKey())
   busy.value = true
   failure.value = null
   try {
-    result.value = await createCurveEstimate(props.contractId, {
+    const created = await createCurveEstimate(props.contractId, {
       expectedRevisionNo: props.revisionNo,
       coverageFromMonth: form.coverage[0],
       coverageToMonth: form.coverage[1],
@@ -52,9 +59,10 @@ async function submit() {
       profile: profile.value?.ok ? profile.value.weights : undefined,
       note: form.note.trim(),
     })
-    emit('created', result.value)
+    emit('created', created)
+    if (session.isCurrent(token, targetKey())) result.value = created
   } catch (error) {
-    failure.value = midlongFailureOf(error)
+    if (session.isCurrent(token, targetKey())) failure.value = midlongFailureOf(error)
   } finally {
     busy.value = false
   }

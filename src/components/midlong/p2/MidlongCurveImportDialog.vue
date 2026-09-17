@@ -15,6 +15,7 @@ import {
 } from '@/services/midlong/midlongP2Types'
 import { downloadBase64, downloadCsv, fileToBase64, fmtQuantity, oversizeUploadMessage } from '@/services/midlong/midlongFormat'
 import { rangeValue } from '@/services/midlong/midlongP2Format'
+import { STALE_DIALOG_WRITE_MESSAGE, createDialogSession } from '@/services/midlong/midlongP2Session'
 
 const props = defineProps<{ modelValue: boolean; contractId: number; revisionNo: number; deliveryStart: string | null; deliveryEnd: string | null; evidence: MidlongEvidence[] }>()
 const emit = defineEmits<{ 'update:modelValue': [boolean]; created: [CurveDraftResult] }>()
@@ -39,7 +40,11 @@ const template = CURVE_TEMPLATES[CURVE_STANDARD_TEMPLATE]
 const TIMEZONES = [{ value: 'Asia/Shanghai', label: 'Asia/Shanghai（北京时间）' }, { value: 'UTC', label: 'UTC' }]
 const CSV_ROLES: CsvRole[] = ['intervals', 'typicalDays', 'typicalDayRanges', 'dailyTotals']
 
+const session = createDialogSession()
+const targetKey = () => `${props.contractId}|${props.revisionNo}`
+
 watch(() => props.modelValue, (open) => {
+  session.renew()
   if (!open) return
   for (const key of Object.keys(files) as CurveFileRole[]) files[key] = null
   Object.assign(form, { evidenceBasis: 'FORMAL', granularityMinutes: null, unit: '', sourceTimezone: '', sourceDocumentType: 'IMPORT_SOURCE_FILE', evidenceIds: [], note: '' })
@@ -86,31 +91,35 @@ async function downloadTemplate(kind: 'xlsx' | 'csv') {
 
 async function submit() {
   if (missing.value.length || busy.value) return
+  // 读文件之前快照写入目标、声明与待读文件：读取期间关闭、重开或切到另一份合同，读完也不写到新对象上。
+  const token = session.begin(targetKey())
+  const contractId = props.contractId
+  const body = {
+    expectedRevisionNo: props.revisionNo,
+    evidenceBasis: form.evidenceBasis,
+    coverageFromMonth: form.coverage[0],
+    coverageToMonth: form.coverage[1],
+    granularityMinutes: form.granularityMinutes ?? undefined,
+    unit: form.unit,
+    sourceTimezone: form.sourceTimezone,
+    sourceDocumentType: form.sourceDocumentType,
+    evidenceIds: [...form.evidenceIds],
+    note: form.note.trim() || undefined,
+  }
+  const roles: CurveFileRole[] = format.value === 'xlsx' ? ['workbook'] : CSV_ROLES
+  const selected = roles.map((role) => [role, files[role]] as const).filter((entry): entry is readonly [CurveFileRole, File] => entry[1] !== null)
   busy.value = true
   failure.value = null
   try {
     const payload: Array<{ role: CurveFileRole; fileName: string; contentBase64: string }> = []
-    const roles: CurveFileRole[] = format.value === 'xlsx' ? ['workbook'] : CSV_ROLES
-    for (const role of roles) {
-      const file = files[role]
-      if (file) payload.push({ role, fileName: file.name, contentBase64: await fileToBase64(file) })
-    }
-    result.value = await createCurveDraft(props.contractId, {
-      expectedRevisionNo: props.revisionNo,
-      evidenceBasis: form.evidenceBasis,
-      coverageFromMonth: form.coverage[0],
-      coverageToMonth: form.coverage[1],
-      granularityMinutes: form.granularityMinutes ?? undefined,
-      unit: form.unit,
-      sourceTimezone: form.sourceTimezone,
-      sourceDocumentType: form.sourceDocumentType,
-      evidenceIds: form.evidenceIds,
-      note: form.note.trim() || undefined,
-      files: payload,
-    })
-    emit('created', result.value)
+    for (const [role, file] of selected) payload.push({ role, fileName: file.name, contentBase64: await fileToBase64(file) })
+    if (!session.isCurrent(token, targetKey())) { ElMessage.warning(STALE_DIALOG_WRITE_MESSAGE); return }
+    const created = await createCurveDraft(contractId, { ...body, files: payload })
+    // 草稿已保存：通知父级刷新；会话已变时不把旧结果显示到新会话里。
+    emit('created', created)
+    if (session.isCurrent(token, targetKey())) result.value = created
   } catch (error) {
-    failure.value = midlongFailureOf(error)
+    if (session.isCurrent(token, targetKey())) failure.value = midlongFailureOf(error)
   } finally {
     busy.value = false
   }
