@@ -89,7 +89,9 @@ async function load() {
     const [positions, subjectRows, stationRows] = await Promise.all([fetchPositions(query.value), fetchSubjects(), fetchStations()])
     if (!guard.isCurrent(token, contextKey())) return
     report.value = positions
-    appliedQuery.value = snapshot
+    // 快照以服务端实际采用的月份边界为准：初次访问未选月份时由服务端推算默认窗口，
+    // 不回填的话导出会让服务端再推算一次，跨月后默认窗口变化会导致 CSV 与页面所见不一致（dljy#2983）。
+    appliedQuery.value = { ...snapshot, fromMonth: positions.fromMonth, toMonth: positions.toMonth }
     subjects.value = subjectRows
     stations.value = stationRows
     if (filters.monthRange.length !== 2) filters.monthRange = [positions.fromMonth, positions.toMonth]

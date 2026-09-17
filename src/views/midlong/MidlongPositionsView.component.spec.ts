@@ -158,12 +158,31 @@ describe('中长期售电月度持仓', () => {
     expect(hoisted.fetchPositions.mock.calls[0][0]).toMatchObject({ productKind: 'ANNUAL' })
     // 第 3 个 select 是「品种周期」（前两个是交易主体、场站）。
     await pickSelectOption(w.findAll('.ml-filters .el-select')[2]!, '月度')
-    // 改筛选控件不触发查询：导出必须仍用 A（持仓当前结果对应的条件），且不带结果返回后回填的月份范围。
+    // 改筛选控件不触发查询：导出必须仍用 A（持仓当前结果对应的条件）加上服务端实际采用的月份边界（回填到筛选的 2027-01~2027-02）。
     expect(hoisted.fetchPositions).toHaveBeenCalledTimes(1)
     await w.findAll('button').find((b) => b.text() === '导出')!.trigger('click')
     await flushPromises()
     expect(hoisted.exportPositions).toHaveBeenCalledTimes(1)
-    expect(hoisted.exportPositions.mock.calls[0][0]).toEqual({ productKind: 'ANNUAL' })
+    expect(hoisted.exportPositions.mock.calls[0][0]).toEqual({ fromMonth: '2027-01', toMonth: '2027-02', productKind: 'ANNUAL' })
+  })
+
+  it('初次访问不带月份：导出快照用服务端实际采用的月份范围，不让服务端再推算（#2983）', async () => {
+    // 测试数据：初次访问地址栏没有 fromMonth/toMonth，服务端按当时默认窗口（2027-06~2027-07）推算并回显。
+    hoisted.fetchCapabilities.mockResolvedValue(caps)
+    hoisted.fetchPositions.mockResolvedValue(report({ fromMonth: '2027-06', toMonth: '2027-07', months: [
+      { month: '2027-06', formalQuantity: '800', contractCount: 1, incomplete: true, affectedContractIds: [1], price: price() },
+      { month: '2027-07', formalQuantity: '0', contractCount: 1, incomplete: true, affectedContractIds: [1], price: price() },
+    ] }))
+    hoisted.exportPositions.mockResolvedValue({ fileName: 'p.csv', content: 'x' })
+    const w = mount(MidlongPositionsView, { global: { stubs: STUBS } })
+    await flushPromises()
+    // 请求本身不带月份，页面月份范围由响应回填。
+    expect(hoisted.fetchPositions.mock.calls[0][0]).not.toHaveProperty('fromMonth')
+    expect(hoisted.exportPositions).not.toHaveBeenCalled()
+    await w.findAll('button').find((b) => b.text() === '导出')!.trigger('click')
+    await flushPromises()
+    expect(hoisted.exportPositions).toHaveBeenCalledTimes(1)
+    expect(hoisted.exportPositions.mock.calls[0][0]).toMatchObject({ fromMonth: '2027-06', toMonth: '2027-07' })
   })
 
   it('点「查询」按 B 条件成功加载后，导出改用 B 条件（#2983）', async () => {
