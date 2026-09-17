@@ -113,6 +113,8 @@ watch(() => props.modelValue, (open) => {
 const canSubmit = computed(() => identity.contractName.trim() && identity.externalContractNo.trim() && !(editorRef.value?.check.errors.length))
 
 function close() {
+  // 保存请求进行中不关闭：否则返回的「曾作废」提示会落在已隐藏的表单里，父页面也收不到已保存通知。
+  if (saving.value) return
   const saved = savedWithWarnings.value
   savedWithWarnings.value = null
   emit('update:modelValue', false)
@@ -142,7 +144,8 @@ async function submit() {
       : await createDraft(input)
     ElMessage.success(props.detail ? '草稿已更新' : '草稿已保存（待补资料并核验确认后才计入持仓）')
     const voidedHints = ((result.warnings ?? []) as DraftWarning[]).filter((w) => w.code === 'PREVIOUSLY_VOIDED')
-    if (voidedHints.length) {
+    // 表单已被关闭（兜底）时直接通知父页面，不把提示留在看不见的表单里。
+    if (voidedHints.length && props.modelValue) {
       savedWithWarnings.value = { contractId: result.contractId, warnings: voidedHints }
       return
     }
@@ -163,7 +166,7 @@ async function submit() {
 </script>
 
 <template>
-  <el-dialog :model-value="modelValue" :title="editing ? '修改合同草稿' : '录入售电合同草稿'" width="920px" top="5vh" @update:model-value="(v: boolean) => (v ? emit('update:modelValue', v) : close())">
+  <el-dialog :model-value="modelValue" :title="editing ? '修改合同草稿' : '录入售电合同草稿'" width="920px" top="5vh" :close-on-click-modal="!saving" :close-on-press-escape="!saving" :show-close="!saving" @update:model-value="(v: boolean) => (v ? emit('update:modelValue', v) : close())">
     <div class="ml-form">
       <MidlongNotice tone="info">
         保存后为「草稿」。补充电子交易确认单、纸质合同或交易中心导出等依据并完成核验确认后，才计入月度持仓；缺价格或月度分解不阻止确认，但会持续提示。
@@ -226,7 +229,7 @@ async function submit() {
     <template #footer>
       <el-button v-if="savedWithWarnings" type="primary" @click="close">完成</el-button>
       <template v-else>
-        <el-button @click="close">取消</el-button>
+        <el-button :disabled="saving" @click="close">取消</el-button>
         <el-button type="primary" :loading="saving" :disabled="!canSubmit" @click="submit">{{ editing ? '保存修改' : '保存草稿' }}</el-button>
       </template>
     </template>

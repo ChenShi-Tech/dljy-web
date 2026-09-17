@@ -114,6 +114,32 @@ describe('中长期合同草稿表单', () => {
     expect(w.emitted('update:modelValue')?.at(-1)).toEqual([false])
   })
 
+  it('保存进行中不能关闭表单；若表单已被关闭，返回曾作废提示时仍通知父页面已保存', async () => {
+    hoisted.fetchContracts.mockResolvedValue({ rows: [], page: 1, pageSize: 200, total: 0, stats: {} })
+    let resolveSave: (v: unknown) => void = () => {}
+    hoisted.createDraft.mockImplementation(() => new Promise((resolve) => { resolveSave = resolve }))
+    const { w, save } = await open({ detail: null })
+    const inputs = w.findAll('.ml-field').filter((f) => /外部合同|合同名称/.test(f.text()))
+    await inputs[0].find('input').setValue('M-7')
+    await inputs[1].find('input').setValue('重新登记的合同')
+    await flushPromises()
+    await save()
+    await flushPromises()
+    const cancel = w.findAll('.el-dialog__footer button').find((b) => b.text() === '取消')!
+    expect(cancel.attributes('disabled')).toBeDefined()
+    await cancel.trigger('click')
+    expect(w.find('.el-dialog__headerbtn').exists()).toBe(false)
+    // Esc / 点遮罩走对话框自身的关闭事件：保存中同样不关闭。
+    w.findComponent({ name: 'ElDialog' }).vm.$emit('update:modelValue', false)
+    await flushPromises()
+    expect(w.emitted('update:modelValue')?.some(([v]) => v === false) ?? false).toBe(false)
+    // 父页面强制关闭（兜底）：返回后直接通知已保存，不把提示留在隐藏的表单里。
+    await w.setProps({ modelValue: false })
+    resolveSave({ contractId: 12, warnings: [{ code: 'PREVIOUSLY_VOIDED', message: '曾登记为合同 3', contractIds: [3] }] })
+    await flushPromises()
+    expect(w.emitted('saved')).toEqual([[12]])
+  })
+
   it('重新打开表单（如切换公司后）：新请求返回前旧的框架协议候选已清空', async () => {
     hoisted.fetchContracts.mockResolvedValueOnce({ rows: [frameworkRow], page: 1, pageSize: 200, total: 1, stats: {} })
     const w = mount(MidlongContractFormDialog, { props: { modelValue: false, subjects: [], stations: [], detail: null }, global: { stubs: STUBS } })
