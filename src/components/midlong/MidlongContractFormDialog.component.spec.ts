@@ -70,10 +70,11 @@ describe('中长期合同草稿表单', () => {
     expect(hoisted.updateDraft).toHaveBeenCalledWith(7, expect.objectContaining({ frameworkContractId: 5, expectedRowVersion: 3 }))
   })
 
-  it('框架协议自身保存时不带框架关联（显式 null）', async () => {
+  it('框架协议自身保存时不带框架关联（显式 null），即使表单里残留了关联', async () => {
     hoisted.fetchContracts.mockResolvedValue({ rows: [], page: 1, pageSize: 200, total: 0, stats: {} })
     hoisted.updateDraft.mockResolvedValue({ contractId: 7, warnings: [] })
-    const { w, save } = await open({ detail: detail({ documentKind: 'FRAMEWORK', frameworkContractId: null, framework: null }) })
+    // 例如电量合同改为框架协议：表单里仍留着原来选的框架协议 5，提交时必须剥掉。
+    const { w, save } = await open({ detail: detail({ documentKind: 'FRAMEWORK', frameworkContractId: 5 }) })
     expect(w.find('[data-testid="ml-framework-select"]').exists()).toBe(false)
     await save()
     await flushPromises()
