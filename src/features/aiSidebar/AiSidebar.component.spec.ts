@@ -383,6 +383,7 @@ describe('AiSidebar · 会话规则', () => {
 describe('AiSidebar · 头部与输入区', () => {
   beforeEach(() => {
     g.__kernels = []
+    g.__manualReady = false
     g.__canWorkbench = true
     window.localStorage.clear()
     resetAiSidebarForTest()
@@ -594,6 +595,7 @@ describe('AiSidebar · 头部与输入区', () => {
 describe('AiSidebar · 专家命令（EC-01/02/03）', () => {
   beforeEach(() => {
     g.__kernels = []
+    g.__manualReady = false
     g.__canWorkbench = true
     g.__user = { roleCode: 'TRADER', username: 'trader' }
     ;(globalThis as unknown as { __briefOrder: string[] }).__briefOrder = []
@@ -668,6 +670,19 @@ describe('AiSidebar · 专家命令（EC-01/02/03）', () => {
     release()
     await settle()
     expect(live()[0]).toBe(brief)
+    expect(brief.asks).toEqual([])
+  })
+
+  it('晨报：内核就绪之前用户已手动发出一轮，就绪、预检都完成后也不补发目标日（dljy#2962）', async () => {
+    g.__manualReady = true
+    await setup()
+    useAiSidebar().startExpert(buildExpertLaunch(findEntry('morning_brief')!, '2026-09-17', '云南省'))
+    await settle()
+    const brief = live()[0]
+    brief.emit('streamingChange', true) // 就绪前输入框已可用，用户先发了一轮
+    brief.emit('streamingChange', false)
+    brief.ready()
+    await settle()
     expect(brief.asks).toEqual([])
   })
 

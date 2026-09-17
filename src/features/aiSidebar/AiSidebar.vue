@@ -116,6 +116,8 @@ function kernelReadyFor(key: number): Promise<boolean> {
 async function askInKernel(question: string) {
   agentEverOpened.value = true
   const key = state.mountKey
+  // 轮次基线在任何等待之前记下：内核就绪前输入框已可输入，用户在此期间发出的一轮也要算进去（dljy#2962）
+  const turnsBefore = turnsStarted
   await nextTick() // 首次/重挂：等 AgentChatPanel 挂载出 ref
   await nextTick() // 等会话属性随 record 更新到 props 后再发
   if (!question.trim()) return // 专家会话不带问题：只开会话、等用户输入
@@ -124,7 +126,6 @@ async function askInKernel(question: string) {
   // 晨报：先装配数据预检（确定性，不依赖模型），再发目标日启动研判——与工作台「生成晨报」一致
   if (record.value.entryKey === 'morning_brief' && briefRailRef.value) {
     const regionId = currentRegion.value.id
-    const turnsBefore = turnsStarted
     await briefRailRef.value.ensureLoaded()
     // 预检取数可能很慢：期间用户又发起了别的会话，这条晨报启动作废，不能把日期发进新会话（dljy-web#121 审查 P1）
     if (state.mountKey !== key) return
