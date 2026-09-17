@@ -131,6 +131,10 @@ export interface WindowRevisionChange {
   next: unknown
 }
 export declare function windowRevisionDiff(previous: Partial<TradingWindowRevision>, next: Partial<TradingWindowRevision>): WindowRevisionChange[]
+export type InstantInputReason = 'FORMAT' | 'DATE_ONLY' | 'MONTH' | 'DAY' | 'HOUR' | 'MINUTE' | 'SECOND' | 'OFFSET'
+export declare const INSTANT_INPUT_REASONS: readonly InstantInputReason[]
+export declare const INSTANT_INPUT_REASON_LABELS: Readonly<Record<InstantInputReason, string>>
+export declare function inspectBeijingDateTime(value: unknown): { ok: true; date: Date } | { ok: false; reason: InstantInputReason }
 export declare function parseBeijingDateTime(value: unknown): Date | null
 export declare function formatBeijingDateTime(value: string | Date | null | undefined): string | null
 export declare function isCompleteBeijingDateTimeInput(value: unknown): boolean
@@ -397,6 +401,8 @@ export interface ProposalSubmission {
 
 export interface ProposalWindowFitIssue {
   field: string
+  /** MISSING：公告明确给出、方案留空；DIFFERENT：方案与公告不一致。两者都不可确认。 */
+  kind?: 'MISSING' | 'DIFFERENT'
   message: string
 }
 

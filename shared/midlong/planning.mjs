@@ -300,18 +300,61 @@ export function isCompleteBeijingDateTimeInput(value) {
   return /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/.test(text) && parseBeijingDateTime(text) !== null
 }
 
+/** 时刻输入不合法的原因（日历上不存在的日期、越界的时分都要明确指出，不交给 Date 静默滚动）。 */
+export const INSTANT_INPUT_REASONS = Object.freeze(['FORMAT', 'DATE_ONLY', 'MONTH', 'DAY', 'HOUR', 'MINUTE', 'SECOND', 'OFFSET'])
+export const INSTANT_INPUT_REASON_LABELS = Object.freeze({
+  FORMAT: '格式应为 YYYY-MM-DD HH:mm', DATE_ONLY: '只有日期、缺少时:分', MONTH: '月份不存在', DAY: '该月没有这一天',
+  HOUR: '小时应在 00—23', MINUTE: '分钟应在 00—59', SECOND: '秒应在 00—59', OFFSET: '时区偏移无效',
+})
+
+const INSTANT_RE = /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2})(\.\d{1,6})?)?(Z|([+-])(\d{2}):?(\d{2}))?$/
+const pad2 = (n) => String(n).padStart(2, '0')
+const daysInMonthOf = (year, month) => new Date(Date.UTC(year, month, 0)).getUTCDate()
+
+/** 逐项定位不合法的原因（只用于给出原因；是否合法由 inspectBeijingDateTime 的反向核对判定）。 */
+function instantReasonOf(parts) {
+  const { year, month, day, hour, minute, second, offsetHour, offsetMinute } = parts
+  if (month < 1 || month > 12) return 'MONTH'
+  if (day < 1 || day > daysInMonthOf(year, month)) return 'DAY'
+  if (hour > 23) return 'HOUR'
+  if (minute > 59) return 'MINUTE'
+  if (second > 59) return 'SECOND'
+  if (offsetHour > 23 || offsetMinute > 59) return 'OFFSET'
+  return 'FORMAT'
+}
+
 /**
- * 业务时刻解析：带时区按原样解析；不带时区的本地时刻按北京时间解释（design D3），不随服务器时区漂移。
+ * 业务时刻逐字段核验：带时区按原样、不带时区按北京时间（design D3）。
+ * Date 会把 02-30、04-31、非闰年 02-29、24:00 静默滚到后面的日期（2031-02-30 → 3 月 2 日），
+ * 所以解析后把结果换回输入所用的时区，反向核对年、月、日、时、分、秒与输入逐项相同；不同即拒绝，并给出原因。
  * 只有日期（YYYY-MM-DD）不接受——申报、确认时间必须是具体时刻，不把日期默认成零点。
- * @returns {Date|null}
+ * @returns {{ ok: true, date: Date } | { ok: false, reason: string }}
  */
-export function parseBeijingDateTime(value) {
-  if (nullish(value)) return null
+export function inspectBeijingDateTime(value) {
+  if (nullish(value)) return { ok: false, reason: 'FORMAT' }
   const text = String(value).trim()
-  if (!text || /^\d{4}-\d{2}-\d{2}$/.test(text)) return null
-  const naive = /^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(:\d{2}(\.\d{1,6})?)?$/.test(text)
-  const zoned = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d{1,6})?)?(Z|[+-]\d{2}:?\d{2})$/.test(text)
-  if (!naive && !zoned) return null
-  const date = new Date(naive ? `${text.replace(' ', 'T')}+08:00` : text)
-  return Number.isNaN(date.getTime()) ? null : date
+  if (/^\d{4}-\d{2}-\d{2}$/.test(text)) return { ok: false, reason: 'DATE_ONLY' }
+  const m = INSTANT_RE.exec(text)
+  if (!m) return { ok: false, reason: 'FORMAT' }
+  const parts = {
+    year: Number(m[1]), month: Number(m[2]), day: Number(m[3]), hour: Number(m[4]), minute: Number(m[5]),
+    second: m[6] === undefined ? 0 : Number(m[6]),
+    offsetHour: m[10] === undefined ? 0 : Number(m[10]), offsetMinute: m[11] === undefined ? 0 : Number(m[11]),
+  }
+  const offsetMinutes = m[8] === 'Z' ? 0 : m[8] ? (m[9] === '-' ? -1 : 1) * (parts.offsetHour * 60 + parts.offsetMinute) : 8 * 60
+  const zone = offsetMinutes === 0 ? 'Z' : `${offsetMinutes < 0 ? '-' : '+'}${pad2(Math.floor(Math.abs(offsetMinutes) / 60))}:${pad2(Math.abs(offsetMinutes) % 60)}`
+  const date = new Date(`${m[1]}-${m[2]}-${m[3]}T${m[4]}:${m[5]}:${pad2(parts.second)}${m[7] ?? ''}${zone}`)
+  if (Number.isNaN(date.getTime())) return { ok: false, reason: instantReasonOf(parts) }
+  // 反向核对：换回输入所用时区后逐项比对，不一致说明 Date 做了滚动。
+  const local = new Date(date.getTime() + offsetMinutes * 60 * 1000)
+  const back = [local.getUTCFullYear(), local.getUTCMonth() + 1, local.getUTCDate(), local.getUTCHours(), local.getUTCMinutes(), local.getUTCSeconds()]
+  const input = [parts.year, parts.month, parts.day, parts.hour, parts.minute, parts.second]
+  if (input.some((v, i) => v !== back[i])) return { ok: false, reason: instantReasonOf(parts) }
+  return { ok: true, date }
+}
+
+/** 业务时刻解析（不合法返回 null；需要原因时用 inspectBeijingDateTime）。 */
+export function parseBeijingDateTime(value) {
+  const result = inspectBeijingDateTime(value)
+  return result.ok ? result.date : null
 }
