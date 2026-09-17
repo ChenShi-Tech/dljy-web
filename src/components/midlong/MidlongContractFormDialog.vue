@@ -43,10 +43,14 @@ const identity = reactive({
 // 可关联的框架协议：本公司本地区未作废的框架协议（服务端同样校验归属、地区、类型与状态）。
 const frameworkOptions = ref<Array<{ contractId: number; label: string }>>([])
 const frameworkLoadError = ref('')
+const frameworkLoading = ref(false)
 let frameworkLoadSeq = 0
 async function loadFrameworks() {
   const seq = ++frameworkLoadSeq
   frameworkLoadError.value = ''
+  // 先清掉上一次（可能是切换前公司）的候选，新范围的结果返回前不能选到旧范围的框架协议。
+  frameworkOptions.value = []
+  frameworkLoading.value = true
   try {
     // 逐页取全：框架协议超过一页时后面的也要能选（服务端单页上限 200）。
     const rows: MidlongContractSummary[] = []
@@ -63,6 +67,8 @@ async function loadFrameworks() {
     if (seq !== frameworkLoadSeq) return
     frameworkOptions.value = []
     frameworkLoadError.value = `框架协议列表加载失败：${midlongFailureOf(error).message}`
+  } finally {
+    if (seq === frameworkLoadSeq) frameworkLoading.value = false
   }
 }
 // 已关联但不在候选里（如已作废）的框架协议也要能显示，不因为选项缺失而被当成「未关联」。
@@ -77,10 +83,14 @@ const frameworkSelectOptions = computed(() => {
 const economics = ref<EconomicsDraft>(emptyEconomicsDraft())
 const editorRef = ref<InstanceType<typeof MidlongEconomicsEditor> | null>(null)
 
+// 重新登记曾作废的外部编号时：保存成功但先不关闭，常驻展示原合同链接，用户确认后再离开（新建后列表会跳转到新合同）。
+const savedWithWarnings = ref<{ contractId: number; warnings: DraftWarning[] } | null>(null)
+
 watch(() => props.modelValue, (open) => {
   if (!open) return
   serverErrors.value = []
   conflictIds.value = []
+  savedWithWarnings.value = null
   const d = props.detail
   if (d) {
     Object.assign(identity, {
@@ -103,7 +113,10 @@ watch(() => props.modelValue, (open) => {
 const canSubmit = computed(() => identity.contractName.trim() && identity.externalContractNo.trim() && !(editorRef.value?.check.errors.length))
 
 function close() {
+  const saved = savedWithWarnings.value
+  savedWithWarnings.value = null
   emit('update:modelValue', false)
+  if (saved) emit('saved', saved.contractId)
 }
 
 async function submit() {
@@ -128,8 +141,10 @@ async function submit() {
       ? await updateDraft(props.detail.contractId, { ...input, expectedRowVersion: props.detail.rowVersion })
       : await createDraft(input)
     ElMessage.success(props.detail ? '草稿已更新' : '草稿已保存（待补资料并核验确认后才计入持仓）')
-    for (const w of (result.warnings ?? []) as DraftWarning[]) {
-      if (w.code === 'PREVIOUSLY_VOIDED') ElMessage.warning({ message: w.message, duration: 8000 })
+    const voidedHints = ((result.warnings ?? []) as DraftWarning[]).filter((w) => w.code === 'PREVIOUSLY_VOIDED')
+    if (voidedHints.length) {
+      savedWithWarnings.value = { contractId: result.contractId, warnings: voidedHints }
+      return
     }
     emit('saved', result.contractId)
     close()
@@ -148,7 +163,7 @@ async function submit() {
 </script>
 
 <template>
-  <el-dialog :model-value="modelValue" :title="editing ? '修改合同草稿' : '录入售电合同草稿'" width="920px" top="5vh" @update:model-value="(v: boolean) => emit('update:modelValue', v)">
+  <el-dialog :model-value="modelValue" :title="editing ? '修改合同草稿' : '录入售电合同草稿'" width="920px" top="5vh" @update:model-value="(v: boolean) => (v ? emit('update:modelValue', v) : close())">
     <div class="ml-form">
       <MidlongNotice tone="info">
         保存后为「草稿」。补充电子交易确认单、纸质合同或交易中心导出等依据并完成核验确认后，才计入月度持仓；缺价格或月度分解不阻止确认，但会持续提示。
@@ -184,7 +199,7 @@ async function submit() {
         </label>
         <label class="ml-field"><span>购电方</span><el-input v-model="identity.counterpartyName" /></label>
         <label v-if="identity.documentKind === 'OBLIGATION'" class="ml-field"><span>所属框架协议（可空）</span>
-          <el-select v-model="identity.frameworkContractId" clearable filterable placeholder="不关联" data-testid="ml-framework-select">
+          <el-select v-model="identity.frameworkContractId" clearable filterable placeholder="不关联" :loading="frameworkLoading" data-testid="ml-framework-select">
             <el-option v-for="f in frameworkSelectOptions" :key="f.contractId" :label="f.label" :value="f.contractId" />
           </el-select>
           <small v-if="frameworkLoadError" class="ml-error">{{ frameworkLoadError }}</small>
@@ -193,6 +208,13 @@ async function submit() {
         <label class="ml-field ml-wide"><span>备注</span><el-input v-model="identity.remarks" /></label>
       </div>
       <MidlongEconomicsEditor ref="editorRef" v-model="economics" :document-kind="identity.documentKind" :energy-attribute="identity.energyAttribute" />
+      <MidlongNotice v-if="savedWithWarnings" tone="warn" title="草稿已保存，请确认不是重复录入" data-testid="ml-previously-voided">
+        <div v-for="(w, i) in savedWithWarnings.warnings" :key="i">
+          {{ w.message }}
+          <router-link v-for="id in w.contractIds ?? []" :key="id" :to="`/zcqjy/contracts/${id}`" class="ml-link" target="_blank">查看已作废的合同 #{{ id }}</router-link>
+        </div>
+        <div>本次保存的是合同 #{{ savedWithWarnings.contractId }}；若确属重复录入，可在详情里作废。</div>
+      </MidlongNotice>
       <MidlongNotice v-if="serverErrors.length" tone="danger" title="保存未成功">
         <div v-for="(msg, i) in serverErrors" :key="i">{{ msg }}</div>
         <div v-if="conflictIds.length">
@@ -202,8 +224,11 @@ async function submit() {
       </MidlongNotice>
     </div>
     <template #footer>
-      <el-button @click="close">取消</el-button>
-      <el-button type="primary" :loading="saving" :disabled="!canSubmit" @click="submit">{{ editing ? '保存修改' : '保存草稿' }}</el-button>
+      <el-button v-if="savedWithWarnings" type="primary" @click="close">完成</el-button>
+      <template v-else>
+        <el-button @click="close">取消</el-button>
+        <el-button type="primary" :loading="saving" :disabled="!canSubmit" @click="submit">{{ editing ? '保存修改' : '保存草稿' }}</el-button>
+      </template>
     </template>
   </el-dialog>
 </template>
