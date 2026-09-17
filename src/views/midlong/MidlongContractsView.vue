@@ -71,9 +71,15 @@ const query = computed<MidlongContractQuery>(() => {
 
 const guard = createLoadGuard()
 const contextKey = () => `${selectedCompanyId.value}|${currentRegion.value.id}|${JSON.stringify(query.value)}`
+// 公司/地区范围：换了范围就先清掉上一范围的合同，加载期间不在新公司的范围栏下继续显示旧公司的数据；
+// 同一范围内翻页或改筛选仍保留旧结果直到新结果返回。
+const scopeKey = () => `${selectedCompanyId.value}|${currentRegion.value.id}`
+let loadedScope = ''
 
 async function load() {
   const token = guard.begin(contextKey())
+  if (scopeKey() !== loadedScope) result.value = null
+  loadedScope = scopeKey()
   state.value = 'loading'
   try {
     const caps = await fetchCapabilities()
@@ -129,9 +135,12 @@ function onPage(p: number) {
 
 async function doExport() {
   exporting.value = true
+  const scope = scopeKey()
   try {
     const { page: _p, pageSize: _s, ...rest } = query.value
     const file = await exportContracts(rest)
+    // 导出返回前切换了公司/地区：丢弃旧范围的文件，不在新范围下载或提示旧公司的行数。
+    if (scope !== scopeKey()) { ElMessage.warning('公司或地区已切换，已丢弃切换前发起的导出'); return }
     downloadCsv(file.fileName, file.content)
     ElMessage.success(`已导出筛选范围内全部 ${file.rowCount} 份合同`)
   } catch (error) {
@@ -238,7 +247,7 @@ watch([selectedCompanyId, () => currentRegion.value.id], () => {
       <el-table v-loading="state === 'loading'" :data="result.rows" border stripe row-key="contractId">
         <el-table-column label="外部编号" min-width="150">
           <template #default="{ row }">
-            <router-link :to="`/zcqjy/contracts/${row.contractId}`" class="ml-link">{{ row.externalContractNo }}</router-link>
+            <router-link :to="{ path: `/zcqjy/contracts/${row.contractId}`, query: route.query }" class="ml-link">{{ row.externalContractNo }}</router-link>
             <el-tag v-if="isTestData(row.sourceNamespace)" size="small" type="warning" effect="plain" class="ml-gap">测试数据</el-tag>
           </template>
         </el-table-column>

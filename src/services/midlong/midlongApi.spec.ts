@@ -11,7 +11,8 @@ vi.mock('@/services/api', async (orig) => ({ ...(await orig<typeof import('@/ser
 vi.mock('@/services/company/companyApi', () => ({ companyUnselected: () => false }))
 vi.mock('@/services/company/companyContext', async () => ({ selectedCompanyId: (await import('vue')).ref('comp') }))
 
-import { addEvidence, contentFingerprint } from './midlongApi'
+import { ApiError } from '@/services/api'
+import { addEvidence, contentFingerprint, midlongFailureOf } from './midlongApi'
 
 const keyOf = (call: unknown[]) => ((call[2] as { headers: Record<string, string> }).headers['Idempotency-Key'])
 
@@ -47,5 +48,14 @@ describe('补充资料幂等键', () => {
     const fingerprints = new Set([0, 1, 5_000, 9_998, 9_999].map((i) => contentFingerprint(`${base.slice(0, i)}y${base.slice(i + 1)}`)))
     fingerprints.add(contentFingerprint(base))
     expect(fingerprints.size).toBe(6)
+  })
+})
+
+describe('错误状态', () => {
+  it('HTTP 200 但信封 code 为 403/404：状态取信封 code，页面才能进入无权限/不存在状态', () => {
+    const envelope = (code: number) => new ApiError('拒绝', { status: 200, code, payload: { code, msg: '拒绝', data: { errorCode: 'SCOPE_DENIED', details: null } } as never })
+    expect(midlongFailureOf(envelope(403)).status).toBe(403)
+    expect(midlongFailureOf(envelope(404)).status).toBe(404)
+    expect(midlongFailureOf(new ApiError('存储不可用', { status: 503, code: 503, payload: { code: 503, msg: '', data: null } as never })).status).toBe(503)
   })
 })

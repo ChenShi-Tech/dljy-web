@@ -8,7 +8,7 @@ import { nextTick } from 'vue'
 import { mount } from '@/test/mount'
 import type { MidlongCapabilities, MidlongPositionReport, MidlongPriceSummary } from '@/services/midlong/midlongTypes'
 
-const hoisted = vi.hoisted(() => ({ fetchPositions: vi.fn(), fetchCapabilities: vi.fn(), routeQuery: {} as Record<string, string>, replace: vi.fn(), companyRef: null as null | { value: string } }))
+const hoisted = vi.hoisted(() => ({ fetchPositions: vi.fn(), fetchCapabilities: vi.fn(), routeQuery: {} as Record<string, string>, replace: vi.fn(), companyRef: null as null | { value: string }, exportPositions: vi.fn(), downloadCsv: vi.fn() }))
 
 vi.mock('element-plus', async (orig) => ({ ...(await orig<typeof import('element-plus')>()), ElMessage: { success: vi.fn(), error: vi.fn() } }))
 vi.mock('vue-router', () => ({ useRoute: () => ({ query: hoisted.routeQuery }), useRouter: () => ({ replace: hoisted.replace }) }))
@@ -25,9 +25,11 @@ vi.mock('@/services/midlong/midlongApi', () => ({
   fetchCapabilities: hoisted.fetchCapabilities,
   fetchPositions: hoisted.fetchPositions,
   fetchSubjects: vi.fn(async () => []),
-  exportPositions: vi.fn(),
+  exportPositions: hoisted.exportPositions,
   midlongFailureOf: (e: unknown) => ({ status: (e as { status?: number }).status ?? 500, errorCode: 'STORAGE_UNAVAILABLE', message: (e as Error).message, details: null }),
 }))
+
+vi.mock('@/services/midlong/midlongFormat', async (orig) => ({ ...(await orig<typeof import('@/services/midlong/midlongFormat')>()), downloadCsv: hoisted.downloadCsv }))
 
 import MidlongPositionsView from './MidlongPositionsView.vue'
 
@@ -115,6 +117,24 @@ describe('中长期售电月度持仓', () => {
     const urlQuery = hoisted.replace.mock.calls.at(-1)![0].query
     expect(urlQuery).not.toHaveProperty('subjectId')
     expect(urlQuery).not.toHaveProperty('stationId')
+  })
+
+  it('切换公司：新数据返回前不再显示旧公司的持仓；导出返回前切换则丢弃文件', async () => {
+    hoisted.fetchCapabilities.mockResolvedValue(caps)
+    hoisted.fetchPositions.mockResolvedValueOnce(report()).mockImplementationOnce(() => new Promise(() => {}))
+    let resolveExport: (v: unknown) => void = () => {}
+    hoisted.exportPositions.mockImplementationOnce(() => new Promise((resolve) => { resolveExport = resolve }))
+    const w = mount(MidlongPositionsView, { global: { stubs: STUBS } })
+    await flushPromises()
+    expect(w.text()).toContain('区间正式分解电量')
+    await w.findAll('button').find((b) => b.text() === '导出')!.trigger('click')
+    hoisted.companyRef!.value = hoisted.companyRef!.value === 'comp-a' ? 'comp-b' : 'comp-a'
+    await nextTick()
+    await flushPromises()
+    expect(w.text()).not.toContain('区间正式分解电量')
+    resolveExport({ fileName: 'p.csv', content: 'x' })
+    await flushPromises()
+    expect(hoisted.downloadCsv).not.toHaveBeenCalled()
   })
 
   it('历史认知时点视图给出说明', async () => {

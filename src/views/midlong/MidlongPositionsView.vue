@@ -66,9 +66,14 @@ const query = computed<MidlongPositionQuery>(() => {
 
 const guard = createLoadGuard()
 const contextKey = () => `${selectedCompanyId.value}|${currentRegion.value.id}|${JSON.stringify(query.value)}`
+// 换了公司/地区先清掉旧范围的持仓，加载期间不显示旧公司的数值（同合同列表页）。
+const scopeKey = () => `${selectedCompanyId.value}|${currentRegion.value.id}`
+let loadedScope = ''
 
 async function load() {
   const token = guard.begin(contextKey())
+  if (scopeKey() !== loadedScope) report.value = null
+  loadedScope = scopeKey()
   state.value = 'loading'
   try {
     const caps = await fetchCapabilities()
@@ -108,8 +113,10 @@ function clearAsOf() {
 
 async function doExport() {
   exporting.value = true
+  const scope = scopeKey()
   try {
     const file = await exportPositions(query.value)
+    if (scope !== scopeKey()) { ElMessage.warning('公司或地区已切换，已丢弃切换前发起的导出'); return }
     downloadCsv(file.fileName, file.content)
   } catch (error) {
     ElMessage.error(midlongFailureOf(error).message)

@@ -15,6 +15,8 @@ const hoisted = vi.hoisted(() => ({
   fetchCapabilities: vi.fn(),
   routeQuery: {} as Record<string, string>,
   replace: vi.fn(),
+  exportContracts: vi.fn(),
+  downloadCsv: vi.fn(),
 }))
 
 vi.mock('element-plus', async (orig) => ({ ...(await orig<typeof import('element-plus')>()), ElMessage: { success: vi.fn(), error: vi.fn(), warning: vi.fn() } }))
@@ -37,9 +39,11 @@ vi.mock('@/services/midlong/midlongApi', () => ({
   fetchCapabilities: hoisted.fetchCapabilities,
   fetchContracts: hoisted.fetchContracts,
   fetchSubjects: vi.fn(async () => []),
-  exportContracts: vi.fn(),
+  exportContracts: hoisted.exportContracts,
   midlongFailureOf: (e: unknown) => ({ status: (e as { status?: number }).status ?? 500, errorCode: 'STORAGE_UNAVAILABLE', message: (e as Error).message, details: null }),
 }))
+
+vi.mock('@/services/midlong/midlongFormat', async (orig) => ({ ...(await orig<typeof import('@/services/midlong/midlongFormat')>()), downloadCsv: hoisted.downloadCsv }))
 
 import MidlongContractsView from './MidlongContractsView.vue'
 
@@ -132,6 +136,37 @@ describe('中长期售电合同列表', () => {
     expect(gapTile.element.tagName).not.toBe('BUTTON')
     expect(gapTile.text()).toContain('按类型查看请用「质量缺口」筛选')
     expect(w.findAll('button.ml-tile').map((b) => b.text()).join('|')).not.toContain('有质量缺口')
+  })
+
+  it('切换公司：新公司数据返回前就不再显示旧公司的合同', async () => {
+    hoisted.fetchCapabilities.mockResolvedValue(caps())
+    hoisted.fetchContracts
+      .mockImplementationOnce(async () => listOf([row({ contractId: 1, externalContractNo: 'A-公司合同' })]))
+      .mockImplementationOnce(() => new Promise(() => {}))
+    const w = mount(MidlongContractsView, { global: { stubs: STUBS } })
+    await flushPromises()
+    expect(w.text()).toContain('A-公司合同')
+    const companyRef = (hoisted as unknown as { companyRef: { value: string } }).companyRef
+    companyRef.value = companyRef.value === 'comp-a' ? 'comp-b' : 'comp-a'
+    await nextTick()
+    await flushPromises()
+    expect(w.text()).not.toContain('A-公司合同')
+  })
+
+  it('导出返回前切换了公司：丢弃旧公司的文件，不下载', async () => {
+    hoisted.fetchCapabilities.mockResolvedValue(caps())
+    hoisted.fetchContracts.mockResolvedValue(listOf([row({})]))
+    let resolveExport: (v: unknown) => void = () => {}
+    hoisted.exportContracts.mockImplementationOnce(() => new Promise((resolve) => { resolveExport = resolve }))
+    const w = mount(MidlongContractsView, { global: { stubs: STUBS } })
+    await flushPromises()
+    await w.findAll('button').find((b) => b.text() === '导出筛选结果')!.trigger('click')
+    const companyRef = (hoisted as unknown as { companyRef: { value: string } }).companyRef
+    companyRef.value = companyRef.value === 'comp-a' ? 'comp-b' : 'comp-a'
+    await nextTick()
+    resolveExport({ fileName: 'a.csv', content: 'x', rowCount: 1, stats: {} })
+    await flushPromises()
+    expect(hoisted.downloadCsv).not.toHaveBeenCalled()
   })
 
   it('非试点地区显示「未开通」，不展示空列表', async () => {

@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, enableAutoUnmount } from '@vue/test-utils'
 import { mount } from '@/test/mount'
 
-const hoisted = vi.hoisted(() => ({ replace: vi.fn(), query: {} as Record<string, string>, fetchContracts: vi.fn(), fetchContractDetails: vi.fn(async () => []) }))
+const hoisted = vi.hoisted(() => ({ replace: vi.fn(), query: {} as Record<string, string>, fetchContracts: vi.fn(), fetchContractDetails: vi.fn(async () => []), exportCsv: vi.fn() }))
 
 vi.mock('element-plus', async (orig) => ({ ...(await orig<typeof import('element-plus')>()), ElMessage: { success: vi.fn(), error: vi.fn(), warning: vi.fn() }, ElMessageBox: { confirm: vi.fn() } }))
 vi.mock('vue-router', () => ({ useRoute: () => ({ query: hoisted.query }), useRouter: () => ({ replace: hoisted.replace, push: vi.fn() }) }))
@@ -20,6 +20,8 @@ vi.mock('@/services/company/companyApi', async (orig) => ({
   fetchTrades: vi.fn(async () => []),
   fetchContractDetails: hoisted.fetchContractDetails,
 }))
+
+vi.mock('../../utils/exportCsv', () => ({ exportCsv: hoisted.exportCsv }))
 
 import CompanyContractsView from './CompanyContractsView.vue'
 
@@ -66,5 +68,23 @@ describe('旧合同管理页的中长期分流', () => {
     expect(managedRow.text()).not.toContain('删除')
     expect(managedRow.text()).not.toContain('已逾期')
     expect(managedRow.text()).toContain('中长期·已确认')
+  })
+
+  it('已纳管合同不计入旧口径「执行中」；导出状态与表格同口径（中长期确认状态）', async () => {
+    hoisted.fetchContracts.mockResolvedValue([
+      contract({ id: 7, contractNo: 'M-7', endDate: '2025-01-31', midlong: managed }),
+      contract({ id: 8, contractNo: 'M-8', status: 'draft', midlong: { ...managed, confirmationStatus: 'PENDING_VERIFICATION', detailPath: '/zcqjy/contracts/8' } }),
+      contract({ id: 1, contractNo: 'L-1', endDate: '2099-12-31' }),
+    ])
+    const w = mount(CompanyContractsView, { global: { stubs: STUBS } })
+    await flushPromises()
+    const activeTile = w.findAll('.stat-card').find((c) => c.find('.stat-label').text() === '执行中')!
+    expect(activeTile.find('.stat-value').text()).toBe('1')
+    await w.findAll('button').find((b) => b.text() === '导出CSV')!.trigger('click')
+    const body = hoisted.exportCsv.mock.calls[0][2] as string[][]
+    const statusOf = (no: string) => body.find((r) => r[0] === no)!.at(-2)
+    expect(statusOf('M-7')).toBe('中长期·已确认')
+    expect(statusOf('M-8')).toBe('中长期·待核对')
+    expect(statusOf('L-1')).toBe('执行中')
   })
 })

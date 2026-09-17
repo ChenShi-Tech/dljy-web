@@ -34,7 +34,9 @@ export function midlongFailureOf(error: unknown): MidlongFailure {
   if (error instanceof ApiError) {
     const data = (error.payload as { data?: { errorCode?: MidlongErrorCode; details?: unknown } }).data
     const errorCode = data?.errorCode ?? 'UNKNOWN'
-    return { status: error.status || error.code, errorCode, message: error.message || MIDLONG_ERROR_LABELS[errorCode as MidlongErrorCode] || '请求失败', details: data?.details ?? null }
+    // HTTP 200 + 信封 code 403/404 这类业务失败：状态以信封 code 为准，否则页面会把无权限/不存在当成一般失败。
+    const status = error.status >= 400 ? error.status : (error.code || error.status)
+    return { status, errorCode, message: error.message || MIDLONG_ERROR_LABELS[errorCode as MidlongErrorCode] || '请求失败', details: data?.details ?? null }
   }
   if (error instanceof Error) return { status: 0, errorCode: 'NETWORK', message: `网络或服务不可达：${error.message}`, details: null }
   return { status: 0, errorCode: 'UNKNOWN', message: '请求失败', details: null }

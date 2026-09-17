@@ -7,10 +7,10 @@ import { flushPromises, enableAutoUnmount } from '@vue/test-utils'
 import { mount } from '@/test/mount'
 import type { MidlongContractDetail, MidlongRevision } from '@/services/midlong/midlongTypes'
 
-const hoisted = vi.hoisted(() => ({ fetchContract: vi.fn(), correctContract: vi.fn(), addEvidence: vi.fn(), fileToBase64: vi.fn(async () => 'Zg==') }))
+const hoisted = vi.hoisted(() => ({ fetchContract: vi.fn(), correctContract: vi.fn(), addEvidence: vi.fn(), fileToBase64: vi.fn(async () => 'Zg=='), routeQuery: {} as Record<string, string> }))
 
 vi.mock('element-plus', async (orig) => ({ ...(await orig<typeof import('element-plus')>()), ElMessage: { success: vi.fn(), error: vi.fn() } }))
-vi.mock('vue-router', () => ({ useRoute: () => ({ params: { id: '7' }, query: {} }), useRouter: () => ({ replace: vi.fn(), push: vi.fn() }) }))
+vi.mock('vue-router', () => ({ useRoute: () => ({ params: { id: '7' }, query: hoisted.routeQuery }), useRouter: () => ({ replace: vi.fn(), push: vi.fn() }) }))
 vi.mock('@/services/company/companyContext', async () => ({ selectedCompanyId: (await import('vue')).ref('comp-a') }))
 vi.mock('@/services/region/regionContext', async () => ({ currentRegion: (await import('vue')).ref({ id: 'yunnan' }) }))
 vi.mock('@/services/company/companyApi', () => ({ fetchStations: vi.fn(async () => []) }))
@@ -28,7 +28,7 @@ vi.mock('@/services/midlong/midlongFormat', async (orig) => ({ ...(await orig<ty
 
 import MidlongContractDetailView from './MidlongContractDetailView.vue'
 
-const STUBS = { CompanyScopeBar: { template: '<div />' }, MidlongContractFormDialog: { template: '<div />' }, 'router-link': { template: '<a><slot /></a>' } }
+const STUBS = { CompanyScopeBar: { template: '<div />' }, MidlongContractFormDialog: { template: '<div />' }, 'router-link': { props: ['to'], template: '<a :data-to="JSON.stringify(to)"><slot /></a>' } }
 
 const revision: MidlongRevision = {
   id: 1, revisionNo: 1, revisionKind: 'INITIAL', status: 'CONFIRMED', supersedesRevisionNo: null, totalQuantity: '1100', sourceQuantity: '1100 MWh',
@@ -55,7 +55,10 @@ function detail(o: Partial<MidlongContractDetail> = {}): MidlongContractDetail {
   }
 }
 
-afterEach(() => vi.clearAllMocks())
+afterEach(() => {
+  vi.clearAllMocks()
+  hoisted.routeQuery = {}
+})
 
 // 每个用例结束卸载组件：否则遗留实例会响应后续用例的公司/地区切换继续取数，既拖慢全量运行，也可能让「最后一次请求」断言取到别的实例。
 enableAutoUnmount(afterEach)
@@ -109,6 +112,15 @@ describe('中长期售电合同详情', () => {
     await flushPromises()
     expect(hoisted.fileToBase64).not.toHaveBeenCalled()
     expect(hoisted.addEvidence).not.toHaveBeenCalled()
+  })
+
+  it('从旧深链或筛选列表进入：返回列表时带回交割期等筛选', async () => {
+    hoisted.routeQuery = { deliveryFrom: '2027-01', deliveryTo: '2027-12' }
+    hoisted.fetchContract.mockResolvedValue(detail())
+    const w = mount(MidlongContractDetailView, { global: { stubs: STUBS } })
+    await flushPromises()
+    const back = w.findAll('a').find((a) => a.text().includes('← 售电合同'))!
+    expect(JSON.parse(back.attributes('data-to')!)).toEqual({ path: '/zcqjy/contracts', query: { deliveryFrom: '2027-01', deliveryTo: '2027-12' } })
   })
 
   it('待核对合同缺依据：核验前明确提示需补齐', async () => {

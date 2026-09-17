@@ -190,7 +190,8 @@ const stats = computed(() => {
   let totalQty = 0
   let overdue = 0
   for (const c of list) {
-    if (c.status === 'active' && !isOverdue(c)) active += 1 // 执行中不含已逾期
+    // 执行中不含已逾期；已纳管中长期合同的兼容投影状态不代表交割进度（交割期已结束仍可能是 active），不计入旧口径「执行中」。
+    if (c.status === 'active' && !isOverdue(c) && !c.midlong) active += 1
     if (isExpiring(c)) expiring += 1
     if (isOverdue(c)) overdue += 1
     totalQty += Number(c.totalQuantity) || 0
@@ -412,7 +413,8 @@ function exportContractsCsv() {
     c.contractNo, c.contractName, stationName(c.stationId),
     MARKET_TYPE_LABELS[c.marketType] ?? c.marketType, TRADE_MODE_LABELS[c.tradeMode] ?? c.tradeMode,
     c.startDate, c.endDate, c.totalQuantity, c.buyerName, c.sellerName, c.buyerPrice, c.sellerPrice, c.totalFee,
-    CONTRACT_STATUS_LABELS[c.status] ?? c.status, c.source === 'IMPORT' ? '导入' : '手动'
+    // 纳管合同导出与表格同口径（中长期确认状态），兼容投影的 draft/active 会把待核对、已确认混成草稿/执行中。
+    c.midlong ? statusLabel(c) : (CONTRACT_STATUS_LABELS[c.status] ?? c.status), c.source === 'IMPORT' ? '导入' : '手动'
   ])
   exportCsv(`合同_${todayBeijing()}`, headers, body)
 }

@@ -29,6 +29,8 @@ import {
 } from '@/services/midlong/midlongFormat'
 
 const route = useRoute()
+// 返回列表时带回进入详情时的列表筛选（含旧深链转来的交割期），不丢筛选。
+const backToList = computed(() => ({ path: '/zcqjy/contracts', query: route.query }))
 const contractId = computed(() => Number(route.params.id))
 
 type LoadState = 'loading' | 'ready' | 'no-company' | 'unsupported' | 'disabled' | 'not-found' | 'failed'
@@ -41,8 +43,13 @@ const stations = ref<CompanyStation[]>([])
 const guard = createLoadGuard()
 const contextKey = () => `${selectedCompanyId.value}|${currentRegion.value.id}|${contractId.value}`
 
+// 换了公司/地区/合同就先清掉旧详情，加载期间不在新范围下显示上一份合同。
+let loadedKey = ''
+
 async function load() {
   const token = guard.begin(contextKey())
+  if (contextKey() !== loadedKey) detail.value = null
+  loadedKey = contextKey()
   state.value = 'loading'
   try {
     const caps = await fetchCapabilities()
@@ -228,7 +235,7 @@ const missingBasis = computed(() => (actionError.value?.errorCode === 'INCOMPLET
 <template>
   <div class="ml-page">
     <div class="ml-head">
-      <router-link to="/zcqjy/contracts" class="ml-link">← 售电合同</router-link>
+      <router-link :to="backToList" class="ml-link">← 售电合同</router-link>
     </div>
     <CompanyScopeBar />
 
