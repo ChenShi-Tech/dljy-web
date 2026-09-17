@@ -72,9 +72,10 @@ describe('中长期合同草稿表单', () => {
 
   it('框架协议超过一页：逐页加载全部选项', async () => {
     const row = (id: number) => ({ ...frameworkRow, contractId: id, contractName: `框架协议 ${id}`, externalContractNo: `FW-${id}` })
+    // 用小数据模拟「一页取不完」（按 total 判断），避免渲染上百个选项拖慢慢速 CI。
     hoisted.fetchContracts
-      .mockResolvedValueOnce({ rows: Array.from({ length: 200 }, (_, i) => row(i + 100)), page: 1, pageSize: 200, total: 201, stats: {} })
-      .mockResolvedValueOnce({ rows: [row(999)], page: 2, pageSize: 200, total: 201, stats: {} })
+      .mockResolvedValueOnce({ rows: [row(100), row(101)], page: 1, pageSize: 200, total: 3, stats: {} })
+      .mockResolvedValueOnce({ rows: [row(999)], page: 2, pageSize: 200, total: 3, stats: {} })
     await open({ detail: null })
     expect(hoisted.fetchContracts).toHaveBeenCalledTimes(2)
     expect(hoisted.fetchContracts.mock.calls[1][0]).toMatchObject({ page: 2, documentKind: 'FRAMEWORK' })
