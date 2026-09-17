@@ -23,10 +23,7 @@ import { axisTooltip, bottomToolbox, emptyOverlay, insideZoom } from '@/services
 import { defineAiPage, useAiSidebar } from '@/features/aiSidebar'
 import { PAGE_PROMPT_KEYS } from '@/prompts'
 
-const POINTS_96 = Array.from({ length: 96 }, (_, i) => {
-  const m = (i + 1) * 15
-  return `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`
-})
+import { POINTS_96 } from '@/utils/spotPoints96'
 const curve = (row: PriceCurveViewModel) => row.points
 const TYPE: Record<'rq' | 'ss', PriceMarket> = { rq: 'rq', ss: 'ss' } // 日前出清 / 实时出清
 

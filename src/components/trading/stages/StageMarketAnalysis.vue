@@ -34,6 +34,7 @@ import {
   type SourceStatus
 } from 'shared/trading-rules/data-integrity.mjs'
 import { savePreflight, type DeclarationOrder } from '@/services/declarations'
+import { useSaveState } from '@/composables/useSaveState'
 import { fetchCaptured } from '@/services/captured'
 import {
   fetchFundamentals,
@@ -507,24 +508,22 @@ const effectiveCredibility = computed(() => {
 const positionGoal = computed(() => reviewFocusOf(activeStanceType.value)?.goal ?? null)
 
 // 写回
-const saving = ref(false)
-const saveMsg = ref('')
-const saveError = ref('')
+// 写回三态走 useSaveState 单源（spot-trading-module-hygiene 收口六份逐字副本）
+const { saving, saveMsg, saveError, runSave } = useSaveState()
 const written = computed(() => props.declaration?.preflight?.dataGate ?? null)
 
 async function writeBack() {
   if (!props.declaration || !daySummary.value.dominantRegime) return
-  saving.value = true
-  saveMsg.value = ''
-  saveError.value = ''
-  try {
+  const declaration = props.declaration
+  const dominantRegime = daySummary.value.dominantRegime
+  await runSave(async () => {
     const s = daySummary.value
     const updated = await savePreflight(
-      props.declaration.id,
+      declaration.id,
       'dataGate',
       {
         // 市场判断（S2 的主产出）
-        regime: s.dominantRegime,
+        regime: dominantRegime,
         coverage: s.coverage,
         priceCenterLow: s.priceCenterLow,
         priceCenterHigh: s.priceCenterHigh,
@@ -552,15 +551,11 @@ async function writeBack() {
         // 24 时段聚合汇总（逐时明细在基本面库 h00–h23 槽，payload 只带总数）
         hourlyExposure: hourlyTotals.value
       },
-      `S2 早间分析：${REGIME_LABEL[s.dominantRegime]}，中枢 ${s.priceCenterLow}–${s.priceCenterHigh} 元/MWh`
+      `S2 早间分析：${REGIME_LABEL[dominantRegime]}，中枢 ${s.priceCenterLow}–${s.priceCenterHigh} 元/MWh`
     )
     emit('updated', updated)
-    saveMsg.value = '市场判断已写回，S3 方向判断可直接读取'
-  } catch (e) {
-    saveError.value = e instanceof Error ? e.message : '写回失败'
-  } finally {
-    saving.value = false
-  }
+    return '市场判断已写回，S3 方向判断可直接读取'
+  })
 }
 </script>
 

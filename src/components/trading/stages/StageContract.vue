@@ -24,6 +24,7 @@ import {
 } from '@/services/trading/contractGap'
 import { REGIME_LABEL } from 'shared/trading-rules/supply-demand.mjs'
 import { savePreflight, type DeclarationOrder } from '@/services/declarations'
+import { useSaveState } from '@/composables/useSaveState'
 import { createContract, fetchContracts, type CompanyContract } from '@/services/company/companyApi'
 import { activeStanceType } from '@/services/stance/stanceContext'
 import AiAssistFill from '@/components/trading/AiAssistFill.vue'
@@ -257,20 +258,17 @@ function applyAssist(s: Record<string, unknown>) {
 }
 
 // 写回
-const saving = ref(false)
-const saveMsg = ref('')
-const saveError = ref('')
+// 写回三态走 useSaveState 单源（spot-trading-module-hygiene 收口六份逐字副本）
+const { saving, saveMsg, saveError, runSave } = useSaveState()
 const written = computed(() => pf.value.contract ?? null)
 
 async function writeBack() {
   if (!decl.value || !actionValid.value) return
-  saving.value = true
-  saveMsg.value = ''
-  saveError.value = ''
-  try {
+  const declaration = decl.value
+  await runSave(async () => {
     const a = assessment.value
     const updated = await savePreflight(
-      decl.value.id,
+      declaration.id,
       'contract',
       {
         gapMwh: a.gapMwh,
@@ -290,12 +288,8 @@ async function writeBack() {
       `S6 补仓：${GAP_SUGGESTION_LABEL[a.suggestion]}，${action.value.trim()}`
     )
     emit('updated', updated)
-    saveMsg.value = '补仓决定已写回，进入 S7 日报收尾'
-  } catch (e) {
-    saveError.value = e instanceof Error ? e.message : '写回失败'
-  } finally {
-    saving.value = false
-  }
+    return '补仓决定已写回，进入 S7 日报收尾'
+  })
 }
 
 function gapClass(s: GapSuggestion) {

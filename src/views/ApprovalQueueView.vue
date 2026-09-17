@@ -9,6 +9,8 @@ import {
   declarationModeOf,
   DECLARATION_MODE_LABEL,
   listDeclarationsPage,
+  PRE_APPROVAL_STATUSES,
+  secondSignatureNotice,
   STATUS_LABEL,
   type DeclarationListParams,
   type DeclarationMode,
@@ -61,7 +63,7 @@ function approvalDeniedReason(d: DeclarationOrder): string {
 // 反向定义（排除未进入审批环节的三个状态）而非正向白名单：原白名单
 // ['APPROVED','REJECTED','SUBMITTED','ACKNOWLEDGED'] 漏了 CLEARED/EXPIRED，
 // 使已走完全流程的存量单在本页整体不可见。反向定义后新增状态不会再漏。
-const PRE_APPROVAL_STATUSES = ['DRAFT', 'RISK_CHECKED', 'PENDING_APPROVAL']
+// 常量本体收口到 services/declarations 单源（spot-trading-module-hygiene）。
 const recentDecided = computed(() =>
   visible.value
     .filter((d) => !PRE_APPROVAL_STATUSES.includes(d.status) && d.approvalRecord.length)
@@ -183,8 +185,9 @@ async function decide(declaration: DeclarationOrder, decision: 'approve' | 'reje
   try {
     const updated = await approveDeclaration(declaration.id, decision, comments.value[declaration.id] || undefined)
     // L3 双签第一签：服务端只落签不转态，明示等待第二签而不是让人以为已批准
-    if (updated.awaitingSecondSignature) {
-      ElMessage.warning('L3 双签：第一签已记录，需第二位审批人批准后本单才进入已审批')
+    const secondSignNote = secondSignatureNotice(updated)
+    if (secondSignNote) {
+      ElMessage.warning(secondSignNote)
     } else {
       ElMessage.success(decision === 'approve' ? '已批准' : '已驳回')
     }

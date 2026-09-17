@@ -23,6 +23,9 @@ import { chartChrome } from '@/composables/useTheme'
 import { onRegionChange } from '@/composables/useRegionReload'
 import { COCKPIT_PRIVATE_FAMILIES, loadCockpit, type CockpitData, type DecisionItem } from '@/services/cockpitData'
 import { hasCgnYunnanPriceEntitlement } from '@/services/market/cgnYunnanLivePrice'
+import { fetchCaptureCoverage } from '@/services/market/captureCoverage'
+import { todayBeijing } from '@/utils/beijingDate'
+import { resolveCockpitInitialDate } from '@/utils/spotDateDefaults'
 import type { PlantForecastArena } from '@/services/market/plantForecastArena'
 import type { SpotMarket } from '@/services/market/spotClient'
 import { exportCsv } from '@/utils/exportCsv'
@@ -860,7 +863,12 @@ function onDateChange() {
   void reload()
 }
 
-onMounted(() => {
+onMounted(async () => {
+  // 初始展示日跟随数据源覆盖区间（spot-trading-date-defaults）：今天仍在覆盖区内取今天，
+  // 否则取覆盖区最后一天（云南价格恒滞后，钉死常量会长期落在无数据日）；覆盖不可得时
+  // 保留 props.initialDate 回退常量。只约束初值：用户手选日期后不再干预。
+  const coverage = await fetchCaptureCoverage(props.regionId, 'clearing')
+  date.value = resolveCockpitInitialDate(todayBeijing(), coverage, props.initialDate)
   void reload()
 })
 
