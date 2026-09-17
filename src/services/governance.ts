@@ -671,6 +671,8 @@ export function canAccessPath(path: string, user: Pick<GovernanceUser, 'roleCode
   // 中长期售电合同与月度持仓（dljy#2939）承接原「公司管理 › 合同管理」的合同底账：可见范围与旧入口一致
   // （全部登录用户看自身公司，写入由后端公司写权限闸门控制），业务迁入不因换入口而扩权或收窄。
   if (normalized === '/zcqjy/contracts' || normalized.startsWith('/zcqjy/contracts/') || normalized === '/zcqjy/positions') return true
+  // P2 分时分解与场站分配（dljy#2971）：同属合同底账的观察维度，可见范围与月度持仓一致。
+  if (normalized === '/zcqjy/positions/intervals' || normalized === '/zcqjy/positions/stations' || normalized.startsWith('/zcqjy/curves/')) return true
 
   const rule = getEffectiveAccessRule(roleCode)
   if (rule.routes?.includes(normalized)) return true

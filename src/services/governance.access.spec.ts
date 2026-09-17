@@ -35,6 +35,18 @@ describe('canAccessPath 判权只看路径（query/hash 不影响）', () => {
     }
   })
 
+  it('中长期 P2 分时持仓、场站维度持仓与分解集详情与月度持仓同一可见范围（dljy#2971）', () => {
+    for (const roleCode of Object.keys(roleLabels) as RoleCode[]) {
+      const legacy = canAccessPath('/gsgl/contracts', { roleCode })
+      expect(canAccessPath('/zcqjy/positions/intervals', { roleCode })).toBe(legacy)
+      expect(canAccessPath('/zcqjy/positions/stations', { roleCode })).toBe(legacy)
+      expect(canAccessPath('/zcqjy/curves/7', { roleCode })).toBe(legacy)
+      // 只放行这三类路径：前缀相似的路径仍按角色规则判定。
+      expect(canAccessPath('/zcqjy/curves', { roleCode })).toBe(canAccessPath('/zcqjy/not-a-midlong-page', { roleCode }))
+      expect(canAccessPath('/zcqjy/positions/intervals-export', { roleCode })).toBe(canAccessPath('/zcqjy/not-a-midlong-page', { roleCode }))
+    }
+  })
+
   it('SETTLEMENT / RETAIL_MANAGER 对 /yygl/import-hub 死授权已移除', () => {
     expect(canAccessPath('/yygl/import-hub', { roleCode: 'SETTLEMENT' })).toBe(false)
     expect(canAccessPath('/yygl/import-hub', { roleCode: 'RETAIL_MANAGER' })).toBe(false)
