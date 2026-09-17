@@ -116,6 +116,7 @@ export const PLANNING_NOTICES = Object.freeze({
   targetUnknown: '尚无已确认的售电目标，不计算剩余计划待售量与完成率。',
   zeroTarget: '确认目标为零，不计算完成率。',
   overPlan: '确认已售电量已超过确认目标（超计划）：剩余计划待售量按负数显示，不截断为零。',
+  overCommitted: '确认已售电量与未完成占用合计已超过确认目标（可安排计划量为负）：真实成交照常入账、不因超计划丢弃，请调整或关闭方案、或更改目标。',
   occupation: '方案占用是已确认方案尚未完成的内部安排，不是正式义务，不计入合同持仓。',
   simulation: '方案测算：仅模拟交易后视图，不增加正式持仓，名义金额不是实际收入。',
   priceNotAssessed: '没有可比的中长期行情，不判断方案价格优劣。',
@@ -188,12 +189,15 @@ export function computePlanProgress({ targetQuantity = null, soldQuantity = null
   const completionRate = targetKnown && soldKnown && !decimalIsZero(targetQuantity) ? decimalDiv(soldQuantity, targetQuantity, 6) : null
   const arrangeable = remaining === null ? null : decimalSub(remaining, occupation)
   const overPlan = targetKnown && !nullish(soldQuantity) ? decimalCompare(soldQuantity, targetQuantity) > 0 : false
+  // 占用建立后又有真实合同确认（合同核验不经过方案占用校验）时，已售 + 占用可能超过目标：如实提示，不回滚真实成交。
+  const overCommitted = arrangeable !== null && decimalCompare(arrangeable, '0') < 0 && decimalCompare(occupation, '0') > 0
   const verificationStatus = !targetKnown ? 'TARGET_UNKNOWN' : soldKnown ? 'VERIFIED' : 'UNVERIFIED'
   const notices = []
   if (!targetKnown) notices.push(PLANNING_NOTICES.targetUnknown)
   if (targetKnown && !soldKnown) notices.push(PLANNING_NOTICES.unverified)
   if (targetKnown && decimalIsZero(targetQuantity)) notices.push(PLANNING_NOTICES.zeroTarget)
   if (overPlan) notices.push(PLANNING_NOTICES.overPlan)
+  if (overCommitted) notices.push(PLANNING_NOTICES.overCommitted)
   return {
     targetQuantity: targetKnown ? targetQuantity : null,
     knownSoldQuantity: nullish(soldQuantity) ? null : soldQuantity,
@@ -203,6 +207,7 @@ export function computePlanProgress({ targetQuantity = null, soldQuantity = null
     openOccupationQuantity: occupation,
     arrangeableQuantity: arrangeable,
     overPlan,
+    overCommitted,
     verificationStatus,
     notices,
   }
@@ -274,6 +279,25 @@ export function windowRevisionDiff(previous, next) {
   return WINDOW_DIFF_FIELDS
     .filter((field) => norm(previous?.[field]) !== norm(next?.[field]))
     .map((field) => ({ field, label: WINDOW_REVIEW_FIELD_LABELS[field] ?? WINDOW_DIFF_LABELS[field] ?? field, previous: previous?.[field] ?? null, next: next?.[field] ?? null }))
+}
+
+/**
+ * 时刻 → 北京时间「YYYY-MM-DD HH:mm」（北京时间全年 UTC+8、无夏令时）；未知或非法返回 null，不补默认值。
+ * @param {string|Date|null|undefined} value
+ */
+export function formatBeijingDateTime(value) {
+  if (nullish(value) || value === '') return null
+  const date = value instanceof Date ? value : new Date(String(value))
+  if (Number.isNaN(date.getTime())) return null
+  const shifted = new Date(date.getTime() + 8 * 3600 * 1000)
+  const pad = (n) => String(n).padStart(2, '0')
+  return `${shifted.getUTCFullYear()}-${pad(shifted.getUTCMonth() + 1)}-${pad(shifted.getUTCDate())} ${pad(shifted.getUTCHours())}:${pad(shifted.getUTCMinutes())}`
+}
+
+/** 完整的北京时间输入「YYYY-MM-DD HH:mm」（日期与时刻都必须给出）。 */
+export function isCompleteBeijingDateTimeInput(value) {
+  const text = String(value ?? '')
+  return /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/.test(text) && parseBeijingDateTime(text) !== null
 }
 
 /**

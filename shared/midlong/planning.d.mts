@@ -58,6 +58,7 @@ export declare const PLANNING_NOTICES: Readonly<{
   targetUnknown: string
   zeroTarget: string
   overPlan: string
+  overCommitted: string
   occupation: string
   simulation: string
   priceNotAssessed: string
@@ -86,6 +87,8 @@ export interface PlanProgressCore {
   openOccupationQuantity: string
   arrangeableQuantity: string | null
   overPlan: boolean
+  /** 已售 + 未完成占用超过目标（可安排计划量为负，且有未完成占用）。 */
+  overCommitted: boolean
   verificationStatus: PlanVerificationStatus
   notices: string[]
 }
@@ -129,6 +132,16 @@ export interface WindowRevisionChange {
 }
 export declare function windowRevisionDiff(previous: Partial<TradingWindowRevision>, next: Partial<TradingWindowRevision>): WindowRevisionChange[]
 export declare function parseBeijingDateTime(value: unknown): Date | null
+export declare function formatBeijingDateTime(value: string | Date | null | undefined): string | null
+export declare function isCompleteBeijingDateTimeInput(value: unknown): boolean
+
+/** 分页结果：total 为筛选范围内总数，rows 只是当前页；页面据此显示分页，不静默截断。 */
+export interface PageResult<T> {
+  rows: T[]
+  total: number
+  page: number
+  pageSize: number
+}
 
 // ── 接口 DTO ─────────────────────────────────────────────────────────────────
 
@@ -238,6 +251,9 @@ export interface PlanProgressReport {
   asOf: string
   regionId: string
   rows: PlanProgressRow[]
+  total: number
+  page: number
+  pageSize: number
   notices: string[]
   generatedAt: string
 }
@@ -336,6 +352,10 @@ export interface TradingWindowInput {
 export interface WindowCalendarReport {
   fromMonth: string
   toMonth: string
+  /** 区间内相关公告总数与本次计入的数量；truncated=true 时页面必须提示缩小区间。 */
+  windowTotal: number
+  windowLimit: number
+  truncated: boolean
   events: Array<WindowCalendarEvent & { windowId: number; revisionNo: number; announcementName: string }>
   pending: Array<{ windowId: number; revisionNo: number; announcementName: string; deliveryStartMonth: string | null; deliveryEndMonth: string | null; pendingTimes: WindowCalendar['pendingTimes'] }>
   notice: string
