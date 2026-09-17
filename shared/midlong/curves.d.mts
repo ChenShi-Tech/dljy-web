@@ -194,6 +194,8 @@ export interface CurveInterval {
   end: string
   quantity: string
   sourceValue: string
+  /** 原始数值文本（保留尾零与写法，如「1.50」），只用于溯源；估算生成或旧数据为 null。 */
+  sourceText: string | null
   sourceUnit: string
   /** 原始资料定位（工作表与行号、典型日与适用日期，或沿用 / 估算说明）。 */
   sourceRef: string | null
@@ -209,7 +211,14 @@ export interface CurveSetDetail extends CurveSet {
   intervals: CurveInterval[] | null
 }
 
-export interface CurveMonthRef { curveSetId: number; setNo: number; granularityMinutes: CurveGranularity; curveQuantity: string | null }
+export interface CurveMonthRef {
+  curveSetId: number
+  setNo: number
+  granularityMinutes: CurveGranularity
+  curveQuantity: string | null
+  /** 按更正后沿用规则（design D4）采用旧版本上的分解集时为该旧版本号；当前版本自己的为 null。 */
+  inheritedFromRevisionNo: number | null
+}
 
 export interface CurveCorrectionImpact {
   status: CorrectionImpactStatus
@@ -244,6 +253,8 @@ export interface ContractCurvesOverview {
     formalCurve: CurveMonthRef | null
     estimateCurve: CurveMonthRef | null
     correctionImpact: CurveCorrectionImpact | null
+    /** 内部估算分解集的更正影响（仍不计入正式口径）。 */
+    estimateCorrectionImpact: CurveCorrectionImpact | null
   }>
   templates: CurveTemplateDeclaration[]
 }
@@ -346,7 +357,15 @@ export interface StationAllocationSetDetail extends StationAllocationSet {
   validation: IssueReport & { segments: StationSegment[] }
 }
 
-export interface EffectiveStationAllocation { allocationSetId: number; setNo: number; segmentMode: StationSegmentMode; rows: StationAllocationRow[]; segments: StationSegment[] }
+export interface EffectiveStationAllocation {
+  allocationSetId: number
+  setNo: number
+  segmentMode: StationSegmentMode
+  /** 仍然有效的分配行：沿用旧版本的分配集时，受更正影响的片段已剔除（见 impact.invalidSegments）。 */
+  rows: StationAllocationRow[]
+  segments: StationSegment[]
+  inheritedFromRevisionNo: number | null
+}
 
 export interface ContractStationAllocationsOverview {
   contractId: number
@@ -372,6 +391,8 @@ export interface ContractStationAllocationsOverview {
     previousRevisionNo: number
     previousAllocationSetId: number
     previousSetNo: number
+    /** 失效的片段：按月分配为月份（YYYY-MM），按合同总量分配为 'TOTAL'。 */
+    invalidSegments: string[]
     segmentsAgainstCurrent: StationSegment[]
     canReuse: boolean
   }>
@@ -409,7 +430,11 @@ export interface IntervalBucket {
   formalQuantity: string | null
   knownContractCount: number
   unknownContractIds: number[]
+  /** 该时段有正式分时、但合同还有未分解到月份的电量（可能落在此时段），时段不算完整。 */
+  incompleteContractIds: number[]
 }
+
+export interface IntervalCurveRef { curveSetId: number; setNo: number; granularityMinutes: number; confirmedAt: string | null; inheritedFromRevisionNo: number | null }
 
 export interface IntervalPositionReport {
   asOf: string
@@ -434,15 +459,29 @@ export interface IntervalPositionReport {
     deliveryStart: string
     deliveryEnd: string
     curveQuantityInRange: string
+    /** 与月度持仓同口径：合同还有未分解到月份的电量。 */
+    monthlyIncomplete: boolean
+    /** 未分解电量；合同总量未知时为 null。 */
+    unallocatedQuantity: string | null
     months: Array<{
       month: string
       timeStatus: CurveTimeStatus
       monthlyFormalQuantity: string | null
-      curve: { curveSetId: number; setNo: number; granularityMinutes: number; confirmedAt: string | null } | null
-      estimate: { curveSetId: number; setNo: number; granularityMinutes: number; confirmedAt: string | null } | null
+      curve: IntervalCurveRef | null
+      estimate: IntervalCurveRef | null
     }>
   }>
-  totals: { contractCount: number; curveQuantityInRange: string; bucketCount: number; unknownBucketCount: number; partialBucketCount: number; timeUnknownContractCount: number }
+  totals: {
+    contractCount: number
+    curveQuantityInRange: string
+    bucketCount: number
+    unknownBucketCount: number
+    partialBucketCount: number
+    timeUnknownContractCount: number
+    unallocatedPoolQuantity: string
+    unallocatedContractCount: number
+  }
+  unallocatedPool: MidlongUnallocatedEntry[]
   excluded: { estimateCurveSets: Array<{ contractId: number; month: string; curveSetId: number; setNo: number; granularityMinutes: number }>; note: string }
 }
 
@@ -469,6 +508,7 @@ export interface StationContribution {
   derivation: StationDerivation
   allocationSetId: number | null
   allocationSetNo: number | null
+  inheritedFromRevisionNo: number | null
 }
 
 export interface StationPositionReport {
@@ -497,7 +537,7 @@ export interface StationPositionReport {
   totals: { subjectTotalQuantity: string; stationAllocatedQuantity: string; unallocatedQuantity: string; stationMonthUnknownQuantity: string; unallocatedPoolQuantity: string }
   unallocatedPool: MidlongUnallocatedEntry[]
   contributions: StationContribution[]
-  allocationSetsUsed: Array<{ contractId: number; allocationSetId: number; setNo: number }>
+  allocationSetsUsed: Array<{ contractId: number; allocationSetId: number; setNo: number; inheritedFromRevisionNo: number | null }>
   revisionsUsed: Array<{ contractId: number; revisionNo: number; confirmedAt: string }>
   excluded: { note: string }
 }
@@ -536,7 +576,7 @@ export interface CurveDeclaration {
   roundingRuleText: string
 }
 
-export interface NormalizedInterval { rowNo: number; startMs: number; endMs: number; sourceValue: string; quantity: string; sourceRef: string }
+export interface NormalizedInterval { rowNo: number; startMs: number; endMs: number; sourceValue: string; sourceText: string | null; quantity: string; sourceRef: string }
 export interface RevisionLike { deliveryStart: string | null; deliveryEnd: string | null; totalQuantity: string | null; allocations?: Array<{ deliveryMonth: string; quantity: string; evidenceBasis: EvidenceBasis }> }
 
 export declare function resolveTimezoneOffset(value: unknown): number | null
@@ -574,6 +614,9 @@ export declare function isSingleMonthDelivery(revision: RevisionLike | null | un
 export declare function resolveIntervalRange(input: { fromDate: unknown; toDate: unknown; granularity: unknown }):
   | { ok: true; fromDate: string; toDate: string; granularity: IntervalPositionGranularity; granularityMinutes: number; days: number; fromMonth: string; toMonth: string; startMs: number; endMs: number }
   | { ok: false; message: string }
+export interface RevisionChainEntry extends RevisionLike { id: number; revisionNo: number; affectedMonths?: string[] }
+/** 更正后沿用规则（design D4）：从最新版本往前，某月 / 合同总量片段仍可沿用哪些版本上已确认的分解（首项为最新版本）。 */
+export declare function inheritableRevisions(chain: RevisionChainEntry[], target?: { month?: string | null; segment?: 'TOTAL' | null }): Array<{ revisionId: number; revisionNo: number }>
 export declare function quantitiesEqual(a: string | null | undefined, b: string | null | undefined): boolean
 export declare function quantityDifference(a: string | null | undefined, b: string | null | undefined): string | null
 export declare function isCurveMonth(value: unknown): boolean

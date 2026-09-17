@@ -128,7 +128,7 @@ export const BUCKET_COVERAGES = Object.freeze(['COMPLETE', 'PARTIAL', 'UNKNOWN',
 export const STATION_ALLOCATION_KINDS = Object.freeze(['FORMAL_TRADING', 'INTERNAL_OPERATING'])
 export const STATION_SEGMENT_MODES = Object.freeze(['CONTRACT_TOTAL', 'MONTHLY'])
 export const STATION_DERIVATIONS = Object.freeze(['CONTRACT_STATION', 'ALLOCATION', 'UNALLOCATED', 'ALLOCATION_MONTH_UNKNOWN'])
-/** 更正影响：已确认的曲线 / 场站分配绑定在旧版本上，合同更正后不自动沿用。 */
+/** 更正影响：合同更正后受影响片段上旧版本已确认的曲线 / 场站分配失效，需要重新确认（未受影响片段按 inheritableRevisions 沿用）。 */
 export const CORRECTION_IMPACT_STATUSES = Object.freeze(['RECONFIRM_REQUIRED', 'QUANTITY_CHANGED'])
 
 export const CURVE_SET_STATUS_LABELS = Object.freeze({ DRAFT: '草稿（未确认）', CONFIRMED: '已确认', DISCARDED: '已废弃' })
@@ -326,6 +326,12 @@ export function convertCurveValue(sourceValue, declaration) {
   return declaration.measure === 'POWER' ? decimalMul(energy, declaration.durationHours) : energy
 }
 
+/** 原始数值文本（去首尾空白，保留尾零与写法，如「1.50」）：只用于溯源展示，计算一律用规范十进制。 */
+function sourceTextOf(raw) {
+  if (raw === null || raw === undefined) return null
+  return String(raw).trim() || null
+}
+
 function parseCurveNumber(raw) {
   const parsed = parseDecimal(raw, { maxScale: MAX_IMPORT_DECIMALS })
   if (parsed.ok) return { value: parsed.value }
@@ -402,7 +408,7 @@ export function normalizeIntervalSeries({ declaration, rows }) {
       issues.push(issue('TIME_INVALID', `${ref}：缺少时段（日期 + 时段序号，或开始时间）`, at))
       return
     }
-    intervals.push({ rowNo: intervals.length + 1, startMs, endMs, sourceValue: number.value, quantity: convertCurveValue(number.value, declaration), sourceRef: ref })
+    intervals.push({ rowNo: intervals.length + 1, startMs, endMs, sourceValue: number.value, sourceText: sourceTextOf(row?.value), quantity: convertCurveValue(number.value, declaration), sourceRef: ref })
   })
   if (intervals.length > MAX_CURVE_INTERVALS) {
     issues.push(issue('TOO_MANY_INTERVALS', `时段数 ${intervals.length} 超过单次上限 ${MAX_CURVE_INTERVALS}，请按月份拆分后分批导入`))
@@ -461,7 +467,7 @@ function applySegment({ item, ref, declaration, values, issues }) {
         valid = false
         continue
       }
-      values.set(period, { value: number.value, ref: segmentRef })
+      values.set(period, { value: number.value, text: sourceTextOf(item?.value), ref: segmentRef })
     }
   }
   return valid
@@ -480,6 +486,7 @@ export function expandTypicalDays({ declaration, typicalDays }) {
   const profiles = Array.isArray(typicalDays) ? typicalDays : []
   if (!profiles.length) issues.push(issue('TYPICAL_DAY_INVALID', '没有典型日定义'))
   let expandedCount = 0
+  const claimedDates = new Map()
   for (const profile of profiles) {
     const name = String(profile?.name ?? '').trim() || '(未命名)'
     const values = new Map()
@@ -507,7 +514,7 @@ export function expandTypicalDays({ declaration, typicalDays }) {
         profileValid = false
         continue
       }
-      values.set(period, { value: number.value, ref })
+      values.set(period, { value: number.value, text: sourceTextOf(item?.value), ref })
     }
     const missingPeriods = []
     for (let p = 1; p <= periodsPerDay; p += 1) if (!values.has(p)) missingPeriods.push(p)
@@ -544,6 +551,16 @@ export function expandTypicalDays({ declaration, typicalDays }) {
         issues.push(issue('TYPICAL_DAY_INVALID', `${ref}「${range?.from ?? ''} — ${range?.to ?? ''}」无效`, { location: range?.location ?? null, sourceRef: ref }))
         continue
       }
+      // 同一天只能套用一个典型日：多个典型日（或同一典型日的多段）适用日期重叠时明确拒绝，不让重复时段悄悄相加。
+      let overlap = null
+      for (let date = from; date <= to && !overlap; date = nextDay(date)) {
+        if (claimedDates.has(date)) overlap = { date, by: claimedDates.get(date) }
+      }
+      if (overlap) {
+        issues.push(issue('TYPICAL_DAY_INVALID', `${ref}「${from} — ${to}」与典型日「${overlap.by}」的适用日期重叠（如 ${overlap.date}），同一天只能套用一个典型日`, { location: range?.location ?? null, sourceRef: ref, date: overlap.date }))
+        continue
+      }
+      for (let date = from; date <= to; date = nextDay(date)) claimedDates.set(date, name)
       if (!profileValid) continue
       for (let date = from; date <= to; date = nextDay(date)) {
         expandedCount += periodsPerDay
@@ -553,9 +570,9 @@ export function expandTypicalDays({ declaration, typicalDays }) {
         }
         const midnight = dateMidnightMs(date, declaration.offsetMinutes)
         for (let p = 1; p <= periodsPerDay; p += 1) {
-          const { value, ref: valueRef } = values.get(p)
+          const { value, text, ref: valueRef } = values.get(p)
           const startMs = midnight + (p - 1) * g * MINUTE_MS
-          intervals.push({ rowNo: intervals.length + 1, startMs, endMs: startMs + g * MINUTE_MS, sourceValue: value, quantity: convertCurveValue(value, declaration), sourceRef: `${valueRef} · ${date}` })
+          intervals.push({ rowNo: intervals.length + 1, startMs, endMs: startMs + g * MINUTE_MS, sourceValue: value, sourceText: text, quantity: convertCurveValue(value, declaration), sourceRef: `${valueRef} · ${date}` })
         }
       }
     }
@@ -865,7 +882,7 @@ export function generateEstimateCurve({ revision, coverageFromMonth, coverageToM
     }
     monthIntervals[lastWeighted].quantity = fromScaled(tail)
     for (const iv of monthIntervals) {
-      intervals.push({ rowNo: intervals.length + 1, startMs: iv.startMs, endMs: iv.endMs, sourceValue: iv.quantity, quantity: iv.quantity, sourceRef: `估算：${CURVE_ESTIMATE_METHOD_LABELS[method]} · ${month}` })
+      intervals.push({ rowNo: intervals.length + 1, startMs: iv.startMs, endMs: iv.endMs, sourceValue: iv.quantity, sourceText: null, quantity: iv.quantity, sourceRef: `估算：${CURVE_ESTIMATE_METHOD_LABELS[method]} · ${month}` })
     }
   }
   if (intervals.length > MAX_CURVE_INTERVALS) {
@@ -964,6 +981,34 @@ export function summarizeStationSegments({ segmentMode, rows, revision, formal =
       status: remaining < 0n ? 'EXCEEDS' : 'WITHIN',
     }
   })
+}
+
+/**
+ * 更正后沿用（design D4 / MA-03）：已确认的分时分解集与场站分配挂在某个经济版本上；合同更正生成新版本后，
+ * 未受影响片段沿用旧版本上已确认的分解，受影响片段失效、需重新确认。从最新版本往前逐版比较，遇到下列情况即停止：
+ * - 月份片段：该版本的受影响月份（affectedMonths）含该月，或该月正式月度分解电量与前一版本不同（任一方未知也算不同）；
+ * - 合同总量片段：该版本有任何受影响月份，或合同电量、交割起止与前一版本不同。
+ * @param {Array<{ id, revisionNo, affectedMonths, totalQuantity, deliveryStart, deliveryEnd, allocations }>} chain
+ *   同一合同已确认的版本，按版本号升序，末尾是当前（或认知时点下有效的）版本。
+ * @param {{ month?: string|null, segment?: 'TOTAL'|null }} target
+ * @returns {Array<{ revisionId: number, revisionNo: number }>} 可取用分解的版本，新到旧，首个是末尾版本本身。
+ */
+export function inheritableRevisions(chain, { month = null, segment = null } = {}) {
+  const list = Array.isArray(chain) ? chain : []
+  if (!list.length) return []
+  const out = [{ revisionId: list[list.length - 1].id, revisionNo: list[list.length - 1].revisionNo }]
+  for (let i = list.length - 1; i > 0; i -= 1) {
+    const cur = list[i]
+    const prev = list[i - 1]
+    const affected = cur.affectedMonths ?? []
+    if (segment === 'TOTAL') {
+      if (affected.length || !quantitiesEqual(cur.totalQuantity, prev.totalQuantity) || cur.deliveryStart !== prev.deliveryStart || cur.deliveryEnd !== prev.deliveryEnd) break
+    } else {
+      if (affected.includes(month) || !quantitiesEqual(formalMonthlyQuantities(cur).get(month) ?? null, formalMonthlyQuantities(prev).get(month) ?? null)) break
+    }
+    out.push({ revisionId: prev.id, revisionNo: prev.revisionNo })
+  }
+  return out
 }
 
 /** 月份是否由合同条款确定为单月交割（单月合同的「按合同总量分配」就是该月分配，不是均摊）。 */
