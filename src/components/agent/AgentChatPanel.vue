@@ -1246,9 +1246,19 @@ async function resumeSession(sessionId: string, opts: { fromClick?: boolean; all
 // ── 审批卡上的会话级自动执行授权（统一 AI 侧边栏 EC-04，design D10）──
 // 只在宿主开启、会话场景为申报体检、且该卡是 L1 业务写入时提供；缺 level 字段（旧账本卡片）一律不提供，
 // 对外提交（submit_declaration，L2）恒不提供。授权按会话生效、不持久，由服务端留痕。
+// 开启后审批卡随即被批准、消失，而之后的 L1 写入恰恰不再出卡——所以「已开启」提示与关闭按钮放在输入框上方，
+// 不依附审批卡；离开这个会话（切换/新建/卸载）时主动撤销服务端授权，不留一个看不见的开关（dljy-web#121 审查 P1）
 const autoApproveOn = ref(false)
 const autoApproveToggling = ref(false)
-watch(() => session.value?.id, () => { autoApproveOn.value = false })
+function revokeAutoApprove(sessionId: string | undefined) {
+  if (!sessionId || !autoApproveOn.value) return
+  autoApproveOn.value = false
+  void setSessionAutoApprove(sessionId, false).catch((err) => {
+    console.warn('[agent-chat] 撤销自动执行授权失败', err)
+  })
+}
+watch(() => session.value?.id, (_id, previousId) => { revokeAutoApprove(previousId) })
+onBeforeUnmount(() => { revokeAutoApprove(session.value?.id) })
 function canOfferAutoApprove(seg: ApprovalSeg): boolean {
   const payload = seg.payload as Record<string, unknown>
   return props.approvalAutoApprove
@@ -1767,6 +1777,11 @@ function approvalBrief(payload: Record<string, unknown>): { label: string; value
       </button>
     </Transition>
 
+    <div v-if="autoApproveOn" class="auto-approve-bar" data-testid="auto-approve-active">
+      <span>本会话已开启业务写入自动执行（对外提交永不自动、执行仍被硬禁）</span>
+      <button type="button" :disabled="autoApproveToggling" @click="toggleAutoApprove(false)">关闭</button>
+    </div>
+
     <!-- 输入框上方的宿主插槽（统一 AI 侧边栏放页面背景条与本页快捷问题） -->
     <slot name="composer-top" />
 
@@ -2084,6 +2099,15 @@ function approvalBrief(payload: Record<string, unknown>): { label: string; value
   background: var(--panel); color: var(--text);
 }
 .approval-actions { display: flex; gap: 8px; margin-top: 8px; }
+.auto-approve-bar {
+  display: flex; align-items: center; gap: 8px; margin: 0 12px 6px; padding: 6px 10px;
+  border: 1px solid var(--warning); border-radius: 8px; font-size: var(--font-12-5); color: var(--text);
+}
+.auto-approve-bar span { flex: 1; min-width: 0; }
+.auto-approve-bar button {
+  flex: none; padding: 2px 10px; border: 1px solid var(--line); border-radius: 6px;
+  background: transparent; color: var(--text); cursor: pointer;
+}
 .btn {
   padding: 5px 16px; border-radius: var(--radius-sm); border: none; cursor: pointer;
   font-size: var(--font-md); font-weight: 600;

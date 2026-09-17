@@ -25,6 +25,7 @@ import { trustWatermark } from '@/services/data/trustGate'
 import { historySourceLabel } from '@/components/agent/historySources'
 import { listRuns, stopAgentRun, type AgentRunSummary, type AgentScenario } from '@/services/agent/agentClient'
 import { entryForSession, findEntry } from '@/services/agent/workbenchEntries'
+import { fetchSessionPromptKey } from '@/services/agent/piPocClient'
 import { currentRegion } from '@/services/region/regionContext'
 import { currentCompany } from '@/services/company/companyContext'
 import { canAccessPath } from '@/services/governance'
@@ -122,9 +123,15 @@ async function askInKernel(question: string) {
   if (!(await kernelReadyFor(key))) return
   // 晨报：先装配数据预检（确定性，不依赖模型），再发目标日启动研判——与工作台「生成晨报」一致
   if (record.value.entryKey === 'morning_brief' && briefRailRef.value) {
+    const regionId = currentRegion.value.id
     await briefRailRef.value.ensureLoaded()
     // 预检取数可能很慢：期间用户又发起了别的会话，这条晨报启动作废，不能把日期发进新会话（dljy-web#121 审查 P1）
     if (state.mountKey !== key) return
+    // 期间切换了地区：预检卡是旧地区的数据，发出去的却是新地区——不混用，取消本次启动（同上审查 P1）
+    if (currentRegion.value.id !== regionId) {
+      ElMessage.info('地区已切换，本次晨报未启动，请重新执行 /晨报')
+      return
+    }
   }
   agentPanelRef.value?.ask(question)
 }
@@ -205,12 +212,36 @@ function newConversation() {
   historyOpen.value = false
   switchSession(null)
 }
-function openHistorySession(sessionId: string, scenario: string) {
+// 重新打开会话时找回它的入口：申报前体检与通用对话同为 chat 场景，只看场景会落到通用对话，
+// 丢掉入口和必须显示的合成数据水印（dljy-web#121 审查 P1）。依次用：已知的解读角色 → pi 记下的解读角色
+// → 工作台建的会话其来源 key 就是入口 key → 场景。查询期间用户又切换了会话，本次打开作废。
+let openSeq = 0
+async function openSessionAs(
+  base: { sessionId: string; scenario: string; title: string; pageKey?: string; promptKey?: string },
+  afterSwitch?: () => void
+) {
+  const seq = ++openSeq
+  const mountKey = state.mountKey
+  const promptKey = base.promptKey || (await fetchSessionPromptKey(base.sessionId).catch(() => null)) || ''
+  if (seq !== openSeq || mountKey !== state.mountKey) return
+  const byPage = base.pageKey ? findEntry(base.pageKey) : undefined
+  const entry = promptKey || !byPage || byPage.scenario !== base.scenario
+    ? entryForSession(base.scenario, promptKey)
+    : byPage
+  switchSession({
+    sessionId: base.sessionId,
+    scenario: base.scenario,
+    promptKey: promptKey || entry.promptKey || '',
+    sourceRoute: '',
+    entryKey: entry.key,
+    title: base.title
+  })
+  afterSwitch?.()
+}
+function openHistorySession(sessionId: string, scenario: string, pageKey?: string) {
   historyOpen.value = false
   busy.value = false
-  switchSession({
-    sessionId, scenario, promptKey: '', sourceRoute: '', entryKey: entryForSession(scenario, '').key, title: ''
-  })
+  void openSessionAs({ sessionId, scenario, title: '', pageKey })
 }
 function onHistoryChanged() {
   void refreshActiveRuns()
@@ -300,16 +331,16 @@ function toggleRunsPanel() {
 function attachActiveRun(run: AgentRunSummary) {
   runsOpen.value = false
   busy.value = false
-  const scenario = run.scenario || 'chat'
-  switchSession({
-    sessionId: run.session_id,
-    scenario,
-    promptKey: '',
-    sourceRoute: '',
-    entryKey: entryForSession(scenario, '').key,
-    title: run.session_title?.trim() || ''
-  })
-  runToAttach.value = { mountKey: state.mountKey, runId: run.run_id }
+  void openSessionAs(
+    {
+      sessionId: run.session_id,
+      scenario: run.scenario || 'chat',
+      title: run.session_title?.trim() || '',
+      pageKey: run.page_key,
+      promptKey: run.prompt_key
+    },
+    () => { runToAttach.value = { mountKey: state.mountKey, runId: run.run_id } }
+  )
 }
 async function stopActiveRun(run: AgentRunSummary) {
   setStopping(run.run_id, true)

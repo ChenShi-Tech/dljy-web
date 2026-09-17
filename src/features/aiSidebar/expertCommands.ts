@@ -28,6 +28,25 @@ function isoDate(d: Date): string {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
 }
 
+const ISO_DATE_SHAPE = /^\d{4}-\d{2}-\d{2}$/
+
+/** 形如 YYYY-MM-DD 且是日历上真实存在的日期（排除 2026-99-99、2026-02-30 这类）。 */
+function isRealIsoDate(t: string): boolean {
+  if (!ISO_DATE_SHAPE.test(t)) return false
+  const [y, m, d] = t.split('-').map(Number)
+  const date = new Date(y, m - 1, d)
+  return date.getFullYear() === y && date.getMonth() === m - 1 && date.getDate() === d
+}
+
+/**
+ * 参数里形似日期却不存在的那个词（入口没有日期输入项时不检查）。命令据此直接拒绝：
+ * 不能当作目标日发出去（预检取数失败也会照常启动），也不能悄悄换成今天。
+ */
+export function findInvalidDate(entry: WorkbenchEntry, args: string): string | null {
+  if (!(entry.inputs ?? []).some((i) => i.kind === 'date')) return null
+  return args.trim().split(/\s+/).find((t) => ISO_DATE_SHAPE.test(t) && !isRealIsoDate(t)) ?? null
+}
+
 /**
  * 把命令参数解析成入口输入值：日期类输入取第一个 `YYYY-MM-DD` / 今天 / 明天，缺省为当天；
  * 其余文字归第一个文本类输入（如「拟申报概述」）。入口没有输入项时整句作为问题。
@@ -42,7 +61,7 @@ export function parseExpertArgs(entry: WorkbenchEntry, args: string, now: Date =
   const rest: string[] = []
   for (const t of tokens) {
     if (!dateValue && dateInput) {
-      if (/^\d{4}-\d{2}-\d{2}$/.test(t)) { dateValue = t; continue }
+      if (isRealIsoDate(t)) { dateValue = t; continue }
       if (t === '今天') { dateValue = isoDate(now); continue }
       if (t === '明天') { dateValue = isoDate(new Date(now.getTime() + 86_400_000)); continue }
     }
@@ -81,6 +100,11 @@ export function createExpertCommands(opts: {
       run: (ctx) => {
         if (!opts.canUse) {
           ctx.postSystemNote('当前角色无权使用该命令（专家命令需要智能体工作台访问权限）。')
+          return
+        }
+        const invalid = findInvalidDate(entry, ctx.args)
+        if (invalid) {
+          ctx.postSystemNote(`日期「${invalid}」不存在，请按 YYYY-MM-DD 输入真实日期，例如 /${EXPERT_COMMAND_NAMES[entry.key]} ${isoDate(new Date())}。`)
           return
         }
         opts.launch(buildExpertLaunch(entry, ctx.args, opts.regionName()))

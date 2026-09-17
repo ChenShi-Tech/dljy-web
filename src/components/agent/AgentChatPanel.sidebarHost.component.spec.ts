@@ -39,6 +39,9 @@ vi.mock('@/services/agent/agentClient', async (importOriginal) => {
     createAgentSession: vi.fn(async () => ({ id: 's_chk', scenario: g.__sessionScenario, title: '', status: 'idle' })),
     sendAgentMessage: vi.fn(async (_id: string, _content: string, onEvent: (e: unknown) => void) => {
       onEvent({ type: 'approval_request', payload: g.__approvalPayload })
+    }),
+    sendAgentApproval: vi.fn(async (_id: string, _action: string, onEvent: (e: unknown) => void) => {
+      onEvent({ type: 'done', status: 'completed' })
     })
   }
 })
@@ -123,6 +126,42 @@ describe('AgentChatPanel · 审批卡自动执行开关', () => {
     await toggle.setValue(true)
     await flushPromises()
     expect(setSessionAutoApprove).toHaveBeenCalledWith('s_chk', true)
+  })
+
+  it('开启后批准审批卡：卡片收起，输入框上方仍有「已开启」提示可随时关闭；卸载时主动撤销（dljy-web#121 审查 P1）', async () => {
+    const w = await withApproval(L1, 'declaration_checkup', true)
+    await w.find('[data-testid="approval-auto-approve"] input').setValue(true)
+    await flushPromises()
+    expect(w.find('[data-testid="auto-approve-active"]').exists()).toBe(true)
+
+    await w.find('.approval-card .btn.approve').trigger('click')
+    await flushPromises()
+    expect(w.find('[data-testid="approval-auto-approve"]').exists()).toBe(false) // 卡片已处理
+    const bar = w.find('[data-testid="auto-approve-active"]')
+    expect(bar.exists()).toBe(true)
+    await bar.find('button').trigger('click')
+    await flushPromises()
+    expect(setSessionAutoApprove).toHaveBeenLastCalledWith('s_chk', false)
+    expect(w.find('[data-testid="auto-approve-active"]').exists()).toBe(false)
+
+    // 开启后新建对话（切走会话、内核不卸载）：旧会话的服务端授权随之撤销
+    vi.mocked(setSessionAutoApprove).mockClear()
+    const switching = await withApproval(L1, 'declaration_checkup', true)
+    await switching.find('[data-testid="approval-auto-approve"] input').setValue(true)
+    await flushPromises()
+    ;(switching.vm as unknown as { newConversation: () => void }).newConversation()
+    await flushPromises()
+    expect(setSessionAutoApprove).toHaveBeenLastCalledWith('s_chk', false)
+    expect(switching.find('[data-testid="auto-approve-active"]').exists()).toBe(false)
+
+    // 再开启一次，然后直接离开（卸载）：服务端授权随之撤销
+    vi.mocked(setSessionAutoApprove).mockClear()
+    const again = await withApproval(L1, 'declaration_checkup', true)
+    await again.find('[data-testid="approval-auto-approve"] input').setValue(true)
+    await flushPromises()
+    again.unmount()
+    await flushPromises()
+    expect(setSessionAutoApprove).toHaveBeenLastCalledWith('s_chk', false)
   })
 
   it('对外提交（L2）卡片不显示开关；按风险级别判断，不只认工具名', async () => {
