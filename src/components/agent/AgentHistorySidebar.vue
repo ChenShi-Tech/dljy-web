@@ -20,7 +20,7 @@ const props = withDefaults(
   { activeSessionId: null, collapsed: false, pageKey: '' }
 )
 const emit = defineEmits<{
-  select: [sessionId: string, scenario: AgentRunScenario]
+  select: [sessionId: string, scenario: AgentRunScenario, pageKey: string]
   newChat: []
   'update:collapsed': [value: boolean]
 }>()
@@ -104,7 +104,7 @@ defineExpose({ reload })
 
 function onSelect(s: HistorySessionMeta) {
   if (editingId.value === s.session_id) return
-  emit('select', s.session_id, s.scenario)
+  emit('select', s.session_id, s.scenario, s.page_key ?? '')
 }
 
 function startRename(s: HistorySessionMeta, e: Event) {

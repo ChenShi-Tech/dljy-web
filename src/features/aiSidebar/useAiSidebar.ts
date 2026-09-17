@@ -12,6 +12,9 @@ import { reactive, readonly } from 'vue'
 import { PAGE_PROMPT_KEYS, type PagePromptKey } from '@/prompts/pageKeys'
 import { activeAiPage, resolveInterpret, type AiContextFactory } from './pageRegistry'
 import type { AiRequestKind, AiSessionRecord } from './sessionPolicy'
+import type { ExpertLaunch } from './expertCommands'
+import { entryForSession } from '@/services/agent/workbenchEntries'
+import type { AgentScenario } from '@/services/agent/agentClient'
 
 export interface AiAskRequest {
   seq: number
@@ -24,6 +27,8 @@ export interface AiAskRequest {
   title: string
   /** 对应的工作台入口；缺省按场景与角色推断 */
   entryKey?: string
+  /** 专家会话的入口输入值（如晨报目标日） */
+  meta?: Record<string, string>
 }
 
 interface AiSidebarState {
@@ -57,7 +62,8 @@ function loadSession(owner: string | null): AiSessionRecord | null {
       promptKey: typeof parsed.promptKey === 'string' ? parsed.promptKey : '',
       sourceRoute: typeof parsed.sourceRoute === 'string' ? parsed.sourceRoute : '',
       entryKey: typeof parsed.entryKey === 'string' ? parsed.entryKey : 'workbench',
-      title: typeof parsed.title === 'string' ? parsed.title : ''
+      title: typeof parsed.title === 'string' ? parsed.title : '',
+      ...(parsed.meta && typeof parsed.meta === 'object' ? { meta: parsed.meta as Record<string, string> } : {})
     }
   } catch {
     return null
@@ -100,16 +106,24 @@ function evaluate(context: AiContextFactory | Record<string, unknown> | null | u
 
 function dispatch(request: Omit<AiAskRequest, 'seq'>, slice: Record<string, unknown> | null): void {
   const question = request.question.trim()
-  if (!question) return
+  // 页面提问必须有问题；专家会话允许空问题（只开会话、等用户输入，如不带参数的 /战略问答）
+  if (!question && request.kind !== 'expert') return
   pending = { question, slice }
   seq += 1
   state.request = { ...request, question, seq }
   state.open = true
 }
 
-/** 内核发送某条问题时取走其数据切片（只取一次；问题文本不匹配则不附带）。 */
+/**
+ * 内核发送某条问题时取走其数据切片（只取一次；问题文本不匹配则不附带）。
+ * 这次发送没有取到切片时，同时忘掉上一次取走的：409 重发只能恢复真正撞上 409 的那条请求的切片，
+ * 否则在输入框里重打同样的文字撞 409，会把早先别的页面的数据带进新会话（dljy-web#119 审查 P2）。
+ */
 export function takeSliceFor(question: string): Record<string, unknown> | null {
-  if (!pending || pending.question !== question.trim()) return null
+  if (!pending || pending.question !== question.trim()) {
+    lastTaken = null
+    return null
+  }
   const { slice } = pending
   lastTaken = pending
   pending = null
@@ -132,6 +146,7 @@ export function bindUser(username: string): void {
   state.session = loadSession(owner)
   state.request = null
   pending = null
+  lastTaken = null
   state.mountKey += 1
 }
 
@@ -149,6 +164,16 @@ export function switchSession(record: AiSessionRecord | null): void {
 export function adoptSessionId(sessionId: string, title = ''): void {
   const base = state.session ?? BLANK_SESSION
   state.session = { ...base, sessionId, title: base.title || title.trim() }
+  saveSession(state.session)
+}
+
+/**
+ * 给当前会话补全入口与解读角色（不重挂内核）：只在记录仍是该会话时生效。
+ * 重新打开会话时入口要靠一次查询才能确定，先按已知信息切过去、查回来再补——不能让查询挡在切换前面。
+ */
+export function refineSessionEntry(sessionId: string, entryKey: string, promptKey: string): void {
+  if (!state.session || state.session.sessionId !== sessionId) return
+  state.session = { ...state.session, entryKey, promptKey }
   saveSession(state.session)
 }
 
@@ -186,6 +211,39 @@ export function useAiSidebar() {
         evaluate(plan.context)
       )
       return true
+    },
+    /** 专家命令：在侧边栏内新开对应入口的会话（场景、角色、首问与工作台同名入口一致）。 */
+    startExpert(launch: ExpertLaunch): void {
+      const { entry, question, values } = launch
+      dispatch(
+        {
+          kind: 'expert',
+          question,
+          scenario: entry.scenario,
+          promptKey: entry.promptKey ?? '',
+          label: entry.title,
+          title: values.date ? `${entry.title} · ${values.date}` : entry.title,
+          entryKey: entry.key,
+          meta: values
+        },
+        null
+      )
+    },
+    /** 跨场景的技能/移交：在侧边栏内新开目标场景会话（不跳转工作台）。 */
+    openScenario(question: string, scenario: AgentScenario): void {
+      const promptKey = scenario === 'chat' ? PAGE_PROMPT_KEYS.workbench : ''
+      dispatch(
+        {
+          kind: 'expert',
+          question,
+          scenario,
+          promptKey,
+          label: '',
+          title: question.slice(0, 24),
+          entryKey: entryForSession(scenario, promptKey).key
+        },
+        null
+      )
     },
     /** 带局部数据向侧边栏提问；角色缺省取当前页声明，无声明时用通用对话角色。 */
     ask(

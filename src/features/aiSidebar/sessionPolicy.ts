@@ -15,6 +15,8 @@ export interface AiSessionRecord {
   /** 对应的工作台入口 key（在工作台打开用） */
   entryKey: string
   title: string
+  /** 专家会话的入口输入值（如晨报目标日），用于会话前置卡片 */
+  meta?: Record<string, string>
 }
 
 export interface AiSessionRequest {

@@ -26,11 +26,14 @@ const sessionBaseById = new Map<string, string>()
 // pi-poc 会话 id 落 localStorage：刷新后内存登记表清空，续聊/回放仍能路由到正确后端
 const PI_SESSIONS_KEY = 'dljy.piPocSessionIds'
 
-function rememberPiSession(id: string): void {
+function rememberPiSession(...ids: string[]): void {
+  for (const id of ids) sessionBaseById.set(id, PI_AGENT_BASE)
   try {
-    const ids = new Set<string>(JSON.parse(localStorage.getItem(PI_SESSIONS_KEY) || '[]'))
-    ids.add(id)
-    localStorage.setItem(PI_SESSIONS_KEY, JSON.stringify([...ids].slice(-50)))
+    const known = new Set<string>(JSON.parse(localStorage.getItem(PI_SESSIONS_KEY) || '[]'))
+    const before = known.size
+    for (const id of ids) known.add(id)
+    // 没有新会话就不写（运行中列表每 5 秒轮询一次）
+    if (known.size !== before) localStorage.setItem(PI_SESSIONS_KEY, JSON.stringify([...known].slice(-50)))
   } catch { /* localStorage 不可用时仅本页内存路由 */ }
 }
 
@@ -136,6 +139,8 @@ export type AgentRunSummary = {
   error?: string | null
   session_title?: string
   page_key?: string
+  /** 建会话时锁定的解读角色（pi 提供；旧版无此字段） */
+  prompt_key?: string
   scenario?: AgentRunScenario | string
 }
 
@@ -341,15 +346,20 @@ export async function getActiveRun(sessionId: string): Promise<AgentActiveRun | 
   return (await res.json()) as AgentActiveRun | null
 }
 
+// 运行中列表只来自 pi 底座（统一 AI 侧边栏 SS-07）：对话 run 早已全部跑在 pi 上，查 agent-backend 恒为空。
+// 列表里的会话都是 pi 会话，一并登记路由——别的页面或别的浏览器建的会话不在本机登记表里，
+// 不登记的话在这里切换、停止、回放时会被送到 legacy base。
 export async function listRuns(status: AgentRunStatus = 'running'): Promise<AgentRunSummary[]> {
   const params = new URLSearchParams({ status })
-  const res = await fetch(`${BASE}/runs?${params.toString()}`, {
+  const res = await fetch(`${PI_AGENT_BASE}/runs?${params.toString()}`, {
     headers: identityHeaders(),
     signal: timeoutSignal(AGENT_REQUEST_TIMEOUT_MS)
   })
   if (res.status === 401 || res.status === 403 || res.status === 404) return []
   if (!res.ok) throw new AgentStreamHttpError(res.status)
-  return (await res.json()) as AgentRunSummary[]
+  const runs = (await res.json()) as AgentRunSummary[]
+  rememberPiSession(...runs.map((run) => run.session_id))
+  return runs
 }
 
 export async function getAgentSession(sessionId: string): Promise<AgentSessionInfo | null> {

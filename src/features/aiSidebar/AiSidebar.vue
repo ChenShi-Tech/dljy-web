@@ -19,17 +19,22 @@ import {
 import { ElMessage } from 'element-plus'
 import AgentChatPanel from '@/components/agent/AgentChatPanel.vue'
 import AgentHistorySidebar from '@/components/agent/AgentHistorySidebar.vue'
+import MorningBriefRail from '@/components/agent/workbench/MorningBriefRail.vue'
+import StrategicQaGaps from '@/components/agent/workbench/StrategicQaGaps.vue'
+import { trustWatermark } from '@/services/data/trustGate'
 import { historySourceLabel } from '@/components/agent/historySources'
 import { listRuns, stopAgentRun, type AgentRunSummary, type AgentScenario } from '@/services/agent/agentClient'
-import { entryForSession } from '@/services/agent/workbenchEntries'
+import { entryForSession, findEntry } from '@/services/agent/workbenchEntries'
+import { fetchPiSessionMeta } from '@/services/agent/piPocClient'
 import { currentRegion } from '@/services/region/regionContext'
 import { currentCompany } from '@/services/company/companyContext'
 import { canAccessPath } from '@/services/governance'
 import { getCurrentUser } from '@/services/auth'
-import { useAiSidebar, takeSliceFor, restoreSliceFor, switchSession, adoptSessionId, bindUser, BLANK_SESSION } from './useAiSidebar'
+import { useAiSidebar, takeSliceFor, restoreSliceFor, switchSession, adoptSessionId, bindUser, refineSessionEntry, BLANK_SESSION } from './useAiSidebar'
 import { activeAiPage, resolveQuestion, type AiPagePreset } from './pageRegistry'
 import { buildPageContext, composeMessageContext } from './pageContext'
 import { decideSession } from './sessionPolicy'
+import { createExpertCommands } from './expertCommands'
 
 const sidebar = useAiSidebar()
 const { state } = sidebar
@@ -63,6 +68,23 @@ function contextFor(question: string) {
   return composeMessageContext(pageContext.value, takeSliceFor(question))
 }
 const presets = computed<AiPagePreset[]>(() => activePage.value?.presets ?? [])
+
+// 专家命令：由工作台入口声明生成；无工作台权限时隐藏（手动输入提示无权）
+const expertCommands = computed(() =>
+  createExpertCommands({
+    canUse: canUseWorkbench.value,
+    regionName: () => currentRegion.value.name,
+    launch: (launch) => sidebar.startExpert(launch)
+  })
+)
+// 会话前置卡片（不入库）：晨报预检卡按命令给的目标日；申报前体检结论加不可移除的合成数据水印
+const currentEntry = computed(() => findEntry(record.value.entryKey))
+const briefDate = computed(() => record.value.meta?.date ?? '')
+const conclusionWatermark = computed(() =>
+  currentEntry.value?.watermarkBasis ? trustWatermark(currentEntry.value.watermarkBasis) : ''
+)
+type BriefRailRef = { ensureLoaded: () => Promise<void> }
+const briefRailRef = ref<BriefRailRef | null>(null)
 function askPreset(p: AiPagePreset) {
   sidebar.ask(resolveQuestion(p.question), { context: p.context ?? null, label: p.label })
 }
@@ -76,10 +98,41 @@ const agentEverOpened = ref(false)
 const busy = ref(false)
 watch(() => state.open, (open) => { if (open) agentEverOpened.value = true }, { immediate: true })
 
+// 内核挂载初始化（探活、续接会话）已完成的那一代（按 mountKey 记）。新挂的内核在 ready 之前收到提问，
+// 发出的请求会被随后的续接中止、会话再被续接结果覆盖——刷新后在同页马上点解读，问题被吞掉还多建一个空会话。
+const readyMountKey = ref(-1)
+const sidebarAlive = ref(true)
+onBeforeUnmount(() => { sidebarAlive.value = false })
+function kernelReadyFor(key: number): Promise<boolean> {
+  if (readyMountKey.value === key) return Promise.resolve(true)
+  return new Promise((resolve) => {
+    const stop = watch([readyMountKey, () => state.mountKey, sidebarAlive], ([ready, current, alive]) => {
+      if (ready === key) { stop(); resolve(true) }
+      else if (current !== key || !alive) { stop(); resolve(false) }
+    })
+  })
+}
+
 async function askInKernel(question: string) {
   agentEverOpened.value = true
+  const key = state.mountKey
   await nextTick() // 首次/重挂：等 AgentChatPanel 挂载出 ref
   await nextTick() // 等会话属性随 record 更新到 props 后再发
+  if (!question.trim()) return // 专家会话不带问题：只开会话、等用户输入
+  // 等这一代内核初始化完成再发；等待期间又切换了会话（新的切换自己会发问），这条作废
+  if (!(await kernelReadyFor(key))) return
+  // 晨报：先装配数据预检（确定性，不依赖模型），再发目标日启动研判——与工作台「生成晨报」一致
+  if (record.value.entryKey === 'morning_brief' && briefRailRef.value) {
+    const regionId = currentRegion.value.id
+    await briefRailRef.value.ensureLoaded()
+    // 预检取数可能很慢：期间用户又发起了别的会话，这条晨报启动作废，不能把日期发进新会话（dljy-web#121 审查 P1）
+    if (state.mountKey !== key) return
+    // 期间切换了地区：预检卡是旧地区的数据，发出去的却是新地区——不混用，取消本次启动（同上审查 P1）
+    if (currentRegion.value.id !== regionId) {
+      ElMessage.info('地区已切换，本次晨报未启动，请重新执行 /晨报')
+      return
+    }
+  }
   agentPanelRef.value?.ask(question)
 }
 
@@ -99,7 +152,8 @@ watch(() => state.request?.seq, async (seq) => {
       promptKey: req.promptKey,
       sourceRoute: req.kind === 'page' ? route.path : '',
       entryKey: req.entryKey ?? entryForSession(req.scenario, req.promptKey).key,
-      title: req.title
+      title: req.title,
+      ...(req.meta ? { meta: req.meta } : {})
     })
   }
   retriedQuestion = null
@@ -142,10 +196,12 @@ function forCurrentKernel<A extends unknown[]>(fn: (...args: A) => unknown) {
     }
   })
 }
+const onKernelReady = forCurrentKernel(() => { readyMountKey.value = state.mountKey })
 const onKernelSessionReady = forCurrentKernel(onSessionReady)
 const onKernelStreamingChange = forCurrentKernel(onStreamingChange)
 const onKernelSessionBusy = forCurrentKernel(onSessionBusy)
 const onKernelConversationReset = forCurrentKernel(onConversationReset)
+const onKernelOpenScenario = forCurrentKernel((question: string, scenario: AgentScenario) => sidebar.openScenario(question, scenario))
 
 // ── 头部：新建 / 历史 / 在工作台打开 ──
 const historyOpen = ref(false)
@@ -156,12 +212,37 @@ function newConversation() {
   historyOpen.value = false
   switchSession(null)
 }
-function openHistorySession(sessionId: string, scenario: string) {
+// 重新打开会话时找回它的入口：申报前体检与通用对话同为 chat 场景，只看场景会落到通用对话，
+// 丢掉入口和必须显示的合成数据水印（dljy-web#121 审查 P1）。依次用：已知的解读角色（运行中行自带）
+// → 工作台建的会话其来源 key 就是入口 key → 场景；不知道解读角色时再向 pi 查，查回来只补全记录、不重挂内核。
+// 切换必须立即发生：查询挡在切换前面的话，用户在旧会话里刚发出的消息会被随后的切换隐藏（同 PR 审查 P1）。
+function entryFor(scenario: string, pageKey: string | undefined, promptKey: string) {
+  const byPage = pageKey ? findEntry(pageKey) : undefined
+  return promptKey || !byPage || byPage.scenario !== scenario ? entryForSession(scenario, promptKey) : byPage
+}
+function openSessionAs(base: { sessionId: string; scenario: string; title: string; pageKey?: string; promptKey?: string }) {
+  const known = base.promptKey || ''
+  const entry = entryFor(base.scenario, base.pageKey, known)
+  switchSession({
+    sessionId: base.sessionId,
+    scenario: base.scenario,
+    promptKey: known || entry.promptKey || '',
+    sourceRoute: '',
+    entryKey: entry.key,
+    title: base.title
+  })
+  if (known) return
+  const mountKey = state.mountKey
+  void fetchPiSessionMeta(base.sessionId).catch(() => null).then((meta) => {
+    if (!meta?.promptKey || mountKey !== state.mountKey) return
+    const refined = entryForSession(base.scenario, meta.promptKey)
+    refineSessionEntry(base.sessionId, refined.key === 'workbench' ? entry.key : refined.key, meta.promptKey)
+  })
+}
+function openHistorySession(sessionId: string, scenario: string, pageKey?: string) {
   historyOpen.value = false
   busy.value = false
-  switchSession({
-    sessionId, scenario, promptKey: '', sourceRoute: '', entryKey: entryForSession(scenario, '').key, title: ''
-  })
+  openSessionAs({ sessionId, scenario, title: '', pageKey })
 }
 function onHistoryChanged() {
   void refreshActiveRuns()
@@ -213,6 +294,7 @@ function fmtTime(ts: number) {
 function fmtRunTime(ts: number) {
   return fmtTime(ts > 1_000_000_000_000 ? ts : ts * 1000)
 }
+// 轮次沿用 pi 的 turn_seq（从 1 起算）；旧底座从 0 起算时模板里曾 +1，切到 pi 后会多显示一轮
 function runSource(run: AgentRunSummary) {
   return historySourceLabel(run.page_key) ?? run.page_key ?? '未标注来源'
 }
@@ -251,14 +333,12 @@ function toggleRunsPanel() {
 function attachActiveRun(run: AgentRunSummary) {
   runsOpen.value = false
   busy.value = false
-  const scenario = run.scenario || 'chat'
-  switchSession({
+  openSessionAs({
     sessionId: run.session_id,
-    scenario,
-    promptKey: '',
-    sourceRoute: '',
-    entryKey: entryForSession(scenario, '').key,
-    title: run.session_title?.trim() || ''
+    scenario: run.scenario || 'chat',
+    title: run.session_title?.trim() || '',
+    pageKey: run.page_key,
+    promptKey: run.prompt_key
   })
   runToAttach.value = { mountKey: state.mountKey, runId: run.run_id }
 }
@@ -328,7 +408,7 @@ function goConfig() {
               <span class="run-copy">
                 <span class="run-title">{{ runTitle(run) }}</span>
                 <span class="run-meta">
-                  {{ runSource(run) }} · 第 {{ run.turn_seq + 1 }} 轮 · seq {{ run.last_seq }} · {{ fmtRunTime(run.created_at) }}
+                  {{ runSource(run) }} · 第 {{ run.turn_seq }} 轮 · seq {{ run.last_seq }} · {{ fmtRunTime(run.created_at) }}
                 </span>
               </span>
             </button>
@@ -354,6 +434,11 @@ function goConfig() {
           :context-payload-for="contextFor"
           :payload="regionPayload"
           message-actions
+          command-host="sidebar"
+          :extra-commands="expertCommands"
+          approval-auto-approve
+          @open-scenario="onKernelOpenScenario"
+          @ready="onKernelReady"
           @session-ready="onKernelSessionReady"
           @streaming-change="onKernelStreamingChange"
           @session-busy="onKernelSessionBusy"
@@ -361,6 +446,13 @@ function goConfig() {
           @done="() => refreshActiveRuns()"
           @history-changed="onHistoryChanged"
         >
+          <template #conversation-top>
+            <div v-if="briefDate && record.entryKey === 'morning_brief'" class="ai-brief-card" data-testid="ai-brief-card">
+              <MorningBriefRail ref="briefRailRef" :date="briefDate" />
+            </div>
+            <StrategicQaGaps v-if="record.entryKey === 'strategic_qa'" class="ai-gaps-card" data-testid="ai-gaps-card" />
+            <div v-if="conclusionWatermark" class="ai-watermark" data-testid="ai-watermark">{{ conclusionWatermark }}</div>
+          </template>
           <template #composer-top>
             <div class="ai-context">
               <div class="ai-context-line" data-testid="ai-page-context">
@@ -502,6 +594,14 @@ function goConfig() {
 .active-runs-head {
   display: flex; align-items: center; justify-content: space-between;
   padding: 6px 8px 2px; font-size: var(--font-xs); color: var(--muted);
+}
+/* 会话前置卡片：晨报预检卡（覆盖工作台里的固定列宽）/ 数据缺口清单 / 结论水印 */
+.ai-brief-card { margin: 4px 0 10px; }
+.ai-brief-card :deep(.mb-rail) { width: auto; max-height: 40vh; }
+.ai-gaps-card { margin: 4px 0 10px; }
+.ai-watermark {
+  margin: 4px 0 10px; padding: 6px 10px; border-radius: 6px;
+  background: var(--warning-tint, rgba(245, 158, 11, 0.12)); color: var(--warning, #b45309); font-size: var(--font-xs);
 }
 /* 输入框上方：页面背景条 + 本页快捷问题 */
 .ai-context { padding: 6px 12px 4px; border-top: 1px solid var(--line-faint); }

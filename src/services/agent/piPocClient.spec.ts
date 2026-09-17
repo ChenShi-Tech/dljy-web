@@ -16,7 +16,7 @@ vi.mock('@/services/api', () => ({
   AGENT_API_BASE_ROOT: '/agent-api'
 }))
 
-import { fetchDataGaps, setSessionAutoApprove } from './piPocClient'
+import { fetchDataGaps, fetchPiSessionMeta, revokeSessionAutoApprove, setSessionAutoApprove } from './piPocClient'
 import { PI_AGENT_BASE } from './agentClient'
 
 const fetchMock = vi.fn()
@@ -62,6 +62,57 @@ describe('fetchDataGaps', () => {
 
     await expect(fetchDataGaps()).rejects.toThrow('HTTP 404')
     await expect(fetchDataGaps()).rejects.toThrow('HTTP 502')
+  })
+})
+
+describe('fetchPiSessionMeta（统一 AI 侧边栏：重新打开会话找回专家入口与授权状态）', () => {
+  it('显式走 PI_AGENT_BASE 的会话详情（sessionId 编码），带身份头，取解读角色与授权状态', async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ id: 's 1', scenario: 'chat', prompt_key: 'pre_submit_check', auto_approve: true }))
+    vi.stubGlobal('fetch', fetchMock)
+    await expect(fetchPiSessionMeta('s 1')).resolves.toEqual({ promptKey: 'pre_submit_check', autoApprove: true })
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(url).toBe(`${PI_AGENT_BASE}/sessions/s%201`)
+    expect(init.headers).toEqual({ 'x-user-id': 'u1' })
+  })
+
+  it('pi 不认识该会话（非 2xx）返回 null；旧版 pi 缺字段时解读角色为 null、授权按未开启', async () => {
+    vi.stubGlobal('fetch', fetchMock)
+    fetchMock.mockResolvedValueOnce(jsonResponse({ detail: 'not found' }, 404))
+    await expect(fetchPiSessionMeta('s_gone')).resolves.toBeNull()
+    fetchMock.mockResolvedValueOnce(jsonResponse({ id: 's_old', scenario: 'chat' }))
+    await expect(fetchPiSessionMeta('s_old')).resolves.toEqual({ promptKey: null, autoApprove: false })
+  })
+})
+
+describe('revokeSessionAutoApprove（切走会话/卸载时撤销授权，失败按退避重试）', () => {
+  it('一次成功即返回 true，不等待', async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ auto_approve: false }))
+    vi.stubGlobal('fetch', fetchMock)
+    const sleep = vi.fn(async (_ms: number) => {})
+    await expect(revokeSessionAutoApprove('s1', { sleep })).resolves.toBe(true)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(JSON.parse((fetchMock.mock.calls[0] as [string, RequestInit])[1].body as string)).toEqual({ enabled: false })
+    expect(sleep).not.toHaveBeenCalled()
+  })
+
+  it('网络或服务端失败时按退避重试，直到成功', async () => {
+    fetchMock
+      .mockRejectedValueOnce(new TypeError('network'))
+      .mockResolvedValueOnce(jsonResponse({ detail: 'x' }, 502))
+      .mockResolvedValueOnce(jsonResponse({ auto_approve: false }))
+    vi.stubGlobal('fetch', fetchMock)
+    const sleep = vi.fn(async (_ms: number) => {})
+    await expect(revokeSessionAutoApprove('s1', { sleep, delaysMs: [10, 20, 30] })).resolves.toBe(true)
+    expect(fetchMock).toHaveBeenCalledTimes(3)
+    expect(sleep.mock.calls.map((c) => c[0])).toEqual([10, 20])
+  })
+
+  it('重试用尽仍失败：返回 false（用户重新打开会话时按服务端状态仍能看到并关闭）', async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ detail: 'x' }, 503))
+    vi.stubGlobal('fetch', fetchMock)
+    const sleep = vi.fn(async (_ms: number) => {})
+    await expect(revokeSessionAutoApprove('s1', { sleep, delaysMs: [10, 20] })).resolves.toBe(false)
+    expect(fetchMock).toHaveBeenCalledTimes(3)
   })
 })
 

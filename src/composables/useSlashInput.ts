@@ -45,7 +45,8 @@ export function useSlashInput(opts: {
       return
     }
     refreshBackendSkills()
-    const commands = getCommands(host)
+    // 菜单只列可见指令；隐藏指令（如无权限的专家命令）不出现在补全里，但手动输入仍可执行
+    const commands = getCommands(host, makeContext('').extraCommands ?? []).filter((c) => !c.hidden)
     const space = text.search(/\s/)
     if (space < 0) {
       // 指令过滤模式：/na → 过滤出 /nav

@@ -13,7 +13,7 @@ const g = globalThis as unknown as { __resetKernels: KernelRec[] }
 g.__resetKernels = []
 
 vi.mock('@/components/agent/AgentChatPanel.vue', async () => {
-  const { defineComponent, h, onUnmounted } = await import('vue')
+  const { defineComponent, h, onMounted, onUnmounted } = await import('vue')
   return {
     default: defineComponent({
       name: 'AgentChatPanelStub',
@@ -22,10 +22,11 @@ vi.mock('@/components/agent/AgentChatPanel.vue', async () => {
         restoreLastSession: { type: Boolean, default: true }, messageActions: { type: Boolean, default: false },
         contextPayloadFor: Function, historyKey: String, payload: Object
       },
-      emits: ['sessionReady', 'streamingChange', 'sessionBusy', 'conversationReset', 'done', 'historyChanged'],
+      emits: ['ready', 'sessionReady', 'streamingChange', 'sessionBusy', 'conversationReset', 'done', 'historyChanged'],
       setup(props, { emit, expose, slots }) {
         const rec: KernelRec = { props: props as Record<string, unknown>, asks: [], unmounted: false, emit: emit as KernelRec['emit'] }
         ;(globalThis as unknown as { __resetKernels: KernelRec[] }).__resetKernels.push(rec)
+        onMounted(() => emit('ready'))
         onUnmounted(() => { rec.unmounted = true })
         expose({ ask: (q: string) => { rec.asks.push(q); return true }, newConversation: () => emit('conversationReset') })
         return () => h('div', { class: 'kernel-stub' }, slots['composer-top']?.())
