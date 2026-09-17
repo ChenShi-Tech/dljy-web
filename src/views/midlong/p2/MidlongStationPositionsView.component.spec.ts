@@ -1,18 +1,23 @@
 // 中长期售电场站维度持仓页的渲染不变量（dljy#2971，MP-05）。
 // 守什么：主体合计 1000 拆成场站 400 + 500 + 未分配 100，页面不出现相加的 1900；内部经营分配视图有区别说明；
-// 按合同总量分配、拆不到月份的电量单独列示；能力未开通时不取数。
+// 按合同总量分配、拆不到月份的电量单独列示；更正后沿用旧版本分配时有说明；能力未开通时不取数；切换公司后旧请求迟到不污染新公司。
 // 坏掉的症状：把主体合计与场站份额相加；内部经营分配被当成正式交易分解展示。
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { enableAutoUnmount, flushPromises } from '@vue/test-utils'
+import { nextTick } from 'vue'
 import { mount } from '@/test/mount'
 import type { MidlongCapabilities } from '@/services/midlong/midlongTypes'
 import type { StationPositionReport } from '@/services/midlong/midlongP2Types'
 
-const hoisted = vi.hoisted(() => ({ fetchCapabilities: vi.fn(), fetchStationPositions: vi.fn() }))
+const hoisted = vi.hoisted(() => ({ fetchCapabilities: vi.fn(), fetchStationPositions: vi.fn(), companyRef: null as null | { value: string } }))
 
 vi.mock('element-plus', async (orig) => ({ ...(await orig<typeof import('element-plus')>()), ElMessage: { success: vi.fn(), error: vi.fn(), warning: vi.fn() } }))
 vi.mock('vue-router', () => ({ useRoute: () => ({ query: {} }), useRouter: () => ({ replace: vi.fn() }) }))
-vi.mock('@/services/company/companyContext', async () => ({ selectedCompanyId: (await import('vue')).ref('comp-a') }))
+vi.mock('@/services/company/companyContext', async () => {
+  const selectedCompanyId = (await import('vue')).ref('comp-a')
+  hoisted.companyRef = selectedCompanyId
+  return { selectedCompanyId }
+})
 vi.mock('@/services/region/regionContext', async () => ({ currentRegion: (await import('vue')).ref({ id: 'yunnan' }) }))
 vi.mock('@/services/midlong/midlongApi', () => ({
   CompanyNotSelectedError: class extends Error {},
@@ -75,6 +80,39 @@ describe('中长期售电场站维度持仓', () => {
     await flushPromises()
     expect(w.text()).toContain('当前为内部经营分配视图')
     expect(w.text()).toContain('不是正式交易分解')
+  })
+
+  it('更正后沿用旧版本分配：有说明，合同贡献标「沿用 v1」', async () => {
+    hoisted.fetchCapabilities.mockResolvedValue(caps())
+    hoisted.fetchStationPositions.mockResolvedValue(report({
+      contributions: [{ month: '2027-06', contractId: 7, externalContractNo: 'TEST-7', contractName: '测试7', revisionNo: 2, stationId: 1, quantity: '400', derivation: 'ALLOCATION', allocationSetId: 5, allocationSetNo: 1, inheritedFromRevisionNo: 1 }],
+      allocationSetsUsed: [{ contractId: 7, allocationSetId: 5, setNo: 1, inheritedFromRevisionNo: 1 }],
+    }))
+    const w = mount(MidlongStationPositionsView, { global: { stubs: STUBS } })
+    await flushPromises()
+    expect(w.text()).toContain('部分分配沿用更正前的版本')
+    await w.findAll('.el-table__body').at(0)!.findAll('tr')[0].trigger('click')
+    await nextTick()
+    expect(w.text()).toContain('（分配集 #1 · 沿用 v1）')
+  })
+
+  it('切换公司：旧公司迟到的响应被丢弃，不显示在新公司下', async () => {
+    hoisted.fetchCapabilities.mockResolvedValue(caps())
+    let resolveOld: (v: StationPositionReport) => void = () => {}
+    hoisted.fetchStationPositions
+      .mockImplementationOnce(() => new Promise((resolve) => { resolveOld = resolve }))
+      .mockImplementationOnce(() => new Promise(() => {}))
+    const w = mount(MidlongStationPositionsView, { global: { stubs: STUBS } })
+    await flushPromises()
+    hoisted.companyRef!.value = 'comp-b'
+    await nextTick()
+    await flushPromises()
+    expect(hoisted.fetchStationPositions).toHaveBeenCalledTimes(2)
+    resolveOld(report())
+    await flushPromises()
+    expect(w.text()).not.toContain('测试风电场A')
+    expect(w.text()).not.toContain('主体合计 1,000')
+    hoisted.companyRef!.value = 'comp-a'
   })
 
   it('能力未开通时不取数', async () => {

@@ -49,16 +49,17 @@ function report(o: Partial<IntervalPositionReport> = {}): IntervalPositionReport
     asOf: '2026-09-17T00:00:00.000Z', view: 'CURRENT', granularity: 'HOUR', granularityMinutes: 60, fromDate: '2027-05-01', toDate: '2027-05-01',
     status: 'partial', regionId: 'yunnan', companyIds: ['comp-a'], generatedAt: '2026-09-17T00:00:00.000Z', filters: {},
     buckets: [
-      { start: '2027-05-01T00:00:00+08:00', end: '2027-05-01T01:00:00+08:00', date: '2027-05-01', month: '2027-05', coverage: 'PARTIAL', formalQuantity: '1', knownContractCount: 1, unknownContractIds: [2] },
-      { start: '2027-05-01T01:00:00+08:00', end: '2027-05-01T02:00:00+08:00', date: '2027-05-01', month: '2027-05', coverage: 'UNKNOWN', formalQuantity: null, knownContractCount: 0, unknownContractIds: [2] },
+      { start: '2027-05-01T00:00:00+08:00', end: '2027-05-01T01:00:00+08:00', date: '2027-05-01', month: '2027-05', coverage: 'PARTIAL', formalQuantity: '1', knownContractCount: 1, unknownContractIds: [2], incompleteContractIds: [] },
+      { start: '2027-05-01T01:00:00+08:00', end: '2027-05-01T02:00:00+08:00', date: '2027-05-01', month: '2027-05', coverage: 'UNKNOWN', formalQuantity: null, knownContractCount: 0, unknownContractIds: [2], incompleteContractIds: [] },
     ],
     contracts: [
-      { contractId: 1, externalContractNo: 'TEST-CURVE', contractName: '有曲线', subjectId: 1, stationId: null, revisionNo: 1, deliveryStart: '2027-05-01', deliveryEnd: '2027-05-01', curveQuantityInRange: '1',
-        months: [{ month: '2027-05', timeStatus: 'CURVE', monthlyFormalQuantity: '24', curve: { curveSetId: 31, setNo: 3, granularityMinutes: 60, confirmedAt: null }, estimate: null }] },
-      { contractId: 2, externalContractNo: 'TEST-MONTH', contractName: '只有月量', subjectId: 1, stationId: null, revisionNo: 1, deliveryStart: '2027-05-01', deliveryEnd: '2027-05-31', curveQuantityInRange: '0',
-        months: [{ month: '2027-05', timeStatus: 'TIME_UNKNOWN', monthlyFormalQuantity: '1000', curve: null, estimate: { curveSetId: 40, setNo: 4, granularityMinutes: 60, confirmedAt: null } }] },
+      { contractId: 1, externalContractNo: 'TEST-CURVE', contractName: '有曲线', subjectId: 1, stationId: null, revisionNo: 1, deliveryStart: '2027-05-01', deliveryEnd: '2027-05-01', curveQuantityInRange: '1', monthlyIncomplete: false, unallocatedQuantity: '0',
+        months: [{ month: '2027-05', timeStatus: 'CURVE', monthlyFormalQuantity: '24', curve: { curveSetId: 31, setNo: 3, granularityMinutes: 60, confirmedAt: null, inheritedFromRevisionNo: null }, estimate: null }] },
+      { contractId: 2, externalContractNo: 'TEST-MONTH', contractName: '只有月量', subjectId: 1, stationId: null, revisionNo: 1, deliveryStart: '2027-05-01', deliveryEnd: '2027-05-31', curveQuantityInRange: '0', monthlyIncomplete: false, unallocatedQuantity: '0',
+        months: [{ month: '2027-05', timeStatus: 'TIME_UNKNOWN', monthlyFormalQuantity: '1000', curve: null, estimate: { curveSetId: 40, setNo: 4, granularityMinutes: 60, confirmedAt: null, inheritedFromRevisionNo: null } }] },
     ],
-    totals: { contractCount: 2, curveQuantityInRange: '1', bucketCount: 2, unknownBucketCount: 1, partialBucketCount: 1, timeUnknownContractCount: 1 },
+    totals: { contractCount: 2, curveQuantityInRange: '1', bucketCount: 2, unknownBucketCount: 1, partialBucketCount: 1, timeUnknownContractCount: 1, unallocatedPoolQuantity: '0', unallocatedContractCount: 0 },
+    unallocatedPool: [],
     excluded: { estimateCurveSets: [{ contractId: 2, month: '2027-05', curveSetId: 40, setNo: 4, granularityMinutes: 60 }], note: '只计已确认的正式分时分解' },
     ...o,
   }
@@ -92,6 +93,38 @@ describe('中长期售电分时持仓', () => {
     expect(links).toContain('/zcqjy/curves/31?date=2027-05-01')
     expect(w.text()).toContain('分时未知，未计入该时段')
     expect(w.text()).toContain('另有内部估算 #4（不计入）')
+  })
+
+  it('与月度持仓同口径：有电量未分解到月份的合同所在时段标部分已知，未分解池单列；沿用更正前曲线的月份标「沿用 v1」', async () => {
+    hoisted.fetchCapabilities.mockResolvedValue(caps())
+    const base = report()
+    hoisted.fetchIntervalPositions.mockResolvedValue(report({
+      buckets: [{ ...base.buckets[0], coverage: 'PARTIAL', formalQuantity: '24', knownContractCount: 1, unknownContractIds: [], incompleteContractIds: [9] }],
+      contracts: [{
+        contractId: 9, externalContractNo: 'TEST-POOL', contractName: '年度合同', subjectId: 1, stationId: null, revisionNo: 2, deliveryStart: '2027-01-01', deliveryEnd: '2027-12-31',
+        curveQuantityInRange: '24', monthlyIncomplete: true, unallocatedQuantity: '76',
+        months: [{ month: '2027-05', timeStatus: 'CURVE', monthlyFormalQuantity: '24', curve: { curveSetId: 60, setNo: 1, granularityMinutes: 60, confirmedAt: null, inheritedFromRevisionNo: 1 }, estimate: null }],
+      }],
+      totals: { ...base.totals, contractCount: 1, timeUnknownContractCount: 0, unknownBucketCount: 0, partialBucketCount: 1, unallocatedPoolQuantity: '76', unallocatedContractCount: 1 },
+      unallocatedPool: [{
+        contractId: 9, externalContractNo: 'TEST-POOL', contractName: '年度合同', revisionNo: 2, deliveryStart: '2027-01-01', deliveryEnd: '2027-12-31',
+        totalQuantity: '100', formalAllocatedQuantity: '24', unallocatedQuantity: '76', reason: 'MONTHLY_ALLOCATION_INCOMPLETE', overlappingMonths: ['2027-05'],
+      }],
+      excluded: { estimateCurveSets: [], note: '只计已确认的正式分时分解' },
+    }))
+    const w = mount(MidlongIntervalPositionsView, { global: { stubs: STUBS } })
+    await flushPromises()
+    const cells = w.findAll('.el-table__body').at(0)!.findAll('tr')[0].findAll('td')
+    expect(cells[1].text()).toBe('24（另有电量未分解到月份）')
+    expect(cells[5].text()).toBe('1')
+    const text = w.text()
+    expect(text).toContain('月度持仓不完整：有电量未分解到月份')
+    expect(text).toContain('未分解到月份的电量（1）')
+    expect(text).not.toContain('部分时段分时未知')
+    expect(text).toContain('2027-05 已有正式分时 · 沿用 v1')
+    await w.findAll('.el-table__body').at(0)!.findAll('tr')[0].trigger('click')
+    await nextTick()
+    expect(w.text()).toContain('另有电量未分解到月份，本时段不完整')
   })
 
   it('能力未开通时不取分时数据，只提示未开通', async () => {

@@ -1,8 +1,9 @@
 <script setup lang="ts">
 // 合同详情里的分时分解区（dljy#2971，MP-04/MA-05）。
 // - 当前版本逐月：已有正式分时 / 分时未知（只有月量）/ 月量未知；内部估算单独标出，不替代正式资料。
-// - 更正影响：合同更正后旧版本上的曲线不自动沿用；同月正式电量未变的可「沿用原曲线」生成当前版本草稿（仍需确认），
-//   电量已变的只提示重新导入。
+// - 更正后沿用：未受更正影响且月量不变的月份继续用旧版本上已确认的曲线，标「沿用 vN」。
+// - 更正影响：受影响月份原有曲线失效；同月正式电量未变的可「沿用原曲线」生成当前版本草稿（仍需确认），
+//   电量已变的只提示重新导入；内部估算同样给出影响（仍不计入正式口径）。
 // - 分解集历史（含草稿、已废弃）可钻取到详情；写操作按后端能力 canWrite 开放，后端再判权。
 import { computed, onMounted, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
@@ -16,7 +17,7 @@ import { createCurveDraft, fetchContractCurves } from '@/services/midlong/midlon
 import type { MidlongEvidence } from '@/services/midlong/midlongTypes'
 import { CORRECTION_IMPACT_LABELS, CURVE_GRANULARITY_LABELS, type ContractCurvesOverview } from '@/services/midlong/midlongP2Types'
 import { createLoadGuard, fmtQuantity } from '@/services/midlong/midlongFormat'
-import { basisTag, curveSetStatusTag, timeStatusTag } from '@/services/midlong/midlongP2Format'
+import { basisTag, curveSetStatusTag, inheritedLabel, timeStatusTag } from '@/services/midlong/midlongP2Format'
 
 const props = defineProps<{ contractId: number; canWrite: boolean; evidence: MidlongEvidence[] }>()
 
@@ -51,6 +52,7 @@ watch([selectedCompanyId, () => currentRegion.value.id, () => props.contractId],
 
 const canCreate = computed(() => Boolean(props.canWrite && overview.value?.canCreate))
 const impactMonths = computed(() => (overview.value?.months ?? []).filter((m) => m.correctionImpact))
+const estimateImpactMonths = computed(() => (overview.value?.months ?? []).filter((m) => m.estimateCorrectionImpact))
 
 async function copyFrom(month: ContractCurvesOverview['months'][number]) {
   const o = overview.value
@@ -88,12 +90,19 @@ async function copyFrom(month: ContractCurvesOverview['months'][number]) {
     <template v-else-if="overview">
       <MidlongNotice v-if="!overview.canCreate && overview.confirmationStatus !== 'CONFIRMED'" tone="info">合同核验确认后才能登记分时分解（未确认版本的电量还会变化）。</MidlongNotice>
       <MidlongNotice v-if="impactMonths.length" tone="warn" title="合同更正影响">
-        合同已更正为 v{{ overview.currentRevisionNo }}，以下月份原有的已确认曲线绑定在旧版本上，不自动沿用：
+        合同已更正为 v{{ overview.currentRevisionNo }}，以下月份受这次更正影响，原有的已确认曲线不再沿用：
         <div v-for="m in impactMonths" :key="m.month" class="ml-impact">
           <b>{{ m.month }}</b>：{{ CORRECTION_IMPACT_LABELS[m.correctionImpact!.status] }}（v{{ m.correctionImpact!.previousRevisionNo }} 分解集 #{{ m.correctionImpact!.previousSetNo }}，
           原月量 {{ fmtQuantity(m.correctionImpact!.previousMonthlyQuantity) }} → 现月量 {{ fmtQuantity(m.correctionImpact!.currentMonthlyQuantity) }} MWh）
           <el-button v-if="canCreate && m.correctionImpact!.canCopy" link type="primary" :loading="copying === m.month" @click="copyFrom(m)">沿用原曲线生成草稿</el-button>
           <span v-else-if="!m.correctionImpact!.canCopy" class="ml-hint">电量已变，请重新导入</span>
+        </div>
+      </MidlongNotice>
+      <MidlongNotice v-if="estimateImpactMonths.length" tone="warn" title="合同更正影响：内部估算（不计入正式口径）">
+        以下月份原有的内部估算受这次更正影响，不再沿用：
+        <div v-for="m in estimateImpactMonths" :key="m.month" class="ml-impact">
+          <b>{{ m.month }}</b>：{{ CORRECTION_IMPACT_LABELS[m.estimateCorrectionImpact!.status] }}（v{{ m.estimateCorrectionImpact!.previousRevisionNo }} 估算 #{{ m.estimateCorrectionImpact!.previousSetNo }}，
+          原月量 {{ fmtQuantity(m.estimateCorrectionImpact!.previousMonthlyQuantity) }} → 现月量 {{ fmtQuantity(m.estimateCorrectionImpact!.currentMonthlyQuantity) }} MWh），需要时重新生成估算
         </div>
       </MidlongNotice>
       <el-table :data="overview.months" border size="small">
@@ -104,12 +113,14 @@ async function copyFrom(month: ContractCurvesOverview['months'][number]) {
           <template #default="{ row }">
             <router-link v-if="row.formalCurve" :to="`/zcqjy/curves/${row.formalCurve.curveSetId}`" class="ml-link">#{{ row.formalCurve.setNo }} · {{ CURVE_GRANULARITY_LABELS[row.formalCurve.granularityMinutes as 60] }} · {{ fmtQuantity(row.formalCurve.curveQuantity) }} MWh</router-link>
             <span v-else class="ml-hint">—</span>
+            <el-tag v-if="row.formalCurve?.inheritedFromRevisionNo" size="small" type="info" class="ml-inherit">{{ inheritedLabel(row.formalCurve.inheritedFromRevisionNo) }}</el-tag>
           </template>
         </el-table-column>
         <el-table-column label="内部估算（不计入）" min-width="190">
           <template #default="{ row }">
             <router-link v-if="row.estimateCurve" :to="`/zcqjy/curves/${row.estimateCurve.curveSetId}`" class="ml-link ml-estimate">估算 #{{ row.estimateCurve.setNo }} · {{ fmtQuantity(row.estimateCurve.curveQuantity) }} MWh</router-link>
             <span v-else class="ml-hint">—</span>
+            <el-tag v-if="row.estimateCurve?.inheritedFromRevisionNo" size="small" type="info" class="ml-inherit">{{ inheritedLabel(row.estimateCurve.inheritedFromRevisionNo) }}</el-tag>
           </template>
         </el-table-column>
       </el-table>
@@ -147,4 +158,5 @@ async function copyFrom(month: ContractCurvesOverview['months'][number]) {
 .ml-hint { color: var(--muted); font-size: var(--font-sm); }
 .ml-danger { color: var(--danger); font-weight: 600; }
 .ml-impact { margin-top: 2px; }
+.ml-inherit { margin-left: 6px; }
 </style>

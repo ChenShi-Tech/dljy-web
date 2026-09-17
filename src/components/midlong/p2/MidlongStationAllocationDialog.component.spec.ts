@@ -23,7 +23,7 @@ const overview: ContractStationAllocationsOverview = {
   subjectStations: [{ stationId: 1, stationName: '测试风电场A' }, { stationId: 2, stationName: '测试风电场B' }, { stationId: 3, stationName: '测试光伏站C' }],
   canCreate: true, sets: [], impact: [],
   effective: {
-    FORMAL_TRADING: { allocationSetId: 9, setNo: 1, segmentMode: 'CONTRACT_TOTAL', segments: [segment()],
+    FORMAL_TRADING: { allocationSetId: 9, setNo: 1, segmentMode: 'CONTRACT_TOTAL', segments: [segment()], inheritedFromRevisionNo: null,
       rows: [{ id: 1, stationId: 1, stationName: '测试风电场A', segmentMonth: null, quantity: '400' }, { id: 2, stationId: 2, stationName: '测试风电场B', segmentMonth: null, quantity: '500' }] },
     INTERNAL_OPERATING: null,
   },

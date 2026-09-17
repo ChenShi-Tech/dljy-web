@@ -14,10 +14,20 @@ import type { EvidenceBasis } from './midlongTypes'
 
 type TagType = 'success' | 'warning' | 'danger' | 'info' | 'primary'
 
-/** 时段桶电量：整桶未知 → 「分时未知」；部分未知 → 已知部分并注明；无义务 → 0（无交割义务）。 */
-export function bucketQuantityLabel(bucket: Pick<IntervalBucket, 'coverage' | 'formalQuantity'>): string {
+/**
+ * 时段桶电量：整桶未知 → 「分时未知」；部分已知 → 已知部分并注明缺什么（合同分时未知 / 电量未分解到月份）；
+ * 无义务 → 0（无交割义务）。
+ */
+export function bucketQuantityLabel(
+  bucket: Pick<IntervalBucket, 'coverage' | 'formalQuantity'> & Partial<Pick<IntervalBucket, 'unknownContractIds' | 'incompleteContractIds'>>,
+): string {
   if (bucket.coverage === 'UNKNOWN' || bucket.formalQuantity === null) return '分时未知'
-  if (bucket.coverage === 'PARTIAL') return `${fmtQuantity(bucket.formalQuantity)}（另有合同分时未知）`
+  if (bucket.coverage === 'PARTIAL') {
+    const reasons: string[] = []
+    if (bucket.unknownContractIds?.length || !bucket.incompleteContractIds?.length) reasons.push('另有合同分时未知')
+    if (bucket.incompleteContractIds?.length) reasons.push('另有电量未分解到月份')
+    return `${fmtQuantity(bucket.formalQuantity)}（${reasons.join('；')}）`
+  }
   if (bucket.coverage === 'NO_OBLIGATION') return '0（无交割义务）'
   return fmtQuantity(bucket.formalQuantity)
 }
@@ -48,6 +58,11 @@ export function allocationKindTag(kind: StationAllocationKind): { label: string;
   return kind === 'INTERNAL_OPERATING'
     ? { label: `${STATION_ALLOCATION_KIND_LABELS.INTERNAL_OPERATING}（非正式交易分解）`, type: 'warning' }
     : { label: STATION_ALLOCATION_KIND_LABELS.FORMAL_TRADING, type: 'success' }
+}
+
+/** 合同更正后沿用旧版本上已确认的分解 / 分配时标「沿用 vN」；当前版本自己的返回空串。 */
+export function inheritedLabel(inheritedFromRevisionNo: number | null | undefined): string {
+  return inheritedFromRevisionNo ? `沿用 v${inheritedFromRevisionNo}` : ''
 }
 
 /** 分配片段：TOTAL → 合同总量；YYYY-MM → 该月。 */

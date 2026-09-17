@@ -4,6 +4,7 @@
 //   页面只展示这条拆分，不给「主体 + 场站」相加的合计。
 // - 默认只用正式交易分解；内部经营分配需显式切换，并以警示说明区别展示。
 // - 按合同总量分配的跨多月合同拆不到月份，整月计入「月份未分到场站」，不按比例推算。
+// - 合同更正后沿用旧版本分配的片段标「沿用 vN」。
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
@@ -18,7 +19,7 @@ import {
   STATION_DERIVATION_LABELS, type StationAllocationKind, type StationPositionQuery, type StationPositionReport,
 } from '@/services/midlong/midlongP2Types'
 import { createLoadGuard, downloadCsv, fmtQuantity } from '@/services/midlong/midlongFormat'
-import { allocationKindTag, stationSplitText } from '@/services/midlong/midlongP2Format'
+import { allocationKindTag, inheritedLabel, stationSplitText } from '@/services/midlong/midlongP2Format'
 
 const route = useRoute()
 const router = useRouter()
@@ -114,6 +115,7 @@ const totals = computed(() => report.value?.totals ?? null)
 const stationColumns = computed(() => report.value?.stations ?? [])
 const stationQuantity = (month: StationPositionReport['months'][number], stationId: number) => month.stations.find((s) => s.stationId === stationId)?.quantity ?? null
 const drillRows = computed(() => (report.value?.contributions ?? []).filter((c) => c.month === drillMonth.value))
+const inheritedSetCount = computed(() => (report.value?.allocationSetsUsed ?? []).filter((s) => s.inheritedFromRevisionNo).length)
 const stationName = (id: number | null) => (id === null ? '—' : stationColumns.value.find((s) => s.stationId === id)?.stationName ?? `场站 ${id}`)
 </script>
 
@@ -158,6 +160,9 @@ const stationName = (id: number | null) => (id === null ? '—' : stationColumns
       <MidlongNotice v-if="report.view === 'AS_OF'" tone="info" title="历史认知时点视图">
         只使用 {{ new Date(report.asOf).toLocaleString('zh-CN') }} 之前已录入并已确认的合同版本与场站分配。
       </MidlongNotice>
+      <MidlongNotice v-if="inheritedSetCount" tone="info" title="部分分配沿用更正前的版本">
+        {{ inheritedSetCount }} 份合同更正后未重新分配：未受更正影响的片段继续采用旧版本上已确认的场站分配，受影响片段计入未分配。
+      </MidlongNotice>
       <MidlongNotice v-if="report.status === 'partial' && totals.unallocatedPoolQuantity !== '0'" tone="warn" title="月度持仓不完整">
         另有 {{ fmtQuantity(totals.unallocatedPoolQuantity) }} MWh 尚未分解到月份（见月度持仓的跨期未分解池），不在本表各月内。
       </MidlongNotice>
@@ -190,7 +195,11 @@ const stationName = (id: number | null) => (id === null ? '—' : stationColumns
           <el-table-column label="版本" width="70"><template #default="{ row }">v{{ row.revisionNo }}</template></el-table-column>
           <el-table-column label="场站" width="150"><template #default="{ row }">{{ stationName(row.stationId) }}</template></el-table-column>
           <el-table-column label="电量(MWh)" width="120" align="right"><template #default="{ row }">{{ fmtQuantity(row.quantity) }}</template></el-table-column>
-          <el-table-column label="来源" min-width="200"><template #default="{ row }">{{ STATION_DERIVATION_LABELS[row.derivation as 'ALLOCATION'] }}{{ row.allocationSetNo ? `（分配集 #${row.allocationSetNo}）` : '' }}</template></el-table-column>
+          <el-table-column label="来源" min-width="220">
+            <template #default="{ row }">
+              {{ STATION_DERIVATION_LABELS[row.derivation as 'ALLOCATION'] }}{{ row.allocationSetNo ? `（分配集 #${row.allocationSetNo}${row.inheritedFromRevisionNo ? ` · ${inheritedLabel(row.inheritedFromRevisionNo)}` : ''}）` : '' }}
+            </template>
+          </el-table-column>
           <template #empty>该月没有已明确到月份的正式分解电量。</template>
         </el-table>
       </div>
