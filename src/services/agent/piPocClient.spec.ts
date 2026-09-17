@@ -16,7 +16,7 @@ vi.mock('@/services/api', () => ({
   AGENT_API_BASE_ROOT: '/agent-api'
 }))
 
-import { fetchDataGaps, setSessionAutoApprove } from './piPocClient'
+import { fetchDataGaps, fetchSessionPromptKey, setSessionAutoApprove } from './piPocClient'
 import { PI_AGENT_BASE } from './agentClient'
 
 const fetchMock = vi.fn()
@@ -62,6 +62,25 @@ describe('fetchDataGaps', () => {
 
     await expect(fetchDataGaps()).rejects.toThrow('HTTP 404')
     await expect(fetchDataGaps()).rejects.toThrow('HTTP 502')
+  })
+})
+
+describe('fetchSessionPromptKey（统一 AI 侧边栏重新打开会话时找回专家入口）', () => {
+  it('显式走 PI_AGENT_BASE 的会话详情（sessionId 编码），带身份头，取 prompt_key', async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ id: 's 1', scenario: 'chat', prompt_key: 'pre_submit_check' }))
+    vi.stubGlobal('fetch', fetchMock)
+    await expect(fetchSessionPromptKey('s 1')).resolves.toBe('pre_submit_check')
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(url).toBe(`${PI_AGENT_BASE}/sessions/s%201`)
+    expect(init.headers).toEqual({ 'x-user-id': 'u1' })
+  })
+
+  it('pi 不认识该会话（非 2xx）或旧版 pi 没有该字段：返回 null 由调用方降级，不抛', async () => {
+    vi.stubGlobal('fetch', fetchMock)
+    fetchMock.mockResolvedValueOnce(jsonResponse({ detail: 'not found' }, 404))
+    await expect(fetchSessionPromptKey('s_gone')).resolves.toBeNull()
+    fetchMock.mockResolvedValueOnce(jsonResponse({ id: 's_old', scenario: 'chat' }))
+    await expect(fetchSessionPromptKey('s_old')).resolves.toBeNull()
   })
 })
 

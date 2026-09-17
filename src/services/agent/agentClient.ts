@@ -139,6 +139,8 @@ export type AgentRunSummary = {
   error?: string | null
   session_title?: string
   page_key?: string
+  /** 建会话时锁定的解读角色（pi 提供；旧版无此字段） */
+  prompt_key?: string
   scenario?: AgentRunScenario | string
 }
 

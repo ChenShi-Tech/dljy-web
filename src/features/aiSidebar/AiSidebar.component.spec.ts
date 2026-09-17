@@ -63,6 +63,10 @@ vi.mock('@/components/agent/AgentHistorySidebar.vue', async () => {
         expose({ reload: async () => {} })
         return () => h('div', { class: 'history-stub' }, [
           h('button', { class: 'pick-brief', onClick: () => emit('select', 's_brief', 'morning_brief') }),
+          // 侧边栏里开的申报前体检会话：场景是 chat，来源是 ai_center
+          h('button', { class: 'pick-pre-sidebar', onClick: () => emit('select', 's_pre', 'chat', 'ai_center') }),
+          // 工作台里开的申报前体检会话：来源 key 就是入口 key
+          h('button', { class: 'pick-pre-workbench', onClick: () => emit('select', 's_pre_wb', 'chat', 'pre_submit_check') }),
           h('button', { class: 'pick-new', onClick: () => emit('newChat') })
         ])
       }
@@ -70,6 +74,7 @@ vi.mock('@/components/agent/AgentHistorySidebar.vue', async () => {
   }
 })
 vi.mock('@/services/agent/agentClient', () => ({ listRuns: vi.fn(async () => []), stopAgentRun: vi.fn(async () => true) }))
+vi.mock('@/services/agent/piPocClient', () => ({ fetchSessionPromptKey: vi.fn(async () => null) }))
 vi.mock('@/components/agent/workbench/MorningBriefRail.vue', async () => {
   const { defineComponent, h } = await import('vue')
   return {
@@ -102,6 +107,8 @@ vi.mock('@/services/company/companyContext', async () => {
 vi.mock('element-plus', () => ({ ElMessage: { success: vi.fn(), warning: vi.fn(), error: vi.fn(), info: vi.fn() } }))
 
 import AiSidebar from './AiSidebar.vue'
+import { currentRegion } from '@/services/region/regionContext'
+import { fetchSessionPromptKey } from '@/services/agent/piPocClient'
 import { listRuns } from '@/services/agent/agentClient'
 import { PAGE_PROMPT_KEYS } from '@/prompts/pageKeys'
 import { activatePage, activeAiPage, deactivatePage, type AiPageDefinition } from './pageRegistry'
@@ -157,6 +164,7 @@ describe('AiSidebar · 会话规则', () => {
     window.localStorage.clear()
     resetAiSidebarForTest()
     vi.mocked(listRuns).mockReset().mockResolvedValue([])
+    vi.mocked(fetchSessionPromptKey).mockReset().mockResolvedValue(null)
   })
 
   it('新挂的内核初始化完成（ready）之前不发问；等待期间又切换了会话，这条问题作废（实机：刷新后马上解读被吞）', async () => {
@@ -379,6 +387,7 @@ describe('AiSidebar · 头部与输入区', () => {
     window.localStorage.clear()
     resetAiSidebarForTest()
     vi.mocked(listRuns).mockReset().mockResolvedValue([])
+    vi.mocked(fetchSessionPromptKey).mockReset().mockResolvedValue(null)
   })
 
   it('运行中数量：有运行时显示数量；接口失败时隐藏，不显示 0', async () => {
@@ -418,6 +427,58 @@ describe('AiSidebar · 头部与输入区', () => {
     await w.find('button[title="在工作台打开"]').trigger('click')
     expect(push).toHaveBeenCalledWith({ path: '/ai-agent', query: { entry: 'workbench', session: 's_open' } })
     expect(useAiSidebar().state.open).toBe(false)
+  })
+
+  it('重新打开申报前体检会话：按 pi 记下的解读角色找回入口与合成数据水印（dljy-web#121 审查 P1）', async () => {
+    vi.mocked(fetchSessionPromptKey).mockReset().mockImplementation(async (id: string) => (id === 's_pre' ? PAGE_PROMPT_KEYS.preSubmitCheck : null))
+    const { w } = await setup()
+    useAiSidebar().open()
+    await settle()
+    await w.find('.ai-title').trigger('click')
+    await w.find('.pick-pre-sidebar').trigger('click')
+    await settle()
+    expect(live()[0].props.resumeSessionId).toBe('s_pre')
+    expect(useAiSidebar().state.session?.entryKey).toBe('pre_submit_check')
+    expect(live()[0].props.promptKey).toBe(PAGE_PROMPT_KEYS.preSubmitCheck)
+    expect(w.find('[data-testid="ai-watermark"]').text()).toContain('advisory_only')
+
+    // pi 已不认识该会话时：工作台开的会话按来源 key 找回入口
+    await w.find('.ai-title').trigger('click')
+    await w.find('.pick-pre-workbench').trigger('click')
+    await settle()
+    expect(live()[0].props.resumeSessionId).toBe('s_pre_wb')
+    expect(useAiSidebar().state.session?.entryKey).toBe('pre_submit_check')
+    expect(w.find('[data-testid="ai-watermark"]').exists()).toBe(true)
+  })
+
+  it('运行中列表的行自带解读角色：直接据此找回入口；查询期间用户点了新建则本次打开作废', async () => {
+    vi.mocked(fetchSessionPromptKey).mockReset().mockResolvedValue(null)
+    vi.mocked(listRuns).mockResolvedValue([
+      { run_id: 'r_pre', session_id: 's_pre_run', turn_seq: 1, status: 'running', created_at: 1, updated_at: 1, last_seq: 3, session_title: '申报前体检', page_key: 'ai_center', prompt_key: PAGE_PROMPT_KEYS.preSubmitCheck, scenario: 'chat' }
+    ])
+    const { w } = await setup()
+    useAiSidebar().open()
+    await settle()
+    await w.find('.ai-runs-badge').trigger('click')
+    await settle()
+    await w.find('.run-main').trigger('click')
+    await settle()
+    expect(fetchSessionPromptKey).not.toHaveBeenCalled()
+    expect(useAiSidebar().state.session?.entryKey).toBe('pre_submit_check')
+    expect(live()[0].props.resumeRunId).toBe('r_pre')
+
+    // 查询很慢：期间点了新建对话
+    let resolveKey: (v: string | null) => void = () => {}
+    vi.mocked(fetchSessionPromptKey).mockImplementation(() => new Promise((r) => { resolveKey = r }))
+    await w.find('.ai-title').trigger('click')
+    await w.find('.pick-pre-sidebar').trigger('click')
+    await settle()
+    await w.find('button[title="新建对话"]').trigger('click')
+    await settle()
+    resolveKey(PAGE_PROMPT_KEYS.preSubmitCheck)
+    await settle()
+    expect(useAiSidebar().state.session).toBeNull()
+    expect(live()[0].props.resumeSessionId).toBeNull()
   })
 
   it('从「运行中」切过去：内核拿到会话与 run id；之后换到别的会话，run id 不再带过去（dljy-web#119 审查 P2）', async () => {
@@ -520,9 +581,11 @@ describe('AiSidebar · 专家命令（EC-01/02/03）', () => {
     g.__user = { roleCode: 'TRADER', username: 'trader' }
     ;(globalThis as unknown as { __briefOrder: string[] }).__briefOrder = []
     ;(globalThis as unknown as { __briefGate: Promise<void> | null }).__briefGate = null
+    ;(currentRegion as unknown as { value: { id: string; name: string } }).value = { id: 'yunnan', name: '云南省' }
     window.localStorage.clear()
     resetAiSidebarForTest()
     vi.mocked(listRuns).mockReset().mockResolvedValue([])
+    vi.mocked(fetchSessionPromptKey).mockReset().mockResolvedValue(null)
   })
 
   it('/晨报：就地新开晨报会话（场景/角色/入口），先装配预检卡再发目标日，页面不跳转', async () => {
@@ -559,6 +622,20 @@ describe('AiSidebar · 专家命令（EC-01/02/03）', () => {
     release()
     await settle()
     expect(next.asks).toEqual(['新能源渗透率上升对价差有什么影响'])
+    expect(brief.asks).toEqual([])
+  })
+
+  it('晨报预检取数期间切换了地区：不把新地区的日期配上旧地区的预检卡发出去（dljy-web#121 审查 P1）', async () => {
+    let release: () => void = () => {}
+    ;(globalThis as unknown as { __briefGate: Promise<void> | null }).__briefGate = new Promise((r) => { release = r })
+    await setup()
+    useAiSidebar().startExpert(buildExpertLaunch(findEntry('morning_brief')!, '2026-09-17', '云南省'))
+    await settle()
+    const brief = live()[0]
+    ;(currentRegion as unknown as { value: { id: string; name: string } }).value = { id: 'shanxi', name: '山西省' }
+    release()
+    await settle()
+    expect(live()[0]).toBe(brief)
     expect(brief.asks).toEqual([])
   })
 

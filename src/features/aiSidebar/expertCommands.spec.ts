@@ -43,6 +43,12 @@ describe('parseExpertArgs / buildExpertLaunch', () => {
     expect(buildExpertLaunch(entry('declaration_checkup'), '', '云南省', NOW).question).toBe('')
   })
 
+  it('形似日期却不存在的词不当作目标日（dljy-web#121 审查 P2）', () => {
+    expect(parseExpertArgs(entry('morning_brief'), '2026-99-99', NOW)).toEqual({ date: '2026-09-16' })
+    expect(parseExpertArgs(entry('pre_submit_check'), '2026-02-30 高峰多报', NOW)).toEqual({ date: '2026-09-16', intent: '2026-02-30 高峰多报' })
+    expect(parseExpertArgs(entry('morning_brief'), '2028-02-29', NOW)).toEqual({ date: '2028-02-29' }) // 闰年照常
+  })
+
   it('没有日期输入项的入口不吞掉像日期的文字', () => {
     expect(parseExpertArgs(entry('strategic_qa'), '2026-09-18 的风险', NOW)).toEqual({})
   })
@@ -60,6 +66,20 @@ describe('createExpertCommands', () => {
     const extra = createExpertCommands({ canUse: true, regionName: () => '云南省', launch })
     expect(executeSlashInput('/晨报 2026-09-17', ctxFor(extra, []))).toBe(true)
     expect(launch).toHaveBeenCalledWith(expect.objectContaining({ question: '2026-09-17', entry: expect.objectContaining({ key: 'morning_brief' }) }))
+  })
+
+  it('日期不存在：提示并拒绝，不发起会话（dljy-web#121 审查 P2）', () => {
+    const launch = vi.fn()
+    const notes: string[] = []
+    const extra = createExpertCommands({ canUse: true, regionName: () => '云南省', launch })
+    expect(executeSlashInput('/晨报 2026-99-99', ctxFor(extra, notes))).toBe(true)
+    expect(executeSlashInput('/申报前体检 2026-02-30 高峰多报', ctxFor(extra, notes))).toBe(true)
+    expect(launch).not.toHaveBeenCalled()
+    expect(notes).toHaveLength(2)
+    expect(notes[0]).toContain('2026-99-99')
+    // 没有日期输入项的入口不检查
+    expect(executeSlashInput('/战略问答 2026-99-99 的风险', ctxFor(extra, notes))).toBe(true)
+    expect(launch).toHaveBeenCalledTimes(1)
   })
 
   it('无权限：补全与 /help 看不到专家命令，手动输入提示无权且不发起会话', () => {

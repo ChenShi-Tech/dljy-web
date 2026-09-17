@@ -32,6 +32,19 @@ export async function setSessionAutoApprove(sessionId: string, enabled: boolean)
   return ((await res.json()) as { auto_approve?: boolean }).auto_approve === true
 }
 
+// 会话建立时锁定的解读角色（pi 会话详情的 prompt_key，白名单 key）。统一 AI 侧边栏重新打开会话时据此找回专家入口：
+// 申报前体检与通用对话同为 chat 场景，只看场景找不回。显式走 pi 基址——历史列表里的会话多半不是本浏览器建的，
+// 不在会话路由登记表里。pi 不认识该会话（已过保留期）或旧版 pi 没有该字段时返回 null，调用方自行降级。
+export async function fetchSessionPromptKey(sessionId: string): Promise<string | null> {
+  const res = await fetch(`${PI_AGENT_BASE}/sessions/${encodeURIComponent(sessionId)}`, {
+    headers: identityHeaders(),
+    signal: timeoutSignal(PI_POC_TIMEOUT_MS)
+  })
+  if (!res.ok) return null
+  const key = ((await res.json()) as { prompt_key?: unknown }).prompt_key
+  return typeof key === 'string' ? key : null
+}
+
 // 当前主对话模型（主仓 #2658）。auto 档下模型会随自建端点可用性自动切换，而此前
 // 这件事只写在服务端日志里——**演示时端点悄悄断掉、答案却照常出来**，屏幕前的人
 // 无从察觉。本函数取回这一事实供界面显示。
