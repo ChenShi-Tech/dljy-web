@@ -627,13 +627,22 @@ async function refreshHistoryFromServer() {
 // 回放历史会话（侧栏选中 / 刷新恢复）。设回 session 续同线程，标记全部已落库。
 // fromClick=用户主动点击侧栏（失败要可见、且不得清 localStorage 指针）；缺省=onMounted 自动恢复
 // （失败静默清陈旧指针即可）。区分两条入口，避免用户点击打不开时既无反馈又误清指针。
+// 世代守卫：侧栏快速连点会话 A、B 会并发两次 loadHistory，A 若晚归会再次覆盖
+// messages/session/高亮，用户随后在错误的旧会话里续聊。加在共享组件内，5 个接入点同受益。
+// 亦被 beginStream() 作废：加载在途时发新消息，历史响应不得再写回。
 async function loadHistory(sessionId: string, opts?: { fromClick?: boolean; allowEmpty?: boolean }): Promise<boolean> {
+  return (await loadHistoryIn(sessionId, opts, gens.beginHistoryLoad())) === 'loaded'
+}
+
+// 回放结果区分「拿不到 transcript」与「等待期间被作废」：只有前者可以降级按 live 会话续看
+type HistoryLoadResult = 'loaded' | 'unavailable' | 'stale'
+async function loadHistoryIn(
+  sessionId: string,
+  opts: { fromClick?: boolean; allowEmpty?: boolean } | undefined,
+  generation: number
+): Promise<HistoryLoadResult> {
   const fromClick = opts?.fromClick === true
   const allowEmpty = opts?.allowEmpty === true
-  // 世代守卫：侧栏快速连点会话 A、B 会并发两次 loadHistory，A 若晚归会再次覆盖
-  // messages/session/高亮，用户随后在错误的旧会话里续聊。加在共享组件内，5 个接入点同受益。
-  // 亦被 beginStream() 作废：加载在途时发新消息，历史响应不得再写回。
-  const generation = gens.beginHistoryLoad()
   const stale = () => gens.isHistoryStale(generation)
   // 切会话前必须作废在途流世代：仅 abort reader 不够，断开 SSE 不停后端 run，旧 send()
   // 的 finally 仍会以有效世代执行 finalizeStreamAfterRun('completed')，提前触发宿主的
@@ -642,10 +651,10 @@ async function loadHistory(sessionId: string, opts?: { fromClick?: boolean; allo
   detachReaderForSwitch()
   try {
     const t = await fetchHistoryTranscript(sessionId)
-    if (stale()) return false
+    if (stale()) return 'stale'
     if (!t || !t.messages?.length) {
       if (allowEmpty && t) {
-        if (stale()) return false
+        if (stale()) return 'stale'
         abort?.abort()
         messages.value = []
         todos.value = []
@@ -654,14 +663,14 @@ async function loadHistory(sessionId: string, opts?: { fromClick?: boolean; allo
           saveLocalSession(t.session_id)
           emit('sessionReady', t.session_id, t.title ?? '')
         }
-        return true
+        return 'loaded'
       }
       // 空 transcript 多为会话仍在生成、首轮尚未落库：主动点击给可见提示，不再静默；不清指针
       if (fromClick) ElMessage.info('该会话暂无可回放内容（可能仍在生成，请稍后再试）')
       else clearLocalSession()
-      return false
+      return 'unavailable'
     }
-    if (stale()) return false
+    if (stale()) return 'stale'
     abort?.abort()
     messages.value = t.messages.map(restoreMsg)
     todos.value = []
@@ -671,13 +680,13 @@ async function loadHistory(sessionId: string, opts?: { fromClick?: boolean; allo
       emit('sessionReady', t.session_id, t.title ?? '')
     }
     scrollBottom(true)
-    return true
+    return 'loaded'
   } catch (err) {
-    if (stale()) return false
+    if (stale()) return 'stale'
     console.warn('[chat-history] 恢复历史失败', err)
     if (fromClick) ElMessage.error('历史加载失败：' + (err instanceof Error ? err.message : '请稍后重试'))
     else clearLocalSession()
-    return false
+    return 'unavailable'
   }
 }
 
@@ -1214,15 +1223,17 @@ async function attachRun(sessionId: string, runId?: string): Promise<boolean> {
     return false
   }
   // 流世代作废已下沉到 loadHistory 内部，不再重复
-  const loaded = await loadHistory(sessionId, { fromClick: true, allowEmpty: true })
-  if (!loaded && !(await adoptLiveSession(sessionId))) return false
+  if (!(await resumeSession(sessionId, { fromClick: true, allowEmpty: true }))) return false
   return runId ? attachRunById(sessionId, runId, -1) : attachActiveRunIfAny(-1)
 }
 
-// live-token-only 会话（历史绑定失败/首轮未落库）不在 Node 历史库：transcript 不可得不应阻断续看，
-// 降级用 live session 信息建最小本地状态。与载历史共用世代：等待期间用户已发新消息或切走，就不再写回。
-async function adoptLiveSession(sessionId: string): Promise<boolean> {
+// 续看一个会话：先回放历史；transcript 不可得时（live-token-only：历史绑定失败/首轮未落库，不在 Node 历史库）
+// 降级用 live 会话信息建最小本地状态。两段查询共用同一个历史世代——任一段等待期间用户发了新消息
+// （beginStream 作废历史世代）或切走，都不再写回，更不能降级覆盖新会话（dljy-web#121 审查 P1）。
+async function resumeSession(sessionId: string, opts: { fromClick?: boolean; allowEmpty?: boolean }): Promise<boolean> {
   const generation = gens.beginHistoryLoad()
+  const result = await loadHistoryIn(sessionId, opts, generation)
+  if (result !== 'unavailable') return result === 'loaded'
   const info = await getAgentSession(sessionId).catch(() => null)
   if (!info || gens.isHistoryStale(generation)) return false
   abort?.abort()
@@ -1372,9 +1383,7 @@ onMounted(async () => {
   } else if (props.resumeSessionId) {
     // 历史回放拿不到（live-token-only）时同样降级续看，并附着在途 run——工作台 `?session=`、
     // 侧边栏刷新恢复都走这里，不能因回放失败开出空白面板、run 在后台继续却看不见（dljy-web#119 审查 P2）
-    const resumed = await loadHistory(props.resumeSessionId, { allowEmpty: true })
-      || await adoptLiveSession(props.resumeSessionId)
-    if (resumed) await attachActiveRunIfAny(-1)
+    if (await resumeSession(props.resumeSessionId, { allowEmpty: true })) await attachActiveRunIfAny(-1)
   } else {
     // 首条自动发送依赖 agent-backend SSE：离线时跳过（由模板「未就绪」提示引导），避免首条即报错。
     if (props.initialQuestion.trim() && !agentOffline.value) {

@@ -77,8 +77,9 @@ vi.mock('@/components/agent/workbench/MorningBriefRail.vue', async () => {
       name: 'MorningBriefRailStub',
       props: { date: String },
       setup(props, { expose }) {
-        const g = globalThis as unknown as { __briefOrder: string[] }
-        expose({ ensureLoaded: async () => { g.__briefOrder.push(`ensureLoaded:${props.date}`) } })
+        const g = globalThis as unknown as { __briefOrder: string[]; __briefGate: Promise<void> | null }
+        // __briefGate：模拟预检取数很慢，用例放行后才完成
+        expose({ ensureLoaded: async () => { g.__briefOrder.push(`ensureLoaded:${props.date}`); await g.__briefGate } })
         return () => h('div', { class: 'brief-stub' }, props.date)
       }
     })
@@ -518,6 +519,7 @@ describe('AiSidebar · 专家命令（EC-01/02/03）', () => {
     g.__canWorkbench = true
     g.__user = { roleCode: 'TRADER', username: 'trader' }
     ;(globalThis as unknown as { __briefOrder: string[] }).__briefOrder = []
+    ;(globalThis as unknown as { __briefGate: Promise<void> | null }).__briefGate = null
     window.localStorage.clear()
     resetAiSidebarForTest()
     vi.mocked(listRuns).mockReset().mockResolvedValue([])
@@ -538,6 +540,26 @@ describe('AiSidebar · 专家命令（EC-01/02/03）', () => {
     expect(k.asks).toEqual(['2026-09-17'])
     expect(w.find('.ai-title-text').text()).toBe('交易晨报 · 2026-09-17')
     expect(push).not.toHaveBeenCalled()
+  })
+
+  it('晨报预检取数期间用户又发起了别的会话：预检回来后不把晨报日期发进新会话（dljy-web#121 审查 P1）', async () => {
+    let release: () => void = () => {}
+    ;(globalThis as unknown as { __briefGate: Promise<void> | null }).__briefGate = new Promise((r) => { release = r })
+    await setup()
+    const ai = useAiSidebar()
+    ai.startExpert(buildExpertLaunch(findEntry('morning_brief')!, '2026-09-17', '云南省'))
+    await settle()
+    const brief = live()[0]
+    expect(brief.asks).toEqual([])
+    ai.startExpert(buildExpertLaunch(findEntry('strategic_qa')!, '新能源渗透率上升对价差有什么影响', '云南省'))
+    await settle()
+    const next = live()[0]
+    expect(next).not.toBe(brief)
+    expect(next.asks).toEqual(['新能源渗透率上升对价差有什么影响'])
+    release()
+    await settle()
+    expect(next.asks).toEqual(['新能源渗透率上升对价差有什么影响'])
+    expect(brief.asks).toEqual([])
   })
 
   it('/战略问答 不带问题：新开会话但不发问，对话内可查看数据缺口清单', async () => {
