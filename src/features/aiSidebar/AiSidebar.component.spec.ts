@@ -462,6 +462,7 @@ describe('AiSidebar · 头部与输入区', () => {
     await settle()
     await w.find('.ai-runs-badge').trigger('click')
     await settle()
+    expect(w.find('.run-meta').text()).toContain('第 1 轮') // pi 的 turn_seq 从 1 起算
     await w.find('.run-main').trigger('click')
     await settle()
     expect(fetchPiSessionMeta).not.toHaveBeenCalled()

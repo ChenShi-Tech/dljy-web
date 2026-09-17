@@ -294,6 +294,7 @@ function fmtTime(ts: number) {
 function fmtRunTime(ts: number) {
   return fmtTime(ts > 1_000_000_000_000 ? ts : ts * 1000)
 }
+// 轮次沿用 pi 的 turn_seq（从 1 起算）；旧底座从 0 起算时模板里曾 +1，切到 pi 后会多显示一轮
 function runSource(run: AgentRunSummary) {
   return historySourceLabel(run.page_key) ?? run.page_key ?? '未标注来源'
 }
@@ -407,7 +408,7 @@ function goConfig() {
               <span class="run-copy">
                 <span class="run-title">{{ runTitle(run) }}</span>
                 <span class="run-meta">
-                  {{ runSource(run) }} · 第 {{ run.turn_seq + 1 }} 轮 · seq {{ run.last_seq }} · {{ fmtRunTime(run.created_at) }}
+                  {{ runSource(run) }} · 第 {{ run.turn_seq }} 轮 · seq {{ run.last_seq }} · {{ fmtRunTime(run.created_at) }}
                 </span>
               </span>
             </button>
