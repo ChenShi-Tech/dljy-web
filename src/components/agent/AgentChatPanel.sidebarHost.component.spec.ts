@@ -38,6 +38,7 @@ vi.mock('@/services/agent/agentClient', async (importOriginal) => {
     listHistorySessions: vi.fn(async () => []),
     getActiveRun: vi.fn(async () => null),
     getAgentSession: vi.fn(async () => null),
+    attachRunStream: vi.fn(() => new Promise(() => {})),
     probeAgentService: vi.fn(async () => 'online'),
     pingAgentService: vi.fn(async () => true),
     createAgentSession: vi.fn(async () => ({ id: 's_chk', scenario: g.__sessionScenario, title: '', status: 'idle' })),
@@ -199,6 +200,15 @@ describe('AgentChatPanel · 审批卡自动执行开关', () => {
     await flushPromises()
     expect(setSessionAutoApprove).toHaveBeenLastCalledWith('s_chk', false)
     expect(w.find('[data-testid="auto-approve-active"]').exists()).toBe(false)
+
+    // 从运行中列表带 run id 切过来（附着在途 run 的路径）同样按服务端同步（dljy-web#121 第四轮审查 P1）
+    vi.mocked(fetchHistoryTranscript).mockResolvedValueOnce({
+      session_id: 's_chk', scenario: 'declaration_checkup', title: '申报体检', archived: false,
+      messages: [{ seq: 1, role: 'user', text: '体检', segs: [] }]
+    })
+    const viaRun = await mountKernel({ scenario: 'declaration_checkup', approvalAutoApprove: true, resumeSessionId: 's_chk', resumeRunId: 'r_live' })
+    await flushPromises()
+    expect(viaRun.find('[data-testid="auto-approve-active"]').exists()).toBe(true)
 
     // 宿主没开启该能力（如工作台）时不查询、不显示
     vi.mocked(fetchPiSessionMeta).mockClear()

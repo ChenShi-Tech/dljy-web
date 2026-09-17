@@ -21,6 +21,10 @@ export async function fetchDataGaps(): Promise<string> {
 
 // 自动执行授权开关（#1527）：按会话生效、服务重启失效（授权不持久红线）。
 // 返回服务端生效后的最终态，开关 UI 以此为准，失败时由调用方回滚显示。
+// 每个会话的授权世代：人每成功开启一次就 +1。在途的撤销重试醒来时发现世代变了，说明之后又重新授权，
+// 必须放弃——否则旧的撤销会悄悄关掉新的授权，而界面仍显示已开启（dljy-web#121 审查 P2）
+const grantGeneration = new Map<string, number>()
+
 export async function setSessionAutoApprove(sessionId: string, enabled: boolean): Promise<boolean> {
   const res = await fetch(`${PI_AGENT_BASE}/sessions/${encodeURIComponent(sessionId)}/auto-approve`, {
     method: 'POST',
@@ -29,7 +33,9 @@ export async function setSessionAutoApprove(sessionId: string, enabled: boolean)
     signal: timeoutSignal(PI_POC_TIMEOUT_MS)
   })
   if (!res.ok) throw new Error(`HTTP ${res.status}`)
-  return ((await res.json()) as { auto_approve?: boolean }).auto_approve === true
+  const on = ((await res.json()) as { auto_approve?: boolean }).auto_approve === true
+  if (on) grantGeneration.set(sessionId, (grantGeneration.get(sessionId) ?? 0) + 1)
+  return on
 }
 
 // 撤销自动执行授权并按退避重试（切走会话或卸载面板时调用）。此时发起它的界面往往已经不在了，
@@ -41,7 +47,10 @@ export async function revokeSessionAutoApprove(
 ): Promise<boolean> {
   const delays = opts.delaysMs ?? [1000, 3000, 10000]
   const sleep = opts.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)))
+  const generation = grantGeneration.get(sessionId) ?? 0
   for (let attempt = 0; ; attempt += 1) {
+    // 期间用户又重新开启了授权：这次撤销已被取代，不能再发 enabled:false
+    if ((grantGeneration.get(sessionId) ?? 0) !== generation) return false
     try {
       if ((await setSessionAutoApprove(sessionId, false)) === false) return true
     } catch (err) {

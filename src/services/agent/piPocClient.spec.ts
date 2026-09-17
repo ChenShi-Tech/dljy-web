@@ -107,6 +107,19 @@ describe('revokeSessionAutoApprove（切走会话/卸载时撤销授权，失败
     expect(sleep.mock.calls.map((c) => c[0])).toEqual([10, 20])
   })
 
+  it('重试等待期间用户又重新开启了授权：旧的撤销放弃，不关掉新的授权（dljy-web#121 第四轮审查 P2）', async () => {
+    vi.stubGlobal('fetch', fetchMock)
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ detail: 'x' }, 502)) // 撤销第一次失败
+      .mockResolvedValueOnce(jsonResponse({ auto_approve: true })) // 用户重新开启成功
+    const sleep = vi.fn(async (_ms: number) => {
+      await expect(setSessionAutoApprove('s_regrant', true)).resolves.toBe(true)
+    })
+    await expect(revokeSessionAutoApprove('s_regrant', { sleep, delaysMs: [10, 20] })).resolves.toBe(false)
+    const disables = fetchMock.mock.calls.filter((c) => JSON.parse((c as [string, RequestInit])[1].body as string).enabled === false)
+    expect(disables).toHaveLength(1) // 只有最初失败的那一次
+  })
+
   it('重试用尽仍失败：返回 false（用户重新打开会话时按服务端状态仍能看到并关闭）', async () => {
     fetchMock.mockResolvedValue(jsonResponse({ detail: 'x' }, 503))
     vi.stubGlobal('fetch', fetchMock)
