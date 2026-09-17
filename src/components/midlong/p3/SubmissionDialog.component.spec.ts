@@ -7,14 +7,25 @@ import { ElDatePicker, ElTimePicker } from 'element-plus'
 import { mount } from '@/test/mount'
 import type { TradeProposalDetail } from '@/services/midlong/midlongP3Types'
 
-const hoisted = vi.hoisted(() => ({ registerSubmission: vi.fn(), addReceipt: vi.fn() }))
+const hoisted = vi.hoisted(() => ({ registerSubmission: vi.fn(), addReceipt: vi.fn(), fileToBase64: vi.fn(), companyRef: null as null | { value: string } }))
 vi.mock('element-plus', async (orig) => ({ ...(await orig<typeof import('element-plus')>()), ElMessage: { success: vi.fn(), error: vi.fn() } }))
 vi.mock('@/services/midlong/midlongApi', () => ({ midlongFailureOf: (e: unknown) => ({ message: (e as Error).message }) }))
 vi.mock('@/services/midlong/midlongP3Api', () => ({ registerSubmission: hoisted.registerSubmission, addReceipt: hoisted.addReceipt }))
+vi.mock('@/services/midlong/midlongFormat', async (orig) => ({ ...(await orig<typeof import('@/services/midlong/midlongFormat')>()), fileToBase64: hoisted.fileToBase64 }))
+vi.mock('@/services/company/companyContext', async () => {
+  const selectedCompanyId = (await import('vue')).ref('comp-a')
+  hoisted.companyRef = selectedCompanyId
+  return { selectedCompanyId }
+})
+vi.mock('@/services/region/regionContext', async () => ({ currentRegion: (await import('vue')).ref({ id: 'yunnan' }) }))
 
 import SubmissionDialog from './SubmissionDialog.vue'
 
-afterEach(() => vi.clearAllMocks())
+afterEach(() => {
+  vi.clearAllMocks()
+  if (hoisted.companyRef) hoisted.companyRef.value = 'comp-a'
+  document.body.innerHTML = ''
+})
 enableAutoUnmount(afterEach)
 
 const proposal = { id: 42, rowVersion: 3 } as TradeProposalDetail
@@ -44,5 +55,28 @@ describe('外部提交登记：提交时间', () => {
     expect(hoisted.registerSubmission).toHaveBeenCalledWith(42, expect.objectContaining({ submittedAt: '2026-09-01 10:30', submittedByName: '测试交易员' }))
     expect(dialog().textContent).toContain('无回执（仅登记提交事实）')
     expect(dialog().textContent).not.toMatch(/平台已受理(?!，也不形成持仓)/)
+  }, FORM_TIMEOUT)
+  it('补回执时读取回执文件期间切换公司：放弃提交并提示，不发写请求（不会用新公司补旧公司的回执）', async () => {
+    let resolveFile: (v: string) => void = () => {}
+    hoisted.fileToBase64.mockImplementation(() => new Promise((resolve) => { resolveFile = resolve }))
+    const submission = { id: 9, proposalId: 42 } as never
+    const w = mount(SubmissionDialog, { props: { modelValue: true, mode: 'receipt', proposal, submission }, attachTo: document.body })
+    await flushPromises()
+    const input = document.body.querySelector('input[data-test="receipt-file"]') as HTMLInputElement
+    Object.defineProperty(input, 'files', { value: [new File(['回执'], '回执.png', { type: 'image/png' })] })
+    input.dispatchEvent(new Event('change'))
+    await flushPromises()
+    const button = [...document.body.querySelectorAll('.el-dialog__footer button')].find((b) => b.textContent?.trim() === '登记') as HTMLButtonElement
+    expect(button.disabled).toBe(false)
+    button.click()
+    await flushPromises()
+    expect(hoisted.fileToBase64).toHaveBeenCalledTimes(1)
+    hoisted.companyRef!.value = 'comp-b'
+    resolveFile('cmVjZWlwdA==')
+    await flushPromises()
+    expect(hoisted.addReceipt).not.toHaveBeenCalled()
+    expect(hoisted.registerSubmission).not.toHaveBeenCalled()
+    expect(document.body.textContent).toContain('公司或地区已切换，已放弃本次提交')
+    w.unmount()
   }, FORM_TIMEOUT)
 })

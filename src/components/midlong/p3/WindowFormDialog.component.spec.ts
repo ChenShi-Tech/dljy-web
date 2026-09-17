@@ -8,14 +8,24 @@ import { enableAutoUnmount, flushPromises } from '@vue/test-utils'
 import { ElDatePicker, ElTimePicker } from 'element-plus'
 import { mount } from '@/test/mount'
 
-const hoisted = vi.hoisted(() => ({ registerWindow: vi.fn(), correctWindow: vi.fn() }))
+const hoisted = vi.hoisted(() => ({ registerWindow: vi.fn(), correctWindow: vi.fn(), fileToBase64: vi.fn(), companyRef: null as null | { value: string } }))
 vi.mock('element-plus', async (orig) => ({ ...(await orig<typeof import('element-plus')>()), ElMessage: { success: vi.fn(), error: vi.fn() } }))
 vi.mock('@/services/midlong/midlongApi', () => ({ midlongFailureOf: (e: unknown) => ({ message: (e as Error).message }) }))
 vi.mock('@/services/midlong/midlongP3Api', () => ({ registerWindow: hoisted.registerWindow, correctWindow: hoisted.correctWindow }))
+vi.mock('@/services/midlong/midlongFormat', async (orig) => ({ ...(await orig<typeof import('@/services/midlong/midlongFormat')>()), fileToBase64: hoisted.fileToBase64 }))
+vi.mock('@/services/company/companyContext', async () => {
+  const selectedCompanyId = (await import('vue')).ref('comp-a')
+  hoisted.companyRef = selectedCompanyId
+  return { selectedCompanyId }
+})
+vi.mock('@/services/region/regionContext', async () => ({ currentRegion: (await import('vue')).ref({ id: 'yunnan' }) }))
 
 import WindowFormDialog from './WindowFormDialog.vue'
 
-afterEach(() => vi.clearAllMocks())
+afterEach(() => {
+  vi.clearAllMocks()
+  if (hoisted.companyRef) hoisted.companyRef.value = 'comp-a'
+})
 enableAutoUnmount(afterEach)
 
 async function openForm() {
@@ -67,5 +77,21 @@ describe('公告登记表单：申报、确认时间', () => {
     await submit().trigger('click')
     await flushPromises()
     expect(hoisted.registerWindow).toHaveBeenCalledWith(expect.objectContaining({ declarationClosesAt: '2031-04-20 17:00', declarationOpensAt: null, confirmationAt: null }))
+  }, FORM_TIMEOUT)
+  it('带附件登记时读取文件期间切换公司：放弃保存并提示，不发写请求（不会用新公司提交旧公司的公告）', async () => {
+    let resolveFile: (v: string) => void = () => {}
+    hoisted.fileToBase64.mockImplementation(() => new Promise((resolve) => { resolveFile = resolve }))
+    const { w, submit } = await openForm()
+    const input = w.find('input[type="file"]')
+    Object.defineProperty(input.element, 'files', { value: [new File(['公告原文'], '公告.pdf', { type: 'application/pdf' })] })
+    await input.trigger('change')
+    await submit().trigger('click')
+    expect(hoisted.fileToBase64).toHaveBeenCalledTimes(1)
+    hoisted.companyRef!.value = 'comp-b'
+    resolveFile('Y29udGVudA==')
+    await flushPromises()
+    expect(hoisted.registerWindow).not.toHaveBeenCalled()
+    expect(hoisted.correctWindow).not.toHaveBeenCalled()
+    expect(w.text()).toContain('公司或地区已切换，已放弃本次提交')
   }, FORM_TIMEOUT)
 })

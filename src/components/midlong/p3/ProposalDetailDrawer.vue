@@ -14,6 +14,7 @@ import {
   recheckProposalWindow,
 } from '@/services/midlong/midlongP3Api'
 import { midlongFailureOf } from '@/services/midlong/midlongApi'
+import { MidlongScopeChangedError, captureScope } from '@/services/midlong/midlongP3Scope'
 import { selectedCompanyId } from '@/services/company/companyContext'
 import { currentRegion } from '@/services/region/regionContext'
 import { createLoadGuard, downloadBase64, downloadCsv, fmtAmount, fmtPrice, fmtQuantity } from '@/services/midlong/midlongFormat'
@@ -42,6 +43,7 @@ const guard = createLoadGuard()
 // 取数代次按「公司 + 地区 + 方案」判断：切换公司或地区后，旧范围的迟到结果一律丢弃，不显示成新范围的方案。
 const scopeKey = () => `${selectedCompanyId.value}|${currentRegion.value.id}`
 const loadKey = () => `${scopeKey()}|${props.proposalId}`
+let detailScope = ''
 
 async function load() {
   if (!props.proposalId) return
@@ -55,6 +57,7 @@ async function load() {
     const d = await fetchProposal(props.proposalId)
     if (!guard.isCurrent(token, key)) return
     detail.value = d
+    detailScope = scopeKey()
   } catch (e) {
     if (!guard.isCurrent(token, key)) return
     failure.value = midlongFailureOf(e).message
@@ -91,12 +94,16 @@ async function run(label: string, action: () => Promise<unknown>, success: strin
   if (busy.value) return
   busy.value = label
   actionError.value = ''
+  // 方案详情属于加载它时的范围；范围已变化（详情会被清空，但点击可能恰在清空前）时不发写请求。
+  const scope = captureScope()
   try {
+    if (detail.value && scope.key !== detailScope) throw new MidlongScopeChangedError()
     await action()
     ElMessage.success(success)
     if (detail.value) emit('changed', detail.value.id)
     await load()
   } catch (e) {
+    if (e instanceof MidlongScopeChangedError) { actionError.value = e.message; return }
     const f = midlongFailureOf(e)
     actionError.value = confirmFailureText(f.errorCode, f.message, f.details)
   } finally {

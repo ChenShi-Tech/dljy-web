@@ -7,6 +7,7 @@ import { ElMessage } from 'element-plus'
 import MidlongNotice from '../MidlongNotice.vue'
 import { createPlan, createPlanRevision, updatePlanDraft, type PlanWriteResult } from '@/services/midlong/midlongP3Api'
 import { midlongFailureOf } from '@/services/midlong/midlongApi'
+import { MidlongScopeChangedError, captureScope } from '@/services/midlong/midlongP3Scope'
 import { PLANNING_NOTICES, PLAN_PERIOD_TYPES, PLAN_PERIOD_TYPE_LABELS, isPeriodKey, type PlanPeriodType, type SalesPlanListRow, type SalesPlanRevision } from '@/services/midlong/midlongP3Types'
 import { TAX_BASES, TAX_BASIS_LABELS, type MidlongSubject, type TaxBasis } from '@/services/midlong/midlongTypes'
 
@@ -31,8 +32,12 @@ function fillFrom(revision: SalesPlanRevision | null, keepReason: boolean) {
   form.changeReason = keepReason ? (revision?.changeReason ?? '') : ''
 }
 
+// 打开表单时的公司/地区范围：主体与目标 ID 属于这个范围，提交前核对仍是它。
+let openScope = captureScope()
+
 watch(() => props.modelValue, (open) => {
   if (!open) return
+  openScope = captureScope()
   Object.assign(form, blank())
   error.value = ''
   if (props.plan) {
@@ -59,6 +64,7 @@ async function submit() {
     priceTaxBasis: form.priceTaxBasis, basisNote: text(form.basisNote), ownerName: text(form.ownerName), changeReason: text(form.changeReason),
   }
   try {
+    openScope.assertCurrent()
     let result: PlanWriteResult
     if (props.mode === 'create') {
       result = await createPlan({ ...revision, subjectId: form.subjectId as number, periodType: form.periodType, periodKey: form.periodKey })
@@ -73,6 +79,7 @@ async function submit() {
     emit('saved', result)
     emit('update:modelValue', false)
   } catch (e) {
+    if (e instanceof MidlongScopeChangedError) { error.value = e.message; return }
     const f = midlongFailureOf(e)
     if (f.errorCode === 'BUSINESS_KEY_CONFLICT') {
       // 同主体同交割期已有目标：不能另建一份，只能在原目标上「发起更改」保留历史版本。

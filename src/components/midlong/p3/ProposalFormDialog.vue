@@ -7,6 +7,7 @@ import { ElMessage } from 'element-plus'
 import MidlongNotice from '../MidlongNotice.vue'
 import { createProposal, updateProposalDraft, type ProposalWriteResult } from '@/services/midlong/midlongP3Api'
 import { midlongFailureOf } from '@/services/midlong/midlongApi'
+import { MidlongScopeChangedError, captureScope } from '@/services/midlong/midlongP3Scope'
 import { PLANNING_NOTICES, type TradeProposalDetail, type TradingWindowListRow } from '@/services/midlong/midlongP3Types'
 import {
   PRICE_COMPONENTS, PRICE_COMPONENT_LABELS, PRODUCT_KINDS, PRODUCT_KIND_LABELS, TAX_BASES, TAX_BASIS_LABELS, TRADE_METHODS, TRADE_METHOD_LABELS,
@@ -25,8 +26,12 @@ const form = reactive(blank())
 const saving = ref(false)
 const error = ref('')
 
+// 打开表单时的公司/地区范围：主体、公告、方案 ID 属于这个范围，提交前核对仍是它。
+let openScope = captureScope()
+
 watch(() => props.modelValue, (open) => {
   if (!open) return
+  openScope = captureScope()
   Object.assign(form, blank())
   error.value = ''
   const p = props.proposal
@@ -64,6 +69,7 @@ async function submit() {
     segments: form.segments.map((s) => ({ deliveryMonth: s.deliveryMonth, quantity: s.quantity.trim() })),
   }
   try {
+    openScope.assertCurrent()
     const result = props.proposal
       ? await updateProposalDraft(props.proposal.id, { ...input, expectedRowVersion: props.proposal.rowVersion })
       : await createProposal(input)
@@ -71,7 +77,7 @@ async function submit() {
     emit('saved', result)
     emit('update:modelValue', false)
   } catch (e) {
-    error.value = midlongFailureOf(e).message
+    error.value = (e instanceof MidlongScopeChangedError ? e.message : midlongFailureOf(e).message)
   } finally {
     saving.value = false
   }

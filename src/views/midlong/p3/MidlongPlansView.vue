@@ -17,6 +17,7 @@ import { selectedCompanyId } from '@/services/company/companyContext'
 import { currentRegion } from '@/services/region/regionContext'
 import { CompanyNotSelectedError, fetchCapabilities, fetchSubjects, midlongFailureOf } from '@/services/midlong/midlongApi'
 import { confirmPlan, fetchAllWindows, fetchPlanProgress, fetchProposals } from '@/services/midlong/midlongP3Api'
+import { captureScope } from '@/services/midlong/midlongP3Scope'
 import { createLoadGuard, fmtPrice, fmtQuantity } from '@/services/midlong/midlongFormat'
 import {
   arrangeableLabel, beijingDateTime, completionLabel, confirmFailureText, planPeriodLabel, proposalStatusTag, remainingLabel, verificationTag,
@@ -32,14 +33,22 @@ const route = useRoute()
 const router = useRouter()
 
 type LoadState = 'loading' | 'ready' | 'no-company' | 'unsupported' | 'disabled' | 'module-off' | 'denied' | 'failed'
+/** 页面级状态只管能力与权限；两个标签页各自加载、各自报错，一个失败不清空另一个已加载的数据。 */
 const state = ref<LoadState>('loading')
 const failureText = ref('')
 const capabilities = ref<MidlongCapabilities | null>(null)
-const report = ref<PlanProgressReport | null>(null)
-const proposals = ref<TradeProposalDetail[]>([])
-const proposalTotal = ref(0)
 const PAGE_SIZE = 50
 const subjects = ref<MidlongSubject[]>([])
+const subjectsError = ref('')
+
+const report = ref<PlanProgressReport | null>(null)
+const targetsLoading = ref(false)
+const targetsError = ref('')
+const proposals = ref<TradeProposalDetail[]>([])
+const proposalTotal = ref(0)
+const proposalsLoading = ref(false)
+const proposalsError = ref('')
+const proposalsLoaded = ref(false)
 const windows = ref<TradingWindowListRow[]>([])
 
 const q = (key: string) => (typeof route.query[key] === 'string' ? (route.query[key] as string) : '')
@@ -50,53 +59,110 @@ const filters = reactive({
   page: pageOfQuery('page'), proposalPage: pageOfQuery('proposalPage'),
 })
 
+// 每个标签页的「筛选条件」（不含页码）。条件与上次取数不同就回到第一页：无论改条件的入口是查询按钮、
+// 查看历史、回到当前还是切换标签，都不会拿着旧页码请求新条件下不存在的页（例如只剩一行的历史视图第 2 页）。
+const targetsFilterKey = () => JSON.stringify([filters.year, filters.subjectId, filters.periodType, filters.asOf, filters.planId])
+const proposalsFilterKey = () => JSON.stringify([filters.status, filters.subjectId])
+let lastTargetsFilterKey = targetsFilterKey()
+let lastProposalsFilterKey = proposalsFilterKey()
+
 const canWrite = computed(() => Boolean(capabilities.value?.canWrite))
-const guard = createLoadGuard()
+const pageGuard = createLoadGuard()
+const targetsGuard = createLoadGuard()
+const proposalsGuard = createLoadGuard()
 const scopeKey = () => `${selectedCompanyId.value}|${currentRegion.value.id}`
-const contextKey = () => `${scopeKey()}|${JSON.stringify(filters)}`
 let loadedScope = ''
 
+async function loadTargets() {
+  if (targetsFilterKey() !== lastTargetsFilterKey) filters.page = 1
+  lastTargetsFilterKey = targetsFilterKey()
+  const key = `${scopeKey()}|${targetsFilterKey()}|${filters.page}`
+  const token = targetsGuard.begin(key)
+  targetsLoading.value = true
+  targetsError.value = ''
+  try {
+    const progress = await fetchPlanProgress({
+      year: filters.year || undefined, subjectId: filters.subjectId || undefined, periodType: filters.periodType || undefined,
+      asOf: filters.asOf || undefined, planId: filters.planId || undefined, page: filters.page, pageSize: PAGE_SIZE,
+    })
+    if (!targetsGuard.isCurrent(token, key)) return
+    report.value = progress
+  } catch (error) {
+    if (!targetsGuard.isCurrent(token, key)) return
+    // 只清本标签的数据：失败时不显示旧条件下的数值，方案标签已加载的数据不受影响。
+    report.value = null
+    targetsError.value = midlongFailureOf(error).message
+  } finally {
+    if (targetsGuard.isCurrent(token, key)) targetsLoading.value = false
+  }
+}
+
+async function loadProposals() {
+  if (proposalsFilterKey() !== lastProposalsFilterKey) filters.proposalPage = 1
+  lastProposalsFilterKey = proposalsFilterKey()
+  const key = `${scopeKey()}|${proposalsFilterKey()}|${filters.proposalPage}`
+  const token = proposalsGuard.begin(key)
+  proposalsLoading.value = true
+  proposalsError.value = ''
+  try {
+    const page = await fetchProposals({ status: filters.status || undefined, subjectId: filters.subjectId || undefined, page: filters.proposalPage, pageSize: PAGE_SIZE })
+    if (!proposalsGuard.isCurrent(token, key)) return
+    proposals.value = page.rows
+    proposalTotal.value = page.total
+    proposalsLoaded.value = true
+  } catch (error) {
+    if (!proposalsGuard.isCurrent(token, key)) return
+    proposals.value = []
+    proposalTotal.value = 0
+    proposalsError.value = midlongFailureOf(error).message
+  } finally {
+    if (proposalsGuard.isCurrent(token, key)) proposalsLoading.value = false
+  }
+}
+
+function loadActiveTab() {
+  return tab.value === 'proposals' ? loadProposals() : loadTargets()
+}
+
 async function load() {
-  const token = guard.begin(contextKey())
-  if (scopeKey() !== loadedScope) { report.value = null; proposals.value = [] }
-  loadedScope = scopeKey()
+  const key = scopeKey()
+  const token = pageGuard.begin(key)
+  if (key !== loadedScope) {
+    report.value = null
+    proposals.value = []
+    proposalTotal.value = 0
+    proposalsLoaded.value = false
+  }
+  loadedScope = key
   state.value = 'loading'
   try {
     const caps = await fetchCapabilities()
-    if (!guard.isCurrent(token, contextKey())) return
+    if (!pageGuard.isCurrent(token, scopeKey())) return
     capabilities.value = caps
     if (!caps.enabled) { state.value = 'disabled'; return }
     if (!caps.regionSupported) { state.value = 'unsupported'; return }
     if (!caps.modules.plans) { state.value = 'module-off'; return }
-    const progressQuery = { year: filters.year || undefined, subjectId: filters.subjectId || undefined, periodType: filters.periodType || undefined, asOf: filters.asOf || undefined, planId: filters.planId || undefined, page: filters.page, pageSize: PAGE_SIZE }
-    const [progress, proposalPage, subjectRows, windowRows] = await Promise.all([
-      fetchPlanProgress(progressQuery),
-      fetchProposals({ status: filters.status || undefined, subjectId: filters.subjectId || undefined, page: filters.proposalPage, pageSize: PAGE_SIZE }),
-      fetchSubjects(),
-      caps.modules.execution ? fetchAllWindows() : Promise.resolve([] as TradingWindowListRow[]),
-    ])
-    if (!guard.isCurrent(token, contextKey())) return
-    report.value = progress
-    proposals.value = proposalPage.rows
-    proposalTotal.value = proposalPage.total
-    subjects.value = subjectRows
-    windows.value = windowRows
     state.value = 'ready'
   } catch (error) {
-    if (!guard.isCurrent(token, contextKey())) return
-    report.value = null
-    proposals.value = []
+    if (!pageGuard.isCurrent(token, scopeKey())) return
     if (error instanceof CompanyNotSelectedError) { state.value = 'no-company'; return }
     const f = midlongFailureOf(error)
     state.value = f.status === 401 || f.status === 403 ? 'denied' : 'failed'
     failureText.value = f.message
+    return
   }
+  // 交易主体只用于筛选与表单，加载失败单独提示，不影响完成情况与方案列表。
+  subjectsError.value = ''
+  fetchSubjects().then((rows) => {
+    if (pageGuard.isCurrent(token, scopeKey())) subjects.value = rows
+  }).catch((error) => {
+    if (pageGuard.isCurrent(token, scopeKey())) subjectsError.value = midlongFailureOf(error).message
+  })
+  await loadActiveTab()
 }
 
-/** 改筛选条件后回到第一页。 */
+/** 查询按钮：条件变化由各标签的筛选键自动回到第一页。 */
 function search() {
-  filters.page = 1
-  filters.proposalPage = 1
   apply()
 }
 
@@ -104,7 +170,14 @@ function apply() {
   const next: Record<string, string> = { tab: tab.value }
   for (const [k, v] of Object.entries(filters)) if (v) next[k] = String(v)
   void router.replace({ query: next })
-  void load()
+  if (state.value === 'ready') void loadActiveTab()
+  else void load()
+}
+
+function changePage(target: 'targets' | 'proposals', page: number) {
+  if (target === 'targets') filters.page = page
+  else filters.proposalPage = page
+  apply()
 }
 
 onMounted(load)
@@ -116,7 +189,11 @@ watch([selectedCompanyId, () => currentRegion.value.id], () => {
   proposalDialog.open = false
   planActionError.value = ''
   Object.assign(filters, { subjectId: '', planId: '', asOf: '', page: 1, proposalPage: 1 })
-  apply()
+  lastTargetsFilterKey = targetsFilterKey()
+  lastProposalsFilterKey = proposalsFilterKey()
+  const next: Record<string, string> = { tab: tab.value }
+  void router.replace({ query: next })
+  void load()
 })
 
 function showHistory(payload: { planId: number; asOf: string; revisionNo: number }) {
@@ -147,7 +224,7 @@ async function doConfirmPlan(row: PlanProgressRow) {
   try {
     await confirmPlan(row.id, row.rowVersion)
     ElMessage.success(`目标 ${planPeriodLabel(row.periodType, row.periodKey)} 已确认新版本`)
-    await load()
+    await loadTargets()
   } catch (e) {
     const f = midlongFailureOf(e)
     planActionError.value = confirmFailureText(f.errorCode, f.message, f.details)
@@ -167,11 +244,36 @@ const proposalDrawer = reactive({ open: false, proposalId: null as number | null
 function openProposal(id: number) {
   Object.assign(proposalDrawer, { open: true, proposalId: id })
 }
-function editProposal(proposal: TradeProposalDetail) {
+const windowsLoading = ref(false)
+/**
+ * 打开方案表单时才加载公告候选（不在进入页面时加载）：公告接口失败只影响候选，不影响目标与方案列表；
+ * 加载期间切换了公司就放弃打开，候选与表单都属于原公司。
+ */
+async function openProposalForm(proposal: TradeProposalDetail | null) {
+  if (windowsLoading.value) return
+  const scope = captureScope()
+  windows.value = []
+  if (capabilities.value?.modules.execution) {
+    windowsLoading.value = true
+    try {
+      const rows = await fetchAllWindows()
+      if (!scope.isCurrent()) return
+      windows.value = rows
+    } catch (error) {
+      if (!scope.isCurrent()) return
+      ElMessage.warning(`公告候选加载失败：${midlongFailureOf(error).message}；可先保存不关联公告的草稿`)
+    } finally {
+      windowsLoading.value = false
+    }
+  }
+  if (!scope.isCurrent()) return
   Object.assign(proposalDialog, { open: true, proposal })
 }
+function editProposal(proposal: TradeProposalDetail) {
+  void openProposalForm(proposal)
+}
 async function onProposalSaved(result: { proposalId: number }) {
-  await load()
+  await loadProposals()
   openProposal(result.proposalId)
 }
 
@@ -186,7 +288,7 @@ const segmentSummary = (p: TradeProposalDetail) => p.segments.map((s) => `${s.de
     </div>
     <CompanyScopeBar />
 
-    <div v-if="state === 'loading' && !report" v-loading="true" class="ml-placeholder" />
+    <div v-if="state === 'loading'" v-loading="true" class="ml-placeholder" />
     <MidlongNotice v-else-if="state === 'no-company'" tone="warn" title="请选择公司">当前地区尚未选择有效公司。</MidlongNotice>
     <MidlongNotice v-else-if="state === 'unsupported'" tone="info" title="当前地区未开通中长期售电模块">{{ capabilities?.reason }}。不回退读取其他地区数据。</MidlongNotice>
     <MidlongNotice v-else-if="state === 'disabled'" tone="warn" title="模块已暂停使用">已确认合同的版本与写保护保持不变。</MidlongNotice>
@@ -194,11 +296,17 @@ const segmentSummary = (p: TradeProposalDetail) => p.segments.map((s) => `${s.de
     <MidlongNotice v-else-if="state === 'denied'" tone="danger" title="无权访问">{{ failureText }}</MidlongNotice>
     <MidlongNotice v-else-if="state === 'failed'" tone="danger" title="计划加载失败（未显示任何替代数值）">{{ failureText }} <el-button link type="primary" @click="load">重试</el-button></MidlongNotice>
 
-    <template v-if="report && (state === 'ready' || state === 'loading')">
+    <template v-if="state === 'ready'">
       <MidlongNotice tone="info" title="口径">{{ PLANNING_NOTICES.targetNature }} {{ PLANNING_NOTICES.occupation }}</MidlongNotice>
+      <MidlongNotice v-if="subjectsError" tone="warn" title="交易主体加载失败">{{ subjectsError }}（筛选与表单暂不能选择主体）</MidlongNotice>
 
       <el-tabs v-model="tab" @tab-change="apply">
         <el-tab-pane label="目标与完成情况" name="targets">
+          <div v-if="targetsLoading && !report" v-loading="true" class="ml-placeholder" />
+          <MidlongNotice v-if="targetsError" tone="danger" title="完成情况加载失败（未显示任何替代数值）" data-test="targets-error">
+            {{ targetsError }} <el-button link type="primary" @click="loadTargets">重试</el-button>
+          </MidlongNotice>
+          <template v-if="report">
           <div class="ml-filters">
             <el-date-picker v-model="filters.year" type="year" value-format="YYYY" placeholder="交割年" style="width: 120px" />
             <el-select v-model="filters.subjectId" placeholder="交易主体" clearable filterable style="width: 170px">
@@ -261,9 +369,10 @@ const segmentSummary = (p: TradeProposalDetail) => p.segments.map((s) => `${s.de
           </el-table>
           <el-pagination
             v-if="report.total > report.pageSize" class="ml-pagination" layout="total, prev, pager, next" :total="report.total" :page-size="report.pageSize"
-            :current-page="report.page" @current-change="(p: number) => { filters.page = p; apply() }"
+            :current-page="report.page" @current-change="(p: number) => changePage('targets', p)"
           />
           <div class="ml-foot">计算时点 {{ beijingDateTime(report.asOf) }} · 数据生成于 {{ beijingDateTime(report.generatedAt) }}</div>
+          </template>
         </el-tab-pane>
 
         <el-tab-pane label="交易方案" name="proposals">
@@ -275,10 +384,13 @@ const segmentSummary = (p: TradeProposalDetail) => p.segments.map((s) => `${s.de
               <el-option v-for="s in subjects" :key="s.id" :label="s.displayName" :value="String(s.id)" />
             </el-select>
             <el-button type="primary" @click="search">查询</el-button>
-            <el-button v-if="canWrite" @click="Object.assign(proposalDialog, { open: true, proposal: null })">新建方案草稿</el-button>
+            <el-button v-if="canWrite" :loading="windowsLoading" @click="openProposalForm(null)">新建方案草稿</el-button>
           </div>
           <MidlongNotice tone="info">{{ PLANNING_NOTICES.simulation }}</MidlongNotice>
-          <el-table :data="proposals" border size="small" class="ml-table" @row-click="(row: TradeProposalDetail) => openProposal(row.id)">
+          <MidlongNotice v-if="proposalsError" tone="danger" title="方案列表加载失败" data-test="proposals-error">
+            {{ proposalsError }} <el-button link type="primary" @click="loadProposals">重试</el-button>
+          </MidlongNotice>
+          <el-table v-loading="proposalsLoading" :data="proposals" border size="small" class="ml-table" @row-click="(row: TradeProposalDetail) => openProposal(row.id)">
             <el-table-column label="方案" width="80"><template #default="{ row }">#{{ row.id }}</template></el-table-column>
             <el-table-column label="状态" width="110"><template #default="{ row }"><el-tag size="small" :type="proposalStatusTag(row.status).type">{{ proposalStatusTag(row.status).label }}</el-tag></template></el-table-column>
             <el-table-column label="交易主体" min-width="120"><template #default="{ row }">{{ row.subjectName ?? `#${row.subjectId}` }}</template></el-table-column>
@@ -292,11 +404,11 @@ const segmentSummary = (p: TradeProposalDetail) => p.segments.map((s) => `${s.de
                 <el-tag v-if="row.window?.needsRecheck" size="small" type="warning">公告已更正待核对</el-tag>
               </template>
             </el-table-column>
-            <template #empty>尚无交易方案。</template>
+            <template #empty>{{ proposalsError ? '方案列表未加载' : proposalsLoaded ? '尚无交易方案。' : '加载中' }}</template>
           </el-table>
           <el-pagination
             v-if="proposalTotal > PAGE_SIZE" class="ml-pagination" layout="total, prev, pager, next" :total="proposalTotal" :page-size="PAGE_SIZE"
-            :current-page="filters.proposalPage" @current-change="(p: number) => { filters.proposalPage = p; apply() }"
+            :current-page="filters.proposalPage" @current-change="(p: number) => changePage('proposals', p)"
           />
         </el-tab-pane>
       </el-tabs>

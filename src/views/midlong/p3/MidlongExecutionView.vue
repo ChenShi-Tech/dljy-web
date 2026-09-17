@@ -7,6 +7,7 @@
 // - 本系统不自动登录或提交外部交易平台；预成交、确认成交、撤单属于后续阶段，本页不出现这些操作。
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { ElMessage } from 'element-plus'
 import CompanyScopeBar from '@/components/company/CompanyScopeBar.vue'
 import MidlongNotice from '@/components/midlong/MidlongNotice.vue'
 import ProposalDetailDrawer from '@/components/midlong/p3/ProposalDetailDrawer.vue'
@@ -16,6 +17,7 @@ import { selectedCompanyId } from '@/services/company/companyContext'
 import { currentRegion } from '@/services/region/regionContext'
 import { CompanyNotSelectedError, fetchCapabilities, fetchSubjects, midlongFailureOf } from '@/services/midlong/midlongApi'
 import { fetchProposals, fetchWindowCalendar, fetchWindows } from '@/services/midlong/midlongP3Api'
+import { captureScope } from '@/services/midlong/midlongP3Scope'
 import { createLoadGuard, fmtQuantity } from '@/services/midlong/midlongFormat'
 import { beijingDateTime, groupEventsByBeijingDate, proposalStatusTag, receiptTag } from '@/services/midlong/midlongP3Format'
 import {
@@ -28,15 +30,22 @@ const route = useRoute()
 const router = useRouter()
 
 type LoadState = 'loading' | 'ready' | 'no-company' | 'unsupported' | 'disabled' | 'module-off' | 'denied' | 'failed'
+/** 页面级状态只管能力与权限；三个标签页各自加载、各自报错，一个失败不清空其他标签已加载的数据。 */
 const state = ref<LoadState>('loading')
 const failureText = ref('')
 const capabilities = ref<MidlongCapabilities | null>(null)
+const PAGE_SIZE = 50
 const calendar = ref<WindowCalendarReport | null>(null)
+const calendarLoading = ref(false)
+const calendarError = ref('')
 const windows = ref<TradingWindowListRow[]>([])
 const windowTotal = ref(0)
+const windowsLoading = ref(false)
+const windowsError = ref('')
 const proposals = ref<TradeProposalDetail[]>([])
 const proposalTotal = ref(0)
-const PAGE_SIZE = 50
+const proposalsLoading = ref(false)
+const proposalsError = ref('')
 const subjects = ref<MidlongSubject[]>([])
 
 const q = (key: string) => (typeof route.query[key] === 'string' ? (route.query[key] as string) : '')
@@ -48,49 +57,109 @@ const filters = reactive({
   monthRange: (q('fromMonth') && q('toMonth') ? [q('fromMonth'), q('toMonth')] : defaultRange()) as string[], status: q('status') as ProposalStatus | '',
   windowPage: Math.max(1, Number(q('windowPage')) || 1), proposalPage: Math.max(1, Number(q('proposalPage')) || 1),
 })
+// 方案标签的筛选条件（不含页码）变化就回到第一页，不论入口是查询按钮还是改完条件直接切换标签。
+const proposalsFilterKey = () => JSON.stringify([filters.status])
+let lastProposalsFilterKey = proposalsFilterKey()
 
 const canWrite = computed(() => Boolean(capabilities.value?.canWrite))
-const guard = createLoadGuard()
+const pageGuard = createLoadGuard()
+const calendarGuard = createLoadGuard()
+const windowsGuard = createLoadGuard()
+const proposalsGuard = createLoadGuard()
 const scopeKey = () => `${selectedCompanyId.value}|${currentRegion.value.id}`
-const contextKey = () => `${scopeKey()}|${JSON.stringify(filters)}`
 let loadedScope = ''
 
+async function loadCalendar() {
+  const [fromMonth, toMonth] = filters.monthRange.length === 2 ? filters.monthRange : defaultRange()
+  const key = `${scopeKey()}|${fromMonth}|${toMonth}`
+  const token = calendarGuard.begin(key)
+  calendarLoading.value = true
+  calendarError.value = ''
+  try {
+    const report = await fetchWindowCalendar({ fromMonth, toMonth })
+    if (!calendarGuard.isCurrent(token, key)) return
+    calendar.value = report
+  } catch (error) {
+    if (!calendarGuard.isCurrent(token, key)) return
+    calendar.value = null
+    calendarError.value = midlongFailureOf(error).message
+  } finally {
+    if (calendarGuard.isCurrent(token, key)) calendarLoading.value = false
+  }
+}
+
+async function loadWindows() {
+  const key = `${scopeKey()}|${filters.windowPage}`
+  const token = windowsGuard.begin(key)
+  windowsLoading.value = true
+  windowsError.value = ''
+  try {
+    const page = await fetchWindows({ page: filters.windowPage, pageSize: PAGE_SIZE })
+    if (!windowsGuard.isCurrent(token, key)) return
+    windows.value = page.rows
+    windowTotal.value = page.total
+  } catch (error) {
+    if (!windowsGuard.isCurrent(token, key)) return
+    windows.value = []
+    windowTotal.value = 0
+    windowsError.value = midlongFailureOf(error).message
+  } finally {
+    if (windowsGuard.isCurrent(token, key)) windowsLoading.value = false
+  }
+}
+
+async function loadProposals() {
+  if (proposalsFilterKey() !== lastProposalsFilterKey) filters.proposalPage = 1
+  lastProposalsFilterKey = proposalsFilterKey()
+  const key = `${scopeKey()}|${proposalsFilterKey()}|${filters.proposalPage}`
+  const token = proposalsGuard.begin(key)
+  proposalsLoading.value = true
+  proposalsError.value = ''
+  try {
+    // 执行页只列出已进入执行链路的方案：由服务端排除草稿并返回总数，不在前端过滤一页结果（否则会静默漏掉）。
+    const page = await fetchProposals({ stage: 'execution', status: filters.status || undefined, page: filters.proposalPage, pageSize: PAGE_SIZE })
+    if (!proposalsGuard.isCurrent(token, key)) return
+    proposals.value = page.rows
+    proposalTotal.value = page.total
+  } catch (error) {
+    if (!proposalsGuard.isCurrent(token, key)) return
+    proposals.value = []
+    proposalTotal.value = 0
+    proposalsError.value = midlongFailureOf(error).message
+  } finally {
+    if (proposalsGuard.isCurrent(token, key)) proposalsLoading.value = false
+  }
+}
+
+function loadActiveTab() {
+  if (tab.value === 'windows') return loadWindows()
+  if (tab.value === 'proposals') return loadProposals()
+  return loadCalendar()
+}
+
 async function load() {
-  const token = guard.begin(contextKey())
-  if (scopeKey() !== loadedScope) { calendar.value = null; windows.value = []; proposals.value = [] }
-  loadedScope = scopeKey()
+  const key = scopeKey()
+  const token = pageGuard.begin(key)
+  if (key !== loadedScope) { calendar.value = null; windows.value = []; windowTotal.value = 0; proposals.value = []; proposalTotal.value = 0; subjects.value = [] }
+  loadedScope = key
   state.value = 'loading'
   try {
     const caps = await fetchCapabilities()
-    if (!guard.isCurrent(token, contextKey())) return
+    if (!pageGuard.isCurrent(token, scopeKey())) return
     capabilities.value = caps
     if (!caps.enabled) { state.value = 'disabled'; return }
     if (!caps.regionSupported) { state.value = 'unsupported'; return }
     if (!caps.modules.execution) { state.value = 'module-off'; return }
-    const [fromMonth, toMonth] = filters.monthRange.length === 2 ? filters.monthRange : defaultRange()
-    const [calendarReport, windowPage, proposalPage, subjectRows] = await Promise.all([
-      fetchWindowCalendar({ fromMonth, toMonth }),
-      fetchWindows({ page: filters.windowPage, pageSize: PAGE_SIZE }),
-      // 执行页只列出已进入执行链路的方案：由服务端排除草稿并返回总数，不在前端过滤一页结果（否则会静默漏掉）。
-      fetchProposals({ stage: 'execution', status: filters.status || undefined, page: filters.proposalPage, pageSize: PAGE_SIZE }),
-      fetchSubjects(),
-    ])
-    if (!guard.isCurrent(token, contextKey())) return
-    calendar.value = calendarReport
-    windows.value = windowPage.rows
-    windowTotal.value = windowPage.total
-    proposals.value = proposalPage.rows
-    proposalTotal.value = proposalPage.total
-    subjects.value = subjectRows
     state.value = 'ready'
   } catch (error) {
-    if (!guard.isCurrent(token, contextKey())) return
-    calendar.value = null
+    if (!pageGuard.isCurrent(token, scopeKey())) return
     if (error instanceof CompanyNotSelectedError) { state.value = 'no-company'; return }
     const f = midlongFailureOf(error)
     state.value = f.status === 401 || f.status === 403 ? 'denied' : 'failed'
     failureText.value = f.message
+    return
   }
+  await loadActiveTab()
 }
 
 function apply() {
@@ -100,13 +169,18 @@ function apply() {
   if (filters.windowPage > 1) next.windowPage = String(filters.windowPage)
   if (filters.proposalPage > 1) next.proposalPage = String(filters.proposalPage)
   void router.replace({ query: next })
-  void load()
+  if (state.value === 'ready') void loadActiveTab()
+  else void load()
 }
 
-/** 改筛选条件后回到第一页。 */
+/** 查询按钮：方案条件变化由筛选键自动回到第一页。 */
 function search() {
-  filters.windowPage = 1
-  filters.proposalPage = 1
+  apply()
+}
+
+function changePage(target: 'windows' | 'proposals', page: number) {
+  if (target === 'windows') filters.windowPage = page
+  else filters.proposalPage = page
   apply()
 }
 
@@ -117,6 +191,7 @@ watch([selectedCompanyId, () => currentRegion.value.id], () => {
   proposalDrawer.open = false
   windowDialog.open = false
   Object.assign(filters, { windowPage: 1, proposalPage: 1 })
+  lastProposalsFilterKey = proposalsFilterKey()
   apply()
 })
 
@@ -134,8 +209,31 @@ function openProposal(id: number) {
   windowDrawer.open = false
   Object.assign(proposalDrawer, { open: true, proposalId: id })
 }
+const subjectsLoading = ref(false)
+/**
+ * 打开公告表单时才加载交易主体（适用主体候选）；加载失败只提示、表单照样可以登记公告原文范围。
+ * 加载期间切换了公司就放弃打开：候选与待更正的公告都属于原公司。
+ */
+async function openWindowForm(window: TradingWindowDetail | null) {
+  if (subjectsLoading.value) return
+  const scope = captureScope()
+  subjectsLoading.value = true
+  try {
+    const rows = await fetchSubjects()
+    if (!scope.isCurrent()) return
+    subjects.value = rows
+  } catch (error) {
+    if (!scope.isCurrent()) return
+    subjects.value = []
+    ElMessage.warning(`交易主体加载失败：${midlongFailureOf(error).message}；可先只登记公告原文的适用范围`)
+  } finally {
+    subjectsLoading.value = false
+  }
+  if (!scope.isCurrent()) return
+  Object.assign(windowDialog, { open: true, window })
+}
 async function onWindowSaved() {
-  await load()
+  await loadActiveTab()
   if (windowDrawer.open) await windowDrawerRef.value?.reload()
 }
 
@@ -150,7 +248,7 @@ const latestReceipt = (p: TradeProposalDetail) => p.submissions.at(-1) ?? null
     </div>
     <CompanyScopeBar />
 
-    <div v-if="state === 'loading' && !calendar" v-loading="true" class="ml-placeholder" />
+    <div v-if="state === 'loading'" v-loading="true" class="ml-placeholder" />
     <MidlongNotice v-else-if="state === 'no-company'" tone="warn" title="请选择公司">当前地区尚未选择有效公司。</MidlongNotice>
     <MidlongNotice v-else-if="state === 'unsupported'" tone="info" title="当前地区未开通中长期售电模块">{{ capabilities?.reason }}。不回退读取其他地区数据。</MidlongNotice>
     <MidlongNotice v-else-if="state === 'disabled'" tone="warn" title="模块已暂停使用">已确认合同的版本与写保护保持不变。</MidlongNotice>
@@ -158,13 +256,18 @@ const latestReceipt = (p: TradeProposalDetail) => p.submissions.at(-1) ?? null
     <MidlongNotice v-else-if="state === 'denied'" tone="danger" title="无权访问">{{ failureText }}</MidlongNotice>
     <MidlongNotice v-else-if="state === 'failed'" tone="danger" title="执行数据加载失败（未显示任何替代数值）">{{ failureText }} <el-button link type="primary" @click="load">重试</el-button></MidlongNotice>
 
-    <template v-if="calendar && (state === 'ready' || state === 'loading')">
+    <template v-if="state === 'ready'">
       <el-tabs v-model="tab" @tab-change="apply">
         <el-tab-pane label="交易日历" name="calendar">
           <div class="ml-filters">
             <el-date-picker v-model="filters.monthRange" type="monthrange" value-format="YYYY-MM" range-separator="至" start-placeholder="起始月" end-placeholder="结束月" style="width: 240px" />
             <el-button type="primary" @click="search">查询</el-button>
           </div>
+          <div v-if="calendarLoading && !calendar" v-loading="true" class="ml-placeholder" />
+          <MidlongNotice v-if="calendarError" tone="danger" title="日历加载失败（未显示任何替代事件）" data-test="calendar-error">
+            {{ calendarError }} <el-button link type="primary" @click="loadCalendar">重试</el-button>
+          </MidlongNotice>
+          <template v-if="calendar">
           <MidlongNotice tone="info">{{ calendar.notice }}</MidlongNotice>
           <MidlongNotice v-if="calendar.truncated" tone="warn" title="日历未显示全部公告" data-test="calendar-truncated">
             所选月份内相关公告共 {{ calendar.windowTotal }} 条，本次只统计了前 {{ calendar.windowLimit }} 条，请缩小月份区间后查看。
@@ -192,12 +295,16 @@ const latestReceipt = (p: TradeProposalDetail) => p.submissions.at(-1) ?? null
               <div v-if="!calendar.pending.length" class="ml-muted">没有时间待补的公告。</div>
             </div>
           </div>
+          </template>
         </el-tab-pane>
 
         <el-tab-pane label="公告登记" name="windows">
           <div class="ml-filters">
-            <el-button v-if="canWrite" type="primary" @click="Object.assign(windowDialog, { open: true, window: null })">登记公告</el-button>
+            <el-button v-if="canWrite" type="primary" :loading="subjectsLoading" @click="openWindowForm(null)">登记公告</el-button>
           </div>
+          <MidlongNotice v-if="windowsError" tone="danger" title="公告列表加载失败" data-test="windows-error">
+            {{ windowsError }} <el-button link type="primary" @click="loadWindows">重试</el-button>
+          </MidlongNotice>
           <el-table :data="windows" border size="small" @row-click="(row: TradingWindowListRow) => openWindow(row.id)">
             <el-table-column label="公告名称" min-width="220"><template #default="{ row }">{{ row.current.announcementName }}</template></el-table-column>
             <el-table-column label="来源" width="140"><template #default="{ row }">{{ row.current.sourceName ?? '待核对' }}</template></el-table-column>
@@ -211,7 +318,7 @@ const latestReceipt = (p: TradeProposalDetail) => p.submissions.at(-1) ?? null
           </el-table>
           <el-pagination
             v-if="windowTotal > PAGE_SIZE" class="ml-pagination" layout="total, prev, pager, next" :total="windowTotal" :page-size="PAGE_SIZE"
-            :current-page="filters.windowPage" @current-change="(p: number) => { filters.windowPage = p; apply() }"
+            :current-page="filters.windowPage" @current-change="(p: number) => changePage('windows', p)"
           />
         </el-tab-pane>
 
@@ -224,6 +331,9 @@ const latestReceipt = (p: TradeProposalDetail) => p.submissions.at(-1) ?? null
             <router-link to="/zcqjy/plans?tab=proposals" class="ml-link">方案草稿与测算 →</router-link>
           </div>
           <MidlongNotice tone="info">{{ PLANNING_NOTICES.exportNotSubmission }} {{ PLANNING_NOTICES.submissionNotAccepted }}</MidlongNotice>
+          <MidlongNotice v-if="proposalsError" tone="danger" title="方案列表加载失败" data-test="proposals-error">
+            {{ proposalsError }} <el-button link type="primary" @click="loadProposals">重试</el-button>
+          </MidlongNotice>
           <el-table :data="proposals" border size="small" @row-click="(row: TradeProposalDetail) => openProposal(row.id)">
             <el-table-column label="方案" width="80"><template #default="{ row }">#{{ row.id }}</template></el-table-column>
             <el-table-column label="状态" width="110"><template #default="{ row }"><el-tag size="small" :type="proposalStatusTag(row.status).type">{{ proposalStatusTag(row.status).label }}</el-tag></template></el-table-column>
@@ -244,7 +354,7 @@ const latestReceipt = (p: TradeProposalDetail) => p.submissions.at(-1) ?? null
           </el-table>
           <el-pagination
             v-if="proposalTotal > PAGE_SIZE" class="ml-pagination" layout="total, prev, pager, next" :total="proposalTotal" :page-size="PAGE_SIZE"
-            :current-page="filters.proposalPage" @current-change="(p: number) => { filters.proposalPage = p; apply() }"
+            :current-page="filters.proposalPage" @current-change="(p: number) => changePage('proposals', p)"
           />
         </el-tab-pane>
       </el-tabs>
@@ -253,7 +363,7 @@ const latestReceipt = (p: TradeProposalDetail) => p.submissions.at(-1) ?? null
     <WindowFormDialog v-model="windowDialog.open" :window="windowDialog.window" :subjects="subjects" @saved="onWindowSaved" />
     <WindowDetailDrawer
       ref="windowDrawerRef" v-model="windowDrawer.open" :window-id="windowDrawer.windowId" :can-write="canWrite"
-      @correct="(w: TradingWindowDetail) => Object.assign(windowDialog, { open: true, window: w })" @open-proposal="openProposal"
+      @correct="(w: TradingWindowDetail) => openWindowForm(w)" @open-proposal="openProposal"
     />
     <ProposalDetailDrawer v-model="proposalDrawer.open" :proposal-id="proposalDrawer.proposalId" :can-write="canWrite" mode="execution" @changed="load" />
   </div>

@@ -7,6 +7,7 @@ import MidlongNotice from '../MidlongNotice.vue'
 import BeijingDateTimeInput from './BeijingDateTimeInput.vue'
 import { addReceipt, registerSubmission, type ReceiptInput } from '@/services/midlong/midlongP3Api'
 import { midlongFailureOf } from '@/services/midlong/midlongApi'
+import { MidlongScopeChangedError, captureScope } from '@/services/midlong/midlongP3Scope'
 import { fileToBase64, oversizeUploadMessage } from '@/services/midlong/midlongFormat'
 import { receiptTag } from '@/services/midlong/midlongP3Format'
 import { PLANNING_NOTICES, RECEIPT_ELEMENT_LABELS, isCompleteBeijingDateTimeInput, type ProposalSubmission, type ReceiptCompleteness, type ReceiptElement, type TradeProposalDetail } from '@/services/midlong/midlongP3Types'
@@ -20,9 +21,12 @@ const file = ref<File | null>(null)
 const saving = ref(false)
 const error = ref('')
 const result = ref<{ completeness: ReceiptCompleteness; missing: ReceiptElement[] } | null>(null)
+// 打开表单时的公司/地区范围：方案、提交 ID 属于这个范围，读取回执文件之后必须核对仍是它才能提交。
+let openScope = captureScope()
 
 watch(() => props.modelValue, (open) => {
   if (!open) return
+  openScope = captureScope()
   Object.assign(form, blank())
   file.value = null
   error.value = ''
@@ -57,8 +61,12 @@ async function submit() {
   if (!valid.value || saving.value) return
   saving.value = true
   error.value = ''
+  const scope = openScope
   try {
+    scope.assertCurrent()
     const receipt = await receiptInput()
+    // 读取回执文件期间可能切换了公司：核对范围后同步发请求。
+    scope.assertCurrent()
     const saved = props.mode === 'receipt' && props.submission
       ? await addReceipt(props.submission.id, receipt ?? {})
       : await registerSubmission(props.proposal.id, {
@@ -69,7 +77,7 @@ async function submit() {
     ElMessage.success(props.mode === 'receipt' ? '回执已补充' : '已登记外部提交（不代表平台已受理）')
     emit('saved')
   } catch (e) {
-    error.value = midlongFailureOf(e).message
+    error.value = (e instanceof MidlongScopeChangedError ? e.message : midlongFailureOf(e).message)
   } finally {
     saving.value = false
   }

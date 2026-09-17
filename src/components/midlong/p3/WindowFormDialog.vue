@@ -9,6 +9,7 @@ import MidlongNotice from '../MidlongNotice.vue'
 import BeijingDateTimeInput from './BeijingDateTimeInput.vue'
 import { correctWindow, registerWindow, type WindowWriteResult } from '@/services/midlong/midlongP3Api'
 import { midlongFailureOf } from '@/services/midlong/midlongApi'
+import { MidlongScopeChangedError, captureScope } from '@/services/midlong/midlongP3Scope'
 import { fileToBase64, oversizeUploadMessage } from '@/services/midlong/midlongFormat'
 import { beijingDateTime } from '@/services/midlong/midlongP3Format'
 import { PLANNING_NOTICES, PROPOSAL_STATUS_LABELS, isCompleteBeijingDateTimeInput, type TradingWindowDetail, type TradingWindowInput } from '@/services/midlong/midlongP3Types'
@@ -28,12 +29,15 @@ const file = ref<File | null>(null)
 const saving = ref(false)
 const error = ref('')
 const outcome = ref<WindowWriteResult | null>(null)
+// 打开表单时的公司/地区范围：公告 ID、适用主体都属于这个范围，读取附件等 await 之后必须核对仍是它才能提交。
+let openScope = captureScope()
 
 /** 已登记的时刻按北京时间回填（YYYY-MM-DD HH:mm），未知保持空，不补默认。 */
 const localTime = (iso: string | null) => (iso ? beijingDateTime(iso, '') : '')
 
 watch(() => props.modelValue, (open) => {
   if (!open) return
+  openScope = captureScope()
   Object.assign(form, blank())
   file.value = null
   error.value = ''
@@ -73,7 +77,9 @@ async function submit() {
   if (!valid.value || saving.value) return
   saving.value = true
   error.value = ''
+  const scope = openScope
   try {
+    scope.assertCurrent()
     const input: TradingWindowInput = {
       announcementName: form.announcementName.trim(), sourceName: text(form.sourceName), sourceReference: text(form.sourceReference),
       publishedDate: text(form.publishedDate), announcementVersion: text(form.announcementVersion), effectiveFrom: text(form.effectiveFrom),
@@ -84,6 +90,8 @@ async function submit() {
       unsupportedParams: Object.fromEntries(form.unsupported.filter((u) => u.name.trim() && u.raw.trim()).map((u) => [u.name.trim(), u.raw.trim()])),
       file: file.value ? { fileName: file.value.name, contentBase64: await fileToBase64(file.value), mediaType: file.value.type || null } : null,
     }
+    // 读取附件期间可能切换了公司：核对范围后同步发请求（写请求的 company 参数在发出时读取）。
+    scope.assertCurrent()
     const saved = props.window
       ? await correctWindow(props.window.id, { ...input, expectedRowVersion: props.window.rowVersion, changeReason: form.changeReason.trim(), keepAttachment: form.keepAttachment })
       : await registerWindow(input)
@@ -92,7 +100,7 @@ async function submit() {
     if (saved.affectedProposals?.length) outcome.value = saved
     else emit('update:modelValue', false)
   } catch (e) {
-    error.value = midlongFailureOf(e).message
+    error.value = (e instanceof MidlongScopeChangedError ? e.message : midlongFailureOf(e).message)
   } finally {
     saving.value = false
   }
