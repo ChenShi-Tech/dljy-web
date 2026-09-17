@@ -567,3 +567,24 @@ export function stepOfStatus(status: DeclarationStatus): number {
   if (status === 'EXPIRED') return 1
   return 3
 }
+
+// ---------------------------------------------------------------------------
+// 状态分组命名常量（spot-trading-module-hygiene 收口）：替换申报工作台×3、审批队列×1、
+// StageDeclare×1 的就地字面量数组。刻意不从 DECLARATION_TRANSITIONS 机械派生——
+// 契约只有单步出边（能到 PENDING_APPROVAL 的仅 RISK_CHECKED），而这两个分组是
+// 业务语义（可编辑草稿类 / 送审前候选），与转移表不同构；以命名常量消除多副本，
+// 成员与各处历史字面量逐一相同，零行为变化。
+/** 可继续编辑/重走流程的草稿类状态（工作台曲线编辑入口、创建入口放行依据）。 */
+export const EDITABLE_DRAFT_STATUSES: readonly DeclarationStatus[] = ['DRAFT', 'RISK_CHECKED', 'REJECTED']
+/** 送审前候选状态（审批队列「全部申报单」区的默认关注集合）。 */
+export const PRE_APPROVAL_STATUSES: readonly DeclarationStatus[] = ['DRAFT', 'RISK_CHECKED', 'PENDING_APPROVAL']
+
+/**
+ * L3 双签第一签的统一提示：服务端只落签不转态，单据仍是待审批——
+ * 申报工作台与审批队列共用同一文案，防止两处漂移。返回 null 表示非双签场景。
+ */
+export function secondSignatureNotice(updated: Pick<DeclarationOrder, 'awaitingSecondSignature'>): string | null {
+  return updated.awaitingSecondSignature
+    ? 'L3 双签：第一签已记录，需第二位审批人批准后本单才进入已审批'
+    : null
+}

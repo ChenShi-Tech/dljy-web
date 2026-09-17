@@ -10,11 +10,11 @@
 //  ⚠️ 采集快照拍摄于 2026-06-03(见 .meta.json capturedAt),其后为平台「未来日」空壳:
 //     2026-06-05~06-30 共 26 天 dl(申报电量) 全空,6/08 起连 jg 也空、仅剩 zcqjj。
 //     故下拉框对这些日期显式标注并禁选,避免「选了日期却什么都不出」的静默空白。
-import { computed, onMounted, ref, nextTick } from 'vue'
+import { onMounted, ref, nextTick } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { currentRegion } from '@/services/region/regionContext'
-import { getRegionCapabilityForPath } from '@/services/region/regionModules'
+import { useCapturedCapability } from '@/composables/useCapturedCapability'
 import { fetchSpotDayAheadReportContract, SPOT_DAY_AHEAD_REPORT_FAMILY } from '@/services/data/contracts'
 import { DECLARATION_PRICE_TYPE_CODES, DECLARATION_QTY_TYPE_CODES } from '@/data/declarationCodes'
 import { fetchCapturedDates } from '@/services/captured'
@@ -26,6 +26,8 @@ import { chartChrome } from '../composables/useTheme'
 import { useEChart } from '../composables/useEChart'
 import { axisTooltip, bottomLayoutLegend, bottomToolbox, emptyOverlay, insideZoom } from '@/services/chart/chartOptions'
 import { exportCsv } from '../utils/exportCsv'
+import { POINTS_96 } from '@/utils/spotPoints96'
+import { resolveDefaultRunDate } from '@/utils/spotDateDefaults'
 
 // 申报电量(dl)最后一个有真实内容的运行日；其后到 06-30 均为采集时点的「未来日」空壳。
 // 逐日核对 91 个采集文件得出（scripts 无常驻校验，改采集范围时同步本常量与上方注释）。
@@ -54,7 +56,6 @@ const GROUPS = [
   { key: 'zxcl', axis: 3, dict: ZPTQX, base: '策略', kind: 'line', unit: '' }
 ] as any[]
 const COL = ['#5470c6', '#ee6666', '#91cc75', '#fac858', '#73c0de', '#3ba272', '#fc8452', '#9a60b4', '#ea7ccc']
-const POINTS_96 = Array.from({ length: 96 }, (_, i) => { const m = (i + 1) * 15; return `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}` })
 const curve = (r: any) => Array.from({ length: 96 }, (_, k) => r['p' + (k + 1)] ?? null)
 const total = (r: any) => r.hj != null ? r.hj : +(curve(r).filter((x) => x != null) as number[]).reduce((a, b) => a + Number(b), 0).toFixed(2)
 
@@ -65,7 +66,8 @@ const error = ref('')
 const notice = ref('')
 const route = useRoute()
 const qDate = typeof route.query.date === 'string' ? route.query.date : ''
-const runDate = ref(qDate || '2026-06-04')
+// 初始仍以回退常量兜底；onMounted 在日期清单到位后按规格改写为「清单最新可用日」
+const runDate = ref(qDate || ENERGY_LAST_DATE)
 const data = ref<any>(null)
 const dlRows = ref<any[]>([])
 const chartRef = ref<HTMLDivElement | null>(null)
@@ -73,18 +75,8 @@ const reportChart = useEChart(chartRef, { render })
 
 const dates = ref<string[]>([])
 function nameOf(g: any, r: any) { return g.dict && r.type != null && g.dict[String(r.type)] ? g.dict[String(r.type)] : (r.type != null ? `${g.base}·${r.type}` : g.base) }
-const routeCapability = computed(() => getRegionCapabilityForPath('/xhjy/zrqsb', currentRegion.value.id))
-const capabilitySupports = computed(() =>
-  routeCapability.value?.route?.dataSupportByRegion?.[currentRegion.value.id]
-  ?? routeCapability.value?.module.dataSupportByRegion[currentRegion.value.id]
-  ?? []
-)
-const isCapabilityDegraded = computed(() => routeCapability.value?.status === 'degraded' || routeCapability.value?.status === 'hidden' || routeCapability.value?.status === 'not-configured')
-const capabilityNote = computed(() =>
-  routeCapability.value?.route?.note
-  ?? capabilitySupports.value.find((item) => item.expectation === 'missing')?.note
-  ?? null
-)
+// 回放取数能力降级判定四件套：单源 composable（原与本页逐字重复于 DayAheadEnergyView）
+const { capabilitySupports, isCapabilityDegraded, capabilityNote } = useCapturedCapability('/xhjy/zrqsb')
 let loadGeneration = 0
 
 async function load() {
@@ -135,7 +127,7 @@ async function load() {
     }
   }
 }
-function reset() { runDate.value = '2026-06-04'; load() }
+function reset() { runDate.value = ENERGY_LAST_DATE; load() }
 
 function clearViewState() {
   data.value = null
@@ -203,23 +195,34 @@ function render() {
   }, { notMerge: true })
 }
 
+// 日期清单是否可用：不可用时页面须明示「当前为回退日」，不得让回退日伪装成最新数据
+const datesUnavailable = ref(false)
+
 async function loadDates() {
   try {
     dates.value = await fetchCapturedDates(SPOT_DAY_AHEAD_REPORT_FAMILY, currentRegion.value.id)
+    datesUnavailable.value = false
   } catch {
     // 清单取不到不阻断主取数：下拉退化为空、日期仍可由 URL/默认值直取（服务端按日期索引选文件）
     dates.value = []
+    datesUnavailable.value = true
   }
 }
 
 onMounted(async () => {
   await loadDates()
+  // 默认运行日（spot-trading-date-defaults）：URL 深链 > 清单最新**可用**日 > 回退常量。
+  // 「可用」按本页口径 = hasEnergy（含申报电量的采集日）；06-05 起为无申报的空壳日，
+  // 只被采集、不构成可作业的运行日，故从默认候选中剔除（下拉仍可见且标注禁选）。
+  runDate.value = resolveDefaultRunDate(qDate, dates.value.filter(hasEnergy), ENERGY_LAST_DATE)
   load()
 })
 
 onRegionChange(async () => {
   // 各地区采集覆盖不同：切区先重取日期清单，再取数（否则下拉留着上一地区的日期）
   await loadDates()
+  // 深链日期只约束首次进入；切区后同样按「清单最新可用日 > 回退」重定，避免落到新地区未采集的日期
+  runDate.value = resolveDefaultRunDate('', dates.value.filter(hasEnergy), ENERGY_LAST_DATE)
   load()
 })
 </script>
@@ -251,6 +254,16 @@ onRegionChange(async () => {
         <el-button size="small" type="primary" @click="load">搜索</el-button>
         <el-button size="small" @click="reset">重置</el-button>
       </div>
+
+      <!-- 日期清单不可用：明示当前是回退日，避免回退日被误读成「数据源确认的最新日」 -->
+      <el-alert
+        v-if="datesUnavailable && !qDate"
+        type="info"
+        :closable="false"
+        :title="`采集日期清单不可用，默认展示回退日 ${ENERGY_LAST_DATE}（非数据源确认的最新日）`"
+        show-icon
+        class="mb"
+      />
 
       <!-- 取数成功但无申报电量：显式说明为何表格与曲线为空，避免静默空白页 -->
       <el-alert v-if="notice" type="warning" :closable="false" :title="notice" show-icon class="mb" />
