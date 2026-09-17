@@ -132,7 +132,7 @@ const STATUS_TEXT: Record<string, string> = { CONSERVED: '守恒', WITHIN_TOLERA
         </el-form-item>
         <el-form-item v-if="format === 'xlsx'" label="工作簿">
           <input type="file" accept=".xlsx" data-role="workbook" @change="onFile('workbook', $event)" />
-          <span class="ml-hint">含「{{ CURVE_FILE_SHEETS.intervals }}」或「{{ CURVE_FILE_SHEETS.typicalDays }}」+「{{ CURVE_FILE_SHEETS.typicalDayRanges }}」，可选「{{ CURVE_FILE_SHEETS.dailyTotals }}」</span>
+          <span class="ml-hint">含「{{ CURVE_FILE_SHEETS.intervals }}」或「{{ CURVE_FILE_SHEETS.typicalDays }}」+「{{ CURVE_FILE_SHEETS.typicalDayRanges }}」，可选「{{ CURVE_FILE_SHEETS.dailyTotals }}」；典型日可按峰平谷时刻段填写功率（跨零点的谷段可写 22:00—08:00）</span>
         </el-form-item>
         <template v-else>
           <el-form-item v-for="role in CSV_ROLES" :key="role" :label="CURVE_FILE_SHEETS[role]">
