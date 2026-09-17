@@ -2,7 +2,8 @@
 // 守什么：方案测算标「方案测算」、名义金额、不判断价格优劣，已售不完整时交易后电量不计算；
 //        确认可执行带上测算里看到的目标版本，余额冲突显示最新可安排量；
 //        导出申报材料只下载文件、不发任何写请求、不改状态；登记提交无回执时明示不代表平台已受理；
-//        公告已更正时显示差异与重新核对入口；执行页登记提交或状态操作后重新取数，后续操作带新版本号。
+//        公告已更正时显示差异与重新核对入口；执行页登记提交或状态操作后重新取数，后续操作带新版本号；
+//        换方案时清掉为原方案填写的原因、说明与登记对话框，原方案进行中的操作返回后不把结果、错误或下载落到新方案上。
 // 坏掉的症状：导出后方案被标成已提交；余额冲突只显示「失败」；无回执提交被显示成已受理。
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { enableAutoUnmount, flushPromises } from '@vue/test-utils'
@@ -11,11 +12,11 @@ import { FORBIDDEN_PLANNING_TERMS, PLANNING_NOTICES, type PlanProgress, type Pro
 
 const hoisted = vi.hoisted(() => ({
   fetchProposal: vi.fn(), fetchProposalComparison: vi.fn(), confirmProposal: vi.fn(), cancelProposal: vi.fn(), closeProposal: vi.fn(), exportProposal: vi.fn(),
-  recheckProposalWindow: vi.fn(), markAwaitingResult: vi.fn(), fetchPlanningAttachment: vi.fn(), downloadCsv: vi.fn(), info: vi.fn(),
+  recheckProposalWindow: vi.fn(), markAwaitingResult: vi.fn(), fetchPlanningAttachment: vi.fn(), downloadCsv: vi.fn(), info: vi.fn(), warning: vi.fn(),
   companyRef: null as null | { value: string },
 }))
 
-vi.mock('element-plus', async (orig) => ({ ...(await orig<typeof import('element-plus')>()), ElMessage: { success: vi.fn(), error: vi.fn(), info: hoisted.info } }))
+vi.mock('element-plus', async (orig) => ({ ...(await orig<typeof import('element-plus')>()), ElMessage: { success: vi.fn(), error: vi.fn(), info: hoisted.info, warning: hoisted.warning } }))
 vi.mock('@/services/midlong/midlongApi', () => ({ midlongFailureOf: (e: unknown) => (e as { failure: unknown }).failure }))
 vi.mock('@/services/company/companyContext', async () => {
   const selectedCompanyId = (await import('vue')).ref('comp-a')
@@ -33,6 +34,11 @@ vi.mock('@/services/midlong/midlongFormat', async (orig) => ({ ...(await orig<ty
 import ProposalDetailDrawer from './ProposalDetailDrawer.vue'
 
 const STUBS = { SubmissionDialog: { template: '<div />' } }
+/** 登记对话框替身：显示是否打开；「保存」按真实对话框的约定发出所登记方案的 id。 */
+const SUBMISSION_STUB = {
+  props: ['modelValue', 'proposal'], emits: ['saved'],
+  template: '<div class="stub-submission" :data-open="String(modelValue)"><button class="stub-submission-save" @click="$emit(\'saved\', proposal.id)" /></div>',
+}
 const WRITE_APIS = ['confirmProposal', 'cancelProposal', 'closeProposal', 'recheckProposalWindow', 'markAwaitingResult'] as const
 
 function progress(o: Partial<PlanProgress> = {}): PlanProgress {
@@ -179,7 +185,7 @@ describe('交易方案详情', () => {
       .mockResolvedValue(proposal({ status: 'AWAITING_RESULT', rowVersion: 5 }))
     hoisted.fetchProposalComparison.mockResolvedValue(comparison())
     hoisted.markAwaitingResult.mockResolvedValue({ proposalId: 42, status: 'AWAITING_RESULT', rowVersion: 5 })
-    const stubs = { SubmissionDialog: { props: ['modelValue'], emits: ['saved'], template: '<div class="stub-submission" :data-open="String(modelValue)"><button class="stub-submission-save" @click="$emit(\'saved\')" /></div>' } }
+    const stubs = { SubmissionDialog: SUBMISSION_STUB }
     const w = mount(ProposalDetailDrawer, { props: { modelValue: true, proposalId: 42, canWrite: true, mode: 'execution' }, global: { stubs } })
     await flushPromises()
     expect(w.text()).toContain('方案版本号 3')
@@ -195,5 +201,83 @@ describe('交易方案详情', () => {
     expect(hoisted.fetchProposal).toHaveBeenCalledTimes(3)
     expect(w.text()).toContain('方案版本号 5')
     expect(w.emitted('changed')).toEqual([[42], [42]])
+  })
+
+  it('换方案时清掉为原方案填写的输入：撤销原因对话框与登记提交对话框关闭、核对说明清空，不会提交到新方案', async () => {
+    const revisedWindow = {
+      windowId: 5, referencedRevisionNo: 1, currentRevisionNo: 2, needsRecheck: true, notice: PLANNING_NOTICES.windowRevised, current: null, changesSinceReferenced: [],
+      referenced: { announcementName: '【测试数据】公告', declarationClosesAt: null, confirmationAt: null, pendingFields: [] } as never,
+    }
+    hoisted.fetchProposal.mockResolvedValue(proposal({ status: 'EXECUTABLE', window: revisedWindow }))
+    hoisted.fetchProposalComparison.mockResolvedValue(comparison())
+    const w = mount(ProposalDetailDrawer, { props: { modelValue: true, proposalId: 42, canWrite: true, mode: 'execution' }, global: { stubs: { SubmissionDialog: SUBMISSION_STUB } } })
+    await flushPromises()
+    await w.find('.p3-inline input').setValue('【测试数据】为方案 42 写的核对说明')
+    await button(w, '登记外部提交')!.trigger('click')
+    expect(w.find('.stub-submission').attributes('data-open')).toBe('true')
+    await button(w, '撤销方案')!.trigger('click')
+    const endDialog = () => w.findAllComponents({ name: 'ElDialog' }).find((d) => String(d.props('title')).startsWith('撤销方案'))!
+    expect(endDialog().props('modelValue')).toBe(true)
+    endDialog().findComponent({ name: 'ElInput' }).vm.$emit('update:modelValue', '【测试数据】为方案 42 写的撤销原因')
+
+    hoisted.fetchProposal.mockResolvedValue(proposal({ id: 43, status: 'EXECUTABLE', window: revisedWindow }))
+    await w.setProps({ proposalId: 43 })
+    await flushPromises()
+    expect(w.text()).toContain('交易方案 #43')
+    expect(endDialog().props('modelValue')).toBe(false)
+    expect(w.find('.stub-submission').attributes('data-open')).toBe('false')
+    expect((w.find('.p3-inline input').element as HTMLInputElement).value).toBe('')
+    expect(hoisted.cancelProposal).not.toHaveBeenCalled()
+    expect(hoisted.recheckProposalWindow).not.toHaveBeenCalled()
+  })
+
+  it('原方案的操作返回前换了方案：失败不显示在新方案上、新方案按钮不被占用；成功只通知父页面，不按旧操作重载', async () => {
+    hoisted.fetchProposal.mockResolvedValue(proposal({ status: 'SUBMITTED' }))
+    hoisted.fetchProposalComparison.mockResolvedValue(comparison())
+    const w = mount(ProposalDetailDrawer, { props: { modelValue: true, proposalId: 42, canWrite: true, mode: 'execution' }, global: { stubs: STUBS } })
+    await flushPromises()
+    let rejectAwait: (e: unknown) => void = () => {}
+    hoisted.markAwaitingResult.mockImplementationOnce(() => new Promise((_, reject) => { rejectAwait = reject }))
+    await button(w, '标记待结果')!.trigger('click')
+    expect(hoisted.markAwaitingResult).toHaveBeenCalledWith(42, { expectedRowVersion: 3 })
+
+    hoisted.fetchProposal.mockResolvedValue(proposal({ id: 43, status: 'SUBMITTED', rowVersion: 7 }))
+    await w.setProps({ proposalId: 43 })
+    await flushPromises()
+    const loads = hoisted.fetchProposal.mock.calls.length
+    rejectAwait({ failure: { status: 409, errorCode: 'VERSION_CONFLICT', message: '【测试数据】方案 42 版本已变化', details: null } })
+    await flushPromises()
+    expect(w.text()).not.toContain('【测试数据】方案 42 版本已变化')
+    expect(hoisted.warning).toHaveBeenCalledWith(expect.stringContaining('方案 #42'))
+    expect(button(w, '标记待结果')!.classes()).not.toContain('is-loading')
+    expect(hoisted.fetchProposal.mock.calls.length).toBe(loads)
+
+    let resolveAwait: (v: unknown) => void = () => {}
+    hoisted.markAwaitingResult.mockImplementationOnce(() => new Promise((resolve) => { resolveAwait = resolve }))
+    await button(w, '标记待结果')!.trigger('click')
+    expect(hoisted.markAwaitingResult).toHaveBeenLastCalledWith(43, { expectedRowVersion: 7 })
+    hoisted.fetchProposal.mockResolvedValue(proposal({ id: 44, status: 'SUBMITTED' }))
+    await w.setProps({ proposalId: 44 })
+    await flushPromises()
+    const loadsBefore = hoisted.fetchProposal.mock.calls.length
+    resolveAwait({ proposalId: 43, status: 'AWAITING_RESULT', rowVersion: 8 })
+    await flushPromises()
+    expect(w.emitted('changed')).toEqual([[43]])
+    expect(hoisted.fetchProposal.mock.calls.length).toBe(loadsBefore)
+    expect(w.text()).toContain('交易方案 #44')
+  })
+
+  it('导出返回前换了方案：不下载原方案的文件，新方案的导出按钮不被占用', async () => {
+    const w = await open(proposal({ status: 'EXECUTABLE' }), 'execution')
+    let resolveExport: (v: unknown) => void = () => {}
+    hoisted.exportProposal.mockImplementationOnce(() => new Promise((resolve) => { resolveExport = resolve }))
+    await button(w, '导出申报材料')!.trigger('click')
+    hoisted.fetchProposal.mockResolvedValue(proposal({ id: 43, status: 'EXECUTABLE' }))
+    await w.setProps({ proposalId: 43 })
+    await flushPromises()
+    resolveExport({ fileName: '方案-42-v3.csv', content: '方案编号,42', proposalRowVersion: 3, proposalStatus: 'EXECUTABLE', contentType: 'text/csv', proposalId: 42, notice: '' })
+    await flushPromises()
+    expect(hoisted.downloadCsv).not.toHaveBeenCalled()
+    expect(button(w, '导出申报材料')!.classes()).not.toContain('is-loading')
   })
 })

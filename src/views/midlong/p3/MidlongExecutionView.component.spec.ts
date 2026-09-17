@@ -1,7 +1,8 @@
 // 中长期交易执行页的渲染不变量（dljy#2973，MT-01/MT-02）。
 // 守什么：日历只列公告明确给出的时间并按北京时间分日；时间未知的公告列入「待补」、不生成事件；
 //        公告列表显示待核对参数数与待重新核对方案数；执行标签只列已进入执行链路的方案，并提示导出不等于提交；
-//        能力未开放时不请求接口；公告详情抽屉开着时登记更正公告，保存后抽屉重新取数显示新版本。
+//        能力未开放时不请求接口；公告详情抽屉开着时登记更正公告，保存后抽屉重新取数显示新版本；
+//        交易主体加载期间换了公告不弹出原公告的更正表单；请求进行中动了筛选控件，结果照常显示不被丢弃。
 // 坏掉的症状：缺截止时间的公告被套上默认截止出现在日历里；草稿方案出现在执行列表可登记提交。
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { enableAutoUnmount, flushPromises } from '@vue/test-utils'
@@ -242,5 +243,66 @@ describe('中长期交易执行页', () => {
     await flushPromises()
     expect(hoisted.fetchProposals).toHaveBeenCalledTimes(2)
     expect(w.text()).not.toContain('#11')
+  })
+
+  it('登记更正时交易主体加载期间换了公告：不弹出原公告的更正表单；抽屉仍是该公告时正常打开', async () => {
+    hoisted.routeQuery = { tab: 'windows' }
+    hoisted.fetchCapabilities.mockResolvedValue(caps(true))
+    hoisted.fetchWindows.mockResolvedValue(page([windowRow(1, '【测试数据】公告甲', 0, 0), windowRow(2, '【测试数据】公告乙', 0, 0)]))
+    let resolveSubjects: (rows: unknown[]) => void = () => {}
+    hoisted.fetchSubjects.mockImplementationOnce(() => new Promise((resolve) => { resolveSubjects = resolve }))
+    const stubs = {
+      ...STUBS,
+      WindowDetailDrawer: {
+        props: ['modelValue', 'windowId'], emits: ['correct'],
+        template: '<div class="stub-window-drawer" :data-id="windowId"><button class="stub-correct" @click="$emit(\'correct\', { id: windowId, rowVersion: 1, currentRevisionNo: 1 })" /></div>',
+      },
+      WindowFormDialog: { props: ['modelValue', 'window'], template: '<div class="stub-window-form" :data-open="String(modelValue)" :data-window="window ? window.id : \'\'" />' },
+    }
+    const w = mount(MidlongExecutionView, { global: { stubs } })
+    await flushPromises()
+    const openRow = async (name: string) => {
+      await w.findAll('.el-table__row').find((r) => r.text().includes(name))!.trigger('click')
+      await flushPromises()
+    }
+    await openRow('【测试数据】公告甲')
+    await w.find('.stub-correct').trigger('click')
+    expect(hoisted.fetchSubjects).toHaveBeenCalledTimes(1)
+    await openRow('【测试数据】公告乙')
+    expect(w.find('.stub-window-drawer').attributes('data-id')).toBe('2')
+    resolveSubjects([])
+    await flushPromises()
+    expect(w.find('.stub-window-form').attributes('data-open')).toBe('false')
+
+    hoisted.fetchSubjects.mockResolvedValueOnce([])
+    await w.find('.stub-correct').trigger('click')
+    await flushPromises()
+    expect(w.find('.stub-window-form').attributes('data-open')).toBe('true')
+    expect(w.find('.stub-window-form').attributes('data-window')).toBe('2')
+  })
+
+  it('请求进行中动了筛选控件但未点查询：返回结果照常显示，不被当成过期丢弃（日历与方案标签）', async () => {
+    hoisted.fetchCapabilities.mockResolvedValue(caps(true))
+    let resolveCalendar: (r: WindowCalendarReport) => void = () => {}
+    hoisted.fetchWindowCalendar.mockImplementationOnce(() => new Promise((resolve) => { resolveCalendar = resolve }))
+    const w = mount(MidlongExecutionView, { global: { stubs: STUBS } })
+    await flushPromises()
+    expect(hoisted.fetchWindowCalendar).toHaveBeenCalledTimes(1)
+    w.findAllComponents({ name: 'ElDatePicker' })[0].vm.$emit('update:modelValue', ['2031-01', '2031-03'])
+    await flushPromises()
+    resolveCalendar(calendar)
+    await flushPromises()
+    expect(w.find('#pane-calendar').text()).toContain('【测试数据】已明确时间的公告')
+    expect(w.find('#pane-calendar .ml-placeholder').exists()).toBe(false)
+
+    let resolveProposals: (r: unknown) => void = () => {}
+    hoisted.fetchProposals.mockImplementationOnce(() => new Promise((resolve) => { resolveProposals = resolve }))
+    await w.findAll('.el-tabs__item').find((t) => t.text() === '方案执行')!.trigger('click')
+    await flushPromises()
+    w.findAllComponents({ name: 'ElSelect' }).find((c) => c.props('placeholder') === '方案状态')!.vm.$emit('update:modelValue', 'SUBMITTED')
+    await flushPromises()
+    resolveProposals(page([proposalRow(11, 'EXECUTABLE')]))
+    await flushPromises()
+    expect(w.find('#pane-proposals').text()).toContain('#11')
   })
 })

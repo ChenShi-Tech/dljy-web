@@ -2,12 +2,12 @@
 // 售电目标录入（dljy#2973，MS-01）：新建目标草稿 / 修改待确认版本 / 发起更改（生成新版本）。
 // 目标是人工确认的经营安排，不是物理可发电量或法定额度；更改必须写原因，旧版本保留在版本历史里。
 // 电量、价格按十进制字符串提交，空值表示未知（不填 0）。
-import { computed, reactive, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import MidlongNotice from '../MidlongNotice.vue'
 import { createPlan, createPlanRevision, updatePlanDraft, type PlanWriteResult } from '@/services/midlong/midlongP3Api'
 import { midlongFailureOf } from '@/services/midlong/midlongApi'
-import { MidlongScopeChangedError, captureScope } from '@/services/midlong/midlongP3Scope'
+import { createWriteSession, isWriteAbandoned } from '@/services/midlong/midlongP3Scope'
 import { PLANNING_NOTICES, PLAN_PERIOD_TYPES, PLAN_PERIOD_TYPE_LABELS, isPeriodKey, type PlanPeriodType, type SalesPlanListRow, type SalesPlanRevision } from '@/services/midlong/midlongP3Types'
 import { TAX_BASES, TAX_BASIS_LABELS, type MidlongSubject, type TaxBasis } from '@/services/midlong/midlongTypes'
 
@@ -32,13 +32,16 @@ function fillFrom(revision: SalesPlanRevision | null, keepReason: boolean) {
   form.changeReason = keepReason ? (revision?.changeReason ?? '') : ''
 }
 
-// 打开表单时的公司/地区范围：主体与目标 ID 属于这个范围，提交前核对仍是它。
-let openScope = captureScope()
+// 写入会话：打开时快照公司/地区范围与写入目标（模式 + 目标 id + 行版本），关闭或重新打开让进行中的保存失效。
+// 本表单发写请求前没有 await，目标在点保存时同步读取；会话用于提交前核对，以及写请求返回前表单已关闭或重开时不改写新表单。
+const session = createWriteSession(() => `${props.mode}:${props.plan?.id ?? ''}:${props.plan?.rowVersion ?? ''}`)
+onBeforeUnmount(() => session.close())
 
 watch(() => props.modelValue, (open) => {
-  if (!open) return
-  openScope = captureScope()
+  if (!open) { session.close(); return }
+  session.open()
   Object.assign(form, blank())
+  saving.value = false
   error.value = ''
   if (props.plan) {
     form.subjectId = props.plan.subjectId
@@ -63,33 +66,43 @@ async function submit() {
     targetQuantity: text(form.targetQuantity), targetPriceLow: text(form.targetPriceLow), targetPriceHigh: text(form.targetPriceHigh),
     priceTaxBasis: form.priceTaxBasis, basisNote: text(form.basisNote), ownerName: text(form.ownerName), changeReason: text(form.changeReason),
   }
+  const ticket = session.begin()
+  const mode = props.mode
+  const plan = props.plan
   try {
-    openScope.assertCurrent()
+    ticket.assertCurrent()
     let result: PlanWriteResult
-    if (props.mode === 'create') {
+    if (mode === 'create') {
       result = await createPlan({ ...revision, subjectId: form.subjectId as number, periodType: form.periodType, periodKey: form.periodKey })
-    } else if (props.mode === 'edit' && props.plan) {
-      result = await updatePlanDraft(props.plan.id, { ...revision, expectedRowVersion: props.plan.rowVersion })
-    } else if (props.plan) {
-      result = await createPlanRevision(props.plan.id, { ...revision, changeReason: form.changeReason.trim(), expectedRowVersion: props.plan.rowVersion })
+    } else if (mode === 'edit' && plan) {
+      result = await updatePlanDraft(plan.id, { ...revision, expectedRowVersion: plan.rowVersion })
+    } else if (plan) {
+      result = await createPlanRevision(plan.id, { ...revision, changeReason: form.changeReason.trim(), expectedRowVersion: plan.rowVersion })
     } else {
       return
     }
-    ElMessage.success(props.mode === 'revise' ? '已发起更改，确认后生效' : '目标草稿已保存，确认后生效')
+    ElMessage.success(mode === 'revise' ? '已发起更改，确认后生效' : '目标草稿已保存，确认后生效')
     emit('saved', result)
-    emit('update:modelValue', false)
+    // 写请求返回前表单已关闭或重开：结果属于上一次打开，不关闭当前表单。
+    if (ticket.sameSession()) emit('update:modelValue', false)
   } catch (e) {
-    if (e instanceof MidlongScopeChangedError) { error.value = e.message; return }
-    const f = midlongFailureOf(e)
-    if (f.errorCode === 'BUSINESS_KEY_CONFLICT') {
-      // 同主体同交割期已有目标：不能另建一份，只能在原目标上「发起更改」保留历史版本。
-      const existing = (f.details as { existingPlanId?: number } | null)?.existingPlanId
-      error.value = `该交易主体在该交割期已有售电目标${existing ? `（目标 #${existing}）` : ''}，不能重复新建；请关闭后在列表中对该目标「发起更改」。`
+    let message: string
+    if (isWriteAbandoned(e)) {
+      message = e.message
     } else {
-      error.value = f.errorCode === 'VERSION_CONFLICT' ? `${f.message}（请关闭后刷新列表再操作）` : f.message
+      const f = midlongFailureOf(e)
+      if (f.errorCode === 'BUSINESS_KEY_CONFLICT') {
+        // 同主体同交割期已有目标：不能另建一份，只能在原目标上「发起更改」保留历史版本。
+        const existing = (f.details as { existingPlanId?: number } | null)?.existingPlanId
+        message = `该交易主体在该交割期已有售电目标${existing ? `（目标 #${existing}）` : ''}，不能重复新建；请关闭后在列表中对该目标「发起更改」。`
+      } else {
+        message = f.errorCode === 'VERSION_CONFLICT' ? `${f.message}（请关闭后刷新列表再操作）` : f.message
+      }
     }
+    if (ticket.sameSession()) error.value = message
+    else ElMessage.warning(isWriteAbandoned(e) ? message : `已关闭的目标表单保存失败：${message}`)
   } finally {
-    saving.value = false
+    if (ticket.sameSession()) saving.value = false
   }
 }
 </script>

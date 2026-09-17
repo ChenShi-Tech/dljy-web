@@ -1,19 +1,19 @@
 <script setup lang="ts">
 // 外部提交登记 / 补充回执（dljy#2973，MT-02）：只记录「谁、什么时候在外部平台提交了」这一事实与回执依据。
 // 本系统不登录、不提交外部交易平台；无回执或回执不完整时明确「不代表平台已受理」，登记也不形成持仓、不转换占用。
-import { computed, reactive, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import MidlongNotice from '../MidlongNotice.vue'
 import BeijingDateTimeInput from './BeijingDateTimeInput.vue'
 import { addReceipt, registerSubmission, type ReceiptInput } from '@/services/midlong/midlongP3Api'
 import { midlongFailureOf } from '@/services/midlong/midlongApi'
-import { MidlongScopeChangedError, captureScope } from '@/services/midlong/midlongP3Scope'
+import { createWriteSession, isWriteAbandoned } from '@/services/midlong/midlongP3Scope'
 import { fileToBase64, oversizeUploadMessage } from '@/services/midlong/midlongFormat'
 import { receiptTag } from '@/services/midlong/midlongP3Format'
 import { PLANNING_NOTICES, RECEIPT_ELEMENT_LABELS, isCompleteBeijingDateTimeInput, type ProposalSubmission, type ReceiptCompleteness, type ReceiptElement, type TradeProposalDetail } from '@/services/midlong/midlongP3Types'
 
 const props = defineProps<{ modelValue: boolean; mode: 'submission' | 'receipt'; proposal: TradeProposalDetail; submission: ProposalSubmission | null }>()
-const emit = defineEmits<{ 'update:modelValue': [boolean]; saved: [] }>()
+const emit = defineEmits<{ 'update:modelValue': [boolean]; saved: [number] }>()
 
 const blank = () => ({ submittedAt: '', submittedByName: '', channel: '', note: '', externalReference: '', receiptAt: '', receiptNote: '' })
 const form = reactive(blank())
@@ -21,14 +21,17 @@ const file = ref<File | null>(null)
 const saving = ref(false)
 const error = ref('')
 const result = ref<{ completeness: ReceiptCompleteness; missing: ReceiptElement[] } | null>(null)
-// 打开表单时的公司/地区范围：方案、提交 ID 属于这个范围，读取回执文件之后必须核对仍是它才能提交。
-let openScope = captureScope()
+// 写入会话：打开时快照公司/地区范围与写入目标（为某个方案行版本登记提交，或给某条提交补回执），关闭或重新打开让进行中的保存失效。
+// 读取回执文件期间点了取消、或关掉后又对另一条提交打开「补充回执」，转换完成后都不能再写入。
+const session = createWriteSession(() => (props.mode === 'receipt' ? `receipt:${props.submission?.id ?? ''}` : `submission:${props.proposal.id}:${props.proposal.rowVersion}`))
+onBeforeUnmount(() => session.close())
 
 watch(() => props.modelValue, (open) => {
-  if (!open) return
-  openScope = captureScope()
+  if (!open) { session.close(); return }
+  session.open()
   Object.assign(form, blank())
   file.value = null
+  saving.value = false
   error.value = ''
   result.value = null
 }, { immediate: true })
@@ -47,39 +50,42 @@ function onFile(event: Event) {
   file.value = selected
 }
 
+/** 回执输入：表单值在调用时同步读取，只有读取文件内容要等待。 */
 async function receiptInput(): Promise<ReceiptInput | null> {
-  const receipt: ReceiptInput = {
-    externalReference: form.externalReference.trim() || null,
-    receiptAt: form.receiptAt || null,
-    note: form.receiptNote.trim() || null,
-    file: file.value ? { fileName: file.value.name, contentBase64: await fileToBase64(file.value), mediaType: file.value.type || null } : null,
-  }
-  return receipt.externalReference || receipt.receiptAt || receipt.file ? receipt : null
+  const selected = file.value
+  const fields = { externalReference: form.externalReference.trim() || null, receiptAt: form.receiptAt || null, note: form.receiptNote.trim() || null }
+  if (!fields.externalReference && !fields.receiptAt && !selected) return null
+  return { ...fields, file: selected ? { fileName: selected.name, contentBase64: await fileToBase64(selected), mediaType: selected.type || null } : null }
 }
 
 async function submit() {
   if (!valid.value || saving.value) return
   saving.value = true
   error.value = ''
-  const scope = openScope
+  // 写入目标与表单值在点保存时同步读取；await 之后只核对，不再读 props 或表单。
+  const ticket = session.begin()
+  const mode = props.mode
+  const proposal = props.proposal
+  const submission = props.submission
+  const submissionFields = { submittedAt: form.submittedAt, submittedByName: form.submittedByName.trim(), channel: form.channel.trim() || null, note: form.note.trim() || null }
   try {
-    scope.assertCurrent()
+    ticket.assertCurrent()
     const receipt = await receiptInput()
-    // 读取回执文件期间可能切换了公司：核对范围后同步发请求。
-    scope.assertCurrent()
-    const saved = props.mode === 'receipt' && props.submission
-      ? await addReceipt(props.submission.id, receipt ?? {})
-      : await registerSubmission(props.proposal.id, {
-        expectedRowVersion: props.proposal.rowVersion, submittedAt: form.submittedAt, submittedByName: form.submittedByName.trim(),
-        channel: form.channel.trim() || null, note: form.note.trim() || null, receipt,
-      })
-    result.value = { completeness: saved.receiptCompleteness, missing: saved.receiptMissing }
-    ElMessage.success(props.mode === 'receipt' ? '回执已补充' : '已登记外部提交（不代表平台已受理）')
-    emit('saved')
+    // 读取回执文件期间可能切换了公司、关闭了表单或换成了另一条提交：核对后同步发请求。
+    ticket.assertCurrent()
+    const saved = mode === 'receipt' && submission
+      ? await addReceipt(submission.id, receipt ?? {})
+      : await registerSubmission(proposal.id, { expectedRowVersion: proposal.rowVersion, ...submissionFields, receipt })
+    ElMessage.success(mode === 'receipt' ? '回执已补充' : '已登记外部提交（不代表平台已受理）')
+    emit('saved', proposal.id)
+    // 写请求返回前表单已关闭或重开：结果属于上一次打开，不显示到当前表单。
+    if (ticket.sameSession()) result.value = { completeness: saved.receiptCompleteness, missing: saved.receiptMissing }
   } catch (e) {
-    error.value = (e instanceof MidlongScopeChangedError ? e.message : midlongFailureOf(e).message)
+    const message = isWriteAbandoned(e) ? e.message : midlongFailureOf(e).message
+    if (ticket.sameSession()) error.value = message
+    else ElMessage.warning(isWriteAbandoned(e) ? message : `已关闭的提交登记保存失败：${message}`)
   } finally {
-    saving.value = false
+    if (ticket.sameSession()) saving.value = false
   }
 }
 </script>

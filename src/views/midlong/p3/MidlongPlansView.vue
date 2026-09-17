@@ -287,6 +287,8 @@ async function openProposalForm(proposal: TradeProposalDetail | null) {
   }
   // 唯一的范围核对：加载期间切换了公司，候选与表单都属于原公司，放弃打开。
   if (!scope.isCurrent()) return
+  // 修改草稿：加载期间抽屉已关闭或换成了另一个方案，再弹出原方案的表单会被当成在改眼前的方案，放弃打开。
+  if (proposal && !(proposalDrawer.open && proposalDrawer.proposalId === proposal.id)) return
   windows.value = rows
   proposalFormScope = scope
   Object.assign(proposalDialog, { open: true, proposal })

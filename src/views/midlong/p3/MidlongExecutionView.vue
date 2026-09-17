@@ -238,6 +238,8 @@ async function openWindowForm(window: TradingWindowDetail | null) {
   }
   // 唯一的范围核对：加载期间切换了公司，主体候选与待更正的公告都属于原公司，放弃打开。
   if (!scope.isCurrent()) return
+  // 登记更正：加载期间公告抽屉已关闭或换成了另一条公告，再弹出原公告的更正表单会被当成在更正眼前的公告，放弃打开。
+  if (window && !(windowDrawer.open && windowDrawer.windowId === window.id)) return
   subjects.value = rows
   Object.assign(windowDialog, { open: true, window })
 }

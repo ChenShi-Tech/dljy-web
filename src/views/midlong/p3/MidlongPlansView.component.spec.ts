@@ -4,7 +4,8 @@
 //        页面不出现套保率、现货敞口、预计利润。
 //        详情抽屉开着时在抽屉外保存同一目标或方案，抽屉显式重新加载，不停留在旧版本。
 // 坏掉的症状：未分解合同的月份显示「剩余 1000、完成率 0%」；超计划被截成 0；能力未开放仍请求接口出空壳页面；
-//            在方案抽屉里修改草稿并保存后抽屉仍显示旧版本号，随后确认带旧版本撞版本冲突。
+//            在方案抽屉里修改草稿并保存后抽屉仍显示旧版本号，随后确认带旧版本撞版本冲突；
+//            公告候选加载期间换了方案，弹出的却是原方案的修改表单；请求进行中动了筛选控件，结果被当成过期丢弃、页面卡在加载中。
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { enableAutoUnmount, flushPromises } from '@vue/test-utils'
 import { mount } from '@/test/mount'
@@ -415,5 +416,73 @@ describe('中长期售电计划页', () => {
     expect(hoisted.fetchCapabilities).toHaveBeenCalledTimes(2)
     expect(w.find('.stub-plan-form').attributes('data-subjects')).toBe('')
     expect(w.text()).not.toContain('300 MWh')
+  })
+
+  it('修改草稿时公告候选加载期间换了方案：不弹出原方案的表单；抽屉仍是该方案时正常打开', async () => {
+    hoisted.routeQuery = { tab: 'proposals' }
+    hoisted.fetchCapabilities.mockResolvedValue(caps({ plans: true, execution: true }))
+    hoisted.fetchProposals.mockResolvedValue(page([proposalDetail({ id: 42 }), proposalDetail({ id: 43 })]))
+    let resolveWindows: (rows: unknown[]) => void = () => {}
+    hoisted.fetchWindows.mockImplementationOnce(() => new Promise((resolve) => { resolveWindows = resolve }))
+    const stubs = {
+      ...STUBS,
+      ProposalDetailDrawer: {
+        props: ['modelValue', 'proposalId'], emits: ['edit'],
+        template: '<div class="stub-proposal-drawer" :data-open="String(modelValue)" :data-id="proposalId"><button class="stub-edit" @click="$emit(\'edit\', { id: proposalId, rowVersion: 3 })" /></div>',
+      },
+      ProposalFormDialog: { props: ['modelValue', 'proposal'], template: '<div class="stub-proposal-form" :data-open="String(modelValue)" :data-proposal="proposal ? proposal.id : \'\'" />' },
+    }
+    const w = mount(MidlongPlansView, { global: { stubs } })
+    await flushPromises()
+    const openRow = async (id: number) => {
+      await w.findAll('.el-table__row').find((r) => r.text().includes(`#${id}`))!.trigger('click')
+      await flushPromises()
+    }
+    await openRow(42)
+    await w.find('.stub-edit').trigger('click')
+    expect(hoisted.fetchWindows).toHaveBeenCalledTimes(1)
+    await openRow(43)
+    expect(w.find('.stub-proposal-drawer').attributes('data-id')).toBe('43')
+    resolveWindows([])
+    await flushPromises()
+    expect(w.find('.stub-proposal-form').attributes('data-open')).toBe('false')
+
+    hoisted.fetchWindows.mockResolvedValueOnce([])
+    await w.find('.stub-edit').trigger('click')
+    await flushPromises()
+    expect(w.find('.stub-proposal-form').attributes('data-open')).toBe('true')
+    expect(w.find('.stub-proposal-form').attributes('data-proposal')).toBe('43')
+  })
+
+  it('请求进行中动了筛选控件但未点查询：返回结果照常显示，不被当成过期丢弃、不卡在加载中（目标与方案标签）', async () => {
+    hoisted.fetchCapabilities.mockResolvedValue(caps({ plans: true, execution: false }))
+    hoisted.fetchPlanProgress.mockResolvedValueOnce(report())
+    const w = mount(MidlongPlansView, { global: { stubs: STUBS } })
+    await flushPromises()
+    const select = (placeholder: string) => w.findAllComponents({ name: 'ElSelect' }).find((c) => c.props('placeholder') === placeholder)!
+
+    let resolveTargets: (r: PlanProgressReport) => void = () => {}
+    hoisted.fetchPlanProgress.mockImplementationOnce(() => new Promise((resolve) => { resolveTargets = resolve }))
+    w.findAllComponents({ name: 'ElDatePicker' }).find((c) => c.props('placeholder') === '交割年')!.vm.$emit('update:modelValue', '2031')
+    await w.findAll('button').find((b) => b.text() === '查询')!.trigger('click')
+    expect(hoisted.fetchPlanProgress).toHaveBeenLastCalledWith(expect.objectContaining({ year: '2031' }))
+    select('粒度').vm.$emit('update:modelValue', 'MONTH')
+    await flushPromises()
+    resolveTargets(report({ total: 1, rows: [row(9, '2031-09', { remainingPlanQuantity: '777', arrangeableQuantity: '777' })] }))
+    await flushPromises()
+    expect(w.text()).toContain('777 MWh')
+    expect(w.find('#pane-targets .el-loading-mask').exists()).toBe(false)
+
+    let resolveProposals: (r: unknown) => void = () => {}
+    hoisted.fetchProposals.mockImplementationOnce(() => new Promise((resolve) => { resolveProposals = resolve }))
+    await w.findAll('.el-tabs__item').find((t) => t.text() === '交易方案')!.trigger('click')
+    await flushPromises()
+    expect(hoisted.fetchProposals).toHaveBeenCalledTimes(1)
+    select('方案状态').vm.$emit('update:modelValue', 'EXECUTABLE')
+    await flushPromises()
+    resolveProposals(page([proposalDetail({ id: 42 })]))
+    await flushPromises()
+    expect(w.find('#pane-proposals').text()).toContain('#42')
+    expect(w.find('#pane-proposals').text()).not.toContain('加载中')
   })
 })

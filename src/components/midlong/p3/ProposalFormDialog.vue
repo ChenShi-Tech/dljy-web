@@ -2,12 +2,12 @@
 // 交易方案草稿（dljy#2973，MS-03/MS-05）：主体、交易窗口（公告版本）、按月交割片段与拟售电量、报价与价格口径、
 // 交易方式、负责人、理由。缺依据也能保存草稿；确认可执行在详情里单独操作（后端校验依据与可安排计划量）。
 // 方案是内部安排，保存草稿不建立占用、不进入正式持仓。
-import { computed, reactive, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import MidlongNotice from '../MidlongNotice.vue'
 import { createProposal, updateProposalDraft, type ProposalWriteResult } from '@/services/midlong/midlongP3Api'
 import { midlongFailureOf } from '@/services/midlong/midlongApi'
-import { MidlongScopeChangedError, captureScope } from '@/services/midlong/midlongP3Scope'
+import { createWriteSession, isWriteAbandoned } from '@/services/midlong/midlongP3Scope'
 import { PLANNING_NOTICES, type TradeProposalDetail, type TradingWindowListRow } from '@/services/midlong/midlongP3Types'
 import {
   PRICE_COMPONENTS, PRICE_COMPONENT_LABELS, PRODUCT_KINDS, PRODUCT_KIND_LABELS, TAX_BASES, TAX_BASIS_LABELS, TRADE_METHODS, TRADE_METHOD_LABELS,
@@ -26,13 +26,16 @@ const form = reactive(blank())
 const saving = ref(false)
 const error = ref('')
 
-// 打开表单时的公司/地区范围：主体、公告、方案 ID 属于这个范围，提交前核对仍是它。
-let openScope = captureScope()
+// 写入会话：打开时快照公司/地区范围与写入目标（新建，或修改某个方案的某个行版本），关闭或重新打开让进行中的保存失效。
+// 本表单发写请求前没有 await，目标在点保存时同步读取；会话用于提交前核对，以及写请求返回前表单已关闭或重开时不改写新表单。
+const session = createWriteSession(() => (props.proposal ? `update:${props.proposal.id}:${props.proposal.rowVersion}` : 'create'))
+onBeforeUnmount(() => session.close())
 
 watch(() => props.modelValue, (open) => {
-  if (!open) return
-  openScope = captureScope()
+  if (!open) { session.close(); return }
+  session.open()
   Object.assign(form, blank())
+  saving.value = false
   error.value = ''
   const p = props.proposal
   if (p) {
@@ -68,18 +71,23 @@ async function submit() {
     priceTaxBasis: form.priceTaxBasis, priceComponent: form.priceComponent, ownerName: text(form.ownerName), rationale: text(form.rationale),
     segments: form.segments.map((s) => ({ deliveryMonth: s.deliveryMonth, quantity: s.quantity.trim() })),
   }
+  const ticket = session.begin()
+  const proposal = props.proposal
   try {
-    openScope.assertCurrent()
-    const result = props.proposal
-      ? await updateProposalDraft(props.proposal.id, { ...input, expectedRowVersion: props.proposal.rowVersion })
+    ticket.assertCurrent()
+    const result = proposal
+      ? await updateProposalDraft(proposal.id, { ...input, expectedRowVersion: proposal.rowVersion })
       : await createProposal(input)
     ElMessage.success('方案草稿已保存（未建立占用）')
     emit('saved', result)
-    emit('update:modelValue', false)
+    // 写请求返回前表单已关闭或重开：结果属于上一次打开，不关闭当前表单。
+    if (ticket.sameSession()) emit('update:modelValue', false)
   } catch (e) {
-    error.value = (e instanceof MidlongScopeChangedError ? e.message : midlongFailureOf(e).message)
+    const message = isWriteAbandoned(e) ? e.message : midlongFailureOf(e).message
+    if (ticket.sameSession()) error.value = message
+    else ElMessage.warning(isWriteAbandoned(e) ? message : `已关闭的方案表单保存失败：${message}`)
   } finally {
-    saving.value = false
+    if (ticket.sameSession()) saving.value = false
   }
 }
 </script>

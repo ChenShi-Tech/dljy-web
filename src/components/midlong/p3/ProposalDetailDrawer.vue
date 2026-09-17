@@ -39,6 +39,13 @@ const failure = ref('')
 const actionError = ref('')
 const loading = ref(false)
 const busy = ref('')
+// 抽屉里为「当前这个方案」填写的输入：撤销/关闭原因、核对说明、登记提交对话框。换方案、开关抽屉或换范围时一律清掉，
+// 不会把为方案 A 填的原因提交到方案 B。
+const endDialog = reactive({ open: false, kind: 'cancel' as 'cancel' | 'close', reason: '', closeKind: 'NO_LONGER_NEEDED' as ProposalCloseKind })
+const recheckNote = ref('')
+const submissionDialog = reactive({ open: false, mode: 'submission' as 'submission' | 'receipt', submission: null as ProposalSubmission | null })
+// 展示代次：打开、关闭、换方案、换范围都自增。进行中的操作返回时代次已变，结果与错误不落到新展示的方案上，也不占用它的按钮。
+let viewGeneration = 0
 const guard = createLoadGuard()
 // 取数代次按「公司 + 地区 + 方案」判断：切换公司或地区后，旧范围的迟到结果一律丢弃，不显示成新范围的方案。
 const scopeKey = () => `${selectedCompanyId.value}|${currentRegion.value.id}`
@@ -77,39 +84,55 @@ async function load() {
   }
 }
 
-watch(() => [props.modelValue, props.proposalId] as const, ([open]) => {
+function resetView() {
+  viewGeneration += 1
+  busy.value = ''
   actionError.value = ''
+  recheckNote.value = ''
+  endDialog.open = false
+  submissionDialog.open = false
+}
+
+watch(() => [props.modelValue, props.proposalId] as const, ([open]) => {
+  resetView()
   if (open) void load()
 }, { immediate: true })
 
 watch(scopeKey, () => {
+  resetView()
   guard.begin(loadKey())
   detail.value = null
   comparison.value = null
-  actionError.value = ''
   loading.value = false
 })
 // 抽屉外保存了同一方案（如在抽屉里点「修改草稿」后保存）时 props 不变、上面的 watcher 不会触发，由父页面显式重新加载。
 defineExpose({ reload: load })
 
+/**
+ * 执行写操作。写请求在调用 action 时同步发出（之前没有 await），目标方案由调用方在点击时同步读取。
+ * 返回前抽屉换了方案、被关闭或换了范围（展示代次变化）：结果仍通知父页面刷新，但不重载、不显示错误、不释放新方案的按钮。
+ */
 async function run(label: string, action: () => Promise<unknown>, success: string) {
-  if (busy.value) return
+  const d = detail.value
+  if (busy.value || !d) return
+  const at = viewGeneration
   busy.value = label
   actionError.value = ''
   // 方案详情属于加载它时的范围；范围已变化（详情会被清空，但点击可能恰在清空前）时不发写请求。
   const scope = captureScope()
   try {
-    if (detail.value && scope.key !== detailScope) throw new MidlongScopeChangedError()
+    if (scope.key !== detailScope) throw new MidlongScopeChangedError()
     await action()
-    ElMessage.success(success)
-    if (detail.value) emit('changed', detail.value.id)
-    await load()
+    ElMessage.success(`方案 #${d.id}：${success}`)
+    emit('changed', d.id)
+    if (at === viewGeneration) await load()
   } catch (e) {
-    if (e instanceof MidlongScopeChangedError) { actionError.value = e.message; return }
-    const f = midlongFailureOf(e)
-    actionError.value = confirmFailureText(f.errorCode, f.message, f.details)
+    const f = e instanceof MidlongScopeChangedError ? null : midlongFailureOf(e)
+    const message = f ? confirmFailureText(f.errorCode, f.message, f.details) : (e as Error).message
+    if (at === viewGeneration) actionError.value = message
+    else ElMessage.warning(`方案 #${d.id} 的操作未完成：${message}`)
   } finally {
-    busy.value = ''
+    if (at === viewGeneration) busy.value = ''
   }
 }
 
@@ -122,7 +145,6 @@ function confirmExecutable() {
   void run('confirm', () => confirmProposal(d.id, { expectedRowVersion: d.rowVersion, expectedPlanRevisions: expectedPlanRevisionsOf(c) }), '方案已确认可执行，占用已建立')
 }
 
-const endDialog = reactive({ open: false, kind: 'cancel' as 'cancel' | 'close', reason: '', closeKind: 'NO_LONGER_NEEDED' as ProposalCloseKind })
 function openEnd(kind: 'cancel' | 'close') {
   Object.assign(endDialog, { open: true, kind, reason: '', closeKind: 'NO_LONGER_NEEDED' })
 }
@@ -134,7 +156,6 @@ function submitEnd() {
   else void run('close', () => closeProposal(d.id, { expectedRowVersion: d.rowVersion, closeKind: endDialog.closeKind, reason: endDialog.reason.trim() }), '方案已关闭，占用已释放')
 }
 
-const recheckNote = ref('')
 function recheck() {
   const d = detail.value
   if (!d?.window || !recheckNote.value.trim()) return
@@ -147,18 +168,19 @@ function recheck() {
 async function doExport() {
   const d = detail.value
   if (!d || busy.value) return
+  const at = viewGeneration
   busy.value = 'export'
   actionError.value = ''
   try {
-    const scope = scopeKey()
     const file = await exportProposal(d.id)
-    if (detail.value?.id !== d.id || scope !== scopeKey()) return
+    // 导出返回前换了方案、关闭了抽屉或换了范围：文件属于原来的方案，不下载。
+    if (at !== viewGeneration) return
     downloadCsv(file.fileName, file.content)
     ElMessage.info(`已导出方案 v${file.proposalRowVersion} 的申报材料；${PLANNING_NOTICES.exportNotSubmission}`)
   } catch (e) {
-    actionError.value = midlongFailureOf(e).message
+    if (at === viewGeneration) actionError.value = midlongFailureOf(e).message
   } finally {
-    busy.value = ''
+    if (at === viewGeneration) busy.value = ''
   }
 }
 
@@ -168,13 +190,13 @@ function awaitResult() {
   void run('await', () => markAwaitingResult(d.id, { expectedRowVersion: d.rowVersion }), '已标记待结果')
 }
 
-const submissionDialog = reactive({ open: false, mode: 'submission' as 'submission' | 'receipt', submission: null as ProposalSubmission | null })
 function openSubmission(mode: 'submission' | 'receipt', submission: ProposalSubmission | null = null) {
   Object.assign(submissionDialog, { open: true, mode, submission })
 }
-async function onSubmissionSaved() {
-  if (detail.value) emit('changed', detail.value.id)
-  await load()
+/** 登记对话框保存的是它打开时的方案：通知父页面刷新；抽屉仍展示这个方案时才重新加载。 */
+async function onSubmissionSaved(proposalId: number) {
+  emit('changed', proposalId)
+  if (detail.value?.id === proposalId) await load()
 }
 
 async function downloadAttachment(attachmentId: number) {

@@ -3,13 +3,13 @@
 // - 按公告原文人工登记；没给的参数留空，页面显示「待核对」，时间未知不套默认（只填日期不填时刻不接受）。
 // - 公告里出现本系统不支持的参数，按「参数名 → 原文」登记，显示待核对，不自动映射。
 // - 更正公告生成新版本（必须写更正原因），原版本保留；引用旧版本的方案会被列出并提示重新核对。
-import { computed, reactive, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import MidlongNotice from '../MidlongNotice.vue'
 import BeijingDateTimeInput from './BeijingDateTimeInput.vue'
 import { correctWindow, registerWindow, type WindowWriteResult } from '@/services/midlong/midlongP3Api'
 import { midlongFailureOf } from '@/services/midlong/midlongApi'
-import { MidlongScopeChangedError, captureScope } from '@/services/midlong/midlongP3Scope'
+import { createWriteSession, isWriteAbandoned } from '@/services/midlong/midlongP3Scope'
 import { fileToBase64, oversizeUploadMessage } from '@/services/midlong/midlongFormat'
 import { beijingDateTime } from '@/services/midlong/midlongP3Format'
 import { PLANNING_NOTICES, PROPOSAL_STATUS_LABELS, isCompleteBeijingDateTimeInput, type TradingWindowDetail, type TradingWindowInput } from '@/services/midlong/midlongP3Types'
@@ -29,17 +29,20 @@ const file = ref<File | null>(null)
 const saving = ref(false)
 const error = ref('')
 const outcome = ref<WindowWriteResult | null>(null)
-// 打开表单时的公司/地区范围：公告 ID、适用主体都属于这个范围，读取附件等 await 之后必须核对仍是它才能提交。
-let openScope = captureScope()
+// 写入会话：打开时快照公司/地区范围与写入目标（登记新公告，或更正某条公告的某个行版本），关闭或重新打开让进行中的保存失效。
+// 读取附件期间点了取消、或关掉后又对另一条公告打开，转换完成后都不能再写入。
+const session = createWriteSession(() => (props.window ? `correct:${props.window.id}:${props.window.rowVersion}` : 'register'))
+onBeforeUnmount(() => session.close())
 
 /** 已登记的时刻按北京时间回填（YYYY-MM-DD HH:mm），未知保持空，不补默认。 */
 const localTime = (iso: string | null) => (iso ? beijingDateTime(iso, '') : '')
 
 watch(() => props.modelValue, (open) => {
-  if (!open) return
-  openScope = captureScope()
+  if (!open) { session.close(); return }
+  session.open()
   Object.assign(form, blank())
   file.value = null
+  saving.value = false
   error.value = ''
   outcome.value = null
   const current = props.window?.revisions.find((r) => r.revisionNo === props.window?.currentRevisionNo)
@@ -77,10 +80,15 @@ async function submit() {
   if (!valid.value || saving.value) return
   saving.value = true
   error.value = ''
-  const scope = openScope
+  // 写入目标与表单值在点保存时同步读取；await 之后只核对，不再读 props 或表单。
+  const ticket = session.begin()
+  const target = props.window
+  const selected = file.value
+  const changeReason = form.changeReason.trim()
+  const keepAttachment = form.keepAttachment
   try {
-    scope.assertCurrent()
-    const input: TradingWindowInput = {
+    ticket.assertCurrent()
+    const fields: Omit<TradingWindowInput, 'file'> = {
       announcementName: form.announcementName.trim(), sourceName: text(form.sourceName), sourceReference: text(form.sourceReference),
       publishedDate: text(form.publishedDate), announcementVersion: text(form.announcementVersion), effectiveFrom: text(form.effectiveFrom),
       effectiveTo: text(form.effectiveTo), applicableScope: text(form.applicableScope), applicableSubjectIds: form.applicableSubjectIds,
@@ -88,21 +96,28 @@ async function submit() {
       deliveryEndMonth: text(form.deliveryEndMonth), declarationOpensAt: text(form.declarationOpensAt), declarationClosesAt: text(form.declarationClosesAt),
       confirmationAt: text(form.confirmationAt),
       unsupportedParams: Object.fromEntries(form.unsupported.filter((u) => u.name.trim() && u.raw.trim()).map((u) => [u.name.trim(), u.raw.trim()])),
-      file: file.value ? { fileName: file.value.name, contentBase64: await fileToBase64(file.value), mediaType: file.value.type || null } : null,
     }
-    // 读取附件期间可能切换了公司：核对范围后同步发请求（写请求的 company 参数在发出时读取）。
-    scope.assertCurrent()
-    const saved = props.window
-      ? await correctWindow(props.window.id, { ...input, expectedRowVersion: props.window.rowVersion, changeReason: form.changeReason.trim(), keepAttachment: form.keepAttachment })
+    const input: TradingWindowInput = {
+      ...fields,
+      file: selected ? { fileName: selected.name, contentBase64: await fileToBase64(selected), mediaType: selected.type || null } : null,
+    }
+    // 读取附件期间可能切换了公司、关闭了表单或换成了另一条公告：核对后同步发请求（写请求的 company 参数在发出时读取）。
+    ticket.assertCurrent()
+    const saved = target
+      ? await correctWindow(target.id, { ...input, expectedRowVersion: target.rowVersion, changeReason, keepAttachment })
       : await registerWindow(input)
-    ElMessage.success(props.window ? '更正公告已登记，原版本保留' : '公告已登记')
+    ElMessage.success(target ? '更正公告已登记，原版本保留' : '公告已登记')
     emit('saved', saved)
+    // 写请求返回前表单已关闭或重开：结果属于上一次打开，不关闭、不改写当前表单。
+    if (!ticket.sameSession()) return
     if (saved.affectedProposals?.length) outcome.value = saved
     else emit('update:modelValue', false)
   } catch (e) {
-    error.value = (e instanceof MidlongScopeChangedError ? e.message : midlongFailureOf(e).message)
+    const message = isWriteAbandoned(e) ? e.message : midlongFailureOf(e).message
+    if (ticket.sameSession()) error.value = message
+    else ElMessage.warning(isWriteAbandoned(e) ? message : `已关闭的公告表单保存失败：${message}`)
   } finally {
-    saving.value = false
+    if (ticket.sameSession()) saving.value = false
   }
 }
 </script>
