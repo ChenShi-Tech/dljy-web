@@ -119,7 +119,7 @@ async function discard(setId: number) {
       <MidlongNotice v-else-if="overview.confirmationStatus !== 'CONFIRMED'" tone="info">合同核验确认后才能登记场站分配。</MidlongNotice>
       <MidlongNotice v-for="i in overview.impact" :key="i.allocationKind" tone="warn" :title="`合同更正影响：${allocationKindTag(i.allocationKind).label}`">
         {{ CORRECTION_IMPACT_LABELS[i.status] }}（v{{ i.previousRevisionNo }} 分配集 #{{ i.previousSetNo }}，失效片段：{{ i.invalidSegments.map(segmentLabel).join('、') }}）。按当前版本核对：
-        {{ i.segmentsAgainstCurrent.map((s) => `${segmentLabel(s.segment)} ${s.status === 'EXCEEDS' ? `超出 ${fmtQuantity(s.excessQuantity)}` : `余额 ${fmtQuantity(s.unallocatedQuantity)}`}`).join('；') }} MWh。
+        {{ i.segmentsAgainstCurrent.filter((s) => i.invalidSegments.includes(s.segment)).map((s) => `${segmentLabel(s.segment)} ${s.status === 'EXCEEDS' ? `超出 ${fmtQuantity(s.excessQuantity)}` : `余额 ${fmtQuantity(s.unallocatedQuantity)}`}`).join('；') }} MWh。
         <el-button v-if="canCreate" link type="primary" @click="openDialog(i.allocationKind)">按当前版本重新登记</el-button>
       </MidlongNotice>
 
@@ -128,7 +128,7 @@ async function discard(setId: number) {
           <el-tag size="small" :type="allocationKindTag(kind).type">{{ allocationKindTag(kind).label }}</el-tag>
           <span v-if="overview.effective[kind]" class="ml-hint">生效分配集 #{{ overview.effective[kind]!.setNo }} · {{ STATION_SEGMENT_MODE_LABELS[overview.effective[kind]!.segmentMode] }}</span>
           <el-tag v-if="overview.effective[kind]?.inheritedFromRevisionNo" size="small" type="info">{{ inheritedLabel(overview.effective[kind]!.inheritedFromRevisionNo) }}（只含未受更正影响的片段）</el-tag>
-          <span v-else class="ml-hint">当前版本尚无已确认的{{ kind === 'FORMAL_TRADING' ? '正式交易分解' : '内部经营分配' }}{{ kind === 'FORMAL_TRADING' ? '：全部电量为未分配' : '' }}</span>
+          <span v-if="!overview.effective[kind]" class="ml-hint">当前版本尚无已确认的{{ kind === 'FORMAL_TRADING' ? '正式交易分解' : '内部经营分配' }}{{ kind === 'FORMAL_TRADING' ? '：全部电量为未分配' : '' }}</span>
         </div>
         <template v-if="overview.effective[kind]">
           <el-table :data="overview.effective[kind]!.segments" border size="small">
