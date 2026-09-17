@@ -12,7 +12,7 @@
 // - 导出申报材料不等于提交；登记提交只是记录外部操作事实，不宣称平台已受理、不形成持仓。
 // - 本期不出现套保率、现货敞口、预计利润等口径，不读取现货、预测数据。
 
-import { decimalCompare, decimalDiv, decimalIsZero, decimalSub } from './decimal.mjs'
+import { decimalAdd, decimalCompare, decimalDiv, decimalIsZero, decimalSub } from './decimal.mjs'
 import { isIsoDate, isMonthKey } from './dates.mjs'
 
 // ── 售电目标（计划） ─────────────────────────────────────────────────────────
@@ -115,8 +115,8 @@ export const PLANNING_NOTICES = Object.freeze({
   unverified: '已售电量覆盖不完整（有合同电量未分解到本交割期或电量未知），结果未完成核验；未分解电量不按零计算。',
   targetUnknown: '尚无已确认的售电目标，不计算剩余计划待售量与完成率。',
   zeroTarget: '确认目标为零，不计算完成率。',
-  overPlan: '确认已售电量已超过确认目标（超计划）：剩余计划待售量按负数显示，不截断为零。',
-  overCommitted: '确认已售电量与未完成占用合计已超过确认目标（可安排计划量为负）：真实成交照常入账、不因超计划丢弃，请调整或关闭方案、或更改目标。',
+  overPlan: '确认已售电量已超过确认目标（超计划）：已核验时剩余计划待售量按负数显示、不截断为零；已售未完成核验时按已知已售（下限）判断，剩余仍待核验。',
+  overCommitted: '确认已售电量与未完成占用合计已超过确认目标：已核验时可安排计划量为负；已售未完成核验时按已知已售（下限）判断，余额仍待核验。真实成交照常入账、不因超计划丢弃，请调整或关闭方案、或更改目标。',
   occupation: '方案占用是已确认方案尚未完成的内部安排，不是正式义务，不计入合同持仓。',
   simulation: '方案测算：仅模拟交易后视图，不增加正式持仓，名义金额不是实际收入。',
   priceNotAssessed: '没有可比的中长期行情，不判断方案价格优劣。',
@@ -177,7 +177,7 @@ const nullish = (v) => v === null || v === undefined
  * 规则：
  * - 目标未知 → 剩余、完成率、可安排均为 null，状态 TARGET_UNKNOWN。
  * - 已售不完整 → 剩余、完成率、可安排均为 null（不把未分解电量当零），状态 UNVERIFIED；
- *   但已知已售已超过目标时，超计划是确定事实，照样标出。
+ *   已知已售只是下限：下限已超过目标（超计划）、下限加未完成占用已超过目标（占用超过目标）都是确定事实，照样标出。
  * - 目标为零 → 完成率 null；剩余与可安排照常计算（可为负）。
  * - 已售超过目标 → 剩余为负、完成率超过 1，不截断。
  */
@@ -190,7 +190,9 @@ export function computePlanProgress({ targetQuantity = null, soldQuantity = null
   const arrangeable = remaining === null ? null : decimalSub(remaining, occupation)
   const overPlan = targetKnown && !nullish(soldQuantity) ? decimalCompare(soldQuantity, targetQuantity) > 0 : false
   // 占用建立后又有真实合同确认（合同核验不经过方案占用校验）时，已售 + 占用可能超过目标：如实提示，不回滚真实成交。
-  const overCommitted = arrangeable !== null && decimalCompare(arrangeable, '0') < 0 && decimalCompare(occupation, '0') > 0
+  // 不依赖可安排计划量：已售未完成核验时余额为 null，但已知已售（下限）加占用已超过目标同样是确定事实。
+  const overCommitted = targetKnown && !nullish(soldQuantity) && decimalCompare(occupation, '0') > 0
+    && decimalCompare(decimalAdd(soldQuantity, occupation), targetQuantity) > 0
   const verificationStatus = !targetKnown ? 'TARGET_UNKNOWN' : soldKnown ? 'VERIFIED' : 'UNVERIFIED'
   const notices = []
   if (!targetKnown) notices.push(PLANNING_NOTICES.targetUnknown)
