@@ -120,6 +120,35 @@ describe('revokeSessionAutoApprove（切走会话/卸载时撤销授权，失败
     expect(disables).toHaveLength(1) // 只有最初失败的那一次
   })
 
+  it('撤销请求已发出、尚未落地时用户重新开启：开启排在撤销之后发出，旧的关闭压不过新的开启（dljy-web#122 审查 P2）', async () => {
+    vi.stubGlobal('fetch', fetchMock)
+    let finishRevoke: (r: Response) => void = () => {}
+    fetchMock
+      .mockImplementationOnce(() => new Promise<Response>((r) => { finishRevoke = r }))
+      .mockResolvedValueOnce(jsonResponse({ auto_approve: true }))
+    const revoking = revokeSessionAutoApprove('s_race', { sleep: async () => {}, delaysMs: [] })
+    const enabling = setSessionAutoApprove('s_race', true)
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(fetchMock).toHaveBeenCalledTimes(1) // 开启还在排队
+    finishRevoke(jsonResponse({ auto_approve: false }))
+    await expect(enabling).resolves.toBe(true)
+    await revoking
+    const order = fetchMock.mock.calls.map((c) => JSON.parse((c as [string, RequestInit])[1].body as string).enabled)
+    expect(order).toEqual([false, true])
+  })
+
+  it('开启请求刚发起、还没返回时，待重试的撤销醒来即放弃（世代在发起时推进）', async () => {
+    vi.stubGlobal('fetch', fetchMock)
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ detail: 'x' }, 502)) // 撤销第一次失败
+      .mockImplementationOnce(() => new Promise<Response>(() => {})) // 开启请求一直在途
+    const sleep = vi.fn(async (_ms: number) => { void setSessionAutoApprove('s_pending', true) })
+    await expect(revokeSessionAutoApprove('s_pending', { sleep, delaysMs: [10] })).resolves.toBe(false)
+    const disables = fetchMock.mock.calls.filter((c) => JSON.parse((c as [string, RequestInit])[1].body as string).enabled === false)
+    expect(disables).toHaveLength(1)
+  })
+
   it('重试用尽仍失败：返回 false（用户重新打开会话时按服务端状态仍能看到并关闭）', async () => {
     fetchMock.mockResolvedValue(jsonResponse({ detail: 'x' }, 503))
     vi.stubGlobal('fetch', fetchMock)
