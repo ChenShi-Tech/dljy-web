@@ -233,16 +233,24 @@ describe('中长期售电计划页', () => {
     expect(hoisted.fetchPlanProgress).toHaveBeenLastCalledWith(expect.objectContaining({ page: 1 }))
   })
 
-  it('占用超过目标时标注并提示；目标超过一页时显示分页并按页取数', async () => {
+  it('占用超过目标时标注并提示（已售未完成核验时余额仍待核验、照样标出）；目标超过一页时显示分页并按页取数', async () => {
     hoisted.fetchCapabilities.mockResolvedValue(caps({ plans: true, execution: false }))
     hoisted.fetchPlanProgress.mockResolvedValue(report({
       total: 120,
-      rows: [row(1, '2031-05', { knownSoldQuantity: '50', remainingPlanQuantity: '50', completionRate: '0.05', openOccupationQuantity: '80', arrangeableQuantity: '-30', overCommitted: true })],
+      rows: [
+        row(1, '2031-05', { knownSoldQuantity: '50', remainingPlanQuantity: '50', completionRate: '0.05', openOccupationQuantity: '80', arrangeableQuantity: '-30', overCommitted: true }),
+        // 目标 100、已知已售 60 另有未分解、占用 50：余额未知，但至少已超 10。
+        row(2, '2031-06', { targetQuantity: '100', knownSoldQuantity: '60', soldComplete: false, remainingPlanQuantity: null, completionRate: null, openOccupationQuantity: '50', arrangeableQuantity: null, verificationStatus: 'UNVERIFIED', overCommitted: true }),
+      ],
     }))
     hoisted.fetchProposals.mockResolvedValue(page([]))
     const w = mount(MidlongPlansView, { global: { stubs: STUBS } })
     await flushPromises()
-    expect(w.text()).toContain('占用超目标')
+    const rows = w.findAll('.ml-table .el-table__body-wrapper tbody tr')
+    expect(rows[0].text()).toContain('占用超目标')
+    expect(rows[1].text()).toContain('占用超目标')
+    expect(rows[1].text()).toContain('待核验（不按零计）')
+    expect(rows[1].text()).not.toContain('-10')
     expect(w.text()).toContain(PLANNING_NOTICES.overCommitted)
     expect(w.text()).toContain('-30 MWh')
     expect(w.find('.ml-pagination').exists()).toBe(true)
