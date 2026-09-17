@@ -19,7 +19,7 @@ vi.mock('@/services/midlong/midlongP2Api', () => ({
 
 import MidlongContractStationsPanel from './MidlongContractStationsPanel.vue'
 
-const STUBS = { MidlongStationAllocationDialog: { template: '<div />' } }
+const STUBS = { MidlongStationAllocationDialog: { props: ['overview'], template: '<div class="stub-dialog" :data-revision="overview.currentRevisionNo" />' } }
 const segment = (month: string, o: Partial<StationSegment> = {}): StationSegment => ({
   segment: month, segmentQuantity: '700', allocatedQuantity: '700', unallocatedQuantity: '0', excessQuantity: '0', stationCount: 1, status: 'WITHIN', ...o,
 })
@@ -47,7 +47,7 @@ enableAutoUnmount(afterEach)
 describe('合同场站分配区', () => {
   it('当前版本有生效分配集时不出现「尚无已确认」；没有生效集的类型才显示兜底提示；没有分配行的月份整月显示为未分配', async () => {
     hoisted.fetchContractStationAllocations.mockResolvedValue(overview())
-    const w = mount(MidlongContractStationsPanel, { props: { contractId: 7, canWrite: true, evidence: [], stations: [] }, global: { stubs: STUBS } })
+    const w = mount(MidlongContractStationsPanel, { props: { contractId: 7, rowVersion: 3, canWrite: true, evidence: [], stations: [] }, global: { stubs: STUBS } })
     await flushPromises()
     const [formal, internal] = w.findAll('.ml-kind')
     expect(formal.text()).toContain('生效分配集 #1')
@@ -56,6 +56,18 @@ describe('合同场站分配区', () => {
     expect(formal.findAll('.el-table__body').at(0)!.findAll('tr')[1].findAll('td').map((td) => td.text())).toEqual(['2027-07 月', '800', '0', '800'])
     expect(internal.text()).toContain('当前版本尚无已确认的内部经营分配')
     expect(internal.text()).not.toContain('生效分配集')
+  })
+
+  it('合同核验、更正或作废后（rowVersion 前进）重新取场站分配概览，分配对话框改用新的版本号', async () => {
+    hoisted.fetchContractStationAllocations.mockResolvedValue(overview({ currentRevisionNo: 1 }))
+    const w = mount(MidlongContractStationsPanel, { props: { contractId: 7, rowVersion: 3, canWrite: true, evidence: [], stations: [] }, global: { stubs: STUBS } })
+    await flushPromises()
+    expect(w.find('.stub-dialog').attributes('data-revision')).toBe('1')
+    hoisted.fetchContractStationAllocations.mockResolvedValue(overview({ currentRevisionNo: 2 }))
+    await w.setProps({ rowVersion: 4 })
+    await flushPromises()
+    expect(hoisted.fetchContractStationAllocations).toHaveBeenCalledTimes(2)
+    expect(w.find('.stub-dialog').attributes('data-revision')).toBe('2')
   })
 
   it('沿用更正前版本的分配标「沿用 v1」且不出现兜底提示；更正影响只列失效片段', async () => {
@@ -68,7 +80,7 @@ describe('合同场站分配区', () => {
         segmentsAgainstCurrent: [segment('2027-06'), segment('2027-07', { segmentQuantity: '900', allocatedQuantity: '600', unallocatedQuantity: '300' })],
       }],
     }))
-    const w = mount(MidlongContractStationsPanel, { props: { contractId: 7, canWrite: true, evidence: [], stations: [] }, global: { stubs: STUBS } })
+    const w = mount(MidlongContractStationsPanel, { props: { contractId: 7, rowVersion: 3, canWrite: true, evidence: [], stations: [] }, global: { stubs: STUBS } })
     await flushPromises()
     const formal = w.findAll('.ml-kind')[0]
     expect(formal.text()).toContain('沿用 v1（只含未受更正影响的片段）')

@@ -362,8 +362,9 @@ const missingBasis = computed(() => (actionError.value?.errorCode === 'INCOMPLET
         <p v-if="current?.allocations.some((a) => a.evidenceBasis === 'INTERNAL_ESTIMATE')" class="ml-muted">内部估算分解仅供参考，不计入正式持仓。</p>
       </div>
 
-      <MidlongContractCurvesPanel v-if="showCurves" :contract-id="detail.contractId" :can-write="canWrite" :evidence="detail.evidence" />
-      <MidlongContractStationsPanel v-if="showStations" :contract-id="detail.contractId" :can-write="canWrite" :evidence="detail.evidence" :stations="stationOptions" />
+      <!-- 核验、更正、作废等操作都会让 rowVersion 前进：面板据此重新取概览，否则仍显示旧版本状态、提交旧的 expectedRevisionNo。 -->
+      <MidlongContractCurvesPanel v-if="showCurves" :contract-id="detail.contractId" :row-version="detail.rowVersion" :can-write="canWrite" :evidence="detail.evidence" />
+      <MidlongContractStationsPanel v-if="showStations" :contract-id="detail.contractId" :row-version="detail.rowVersion" :can-write="canWrite" :evidence="detail.evidence" :stations="stationOptions" />
 
       <div class="ml-panel">
         <h3>版本历史（{{ detail.revisions.length }}）</h3>

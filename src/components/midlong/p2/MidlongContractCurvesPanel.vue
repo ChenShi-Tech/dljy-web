@@ -19,7 +19,7 @@ import { CORRECTION_IMPACT_LABELS, CURVE_GRANULARITY_LABELS, type ContractCurves
 import { createLoadGuard, fmtQuantity } from '@/services/midlong/midlongFormat'
 import { basisTag, curveSetStatusTag, inheritedLabel, timeStatusTag } from '@/services/midlong/midlongP2Format'
 
-const props = defineProps<{ contractId: number; canWrite: boolean; evidence: MidlongEvidence[] }>()
+const props = defineProps<{ contractId: number; rowVersion: number; canWrite: boolean; evidence: MidlongEvidence[] }>()
 
 const overview = ref<ContractCurvesOverview | null>(null)
 const failure = ref('')
@@ -27,7 +27,8 @@ const loading = ref(false)
 const dialogs = ref({ import: false, estimate: false })
 const copying = ref<string | null>(null)
 const guard = createLoadGuard()
-const contextKey = () => `${selectedCompanyId.value}|${currentRegion.value.id}|${props.contractId}`
+// 合同行版本（rowVersion）也进上下文：核验、更正、作废后重新取概览，并丢弃操作前发出的迟到响应。
+const contextKey = () => `${selectedCompanyId.value}|${currentRegion.value.id}|${props.contractId}|${props.rowVersion}`
 
 async function load() {
   const token = guard.begin(contextKey())
@@ -48,7 +49,7 @@ async function load() {
 }
 
 onMounted(load)
-watch([selectedCompanyId, () => currentRegion.value.id, () => props.contractId], () => void load())
+watch([selectedCompanyId, () => currentRegion.value.id, () => props.contractId, () => props.rowVersion], () => void load())
 
 const canCreate = computed(() => Boolean(props.canWrite && overview.value?.canCreate))
 const impactMonths = computed(() => (overview.value?.months ?? []).filter((m) => m.correctionImpact))

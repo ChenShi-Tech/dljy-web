@@ -31,6 +31,16 @@ afterEach(() => { vi.clearAllMocks() })
 enableAutoUnmount(afterEach)
 
 describe('分时曲线导入', () => {
+  it('点覆盖月份的清除按钮（值变为 null）：不报错，提示补充覆盖月份且不能提交', async () => {
+    const w = await open()
+    const range = w.findAllComponents({ name: 'ElDatePicker' }).find((c) => c.props('type') === 'monthrange')!
+    range.vm.$emit('update:modelValue', null)
+    await flushPromises()
+    expect((w.vm as unknown as DialogVm).form.coverage).toEqual([])
+    expect(w.text()).toContain('覆盖月份')
+    expect(w.findAll('button').find((b) => b.text() === '保存草稿并校验')!.attributes('disabled')).toBeDefined()
+  })
+
   it('未声明原始时区、单位、粒度时不能提交；模板容差与尾差规则公示', async () => {
     const w = await open()
     expect(w.text()).toContain('守恒容差 0 MWh')

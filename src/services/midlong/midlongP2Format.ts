@@ -60,6 +60,11 @@ export function allocationKindTag(kind: StationAllocationKind): { label: string;
     : { label: STATION_ALLOCATION_KIND_LABELS.FORMAL_TRADING, type: 'success' }
 }
 
+/** 日期 / 月份范围选择器的值：点清除按钮时 Element Plus 回传 null，一律规范为空数组，由调用方按默认范围回退。 */
+export function rangeValue(value: unknown): string[] {
+  return Array.isArray(value) ? value.map(String) : []
+}
+
 /** 合同更正后沿用旧版本上已确认的分解 / 分配时标「沿用 vN」；当前版本自己的返回空串。 */
 export function inheritedLabel(inheritedFromRevisionNo: number | null | undefined): string {
   return inheritedFromRevisionNo ? `沿用 v${inheritedFromRevisionNo}` : ''

@@ -10,7 +10,7 @@ import {
   CURVE_ESTIMATE_GRANULARITIES, CURVE_ESTIMATE_METHOD_LABELS, CURVE_GRANULARITY_LABELS, CURVE_TEMPLATES,
   type CurveDraftResult, type CurveEstimateMethod,
 } from '@/services/midlong/midlongP2Types'
-import { parseProfileWeights } from '@/services/midlong/midlongP2Format'
+import { parseProfileWeights, rangeValue } from '@/services/midlong/midlongP2Format'
 
 const props = defineProps<{ modelValue: boolean; contractId: number; revisionNo: number; deliveryStart: string | null }>()
 const emit = defineEmits<{ 'update:modelValue': [boolean]; created: [CurveDraftResult] }>()
@@ -78,7 +78,7 @@ async function submit() {
           </el-select>
         </el-form-item>
         <el-form-item label="覆盖月份">
-          <el-date-picker v-model="form.coverage" type="monthrange" value-format="YYYY-MM" range-separator="至" start-placeholder="起始月" end-placeholder="结束月" style="width: 240px" />
+          <el-date-picker :model-value="form.coverage" type="monthrange" @update:model-value="(v: unknown) => (form.coverage = rangeValue(v))" value-format="YYYY-MM" range-separator="至" start-placeholder="起始月" end-placeholder="结束月" style="width: 240px" />
         </el-form-item>
         <el-form-item v-if="form.method === 'PROFILE'" label="时段权重">
           <el-input v-model="form.profileText" type="textarea" :rows="3" :placeholder="`${periodsPerDay} 个非负权重，逗号或空格分隔，第 1 个对应 00:00 起的时段`" />

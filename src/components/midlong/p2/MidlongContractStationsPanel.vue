@@ -20,7 +20,7 @@ import {
 import { createLoadGuard, fmtQuantity } from '@/services/midlong/midlongFormat'
 import { allocationKindTag, curveSetStatusTag, inheritedLabel, segmentLabel } from '@/services/midlong/midlongP2Format'
 
-const props = defineProps<{ contractId: number; canWrite: boolean; evidence: MidlongEvidence[]; stations: Array<{ id: number; name: string }> }>()
+const props = defineProps<{ contractId: number; rowVersion: number; canWrite: boolean; evidence: MidlongEvidence[]; stations: Array<{ id: number; name: string }> }>()
 
 const overview = ref<ContractStationAllocationsOverview | null>(null)
 const failure = ref('')
@@ -28,7 +28,8 @@ const loading = ref(false)
 const dialogOpen = ref(false)
 const dialogKind = ref<StationAllocationKind>('FORMAL_TRADING')
 const guard = createLoadGuard()
-const contextKey = () => `${selectedCompanyId.value}|${currentRegion.value.id}|${props.contractId}`
+// 合同行版本（rowVersion）也进上下文：核验、更正、作废后重新取概览，并丢弃操作前发出的迟到响应。
+const contextKey = () => `${selectedCompanyId.value}|${currentRegion.value.id}|${props.contractId}|${props.rowVersion}`
 
 async function load() {
   const token = guard.begin(contextKey())
@@ -49,7 +50,7 @@ async function load() {
 }
 
 onMounted(load)
-watch([selectedCompanyId, () => currentRegion.value.id, () => props.contractId], () => void load())
+watch([selectedCompanyId, () => currentRegion.value.id, () => props.contractId, () => props.rowVersion], () => void load())
 
 const canCreate = computed(() => Boolean(props.canWrite && overview.value?.canCreate))
 const drafts = computed(() => (overview.value?.sets ?? []).filter((s) => s.status === 'DRAFT'))

@@ -24,7 +24,7 @@ import {
   INTERVAL_POSITION_MAX_DAYS, type IntervalBucket, type IntervalPositionGranularity, type IntervalPositionQuery, type IntervalPositionReport,
 } from '@/services/midlong/midlongP2Types'
 import { createLoadGuard, downloadCsv, fmtQuantity } from '@/services/midlong/midlongFormat'
-import { bucketQuantityLabel, bucketTimeLabel, coverageTag, inheritedLabel, timeStatusTag } from '@/services/midlong/midlongP2Format'
+import { bucketQuantityLabel, bucketTimeLabel, coverageTag, inheritedLabel, rangeValue, timeStatusTag } from '@/services/midlong/midlongP2Format'
 
 const route = useRoute()
 const router = useRouter()
@@ -142,7 +142,9 @@ const poolHasUnknownTotal = computed(() => (report.value?.unallocatedPool ?? [])
 
 function buildOption(): Record<string, unknown> {
   const buckets = report.value?.buckets ?? []
-  const labels = buckets.map((b) => bucketTimeLabel(b.start, filters.granularity))
+  // 标签按这份结果实际的粒度，不读控件：改了粒度还没点「查询」时，图表必须与表格、导出一致。
+  const granularity = report.value?.granularity ?? 'HOUR'
+  const labels = buckets.map((b) => bucketTimeLabel(b.start, granularity))
   const accent = cssVar('--accent') || '#2563eb'
   const warning = cssVar('--warning') || '#f59e0b'
   const muted = cssVar('--muted') || '#94a3b8'
@@ -207,7 +209,7 @@ function buildOption(): Record<string, unknown> {
 
     <template v-if="report && totals && (state === 'ready' || state === 'loading')">
       <div class="ml-filters">
-        <el-date-picker v-model="filters.dateRange" type="daterange" value-format="YYYY-MM-DD" range-separator="至" start-placeholder="起始日" end-placeholder="结束日" style="width: 240px" />
+        <el-date-picker :model-value="filters.dateRange" type="daterange" @update:model-value="(v: unknown) => (filters.dateRange = rangeValue(v))" value-format="YYYY-MM-DD" range-separator="至" start-placeholder="起始日" end-placeholder="结束日" style="width: 240px" />
         <el-radio-group v-model="filters.granularity" size="small">
           <el-radio-button v-for="g in GRANULARITY_OPTIONS" :key="g.value" :value="g.value">{{ g.label }}</el-radio-button>
         </el-radio-group>

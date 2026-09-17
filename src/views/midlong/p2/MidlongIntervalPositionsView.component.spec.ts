@@ -8,6 +8,7 @@ import { nextTick } from 'vue'
 import { mount } from '@/test/mount'
 import type { MidlongCapabilities } from '@/services/midlong/midlongTypes'
 import type { IntervalPositionReport } from '@/services/midlong/midlongP2Types'
+import { beijingToday } from '@/services/midlong/midlongTypes'
 
 const hoisted = vi.hoisted(() => ({
   fetchCapabilities: vi.fn(), fetchIntervalPositions: vi.fn(), exportIntervalPositions: vi.fn(), replace: vi.fn(), downloadCsv: vi.fn(),
@@ -38,7 +39,7 @@ vi.mock('@/services/midlong/midlongP2Api', async (orig) => ({
 
 import MidlongIntervalPositionsView from './MidlongIntervalPositionsView.vue'
 
-const STUBS = { CompanyScopeBar: { template: '<div />' }, ChartCard: { template: '<div class="stub-chart" />' }, 'router-link': { props: ['to'], template: '<a :data-to="typeof to === \'string\' ? to : JSON.stringify(to)"><slot /></a>' } }
+const STUBS = { CompanyScopeBar: { template: '<div />' }, ChartCard: { props: ['buildOption'], template: '<div class="stub-chart" :data-labels="buildOption().xAxis.data.join(\'|\')" />' }, 'router-link': { props: ['to'], template: '<a :data-to="typeof to === \'string\' ? to : JSON.stringify(to)"><slot /></a>' } }
 const caps = (modules: Record<string, boolean> = { curves: true }): MidlongCapabilities => ({
   enabled: true, regionId: 'yunnan', regionSupported: true, pilotRegions: ['yunnan'], phase: 'P1',
   modules: { contracts: true, positions: true, imports: true, plans: false, execution: false, review: false, ...modules } as MidlongCapabilities['modules'],
@@ -145,6 +146,36 @@ describe('中长期售电分时持仓', () => {
     expect(hoisted.exportIntervalPositions).toHaveBeenCalledTimes(1)
     expect(hoisted.exportIntervalPositions.mock.calls[0][0]).toEqual(shown)
     expect(hoisted.downloadCsv).toHaveBeenCalledWith('TEST.csv', 'x')
+    expect(hoisted.fetchIntervalPositions).toHaveBeenCalledTimes(1)
+  })
+
+  it('点日期范围的清除按钮（值变为 null）后再查询：不报错，按默认的今天查询', async () => {
+    hoisted.fetchCapabilities.mockResolvedValue(caps())
+    hoisted.fetchIntervalPositions.mockResolvedValue(report())
+    const w = mount(MidlongIntervalPositionsView, { global: { stubs: STUBS } })
+    await flushPromises()
+    const range = w.findAllComponents({ name: 'ElDatePicker' }).find((c) => c.props('type') === 'daterange')!
+    range.vm.$emit('update:modelValue', null)
+    await flushPromises()
+    expect((w.vm as unknown as { filters: { dateRange: unknown } }).filters.dateRange).toEqual([])
+    await w.findAll('button').find((b) => b.text() === '查询')!.trigger('click')
+    await flushPromises()
+    const today = beijingToday()
+    expect(hoisted.fetchIntervalPositions).toHaveBeenCalledTimes(2)
+    expect(hoisted.fetchIntervalPositions.mock.calls[1][0]).toEqual({ fromDate: today, toDate: today, granularity: 'HOUR' })
+  })
+
+  it('改了粒度但没点「查询」：图表标签仍按这份结果的粒度（小时），与表格、导出一致', async () => {
+    hoisted.fetchCapabilities.mockResolvedValue(caps())
+    hoisted.fetchIntervalPositions.mockResolvedValue(report())
+    const w = mount(MidlongIntervalPositionsView, { global: { stubs: STUBS } })
+    await flushPromises()
+    // 桩与真实 ChartCard 一样在渲染时调用 buildOption()，依赖的响应式数据变化即重算。
+    const labels = () => w.find('.stub-chart').attributes('data-labels')!.split('|')
+    expect(labels()).toEqual(['05-01 00:00', '05-01 01:00'])
+    ;(w.vm as unknown as { filters: { granularity: string } }).filters.granularity = 'DAY'
+    await flushPromises()
+    expect(labels()).toEqual(['05-01 00:00', '05-01 01:00'])
     expect(hoisted.fetchIntervalPositions).toHaveBeenCalledTimes(1)
   })
 
