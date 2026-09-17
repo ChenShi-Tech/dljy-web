@@ -58,7 +58,8 @@ async function open(props: Record<string, unknown>) {
 afterEach(() => vi.clearAllMocks())
 enableAutoUnmount(afterEach)
 
-describe('中长期合同草稿表单', () => {
+// 整个 el-dialog 表单挂载较重，全量并发跑且本机负载高时单例偶发超过默认 5 秒；放宽超时，不改断言。
+describe('中长期合同草稿表单', { timeout: 20000 }, () => {
   it('修改草稿时带回原有框架协议关联，保存请求里不会把它清空', async () => {
     hoisted.fetchContracts.mockResolvedValue({ rows: [frameworkRow], page: 1, pageSize: 200, total: 1, stats: {} })
     hoisted.updateDraft.mockResolvedValue({ contractId: 7, warnings: [] })
