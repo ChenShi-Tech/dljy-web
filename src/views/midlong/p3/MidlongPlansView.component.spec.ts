@@ -17,6 +17,7 @@ import {
 const hoisted = vi.hoisted(() => ({
   fetchCapabilities: vi.fn(), fetchPlanProgress: vi.fn(), fetchProposals: vi.fn(), fetchWindows: vi.fn(), confirmPlan: vi.fn(), replace: vi.fn(),
   fetchPlan: vi.fn(), fetchProposal: vi.fn(), fetchProposalComparison: vi.fn(), confirmProposal: vi.fn(),
+  fetchSubjects: vi.fn(async () => [{ id: 1, displayName: '测试交易单元', subjectKey: 'TEST-1' }]),
   routeQuery: {} as Record<string, string>, companyRef: null as null | { value: string },
 }))
 
@@ -31,7 +32,7 @@ vi.mock('@/services/region/regionContext', async () => ({ currentRegion: (await 
 vi.mock('@/services/midlong/midlongApi', () => ({
   CompanyNotSelectedError: class extends Error {},
   fetchCapabilities: hoisted.fetchCapabilities,
-  fetchSubjects: vi.fn(async () => [{ id: 1, displayName: '测试交易单元', subjectKey: 'TEST-1' }]),
+  fetchSubjects: hoisted.fetchSubjects,
   midlongFailureOf: (e: unknown) => ({ status: 500, errorCode: 'STORAGE_UNAVAILABLE', message: (e as Error).message, details: null }),
 }))
 vi.mock('@/services/midlong/midlongP3Api', () => ({
@@ -257,6 +258,8 @@ describe('中长期售电计划页', () => {
     await w.find('.stub-history').trigger('click')
     await flushPromises()
     expect(hoisted.fetchPlanProgress).toHaveBeenLastCalledWith(expect.objectContaining({ planId: '7', asOf: '2031-01-31T23:59:59.999Z', page: 1 }))
+    // 路由与请求一致：URL 里不能留着第 2 页，否则刷新或分享时又按第 2 页打开空的历史报告。
+    expect(hoisted.replace).toHaveBeenLastCalledWith({ query: expect.objectContaining({ planId: '7', page: '1' }) })
   })
 
   it('方案标签改了条件就回到第一页：从第 3 页改状态后查询按第 1 页请求', async () => {
@@ -271,6 +274,7 @@ describe('中长期售电计划页', () => {
     await w.findAll('button').filter((b) => b.text() === '查询').at(-1)!.trigger('click')
     await flushPromises()
     expect(hoisted.fetchProposals).toHaveBeenLastCalledWith(expect.objectContaining({ status: 'EXECUTABLE', page: 1 }))
+    expect(hoisted.replace).toHaveBeenLastCalledWith({ query: expect.objectContaining({ status: 'EXECUTABLE', proposalPage: '1' }) })
   })
 
   it('标签页分别加载：方案接口失败只在方案标签报错，目标标签的完成情况照常显示且不被清空', async () => {
@@ -387,5 +391,21 @@ describe('中长期售电计划页', () => {
     expect(hoisted.confirmPlan).toHaveBeenCalledWith(1, 2)
     expect(hoisted.fetchPlan).toHaveBeenCalledTimes(3)
     expect(drawer.text()).toContain('boss-user')
+  })
+
+  it('切换公司：重新取能力并清空交易主体，新公司的主体返回前不保留上一家公司的主体', async () => {
+    hoisted.fetchCapabilities.mockResolvedValue(caps({ plans: true, execution: false }))
+    hoisted.fetchPlanProgress.mockResolvedValue(report())
+    const stubs = { ...STUBS, PlanFormDialog: { props: ['subjects'], template: '<div class="stub-plan-form" :data-subjects="subjects.map((s) => s.displayName).join()" />' } }
+    const w = mount(MidlongPlansView, { global: { stubs } })
+    await flushPromises()
+    expect(w.find('.stub-plan-form').attributes('data-subjects')).toBe('测试交易单元')
+    hoisted.fetchSubjects.mockImplementationOnce(() => new Promise(() => {}))
+    hoisted.fetchPlanProgress.mockImplementationOnce(() => new Promise(() => {}))
+    hoisted.companyRef!.value = 'comp-b'
+    await flushPromises()
+    expect(hoisted.fetchCapabilities).toHaveBeenCalledTimes(2)
+    expect(w.find('.stub-plan-form').attributes('data-subjects')).toBe('')
+    expect(w.text()).not.toContain('300 MWh')
   })
 })

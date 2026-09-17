@@ -140,6 +140,8 @@ function loadActiveTab() {
 async function load() {
   const key = scopeKey()
   const token = pageGuard.begin(key)
+  // 换了公司或地区：三个标签的数据与交易主体都属于原范围，全部清空，切到其他标签时不短暂显示原公司记录
+  // （错误与加载状态由各标签取数开始时重置；能力在下面重新读取，读取期间页面整体处于加载态）。
   if (key !== loadedScope) { calendar.value = null; windows.value = []; windowTotal.value = 0; proposals.value = []; proposalTotal.value = 0; subjects.value = [] }
   loadedScope = key
   state.value = 'loading'
@@ -162,13 +164,19 @@ async function load() {
   await loadActiveTab()
 }
 
-function apply() {
+/** 同步路由。方案条件变化先回到第一页再写路由：否则 URL 留着旧页码，刷新或分享时又按旧页码初始化。 */
+function syncRoute() {
+  if (proposalsFilterKey() !== lastProposalsFilterKey) filters.proposalPage = 1
   const next: Record<string, string> = { tab: tab.value }
   if (filters.monthRange.length === 2) { next.fromMonth = filters.monthRange[0]; next.toMonth = filters.monthRange[1] }
   if (filters.status) next.status = filters.status
   if (filters.windowPage > 1) next.windowPage = String(filters.windowPage)
   if (filters.proposalPage > 1) next.proposalPage = String(filters.proposalPage)
   void router.replace({ query: next })
+}
+
+function apply() {
+  syncRoute()
   if (state.value === 'ready') void loadActiveTab()
   else void load()
 }
@@ -185,14 +193,16 @@ function changePage(target: 'windows' | 'proposals', page: number) {
 }
 
 onMounted(load)
-// 切换公司/地区：关闭详情抽屉与公告表单，旧范围的迟到结果由抽屉的代次守卫丢弃。
+// 切换公司/地区：关闭详情抽屉与公告表单，回到第一页；与计划页一致重跑页面级加载（重新取能力与写权限、清空全部标签），
+// 不能只重载当前标签。旧范围的迟到结果由各代次守卫丢弃。
 watch([selectedCompanyId, () => currentRegion.value.id], () => {
   windowDrawer.open = false
   proposalDrawer.open = false
   windowDialog.open = false
   Object.assign(filters, { windowPage: 1, proposalPage: 1 })
   lastProposalsFilterKey = proposalsFilterKey()
-  apply()
+  syncRoute()
+  void load()
 })
 
 const calendarGroups = computed(() => groupEventsByBeijingDate(calendar.value?.events ?? []))

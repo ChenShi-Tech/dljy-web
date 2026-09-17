@@ -143,6 +143,9 @@ describe('中长期交易执行页', () => {
     await w.findAll('.el-tabs__item').find((t) => t.text() === '方案执行')!.trigger('click')
     await flushPromises()
     expect(hoisted.fetchProposals).toHaveBeenLastCalledWith(expect.objectContaining({ status: 'SUBMITTED', page: 1 }))
+    // 路由与请求一致：改条件后切换标签写入的 URL 不能留着第 3 页（第 1 页不写页码）。
+    expect(hoisted.replace.mock.calls.at(-1)![0].query).toMatchObject({ tab: 'proposals', status: 'SUBMITTED' })
+    expect(hoisted.replace.mock.calls.at(-1)![0].query).not.toHaveProperty('proposalPage')
     expect(w.text()).toContain('#11')
   })
 
@@ -211,5 +214,33 @@ describe('中长期交易执行页', () => {
     expect(hoisted.fetchWindow).toHaveBeenCalledTimes(2)
     expect(drawer.text()).toContain('当前 v3')
     expect(drawer.text()).toContain('更正原因：【测试数据】更正申报截止')
+  })
+
+  it('切换公司：重跑页面级加载刷新能力与写权限，清空全部标签，切到其他标签时不出现上一家公司的记录', async () => {
+    hoisted.routeQuery = { tab: 'proposals' }
+    hoisted.fetchCapabilities.mockResolvedValue(caps(true))
+    hoisted.fetchProposals.mockResolvedValue(page([proposalRow(11, 'EXECUTABLE')]))
+    hoisted.fetchWindows.mockResolvedValue(page([windowRow(1, '【测试数据】甲公司公告', 0, 0)]))
+    const w = mount(MidlongExecutionView, { global: { stubs: STUBS } })
+    await flushPromises()
+    expect(w.text()).toContain('#11')
+    await w.findAll('.el-tabs__item').find((t) => t.text() === '公告登记')!.trigger('click')
+    await flushPromises()
+    expect(w.text()).toContain('【测试数据】甲公司公告')
+    expect(w.findAll('button').some((b) => b.text() === '登记公告')).toBe(true)
+
+    // 乙公司只读；公告与方案接口都还没返回。
+    hoisted.fetchCapabilities.mockResolvedValue({ ...caps(true), canWrite: false, companyId: 'comp-b', scopeCompanyIds: ['comp-b'] })
+    hoisted.fetchWindows.mockImplementation(() => new Promise(() => {}))
+    hoisted.fetchProposals.mockImplementation(() => new Promise(() => {}))
+    hoisted.companyRef!.value = 'comp-b'
+    await flushPromises()
+    expect(hoisted.fetchCapabilities).toHaveBeenCalledTimes(2)
+    expect(w.text()).not.toContain('【测试数据】甲公司公告')
+    expect(w.findAll('button').some((b) => b.text() === '登记公告')).toBe(false)
+    await w.findAll('.el-tabs__item').find((t) => t.text() === '方案执行')!.trigger('click')
+    await flushPromises()
+    expect(hoisted.fetchProposals).toHaveBeenCalledTimes(2)
+    expect(w.text()).not.toContain('#11')
   })
 })

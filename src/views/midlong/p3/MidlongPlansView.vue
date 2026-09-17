@@ -127,11 +127,14 @@ function loadActiveTab() {
 async function load() {
   const key = scopeKey()
   const token = pageGuard.begin(key)
+  // 换了公司或地区：各标签数据与交易主体都属于原范围，全部清空，不在新范围里短暂显示
+  // （错误与加载状态由各标签取数开始时重置；公告候选在打开表单时重新加载）。
   if (key !== loadedScope) {
     report.value = null
     proposals.value = []
     proposalTotal.value = 0
     proposalsLoaded.value = false
+    subjects.value = []
   }
   loadedScope = key
   state.value = 'loading'
@@ -166,7 +169,14 @@ function search() {
   apply()
 }
 
+/** 条件与上次取数不同的标签回到第一页。必须在写路由之前调用：否则 URL 留着旧页码，刷新或分享时又按旧页码初始化。 */
+function resetChangedPages() {
+  if (targetsFilterKey() !== lastTargetsFilterKey) filters.page = 1
+  if (proposalsFilterKey() !== lastProposalsFilterKey) filters.proposalPage = 1
+}
+
 function apply() {
+  resetChangedPages()
   const next: Record<string, string> = { tab: tab.value }
   for (const [k, v] of Object.entries(filters)) if (v) next[k] = String(v)
   void router.replace({ query: next })
