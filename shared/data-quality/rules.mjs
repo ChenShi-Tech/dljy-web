@@ -201,6 +201,17 @@ export const CAPTURE_QUALITY_RULES = {
       market_monthly_trend: { skip: false, cadence: 'monthly', dateField: 'month' },
       market_price: { skip: false, cadence: 'monthly', dateField: 'month' }
     }
+  },
+  // 南网披露表通用长表（issue #2825）：17 个 datasetKey 共享一族，宽表 unpivot 后 96 点/日、
+  // 标量表 1-N 行/日不统一，按「有行即可」的日行数口径（同 yn_hydro_group_limit 处置——
+  // 不套 distinct timePoint 完整率，避免对宽表以外键恒误报）。
+  yn_disclosure_metric: {
+    cadence: 'daily',
+    expectedPointsPerDay: 1,
+    minRowsPerDay: 1,
+    dateField: 'operateDate',
+    valueFields: ['value'],
+    zeroRunWarnLength: 0
   }
 }
 

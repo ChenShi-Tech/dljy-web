@@ -23,6 +23,18 @@ describe('canAccessPath 判权只看路径（query/hash 不影响）', () => {
     expect(canAccessPath('/system/accounts?x=1', quant)).toBe(false)
   })
 
+  it('中长期售电合同/月度持仓与旧「合同管理」可见范围一致：换入口不扩权也不收窄（dljy#2939，原方案用例 18）', () => {
+    for (const roleCode of Object.keys(roleLabels) as RoleCode[]) {
+      const legacy = canAccessPath('/gsgl/contracts', { roleCode })
+      expect(canAccessPath('/zcqjy/contracts', { roleCode })).toBe(legacy)
+      expect(canAccessPath('/zcqjy/contracts/42?deliveryFrom=2027-01', { roleCode })).toBe(legacy)
+      expect(canAccessPath('/zcqjy/positions', { roleCode })).toBe(legacy)
+      // 放行只命中这三类路径：前缀相似的路径与中长期其它页面仍按角色规则判定，不被顺带放开。
+      expect(canAccessPath('/zcqjy/contracts-export', { roleCode })).toBe(canAccessPath('/zcqjy/not-a-midlong-page', { roleCode }))
+      expect(canAccessPath('/zcqjy/positions/detail', { roleCode })).toBe(canAccessPath('/zcqjy/not-a-midlong-page', { roleCode }))
+    }
+  })
+
   it('SETTLEMENT / RETAIL_MANAGER 对 /yygl/import-hub 死授权已移除', () => {
     expect(canAccessPath('/yygl/import-hub', { roleCode: 'SETTLEMENT' })).toBe(false)
     expect(canAccessPath('/yygl/import-hub', { roleCode: 'RETAIL_MANAGER' })).toBe(false)

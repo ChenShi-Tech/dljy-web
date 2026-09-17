@@ -3,6 +3,7 @@ import { selectedCompanyId, setCompanyOptions, type CompanyOption } from '@/serv
 import { companyRegionId } from '@/services/region/regionCompany'
 import { selectedRegionId } from '@/services/region/regionContext'
 import type { Infer } from 'shared/schema/define.mjs'
+import type { LegacyMidlongManagement } from '@/services/midlong/midlongTypes'
 import {
   stationSchema, unitSchema, unitOutputSchema, tradeSchema, profileSchema,
   contractSchema, contractDetailSchema, MARKET_TYPES, TRADE_MODES, CONTRACT_STATUSES
@@ -38,6 +39,8 @@ export type CompanyContract = Infer<typeof contractSchema> & ServerManaged & {
   ownerDomain?: 'market-trading' | 'retail-settlement' | 'unknown'
   blocked?: boolean
   contractId?: number | null
+  // dljy#2938：已纳入中长期售电底账的合同，旧列表补充纳管状态；此类合同在旧入口只读，编辑走新页面。
+  midlong?: LegacyMidlongManagement
 }
 export type CompanyContractDetail = Infer<typeof contractDetailSchema> & { id: number; companyId: string; contractId: number; createdAt?: string; updatedAt?: string }
 // 创建/编辑合同时可随主体附带交易明细数组（后端整体替换该合同明细）。

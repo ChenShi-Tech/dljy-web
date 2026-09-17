@@ -668,6 +668,9 @@ export function canAccessPath(path: string, user: Pick<GovernanceUser, 'roleCode
   // 公司管理入口对所有登录用户开放：每人看到的是自身公司（后端 companyId 隔离），
   // 写操作由后端 company 写权限闸门控制。故前端不按角色限制 /gsgl 菜单可见性。
   if (normalized === '/gsgl' || normalized.startsWith('/gsgl/')) return true
+  // 中长期售电合同与月度持仓（dljy#2939）承接原「公司管理 › 合同管理」的合同底账：可见范围与旧入口一致
+  // （全部登录用户看自身公司，写入由后端公司写权限闸门控制），业务迁入不因换入口而扩权或收窄。
+  if (normalized === '/zcqjy/contracts' || normalized.startsWith('/zcqjy/contracts/') || normalized === '/zcqjy/positions') return true
 
   const rule = getEffectiveAccessRule(roleCode)
   if (rule.routes?.includes(normalized)) return true

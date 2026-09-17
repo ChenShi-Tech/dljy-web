@@ -88,6 +88,10 @@ const companyAssets = () => import('../views/company/CompanyAssetsView.vue')
 const companyOutput = () => import('../views/company/CompanyOutputView.vue')
 const companyTrades = () => import('../views/company/CompanyTradesView.vue')
 const companyContracts = () => import('../views/company/CompanyContractsView.vue')
+// 云南中长期售电合同 P1（dljy#2939）：合同底账、详情与月度持仓；旧「公司管理 › 合同管理」保留并对已纳管合同分流。
+const midlongContracts = () => import('../views/midlong/MidlongContractsView.vue')
+const midlongContractDetail = () => import('../views/midlong/MidlongContractDetailView.vue')
+const midlongPositions = () => import('../views/midlong/MidlongPositionsView.vue')
 const riskCenter = () => import('../views/RiskCenterView.vue')
 
 type PageMeta = {
@@ -246,6 +250,10 @@ const router = createRouter({
         page('xhjy/region', 'SpotRegionOverview', { block: '现货交易', title: '地区现货概览', code: 'spot-region-overview', endpoint: 'local regional trading registry', dataPath: 'local_region_trading', scope: '当前地区现货机制、价格画像、电源结构和通用底座', kind: 'mixed' }, regionalTradingHub),
 
         // 中长期交易 /zcqjy
+        // 售电合同与月度持仓（dljy#2939）：只读合同底账，不依赖现货/预测/厂侧接口；公司范围与旧合同页同口径。
+        page('zcqjy/contracts', 'MidlongContracts', { block: '中长期交易', title: '售电合同', code: 'midlong-contracts', endpoint: 'GET/POST/PATCH /api/v1/midlong/contracts* + /imports* + /subjects', dataPath: 'company.midlong_*', scope: '云南中长期售电合同：录入、导入、核验、更正、作废与资料', kind: 'real' }, midlongContracts),
+        page('zcqjy/contracts/:id', 'MidlongContractDetail', { block: '中长期交易', title: '售电合同详情', code: 'midlong-contract-detail', endpoint: 'GET /api/v1/midlong/contracts/{id} + verify/revisions/void/evidence/aliases', dataPath: 'company.midlong_*', scope: '版本历史、月度分解、资料与业务事件', kind: 'real' }, midlongContractDetail),
+        page('zcqjy/positions', 'MidlongPositions', { block: '中长期交易', title: '月度持仓', code: 'midlong-positions', endpoint: 'GET /api/v1/midlong/positions(+/export)', dataPath: 'company.midlong_*', scope: '已确认售电义务按月汇总、跨期未分解池、价格覆盖与名义金额、历史认知时点', kind: 'real' }, midlongPositions),
         page('zcqjy/zccljk', 'PositionMonitor', { block: '中长期交易', title: '持仓量监控', code: 'zccljk', endpoint: 'GET /sdpt/zfsdjy/ccljkDay|ccljkTime|list', dataPath: 'sdpt_zfsdjy', scope: '2026-06，39行', kind: 'real' }, zfsdjyPosition),
         page('zcqjy/zfsdjy', 'PeriodTrading', { block: '中长期交易', title: '分时段交易', code: 'zfsdjy', endpoint: 'GET /sdpt/zfsdjy/list', dataPath: 'sdpt_zfsdjy', kind: 'real' }, zfsdjyTrades),
         page('zcqjy/zjyap', 'TradeCalendar', { block: '中长期交易', title: '交易月历', code: 'zjyap', endpoint: 'GET /sdpt/zjyap/calendar', dataPath: 'sdpt_zjyap', scope: '28行', kind: 'real' }, tradeCalendar),
