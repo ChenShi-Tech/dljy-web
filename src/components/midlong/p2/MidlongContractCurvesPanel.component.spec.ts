@@ -17,7 +17,11 @@ vi.mock('@/services/midlong/midlongP2Api', () => ({ fetchContractCurves: hoisted
 
 import MidlongContractCurvesPanel from './MidlongContractCurvesPanel.vue'
 
-const STUBS = { 'router-link': { props: ['to'], template: '<a :data-to="to"><slot /></a>' }, MidlongCurveImportDialog: { template: '<div />' }, MidlongCurveEstimateDialog: { template: '<div />' } }
+const STUBS = {
+  'router-link': { props: ['to'], template: '<a :data-to="to"><slot /></a>' },
+  MidlongCurveImportDialog: { props: ['revisionNo'], template: '<div class="stub-import" :data-revision="revisionNo" />' },
+  MidlongCurveEstimateDialog: { props: ['revisionNo'], template: '<div class="stub-estimate" :data-revision="revisionNo" />' },
+}
 
 function overview(o: Partial<ContractCurvesOverview> = {}): ContractCurvesOverview {
   return {
@@ -41,7 +45,7 @@ enableAutoUnmount(afterEach)
 describe('合同分时分解区', () => {
   it('分时未知与月量未知分开显示；估算单列为不计入；更正影响只对电量未变的月份提供沿用', async () => {
     hoisted.fetchContractCurves.mockResolvedValue(overview())
-    const w = mount(MidlongContractCurvesPanel, { props: { contractId: 7, canWrite: true, evidence: [] }, global: { stubs: STUBS } })
+    const w = mount(MidlongContractCurvesPanel, { props: { contractId: 7, rowVersion: 3, canWrite: true, evidence: [] }, global: { stubs: STUBS } })
     await flushPromises()
     const text = w.text()
     expect(text).toContain('分时未知（只有月量）')
@@ -68,7 +72,7 @@ describe('合同分时分解区', () => {
           estimateCorrectionImpact: { status: 'QUANTITY_CHANGED', previousRevisionNo: 1, previousCurveSetId: 21, previousSetNo: 2, previousMonthlyQuantity: '24', previousCurveQuantity: '24', currentMonthlyQuantity: '30', monthAffectedByCorrection: true, canCopy: false } },
       ],
     }))
-    const w = mount(MidlongContractCurvesPanel, { props: { contractId: 7, canWrite: true, evidence: [] }, global: { stubs: STUBS } })
+    const w = mount(MidlongContractCurvesPanel, { props: { contractId: 7, rowVersion: 3, canWrite: true, evidence: [] }, global: { stubs: STUBS } })
     await flushPromises()
     const rows = w.findAll('.el-table__body').at(0)!.findAll('tr')
     expect(rows[0].findAll('td')[3].text()).toContain('沿用 v1')
@@ -81,9 +85,21 @@ describe('合同分时分解区', () => {
     expect(w.findAll('button').filter((b) => b.text() === '沿用原曲线生成草稿')).toHaveLength(0)
   })
 
+  it('合同核验、更正或作废后（rowVersion 前进）重新取分时概览，导入与估算对话框改用新的版本号', async () => {
+    hoisted.fetchContractCurves.mockResolvedValue(overview({ currentRevisionNo: 1 }))
+    const w = mount(MidlongContractCurvesPanel, { props: { contractId: 7, rowVersion: 3, canWrite: true, evidence: [] }, global: { stubs: STUBS } })
+    await flushPromises()
+    expect([w.find('.stub-import').attributes('data-revision'), w.find('.stub-estimate').attributes('data-revision')]).toEqual(['1', '1'])
+    hoisted.fetchContractCurves.mockResolvedValue(overview({ currentRevisionNo: 2 }))
+    await w.setProps({ rowVersion: 4 })
+    await flushPromises()
+    expect(hoisted.fetchContractCurves).toHaveBeenCalledTimes(2)
+    expect([w.find('.stub-import').attributes('data-revision'), w.find('.stub-estimate').attributes('data-revision')]).toEqual(['2', '2'])
+  })
+
   it('只读用户看不到导入、估算与沿用操作', async () => {
     hoisted.fetchContractCurves.mockResolvedValue(overview())
-    const w = mount(MidlongContractCurvesPanel, { props: { contractId: 7, canWrite: false, evidence: [] }, global: { stubs: STUBS } })
+    const w = mount(MidlongContractCurvesPanel, { props: { contractId: 7, rowVersion: 3, canWrite: false, evidence: [] }, global: { stubs: STUBS } })
     await flushPromises()
     const labels = w.findAll('button').map((b) => b.text())
     expect(labels).not.toContain('导入曲线')
@@ -92,7 +108,7 @@ describe('合同分时分解区', () => {
 
   it('加载失败显示错误，不显示空表冒充无曲线', async () => {
     hoisted.fetchContractCurves.mockRejectedValue(new Error('合同存储暂不可用'))
-    const w = mount(MidlongContractCurvesPanel, { props: { contractId: 7, canWrite: true, evidence: [] }, global: { stubs: STUBS } })
+    const w = mount(MidlongContractCurvesPanel, { props: { contractId: 7, rowVersion: 3, canWrite: true, evidence: [] }, global: { stubs: STUBS } })
     await flushPromises()
     expect(w.text()).toContain('分时分解加载失败')
     expect(w.text()).not.toContain('尚未登记任何分时分解')

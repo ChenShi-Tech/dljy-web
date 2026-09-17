@@ -14,6 +14,7 @@ import {
   P2_BASIS_EVIDENCE_TYPES, type CurveDraftResult, type CurveFileRole, type CurveGranularity, type CurveSourceDocumentType,
 } from '@/services/midlong/midlongP2Types'
 import { downloadBase64, downloadCsv, fileToBase64, fmtQuantity, oversizeUploadMessage } from '@/services/midlong/midlongFormat'
+import { rangeValue } from '@/services/midlong/midlongP2Format'
 
 const props = defineProps<{ modelValue: boolean; contractId: number; revisionNo: number; deliveryStart: string | null; deliveryEnd: string | null; evidence: MidlongEvidence[] }>()
 const emit = defineEmits<{ 'update:modelValue': [boolean]; created: [CurveDraftResult] }>()
@@ -158,7 +159,7 @@ const STATUS_TEXT: Record<string, string> = { CONSERVED: '守恒', WITHIN_TOLERA
           </el-select>
         </el-form-item>
         <el-form-item label="覆盖月份" required>
-          <el-date-picker v-model="form.coverage" type="monthrange" value-format="YYYY-MM" range-separator="至" start-placeholder="起始月" end-placeholder="结束月" style="width: 240px" />
+          <el-date-picker :model-value="form.coverage" type="monthrange" @update:model-value="(v: unknown) => (form.coverage = rangeValue(v))" value-format="YYYY-MM" range-separator="至" start-placeholder="起始月" end-placeholder="结束月" style="width: 240px" />
           <span class="ml-hint">交割期 {{ deliveryStart ?? '—' }} ~ {{ deliveryEnd ?? '—' }}</span>
         </el-form-item>
         <el-form-item v-if="form.evidenceBasis === 'FORMAL'" label="文件性质">

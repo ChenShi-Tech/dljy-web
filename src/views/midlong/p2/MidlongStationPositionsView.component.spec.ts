@@ -136,6 +136,22 @@ describe('中长期售电场站维度持仓', () => {
     expect(hoisted.downloadCsv).toHaveBeenCalledWith('TEST.csv', 'x')
   })
 
+  it('点月份范围的清除按钮（值变为 null）后再查询：不报错，按服务端默认月份查询', async () => {
+    hoisted.fetchCapabilities.mockResolvedValue(caps())
+    hoisted.fetchStationPositions.mockResolvedValue(report())
+    const w = mount(MidlongStationPositionsView, { global: { stubs: STUBS } })
+    await flushPromises()
+    const range = w.findAllComponents({ name: 'ElDatePicker' }).find((c) => c.props('type') === 'monthrange')!
+    range.vm.$emit('update:modelValue', null)
+    await flushPromises()
+    expect((w.vm as unknown as { filters: { monthRange: unknown } }).filters.monthRange).toEqual([])
+    await w.findAll('button').find((b) => b.text() === '查询')!.trigger('click')
+    await flushPromises()
+    expect(hoisted.fetchStationPositions).toHaveBeenCalledTimes(2)
+    expect(hoisted.fetchStationPositions.mock.calls[1][0]).toEqual({ allocationKind: 'FORMAL_TRADING' })
+    expect((w.vm as unknown as { filters: { monthRange: string[] } }).filters.monthRange).toEqual(['2027-06', '2027-07'])
+  })
+
   it('能力未开通时不取数', async () => {
     hoisted.fetchCapabilities.mockResolvedValue(caps({}))
     const w = mount(MidlongStationPositionsView, { global: { stubs: STUBS } })

@@ -19,7 +19,7 @@ import {
   STATION_DERIVATION_LABELS, type StationAllocationKind, type StationPositionQuery, type StationPositionReport,
 } from '@/services/midlong/midlongP2Types'
 import { createLoadGuard, downloadCsv, fmtQuantity } from '@/services/midlong/midlongFormat'
-import { allocationKindTag, inheritedLabel, stationSplitText } from '@/services/midlong/midlongP2Format'
+import { allocationKindTag, inheritedLabel, rangeValue, stationSplitText } from '@/services/midlong/midlongP2Format'
 
 const route = useRoute()
 const router = useRouter()
@@ -143,7 +143,7 @@ const stationName = (id: number | null) => (id === null ? '—' : stationColumns
 
     <template v-if="report && totals && (state === 'ready' || state === 'loading')">
       <div class="ml-filters">
-        <el-date-picker v-model="filters.monthRange" type="monthrange" value-format="YYYY-MM" range-separator="至" start-placeholder="起始月" end-placeholder="结束月" style="width: 240px" />
+        <el-date-picker :model-value="filters.monthRange" type="monthrange" @update:model-value="(v: unknown) => (filters.monthRange = rangeValue(v))" value-format="YYYY-MM" range-separator="至" start-placeholder="起始月" end-placeholder="结束月" style="width: 240px" />
         <el-radio-group v-model="filters.allocationKind" size="small">
           <el-radio-button value="FORMAL_TRADING">正式交易分解</el-radio-button>
           <el-radio-button value="INTERNAL_OPERATING">内部经营分配</el-radio-button>
