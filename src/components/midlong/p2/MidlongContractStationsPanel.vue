@@ -19,6 +19,7 @@ import {
 } from '@/services/midlong/midlongP2Types'
 import { createLoadGuard, fmtQuantity } from '@/services/midlong/midlongFormat'
 import { allocationKindTag, curveSetStatusTag, inheritedLabel, segmentLabel } from '@/services/midlong/midlongP2Format'
+import { createDialogSession } from '@/services/midlong/midlongP2Session'
 
 const props = defineProps<{ contractId: number; rowVersion: number; canWrite: boolean; evidence: MidlongEvidence[]; stations: Array<{ id: number; name: string }> }>()
 
@@ -71,24 +72,30 @@ const confirmBlocked = computed(() => {
   return ''
 })
 
+// 确认对话框的会话：确认返回前关闭并对另一份草稿重新打开时，旧确认的结果（关闭、报错、忙碌状态）不作用到新会话。
+const confirmSession = createDialogSession()
+
 function openConfirm(set: StationAllocationSet) {
+  confirmSession.renew()
   Object.assign(confirming, { open: true, set, evidenceIds: [...set.evidenceIds], basisNote: set.basisNote ?? '', busy: false, error: null })
 }
 
 async function submitConfirm() {
   const set = confirming.set
   if (!set || confirmBlocked.value || confirming.busy) return
+  const token = confirmSession.begin(String(set.id))
+  const current = () => confirmSession.isCurrent(token, String(confirming.set?.id ?? ''))
   confirming.busy = true
   confirming.error = null
   try {
     await confirmStationAllocationSet(set.id, { evidenceIds: confirming.evidenceIds, basisNote: confirming.basisNote.trim() || undefined })
     ElMessage.success('场站分配已确认')
-    confirming.open = false
+    if (current()) confirming.open = false
     await load()
   } catch (error) {
-    confirming.error = midlongFailureOf(error)
+    if (current()) confirming.error = midlongFailureOf(error)
   } finally {
-    confirming.busy = false
+    if (current()) confirming.busy = false
   }
 }
 

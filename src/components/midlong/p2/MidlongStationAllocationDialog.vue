@@ -17,6 +17,7 @@ import {
 } from '@/services/midlong/midlongP2Types'
 import { fmtQuantity } from '@/services/midlong/midlongFormat'
 import { segmentLabel } from '@/services/midlong/midlongP2Format'
+import { createDialogSession } from '@/services/midlong/midlongP2Session'
 
 const props = defineProps<{
   modelValue: boolean
@@ -45,7 +46,13 @@ function prefill(kind: StationAllocationKind) {
   failure.value = null
 }
 
+// 会话代次：保存草稿 / 确认返回较慢时对话框可能已关闭或重开到另一份合同、另一类分配。旧会话的草稿不能出现在新会话里
+// （否则新会话里点「确认分配」确认的是旧合同或旧类型的草稿），旧会话的确认也不能关掉新会话。
+const session = createDialogSession()
+const targetKey = () => `${props.overview.contractId}|${props.overview.currentRevisionNo}|${form.allocationKind}`
+
 watch(() => props.modelValue, (open) => {
+  session.renew()
   if (!open) return
   prefill(props.initialKind ?? 'FORMAL_TRADING')
   switchedKind.value = null
@@ -91,10 +98,11 @@ function addRow() {
 
 async function saveDraft() {
   if (busy.value) return
+  const token = session.begin(targetKey())
   busy.value = true
   failure.value = null
   try {
-    draft.value = await createStationAllocationDraft(props.overview.contractId, {
+    const saved = await createStationAllocationDraft(props.overview.contractId, {
       expectedRevisionNo: props.overview.currentRevisionNo,
       allocationKind: form.allocationKind,
       segmentMode: form.segmentMode,
@@ -103,8 +111,9 @@ async function saveDraft() {
       evidenceIds: form.evidenceIds,
     })
     emit('changed')
+    if (session.isCurrent(token, targetKey())) draft.value = saved
   } catch (error) {
-    failure.value = midlongFailureOf(error)
+    if (session.isCurrent(token, targetKey())) failure.value = midlongFailureOf(error)
   } finally {
     busy.value = false
   }
@@ -112,15 +121,17 @@ async function saveDraft() {
 
 async function confirm() {
   if (!draft.value || confirmBlocked.value || busy.value) return
+  const token = session.begin(targetKey())
+  const kind = form.allocationKind
   busy.value = true
   failure.value = null
   try {
     await confirmStationAllocationSet(draft.value.allocationSetId, { evidenceIds: form.evidenceIds, basisNote: form.basisNote.trim() || undefined })
-    ElMessage.success(form.allocationKind === 'FORMAL_TRADING' ? '场站分配已确认，场站维度持仓按新分配拆分' : '内部经营分配已确认（不作为正式交易分解）')
+    ElMessage.success(kind === 'FORMAL_TRADING' ? '场站分配已确认，场站维度持仓按新分配拆分' : '内部经营分配已确认（不作为正式交易分解）')
     emit('changed')
-    emit('update:modelValue', false)
+    if (session.isCurrent(token, targetKey())) emit('update:modelValue', false)
   } catch (error) {
-    failure.value = midlongFailureOf(error)
+    if (session.isCurrent(token, targetKey())) failure.value = midlongFailureOf(error)
   } finally {
     busy.value = false
   }

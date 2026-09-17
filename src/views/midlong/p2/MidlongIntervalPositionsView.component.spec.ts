@@ -149,6 +149,32 @@ describe('中长期售电分时持仓', () => {
     expect(hoisted.fetchIntervalPositions).toHaveBeenCalledTimes(1)
   })
 
+  it('查询请求途中改了筛选（没点查询）：不卡在加载中，响应照常显示，请求参数是点查询时的值', async () => {
+    hoisted.fetchCapabilities.mockResolvedValue(caps())
+    hoisted.fetchIntervalPositions.mockResolvedValueOnce(report())
+    const w = mount(MidlongIntervalPositionsView, { global: { stubs: STUBS } })
+    await flushPromises()
+    const vm = w.vm as unknown as { state: string; filters: { dateRange: string[]; granularity: string } }
+    let resolveCaps: (v: MidlongCapabilities) => void = () => {}
+    let resolvePositions: (v: IntervalPositionReport) => void = () => {}
+    hoisted.fetchCapabilities.mockImplementationOnce(() => new Promise((resolve) => { resolveCaps = resolve }))
+    hoisted.fetchIntervalPositions.mockImplementationOnce(() => new Promise((resolve) => { resolvePositions = resolve }))
+    await w.findAll('button').find((b) => b.text() === '查询')!.trigger('click')
+    expect(vm.state).toBe('loading')
+    vm.filters.granularity = 'DAY'
+    await flushPromises()
+    resolveCaps(caps())
+    await flushPromises()
+    expect(hoisted.fetchIntervalPositions.mock.calls[1][0]).toEqual({ fromDate: '2027-05-01', toDate: '2027-05-01', granularity: 'HOUR' })
+    vm.filters.dateRange = ['2027-06-01', '2027-06-02']
+    await flushPromises()
+    const base = report()
+    resolvePositions(report({ contracts: [{ ...base.contracts[0], externalContractNo: 'TEST-AFTER' }, base.contracts[1]] }))
+    await flushPromises()
+    expect(vm.state).toBe('ready')
+    expect(w.text()).toContain('TEST-AFTER')
+  })
+
   it('点日期范围的清除按钮（值变为 null）后再查询：不报错，按默认的今天查询', async () => {
     hoisted.fetchCapabilities.mockResolvedValue(caps())
     hoisted.fetchIntervalPositions.mockResolvedValue(report())

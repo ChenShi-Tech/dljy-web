@@ -7,14 +7,15 @@ import { enableAutoUnmount, flushPromises } from '@vue/test-utils'
 import { nextTick } from 'vue'
 import { mount } from '@/test/mount'
 
-const hoisted = vi.hoisted(() => ({ createCurveDraft: vi.fn(), fileToBase64: vi.fn(async () => 'Zg==') }))
+const hoisted = vi.hoisted(() => ({ createCurveDraft: vi.fn(), fileToBase64: vi.fn(async () => 'Zg=='), warning: vi.fn() }))
 
-vi.mock('element-plus', async (orig) => ({ ...(await orig<typeof import('element-plus')>()), ElMessage: { success: vi.fn(), error: vi.fn() } }))
+vi.mock('element-plus', async (orig) => ({ ...(await orig<typeof import('element-plus')>()), ElMessage: { success: vi.fn(), error: vi.fn(), warning: hoisted.warning } }))
 vi.mock('@/services/midlong/midlongApi', () => ({ midlongFailureOf: (e: unknown) => (e as { failure: unknown }).failure }))
 vi.mock('@/services/midlong/midlongP2Api', () => ({ createCurveDraft: hoisted.createCurveDraft, fetchCurveTemplate: vi.fn() }))
 vi.mock('@/services/midlong/midlongFormat', async (orig) => ({ ...(await orig<typeof import('@/services/midlong/midlongFormat')>()), fileToBase64: hoisted.fileToBase64 }))
 
 import MidlongCurveImportDialog from './MidlongCurveImportDialog.vue'
+import { STALE_DIALOG_WRITE_MESSAGE } from '@/services/midlong/midlongP2Session'
 
 const STUBS = { 'router-link': { props: ['to'], template: '<a :data-to="to"><slot /></a>' } }
 
@@ -31,6 +32,51 @@ afterEach(() => { vi.clearAllMocks() })
 enableAutoUnmount(afterEach)
 
 describe('分时曲线导入', () => {
+  it('读取曲线文件期间关闭，或关闭后重开到另一份合同：读完不发写请求并提示放弃；新会话照常写到新合同', async () => {
+    const w = await open()
+    const vm = w.vm as unknown as DialogVm
+    const fill = async () => {
+      vm.files.workbook = new File(['x'], 'TEST-曲线.xlsx')
+      Object.assign(vm.form, { granularityMinutes: 60, unit: 'MWh', sourceTimezone: 'Asia/Shanghai' })
+      await nextTick()
+    }
+    const pendingRead = () => {
+      let resolveRead: (v: string) => void = () => {}
+      hoisted.fileToBase64.mockImplementationOnce(() => new Promise((resolve) => { resolveRead = resolve }))
+      return (v: string) => resolveRead(v)
+    }
+    const submit = () => w.findAll('button').find((b) => b.text() === '保存草稿并校验')!.trigger('click')
+
+    await fill()
+    let finishRead = pendingRead()
+    await submit()
+    await w.setProps({ modelValue: false })
+    finishRead('Zg==')
+    await flushPromises()
+    expect(hoisted.createCurveDraft).not.toHaveBeenCalled()
+
+    await w.setProps({ modelValue: true })
+    await nextTick()
+    await fill()
+    finishRead = pendingRead()
+    await submit()
+    await w.setProps({ modelValue: false })
+    await w.setProps({ modelValue: true, contractId: 8, revisionNo: 5 })
+    await nextTick()
+    finishRead('Zg==')
+    await flushPromises()
+    expect(hoisted.createCurveDraft).not.toHaveBeenCalled()
+    expect(hoisted.warning).toHaveBeenCalledWith(STALE_DIALOG_WRITE_MESSAGE)
+    expect(hoisted.warning).toHaveBeenCalledTimes(2)
+
+    hoisted.createCurveDraft.mockResolvedValue({ curveSetId: 40, setNo: 1, status: 'DRAFT', revisionNo: 5, validation: { blocking: false, blockingCount: 0, warningCount: 0, completeness: 'COMPLETE', summary: [], months: [] } })
+    await fill()
+    await submit()
+    await flushPromises()
+    expect(hoisted.createCurveDraft).toHaveBeenCalledTimes(1)
+    expect(hoisted.createCurveDraft).toHaveBeenCalledWith(8, expect.objectContaining({ expectedRevisionNo: 5 }))
+  })
+
   it('点覆盖月份的清除按钮（值变为 null）：不报错，提示补充覆盖月份且不能提交', async () => {
     const w = await open()
     const range = w.findAllComponents({ name: 'ElDatePicker' }).find((c) => c.props('type') === 'monthrange')!

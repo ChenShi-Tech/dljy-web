@@ -62,32 +62,34 @@ const query = computed<IntervalPositionQuery>(() => {
 const guard = createLoadGuard()
 // 页面上这份 report 所用的查询：导出用它，而不是控件里尚未点「查询」的值，保证下载的文件与页面一致。
 const reportQuery = ref<IntervalPositionQuery | null>(null)
-const contextKey = () => `${selectedCompanyId.value}|${currentRegion.value.id}|${JSON.stringify(query.value)}`
+// 请求守卫只看作用域（公司 + 地区）与守卫代次：筛选控件的实时值不进守卫，否则请求途中改一下控件（没点查询），
+// 这次响应就被丢掉而又没有新请求接手，页面卡在加载中。被新请求取代时由最新一次请求收尾。
 const scopeKey = () => `${selectedCompanyId.value}|${currentRegion.value.id}`
 let loadedScope = ''
 
 async function load() {
-  const token = guard.begin(contextKey())
+  // 发起时快照本次应用的查询；之后的任何 await 期间控件怎么变都不影响这次请求。
+  const requested = { ...query.value }
+  const token = guard.begin(scopeKey())
   if (scopeKey() !== loadedScope) report.value = null
   loadedScope = scopeKey()
   state.value = 'loading'
   drillBucket.value = null
   try {
     const caps = await fetchCapabilities()
-    if (!guard.isCurrent(token, contextKey())) return
+    if (!guard.isCurrent(token, scopeKey())) return
     capabilities.value = caps
     if (!caps.enabled) { state.value = 'disabled'; return }
     if (!caps.regionSupported) { state.value = 'unsupported'; return }
     if (!p2ModuleOn(caps, 'curves')) { state.value = 'module-off'; return }
-    const requested = { ...query.value }
     const [positions, subjectRows] = await Promise.all([fetchIntervalPositions(requested), fetchSubjects()])
-    if (!guard.isCurrent(token, contextKey())) return
+    if (!guard.isCurrent(token, scopeKey())) return
     report.value = positions
     reportQuery.value = requested
     subjects.value = subjectRows
     state.value = 'ready'
   } catch (error) {
-    if (!guard.isCurrent(token, contextKey())) return
+    if (!guard.isCurrent(token, scopeKey())) return
     report.value = null
     reportQuery.value = null
     if (error instanceof CompanyNotSelectedError) { state.value = 'no-company'; return }
