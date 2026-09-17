@@ -73,11 +73,7 @@ const weatherCols = ref<{ label: string; prop: string }[]>([])
 const weatherData = ref<any[]>([])
 const dateProp = ref('')
 
-// 96 个时点标签 00:15 .. 24:00
-const POINTS_96 = Array.from({ length: 96 }, (_, i) => {
-  const m = (i + 1) * 15
-  return `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`
-})
+import { POINTS_96 } from '@/utils/spotPoints96'
 
 const ymd = (t: number | Date) => {
   const d = t instanceof Date ? t : new Date(t)
