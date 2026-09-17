@@ -124,7 +124,8 @@ export interface MidlongCapabilities {
   regionSupported: boolean
   pilotRegions: string[]
   phase: 'P1'
-  modules: { contracts: boolean; positions: boolean; imports: boolean; plans: false; execution: false; review: false }
+  /** 各期能力开关：P1 合同/持仓/导入；P2 分时分解 curves 与场站分配 stationAllocations；P3 计划 plans 与交易执行 execution；P5 复盘 review。 */
+  modules: { contracts: boolean; positions: boolean; imports: boolean; curves: boolean; stationAllocations: boolean; plans: false; execution: false; review: false }
   canWrite: boolean
   companyId: string
   scopeCompanyIds: string[]
