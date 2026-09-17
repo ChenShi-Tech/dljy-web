@@ -4,6 +4,7 @@
 // - 缺月度分解的电量进入「跨期未分解池」，不画成 0、不按月均摊；含未分解合同的月份单独标出。
 // - 价格只在同币种、同含税口径、同价格构成内求均价；不可比时分组展示。金额是合同量价名义金额，不是结算收入。
 // - 支持历史认知时点（asOf）：只看当时已录入且已确认的版本，迟到的更正不改写过去的视图。
+// - 导出用「加载当前结果时的查询快照」：改了筛选没点「查询」时，导出的文件仍与页面所见一致（dljy#2983）。
 // - 本页只读合同底账，不调用现货、预测或厂侧接口；服务失败显示错误，不回退示意数值。
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -36,6 +37,8 @@ const state = ref<LoadState>('loading')
 const failureText = ref('')
 const capabilities = ref<MidlongCapabilities | null>(null)
 const report = ref<MidlongPositionReport | null>(null)
+// 当前结果对应的查询快照：与 report 同生共死（同一时刻写入、清空时机一致），供导出使用（dljy#2983）。
+const appliedQuery = ref<MidlongPositionQuery | null>(null)
 const subjects = ref<MidlongSubject[]>([])
 const stations = ref<CompanyStation[]>([])
 const exporting = ref(false)
@@ -72,7 +75,7 @@ let loadedScope = ''
 
 async function load() {
   const token = guard.begin(contextKey())
-  if (scopeKey() !== loadedScope) report.value = null
+  if (scopeKey() !== loadedScope) { report.value = null; appliedQuery.value = null }
   loadedScope = scopeKey()
   state.value = 'loading'
   try {
@@ -81,9 +84,12 @@ async function load() {
     capabilities.value = caps
     if (!caps.enabled) { state.value = 'disabled'; return }
     if (!caps.regionSupported) { state.value = 'unsupported'; return }
+    // 发请求时先快照本次实际用的查询；确认仍是当前请求、与结果同一时刻生效，迟到或失败的请求不更新快照。
+    const snapshot = query.value
     const [positions, subjectRows, stationRows] = await Promise.all([fetchPositions(query.value), fetchSubjects(), fetchStations()])
     if (!guard.isCurrent(token, contextKey())) return
     report.value = positions
+    appliedQuery.value = snapshot
     subjects.value = subjectRows
     stations.value = stationRows
     if (filters.monthRange.length !== 2) filters.monthRange = [positions.fromMonth, positions.toMonth]
@@ -91,6 +97,7 @@ async function load() {
   } catch (error) {
     if (!guard.isCurrent(token, contextKey())) return
     report.value = null
+    appliedQuery.value = null
     if (error instanceof CompanyNotSelectedError) { state.value = 'no-company'; return }
     const f = midlongFailureOf(error)
     state.value = f.status === 401 || f.status === 403 ? 'denied' : 'failed'
@@ -112,10 +119,13 @@ function clearAsOf() {
 }
 
 async function doExport() {
+  // 导出用加载当前结果时的快照，不用筛选控件实时值（dljy#2983）；正常路径导出按钮只在有结果时可见，这里兜底提示。
+  const applied = appliedQuery.value
+  if (!applied) { ElMessage.warning('请先查询出结果，再导出'); return }
   exporting.value = true
   const scope = scopeKey()
   try {
-    const file = await exportPositions(query.value)
+    const file = await exportPositions(applied)
     if (scope !== scopeKey()) { ElMessage.warning('公司或地区已切换，已丢弃切换前发起的导出'); return }
     downloadCsv(file.fileName, file.content)
   } catch (error) {
