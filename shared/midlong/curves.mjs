@@ -957,7 +957,12 @@ export function validateStationAllocations({ segmentMode, rows, revision }) {
   return { rows: normalized, segments, ...summarizeIssues(issues) }
 }
 
-/** 按片段汇总分配合计与未分配余额（校验与展示共用）。 */
+/**
+ * 按片段汇总分配合计与未分配余额（校验与展示共用）。
+ * 按交割月分配时，片段 = 交割期内全部有正式月度电量的月份 ∪ 分配行出现的月份：没有分配行的月份照样列出，
+ * 未分配余额就是该月正式电量——否则「只给六月分配」时七月整月未分配会从预览与校验结果里消失。
+ * 交割期内没有正式月度电量、也没有分配行的月份不列出（它不是可分配片段，列出会变成阻断）。
+ */
 export function summarizeStationSegments({ segmentMode, rows, revision, formal = formalMonthlyQuantities(revision) }) {
   const bySegment = new Map()
   for (const row of rows ?? []) {
@@ -967,7 +972,8 @@ export function summarizeStationSegments({ segmentMode, rows, revision, formal =
     entry.stationCount += 1
     bySegment.set(key, entry)
   }
-  const keys = segmentMode === 'MONTHLY' ? [...bySegment.keys()].sort() : ['TOTAL']
+  const formalMonths = deliveryMonths(revision?.deliveryStart, revision?.deliveryEnd).filter((m) => formal.has(m))
+  const keys = segmentMode === 'MONTHLY' ? [...new Set([...formalMonths, ...bySegment.keys()])].sort() : ['TOTAL']
   return keys.map((segment) => {
     const entry = bySegment.get(segment) ?? { allocated: 0n, stationCount: 0 }
     const segmentQuantity = segment === 'TOTAL'
