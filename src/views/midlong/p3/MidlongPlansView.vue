@@ -252,21 +252,20 @@ const windowsLoading = ref(false)
 async function openProposalForm(proposal: TradeProposalDetail | null) {
   if (windowsLoading.value) return
   const scope = captureScope()
-  windows.value = []
+  let rows: TradingWindowListRow[] = []
   if (capabilities.value?.modules.execution) {
     windowsLoading.value = true
     try {
-      const rows = await fetchAllWindows()
-      if (!scope.isCurrent()) return
-      windows.value = rows
+      rows = await fetchAllWindows()
     } catch (error) {
-      if (!scope.isCurrent()) return
-      ElMessage.warning(`公告候选加载失败：${midlongFailureOf(error).message}；可先保存不关联公告的草稿`)
+      if (scope.isCurrent()) ElMessage.warning(`公告候选加载失败：${midlongFailureOf(error).message}；可先保存不关联公告的草稿`)
     } finally {
       windowsLoading.value = false
     }
   }
+  // 唯一的范围核对：加载期间切换了公司，候选与表单都属于原公司，放弃打开。
   if (!scope.isCurrent()) return
+  windows.value = rows
   Object.assign(proposalDialog, { open: true, proposal })
 }
 function editProposal(proposal: TradeProposalDetail) {

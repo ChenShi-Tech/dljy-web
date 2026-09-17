@@ -10,17 +10,22 @@ import type { MidlongCapabilities } from '@/services/midlong/midlongTypes'
 import { PLANNING_NOTICES, type TradeProposalDetail, type TradingWindowListRow, type WindowCalendarReport } from '@/services/midlong/midlongP3Types'
 
 const hoisted = vi.hoisted(() => ({
-  fetchCapabilities: vi.fn(), fetchWindowCalendar: vi.fn(), fetchWindows: vi.fn(), fetchProposals: vi.fn(), replace: vi.fn(), routeQuery: {} as Record<string, string>,
+  fetchCapabilities: vi.fn(), fetchWindowCalendar: vi.fn(), fetchWindows: vi.fn(), fetchProposals: vi.fn(), fetchSubjects: vi.fn(), replace: vi.fn(), routeQuery: {} as Record<string, string>,
+  companyRef: null as null | { value: string },
 }))
 
 vi.mock('element-plus', async (orig) => ({ ...(await orig<typeof import('element-plus')>()), ElMessage: { success: vi.fn(), error: vi.fn() } }))
 vi.mock('vue-router', () => ({ useRoute: () => ({ query: hoisted.routeQuery }), useRouter: () => ({ replace: hoisted.replace }) }))
-vi.mock('@/services/company/companyContext', async () => ({ selectedCompanyId: (await import('vue')).ref('comp-a') }))
+vi.mock('@/services/company/companyContext', async () => {
+  const selectedCompanyId = (await import('vue')).ref('comp-a')
+  hoisted.companyRef = selectedCompanyId
+  return { selectedCompanyId }
+})
 vi.mock('@/services/region/regionContext', async () => ({ currentRegion: (await import('vue')).ref({ id: 'yunnan' }) }))
 vi.mock('@/services/midlong/midlongApi', () => ({
   CompanyNotSelectedError: class extends Error {},
   fetchCapabilities: hoisted.fetchCapabilities,
-  fetchSubjects: vi.fn(async () => []),
+  fetchSubjects: hoisted.fetchSubjects,
   midlongFailureOf: (e: unknown) => ({ status: 500, errorCode: 'STORAGE_UNAVAILABLE', message: (e as Error).message, details: null }),
 }))
 vi.mock('@/services/midlong/midlongP3Api', () => ({ fetchWindowCalendar: hoisted.fetchWindowCalendar, fetchWindows: hoisted.fetchWindows, fetchProposals: hoisted.fetchProposals }))
@@ -28,7 +33,7 @@ vi.mock('@/services/midlong/midlongP3Api', () => ({ fetchWindowCalendar: hoisted
 import MidlongExecutionView from './MidlongExecutionView.vue'
 
 const STUBS = {
-  CompanyScopeBar: { template: '<div />' }, WindowFormDialog: { template: '<div />' }, WindowDetailDrawer: { template: '<div />' },
+  CompanyScopeBar: { template: '<div />' }, WindowFormDialog: { props: ['modelValue'], template: '<div class="stub-window-form" :data-open="String(modelValue)" />' }, WindowDetailDrawer: { template: '<div />' },
   ProposalDetailDrawer: { template: '<div />' }, 'router-link': { template: '<a><slot /></a>' },
 }
 
@@ -61,6 +66,7 @@ const proposalRow = (id: number, status: TradeProposalDetail['status']) => ({ id
 afterEach(() => {
   vi.clearAllMocks()
   hoisted.routeQuery = {}
+  if (hoisted.companyRef) hoisted.companyRef.value = 'comp-a'
 })
 enableAutoUnmount(afterEach)
 
@@ -141,5 +147,22 @@ describe('中长期交易执行页', () => {
     expect(w.text()).toContain('交易执行功能尚未开放')
     expect(hoisted.fetchWindowCalendar).not.toHaveBeenCalled()
     expect(hoisted.fetchWindows).not.toHaveBeenCalled()
+  })
+  it('交易主体在打开公告表单时才加载；加载中切换公司则不打开表单', async () => {
+    hoisted.routeQuery = { tab: 'windows' }
+    hoisted.fetchCapabilities.mockResolvedValue(caps(true))
+    hoisted.fetchWindows.mockResolvedValue(page([]))
+    let resolveSubjects: (rows: unknown[]) => void = () => {}
+    hoisted.fetchSubjects.mockImplementation(() => new Promise((resolve) => { resolveSubjects = resolve }))
+    const w = mount(MidlongExecutionView, { global: { stubs: STUBS } })
+    await flushPromises()
+    expect(hoisted.fetchSubjects).not.toHaveBeenCalled()
+    await w.findAll('button').find((b) => b.text() === '登记公告')!.trigger('click')
+    expect(hoisted.fetchSubjects).toHaveBeenCalledTimes(1)
+    hoisted.companyRef!.value = 'comp-b'
+    await flushPromises()
+    resolveSubjects([])
+    await flushPromises()
+    expect(w.find('.stub-window-form').attributes('data-open')).toBe('false')
   })
 })

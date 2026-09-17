@@ -217,19 +217,18 @@ const subjectsLoading = ref(false)
 async function openWindowForm(window: TradingWindowDetail | null) {
   if (subjectsLoading.value) return
   const scope = captureScope()
+  let rows: MidlongSubject[] = []
   subjectsLoading.value = true
   try {
-    const rows = await fetchSubjects()
-    if (!scope.isCurrent()) return
-    subjects.value = rows
+    rows = await fetchSubjects()
   } catch (error) {
-    if (!scope.isCurrent()) return
-    subjects.value = []
-    ElMessage.warning(`交易主体加载失败：${midlongFailureOf(error).message}；可先只登记公告原文的适用范围`)
+    if (scope.isCurrent()) ElMessage.warning(`交易主体加载失败：${midlongFailureOf(error).message}；可先只登记公告原文的适用范围`)
   } finally {
     subjectsLoading.value = false
   }
+  // 唯一的范围核对：加载期间切换了公司，主体候选与待更正的公告都属于原公司，放弃打开。
   if (!scope.isCurrent()) return
+  subjects.value = rows
   Object.assign(windowDialog, { open: true, window })
 }
 async function onWindowSaved() {
