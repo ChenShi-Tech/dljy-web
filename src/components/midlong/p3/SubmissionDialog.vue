@@ -4,11 +4,12 @@
 import { computed, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import MidlongNotice from '../MidlongNotice.vue'
+import BeijingDateTimeInput from './BeijingDateTimeInput.vue'
 import { addReceipt, registerSubmission, type ReceiptInput } from '@/services/midlong/midlongP3Api'
 import { midlongFailureOf } from '@/services/midlong/midlongApi'
 import { fileToBase64, oversizeUploadMessage } from '@/services/midlong/midlongFormat'
 import { receiptTag } from '@/services/midlong/midlongP3Format'
-import { PLANNING_NOTICES, RECEIPT_ELEMENT_LABELS, type ProposalSubmission, type ReceiptCompleteness, type ReceiptElement, type TradeProposalDetail } from '@/services/midlong/midlongP3Types'
+import { PLANNING_NOTICES, RECEIPT_ELEMENT_LABELS, isCompleteBeijingDateTimeInput, type ProposalSubmission, type ReceiptCompleteness, type ReceiptElement, type TradeProposalDetail } from '@/services/midlong/midlongP3Types'
 
 const props = defineProps<{ modelValue: boolean; mode: 'submission' | 'receipt'; proposal: TradeProposalDetail; submission: ProposalSubmission | null }>()
 const emit = defineEmits<{ 'update:modelValue': [boolean]; saved: [] }>()
@@ -28,9 +29,12 @@ watch(() => props.modelValue, (open) => {
   result.value = null
 }, { immediate: true })
 
-const valid = computed(() => props.mode === 'receipt'
+/** 时刻只接受日期 + 时:分完整输入：只选日期会被当成零点，外部提交与回执时间不能这样猜。 */
+const receiptAtComplete = computed(() => form.receiptAt === '' || isCompleteBeijingDateTimeInput(form.receiptAt))
+const submittedAtIncomplete = computed(() => form.submittedAt !== '' && !isCompleteBeijingDateTimeInput(form.submittedAt))
+const valid = computed(() => receiptAtComplete.value && (props.mode === 'receipt'
   ? Boolean(form.externalReference.trim() || form.receiptAt || file.value)
-  : Boolean(form.submittedAt && form.submittedByName.trim()))
+  : Boolean(isCompleteBeijingDateTimeInput(form.submittedAt) && form.submittedByName.trim())))
 
 function onFile(event: Event) {
   const selected = (event.target as HTMLInputElement).files?.[0] ?? null
@@ -78,7 +82,7 @@ async function submit() {
     <el-form label-width="120px" class="p3-form" @submit.prevent>
       <template v-if="mode === 'submission'">
         <el-form-item label="外部提交时间" required>
-          <el-date-picker v-model="form.submittedAt" type="datetime" value-format="YYYY-MM-DD HH:mm" format="YYYY-MM-DD HH:mm" placeholder="北京时间" style="width: 100%" />
+          <BeijingDateTimeInput v-model="form.submittedAt" data-test="submittedAt" />
         </el-form-item>
         <el-form-item label="外部操作人" required><el-input v-model="form.submittedByName" /></el-form-item>
         <el-form-item label="渠道"><el-input v-model="form.channel" placeholder="如：交易平台人工申报" /></el-form-item>
@@ -87,8 +91,9 @@ async function submit() {
       <div class="p3-sub">回执依据（可暂缺，缺失项会显示为待补）</div>
       <el-form-item label="申报/回执编号"><el-input v-model="form.externalReference" /></el-form-item>
       <el-form-item label="平台回执时间">
-        <el-date-picker v-model="form.receiptAt" type="datetime" value-format="YYYY-MM-DD HH:mm" format="YYYY-MM-DD HH:mm" placeholder="北京时间" style="width: 100%" />
+        <BeijingDateTimeInput v-model="form.receiptAt" data-test="receiptAt" />
       </el-form-item>
+      <div v-if="submittedAtIncomplete || !receiptAtComplete" class="p3-time-hint" data-test="incomplete-time">时间须同时填写日期与时:分，不能只选日期。</div>
       <el-form-item label="回执文件"><input type="file" data-test="receipt-file" @change="onFile" /></el-form-item>
       <el-form-item label="回执说明"><el-input v-model="form.receiptNote" /></el-form-item>
     </el-form>
@@ -107,4 +112,5 @@ async function submit() {
 <style scoped>
 .p3-form { margin-top: 12px; }
 .p3-sub { margin: 4px 0 8px 12px; font-size: var(--font-sm); color: var(--muted); }
+.p3-time-hint { margin: -6px 0 10px 120px; font-size: var(--font-sm); color: var(--danger); }
 </style>

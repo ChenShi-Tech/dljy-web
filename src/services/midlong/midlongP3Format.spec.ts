@@ -12,7 +12,7 @@ import { FORBIDDEN_PLANNING_TERMS, RECEIPT_COMPLETENESS_LABELS, type PlanProgres
 function progress(o: Partial<PlanProgress> = {}): PlanProgress {
   return {
     targetQuantity: '1000', knownSoldQuantity: '700', soldComplete: true, remainingPlanQuantity: '300', completionRate: '0.7', openOccupationQuantity: '200',
-    arrangeableQuantity: '100', overPlan: false, verificationStatus: 'VERIFIED', notices: [], incompleteContracts: [], positionsAsOf: '2031-01-01T00:00:00.000Z', ...o,
+    arrangeableQuantity: '100', overPlan: false, overCommitted: false, verificationStatus: 'VERIFIED', notices: [], incompleteContracts: [], positionsAsOf: '2031-01-01T00:00:00.000Z', ...o,
   }
 }
 

@@ -6,6 +6,8 @@ import { ElMessage } from 'element-plus'
 import MidlongNotice from '../MidlongNotice.vue'
 import { fetchPlanningAttachment, fetchWindow } from '@/services/midlong/midlongP3Api'
 import { midlongFailureOf } from '@/services/midlong/midlongApi'
+import { selectedCompanyId } from '@/services/company/companyContext'
+import { currentRegion } from '@/services/region/regionContext'
 import { createLoadGuard, downloadBase64 } from '@/services/midlong/midlongFormat'
 import { beijingDateTime, proposalStatusTag } from '@/services/midlong/midlongP3Format'
 import { PLANNING_EVENT_TYPE_LABELS, PLANNING_NOTICES, type TradingWindowDetail } from '@/services/midlong/midlongP3Types'
@@ -18,10 +20,13 @@ const detail = ref<TradingWindowDetail | null>(null)
 const failure = ref('')
 const loading = ref(false)
 const guard = createLoadGuard()
+// 代次按「公司 + 地区 + 公告」判断：切换后旧范围的迟到结果丢弃。
+const scopeKey = () => `${selectedCompanyId.value}|${currentRegion.value.id}`
+const loadKey = () => `${scopeKey()}|${props.windowId}`
 
 async function load() {
   if (!props.windowId) return
-  const key = String(props.windowId)
+  const key = loadKey()
   const token = guard.begin(key)
   detail.value = null
   failure.value = ''
@@ -39,6 +44,11 @@ async function load() {
 }
 
 watch(() => [props.modelValue, props.windowId] as const, ([open]) => { if (open) void load() }, { immediate: true })
+watch(scopeKey, () => {
+  guard.begin(loadKey())
+  detail.value = null
+  loading.value = false
+})
 defineExpose({ reload: load })
 
 async function download(attachmentId: number) {

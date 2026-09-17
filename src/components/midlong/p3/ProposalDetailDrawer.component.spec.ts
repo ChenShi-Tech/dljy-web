@@ -12,10 +12,17 @@ import { FORBIDDEN_PLANNING_TERMS, PLANNING_NOTICES, type PlanProgress, type Pro
 const hoisted = vi.hoisted(() => ({
   fetchProposal: vi.fn(), fetchProposalComparison: vi.fn(), confirmProposal: vi.fn(), cancelProposal: vi.fn(), closeProposal: vi.fn(), exportProposal: vi.fn(),
   recheckProposalWindow: vi.fn(), markAwaitingResult: vi.fn(), fetchPlanningAttachment: vi.fn(), downloadCsv: vi.fn(), info: vi.fn(),
+  companyRef: null as null | { value: string },
 }))
 
 vi.mock('element-plus', async (orig) => ({ ...(await orig<typeof import('element-plus')>()), ElMessage: { success: vi.fn(), error: vi.fn(), info: hoisted.info } }))
 vi.mock('@/services/midlong/midlongApi', () => ({ midlongFailureOf: (e: unknown) => (e as { failure: unknown }).failure }))
+vi.mock('@/services/company/companyContext', async () => {
+  const selectedCompanyId = (await import('vue')).ref('comp-a')
+  hoisted.companyRef = selectedCompanyId
+  return { selectedCompanyId }
+})
+vi.mock('@/services/region/regionContext', async () => ({ currentRegion: (await import('vue')).ref({ id: 'yunnan' }) }))
 vi.mock('@/services/midlong/midlongP3Api', () => ({
   fetchProposal: hoisted.fetchProposal, fetchProposalComparison: hoisted.fetchProposalComparison, confirmProposal: hoisted.confirmProposal,
   cancelProposal: hoisted.cancelProposal, closeProposal: hoisted.closeProposal, exportProposal: hoisted.exportProposal,
@@ -31,7 +38,7 @@ const WRITE_APIS = ['confirmProposal', 'cancelProposal', 'closeProposal', 'reche
 function progress(o: Partial<PlanProgress> = {}): PlanProgress {
   return {
     targetQuantity: '1000', knownSoldQuantity: '700', soldComplete: true, remainingPlanQuantity: '300', completionRate: '0.7', openOccupationQuantity: '0',
-    arrangeableQuantity: '300', overPlan: false, verificationStatus: 'VERIFIED', notices: [], incompleteContracts: [], positionsAsOf: '', ...o,
+    arrangeableQuantity: '300', overPlan: false, overCommitted: false, verificationStatus: 'VERIFIED', notices: [], incompleteContracts: [], positionsAsOf: '', ...o,
   }
 }
 
@@ -67,7 +74,10 @@ function comparison(): ProposalComparison {
   }
 }
 
-afterEach(() => vi.clearAllMocks())
+afterEach(() => {
+  vi.clearAllMocks()
+  if (hoisted.companyRef) hoisted.companyRef.value = 'comp-a'
+})
 enableAutoUnmount(afterEach)
 
 async function open(p: TradeProposalDetail, mode: 'plans' | 'execution' = 'plans') {
@@ -80,6 +90,21 @@ async function open(p: TradeProposalDetail, mode: 'plans' | 'execution' = 'plans
 const button = (w: Awaited<ReturnType<typeof open>>, label: string) => w.findAll('button').find((b) => b.text().startsWith(label))
 
 describe('交易方案详情', () => {
+  it('切换公司后，旧公司的方案详情迟到返回直接丢弃，不显示成新公司的方案', async () => {
+    let resolveDetail: (p: TradeProposalDetail) => void = () => {}
+    hoisted.fetchProposal.mockImplementation(() => new Promise((resolve) => { resolveDetail = resolve }))
+    hoisted.fetchProposalComparison.mockResolvedValue(comparison())
+    const w = mount(ProposalDetailDrawer, { props: { modelValue: true, proposalId: 42, canWrite: true }, global: { stubs: STUBS } })
+    await flushPromises()
+    hoisted.companyRef!.value = 'comp-b'
+    await flushPromises()
+    resolveDetail(proposal())
+    await flushPromises()
+    expect(w.text()).not.toContain('测试交易单元')
+    expect(w.text()).not.toContain('方案测算')
+    expect(hoisted.fetchProposalComparison).not.toHaveBeenCalled()
+  })
+
   it('方案测算：标方案测算与名义金额，不判断价格优劣；已售不完整月份交易后电量不计算；公告截止未知显示待补', async () => {
     const w = await open(proposal())
     const text = w.text()

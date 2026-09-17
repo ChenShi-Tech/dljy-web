@@ -7,8 +7,14 @@ import { enableAutoUnmount, flushPromises } from '@vue/test-utils'
 import { mount } from '@/test/mount'
 import { PLANNING_NOTICES, type SalesPlanDetail, type SalesPlanRevision } from '@/services/midlong/midlongP3Types'
 
-const hoisted = vi.hoisted(() => ({ fetchPlan: vi.fn() }))
+const hoisted = vi.hoisted(() => ({ fetchPlan: vi.fn(), regionRef: null as null | { value: { id: string } } }))
 vi.mock('@/services/midlong/midlongApi', () => ({ midlongFailureOf: (e: unknown) => ({ message: (e as Error).message }) }))
+vi.mock('@/services/company/companyContext', async () => ({ selectedCompanyId: (await import('vue')).ref('comp-a') }))
+vi.mock('@/services/region/regionContext', async () => {
+  const currentRegion = (await import('vue')).ref({ id: 'yunnan' })
+  hoisted.regionRef = currentRegion
+  return { currentRegion }
+})
 vi.mock('@/services/midlong/midlongP3Api', () => ({ fetchPlan: hoisted.fetchPlan }))
 
 import PlanDetailDrawer from './PlanDetailDrawer.vue'
@@ -33,10 +39,26 @@ const plan: SalesPlanDetail = {
   ],
 }
 
-afterEach(() => vi.clearAllMocks())
+afterEach(() => {
+  vi.clearAllMocks()
+  if (hoisted.regionRef) hoisted.regionRef.value = { id: 'yunnan' }
+})
 enableAutoUnmount(afterEach)
 
 describe('售电目标详情', () => {
+  it('切换地区后，旧地区的目标详情迟到返回直接丢弃', async () => {
+    let resolvePlan: (p: SalesPlanDetail) => void = () => {}
+    hoisted.fetchPlan.mockImplementation(() => new Promise((resolve) => { resolvePlan = resolve }))
+    const w = mount(PlanDetailDrawer, { props: { modelValue: true, planId: 9 } })
+    await flushPromises()
+    hoisted.regionRef!.value = { id: 'shanxi' }
+    await flushPromises()
+    resolvePlan(plan)
+    await flushPromises()
+    expect(w.text()).not.toContain('测试交易单元')
+    expect(w.text()).not.toContain('1,200')
+  })
+
   it('版本历史保留旧目标、更改原因与确认人；被取代版本可查看当时完成情况', async () => {
     hoisted.fetchPlan.mockResolvedValue(plan)
     const w = mount(PlanDetailDrawer, { props: { modelValue: true, planId: 9 } })

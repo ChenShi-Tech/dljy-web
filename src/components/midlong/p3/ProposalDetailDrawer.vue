@@ -14,6 +14,8 @@ import {
   recheckProposalWindow,
 } from '@/services/midlong/midlongP3Api'
 import { midlongFailureOf } from '@/services/midlong/midlongApi'
+import { selectedCompanyId } from '@/services/company/companyContext'
+import { currentRegion } from '@/services/region/regionContext'
 import { createLoadGuard, downloadBase64, downloadCsv, fmtAmount, fmtPrice, fmtQuantity } from '@/services/midlong/midlongFormat'
 import {
   afterQuantityLabel, arrangeableLabel, beijingDateTime, completionLabel, confirmFailureText, expectedPlanRevisionsOf, planPeriodLabel,
@@ -37,10 +39,13 @@ const actionError = ref('')
 const loading = ref(false)
 const busy = ref('')
 const guard = createLoadGuard()
+// 取数代次按「公司 + 地区 + 方案」判断：切换公司或地区后，旧范围的迟到结果一律丢弃，不显示成新范围的方案。
+const scopeKey = () => `${selectedCompanyId.value}|${currentRegion.value.id}`
+const loadKey = () => `${scopeKey()}|${props.proposalId}`
 
 async function load() {
   if (!props.proposalId) return
-  const key = String(props.proposalId)
+  const key = loadKey()
   const token = guard.begin(key)
   failure.value = ''
   comparisonFailure.value = ''
@@ -73,6 +78,14 @@ watch(() => [props.modelValue, props.proposalId] as const, ([open]) => {
   actionError.value = ''
   if (open) void load()
 }, { immediate: true })
+
+watch(scopeKey, () => {
+  guard.begin(loadKey())
+  detail.value = null
+  comparison.value = null
+  actionError.value = ''
+  loading.value = false
+})
 
 async function run(label: string, action: () => Promise<unknown>, success: string) {
   if (busy.value) return
@@ -128,8 +141,9 @@ async function doExport() {
   busy.value = 'export'
   actionError.value = ''
   try {
+    const scope = scopeKey()
     const file = await exportProposal(d.id)
-    if (detail.value?.id !== d.id) return
+    if (detail.value?.id !== d.id || scope !== scopeKey()) return
     downloadCsv(file.fileName, file.content)
     ElMessage.info(`已导出方案 v${file.proposalRowVersion} 的申报材料；${PLANNING_NOTICES.exportNotSubmission}`)
   } catch (e) {

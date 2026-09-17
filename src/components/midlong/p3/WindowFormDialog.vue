@@ -6,11 +6,12 @@
 import { computed, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import MidlongNotice from '../MidlongNotice.vue'
+import BeijingDateTimeInput from './BeijingDateTimeInput.vue'
 import { correctWindow, registerWindow, type WindowWriteResult } from '@/services/midlong/midlongP3Api'
 import { midlongFailureOf } from '@/services/midlong/midlongApi'
 import { fileToBase64, oversizeUploadMessage } from '@/services/midlong/midlongFormat'
 import { beijingDateTime } from '@/services/midlong/midlongP3Format'
-import { PLANNING_NOTICES, PROPOSAL_STATUS_LABELS, type TradingWindowDetail, type TradingWindowInput } from '@/services/midlong/midlongP3Types'
+import { PLANNING_NOTICES, PROPOSAL_STATUS_LABELS, isCompleteBeijingDateTimeInput, type TradingWindowDetail, type TradingWindowInput } from '@/services/midlong/midlongP3Types'
 import { PRODUCT_KINDS, PRODUCT_KIND_LABELS, TRADE_METHODS, TRADE_METHOD_LABELS, type MidlongSubject, type ProductKind, type TradeMethod } from '@/services/midlong/midlongTypes'
 
 const props = defineProps<{ modelValue: boolean; window: TradingWindowDetail | null; subjects: MidlongSubject[] }>()
@@ -52,7 +53,10 @@ watch(() => props.modelValue, (open) => {
 }, { immediate: true })
 
 const correcting = computed(() => Boolean(props.window))
-const valid = computed(() => Boolean(form.announcementName.trim()) && (!correcting.value || Boolean(form.changeReason.trim())))
+/** 时刻要么留空（未知），要么日期与时:分都填；只填日期不允许提交，避免把未知时刻默认成零点。 */
+const TIME_FIELDS = ['declarationOpensAt', 'declarationClosesAt', 'confirmationAt'] as const
+const incompleteTimes = computed(() => TIME_FIELDS.filter((f) => form[f] !== '' && !isCompleteBeijingDateTimeInput(form[f])))
+const valid = computed(() => Boolean(form.announcementName.trim()) && (!correcting.value || Boolean(form.changeReason.trim())) && incompleteTimes.value.length === 0)
 const text = (v: string) => (v.trim() === '' ? null : v.trim())
 
 function onFile(event: Event) {
@@ -129,14 +133,16 @@ async function submit() {
         <span class="p3-dash">—</span>
         <el-date-picker v-model="form.deliveryEndMonth" type="month" value-format="YYYY-MM" placeholder="结束月" style="width: 140px" />
       </el-form-item>
-      <el-form-item label="申报时间">
-        <el-date-picker v-model="form.declarationOpensAt" type="datetime" value-format="YYYY-MM-DD HH:mm" format="YYYY-MM-DD HH:mm" placeholder="开始（北京时间）" style="width: 200px" />
-        <span class="p3-dash">—</span>
-        <el-date-picker v-model="form.declarationClosesAt" type="datetime" value-format="YYYY-MM-DD HH:mm" format="YYYY-MM-DD HH:mm" placeholder="截止（北京时间）" style="width: 200px" />
+      <el-form-item label="申报开始">
+        <BeijingDateTimeInput v-model="form.declarationOpensAt" data-test="declarationOpensAt" />
+      </el-form-item>
+      <el-form-item label="申报截止">
+        <BeijingDateTimeInput v-model="form.declarationClosesAt" data-test="declarationClosesAt" />
       </el-form-item>
       <el-form-item label="确认时间">
-        <el-date-picker v-model="form.confirmationAt" type="datetime" value-format="YYYY-MM-DD HH:mm" format="YYYY-MM-DD HH:mm" placeholder="北京时间" style="width: 200px" />
+        <BeijingDateTimeInput v-model="form.confirmationAt" data-test="confirmationAt" />
       </el-form-item>
+      <div v-if="incompleteTimes.length" class="p3-time-hint" data-test="incomplete-time">申报、确认时间须同时填写日期与时:分；公告未给出确切时刻时请整项留空（显示待补），不要只选日期。</div>
       <el-form-item label="不支持的参数">
         <div class="p3-unsupported">
           <div v-for="(u, i) in form.unsupported" :key="i" class="p3-segment">
@@ -169,5 +175,6 @@ async function submit() {
 .p3-form { margin-top: 12px; }
 .p3-dash { margin: 0 6px; color: var(--muted); }
 .p3-unsupported { display: flex; flex-direction: column; gap: 6px; }
+.p3-time-hint { margin: -6px 0 10px 120px; font-size: var(--font-sm); color: var(--danger); }
 .p3-segment { display: flex; gap: 8px; align-items: center; }
 </style>

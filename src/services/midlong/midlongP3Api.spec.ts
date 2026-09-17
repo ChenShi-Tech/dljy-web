@@ -11,7 +11,7 @@ vi.mock('@/services/company/companyApi', () => ({ companyUnselected: () => hoist
 vi.mock('@/services/company/companyContext', async () => ({ selectedCompanyId: (await import('vue')).ref('comp') }))
 
 import { CompanyNotSelectedError } from './midlongApi'
-import { exportProposal, fetchPlanProgress, registerSubmission } from './midlongP3Api'
+import { exportProposal, fetchAllWindows, fetchPlanProgress, registerSubmission } from './midlongP3Api'
 
 const keyOf = (call: unknown[]) => ((call[2] as { headers: Record<string, string> }).headers['Idempotency-Key'])
 
@@ -54,5 +54,18 @@ describe('公司选择', () => {
     await expect(registerSubmission(1, { expectedRowVersion: 1, submittedAt: 'x', submittedByName: 'y' })).rejects.toBeInstanceOf(CompanyNotSelectedError)
     expect(hoisted.apiGet).not.toHaveBeenCalled()
     expect(hoisted.apiPost).not.toHaveBeenCalled()
+  })
+})
+
+describe('方案表单的公告候选', () => {
+  it('逐页取完全部公告，不只取第一页', async () => {
+    const row = (id: number) => ({ id })
+    hoisted.apiGet.mockReset()
+      .mockResolvedValueOnce({ data: { rows: Array.from({ length: 100 }, (_, i) => row(i + 1)), total: 230, page: 1, pageSize: 100 } })
+      .mockResolvedValueOnce({ data: { rows: Array.from({ length: 100 }, (_, i) => row(i + 101)), total: 230, page: 2, pageSize: 100 } })
+      .mockResolvedValueOnce({ data: { rows: Array.from({ length: 30 }, (_, i) => row(i + 201)), total: 230, page: 3, pageSize: 100 } })
+    const rows = await fetchAllWindows()
+    expect(rows).toHaveLength(230)
+    expect(hoisted.apiGet.mock.calls.map((c) => (c[1] as { page: number }).page)).toEqual([1, 2, 3])
   })
 })

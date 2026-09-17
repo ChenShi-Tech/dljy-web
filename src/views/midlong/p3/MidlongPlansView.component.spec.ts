@@ -11,12 +11,16 @@ import { FORBIDDEN_PLANNING_TERMS, PLANNING_NOTICES, type PlanProgress, type Pla
 
 const hoisted = vi.hoisted(() => ({
   fetchCapabilities: vi.fn(), fetchPlanProgress: vi.fn(), fetchProposals: vi.fn(), fetchWindows: vi.fn(), confirmPlan: vi.fn(), replace: vi.fn(),
-  routeQuery: {} as Record<string, string>,
+  routeQuery: {} as Record<string, string>, companyRef: null as null | { value: string },
 }))
 
 vi.mock('element-plus', async (orig) => ({ ...(await orig<typeof import('element-plus')>()), ElMessage: { success: vi.fn(), error: vi.fn() } }))
 vi.mock('vue-router', () => ({ useRoute: () => ({ query: hoisted.routeQuery }), useRouter: () => ({ replace: hoisted.replace }) }))
-vi.mock('@/services/company/companyContext', async () => ({ selectedCompanyId: (await import('vue')).ref('comp-a') }))
+vi.mock('@/services/company/companyContext', async () => {
+  const selectedCompanyId = (await import('vue')).ref('comp-a')
+  hoisted.companyRef = selectedCompanyId
+  return { selectedCompanyId }
+})
 vi.mock('@/services/region/regionContext', async () => ({ currentRegion: (await import('vue')).ref({ id: 'yunnan' }) }))
 vi.mock('@/services/midlong/midlongApi', () => ({
   CompanyNotSelectedError: class extends Error {},
@@ -25,15 +29,19 @@ vi.mock('@/services/midlong/midlongApi', () => ({
   midlongFailureOf: (e: unknown) => ({ status: 500, errorCode: 'STORAGE_UNAVAILABLE', message: (e as Error).message, details: null }),
 }))
 vi.mock('@/services/midlong/midlongP3Api', () => ({
-  fetchPlanProgress: hoisted.fetchPlanProgress, fetchProposals: hoisted.fetchProposals, fetchWindows: hoisted.fetchWindows, confirmPlan: hoisted.confirmPlan,
+  fetchPlanProgress: hoisted.fetchPlanProgress, fetchProposals: hoisted.fetchProposals, fetchAllWindows: hoisted.fetchWindows, confirmPlan: hoisted.confirmPlan,
 }))
 
 import MidlongPlansView from './MidlongPlansView.vue'
 
 const STUBS = {
-  CompanyScopeBar: { template: '<div />' }, PlanFormDialog: { template: '<div />' }, PlanDetailDrawer: { template: '<div />' },
-  ProposalFormDialog: { template: '<div />' }, ProposalDetailDrawer: { template: '<div />' }, 'router-link': { template: '<a><slot /></a>' },
+  CompanyScopeBar: { template: '<div />' }, PlanFormDialog: { template: '<div />' },
+  PlanDetailDrawer: { props: ['modelValue', 'planId'], template: '<div class="stub-plan-drawer" :data-open="String(modelValue)" />' },
+  ProposalFormDialog: { template: '<div />' },
+  ProposalDetailDrawer: { props: ['modelValue', 'proposalId'], template: '<div class="stub-proposal-drawer" :data-open="String(modelValue)" :data-id="proposalId" />' },
+  'router-link': { template: '<a><slot /></a>' },
 }
+const page = <T>(rows: T[], total = rows.length) => ({ rows, total, page: 1, pageSize: 50 })
 
 function caps(modules: { plans: boolean; execution: boolean }): MidlongCapabilities {
   return {
@@ -46,7 +54,7 @@ function caps(modules: { plans: boolean; execution: boolean }): MidlongCapabilit
 function progress(o: Partial<PlanProgress> = {}): PlanProgress {
   return {
     targetQuantity: '1000', knownSoldQuantity: '700', soldComplete: true, remainingPlanQuantity: '300', completionRate: '0.7', openOccupationQuantity: '200',
-    arrangeableQuantity: '100', overPlan: false, verificationStatus: 'VERIFIED', notices: [], incompleteContracts: [], positionsAsOf: '2031-01-01T00:00:00.000Z', ...o,
+    arrangeableQuantity: '100', overPlan: false, overCommitted: false, verificationStatus: 'VERIFIED', notices: [], incompleteContracts: [], positionsAsOf: '2031-01-01T00:00:00.000Z', ...o,
   }
 }
 
@@ -61,7 +69,7 @@ function row(id: number, periodKey: string, p: Partial<PlanProgress>, confirmed 
 
 function report(o: Partial<PlanProgressReport> = {}): PlanProgressReport {
   return {
-    view: 'CURRENT', asOf: '2031-01-01T00:00:00.000Z', regionId: 'yunnan', generatedAt: '2031-01-01T00:00:00.000Z', notices: [],
+    view: 'CURRENT', asOf: '2031-01-01T00:00:00.000Z', regionId: 'yunnan', generatedAt: '2031-01-01T00:00:00.000Z', notices: [], total: 4, page: 1, pageSize: 50,
     rows: [
       row(1, '2031-05', {}),
       row(2, '2031-06', { knownSoldQuantity: '1100', remainingPlanQuantity: '-100', completionRate: '1.1', arrangeableQuantity: '-150', overPlan: true, openOccupationQuantity: '50' }),
@@ -75,6 +83,7 @@ function report(o: Partial<PlanProgressReport> = {}): PlanProgressReport {
 afterEach(() => {
   vi.clearAllMocks()
   hoisted.routeQuery = {}
+  if (hoisted.companyRef) hoisted.companyRef.value = 'comp-a'
 })
 enableAutoUnmount(afterEach)
 
@@ -82,7 +91,7 @@ describe('中长期售电计划页', () => {
   it('剩余计划待售量与完成率：已核验、超计划、未完成核验、目标未确认分别如实显示', async () => {
     hoisted.fetchCapabilities.mockResolvedValue(caps({ plans: true, execution: true }))
     hoisted.fetchPlanProgress.mockResolvedValue(report())
-    hoisted.fetchProposals.mockResolvedValue([])
+    hoisted.fetchProposals.mockResolvedValue(page([]))
     hoisted.fetchWindows.mockResolvedValue([])
     const w = mount(MidlongPlansView, { global: { stubs: STUBS } })
     await flushPromises()
@@ -109,7 +118,7 @@ describe('中长期售电计划页', () => {
     hoisted.routeQuery = { planId: '1', asOf: '2031-02-01T00:00:00.000Z' }
     hoisted.fetchCapabilities.mockResolvedValue(caps({ plans: true, execution: false }))
     hoisted.fetchPlanProgress.mockResolvedValue(report({ view: 'AS_OF', rows: [row(1, '2031-05', {})] }))
-    hoisted.fetchProposals.mockResolvedValue([])
+    hoisted.fetchProposals.mockResolvedValue(page([]))
     const w = mount(MidlongPlansView, { global: { stubs: STUBS } })
     await flushPromises()
     expect(hoisted.fetchPlanProgress).toHaveBeenCalledWith(expect.objectContaining({ planId: '1', asOf: '2031-02-01T00:00:00.000Z' }))
@@ -130,11 +139,46 @@ describe('中长期售电计划页', () => {
   it('服务失败显示错误，不显示任何替代数值', async () => {
     hoisted.fetchCapabilities.mockResolvedValue(caps({ plans: true, execution: true }))
     hoisted.fetchPlanProgress.mockRejectedValue(new Error('存储不可用'))
-    hoisted.fetchProposals.mockResolvedValue([])
+    hoisted.fetchProposals.mockResolvedValue(page([]))
     hoisted.fetchWindows.mockResolvedValue([])
     const w = mount(MidlongPlansView, { global: { stubs: STUBS } })
     await flushPromises()
     expect(w.text()).toContain('计划加载失败（未显示任何替代数值）')
     expect(w.text()).not.toContain('MWh')
+  })
+  it('切换公司：关闭已打开的方案与目标详情抽屉，按新公司回到第一页重新取数', async () => {
+    const proposalRow = { id: 42, status: 'EXECUTABLE', subjectId: 1, subjectName: '测试交易单元', segments: [{ deliveryMonth: '2031-05', quantity: '80' }], proposedPrice: null, openOccupationQuantity: '80', window: null }
+    hoisted.fetchCapabilities.mockResolvedValue(caps({ plans: true, execution: true }))
+    hoisted.fetchPlanProgress.mockResolvedValue(report())
+    hoisted.fetchProposals.mockResolvedValue(page([proposalRow]))
+    hoisted.fetchWindows.mockResolvedValue([])
+    const w = mount(MidlongPlansView, { global: { stubs: STUBS } })
+    await flushPromises()
+    await w.findAll('.el-table__row').find((r) => r.text().includes('#42'))!.trigger('click')
+    await w.findAll('.ml-table .el-table__body-wrapper tbody tr')[0].findAll('button').find((b) => b.text() === '版本与占用')!.trigger('click')
+    await flushPromises()
+    expect(w.find('.stub-proposal-drawer').attributes('data-open')).toBe('true')
+    expect(w.find('.stub-plan-drawer').attributes('data-open')).toBe('true')
+    hoisted.companyRef!.value = 'comp-b'
+    await flushPromises()
+    expect(w.find('.stub-proposal-drawer').attributes('data-open')).toBe('false')
+    expect(w.find('.stub-plan-drawer').attributes('data-open')).toBe('false')
+    expect(hoisted.fetchPlanProgress).toHaveBeenLastCalledWith(expect.objectContaining({ page: 1 }))
+  })
+
+  it('占用超过目标时标注并提示；目标超过一页时显示分页并按页取数', async () => {
+    hoisted.fetchCapabilities.mockResolvedValue(caps({ plans: true, execution: false }))
+    hoisted.fetchPlanProgress.mockResolvedValue(report({
+      total: 120,
+      rows: [row(1, '2031-05', { knownSoldQuantity: '50', remainingPlanQuantity: '50', completionRate: '0.05', openOccupationQuantity: '80', arrangeableQuantity: '-30', overCommitted: true })],
+    }))
+    hoisted.fetchProposals.mockResolvedValue(page([]))
+    const w = mount(MidlongPlansView, { global: { stubs: STUBS } })
+    await flushPromises()
+    expect(w.text()).toContain('占用超目标')
+    expect(w.text()).toContain(PLANNING_NOTICES.overCommitted)
+    expect(w.text()).toContain('-30 MWh')
+    expect(w.find('.ml-pagination').exists()).toBe(true)
+    expect(hoisted.fetchPlanProgress).toHaveBeenCalledWith(expect.objectContaining({ page: 1, pageSize: 50 }))
   })
 })

@@ -40,8 +40,10 @@ function caps(execution: boolean): MidlongCapabilities {
   } as unknown as MidlongCapabilities
 }
 
+const page = <T>(rows: T[], total = rows.length) => ({ rows, total, page: 1, pageSize: 50 })
+
 const calendar: WindowCalendarReport = {
-  fromMonth: '2031-04', toMonth: '2031-06', notice: PLANNING_NOTICES.windowPending,
+  fromMonth: '2031-04', toMonth: '2031-06', notice: PLANNING_NOTICES.windowPending, windowTotal: 2, windowLimit: 500, truncated: false,
   events: [
     { kind: 'DECLARATION_OPENS', label: '申报开始', at: '2031-04-19T16:30:00.000Z', windowId: 1, revisionNo: 2, announcementName: '【测试数据】已明确时间的公告' },
     { kind: 'DECLARATION_CLOSES', label: '申报截止', at: '2031-04-20T09:00:00.000Z', windowId: 1, revisionNo: 2, announcementName: '【测试数据】已明确时间的公告' },
@@ -66,8 +68,8 @@ describe('中长期交易执行页', () => {
   it('日历：已明确时间按北京时间分日，时间未知的公告只进待补、不生成事件', async () => {
     hoisted.fetchCapabilities.mockResolvedValue(caps(true))
     hoisted.fetchWindowCalendar.mockResolvedValue(calendar)
-    hoisted.fetchWindows.mockResolvedValue([])
-    hoisted.fetchProposals.mockResolvedValue([])
+    hoisted.fetchWindows.mockResolvedValue(page([]))
+    hoisted.fetchProposals.mockResolvedValue(page([]))
     const w = mount(MidlongExecutionView, { global: { stubs: STUBS } })
     await flushPromises()
     const days = w.findAll('.ml-day')
@@ -80,22 +82,38 @@ describe('中长期交易执行页', () => {
     expect(w.text()).toContain(PLANNING_NOTICES.windowPending)
   })
 
-  it('公告列表与执行列表：显示待核对与待重新核对数；草稿方案不进入执行列表；提示导出不等于提交', async () => {
+  it('公告列表与执行列表：显示待核对与待重新核对数；执行列表由服务端排除草稿并分页（不在前端过滤一页结果）；提示导出不等于提交', async () => {
     hoisted.routeQuery = { tab: 'windows' }
     hoisted.fetchCapabilities.mockResolvedValue(caps(true))
     hoisted.fetchWindowCalendar.mockResolvedValue({ ...calendar, events: [], pending: [] })
-    hoisted.fetchWindows.mockResolvedValue([windowRow(1, '【测试数据】公告甲', 4, 2)])
-    hoisted.fetchProposals.mockResolvedValue([proposalRow(10, 'DRAFT'), proposalRow(11, 'EXECUTABLE'), proposalRow(12, 'SUBMITTED')])
+    hoisted.fetchWindows.mockResolvedValue(page([windowRow(1, '【测试数据】公告甲', 4, 2)], 130))
+    hoisted.fetchProposals.mockResolvedValue(page([proposalRow(11, 'EXECUTABLE'), proposalRow(12, 'SUBMITTED')], 2))
     const w = mount(MidlongExecutionView, { global: { stubs: STUBS } })
     await flushPromises()
+    expect(hoisted.fetchProposals).toHaveBeenCalledWith(expect.objectContaining({ stage: 'execution', page: 1, pageSize: 50 }))
+    expect(hoisted.fetchWindows).toHaveBeenCalledWith({ page: 1, pageSize: 50 })
     const text = w.text()
     expect(text).toContain('【测试数据】公告甲')
     expect(text).toContain('2 / 3')
     expect(text).toContain(PLANNING_NOTICES.exportNotSubmission)
     expect(text).toContain('#11')
     expect(text).toContain('#12')
-    expect(text).not.toContain('#10')
     expect(text).toContain('未登记提交')
+    expect(w.findAll('.ml-pagination')).toHaveLength(1)
+    expect(text).toContain('130')
+  })
+
+  it('日历超过单次公告上限：明确提示未显示全部并给出总数', async () => {
+    hoisted.fetchCapabilities.mockResolvedValue(caps(true))
+    hoisted.fetchWindowCalendar.mockResolvedValue({ ...calendar, windowTotal: 812, windowLimit: 500, truncated: true })
+    hoisted.fetchWindows.mockResolvedValue(page([]))
+    hoisted.fetchProposals.mockResolvedValue(page([]))
+    const w = mount(MidlongExecutionView, { global: { stubs: STUBS } })
+    await flushPromises()
+    const notice = w.find('[data-test="calendar-truncated"]')
+    expect(notice.exists()).toBe(true)
+    expect(notice.text()).toContain('共 812 条')
+    expect(notice.text()).toContain('前 500 条')
   })
 
   it('能力未开放：显示未开放提示，不请求日历与公告接口', async () => {

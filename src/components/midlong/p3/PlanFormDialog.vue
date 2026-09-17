@@ -74,7 +74,13 @@ async function submit() {
     emit('update:modelValue', false)
   } catch (e) {
     const f = midlongFailureOf(e)
-    error.value = f.errorCode === 'VERSION_CONFLICT' ? `${f.message}（请关闭后刷新列表再操作）` : f.message
+    if (f.errorCode === 'BUSINESS_KEY_CONFLICT') {
+      // 同主体同交割期已有目标：不能另建一份，只能在原目标上「发起更改」保留历史版本。
+      const existing = (f.details as { existingPlanId?: number } | null)?.existingPlanId
+      error.value = `该交易主体在该交割期已有售电目标${existing ? `（目标 #${existing}）` : ''}，不能重复新建；请关闭后在列表中对该目标「发起更改」。`
+    } else {
+      error.value = f.errorCode === 'VERSION_CONFLICT' ? `${f.message}（请关闭后刷新列表再操作）` : f.message
+    }
   } finally {
     saving.value = false
   }

@@ -10,7 +10,7 @@ import { companyUnselected } from '@/services/company/companyApi'
 import { selectedCompanyId } from '@/services/company/companyContext'
 import { CompanyNotSelectedError, actionKey, contentFingerprint } from './midlongApi'
 import type {
-  PlanPeriodType, PlanProgressReport, PlanningAttachment, ProposalCloseKind, ProposalComparison, ProposalExport, ProposalStatus,
+  PageResult, PlanPeriodType, PlanProgressReport, PlanningAttachment, ProposalCloseKind, ProposalComparison, ProposalExport, ProposalStatus,
   SalesPlanDetail, SalesPlanListRow, SalesPlanRevision, SubmissionRegistrationResult, TradeProposalDetail, TradeProposalInput,
   TradingWindowDetail, TradingWindowInput, TradingWindowListRow, WindowCalendarReport, WindowRevisionChange,
 } from './midlongP3Types'
@@ -56,10 +56,12 @@ export type PlanRevisionInput = {
   ownerName?: string | null
   changeReason?: string | null
 }
-export type PlanQuery = { subjectId?: string; periodType?: PlanPeriodType | ''; year?: string }
+/** 分页参数：列表接口一律分页返回 total，页面按 total 显示分页，不在前端对一页结果再过滤。 */
+export type PageQuery = { page?: number; pageSize?: number }
+export type PlanQuery = PageQuery & { subjectId?: string; periodType?: PlanPeriodType | ''; year?: string }
 
-export async function fetchPlans(query: PlanQuery = {}): Promise<SalesPlanListRow[]> {
-  return dataOf(await apiGet<Envelope<{ rows: SalesPlanListRow[] }>>(`${BASE}/plans`, readQuery(query))).rows
+export async function fetchPlans(query: PlanQuery = {}): Promise<PageResult<SalesPlanListRow>> {
+  return dataOf(await apiGet<Envelope<PageResult<SalesPlanListRow>>>(`${BASE}/plans`, readQuery(query)))
 }
 
 export async function fetchPlanProgress(query: PlanQuery & { planId?: string; asOf?: string } = {}): Promise<PlanProgressReport> {
@@ -95,10 +97,11 @@ export async function fetchPlanRevisions(planId: number): Promise<SalesPlanRevis
 
 // ── 交易方案 ─────────────────────────────────────────────────────────────────
 
-export type ProposalQuery = { status?: ProposalStatus | ''; subjectId?: string; windowId?: string }
+/** stage=execution：服务端排除草稿（执行页只看已进入执行链路的方案）。 */
+export type ProposalQuery = PageQuery & { status?: ProposalStatus | ''; subjectId?: string; windowId?: string; stage?: 'execution' }
 
-export async function fetchProposals(query: ProposalQuery = {}): Promise<TradeProposalDetail[]> {
-  return dataOf(await apiGet<Envelope<{ rows: TradeProposalDetail[] }>>(`${BASE}/proposals`, readQuery(query))).rows
+export async function fetchProposals(query: ProposalQuery = {}): Promise<PageResult<TradeProposalDetail>> {
+  return dataOf(await apiGet<Envelope<PageResult<TradeProposalDetail>>>(`${BASE}/proposals`, readQuery(query)))
 }
 
 export async function fetchProposal(proposalId: number): Promise<TradeProposalDetail> {
@@ -159,8 +162,19 @@ export async function markAwaitingResult(proposalId: number, input: { expectedRo
 
 // ── 交易窗口（公告）与日历 ───────────────────────────────────────────────────
 
-export async function fetchWindows(query: { fromMonth?: string; toMonth?: string } = {}): Promise<TradingWindowListRow[]> {
-  return dataOf(await apiGet<Envelope<{ rows: TradingWindowListRow[] }>>(`${BASE}/windows`, readQuery(query))).rows
+export async function fetchWindows(query: PageQuery & { fromMonth?: string; toMonth?: string } = {}): Promise<PageResult<TradingWindowListRow>> {
+  return dataOf(await apiGet<Envelope<PageResult<TradingWindowListRow>>>(`${BASE}/windows`, readQuery(query)))
+}
+
+/** 方案表单的公告候选：逐页取完全部公告，不只取第一页（候选缺失会让用户以为公告没登记）。 */
+export async function fetchAllWindows(): Promise<TradingWindowListRow[]> {
+  const pageSize = 100
+  const rows: TradingWindowListRow[] = []
+  for (let page = 1; ; page += 1) {
+    const result = await fetchWindows({ page, pageSize })
+    rows.push(...result.rows)
+    if (!result.rows.length || rows.length >= result.total) return rows
+  }
 }
 
 export async function fetchWindow(windowId: number): Promise<TradingWindowDetail> {

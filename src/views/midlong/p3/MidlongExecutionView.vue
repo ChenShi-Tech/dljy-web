@@ -33,7 +33,10 @@ const failureText = ref('')
 const capabilities = ref<MidlongCapabilities | null>(null)
 const calendar = ref<WindowCalendarReport | null>(null)
 const windows = ref<TradingWindowListRow[]>([])
+const windowTotal = ref(0)
 const proposals = ref<TradeProposalDetail[]>([])
+const proposalTotal = ref(0)
+const PAGE_SIZE = 50
 const subjects = ref<MidlongSubject[]>([])
 
 const q = (key: string) => (typeof route.query[key] === 'string' ? (route.query[key] as string) : '')
@@ -41,7 +44,10 @@ const TABS = ['calendar', 'windows', 'proposals'] as const
 const tab = ref<(typeof TABS)[number]>((TABS as readonly string[]).includes(q('tab')) ? (q('tab') as (typeof TABS)[number]) : 'calendar')
 const thisMonth = beijingToday().slice(0, 7)
 const defaultRange = (): string[] => [thisMonth, monthsBetween(thisMonth, `${Number(thisMonth.slice(0, 4)) + 1}-12`)[2]]
-const filters = reactive({ monthRange: (q('fromMonth') && q('toMonth') ? [q('fromMonth'), q('toMonth')] : defaultRange()) as string[], status: q('status') as ProposalStatus | '' })
+const filters = reactive({
+  monthRange: (q('fromMonth') && q('toMonth') ? [q('fromMonth'), q('toMonth')] : defaultRange()) as string[], status: q('status') as ProposalStatus | '',
+  windowPage: Math.max(1, Number(q('windowPage')) || 1), proposalPage: Math.max(1, Number(q('proposalPage')) || 1),
+})
 
 const canWrite = computed(() => Boolean(capabilities.value?.canWrite))
 const guard = createLoadGuard()
@@ -62,14 +68,19 @@ async function load() {
     if (!caps.regionSupported) { state.value = 'unsupported'; return }
     if (!caps.modules.execution) { state.value = 'module-off'; return }
     const [fromMonth, toMonth] = filters.monthRange.length === 2 ? filters.monthRange : defaultRange()
-    const [calendarReport, windowRows, proposalRows, subjectRows] = await Promise.all([
-      fetchWindowCalendar({ fromMonth, toMonth }), fetchWindows(), fetchProposals({ status: filters.status || undefined }), fetchSubjects(),
+    const [calendarReport, windowPage, proposalPage, subjectRows] = await Promise.all([
+      fetchWindowCalendar({ fromMonth, toMonth }),
+      fetchWindows({ page: filters.windowPage, pageSize: PAGE_SIZE }),
+      // 执行页只列出已进入执行链路的方案：由服务端排除草稿并返回总数，不在前端过滤一页结果（否则会静默漏掉）。
+      fetchProposals({ stage: 'execution', status: filters.status || undefined, page: filters.proposalPage, pageSize: PAGE_SIZE }),
+      fetchSubjects(),
     ])
     if (!guard.isCurrent(token, contextKey())) return
     calendar.value = calendarReport
-    windows.value = windowRows
-    // 执行页只列出已进入执行链路的方案；草稿在计划页处理。
-    proposals.value = proposalRows.filter((p) => p.status !== 'DRAFT')
+    windows.value = windowPage.rows
+    windowTotal.value = windowPage.total
+    proposals.value = proposalPage.rows
+    proposalTotal.value = proposalPage.total
     subjects.value = subjectRows
     state.value = 'ready'
   } catch (error) {
@@ -86,14 +97,26 @@ function apply() {
   const next: Record<string, string> = { tab: tab.value }
   if (filters.monthRange.length === 2) { next.fromMonth = filters.monthRange[0]; next.toMonth = filters.monthRange[1] }
   if (filters.status) next.status = filters.status
+  if (filters.windowPage > 1) next.windowPage = String(filters.windowPage)
+  if (filters.proposalPage > 1) next.proposalPage = String(filters.proposalPage)
   void router.replace({ query: next })
   void load()
 }
 
+/** 改筛选条件后回到第一页。 */
+function search() {
+  filters.windowPage = 1
+  filters.proposalPage = 1
+  apply()
+}
+
 onMounted(load)
+// 切换公司/地区：关闭详情抽屉与公告表单，旧范围的迟到结果由抽屉的代次守卫丢弃。
 watch([selectedCompanyId, () => currentRegion.value.id], () => {
   windowDrawer.open = false
   proposalDrawer.open = false
+  windowDialog.open = false
+  Object.assign(filters, { windowPage: 1, proposalPage: 1 })
   apply()
 })
 
@@ -140,9 +163,12 @@ const latestReceipt = (p: TradeProposalDetail) => p.submissions.at(-1) ?? null
         <el-tab-pane label="交易日历" name="calendar">
           <div class="ml-filters">
             <el-date-picker v-model="filters.monthRange" type="monthrange" value-format="YYYY-MM" range-separator="至" start-placeholder="起始月" end-placeholder="结束月" style="width: 240px" />
-            <el-button type="primary" @click="apply">查询</el-button>
+            <el-button type="primary" @click="search">查询</el-button>
           </div>
           <MidlongNotice tone="info">{{ calendar.notice }}</MidlongNotice>
+          <MidlongNotice v-if="calendar.truncated" tone="warn" title="日历未显示全部公告" data-test="calendar-truncated">
+            所选月份内相关公告共 {{ calendar.windowTotal }} 条，本次只统计了前 {{ calendar.windowLimit }} 条，请缩小月份区间后查看。
+          </MidlongNotice>
           <div class="ml-calendar">
             <div class="ml-panel">
               <h3>已明确时间的事件 <small>北京时间</small></h3>
@@ -183,6 +209,10 @@ const latestReceipt = (p: TradeProposalDetail) => p.submissions.at(-1) ?? null
             <el-table-column label="待重新核对方案" width="120" align="right"><template #default="{ row }"><span :class="{ 'ml-warn': row.proposalsNeedingRecheck }">{{ row.proposalsNeedingRecheck }}</span> / {{ row.proposalCount }}</template></el-table-column>
             <template #empty>尚未登记交易公告。没有真实公告时日历为空，不生成示意窗口。</template>
           </el-table>
+          <el-pagination
+            v-if="windowTotal > PAGE_SIZE" class="ml-pagination" layout="total, prev, pager, next" :total="windowTotal" :page-size="PAGE_SIZE"
+            :current-page="filters.windowPage" @current-change="(p: number) => { filters.windowPage = p; apply() }"
+          />
         </el-tab-pane>
 
         <el-tab-pane label="方案执行" name="proposals">
@@ -190,7 +220,7 @@ const latestReceipt = (p: TradeProposalDetail) => p.submissions.at(-1) ?? null
             <el-select v-model="filters.status" placeholder="方案状态" clearable style="width: 140px">
               <el-option v-for="s in ['EXECUTABLE', 'SUBMITTED', 'AWAITING_RESULT', 'CANCELLED', 'CLOSED'] as ProposalStatus[]" :key="s" :label="PROPOSAL_STATUS_LABELS[s]" :value="s" />
             </el-select>
-            <el-button type="primary" @click="apply">查询</el-button>
+            <el-button type="primary" @click="search">查询</el-button>
             <router-link to="/zcqjy/plans?tab=proposals" class="ml-link">方案草稿与测算 →</router-link>
           </div>
           <MidlongNotice tone="info">{{ PLANNING_NOTICES.exportNotSubmission }} {{ PLANNING_NOTICES.submissionNotAccepted }}</MidlongNotice>
@@ -212,6 +242,10 @@ const latestReceipt = (p: TradeProposalDetail) => p.submissions.at(-1) ?? null
             <el-table-column label="公告核对" width="130"><template #default="{ row }"><el-tag v-if="row.window?.needsRecheck" size="small" type="warning">公告已更正待核对</el-tag></template></el-table-column>
             <template #empty>没有已确认可执行的方案。</template>
           </el-table>
+          <el-pagination
+            v-if="proposalTotal > PAGE_SIZE" class="ml-pagination" layout="total, prev, pager, next" :total="proposalTotal" :page-size="PAGE_SIZE"
+            :current-page="filters.proposalPage" @current-change="(p: number) => { filters.proposalPage = p; apply() }"
+          />
         </el-tab-pane>
       </el-tabs>
     </template>
@@ -240,6 +274,7 @@ const latestReceipt = (p: TradeProposalDetail) => p.submissions.at(-1) ?? null
 .ml-day-date { font-weight: 600; font-variant-numeric: tabular-nums; margin-bottom: 4px; }
 .ml-event { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-size: var(--font-md); padding: 2px 0; }
 .ml-link { color: var(--accent); text-decoration: none; }
+.ml-pagination { margin-top: 10px; justify-content: flex-end; }
 .ml-warn { color: var(--warning); }
 .ml-muted { color: var(--muted); font-size: var(--font-sm); }
 @media (max-width: 1100px) { .ml-calendar { grid-template-columns: 1fr; } }

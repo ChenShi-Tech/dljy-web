@@ -16,7 +16,7 @@ import ProposalFormDialog from '@/components/midlong/p3/ProposalFormDialog.vue'
 import { selectedCompanyId } from '@/services/company/companyContext'
 import { currentRegion } from '@/services/region/regionContext'
 import { CompanyNotSelectedError, fetchCapabilities, fetchSubjects, midlongFailureOf } from '@/services/midlong/midlongApi'
-import { confirmPlan, fetchPlanProgress, fetchProposals, fetchWindows } from '@/services/midlong/midlongP3Api'
+import { confirmPlan, fetchAllWindows, fetchPlanProgress, fetchProposals } from '@/services/midlong/midlongP3Api'
 import { createLoadGuard, fmtPrice, fmtQuantity } from '@/services/midlong/midlongFormat'
 import {
   arrangeableLabel, beijingDateTime, completionLabel, confirmFailureText, planPeriodLabel, proposalStatusTag, remainingLabel, verificationTag,
@@ -37,12 +37,18 @@ const failureText = ref('')
 const capabilities = ref<MidlongCapabilities | null>(null)
 const report = ref<PlanProgressReport | null>(null)
 const proposals = ref<TradeProposalDetail[]>([])
+const proposalTotal = ref(0)
+const PAGE_SIZE = 50
 const subjects = ref<MidlongSubject[]>([])
 const windows = ref<TradingWindowListRow[]>([])
 
 const q = (key: string) => (typeof route.query[key] === 'string' ? (route.query[key] as string) : '')
 const tab = ref(q('tab') === 'proposals' ? 'proposals' : 'targets')
-const filters = reactive({ year: q('year'), subjectId: q('subjectId'), periodType: q('periodType') as PlanPeriodType | '', asOf: q('asOf'), planId: q('planId'), status: q('status') as ProposalStatus | '' })
+const pageOfQuery = (key: string) => Math.max(1, Number(q(key)) || 1)
+const filters = reactive({
+  year: q('year'), subjectId: q('subjectId'), periodType: q('periodType') as PlanPeriodType | '', asOf: q('asOf'), planId: q('planId'), status: q('status') as ProposalStatus | '',
+  page: pageOfQuery('page'), proposalPage: pageOfQuery('proposalPage'),
+})
 
 const canWrite = computed(() => Boolean(capabilities.value?.canWrite))
 const guard = createLoadGuard()
@@ -62,16 +68,17 @@ async function load() {
     if (!caps.enabled) { state.value = 'disabled'; return }
     if (!caps.regionSupported) { state.value = 'unsupported'; return }
     if (!caps.modules.plans) { state.value = 'module-off'; return }
-    const progressQuery = { year: filters.year || undefined, subjectId: filters.subjectId || undefined, periodType: filters.periodType || undefined, asOf: filters.asOf || undefined, planId: filters.planId || undefined }
-    const [progress, proposalRows, subjectRows, windowRows] = await Promise.all([
+    const progressQuery = { year: filters.year || undefined, subjectId: filters.subjectId || undefined, periodType: filters.periodType || undefined, asOf: filters.asOf || undefined, planId: filters.planId || undefined, page: filters.page, pageSize: PAGE_SIZE }
+    const [progress, proposalPage, subjectRows, windowRows] = await Promise.all([
       fetchPlanProgress(progressQuery),
-      fetchProposals({ status: filters.status || undefined, subjectId: filters.subjectId || undefined }),
+      fetchProposals({ status: filters.status || undefined, subjectId: filters.subjectId || undefined, page: filters.proposalPage, pageSize: PAGE_SIZE }),
       fetchSubjects(),
-      caps.modules.execution ? fetchWindows() : Promise.resolve([] as TradingWindowListRow[]),
+      caps.modules.execution ? fetchAllWindows() : Promise.resolve([] as TradingWindowListRow[]),
     ])
     if (!guard.isCurrent(token, contextKey())) return
     report.value = progress
-    proposals.value = proposalRows
+    proposals.value = proposalPage.rows
+    proposalTotal.value = proposalPage.total
     subjects.value = subjectRows
     windows.value = windowRows
     state.value = 'ready'
@@ -86,6 +93,13 @@ async function load() {
   }
 }
 
+/** 改筛选条件后回到第一页。 */
+function search() {
+  filters.page = 1
+  filters.proposalPage = 1
+  apply()
+}
+
 function apply() {
   const next: Record<string, string> = { tab: tab.value }
   for (const [k, v] of Object.entries(filters)) if (v) next[k] = String(v)
@@ -94,9 +108,14 @@ function apply() {
 }
 
 onMounted(load)
-// 切换公司/地区：主体、目标、方案编号都属于原公司，清掉筛选后重新取数，旧请求迟到直接丢弃。
+// 切换公司/地区：主体、目标、方案编号都属于原公司——关闭详情抽屉与表单（与执行页一致），清掉筛选后重新取数，旧请求迟到直接丢弃。
 watch([selectedCompanyId, () => currentRegion.value.id], () => {
-  Object.assign(filters, { subjectId: '', planId: '', asOf: '' })
+  planDrawer.open = false
+  proposalDrawer.open = false
+  planDialog.open = false
+  proposalDialog.open = false
+  planActionError.value = ''
+  Object.assign(filters, { subjectId: '', planId: '', asOf: '', page: 1, proposalPage: 1 })
   apply()
 })
 
@@ -139,6 +158,7 @@ async function doConfirmPlan(row: PlanProgressRow) {
 
 const hasUnverified = computed(() => (report.value?.rows ?? []).some((r) => r.progress.verificationStatus === 'UNVERIFIED'))
 const hasOverPlan = computed(() => (report.value?.rows ?? []).some((r) => r.progress.overPlan))
+const hasOverCommitted = computed(() => (report.value?.rows ?? []).some((r) => r.progress.overCommitted))
 
 // ── 方案 ─────────────────────────────────────────────────────────────────────
 const proposalDialog = reactive({ open: false, proposal: null as TradeProposalDetail | null })
@@ -187,7 +207,7 @@ const segmentSummary = (p: TradeProposalDetail) => p.segments.map((s) => `${s.de
             <el-select v-model="filters.periodType" placeholder="粒度" clearable style="width: 100px">
               <el-option v-for="t in PLAN_PERIOD_TYPES" :key="t" :label="PLAN_PERIOD_TYPE_LABELS[t]" :value="t" />
             </el-select>
-            <el-button type="primary" @click="apply">查询</el-button>
+            <el-button type="primary" @click="search">查询</el-button>
             <el-button v-if="canWrite && report.view === 'CURRENT'" @click="openPlanDialog('create')">新建目标</el-button>
           </div>
 
@@ -197,6 +217,7 @@ const segmentSummary = (p: TradeProposalDetail) => p.segments.map((s) => `${s.de
           </MidlongNotice>
           <MidlongNotice v-if="hasUnverified" tone="warn" title="部分结果未完成核验">{{ PLANNING_NOTICES.unverified }}</MidlongNotice>
           <MidlongNotice v-if="hasOverPlan" tone="warn" title="存在超计划">{{ PLANNING_NOTICES.overPlan }}</MidlongNotice>
+          <MidlongNotice v-if="hasOverCommitted" tone="warn" title="占用超过目标">{{ PLANNING_NOTICES.overCommitted }}</MidlongNotice>
           <MidlongNotice v-if="planActionError" tone="danger" title="操作未完成">{{ planActionError }}</MidlongNotice>
 
           <el-table :data="report.rows" border size="small" class="ml-table">
@@ -220,6 +241,7 @@ const segmentSummary = (p: TradeProposalDetail) => p.segments.map((s) => `${s.de
               <template #default="{ row }">
                 <el-tag size="small" :type="verificationTag(row.progress).type">{{ verificationTag(row.progress).label }}</el-tag>
                 <el-tag v-if="row.progress.overPlan" size="small" type="danger">超计划</el-tag>
+                <el-tag v-if="row.progress.overCommitted" size="small" type="warning">占用超目标</el-tag>
               </template>
             </el-table-column>
             <el-table-column label="待确认版本" width="150">
@@ -237,6 +259,10 @@ const segmentSummary = (p: TradeProposalDetail) => p.segments.map((s) => `${s.de
             </el-table-column>
             <template #empty>所选范围内没有售电目标。</template>
           </el-table>
+          <el-pagination
+            v-if="report.total > report.pageSize" class="ml-pagination" layout="total, prev, pager, next" :total="report.total" :page-size="report.pageSize"
+            :current-page="report.page" @current-change="(p: number) => { filters.page = p; apply() }"
+          />
           <div class="ml-foot">计算时点 {{ beijingDateTime(report.asOf) }} · 数据生成于 {{ beijingDateTime(report.generatedAt) }}</div>
         </el-tab-pane>
 
@@ -248,7 +274,7 @@ const segmentSummary = (p: TradeProposalDetail) => p.segments.map((s) => `${s.de
             <el-select v-model="filters.subjectId" placeholder="交易主体" clearable filterable style="width: 170px">
               <el-option v-for="s in subjects" :key="s.id" :label="s.displayName" :value="String(s.id)" />
             </el-select>
-            <el-button type="primary" @click="apply">查询</el-button>
+            <el-button type="primary" @click="search">查询</el-button>
             <el-button v-if="canWrite" @click="Object.assign(proposalDialog, { open: true, proposal: null })">新建方案草稿</el-button>
           </div>
           <MidlongNotice tone="info">{{ PLANNING_NOTICES.simulation }}</MidlongNotice>
@@ -268,6 +294,10 @@ const segmentSummary = (p: TradeProposalDetail) => p.segments.map((s) => `${s.de
             </el-table-column>
             <template #empty>尚无交易方案。</template>
           </el-table>
+          <el-pagination
+            v-if="proposalTotal > PAGE_SIZE" class="ml-pagination" layout="total, prev, pager, next" :total="proposalTotal" :page-size="PAGE_SIZE"
+            :current-page="filters.proposalPage" @current-change="(p: number) => { filters.proposalPage = p; apply() }"
+          />
         </el-tab-pane>
       </el-tabs>
     </template>
@@ -288,6 +318,7 @@ const segmentSummary = (p: TradeProposalDetail) => p.segments.map((s) => `${s.de
 .ml-filters { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
 .ml-table { margin-top: 10px; }
 .ml-foot { margin-top: 8px; font-size: var(--font-xs); color: var(--muted); }
+.ml-pagination { margin-top: 10px; justify-content: flex-end; }
 .ml-warn { color: var(--warning); }
 .ml-muted { color: var(--muted); }
 </style>

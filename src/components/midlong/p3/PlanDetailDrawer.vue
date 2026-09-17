@@ -6,6 +6,8 @@ import { ref, watch } from 'vue'
 import MidlongNotice from '../MidlongNotice.vue'
 import { fetchPlan } from '@/services/midlong/midlongP3Api'
 import { midlongFailureOf } from '@/services/midlong/midlongApi'
+import { selectedCompanyId } from '@/services/company/companyContext'
+import { currentRegion } from '@/services/region/regionContext'
 import { createLoadGuard, fmtPrice, fmtQuantity } from '@/services/midlong/midlongFormat'
 import { beijingDateTime, planPeriodLabel, proposalStatusTag } from '@/services/midlong/midlongP3Format'
 import {
@@ -21,10 +23,13 @@ const detail = ref<SalesPlanDetail | null>(null)
 const failure = ref('')
 const loading = ref(false)
 const guard = createLoadGuard()
+// 代次按「公司 + 地区 + 目标」判断：切换后旧范围的迟到结果丢弃。
+const scopeKey = () => `${selectedCompanyId.value}|${currentRegion.value.id}`
+const loadKey = () => `${scopeKey()}|${props.planId}`
 
 async function load() {
   if (!props.planId) return
-  const key = String(props.planId)
+  const key = loadKey()
   const token = guard.begin(key)
   detail.value = null
   failure.value = ''
@@ -42,6 +47,11 @@ async function load() {
 }
 
 watch(() => [props.modelValue, props.planId] as const, ([open]) => { if (open) void load() }, { immediate: true })
+watch(scopeKey, () => {
+  guard.begin(loadKey())
+  detail.value = null
+  loading.value = false
+})
 
 // el-table 插槽里的 row 没有类型，标签查表经带类型的小函数取，避免隐式 any 索引。
 const revisionStatusLabel = (r: SalesPlanRevision) => PLAN_REVISION_STATUS_LABELS[r.status]
