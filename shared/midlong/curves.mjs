@@ -484,6 +484,12 @@ export function expandTypicalDays({ declaration, typicalDays }) {
   const g = declaration.granularityMinutes
   const periodsPerDay = DAY_MINUTES / g
   const profiles = Array.isArray(typicalDays) ? typicalDays : []
+  // 典型日按「日期」整日套用，日期只有在北京时间下才与交割期逐日对应：源时区不是 +08:00 时，
+  // 整日展开必然月初缺段、月末越界，永远无法确认。明确拒绝，改用带日期时刻的逐时段明细（按原偏移换算）。
+  if (declaration.offsetMinutes !== BEIJING_OFFSET_MINUTES) {
+    issues.push(issue('DECLARATION_INVALID', `典型日曲线按北京时间日期套用，原始时区须为 Asia/Shanghai（+08:00）；「${declaration.sourceTimezone}」口径的曲线请改用逐时段明细（带日期时刻）导入，系统按原偏移换算为北京时间`, { field: 'sourceTimezone' }))
+    return { intervals, issues }
+  }
   if (!profiles.length) issues.push(issue('TYPICAL_DAY_INVALID', '没有典型日定义'))
   let expandedCount = 0
   const claimedDates = new Map()
