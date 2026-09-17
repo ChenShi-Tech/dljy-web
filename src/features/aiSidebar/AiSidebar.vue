@@ -97,11 +97,29 @@ const agentEverOpened = ref(false)
 const busy = ref(false)
 watch(() => state.open, (open) => { if (open) agentEverOpened.value = true }, { immediate: true })
 
+// 内核挂载初始化（探活、续接会话）已完成的那一代（按 mountKey 记）。新挂的内核在 ready 之前收到提问，
+// 发出的请求会被随后的续接中止、会话再被续接结果覆盖——刷新后在同页马上点解读，问题被吞掉还多建一个空会话。
+const readyMountKey = ref(-1)
+const sidebarAlive = ref(true)
+onBeforeUnmount(() => { sidebarAlive.value = false })
+function kernelReadyFor(key: number): Promise<boolean> {
+  if (readyMountKey.value === key) return Promise.resolve(true)
+  return new Promise((resolve) => {
+    const stop = watch([readyMountKey, () => state.mountKey, sidebarAlive], ([ready, current, alive]) => {
+      if (ready === key) { stop(); resolve(true) }
+      else if (current !== key || !alive) { stop(); resolve(false) }
+    })
+  })
+}
+
 async function askInKernel(question: string) {
   agentEverOpened.value = true
+  const key = state.mountKey
   await nextTick() // 首次/重挂：等 AgentChatPanel 挂载出 ref
   await nextTick() // 等会话属性随 record 更新到 props 后再发
   if (!question.trim()) return // 专家会话不带问题：只开会话、等用户输入
+  // 等这一代内核初始化完成再发；等待期间又切换了会话（新的切换自己会发问），这条作废
+  if (!(await kernelReadyFor(key))) return
   // 晨报：先装配数据预检（确定性，不依赖模型），再发目标日启动研判——与工作台「生成晨报」一致
   if (record.value.entryKey === 'morning_brief' && briefRailRef.value) await briefRailRef.value.ensureLoaded()
   agentPanelRef.value?.ask(question)
@@ -167,6 +185,7 @@ function forCurrentKernel<A extends unknown[]>(fn: (...args: A) => unknown) {
     }
   })
 }
+const onKernelReady = forCurrentKernel(() => { readyMountKey.value = state.mountKey })
 const onKernelSessionReady = forCurrentKernel(onSessionReady)
 const onKernelStreamingChange = forCurrentKernel(onStreamingChange)
 const onKernelSessionBusy = forCurrentKernel(onSessionBusy)
@@ -384,6 +403,7 @@ function goConfig() {
           :extra-commands="expertCommands"
           approval-auto-approve
           @open-scenario="onKernelOpenScenario"
+          @ready="onKernelReady"
           @session-ready="onKernelSessionReady"
           @streaming-change="onKernelStreamingChange"
           @session-busy="onKernelSessionBusy"

@@ -43,6 +43,7 @@ import {
   createAgentSession,
   getActiveRun,
   identityHeaders,
+  listRuns,
   pingAgentService,
   probeAgentService,
   sendAgentMessage,
@@ -163,6 +164,35 @@ describe('createAgentSession 会话级路由登记', () => {
     await expect(createAgentSession('chat')).rejects.toThrow('缺少 vendor-a 的 API Key')
     mockFetch(async () => new Response('oops', { status: 500 }))
     await expect(createAgentSession('chat')).rejects.toThrow('智能体后端未启动')
+  })
+})
+
+describe('listRuns 运行中列表（统一 AI 侧边栏 SS-07）', () => {
+  const run = (sessionId: string) => ({
+    run_id: `r-${sessionId}`, session_id: sessionId, turn_seq: 1, status: 'running',
+    created_at: 1, updated_at: 1, last_seq: 3, session_title: '在跑', page_key: 'ai_center', scenario: 'chat'
+  })
+
+  it('走 pi 底座；返回的会话登记为 pi 会话，之后切换、停止、回放都路由到 pi', async () => {
+    const spy = mockFetch(async () => jsonRes([run('sess-run-elsewhere')]))
+    const runs = await listRuns('running')
+    expect(runs.map((r) => r.session_id)).toEqual(['sess-run-elsewhere'])
+    expect((spy.mock.calls[0] as unknown as [string])[0]).toBe(`${PI_BASE}/runs?status=running`)
+    expect(JSON.parse(localStorage.getItem(PI_KEY) || '[]')).toContain('sess-run-elsewhere')
+
+    mockFetch(async () => jsonRes(null))
+    await getActiveRun('sess-run-elsewhere')
+    const url = (vi.mocked(fetch).mock.calls.at(-1) as unknown as [string])[0]
+    expect(url.startsWith(PI_BASE)).toBe(true)
+  })
+
+  it('未登录 / 无权限 / 端点不存在 → 空列表；其它失败抛错（由侧边栏隐藏数量）', async () => {
+    for (const status of [401, 403, 404]) {
+      mockFetch(async () => jsonRes({ detail: 'x' }, { status }))
+      expect(await listRuns('running')).toEqual([])
+    }
+    mockFetch(async () => jsonRes({ detail: 'x' }, { status: 500 }))
+    await expect(listRuns('running')).rejects.toBeInstanceOf(AgentStreamHttpError)
   })
 })
 

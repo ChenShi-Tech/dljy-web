@@ -9,14 +9,16 @@ import { nextTick } from 'vue'
 import { mount, flushPromises } from '@vue/test-utils'
 import { createRouter, createMemoryHistory } from 'vue-router'
 
-type KernelRec = { props: Record<string, unknown>; asks: string[]; contexts: unknown[]; unmounted: boolean; emit: (e: string, ...a: unknown[]) => void }
-const g = globalThis as unknown as { __kernels: KernelRec[]; __canWorkbench: boolean; __user: { roleCode: string; username: string } }
+type KernelRec = { props: Record<string, unknown>; asks: string[]; contexts: unknown[]; unmounted: boolean; emit: (e: string, ...a: unknown[]) => void; ready: () => void }
+// __manualReady：内核挂载后不自动发 ready（模拟续接会话还没完成），由用例调用 rec.ready()
+const g = globalThis as unknown as { __kernels: KernelRec[]; __canWorkbench: boolean; __user: { roleCode: string; username: string }; __manualReady: boolean }
 g.__kernels = []
+g.__manualReady = false
 g.__canWorkbench = true
 g.__user = { roleCode: 'TRADER', username: 'trader' }
 
 vi.mock('@/components/agent/AgentChatPanel.vue', async () => {
-  const { defineComponent, h, onUnmounted } = await import('vue')
+  const { defineComponent, h, onMounted, onUnmounted } = await import('vue')
   return {
     default: defineComponent({
       name: 'AgentChatPanelStub',
@@ -27,10 +29,13 @@ vi.mock('@/components/agent/AgentChatPanel.vue', async () => {
         commandHost: { type: String, default: 'agent' }, extraCommands: { type: Array, default: () => [] },
         approvalAutoApprove: { type: Boolean, default: false }
       },
-      emits: ['sessionReady', 'streamingChange', 'sessionBusy', 'conversationReset', 'openScenario', 'done', 'historyChanged'],
+      emits: ['ready', 'sessionReady', 'streamingChange', 'sessionBusy', 'conversationReset', 'openScenario', 'done', 'historyChanged'],
       setup(props, { emit, expose, slots }) {
-        const rec: KernelRec = { props: props as Record<string, unknown>, asks: [], contexts: [], unmounted: false, emit: emit as KernelRec['emit'] }
-        ;(globalThis as unknown as { __kernels: KernelRec[] }).__kernels.push(rec)
+        const rec: KernelRec = { props: props as Record<string, unknown>, asks: [], contexts: [], unmounted: false, emit: emit as KernelRec['emit'], ready: () => emit('ready') }
+        const shared = globalThis as unknown as { __kernels: KernelRec[]; __manualReady: boolean }
+        shared.__kernels.push(rec)
+        // 与真实内核一致：挂载初始化完成后发 ready
+        onMounted(() => { if (!shared.__manualReady) emit('ready') })
         onUnmounted(() => { rec.unmounted = true })
         // 与真实内核一致：发送时按问题取本轮附带信息（会取走待发切片）
         expose({
@@ -145,11 +150,60 @@ async function settle() {
 describe('AiSidebar · 会话规则', () => {
   beforeEach(() => {
     g.__kernels = []
+    g.__manualReady = false
     g.__canWorkbench = true
     g.__user = { roleCode: 'TRADER', username: 'trader' }
     window.localStorage.clear()
     resetAiSidebarForTest()
     vi.mocked(listRuns).mockReset().mockResolvedValue([])
+  })
+
+  it('新挂的内核初始化完成（ready）之前不发问；等待期间又切换了会话，这条问题作废（实机：刷新后马上解读被吞）', async () => {
+    g.__manualReady = true
+    const { w } = await setup()
+    const ai = useAiSidebar()
+    ai.interpret()
+    await settle()
+    const first = live()[0]
+    expect(first.asks).toEqual([])
+    first.ready()
+    await settle()
+    expect(first.asks).toHaveLength(1)
+
+    // 换角色提问 → 新开会话、新内核；它初始化完成前用户点了新建对话
+    ai.ask('驾驶舱里的问题', { promptKey: PAGE_PROMPT_KEYS.workbench })
+    await settle()
+    const second = live()[0]
+    expect(second).not.toBe(first)
+    expect(second.asks).toEqual([])
+    await w.find('button[title="新建对话"]').trigger('click')
+    await settle()
+    const third = live()[0]
+    expect(third).not.toBe(second)
+    second.ready()
+    third.ready()
+    await settle()
+    expect(second.asks).toEqual([])
+    expect(third.asks).toEqual([])
+  })
+
+  it('被替换的旧内核在卸载前发出的 ready 不算新内核就绪', async () => {
+    g.__manualReady = true
+    await setup()
+    const ai = useAiSidebar()
+    ai.open()
+    await settle()
+    const first = live()[0]
+    switchSession({ sessionId: null, scenario: 'chat', promptKey: PAGE_PROMPT_KEYS.marketDataAnalysis, sourceRoute: '/sjfx/fshq', entryKey: 'workbench', title: '' })
+    first.ready() // 切换已生效、旧内核还没卸载
+    ai.interpret() // 同页同角色：续聊这条记录，发给新内核
+    await settle()
+    const second = live()[0]
+    expect(second).not.toBe(first)
+    expect(second.asks).toEqual([])
+    second.ready()
+    await settle()
+    expect(second.asks).toHaveLength(1)
   })
 
   it('页面解读：挂载内核并以页面角色发出问题；同页再解读续聊同一内核', async () => {
