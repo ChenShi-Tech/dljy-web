@@ -141,27 +141,51 @@ describe('补充回执：关闭或换对象时进行中的保存作废', () => {
     w.unmount()
   }, FORM_TIMEOUT)
 
-  it('写请求返回前关闭并对另一条提交打开：旧结果不显示在新表单，新表单可以继续保存', async () => {
-    let resolveWrite: (v: unknown) => void = () => {}
-    hoisted.addReceipt.mockImplementationOnce(() => new Promise((resolve) => { resolveWrite = resolve }))
-    hoisted.fileToBase64.mockResolvedValue('cmVjZWlwdA==')
+  it('写请求返回前关闭并重开：旧的成功不显示到新表单、不结束新表单的保存中，旧的失败不显示在新表单', async () => {
+    const pending: Array<{ resolve: (v: unknown) => void; reject: (e: Error) => void }> = []
+    hoisted.addReceipt.mockImplementation(() => new Promise((resolve, reject) => { pending.push({ resolve, reject }) }))
     const w = mount(SubmissionDialog, { props: { modelValue: true, mode: 'receipt', proposal, submission: submissionOf(9) }, attachTo: document.body })
     await flushPromises()
-    const input = document.body.querySelector('input[data-test="receipt-file"]') as HTMLInputElement
-    Object.defineProperty(input, 'files', { value: [new File(['回执'], '回执.png', { type: 'image/png' })], configurable: true })
-    input.dispatchEvent(new Event('change'))
-    await flushPromises()
-    footerButton('登记').click()
-    await flushPromises()
-    expect(hoisted.addReceipt).toHaveBeenCalledWith(9, expect.objectContaining({ file: expect.objectContaining({ fileName: '回执.png' }) }))
-    await w.setProps({ modelValue: false })
-    await w.setProps({ modelValue: true, submission: submissionOf(10) })
-    resolveWrite({ submissionId: 9, receiptCompleteness: 'PARTIAL', receiptMissing: ['externalReference', 'receiptAt'] })
+    const saveReceipt = async (reference: string) => {
+      w.findAllComponents({ name: 'ElFormItem' }).find((item) => item.props('label') === '申报/回执编号')!.findComponent({ name: 'ElInput' }).vm.$emit('update:modelValue', reference)
+      await flushPromises()
+      footerButton('登记').click()
+      await flushPromises()
+    }
+    const reopen = async (id: number) => {
+      await w.setProps({ modelValue: false })
+      await w.setProps({ modelValue: true, submission: submissionOf(id) })
+    }
+    await saveReceipt('TEST-REF-9')
+    expect(hoisted.addReceipt).toHaveBeenLastCalledWith(9, expect.objectContaining({ externalReference: 'TEST-REF-9' }))
+    await reopen(10)
+    await saveReceipt('TEST-REF-10')
+    expect(hoisted.addReceipt).toHaveBeenLastCalledWith(10, expect.objectContaining({ externalReference: 'TEST-REF-10' }))
+
+    pending[0].resolve({ submissionId: 9, receiptCompleteness: 'PARTIAL', receiptMissing: ['receiptAt', 'attachment'] })
     await flushPromises()
     expect(w.emitted('saved')).toEqual([[42]])
     expect(document.body.textContent).not.toContain('登记完成')
-    expect(footerButton('登记')).toBeDefined()
+    expect(footerButton('登记').classList.contains('is-loading')).toBe(true)
+
+    await reopen(11)
+    pending[1].reject(new Error('【测试数据】提交 10 不存在'))
+    await flushPromises()
+    expect(document.body.textContent).not.toContain('【测试数据】提交 10 不存在')
+    expect(hoisted.warning).toHaveBeenCalledWith(expect.stringContaining('【测试数据】提交 10 不存在'))
     expect(footerButton('登记').classList.contains('is-loading')).toBe(false)
+    w.unmount()
+  }, FORM_TIMEOUT)
+
+  it('打开期间写入对象被换成另一条提交（未重新打开）：读取回执文件之后核对对象，放弃保存', async () => {
+    const w = mount(SubmissionDialog, { props: { modelValue: true, mode: 'receipt', proposal, submission: submissionOf(9) }, attachTo: document.body })
+    await flushPromises()
+    const release = await saveReceiptWithPendingFile()
+    await w.setProps({ submission: submissionOf(10) })
+    release()
+    await flushPromises()
+    expect(hoisted.addReceipt).not.toHaveBeenCalled()
+    expect(document.body.textContent).toContain('已放弃本次保存')
     w.unmount()
   }, FORM_TIMEOUT)
 })

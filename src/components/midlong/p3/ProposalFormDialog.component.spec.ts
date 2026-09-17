@@ -26,7 +26,7 @@ const proposalOf = (id: number) => ({
 const save = (w: ReturnType<typeof mount>) => w.findAll('.el-dialog__footer button').find((b) => b.text().startsWith('保存'))!
 
 describe('交易方案草稿表单：保存会话', () => {
-  it('写请求返回前关闭并对另一个方案打开：旧结果不关闭新表单，旧方案的失败不显示在新表单；正常保存成功即关闭', async () => {
+  it('写请求返回前关闭并重开：旧的成功不关闭新表单、不结束新表单的保存中，旧的失败不显示在新表单；正常保存成功即关闭', async () => {
     hoisted.updateProposalDraft.mockResolvedValueOnce({ proposalId: 1, status: 'DRAFT', rowVersion: 4 })
     const ok = mount(ProposalFormDialog, { props: { modelValue: true, proposal: proposalOf(1), subjects, windows: [] } })
     await flushPromises()
@@ -37,18 +37,31 @@ describe('交易方案草稿表单：保存会话', () => {
     expect(ok.emitted('update:modelValue')).toEqual([[false]])
     ok.unmount()
 
-    let rejectWrite: (e: Error) => void = () => {}
-    hoisted.updateProposalDraft.mockImplementationOnce(() => new Promise((_, reject) => { rejectWrite = reject }))
+    const pending: Array<{ resolve: (v: unknown) => void; reject: (e: Error) => void }> = []
+    hoisted.updateProposalDraft.mockImplementation(() => new Promise((resolve, reject) => { pending.push({ resolve, reject }) }))
     const w = mount(ProposalFormDialog, { props: { modelValue: true, proposal: proposalOf(1), subjects, windows: [] } })
     await flushPromises()
+    const reopen = async (id: number) => {
+      await w.setProps({ modelValue: false })
+      await w.setProps({ modelValue: true, proposal: proposalOf(id) })
+    }
+    await save(w).trigger('click')
+    await reopen(2)
     await save(w).trigger('click')
     await flushPromises()
-    await w.setProps({ modelValue: false })
-    await w.setProps({ modelValue: true, proposal: proposalOf(2) })
-    rejectWrite(new Error('【测试数据】方案 1 版本已变化'))
+    expect(hoisted.updateProposalDraft.mock.calls.slice(1).map((c) => c[0])).toEqual([1, 2])
+
+    pending[0].resolve({ proposalId: 1, status: 'DRAFT', rowVersion: 5 })
     await flushPromises()
-    expect(w.text()).not.toContain('【测试数据】方案 1 版本已变化')
-    expect(hoisted.warning).toHaveBeenCalledWith(expect.stringContaining('【测试数据】方案 1 版本已变化'))
+    expect(w.emitted('saved')).toHaveLength(1)
+    expect(w.emitted('update:modelValue')).toBeUndefined()
+    expect(save(w).classes()).toContain('is-loading')
+
+    await reopen(3)
+    pending[1].reject(new Error('【测试数据】方案 2 版本已变化'))
+    await flushPromises()
+    expect(w.text()).not.toContain('【测试数据】方案 2 版本已变化')
+    expect(hoisted.warning).toHaveBeenCalledWith(expect.stringContaining('【测试数据】方案 2 版本已变化'))
     expect(w.emitted('update:modelValue')).toBeUndefined()
     expect(save(w).classes()).not.toContain('is-loading')
   })

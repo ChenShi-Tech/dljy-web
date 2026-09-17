@@ -38,35 +38,47 @@ describe('售电目标表单', () => {
     expect(w.text()).toContain('发起更改')
   })
 
-  it('写请求返回前关闭并对另一个目标打开：旧结果不关闭新表单，旧目标的失败不显示在新表单；正常保存成功即关闭', async () => {
+  it('写请求返回前关闭并重开：旧的成功不关闭新表单、不结束新表单的保存中，旧的失败不显示在新表单；正常保存成功即关闭', async () => {
     const planOf = (id: number) => ({
       id, rowVersion: 3, subjectId: 1, periodType: 'MONTH', periodKey: `2031-0${id}`, currentRevisionNo: 1, confirmedRevision: null,
       draftRevision: { revisionNo: 1, targetQuantity: '100', targetPriceLow: null, targetPriceHigh: null, priceTaxBasis: 'UNKNOWN', basisNote: null, ownerName: null, changeReason: null },
     }) as unknown as SalesPlanListRow
-    const save = (w: ReturnType<typeof mount>) => w.findAll('.el-dialog__footer button').find((b) => b.text().startsWith('保存'))!.trigger('click')
+    const saveButton = (w: ReturnType<typeof mount>) => w.findAll('.el-dialog__footer button').find((b) => b.text().startsWith('保存'))!
 
     hoisted.updatePlanDraft.mockResolvedValueOnce({ planId: 1, revisionNo: 1, status: 'DRAFT' })
     const ok = mount(PlanFormDialog, { props: { modelValue: true, mode: 'edit', plan: planOf(1), subjects } })
     await flushPromises()
-    await save(ok)
+    await saveButton(ok).trigger('click')
     await flushPromises()
     expect(ok.emitted('update:modelValue')).toEqual([[false]])
     ok.unmount()
 
-    let rejectWrite: (e: unknown) => void = () => {}
-    hoisted.updatePlanDraft.mockImplementationOnce(() => new Promise((_, reject) => { rejectWrite = reject }))
+    const pending: Array<{ resolve: (v: unknown) => void; reject: (e: unknown) => void }> = []
+    hoisted.updatePlanDraft.mockImplementation(() => new Promise((resolve, reject) => { pending.push({ resolve, reject }) }))
     const w = mount(PlanFormDialog, { props: { modelValue: true, mode: 'edit', plan: planOf(1), subjects } })
     await flushPromises()
-    await save(w)
+    const reopen = async (id: number) => {
+      await w.setProps({ modelValue: false })
+      await w.setProps({ modelValue: true, plan: planOf(id) })
+    }
+    await saveButton(w).trigger('click')
+    await reopen(2)
+    await saveButton(w).trigger('click')
     await flushPromises()
-    expect(hoisted.updatePlanDraft).toHaveBeenLastCalledWith(1, expect.objectContaining({ expectedRowVersion: 3 }))
-    await w.setProps({ modelValue: false })
-    await w.setProps({ modelValue: true, plan: planOf(2) })
-    rejectWrite({ failure: { status: 409, errorCode: 'VERSION_CONFLICT', message: '【测试数据】目标 1 版本已变化', details: null } })
+    expect(hoisted.updatePlanDraft.mock.calls.slice(1).map((c) => c[0])).toEqual([1, 2])
+
+    pending[0].resolve({ planId: 1, revisionNo: 1, status: 'DRAFT' })
     await flushPromises()
-    expect(w.text()).not.toContain('【测试数据】目标 1 版本已变化')
-    expect(hoisted.warning).toHaveBeenCalledWith(expect.stringContaining('【测试数据】目标 1 版本已变化'))
+    expect(w.emitted('saved')).toHaveLength(1)
     expect(w.emitted('update:modelValue')).toBeUndefined()
-    expect(w.findAll('.el-dialog__footer button').find((b) => b.text().startsWith('保存'))!.classes()).not.toContain('is-loading')
+    expect(saveButton(w).classes()).toContain('is-loading')
+
+    await reopen(3)
+    pending[1].reject({ failure: { status: 409, errorCode: 'VERSION_CONFLICT', message: '【测试数据】目标 2 版本已变化', details: null } })
+    await flushPromises()
+    expect(w.text()).not.toContain('【测试数据】目标 2 版本已变化')
+    expect(hoisted.warning).toHaveBeenCalledWith(expect.stringContaining('【测试数据】目标 2 版本已变化'))
+    expect(w.emitted('update:modelValue')).toBeUndefined()
+    expect(saveButton(w).classes()).not.toContain('is-loading')
   })
 })

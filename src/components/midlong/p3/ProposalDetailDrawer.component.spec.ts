@@ -231,53 +231,57 @@ describe('交易方案详情', () => {
     expect(hoisted.recheckProposalWindow).not.toHaveBeenCalled()
   })
 
-  it('原方案的操作返回前换了方案：失败不显示在新方案上、新方案按钮不被占用；成功只通知父页面，不按旧操作重载', async () => {
+  it('原方案的操作返回前换了方案：失败不显示在新方案上、不占用新方案按钮；成功只通知父页面，不按旧操作重载、不结束新方案进行中的操作', async () => {
     hoisted.fetchProposal.mockResolvedValue(proposal({ status: 'SUBMITTED' }))
     hoisted.fetchProposalComparison.mockResolvedValue(comparison())
     const w = mount(ProposalDetailDrawer, { props: { modelValue: true, proposalId: 42, canWrite: true, mode: 'execution' }, global: { stubs: STUBS } })
     await flushPromises()
-    let rejectAwait: (e: unknown) => void = () => {}
-    hoisted.markAwaitingResult.mockImplementationOnce(() => new Promise((_, reject) => { rejectAwait = reject }))
+    const pending: Array<{ resolve: (v: unknown) => void; reject: (e: unknown) => void }> = []
+    hoisted.markAwaitingResult.mockImplementation(() => new Promise((resolve, reject) => { pending.push({ resolve, reject }) }))
+    const switchTo = async (id: number, rowVersion = 3) => {
+      hoisted.fetchProposal.mockResolvedValue(proposal({ id, status: 'SUBMITTED', rowVersion }))
+      await w.setProps({ proposalId: id })
+      await flushPromises()
+    }
     await button(w, '标记待结果')!.trigger('click')
-    expect(hoisted.markAwaitingResult).toHaveBeenCalledWith(42, { expectedRowVersion: 3 })
-
-    hoisted.fetchProposal.mockResolvedValue(proposal({ id: 43, status: 'SUBMITTED', rowVersion: 7 }))
-    await w.setProps({ proposalId: 43 })
-    await flushPromises()
+    expect(hoisted.markAwaitingResult).toHaveBeenLastCalledWith(42, { expectedRowVersion: 3 })
+    await switchTo(43, 7)
     const loads = hoisted.fetchProposal.mock.calls.length
-    rejectAwait({ failure: { status: 409, errorCode: 'VERSION_CONFLICT', message: '【测试数据】方案 42 版本已变化', details: null } })
+    pending[0].reject({ failure: { status: 409, errorCode: 'VERSION_CONFLICT', message: '【测试数据】方案 42 版本已变化', details: null } })
     await flushPromises()
     expect(w.text()).not.toContain('【测试数据】方案 42 版本已变化')
     expect(hoisted.warning).toHaveBeenCalledWith(expect.stringContaining('方案 #42'))
     expect(button(w, '标记待结果')!.classes()).not.toContain('is-loading')
     expect(hoisted.fetchProposal.mock.calls.length).toBe(loads)
 
-    let resolveAwait: (v: unknown) => void = () => {}
-    hoisted.markAwaitingResult.mockImplementationOnce(() => new Promise((resolve) => { resolveAwait = resolve }))
     await button(w, '标记待结果')!.trigger('click')
     expect(hoisted.markAwaitingResult).toHaveBeenLastCalledWith(43, { expectedRowVersion: 7 })
-    hoisted.fetchProposal.mockResolvedValue(proposal({ id: 44, status: 'SUBMITTED' }))
-    await w.setProps({ proposalId: 44 })
-    await flushPromises()
+    await switchTo(44)
+    await button(w, '标记待结果')!.trigger('click')
+    expect(hoisted.markAwaitingResult).toHaveBeenLastCalledWith(44, { expectedRowVersion: 3 })
     const loadsBefore = hoisted.fetchProposal.mock.calls.length
-    resolveAwait({ proposalId: 43, status: 'AWAITING_RESULT', rowVersion: 8 })
+    pending[1].resolve({ proposalId: 43, status: 'AWAITING_RESULT', rowVersion: 8 })
     await flushPromises()
     expect(w.emitted('changed')).toEqual([[43]])
     expect(hoisted.fetchProposal.mock.calls.length).toBe(loadsBefore)
     expect(w.text()).toContain('交易方案 #44')
+    expect(button(w, '标记待结果')!.classes()).toContain('is-loading')
   })
 
-  it('导出返回前换了方案：不下载原方案的文件，新方案的导出按钮不被占用', async () => {
+  it('导出返回前换了方案：不下载原方案的文件，不结束新方案进行中的导出', async () => {
     const w = await open(proposal({ status: 'EXECUTABLE' }), 'execution')
-    let resolveExport: (v: unknown) => void = () => {}
-    hoisted.exportProposal.mockImplementationOnce(() => new Promise((resolve) => { resolveExport = resolve }))
+    const pending: Array<(v: unknown) => void> = []
+    hoisted.exportProposal.mockImplementation(() => new Promise((resolve) => { pending.push(resolve) }))
     await button(w, '导出申报材料')!.trigger('click')
     hoisted.fetchProposal.mockResolvedValue(proposal({ id: 43, status: 'EXECUTABLE' }))
     await w.setProps({ proposalId: 43 })
     await flushPromises()
-    resolveExport({ fileName: '方案-42-v3.csv', content: '方案编号,42', proposalRowVersion: 3, proposalStatus: 'EXECUTABLE', contentType: 'text/csv', proposalId: 42, notice: '' })
+    expect(button(w, '导出申报材料')!.classes()).not.toContain('is-loading')
+    await button(w, '导出申报材料')!.trigger('click')
+    expect(hoisted.exportProposal).toHaveBeenLastCalledWith(43)
+    pending[0]({ fileName: '方案-42-v3.csv', content: '方案编号,42', proposalRowVersion: 3, proposalStatus: 'EXECUTABLE', contentType: 'text/csv', proposalId: 42, notice: '' })
     await flushPromises()
     expect(hoisted.downloadCsv).not.toHaveBeenCalled()
-    expect(button(w, '导出申报材料')!.classes()).not.toContain('is-loading')
+    expect(button(w, '导出申报材料')!.classes()).toContain('is-loading')
   })
 })

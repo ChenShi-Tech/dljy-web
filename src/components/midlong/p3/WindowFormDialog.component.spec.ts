@@ -169,7 +169,7 @@ describe('公告登记表单：关闭或换对象时进行中的保存作废', (
     expect(hoisted.correctWindow).not.toHaveBeenCalled()
   }, FORM_TIMEOUT)
 
-  it('写请求返回前关闭并打开另一条公告：旧结果不关闭新表单、失败也不显示在新表单；正常保存成功即关闭', async () => {
+  it('写请求返回前关闭并重开：旧的成功不关闭新表单、不结束新表单的保存中，旧的失败不显示在新表单；正常保存成功即关闭', async () => {
     hoisted.registerWindow.mockResolvedValueOnce({ windowId: 1, revisionNo: 1 })
     const first = await openForm()
     await first.submit().trigger('click')
@@ -177,21 +177,56 @@ describe('公告登记表单：关闭或换对象时进行中的保存作废', (
     expect(first.w.emitted('update:modelValue')).toEqual([[false]])
     first.w.unmount()
 
-    let rejectWrite: (e: Error) => void = () => {}
-    hoisted.correctWindow.mockImplementationOnce(() => new Promise((_, reject) => { rejectWrite = reject }))
+    const pending: Array<{ resolve: (v: unknown) => void; reject: (e: Error) => void }> = []
+    hoisted.correctWindow.mockImplementation(() => new Promise((resolve, reject) => { pending.push({ resolve, reject }) }))
+    const w = mount(WindowFormDialog, { props: { modelValue: true, window: windowOf(1, '【测试数据】公告甲'), subjects: [] } })
+    await flushPromises()
+    const saveCorrection = async (reason: string) => {
+      await fillChangeReason(w, reason)
+      await footerButton(w, '登记更正版本').trigger('click')
+      await flushPromises()
+    }
+    const reopen = async (id: number, name: string) => {
+      await w.setProps({ modelValue: false })
+      await w.setProps({ modelValue: true, window: windowOf(id, name) })
+    }
+    await saveCorrection('【测试数据】更正甲')
+    expect(hoisted.correctWindow).toHaveBeenLastCalledWith(1, expect.objectContaining({ changeReason: '【测试数据】更正甲', expectedRowVersion: 2 }))
+    await reopen(2, '【测试数据】公告乙')
+    await saveCorrection('【测试数据】更正乙')
+    expect(hoisted.correctWindow).toHaveBeenLastCalledWith(2, expect.objectContaining({ changeReason: '【测试数据】更正乙' }))
+
+    pending[0].resolve({ windowId: 1, revisionNo: 2, affectedProposals: [] })
+    await flushPromises()
+    expect(w.emitted('saved')).toHaveLength(1)
+    expect(w.emitted('update:modelValue')).toBeUndefined()
+    expect(footerButton(w, '登记更正版本').classes()).toContain('is-loading')
+
+    await reopen(3, '【测试数据】公告丙')
+    pending[1].reject(new Error('【测试数据】公告乙版本冲突'))
+    await flushPromises()
+    expect(w.text()).not.toContain('【测试数据】公告乙版本冲突')
+    expect(hoisted.warning).toHaveBeenCalledWith(expect.stringContaining('【测试数据】公告乙版本冲突'))
+    expect(w.emitted('update:modelValue')).toBeUndefined()
+    expect(footerButton(w, '登记更正版本').classes()).not.toContain('is-loading')
+  }, FORM_TIMEOUT)
+
+  it('打开期间写入对象被换掉（未重新打开）：点保存与读取附件之后都核对对象，放弃保存', async () => {
     const w = mount(WindowFormDialog, { props: { modelValue: true, window: windowOf(1, '【测试数据】公告甲'), subjects: [] } })
     await flushPromises()
     await fillChangeReason(w, '【测试数据】更正甲')
+    const release = await attachPendingFile(w)
+    await footerButton(w, '登记更正版本').trigger('click')
+    await w.setProps({ window: windowOf(2, '【测试数据】公告乙') })
+    release()
+    await flushPromises()
+    expect(hoisted.correctWindow).not.toHaveBeenCalled()
+    expect(w.text()).toContain('已放弃本次保存')
+
+    hoisted.fileToBase64.mockResolvedValue('Y29udGVudA==')
     await footerButton(w, '登记更正版本').trigger('click')
     await flushPromises()
-    expect(hoisted.correctWindow).toHaveBeenCalledWith(1, expect.objectContaining({ changeReason: '【测试数据】更正甲', expectedRowVersion: 2 }))
-    await w.setProps({ modelValue: false })
-    await w.setProps({ modelValue: true, window: windowOf(2, '【测试数据】公告乙') })
-    rejectWrite(new Error('【测试数据】版本冲突'))
-    await flushPromises()
-    expect(w.text()).not.toContain('【测试数据】版本冲突')
-    expect(hoisted.warning).toHaveBeenCalledWith(expect.stringContaining('【测试数据】版本冲突'))
-    expect(w.emitted('update:modelValue')).toBeUndefined()
-    expect(footerButton(w, '登记更正版本').attributes('class')).not.toContain('is-loading')
+    expect(hoisted.fileToBase64).toHaveBeenCalledTimes(1)
+    expect(hoisted.correctWindow).not.toHaveBeenCalled()
   }, FORM_TIMEOUT)
 })

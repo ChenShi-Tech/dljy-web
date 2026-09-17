@@ -193,10 +193,10 @@ function awaitResult() {
 function openSubmission(mode: 'submission' | 'receipt', submission: ProposalSubmission | null = null) {
   Object.assign(submissionDialog, { open: true, mode, submission })
 }
-/** 登记对话框保存的是它打开时的方案：通知父页面刷新；抽屉仍展示这个方案时才重新加载。 */
+/** 登记对话框保存的是它打开时的方案（id 由对话框带回），据此通知父页面；抽屉按当前展示的方案重新加载。 */
 async function onSubmissionSaved(proposalId: number) {
   emit('changed', proposalId)
-  if (detail.value?.id === proposalId) await load()
+  await load()
 }
 
 async function downloadAttachment(attachmentId: number) {
