@@ -9,7 +9,7 @@ import {
   DOCUMENT_KINDS, DOCUMENT_KIND_LABELS, ENERGY_ATTRIBUTES, ENERGY_ATTRIBUTE_LABELS, MARKET_SCOPES, MARKET_SCOPE_LABELS,
   PRODUCT_KINDS, PRODUCT_KIND_LABELS, TRADE_METHODS, TRADE_METHOD_LABELS,
   type DocumentKind, type EnergyAttribute, type MarketScope, type MidlongContractDetail, type MidlongContractInput,
-  type MidlongSubject, type ProductKind, type TradeMethod,
+  type MidlongContractSummary, type MidlongSubject, type ProductKind, type TradeMethod,
 } from '@/services/midlong/midlongTypes'
 import { createDraft, fetchContracts, midlongFailureOf, updateDraft, type DraftWarning } from '@/services/midlong/midlongApi'
 import { draftFromRevision, emptyEconomicsDraft, toEconomicsInput, type EconomicsDraft } from '@/services/midlong/economicsDraft'
@@ -48,9 +48,15 @@ async function loadFrameworks() {
   const seq = ++frameworkLoadSeq
   frameworkLoadError.value = ''
   try {
-    const list = await fetchContracts({ documentKind: 'FRAMEWORK', confirmationStatus: 'DRAFT,PENDING_VERIFICATION,CONFIRMED', pageSize: 200 })
-    if (seq !== frameworkLoadSeq) return
-    frameworkOptions.value = list.rows
+    // 逐页取全：框架协议超过一页时后面的也要能选（服务端单页上限 200）。
+    const rows: MidlongContractSummary[] = []
+    for (let page = 1; ; page += 1) {
+      const list = await fetchContracts({ documentKind: 'FRAMEWORK', confirmationStatus: 'DRAFT,PENDING_VERIFICATION,CONFIRMED', page, pageSize: 200 })
+      if (seq !== frameworkLoadSeq) return
+      rows.push(...list.rows)
+      if (!list.rows.length || rows.length >= list.total) break
+    }
+    frameworkOptions.value = rows
       .filter((r) => r.contractId !== props.detail?.contractId)
       .map((r) => ({ contractId: r.contractId, label: `${r.contractName}（${r.externalContractNo}）` }))
   } catch (error) {

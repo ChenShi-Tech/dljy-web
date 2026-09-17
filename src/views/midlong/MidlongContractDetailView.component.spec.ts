@@ -151,6 +151,12 @@ describe('中长期售电合同详情', () => {
     await flushPromises()
     const link = w.findAll('a').find((a) => a.text().includes('年度框架协议（FW-5）'))!
     expect(JSON.parse(link.attributes('data-to')!)).toBe('/zcqjy/contracts/5')
+    expect(w.text()).not.toContain('框架协议已作废')
+
+    hoisted.fetchContract.mockResolvedValue(detail({ frameworkContractId: 5, framework: { ...framework, confirmationStatus: 'VOIDED' } }))
+    const v = mount(MidlongContractDetailView, { global: { stubs: STUBS } })
+    await flushPromises()
+    expect(v.text()).toContain('框架协议已作废（保留历史关联）')
 
     hoisted.fetchContract.mockResolvedValue(detail({ contractId: 5, documentKind: 'FRAMEWORK', contractName: '年度框架协议', linkedContracts: [{ contractId: 7, contractName: '月度合同', externalContractNo: 'M-7', documentKind: 'OBLIGATION', confirmationStatus: 'CONFIRMED', totalQuantity: '1100', deliveryStart: '2027-05-01', deliveryEnd: '2027-05-31' }] }))
     const f = mount(MidlongContractDetailView, { global: { stubs: STUBS } })

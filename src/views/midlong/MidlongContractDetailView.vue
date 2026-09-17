@@ -317,7 +317,10 @@ const missingBasis = computed(() => (actionError.value?.errorCode === 'INCOMPLET
           <el-descriptions-item label="首次确认">{{ detail.firstConfirmedAt ? `${new Date(detail.firstConfirmedAt).toLocaleString('zh-CN')} · ${detail.firstConfirmedBy}` : '未确认' }}</el-descriptions-item>
           <el-descriptions-item label="导入批次">{{ detail.importBatchId ?? '—' }}</el-descriptions-item>
           <el-descriptions-item v-if="detail.documentKind === 'OBLIGATION'" label="所属框架协议">
-            <router-link v-if="detail.framework" :to="`/zcqjy/contracts/${detail.framework.contractId}`" class="ml-link">{{ detail.framework.contractName }}（{{ detail.framework.externalContractNo }}）</router-link>
+            <template v-if="detail.framework">
+              <router-link :to="`/zcqjy/contracts/${detail.framework.contractId}`" class="ml-link">{{ detail.framework.contractName }}（{{ detail.framework.externalContractNo }}）</router-link>
+              <el-tag v-if="detail.framework.confirmationStatus === 'VOIDED'" size="small" type="info" effect="plain" class="ml-gap">框架协议已作废（保留历史关联）</el-tag>
+            </template>
             <template v-else>未关联</template>
           </el-descriptions-item>
         </el-descriptions>
@@ -535,6 +538,7 @@ const missingBasis = computed(() => (actionError.value?.errorCode === 'INCOMPLET
 .ml-link { color: var(--accent); text-decoration: none; }
 .ml-muted { color: var(--muted); font-size: var(--font-sm); }
 .ml-mono { font-family: var(--font-mono, monospace); }
+.ml-gap { margin-left: 6px; }
 .ml-dialog { display: flex; flex-direction: column; gap: 12px; }
 .ml-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 14px; }
 .ml-field { display: flex; flex-direction: column; gap: 6px; font-size: var(--font-md); color: var(--muted); }

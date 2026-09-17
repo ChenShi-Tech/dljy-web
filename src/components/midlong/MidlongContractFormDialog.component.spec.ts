@@ -70,6 +70,19 @@ describe('中长期合同草稿表单', () => {
     expect(hoisted.updateDraft).toHaveBeenCalledWith(7, expect.objectContaining({ frameworkContractId: 5, expectedRowVersion: 3 }))
   })
 
+  it('框架协议超过一页：逐页加载全部选项', async () => {
+    const row = (id: number) => ({ ...frameworkRow, contractId: id, contractName: `框架协议 ${id}`, externalContractNo: `FW-${id}` })
+    hoisted.fetchContracts
+      .mockResolvedValueOnce({ rows: Array.from({ length: 200 }, (_, i) => row(i + 100)), page: 1, pageSize: 200, total: 201, stats: {} })
+      .mockResolvedValueOnce({ rows: [row(999)], page: 2, pageSize: 200, total: 201, stats: {} })
+    await open({ detail: null })
+    expect(hoisted.fetchContracts).toHaveBeenCalledTimes(2)
+    expect(hoisted.fetchContracts.mock.calls[1][0]).toMatchObject({ page: 2, documentKind: 'FRAMEWORK' })
+    document.querySelector<HTMLElement>('[data-testid="ml-framework-select"] .el-select__wrapper')?.click()
+    await flushPromises()
+    expect(document.body.textContent).toContain('框架协议 999（FW-999）')
+  })
+
   it('框架协议自身保存时不带框架关联（显式 null），即使表单里残留了关联', async () => {
     hoisted.fetchContracts.mockResolvedValue({ rows: [], page: 1, pageSize: 200, total: 0, stats: {} })
     hoisted.updateDraft.mockResolvedValue({ contractId: 7, warnings: [] })
