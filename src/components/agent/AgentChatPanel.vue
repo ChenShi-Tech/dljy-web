@@ -1224,6 +1224,8 @@ async function attachRun(sessionId: string, runId?: string): Promise<boolean> {
   }
   // 流世代作废已下沉到 loadHistory 内部，不再重复
   if (!(await resumeSession(sessionId, { fromClick: true, allowEmpty: true }))) return false
+  // 从运行中列表带 run id 切过来同样要按服务端同步授权：撤销重试用尽时，会话可能仍在后台跑且授权开着（dljy-web#121 审查 P1）
+  void syncAutoApproveFromServer()
   return runId ? attachRunById(sessionId, runId, -1) : attachActiveRunIfAny(-1)
 }
 

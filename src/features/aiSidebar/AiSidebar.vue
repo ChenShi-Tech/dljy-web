@@ -124,12 +124,18 @@ async function askInKernel(question: string) {
   // 晨报：先装配数据预检（确定性，不依赖模型），再发目标日启动研判——与工作台「生成晨报」一致
   if (record.value.entryKey === 'morning_brief' && briefRailRef.value) {
     const regionId = currentRegion.value.id
+    const turnsBefore = turnsStarted
     await briefRailRef.value.ensureLoaded()
     // 预检取数可能很慢：期间用户又发起了别的会话，这条晨报启动作废，不能把日期发进新会话（dljy-web#121 审查 P1）
     if (state.mountKey !== key) return
     // 期间切换了地区：预检卡是旧地区的数据，发出去的却是新地区——不混用，取消本次启动（同上审查 P1）
     if (currentRegion.value.id !== regionId) {
       ElMessage.info('地区已切换，本次晨报未启动，请重新执行 /晨报')
+      return
+    }
+    // 期间用户已在这个会话里自己发过一轮：晨报场景要求目标日是首条消息，再补发会变成第二轮（dljy-web#121 审查 P2）
+    if (turnsStarted !== turnsBefore) {
+      ElMessage.info('预检期间已开始对话，本次晨报未启动；需要时请新建对话后重新执行 /晨报')
       return
     }
   }
@@ -163,7 +169,10 @@ watch(() => state.request?.seq, async (seq) => {
 function onSessionReady(sessionId: string, title?: string) {
   adoptSessionId(sessionId, title ?? '')
 }
+// 内核开始生成的次数：晨报预检等待期间用户若自己发过一轮，启动时据此放弃（见 askInKernel）
+let turnsStarted = 0
 function onStreamingChange(value: boolean) {
+  if (value) turnsStarted += 1
   busy.value = value
 }
 // 内核里的会话被清空（/clear）：视同新建对话——切到空白记录，下一次提问按通用对话角色建会话，
