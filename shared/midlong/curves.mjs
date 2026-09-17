@@ -99,7 +99,10 @@ export const CURVE_FILE_COLUMNS = Object.freeze({
   ]),
   typicalDays: Object.freeze([
     { key: 'name', name: '典型日名称', aliases: ['典型日'], required: true, hint: '与「典型日适用日期」表对应' },
-    { key: 'periodIndex', name: '时段序号', aliases: ['时段', '序号'], required: true, hint: '1 表示 00:00 起的第一个时段' },
+    { key: 'periodIndex', name: '时段序号', aliases: ['时段', '序号'], required: false, hint: '1 表示 00:00 起的第一个时段；与「开始时刻/结束时刻」二选一' },
+    { key: 'segmentName', name: '时段名称', aliases: ['峰平谷'], required: false, hint: '可选：峰、平、谷等，只用于定位' },
+    { key: 'startTime', name: '开始时刻', aliases: [], required: false, hint: '按时刻段填写（如峰段 08:00）；只支持功率，段内每个粒度时段取同一功率' },
+    { key: 'endTime', name: '结束时刻', aliases: [], required: false, hint: 'HH:mm，可写 24:00；早于开始时刻表示跨零点（如谷段 22:00—08:00）' },
     { key: 'value', name: '数值', aliases: ['电量', '功率', '值'], required: true, hint: '非负，最多 6 位小数' },
   ]),
   typicalDayRanges: Object.freeze([
@@ -408,9 +411,66 @@ export function normalizeIntervalSeries({ declaration, rows }) {
   return { intervals, issues }
 }
 
+function minuteLabel(minutes) {
+  return `${pad2(Math.floor(minutes / 60))}:${pad2(minutes % 60)}`
+}
+
+/**
+ * 典型日的一个时刻段（如峰平谷「峰 08:00—12:00 交易电力 100 MW」）→ 该段覆盖的每个粒度时段取同一功率。
+ * 只接受功率：段内功率不变时逐时段换算是精确的；电量合计拆到时段就是均摊，拒绝。
+ * 结束时刻不晚于开始时刻表示跨零点（如谷段 22:00—08:00，按同一天的 22:00—24:00 与 00:00—08:00 两段计）；
+ * 段边界必须落在粒度边界上，段与段重叠、与逐时段序号重复都报错。
+ * @returns {boolean} 该段是否有效
+ */
+function applySegment({ item, ref, declaration, values, issues }) {
+  const g = declaration.granularityMinutes
+  const segmentName = String(item?.segmentName ?? '').trim()
+  const at = { location: item?.location ?? null, sourceRef: ref }
+  if (declaration.measure !== 'POWER') {
+    issues.push(issue('TYPICAL_DAY_INVALID', `${ref}：按时刻段填写只支持功率（MW/kW）；电量合计拆到各时段就是均摊，请改填功率或逐时段电量`, at))
+    return false
+  }
+  const start = parseTimeOfDay(item?.startTime)
+  const end = parseTimeOfDay(item?.endTime)
+  if (start === null || start === DAY_MINUTES || end === null || String(item?.endTime ?? '').trim() === '') {
+    issues.push(issue('TIME_INVALID', `${ref}：时刻段「${item?.startTime ?? ''}—${item?.endTime ?? ''}」无效（HH:mm，结束可写 24:00）`, at))
+    return false
+  }
+  if (start % g !== 0 || end % g !== 0) {
+    issues.push(issue('TYPICAL_DAY_INVALID', `${ref}：时刻段 ${item.startTime}—${item.endTime} 不在 ${g} 分钟粒度边界上，不能拆成整时段`, at))
+    return false
+  }
+  if (start === end) {
+    issues.push(issue('TYPICAL_DAY_INVALID', `${ref}：时刻段开始与结束相同，无法判断是空段还是全天，请写 00:00—24:00`, at))
+    return false
+  }
+  const number = parseCurveNumber(item?.value)
+  if (number.empty || number.error) {
+    issues.push(issue(number.empty ? 'TYPICAL_DAY_INVALID' : 'VALUE_INVALID', `${ref}：${number.empty ? '数值为空' : number.error}`, at))
+    return false
+  }
+  const wraps = end < start
+  const spans = wraps ? [[start, DAY_MINUTES], [0, end]] : [[start, end]]
+  const segmentRef = `${ref}（${segmentName ? `${segmentName} ` : ''}${item.startTime}—${item.endTime}${wraps ? '，跨零点' : ''}）`
+  let valid = true
+  for (const [from, to] of spans) {
+    for (let minute = from; minute < to; minute += g) {
+      const period = minute / g + 1
+      if (values.has(period)) {
+        issues.push(issue('TYPICAL_DAY_INVALID', `${segmentRef}：与已定义的 ${minuteLabel(minute)} 起时段重叠`, at))
+        valid = false
+        continue
+      }
+      values.set(period, { value: number.value, ref: segmentRef })
+    }
+  }
+  return valid
+}
+
 /**
  * 典型日曲线 → 按实际适用日期逐日展开的规范时段。每个典型日有自己的时段值与适用日期区间（含首尾两日）。
- * @param {{ declaration: object, typicalDays: Array<{ name, values: Array<{ periodIndex, value, location? }>, dateRanges: Array<{ from, to, location? }>, declaredDailyTotal? }> }} input
+ * 时段值二选一：逐时段序号（periodIndex），或峰平谷这类时刻段（startTime/endTime，可带 segmentName，只接受功率）。
+ * @param {{ declaration: object, typicalDays: Array<{ name, values: Array<{ periodIndex?, startTime?, endTime?, segmentName?, value, location? }>, dateRanges: Array<{ from, to, location? }>, declaredDailyTotal? }> }} input
  */
 export function expandTypicalDays({ declaration, typicalDays }) {
   const intervals = []
@@ -426,9 +486,13 @@ export function expandTypicalDays({ declaration, typicalDays }) {
     let profileValid = true
     for (const [index, item] of (Array.isArray(profile?.values) ? profile.values : []).entries()) {
       const ref = `典型日「${name}」${locationText(item?.location) ?? `第 ${index + 1} 个时段值`}`
+      if (String(item?.periodIndex ?? '').trim() === '' && String(item?.startTime ?? '').trim() !== '') {
+        if (!applySegment({ item, ref, declaration, values, issues })) profileValid = false
+        continue
+      }
       const period = Number(String(item?.periodIndex ?? '').trim())
       if (!Number.isInteger(period) || period < 1 || period > periodsPerDay) {
-        issues.push(issue('PERIOD_INDEX_INVALID', `${ref}：时段序号「${item?.periodIndex ?? ''}」无效（1—${periodsPerDay}）`, { location: item?.location ?? null, sourceRef: ref }))
+        issues.push(issue('PERIOD_INDEX_INVALID', `${ref}：时段序号「${item?.periodIndex ?? ''}」无效（1—${periodsPerDay}），或改填开始 / 结束时刻`, { location: item?.location ?? null, sourceRef: ref }))
         profileValid = false
         continue
       }
@@ -448,7 +512,8 @@ export function expandTypicalDays({ declaration, typicalDays }) {
     const missingPeriods = []
     for (let p = 1; p <= periodsPerDay; p += 1) if (!values.has(p)) missingPeriods.push(p)
     if (missingPeriods.length) {
-      issues.push(issue('TYPICAL_DAY_INVALID', `典型日「${name}」缺 ${missingPeriods.length} 个时段（如第 ${missingPeriods.slice(0, 5).join('、')} 时段），不按零补齐`, { typicalDay: name, missingPeriods: missingPeriods.slice(0, 96) }))
+      const sample = missingPeriods.slice(0, 5).map((p) => `第 ${p} 时段（${minuteLabel((p - 1) * g)} 起）`).join('、')
+      issues.push(issue('TYPICAL_DAY_INVALID', `典型日「${name}」缺 ${missingPeriods.length} 个时段（如${sample}），不按零补齐`, { typicalDay: name, missingPeriods: missingPeriods.slice(0, 96) }))
       profileValid = false
     }
     if (profile?.declaredDailyTotal !== undefined && profile?.declaredDailyTotal !== null && String(profile.declaredDailyTotal).trim() !== '') {

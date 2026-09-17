@@ -251,7 +251,8 @@ export interface ContractCurvesOverview {
 export interface CurveIntervalRowInput { date?: string; periodIndex?: string | number; start?: string; end?: string; value: string | number | null }
 export interface TypicalDayInput {
   name: string
-  values: Array<{ periodIndex: string | number; value: string | number | null }>
+  /** 每个值二选一：逐时段序号，或峰平谷这类时刻段（startTime/endTime，只接受功率；结束早于开始表示跨零点）。 */
+  values: Array<{ periodIndex?: string | number; startTime?: string; endTime?: string; segmentName?: string; value: string | number | null }>
   dateRanges: Array<{ from: string; to: string }>
   declaredDailyTotal?: string | number | null
 }
