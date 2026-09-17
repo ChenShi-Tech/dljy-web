@@ -28,6 +28,8 @@ export async function fetchDataGaps(): Promise<string> {
 // - 排队：该会话所有已经发出、还没落地的撤销请求（关闭→重开→再关闭时可能不止一个）都落地之前，开启请求先等——
 //   否则旧的「关闭」可能晚于新的「开启」到达服务端。
 const grantGeneration = new Map<string, number>()
+// 结果不明的开启可能在清理之后才被服务端执行（客户端已超时、请求仍在路上）：清理完成后再等过这段时间复查一次
+const AMBIGUOUS_ENABLE_RECHECK_MS = PI_POC_TIMEOUT_MS * 3
 const revokesInFlight = new Map<string, Set<Promise<boolean>>>()
 
 async function postAutoApprove(sessionId: string, enabled: boolean): Promise<boolean> {
@@ -42,11 +44,32 @@ async function postAutoApprove(sessionId: string, enabled: boolean): Promise<boo
 }
 
 export async function setSessionAutoApprove(sessionId: string, enabled: boolean): Promise<boolean> {
-  if (enabled) {
-    grantGeneration.set(sessionId, (grantGeneration.get(sessionId) ?? 0) + 1)
-    await Promise.allSettled([...(revokesInFlight.get(sessionId) ?? [])])
+  if (!enabled) return postAutoApprove(sessionId, false)
+  const generation = (grantGeneration.get(sessionId) ?? 0) + 1
+  grantGeneration.set(sessionId, generation)
+  await Promise.allSettled([...(revokesInFlight.get(sessionId) ?? [])])
+  try {
+    return await postAutoApprove(sessionId, true)
+  } catch (err) {
+    // 开启失败或结果不明（超时、响应丢失时服务端可能已经开启）：调用方会把界面回滚为未开启，
+    // 而本次开启又作废了之前待重试的撤销——重新发起一次带重试的撤销，不留看不见的授权（dljy#2962）。
+    // 只在这次开启仍是最新一次时才清理：期间又有更新的开启发起，清理会把那次新授权关掉
+    if ((grantGeneration.get(sessionId) ?? 0) === generation) {
+      void revokeSessionAutoApprove(sessionId).then(() => recheckAfterAmbiguousEnable(sessionId, generation))
+    }
+    throw err
   }
-  return postAutoApprove(sessionId, enabled)
+}
+
+// 结果不明的开启被清理之后，它仍可能晚于清理到达服务端并重新打开授权。等过超时窗口再按服务端状态复查一次，
+// 期间没有更新的开启、而授权仍开着，就再撤销一次（dljy#2962）。彻底杜绝需要服务端按请求先后排序，这里只收窄窗口。
+function recheckAfterAmbiguousEnable(sessionId: string, generation: number): void {
+  setTimeout(() => {
+    if ((grantGeneration.get(sessionId) ?? 0) !== generation) return
+    void fetchPiSessionMeta(sessionId).catch(() => null).then((meta) => {
+      if (meta?.autoApprove && (grantGeneration.get(sessionId) ?? 0) === generation) void revokeSessionAutoApprove(sessionId)
+    })
+  }, AMBIGUOUS_ENABLE_RECHECK_MS)
 }
 
 // 撤销自动执行授权并按退避重试（切走会话或卸载面板时调用）。此时发起它的界面往往已经不在了，
