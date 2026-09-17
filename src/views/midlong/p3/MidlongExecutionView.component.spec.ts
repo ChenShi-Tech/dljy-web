@@ -1,0 +1,109 @@
+// 中长期交易执行页的渲染不变量（dljy#2973，MT-01/MT-02）。
+// 守什么：日历只列公告明确给出的时间并按北京时间分日；时间未知的公告列入「待补」、不生成事件；
+//        公告列表显示待核对参数数与待重新核对方案数；执行标签只列已进入执行链路的方案，并提示导出不等于提交；
+//        能力未开放时不请求接口。
+// 坏掉的症状：缺截止时间的公告被套上默认截止出现在日历里；草稿方案出现在执行列表可登记提交。
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { enableAutoUnmount, flushPromises } from '@vue/test-utils'
+import { mount } from '@/test/mount'
+import type { MidlongCapabilities } from '@/services/midlong/midlongTypes'
+import { PLANNING_NOTICES, type TradeProposalDetail, type TradingWindowListRow, type WindowCalendarReport } from '@/services/midlong/midlongP3Types'
+
+const hoisted = vi.hoisted(() => ({
+  fetchCapabilities: vi.fn(), fetchWindowCalendar: vi.fn(), fetchWindows: vi.fn(), fetchProposals: vi.fn(), replace: vi.fn(), routeQuery: {} as Record<string, string>,
+}))
+
+vi.mock('element-plus', async (orig) => ({ ...(await orig<typeof import('element-plus')>()), ElMessage: { success: vi.fn(), error: vi.fn() } }))
+vi.mock('vue-router', () => ({ useRoute: () => ({ query: hoisted.routeQuery }), useRouter: () => ({ replace: hoisted.replace }) }))
+vi.mock('@/services/company/companyContext', async () => ({ selectedCompanyId: (await import('vue')).ref('comp-a') }))
+vi.mock('@/services/region/regionContext', async () => ({ currentRegion: (await import('vue')).ref({ id: 'yunnan' }) }))
+vi.mock('@/services/midlong/midlongApi', () => ({
+  CompanyNotSelectedError: class extends Error {},
+  fetchCapabilities: hoisted.fetchCapabilities,
+  fetchSubjects: vi.fn(async () => []),
+  midlongFailureOf: (e: unknown) => ({ status: 500, errorCode: 'STORAGE_UNAVAILABLE', message: (e as Error).message, details: null }),
+}))
+vi.mock('@/services/midlong/midlongP3Api', () => ({ fetchWindowCalendar: hoisted.fetchWindowCalendar, fetchWindows: hoisted.fetchWindows, fetchProposals: hoisted.fetchProposals }))
+
+import MidlongExecutionView from './MidlongExecutionView.vue'
+
+const STUBS = {
+  CompanyScopeBar: { template: '<div />' }, WindowFormDialog: { template: '<div />' }, WindowDetailDrawer: { template: '<div />' },
+  ProposalDetailDrawer: { template: '<div />' }, 'router-link': { template: '<a><slot /></a>' },
+}
+
+function caps(execution: boolean): MidlongCapabilities {
+  return {
+    enabled: true, regionId: 'yunnan', regionSupported: true, pilotRegions: ['yunnan'], phase: 'P1',
+    modules: { contracts: true, positions: true, imports: true, review: false, plans: true, execution },
+    canWrite: true, companyId: 'comp-a', scopeCompanyIds: ['comp-a'], reason: null,
+  } as unknown as MidlongCapabilities
+}
+
+const calendar: WindowCalendarReport = {
+  fromMonth: '2031-04', toMonth: '2031-06', notice: PLANNING_NOTICES.windowPending,
+  events: [
+    { kind: 'DECLARATION_OPENS', label: '申报开始', at: '2031-04-19T16:30:00.000Z', windowId: 1, revisionNo: 2, announcementName: '【测试数据】已明确时间的公告' },
+    { kind: 'DECLARATION_CLOSES', label: '申报截止', at: '2031-04-20T09:00:00.000Z', windowId: 1, revisionNo: 2, announcementName: '【测试数据】已明确时间的公告' },
+  ],
+  pending: [{ windowId: 2, revisionNo: 1, announcementName: '【测试数据】只有交割月的公告', deliveryStartMonth: '2031-05', deliveryEndMonth: '2031-05', pendingTimes: [{ kind: 'DECLARATION_CLOSES', label: '申报截止待补' }] }],
+}
+
+const windowRow = (id: number, name: string, pending: number, recheck: number): TradingWindowListRow => ({
+  id, companyId: 'comp-a', regionId: 'yunnan', currentRevisionNo: 2, rowVersion: 2, createdAt: '', createdBy: null, proposalCount: 3, proposalsNeedingRecheck: recheck,
+  current: { announcementName: name, sourceName: null, publishedDate: null, deliveryStartMonth: '2031-05', deliveryEndMonth: null, declarationClosesAt: null, pendingFields: Array.from({ length: pending }, (_, i) => ({ field: `f${i}`, label: `参数${i}`, reason: 'MISSING' })) } as never,
+})
+
+const proposalRow = (id: number, status: TradeProposalDetail['status']) => ({ id, status, subjectId: 1, subjectName: '测试交易单元', totalQuantity: '100', window: null, submissions: [] }) as unknown as TradeProposalDetail
+
+afterEach(() => {
+  vi.clearAllMocks()
+  hoisted.routeQuery = {}
+})
+enableAutoUnmount(afterEach)
+
+describe('中长期交易执行页', () => {
+  it('日历：已明确时间按北京时间分日，时间未知的公告只进待补、不生成事件', async () => {
+    hoisted.fetchCapabilities.mockResolvedValue(caps(true))
+    hoisted.fetchWindowCalendar.mockResolvedValue(calendar)
+    hoisted.fetchWindows.mockResolvedValue([])
+    hoisted.fetchProposals.mockResolvedValue([])
+    const w = mount(MidlongExecutionView, { global: { stubs: STUBS } })
+    await flushPromises()
+    const days = w.findAll('.ml-day')
+    expect(days).toHaveLength(1)
+    expect(days[0].find('.ml-day-date').text()).toBe('2031-04-20')
+    expect(days[0].text()).toContain('00:30')
+    expect(days[0].text()).toContain('17:00')
+    expect(days[0].text()).not.toContain('只有交割月的公告')
+    expect(w.text()).toContain('申报截止待补')
+    expect(w.text()).toContain(PLANNING_NOTICES.windowPending)
+  })
+
+  it('公告列表与执行列表：显示待核对与待重新核对数；草稿方案不进入执行列表；提示导出不等于提交', async () => {
+    hoisted.routeQuery = { tab: 'windows' }
+    hoisted.fetchCapabilities.mockResolvedValue(caps(true))
+    hoisted.fetchWindowCalendar.mockResolvedValue({ ...calendar, events: [], pending: [] })
+    hoisted.fetchWindows.mockResolvedValue([windowRow(1, '【测试数据】公告甲', 4, 2)])
+    hoisted.fetchProposals.mockResolvedValue([proposalRow(10, 'DRAFT'), proposalRow(11, 'EXECUTABLE'), proposalRow(12, 'SUBMITTED')])
+    const w = mount(MidlongExecutionView, { global: { stubs: STUBS } })
+    await flushPromises()
+    const text = w.text()
+    expect(text).toContain('【测试数据】公告甲')
+    expect(text).toContain('2 / 3')
+    expect(text).toContain(PLANNING_NOTICES.exportNotSubmission)
+    expect(text).toContain('#11')
+    expect(text).toContain('#12')
+    expect(text).not.toContain('#10')
+    expect(text).toContain('未登记提交')
+  })
+
+  it('能力未开放：显示未开放提示，不请求日历与公告接口', async () => {
+    hoisted.fetchCapabilities.mockResolvedValue(caps(false))
+    const w = mount(MidlongExecutionView, { global: { stubs: STUBS } })
+    await flushPromises()
+    expect(w.text()).toContain('交易执行功能尚未开放')
+    expect(hoisted.fetchWindowCalendar).not.toHaveBeenCalled()
+    expect(hoisted.fetchWindows).not.toHaveBeenCalled()
+  })
+})
