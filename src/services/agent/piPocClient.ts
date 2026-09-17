@@ -43,14 +43,16 @@ async function postAutoApprove(sessionId: string, enabled: boolean): Promise<boo
 
 export async function setSessionAutoApprove(sessionId: string, enabled: boolean): Promise<boolean> {
   if (!enabled) return postAutoApprove(sessionId, false)
-  grantGeneration.set(sessionId, (grantGeneration.get(sessionId) ?? 0) + 1)
+  const generation = (grantGeneration.get(sessionId) ?? 0) + 1
+  grantGeneration.set(sessionId, generation)
   await Promise.allSettled([...(revokesInFlight.get(sessionId) ?? [])])
   try {
     return await postAutoApprove(sessionId, true)
   } catch (err) {
     // 开启失败或结果不明（超时、响应丢失时服务端可能已经开启）：调用方会把界面回滚为未开启，
-    // 而本次开启又作废了之前待重试的撤销——重新发起一次带重试的撤销，不留看不见的授权（dljy#2962）
-    void revokeSessionAutoApprove(sessionId)
+    // 而本次开启又作废了之前待重试的撤销——重新发起一次带重试的撤销，不留看不见的授权（dljy#2962）。
+    // 只在这次开启仍是最新一次时才清理：期间又有更新的开启发起，清理会把那次新授权关掉
+    if ((grantGeneration.get(sessionId) ?? 0) === generation) void revokeSessionAutoApprove(sessionId)
     throw err
   }
 }

@@ -172,6 +172,23 @@ describe('revokeSessionAutoApprove（切走会话/卸载时撤销授权，失败
     expect(bodies).toEqual([true, false])
   })
 
+  it('旧的开启还在途时又发起了新的开启：旧的开启随后失败，不清理、不关掉新的授权', async () => {
+    vi.stubGlobal('fetch', fetchMock)
+    let failOld: (e: Error) => void = () => {}
+    fetchMock
+      .mockImplementationOnce(() => new Promise<Response>((_r, reject) => { failOld = reject }))
+      .mockResolvedValueOnce(jsonResponse({ auto_approve: true }))
+    const older = setSessionAutoApprove('s_twice_grant', true)
+    await Promise.resolve()
+    await Promise.resolve()
+    await expect(setSessionAutoApprove('s_twice_grant', true)).resolves.toBe(true)
+    failOld(new TypeError('network'))
+    await expect(older).rejects.toThrow('network')
+    await new Promise((r) => setTimeout(r, 0))
+    const bodies = fetchMock.mock.calls.map((c) => JSON.parse((c as [string, RequestInit])[1].body as string).enabled)
+    expect(bodies).toEqual([true, true])
+  })
+
   it('开启请求刚发起、还没返回时，待重试的撤销醒来即放弃（世代在发起时推进）', async () => {
     vi.stubGlobal('fetch', fetchMock)
     fetchMock
