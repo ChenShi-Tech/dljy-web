@@ -309,7 +309,7 @@ export const regionModuleCapabilities: RegionModuleCapability[] = [
     title: '中长期交易',
     group: 'midlong',
     routePrefixes: ['/zcqjy', '/sjxh/zjzzt'],
-    routePaths: ['/zcqjy/contracts', '/zcqjy/positions', '/zcqjy/positions/intervals', '/zcqjy/positions/stations', '/zcqjy/curves', '/zcqjy/zccljk', '/zcqjy/exposure', '/zcqjy/zfsdjy', '/zcqjy/zjyap', '/sjxh/zjzzt'],
+    routePaths: ['/zcqjy/contracts', '/zcqjy/positions', '/zcqjy/positions/intervals', '/zcqjy/positions/stations', '/zcqjy/curves', '/zcqjy/plans', '/zcqjy/execution', '/zcqjy/zccljk', '/zcqjy/exposure', '/zcqjy/zfsdjy', '/zcqjy/zjyap', '/sjxh/zjzzt'],
     statusByRegion: {
       shanxi: 'available',
       yunnan: 'degraded',
@@ -371,6 +371,17 @@ export const regionModuleCapabilities: RegionModuleCapability[] = [
         includeSubpaths: true,
         statusByRegion: { yunnan: 'available', shanxi: 'hidden', guangdong: 'hidden', sichuan: 'hidden' },
         note: '分时分解集详情（/zcqjy/curves/:id），仅云南试点。'
+      },
+      // 云南中长期售电 P3（dljy#2973）：售电计划与交易执行，同样只开通云南。
+      {
+        path: '/zcqjy/plans',
+        statusByRegion: { yunnan: 'available', shanxi: 'hidden', guangdong: 'hidden', sichuan: 'hidden' },
+        note: '人工售电目标、完成情况与交易方案占用；目标是经营安排，不依赖现货/预测数据；仅云南试点。'
+      },
+      {
+        path: '/zcqjy/execution',
+        statusByRegion: { yunnan: 'available', shanxi: 'hidden', guangdong: 'hidden', sichuan: 'hidden' },
+        note: '交易公告与日历、申报材料导出与外部提交登记；导出不代提交、不对接外部平台；仅云南试点。'
       },
       // sdpt_zfsdjy 是三德普华私有族（曾误标 public，匿名可读该公司中长期合同台账与
       // 逐日持仓电量/持仓均价，#1617 合并后复查发现）。与 /xhjy/zrqsb、/xhjy/zptqx 同口径：

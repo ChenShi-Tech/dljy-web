@@ -145,4 +145,14 @@ describe('中长期售电合同入口仅云南开通（dljy#2939）', () => {
     }
     expect(getRegionCapabilityForPath('/zcqjy/curves-export', 'shanxi')?.route).toBeNull()
   })
+
+  it('P3 售电计划与交易执行同样只在云南可用（dljy#2973）', () => {
+    for (const path of ['/zcqjy/plans', '/zcqjy/execution']) {
+      expect(isRegionRouteAvailable(path, 'yunnan')).toBe(true)
+      for (const region of ['shanxi', 'guangdong', 'sichuan']) {
+        expect(getRegionCapabilityForPath(path, region)?.status).toBe('hidden')
+        expect(isRegionRouteAvailable(path, region)).toBe(false)
+      }
+    }
+  })
 })
