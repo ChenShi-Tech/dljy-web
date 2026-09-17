@@ -138,6 +138,29 @@ describe('revokeSessionAutoApprove（切走会话/卸载时撤销授权，失败
     expect(order).toEqual([false, true])
   })
 
+  it('先后两次撤销请求都在途时开启：等全部落地才发出开启，先发出的那次也压不过新的开启（dljy-web#122 审查 P2）', async () => {
+    vi.stubGlobal('fetch', fetchMock)
+    const finishers: Array<(r: Response) => void> = []
+    fetchMock
+      .mockImplementationOnce(() => new Promise<Response>((r) => { finishers.push(r) }))
+      .mockImplementationOnce(() => new Promise<Response>((r) => { finishers.push(r) }))
+      .mockResolvedValueOnce(jsonResponse({ auto_approve: true }))
+    const first = revokeSessionAutoApprove('s_twice', { sleep: async () => {}, delaysMs: [] })
+    const second = revokeSessionAutoApprove('s_twice', { sleep: async () => {}, delaysMs: [] })
+    const enabling = setSessionAutoApprove('s_twice', true)
+    await Promise.resolve()
+    finishers[1](jsonResponse({ auto_approve: false })) // 后发出的先落地
+    await second
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(fetchMock).toHaveBeenCalledTimes(2) // 先发出的还没落地，开启继续排队
+    finishers[0](jsonResponse({ auto_approve: false }))
+    await expect(enabling).resolves.toBe(true)
+    await first
+    const order = fetchMock.mock.calls.map((c) => JSON.parse((c as [string, RequestInit])[1].body as string).enabled)
+    expect(order).toEqual([false, false, true])
+  })
+
   it('开启请求刚发起、还没返回时，待重试的撤销醒来即放弃（世代在发起时推进）', async () => {
     vi.stubGlobal('fetch', fetchMock)
     fetchMock

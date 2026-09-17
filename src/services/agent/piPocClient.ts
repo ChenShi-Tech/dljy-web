@@ -25,9 +25,10 @@ export async function fetchDataGaps(): Promise<string> {
 // 开启与撤销的先后次序（dljy-web#121 / #122 审查 P2）：撤销在切走会话时发起、失败还会退避重试，
 // 用户随时可能重新打开同一会话再次开启。两条规则保证旧的撤销压不过新的开启：
 // - 授权世代：每次**发起**开启（不等返回）就推进一次；待重试的撤销醒来发现世代变了就放弃；
-// - 排队：已经发出的撤销请求没落地之前，开启请求先等它——否则旧的「关闭」可能晚于新的「开启」到达服务端。
+// - 排队：该会话所有已经发出、还没落地的撤销请求（关闭→重开→再关闭时可能不止一个）都落地之前，开启请求先等——
+//   否则旧的「关闭」可能晚于新的「开启」到达服务端。
 const grantGeneration = new Map<string, number>()
-const revokeInFlight = new Map<string, Promise<boolean>>()
+const revokesInFlight = new Map<string, Set<Promise<boolean>>>()
 
 async function postAutoApprove(sessionId: string, enabled: boolean): Promise<boolean> {
   const res = await fetch(`${PI_AGENT_BASE}/sessions/${encodeURIComponent(sessionId)}/auto-approve`, {
@@ -43,7 +44,7 @@ async function postAutoApprove(sessionId: string, enabled: boolean): Promise<boo
 export async function setSessionAutoApprove(sessionId: string, enabled: boolean): Promise<boolean> {
   if (enabled) {
     grantGeneration.set(sessionId, (grantGeneration.get(sessionId) ?? 0) + 1)
-    await revokeInFlight.get(sessionId)?.catch(() => false)
+    await Promise.allSettled([...(revokesInFlight.get(sessionId) ?? [])])
   }
   return postAutoApprove(sessionId, enabled)
 }
@@ -62,7 +63,9 @@ export async function revokeSessionAutoApprove(
   for (let attempt = 0; ; attempt += 1) {
     if ((grantGeneration.get(sessionId) ?? 0) !== generation) return false
     const request = postAutoApprove(sessionId, false)
-    revokeInFlight.set(sessionId, request)
+    const pending = revokesInFlight.get(sessionId) ?? new Set<Promise<boolean>>()
+    pending.add(request)
+    revokesInFlight.set(sessionId, pending)
     try {
       if ((await request) === false) return true
     } catch (err) {
@@ -71,7 +74,8 @@ export async function revokeSessionAutoApprove(
         return false
       }
     } finally {
-      if (revokeInFlight.get(sessionId) === request) revokeInFlight.delete(sessionId)
+      pending.delete(request)
+      if (!pending.size && revokesInFlight.get(sessionId) === pending) revokesInFlight.delete(sessionId)
     }
     if (attempt >= delays.length) return false
     await sleep(delays[attempt])
