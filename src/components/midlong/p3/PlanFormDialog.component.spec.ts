@@ -80,5 +80,13 @@ describe('售电目标表单', () => {
     expect(hoisted.warning).toHaveBeenCalledWith(expect.stringContaining('【测试数据】目标 2 版本已变化'))
     expect(w.emitted('update:modelValue')).toBeUndefined()
     expect(saveButton(w).classes()).not.toContain('is-loading')
+
+    // 只关闭不重开：旧失败改为消息提示，不留在已关闭的表单里。
+    await saveButton(w).trigger('click')
+    await w.setProps({ modelValue: false })
+    pending[2].reject({ failure: { status: 409, errorCode: 'VERSION_CONFLICT', message: '【测试数据】目标 3 版本已变化', details: null } })
+    await flushPromises()
+    expect(hoisted.warning).toHaveBeenCalledWith(expect.stringContaining('【测试数据】目标 3 版本已变化'))
+    expect(w.text()).not.toContain('【测试数据】目标 3 版本已变化')
   })
 })

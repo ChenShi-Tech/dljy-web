@@ -231,6 +231,19 @@ describe('交易方案详情', () => {
     expect(hoisted.recheckProposalWindow).not.toHaveBeenCalled()
   })
 
+  it('切换公司时同样清掉为原方案打开的撤销原因对话框与登记对话框', async () => {
+    hoisted.fetchProposal.mockResolvedValue(proposal({ status: 'EXECUTABLE' }))
+    hoisted.fetchProposalComparison.mockResolvedValue(comparison())
+    const w = mount(ProposalDetailDrawer, { props: { modelValue: true, proposalId: 42, canWrite: true, mode: 'execution' }, global: { stubs: { SubmissionDialog: SUBMISSION_STUB } } })
+    await flushPromises()
+    await button(w, '撤销方案')!.trigger('click')
+    const endDialog = () => w.findAllComponents({ name: 'ElDialog' }).find((d) => String(d.props('title')).startsWith('撤销方案'))!
+    expect(endDialog().props('modelValue')).toBe(true)
+    hoisted.companyRef!.value = 'comp-b'
+    await flushPromises()
+    expect(endDialog().props('modelValue')).toBe(false)
+  })
+
   it('原方案的操作返回前换了方案：失败不显示在新方案上、不占用新方案按钮；成功只通知父页面，不按旧操作重载、不结束新方案进行中的操作', async () => {
     hoisted.fetchProposal.mockResolvedValue(proposal({ status: 'SUBMITTED' }))
     hoisted.fetchProposalComparison.mockResolvedValue(comparison())

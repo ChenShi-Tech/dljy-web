@@ -64,5 +64,13 @@ describe('交易方案草稿表单：保存会话', () => {
     expect(hoisted.warning).toHaveBeenCalledWith(expect.stringContaining('【测试数据】方案 2 版本已变化'))
     expect(w.emitted('update:modelValue')).toBeUndefined()
     expect(save(w).classes()).not.toContain('is-loading')
+
+    // 只关闭不重开：旧失败改为消息提示，不留在已关闭的表单里。
+    await save(w).trigger('click')
+    await w.setProps({ modelValue: false })
+    pending[2].reject(new Error('【测试数据】方案 3 版本已变化'))
+    await flushPromises()
+    expect(hoisted.warning).toHaveBeenCalledWith(expect.stringContaining('【测试数据】方案 3 版本已变化'))
+    expect(w.text()).not.toContain('【测试数据】方案 3 版本已变化')
   })
 })

@@ -128,6 +128,17 @@ describe('补充回执：关闭或换对象时进行中的保存作废', () => {
     w.unmount()
   }, FORM_TIMEOUT)
 
+  it('读取回执文件期间对话框被卸载（详情抽屉换了方案）：放弃保存，不发写请求', async () => {
+    const w = mount(SubmissionDialog, { props: { modelValue: true, mode: 'receipt', proposal, submission: submissionOf(9) }, attachTo: document.body })
+    await flushPromises()
+    const release = await saveReceiptWithPendingFile()
+    w.unmount()
+    release()
+    await flushPromises()
+    expect(hoisted.addReceipt).not.toHaveBeenCalled()
+    expect(hoisted.registerSubmission).not.toHaveBeenCalled()
+  }, FORM_TIMEOUT)
+
   it('读取回执文件期间关闭后在同一方案上改为登记外部提交：旧回执不会随提交登记写入', async () => {
     const w = mount(SubmissionDialog, { props: { modelValue: true, mode: 'receipt', proposal, submission: submissionOf(9) }, attachTo: document.body })
     await flushPromises()
