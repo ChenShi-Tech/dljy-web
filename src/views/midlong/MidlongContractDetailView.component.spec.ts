@@ -50,7 +50,7 @@ function detail(o: Partial<MidlongContractDetail> = {}): MidlongContractDetail {
     current: { revisionNo: 1, status: 'CONFIRMED', totalQuantity: '1100', sellerPrice: '300', priceStatus: 'KNOWN', priceType: 'FIXED', taxBasis: 'TAX_INCLUDED', priceComponent: 'ENERGY_ONLY', deliveryStart: '2027-05-01', deliveryEnd: '2027-05-31', allocationCompleteness: 'COMPLETE', businessEffectiveAt: null, confirmedAt: '2026-09-01T00:00:00.000Z' },
     originalQuantity: '1100', currentRevision: revision, revisions: [revision],
     evidence: [{ id: 3, contractId: 7, importBatchId: null, documentType: 'ELECTRONIC_CONFIRMATION', sha256: 'a'.repeat(64), byteSize: 10, originalFileName: '确认单.pdf', mediaType: null, source: 'UPLOAD', note: null, uploadedAt: '2026-09-01T00:00:00.000Z', uploadedBy: 'u' }],
-    events: [], aliases: [], linkedTrades: { label: '关联成交电量', tradeCount: 0, volume: '0' },
+    events: [], aliases: [], framework: null, linkedContracts: [], linkedTrades: { label: '关联成交电量', tradeCount: 0, volume: '0' },
     ...o,
   }
 }
@@ -121,6 +121,55 @@ describe('中长期售电合同详情', () => {
     await flushPromises()
     const back = w.findAll('a').find((a) => a.text().includes('← 售电合同'))!
     expect(JSON.parse(back.attributes('data-to')!)).toEqual({ path: '/zcqjy/contracts', query: { deliveryFrom: '2027-01', deliveryTo: '2027-12' } })
+  })
+
+  it('录入更正：生效时间不能选未来；填入未来时刻时本地拦截，不发更正请求（#2961）', async () => {
+    hoisted.fetchContract.mockResolvedValue(detail())
+    const w = mount(MidlongContractDetailView, { global: { stubs: STUBS } })
+    await flushPromises()
+    await w.findAll('.ml-actions button').find((b) => b.text() === '录入更正')!.trigger('click')
+    await flushPromises()
+    const picker = w.findAllComponents({ name: 'ElDatePicker' }).find((c) => c.props('type') === 'datetime')!
+    const disabledDate = picker.props('disabledDate') as (d: Date) => boolean
+    expect(disabledDate(new Date(Date.now() + 24 * 3600 * 1000))).toBe(true)
+    expect(disabledDate(new Date(Date.now() - 24 * 3600 * 1000))).toBe(false)
+    picker.vm.$emit('update:modelValue', '2099-01-01T00:00:00+08:00')
+    const dialog = w.findAll('.el-dialog').find((d) => d.text().includes('录入更正（生成新版本）'))!
+    await dialog.find('input[placeholder^="如：原确认单"]').setValue('测试：未来生效')
+    await dialog.find('.el-checkbox-group .el-checkbox input').setValue(true)
+    await flushPromises()
+    await dialog.findAll('.el-dialog__footer button').find((b) => b.text() === '生成更正版本')!.trigger('click')
+    await flushPromises()
+    expect(hoisted.correctContract).not.toHaveBeenCalled()
+    expect(w.text()).toContain('业务生效时间不能晚于当前时间')
+  })
+
+  it('框架协议：电量合同显示所属框架协议，框架协议列出框架下的合同（#2961）', async () => {
+    const framework = { contractId: 5, contractName: '年度框架协议', externalContractNo: 'FW-5', documentKind: 'FRAMEWORK' as const, confirmationStatus: 'CONFIRMED' as const, totalQuantity: null, deliveryStart: '2027-01-01', deliveryEnd: '2027-12-31' }
+    hoisted.fetchContract.mockResolvedValue(detail({ frameworkContractId: 5, framework }))
+    const w = mount(MidlongContractDetailView, { global: { stubs: STUBS } })
+    await flushPromises()
+    const link = w.findAll('a').find((a) => a.text().includes('年度框架协议（FW-5）'))!
+    expect(JSON.parse(link.attributes('data-to')!)).toBe('/zcqjy/contracts/5')
+
+    hoisted.fetchContract.mockResolvedValue(detail({ contractId: 5, documentKind: 'FRAMEWORK', contractName: '年度框架协议', linkedContracts: [{ contractId: 7, contractName: '月度合同', externalContractNo: 'M-7', documentKind: 'OBLIGATION', confirmationStatus: 'CONFIRMED', totalQuantity: '1100', deliveryStart: '2027-05-01', deliveryEnd: '2027-05-31' }] }))
+    const f = mount(MidlongContractDetailView, { global: { stubs: STUBS } })
+    await flushPromises()
+    expect(f.text()).toContain('框架下的合同（1）')
+    expect(f.text()).toContain('月度合同')
+    const listLink = f.findAll('a').find((a) => a.text().includes('在合同列表中查看'))!
+    expect(JSON.parse(listLink.attributes('data-to')!)).toEqual({ path: '/zcqjy/contracts', query: { frameworkContractId: '5' } })
+  })
+
+  it('已作废合同：外部编号标明已随作废释放，并提示可以重新登记（#2961）', async () => {
+    hoisted.fetchContract.mockResolvedValue(detail({
+      confirmationStatus: 'VOIDED', voidReason: '交易方式录错', voidedAt: '2026-09-17T01:00:00.000Z', voidedBy: 'u',
+      aliases: [{ id: 1, sourceNamespace: 'MANUAL', externalObligationId: 'M-7', aliasKind: 'PRIMARY', subjectId: 1, verificationNote: null, createdAt: '', createdBy: 'u', releasedAt: '2026-09-17T01:00:00.000Z', releasedReason: '交易方式录错' }],
+    }))
+    const w = mount(MidlongContractDetailView, { global: { stubs: STUBS } })
+    await flushPromises()
+    expect(w.text()).toContain('外部编号 M-7 已随作废释放，可以按正确内容重新登记')
+    expect(w.text()).toContain('已随作废释放')
   })
 
   it('待核对合同缺依据：核验前明确提示需补齐', async () => {

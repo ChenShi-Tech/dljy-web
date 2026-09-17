@@ -1,5 +1,6 @@
 <script setup lang="ts">
 // 中长期售电合同草稿录入/修改（dljy#2939）。只处理草稿与待核对合同；已确认合同走「更正」。
+// 电量合同可关联本公司本地区的框架协议（MC-01）；表单始终提交该字段，修改草稿时带回原关联、不会被清空（#2961）。
 import { computed, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import MidlongEconomicsEditor from './MidlongEconomicsEditor.vue'
@@ -10,7 +11,7 @@ import {
   type DocumentKind, type EnergyAttribute, type MarketScope, type MidlongContractDetail, type MidlongContractInput,
   type MidlongSubject, type ProductKind, type TradeMethod,
 } from '@/services/midlong/midlongTypes'
-import { createDraft, midlongFailureOf, updateDraft } from '@/services/midlong/midlongApi'
+import { createDraft, fetchContracts, midlongFailureOf, updateDraft, type DraftWarning } from '@/services/midlong/midlongApi'
 import { draftFromRevision, emptyEconomicsDraft, toEconomicsInput, type EconomicsDraft } from '@/services/midlong/economicsDraft'
 import type { CompanyStation } from '@/services/company/companyApi'
 
@@ -35,7 +36,37 @@ const identity = reactive({
   signedDate: '',
   subjectId: null as number | null,
   stationId: null as number | null,
+  frameworkContractId: null as number | null,
   remarks: '',
+})
+
+// 可关联的框架协议：本公司本地区未作废的框架协议（服务端同样校验归属、地区、类型与状态）。
+const frameworkOptions = ref<Array<{ contractId: number; label: string }>>([])
+const frameworkLoadError = ref('')
+let frameworkLoadSeq = 0
+async function loadFrameworks() {
+  const seq = ++frameworkLoadSeq
+  frameworkLoadError.value = ''
+  try {
+    const list = await fetchContracts({ documentKind: 'FRAMEWORK', confirmationStatus: 'DRAFT,PENDING_VERIFICATION,CONFIRMED', pageSize: 200 })
+    if (seq !== frameworkLoadSeq) return
+    frameworkOptions.value = list.rows
+      .filter((r) => r.contractId !== props.detail?.contractId)
+      .map((r) => ({ contractId: r.contractId, label: `${r.contractName}（${r.externalContractNo}）` }))
+  } catch (error) {
+    if (seq !== frameworkLoadSeq) return
+    frameworkOptions.value = []
+    frameworkLoadError.value = `框架协议列表加载失败：${midlongFailureOf(error).message}`
+  }
+}
+// 已关联但不在候选里（如已作废）的框架协议也要能显示，不因为选项缺失而被当成「未关联」。
+const frameworkSelectOptions = computed(() => {
+  const current = props.detail?.framework
+  const options = [...frameworkOptions.value]
+  if (current && identity.frameworkContractId === current.contractId && !options.some((o) => o.contractId === current.contractId)) {
+    options.unshift({ contractId: current.contractId, label: `${current.contractName}（${current.externalContractNo}）` })
+  }
+  return options
 })
 const economics = ref<EconomicsDraft>(emptyEconomicsDraft())
 const editorRef = ref<InstanceType<typeof MidlongEconomicsEditor> | null>(null)
@@ -50,16 +81,17 @@ watch(() => props.modelValue, (open) => {
       documentKind: d.documentKind, productKind: d.productKind ?? 'ANNUAL', tradeMethod: d.tradeMethod ?? 'BILATERAL',
       marketScope: d.marketScope ?? 'PROVINCIAL', energyAttribute: d.energyAttribute ?? 'CONVENTIONAL', contractName: d.contractName,
       externalContractNo: d.externalContractNo, sourceNamespace: d.sourceNamespace, counterpartyName: d.counterpartyName ?? '',
-      signedDate: d.signedDate ?? '', subjectId: d.subjectId, stationId: d.stationId, remarks: d.remarks ?? '',
+      signedDate: d.signedDate ?? '', subjectId: d.subjectId, stationId: d.stationId, frameworkContractId: d.frameworkContractId, remarks: d.remarks ?? '',
     })
     economics.value = d.currentRevision ? draftFromRevision(d.currentRevision) : emptyEconomicsDraft()
   } else {
     Object.assign(identity, {
       documentKind: 'OBLIGATION', productKind: 'ANNUAL', tradeMethod: 'BILATERAL', marketScope: 'PROVINCIAL', energyAttribute: 'CONVENTIONAL',
-      contractName: '', externalContractNo: '', sourceNamespace: 'MANUAL', counterpartyName: '', signedDate: '', subjectId: null, stationId: null, remarks: '',
+      contractName: '', externalContractNo: '', sourceNamespace: 'MANUAL', counterpartyName: '', signedDate: '', subjectId: null, stationId: null, frameworkContractId: null, remarks: '',
     })
     economics.value = emptyEconomicsDraft()
   }
+  void loadFrameworks()
 })
 
 const canSubmit = computed(() => identity.contractName.trim() && identity.externalContractNo.trim() && !(editorRef.value?.check.errors.length))
@@ -80,6 +112,8 @@ async function submit() {
     sourceNamespace: identity.sourceNamespace.trim() || 'MANUAL',
     counterpartyName: identity.counterpartyName.trim() || null,
     signedDate: identity.signedDate || null,
+    // 框架协议自身不能再挂到框架协议下；显式 null 表示取消关联。
+    frameworkContractId: identity.documentKind === 'OBLIGATION' ? identity.frameworkContractId : null,
     remarks: identity.remarks.trim() || null,
     economics: toEconomicsInput(economics.value),
   }
@@ -88,6 +122,9 @@ async function submit() {
       ? await updateDraft(props.detail.contractId, { ...input, expectedRowVersion: props.detail.rowVersion })
       : await createDraft(input)
     ElMessage.success(props.detail ? '草稿已更新' : '草稿已保存（待补资料并核验确认后才计入持仓）')
+    for (const w of (result.warnings ?? []) as DraftWarning[]) {
+      if (w.code === 'PREVIOUSLY_VOIDED') ElMessage.warning({ message: w.message, duration: 8000 })
+    }
     emit('saved', result.contractId)
     close()
   } catch (error) {
@@ -140,6 +177,12 @@ async function submit() {
           </el-select>
         </label>
         <label class="ml-field"><span>购电方</span><el-input v-model="identity.counterpartyName" /></label>
+        <label v-if="identity.documentKind === 'OBLIGATION'" class="ml-field"><span>所属框架协议（可空）</span>
+          <el-select v-model="identity.frameworkContractId" clearable filterable placeholder="不关联" data-testid="ml-framework-select">
+            <el-option v-for="f in frameworkSelectOptions" :key="f.contractId" :label="f.label" :value="f.contractId" />
+          </el-select>
+          <small v-if="frameworkLoadError" class="ml-error">{{ frameworkLoadError }}</small>
+        </label>
         <label class="ml-field"><span>签订/成交日期</span><el-date-picker v-model="identity.signedDate" type="date" value-format="YYYY-MM-DD" /></label>
         <label class="ml-field ml-wide"><span>备注</span><el-input v-model="identity.remarks" /></label>
       </div>
@@ -166,5 +209,6 @@ async function submit() {
 .ml-field :deep(.el-select), .ml-field :deep(.el-date-editor) { width: 100%; }
 .ml-wide { grid-column: span 2; }
 .ml-link { margin-right: 8px; color: var(--accent); }
+.ml-error { color: var(--danger, #c0392b); font-size: var(--font-xs); }
 @media (max-width: 720px) { .ml-wide { grid-column: auto; } }
 </style>
