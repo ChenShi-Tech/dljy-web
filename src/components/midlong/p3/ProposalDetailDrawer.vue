@@ -89,6 +89,8 @@ watch(scopeKey, () => {
   actionError.value = ''
   loading.value = false
 })
+// 抽屉外保存了同一方案（如在抽屉里点「修改草稿」后保存）时 props 不变、上面的 watcher 不会触发，由父页面显式重新加载。
+defineExpose({ reload: load })
 
 async function run(label: string, action: () => Promise<unknown>, success: string) {
   if (busy.value) return

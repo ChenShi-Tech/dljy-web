@@ -16,8 +16,8 @@ import ProposalFormDialog from '@/components/midlong/p3/ProposalFormDialog.vue'
 import { selectedCompanyId } from '@/services/company/companyContext'
 import { currentRegion } from '@/services/region/regionContext'
 import { CompanyNotSelectedError, fetchCapabilities, fetchSubjects, midlongFailureOf } from '@/services/midlong/midlongApi'
-import { confirmPlan, fetchAllWindows, fetchPlanProgress, fetchProposals } from '@/services/midlong/midlongP3Api'
-import { captureScope } from '@/services/midlong/midlongP3Scope'
+import { confirmPlan, fetchAllWindows, fetchPlanProgress, fetchProposals, type PlanWriteResult, type ProposalWriteResult } from '@/services/midlong/midlongP3Api'
+import { captureScope, type ScopeSnapshot } from '@/services/midlong/midlongP3Scope'
 import { createLoadGuard, fmtPrice, fmtQuantity } from '@/services/midlong/midlongFormat'
 import {
   arrangeableLabel, beijingDateTime, completionLabel, confirmFailureText, planPeriodLabel, proposalStatusTag, remainingLabel, verificationTag,
@@ -210,6 +210,7 @@ function backToCurrent() {
 // ── 目标 ─────────────────────────────────────────────────────────────────────
 const planDialog = reactive({ open: false, mode: 'create' as 'create' | 'edit' | 'revise', plan: null as PlanProgressRow | null })
 const planDrawer = reactive({ open: false, planId: null as number | null })
+const planDrawerRef = ref<InstanceType<typeof PlanDetailDrawer> | null>(null)
 const planActionError = ref('')
 const confirming = ref<number | null>(null)
 
@@ -224,13 +225,21 @@ async function doConfirmPlan(row: PlanProgressRow) {
   try {
     await confirmPlan(row.id, row.rowVersion)
     ElMessage.success(`目标 ${planPeriodLabel(row.periodType, row.periodKey)} 已确认新版本`)
-    await loadTargets()
+    await Promise.all([loadTargets(), reloadPlanDrawer(row.id)])
   } catch (e) {
     const f = midlongFailureOf(e)
     planActionError.value = confirmFailureText(f.errorCode, f.message, f.details)
   } finally {
     confirming.value = null
   }
+}
+
+/** 目标写入后：详情抽屉若正开着同一目标，planId 没变、抽屉不会自己重新取数，显式重新加载，避免继续显示旧版本与旧占用。 */
+function reloadPlanDrawer(planId: number) {
+  return planDrawer.open && planDrawer.planId === planId ? planDrawerRef.value?.reload() : undefined
+}
+async function onPlanSaved(result: PlanWriteResult) {
+  await Promise.all([load(), reloadPlanDrawer(result.planId)])
 }
 
 const hasUnverified = computed(() => (report.value?.rows ?? []).some((r) => r.progress.verificationStatus === 'UNVERIFIED'))
@@ -240,6 +249,9 @@ const hasOverCommitted = computed(() => (report.value?.rows ?? []).some((r) => r
 // ── 方案 ─────────────────────────────────────────────────────────────────────
 const proposalDialog = reactive({ open: false, proposal: null as TradeProposalDetail | null })
 const proposalDrawer = reactive({ open: false, proposalId: null as number | null })
+const proposalDrawerRef = ref<InstanceType<typeof ProposalDetailDrawer> | null>(null)
+/** 打开方案表单时的范围：保存结果只在同一公司与地区内刷新列表、打开或重载抽屉。 */
+let proposalFormScope: ScopeSnapshot | null = null
 
 function openProposal(id: number) {
   Object.assign(proposalDrawer, { open: true, proposalId: id })
@@ -266,14 +278,24 @@ async function openProposalForm(proposal: TradeProposalDetail | null) {
   // 唯一的范围核对：加载期间切换了公司，候选与表单都属于原公司，放弃打开。
   if (!scope.isCurrent()) return
   windows.value = rows
+  proposalFormScope = scope
   Object.assign(proposalDialog, { open: true, proposal })
 }
 function editProposal(proposal: TradeProposalDetail) {
   void openProposalForm(proposal)
 }
-async function onProposalSaved(result: { proposalId: number }) {
+async function onProposalSaved(result: ProposalWriteResult) {
+  const scope = proposalFormScope
+  // 在已打开的同一方案抽屉里修改草稿：proposalId 没变、抽屉不会自己重新取数，必须显式重新加载；
+  // 否则抽屉继续显示旧字段、旧测算与旧版本号，随后确认会带旧版本撞版本冲突。
+  // （切换公司时抽屉已被关闭，不会走到这里。）
+  if (proposalDrawer.open && proposalDrawer.proposalId === result.proposalId) {
+    await Promise.all([loadProposals(), proposalDrawerRef.value?.reload()])
+    return
+  }
   await loadProposals()
-  openProposal(result.proposalId)
+  // 唯一的范围核对：保存返回前或列表加载期间切换了公司，方案属于原公司，不在新公司里打开它。
+  if (scope?.isCurrent()) openProposal(result.proposalId)
 }
 
 const segmentSummary = (p: TradeProposalDetail) => p.segments.map((s) => `${s.deliveryMonth} ${fmtQuantity(s.quantity)}`).join('；')
@@ -413,10 +435,13 @@ const segmentSummary = (p: TradeProposalDetail) => p.segments.map((s) => `${s.de
       </el-tabs>
     </template>
 
-    <PlanFormDialog v-model="planDialog.open" :mode="planDialog.mode" :plan="planDialog.plan" :subjects="subjects" @saved="load" />
-    <PlanDetailDrawer v-model="planDrawer.open" :plan-id="planDrawer.planId" @history="showHistory" />
+    <PlanFormDialog v-model="planDialog.open" :mode="planDialog.mode" :plan="planDialog.plan" :subjects="subjects" @saved="onPlanSaved" />
+    <PlanDetailDrawer ref="planDrawerRef" v-model="planDrawer.open" :plan-id="planDrawer.planId" @history="showHistory" />
     <ProposalFormDialog v-model="proposalDialog.open" :proposal="proposalDialog.proposal" :subjects="subjects" :windows="windows" @saved="onProposalSaved" />
-    <ProposalDetailDrawer v-model="proposalDrawer.open" :proposal-id="proposalDrawer.proposalId" :can-write="canWrite" mode="plans" @changed="load" @edit="editProposal" />
+    <ProposalDetailDrawer
+      ref="proposalDrawerRef" v-model="proposalDrawer.open" :proposal-id="proposalDrawer.proposalId" :can-write="canWrite" mode="plans"
+      @changed="load" @edit="editProposal"
+    />
   </div>
 </template>
 

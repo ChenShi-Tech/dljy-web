@@ -2,7 +2,7 @@
 // 守什么：方案测算标「方案测算」、名义金额、不判断价格优劣，已售不完整时交易后电量不计算；
 //        确认可执行带上测算里看到的目标版本，余额冲突显示最新可安排量；
 //        导出申报材料只下载文件、不发任何写请求、不改状态；登记提交无回执时明示不代表平台已受理；
-//        公告已更正时显示差异与重新核对入口。
+//        公告已更正时显示差异与重新核对入口；执行页登记提交或状态操作后重新取数，后续操作带新版本号。
 // 坏掉的症状：导出后方案被标成已提交；余额冲突只显示「失败」；无回执提交被显示成已受理。
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { enableAutoUnmount, flushPromises } from '@vue/test-utils'
@@ -170,5 +170,30 @@ describe('交易方案详情', () => {
     await button(w, '按新版本重新核对')!.trigger('click')
     await flushPromises()
     expect(hoisted.recheckProposalWindow).toHaveBeenCalledWith(42, { expectedRowVersion: 3, windowRevisionNo: 2, note: '【测试数据】已核对' })
+  })
+
+  it('执行页：登记外部提交保存、标记待结果后抽屉都重新取数，后续操作带新的版本号', async () => {
+    hoisted.fetchProposal
+      .mockResolvedValueOnce(proposal({ status: 'EXECUTABLE' }))
+      .mockResolvedValueOnce(proposal({ status: 'SUBMITTED', rowVersion: 4 }))
+      .mockResolvedValue(proposal({ status: 'AWAITING_RESULT', rowVersion: 5 }))
+    hoisted.fetchProposalComparison.mockResolvedValue(comparison())
+    hoisted.markAwaitingResult.mockResolvedValue({ proposalId: 42, status: 'AWAITING_RESULT', rowVersion: 5 })
+    const stubs = { SubmissionDialog: { props: ['modelValue'], emits: ['saved'], template: '<div class="stub-submission" :data-open="String(modelValue)"><button class="stub-submission-save" @click="$emit(\'saved\')" /></div>' } }
+    const w = mount(ProposalDetailDrawer, { props: { modelValue: true, proposalId: 42, canWrite: true, mode: 'execution' }, global: { stubs } })
+    await flushPromises()
+    expect(w.text()).toContain('方案版本号 3')
+    await button(w, '登记外部提交')!.trigger('click')
+    expect(w.find('.stub-submission').attributes('data-open')).toBe('true')
+    await w.find('.stub-submission-save').trigger('click')
+    await flushPromises()
+    expect(hoisted.fetchProposal).toHaveBeenCalledTimes(2)
+    expect(w.text()).toContain('方案版本号 4')
+    await button(w, '标记待结果')!.trigger('click')
+    await flushPromises()
+    expect(hoisted.markAwaitingResult).toHaveBeenCalledWith(42, { expectedRowVersion: 4 })
+    expect(hoisted.fetchProposal).toHaveBeenCalledTimes(3)
+    expect(w.text()).toContain('方案版本号 5')
+    expect(w.emitted('changed')).toEqual([[42], [42]])
   })
 })

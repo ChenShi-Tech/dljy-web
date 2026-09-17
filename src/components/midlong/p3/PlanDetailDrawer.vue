@@ -52,6 +52,8 @@ watch(scopeKey, () => {
   detail.value = null
   loading.value = false
 })
+// 目标在抽屉外保存（修改、发起更改、确认）时 planId 不变、watcher 不会触发，由父页面显式重新加载。
+defineExpose({ reload: load })
 
 // el-table 插槽里的 row 没有类型，标签查表经带类型的小函数取，避免隐式 any 索引。
 const revisionStatusLabel = (r: SalesPlanRevision) => PLAN_REVISION_STATUS_LABELS[r.status]
