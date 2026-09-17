@@ -21,7 +21,16 @@ export async function fetchDataGaps(): Promise<string> {
 
 // 自动执行授权开关（#1527）：按会话生效、服务重启失效（授权不持久红线）。
 // 返回服务端生效后的最终态，开关 UI 以此为准，失败时由调用方回滚显示。
-export async function setSessionAutoApprove(sessionId: string, enabled: boolean): Promise<boolean> {
+//
+// 开启与撤销的先后次序（dljy-web#121 / #122 审查 P2）：撤销在切走会话时发起、失败还会退避重试，
+// 用户随时可能重新打开同一会话再次开启。两条规则保证旧的撤销压不过新的开启：
+// - 授权世代：每次**发起**开启（不等返回）就推进一次；待重试的撤销醒来发现世代变了就放弃；
+// - 排队：该会话所有已经发出、还没落地的撤销请求（关闭→重开→再关闭时可能不止一个）都落地之前，开启请求先等——
+//   否则旧的「关闭」可能晚于新的「开启」到达服务端。
+const grantGeneration = new Map<string, number>()
+const revokesInFlight = new Map<string, Set<Promise<boolean>>>()
+
+async function postAutoApprove(sessionId: string, enabled: boolean): Promise<boolean> {
   const res = await fetch(`${PI_AGENT_BASE}/sessions/${encodeURIComponent(sessionId)}/auto-approve`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', ...identityHeaders() },
@@ -32,23 +41,41 @@ export async function setSessionAutoApprove(sessionId: string, enabled: boolean)
   return ((await res.json()) as { auto_approve?: boolean }).auto_approve === true
 }
 
+export async function setSessionAutoApprove(sessionId: string, enabled: boolean): Promise<boolean> {
+  if (enabled) {
+    grantGeneration.set(sessionId, (grantGeneration.get(sessionId) ?? 0) + 1)
+    await Promise.allSettled([...(revokesInFlight.get(sessionId) ?? [])])
+  }
+  return postAutoApprove(sessionId, enabled)
+}
+
 // 撤销自动执行授权并按退避重试（切走会话或卸载面板时调用）。此时发起它的界面往往已经不在了，
 // 一次网络抖动就会留下一个开着却看不见的授权，所以不依附组件生命周期、失败自行重试；
 // 全部失败时返回 false，用户重新打开该会话仍能从会话详情看到授权开启并手动关闭。
+// 期间用户又发起了开启：本次撤销被取代，返回 false 且不再发送。
 export async function revokeSessionAutoApprove(
   sessionId: string,
   opts: { delaysMs?: number[]; sleep?: (ms: number) => Promise<void> } = {}
 ): Promise<boolean> {
   const delays = opts.delaysMs ?? [1000, 3000, 10000]
   const sleep = opts.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)))
+  const generation = grantGeneration.get(sessionId) ?? 0
   for (let attempt = 0; ; attempt += 1) {
+    if ((grantGeneration.get(sessionId) ?? 0) !== generation) return false
+    const request = postAutoApprove(sessionId, false)
+    const pending = revokesInFlight.get(sessionId) ?? new Set<Promise<boolean>>()
+    pending.add(request)
+    revokesInFlight.set(sessionId, pending)
     try {
-      if ((await setSessionAutoApprove(sessionId, false)) === false) return true
+      if ((await request) === false) return true
     } catch (err) {
       if (attempt >= delays.length) {
         console.warn('[pi-poc] 撤销自动执行授权失败，已放弃重试', sessionId, err)
         return false
       }
+    } finally {
+      pending.delete(request)
+      if (!pending.size && revokesInFlight.get(sessionId) === pending) revokesInFlight.delete(sessionId)
     }
     if (attempt >= delays.length) return false
     await sleep(delays[attempt])

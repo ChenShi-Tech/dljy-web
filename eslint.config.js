@@ -22,11 +22,10 @@ const CHAT_KERNEL_PATTERN = {
   message: '业务视图不得直接内嵌对话内核——页面解读与提问请经 @/features/aiSidebar（defineAiPage / useAiSidebar）；流程步骤内嵌对话需登记到 eslint.config.js 白名单（见 DEVELOPMENT.md §3.4）'
 }
 const LEGACY_AI_PANEL_PATTERN = {
-  group: ['**/composables/useAiPanel', '**/composables/usePageInsight', '@/composables/useAiPanel', '@/composables/usePageInsight'],
+  group: ['**/composables/useAiPanel', '**/composables/usePageInsight', '@/composables/useAiPanel', '@/composables/usePageInsight', '**/agent/AgentSidekick.vue'],
   message: '全局 AI 面板接口已迁到 @/features/aiSidebar（useAiSidebar / defineAiPage）'
 }
 // 允许直接内嵌对话内核的文件：智能体工作台本身 + 作为流程步骤的内嵌对话（EN-05）。
-// 末尾三项是入口收拢前的过渡（unify-ai-sidebar 第 6 组迁入侧边栏后移出本名单）。
 const EMBEDDED_CHAT_ALLOWLIST = [
   'src/views/AgentWorkbenchView.vue',
   'src/views/DeclarationDeskView.vue',
@@ -35,10 +34,7 @@ const EMBEDDED_CHAT_ALLOWLIST = [
   'src/components/review/workbench/ReviewAssistantWorkbench.vue',
   'src/components/trading/stages/StageDirection.vue',
   'src/components/trading/stages/StageMarketAnalysis.vue',
-  'src/components/trading/stages/StorageDispatchBlock.vue',
-  'src/components/agent/AgentSidekick.vue',
-  'src/views/TradingCockpitView.vue',
-  'src/views/UniversalCapturedBrowserView.vue'
+  'src/components/trading/stages/StorageDispatchBlock.vue'
 ]
 
 export default tseslint.config(

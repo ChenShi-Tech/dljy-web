@@ -656,6 +656,21 @@ describe('AiSidebar · 专家命令（EC-01/02/03）', () => {
     expect(brief.asks).toEqual([])
   })
 
+  it('晨报预检取数期间用户自己发过一轮：不再把目标日补发成第二轮（dljy-web#121 第四轮审查 P2）', async () => {
+    let release: () => void = () => {}
+    ;(globalThis as unknown as { __briefGate: Promise<void> | null }).__briefGate = new Promise((r) => { release = r })
+    await setup()
+    useAiSidebar().startExpert(buildExpertLaunch(findEntry('morning_brief')!, '2026-09-17', '云南省'))
+    await settle()
+    const brief = live()[0]
+    brief.emit('streamingChange', true) // 用户在预检完成前手动提问，并且这一轮已经答完
+    brief.emit('streamingChange', false)
+    release()
+    await settle()
+    expect(live()[0]).toBe(brief)
+    expect(brief.asks).toEqual([])
+  })
+
   it('/战略问答 不带问题：新开会话但不发问，对话内可查看数据缺口清单', async () => {
     const { w } = await setup()
     useAiSidebar().startExpert(buildExpertLaunch(findEntry('strategic_qa')!, '', '云南省'))
