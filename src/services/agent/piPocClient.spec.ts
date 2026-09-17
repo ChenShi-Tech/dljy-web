@@ -161,6 +161,17 @@ describe('revokeSessionAutoApprove（切走会话/卸载时撤销授权，失败
     expect(order).toEqual([false, false, true])
   })
 
+  it('开启请求失败或结果不明：重新发起撤销，并把错误照常抛给调用方（dljy#2962）', async () => {
+    vi.stubGlobal('fetch', fetchMock)
+    fetchMock
+      .mockRejectedValueOnce(new DOMException('timeout', 'TimeoutError')) // 开启超时：服务端是否生效未知
+      .mockResolvedValueOnce(jsonResponse({ auto_approve: false })) // 恢复的撤销
+    await expect(setSessionAutoApprove('s_ambiguous', true)).rejects.toThrow('timeout')
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2))
+    const bodies = fetchMock.mock.calls.map((c) => JSON.parse((c as [string, RequestInit])[1].body as string).enabled)
+    expect(bodies).toEqual([true, false])
+  })
+
   it('开启请求刚发起、还没返回时，待重试的撤销醒来即放弃（世代在发起时推进）', async () => {
     vi.stubGlobal('fetch', fetchMock)
     fetchMock
