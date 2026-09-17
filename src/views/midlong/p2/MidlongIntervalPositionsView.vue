@@ -3,6 +3,8 @@
 // - 只计已确认的正式分时分解；内部估算集不计入，列在排除项里。
 // - 只有月量、分时粒度不足或月量未知的合同在该时段是「分时未知」：电量不显示 0、不均摊，图上不画柱；
 //   当天没有任何交割义务的时段才是真实 0。
+// - 与月度持仓同口径：合同还有未分解到月份的电量时，它所在的时段即使有曲线也标「部分已知」，未分解池单独列出。
+// - 合同更正后沿用旧版本曲线的月份标「沿用 vN」。
 // - 时段钻取到合同与所用分解集（再到原始曲线行），导出与页面同一次查询。
 // - 支持历史认知时点；服务失败显示错误，不回退示意数值；本页不调用现货、预测或厂侧接口。
 import { computed, onMounted, reactive, ref, watch } from 'vue'
@@ -22,7 +24,7 @@ import {
   INTERVAL_POSITION_MAX_DAYS, type IntervalBucket, type IntervalPositionGranularity, type IntervalPositionQuery, type IntervalPositionReport,
 } from '@/services/midlong/midlongP2Types'
 import { createLoadGuard, downloadCsv, fmtQuantity } from '@/services/midlong/midlongFormat'
-import { bucketQuantityLabel, bucketTimeLabel, coverageTag, timeStatusTag } from '@/services/midlong/midlongP2Format'
+import { bucketQuantityLabel, bucketTimeLabel, coverageTag, inheritedLabel, timeStatusTag } from '@/services/midlong/midlongP2Format'
 
 const route = useRoute()
 const router = useRouter()
@@ -125,8 +127,12 @@ const drillContracts = computed(() => {
   if (!bucket || !report.value) return []
   return report.value.contracts
     .filter((c) => bucket.date >= c.deliveryStart && bucket.date <= c.deliveryEnd)
-    .map((c) => ({ contract: c, month: c.months.find((m) => m.month === bucket.month) ?? null, unknown: bucket.unknownContractIds.includes(c.contractId) }))
+    .map((c) => ({
+      contract: c, month: c.months.find((m) => m.month === bucket.month) ?? null,
+      unknown: bucket.unknownContractIds.includes(c.contractId), incomplete: bucket.incompleteContractIds.includes(c.contractId),
+    }))
 })
+const poolHasUnknownTotal = computed(() => (report.value?.unallocatedPool ?? []).some((p) => p.unallocatedQuantity === null))
 
 function buildOption(): Record<string, unknown> {
   const buckets = report.value?.buckets ?? []
@@ -144,7 +150,7 @@ function buildOption(): Record<string, unknown> {
   })
   return {
     grid: { left: 64, right: 24, top: 36, bottom: 48 },
-    legend: { top: 0, data: ['正式分时电量', '部分合同分时未知的时段'] },
+    legend: { top: 0, data: ['正式分时电量', '部分已知的时段'] },
     tooltip: {
       trigger: 'axis',
       formatter: (params: Array<{ dataIndex: number }>) => {
@@ -155,6 +161,7 @@ function buildOption(): Record<string, unknown> {
           `正式分时电量：${bucketQuantityLabel(b)}${b.formalQuantity !== null && b.coverage !== 'NO_OBLIGATION' ? ' MWh' : ''}`,
           `覆盖：${coverageTag(b.coverage).label}`,
           b.unknownContractIds.length ? `分时未知合同 ${b.unknownContractIds.length} 份（不补零、不均摊）` : '',
+          b.incompleteContractIds.length ? `另有 ${b.incompleteContractIds.length} 份合同有电量未分解到月份（本时段不完整）` : '',
         ].filter(Boolean).join('<br/>')
       },
     },
@@ -167,7 +174,7 @@ function buildOption(): Record<string, unknown> {
         markArea: { silent: true, itemStyle: { color: withAlpha(muted, 0.18) }, label: { color: muted }, data: unknownAreas },
       },
       {
-        name: '部分合同分时未知的时段', type: 'bar', stack: 'qty',
+        name: '部分已知的时段', type: 'bar', stack: 'qty',
         itemStyle: { color: withAlpha(accent, 0.35), borderColor: warning, borderWidth: 2, borderType: 'dashed' },
         data: buckets.map((b) => (b.coverage === 'PARTIAL' ? Number(b.formalQuantity) : null)),
       },
@@ -214,8 +221,12 @@ function buildOption(): Record<string, unknown> {
       <MidlongNotice v-if="report.view === 'AS_OF'" tone="info" title="历史认知时点视图">
         只使用 {{ new Date(report.asOf).toLocaleString('zh-CN') }} 之前已录入并已确认的合同版本与分时分解；之后的更正或新确认的曲线不影响本视图。
       </MidlongNotice>
-      <MidlongNotice v-if="report.status === 'partial'" tone="warn" title="部分时段分时未知">
+      <MidlongNotice v-if="totals.timeUnknownContractCount" tone="warn" title="部分时段分时未知">
         {{ totals.timeUnknownContractCount }} 份合同在所选范围内只有月量、分时粒度不足或月量未知：这些时段显示「分时未知」，不补零、不按天或时段均摊。
+      </MidlongNotice>
+      <MidlongNotice v-if="totals.unallocatedContractCount" tone="warn" title="月度持仓不完整：有电量未分解到月份">
+        {{ totals.unallocatedContractCount }} 份合同共有 {{ fmtQuantity(totals.unallocatedPoolQuantity) }} MWh{{ poolHasUnknownTotal ? '（另有合同总量未知）' : '' }} 尚未分解到月份，与月度持仓同口径：
+        这些电量落在哪个时段未知，不计入任何时段；这些合同所在的时段即使有曲线也只算部分已知。
       </MidlongNotice>
       <MidlongNotice v-if="report.status === 'empty'" tone="info" title="所选范围内没有已确认的中长期售电义务" />
 
@@ -223,10 +234,11 @@ function buildOption(): Record<string, unknown> {
         <div class="ml-tile"><span>区间正式分时电量</span><b>{{ fmtQuantity(totals.curveQuantityInRange) }}<i>MWh</i></b><small>{{ totals.contractCount }} 份已确认合同</small></div>
         <div class="ml-tile warn"><span>分时未知时段</span><b>{{ totals.unknownBucketCount }}<i>个</i></b><small>另有 {{ totals.partialBucketCount }} 个时段部分未知</small></div>
         <div class="ml-tile warn"><span>分时未知合同</span><b>{{ totals.timeUnknownContractCount }}<i>份</i></b><small>只有月量或粒度不足 · 不均摊</small></div>
+        <div class="ml-tile warn"><span>未分解到月份</span><b>{{ fmtQuantity(totals.unallocatedPoolQuantity) }}<i>MWh</i></b><small>{{ totals.unallocatedContractCount }} 份合同 · 不计入任何时段</small></div>
         <div class="ml-tile"><span>内部估算分解集</span><b>{{ report.excluded.estimateCurveSets.length }}<i>套</i></b><small>不计入正式分时持仓</small></div>
       </div>
 
-      <ChartCard title="分时持仓（灰色底带为分时未知，虚线框为部分未知）" :height="320" :build-option="buildOption" :empty="report.status === 'empty'" empty-text="暂无已确认持仓" />
+      <ChartCard title="分时持仓（灰色底带为分时未知，虚线框为部分已知）" :height="320" :build-option="buildOption" :empty="report.status === 'empty'" empty-text="暂无已确认持仓" />
 
       <div class="ml-panel">
         <h3>时段明细 <small>点击时段查看合同与所用分解集</small></h3>
@@ -238,6 +250,7 @@ function buildOption(): Record<string, unknown> {
           <el-table-column label="覆盖" width="150"><template #default="{ row }"><el-tag size="small" :type="coverageTag(row.coverage).type">{{ coverageTag(row.coverage).label }}</el-tag></template></el-table-column>
           <el-table-column prop="knownContractCount" label="已有分时合同" width="110" align="right" />
           <el-table-column label="分时未知合同" width="120" align="right"><template #default="{ row }">{{ row.unknownContractIds.length }}</template></el-table-column>
+          <el-table-column label="有未分解电量合同" width="140" align="right"><template #default="{ row }">{{ row.incompleteContractIds.length }}</template></el-table-column>
         </el-table>
       </div>
 
@@ -256,6 +269,8 @@ function buildOption(): Record<string, unknown> {
             <template #default="{ row }">
               <router-link v-if="row.month?.curve && !row.unknown" :to="`/zcqjy/curves/${row.month.curve.curveSetId}?date=${drillBucket.date}`" class="ml-link">分解集 #{{ row.month.curve.setNo }}（{{ row.month.curve.granularityMinutes }} 分钟）</router-link>
               <span v-else class="ml-warn">分时未知，未计入该时段</span>
+              <el-tag v-if="row.month?.curve?.inheritedFromRevisionNo && !row.unknown" size="small" type="info" class="ml-tag">{{ inheritedLabel(row.month.curve.inheritedFromRevisionNo) }}</el-tag>
+              <span v-if="row.incomplete" class="ml-warn">另有电量未分解到月份，本时段不完整</span>
               <span v-if="row.month?.estimate" class="ml-hint">另有内部估算 #{{ row.month.estimate.setNo }}（不计入）</span>
             </template>
           </el-table-column>
@@ -269,10 +284,26 @@ function buildOption(): Record<string, unknown> {
           <el-table-column label="交割期" width="200"><template #default="{ row }">{{ row.deliveryStart }} ~ {{ row.deliveryEnd }}</template></el-table-column>
           <el-table-column label="各月分时状态" min-width="280">
             <template #default="{ row }">
-              <el-tag v-for="m in row.months" :key="m.month" size="small" :type="timeStatusTag(m.timeStatus).type" class="ml-tag">{{ m.month }} {{ timeStatusTag(m.timeStatus).label }}</el-tag>
+              <el-tag v-for="m in row.months" :key="m.month" size="small" :type="timeStatusTag(m.timeStatus).type" class="ml-tag">
+                {{ m.month }} {{ timeStatusTag(m.timeStatus).label }}{{ m.curve?.inheritedFromRevisionNo ? ` · ${inheritedLabel(m.curve.inheritedFromRevisionNo)}` : '' }}
+              </el-tag>
             </template>
           </el-table-column>
+          <el-table-column label="未分解到月份(MWh)" width="150" align="right">
+            <template #default="{ row }"><span v-if="row.monthlyIncomplete" class="ml-warn">{{ row.unallocatedQuantity === null ? '合同总量未知' : fmtQuantity(row.unallocatedQuantity) }}</span><span v-else>—</span></template>
+          </el-table-column>
           <el-table-column label="区间分时电量(MWh)" width="150" align="right"><template #default="{ row }">{{ fmtQuantity(contractById.get(row.contractId)?.curveQuantityInRange) }}</template></el-table-column>
+        </el-table>
+      </div>
+
+      <div v-if="report.unallocatedPool.length" class="ml-panel">
+        <h3>未分解到月份的电量（{{ report.unallocatedPool.length }}）<small>与月度持仓的跨期未分解池同一计算，不计入任何时段</small></h3>
+        <el-table :data="report.unallocatedPool" border size="small">
+          <el-table-column label="合同" min-width="220"><template #default="{ row }"><router-link :to="`/zcqjy/contracts/${row.contractId}`" class="ml-link">{{ row.externalContractNo }}</router-link> {{ row.contractName }}</template></el-table-column>
+          <el-table-column label="交割期" width="200"><template #default="{ row }">{{ row.deliveryStart }} ~ {{ row.deliveryEnd }}</template></el-table-column>
+          <el-table-column label="合同电量(MWh)" width="130" align="right"><template #default="{ row }">{{ row.totalQuantity === null ? '未知' : fmtQuantity(row.totalQuantity) }}</template></el-table-column>
+          <el-table-column label="已分解到月份(MWh)" width="150" align="right"><template #default="{ row }">{{ fmtQuantity(row.formalAllocatedQuantity) }}</template></el-table-column>
+          <el-table-column label="未分解(MWh)" width="130" align="right"><template #default="{ row }"><span class="ml-warn">{{ row.unallocatedQuantity === null ? '未知' : fmtQuantity(row.unallocatedQuantity) }}</span></template></el-table-column>
         </el-table>
       </div>
 
@@ -291,7 +322,7 @@ function buildOption(): Record<string, unknown> {
 .ml-placeholder { min-height: 200px; }
 .ml-filters { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .ml-hint { color: var(--muted); font-size: var(--font-sm); margin-left: 4px; }
-.ml-tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.ml-tiles { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; }
 .ml-tile { display: flex; flex-direction: column; gap: 3px; padding: 12px 14px; border: 1px solid var(--line); border-radius: var(--radius, 8px); background: var(--panel); }
 .ml-tile span { font-size: var(--font-sm); color: var(--muted); }
 .ml-tile b { font-size: var(--font-24); font-weight: 650; font-variant-numeric: tabular-nums; font-family: var(--font-display); }

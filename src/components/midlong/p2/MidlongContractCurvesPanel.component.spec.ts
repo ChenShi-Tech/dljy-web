@@ -24,11 +24,12 @@ function overview(o: Partial<ContractCurvesOverview> = {}): ContractCurvesOvervi
     contractId: 7, companyId: 'comp-a', regionId: 'yunnan', externalContractNo: 'TEST-7', contractName: '【测试数据】', documentKind: 'OBLIGATION', confirmationStatus: 'CONFIRMED',
     currentRevisionNo: 2, deliveryStart: '2027-10-01', deliveryEnd: '2027-12-31', canCreate: true, sets: [], templates: [],
     months: [
-      { month: '2027-10', monthlyFormalQuantity: '24', timeStatus: 'TIME_UNKNOWN', formalCurve: null, estimateCurve: null,
-        correctionImpact: { status: 'RECONFIRM_REQUIRED', previousRevisionNo: 1, previousCurveSetId: 11, previousSetNo: 1, previousMonthlyQuantity: '24', previousCurveQuantity: '24', currentMonthlyQuantity: '24', monthAffectedByCorrection: false, canCopy: true } },
-      { month: '2027-11', monthlyFormalQuantity: '30', timeStatus: 'TIME_UNKNOWN', formalCurve: null, estimateCurve: { curveSetId: 40, setNo: 4, granularityMinutes: 60, curveQuantity: '30' },
-        correctionImpact: { status: 'QUANTITY_CHANGED', previousRevisionNo: 1, previousCurveSetId: 12, previousSetNo: 2, previousMonthlyQuantity: '24', previousCurveQuantity: '24', currentMonthlyQuantity: '30', monthAffectedByCorrection: true, canCopy: false } },
-      { month: '2027-12', monthlyFormalQuantity: null, timeStatus: 'MONTH_UNKNOWN', formalCurve: null, estimateCurve: null, correctionImpact: null },
+      { month: '2027-10', monthlyFormalQuantity: '24', timeStatus: 'TIME_UNKNOWN', formalCurve: null, estimateCurve: null, estimateCorrectionImpact: null,
+        correctionImpact: { status: 'RECONFIRM_REQUIRED', previousRevisionNo: 1, previousCurveSetId: 11, previousSetNo: 1, previousMonthlyQuantity: '24', previousCurveQuantity: '24', currentMonthlyQuantity: '24', monthAffectedByCorrection: true, canCopy: true } },
+      { month: '2027-11', monthlyFormalQuantity: '30', timeStatus: 'TIME_UNKNOWN', formalCurve: null, estimateCurve: { curveSetId: 40, setNo: 4, granularityMinutes: 60, curveQuantity: '30', inheritedFromRevisionNo: null },
+        correctionImpact: { status: 'QUANTITY_CHANGED', previousRevisionNo: 1, previousCurveSetId: 12, previousSetNo: 2, previousMonthlyQuantity: '24', previousCurveQuantity: '24', currentMonthlyQuantity: '30', monthAffectedByCorrection: true, canCopy: false },
+        estimateCorrectionImpact: null },
+      { month: '2027-12', monthlyFormalQuantity: null, timeStatus: 'MONTH_UNKNOWN', formalCurve: null, estimateCurve: null, correctionImpact: null, estimateCorrectionImpact: null },
     ],
     ...o,
   }
@@ -54,6 +55,30 @@ describe('合同分时分解区', () => {
     await copyButtons[0].trigger('click')
     await flushPromises()
     expect(hoisted.createCurveDraft).toHaveBeenCalledWith(7, { expectedRevisionNo: 2, evidenceBasis: 'FORMAL', coverageFromMonth: '2027-10', coverageToMonth: '2027-10', copyFromCurveSetId: 11 })
+  })
+
+  it('未受更正影响的月份标「沿用 v1」；内部估算受影响时单独提示，不给正式沿用按钮', async () => {
+    hoisted.fetchContractCurves.mockResolvedValue(overview({
+      months: [
+        { month: '2027-09', monthlyFormalQuantity: '24', timeStatus: 'CURVE', correctionImpact: null, estimateCorrectionImpact: null,
+          formalCurve: { curveSetId: 10, setNo: 1, granularityMinutes: 60, curveQuantity: '24', inheritedFromRevisionNo: 1 },
+          estimateCurve: { curveSetId: 20, setNo: 2, granularityMinutes: 60, curveQuantity: '24', inheritedFromRevisionNo: 1 } },
+        { month: '2027-10', monthlyFormalQuantity: '30', timeStatus: 'CURVE', correctionImpact: null, estimateCurve: null,
+          formalCurve: { curveSetId: 30, setNo: 3, granularityMinutes: 60, curveQuantity: '30', inheritedFromRevisionNo: null },
+          estimateCorrectionImpact: { status: 'QUANTITY_CHANGED', previousRevisionNo: 1, previousCurveSetId: 21, previousSetNo: 2, previousMonthlyQuantity: '24', previousCurveQuantity: '24', currentMonthlyQuantity: '30', monthAffectedByCorrection: true, canCopy: false } },
+      ],
+    }))
+    const w = mount(MidlongContractCurvesPanel, { props: { contractId: 7, canWrite: true, evidence: [] }, global: { stubs: STUBS } })
+    await flushPromises()
+    const rows = w.findAll('.el-table__body').at(0)!.findAll('tr')
+    expect(rows[0].findAll('td')[3].text()).toContain('沿用 v1')
+    expect(rows[0].findAll('td')[4].text()).toContain('沿用 v1')
+    expect(rows[1].findAll('td')[3].text()).not.toContain('沿用')
+    const text = w.text()
+    expect(text).toContain('合同更正影响：内部估算（不计入正式口径）')
+    expect(text).toContain('v1 估算 #2')
+    expect(text).not.toContain('以下月份受这次更正影响，原有的已确认曲线不再沿用')
+    expect(w.findAll('button').filter((b) => b.text() === '沿用原曲线生成草稿')).toHaveLength(0)
   })
 
   it('只读用户看不到导入、估算与沿用操作', async () => {

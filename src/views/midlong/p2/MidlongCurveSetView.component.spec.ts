@@ -60,17 +60,21 @@ afterEach(() => { vi.clearAllMocks(); hoisted.routeQuery = {} })
 enableAutoUnmount(afterEach)
 
 describe('分时分解集详情', () => {
-  it('钻取到原始行：当日逐时段显示原始数值、原始单位与资料定位；来源显示粒度、时区、换算方法与容差', async () => {
+  it('钻取到原始行：当日逐时段显示原始写法、原始单位与资料定位；来源显示粒度、时区、换算方法与容差', async () => {
     hoisted.routeQuery = { date: '2027-05-01' }
     hoisted.fetchCurveSet.mockResolvedValue(detail({
       date: '2027-05-01',
-      intervals: [{ rowNo: 1, start: '2027-05-01T00:00:00+08:00', end: '2027-05-01T00:15:00+08:00', quantity: '0.25', sourceValue: '1', sourceUnit: 'MW', sourceRef: '分时曲线 第 3 行' }],
+      intervals: [
+        { rowNo: 1, start: '2027-05-01T00:00:00+08:00', end: '2027-05-01T00:15:00+08:00', quantity: '0.25', sourceValue: '1', sourceText: '1.00', sourceUnit: 'MW', sourceRef: '分时曲线 第 3 行' },
+        { rowNo: 2, start: '2027-05-01T00:15:00+08:00', end: '2027-05-01T00:30:00+08:00', quantity: '0.5', sourceValue: '2', sourceText: null, sourceUnit: 'MW', sourceRef: '分时曲线 第 4 行' },
+      ],
     }))
     const w = mount(MidlongCurveSetView, { global: { stubs: STUBS } })
     await flushPromises()
     expect(hoisted.fetchCurveSet).toHaveBeenCalledWith(31, '2027-05-01')
     const text = w.text()
-    expect(text).toContain('1 MW')
+    expect(text).toContain('1.00 MW')
+    expect(text).toContain('2 MW')
     expect(text).toContain('分时曲线 第 3 行')
     expect(text).toContain('功率 × 区间时长（小时）')
     expect(text).toContain('Asia/Shanghai')

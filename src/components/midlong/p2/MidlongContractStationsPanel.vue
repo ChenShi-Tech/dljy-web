@@ -2,7 +2,8 @@
 // 合同详情里的场站分配区（dljy#2971，MP-05/MA-05）。
 // - 合同绑定了场站：整笔电量归该场站，不做分配。交易单元统签：分别展示正式交易分解与内部经营分配的当前生效集与片段余额。
 // - 主体合计与场站份额是同一义务的拆分：只展示「片段电量 = 已分配 + 未分配」，不相加。
-// - 合同更正后旧版本上的分配不自动沿用，给出影响提示；草稿可继续确认或废弃。
+// - 合同更正后：未受影响的片段继续沿用旧版本上已确认的分配（标「沿用 vN」），受影响片段失效并给出影响提示；
+//   重新登记时对话框用仍有效的行预填（新分配集是整套快照）。草稿可继续确认或废弃。
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import MidlongNotice from '../MidlongNotice.vue'
@@ -17,7 +18,7 @@ import {
   type ContractStationAllocationsOverview, type StationAllocationKind, type StationAllocationSet,
 } from '@/services/midlong/midlongP2Types'
 import { createLoadGuard, fmtQuantity } from '@/services/midlong/midlongFormat'
-import { allocationKindTag, curveSetStatusTag, segmentLabel } from '@/services/midlong/midlongP2Format'
+import { allocationKindTag, curveSetStatusTag, inheritedLabel, segmentLabel } from '@/services/midlong/midlongP2Format'
 
 const props = defineProps<{ contractId: number; canWrite: boolean; evidence: MidlongEvidence[]; stations: Array<{ id: number; name: string }> }>()
 
@@ -117,7 +118,7 @@ async function discard(setId: number) {
       <MidlongNotice v-else-if="overview.subjectId === null" tone="warn">合同未指定交易主体 / 交易单元，无法做交易单元到场站的分配。</MidlongNotice>
       <MidlongNotice v-else-if="overview.confirmationStatus !== 'CONFIRMED'" tone="info">合同核验确认后才能登记场站分配。</MidlongNotice>
       <MidlongNotice v-for="i in overview.impact" :key="i.allocationKind" tone="warn" :title="`合同更正影响：${allocationKindTag(i.allocationKind).label}`">
-        {{ CORRECTION_IMPACT_LABELS[i.status] }}（v{{ i.previousRevisionNo }} 分配集 #{{ i.previousSetNo }}）。按当前版本核对：
+        {{ CORRECTION_IMPACT_LABELS[i.status] }}（v{{ i.previousRevisionNo }} 分配集 #{{ i.previousSetNo }}，失效片段：{{ i.invalidSegments.map(segmentLabel).join('、') }}）。按当前版本核对：
         {{ i.segmentsAgainstCurrent.map((s) => `${segmentLabel(s.segment)} ${s.status === 'EXCEEDS' ? `超出 ${fmtQuantity(s.excessQuantity)}` : `余额 ${fmtQuantity(s.unallocatedQuantity)}`}`).join('；') }} MWh。
         <el-button v-if="canCreate" link type="primary" @click="openDialog(i.allocationKind)">按当前版本重新登记</el-button>
       </MidlongNotice>
@@ -126,6 +127,7 @@ async function discard(setId: number) {
         <div class="ml-kind-head">
           <el-tag size="small" :type="allocationKindTag(kind).type">{{ allocationKindTag(kind).label }}</el-tag>
           <span v-if="overview.effective[kind]" class="ml-hint">生效分配集 #{{ overview.effective[kind]!.setNo }} · {{ STATION_SEGMENT_MODE_LABELS[overview.effective[kind]!.segmentMode] }}</span>
+          <el-tag v-if="overview.effective[kind]?.inheritedFromRevisionNo" size="small" type="info">{{ inheritedLabel(overview.effective[kind]!.inheritedFromRevisionNo) }}（只含未受更正影响的片段）</el-tag>
           <span v-else class="ml-hint">当前版本尚无已确认的{{ kind === 'FORMAL_TRADING' ? '正式交易分解' : '内部经营分配' }}{{ kind === 'FORMAL_TRADING' ? '：全部电量为未分配' : '' }}</span>
         </div>
         <template v-if="overview.effective[kind]">

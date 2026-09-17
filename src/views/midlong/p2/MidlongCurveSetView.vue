@@ -260,7 +260,7 @@ function submitDiscard() {
         <el-table :data="detail.intervals ?? []" border size="small" max-height="420">
           <el-table-column label="时段" width="180"><template #default="{ row }">{{ row.start.slice(11, 16) }} ~ {{ row.end.slice(11, 16) }}</template></el-table-column>
           <el-table-column label="电量(MWh)" width="130" align="right"><template #default="{ row }">{{ fmtQuantity(row.quantity) }}</template></el-table-column>
-          <el-table-column label="原始数值" width="150" align="right"><template #default="{ row }">{{ row.sourceValue }} {{ row.sourceUnit }}</template></el-table-column>
+          <el-table-column label="原始数值（原写法）" width="160" align="right"><template #default="{ row }">{{ row.sourceText ?? row.sourceValue }} {{ row.sourceUnit }}</template></el-table-column>
           <el-table-column prop="sourceRef" label="原始资料定位" min-width="260" />
           <template #empty>当日没有时段数据（缺时段按未知处理）。</template>
         </el-table>

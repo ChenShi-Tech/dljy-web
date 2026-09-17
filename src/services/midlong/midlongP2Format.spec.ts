@@ -11,7 +11,7 @@ vi.mock('@/services/company/companyApi', () => ({ companyUnselected: () => false
 vi.mock('@/services/company/companyContext', async () => ({ selectedCompanyId: (await import('vue')).ref('comp') }))
 
 import { createCurveDraft, p2ModuleOn } from './midlongP2Api'
-import { basisTag, allocationKindTag, bucketQuantityLabel, parseProfileWeights, stationSplitText } from './midlongP2Format'
+import { basisTag, allocationKindTag, bucketQuantityLabel, inheritedLabel, parseProfileWeights, stationSplitText } from './midlongP2Format'
 import { validateStationAllocations } from './midlongP2Types'
 import type { MidlongCapabilities } from './midlongTypes'
 
@@ -26,6 +26,18 @@ describe('分时与场站展示口径', () => {
     expect(bucketQuantityLabel({ coverage: 'PARTIAL', formalQuantity: '1' })).toBe('1（另有合同分时未知）')
     expect(bucketQuantityLabel({ coverage: 'NO_OBLIGATION', formalQuantity: '0' })).toBe('0（无交割义务）')
     expect(bucketQuantityLabel({ coverage: 'COMPLETE', formalQuantity: '0.25' })).toBe('0.25')
+  })
+
+  it('有曲线但合同还有电量未分解到月份：已知部分照显示，注明不完整的原因', () => {
+    expect(bucketQuantityLabel({ coverage: 'PARTIAL', formalQuantity: '24', unknownContractIds: [], incompleteContractIds: [9] })).toBe('24（另有电量未分解到月份）')
+    expect(bucketQuantityLabel({ coverage: 'PARTIAL', formalQuantity: '24', unknownContractIds: [2], incompleteContractIds: [9] })).toBe('24（另有合同分时未知；另有电量未分解到月份）')
+    expect(bucketQuantityLabel({ coverage: 'PARTIAL', formalQuantity: '1', unknownContractIds: [2], incompleteContractIds: [] })).toBe('1（另有合同分时未知）')
+  })
+
+  it('更正后沿用旧版本的分解标「沿用 vN」，当前版本自己的不标', () => {
+    expect(inheritedLabel(1)).toBe('沿用 v1')
+    expect(inheritedLabel(null)).toBe('')
+    expect(inheritedLabel(undefined)).toBe('')
   })
 
   it('内部估算与内部经营分配带区别标签', () => {
