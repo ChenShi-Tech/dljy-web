@@ -74,7 +74,7 @@ vi.mock('@/components/agent/AgentHistorySidebar.vue', async () => {
   }
 })
 vi.mock('@/services/agent/agentClient', () => ({ listRuns: vi.fn(async () => []), stopAgentRun: vi.fn(async () => true) }))
-vi.mock('@/services/agent/piPocClient', () => ({ fetchSessionPromptKey: vi.fn(async () => null) }))
+vi.mock('@/services/agent/piPocClient', () => ({ fetchPiSessionMeta: vi.fn(async () => null) }))
 vi.mock('@/components/agent/workbench/MorningBriefRail.vue', async () => {
   const { defineComponent, h } = await import('vue')
   return {
@@ -108,7 +108,7 @@ vi.mock('element-plus', () => ({ ElMessage: { success: vi.fn(), warning: vi.fn()
 
 import AiSidebar from './AiSidebar.vue'
 import { currentRegion } from '@/services/region/regionContext'
-import { fetchSessionPromptKey } from '@/services/agent/piPocClient'
+import { fetchPiSessionMeta } from '@/services/agent/piPocClient'
 import { listRuns } from '@/services/agent/agentClient'
 import { PAGE_PROMPT_KEYS } from '@/prompts/pageKeys'
 import { activatePage, activeAiPage, deactivatePage, type AiPageDefinition } from './pageRegistry'
@@ -164,7 +164,7 @@ describe('AiSidebar · 会话规则', () => {
     window.localStorage.clear()
     resetAiSidebarForTest()
     vi.mocked(listRuns).mockReset().mockResolvedValue([])
-    vi.mocked(fetchSessionPromptKey).mockReset().mockResolvedValue(null)
+    vi.mocked(fetchPiSessionMeta).mockReset().mockResolvedValue(null)
   })
 
   it('新挂的内核初始化完成（ready）之前不发问；等待期间又切换了会话，这条问题作废（实机：刷新后马上解读被吞）', async () => {
@@ -387,7 +387,7 @@ describe('AiSidebar · 头部与输入区', () => {
     window.localStorage.clear()
     resetAiSidebarForTest()
     vi.mocked(listRuns).mockReset().mockResolvedValue([])
-    vi.mocked(fetchSessionPromptKey).mockReset().mockResolvedValue(null)
+    vi.mocked(fetchPiSessionMeta).mockReset().mockResolvedValue(null)
   })
 
   it('运行中数量：有运行时显示数量；接口失败时隐藏，不显示 0', async () => {
@@ -430,13 +430,14 @@ describe('AiSidebar · 头部与输入区', () => {
   })
 
   it('重新打开申报前体检会话：按 pi 记下的解读角色找回入口与合成数据水印（dljy-web#121 审查 P1）', async () => {
-    vi.mocked(fetchSessionPromptKey).mockReset().mockImplementation(async (id: string) => (id === 's_pre' ? PAGE_PROMPT_KEYS.preSubmitCheck : null))
+    vi.mocked(fetchPiSessionMeta).mockReset().mockImplementation(async (id: string) => (id === 's_pre' ? { promptKey: PAGE_PROMPT_KEYS.preSubmitCheck, autoApprove: false } : null))
     const { w } = await setup()
     useAiSidebar().open()
     await settle()
     await w.find('.ai-title').trigger('click')
     await w.find('.pick-pre-sidebar').trigger('click')
     await settle()
+    expect(live()).toHaveLength(1)
     expect(live()[0].props.resumeSessionId).toBe('s_pre')
     expect(useAiSidebar().state.session?.entryKey).toBe('pre_submit_check')
     expect(live()[0].props.promptKey).toBe(PAGE_PROMPT_KEYS.preSubmitCheck)
@@ -451,8 +452,8 @@ describe('AiSidebar · 头部与输入区', () => {
     expect(w.find('[data-testid="ai-watermark"]').exists()).toBe(true)
   })
 
-  it('运行中列表的行自带解读角色：直接据此找回入口；查询期间用户点了新建则本次打开作废', async () => {
-    vi.mocked(fetchSessionPromptKey).mockReset().mockResolvedValue(null)
+  it('运行中列表的行自带解读角色：直接据此找回入口；需要查询时先切换、查回来只补全记录（dljy-web#121 审查 P1）', async () => {
+    vi.mocked(fetchPiSessionMeta).mockReset().mockResolvedValue(null)
     vi.mocked(listRuns).mockResolvedValue([
       { run_id: 'r_pre', session_id: 's_pre_run', turn_seq: 1, status: 'running', created_at: 1, updated_at: 1, last_seq: 3, session_title: '申报前体检', page_key: 'ai_center', prompt_key: PAGE_PROMPT_KEYS.preSubmitCheck, scenario: 'chat' }
     ])
@@ -463,19 +464,34 @@ describe('AiSidebar · 头部与输入区', () => {
     await settle()
     await w.find('.run-main').trigger('click')
     await settle()
-    expect(fetchSessionPromptKey).not.toHaveBeenCalled()
+    expect(fetchPiSessionMeta).not.toHaveBeenCalled()
     expect(useAiSidebar().state.session?.entryKey).toBe('pre_submit_check')
     expect(live()[0].props.resumeRunId).toBe('r_pre')
 
-    // 查询很慢：期间点了新建对话
-    let resolveKey: (v: string | null) => void = () => {}
-    vi.mocked(fetchSessionPromptKey).mockImplementation(() => new Promise((r) => { resolveKey = r }))
+    // 查询很慢：切换立即发生（不被查询挡住），查回来只补全记录、不重挂内核——期间用户在这个会话里发的消息不受影响
+    type Meta = Awaited<ReturnType<typeof fetchPiSessionMeta>>
+    let resolveMeta: (v: Meta) => void = () => {}
+    vi.mocked(fetchPiSessionMeta).mockImplementation(() => new Promise((r) => { resolveMeta = r }))
+    await w.find('.ai-title').trigger('click')
+    await w.find('.pick-pre-sidebar').trigger('click')
+    await settle()
+    const opened = live()[0]
+    expect(opened.props.resumeSessionId).toBe('s_pre')
+    expect(useAiSidebar().state.session?.entryKey).toBe('workbench')
+    resolveMeta({ promptKey: PAGE_PROMPT_KEYS.preSubmitCheck, autoApprove: false })
+    await settle()
+    expect(live()[0]).toBe(opened)
+    expect(useAiSidebar().state.session?.entryKey).toBe('pre_submit_check')
+    expect(w.find('[data-testid="ai-watermark"]').exists()).toBe(true)
+
+    // 查询期间点了新建对话：查回来的结果不改动新的空白对话
+    vi.mocked(fetchPiSessionMeta).mockImplementation(() => new Promise((r) => { resolveMeta = r }))
     await w.find('.ai-title').trigger('click')
     await w.find('.pick-pre-sidebar').trigger('click')
     await settle()
     await w.find('button[title="新建对话"]').trigger('click')
     await settle()
-    resolveKey(PAGE_PROMPT_KEYS.preSubmitCheck)
+    resolveMeta({ promptKey: PAGE_PROMPT_KEYS.preSubmitCheck, autoApprove: false })
     await settle()
     expect(useAiSidebar().state.session).toBeNull()
     expect(live()[0].props.resumeSessionId).toBeNull()
@@ -585,7 +601,7 @@ describe('AiSidebar · 专家命令（EC-01/02/03）', () => {
     window.localStorage.clear()
     resetAiSidebarForTest()
     vi.mocked(listRuns).mockReset().mockResolvedValue([])
-    vi.mocked(fetchSessionPromptKey).mockReset().mockResolvedValue(null)
+    vi.mocked(fetchPiSessionMeta).mockReset().mockResolvedValue(null)
   })
 
   it('/晨报：就地新开晨报会话（场景/角色/入口），先装配预检卡再发目标日，页面不跳转', async () => {

@@ -25,12 +25,12 @@ import { trustWatermark } from '@/services/data/trustGate'
 import { historySourceLabel } from '@/components/agent/historySources'
 import { listRuns, stopAgentRun, type AgentRunSummary, type AgentScenario } from '@/services/agent/agentClient'
 import { entryForSession, findEntry } from '@/services/agent/workbenchEntries'
-import { fetchSessionPromptKey } from '@/services/agent/piPocClient'
+import { fetchPiSessionMeta } from '@/services/agent/piPocClient'
 import { currentRegion } from '@/services/region/regionContext'
 import { currentCompany } from '@/services/company/companyContext'
 import { canAccessPath } from '@/services/governance'
 import { getCurrentUser } from '@/services/auth'
-import { useAiSidebar, takeSliceFor, restoreSliceFor, switchSession, adoptSessionId, bindUser, BLANK_SESSION } from './useAiSidebar'
+import { useAiSidebar, takeSliceFor, restoreSliceFor, switchSession, adoptSessionId, bindUser, refineSessionEntry, BLANK_SESSION } from './useAiSidebar'
 import { activeAiPage, resolveQuestion, type AiPagePreset } from './pageRegistry'
 import { buildPageContext, composeMessageContext } from './pageContext'
 import { decideSession } from './sessionPolicy'
@@ -213,35 +213,36 @@ function newConversation() {
   switchSession(null)
 }
 // 重新打开会话时找回它的入口：申报前体检与通用对话同为 chat 场景，只看场景会落到通用对话，
-// 丢掉入口和必须显示的合成数据水印（dljy-web#121 审查 P1）。依次用：已知的解读角色 → pi 记下的解读角色
-// → 工作台建的会话其来源 key 就是入口 key → 场景。查询期间用户又切换了会话，本次打开作废。
-let openSeq = 0
-async function openSessionAs(
-  base: { sessionId: string; scenario: string; title: string; pageKey?: string; promptKey?: string },
-  afterSwitch?: () => void
-) {
-  const seq = ++openSeq
-  const mountKey = state.mountKey
-  const promptKey = base.promptKey || (await fetchSessionPromptKey(base.sessionId).catch(() => null)) || ''
-  if (seq !== openSeq || mountKey !== state.mountKey) return
-  const byPage = base.pageKey ? findEntry(base.pageKey) : undefined
-  const entry = promptKey || !byPage || byPage.scenario !== base.scenario
-    ? entryForSession(base.scenario, promptKey)
-    : byPage
+// 丢掉入口和必须显示的合成数据水印（dljy-web#121 审查 P1）。依次用：已知的解读角色（运行中行自带）
+// → 工作台建的会话其来源 key 就是入口 key → 场景；不知道解读角色时再向 pi 查，查回来只补全记录、不重挂内核。
+// 切换必须立即发生：查询挡在切换前面的话，用户在旧会话里刚发出的消息会被随后的切换隐藏（同 PR 审查 P1）。
+function entryFor(scenario: string, pageKey: string | undefined, promptKey: string) {
+  const byPage = pageKey ? findEntry(pageKey) : undefined
+  return promptKey || !byPage || byPage.scenario !== scenario ? entryForSession(scenario, promptKey) : byPage
+}
+function openSessionAs(base: { sessionId: string; scenario: string; title: string; pageKey?: string; promptKey?: string }) {
+  const known = base.promptKey || ''
+  const entry = entryFor(base.scenario, base.pageKey, known)
   switchSession({
     sessionId: base.sessionId,
     scenario: base.scenario,
-    promptKey: promptKey || entry.promptKey || '',
+    promptKey: known || entry.promptKey || '',
     sourceRoute: '',
     entryKey: entry.key,
     title: base.title
   })
-  afterSwitch?.()
+  if (known) return
+  const mountKey = state.mountKey
+  void fetchPiSessionMeta(base.sessionId).catch(() => null).then((meta) => {
+    if (!meta?.promptKey || mountKey !== state.mountKey) return
+    const refined = entryForSession(base.scenario, meta.promptKey)
+    refineSessionEntry(base.sessionId, refined.key === 'workbench' ? entry.key : refined.key, meta.promptKey)
+  })
 }
 function openHistorySession(sessionId: string, scenario: string, pageKey?: string) {
   historyOpen.value = false
   busy.value = false
-  void openSessionAs({ sessionId, scenario, title: '', pageKey })
+  openSessionAs({ sessionId, scenario, title: '', pageKey })
 }
 function onHistoryChanged() {
   void refreshActiveRuns()
@@ -331,16 +332,14 @@ function toggleRunsPanel() {
 function attachActiveRun(run: AgentRunSummary) {
   runsOpen.value = false
   busy.value = false
-  void openSessionAs(
-    {
-      sessionId: run.session_id,
-      scenario: run.scenario || 'chat',
-      title: run.session_title?.trim() || '',
-      pageKey: run.page_key,
-      promptKey: run.prompt_key
-    },
-    () => { runToAttach.value = { mountKey: state.mountKey, runId: run.run_id } }
-  )
+  openSessionAs({
+    sessionId: run.session_id,
+    scenario: run.scenario || 'chat',
+    title: run.session_title?.trim() || '',
+    pageKey: run.page_key,
+    promptKey: run.prompt_key
+  })
+  runToAttach.value = { mountKey: state.mountKey, runId: run.run_id }
 }
 async function stopActiveRun(run: AgentRunSummary) {
   setStopping(run.run_id, true)
