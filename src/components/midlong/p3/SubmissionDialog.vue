@@ -93,7 +93,7 @@ async function submit() {
       <el-form-item label="平台回执时间">
         <BeijingDateTimeInput v-model="form.receiptAt" data-test="receiptAt" />
       </el-form-item>
-      <div v-if="submittedAtIncomplete || !receiptAtComplete" class="p3-time-hint" data-test="incomplete-time">时间须同时填写日期与时:分，不能只选日期。</div>
+      <div v-if="submittedAtIncomplete || !receiptAtComplete" class="p3-time-hint" data-test="incomplete-time">时间须同时填写日历上存在的日期与时:分，不能只选日期。</div>
       <el-form-item label="回执文件"><input type="file" data-test="receipt-file" @change="onFile" /></el-form-item>
       <el-form-item label="回执说明"><el-input v-model="form.receiptNote" /></el-form-item>
     </el-form>

@@ -42,6 +42,21 @@ describe('公告登记表单：申报、确认时间', () => {
     expect(hoisted.registerWindow).not.toHaveBeenCalled()
   }, FORM_TIMEOUT)
 
+  it('手输日历上不存在的日期（2031-02-30、非闰年 02-29）：即使填了时:分也不能提交，不会被滚成下个月', async () => {
+    const { w, closes, submit } = await openForm()
+    for (const date of ['2031-02-30', '2031-04-31', '2031-02-29']) {
+      closes.findComponent(ElDatePicker).vm.$emit('update:modelValue', date)
+      closes.findComponent(ElTimePicker).vm.$emit('update:modelValue', '10:00')
+      await flushPromises()
+      expect(w.find('[data-test="incomplete-time"]').exists(), date).toBe(true)
+      expect(submit().attributes('disabled'), date).toBeDefined()
+    }
+    closes.findComponent(ElDatePicker).vm.$emit('update:modelValue', '2032-02-29')
+    await flushPromises()
+    expect(w.find('[data-test="incomplete-time"]').exists(), '2032 闰日合法').toBe(false)
+    expect(hoisted.registerWindow).not.toHaveBeenCalled()
+  }, FORM_TIMEOUT)
+
   it('日期与时:分都填：按北京时间「YYYY-MM-DD HH:mm」提交；未填的时间按未知提交', async () => {
     hoisted.registerWindow.mockResolvedValue({ windowId: 1, revisionNo: 1 })
     const { w, closes, submit } = await openForm()

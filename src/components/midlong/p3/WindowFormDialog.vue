@@ -53,7 +53,10 @@ watch(() => props.modelValue, (open) => {
 }, { immediate: true })
 
 const correcting = computed(() => Boolean(props.window))
-/** 时刻要么留空（未知），要么日期与时:分都填；只填日期不允许提交，避免把未知时刻默认成零点。 */
+/**
+ * 时刻要么留空（未知），要么日期与时:分都填；只填日期不允许提交，避免把未知时刻默认成零点。
+ * 完整性判断与后端同一规则：日期必须在日历上存在（2031-02-30 这类手输值不会被当成 3 月 2 日提交）。
+ */
 const TIME_FIELDS = ['declarationOpensAt', 'declarationClosesAt', 'confirmationAt'] as const
 const incompleteTimes = computed(() => TIME_FIELDS.filter((f) => form[f] !== '' && !isCompleteBeijingDateTimeInput(form[f])))
 const valid = computed(() => Boolean(form.announcementName.trim()) && (!correcting.value || Boolean(form.changeReason.trim())) && incompleteTimes.value.length === 0)
@@ -142,7 +145,7 @@ async function submit() {
       <el-form-item label="确认时间">
         <BeijingDateTimeInput v-model="form.confirmationAt" data-test="confirmationAt" />
       </el-form-item>
-      <div v-if="incompleteTimes.length" class="p3-time-hint" data-test="incomplete-time">申报、确认时间须同时填写日期与时:分；公告未给出确切时刻时请整项留空（显示待补），不要只选日期。</div>
+      <div v-if="incompleteTimes.length" class="p3-time-hint" data-test="incomplete-time">申报、确认时间须同时填写日历上存在的日期与时:分；公告未给出确切时刻时请整项留空（显示待补），不要只选日期。</div>
       <el-form-item label="不支持的参数">
         <div class="p3-unsupported">
           <div v-for="(u, i) in form.unsupported" :key="i" class="p3-segment">

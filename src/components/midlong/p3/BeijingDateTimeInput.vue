@@ -3,6 +3,7 @@
 // Element Plus 的 datetime 选择器在只点日期时会自动补 00:00（组件测试实测：点日期后值即为「YYYY-MM-DD 00:00」），
 // 会把「只知道日期」伪装成确切时刻、绕过后端「只给日期不接受」的校验。这里把日期与时刻拆成两个必须都填的输入：
 // 两项都填 → 「YYYY-MM-DD HH:mm」；都不填 → 空串（未知）；只填一项 → 原样回传不完整值，由使用方判定不可提交。
+// 本组件不修正任何值：手输出的不存在日期（如 2031-02-30）原样回传，使用方用 isCompleteBeijingDateTimeInput 判定不可提交。
 import { ref, watch } from 'vue'
 
 const props = withDefaults(defineProps<{ modelValue: string; datePlaceholder?: string; timePlaceholder?: string }>(), { datePlaceholder: '日期', timePlaceholder: '时:分' })
