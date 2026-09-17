@@ -64,7 +64,7 @@ function report(o: Partial<PlanProgressReport> = {}): PlanProgressReport {
     view: 'CURRENT', asOf: '2031-01-01T00:00:00.000Z', regionId: 'yunnan', generatedAt: '2031-01-01T00:00:00.000Z', notices: [],
     rows: [
       row(1, '2031-05', {}),
-      row(2, '2031-06', { knownSoldQuantity: '1100', remainingPlanQuantity: '-100', completionRate: '1.1', arrangeableQuantity: '-100', overPlan: true, openOccupationQuantity: '0' }),
+      row(2, '2031-06', { knownSoldQuantity: '1100', remainingPlanQuantity: '-100', completionRate: '1.1', arrangeableQuantity: '-150', overPlan: true, openOccupationQuantity: '50' }),
       row(3, '2031-07', { knownSoldQuantity: '800', soldComplete: false, remainingPlanQuantity: null, completionRate: null, arrangeableQuantity: null, verificationStatus: 'UNVERIFIED', openOccupationQuantity: '0' }),
       row(4, '2031-08', { targetQuantity: null, remainingPlanQuantity: null, completionRate: null, arrangeableQuantity: null, verificationStatus: 'TARGET_UNKNOWN', openOccupationQuantity: '0' }, false),
     ],
@@ -94,6 +94,7 @@ describe('中长期售电计划页', () => {
     expect(rows[0].text()).toContain('70%')
     expect(rows[0].text()).toContain('100 MWh')
     expect(rows[1].text()).toContain('-100 MWh')
+    expect(rows[1].text()).toContain('-150 MWh')
     expect(rows[1].text()).toContain('110%')
     expect(rows[1].text()).toContain('超计划')
     expect(rows[2].text()).toContain('待核验（不按零计）')
