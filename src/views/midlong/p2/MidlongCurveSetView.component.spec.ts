@@ -1,6 +1,6 @@
 // 中长期售电分时分解集详情页的交互不变量（dljy#2971，MP-04/MA-05）。
 // 守什么：来源可钻取到原始行、原始数值与单位；有阻断问题的草稿不能确认；内部估算确认必须写依据；
-// 合同已更正时确认失败给出「按当前版本重新登记」的提示。
+// 合同已更正时确认失败给出「按当前版本重新登记」的提示；旧版本上的草稿不能确认但仍能废弃。
 // 坏掉的症状：看不到曲线来自哪一行；不守恒的草稿也能点确认；估算被当正式资料确认；过期草稿确认失败时只给一句含糊报错。
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { enableAutoUnmount, flushPromises } from '@vue/test-utils'
@@ -8,7 +8,7 @@ import { mount } from '@/test/mount'
 import type { MidlongCapabilities } from '@/services/midlong/midlongTypes'
 import type { CurveSetDetail } from '@/services/midlong/midlongP2Types'
 
-const hoisted = vi.hoisted(() => ({ fetchCurveSet: vi.fn(), confirmCurveSet: vi.fn(), routeQuery: {} as Record<string, string> }))
+const hoisted = vi.hoisted(() => ({ fetchCurveSet: vi.fn(), confirmCurveSet: vi.fn(), discardCurveSet: vi.fn(), routeQuery: {} as Record<string, string> }))
 
 vi.mock('element-plus', async (orig) => ({ ...(await orig<typeof import('element-plus')>()), ElMessage: { success: vi.fn(), error: vi.fn() } }))
 vi.mock('vue-router', () => ({ useRoute: () => ({ params: { id: '31' }, query: hoisted.routeQuery }), useRouter: () => ({ replace: vi.fn() }) }))
@@ -29,7 +29,7 @@ vi.mock('@/services/midlong/midlongP2Api', async (orig) => ({
   p2ModuleOn: (await orig<typeof import('@/services/midlong/midlongP2Api')>()).p2ModuleOn,
   fetchCurveSet: hoisted.fetchCurveSet,
   confirmCurveSet: hoisted.confirmCurveSet,
-  discardCurveSet: vi.fn(),
+  discardCurveSet: hoisted.discardCurveSet,
 }))
 
 import MidlongCurveSetView from './MidlongCurveSetView.vue'
@@ -80,6 +80,27 @@ describe('分时分解集详情', () => {
     expect(text).toContain('Asia/Shanghai')
     expect(text).toContain('0 MWh')
     expect(text).toContain('TEST-曲线.xlsx')
+  })
+
+  it('合同更正后旧版本上的草稿：不显示「确认」但仍可「废弃草稿」；当前版本的草稿两个按钮都在', async () => {
+    hoisted.fetchCurveSet.mockResolvedValue(detail({ isCurrentRevision: false, contract: { ...detail().contract, currentRevisionNo: 2 } }))
+    const stale = mount(MidlongCurveSetView, { global: { stubs: STUBS } })
+    await flushPromises()
+    expect(stale.findAll('.ml-actions button').map((b) => b.text())).toEqual(['废弃草稿'])
+    expect(stale.text()).toContain('草稿不能再确认，请按当前版本重新登记；不再需要时可以废弃')
+    hoisted.discardCurveSet.mockResolvedValue({ curveSetId: 31, setNo: 3, status: 'DISCARDED' })
+    await stale.findAll('.ml-actions button')[0].trigger('click')
+    await flushPromises()
+    await stale.find('.el-dialog textarea').setValue('【测试】合同已更正，废弃旧版本草稿')
+    await stale.findAll('.el-dialog__footer button').find((b) => b.text() === '废弃')!.trigger('click')
+    await flushPromises()
+    expect(hoisted.discardCurveSet).toHaveBeenCalledWith(31, '【测试】合同已更正，废弃旧版本草稿')
+    stale.unmount()
+
+    hoisted.fetchCurveSet.mockResolvedValue(detail())
+    const current = mount(MidlongCurveSetView, { global: { stubs: STUBS } })
+    await flushPromises()
+    expect(current.findAll('.ml-actions button').map((b) => b.text())).toEqual(['确认', '废弃草稿'])
   })
 
   it('有阻断问题的草稿不能确认，并列出问题定位', async () => {

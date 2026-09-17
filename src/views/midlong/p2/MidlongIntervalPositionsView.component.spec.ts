@@ -10,7 +10,7 @@ import type { MidlongCapabilities } from '@/services/midlong/midlongTypes'
 import type { IntervalPositionReport } from '@/services/midlong/midlongP2Types'
 
 const hoisted = vi.hoisted(() => ({
-  fetchCapabilities: vi.fn(), fetchIntervalPositions: vi.fn(), exportIntervalPositions: vi.fn(), replace: vi.fn(),
+  fetchCapabilities: vi.fn(), fetchIntervalPositions: vi.fn(), exportIntervalPositions: vi.fn(), replace: vi.fn(), downloadCsv: vi.fn(),
   companyRef: null as null | { value: string },
 }))
 
@@ -23,6 +23,7 @@ vi.mock('@/services/company/companyContext', async () => {
 })
 vi.mock('@/services/region/regionContext', async () => ({ currentRegion: (await import('vue')).ref({ id: 'yunnan' }) }))
 vi.mock('@/composables/useTheme', () => ({ cssVar: () => '' }))
+vi.mock('@/services/midlong/midlongFormat', async (orig) => ({ ...(await orig<typeof import('@/services/midlong/midlongFormat')>()), downloadCsv: hoisted.downloadCsv }))
 vi.mock('@/services/midlong/midlongApi', () => ({
   CompanyNotSelectedError: class extends Error {},
   fetchCapabilities: hoisted.fetchCapabilities,
@@ -125,6 +126,26 @@ describe('中长期售电分时持仓', () => {
     await w.findAll('.el-table__body').at(0)!.findAll('tr')[0].trigger('click')
     await nextTick()
     expect(w.text()).toContain('另有电量未分解到月份，本时段不完整')
+  })
+
+  it('导出用页面当前结果的查询：改了筛选但没点「查询」时，导出参数仍是上一次查询的', async () => {
+    hoisted.fetchCapabilities.mockResolvedValue(caps())
+    hoisted.fetchIntervalPositions.mockResolvedValue(report())
+    hoisted.exportIntervalPositions.mockResolvedValue({ fileName: 'TEST.csv', contentType: 'text/csv', content: 'x', status: 'partial' })
+    const w = mount(MidlongIntervalPositionsView, { global: { stubs: STUBS } })
+    await flushPromises()
+    const shown = { fromDate: '2027-05-01', toDate: '2027-05-01', granularity: 'HOUR' }
+    expect(hoisted.fetchIntervalPositions.mock.calls[0][0]).toEqual(shown)
+    const filters = (w.vm as unknown as { filters: { dateRange: string[]; granularity: string; energyAttribute: string } }).filters
+    filters.dateRange = ['2027-06-01', '2027-06-30']
+    filters.granularity = 'DAY'
+    filters.energyAttribute = 'GREEN'
+    await w.findAll('button').find((b) => b.text() === '导出')!.trigger('click')
+    await flushPromises()
+    expect(hoisted.exportIntervalPositions).toHaveBeenCalledTimes(1)
+    expect(hoisted.exportIntervalPositions.mock.calls[0][0]).toEqual(shown)
+    expect(hoisted.downloadCsv).toHaveBeenCalledWith('TEST.csv', 'x')
+    expect(hoisted.fetchIntervalPositions).toHaveBeenCalledTimes(1)
   })
 
   it('能力未开通时不取分时数据，只提示未开通', async () => {
