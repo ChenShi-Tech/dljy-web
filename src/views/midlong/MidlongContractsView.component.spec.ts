@@ -3,7 +3,7 @@
 // 服务失败显示错误而非「没有合同」；交割期已结束不显示逾期；缺售电价显示待核对而不是 0。
 // 坏掉的症状：切到 B 公司后闪现 A 公司合同；山西地区看到空列表误以为没有合同；接口 503 时页面说「没有合同」。
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { flushPromises } from '@vue/test-utils'
+import { flushPromises, enableAutoUnmount } from '@vue/test-utils'
 import { nextTick } from 'vue'
 import { mount } from '@/test/mount'
 import type { MidlongCapabilities, MidlongContractListResult, MidlongContractSummary } from '@/services/midlong/midlongTypes'
@@ -79,6 +79,9 @@ afterEach(() => {
   vi.clearAllMocks()
   hoisted.routeQuery = {}
 })
+
+// 每个用例结束卸载组件：否则遗留实例会响应后续用例的公司/地区切换继续取数，既拖慢全量运行，也可能让「最后一次请求」断言取到别的实例。
+enableAutoUnmount(afterEach)
 
 describe('中长期售电合同列表', () => {
   it('切换公司 A→B 后，A 的迟到响应不覆盖 B 的列表', async () => {

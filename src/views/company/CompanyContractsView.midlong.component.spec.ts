@@ -3,7 +3,7 @@
 // 已纳管合同在旧列表不给编辑/删除；到期/逾期预警不再按日期给已纳管合同判逾期。
 // 坏掉的症状：收藏的旧链接打开的是旧抽屉、还能在旧页改掉已确认合同；已结束的中长期合同在旧页被标「已逾期」。
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { flushPromises } from '@vue/test-utils'
+import { flushPromises, enableAutoUnmount } from '@vue/test-utils'
 import { mount } from '@/test/mount'
 
 const hoisted = vi.hoisted(() => ({ replace: vi.fn(), query: {} as Record<string, string>, fetchContracts: vi.fn(), fetchContractDetails: vi.fn(async () => []) }))
@@ -32,6 +32,9 @@ const contract = (o: Record<string, unknown>) => ({
 })
 
 afterEach(() => { vi.clearAllMocks(); hoisted.query = {} })
+
+// 每个用例结束卸载组件：否则遗留实例会响应后续用例的公司/地区切换继续取数，既拖慢全量运行，也可能让「最后一次请求」断言取到别的实例。
+enableAutoUnmount(afterEach)
 
 describe('旧合同管理页的中长期分流', () => {
   it('旧深链指向已纳管合同：跳到新详情页并把年份筛选换成交割期筛选', async () => {

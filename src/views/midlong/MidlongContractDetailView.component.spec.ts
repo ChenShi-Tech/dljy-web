@@ -3,7 +3,7 @@
 // 「已被他人更新」并能刷新，内容不静默覆盖；待核对合同缺依据时明确提示核验前需补齐。
 // 坏掉的症状：已确认合同还能直接改；并发更正时后提交者以为保存成功；缺依据时点核验才发现不行。
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { flushPromises } from '@vue/test-utils'
+import { flushPromises, enableAutoUnmount } from '@vue/test-utils'
 import { mount } from '@/test/mount'
 import type { MidlongContractDetail, MidlongRevision } from '@/services/midlong/midlongTypes'
 
@@ -56,6 +56,9 @@ function detail(o: Partial<MidlongContractDetail> = {}): MidlongContractDetail {
 }
 
 afterEach(() => vi.clearAllMocks())
+
+// 每个用例结束卸载组件：否则遗留实例会响应后续用例的公司/地区切换继续取数，既拖慢全量运行，也可能让「最后一次请求」断言取到别的实例。
+enableAutoUnmount(afterEach)
 
 describe('中长期售电合同详情', () => {
   it('已确认合同只能更正或作废，不能直接修改草稿', async () => {

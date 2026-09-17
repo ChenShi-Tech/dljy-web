@@ -3,7 +3,7 @@
 // 刷新结果并禁用提交；提交成功只显示「待核对」，不暗示已确认。
 // 坏掉的症状：用户看不出第几行哪一列错；冲突批次仍能点提交；预览过期后继续用旧结果提交。
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { flushPromises } from '@vue/test-utils'
+import { flushPromises, enableAutoUnmount } from '@vue/test-utils'
 import { mount } from '@/test/mount'
 import type { MidlongImportPreview, MidlongImportRowReport } from '@/services/midlong/midlongTypes'
 
@@ -61,6 +61,9 @@ async function openAndPreview() {
 }
 
 afterEach(() => vi.clearAllMocks())
+
+// 每个用例结束卸载组件：否则遗留实例会响应后续用例的公司/地区切换继续取数，既拖慢全量运行，也可能让「最后一次请求」断言取到别的实例。
+enableAutoUnmount(afterEach)
 
 describe('中长期合同导入', () => {
   it('错误定位到工作表、行、列；有冲突或错误时不能提交', async () => {

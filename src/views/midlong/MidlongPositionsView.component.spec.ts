@@ -3,7 +3,7 @@
 // 名义金额不完整时明示；历史认知时点视图有说明；服务失败显示错误而不是示意数值。
 // 坏掉的症状：全年 12000 MWh 无分解的合同被画成每月 0 或每月 1000；含税与未核对绿电价被揉成一个均价。
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { flushPromises } from '@vue/test-utils'
+import { flushPromises, enableAutoUnmount } from '@vue/test-utils'
 import { nextTick } from 'vue'
 import { mount } from '@/test/mount'
 import type { MidlongCapabilities, MidlongPositionReport, MidlongPriceSummary } from '@/services/midlong/midlongTypes'
@@ -63,6 +63,9 @@ afterEach(() => {
   vi.clearAllMocks()
   hoisted.routeQuery = {}
 })
+
+// 每个用例结束卸载组件：否则遗留实例会响应后续用例的公司/地区切换继续取数，既拖慢全量运行，也可能让「最后一次请求」断言取到别的实例。
+enableAutoUnmount(afterEach)
 
 describe('中长期售电月度持仓', () => {
   it('缺分解月份不显示成 0 持仓；未分解池只列一次合同', async () => {
