@@ -57,7 +57,7 @@ const STUBS = {
 
 const caps = (overrides: Partial<MidlongCapabilities> = {}): MidlongCapabilities => ({
   enabled: true, regionId: 'yunnan', regionSupported: true, pilotRegions: ['yunnan'], phase: 'P1',
-  modules: { contracts: true, positions: true, imports: true, plans: false, execution: false, review: false },
+  modules: { contracts: true, positions: true, imports: true, curves: true, stationAllocations: true, plans: false, execution: false, review: false },
   canWrite: true, companyId: 'comp-a', scopeCompanyIds: ['comp-a'], reason: null, ...overrides,
 })
 

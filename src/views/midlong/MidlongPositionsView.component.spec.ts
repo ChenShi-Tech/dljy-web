@@ -36,7 +36,7 @@ import MidlongPositionsView from './MidlongPositionsView.vue'
 const STUBS = { CompanyScopeBar: { template: '<div />' }, ChartCard: { template: '<div class="stub-chart" />' }, 'router-link': { template: '<a><slot /></a>' } }
 const caps: MidlongCapabilities = {
   enabled: true, regionId: 'yunnan', regionSupported: true, pilotRegions: ['yunnan'], phase: 'P1',
-  modules: { contracts: true, positions: true, imports: true, plans: false, execution: false, review: false },
+  modules: { contracts: true, positions: true, imports: true, curves: true, stationAllocations: true, plans: false, execution: false, review: false },
   canWrite: false, companyId: 'comp-a', scopeCompanyIds: ['comp-a'], reason: null,
 }
 const price = (o: Partial<MidlongPriceSummary> = {}): MidlongPriceSummary => ({
