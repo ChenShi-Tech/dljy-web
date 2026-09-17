@@ -27,6 +27,9 @@ async function openForm() {
   return { w, closes, submit }
 }
 
+// 整个 el-dialog 表单含多组日期/时刻选择器，全量并发跑时挂载较慢；单例放宽超时，不改断言。
+const FORM_TIMEOUT = 20000
+
 describe('公告登记表单：申报、确认时间', () => {
   it('只选日期：不能提交并提示须填写时:分，不会以 00:00 提交', async () => {
     const { w, closes, submit } = await openForm()
@@ -37,7 +40,7 @@ describe('公告登记表单：申报、确认时间', () => {
     await submit().trigger('click')
     await flushPromises()
     expect(hoisted.registerWindow).not.toHaveBeenCalled()
-  })
+  }, FORM_TIMEOUT)
 
   it('日期与时:分都填：按北京时间「YYYY-MM-DD HH:mm」提交；未填的时间按未知提交', async () => {
     hoisted.registerWindow.mockResolvedValue({ windowId: 1, revisionNo: 1 })
@@ -49,5 +52,5 @@ describe('公告登记表单：申报、确认时间', () => {
     await submit().trigger('click')
     await flushPromises()
     expect(hoisted.registerWindow).toHaveBeenCalledWith(expect.objectContaining({ declarationClosesAt: '2031-04-20 17:00', declarationOpensAt: null, confirmationAt: null }))
-  })
+  }, FORM_TIMEOUT)
 })

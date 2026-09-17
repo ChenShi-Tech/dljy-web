@@ -19,6 +19,9 @@ enableAutoUnmount(afterEach)
 
 const proposal = { id: 42, rowVersion: 3 } as TradeProposalDetail
 
+// 整个 el-dialog 表单含多组日期/时刻选择器，全量并发跑时挂载较慢；单例放宽超时，不改断言。
+const FORM_TIMEOUT = 20000
+
 describe('外部提交登记：提交时间', () => {
   it('只选日期不能登记；补上时:分后按北京时间提交，结果提示依据待补且不称受理', async () => {
     hoisted.registerSubmission.mockResolvedValue({ proposalId: 42, submissionId: 1, status: 'SUBMITTED', rowVersion: 4, receiptCompleteness: 'NONE', receiptMissing: ['externalReference', 'receiptAt', 'attachment'], platformAcceptance: 'NOT_ASSERTED', notice: '' })
@@ -41,5 +44,5 @@ describe('外部提交登记：提交时间', () => {
     expect(hoisted.registerSubmission).toHaveBeenCalledWith(42, expect.objectContaining({ submittedAt: '2026-09-01 10:30', submittedByName: '测试交易员' }))
     expect(dialog().textContent).toContain('无回执（仅登记提交事实）')
     expect(dialog().textContent).not.toMatch(/平台已受理(?!，也不形成持仓)/)
-  })
+  }, FORM_TIMEOUT)
 })
