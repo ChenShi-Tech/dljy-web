@@ -23,7 +23,11 @@ vi.mock('@/composables/useAgentHealth', async () => {
     })
   }
 })
-vi.mock('@/services/agent/piPocClient', () => ({ setSessionAutoApprove: vi.fn(async (_id: string, enabled: boolean) => enabled) }))
+vi.mock('@/services/agent/piPocClient', () => ({
+  setSessionAutoApprove: vi.fn(async (_id: string, enabled: boolean) => enabled),
+  revokeSessionAutoApprove: vi.fn(async () => true),
+  fetchPiSessionMeta: vi.fn(async () => null)
+}))
 vi.mock('@/services/agent/agentClient', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/services/agent/agentClient')>()
   const g = globalThis as unknown as { __approvalPayload: Record<string, unknown>; __sessionScenario: string }
@@ -47,14 +51,17 @@ vi.mock('@/services/agent/agentClient', async (importOriginal) => {
 })
 
 import AgentChatPanel from './AgentChatPanel.vue'
-import { setSessionAutoApprove } from '@/services/agent/piPocClient'
+import { fetchPiSessionMeta, revokeSessionAutoApprove, setSessionAutoApprove } from '@/services/agent/piPocClient'
+import { fetchHistoryTranscript } from '@/services/agent/agentClient'
 
 const g = globalThis as unknown as { __approvalPayload: Record<string, unknown>; __sessionScenario: string }
 const wrappers: Array<{ unmount: () => void }> = []
 afterEach(() => { wrappers.splice(0).forEach((w) => w.unmount()) })
 beforeEach(() => {
   push.mockClear()
-  vi.mocked(setSessionAutoApprove).mockClear()
+  vi.mocked(setSessionAutoApprove).mockReset().mockImplementation(async (_id: string, enabled: boolean) => enabled)
+  vi.mocked(revokeSessionAutoApprove).mockClear()
+  vi.mocked(fetchPiSessionMeta).mockReset().mockResolvedValue(null)
   window.localStorage.clear()
 })
 
@@ -144,24 +151,65 @@ describe('AgentChatPanel · 审批卡自动执行开关', () => {
     expect(setSessionAutoApprove).toHaveBeenLastCalledWith('s_chk', false)
     expect(w.find('[data-testid="auto-approve-active"]').exists()).toBe(false)
 
-    // 开启后新建对话（切走会话、内核不卸载）：旧会话的服务端授权随之撤销
-    vi.mocked(setSessionAutoApprove).mockClear()
+    // 开启后新建对话（切走会话、内核不卸载）：旧会话的服务端授权交给带重试的撤销
     const switching = await withApproval(L1, 'declaration_checkup', true)
     await switching.find('[data-testid="approval-auto-approve"] input').setValue(true)
     await flushPromises()
     ;(switching.vm as unknown as { newConversation: () => void }).newConversation()
     await flushPromises()
-    expect(setSessionAutoApprove).toHaveBeenLastCalledWith('s_chk', false)
+    expect(revokeSessionAutoApprove).toHaveBeenLastCalledWith('s_chk')
     expect(switching.find('[data-testid="auto-approve-active"]').exists()).toBe(false)
 
     // 再开启一次，然后直接离开（卸载）：服务端授权随之撤销
-    vi.mocked(setSessionAutoApprove).mockClear()
+    vi.mocked(revokeSessionAutoApprove).mockClear()
     const again = await withApproval(L1, 'declaration_checkup', true)
     await again.find('[data-testid="approval-auto-approve"] input').setValue(true)
     await flushPromises()
     again.unmount()
     await flushPromises()
+    expect(revokeSessionAutoApprove).toHaveBeenLastCalledWith('s_chk')
+  })
+
+  it('开启请求还在途时切走会话：迟到的「已开启」立即撤销，不在新会话上显示（dljy-web#121 审查 P1）', async () => {
+    const w = await withApproval(L1, 'declaration_checkup', true)
+    let resolveEnable: (v: boolean) => void = () => {}
+    vi.mocked(setSessionAutoApprove).mockImplementationOnce(() => new Promise((r) => { resolveEnable = r }))
+    await w.find('[data-testid="approval-auto-approve"] input').setValue(true)
+    await flushPromises()
+    ;(w.vm as unknown as { newConversation: () => void }).newConversation()
+    await flushPromises()
+    expect(revokeSessionAutoApprove).not.toHaveBeenCalled() // 此时界面状态仍是未开启，撤销钩子看不到在途请求
+    resolveEnable(true)
+    await flushPromises()
+    expect(revokeSessionAutoApprove).toHaveBeenCalledWith('s_chk')
+    expect(w.find('[data-testid="auto-approve-active"]').exists()).toBe(false)
+  })
+
+  it('重新打开一个授权仍开启的会话（切走时撤销没成功）：按服务端状态显示提示条，可以手动关闭（dljy-web#121 审查 P1）', async () => {
+    vi.mocked(fetchHistoryTranscript).mockResolvedValueOnce({
+      session_id: 's_chk', scenario: 'declaration_checkup', title: '申报体检', archived: false,
+      messages: [{ seq: 1, role: 'user', text: '体检', segs: [] }]
+    })
+    vi.mocked(fetchPiSessionMeta).mockResolvedValue({ promptKey: '', autoApprove: true })
+    const w = await mountKernel({ scenario: 'declaration_checkup', approvalAutoApprove: true, resumeSessionId: 's_chk' })
+    await flushPromises()
+    const bar = w.find('[data-testid="auto-approve-active"]')
+    expect(bar.exists()).toBe(true)
+    await bar.find('button').trigger('click')
+    await flushPromises()
     expect(setSessionAutoApprove).toHaveBeenLastCalledWith('s_chk', false)
+    expect(w.find('[data-testid="auto-approve-active"]').exists()).toBe(false)
+
+    // 宿主没开启该能力（如工作台）时不查询、不显示
+    vi.mocked(fetchPiSessionMeta).mockClear()
+    vi.mocked(fetchHistoryTranscript).mockResolvedValueOnce({
+      session_id: 's_chk', scenario: 'declaration_checkup', title: '申报体检', archived: false,
+      messages: [{ seq: 1, role: 'user', text: '体检', segs: [] }]
+    })
+    const plain = await mountKernel({ scenario: 'declaration_checkup', resumeSessionId: 's_chk' })
+    await flushPromises()
+    expect(fetchPiSessionMeta).not.toHaveBeenCalled()
+    expect(plain.find('[data-testid="auto-approve-active"]').exists()).toBe(false)
   })
 
   it('对外提交（L2）卡片不显示开关；按风险级别判断，不只认工具名', async () => {

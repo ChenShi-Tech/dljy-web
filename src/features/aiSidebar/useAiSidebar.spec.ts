@@ -8,7 +8,7 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import { PAGE_PROMPT_KEYS } from '@/prompts/pageKeys'
 import { activatePage, activeAiPage, deactivatePage, resolveInterpret, type AiPageDefinition } from './pageRegistry'
 import { buildPageContext, composeMessageContext } from './pageContext'
-import { bindUser, resetAiSidebarForTest, restoreSliceFor, takeSliceFor, useAiSidebar } from './useAiSidebar'
+import { bindUser, refineSessionEntry, resetAiSidebarForTest, restoreSliceFor, switchSession, takeSliceFor, useAiSidebar } from './useAiSidebar'
 
 const PAGE = buildPageContext({
   routePath: '/sjfx/fshq',
@@ -59,6 +59,17 @@ describe('useAiSidebar · 发问与切片', () => {
     expect(takeSliceFor('解读这一行')).toBeNull()
     restoreSliceFor('解读这一行')
     expect(takeSliceFor('解读这一行')).toBeNull()
+  })
+
+  it('补全入口只改当前仍是该会话的记录，且不重挂内核', () => {
+    switchSession({ sessionId: 's_a', scenario: 'chat', promptKey: '', sourceRoute: '', entryKey: 'workbench', title: '' })
+    const ai = useAiSidebar()
+    const mountKey = ai.state.mountKey
+    refineSessionEntry('s_other', 'pre_submit_check', 'pre_submit_check')
+    expect(ai.state.session?.entryKey).toBe('workbench')
+    refineSessionEntry('s_a', 'pre_submit_check', 'pre_submit_check')
+    expect(ai.state.session).toMatchObject({ sessionId: 's_a', entryKey: 'pre_submit_check', promptKey: 'pre_submit_check' })
+    expect(ai.state.mountKey).toBe(mountKey)
   })
 
   it('换账号后，上一账号取走的切片不能被 409 重发恢复', () => {

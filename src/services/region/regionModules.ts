@@ -41,6 +41,8 @@ export type RegionCapabilityDataSupport = {
 
 export type RegionRouteCapability = {
   path: string
+  /** 为 true 时同样覆盖 `${path}/…` 子路径（如详情页 /zcqjy/contracts/:id），否则只精确匹配。 */
+  includeSubpaths?: boolean
   statusByRegion?: Record<string, RegionModuleCapabilityStatus>
   dataSupportByRegion?: Record<string, RegionCapabilityDataSupport[]>
   note?: string
@@ -307,7 +309,7 @@ export const regionModuleCapabilities: RegionModuleCapability[] = [
     title: '中长期交易',
     group: 'midlong',
     routePrefixes: ['/zcqjy', '/sjxh/zjzzt'],
-    routePaths: ['/zcqjy/zccljk', '/zcqjy/exposure', '/zcqjy/zfsdjy', '/zcqjy/zjyap', '/sjxh/zjzzt'],
+    routePaths: ['/zcqjy/contracts', '/zcqjy/positions', '/zcqjy/zccljk', '/zcqjy/exposure', '/zcqjy/zfsdjy', '/zcqjy/zjyap', '/sjxh/zjzzt'],
     statusByRegion: {
       shanxi: 'available',
       yunnan: 'degraded',
@@ -341,6 +343,18 @@ export const regionModuleCapabilities: RegionModuleCapability[] = [
       ]
     },
     routeCapabilities: [
+      // 云南中长期售电 P1（dljy#2939）：试点只开通云南；其他地区不展示入口，也不回退读取任何地区的合同底账。
+      {
+        path: '/zcqjy/contracts',
+        includeSubpaths: true,
+        statusByRegion: { yunnan: 'available', shanxi: 'hidden', guangdong: 'hidden', sichuan: 'hidden' },
+        note: '中长期售电合同底账（company.midlong_*），P1 仅云南试点；后端对其他地区返回未开通。'
+      },
+      {
+        path: '/zcqjy/positions',
+        statusByRegion: { yunnan: 'available', shanxi: 'hidden', guangdong: 'hidden', sichuan: 'hidden' },
+        note: '已确认售电义务月度持仓，只读合同底账，不依赖现货/预测数据；P1 仅云南试点。'
+      },
       // sdpt_zfsdjy 是三德普华私有族（曾误标 public，匿名可读该公司中长期合同台账与
       // 逐日持仓电量/持仓均价，#1617 合并后复查发现）。与 /xhjy/zrqsb、/xhjy/zptqx 同口径：
       // 其它地区既无自有采集、也不可能跨公司串读 → hidden，四地区逐个显式声明。
@@ -618,7 +632,10 @@ export function getRegionModuleAccessRoutes(roleCode: RoleCode) {
 export function getRegionCapabilityForPath(path: string, regionId?: string) {
   const module = getRegionModuleCapabilityForPath(path)
   if (!module || !regionId) return null
-  const route = module.routeCapabilities?.find((item) => normalizePath(item.path) === normalizePath(path))
+  const normalized = normalizePath(path)
+  // 精确匹配优先；声明了 includeSubpaths 的能力项再覆盖其子路径，避免详情页回落到模块整体状态而在未开通地区放行。
+  const route = module.routeCapabilities?.find((item) => normalizePath(item.path) === normalized)
+    ?? module.routeCapabilities?.find((item) => item.includeSubpaths && normalized.startsWith(`${normalizePath(item.path)}/`))
   // 覆盖面内但该地区未登记 → not-configured（fail-closed），不再返回 null 造成上游按「未覆盖」放行。
   const status = route?.statusByRegion?.[regionId] ?? module.statusByRegion[regionId] ?? 'not-configured'
   return { module, route: route ?? null, status }

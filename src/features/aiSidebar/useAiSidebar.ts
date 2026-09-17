@@ -167,6 +167,16 @@ export function adoptSessionId(sessionId: string, title = ''): void {
   saveSession(state.session)
 }
 
+/**
+ * 给当前会话补全入口与解读角色（不重挂内核）：只在记录仍是该会话时生效。
+ * 重新打开会话时入口要靠一次查询才能确定，先按已知信息切过去、查回来再补——不能让查询挡在切换前面。
+ */
+export function refineSessionEntry(sessionId: string, entryKey: string, promptKey: string): void {
+  if (!state.session || state.session.sessionId !== sessionId) return
+  state.session = { ...state.session, entryKey, promptKey }
+  saveSession(state.session)
+}
+
 /** 测试用：复位模块级状态（模拟整页刷新：内存清空，挂载时由 bindUser 从存储读回）。 */
 export function resetAiSidebarForTest(): void {
   state.open = false

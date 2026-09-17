@@ -48,7 +48,7 @@ import {
 import DataBasisBadge from '../DataBasisBadge.vue'
 import type { DataBasis } from '@/services/dataBasis'
 import { ElMessage } from 'element-plus'
-import { setSessionAutoApprove } from '@/services/agent/piPocClient'
+import { fetchPiSessionMeta, revokeSessionAutoApprove, setSessionAutoApprove } from '@/services/agent/piPocClient'
 import type { SlashCommand } from '@/services/slashCommands'
 
 // 从工具结果文本识别数据口径：贴合本项目「合成降级必须页面可见」的标注纪律，
@@ -1248,17 +1248,27 @@ async function resumeSession(sessionId: string, opts: { fromClick?: boolean; all
 // 对外提交（submit_declaration，L2）恒不提供。授权按会话生效、不持久，由服务端留痕。
 // 开启后审批卡随即被批准、消失，而之后的 L1 写入恰恰不再出卡——所以「已开启」提示与关闭按钮放在输入框上方，
 // 不依附审批卡；离开这个会话（切换/新建/卸载）时主动撤销服务端授权，不留一个看不见的开关（dljy-web#121 审查 P1）
+// 撤销走带退避重试的服务层函数：切走/卸载后界面已不在，失败不能靠用户点按钮重试；
+// 全部失败时用户重新打开该会话，挂载时按服务端授权状态重新显示提示条（见 syncAutoApproveFromServer）。
 const autoApproveOn = ref(false)
 const autoApproveToggling = ref(false)
+let panelUnmounted = false
 function revokeAutoApprove(sessionId: string | undefined) {
   if (!sessionId || !autoApproveOn.value) return
   autoApproveOn.value = false
-  void setSessionAutoApprove(sessionId, false).catch((err) => {
-    console.warn('[agent-chat] 撤销自动执行授权失败', err)
-  })
+  void revokeSessionAutoApprove(sessionId)
 }
 watch(() => session.value?.id, (_id, previousId) => { revokeAutoApprove(previousId) })
-onBeforeUnmount(() => { revokeAutoApprove(session.value?.id) })
+onBeforeUnmount(() => {
+  panelUnmounted = true
+  revokeAutoApprove(session.value?.id)
+})
+async function syncAutoApproveFromServer() {
+  const sessionId = session.value?.id
+  if (!props.approvalAutoApprove || !sessionId) return
+  const meta = await fetchPiSessionMeta(sessionId).catch(() => null)
+  if (meta?.autoApprove && !panelUnmounted && session.value?.id === sessionId) autoApproveOn.value = true
+}
 function canOfferAutoApprove(seg: ApprovalSeg): boolean {
   const payload = seg.payload as Record<string, unknown>
   return props.approvalAutoApprove
@@ -1271,11 +1281,22 @@ async function toggleAutoApprove(enabled: boolean) {
   if (!sessionId) return
   autoApproveToggling.value = true
   try {
-    autoApproveOn.value = await setSessionAutoApprove(sessionId, enabled)
+    const result = await setSessionAutoApprove(sessionId, enabled)
+    // 等待期间用户已切走或面板已卸载：迟到的「已开启」没有任何界面能关掉，立即撤销（dljy-web#121 审查 P1）
+    if (panelUnmounted || session.value?.id !== sessionId) {
+      if (result) void revokeSessionAutoApprove(sessionId)
+      return
+    }
+    autoApproveOn.value = result
     ElMessage.success(autoApproveOn.value
       ? '已开启本会话自动执行授权：落库草稿不再逐次审批（对外提交仍永不自动）'
       : '已关闭自动执行授权：业务写操作恢复逐次审批')
   } catch (exc) {
+    // 已切走：失败的请求在服务端是否生效无从得知，一律交给带重试的撤销，且不改动当前会话的界面状态
+    if (panelUnmounted || session.value?.id !== sessionId) {
+      void revokeSessionAutoApprove(sessionId)
+      return
+    }
     autoApproveOn.value = !enabled
     ElMessage.error(`授权切换失败：${String(exc)}`)
   } finally {
@@ -1393,7 +1414,10 @@ onMounted(async () => {
   } else if (props.resumeSessionId) {
     // 历史回放拿不到（live-token-only）时同样降级续看，并附着在途 run——工作台 `?session=`、
     // 侧边栏刷新恢复都走这里，不能因回放失败开出空白面板、run 在后台继续却看不见（dljy-web#119 审查 P2）
-    if (await resumeSession(props.resumeSessionId, { allowEmpty: true })) await attachActiveRunIfAny(-1)
+    if (await resumeSession(props.resumeSessionId, { allowEmpty: true })) {
+      void syncAutoApproveFromServer()
+      await attachActiveRunIfAny(-1)
+    }
   } else {
     // 首条自动发送依赖 agent-backend SSE：离线时跳过（由模板「未就绪」提示引导），避免首条即报错。
     if (props.initialQuestion.trim() && !agentOffline.value) {
