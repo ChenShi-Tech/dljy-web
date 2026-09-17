@@ -1,7 +1,9 @@
 // 场站分配对话框的交互不变量（dljy#2971，MP-05）。
 // 守什么：打开时预填当前生效的分配（新集是完整快照，不另起一份相加）；实时显示未分配余额与超出量；
-// 超额草稿不能确认；服务端拒绝超额时显示「原分配不变」与当前可分配余额；正式交易分解确认必须选依据。
-// 坏掉的症状：给第三个场站分 200 时页面仍显示可确认；拒绝后用户不知道原分配是否被改动。
+// 超额草稿不能确认；服务端拒绝超额时显示「原分配不变」与当前可分配余额；正式交易分解确认必须选依据；
+// 切换分配类型后按新类型的生效分配重新预填，提交的行不带上一类型的行。
+// 坏掉的症状：给第三个场站分 200 时页面仍显示可确认；拒绝后用户不知道原分配是否被改动；
+// 在正式交易分解预填后切到内部经营分配保存，把正式分解的行当成内部经营分配提交并替换其整套快照。
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { enableAutoUnmount, flushPromises } from '@vue/test-utils'
 import { nextTick } from 'vue'
@@ -30,8 +32,18 @@ const overview: ContractStationAllocationsOverview = {
 }
 const evidence = [{ id: 5, contractId: 7, importBatchId: null, documentType: 'ELECTRONIC_CONFIRMATION' as const, sha256: 'a'.repeat(64), byteSize: 1, originalFileName: '确认单.pdf', mediaType: null, source: 'UPLOAD', note: null, uploadedAt: '', uploadedBy: null }]
 
-async function open() {
-  const w = mount(MidlongStationAllocationDialog, { props: { modelValue: false, overview, stations: [], evidence } })
+const internalSegment = { segment: '2027-06', segmentQuantity: '1000', allocatedQuantity: '1000', unallocatedQuantity: '0', excessQuantity: '0', stationCount: 1, status: 'WITHIN' as const }
+const overviewWithInternal: ContractStationAllocationsOverview = {
+  ...overview,
+  effective: {
+    FORMAL_TRADING: overview.effective.FORMAL_TRADING,
+    INTERNAL_OPERATING: { allocationSetId: 11, setNo: 1, segmentMode: 'MONTHLY', segments: [internalSegment], inheritedFromRevisionNo: null,
+      rows: [{ id: 3, stationId: 3, stationName: '测试光伏站C', segmentMonth: '2027-06', quantity: '1000' }] },
+  },
+}
+
+async function open(o: ContractStationAllocationsOverview = overview) {
+  const w = mount(MidlongStationAllocationDialog, { props: { modelValue: false, overview: o, stations: [], evidence } })
   await w.setProps({ modelValue: true })
   await nextTick()
   return w
@@ -53,6 +65,37 @@ describe('场站分配对话框', () => {
     await nextTick()
     expect(segmentRow()).toEqual(['合同总量', '1,000', '1,100', '0', '超出 100'])
     expect(w.text()).toContain('分配合计超过合同片段电量 × 1')
+  })
+
+  it('切换分配类型：行、片段方式与依据按新类型的生效分配重新预填，保存时只提交新类型的行', async () => {
+    hoisted.createStationAllocationDraft.mockResolvedValue({ allocationSetId: 12, setNo: 2, status: 'DRAFT', revisionNo: 1, validation: { blocking: false, blockingCount: 0, warningCount: 0, summary: [], completeness: null, segments: [internalSegment] } })
+    const w = await open(overviewWithInternal)
+    type Form = { allocationKind: string; segmentMode: string; rows: Array<{ stationId: number | null; segmentMonth: string; quantity: string }>; evidenceIds: number[]; basisNote: string }
+    const form = () => (w.vm as unknown as { form: Form }).form
+    const pickKind = async (label: string) => {
+      await w.findAll('.el-radio').find((r) => r.text().startsWith(label))!.find('input').setValue(true)
+      await flushPromises()
+    }
+    form().evidenceIds = [5]
+    await w.findAll('.ml-row input').at(-1)!.setValue('450')
+    expect(form().rows.map((r) => [r.stationId, r.quantity])).toEqual([[1, '400'], [2, '450']])
+
+    await pickKind('内部经营分配')
+    expect([form().allocationKind, form().segmentMode, form().evidenceIds]).toEqual(['INTERNAL_OPERATING', 'MONTHLY', []])
+    expect(form().rows).toEqual([{ stationId: 3, segmentMonth: '2027-06', quantity: '1000' }])
+    expect(w.text()).toContain('已按「内部经营分配」当前生效的分配重新预填')
+
+    await pickKind('正式交易分解')
+    expect([form().segmentMode, form().rows.map((r) => [r.stationId, r.quantity])]).toEqual(['CONTRACT_TOTAL', [[1, '400'], [2, '500']]])
+
+    await pickKind('内部经营分配')
+    await w.find('textarea').setValue('【测试】内部考核口径')
+    await w.findAll('button').find((b) => b.text() === '保存草稿并校验')!.trigger('click')
+    await flushPromises()
+    expect(hoisted.createStationAllocationDraft).toHaveBeenCalledWith(7, {
+      expectedRevisionNo: 1, allocationKind: 'INTERNAL_OPERATING', segmentMode: 'MONTHLY',
+      rows: [{ stationId: 3, segmentMonth: '2027-06', quantity: '1000' }], basisNote: '【测试】内部考核口径', evidenceIds: [],
+    })
   })
 
   it('服务端拒绝超额确认：提示原分配不变与当前可分配余额；正式交易分解未选依据时确认按钮禁用', async () => {

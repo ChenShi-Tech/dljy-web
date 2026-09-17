@@ -3,6 +3,8 @@
 // - 片段 = 合同总量或某交割月的正式月度电量；分配合计超过片段电量时标出超出量，不能确认，原分配保持不变。
 // - 未分配余额始终可见；主体合计与场站份额是同一义务的拆分，不相加。
 // - 正式交易分解必须附依据资料；内部经营分配必须写依据说明，并与正式分解区别展示。
+// - 两类分配各自是整套快照：切换分配类型时，分配行、片段方式与依据都按新类型的当前生效分配重新预填，
+//   不把上一类型的行带过去（否则确认后会用错类型的行替换该类型的整套分配）；草稿保存后表单锁定，类型不能再改。
 import { computed, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import MidlongNotice from '../MidlongNotice.vue'
@@ -30,19 +32,31 @@ const form = reactive({ allocationKind: 'FORMAL_TRADING' as StationAllocationKin
 const busy = ref(false)
 const failure = ref<MidlongFailure | null>(null)
 const draft = ref<StationAllocationDraftResult | null>(null)
+const switchedKind = ref<StationAllocationKind | null>(null)
 
-watch(() => props.modelValue, (open) => {
-  if (!open) return
-  form.allocationKind = props.initialKind ?? 'FORMAL_TRADING'
-  const effective = props.overview.effective[form.allocationKind]
-  // 预填当前生效的分配：新分配集是完整快照，追加场站时在原分配上改，而不是另起一份相加。
+/** 按某类分配的当前生效集预填：新分配集是完整快照，追加场站时在原分配上改，而不是另起一份相加。 */
+function prefill(kind: StationAllocationKind) {
+  const effective = props.overview.effective[kind]
+  form.allocationKind = kind
   form.segmentMode = effective?.segmentMode ?? 'CONTRACT_TOTAL'
   form.rows = effective?.rows.map((r) => ({ stationId: r.stationId, segmentMonth: r.segmentMonth ?? '', quantity: r.quantity })) ?? [{ stationId: null, segmentMonth: '', quantity: '' }]
   form.basisNote = ''
   form.evidenceIds = []
   failure.value = null
+}
+
+watch(() => props.modelValue, (open) => {
+  if (!open) return
+  prefill(props.initialKind ?? 'FORMAL_TRADING')
+  switchedKind.value = null
   draft.value = null
 })
+
+function onKindChange(kind: string | number | boolean | undefined) {
+  if (draft.value) return
+  prefill(kind as StationAllocationKind)
+  switchedKind.value = kind as StationAllocationKind
+}
 
 const stationOptions = computed(() => {
   const mapped = props.overview.subjectStations
@@ -122,10 +136,11 @@ const failureDetails = computed(() => failure.value?.details as { segments?: Sta
     </MidlongNotice>
     <el-form label-width="96px" class="ml-form" :disabled="Boolean(draft)">
       <el-form-item label="分配类型">
-        <el-radio-group v-model="form.allocationKind">
+        <el-radio-group v-model="form.allocationKind" @change="onKindChange">
           <el-radio value="FORMAL_TRADING">{{ STATION_ALLOCATION_KIND_LABELS.FORMAL_TRADING }}</el-radio>
           <el-radio value="INTERNAL_OPERATING">{{ STATION_ALLOCATION_KIND_LABELS.INTERNAL_OPERATING }}（非正式交易分解）</el-radio>
         </el-radio-group>
+        <div v-if="switchedKind" class="ml-hint ml-switched">已按「{{ STATION_ALLOCATION_KIND_LABELS[switchedKind] }}」当前生效的分配重新预填分配行、片段与依据；切换前未保存的修改不会带到这一类。</div>
       </el-form-item>
       <el-form-item label="分配片段">
         <el-radio-group v-model="form.segmentMode">
@@ -194,6 +209,7 @@ const failureDetails = computed(() => failure.value?.details as { segments?: Sta
 .ml-hint { color: var(--muted); font-size: var(--font-sm); margin-right: 8px; }
 .ml-summary { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
 .ml-segments { margin-top: 6px; }
+.ml-switched { width: 100%; }
 .ml-warn { color: var(--warning); }
 .ml-danger { color: var(--danger); font-weight: 600; }
 </style>
