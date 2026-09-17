@@ -172,6 +172,45 @@ describe('revokeSessionAutoApprove（切走会话/卸载时撤销授权，失败
     expect(bodies).toEqual([true, false])
   })
 
+  it('结果不明的开启晚于清理生效：超时窗口过后复查服务端，授权仍开着就再撤销一次', async () => {
+    vi.useFakeTimers()
+    try {
+      vi.stubGlobal('fetch', fetchMock)
+      fetchMock
+        .mockRejectedValueOnce(new DOMException('timeout', 'TimeoutError')) // 开启超时
+        .mockResolvedValueOnce(jsonResponse({ auto_approve: false })) // 清理撤销成功
+        .mockResolvedValueOnce(jsonResponse({ id: 's_late', auto_approve: true })) // 复查：迟到的开启已生效
+        .mockResolvedValueOnce(jsonResponse({ auto_approve: false })) // 再撤销
+      await expect(setSessionAutoApprove('s_late', true)).rejects.toThrow('timeout')
+      await vi.advanceTimersByTimeAsync(0)
+      expect(fetchMock).toHaveBeenCalledTimes(2)
+      await vi.advanceTimersByTimeAsync(30_000)
+      expect(fetchMock).toHaveBeenCalledTimes(4)
+      const last = fetchMock.mock.calls[3] as [string, RequestInit]
+      expect(JSON.parse(last[1].body as string)).toEqual({ enabled: false })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('复查前又发起了新的开启：不复查、不撤销', async () => {
+    vi.useFakeTimers()
+    try {
+      vi.stubGlobal('fetch', fetchMock)
+      fetchMock
+        .mockRejectedValueOnce(new DOMException('timeout', 'TimeoutError'))
+        .mockResolvedValueOnce(jsonResponse({ auto_approve: false }))
+        .mockResolvedValueOnce(jsonResponse({ auto_approve: true })) // 新的开启
+      await expect(setSessionAutoApprove('s_regrant_later', true)).rejects.toThrow('timeout')
+      await vi.advanceTimersByTimeAsync(0)
+      await expect(setSessionAutoApprove('s_regrant_later', true)).resolves.toBe(true)
+      await vi.advanceTimersByTimeAsync(30_000)
+      expect(fetchMock).toHaveBeenCalledTimes(3)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('旧的开启还在途时又发起了新的开启：旧的开启随后失败，不清理、不关掉新的授权', async () => {
     vi.stubGlobal('fetch', fetchMock)
     let failOld: (e: Error) => void = () => {}
