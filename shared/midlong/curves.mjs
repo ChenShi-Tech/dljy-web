@@ -163,6 +163,7 @@ export const CURVE_ISSUES = Object.freeze({
   TOO_MANY_INTERVALS: { severity: 'blocking', label: '时段数超过上限' },
   VALUE_INVALID: { severity: 'blocking', label: '数值无效' },
   TIME_INVALID: { severity: 'blocking', label: '时间无效' },
+  TIME_COORDINATE_CONFLICT: { severity: 'blocking', label: '时段序号与开始 / 结束时刻指向不同时段' },
   PERIOD_INDEX_INVALID: { severity: 'blocking', label: '时段序号无效' },
   INTERVAL_INVALID: { severity: 'blocking', label: '结束时间不晚于开始时间' },
   INTERVAL_DURATION_MISMATCH: { severity: 'blocking', label: '时段长度与声明粒度不一致' },
@@ -351,8 +352,47 @@ function locationText(location) {
   return parts.join(' ') || null
 }
 
+/** epoch 毫秒在某固定偏移下的日期（YYYY-MM-DD）。 */
+function localDateOf(ms, offsetMinutes) {
+  return new Date(ms + offsetMinutes * MINUTE_MS).toISOString().slice(0, 10)
+}
+
 /**
- * 逐时段曲线 → 规范时段。行可以用「日期 + 时段序号」「开始时间（+结束时间）」或「日期 + 当日开始/结束时刻」三种写法之一。
+ * 开始（+结束）时间 → 区间：有日期时按「日期 + 当日时刻」，否则按完整日期时间（带偏移按原偏移，不带按声明时区）。
+ * 只给开始时，结束 = 开始 + 粒度。
+ * @returns {{ startMs: number, endMs: number } | { error: string }}
+ */
+function timeCoordinate({ dateText, startText, endText, declaration }) {
+  const g = declaration.granularityMinutes
+  if (dateText) {
+    const date = normalizeDate(dateText)
+    const startMinute = parseTimeOfDay(startText)
+    const endMinute = endText ? parseTimeOfDay(endText) : null
+    if (!date || startMinute === null || startMinute === DAY_MINUTES || (endText && endMinute === null)) {
+      return { error: `日期或当日时刻无效（${dateText} ${startText}${endText ? `—${endText}` : ''}）` }
+    }
+    const midnight = dateMidnightMs(date, declaration.offsetMinutes)
+    const startMs = midnight + startMinute * MINUTE_MS
+    let endMs = endText ? midnight + endMinute * MINUTE_MS : startMs + g * MINUTE_MS
+    // 「23:45—00:00」按次日零点理解；其他结束早于开始的写法照常判为无效时段，不猜测。
+    if (endText && endMinute === 0 && startMinute > 0) endMs += DAY_MINUTES * MINUTE_MS
+    return { startMs, endMs }
+  }
+  const startMs = parseCurveDateTime(startText, declaration.offsetMinutes)
+  const endMs = endText ? parseCurveDateTime(endText, declaration.offsetMinutes) : startMs === null ? null : startMs + g * MINUTE_MS
+  if (startMs === null || endMs === null) return { error: `时间「${startText}${endText ? ` — ${endText}` : ''}」无效（应为 YYYY-MM-DD HH:mm）` }
+  return { startMs, endMs }
+}
+
+function intervalText(startMs, endMs) {
+  return `${startMs === null ? '（未给开始）' : toBeijingIso(startMs)} — ${toBeijingIso(endMs)}`
+}
+
+/**
+ * 逐时段曲线 → 规范时段。行可以用「日期 + 时段序号」「开始时间（+结束时间）」或「日期 + 当日开始/结束时刻」写法。
+ * 同一行两种写法都给（模板同时提供这几列）时，按声明时区分别解析并核对：指向同一个 [开始, 结束) 才接受；
+ * 不一致报 TIME_COORDINATE_CONFLICT 阻断，列出两种写法各自的区间，不按任一方猜测——否则陈旧或误填的序号列会把
+ * 数值挪到别的时段，而完整性与守恒校验照样通过。只给结束时刻（无开始）时核对它是否等于序号时段的结束。
  * @param {{ declaration: object, rows: Array<{ date?, periodIndex?, start?, end?, value, location? }> }} input
  * @returns {{ intervals: object[], issues: object[] }}
  */
@@ -373,42 +413,42 @@ export function normalizeIntervalSeries({ declaration, rows }) {
     const startText = String(row?.start ?? '').trim()
     const endText = String(row?.end ?? '').trim()
     const periodText = String(row?.periodIndex ?? '').trim()
-    let startMs = null
-    let endMs = null
-    if (dateText && periodText) {
-      const date = normalizeDate(dateText)
+    const byTime = startText ? timeCoordinate({ dateText, startText, endText, declaration }) : null
+    if (byTime?.error) { issues.push(issue('TIME_INVALID', `${ref}：${byTime.error}`, at)); return }
+    let byPeriod = null
+    if (periodText && (dateText || byTime)) {
+      // 没有日期列时，序号所在的日期取开始时间在声明时区下的日期。
+      const date = dateText ? normalizeDate(dateText) : localDateOf(byTime.startMs, declaration.offsetMinutes)
       const period = Number(periodText)
       if (!date) { issues.push(issue('TIME_INVALID', `${ref}：日期「${dateText}」无效`, at)); return }
       if (!Number.isInteger(period) || period < 1 || period > periodsPerDay) {
         issues.push(issue('PERIOD_INDEX_INVALID', `${ref}：时段序号「${periodText}」无效（${g} 分钟粒度为 1—${periodsPerDay}，1 表示当日 00:00 起的第一个时段）`, at))
         return
       }
-      startMs = dateMidnightMs(date, declaration.offsetMinutes) + (period - 1) * g * MINUTE_MS
-      endMs = startMs + g * MINUTE_MS
-    } else if (dateText && startText) {
+      const startMs = dateMidnightMs(date, declaration.offsetMinutes) + (period - 1) * g * MINUTE_MS
+      byPeriod = { startMs, endMs: startMs + g * MINUTE_MS }
+    }
+    let timeClaim = byTime
+    if (byPeriod && !byTime && endText) {
       const date = normalizeDate(dateText)
-      const startMinute = parseTimeOfDay(startText)
-      const endMinute = endText ? parseTimeOfDay(endText) : null
-      if (!date || startMinute === null || startMinute === DAY_MINUTES || (endText && endMinute === null)) {
-        issues.push(issue('TIME_INVALID', `${ref}：日期或当日时刻无效（${dateText} ${startText}${endText ? `—${endText}` : ''}）`, at))
-        return
-      }
-      startMs = dateMidnightMs(date, declaration.offsetMinutes) + startMinute * MINUTE_MS
-      endMs = endText ? dateMidnightMs(date, declaration.offsetMinutes) + endMinute * MINUTE_MS : startMs + g * MINUTE_MS
-      // 「23:45—00:00」按次日零点理解；其他结束早于开始的写法照常判为无效时段，不猜测。
-      if (endText && endMinute === 0 && startMinute > 0) endMs += DAY_MINUTES * MINUTE_MS
-    } else if (startText) {
-      startMs = parseCurveDateTime(startText, declaration.offsetMinutes)
-      endMs = endText ? parseCurveDateTime(endText, declaration.offsetMinutes) : startMs === null ? null : startMs + g * MINUTE_MS
-      if (startMs === null || endMs === null) {
-        issues.push(issue('TIME_INVALID', `${ref}：时间「${startText}${endText ? ` — ${endText}` : ''}」无效（应为 YYYY-MM-DD HH:mm）`, at))
-        return
-      }
-    } else {
+      const endMinute = parseTimeOfDay(endText)
+      if (endMinute === null) { issues.push(issue('TIME_INVALID', `${ref}：结束时刻「${endText}」无效（与「日期」搭配的 HH:mm，24:00 表示当日结束）`, at)); return }
+      timeClaim = { startMs: null, endMs: dateMidnightMs(date, declaration.offsetMinutes) + (endMinute === 0 ? DAY_MINUTES : endMinute) * MINUTE_MS }
+    }
+    if (byPeriod && timeClaim && (timeClaim.endMs !== byPeriod.endMs || (timeClaim.startMs !== null && timeClaim.startMs !== byPeriod.startMs))) {
+      issues.push(issue('TIME_COORDINATE_CONFLICT', `${ref}：时段序号「${periodText}」对应 ${intervalText(byPeriod.startMs, byPeriod.endMs)}，开始 / 结束时间「${startText}${endText ? ` — ${endText}` : ''}」对应 ${intervalText(timeClaim.startMs, timeClaim.endMs)}，两种写法指向不同时段；请核对后改为一致或只保留一种，系统不按任一方猜测`, {
+        ...at,
+        periodInterval: { start: toBeijingIso(byPeriod.startMs), end: toBeijingIso(byPeriod.endMs) },
+        timeInterval: { start: timeClaim.startMs === null ? null : toBeijingIso(timeClaim.startMs), end: toBeijingIso(timeClaim.endMs) },
+      }))
+      return
+    }
+    const chosen = byPeriod ?? byTime
+    if (!chosen) {
       issues.push(issue('TIME_INVALID', `${ref}：缺少时段（日期 + 时段序号，或开始时间）`, at))
       return
     }
-    intervals.push({ rowNo: intervals.length + 1, startMs, endMs, sourceValue: number.value, sourceText: sourceTextOf(row?.value), quantity: convertCurveValue(number.value, declaration), sourceRef: ref })
+    intervals.push({ rowNo: intervals.length + 1, startMs: chosen.startMs, endMs: chosen.endMs, sourceValue: number.value, sourceText: sourceTextOf(row?.value), quantity: convertCurveValue(number.value, declaration), sourceRef: ref })
   })
   if (intervals.length > MAX_CURVE_INTERVALS) {
     issues.push(issue('TOO_MANY_INTERVALS', `时段数 ${intervals.length} 超过单次上限 ${MAX_CURVE_INTERVALS}，请按月份拆分后分批导入`))
@@ -475,7 +515,8 @@ function applySegment({ item, ref, declaration, values, issues }) {
 
 /**
  * 典型日曲线 → 按实际适用日期逐日展开的规范时段。每个典型日有自己的时段值与适用日期区间（含首尾两日）。
- * 时段值二选一：逐时段序号（periodIndex），或峰平谷这类时刻段（startTime/endTime，可带 segmentName，只接受功率）。
+ * 时段值二选一：逐时段序号（periodIndex），或峰平谷这类时刻段（startTime/endTime，可带 segmentName，只接受功率）；
+ * 两者都给时时刻必须恰好是该序号时段，否则报 TIME_COORDINATE_CONFLICT。
  * @param {{ declaration: object, typicalDays: Array<{ name, values: Array<{ periodIndex?, startTime?, endTime?, segmentName?, value, location? }>, dateRanges: Array<{ from, to, location? }>, declaredDailyTotal? }> }} input
  */
 export function expandTypicalDays({ declaration, typicalDays }) {
@@ -508,6 +549,28 @@ export function expandTypicalDays({ declaration, typicalDays }) {
         issues.push(issue('PERIOD_INDEX_INVALID', `${ref}：时段序号「${item?.periodIndex ?? ''}」无效（1—${periodsPerDay}），或改填开始 / 结束时刻`, { location: item?.location ?? null, sourceRef: ref }))
         profileValid = false
         continue
+      }
+      // 时段序号与开始 / 结束时刻都给时，时刻必须恰好是这个序号时段，否则不按任一方猜测（同逐时段曲线的混合写法）。
+      const startTimeText = String(item?.startTime ?? '').trim()
+      const endTimeText = String(item?.endTime ?? '').trim()
+      if (startTimeText || endTimeText) {
+        const periodStart = (period - 1) * g
+        const periodEnd = period * g
+        const startMinute = startTimeText ? parseTimeOfDay(startTimeText) : null
+        const endMinute = endTimeText ? parseTimeOfDay(endTimeText) : null
+        if ((startTimeText && (startMinute === null || startMinute === DAY_MINUTES)) || (endTimeText && endMinute === null)) {
+          issues.push(issue('TIME_INVALID', `${ref}：时刻「${startTimeText}—${endTimeText}」无效（HH:mm，结束可写 24:00）`, { location: item?.location ?? null, sourceRef: ref }))
+          profileValid = false
+          continue
+        }
+        const endMatches = endMinute === null || endMinute === periodEnd || (endMinute === 0 && periodEnd === DAY_MINUTES)
+        if ((startMinute !== null && startMinute !== periodStart) || !endMatches) {
+          issues.push(issue('TIME_COORDINATE_CONFLICT', `${ref}：时段序号「${period}」对应 ${minuteLabel(periodStart)}—${minuteLabel(periodEnd)}，开始 / 结束时刻写的是「${startTimeText || '（未给开始）'}—${endTimeText || '（未给结束）'}」，两种写法指向不同时段；请核对后改为一致或只保留一种，系统不按任一方猜测`, {
+            location: item?.location ?? null, sourceRef: ref, period, periodTime: { start: minuteLabel(periodStart), end: minuteLabel(periodEnd) }, timeText: { start: startTimeText || null, end: endTimeText || null },
+          }))
+          profileValid = false
+          continue
+        }
       }
       const number = parseCurveNumber(item?.value)
       if (number.empty || number.error) {

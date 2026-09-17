@@ -96,6 +96,12 @@ export interface ValidationIssue {
   field?: string
   segment?: string
   ranges?: Array<{ start: string; end: string; count: number }>
+  /** TIME_COORDINATE_CONFLICT（逐时段）：时段序号与开始 / 结束时间各自对应的区间（只给结束时 start 为 null）。 */
+  periodInterval?: { start: string; end: string }
+  timeInterval?: { start: string | null; end: string }
+  /** TIME_COORDINATE_CONFLICT（典型日）：序号对应的时刻与填写的时刻文本。 */
+  periodTime?: { start: string; end: string }
+  timeText?: { start: string | null; end: string | null }
   [key: string]: unknown
 }
 
