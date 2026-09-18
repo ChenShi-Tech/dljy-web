@@ -149,6 +149,8 @@ async function submit() {
       savedWithWarnings.value = { contractId: result.contractId, warnings: voidedHints }
       return
     }
+    // 保存已完成：先复位「保存中」再关闭，否则关闭时的「保存中不关闭」保护会把这次关闭拦下（dljy#2978）。
+    saving.value = false
     emit('saved', result.contractId)
     close()
   } catch (error) {
