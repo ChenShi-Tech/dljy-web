@@ -13,6 +13,12 @@ export const INSIGHT_SCHEMA_VERSION = 'insight/v1'
 export const INSIGHT_TIME_ZONE = 'Asia/Shanghai'
 /** 单次分析的业务窗上限（D10 研究预览初始上限同为 366 天）。 */
 export const MAX_WINDOW_DAYS = 366
+
+/**
+ * 按 UTF-16 码元比较文本，给排序用。localeCompare 随运行环境的语言区域变化（中文区域按拼音排），
+ * 同一份数据在两台机器上会排出不同顺序、算出不同的结果版本；洞察里凡是决定输出顺序的排序都用它。
+ */
+export const compareText = (a, b) => (a < b ? -1 : a > b ? 1 : 0)
 export const MAX_OBJECT_REFS = 200
 export const PAGE_SIZE_DEFAULT = 50
 export const PAGE_SIZE_MAX = 200

@@ -3,6 +3,7 @@
 export declare const INSIGHT_SCHEMA_VERSION: 'insight/v1'
 export declare const INSIGHT_TIME_ZONE: 'Asia/Shanghai'
 export declare const MAX_WINDOW_DAYS: number
+export declare function compareText(a: string, b: string): number
 export declare const MAX_OBJECT_REFS: number
 export declare const PAGE_SIZE_DEFAULT: number
 export declare const PAGE_SIZE_MAX: number

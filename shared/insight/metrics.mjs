@@ -5,6 +5,7 @@
 // 分析默认值只是平台的分析口径，不冒称已核验的官方规则；跨生效日按适用版本分段，缺历史依据的区间不套今天的规则。
 
 import { decimalCompare, decimalRound, parseDecimal } from '../midlong/decimal.mjs'
+import { compareText } from './contract.mjs'
 
 /** 依据类型：official 官方规则（需写明出处）· analysis-default 平台分析默认值 · user 用户参数。 */
 export const RULE_KINDS = Object.freeze(['official', 'analysis-default', 'user'])
@@ -64,6 +65,13 @@ export const INSIGHT_METRICS = Object.freeze([
   definition({ metricId: 'forecast.mae-ratio', version: '1', label: '平均绝对误差占实际均值', unit: '%', places: 1, formula: 'MAE/Ā×100', basis: '共同有效时段；实际均值不为正时不计算' }),
   definition({ metricId: 'supply.progress-change', version: '1', label: '较前一日同进度变化', unit: '%', places: 1, formula: '(当日已发布时段均值−前一日同时段均值)/前一日同时段均值×100', basis: '只对单日窗口；前一日同时段缺任何时段则不比较' }),
   definition({ metricId: 'supply.residual-demand-proxy', version: '1', label: '剩余需求代理（分析代理）', unit: 'MW', places: 1, formula: '负荷+净外送−新能源', basis: '三者同范围同区间且方向明确；不是官方竞价空间，缺一项不可算' }),
+  // #3022 电网边界：通道实测与同名断面上下界对比（正向限值为上界、反向限值为下界，符号原样保留）。不是可用输电能力。
+  definition({ metricId: 'grid.limit-margin-minimum', version: '1', label: '最小限值裕度', unit: 'MW', places: 1, formula: 'min(min(正向限值−实际, 实际−反向限值))', basis: '同名通道同一时段；负数表示超出限值区间；并列取最早时段' }),
+  definition({ metricId: 'grid.limit-load-rate-maximum', version: '1', label: '最高限值负载率', unit: '%', places: 1, formula: '实际≥0：实际/正向限值×100；实际<0：实际/反向限值×100', basis: '只在对应方向限值不为 0 且同号时计算；并列取最早时段' }),
+  definition({ metricId: 'grid.outside-limit-hours', version: '1', label: '超出限值区间时长', unit: 'h', places: 2, formula: 'ΣΔt(实际>正向限值 或 实际<反向限值)', basis: '实测与限值的对比，不等于调度认定的越限；直流满送时实测常高出限值几 MW' }),
+  definition({ metricId: 'sample.matched-hours', version: '1', label: '配对时长', unit: 'h', places: 2, formula: 'ΣΔt（实际与上下界都有效）', basis: '裕度与负载率只在这些时段计算' }),
+  definition({ metricId: 'sample.no-limit-hours', version: '1', label: '缺限值时长', unit: 'h', places: 2, formula: 'ΣΔt（实际有效但缺上界或下界）', basis: '缺测不补，不计算' }),
+  definition({ metricId: 'sample.invalid-limit-hours', version: '1', label: '限值区间不成立时长', unit: 'h', places: 2, formula: 'ΣΔt（正向限值<反向限值）', basis: '区间本身矛盾，不计算裕度' }),
 ])
 
 const BY_ID = new Map(INSIGHT_METRICS.map(item => [item.metricId, item]))
@@ -84,7 +92,7 @@ export function validateMetricDefinitions(list = INSIGHT_METRICS) {
     if (!ROUNDING_MODES.includes(item.rounding)) errors.push(`${where}: 未知舍入方式 ${item.rounding}`)
     if (!Number.isInteger(item.places) || item.places < 0 || item.places > 6) errors.push(`${where}: 显示精度应为 0—6 位小数`)
     if (item.ruleKind === 'official' && !item.source) errors.push(`${where}: 官方规则必须写明出处`)
-    const periods = [...item.effective].sort((a, b) => String(a.from ?? '').localeCompare(String(b.from ?? '')))
+    const periods = [...item.effective].sort((a, b) => compareText(String(a.from ?? ''), String(b.from ?? '')))
     for (let i = 1; i < periods.length; i++) {
       if (periods[i - 1].to === null || periods[i].from === null || periods[i - 1].to >= periods[i].from) errors.push(`${where}: 生效区间重叠`)
     }
@@ -146,7 +154,7 @@ export function rankEligible(items, { metricId, direction }) {
     else eligible.push(item)
   }
   const sign = direction === 'asc' ? 1 : -1
-  eligible.sort((a, b) => sign * decimalCompare(a.value, b.value) || a.objectId.localeCompare(b.objectId))
+  eligible.sort((a, b) => sign * decimalCompare(a.value, b.value) || compareText(a.objectId, b.objectId))
   const ranked = []
   eligible.forEach((item, index) => {
     const previous = ranked.at(-1)
@@ -155,5 +163,5 @@ export function rankEligible(items, { metricId, direction }) {
     if (tied) previous.tied = true
     ranked.push({ objectId: item.objectId, value: item.value, rank, tied })
   })
-  return { metricId, definitionVersion: metric.version, eligibility: metric.eligibility, ranked, ineligible: ineligible.sort((a, b) => a.objectId.localeCompare(b.objectId)) }
+  return { metricId, definitionVersion: metric.version, eligibility: metric.eligibility, ranked, ineligible: ineligible.sort((a, b) => compareText(a.objectId, b.objectId)) }
 }
