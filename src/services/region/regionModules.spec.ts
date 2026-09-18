@@ -146,6 +146,21 @@ describe('中长期售电合同入口仅云南开通（dljy#2939）', () => {
     expect(getRegionCapabilityForPath('/zcqjy/curves-export', 'shanxi')?.route).toBeNull()
   })
 
+  it('敞口看板归现货模块、交易月历在云南隐藏（dljy#2988）', () => {
+    // 路径仍在 /zcqjy 下，但按精确 routePaths 解析到现货模块，不被中长期的 /zcqjy 前缀吃掉。
+    const exposure = getRegionCapabilityForPath('/zcqjy/exposure', 'yunnan')
+    expect(exposure?.module.id).toBe('spot-trading')
+    expect(exposure?.status).toBe('degraded')
+    expect(getRegionCapabilityForPath('/zcqjy/exposure', 'shanxi')?.status).toBe('available')
+    // 同前缀的中长期页面仍解析到中长期模块。
+    expect(getRegionCapabilityForPath('/zcqjy/positions', 'yunnan')?.module.id).toBe('midlong-trading')
+    expect(getRegionCapabilityForPath('/zcqjy/contracts', 'yunnan')?.module.id).toBe('midlong-trading')
+    // 云南属南网，不取国网月历：隐藏而不是显示空页面。
+    expect(getRegionCapabilityForPath('/zcqjy/zjyap', 'yunnan')?.status).toBe('hidden')
+    expect(isRegionRouteAvailable('/zcqjy/zjyap', 'yunnan')).toBe(false)
+    expect(getRegionCapabilityForPath('/zcqjy/zjyap', 'shanxi')?.status).toBe('available')
+  })
+
   it('P3 售电计划与交易执行同样只在云南可用（dljy#2973）', () => {
     for (const path of ['/zcqjy/plans', '/zcqjy/execution']) {
       expect(isRegionRouteAvailable(path, 'yunnan')).toBe(true)
