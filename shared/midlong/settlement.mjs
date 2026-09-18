@@ -327,3 +327,24 @@ export function summarizeComparableGroups(groups = []) {
     rankingNotice: comparable ? null : SETTLEMENT_NOTICES.comparableGroupsOnly,
   }
 }
+
+/**
+ * 台账导出的服务端全量分页收集（design D6：导出复用服务端筛选，不按浏览器当前页拼、
+ * 也不静默截断）。逐页调用 fetchPage(page, pageSize) 直到收满 total 或空页；
+ * maxPages 防御异常总量（超限抛错而不是无界循环）。
+ * @param {(page: number, pageSize: number) => Promise<{ rows: Array, total: number }>} fetchPage
+ */
+export async function collectAllPages(fetchPage, { pageSize = 100, maxPages = 500 } = {}) {
+  const rows = []
+  let total = null
+  for (let page = 1; page <= maxPages; page += 1) {
+    const result = await fetchPage(page, pageSize)
+    total = Number(result.total ?? 0)
+    rows.push(...result.rows)
+    if (!result.rows.length || rows.length >= total) break
+  }
+  if (rows.length < total) {
+    throw new Error(`台账导出未收满（${rows.length}/${total}），中止以免输出不完整文件`)
+  }
+  return { rows, total }
+}

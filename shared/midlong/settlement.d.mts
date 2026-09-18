@@ -162,3 +162,9 @@ export interface ComparableGroupSummary {
   rankingNotice: string | null
 }
 export declare function summarizeComparableGroups(groups?: Array<{ currency: string; taxBasis: string; priceComponent: string; knownQuantity: string; notionalAmount: string }>): ComparableGroupSummary
+
+/** 台账导出的服务端全量分页收集（design D6：不按浏览器当前页拼、不静默截断）。 */
+export declare function collectAllPages(
+  fetchPage: (page: number, pageSize: number) => Promise<{ rows: Array<unknown>, total: number }>,
+  options?: { pageSize?: number, maxPages?: number },
+): Promise<{ rows: Array<unknown>, total: number }>
