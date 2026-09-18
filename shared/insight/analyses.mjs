@@ -92,6 +92,27 @@ export const INSIGHT_ANALYSES = Object.freeze([
     viewFamily: 'supply', views: ['series', 'summary', 'forecast-error', 'residual-proxy'],
   }),
   analysis({
+    // 市场总览重点事项（#3006，OV03/OV04）：规则与阈值在 overview.mjs 登记；同进度比较要读前一日作参考期
+    analysisId: 'overview.key-items', title: '市场总览重点事项', pageIds: ['overview'], regionIds: ['yunnan'],
+    sourceIds: ['yn.price.user.day-ahead', 'yn.price.user.real-time', 'yn.system.load.actual', 'yn.system.load.forecast', 'yn.system.new-energy.actual'],
+    viewFamily: 'overview', views: ['key-items', 'series'], reference: { days: 1, views: ['key-items'] },
+    limits: { maxDays: 7 },
+  }),
+  analysis({
+    // 水电周出力（#3005，SH02）：私有渠道的逐日平均出力，按区域分列；云南与其他省不相加
+    analysisId: 'supply.hydro-weekly-output', title: '水电周出力预测（按区域，获权）',
+    pageIds: ['supply'], regionIds: ['yunnan'],
+    sourceIds: ['cgn.hydro.weekly-output.forecast'],
+    filters: { objectIds: objectIdsFilter(10) }, limits: { maxDays: 31, maxObjects: 10 },
+  }),
+  analysis({
+    // 云南水电机组群组成与占比（#3005，SH02）：只有占比，没有上限值
+    analysisId: 'supply.hydro-unit-groups', title: '云南水电机组群组成与机组出力占比（获权）',
+    pageIds: ['supply'], regionIds: ['yunnan'],
+    sourceIds: ['cgn.hydro.yn-group-share'],
+    filters: { objectIds: objectIdsFilter(50) }, limits: { maxDays: 31, maxObjects: 50 },
+  }),
+  analysis({
     analysisId: 'prices.user-series', title: '云南用户侧日前/实时价格',
     pageIds: ['overview', 'prices'], regionIds: ['yunnan'],
     sourceIds: ['yn.price.user.day-ahead', 'yn.price.user.real-time'],
