@@ -23,7 +23,8 @@ export type InsightSource = {
   authority: string
   ingestChannel: string
   measure: { kind: MeasureKind; unit: string; inputUnit: string; factor: string; powerSemantics?: PowerSemantics; valueField?: string; fields?: readonly SourceField[] }
-  time: { resolutionMinutes: 15 | 60 | 1440; slotLabel: 'interval-start' | 'business-day'; dateField?: string; timeField?: string; targetDateField?: string }
+  /** targetDateField + leadDays：预测按目标日定位；ref_date（发布日）= 目标日 − leadDays */
+  time: { resolutionMinutes: 15 | 60 | 1440; slotLabel: 'interval-start' | 'business-day'; dateField?: string; timeField?: string; targetDateField?: string; leadDays?: number }
   variant: 'actual' | 'forecast' | null
   marketPhase: MarketPhase | null
   priceObject: PriceObject | null
@@ -33,8 +34,12 @@ export type InsightSource = {
   precision: { places: number }
   versionPolicy: VersionPolicy
   freshness: FreshnessCadence
+  /** 供需类别（系统曲线与送受电）；其他来源为 null */
+  category: SupplyCategory | null
 }
 
+export type SupplyCategory = 'load' | 'hydro' | 'new-energy' | 'non-market' | 'total-generation' | 'transfer'
+export declare const SUPPLY_CATEGORIES: readonly SupplyCategory[]
 export type SourceField = { id: string; valueField: string; unit: string; kind: MeasureKind }
 export declare function sourceFields(source: InsightSource): SourceField[]
 export declare const MEASURE_KINDS: readonly MeasureKind[]
