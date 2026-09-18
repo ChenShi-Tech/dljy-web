@@ -157,9 +157,13 @@ describe('中长期售电合同入口仅云南开通（dljy#2939）', () => {
     expect(getRegionCapabilityForPath('/zcqjy/positions', 'yunnan')?.module.id).toBe('midlong-trading')
     expect(getRegionCapabilityForPath('/zcqjy/contracts', 'yunnan')?.module.id).toBe('midlong-trading')
     // 云南属南网，不取国网月历：隐藏而不是显示空页面。
-    expect(getRegionCapabilityForPath('/zcqjy/zjyap', 'yunnan')?.status).toBe('hidden')
-    expect(isRegionRouteAvailable('/zcqjy/zjyap', 'yunnan')).toBe(false)
+    for (const southernGrid of ['yunnan', 'guangdong']) {
+      expect(getRegionCapabilityForPath('/zcqjy/zjyap', southernGrid)?.status, southernGrid).toBe('hidden')
+      expect(isRegionRouteAvailable('/zcqjy/zjyap', southernGrid), southernGrid).toBe(false)
+    }
     expect(getRegionCapabilityForPath('/zcqjy/zjyap', 'shanxi')?.status).toBe('available')
+    // 四川同属国网，保留经国网基线回退读山西月历的既有口径，不随南网一起隐藏。
+    expect(getRegionCapabilityForPath('/zcqjy/zjyap', 'sichuan')?.status).not.toBe('hidden')
   })
 
   it('精确路径优先于前缀，不受模块声明顺序影响（dljy#2988）', () => {
