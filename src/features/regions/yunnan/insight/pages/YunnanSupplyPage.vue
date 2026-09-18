@@ -46,6 +46,7 @@ import {
 } from '@/components/insight/chart/useInsightSeriesChart'
 import {
   formatBeijingDateTime,
+  formatInsightValue,
   insightPrecision,
   insightSeriesName,
   insightSourceTitle,
@@ -376,13 +377,13 @@ function filterSeriesResult(result: InsightBlockResult | null, predicate: (meta:
 function scopedChartSeries(
   result: InsightBlockResult | null,
   predicate: (meta: SupplySeriesEntry) => boolean
-): Array<{ seriesId: string; name: string; unit: string; points: InsightChartPoint[] }> {
+): Array<{ seriesId: string; name: string; unit: string; points: InsightChartPoint[]; sourceId: string }> {
   const filtered = filterSeriesResult(result, predicate)
   if (!filtered) return []
-  const out: Array<{ seriesId: string; name: string; unit: string; points: InsightChartPoint[] }> = []
+  const out: Array<{ seriesId: string; name: string; unit: string; points: InsightChartPoint[]; sourceId: string }> = []
   for (const group of buildInsightChartGroups(filtered)) {
     for (const chart of group.series) {
-      out.push({ seriesId: chart.meta.seriesId, name: seriesLabelOf(chart.meta), unit: chart.unit, points: chart.points })
+      out.push({ seriesId: chart.meta.seriesId, name: seriesLabelOf(chart.meta), unit: chart.unit, points: chart.points, sourceId: chart.meta.sourceId })
     }
   }
   return out
@@ -394,7 +395,7 @@ function beijingMDHM(ms: number): string {
   return `${beijing.slice(5, 10)} ${beijing.slice(11, 16)}`
 }
 
-type PlainChartSeries = { name: string; unit: string; points: InsightChartPoint[] }
+type PlainChartSeries = { name: string; unit: string; points: InsightChartPoint[]; sourceId?: string }
 
 /** 一条序列 → ECharts 线（阶梯 end、缺测断开、无平滑；预测虚线由调用方指定）。 */
 function plainLineOf(series: PlainChartSeries, dashed: boolean): Record<string, unknown> {
@@ -414,8 +415,8 @@ function plainLineOf(series: PlainChartSeries, dashed: boolean): Record<string, 
   }
 }
 
-/** 一组线 → 基础 option（时间轴、双轴语义由公共分组器保证单一单位，这里单 MW 轴）。 */
-function baseChartOption(series: Array<Record<string, unknown>>): Record<string, unknown> {
+/** 一组线 → 基础 option（时间轴、双轴语义由公共分组器保证单一单位，这里单 MW 轴；metas 供 tooltip 按来源精度取值）。 */
+function baseChartOption(series: Array<Record<string, unknown>>, metas: Array<{ name: string; sourceId?: string }> = []): Record<string, unknown> {
   return {
     tooltip: {
       trigger: 'axis',
@@ -428,7 +429,8 @@ function baseChartOption(series: Array<Record<string, unknown>>): Record<string,
           const [ts, val] = value
           const endMs = param.data?.end ? Date.parse(param.data.end) : Number.NaN
           const slot = Number.isFinite(endMs) ? `~${beijingMDHM(endMs)}` : ''
-          const shown = val === null || val === undefined || !Number.isFinite(val) ? '缺测' : String(val)
+          const precision = insightPrecision(metas.find((meta) => meta.name === param.seriesName)?.sourceId ?? '')
+          const shown = val === null || val === undefined || !Number.isFinite(val) ? '缺测' : formatInsightValue(String(val), precision)
           lines.push(`${param.marker ?? ''}${param.seriesName ?? ''}　${beijingMDHM(ts)}${slot}　${shown}`)
         }
         return lines.join('<br/>')
@@ -452,7 +454,7 @@ function buildSystemOption(result: InsightBlockResult | null, scope: 'yunnan' | 
     ...actual.map((chart) => plainLineOf(chart, false)),
     ...forecast.map((chart) => plainLineOf(chart, true)),
   ]
-  return baseChartOption(series)
+  return baseChartOption(series, [...actual, ...forecast])
 }
 
 const overviewOption = computed(() => buildSystemOption(viewStates.series.result, 'yunnan', showForecast.value))
@@ -622,10 +624,11 @@ const rawCompareOption = computed(() => {
       .filter((meta) => meta.variant === 'forecast' && ids.has(meta.seriesId))
       .map((meta) => meta.seriesId)
   )
-  const lines = scopedChartSeries(viewStates.series.result, (meta) => ids.has(meta.seriesId)).map((chart) =>
+  const scoped = scopedChartSeries(viewStates.series.result, (meta) => ids.has(meta.seriesId))
+  const lines = scoped.map((chart) =>
     plainLineOf(chart, dashedIds.has(chart.seriesId))
   )
-  return baseChartOption(lines)
+  return baseChartOption(lines, scoped)
 })
 
 /**
@@ -664,7 +667,7 @@ const errorChartOption = computed(() => {
   const lines = buildInsightChartGroups(adapted)
     .flatMap((group) => group.series)
     .map((chart: InsightChartSeries) => plainLineOf({ name: '预测 − 实际', unit: chart.unit, points: chart.points }, false))
-  return baseChartOption(lines)
+  return baseChartOption(lines, [{ name: '预测 − 实际', sourceId: actualSourceId }])
 })
 
 /** 配对统计卡（MAE、平均偏差、三口径时长）：tables.summary 里所选配对的行。 */
@@ -751,7 +754,7 @@ const proxyChartOption = computed(() => {
   const lines = buildInsightChartGroups(adapted)
     .flatMap((group) => group.series)
     .map((chart: InsightChartSeries) => plainLineOf({ name: '剩余需求代理（预测）', unit: chart.unit, points: chart.points }, false))
-  return baseChartOption(lines)
+  return baseChartOption(lines, [{ name: '剩余需求代理（预测）', sourceId: 'yn.system.load.forecast' }])
 })
 
 /** 代理统计卡：代理均值、最低/最高（带出现时段）、共同有效时长。 */
@@ -814,8 +817,8 @@ const compareDaysDifferent = computed(() => {
   return windowDays(ctx.businessWindow.value) !== windowDays(reference)
 })
 
-function metricTextOf(rows: Map<string, MetricRow>, seriesId: string, metricId: string): string {
-  const row = rows.get(`${seriesId}|${metricId}`)
+function metricTextOf(rows: Map<string, MetricRow>, metricId: string): string {
+  const row = rows.get(metricId)
   const shown = row ? formatMetricValue(metricId, row.value) : null
   return shown === null || shown === undefined ? '—' : String(shown)
 }
@@ -858,12 +861,12 @@ const compareRows = computed<CompareRow[]>(() => {
     rows.push({
       key: meta.seriesId,
       name: seriesLabelOf(meta),
-      currentMean: metricTextOf(cur, meta.seriesId, 'supply.mean-power'),
-      currentMin: metricTextOf(cur, meta.seriesId, 'supply.minimum'),
-      currentMax: metricTextOf(cur, meta.seriesId, 'supply.maximum'),
-      referenceMean: metricTextOf(ref, meta.seriesId, 'supply.mean-power'),
-      referenceMin: metricTextOf(ref, meta.seriesId, 'supply.minimum'),
-      referenceMax: metricTextOf(ref, meta.seriesId, 'supply.maximum'),
+      currentMean: metricTextOf(cur, 'supply.mean-power'),
+      currentMin: metricTextOf(cur, 'supply.minimum'),
+      currentMax: metricTextOf(cur, 'supply.maximum'),
+      referenceMean: metricTextOf(ref, 'supply.mean-power'),
+      referenceMin: metricTextOf(ref, 'supply.minimum'),
+      referenceMax: metricTextOf(ref, 'supply.maximum'),
     })
   }
   return rows
@@ -1264,7 +1267,7 @@ onMounted(() => {
                   {{ referenceWindow.start }} ~ {{ referenceWindow.end }}
                 </p>
                 <el-alert v-if="compareDaysDifferent" type="warning" :closable="false" :title="COMPARE_DAYS_TEXT" />
-                <el-table v-if="compareRows.length" :data="compareRows" size="small" border max-height="360">
+                <el-table v-if="compareRows.length" :data="compareRows" size="small" border max-height="360" data-testid="yns-compare-table">
                   <el-table-column prop="name" label="序列" min-width="200" show-overflow-tooltip />
                   <el-table-column prop="currentMean" label="平均功率（当前，MW）" width="150" align="right" />
                   <el-table-column prop="currentMin" label="最低（当前）" width="110" align="right" />
