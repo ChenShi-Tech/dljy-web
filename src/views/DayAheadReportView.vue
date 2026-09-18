@@ -16,6 +16,8 @@ import { ElMessage } from 'element-plus'
 import { currentRegion } from '@/services/region/regionContext'
 import { useCapturedCapability } from '@/composables/useCapturedCapability'
 import { fetchSpotDayAheadReportContract, SPOT_DAY_AHEAD_REPORT_FAMILY } from '@/services/data/contracts'
+import type { DayAheadReportGroupKey, SpotDayAheadReportBlock, SpotDayAheadRow } from '@/services/data/contracts'
+import type * as echarts from 'echarts'
 import { DECLARATION_PRICE_TYPE_CODES, DECLARATION_QTY_TYPE_CODES } from '@/data/declarationCodes'
 import { fetchCapturedDates } from '@/services/captured'
 import { onRegionChange } from '../composables/useRegionReload'
@@ -39,13 +41,21 @@ const hasEnergy = (date: string) => date <= ENERGY_LAST_DATE
 const ZPTQX = DECLARATION_QTY_TYPE_CODES
 const ZPTJG = DECLARATION_PRICE_TYPE_CODES
 // 组 → 轴/字典/类型/tooltip 单位
+interface ReportGroupSpec {
+  key: DayAheadReportGroupKey
+  axis: number
+  dict?: Record<string, string>
+  base: string
+  kind: 'line' | 'bar'
+  unit: string
+}
 // zcqjj：原标注「持仓比例 %」并挂 min:0/max:100 的固定轴，但逐日实测值域为 86~532
 // （4/15: 120~478.1、6/04: 86~531.8、6/10: 99.5~532.5），整条线恒被裁到轴外不可见，这是真 bug。
 // ⚠️ 但值域超 100 只能证伪「0~100 的比例轴」，不足以证明它是价格（拿元/MWh 量级去佐证是循环论证）；
 // 平台未提供 zrqsb 分组字典，语义待核实（#1468）。故这里只修可见性、不臆断命名：
 // 保留原始字段名 `zcqjj` 作图例、不标单位，挂独立自适应轴（scale:true），刻意不并入价格轴，
 // 以免一个可能是持仓类的指标被读成电价而误导交易分析。
-const GROUPS = [
+const GROUPS: ReportGroupSpec[] = [
   { key: 'dl', axis: 0, dict: ZPTQX, base: '电量', kind: 'line', unit: 'MWh' },
   { key: 'jg', axis: 1, dict: ZPTJG, base: '价格', kind: 'line', unit: '元/MWh' },
   { key: 'jgc', axis: 2, base: '价格差', kind: 'bar', unit: '元/MWh' },
@@ -54,10 +64,13 @@ const GROUPS = [
   { key: 'jq2', axis: 3, dict: ZPTQX, base: '策略', kind: 'line', unit: '' },
   { key: 'cl', axis: 3, dict: ZPTQX, base: '策略', kind: 'line', unit: '' },
   { key: 'zxcl', axis: 3, dict: ZPTQX, base: '策略', kind: 'line', unit: '' }
-] as any[]
+]
 const COL = ['#5470c6', '#ee6666', '#91cc75', '#fac858', '#73c0de', '#3ba272', '#fc8452', '#9a60b4', '#ea7ccc']
-const curve = (r: any) => Array.from({ length: 96 }, (_, k) => r['p' + (k + 1)] ?? null)
-const total = (r: any) => r.hj != null ? r.hj : +(curve(r).filter((x) => x != null) as number[]).reduce((a, b) => a + Number(b), 0).toFixed(2)
+// 96 点字段键统一经 pointKey 构造，命中 SpotDayAheadRow 的 `p${number}` 模板索引签名
+const pointKey = (n: number): `p${number}` => `p${n}`
+type ReportListRow = SpotDayAheadRow & { _idx: number; _name: string }
+const curve = (r: SpotDayAheadRow) => Array.from({ length: 96 }, (_, k) => r[pointKey(k + 1)] ?? null)
+const total = (r: SpotDayAheadRow) => r.hj != null ? r.hj : +(curve(r).filter((x) => x != null) as number[]).reduce((a, b) => a + Number(b), 0).toFixed(2)
 
 const loading = ref(true)
 const error = ref('')
@@ -68,13 +81,13 @@ const route = useRoute()
 const qDate = typeof route.query.date === 'string' ? route.query.date : ''
 // 初始仍以回退常量兜底；onMounted 在日期清单到位后按规格改写为「清单最新可用日」
 const runDate = ref(qDate || ENERGY_LAST_DATE)
-const data = ref<any>(null)
-const dlRows = ref<any[]>([])
+const data = ref<SpotDayAheadReportBlock['groups'] | null>(null)
+const dlRows = ref<ReportListRow[]>([])
 const chartRef = ref<HTMLDivElement | null>(null)
 const reportChart = useEChart(chartRef, { render })
 
 const dates = ref<string[]>([])
-function nameOf(g: any, r: any) { return g.dict && r.type != null && g.dict[String(r.type)] ? g.dict[String(r.type)] : (r.type != null ? `${g.base}·${r.type}` : g.base) }
+function nameOf(g: ReportGroupSpec, r: SpotDayAheadRow) { return g.dict && r.type != null && g.dict[String(r.type)] ? g.dict[String(r.type)] : (r.type != null ? `${g.base}·${r.type}` : g.base) }
 // 回放取数能力降级判定四件套：单源 composable（原与本页逐字重复于 DayAheadEnergyView）
 const { capabilitySupports, isCapabilityDegraded, capabilityNote } = useCapturedCapability('/xhjy/zrqsb')
 let loadGeneration = 0
@@ -106,7 +119,7 @@ async function load() {
     })
     if (generation !== loadGeneration) return
     data.value = contract.blocks.day_ahead_report.groups
-    dlRows.value = (data.value.dl || []).map((r: any, i: number) => ({ ...r, _idx: i + 1, _name: nameOf(GROUPS[0], r) }))
+    dlRows.value = (data.value.dl || []).map((r, i) => ({ ...r, _idx: i + 1, _name: nameOf(GROUPS[0], r) }))
     notice.value = dlRows.value.length
       ? ''
       : hasEnergy(runDate.value)
@@ -140,29 +153,33 @@ function renderEmptyChart(text = '暂无数据') {
 }
 
 // 合计列排序（列无 prop，走自定义比较）与表格导出
-const sortByTotal = (a: any, b: any) => Number(total(a)) - Number(total(b))
+const sortByTotal = (a: ReportListRow, b: ReportListRow) => Number(total(a)) - Number(total(b))
 function exportTable() {
   exportCsv(
     `日前上报电量_${runDate.value}`,
     ['序号', '类型', '合计', ...POINTS_96],
-    dlRows.value.map((r: any) => [r._idx, r._name, total(r), ...Array.from({ length: 96 }, (_, k) => r['p' + (k + 1)] ?? '')])
+    dlRows.value.map((r) => [r._idx, r._name, total(r), ...Array.from({ length: 96 }, (_, k) => r[pointKey(k + 1)] ?? '')])
   )
 }
 
 function render() {
   if (!chartRef.value || !data.value) return
   const cc = chartChrome()
-  const series: any[] = []; let ci = 0
+  // ECharts series 项类型从 setOption 参数推导；分式展开兼容「单项 | 单项数组」两种形态
+  type SeriesOption = NonNullable<Parameters<echarts.ECharts['setOption']>[0]['series']>
+  type FlattenSeries<S> = S extends readonly (infer T)[] ? T : S
+  type SeriesItem = FlattenSeries<SeriesOption>
+  const series: SeriesItem[] = []; let ci = 0
   const seriesUnits: Record<string, string> = {}
   GROUPS.forEach((g) => {
-    const arr = data.value[g.key]
+    const arr = data.value?.[g.key]
     if (!Array.isArray(arr)) return
-    arr.forEach((r: any) => {
+    arr.forEach((r) => {
       if (!curve(r).some((x) => x != null)) return
       const color = COL[ci++ % COL.length]
       seriesUnits[nameOf(g, r)] = g.unit ?? ''
       const nm = nameOf(g, r)
-      if (g.kind === 'bar') series.push({ name: nm, type: 'bar', yAxisIndex: g.axis, data: curve(r), barMaxWidth: 4, itemStyle: { color: (p: any) => (p.value >= 0 ? '#ee4d4d' : '#3ba776') } })
+      if (g.kind === 'bar') series.push({ name: nm, type: 'bar', yAxisIndex: g.axis, data: curve(r), barMaxWidth: 4, itemStyle: { color: (p: { value?: unknown }) => ((p.value as number) >= 0 ? '#ee4d4d' : '#3ba776') } })
       else {
         // 96 点值按 15min 时段恒定，真实形态是阶梯线(step)而非平滑样条；预测/AI/回归类曲线虚线弱化，出清与实际实线
         const isForecast = /预测|预估|AI|回归/.test(nm)
@@ -279,7 +296,7 @@ onRegionChange(async () => {
           <el-table-column prop="_idx" label="序号" width="60" fixed align="center" />
           <el-table-column prop="_name" label="类型" width="120" fixed />
           <el-table-column label="合计" width="110" align="right" fixed sortable :sort-method="sortByTotal"><template #default="{ row }">{{ total(row) }}</template></el-table-column>
-          <el-table-column v-for="(p, i) in POINTS_96" :key="i" :label="p" width="76" align="right"><template #default="{ row }">{{ row['p' + (i + 1)] ?? '-' }}</template></el-table-column>
+          <el-table-column v-for="(p, i) in POINTS_96" :key="i" :label="p" width="76" align="right"><template #default="{ row }">{{ row[pointKey(i + 1)] ?? '-' }}</template></el-table-column>
         </el-table>
       </el-card>
 

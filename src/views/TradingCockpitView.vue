@@ -38,6 +38,7 @@ import { resolveRegionSlot, type RegionSlotId } from '@/services/region/regionSl
 import { currentRegion } from '@/services/region/regionContext'
 import { getCurrentUser, type AuthUser } from '@/services/auth'
 import { fetchCaptured } from '@/services/captured'
+import type { CapturedListEnvelope, YnForecastRow } from '@/services/data/contracts'
 import { canAccessPath, isPathAvailableInRegion, roleLabels, subjectTypeLabels } from '@/services/governance'
 import { fetchLatestBidPlanSummary, nextDeclarationTargetDate, type BidPlanSummary } from '@/services/forecast/bidPlanClient'
 import { getRuleProfile } from '../rules'
@@ -85,28 +86,28 @@ async function loadDisclosureSummary() {
     // 「按今天回推窗口」在历史包场景整窗落空，limit 尾部（文件按日期升序拼接）即最新若干天。
     const filter = { limit: 2000 }
     const [loadB, neB, ipB] = await Promise.all([
-      fetchCaptured<any>('yn_system_forecast', 'load_forecast', filter),
-      fetchCaptured<any>('yn_system_forecast', 'new_energy_forecast_d1', filter),
-      fetchCaptured<any>('yn_system_forecast', 'inter_provincial_forecast', filter)
+      fetchCaptured<CapturedListEnvelope<YnForecastRow>>('yn_system_forecast', 'load_forecast', filter),
+      fetchCaptured<CapturedListEnvelope<YnForecastRow>>('yn_system_forecast', 'new_energy_forecast_d1', filter),
+      fetchCaptured<CapturedListEnvelope<YnForecastRow>>('yn_system_forecast', 'inter_provincial_forecast', filter)
     ])
     // stale 校验：期间切了地区或发起了新请求 → 丢弃本次结果
     if (seq !== discReqSeq || currentRegion.value.id !== 'yunnan') return
     // 目标日口径：new_energy_forecast_d1 为滚动 D-1 集（operateDate=发布日、targetDate=目标日），
     // 用 targetDate 归组才是「被预测的那一天」；单日期表 targetDate=null 回退 operateDate。
-    const dayOf = (r: any) => r.targetDate ?? r.operateDate
-    const latestAvg = (body: any, pick: (r: any) => boolean): { date: string; avg: number | null } => {
-      const rows: any[] = Array.isArray(body?.data) ? body.data : []
-      const dates = rows.map(dayOf).filter(Boolean).sort()
+    const dayOf = (r: YnForecastRow) => r.targetDate ?? r.operateDate
+    const latestAvg = (body: CapturedListEnvelope<YnForecastRow>, pick: (r: YnForecastRow) => boolean): { date: string; avg: number | null } => {
+      const rows: YnForecastRow[] = Array.isArray(body?.data) ? body.data : []
+      const dates = rows.map(dayOf).filter((d): d is string => Boolean(d)).sort()
       const latest = dates.at(-1)
       if (!latest) return { date: '', avg: null }
-      const vals = rows.filter((r) => dayOf(r) === latest && pick(r) && typeof r.value === 'number')
+      const vals = rows.filter((r): r is YnForecastRow & { value: number } => dayOf(r) === latest && pick(r) && typeof r.value === 'number')
       return { date: latest, avg: vals.length ? +(vals.reduce((s, r) => s + r.value, 0) / vals.length).toFixed(0) : null }
     }
     // 云南总送出：同一时点可能有多个含「云南」断面，先按 timePoint 合计各断面送出，再对
     // 时点求日均（与弹性引擎口径一致；直接对断面行求均值会按断面数稀释外送规模）。
-    const latestSectionSum = (body: any): { date: string; avg: number | null } => {
-      const rows: any[] = (Array.isArray(body?.data) ? body.data : []).filter(
-        (r: any) => typeof r.region === 'string' && r.region.includes('云南')
+    const latestSectionSum = (body: CapturedListEnvelope<YnForecastRow>): { date: string; avg: number | null } => {
+      const rows = (Array.isArray(body?.data) ? body.data : []).filter(
+        (r): r is YnForecastRow & { value: number } => typeof r.region === 'string' && r.region.includes('云南')
           && r.metric === 'inter_provincial_send' && typeof r.value === 'number'
       )
       const latest = rows.map(dayOf).filter(Boolean).sort().at(-1)
