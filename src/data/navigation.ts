@@ -1,5 +1,6 @@
 import {
   Gauge,
+  FileSliders,
   Coins,
   CalendarRange,
   LineChart,
@@ -123,6 +124,7 @@ export const navigation: NavItem[] = [
       // 云南中长期售电 P3（dljy#2973）：售电目标与方案、交易公告日历与提交登记已交付；与敞口/交易月历分开，不引入现货或预测口径。
       { path: '/zcqjy/plans', title: '售电计划', icon: ListChecks },
       { path: '/zcqjy/execution', title: '交易执行', icon: Compass },
+      { path: '/zcqjy/adjustments', title: '合同调整', icon: FileSliders },
       { path: '/zcqjy/zccljk', title: '中长期持仓监控', icon: Gauge },
       { path: '/zcqjy/exposure', title: '中长期敞口看板', icon: Gauge },
       { path: '/zcqjy/zfsdjy', title: '中长期分时段交易', icon: ChartSpline },
