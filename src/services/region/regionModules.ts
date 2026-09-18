@@ -257,8 +257,9 @@ export const regionModuleCapabilities: RegionModuleCapability[] = [
     id: 'spot-trading',
     title: '现货交易',
     group: 'spot',
+    // /zcqjy/exposure 路径留在 zcqjy 下（深链不断），但它读现货结算口径、产出现货价格风险指标，归现货模块（dljy#2988）。
     routePrefixes: ['/dashboard', '/xhjy/monitor', '/xhjy/zrqsb', '/xhjy/zptqx', '/xhjy/desk', '/xhjy/approvals', '/xhjy/review', '/xhjy/risk-center'],
-    routePaths: ['/dashboard', '/xhjy/monitor', '/xhjy/zrqsb', '/xhjy/zptqx', '/xhjy/desk', '/xhjy/approvals', '/xhjy/review', '/xhjy/risk-center'],
+    routePaths: ['/dashboard', '/xhjy/monitor', '/xhjy/zrqsb', '/xhjy/zptqx', '/xhjy/desk', '/xhjy/approvals', '/xhjy/review', '/xhjy/risk-center', '/zcqjy/exposure'],
     statusByRegion: {
       shanxi: 'available',
       yunnan: 'degraded',
@@ -317,7 +318,9 @@ export const regionModuleCapabilities: RegionModuleCapability[] = [
       // 云南：结算口径三段式复盘已接真实源可用（#1488），但偏差考核那套的申报/实际两侧都无源
       // （sdpt_zrqsb 是山西私有族，严格地区不回退），且结算采集仅覆盖 2026-05。
       { path: '/xhjy/review', statusByRegion: { shanxi: 'degraded', yunnan: 'degraded' }, note: '山西可读真实申报量，但实际上网电量无数据源、须调用方提供；云南结算口径三段式复盘可用（采集仅覆盖 2026-05），偏差考核两侧仍无源。' },
-      { path: '/xhjy/risk-center', statusByRegion: { shanxi: 'available', yunnan: 'degraded' }, note: '风险聚合可用，云南现货执行源仍不完整。' }
+      { path: '/xhjy/risk-center', statusByRegion: { shanxi: 'available', yunnan: 'degraded' }, note: '风险聚合可用，云南现货执行源仍不完整。' },
+      // 中长期与现货套保（原中长期敞口看板，dljy#2988）：合同分解 vs 预计出力算逐时敞口，并读现货结算口径算套保率与净敞口。
+      { path: '/zcqjy/exposure', statusByRegion: { shanxi: 'available', yunnan: 'degraded' }, note: '敞口与套保计算可用，云南中长期真实输入（P2 分时分解）与结算口径待接入。' }
     ]
   },
   {
@@ -428,7 +431,6 @@ export const regionModuleCapabilities: RegionModuleCapability[] = [
         },
         note: 'sdpt_zfsdjy 为三德普华公司私有族，仅山西宿主可读；其余地区不展示该模块。'
       },
-      { path: '/zcqjy/exposure', statusByRegion: { shanxi: 'available', yunnan: 'degraded' }, note: '敞口计算可用，云南合同/中长期真实输入待补齐。' },
       {
         path: '/zcqjy/zfsdjy',
         statusByRegion: { shanxi: 'available', yunnan: 'hidden', guangdong: 'hidden', sichuan: 'hidden' },
@@ -439,7 +441,9 @@ export const regionModuleCapabilities: RegionModuleCapability[] = [
       },
       {
         path: '/zcqjy/zjyap',
-        statusByRegion: { shanxi: 'available', yunnan: 'degraded' },
+        // 云南、广东同属南网，不跨电网取国网月历（sdpt_zjyap gridScope=sgcc）：显示空页面反而误导，直接隐藏（dljy#2988）。
+        // 四川同属国网，保留经国网基线回退读山西月历的既有口径，不在此隐藏。
+        statusByRegion: { shanxi: 'available', yunnan: 'hidden', guangdong: 'hidden' },
         dataSupportByRegion: {
           shanxi: [shanxiSdptSupport('山西交易月历', ['sdpt_zjyap'], 'sdpt_zjyap/calendar 国网交易安排基线真实回放。')],
           yunnan: [{ label: '南网不取国网月历', families: ['sdpt_zjyap'], expectation: 'missing', note: 'zjyap 为 gridScope=sgcc 国网交易安排，云南属南网经营区，不跨电网取数。' }]
@@ -733,15 +737,23 @@ export function getRegionModuleForPath(path: string) {
   })
 }
 
-export function getRegionModuleCapabilityForPath(path: string) {
+/**
+ * 路径 → 模块：先在所有模块里找精确 routePaths，再退回前缀匹配。
+ * 页面归属与路径前缀不一致时（如 /zcqjy/exposure 归现货组、路径仍在 /zcqjy 下），
+ * 结果不能取决于模块在数组里的先后（dljy#2988）。列表作为参数传入，便于单测构造顺序。
+ */
+export function resolveRegionModuleForPath<T extends Pick<RegionModuleCapability, 'routePaths' | 'routePrefixes'>>(modules: readonly T[], path: string): T | null {
   const normalized = normalizePath(path)
-  return regionModuleCapabilities.find((module) => {
-    if (module.routePaths.some((routePath) => normalizePath(routePath) === normalized)) return true
-    return module.routePrefixes.some((routePrefix) => {
-      const prefix = normalizePath(routePrefix)
-      return normalized === prefix || normalized.startsWith(`${prefix}/`)
-    })
-  }) ?? null
+  const exact = modules.find((module) => module.routePaths.some((routePath) => normalizePath(routePath) === normalized))
+  if (exact) return exact
+  return modules.find((module) => module.routePrefixes.some((routePrefix) => {
+    const prefix = normalizePath(routePrefix)
+    return normalized === prefix || normalized.startsWith(`${prefix}/`)
+  })) ?? null
+}
+
+export function getRegionModuleCapabilityForPath(path: string) {
+  return resolveRegionModuleForPath(regionModuleCapabilities, path)
 }
 
 function getRoleLandingRoutes(module: RegionBusinessModule, user: UserLike) {

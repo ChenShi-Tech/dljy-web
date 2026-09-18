@@ -3,6 +3,7 @@
 export declare const INSIGHT_SCHEMA_VERSION: 'insight/v1'
 export declare const INSIGHT_TIME_ZONE: 'Asia/Shanghai'
 export declare const MAX_WINDOW_DAYS: number
+export declare function compareText(a: string, b: string): number
 export declare const MAX_OBJECT_REFS: number
 export declare const PAGE_SIZE_DEFAULT: number
 export declare const PAGE_SIZE_MAX: number
@@ -96,6 +97,10 @@ export type RuntimeStatus = {
   comparability: { status: ComparabilityStatus; reasons: ComparabilityReason[] }
 }
 export type SourceRef = { sourceId: string; accessScope: 'public' | 'company'; versionToken?: string | null; channel?: string }
+export type ResultPage =
+  | { scope: 'all'; totalRows: number }
+  | { scope: 'page'; size: number; offset: number; returnedRows: number; totalRows: number; nextCursor: string | null }
+
 export type InsightResult<TData = unknown> = {
   schemaVersion: string
   queryId: string
@@ -113,6 +118,8 @@ export type InsightResult<TData = unknown> = {
   coverage?: Record<string, unknown>
   quality?: Record<string, unknown>
   data?: TData
+  /** 分页范围（#2994）：不带 page 请求时为全量；带 page 时只切明细行，统计与版本仍按全量 */
+  page?: ResultPage
   drilldowns?: unknown[]
   resultVersion?: string
   readSetRef?: string

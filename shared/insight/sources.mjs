@@ -11,7 +11,9 @@
 //   - 时点 HH:MM 取值 00:00…23:45（15 分钟）或 00:00…23:00（小时），标注的是区间起点。
 
 /** 度量种类：决定能否求和、能否按时长加权、能否积分成电量。 */
-export const MEASURE_KINDS = Object.freeze(['price', 'power', 'energy', 'amount', 'ratio', 'capacity', 'flag', 'list'])
+export const MEASURE_KINDS = Object.freeze(['price', 'power', 'energy', 'amount', 'ratio', 'capacity', 'count', 'flag', 'list'])
+/** 记录类度量（是否、清单）：不是数值时序，只走「记录」视图，不做规范化、汇总或画曲线（#3022）。 */
+export const RECORD_KINDS = Object.freeze(['flag', 'list'])
 /** 功率语义：只有 interval-average 可以乘时长变电量；instant 与 unknown 只能取平均或画图。 */
 export const POWER_SEMANTICS = Object.freeze(['interval-average', 'instant', 'unknown'])
 /** 业务范围：说的是哪一片市场，不是存储隔离地区。 */
@@ -24,6 +26,11 @@ export const ACCESS_SCOPES = Object.freeze(['public', 'company'])
  *   status-axis  同一业务键有明确的状态轴（正式/暂结），按请求的状态取，不混算
  */
 export const VERSION_POLICIES = Object.freeze(['single', 'owner-latest', 'status-axis'])
+/**
+ * 供需类别（#3005，SH01）：负荷是需求；水电、新能源按电源类型分；非市场按市场属性分，可能与水电/新能源重叠；
+ * 总发电是合计；送受电单列。类别之间不能随意相加，「总发电减水电减新能源」也不是火电。
+ */
+export const SUPPLY_CATEGORIES = Object.freeze(['load', 'hydro', 'new-energy', 'non-market', 'total-generation', 'transfer'])
 /** 新鲜度节奏：历史资料包没有持续供数资格，新鲜度只能是 unknown（D3.1）。 */
 export const FRESHNESS_CADENCES = Object.freeze(['daily', 'historical-package', 'monthly-package', 'unregistered'])
 
@@ -48,6 +55,7 @@ function source(definition) {
     knownAt: null,
     dimensions: Object.freeze([]),
     objectDimension: null,
+    category: null,
     precision: Object.freeze({ places: 3 }),
     versionPolicy: 'single',
     ...definition,
@@ -61,52 +69,52 @@ const METRIC_KEY = { load: 'load', hydro: 'hydro', 'new-energy': 'new_energy', '
 
 const systemSources = [
   ...SYSTEM_SERIES.map(([id, label]) => source({
-    sourceId: `yn.system.${id}.actual`, title: `云南${label}（实际）`,
+    sourceId: `yn.system.${id}.actual`, title: `云南${label}（实际）`, category: id,
     read: capture('yn_system_forecast', `${METRIC_KEY[id]}_actual`, { region: 'yn' }),
     businessScope: 'yunnan', accessScope: 'public', authority: 'csg-disclosure', ingestChannel: 'bulk-history',
     accessNote: '2026-07-02 之后的行经中广核渠道取得后写入公开族，访问范围待确认（见数据基线 3.1 节）',
     measure: POWER_MW, time: TIME_15, variant: 'actual', freshness: 'historical-package',
   })),
   ...SYSTEM_SERIES.map(([id, label]) => source({
-    sourceId: `csg.system.${id}.actual`, title: `南方电网整体口径${label}（实际，背景）`,
+    sourceId: `csg.system.${id}.actual`, title: `南方电网整体口径${label}（实际，背景）`, category: id,
     read: capture('yn_system_forecast', `${METRIC_KEY[id]}_actual`, { region: 'all' }),
     businessScope: 'csg-aggregate', accessScope: 'public', authority: 'csg-disclosure', ingestChannel: 'bulk-history',
     accessNote: '非云南范围；与云南序列不是简单包含关系（水电比值 0.69—2.48），只作单列背景，不计入云南汇总',
     measure: POWER_MW, time: TIME_15, variant: 'actual', freshness: 'historical-package',
   })),
   source({
-    sourceId: 'yn.system.load.forecast', title: '云南统调负荷（预测）',
+    sourceId: 'yn.system.load.forecast', category: 'load', title: '云南统调负荷（预测）',
     read: capture('yn_system_forecast', 'load_forecast', { region: 'yn' }),
     businessScope: 'yunnan', accessScope: 'public', authority: 'csg-disclosure', ingestChannel: 'bulk-history',
     measure: POWER_MW, time: TIME_15, variant: 'forecast', freshness: 'historical-package',
   }),
   source({
-    sourceId: 'yn.system.new-energy.forecast-d1', title: '云南新能源出力（日前预测）',
+    sourceId: 'yn.system.new-energy.forecast-d1', category: 'new-energy', title: '云南新能源出力（日前预测）',
     read: capture('yn_system_forecast', 'new_energy_forecast_d1', { region: 'yn' }),
     businessScope: 'yunnan', accessScope: 'public', authority: 'csg-disclosure', ingestChannel: 'bulk-history',
-    measure: POWER_MW, time: Object.freeze({ ...TIME_15, targetDateField: 'targetDate' }), variant: 'forecast', freshness: 'historical-package',
+    measure: POWER_MW, time: Object.freeze({ ...TIME_15, targetDateField: 'targetDate', leadDays: 1 }), variant: 'forecast', freshness: 'historical-package',
   }),
   source({
-    sourceId: 'yn.system.non-market.forecast', title: '云南非市场机组出力（预测）',
+    sourceId: 'yn.system.non-market.forecast', category: 'non-market', title: '云南非市场机组出力（预测）',
     read: capture('yn_system_forecast', 'non_market_forecast', { region: 'yn' }),
     businessScope: 'yunnan', accessScope: 'public', authority: 'csg-disclosure', ingestChannel: 'bulk-history',
     measure: POWER_MW, time: TIME_15, variant: 'forecast', freshness: 'historical-package',
   }),
   source({
-    sourceId: 'csg.system.load.forecast', title: '南方电网整体口径统调负荷（预测，背景）',
+    sourceId: 'csg.system.load.forecast', category: 'load', title: '南方电网整体口径统调负荷（预测，背景）',
     read: capture('yn_system_forecast', 'load_forecast', { region: 'all' }),
     businessScope: 'csg-aggregate', accessScope: 'public', authority: 'csg-disclosure', ingestChannel: 'bulk-history',
     measure: POWER_MW, time: TIME_15, variant: 'forecast', freshness: 'historical-package',
   }),
   source({
-    sourceId: 'csg.system.new-energy.forecast-d1', title: '南方电网整体口径新能源出力（日前预测，背景）',
+    sourceId: 'csg.system.new-energy.forecast-d1', category: 'new-energy', title: '南方电网整体口径新能源出力（日前预测，背景）',
     read: capture('yn_system_forecast', 'new_energy_forecast_d1', { region: 'all' }),
     businessScope: 'csg-aggregate', accessScope: 'public', authority: 'csg-disclosure', ingestChannel: 'bulk-history',
-    measure: POWER_MW, time: Object.freeze({ ...TIME_15, targetDateField: 'targetDate' }), variant: 'forecast', freshness: 'historical-package',
+    measure: POWER_MW, time: Object.freeze({ ...TIME_15, targetDateField: 'targetDate', leadDays: 1 }), variant: 'forecast', freshness: 'historical-package',
   }),
   // 只有南方电网整体口径，没有云南总发电预测：不能与云南总发电实际算误差（A05）。
   source({
-    sourceId: 'csg.system.total-generation.forecast', title: '南方电网整体口径总发电出力（预测，背景）',
+    sourceId: 'csg.system.total-generation.forecast', category: 'total-generation', title: '南方电网整体口径总发电出力（预测，背景）',
     read: capture('yn_system_forecast', 'total_generation_forecast', { region: 'all' }),
     businessScope: 'csg-aggregate', accessScope: 'public', authority: 'csg-disclosure', ingestChannel: 'bulk-history',
     measure: POWER_MW, time: TIME_15, variant: 'forecast', freshness: 'historical-package',
@@ -117,7 +125,15 @@ const systemSources = [
     read: capture('yn_system_forecast', 'inter_provincial_forecast'),
     businessScope: 'csg-multi-region', accessScope: 'public', authority: 'csg-disclosure', ingestChannel: 'bulk-history',
     measure: POWER_MW, time: TIME_60, variant: 'forecast', freshness: 'historical-package',
-    dimensions: Object.freeze(['region', 'metric']),
+    dimensions: Object.freeze(['region', 'metric']), category: 'transfer',
+  }),
+  // 云南总送出（预测）：同一 dataset 里按通道名筛出云南一条，方向为送出（#3005，剩余需求代理的输入）。
+  source({
+    sourceId: 'yn.transfer.send-out.forecast', title: '云南总送出（预测）', category: 'transfer',
+    read: capture('yn_system_forecast', 'inter_provincial_forecast', { region: '云南总送出', metric: 'inter_provincial_send' }),
+    businessScope: 'yunnan', accessScope: 'public', authority: 'csg-disclosure', ingestChannel: 'bulk-history',
+    accessNote: '只有送出方向；本来源没有云南受入，不能等同于净外送',
+    measure: POWER_MW, time: TIME_60, variant: 'forecast', freshness: 'historical-package',
   }),
 ]
 
@@ -156,6 +172,182 @@ const priceSources = [
     // 对象身份是绑定表的标准厂名；一个场站挂多个节点时逐节点分序列，不取首个、不等权平均
     versionPolicy: 'owner-latest', freshness: 'unregistered', dimensions: Object.freeze(['plantName', 'stationId', 'upstreamNodeId', 'nodeName']), objectDimension: 'plantName',
   })),
+]
+
+// 中广核渠道取得的南网披露（#3005 水电事实视角）：经 agent-backend 私有接口读取，按公司私有授权。
+// 逐日记录；payloadFields 把上游中文列名映射成洞察字段，未登记的列不读。
+const privateDisclosure = (dataset, payloadFields) => Object.freeze({ kind: 'private-api', resource: 'cgn-disclosure', dataset, ownerCompanyId: CGN_OWNER, payloadFields: Object.freeze(payloadFields) })
+const TIME_DAY = Object.freeze({ resolutionMinutes: 1440, slotLabel: 'business-day', dateField: 'operateDate' })
+
+// 跨省与电网边界、备用与机组（#3022，设计 D8）：中广核渠道取得的南网披露，经 agent-backend 私有接口读取。
+// 分时数据（15 分钟）时点列 time_point 是区间起点；逐日数据按业务日。值在 payload 的文本列里，数值列为空。
+// 方向与符号原样保留：通道流量与断面限值可为负，负号就是方向，不取绝对值。
+const TIME_15_PRIVATE = Object.freeze({ resolutionMinutes: 15, slotLabel: 'interval-start', dateField: 'operateDate', timeField: 'timePoint' })
+const gridPrivate = spec => source({
+  accessScope: 'company', authority: 'csg-disclosure', ingestChannel: 'cgn-api', versionPolicy: 'owner-latest', freshness: 'unregistered',
+  accessNote: '经中广核渠道取得的南网披露，按公司私有授权读取', ...spec,
+})
+const MW_SIGNED = Object.freeze({ kind: 'power', unit: 'MW', inputUnit: 'MW', factor: '1', powerSemantics: 'unknown', valueField: 'value' })
+const CAPACITY_MW = field => Object.freeze({ kind: 'capacity', unit: 'MW', inputUnit: 'MW', factor: '1', valueField: field })
+
+const gridDisclosureSources = [
+  gridPrivate({
+    sourceId: 'cgn.grid.tie-line.actual', title: '省间联络线实际（总送出/总受入）', category: 'transfer',
+    read: privateDisclosure('actual_interprov_tie_line', { region: '区域名称', channel: '通道名称', timePoint: 'time_point', value: 'value' }),
+    businessScope: 'csg-multi-region', measure: MW_SIGNED, time: TIME_15_PRIVATE, variant: 'actual',
+    dimensions: Object.freeze(['region', 'channel']), objectDimension: 'channel',
+  }),
+  gridPrivate({
+    sourceId: 'cgn.grid.key-channel.actual', title: '重点通道输电实际', category: 'transfer',
+    read: privateDisclosure('actual_key_channel_transmission', { channel: '通道名称', timePoint: 'time_point', value: 'value' }),
+    businessScope: 'csg-aggregate', measure: MW_SIGNED, time: TIME_15_PRIVATE, variant: 'actual',
+    dimensions: Object.freeze(['channel']), objectDimension: 'channel',
+  }),
+  gridPrivate({
+    sourceId: 'cgn.grid.key-line-transformer.actual', title: '重点线路与主变潮流实际', category: 'transfer',
+    read: privateDisclosure('actual_key_line_transformer_flow', { channel: '通道名称', timePoint: 'time_point', value: 'value' }),
+    businessScope: 'csg-aggregate', measure: MW_SIGNED, time: TIME_15_PRIVATE, variant: 'actual',
+    dimensions: Object.freeze(['channel']), objectDimension: 'channel',
+  }),
+  gridPrivate({
+    sourceId: 'cgn.grid.section-constraint.actual', title: '输电断面限值（正向/反向）', category: 'transfer',
+    read: privateDisclosure('actual_transmission_section_constraint', { channel: '通道名称', limitType: '数据类型', timePoint: 'time_point', value: 'value' }),
+    businessScope: 'csg-aggregate', measure: Object.freeze({ ...MW_SIGNED, kind: 'capacity' }), time: TIME_15_PRIVATE, variant: 'actual',
+    dimensions: Object.freeze(['channel', 'limitType']), objectDimension: 'channel',
+  }),
+  gridPrivate({
+    sourceId: 'cgn.grid.external-tie-line.forecast', title: '区外联络线计划', category: 'transfer',
+    read: privateDisclosure('forecast_external_tie_line', { tieLine: '区外联络线', timePoint: 'time_point', value: 'value' }),
+    businessScope: 'csg-aggregate', measure: MW_SIGNED, time: TIME_15_PRIVATE, variant: 'forecast',
+    dimensions: Object.freeze(['tieLine']), objectDimension: 'tieLine',
+  }),
+  gridPrivate({
+    sourceId: 'cgn.grid.priority-limit.forecast', title: '省间优先送电电量下限（日）', category: 'transfer',
+    read: privateDisclosure('forecast_interprov_priority_limit', { category: '送电类别名称', lowerLimit: '送端电量下限' }),
+    businessScope: 'csg-multi-region', measure: Object.freeze({ kind: 'energy', unit: 'MWh', inputUnit: 'MWh', factor: '1', valueField: 'lowerLimit' }),
+    time: TIME_DAY, variant: 'forecast', dimensions: Object.freeze(['category']), objectDimension: 'category',
+  }),
+  gridPrivate({
+    sourceId: 'cgn.grid.transmission-capacity.forecast', title: '通道最大可用输电能力（日）', category: 'transfer',
+    read: privateDisclosure('forecast_transmission_capacity', { channel: '通道名称', capacity: '最大可用容量' }),
+    businessScope: 'csg-aggregate', measure: CAPACITY_MW('capacity'), time: TIME_DAY, variant: 'forecast',
+    dimensions: Object.freeze(['channel']), objectDimension: 'channel',
+  }),
+  gridPrivate({
+    sourceId: 'cgn.grid.stable-section.actual', title: '稳定断面最大负载率（日，获权）',
+    read: privateDisclosure('actual_stable_section', { section: '断面名称', maxLoadRate: '最大负载率' }),
+    businessScope: 'csg-multi-region', measure: Object.freeze({ kind: 'ratio', unit: '%', inputUnit: '%', factor: '1', valueField: 'maxLoadRate' }),
+    time: TIME_DAY, variant: 'actual', dimensions: Object.freeze(['section']), objectDimension: 'section',
+  }),
+  gridPrivate({
+    sourceId: 'cgn.grid.section-congestion.actual', title: '重载与越限断面数量（日）',
+    read: privateDisclosure('actual_section_congestion', { heavy: '重载断面数量', exceeded: '越限断面数量' }),
+    businessScope: 'csg-aggregate', time: TIME_DAY, variant: 'actual',
+    measure: Object.freeze({
+      kind: 'count', unit: 'count', inputUnit: 'count', factor: '1',
+      fields: Object.freeze([
+        Object.freeze({ id: 'heavySections', valueField: 'heavy', unit: 'count', kind: 'count' }),
+        Object.freeze({ id: 'exceededSections', valueField: 'exceeded', unit: 'count', kind: 'count' }),
+      ]),
+    }),
+  }),
+  gridPrivate({
+    sourceId: 'cgn.grid.load-summary.actual', title: '电网负荷总体情况（日，南网）', category: 'load',
+    read: privateDisclosure('actual_grid_load_summary', { region: '区域名称', average: '平均负荷', min: '最低负荷', max: '最高负荷' }),
+    businessScope: 'csg-aggregate', time: TIME_DAY, variant: 'actual',
+    measure: Object.freeze({
+      kind: 'power', unit: 'MW', inputUnit: 'MW', factor: '1', powerSemantics: 'unknown',
+      fields: Object.freeze([
+        Object.freeze({ id: 'average', valueField: 'average', unit: 'MW', kind: 'power' }),
+        Object.freeze({ id: 'min', valueField: 'min', unit: 'MW', kind: 'power' }),
+        Object.freeze({ id: 'max', valueField: 'max', unit: 'MW', kind: 'power' }),
+      ]),
+    }),
+    dimensions: Object.freeze(['region']),
+  }),
+  gridPrivate({
+    sourceId: 'cgn.reserve.peak.actual', title: '高峰备用容量实际（日，按区域）',
+    read: privateDisclosure('actual_peak_reserve', { region: '所属区域', capacity: '容量' }),
+    businessScope: 'csg-multi-region', measure: CAPACITY_MW('capacity'), time: TIME_DAY, variant: 'actual',
+    dimensions: Object.freeze(['region']), objectDimension: 'region',
+  }),
+  gridPrivate({
+    sourceId: 'cgn.reserve.forecast', title: '正负备用预测（获权，按区域）',
+    read: privateDisclosure('forecast_reserve', { region: '所属区域', reserveType: '类型', timePoint: 'time_point', value: 'value' }),
+    businessScope: 'csg-multi-region', measure: Object.freeze({ kind: 'capacity', unit: 'MW', inputUnit: 'MW', factor: '1', valueField: 'value' }),
+    time: TIME_15_PRIVATE, variant: 'forecast', dimensions: Object.freeze(['region', 'reserveType']), objectDimension: 'region',
+  }),
+  gridPrivate({
+    sourceId: 'cgn.units.non-da-new-energy-capacity', title: '不参与日前市场的新能源容量（日）',
+    read: privateDisclosure('forecast_non_da_new_energy_capacity', { region: '所属区域', capacity: '不参与日前市场的新能源总容量（兆瓦）' }),
+    businessScope: 'csg-multi-region', measure: CAPACITY_MW('capacity'), time: TIME_DAY, variant: 'forecast',
+    accessNote: '容量不是出力；区域含「全区域」，按区域分列不相加', dimensions: Object.freeze(['region']), objectDimension: 'region',
+  }),
+  gridPrivate({
+    sourceId: 'cgn.units.maintenance-capacity', title: '机组检修容量（日，南方区域总值）',
+    read: privateDisclosure('forecast_unit_maintenance_capacity', { capacity: '南方区域总容量（兆瓦）' }),
+    businessScope: 'csg-aggregate', measure: CAPACITY_MW('capacity'), time: TIME_DAY, variant: 'forecast',
+    accessNote: '南方区域总值，不是云南停机容量，不能作云南备用率分母',
+  }),
+  gridPrivate({
+    sourceId: 'cgn.units.price-weight', title: '机组分段价格权重（日）',
+    // 存储日期是发布日，payload 的 operate_date 是适用的运行日：2026-07-18—08-17 的 2,850 行逐行都是发布日 +1。
+    read: privateDisclosure('forecast_price_weight', { targetDate: 'operate_date', region: '所属区域', plant: '电厂名称', unit: '机组名称', segment: '段序号', weight: '价格权重', segmentStart: '分段起始容量', segmentEnd: '分段终止容量' }),
+    businessScope: 'csg-multi-region', time: Object.freeze({ ...TIME_DAY, targetDateField: 'targetDate', leadDays: 1 }), variant: 'forecast',
+    accessNote: '权重与分段容量是规则背景，不是报价或边际成本；分段容量源端未注明单位',
+    measure: Object.freeze({
+      kind: 'ratio', unit: 'weight', inputUnit: 'weight', factor: '1',
+      fields: Object.freeze([
+        Object.freeze({ id: 'weight', valueField: 'weight', unit: 'weight', kind: 'ratio' }),
+        Object.freeze({ id: 'segmentStart', valueField: 'segmentStart', unit: 'unspecified', kind: 'capacity' }),
+        Object.freeze({ id: 'segmentEnd', valueField: 'segmentEnd', unit: 'unspecified', kind: 'capacity' }),
+      ]),
+    }),
+    dimensions: Object.freeze(['region', 'plant', 'unit', 'segment']), objectDimension: 'plant',
+  }),
+  gridPrivate({
+    sourceId: 'cgn.units.group-share', title: '机组群组成与出力占比（必开/最小方式等，按区域）',
+    read: privateDisclosure('forecast_unit_group', { region: '所属区域', group: '机组群名称', plant: '电厂名称', unit: '机组名称', share: '机组出力所占比例（百分比）' }),
+    businessScope: 'csg-multi-region', measure: Object.freeze({ kind: 'ratio', unit: '%', inputUnit: '%', factor: '1', valueField: 'share' }),
+    time: TIME_DAY, variant: 'forecast', dimensions: Object.freeze(['region', 'group', 'plant', 'unit']), objectDimension: 'group',
+  }),
+  // 以下两类是清单与是否，不是数值时序：只走「记录」视图，不画曲线、不换算出力。
+  gridPrivate({
+    sourceId: 'cgn.units.peak-regulation', title: '是否开展调峰（日，按区域）',
+    read: privateDisclosure('forecast_peak_regulation_demand', { region: '所属区域', flag: '是否开展调峰' }),
+    businessScope: 'csg-multi-region', measure: Object.freeze({ kind: 'flag', unit: 'yes-no', inputUnit: 'yes-no', factor: '1', valueField: 'flag' }),
+    time: TIME_DAY, variant: 'forecast', dimensions: Object.freeze(['region']), objectDimension: 'region',
+    accessNote: '只是是否开展调峰，不是调峰需求的 MW 数',
+  }),
+  gridPrivate({
+    sourceId: 'cgn.units.must-run-stop', title: '必开必停机组清单（日）',
+    read: privateDisclosure('forecast_must_run_stop_unit_list', { region: '所属区域', plant: '电厂名称', unit: '机组名称', mode: '必开/必停' }),
+    businessScope: 'csg-multi-region', measure: Object.freeze({ kind: 'list', unit: 'list', inputUnit: 'list', factor: '1', valueField: 'mode' }),
+    time: TIME_DAY, variant: 'forecast', dimensions: Object.freeze(['region', 'plant', 'unit']), objectDimension: 'plant',
+    accessNote: '只有名单，没有分时出力；不按装机容量生成出力曲线',
+  }),
+]
+
+const hydroDisclosureSources = [
+  source({
+    sourceId: 'cgn.hydro.weekly-output.forecast', title: '水电周出力预测（逐日平均出力，按区域）', category: 'hydro',
+    read: privateDisclosure('forecast_hydro_weekly_output', { region: '所属区域', averageOutput: '平均出力（MW）' }),
+    businessScope: 'csg-multi-region', accessScope: 'company', authority: 'csg-disclosure', ingestChannel: 'cgn-api',
+    accessNote: '经中广核渠道取得的南网披露，按公司私有授权读取；区域含云南与其他省，按区域分列、不相加',
+    // 「平均出力」是逐日平均功率，属于区间平均；只作功率展示，不在本来源内换算电量。
+    measure: Object.freeze({ kind: 'power', unit: 'MW', inputUnit: 'MW', factor: '1', powerSemantics: 'interval-average', valueField: 'averageOutput' }),
+    time: TIME_DAY, variant: 'forecast', versionPolicy: 'owner-latest', freshness: 'unregistered',
+    dimensions: Object.freeze(['region']), objectDimension: 'region',
+  }),
+  source({
+    sourceId: 'cgn.hydro.yn-group-share', title: '云南水电机组群组成与机组出力占比（按日）', category: 'hydro',
+    read: privateDisclosure('forecast_yn_hydro_group_energy_limit', { region: '所属区域', group: '机组群名称', plant: '电厂名称', unit: '机组名称', share: '机组出力所占比例（百分比）' }),
+    businessScope: 'yunnan', accessScope: 'company', authority: 'csg-disclosure', ingestChannel: 'cgn-api',
+    accessNote: '上游数据集名称含「电量上限」，实际只披露机组群组成与占比，没有电量或出力上限值；不据此画上限线',
+    measure: Object.freeze({ kind: 'ratio', unit: '%', inputUnit: '%', factor: '1', valueField: 'share' }),
+    time: TIME_DAY, variant: 'forecast', versionPolicy: 'owner-latest', freshness: 'unregistered',
+    dimensions: Object.freeze(['region', 'group', 'plant', 'unit']), objectDimension: 'group',
+  }),
 ]
 
 const disclosureSources = [
@@ -231,7 +423,7 @@ const plantSources = [
   }),
 ]
 
-export const INSIGHT_SOURCES = Object.freeze([...systemSources, ...priceSources, ...disclosureSources, ...plantSources])
+export const INSIGHT_SOURCES = Object.freeze([...systemSources, ...hydroDisclosureSources, ...gridDisclosureSources, ...priceSources, ...disclosureSources, ...plantSources])
 const BY_ID = new Map(INSIGHT_SOURCES.map(entry => [entry.sourceId, entry]))
 
 /**
@@ -272,10 +464,17 @@ export function validateInsightSources(sources = INSIGHT_SOURCES) {
     if (!['capture', 'serving', 'private-api'].includes(entry.read?.kind)) errors.push(`${where}: 未知读取方式`)
     if (entry.accessScope === 'company' && entry.read?.kind === 'serving') errors.push(`${where}: 公司私有来源不能经公开 serving 路由读取`)
     if (entry.read?.kind === 'private-api' && (entry.accessScope !== 'company' || !entry.read.ownerCompanyId)) errors.push(`${where}: 私有接口来源必须声明公司私有范围与归属公司`)
+    if (entry.read?.resource === 'cgn-disclosure') {
+      const mapped = Object.keys(entry.read.payloadFields ?? {})
+      const needed = [...entry.dimensions, ...sourceFields(entry).map(field => field.valueField), ...(entry.time?.targetDateField ? [entry.time.targetDateField] : [])]
+      if (!entry.read.dataset || needed.some(name => !mapped.includes(name))) errors.push(`${where}: 私有披露来源必须声明数据集，并为全部维度与取值字段登记列名映射`)
+    }
     for (const field of entry.measure?.fields ?? []) {
       if (!/^[A-Za-z][A-Za-z0-9_]{0,63}$/.test(field.valueField ?? '') || !MEASURE_KINDS.includes(field.kind) || typeof field.unit !== 'string') errors.push(`${where}: 字段 ${field.id} 登记不完整`)
     }
     if (entry.objectDimension && !entry.dimensions.includes(entry.objectDimension)) errors.push(`${where}: 对象维度必须是已登记维度之一`)
+    if (entry.time?.leadDays !== undefined && (!entry.time.targetDateField || !Number.isInteger(entry.time.leadDays) || entry.time.leadDays < 0)) errors.push(`${where}: 提前天数必须配合目标日字段、且为非负整数`)
+    if (entry.category !== null && !SUPPLY_CATEGORIES.includes(entry.category)) errors.push(`${where}: 未知供需类别 ${entry.category}`)
   }
   return errors
 }
