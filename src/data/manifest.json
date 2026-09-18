@@ -862,7 +862,7 @@
   {
     "id": "zccljk",
     "path": "/zcqjy/zccljk",
-    "title": "持仓量监控",
+    "title": "持仓量监控（山西采集）",
     "domain": "中长期交易",
     "kind": "real",
     "endpoint": "GET /sdpt/zfsdjy/ccljkDay|ccljkTime|list",
@@ -892,7 +892,7 @@
   {
     "id": "zjyap",
     "path": "/zcqjy/zjyap",
-    "title": "交易月历",
+    "title": "交易月历（山西·国网）",
     "domain": "中长期交易",
     "kind": "real",
     "endpoint": "GET /sdpt/zjyap/calendar",

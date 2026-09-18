@@ -65,6 +65,16 @@ describe('改名后的页面在各用户可见处名称一致（dljy#2988）', (
     }
   })
 
+  it('清单 manifest 的标题与菜单一致', () => {
+    const manifest = JSON.parse(
+      readFileSync(new URL('./manifest.json', import.meta.url), 'utf8')
+    ) as Array<{ path: string; title: string }>
+    const byPath = new Map(manifest.map((p) => [p.path, p.title]))
+    for (const { path, title } of cases) {
+      expect(byPath.get(path), `${path} 清单标题`).toBe(title)
+    }
+  })
+
   it('敞口页 AI 侧边栏标签与菜单一致', () => {
     const source = readFileSync(new URL('../views/ExposureBoardView.vue', import.meta.url), 'utf8')
     expect(source).toContain("label: '中长期与现货套保'")
