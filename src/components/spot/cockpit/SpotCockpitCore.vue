@@ -960,8 +960,8 @@ onRegionChange(() => {
         <div class="lab">全市场{{ market === 'da' ? '日前' : '实时' }}均价</div>
         <div class="val da num">{{ fmt(kpis?.marketAvg, 0) }}<small>元/MWh</small></div>
       </div>
-      <div class="kpi">
-        <div class="lab">结算均价</div>
+      <div class="kpi" title="按厂站等权平均的结算价口径，不是集团量费加权综合结算均价（dljy#2992）">
+        <div class="lab">样站等权结算价</div>
         <div class="val gold num">{{ fmt(kpis?.settlementAvgPrice, 0) }}<small>元/MWh</small></div>
         <div v-if="kpis?.settlementDaPrice != null || kpis?.settlementRtPrice != null" class="delta">
           DA {{ fmt(kpis?.settlementDaPrice, 0) }} / RT {{ fmt(kpis?.settlementRtPrice, 0) }}

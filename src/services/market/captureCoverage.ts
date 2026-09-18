@@ -109,6 +109,31 @@ export async function fetchCaptureCoverage(
     : purpose === 'clearing' ? CLEARING_DATASETS[regionId]
       : undefined
   if (!spec) return null
+  return queryCoverage(spec, regionId)
+}
+
+// ---------------------------------------------------------------------------
+// 结算族覆盖区间（#2992）：云南结算价页「查看历史资料」入口用。
+// 与上面同一条 /api/real-coverage 通道：yn_spot_settlement 是公司私有族，
+// apiGet 自动带的身份头（x-company-id 等）决定能否看到；无权/失败返回 null，
+// 调用方只说「暂无资料」，不编造覆盖区间。
+// ---------------------------------------------------------------------------
+
+const SETTLEMENT_DATASETS: Record<string, { family: string; datasetKeys: string[] } | undefined> = {
+  yunnan: { family: 'yn_spot_settlement', datasetKeys: ['yn_settlement_daily'] }
+}
+
+/** 该地区结算族的已入库覆盖区间（yn_settlement_daily 起止）；未登记/失败/无权返回 null。 */
+export async function fetchSettlementCoverage(regionId: string): Promise<DateRange | null> {
+  const spec = SETTLEMENT_DATASETS[regionId]
+  if (!spec) return null
+  return queryCoverage(spec, regionId)
+}
+
+async function queryCoverage(
+  spec: { family: string; datasetKeys: string[] },
+  regionId: string
+): Promise<DateRange | null> {
   try {
     const res = await apiGet<CoverageResponse>('/api/real-coverage', {
       family: spec.family,

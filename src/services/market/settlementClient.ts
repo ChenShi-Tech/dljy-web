@@ -9,8 +9,14 @@
 //
 // 字段口径（capture-families.mjs ynSpotSettlementSchema，中文列名→英文字段）：
 // daPrice  = 日前结算电价    rtPrice = 实时结算电价
-// avgPrice = 平均电价(综合结算) ltmPrice = 合计中长期电价
-// daClearedEnergy/totalEnergy 等电量字段供加权（本处取等权均值，口径在注释标注）。
+// avgPrice = 平均电价(该厂综合结算) ltmPrice = 合计中长期电价
+// daClearedEnergy/totalEnergy 等电量字段供加权。
+//
+// #2992 口径纪律：本模块的跨厂均值一律是「样站等权」，daPrice/rtPrice/ltmPrice 没有
+// 可加权的费用口径，只能等权（对外展示名见消费面板）；集团「综合结算均价」必须走
+// 服务端结算统计（review/analysis/settlement，量费加权），本模块不再提供任何
+// 被当作集团结算均价使用的第二套算法——avgPrice 聚合结果改名 sampleAvgPrice，
+// 只能以「样站等权平均电价」名义消费。
 //
 // 严格地区「真实或空」：fetchCaptured 自动带 currentRegion.id；云南在
 // REGION_STRICT_REAL_DATA 内，无真实数据走空态、不回退山西基线。失败/无数据 →
@@ -29,8 +35,9 @@ export interface SettlementPricePoint {
   daPrice: number | null
   /** 实时结算电价（元/MWh） */
   rtPrice: number | null
-  /** 综合结算均价（元/MWh，平均电价） */
-  avgPrice: number | null
+  /** 样站等权平均电价（元/MWh）。跨厂等权口径：单厂时即该厂平均电价；
+   *  绝不是集团量费加权结算均价（#2992 起集团口径只由服务端结算统计提供）。 */
+  sampleAvgPrice: number | null
   /** 中长期电价（元/MWh，参照线·非结算主序列） */
   ltmPrice: number | null
   /** 该日参与聚合的厂站数 */
@@ -78,9 +85,10 @@ function meanOrNull(values: number[]): number | null {
 }
 
 /**
- * 拉真实结算数据并按日聚合三价。
+ * 拉真实结算数据并按日聚合三价（样站等权口径）。
  *
- * @param opts.dateRange 闭区间日期过滤 [from, to]，默认演示月 2026-05（与现有云南 panel 一致）
+ * @param opts.dateRange 闭区间日期过滤 [from, to]；缺省为空 = 不按日期过滤（#2992 起
+ *                        不再内置「演示月」默认值，默认日期由调用方按覆盖/当天决定）
  * @param opts.plant     电厂筛选；省略/空串=全部电厂（ALL_PLANTS 语义）
  */
 export async function loadSettlementPrices(
@@ -91,7 +99,7 @@ export async function loadSettlementPrices(
     source?: { family: string; dataset: string; region: string }
   } = {}
 ): Promise<SettlementPriceResult> {
-  const [from, to] = opts.dateRange ?? ['2026-05-01', '2026-05-31']
+  const [from, to] = opts.dateRange ?? ['', '']
   const source = opts.source ?? { family: 'yn_spot_settlement', dataset: 'yn_settlement_daily', region: 'yunnan' }
   let plant = opts.plant?.trim()
   let rows: SettlementRow[] = []
@@ -122,7 +130,7 @@ export async function loadSettlementPrices(
 
   const filtered = rows.filter((r) => inRange(r.date) && plantMatch(r.plant))
 
-  // 按日分组等权均值。
+  // 按日分组等权均值（样站等权口径，见文件头 #2992 纪律）。
   const byDate = new Map<
     string,
     { da: number[]; rt: number[]; avg: number[]; ltm: number[]; count: number }
@@ -145,7 +153,7 @@ export async function loadSettlementPrices(
         date,
         daPrice: meanOrNull(g.da),
         rtPrice: meanOrNull(g.rt),
-        avgPrice: meanOrNull(g.avg),
+        sampleAvgPrice: meanOrNull(g.avg),
         ltmPrice: meanOrNull(g.ltm),
         plantCount: g.count
       }
@@ -200,7 +208,7 @@ export function aggregatePoints(
     const cur = groups.get(k) ?? { da: [], rt: [], avg: [], ltm: [], count: 0, rawDates: [] }
     if (p.daPrice !== null) cur.da.push(p.daPrice)
     if (p.rtPrice !== null) cur.rt.push(p.rtPrice)
-    if (p.avgPrice !== null) cur.avg.push(p.avgPrice)
+    if (p.sampleAvgPrice !== null) cur.avg.push(p.sampleAvgPrice)
     if (p.ltmPrice !== null) cur.ltm.push(p.ltmPrice)
     cur.count += p.plantCount
     cur.rawDates.push(p.date)
@@ -212,11 +220,12 @@ export function aggregatePoints(
     .map((k) => {
       const g = groups.get(k)!
       // date 字段在周/月聚合下用标签承载（图 x 轴展示）；plantCount 累加。
+      // 周/月聚合是对「按日等权值」再等权 → 对外说明为「日均等权」。
       return {
         date: labelOf(k),
         daPrice: meanOrNull(g.da),
         rtPrice: meanOrNull(g.rt),
-        avgPrice: meanOrNull(g.avg),
+        sampleAvgPrice: meanOrNull(g.avg),
         ltmPrice: meanOrNull(g.ltm),
         plantCount: g.count
       } satisfies SettlementPricePoint
