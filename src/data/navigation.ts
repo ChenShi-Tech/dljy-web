@@ -47,6 +47,11 @@ export type NavItem = {
   // （发电/售电/储能全立场可见）；组合/集团视角（TRADER/GROUP）恒全可见。
   // 只做叶子级标注，分组内常混排共享与专属页（如公司管理：台账属发电、合同共享）。
   stanceAffinity?: SubjectType[]
+  // #2991：在这些地区只从菜单摘除入口（filterNavigationForUser 生效），不影响路由可达
+  // 与权限——旧链接/收藏深链仍可直接访问，由页面自身显示可解释的降级说明。
+  // 与 regionIds（显式圈定可见地区）互补：regionIds 是「只在哪些地区显示」，
+  // hiddenInRegionIds 是「只在哪些地区隐藏」。
+  hiddenInRegionIds?: string[]
 }
 
 // 按交易工作流组织的菜单（信息架构重构，见 docs/agent-harness/主题与信息架构规划.md §2）。
@@ -60,7 +65,9 @@ export const navigation: NavItem[] = [
     icon: ChartSpline,
     children: [
       { path: '/insight/cockpit', title: '市场洞察驾驶舱', icon: Gauge },
-      { path: '/sjfx/fshq', title: '分时行情', icon: LineChart },
+      // #2991：云南没有撮合分时行情来源（sdpt_fshq 为山西三德私有族），菜单在云南隐藏；
+      // 路由保持可达（degraded），直接访问由 FshqView 显示可解释降级卡 + 价格分析入口。
+      { path: '/sjfx/fshq', title: '分时行情', icon: LineChart, hiddenInRegionIds: ['yunnan'] },
       { path: '/sjfx/zrsjg', title: '价格分析', icon: ChartSpline },
       { path: '/sjfx/zcqxhdl', title: '出清现货电量分析', icon: LineChart },
       { path: '/sjfx/zrxgx', title: '现货价格×新能源', icon: ChartSpline, stanceAffinity: ['GENERATOR'] },

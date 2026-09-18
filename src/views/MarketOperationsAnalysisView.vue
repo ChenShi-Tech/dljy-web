@@ -9,6 +9,7 @@ import {
   loadMarketAnalysis,
   type CategoryRow,
   type MarketAnalysisDataset,
+  type MarketAnalysisSectionBasis,
   type MarketAnalysisTab,
   type MarketMetric
 } from '@/services/market/marketAnalysis'
@@ -24,32 +25,49 @@ const dataset = ref<MarketAnalysisDataset>(getMarketAnalysis(selectedYear.value)
 const basis = ref<DataBasis | null>(null)
 const hasRealData = ref(false)
 const publicDataReal = ref(false)
+// #2991：逐页签口径（按页签自己消费的数据集真实性判定），替代旧的整页 hasRealData 顶包。
+const sectionBasis = ref<MarketAnalysisSectionBasis | null>(null)
 // #669：售电套餐为 company 私有族，非归属公司会被授权闸门拒绝→单独跟踪真实性/拒绝态。
 const retailPackagesReal = ref(false)
 const retailPackagesPartialReal = ref(false)
 const retailPackageDetailsReal = ref(false)
 const retailPackageMetricsReal = ref(false)
 const retailPackagesAccessDenied = ref(false)
-// 无真实数据时恒显 synthetic 徽章（Mock 标注纪律：占位示例必须可见标注），有真实才显真实 basis。
-// 套餐 tab 单独判定：两键均真实=captured，一真一缺=illustrative，均无=synthetic。
-const visibleBasis = computed<DataBasis | null>(() => {
-  if (activeTab.value === 'packages') {
-    if (retailPackagesReal.value) return basis.value
-    return retailPackagesPartialReal.value ? 'illustrative' : 'synthetic'
+// #2991：徽章按当前页签自己的口径显示（captured=该页签数据集全真实 / illustrative=部分真实 /
+// synthetic=全不真实）。加载完成前无页签口径，回落 synthetic（Mock 标注纪律：宁标合成不冒真实）。
+const visibleBasis = computed<DataBasis | null>(() => sectionBasis.value?.[activeTab.value] ?? 'synthetic')
+// #2991：部分真实（illustrative）页签的提示——缺真实数据集的部分显示为空，未用示例补齐。
+const sectionNotice = computed<string>(() => {
+  if (activeTab.value !== 'packages' || visibleBasis.value !== 'illustrative') return ''
+  if (retailPackagesAccessDenied.value) {
+    return '售电套餐为售电公司私有经营口径，当前账号无查看权限；缺权限的部分显示为空，未用示例补齐，不含任何经营数据。'
   }
-  return publicDataReal.value ? basis.value : 'synthetic'
+  const realPart = retailPackageDetailsReal.value ? '套餐明细' : '套餐 KPI'
+  return `${realPart}已真实落盘，另一数据集暂无真实回放；缺失部分显示为空，未用示例补齐。`
 })
 // 套餐 tab 占位/授权态提示（可见「模拟数据」纪律 + 不泄漏他司经营数据）。
 const packagesNotice = computed<string>(() => {
   if (activeTab.value !== 'packages' || retailPackagesReal.value) return ''
+  // #2991：部分真实不再是「真实与示例混合」，缺的部分是空态——口径提示移到 sectionNotice。
+  if (retailPackagesPartialReal.value) return ''
   if (retailPackagesAccessDenied.value) {
     return '售电套餐为售电公司私有经营口径，当前账号无查看权限，下方为占位示例（模拟数据），不含真实经营数据。'
   }
-  if (retailPackagesPartialReal.value) {
-    const realPart = retailPackageDetailsReal.value ? '套餐明细' : (retailPackageMetricsReal.value ? '套餐 KPI' : '部分数据')
-    return `${realPart}已真实落盘，另一数据集仍为占位示例；当前为真实与示例混合展示，不可用于实盘决策。`
-  }
   return '未检测到售电套餐真实落盘，下方为占位示例（模拟数据）。'
+})
+// #2991：空态文案。仅「页面有部分真实数据」场景才用空态（此时字段为空=确无真实数据）；
+// 整页纯示例（synthetic）时数据非空、且有可见「模拟数据」提示，不显示空态。
+const EMPTY_HINT = '暂无该项真实数据，未用示例补齐'
+const showEmptyState = computed(() => hasRealData.value)
+// 图表空态文案：有部分真实数据时空=「确无该项真实数据」，否则是普通无数据
+const chartEmptyText = () => (showEmptyState.value ? EMPTY_HINT : '暂无数据')
+const metricsEmpty = computed(() => showEmptyState.value && metrics.value.length === 0)
+// 当前页签的明细行在「页面有部分真实数据」场景下为空 = 该页签确无真实数据，显示空态。
+const tabDetailEmpty = computed(() => {
+  if (!showEmptyState.value) return false
+  if (activeTab.value === 'packages') return dataset.value.retailPackages.length === 0
+  if (activeTab.value === 'price') return dataset.value.priceTrend.length === 0
+  return categoryRows.value.length === 0
 })
 const loading = ref(false)
 const errorMsg = ref('')
@@ -78,6 +96,8 @@ const metrics = computed<MarketMetric[]>(() => {
   if (activeTab.value === 'packages') return dataset.value.packageMetrics
   if (activeTab.value === 'price') {
     const prices = dataset.value.priceTrend
+    // #2991：缺真实价格回放时 priceTrend 为空 → 空指标列表（页面显示空态），不产出 NaN 卡片
+    if (!prices.length) return []
     const avgSpot = prices.reduce((sum, row) => sum + row.spotPrice, 0) / prices.length
     const avgMid = prices.reduce((sum, row) => sum + row.mediumLongPrice, 0) / prices.length
     return [
@@ -131,6 +151,7 @@ async function refreshData() {
     basis.value = result.basis
     hasRealData.value = result.hasRealData
     publicDataReal.value = result.publicDataReal
+    sectionBasis.value = result.sectionBasis
     retailPackagesReal.value = result.retailPackagesReal
     retailPackagesPartialReal.value = result.retailPackagesPartialReal
     retailPackageDetailsReal.value = result.retailPackageDetailsReal
@@ -145,6 +166,7 @@ async function refreshData() {
     basis.value = null
     hasRealData.value = false
     publicDataReal.value = false
+    sectionBasis.value = null
     retailPackagesReal.value = false
     retailPackagesPartialReal.value = false
     retailPackageDetailsReal.value = false
@@ -158,8 +180,9 @@ async function refreshData() {
 
 function renderCategoryChart() {
   if (!categoryChartRef.value) return
+  // #2991：部分真实场景下空数据是诚实空态（未用示例补齐），空文案说明原因，不画空坐标冒充有数据。
   categoryChart.setOption({
-    ...emptyOverlay(!categoryRows.value.length),
+    ...emptyOverlay(!categoryRows.value.length, chartEmptyText()),
     tooltip: { trigger: 'item' },
     legend: { bottom: 0, type: 'scroll' },
     series: [
@@ -181,7 +204,7 @@ function renderTrendChart() {
   if (activeTab.value === 'price') {
     const rows = dataset.value.priceTrend
     trendChart.setOption({
-      ...emptyOverlay(!rows.length),
+      ...emptyOverlay(!rows.length, chartEmptyText()),
       grid: { left: 52, right: 26, top: 48, bottom: 42 },
       tooltip: axisTooltip({ unit: '元/kWh', digits: 4 }),
       toolbox: { ...chartToolbox('价格曲线'), top: 26 },
@@ -199,7 +222,7 @@ function renderTrendChart() {
 
   const rows = dataset.value.monthlyTrend
   trendChart.setOption({
-    ...emptyOverlay(!rows.length),
+    ...emptyOverlay(!rows.length, chartEmptyText()),
     // 底部布局:图例顶部居中 + 工具栏底部右下角,top/bottom 56 各让一行
     grid: { left: 52, right: 26, top: 56, bottom: 56 },
     tooltip: axisTooltip({
@@ -256,6 +279,13 @@ const insightBasis = () => visibleBasis.value ?? 'synthetic'
 function insightContext(): Record<string, unknown> {
   const tabLabel = insightTabLabel()
   const displayedBasis = insightBasis()
+  // #2991：口径注记区分三态——captured=页签数据集全真实；illustrative=部分真实、缺失为空；
+  // synthetic=整页占位示例。
+  const caliberNote = displayedBasis === 'captured'
+    ? '真实回放数据'
+    : displayedBasis === 'illustrative'
+      ? '部分真实回放，缺失数据集显示为空（未用示例补齐）'
+      : '当前为占位示例，仅供页面形态'
   return {
     page: '市场经营分析 (market-ops)',
     year: selectedYear.value,
@@ -263,7 +293,7 @@ function insightContext(): Record<string, unknown> {
     metrics: metrics.value.map((m) => ({ label: m.label, value: m.value, unit: m.unit })),
     top_categories: categoryRows.value.slice(0, 10).map((r) => ({ name: r.name, quantity: r.quantity, avgPrice: r.avgPrice, percentage: r.percentage })),
     basis: displayedBasis,
-    caliber_note: displayedBasis === 'captured' ? '真实回放数据' : '当前为占位示例，仅供页面形态'
+    caliber_note: caliberNote
   }
 }
 
@@ -288,13 +318,15 @@ onMounted(refreshData)
 <template>
   <div class="page-stack market-ops">
     <RegionDataBanner />
-    <section class="metric-grid">
+    <!-- #2991：缺真实 KPI 的页签显示诚实空态，不渲染空指标卡冒充有数据 -->
+    <section v-if="metrics.length" class="metric-grid">
       <article v-for="metric in metrics" :key="metric.label" class="metric-card">
         <span>{{ metric.label }}</span>
         <strong>{{ metric.value }} <small>{{ metric.unit }}</small></strong>
         <em :class="metric.tone">{{ selectedYear }}</em>
       </article>
     </section>
+    <el-empty v-else-if="metricsEmpty" :description="EMPTY_HINT" :image-size="72" />
 
     <section class="panel">
       <div class="panel-title">
@@ -344,8 +376,11 @@ onMounted(refreshData)
       </div>
 
       <p v-if="packagesNotice" class="packages-notice">🔒 {{ packagesNotice }}</p>
+      <p v-if="sectionNotice" class="packages-notice">🔒 {{ sectionNotice }}</p>
 
-      <el-table v-if="activeTab !== 'packages' && activeTab !== 'price'" :data="categoryRows" size="small" v-loading="loading">
+      <!-- #2991：页签明细无真实数据时显示诚实空态（整页纯示例场景除外——那有可见「模拟数据」提示） -->
+      <el-empty v-if="tabDetailEmpty" :description="EMPTY_HINT" :image-size="72" />
+      <el-table v-else-if="activeTab !== 'packages' && activeTab !== 'price'" :data="categoryRows" size="small" v-loading="loading">
         <el-table-column prop="name" label="对象" min-width="180" />
         <el-table-column prop="quantity" label="交易电量(亿kWh)" width="160" align="right" sortable />
         <el-table-column prop="avgPrice" label="均价(元/kWh)" width="140" align="right" sortable />
