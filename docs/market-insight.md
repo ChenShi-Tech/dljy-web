@@ -23,7 +23,7 @@
 以下修正是底线行为，**不挂任何界面开关**——关闭未来的新工作区也不会退回旧行为。
 
 1. **市场经营分析逐数据集真实性**（`src/services/market/marketAnalysis.ts`）：
-   - `loadMarketAnalysis` 返回新增 `realByKey`（逐数据集是否真实）与 `sectionBasis`（逐页签口径：captured=该页签数据集全真实 / illustrative=部分真实 / synthetic=全不真实）。
+   - `loadMarketAnalysis` 返回新增 `realByKey`（逐数据集是否真实）与 `sectionBasis`（逐页签口径：页面有真实数据时，页签至少一个数据集真实为 captured、全无为 empty 诚实空态；整页无真实数据时全部 synthetic 示例）与 `sectionPartial`（页签部分数据集缺失，缺失部分显示为空并提示）。
    - 只要页面**不是**纯示例（有任一真实数据集）：没有真实数据的字段一律返回**空**（空数组 / 空指标列表），`hourData` 恒为空（它从来没有真实来源）；**绝不回落示例**。
    - 只有 9 个数据集全部不真实时，才保持「整页示例 + synthetic 徽章 + 可见模拟数据提示」的原行为（这是合规的整页演示态）。
    - 页面层（`MarketOperationsAnalysisView.vue`）每个页签按自己的口径显示徽章；页签数据为空时显示「暂无该项真实数据，未用示例补齐」，不画空坐标冒充有数据。月度市场归因面板（`MarketAttributionPanel.vue`）同样按 `market_price` / `market_monthly_trend` 各自真实性标注，缺失行显示为空并说明。
