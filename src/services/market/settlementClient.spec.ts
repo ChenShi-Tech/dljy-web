@@ -17,7 +17,7 @@ import { fetchCaptured } from '@/services/captured'
 import { aggregatePoints, loadSettlementPrices, type SettlementPricePoint } from '@/services/market/settlementClient'
 
 function pt(date: string, over: Partial<SettlementPricePoint> = {}): SettlementPricePoint {
-  return { date, daPrice: 100, rtPrice: 100, avgPrice: 100, ltmPrice: 100, plantCount: 1, ...over }
+  return { date, daPrice: 100, rtPrice: 100, sampleAvgPrice: 100, ltmPrice: 100, plantCount: 1, ...over }
 }
 
 beforeEach(() => {
@@ -112,7 +112,7 @@ describe('loadSettlementPrices', () => {
       date: '2026-05-10',
       daPrice: 200, // (300+100)/2 等权
       rtPrice: 150,
-      avgPrice: 250,
+      sampleAvgPrice: 250,
       ltmPrice: 220,
       plantCount: 2,
     }])
@@ -121,10 +121,10 @@ describe('loadSettlementPrices', () => {
       updatedAt: '2026-06-01T00:00:00Z', matchedPlant: null,
     })
     expect(r.plantOptions).toEqual(['大唐B厂', '华能A厂']) // zh-CN 拼音序：da < hua
-    // 取数参数：族/数据集/地区 + 默认演示月区间
+    // 取数参数：族/数据集/地区；缺省区间不再内置演示月（#2992）→ 空串=不过滤日期
     expect(vi.mocked(fetchCaptured)).toHaveBeenCalledWith(
       'yn_spot_settlement', 'yn_settlement_daily',
-      { region: 'yunnan', dateFrom: '2026-05-01', dateTo: '2026-05-31' }
+      { region: 'yunnan', dateFrom: '', dateTo: '' }
     )
   })
 
