@@ -6,6 +6,8 @@
 //   3. 有状态轴（正式/暂结）的来源，按请求的状态取；请求正式时绝不拿暂结补位，反之亦然。
 // 跨来源（例如厂侧 API 与月包）同键对照只报差异，不自动互相覆盖；调用方需要单一口径时自己显式选一个来源。
 
+import { compareText } from './contract.mjs'
+
 export const SETTLEMENT_STATUSES = Object.freeze(['formal', 'provisional'])
 
 const stableJson = value => JSON.stringify(sortKeys(value))
@@ -45,7 +47,7 @@ export function selectVersions(rows, { keyOf, contentOf = row => row, statusOf =
     duplicates += list.length - 1
     selected.push(list[0])
   }
-  conflicts.sort((a, b) => a.key.localeCompare(b.key))
+  conflicts.sort((a, b) => compareText(a.key, b.key))
   return { selected, duplicates, conflicts, excludedByStatus }
 }
 
@@ -64,5 +66,5 @@ export function compareSources(leftRows, rightRows, { keyOf, contentOf }) {
     else different.push({ key, left: a, right: b })
   }
   for (const key of right.keys()) if (!left.has(key)) onlyRight.push(key)
-  return { onlyLeft: onlyLeft.sort(), onlyRight: onlyRight.sort(), same: same.sort(), different: different.sort((a, b) => a.key.localeCompare(b.key)) }
+  return { onlyLeft: onlyLeft.sort(), onlyRight: onlyRight.sort(), same: same.sort(), different: different.sort((a, b) => compareText(a.key, b.key)) }
 }

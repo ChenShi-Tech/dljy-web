@@ -5,7 +5,7 @@
 // 其他地区不会因为这里登记了云南分析而自动获得它（RS01）：regionIds 是白名单。
 
 import { INSIGHT_ERRORS, InsightContractError, MAX_WINDOW_DAYS } from './contract.mjs'
-import { getInsightSource } from './sources.mjs'
+import { RECORD_KINDS, getInsightSource } from './sources.mjs'
 
 /** HTTP 接口目录（D4）。读接口的 POST 不产生业务写入，productionWrite 恒为 false。 */
 export const INSIGHT_ENDPOINTS = Object.freeze({
@@ -60,6 +60,11 @@ function analysis(definition) {
   const access = sources.some(entry => entry.accessScope === 'company') ? 'company' : 'public'
   const views = Object.freeze([...(definition.views ?? ['series'])])
   if (views.length > 1 && !definition.viewFamily) throw new Error(`分析 ${definition.analysisId} 登记了多个视图，必须声明视图族`)
+  // 是否/清单类来源不是数值时序（GB03）：只能单独组成记录视图分析，不与曲线混在一起，也不给曲线视图。
+  const recordSources = sources.filter(entry => RECORD_KINDS.includes(entry.measure.kind))
+  const recordsFamily = definition.viewFamily === 'records'
+  if (recordSources.length && (recordSources.length !== sources.length || !recordsFamily)) throw new Error(`分析 ${definition.analysisId}：是否/清单类来源只能单独组成记录视图分析`)
+  if (recordsFamily && (!recordSources.length || views.some(view => view !== 'records'))) throw new Error(`分析 ${definition.analysisId}：记录视图分析只能读是否/清单类来源、只给记录视图`)
   return Object.freeze({
     version: '1',
     viewFamily: null,
@@ -110,6 +115,35 @@ export const INSIGHT_ANALYSES = Object.freeze([
     analysisId: 'supply.hydro-unit-groups', title: '云南水电机组群组成与机组出力占比（获权）',
     pageIds: ['supply'], regionIds: ['yunnan'],
     sourceIds: ['cgn.hydro.yn-group-share'],
+    filters: { objectIds: objectIdsFilter(50) }, limits: { maxDays: 31, maxObjects: 50 },
+  }),
+  analysis({
+    // 跨省与电网边界（#3022，GB01/GB02）：通道流量与断面限值只在同名、同方向、同一时段配对
+    analysisId: 'grid.channel-flows', title: '省间联络线、重点通道与断面限值（获权）',
+    pageIds: ['grid-boundaries'], regionIds: ['yunnan'],
+    sourceIds: ['cgn.grid.tie-line.actual', 'cgn.grid.key-channel.actual', 'cgn.grid.key-line-transformer.actual', 'cgn.grid.section-constraint.actual', 'cgn.grid.external-tie-line.forecast'],
+    viewFamily: 'grid', views: ['series', 'limit-match'],
+    filters: { objectIds: objectIdsFilter(30) }, limits: { maxDays: 7, maxObjects: 30 },
+  }),
+  analysis({
+    analysisId: 'grid.transfer-daily', title: '送电电量下限、通道能力与断面负载（日，获权）',
+    pageIds: ['grid-boundaries'], regionIds: ['yunnan'],
+    sourceIds: ['cgn.grid.priority-limit.forecast', 'cgn.grid.transmission-capacity.forecast', 'cgn.grid.stable-section.actual', 'cgn.grid.section-congestion.actual', 'cgn.grid.load-summary.actual'],
+    limits: { maxDays: 31 },
+  }),
+  analysis({
+    // 备用与机组（#3022，GB03）：容量、占比、权重按原义分列，不换算出力
+    analysisId: 'grid.reserve-units', title: '备用、检修容量与机组群（获权）',
+    pageIds: ['grid-boundaries'], regionIds: ['yunnan'],
+    sourceIds: ['cgn.reserve.peak.actual', 'cgn.reserve.forecast', 'cgn.units.non-da-new-energy-capacity', 'cgn.units.maintenance-capacity', 'cgn.units.price-weight', 'cgn.units.group-share'],
+    filters: { objectIds: objectIdsFilter(50) }, limits: { maxDays: 31, maxObjects: 50 },
+  }),
+  analysis({
+    // 是否调峰、必开必停清单：记录不是时序，只给记录视图
+    analysisId: 'grid.unit-lists', title: '是否调峰与必开必停清单（获权）',
+    pageIds: ['grid-boundaries'], regionIds: ['yunnan'],
+    sourceIds: ['cgn.units.peak-regulation', 'cgn.units.must-run-stop'],
+    viewFamily: 'records', views: ['records'],
     filters: { objectIds: objectIdsFilter(50) }, limits: { maxDays: 31, maxObjects: 50 },
   }),
   analysis({

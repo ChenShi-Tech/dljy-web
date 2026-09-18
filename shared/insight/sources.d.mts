@@ -1,7 +1,7 @@
 // 市场洞察来源语义登记类型（#2993）。
 import type { MarketPhase, PriceObject } from './contract.mjs'
 
-export type MeasureKind = 'price' | 'power' | 'energy' | 'amount' | 'ratio' | 'capacity' | 'flag' | 'list'
+export type MeasureKind = 'price' | 'power' | 'energy' | 'amount' | 'ratio' | 'capacity' | 'count' | 'flag' | 'list'
 export type PowerSemantics = 'interval-average' | 'instant' | 'unknown'
 export type BusinessScope = 'yunnan' | 'csg-aggregate' | 'csg-multi-region' | 'plant' | 'node'
 export type AccessScope = 'public' | 'company'
@@ -43,6 +43,7 @@ export declare const SUPPLY_CATEGORIES: readonly SupplyCategory[]
 export type SourceField = { id: string; valueField: string; unit: string; kind: MeasureKind }
 export declare function sourceFields(source: InsightSource): SourceField[]
 export declare const MEASURE_KINDS: readonly MeasureKind[]
+export declare const RECORD_KINDS: readonly MeasureKind[]
 export declare const POWER_SEMANTICS: readonly PowerSemantics[]
 export declare const BUSINESS_SCOPES: readonly BusinessScope[]
 export declare const ACCESS_SCOPES: readonly AccessScope[]

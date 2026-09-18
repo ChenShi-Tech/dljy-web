@@ -9,7 +9,7 @@
 //
 // 本文件只做规范化与比对（前后端同构）；摘要值由服务端用 sha256 计算后以 rv1:/rs1: 前缀下发。
 
-import { INSIGHT_ERRORS, InsightContractError, isReadSetRef, isResultVersion } from './contract.mjs'
+import { INSIGHT_ERRORS, InsightContractError, compareText, isReadSetRef, isResultVersion } from './contract.mjs'
 
 const fail = message => { throw new InsightContractError(INSIGHT_ERRORS.UNPROCESSABLE, message) }
 
@@ -48,9 +48,9 @@ export function buildReadSet({ sources, mappingVersion = null, metricVersions = 
   if (new Set(ids).size !== ids.length) fail('读取版本集合里的来源重复')
   return {
     schema: 'insight-read-set/v1',
-    sources: [...sources].sort((a, b) => a.sourceId.localeCompare(b.sourceId)).map(({ sourceId, versionToken, window = null, rowCount = null }) => ({ sourceId, versionToken, window, rowCount })),
+    sources: [...sources].sort((a, b) => compareText(a.sourceId, b.sourceId)).map(({ sourceId, versionToken, window = null, rowCount = null }) => ({ sourceId, versionToken, window, rowCount })),
     mappingVersion,
-    metricVersions: Object.fromEntries(Object.entries(metricVersions).sort(([a], [b]) => a.localeCompare(b))),
+    metricVersions: Object.fromEntries(Object.entries(metricVersions).sort(([a], [b]) => compareText(a, b))),
     methodVersion,
   }
 }
