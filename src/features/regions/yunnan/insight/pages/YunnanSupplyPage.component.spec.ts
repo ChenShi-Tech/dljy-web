@@ -533,6 +533,20 @@ describe('供需全景', () => {
     expect(names.some((name) => name.includes('南方电网整体口径'))).toBe(false)
   })
 
+  it('主图 tooltip 点值按来源精度显示（126.666666666667 → 126.667），不透出原始浮点', async () => {
+    await mountPage()
+
+    const title = '云南系统曲线（实际实线；预测虚线）'
+    const formatter = (chartOptionOf(title)?.tooltip as { formatter?: (raw: unknown) => string } | undefined)?.formatter
+    expect(typeof formatter).toBe('function')
+    const seriesName = String(chartSeriesOf(title)[0]?.name ?? '')
+    const out = formatter!([
+      { marker: '', seriesName, data: { value: [Date.parse('2026-09-17T10:00:00+08:00'), 126.666666666667] } },
+    ])
+    expect(out).toContain('126.667')
+    expect(out).not.toContain('126.666666666667')
+  })
+
   it('预测曲线默认不同图；打开开关后以虚线出现在主图（阶梯、缺测断开口径不变）', async () => {
     await mountPage()
 
@@ -711,6 +725,9 @@ describe('历史比较', () => {
     expect(text).toContain('平均功率（当前，MW）')
     expect(text).toContain('平均功率（参考，MW）')
     expect(text).toContain('参考窗口 2025-05-01 ~ 2025-05-07')
+    // 数值按指标精度显示（夹具 126.666666666667 → 126.7），不是恒「—」；断言收窄到对比表本身，
+    // 避免误吃其他页签统计卡里的同值
+    expect(wrapper!.find('[data-testid="yns-compare-table"]').text()).toContain('126.7')
   })
 
   it('改当前窗口后旧对比作废：迟到的参考结果不写进新状态，对比表不显示', async () => {
