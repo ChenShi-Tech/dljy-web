@@ -25,7 +25,7 @@ export function registerYunnanInsightWorkspace(): void {
     pages: [
       { pageId: 'overview', title: '市场总览', order: 1, load: loadPending, delivered: false },
       { pageId: 'prices', title: '价格与价差', order: 2, load: () => import('./pages/YunnanPricesPage.vue'), delivered: false },
-      { pageId: 'supply', title: '供需与水电', order: 3, load: loadPending, delivered: false },
+      { pageId: 'supply', title: '供需与水电', order: 3, load: () => import('./pages/YunnanSupplyPage.vue'), delivered: true },
       { pageId: 'grid-boundaries', title: '跨省与电网边界', order: 4, load: loadPending, delivered: false },
       { pageId: 'plants', title: '场站市场表现', order: 5, load: loadPending, delivered: false },
       { pageId: 'research', title: '研究工作台', order: 6, load: loadPending, delivered: false }
