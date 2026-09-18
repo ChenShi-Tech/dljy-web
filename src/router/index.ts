@@ -96,6 +96,9 @@ const midlongPositions = () => import('../views/midlong/MidlongPositionsView.vue
 const midlongIntervalPositions = () => import('../views/midlong/p2/MidlongIntervalPositionsView.vue')
 const midlongStationPositions = () => import('../views/midlong/p2/MidlongStationPositionsView.vue')
 const midlongCurveSet = () => import('../views/midlong/p2/MidlongCurveSetView.vue')
+// 云南中长期售电 P3（dljy#2973）：售电计划与交易执行。
+const midlongPlans = () => import('../views/midlong/p3/MidlongPlansView.vue')
+const midlongExecution = () => import('../views/midlong/p3/MidlongExecutionView.vue')
 const riskCenter = () => import('../views/RiskCenterView.vue')
 
 type PageMeta = {
@@ -261,6 +264,9 @@ const router = createRouter({
         // 分时分解与场站分配（dljy#2971）：正式分解与估算分开，只有月量的合同在小时粒度显示分时未知；不依赖现货/预测。
         page('zcqjy/positions/intervals', 'MidlongIntervalPositions', { block: '中长期交易', title: '分时持仓', code: 'midlong-interval-positions', endpoint: 'GET /api/v1/midlong/positions/intervals(+/export)', dataPath: 'company.midlong_curve_*', scope: '已确认分解集按月/日/时汇总、分时未知与守恒状态', kind: 'real' }, midlongIntervalPositions),
         page('zcqjy/positions/stations', 'MidlongStationPositions', { block: '中长期交易', title: '场站维度持仓', code: 'midlong-station-positions', endpoint: 'GET /api/v1/midlong/positions/stations(+/export)', dataPath: 'company.midlong_station_allocation_*', scope: '交易单元义务按场站分配份额与未分配余额（同一义务的不同观察维度，不相加）', kind: 'real' }, midlongStationPositions),
+        // 售电目标、方案与交易日历（dljy#2973）：目标是经营安排不是物理可发电量，方案占用不计正式持仓，导出申报材料不代提交。
+        page('zcqjy/plans', 'MidlongPlans', { block: '中长期交易', title: '售电计划', code: 'midlong-plans', endpoint: 'GET/POST/PATCH /api/v1/midlong/plans* + /proposals*', dataPath: 'company.midlong_sales_plan* + midlong_trade_proposal* + midlong_plan_occupations', scope: '人工售电目标版本与完成情况、交易方案测算与方案占用', kind: 'real' }, midlongPlans),
+        page('zcqjy/execution', 'MidlongExecution', { block: '中长期交易', title: '交易执行', code: 'midlong-execution', endpoint: 'GET/POST /api/v1/midlong/windows* + /proposals/{id}/export|submissions + /submissions/{id}/receipts', dataPath: 'company.midlong_trading_window* + midlong_proposal_submissions + midlong_submission_receipts', scope: '交易公告与日历、申报材料导出、外部提交登记与回执完整度', kind: 'real' }, midlongExecution),
         page('zcqjy/curves/:id', 'MidlongCurveSet', { block: '中长期交易', title: '分解集详情', code: 'midlong-curve-set', endpoint: 'GET /api/v1/midlong/curves/{id} + confirm/discard', dataPath: 'company.midlong_curve_*', scope: '分时分解集原始粒度、单位换算、缺段/重叠/守恒校验与来源', kind: 'real' }, midlongCurveSet),
         page('zcqjy/zccljk', 'PositionMonitor', { block: '中长期交易', title: '持仓量监控', code: 'zccljk', endpoint: 'GET /sdpt/zfsdjy/ccljkDay|ccljkTime|list', dataPath: 'sdpt_zfsdjy', scope: '2026-06，39行', kind: 'real' }, zfsdjyPosition),
         page('zcqjy/zfsdjy', 'PeriodTrading', { block: '中长期交易', title: '分时段交易', code: 'zfsdjy', endpoint: 'GET /sdpt/zfsdjy/list', dataPath: 'sdpt_zfsdjy', kind: 'real' }, zfsdjyTrades),

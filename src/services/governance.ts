@@ -673,6 +673,8 @@ export function canAccessPath(path: string, user: Pick<GovernanceUser, 'roleCode
   if (normalized === '/zcqjy/contracts' || normalized.startsWith('/zcqjy/contracts/') || normalized === '/zcqjy/positions') return true
   // P2 分时分解与场站分配（dljy#2971）：同属合同底账的观察维度，可见范围与月度持仓一致。
   if (normalized === '/zcqjy/positions/intervals' || normalized === '/zcqjy/positions/stations' || normalized.startsWith('/zcqjy/curves/')) return true
+  // P3 售电计划与交易执行（dljy#2973）：同属中长期售电经营台账，可见范围与月度持仓一致，写入由后端公司写权限闸门控制。
+  if (normalized === '/zcqjy/plans' || normalized === '/zcqjy/execution') return true
 
   const rule = getEffectiveAccessRule(roleCode)
   if (rule.routes?.includes(normalized)) return true

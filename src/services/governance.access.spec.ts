@@ -47,6 +47,17 @@ describe('canAccessPath 判权只看路径（query/hash 不影响）', () => {
     }
   })
 
+  it('中长期 P3 售电计划与交易执行与月度持仓同一可见范围（dljy#2973）', () => {
+    for (const roleCode of Object.keys(roleLabels) as RoleCode[]) {
+      const legacy = canAccessPath('/gsgl/contracts', { roleCode })
+      expect(canAccessPath('/zcqjy/plans', { roleCode })).toBe(legacy)
+      expect(canAccessPath('/zcqjy/execution', { roleCode })).toBe(legacy)
+      // 只放行这两个精确路径：前缀相似的路径仍按角色规则判定。
+      expect(canAccessPath('/zcqjy/plans-export', { roleCode })).toBe(canAccessPath('/zcqjy/not-a-midlong-page', { roleCode }))
+      expect(canAccessPath('/zcqjy/execution/1', { roleCode })).toBe(canAccessPath('/zcqjy/not-a-midlong-page', { roleCode }))
+    }
+  })
+
   it('SETTLEMENT / RETAIL_MANAGER 对 /yygl/import-hub 死授权已移除', () => {
     expect(canAccessPath('/yygl/import-hub', { roleCode: 'SETTLEMENT' })).toBe(false)
     expect(canAccessPath('/yygl/import-hub', { roleCode: 'RETAIL_MANAGER' })).toBe(false)

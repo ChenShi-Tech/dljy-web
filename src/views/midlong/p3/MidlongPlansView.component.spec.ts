@@ -1,0 +1,488 @@
+// 中长期售电计划页的渲染不变量（dljy#2973，MS-01/MS-02/MS-04）。
+// 守什么：术语为剩余计划待售量；已核验行显示剩余与完成率、超计划显示负数与超过 100% 并标超计划、
+//        未完成核验与目标未确认不显示 0；目标是经营安排的声明可见；历史视图有说明；能力未开放时不取数；
+//        页面不出现套保率、现货敞口、预计利润。
+//        详情抽屉开着时在抽屉外保存同一目标或方案，抽屉显式重新加载，不停留在旧版本。
+// 坏掉的症状：未分解合同的月份显示「剩余 1000、完成率 0%」；超计划被截成 0；能力未开放仍请求接口出空壳页面；
+//            在方案抽屉里修改草稿并保存后抽屉仍显示旧版本号，随后确认带旧版本撞版本冲突；
+//            公告候选加载期间换了方案，弹出的却是原方案的修改表单；请求进行中动了筛选控件，结果被当成过期丢弃、页面卡在加载中。
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { enableAutoUnmount, flushPromises } from '@vue/test-utils'
+import { mount } from '@/test/mount'
+import type { MidlongCapabilities } from '@/services/midlong/midlongTypes'
+import {
+  FORBIDDEN_PLANNING_TERMS, PLANNING_NOTICES, type PlanProgress, type PlanProgressReport, type PlanProgressRow, type ProposalComparison, type SalesPlanDetail, type SalesPlanRevision,
+  type TradeProposalDetail,
+} from '@/services/midlong/midlongP3Types'
+
+const hoisted = vi.hoisted(() => ({
+  fetchCapabilities: vi.fn(), fetchPlanProgress: vi.fn(), fetchProposals: vi.fn(), fetchWindows: vi.fn(), confirmPlan: vi.fn(), replace: vi.fn(),
+  fetchPlan: vi.fn(), fetchProposal: vi.fn(), fetchProposalComparison: vi.fn(), confirmProposal: vi.fn(),
+  fetchSubjects: vi.fn(async () => [{ id: 1, displayName: '测试交易单元', subjectKey: 'TEST-1' }]),
+  routeQuery: {} as Record<string, string>, companyRef: null as null | { value: string },
+}))
+
+vi.mock('element-plus', async (orig) => ({ ...(await orig<typeof import('element-plus')>()), ElMessage: { success: vi.fn(), error: vi.fn() } }))
+vi.mock('vue-router', () => ({ useRoute: () => ({ query: hoisted.routeQuery }), useRouter: () => ({ replace: hoisted.replace }) }))
+vi.mock('@/services/company/companyContext', async () => {
+  const selectedCompanyId = (await import('vue')).ref('comp-a')
+  hoisted.companyRef = selectedCompanyId
+  return { selectedCompanyId }
+})
+vi.mock('@/services/region/regionContext', async () => ({ currentRegion: (await import('vue')).ref({ id: 'yunnan' }) }))
+vi.mock('@/services/midlong/midlongApi', () => ({
+  CompanyNotSelectedError: class extends Error {},
+  fetchCapabilities: hoisted.fetchCapabilities,
+  fetchSubjects: hoisted.fetchSubjects,
+  midlongFailureOf: (e: unknown) => ({ status: 500, errorCode: 'STORAGE_UNAVAILABLE', message: (e as Error).message, details: null }),
+}))
+vi.mock('@/services/midlong/midlongP3Api', () => ({
+  fetchPlanProgress: hoisted.fetchPlanProgress, fetchProposals: hoisted.fetchProposals, fetchAllWindows: hoisted.fetchWindows, confirmPlan: hoisted.confirmPlan,
+  // 详情抽屉按真实组件挂载时用到的接口。
+  fetchPlan: hoisted.fetchPlan, fetchProposal: hoisted.fetchProposal, fetchProposalComparison: hoisted.fetchProposalComparison, confirmProposal: hoisted.confirmProposal,
+  cancelProposal: vi.fn(), closeProposal: vi.fn(), exportProposal: vi.fn(), fetchPlanningAttachment: vi.fn(), markAwaitingResult: vi.fn(), recheckProposalWindow: vi.fn(),
+}))
+
+import MidlongPlansView from './MidlongPlansView.vue'
+import PlanDetailDrawer from '@/components/midlong/p3/PlanDetailDrawer.vue'
+import ProposalDetailDrawer from '@/components/midlong/p3/ProposalDetailDrawer.vue'
+
+const STUBS = {
+  CompanyScopeBar: { template: '<div />' }, PlanFormDialog: { template: '<div />' },
+  PlanDetailDrawer: { props: ['modelValue', 'planId'], template: '<div class="stub-plan-drawer" :data-open="String(modelValue)" />' },
+  ProposalFormDialog: { props: ['modelValue'], template: '<div class="stub-proposal-form" :data-open="String(modelValue)" />' },
+  ProposalDetailDrawer: { props: ['modelValue', 'proposalId'], template: '<div class="stub-proposal-drawer" :data-open="String(modelValue)" :data-id="proposalId" />' },
+  'router-link': { template: '<a><slot /></a>' },
+}
+const page = <T>(rows: T[], total = rows.length) => ({ rows, total, page: 1, pageSize: 50 })
+
+function caps(modules: { plans: boolean; execution: boolean }): MidlongCapabilities {
+  return {
+    enabled: true, regionId: 'yunnan', regionSupported: true, pilotRegions: ['yunnan'], phase: 'P1',
+    modules: { contracts: true, positions: true, imports: true, review: false, ...modules },
+    canWrite: true, companyId: 'comp-a', scopeCompanyIds: ['comp-a'], reason: null,
+  } as unknown as MidlongCapabilities
+}
+
+function progress(o: Partial<PlanProgress> = {}): PlanProgress {
+  return {
+    targetQuantity: '1000', knownSoldQuantity: '700', soldComplete: true, remainingPlanQuantity: '300', completionRate: '0.7', openOccupationQuantity: '200',
+    arrangeableQuantity: '100', overPlan: false, overCommitted: false, verificationStatus: 'VERIFIED', notices: [], incompleteContracts: [], positionsAsOf: '2031-01-01T00:00:00.000Z', ...o,
+  }
+}
+
+function row(id: number, periodKey: string, p: Partial<PlanProgress>, confirmed = true): PlanProgressRow {
+  const revision = { id, planId: id, revisionNo: 1, status: 'CONFIRMED' as const, supersedesRevisionNo: null, targetQuantity: p.targetQuantity ?? '1000', targetPriceLow: null, targetPriceHigh: null, priceTaxBasis: 'UNKNOWN' as const, basisNote: '测试依据', ownerName: '测试', changeReason: null, recordedAt: '', recordedBy: null, updatedAt: '', confirmedAt: '2031-01-01T00:00:00.000Z', confirmedBy: 'cgn-admin' }
+  return {
+    id, companyId: 'comp-a', regionId: 'yunnan', subjectId: 1, subjectName: '测试交易单元', subjectKey: 'TEST-1', periodType: 'MONTH', periodKey, currentRevisionNo: 1,
+    confirmedRevisionNo: confirmed ? 1 : null, rowVersion: 2, createdAt: '', createdBy: null, updatedAt: '', targetNature: 'BUSINESS_ARRANGEMENT', targetNatureNotice: PLANNING_NOTICES.targetNature,
+    confirmedRevision: confirmed ? revision : null, draftRevision: null, progress: progress(p),
+  }
+}
+
+function report(o: Partial<PlanProgressReport> = {}): PlanProgressReport {
+  return {
+    view: 'CURRENT', asOf: '2031-01-01T00:00:00.000Z', regionId: 'yunnan', generatedAt: '2031-01-01T00:00:00.000Z', notices: [], total: 4, page: 1, pageSize: 50,
+    rows: [
+      row(1, '2031-05', {}),
+      row(2, '2031-06', { knownSoldQuantity: '1100', remainingPlanQuantity: '-100', completionRate: '1.1', arrangeableQuantity: '-150', overPlan: true, openOccupationQuantity: '50' }),
+      row(3, '2031-07', { knownSoldQuantity: '800', soldComplete: false, remainingPlanQuantity: null, completionRate: null, arrangeableQuantity: null, verificationStatus: 'UNVERIFIED', openOccupationQuantity: '0' }),
+      row(4, '2031-08', { targetQuantity: null, remainingPlanQuantity: null, completionRate: null, arrangeableQuantity: null, verificationStatus: 'TARGET_UNKNOWN', openOccupationQuantity: '0' }, false),
+    ],
+    ...o,
+  }
+}
+
+function proposalDetail(o: Partial<TradeProposalDetail> = {}): TradeProposalDetail {
+  return {
+    id: 42, companyId: 'comp-a', regionId: 'yunnan', subjectId: 1, subjectName: '测试交易单元', windowId: null, windowRevisionNo: null, productKind: 'MONTHLY',
+    tradeMethod: 'CENTRALIZED_BIDDING', proposedPrice: '330', priceTaxBasis: 'TAX_INCLUDED', priceComponent: 'ENERGY_ONLY', ownerName: '测试负责人', rationale: '【测试数据】原理由',
+    status: 'DRAFT', rowVersion: 3, confirmedAt: null, confirmedBy: null, positionsAsOf: null, awaitingResultAt: null, awaitingResultBy: null, endedAt: null, endedBy: null,
+    endReason: null, closeKind: null, createdAt: '', createdBy: null, updatedAt: '', segments: [{ deliveryMonth: '2031-05', quantity: '200' }],
+    totalQuantity: '200', planRefs: [], occupations: [], openOccupationQuantity: '0', submissions: [], window: null,
+    readiness: { missing: [], windowMismatches: [], windowUnverified: [], windowRevised: false }, events: [], notices: [], formalPosition: false, ...o,
+  }
+}
+
+function proposalComparison(rowVersion: number, revisionNo: number): ProposalComparison {
+  return {
+    proposalId: 42, proposalStatus: 'DRAFT', proposalRowVersion: rowVersion, uncoveredMonths: [], nature: 'SIMULATION', notices: [],
+    priceAssessment: { status: 'NOT_ASSESSED', reason: 'NO_COMPARABLE_MIDLONG_QUOTE' },
+    proposal: { totalQuantity: '200', proposedPrice: '330', priceTaxBasis: 'TAX_INCLUDED', priceComponent: 'ENERGY_ONLY', notionalAmount: '66000' },
+    months: [],
+    plans: [{ planId: 1, periodType: 'MONTH', periodKey: '2031-05', currentRevisionNo: revisionNo, referencedRevisionNo: null, referencedTargetQuantity: null, revisionSuperseded: false, proposalQuantityInPeriod: '200',
+      before: progress(), after: progress() }],
+    positionsAsOf: '',
+  }
+}
+
+const planRevision = (o: Partial<SalesPlanRevision>): SalesPlanRevision => ({
+  id: 1, planId: 1, revisionNo: 1, status: 'CONFIRMED', supersedesRevisionNo: null, targetQuantity: '1000', targetPriceLow: null, targetPriceHigh: null, priceTaxBasis: 'TAX_INCLUDED',
+  basisNote: '【测试数据】经营会', ownerName: '测试负责人', changeReason: null, recordedAt: '', recordedBy: 'cgn-admin', updatedAt: '',
+  confirmedAt: null, confirmedBy: null, supersededAt: null, historyAsOf: null, ...o,
+})
+
+function planDetail(revisions: SalesPlanRevision[]): SalesPlanDetail {
+  return {
+    id: 1, companyId: 'comp-a', regionId: 'yunnan', subjectId: 1, subjectName: '测试交易单元', subjectKey: 'TEST-1', periodType: 'MONTH', periodKey: '2031-05', currentRevisionNo: revisions.length,
+    confirmedRevisionNo: 1, rowVersion: revisions.length + 1, createdAt: '', createdBy: null, updatedAt: '', targetNature: 'BUSINESS_ARRANGEMENT', targetNatureNotice: PLANNING_NOTICES.targetNature,
+    revisions, events: [], occupations: [],
+  }
+}
+
+/** 按真实组件挂载详情抽屉；表单换成带「保存」按钮的替身，保存时按真实表单的顺序发 saved 再关闭。 */
+const FORM_SAVE_STUBS = {
+  ...STUBS,
+  PlanDetailDrawer: false,
+  ProposalDetailDrawer: false,
+  PlanFormDialog: {
+    props: ['modelValue', 'plan'], emits: ['saved', 'update:modelValue'],
+    template: '<div class="stub-plan-form" :data-open="String(modelValue)"><button class="stub-plan-save" @click="$emit(\'saved\', { planId: plan.id, revisionNo: 2, status: \'DRAFT\' }); $emit(\'update:modelValue\', false)" /></div>',
+  },
+  ProposalFormDialog: {
+    props: ['modelValue', 'proposal'], emits: ['saved', 'update:modelValue'],
+    template: '<div class="stub-proposal-form" :data-open="String(modelValue)"><button class="stub-proposal-save" @click="$emit(\'saved\', { proposalId: proposal ? proposal.id : 99, status: \'DRAFT\', rowVersion: 4 }); $emit(\'update:modelValue\', false)" /></div>',
+  },
+}
+
+afterEach(() => {
+  vi.clearAllMocks()
+  hoisted.routeQuery = {}
+  if (hoisted.companyRef) hoisted.companyRef.value = 'comp-a'
+})
+enableAutoUnmount(afterEach)
+
+describe('中长期售电计划页', () => {
+  it('剩余计划待售量与完成率：已核验、超计划、未完成核验、目标未确认分别如实显示', async () => {
+    hoisted.fetchCapabilities.mockResolvedValue(caps({ plans: true, execution: true }))
+    hoisted.fetchPlanProgress.mockResolvedValue(report())
+    hoisted.fetchProposals.mockResolvedValue(page([]))
+    hoisted.fetchWindows.mockResolvedValue([])
+    const w = mount(MidlongPlansView, { global: { stubs: STUBS } })
+    await flushPromises()
+    const text = w.text()
+    expect(text).toContain('剩余计划待售量')
+    expect(text).toContain(PLANNING_NOTICES.targetNature)
+    const rows = w.findAll('.ml-table .el-table__body-wrapper tbody tr')
+    expect(rows[0].text()).toContain('300 MWh')
+    expect(rows[0].text()).toContain('70%')
+    expect(rows[0].text()).toContain('100 MWh')
+    expect(rows[1].text()).toContain('-100 MWh')
+    expect(rows[1].text()).toContain('-150 MWh')
+    expect(rows[1].text()).toContain('110%')
+    expect(rows[1].text()).toContain('超计划')
+    expect(rows[2].text()).toContain('待核验（不按零计）')
+    expect(rows[2].text()).toContain('另有未分解')
+    expect(rows[2].text()).not.toMatch(/\b0%/)
+    expect(rows[3].text()).toContain('目标未确认')
+    expect(text).toContain('部分结果未完成核验')
+    for (const term of FORBIDDEN_PLANNING_TERMS) expect(text).not.toContain(term)
+  })
+
+  it('历史视图：显示旧报告说明，不提供新建与确认操作', async () => {
+    hoisted.routeQuery = { planId: '1', asOf: '2031-02-01T00:00:00.000Z' }
+    hoisted.fetchCapabilities.mockResolvedValue(caps({ plans: true, execution: false }))
+    hoisted.fetchPlanProgress.mockResolvedValue(report({ view: 'AS_OF', rows: [row(1, '2031-05', {})] }))
+    hoisted.fetchProposals.mockResolvedValue(page([]))
+    const w = mount(MidlongPlansView, { global: { stubs: STUBS } })
+    await flushPromises()
+    expect(hoisted.fetchPlanProgress).toHaveBeenCalledWith(expect.objectContaining({ planId: '1', asOf: '2031-02-01T00:00:00.000Z' }))
+    expect(w.text()).toContain('历史视图（旧报告）')
+    expect(w.findAll('button').some((b) => b.text() === '新建目标')).toBe(false)
+    expect(hoisted.fetchWindows).not.toHaveBeenCalled()
+  })
+
+  it('能力未开放：显示未开放提示，不请求计划与方案接口', async () => {
+    hoisted.fetchCapabilities.mockResolvedValue(caps({ plans: false, execution: false }))
+    const w = mount(MidlongPlansView, { global: { stubs: STUBS } })
+    await flushPromises()
+    expect(w.text()).toContain('售电计划功能尚未开放')
+    expect(hoisted.fetchPlanProgress).not.toHaveBeenCalled()
+    expect(hoisted.fetchProposals).not.toHaveBeenCalled()
+  })
+
+  it('服务失败显示错误，不显示任何替代数值', async () => {
+    hoisted.fetchCapabilities.mockResolvedValue(caps({ plans: true, execution: true }))
+    hoisted.fetchPlanProgress.mockRejectedValue(new Error('存储不可用'))
+    hoisted.fetchProposals.mockResolvedValue(page([]))
+    hoisted.fetchWindows.mockResolvedValue([])
+    const w = mount(MidlongPlansView, { global: { stubs: STUBS } })
+    await flushPromises()
+    expect(w.find('[data-test="targets-error"]').text()).toContain('完成情况加载失败（未显示任何替代数值）')
+    // 目标标签里不出现任何电量数值（方案标签的表头「交割片段（MWh）」不算）。
+    expect(w.find('#pane-targets').text()).not.toContain('MWh')
+  })
+  it('切换公司：关闭已打开的方案与目标详情抽屉，按新公司回到第一页重新取数', async () => {
+    const proposalRow = { id: 42, status: 'EXECUTABLE', subjectId: 1, subjectName: '测试交易单元', segments: [{ deliveryMonth: '2031-05', quantity: '80' }], proposedPrice: null, openOccupationQuantity: '80', window: null }
+    hoisted.fetchCapabilities.mockResolvedValue(caps({ plans: true, execution: true }))
+    hoisted.fetchPlanProgress.mockResolvedValue(report())
+    hoisted.fetchProposals.mockResolvedValue(page([proposalRow]))
+    hoisted.fetchWindows.mockResolvedValue([])
+    const w = mount(MidlongPlansView, { global: { stubs: STUBS } })
+    await flushPromises()
+    await w.findAll('.ml-table .el-table__body-wrapper tbody tr')[0].findAll('button').find((b) => b.text() === '版本与占用')!.trigger('click')
+    await w.findAll('.el-tabs__item').find((t) => t.text() === '交易方案')!.trigger('click')
+    await flushPromises()
+    await w.findAll('.el-table__row').find((r) => r.text().includes('#42'))!.trigger('click')
+    await flushPromises()
+    expect(w.find('.stub-proposal-drawer').attributes('data-open')).toBe('true')
+    expect(w.find('.stub-plan-drawer').attributes('data-open')).toBe('true')
+    hoisted.companyRef!.value = 'comp-b'
+    await flushPromises()
+    expect(w.find('.stub-proposal-drawer').attributes('data-open')).toBe('false')
+    expect(w.find('.stub-plan-drawer').attributes('data-open')).toBe('false')
+    expect(hoisted.fetchPlanProgress).toHaveBeenLastCalledWith(expect.objectContaining({ page: 1 }))
+  })
+
+  it('占用超过目标时标注并提示（已售未完成核验时余额仍待核验、照样标出）；目标超过一页时显示分页并按页取数', async () => {
+    hoisted.fetchCapabilities.mockResolvedValue(caps({ plans: true, execution: false }))
+    hoisted.fetchPlanProgress.mockResolvedValue(report({
+      total: 120,
+      rows: [
+        row(1, '2031-05', { knownSoldQuantity: '50', remainingPlanQuantity: '50', completionRate: '0.05', openOccupationQuantity: '80', arrangeableQuantity: '-30', overCommitted: true }),
+        // 目标 100、已知已售 60 另有未分解、占用 50：余额未知，但至少已超 10。
+        row(2, '2031-06', { targetQuantity: '100', knownSoldQuantity: '60', soldComplete: false, remainingPlanQuantity: null, completionRate: null, openOccupationQuantity: '50', arrangeableQuantity: null, verificationStatus: 'UNVERIFIED', overCommitted: true }),
+      ],
+    }))
+    hoisted.fetchProposals.mockResolvedValue(page([]))
+    const w = mount(MidlongPlansView, { global: { stubs: STUBS } })
+    await flushPromises()
+    const rows = w.findAll('.ml-table .el-table__body-wrapper tbody tr')
+    expect(rows[0].text()).toContain('占用超目标')
+    expect(rows[1].text()).toContain('占用超目标')
+    expect(rows[1].text()).toContain('待核验（不按零计）')
+    expect(rows[1].text()).not.toContain('-10')
+    expect(w.text()).toContain(PLANNING_NOTICES.overCommitted)
+    expect(w.text()).toContain('-30 MWh')
+    expect(w.find('.ml-pagination').exists()).toBe(true)
+    expect(hoisted.fetchPlanProgress).toHaveBeenCalledWith(expect.objectContaining({ page: 1, pageSize: 50 }))
+  })
+  it('从第 2 页进入历史视图：只剩一行结果时按第 1 页请求，不请求不存在的第 2 页', async () => {
+    hoisted.routeQuery = { page: '2' }
+    hoisted.fetchCapabilities.mockResolvedValue(caps({ plans: true, execution: false }))
+    hoisted.fetchPlanProgress.mockResolvedValue(report({ total: 120, page: 2 }))
+    const w = mount(MidlongPlansView, { global: { stubs: { ...STUBS, PlanDetailDrawer: { emits: ['history'], template: '<button class="stub-history" @click="$emit(\'history\', { planId: 7, asOf: \'2031-01-31T23:59:59.999Z\', revisionNo: 1 })" />' } } } })
+    await flushPromises()
+    expect(hoisted.fetchPlanProgress).toHaveBeenLastCalledWith(expect.objectContaining({ page: 2 }))
+    await w.find('.stub-history').trigger('click')
+    await flushPromises()
+    expect(hoisted.fetchPlanProgress).toHaveBeenLastCalledWith(expect.objectContaining({ planId: '7', asOf: '2031-01-31T23:59:59.999Z', page: 1 }))
+    // 路由与请求一致：URL 里不能留着第 2 页，否则刷新或分享时又按第 2 页打开空的历史报告。
+    expect(hoisted.replace).toHaveBeenLastCalledWith({ query: expect.objectContaining({ planId: '7', page: '1' }) })
+  })
+
+  it('方案标签改了条件就回到第一页：从第 3 页改状态后查询按第 1 页请求', async () => {
+    hoisted.routeQuery = { tab: 'proposals', proposalPage: '3' }
+    hoisted.fetchCapabilities.mockResolvedValue(caps({ plans: true, execution: false }))
+    hoisted.fetchProposals.mockResolvedValue({ rows: [], total: 150, page: 3, pageSize: 50 })
+    const w = mount(MidlongPlansView, { global: { stubs: STUBS } })
+    await flushPromises()
+    expect(hoisted.fetchProposals).toHaveBeenLastCalledWith(expect.objectContaining({ page: 3 }))
+    w.findAllComponents({ name: 'ElSelect' }).find((c) => c.props('placeholder') === '方案状态')!.vm.$emit('update:modelValue', 'EXECUTABLE')
+    await flushPromises()
+    await w.findAll('button').filter((b) => b.text() === '查询').at(-1)!.trigger('click')
+    await flushPromises()
+    expect(hoisted.fetchProposals).toHaveBeenLastCalledWith(expect.objectContaining({ status: 'EXECUTABLE', page: 1 }))
+    expect(hoisted.replace).toHaveBeenLastCalledWith({ query: expect.objectContaining({ status: 'EXECUTABLE', proposalPage: '1' }) })
+  })
+
+  it('标签页分别加载：方案接口失败只在方案标签报错，目标标签的完成情况照常显示且不被清空', async () => {
+    hoisted.fetchCapabilities.mockResolvedValue(caps({ plans: true, execution: true }))
+    hoisted.fetchPlanProgress.mockResolvedValue(report())
+    hoisted.fetchProposals.mockRejectedValue(new Error('方案接口不可用'))
+    hoisted.fetchWindows.mockRejectedValue(new Error('公告接口不可用'))
+    const w = mount(MidlongPlansView, { global: { stubs: STUBS } })
+    await flushPromises()
+    expect(hoisted.fetchProposals).not.toHaveBeenCalled()
+    expect(hoisted.fetchWindows).not.toHaveBeenCalled()
+    expect(w.text()).toContain('300 MWh')
+    await w.findAll('.el-tabs__item').find((t) => t.text() === '交易方案')!.trigger('click')
+    await flushPromises()
+    expect(w.find('[data-test="proposals-error"]').text()).toContain('方案接口不可用')
+    expect(w.find('[data-test="targets-error"]').exists()).toBe(false)
+    expect(w.text()).toContain('300 MWh')
+    await w.findAll('.el-tabs__item').find((t) => t.text() === '目标与完成情况')!.trigger('click')
+    await flushPromises()
+    expect(w.findAll('.ml-table .el-table__body-wrapper tbody tr')[0].text()).toContain('300 MWh')
+  })
+
+  it('公告候选在打开方案表单时才加载；加载中切换公司则不打开表单', async () => {
+    hoisted.routeQuery = { tab: 'proposals' }
+    hoisted.fetchCapabilities.mockResolvedValue(caps({ plans: true, execution: true }))
+    hoisted.fetchProposals.mockResolvedValue(page([]))
+    let resolveWindows: (rows: unknown[]) => void = () => {}
+    hoisted.fetchWindows.mockImplementation(() => new Promise((resolve) => { resolveWindows = resolve }))
+    const w = mount(MidlongPlansView, { global: { stubs: STUBS } })
+    await flushPromises()
+    expect(hoisted.fetchWindows).not.toHaveBeenCalled()
+    await w.findAll('button').find((b) => b.text() === '新建方案草稿')!.trigger('click')
+    expect(hoisted.fetchWindows).toHaveBeenCalledTimes(1)
+    hoisted.companyRef!.value = 'comp-b'
+    await flushPromises()
+    resolveWindows([])
+    await flushPromises()
+    expect(w.find('.stub-proposal-form').attributes('data-open')).toBe('false')
+  })
+
+  it('方案详情抽屉开着时修改草稿并保存：抽屉重新取数显示新版本号，随后确认带新的版本号', async () => {
+    hoisted.routeQuery = { tab: 'proposals' }
+    hoisted.fetchCapabilities.mockResolvedValue(caps({ plans: true, execution: true }))
+    hoisted.fetchProposals.mockResolvedValue(page([proposalDetail()]))
+    hoisted.fetchWindows.mockResolvedValue([])
+    hoisted.fetchProposal.mockResolvedValueOnce(proposalDetail()).mockResolvedValue(proposalDetail({ rowVersion: 4, rationale: '【测试数据】修改后理由' }))
+    hoisted.fetchProposalComparison.mockResolvedValueOnce(proposalComparison(3, 1)).mockResolvedValue(proposalComparison(4, 2))
+    hoisted.confirmProposal.mockResolvedValue({ proposalId: 42, status: 'EXECUTABLE', rowVersion: 5, confirmedAt: '' })
+    const w = mount(MidlongPlansView, { global: { stubs: FORM_SAVE_STUBS } })
+    await flushPromises()
+    await w.findAll('.el-table__row').find((r) => r.text().includes('#42'))!.trigger('click')
+    await flushPromises()
+    const drawer = w.findComponent(ProposalDetailDrawer)
+    expect(drawer.text()).toContain('方案版本号 3')
+    await drawer.findAll('button').find((b) => b.text() === '修改草稿')!.trigger('click')
+    await flushPromises()
+    expect(w.find('.stub-proposal-form').attributes('data-open')).toBe('true')
+    await w.find('.stub-proposal-save').trigger('click')
+    await flushPromises()
+    expect(hoisted.fetchProposal).toHaveBeenCalledTimes(2)
+    expect(hoisted.fetchProposalComparison).toHaveBeenCalledTimes(2)
+    expect(drawer.text()).toContain('方案版本号 4')
+    expect(drawer.text()).toContain('【测试数据】修改后理由')
+    expect(drawer.text()).not.toContain('方案版本号 3')
+    await drawer.findAll('button').find((b) => b.text().startsWith('确认可执行'))!.trigger('click')
+    await flushPromises()
+    expect(hoisted.confirmProposal).toHaveBeenCalledWith(42, { expectedRowVersion: 4, expectedPlanRevisions: [{ planId: 1, revisionNo: 2 }] })
+  })
+
+  it('新建方案保存返回前切换了公司：不在新公司里打开原公司的方案抽屉', async () => {
+    hoisted.routeQuery = { tab: 'proposals' }
+    hoisted.fetchCapabilities.mockResolvedValue(caps({ plans: true, execution: true }))
+    hoisted.fetchProposals.mockResolvedValue(page([]))
+    hoisted.fetchWindows.mockResolvedValue([])
+    const w = mount(MidlongPlansView, { global: { stubs: { ...STUBS, ProposalFormDialog: FORM_SAVE_STUBS.ProposalFormDialog } } })
+    await flushPromises()
+    await w.findAll('button').find((b) => b.text() === '新建方案草稿')!.trigger('click')
+    await flushPromises()
+    expect(w.find('.stub-proposal-form').attributes('data-open')).toBe('true')
+    hoisted.companyRef!.value = 'comp-b'
+    await flushPromises()
+    await w.find('.stub-proposal-save').trigger('click')
+    await flushPromises()
+    expect(w.find('.stub-proposal-drawer').attributes('data-open')).toBe('false')
+    expect(w.find('.stub-proposal-drawer').attributes('data-id')).toBeUndefined()
+  })
+
+  it('目标详情抽屉开着时修改目标保存、确认目标：抽屉都重新取数，显示新版本', async () => {
+    const draft = planRevision({ id: 2, revisionNo: 2, status: 'DRAFT', targetQuantity: '1200', changeReason: '【测试数据】修改前原因' })
+    const withDraft: PlanProgressRow = { ...row(1, '2031-05', {}), currentRevisionNo: 2, draftRevision: draft }
+    hoisted.fetchCapabilities.mockResolvedValue(caps({ plans: true, execution: false }))
+    hoisted.fetchPlanProgress.mockResolvedValue(report({ total: 1, rows: [withDraft] }))
+    hoisted.fetchPlan
+      .mockResolvedValueOnce(planDetail([planRevision({}), draft]))
+      .mockResolvedValueOnce(planDetail([planRevision({}), { ...draft, changeReason: '【测试数据】保存后原因' }]))
+      .mockResolvedValue(planDetail([planRevision({}), { ...draft, status: 'CONFIRMED', changeReason: '【测试数据】保存后原因', confirmedBy: 'boss-user', confirmedAt: '2031-02-01T00:00:00.000Z' }]))
+    hoisted.confirmPlan.mockResolvedValue({ planId: 1, revisionNo: 2, status: 'CONFIRMED' })
+    const w = mount(MidlongPlansView, { global: { stubs: FORM_SAVE_STUBS } })
+    await flushPromises()
+    const rowButton = (label: string) => w.findAll('.ml-table .el-table__body-wrapper tbody tr')[0].findAll('button').find((b) => b.text() === label)!
+    await rowButton('版本与占用').trigger('click')
+    await flushPromises()
+    const drawer = w.findComponent(PlanDetailDrawer)
+    expect(drawer.text()).toContain('【测试数据】修改前原因')
+    await rowButton('修改').trigger('click')
+    await flushPromises()
+    await w.find('.stub-plan-save').trigger('click')
+    await flushPromises()
+    expect(hoisted.fetchPlan).toHaveBeenCalledTimes(2)
+    expect(drawer.text()).toContain('【测试数据】保存后原因')
+    expect(drawer.text()).not.toContain('【测试数据】修改前原因')
+    await rowButton('确认').trigger('click')
+    await flushPromises()
+    expect(hoisted.confirmPlan).toHaveBeenCalledWith(1, 2)
+    expect(hoisted.fetchPlan).toHaveBeenCalledTimes(3)
+    expect(drawer.text()).toContain('boss-user')
+  })
+
+  it('切换公司：重新取能力并清空交易主体，新公司的主体返回前不保留上一家公司的主体', async () => {
+    hoisted.fetchCapabilities.mockResolvedValue(caps({ plans: true, execution: false }))
+    hoisted.fetchPlanProgress.mockResolvedValue(report())
+    const stubs = { ...STUBS, PlanFormDialog: { props: ['subjects'], template: '<div class="stub-plan-form" :data-subjects="subjects.map((s) => s.displayName).join()" />' } }
+    const w = mount(MidlongPlansView, { global: { stubs } })
+    await flushPromises()
+    expect(w.find('.stub-plan-form').attributes('data-subjects')).toBe('测试交易单元')
+    hoisted.fetchSubjects.mockImplementationOnce(() => new Promise(() => {}))
+    hoisted.fetchPlanProgress.mockImplementationOnce(() => new Promise(() => {}))
+    hoisted.companyRef!.value = 'comp-b'
+    await flushPromises()
+    expect(hoisted.fetchCapabilities).toHaveBeenCalledTimes(2)
+    expect(w.find('.stub-plan-form').attributes('data-subjects')).toBe('')
+    expect(w.text()).not.toContain('300 MWh')
+  })
+
+  it('修改草稿时公告候选加载期间换了方案：不弹出原方案的表单；抽屉仍是该方案时正常打开', async () => {
+    hoisted.routeQuery = { tab: 'proposals' }
+    hoisted.fetchCapabilities.mockResolvedValue(caps({ plans: true, execution: true }))
+    hoisted.fetchProposals.mockResolvedValue(page([proposalDetail({ id: 42 }), proposalDetail({ id: 43 })]))
+    let resolveWindows: (rows: unknown[]) => void = () => {}
+    hoisted.fetchWindows.mockImplementationOnce(() => new Promise((resolve) => { resolveWindows = resolve }))
+    const stubs = {
+      ...STUBS,
+      ProposalDetailDrawer: {
+        props: ['modelValue', 'proposalId'], emits: ['edit'],
+        template: '<div class="stub-proposal-drawer" :data-open="String(modelValue)" :data-id="proposalId"><button class="stub-edit" @click="$emit(\'edit\', { id: proposalId, rowVersion: 3 })" /></div>',
+      },
+      ProposalFormDialog: { props: ['modelValue', 'proposal'], template: '<div class="stub-proposal-form" :data-open="String(modelValue)" :data-proposal="proposal ? proposal.id : \'\'" />' },
+    }
+    const w = mount(MidlongPlansView, { global: { stubs } })
+    await flushPromises()
+    const openRow = async (id: number) => {
+      await w.findAll('.el-table__row').find((r) => r.text().includes(`#${id}`))!.trigger('click')
+      await flushPromises()
+    }
+    await openRow(42)
+    await w.find('.stub-edit').trigger('click')
+    expect(hoisted.fetchWindows).toHaveBeenCalledTimes(1)
+    await openRow(43)
+    expect(w.find('.stub-proposal-drawer').attributes('data-id')).toBe('43')
+    resolveWindows([])
+    await flushPromises()
+    expect(w.find('.stub-proposal-form').attributes('data-open')).toBe('false')
+
+    hoisted.fetchWindows.mockResolvedValueOnce([])
+    await w.find('.stub-edit').trigger('click')
+    await flushPromises()
+    expect(w.find('.stub-proposal-form').attributes('data-open')).toBe('true')
+    expect(w.find('.stub-proposal-form').attributes('data-proposal')).toBe('43')
+  })
+
+  it('请求进行中动了筛选控件但未点查询：返回结果照常显示，不被当成过期丢弃、不卡在加载中（目标与方案标签）', async () => {
+    hoisted.fetchCapabilities.mockResolvedValue(caps({ plans: true, execution: false }))
+    hoisted.fetchPlanProgress.mockResolvedValueOnce(report())
+    const w = mount(MidlongPlansView, { global: { stubs: STUBS } })
+    await flushPromises()
+    const select = (placeholder: string) => w.findAllComponents({ name: 'ElSelect' }).find((c) => c.props('placeholder') === placeholder)!
+
+    let resolveTargets: (r: PlanProgressReport) => void = () => {}
+    hoisted.fetchPlanProgress.mockImplementationOnce(() => new Promise((resolve) => { resolveTargets = resolve }))
+    w.findAllComponents({ name: 'ElDatePicker' }).find((c) => c.props('placeholder') === '交割年')!.vm.$emit('update:modelValue', '2031')
+    await w.findAll('button').find((b) => b.text() === '查询')!.trigger('click')
+    expect(hoisted.fetchPlanProgress).toHaveBeenLastCalledWith(expect.objectContaining({ year: '2031' }))
+    select('粒度').vm.$emit('update:modelValue', 'MONTH')
+    await flushPromises()
+    resolveTargets(report({ total: 1, rows: [row(9, '2031-09', { remainingPlanQuantity: '777', arrangeableQuantity: '777' })] }))
+    await flushPromises()
+    expect(w.text()).toContain('777 MWh')
+    expect(w.find('#pane-targets .el-loading-mask').exists()).toBe(false)
+
+    let resolveProposals: (r: unknown) => void = () => {}
+    hoisted.fetchProposals.mockImplementationOnce(() => new Promise((resolve) => { resolveProposals = resolve }))
+    await w.findAll('.el-tabs__item').find((t) => t.text() === '交易方案')!.trigger('click')
+    await flushPromises()
+    expect(hoisted.fetchProposals).toHaveBeenCalledTimes(1)
+    select('方案状态').vm.$emit('update:modelValue', 'EXECUTABLE')
+    await flushPromises()
+    resolveProposals(page([proposalDetail({ id: 42 })]))
+    await flushPromises()
+    expect(w.find('#pane-proposals').text()).toContain('#42')
+    expect(w.find('#pane-proposals').text()).not.toContain('加载中')
+  })
+})
