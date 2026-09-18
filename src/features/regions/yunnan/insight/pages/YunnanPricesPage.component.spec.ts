@@ -22,6 +22,9 @@ import {
   queryInsight,
 } from '@/services/insight/insightClient'
 import { searchSpotNodes } from '@/services/market/spotClient'
+import { getCurrentUser } from '@/services/auth'
+import { beijingToday } from 'shared/midlong/dates.mjs'
+import { sevenDayWindowEndingAt } from './prices/priceProfileModel'
 import { selectedRegionId } from '@/services/region/regionContext'
 import { selectedCompanyId } from '@/services/company/companyContext'
 import { mount as appMount } from '@/test/mount'
@@ -91,6 +94,13 @@ const ChartCardStub = defineComponent({
   setup(props) {
     return () => h('div', { class: 'chart-card-stub' }, props.title)
   },
+})
+
+const Price3DSceneStub = defineComponent({
+  name: 'Price3DScene',
+  props: { lines: { type: Array, default: () => [] }, timePoints: { type: Array, default: () => [] }, dates: { type: Array, default: () => [] } },
+  emits: ['initError', 'pointClick'],
+  render: () => h('div', { class: 'price-3d-scene-stub' }),
 })
 
 // ── 结果夹具（形状对照 dljy 仓 price-views.mjs；contextVersion 跟随页面请求）────────────
@@ -193,15 +203,33 @@ function spreadResult(request: any) {
   })
 }
 
+/** 长表行（多日立体/热力/双切面消费）：15 分钟时段 + 业务日 + 时点。 */
+function profileRow(seriesId: string, date: string, timeOfDay: string, value: string) {
+  const [h0, m0] = timeOfDay.split(':').map(Number)
+  const endMinutes = h0! * 60 + m0! + 15
+  const endTime = `${String(Math.floor(endMinutes / 60)).padStart(2, '0')}:${String(endMinutes % 60).padStart(2, '0')}`
+  return { seriesId, date, timeOfDay, intervalStart: `${date}T${timeOfDay}:00+08:00`, intervalEnd: `${date}T${endTime}:00+08:00`, value }
+}
+
 function profileResult(request: any) {
-  const second = nodePriceSeries({ seriesId: 'ser-node-2', dimensions: { nodeName: 'YN.KM.02' } })
+  const second = nodePriceSeries({ seriesId: 'ser-node-2', dimensions: { nodeName: 'YN.KM.02' }, marketPhase: 'real-time', sourceId: 'yn.price.node.public.real-time' })
   return insightResult({
     contextVersion: request.context.contextVersion,
     data: {
       schemaVersion: 'insight-result-data/v1',
       dimensions: [{ id: 'seriesId', kind: 'category' }, { id: 'date', kind: 'category' }, { id: 'metricId', kind: 'category' }],
       measures: [{ id: 'value', unit: 'yuan/MWh' }],
-      rows: [],
+      // 长表：两个业务日 × 日前(ser-node-1)/实时(ser-node-2)，缺测=行不存在（09-11 实时 00:15 缺、含负价）
+      rows: [
+        profileRow('ser-node-1', '2026-09-10', '00:00', '210.5'),
+        profileRow('ser-node-1', '2026-09-10', '00:15', '220'),
+        profileRow('ser-node-2', '2026-09-10', '00:00', '205.25'),
+        profileRow('ser-node-2', '2026-09-10', '00:15', '215'),
+        profileRow('ser-node-1', '2026-09-11', '00:00', '150'),
+        profileRow('ser-node-1', '2026-09-11', '00:15', '140'),
+        profileRow('ser-node-2', '2026-09-11', '00:00', '155'),
+        profileRow('ser-node-2', '2026-09-11', '00:15', '-12.5'),
+      ],
       series: [nodePriceSeries(), second],
       tables: {
         daily: {
@@ -316,7 +344,7 @@ async function mountPage(): Promise<VueWrapper<any>> {
   wrapper = appMount(YunnanPricesPage, {
     global: {
       plugins: [router],
-      stubs: { InsightSeriesChart: InsightSeriesChartStub, ChartCard: ChartCardStub },
+      stubs: { InsightSeriesChart: InsightSeriesChartStub, ChartCard: ChartCardStub, Price3DScene: Price3DSceneStub },
     },
   })
   await flushPromises()
@@ -651,5 +679,97 @@ describe('展示纪律', () => {
     expect(text).not.toContain('sourceId')
     expect(text).not.toContain('family')
     expect(text).not.toContain('SELECT ')
+  })
+})
+
+// ── 多日展示模式（单日走势 / 多日立体 / 日期×时段热力；dljy#3007 任务 6.8/6.9）────────
+
+function modeGroup(): VueWrapper<any> {
+  return wrapper!.getComponent('[data-testid="ynp-series-mode"]') as unknown as VueWrapper<any>
+}
+
+async function switchMode(mode: 'single' | 'multi3d' | 'heatmap') {
+  modeGroup().vm.$emit('update:modelValue', mode)
+  await flushPromises()
+}
+
+function profileCalls() {
+  return queryCallsOf((request) => request.filters?.view === 'profile')
+}
+
+function modeStorageKey(analysisId = 'prices.user-series') {
+  return `ynp.prices.mode|${getCurrentUser().username}|yunnan|${analysisId}`
+}
+
+function throwingStorage(): Storage {
+  const boom = () => {
+    throw new Error('storage disabled')
+  }
+  return { length: 0, clear: boom, getItem: boom, key: boom, removeItem: boom, setItem: boom }
+}
+
+describe('多日展示模式', () => {
+  it('切到多日立体：数据面走 profile 视图（与「历史分布」页签共用，切过去不重查）', async () => {
+    await mountPage()
+    // 默认单日走势：只查 series + summary，不发 profile
+    expect(profileCalls()).toHaveLength(0)
+    expect(queryCallsOf((request) => request.filters?.view === 'series')).toHaveLength(1)
+
+    await switchMode('multi3d')
+    expect(profileCalls()).toHaveLength(1)
+    // series 视图查询行为不变（模式只切换展示）
+    expect(queryCallsOf((request) => request.filters?.view === 'series')).toHaveLength(1)
+
+    // 历史分布页签与多日模式共用同一份 profile 结果：同签名不重查
+    await switchTab('profile')
+    expect(profileCalls()).toHaveLength(1)
+  })
+
+  it('单日窗口不悄悄扩窗：提示 + 「改为 7 天」按钮，点了才扩窗并按新口径重查', async () => {
+    await mountPage()
+    await switchMode('multi3d')
+    expect(wrapper!.find('[data-testid="ynp-3dw-window-hint"]').exists()).toBe(true)
+    const extend = wrapper!.find('[data-testid="ynp-3dw-extend"]')
+    expect(extend.exists()).toBe(true)
+    // 按钮文案写明目标窗口（结束日=今天，往前数 7 天）
+    const expected = sevenDayWindowEndingAt(beijingToday())
+    expect(extend.text()).toContain(`改为 ${expected.start} — ${expected.end} 共 7 天`)
+
+    await extend.trigger('click')
+    await flushPromises()
+    // 页面 setBusinessWindow：日期窗控件与上下文同步为 7 天窗口
+    expect(wrapper!.getComponent(InsightDateRange).props('modelValue')).toEqual(expected)
+    // 口径变化：profile 按新窗口重查（旧结果属于旧口径，不冒充）
+    expect(profileCalls()).toHaveLength(2)
+  })
+
+  it('模式按 用户+地区+价格对象 记忆：换对象换键，换回恢复', async () => {
+    await mountPage()
+    await switchMode('heatmap')
+    expect(modeGroup().props('modelValue')).toBe('heatmap')
+    expect(localStorage.getItem(modeStorageKey())).toBe('heatmap')
+
+    // 换到公开节点价：另一个键没有记忆 → 回单日走势
+    await choosePriceObject('prices.public-node-series')
+    expect(modeGroup().props('modelValue')).toBe('single')
+    expect(localStorage.getItem(modeStorageKey('prices.public-node-series'))).toBeNull()
+
+    // 换回用户侧价：恢复该键记忆的模式
+    await choosePriceObject('prices.user-series')
+    expect(modeGroup().props('modelValue')).toBe('heatmap')
+  })
+
+  it('localStorage 不可用（读写抛错）：页面正常、模式切换不炸、行为回默认', async () => {
+    const original = globalThis.localStorage
+    Object.defineProperty(globalThis, 'localStorage', { configurable: true, writable: true, value: throwingStorage() })
+    try {
+      await mountPage()
+      await switchMode('multi3d')
+      // 读写都抛错：页面仍渲染工作区（记忆静默失败，模式仍由本次会话状态决定）
+      expect(wrapper!.find('[data-testid="ynp-price-3d-workspace"]').exists()).toBe(true)
+      expect(modeGroup().props('modelValue')).toBe('multi3d')
+    } finally {
+      Object.defineProperty(globalThis, 'localStorage', { configurable: true, writable: true, value: original })
+    }
   })
 })
