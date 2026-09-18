@@ -24,6 +24,11 @@ export const ACCESS_SCOPES = Object.freeze(['public', 'company'])
  *   status-axis  同一业务键有明确的状态轴（正式/暂结），按请求的状态取，不混算
  */
 export const VERSION_POLICIES = Object.freeze(['single', 'owner-latest', 'status-axis'])
+/**
+ * 供需类别（#3005，SH01）：负荷是需求；水电、新能源按电源类型分；非市场按市场属性分，可能与水电/新能源重叠；
+ * 总发电是合计；送受电单列。类别之间不能随意相加，「总发电减水电减新能源」也不是火电。
+ */
+export const SUPPLY_CATEGORIES = Object.freeze(['load', 'hydro', 'new-energy', 'non-market', 'total-generation', 'transfer'])
 /** 新鲜度节奏：历史资料包没有持续供数资格，新鲜度只能是 unknown（D3.1）。 */
 export const FRESHNESS_CADENCES = Object.freeze(['daily', 'historical-package', 'monthly-package', 'unregistered'])
 
@@ -48,6 +53,7 @@ function source(definition) {
     knownAt: null,
     dimensions: Object.freeze([]),
     objectDimension: null,
+    category: null,
     precision: Object.freeze({ places: 3 }),
     versionPolicy: 'single',
     ...definition,
@@ -61,52 +67,52 @@ const METRIC_KEY = { load: 'load', hydro: 'hydro', 'new-energy': 'new_energy', '
 
 const systemSources = [
   ...SYSTEM_SERIES.map(([id, label]) => source({
-    sourceId: `yn.system.${id}.actual`, title: `云南${label}（实际）`,
+    sourceId: `yn.system.${id}.actual`, title: `云南${label}（实际）`, category: id,
     read: capture('yn_system_forecast', `${METRIC_KEY[id]}_actual`, { region: 'yn' }),
     businessScope: 'yunnan', accessScope: 'public', authority: 'csg-disclosure', ingestChannel: 'bulk-history',
     accessNote: '2026-07-02 之后的行经中广核渠道取得后写入公开族，访问范围待确认（见数据基线 3.1 节）',
     measure: POWER_MW, time: TIME_15, variant: 'actual', freshness: 'historical-package',
   })),
   ...SYSTEM_SERIES.map(([id, label]) => source({
-    sourceId: `csg.system.${id}.actual`, title: `南方电网整体口径${label}（实际，背景）`,
+    sourceId: `csg.system.${id}.actual`, title: `南方电网整体口径${label}（实际，背景）`, category: id,
     read: capture('yn_system_forecast', `${METRIC_KEY[id]}_actual`, { region: 'all' }),
     businessScope: 'csg-aggregate', accessScope: 'public', authority: 'csg-disclosure', ingestChannel: 'bulk-history',
     accessNote: '非云南范围；与云南序列不是简单包含关系（水电比值 0.69—2.48），只作单列背景，不计入云南汇总',
     measure: POWER_MW, time: TIME_15, variant: 'actual', freshness: 'historical-package',
   })),
   source({
-    sourceId: 'yn.system.load.forecast', title: '云南统调负荷（预测）',
+    sourceId: 'yn.system.load.forecast', category: 'load', title: '云南统调负荷（预测）',
     read: capture('yn_system_forecast', 'load_forecast', { region: 'yn' }),
     businessScope: 'yunnan', accessScope: 'public', authority: 'csg-disclosure', ingestChannel: 'bulk-history',
     measure: POWER_MW, time: TIME_15, variant: 'forecast', freshness: 'historical-package',
   }),
   source({
-    sourceId: 'yn.system.new-energy.forecast-d1', title: '云南新能源出力（日前预测）',
+    sourceId: 'yn.system.new-energy.forecast-d1', category: 'new-energy', title: '云南新能源出力（日前预测）',
     read: capture('yn_system_forecast', 'new_energy_forecast_d1', { region: 'yn' }),
     businessScope: 'yunnan', accessScope: 'public', authority: 'csg-disclosure', ingestChannel: 'bulk-history',
-    measure: POWER_MW, time: Object.freeze({ ...TIME_15, targetDateField: 'targetDate' }), variant: 'forecast', freshness: 'historical-package',
+    measure: POWER_MW, time: Object.freeze({ ...TIME_15, targetDateField: 'targetDate', leadDays: 1 }), variant: 'forecast', freshness: 'historical-package',
   }),
   source({
-    sourceId: 'yn.system.non-market.forecast', title: '云南非市场机组出力（预测）',
+    sourceId: 'yn.system.non-market.forecast', category: 'non-market', title: '云南非市场机组出力（预测）',
     read: capture('yn_system_forecast', 'non_market_forecast', { region: 'yn' }),
     businessScope: 'yunnan', accessScope: 'public', authority: 'csg-disclosure', ingestChannel: 'bulk-history',
     measure: POWER_MW, time: TIME_15, variant: 'forecast', freshness: 'historical-package',
   }),
   source({
-    sourceId: 'csg.system.load.forecast', title: '南方电网整体口径统调负荷（预测，背景）',
+    sourceId: 'csg.system.load.forecast', category: 'load', title: '南方电网整体口径统调负荷（预测，背景）',
     read: capture('yn_system_forecast', 'load_forecast', { region: 'all' }),
     businessScope: 'csg-aggregate', accessScope: 'public', authority: 'csg-disclosure', ingestChannel: 'bulk-history',
     measure: POWER_MW, time: TIME_15, variant: 'forecast', freshness: 'historical-package',
   }),
   source({
-    sourceId: 'csg.system.new-energy.forecast-d1', title: '南方电网整体口径新能源出力（日前预测，背景）',
+    sourceId: 'csg.system.new-energy.forecast-d1', category: 'new-energy', title: '南方电网整体口径新能源出力（日前预测，背景）',
     read: capture('yn_system_forecast', 'new_energy_forecast_d1', { region: 'all' }),
     businessScope: 'csg-aggregate', accessScope: 'public', authority: 'csg-disclosure', ingestChannel: 'bulk-history',
-    measure: POWER_MW, time: Object.freeze({ ...TIME_15, targetDateField: 'targetDate' }), variant: 'forecast', freshness: 'historical-package',
+    measure: POWER_MW, time: Object.freeze({ ...TIME_15, targetDateField: 'targetDate', leadDays: 1 }), variant: 'forecast', freshness: 'historical-package',
   }),
   // 只有南方电网整体口径，没有云南总发电预测：不能与云南总发电实际算误差（A05）。
   source({
-    sourceId: 'csg.system.total-generation.forecast', title: '南方电网整体口径总发电出力（预测，背景）',
+    sourceId: 'csg.system.total-generation.forecast', category: 'total-generation', title: '南方电网整体口径总发电出力（预测，背景）',
     read: capture('yn_system_forecast', 'total_generation_forecast', { region: 'all' }),
     businessScope: 'csg-aggregate', accessScope: 'public', authority: 'csg-disclosure', ingestChannel: 'bulk-history',
     measure: POWER_MW, time: TIME_15, variant: 'forecast', freshness: 'historical-package',
@@ -117,7 +123,15 @@ const systemSources = [
     read: capture('yn_system_forecast', 'inter_provincial_forecast'),
     businessScope: 'csg-multi-region', accessScope: 'public', authority: 'csg-disclosure', ingestChannel: 'bulk-history',
     measure: POWER_MW, time: TIME_60, variant: 'forecast', freshness: 'historical-package',
-    dimensions: Object.freeze(['region', 'metric']),
+    dimensions: Object.freeze(['region', 'metric']), category: 'transfer',
+  }),
+  // 云南总送出（预测）：同一 dataset 里按通道名筛出云南一条，方向为送出（#3005，剩余需求代理的输入）。
+  source({
+    sourceId: 'yn.transfer.send-out.forecast', title: '云南总送出（预测）', category: 'transfer',
+    read: capture('yn_system_forecast', 'inter_provincial_forecast', { region: '云南总送出', metric: 'inter_provincial_send' }),
+    businessScope: 'yunnan', accessScope: 'public', authority: 'csg-disclosure', ingestChannel: 'bulk-history',
+    accessNote: '只有送出方向；本来源没有云南受入，不能等同于净外送',
+    measure: POWER_MW, time: TIME_60, variant: 'forecast', freshness: 'historical-package',
   }),
 ]
 
@@ -276,6 +290,8 @@ export function validateInsightSources(sources = INSIGHT_SOURCES) {
       if (!/^[A-Za-z][A-Za-z0-9_]{0,63}$/.test(field.valueField ?? '') || !MEASURE_KINDS.includes(field.kind) || typeof field.unit !== 'string') errors.push(`${where}: 字段 ${field.id} 登记不完整`)
     }
     if (entry.objectDimension && !entry.dimensions.includes(entry.objectDimension)) errors.push(`${where}: 对象维度必须是已登记维度之一`)
+    if (entry.time?.leadDays !== undefined && (!entry.time.targetDateField || !Number.isInteger(entry.time.leadDays) || entry.time.leadDays < 0)) errors.push(`${where}: 提前天数必须配合目标日字段、且为非负整数`)
+    if (entry.category !== null && !SUPPLY_CATEGORIES.includes(entry.category)) errors.push(`${where}: 未知供需类别 ${entry.category}`)
   }
   return errors
 }

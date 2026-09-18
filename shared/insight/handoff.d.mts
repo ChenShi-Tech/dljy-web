@@ -66,12 +66,30 @@ export type InsightAction = {
   available: boolean
   unavailableReason: string | null
 }
-export type ResultData = {
-  schemaVersion: string
-  dimensions: Array<{ id: string; kind: 'time' | 'object' | 'category'; unit?: string }>
+export type ResultDimensionKind = 'time' | 'object' | 'category' | 'date' | 'time-of-day' | 'ordinal'
+export type ResultTable = {
+  dimensions: Array<{ id: string; kind: ResultDimensionKind; unit?: string }>
   measures: Array<{ id: string; unit: string; metricRef?: string; precision?: number }>
   rows: Array<Record<string, unknown>>
+  /** 排序或筛选规则的业务说明（如价差异常排序） */
+  rule?: string
+}
+export type ResultData = ResultTable & {
+  schemaVersion: string
   sampling?: { method: string; population: number; shown?: number }
+  /** 视图（#3004/#3005）：series 明细之外的统计视图；附表放在 tables，同样声明维度与度量 */
+  view?: string
+  series?: Array<Record<string, unknown>>
+  tables?: Record<string, ResultTable>
+  /** 未配对的序列与原因（价差、基差、预测误差） */
+  unpaired?: Array<{ seriesId: string; reason: string }>
+  /** 条件不满足、不给数的指标与原因 */
+  unavailableMetrics?: Array<{ metricId: string; reason: string }>
+  /** 不计算的派生量与原因（如「总发电减水电减新能源」） */
+  notDerived?: Array<{ label: string; reason: string }>
+  notes?: Array<{ note: string; sourceId?: string }>
+  unavailable?: Array<{ item: string; reason: string }>
+  formula?: string
 }
 
 export declare function assertSchemaVersion(value: unknown, expected: string): void

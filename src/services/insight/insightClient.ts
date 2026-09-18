@@ -126,8 +126,12 @@ export type InsightSeriesMeta = {
   variant: string | null
 }
 
-/** query 结果的 data 部分：长表行 + 序列目录（rows 值为十进制字符串，interval 为北京时间 ISO）。 */
-export type InsightResultData = ResultData & {
+/**
+ * query 结果的 data 部分：长表行 + 序列目录（rows 值为十进制字符串，interval 为北京时间 ISO）。
+ * 共享契约里 series 是按视图各异的宽松类型（统计视图还有集合、价差对等条目）；明细视图
+ * 用这里的严格目录类型替换它，不做交叉（数组交叉会让 map/find 退回宽松元素类型）。
+ */
+export type InsightResultData = Omit<ResultData, 'series'> & {
   series: InsightSeriesMeta[]
 }
 

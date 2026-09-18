@@ -28,6 +28,23 @@ export function objectIdsFilter(max) {
   }
 }
 
+/**
+ * 视图筛选（#3004）：同一分析的明细、摘要、价差、切面、基差共用读取版本集合，只是呈现不同（D4.1）。
+ * 允许的视图随分析登记；不支持的视图直接说明原因，不回一个空结果。
+ */
+export function viewFilter(allowed) {
+  return value => {
+    if (!allowed.includes(value)) fail(`该分析支持的视图：${allowed.join('、')}`, { allowedViews: allowed })
+    return value
+  }
+}
+
+/** 节点基差的参考对象：显式指定、格式同对象标识；是否在所选对象里由查询层核对。 */
+export function referenceObjectFilter(value) {
+  if (typeof value !== 'string' || !ID_RE.test(value)) fail('参考对象标识格式不正确')
+  return value
+}
+
 /** 目标粒度筛选：只能汇总到更粗的已登记粒度（15/60/1440 分钟），细化由内核拒绝。 */
 export function resolutionFilter(value) {
   if (![15, 60, 1440].includes(value)) fail('汇总粒度只能是 15、60 或 1440 分钟')
@@ -41,10 +58,19 @@ function analysis(definition) {
     return entry
   })
   const access = sources.some(entry => entry.accessScope === 'company') ? 'company' : 'public'
+  const views = Object.freeze([...(definition.views ?? ['series'])])
+  if (views.length > 1 && !definition.viewFamily) throw new Error(`分析 ${definition.analysisId} 登记了多个视图，必须声明视图族`)
   return Object.freeze({
     version: '1',
+    viewFamily: null,
     ...definition,
-    filters: Object.freeze({ resolutionMinutes: resolutionFilter, ...definition.filters }),
+    views,
+    filters: Object.freeze({
+      resolutionMinutes: resolutionFilter,
+      ...(views.length > 1 ? { view: viewFilter(views) } : {}),
+      ...(views.includes('basis') ? { referenceObjectId: referenceObjectFilter } : {}),
+      ...definition.filters,
+    }),
     sourceIds: Object.freeze([...definition.sourceIds]),
     access,
     limits: Object.freeze({ maxDays: MAX_WINDOW_DAYS, maxObjects: 0, requiresObjects: false, ...definition.limits }),
@@ -57,34 +83,41 @@ export const INSIGHT_ANALYSES = Object.freeze([
     pageIds: ['overview', 'supply'], regionIds: ['yunnan'],
     sourceIds: [
       'yn.system.load.actual', 'yn.system.hydro.actual', 'yn.system.new-energy.actual', 'yn.system.non-market.actual', 'yn.system.total-generation.actual',
-      'yn.system.load.forecast', 'yn.system.new-energy.forecast-d1', 'yn.system.non-market.forecast',
+      'yn.system.load.forecast', 'yn.system.new-energy.forecast-d1', 'yn.system.non-market.forecast', 'yn.transfer.send-out.forecast',
       'csg.system.load.actual', 'csg.system.hydro.actual', 'csg.system.new-energy.actual', 'csg.system.non-market.actual', 'csg.system.total-generation.actual',
       'csg.system.load.forecast', 'csg.system.new-energy.forecast-d1', 'csg.system.total-generation.forecast',
     ],
     limits: { maxDays: 31 },
+    // 供需视图（#3005）：统计与分类、预测与实际配对、剩余需求代理
+    viewFamily: 'supply', views: ['series', 'summary', 'forecast-error', 'residual-proxy'],
   }),
   analysis({
     analysisId: 'prices.user-series', title: '云南用户侧日前/实时价格',
     pageIds: ['overview', 'prices'], regionIds: ['yunnan'],
     sourceIds: ['yn.price.user.day-ahead', 'yn.price.user.real-time'],
+    // 用户侧价没有节点维度：不提供节点基差（PR02）
+    viewFamily: 'price', views: ['series', 'summary', 'spread', 'profile'],
   }),
   analysis({
     analysisId: 'prices.public-node-series', title: '云南公开历史节点价格',
     pageIds: ['prices'], regionIds: ['yunnan'],
     sourceIds: ['yn.price.node.public.day-ahead', 'yn.price.node.public.real-time'],
     filters: { objectIds: objectIdsFilter(50) }, limits: { maxDays: 31, maxObjects: 50, requiresObjects: true },
+    viewFamily: 'price', views: ['series', 'summary', 'spread', 'profile', 'basis'],
   }),
   analysis({
     analysisId: 'prices.company-node-series', title: '厂侧节点价格（获权）',
     pageIds: ['prices'], regionIds: ['yunnan'],
     sourceIds: ['cgn.price.node.day-ahead', 'cgn.price.node.real-time'],
     filters: { objectIds: objectIdsFilter(50) }, limits: { maxDays: 31, maxObjects: 50, requiresObjects: true },
+    viewFamily: 'price', views: ['series', 'summary', 'spread', 'profile', 'basis'],
   }),
   analysis({
     analysisId: 'prices.plant-node-series', title: '场站关联节点价格（获权）',
     pageIds: ['prices', 'plants'], regionIds: ['yunnan'],
     sourceIds: ['cgn.price.plant-node.day-ahead', 'cgn.price.plant-node.real-time', 'cgn.plant.nodal-price'],
     filters: { objectIds: objectIdsFilter(50) }, limits: { maxDays: 31, maxObjects: 50, requiresObjects: true },
+    viewFamily: 'price', views: ['series', 'summary', 'spread', 'profile', 'basis'],
   }),
   analysis({
     analysisId: 'grid.boundary-series', title: '跨省送受与公开披露度量',
