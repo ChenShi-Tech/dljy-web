@@ -69,7 +69,7 @@ export const EXECUTION_NOTICES = Object.freeze({
   duplicateReplay: '同一确认单重复处理：已链接既有确认记录，持仓与占用转换不重复发生。',
   contentChangeIsRevision: '同一确认单号内容变化必须作为修订版本提交（旧版本保留），不能按新成交重复入账。',
   subjectMismatch: '候选合同与确认单交易主体不一致：已拒绝自动关联，请人工核对归属；不同主体同号各自独立，不共享成交或持仓。',
-  lateResult: '方案占用已释放（过期、撤销或关闭）：迟到真实成交照常入账义务，占用保持 0、不产生负占用，请核对计划偏差。',
+  lateResult: '方案占用已释放（过期、撤销或关闭）：迟到真实成交照常入账义务，占用保持 0、不会为负，请核对计划偏差。',
   occupationFloor: '占用转换只扣减未完成占用、下限为 0；已释放占用不得再次扣减。',
   overPlan: '该成交使确认已售电量超过确认目标（超计划）：义务已照常登记、不丢弃，请调整计划或方案。',
   planDeviation: '该成交导致计划偏差：已按最新已售重算剩余计划待售量与可安排计划量，请核对。',
@@ -165,6 +165,26 @@ export function allocateOccupationConversion({ segments = [], previousConvertedB
       reason,
     })
   }
+  // 修订删掉的交割月（新版本 segments 里不再出现、但此前转换过量）：绝对量语义同样适用于占用——
+  // 该月按 previous 全额负增量回退，否则占用余量被永久吃掉（MT-04/MS-04，P4 审计 P2-1）。
+  for (const [removedMonth, previous] of previousByMonth) {
+    if (months.some((m) => m.deliveryMonth === removedMonth)) continue
+    if (decimalIsZero(previous)) continue
+    const delta = decimalSub('0', previous)
+    const remainingBefore = remainingByMonth.get(removedMonth) ?? null
+    if (remainingBefore !== null) remainingByMonth.set(removedMonth, decimalSub(remainingBefore, delta))
+    totalDelta = decimalAdd(totalDelta, delta)
+    months.push({
+      deliveryMonth: removedMonth,
+      targetQuantity: '0',
+      previousConvertedQuantity: previous,
+      delta,
+      remainingBefore,
+      remainingAfter: remainingBefore === null ? null : decimalSub(remainingBefore, delta),
+      reason: 'REDUCED',
+    })
+  }
+  months.sort((a, b) => (a.deliveryMonth < b.deliveryMonth ? -1 : 1))
   return { months, totalDelta, totalUnconverted, lateResult: decimalCompare(totalUnconverted, '0') > 0 }
 }
 
