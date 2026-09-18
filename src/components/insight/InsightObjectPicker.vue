@@ -2,7 +2,10 @@
 // 市场洞察对象多选器（dljy#2996，OpenSpec 任务 5.5）
 // ----------------------------------------------------------------------------
 // 分析对象（节点 / 场站 / 通道等）的多选入口。选项由页面传入——本阶段不建对象目录
-// 接口，目录从哪来（获权清单、绑定表、历史选择）由业务页决定。
+// 接口，目录从哪来（获权清单、绑定表、历史选择、远程检索）由业务页决定：
+//   - 静态模式（默认）：options 由页面一次性备好；
+//   - 远程模式（dljy#3007 价格页）：remote + remoteMethod，页面边搜边把结果写回
+//     options（本组件不持检索状态，检索失败重试也由页面负责）。
 //   - 上限来自 analysis.limits.maxObjects：选满后禁止继续选（multiple-limit）并明示
 //     「最多可选 N 个」，不静默截断用户的选择；
 //   - requiresObjects 的分析未选对象时由页面拦截查询（不发请求）；本组件只负责
@@ -21,6 +24,12 @@ const props = defineProps<{
   requiresObjects?: boolean
   placeholder?: string
   disabled?: boolean
+  /** 远程检索（dljy#3007 价格页节点搜索）：true 时启用 el-select remote 模式 */
+  remote?: boolean
+  /** 远程检索回调（输入变化触发）；选项由页面写回 options prop */
+  remoteMethod?: (query: string) => void
+  /** 远程检索进行中（el-select loading 态） */
+  remoteLoading?: boolean
 }>()
 
 const emit = defineEmits<{ 'update:modelValue': [ids: string[]] }>()
@@ -52,6 +61,10 @@ const atLimit = computed(() => Boolean(props.maxObjects && props.modelValue.leng
       :multiple-limit="maxObjects || 0"
       :placeholder="placeholderText"
       :disabled="disabled"
+      :remote="remote"
+      :remote-method="remoteMethod"
+      :loading="remoteLoading"
+      :reserve-keyword="remote"
       class="insight-object-picker__select"
     >
       <el-option v-for="option in options" :key="option.id" :label="option.label" :value="option.id" />

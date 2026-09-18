@@ -7,7 +7,9 @@
 //   - 各来源（业务标题、公开/获权、版本标记短码、读到的有效时段数）；
 //   - 覆盖（每条序列 应有/有效/缺/冲突/剔除/重复 时段数；对象 已读到/未读到/来源里没有）；
 //   - 质量汇总、新鲜度说明（freshness.evidence）、分页范围（本页 x/y 行 或 全量 y 行）；
-//   - 口径说明（派生程度 + 粒度：原生 n 分钟 → 当前 m 分钟）。
+//   - 口径说明（派生程度 + 粒度：原生 n 分钟 → 当前 m 分钟）；
+//   - 可选默认插槽：调用方补充「这份证据与某视图是同一份读取」之类的页面级说明
+//     （dljy#3007 价格页：价差/摘要/切面与明细共用读取版本集合），不传不影响现有用法。
 // 展示纪律：不出现 family / SQL / 表名 / 来源标识原文；版本摘要给短码、完整值仅复制用。
 
 import { computed } from 'vue'
@@ -210,6 +212,9 @@ async function copyRef(value: string | null | undefined): Promise<void> {
         <el-table-column prop="excludedValues" label="剔除值" width="80" align="right" />
         <el-table-column prop="duplicateRows" label="重复行" width="80" align="right" />
       </el-table>
+
+      <!-- 页面级补充说明（如「与明细是同一份读取」）；内容由调用方决定显隐 -->
+      <slot />
     </div>
     <el-empty v-else description="暂无证据（未查询或查询失败）" />
   </el-drawer>

@@ -1,0 +1,655 @@
+// YunnanPricesPage.component.spec.ts — 云南价格与价差页回归（dljy#3007 任务 6.5/6.6 第一部分）
+// 守什么不变量（对照 specs yunnan-price-analysis）：
+//   ① 价格对象只列能力目录可用的；公共账号看不到厂侧对象；切换是显式操作，查询失败不回落；
+//   ② 节点类未选对象、基差未选参考对象：页面层拦截，不发请求；
+//   ③ 用户侧价无节点维度：基差页签只显示固定说明；
+//   ④ 参考对象只能从已选对象中选，被移出已选集合时清空；
+//   ⑤ 不可用指标（负价电量占比）按后端原文如实标注，不显示成 0；集合权重口径原文展示；
+//   ⑥ 指标显示按登记精度（126.666…→126.67）；
+//   ⑦ 价差方向与异常规则固定文案；异常行点击生成语义选区（无 dataIndex/seriesIndex）；
+//   ⑧ 422（只选一侧来源）直显后端文案；profile 窗口天数与有效天数如实、不冒充季节规律；
+//   ⑨ 上下文变化后迟到结果不写进新状态；页签懒加载切回不重查；
+//   ⑩ 界面只出现业务语言，不出现来源标识原文。
+// mock 边界：insightClient（保留类型与错误类）/ spotClient / cgnYunnanLivePrice 打桩；
+// useInsightContext 用真 composable（真 router + 全局地区/公司 ref）。
+import { defineComponent, h } from 'vue'
+import { flushPromises, type VueWrapper } from '@vue/test-utils'
+import { createMemoryHistory, createRouter, type Router } from 'vue-router'
+import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest'
+import type { InsightSelection } from 'shared/insight/handoff.mjs'
+import {
+  fetchInsightCapabilities,
+  queryInsight,
+} from '@/services/insight/insightClient'
+import { searchSpotNodes } from '@/services/market/spotClient'
+import { selectedRegionId } from '@/services/region/regionContext'
+import { selectedCompanyId } from '@/services/company/companyContext'
+import { mount as appMount } from '@/test/mount'
+import InsightDateRange from '@/components/insight/InsightDateRange.vue'
+import InsightHistoryCandidates from '@/components/insight/InsightHistoryCandidates.vue'
+import InsightObjectPicker from '@/components/insight/InsightObjectPicker.vue'
+import {
+  insightResult,
+  nodePriceResult,
+  nodePriceSeries,
+  row,
+} from '@/components/insight/insightFixtures'
+import YunnanPricesPage from './YunnanPricesPage.vue'
+
+// ── 可控 mock 状态（vi.hoisted：vi.mock 工厂提升后仍可引用）────────────────────────────
+
+const state = vi.hoisted(() => ({
+  capabilities: null as unknown,
+  responder: null as ((request: any) => Promise<any>) | null,
+}))
+
+vi.mock('@/services/insight/insightClient', async (importOriginal) => {
+  const actual = await importOriginal<Record<string, unknown>>()
+  return {
+    ...actual,
+    queryInsight: vi.fn((request: any) => state.responder!(request)),
+    fetchInsightCapabilities: vi.fn(() => Promise.resolve(state.capabilities)),
+  }
+})
+
+vi.mock('@/services/market/spotClient', () => ({
+  searchSpotNodes: vi.fn(async () => ({ count: 2, nodes: ['YN.KM.01', 'YN.KM.02'] })),
+}))
+
+vi.mock('@/services/market/cgnYunnanLivePrice', () => ({
+  fetchCgnYunnanPriceBundle: vi.fn(async () => ({
+    plants: { items: [{ plantName: '某光伏电站' }, { plantName: '某风电场' }] },
+  })),
+  hasCgnYunnanPriceEntitlement: () => false,
+}))
+
+// ── 图表桩：绕开 ECharts canvas；捕获 applySelection 调用（选区语义断言用）──────────────
+
+const chartApplyCalls: Array<InsightSelection | null> = []
+
+const InsightSeriesChartStub = defineComponent({
+  name: 'InsightSeriesChart',
+  props: {
+    result: { type: Object, default: null },
+    current: { type: Object, default: null },
+    height: { type: Number, default: 320 },
+  },
+  emits: ['select'],
+  setup(_props, { expose }) {
+    expose({
+      applySelection: (selection: InsightSelection | null) => {
+        chartApplyCalls.push(selection)
+      },
+    })
+  },
+  render: () => h('div', { class: 'series-chart-stub' }),
+})
+
+const ChartCardStub = defineComponent({
+  name: 'ChartCard',
+  props: { title: { type: String, default: '' } },
+  setup(props) {
+    return () => h('div', { class: 'chart-card-stub' }, props.title)
+  },
+})
+
+// ── 结果夹具（形状对照 dljy 仓 price-views.mjs；contextVersion 跟随页面请求）────────────
+
+const SPREAD_ANOMALY_RULE = '按价差绝对值从大到小，最多 20 个时段；同值按时间先后、再按对象排列。只是排序，不是官方异常认定。'
+const SPREAD_ONE_SIDE_422 = '日前实时价差需要同时读取日前与实时两类价格，请在来源里同时选择'
+const UNAVAILABLE_NEGATIVE_ENERGY = '没有同对象同区间的电量，不计算负价电量占比'
+const SET_WEIGHT_NOTE = '每个节点每个有效时段等权；不是电量加权，也不是全省结算价'
+const PLANT_BINDING_NOTE = '场站与节点的关系取自当前绑定，没有生效期；历史日期上的关系是按当前映射的观察，不是已认证的历史关系。'
+
+function seriesResult(request: any) {
+  return nodePriceResult(['300.5'], { contextVersion: request.context.contextVersion })
+}
+
+function summaryResult(request: any) {
+  const set = {
+    seriesId: 'set:yn.price.node.public.day-ahead',
+    kind: 'object-set',
+    sourceId: 'yn.price.node.public.day-ahead',
+    unit: 'by-metric',
+    priceObject: 'public-node',
+    marketPhase: 'day-ahead',
+    dimensions: {},
+    memberSeriesIds: ['ser-node-1'],
+    weightRule: 'equal-object-slot',
+    weightNote: SET_WEIGHT_NOTE,
+  }
+  return insightResult({
+    contextVersion: request.context.contextVersion,
+    data: {
+      schemaVersion: 'insight-result-data/v1',
+      dimensions: [{ id: 'seriesId', kind: 'category' }, { id: 'metricId', kind: 'category' }],
+      measures: [{ id: 'value', unit: 'by-metric' }],
+      rows: [
+        { seriesId: 'ser-node-1', metricId: 'price.time-weighted-average', value: '126.666666666667' },
+        { seriesId: 'ser-node-1', metricId: 'price.minimum', value: '50', atIntervalStart: '2026-09-10T03:00:00+08:00' },
+        { seriesId: 'ser-node-1', metricId: 'price.maximum', value: '400', atIntervalStart: '2026-09-10T19:00:00+08:00' },
+        { seriesId: 'ser-node-1', metricId: 'price.negative-duration', value: '2.5' },
+        { seriesId: 'ser-node-1', metricId: 'sample.valid-hours', value: '24' },
+        { seriesId: set.seriesId, metricId: 'sample.object-count', value: '1' },
+        { seriesId: set.seriesId, metricId: 'sample.series-count', value: '1' },
+        { seriesId: set.seriesId, metricId: 'price.node-set-equal-weight-average', value: '126.67' },
+        { seriesId: set.seriesId, metricId: 'sample.valid-hours', value: '24' },
+      ],
+      series: [nodePriceSeries(), set],
+      unavailableMetrics: [
+        { metricId: 'price.negative-energy-ratio', reason: UNAVAILABLE_NEGATIVE_ENERGY },
+      ],
+    },
+  })
+}
+
+function spreadResult(request: any) {
+  const pair = {
+    seriesId: 'spread:public-node:YN.KM.01',
+    kind: 'da-rt-spread',
+    direction: 'day-ahead-minus-real-time',
+    unit: 'yuan/MWh',
+    priceObject: 'public-node',
+    marketPhase: null,
+    dimensions: { nodeName: 'YN.KM.01' },
+    dayAheadSeriesId: 'ser-node-1',
+    realTimeSeriesId: 'ser-node-2',
+    resolutionMinutes: 15,
+  }
+  return insightResult({
+    contextVersion: request.context.contextVersion,
+    data: {
+      schemaVersion: 'insight-result-data/v1',
+      dimensions: [
+        { id: 'seriesId', kind: 'category' },
+        { id: 'intervalStart', kind: 'time' },
+        { id: 'intervalEnd', kind: 'time' },
+      ],
+      measures: [{ id: 'value', unit: 'yuan/MWh' }],
+      rows: [row(pair.seriesId, '2026-09-10T10:00:00+08:00', '2026-09-10T10:15:00+08:00', '88.25')],
+      series: [pair],
+      tables: {
+        summary: {
+          rows: [
+            { seriesId: pair.seriesId, metricId: 'sample.common-hours', value: '24' },
+            { seriesId: pair.seriesId, metricId: 'sample.day-ahead-valid-hours', value: '24' },
+            { seriesId: pair.seriesId, metricId: 'sample.real-time-valid-hours', value: '24' },
+            { seriesId: pair.seriesId, metricId: 'price.da-rt-spread', value: '12.5' },
+            { seriesId: pair.seriesId, metricId: 'price.da-rt-spread-abs-mean', value: '30.25' },
+            { seriesId: pair.seriesId, metricId: 'price.da-rt-spread-maximum', value: '88.25', atIntervalStart: '2026-09-10T10:00:00+08:00' },
+            { seriesId: pair.seriesId, metricId: 'price.da-rt-spread-minimum', value: '-20', atIntervalStart: '2026-09-10T03:00:00+08:00' },
+            { seriesId: pair.seriesId, metricId: 'price.da-rt-spread-positive-share', value: '62.5' },
+          ],
+        },
+        anomalies: {
+          rule: SPREAD_ANOMALY_RULE,
+          rows: [
+            { seriesId: pair.seriesId, intervalStart: '2026-09-10T10:00:00+08:00', intervalEnd: '2026-09-10T10:15:00+08:00', value: '88.25', rank: '1' },
+          ],
+        },
+      },
+      unpaired: [],
+    },
+  })
+}
+
+function profileResult(request: any) {
+  const second = nodePriceSeries({ seriesId: 'ser-node-2', dimensions: { nodeName: 'YN.KM.02' } })
+  return insightResult({
+    contextVersion: request.context.contextVersion,
+    data: {
+      schemaVersion: 'insight-result-data/v1',
+      dimensions: [{ id: 'seriesId', kind: 'category' }, { id: 'date', kind: 'category' }, { id: 'metricId', kind: 'category' }],
+      measures: [{ id: 'value', unit: 'yuan/MWh' }],
+      rows: [],
+      series: [nodePriceSeries(), second],
+      tables: {
+        daily: {
+          rows: [
+            { seriesId: 'ser-node-1', date: '2026-09-10', metricId: 'price.time-weighted-average', value: '210.5' },
+            { seriesId: 'ser-node-1', date: '2026-09-11', metricId: 'price.time-weighted-average', value: '220.5' },
+            { seriesId: 'ser-node-2', date: '2026-09-10', metricId: 'price.time-weighted-average', value: '205' },
+          ],
+        },
+        timeOfDay: {
+          rows: [
+            { seriesId: 'ser-node-1', timeOfDay: '00:00', metricId: 'price.time-weighted-average', value: '200' },
+            { seriesId: 'ser-node-1', timeOfDay: '01:00', metricId: 'price.time-weighted-average', value: '202' },
+          ],
+        },
+      },
+    },
+  })
+}
+
+function basisResult(request: any) {
+  const entry = {
+    seriesId: 'basis:public-node:YN.KM.02',
+    kind: 'node-basis',
+    unit: 'yuan/MWh',
+    priceObject: 'public-node',
+    marketPhase: 'day-ahead',
+    dimensions: { nodeName: 'YN.KM.02' },
+    baseSeriesId: 'ser-node-2',
+    referenceSeriesId: 'ser-node-1',
+    referenceObjectId: 'YN.KM.01',
+  }
+  return insightResult({
+    contextVersion: request.context.contextVersion,
+    data: {
+      schemaVersion: 'insight-result-data/v1',
+      dimensions: [
+        { id: 'seriesId', kind: 'category' },
+        { id: 'intervalStart', kind: 'time' },
+        { id: 'intervalEnd', kind: 'time' },
+      ],
+      measures: [{ id: 'value', unit: 'yuan/MWh' }],
+      rows: [row(entry.seriesId, '2026-09-10T00:00:00+08:00', '2026-09-10T01:00:00+08:00', '5.5')],
+      series: [entry],
+      tables: {
+        summary: {
+          rows: [
+            { seriesId: entry.seriesId, metricId: 'sample.common-hours', value: '24' },
+            { seriesId: entry.seriesId, metricId: 'price.node-basis', value: '5.5' },
+            { seriesId: entry.seriesId, metricId: 'price.node-basis-minimum', value: '-2', atIntervalStart: '2026-09-10T03:00:00+08:00' },
+            { seriesId: entry.seriesId, metricId: 'price.node-basis-maximum', value: '12', atIntervalStart: '2026-09-10T19:00:00+08:00' },
+          ],
+        },
+      },
+      notes: [{ sourceId: 'yn.price.node.public.day-ahead', note: PLANT_BINDING_NOTE }],
+      unpaired: [{ seriesId: 'ser-node-3', reason: '参考对象在该来源这段日期没有资料' }],
+    },
+  })
+}
+
+function defaultResponder(request: any): Promise<any> {
+  switch (request.filters?.view) {
+    case 'summary':
+      return Promise.resolve(summaryResult(request))
+    case 'spread':
+      return Promise.resolve(spreadResult(request))
+    case 'profile':
+      return Promise.resolve(profileResult(request))
+    case 'basis':
+      return Promise.resolve(basisResult(request))
+    default:
+      return Promise.resolve(seriesResult(request))
+  }
+}
+
+function capsWith(analysisIds: string[]): any {
+  return {
+    regionId: 'yunnan',
+    registered: true,
+    analyses: analysisIds.map((analysisId) => ({
+      analysisId,
+      version: '1.0.0',
+      title: analysisId,
+      pageIds: ['prices'],
+      access: 'public',
+      sourceIds: ['yn.price.node.public.day-ahead', 'yn.price.node.public.real-time'],
+      limits: { maxDays: 31, maxObjects: 50, requiresObjects: analysisId !== 'prices.user-series' },
+    })),
+    sources: [
+      { sourceId: 'yn.price.node.public.day-ahead', title: '公开历史节点价·日前', accessScope: 'public' },
+      { sourceId: 'yn.price.node.public.real-time', title: '公开历史节点价·实时', accessScope: 'public' },
+    ],
+    endpoints: {},
+    mock: false,
+    productionWrite: false,
+  }
+}
+
+const ALL_ANALYSES = [
+  'prices.user-series',
+  'prices.public-node-series',
+  'prices.company-node-series',
+  'prices.plant-node-series',
+]
+
+// ── 挂载与交互辅助 ───────────────────────────────────────────────────────────────────────
+
+let router: Router
+let wrapper: VueWrapper<any> | null = null
+
+async function mountPage(): Promise<VueWrapper<any>> {
+  wrapper = appMount(YunnanPricesPage, {
+    global: {
+      plugins: [router],
+      stubs: { InsightSeriesChart: InsightSeriesChartStub, ChartCard: ChartCardStub },
+    },
+  })
+  await flushPromises()
+  return wrapper
+}
+
+function queryCallsOf(predicate: (request: any) => boolean) {
+  return vi.mocked(queryInsight).mock.calls.filter(([request]) => predicate(request))
+}
+
+// VTU 对字符串选择器返回弱类型（无 vm/props），统一断言回 VueWrapper。
+function priceObjectSelect(): VueWrapper<any> {
+  return wrapper!.getComponent('[data-testid="ynp-price-object"]') as unknown as VueWrapper<any>
+}
+
+function basisReferenceSelect(): VueWrapper<any> {
+  return wrapper!.getComponent('[data-testid="ynp-basis-reference"]') as unknown as VueWrapper<any>
+}
+
+async function choosePriceObject(analysisId: string) {
+  priceObjectSelect().vm.$emit('change', analysisId)
+  await flushPromises()
+}
+
+async function switchTab(name: string) {
+  wrapper!.getComponent({ name: 'ElTabs' }).vm.$emit('tab-change', name)
+  await flushPromises()
+}
+
+async function chooseObjects(...ids: string[]) {
+  wrapper!.getComponent(InsightObjectPicker).vm.$emit('update:modelValue', ids)
+  await flushPromises()
+}
+
+async function setWindow(start: string, end: string) {
+  wrapper!.getComponent(InsightDateRange).vm.$emit('update:modelValue', { start, end })
+  await flushPromises()
+}
+
+beforeEach(async () => {
+  localStorage.clear()
+  selectedRegionId.value = 'yunnan'
+  selectedCompanyId.value = 'c1'
+  router = createRouter({
+    history: createMemoryHistory(),
+    routes: [{ path: '/', component: { render: () => null } }],
+  })
+  await router.push('/')
+  state.capabilities = capsWith(ALL_ANALYSES)
+  state.responder = defaultResponder
+  vi.mocked(queryInsight).mockClear()
+  vi.mocked(fetchInsightCapabilities).mockClear()
+  vi.mocked(searchSpotNodes).mockClear()
+  chartApplyCalls.length = 0
+})
+
+afterEach(() => {
+  wrapper?.unmount()
+  wrapper = null
+})
+
+// ── 用例 ─────────────────────────────────────────────────────────────────────────────────
+
+describe('价格对象目录', () => {
+  it('只列能力目录可用的对象：公共账号只有用户侧与公开节点两个选项，默认第一个，不出现厂侧对象', async () => {
+    state.capabilities = capsWith(['prices.user-series', 'prices.public-node-series'])
+    await mountPage()
+
+    const options = priceObjectSelect().findAllComponents({ name: 'ElOption' })
+    expect(options).toHaveLength(2)
+    expect(options.map((option) => option.props('label'))).toEqual(['用户侧价格', '公开历史节点价'])
+    // 默认选第一个可用对象（用户侧价，无对象维度，直接查询）
+    expect(priceObjectSelect().props('modelValue')).toBe('prices.user-series')
+    expect(queryCallsOf((request) => request.analysisId === 'prices.user-series')).toHaveLength(2)
+  })
+
+  it('节点类对象未选时不发任何查询；选完对象后查询携带 filters.objectIds', async () => {
+    state.capabilities = capsWith(['prices.public-node-series'])
+    await mountPage()
+
+    expect(queryInsight).not.toHaveBeenCalled()
+    expect(wrapper!.text()).toContain('请先在上方选择分析对象，再进行查询')
+
+    await chooseObjects('YN.KM.01')
+    const calls = queryCallsOf((request) => request.filters?.view === 'series')
+    expect(calls).toHaveLength(1)
+    expect(calls[0]![0]!.filters!.objectIds).toEqual(['YN.KM.01'])
+  })
+
+  it('切换价格对象后查询失败：保持所选对象不自动回落，显示读取失败，不替用户改查公开节点价', async () => {
+    await mountPage()
+    // 默认用户侧价已查询成功；切到厂侧节点价（需对象）
+    state.responder = () =>
+      Promise.reject(
+        Object.assign(new Error('资料读取失败，请稍后重试'), { status: 503, errorCode: 'UNAVAILABLE' })
+      )
+    await choosePriceObject('prices.company-node-series')
+    await chooseObjects('YN.KM.01')
+
+    // 所选仍是厂侧节点价（用户显式操作，失败不回落）
+    expect(priceObjectSelect().props('modelValue')).toBe('prices.company-node-series')
+    expect(wrapper!.text()).toContain('资料读取失败')
+    // 没有替用户回落到公开节点价
+    expect(queryCallsOf((request) => request.analysisId === 'prices.public-node-series')).toHaveLength(0)
+    expect(queryCallsOf((request) => request.analysisId === 'prices.company-node-series').length).toBeGreaterThan(0)
+  })
+
+  it('历史候选按当前价格对象的日前与实时两个价格来源求交集（场站清单来源不参与）', async () => {
+    state.capabilities = capsWith(['prices.public-node-series', 'prices.plant-node-series'])
+    await mountPage()
+
+    expect(wrapper!.getComponent(InsightHistoryCandidates).props('requiredSourceIds')).toEqual([
+      'yn.price.node.public.day-ahead',
+      'yn.price.node.public.real-time',
+    ])
+
+    await choosePriceObject('prices.plant-node-series')
+    // 场站关联价分析含第三来源 cgn.plant.nodal-price（场站清单，非价格读取），交集只按两个价格来源
+    expect(wrapper!.getComponent(InsightHistoryCandidates).props('requiredSourceIds')).toEqual([
+      'cgn.price.plant-node.day-ahead',
+      'cgn.price.plant-node.real-time',
+    ])
+  })
+})
+
+describe('节点基差页签', () => {
+  it('用户侧价格没有节点维度：基差页签显示固定说明且不发 basis 查询', async () => {
+    state.capabilities = capsWith(['prices.user-series'])
+    await mountPage()
+    await switchTab('basis')
+
+    expect(wrapper!.text()).toContain('用户侧价格没有节点维度，不提供节点基差')
+    expect(queryCallsOf((request) => request.filters?.view === 'basis')).toHaveLength(0)
+  })
+
+  it('未选参考对象不发 basis 查询；选定后查询携带 referenceObjectId 与 objectIds，未配对与 notes 原文随结果展示', async () => {
+    state.capabilities = capsWith(['prices.public-node-series'])
+    await mountPage()
+    await chooseObjects('YN.KM.01', 'YN.KM.02')
+    await switchTab('basis')
+
+    expect(wrapper!.text()).toContain('请先选择参考节点或参考场站')
+    expect(queryCallsOf((request) => request.filters?.view === 'basis')).toHaveLength(0)
+
+    basisReferenceSelect().vm.$emit('update:modelValue', 'YN.KM.01')
+    await flushPromises()
+    const calls = queryCallsOf((request) => request.filters?.view === 'basis')
+    expect(calls).toHaveLength(1)
+    expect(calls[0]![0]!.filters!.referenceObjectId).toBe('YN.KM.01')
+    expect(calls[0]![0]!.filters!.objectIds).toEqual(['YN.KM.01', 'YN.KM.02'])
+    // 场站绑定关系口径说明（后端 notes 原文）与未配对原因（不悄悄丢弃）随结果展示
+    expect(wrapper!.text()).toContain(PLANT_BINDING_NOTE)
+    expect(wrapper!.text()).toContain('未配对')
+    expect(wrapper!.text()).toContain('参考对象在该来源这段日期没有资料')
+  })
+
+  it('参考对象只能从已选对象中选；被移出已选集合时自动清空', async () => {
+    state.capabilities = capsWith(['prices.public-node-series'])
+    await mountPage()
+    await chooseObjects('YN.KM.01', 'YN.KM.02')
+    await switchTab('basis')
+
+    // VTU 组件 wrapper 持有的是取用时的 vnode 快照，重新渲染后须重新 getComponent 再看子树
+    const optionValues = () =>
+      basisReferenceSelect()
+        .findAllComponents({ name: 'ElOption' })
+        .map((option) => option.props('value'))
+    expect(optionValues()).toEqual(['YN.KM.01', 'YN.KM.02'])
+
+    basisReferenceSelect().vm.$emit('update:modelValue', 'YN.KM.02')
+    await flushPromises()
+
+    // 从已选对象中移除 YN.KM.02：参考随之清空（数据一致性，不是回落），选项只剩 YN.KM.01
+    await chooseObjects('YN.KM.01')
+    expect(basisReferenceSelect().props('modelValue')).toBe('')
+    expect(optionValues()).toEqual(['YN.KM.01'])
+  })
+})
+
+describe('统计摘要', () => {
+  it('负价电量占比标注「不可用」并按后端原文说明原因，不显示成 0；集合权重口径原文展示', async () => {
+    state.capabilities = capsWith(['prices.user-series'])
+    await mountPage()
+
+    const text = wrapper!.text()
+    expect(text).toContain(`负价电量占比 不可用：${UNAVAILABLE_NEGATIVE_ENERGY}`)
+    expect(text).not.toContain('负价电量占比：0')
+    expect(text).toContain(SET_WEIGHT_NOTE)
+    expect(text).toContain('所选对象集合')
+  })
+
+  it('指标按登记精度显示：126.666666666667 → 126.67', async () => {
+    state.capabilities = capsWith(['prices.user-series'])
+    await mountPage()
+
+    const text = wrapper!.text()
+    expect(text).toContain('126.67')
+    expect(text).not.toContain('126.666')
+  })
+})
+
+describe('日前实时价差', () => {
+  it('方向说明与异常规则固定文案；配对统计以卡片呈现（指标名与精度取登记）；查询按 view=spread 发起', async () => {
+    state.capabilities = capsWith(['prices.user-series'])
+    await mountPage()
+    await switchTab('spread')
+
+    const text = wrapper!.text()
+    expect(text).toContain('价差 = 日前 − 实时，正值表示日前高于实时；这是价格差，不是收益')
+    expect(text).toContain(SPREAD_ANOMALY_RULE)
+    // 配对统计卡：均值 12.5、绝对值均值 30.25（登记精度）、极值带出现时段
+    expect(text).toContain('12.5')
+    expect(text).toContain('30.25')
+    expect(text).toContain('88.25')
+    expect(text).toContain('10:00 出现')
+    expect(queryCallsOf((request) => request.filters?.view === 'spread')).toHaveLength(1)
+  })
+
+  it('异常行点击生成语义选区：无 dataIndex/seriesIndex，承载对象与时段并定位图表', async () => {
+    state.capabilities = capsWith(['prices.public-node-series'])
+    await mountPage()
+    await chooseObjects('YN.KM.01')
+    await switchTab('spread')
+
+    const tables = wrapper!.findAllComponents({ name: 'ElTable' })
+    const anomalyTable = tables.find((table) => {
+      const data = table.props('data') as Array<Record<string, unknown>>
+      return Boolean(data?.length && 'rank' in data[0])
+    })
+    expect(anomalyTable).toBeTruthy()
+    anomalyTable!.vm.$emit('row-click', {
+      seriesId: 'spread:public-node:YN.KM.01',
+      intervalStart: '2026-09-10T10:00:00+08:00',
+      intervalEnd: '2026-09-10T10:15:00+08:00',
+      value: '88.25',
+      rank: '1',
+    })
+    await flushPromises()
+
+    const selection = chartApplyCalls.at(-1)
+    expect(selection).toBeTruthy()
+    const json = JSON.stringify(selection)
+    expect(json).not.toContain('dataIndex')
+    expect(json).not.toContain('seriesIndex')
+    expect(json).toContain('YN.KM.01')
+    expect(json).toContain('2026-09-10T10:00:00+08:00')
+    expect(wrapper!.text()).toContain('已定位时段')
+  })
+
+  it('只选一侧来源的 422：直显后端文案', async () => {
+    state.capabilities = capsWith(['prices.user-series'])
+    await mountPage()
+    state.responder = (request) =>
+      request.filters?.view === 'spread'
+        ? Promise.reject(Object.assign(new Error(SPREAD_ONE_SIDE_422), { status: 422, errorCode: 'INVALID_FILTER' }))
+        : defaultResponder(request)
+    await switchTab('spread')
+
+    expect(wrapper!.text()).toContain(SPREAD_ONE_SIDE_422)
+  })
+})
+
+describe('历史分布', () => {
+  it('窗口天数与各序列有效天数如实展示；样本说明与「暂不支持按季节、工作日筛选」都在', async () => {
+    state.capabilities = capsWith(['prices.user-series'])
+    await mountPage()
+    await setWindow('2026-09-10', '2026-09-11')
+    await switchTab('profile')
+
+    const text = wrapper!.text()
+    expect(text).toContain('业务窗口 2026-09-10 ~ 2026-09-11（2 天）')
+    // 两条序列：一条两天、一条一天（缺测如实，不装满窗；序列名含市场阶段「日前」）
+    expect(text).toContain('YN.KM.01 日前 2 天')
+    expect(text).toContain('YN.KM.02 日前 1 天')
+    expect(text).toContain('只统计所选窗口内真实存在的时段；样本只有一年或更短时，不代表多年季节规律')
+    expect(text).toContain('暂不支持按季节、工作日筛选')
+    expect(text).toContain('逐日均价（时长加权）')
+    expect(text).toContain('各时段跨日均价（时长加权）')
+  })
+})
+
+describe('状态纪律', () => {
+  it('上下文变化后迟到结果不写进新状态；页签切走再切回不重查', async () => {
+    state.capabilities = capsWith(['prices.user-series'])
+    await mountPage()
+    await switchTab('profile')
+
+    // 旧口径请求挂起（profile + 此前的 series/summary 已完成，这里只拦 profile）
+    let resolveOld: (value: any) => void = () => {}
+    const oldPromise = new Promise((resolve) => {
+      resolveOld = resolve
+    })
+    const oldVersion = `rv1:${'c'.repeat(64)}`
+    state.responder = (request) =>
+      request.filters?.view === 'profile'
+        ? oldPromise.then(() => insightResult({ resultVersion: oldVersion, contextVersion: request.context.contextVersion }))
+        : defaultResponder(request)
+
+    // 换窗口：上下文变化作废在途请求，并按新口径重查
+    await setWindow('2026-09-10', '2026-09-11')
+
+    // 旧响应迟到到达：不得写进新状态（图表仍显示新口径结果）
+    resolveOld(null)
+    await flushPromises()
+
+    const profileChart = wrapper!
+      .findAllComponents(InsightSeriesChartStub)
+      .map((chart) => chart.props('result') as any)
+      .filter((result) => result?.data)
+    // 时段走势在新窗口下重查成功；任何已渲染结果都不是旧版本
+    expect(profileChart.every((result) => result.resultVersion !== oldVersion)).toBe(true)
+
+    // 换窗后首次切回时段走势：旧状态已被清空，按新口径重查是正确行为，先让它查完
+    await switchTab('series')
+    // 同签名下切走再切回：不重查
+    const seriesCallsBefore = queryCallsOf((request) => request.filters?.view === 'series').length
+    await switchTab('profile')
+    await switchTab('series')
+    expect(queryCallsOf((request) => request.filters?.view === 'series')).toHaveLength(seriesCallsBefore)
+  })
+})
+
+describe('展示纪律', () => {
+  it('界面只出现业务语言：不出现来源标识、family、SQL、表名原文', async () => {
+    state.capabilities = capsWith(ALL_ANALYSES)
+    await mountPage()
+    await switchTab('spread')
+
+    const text = wrapper!.text()
+    expect(text).not.toContain('yn.price')
+    expect(text).not.toContain('cgn.price')
+    expect(text).not.toContain('sourceId')
+    expect(text).not.toContain('family')
+    expect(text).not.toContain('SELECT ')
+  })
+})

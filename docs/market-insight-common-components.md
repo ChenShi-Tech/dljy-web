@@ -2,7 +2,7 @@
 
 本文档是市场洞察公共件（OpenSpec 任务 5.4—5.8）的使用说明：页面开发者如何用这套组件搭一个「区块 + 证据 + 图表选区 + 明细表」的标准洞察页，以及各组件守住的口径红线。契约与接口本身的定义在后端仓（`dljy/shared/insight/`，经 `npm run sync:web` 镜像到本仓 `shared/insight/`，只读），本文只讲前端消费方式。
 
-> 相关文档：[市场洞察数据口径说明](./market-insight.md)、[市场洞察旧图表能力清单](./market-insight-chart-inventory.md)。
+> 相关文档：[市场洞察数据口径说明](./market-insight.md)、[市场洞察旧图表能力清单](./market-insight-chart-inventory.md)、[云南市场洞察价格与价差页](./market-insight-prices.md)。
 
 ## 模块清单
 
@@ -53,6 +53,8 @@ props:  modelValue: boolean                v-model 开关
         result: InsightBlockResult | null
         sourceTitles?: Record<string, InsightSourceTitle>
 emits:  update:modelValue
+slot:   默认插槽（可选）：页面级补充说明，如「该视图与明细来自同一份读取」（dljy#3007
+        价格页按 readSetRef 相等时显示）；不传不影响现有用法
 ```
 
 字段口径：
@@ -86,12 +88,17 @@ emits:  update:modelValue
 InsightObjectPicker   props: modelValue: string[]（对象 id 数组）；options: InsightObjectOption[]
                       maxObjects?: number（analysis.limits.maxObjects）
                       requiresObjects?: boolean（未选对象时占位提示「请先选择节点或场站」）
+                      remote?: boolean（远程检索模式，dljy#3007 价格页节点搜索）
+                      remoteMethod?: (query: string) => void（输入触发；结果由页面写回 options）
+                      remoteLoading?: boolean（检索进行中 → el-select loading 态）
                       emits: update:modelValue
 
 InsightDateRange      props: modelValue: { start, end }（业务日 YYYY-MM-DD）
                       maxDays?: number（analysis.limits.maxDays；缺省 366）
                       emits: update:modelValue
 ```
+
+远程模式下本组件不持检索状态：检索回调、失败重试、选项写回都由页面负责（组件只透传 el-select 的 remote 能力）。
 
 日期窗超限时提示「单次分析最多 N 天，当前 M 天；请缩小范围（未自动截断）」，维持原窗口——不静默截断用户的选择。
 
@@ -106,6 +113,8 @@ expose: applySelection(selection | null)                   外部（表格行点
 ```
 
 内部：结果按单位分组（一张图最多两种单位、每种单位一根 y 轴），每组一个 `InsightChartPane`（内部组件，页面不直接用）。点击一个点或框选一片 → 经 `useInsightSelection` 构建语义选区上抛；清除框选 → 上抛 null。空结果不画空坐标轴，显示「暂无可绘制的序列」。
+
+序列名经 `insightText` 的 `fieldText` 拼业务名：价差 / 基差等视图合成序列没有来源字段，其字段名同样在 `FIELD_TEXT` 登记（`spread` = 「日前−实时价差」、`basis` = 「节点基差」，dljy#3007 价格页）。
 
 ### InsightResultTable（明细表）
 
