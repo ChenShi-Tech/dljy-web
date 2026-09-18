@@ -310,12 +310,28 @@ async function safeFetchMarket<T>(key: string, family: string = MARKET_FAMILY):
   }
 }
 
+/**
+ * 逐页签数据口径（#2991）：按「该页签自己消费的数据集」判定，而不是整页 hasRealData 顶包。
+ * 页面有真实数据时：页签至少一个数据集真实 = captured（展示的都是真实行，缺的数据集以空态呈现，
+ * 由 sectionPartial 提示「部分缺失」）；页签数据集全不真实 = empty（诚实空态，不是模拟数据）。
+ * 整页没有任何真实数据时：全部页签 synthetic（整页示例 + 可见「模拟数据」提示）。
+ */
+export type MarketAnalysisSectionBasis = Record<MarketAnalysisTab, DataBasis>
+/** 页签是否「部分数据集真实、部分缺失」（缺失部分为空态），页面据此显示缺口提示。 */
+export type MarketAnalysisSectionPartial = Record<MarketAnalysisTab, boolean>
+
 export interface MarketAnalysisResult {
   dataset: MarketAnalysisDataset
   basis: DataBasis
   hasRealData: boolean
   // 公共 7 键与套餐私有族必须独立判断，避免仅套餐命中时把公共页签误标 captured。
   publicDataReal: boolean
+  // #2991：逐数据集真实性（9 个 datasetKey → 是否命中真实回放）。
+  // 消费方据此决定字段显示真实数据还是诚实空态，杜绝「任一真实 → 其余字段回落示例」的混排。
+  realByKey: Record<string, boolean>
+  // #2991：逐页签口径，页面按它显示徽章/提示（不再用整页 basis 顶包）。
+  sectionBasis: MarketAnalysisSectionBasis
+  sectionPartial: MarketAnalysisSectionPartial
   // #669：售电套餐 tab 的真实性单独暴露（company 私有族，可能被授权闸门拒绝）。
   retailPackagesReal: boolean
   retailPackagesPartialReal: boolean
@@ -325,9 +341,39 @@ export interface MarketAnalysisResult {
 }
 
 /**
+ * 页签 → 该页签消费的 datasetKey（与下方装配逻辑一一对应）。#2991：页签级徽章/空态
+ * 按这组键的真实性判定，不再用整页 hasRealData 顶包。
+ */
+// 非价格页签都会画月度趋势图（renderTrendChart 读 monthlyTrend），所以都依赖 market_monthly_trend。
+const TAB_DATASET_KEYS: Record<MarketAnalysisTab, readonly string[]> = {
+  overview: ['market_trade_summary', 'market_monthly_trend', 'market_metrics'],
+  generation: ['market_generation', 'market_monthly_trend', 'market_metrics'],
+  sales: ['market_sales', 'market_monthly_trend', 'market_metrics'],
+  storage: ['market_storage', 'market_monthly_trend', 'market_metrics'],
+  packages: [RETAIL_PACKAGE_KEY, RETAIL_PACKAGE_METRICS_KEY, 'market_monthly_trend'],
+  price: ['market_price']
+}
+// KPI 两个数据集按页签分行（行上带 tab），一个信封真实不代表每个页签都有 KPI：按当前页签实际有没有行判定。
+const METRIC_KEYS = new Set(['market_metrics', RETAIL_PACKAGE_METRICS_KEY])
+
+function sectionsOf(realByKey: Record<string, boolean>, hasRealData: boolean, metricTabs: ReadonlySet<string> = new Set()) {
+  const basis = {} as MarketAnalysisSectionBasis
+  const partial = {} as MarketAnalysisSectionPartial
+  for (const entry of Object.entries(TAB_DATASET_KEYS) as Array<[MarketAnalysisTab, readonly string[]]>) {
+    const [tab, keys] = entry
+    const reals = keys.map((key) => (METRIC_KEYS.has(key) ? Boolean(realByKey[key]) && metricTabs.has(tab) : Boolean(realByKey[key])))
+    basis[tab] = !hasRealData ? 'synthetic' : reals.some(Boolean) ? 'captured' : 'empty'
+    partial[tab] = hasRealData && reals.some(Boolean) && !reals.every(Boolean)
+  }
+  return { sectionBasis: basis, sectionPartial: partial }
+}
+
+/**
  * 装配市场经营分析全部模块数据（9 datasetKey 并行真实回放 + 失败降级）。
- * 无任何真实数据 → 硬编码 fallback（basis=synthetic）；有任一真实 → basis=captured，
- * 各字段优先用真实 rows，缺失的 datasetKey 回落 fallback（保证 View 总有完整 dataset）。
+ * 无任何真实数据 → 硬编码 fallback（basis=synthetic，可见「模拟数据」标注，合规）。
+ * #2991：有任一真实数据时，缺真实回放的字段一律返回空（空数组/空指标列表），
+ * 绝不回落示例——旧实现「真实优先、否则示例」的混排会让 318 家、1258.6 亿kWh 等
+ * 示例值顶着 captured 徽章出现，误导用户。hourData 从无真实来源，此分支恒为空。
  */
 export async function loadMarketAnalysis(year = 2026): Promise<MarketAnalysisResult> {
   // 公共 7 键走 market_analysis(public)；套餐明细与 KPI 走同一 company 私有族并行取。
@@ -340,18 +386,21 @@ export async function loadMarketAnalysis(year = 2026): Promise<MarketAnalysisRes
   const rowsOf = <T,>(key: string): T[] => (results.find((r) => r.key === key)?.rows ?? []) as T[]
   const publicDataReal = publicResults.some((r) => r.real)
   const hasRealData = results.some((r) => r.real)
+  // #2991：逐数据集真实性（9 键），供页面显示页签级口径与诚实空态。
+  const realByKey = Object.fromEntries(results.map((r) => [r.key, r.real]))
   // 套餐 tab 同时展示明细与 KPI；只有两者均为真实回放才允许整页标 captured。
   const retailPackagesReal = packageResult.real && packageMetricResult.real
   const retailPackagesPartialReal = packageResult.real !== packageMetricResult.real
   const retailPackagesAccessDenied = packageResult.denied || packageMetricResult.denied
-  const fallback = getMarketAnalysis(year)
 
   if (!hasRealData) {
     return {
-      dataset: fallback,
+      dataset: getMarketAnalysis(year),
       basis: 'synthetic',
       hasRealData: false,
       publicDataReal,
+      realByKey,
+      ...sectionsOf(realByKey, false),
       retailPackagesReal,
       retailPackagesPartialReal,
       retailPackageDetailsReal: packageResult.real,
@@ -360,46 +409,30 @@ export async function loadMarketAnalysis(year = 2026): Promise<MarketAnalysisRes
     }
   }
 
-  const tradeSummary = withPercent<TradeSummaryRow>(
-    rowsOf<TradeSummaryRow>('market_trade_summary').length ? rowsOf<TradeSummaryRow>('market_trade_summary') : fallback.tradeSummary
-  )
-  const monthlyTrend = rowsOf<MonthTrendRow>('market_monthly_trend').length
-    ? rowsOf<MonthTrendRow>('market_monthly_trend')
-    : fallback.monthlyTrend
+  // 以下只在「至少一个数据集真实」时执行：每个字段只取自己的真实行，没有就为空。
+  const tradeSummary = withPercent<TradeSummaryRow>(rowsOf<TradeSummaryRow>('market_trade_summary'))
+  const monthlyTrend = rowsOf<MonthTrendRow>('market_monthly_trend')
   const genRows = rowsOf<CategoryRow & { category?: string }>('market_generation')
   const stripCategory = (r: CategoryRow & { category?: string }): CategoryRow => ({
     name: r.name, quantity: r.quantity, avgPrice: r.avgPrice, count: r.count, percentage: r.percentage
   })
   const powerTypesRaw = genRows.filter((r) => !r.category || r.category === 'powerType').map(stripCategory)
   const detailsRaw = genRows.filter((r) => r.category === 'detail').map(stripCategory)
-  const powerTypes = withPercent<CategoryRow>(powerTypesRaw.length ? powerTypesRaw : fallback.powerTypes)
-  const generationDetails = withPercent<CategoryRow>(detailsRaw.length ? detailsRaw : fallback.generationDetails)
-  const salesSrc = rowsOf<CategoryRow>('market_sales')
-  const salesCompanies = withPercent<CategoryRow>(salesSrc.length ? salesSrc : fallback.salesCompanies)
-  const storageSrc = rowsOf<CategoryRow>('market_storage')
-  const storageProjects = withPercent<CategoryRow>(storageSrc.length ? storageSrc : fallback.storageProjects)
-  const retailPackages = rowsOf<RetailPackageRow>('market_packages').length
-    ? rowsOf<RetailPackageRow>('market_packages')
-    : fallback.retailPackages
-  const priceSrc = rowsOf<PriceTrendRow>('market_price')
-  const priceTrend = priceSrc.length
-    ? priceSrc.map((r) => ({ ...r, deviation: r.deviation || +(r.spotPrice - r.mediumLongPrice).toFixed(4) }))
-    : fallback.priceTrend
+  const powerTypes = withPercent<CategoryRow>(powerTypesRaw)
+  const generationDetails = withPercent<CategoryRow>(detailsRaw)
+  const salesCompanies = withPercent<CategoryRow>(rowsOf<CategoryRow>('market_sales'))
+  const storageProjects = withPercent<CategoryRow>(rowsOf<CategoryRow>('market_storage'))
+  const retailPackages = rowsOf<RetailPackageRow>('market_packages')
+  const priceTrend = rowsOf<PriceTrendRow>('market_price')
+    .map((r) => ({ ...r, deviation: r.deviation || +(r.spotPrice - r.mediumLongPrice).toFixed(4) }))
 
   const metricRows = rowsOf<MarketMetric & { tab?: string }>('market_metrics')
   const packageMetricRows = rowsOf<MarketMetric & { tab?: string }>(RETAIL_PACKAGE_METRICS_KEY)
-  const pickMetrics = (tab: string): MarketMetric[] => {
-    const rows = (tab === 'packages' ? packageMetricRows : metricRows)
+  // #2991：缺真实 KPI 的页签返回空指标列表（页面显示空态），不再回落示例指标。
+  const pickMetrics = (tab: string): MarketMetric[] =>
+    (tab === 'packages' ? packageMetricRows : metricRows)
       .filter((r) => r.tab === tab)
       .map(({ label, value, unit, tone }) => ({ label, value, unit, tone }))
-    if (rows.length) return rows
-    if (tab === 'overview') return fallback.overviewMetrics
-    if (tab === 'generation') return fallback.generationMetrics
-    if (tab === 'sales') return fallback.salesMetrics
-    if (tab === 'storage') return fallback.storageMetrics
-    if (tab === 'packages') return fallback.packageMetrics
-    return []
-  }
 
   const dataset: MarketAnalysisDataset = {
     year,
@@ -410,7 +443,7 @@ export async function loadMarketAnalysis(year = 2026): Promise<MarketAnalysisRes
     packageMetrics: pickMetrics('packages'),
     tradeSummary,
     monthlyTrend,
-    hourData: fallback.hourData, // 备用，不手录
+    hourData: [], // hourData 从无真实来源：部分真实场景下宁可空也不回放示例曲线
     powerTypes,
     generationDetails,
     salesCompanies,
@@ -424,6 +457,8 @@ export async function loadMarketAnalysis(year = 2026): Promise<MarketAnalysisRes
     basis: 'captured',
     hasRealData: true,
     publicDataReal,
+    realByKey,
+    ...sectionsOf(realByKey, true, new Set([...metricRows, ...packageMetricRows].map((r) => r.tab).filter((tab): tab is string => Boolean(tab)))),
     retailPackagesReal,
     retailPackagesPartialReal,
     retailPackageDetailsReal: packageResult.real,

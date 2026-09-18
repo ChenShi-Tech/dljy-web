@@ -3,16 +3,18 @@
 // 市场洞察出清契约返回 timePoints + series[]，保持连续时序、多轴叠加。
 // 4 轴:0 电量(左,MWh) | 1 价格(右,0-1500) | 2 比率(右,0-2) | 3 价格差(右,-1500~1500)。
 // 差异点(对照线上):运行日期=区间(控横轴) / 对比日期=单日(竖线对比) / 价格差用红柱 / 主策略用圆点标值 / Y轴可隐藏。
-import { onMounted, ref, nextTick, watch } from 'vue'
+import { computed, onMounted, ref, nextTick, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { currentRegion } from '@/services/region/regionContext'
 import {
   fetchMarketInsightClearingSpotContract,
   type MarketInsightClearingSpotBlock
 } from '@/services/data/contracts'
+import { getRegionCapabilityForPath, type RegionCapabilityDataSupport } from '@/services/region/regionModules'
 import { onRegionChange } from '../composables/useRegionReload'
 import RegionDataBanner from '@/components/region/RegionDataBanner.vue'
 import CapabilitySupportBadge from '../components/CapabilitySupportBadge.vue'
+import CapabilityDegradedCard from '../components/CapabilityDegradedCard.vue'
 import { chartChrome } from '../composables/useTheme'
 import { useEChart } from '../composables/useEChart'
 import { useQuerySync } from '../composables/useQuerySync'
@@ -57,12 +59,36 @@ const hideAxis = ref(false)
 useQuerySync({ compare: compareDate })
 
 const dateOf = (s: string) => String(s).slice(0, 10)
+// #2991：sdpt_zcqxhdl/__list__ 是山西公司专属清单（后端注册表 datasetOwners），只有山西
+// 可以读。非山西地区（云南/广东/四川…）本页停用：不发请求、不画空图，显示停用说明卡。
+const isClearingRegionSupported = computed(() => currentRegion.value.id === 'shanxi')
+const CLEARING_DISABLED_NOTE =
+  '旧出清电量实现已停用：原实现读取的是山西公司专属清单，不代表云南全省出清（本页在所有非山西地区停用，不再跨地区读取）。获权场站的申报、出清与实际对照将在「场站市场表现」中提供。'
+const routeCapability = computed(() => getRegionCapabilityForPath('/sjfx/zcqxhdl', currentRegion.value.id))
+const clearingDegradedSupports = computed<RegionCapabilityDataSupport[]>(() => {
+  const cap = routeCapability.value
+  if (!cap) return []
+  const supports = cap.route?.dataSupportByRegion?.[currentRegion.value.id]
+    ?? cap.module.dataSupportByRegion[currentRegion.value.id]
+    ?? []
+  return supports.filter((item) => item.expectation !== 'real')
+})
 // 防止切地区时旧地区慢响应覆盖新地区出清状态（#415）。
 let loadGeneration = 0
 
 async function load() {
   const generation = ++loadGeneration
-  loading.value = true; error.value = ''
+  error.value = ''
+  // #2991：非山西地区直接进停用态——不发请求（客户端层也有一道防御），不渲染图表。
+  if (!isClearingRegionSupported.value) {
+    loading.value = false
+    clearViewState()
+    // 停用态没有任何数据：诚实空态，不是合成数据。
+    dataBasis.value = 'empty'
+    renderEmptyChart()
+    return
+  }
+  loading.value = true
   clearViewState()
   renderEmptyChart()
   mainChart.showLoading()
@@ -237,25 +263,35 @@ onRegionChange(load)
   <div class="a3" v-loading="loading">
     <RegionDataBanner />
     <CapabilitySupportBadge path="/sjfx/zcqxhdl" />
-    <el-alert v-if="error" type="error" :closable="false" :title="error" class="mb" />
-    <div class="toolbar">
-      <span class="lbl">运行日期</span>
-      <el-date-picker v-model="runRange" type="daterange" value-format="YYYY-MM-DD" unlink-panels
-        range-separator="~" start-placeholder="开始" end-placeholder="结束" size="small"
-        :clearable="false" :disabled-date="disabledOut" style="width: 240px" />
-      <span class="lbl">对比日期</span>
-      <el-date-picker v-model="compareDate" type="date" value-format="YYYY-MM-DD" size="small"
-        placeholder="选择对比日" clearable :disabled-date="disabledOut" style="width: 150px" />
-      <span class="spacer" />
-      <el-button size="small" type="primary" @click="fixedAxis = !fixedAxis">{{ fixedAxis ? '坐标自动' : '坐标固定' }}</el-button>
-      <el-button size="small" type="primary" @click="hideAxis = !hideAxis">{{ hideAxis ? '显示Y轴' : '隐藏Y轴' }}</el-button>
-      <el-button size="small" type="success" plain @click="askInsight">✨ 解读本页</el-button>
-      <TrustBadge :basis="dataBasis" prefix="决策口径" />
-    </div>
-    <div class="chart-card">
-      <div ref="chartRef" class="chart chart-host"></div>
-      <!-- 数据源(内部参考,勿对外展示)：市场洞察出清现货契约 ｜ 4 轴：电量(左)·价格·比率·价格差(右) ｜ ~ -->
-    </div>
+    <!-- #2991：非山西地区显示停用说明卡（不发请求、不画空图），山西保持原出清图不动 -->
+    <CapabilityDegradedCard
+      v-if="!isClearingRegionSupported"
+      title="出清电量分析在当前地区已停用"
+      :region-name="currentRegion.name"
+      :note="CLEARING_DISABLED_NOTE"
+      :supports="clearingDegradedSupports"
+    />
+    <template v-else>
+      <el-alert v-if="error" type="error" :closable="false" :title="error" class="mb" />
+      <div class="toolbar">
+        <span class="lbl">运行日期</span>
+        <el-date-picker v-model="runRange" type="daterange" value-format="YYYY-MM-DD" unlink-panels
+          range-separator="~" start-placeholder="开始" end-placeholder="结束" size="small"
+          :clearable="false" :disabled-date="disabledOut" style="width: 240px" />
+        <span class="lbl">对比日期</span>
+        <el-date-picker v-model="compareDate" type="date" value-format="YYYY-MM-DD" size="small"
+          placeholder="选择对比日" clearable :disabled-date="disabledOut" style="width: 150px" />
+        <span class="spacer" />
+        <el-button size="small" type="primary" @click="fixedAxis = !fixedAxis">{{ fixedAxis ? '坐标自动' : '坐标固定' }}</el-button>
+        <el-button size="small" type="primary" @click="hideAxis = !hideAxis">{{ hideAxis ? '显示Y轴' : '隐藏Y轴' }}</el-button>
+        <el-button size="small" type="success" plain @click="askInsight">✨ 解读本页</el-button>
+        <TrustBadge :basis="dataBasis" prefix="决策口径" />
+      </div>
+      <div class="chart-card">
+        <div ref="chartRef" class="chart chart-host"></div>
+        <!-- 数据源(内部参考,勿对外展示)：市场洞察出清现货契约 ｜ 4 轴：电量(左)·价格·比率·价格差(右) ｜ ~ -->
+      </div>
+    </template>
   </div>
 </template>
 

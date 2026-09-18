@@ -201,7 +201,10 @@ export const regionModuleCapabilities: RegionModuleCapability[] = [
         shanxiSdptSupport('山西市场洞察基线', ['sdpt_console', 'sdpt_zsjfx_idx', 'sdpt_zcqxhdl', 'sdpt_actualLoad', 'sdpt_fshq'], '三德普华/山西采集族为基线，经典洞察页可真实回放。')
       ],
       yunnan: [
-        { label: '云南洞察已接真实族', families: ['sdpt_console', 'sdpt_zsjfx_idx', 'sdpt_zcqxhdl', 'sdpt_actualLoad', 'yn_system_forecast'], expectation: 'real', note: '2026-07-06 后 sdpt_console、zsjfx 索引、listrs_full、逐日负荷和关系图输入已有云南真实支撑。' },
+        // #2991 措辞校正：云南 sdpt_zcqxhdl 真实存在的只有 listrs_full（供价格分析页），
+        // 不含出清电量清单 __list__——那登记在山西三德公司私有面，云南没有该键。
+        { label: '云南洞察已接真实族', families: ['sdpt_console', 'sdpt_zsjfx_idx', 'sdpt_zcqxhdl', 'sdpt_actualLoad', 'yn_system_forecast'], expectation: 'real', note: '2026-07-06 后 sdpt_console、zsjfx 索引、逐日负荷和关系图输入已有云南真实支撑；sdpt_zcqxhdl 仅 listrs_full（供价格分析页使用）。' },
+        { label: '云南出清电量清单缺口', families: ['sdpt_zcqxhdl'], expectation: 'missing', note: '__list__ 出清电量清单是山西三德公司私有口径（dljy#2991），云南无全省出清清单来源；出清现货电量分析页在云南显示停用说明，不跨地区读取。' },
         { label: '云南分时行情缺口', families: ['sdpt_fshq'], expectation: 'missing', note: '交易撮合行情 fshq 暂无云南来源，页面后续应显示可解释降级卡。' },
         { label: '市场经营手录口径', families: ['market_analysis'], expectation: 'partial', note: 'market_analysis 是手录/导入公共口径（概览/发电/售电/储能/价格/月度/指标），不等价于完整云南交易中心行情。' },
         { label: '售电套餐经营口径(公司私有)', families: ['market_retail_packages'], expectation: 'partial', note: 'market_retail_packages 为售电套餐公司私有经营口径（#669），仅归属公司 comp-cgn-yunnan 登录可见真实回放；非归属公司走 synthetic 授权态，不泄漏他司经营数据。' }
@@ -223,7 +226,10 @@ export const regionModuleCapabilities: RegionModuleCapability[] = [
       { path: '/insight/cockpit', statusByRegion: { shanxi: 'available', yunnan: 'available' }, note: '市场洞察 bundle 已按地区贯穿，云南真实族缺口由 bundle gaps 标注。' },
       { path: '/sjfx/fshq', statusByRegion: { shanxi: 'available', yunnan: 'degraded' }, note: '云南无 fshq 交易撮合行情来源。' },
       { path: '/sjfx/zrsjg', statusByRegion: { shanxi: 'available', yunnan: 'available' }, note: '云南使用 sdpt_zcqxhdl listrs_full 真实回放。' },
-      { path: '/sjfx/zcqxhdl', statusByRegion: { shanxi: 'available', yunnan: 'available' }, note: '出清曲线类输入已纳入云南真实支撑。' },
+      // #2991：此前声明「出清曲线类输入已纳入云南真实支撑」是错误声明——云南 sdpt_zcqxhdl
+      // 只有 listrs_full（价格分析页用），出清电量清单 __list__ 是山西三德公司私有键。
+      // degraded 放行路由（旧深链可达），页面显示停用说明卡；客户端不再发 __list__ 请求。
+      { path: '/sjfx/zcqxhdl', statusByRegion: { shanxi: 'available', yunnan: 'degraded' }, note: '云南出清电量页已停用（dljy#2991）：__list__ 为山西公司私有清单，云南无全省出清清单来源；页面显示停用说明，不跨地区读取。' },
       { path: '/sjfx/zrxgx', statusByRegion: { shanxi: 'available', yunnan: 'available' }, note: '同页关系图可走云南 yn_system_forecast 口径；山西专有维度见 subCapabilities。' },
       { path: '/sjfx/zrxgx2', statusByRegion: { shanxi: 'available', yunnan: 'available' }, note: '统调负荷关系图可走云南系统预测/实际长表口径。' },
       { path: '/sjfx/actualLoad', statusByRegion: { shanxi: 'available', yunnan: 'available' }, note: '逐日系统负荷已有云南真实支撑。' },

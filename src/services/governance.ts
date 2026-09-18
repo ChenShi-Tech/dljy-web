@@ -93,6 +93,11 @@ export type NavigationLike = {
   regionIds?: string[]
   children?: NavigationLike[]
   demo?: boolean
+  /**
+   * #2991：在这些地区只从菜单隐藏（filterNavigationForUser/matchesNavigationRegion 生效），
+   * 不影响路由可达与权限——深链仍可直接访问，由页面自身解释降级。语义见 data/navigation.ts。
+   */
+  hiddenInRegionIds?: string[]
   /** 立场亲和（#2193 · #2196）：缺省=共享；语义见 services/stance/stanceNavigation.ts。 */
   stanceAffinity?: SubjectType[]
 }
@@ -717,7 +722,10 @@ export function filterNavigationForUser(items: NavigationLike[], user: Pick<Gove
 
 function matchesNavigationRegion(item: NavigationLike, regionId?: string) {
   const matchesDeclaredRegion = !item.regionIds?.length || Boolean(regionId && item.regionIds.includes(regionId))
-  return matchesDeclaredRegion && isPathAvailableInRegion(item.path, regionId)
+  // #2991：hiddenInRegionIds 只摘菜单入口。isPathAvailableInRegion 的地区可用性判定保持不变，
+  // 保证「菜单隐藏但路由可达」——旧链接仍可直接访问，页面自身负责降级说明。
+  const hiddenInRegion = Boolean(regionId && item.hiddenInRegionIds?.includes(regionId))
+  return matchesDeclaredRegion && !hiddenInRegion && isPathAvailableInRegion(item.path, regionId)
 }
 
 export function getDecisionGateHint(path: string, user: Pick<GovernanceUser, 'roleCode'> | null | undefined) {

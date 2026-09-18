@@ -5,7 +5,7 @@
 //   说明:线上"买卖盘(买1-3量价/卖1-3量价)"走 /sdpt/fshq/dataDet(按点 id),本次仅采集了 /fshq/data,未含 dataDet;
 //   故底部改用已采集的逐点滚动值(extendMap 标注日/旬/月滚动 + opData/出清价),买卖盘待补抓(见 今日进度.md)。
 import { computed, onMounted, ref, nextTick, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { fetchCaptured } from '@/services/captured'
 import { currentRegion } from '@/services/region/regionContext'
 import { getRegionCapabilityForPath, type RegionCapabilityDataSupport } from '@/services/region/regionModules'
@@ -39,6 +39,7 @@ const loading = ref(true)
 const error = ref('')
 // 支持从 URL 带参跳转(AI 助手/外链):?date=YYYY-MM-DD & mode=rq|jy
 const route = useRoute()
+const router = useRouter()
 const qDate = typeof route.query.date === 'string' ? route.query.date : ''
 const qMode = route.query.mode === 'jy' ? 'jy' : 'rq'
 const mode = ref<'rq' | 'jy'>(qMode)
@@ -59,6 +60,12 @@ const routeSupports = computed<RegionCapabilityDataSupport[]>(() => {
     ?? []
 })
 const degradedSupports = computed(() => routeSupports.value.filter((item) => item.expectation !== 'real'))
+// #2991：云南降级说明要点——不是「被价格页替代」，而是云南根本没有撮合分时行情来源，
+// 节点价格（现货节点电价）与撮合行情是两种口径，不能互相顶替；价格分析页是当前可用的替代入口。
+const isYunnanDegraded = computed(() => isRouteDegraded.value && currentRegion.value.id === 'yunnan')
+function goPriceAnalysis() {
+  router.push('/sjfx/zrsjg')
+}
 
 function updateJyBoundsFromData(d: any) {
   if (mode.value !== 'jy') return
@@ -259,7 +266,13 @@ onRegionChange(load)
       :region-name="currentRegion.name"
       :note="routeNote"
       :supports="degradedSupports"
-    />
+    >
+      <!-- #2991：云南专属说明与替代入口——撮合行情无来源，节点价格不能代替撮合行情 -->
+      <template v-if="isYunnanDegraded" #extra>
+        <span>云南没有撮合分时行情来源，节点价格不能代替撮合行情；可先查看已接真实来源的价格分析。</span>
+        <el-button size="small" type="primary" @click="goPriceAnalysis">查看价格分析</el-button>
+      </template>
+    </CapabilityDegradedCard>
     <template v-else>
       <div class="toolbar">
         <el-radio-group v-model="mode" size="small">
