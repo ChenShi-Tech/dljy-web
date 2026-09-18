@@ -1,18 +1,26 @@
 <script setup lang="ts">
 // 云南结算价分析面板（xhjy/yunnan/settlement-price）：日前-实时-结算三价对比 + 峰谷价差水位。
-// 属父 Epic #376（现货接入），任务 #381。
+// 属父 Epic #376（现货接入），任务 #381；#2992 量费加权均价 + 默认日期改当天。
 //
-// 两路真实数据源（非 Mock）：
-//   ① 结算三价：loadSettlementPrices() ← fetchCaptured('yn_spot_settlement','yn_settlement_daily')
-//      yn-fact-pnl.mjs 已 filter result_type==='formal'（temp 不进 family），字段 daPrice/rtPrice/
-//      avgPrice(结算均价)/ltmPrice(中长期参照)。按日跨电厂等权均值，可再聚合周/月。
-//   ② 峰谷价差水位 + 最高/最低/均价/负价占比：fetchDailySummary()（spotClient /v1/spot/node-price/daily）
+// 三路真实数据源（非 Mock）：
+//   ① 综合结算均价（集团口径）：fetchWeightedSettlementAvg() ← POST /api/v1/review/analysis/settlement
+//      服务端「成对有效记录 Σ电费/Σ电量」量费加权（dljy#2998 契约）。前端不实现第二套加权公式，
+//      服务端失败显示中文原因、绝不回退等权（#2992 红线）。按日走 current.daily、周/月走 current.buckets。
+//   ② 样站等权三价：loadSettlementPrices() ← fetchCaptured('yn_spot_settlement','yn_settlement_daily')
+//      yn-fact-pnl.mjs 已 filter result_type==='formal'，字段 daPrice/rtPrice/
+//      sampleAvgPrice(样站等权平均电价)/ltmPrice(中长期参照)。按日跨电厂等权，可再聚合周/月（日均等权）。
+//      全部厂站时展示名带「样站等权」并注明「不是集团结算均价」；单厂保持原名（无跨厂平均）。
+//   ③ 峰谷价差水位 + 最高/最低/均价/负价占比：fetchDailySummary()（spotClient /v1/spot/node-price/daily）
 //      全节点日聚合（avg/max/min/neg_share_pct），单日水位 + 日期范围趋势；水位带=Top N 节点 min~max 范围。
 //
-// 呈现纪律（用户强制）：三价用出清实线（smooth:false·连续量直线），中长期价虚线（合约参照·非主序列）；
+// 默认日期纪律（#2992）：首次进入默认北京时间「当天」；所选范围无已入库资料时给
+// 「查看历史资料」入口（按 /api/real-coverage 实时覆盖区间）；用户主动选历史后顶部
+// 显示「历史资料：起 至 止」。不再写死 2026-05，不自动跳月。
+//
+// 呈现纪律（用户强制）：出清实线（smooth:false·连续量直线），中长期价虚线（合约参照·非主序列）；
 // 缺测用 null 不连线（connectNulls:false）。严格地区 yunnan「真实或空」：无数据走空态、不回退山西。
-import { computed, onMounted, ref } from 'vue'
-import { Coins, Activity, BarChart3, TableProperties, Waves } from 'lucide-vue-next'
+import { computed, onMounted, ref, watch } from 'vue'
+import { Coins, Activity, BarChart3, TableProperties, Waves, History } from 'lucide-vue-next'
 import ChartCard from '../../../components/common/ChartCard.vue'
 import DataQualityBadge from '../../../components/common/DataQualityBadge.vue'
 import DataState from '../../../components/common/DataState.vue'
@@ -26,6 +34,8 @@ import { chartChrome } from '../../../composables/useTheme'
 import { onSelectionChange, useSpotSelection } from '@/composables/useSpotSelection'
 import { ALL_PLANTS, ALL_UNITS, usePlantUnitFilter, type PlantUnitFilterRow } from '@/composables/usePlantUnitFilter'
 import { axisTooltip, chartToolbox, fmtNum, emptyOverlay, sliderZoom } from '@/services/chart/chartOptions'
+import { selectedCompanyId } from '@/services/company/companyContext'
+import { fetchSettlementCoverage } from '@/services/market/captureCoverage'
 import {
   fetchDailySummary,
   type SpotMarket,
@@ -38,9 +48,22 @@ import {
   type SettlementPricePoint,
   type Aggregation
 } from '@/services/market/settlementClient'
+import {
+  fetchWeightedSettlementAvg,
+  weightedAvgSeries,
+  describeWeightedFailure,
+  isHistoryRange,
+  resolveInitialNodeDate,
+  resolveInitialSettleRange,
+  settleToday,
+  historyJumpRange,
+  type SettlementAnalysis,
+  type WeightedAvgPoint
+} from '@/services/market/yunnanSettlementAnalysis'
+import { DEFAULT_SPOT_SELECTION_DATE, DEFAULT_SPOT_SELECTION_DATE_RANGE } from '@/stores/spotSelection'
 
 type DateRange = [string, string]
-type PriceField = 'daPrice' | 'rtPrice' | 'avgPrice' | 'ltmPrice'
+type PriceField = 'daPrice' | 'rtPrice' | 'ltmPrice'
 type PriceBandRange = { start: number; end: number }
 type PeakValleyTrendPoint = {
   date: string
@@ -52,29 +75,28 @@ type PeakValleyTrendPoint = {
   nodeCount: number
 }
 
-// 控件状态
-// 三价序列默认演示月 2026-05（与现有云南 panel 一致；yn_spot_settlement 当前覆盖该月）。
-const DEFAULT_SETTLE_RANGE: DateRange = ['2026-05-01', '2026-05-31']
-const DEFAULT_NODE_DATE = '2026-05-31'
+// 控件状态（#2992）：默认北京时间「当天」；store 出厂默认（写死 2026-05-01，非用户选择）不采用；
+// 用户/其它面板主动选过的范围（含单日）一律尊重，不再强制拉回五月。
 const spotSelection = useSpotSelection()
 const initialSelection = spotSelection.snapshot()
 
 function normalizeRange(value: readonly [string, string] | DateRange | undefined): DateRange {
-  if (!value?.[0] || !value?.[1]) return [...DEFAULT_SETTLE_RANGE]
+  if (!value?.[0] || !value?.[1]) return [...dateRange.value]
   return [value[0], value[1]]
 }
 
-function initialRange(value: readonly [string, string] | DateRange | undefined): DateRange {
-  const range = normalizeRange(value)
-  return range[0] === range[1] ? [...DEFAULT_SETTLE_RANGE] : range
-}
-
-const dateRange = ref<DateRange>(initialRange(initialSelection.dateRange))
-// 节点电价快照日（峰谷水位/KPI 用）：默认范围末尾，单独可改。
+const initialRangeValue = resolveInitialSettleRange(
+  initialSelection.dateRange,
+  DEFAULT_SPOT_SELECTION_DATE_RANGE,
+  settleToday()
+)
+const dateRange = ref<DateRange>(initialRangeValue)
+// 节点电价快照日（峰谷水位/KPI 用）：默认范围末日（#2992 起不再写死五月），store 里
+// 用户主动选过的日优先。
 const nodeDate = ref(
-  initialSelection.dateRange[0] === initialSelection.dateRange[1]
-    ? dateRange.value[1]
-    : initialSelection.date || dateRange.value[1] || DEFAULT_NODE_DATE
+  initialSelection.date && initialSelection.date !== DEFAULT_SPOT_SELECTION_DATE
+    ? initialSelection.date
+    : resolveInitialNodeDate(initialRangeValue)
 )
 const selectedPlant = ref<string>(initialSelection.plant || ALL_PLANTS)
 const selectedUnit = ref<string>(ALL_UNITS)
@@ -97,15 +119,23 @@ const settlePoints = ref<SettlementPricePoint[]>([])
 const settlePlantOptions = ref<string[]>([])
 const dailyItems = ref<DailySummaryItem[]>([])
 const peakValleyTrend = ref<PeakValleyTrendPoint[]>([])
+// 综合结算均价（服务端量费加权）：analysis 原样持有，序列按聚合粒度派生。
+const weightedAnalysis = ref<SettlementAnalysis | null>(null)
+// 已入库结算覆盖区间（查看历史资料入口用）；取不到为 null → 只说暂无资料。
+const settlementCoverage = ref<{ start: string; end: string } | null>(null)
 
 // 加载/错误态
 const settleLoading = ref(false)
 const dailyLoading = ref(false)
-// 版本守卫：loadSettle/loadDaily 各自维护 seq，切日期/厂站/节点/market 旧响应丢弃（#405 同族，#545）
+const weightedLoading = ref(false)
+// 版本守卫：loadSettle/loadDaily/loadWeightedAvg 各自维护 seq，切日期/厂站/聚合旧响应丢弃（#405 同族，#545）
 const settleSeq = ref(0)
 const dailySeq = ref(0)
+const weightedSeq = ref(0)
+let weightedController: AbortController | null = null
 const settleErrorMsg = ref('')
 const dailyErrorMsg = ref('')
+const weightedErrorMsg = ref('')
 // 两族独立空态提示：结算族未摄取 / 节点电价族未摄取 Parquet。
 const settleIngestHint = ref(false)
 const nodeIngestHint = ref(false)
@@ -123,13 +153,58 @@ const plantFilter = usePlantUnitFilter({
 const plantOptions = plantFilter.plantOptions
 const plantLabel = plantFilter.plantLabel
 
-// 当前筛选+聚合后的三价序列。
+// 当前筛选+聚合后的样站等权三价序列。
 const aggregatedPoints = computed(() => aggregatePoints(settlePoints.value, aggregation.value))
 const rangeDates = computed(() => daysBetween(dateRange.value))
 const hasSettleData = computed(() => aggregatedPoints.value.length > 0)
 const hasDailySnapshot = computed(() => peakValleyRows.value.length > 0)
 const hasPeakValleyTrend = computed(() => peakValleyTrend.value.some((p) => p.spread !== null))
 const errorMsg = computed(() => settleErrorMsg.value || dailyErrorMsg.value)
+
+// ---- 综合结算均价（服务端量费加权，#2992）----
+// 图 x 轴标签由 aggregatePoints 的 labelOf 生成（周=`YYYY-MM-DD 周`、月=`YYYY-MM 月`）；
+// 服务端 bucket.key 是 ISO 周一日期 / YYYY-MM，与 weekKey/monthKey 分组键一致，直接映射。
+function weightedLabel(key: string, agg: Aggregation): string {
+  if (agg === 'week') return `${key} 周`
+  if (agg === 'month') return `${key} 月`
+  return key
+}
+
+const weightedPoints = computed<WeightedAvgPoint[]>(() =>
+  weightedAvgSeries(weightedAnalysis.value, aggregation.value)
+)
+const weightedByLabel = computed(() => {
+  const m = new Map<string, number | null>()
+  for (const p of weightedPoints.value) m.set(weightedLabel(p.key, aggregation.value), p.price)
+  return m
+})
+// 「查看历史资料（起—止）」入口：仅当拿到真实覆盖区间才出现（取不到只说暂无资料，不编造覆盖）。
+const coverageJump = computed(() => historyJumpRange(settlementCoverage.value))
+// 空态：x 轴无样站点且加载/错误都不在场 → 诚实空态 + 覆盖入口。
+const showSettleEmpty = computed(
+  () => !settleLoading.value && !weightedLoading.value && !settleErrorMsg.value && !hasSettleData.value
+)
+// 历史资料提示：所选范围整体早于今天（完整日期）。
+const historyNotice = computed(() =>
+  isHistoryRange(dateRange.value, settleToday())
+    ? `历史资料：${dateRange.value[0]} 至 ${dateRange.value[1]}`
+    : ''
+)
+
+// 展示名（#2992）：综合结算均价只认服务端量费加权口径；样站三条线在「全部厂站」时
+// 明示等权口径，单厂时保持原名（无跨厂平均）。
+const seriesNames = computed(() => ({
+  da: isAllPlants.value ? '样站等权日前价' : '日前结算价',
+  rt: isAllPlants.value ? '样站等权实时价' : '实时结算价',
+  avg: '综合结算均价（量费加权）',
+  ltm: isAllPlants.value ? '样站等权中长期价(参照)' : '中长期电价(参照)'
+}))
+// 图例旁的口径说明：全部厂站明示「按厂站等权，不是集团结算均价」；周/月再说明「日均等权」。
+const equalWeightNote = computed(() => {
+  const weekly = aggregation.value !== 'day' ? '（日均等权）' : ''
+  if (!isAllPlants.value) return aggregation.value === 'day' ? '' : `样站按日均等权${weekly}`
+  return `日前/实时/中长期按厂站等权${weekly}，不是集团结算均价`
+})
 
 // KPI（当日跨节点聚合，单日快照）
 const kpi = computed(() => {
@@ -176,7 +251,7 @@ function daysBetween(range: DateRange): string[] {
   }
   const start = parse(range[0])
   const end = parse(range[1])
-  if (!Number.isFinite(start) || !Number.isFinite(end)) return [...DEFAULT_SETTLE_RANGE]
+  if (!Number.isFinite(start) || !Number.isFinite(end)) return [] // 非法日期不猜默认范围（#2992）
   const from = Math.min(start, end)
   const to = Math.max(start, end)
   const out: string[] = []
@@ -195,7 +270,8 @@ function quantile(values: number[], q: number): number | null {
 }
 
 const priceThresholds = computed(() => {
-  const values = aggregatedPoints.value.flatMap((p) => [p.daPrice, p.rtPrice, p.avgPrice])
+  // Q25/Q75 水位带只描述样站等权三条线的分布（综合结算均价是服务端口径，不参与）。
+  const values = aggregatedPoints.value.flatMap((p) => [p.daPrice, p.rtPrice, p.sampleAvgPrice])
     .filter((v): v is number => v !== null && Number.isFinite(v))
   const q25 = quantile(values, 0.25)
   const q75 = quantile(values, 0.75)
@@ -212,7 +288,7 @@ const negativePriceRanges = computed<PriceBandRange[]>(() => {
   let start = -1
   for (let index = 0; index < pts.length; index += 1) {
     const p = pts[index]
-    const negative = [p.daPrice, p.rtPrice, p.avgPrice].some((v) => v !== null && v < 0)
+    const negative = [p.daPrice, p.rtPrice, p.sampleAvgPrice].some((v) => v !== null && v < 0)
     if (negative && start < 0) start = index
     if ((!negative || index === pts.length - 1) && start >= 0) {
       ranges.push({ start, end: negative && index === pts.length - 1 ? index : index - 1 })
@@ -313,7 +389,41 @@ function priceExtremaMarkPoint(field: Exclude<PriceField, 'ltmPrice'>, color: st
   }
 }
 
-// 三价对比曲线（出清实线 + 中长期虚线）
+// 综合结算均价（服务端量费加权）的极值标注：值序列按 x 轴标签从 weightedByLabel 对齐。
+function weightedExtremaMarkPoint(color: string) {
+  const values = aggregatedPoints.value
+    .map((p) => ({ date: p.date, value: weightedByLabel.value.get(p.date) ?? null }))
+    .filter((p): p is { date: string; value: number } => p.value !== null && Number.isFinite(p.value))
+  if (!values.length) return undefined
+  const max = values.reduce((best, item) => (item.value > best.value ? item : best), values[0])
+  const min = values.reduce((best, item) => (item.value < best.value ? item : best), values[0])
+  const data = [
+    {
+      name: '异常高',
+      coord: [max.date, max.value],
+      value: +max.value.toFixed(2),
+      itemStyle: { color },
+      label: { formatter: '高' }
+    }
+  ]
+  if (min.date !== max.date || min.value !== max.value) {
+    data.push({
+      name: '异常低',
+      coord: [min.date, min.value],
+      value: +min.value.toFixed(2),
+      itemStyle: { color: '#2563eb' },
+      label: { formatter: '低' }
+    })
+  }
+  return {
+    symbol: 'pin',
+    symbolSize: 42,
+    label: { color: '#fff', fontSize: 10, fontWeight: 700 },
+    data
+  }
+}
+
+// 三价对比曲线（样站等权三价 + 服务端量费加权综合均价 + 中长期虚线）
 function buildPriceOption() {
   const cc = chartChrome()
   const pts = aggregatedPoints.value
@@ -321,6 +431,7 @@ function buildPriceOption() {
   const empty = !pts.length
   const markArea = priceMarkArea()
   const markLine = priceThresholdMarkLine()
+  const names = seriesNames.value
   // 出清实线（连续量直线）：smooth:false、不连线缺测（null）。
   const line = (field: PriceField, color: string) => ({
     type: 'line',
@@ -332,6 +443,18 @@ function buildPriceOption() {
     itemStyle: { color },
     data: pts.map((p) => (p[field] as number | null) ?? null)
   })
+  // 综合结算均价：数据只来自服务端结算统计（weightedByLabel），无等权回退；
+  // x 轴上没有对应桶/日的位置即缺测 → null 断开。
+  const weightedLine = {
+    type: 'line',
+    smooth: false,
+    showSymbol: pts.length <= 1,
+    sampling: 'lttb',
+    connectNulls: false,
+    lineStyle: { width: 2, color: '#2563eb' },
+    itemStyle: { color: '#2563eb' },
+    data: pts.map((p) => weightedByLabel.value.get(p.date) ?? null)
+  }
   return {
     tooltip: { ...axisTooltip({ unit: '元/MWh', digits: 2 }), confine: true },
     toolbox: chartToolbox('结算三价对比'),
@@ -356,25 +479,25 @@ function buildPriceOption() {
     series: [
       {
         ...line('daPrice', '#0f766e'),
-        name: '日前结算价',
+        name: names.da,
         markArea,
         markLine,
         markPoint: priceExtremaMarkPoint('daPrice', '#0f766e')
       },
       {
         ...line('rtPrice', '#ED7D31'),
-        name: '实时结算价',
+        name: names.rt,
         markPoint: priceExtremaMarkPoint('rtPrice', '#ED7D31')
       },
       {
-        ...line('avgPrice', '#2563eb'),
-        name: '综合结算价',
-        markPoint: priceExtremaMarkPoint('avgPrice', '#2563eb')
+        ...weightedLine,
+        name: names.avg,
+        markPoint: weightedExtremaMarkPoint('#2563eb')
       },
       // 中长期电价为合约参照（非出清主序列）→ 虚线。
       {
         ...line('ltmPrice', '#9333ea'),
-        name: '中长期电价(参照)',
+        name: names.ltm,
         lineStyle: { width: 1.4, color: '#9333ea', type: 'dashed' }
       }
     ],
@@ -601,24 +724,28 @@ function buildPeakValleyTrendOption() {
   }
 }
 
-// 明细表（按聚合粒度的三价 + 电厂数）
-const settleLabels: Record<string, string> = {
+// 明细表（按聚合粒度的样站等权三价 + 服务端量费加权综合均价 + 电厂数）
+const settleLabels = computed<Record<string, string>>(() => ({
   date: '日期',
-  daPrice: '日前结算价(元/MWh)',
-  rtPrice: '实时结算价(元/MWh)',
-  avgPrice: '综合结算价(元/MWh)',
-  ltmPrice: '中长期电价(元/MWh)',
+  daPrice: `${seriesNames.value.da}(元/MWh)`,
+  rtPrice: `${seriesNames.value.rt}(元/MWh)`,
+  avgPrice: '综合结算均价(元/MWh·量费加权)',
+  ltmPrice: `${seriesNames.value.ltm}(元/MWh)`,
   plantCount: '厂站数'
-}
+}))
 const settleRows = computed(() =>
-  aggregatedPoints.value.map((p) => ({
-    date: p.date,
-    daPrice: p.daPrice === null ? '—' : fmtNum(p.daPrice, 2),
-    rtPrice: p.rtPrice === null ? '—' : fmtNum(p.rtPrice, 2),
-    avgPrice: p.avgPrice === null ? '—' : fmtNum(p.avgPrice, 2),
-    ltmPrice: p.ltmPrice === null ? '—' : fmtNum(p.ltmPrice, 2),
-    plantCount: p.plantCount
-  }))
+  aggregatedPoints.value.map((p) => {
+    const weighted = weightedByLabel.value.get(p.date)
+    return {
+      date: p.date,
+      daPrice: p.daPrice === null ? '—' : fmtNum(p.daPrice, 2),
+      rtPrice: p.rtPrice === null ? '—' : fmtNum(p.rtPrice, 2),
+      // 只认服务端量费加权值：无对应桶/日（undefined）或无成对记录（null）都如实「—」。
+      avgPrice: weighted === null || weighted === undefined ? '—' : fmtNum(weighted, 2),
+      ltmPrice: p.ltmPrice === null ? '—' : fmtNum(p.ltmPrice, 2),
+      plantCount: p.plantCount
+    }
+  })
 )
 
 // 加载
@@ -670,6 +797,8 @@ async function loadSettle() {
     const ensured = plantFilter.ensureSelections()
     if (ensured.plantChanged) {
       spotSelection.setPlant(selectedPlant.value)
+      // 厂站被自动纠正（所选厂不在 capture 族中）→ 综合结算均价随新厂名重取（#2992）。
+      void loadWeightedAvg()
       return await loadSettle()
     }
     settleIngestHint.value = !r.hasData
@@ -685,6 +814,51 @@ async function loadSettle() {
   } finally {
     if (seq === settleSeq.value) settleLoading.value = false // 只有最新轮才关 loading（#405）
   }
+}
+
+// 综合结算均价（服务端量费加权，#2992）：AbortController 取消上一次 + 代次守卫，
+// 切日期/厂站/聚合/公司时旧响应丢弃。失败显示中文原因（describeWeightedFailure），
+// 绝不回退到前端等权平均。
+async function loadWeightedAvg() {
+  const seq = ++weightedSeq.value
+  weightedController?.abort()
+  weightedController = new AbortController()
+  weightedLoading.value = true
+  weightedErrorMsg.value = ''
+  try {
+    const analysis = await fetchWeightedSettlementAvg({
+      company: selectedCompanyId.value,
+      plants: isAllPlants.value ? [] : [selectedPlant.value],
+      dateRange: dateRange.value,
+      aggregation: aggregation.value,
+      signal: weightedController.signal
+    })
+    if (seq !== weightedSeq.value) return // 新轮已发起，丢弃旧响应
+    weightedAnalysis.value = analysis
+  } catch (e) {
+    if (seq !== weightedSeq.value) return // 旧轮的错误不覆盖新轮
+    if (e instanceof DOMException && e.name === 'AbortError') return // 主动取消不算失败
+    weightedAnalysis.value = null
+    weightedErrorMsg.value = describeWeightedFailure(e)
+  } finally {
+    if (seq === weightedSeq.value) weightedLoading.value = false
+  }
+}
+
+// 已入库结算覆盖区间（/api/real-coverage，yn_spot_settlement/yn_settlement_daily）：
+// 供「查看历史资料」入口；取不到（无权/未登记/接口失败）保持 null，只说暂无资料。
+async function loadCoverage() {
+  settlementCoverage.value = await fetchSettlementCoverage('yunnan')
+}
+
+/** 「查看历史资料」点击：把范围设为覆盖区间并重拉（用户主动选择历史后才显示历史提示之外的数据）。 */
+function applyCoverageRange() {
+  const next = coverageJump.value
+  if (!next) return
+  dateRange.value = [...next]
+  nodeDate.value = next[1]
+  setSharedSelection({ dateRange: [...next], date: next[1] })
+  void reloadAll()
 }
 
 const DAILY_REQUEST_CONCURRENCY = 4
@@ -721,9 +895,10 @@ async function loadDaily() {
 async function reloadAll() {
   settleErrorMsg.value = ''
   dailyErrorMsg.value = ''
+  weightedErrorMsg.value = ''
   settleIngestHint.value = false
   nodeIngestHint.value = false
-  await Promise.all([loadSettle(), loadDaily()])
+  await Promise.all([loadSettle(), loadDaily(), loadWeightedAvg()])
 }
 
 function setSharedSelection(patch: Parameters<typeof spotSelection.setSelection>[0]) {
@@ -734,15 +909,16 @@ function onDateRangeChange(next?: DateRange) {
   if (next) dateRange.value = next
   nodeDate.value = dateRange.value[1] || dateRange.value[0] || nodeDate.value
   setSharedSelection({ dateRange: dateRange.value, date: nodeDate.value })
-  void Promise.all([loadSettle(), loadDaily()])
+  void Promise.all([loadSettle(), loadDaily(), loadWeightedAvg()])
 }
 function onPlantChange(next?: string) {
   if (next) selectedPlant.value = next
   setSharedSelection({ plant: selectedPlant.value })
-  void loadSettle()
+  void Promise.all([loadSettle(), loadWeightedAvg()])
 }
 function onAggregationChange() {
-  // 仅前端重聚合，无需重拉。
+  // 样站等权三条线仅前端重聚合；综合结算均价的粒度由服务端 buckets 决定 → 重拉。
+  void loadWeightedAvg()
 }
 function onNodeDateChange(next?: string) {
   if (next) nodeDate.value = next
@@ -769,13 +945,22 @@ onSelectionChange(
     selectedNode.value = selection.node
     nodeDate.value = selection.date || nodeDate.value
     market.value = selection.market
-    if (settleChanged) void loadSettle()
+    if (settleChanged) {
+      void loadSettle()
+      void loadWeightedAvg()
+    }
     if (settleChanged || dailyChanged) void loadDaily()
   },
   { fields: ['date', 'dateRange', 'plant', 'node', 'market'] }
 )
 
+// 公司上下文变化（管理员/集团切公司）→ 综合结算均价随公司重取（结算统计按公司授权）。
+watch(selectedCompanyId, () => {
+  void loadWeightedAvg()
+})
+
 onMounted(async () => {
+  void loadCoverage()
   await reloadAll()
 })
 
@@ -792,9 +977,9 @@ onRegionChange(() => {
     <section class="sp-hero">
       <div class="sp-kicker"><Coins :size="16" /><span>云南 · 现货结算价分析</span></div>
       <p>
-        日前-实时-结算三价对比 + 中长期电价参照（左路，yn_spot_settlement 真实结算，result_type=formal 权威行）；
-        节点电价峰谷价差水位与最高/最低/均价/负价占比（右路，现货权威后端 /v1/spot/node-price/daily）。
-        严格地区 yunnan「真实或空」，无数据走空态、不回退山西。
+        综合结算均价由服务端结算统计按「成对有效记录 Σ电费/Σ电量」量费加权给出（集团口径，前端不做二次计算）；
+        日前/实时/中长期为样站等权参照线，中长期为合约虚线；节点电价峰谷价差水位来自现货权威后端
+        /v1/spot/node-price/daily。严格地区 yunnan「真实或空」，无数据走空态、不回退山西。
       </p>
     </section>
 
@@ -850,8 +1035,27 @@ onRegionChange(() => {
     </SpotFilterBar>
 
     <el-alert v-if="errorMsg" type="error" :closable="false" :title="errorMsg" class="sp-alert" show-icon />
+    <!-- #2992：服务端结算统计失败/无权时明示原因，不回退等权 -->
     <el-alert
-      v-else-if="settleIngestHint"
+      v-if="weightedErrorMsg && !errorMsg"
+      type="warning"
+      :closable="false"
+      class="sp-alert"
+      show-icon
+      :title="weightedErrorMsg"
+      description="综合结算均价只认服务端结算统计（量费加权），失败时不提供替代算法。可稍后重试或联系管理员确认公司/地区权限。"
+    />
+    <!-- #2992：用户主动选择历史范围后，明示这是历史资料（完整日期） -->
+    <el-alert
+      v-if="historyNotice && !errorMsg"
+      type="info"
+      :closable="false"
+      class="sp-alert"
+      show-icon
+      :title="historyNotice"
+    />
+    <el-alert
+      v-else-if="!errorMsg && !weightedErrorMsg && settleIngestHint"
       type="warning"
       :closable="false"
       class="sp-alert"
@@ -902,14 +1106,30 @@ onRegionChange(() => {
       <DataState
         :loading="settleLoading"
         :error="settleErrorMsg"
-        :empty="!hasSettleData"
-        empty-text="该筛选条件下暂无 formal 结算数据"
       >
         <template #skeleton>
           <SpotSkeleton variant="chart" :height="340" />
         </template>
+        <!-- #2992：诚实空态 + 「查看历史资料」入口（仅当拿到真实覆盖区间才出现） -->
+        <div v-if="showSettleEmpty" class="sp-settle-empty">
+          <p>所选日期（{{ dateRange[0] }} 至 {{ dateRange[1] }}）暂无已入库结算资料。</p>
+          <p v-if="coverageJump" class="sp-settle-empty-cov">
+            已入库结算资料覆盖：{{ settlementCoverage?.start }} 至 {{ settlementCoverage?.end }}
+          </p>
+          <el-button
+            v-if="coverageJump"
+            type="primary"
+            plain
+            size="small"
+            @click="applyCoverageRange"
+          >
+            <History :size="14" style="margin-right: 4px" />
+            查看历史资料（{{ coverageJump[0] }}—{{ coverageJump[1] }}）
+          </el-button>
+        </div>
         <ChartCard
-          title="结算三价对比曲线（日前 / 实时 / 综合 / 中长期参照）"
+          v-else
+          title="结算三价对比（样站等权日前/实时/中长期 + 综合结算均价）"
           :height="340"
           :build-option="buildPriceOption"
           fullscreen
@@ -919,6 +1139,7 @@ onRegionChange(() => {
           <template #actions>
             <span class="sp-chart-sub">
               {{ plantLabel }} · {{ aggregation === 'day' ? '按日' : aggregation === 'week' ? '按周' : '按月' }}
+              <template v-if="equalWeightNote"> · {{ equalWeightNote }}</template>
             </span>
           </template>
         </ChartCard>
@@ -973,9 +1194,9 @@ onRegionChange(() => {
 
     <section class="sp-table-card">
       <div class="sp-table-head">
-        <h3><TableProperties :size="16" /> 结算三价明细（按聚合粒度）</h3>
+        <h3><TableProperties :size="16" /> 结算价明细（按聚合粒度）</h3>
         <span class="sp-table-sub">
-          {{ plantLabel }} · {{ dateRange[0] }} ~ {{ dateRange[1] }} · 共 {{ settleRows.length }} 行
+          {{ plantLabel }} · {{ dateRange[0] }} ~ {{ dateRange[1] }} · 共 {{ settleRows.length }} 行<template v-if="equalWeightNote"> · {{ equalWeightNote }}</template>
         </span>
       </div>
       <DataState
@@ -1094,6 +1315,29 @@ onRegionChange(() => {
   display: grid;
   grid-template-columns: 1fr;
   gap: 14px;
+}
+
+/* #2992：所选范围无已入库结算资料的诚实空态 + 查看历史资料入口 */
+.sp-settle-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 40px 16px;
+  border: 1px dashed #dfe7eb;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.sp-settle-empty p {
+  margin: 0;
+  color: #687987;
+  font-size: var(--font-md);
+}
+
+.sp-settle-empty-cov {
+  color: #909399;
+  font-size: var(--font-sm);
 }
 
 .sp-chart-sub {

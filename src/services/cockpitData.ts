@@ -92,7 +92,9 @@ export interface CockpitOptions {
 // 模块结果类型
 export interface CockpitKpis {
   marketAvg: number | null
-  settlementAvgPrice: number | null // 综合结算均价（元/MWh，settlementClient 当前日）
+  // #2992：样站等权结算均价（元/MWh，settlementClient 当前日，跨厂等权口径）。
+  // 不是集团量费加权综合结算均价——后者只由服务端结算统计提供，驾驶舱 KPI 已改名标明。
+  settlementAvgPrice: number | null
   settlementDaPrice: number | null // 日前结算电价（元/MWh）
   settlementRtPrice: number | null // 实时结算电价（元/MWh）
   peakValleySpread: number | null
@@ -780,7 +782,7 @@ export async function loadCockpit(opts: CockpitOptions): Promise<CockpitData> {
 
   const kpis: CockpitKpis = {
     marketAvg: avgOfAvg,
-    settlementAvgPrice: settlementPoint?.avgPrice ?? null,
+    settlementAvgPrice: settlementPoint?.sampleAvgPrice ?? null,
     settlementDaPrice: settlementPoint?.daPrice ?? null,
     settlementRtPrice: settlementPoint?.rtPrice ?? null,
     peakValleySpread: peakValley,

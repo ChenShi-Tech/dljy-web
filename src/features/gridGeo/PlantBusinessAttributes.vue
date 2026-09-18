@@ -300,7 +300,8 @@ onBeforeUnmount(() => { loadRequestId += 1 })
         <div v-if="settlementState === 'ready' && settlementPoint" class="settlement-body">
           <span><small>日前结算</small><strong>{{ number(settlementPoint.daPrice) }}</strong></span>
           <span><small>实时结算</small><strong>{{ number(settlementPoint.rtPrice) }}</strong></span>
-          <span><small>综合结算</small><strong>{{ number(settlementPoint.avgPrice) }}</strong></span>
+          <!-- #2992：单厂单日的该厂平均电价（非跨厂等权，也不是集团量费加权口径） -->
+          <span><small>综合结算</small><strong>{{ number(settlementPoint.sampleAvgPrice) }}</strong></span>
           <span><small>中长期参照</small><strong>{{ number(settlementPoint.ltmPrice) }}</strong></span>
         </div>
         <div v-else-if="settlementState === 'loading'" class="domain-empty">正在读取正式结算回放…</div>
