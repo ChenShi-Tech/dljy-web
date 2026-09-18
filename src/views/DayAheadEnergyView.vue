@@ -8,6 +8,7 @@ import { computed, onMounted, ref, nextTick } from 'vue'
 import { useRoute } from 'vue-router'
 import { currentRegion } from '@/services/region/regionContext'
 import { fetchSpotDayAheadEnergyContract, SPOT_DAY_AHEAD_ENERGY_FAMILY } from '@/services/data/contracts'
+import type { DayAheadEnergyRow } from '@/services/data/contracts'
 import { onRegionChange } from '../composables/useRegionReload'
 import RegionDataBanner from '@/components/region/RegionDataBanner.vue'
 import CapabilitySupportBadge from '../components/CapabilitySupportBadge.vue'
@@ -21,11 +22,13 @@ import { useCapturedCapability } from '@/composables/useCapturedCapability'
 
 const loading = ref(true)
 const error = ref('')
-const rows = ref<any[]>([])
+// 表格行 = 契约归一行 + 本页序号（导出/勾选沿用）
+type EnergyListRow = DayAheadEnergyRow & { _idx: number }
+const rows = ref<EnergyListRow[]>([])
 const route = useRoute()
 const urlRange: [string, string] | null = (typeof route.query.from === 'string' && typeof route.query.to === 'string') ? [route.query.from as string, route.query.to as string] : (typeof route.query.date === 'string' ? [route.query.date, route.query.date] : null)
 const range = ref<[string, string] | null>(urlRange)
-const selected = ref<any[]>([])
+const selected = ref<EnergyListRow[]>([])
 const chartRef = ref<HTMLDivElement | null>(null)
 const tableRef = ref()
 const energyChart = useEChart(chartRef, { render })
@@ -55,8 +58,9 @@ async function load() {
     const contract = await fetchSpotDayAheadEnergyContract({ region: currentRegion.value.id })
     if (generation !== loadGeneration) return
     rows.value = contract.blocks.day_ahead_energy.rows
-      .sort((a: any, b: any) => (a.date < b.date ? 1 : -1))
-      .map((r: any, i: number) => ({ ...r, _idx: i + 1 }))
+      .slice()
+      .sort((a, b) => (a.date < b.date ? 1 : -1))
+      .map((r, i) => ({ ...r, _idx: i + 1 }))
     await nextTick()
     if (generation !== loadGeneration) return
     render()
@@ -73,7 +77,7 @@ async function load() {
   }
 }
 function reset() { range.value = null; tableRef.value?.clearSelection() }
-function onSel(rs: any[]) { selected.value = rs; render() }
+function onSel(rs: EnergyListRow[]) { selected.value = rs; render() }
 
 function clearViewState() {
   rows.value = []
@@ -90,7 +94,7 @@ function exportTable() {
   exportCsv(
     `日前电量预估_${tag}`,
     ['序号', '售电公司', '日期', '类型', '合计', ...POINTS_96],
-    filtered.value.map((r: any) => [r._idx, r.sdgs, r.date, '预估电量', r.total, ...PTS_96.map((p) => r[p] ?? '')])
+    filtered.value.map((r) => [r._idx, r.sdgs, r.date, '预估电量', r.total, ...PTS_96.map((p) => r[p] ?? '')])
   )
 }
 

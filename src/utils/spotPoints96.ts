@@ -8,5 +8,5 @@ export function pointLabel(i: number): string {
 
 export const POINTS_96: string[] = Array.from({ length: 96 }, (_, i) => pointLabel(i))
 
-/** 96 个电量/价格字段名 p1…p96（与 POINTS_96 同序，配合表格列/取数下标）。 */
-export const PTS_96: string[] = Array.from({ length: 96 }, (_, i) => `p${i + 1}`)
+/** 96 个电量/价格字段名 p1…p96（与 POINTS_96 同序，配合表格列/取数下标）。键类型收窄为点位键，可直接索引 SpotDayAheadRow。 */
+export const PTS_96 = Array.from({ length: 96 }, (_, i): `p${number}` => `p${i + 1}`)
