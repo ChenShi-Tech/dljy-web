@@ -103,6 +103,9 @@ export const navigation: NavItem[] = [
       { path: '/xhjy/approvals', title: '申报审批队列', icon: FileText },
       { path: '/xhjy/review', title: '复盘中心', icon: ChartSpline },
       { path: '/xhjy/risk-center', title: '风控阈值面板', icon: Gauge },
+      { path: '/zcqjy/exposure', title: '中长期与现货套保', icon: Gauge },
+      // 中长期与现货的衔接页（dljy#2988）：把中长期合同电量按形状分解后与预计出力比对，算逐时敞口与套保率，
+      // 并读现货结算口径。产出是现货价格风险指标，故归现货组；路由路径 /zcqjy/exposure 不变，深链不断。
       // 云南交易工作台侧栏入口已移除（其功能并入首位「现货交易驾驶舱」/dashboard）。
       // yunnanTradingNavigation 现为 null，此 spread 展开为空数组；保留注入点以便回滚恢复独立入口。
       ...(yunnanTradingNavigation ? [yunnanTradingNavigation] : [])
@@ -123,10 +126,10 @@ export const navigation: NavItem[] = [
       // 云南中长期售电 P3（dljy#2973）：售电目标与方案、交易公告日历与提交登记已交付；与敞口/交易月历分开，不引入现货或预测口径。
       { path: '/zcqjy/plans', title: '售电计划', icon: ListChecks },
       { path: '/zcqjy/execution', title: '交易执行', icon: Compass },
-      { path: '/zcqjy/zccljk', title: '中长期持仓监控', icon: Gauge },
-      { path: '/zcqjy/exposure', title: '中长期敞口看板', icon: Gauge },
+      // 以下三项是山西采集族的旧页面，与云南中长期售电底账不同源，菜单名标注地区避免与新页面混淆（dljy#2988）。
+      { path: '/zcqjy/zccljk', title: '持仓量监控（山西采集）', icon: Gauge },
       { path: '/zcqjy/zfsdjy', title: '中长期分时段交易', icon: ChartSpline },
-      { path: '/zcqjy/zjyap', title: '交易月历', icon: CalendarRange },
+      { path: '/zcqjy/zjyap', title: '交易月历（山西·国网）', icon: CalendarRange },
       { path: '/sjxh/zjzzt', title: '省间中长期电量计划', icon: Network }
     ]
   },

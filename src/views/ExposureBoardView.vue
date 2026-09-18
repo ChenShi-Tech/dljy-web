@@ -1,5 +1,6 @@
 <script setup lang="ts">
-// 中长期敞口看板（/zcqjy/exposure）：合同分解 vs 预计出力 → 逐时敞口与套保率。
+// 中长期与现货套保（/zcqjy/exposure，原「中长期敞口看板」）：合同分解 vs 预计出力 → 逐时敞口与套保率。
+// 归现货交易菜单组（dljy#2988）：产出是现货价格风险指标；合同小时形状目前为模式推演，非 P2 实测分时。
 // 数据走 /api/agent/quant/exposure 直调端点（与智能体共用同一套确定性引擎）。
 import { computed, nextTick, onMounted, ref, type Ref } from 'vue'
 import { Calculator, Gauge, TrendingDown, TrendingUp } from 'lucide-vue-next'
@@ -74,7 +75,7 @@ async function loadSettle() {
 // 快捷问题在点击时刻插入当前月份/合同总量/分解模式；首条标记为本页解读，悬浮球点击即发送它。
 // 原侧栏不传解读角色（走通用助手），这里沿用通用对话角色。
 defineAiPage({
-  label: '中长期敞口看板',
+  label: '中长期与现货套保',
   promptKey: PAGE_PROMPT_KEYS.workbench,
   presets: [
     {

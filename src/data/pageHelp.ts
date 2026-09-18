@@ -106,12 +106,12 @@ export const pageHelpRegistry: Record<string, PageHelpEntry> = {
 
   // 中长期交易
   ExposureBoard: {
-    title: '中长期敞口看板',
-    body: '合同分解 vs 预计出力的逐时敞口看板：4 KPI（套保率/净卖出敞口/净买入敞口/日均合同电量）+ 主图（合同分解 vs 预计出力双线 + gap 柱正负着色）+ 日×小时敞口热力图 + 智能体解读。支持三种分解模式（峰谷结构/均匀/光伏镜像）与两种对比口径。数据来自 /agent-api/agent/quant/exposure 确定性引擎，合成项显式标注。属决策支持，非投资建议；以正式结算口径为准。',
+    title: '中长期与现货套保',
+    body: '中长期合同分解 vs 预计出力的逐时敞口：4 KPI（套保率/净卖出敞口/净买入敞口/日均合同电量）+ 主图（双线 + gap 柱正负着色）+ 日×小时敞口热力图 + 智能体解读。合同的小时形状由三种模式推演（峰谷结构/均匀/光伏镜像），是合成测算不是实测分时，页面显式标注；另并列展示现货结算口径的真实套保率与净敞口。产出为现货价格风险指标，故归现货交易；属决策支持，非投资建议，以正式结算口径为准。',
     docPath: 'docs/features/exposure-board.md'
   },
   PositionMonitor: {
-    title: '持仓量监控',
+    title: '持仓量监控（山西采集）',
     body: '中长期持仓量监控回放：序列分类展示（均价/合计/预估等按名归类折线/堆叠柱），日维度序列名去日期前缀。数据来自 /sdpt/zfsdjy/ccljkDay|ccljkTime，回放 sdpt_zfsdjy（2026-06，39 行）。为真实采集回放数据。',
     docPath: 'docs/data/yunnan-actualload-derive.md'
   },
@@ -121,7 +121,7 @@ export const pageHelpRegistry: Record<string, PageHelpEntry> = {
     docPath: 'docs/data/yunnan-actualload-derive.md'
   },
   TradeCalendar: {
-    title: '交易月历',
+    title: '交易月历（山西·国网）',
     body: '交易月历回放：按日历查看交易日历安排。数据来自 GET /sdpt/zjyap/calendar，回放 sdpt_zjyap（28 行）。为真实采集回放数据。',
     docPath: 'docs/data/yunnan-actualload-derive.md'
   },
