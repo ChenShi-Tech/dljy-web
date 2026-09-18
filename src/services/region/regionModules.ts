@@ -407,8 +407,9 @@ export const regionModuleCapabilities: RegionModuleCapability[] = [
       },
       {
         path: '/zcqjy/zjyap',
-        // 云南属南网，不跨电网取国网月历（sdpt_zjyap gridScope=sgcc）：显示空页面反而误导，直接隐藏（dljy#2988）。
-        statusByRegion: { shanxi: 'available', yunnan: 'hidden' },
+        // 云南、广东同属南网，不跨电网取国网月历（sdpt_zjyap gridScope=sgcc）：显示空页面反而误导，直接隐藏（dljy#2988）。
+        // 四川同属国网，保留经国网基线回退读山西月历的既有口径，不在此隐藏。
+        statusByRegion: { shanxi: 'available', yunnan: 'hidden', guangdong: 'hidden' },
         dataSupportByRegion: {
           shanxi: [shanxiSdptSupport('山西交易月历', ['sdpt_zjyap'], 'sdpt_zjyap/calendar 国网交易安排基线真实回放。')],
           yunnan: [{ label: '南网不取国网月历', families: ['sdpt_zjyap'], expectation: 'missing', note: 'zjyap 为 gridScope=sgcc 国网交易安排，云南属南网经营区，不跨电网取数。' }]
