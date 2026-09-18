@@ -1,8 +1,8 @@
 // 云南市场洞察工作区登记（dljy#2995 阶段 A）
 // ----------------------------------------------------------------------------
-// 六页全部登记、全部 delivered:false——本阶段只搭骨架：路由、宿主、导航装配、
-// 兼容映射齐备，业务页后续逐页交付（交付一页把该页 delivered 置 true 并换掉 load 指向）。
-// 全部未交付时导航不替换（listInsightNavigation 返回 null），侧边栏与现状完全一致。
+// 六页骨架齐备；prices 页已交付第一部分（四页签，dljy#3007）但 delivered 仍为 false——
+// 多日三维价格、日期×时段热力与三维降级（任务 6.8/6.9）到位后再置 true 并整体替换导航；
+// 其余页仍为占位。全部未交付时导航不替换（listInsightNavigation 返回 null），侧边栏与现状完全一致。
 //
 // enabled 读 VITE_YUNNAN_INSIGHT_WORKSPACE（默认关闭）——这是 UI 装配开关不是授权开关
 //（授权走 governance.canAccessPath 权限别名，与本开关无关），关闭时云南导航与现状
@@ -24,7 +24,7 @@ export function registerYunnanInsightWorkspace(): void {
     replacesNavigation: true,
     pages: [
       { pageId: 'overview', title: '市场总览', order: 1, load: loadPending, delivered: false },
-      { pageId: 'prices', title: '价格与价差', order: 2, load: loadPending, delivered: false },
+      { pageId: 'prices', title: '价格与价差', order: 2, load: () => import('./pages/YunnanPricesPage.vue'), delivered: false },
       { pageId: 'supply', title: '供需与水电', order: 3, load: loadPending, delivered: false },
       { pageId: 'grid-boundaries', title: '跨省与电网边界', order: 4, load: loadPending, delivered: false },
       { pageId: 'plants', title: '场站市场表现', order: 5, load: loadPending, delivered: false },

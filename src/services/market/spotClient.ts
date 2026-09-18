@@ -74,13 +74,20 @@ function buildQuery(params: Record<string, string | number | undefined>): string
   return qs ? `?${qs}` : ''
 }
 
-async function getEnvelope<T>(path: string, params: Record<string, string | number | undefined> = {}): Promise<SpotDataResult<T>> {
+async function getEnvelope<T>(
+  path: string,
+  params: Record<string, string | number | undefined> = {},
+  options: { publicOnly?: boolean } = {}
+): Promise<SpotDataResult<T>> {
   // 只有 token 对应账号的 home company 属中广核云南时才选择专属 PG 路径；其他
   // 集团即使进入共用云南页面也走自己的普通 serving route，不向专属端点制造 403。
   // 私有路径一旦选中，403/503 仍原样失败，绝不运行时回落普通节点价。
+  // publicOnly（dljy#3007 价格页）：强制走公共节点价端点——公开历史节点价对象
+  // 检索的口径是公共维表，中广核账号也不该被切到厂侧私有节点清单。
   const privateYunnan = currentRegion.value.id === 'yunnan'
     && path.startsWith('/node-price/')
     && hasCgnYunnanPriceEntitlement()
+    && !options.publicOnly
   const effectiveBase = privateYunnan ? `${BASE}/cgn-yunnan` : BASE
   const effectiveParams = privateYunnan ? { ...params, region: undefined } : params
   const headers = identityHeaders()
@@ -117,8 +124,12 @@ async function getEnvelope<T>(path: string, params: Record<string, string | numb
   }
 }
 
-async function get<T>(path: string, params: Record<string, string | number | undefined> = {}): Promise<T> {
-  return (await getEnvelope<T>(path, params)).data
+async function get<T>(
+  path: string,
+  params: Record<string, string | number | undefined> = {},
+  options?: { publicOnly?: boolean }
+): Promise<T> {
+  return (await getEnvelope<T>(path, params, options)).data
 }
 
 /** 可用现货地区清单（中文名，如「云南」「广东」）。 */
@@ -126,9 +137,15 @@ export function fetchSpotRegions(): Promise<SpotRegions> {
   return get('/regions')
 }
 
-/** 节点名检索（filterable + remote 后端模糊匹配）。 */
-export function searchSpotNodes(q: string, region?: string, limit = 50): Promise<SpotNodes> {
-  return get('/node-price/nodes', { q, limit, region })
+/** 节点名检索（filterable + remote 后端模糊匹配）。
+ *  options.publicOnly：强制公共节点价端点（默认按账号自动选择私有/公共路径）。 */
+export function searchSpotNodes(
+  q: string,
+  region?: string,
+  limit = 50,
+  options?: { publicOnly?: boolean }
+): Promise<SpotNodes> {
+  return get('/node-price/nodes', { q, limit, region }, options)
 }
 
 /** 单节点原生粒度价格序列（da=日前 / rt=实时）。 */

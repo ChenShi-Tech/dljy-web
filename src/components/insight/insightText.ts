@@ -92,6 +92,8 @@ export const ACCESS_SCOPE_TEXT: Record<string, string> = {
 /**
  * 宽行来源按字段拆序列（日结的电量/电费、损失归因的三类损失）：
  * 字段的中文名只在这里登记；'value' 是唯一数值字段时不占业务名。
+ * 价差 / 基差是视图合成的序列（没有来源字段），同样在这里登记业务名，
+ * 供图表图例与 tooltip 拼序列名（dljy#3007 价格页）。
  */
 export const FIELD_TEXT: Record<string, string> = {
   totalEnergy: '电量',
@@ -99,6 +101,8 @@ export const FIELD_TEXT: Record<string, string> = {
   strategyLossTotal: '策略损失',
   forecastLossTotal: '预测损失',
   gridLossTotal: '电网损失',
+  spread: '日前−实时价差',
+  basis: '节点基差',
 }
 
 export function fieldText(fieldId: string): string {
