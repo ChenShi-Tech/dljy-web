@@ -13,6 +13,8 @@ export declare function deliveryMonths(deliveryStart: string | null | undefined,
 export declare function beijingToday(now?: number): string
 export declare function nextDay(isoDate: string): string | null
 export declare function beijingMidnightInstant(isoDate: string): string | null
+export type BeijingInstantFailureReason = 'FORMAT' | 'MONTH' | 'DAY' | 'HOUR' | 'MINUTE' | 'SECOND' | 'OFFSET'
+export declare function parseBeijingInstant(value: unknown): { ok: true; date: Date } | { ok: false; reason: BeijingInstantFailureReason }
 export declare function deliveryInterval(deliveryStart: string, deliveryEnd: string): { startInclusive: string; endExclusive: string } | null
 export declare function deliveryProgress(deliveryStart: string | null | undefined, deliveryEnd: string | null | undefined, today?: string): DeliveryProgress
 export declare function rangesIntersect(aStart: string, aEnd: string, bStart: string, bEnd: string): boolean
