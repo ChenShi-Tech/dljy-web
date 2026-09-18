@@ -1,6 +1,7 @@
 <script setup lang="ts">
 // 中长期售电合同列表（/zcqjy/contracts，dljy#2939，MC-01..06 / MW-02..04）。
 // - 筛选、分页、统计、导出全部在服务端完成：统计与导出覆盖整个筛选集，不随当前页丢量。
+// - 导出用「加载当前结果时的查询快照」：改了筛选没点「查询」时，导出的文件仍与页面所见一致（dljy#2983）。
 // - 三维状态分开呈现：确认状态 / 交割进度（按北京时间日期派生，结束 ≠ 逾期）/ 质量缺口（可并存）。
 // - 切换公司或地区时，旧请求迟到返回一律丢弃（MW-03）；无权限、未开通、无数据、服务失败分别提示。
 import { computed, onMounted, reactive, ref, watch } from 'vue'
@@ -33,6 +34,8 @@ const state = ref<LoadState>('loading')
 const failure = ref('')
 const capabilities = ref<MidlongCapabilities | null>(null)
 const result = ref<MidlongContractListResult | null>(null)
+// 当前结果对应的查询快照：与 result 同生共死（同一时刻写入、清空时机一致），供导出使用（dljy#2983）。
+const appliedQuery = ref<MidlongContractQuery | null>(null)
 const subjects = ref<MidlongSubject[]>([])
 const stations = ref<CompanyStation[]>([])
 const exporting = ref(false)
@@ -80,7 +83,7 @@ let loadedScope = ''
 
 async function load() {
   const token = guard.begin(contextKey())
-  if (scopeKey() !== loadedScope) result.value = null
+  if (scopeKey() !== loadedScope) { result.value = null; appliedQuery.value = null }
   loadedScope = scopeKey()
   state.value = 'loading'
   try {
@@ -89,15 +92,19 @@ async function load() {
     capabilities.value = caps
     if (!caps.enabled) { state.value = 'disabled'; return }
     if (!caps.regionSupported) { state.value = 'unsupported'; return }
+    // 发请求时先快照本次实际用的查询；确认仍是当前请求、与结果同一时刻生效，迟到或失败的请求不更新快照。
+    const snapshot = query.value
     const [list, subjectRows, stationRows] = await Promise.all([fetchContracts(query.value), fetchSubjects(), fetchStations()])
     if (!guard.isCurrent(token, contextKey())) return
     result.value = list
+    appliedQuery.value = snapshot
     subjects.value = subjectRows
     stations.value = stationRows
     state.value = 'ready'
   } catch (error) {
     if (!guard.isCurrent(token, contextKey())) return
     result.value = null
+    appliedQuery.value = null
     if (error instanceof CompanyNotSelectedError) { state.value = 'no-company'; return }
     const f = midlongFailureOf(error)
     state.value = f.status === 403 || f.status === 401 ? 'denied' : 'failed'
@@ -136,10 +143,13 @@ function onPage(p: number) {
 }
 
 async function doExport() {
+  // 导出用加载当前结果时的快照，不用筛选控件实时值（dljy#2983）；正常路径导出按钮只在有结果时可见，这里兜底提示。
+  const applied = appliedQuery.value
+  if (!applied) { ElMessage.warning('请先查询出结果，再导出'); return }
   exporting.value = true
   const scope = scopeKey()
   try {
-    const { page: _p, pageSize: _s, ...rest } = query.value
+    const { page: _p, pageSize: _s, ...rest } = applied
     const file = await exportContracts(rest)
     // 导出返回前切换了公司/地区：丢弃旧范围的文件，不在新范围下载或提示旧公司的行数。
     if (scope !== scopeKey()) { ElMessage.warning('公司或地区已切换，已丢弃切换前发起的导出'); return }

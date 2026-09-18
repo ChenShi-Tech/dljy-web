@@ -185,6 +185,43 @@ describe('中长期售电合同列表', () => {
     expect(hoisted.downloadCsv).not.toHaveBeenCalled()
   })
 
+  it('导出用加载当前结果时的查询快照：改筛选未点「查询」，导出仍是旧条件（#2983）', async () => {
+    // 测试数据：初始按 A 条件（keyword=A条件）加载；把输入框改成 B 条件但不点「查询」。
+    hoisted.routeQuery = { keyword: 'A条件' }
+    hoisted.fetchCapabilities.mockResolvedValue(caps())
+    hoisted.fetchContracts.mockResolvedValue(listOf([row({})]))
+    hoisted.exportContracts.mockResolvedValue({ fileName: 'a.csv', content: 'x', rowCount: 1, stats: {} })
+    const w = mount(MidlongContractsView, { global: { stubs: STUBS } })
+    await flushPromises()
+    expect(hoisted.fetchContracts.mock.calls[0][0]).toMatchObject({ keyword: 'A条件' })
+    await w.find('input[placeholder="名称 / 外部编号"]').setValue('B条件')
+    await flushPromises()
+    // 改筛选控件不触发查询：导出必须仍用 A（列表当前结果对应的条件），也不带分页参数。
+    expect(hoisted.fetchContracts).toHaveBeenCalledTimes(1)
+    await w.findAll('button').find((b) => b.text() === '导出筛选结果')!.trigger('click')
+    await flushPromises()
+    expect(hoisted.exportContracts).toHaveBeenCalledTimes(1)
+    expect(hoisted.exportContracts.mock.calls[0][0]).toEqual({ keyword: 'A条件' })
+  })
+
+  it('点「查询」按 B 条件成功加载后，导出改用 B 条件（#2983）', async () => {
+    // 测试数据：初始 A 条件加载后，改成 B 条件并点「查询」，导出随新结果更新。
+    hoisted.routeQuery = { keyword: 'A条件' }
+    hoisted.fetchCapabilities.mockResolvedValue(caps())
+    hoisted.fetchContracts.mockResolvedValue(listOf([row({})]))
+    hoisted.exportContracts.mockResolvedValue({ fileName: 'a.csv', content: 'x', rowCount: 1, stats: {} })
+    const w = mount(MidlongContractsView, { global: { stubs: STUBS } })
+    await flushPromises()
+    await w.find('input[placeholder="名称 / 外部编号"]').setValue('B条件')
+    await w.findAll('button').find((b) => b.text() === '查询')!.trigger('click')
+    await flushPromises()
+    expect(hoisted.fetchContracts.mock.calls.at(-1)![0]).toMatchObject({ keyword: 'B条件' })
+    await w.findAll('button').find((b) => b.text() === '导出筛选结果')!.trigger('click')
+    await flushPromises()
+    expect(hoisted.exportContracts).toHaveBeenCalledTimes(1)
+    expect(hoisted.exportContracts.mock.calls[0][0]).toEqual({ keyword: 'B条件' })
+  })
+
   it('非试点地区显示「未开通」，不展示空列表', async () => {
     hoisted.fetchCapabilities.mockResolvedValue(caps({ regionId: 'shanxi', regionSupported: false, reason: '地区 shanxi 尚未开通中长期售电模块' }))
     const w = mount(MidlongContractsView, { global: { stubs: STUBS } })
