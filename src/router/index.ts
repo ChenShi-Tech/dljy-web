@@ -4,6 +4,7 @@ import { resetCaptureAccessDenied } from '@/services/api'
 import { getCurrentUser, getToken } from '@/services/auth'
 import { canAccessPath, firstAccessiblePath, isPathAvailableInRegion } from '@/services/governance'
 import { getCurrentRegionSnapshot } from '@/services/region/regionContext'
+import type { InsightPageId } from '@/services/region/insightWorkspace'
 import { isMultiStance, activeStanceType, requiresStanceSelection } from '@/services/stance/stanceContext'
 import { isPathAvailableInStance } from '@/services/stance/stanceNavigation'
 
@@ -100,6 +101,7 @@ const midlongCurveSet = () => import('../views/midlong/p2/MidlongCurveSetView.vu
 const midlongPlans = () => import('../views/midlong/p3/MidlongPlansView.vue')
 const midlongExecution = () => import('../views/midlong/p3/MidlongExecutionView.vue')
 const riskCenter = () => import('../views/RiskCenterView.vue')
+const insightWorkspaceHost = () => import('../views/insight/InsightWorkspaceHost.vue')
 
 type PageMeta = {
   block: string
@@ -113,6 +115,8 @@ type PageMeta = {
   cfg?: any
   suiteDomain?: string
   regionIds?: string[]
+  /** 市场洞察工作区规范页 id（dljy#2995）：宿主按 当前地区+pageId 经注册表分发内容 */
+  insightPageId?: InsightPageId
 }
 const page = (path: string, name: string, meta: PageMeta, component: any = placeholder) => ({
   path,
@@ -295,6 +299,16 @@ const router = createRouter({
 
         // 数据分析 /sjfx
         page('insight/cockpit', 'MarketInsightCockpit', { block: '数据分析', title: '市场洞察驾驶舱', code: 'market-insight-cockpit', endpoint: 'GET /agent-api/v1/market-insight/bundle + agent sessions (SSE)', dataPath: 'market_insight', scope: '市场快照/价格弹性/价差套利/节点热力/异动雷达 一屏确定性渲染 + AI 解读(选中即问)', kind: 'mixed' }, marketInsightCockpit),
+        // 市场洞察地区工作区规范入口（dljy#2995 阶段 A）：六条统一宿主路由，地址不含省份，
+        // 内容按当前全局地区经 insightWorkspace 注册表分发（云南默认关闭；山西兼容登记
+        // overview/prices 两页；广东/四川未开通，宿主显示未开通说明，不借用他省数据）。
+        // 路由层不按地区拦截（守卫放行），权限经 governance 权限别名与旧入口严格等价。
+        page('insight/overview', 'InsightOverview', { block: '数据分析', title: '市场总览', code: 'insight-overview', endpoint: '地区工作区分发（src/services/region/insightWorkspace.ts 按当前地区解析）', dataPath: '由地区工作区注册决定', scope: '阶段A骨架:统一宿主路由;已交付地区渲染对应页面,未交付显示建设占位,未登记显示未开通', note: '权限等价旧入口 /insight/cockpit（governance.insightPathAccessAliases）', insightPageId: 'overview' }, insightWorkspaceHost),
+        page('insight/prices', 'InsightPrices', { block: '数据分析', title: '价格与价差', code: 'insight-prices', endpoint: '地区工作区分发（src/services/region/insightWorkspace.ts 按当前地区解析）', dataPath: '由地区工作区注册决定', scope: '阶段A骨架:统一宿主路由;已交付地区渲染对应页面,未交付显示建设占位,未登记显示未开通', note: '权限等价旧入口 /sjfx/zrsjg（governance.insightPathAccessAliases）', insightPageId: 'prices' }, insightWorkspaceHost),
+        page('insight/supply', 'InsightSupply', { block: '数据分析', title: '供需与水电', code: 'insight-supply', endpoint: '地区工作区分发（src/services/region/insightWorkspace.ts 按当前地区解析）', dataPath: '由地区工作区注册决定', scope: '阶段A骨架:统一宿主路由;已交付地区渲染对应页面,未交付显示建设占位,未登记显示未开通', note: '权限等价旧入口 /sjfx/actualLoad（governance.insightPathAccessAliases）', insightPageId: 'supply' }, insightWorkspaceHost),
+        page('insight/grid-boundaries', 'InsightGridBoundaries', { block: '数据分析', title: '跨省与电网边界', code: 'insight-grid-boundaries', endpoint: '地区工作区分发（src/services/region/insightWorkspace.ts 按当前地区解析）', dataPath: '由地区工作区注册决定', scope: '阶段A骨架:统一宿主路由;已交付地区渲染对应页面,未交付显示建设占位,未登记显示未开通', note: '权限等价旧入口 /grid-assets/disclosures（governance.insightPathAccessAliases）', insightPageId: 'grid-boundaries' }, insightWorkspaceHost),
+        page('insight/plants', 'InsightPlants', { block: '数据分析', title: '场站市场表现', code: 'insight-plants', endpoint: '地区工作区分发（src/services/region/insightWorkspace.ts 按当前地区解析）', dataPath: '由地区工作区注册决定', scope: '阶段A骨架:统一宿主路由;已交付地区渲染对应页面,未交付显示建设占位,未登记显示未开通', note: '权限等价旧入口 /xhjy/yunnan/settlement-price、/xhjy/yunnan/node-price（governance.insightPathAccessAliases）', insightPageId: 'plants' }, insightWorkspaceHost),
+        page('insight/research', 'InsightResearch', { block: '数据分析', title: '研究工作台', code: 'insight-research', endpoint: '地区工作区分发（src/services/region/insightWorkspace.ts 按当前地区解析）', dataPath: '由地区工作区注册决定', scope: '阶段A骨架:统一宿主路由;已交付地区渲染对应页面,未交付显示建设占位,未登记显示未开通', note: '权限等价旧入口 /sjfx/zrxgx、/sjfx/zrxgx2、/sjfx/singleZsjfx（governance.insightPathAccessAliases）', insightPageId: 'research' }, insightWorkspaceHost),
         page('sjfx/singleZsjfx', 'DataAnalysis', { block: '数据分析', title: '数据分析', code: 'singleZsjfx', endpoint: 'POST /sdpt/zsjfx/singleData', dataPath: 'sdpt_zsjfx', scope: '91天×全63类型，每天 dataMap.series 60×96点', kind: 'mixed', note: '含实际值也含预测序列；63类型见 itemConfig' }, dataAnalysis),
         page('sjfx/zcqxhdl', 'ClearingSpotAnalysis', { block: '数据分析', title: '出清现货电量分析', code: 'zcqxhdl', endpoint: 'POST /sdpt/zcqxhdl/list (宽范围)', dataPath: 'sdpt_zcqxhdl', scope: '10序列×~65天(4/1~6/4)', kind: 'real' }, clearingSpotAnalysis),
         page('sjfx/zrxgx', 'PriceNewEnergyRelation', { block: '数据分析', title: '现货价格与新能源关系', code: 'zrxgx', endpoint: 'POST /sdpt/zcqxhdl/list24 (ts=回溯天数)', dataPath: 'sdpt_zcqxhdl', scope: '373天 2025-05~2026-06', kind: 'real', note: '{rqdj日前电价, xnyz/xnyg/xnyzd/xnygd, xd}' }, priceNewEnergyRelation),

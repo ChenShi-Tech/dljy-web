@@ -234,7 +234,17 @@ export const regionModuleCapabilities: RegionModuleCapability[] = [
       { path: '/sjfx/zrxgx2', statusByRegion: { shanxi: 'available', yunnan: 'available' }, note: '统调负荷关系图可走云南系统预测/实际长表口径。' },
       { path: '/sjfx/actualLoad', statusByRegion: { shanxi: 'available', yunnan: 'available' }, note: '逐日系统负荷已有云南真实支撑。' },
       { path: '/sjfx/singleZsjfx', statusByRegion: { shanxi: 'available', yunnan: 'available' }, note: 'zsjfx 索引已具备云南真实支撑。' },
-      { path: '/sjfx/market-ops', statusByRegion: { shanxi: 'available', yunnan: 'degraded' }, note: '手录市场经营口径可用但不代表完整云南行情自动接入。' }
+      { path: '/sjfx/market-ops', statusByRegion: { shanxi: 'available', yunnan: 'degraded' }, note: '手录市场经营口径可用但不代表完整云南行情自动接入。' },
+      // dljy#2995 阶段 A：六条规范入口 /insight/<pageId>。路由层四地区一律放行（degraded 也是放行态），
+      // 内容由工作区注册（src/services/region/insightWorkspace.ts）按当前地区决定：山西兼容登记
+      // overview/prices 落现有页面，云南默认关闭（开关开后六页均为建设占位），广东/四川未登记显示
+      // 未开通说明——绝不借用他省数据。状态值只表达该地区洞察数据整体健康度，与路由可达性解耦。
+      { path: '/insight/overview', statusByRegion: { shanxi: 'available', yunnan: 'degraded', guangdong: 'degraded', sichuan: 'degraded' }, note: '由工作区注册决定内容；路由放行仅为规范地址可达，未登记地区由宿主显示未开通。' },
+      { path: '/insight/prices', statusByRegion: { shanxi: 'available', yunnan: 'degraded', guangdong: 'degraded', sichuan: 'degraded' }, note: '由工作区注册决定内容；路由放行仅为规范地址可达，未登记地区由宿主显示未开通。' },
+      { path: '/insight/supply', statusByRegion: { shanxi: 'available', yunnan: 'degraded', guangdong: 'degraded', sichuan: 'degraded' }, note: '由工作区注册决定内容；路由放行仅为规范地址可达，未登记地区由宿主显示未开通。' },
+      { path: '/insight/grid-boundaries', statusByRegion: { shanxi: 'available', yunnan: 'degraded', guangdong: 'degraded', sichuan: 'degraded' }, note: '由工作区注册决定内容；路由放行仅为规范地址可达，未登记地区由宿主显示未开通。' },
+      { path: '/insight/plants', statusByRegion: { shanxi: 'available', yunnan: 'degraded', guangdong: 'degraded', sichuan: 'degraded' }, note: '由工作区注册决定内容；路由放行仅为规范地址可达，未登记地区由宿主显示未开通。' },
+      { path: '/insight/research', statusByRegion: { shanxi: 'available', yunnan: 'degraded', guangdong: 'degraded', sichuan: 'degraded' }, note: '由工作区注册决定内容；路由放行仅为规范地址可达，未登记地区由宿主显示未开通。' }
     ],
     subCapabilities: [
       { id: 'zrxgx.xnyz', title: '新能源总出力', scope: 'dimension', statusByRegion: { shanxi: 'available', yunnan: 'available' }, note: '山西/云南均可表达新能源总量关系。' },
