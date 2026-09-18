@@ -659,7 +659,22 @@ export function resolveGovernanceUser(username?: string, base?: Partial<Governan
   }
 }
 
-export function canAccessPath(path: string, user: Pick<GovernanceUser, 'roleCode'> | null | undefined) {
+// 市场洞察规范入口的权限别名（dljy#2995 阶段 A）：新路径 /insight/<pageId> 的可访问性
+// 严格等价于「任一对应旧入口可访问」（spec RW05 不扩权：新路径不提供旧入口没有的访问）。
+// ⚠️ 判定必须先于 routes/groups 前缀匹配：多数业务角色的 groups 含 '/insight' 前缀组，
+// 若先走组前缀匹配，plants/grid-boundaries 等收纳了私有旧入口的页面会被 '/insight' 组
+// 放行（如 PLANT_OPERATOR 无节点价/结算价权限却可见 /insight/plants），等于借组扩权。
+// 管理员级角色在 canAccessPath 开头已全放行，不受此表影响。
+export const insightPathAccessAliases: Record<string, string[]> = {
+  '/insight/overview': ['/insight/cockpit'],
+  '/insight/prices': ['/sjfx/zrsjg'],
+  '/insight/supply': ['/sjfx/actualLoad'],
+  '/insight/grid-boundaries': ['/grid-assets/disclosures'],
+  '/insight/plants': ['/xhjy/yunnan/settlement-price', '/xhjy/yunnan/node-price'],
+  '/insight/research': ['/sjfx/zrxgx', '/sjfx/zrxgx2', '/sjfx/singleZsjfx']
+}
+
+export function canAccessPath(path: string, user: Pick<GovernanceUser, 'roleCode'> | null | undefined): boolean {
   if (!path || path === '/login') return true
   const rawPath = normalizePath(path)
   // 专题是复盘中心的展开页面，沿用同一角色权限，不能因新增路径扩大访问范围。
@@ -680,6 +695,12 @@ export function canAccessPath(path: string, user: Pick<GovernanceUser, 'roleCode
   if (normalized === '/zcqjy/positions/intervals' || normalized === '/zcqjy/positions/stations' || normalized.startsWith('/zcqjy/curves/')) return true
   // P3 售电计划与交易执行（dljy#2973）：同属中长期售电经营台账，可见范围与月度持仓一致，写入由后端公司写权限闸门控制。
   if (normalized === '/zcqjy/plans' || normalized === '/zcqjy/execution') return true
+  // 市场洞察规范入口（dljy#2995）：与旧入口权限严格等价——任一旧入口可访问即可访问，
+  // 全部不可访问则拒绝。必须先于 routes/groups 匹配（原因见 insightPathAccessAliases 注释）。
+  const insightAliases = insightPathAccessAliases[normalized]
+  if (insightAliases) {
+    return insightAliases.some((alias) => canAccessPath(alias, user))
+  }
 
   const rule = getEffectiveAccessRule(roleCode)
   if (rule.routes?.includes(normalized)) return true

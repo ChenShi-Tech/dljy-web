@@ -7,8 +7,10 @@
 import { defineAsyncComponent } from 'vue'
 import { registerRegionSlot } from '@/services/region/regionSlots'
 import { YUNNAN_REGION_ID } from './profile'
+import { registerYunnanInsightWorkspace } from './insight/workspace'
 
 export function registerYunnanRegion(): void {
+  registerYunnanInsightWorkspace()
   registerRegionSlot({
     slotId: 'cockpit.elasticity',
     regionId: YUNNAN_REGION_ID,
