@@ -336,34 +336,42 @@ const objectOptions = ref<InsightObjectOption[]>([])
 const objectLoading = ref(false)
 
 /** 节点类对象：remote 检索。公开节点强制公共端点（口径是公共维表）；厂侧节点按账号自动路由。 */
+// 边输入边检索：只认最后一次输入的结果，先发后到的旧检索不覆盖新选项。
+let objectSearchSeq = 0
 async function searchObjects(query: string): Promise<void> {
   const priceObject = currentEntry.value?.priceObject
   if (priceObject !== 'public-node' && priceObject !== 'company-node') return
+  const seq = ++objectSearchSeq
   objectLoading.value = true
   try {
     const data = await searchSpotNodes(query, '云南', 50, { publicOnly: priceObject === 'public-node' })
+    if (seq !== objectSearchSeq) return
     objectOptions.value = (data.nodes ?? []).map((name) => ({ id: name, label: name }))
   } catch {
-    objectOptions.value = [] // 检索失败如实空选项，不打断页面其它部分
+    if (seq === objectSearchSeq) objectOptions.value = [] // 检索失败如实空选项，不打断页面其它部分
   } finally {
-    objectLoading.value = false
+    if (seq === objectSearchSeq) objectLoading.value = false
   }
 }
 
 // 场站关联价对象：场站清单来自当日价格快照（plants 的标准厂名）。
+// 连续改日期或切对象时只认最后一次请求，迟到的旧日期清单不覆盖新的。
+let plantOptionsSeq = 0
 watch(
   [priceObjectChoice, () => ctx.businessWindow.value.start],
   async () => {
+    const seq = ++plantOptionsSeq
     if (currentEntry.value?.priceObject !== 'plant-node') return
     objectLoading.value = true
     try {
       const bundle = await fetchCgnYunnanPriceBundle(ctx.businessWindow.value.start)
+      if (seq !== plantOptionsSeq) return
       const names = [...new Set((bundle.plants?.items ?? []).map((item) => item.plantName))]
       objectOptions.value = names.map((name) => ({ id: name, label: name }))
     } catch {
-      objectOptions.value = []
+      if (seq === plantOptionsSeq) objectOptions.value = []
     } finally {
-      objectLoading.value = false
+      if (seq === plantOptionsSeq) objectLoading.value = false
     }
   }
 )
@@ -408,7 +416,8 @@ function adaptPairedResult(result: InsightBlockResult, fieldId: 'spread' | 'basi
         unit: entry.unit,
         measureKind: 'price',
         dimensions: entry.dimensions ?? {},
-        businessScope: 'node',
+        // 业务范围跟着价格来源走：用户侧价是云南全市场，不能标成节点。
+        businessScope: getInsightSource(sourceId)?.businessScope ?? 'node',
         resolutionMinutes: minutes,
         nativeResolutionMinutes: minutes,
         priceObject: entry.priceObject,
