@@ -1,6 +1,6 @@
 // useInsightSeriesChart.spec.ts — 序列图表内核回归（dljy#2996 任务 5.8，design DE03/DE09）
 // 守什么不变量：
-//   ① 阶梯线 step:'start'（值是 [start,end) 整段口径，不是时点瞬时值）；
+//   ① 阶梯线 step:'end'（值是 [start,end) 整段口径、起点标注，不是时点瞬时值）；连续段末尾补区间终点边界点；
 //   ② 缺测时段插 null 断开：connectNulls:false、smooth:false——平滑或连线都会造出
 //      没有观测的形状，0 也不能顶替缺测；
 //   ③ 首个有效行之前 / 最后有效行之后不画线（那些日子没有观测，不是缺测断线）；
@@ -21,11 +21,20 @@ function optionOf(index = 0): ReturnType<typeof buildInsightChartOption> {
 }
 
 describe('阶梯线与缺测断开', () => {
-  it('step:start、connectNulls:false、smooth:false 一个都不能少', () => {
+  it('边界点只负责画满最后一段：tooltip 不把它当观测列出', () => {
+    const option = optionOf() as { tooltip: { formatter: (raw: unknown) => string } }
+    const edge = option.tooltip.formatter([
+      { marker: '', seriesName: groups0Name(), data: { value: [TS_0015, 301.5], end: '2026-09-10T00:30:00+08:00', edge: true } },
+    ])
+    expect(edge).toBe('')
+  })
+
+  it('step:end、connectNulls:false、smooth:false 一个都不能少', () => {
     const option = optionOf() as { series: Array<Record<string, unknown>> }
     const series = option.series[0]
 
-    expect(series.step).toBe('start')
+    // 值标在区间起点：'end' 让它水平延续到下一个点；'start' 会把每个值画到前一个区间上。
+    expect(series.step).toBe('end')
     expect(series.connectNulls).toBe(false)
     expect(series.smooth).toBe(false)
   })
@@ -34,20 +43,27 @@ describe('阶梯线与缺测断开', () => {
     const groups = buildInsightChartGroups(nodePriceResult(['300.125', '301.5', null, '303']))
     const points = groups[0].series[0].points
 
-    expect(points).toHaveLength(4)
+    // 观测 3 个 + 缺测 1 个 + 两个连续段各补 1 个区间终点边界点
+    expect(points).toHaveLength(6)
     expect(points[0]).toMatchObject({ ts: TS_0000, value: 300.125 })
     expect(points[1].value).toBe(301.5)
-    // 00:15-00:30 无行 = 缺测：null 断开，绝不用 0 顶替。
-    expect(points[2]).toMatchObject({ ts: Date.parse('2026-09-10T00:30:00+08:00'), value: null })
-    expect(points[3].value).toBe(303)
+    // 缺测前的最后一段补边界点，把 301.5 画满到 00:30
+    expect(points[2]).toMatchObject({ ts: Date.parse('2026-09-10T00:30:00+08:00'), value: 301.5, edge: true })
+    // 00:30-00:45 无行 = 缺测：null 断开，绝不用 0 顶替。
+    expect(points[3]).toMatchObject({ ts: Date.parse('2026-09-10T00:30:00+08:00'), value: null })
+    expect(points[3].edge).toBeUndefined()
+    expect(points[4].value).toBe(303)
+    expect(points[5]).toMatchObject({ ts: Date.parse('2026-09-10T01:00:00+08:00'), value: 303, edge: true })
   })
 
   it('首个有效行之前与最后有效行之后不生成格点（没有观测 ≠ 缺测断线）', () => {
     const groups = buildInsightChartGroups(nodePriceResult([null, '300', null]))
     const points = groups[0].series[0].points
 
-    expect(points).toHaveLength(1)
+    // 一个观测 + 它的区间终点边界点；首尾之外不生成格点
+    expect(points).toHaveLength(2)
     expect(points[0].value).toBe(300)
+    expect(points[1].edge).toBe(true)
   })
 
   it('tooltip 缺测写「缺测」，正常值按来源显示精度', () => {

@@ -1,8 +1,11 @@
 // 市场洞察序列图表内核（dljy#2996，OpenSpec 任务 5.8，design DE09）
 // ----------------------------------------------------------------------------
 // 把一份规范结果（insight-result-data/v1 长表 + 序列目录）转成 ECharts option：
-//   - 每条序列一条阶梯线（step:'start'）：值代表 [intervalStart, intervalEnd) 整段，
-//     不是时点瞬时值（DE03）；
+//   - 每条序列一条阶梯线（step:'end'）：值代表 [intervalStart, intervalEnd) 整段，
+//     不是时点瞬时值（DE03）。ECharts 的 'end' 让每个点的值水平延续到下一个点，正好覆盖
+//     「起点标注」的区间；'start' 会把每个值画到前一个区间上，整条线左移一格。连续段的
+//     最后一个区间（缺测前、序列末尾）另补一个区间终点的「边界点」，否则这段画不出来；
+//     边界点不进 tooltip、不参与选区；
 //   - 缺测时段插 null 断开（connectNulls:false），不插值、不平滑（smooth 必须 false）——
 //     平滑曲线会在缺测边界造出没有观测的形状；
 //   - y 轴按单位分组：同单位共用一根轴，不同单位各自成轴；一张图最多两根轴，
@@ -18,7 +21,7 @@ import type { InsightBlockResult, InsightSeriesMeta } from '@/services/insight/i
 import { formatInsightValue, insightPrecision, insightSeriesName } from '../insightText'
 
 /** 一条序列的展示点：ts 为区间起点毫秒；value 为 null 即缺测；end 为区间终点（北京时间 ISO）。 */
-export type InsightChartPoint = { ts: number; value: number | null; end: string }
+export type InsightChartPoint = { ts: number; value: number | null; end: string; edge?: true }
 
 export type InsightChartSeries = {
   meta: InsightSeriesMeta
@@ -69,11 +72,14 @@ function buildPoints(
   // 从首个格点步进到最后一个有效起点；缺的格点为 null（缺测断开）。
   for (let ts = own[0].startMs; ts <= own[own.length - 1].startMs; ts += step) {
     const slot = slots.get(ts)
-    points.push(
-      slot
-        ? { ts, value: Number(slot.value), end: slot.endIso }
-        : { ts, value: null, end: new Date(ts + step + 8 * 3_600_000).toISOString().replace('Z', '+08:00') }
-    )
+    if (!slot) {
+      points.push({ ts, value: null, end: new Date(ts + step + 8 * 3_600_000).toISOString().replace('Z', '+08:00') })
+      continue
+    }
+    const value = Number(slot.value)
+    points.push({ ts, value, end: slot.endIso })
+    // 连续段的最后一个区间：补区间终点的边界点，让 step:'end' 把这段画满到区间终点。
+    if (!slots.has(ts + step)) points.push({ ts: ts + step, value, end: slot.endIso, edge: true })
   }
   return points
 }
@@ -107,7 +113,7 @@ export function buildInsightChartGroups(result: InsightBlockResult): InsightChar
 type TooltipParam = {
   marker?: string
   seriesName?: string
-  data?: { value?: [number, number | null]; end?: string }
+  data?: { value?: [number, number | null]; end?: string; edge?: true }
 }
 
 /**
@@ -123,7 +129,8 @@ export function buildInsightChartOption(group: InsightChartGroup): EChartsOption
         const lines: string[] = []
         for (const param of params) {
           const value = param.data?.value
-          if (!value) continue
+          // 边界点只负责把最后一段画满，不是一个观测。
+          if (!value || param.data?.edge) continue
           const [ts, val] = value
           const endIso = param.data?.end
           const endHM = endIso && Number.isFinite(Date.parse(endIso)) ? beijingHM(Date.parse(endIso)) : ''
@@ -150,13 +157,13 @@ export function buildInsightChartOption(group: InsightChartGroup): EChartsOption
     series: group.series.map((series) => ({
       name: series.name,
       type: 'line' as const,
-      // 阶梯线：值是 [start, end) 整段口径；缺测断开；不平滑（见文件头注释）。
-      step: 'start' as const,
+      // 阶梯线：值是 [start, end) 整段口径（起点标注 → step:'end'）；缺测断开；不平滑（见文件头注释）。
+      step: 'end' as const,
       connectNulls: false,
       smooth: false,
       yAxisIndex: group.units.indexOf(series.unit),
       symbol: 'none',
-      data: series.points.map((point) => ({ value: [point.ts, point.value], end: point.end })),
+      data: series.points.map((point) => ({ value: [point.ts, point.value], end: point.end, ...(point.edge ? { edge: true as const } : {}) })),
       emphasis: { focus: 'series' as const },
     })),
   }

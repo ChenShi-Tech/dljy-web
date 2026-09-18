@@ -67,7 +67,8 @@ const chart = useEChart(host, {
   render: paint,
   onInit(instance) {
     instance.on('click', (raw: unknown) => {
-      const params = raw as { seriesIndex?: number; data?: { value?: [number, unknown]; end?: string } }
+      const params = raw as { seriesIndex?: number; data?: { value?: [number, unknown]; end?: string; edge?: true } }
+      if (params.data?.edge) return
       const ts = params.data?.value?.[0]
       if (typeof ts !== 'number' || !params.data?.end) return
       if (typeof params.seriesIndex !== 'number') return
@@ -84,7 +85,7 @@ const chart = useEChart(host, {
         if (!series) return
         for (const dataIndex of entry.dataIndex ?? []) {
           const point = series.points[dataIndex]
-          if (point) hits.push({ seriesIndex, point: { ts: point.ts, end: point.end } })
+          if (point && !point.edge) hits.push({ seriesIndex, point: { ts: point.ts, end: point.end } })
         }
       })
       emit('brush', hits)

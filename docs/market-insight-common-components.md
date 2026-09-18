@@ -188,7 +188,7 @@ emits:  row-click: [{ series: InsightSeriesMeta, row: 原始行 }]  点击行只
 
 ### A04 时间与粒度
 
-- **守什么**：区间值画阶梯线（`step:'start'`，值是 `[start, end)` 整段口径）；缺测断开（`connectNulls:false`、`smooth:false`）；同单位共轴、不同单位各成一轴，一张图最多两根轴。
+- **守什么**：区间值画阶梯线（`step:'end'`，值是 `[start, end)` 整段口径、起点标注；连续段末尾补区间终点的边界点，边界点不进提示、不参与选区）；缺测断开（`connectNulls:false`、`smooth:false`）；同单位共轴、不同单位各成一轴，一张图最多两根轴。
 - **怎么验证**：看 option 断言或目视阶梯形状；价格（yuan/MWh）与功率（MW）同图时各用一根 y 轴；第三种单位拆第二张图。
 - **对应测试**：`useInsightSeriesChart.spec.ts`（step / connectNulls / smooth 三断言、缺测断开、价格功率两轴、三单位拆图）。
 
