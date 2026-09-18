@@ -92,13 +92,14 @@ describe('loadMarketAnalysis 数据来源分域', () => {
     expect(serialized).not.toContain('286.4')
     expect(serialized).not.toContain('116')
 
-    // 页签口径：price captured；其余页签全不真实 → synthetic（不得用整页 basis 顶包）
+    // 页签口径：price captured；其余页签无真实数据 → empty（诚实空态，不是模拟数据，也不得用整页 basis 顶包）
     expect(result.sectionBasis.price).toBe('captured')
-    expect(result.sectionBasis.overview).toBe('synthetic')
-    expect(result.sectionBasis.generation).toBe('synthetic')
-    expect(result.sectionBasis.sales).toBe('synthetic')
-    expect(result.sectionBasis.storage).toBe('synthetic')
-    expect(result.sectionBasis.packages).toBe('synthetic')
+    expect(result.sectionBasis.overview).toBe('empty')
+    expect(result.sectionBasis.generation).toBe('empty')
+    expect(result.sectionBasis.sales).toBe('empty')
+    expect(result.sectionBasis.storage).toBe('empty')
+    expect(result.sectionBasis.packages).toBe('empty')
+    expect(Object.values(result.sectionPartial).some(Boolean)).toBe(false)
   })
 
   it('全部公共键真实时各字段来自真实行，页面级 basis 为 captured', async () => {
@@ -154,13 +155,13 @@ describe('loadMarketAnalysis 数据来源分域', () => {
     expect(result.dataset.packageMetrics).toEqual([])
     expect(result.dataset.hourData).toEqual([])
 
-    // 公共页签 captured；套餐两键全缺 → synthetic
+    // 公共页签 captured；套餐两键全缺 → empty
     expect(result.sectionBasis.overview).toBe('captured')
     expect(result.sectionBasis.generation).toBe('captured')
     expect(result.sectionBasis.sales).toBe('captured')
     expect(result.sectionBasis.storage).toBe('captured')
     expect(result.sectionBasis.price).toBe('captured')
-    expect(result.sectionBasis.packages).toBe('synthetic')
+    expect(result.sectionBasis.packages).toBe('empty')
   })
 
   it('全部数据集不真实时保持整页示例 + synthetic 旧行为', async () => {
@@ -183,5 +184,26 @@ describe('loadMarketAnalysis 数据来源分域', () => {
     for (const basis of Object.values(result.sectionBasis)) {
       expect(basis).toBe('synthetic')
     }
+  })
+
+  it('页签部分数据集真实时标 captured 并给出部分缺失标记，缺失部分为空', async () => {
+    fetchCaptured.mockImplementation(async (family: string, key: string) => {
+      if (family === 'market_analysis' && key === 'market_trade_summary') {
+        return capturedRows([{ name: '中长期', quantity: 100, avgPrice: 0.4, count: 3, percentage: 0 }])
+      }
+      if (family === 'market_analysis' && key === 'market_price') {
+        return capturedRows([{ month: '1月', mediumLongPrice: 0.37, spotPrice: 0.41, retailPrice: 0.44, deviation: 0 }])
+      }
+      return mockEmpty()
+    })
+    const result = await loadMarketAnalysis(2026)
+    expect(result.sectionBasis.overview).toBe('captured')
+    expect(result.sectionPartial.overview).toBe(true)
+    expect(result.dataset.monthlyTrend).toEqual([])
+    expect(result.dataset.overviewMetrics).toEqual([])
+    expect(result.sectionBasis.price).toBe('captured')
+    expect(result.sectionPartial.price).toBe(false)
+    expect(result.sectionBasis.sales).toBe('empty')
+    expect(result.sectionPartial.sales).toBe(false)
   })
 })

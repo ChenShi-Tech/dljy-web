@@ -312,10 +312,13 @@ async function safeFetchMarket<T>(key: string, family: string = MARKET_FAMILY):
 
 /**
  * 逐页签数据口径（#2991）：按「该页签自己消费的数据集」判定，而不是整页 hasRealData 顶包。
- * captured = 页签消费的全部数据集均真实；illustrative = 部分真实（缺的以空态呈现）；
- * synthetic = 全部不真实（仅出现在整页纯示例分支）。
+ * 页面有真实数据时：页签至少一个数据集真实 = captured（展示的都是真实行，缺的数据集以空态呈现，
+ * 由 sectionPartial 提示「部分缺失」）；页签数据集全不真实 = empty（诚实空态，不是模拟数据）。
+ * 整页没有任何真实数据时：全部页签 synthetic（整页示例 + 可见「模拟数据」提示）。
  */
 export type MarketAnalysisSectionBasis = Record<MarketAnalysisTab, DataBasis>
+/** 页签是否「部分数据集真实、部分缺失」（缺失部分为空态），页面据此显示缺口提示。 */
+export type MarketAnalysisSectionPartial = Record<MarketAnalysisTab, boolean>
 
 export interface MarketAnalysisResult {
   dataset: MarketAnalysisDataset
@@ -328,6 +331,7 @@ export interface MarketAnalysisResult {
   realByKey: Record<string, boolean>
   // #2991：逐页签口径，页面按它显示徽章/提示（不再用整页 basis 顶包）。
   sectionBasis: MarketAnalysisSectionBasis
+  sectionPartial: MarketAnalysisSectionPartial
   // #669：售电套餐 tab 的真实性单独暴露（company 私有族，可能被授权闸门拒绝）。
   retailPackagesReal: boolean
   retailPackagesPartialReal: boolean
@@ -349,14 +353,16 @@ const TAB_DATASET_KEYS: Record<MarketAnalysisTab, readonly string[]> = {
   price: ['market_price']
 }
 
-function sectionBasisOf(realByKey: Record<string, boolean>): MarketAnalysisSectionBasis {
-  const out = {} as MarketAnalysisSectionBasis
+function sectionsOf(realByKey: Record<string, boolean>, hasRealData: boolean) {
+  const basis = {} as MarketAnalysisSectionBasis
+  const partial = {} as MarketAnalysisSectionPartial
   for (const entry of Object.entries(TAB_DATASET_KEYS) as Array<[MarketAnalysisTab, readonly string[]]>) {
     const [tab, keys] = entry
     const reals = keys.map((key) => Boolean(realByKey[key]))
-    out[tab] = reals.every(Boolean) ? 'captured' : reals.some(Boolean) ? 'illustrative' : 'synthetic'
+    basis[tab] = !hasRealData ? 'synthetic' : reals.some(Boolean) ? 'captured' : 'empty'
+    partial[tab] = hasRealData && reals.some(Boolean) && !reals.every(Boolean)
   }
-  return out
+  return { sectionBasis: basis, sectionPartial: partial }
 }
 
 /**
@@ -391,7 +397,7 @@ export async function loadMarketAnalysis(year = 2026): Promise<MarketAnalysisRes
       hasRealData: false,
       publicDataReal,
       realByKey,
-      sectionBasis: sectionBasisOf(realByKey),
+      ...sectionsOf(realByKey, false),
       retailPackagesReal,
       retailPackagesPartialReal,
       retailPackageDetailsReal: packageResult.real,
@@ -449,7 +455,7 @@ export async function loadMarketAnalysis(year = 2026): Promise<MarketAnalysisRes
     hasRealData: true,
     publicDataReal,
     realByKey,
-    sectionBasis: sectionBasisOf(realByKey),
+    ...sectionsOf(realByKey, true),
     retailPackagesReal,
     retailPackagesPartialReal,
     retailPackageDetailsReal: packageResult.real,

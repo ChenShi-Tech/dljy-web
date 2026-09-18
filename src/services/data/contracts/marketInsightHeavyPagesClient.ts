@@ -172,17 +172,15 @@ export async function fetchMarketInsightClearingSpotContract(params: {
   })
 }
 
-/** 非山西地区的「本地区不适用」空态：不发请求，mock 纪律字段齐全（诚实标注非真实）。 */
+/**
+ * 非山西地区的「本地区不适用」空态：不发请求、不带任何数据。
+ * 元信息与能力未开通分支一致（只给地区），空 payload 由契约适配层统一归为 missing 并按既有约定标注非真实；
+ * 页面在非山西地区直接显示停用说明卡，不渲染这份契约。
+ */
 function clearingNotApplicableContract(region: string): MarketInsightClearingSpotContract {
   const contract = toMarketInsightClearingSpotContract({
     payload: {},
-    meta: {
-      region_requested: region,
-      region_served: region,
-      region_fallback: false,
-      mock: true,
-      sourceType: 'MOCK'
-    }
+    meta: { region_requested: region, region_served: region, region_fallback: false }
   })
   contract.data_availability = contract.data_availability.map((item) => ({
     ...item,

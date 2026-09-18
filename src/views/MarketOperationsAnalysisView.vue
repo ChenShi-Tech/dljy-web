@@ -10,6 +10,7 @@ import {
   type CategoryRow,
   type MarketAnalysisDataset,
   type MarketAnalysisSectionBasis,
+  type MarketAnalysisSectionPartial,
   type MarketAnalysisTab,
   type MarketMetric
 } from '@/services/market/marketAnalysis'
@@ -27,29 +28,40 @@ const hasRealData = ref(false)
 const publicDataReal = ref(false)
 // #2991：逐页签口径（按页签自己消费的数据集真实性判定），替代旧的整页 hasRealData 顶包。
 const sectionBasis = ref<MarketAnalysisSectionBasis | null>(null)
+const sectionPartial = ref<MarketAnalysisSectionPartial | null>(null)
 // #669：售电套餐为 company 私有族，非归属公司会被授权闸门拒绝→单独跟踪真实性/拒绝态。
 const retailPackagesReal = ref(false)
 const retailPackagesPartialReal = ref(false)
 const retailPackageDetailsReal = ref(false)
 const retailPackageMetricsReal = ref(false)
 const retailPackagesAccessDenied = ref(false)
-// #2991：徽章按当前页签自己的口径显示（captured=该页签数据集全真实 / illustrative=部分真实 /
-// synthetic=全不真实）。加载完成前无页签口径，回落 synthetic（Mock 标注纪律：宁标合成不冒真实）。
+// #2991：徽章按当前页签自己的口径显示：captured=页签展示的都是真实行（可能部分数据集缺失，见 sectionNotice）；
+// empty=页面有真实数据但本页签没有，诚实空态；synthetic=整页没有真实数据、展示占位示例。
+// 加载完成前无页签口径，回落 synthetic（Mock 标注纪律：宁标合成不冒真实）。
 const visibleBasis = computed<DataBasis | null>(() => sectionBasis.value?.[activeTab.value] ?? 'synthetic')
-// #2991：部分真实（illustrative）页签的提示——缺真实数据集的部分显示为空，未用示例补齐。
+const activeSectionPartial = computed(() => Boolean(sectionPartial.value?.[activeTab.value]))
+// #2991：部分数据集真实的页签提示——缺真实数据集的部分显示为空，未用示例补齐。
 const sectionNotice = computed<string>(() => {
-  if (activeTab.value !== 'packages' || visibleBasis.value !== 'illustrative') return ''
-  if (retailPackagesAccessDenied.value) {
-    return '售电套餐为售电公司私有经营口径，当前账号无查看权限；缺权限的部分显示为空，未用示例补齐，不含任何经营数据。'
+  if (!activeSectionPartial.value) return ''
+  if (activeTab.value === 'packages') {
+    if (retailPackagesAccessDenied.value) {
+      return '售电套餐为售电公司私有经营口径，当前账号无查看权限；缺权限的部分显示为空，不含任何经营数据。'
+    }
+    const realPart = retailPackageDetailsReal.value ? '套餐明细' : '套餐 KPI'
+    return `${realPart}已真实落盘，另一数据集暂无真实回放；缺失部分显示为空，未用示例补齐。`
   }
-  const realPart = retailPackageDetailsReal.value ? '套餐明细' : '套餐 KPI'
-  return `${realPart}已真实落盘，另一数据集暂无真实回放；缺失部分显示为空，未用示例补齐。`
+  return '本页签部分数据集暂无真实回放，缺失部分显示为空，未用示例补齐。'
 })
-// 套餐 tab 占位/授权态提示（可见「模拟数据」纪律 + 不泄漏他司经营数据）。
+// 套餐 tab 授权态/缺数提示（可见「模拟数据」纪律 + 不泄漏他司经营数据）。
+// 页面有真实数据时套餐页签缺数就是空态，不能再说「下方为占位示例」；只有整页纯示例时才是示例。
 const packagesNotice = computed<string>(() => {
   if (activeTab.value !== 'packages' || retailPackagesReal.value) return ''
-  // #2991：部分真实不再是「真实与示例混合」，缺的部分是空态——口径提示移到 sectionNotice。
   if (retailPackagesPartialReal.value) return ''
+  if (hasRealData.value) {
+    return retailPackagesAccessDenied.value
+      ? '售电套餐为售电公司私有经营口径，当前账号无查看权限，此页签不显示任何经营数据。'
+      : '暂无售电套餐真实数据，此页签为空，未用示例补齐。'
+  }
   if (retailPackagesAccessDenied.value) {
     return '售电套餐为售电公司私有经营口径，当前账号无查看权限，下方为占位示例（模拟数据），不含真实经营数据。'
   }
@@ -152,6 +164,7 @@ async function refreshData() {
     hasRealData.value = result.hasRealData
     publicDataReal.value = result.publicDataReal
     sectionBasis.value = result.sectionBasis
+    sectionPartial.value = result.sectionPartial
     retailPackagesReal.value = result.retailPackagesReal
     retailPackagesPartialReal.value = result.retailPackagesPartialReal
     retailPackageDetailsReal.value = result.retailPackageDetailsReal
@@ -167,6 +180,7 @@ async function refreshData() {
     hasRealData.value = false
     publicDataReal.value = false
     sectionBasis.value = null
+    sectionPartial.value = null
     retailPackagesReal.value = false
     retailPackagesPartialReal.value = false
     retailPackageDetailsReal.value = false
@@ -279,12 +293,12 @@ const insightBasis = () => visibleBasis.value ?? 'synthetic'
 function insightContext(): Record<string, unknown> {
   const tabLabel = insightTabLabel()
   const displayedBasis = insightBasis()
-  // #2991：口径注记区分三态——captured=页签数据集全真实；illustrative=部分真实、缺失为空；
-  // synthetic=整页占位示例。
+  // #2991：口径注记区分——captured 真实回放（可能部分数据集缺失为空）；empty 本页签无真实数据；
+  // synthetic 整页占位示例。
   const caliberNote = displayedBasis === 'captured'
-    ? '真实回放数据'
-    : displayedBasis === 'illustrative'
-      ? '部分真实回放，缺失数据集显示为空（未用示例补齐）'
+    ? (activeSectionPartial.value ? '真实回放数据；部分数据集缺失，显示为空（未用示例补齐）' : '真实回放数据')
+    : displayedBasis === 'empty'
+      ? '本页签暂无真实数据（空态，未用示例补齐）'
       : '当前为占位示例，仅供页面形态'
   return {
     page: '市场经营分析 (market-ops)',

@@ -83,7 +83,8 @@ async function load() {
   if (!isClearingRegionSupported.value) {
     loading.value = false
     clearViewState()
-    dataBasis.value = 'synthetic'
+    // 停用态没有任何数据：诚实空态，不是合成数据。
+    dataBasis.value = 'empty'
     renderEmptyChart()
     return
   }
