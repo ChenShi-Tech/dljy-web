@@ -4,7 +4,8 @@ import {
   getRegionCapabilityForPath,
   getRegionSubCapability,
   isRegionRouteAvailable,
-  regionCapabilityAllowsRequest
+  regionCapabilityAllowsRequest,
+  resolveRegionModuleForPath
 } from './regionModules'
 
 // 注册表内任一能力覆盖路由（insight 组经典页）。注意 statusByRegion 除 shanxi/yunnan 外，
@@ -159,6 +160,18 @@ describe('中长期售电合同入口仅云南开通（dljy#2939）', () => {
     expect(getRegionCapabilityForPath('/zcqjy/zjyap', 'yunnan')?.status).toBe('hidden')
     expect(isRegionRouteAvailable('/zcqjy/zjyap', 'yunnan')).toBe(false)
     expect(getRegionCapabilityForPath('/zcqjy/zjyap', 'shanxi')?.status).toBe('available')
+  })
+
+  it('精确路径优先于前缀，不受模块声明顺序影响（dljy#2988）', () => {
+    // 故意把「持有 /zcqjy 前缀」的模块排在前面，把「精确登记 /zcqjy/exposure」的模块排在后面：
+    // 只有先做全局精确匹配才会命中后者。按声明顺序逐个判断会错判成前缀那个模块。
+    const prefixOwner = { id: 'prefix-owner', routePaths: ['/zcqjy/contracts'], routePrefixes: ['/zcqjy'] }
+    const exactOwner = { id: 'exact-owner', routePaths: ['/zcqjy/exposure'], routePrefixes: ['/xhjy'] }
+    expect(resolveRegionModuleForPath([prefixOwner, exactOwner], '/zcqjy/exposure')?.id).toBe('exact-owner')
+    expect(resolveRegionModuleForPath([prefixOwner, exactOwner], '/zcqjy/contracts')?.id).toBe('prefix-owner')
+    // 没有精确登记时仍按前缀回退。
+    expect(resolveRegionModuleForPath([prefixOwner, exactOwner], '/zcqjy/zfsdjy')?.id).toBe('prefix-owner')
+    expect(resolveRegionModuleForPath([prefixOwner, exactOwner], '/no-such')).toBeNull()
   })
 
   it('P3 售电计划与交易执行同样只在云南可用（dljy#2973）', () => {

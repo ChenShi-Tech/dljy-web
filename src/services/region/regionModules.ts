@@ -702,16 +702,23 @@ export function getRegionModuleForPath(path: string) {
   })
 }
 
-export function getRegionModuleCapabilityForPath(path: string) {
+/**
+ * 路径 → 模块：先在所有模块里找精确 routePaths，再退回前缀匹配。
+ * 页面归属与路径前缀不一致时（如 /zcqjy/exposure 归现货组、路径仍在 /zcqjy 下），
+ * 结果不能取决于模块在数组里的先后（dljy#2988）。列表作为参数传入，便于单测构造顺序。
+ */
+export function resolveRegionModuleForPath<T extends Pick<RegionModuleCapability, 'routePaths' | 'routePrefixes'>>(modules: readonly T[], path: string): T | null {
   const normalized = normalizePath(path)
-  // 先在所有模块里找精确 routePaths，再退回前缀匹配：页面归属与路径前缀不一致时（如 /zcqjy/exposure 归现货组），
-  // 结果不能取决于模块在数组里的先后（dljy#2988）。
-  const exact = regionModuleCapabilities.find((module) => module.routePaths.some((routePath) => normalizePath(routePath) === normalized))
+  const exact = modules.find((module) => module.routePaths.some((routePath) => normalizePath(routePath) === normalized))
   if (exact) return exact
-  return regionModuleCapabilities.find((module) => module.routePrefixes.some((routePrefix) => {
+  return modules.find((module) => module.routePrefixes.some((routePrefix) => {
     const prefix = normalizePath(routePrefix)
     return normalized === prefix || normalized.startsWith(`${prefix}/`)
   })) ?? null
+}
+
+export function getRegionModuleCapabilityForPath(path: string) {
+  return resolveRegionModuleForPath(regionModuleCapabilities, path)
 }
 
 function getRoleLandingRoutes(module: RegionBusinessModule, user: UserLike) {
