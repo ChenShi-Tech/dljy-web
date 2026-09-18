@@ -309,7 +309,7 @@ export const regionModuleCapabilities: RegionModuleCapability[] = [
     title: '中长期交易',
     group: 'midlong',
     routePrefixes: ['/zcqjy', '/sjxh/zjzzt'],
-    routePaths: ['/zcqjy/contracts', '/zcqjy/positions', '/zcqjy/zccljk', '/zcqjy/exposure', '/zcqjy/zfsdjy', '/zcqjy/zjyap', '/sjxh/zjzzt'],
+    routePaths: ['/zcqjy/contracts', '/zcqjy/positions', '/zcqjy/positions/intervals', '/zcqjy/positions/stations', '/zcqjy/curves', '/zcqjy/zccljk', '/zcqjy/exposure', '/zcqjy/zfsdjy', '/zcqjy/zjyap', '/sjxh/zjzzt'],
     statusByRegion: {
       shanxi: 'available',
       yunnan: 'degraded',
@@ -354,6 +354,23 @@ export const regionModuleCapabilities: RegionModuleCapability[] = [
         path: '/zcqjy/positions',
         statusByRegion: { yunnan: 'available', shanxi: 'hidden', guangdong: 'hidden', sichuan: 'hidden' },
         note: '已确认售电义务月度持仓，只读合同底账，不依赖现货/预测数据；P1 仅云南试点。'
+      },
+      // 云南中长期售电 P2（dljy#2971）：分时持仓、场站维度持仓与分解集详情，同样只开通云南。
+      {
+        path: '/zcqjy/positions/intervals',
+        statusByRegion: { yunnan: 'available', shanxi: 'hidden', guangdong: 'hidden', sichuan: 'hidden' },
+        note: '已确认分解集的月/日/时持仓；只有月量的合同在小时粒度显示分时未知，不依赖现货/预测数据；仅云南试点。'
+      },
+      {
+        path: '/zcqjy/positions/stations',
+        statusByRegion: { yunnan: 'available', shanxi: 'hidden', guangdong: 'hidden', sichuan: 'hidden' },
+        note: '交易单元义务的场站分配份额与未分配余额；仅云南试点。'
+      },
+      {
+        path: '/zcqjy/curves',
+        includeSubpaths: true,
+        statusByRegion: { yunnan: 'available', shanxi: 'hidden', guangdong: 'hidden', sichuan: 'hidden' },
+        note: '分时分解集详情（/zcqjy/curves/:id），仅云南试点。'
       },
       // sdpt_zfsdjy 是三德普华私有族（曾误标 public，匿名可读该公司中长期合同台账与
       // 逐日持仓电量/持仓均价，#1617 合并后复查发现）。与 /xhjy/zrqsb、/xhjy/zptqx 同口径：

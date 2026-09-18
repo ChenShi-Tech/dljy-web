@@ -20,6 +20,7 @@ import { withAlpha } from '@/services/chart/chartStyle'
 import {
   CompanyNotSelectedError, exportPositions, fetchCapabilities, fetchPositions, fetchSubjects, midlongFailureOf,
 } from '@/services/midlong/midlongApi'
+import { p2ModuleOn } from '@/services/midlong/midlongP2Api'
 import {
   ENERGY_ATTRIBUTES, ENERGY_ATTRIBUTE_LABELS, PRICE_COMPONENT_LABELS, PRODUCT_KINDS, PRODUCT_KIND_LABELS, TAX_BASIS_LABELS,
   TRADE_METHODS, TRADE_METHOD_LABELS,
@@ -198,6 +199,16 @@ function buildOption(): Record<string, unknown> {
   }
 }
 
+// P2 入口（dljy#2971）：分时持仓、场站维度持仓只在对应能力开通时出现，带上当前月份与主体筛选。
+const intervalLink = computed(() => ({
+  path: '/zcqjy/positions/intervals',
+  query: { fromDate: `${filters.monthRange[0] ?? report.value?.fromMonth ?? ''}-01`, toDate: `${filters.monthRange[0] ?? report.value?.fromMonth ?? ''}-01`, granularity: 'HOUR', ...(filters.subjectId ? { subjectId: filters.subjectId } : {}) },
+}))
+const stationLink = computed(() => ({
+  path: '/zcqjy/positions/stations',
+  query: { ...(filters.monthRange.length === 2 ? { fromMonth: filters.monthRange[0], toMonth: filters.monthRange[1] } : {}), ...(filters.subjectId ? { subjectId: filters.subjectId } : {}) },
+}))
+
 const stationName = (id: number | null) => (id ? stations.value.find((s) => s.id === id)?.name ?? `#${id}` : '未分配')
 </script>
 
@@ -239,6 +250,8 @@ const stationName = (id: number | null) => (id ? stations.value.find((s) => s.id
         <el-button type="primary" @click="apply">查询</el-button>
         <el-button :loading="exporting" @click="doExport">导出</el-button>
         <router-link to="/zcqjy/contracts" class="ml-link">售电合同 →</router-link>
+        <router-link v-if="p2ModuleOn(capabilities, 'curves')" :to="intervalLink" class="ml-link">分时持仓 →</router-link>
+        <router-link v-if="p2ModuleOn(capabilities, 'stationAllocations')" :to="stationLink" class="ml-link">场站维度 →</router-link>
       </div>
 
       <MidlongNotice v-if="report.view === 'AS_OF'" tone="info" title="历史认知时点视图">

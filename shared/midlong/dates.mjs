@@ -111,6 +111,49 @@ export function beijingMidnightInstant(isoDate) {
   return new Date(Date.UTC(year, month - 1, day) - SHANGHAI_OFFSET_MS).toISOString()
 }
 
+// 业务时刻的分项正则：日期固定 4-2-2 位，时间可省（省略即当日零点），秒与小数可省
+// （小数位数不限——兼容 RFC3339Nano 等亚毫秒精度，换算时按毫秒截断），
+// 时区后缀 Z 或 ±HH:MM 可省（省略按北京时间，design D3）。
+const INSTANT_RE = /^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2})(?::(\d{2})(?:\.(\d+))?)?)?(Z|[+-]\d{2}:\d{2})?$/
+
+/**
+ * 严格解析业务时刻（#2981）：逐项核对各分量范围，日历上不存在的日期或越界的时分秒一律拒绝，
+ * 绝不交给 new Date 碰运气（JS Date 会把 02-30 静默滚动成 03-02）。
+ * 接受 YYYY-MM-DD（北京时间零点）与 YYYY-MM-DD[T ]HH:mm[:ss[.f+]]（秒小数位数不限、按毫秒截断），可带 Z 或 ±HH:MM；
+ * 不带时区按北京时间（+08:00）解释。返回 { ok: true, date } 或 { ok: false, reason }，
+ * reason ∈ FORMAT / MONTH / DAY / HOUR / MINUTE / SECOND / OFFSET。
+ */
+export function parseBeijingInstant(value) {
+  const m = INSTANT_RE.exec(String(value ?? '').trim())
+  if (!m) return { ok: false, reason: 'FORMAT' }
+  const [, yearText, monthText, dayText, hourText = '00', minuteText = '00', secondText = '00', frac, offset] = m
+  const year = Number(yearText)
+  const month = Number(monthText)
+  const day = Number(dayText)
+  const hour = Number(hourText)
+  const minute = Number(minuteText)
+  const second = Number(secondText)
+  if (year < 100) return { ok: false, reason: 'FORMAT' } // Date.UTC 会把 0–99 年映射到 1900 年代，直接拒绝
+  if (month < 1 || month > 12) return { ok: false, reason: 'MONTH' }
+  if (day < 1 || day > daysInMonth(year, month)) return { ok: false, reason: 'DAY' }
+  if (hour > 23) return { ok: false, reason: 'HOUR' }
+  if (minute > 59) return { ok: false, reason: 'MINUTE' }
+  if (second > 59) return { ok: false, reason: 'SECOND' }
+  let offsetMinutes = 480 // 无时区后缀按北京时间（design D3）
+  if (offset) {
+    if (offset === 'Z') {
+      offsetMinutes = 0
+    } else {
+      const sign = offset[0] === '-' ? -1 : 1
+      const [offsetHour, offsetMinute] = offset.slice(1).split(':').map(Number)
+      if (offsetHour > 14 || offsetMinute > 59) return { ok: false, reason: 'OFFSET' }
+      offsetMinutes = sign * (offsetHour * 60 + offsetMinute)
+    }
+  }
+  const ms = frac ? Number(frac.padEnd(3, '0').slice(0, 3)) : 0
+  return { ok: true, date: new Date(Date.UTC(year, month - 1, day, hour, minute, second, ms) - offsetMinutes * 60 * 1000) }
+}
+
 /** 交割期换算为排他上界的时段 [start, end)（北京时间零点）。 */
 export function deliveryInterval(deliveryStart, deliveryEnd) {
   if (!isIsoDate(deliveryStart) || !isIsoDate(deliveryEnd) || deliveryEnd < deliveryStart) return null

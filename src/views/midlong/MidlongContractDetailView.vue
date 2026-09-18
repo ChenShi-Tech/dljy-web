@@ -10,6 +10,8 @@ import CompanyScopeBar from '@/components/company/CompanyScopeBar.vue'
 import MidlongNotice from '@/components/midlong/MidlongNotice.vue'
 import MidlongContractFormDialog from '@/components/midlong/MidlongContractFormDialog.vue'
 import MidlongEconomicsEditor from '@/components/midlong/MidlongEconomicsEditor.vue'
+import MidlongContractCurvesPanel from '@/components/midlong/p2/MidlongContractCurvesPanel.vue'
+import MidlongContractStationsPanel from '@/components/midlong/p2/MidlongContractStationsPanel.vue'
 import { selectedCompanyId } from '@/services/company/companyContext'
 import { fetchStations, type CompanyStation } from '@/services/company/companyApi'
 import { currentRegion } from '@/services/region/regionContext'
@@ -17,6 +19,7 @@ import {
   CompanyNotSelectedError, addEvidence, correctContract, fetchCapabilities, fetchContract, fetchEvidenceContent, fetchSubjects,
   linkAlias, midlongFailureOf, verifyContract, voidContract, type EvidenceUpload, type MidlongFailure,
 } from '@/services/midlong/midlongApi'
+import { p2ModuleOn } from '@/services/midlong/midlongP2Api'
 import {
   DELIVERY_CYCLE_LABELS, DOCUMENT_KIND_LABELS, ENERGY_ATTRIBUTE_LABELS, EVENT_TYPE_LABELS, EVIDENCE_BASIS_LABELS,
   EVIDENCE_DOCUMENT_TYPES, EVIDENCE_DOCUMENT_TYPE_LABELS, MARKET_SCOPE_LABELS, PRICE_COMPONENT_LABELS, PRICE_TYPE_LABELS,
@@ -90,6 +93,10 @@ const subjectLabel = computed(() => {
   return `${d.subjectName}（${d.subjectKey}${d.subjectUnitCode ? ` · 单元 ${d.subjectUnitCode}` : ' · 单元代码待补'}）`
 })
 const releasedAliases = computed(() => (detail.value?.aliases ?? []).filter((a) => a.releasedAt))
+// P2 分时分解与场站分配（dljy#2971）：能力开关打开且是电量合同时才出现，关闭时不调用对应接口。
+const showCurves = computed(() => p2ModuleOn(capabilities.value, 'curves') && detail.value?.documentKind === 'OBLIGATION')
+const showStations = computed(() => p2ModuleOn(capabilities.value, 'stationAllocations') && detail.value?.documentKind === 'OBLIGATION')
+const stationOptions = computed(() => stations.value.map((s) => ({ id: s.id, name: s.name ?? `场站 ${s.id}` })))
 const evidenceById = computed(() => new Map((detail.value?.evidence ?? []).map((e) => [e.id, e])))
 
 function allocationPrice(rev: MidlongRevision, a: MidlongRevision['allocations'][number]) {
@@ -354,6 +361,10 @@ const missingBasis = computed(() => (actionError.value?.errorCode === 'INCOMPLET
         </el-table>
         <p v-if="current?.allocations.some((a) => a.evidenceBasis === 'INTERNAL_ESTIMATE')" class="ml-muted">内部估算分解仅供参考，不计入正式持仓。</p>
       </div>
+
+      <!-- 核验、更正、作废等操作都会让 rowVersion 前进：面板据此重新取概览，否则仍显示旧版本状态、提交旧的 expectedRevisionNo。 -->
+      <MidlongContractCurvesPanel v-if="showCurves" :contract-id="detail.contractId" :row-version="detail.rowVersion" :can-write="canWrite" :evidence="detail.evidence" />
+      <MidlongContractStationsPanel v-if="showStations" :contract-id="detail.contractId" :row-version="detail.rowVersion" :can-write="canWrite" :evidence="detail.evidence" :stations="stationOptions" />
 
       <div class="ml-panel">
         <h3>版本历史（{{ detail.revisions.length }}）</h3>

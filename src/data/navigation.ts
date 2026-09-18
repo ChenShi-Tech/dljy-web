@@ -109,6 +109,9 @@ export const navigation: NavItem[] = [
       // 云南中长期售电 P1（dljy#2939）：只开放已交付的合同与月度持仓；计划/执行/复盘未交付不出现空壳菜单。
       { path: '/zcqjy/contracts', title: '售电合同', icon: FileText },
       { path: '/zcqjy/positions', title: '月度持仓', icon: ChartColumn },
+      // 云南中长期售电 P2（dljy#2971）：分时分解与场站分配已交付。
+      { path: '/zcqjy/positions/intervals', title: '分时持仓', icon: ChartSpline },
+      { path: '/zcqjy/positions/stations', title: '场站维度持仓', icon: Factory },
       { path: '/zcqjy/zccljk', title: '中长期持仓监控', icon: Gauge },
       { path: '/zcqjy/exposure', title: '中长期敞口看板', icon: Gauge },
       { path: '/zcqjy/zfsdjy', title: '中长期分时段交易', icon: ChartSpline },
