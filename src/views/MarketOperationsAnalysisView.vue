@@ -47,6 +47,9 @@ const sectionNotice = computed<string>(() => {
     if (retailPackagesAccessDenied.value) {
       return '售电套餐为售电公司私有经营口径，当前账号无查看权限；缺权限的部分显示为空，不含任何经营数据。'
     }
+    if (!retailPackageDetailsReal.value && !retailPackageMetricsReal.value) {
+      return '暂无售电套餐真实数据，套餐明细与 KPI 显示为空，未用示例补齐；月度趋势为市场公共口径。'
+    }
     const realPart = retailPackageDetailsReal.value ? '套餐明细' : '套餐 KPI'
     return `${realPart}已真实落盘，另一数据集暂无真实回放；缺失部分显示为空，未用示例补齐。`
   }
@@ -58,6 +61,8 @@ const packagesNotice = computed<string>(() => {
   if (activeTab.value !== 'packages' || retailPackagesReal.value) return ''
   if (retailPackagesPartialReal.value) return ''
   if (hasRealData.value) {
+    // 部分缺失时由 sectionNotice 统一提示，避免两条提示重复
+    if (activeSectionPartial.value) return ''
     return retailPackagesAccessDenied.value
       ? '售电套餐为售电公司私有经营口径，当前账号无查看权限，此页签不显示任何经营数据。'
       : '暂无售电套餐真实数据，此页签为空，未用示例补齐。'

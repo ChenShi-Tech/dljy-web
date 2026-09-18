@@ -155,13 +155,15 @@ describe('loadMarketAnalysis 数据来源分域', () => {
     expect(result.dataset.packageMetrics).toEqual([])
     expect(result.dataset.hourData).toEqual([])
 
-    // 公共页签 captured；套餐两键全缺 → empty
+    // 公共页签 captured；套餐两键全缺但月度趋势真实 → captured + 部分缺失（套餐明细与 KPI 为空）
     expect(result.sectionBasis.overview).toBe('captured')
     expect(result.sectionBasis.generation).toBe('captured')
     expect(result.sectionBasis.sales).toBe('captured')
     expect(result.sectionBasis.storage).toBe('captured')
     expect(result.sectionBasis.price).toBe('captured')
-    expect(result.sectionBasis.packages).toBe('empty')
+    expect(result.sectionBasis.packages).toBe('captured')
+    expect(result.sectionPartial.packages).toBe(true)
+    expect(result.dataset.retailPackages).toEqual([])
   })
 
   it('全部数据集不真实时保持整页示例 + synthetic 旧行为', async () => {
@@ -205,5 +207,22 @@ describe('loadMarketAnalysis 数据来源分域', () => {
     expect(result.sectionPartial.price).toBe(false)
     expect(result.sectionBasis.sales).toBe('empty')
     expect(result.sectionPartial.sales).toBe(false)
+  })
+
+  it('KPI 只到了部分页签、月度趋势缺失时，相关页签标部分缺失而不是全真实', async () => {
+    fetchCaptured.mockImplementation(async (family: string, key: string) => {
+      if (family !== 'market_analysis') return mockEmpty()
+      if (key === 'market_generation') return capturedRows([{ name: '水电', quantity: 50, avgPrice: 0.3, count: 5, percentage: 0 }])
+      if (key === 'market_metrics') return capturedRows([{ tab: 'overview', label: '真实交易对手', value: 66, unit: '个', tone: 'purple' }])
+      return mockEmpty()
+    })
+    const result = await loadMarketAnalysis(2026)
+    // 发电页签：分类真实，但本页签没有 KPI 行、月度趋势也没到 → captured + 部分缺失
+    expect(result.sectionBasis.generation).toBe('captured')
+    expect(result.sectionPartial.generation).toBe(true)
+    expect(result.dataset.generationMetrics).toEqual([])
+    expect(result.dataset.monthlyTrend).toEqual([])
+    // 售电页签：只有别的页签的 KPI 行，自己什么都没有 → empty
+    expect(result.sectionBasis.sales).toBe('empty')
   })
 })

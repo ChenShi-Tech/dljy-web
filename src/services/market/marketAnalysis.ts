@@ -344,21 +344,24 @@ export interface MarketAnalysisResult {
  * 页签 → 该页签消费的 datasetKey（与下方装配逻辑一一对应）。#2991：页签级徽章/空态
  * 按这组键的真实性判定，不再用整页 hasRealData 顶包。
  */
+// 非价格页签都会画月度趋势图（renderTrendChart 读 monthlyTrend），所以都依赖 market_monthly_trend。
 const TAB_DATASET_KEYS: Record<MarketAnalysisTab, readonly string[]> = {
   overview: ['market_trade_summary', 'market_monthly_trend', 'market_metrics'],
-  generation: ['market_generation', 'market_metrics'],
-  sales: ['market_sales', 'market_metrics'],
-  storage: ['market_storage', 'market_metrics'],
-  packages: [RETAIL_PACKAGE_KEY, RETAIL_PACKAGE_METRICS_KEY],
+  generation: ['market_generation', 'market_monthly_trend', 'market_metrics'],
+  sales: ['market_sales', 'market_monthly_trend', 'market_metrics'],
+  storage: ['market_storage', 'market_monthly_trend', 'market_metrics'],
+  packages: [RETAIL_PACKAGE_KEY, RETAIL_PACKAGE_METRICS_KEY, 'market_monthly_trend'],
   price: ['market_price']
 }
+// KPI 两个数据集按页签分行（行上带 tab），一个信封真实不代表每个页签都有 KPI：按当前页签实际有没有行判定。
+const METRIC_KEYS = new Set(['market_metrics', RETAIL_PACKAGE_METRICS_KEY])
 
-function sectionsOf(realByKey: Record<string, boolean>, hasRealData: boolean) {
+function sectionsOf(realByKey: Record<string, boolean>, hasRealData: boolean, metricTabs: ReadonlySet<string> = new Set()) {
   const basis = {} as MarketAnalysisSectionBasis
   const partial = {} as MarketAnalysisSectionPartial
   for (const entry of Object.entries(TAB_DATASET_KEYS) as Array<[MarketAnalysisTab, readonly string[]]>) {
     const [tab, keys] = entry
-    const reals = keys.map((key) => Boolean(realByKey[key]))
+    const reals = keys.map((key) => (METRIC_KEYS.has(key) ? Boolean(realByKey[key]) && metricTabs.has(tab) : Boolean(realByKey[key])))
     basis[tab] = !hasRealData ? 'synthetic' : reals.some(Boolean) ? 'captured' : 'empty'
     partial[tab] = hasRealData && reals.some(Boolean) && !reals.every(Boolean)
   }
@@ -455,7 +458,7 @@ export async function loadMarketAnalysis(year = 2026): Promise<MarketAnalysisRes
     hasRealData: true,
     publicDataReal,
     realByKey,
-    ...sectionsOf(realByKey, true),
+    ...sectionsOf(realByKey, true, new Set([...metricRows, ...packageMetricRows].map((r) => r.tab).filter((tab): tab is string => Boolean(tab)))),
     retailPackagesReal,
     retailPackagesPartialReal,
     retailPackageDetailsReal: packageResult.real,
