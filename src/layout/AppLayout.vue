@@ -3,7 +3,7 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Bell, ChevronDown, KeyRound, LogOut, Menu, RefreshCw, Sparkles } from 'lucide-vue-next'
-import { navigation, type NavItem } from '../data/navigation'
+import { applyInsightWorkspaceNavigation, navigation, type NavItem } from '../data/navigation'
 import { getRegionStatusLabel } from '../data/regions'
 import { getDashboard, type Notice } from '@/services/dashboard/dashboardData'
 import { getCurrentUser, getInfo, logout, type AuthUser } from '@/services/auth'
@@ -83,7 +83,10 @@ const visibleNavigation = computed(() => {
   const _accessRevision = accessRevision.value
   // 立场视图层（#2196）：角色×地区过滤后，再按当前立场出工作台（共享页恒可见，
   // 组合/集团视角全量；专职立场只看共享页 + 本立场专属页）。
-  const byRoleAndRegion = filterNavigationForUser(navigation, currentUser.value, currentRegion.value.id)
+  // 地区工作区装配（dljy#2995）：已启用装配型洞察工作区且有已交付页时，「市场洞察」
+  // 分组 children 被原位替换；否则沿用现有入口，侧边栏与现状完全一致。
+  const assembled = applyInsightWorkspaceNavigation(navigation, currentRegion.value.id)
+  const byRoleAndRegion = filterNavigationForUser(assembled, currentUser.value, currentRegion.value.id)
   return withCurrentRegionTradingTitle(filterNavigationForStance(byRoleAndRegion, activeStanceType.value))
 })
 const currentGate = computed(() => getDecisionGateHint(route.path, currentUser.value))
@@ -120,9 +123,11 @@ function openSecurityCenter() {
 function switchRegion(regionId: string) {
   if (regionId === selectedRegionId.value) return
   setCurrentRegionId(regionId)
-  const nextPath = resolveRegionSwitchRoute(regionId, currentUser.value, route.path)
-  if (nextPath !== route.path) {
-    router.replace(nextPath)
+  // 统一解析（dljy#2995）：洞察规范页按 目标地区支持/已登记未交付/未登记 三态落位，
+  // 其余路径行为与旧版一致；带 query 的落点（原地停留保留日期等业务参数）。
+  const next = resolveRegionSwitchRoute(regionId, currentUser.value, route.path, route.query)
+  if (next.path !== route.path) {
+    router.replace(next)
   }
 }
 
@@ -258,9 +263,10 @@ watch(
 watch(
   () => currentRegion.value.id,
   (regionId) => {
-    if (!canAccessPath(route.path, currentUser.value) || !isPathAvailableInRegion(route.path, regionId)) {
-      router.replace(firstAccessiblePath(currentUser.value, regionId))
-    }
+    // 路径仍可用（有权限且该地区放行）时不二次跳转，避免 landing 页来回弹；
+    // 不可用时与 switchRegion 走同一个统一解析（含洞察页的原地停留/默认入口/未登记语义）。
+    if (canAccessPath(route.path, currentUser.value) && isPathAvailableInRegion(route.path, regionId)) return
+    router.replace(resolveRegionSwitchRoute(regionId, currentUser.value, route.path, route.query))
   }
 )
 </script>

@@ -28,6 +28,7 @@ import { REPORTS_FEATURE_ENABLED } from '../features/reports/config'
 import { reportsNavigation } from '../features/reports/navigation'
 import { GRID_GEO_FEATURE_ENABLED } from '../features/gridGeo/config'
 import { gridGeoNavigation } from '../features/gridGeo/navigation'
+import { listInsightNavigation } from '@/services/region/insightWorkspace'
 import type { SubjectType } from '@/services/governance'
 
 // 冻结下架（简化 IA·PR-A）：演示/静态占位分组默认从侧边栏摘除（代码与路由保留、深链可达），
@@ -257,3 +258,21 @@ export const navigation: NavItem[] = [
     ]
   }
 ]
+
+// 市场洞察地区工作区导航装配（dljy#2995 阶段 A）
+// ----------------------------------------------------------------------------
+// 纯函数：当某地区已启用「装配型」洞察工作区且有已交付页时，把「市场洞察」分组
+// （path '/insight'）的直接子项原位替换为工作区 delivered 页；其余任何情况（未注册、
+// 开关未启用、兼容型登记、已启用但无已交付页）都保持现有 children 原样。
+// 替换后的 children 仍走 filterNavigationForUser / filterNavigationForStance 过滤链，
+// 权限与立场过滤逻辑不变；其他分组永不触碰。
+export function applyInsightWorkspaceNavigation(items: NavItem[], regionId: string): NavItem[] {
+  const entries = listInsightNavigation(regionId)
+  if (!entries) return items
+  return items.map((item) => {
+    if (item.path !== '/insight' || !item.children) return item
+    // InsightNavEntry 与 NavItem 必填字段（path/title/icon）结构兼容，icon 由内核按页 id 提供
+    const children: NavItem[] = entries.map((entry) => ({ ...entry }))
+    return { ...item, children }
+  })
+}
