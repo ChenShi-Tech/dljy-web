@@ -125,6 +125,8 @@ export const navigation: NavItem[] = [
       { path: '/zcqjy/plans', title: '售电计划', icon: ListChecks },
       { path: '/zcqjy/execution', title: '交易执行', icon: Compass },
       { path: '/zcqjy/adjustments', title: '合同调整', icon: FileSliders },
+      { path: '/zcqjy/review', title: '业务复盘', icon: FileChartColumn },
+      { path: '/zcqjy/bills', title: '外部账单与差异', icon: Coins },
       { path: '/zcqjy/zccljk', title: '中长期持仓监控', icon: Gauge },
       { path: '/zcqjy/exposure', title: '中长期敞口看板', icon: Gauge },
       { path: '/zcqjy/zfsdjy', title: '中长期分时段交易', icon: ChartSpline },
