@@ -71,6 +71,32 @@ describe('中长期合同草稿表单', { timeout: 20000 }, () => {
     expect(hoisted.updateDraft).toHaveBeenCalledWith(7, expect.objectContaining({ frameworkContractId: 5, expectedRowVersion: 3 }))
   })
 
+  it('普通保存成功（修改草稿）：表单立即关闭，并只通知一次已保存（dljy#2978）', async () => {
+    hoisted.fetchContracts.mockResolvedValue({ rows: [frameworkRow], page: 1, pageSize: 200, total: 1, stats: {} })
+    hoisted.updateDraft.mockResolvedValue({ contractId: 7, warnings: [] })
+    const { w, save } = await open({ detail: detail() })
+    await save()
+    await flushPromises()
+    expect(hoisted.updateDraft).toHaveBeenCalledTimes(1)
+    expect(w.emitted('saved')).toEqual([[7]])
+    expect(w.emitted('update:modelValue')).toEqual([[false]])
+  })
+
+  it('普通保存成功（新建草稿）：表单立即关闭，并只通知一次已保存（dljy#2978）', async () => {
+    hoisted.fetchContracts.mockResolvedValue({ rows: [], page: 1, pageSize: 200, total: 0, stats: {} })
+    hoisted.createDraft.mockResolvedValue({ contractId: 12, warnings: [] })
+    const { w, save } = await open({ detail: null })
+    const inputs = w.findAll('.ml-field').filter((f) => /外部合同|合同名称/.test(f.text()))
+    await inputs[0].find('input').setValue('M-8')
+    await inputs[1].find('input').setValue('新录入的合同')
+    await flushPromises()
+    await save()
+    await flushPromises()
+    expect(hoisted.createDraft).toHaveBeenCalledTimes(1)
+    expect(w.emitted('saved')).toEqual([[12]])
+    expect(w.emitted('update:modelValue')).toEqual([[false]])
+  })
+
   it('框架协议超过一页：逐页加载全部选项', async () => {
     const row = (id: number) => ({ ...frameworkRow, contractId: id, contractName: `框架协议 ${id}`, externalContractNo: `FW-${id}` })
     // 用小数据模拟「一页取不完」（按 total 判断），避免渲染上百个选项拖慢慢速 CI。
