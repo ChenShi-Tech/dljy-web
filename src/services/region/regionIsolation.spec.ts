@@ -15,7 +15,7 @@
 // ⑤ 未登记 capability（fail-closed，不放行）
 // ⑥ 切区后缓存失效（缓存键必须含地区，不得跨地区复用）
 
-import { describe, expect, it } from 'vitest'
+import { beforeAll, describe, expect, it, vi } from 'vitest'
 import {
   getFamilyGridScope,
   isCrossRegionFamily,
@@ -31,6 +31,7 @@ import { resolveServingRoute } from '@/services/data/contracts/servingRoutes.gen
 import { isPathAvailableInRegion } from '@/services/governance'
 import { getRegionCapabilityForPath, isRegionRouteAvailable, regionCapabilityAllowsRequest } from './regionModules'
 import { resolveMechanismProfile } from './mechanismProfile'
+import { INSIGHT_PAGE_PATHS, resolveInsightPage } from './insightWorkspace'
 
 const CSG_REGION = 'yunnan'
 const SGCC_BASELINE = 'shanxi'
@@ -179,5 +180,40 @@ describe('⑥ 切区缓存失效：缓存键必须含地区维度', () => {
     // 改用仍然逐地区不同的字段：原生粒度（云南 60min / 山西 15min）与电网归属。
     expect(yunnan.granularityNative.value).not.toBe(shanxi.granularityNative.value)
     expect(yunnan.gridOperator.value).not.toBe(shanxi.gridOperator.value)
+  })
+})
+
+describe('⑦ 市场洞察规范入口（dljy#2995）：未登记地区留在洞察域，不借用他省数据', () => {
+  beforeAll(async () => {
+    const { installRegionPackages } = await import('@/features/regions')
+    installRegionPackages()
+  })
+
+  it('六条规范路径四地区路由层均放行：守卫不踢，内容由工作区注册决定', () => {
+    for (const path of Object.values(INSIGHT_PAGE_PATHS)) {
+      expect(isPathAvailableInRegion(path, 'shanxi'), path).toBe(true)
+      expect(isPathAvailableInRegion(path, 'yunnan'), path).toBe(true)
+      expect(isPathAvailableInRegion(path, 'guangdong'), path).toBe(true)
+      expect(isPathAvailableInRegion(path, 'sichuan'), path).toBe(true)
+    }
+  })
+
+  it('未登记工作区的地区（广东/四川）解析为 not-registered：宿主显示未开通、不发任何请求', () => {
+    for (const regionId of ['guangdong', 'sichuan']) {
+      for (const pageId of ['overview', 'prices', 'supply', 'plants', 'research'] as const) {
+        expect(resolveInsightPage(regionId, pageId), `${regionId}/${pageId}`).toEqual({ kind: 'not-registered' })
+      }
+    }
+  })
+
+  it('云南开关未开时同样 not-registered；打开后未交付页落本省占位，绝不解析成山西页面', () => {
+    vi.unstubAllEnvs()
+    expect(resolveInsightPage('yunnan', 'prices')).toEqual({ kind: 'not-registered' })
+    vi.stubEnv('VITE_YUNNAN_INSIGHT_WORKSPACE', '1')
+    const pending = resolveInsightPage('yunnan', 'prices')
+    expect(pending).toMatchObject({ kind: 'fallback', reason: 'page-not-delivered' })
+    // 占位仍指向云南本省登记的 descriptor，不会把山西的已交付页拿来渲染
+    expect(pending.kind === 'fallback' && pending.page?.pageId).toBe('prices')
+    vi.unstubAllEnvs()
   })
 })
