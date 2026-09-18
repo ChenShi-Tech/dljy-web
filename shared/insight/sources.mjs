@@ -172,6 +172,33 @@ const priceSources = [
   })),
 ]
 
+// 中广核渠道取得的南网披露（#3005 水电事实视角）：经 agent-backend 私有接口读取，按公司私有授权。
+// 逐日记录；payloadFields 把上游中文列名映射成洞察字段，未登记的列不读。
+const privateDisclosure = (dataset, payloadFields) => Object.freeze({ kind: 'private-api', resource: 'cgn-disclosure', dataset, ownerCompanyId: CGN_OWNER, payloadFields: Object.freeze(payloadFields) })
+const TIME_DAY = Object.freeze({ resolutionMinutes: 1440, slotLabel: 'business-day', dateField: 'operateDate' })
+
+const hydroDisclosureSources = [
+  source({
+    sourceId: 'cgn.hydro.weekly-output.forecast', title: '水电周出力预测（逐日平均出力，按区域）', category: 'hydro',
+    read: privateDisclosure('forecast_hydro_weekly_output', { region: '所属区域', averageOutput: '平均出力（MW）' }),
+    businessScope: 'csg-multi-region', accessScope: 'company', authority: 'csg-disclosure', ingestChannel: 'cgn-api',
+    accessNote: '经中广核渠道取得的南网披露，按公司私有授权读取；区域含云南与其他省，按区域分列、不相加',
+    // 「平均出力」是逐日平均功率，属于区间平均；只作功率展示，不在本来源内换算电量。
+    measure: Object.freeze({ kind: 'power', unit: 'MW', inputUnit: 'MW', factor: '1', powerSemantics: 'interval-average', valueField: 'averageOutput' }),
+    time: TIME_DAY, variant: 'forecast', versionPolicy: 'owner-latest', freshness: 'unregistered',
+    dimensions: Object.freeze(['region']), objectDimension: 'region',
+  }),
+  source({
+    sourceId: 'cgn.hydro.yn-group-share', title: '云南水电机组群组成与机组出力占比（按日）', category: 'hydro',
+    read: privateDisclosure('forecast_yn_hydro_group_energy_limit', { region: '所属区域', group: '机组群名称', plant: '电厂名称', unit: '机组名称', share: '机组出力所占比例（百分比）' }),
+    businessScope: 'yunnan', accessScope: 'company', authority: 'csg-disclosure', ingestChannel: 'cgn-api',
+    accessNote: '上游数据集名称含「电量上限」，实际只披露机组群组成与占比，没有电量或出力上限值；不据此画上限线',
+    measure: Object.freeze({ kind: 'ratio', unit: '%', inputUnit: '%', factor: '1', valueField: 'share' }),
+    time: TIME_DAY, variant: 'forecast', versionPolicy: 'owner-latest', freshness: 'unregistered',
+    dimensions: Object.freeze(['region', 'group', 'plant', 'unit']), objectDimension: 'group',
+  }),
+]
+
 const disclosureSources = [
   source({
     sourceId: 'csg.disclosure.stable-section', title: '稳定断面最大负载率（日）',
@@ -245,7 +272,7 @@ const plantSources = [
   }),
 ]
 
-export const INSIGHT_SOURCES = Object.freeze([...systemSources, ...priceSources, ...disclosureSources, ...plantSources])
+export const INSIGHT_SOURCES = Object.freeze([...systemSources, ...hydroDisclosureSources, ...priceSources, ...disclosureSources, ...plantSources])
 const BY_ID = new Map(INSIGHT_SOURCES.map(entry => [entry.sourceId, entry]))
 
 /**
@@ -286,6 +313,11 @@ export function validateInsightSources(sources = INSIGHT_SOURCES) {
     if (!['capture', 'serving', 'private-api'].includes(entry.read?.kind)) errors.push(`${where}: 未知读取方式`)
     if (entry.accessScope === 'company' && entry.read?.kind === 'serving') errors.push(`${where}: 公司私有来源不能经公开 serving 路由读取`)
     if (entry.read?.kind === 'private-api' && (entry.accessScope !== 'company' || !entry.read.ownerCompanyId)) errors.push(`${where}: 私有接口来源必须声明公司私有范围与归属公司`)
+    if (entry.read?.resource === 'cgn-disclosure') {
+      const mapped = Object.keys(entry.read.payloadFields ?? {})
+      const needed = [...entry.dimensions, ...sourceFields(entry).map(field => field.valueField)]
+      if (!entry.read.dataset || needed.some(name => !mapped.includes(name))) errors.push(`${where}: 私有披露来源必须声明数据集，并为全部维度与取值字段登记列名映射`)
+    }
     for (const field of entry.measure?.fields ?? []) {
       if (!/^[A-Za-z][A-Za-z0-9_]{0,63}$/.test(field.valueField ?? '') || !MEASURE_KINDS.includes(field.kind) || typeof field.unit !== 'string') errors.push(`${where}: 字段 ${field.id} 登记不完整`)
     }

@@ -11,7 +11,7 @@ export type FreshnessCadence = 'daily' | 'historical-package' | 'monthly-package
 export type SourceRead =
   | { kind: 'capture'; family: string; datasetKey: string; rowFilter?: Record<string, string> }
   | { kind: 'serving'; datasetId: string; region: string }
-  | { kind: 'private-api'; resource: string; ownerCompanyId: string }
+  | { kind: 'private-api'; resource: string; ownerCompanyId: string; dataset?: string; payloadFields?: Readonly<Record<string, string>> }
 
 export type InsightSource = {
   sourceId: string

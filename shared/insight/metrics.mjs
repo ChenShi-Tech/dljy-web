@@ -60,6 +60,9 @@ export const INSIGHT_METRICS = Object.freeze([
   definition({ metricId: 'forecast.mape', version: '1', label: '平均百分比误差', unit: '%', places: 1, formula: 'Σ|F−A|/|A|/n', basis: '实际为零或接近零时失真；当前视图不计算' }),
   definition({ metricId: 'sample.forecast-valid-hours', version: '1', label: '预测有效时长', unit: 'h', places: 2, formula: 'ΣΔt（预测有效）', basis: '配对另报各自覆盖' }),
   definition({ metricId: 'sample.actual-valid-hours', version: '1', label: '实际有效时长', unit: 'h', places: 2, formula: 'ΣΔt（实际有效）', basis: '配对另报各自覆盖' }),
+  // #3006 总览重点事项：误差占比与同进度变化率
+  definition({ metricId: 'forecast.mae-ratio', version: '1', label: '平均绝对误差占实际均值', unit: '%', places: 1, formula: 'MAE/Ā×100', basis: '共同有效时段；实际均值不为正时不计算' }),
+  definition({ metricId: 'supply.progress-change', version: '1', label: '较前一日同进度变化', unit: '%', places: 1, formula: '(当日已发布时段均值−前一日同时段均值)/前一日同时段均值×100', basis: '只对单日窗口；前一日同时段缺任何时段则不比较' }),
   definition({ metricId: 'supply.residual-demand-proxy', version: '1', label: '剩余需求代理（分析代理）', unit: 'MW', places: 1, formula: '负荷+净外送−新能源', basis: '三者同范围同区间且方向明确；不是官方竞价空间，缺一项不可算' }),
 ])
 
