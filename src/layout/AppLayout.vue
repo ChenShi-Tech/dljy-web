@@ -19,6 +19,7 @@ import {
 } from '@/services/company/companyContext'
 import { currentRegion, selectedRegionId, setCurrentRegionId } from '@/services/region/regionContext'
 import { resolveRegionSwitchRoute } from '@/services/region/regionNavigation'
+import { isInsightWorkspacePath } from '@/services/region/insightWorkspace'
 import {
   activeStanceKey,
   activeStanceType,
@@ -263,10 +264,15 @@ watch(
 watch(
   () => currentRegion.value.id,
   (regionId) => {
-    // 路径仍可用（有权限且该地区放行）时不二次跳转，避免 landing 页来回弹；
-    // 不可用时与 switchRegion 走同一个统一解析（含洞察页的原地停留/默认入口/未登记语义）。
+    // 路径仍可用（有权限且该地区放行）时不二次跳转，避免 landing 页来回弹。
     if (canAccessPath(route.path, currentUser.value) && isPathAvailableInRegion(route.path, regionId)) return
-    router.replace(resolveRegionSwitchRoute(regionId, currentUser.value, route.path, route.query))
+    // 只有市场洞察规范页走统一解析（原地停留/默认入口/未登记语义）；其余路径保持旧行为
+    // 回首个可访问页——非洞察页的地区切换行为不因本次接入而改变（spec RW04）。
+    if (isInsightWorkspacePath(route.path)) {
+      router.replace(resolveRegionSwitchRoute(regionId, currentUser.value, route.path, route.query))
+      return
+    }
+    router.replace(firstAccessiblePath(currentUser.value, regionId))
   }
 )
 </script>
