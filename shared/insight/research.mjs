@@ -10,7 +10,7 @@
 // 同类日（显式特征标准化 + 加权距离）、负荷同进度比较。同类日不默认输出预测价格；
 // 相关分析不输出置信区间（未处理时序自相关），异常窗口不给因果结论（RS05）。
 
-import { INSIGHT_ERRORS, InsightContractError, assertKnownKeys, calendarDayMs, parseInsightContext } from './contract.mjs'
+import { INSIGHT_ERRORS, InsightContractError, assertKnownKeys, calendarDayMs, parseExpectedResult, parseInsightContext } from './contract.mjs'
 import { getInsightAnalysis } from './analyses.mjs'
 import { getInsightSource, sourceFields } from './sources.mjs'
 import { decimalCompare, parseDecimal, toScaled } from '../midlong/decimal.mjs'
@@ -390,4 +390,40 @@ function parseSimilarDay(item, value) {
   }, 0n)
   if (total !== ONE) fail('特征权重之和必须恰好为 1')
   return { targetDate: value.targetDate, minCandidates, features: Object.freeze(features.map(feature => Object.freeze({ ...feature }))) }
+}
+
+// ── 研究定义保存（任务 14.3，RS06）───────────────────────────────────────────────────────────
+/** 服务端冻结的标准研究定义 schemaVersion：定义、方法版本、源引用一起冻结，按新源重跑生成新运行版本。 */
+export const RESEARCH_DEFINITION_SCHEMA_VERSION = 'insight-research-definition/v1'
+
+const DEFINITION_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+/**
+ * 解析研究定义保存请求 `{ presetId, context, filters?, transformations?, expected, title?,
+ * idempotencyKey, definitionId? }`。
+ * 浏览器只提交定义与源引用（同预览请求的形状）加期望版本：不接受任何结果数据或汇总，
+ * 服务端按同一研究内核重跑核验一致后才冻结；definitionId 给出即「更新已保存条目」，
+ * 缺省即新建；幂等键必填，重复提交不重复创建。
+ */
+export function parseResearchDefinitionSaveBody(body) {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) fail('研究定义保存请求体应为对象')
+  assertKnownKeys(body, ['presetId', 'context', 'filters', 'transformations', 'expected', 'title', 'idempotencyKey', 'definitionId'], '研究定义保存')
+  if (typeof body.idempotencyKey !== 'string' || !body.idempotencyKey.trim() || body.idempotencyKey.trim().length > 200) {
+    fail('请提供有效的研究定义保存标识：重复提交凭它复用原条目，不会重复创建')
+  }
+  let definitionId = null
+  if (body.definitionId !== undefined && body.definitionId !== null) {
+    if (typeof body.definitionId !== 'string' || !DEFINITION_ID_RE.test(body.definitionId)) fail('研究定义标识格式不正确')
+    definitionId = body.definitionId
+  }
+  const preview = parseResearchPreviewRequest({
+    presetId: body.presetId,
+    context: body.context,
+    ...(body.filters !== undefined ? { filters: body.filters } : {}),
+    ...(body.transformations !== undefined ? { transformations: body.transformations } : {}),
+  })
+  const expected = parseExpectedResult(body.expected)
+  if (!expected) fail('保存研究定义必须带上你看到的结果版本：服务端重跑核对一致才会保存，不一致会提示先重跑')
+  const title = body.title === undefined || body.title === null ? null : String(body.title).trim().slice(0, 200) || null
+  return Object.freeze({ ...preview, definitionId, expected, title, idempotencyKey: body.idempotencyKey.trim() })
 }
