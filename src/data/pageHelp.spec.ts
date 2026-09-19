@@ -52,7 +52,7 @@ describe('getPageHelp 查找', () => {
 describe('改名后的页面在各用户可见处名称一致（dljy#2988）', () => {
   // 菜单、帮助弹窗、AI 侧边栏、清单四处分别维护标题，改名只改一处会让同一屏出现两个名字。
   const cases = [
-    { key: 'ExposureBoard', path: '/zcqjy/exposure', title: '中长期与现货套保' },
+    { key: 'HedgeWorkbench', path: '/xhjy/hedge', title: '中长期与现货套保' },
     { key: 'PositionMonitor', path: '/zcqjy/zccljk', title: '持仓量监控（山西采集）' },
     { key: 'TradeCalendar', path: '/zcqjy/zjyap', title: '交易月历（山西·国网）' }
   ]
