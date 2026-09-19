@@ -13,6 +13,7 @@
 // 未选对象 / 未选参考的前置拦截在页面层完成（不发请求），后端校验是第二道防线。
 
 import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import type { InsightSelection } from 'shared/insight/handoff.mjs'
 import { getInsightAnalysis } from 'shared/insight/analyses.mjs'
 import { getInsightSource } from 'shared/insight/sources.mjs'
@@ -31,6 +32,7 @@ import { getCurrentUser } from '@/services/auth'
 import { hasCompanyAdmin } from '@/services/governance'
 import { useInsightContext } from '@/composables/useInsightContext'
 import { useInsightSelection } from '@/components/insight/chart/useInsightSelection'
+import { buildResearchHandoffQuery } from '../researchHandoff'
 import Price3DWorkspace from './prices/Price3DWorkspace.vue'
 import { readPriceMode, writePriceMode, type PriceDisplayMode } from './prices/priceModeStorage'
 import InsightBlock from '@/components/insight/InsightBlock.vue'
@@ -644,6 +646,22 @@ function onSpreadChartSelect(selection: InsightSelection | null): void {
   spreadSelection.value = selection
 }
 
+// ── 选区承接研究（任务 13.7，RS08）：语义选区 → 研究工作台预填研究范围 ──────────────────
+// 经地址参数白名单只带窗口起止日 + 对象/来源引用（DE10：不携带时段数组/原始数据）；
+// 研究页按同一套 useInsightContext 参数还原窗口与对象、来源，并按承接来源预填预设。
+
+const router = useRouter()
+
+const RESEARCH_HANDOFF_TO_TEXT = '把选区窗口与对象/来源引用交给研究工作台预填研究范围（不带原始数据）'
+
+function onSpreadSelectionToResearch(): void {
+  const selection = spreadSelection.value
+  if (!selection) return
+  const query = buildResearchHandoffQuery(selection, 'prices')
+  if (!query) return
+  void router.push({ path: '/insight/research', query })
+}
+
 /** 已定位时段的可读描述（「对象 · HH:mm~HH:mm」，语义身份，无下标）。 */
 const spreadSelectionText = computed(() => {
   const selection = spreadSelection.value
@@ -1021,7 +1039,19 @@ onMounted(() => {
                   :height="300"
                   @select="onSpreadChartSelect"
                 />
-                <p v-if="spreadSelectionText" class="ynp-prices__hint">已定位时段：{{ spreadSelectionText }}</p>
+                <p v-if="spreadSelectionText" class="ynp-prices__hint">
+                  已定位时段：{{ spreadSelectionText }}
+                  <el-button
+                    size="small"
+                    type="primary"
+                    plain
+                    data-testid="ynp-spread-to-research"
+                    :title="RESEARCH_HANDOFF_TO_TEXT"
+                    @click="onSpreadSelectionToResearch"
+                  >
+                    以选区进入研究
+                  </el-button>
+                </p>
                 <div v-if="spreadSummaryCards.length" class="ynp-prices__cards">
                   <div v-for="card in spreadSummaryCards" :key="card.key" class="ynp-prices__card">
                     <h4 class="ynp-prices__card-title">{{ card.title }}</h4>
