@@ -497,13 +497,18 @@ async function saveDefinition(): Promise<void> {
   saveState.saving = true
   saveState.error = ''
   saveState.savedVersion = null
+  // 在途期间配置可能已变（代次签名失效会清掉旧定义 ID）：迟到响应不得把 A 配置的定义
+  // ID 写回来配 B 配置的结果/上下文——签名已变就丢弃响应，不写任何状态。
+  const signatureAtRequest = configSignature.value
   try {
     const detail = await saveResearchDefinition({ presetId: preset.presetId, context, filters, transformations, expected, idempotencyKey })
+    if (configSignature.value !== signatureAtRequest) return
     const version = detail.latestRun?.runNo ?? 1
     savedDefinitionId.value = detail.definitionId
     saveState.savedVersion = version
     ElMessage.success(detail.replay ? `已保存（版本 ${version}）；该定义此前已保存，未重复创建` : `已保存（版本 ${version}）`)
   } catch (error) {
+    if (configSignature.value !== signatureAtRequest) return
     // 409（源已更新）→ 固定提示先重新运行；其余透传后端原因原文。未保存，绝不提示成功。
     saveState.error = researchSaveError(error, '保存未完成：研究页其余功能不受影响，请稍后重试')
   } finally {
