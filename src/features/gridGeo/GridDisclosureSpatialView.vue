@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
+import { computed, inject, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
+import { routeLocationKey } from 'vue-router'
 import { Activity, ArrowRight, ArrowDownUp, CalendarDays, Check, ChevronLeft, ChevronRight, Clock3, FileText, Filter, Gauge, Layers3, MapPinned, RadioTower, RefreshCw, Search, ShieldCheck, Wind, X, Zap } from 'lucide-vue-next'
 import { currentRegion } from '@/services/region/regionContext'
 import { selectedCompanyId } from '@/services/company/companyContext'
@@ -22,6 +23,7 @@ import DisclosureMaintenanceTools from './DisclosureMaintenanceTools.vue'
 import DisclosureMaintenanceList from './DisclosureMaintenanceList.vue'
 import DisclosureEventGroups from './DisclosureEventGroups.vue'
 import { createDefaultMaintenanceFilters, hasMaintenanceFilters, type MaintenanceFilters } from './disclosureMaintenance'
+import { queryText, validObjectDate } from './objectNavigation'
 import { useGridObjectContext } from './useGridObjectContext'
 import GridObjectContextBar from './GridObjectContextBar.vue'
 import GridObjectDrawer from './GridObjectDrawer.vue'
@@ -33,14 +35,23 @@ const objectTarget = shallowRef<GridObjectReference | null>(null)
 const objectQuery = computed((): Record<string, string> => objectContext.reference.value ? { objectKind: objectContext.reference.value.kind, objectId: objectContext.reference.value.id } : {})
 const objectQueryKey = computed(() => JSON.stringify([objectContext.hasContext.value, objectQuery.value]))
 const objectBlocked = computed(() => objectContext.hasContext.value && !objectContext.reference.value)
-const date = ref(objectContext.hasContext.value ? objectContext.date.value : todayBeijing())
+// 洞察电网边界页深链（dljy#3106 D6.1）：通道/断面名经 keyword 预填披露检索，输电主题
+// 按名过滤，业务日期经 objectDate 落到洞察窗口末日。只认合法单值（非空字符串、无控制
+// 字符、检索词 ≤120 字；日期必须是真实日历日），其余按缺省处理；对象上下文
+//（objectKind/objectId）仍走 useGridObjectContext，两组键互不占用。
+const deskRoute = inject(routeLocationKey, null)
+const initialKeywordQuery = queryText(deskRoute?.query.keyword).trim()
+const initialKeyword = initialKeywordQuery && initialKeywordQuery.length <= 120 && !/[\u0000-\u001f]/.test(initialKeywordQuery) ? initialKeywordQuery : ''
+const initialObjectDate = queryText(deskRoute?.query.objectDate)
+const initialDate = validObjectDate(initialObjectDate) ? initialObjectDate : todayBeijing()
+const date = ref(objectContext.hasContext.value ? objectContext.date.value : initialDate)
 const mode = ref<'day' | 'week'>('day')
 const themeId = ref<DeskThemeId>('price')
 const metricId = ref('price')
 const channel = ref('')
 const preferredChannels = new Map<string, string>()
-const searchText = ref('')
-const keyword = ref('')
+const searchText = ref(initialKeyword)
+const keyword = ref(initialKeyword)
 const categoryFilter = ref<'' | GridDisclosureCategory>('')
 const maintenanceFilters = ref<MaintenanceFilters>(createDefaultMaintenanceFilters())
 const appliedMaintenanceFilters = ref<MaintenanceFilters>(createDefaultMaintenanceFilters())
