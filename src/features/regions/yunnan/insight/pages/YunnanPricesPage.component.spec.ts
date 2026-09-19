@@ -632,7 +632,7 @@ describe('日前实时价差', () => {
     expect(wrapper!.text()).toContain('已定位时段')
   })
 
-  it('「以选区进入研究」：按白名单只带窗口起止日 + 对象/来源引用跳研究页（不带时段数组）', async () => {
+  it('「以选区进入研究」：按白名单只带窗口起止日 + 来源引用跳研究页（对象引用与时段数组不进 URL）', async () => {
     router.addRoute({ path: '/insight/research', component: { render: () => null } })
     state.capabilities = capsWith(['prices.public-node-series'])
     await mountPage()
@@ -660,9 +660,9 @@ describe('日前实时价差', () => {
     expect(query.from).toBe('prices')
     expect(query.start).toBe('2026-09-10')
     expect(query.end).toBe('2026-09-10')
-    expect(query.objects).toBe(encodeURIComponent('YN.KM.01'))
     expect(String(query.sources)).toContain('yn.price.node.public')
-    // 白名单外字段不进 URL：时段数组与版本令牌不交接
+    // 研究预览不消费对象范围：对象引用不进承接（带过去就是假承接）；时段数组与版本令牌同样不交接
+    expect(query.objects).toBeUndefined()
     expect(query.timeIntervals).toBeUndefined()
     expect(query.resultRef).toBeUndefined()
   })
