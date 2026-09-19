@@ -387,6 +387,8 @@ const saveState = reactive<{ saving: boolean; savedVersion: number | null; error
   savedVersion: null,
   error: '',
 })
+/** 最近一次保存成功的研究定义 id：材料通道（#3116）只接受 definitionId。 */
+const savedDefinitionId = ref<string | null>(null)
 
 /** 已保存分析窗口：查看（列表/原样只读）对所有人开放；重算入口由窗口按权限另行显隐。 */
 const savedVisible = ref(false)
@@ -487,6 +489,7 @@ async function saveDefinition(): Promise<void> {
   try {
     const detail = await saveResearchDefinition({ presetId: preset.presetId, context, filters, transformations, expected, idempotencyKey })
     const version = detail.latestRun?.runNo ?? 1
+    savedDefinitionId.value = detail.definitionId
     saveState.savedVersion = version
     ElMessage.success(detail.replay ? `已保存（版本 ${version}）；该定义此前已保存，未重复创建` : `已保存（版本 ${version}）`)
   } catch (error) {
@@ -499,9 +502,11 @@ async function saveDefinition(): Promise<void> {
 
 // ── 加入专题材料（任务 14.5/14.6，与 #151 价格页同模式）：运行产物作为材料主体 ────────────
 // 复用 InsightMaterialDialog 与既有 evidence/workpaper 协议，冻结与入稿全在窗口内完成，不另起
-// 第二套材料通道：请求只带「登记研究预设 + 上下文 + 筛选 + 期望版本」，服务端核对一致才冻结，
-// 源已更新 409 提示先重新运行；幂等键由窗口按内容派生，重复保存同一份结果不重复创建。
-// 材料保存是公司写入：入口按 governance 写权限显隐（后端写入闸门才是权威）。
+// 第二套材料通道。材料通道只接受**已保存研究定义**（definitionId，dljy#3116 放行；研究预设 id
+// 直传会被 404——必须先经 14.3 保存协议生成定义与冻结运行，防止绕过服务端重算核验）：未保存
+// 点加入 → 提示先保存，不开窗；已保存 → analysisId=definitionId、期望版本与冻结运行对照，
+// 源已更新 409 提示先重新运行；幂等键由窗口按内容派生。材料保存是公司写入：入口按 governance
+// 写权限显隐（后端写入闸门才是权威）。
 
 const materialVisible = ref(false)
 const materialSubject = ref('')
@@ -513,11 +518,16 @@ function openMaterial(): void {
   const preset = activePreset.value
   const current = runState.result
   if (!preset || !current || !current.resultVersion || !current.readSetRef) return
+  // 未保存过定义：材料通道需要 definitionId（#3116），先提示保存而不是静默不开。
+  if (!savedDefinitionId.value) {
+    ElMessage.warning('请先保存分析（生成定义与冻结运行），再加入材料')
+    return
+  }
   // 上下文剥掉代次（导航概念，同保存分析）：同口径重复保存幂等键稳定。
   const { contextVersion: _generation, ...context } = ctx.toQueryContext()
   materialSubject.value = preset.title
   materialRequest.value = {
-    analysisId: preset.presetId,
+    analysisId: savedDefinitionId.value,
     context,
     filters: preset.kind === 'correlation' ? { groupBy: groupBy.value } : undefined,
   }
