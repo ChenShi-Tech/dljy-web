@@ -6,6 +6,7 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
+import { identityHeaders } from '@/services/agent/agentClient'
 import CompanyScopeBar from '@/components/company/CompanyScopeBar.vue'
 import MidlongNotice from '@/components/midlong/MidlongNotice.vue'
 import MidlongContractFormDialog from '@/components/midlong/MidlongContractFormDialog.vue'
@@ -197,6 +198,66 @@ function submitAlias() {
   void runAction('alias', () => linkAlias(d.contractId, { expectedRowVersion: d.rowVersion, ...aliasForm }), '已关联外部编号')
 }
 
+// 购方类别标注（build-midlong-spot-hedging 3.3/D3）：分类事实，不进版本与指纹。
+const buyerCategoryForm = reactive<{ value: string; rowVersion: number | null }>({ value: 'GRID_AGENCY', rowVersion: null })
+const buyerCategoryVisible = ref(false)
+const buyerCategorySaving = ref(false)
+const BUYER_CATEGORY_OPTIONS = [
+  { value: 'GRID_AGENCY', label: '电网代理购电' },
+  { value: 'PRIORITY_GENERATION', label: '优先发电计划' },
+  { value: 'RETAILER', label: '售电公司' },
+  { value: 'END_USER', label: '电力用户' },
+  { value: 'INTER_PROVINCIAL_BUYER', label: '省外购方' },
+  { value: 'OTHER', label: '其他' },
+]
+function buyerCategoryLabel(value: string) {
+  return BUYER_CATEGORY_OPTIONS.find((o) => o.value === value)?.label ?? value
+}
+function openBuyerCategory() {
+  const d = detail.value
+  if (!d) return
+  buyerCategoryForm.value = d.labels?.BUYER_CATEGORY ?? 'GRID_AGENCY'
+  // 标注行的 rowVersion 与合同行版本无关；首录不传。已有标注时用 GET labels 拿最新。
+  buyerCategoryForm.rowVersion = d.labels?.BUYER_CATEGORY ? null : null
+  buyerCategoryVisible.value = true
+}
+async function refreshBuyerCategory() {
+  const d = detail.value
+  if (!d) return
+  try {
+    const res = await fetch(`${'/api/v1/midlong'}/contracts/${d.contractId}/labels`, { headers: identityHeaders() as Record<string, string> })
+    const payload = await res.json()
+    buyerCategoryForm.rowVersion = null
+    void payload
+    await load()
+  } catch { /* 保持现状 */ }
+}
+async function submitBuyerCategory() {
+  const d = detail.value
+  if (!d || buyerCategorySaving.value) return
+  buyerCategorySaving.value = true
+  try {
+    const res = await fetch(`/api/v1/midlong/contracts/${d.contractId}/labels`, {
+      method: 'PUT',
+      headers: { ...identityHeaders(), 'content-type': 'application/json', 'idempotency-key': crypto.randomUUID() } as Record<string, string>,
+      body: JSON.stringify({ dimension: 'BUYER_CATEGORY', value: buyerCategoryForm.value === '' ? null : buyerCategoryForm.value, rowVersion: buyerCategoryForm.rowVersion }),
+    })
+    const payload = await res.json().catch(() => ({}))
+    if (res.status === 200) {
+      ElMessage.success('购方类别已保存（不产生合同版本）')
+      buyerCategoryVisible.value = false
+      buyerCategoryForm.rowVersion = payload?.data?.rowVersion ?? null
+      await load()
+    } else if (res.status === 409) {
+      ElMessage.error('标注已被他人更新，请刷新后核对')
+    } else {
+      ElMessage.error(payload?.msg ?? '保存失败')
+    }
+  } finally {
+    buyerCategorySaving.value = false
+  }
+}
+
 // 补充资料
 const evidenceForm = reactive({ documentType: 'ELECTRONIC_CONFIRMATION' as EvidenceUpload['documentType'], note: '', file: null as File | null })
 const uploadableTypes = EVIDENCE_DOCUMENT_TYPES.filter((t) => t !== 'IMPORT_SOURCE_FILE') as EvidenceUpload['documentType'][]
@@ -267,6 +328,10 @@ const missingBasis = computed(() => (actionError.value?.errorCode === 'INCOMPLET
             <el-tag :type="progressTag(detail.deliveryProgress).type" effect="plain">{{ progressTag(detail.deliveryProgress).label }}</el-tag>
             <el-tag effect="plain">版本 {{ detail.currentRevisionNo }}</el-tag>
             <el-tag v-if="isTestData" type="warning" effect="plain">测试数据</el-tag>
+            <el-tag v-if="detail.labels?.BUYER_CATEGORY" type="info" effect="plain" data-test="buyer-category-tag">
+              购方：{{ buyerCategoryLabel(detail.labels.BUYER_CATEGORY) }}
+            </el-tag>
+            <el-tag v-else type="info" effect="plain" data-test="buyer-category-unclassified">购方：未分类</el-tag>
           </div>
         </div>
         <div v-if="canWrite" class="ml-actions">
@@ -278,6 +343,7 @@ const missingBasis = computed(() => (actionError.value?.errorCode === 'INCOMPLET
           <template v-if="status !== 'VOIDED'">
             <el-button @click="openEvidence">补充资料</el-button>
             <el-button @click="openAlias">关联外部编号</el-button>
+            <el-button data-test="buyer-category-edit" @click="openBuyerCategory">标注购方类别</el-button>
             <el-button type="danger" plain @click="openVoid">{{ status === 'CONFIRMED' ? '整笔纠错作废' : '作废草稿' }}</el-button>
           </template>
         </div>
@@ -524,7 +590,17 @@ const missingBasis = computed(() => (actionError.value?.errorCode === 'INCOMPLET
         <el-button type="primary" :loading="busy" :disabled="!evidenceForm.file" @click="submitEvidence">上传</el-button>
       </template>
     </el-dialog>
-  </div>
+      <el-dialog v-model="buyerCategoryVisible" title="标注购方类别" width="420px" data-test="buyer-category-dialog">
+      <el-select v-model="buyerCategoryForm.value" data-test="buyer-category-select" style="width: 100%">
+        <el-option v-for="o in BUYER_CATEGORY_OPTIONS" :key="o.value" :value="o.value" :label="o.label" />
+      </el-select>
+      <p class="bc-note">分类事实：不产生合同版本、不改变指纹；清除选择即回到「未分类」。保存需公司写权限。</p>
+      <template #footer>
+        <el-button @click="buyerCategoryVisible = false">取消</el-button>
+        <el-button type="primary" :loading="buyerCategorySaving" data-test="buyer-category-save" @click="submitBuyerCategory">保存</el-button>
+      </template>
+    </el-dialog>
+</div>
 </template>
 
 <style scoped>
