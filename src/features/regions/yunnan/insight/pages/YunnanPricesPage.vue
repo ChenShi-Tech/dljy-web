@@ -33,6 +33,12 @@ import { hasCompanyAdmin } from '@/services/governance'
 import { useInsightContext } from '@/composables/useInsightContext'
 import { useInsightSelection } from '@/components/insight/chart/useInsightSelection'
 import { buildResearchHandoffQuery } from '../researchHandoff'
+import {
+  SPATIAL_LINK_TARGETS,
+  objectSpatialLinkQuery,
+  openSpatialViewLink,
+  spatialEntryVisible,
+} from '../spatialLinks'
 import Price3DWorkspace from './prices/Price3DWorkspace.vue'
 import { readPriceMode, writePriceMode, type PriceDisplayMode } from './prices/priceModeStorage'
 import InsightBlock from '@/components/insight/InsightBlock.vue'
@@ -662,6 +668,37 @@ function onSpreadSelectionToResearch(): void {
   void router.push({ path: '/insight/research', query })
 }
 
+// ── 空间查阅入口（dljy#3106 D6.1「三维地形/空间」未就绪项补齐）─────────────────────────
+// 节点基差页签选中参考节点后，可跳入既有「电力市场空间态势」（grid-geo 模块原地复用，
+// 洞察不复制 Cesium）。权限显隐沿用 spatialLinks 登记（canAccessPath 既有口径，无权限
+// 不渲染）；query 白名单只带单个节点名 + 地区/公司归属 + 窗口末日（objectDate）+
+// 来源标记，时段数组与原始序列不进 URL；公司未选或多对象时不渲染（绑定必然落空）。
+
+const MARKET_SPATIAL_TARGET = SPATIAL_LINK_TARGETS.marketSpatial
+
+const basisSpatialVisible = computed(() =>
+  spatialEntryVisible({
+    path: MARKET_SPATIAL_TARGET,
+    objectName: basisReference.value || null,
+    companyId: ctx.companyId.value,
+  })
+)
+
+function onBasisToSpatialView(): void {
+  if (!basisReference.value || !ctx.companyId.value) return
+  openSpatialViewLink(router, {
+    path: MARKET_SPATIAL_TARGET,
+    query: objectSpatialLinkQuery({
+      kind: 'node',
+      objectId: basisReference.value,
+      regionId: ctx.regionId.value,
+      companyId: ctx.companyId.value,
+      date: ctx.businessWindow.value.end,
+      from: 'insight-prices',
+    }),
+  })
+}
+
 /** 已定位时段的可读描述（「对象 · HH:mm~HH:mm」，语义身份，无下标）。 */
 const spreadSelectionText = computed(() => {
   const selection = spreadSelection.value
@@ -1172,6 +1209,13 @@ onMounted(() => {
                       <el-option v-for="option in basisOptions" :key="option.id" :label="option.label" :value="option.id" />
                     </el-select>
                   </label>
+                  <el-button
+                    v-if="basisSpatialVisible"
+                    data-testid="ynp-basis-spatial"
+                    @click="onBasisToSpatialView"
+                  >
+                    在空间视图查看
+                  </el-button>
                 </div>
                 <el-alert type="info" :closable="false" :title="BASIS_DIRECTION_TEXT" />
                 <el-empty v-if="!basisReference" :description="BASIS_PICK_REFERENCE_TEXT" :image-size="72" />

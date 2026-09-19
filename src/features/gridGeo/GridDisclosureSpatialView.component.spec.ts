@@ -1069,3 +1069,38 @@ describe('公开披露交易台上下文联动', () => {
     wrapper.unmount()
   })
 })
+
+// 洞察深链承接（dljy#3106 D6.1）：电网边界页「在空间视图查看」经 keyword/objectDate
+// 预填披露检索与业务日期；只认合法单值，数组/非法日历日按缺省处理，不伪造上下文。
+describe('洞察深链：keyword 与业务日期预填', () => {
+  const deskStubs = { DisclosureDeskChart: chartStub, DisclosureMetricPicker: metricPickerStub, DisclosureDeskInsights: insightsStub, DisclosureUnitRoster: rosterStub, DisclosureEventGroups: groupsStub }
+
+  async function mountWithQuery(query: Record<string, unknown>) {
+    const { createMemoryHistory, createRouter } = await import('vue-router')
+    const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/grid-assets/disclosures', component: GridDisclosureSpatialView }] })
+    await router.push({ path: '/grid-assets/disclosures', query: query as Record<string, string> })
+    await router.isReady()
+    const wrapper = mount(GridDisclosureSpatialView, { global: { plugins: [router], stubs: deskStubs } })
+    await flushPromises()
+    return wrapper
+  }
+
+  it('keyword 预填搜索框并进入首个请求；objectDate 落到洞察窗口末日', async () => {
+    const wrapper = await mountWithQuery({ keyword: '  某输电通道 ', objectDate: '2026-07-01' })
+    expect((wrapper.get('[data-testid="desk-search"]').element as HTMLInputElement).value).toBe('某输电通道')
+    expect(calls.groups.mock.calls.length).toBeGreaterThan(0)
+    expect(calls.groups.mock.lastCall![0]).toMatchObject({ keyword: '某输电通道', from: '2026-07-01T00:00:00+08:00', to: '2026-07-01T23:59:59+08:00' })
+    expect(calls.overview.mock.lastCall![0].keyword).toBe('某输电通道')
+    // 无对象上下文键：不触发对象关联读取，也不出现对象范围说明
+    expect(wrapper.find('.object-scope-note').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('数组 keyword 与非法日历日不进请求：按无词、今天处理', async () => {
+    const wrapper = await mountWithQuery({ keyword: ['a', 'b'], objectDate: '2026-02-30' })
+    expect((wrapper.get('[data-testid="desk-search"]').element as HTMLInputElement).value).toBe('')
+    expect(calls.groups.mock.lastCall![0]).toMatchObject({ from: '2026-09-09T00:00:00+08:00' })
+    expect(calls.groups.mock.lastCall![0].keyword).toBeUndefined()
+    wrapper.unmount()
+  })
+})
