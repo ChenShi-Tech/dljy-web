@@ -1,8 +1,8 @@
 // researchHandoff.spec.ts — 研究承接语义选区白名单回归（dljy#3114，任务 13.7，RS08、DE10）
 // 守什么不变量：
-//   ① 选区 → 地址参数白名单只有：窗口起止业务日（时段选区折叠）+ 对象 + 来源 + 来源页；
-//      时段数组、版本令牌、原始数据不进 URL；
-//   ② 来源页不在白名单 / 空选区：不承接（返回 null），不假装预填；
+//   ① 选区 → 地址参数白名单只有：窗口起止业务日（时段选区折叠）+ 来源 + 来源页；
+//      对象引用不进承接（研究预览不消费对象范围）；时段数组、版本令牌、原始数据不进 URL；
+//   ② 来源页不在白名单 / 空选区（无时段）：不承接（返回 null），不假装预填；
 //   ③ 预设建议按「登记输入来源 ∩ 承接来源」最大者，并列取登记顺序，无交集不预填；
 //   ④ 返回原页带回窗口/对象/来源（与 useInsightContext 同一套参数名，可恢复口径）。
 import { describe, expect, it } from 'vitest'
@@ -34,7 +34,7 @@ function selectionFixture(overrides: Record<string, unknown> = {}): InsightSelec
 }
 
 describe('选区 → 承接地址参数', () => {
-  it('多段时段选区折叠为起止业务日；对象/来源去重逗号连接；不带时段数组与版本令牌', () => {
+  it('多段时段选区折叠为起止业务日；来源去重逗号连接；对象引用不进承接', () => {
     const query = buildResearchHandoffQuery(
       selectionFixture({
         timeIntervals: [
@@ -49,9 +49,9 @@ describe('选区 → 承接地址参数', () => {
       from: 'prices',
       start: '2026-09-01',
       end: '2026-09-03',
-      objects: 'node-A,node-B',
       sources: 'yn.price.user.day-ahead',
     })
+    expect(query).not.toHaveProperty('objects') // 研究预览不消费对象范围：带过去就是假承接
     expect(JSON.stringify(query)).not.toContain('timeIntervals')
     expect(JSON.stringify(query)).not.toContain('resultVersion')
   })
@@ -67,31 +67,29 @@ describe('选区 → 承接地址参数', () => {
       from: 'prices',
       start: '2026-09-01',
       end: '2026-09-01',
-      objects: 'node-A',
       sources: 'yn.price.user.day-ahead',
     })
   })
 
-  it('只承接对象引用（无时段）也成立；日期非法时只承接对象与来源', () => {
+  it('只含对象引用（无时段）的选区：不承接（研究范围没有对象字段，无窗口可接）', () => {
     const objectsOnly = buildResearchHandoffQuery(
       selectionFixture({ timeIntervals: [] }),
       'grid-boundaries'
     )
-    expect(objectsOnly).toEqual({
-      from: 'grid-boundaries',
-      objects: 'node-A',
-      sources: 'yn.price.user.day-ahead',
-    })
+    expect(objectsOnly).toBeNull()
+  })
 
+  it('日期非法时只承接 from+sources，不写窗口', () => {
     const badDays = buildResearchHandoffQuery(
       selectionFixture({ timeIntervals: [{ start: 'not-a-time', end: 'not-a-time' }] }),
       'prices'
     )
     expect(badDays).not.toHaveProperty('start')
     expect(badDays).not.toHaveProperty('end')
+    expect(badDays).not.toBeNull()
   })
 
-  it('空选区（无时段且无对象）与白名单外来源页：不承接', () => {
+  it('空选区（无时段）与白名单外来源页：不承接', () => {
     expect(buildResearchHandoffQuery(selectionFixture({ timeIntervals: [], objectRefs: [] }), 'prices')).toBeNull()
     expect(buildResearchHandoffQuery(selectionFixture(), 'unknown-page')).toBeNull()
     expect(buildResearchHandoffQuery(null, 'prices')).toBeNull()

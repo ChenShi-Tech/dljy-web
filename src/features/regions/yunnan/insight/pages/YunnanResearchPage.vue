@@ -47,7 +47,6 @@ import {
   handoffReturnLocation,
   parseResearchHandoffOrigin,
   suggestResearchPresetId,
-  type ResearchHandoffOrigin,
 } from '../researchHandoff'
 import ResearchStatFacet from './ResearchStatFacet.vue'
 import { idempotencyKeyOf } from '@/services/api'
@@ -118,7 +117,9 @@ const PRICE_RESPONSE_NOTE =
 
 // ── 承接洞察选区（任务 13.7，RS08）：来源页白名单 + 预设建议预填 ─────────────────────────
 
-const handoffOrigin = ref<ResearchHandoffOrigin | null>(parseResearchHandoffOrigin(route.query))
+// 来源随路由查询派生（不能一次性拷贝）：AppLayout 保活下 setup 只跑一次，
+// 缓存实例再次被「以选区进入研究」唤起时，ref 里的旧值会让横幅与预填永远不出现。
+const handoffOrigin = computed(() => parseResearchHandoffOrigin(route.query))
 
 const handoffOriginLabel = computed(() =>
   handoffOrigin.value ? RESEARCH_HANDOFF_ORIGIN_LABELS[handoffOrigin.value] : ''
@@ -150,12 +151,20 @@ const handoffBanner = computed(() => {
   return `已承接「${RESEARCH_HANDOFF_ORIGIN_LABELS[origin]}」的选区范围：${parts.join('、')}；承接只携带窗口与对象/来源引用，不带原始数据；${prefill}`
 })
 
-/** 能力目录就绪后按承接来源预填一次（用户已选预设时不覆盖）。 */
+/** 按承接来源预填（每个承接签名只试一次；用户已选预设时不覆盖、不换词）。 */
+let appliedHandoffPrefill = ''
 function applyHandoffPrefill(): void {
-  if (!handoffOrigin.value || selectedPresetId.value) return
+  const origin = handoffOrigin.value
+  if (!origin || selectedPresetId.value) return
   const suggested = handoffSuggestedPresetId.value
-  if (suggested) selectPreset(suggested)
+  if (!suggested) return
+  const signature = JSON.stringify([origin, ctx.businessWindow.value.start, ctx.businessWindow.value.end, ...ctx.sourceIds.value])
+  if (signature === appliedHandoffPrefill) return
+  appliedHandoffPrefill = signature
+  selectPreset(suggested)
 }
+// 能力目录就绪后按当次承接预填；缓存实例收到新承接（路由查询变化）时再次尝试。
+watch(() => JSON.stringify(route.query), () => applyHandoffPrefill())
 
 function returnToOrigin(): void {
   const origin = handoffOrigin.value
@@ -375,11 +384,14 @@ const saveState = reactive<{ saving: boolean; savedVersion: number | null; error
 /** 已保存分析窗口：查看（列表/原样只读）对所有人开放；重算入口由窗口按权限另行显隐。 */
 const savedVisible = ref(false)
 
-/** 配置签名：任一参数变化旧结果立即失效（清空展示，在途请求由代次机制作废）。 */
+/** 配置签名：任一参数或上下文代次变化，旧结果立即失效（清空展示，在途请求由代次机制作废）。
+ *  contextVersion 覆盖窗口/对象/来源/地区/公司全部业务字段——缓存页收到新承接（来源或对象
+ *  变了）而日期未变时，旧结果不得冒充新范围的结果继续展示、保存。 */
 const configSignature = computed(() =>
   JSON.stringify([
     selectedPresetId.value,
     ctx.regionId.value,
+    ctx.contextVersion.value,
     ctx.businessWindow.value.start,
     ctx.businessWindow.value.end,
     mode.value,

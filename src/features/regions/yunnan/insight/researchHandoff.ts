@@ -3,9 +3,12 @@
 // 价格/电网/场站页的图表语义选区（insight-selection/v1，useInsightSelection 构建）可以
 // 交接给研究工作台预填研究范围。交接纪律（D6「图表点选、时段选区和对象选取只改变已明确的
 // 研究范围」+ DE10 只传业务身份）：
-//   - 地址参数白名单只有：窗口起止业务日（时段选区**折叠**为起止日）+ 对象引用 + 来源引用
+//   - 地址参数白名单只有：窗口起止业务日（时段选区**折叠**为起止日）+ 来源引用
 //     + 来源页标识；时段数组、原始数据、版本令牌一律不进 URL；
-//   - 窗口/对象/来源三个参数的完整校验由研究页 useInsightContext 完成（本模块不重复实现，
+//   - **对象引用不进研究承接**：研究预览请求没有对象范围字段（toQueryContext 恒发
+//     objectRefs: []，预览过滤也不消费对象），把对象名带过去就是假承接——横幅声称
+//     范围含对象、结果却比所选更宽；
+//   - 窗口/来源三个参数的完整校验由研究页 useInsightContext 完成（本模块不重复实现，
 //     两边共用契约镜像的同一套口径）；本模块只负责来源页白名单与预设建议；
 //   - 预设建议按「预设登记输入的来源与承接来源的交集」计算，交集为空不预填——
 //     研究预设是登记白名单，没有来源对应的预设就不假装能承接。
@@ -36,9 +39,9 @@ export function buildResearchHandoffQuery(
 ): Record<string, string> | null {
   if (!Object.prototype.hasOwnProperty.call(RESEARCH_HANDOFF_ORIGINS, from)) return null
   const intervals = selection?.timeIntervals ?? []
-  const objectRefs = selection?.objectRefs ?? []
   const sourceIds = selection?.sourceIds ?? []
-  if (!intervals.length && !objectRefs.length) return null
+  // 只有时段（窗口）才构成研究范围：对象引用不进承接（研究预览不消费对象范围）。
+  if (!intervals.length) return null
   const query: Record<string, string> = { from }
   // 时段选区折叠为起止业务日（北京时间 ISO 的日期部分；起止分别取最小/最大）。
   const days = intervals
@@ -48,9 +51,6 @@ export function buildResearchHandoffQuery(
   if (days.length) {
     query.start = days[0]
     query.end = days[days.length - 1]
-  }
-  if (objectRefs.length) {
-    query.objects = [...new Set(objectRefs.map((ref) => ref.id))].map(encodeURIComponent).join(',')
   }
   if (sourceIds.length) {
     query.sources = [...new Set(sourceIds)].map(encodeURIComponent).join(',')
