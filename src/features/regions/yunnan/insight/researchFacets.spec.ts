@@ -114,3 +114,29 @@ describe('分面图（单面单轴）', () => {
     expect(statFacetTitleOf('custom-unit')).toContain('custom-unit')
   })
 })
+
+describe('分面图悬浮提示（登记精度文本）', () => {
+  it('tooltip 用 group.text 呈现登记精度值并带单位，无单位量纲不追加', () => {
+    const facet = buildResearchStatFacets(
+      [
+        { metricId: 'supply.mean-power', group: 'all', value: '4310.25' },
+        { metricId: 'research.pearson-r', group: 'all', value: '0.812345' },
+      ],
+      {}
+    )
+    const powerFacet = facet.find((item) => item.unit === 'MW')!
+    const rFacet = facet.find((item) => item.unit === 'r')!
+    expect(powerFacet).toBeTruthy()
+    expect(rFacet).toBeTruthy()
+
+    const powerOption = buildStatFacetOption(powerFacet) as { tooltip: { formatter: (params: unknown) => string } }
+    const powerText = powerOption.tooltip.formatter([{ seriesName: powerFacet.items[0]!.label, axisValue: '全样本' }])
+    expect(powerText).toContain(String(powerFacet.items[0]!.groups[0]!.text))
+    expect(powerText).toContain('MW')
+
+    const rOption = buildStatFacetOption(rFacet) as { tooltip: { formatter: (params: unknown) => string } }
+    const rText = rOption.tooltip.formatter([{ seriesName: rFacet.items[0]!.label, axisValue: '全样本' }])
+    expect(rText).toContain(String(rFacet.items[0]!.groups[0]!.text))
+    expect(rText).not.toContain('r ')
+  })
+})

@@ -169,6 +169,12 @@ watch(() => JSON.stringify(route.query), () => applyHandoffPrefill())
 function returnToOrigin(): void {
   const origin = handoffOrigin.value
   if (!origin) return
+  // 优先原路返回（历史栈）：来源页 URL 原样恢复——研究承接已不带对象范围，
+  // 用 ctx 重建的返回地址会丢掉来源页的对象选择。无历史栈（直达/刷新）才按窗口+来源重建。
+  if (window.history.state?.back) {
+    router.back()
+    return
+  }
   const location = handoffReturnLocation(origin, ctx.businessWindow.value, ctx.objectIds.value, ctx.sourceIds.value)
   void router.push({ path: location.path, query: location.query })
 }
@@ -411,6 +417,9 @@ watch(configSignature, () => {
   runState.result = null
   runState.error = null
   runState.runKey = ''
+  // 被代次作废的迟到请求在 finally 里因同签名守卫跳过清 loading——由这里显式归还，
+  // 否则承接/上下文变化后运行按钮永远停在加载态。
+  runState.loading = false
   saveState.savedVersion = null
   saveState.error = ''
 })

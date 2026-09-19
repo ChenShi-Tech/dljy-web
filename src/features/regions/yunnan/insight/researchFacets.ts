@@ -151,6 +151,8 @@ export function statFacetTitleOf(unit: string): string {
 /**
  * 一个分面 → ECharts option：一张图、一根 y 轴（单位随轴名），指标各一条序列
  * （颜色/图例区分）。横轴是分组（全样本 / 各日历月），同量纲才共这张图。
+ * 悬浮提示用登记精度文本（group.text）而非坐标数值——重显未格式化的数字会改口径；
+ * 无单位量纲（相关系数/样本计数/随输入量纲/无单位）不追加单位。
  */
 export function buildStatFacetOption(facet: ResearchStatFacet): Record<string, unknown> {
   const categories: string[] = []
@@ -159,8 +161,23 @@ export function buildStatFacetOption(facet: ResearchStatFacet): Record<string, u
       if (!categories.includes(group.label)) categories.push(group.label)
     }
   }
+  const UNITLESS = new Set(['r', 'count', 'by-input', '无单位'])
+  const tooltipFormatter = (raw: unknown): string => {
+    const list = Array.isArray(raw) ? raw : [raw]
+    const title = String((list[0] as { axisValue?: string } | undefined)?.axisValue ?? '')
+    const rows = list.map((item) => {
+      const point = item as { seriesName?: string; axisValue?: string; name?: string }
+      const group = facet.items
+        .find((candidate) => candidate.label === point.seriesName)
+        ?.groups.find((candidate) => candidate.label === (point.axisValue ?? point.name))
+      const value = group ? group.text : '—'
+      const unit = UNITLESS.has(facet.unit) ? '' : ` ${facet.unit}`
+      return `${point.seriesName ?? ''}：${value}${unit}`
+    })
+    return [title, ...rows].filter(Boolean).join('<br/>')
+  }
   return {
-    tooltip: { trigger: 'axis' },
+    tooltip: { trigger: 'axis', formatter: tooltipFormatter },
     legend: { type: 'scroll', top: 0 },
     grid: { left: 56, right: 16, top: 32, bottom: 32 },
     xAxis: { type: 'category', data: categories },
