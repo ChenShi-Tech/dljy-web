@@ -261,6 +261,47 @@ function anomalyResult(): Record<string, unknown> {
 
 const DEFAULT_RESULT = () => correlationResult()
 
+/** 同进度夹具：统计行含三个不同量纲（% / MW / 条数），分面按量纲拆三面。 */
+function progressResult(): Record<string, unknown> {
+  const seriesId = 'progress:research.load-progress-comparison:2026-09-09'
+  return baseResult({
+    presetId: 'research.load-progress-comparison',
+    businessWindow: { start: '2026-09-09', end: '2026-09-09', timeZone: 'Asia/Shanghai', days: 1 },
+    inputs: [
+      { id: 'series', label: '统调负荷（实际）', sourceIds: ['yn.system.load.actual'], resolutionMinutes: 60, validSlots: 18, expectedSlots: 24, coverageRatio: '0.75' },
+    ],
+    sample: { conditions: { minSamples: 4, minCoverageRatio: '0' }, primarySamples: 18, eligibilityMet: true, observed: 18 },
+    method: {
+      kind: 'progress-comparison',
+      kernel: 'research-kernel/1',
+      notes: ['同进度比较是描述性观察：前一日同段齐全才比较，不推断日内走势。'],
+    },
+    data: {
+      schemaVersion: 'insight-result-data/v1',
+      view: 'progress-comparison',
+      dimensions: [{ id: 'seriesId', kind: 'category' }, { id: 'metricId', kind: 'category' }],
+      measures: [{ id: 'value', unit: 'by-metric' }],
+      rows: [
+        { seriesId, metricId: 'supply.progress-change', value: '12.5' },
+        { seriesId, metricId: 'supply.mean-power', value: '4310.25' },
+        { seriesId, metricId: 'sample.valid-count', value: '18' },
+      ],
+      series: [
+        {
+          seriesId,
+          kind: 'research-progress',
+          date: '2026-09-09',
+          referenceDate: '2026-09-08',
+          publishedSlots: 18,
+          comparedSlots: 18,
+          missingReferenceSlots: 0,
+          referenceMean: '3837.5',
+        },
+      ],
+    },
+  })
+}
+
 // ── 挂载与交互辅助 ───────────────────────────────────────────────────────────────────────
 
 let router: Router
@@ -270,7 +311,7 @@ async function mountPage(): Promise<VueWrapper<any>> {
   wrapper = appMount(YunnanResearchPage, {
     global: {
       plugins: [router],
-      stubs: { teleport: true },
+      stubs: { teleport: true, ResearchStatFacet: true },
     },
   })
   await flushPromises()
@@ -886,5 +927,178 @@ describe('研究页 · AI 解读注册（15.3）', () => {
     await flushPromises()
     const slice = resolveInterpret(def)!.context?.() as { blocks: unknown[] } | null
     expect(slice?.blocks ?? []).toHaveLength(0)
+// ── 多指标量纲分面与视图选择（任务 13.7，RS08、D6.1）────────────────────────────────────
+
+describe('量纲分面与视图选择', () => {
+  it('同进度结果按登记量纲拆三面并列（%/MW/样本计数），各面标题带量纲说明', async () => {
+    state.result = progressResult()
+    await mountPage()
+    await setWindow('2026-09-09', '2026-09-09')
+    await selectPreset('research.load-progress-comparison')
+    await run()
+
+    const facets = wrapper!.findAll('[data-testid="yr-facet"]')
+    expect(facets).toHaveLength(3)
+    expect(facets[0]!.text()).toContain('百分比（%）')
+    expect(facets[1]!.text()).toContain('功率（MW）')
+    expect(facets[2]!.text()).toContain('样本计数')
+  })
+
+  it('相关结果同样按量纲分面（r/随输入量纲/样本计数），并给出视图选择边界说明', async () => {
+    await mountPage()
+    await selectPreset('research.price-new-energy-correlation')
+    await run()
+
+    const facets = wrapper!.findAll('[data-testid="yr-facet"]')
+    expect(facets).toHaveLength(3)
+    const note = wrapper!.find('[data-testid="yr-view-scope-note"]')
+    expect(note.exists()).toBe(true)
+    expect(note.text()).toContain('仅本会话')
+    expect(note.text()).toContain('不包含视图选择')
+  })
+
+  it('序列显隐只改当前视图：隐藏 MW 序列后该面消失，结果不重查、不清空', async () => {
+    state.result = progressResult()
+    await mountPage()
+    await setWindow('2026-09-09', '2026-09-09')
+    await selectPreset('research.load-progress-comparison')
+    await run()
+    expect(previewCalls()).toHaveLength(1)
+
+    await wrapper!.find('[data-testid="yr-facet-series-supply-mean-power"]').setValue(false)
+    await flushPromises()
+    expect(wrapper!.findAll('[data-testid="yr-facet"]')).toHaveLength(2)
+    expect(wrapper!.find('[data-testid="yr-result"]').exists()).toBe(true)
+    expect(previewCalls()).toHaveLength(1) // 同签名不重查：视图操作不发请求
+  })
+
+  it('新一次运行回到默认视图（序列显隐不跨运行残留）', async () => {
+    state.result = progressResult()
+    await mountPage()
+    await setWindow('2026-09-09', '2026-09-09')
+    await selectPreset('research.load-progress-comparison')
+    await run()
+    await wrapper!.find('[data-testid="yr-facet-series-supply-mean-power"]').setValue(false)
+    expect(wrapper!.findAll('[data-testid="yr-facet"]')).toHaveLength(2)
+
+    await run()
+    expect(wrapper!.findAll('[data-testid="yr-facet"]')).toHaveLength(3)
+  })
+
+  it('分面顺序可在会话内调整（上移/下移），同样不触发请求', async () => {
+    state.result = progressResult()
+    await mountPage()
+    await setWindow('2026-09-09', '2026-09-09')
+    await selectPreset('research.load-progress-comparison')
+    await run()
+
+    await wrapper!.findAll('[data-testid="yr-facet-move-down"]')[0]!.trigger('click')
+    await flushPromises()
+    const afterMove = wrapper!.findAll('[data-testid="yr-facet"]')
+    expect(afterMove[0]!.text()).toContain('功率（MW）')
+    expect(previewCalls()).toHaveLength(1)
+  })
+})
+
+// ── 参考日明示（任务 13.7）：同类日目标日显式给、同进度参考日按登记固定并明示 ─────────────
+
+describe('参考日明示', () => {
+  it('同进度比较运行前明示参考日 = 业务日前一日（登记固定，不自动另选、不发明变换字段）', async () => {
+    await mountPage()
+    await setWindow('2026-09-09', '2026-09-09')
+    await selectPreset('research.load-progress-comparison')
+
+    const reference = wrapper!.find('[data-testid="yr-reference-day"]')
+    expect(reference.exists()).toBe(true)
+    expect(reference.text()).toContain('参考日 2026-09-08')
+    expect(reference.text()).toContain('按登记固定为业务日前一日')
+    // 明示在运行前就有：不发请求也已可见
+    expect(previewCalls()).toHaveLength(0)
+  })
+
+  it('同类日的目标日保持显式日期选择；非同进度预设不出现参考日行', async () => {
+    await mountPage()
+    await selectPreset('research.price-new-energy-correlation')
+    expect(wrapper!.find('[data-testid="yr-reference-day"]').exists()).toBe(false)
+  })
+})
+
+// ── 承接洞察选区（任务 13.7，RS08、DE10）─────────────────────────────────────────────────
+
+describe('承接洞察选区', () => {
+  it('价格页选区 → 预设预填 + 范围说明 + 返回原页（窗口/对象/来源随返回恢复）', async () => {
+    router.addRoute({ path: '/insight/prices', component: { render: () => null } })
+    await router.push({
+      path: '/',
+      query: {
+        from: 'prices',
+        start: '2026-09-01',
+        end: '2026-09-10',
+        objects: encodeURIComponent('node-A'),
+        sources: encodeURIComponent('yn.price.user.day-ahead'),
+      },
+    })
+    await mountPage()
+
+    const banner = wrapper!.find('[data-testid="yr-handoff"]')
+    expect(banner.exists()).toBe(true)
+    expect(banner.text()).toContain('已承接「价格与价差」的选区范围')
+    expect(banner.text()).toContain('窗口 2026-09-01 ~ 2026-09-10')
+    expect(banner.text()).toContain('对象 1 个')
+    expect(banner.text()).toContain('研究预设已按承接来源预填')
+    // 预设按承接来源预填（能力目录就绪后），可更换
+    const select = wrapper!.find('[data-testid="yr-preset-select"]').element as HTMLSelectElement
+    expect(select.value).toBe('research.price-new-energy-correlation')
+
+    await wrapper!.find('[data-testid="yr-handoff-return"]').trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.path).toBe('/insight/prices')
+    expect(router.currentRoute.value.query.start).toBe('2026-09-01')
+    expect(router.currentRoute.value.query.end).toBe('2026-09-10')
+    expect(router.currentRoute.value.query.objects).toBe('node-A')
+    expect(router.currentRoute.value.query.sources).toBe('yn.price.user.day-ahead')
+  })
+
+  it('承接来源未对应已登记预设：范围照常承接，预设不预填、如实说明', async () => {
+    await router.push({
+      path: '/',
+      query: {
+        from: 'grid-boundaries',
+        start: '2026-09-01',
+        end: '2026-09-10',
+        sources: encodeURIComponent('yn.transfer.tie-line.flow'),
+      },
+    })
+    await mountPage()
+
+    const banner = wrapper!.find('[data-testid="yr-handoff"]')
+    expect(banner.exists()).toBe(true)
+    expect(banner.text()).toContain('已承接「跨省与电网边界」的选区范围')
+    expect(banner.text()).toContain('承接来源未对应已登记预设')
+    const select = wrapper!.find('[data-testid="yr-preset-select"]').element as HTMLSelectElement
+    expect(select.value).toBe('')
+  })
+
+  it('不认识的来源页参数：不承接、无横幅（不假装知道范围从哪来）', async () => {
+    await router.push({ path: '/', query: { from: 'unknown-page' } })
+    await mountPage()
+    expect(wrapper!.find('[data-testid="yr-handoff"]').exists()).toBe(false)
+    const select = wrapper!.find('[data-testid="yr-preset-select"]').element as HTMLSelectElement
+    expect(select.value).toBe('')
+  })
+})
+
+// ── 红线（任务 13.7，RS08）：价格响应缺模型输入明确不可用；代理不冒充官方竞价空间 ─────────
+
+describe('价格响应红线', () => {
+  it('价格响应类预设未登记开放：页面常驻说明缺模型输入/方法/验证结果不可用，代理不是官方竞价空间', async () => {
+    await mountPage()
+    const note = wrapper!.find('[data-testid="yr-price-response-note"]')
+    expect(note.exists()).toBe(true)
+    expect(note.text()).toContain('价格响应类研究预设未登记开放')
+    expect(note.text()).toContain('需要已登记的模型输入、方法与验证结果')
+    expect(note.text()).toContain('不是官方竞价空间')
+    // 因果边界同时在场：统计关联不等于因果
+    expect(wrapper!.text()).toContain('统计关联不等于因果')
   })
 })

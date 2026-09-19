@@ -632,6 +632,41 @@ describe('日前实时价差', () => {
     expect(wrapper!.text()).toContain('已定位时段')
   })
 
+  it('「以选区进入研究」：按白名单只带窗口起止日 + 对象/来源引用跳研究页（不带时段数组）', async () => {
+    router.addRoute({ path: '/insight/research', component: { render: () => null } })
+    state.capabilities = capsWith(['prices.public-node-series'])
+    await mountPage()
+    await chooseObjects('YN.KM.01')
+    await switchTab('spread')
+
+    const tables = wrapper!.findAllComponents({ name: 'ElTable' })
+    const anomalyTable = tables.find((table) => {
+      const data = table.props('data') as Array<Record<string, unknown>>
+      return Boolean(data?.length && 'rank' in data[0])
+    })
+    anomalyTable!.vm.$emit('row-click', {
+      seriesId: 'spread:public-node:YN.KM.01',
+      intervalStart: '2026-09-10T10:00:00+08:00',
+      intervalEnd: '2026-09-10T10:15:00+08:00',
+      value: '88.25',
+      rank: '1',
+    })
+    await flushPromises()
+
+    await wrapper!.find('[data-testid="ynp-spread-to-research"]').trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.path).toBe('/insight/research')
+    const query = router.currentRoute.value.query
+    expect(query.from).toBe('prices')
+    expect(query.start).toBe('2026-09-10')
+    expect(query.end).toBe('2026-09-10')
+    expect(query.objects).toBe(encodeURIComponent('YN.KM.01'))
+    expect(String(query.sources)).toContain('yn.price.node.public')
+    // 白名单外字段不进 URL：时段数组与版本令牌不交接
+    expect(query.timeIntervals).toBeUndefined()
+    expect(query.resultRef).toBeUndefined()
+  })
+
   it('只选一侧来源的 422：直显后端文案', async () => {
     state.capabilities = capsWith(['prices.user-series'])
     await mountPage()

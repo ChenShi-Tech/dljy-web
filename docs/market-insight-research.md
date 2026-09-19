@@ -8,6 +8,7 @@
 
 - **页面切片（任务 13.5/13.6）**：预设入口、运行面板（方法/期间/事前事后）、按预设类型的结果呈现、受控自定义、事前纪律、超限与拒绝原文。
 - **保存与重算切片（任务 14.4，后端 14.3）**：保存分析（后端定义冻结协议）、已保存分析列表、查看原始产物与按新源重算，见下节「保存与重算」。
+- **多指标分面/参考日/选区承接切片（任务 13.7，RS08、D6.1）**：量纲分面、参考日明示、视图选择（会话内）与选区承接，见下节「多指标分面、参考日、视图选择与选区承接」。
 - **不在前端**：研究定义与运行版本的任何本地持久化——定义只存服务端（迁移 059），浏览器零存储、不提交结果数据；价格响应类预设（竞价空间×价格）未登记，页面自然不出现。
 - **与旧关系图的关系**：旧价格×新能源/负荷关系散点（`src/views/relation/RelationExplorer.vue`）与旧综合多指标分析（`src/views/DataAnalysisView.vue`）本期**保留不删**；其适用视图按预设登记迁入本页（相关统计、滞后对比、异常窗口时间线、同类日候选表）。相关散点本身暂未迁入：研究预览契约（`insight-research/v1`）只下发统计量与样本说明、不下发点数据，前端不重算口径——点数据随结果契约扩展后再迁，旧页届时才下线。
 
@@ -57,6 +58,14 @@
 - 合法大值**不裁剪**：全部数值按后端十进制原值（登记精度）渲染，无固定坐标上限——超过旧散点 14000 上限的出力/均值原样可见（RS02）。
 - 超限前置拦截（预设单次天数上限、滞后 ±96、窗口 ≤96）按上限提示；后端超限/拒绝按原因原文展示，**不截断冒充完整**（RS07）。
 
+## 多指标分面、参考日、视图选择与选区承接（任务 13.7，RS08、D6.1）
+
+- **量纲分面**：统计型内核（相关 / 明确滞后比较 / 同进度比较）的统计行按云南登记目录的量纲拆成并列分面——一个量纲一张图、一根轴（单位随轴名），不同量纲各拆一张图，**不共轴、不做双 Y 轴混标**（沿用 `useInsightSeriesChart` 的分组纪律）；面内指标各一条序列，颜色/图例区分，横轴是分组（全样本 / 日历月；滞后与同进度是单窗「所选窗」）。异常窗口是时间线、同类日是候选表，各有专门呈现，不进统计分面。纯函数在 `researchFacets.ts`（含 `buildStatFacetOption`），单图组件 `ResearchStatFacet.vue`。
+- **参考日**：同类日的目标日本就是显式日期选择（目标日须在业务日期窗内）；同进度比较的参考日按登记固定为业务日前一日（`reference.days=1`），运行面板在运行前明示映射（换参考日 = 改业务日期窗）。镜像 `shared/insight/research.mjs` 的允许变换清单里，同进度比较**没有任何变换参数**（`assertKnownKeys` 只允许空集），相关分析同理——参考日没有后端登记的字段就不发明，只做明示。
+- **视图选择（序列显隐、分面顺序）仅本会话生效**：它是运行面板的会话内视图状态——不进配置签名（切换视图不清结果、同签名不重查）、不进保存请求。后端研究定义 schema（`parseResearchDefinitionSaveBody`）未登记视图字段，transformations 也没有自由字段可借，按「不发明未登记字段」的纪律**如实说明**（页面常驻说明 + 此处登记），视图选择不随保存走；新一次运行回到默认视图。
+- **选区承接**：价格页日前实时价差的语义选区（`insight-selection/v1`，`useInsightSelection` 构建）提供「以选区进入研究」：经地址参数白名单只带**窗口起止业务日**（时段选区折叠为起止日）+ 对象引用 + 来源引用 + 来源页标识——时段数组、版本令牌、原始数据一律不进 URL（DE10）。研究页由 `useInsightContext` 按同一套参数还原窗口/对象/来源，顶部横幅说明承接范围；预设按「登记输入来源 ∩ 承接来源」最大者建议预填（并列取登记序、无交集不预填并如实说明），可更换；提供「返回原页」并带回窗口/对象/来源恢复口径。来源页白名单与建议逻辑在 `researchHandoff.ts`。电网/场站页当前没有 `useInsightSelection` 图表选区，其承接入口待选区能力落地后接同一通道（来源页白名单已预留 `grid-boundaries` / `plants`）。
+- **价格响应红线**：竞价空间×价格拟合/弹性区间属「研究的价格响应预设」，按 D6.1 **按能力开放**——当前后端未登记该预设（缺已登记的模型输入、方法与验证结果），页面明确标注未登记开放、不可运行；剩余需求代理预设沿用供需页口径原文：**分析代理量，不是官方竞价空间，也不构成因果或套利结论**。全页保持「统计关联不等于因果」的方法边界。
+
 ## 保存与重算（任务 14.4，RS06、CH05、design D9 保存方式段）
 
 保存与后端研究定义冻结协议（dljy#3094，任务 14.3）同用一套，不另起第二套：
@@ -76,6 +85,7 @@
 ## 组件与测试
 
 - 客户端：`src/services/insight/researchClient.ts`——`runResearchPreview`（POST `research/preview`）与研究定义四端点（`saveResearchDefinition`/`listResearchDefinitions`/`getResearchDefinition`/`runResearchDefinition`，路径取镜像 `INSIGHT_ENDPOINTS.researchDefinition*`）；错误折叠与 AbortError 约定复用 `insightClient`，`researchSaveError` 折叠 409 文案。
-- 页面：`src/features/regions/yunnan/insight/pages/YunnanResearchPage.vue`；回归 `YunnanResearchPage.component.spec.ts`（27 例：预设清单与缺口原文、资格不足不可运行、请求形状、四类事前拒绝原文、事后标注、无自由文本输入面、切参失效、超限原文、>14000 渲染、样本与方法版本、同类日排除与不足、保存成功/409/无权限入口隐藏/幂等键、业务语言扫描）。
+- 页面：`src/features/regions/yunnan/insight/pages/YunnanResearchPage.vue`；回归 `YunnanResearchPage.component.spec.ts`（38 例：预设清单与缺口原文、资格不足不可运行、请求形状、四类事前拒绝原文、事后标注、无自由文本输入面、切参失效、超限原文、>14000 渲染、样本与方法版本、同类日排除与不足、保存成功/409/无权限入口隐藏/幂等键、量纲分面与序列显隐/分面顺序（同签名不重查）、参考日明示、承接选区（预填/无交集/未知来源页）、价格响应红线、业务语言扫描）。
+- 分面与承接纯模块：`src/features/regions/yunnan/insight/researchFacets.ts`（量纲分面 + 单面单轴 option，回归 9 例）与 `researchHandoff.ts`（选区→地址参数白名单、来源页白名单、预设建议、返回原页，回归 8 例）；分面单图组件 `pages/ResearchStatFacet.vue`（useEChart 渲染，测试中打桩）。
 - 已保存窗口：`src/components/insight/InsightResearchSavedDialog.vue`；回归 `InsightResearchSavedDialog.component.spec.ts`（11 例：列表取数与公司隔离说明、列表失败/空态、分页加载更多、查看只读（来源引用与样本说明原文）、历史版本 runNo 切换、重算新版本/源未变化读回/失败原文、无写权限重算入口不渲染、业务语言扫描）。
 - 镜像依赖：`shared/insight/research.mjs`（预设目录与保存请求解析）、`metrics.mjs`（research.* 指标登记）、`analyses.mjs`（`researchPreview` 与 `researchDefinition*` 四端点，d.mts 同步补端点类型）；shared/ 文件数指纹测试随白名单同步（80→81）。
