@@ -181,16 +181,69 @@ export const INSIGHT_ANALYSES = Object.freeze([
     limits: { maxDays: 31 },
   }),
   analysis({
+    // 八类厂站曲线（#3028 任务 11.3）：供应商比较按共同场站×时段组织，共同样本不足只并列展示
     analysisId: 'plants.output-series', title: '场站出力八类曲线（获权）',
     pageIds: ['plants'], regionIds: ['yunnan'],
     sourceIds: ['cgn.plant.output'],
     filters: { objectIds: objectIdsFilter(50) }, limits: { maxDays: 31, maxObjects: 50 },
+    viewFamily: 'plants', views: ['series', 'supplier-comparison'],
+  }),
+  analysis({
+    // 价格捕获参考（#3028 任务 11.2，PP03）：同口径上网电量 × 场站节点价，Σ(Et×P)/ΣE；
+    // 多节点分列，参考价不是收入。价格不双计：节点价唯一来源是 cgn.plant.nodal-price
+    analysisId: 'plants.price-capture', title: '场站价格捕获参考（获权）',
+    pageIds: ['plants'], regionIds: ['yunnan'],
+    sourceIds: ['cgn.plant.business-actual', 'cgn.plant.nodal-price'],
+    filters: { objectIds: objectIdsFilter(50) }, limits: { maxDays: 31, maxObjects: 50, requiresObjects: true },
+    viewFamily: 'plants', views: ['series', 'capture'],
   }),
   analysis({
     analysisId: 'plants.settlement-daily', title: '场站日结算与源系统损失（获权）',
     pageIds: ['plants'], regionIds: ['yunnan'],
     sourceIds: ['cgn.plant.settlement-daily', 'cgn.plant.loss-daily'],
     filters: { objectIds: objectIdsFilter(200) }, limits: { maxObjects: 200 },
+  }),
+  // ── 五月月包余量分析（#3026 接入通道；数据落库前诚实缺数，#3027 补录后可查）──────────
+  analysis({
+    // 申报、出清、上网、集控实发对照（PP06）：量纲同为 MWh 但口径分开，语义对照视图并列不相加；
+    // 中长期电量以「合同口径引用」单独成列（plants.midlong-reference 的来源）
+    analysisId: 'plants.clearing-actual', title: '申报、出清、上网与集控实发对照（获权）',
+    pageIds: ['plants'], regionIds: ['yunnan'],
+    sourceIds: [
+      'cgn.plant.spot-clearing-day-ahead', 'cgn.plant.spot-clearing-real-time',
+      'cgn.plant.business-declared', 'cgn.plant.business-actual', 'cgn.plant.control-generation',
+      'cgn.plant.midlong-energy',
+    ],
+    filters: { objectIds: objectIdsFilter(50) }, limits: { maxDays: 31, maxObjects: 50, requiresObjects: true },
+    viewFamily: 'plants', views: ['series', 'semantics'],
+  }),
+  analysis({
+    analysisId: 'plants.business-forecast', title: '一体化预测出力（获权）',
+    pageIds: ['plants'], regionIds: ['yunnan'],
+    sourceIds: ['cgn.plant.business-integrated-forecast'],
+    filters: { objectIds: objectIdsFilter(50) }, limits: { maxDays: 31, maxObjects: 50, requiresObjects: true },
+  }),
+  analysis({
+    analysisId: 'plants.midlong-reference', title: '场站历史中长期电量与合同价（只读引用，获权）',
+    pageIds: ['plants'], regionIds: ['yunnan'],
+    sourceIds: ['cgn.plant.midlong-energy', 'cgn.plant.midlong-price'],
+    filters: { objectIds: objectIdsFilter(50) }, limits: { maxDays: 31, maxObjects: 50, requiresObjects: true },
+  }),
+  analysis({
+    analysisId: 'plants.daily-metrics', title: '场站日报指标（获权）',
+    pageIds: ['plants'], regionIds: ['yunnan'],
+    sourceIds: ['cgn.plant.daily-metrics'],
+    filters: { objectIds: objectIdsFilter(200) }, limits: { maxDays: 31, maxObjects: 200, requiresObjects: true },
+    // 覆盖摘要（#3028 任务 11.1）：宽表六字段各自独立统计有效样本
+    viewFamily: 'plants', views: ['series', 'coverage-summary'],
+  }),
+  analysis({
+    analysisId: 'plants.settlement-interval', title: '分时结算电量电费（正式，获权）',
+    pageIds: ['plants'], regionIds: ['yunnan'],
+    sourceIds: ['cgn.plant.settlement-interval-formal'],
+    filters: { objectIds: objectIdsFilter(50) }, limits: { maxDays: 31, maxObjects: 50, requiresObjects: true },
+    // 语义对照（#3028 任务 11.4）：分时结算电量列进对照表；电费与单价不进（只对电量口径）
+    viewFamily: 'plants', views: ['series', 'semantics'],
   }),
 ])
 
