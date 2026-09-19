@@ -23,8 +23,9 @@ export type InsightSource = {
   authority: string
   ingestChannel: string
   measure: { kind: MeasureKind; unit: string; inputUnit: string; factor: string; powerSemantics?: PowerSemantics; valueField?: string; fields?: readonly SourceField[] }
-  /** targetDateField + leadDays：预测按目标日定位；ref_date（发布日）= 目标日 − leadDays */
-  time: { resolutionMinutes: 15 | 60 | 1440; slotLabel: 'interval-start' | 'business-day'; dateField?: string; timeField?: string; targetDateField?: string; leadDays?: number }
+  /** targetDateField + leadDays：预测按目标日定位；ref_date（发布日）= 目标日 − leadDays。
+   *  businessPeriod: 'month' —— 月周期资料（月结等），行日期是月份标记（如 2026-05），按月落窗与计覆盖 */
+  time: { resolutionMinutes: 15 | 60 | 1440; slotLabel: 'interval-start' | 'business-day'; dateField?: string; timeField?: string; targetDateField?: string; leadDays?: number; businessPeriod?: 'month' }
   variant: 'actual' | 'forecast' | null
   marketPhase: MarketPhase | null
   priceObject: PriceObject | null
