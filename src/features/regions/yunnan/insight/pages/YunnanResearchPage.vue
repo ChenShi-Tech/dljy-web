@@ -31,6 +31,7 @@ import {
 } from '@/services/insight/insightClient'
 import { runResearchPreview, type ResearchPreviewResult, type ResearchRow, type ResearchSeriesMeta } from '@/services/insight/researchClient'
 import { useInsightContext } from '@/composables/useInsightContext'
+import { useInsightAiPage, type InsightAiEvidenceBlock, type InsightAiEvidenceItem } from '@/features/regions/yunnan/insight/useInsightAiPage'
 import InsightDateRange from '@/components/insight/InsightDateRange.vue'
 import { insightSourceTitle, type InsightSourceTitle } from '@/components/insight/insightText'
 
@@ -532,6 +533,66 @@ const progressStatRows = computed<ProgressRow[]>(() => {
     .filter((metricId) => byMetric.has(metricId))
     .map((metricId) => ({ label: metricLabelOf(metricId), unit: metricUnitOf(metricId), text: metricTextOf(metricId, byMetric.get(metricId) ?? null) }))
 })
+
+// ── AI 解读（任务 15.3）：统一侧栏注册 + 取材纪律（CH03/D9）──────────────────────────────
+// 研究结果与区块结果形状不同（无 runtime 六维），按同一纪律在页内构造：runKey 与当前
+// 配置签名不一致的旧结果不进上下文；只传预设/方法/版本/样本摘要，不传 rows。
+
+function researchAiBlock(): InsightAiEvidenceBlock | null {
+  const preset = activePreset.value
+  const res = runState.result
+  if (!preset || !res) return null
+  if (runState.runKey !== configSignature.value) return null // 过期结果：属于另一组参数，绝不提交
+  const evidence: InsightAiEvidenceItem[] = [
+    {
+      id: 'research.result',
+      text: `研究预设 ${preset.presetId}（${preset.title}）的结果版本 ${res.resultVersion}（读取版本集 ${res.readSetRef}，方法版本 ${res.methodVersion}）；` +
+        `业务窗 ${res.businessWindow.start}~${res.businessWindow.end}；模式 ${res.mode}${res.asOf ? `（截止时点 ${res.asOf}）` : ''}；` +
+        `样本 ${res.sample.observed} 条（资格${res.sample.eligibilityMet ? '已满足' : '未满足'}）`,
+    },
+  ]
+  const filterParts = [
+    res.mode === 'ex-ante' ? '模式：事前（显式截止时点）' : '模式：事后对照',
+    ...(res.data.sampling ? [`抽样：${res.data.sampling.method}（总体 ${res.data.sampling.population}）`] : []),
+  ]
+  evidence.push({ id: 'research.filters', text: `筛选摘要：${filterParts.join('；')}` })
+  if (res.method.notes.length) {
+    evidence.push({ id: 'research.method', text: `方法说明（原文）：${res.method.notes.slice(0, 4).join('；')}` })
+  }
+  const excluded = Object.entries(res.exAnte?.perSource ?? {}).filter(([, d]) => d.excludedAfterAsOf > 0 || d.missingKnownAt > 0)
+  if (excluded.length) {
+    evidence.push({
+      id: 'research.exante',
+      text: `事前排除说明：${excluded.map(([sourceId, d]) => `${sourceId} 事后行排除 ${d.excludedAfterAsOf}、缺已知时间 ${d.missingKnownAt}`).join('；')}；这些数据不得表述为当时可得`,
+    })
+  }
+  return {
+    blockId: 'research',
+    title: preset.title,
+    sourceRefs: res.sourceRefs.map((ref) => ref.sourceId),
+    evidence,
+    runtime: {
+      access: 'granted',
+      availability: { state: 'complete' },
+      // 研究统计不追踪数据新鲜度：诚实按 unknown 传入（AI 不得把统计表述为当前事实）。
+      freshness: { state: 'unknown' },
+    },
+  }
+}
+
+const insightAi = useInsightAiPage({
+  pageId: 'research',
+  label: '云南研究工作台',
+  collect: () => {
+    const block = researchAiBlock()
+    return block ? [block] : []
+  },
+  currentSignature: () => configSignature.value,
+})
+
+const onAiInterpret = (): void => {
+  void insightAi.interpret()
+}
 </script>
 
 <template>
@@ -555,6 +616,13 @@ const progressStatRows = computed<ProgressRow[]>(() => {
           </option>
         </select>
       </label>
+      <!-- AI 入口（15.3）：模型离线只隐藏入口，数据页不受影响（D9） -->
+      <el-button
+        v-if="insightAi.aiAvailable.value"
+        type="primary"
+        data-testid="yr-ai-entry"
+        @click="onAiInterpret"
+      >✨ AI 解读本页</el-button>
     </section>
 
     <p class="yr__meta">{{ STAGE_TEXT }}</p>

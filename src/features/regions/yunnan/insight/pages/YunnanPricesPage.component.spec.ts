@@ -49,6 +49,7 @@ import {
   RESULT_VERSION,
   row,
 } from '@/components/insight/insightFixtures'
+import { activeAiPage, resolveInterpret } from '@/features/aiSidebar/pageRegistry'
 import YunnanPricesPage from './YunnanPricesPage.vue'
 
 // ── 可控 mock 状态（vi.hoisted：vi.mock 工厂提升后仍可引用）────────────────────────────
@@ -56,6 +57,11 @@ import YunnanPricesPage from './YunnanPricesPage.vue'
 const state = vi.hoisted(() => ({
   capabilities: null as unknown,
   responder: null as ((request: any) => Promise<any>) | null,
+}))
+
+vi.mock('@/composables/useAgentHealth', () => ({
+  // 页面 AI 入口的探活打桩：不发起真实网络连接；AI 入口可见性按在线处理。
+  useAgentHealth: () => ({ health: { value: 'online' }, ready: { value: true }, offline: { value: false }, check: async () => {} }),
 }))
 
 vi.mock('@/services/insight/insightClient', async (importOriginal) => {
@@ -942,5 +948,30 @@ describe('业务模块只读深链·资料维护', () => {
 
     expect(wrapper!.text()).toContain('尚未接入')
     expect(wrapper!.find('[data-testid="insight-open-maintenance"]').exists()).toBe(false)
+  })
+})
+
+// ── AI 解读注册（dljy#3100，任务 15.3）：六页注册覆盖之价格页 ─────────────────────────────
+
+describe('YunnanPricesPage · AI 解读注册（15.3）', () => {
+  it('注册统一侧栏声明并挂入口按钮：采集含时段走势与统计摘要，payload 无原始行', async () => {
+    await mountPage()
+    expect(wrapper!.find('[data-testid="ynp-ai-entry"]').exists()).toBe(true)
+    const def = activeAiPage().value
+    expect(def?.label).toBe('云南价格分析')
+    const slice = resolveInterpret(def!)!.context?.() as { blocks: Array<Record<string, unknown>> } | null
+    expect(slice).not.toBeNull()
+    expect(slice!.blocks.map((block) => block.blockId).sort()).toEqual(['series', 'summary'])
+    expect(JSON.stringify(slice)).not.toMatch(/"rows"/)
+  })
+
+  it('切换价格对象后旧签名结果作废：新查询未就绪期间采集为空（过期资料不进上下文）', async () => {
+    await mountPage()
+    const def = activeAiPage().value!
+    expect((resolveInterpret(def)!.context?.() as { blocks: unknown[] }).blocks).toHaveLength(2)
+    state.responder = () => new Promise(() => {}) // 新查询挂起（公共节点价需先选对象）
+    await choosePriceObject('prices.public-node-series') // 全部旧结果作废
+    const slice = resolveInterpret(def)!.context?.() as { blocks: unknown[] } | null
+    expect(slice?.blocks ?? []).toHaveLength(0)
   })
 })

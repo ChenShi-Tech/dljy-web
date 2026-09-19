@@ -28,6 +28,7 @@ import { mount as appMount } from '@/test/mount'
 import InsightDateRange from '@/components/insight/InsightDateRange.vue'
 import InsightObjectPicker from '@/components/insight/InsightObjectPicker.vue'
 import { insightResult } from '@/components/insight/insightFixtures'
+import { activeAiPage, resolveInterpret } from '@/features/aiSidebar/pageRegistry'
 import YunnanGridBoundariesPage from './YunnanGridBoundariesPage.vue'
 import { fetchGridDisclosureEvents, fetchGridDisclosureOverview, fetchGridObject } from '@/features/gridGeo/client'
 import { ApiError } from '@/services/api'
@@ -42,6 +43,11 @@ const state = vi.hoisted(() => ({
   /** 检修干预页签（#3092）：当前账号角色与 gridGeo 披露客户端的可控响应。 */
   role: 'TRADER' as string,
   availability: 'available' as string,
+}))
+
+vi.mock('@/composables/useAgentHealth', () => ({
+  // 页面 AI 入口的探活打桩：不发起真实网络连接；AI 入口可见性按在线处理。
+  useAgentHealth: () => ({ health: { value: 'online' }, ready: { value: true }, offline: { value: false }, check: async () => {} }),
 }))
 
 vi.mock('@/services/insight/insightClient', async (importOriginal) => {
@@ -1064,5 +1070,31 @@ describe('检修干预页签（#3092）', () => {
       expect(String((params as any).from)).toBe('2026-09-10')
       expect(String((params as any).to)).toBe('2026-09-16')
     }
+  })
+})
+
+// ── AI 解读注册（dljy#3100，任务 15.3）：六页注册覆盖之电网边界页 ─────────────────────────
+
+describe('电网边界页 · AI 解读注册（15.3）', () => {
+  it('注册统一侧栏声明并挂入口按钮：采集当前页签已就绪查询（送受电=boundary+transfer），payload 无原始行', async () => {
+    await mountPage()
+    expect(wrapper!.find('[data-testid="ygb-ai-entry"]').exists()).toBe(true)
+    const def = activeAiPage().value
+    expect(def?.label).toBe('云南电网边界')
+    const slice = resolveInterpret(def!)!.context?.() as { blocks: Array<Record<string, unknown>> } | null
+    expect(slice).not.toBeNull()
+    expect(slice!.blocks.map((block) => block.blockId).sort()).toEqual(['boundary-series', 'transfer-daily'])
+    expect(JSON.stringify(slice)).not.toMatch(/"rows"/)
+  })
+
+  it('窗口变化后旧结果作废：新查询未就绪期间采集为空（过期资料不进上下文）', async () => {
+    await mountPage()
+    const def = activeAiPage().value!
+    expect((resolveInterpret(def)!.context?.() as { blocks: unknown[] }).blocks).toHaveLength(2)
+    state.responder = () => new Promise(() => {}) // 新查询挂起
+    wrapper!.getComponent(InsightDateRange).vm.$emit('update:modelValue', { start: '2026-09-17', end: '2026-09-18' })
+    await flushPromises()
+    const slice = resolveInterpret(def)!.context?.() as { blocks: unknown[] } | null
+    expect(slice?.blocks ?? []).toHaveLength(0)
   })
 })

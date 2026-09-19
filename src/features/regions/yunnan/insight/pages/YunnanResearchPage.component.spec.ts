@@ -25,6 +25,7 @@ import { runResearchPreview } from '@/services/insight/researchClient'
 import { selectedRegionId } from '@/services/region/regionContext'
 import { selectedCompanyId } from '@/services/company/companyContext'
 import { mount as appMount } from '@/test/mount'
+import { activeAiPage, resolveInterpret } from '@/features/aiSidebar/pageRegistry'
 import YunnanResearchPage from './YunnanResearchPage.vue'
 
 const HEX64 = 'a'.repeat(64)
@@ -36,6 +37,11 @@ const state = vi.hoisted(() => ({
   /** research/preview 应答器：默认成功返回 state.result；可替换为拒绝。 */
   responder: null as ((request: any) => Promise<any>) | null,
   result: null as unknown,
+}))
+
+vi.mock('@/composables/useAgentHealth', () => ({
+  // 页面 AI 入口的探活打桩：不发起真实网络连接；AI 入口可见性按在线处理。
+  useAgentHealth: () => ({ health: { value: 'online' }, ready: { value: true }, offline: { value: false }, check: async () => {} }),
 }))
 
 vi.mock('@/services/insight/insightClient', async (importOriginal) => {
@@ -714,5 +720,39 @@ describe('受控输入面与业务语言', () => {
     expect(text).not.toContain('rv1:')
     expect(text).not.toContain('yn.price')
     expect(text).not.toContain('yn.system')
+  })
+})
+
+// ── AI 解读注册（dljy#3100，任务 15.3）：六页注册覆盖之研究工作台页 ───────────────────────
+
+describe('研究页 · AI 解读注册（15.3）', () => {
+  it('注册统一侧栏声明并挂入口按钮：运行后采集当前签名结果，payload 无 rows 且带版本引用', async () => {
+    await mountPage()
+    await setWindow('2026-09-01', '2026-09-10')
+    await selectPreset('research.price-new-energy-correlation')
+    await run()
+    expect(wrapper!.find('[data-testid="yr-ai-entry"]').exists()).toBe(true)
+    const def = activeAiPage().value
+    expect(def?.label).toBe('云南研究工作台')
+    const slice = resolveInterpret(def!)!.context?.() as { blocks: Array<Record<string, unknown>> } | null
+    expect(slice).not.toBeNull()
+    expect(slice!.blocks).toHaveLength(1)
+    const text = JSON.stringify(slice)
+    expect(text).not.toMatch(/"rows"/)
+    expect(text).toContain('rv1:')
+    expect(text).toContain('rs1:')
+    expect(text).toContain('事后对照')
+  })
+
+  it('切换预设（配置签名变化）后旧结果作废：采集为空（过期研究不进上下文）', async () => {
+    await mountPage()
+    await selectPreset('research.price-new-energy-correlation')
+    await run()
+    const def = activeAiPage().value!
+    expect((resolveInterpret(def)!.context?.() as { blocks: unknown[] }).blocks).toHaveLength(1)
+    await selectPreset('research.price-load-lag-comparison') // 签名变化即清空旧结果
+    await flushPromises()
+    const slice = resolveInterpret(def)!.context?.() as { blocks: unknown[] } | null
+    expect(slice?.blocks ?? []).toHaveLength(0)
   })
 })

@@ -36,6 +36,7 @@ import InsightDateRange from '@/components/insight/InsightDateRange.vue'
 import InsightObjectPicker from '@/components/insight/InsightObjectPicker.vue'
 import ChartCard from '@/components/common/ChartCard.vue'
 import { insightResult } from '@/components/insight/insightFixtures'
+import { activeAiPage, resolveInterpret } from '@/features/aiSidebar/pageRegistry'
 import YunnanPlantsPage from './YunnanPlantsPage.vue'
 
 // ── 可控 mock 状态（vi.hoisted：vi.mock 工厂提升后仍可引用）────────────────────────────
@@ -45,6 +46,11 @@ const state = vi.hoisted(() => ({
   responder: null as ((request: any) => Promise<any>) | null,
   /** coverage 来源清单：analysisId → sources[]（objects 字段按场景给或不给）。 */
   coverageSources: null as Record<string, Array<{ sourceId: string; objects?: string[]; objectsNote?: string }>> | null,
+}))
+
+vi.mock('@/composables/useAgentHealth', () => ({
+  // 页面 AI 入口的探活打桩：不发起真实网络连接；AI 入口可见性按在线处理。
+  useAgentHealth: () => ({ health: { value: 'online' }, ready: { value: true }, offline: { value: false }, check: async () => {} }),
 }))
 
 vi.mock('@/services/insight/insightClient', async (importOriginal) => {
@@ -1736,5 +1742,35 @@ describe('业务模块只读深链', () => {
     expect(text).not.toMatch(/cgn\.|plants\.|\/xhjy|\/zcqjy|\/data-ops|sourceId|analysisId/)
     expect(text).toContain('前往结算业务')
     expect(text).toContain('不创建或提交任何单据')
+  })
+})
+
+// ── AI 解读注册（dljy#3100，任务 15.3）：六页注册覆盖之场站页 ─────────────────────────────
+
+describe('场站页 · AI 解读注册（15.3）', () => {
+  it('注册统一侧栏声明并挂入口按钮：采集当前页签已就绪查询（组合总览=coverage+daily），payload 无原始行', async () => {
+    await mountPage()
+    pickerOf('ypp-overview-objects').vm.$emit('update:modelValue', ['甲风电场', '乙光伏电站'])
+    await flushPromises()
+    expect(wrapper!.find('[data-testid="ypp-ai-entry"]').exists()).toBe(true)
+    const def = activeAiPage().value
+    expect(def?.label).toBe('云南场站表现')
+    const slice = resolveInterpret(def!)!.context?.() as { blocks: Array<Record<string, unknown>> } | null
+    expect(slice).not.toBeNull()
+    expect(slice!.blocks.map((block) => block.blockId).sort()).toEqual(['overview-coverage', 'settlement-daily'])
+    expect(JSON.stringify(slice)).not.toMatch(/"rows"/)
+  })
+
+  it('公司切换后旧结果作废：新查询未就绪期间采集为空（不带上一公司资料发起解读）', async () => {
+    await mountPage()
+    pickerOf('ypp-overview-objects').vm.$emit('update:modelValue', ['甲风电场'])
+    await flushPromises()
+    const def = activeAiPage().value!
+    expect((resolveInterpret(def)!.context?.() as { blocks: unknown[] }).blocks).toHaveLength(2)
+    state.responder = () => new Promise(() => {}) // 新查询挂起
+    selectedCompanyId.value = 'c2-company' // 切公司：代次 +1，全部旧结果属于上一公司
+    await flushPromises()
+    const slice = resolveInterpret(def)!.context?.() as { blocks: unknown[] } | null
+    expect(slice?.blocks ?? []).toHaveLength(0)
   })
 })

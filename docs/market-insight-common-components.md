@@ -9,6 +9,7 @@
 | 模块 | 路径 | 职责 |
 | --- | --- | --- |
 | HTTP 客户端 | `src/services/insight/insightClient.ts` | `queryInsight` / `fetchInsightCapabilities` / `fetchInsightCoverage`；把后端信封归一成 `InsightRequestError`（status/message/details）；`assertInsightResult` 前置校验 |
+| AI 上下文客户端 | `src/services/insight/insightAiContextClient.ts` | `assembleInsightAiContext`：调 `POST /api/v1/insight-ai-context/assemble`（dljy#3097 约束层）组装四段纪律信封；出参形状自检 |
 | 查询上下文 | `src/composables/useInsightContext.ts` | 地区 × 公司 × 业务日期窗 × 对象 × 来源的统一状态；地址参数互转；`contextVersion` 与请求代次联动 |
 | 下钻上下文 | `src/services/region/insightHandoff.ts` | 页面间下钻的统一可校验 URL 编解码（共享四键 + `hx_` 扩展键）、超长丢弃清单与返回状态（dljy#3087） |
 | 区块容器 | `src/components/insight/InsightBlock.vue` | 结果/错误/空态/部分数据的统一外壳，来源标签与证据/导出/材料入口 |
@@ -24,6 +25,7 @@
 | 材料窗口 | `src/components/insight/InsightMaterialDialog.vue` | 洞察区块 → 复盘底稿材料：选择既有底稿、冻结保存（409 先重跑）、入稿 |
 | 文案中枢 | `src/components/insight/insightText.ts` | 错误/可用性/派生/阶段/价格对象/访问范围/字段的全部业务话术 |
 | 测试夹具 | `src/components/insight/insightFixtures.ts` | 能过契约校验的最小合法结果构造，各 spec 复用 |
+| AI 侧栏注册 | `src/features/regions/yunnan/insight/useInsightAiPage.ts` | 六页统一 AI 解读注册与取材纪律（任务 15.3）；签名纪律 `insightAiBlockOf` 也在此 |
 
 ## 组件接口
 
@@ -261,6 +263,27 @@ hasInsightDrilldownParams(query)    -> boolean              // URL 是否带 hx_
 
 - `src/features/regions/yunnan/insight/businessLinks.component.spec.ts`：query 白名单/无原始数据数组/无可写动词/目标只读路径/双保险出口。
 - `src/features/regions/yunnan/insight/pages/YunnanPlantsPage.component.spec.ts`、`YunnanPricesPage.component.spec.ts` 的「业务模块只读深链」用例：入口显隐 × 权限、跳转参数、返回重查、业务语言扫描。
+## AI 取材纪律（useInsightAiPage，dljy#3100 任务 15.3）
+
+六页（总览/价格/供需/电网边界/场站/研究工作台）经统一 AI 侧栏协议（`defineAiPage`）注册「解读本页」；
+点击时采集当前有效证据切片，先交 `POST /api/v1/insight-ai-context/assemble`（dljy#3097 约束层）
+组装为四段纪律信封（事实→可能因素→已明确相关对象→待核实项；事实必须带 evidenceRefs；来源缺失
+与过期随上下文显式传入），成功才随问题派发。规则：
+
+1. **签名纪律**：`insightAiBlockOf` 只收「当前签名一致」的结果——`queriedKey !== currentKey`
+   的过期区块返回 null，绝不进上下文（切页/切公司/keep-alive 后不提交旧资料的机械落点）；
+   无权（denied）区块整块退出，不泄露私有资料存在性。
+2. **只传摘要与版本引用**：区块带 analysisId、view、业务窗、`resultVersion`/`readSetRef`、
+   access/availability/freshness 六维、序列目录（来源/字段/单位/粒度）与筛选摘要；
+   **绝不传原始行数据数组**——payload 体积不随结果行数增长（测试断言）。
+3. **组装失败诚实报错**：/assemble 单次尝试、不自动重试；失败 `ElMessage.error` 原因原文，
+   本次解读不发起；无已就绪结果时提示先等查询完成，不拿空切片冒充解读。
+4. **组装期间守卫**：/assemble 往返期间上下文签名变化（切公司/改窗）或页面失活/卸载，
+   本次解读作废——信封属于点击时刻的旧读取，不带旧资料派发。
+5. **未就绪纪律（D9）**：模型离线（`useAgentHealth` 探活 offline）只隐藏 AI 入口按钮；
+   数据页查询、分析、保存、导出完整工作，不依赖模型。探活 unknown（未返回）视为可用。
+6. **派发上下文双件套**：证据正文在 `blocks`（约束信封的注册表只含 id 与元数据），
+   纪律面在 `insight_ai_context`（四段契约、反例纪律、渲染提示词）；两者随同一轮下发。
 
 ## 阶段 A 集成检查
 
@@ -314,3 +337,5 @@ hasInsightDrilldownParams(query)    -> boolean              // URL 是否带 hx_
 | `src/components/insight/chart/useInsightSelection.spec.ts` | 语义字段、位置键拒绝、时段合并、迟到守卫、防回环、reset |
 | `src/components/insight/InsightResultTable.component.spec.ts` | 列与缺测、本页/全量标注、导出本页/全量、CSV 口径（含 RFC 4180 转义与精度直出）、选区高亮、row-click |
 | `src/components/insight/InsightMaterialDialog.component.spec.ts` | 底稿列表失败、冻结请求期望版本与幂等键、非主笔不冻结、成功入稿、幂等不重复入稿、409 先重跑、入稿冲突如实说明（dljy#3078） |
+| `src/features/regions/yunnan/insight/useInsightAiPage.component.spec.ts` | 签名纪律（过期/无权/空结果不进上下文）、payload 无原始行、注册 KeepAlive 生命周期、/assemble 组装派发与失败诚实报错（dljy#3100） |
+| 六页 `*.component.spec.ts` 内「AI 解读注册（15.3）」用例 | 每页注册声明、入口按钮、当前签名采集、上下文变化后不采集旧资料 |
