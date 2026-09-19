@@ -305,7 +305,7 @@ async function mountPage(): Promise<VueWrapper<any>> {
   wrapper = appMount(YunnanResearchPage, {
     global: {
       plugins: [router],
-      stubs: { teleport: true, ResearchStatFacet: true },
+      stubs: { teleport: true, ResearchStatFacet: { template: '<div data-testid="yr-facet-chart" />' } },
     },
   })
   await flushPromises()
@@ -920,17 +920,26 @@ describe('量纲分面与视图选择', () => {
     expect(note.text()).toContain('不包含视图选择')
   })
 
-  it('序列显隐只改当前视图：隐藏 MW 序列后该面消失，结果不重查、不清空', async () => {
+  it('序列显隐只改当前视图：隐藏唯一序列后该面不出图但控件保留，可勾回；结果不重查、不清空', async () => {
     state.result = progressResult()
     await mountPage()
     await setWindow('2026-09-09', '2026-09-09')
     await selectPreset('research.load-progress-comparison')
     await run()
     expect(previewCalls()).toHaveLength(1)
+    expect(wrapper!.findAll('[data-testid="yr-facet-chart"]')).toHaveLength(3)
 
-    await wrapper!.find('[data-testid="yr-facet-series-supply-mean-power"]').setValue(false)
+    const mwToggle = () => wrapper!.find('[data-testid="yr-facet-series-supply-mean-power"]')
+    await mwToggle().setValue(false)
     await flushPromises()
-    expect(wrapper!.findAll('[data-testid="yr-facet"]')).toHaveLength(2)
+    // 控制面永远在场：分面骨架不随显隐消失（唯一序列被隐藏也能勾回），只是不再出图
+    expect(wrapper!.findAll('[data-testid="yr-facet"]')).toHaveLength(3)
+    expect(wrapper!.findAll('[data-testid="yr-facet-chart"]')).toHaveLength(2)
+    expect(mwToggle().exists()).toBe(true)
+    expect((mwToggle().element as HTMLInputElement).checked).toBe(false)
+    await mwToggle().setValue(true)
+    await flushPromises()
+    expect(wrapper!.findAll('[data-testid="yr-facet-chart"]')).toHaveLength(3)
     expect(wrapper!.find('[data-testid="yr-result"]').exists()).toBe(true)
     expect(previewCalls()).toHaveLength(1) // 同签名不重查：视图操作不发请求
   })
@@ -942,10 +951,10 @@ describe('量纲分面与视图选择', () => {
     await selectPreset('research.load-progress-comparison')
     await run()
     await wrapper!.find('[data-testid="yr-facet-series-supply-mean-power"]').setValue(false)
-    expect(wrapper!.findAll('[data-testid="yr-facet"]')).toHaveLength(2)
+    expect(wrapper!.findAll('[data-testid="yr-facet-chart"]')).toHaveLength(2)
 
     await run()
-    expect(wrapper!.findAll('[data-testid="yr-facet"]')).toHaveLength(3)
+    expect(wrapper!.findAll('[data-testid="yr-facet-chart"]')).toHaveLength(3)
   })
 
   it('分面顺序可在会话内调整（上移/下移），同样不触发请求', async () => {

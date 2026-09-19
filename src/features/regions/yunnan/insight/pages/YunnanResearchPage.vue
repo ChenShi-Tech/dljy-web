@@ -135,9 +135,18 @@ const handoffBanner = computed(() => {
   const parts = [`窗口 ${ctx.businessWindow.value.start} ~ ${ctx.businessWindow.value.end}`]
   if (ctx.objectIds.value.length) parts.push(`对象 ${ctx.objectIds.value.length} 个`)
   if (ctx.sourceIds.value.length) parts.push(`来源 ${ctx.sourceIds.value.length} 项`)
-  const prefill = handoffSuggestedPresetId.value
-    ? '研究预设已按承接来源预填（可更换）'
-    : '承接来源未对应已登记预设，请手动选择研究问题'
+  // 预填文案只认实际生效的选择：建议存在 ≠ 预填成功（目录未就绪/失败/所需分析未开放时
+  // selectPreset 会拒绝，界面不得声称已预填一个空预设）。
+  const suggested = handoffSuggestedPresetId.value
+  const prefill = !suggested
+    ? '承接来源未对应已登记预设，请手动选择研究问题'
+    : selectedPresetId.value === suggested
+      ? '研究预设已按承接来源预填（可更换）'
+      : capabilitiesLoading.value
+        ? '承接预设待能力目录就绪后预填'
+        : capabilitiesError.value
+          ? '能力目录读取失败，承接预设未能预填，请手动选择研究问题'
+          : '承接来源对应的预设当前不可运行（所需分析未开放），请手动选择研究问题'
   return `已承接「${RESEARCH_HANDOFF_ORIGIN_LABELS[origin]}」的选区范围：${parts.join('、')}；承接只携带窗口与对象/来源引用，不带原始数据；${prefill}`
 })
 
@@ -507,6 +516,7 @@ const facetEligible = computed(() => ['correlation', 'lag-comparison', 'progress
 const hiddenMetricIds = ref<ReadonlySet<string>>(new Set())
 const facetOrder = ref<readonly string[]>([])
 
+/** 图表分面：随显隐过滤（隐藏的序列不进图、整面隐藏时不出图）。 */
 const statFacets = computed(() => {
   if (!facetEligible.value || !result.value) return []
   return buildResearchStatFacets(result.value.data.rows, {
@@ -514,6 +524,20 @@ const statFacets = computed(() => {
     facetOrder: facetOrder.value,
   })
 })
+
+/** 控制面分面：同一套拆面与排序，但不做显隐过滤——显隐控件要一直在场，
+ * 否则取消勾选后控件随序列一起消失，唯一序列被隐藏时整面都找不回（只能重跑）。 */
+const statFacetControls = computed(() => {
+  if (!facetEligible.value || !result.value) return []
+  return buildResearchStatFacets(result.value.data.rows, {
+    facetOrder: facetOrder.value,
+  })
+})
+
+/** 可见图按单位索引：控制面渲染图表面时按单位取对应过滤后分面（无可见序列则不出图）。 */
+const statFacetByUnit = computed(
+  () => new Map(statFacets.value.map((facet) => [facet.unit, facet]))
+)
 
 /** 序列显隐：只改当前视图，不重新请求（同签名不重查），结果不清空。 */
 function toggleMetricVisibility(metricId: string, visible: boolean): void {
@@ -523,9 +547,10 @@ function toggleMetricVisibility(metricId: string, visible: boolean): void {
   hiddenMetricIds.value = next
 }
 
-/** 分面顺序（上移/下移）：会话内视图状态，同样不触发请求。 */
+/** 分面顺序（上移/下移）：会话内视图状态，同样不触发请求。按控制面全集排序——
+ * 被整面隐藏的分面也保持次序，重新勾回时不跳位。 */
 function moveFacet(index: number, delta: number): void {
-  const units = statFacets.value.map((facet) => facet.unit)
+  const units = statFacetControls.value.map((facet) => facet.unit)
   const target = index + delta
   if (target < 0 || target >= units.length) return
   ;[units[index], units[target]] = [units[target], units[index]]
@@ -1124,14 +1149,15 @@ const progressStatRows = computed<ProgressRow[]>(() => {
         <!-- 多指标量纲分面（任务 13.7，RS08、D6.1）：统计行按登记量纲拆面并列——
              一个量纲一张图一根轴，不同量纲各拆一张图（不共轴、不做双 Y 轴混标）；
              面内序列显隐、分面顺序是会话内视图状态（不进请求、不进保存定义） -->
-        <template v-if="statFacets.length">
+        <template v-if="statFacetControls.length">
           <div class="yr__facets">
-            <section v-for="(facet, index) in statFacets" :key="facet.unit" class="yr__facet" data-testid="yr-facet">
+            <!-- 分面骨架按控制面（不过滤显隐）渲染：图有可见序列才出图，控件永远在场 -->
+            <section v-for="(facet, index) in statFacetControls" :key="facet.unit" class="yr__facet" data-testid="yr-facet">
               <header class="yr__facet-head">
                 <h4>{{ statFacetTitleOf(facet.unit) }}</h4>
                 <span class="yr__facet-actions">
                   <el-button size="small" text :disabled="index === 0" data-testid="yr-facet-move-up" @click="moveFacet(index, -1)">上移</el-button>
-                  <el-button size="small" text :disabled="index === statFacets.length - 1" data-testid="yr-facet-move-down" @click="moveFacet(index, 1)">下移</el-button>
+                  <el-button size="small" text :disabled="index === statFacetControls.length - 1" data-testid="yr-facet-move-down" @click="moveFacet(index, 1)">下移</el-button>
                 </span>
               </header>
               <div class="yr__facet-toggles">
@@ -1145,7 +1171,7 @@ const progressStatRows = computed<ProgressRow[]>(() => {
                   {{ item.label }}
                 </label>
               </div>
-              <ResearchStatFacet :facet="facet" />
+              <ResearchStatFacet v-if="statFacetByUnit.get(facet.unit)" :facet="statFacetByUnit.get(facet.unit)!" />
             </section>
           </div>
           <p class="yr__hint" data-testid="yr-view-scope-note">{{ VIEW_SCOPE_NOTE }}</p>

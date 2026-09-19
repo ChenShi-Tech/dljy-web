@@ -34,7 +34,7 @@ export function buildResearchHandoffQuery(
   selection: InsightSelection | null | undefined,
   from: string
 ): Record<string, string> | null {
-  if (!(from in RESEARCH_HANDOFF_ORIGINS)) return null
+  if (!Object.prototype.hasOwnProperty.call(RESEARCH_HANDOFF_ORIGINS, from)) return null
   const intervals = selection?.timeIntervals ?? []
   const objectRefs = selection?.objectRefs ?? []
   const sourceIds = selection?.sourceIds ?? []
@@ -42,7 +42,7 @@ export function buildResearchHandoffQuery(
   const query: Record<string, string> = { from }
   // 时段选区折叠为起止业务日（北京时间 ISO 的日期部分；起止分别取最小/最大）。
   const days = intervals
-    .flatMap((interval) => [String(interval.start).slice(0, 10), String(interval.end).slice(0, 10)])
+    .flatMap((interval) => intervalEndpointDays(String(interval.start), String(interval.end)))
     .filter((day) => /^\d{4}-\d{2}-\d{2}$/.test(day))
     .sort()
   if (days.length) {
@@ -58,10 +58,29 @@ export function buildResearchHandoffQuery(
   return query
 }
 
+/**
+ * 一段半开区间 [start, end) 的起止 → 业务日（北京时间 ISO 字符串日期部分，沿用本模块口径）：
+ * end 恰为当日零点（00:00[:00[.000]]，剥掉时区后缀后比对）时该端点属于前一天——
+ * 把零点端点并进次峰会悄悄放宽研究窗口，单日预设会越过 maxDays 约束。
+ */
+function intervalEndpointDays(start: string, end: string): [string, string] {
+  const startDay = start.slice(0, 10)
+  const endText = end.replace(/(?:Z|[+-]\d{2}:\d{2})$/, '')
+  const endDay = endText.slice(0, 10)
+  if (/^\d{4}-\d{2}-\d{2}$/.test(endDay) && /^00:00(:00(\.\d+)?)?$/.test(endText.slice(11))) {
+    const previous = new Date(`${endDay}T00:00:00Z`)
+    previous.setUTCDate(previous.getUTCDate() - 1)
+    return [startDay, previous.toISOString().slice(0, 10)]
+  }
+  return [startDay, endDay]
+}
+
 /** 解析承接来源页：白名单外（含缺失）返回 null——不认识的来源不假装承接。 */
 export function parseResearchHandoffOrigin(query: { from?: unknown }): ResearchHandoffOrigin | null {
   const from = query.from
-  return typeof from === 'string' && from in RESEARCH_HANDOFF_ORIGINS ? (from as ResearchHandoffOrigin) : null
+  return typeof from === 'string' && Object.prototype.hasOwnProperty.call(RESEARCH_HANDOFF_ORIGINS, from)
+    ? (from as ResearchHandoffOrigin)
+    : null
 }
 
 /** 返回原页的位置：带回窗口与对象/来源（useInsightContext 同一套参数名，可恢复口径）。 */
