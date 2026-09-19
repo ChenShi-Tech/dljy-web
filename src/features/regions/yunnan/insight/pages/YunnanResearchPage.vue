@@ -389,6 +389,9 @@ const saveState = reactive<{ saving: boolean; savedVersion: number | null; error
 })
 /** 最近一次保存成功的研究定义 id：材料通道（#3116）只接受 definitionId。 */
 const savedDefinitionId = ref<string | null>(null)
+/** 该定义保存时所对应的结果版本指纹：配置签名不变、源更新后重跑会得到新版本——
+ *  指纹不一致即旧定义，材料入口必须要求重新保存（不带旧冻结定义配新结果版本）。 */
+const savedForVersions = ref<{ resultVersion: string; readSetRef: string } | null>(null)
 
 /** 已保存分析窗口：查看（列表/原样只读）对所有人开放；重算入口由窗口按权限另行显隐。 */
 const savedVisible = ref(false)
@@ -428,6 +431,7 @@ watch(configSignature, () => {
   // 已保存定义 ID 绑定配置签名：配置一变，旧定义不再对应当前结果——不清掉的话
   // 材料入口会把 A 定义的 ID 配上 B 结果的期望版本发给服务端（版本核对必然错位）。
   savedDefinitionId.value = null
+  savedForVersions.value = null
 })
 
 /** 研究请求上下文：显式叠加当前模式与事前时点（toQueryContext 默认事后、无时点）。
@@ -454,6 +458,13 @@ async function runPreview(): Promise<void> {
     // 新一次运行回到默认视图（序列显隐/分面顺序绑定当前结果，是会话内状态）。
     hiddenMetricIds.value = new Set()
     facetOrder.value = []
+    // 同签名重跑（源更新）会得到新版本：与已保存定义对应的版本指纹不一致即旧定义，
+    // 材料入口必须要求重新保存，不带旧冻结定义配新结果的期望版本。
+    if (savedForVersions.value && (result.resultVersion !== savedForVersions.value.resultVersion || result.readSetRef !== savedForVersions.value.readSetRef)) {
+      savedDefinitionId.value = null
+      savedForVersions.value = null
+      saveState.savedVersion = null
+    }
     runState.result = result
     runState.runKey = key
   } catch (error) {
@@ -503,8 +514,13 @@ async function saveDefinition(): Promise<void> {
   try {
     const detail = await saveResearchDefinition({ presetId: preset.presetId, context, filters, transformations, expected, idempotencyKey })
     if (configSignature.value !== signatureAtRequest) return
+    // 保存针对的是发起时看到的结果：响应到达前若同签名重跑换成了新版本（源更新），
+    // 这份冻结定义已对不上屏幕上的结果——丢弃响应，材料入口等下一次保存。
+    const displayed = runState.result
+    if (!displayed || displayed.resultVersion !== expected.resultVersion || displayed.readSetRef !== expected.readSetRef) return
     const version = detail.latestRun?.runNo ?? 1
     savedDefinitionId.value = detail.definitionId
+    savedForVersions.value = { resultVersion: expected.resultVersion, readSetRef: expected.readSetRef }
     saveState.savedVersion = version
     ElMessage.success(detail.replay ? `已保存（版本 ${version}）；该定义此前已保存，未重复创建` : `已保存（版本 ${version}）`)
   } catch (error) {
