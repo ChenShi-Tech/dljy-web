@@ -17,6 +17,7 @@ import {
   keywordSpatialLinkQuery,
   objectSpatialLinkQuery,
   openSpatialViewLink,
+  resolveSpatialObjectId,
   spatialEntryVisible,
   spatialLinkHasWriteVerb,
 } from './spatialLinks'
@@ -26,9 +27,16 @@ const gov = vi.hoisted(() => ({
   user: null as unknown,
 }))
 
+const geo = vi.hoisted(() => ({
+  plants: vi.fn(),
+  nodes: vi.fn(),
+}))
+
 vi.mock('@/services/governance', () => ({ canAccessPath: gov.canAccessPath }))
 
 vi.mock('@/services/auth', () => ({ getCurrentUser: vi.fn(() => gov.user) }))
+
+vi.mock('@/features/gridGeo/client', () => ({ fetchGridGeoPlants: geo.plants, fetchGridGeoNodes: geo.nodes }))
 
 function routerSpy() {
   const push = vi.fn()
@@ -160,5 +168,53 @@ describe('入口权限显隐（三页共用判定）', () => {
       throw new Error('governance unavailable')
     })
     expect(canFollowSpatialLink('/grid-assets/market')).toBe(false)
+  })
+})
+
+describe('展示名 → 网格资产 ID 解析（objectId 契约：不透明资产 ID，不拿名字生成）', () => {
+  it('场站：standardName 或 alias 唯一命中给 plantId（播种即资产 ID）', async () => {
+    geo.plants.mockResolvedValue({
+      data: { items: [
+        { plantId: 'PLT-1', standardName: '云海风电场', aliases: ['云海风电'] },
+        { plantId: 'PLT-2', standardName: '澜沧江水电站', aliases: [] },
+      ] },
+    })
+    await expect(resolveSpatialObjectId('plant', '云海风电场')).resolves.toBe('PLT-1')
+    await expect(resolveSpatialObjectId('plant', '云海风电')).resolves.toBe('PLT-1')
+  })
+
+  it('场站零命中、同名多资产、读取失败：一律 null（调用方如实说明不跳转）', async () => {
+    geo.plants.mockResolvedValue({
+      data: { items: [
+        { plantId: 'PLT-1', standardName: '同名电站', aliases: [] },
+        { plantId: 'PLT-2', standardName: '同名电站', aliases: [] },
+      ] },
+    })
+    await expect(resolveSpatialObjectId('plant', '同名电站')).resolves.toBeNull()
+    await expect(resolveSpatialObjectId('plant', '不存在电站')).resolves.toBeNull()
+    geo.plants.mockRejectedValue(new Error('db down'))
+    await expect(resolveSpatialObjectId('plant', '云海风电场')).resolves.toBeNull()
+  })
+
+  it('节点：keyword 检索结果内按 standardName/nodeName/alias 精确唯一匹配给 assetId；LIKE 带出的近似项不算命中', async () => {
+    geo.nodes.mockResolvedValue({
+      data: { items: [
+        { assetId: 'ND-1', standardName: '500kV 某甲线节点', nodeName: '某甲线', aliases: ['甲节点'] },
+        { assetId: 'ND-2', standardName: '500kV 某乙线节点', nodeName: '某乙线', aliases: [] },
+      ] },
+    })
+    await expect(resolveSpatialObjectId('node', '某甲线')).resolves.toBe('ND-1')
+    await expect(resolveSpatialObjectId('node', '500kV 某乙线节点')).resolves.toBe('ND-2')
+    await expect(resolveSpatialObjectId('node', '甲节点')).resolves.toBe('ND-1')
+    await expect(resolveSpatialObjectId('node', '某')).resolves.toBeNull()
+  })
+
+  it('空名不发起读取', async () => {
+    geo.plants.mockClear()
+    geo.nodes.mockClear()
+    await expect(resolveSpatialObjectId('plant', '')).resolves.toBeNull()
+    await expect(resolveSpatialObjectId('node', '')).resolves.toBeNull()
+    expect(geo.plants).not.toHaveBeenCalled()
+    expect(geo.nodes).not.toHaveBeenCalled()
   })
 })

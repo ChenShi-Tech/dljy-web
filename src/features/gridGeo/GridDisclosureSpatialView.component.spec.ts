@@ -1104,3 +1104,49 @@ describe('洞察深链：keyword 与业务日期预填', () => {
     wrapper.unmount()
   })
 })
+
+describe('洞察深链在保活复用下按签名生效', () => {
+  const deskStubs = { DisclosureDeskChart: chartStub, DisclosureMetricPicker: metricPickerStub, DisclosureDeskInsights: insightsStub, DisclosureUnitRoster: rosterStub, DisclosureEventGroups: groupsStub }
+
+  it('离开后再带新深链进入（实例未销毁）：新签名立即应用；同一签名与无键返回保留现场', async () => {
+    const { createMemoryHistory, createRouter } = await import('vue-router')
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        { path: '/grid-assets/disclosures', component: GridDisclosureSpatialView },
+        { path: '/other', component: { render: () => null } },
+      ],
+    })
+    await router.push({ path: '/grid-assets/disclosures', query: { keyword: '第一条通道', objectDate: '2026-07-01' } })
+    await router.isReady()
+    const wrapper = mount(GridDisclosureSpatialView, { global: { plugins: [router], stubs: deskStubs } })
+    await flushPromises()
+    expect((wrapper.get('[data-testid="desk-search"]').element as HTMLInputElement).value).toBe('第一条通道')
+
+    // 用户本地改动搜索词（现场）
+    await wrapper.get('[data-testid="desk-search"]').setValue('本地改动')
+
+    // 同一签名再次进入：保留本地编辑
+    await router.push({ path: '/grid-assets/disclosures', query: { keyword: '第一条通道', objectDate: '2026-07-01' } })
+    await flushPromises()
+    expect((wrapper.get('[data-testid="desk-search"]').element as HTMLInputElement).value).toBe('本地改动')
+
+    // 离开（保活隐藏）后带新深链回来：新签名立即生效
+    await router.push('/other')
+    await flushPromises()
+    await router.push({ path: '/grid-assets/disclosures', query: { keyword: '第二条通道', objectDate: '2026-07-02' } })
+    await flushPromises()
+    expect((wrapper.get('[data-testid="desk-search"]').element as HTMLInputElement).value).toBe('第二条通道')
+    expect((wrapper.get('[data-testid="desk-date"]').element as HTMLInputElement).value).toBe('2026-07-02')
+    expect(calls.groups.mock.lastCall![0]).toMatchObject({ keyword: '第二条通道', from: '2026-07-02T00:00:00+08:00' })
+
+    // 不带深链键的普通导航（菜单返回）：不覆盖现场
+    await router.push('/other')
+    await flushPromises()
+    await router.push({ path: '/grid-assets/disclosures' })
+    await flushPromises()
+    expect((wrapper.get('[data-testid="desk-search"]').element as HTMLInputElement).value).toBe('第二条通道')
+    expect((wrapper.get('[data-testid="desk-date"]').element as HTMLInputElement).value).toBe('2026-07-02')
+    wrapper.unmount()
+  })
+})

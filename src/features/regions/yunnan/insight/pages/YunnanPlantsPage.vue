@@ -44,8 +44,10 @@ import {
   SPATIAL_LINK_TARGETS,
   objectSpatialLinkQuery,
   openSpatialViewLink,
+  resolveSpatialObjectId,
   spatialEntryVisible,
 } from '../spatialLinks'
+import { ElMessage } from 'element-plus'
 import InsightBlock from '@/components/insight/InsightBlock.vue'
 import InsightDateRange from '@/components/insight/InsightDateRange.vue'
 import InsightEvidenceDrawer from '@/components/insight/InsightEvidenceDrawer.vue'
@@ -356,9 +358,11 @@ function onOverviewObjectsChange(ids: string[]): void {
 // ── 空间查阅入口（dljy#3106 D6.1「三维地形/空间」未就绪项补齐）─────────────────────────
 // 组合总览页签选中**单个**场站（单场站上下文）后，可跳入既有「电力市场空间态势」
 // （grid-geo 模块原地复用，洞察不复制 Cesium；场站对象绑定后地图聚焦该场站）。
-// 权限显隐沿用 spatialLinks 登记（canAccessPath 既有口径，无权限不渲染）；query 白名单
-// 只带单个场站名 + 地区/公司归属 + 窗口末日（objectDate）+ 来源标记，多选不渲染
-// （对象名数组不进 URL），公司未选不渲染（grid-geo 按 地区+公司 校验归属）。
+// 权限显隐沿用 spatialLinks 登记（canAccessPath 既有口径，无权限不渲染）；覆盖名先经
+// resolveSpatialObjectId 解析成网格资产 ID（objectId 契约是不透明资产 ID，不得拿名字
+// 生成），解析失败如实说明不跳转；query 白名单只带资产 ID + 地区/公司归属 + 窗口末日
+// （objectDate）+ 来源标记，多选不渲染（对象名数组不进 URL），公司未选不渲染
+// （grid-geo 按 地区+公司 校验归属）。
 
 const router = useRouter()
 const PLANTS_SPATIAL_TARGET = SPATIAL_LINK_TARGETS.marketSpatial
@@ -371,14 +375,21 @@ const plantSpatialVisible = computed(() =>
   })
 )
 
-function onPlantToSpatialView(): void {
+async function onPlantToSpatialView(): Promise<void> {
   const name = overviewObjects.value.length === 1 ? overviewObjects.value[0] : ''
   if (!name || !ctx.companyId.value) return
+  // 覆盖名先解析成网格资产 ID（objectId 契约是不透明资产 ID，名字直传会请求不存在的资产）；
+  // 解析失败（未登记/同名多资产/读取失败）如实说明并不跳转，不带脏参数跳走。
+  const assetId = await resolveSpatialObjectId('plant', name)
+  if (!assetId) {
+    ElMessage.warning(`空间资产登记中未找到与「${name}」唯一对应的场站，本次未跳转`)
+    return
+  }
   openSpatialViewLink(router, {
     path: PLANTS_SPATIAL_TARGET,
     query: objectSpatialLinkQuery({
       kind: 'plant',
-      objectId: name,
+      objectId: assetId,
       regionId: ctx.regionId.value,
       companyId: ctx.companyId.value,
       date: ctx.businessWindow.value.end,

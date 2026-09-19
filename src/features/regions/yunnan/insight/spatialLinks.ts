@@ -16,6 +16,7 @@
 import type { Router } from 'vue-router'
 import { canAccessPath } from '@/services/governance'
 import { getCurrentUser } from '@/services/auth'
+import { fetchGridGeoNodes, fetchGridGeoPlants } from '@/features/gridGeo/client'
 
 /** 空间查阅目标：既有 grid-geo 只读空间场景路径（登记处，文档与测试共用）。 */
 export const SPATIAL_LINK_TARGETS = {
@@ -45,11 +46,41 @@ function isBusinessDate(value: string | undefined): value is string {
 }
 
 /**
+ * 展示名 → 网格资产 ID 解析（组装对象绑定 query 前必经）：导航契约的 objectId 是
+ * 不透明资产 ID（docs/grid-object-navigation.md——不得根据短名、序号生成），而洞察页
+ * 持有的对象身份是展示名（场站覆盖名 / 节点名 / 厂站名），两者不同名时直接拿名字当
+ * objectId 会让对象上下文请求一个不存在的资产。这里按 grid-geo 登记解析：
+ *   - 场站：登记名单 standardName/alias 精确匹配 → 唯一命中给 plantId（播种即资产 ID）；
+ *   - 节点：登记检索（keyword）后按 standardName/nodeName/alias 精确匹配 → 唯一命中给 assetId；
+ * 零命中、多命中或读取失败一律返回 null——调用方如实说明并不跳转，绝不拿名字冒充对象 ID。
+ */
+export async function resolveSpatialObjectId(kind: 'plant' | 'node', name: string): Promise<string | null> {
+  if (!name) return null
+  try {
+    if (kind === 'plant') {
+      const response = await fetchGridGeoPlants()
+      const hits = (response.data?.items ?? []).filter(
+        (item) => item.standardName === name || item.aliases.includes(name)
+      )
+      return hits.length === 1 ? hits[0].plantId : null
+    }
+    const response = await fetchGridGeoNodes({ keyword: name, pageSize: 500 })
+    const hits = (response.data?.items ?? []).filter(
+      (item) => item.standardName === name || item.nodeName === name || item.aliases.includes(name)
+    )
+    return hits.length === 1 ? hits[0].assetId : null
+  } catch {
+    return null
+  }
+}
+
+/**
  * 对象绑定 query（价格页节点 / 场站页单场站 → 电力市场空间态势）。
  * 只带单个对象名 + 地区/公司归属 + 业务日期（objectDate，洞察窗口末日）+ 来源标记；
  * 对象名、地区、公司任一为空则不组装（返回空 query，出口不会 push）——
  * 不带一半上下文假装能承接。时段（objectFrom/objectTo）是时刻区间，洞察业务日期窗
- * 没有时刻，不伪造，一律不带。
+ * 没有时刻，不伪造，一律不带。objectId 必须先经 resolveSpatialObjectId 解析成资产 ID，
+ * 不是展示名。
  */
 export function objectSpatialLinkQuery(args: {
   kind: 'node' | 'plant'
