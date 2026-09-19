@@ -9,7 +9,7 @@
 - **本页（任务 11.5/11.6 页面切片 + 任务 12.5 结算页签切片，#3032）**：五个页签——组合总览、价格出力、预测执行、申报出清实际、结算表现。
 - **结算页签（任务 12.5，specs yunnan-settlement-insight ST01—ST06）**：正式/暂结对照、总量总费与量费加权均价、分项覆盖与损失解释、单据记录与核对，详见下文「结算页签」节。
 - **旧结算入口迁移说明**：旧的云南结算价页（`src/views/yunnan/YunnanSettlementPriceView.vue` 的「结算价分析」面板，样站等权三价口径）本期**不删不改**——按 #2991 底线行为保留，待新结算页签验收后另行迁移；迁移时其「组合均值」将改用本页的量费加权口径（ST02），等权样站价不再冒充集团结算均价。
-- 页面已 `delivered: true` 进导航（`workspace.ts`）；research 仍为占位，不受本页影响。
+- 页面已 `delivered: true` 进导航（`workspace.ts`）；research 已由 dljy#3080 研究工作台切片交付（见 market-insight-research.md）。
 
 ## 分析目录
 
