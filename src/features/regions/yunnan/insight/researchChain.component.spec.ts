@@ -686,7 +686,7 @@ describe('链 B：运行产物 → 专题材料 → 底稿入稿', () => {
     const [company, region, request, expected, key] = vi.mocked(captureInsightMaterial).mock.calls[0]!
     expect(company).toBe('c1')
     expect(region).toBe('yunnan')
-    expect(request.analysisId).toBe(PRESET_ID)
+    expect(request.analysisId).toBe(DEFINITION_ID) // #3116：材料通道收已保存研究定义 id
     expect(request.context.contextVersion).toBeUndefined() // 代次不进材料请求（幂等键稳定）
     expect(expected).toEqual({ resultVersion: `rv1:${hexOf(1)}`, readSetRef: `rs1:${hexOf(1)}` })
     expect(String(key)).toMatch(/^insight-material-/)
