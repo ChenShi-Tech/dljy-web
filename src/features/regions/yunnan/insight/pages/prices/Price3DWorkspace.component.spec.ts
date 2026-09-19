@@ -257,7 +257,7 @@ describe('多对象：显式选立体对象', () => {
     await nextTick()
     const scene = wrapper.find('.price-3d-scene-stub')
     expect(scene.exists()).toBe(true)
-    const lines = wrapper.getComponent(Price3DSceneStub).props('lines') as Array<{ phase: string; date: string }>
+    const lines = wrapper.getComponent(Price3DSceneStub).props('lines') as Array<{ phase: string; date: string; segments: unknown }>
     // 节点 A：2 天 × 2 阶段 = 4 条线；B 的序列（值全 300）不进来
     expect(lines).toHaveLength(4)
     expect(lines.map((l) => [l.phase, l.date])).toEqual([
