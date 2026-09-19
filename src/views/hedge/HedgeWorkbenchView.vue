@@ -10,7 +10,8 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { currentRegion } from '@/services/region/regionContext'
 import {
   HedgeApiError, activateBand, fetchBandActivation, fetchBandPresets, fetchCaps, fetchBaselines,
-  fetchMechanismParams, fetchOverview, postMechanismVersion, putBaselines, putCaps, requestBandSchemeCreate,
+  fetchMechanismParams, fetchMonths, fetchOverview, fetchSettlement, postMechanismVersion, postSimulate,
+  putBaselines, putCaps, requestBandSchemeCreate,
 } from '@/services/hedge/hedgeApi'
 import type { HedgeOverview } from '@/services/hedge/hedgeApi'
 import { createQuerySession, scopeKeyOf } from '@/services/hedge/hedgeSession'
@@ -29,7 +30,50 @@ const showAsOfBanner = ref(false)
 const maintenanceOpen = ref(false)
 const baselineRows = ref<Array<{ stationId: number; month: string; quantityMwh: string; basisNote?: string }>>([])
 const baselineStatus = ref<string | null>(null)
-const canWrite = ref(true) // 由 capabilities 接口补充；乐观渲染受 403 兜底
+const canWrite = ref(true)
+const tab = ref<'today2' | 'month' | 'settlement' | 'simulate'>('today2')
+const monthData = ref<Record<string, unknown> | null>(null)
+const monthLoading = ref(false)
+const settlementData = ref<Record<string, unknown> | null>(null)
+const settlementLoading = ref(false)
+const simulateResult = ref<Record<string, unknown> | null>(null)
+const simulateQuantity = ref('')
+const simulateStatus = ref<string | null>(null)
+
+async function loadMonth() {
+  monthLoading.value = true
+  try {
+    const range = today2Range()
+    monthData.value = await fetchMonths({ fromMonth: range.fromDate.slice(0, 7), toMonth: range.fromDate.slice(0, 7) })
+  } catch { monthData.value = null }
+  monthLoading.value = false
+}
+
+async function loadSettlement() {
+  settlementLoading.value = true
+  try {
+    const range = today2Range()
+    settlementData.value = await fetchSettlement({
+      fromDate: `${range.fromDate.slice(0, 7)}-01`, toDate: range.toDate, granularity: 'DAY', view: 'FORMAL',
+    })
+  } catch { settlementData.value = null }
+  settlementLoading.value = false
+}
+
+async function runSimulate() {
+  simulateStatus.value = null
+  try {
+    const range = today2Range()
+    const result = await postSimulate({
+      window: { fromDate: range.fromDate, toDate: range.toDate },
+      adjustments: [{ quantityMwh: simulateQuantity.value, shape: { kind: 'FLAT' } }],
+    })
+    simulateResult.value = result
+    simulateStatus.value = '试算完成（不落库，刷新即消失）'
+  } catch (err) {
+    simulateStatus.value = err instanceof HedgeApiError ? `${err.errorCode}：${err.message}` : '试算失败'
+  }
+}
 
 const scopeKey = computed(() => scopeKeyOf({
   companyId, regionId: currentRegion.value.id, asOf: asOfInput.value || null, granularity: granularity.value,
@@ -74,6 +118,10 @@ function scheduleLoad() {
   inFlight = setTimeout(load, 150)
 }
 
+watch(tab, (t) => {
+  if (t === 'month') loadMonth()
+  if (t === 'settlement') loadSettlement()
+})
 watch([granularity, asOfInput], () => {
   overview.value = null // HW-06：切换即清空旧结果
   scheduleLoad()
@@ -183,7 +231,13 @@ onBeforeUnmount(() => { if (inFlight) clearTimeout(inFlight) })
         <button data-test="asof-clear" @click="onAsOfClear">回到当前视图</button>
       </div>
       <header class="page-head">
-        <h2>今明两日敞口</h2>
+        <h2>中长期与现货套保</h2>
+        <nav class="tabs" data-test="tabs">
+          <button :class="{ active: tab === 'today2' }" @click="tab = 'today2'">今明两日</button>
+          <button :class="{ active: tab === 'month' }" @click="tab = 'month'; loadMonth()">当月/后续</button>
+          <button :class="{ active: tab === 'settlement' }" @click="tab = 'settlement'; loadSettlement()">结算复核</button>
+          <button :class="{ active: tab === 'simulate' }" @click="tab = 'simulate'">补仓试算</button>
+        </nav>
         <label>粒度
           <select v-model="granularity" data-test="granularity">
             <option value="HOUR">小时</option>
@@ -199,7 +253,7 @@ onBeforeUnmount(() => { if (inFlight) clearTimeout(inFlight) })
       <p v-if="loadError" class="load-error" data-test="load-error">{{ loadError }}</p>
       <p v-else-if="loading" data-test="loading">加载中…</p>
 
-      <section v-if="overview" class="body">
+      <section v-if="overview && tab === 'today2'" class="body">
         <div class="metrics" data-test="metrics">
           <div class="metric-card" data-test="metric-today2">
             <h3>今明两日逐时段套保率</h3>
@@ -257,6 +311,26 @@ onBeforeUnmount(() => { if (inFlight) clearTimeout(inFlight) })
           <ul><li v-for="(gap, i) in overview.gaps" :key="i">{{ gap.code }}：{{ gap.message }}</li></ul>
           <p v-if="!overview.gaps.length">无</p>
         </section>
+      </section>
+
+      <section v-if="tab === 'month' && monthData" data-test="month-view" class="body">
+        <h3>当月/后续月份（月度视图）</h3>
+        <pre>{{ JSON.stringify(monthData.months ?? monthData, null, 2).slice(0, 2000) }}</pre>
+      </section>
+
+      <section v-if="tab === 'settlement'" data-test="settlement-view" class="body">
+        <h3>结算复核（已实现指标，不判级）</h3>
+        <p v-if="settlementLoading">加载中…</p>
+        <p v-else-if="!settlementData">暂无已入库结算数据（新月份入库后自动出现）</p>
+        <pre v-else>{{ JSON.stringify(settlementData, null, 2).slice(0, 2000) }}</pre>
+      </section>
+
+      <section v-if="tab === 'simulate'" data-test="simulate-view" class="body">
+        <h3>补仓试算（不落库；刷新即消失）</h3>
+        <input v-model="simulateQuantity" data-test="simulate-qty" placeholder="试算电量 MWh" />
+        <button data-test="simulate-run" @click="runSimulate">试算</button>
+        <p data-test="simulate-status">{{ simulateStatus }}</p>
+        <pre v-if="simulateResult">{{ JSON.stringify(simulateResult, null, 2).slice(0, 2000) }}</pre>
       </section>
 
       <section v-if="maintenanceOpen" class="maintenance" data-test="maintenance">

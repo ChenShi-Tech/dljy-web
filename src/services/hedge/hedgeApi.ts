@@ -106,6 +106,10 @@ export function fetchBaselines(query: { fromMonth?: string; toMonth?: string; as
   return request<Record<string, unknown>>('GET', '/baselines', { query })
 }
 
+export function fetchSettlement(query: { fromDate: string; toDate: string; granularity?: string; view?: string }) {
+  return request<Record<string, unknown>>('GET', '/settlement/review', { query })
+}
+
 export function fetchCaps(query: { fromMonth?: string; toMonth?: string }) {
   return request<Record<string, unknown>>('GET', '/caps', { query })
 }
