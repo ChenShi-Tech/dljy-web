@@ -618,7 +618,7 @@ describe('YunnanOverviewPage', () => {
     expect(wrapper!.text()).toContain('获权场站表现')
     const plantsCalls = queryCallsOf((request) => request.analysisId === PLANTS)
     expect(plantsCalls).toHaveLength(1)
-    expect(plantsCalls[0]![0].filters).toEqual({})
+    expect(plantsCalls[0]![0].filters).toEqual({ view: 'series' })
   })
 
   it('窗口变化（上下文代次）后全部区块作废重查，请求窗口是新日期', async () => {

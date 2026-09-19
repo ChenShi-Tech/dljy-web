@@ -34,6 +34,24 @@ import InsightEvidenceDrawer from '@/components/insight/InsightEvidenceDrawer.vu
 import InsightHistoryCandidates from '@/components/insight/InsightHistoryCandidates.vue'
 import InsightObjectPicker, { type InsightObjectOption } from '@/components/insight/InsightObjectPicker.vue'
 import InsightResultTable from '@/components/insight/InsightResultTable.vue'
+import { useRouter } from 'vue-router'
+import { GRID_GEO_DISCLOSURE_ROLES } from 'shared/schema/grid-geo-contract.mjs'
+import { getCurrentUser } from '@/services/auth'
+import { ApiError } from '@/services/api'
+import { currentRegion } from '@/services/region/regionContext'
+import {
+  fetchGridDisclosureEvents,
+  fetchGridDisclosureOverview,
+  fetchGridObject,
+} from '@/features/gridGeo/client'
+import {
+  maintenanceListSummary,
+  maintenanceTimeBasis,
+
+} from '@/features/gridGeo/disclosureMaintenance'
+import { disclosureEventWindow, parseDisclosureTime } from '@/features/gridGeo/disclosureTime'
+import type { GridDisclosureEvent } from '@/features/gridGeo/types'
+import type { GridObjectDetail } from '@/features/gridGeo/objectNavigation'
 import InsightSeriesChart from '@/components/insight/chart/InsightSeriesChart.vue'
 import {
   formatBeijingDateTime,
@@ -57,6 +75,7 @@ const GRID_TABS = [
   { view: 'transfer', label: '送受电' },
   { view: 'channel', label: '通道断面' },
   { view: 'reserve', label: '备用机组' },
+  { view: 'maintenance', label: '检修干预' },
 ] as const
 
 type GridTab = (typeof GRID_TABS)[number]['view']
@@ -310,6 +329,7 @@ watch(
   () => {
     for (const name of Object.keys(viewStates) as QueryName[]) Object.assign(viewStates[name], blankState())
     for (const analysisId of OBJECT_COVERAGE_ANALYSES) objectStates[analysisId] = blankObjects()
+    resetMaintenanceStates()
     ensureTab(activeTab.value)
   }
 )
@@ -350,6 +370,8 @@ function ensureTab(tab: GridTab): void {
     void loadObjectOptions(CHANNEL_FLOWS_ANALYSIS)
     ensureQuery('channel-series')
     ensureQuery('channel-limit-match')
+  } else if (tab === 'maintenance') {
+    ensureMaintenanceTab()
   } else {
     void loadObjectOptions(RESERVE_UNITS_ANALYSIS)
     void loadObjectOptions(UNIT_LISTS_ANALYSIS)
@@ -597,6 +619,254 @@ const unitListRows = computed<RecordRow[]>(() => {
 
 // ── 证据抽屉与历史候选 ───────────────────────────────────────────────────────────────────
 
+// ── 检修干预页签（#3092，任务 10.6，GB04—GB06、CH01）──────────────────────────────────
+// 数据来自 grid-geo 披露事件接口（grid.disclosure_events，10.1 基线：检修四表不登记
+// 洞察度量来源，事件消费走 disclosure-read-model 的身份归并与对象关系），不经洞察查询。
+//   - 计划检修（category=maintenance，含检修计划与电网检修信息）与实际干预
+//     （intervention+outage，人工干预与非计划停运）两组分列，不混排；
+//   - identity=annotate：同一事件被重复披露时逐行带「第 N 版/共 M 版」，页首计数区分
+//     原始记录与独立事件，身份不足的保留未归并提示（GB04）；
+//   - 只有业务日的记录如实标注时间口径，不推断精确停复电时刻（GB04）；
+//   - 联看同期价格只携带事件窗口跳价格页（start/end query），同期变化不自动归因损失，
+//     返回恢复由浏览器后退承担（15.x 统一 insightHandoff）；已关联场站只来自对象接口
+//     的明确关系（relations.plants），无关系不选同名/近似场站（GB05、GB06、CH01）。
+
+const router = useRouter()
+
+/** 角色门控与后端 GRID_GEO_DISCLOSURE_ROLES 同源（shared 契约镜像）；授权由服务端裁决。 */
+const canReadMaintenance = computed(() => GRID_GEO_DISCLOSURE_ROLES.includes(getCurrentUser().roleCode))
+
+const MAINTENANCE_NOTE_TEXT = '检修与干预是披露事件记录：计划检修与实际干预分组展示，同一事件重复披露只计一次并标注版本；只有业务日的记录不推断精确起止时刻'
+const MAINTENANCE_ROLE_TEXT = '检修干预取自公开披露事件库：当前账号角色没有披露读取权限，无法展示'
+const MAINTENANCE_COMPARE_TEXT = '联看同期价格只携带事件窗口；事件同期变化不自动归因价格或收益损失，返回本页请用浏览器后退'
+const MAINTENANCE_NO_WINDOW_TEXT = '该事件没有可用的业务日期或起止时间，无法联看同期价格'
+const MAINTENANCE_RELATION_TEXT = '该事件没有已登记的场站对象关系：同名或近似名称不作为关联依据'
+const MAINTENANCE_PLAN_TITLE = '计划检修（检修计划与电网检修信息，披露）'
+const MAINTENANCE_ACTUAL_TITLE = '实际干预（人工干预与非计划停运，披露）'
+
+const MAINTENANCE_PAGE_SIZE = 100
+
+/** 单组事件列表状态：三态（有数/窗口内无数/未接入）+ 单块错误与手动重试。 */
+type MaintenanceGroupState = {
+  loading: boolean
+  error: string | null
+  errorCode: number | null
+  availability: 'available' | 'missing' | 'not-configured' | null
+  rows: GridDisclosureEvent[]
+  total: number | null
+  /** 完成时（成功或失败）的口径签名；同签名不自动重查，重试由用户触发。 */
+  queriedKey: string
+}
+
+function blankMaintenanceGroup(): MaintenanceGroupState {
+  return { loading: false, error: null, errorCode: null, availability: null, rows: [], total: null, queriedKey: '' }
+}
+
+const maintenancePlan = reactive(blankMaintenanceGroup())
+const maintenanceActual = reactive(blankMaintenanceGroup())
+const maintenanceCounts = reactive({
+  loading: false,
+  error: null as string | null,
+  raw: null as number | null,
+  distinct: null as number | null,
+  unidentified: null as number | null,
+  queriedKey: '',
+})
+const maintenanceRelation = reactive({
+  eventId: null as string | null,
+  loading: false,
+  error: null as string | null,
+  plants: null as GridObjectDetail['relations']['plants'] | null,
+})
+const selectedMaintenanceId = ref<string | null>(null)
+
+function maintenanceKey(): string {
+  return ['maintenance', ctx.contextVersion.value].join('|')
+}
+
+function resetMaintenanceStates(): void {
+  Object.assign(maintenancePlan, blankMaintenanceGroup())
+  Object.assign(maintenanceActual, blankMaintenanceGroup())
+  Object.assign(maintenanceCounts, { loading: false, error: null, raw: null, distinct: null, unidentified: null, queriedKey: '' })
+  Object.assign(maintenanceRelation, { eventId: null, loading: false, error: null, plants: null })
+  selectedMaintenanceId.value = null
+}
+
+/** 时间列：ISO 文本格式化为北京时间，解析不了或缺失如实「未提供」。 */
+function maintenanceTimeText(value: string | null | undefined): string {
+  return value && parseDisclosureTime(value) !== null ? formatBeijingDateTime(value) : '未提供'
+}
+
+function maintenanceVersionText(event: GridDisclosureEvent): string {
+  const identity = event.identity
+  if (!identity || !(identity.versions > 1)) return '—'
+  return `第 ${identity.version} 版 / 共 ${identity.versions} 版`
+}
+
+type MaintenanceRow = {
+  key: string
+  businessDate: string
+  title: string
+  reason: string
+  start: string
+  end: string
+  basis: string
+  version: string
+  event: GridDisclosureEvent
+}
+
+function maintenanceRowsOf(state: MaintenanceGroupState): MaintenanceRow[] {
+  return state.rows.map((event, index) => ({
+    key: `${event.eventId}#${index}`,
+    businessDate: event.businessDate ?? '未提供',
+    title: event.title,
+    reason: maintenanceListSummary(event) || '原因未提供',
+    start: maintenanceTimeText(event.effectiveAt),
+    end: maintenanceTimeText(event.expiresAt),
+    basis: maintenanceTimeBasis(event),
+    version: maintenanceVersionText(event),
+    event,
+  }))
+}
+
+const maintenancePlanRows = computed<MaintenanceRow[]>(() => maintenanceRowsOf(maintenancePlan))
+const maintenanceActualRows = computed<MaintenanceRow[]>(() => maintenanceRowsOf(maintenanceActual))
+
+/** 页首计数（GB04）：原始记录 vs 独立事件；身份不足保留未归并提示。 */
+const maintenanceCountText = computed<string>(() => {
+  if (maintenanceCounts.raw === null || maintenanceCounts.distinct === null) return ''
+  const parts = [`窗口内原始记录 ${maintenanceCounts.raw} 条`, `独立事件 ${maintenanceCounts.distinct} 条`]
+  if ((maintenanceCounts.unidentified ?? 0) > 0) parts.push(`${maintenanceCounts.unidentified} 条身份不足、保留未归并`)
+  return parts.join('；')
+})
+
+/** 联看窗口：业务日为基准，精确区间换算成北京时间业务日；推不出窗口不给入口。 */
+function maintenanceCompareWindow(event: GridDisclosureEvent): { start: string; end: string } | null {
+  const beijingDay = (iso: string) => new Date(Date.parse(iso) + 8 * 3_600_000).toISOString().slice(0, 10)
+  const precise = disclosureEventWindow(event)
+  const start = event.businessDate ?? (precise ? beijingDay(precise.from) : null)
+  if (!start) return null
+  const endCandidate = precise?.to ? beijingDay(precise.to) : null
+  const end = endCandidate && endCandidate >= start ? endCandidate : start
+  return { start, end }
+}
+
+function ensureMaintenanceTab(): void {
+  if (!canReadMaintenance.value) return
+  void loadMaintenanceCounts()
+  void loadMaintenanceGroup('plan')
+  void loadMaintenanceGroup('actual')
+}
+
+async function loadMaintenanceCounts(): Promise<void> {
+  const key = maintenanceKey()
+  if (maintenanceCounts.queriedKey === key || maintenanceCounts.loading) return
+  maintenanceCounts.loading = true
+  maintenanceCounts.error = null
+  try {
+    const result = await fetchGridDisclosureOverview({
+      category: 'maintenance,intervention,outage',
+      identity: 'annotate',
+      from: ctx.businessWindow.value.start,
+      to: ctx.businessWindow.value.end,
+    })
+    if (maintenanceKey() !== key) return
+    maintenanceCounts.raw = result.identity?.rawCount ?? null
+    maintenanceCounts.distinct = result.identity?.distinctCount ?? null
+    maintenanceCounts.unidentified = result.identity?.unidentifiedCount ?? null
+    maintenanceCounts.queriedKey = key
+  } catch (error) {
+    if (maintenanceKey() !== key) return
+    maintenanceCounts.error = error instanceof Error ? error.message : String(error)
+    maintenanceCounts.queriedKey = key
+  } finally {
+    if (maintenanceKey() === key) maintenanceCounts.loading = false
+  }
+}
+
+async function loadMaintenanceGroup(kind: 'plan' | 'actual'): Promise<void> {
+  const target = kind === 'plan' ? maintenancePlan : maintenanceActual
+  const key = maintenanceKey()
+  if (target.queriedKey === key || target.loading) return
+  target.loading = true
+  target.error = null
+  try {
+    const result = await fetchGridDisclosureEvents({
+      category: kind === 'plan' ? 'maintenance' : 'intervention,outage',
+      identity: 'annotate',
+      from: ctx.businessWindow.value.start,
+      to: ctx.businessWindow.value.end,
+      pageSize: MAINTENANCE_PAGE_SIZE,
+    })
+    if (maintenanceKey() !== key) return
+    target.rows = result.items ?? []
+    target.total = result.total ?? target.rows.length
+    target.availability = result.dataAvailability?.status ?? (target.rows.length ? 'available' : 'missing')
+    target.queriedKey = key
+  } catch (error) {
+    if (maintenanceKey() !== key) return
+    target.error = error instanceof Error ? error.message : String(error)
+    target.errorCode = error instanceof ApiError ? error.status : null
+    target.queriedKey = key
+  } finally {
+    if (maintenanceKey() === key) target.loading = false
+  }
+}
+
+function retryMaintenanceCounts(): void {
+  maintenanceCounts.queriedKey = ''
+  void loadMaintenanceCounts()
+}
+
+function retryMaintenanceGroup(kind: 'plan' | 'actual'): void {
+  const target = kind === 'plan' ? maintenancePlan : maintenanceActual
+  target.queriedKey = ''
+  void loadMaintenanceGroup(kind)
+}
+
+const selectedMaintenanceEvent = computed<GridDisclosureEvent | null>(() => {
+  if (!selectedMaintenanceId.value) return null
+  return [...maintenancePlan.rows, ...maintenanceActual.rows].find((event) => event.eventId === selectedMaintenanceId.value) ?? null
+})
+
+const selectedMaintenanceWindow = computed(() => {
+  const event = selectedMaintenanceEvent.value
+  return event ? maintenanceCompareWindow(event) : null
+})
+
+function selectMaintenanceEvent(event: GridDisclosureEvent): void {
+  selectedMaintenanceId.value = event.eventId
+  void loadMaintenanceRelation(event)
+}
+
+/** 已关联场站只认对象接口的明确关系（relations.plants）；404/无关系是正常事实不是错误。 */
+async function loadMaintenanceRelation(event: GridDisclosureEvent): Promise<void> {
+  Object.assign(maintenanceRelation, { eventId: event.eventId, loading: true, error: null, plants: null })
+  try {
+    const detail = await fetchGridObject({ kind: 'disclosure', id: event.eventId, regionId: currentRegion.value.id })
+    if (maintenanceRelation.eventId !== event.eventId) return
+    maintenanceRelation.plants = detail.relations.plants
+  } catch (error) {
+    if (maintenanceRelation.eventId !== event.eventId) return
+    if (error instanceof ApiError && (error.status === 404 || error.code === 404)) {
+      maintenanceRelation.plants = []
+    } else {
+      maintenanceRelation.error = error instanceof Error ? error.message : String(error)
+    }
+  } finally {
+    if (maintenanceRelation.eventId === event.eventId) maintenanceRelation.loading = false
+  }
+}
+
+/** 同期联看（GB05、CH01）：只带窗口不带任何归因；价格页由 start/end query 恢复口径。 */
+function openMaintenanceCompare(event: GridDisclosureEvent): void {
+  const win = maintenanceCompareWindow(event)
+  if (!win) return
+  void router.push({ path: '/insight/prices', query: { start: win.start, end: win.end } })
+}
+
+// ── 证据抽屉与历史候选 ───────────────────────────────────────────────────────────────────
+
 const evidenceVisible = ref(false)
 const evidenceTarget = ref<InsightBlockResult | null>(null)
 
@@ -817,6 +1087,100 @@ onMounted(() => {
               />
               <el-alert v-for="(note, index) in limitNotes" :key="`ln-${index}`" type="info" :closable="false" :title="note" />
             </InsightBlock>
+          </template>
+
+          <!-- 检修干预（#3092，GB04—GB06、CH01）：披露事件两组分列 + 版本/计数 + 联看窗口 + 明确对象关系 -->
+          <template v-else-if="tab.view === 'maintenance'">
+            <el-alert v-if="!canReadMaintenance" type="info" :closable="false" :title="MAINTENANCE_ROLE_TEXT" data-testid="ygb-maintenance-gated" />
+            <template v-else>
+              <el-alert type="info" :closable="false" :title="MAINTENANCE_NOTE_TEXT" />
+              <p v-if="maintenanceCountText" class="ygb__hint" data-testid="ygb-maintenance-counts">{{ maintenanceCountText }}</p>
+              <el-alert v-else-if="maintenanceCounts.error" type="error" show-icon :closable="false" title="披露计数读取失败">
+                <p class="ygb__hint">独立事件与原始记录计数不可用；其余区块不受影响。</p>
+                <el-button size="small" @click="retryMaintenanceCounts">重试</el-button>
+              </el-alert>
+
+              <div class="ygb__cards">
+                <section
+                  v-for="group in ([
+                    ['plan', MAINTENANCE_PLAN_TITLE, maintenancePlan, maintenancePlanRows],
+                    ['actual', MAINTENANCE_ACTUAL_TITLE, maintenanceActual, maintenanceActualRows],
+                  ] as const)"
+                  :key="group[0]"
+                  class="ygb__card"
+                  :data-testid="`ygb-maintenance-${group[0]}`"
+                >
+                  <h4 class="ygb__card-title">{{ group[1] }}</h4>
+                  <el-alert v-if="group[2].error" type="error" show-icon :closable="false" title="披露事件读取失败">
+                    <p class="ygb__hint">{{ group[2].error }}</p>
+                    <el-button size="small" @click="retryMaintenanceGroup(group[0])">重试</el-button>
+                  </el-alert>
+                  <el-alert v-else-if="group[2].availability === 'not-configured'" type="info" :closable="false" title="公开披露事件库未接入当前地区数据源：无法展示该组披露" />
+                  <el-alert v-else-if="group[2].availability === 'missing'" type="info" :closable="false" title="所选窗口内没有已导入的该组披露记录：可调整日期窗" />
+                  <p v-else-if="group[2].loading" class="ygb__hint">正在读取披露事件…</p>
+                  <template v-else-if="group[3].length">
+                    <el-table
+                      :data="group[3]"
+                      size="small"
+                      border
+                      max-height="360"
+                      :row-class-name="({ row }: { row: MaintenanceRow }) => (row.event.eventId === selectedMaintenanceId ? 'ygb__row-selected' : '')"
+                      @row-click="(row: MaintenanceRow) => selectMaintenanceEvent(row.event)"
+                    >
+                      <el-table-column prop="businessDate" label="业务日" width="100" />
+                      <el-table-column prop="title" label="事件" min-width="170" show-overflow-tooltip />
+                      <el-table-column prop="reason" label="原因" min-width="160" show-overflow-tooltip />
+                      <el-table-column prop="start" label="起" width="120" />
+                      <el-table-column prop="end" label="止" width="120" />
+                      <el-table-column prop="basis" label="时间口径" width="110" />
+                      <el-table-column prop="version" label="披露版本" width="130" />
+                      <el-table-column label="操作" width="90">
+                        <template #default="{ row }">
+                          <el-button size="small" link data-testid="ygb-maintenance-detail-open" @click.stop="selectMaintenanceEvent(row.event)">详情</el-button>
+                        </template>
+                      </el-table-column>
+                    </el-table>
+                    <p v-if="group[2].total !== null && group[2].total > group[3].length" class="ygb__hint">
+                      已显示前 {{ group[3].length }} 条（共 {{ group[2].total }} 条）：缩小窗口或加筛选可查看更多
+                    </p>
+                  </template>
+                  <p v-else class="ygb__hint">所选窗口内没有该组披露记录。</p>
+                </section>
+              </div>
+
+              <div v-if="selectedMaintenanceEvent" class="ygb__card" data-testid="ygb-maintenance-detail">
+                <h4 class="ygb__card-title">{{ selectedMaintenanceEvent.title }}</h4>
+                <p class="ygb__hint">{{ selectedMaintenanceEvent.summary || '原因未提供' }}</p>
+                <p class="ygb__hint">
+                  时间口径：{{ maintenanceTimeBasis(selectedMaintenanceEvent) }}；披露版本：{{ maintenanceVersionText(selectedMaintenanceEvent) }}
+                </p>
+                <div class="ygb__bar">
+                  <el-button
+                    v-if="selectedMaintenanceWindow"
+                    size="small"
+                    type="primary"
+                    data-testid="ygb-maintenance-compare"
+                    @click="openMaintenanceCompare(selectedMaintenanceEvent)"
+                  >
+                    联看同期价格（{{ selectedMaintenanceWindow.start }} 至 {{ selectedMaintenanceWindow.end }}）
+                  </el-button>
+                  <span v-else class="ygb__hint">{{ MAINTENANCE_NO_WINDOW_TEXT }}</span>
+                </div>
+                <p class="ygb__hint">{{ MAINTENANCE_COMPARE_TEXT }}</p>
+                <p v-if="maintenanceRelation.loading" class="ygb__hint">正在读取对象关系…</p>
+                <p v-else-if="maintenanceRelation.error" class="ygb__hint">对象关系读取失败：{{ maintenanceRelation.error }}</p>
+                <p
+                  v-else-if="maintenanceRelation.plants && maintenanceRelation.plants.length"
+                  class="ygb__hint"
+                  data-testid="ygb-maintenance-plants"
+                >
+                  已关联场站（仅明确关系）：{{ maintenanceRelation.plants.map((plant) => plant.name).join('、') }}
+                </p>
+                <p v-else-if="maintenanceRelation.plants" class="ygb__hint" data-testid="ygb-maintenance-no-plants">
+                  {{ MAINTENANCE_RELATION_TEXT }}
+                </p>
+              </div>
+            </template>
           </template>
 
           <!-- 备用机组：备用容量序列 + 是否/清单记录表 -->
