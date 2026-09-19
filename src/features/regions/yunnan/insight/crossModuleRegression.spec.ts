@@ -319,7 +319,7 @@ describe('模型离线：AI 入口诚实不可用，六页能力完整保留', (
 
   it('探活 offline：aiAvailable=false、interpret 拒绝并明说；同刻数据查询、CSV 导出、材料保存全部照常', async () => {
     state.offline = true
-    const { wrapper } = await mountHarness({ collect: () => [blockFrom(RESULT, 'k1')!] })
+    const { wrapper: _wrapper } = await mountHarness({ collect: () => [blockFrom(RESULT, 'k1')!] })
 
     // AI 入口：诚实不可用（不派发、不假装解读）
     expect(latest!.aiAvailable.value).toBe(false)
