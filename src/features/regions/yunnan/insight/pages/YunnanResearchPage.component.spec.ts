@@ -1179,6 +1179,24 @@ describe('材料接线（definitionId 纪律）', () => {
     expect(captured.visible).toBe(false)
   })
 
+  it('保存在途时改配置：迟到响应不写回旧定义 ID（材料入口要求重新保存）', async () => {
+    const captured = await mountWithMaterialCapture()
+    await selectPreset('research.price-new-energy-correlation')
+    await run()
+    let release!: (value: unknown) => void
+    const gate = new Promise((done) => { release = done })
+    state.saveResponder = () => gate
+    await save() // 保存请求在途
+    // 配置变更 → 代次签名失效；随后迟到的保存响应不得把 A 配置的定义 ID 写回来
+    await setWindow('2026-09-02', '2026-09-11')
+    release(state.saveDetail)
+    await flushPromises()
+    await run()
+    await wrapper!.find('[data-testid="yr-add-material"]').trigger('click')
+    await flushPromises()
+    expect(captured.visible).toBe(false)
+  })
+
   it('事前运行保存后加入材料：请求上下文与运行同口径（mode=ex-ante、asOf 随行）', async () => {
     const captured = await mountWithMaterialCapture()
     state.result = {
