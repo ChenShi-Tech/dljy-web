@@ -56,6 +56,22 @@ describe('选区 → 承接地址参数', () => {
     expect(JSON.stringify(query)).not.toContain('resultVersion')
   })
 
+  it('半开区间 end 恰为当日零点：该端点属于前一天，折叠业务日不含次日', () => {
+    const midnight = buildResearchHandoffQuery(
+      selectionFixture({
+        timeIntervals: [{ start: '2026-09-01T10:00:00+08:00', end: '2026-09-02T00:00:00+08:00' }],
+      }),
+      'prices'
+    )
+    expect(midnight).toEqual({
+      from: 'prices',
+      start: '2026-09-01',
+      end: '2026-09-01',
+      objects: 'node-A',
+      sources: 'yn.price.user.day-ahead',
+    })
+  })
+
   it('只承接对象引用（无时段）也成立；日期非法时只承接对象与来源', () => {
     const objectsOnly = buildResearchHandoffQuery(
       selectionFixture({ timeIntervals: [] }),
@@ -79,6 +95,13 @@ describe('选区 → 承接地址参数', () => {
     expect(buildResearchHandoffQuery(selectionFixture({ timeIntervals: [], objectRefs: [] }), 'prices')).toBeNull()
     expect(buildResearchHandoffQuery(selectionFixture(), 'unknown-page')).toBeNull()
     expect(buildResearchHandoffQuery(null, 'prices')).toBeNull()
+  })
+
+  it('来源页只认自有属性：原型链键（toString/constructor）不作来源承接', () => {
+    expect(buildResearchHandoffQuery(selectionFixture(), 'toString')).toBeNull()
+    expect(buildResearchHandoffQuery(selectionFixture(), 'constructor')).toBeNull()
+    expect(parseResearchHandoffOrigin({ from: 'toString' })).toBeNull()
+    expect(parseResearchHandoffOrigin({ from: 'constructor' })).toBeNull()
   })
 
   it('parseResearchHandoffOrigin：白名单外/缺失返回 null，不认识的来源不假装承接', () => {
