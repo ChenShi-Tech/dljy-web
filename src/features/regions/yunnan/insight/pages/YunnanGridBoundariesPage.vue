@@ -42,7 +42,6 @@ import InsightEvidenceDrawer from '@/components/insight/InsightEvidenceDrawer.vu
 import InsightHistoryCandidates from '@/components/insight/InsightHistoryCandidates.vue'
 import InsightObjectPicker, { type InsightObjectOption } from '@/components/insight/InsightObjectPicker.vue'
 import InsightResultTable from '@/components/insight/InsightResultTable.vue'
-import { useRouter } from 'vue-router'
 import { GRID_GEO_DISCLOSURE_ROLES } from 'shared/schema/grid-geo-contract.mjs'
 import { getCurrentUser } from '@/services/auth'
 import { ApiError } from '@/services/api'
@@ -666,8 +665,6 @@ const unitListRows = computed<RecordRow[]>(() => {
 //   - 联看同期价格只携带事件窗口跳价格页（start/end query），同期变化不自动归因损失，
 //     返回恢复由浏览器后退承担（15.x 统一 insightHandoff）；已关联场站只来自对象接口
 //     的明确关系（relations.plants），无关系不选同名/近似场站（GB05、GB06、CH01）。
-
-const router = useRouter()
 
 /** 角色门控与后端 GRID_GEO_DISCLOSURE_ROLES 同源（shared 契约镜像）；授权由服务端裁决。 */
 const canReadMaintenance = computed(() => GRID_GEO_DISCLOSURE_ROLES.includes(getCurrentUser().roleCode))

@@ -62,6 +62,8 @@ const state = vi.hoisted(() => ({
 vi.mock('@/composables/useAgentHealth', () => ({
   // 页面 AI 入口的探活打桩：不发起真实网络连接；AI 入口可见性按在线处理。
   useAgentHealth: () => ({ health: { value: 'online' }, ready: { value: true }, offline: { value: false }, check: async () => {} }),
+}))
+
 const geo = vi.hoisted(() => ({
   plants: vi.fn<() => Promise<any>>(),
   nodes: vi.fn<() => Promise<any>>(),
@@ -82,14 +84,6 @@ vi.mock('@/features/gridGeo/client', () => ({
   fetchGridGeoNodes: geo.nodes,
   fetchGridObject: geo.object,
 }))
-
-vi.mock('@/services/governance', async (importOriginal) => {
-  const actual = await importOriginal<Record<string, unknown>>()
-  return {
-    ...actual,
-    canAccessPath: vi.fn(() => true),
-  }
-})
 
 vi.mock('@/services/market/spotClient', () => ({
   searchSpotNodes: vi.fn(async () => ({ count: 2, nodes: ['YN.KM.01', 'YN.KM.02'] })),

@@ -51,6 +51,7 @@ import {
   openDataMaintenanceLink,
 } from '../businessLinks'
 import { insightAiBlockOf, useInsightAiPage, type InsightAiEvidenceBlock } from '@/features/regions/yunnan/insight/useInsightAiPage'
+import {
   SPATIAL_LINK_TARGETS,
   objectSpatialLinkQuery,
   openSpatialViewLink,
@@ -375,6 +376,7 @@ function onOverviewObjectsChange(ids: string[]): void {
 // （grid-geo 按 地区+公司 校验归属）。
 
 const router = useRouter()
+
 const PLANTS_SPATIAL_TARGET = SPATIAL_LINK_TARGETS.marketSpatial
 
 const plantSpatialVisible = computed(() =>
@@ -1261,8 +1263,6 @@ const reconcileMonthlyMissingText = computed(() => {
 // ── 业务模块只读深链（dljy#3096，任务 15.5，design D11 / CH04 / PP07）────────────────────
 // 洞察只传证据引用（期间/对象名）与授权入口：显隐经 governance 既有口径判定（无权限不渲染），
 // 跳转是查看不是操作——不自动创建/提交任何单据，不更改合同与电费（写入只在目标业务模块）。
-
-const router = useRouter()
 
 /** 结算业务入口：复盘中心（结算复盘、日报核验）对当前账号可访问才显示。 */
 const canOpenSettlement = computed(() => canFollowDeepLink(DEEP_LINK_TARGETS.settlementReview))
