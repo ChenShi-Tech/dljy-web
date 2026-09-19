@@ -23,8 +23,12 @@
 //     只读红线：洞察不提供任何修改电费或自动结算的入口；
 //   - 获权分析按能力目录判定可见性：公共账号整页给「获权数据需开通」说明，不发任何请求；
 //   - 对象选项来自覆盖接口（coverage）各来源的 objects 清单：字段缺失（老后端）显示
-//    「无法列出」且不发查询；为空如实说明窗口内没有对象；未选对象前置拦截不发请求。
+//    「无法列出」且不发查询；为空如实说明窗口内没有对象；未选对象前置拦截不发请求；
+//   - 业务模块只读深链（dljy#3096，任务 15.5）：结算页签「前往结算业务」、申报出清实际
+//    页签「前往中长期模块」、区块空态「前往资料维护」——显隐经 governance 既有口径判定，
+//    跳转只带期间/对象名/from 标记，不自动创建/提交任何单据（design D11 / CH04 / PP07）。
 import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import { getInsightAnalysis } from 'shared/insight/analyses.mjs'
 import { formatMetricValue, getMetricDefinition } from 'shared/insight/metrics.mjs'
 import type { InsightContextInput } from 'shared/insight/contract.mjs'
@@ -39,6 +43,13 @@ import {
   type InsightSeriesMeta,
 } from '@/services/insight/insightClient'
 import { useInsightContext } from '@/composables/useInsightContext'
+import {
+  DEEP_LINK_TARGETS,
+  businessDeepLinkQuery,
+  canFollowDeepLink,
+  openBusinessDeepLink,
+  openDataMaintenanceLink,
+} from '../businessLinks'
 import InsightBlock from '@/components/insight/InsightBlock.vue'
 import InsightDateRange from '@/components/insight/InsightDateRange.vue'
 import InsightEvidenceDrawer from '@/components/insight/InsightEvidenceDrawer.vue'
@@ -1195,6 +1206,54 @@ const reconcileMonthlyMissingText = computed(() => {
   return `「${missing.join('、')}」在 ${month} 没有月结记录：月结按月周期单独展示，缺失如实说明，不拿日值凑月份。`
 })
 
+
+// ── 业务模块只读深链（dljy#3096，任务 15.5，design D11 / CH04 / PP07）────────────────────
+// 洞察只传证据引用（期间/对象名）与授权入口：显隐经 governance 既有口径判定（无权限不渲染），
+// 跳转是查看不是操作——不自动创建/提交任何单据，不更改合同与电费（写入只在目标业务模块）。
+
+const router = useRouter()
+
+/** 结算业务入口：复盘中心（结算复盘、日报核验）对当前账号可访问才显示。 */
+const canOpenSettlement = computed(() => canFollowDeepLink(DEEP_LINK_TARGETS.settlementReview))
+/** 中长期模块入口：月度持仓（只读台账）对当前账号可访问才显示。 */
+const canOpenMidlong = computed(() => canFollowDeepLink(DEEP_LINK_TARGETS.midlongPositions))
+/** 资料维护入口：上传中心沿数据运维岗的既有权限（admin-only），原权限决定是否可维护。 */
+const canMaintainData = computed(() => canFollowDeepLink(DEEP_LINK_TARGETS.dataMaintenance))
+
+/** 语义对照出现「中长期电量（合同口径引用）」列时才给中长期入口：引用在场，入口才有意义。 */
+const hasMidlongReference = computed(() =>
+  semanticsColumns.value.some((column) => column.id === 'midlongContractReference')
+)
+
+/** 前往结算业务：携带期间与对象名（非敏感 ID）+ from 标记；不创建/提交任何单据。 */
+function openSettlementBusiness(): void {
+  openBusinessDeepLink(router, {
+    path: DEEP_LINK_TARGETS.settlementReview,
+    query: businessDeepLinkQuery({
+      window: ctx.businessWindow.value,
+      from: 'insight-plants',
+      objectId: overviewObjects.value[0] ?? null,
+    }),
+  })
+}
+
+/** 前往中长期模块：同上，只带期间与对象名；合同维护、成交等操作一律留在目标模块。 */
+function openMidlongModule(): void {
+  openBusinessDeepLink(router, {
+    path: DEEP_LINK_TARGETS.midlongPositions,
+    query: businessDeepLinkQuery({
+      window: ctx.businessWindow.value,
+      from: 'insight-plants',
+      objectId: clearingObjects.value[0] ?? null,
+    }),
+  })
+}
+
+/** 前往资料维护：跳上传中心面板，携带缺口期间与 from 标记；返回后由 contextVersion 机制重查。 */
+function openDataMaintenance(): void {
+  openDataMaintenanceLink(router, { window: ctx.businessWindow.value, from: 'insight-plants' })
+}
+
 // ── 证据抽屉与历史候选 ───────────────────────────────────────────────────────────────────
 
 const evidenceVisible = ref(false)
@@ -1298,8 +1357,10 @@ onMounted(() => {
               :on-retry="() => retryQuery('overview-coverage')"
               :on-refresh="() => retryQuery('overview-coverage')"
               :source-titles="sourceTitles"
+              :maintenance="canMaintainData"
               @open-candidates="openCandidates"
               @open-evidence="openEvidence('overview-coverage')"
+              @open-maintenance="openDataMaintenance"
             >
               <el-alert type="info" :closable="false" :title="COVERAGE_FIELDS_TEXT" />
               <el-empty v-if="!overviewObjects.length" :description="PICK_PLANT_TEXT" :image-size="72" />
@@ -1327,8 +1388,10 @@ onMounted(() => {
               :on-retry="() => retryQuery('settlement-daily')"
               :on-refresh="() => retryQuery('settlement-daily')"
               :source-titles="sourceTitles"
+              :maintenance="canMaintainData"
               @open-candidates="openCandidates"
               @open-evidence="openEvidence('settlement-daily')"
+              @open-maintenance="openDataMaintenance"
             >
               <el-alert type="info" :closable="false" title="正式日结口径：现有读模型只含正式日结，暂结走结算原件通道单独读取，不混进正式口径" />
               <el-empty v-if="!overviewObjects.length" :description="FOLLOW_OVERVIEW_TEXT" :image-size="72" />
@@ -1385,8 +1448,10 @@ onMounted(() => {
               :on-retry="() => retryQuery('capture')"
               :on-refresh="() => retryQuery('capture')"
               :source-titles="sourceTitles"
+              :maintenance="canMaintainData"
               @open-candidates="openCandidates"
               @open-evidence="openEvidence('capture')"
+              @open-maintenance="openDataMaintenance"
             >
               <el-alert type="info" :closable="false" :title="CAPTURE_TEXT" />
               <el-alert type="info" :closable="false" :title="PRODUCT_TEXT" />
@@ -1441,8 +1506,10 @@ onMounted(() => {
               :on-retry="() => retryQuery('output-series')"
               :on-refresh="() => retryQuery('output-series')"
               :source-titles="sourceTitles"
+              :maintenance="canMaintainData"
               @open-candidates="openCandidates"
               @open-evidence="openEvidence('output-series')"
+              @open-maintenance="openDataMaintenance"
             >
               <el-alert type="info" :closable="false" :title="LINKAGE_TEXT" />
               <p class="ypp__hint">{{ FOLLOW_PRICE_TEXT }}</p>
@@ -1507,8 +1574,10 @@ onMounted(() => {
               :on-retry="() => retryQuery('supplier-comparison')"
               :on-refresh="() => retryQuery('supplier-comparison')"
               :source-titles="sourceTitles"
+              :maintenance="canMaintainData"
               @open-candidates="openCandidates"
               @open-evidence="openEvidence('supplier-comparison')"
+              @open-maintenance="openDataMaintenance"
             >
               <el-alert type="info" :closable="false" :title="COMPARE_TEXT" />
               <el-alert type="info" :closable="false" :title="NIGHT_ZERO_TEXT" />
@@ -1584,8 +1653,10 @@ onMounted(() => {
               :on-retry="() => retryQuery('semantics')"
               :on-refresh="() => retryQuery('semantics')"
               :source-titles="sourceTitles"
+              :maintenance="canMaintainData"
               @open-candidates="openCandidates"
               @open-evidence="openEvidence('semantics')"
+              @open-maintenance="openDataMaintenance"
             >
               <el-alert type="info" :closable="false" :title="SEMANTICS_TEXT" />
               <el-empty v-if="!clearingObjects.length" :description="PICK_PLANT_TEXT" :image-size="72" />
@@ -1607,6 +1678,13 @@ onMounted(() => {
                 <ul class="ypp__legend">
                   <li v-for="column in semanticsColumns" :key="`lg-${column.id}`">{{ column.label }}：{{ column.semantic }}</li>
                 </ul>
+                <!-- 中长期引用在场时给只读深链入口（15.5）：跳月度持仓，维护留在目标模块 -->
+                <div v-if="hasMidlongReference && canOpenMidlong" class="ypp__deeplink" data-testid="ypp-midlong-row">
+                  <span class="ypp__hint">中长期电量是合同口径的只读引用；合同与持仓的维护在中长期模块办理。</span>
+                  <el-button link type="primary" size="small" data-testid="ypp-open-midlong" @click="openMidlongModule">
+                    前往中长期模块
+                  </el-button>
+                </div>
                 <el-alert
                   v-for="(item, index) in semanticsExcluded"
                   :key="`se-${index}`"
@@ -1627,8 +1705,10 @@ onMounted(() => {
               :on-retry="() => retryQuery('business-forecast')"
               :on-refresh="() => retryQuery('business-forecast')"
               :source-titles="sourceTitles"
+              :maintenance="canMaintainData"
               @open-candidates="openCandidates"
               @open-evidence="openEvidence('business-forecast')"
+              @open-maintenance="openDataMaintenance"
             >
               <p class="ypp__hint">{{ FOLLOW_CLEARING_TEXT }}</p>
               <el-empty v-if="!clearingObjects.length" :description="PICK_PLANT_TEXT" :image-size="72" />
@@ -1642,8 +1722,10 @@ onMounted(() => {
             </InsightBlock>
           </template>
 
-          <!-- 结算表现（ST01—ST06）：正式/暂结显式切换、量费加权统计、损失解释、单据记录与核对 -->
+          <!-- 结算表现（ST01—ST06）：正式/暂结显式切换、量费加权统计、损失解释、单据记录与核对；「前往结算业务」为只读深链入口（15.5） -->
           <template v-else-if="tab.view === 'settlement'">
+            <section class="ypp__settlement" data-testid="ypp-settlement-section">
+              <p class="ypp__hint">结算确认与电费修正在结算/复盘业务模块办理；这里只提供获权查看入口，不创建或提交任何单据。</p>
             <el-alert
               v-if="!hasAnySettlement"
               type="info"
@@ -1653,6 +1735,9 @@ onMounted(() => {
             />
             <template v-if="hasAnySettlement">
               <el-alert type="info" :closable="false" :title="SETTLEMENT_STATUS_TEXT" />
+              <div v-if="canOpenSettlement" class="ypp__bar" data-testid="ypp-settlement-entry-bar">
+                <el-button link type="primary" size="small" data-testid="ypp-open-settlement" @click="openSettlementBusiness">前往结算业务</el-button>
+              </div>
               <div v-if="hasSettlementDaily || hasStatusDiff || hasSettlementReconcile" class="ypp__bar">
                 <label class="ypp__field">
                   <span>场站对象（多选，最多 {{ (hasStatusDiff ? statusDiffDef : settlementDailyDef)?.limits.maxObjects ?? 200 }} 个）</span>
@@ -1954,6 +2039,7 @@ onMounted(() => {
                 </template>
               </InsightBlock>
             </template>
+            </section>
           </template>
         </template>
       </el-tab-pane>
@@ -2100,5 +2186,40 @@ onMounted(() => {
   padding: 0 0 0 18px;
   color: var(--muted, #64748b);
   font-size: var(--font-xs, 12px);
+}
+
+/* 结算页签占位区块：头部（标题 + 只读深链入口）+ 占位说明 */
+.ypp__settlement {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border: 1px solid var(--line, #e5e7eb);
+  border-radius: 12px;
+  padding: 14px 16px;
+  background: var(--panel, #fff);
+}
+
+.ypp__settlement-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.ypp__block-title {
+  margin: 0;
+  font-size: var(--font-lg, 16px);
+  font-weight: 600;
+  color: var(--text, #1f2a37);
+}
+
+/* 深链入口行（中长期引用等）：说明 + 链接按钮 */
+.ypp__deeplink {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 6px;
 }
 </style>

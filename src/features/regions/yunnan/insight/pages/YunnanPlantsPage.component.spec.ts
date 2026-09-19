@@ -22,6 +22,7 @@ import { defineComponent, h } from 'vue'
 import { DOMWrapper, flushPromises, type VueWrapper } from '@vue/test-utils'
 import { createMemoryHistory, createRouter, type Router } from 'vue-router'
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest'
+import { beijingToday } from 'shared/midlong/dates.mjs'
 import {
   fetchInsightCapabilities,
   fetchInsightCoverage,
@@ -934,7 +935,11 @@ beforeEach(async () => {
   selectedCompanyId.value = 'c1'
   router = createRouter({
     history: createMemoryHistory(),
-    routes: [{ path: '/', component: { render: () => null } }],
+    // 兜底路由：业务模块只读深链用例要真实 push 到 /xhjy/review 等业务路径（dljy#3096）
+    routes: [
+      { path: '/', component: { render: () => null } },
+      { path: '/:pathMatch(.*)*', component: { render: () => null } },
+    ],
   })
   await router.push('/')
   state.capabilities = plantsCaps(ENTITLED_CAPS)
@@ -1545,5 +1550,191 @@ describe('状态与展示纪律', () => {
     expect(text).not.toContain('plant_name')
     expect(text).not.toContain('data_type')
     expect(text).not.toContain('dayAheadDeclared')
+  })
+})
+
+// ── 业务模块只读深链（dljy#3096，任务 15.5：design D11 / CH04 / PP07）────────────────────
+// 红线：进入只传证据（期间/对象名/from），不自动创建/提交任何单据；无权限的入口不渲染。
+
+describe('业务模块只读深链', () => {
+  function storedUser(username: string): void {
+    localStorage.setItem('dljy_governance_user', JSON.stringify({ username }))
+  }
+
+  /** 最近一次深链跳转的目标（spy 真实 push，导航照常发生）。 */
+  function lastPush(): { path: string; query: Record<string, string> } {
+    return vi.mocked(router.push).mock.calls.at(-1)![0] as unknown as { path: string; query: Record<string, string> }
+  }
+
+  function spyPush(): void {
+    vi.spyOn(router, 'push')
+  }
+
+  it('结算入口：有权限显示，跳转复盘中心只带期间/对象名/from，跳转不发任何洞察请求', async () => {
+    storedUser('lead') // TRADE_LEAD：/xhjy 组授权可访问复盘中心
+    await mountPage()
+    pickerOf('ypp-overview-objects').vm.$emit('update:modelValue', ['甲风电场', '乙光伏电站'])
+    await flushPromises()
+    await switchTab('settlement')
+
+    const entry = wrapper!.find('[data-testid="ypp-open-settlement"]')
+    expect(entry.exists()).toBe(true)
+    expect(entry.text()).toBe('前往结算业务')
+
+    spyPush()
+    const queriesBefore = vi.mocked(queryInsight).mock.calls.length
+    await entry.trigger('click')
+    await flushPromises()
+
+    const target = lastPush()
+    expect(target.path).toBe('/xhjy/review') // 只读业务页路径（复盘/结算核验），无写端点段
+    expect(target.query).toEqual({
+      start: beijingToday(),
+      end: beijingToday(),
+      from: 'insight-plants',
+      object: '甲风电场', // 只带首个所选对象名，不带整组原始数据
+    })
+    for (const value of Object.values(target.query)) expect(Array.isArray(value)).toBe(false)
+    expect(Object.keys(target.query).every((key) => !/submit|create|confirm|approve/.test(key))).toBe(true)
+    // 跳转是纯导航：洞察不发新查询，更不代业务模块创建/提交任何单据
+    expect(vi.mocked(queryInsight).mock.calls).toHaveLength(queriesBefore)
+  })
+
+  it('结算入口：无权限（QUANT 无复盘中心授权）不渲染，不增加无权限操作', async () => {
+    storedUser('quant')
+    await mountPage()
+    await switchTab('settlement')
+
+    expect(wrapper!.find('[data-testid="ypp-open-settlement"]').exists()).toBe(false)
+    expect(wrapper!.text()).not.toContain('前往结算业务')
+  })
+
+  it('中长期入口：语义对照含中长期引用列时显示，跳转月度持仓并带 from 标记', async () => {
+    storedUser('trader') // /zcqjy/positions 对全部登录用户开放（governance 既有口径）
+    await mountPage()
+    await switchTab('clearing')
+    pickerOf('ypp-clearing-objects').vm.$emit('update:modelValue', ['甲风电场'])
+    await flushPromises()
+
+    const row = wrapper!.find('[data-testid="ypp-midlong-row"]')
+    expect(row.exists()).toBe(true)
+    expect(row.text()).toContain('中长期电量是合同口径的只读引用')
+
+    spyPush()
+    await row.find('[data-testid="ypp-open-midlong"]').trigger('click')
+    await flushPromises()
+
+    const target = lastPush()
+    expect(target.path).toBe('/zcqjy/positions')
+    expect(target.query.from).toBe('insight-plants')
+    expect(target.query.object).toBe('甲风电场')
+  })
+
+  it('中长期入口：语义对照没有中长期引用列时不显示（引用不在场就不给入口）', async () => {
+    storedUser('trader')
+    state.responder = (request: any) => {
+      if (request.analysisId !== CLEARING_ACTUAL) return defaultResponder(request)
+      const result = semanticsResult(request) as any
+      result.data.tables.semantics.columns = SEMANTIC_COLUMNS.filter((column) => column.id !== 'midlongContractReference')
+      return Promise.resolve(result)
+    }
+    await mountPage()
+    await switchTab('clearing')
+    pickerOf('ypp-clearing-objects').vm.$emit('update:modelValue', ['甲风电场'])
+    await flushPromises()
+
+    expect(wrapper!.find('[data-testid="ypp-midlong-row"]').exists()).toBe(false)
+    expect(wrapper!.text()).not.toContain('前往中长期模块')
+  })
+
+  it('资料维护入口：空态原因为「未接入」且有权限（管理员）显示，跳转上传中心带 panel=upload', async () => {
+    storedUser('admin')
+    state.responder = (request: any) => {
+      if (request.analysisId !== SETTLEMENT_DAILY) return defaultResponder(request)
+      return Promise.resolve(insightResult({
+        contextVersion: request.context.contextVersion,
+        analysisId: SETTLEMENT_DAILY,
+        sourceRefs: [{ sourceId: 'cgn.plant.settlement-daily', accessScope: 'company' }],
+        runtime: {
+          access: 'granted',
+          availability: { state: 'empty', reason: 'not-onboarded' },
+          freshness: { state: 'unknown' },
+          comparability: { status: 'compatible', reasons: [] },
+        },
+        data: { schemaVersion: 'insight-result-data/v1', dimensions: [], measures: [], rows: [], series: [] },
+      }))
+    }
+    await mountPage()
+    pickerOf('ypp-overview-objects').vm.$emit('update:modelValue', ['甲风电场'])
+    await flushPromises()
+
+    const block = blockOf('正式日结明细（获权）')!
+    const entry = block.find('[data-testid="insight-open-maintenance"]')
+    expect(entry.exists()).toBe(true)
+    expect(entry.text()).toBe('前往资料维护')
+
+    spyPush()
+    await entry.trigger('click')
+    await flushPromises()
+
+    const target = lastPush()
+    expect(target.path).toBe('/data-ops/console')
+    expect(target.query.panel).toBe('upload')
+    expect(target.query.from).toBe('insight-plants')
+    expect(Object.values(target.query).every((value) => typeof value === 'string')).toBe(true)
+  })
+
+  it('资料维护入口：无权限（TRADER 无数据运维授权）不渲染', async () => {
+    storedUser('trader')
+    state.responder = (request: any) => {
+      if (request.analysisId !== SETTLEMENT_DAILY) return defaultResponder(request)
+      return Promise.resolve(insightResult({
+        contextVersion: request.context.contextVersion,
+        analysisId: SETTLEMENT_DAILY,
+        sourceRefs: [{ sourceId: 'cgn.plant.settlement-daily', accessScope: 'company' }],
+        runtime: {
+          access: 'granted',
+          availability: { state: 'empty', reason: 'beyond-coverage' },
+          freshness: { state: 'unknown' },
+          comparability: { status: 'compatible', reasons: [] },
+        },
+        data: { schemaVersion: 'insight-result-data/v1', dimensions: [], measures: [], rows: [], series: [] },
+      }))
+    }
+    await mountPage()
+    pickerOf('ypp-overview-objects').vm.$emit('update:modelValue', ['甲风电场'])
+    await flushPromises()
+
+    const block = blockOf('正式日结明细（获权）')!
+    expect(block.find('[data-testid="insight-open-maintenance"]').exists()).toBe(false)
+  })
+
+  it('从业务页返回（route query 变化）：覆盖与查询自动重查——返回不视为已补齐', async () => {
+    await mountPage()
+    pickerOf('ypp-overview-objects').vm.$emit('update:modelValue', ['甲风电场'])
+    await flushPromises()
+    expect(coverageCallsOf(DAILY_METRICS)).toHaveLength(1)
+
+    // 模拟浏览器从业务页返回：地址 query 恢复（窗口与离页时不同），页面按既有
+    // contextVersion/queriedKey 机制作废旧状态并重查覆盖，不把离开前的缺口当已补齐
+    await router.push({ path: '/insight/plants', query: { start: '2026-09-10', end: '2026-09-11', from: 'insight-plants' } })
+    await flushPromises()
+
+    const coverageCalls = coverageCallsOf(DAILY_METRICS)
+    expect(coverageCalls).toHaveLength(2)
+    const latestCoverage = coverageCalls.at(-1)![0] as any
+    expect(latestCoverage.context.businessWindow).toEqual({ start: '2026-09-10', end: '2026-09-11', timeZone: 'Asia/Shanghai' })
+    expect(queryCallsOf((request) => request.analysisId === DAILY_METRICS)).toHaveLength(2)
+  })
+
+  it('深链入口只出现业务语言：结算区块不出现来源标识与路径原文', async () => {
+    storedUser('lead')
+    await mountPage()
+    await switchTab('settlement')
+
+    const text = wrapper!.find('[data-testid="ypp-settlement-section"]').text()
+    expect(text).not.toMatch(/cgn\.|plants\.|\/xhjy|\/zcqjy|\/data-ops|sourceId|analysisId/)
+    expect(text).toContain('前往结算业务')
+    expect(text).toContain('不创建或提交任何单据')
   })
 })

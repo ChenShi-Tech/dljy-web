@@ -10,9 +10,12 @@
 //   - 价差固定「日前 − 实时」，是价格差不是收益；基差必须显式选参考对象；
 //   - 负价电量占比没有同对象电量支撑，按后端 unavailableMetrics 原文如实标注不可用；
 //   - 历史分布只描述所选窗口，不冒充多年季节规律。
+//   - 业务模块只读深链（dljy#3096，任务 15.5）：区块空态「前往资料维护」——显隐经
+//    governance 既有口径判定，跳转只带期间/from 标记，不在洞察手填真实值；返回后重查。
 // 未选对象 / 未选参考的前置拦截在页面层完成（不发请求），后端校验是第二道防线。
 
 import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import type { InsightSelection } from 'shared/insight/handoff.mjs'
 import { getInsightAnalysis } from 'shared/insight/analyses.mjs'
 import { getInsightSource } from 'shared/insight/sources.mjs'
@@ -31,6 +34,7 @@ import { getCurrentUser } from '@/services/auth'
 import { hasCompanyAdmin } from '@/services/governance'
 import { useInsightContext } from '@/composables/useInsightContext'
 import { useInsightSelection } from '@/components/insight/chart/useInsightSelection'
+import { canFollowDeepLink, DEEP_LINK_TARGETS, openDataMaintenanceLink } from '../businessLinks'
 import Price3DWorkspace from './prices/Price3DWorkspace.vue'
 import { readPriceMode, writePriceMode, type PriceDisplayMode } from './prices/priceModeStorage'
 import InsightBlock from '@/components/insight/InsightBlock.vue'
@@ -812,6 +816,19 @@ const canWriteCompany = computed(() => {
 
 type MaterialView = 'series' | 'profile'
 
+// ── 业务模块只读深链（dljy#3096，任务 15.5，design D11 / CH04 / PP07）────────────────────
+// 价格页的深链面只有「前往资料维护」：区块空态原因为「未接入 / 超覆盖」且当前账号对
+// 上传中心有权限时出现（显隐在页面，入口在 InsightBlock）。跳转只带期间与 from 标记，
+// 不在洞察手填真实值；返回后由 contextVersion 机制重查——返回不视为已补齐。
+
+const router = useRouter()
+
+const canMaintainData = computed(() => canFollowDeepLink(DEEP_LINK_TARGETS.dataMaintenance))
+
+function openDataMaintenance(): void {
+  openDataMaintenanceLink(router, { window: ctx.businessWindow.value, from: 'insight-prices' })
+}
+
 const materialVisible = ref(false)
 const materialView = ref<MaterialView>('series')
 const materialSubject = ref('')
@@ -944,9 +961,11 @@ onMounted(() => {
                 :source-titles="sourceTitles"
                 :exportable="true"
                 :materializable="canWriteCompany"
+                :maintenance="canMaintainData"
                 @open-candidates="openCandidates"
                 @open-evidence="openEvidence('series')"
                 @add-material="openMaterial('series')"
+                @open-maintenance="openDataMaintenance"
               >
                 <InsightSeriesChart
                   :result="viewStates.series.result"
@@ -971,8 +990,10 @@ onMounted(() => {
               :on-retry="() => retryView('series')"
               :on-refresh="() => retryView('series')"
               :source-titles="sourceTitles"
+              :maintenance="canMaintainData"
               @open-candidates="openCandidates"
               @open-evidence="openEvidence('summary')"
+              @open-maintenance="openDataMaintenance"
             >
               <el-alert
                 v-for="item in unavailableMetrics"
@@ -1006,8 +1027,10 @@ onMounted(() => {
               :on-retry="() => retryView('spread')"
               :on-refresh="() => retryView('spread')"
               :source-titles="sourceTitles"
+              :maintenance="canMaintainData"
               @open-candidates="openCandidates"
               @open-evidence="openEvidence('spread')"
+              @open-maintenance="openDataMaintenance"
             >
               <el-alert type="info" :closable="false" :title="SPREAD_DIRECTION_TEXT" />
               <p v-if="requiresObjects && !ctx.objectIds.value.length" class="ynp-prices__hint">
@@ -1081,9 +1104,11 @@ onMounted(() => {
               :source-titles="sourceTitles"
               :exportable="true"
               :materializable="canWriteCompany"
+              :maintenance="canMaintainData"
               @open-candidates="openCandidates"
               @open-evidence="openEvidence('profile')"
               @add-material="openMaterial('profile')"
+              @open-maintenance="openDataMaintenance"
             >
               <p v-if="requiresObjects && !ctx.objectIds.value.length" class="ynp-prices__hint">
                 请先在上方选择分析对象，再进行查询（未选对象不发请求）。
@@ -1121,8 +1146,10 @@ onMounted(() => {
               :on-retry="() => retryView('basis')"
               :on-refresh="() => retryView('basis')"
               :source-titles="sourceTitles"
+              :maintenance="canMaintainData"
               @open-candidates="openCandidates"
               @open-evidence="openEvidence('basis')"
+              @open-maintenance="openDataMaintenance"
             >
               <el-empty v-if="!supportsBasis" :description="USER_PRICE_NO_BASIS_TEXT" :image-size="72" />
               <p v-else-if="requiresObjects && !ctx.objectIds.value.length" class="ynp-prices__hint">

@@ -18,6 +18,10 @@
 //     === 'all'）开放，导出同版本全量行（复用 insightCsv，精度不加工），文件名含业务窗口；
 //   - 「加入材料」：公司写入，页面按权限决定是否传 materializable（公共读者不传=不出现），
 //     点击 emit('add-material') 由页面打开材料窗口，本组件不持保存状态；
+//   - 「前往资料维护」（dljy#3096，任务 15.5）：空态原因为「未接入 / 超覆盖」且页面传
+//     maintenance（页面已按 governance 判定资料维护权限）时出现；点击 emit 由页面跳转
+//     上传中心。只在空态出现，部分缺数（partial）不引导维护；返回后的重查由页面负责，
+//     返回不视为已补齐（PP07）。
 //   - 版本绑定：页面传 stale（与页面查询键同步）或区块处于 409 冲突（旧结果仍在展示）时，
 //     两个入口禁用并提示「结果已过期，请刷新后再导出」——过期结果不导出、不保存。
 
@@ -51,6 +55,8 @@ const props = defineProps<{
   exportable?: boolean
   /** 头部「加入材料」入口开关：页面已按公司写权限判断显隐（显隐在页面，禁用在组件） */
   materializable?: boolean
+  /** 空态「前往资料维护」开关（dljy#3096）：页面已按 governance 判定资料维护权限；仅未接入/超覆盖空态出现 */
+  maintenance?: boolean
   /** 页面声明当前结果已过期（与页面查询键同步）：导出与材料入口禁用并提示 */
   stale?: boolean
 }>()
@@ -62,6 +68,8 @@ const emit = defineEmits<{
   'open-evidence': []
   /** 「加入材料」：由页面打开材料窗口（冻结请求与期望版本由页面组装） */
   'add-material': []
+  /** 「前往资料维护」：由页面跳转上传中心/资料维护页（dljy#3096，任务 15.5） */
+  'open-maintenance': []
 }>()
 
 const errorCopy = computed(() => (props.error ? insightErrorCopy(props.error) : null))
@@ -129,6 +137,14 @@ const missingObjects = computed(() => {
 const showCandidatesEntry = computed(() => {
   const reason = availability.value?.reason
   return isEmpty.value && (reason === 'beyond-coverage' || reason === 'not-onboarded' || reason === 'not-published')
+})
+
+/** 空态是否提供「前往资料维护」入口（dljy#3096，任务 15.5）：仅「未接入 / 超覆盖」——
+ *  这两种是补录资料能解决的缺口；其余空态（未发布、不适用等）引导维护是误导。
+ *  显隐的权限判定在页面（maintenance prop），部分缺数不引导（内容照常展示）。 */
+const showMaintenanceEntry = computed(() => {
+  const reason = availability.value?.reason
+  return Boolean(props.maintenance) && isEmpty.value && (reason === 'beyond-coverage' || reason === 'not-onboarded')
 })
 </script>
 
@@ -216,8 +232,16 @@ const showCandidatesEntry = computed(() => {
     <div v-else-if="isEmpty" class="insight-block__state">
       <EmptyState :text="availabilityReasonText(availability?.reason)" />
       <p v-if="availability?.detail" class="insight-block__detail">{{ availability.detail }}</p>
-      <div v-if="showCandidatesEntry" class="insight-block__actions">
-        <el-button size="small" @click="emit('open-candidates')">查看可分析日期</el-button>
+      <div v-if="showCandidatesEntry || showMaintenanceEntry" class="insight-block__actions">
+        <el-button v-if="showCandidatesEntry" size="small" @click="emit('open-candidates')">查看可分析日期</el-button>
+        <el-button
+          v-if="showMaintenanceEntry"
+          size="small"
+          data-testid="insight-open-maintenance"
+          @click="emit('open-maintenance')"
+        >
+          前往资料维护
+        </el-button>
       </div>
     </div>
 
