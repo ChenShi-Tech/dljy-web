@@ -18,15 +18,17 @@ function overviewOf(intervals: Array<{ covered: boolean; locked: { midlong: stri
 }
 
 /** 约束施加规则（HA-02）：仅对「仅中长期」已知且已覆盖的时段施加约束。 */
-function constraintsOf(overview: HedgeOverview | null, regionOpen: boolean): Array<{ start: string; capMwh: number } | 'unknown-skipped'> {
+type ConstraintRow = { start: string; capMwh: number }
+function constraintsOf(overview: HedgeOverview | null, regionOpen: boolean): Array<ConstraintRow | 'unknown-skipped'> {
   if (!regionOpen || !overview) return []
-  const rows = []
+  const rows: Array<ConstraintRow | 'unknown-skipped'> = []
   for (const row of overview.intervals) {
     if (!row.covered || row.exposure.midlongOnly === null) {
       rows.push('unknown-skipped')
       continue
     }
-    rows.push({ start: row.start, capMwh: Number(row.locked.midlong ?? 0) })
+    const start: string = String(row.start)
+    rows.push({ start, capMwh: Number(row.locked.midlong ?? 0) })
   }
   return rows
 }

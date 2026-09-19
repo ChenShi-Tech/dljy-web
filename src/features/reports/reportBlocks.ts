@@ -352,8 +352,9 @@ const builders: Record<string, BlockBuilder> = {
     const kpis: KpiCell[] = [
       { label: '中长期持仓', value: round(contracted), unit: 'MWh' },
       { label: '预测电量', value: round(forecast), unit: 'MWh' },
-      { label: '持仓覆盖率', value: `${round(h.coverageRate * 100, 1)}%`, tone: h.coverageRate < 0.8 ? 'warning' : 'stable' },
-      { label: '未对冲敞口', value: h.openExposureMwh, unit: 'MWh', tone: Math.abs(h.openExposureMwh) > forecast * 0.2 ? 'danger' : 'stable' }
+      // HA-04/HA-06：只展示数值不判级；分母 0/缺失显示「不可计算」，缺失日不按 0 计。
+      { label: '持仓覆盖率', value: h.notComputable ? '不可计算' : `${round((h.coverageRate as number) * 100, 1)}%` },
+      { label: '未对冲敞口', value: h.notComputable ? '不可计算' : h.openExposureMwh, unit: 'MWh' }
     ]
     return block('RB-HEDGE-EXPOSURE', 'METRIC', '持仓覆盖与敞口', { kpis })
   },
