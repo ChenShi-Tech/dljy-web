@@ -63,8 +63,10 @@ function collectCallSites(): CallSite[] {
 describe('fetchExposure 参数契约', () => {
   const sites = collectCallSites()
 
-  it('至少扫描到调用点（守卫本身不能因正则失配而空跑）', () => {
-    expect(sites.length).toBeGreaterThan(0)
+  it('前端调用点已全部迁移（9.6/HA-05：fetchOverview 取代 fetchExposure）', () => {
+    // 组 8/9 完成后前端不应再有调用点；端点本体（quant.py exposure）保留一个发布周期，
+    // 确认零调用后经移除 issue 删除 quantClient.ts 里的 fetchExposure 定义。
+    expect(sites.length).toBe(0)
   })
 
   it('mode 实参不得取 expected_source 的值域', () => {
