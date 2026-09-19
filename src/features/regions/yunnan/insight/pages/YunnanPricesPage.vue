@@ -40,9 +40,10 @@ import {
   resolveSpatialObjectId,
   spatialEntryVisible,
 } from '../spatialLinks'
+import { fetchGridObject } from '@/features/gridGeo/client'
+import { ElMessage } from 'element-plus'
 import Price3DWorkspace from './prices/Price3DWorkspace.vue'
 import { readPriceMode, writePriceMode, type PriceDisplayMode } from './prices/priceModeStorage'
-import { ElMessage } from 'element-plus'
 import InsightBlock from '@/components/insight/InsightBlock.vue'
 import InsightDateRange from '@/components/insight/InsightDateRange.vue'
 import InsightEvidenceDrawer from '@/components/insight/InsightEvidenceDrawer.vue'
@@ -700,6 +701,20 @@ async function onBasisToSpatialView(): Promise<void> {
         : `空间资产登记中未找到与「${basisReference.value}」唯一对应的节点，本次未跳转`
     )
     return
+  }
+  if (kind === 'node') {
+    // 市场空间态势只按对象的场站关联取景（detail.relations.plants）：无场站关联的独立节点
+    // 跳过去只会得到「尚未关联场站」的报错——点击时确认关联，未关联/读取失败如实说明不跳转。
+    try {
+      const detail = await fetchGridObject({ kind: 'node', id: assetId, regionId: ctx.regionId.value })
+      if (!detail.relations.plants.length) {
+        ElMessage.warning(`「${basisReference.value}」在空间资产中未关联场站，市场空间态势暂无法聚焦独立节点，本次未跳转`)
+        return
+      }
+    } catch {
+      ElMessage.warning(`「${basisReference.value}」的空间资产关联读取失败，本次未跳转`)
+      return
+    }
   }
   openSpatialViewLink(router, {
     path: MARKET_SPATIAL_TARGET,
