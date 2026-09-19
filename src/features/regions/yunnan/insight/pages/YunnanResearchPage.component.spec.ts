@@ -1165,4 +1165,37 @@ describe('材料接线（definitionId 纪律）', () => {
     const request = captured.request as { analysisId: string }
     expect(request.analysisId).toBe('5f0c9e64-1a2b-4c3d-8e4f-001122334455')
   })
+
+  it('保存后改配置再运行：旧定义 ID 失效，材料入口重新要求先保存（不带旧 ID 配新结果）', async () => {
+    const captured = await mountWithMaterialCapture()
+    await selectPreset('research.price-new-energy-correlation')
+    await run()
+    await save()
+    // 换窗口 = 配置签名变化：已保存定义 ID 随之失效，重跑后也不能拿旧定义 ID 配新结果
+    await setWindow('2026-09-02', '2026-09-11')
+    await run()
+    await wrapper!.find('[data-testid="yr-add-material"]').trigger('click')
+    await flushPromises()
+    expect(captured.visible).toBe(false)
+  })
+
+  it('事前运行保存后加入材料：请求上下文与运行同口径（mode=ex-ante、asOf 随行）', async () => {
+    const captured = await mountWithMaterialCapture()
+    state.result = {
+      ...correlationResult(),
+      mode: 'ex-ante',
+      asOf: '2026-09-05T08:30:00+08:00',
+    }
+    await selectPreset('research.price-new-energy-correlation')
+    await setMode('ex-ante')
+    await setAsOf('2026-09-05 08:30')
+    await run()
+    await save()
+    await wrapper!.find('[data-testid="yr-add-material"]').trigger('click')
+    await flushPromises()
+    expect(captured.visible).toBe(true)
+    const request = captured.request as { context: { mode: string; asOf: string | null } }
+    expect(request.context.mode).toBe('ex-ante')
+    expect(request.context.asOf).toBe('2026-09-05T08:30:00+08:00')
+  })
 })

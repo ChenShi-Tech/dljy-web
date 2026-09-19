@@ -426,12 +426,22 @@ watch(configSignature, () => {
   runState.loading = false
   saveState.savedVersion = null
   saveState.error = ''
+  // 已保存定义 ID 绑定配置签名：配置一变，旧定义不再对应当前结果——不清掉的话
+  // 材料入口会把 A 定义的 ID 配上 B 结果的期望版本发给服务端（版本核对必然错位）。
+  savedDefinitionId.value = null
 })
+
+/** 研究请求上下文：显式叠加当前模式与事前时点（toQueryContext 默认事后、无时点）。
+ * 运行、保存、材料三条通道的期望版本都来自当前运行结果，上下文必须与运行同口径——
+ * 否则事前运行会被服务端按事后定义重算核对，版本必然对不上或冻结错模式。 */
+function researchContext(): InsightContextInput {
+  return { ...ctx.toQueryContext(), mode: mode.value, asOf: asOfIso.value }
+}
 
 async function runPreview(): Promise<void> {
   const preset = activePreset.value
   if (!preset || !canRun.value || runState.loading) return
-  const context: InsightContextInput = { ...ctx.toQueryContext(), mode: mode.value, asOf: asOfIso.value }
+  const context: InsightContextInput = researchContext()
   const filters = preset.kind === 'correlation' ? { groupBy: groupBy.value } : undefined
   const transformations = buildTransformations(preset)
   const key = configSignature.value
@@ -471,7 +481,8 @@ async function saveDefinition(): Promise<void> {
     return
   }
   // 上下文剥掉代次（导航概念，同 #151 材料保存）：同口径重复保存幂等键稳定。
-  const { contextVersion: _generation, ...context } = ctx.toQueryContext()
+  // 模式/事前时点与运行同口径（researchContext）：期望版本来自当前运行，不能错口径核对。
+  const { contextVersion: _generation, ...context } = researchContext()
   const expected = { resultVersion: current.resultVersion, readSetRef: current.readSetRef }
   const filters = preset.kind === 'correlation' ? { groupBy: groupBy.value } : undefined
   const transformations = buildTransformations(preset)
@@ -525,7 +536,9 @@ function openMaterial(): void {
     return
   }
   // 上下文剥掉代次（导航概念，同保存分析）：同口径重复保存幂等键稳定。
-  const { contextVersion: _generation, ...context } = ctx.toQueryContext()
+  // 模式/事前时点与运行同口径（researchContext）：期望版本来自当前运行，不能错口径核对；
+  // 服务端研究路径按定义的冻结运行核对版本并取定义里的上下文/变换冻结材料。
+  const { contextVersion: _generation, ...context } = researchContext()
   materialSubject.value = preset.title
   materialRequest.value = {
     analysisId: savedDefinitionId.value,
