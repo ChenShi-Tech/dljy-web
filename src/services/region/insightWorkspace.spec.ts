@@ -140,17 +140,19 @@ describe('地区包真包集成（installRegionPackages 装配）', () => {
     expect(listInsightNavigation('yunnan')).toBeNull()
   })
 
-  it('云南开关打开：supply 页已交付可解析并进导航，其余五页仍为建设占位（page-not-delivered）', () => {
+  it('云南开关打开：overview 与 supply 页已交付可解析并进导航，其余四页仍为建设占位（page-not-delivered）', () => {
     vi.stubEnv('VITE_YUNNAN_INSIGHT_WORKSPACE', '1')
     const workspace = getInsightWorkspace('yunnan')
     expect(workspace?.workspaceId).toBe('yunnan.insight')
     expect(workspace?.pages).toHaveLength(6)
-    // dljy#3008：供需与水电页交付；prices 页四页签已上线但三维热力未齐，delivered 仍 false
-    expect(workspace?.pages.filter((page) => page.delivered).map((page) => page.pageId)).toEqual(['supply'])
+    // dljy#3009：市场总览页交付；dljy#3008：供需与水电页交付；prices 页四页签已上线但三维热力未齐，delivered 仍 false
+    expect(workspace?.pages.filter((page) => page.delivered).map((page) => page.pageId)).toEqual(['overview', 'supply'])
+    expect(resolveInsightPage('yunnan', 'overview')).toMatchObject({ kind: 'page' })
     expect(resolveInsightPage('yunnan', 'supply')).toMatchObject({ kind: 'page' })
     expect(resolveInsightPage('yunnan', 'prices')).toMatchObject({ kind: 'fallback', reason: 'page-not-delivered' })
-    // 导航只收 delivered 页 → 只出现供需与水电一项
+    // 导航只收 delivered 页 → 市场总览 + 供需与水电两项（按 order 排序）
     expect(listInsightNavigation('yunnan')).toEqual([
+      expect.objectContaining({ path: '/insight/overview', title: '市场总览' }),
       expect.objectContaining({ path: '/insight/supply', title: '供需与水电' }),
     ])
     vi.unstubAllEnvs()
