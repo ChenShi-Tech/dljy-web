@@ -48,29 +48,6 @@ const channel = ref('')
 const preferredChannels = new Map<string, string>()
 const searchText = ref('')
 const keyword = ref('')
-// 深链承接要在保活复用时也生效：AppLayout 对路由页保活，setup 只跑一次——再次带
-// keyword/objectDate 深链进入（实例未销毁）不会重跑 setup，必须按路由查询签名应用。
-// 只认带深链键的进入（不带键的普通导航保留现场）；同一签名再次进入保留本地编辑
-// （返回原页不丢搜索词与日期）；对象上下文键仍走 useGridObjectContext，两组键互不占用。
-let appliedDeepLink = ''
-watch(
-  () => [objectContext.active.value, JSON.stringify(deskRoute?.query ?? {})] as const,
-  ([active]) => {
-    if (!active) return
-    const query = deskRoute?.query ?? {}
-    const rawKeyword = queryText(query.keyword).trim()
-    const rawDate = queryText(query.objectDate)
-    if (!rawKeyword && !rawDate) return
-    const signature = JSON.stringify([rawKeyword, validObjectDate(rawDate) ? rawDate : ''])
-    if (signature === appliedDeepLink) return
-    appliedDeepLink = signature
-    const linkKeyword = rawKeyword && rawKeyword.length <= 120 && !/[\u0000-\u001f]/.test(rawKeyword) ? rawKeyword : ''
-    searchText.value = linkKeyword
-    keyword.value = linkKeyword
-    if (validObjectDate(rawDate) && !objectContext.hasContext.value) date.value = rawDate
-  },
-  { immediate: true }
-)
 const categoryFilter = ref<'' | GridDisclosureCategory>('')
 const maintenanceFilters = ref<MaintenanceFilters>(createDefaultMaintenanceFilters())
 const appliedMaintenanceFilters = ref<MaintenanceFilters>(createDefaultMaintenanceFilters())
@@ -366,6 +343,32 @@ function changePage(next: number) { if (next > 0 && next <= totalPages.value && 
 function refresh() { refreshKey.value += 1; void Promise.all([loadRailOverview(), loadOverview(), loadEvents(), loadCurve(), loadProviders(), loadThemeAvailability()]) }
 function resetFilters() { searchText.value = ''; keyword.value = ''; clearMaintenanceFilters(); chooseTheme('price'); clearSelection() }
 watch(searchText, (value) => { if (searchTimer) clearTimeout(searchTimer); searchTimer = setTimeout(() => { keyword.value = value.trim() }, 260) })
+// 深链承接要在保活复用时也生效：AppLayout 对路由页保活，setup 只跑一次——再次带
+// keyword/objectDate 深链进入（实例未销毁）不会重跑 setup，必须按路由查询签名应用。
+// 通道/断面深链一律落到「联络线与断面」主题（chooseTheme 会顺带清类别筛选、指标随主题），
+// 否则缓存页停在检修等受限主题时，新词会被旧类别过滤掉；同一签名再次进入保留本地编辑
+// （返回原页不丢搜索词与日期）；不带深链键的普通导航不覆盖现场（keep-alive 既有语义）；
+// 对象上下文键仍走 useGridObjectContext，两组键互不占用。
+let appliedDeepLink = ''
+watch(
+  () => [objectContext.active.value, JSON.stringify(deskRoute?.query ?? {})] as const,
+  ([active]) => {
+    if (!active) return
+    const query = deskRoute?.query ?? {}
+    const rawKeyword = queryText(query.keyword).trim()
+    const rawDate = queryText(query.objectDate)
+    if (!rawKeyword && !rawDate) return
+    const signature = JSON.stringify([rawKeyword, validObjectDate(rawDate) ? rawDate : ''])
+    if (signature === appliedDeepLink) return
+    appliedDeepLink = signature
+    chooseTheme('transmission')
+    const linkKeyword = rawKeyword && rawKeyword.length <= 120 && !/[\u0000-\u001f]/.test(rawKeyword) ? rawKeyword : ''
+    searchText.value = linkKeyword
+    keyword.value = linkKeyword
+    if (validObjectDate(rawDate) && !objectContext.hasContext.value) date.value = rawDate
+  },
+  { immediate: true }
+)
 watch(() => [dateFrom.value, dateTo.value, scopeKey.value], () => { clearSelection(); hoveredAt.value = null })
 watch(scopeKey, clearMaintenanceFilters)
 watch([dateFrom, dateTo, scopeKey, keyword, objectQueryKey], () => { railOverview.value = null; void loadRailOverview() }, { immediate: true })

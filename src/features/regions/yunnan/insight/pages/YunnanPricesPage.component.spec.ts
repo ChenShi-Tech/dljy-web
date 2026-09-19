@@ -62,6 +62,10 @@ const state = vi.hoisted(() => ({
 vi.mock('@/composables/useAgentHealth', () => ({
   // 页面 AI 入口的探活打桩：不发起真实网络连接；AI 入口可见性按在线处理。
   useAgentHealth: () => ({ health: { value: 'online' }, ready: { value: true }, offline: { value: false }, check: async () => {} }),
+const geo = vi.hoisted(() => ({
+  plants: vi.fn<() => Promise<any>>(),
+  nodes: vi.fn<() => Promise<any>>(),
+  object: vi.fn<() => Promise<any>>(),
 }))
 
 vi.mock('@/services/insight/insightClient', async (importOriginal) => {
@@ -70,6 +74,20 @@ vi.mock('@/services/insight/insightClient', async (importOriginal) => {
     ...actual,
     queryInsight: vi.fn((request: any) => state.responder!(request)),
     fetchInsightCapabilities: vi.fn(() => Promise.resolve(state.capabilities)),
+  }
+})
+
+vi.mock('@/features/gridGeo/client', () => ({
+  fetchGridGeoPlants: geo.plants,
+  fetchGridGeoNodes: geo.nodes,
+  fetchGridObject: geo.object,
+}))
+
+vi.mock('@/services/governance', async (importOriginal) => {
+  const actual = await importOriginal<Record<string, unknown>>()
+  return {
+    ...actual,
+    canAccessPath: vi.fn(() => true),
   }
 })
 
@@ -665,6 +683,28 @@ describe('日前实时价差', () => {
     expect(query.objects).toBeUndefined()
     expect(query.timeIntervals).toBeUndefined()
     expect(query.resultRef).toBeUndefined()
+  })
+
+  it('空间入口：独立节点未关联场站时不跳转（市场空间态势无法聚焦独立节点，如实说明）', async () => {
+    router.addRoute({ path: '/grid-assets/market', component: { render: () => null } })
+    state.capabilities = capsWith(['prices.public-node-series'])
+    geo.object.mockClear()
+    geo.nodes.mockResolvedValue({ data: { items: [{ assetId: 'ND-KM01', standardName: 'YN.KM.01', nodeName: 'YN.KM.01', aliases: [] }] } })
+    geo.object.mockResolvedValue({
+      reference: { kind: 'node', id: 'ND-KM01', regionId: 'yunnan' },
+      relations: { plants: [], nodes: [] },
+    })
+    await mountPage()
+    await chooseObjects('YN.KM.01')
+    await switchTab('basis')
+    basisReferenceSelect().vm.$emit('update:modelValue', 'YN.KM.01')
+    await flushPromises()
+
+    await wrapper!.find('[data-testid="ynp-basis-spatial"]').trigger('click')
+    await flushPromises()
+    // 名字解析成资产 ID 后仍要确认场站关联：无关联不跳转，路由停在价格页
+    expect(geo.object).toHaveBeenCalledTimes(1)
+    expect(router.currentRoute.value.path).not.toBe('/grid-assets/market')
   })
 
   it('只选一侧来源的 422：直显后端文案', async () => {
