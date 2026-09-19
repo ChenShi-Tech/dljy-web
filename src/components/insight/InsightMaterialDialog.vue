@@ -15,7 +15,6 @@
 
 import { computed, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
-import type { InsightBlockResult } from '@/services/insight/insightClient'
 import { idempotencyKeyOf } from '@/services/api'
 import {
   captureInsightMaterial,
@@ -30,6 +29,17 @@ import {
 import { workpaperOptionLabel } from '@/services/review/reportPresentation'
 import { shortRef } from './insightText'
 
+/**
+ * 材料主体的版本引用视图：窗口只消费业务窗口起止与期望版本（resultVersion/readSetRef），
+ * 洞察区块结果（insight/v1）与研究运行产物（insight-research/v1）都满足——保存核对走
+ * 期望版本，组件不依赖其它结果字段（价格页与研究页同一入口，任务 14.5/14.6）。
+ */
+type InsightMaterialResultRef = {
+  businessWindow: { start: string; end: string }
+  resultVersion?: string
+  readSetRef?: string
+}
+
 const props = defineProps<{
   /** v-model：窗口开关 */
   modelValue: boolean
@@ -39,8 +49,8 @@ const props = defineProps<{
   subject: string
   /** 冻结请求：登记分析 + 上下文 + 筛选（上下文不含代次，保证同口径重复保存幂等键稳定） */
   request: { analysisId: string; context: Record<string, unknown>; filters?: Record<string, unknown> } | null
-  /** 当前区块结果：提供期望版本（resultVersion/readSetRef）与业务窗口说明 */
-  result: InsightBlockResult | null
+  /** 当前结果主体：提供期望版本（resultVersion/readSetRef）与业务窗口说明 */
+  result: InsightMaterialResultRef | null
 }>()
 
 const emit = defineEmits<{

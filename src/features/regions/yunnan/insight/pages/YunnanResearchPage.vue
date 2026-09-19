@@ -67,6 +67,7 @@ import {
 } from '@/services/insight/researchClient'
 import { useInsightContext } from '@/composables/useInsightContext'
 import InsightDateRange from '@/components/insight/InsightDateRange.vue'
+import InsightMaterialDialog from '@/components/insight/InsightMaterialDialog.vue'
 import InsightResearchSavedDialog from '@/components/insight/InsightResearchSavedDialog.vue'
 import { insightSourceTitle, type InsightSourceTitle } from '@/components/insight/insightText'
 
@@ -494,6 +495,33 @@ async function saveDefinition(): Promise<void> {
   } finally {
     saveState.saving = false
   }
+}
+
+// ── 加入专题材料（任务 14.5/14.6，与 #151 价格页同模式）：运行产物作为材料主体 ────────────
+// 复用 InsightMaterialDialog 与既有 evidence/workpaper 协议，冻结与入稿全在窗口内完成，不另起
+// 第二套材料通道：请求只带「登记研究预设 + 上下文 + 筛选 + 期望版本」，服务端核对一致才冻结，
+// 源已更新 409 提示先重新运行；幂等键由窗口按内容派生，重复保存同一份结果不重复创建。
+// 材料保存是公司写入：入口按 governance 写权限显隐（后端写入闸门才是权威）。
+
+const materialVisible = ref(false)
+const materialSubject = ref('')
+const materialRequest = ref<{ analysisId: string; context: Record<string, unknown>; filters?: Record<string, unknown> } | null>(null)
+
+const materialResult = computed(() => runState.result)
+
+function openMaterial(): void {
+  const preset = activePreset.value
+  const current = runState.result
+  if (!preset || !current || !current.resultVersion || !current.readSetRef) return
+  // 上下文剥掉代次（导航概念，同保存分析）：同口径重复保存幂等键稳定。
+  const { contextVersion: _generation, ...context } = ctx.toQueryContext()
+  materialSubject.value = preset.title
+  materialRequest.value = {
+    analysisId: preset.presetId,
+    context,
+    filters: preset.kind === 'correlation' ? { groupBy: groupBy.value } : undefined,
+  }
+  materialVisible.value = true
 }
 
 // ── 结果读取（宽松形状 + 展示辅助；值按登记精度或原文呈现，无任何裁剪）──────────────────
@@ -1000,6 +1028,18 @@ const progressStatRows = computed<ProgressRow[]>(() => {
         <header class="yr__result-head">
           <h3 class="yr__panel-title">{{ KIND_LABELS[result.method.kind] ?? result.method.kind }}结果</h3>
           <span class="yr__tag" data-testid="yr-mode-badge">{{ result.mode === 'ex-post' ? EX_POST_BADGE : EX_ANTE_BADGE }}</span>
+          <!-- 加入专题材料（任务 14.5/14.6）：公司写入入口按权限显隐（同 #151 价格页材料口径）；
+               冻结与入稿在材料窗口内完成，源已更新 409 由窗口提示先重跑 -->
+          <el-button
+            v-if="canWriteCompany"
+            size="small"
+            plain
+            data-testid="yr-add-material"
+            :disabled="!result.resultVersion || !result.readSetRef"
+            @click="openMaterial"
+          >
+            加入专题材料
+          </el-button>
         </header>
 
         <p class="yr__sample" data-testid="yr-sample">
@@ -1210,6 +1250,16 @@ const progressStatRows = computed<ProgressRow[]>(() => {
 
     <!-- 已保存分析：列表/查看对所有人开放（公司隔离、原样只读）；重算入口按写权限显隐 -->
     <InsightResearchSavedDialog v-model="savedVisible" :can-write="canWriteCompany" />
+
+    <!-- 加入专题材料（任务 14.5/14.6）：冻结 + 入稿全在窗口内完成，服务不可用只报错不阻断研究页 -->
+    <InsightMaterialDialog
+      v-model="materialVisible"
+      :region="ctx.regionId.value"
+      :company-id="ctx.companyId.value ?? ''"
+      :subject="materialSubject"
+      :request="materialRequest"
+      :result="materialResult"
+    />
   </div>
 </template>
 
