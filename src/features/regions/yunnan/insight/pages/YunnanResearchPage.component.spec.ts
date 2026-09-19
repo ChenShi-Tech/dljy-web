@@ -1179,6 +1179,19 @@ describe('材料接线（definitionId 纪律）', () => {
     expect(captured.visible).toBe(false)
   })
 
+  it('同签名重跑（源更新）得到新版本：旧定义 ID 失效，材料入口要求重新保存', async () => {
+    const captured = await mountWithMaterialCapture()
+    await selectPreset('research.price-new-energy-correlation')
+    await run()
+    await save()
+    // 源更新后同签名重跑：新结果版本 ≠ 已保存定义对应的版本指纹
+    state.result = { ...correlationResult(), resultVersion: `rv2:${'b'.repeat(64)}` }
+    await run()
+    await wrapper!.find('[data-testid="yr-add-material"]').trigger('click')
+    await flushPromises()
+    expect(captured.visible).toBe(false)
+  })
+
   it('保存在途时改配置：迟到响应不写回旧定义 ID（材料入口要求重新保存）', async () => {
     const captured = await mountWithMaterialCapture()
     await selectPreset('research.price-new-energy-correlation')
