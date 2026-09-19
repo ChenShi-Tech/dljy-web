@@ -100,6 +100,11 @@ const midlongCurveSet = () => import('../views/midlong/p2/MidlongCurveSetView.vu
 // 云南中长期售电 P3（dljy#2973）：售电计划与交易执行。
 const midlongPlans = () => import('../views/midlong/p3/MidlongPlansView.vue')
 const midlongExecution = () => import('../views/midlong/p3/MidlongExecutionView.vue')
+// 云南中长期售电 P4（dljy#3014）：合同调整（执行确认是交易执行页的第四个标签，无新路由）。
+const midlongAdjustments = () => import('../views/midlong/p4/MidlongAdjustmentsView.vue')
+// 云南中长期售电 P5（dljy#3016）：业务复盘与月报、外部账单与差异。
+const midlongReview = () => import('../views/midlong/p5/MidlongReviewView.vue')
+const midlongBills = () => import('../views/midlong/p5/MidlongBillsView.vue')
 const riskCenter = () => import('../views/RiskCenterView.vue')
 const insightWorkspaceHost = () => import('../views/insight/InsightWorkspaceHost.vue')
 
@@ -273,6 +278,12 @@ const router = createRouter({
         // 售电目标、方案与交易日历（dljy#2973）：目标是经营安排不是物理可发电量，方案占用不计正式持仓，导出申报材料不代提交。
         page('zcqjy/plans', 'MidlongPlans', { block: '中长期交易', title: '售电计划', code: 'midlong-plans', endpoint: 'GET/POST/PATCH /api/v1/midlong/plans* + /proposals*', dataPath: 'company.midlong_sales_plan* + midlong_trade_proposal* + midlong_plan_occupations', scope: '人工售电目标版本与完成情况、交易方案测算与方案占用', kind: 'real' }, midlongPlans),
         page('zcqjy/execution', 'MidlongExecution', { block: '中长期交易', title: '交易执行', code: 'midlong-execution', endpoint: 'GET/POST /api/v1/midlong/windows* + /proposals/{id}/export|submissions + /submissions/{id}/receipts', dataPath: 'company.midlong_trading_window* + midlong_proposal_submissions + midlong_submission_receipts', scope: '交易公告与日历、申报材料导出、外部提交登记与回执完整度', kind: 'real' }, midlongExecution),
+        // 合同调整（dljy#3014）：转让/调整/部分终止的登记、方向核验、可调余额与影响追溯；更正仍在合同详情。
+        page('zcqjy/adjustments', 'MidlongAdjustments', { block: '中长期交易', title: '合同调整', code: 'midlong-adjustments', endpoint: 'GET/POST /api/v1/midlong/adjustments* + /executions/confirmations*', dataPath: 'company.midlong_adjustment* + midlong_execution_*', scope: '外部调整/转让/部分终止：方向核验、可调余额、原子生效与变更影响追溯', kind: 'real' }, midlongAdjustments),
+        // 业务复盘与月报（dljy#3016）：指标只读分析、报告冻结与版本追溯；不导入现货复盘状态。
+        page('zcqjy/review', 'MidlongReview', { block: '中长期交易', title: '业务复盘', code: 'midlong-review', endpoint: 'GET/POST /api/v1/midlong/review/metrics + /reports*', dataPath: 'company.midlong_review_report* + midlong_*', scope: '量价业务分析（不可比不排名）、月度报告冻结与迟到修订版本', kind: 'real' }, midlongReview),
+        // 外部账单与差异（dljy#3016）：三种金额分离、综合账单不猜分、差异处理闭环。
+        page('zcqjy/bills', 'MidlongBills', { block: '中长期交易', title: '外部账单与差异', code: 'midlong-bills', endpoint: 'GET/POST /api/v1/midlong/bills* + /discrepancies* + /settlement-attachments/{id}', dataPath: 'company.midlong_bill* + midlong_bill_discrepancies', scope: '外部账单登记与修订、收款凭证、量价差异登记与处理闭环', kind: 'real' }, midlongBills),
         page('zcqjy/curves/:id', 'MidlongCurveSet', { block: '中长期交易', title: '分解集详情', code: 'midlong-curve-set', endpoint: 'GET /api/v1/midlong/curves/{id} + confirm/discard', dataPath: 'company.midlong_curve_*', scope: '分时分解集原始粒度、单位换算、缺段/重叠/守恒校验与来源', kind: 'real' }, midlongCurveSet),
         page('zcqjy/zccljk', 'PositionMonitor', { block: '中长期交易', title: '持仓量监控（山西采集）', code: 'zccljk', endpoint: 'GET /sdpt/zfsdjy/ccljkDay|ccljkTime|list', dataPath: 'sdpt_zfsdjy', scope: '2026-06，39行', kind: 'real' }, zfsdjyPosition),
         page('zcqjy/zfsdjy', 'PeriodTrading', { block: '中长期交易', title: '分时段交易', code: 'zfsdjy', endpoint: 'GET /sdpt/zfsdjy/list', dataPath: 'sdpt_zfsdjy', kind: 'real' }, zfsdjyTrades),

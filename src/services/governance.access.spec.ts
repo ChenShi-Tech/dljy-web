@@ -58,6 +58,19 @@ describe('canAccessPath 判权只看路径（query/hash 不影响）', () => {
     }
   })
 
+  it('中长期 P4/P5 合同调整、业务复盘与外部账单与月度持仓同一可见范围（dljy#3014/#3016）', () => {
+    for (const roleCode of Object.keys(roleLabels) as RoleCode[]) {
+      const legacy = canAccessPath('/gsgl/contracts', { roleCode })
+      expect(canAccessPath('/zcqjy/adjustments', { roleCode })).toBe(legacy)
+      expect(canAccessPath('/zcqjy/review', { roleCode })).toBe(legacy)
+      expect(canAccessPath('/zcqjy/bills', { roleCode })).toBe(legacy)
+      // 只放行这三个精确路径：前缀相似的路径仍按角色规则判定。
+      expect(canAccessPath('/zcqjy/adjustments/1', { roleCode })).toBe(canAccessPath('/zcqjy/not-a-midlong-page', { roleCode }))
+      expect(canAccessPath('/zcqjy/review-export', { roleCode })).toBe(canAccessPath('/zcqjy/not-a-midlong-page', { roleCode }))
+      expect(canAccessPath('/zcqjy/bills/2', { roleCode })).toBe(canAccessPath('/zcqjy/not-a-midlong-page', { roleCode }))
+    }
+  })
+
   it('SETTLEMENT / RETAIL_MANAGER 对 /yygl/import-hub 死授权已移除', () => {
     expect(canAccessPath('/yygl/import-hub', { roleCode: 'SETTLEMENT' })).toBe(false)
     expect(canAccessPath('/yygl/import-hub', { roleCode: 'RETAIL_MANAGER' })).toBe(false)

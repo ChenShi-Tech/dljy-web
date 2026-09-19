@@ -1,7 +1,9 @@
 <script setup lang="ts">
-// 中长期售电合同详情（/zcqjy/contracts/:id，dljy#2939，MC-03..06 / MA-01/04）。
+// 中长期售电合同详情（/zcqjy/contracts/:id，dljy#2939，MC-03..06 / MA-01/04；P4 合同调整区块 dljy#3014，MA-01..05）。
 // 原始量与当前有效量、月度分解、版本历史、资料、事件分区展示；操作按确认状态开放：
 // 草稿/待核对 → 修改、补资料、核验确认；已确认 → 录入更正（生成新版本）、整笔纠错作废；不提供物理删除。
+// P4 起：已确认合同的「外部调整/转让/部分终止」在「合同调整」区块登记（与录入更正分开），
+// 版本历史里更正与调整产生的版本同一条时间线、都有「影响对比」。
 // 所有有状态写入带 rowVersion：他人先改过时提示刷新核对差异，不静默覆盖。
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
@@ -17,9 +19,11 @@ import MidlongContractFormDialog from '@/components/midlong/MidlongContractFormD
 import MidlongEconomicsEditor from '@/components/midlong/MidlongEconomicsEditor.vue'
 import MidlongContractCurvesPanel from '@/components/midlong/p2/MidlongContractCurvesPanel.vue'
 import MidlongContractStationsPanel from '@/components/midlong/p2/MidlongContractStationsPanel.vue'
+import MidlongContractAdjustmentsPanel from '@/components/midlong/p4/MidlongContractAdjustmentsPanel.vue'
 import { selectedCompanyId } from '@/services/company/companyContext'
 import { fetchStations, type CompanyStation } from '@/services/company/companyApi'
 import { p2ModuleOn } from '@/services/midlong/midlongP2Api'
+import { p4ModuleOn } from '@/services/midlong/midlongP4Api'
 import {
   DELIVERY_CYCLE_LABELS, DOCUMENT_KIND_LABELS, ENERGY_ATTRIBUTE_LABELS, EVENT_TYPE_LABELS, EVIDENCE_BASIS_LABELS,
   EVIDENCE_DOCUMENT_TYPES, EVIDENCE_DOCUMENT_TYPE_LABELS, MARKET_SCOPE_LABELS, PRICE_COMPONENT_LABELS, PRICE_TYPE_LABELS,
@@ -96,6 +100,10 @@ const releasedAliases = computed(() => (detail.value?.aliases ?? []).filter((a) 
 // P2 分时分解与场站分配（dljy#2971）：能力开关打开且是电量合同时才出现，关闭时不调用对应接口。
 const showCurves = computed(() => p2ModuleOn(capabilities.value, 'curves') && detail.value?.documentKind === 'OBLIGATION')
 const showStations = computed(() => p2ModuleOn(capabilities.value, 'stationAllocations') && detail.value?.documentKind === 'OBLIGATION')
+// P4 合同调整区块（dljy#3014）：adjustments 能力打开即出现（任何确认状态都可看历史，登记入口只对已确认合同开放）。
+const showAdjustments = computed(() => p4ModuleOn(capabilities.value, 'adjustments'))
+const adjustmentsPanel = ref<InstanceType<typeof MidlongContractAdjustmentsPanel> | null>(null)
+const openRevisionImpact = (revisionNo: number) => { adjustmentsPanel.value?.openRevisionImpact(revisionNo) }
 const stationOptions = computed(() => stations.value.map((s) => ({ id: s.id, name: s.name ?? `场站 ${s.id}` })))
 const evidenceById = computed(() => new Map((detail.value?.evidence ?? []).map((e) => [e.id, e])))
 
@@ -418,6 +426,10 @@ const missingBasis = computed(() => (actionError.value?.errorCode === 'INCOMPLET
       <!-- 核验、更正、作废等操作都会让 rowVersion 前进：面板据此重新取概览，否则仍显示旧版本状态、提交旧的 expectedRevisionNo。 -->
       <MidlongContractCurvesPanel v-if="showCurves" :contract-id="detail.contractId" :row-version="detail.rowVersion" :can-write="canWrite" :evidence="detail.evidence" />
       <MidlongContractStationsPanel v-if="showStations" :contract-id="detail.contractId" :row-version="detail.rowVersion" :can-write="canWrite" :evidence="detail.evidence" :stations="stationOptions" />
+      <MidlongContractAdjustmentsPanel
+        v-if="showAdjustments" ref="adjustmentsPanel" :contract-id="detail.contractId" :contract-label="detail.contractName"
+        :row-version="detail.rowVersion" :can-write="canWrite" :confirmation-status="detail.confirmationStatus" @changed="load"
+      />
 
       <div class="ml-panel">
         <h3>版本历史（{{ detail.revisions.length }}）</h3>
@@ -431,8 +443,13 @@ const missingBasis = computed(() => (actionError.value?.errorCode === 'INCOMPLET
                 <span class="ml-muted">录入 {{ rev.recordedBy ?? '—' }}<template v-if="rev.confirmedAt"> · 确认 {{ rev.confirmedBy }} {{ new Date(rev.confirmedAt).toLocaleString('zh-CN') }}</template></span>
               </div>
               <div>电量 {{ fmtQuantity(rev.totalQuantity) }} MWh · 售电价 {{ rev.priceStatus === 'KNOWN' ? `${fmtPrice(rev.sellerPrice)} 元/MWh` : '待核对' }} · 交割期 {{ rev.deliveryStart ?? '—' }} ~ {{ rev.deliveryEnd ?? '—' }} · 分解 {{ rev.allocations.length }} 行</div>
-              <div v-if="rev.changeReason">更正原因：{{ rev.changeReason }}<template v-if="rev.affectedMonths.length">；受影响月份 {{ rev.affectedMonths.join('、') }}</template></div>
+              <div v-if="rev.changeReason">{{ rev.revisionKind === 'CORRECTION' ? '更正原因' : '变更原因' }}：{{ rev.changeReason }}<template v-if="rev.affectedMonths.length">；受影响月份 {{ rev.affectedMonths.join('、') }}</template></div>
               <div v-if="rev.evidenceIds.length" class="ml-muted">依据：{{ rev.evidenceIds.map((id) => evidenceById.get(id)?.originalFileName ?? `#${id}`).join('、') }}</div>
+              <!-- MA-05：更正与调整产生的变更版本同一条时间线，都可看变更前后快照（初始/基线版本没有「变更前」）。 -->
+              <el-button
+                v-if="showAdjustments && rev.supersedesRevisionNo !== null" link type="primary" size="small"
+                :data-test="`revision-impact-${rev.revisionNo}`" @click.stop="openRevisionImpact(rev.revisionNo)"
+              >影响对比（变更前后快照）</el-button>
             </div>
           </el-timeline-item>
         </el-timeline>
