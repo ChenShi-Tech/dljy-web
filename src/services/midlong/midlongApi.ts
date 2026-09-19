@@ -7,7 +7,7 @@
 //    内容改了键就不同。
 // 3. 错误保留服务端错误码（VERSION_CONFLICT、PREVIEW_STALE 等），页面据此给出可操作提示；
 //    存储故障与无权限不会被吞成空数据。
-import { ApiError, apiGet, apiPatch, apiPost, idempotencyKeyOf } from '@/services/api'
+import { ApiError, apiGet, apiPatch, apiPost, apiPut, idempotencyKeyOf } from '@/services/api'
 import { companyUnselected } from '@/services/company/companyApi'
 import { selectedCompanyId } from '@/services/company/companyContext'
 import type {
@@ -129,6 +129,24 @@ export async function exportContracts(query: MidlongContractQuery): Promise<Midl
 
 export async function fetchContract(contractId: number): Promise<MidlongContractDetail> {
   return dataOf(await apiGet<Envelope<MidlongContractDetail>>(`${BASE}/contracts/${contractId}`, readQuery()))
+}
+
+/** 分类标注维度（build-midlong-spot-hedging 3.3/D3）：分类事实，不进合同版本与指纹。 */
+export type MidlongLabelDimension = 'BUYER_CATEGORY'
+
+/**
+ * 写合同分类标注（PUT /contracts/{id}/labels）。
+ * rowVersion 语义与后端一致：省略/为 null = 直接写（首录或重开对话框）；带值则乐观校验，
+ * 不匹配抛 409 VERSION_CONFLICT（details.currentRowVersion 可用于恢复）。
+ */
+export async function putContractLabels(
+  contractId: number,
+  input: { dimension: MidlongLabelDimension; value: string | null; rowVersion?: number | null },
+): Promise<{ contractId: number; dimension: string; value: string | null; rowVersion: number | null }> {
+  const body: Record<string, unknown> = { dimension: input.dimension, value: input.value }
+  if (input.rowVersion != null) body.rowVersion = input.rowVersion
+  return dataOf(await apiPut<Envelope<{ contractId: number; dimension: string; value: string | null; rowVersion: number | null }>>(
+    writePath(`${BASE}/contracts/${contractId}/labels`), body, withKey(actionKey('labels', [contractId, input]))))
 }
 
 /** 草稿保存的提示（不阻止保存）；PREVIOUSLY_VOIDED 表示该外部编号曾随作废释放，contractIds 为作废的合同。 */

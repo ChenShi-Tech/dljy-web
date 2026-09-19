@@ -6,7 +6,11 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { identityHeaders } from '@/services/agent/agentClient'
+import { currentRegion } from '@/services/region/regionContext'
+import {
+  CompanyNotSelectedError, addEvidence, correctContract, fetchCapabilities, fetchContract, fetchEvidenceContent, fetchSubjects,
+  linkAlias, midlongFailureOf, putContractLabels, verifyContract, voidContract, type EvidenceUpload, type MidlongFailure,
+} from '@/services/midlong/midlongApi'
 import CompanyScopeBar from '@/components/company/CompanyScopeBar.vue'
 import MidlongNotice from '@/components/midlong/MidlongNotice.vue'
 import MidlongContractFormDialog from '@/components/midlong/MidlongContractFormDialog.vue'
@@ -15,11 +19,6 @@ import MidlongContractCurvesPanel from '@/components/midlong/p2/MidlongContractC
 import MidlongContractStationsPanel from '@/components/midlong/p2/MidlongContractStationsPanel.vue'
 import { selectedCompanyId } from '@/services/company/companyContext'
 import { fetchStations, type CompanyStation } from '@/services/company/companyApi'
-import { currentRegion } from '@/services/region/regionContext'
-import {
-  CompanyNotSelectedError, addEvidence, correctContract, fetchCapabilities, fetchContract, fetchEvidenceContent, fetchSubjects,
-  linkAlias, midlongFailureOf, verifyContract, voidContract, type EvidenceUpload, type MidlongFailure,
-} from '@/services/midlong/midlongApi'
 import { p2ModuleOn } from '@/services/midlong/midlongP2Api'
 import {
   DELIVERY_CYCLE_LABELS, DOCUMENT_KIND_LABELS, ENERGY_ATTRIBUTE_LABELS, EVENT_TYPE_LABELS, EVIDENCE_BASIS_LABELS,
@@ -217,42 +216,30 @@ function openBuyerCategory() {
   const d = detail.value
   if (!d) return
   buyerCategoryForm.value = d.labels?.BUYER_CATEGORY ?? 'GRID_AGENCY'
-  // 标注行的 rowVersion 与合同行版本无关；首录不传。已有标注时用 GET labels 拿最新。
-  buyerCategoryForm.rowVersion = d.labels?.BUYER_CATEGORY ? null : null
+  // 标注行的 rowVersion 与合同行版本无关：重开对话框不校验直接写（后端省略即直写）；
+  // 保存成功后记住返回的 rowVersion，同一会话内的后续提交带它做乐观校验。
+  buyerCategoryForm.rowVersion = null
   buyerCategoryVisible.value = true
-}
-async function refreshBuyerCategory() {
-  const d = detail.value
-  if (!d) return
-  try {
-    const res = await fetch(`${'/api/v1/midlong'}/contracts/${d.contractId}/labels`, { headers: identityHeaders() as Record<string, string> })
-    const payload = await res.json()
-    buyerCategoryForm.rowVersion = null
-    void payload
-    await load()
-  } catch { /* 保持现状 */ }
 }
 async function submitBuyerCategory() {
   const d = detail.value
   if (!d || buyerCategorySaving.value) return
   buyerCategorySaving.value = true
   try {
-    const res = await fetch(`/api/v1/midlong/contracts/${d.contractId}/labels`, {
-      method: 'PUT',
-      headers: { ...identityHeaders(), 'content-type': 'application/json', 'idempotency-key': crypto.randomUUID() } as Record<string, string>,
-      body: JSON.stringify({ dimension: 'BUYER_CATEGORY', value: buyerCategoryForm.value === '' ? null : buyerCategoryForm.value, rowVersion: buyerCategoryForm.rowVersion }),
+    const payload = await putContractLabels(d.contractId, {
+      dimension: 'BUYER_CATEGORY',
+      value: buyerCategoryForm.value === '' ? null : buyerCategoryForm.value,
+      rowVersion: buyerCategoryForm.rowVersion,
     })
-    const payload = await res.json().catch(() => ({}))
-    if (res.status === 200) {
-      ElMessage.success('购方类别已保存（不产生合同版本）')
-      buyerCategoryVisible.value = false
-      buyerCategoryForm.rowVersion = payload?.data?.rowVersion ?? null
-      await load()
-    } else if (res.status === 409) {
-      ElMessage.error('标注已被他人更新，请刷新后核对')
-    } else {
-      ElMessage.error(payload?.msg ?? '保存失败')
-    }
+    ElMessage.success('购方类别已保存（不产生合同版本）')
+    buyerCategoryVisible.value = false
+    buyerCategoryForm.rowVersion = payload?.rowVersion ?? null
+    await load()
+  } catch (err) {
+    const failure: MidlongFailure = midlongFailureOf(err)
+    if (failure.status === 409) ElMessage.error('标注已被他人更新，请刷新后核对')
+    else if (failure.status === 403) ElMessage.error('当前账号无公司写权限，无法修改标注')
+    else ElMessage.error(failure.message || '保存失败')
   } finally {
     buyerCategorySaving.value = false
   }

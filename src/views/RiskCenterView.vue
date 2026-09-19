@@ -9,7 +9,6 @@ import {
   classifyReviewError,
   fetchReview,
   fetchMonitor,
-  type ExposureResult,
   type ReviewFailure,
   type ReviewResult,
   type MonitorResult,
@@ -32,14 +31,12 @@ const thresholds = computed(() => getRiskThresholds(regionId.value))
 
 const loading = ref(false)
 const error = ref('')
-const exposure = ref<ExposureResult | null>(null)
 const review = ref<ReviewResult | null>(null)
 const reviewFailure = ref<ReviewFailure | null>(null)
 const monitor = ref<MonitorResult | null>(null)
 const alerts = ref<Alert[]>([])
 
 const now = new Date()
-const month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
 const yesterday = new Date(now.getTime() - 86400000)
 const dateStr = `${yesterday.getFullYear()}-${String(yesterday.getMonth() + 1).padStart(2, '0')}-${String(yesterday.getDate()).padStart(2, '0')}`
 

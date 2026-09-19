@@ -4,8 +4,9 @@
 // 只开放云南（D15/HW-07）：其他地区隐藏入口、直接访问统一显示「该地区未开放」且不发任何请求。
 // 默认展示今天+明天逐时段敞口（含机制/仅中长期两条，未知断开不连线），页头列出各数据腿
 // 新鲜度，标准指标卡展示两个套保率与生效方案判级；服务端需关注清单与数据缺口单独成区。
-// 认知时点回看（HW-05）：横幅 + 导出带 asOf；切换公司/地区/时点丢弃迟到响应（HW-06，查询代次）。
-// 维护入口（HW-10）：区间方案切换、月度发电基准录入；无写权限只读并注明所需权限。
+// 认知时点回看（HW-05）：横幅；切换公司/地区/时点丢弃迟到响应（HW-06，查询代次）。
+// 维护入口（HW-10）：区间方案切换、月度发电基准录入；无写权限只读并注明所需权限
+// （写权限由后端把关：首个 403 即转只读态并说明所需角色）。
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { currentRegion } from '@/services/region/regionContext'
 import {
@@ -153,6 +154,21 @@ const mechanismStatus = ref<string | null>(null)
 const capsRows = ref<Array<{ subjectId: number; month: string; capMwh: string; sourceNote?: string; rowVersion?: number }>>([])
 const capsStatus = ref<string | null>(null)
 
+/** 维护写口错误统一映射（HW-10）：403 转只读态并说明所需权限；422 定位字段（details.field）；409 提示刷新。 */
+function hedgeMaintenanceMessage(err: unknown): string {
+  if (!(err instanceof HedgeApiError)) return '操作失败'
+  if (err.status === 403) {
+    canWrite.value = false
+    return '403：当前角色无公司写权限，已转只读（维护需要 ADMIN / 本公司 BOSS）'
+  }
+  if (err.status === 422) {
+    const field = typeof err.details?.field === 'string' ? String(err.details.field) : null
+    return field ? `422：字段 ${field} —— ${err.message}` : `422：${err.message}`
+  }
+  if (err.status === 409) return '409：已被他人更新，请刷新后核对'
+  return `${err.errorCode}：${err.message}`
+}
+
 async function activateScheme(presetKey: string, label: string) {
   schemeStatus.value = null
   try {
@@ -161,7 +177,7 @@ async function activateScheme(presetKey: string, label: string) {
     schemeStatus.value = `已切换到「${label}」（唯一生效，历史保留）`
     await load()
   } catch (err) {
-    schemeStatus.value = err instanceof HedgeApiError ? `${err.errorCode}：${err.message}` : '切换失败'
+    schemeStatus.value = hedgeMaintenanceMessage(err)
   }
 }
 
@@ -192,9 +208,7 @@ async function saveCap(row: { subjectId: number; month: string; capMwh: string; 
     capsStatus.value = '核定上限已保存'
     await loadCaps()
   } catch (err) {
-    capsStatus.value = err instanceof HedgeApiError
-      ? (err.errorCode === 'VERSION_CONFLICT' ? '409：已被他人更新，请刷新后核对' : `${err.errorCode}：${err.message}`)
-      : '保存失败'
+    capsStatus.value = hedgeMaintenanceMessage(err)
   }
 }
 
@@ -205,9 +219,18 @@ async function saveBaselines() {
     baselineStatus.value = '已保存（写入后下一次读取即反映到套保计算）'
     await load()
   } catch (err) {
-    baselineStatus.value = err instanceof HedgeApiError
-      ? (err.errorCode === 'VERSION_CONFLICT' ? '409：基准已被他人更新，请刷新后核对' : err.message)
-      : '保存失败'
+    baselineStatus.value = hedgeMaintenanceMessage(err)
+  }
+}
+
+async function confirmMechanism(row: Record<string, unknown>) {
+  mechanismStatus.value = null
+  try {
+    await postMechanismVersion(String(row.periodKey), { action: 'CONFIRM', baseVersionNo: Number(row.versionNo), effectiveFrom: '2025-06-01' })
+    mechanismStatus.value = '机制参数已确认生效'
+    await load()
+  } catch (err) {
+    mechanismStatus.value = err instanceof HedgeApiError ? hedgeMaintenanceMessage(err) : '确认失败'
   }
 }
 
@@ -337,7 +360,7 @@ onBeforeUnmount(() => { if (inFlight) clearTimeout(inFlight) })
         <h3>区间方案（预置带出处，采用即快照；未配置时全站「未评估」）</h3>
         <p data-test="scheme-status">{{ schemeStatus ?? (schemeActivation ? `当前生效：v${(schemeActivation as { versionNo?: number }).versionNo ?? '—'}` : '未配置') }}</p>
         <div class="baseline-row">
-          <button v-for="p in schemePresets" :key="String(p.key)" data-test="scheme-activate" @click="activateScheme(String(p.key), String(p.label))">
+          <button v-for="p in schemePresets" :key="String(p.key)" data-test="scheme-activate" :disabled="!canWrite" @click="activateScheme(String(p.key), String(p.label))">
             采用{{ p.label }}
           </button>
         </div>
@@ -347,7 +370,7 @@ onBeforeUnmount(() => { if (inFlight) clearTimeout(inFlight) })
         <ul>
           <li v-for="(row, i) in mechanismRows" :key="i">
             场站 {{ row.stationId }}：比例 {{ row.ratio }}（{{ row.status }}<span v-if="row.endReason">/{{ row.endReason }}</span>）
-            <button v-if="row.status === 'PENDING'" @click="postMechanismVersion(String(row.periodKey), { action: 'CONFIRM', baseVersionNo: Number(row.versionNo), effectiveFrom: '2025-06-01' }).then(load)">确认生效</button>
+            <button v-if="row.status === 'PENDING'" :disabled="!canWrite" @click="confirmMechanism(row)">确认生效</button>
           </li>
         </ul>
 
@@ -357,7 +380,7 @@ onBeforeUnmount(() => { if (inFlight) clearTimeout(inFlight) })
           <input v-model="row.subjectId" placeholder="交易单元" />
           <input v-model="row.month" placeholder="2026-11" />
           <input v-model="row.capMwh" placeholder="MWh" />
-          <button @click="saveCap(row)">保存</button>
+          <button :disabled="!canWrite" @click="saveCap(row)">保存</button>
         </div>
 
         <h3>月度发电基准（经营计划口径，禁止用售电目标顶替）</h3>
@@ -368,7 +391,7 @@ onBeforeUnmount(() => { if (inFlight) clearTimeout(inFlight) })
           <input v-model="row.quantityMwh" placeholder="MWh" />
           <input v-model="row.basisNote" placeholder="依据说明" />
         </div>
-        <button data-test="baseline-save" @click="saveBaselines">保存基准</button>
+        <button data-test="baseline-save" :disabled="!canWrite" @click="saveBaselines">保存基准</button>
         <p data-test="baseline-status">{{ baselineStatus }}</p>
       </section>
     </template>

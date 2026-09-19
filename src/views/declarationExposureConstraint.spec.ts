@@ -7,8 +7,6 @@ import type { HedgeOverview } from '@/services/hedge/hedgeApi'
 const fetchOverview = vi.fn()
 vi.mock('@/services/hedge/hedgeApi', () => ({ fetchOverview }))
 
-const T = (hour: number) => new Date(`2026-09-20T${String(hour).padStart(2, '0')}:00:00+08:00`).toISOString()
-
 function overviewOf(intervals: Array<{ covered: boolean; locked: { midlong: string | null }; exposure: { midlongOnly: string | null } }>) {
   return {
     asOf: '2026-09-19T00:00:00Z', view: 'CURRENT', intervals,
