@@ -285,6 +285,34 @@ hasInsightDrilldownParams(query)    -> boolean              // URL 是否带 hx_
 6. **派发上下文双件套**：证据正文在 `blocks`（约束信封的注册表只含 id 与元数据），
    纪律面在 `insight_ai_context`（四段契约、反例纪律、渲染提示词）；两者随同一轮下发。
 
+
+
+## 跨模块回归与链路用例（dljy#3104，任务 15.6/15.8）
+
+两条组件/集成级用例链把上述能力串成链路回归（服务层打桩，不改产品代码），守 design D11.2 的
+扩展性验收——「能消费，也能拒绝」：
+
+- `src/features/regions/yunnan/insight/crossModuleRegression.spec.ts`（15.6，验收 A14）：
+  模型探活 offline 与 /assemble 503/网络失败下，AI 入口诚实不可用、不派发、无重试风暴；
+  同刻数据查询、同版本 CSV 导出与材料保存照常（模型不是数据页依赖）。专题服务不可用
+  （冻结 503/底稿列表 500）在材料窗口诚实报服务端原因、未保存绝不提示成功、分析页不受影响。
+  私有撤权（切公司签名过期 / denied / 保存 403 / 查询 403）：旧证据不进 AI 上下文（签名纪律
+  + denied 整块退出，不泄露私有块存在性）、403/409 按原语义上抛或透传，不吞成空图。
+
+- `src/features/regions/yunnan/insight/handoffLinks.spec.ts`（15.8，验收 A18/A19）四条链路：
+  ① 选区→AI：图表选区构建语义选区（版本三元组/来源一致、北京时间时段、无位置键）→ 同一
+  证据与签名经 insightAiBlockOf 采集（AI 证据=选区）→ 切公司后旧选区 build=null、旧签名
+  采集=null；带 from 的下钻可还原发起页位置。
+  ② 对象深链往返：businessDeepLinkQuery 只含白名单键、无原始数组、无可写动词；出口双保险
+  （非法 query 直接不动）；入口显隐按 governance 既有口径（读取用户失败=无权限）；返回后
+  共享四键还原、coverage 按返回窗口重查、资料维护带 panel。
+  ③ 材料保存链：同版本保存带期望版本+幂等键 → 幂等命中「未重复创建」不二次入稿 → 源更新
+  409 诚实报错 → 重跑（新结果版本）后再保存，期望版本与幂等键随之更新。
+  ④ 下钻编码往返：build/parse round-trip 在六页 pageId 逐一成立、返回状态可恢复；未知 hx_
+  键与命名空间重复键进 ignored 提示；超长按 view→marketPhase→priceObject→objects→sources
+  顺序丢弃并给 dropped 清单（窗口与 from 必需不丢）；非法对象 build 抛契约错误、parse 整参
+  丢弃（能拒绝，不静默缩窄）。
+
 ## 阶段 A 集成检查
 
 公共件自身的回归测试覆盖以下检查项；业务页面接入时按「怎么验证」逐条过一遍。
@@ -339,3 +367,5 @@ hasInsightDrilldownParams(query)    -> boolean              // URL 是否带 hx_
 | `src/components/insight/InsightMaterialDialog.component.spec.ts` | 底稿列表失败、冻结请求期望版本与幂等键、非主笔不冻结、成功入稿、幂等不重复入稿、409 先重跑、入稿冲突如实说明（dljy#3078） |
 | `src/features/regions/yunnan/insight/useInsightAiPage.component.spec.ts` | 签名纪律（过期/无权/空结果不进上下文）、payload 无原始行、注册 KeepAlive 生命周期、/assemble 组装派发与失败诚实报错（dljy#3100） |
 | 六页 `*.component.spec.ts` 内「AI 解读注册（15.3）」用例 | 每页注册声明、入口按钮、当前签名采集、上下文变化后不采集旧资料 |
+| `src/features/regions/yunnan/insight/crossModuleRegression.spec.ts` | 15.6 跨模块回归：模型离线/组装失败/专题不可用/撤权四类故障下「AI 诚实不可用、查询导出保存照常、错误不伪装成功」（A14） |
+| `src/features/regions/yunnan/insight/handoffLinks.spec.ts` | 15.8 四条链路：选区→AI、对象深链往返、材料保存幂等与 409 重跑、下钻编码六页往返与未知字段丢弃提示（A18/A19） |
