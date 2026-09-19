@@ -98,7 +98,8 @@ function rowClassName({ row }: { row: (typeof tableRows.value)[number] }): strin
 
 function exportPage(): void {
   const result = props.result
-  if (!result?.resultVersion) return
+  // 版本绑定（dljy#3078 任务 15.2）：没有 resultVersion/readSetRef 的结果不能作为可核验的存档导出。
+  if (!result?.data || !result.resultVersion || !result.readSetRef) return
   downloadInsightCsv(buildInsightCsv(result, props.sourceTitles), `洞察结果-${result.analysisId}-${result.resultVersion.slice(0, 12)}.csv`)
   ElMessage.success(`已导出本页 ${tableRows.value.length} 行`)
 }
@@ -110,7 +111,7 @@ async function exportAll(): Promise<void> {
   exportingAll.value = true
   try {
     const full = await props.fetchAll()
-    if (!full?.data || !full.resultVersion) {
+    if (!full?.data || !full.resultVersion || !full.readSetRef) {
       ElMessage.warning('全量数据读取失败，未导出')
       return
     }

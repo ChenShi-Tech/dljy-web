@@ -12,8 +12,17 @@
 //     提供「查看可分析日期」入口（emit，由页面打开候选面板，本组件不改上下文）。
 // 部分可用（partial）内容照常渲染：顶部浅色提示条写 detail，并列出没读到的对象
 // （coverage.objects.missingRequested）——部分资料如实标注，不装作完整（A03）。
+//
+// 头部动作区（dljy#3078，任务 15.2/14.5）：
+//   - 「导出 CSV」：只读动作，凡声明 exportable 的区块人人可用；只对全量口径（page.scope
+//     === 'all'）开放，导出同版本全量行（复用 insightCsv，精度不加工），文件名含业务窗口；
+//   - 「加入材料」：公司写入，页面按权限决定是否传 materializable（公共读者不传=不出现），
+//     点击 emit('add-material') 由页面打开材料窗口，本组件不持保存状态；
+//   - 版本绑定：页面传 stale（与页面查询键同步）或区块处于 409 冲突（旧结果仍在展示）时，
+//     两个入口禁用并提示「结果已过期，请刷新后再导出」——过期结果不导出、不保存。
 
 import { computed } from 'vue'
+import { ElMessage } from 'element-plus'
 import type { InsightBlockResult, InsightRequestError } from '@/services/insight/insightClient'
 import {
   availabilityReasonText,
@@ -21,6 +30,7 @@ import {
   insightSourceTitle,
   type InsightSourceTitle,
 } from './insightText'
+import { buildInsightCsv, downloadInsightCsv } from './insightCsv'
 import EmptyState from '../common/EmptyState.vue'
 import LoadingState from '../common/LoadingState.vue'
 
@@ -37,6 +47,12 @@ const props = defineProps<{
   onRefresh?: () => void
   /** 来源标题目录（来自 capabilities.sources）；未传时回落共享契约镜像 */
   sourceTitles?: Record<string, InsightSourceTitle>
+  /** 头部「导出 CSV」入口开关：页面声明本区块结果可导出；仅全量口径实际可导 */
+  exportable?: boolean
+  /** 头部「加入材料」入口开关：页面已按公司写权限判断显隐（显隐在页面，禁用在组件） */
+  materializable?: boolean
+  /** 页面声明当前结果已过期（与页面查询键同步）：导出与材料入口禁用并提示 */
+  stale?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -44,6 +60,8 @@ const emit = defineEmits<{
   'open-candidates': []
   /** 「证据」：由页面打开证据抽屉 */
   'open-evidence': []
+  /** 「加入材料」：由页面打开材料窗口（冻结请求与期望版本由页面组装） */
+  'add-material': []
 }>()
 
 const errorCopy = computed(() => (props.error ? insightErrorCopy(props.error) : null))
@@ -55,6 +73,35 @@ const denied = computed(() => props.result?.runtime.access === 'denied')
 const availability = computed(() => props.result?.runtime.availability ?? null)
 const isEmpty = computed(() => availability.value?.state === 'empty')
 const isPartial = computed(() => availability.value?.state === 'partial')
+
+/** 结果是否已过期仍在展示：页面按查询键声明 stale，或 409 冲突后旧结果还在。 */
+const resultStale = computed(() => props.stale === true || conflictWithResult.value)
+
+/** 导出入口：只对有版本引用的全量口径开放；分页结果只是一页，导出会冒充全量。 */
+const exportReady = computed(() => {
+  const result = props.result
+  return Boolean(
+    props.exportable &&
+      result &&
+      !denied.value &&
+      result.data &&
+      result.resultVersion &&
+      result.readSetRef &&
+      result.page?.scope === 'all'
+  )
+})
+
+/** 过期（页面声明或 409 冲突）时入口禁用：过期版本不导出、不保存，先刷新换版本。 */
+const exportBlocked = computed(() => exportReady.value && resultStale.value)
+
+/** 头部「导出 CSV」：同版本全量行直落 CSV（复用 insightCsv 口径），文件名含业务窗口。 */
+function exportCsv(): void {
+  const result = props.result
+  if (!exportReady.value || exportBlocked.value || !result?.data) return
+  const window = result.businessWindow
+  downloadInsightCsv(buildInsightCsv(result, props.sourceTitles), `洞察-${props.title}-${window.start}至${window.end}.csv`)
+  ElMessage.success(`已导出「${props.title}」${window.start}至${window.end} 的同版本全量结果`)
+}
 
 /** 头部来源标签：业务标题 + 公开/获权样式（不显示来源标识原文）。 */
 const sourceTags = computed(() => {
@@ -98,6 +145,35 @@ const showCandidatesEntry = computed(() => {
         >
           {{ tag.title }}·{{ tag.accessScope === 'company' ? '获权' : '公开' }}
         </span>
+        <span
+          v-if="exportBlocked"
+          class="insight-block__stale-hint"
+          data-testid="insight-export-stale-hint"
+        >
+          结果已过期，请刷新后再导出
+        </span>
+        <el-button
+          v-if="exportReady"
+          link
+          type="primary"
+          size="small"
+          :disabled="exportBlocked"
+          data-testid="insight-export-csv"
+          @click="exportCsv"
+        >
+          导出 CSV
+        </el-button>
+        <el-button
+          v-if="materializable && result && !denied"
+          link
+          type="primary"
+          size="small"
+          :disabled="resultStale"
+          data-testid="insight-add-material"
+          @click="emit('add-material')"
+        >
+          加入材料
+        </el-button>
         <el-button
           v-if="result && !denied"
           link
@@ -216,6 +292,11 @@ const showCandidatesEntry = computed(() => {
   background: rgba(217, 119, 6, 0.08);
   color: #b45309;
   border-color: rgba(217, 119, 6, 0.35);
+}
+
+.insight-block__stale-hint {
+  color: #b45309;
+  font-size: var(--font-xs, 12px);
 }
 
 .insight-block__state {
