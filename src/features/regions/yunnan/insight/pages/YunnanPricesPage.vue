@@ -41,10 +41,12 @@ import {
   SPATIAL_LINK_TARGETS,
   objectSpatialLinkQuery,
   openSpatialViewLink,
+  resolveSpatialObjectId,
   spatialEntryVisible,
 } from '../spatialLinks'
 import Price3DWorkspace from './prices/Price3DWorkspace.vue'
 import { readPriceMode, writePriceMode, type PriceDisplayMode } from './prices/priceModeStorage'
+import { ElMessage } from 'element-plus'
 import InsightBlock from '@/components/insight/InsightBlock.vue'
 import InsightDateRange from '@/components/insight/InsightDateRange.vue'
 import InsightEvidenceDrawer from '@/components/insight/InsightEvidenceDrawer.vue'
@@ -673,10 +675,11 @@ function onSpreadSelectionToResearch(): void {
 }
 
 // ── 空间查阅入口（dljy#3106 D6.1「三维地形/空间」未就绪项补齐）─────────────────────────
-// 节点基差页签选中参考节点后，可跳入既有「电力市场空间态势」（grid-geo 模块原地复用，
+// 节点基差页签选中参考对象后，可跳入既有「电力市场空间态势」（grid-geo 模块原地复用，
 // 洞察不复制 Cesium）。权限显隐沿用 spatialLinks 登记（canAccessPath 既有口径，无权限
-// 不渲染）；query 白名单只带单个节点名 + 地区/公司归属 + 窗口末日（objectDate）+
-// 来源标记，时段数组与原始序列不进 URL；公司未选或多对象时不渲染（绑定必然落空）。
+// 不渲染）；参考对象名先经 resolveSpatialObjectId 解析成网格资产 ID（objectId 契约是
+// 不透明资产 ID，不得拿名字生成），解析失败如实说明不跳转；query 白名单只带资产 ID +
+// 地区/公司归属 + 窗口末日（objectDate）+ 来源标记，时段数组与原始序列不进 URL。
 
 const MARKET_SPATIAL_TARGET = SPATIAL_LINK_TARGETS.marketSpatial
 
@@ -688,13 +691,25 @@ const basisSpatialVisible = computed(() =>
   })
 )
 
-function onBasisToSpatialView(): void {
+async function onBasisToSpatialView(): Promise<void> {
   if (!basisReference.value || !ctx.companyId.value) return
+  // 参考对象先解析成网格资产 ID（objectId 契约是不透明资产 ID，名字直传会请求不存在的资产）。
+  // 对象种类跟价格对象走：场站关联节点模式的参考是场站（plant），公司厂侧节点模式是节点（node）。
+  const kind = currentEntry.value?.priceObject === 'plant-node' ? 'plant' : 'node'
+  const assetId = await resolveSpatialObjectId(kind, basisReference.value)
+  if (!assetId) {
+    ElMessage.warning(
+      kind === 'plant'
+        ? `空间资产登记中未找到与「${basisReference.value}」唯一对应的场站，本次未跳转`
+        : `空间资产登记中未找到与「${basisReference.value}」唯一对应的节点，本次未跳转`
+    )
+    return
+  }
   openSpatialViewLink(router, {
     path: MARKET_SPATIAL_TARGET,
     query: objectSpatialLinkQuery({
-      kind: 'node',
-      objectId: basisReference.value,
+      kind,
+      objectId: assetId,
       regionId: ctx.regionId.value,
       companyId: ctx.companyId.value,
       date: ctx.businessWindow.value.end,

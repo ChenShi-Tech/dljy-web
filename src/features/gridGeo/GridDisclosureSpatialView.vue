@@ -40,18 +40,37 @@ const objectBlocked = computed(() => objectContext.hasContext.value && !objectCo
 // 字符、检索词 ≤120 字；日期必须是真实日历日），其余按缺省处理；对象上下文
 //（objectKind/objectId）仍走 useGridObjectContext，两组键互不占用。
 const deskRoute = inject(routeLocationKey, null)
-const initialKeywordQuery = queryText(deskRoute?.query.keyword).trim()
-const initialKeyword = initialKeywordQuery && initialKeywordQuery.length <= 120 && !/[\u0000-\u001f]/.test(initialKeywordQuery) ? initialKeywordQuery : ''
-const initialObjectDate = queryText(deskRoute?.query.objectDate)
-const initialDate = validObjectDate(initialObjectDate) ? initialObjectDate : todayBeijing()
-const date = ref(objectContext.hasContext.value ? objectContext.date.value : initialDate)
+const date = ref(objectContext.hasContext.value ? objectContext.date.value : todayBeijing())
 const mode = ref<'day' | 'week'>('day')
 const themeId = ref<DeskThemeId>('price')
 const metricId = ref('price')
 const channel = ref('')
 const preferredChannels = new Map<string, string>()
-const searchText = ref(initialKeyword)
-const keyword = ref(initialKeyword)
+const searchText = ref('')
+const keyword = ref('')
+// 深链承接要在保活复用时也生效：AppLayout 对路由页保活，setup 只跑一次——再次带
+// keyword/objectDate 深链进入（实例未销毁）不会重跑 setup，必须按路由查询签名应用。
+// 只认带深链键的进入（不带键的普通导航保留现场）；同一签名再次进入保留本地编辑
+// （返回原页不丢搜索词与日期）；对象上下文键仍走 useGridObjectContext，两组键互不占用。
+let appliedDeepLink = ''
+watch(
+  () => [objectContext.active.value, JSON.stringify(deskRoute?.query ?? {})] as const,
+  ([active]) => {
+    if (!active) return
+    const query = deskRoute?.query ?? {}
+    const rawKeyword = queryText(query.keyword).trim()
+    const rawDate = queryText(query.objectDate)
+    if (!rawKeyword && !rawDate) return
+    const signature = JSON.stringify([rawKeyword, validObjectDate(rawDate) ? rawDate : ''])
+    if (signature === appliedDeepLink) return
+    appliedDeepLink = signature
+    const linkKeyword = rawKeyword && rawKeyword.length <= 120 && !/[\u0000-\u001f]/.test(rawKeyword) ? rawKeyword : ''
+    searchText.value = linkKeyword
+    keyword.value = linkKeyword
+    if (validObjectDate(rawDate) && !objectContext.hasContext.value) date.value = rawDate
+  },
+  { immediate: true }
+)
 const categoryFilter = ref<'' | GridDisclosureCategory>('')
 const maintenanceFilters = ref<MaintenanceFilters>(createDefaultMaintenanceFilters())
 const appliedMaintenanceFilters = ref<MaintenanceFilters>(createDefaultMaintenanceFilters())
