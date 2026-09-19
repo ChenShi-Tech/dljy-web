@@ -8,7 +8,10 @@
 // 维护入口（HW-10）：区间方案切换、月度发电基准录入；无写权限只读并注明所需权限。
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { currentRegion } from '@/services/region/regionContext'
-import { HedgeApiError, fetchBaselines, fetchOverview, putBaselines } from '@/services/hedge/hedgeApi'
+import {
+  HedgeApiError, activateBand, fetchBandActivation, fetchBandPresets, fetchCaps, fetchBaselines,
+  fetchMechanismParams, fetchOverview, postMechanismVersion, putBaselines, putCaps, requestBandSchemeCreate,
+} from '@/services/hedge/hedgeApi'
 import type { HedgeOverview } from '@/services/hedge/hedgeApi'
 import { createQuerySession, scopeKeyOf } from '@/services/hedge/hedgeSession'
 
@@ -84,6 +87,66 @@ async function openMaintenance() {
       baselineRows.value = (data as { rows: Array<{ stationId: number; month: string; quantityMwh: string; basisNote?: string }> }).rows
         .map((row) => ({ stationId: row.stationId, month: row.month, quantityMwh: row.quantityMwh, basisNote: row.basisNote }))
     } catch { baselineRows.value = [] }
+    fetchBandPresets().then((data) => {
+      schemePresets.value = ((data as { rows: Array<Record<string, unknown>> }).rows) ?? []
+      return fetchBandActivation({}).then((act) => { schemeActivation.value = (act as { active?: Record<string, unknown> }).active ?? null })
+    }).catch(() => { schemeActivation.value = null })
+    loadMechanismParams()
+    loadCaps()
+  }
+}
+
+// ── 其余三个维护入口：区间方案 / 机制参数 / 核定上限（HW-10）──────────────────
+const schemePresets = ref<Array<Record<string, unknown>>>([])
+const schemeActivation = ref<Record<string, unknown> | null>(null)
+const schemeStatus = ref<string | null>(null)
+const mechanismRows = ref<Array<Record<string, unknown>>>([])
+const mechanismStatus = ref<string | null>(null)
+const capsRows = ref<Array<{ subjectId: number; month: string; capMwh: string; sourceNote?: string; rowVersion?: number }>>([])
+const capsStatus = ref<string | null>(null)
+
+async function activateScheme(presetKey: string, label: string) {
+  schemeStatus.value = null
+  try {
+    const created = await requestBandSchemeCreate({ name: `采用-${label}`, presetKey, origin: 'PRESET' })
+    await activateBand({ schemeId: (created as { schemeId: number }).schemeId, versionNo: 1, reason: `采用预置${label}` })
+    schemeStatus.value = `已切换到「${label}」（唯一生效，历史保留）`
+    await load()
+  } catch (err) {
+    schemeStatus.value = err instanceof HedgeApiError ? `${err.errorCode}：${err.message}` : '切换失败'
+  }
+}
+
+async function loadMechanismParams() {
+  try {
+    const data = await fetchMechanismParams({})
+    mechanismRows.value = (data as { rows: Array<Record<string, unknown>> }).rows
+    mechanismStatus.value = mechanismRows.value.length ? null : '暂无机制参数登记（导入后待业务确认）'
+  } catch (err) {
+    mechanismStatus.value = err instanceof HedgeApiError ? err.message : '加载失败'
+  }
+}
+
+async function loadCaps() {
+  try {
+    const data = await fetchCaps({ fromMonth: '2026-10', toMonth: '2026-12' })
+    capsRows.value = (data as { rows: typeof capsRows.value }).rows
+    capsStatus.value = capsRows.value.length ? null : '核定上限未登记（向交易机构索取核定文件后录入）'
+  } catch (err) {
+    capsStatus.value = err instanceof HedgeApiError ? err.message : '加载失败'
+  }
+}
+
+async function saveCap(row: { subjectId: number; month: string; capMwh: string; sourceNote?: string; rowVersion?: number }) {
+  capsStatus.value = null
+  try {
+    await putCaps([row])
+    capsStatus.value = '核定上限已保存'
+    await loadCaps()
+  } catch (err) {
+    capsStatus.value = err instanceof HedgeApiError
+      ? (err.errorCode === 'VERSION_CONFLICT' ? '409：已被他人更新，请刷新后核对' : `${err.errorCode}：${err.message}`)
+      : '保存失败'
   }
 }
 
@@ -197,6 +260,32 @@ onBeforeUnmount(() => { if (inFlight) clearTimeout(inFlight) })
       </section>
 
       <section v-if="maintenanceOpen" class="maintenance" data-test="maintenance">
+        <h3>区间方案（预置带出处，采用即快照；未配置时全站「未评估」）</h3>
+        <p data-test="scheme-status">{{ schemeStatus ?? (schemeActivation ? `当前生效：v${(schemeActivation as { versionNo?: number }).versionNo ?? '—'}` : '未配置') }}</p>
+        <div class="baseline-row">
+          <button v-for="p in schemePresets" :key="String(p.key)" data-test="scheme-activate" @click="activateScheme(String(p.key), String(p.label))">
+            采用{{ p.label }}
+          </button>
+        </div>
+
+        <h3>场站机制参数（比例制，待确认不参与计算）</h3>
+        <p data-test="mechanism-status">{{ mechanismStatus ?? `${mechanismRows.length} 个生效期已登记` }}</p>
+        <ul>
+          <li v-for="(row, i) in mechanismRows" :key="i">
+            场站 {{ row.stationId }}：比例 {{ row.ratio }}（{{ row.status }}<span v-if="row.endReason">/{{ row.endReason }}</span>）
+            <button v-if="row.status === 'PENDING'" @click="postMechanismVersion(String(row.periodKey), { action: 'CONFIRM', baseVersionNo: Number(row.versionNo), effectiveFrom: '2025-06-01' }).then(load)">确认生效</button>
+          </li>
+        </ul>
+
+        <h3>核定上限（交易单元 × 月；未登记显示「核定上限未登记」）</h3>
+        <p data-test="caps-status">{{ capsStatus ?? `${capsRows.length} 行已登记` }}</p>
+        <div v-for="(row, i) in capsRows" :key="i" class="baseline-row">
+          <input v-model="row.subjectId" placeholder="交易单元" />
+          <input v-model="row.month" placeholder="2026-11" />
+          <input v-model="row.capMwh" placeholder="MWh" />
+          <button @click="saveCap(row)">保存</button>
+        </div>
+
         <h3>月度发电基准（经营计划口径，禁止用售电目标顶替）</h3>
         <p v-if="!canWrite" class="readonly-note">只读：维护需要公司写权限（ADMIN / 本公司 BOSS）</p>
         <div v-for="(row, i) in baselineRows" :key="i" class="baseline-row">

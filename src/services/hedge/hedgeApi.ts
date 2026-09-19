@@ -116,6 +116,10 @@ export function putBaselines(items: Array<{ stationId: number; month: string; qu
   return request<Record<string, unknown>>('PUT', '/baselines', { body: { items } })
 }
 
+export function requestBandSchemeCreate(body: { name: string; presetKey?: string; origin?: string; tiers?: unknown; basis?: string; note?: string }) {
+  return request<Record<string, unknown>>('POST', '/band/schemes', { body })
+}
+
 export function activateBand(body: { schemeId: number; versionNo: number; reason: string; rowVersion?: number; effectiveFrom?: string }) {
   return request<Record<string, unknown>>('PUT', '/band/activation', { body })
 }
