@@ -618,7 +618,7 @@ describe('历史分布', () => {
     expect(text).toContain('业务窗口 2026-09-10 ~ 2026-09-11（2 天）')
     // 两条序列：一条两天、一条一天（缺测如实，不装满窗；序列名含市场阶段「日前」）
     expect(text).toContain('YN.KM.01 日前 2 天')
-    expect(text).toContain('YN.KM.02 日前 1 天')
+    expect(text).toContain('YN.KM.02 实时 1 天')
     expect(text).toContain('只统计所选窗口内真实存在的时段；样本只有一年或更短时，不代表多年季节规律')
     expect(text).toContain('暂不支持按季节、工作日筛选')
     expect(text).toContain('逐日均价（时长加权）')

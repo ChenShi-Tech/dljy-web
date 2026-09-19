@@ -269,24 +269,35 @@ function onTabChange(name: string | number): void {
 
 const seriesMode = ref<PriceDisplayMode>('single')
 
-/** 按当前键恢复记忆的模式；localStorage 抛错时 readPriceMode 回 'single'。 */
+/** storage 抛错（隐私模式/被禁用）时仍可用的用户名读取：读不到按匿名处理，不影响页面。 */
+function currentUsername(): string {
+  try {
+    return getCurrentUser().username
+  } catch {
+    return 'anonymous'
+  }
+}
+
+/** 按当前键恢复记忆的模式；只赋值不回写（恢复不是用户动作，不产生记忆）。 */
 function restoreSeriesMode(): void {
   if (!priceObjectChoice.value) return
-  seriesMode.value = readPriceMode(getCurrentUser().username, ctx.regionId.value, priceObjectChoice.value)
+  const remembered = readPriceMode(currentUsername(), ctx.regionId.value, priceObjectChoice.value)
+  if (seriesMode.value !== remembered) seriesMode.value = remembered
 }
 
 // 用户/地区/价格对象任一变化 → 换键恢复（旧键的记忆不跨对象串扰）。
-watch([() => getCurrentUser().username, () => ctx.regionId.value, priceObjectChoice], () => {
+watch([currentUsername, () => ctx.regionId.value, priceObjectChoice], () => {
   restoreSeriesMode()
 })
 
-// 模式变化 → 记忆 + 非 single 时确保 profile 已按当前口径查询。
-watch(seriesMode, (mode) => {
+/** 用户显式切换模式（分段控件或三维降级建议）：记忆 + 非 single 时确保 profile 查询。 */
+function onModeChange(mode: PriceDisplayMode): void {
+  if (seriesMode.value !== mode) seriesMode.value = mode
   if (priceObjectChoice.value) {
-    writePriceMode(getCurrentUser().username, ctx.regionId.value, priceObjectChoice.value, mode)
+    writePriceMode(currentUsername(), ctx.regionId.value, priceObjectChoice.value, mode)
   }
   ensureSeriesModeQueries()
-})
+}
 
 /** 非单日模式的数据面是 profile 视图（与「历史分布」页签同签名不重查）。 */
 function ensureSeriesModeQueries(): void {
@@ -298,9 +309,9 @@ function onExtendWindow(range: { start: string; end: string }): void {
   ctx.setBusinessWindow(range.start, range.end)
 }
 
-/** 三维超限/降级时用户改看热力：更新模式（经 watch 记忆并确保查询）。 */
+/** 三维超限/降级时用户改看热力：与分段切换同一条路径（记忆 + 确保查询）。 */
 function onSwitchMode(mode: 'heatmap'): void {
-  seriesMode.value = mode
+  onModeChange(mode)
 }
 
 function onWindowChange(next: { start: string; end: string }): void {
@@ -850,7 +861,12 @@ onMounted(() => {
           <!-- 时段走势：单日走势 / 多日立体 / 日期×时段热力（模式按 用户+地区+价格对象 记忆） + 统计摘要 -->
           <template v-if="tab.view === 'series'">
             <div class="ynp-prices__mode-row">
-              <el-radio-group v-model="seriesMode" size="small" data-testid="ynp-series-mode">
+              <el-radio-group
+                :model-value="seriesMode"
+                size="small"
+                data-testid="ynp-series-mode"
+                @update:model-value="onModeChange"
+              >
                 <el-radio-button value="single">单日走势</el-radio-button>
                 <el-radio-button value="multi3d">多日立体</el-radio-button>
                 <el-radio-button value="heatmap">日期×时段热力</el-radio-button>
