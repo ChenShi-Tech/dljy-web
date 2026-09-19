@@ -2,8 +2,9 @@
 // 守什么不变量（对照 specs yunnan-market-overview）：
 //   ① 进页面自动加载当日事实：能力目录就绪后逐块查询，不需要任何预检点击；默认窗口是
 //     北京时间当日，不自动改日（A02）；
-//   ② 区块按 OVERVIEW_BLOCKS 独立查询、独立失败：单视图分析（电网/场站）不送 view 筛选，
-//     多视图分析送 block.view；一个区块失败不影响其他区块渲染（OV02）；
+//   ② 区块按 OVERVIEW_BLOCKS 独立查询、独立失败：view 筛选按契约登记（多视图分析送 block.view
+//     ——settlement-daily 升级正式/损失解释双视图后场站区块送 view=series），单视图分析不送；
+//     一个区块失败不影响其他区块渲染（OV02）；
 //   ③ 重点事项：事项与规则评估原样展示（为什么没有这一条）；无满足条件不凑数（OV03）；
 //     同进度比较 ok 给完整对比，参考期不完整只说明原因、不显示假环比（OV04）；
 //   ④ 下钻带同一业务日期（OV05）：区块按钮与事项「查看详情」都 router.push 规范地址并带
@@ -612,13 +613,13 @@ describe('YunnanOverviewPage', () => {
     expect(queryCallsOf((request) => request.analysisId === PLANTS)).toHaveLength(0)
   })
 
-  it('获权账号：场站区块可见并发请求（单视图分析不带 view 筛选）', async () => {
+  it('获权账号：场站区块可见并发请求（settlement-daily 已登记双视图，view 按区块送 series）', async () => {
     state.capabilities = overviewCaps(ENTITLED_CAPS)
     await mountPage()
     expect(wrapper!.text()).toContain('获权场站表现')
     const plantsCalls = queryCallsOf((request) => request.analysisId === PLANTS)
     expect(plantsCalls).toHaveLength(1)
-    expect(plantsCalls[0]![0].filters).toEqual({})
+    expect(plantsCalls[0]![0].filters).toEqual({ view: 'series' })
   })
 
   it('窗口变化（上下文代次）后全部区块作废重查，请求窗口是新日期', async () => {

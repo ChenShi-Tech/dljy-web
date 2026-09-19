@@ -1,6 +1,6 @@
 // YunnanPlantsPage.component.spec.ts — 云南场站市场表现页回归（dljy#3083，OpenSpec 任务 11.5/11.6）
 // 守什么不变量（对照 specs yunnan-plant-market-performance、dljy 仓 plants-views.mjs）：
-//   ① 五页签懒加载：查询形状固定（view 筛选、单视图分析不带 view）；结算页签零请求；
+//   ① 五页签懒加载：查询形状固定（view 筛选、单视图分析不带 view）；获权区块按对象选择编排；
 //   ② 获权分析按能力目录判定：公共账号整页「获权数据需开通」说明，切遍页签不发任何请求；
 //   ③ 对象选项来自覆盖接口 objects：字段缺失（老后端）显示「无法列出」不发查询；
 //     为空如实说明；未选对象不发请求；objectsNote 原文透出；
@@ -11,11 +11,15 @@
 //     单源标单源、夜间零值固定说明、可比组共同样本均值极值表；
 //   ⑦ 语义对照：view=semantics、列=申报/出清/上网/集控实发等、null 显示「—」、notes 原文、
 //     不出现派生偏差列（「偏差对照将在口径确认后提供」）；
-//   ⑧ 上下文（窗口）变化全部作废重查（含覆盖清单）；界面只出现业务语言。
+//   ⑧ 结算表现（ST01—ST06）：正式/暂结显式切换（默认正式 view=series、暂结 view=status-diff）、
+//     两态并排不相加、只有暂结 notes 原文、加权均价卡口径（成对有效记录 Σ电费/Σ电量、
+//     正式/暂结分列不互加）、grid_loss 未知态、未解释差额「不是损失认定」、单据记录固定说明
+//     与只读红线、核对缺失周期「—」+说明与月结缺失；
+//   ⑨ 上下文（窗口）变化全部作废重查（含覆盖清单）；界面只出现业务语言。
 // mock 边界：insightClient 打桩（保留类型与错误类）；useInsightContext 用真 composable；
 // shared/insight 契约镜像用真模块（指标/精度取登记）。
 import { defineComponent, h } from 'vue'
-import { flushPromises, type VueWrapper } from '@vue/test-utils'
+import { DOMWrapper, flushPromises, type VueWrapper } from '@vue/test-utils'
 import { createMemoryHistory, createRouter, type Router } from 'vue-router'
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest'
 import {
@@ -83,6 +87,10 @@ const InsightSeriesChartStub = defineComponent({
 
 const DAILY_METRICS = 'plants.daily-metrics'
 const SETTLEMENT_DAILY = 'plants.settlement-daily'
+const SETTLEMENT_STATUS_DIFF = 'plants.settlement-status-diff'
+const SETTLEMENT_INTERVAL = 'plants.settlement-interval'
+const SETTLEMENT_DOCS = 'plants.settlement-docs'
+const SETTLEMENT_RECONCILE = 'plants.settlement-reconcile'
 const PRICE_CAPTURE = 'plants.price-capture'
 const OUTPUT_SERIES = 'plants.output-series'
 const CLEARING_ACTUAL = 'plants.clearing-actual'
@@ -91,6 +99,16 @@ const BUSINESS_FORECAST = 'plants.business-forecast'
 const SOURCE_TITLES: Record<string, string> = {
   'cgn.plant.daily-metrics': '场站日报指标（获权）',
   'cgn.plant.settlement-daily': '场站日结算（正式，五月月包）',
+  'cgn.plant.loss-daily': '场站日损失归因（获权）',
+  'cgn.settlement.daily-settlement-temp': '场站日结算（暂结，原始证据提取，获权）',
+  'cgn.plant.settlement-interval-formal': '分时结算电量电费（正式，获权）',
+  'cgn.plant.settlement-interval-temp': '分时结算电量电费（暂结，获权）',
+  'cgn.settlement.monthly-total': '月结汇总电费（获权）',
+  'cgn.settlement.bill-records': '账单索引记录（获权）',
+  'cgn.settlement.bill-downloads': '账单文件下载记录（获权）',
+  'cgn.settlement.bill-cells': '账单单元格转录（获权）',
+  'cgn.settlement.monthly-doc': '月结原始载荷（获权）',
+  'cgn.settlement.daily-split': '拆分日结审批记录（获权）',
   'cgn.plant.output': '场站出力八类曲线（五月月包）',
   'cgn.plant.nodal-price': '场站节点结算电价（五月月包，小时）',
   'cgn.plant.business-actual': '实际上网电量（经营汇总，获权）',
@@ -98,7 +116,6 @@ const SOURCE_TITLES: Record<string, string> = {
   'cgn.plant.spot-clearing-day-ahead': '日前出清电量（申报出清，获权）',
   'cgn.plant.spot-clearing-real-time': '实时出清电量（申报出清，获权）',
   'cgn.plant.control-generation': '集控实发电量（获权）',
-  'cgn.plant.settlement-interval-formal': '分时结算电量电费（正式，获权）',
   'cgn.plant.midlong-energy': '中长期电量（合同口径引用，获权）',
   'cgn.plant.business-integrated-forecast': '一体化预测出力（经营汇总，获权）',
 }
@@ -194,6 +211,307 @@ function settlementDailyResult(request: any) {
         { seriesId: fee.seriesId, intervalStart: '2026-09-17T00:00:00+08:00', intervalEnd: '2026-09-18T00:00:00+08:00', value: '155000.75' },
       ],
       series: [energy, fee],
+    },
+  })
+}
+
+// ── 结算表现：status-diff / settlement-stats / loss-explain / records / reconcile ────────
+
+/** 正式/暂结对照（status-diff）：宽表 + 两态 notes（含只有暂结的期间）。 */
+function statusDiffResult(request: any) {
+  return insightResult({
+    contextVersion: request.context.contextVersion,
+    analysisId: SETTLEMENT_STATUS_DIFF,
+    sourceRefs: [
+      { sourceId: 'cgn.plant.settlement-daily', accessScope: 'company' },
+      { sourceId: 'cgn.settlement.daily-settlement-temp', accessScope: 'company' },
+    ],
+    data: {
+      schemaVersion: 'insight-result-data/v1',
+      view: 'status-diff',
+      dimensions: [
+        { id: 'objectId', kind: 'category' },
+        { id: 'date', kind: 'date' },
+        { id: 'status', kind: 'category' },
+        { id: 'metricId', kind: 'category' },
+      ],
+      measures: [{ id: 'value', unit: 'by-metric' }],
+      rows: [
+        { objectId: '甲风电场', date: '2026-09-17', status: 'formal', metricId: 'settlement.total-energy', value: '500.25' },
+        { objectId: '甲风电场', date: '2026-09-17', status: 'temp', metricId: 'settlement.total-energy', value: '498.00' },
+        { objectId: '甲风电场', date: '2026-09-17', status: 'diff', metricId: 'settlement.status-diff-energy', value: '2.25' },
+      ],
+      series: [],
+      coverage: { denominatorBasis: 'authorized-observed-objects', denominatorNote: DENOMINATOR_NOTE, observedNote: 'observed 为该对象在正式/暂结两态的有效量费样本数合计', objects: [] },
+      notes: [
+        { note: '正式/暂结是显式状态轴：正式读正式读模型，暂结从日结原始证据提取；两态都在才计算差异（正式 − 暂结），永不相加、不双计（ST01）。' },
+        {
+          note: '有 1 个「场站×日」只有暂结没有正式记录（如 乙光伏电站 2026-09-17）：正式缺失如实说明，不静默用暂结顶替正式口径（A08）。',
+          onlyTempDates: [{ objectId: '乙光伏电站', date: '2026-09-17' }],
+        },
+        { note: '正式与暂结并存的「场站×日」共 1 个，只有这些日期给出差异列；差异不是更正，哪一方为准由结算业务确认。' },
+      ],
+      tables: {
+        diff: {
+          rows: [
+            {
+              objectId: '甲风电场', date: '2026-09-17',
+              formalEnergyMwh: '500.25', formalFeeYuan: '155000.75',
+              tempEnergyMwh: '498.00', tempFeeYuan: '154000.00',
+              energyDiffMwh: '2.25', feeDiffYuan: '1000.75',
+            },
+            {
+              objectId: '乙光伏电站', date: '2026-09-17',
+              formalEnergyMwh: null, formalFeeYuan: null,
+              tempEnergyMwh: '120.00', tempFeeYuan: '36000.00',
+              energyDiffMwh: null, feeDiffYuan: null,
+            },
+          ],
+          columns: [
+            { id: 'formalEnergyMwh', label: '正式电量', sourceId: 'cgn.plant.settlement-daily' },
+            { id: 'formalFeeYuan', label: '正式电费', sourceId: 'cgn.plant.settlement-daily' },
+            { id: 'tempEnergyMwh', label: '暂结电量', sourceId: 'cgn.settlement.daily-settlement-temp' },
+            { id: 'tempFeeYuan', label: '暂结电费', sourceId: 'cgn.settlement.daily-settlement-temp' },
+            { id: 'energyDiffMwh', label: '电量差异（正式−暂结）' },
+            { id: 'feeDiffYuan', label: '电费差异（正式−暂结）' },
+          ],
+          rule: '两态都在才给出差异列；任一态缺失该列为 null（缺失不等于 0，也不等于两态一致）。',
+        },
+      },
+    },
+  })
+}
+
+const STATS_FORMAL = 'settlement-stats:cgn.plant.settlement-interval-formal:甲风电场'
+const STATS_TEMP = 'settlement-stats:cgn.plant.settlement-interval-temp:甲风电场'
+const STATS_FORMAL_TOTAL = 'settlement-stats-total:cgn.plant.settlement-interval-formal'
+const STATS_TEMP_TOTAL = 'settlement-stats-total:cgn.plant.settlement-interval-temp'
+
+/** 量费加权统计（settlement-stats）：正式/暂结按来源分列，合计行与零分母原因都由后端给出。 */
+function settlementStatsResult(request: any) {
+  const statRow = (seriesId: string, objectId: string, metricId: string, value: string | null) => ({ seriesId, objectId, metricId, value })
+  return insightResult({
+    contextVersion: request.context.contextVersion,
+    analysisId: SETTLEMENT_INTERVAL,
+    sourceRefs: [
+      { sourceId: 'cgn.plant.settlement-interval-formal', accessScope: 'company' },
+      { sourceId: 'cgn.plant.settlement-interval-temp', accessScope: 'company' },
+    ],
+    data: {
+      schemaVersion: 'insight-result-data/v1',
+      view: 'settlement-stats',
+      dimensions: [
+        { id: 'seriesId', kind: 'category' },
+        { id: 'objectId', kind: 'category' },
+        { id: 'metricId', kind: 'category' },
+      ],
+      measures: [{ id: 'value', unit: 'by-metric' }],
+      rows: [
+        statRow(STATS_FORMAL, '甲风电场', 'settlement.total-energy', '1200.500'),
+        statRow(STATS_FORMAL, '甲风电场', 'settlement.total-fee', '375123.40'),
+        statRow(STATS_FORMAL, '甲风电场', 'settlement.weighted-average-price', '312.45'),
+        statRow(STATS_FORMAL, '甲风电场', 'settlement.paired-count', '20'),
+        statRow(STATS_FORMAL, '甲风电场', 'settlement.missing-fee-count', '2'),
+        statRow(STATS_FORMAL, '甲风电场', 'settlement.missing-energy-count', '0'),
+        statRow(STATS_TEMP, '甲风电场', 'settlement.total-energy', '1190.000'),
+        statRow(STATS_TEMP, '甲风电场', 'settlement.total-fee', '370000.00'),
+        statRow(STATS_TEMP, '甲风电场', 'settlement.weighted-average-price', '310.92'),
+        statRow(STATS_TEMP, '甲风电场', 'settlement.paired-count', '19'),
+        statRow(STATS_TEMP, '甲风电场', 'settlement.missing-fee-count', '3'),
+        statRow(STATS_TEMP, '甲风电场', 'settlement.missing-energy-count', '0'),
+        // 合计行（ST02 手算锚点：10/30 MWh 配 1000/6000 元 → 175，不是等权 150）
+        statRow(STATS_FORMAL_TOTAL, '(所选记录合计)', 'settlement.total-energy', '40.000'),
+        statRow(STATS_FORMAL_TOTAL, '(所选记录合计)', 'settlement.total-fee', '7000.00'),
+        statRow(STATS_FORMAL_TOTAL, '(所选记录合计)', 'settlement.weighted-average-price', '175.00'),
+        statRow(STATS_FORMAL_TOTAL, '(所选记录合计)', 'settlement.paired-count', '2'),
+        statRow(STATS_FORMAL_TOTAL, '(所选记录合计)', 'settlement.missing-fee-count', '1'),
+        statRow(STATS_FORMAL_TOTAL, '(所选记录合计)', 'settlement.missing-energy-count', '0'),
+        // 暂结合计行零分母：均价 null + 后端原因
+        statRow(STATS_TEMP_TOTAL, '(所选记录合计)', 'settlement.total-energy', '0.000'),
+        statRow(STATS_TEMP_TOTAL, '(所选记录合计)', 'settlement.total-fee', '500.00'),
+        statRow(STATS_TEMP_TOTAL, '(所选记录合计)', 'settlement.weighted-average-price', null),
+        statRow(STATS_TEMP_TOTAL, '(所选记录合计)', 'settlement.paired-count', '1'),
+        statRow(STATS_TEMP_TOTAL, '(所选记录合计)', 'settlement.missing-fee-count', '0'),
+        statRow(STATS_TEMP_TOTAL, '(所选记录合计)', 'settlement.missing-energy-count', '0'),
+      ],
+      series: [
+        { seriesId: STATS_FORMAL, kind: 'settlement-stats', sourceId: 'cgn.plant.settlement-interval-formal', objectId: '甲风电场' },
+        { seriesId: STATS_TEMP, kind: 'settlement-stats', sourceId: 'cgn.plant.settlement-interval-temp', objectId: '甲风电场' },
+        { seriesId: STATS_FORMAL_TOTAL, kind: 'settlement-stats-total', sourceId: 'cgn.plant.settlement-interval-formal', objectId: null, scope: 'selected-records' },
+        {
+          seriesId: STATS_TEMP_TOTAL, kind: 'settlement-stats-total', sourceId: 'cgn.plant.settlement-interval-temp', objectId: null, scope: 'selected-records',
+          averagePriceUnavailableReason: 'Σ电量不为正：均价不可计算，返回空并写明原因，不补零',
+        },
+      ],
+      coverage: { denominatorBasis: 'authorized-observed-objects', denominatorNote: DENOMINATOR_NOTE, observedNote: 'observed 为该对象的有效电量样本数（业务日/时点数）', objects: [] },
+      notes: [
+        { note: '结算均价 = 成对有效记录 Σ电费/Σ电量（量费加权）：只有电量与电费同时有效的记录才进入分子与分母；缺电费或缺电量的行数单独列出，不补零、不参与均价。' },
+        { note: '合计行是同一有效记录集合的 Σ电费/Σ电量，不是各对象均价的算术平均（手算锚点：10/30 MWh 配 1000/6000 元 → 175 元/MWh，不是等权 150）。' },
+        { note: '正式与暂结按来源分别统计：分时结算 formal/temp 两个来源不互加、不混算；所选窗口跨月直接拒绝（跨月样本不相加）。' },
+      ],
+    },
+  })
+}
+
+/** 损失解释（loss-explain）：电网损失全空「来源未提供」、瀑布不齐、未解释差额单列。 */
+function lossExplainResult(request: any) {
+  return insightResult({
+    contextVersion: request.context.contextVersion,
+    analysisId: SETTLEMENT_DAILY,
+    sourceRefs: [
+      { sourceId: 'cgn.plant.settlement-daily', accessScope: 'company' },
+      { sourceId: 'cgn.plant.loss-daily', accessScope: 'company' },
+    ],
+    data: {
+      schemaVersion: 'insight-result-data/v1',
+      view: 'loss-explain',
+      dimensions: [
+        { id: 'objectId', kind: 'category' },
+        { id: 'date', kind: 'date' },
+        { id: 'metricId', kind: 'category' },
+      ],
+      measures: [{ id: 'value', unit: 'yuan' }],
+      rows: [
+        { objectId: '甲风电场', date: '2026-09-17', metricId: 'settlement.total-fee', value: '155000.75' },
+        { objectId: '甲风电场', date: '2026-09-17', metricId: 'loss.strategy', value: '-2300.50' },
+        { objectId: '甲风电场', date: '2026-09-17', metricId: 'loss.forecast', value: '-1200.25' },
+        { objectId: '甲风电场', date: '2026-09-17', metricId: 'settlement.unexplained-difference', value: '158501.50' },
+      ],
+      series: [],
+      gridLoss: { provided: false, note: '电网损失来源未提供：窗口内电网损失字段全部为空，不补零、不用残差填充，也不声称无电网影响（ST04）。' },
+      waterfall: { complete: false, missingComponents: ['gridLoss'], note: '分项不齐（电网损失未提供），不做完整收入瀑布；缺的分项不用「总额 − 其余」补齐后冒充来源值（ST03）。' },
+      coverage: { denominatorBasis: 'authorized-observed-objects', denominatorNote: DENOMINATOR_NOTE, observedNote: 'observed 为该对象损失归因来源的有效样本数（业务日数）', objects: [] },
+      notes: [
+        { note: '策略损失与预测损失是源系统披露值，照常展示、保留源符号；本平台不做第二套损失推导。' },
+        { note: '「未解释差额」= 源收入 − 已知分项合计：只是未解释差额，不是损失认定，不自动归到电网、策略或预测损失（ST03）。' },
+      ],
+      tables: {
+        losses: {
+          rows: [
+            {
+              objectId: '甲风电场', date: '2026-09-17',
+              revenueYuan: '155000.75', strategyLossYuan: '-2300.50', forecastLossYuan: '-1200.25',
+              gridLossYuan: null, unexplainedDifferenceYuan: '158501.50',
+            },
+          ],
+          rule: '行=对象×业务日；null 表示该字段当日未提供，不是 0。',
+        },
+      },
+    },
+  })
+}
+
+/** 单据记录（records）：账单索引与下载记录各一条（列=维度并集，值按原文）。 */
+function docsRecordsResult(request: any) {
+  return insightResult({
+    contextVersion: request.context.contextVersion,
+    analysisId: SETTLEMENT_DOCS,
+    sourceRefs: [
+      { sourceId: 'cgn.settlement.bill-records', accessScope: 'company' },
+      { sourceId: 'cgn.settlement.bill-downloads', accessScope: 'company' },
+    ],
+    data: {
+      schemaVersion: 'insight-result-data/v1',
+      view: 'records',
+      dimensions: [
+        { id: 'sourceId', kind: 'category' },
+        { id: 'date', kind: 'date' },
+        { id: 'plant_name', kind: 'category' },
+        { id: 'bill_type', kind: 'category' },
+        { id: 'settle_month', kind: 'category' },
+        { id: 'company_name', kind: 'category' },
+        { id: 'file_name', kind: 'category' },
+        { id: 'file_ext', kind: 'category' },
+      ],
+      measures: [{ id: 'value', unit: 'text' }],
+      rows: [
+        {
+          sourceId: 'cgn.settlement.bill-records', date: '2026-05-01',
+          plant_name: '甲风电场', bill_type: '月结账单', settle_month: '2026-05', company_name: '云南电网',
+          file_name: null, file_ext: null, value: 'BILL-2026-05-001',
+        },
+        {
+          sourceId: 'cgn.settlement.bill-downloads', date: '2026-05-02',
+          plant_name: '甲风电场', bill_type: '月结账单', settle_month: '2026-05', company_name: null,
+          file_name: '甲风电场-202605.pdf', file_ext: 'pdf', value: '成功',
+        },
+      ],
+      series: [],
+    },
+  })
+}
+
+/** 核对（reconcile）：日报/日结同周期差异（含缺失侧与质量剔除）+ 月结单列。 */
+function reconcileResult(request: any) {
+  return insightResult({
+    contextVersion: request.context.contextVersion,
+    analysisId: SETTLEMENT_RECONCILE,
+    sourceRefs: [
+      { sourceId: 'cgn.plant.daily-metrics', accessScope: 'company' },
+      { sourceId: 'cgn.plant.settlement-daily', accessScope: 'company' },
+      { sourceId: 'cgn.settlement.monthly-total', accessScope: 'company' },
+    ],
+    data: {
+      schemaVersion: 'insight-result-data/v1',
+      view: 'reconcile',
+      dimensions: [
+        { id: 'objectId', kind: 'category' },
+        { id: 'date', kind: 'date' },
+        { id: 'metricId', kind: 'category' },
+      ],
+      measures: [{ id: 'value', unit: 'yuan' }],
+      rows: [
+        { objectId: '甲风电场', date: '2026-09-17', metricId: 'settlement.total-fee', value: '155000.75' },
+        { objectId: '甲风电场', date: '2026-09-17', metricId: 'settlement.reconcile-daily-fee', value: '155000.75' },
+        { objectId: '甲风电场', date: '2026-09-17', metricId: 'settlement.reconcile-difference', value: '0.00' },
+      ],
+      series: [],
+      qualityExcluded: [
+        { objectId: '乙光伏电站', date: '2026-09-18', sourceId: 'cgn.plant.daily-metrics', reason: '日报缺测说明标缺「结算收入」：该日数值不参与核对（已标缺测的零不是有效真实零，ST05）' },
+      ],
+      coverage: {
+        denominatorBasis: 'authorized-observed-objects',
+        denominatorNote: '核对覆盖按「所选获权资料对象」逐行给出；缺失一侧输出 null + 说明，不静默用另一侧顶替。',
+        objects: [],
+      },
+      notes: [
+        { note: '日报（日）、日结（日）、月结（月）是不同周期/证据层级：不相加、不跨周期互比；差异列只在同对象同业务日双方齐备时给出（日报收入 − 日结电费）。' },
+        { note: '月结单独按月展示：窗口内没有月结记录的月份不出行，页面按窗口月份给「月结缺失」说明，不拿日值凑月份。' },
+      ],
+      tables: {
+        daily: {
+          rows: [
+            {
+              objectId: '甲风电场', date: '2026-09-17',
+              dailyReportRevenueYuan: '155000.75', settlementDailyFeeYuan: '155000.75', differenceYuan: '0.00',
+              dailyReportSource: 'cgn.plant.daily-metrics', settlementSource: 'cgn.plant.settlement-daily',
+              dailyReportQuality: 'ok', missingSide: null,
+            },
+            {
+              objectId: '甲风电场', date: '2026-09-18',
+              dailyReportRevenueYuan: '142000.00', settlementDailyFeeYuan: null, differenceYuan: null,
+              dailyReportSource: 'cgn.plant.daily-metrics', settlementSource: 'cgn.plant.settlement-daily',
+              dailyReportQuality: 'ok', missingSide: 'settlement-daily',
+            },
+            {
+              objectId: '乙光伏电站', date: '2026-09-18',
+              dailyReportRevenueYuan: null, settlementDailyFeeYuan: '36000.00', differenceYuan: null,
+              dailyReportSource: 'cgn.plant.daily-metrics', settlementSource: 'cgn.plant.settlement-daily',
+              dailyReportQuality: 'excluded-missing-flagged', missingSide: 'daily-report',
+            },
+          ],
+          rule: '同周期（日）核对：差异 = 日报收入 − 日结电费，只在双方齐备时给出；任一侧缺失为 null（缺失≠0）。',
+        },
+        monthly: {
+          rows: [
+            {
+              objectId: '甲风电场', settleMonth: '2026-09', monthlyFeeYuan: '297000.75',
+              monthlyFeeSource: 'cgn.settlement.monthly-total', note: '月结是月周期：不与日报（日）/日结（日）相加或互比（ST05）。',
+            },
+          ],
+          rule: '月周期单独展示：不与日报/日结相加或互比；窗口内没有月结记录的对象不出行。',
+        },
+      },
     },
   })
 }
@@ -476,7 +794,13 @@ function businessForecastResult(request: any) {
 
 function defaultResponder(request: any): Promise<any> {
   if (request.analysisId === DAILY_METRICS) return Promise.resolve(coverageSummaryResult(request))
-  if (request.analysisId === SETTLEMENT_DAILY) return Promise.resolve(settlementDailyResult(request))
+  if (request.analysisId === SETTLEMENT_DAILY) {
+    return Promise.resolve(request.filters?.view === 'loss-explain' ? lossExplainResult(request) : settlementDailyResult(request))
+  }
+  if (request.analysisId === SETTLEMENT_STATUS_DIFF) return Promise.resolve(statusDiffResult(request))
+  if (request.analysisId === SETTLEMENT_INTERVAL) return Promise.resolve(settlementStatsResult(request))
+  if (request.analysisId === SETTLEMENT_DOCS) return Promise.resolve(docsRecordsResult(request))
+  if (request.analysisId === SETTLEMENT_RECONCILE) return Promise.resolve(reconcileResult(request))
   if (request.analysisId === PRICE_CAPTURE) return Promise.resolve(captureResult(request))
   if (request.analysisId === OUTPUT_SERIES) {
     return Promise.resolve(request.filters?.view === 'supplier-comparison' ? supplierComparisonResult(request) : outputSeriesResult(request))
@@ -494,9 +818,13 @@ const DEFAULT_COVERAGE_SOURCES: Record<string, Array<{ sourceId: string; objects
     { sourceId: 'cgn.plant.business-declared', objects: ['甲风电场'] },
     { sourceId: 'cgn.plant.spot-clearing-day-ahead', objects: ['甲风电场'] },
   ],
+  [SETTLEMENT_STATUS_DIFF]: [{ sourceId: 'cgn.plant.settlement-daily', objects: ['甲风电场', '乙光伏电站'] }],
+  [SETTLEMENT_DAILY]: [{ sourceId: 'cgn.plant.settlement-daily', objects: ['甲风电场', '乙光伏电站'] }],
+  [SETTLEMENT_INTERVAL]: [{ sourceId: 'cgn.plant.settlement-interval-formal', objects: ['甲风电场'] }],
 }
 
 function plantsCaps(analysisIds: string[]): any {
+  const WIDE_OBJECTS = [DAILY_METRICS, SETTLEMENT_DAILY, SETTLEMENT_STATUS_DIFF, SETTLEMENT_DOCS, SETTLEMENT_RECONCILE]
   return {
     regionId: 'yunnan',
     registered: true,
@@ -507,7 +835,11 @@ function plantsCaps(analysisIds: string[]): any {
       pageIds: ['plants'],
       access: 'company',
       sourceIds: Object.keys(SOURCE_TITLES),
-      limits: { maxDays: 31, maxObjects: analysisId === DAILY_METRICS || analysisId === SETTLEMENT_DAILY ? 200 : 50, requiresObjects: analysisId !== SETTLEMENT_DAILY },
+      limits: {
+        maxDays: 31,
+        maxObjects: WIDE_OBJECTS.includes(analysisId) ? 200 : 50,
+        requiresObjects: analysisId !== SETTLEMENT_DAILY && analysisId !== SETTLEMENT_DOCS,
+      },
     })),
     sources: Object.entries(SOURCE_TITLES).map(([sourceId, title]) => ({
       sourceId,
@@ -530,7 +862,18 @@ function plantsCaps(analysisIds: string[]): any {
   }
 }
 
-const ENTITLED_CAPS = [DAILY_METRICS, SETTLEMENT_DAILY, PRICE_CAPTURE, OUTPUT_SERIES, CLEARING_ACTUAL, BUSINESS_FORECAST]
+const ENTITLED_CAPS = [
+  DAILY_METRICS,
+  SETTLEMENT_DAILY,
+  SETTLEMENT_STATUS_DIFF,
+  SETTLEMENT_INTERVAL,
+  SETTLEMENT_DOCS,
+  SETTLEMENT_RECONCILE,
+  PRICE_CAPTURE,
+  OUTPUT_SERIES,
+  CLEARING_ACTUAL,
+  BUSINESS_FORECAST,
+]
 const PUBLIC_CAPS: string[] = []
 
 // ── 挂载与交互辅助 ───────────────────────────────────────────────────────────────────────
@@ -574,6 +917,12 @@ async function switchTab(name: string) {
   await flushPromises()
 }
 
+/** 通过结算状态单选组切换正式/暂结。 */
+async function switchStatusMode(mode: 'formal' | 'temp') {
+  wrapper!.getComponent({ name: 'ElRadioGroup' }).vm.$emit('update:modelValue', mode)
+  await flushPromises()
+}
+
 async function setWindow(start: string, end: string) {
   wrapper!.getComponent(InsightDateRange).vm.$emit('update:modelValue', { start, end })
   await flushPromises()
@@ -604,7 +953,7 @@ afterEach(() => {
 // ── 用例 ─────────────────────────────────────────────────────────────────────────────────
 
 describe('组合总览', () => {
-  it('公共账号：整页「获权数据需开通」说明，切遍五页签不发任何查询与覆盖请求；结算占位可见', async () => {
+  it('公共账号：整页「获权数据需开通」说明，切遍五页签不发任何查询与覆盖请求；结算页签给开通说明', async () => {
     state.capabilities = plantsCaps(PUBLIC_CAPS)
     await mountPage()
     for (const tab of ['price-output', 'forecast', 'clearing', 'settlement']) await switchTab(tab)
@@ -617,7 +966,9 @@ describe('组合总览', () => {
     expect(text).not.toContain('价格捕获参考（获权）')
     expect(text).not.toContain('供应商比较（获权）')
     expect(text).not.toContain('申报出清实发对照（获权）')
-    expect(wrapper!.find('[data-testid="ypp-settlement-placeholder"]').exists()).toBe(true)
+    expect(wrapper!.find('[data-testid="ypp-settlement-entitlement"]').exists()).toBe(true)
+    expect(text).not.toContain('正式/暂结对照（获权）')
+    expect(text).not.toContain('结算单据与原件引用（获权）')
   })
 
   it('coverage objects 缺失（老后端）时：显示「无法列出」、选择器禁用、不发任何查询', async () => {
@@ -899,21 +1250,217 @@ describe('申报出清实际', () => {
   })
 })
 
-describe('状态与展示纪律', () => {
-  it('结算占位页签：切到后不发任何请求，占位说明可见', async () => {
+describe('结算表现', () => {
+  /** 进入结算页签并选定日结组对象（默认正式模式）。 */
+  async function openSettlement(objectIds: string[] = ['甲风电场']) {
     await mountPage()
-    await switchTab('overview')
-    pickerOf('ypp-overview-objects').vm.$emit('update:modelValue', ['甲风电场'])
+    await switchTab('settlement')
+    if (objectIds.length) pickerOf('ypp-settlement-objects').vm.$emit('update:modelValue', objectIds)
     await flushPromises()
-    const callsBefore = vi.mocked(queryInsight).mock.calls.length
+  }
 
+  it('页签懒加载与门控：未选对象时只有单据记录发查询（view=records、无 objectIds），其余等待对象；覆盖清单按结算分析归属拉取', async () => {
+    await mountPage()
     await switchTab('settlement')
 
-    expect(vi.mocked(queryInsight).mock.calls).toHaveLength(callsBefore)
-    expect(vi.mocked(fetchInsightCoverage).mock.calls).toHaveLength(coverageCallsOf(DAILY_METRICS).length)
-    expect(wrapper!.text()).toContain('结算表现（正式/暂结对照、分项与原件追溯）建设中')
-    expect(wrapper!.text()).toContain('本页签不发任何数据请求')
+    const docs = queryCallsOf((request) => request.analysisId === SETTLEMENT_DOCS)
+    expect(docs).toHaveLength(1)
+    expect(docs[0]![0]!.filters!.view).toBe('records')
+    expect(docs[0]![0]!.filters!.objectIds).toBeUndefined()
+    for (const id of [SETTLEMENT_DAILY, SETTLEMENT_STATUS_DIFF, SETTLEMENT_INTERVAL, SETTLEMENT_RECONCILE]) {
+      expect(queryCallsOf((request) => request.analysisId === id)).toHaveLength(0)
+    }
+    expect(wrapper!.text()).toContain('请先选择场站对象')
+    expect(coverageCallsOf(SETTLEMENT_STATUS_DIFF)).toHaveLength(1)
+    expect(coverageCallsOf(SETTLEMENT_INTERVAL)).toHaveLength(1)
   })
+
+  it('正式/暂结显式切换：默认正式 view=series；切暂结查 status-diff（同一组 objectIds）；切回不重查', async () => {
+    await openSettlement()
+
+    const formal = queryCallsOf((request) => request.analysisId === SETTLEMENT_DAILY && request.filters?.view === 'series')
+    expect(formal).toHaveLength(1)
+    expect(formal[0]![0]!.filters!.objectIds).toEqual(['甲风电场'])
+    expect(queryCallsOf((request) => request.analysisId === SETTLEMENT_STATUS_DIFF)).toHaveLength(0)
+
+    await switchStatusMode('temp')
+
+    const diff = queryCallsOf((request) => request.analysisId === SETTLEMENT_STATUS_DIFF)
+    expect(diff).toHaveLength(1)
+    expect(diff[0]![0]!.filters!.view).toBe('status-diff')
+    expect(diff[0]![0]!.filters!.objectIds).toEqual(['甲风电场'])
+
+    await switchStatusMode('formal')
+
+    expect(queryCallsOf((request) => request.analysisId === SETTLEMENT_DAILY && request.filters?.view === 'series')).toHaveLength(1)
+  })
+
+  it('正式（默认）明细：固定口径「暂结不混进正式口径」+ 明细渲染（切暂结后正式区块让位对照区块）', async () => {
+    await openSettlement()
+
+    const note = wrapper!.find('[data-testid="ypp-settlement-formal-note"]')
+    expect(note.exists()).toBe(true)
+    const section = new DOMWrapper(note.element.closest('section')!)
+    expect(section.text()).toContain('暂结不混进正式口径')
+    expect(section.text()).toContain('500.25')
+    expect(section.text()).toContain('155000.75')
+    expect(wrapper!.text()).not.toContain('正式/暂结对照（获权）')
+
+    await switchStatusMode('temp')
+
+    expect(wrapper!.find('[data-testid="ypp-settlement-formal-note"]').exists()).toBe(false)
+    expect(blockOf('正式/暂结对照（获权）')).toBeTruthy()
+  })
+
+  it('暂结对照：两态并排（列=正式/暂结/差异）、只有暂结的行差异列「—」、notes 原文（不静默顶替、差异不是更正、不相加）', async () => {
+    await openSettlement(['甲风电场', '乙光伏电站'])
+    await switchStatusMode('temp')
+
+    const table = wrapper!.find('[data-testid="ypp-status-diff-table"]')
+    expect(table.exists()).toBe(true)
+    const labels = wrapper!.findAllComponents({ name: 'ElTableColumn' }).map((column) => String(column.props('label') ?? ''))
+    for (const label of ['正式电量', '正式电费', '暂结电量', '暂结电费', '电量差异（正式−暂结）', '电费差异（正式−暂结）']) {
+      expect(labels).toContain(label)
+    }
+    expect(table.text()).toContain('500.25')
+    expect(table.text()).toContain('154000.00')
+    expect(table.text()).toContain('1000.75')
+    // 只有暂结的行：正式列与差异列都是「—」（缺失≠0、也不等于两态一致）
+    expect(table.text()).toContain('—')
+    const text = wrapper!.text()
+    expect(text).toContain('只有暂结没有正式记录')
+    expect(text).toContain('不静默用暂结顶替正式口径')
+    expect(text).toContain('差异不是更正')
+    expect(text).toContain('永不相加、不双计')
+  })
+
+  it('只有对照未获权（有正式无对照）：切到暂结给显式说明、不发对照查询，不静默用暂结顶替', async () => {
+    state.capabilities = plantsCaps(ENTITLED_CAPS.filter((id) => id !== SETTLEMENT_STATUS_DIFF))
+    await mountPage()
+    await switchTab('settlement')
+    pickerOf('ypp-settlement-objects').vm.$emit('update:modelValue', ['甲风电场'])
+    await flushPromises()
+    await switchStatusMode('temp')
+
+    expect(queryCallsOf((request) => request.analysisId === SETTLEMENT_STATUS_DIFF)).toHaveLength(0)
+    expect(wrapper!.text()).toContain('当前公司没有正式/暂结对照的查看授权')
+    expect(wrapper!.text()).toContain('不静默用暂结顶替正式')
+  })
+
+  it('量费加权均价卡：正式/暂结分卡不相加、合计均价 175（量费加权锚点）、口径文案与缺电费/缺电量计数、零分母给原因', async () => {
+    await openSettlement()
+    pickerOf('ypp-settlement-interval-objects').vm.$emit('update:modelValue', ['甲风电场'])
+    await flushPromises()
+
+    const stats = queryCallsOf((request) => request.analysisId === SETTLEMENT_INTERVAL)
+    expect(stats).toHaveLength(1)
+    expect(stats[0]![0]!.filters!.view).toBe('settlement-stats')
+    expect(stats[0]![0]!.filters!.objectIds).toEqual(['甲风电场'])
+
+    const cards = wrapper!.find('[data-testid="ypp-settlement-stats-cards"]')
+    expect(cards.exists()).toBe(true)
+    expect(cards.text()).toContain('正式 · 所选记录合计')
+    expect(cards.text()).toContain('暂结 · 所选记录合计')
+    expect(cards.text()).toContain('175 yuan/MWh')
+    expect(cards.text()).toContain('成对有效记录 Σ电费/Σ电量')
+    // 暂结合计卡零分母：均价「—」+ 后端原因，不补零
+    expect(cards.text()).toContain('Σ电量不为正')
+
+    const table = wrapper!.find('[data-testid="ypp-settlement-stats-table"]')
+    expect(table.exists()).toBe(true)
+    expect(table.text()).toContain('甲风电场')
+    expect(table.text()).toContain('312.45')
+    expect(table.text()).toContain('310.92')
+    const labels = wrapper!.findAllComponents({ name: 'ElTableColumn' }).map((column) => String(column.props('label') ?? ''))
+    expect(labels).toContain('缺电费记录数')
+    expect(labels).toContain('缺电量记录数')
+    const text = wrapper!.text()
+    expect(text).toContain('不互加、不混算')
+    expect(text).toContain('不是等权 150')
+  })
+
+  it('grid_loss 未知态：电网损失「来源未提供」、瀑布不齐不拼、未解释差额「不是损失认定」标注', async () => {
+    await openSettlement()
+
+    const lossBlock = blockOf('分项覆盖与损失解释（获权）')!
+    const gridNote = lossBlock.find('[data-testid="ypp-grid-loss-note"]')
+    expect(gridNote.exists()).toBe(true)
+    expect(gridNote.text()).toContain('电网损失来源未提供')
+    expect(gridNote.text()).toContain('不补零、不用残差填充')
+    const waterfallNote = lossBlock.find('[data-testid="ypp-waterfall-note"]')
+    expect(waterfallNote.text()).toContain('分项不齐')
+    expect(waterfallNote.text()).toContain('不做完整收入瀑布')
+
+    const table = lossBlock.find('[data-testid="ypp-loss-table"]')
+    expect(table.exists()).toBe(true)
+    const labels = wrapper!.findAllComponents({ name: 'ElTableColumn' }).map((column) => String(column.props('label') ?? ''))
+    expect(labels).toContain('电网损失（源系统披露）')
+    expect(labels).toContain('未解释差额（不是损失认定）')
+    expect(table.text()).toContain('—') // 电网损失 null 显示「—」，不补零
+    expect(table.text()).toContain('158501.50')
+    expect(lossBlock.text()).toContain('不是损失认定，不自动归到电网、策略或预测损失')
+  })
+
+  it('单据记录：获权即查、固定说明「有索引不等于文件可下载」、列头业务名、只读红线（无修改入口）', async () => {
+    await openSettlement()
+
+    const docsBlock = blockOf('结算单据与原件引用（获权）')!
+    expect(docsBlock.find('[data-testid="ypp-settlement-docs-note"]').text()).toContain('有索引不等于文件可下载')
+    expect(docsBlock.text()).toContain('账单索引≠账单原件')
+    expect(docsBlock.text()).toContain('无模板语义不得计算合计')
+    expect(docsBlock.find('[data-testid="ypp-settlement-readonly-note"]').text()).toContain('不提供任何修改电费或自动结算的入口')
+
+    const table = docsBlock.find('[data-testid="ypp-docs-table"]')
+    expect(table.exists()).toBe(true)
+    expect(table.text()).toContain('账单索引记录（获权）')
+    expect(table.text()).toContain('甲风电场')
+    expect(table.text()).toContain('BILL-2026-05-001')
+    const labels = docsBlock.findAllComponents({ name: 'ElTableColumn' }).map((column: any) => String(column.props('label') ?? ''))
+    expect(labels).toContain('场站')
+    expect(labels).toContain('单据类型')
+    expect(labels).toContain('账期月')
+    expect(labels).not.toContain('plant_name')
+    // 只读红线：单据区块没有任何「修改/录入/提交」类操作按钮
+    const buttonTexts = docsBlock.findAll('button').map((button) => button.text())
+    expect(buttonTexts.some((text) => text.includes('修改') || text.includes('录入') || text.includes('提交'))).toBe(false)
+  })
+
+  it('核对：缺失周期「—」+缺失说明、质量剔除原文、月结单列展示与月结缺失说明', async () => {
+    await openSettlement(['甲风电场', '乙光伏电站'])
+
+    const dailyTable = wrapper!.find('[data-testid="ypp-reconcile-daily-table"]')
+    expect(dailyTable.exists()).toBe(true)
+    expect(dailyTable.text()).toContain('0.00')
+    expect(dailyTable.text()).toContain('—')
+    expect(dailyTable.text()).toContain('缺日结电费（该侧本窗口无资料）')
+    expect(dailyTable.text()).toContain('质量剔除：日报缺测说明标缺「结算收入」')
+    expect(wrapper!.text()).toContain('不相加、不跨周期互比')
+
+    const monthlyTable = wrapper!.find('[data-testid="ypp-reconcile-monthly-table"]')
+    expect(monthlyTable.exists()).toBe(true)
+    expect(monthlyTable.text()).toContain('297000.75')
+    expect(monthlyTable.text()).toContain('2026-09')
+
+    const missing = wrapper!.find('[data-testid="ypp-reconcile-monthly-missing"]')
+    expect(missing.exists()).toBe(true)
+    expect(missing.text()).toContain('乙光伏电站')
+    expect(missing.text()).toContain('没有月结记录')
+  })
+
+  it('只读红线（页签全局）：结算页签不出现任何电费修改或自动结算入口', async () => {
+    await openSettlement(['甲风电场'])
+    pickerOf('ypp-settlement-interval-objects').vm.$emit('update:modelValue', ['甲风电场'])
+    await flushPromises()
+
+    const buttonTexts = wrapper!.findAll('button').map((button) => button.text())
+    for (const forbidden of ['修改电费', '调整电费', '录入电费', '自动结算', '确认结算']) {
+      expect(buttonTexts.some((text) => text.includes(forbidden))).toBe(false)
+    }
+    expect(wrapper!.text()).toContain('洞察只读，不提供任何修改电费或自动结算的入口')
+  })
+})
+
+describe('状态与展示纪律', () => {
 
   it('页签懒加载：切走再切回不重查（同签名）', async () => {
     await mountPage()
@@ -967,19 +1514,35 @@ describe('状态与展示纪律', () => {
     await switchTab('clearing')
     pickerOf('ypp-clearing-objects').vm.$emit('update:modelValue', ['甲风电场'])
     await flushPromises()
+    await switchTab('settlement')
+    pickerOf('ypp-settlement-objects').vm.$emit('update:modelValue', ['甲风电场'])
+    await flushPromises()
+    pickerOf('ypp-settlement-interval-objects').vm.$emit('update:modelValue', ['甲风电场'])
+    await flushPromises()
+    await switchStatusMode('temp')
 
     const text = wrapper!.text()
     expect(text).not.toContain('cgn.plant')
+    expect(text).not.toContain('cgn.settlement')
     expect(text).not.toContain('plants.daily-metrics')
     expect(text).not.toContain('plants.price-capture')
     expect(text).not.toContain('plants.output-series')
     expect(text).not.toContain('plants.clearing-actual')
     expect(text).not.toContain('plants.settlement-daily')
+    expect(text).not.toContain('plants.settlement-status-diff')
+    expect(text).not.toContain('plants.settlement-interval')
+    expect(text).not.toContain('plants.settlement-docs')
+    expect(text).not.toContain('plants.settlement-reconcile')
     expect(text).not.toContain('plants.business-forecast')
     expect(text).not.toContain('sourceId')
     expect(text).not.toContain('objectIds')
     expect(text).not.toContain('coverage-summary')
     expect(text).not.toContain('supplier-comparison')
+    expect(text).not.toContain('status-diff')
+    expect(text).not.toContain('loss-explain')
+    expect(text).not.toContain('settlement-stats')
+    expect(text).not.toContain('result_type')
+    expect(text).not.toContain('plant_name')
     expect(text).not.toContain('data_type')
     expect(text).not.toContain('dayAheadDeclared')
   })
