@@ -839,8 +839,6 @@ type MaterialView = 'series' | 'profile'
 // 上传中心有权限时出现（显隐在页面，入口在 InsightBlock）。跳转只带期间与 from 标记，
 // 不在洞察手填真实值；返回后由 contextVersion 机制重查——返回不视为已补齐。
 
-const router = useRouter()
-
 const canMaintainData = computed(() => canFollowDeepLink(DEEP_LINK_TARGETS.dataMaintenance))
 
 function openDataMaintenance(): void {

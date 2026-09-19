@@ -927,6 +927,9 @@ describe('研究页 · AI 解读注册（15.3）', () => {
     await flushPromises()
     const slice = resolveInterpret(def)!.context?.() as { blocks: unknown[] } | null
     expect(slice?.blocks ?? []).toHaveLength(0)
+  })
+})
+
 // ── 多指标量纲分面与视图选择（任务 13.7，RS08、D6.1）────────────────────────────────────
 
 describe('量纲分面与视图选择', () => {
