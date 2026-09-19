@@ -7,7 +7,6 @@ import { computed, onMounted, ref } from 'vue'
 import { AlertTriangle, ShieldCheck, Activity, Gauge } from 'lucide-vue-next'
 import {
   classifyReviewError,
-  fetchExposure,
   fetchReview,
   fetchMonitor,
   type ExposureResult,
@@ -15,12 +14,12 @@ import {
   type ReviewResult,
   type MonitorResult,
 } from '@/services/quant/quantClient'
+import { fetchSummary } from '@/services/hedge/hedgeApi'
 import { listAlerts, type Alert } from '@/services/alertClient'
 import { currentRegion } from '@/services/region/regionContext'
 import { onRegionChange } from '@/composables/useRegionReload'
 import {
   getRiskThresholds,
-  hedgeRatioLevel,
   deviationPenaltyLevel,
   spreadAlertLevel,
   RISK_LEVEL_LABEL,
@@ -50,17 +49,17 @@ async function load() {
   reviewFailure.value = null
   // 各端点用 allSettled 隔离：单点失败不阻断整页，但不再用 catch 把原因折成 null。
   const tasks = await Promise.allSettled([
-    fetchExposure({ month, total_mwh: 0 }),
     fetchReview({ date: dateStr }),
     fetchMonitor(dateStr, thresholds.value.spreadThresholdYuan),
+    fetchSummary({ window: 'today2' }),
     listAlerts(),
   ])
-  exposure.value = tasks[0].status === 'fulfilled' ? tasks[0].value : null
-  review.value = tasks[1].status === 'fulfilled' ? tasks[1].value : null
-  monitor.value = tasks[2].status === 'fulfilled' ? tasks[2].value : null
-  if (tasks[1].status === 'rejected') reviewFailure.value = classifyReviewError(tasks[1].reason)
+  review.value = tasks[0].status === 'fulfilled' ? tasks[0].value : null
+  monitor.value = tasks[1].status === 'fulfilled' ? tasks[1].value : null
+  hedgeSummary.value = tasks[2].status === 'fulfilled' ? tasks[2].value : null
+  if (tasks[0].status === 'rejected') reviewFailure.value = classifyReviewError(tasks[0].reason)
   alerts.value = tasks[3].status === 'fulfilled' ? tasks[3].value.alerts : []
-  const otherFailures = [tasks[0], tasks[2], tasks[3]].filter((task) => task.status === 'rejected')
+  const otherFailures = [tasks[1], tasks[2], tasks[3]].filter((task) => task.status === 'rejected')
   if (otherFailures.length) error.value = `其他 ${otherFailures.length} 项风控数据加载失败，已保留可用结果。`
   loading.value = false
 }
@@ -68,9 +67,22 @@ async function load() {
 onMounted(load)
 onRegionChange(load)
 
-const hedgeLevel = computed<RiskLevel>(() =>
-  exposure.value ? hedgeRatioLevel(exposure.value.hedge_ratio, thresholds.value) : 'green'
-)
+// HA-01/HA-04：套保卡片读 /api/v1/hedge/summary 统一结果；失败/未配置/不可计算/不完整/地区未开放
+// 一律灰色「未评估」并写明原因，MUST NOT 默认安全，也不进面板整体红黄绿计算。
+const hedgeSummary = ref<Record<string, unknown> | null>(null)
+const hedgeNotAssessed = computed<string | null>(() => {
+  const s = hedgeSummary.value as { regionSupported?: boolean; scheme?: unknown; status?: string; reason?: string } | null
+  if (s === null) return '数据加载失败'
+  if (s.regionSupported === false) return '该地区未开放'
+  if (!s.scheme) return '套保区间未配置'
+  if (s.status && s.status !== 'OK') return s.reason ?? String(s.status)
+  return null
+})
+const hedgeRatioValue = computed<string | null>(() => {
+  if (hedgeNotAssessed.value) return null
+  const s = hedgeSummary.value as { metrics?: Record<string, { value?: string | null }> } | null
+  return s?.metrics?.TODAY2_INTERVAL?.value ?? null
+})
 const devLevel = computed<RiskLevel>(() =>
   review.value ? deviationPenaltyLevel(review.value.deviation.estimated_penalty_yuan, thresholds.value) : 'green'
 )
@@ -96,17 +108,21 @@ function levelClass(l: RiskLevel) {
 
     <section class="rc-thr">
       <span>当前阈值：</span>
-      <span>套保率 ≥ {{ (thresholds.hedgeRatioGreen * 100).toFixed(0) }}% 绿 / {{ (thresholds.hedgeRatioYellow * 100).toFixed(0) }}% 黄</span>
       <span>偏差考核费 ≥ {{ thresholds.deviationPenaltyRedYuan }} 元 红</span>
       <span>价差阈值 {{ thresholds.spreadThresholdYuan }} 元/MWh，告警 ≥ {{ thresholds.spreadAlertRedCount }} 条 红</span>
     </section>
 
     <div v-loading="loading" class="rc-cards">
-      <div class="rc-card" :class="levelClass(hedgeLevel)">
-        <div class="rc-card-head"><Gauge :size="15" /> 中长期敞口·套保率</div>
-        <div class="rc-val">{{ exposure ? (exposure.hedge_ratio * 100).toFixed(1) + '%' : '—' }}</div>
-        <div class="rc-tag">{{ RISK_LEVEL_LABEL[hedgeLevel] }}</div>
-        <div class="rc-hint">现货售/购敞口 {{ exposure?.spot_sell_exposure_mwh?.toFixed(0) ?? '—' }} / {{ exposure?.spot_buy_exposure_mwh?.toFixed(0) ?? '—' }} MWh</div>
+      <div class="rc-card hedge-card" data-test="hedge-card" :class="hedgeNotAssessed ? 'rc-unevaluated' : ''">
+        <div class="rc-card-head"><Gauge :size="15" /> 中长期与现货套保</div>
+        <template v-if="hedgeNotAssessed">
+          <div class="rc-val rc-grey" data-test="hedge-unevaluated">未评估</div>
+          <div class="rc-hint" data-test="hedge-unevaluated-reason">{{ hedgeNotAssessed }}</div>
+        </template>
+        <template v-else>
+          <div class="rc-val" data-test="hedge-ratio">{{ hedgeRatioValue ? Number(hedgeRatioValue).toLocaleString(undefined, { style: 'percent', maximumFractionDigits: 1 }) : '不可计算' }}</div>
+          <div class="rc-hint">今明两日逐时段套保率；生效方案 {{ (hedgeSummary as any)?.scheme?.name ?? '—' }}</div>
+        </template>
       </div>
       <div class="rc-card" :class="review ? levelClass(devLevel) : 'state-empty'">
         <div class="rc-card-head"><Activity :size="15" /> 申报偏差考核（{{ review?.deviation?.tolerance_pct ?? '—' }}% 免考核带）</div>
@@ -161,6 +177,8 @@ function levelClass(l: RiskLevel) {
   background: var(--el-fill-color-light); padding: 8px 12px; border-radius: 6px; margin-bottom: 14px;
 }
 .rc-cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 16px; }
+.rc-unevaluated { filter: grayscale(1); opacity: 0.75; }
+.rc-grey { color: #9ca3af; }
 .rc-card {
   border: 1px solid var(--el-border-color); border-radius: 8px; padding: 12px;
   background: var(--el-bg-color); border-left-width: 4px;
