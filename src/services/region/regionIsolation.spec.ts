@@ -208,12 +208,12 @@ describe('⑦ 市场洞察规范入口（dljy#2995）：未登记地区留在洞
 
   it('云南开关未开时同样 not-registered；打开后未交付页落本省占位，绝不解析成山西页面', () => {
     vi.unstubAllEnvs()
-    expect(resolveInsightPage('yunnan', 'plants')).toEqual({ kind: 'not-registered' })
+    expect(resolveInsightPage('yunnan', 'research')).toEqual({ kind: 'not-registered' })
     vi.stubEnv('VITE_YUNNAN_INSIGHT_WORKSPACE', '1')
-    const pending = resolveInsightPage('yunnan', 'plants')
+    const pending = resolveInsightPage('yunnan', 'research')
     expect(pending).toMatchObject({ kind: 'fallback', reason: 'page-not-delivered' })
     // 占位仍指向云南本省登记的 descriptor，不会把山西的已交付页拿来渲染
-    expect(pending.kind === 'fallback' && pending.page?.pageId).toBe('plants')
+    expect(pending.kind === 'fallback' && pending.page?.pageId).toBe('research')
     vi.unstubAllEnvs()
   })
 })
