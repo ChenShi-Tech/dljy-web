@@ -1,7 +1,8 @@
-// 中长期售电 P3：售电目标、交易窗口与交易方案的共享契约（#2972，Epic #2937，openspec tasks 第 8—9 组）。
+// 中长期售电 P3/P4：售电目标、交易窗口、交易方案与执行结果的共享契约（#2972/#3013，Epic #2937）。
 //
-// 单一事实源：后端 server/midlong/midlong-p3-* 与前端（经 sync:web 同步到 dljy-web 只读）共用这里的
-// 枚举、中文标签、提示文案与纯函数规则。零依赖（只引用同目录的十进制与日期工具）、前后端同构。
+// 单一事实源：后端 server/midlong/midlong-p3-*、midlong-p4-execution-* 与前端（经 sync:web 同步到
+// dljy-web 只读）共用这里的枚举、中文标签、提示文案与纯函数规则。零依赖（只引用同目录的十进制与日期
+// 工具）、前后端同构。P4 起（#3013）方案状态机激活预成交/确认成交/外部撤单（由执行确认驱动）。
 //
 // 口径红线（specs midlong-sales-planning MS-01..05、midlong-trade-execution MT-01/MT-02）：
 // - 售电目标是人工确认的经营安排，不是物理可发电量，也不是法定额度。
@@ -26,25 +27,31 @@ export const PLAN_VERIFICATION_STATUSES = Object.freeze(['VERIFIED', 'UNVERIFIED
 // ── 交易方案 ─────────────────────────────────────────────────────────────────
 
 /**
- * 本期实现的方案状态：方案草稿、确认可执行、已登记提交、待结果、已撤销、已关闭。
- * 预成交、确认成交、撤单属于 P4（DEFERRED_PROPOSAL_STATUSES），本期不实现流转。
+ * 方案状态：方案草稿、确认可执行、已登记提交、待结果、预成交、确认成交、外部撤单、已撤销、已关闭。
+ * P4 起执行结果状态（PRE_CLEARED/CLEARED/WITHDRAWN）进入正式流转（#3013）：
+ * 预成交不转换占用；确认成交转换未完成占用；外部撤单为终态（占用不因冲正恢复，余量可关闭释放）。
  */
-export const PROPOSAL_STATUSES = Object.freeze(['DRAFT', 'EXECUTABLE', 'SUBMITTED', 'AWAITING_RESULT', 'CANCELLED', 'CLOSED'])
-/** 占用未释放的状态。 */
-export const PROPOSAL_OCCUPYING_STATUSES = Object.freeze(['EXECUTABLE', 'SUBMITTED', 'AWAITING_RESULT'])
-export const PROPOSAL_TERMINAL_STATUSES = Object.freeze(['CANCELLED', 'CLOSED'])
-export const DEFERRED_PROPOSAL_STATUSES = Object.freeze(['PRE_CLEARED', 'CLEARED', 'WITHDRAWN'])
+export const PROPOSAL_STATUSES = Object.freeze(['DRAFT', 'EXECUTABLE', 'SUBMITTED', 'AWAITING_RESULT', 'PRE_CLEARED', 'CLEARED', 'WITHDRAWN', 'CANCELLED', 'CLOSED'])
+/** 占用未释放的状态（PRE_CLEARED/CLEARED 仍持有未完成占用余量，关闭时释放）。 */
+export const PROPOSAL_OCCUPYING_STATUSES = Object.freeze(['EXECUTABLE', 'SUBMITTED', 'AWAITING_RESULT', 'PRE_CLEARED', 'CLEARED'])
+export const PROPOSAL_TERMINAL_STATUSES = Object.freeze(['CANCELLED', 'CLOSED', 'WITHDRAWN'])
+/** 外部结果状态（与 EXECUTION_RESULT_STATUSES 同名同义，由 P4 执行确认驱动）。 */
+export const PROPOSAL_RESULT_STATUSES = Object.freeze(['PRE_CLEARED', 'CLEARED', 'WITHDRAWN'])
 
-/** 方案动作 → 允许的起始状态。撤销只能发生在外部提交之前；已登记提交后只能关闭（撤单属于 P4）。 */
+/** 方案动作 → 允许的起始状态。撤销只能发生在外部提交之前；已登记提交后只能关闭；成交结果由执行确认驱动。 */
 export const PROPOSAL_ACTION_FROM = Object.freeze({
   UPDATE_DRAFT: Object.freeze(['DRAFT']),
   CONFIRM: Object.freeze(['DRAFT']),
   CANCEL: Object.freeze(['DRAFT', 'EXECUTABLE']),
-  CLOSE: Object.freeze(['EXECUTABLE', 'SUBMITTED', 'AWAITING_RESULT']),
+  CLOSE: Object.freeze(['EXECUTABLE', 'SUBMITTED', 'AWAITING_RESULT', 'PRE_CLEARED', 'CLEARED', 'WITHDRAWN']),
   REGISTER_SUBMISSION: Object.freeze(['EXECUTABLE', 'SUBMITTED', 'AWAITING_RESULT']),
   ADD_RECEIPT: Object.freeze(['SUBMITTED', 'AWAITING_RESULT', 'CLOSED']),
   AWAIT_RESULT: Object.freeze(['SUBMITTED']),
   RECHECK_WINDOW: Object.freeze(['DRAFT', 'EXECUTABLE', 'SUBMITTED', 'AWAITING_RESULT']),
+  // P4 执行确认（成交转换，MT-03/04）：预成交/确认成交从已进入执行链路的状态发起；外部撤单只作用于结果状态。
+  PRE_CLEAR: Object.freeze(['SUBMITTED', 'AWAITING_RESULT']),
+  CLEAR: Object.freeze(['SUBMITTED', 'AWAITING_RESULT', 'PRE_CLEARED']),
+  WITHDRAW: Object.freeze(['PRE_CLEARED', 'CLEARED']),
 })
 
 export function proposalActionAllowed(status, action) {
@@ -70,13 +77,17 @@ export const WINDOW_REVIEW_FIELDS = Object.freeze([
 export const CALENDAR_EVENT_KINDS = Object.freeze(['DECLARATION_OPENS', 'DECLARATION_CLOSES', 'CONFIRMATION'])
 const CALENDAR_FIELD_OF = Object.freeze({ DECLARATION_OPENS: 'declarationOpensAt', DECLARATION_CLOSES: 'declarationClosesAt', CONFIRMATION: 'confirmationAt' })
 
-export const PLANNING_ATTACHMENT_PURPOSES = Object.freeze(['WINDOW_ANNOUNCEMENT', 'SUBMISSION_RECEIPT'])
+export const PLANNING_ATTACHMENT_PURPOSES = Object.freeze(['WINDOW_ANNOUNCEMENT', 'SUBMISSION_RECEIPT', 'EXECUTION_CONFIRMATION'])
 
 export const PLANNING_EVENT_TYPES = Object.freeze([
   'PLAN_CREATED', 'PLAN_DRAFT_UPDATED', 'PLAN_REVISION_CREATED', 'PLAN_CONFIRMED',
   'WINDOW_REGISTERED', 'WINDOW_CORRECTED',
   'PROPOSAL_CREATED', 'PROPOSAL_DRAFT_UPDATED', 'PROPOSAL_CONFIRMED', 'PROPOSAL_WINDOW_REVISED', 'PROPOSAL_WINDOW_RECHECKED',
   'PROPOSAL_SUBMISSION_REGISTERED', 'PROPOSAL_RECEIPT_ADDED', 'PROPOSAL_AWAITING_RESULT', 'PROPOSAL_CANCELLED', 'PROPOSAL_CLOSED',
+  // P4 执行确认（#3013）：方案执行结果事件 + 确认单维度事件（事件表新增 confirmation_id 目标列）。
+  'PROPOSAL_PRE_CLEARED', 'PROPOSAL_CLEARED', 'PROPOSAL_WITHDRAWN',
+  'EXECUTION_CONFIRMATION_REGISTERED', 'EXECUTION_CONFIRMATION_REVISED', 'EXECUTION_CONFIRMATION_REVOKED',
+  'EXECUTION_CONTRACT_LINKED', 'EXECUTION_OCCUPATION_CONVERTED',
 ])
 
 // ── 中文标签与固定提示 ───────────────────────────────────────────────────────
@@ -87,7 +98,8 @@ export const PLAN_VERIFICATION_STATUS_LABELS = Object.freeze({
   VERIFIED: '已核验', UNVERIFIED: '结果未完成核验', TARGET_UNKNOWN: '目标未确认',
 })
 export const PROPOSAL_STATUS_LABELS = Object.freeze({
-  DRAFT: '方案草稿', EXECUTABLE: '确认可执行', SUBMITTED: '已登记提交', AWAITING_RESULT: '待结果', CANCELLED: '已撤销', CLOSED: '已关闭',
+  DRAFT: '方案草稿', EXECUTABLE: '确认可执行', SUBMITTED: '已登记提交', AWAITING_RESULT: '待结果',
+  PRE_CLEARED: '预成交', CLEARED: '确认成交', WITHDRAWN: '外部撤单', CANCELLED: '已撤销', CLOSED: '已关闭',
 })
 export const PROPOSAL_CLOSE_KIND_LABELS = Object.freeze({ NO_LONGER_NEEDED: '不再执行', WINDOW_EXPIRED: '窗口已过', OTHER: '其他' })
 export const OCCUPATION_RELEASE_REASON_LABELS = Object.freeze({ CANCELLED: '方案撤销', CLOSED: '方案关闭' })
@@ -107,6 +119,9 @@ export const PLANNING_EVENT_TYPE_LABELS = Object.freeze({
   PROPOSAL_CREATED: '创建方案草稿', PROPOSAL_DRAFT_UPDATED: '修改方案草稿', PROPOSAL_CONFIRMED: '确认可执行（建立占用）',
   PROPOSAL_WINDOW_REVISED: '引用的公告已更正（待重新核对）', PROPOSAL_WINDOW_RECHECKED: '按新公告版本重新核对', PROPOSAL_SUBMISSION_REGISTERED: '登记外部提交', PROPOSAL_RECEIPT_ADDED: '补充回执',
   PROPOSAL_AWAITING_RESULT: '标记待结果', PROPOSAL_CANCELLED: '撤销方案（释放占用）', PROPOSAL_CLOSED: '关闭方案（释放占用）',
+  PROPOSAL_PRE_CLEARED: '方案收到预成交结果', PROPOSAL_CLEARED: '方案确认成交（占用转换）', PROPOSAL_WITHDRAWN: '方案被外部撤单（冲正）',
+  EXECUTION_CONFIRMATION_REGISTERED: '登记外部成交确认单', EXECUTION_CONFIRMATION_REVISED: '确认单内容修订（旧版保留）',
+  EXECUTION_CONFIRMATION_REVOKED: '外部撤销冲正（旧成交保留）', EXECUTION_CONTRACT_LINKED: '确认单关联合同', EXECUTION_OCCUPATION_CONVERTED: '占用转换为成交',
 })
 
 /** 页面与导出共用的固定口径提示。 */
