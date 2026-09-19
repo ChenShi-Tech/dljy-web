@@ -3,6 +3,7 @@
 > dljy#2995（云南地区市场洞察工作区，OpenSpec `build-yunnan-regional-market-insight` D6.1）阶段 A 产出。
 > 逐项登记现有「市场洞察」域图表能力的**代码位置、业务问题、云南工作区新落点、数据资格、复用方式与验收要点**，
 > 供后续阶段逐页交付时对照——旧能力一个不丢，不重做业务设计。
+> 任务 16.8 的六页落位核对结论见文末「云南六页落位核对（16.8 / A20）」。
 > 数据口径总说明见 [market-insight.md](./market-insight.md)。
 
 六页与页 id 的对应：市场总览 `overview`、价格与价差 `prices`、供需与水电 `supply`、跨省与电网边界 `grid-boundaries`、场站市场表现 `plants`、研究工作台 `research`（注册契约见 `src/services/region/insightWorkspace.ts`）。
@@ -128,7 +129,58 @@
 
 ---
 
-## 通用验收底线（适用全部条目）
+## 云南六页落位核对（16.8 / A20）
+
+> 2026-09-19 对照 `feat/chart-inventory-check`（叠于 feat/ai-pages 之上）的六页实现逐行核对（dljy#3106）。
+> 「资格」沿用 design.md D6.1 原始措辞；「实例可用性」据 dljy#3086 实测快照（洞察 API，2026-09-19）与
+> 数据落库 #3088 现状——两者都只描述核验时点，不是持续供数承诺。浏览器动线的真实设备证据
+> （A17—A20 真实设备部分）归 #3010，不在本核对范围。无数据能力如实标「未就绪＋原因」，
+> 不以页面存在冒充能力。
+
+| # | D6.1 旧能力 | 云南六页落位（新落点） | 资格 → 核对现状 | 测试位置 | 实例可用性 |
+|---|---|---|---|---|---|
+| 1 | 三维多日价格线 + 日内切面 + 日期切面 | `YunnanPricesPage.vue` 时段走势页签：单日走势 / 多日立体 / 日期×时段热力三模式（`Price3DWorkspace.vue` + `Price3DScene.vue`，纯模型 `priceProfileModel.ts`）；与「历史分布」页签共用同一份 profile 结果，不另发请求 | 必须保留并适配 → **已适配**：单日明确为单日剖面；多日默认 7 日窗、扩窗须用户显式确认（不悄悄扩窗）；超 6000 原生点不渲染三维也不静默截断 | `priceProfileModel.spec.ts`、`Price3DWorkspace.component.spec.ts`、`Price3DScene.component.spec.ts` | 可用（#3086：价格完整窗口 2026-05-01~08-17/18，5 月 complete、8 月边缘日 partial 如实标注） |
+| 2 | 节点×时段热力、节点价曲线与基差 | 价格页「节点基差」页签（`basis` 视图，参考对象显式指定）+「历史分布」的日期×时段热力（热格点击 → 同步切面与证据表） | 必须保留 → **保留**：全量统计走 summary 指标与切面证据表，选择热格下钻到证据行；基差只在共同有效时段计算 | `Price3DWorkspace.component.spec.ts`（热力）、`YunnanPricesPage.component.spec.ts` | 可用（#3086：public/company-node 15 分钟原生粒度；user-price 无节点维度则不提供基差，如实说明） |
+| 3 | 日前实时曲线、差值及异常时段 | 价格页「日前实时价差」页签（`spread` 视图）：配对曲线 + 异常时段表（行点击 → 图表定位）+ 配对统计卡 + 未配对原因逐条说明 | 必须保留 → **保留**：同一共同覆盖样本配对；异常规则原文展示；价差=日前−实时是价格差不是收益 | `YunnanPricesPage.component.spec.ts` | 可用（#3086：价差摘要实测；2026-05 起采集覆盖，覆盖外诚实空态） |
+| 4 | 逐日负荷均值/极值、同期与连续历史 | 供需页「历史比较」页签（`history` 视图，`YunnanSupplyPage.vue`） | 保留适用能力 → **保留**：参考窗口由用户显式选择（不自动取去年同期），只比较两边都有的日期；云南缺年诚实断线不插值 | `YunnanSupplyPage.component.spec.ts` | 可用（窗口受披露实际/月包覆盖约束：#3086 供需完整窗口同 2026-05 起；窗口外空态） |
+| 5 | 综合多指标、多轴、参考日和保存视图 | 研究页受控自定义：指标输入只有预设登记项的只读白名单下拉 + 有限变换；可保存研究定义（`definitionDraft`） | 必须保留适用能力 → **保留**：按云南指标目录；不是 SQL 控制台；保存承载为研究定义草稿而非自由视图快照 | `YunnanResearchPage.component.spec.ts`、`insightContractConsumers.spec.ts` | 可用（research/preview 实例已接，#3086 联调口径） |
+| 6 | 价格×新能源/负荷关系散点 | 研究页预设 `research.price-new-energy-correlation`、`research.price-load-correlation`（`shared/insight/research.mjs` 登记） | 必须保留并扩充 → **已扩充**：同族共 9 个登记预设（水电出力、送受、价差-联络线、滞后对比、负荷进度、异常窗口、同类日） | `insightContractConsumers.spec.ts`、`YunnanResearchPage.component.spec.ts` | 可用（预设资格不足时页面标「输入不足」可见不可运行，不硬凑） |
+| 7 | 结算趋势、场站 min/max 区间与均值点 | 场站页「结算表现」页签（`plants.settlement-daily` / `settlement-status-diff` / `settlement-interval` 三分析） | 必须保留适用能力 → **保留**：正式/暂结是显式状态轴（默认正式），区间不冒充箱线图，量费加权口径见 plants 文档 | `YunnanPlantsPage.component.spec.ts` | 部分可用（#3086 覆盖窗口内可用；暂结对照依赖 #3088 管线的 `plant_daily_settlement_raw` 数据集真实补录执行——管线与对拍已就绪，写库由主会话按授权另行执行，补录前暂结侧如实空态） |
+| 8 | 量价叠加、结构堆叠、排序 | 场站页组合总览 / 价格出力页签（捕获参考价分桶、序列图表），供需页全景引用 | 保留表达形式、替换错误数据口径 → **已换口径**：可相加分项才堆叠，缺来源不造份额；缺出力场站诚实缺席不补零 | `YunnanPlantsPage.component.spec.ts` | 可用（#3086 覆盖窗口内；缺测字段按六字段独立统计覆盖天数） |
+| 9 | 市场异动卡、按时段关注项 | 总览页重点事项区块（`OVERVIEW_BLOCKS` 确定性装配，`YunnanOverviewPage.vue`） | 保留发现与证据链 → **保留**：规则评估逐条在、文案带「这是价格差，不是收益」限定；无数据区块显示说明卡不出雷达分 | `YunnanOverviewPage.component.spec.ts` | 可用（#3086：总览 5/2 触发 1 条重点事项实测，规则评估逐条在） |
+| 10 | 竞价空间×价格拟合、陡缓区间 | 研究页预设 `research.residual-proxy-price-correlation`；供需页「剩余需求代理」口径说明 | 按能力开放 → **按能力开放**：代理变量不冒充官方竞价空间（页面固定文案），复用已验证模型并展示样本/覆盖；输入资格不足禁用 | `YunnanResearchPage.component.spec.ts`、`YunnanSupplyPage.component.spec.ts` | 按资格（#3086 输入面以能力目录为准；缺输入则禁用不硬凑） |
+| 11 | 价差卡中的套利收益/储能回测 | 价差事实留价格页「日前实时价差」（spread 视图）；套利测算不进洞察（无资金测算页内入口） | 不作为市场事实搬运 → **遵守**：价差固定「日前 − 实时」且标注价格差不是收益；未搬运任何收益测算 | `YunnanPricesPage.component.spec.ts` | 可用（价差为价格事实，非成交语义） |
+| 12 | 撮合日 K、买卖盘逐笔 | **云南隐藏、山西保留**：导航菜单 `hiddenInRegionIds: ['yunnan']`（`src/data/navigation.ts`）；路由保持可达，云南直接访问显示 #2991 可解释降级卡 + 价格分析入口（`FshqView.vue`） | 云南无撮合来源则隐藏 → **一致**：绝不以节点价拼假盘口；山西原能力原样保留（组件零改动） | `governance.navigation-region.spec.ts` | 山西可用；云南按设计隐藏（云南、广东、四川无来源） |
+| 13 | 三维地形、场站/节点空间位置 | grid-geo 模块整体保留（`CesiumPlantMap.vue` / `ProvinceFlatMap.vue` 在位，零改动）；**洞察页动作入口未挂接** | 保留入口与上下文 → **未就绪（如实登记）**：模块与旧入口保留 ✓；「从节点/电网/场站动作进入空间场景」的按钮尚未在六页挂接——不以「模块存在」冒充「入口已通」，挂接归后续切片 | grid-geo 既有测试（本切片不改该模块） | 旧入口可用；洞察内入口未就绪（待挂接） |
+
+### 统计一致性用例（16.8「统计不随抽样改变」）
+
+新增 8 例（16.8 / A20 自动化落点）：
+
+- `priceProfileModel.spec.ts` 新 describe「统计不随抽样与呈现次序改变」5 例：
+  1. rows 乱序输入：网格轴、热力极值与格子数与原序一致（行序是传输细节，不进统计）；
+  2. 三维顶点合计 === 网格原生行数（阶梯与拆段只是表达，**不新增观测点**）；
+  3. 缺测拆段无桥接顶点（段间不存在补出的连接点）；
+  4. 全负价序列：热力极值两端均为负（轴 domain 可整体为负），切面与默认剖面照常解析；
+  5. 同一网格下三维顶点、热力格子与证据表对同一时段给出同一值（各视图不各自抽样）。
+- `insightContractConsumers.spec.ts`（新文件）3 例：
+  6. research/preview 契约三层俱全：端点登记 → researchClient 真实 POST → 研究页真实消费；
+  7. insights/query 契约：除研究页（走研究预览契约）外五页真实调用 queryInsight，六页全部消费 insightClient；
+  8. 六页注册与页面文件一一对应（注册无孤儿、页面文件无未注册，运行时 readdir 列举不硬编码）。
+
+引用既有（不重复造）：
+
+- **GL 失败可降级**：`Price3DWorkspace.component.spec.ts`「三维预算与 WebGL 降级」——超 6000 原生点不画三维且不截断、WebGL 不可用自动降级热力（同一数据）且说明如实、页签切走不渲染三维；`Price3DScene.component.spec.ts`——初始化抛错 → emit initError 父级降级、卸载 dispose 释放 WebGL 上下文。
+- **负价可见 / 缺测断开**：`priceProfileModel.spec.ts`（负价原样为负、缺测两侧拆段断开不跨缺测连线、visualMap 极值含负价）与 `Price3DWorkspace.component.spec.ts`（热力负价时色带以 0 为中心对称）。
+- **渲染/切面性能**：三维只承担看多日结构（6000 原生点预算内不降采样、超预算明示切热力），二维切面与表格同一份规范结果；大屏/受限设备的真实测量归 #3010。
+
+### 契约非「只有类型声明」
+
+`insightContractConsumers.spec.ts` 把「契约有真实消费者」固化为门禁：三层断链（端点登记 → 客户端 POST → 页面源码消费）任一断开即红；六页注册与 `pages/Yunnan*Page.vue` 一一对应（readdir 运行时核对），孤儿注册或未注册文件都会失败。
+
+---
+
+
 
 - 迁移不改数据口径：每项复用的取数函数、字段映射原样保留；口径变化必须单独走数据口径变更流程并登记 `market-insight.md`。
 - 地区隔离：上述任何能力在云南的新页面里只吃云南真实源；缺源诚实空态或说明卡，绝不串读山西/广东/四川（spec RW02/RW05 及地区隔离红线）。
