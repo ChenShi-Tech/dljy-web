@@ -622,7 +622,7 @@ function exportContractsCsv() {
           <div class="exec-summary">
             <span>合同金额 <b>{{ fmtNum(settlementPreview.contractAmount, 0) }}</b> 元</span>
             <span>已执行金额 <b>{{ fmtNum(settlementPreview.executedAmount, 0) }}</b> 元</span>
-            <span>履约率 <b>{{ (settlementPreview.coverageRate * 100).toFixed(1) }}%</b></span>
+            <span>履约率 <b>{{ ((settlementPreview.coverageRate ?? 0) * 100).toFixed(1) }}%</b></span>
             <span>未执行 <b>{{ fmtNum(settlementPreview.openExposureMwh, 0) }}</b> MWh</span>
           </div>
           <p class="settle-note">基于合同量价与已执行电量的快速估算；分时结算、出清电价、两个细则偏差考核分档对账口径待理顺后接入。</p>

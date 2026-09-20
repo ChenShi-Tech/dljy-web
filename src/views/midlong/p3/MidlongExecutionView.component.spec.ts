@@ -12,10 +12,10 @@ import { PLANNING_NOTICES, type TradeProposalDetail, type TradingWindowDetail, t
 
 const hoisted = vi.hoisted(() => ({
   fetchCapabilities: vi.fn(), fetchWindowCalendar: vi.fn(), fetchWindows: vi.fn(), fetchProposals: vi.fn(), fetchSubjects: vi.fn(), fetchWindow: vi.fn(), replace: vi.fn(), routeQuery: {} as Record<string, string>,
-  companyRef: null as null | { value: string },
+  fetchExecutions: vi.fn(), companyRef: null as null | { value: string },
 }))
 
-vi.mock('element-plus', async (orig) => ({ ...(await orig<typeof import('element-plus')>()), ElMessage: { success: vi.fn(), error: vi.fn() } }))
+vi.mock('element-plus', async (orig) => ({ ...(await orig<typeof import('element-plus')>()), ElMessage: { success: vi.fn(), error: vi.fn(), warning: vi.fn() } }))
 vi.mock('vue-router', () => ({ useRoute: () => ({ query: hoisted.routeQuery }), useRouter: () => ({ replace: hoisted.replace }) }))
 vi.mock('@/services/company/companyContext', async () => {
   const selectedCompanyId = (await import('vue')).ref('comp-a')
@@ -34,13 +34,22 @@ vi.mock('@/services/midlong/midlongP3Api', () => ({
   // 公告详情抽屉按真实组件挂载时用到的接口。
   fetchWindow: hoisted.fetchWindow, fetchPlanningAttachment: vi.fn(),
 }))
+vi.mock('@/services/midlong/midlongP4Api', () => ({
+  fetchExecutions: hoisted.fetchExecutions,
+  // 与真实实现同语义：按名称读取能力开关，缺省视为未开通。
+  p4ModuleOn: (caps: { enabled?: boolean; regionSupported?: boolean; modules?: Record<string, boolean> } | null | undefined, name: string) =>
+    Boolean(caps?.enabled && caps.regionSupported && caps?.modules?.[name] === true),
+}))
 
 import MidlongExecutionView from './MidlongExecutionView.vue'
 import WindowDetailDrawer from '@/components/midlong/p3/WindowDetailDrawer.vue'
 
 const STUBS = {
   CompanyScopeBar: { template: '<div />' }, WindowFormDialog: { props: ['modelValue'], template: '<div class="stub-window-form" :data-open="String(modelValue)" />' }, WindowDetailDrawer: { template: '<div />' },
-  ProposalDetailDrawer: { template: '<div />' }, 'router-link': { template: '<a><slot /></a>' },
+  ProposalDetailDrawer: { template: '<div />' },
+  ConfirmationFormDialog: { props: ['modelValue', 'subjects', 'proposals'], template: '<div class="stub-confirmation-form" :data-open="String(modelValue)" :data-proposals="proposals.length" />' },
+  ConfirmationDetailDrawer: { props: ['modelValue', 'confirmationId'], template: '<div class="stub-confirmation-drawer" :data-id="confirmationId" :data-open="String(modelValue)" />' },
+  'router-link': { template: '<a><slot /></a>' },
 }
 
 function caps(execution: boolean): MidlongCapabilities {
@@ -304,5 +313,81 @@ describe('中长期交易执行页', () => {
     resolveProposals(page([proposalRow(11, 'EXECUTABLE')]))
     await flushPromises()
     expect(w.find('#pane-proposals').text()).toContain('#11')
+  })
+})
+
+describe('执行确认标签（P4）', () => {
+  const capsP4 = (executions: boolean) => ({ ...caps(true), modules: { ...caps(true).modules, executions } }) as MidlongCapabilities
+  const confirmationRow = (id: number, overrides: Record<string, unknown> = {}) => ({
+    id, companyId: 'comp-a', regionId: 'yunnan', subjectId: 1, subjectName: '测试交易单元', sourceNamespace: '昆明交易中心',
+    confirmationNo: `C-2026-${id}`, proposalId: null, proposalStatus: null, currentRevisionNo: 1, rowVersion: 1,
+    resultStatus: 'CLEARED', pendingReview: false, totalQuantity: '850', priceKnown: true, convertedQuantity: '150',
+    linkedContracts: [{ contractId: 7, linkKind: 'OBLIGATION_CREATED' }], reversed: false, createdAt: '', createdBy: null, updatedAt: '',
+    ...overrides,
+  })
+
+  it('executions 能力关闭：标签不出现、确认单接口不请求；打开时列表带结果状态与待核对筛选', async () => {
+    hoisted.routeQuery = { tab: 'confirmations' }
+    hoisted.fetchCapabilities.mockResolvedValue(capsP4(false))
+    hoisted.fetchWindowCalendar.mockResolvedValue(calendar)
+    const w = mount(MidlongExecutionView, { global: { stubs: STUBS } })
+    await flushPromises()
+    expect(w.findAll('.el-tabs__item').some((t) => t.text() === '执行确认')).toBe(false)
+    expect(hoisted.fetchExecutions).not.toHaveBeenCalled()
+    // URL 里的 confirmations 标签被纠正回日历，不请求一个不存在的标签数据。
+    expect(hoisted.fetchWindowCalendar).toHaveBeenCalledTimes(1)
+
+    hoisted.fetchCapabilities.mockResolvedValue(capsP4(true))
+    hoisted.fetchExecutions.mockResolvedValue(page([confirmationRow(21), confirmationRow(22, { resultStatus: 'PRE_CLEARED', pendingReview: true, convertedQuantity: '0' })]))
+    const v = mount(MidlongExecutionView, { global: { stubs: STUBS } })
+    await flushPromises()
+    expect(v.findAll('.el-tabs__item').some((t) => t.text() === '执行确认')).toBe(true)
+    expect(hoisted.fetchExecutions).toHaveBeenCalledWith({ page: 1, pageSize: 50, resultStatus: undefined, pendingReview: undefined })
+    const pane = v.find('#pane-confirmations')
+    expect(pane.text()).toContain('确认成交')
+    expect(pane.text()).toContain('预成交')
+    expect(pane.text()).toContain('待核对')
+    expect(pane.text()).toContain('昆明交易中心 / C-2026-21')
+    expect(pane.text()).toContain('#7（创建）'.replace('（创建）', '')) // 关联合同列
+    // 只看待核对：请求带 pendingReview: true。
+    v.findAllComponents({ name: 'ElCheckbox' })[0].vm.$emit('update:modelValue', true)
+    v.findAll('button').find((b) => b.text() === '查询')!.trigger('click')
+    await flushPromises()
+    expect(hoisted.fetchExecutions).toHaveBeenLastCalledWith(expect.objectContaining({ pendingReview: true }))
+  })
+
+  it('点行打开确认单详情抽屉；登记按钮先加载主体与执行链路方案候选再打开表单', async () => {
+    hoisted.routeQuery = { tab: 'confirmations' }
+    hoisted.fetchCapabilities.mockResolvedValue(capsP4(true))
+    hoisted.fetchExecutions.mockResolvedValue(page([confirmationRow(21)]))
+    hoisted.fetchSubjects.mockResolvedValue([{ id: 1, subjectKey: 'S1', displayName: '测试交易单元' }])
+    hoisted.fetchProposals.mockResolvedValue(page([proposalRow(11, 'SUBMITTED')]))
+    const w = mount(MidlongExecutionView, { global: { stubs: STUBS } })
+    await flushPromises()
+    await w.findAll('.el-table__row').find((r) => r.text().includes('C-2026-21'))!.trigger('click')
+    expect(w.find('.stub-confirmation-drawer').attributes('data-id')).toBe('21')
+    expect(w.find('.stub-confirmation-drawer').attributes('data-open')).toBe('true')
+
+    expect(hoisted.fetchSubjects).not.toHaveBeenCalled()
+    await w.findAll('button').find((b) => b.text() === '登记确认单')!.trigger('click')
+    await flushPromises()
+    expect(hoisted.fetchSubjects).toHaveBeenCalledTimes(1)
+    expect(hoisted.fetchProposals).toHaveBeenCalledWith(expect.objectContaining({ stage: 'execution' }))
+    expect(w.find('.stub-confirmation-form').attributes('data-open')).toBe('true')
+    expect(w.find('.stub-confirmation-form').attributes('data-proposals')).toBe('1')
+  })
+
+  it('切换公司：确认单数据清空、抽屉与表单关闭，切回标签不显示上一家公司的确认单', async () => {
+    hoisted.routeQuery = { tab: 'confirmations' }
+    hoisted.fetchCapabilities.mockResolvedValue(capsP4(true))
+    hoisted.fetchExecutions.mockResolvedValueOnce(page([confirmationRow(21)])).mockImplementation(() => new Promise(() => {}))
+    const w = mount(MidlongExecutionView, { global: { stubs: STUBS } })
+    await flushPromises()
+    expect(w.find('#pane-confirmations').text()).toContain('C-2026-21')
+    hoisted.companyRef!.value = 'comp-b'
+    await flushPromises()
+    expect(w.find('#pane-confirmations').text()).not.toContain('C-2026-21')
+    expect(w.find('.stub-confirmation-drawer').attributes('data-open')).toBe('false')
+    expect(w.find('.stub-confirmation-form').attributes('data-open')).toBe('false')
   })
 })
