@@ -11,7 +11,8 @@
 //   ⑧ 合法大值（>14000）原样渲染，不裁剪；
 //   ⑨ 样本说明（n/覆盖率/最低条件/方法版本）与方法口径原文（无置信区间、无因果）透出；
 //   ⑩ 同类日候选表带逐特征贡献、排除候选原因与不足原因原文；
-//   ⑪ 保存分析是明示的占位入口，不假装已保存；
+//   ⑪ 保存分析（任务 14.4）：只提交定义与期望版本；409 提示先重跑不保存；无写权限入口不渲染
+//     而预览与已保存查看保留；幂等键按内容派生；未成功绝不提示已保存；
 //   ⑫ 界面只出现业务语言，不出现预设标识/来源标识/模式枚举原文。
 // mock 边界：researchClient/insightClient 打桩（保留类型与错误类）；useInsightContext 用真
 // composable（真 router + 全局地区/公司 ref）；shared/insight 契约镜像用真模块（指标/精度取登记）。
@@ -21,7 +22,7 @@ import { createMemoryHistory, createRouter, type Router } from 'vue-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { fetchInsightCapabilities, InsightRequestError } from '@/services/insight/insightClient'
-import { runResearchPreview } from '@/services/insight/researchClient'
+import { runResearchPreview, saveResearchDefinition } from '@/services/insight/researchClient'
 import { selectedRegionId } from '@/services/region/regionContext'
 import { selectedCompanyId } from '@/services/company/companyContext'
 import { mount as appMount } from '@/test/mount'
@@ -37,6 +38,11 @@ const state = vi.hoisted(() => ({
   /** research/preview 应答器：默认成功返回 state.result；可替换为拒绝。 */
   responder: null as ((request: any) => Promise<any>) | null,
   result: null as unknown,
+  /** 研究定义保存应答器（任务 14.4）：默认成功返回 state.saveDetail；可替换为拒绝。 */
+  saveResponder: null as ((request: any) => Promise<any>) | null,
+  saveDetail: null as unknown,
+  /** 公司写权限显隐（governance.hasCompanyAdmin 打桩）。 */
+  canWrite: true,
 }))
 
 vi.mock('@/composables/useAgentHealth', () => ({
@@ -57,6 +63,23 @@ vi.mock('@/services/insight/researchClient', async (importOriginal) => {
   return {
     ...actual,
     runResearchPreview: vi.fn((request: any) => state.responder!(request)),
+    saveResearchDefinition: vi.fn((request: any) => state.saveResponder!(request)),
+  }
+})
+
+vi.mock('@/services/auth', async (importOriginal) => {
+  const actual = await importOriginal<Record<string, unknown>>()
+  return {
+    ...actual,
+    getCurrentUser: vi.fn(() => ({ userId: 'u-admin', roleCode: 'company-admin' })),
+  }
+})
+
+vi.mock('@/services/governance', async (importOriginal) => {
+  const actual = await importOriginal<Record<string, unknown>>()
+  return {
+    ...actual,
+    hasCompanyAdmin: vi.fn(() => state.canWrite),
   }
 })
 
@@ -302,6 +325,47 @@ function previewCalls() {
   return vi.mocked(runResearchPreview).mock.calls
 }
 
+/** 保存响应夹具：形状对照 dljy 仓 insight-research-definitions.mjs 的 formatDetail。 */
+function saveDetailFixture(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  const result = state.result as Record<string, unknown>
+  return {
+    definitionId: '5f0c9e64-1a2b-4c3d-8e4f-001122334455',
+    regionId: 'yunnan',
+    presetId: 'research.price-new-energy-correlation',
+    title: '云南价格 × 新能源出力（共同样本相关）',
+    businessWindow: { start: '2026-09-01', end: '2026-09-10' },
+    mode: 'ex-post',
+    runCount: 1,
+    runs: [
+      { runNo: 1, resultVersion: `rv1:${HEX64}`, readSetRef: `rs1:${HEX64}`, createdBy: 'u-admin', createdAt: '2026-09-19T10:00:00+08:00' },
+    ],
+    latestRun: {
+      runNo: 1,
+      resultVersion: `rv1:${HEX64}`,
+      readSetRef: `rs1:${HEX64}`,
+      createdBy: 'u-admin',
+      createdAt: '2026-09-19T10:00:00+08:00',
+      content: {
+        schemaVersion: 'insight-research-run/v1',
+        topic: 'market_insight_research',
+        title: '云南价格 × 新能源出力（共同样本相关）',
+        frozenAt: '2026-09-19T10:00:00+08:00',
+        definition: {},
+        note: '研究运行产物：服务端按定义用研究内核重新计算并核对期望版本后冻结；查看保存结果与按新源重算是两回事，旧版本不再改变。',
+        result,
+      },
+    },
+    mock: false,
+    productionWrite: false,
+    ...overrides,
+  }
+}
+
+async function save() {
+  await wrapper!.find('[data-testid="yr-save"]').trigger('click')
+  await flushPromises()
+}
+
 beforeEach(async () => {
   localStorage.clear()
   selectedRegionId.value = 'yunnan'
@@ -314,8 +378,12 @@ beforeEach(async () => {
   state.capabilities = caps([PRICE_SERIES, SUPPLY_SERIES])
   state.result = DEFAULT_RESULT()
   state.responder = () => Promise.resolve(state.result)
+  state.saveDetail = saveDetailFixture()
+  state.saveResponder = () => Promise.resolve(state.saveDetail)
+  state.canWrite = true
   vi.mocked(fetchInsightCapabilities).mockClear()
   vi.mocked(runResearchPreview).mockClear()
+  vi.mocked(saveResearchDefinition).mockClear()
 })
 
 afterEach(() => {
@@ -668,15 +736,79 @@ describe('样本说明与结果解释', () => {
     expect(wrapper!.find('[data-testid="yr-eligibility"]').exists()).toBe(true)
   })
 
-  it('保存分析是明示占位：按钮禁用、写明即将提供、不出现「已保存」', async () => {
+  it('无公司写权限：保存入口不渲染，运行预览与已保存查看入口保留（权限语义分离）', async () => {
+    state.canWrite = false
     await mountPage()
     await selectPreset('research.price-new-energy-correlation')
-    const save = wrapper!.find('[data-testid="yr-save"]')
-    expect(save.exists()).toBe(true)
-    expect(save.attributes('disabled')).toBeDefined()
-    expect(save.text()).toContain('即将提供')
-    expect(wrapper!.text()).toContain('不会保存任何结果')
-    expect(wrapper!.text()).not.toContain('已保存')
+    expect(wrapper!.find('[data-testid="yr-save-area"]').exists()).toBe(false)
+    expect(wrapper!.find('[data-testid="yr-save"]').exists()).toBe(false)
+    // 查询不受影响：预览照常可运行；已保存列表入口保留（查看是只读动作）
+    await run()
+    expect(wrapper!.find('[data-testid="yr-result"]').exists()).toBe(true)
+    expect(wrapper!.find('[data-testid="yr-saved-open"]').exists()).toBe(true)
+    expect(wrapper!.find('[data-testid="yr-save-success"]').exists()).toBe(false)
+  })
+
+  it('有写权限：保存提交定义与期望版本（含幂等键、剥掉代次），成功显示「已保存（版本 1）」', async () => {
+    await mountPage()
+    await selectPreset('research.price-new-energy-correlation')
+    await run()
+    // 没有结果时不可保存；有结果后可保存
+    await save()
+    const request = vi.mocked(saveResearchDefinition).mock.calls[0]![0] as Record<string, any>
+    expect(request.presetId).toBe('research.price-new-energy-correlation')
+    expect(request.expected).toEqual({ resultVersion: `rv1:${HEX64}`, readSetRef: `rs1:${HEX64}` })
+    expect(request.idempotencyKey).toEqual(expect.stringMatching(/^research-definition-/))
+    expect(request.context.mode).toBe('ex-post')
+    expect(request.context.contextVersion).toBeUndefined() // 代次不进保存请求（幂等键稳定）
+    const success = wrapper!.find('[data-testid="yr-save-success"]')
+    expect(success.exists()).toBe(true)
+    expect(success.text()).toContain('已保存（版本 1）')
+  })
+
+  it('资料已更新（409）：提示先重新运行再保存，不出现「已保存」、不假装成功', async () => {
+    await mountPage()
+    await selectPreset('research.price-new-energy-correlation')
+    await run()
+    state.saveResponder = () =>
+      Promise.reject(new InsightRequestError({ status: 409, errorCode: 'VERSION_CONFLICT', message: '源资料已更新：重新核验的读取版本与你看到的不一致' }))
+    await save()
+    const error = wrapper!.find('[data-testid="yr-save-error"]')
+    expect(error.exists()).toBe(true)
+    expect(error.text()).toContain('资料已更新，请先重新运行再保存')
+    expect(wrapper!.find('[data-testid="yr-save-success"]').exists()).toBe(false)
+  })
+
+  it('其他拒绝（403 等）：展示后端原因原文，不冒充成功', async () => {
+    await mountPage()
+    await selectPreset('research.price-new-energy-correlation')
+    await run()
+    state.saveResponder = () =>
+      Promise.reject(new InsightRequestError({ status: 403, errorCode: 'FORBIDDEN', message: '当前账号没有所选公司的写权限：可以分析与查看已保存研究，但不能保存' }))
+    await save()
+    const error = wrapper!.find('[data-testid="yr-save-error"]')
+    expect(error.text()).toContain('当前账号没有所选公司的写权限')
+    expect(wrapper!.find('[data-testid="yr-save-success"]').exists()).toBe(false)
+  })
+
+  it('没有可保存结果时保存按钮禁用，且任何时刻不出现虚假的已保存提示', async () => {
+    await mountPage()
+    await selectPreset('research.price-new-energy-correlation')
+    expect(wrapper!.find('[data-testid="yr-save"]').attributes('disabled')).toBeDefined()
+    expect(wrapper!.find('[data-testid="yr-save-success"]').exists()).toBe(false)
+  })
+
+  it('幂等：同口径重复保存使用同一幂等键（服务端可去重，不重复创建）', async () => {
+    await mountPage()
+    await selectPreset('research.price-new-energy-correlation')
+    await run()
+    await save()
+    await save()
+    const calls = vi.mocked(saveResearchDefinition).mock.calls
+    expect(calls.length).toBe(2)
+    expect((calls[0]![0] as Record<string, unknown>).idempotencyKey).toBe((calls[1]![0] as Record<string, unknown>).idempotencyKey)
+    // 幂等命中（replay）也如实说明未重复创建
+    expect(wrapper!.find('[data-testid="yr-save-success"]').text()).toContain('已保存（版本 1）')
   })
 })
 

@@ -13,14 +13,14 @@
 //
 // 响应形状对照 dljy 仓 insight-research.mjs 的 runResearchPreview（insight-research/v1）。
 
-import { apiPost } from '@/services/api'
+import { apiGet, apiPost } from '@/services/api'
 import { INSIGHT_ENDPOINTS } from 'shared/insight/analyses.mjs'
 import {
   INSIGHT_ERRORS,
   InsightContractError,
   type InsightContextInput,
 } from 'shared/insight/contract.mjs'
-import { isAbortError, toInsightError } from './insightClient'
+import { InsightRequestError, isAbortError, toInsightError } from './insightClient'
 
 // ── 请求类型（形状来自 shared/insight/research.mjs 的 parseResearchPreviewRequest）────────
 
@@ -141,4 +141,214 @@ export function runResearchPreview(
     })
     return assertResearchPreviewResult(payload.data)
   })
+}
+
+// ── 研究定义保存/列表/取回/按新源重算（dljy#3094，OpenSpec 任务 14.4；RS06、D9 保存方式段）──
+// 与 #3020 复盘材料同一套冻结协议，不另起第二套：浏览器只提交「定义与源引用 + 期望版本」，
+// 服务端按同一研究内核重算核对一致才冻结；源已变化返回 409（提示先重新运行，不自动接受新值）。
+// 定义与运行版本只存服务端（迁移 059），前端零持久化；请求夹带任何未登记字段直接 400。
+
+/** 一次研究定义保存请求（形状 = shared/insight/research.mjs 的 parseResearchDefinitionSaveBody）。 */
+export type ResearchDefinitionSaveRequest = {
+  presetId: string
+  /** 与预览同形状的上下文；调用方应剥掉 contextVersion（导航概念），保证同口径重复保存幂等键稳定。 */
+  context: InsightContextInput
+  filters?: { groupBy?: string }
+  transformations?: Record<string, unknown>
+  /** 用户看到的版本（resultVersion/readSetRef）：服务端重算核对一致才保存，不一致 409。 */
+  expected: { resultVersion: string; readSetRef: string }
+  /** 可选标题；缺省由服务端取预设标题。 */
+  title?: string
+  /** 幂等键必填：同键同内容重试返回原条目（replay），不重复创建。 */
+  idempotencyKey: string
+}
+
+/** 运行版本元数据（版本清单行）。 */
+export type ResearchRunMeta = {
+  runNo: number
+  resultVersion: string
+  readSetRef?: string
+  createdBy?: string | null
+  createdAt: string
+}
+
+/** 运行版本的完整冻结产物（服务端冻结，前端只读展示，不重算）。 */
+export type ResearchRunContent = ResearchRunMeta & {
+  content: {
+    schemaVersion: string
+    topic: string
+    title: string
+    frozenAt: string
+    definition: Record<string, unknown>
+    note: string
+    /** 冻结的运行结果（insight-research/v1，与预览同一形状）：来源引用与样本说明原文都在这里。 */
+    result: ResearchPreviewResult
+  }
+  contentHash?: string
+}
+
+/** 取回响应：定义摘要 + 版本清单 + 最新（或指定）运行版本完整产物。 */
+export type ResearchDefinitionDetail = {
+  definitionId: string
+  regionId: string
+  presetId: string
+  presetVersion?: string
+  title: string
+  businessWindow?: { start: string; end: string }
+  mode?: string
+  methodVersion?: string
+  runCount: number
+  runs: ResearchRunMeta[]
+  latestRun: ResearchRunContent | null
+  /** 幂等命中：同键同内容重试读回原条目，未重复创建。 */
+  replay?: boolean
+  note?: string
+  mock: false
+  productionWrite: false
+}
+
+/** 列表行（公司隔离由后端会话决定，前端不做二次过滤）。 */
+export type ResearchDefinitionRow = {
+  definitionId: string
+  regionId: string
+  presetId: string
+  title: string
+  businessWindow: { start: string; end: string }
+  mode: string
+  runCount: number
+  latestRun: { runNo: number; resultVersion: string; createdAt: string } | null
+  createdBy: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export type ResearchDefinitionListResult = {
+  rows: ResearchDefinitionRow[]
+  hasMore: boolean
+  offset: number
+  mock: false
+  productionWrite: false
+}
+
+/** 按新源重算响应：changed=false 表示源未变化读回既有版本，不重复建版本。 */
+export type ResearchDefinitionRunResult = {
+  definitionId: string
+  regionId: string
+  title: string
+  changed: boolean
+  run: ResearchRunContent | null
+  runs: ResearchRunMeta[]
+  note?: string
+  mock: false
+  productionWrite: false
+}
+
+/** 形状自检：定义/运行响应必须声明 mock:false 与 productionWrite:false，结构不合规按 422 处理。 */
+function assertResearchDefinitionDetail(value: unknown): ResearchDefinitionDetail {
+  const detail = value as ResearchDefinitionDetail | null
+  if (
+    !detail || typeof detail !== 'object' || Array.isArray(detail)
+    || typeof detail.definitionId !== 'string' || typeof detail.presetId !== 'string'
+    || typeof detail.title !== 'string' || !Array.isArray(detail.runs)
+    || (detail.latestRun !== null && (!detail.latestRun || typeof detail.latestRun !== 'object' || !detail.latestRun.content))
+    || detail.mock !== false || detail.productionWrite !== false
+  ) {
+    throw new InsightContractError(INSIGHT_ERRORS.UNPROCESSABLE, '研究定义响应格式不正确')
+  }
+  return detail
+}
+
+function assertResearchDefinitionList(value: unknown): ResearchDefinitionListResult {
+  const page = value as ResearchDefinitionListResult | null
+  if (
+    !page || typeof page !== 'object' || Array.isArray(page)
+    || !Array.isArray(page.rows) || typeof page.hasMore !== 'boolean' || typeof page.offset !== 'number'
+    || page.mock !== false || page.productionWrite !== false
+  ) {
+    throw new InsightContractError(INSIGHT_ERRORS.UNPROCESSABLE, '研究定义列表格式不正确')
+  }
+  return page
+}
+
+function assertResearchDefinitionRunResult(value: unknown): ResearchDefinitionRunResult {
+  const result = value as ResearchDefinitionRunResult | null
+  if (
+    !result || typeof result !== 'object' || Array.isArray(result)
+    || typeof result.definitionId !== 'string' || typeof result.changed !== 'boolean'
+    || !Array.isArray(result.runs)
+    || (result.run !== null && (!result.run || !result.run.content))
+    || result.mock !== false || result.productionWrite !== false
+  ) {
+    throw new InsightContractError(INSIGHT_ERRORS.UNPROCESSABLE, '研究重算响应格式不正确')
+  }
+  return result
+}
+
+/** 端点路径里的 {id} 占位（契约镜像为唯一来源，这里只做替换）。 */
+function definitionPath(path: string, definitionId: string): string {
+  return path.replace('{id}', encodeURIComponent(definitionId))
+}
+
+/** POST research/definitions：保存/更新研究定义（服务端重算核验一致才冻结）。 */
+export function saveResearchDefinition(
+  request: ResearchDefinitionSaveRequest,
+  options?: { signal?: AbortSignal }
+): Promise<ResearchDefinitionDetail> {
+  return call(async () => {
+    const payload = await apiPost<ResearchDefinitionDetail>(INSIGHT_ENDPOINTS.researchDefinitionSave.path, request, {
+      signal: options?.signal,
+    })
+    return assertResearchDefinitionDetail(payload.data)
+  })
+}
+
+/** GET research/definitions：本公司、当前地区已保存列表（分页默认 50、最多 200）。 */
+export function listResearchDefinitions(
+  options?: { offset?: number; limit?: number; signal?: AbortSignal }
+): Promise<ResearchDefinitionListResult> {
+  return call(async () => {
+    const payload = await apiGet<ResearchDefinitionListResult>(INSIGHT_ENDPOINTS.researchDefinitionList.path, {
+      ...(options?.offset !== undefined ? { offset: options.offset } : {}),
+      ...(options?.limit !== undefined ? { limit: options.limit } : {}),
+    }, { signal: options?.signal })
+    return assertResearchDefinitionList(payload.data)
+  })
+}
+
+/** GET research/definitions/{id}：取回定义 + 版本清单 + 运行产物；runNo 指定历史版本（查看原结果）。 */
+export function getResearchDefinition(
+  definitionId: string,
+  options?: { runNo?: number | null; signal?: AbortSignal }
+): Promise<ResearchDefinitionDetail> {
+  return call(async () => {
+    const payload = await apiGet<ResearchDefinitionDetail>(definitionPath(INSIGHT_ENDPOINTS.researchDefinitionGet.path, definitionId), {
+      ...(options?.runNo !== undefined && options.runNo !== null ? { runNo: options.runNo } : {}),
+    }, { signal: options?.signal })
+    return assertResearchDefinitionDetail(payload.data)
+  })
+}
+
+/** POST research/definitions/{id}/run：按新源重算，追加新版本不可变产物；源未变化读回既有版本。 */
+export function runResearchDefinition(
+  definitionId: string,
+  options?: { signal?: AbortSignal }
+): Promise<ResearchDefinitionRunResult> {
+  return call(async () => {
+    const payload = await apiPost<ResearchDefinitionRunResult>(definitionPath(INSIGHT_ENDPOINTS.researchDefinitionRun.path, definitionId), {}, {
+      signal: options?.signal,
+    })
+    return assertResearchDefinitionRunResult(payload.data)
+  })
+}
+
+/**
+ * 保存失败文案折叠：409 是「你看到的版本已经不在了」，固定提示先重新运行，不展示成系统故障；
+ * 403 透传后端原因原文（无写权限的处置说明）；其余给服务端原文或兜底文案。
+ */
+export function researchSaveError(error: unknown, fallback: string): string {
+  if (error instanceof InsightRequestError) {
+    if (error.status === 409) return '资料已更新，请先重新运行再保存'
+    return error.message || fallback
+  }
+  return fallback
 }

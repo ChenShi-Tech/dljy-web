@@ -15,24 +15,39 @@
 //   - 值直接渲染后端十进制原值：坐标与表格都不设固定上限——合法值再大也完整呈现，
 //     超限请求被前置拦截或按后端原因原文拒绝，绝不截断冒充完整（RS02、RS07）。
 //   - 切换预设/参数/模式/窗口即作废旧结果（代次签名变化立即清空，在途请求由代次机制作废）。
-//   - 保存分析是占位入口（任务 14.4 另行切片）：明示「即将提供」，不假装已保存。
+//   - 保存分析走后端定义冻结（任务 14.4，RS06；与复盘材料同一冻结协议）：只提交「定义与
+//     源引用 + 期望版本」，服务端按同一研究内核重算核对一致才保存；源已更新返回 409 →
+//     提示「资料已更新，请先重新运行再保存」，未保存、不自动接受新值，未成功绝不提示成功。
+//     公司写权限决定保存入口显隐（后端闸门才是权威）；运行预览与已保存列表查看不受限。
 //   - 旧关系图（价格×新能源/负荷散点）与旧综合分析的适用视图迁入本页：结果呈现形式与
 //     预设登记对齐（相关统计、滞后对比、异常窗口时间线、同类日候选表），数据面统一走
 //     research/preview，旧页本期保留不删（D6.1）。
 import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { ElMessage } from 'element-plus'
 import { getInsightAnalysis } from 'shared/insight/analyses.mjs'
 import { formatMetricValue, getMetricDefinition } from 'shared/insight/metrics.mjs'
 import { RESEARCH_MAX_LAG_SLOTS, RESEARCH_MAX_WINDOW_SLOTS, listResearchPresets } from 'shared/insight/research.mjs'
 import type { InsightContextInput } from 'shared/insight/contract.mjs'
+import { idempotencyKeyOf } from '@/services/api'
+import { getCurrentUser } from '@/services/auth'
+import { hasCompanyAdmin } from '@/services/governance'
 import {
   fetchInsightCapabilities,
   type InsightCapabilities,
   type InsightRequestError,
 } from '@/services/insight/insightClient'
-import { runResearchPreview, type ResearchPreviewResult, type ResearchRow, type ResearchSeriesMeta } from '@/services/insight/researchClient'
+import {
+  runResearchPreview,
+  saveResearchDefinition,
+  researchSaveError,
+  type ResearchPreviewResult,
+  type ResearchRow,
+  type ResearchSeriesMeta,
+} from '@/services/insight/researchClient'
 import { useInsightContext } from '@/composables/useInsightContext'
 import { useInsightAiPage, type InsightAiEvidenceBlock, type InsightAiEvidenceItem } from '@/features/regions/yunnan/insight/useInsightAiPage'
 import InsightDateRange from '@/components/insight/InsightDateRange.vue'
+import InsightResearchSavedDialog from '@/components/insight/InsightResearchSavedDialog.vue'
 import { insightSourceTitle, type InsightSourceTitle } from '@/components/insight/insightText'
 
 // ── 契约镜像的预设（页面不二次定义口径）──────────────────────────────────────────────────
@@ -63,7 +78,8 @@ const EX_POST_BADGE = '事后对照'
 const EX_ANTE_BADGE = '事前 · 截至时点'
 const STAGE_TEXT = '研究工作台只运行登记过的预设：结果保留样本、覆盖与方法说明；统计关联不等于因果，同类日不以相似度承诺价格预测'
 const NO_PRESET_TEXT = '当前地区暂未开通研究预设：研究入口按地区登记，未登记地区不借用其他地区的预设'
-const SAVE_PENDING_TEXT = '研究定义保存将在后续切片开放：当前只做预览，不会保存任何结果'
+const SAVE_HINT_NO_RESULT = '运行预览后才能保存：保存提交的是研究定义与版本，不是结果本身'
+const SAVE_HINT_READY = '保存会把定义与期望版本交给服务端核验：按同口径重算一致才冻结；资料已更新时会要求先重新运行再保存'
 
 // ── 上下文与能力目录 ─────────────────────────────────────────────────────────────────────
 
@@ -255,6 +271,27 @@ const runState = reactive<{ result: ResearchPreviewResult | null; error: Insight
   runKey: '',
 })
 
+// ── 保存分析（任务 14.4，RS06）与已保存列表入口 ──────────────────────────────────────────
+// 权限语义分离（同 #151 材料口径）：保存是公司写入，按 governance 既有口径只对公司管理员级
+// 账号显示入口（后端写入闸门才是权威）；运行预览与已保存列表查看不受影响。
+
+const canWriteCompany = computed(() => {
+  try {
+    return hasCompanyAdmin(getCurrentUser())
+  } catch {
+    return false
+  }
+})
+
+const saveState = reactive<{ saving: boolean; savedVersion: number | null; error: string }>({
+  saving: false,
+  savedVersion: null,
+  error: '',
+})
+
+/** 已保存分析窗口：查看（列表/原样只读）对所有人开放；重算入口由窗口按权限另行显隐。 */
+const savedVisible = ref(false)
+
 /** 配置签名：任一参数变化旧结果立即失效（清空展示，在途请求由代次机制作废）。 */
 const configSignature = computed(() =>
   JSON.stringify([
@@ -279,6 +316,8 @@ watch(configSignature, () => {
   runState.result = null
   runState.error = null
   runState.runKey = ''
+  saveState.savedVersion = null
+  saveState.error = ''
 })
 
 async function runPreview(): Promise<void> {
@@ -303,6 +342,50 @@ async function runPreview(): Promise<void> {
     runState.runKey = key
   } finally {
     if (configSignature.value === key) runState.loading = false
+  }
+}
+
+// ── 保存动作：只提交定义与源引用 + 期望版本，服务端重算核对一致才冻结（RS06）────────────
+
+const canSave = computed(() => canWriteCompany.value && Boolean(runState.result?.resultVersion && runState.result?.readSetRef))
+
+const saveHint = computed(() => (runState.result ? SAVE_HINT_READY : SAVE_HINT_NO_RESULT))
+
+async function saveDefinition(): Promise<void> {
+  const preset = activePreset.value
+  const current = runState.result
+  if (!preset || !current || saveState.saving) return
+  if (!current.resultVersion || !current.readSetRef) {
+    saveState.error = '当前结果缺少版本标记，无法保存：请重新运行预览'
+    return
+  }
+  // 上下文剥掉代次（导航概念，同 #151 材料保存）：同口径重复保存幂等键稳定。
+  const { contextVersion: _generation, ...context } = ctx.toQueryContext()
+  const expected = { resultVersion: current.resultVersion, readSetRef: current.readSetRef }
+  const filters = preset.kind === 'correlation' ? { groupBy: groupBy.value } : undefined
+  const transformations = buildTransformations(preset)
+  // 幂等键按业务内容派生：同定义同版本重复保存/重试同键 → 服务端返回原条目，不重复创建。
+  const idempotencyKey = idempotencyKeyOf('research-definition', {
+    region: ctx.regionId.value,
+    presetId: preset.presetId,
+    context,
+    filters: filters ?? null,
+    transformations: transformations ?? null,
+    expected,
+  })
+  saveState.saving = true
+  saveState.error = ''
+  saveState.savedVersion = null
+  try {
+    const detail = await saveResearchDefinition({ presetId: preset.presetId, context, filters, transformations, expected, idempotencyKey })
+    const version = detail.latestRun?.runNo ?? 1
+    saveState.savedVersion = version
+    ElMessage.success(detail.replay ? `已保存（版本 ${version}）；该定义此前已保存，未重复创建` : `已保存（版本 ${version}）`)
+  } catch (error) {
+    // 409（源已更新）→ 固定提示先重新运行；其余透传后端原因原文。未保存，绝不提示成功。
+    saveState.error = researchSaveError(error, '保存未完成：研究页其余功能不受影响，请稍后重试')
+  } finally {
+    saveState.saving = false
   }
 }
 
@@ -623,6 +706,10 @@ const onAiInterpret = (): void => {
         data-testid="yr-ai-entry"
         @click="onAiInterpret"
       >✨ AI 解读本页</el-button>
+      <div class="yr__field yr__saved">
+        <span>已保存分析（本公司，可查看与按新源重算）</span>
+        <el-button plain data-testid="yr-saved-open" @click="savedVisible = true">查看已保存分析</el-button>
+      </div>
     </section>
 
     <p class="yr__meta">{{ STAGE_TEXT }}</p>
@@ -753,10 +840,36 @@ const onAiInterpret = (): void => {
         </div>
       </section>
 
-      <!-- 保存占位（任务 14.4）：不假装已保存 -->
-      <section class="yr__save" data-testid="yr-save-area">
-        <el-button disabled data-testid="yr-save">保存分析（即将提供）</el-button>
-        <span class="yr__hint">{{ SAVE_PENDING_TEXT }}</span>
+      <!-- 保存分析（任务 14.4，RS06）：写权限才显示入口；只提交定义与期望版本，服务端重算
+           核对一致才冻结；409 提示先重新运行，未保存、绝不提示成功 -->
+      <section v-if="canWriteCompany" class="yr__save" data-testid="yr-save-area">
+        <el-button
+          type="primary"
+          plain
+          data-testid="yr-save"
+          :disabled="!canSave"
+          :loading="saveState.saving"
+          @click="saveDefinition"
+        >
+          保存分析
+        </el-button>
+        <span class="yr__hint" data-testid="yr-save-hint">{{ saveHint }}</span>
+        <el-alert
+          v-if="saveState.savedVersion !== null"
+          type="success"
+          show-icon
+          :closable="false"
+          :title="`已保存（版本 ${saveState.savedVersion}）`"
+          data-testid="yr-save-success"
+        />
+        <el-alert
+          v-if="saveState.error"
+          type="error"
+          show-icon
+          :closable="false"
+          :title="saveState.error"
+          data-testid="yr-save-error"
+        />
       </section>
 
       <!-- 结果：样本说明 + 图表/表 + 方法与口径原文 -->
@@ -946,6 +1059,9 @@ const onAiInterpret = (): void => {
         </div>
       </section>
     </template>
+
+    <!-- 已保存分析：列表/查看对所有人开放（公司隔离、原样只读）；重算入口按写权限显隐 -->
+    <InsightResearchSavedDialog v-model="savedVisible" :can-write="canWriteCompany" />
   </div>
 </template>
 
@@ -969,6 +1085,9 @@ const onAiInterpret = (): void => {
 .yr__field > span:first-child {
   font-size: var(--font-tb-12);
   color: var(--el-text-color-secondary);
+}
+.yr__saved {
+  justify-content: flex-end;
 }
 .yr__meta {
   margin: 0;
