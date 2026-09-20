@@ -15,6 +15,7 @@
 // 未选对象 / 对象清单不可用 / 窗口超限的前置拦截在页面层完成（不发请求），后端校验是第二道防线。
 
 import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import { getInsightAnalysis } from 'shared/insight/analyses.mjs'
 import { formatMetricValue, getMetricDefinition } from 'shared/insight/metrics.mjs'
 import type { InsightContextInput } from 'shared/insight/contract.mjs'
@@ -29,13 +30,18 @@ import {
 } from '@/services/insight/insightClient'
 import { useInsightContext } from '@/composables/useInsightContext'
 import { insightAiBlockOf, useInsightAiPage, type InsightAiEvidenceBlock } from '@/features/regions/yunnan/insight/useInsightAiPage'
+import {
+  SPATIAL_LINK_TARGETS,
+  keywordSpatialLinkQuery,
+  openSpatialViewLink,
+  spatialEntryVisible,
+} from '../spatialLinks'
 import InsightBlock from '@/components/insight/InsightBlock.vue'
 import InsightDateRange from '@/components/insight/InsightDateRange.vue'
 import InsightEvidenceDrawer from '@/components/insight/InsightEvidenceDrawer.vue'
 import InsightHistoryCandidates from '@/components/insight/InsightHistoryCandidates.vue'
 import InsightObjectPicker, { type InsightObjectOption } from '@/components/insight/InsightObjectPicker.vue'
 import InsightResultTable from '@/components/insight/InsightResultTable.vue'
-import { useRouter } from 'vue-router'
 import { GRID_GEO_DISCLOSURE_ROLES } from 'shared/schema/grid-geo-contract.mjs'
 import { getCurrentUser } from '@/services/auth'
 import { ApiError } from '@/services/api'
@@ -291,6 +297,34 @@ function retryObjects(analysisId: ObjectCoverageAnalysis): void {
 
 function onChannelObjectsChange(ids: string[]): void {
   channelObjects.value = [...ids]
+}
+
+// ── 空间查阅入口（dljy#3106 D6.1「三维地形/空间」未就绪项补齐）─────────────────────────
+// 通道断面页签选中**单个**通道/断面后，可跳入既有「公开披露空间层」（grid-geo 模块原地
+// 复用，洞察不复制 Cesium）。通道/断面在 grid-geo 无独立对象类型，不伪造对象绑定，以披露
+// 检索词承接（对象名预填搜索，输电主题按名过滤）。权限显隐沿用 spatialLinks 登记
+// （canAccessPath 既有口径，无权限不渲染）；query 白名单只带单个对象名 + 窗口末日
+//（objectDate）+ 来源标记，多选不渲染（对象名数组不进 URL），公司未选不渲染
+//（grid-geo 按 地区+公司 校验归属）。
+
+const router = useRouter()
+const DISCLOSURE_SPATIAL_TARGET = SPATIAL_LINK_TARGETS.disclosureSpatial
+
+const channelSpatialVisible = computed(() =>
+  spatialEntryVisible({
+    path: DISCLOSURE_SPATIAL_TARGET,
+    objectName: channelObjects.value.length === 1 ? channelObjects.value[0] : null,
+    companyId: ctx.companyId.value,
+  })
+)
+
+function onChannelToSpatialView(): void {
+  const name = channelObjects.value.length === 1 ? channelObjects.value[0] : ''
+  if (!name || !ctx.companyId.value) return
+  openSpatialViewLink(router, {
+    path: DISCLOSURE_SPATIAL_TARGET,
+    query: keywordSpatialLinkQuery({ keyword: name, date: ctx.businessWindow.value.end, from: 'insight-grid-boundaries' }),
+  })
 }
 
 function onReserveObjectsChange(ids: string[]): void {
@@ -631,8 +665,6 @@ const unitListRows = computed<RecordRow[]>(() => {
 //   - 联看同期价格只携带事件窗口跳价格页（start/end query），同期变化不自动归因损失，
 //     返回恢复由浏览器后退承担（15.x 统一 insightHandoff）；已关联场站只来自对象接口
 //     的明确关系（relations.plants），无关系不选同名/近似场站（GB05、GB06、CH01）。
-
-const router = useRouter()
 
 /** 角色门控与后端 GRID_GEO_DISCLOSURE_ROLES 同源（shared 契约镜像）；授权由服务端裁决。 */
 const canReadMaintenance = computed(() => GRID_GEO_DISCLOSURE_ROLES.includes(getCurrentUser().roleCode))
@@ -1055,6 +1087,13 @@ onMounted(() => {
                     @update:model-value="onChannelObjectsChange"
                   />
                 </label>
+                <el-button
+                  v-if="channelSpatialVisible"
+                  data-testid="ygb-channel-spatial"
+                  @click="onChannelToSpatialView"
+                >
+                  在空间视图查看
+                </el-button>
               </div>
               <el-alert v-if="channelWindowTooLarge" type="warning" :closable="false" :title="CHANNEL_WINDOW_TEXT" />
               <template v-else-if="objectsPhase(CHANNEL_FLOWS_ANALYSIS) === 'error'">

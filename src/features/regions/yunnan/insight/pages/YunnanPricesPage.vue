@@ -37,6 +37,15 @@ import { insightAiBlockOf, useInsightAiPage, type InsightAiEvidenceBlock } from 
 import { useInsightSelection } from '@/components/insight/chart/useInsightSelection'
 import { canFollowDeepLink, DEEP_LINK_TARGETS, openDataMaintenanceLink } from '../businessLinks'
 import { buildResearchHandoffQuery } from '../researchHandoff'
+import {
+  SPATIAL_LINK_TARGETS,
+  objectSpatialLinkQuery,
+  openSpatialViewLink,
+  resolveSpatialObjectId,
+  spatialEntryVisible,
+} from '../spatialLinks'
+import { fetchGridObject } from '@/features/gridGeo/client'
+import { ElMessage } from 'element-plus'
 import Price3DWorkspace from './prices/Price3DWorkspace.vue'
 import { readPriceMode, writePriceMode, type PriceDisplayMode } from './prices/priceModeStorage'
 import InsightBlock from '@/components/insight/InsightBlock.vue'
@@ -666,6 +675,64 @@ function onSpreadSelectionToResearch(): void {
   void router.push({ path: '/insight/research', query })
 }
 
+// ── 空间查阅入口（dljy#3106 D6.1「三维地形/空间」未就绪项补齐）─────────────────────────
+// 节点基差页签选中参考对象后，可跳入既有「电力市场空间态势」（grid-geo 模块原地复用，
+// 洞察不复制 Cesium）。权限显隐沿用 spatialLinks 登记（canAccessPath 既有口径，无权限
+// 不渲染）；参考对象名先经 resolveSpatialObjectId 解析成网格资产 ID（objectId 契约是
+// 不透明资产 ID，不得拿名字生成），解析失败如实说明不跳转；query 白名单只带资产 ID +
+// 地区/公司归属 + 窗口末日（objectDate）+ 来源标记，时段数组与原始序列不进 URL。
+
+const MARKET_SPATIAL_TARGET = SPATIAL_LINK_TARGETS.marketSpatial
+
+const basisSpatialVisible = computed(() =>
+  spatialEntryVisible({
+    path: MARKET_SPATIAL_TARGET,
+    objectName: basisReference.value || null,
+    companyId: ctx.companyId.value,
+  })
+)
+
+async function onBasisToSpatialView(): Promise<void> {
+  if (!basisReference.value || !ctx.companyId.value) return
+  // 参考对象先解析成网格资产 ID（objectId 契约是不透明资产 ID，名字直传会请求不存在的资产）。
+  // 对象种类跟价格对象走：场站关联节点模式的参考是场站（plant），公司厂侧节点模式是节点（node）。
+  const kind = currentEntry.value?.priceObject === 'plant-node' ? 'plant' : 'node'
+  const assetId = await resolveSpatialObjectId(kind, basisReference.value)
+  if (!assetId) {
+    ElMessage.warning(
+      kind === 'plant'
+        ? `空间资产登记中未找到与「${basisReference.value}」唯一对应的场站，本次未跳转`
+        : `空间资产登记中未找到与「${basisReference.value}」唯一对应的节点，本次未跳转`
+    )
+    return
+  }
+  if (kind === 'node') {
+    // 市场空间态势只按对象的场站关联取景（detail.relations.plants）：无场站关联的独立节点
+    // 跳过去只会得到「尚未关联场站」的报错——点击时确认关联，未关联/读取失败如实说明不跳转。
+    try {
+      const detail = await fetchGridObject({ kind: 'node', id: assetId, regionId: ctx.regionId.value })
+      if (!detail.relations.plants.length) {
+        ElMessage.warning(`「${basisReference.value}」在空间资产中未关联场站，市场空间态势暂无法聚焦独立节点，本次未跳转`)
+        return
+      }
+    } catch {
+      ElMessage.warning(`「${basisReference.value}」的空间资产关联读取失败，本次未跳转`)
+      return
+    }
+  }
+  openSpatialViewLink(router, {
+    path: MARKET_SPATIAL_TARGET,
+    query: objectSpatialLinkQuery({
+      kind,
+      objectId: assetId,
+      regionId: ctx.regionId.value,
+      companyId: ctx.companyId.value,
+      date: ctx.businessWindow.value.end,
+      from: 'insight-prices',
+    }),
+  })
+}
+
 /** 已定位时段的可读描述（「对象 · HH:mm~HH:mm」，语义身份，无下标）。 */
 const spreadSelectionText = computed(() => {
   const selection = spreadSelection.value
@@ -1254,6 +1321,13 @@ onMounted(() => {
                       <el-option v-for="option in basisOptions" :key="option.id" :label="option.label" :value="option.id" />
                     </el-select>
                   </label>
+                  <el-button
+                    v-if="basisSpatialVisible"
+                    data-testid="ynp-basis-spatial"
+                    @click="onBasisToSpatialView"
+                  >
+                    在空间视图查看
+                  </el-button>
                 </div>
                 <el-alert type="info" :closable="false" :title="BASIS_DIRECTION_TEXT" />
                 <el-empty v-if="!basisReference" :description="BASIS_PICK_REFERENCE_TEXT" :image-size="72" />

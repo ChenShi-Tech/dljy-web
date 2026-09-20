@@ -23,6 +23,7 @@
 | 明细表 | `src/components/insight/InsightResultTable.vue` | 语义列明细表、本页/全量标注、选区联动高亮、CSV 导出 |
 | CSV 口径 | `src/components/insight/insightCsv.ts` | `buildInsightCsv` / `downloadInsightCsv`（本页与全量导出共用） |
 | 材料窗口 | `src/components/insight/InsightMaterialDialog.vue` | 洞察区块 → 复盘底稿材料：选择既有底稿、冻结保存（409 先重跑）、入稿 |
+| 空间查阅深链 | `src/features/regions/yunnan/insight/spatialLinks.ts` | 洞察页「在空间视图查看」→ 既有 grid-geo 空间场景：目标登记、query 白名单、权限显隐与出口双保险（dljy#3106） |
 | 文案中枢 | `src/components/insight/insightText.ts` | 错误/可用性/派生/阶段/价格对象/访问范围/字段的全部业务话术 |
 | 测试夹具 | `src/components/insight/insightFixtures.ts` | 能过契约校验的最小合法结果构造，各 spec 复用 |
 | AI 侧栏注册 | `src/features/regions/yunnan/insight/useInsightAiPage.ts` | 六页统一 AI 解读注册与取材纪律（任务 15.3）；签名纪律 `insightAiBlockOf` 也在此 |
@@ -226,6 +227,18 @@ hasInsightDrilldownParams(query)    -> boolean              // URL 是否带 hx_
 4. **防回环**：与上一次相同（规范化后）的选区不重复上抛；图表↔表格联动来回触发时第二跳被吞。结果更换或 `reset()` 后允许重选同一段。
 
 对象维度值不是合法契约 id（如中文显示名）时不进 `objectRefs`，时段仍承载选区——不让整条选区被校验拒绝。多序列市场阶段/价格对象不一致时该字段置 null（不硬造单一口径）。
+
+## 跨模块深链（spatialLinks，dljy#3106）
+
+洞察页动作按钮跳入既有业务模块的只读页面，模式沿用 businessLinks（#3096 登记+白名单+权限+出口双保险；该登记文件在 `feat/insight-deeplink` 分支）。当前登记：**空间查阅深链** `src/features/regions/yunnan/insight/spatialLinks.ts`——design D6.1「三维地形、场站/节点空间位置：从节点/电网/场站动作进入已有空间资产，保留入口与上下文，不在洞察复制 Cesium」。入口清单：
+
+| 来源页 | 触发条件 | 目标（既有只读路径） | query 承接 |
+| --- | --- | --- | --- |
+| 价格与价差「节点基差」 | 选中参考节点 | `/grid-assets/market` 电力市场空间态势 | 节点对象绑定（objectKind/objectId + 地区/公司归属）+ 窗口末日 objectDate + from |
+| 场站市场表现「组合总览」 | 选中单场站 | `/grid-assets/market` 电力市场空间态势 | 场站对象绑定 + objectDate + from |
+| 跨省与电网边界「通道断面」 | 选中单个通道/断面 | `/grid-assets/disclosures` 公开披露空间层 | 通道/断面无 grid-geo 对象类型，以披露检索词 keyword + objectDate 承接（不伪造对象绑定） |
+
+红线（与 businessLinks 一致）：query 白名单只有对象上下文键 / keyword / from，值均为非空标量字符串——对象名数组、时段序列与可写动词不进 URL；入口显隐走 `governance.canAccessPath` 既有口径，无权限、多对象选中或公司未选时不渲染；`openSpatialViewLink` 出口再校验一遍（不合法不 push）。
 
 ## 导出规则（insightCsv）
 

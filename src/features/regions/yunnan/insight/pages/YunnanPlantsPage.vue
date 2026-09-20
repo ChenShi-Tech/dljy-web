@@ -51,6 +51,14 @@ import {
   openDataMaintenanceLink,
 } from '../businessLinks'
 import { insightAiBlockOf, useInsightAiPage, type InsightAiEvidenceBlock } from '@/features/regions/yunnan/insight/useInsightAiPage'
+import {
+  SPATIAL_LINK_TARGETS,
+  objectSpatialLinkQuery,
+  openSpatialViewLink,
+  resolveSpatialObjectId,
+  spatialEntryVisible,
+} from '../spatialLinks'
+import { ElMessage } from 'element-plus'
 import InsightBlock from '@/components/insight/InsightBlock.vue'
 import InsightDateRange from '@/components/insight/InsightDateRange.vue'
 import InsightEvidenceDrawer from '@/components/insight/InsightEvidenceDrawer.vue'
@@ -356,6 +364,50 @@ function retryObjects(analysisId: ObjectCoverageAnalysis): void {
 
 function onOverviewObjectsChange(ids: string[]): void {
   overviewObjects.value = [...ids]
+}
+
+// ── 空间查阅入口（dljy#3106 D6.1「三维地形/空间」未就绪项补齐）─────────────────────────
+// 组合总览页签选中**单个**场站（单场站上下文）后，可跳入既有「电力市场空间态势」
+// （grid-geo 模块原地复用，洞察不复制 Cesium；场站对象绑定后地图聚焦该场站）。
+// 权限显隐沿用 spatialLinks 登记（canAccessPath 既有口径，无权限不渲染）；覆盖名先经
+// resolveSpatialObjectId 解析成网格资产 ID（objectId 契约是不透明资产 ID，不得拿名字
+// 生成），解析失败如实说明不跳转；query 白名单只带资产 ID + 地区/公司归属 + 窗口末日
+// （objectDate）+ 来源标记，多选不渲染（对象名数组不进 URL），公司未选不渲染
+// （grid-geo 按 地区+公司 校验归属）。
+
+const router = useRouter()
+
+const PLANTS_SPATIAL_TARGET = SPATIAL_LINK_TARGETS.marketSpatial
+
+const plantSpatialVisible = computed(() =>
+  spatialEntryVisible({
+    path: PLANTS_SPATIAL_TARGET,
+    objectName: overviewObjects.value.length === 1 ? overviewObjects.value[0] : null,
+    companyId: ctx.companyId.value,
+  })
+)
+
+async function onPlantToSpatialView(): Promise<void> {
+  const name = overviewObjects.value.length === 1 ? overviewObjects.value[0] : ''
+  if (!name || !ctx.companyId.value) return
+  // 覆盖名先解析成网格资产 ID（objectId 契约是不透明资产 ID，名字直传会请求不存在的资产）；
+  // 解析失败（未登记/同名多资产/读取失败）如实说明并不跳转，不带脏参数跳走。
+  const assetId = await resolveSpatialObjectId('plant', name)
+  if (!assetId) {
+    ElMessage.warning(`空间资产登记中未找到与「${name}」唯一对应的场站，本次未跳转`)
+    return
+  }
+  openSpatialViewLink(router, {
+    path: PLANTS_SPATIAL_TARGET,
+    query: objectSpatialLinkQuery({
+      kind: 'plant',
+      objectId: assetId,
+      regionId: ctx.regionId.value,
+      companyId: ctx.companyId.value,
+      date: ctx.businessWindow.value.end,
+      from: 'insight-plants',
+    }),
+  })
 }
 
 function onCaptureObjectsChange(ids: string[]): void {
@@ -1212,8 +1264,6 @@ const reconcileMonthlyMissingText = computed(() => {
 // 洞察只传证据引用（期间/对象名）与授权入口：显隐经 governance 既有口径判定（无权限不渲染），
 // 跳转是查看不是操作——不自动创建/提交任何单据，不更改合同与电费（写入只在目标业务模块）。
 
-const router = useRouter()
-
 /** 结算业务入口：复盘中心（结算复盘、日报核验）对当前账号可访问才显示。 */
 const canOpenSettlement = computed(() => canFollowDeepLink(DEEP_LINK_TARGETS.settlementReview))
 /** 中长期模块入口：月度持仓（只读台账）对当前账号可访问才显示。 */
@@ -1394,6 +1444,13 @@ onMounted(() => {
                     @update:model-value="onOverviewObjectsChange"
                   />
                 </label>
+                <el-button
+                  v-if="plantSpatialVisible"
+                  data-testid="ypp-overview-spatial"
+                  @click="onPlantToSpatialView"
+                >
+                  在空间视图查看
+                </el-button>
               </div>
               <template v-if="objectsPhase(PLANTS_DAILY_METRICS) === 'error'">
                 <el-alert type="error" show-icon :closable="false" title="对象清单读取失败">
