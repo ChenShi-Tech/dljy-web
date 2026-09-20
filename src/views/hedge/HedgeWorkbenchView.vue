@@ -283,16 +283,16 @@ onBeforeUnmount(() => { if (inFlight) clearTimeout(inFlight) })
             <p>含机制：<b>{{ overview.ratio.withMechanism.value ?? '不可计算' }}</b>（{{ overview.ratio.withMechanism.status }}）</p>
             <p>仅中长期：<b>{{ overview.ratio.midlongOnly.value ?? '不可计算' }}</b>（{{ overview.ratio.midlongOnly.status }}）</p>
             <p data-test="assessment">
-              判级：{{ overview.standardMetrics.TODAY2_INTERVAL?.level }}
-              <span v-if="overview.standardMetrics.TODAY2_INTERVAL?.reason">
-                （未评估：{{ overview.standardMetrics.TODAY2_INTERVAL.reason }}）</span>
+              判级：{{ overview.standardMetrics?.TODAY2_INTERVAL?.level ?? '未评估' }}
+              <span v-if="overview.standardMetrics?.TODAY2_INTERVAL?.reason">
+                （未评估：{{ overview.standardMetrics?.TODAY2_INTERVAL.reason }}）</span>
             </p>
             <p v-if="overview.scheme" class="scheme">生效方案：{{ overview.scheme.name }} v{{ overview.scheme.versionNo }}（{{ overview.scheme.basis === 'WITH_MECHANISM' ? '含机制' : '仅中长期' }} 判级）</p>
             <p v-else class="scheme">未评估：套保区间未配置</p>
           </div>
           <div class="metric-card" data-test="sensitivity">
             <h3>价格敏感度</h3>
-            <p>{{ overview.sensitivity.value ?? '不完整' }}<span v-if="overview.sensitivity.note">（{{ overview.sensitivity.note }}）</span></p>
+            <p>{{ overview.sensitivity?.value ?? '不完整' }}<span v-if="overview.sensitivity?.note">（{{ overview.sensitivity?.note }}）</span></p>
           </div>
         </div>
 
