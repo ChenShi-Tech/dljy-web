@@ -96,6 +96,14 @@ export type InsightCoverageSource = {
   completeDates: string[]
   partialDates: string[]
   ranges: DateRange[]
+  /**
+   * 窗口内的有效对象清单（可选）：只有对象维度的来源、且新版洞察服务才下发。
+   * 字段缺失（老后端）≠ 空数组（窗口内确实没有对象）——页面据此区分
+   * 「无法列出」与「没有对象」，绝不伪造选项。
+   */
+  objects?: string[]
+  /** 对象清单的补充说明（如清单超过上限被截断时给出说明原文）。 */
+  objectsNote?: string
 }
 
 export type InsightCoverageResult = {
