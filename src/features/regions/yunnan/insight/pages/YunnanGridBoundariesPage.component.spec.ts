@@ -630,7 +630,7 @@ describe('通道断面页签', () => {
     expect(coverageCalls).toHaveLength(1)
     expect((coverageCalls[0]![0] as any).filters?.objectIds).toBeUndefined()
     expect(queryCallsOf((request) => request.analysisId === CHANNEL_FLOWS)).toHaveLength(0)
-    expect(wrapper!.text()).toContain('请先选择通道或断面')
+    expect(wrapper!.text()).toContain('请选择通道或断面')
   })
 
   it('objectsNote（清单截断说明）原文透出', async () => {

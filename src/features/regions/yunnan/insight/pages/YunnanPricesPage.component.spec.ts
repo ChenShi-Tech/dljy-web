@@ -476,7 +476,7 @@ describe('价格对象目录', () => {
     await mountPage()
 
     expect(queryInsight).not.toHaveBeenCalled()
-    expect(wrapper!.text()).toContain('请先在上方选择分析对象，再进行查询')
+    expect(wrapper!.text()).toContain('请先选择节点或场站')
 
     await chooseObjects('YN.KM.01')
     const calls = queryCallsOf((request) => request.filters?.view === 'series')

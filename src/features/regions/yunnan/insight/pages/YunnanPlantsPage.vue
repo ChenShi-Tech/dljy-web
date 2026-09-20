@@ -27,6 +27,7 @@
 //   - 业务模块只读深链（dljy#3096，任务 15.5）：结算页签「前往结算业务」、申报出清实际
 //    页签「前往中长期模块」、区块空态「前往资料维护」——显隐经 governance 既有口径判定，
 //    跳转只带期间/对象名/from 标记，不自动创建/提交任何单据（design D11 / CH04 / PP07）。
+import InsightNote from '@/components/insight/InsightNote.vue'
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { getInsightAnalysis } from 'shared/insight/analyses.mjs'
@@ -106,8 +107,7 @@ const PLANTS_TABS = [
 type PlantsTab = (typeof PLANTS_TABS)[number]['view']
 
 // 视图固定说明（口径来自 specs 与后端 plants 视图，改文案要同步 docs/market-insight-plants.md）
-const STAGE_TEXT = '场站市场表现只呈现获权资料的分析结果：页面不计算、不派生，口径以后端分析视图为准'
-const PICK_PLANT_TEXT = '请先选择场站对象（选项来自所选窗口的覆盖清单）；未选不发请求'
+const PICK_PLANT_TEXT = '请选择场站对象'
 const OBJECTS_UNAVAILABLE_TEXT = '对象清单需要新版洞察服务，当前无法列出'
 const OBJECTS_EMPTY_TEXT = '所选窗口内没有可选对象：可换一个日期窗或确认数据接入情况'
 const ENTITLEMENT_OVERVIEW_TEXT = '获权数据需开通：当前公司没有场站日报指标与正式日结明细的查看授权'
@@ -131,8 +131,6 @@ const COMPARE_TEXT = '按「同一场站、同一曲线家族、不同供应商/
 const NIGHT_ZERO_TEXT = '夜间零值是真实值：照常呈现、参与统计，不剔除、不标注异常'
 const SEMANTICS_TEXT = '申报、出清、上网、集控实发、分时结算与中长期引用语义不同：不相加、不差值、不分摊；本页不提供派生偏差列——偏差对照将在口径确认后提供'
 const FOLLOW_OVERVIEW_TEXT = '与上方同一组场站对象；未选或对象清单不可用时本区块不查询'
-const FOLLOW_PRICE_TEXT = '与上方价格捕获表同一组场站对象；未选或对象清单不可用时本区块不查询'
-const FOLLOW_CLEARING_TEXT = '与上方对照表同一组场站对象；未选或对象清单不可用时本区块不查询'
 
 /** 日报宽表六字段 → 业务名（字段登记见 shared/insight/sources.mjs，界面不透出内部字段原文）。 */
 const DAILY_FIELD_LABELS: Record<string, string> = {
@@ -1394,7 +1392,7 @@ onMounted(() => {
     <!-- 顶部：日期窗与固定口径说明 -->
     <section class="ypp__controls">
       <label class="ypp__field">
-        <span>业务日期窗</span>
+        <span>分析日期</span>
         <InsightDateRange
           :model-value="ctx.businessWindow.value"
           :max-days="maxDays"
@@ -1409,8 +1407,6 @@ onMounted(() => {
         @click="onAiInterpret"
       >✨ AI 解读本页</el-button>
     </section>
-
-    <p class="ypp__meta">{{ STAGE_TEXT }}</p>
 
     <el-alert v-if="capabilitiesError" type="error" show-icon :closable="false" title="能力目录读取失败">
       <p class="ypp__hint">当前看不到可用的场站分析；可重试，不影响已就绪区块的展示。</p>
@@ -1483,7 +1479,7 @@ onMounted(() => {
               @open-evidence="openEvidence('overview-coverage')"
               @open-maintenance="openDataMaintenance"
             >
-              <el-alert type="info" :closable="false" :title="COVERAGE_FIELDS_TEXT" />
+              <InsightNote label="字段覆盖口径" :text="COVERAGE_FIELDS_TEXT" />
               <el-empty v-if="!overviewObjects.length" :description="PICK_PLANT_TEXT" :image-size="72" />
               <template v-else>
                 <el-alert v-if="overviewDenominatorNote" type="info" :closable="false" :title="overviewDenominatorNote" data-testid="ypp-denominator-note" />
@@ -1514,7 +1510,7 @@ onMounted(() => {
               @open-evidence="openEvidence('settlement-daily')"
               @open-maintenance="openDataMaintenance"
             >
-              <el-alert type="info" :closable="false" title="正式日结口径：现有读模型只含正式日结，暂结走结算原件通道单独读取，不混进正式口径" />
+              <InsightNote label="正式日结口径" text="暂结资料在暂结对照中查看。" />
               <el-empty v-if="!overviewObjects.length" :description="FOLLOW_OVERVIEW_TEXT" :image-size="72" />
               <InsightResultTable
                 v-else
@@ -1574,8 +1570,8 @@ onMounted(() => {
               @open-evidence="openEvidence('capture')"
               @open-maintenance="openDataMaintenance"
             >
-              <el-alert type="info" :closable="false" :title="CAPTURE_TEXT" />
-              <el-alert type="info" :closable="false" :title="PRODUCT_TEXT" />
+              <InsightNote label="电量加权节点参考价" :text="CAPTURE_TEXT" />
+              <InsightNote label="节点量价参考乘积" :text="PRODUCT_TEXT" />
               <el-empty v-if="!captureObjects.length" :description="PICK_PLANT_TEXT" :image-size="72" />
               <template v-else>
                 <el-alert v-if="captureDenominatorNote" type="info" :closable="false" :title="captureDenominatorNote" />
@@ -1632,8 +1628,8 @@ onMounted(() => {
               @open-evidence="openEvidence('output-series')"
               @open-maintenance="openDataMaintenance"
             >
-              <el-alert type="info" :closable="false" :title="LINKAGE_TEXT" />
-              <p class="ypp__hint">{{ FOLLOW_PRICE_TEXT }}</p>
+              <InsightNote label="量价联看口径" :text="LINKAGE_TEXT" />
+
               <el-empty v-if="!captureObjects.length" :description="PICK_PLANT_TEXT" :image-size="72" />
               <template v-else>
                 <InsightSeriesChart
@@ -1700,8 +1696,8 @@ onMounted(() => {
               @open-evidence="openEvidence('supplier-comparison')"
               @open-maintenance="openDataMaintenance"
             >
-              <el-alert type="info" :closable="false" :title="COMPARE_TEXT" />
-              <el-alert type="info" :closable="false" :title="NIGHT_ZERO_TEXT" />
+              <InsightNote label="供应商共同样本" :text="COMPARE_TEXT" />
+              <InsightNote label="零值口径" :text="NIGHT_ZERO_TEXT" />
               <el-empty v-if="!comparisonObjects.length" :description="PICK_PLANT_TEXT" :image-size="72" />
               <template v-else>
                 <el-table v-if="compareMemberRows.length" :data="compareMemberRows" size="small" border max-height="420" data-testid="ypp-compare-table">
@@ -1779,7 +1775,7 @@ onMounted(() => {
               @open-evidence="openEvidence('semantics')"
               @open-maintenance="openDataMaintenance"
             >
-              <el-alert type="info" :closable="false" :title="SEMANTICS_TEXT" />
+              <InsightNote label="电量口径" :text="SEMANTICS_TEXT" />
               <el-empty v-if="!clearingObjects.length" :description="PICK_PLANT_TEXT" :image-size="72" />
               <template v-else>
                 <el-alert v-if="semanticsDenominatorNote" type="info" :closable="false" :title="semanticsDenominatorNote" />
@@ -1801,7 +1797,8 @@ onMounted(() => {
                 </ul>
                 <!-- 中长期引用在场时给只读深链入口（15.5）：跳月度持仓，维护留在目标模块 -->
                 <div v-if="hasMidlongReference && canOpenMidlong" class="ypp__deeplink" data-testid="ypp-midlong-row">
-                  <span class="ypp__hint">中长期电量是合同口径的只读引用；合同与持仓的维护在中长期模块办理。</span>
+                  <InsightNote label="合同电量 · 只读引用" text="中长期电量是合同口径的只读引用；合同与持仓在中长期模块维护。" />
+
                   <el-button link type="primary" size="small" data-testid="ypp-open-midlong" @click="openMidlongModule">
                     前往中长期模块
                   </el-button>
@@ -1831,7 +1828,7 @@ onMounted(() => {
               @open-evidence="openEvidence('business-forecast')"
               @open-maintenance="openDataMaintenance"
             >
-              <p class="ypp__hint">{{ FOLLOW_CLEARING_TEXT }}</p>
+
               <el-empty v-if="!clearingObjects.length" :description="PICK_PLANT_TEXT" :image-size="72" />
               <InsightSeriesChart
                 v-else
@@ -1846,7 +1843,8 @@ onMounted(() => {
           <!-- 结算表现（ST01—ST06）：正式/暂结显式切换、量费加权统计、损失解释、单据记录与核对；「前往结算业务」为只读深链入口（15.5） -->
           <template v-else-if="tab.view === 'settlement'">
             <section class="ypp__settlement" data-testid="ypp-settlement-section">
-              <p class="ypp__hint">结算确认与电费修正在结算/复盘业务模块办理；这里只提供获权查看入口，不创建或提交任何单据。</p>
+              <InsightNote label="结算资料 · 只读" text="结算确认与电费修正在结算业务模块办理；这里不创建或提交任何单据。" />
+
             <el-alert
               v-if="!hasAnySettlement"
               type="info"
@@ -1855,7 +1853,7 @@ onMounted(() => {
               data-testid="ypp-settlement-entitlement"
             />
             <template v-if="hasAnySettlement">
-              <el-alert type="info" :closable="false" :title="SETTLEMENT_STATUS_TEXT" />
+              <InsightNote label="正式 / 暂结口径" :text="SETTLEMENT_STATUS_TEXT" />
               <div v-if="canOpenSettlement" class="ypp__bar" data-testid="ypp-settlement-entry-bar">
                 <el-button link type="primary" size="small" data-testid="ypp-open-settlement" @click="openSettlementBusiness">前往结算业务</el-button>
               </div>
@@ -1910,7 +1908,7 @@ onMounted(() => {
                 @open-candidates="openCandidates"
                 @open-evidence="openEvidence('settlement-formal')"
               >
-                <el-alert type="info" :closable="false" :title="SETTLEMENT_FORMAL_TEXT" data-testid="ypp-settlement-formal-note" />
+                <InsightNote label="正式日结" :text="SETTLEMENT_FORMAL_TEXT" data-testid="ypp-settlement-formal-note" />
                 <el-empty v-if="!settlementObjects.length" :description="PICK_PLANT_TEXT" :image-size="72" />
                 <InsightResultTable
                   v-else
@@ -1934,7 +1932,7 @@ onMounted(() => {
                 @open-candidates="openCandidates"
                 @open-evidence="openEvidence('settlement-status-diff')"
               >
-                <el-alert type="info" :closable="false" :title="SETTLEMENT_TEMP_TEXT" data-testid="ypp-settlement-temp-note" />
+                <InsightNote label="正式 − 暂结" :text="SETTLEMENT_TEMP_TEXT" data-testid="ypp-settlement-temp-note" />
                 <el-empty v-if="!settlementObjects.length" :description="PICK_PLANT_TEXT" :image-size="72" />
                 <template v-else>
                   <el-table v-if="statusDiffRows.length" :data="statusDiffRows" size="small" border max-height="420" data-testid="ypp-status-diff-table">
@@ -2002,7 +2000,7 @@ onMounted(() => {
                 @open-candidates="openCandidates"
                 @open-evidence="openEvidence('settlement-stats')"
               >
-                <el-alert type="info" :closable="false" :title="SETTLEMENT_STATS_TEXT" data-testid="ypp-settlement-stats-note" />
+                <InsightNote label="量费加权均价" :text="SETTLEMENT_STATS_TEXT" data-testid="ypp-settlement-stats-note" />
                 <el-empty v-if="!intervalObjects.length" :description="PICK_PLANT_TEXT" :image-size="72" />
                 <template v-else>
                   <div v-if="settlementStatsCards.length" class="ypp__cards" data-testid="ypp-settlement-stats-cards">
@@ -2044,7 +2042,7 @@ onMounted(() => {
                 @open-candidates="openCandidates"
                 @open-evidence="openEvidence('settlement-loss')"
               >
-                <el-alert type="info" :closable="false" :title="SETTLEMENT_LOSS_TEXT" data-testid="ypp-settlement-loss-note" />
+                <InsightNote label="损失与差额口径" :text="SETTLEMENT_LOSS_TEXT" data-testid="ypp-settlement-loss-note" />
                 <el-empty v-if="!settlementObjects.length" :description="FOLLOW_OVERVIEW_TEXT" :image-size="72" />
                 <template v-else>
                   <el-alert
@@ -2091,9 +2089,9 @@ onMounted(() => {
                 @open-candidates="openCandidates"
                 @open-evidence="openEvidence('settlement-docs')"
               >
-                <el-alert type="info" :closable="false" :title="SETTLEMENT_DOCS_TEXT" data-testid="ypp-settlement-docs-note" />
-                <el-alert type="warning" :closable="false" :title="SETTLEMENT_READONLY_TEXT" data-testid="ypp-settlement-readonly-note" />
-                <p class="ypp__hint">单据记录按全部获权对象查询：记录来源的对象可选，这里不单设对象选择。</p>
+                <InsightNote label="单据与原件" :text="SETTLEMENT_DOCS_TEXT" data-testid="ypp-settlement-docs-note" />
+                <InsightNote label="只读结算资料" :text="SETTLEMENT_READONLY_TEXT" data-testid="ypp-settlement-readonly-note" />
+
                 <el-table v-if="docsRows.length" :data="docsRows" size="small" border max-height="420" data-testid="ypp-docs-table">
                   <el-table-column prop="date" label="业务日/账期" width="110" />
                   <el-table-column prop="source" label="单据类型" min-width="200" show-overflow-tooltip />
@@ -2123,7 +2121,7 @@ onMounted(() => {
                 @open-candidates="openCandidates"
                 @open-evidence="openEvidence('settlement-reconcile')"
               >
-                <el-alert type="info" :closable="false" :title="SETTLEMENT_RECONCILE_TEXT" data-testid="ypp-settlement-reconcile-note" />
+                <InsightNote label="同周期核对" :text="SETTLEMENT_RECONCILE_TEXT" data-testid="ypp-settlement-reconcile-note" />
                 <el-empty v-if="!settlementObjects.length" :description="FOLLOW_OVERVIEW_TEXT" :image-size="72" />
                 <template v-else>
                   <h4 class="ypp__section-title">日报 vs 日结（同周期：日）</h4>
@@ -2217,11 +2215,6 @@ onMounted(() => {
   width: 260px;
 }
 
-.ypp__meta {
-  margin: 0;
-  color: var(--muted, #687987);
-  font-size: var(--font-sm, 13px);
-}
 
 .ypp__hint {
   margin: 0;

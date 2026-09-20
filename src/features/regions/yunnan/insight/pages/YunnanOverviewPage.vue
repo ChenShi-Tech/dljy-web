@@ -21,6 +21,9 @@
 //     目录门控；下钻只带业务窗口（query start/end），明细以电网边界页完整筛选为准；
 //   - 天气等旧驾驶舱大块不带入本页（收拢为各页自己的事）。
 
+import OverviewMetricCard from './OverviewMetricCard.vue'
+import InsightNote from '@/components/insight/InsightNote.vue'
+import { ArrowUpRight, Activity, CalendarDays } from 'lucide-vue-next'
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { beijingToday } from 'shared/midlong/dates.mjs'
@@ -54,21 +57,18 @@ import type { GridDisclosureEvent, GridDisclosureOverview } from '@/features/gri
 
 // ── 固定文案（改文案要同步 docs/market-insight-overview.md）──────────────────────────────
 
-const PAGE_NOTE_TEXT = '总览只汇总已登记分析的结果；每个区块独立读取、独立重试，一个来源失败只影响它自己的区块'
-const NO_KEY_ITEMS_TEXT = '没有满足阈值的事项；每条规则的评估状态见下方「规则评估」，阈值是平台分析默认值，不是官方规则'
+const NO_KEY_ITEMS_TEXT = '暂无触发事项'
 const SPREAD_IS_NOT_REVENUE_TEXT = '价差是价格差，不是收益'
 const FORECAST_MODE_TEXT = '事后对照（只有发布日期，没有发布时刻，不能当事前回测）'
-const PROGRESS_NO_FAKE_COMPARE_TEXT = '本期值见「供需与水电」区块；参考期不完整时不显示环比'
-const PAGE_BUILDING_TEXT = '该详情页正在建设，尚未开通'
 
 // 电网事件摘要（dljy#3102，任务 10.7）：与电网边界页完整筛选同源同口径；本区块不提供导出，
 // 明细以电网边界页为准（页面级导出只覆盖洞察分析区块，披露摘要不伪造全量口径）。
 const EVENTS_SUMMARY_NOTE_TEXT = '摘要与电网边界页完整筛选同源同口径；导出不等于当前页，明细以电网边界页为准'
 const EVENTS_IDENTITY_MISSING_TEXT = '身份归并结果未提供：独立事件数暂缺，只显示原始记录数'
 const EVENTS_EMPTY_TEXT = '当前窗口内没有计划检修、实际干预或故障的披露记录'
-const EVENTS_PLAN_TITLE = '计划检修（检修计划与电网检修信息）'
-const EVENTS_ACTUAL_TITLE = '实际干预（人工干预与非计划停运）'
-const EVENTS_RECENT_TITLE = '最近 3 条（窗口内停电时间最晚）'
+const EVENTS_PLAN_TITLE = '计划检修'
+const EVENTS_ACTUAL_TITLE = '实际干预与停运'
+const EVENTS_RECENT_TITLE = '近期事件'
 /** 与电网边界页检修干预页签同一批类别：计划=maintenance，实际=intervention+outage。 */
 const EVENTS_CATEGORY = 'maintenance,intervention,outage'
 const EVENTS_PAGE_SIZE = 100
@@ -473,7 +473,7 @@ const spreadCards = computed<StatCard[]>(() => {
     if (!own) continue
     cards.push({
       key: meta.seriesId,
-      title: '日前 − 实时价差（用户侧，共同有效时段）',
+      title: '日前 − 实时 · 用户侧',
       note: SPREAD_IS_NOT_REVENUE_TEXT,
       rows: SPREAD_METRICS.map((metricId) => metricCardRow(metricId, own.get(metricId))),
     })
@@ -511,7 +511,7 @@ const supplyCards = computed<StatCard[]>(() => {
       if (meta.businessScope !== 'yunnan') continue
       cards.push({
         key: meta.seriesId,
-        title: '水电占比（云南，同一业务范围）',
+        title: '云南水电占比',
         note: '水电 / 总发电（共同有效时段按时长加权）',
         rows: SHARE_METRICS.map((metricId) => metricCardRow(metricId, own.get(metricId))),
       })
@@ -841,37 +841,67 @@ const onAiInterpret = (): void => {
 
 <template>
   <div class="yno-overview">
-    <!-- 顶部：日期窗与模式说明 -->
+    <header class="yno-overview__masthead">
+      <div><span class="yno-overview__eyebrow"><Activity :size="14" /> 云南市场</span><h2>市场总览</h2></div>
+      <span class="yno-overview__mode" data-testid="yno-window-mode"><CalendarDays :size="14" /> {{ windowModeText }}</span>
+    </header>
     <section class="yno-overview__controls">
       <label class="yno-overview__field">
-        <span>业务日期窗</span>
+        <span>分析日期</span>
         <InsightDateRange
           :model-value="ctx.businessWindow.value"
           :max-days="maxDays"
           @update:model-value="(next: { start: string; end: string }) => ctx.setBusinessWindow(next.start, next.end)"
         />
       </label>
-      <span class="yno-overview__mode" data-testid="yno-window-mode">{{ windowModeText }}</span>
       <!-- AI 入口（15.3）：模型离线只隐藏入口，数据页不受影响（D9） -->
       <el-button
         v-if="insightAi.aiAvailable.value"
         type="primary"
         data-testid="yno-ai-entry"
         @click="onAiInterpret"
-      >✨ AI 解读本页</el-button>
+      >AI 解读</el-button>
     </section>
-
-    <p class="yno-overview__meta">{{ PAGE_NOTE_TEXT }}</p>
 
     <el-alert v-if="capabilitiesError" type="error" show-icon :closable="false" title="能力目录读取失败">
       <p class="yno-overview__hint">当前看不到可用的总览区块；可重试，不影响已就绪区块的展示。</p>
       <el-button size="small" :loading="capabilitiesLoading" @click="loadCapabilities">重试</el-button>
     </el-alert>
 
-    <!-- 重点事项：最多五条 + 规则评估 + 同进度比较 -->
     <InsightBlock
+      compact-sources
+      v-if="blockVisible('prices')"
+      class="yno-overview__panel yno-overview__panel--prices"
+      title="市场价格"
+      :result="viewStates['prices'].result"
+      :error="viewStates['prices'].error"
+      :loading="viewStates['prices'].loading"
+      :on-retry="() => retryQuery('prices')"
+      :on-refresh="() => retryQuery('prices')"
+      :source-titles="sourceTitles"
+      @open-candidates="openCandidates('prices')"
+      @open-evidence="openEvidence('prices')"
+    >
+      <div class="yno-overview__bar">
+        <el-button size="small" data-testid="yno-prices-drilldown" @click="blockDrilldown('prices')">价格分析 <ArrowUpRight :size="14" /></el-button>
+      </div>
+      <el-alert
+        v-for="(item, index) in priceUnavailable"
+        :key="`pu-${index}`"
+        type="info"
+        :closable="false"
+        :title="`${getMetricDefinition(item.metricId)?.label ?? item.metricId} 不可用：${item.reason}`"
+      />
+      <div v-if="priceCards.length" class="yno-overview__cards">
+        <OverviewMetricCard v-for="(card, index) in priceCards" :key="card.key" :card="card" :tone="index % 2 ? 'blue' : 'teal'" />
+      </div>
+    </InsightBlock>
+
+    <InsightBlock
+      compact-sources
       v-if="blockVisible('key-items')"
-      title="重点事项（最多五条，无满足条件不凑数）"
+      class="yno-overview__panel yno-overview__panel--key-items"
+      title="重点关注"
       :result="viewStates['key-items'].result"
       :error="viewStates['key-items'].error"
       :loading="viewStates['key-items'].loading"
@@ -899,7 +929,8 @@ const onAiInterpret = (): void => {
             </el-button>
           </div>
           <p class="yno-overview__item-statement">{{ item.statement }}</p>
-          <dl class="yno-overview__item-grid">
+          <div class="yno-overview__item-value">{{ observationText(item) }}</div>
+          <InsightNote label="时段与基准"><dl class="yno-overview__item-grid">
             <dt>时段</dt>
             <dd>{{ intervalText(item.interval) }}</dd>
             <dt>观测</dt>
@@ -908,22 +939,21 @@ const onAiInterpret = (): void => {
             <dd>{{ baselineText(item.baseline) }}</dd>
             <dt>覆盖</dt>
             <dd>{{ coverageText(item.coverage) }}</dd>
-          </dl>
+          </dl></InsightNote>
         </li>
       </ol>
 
       <!-- 同进度比较：参考期不完整时只说明原因，不显示环比 -->
       <div v-if="progressComparison" class="yno-overview__progress" data-testid="yno-progress">
-        <h4>负荷同进度比较（与前一日同一时段）</h4>
+        <h4>负荷同进度比较</h4>
         <p>{{ progressText }}</p>
-        <p v-if="progressComparison.status !== 'ok'" class="yno-overview__hint">{{ PROGRESS_NO_FAKE_COMPARE_TEXT }}</p>
       </div>
 
       <!-- 规则评估：为什么没有这一条 -->
       <el-collapse class="yno-overview__rules">
         <el-collapse-item name="rules">
           <template #title>
-            <span class="yno-overview__rules-title">规则评估（每条规则的触发状态与原因）</span>
+            <span class="yno-overview__rules-title">筛选规则与评估</span>
           </template>
           <ul class="yno-overview__rule-list">
             <li v-for="rule in keyRules" :key="rule.ruleId" :data-testid="`yno-rule-${rule.ruleId}`">
@@ -935,85 +965,14 @@ const onAiInterpret = (): void => {
         </el-collapse-item>
       </el-collapse>
 
-      <el-alert v-for="(note, index) in keyNotes" :key="`kn-${index}`" type="info" :closable="false" :title="note" />
+      <InsightNote v-if="keyNotes.length" label="分析阈值说明"><p v-for="(note, index) in keyNotes" :key="index">{{ note }}</p></InsightNote>
     </InsightBlock>
 
-    <!-- 价格概况：用户侧日前/实时摘要卡，下钻价格页 -->
     <InsightBlock
-      v-if="blockVisible('prices')"
-      title="价格概况（用户侧日前/实时）"
-      :result="viewStates['prices'].result"
-      :error="viewStates['prices'].error"
-      :loading="viewStates['prices'].loading"
-      :on-retry="() => retryQuery('prices')"
-      :on-refresh="() => retryQuery('prices')"
-      :source-titles="sourceTitles"
-      @open-candidates="openCandidates('prices')"
-      @open-evidence="openEvidence('prices')"
-    >
-      <div class="yno-overview__bar">
-        <el-button size="small" data-testid="yno-prices-drilldown" @click="blockDrilldown('prices')">进入价格与价差页</el-button>
-      </div>
-      <el-alert
-        v-for="(item, index) in priceUnavailable"
-        :key="`pu-${index}`"
-        type="info"
-        :closable="false"
-        :title="`${getMetricDefinition(item.metricId)?.label ?? item.metricId} 不可用：${item.reason}`"
-      />
-      <div v-if="priceCards.length" class="yno-overview__cards">
-        <div v-for="card in priceCards" :key="card.key" class="yno-overview__card">
-          <h4 class="yno-overview__card-title">{{ card.title }}</h4>
-          <dl class="yno-overview__card-grid">
-            <template v-for="row in card.rows" :key="row.metricId">
-              <dt>{{ row.label }}</dt>
-              <dd>{{ row.text }}{{ row.unit ? ` ${row.unit}` : '' }}{{ row.note ? `（${row.note}）` : '' }}</dd>
-            </template>
-          </dl>
-        </div>
-      </div>
-    </InsightBlock>
-
-    <!-- 日前实时价差：配对摘要 + 异常时段表，下钻价格页 -->
-    <InsightBlock
-      v-if="blockVisible('spread')"
-      title="日前实时价差（共同有效时段）"
-      :result="viewStates['spread'].result"
-      :error="viewStates['spread'].error"
-      :loading="viewStates['spread'].loading"
-      :on-retry="() => retryQuery('spread')"
-      :on-refresh="() => retryQuery('spread')"
-      :source-titles="sourceTitles"
-      @open-candidates="openCandidates('spread')"
-      @open-evidence="openEvidence('spread')"
-    >
-      <div class="yno-overview__bar">
-        <el-button size="small" data-testid="yno-spread-drilldown" @click="blockDrilldown('spread')">进入价格与价差页</el-button>
-      </div>
-      <el-alert v-for="(item, index) in spreadUnpaired" :key="`su-${index}`" type="warning" :closable="false" :title="`未配对：${item}`" />
-      <div v-if="spreadCards.length" class="yno-overview__cards">
-        <div v-for="card in spreadCards" :key="card.key" class="yno-overview__card">
-          <h4 class="yno-overview__card-title">{{ card.title }}</h4>
-          <dl class="yno-overview__card-grid">
-            <template v-for="row in card.rows" :key="row.metricId">
-              <dt>{{ row.label }}</dt>
-              <dd>{{ row.text }}{{ row.unit ? ` ${row.unit}` : '' }}{{ row.note ? `（${row.note}）` : '' }}</dd>
-            </template>
-          </dl>
-          <p class="yno-overview__card-note">{{ card.note }}</p>
-        </div>
-      </div>
-      <el-table v-if="spreadAnomalies.length" :data="spreadAnomalies" size="small" border max-height="240" data-testid="yno-spread-anomalies">
-        <el-table-column prop="rank" label="序" width="60" />
-        <el-table-column prop="time" label="时段" min-width="220" />
-        <el-table-column prop="value" label="价差（元/MWh）" width="140" align="right" />
-      </el-table>
-    </InsightBlock>
-
-    <!-- 供需与水电概况：云南实际序列摘要 + 水电占比，下钻供需页 -->
-    <InsightBlock
+      compact-sources
       v-if="blockVisible('supply')"
-      title="供需与水电概况（云南实际）"
+      class="yno-overview__panel yno-overview__panel--supply"
+      title="供需与水电"
       :result="viewStates['supply'].result"
       :error="viewStates['supply'].error"
       :loading="viewStates['supply'].loading"
@@ -1024,31 +983,18 @@ const onAiInterpret = (): void => {
       @open-evidence="openEvidence('supply')"
     >
       <div class="yno-overview__bar">
-        <el-button size="small" data-testid="yno-supply-drilldown" @click="blockDrilldown('supply')">进入供需与水电页</el-button>
+        <el-button size="small" data-testid="yno-supply-drilldown" @click="blockDrilldown('supply')">供需分析 <ArrowUpRight :size="14" /></el-button>
       </div>
       <div v-if="supplyCards.length" class="yno-overview__cards">
-        <div
-          v-for="card in supplyCards"
-          :key="card.key"
-          class="yno-overview__card"
-          :class="{ 'yno-overview__card--share': card.key.startsWith('share:') }"
-        >
-          <h4 class="yno-overview__card-title">{{ card.title }}</h4>
-          <dl class="yno-overview__card-grid">
-            <template v-for="row in card.rows" :key="row.metricId">
-              <dt>{{ row.label }}</dt>
-              <dd>{{ row.text }}{{ row.unit ? ` ${row.unit}` : '' }}{{ row.note ? `（${row.note}）` : '' }}</dd>
-            </template>
-          </dl>
-          <p v-if="card.note" class="yno-overview__card-note">{{ card.note }}</p>
-        </div>
+        <OverviewMetricCard v-for="(card, index) in supplyCards" :key="card.key" :card="card" :tone="index % 2 ? 'blue' : 'teal'" />
       </div>
     </InsightBlock>
 
-    <!-- 预测与实际：配对误差卡（事后对照），下钻供需页 -->
     <InsightBlock
+      compact-sources
       v-if="blockVisible('forecast')"
-      title="预测与实际（事后对照）"
+      class="yno-overview__panel yno-overview__panel--forecast"
+      title="预测偏差 · 事后对照"
       :result="viewStates['forecast'].result"
       :error="viewStates['forecast'].error"
       :loading="viewStates['forecast'].loading"
@@ -1059,35 +1005,77 @@ const onAiInterpret = (): void => {
       @open-evidence="openEvidence('forecast')"
     >
       <div class="yno-overview__bar">
-        <el-button size="small" data-testid="yno-forecast-drilldown" @click="blockDrilldown('forecast')">进入供需与水电页</el-button>
+        <el-button size="small" data-testid="yno-forecast-drilldown" @click="blockDrilldown('forecast')">供需分析 <ArrowUpRight :size="14" /></el-button>
       </div>
       <el-alert v-for="(item, index) in forecastUnpaired" :key="`fu-${index}`" type="warning" :closable="false" :title="`未配对：${item}`" />
       <div v-if="forecastCards.length" class="yno-overview__cards">
-        <div v-for="card in forecastCards" :key="card.key" class="yno-overview__card">
-          <h4 class="yno-overview__card-title">{{ card.title }}</h4>
-          <dl class="yno-overview__card-grid">
-            <template v-for="row in card.rows" :key="row.metricId">
-              <dt>{{ row.label }}</dt>
-              <dd>{{ row.text }}{{ row.unit ? ` ${row.unit}` : '' }}{{ row.note ? `（${row.note}）` : '' }}</dd>
-            </template>
-          </dl>
-          <p v-if="card.eligibility" class="yno-overview__card-note">{{ card.eligibility }}</p>
-          <p class="yno-overview__card-note">{{ card.note }}</p>
-        </div>
+        <OverviewMetricCard v-for="card in forecastCards" :key="card.key" :card="card" tone="blue" />
       </div>
     </InsightBlock>
 
-    <!-- 电网事件摘要（10.7）：与电网边界页检修干预页签同一批披露事件接口；
-         计划/实际分组 + 最近三条 + 带业务窗口下钻；独立查询独立重试（OV02），
-         未接入/无记录诚实空态（OV03） -->
     <InsightBlock
-      title="电网事件摘要（计划检修 / 实际干预 / 故障）"
+      compact-sources
+      v-if="blockVisible('spread')"
+      class="yno-overview__panel yno-overview__panel--spread"
+      title="日前实时价差"
+      :result="viewStates['spread'].result"
+      :error="viewStates['spread'].error"
+      :loading="viewStates['spread'].loading"
+      :on-retry="() => retryQuery('spread')"
+      :on-refresh="() => retryQuery('spread')"
+      :source-titles="sourceTitles"
+      @open-candidates="openCandidates('spread')"
+      @open-evidence="openEvidence('spread')"
+    >
+      <div class="yno-overview__bar">
+        <el-button size="small" data-testid="yno-spread-drilldown" @click="blockDrilldown('spread')">价格分析 <ArrowUpRight :size="14" /></el-button>
+      </div>
+      <el-alert v-for="(item, index) in spreadUnpaired" :key="`su-${index}`" type="warning" :closable="false" :title="`未配对：${item}`" />
+      <div v-if="spreadCards.length" class="yno-overview__cards">
+        <OverviewMetricCard v-for="(card, index) in spreadCards" :key="card.key" :card="card" :tone="index % 2 ? 'blue' : 'amber'" />
+      </div>
+      <details v-if="spreadAnomalies.length" class="yno-overview__details"><summary>异常时段 · {{ spreadAnomalies.length }}</summary><el-table :data="spreadAnomalies" size="small" border max-height="240" data-testid="yno-spread-anomalies">
+        <el-table-column prop="rank" label="序" width="60" />
+        <el-table-column prop="time" label="时段" min-width="220" />
+        <el-table-column prop="value" label="价差（元/MWh）" width="140" align="right" />
+      </el-table></details>
+    </InsightBlock>
+
+    <InsightBlock
+      compact-sources
+      v-if="blockVisible('grid')"
+      class="yno-overview__panel yno-overview__panel--grid"
+      title="跨省送受趋势"
+      :result="viewStates['grid'].result"
+      :error="viewStates['grid'].error"
+      :loading="viewStates['grid'].loading"
+      :on-retry="() => retryQuery('grid')"
+      :on-refresh="() => retryQuery('grid')"
+      :source-titles="sourceTitles"
+      @open-candidates="openCandidates('grid')"
+      @open-evidence="openEvidence('grid')"
+    >
+      <div class="yno-overview__bar">
+        <el-button size="small" data-testid="yno-grid-drilldown" @click="blockDrilldown('grid')">电网边界 <ArrowUpRight :size="14" /></el-button>
+      </div>
+      <InsightSeriesChart
+        :result="viewStates['grid'].result"
+        :current="{ regionId: ctx.regionId.value, companyId: ctx.companyId.value, contextVersion: ctx.contextVersion.value }"
+        :height="260"
+        @select="() => {}"
+      />
+    </InsightBlock>
+
+    <InsightBlock
+      compact-sources
+      class="yno-overview__panel yno-overview__panel--events"
+      title="电网动态"
       :result="null"
       :error="null"
       :loading="eventsState.loading"
       :source-titles="sourceTitles"
     >
-      <p class="yno-overview__hint" data-testid="yno-events-note">{{ EVENTS_SUMMARY_NOTE_TEXT }}</p>
+      <InsightNote label="事件统计口径" :text="EVENTS_SUMMARY_NOTE_TEXT" data-testid="yno-events-note" />
       <template v-if="eventsState.overview">
         <el-empty v-if="eventsEmptyReason" :description="eventsEmptyReason" :image-size="72" data-testid="yno-events-empty" />
         <template v-else>
@@ -1143,7 +1131,7 @@ const onAiInterpret = (): void => {
           </ol>
         </div>
             <div class="yno-overview__bar">
-              <el-button size="small" data-testid="yno-events-drilldown" @click="drilldown('grid-boundaries')">进入电网边界页检修干预页签</el-button>
+              <el-button size="small" data-testid="yno-events-drilldown" @click="drilldown('grid-boundaries')">检修与干预 <ArrowUpRight :size="14" /></el-button>
             </div>
         </template>
         </template>
@@ -1157,35 +1145,11 @@ const onAiInterpret = (): void => {
       </template>
     </InsightBlock>
 
-    <!-- 跨省与电网边界：背景曲线（详情页建设中） -->
     <InsightBlock
-      v-if="blockVisible('grid')"
-      title="跨省与电网边界（背景曲线）"
-      :result="viewStates['grid'].result"
-      :error="viewStates['grid'].error"
-      :loading="viewStates['grid'].loading"
-      :on-retry="() => retryQuery('grid')"
-      :on-refresh="() => retryQuery('grid')"
-      :source-titles="sourceTitles"
-      @open-candidates="openCandidates('grid')"
-      @open-evidence="openEvidence('grid')"
-    >
-      <div class="yno-overview__bar">
-        <el-button size="small" data-testid="yno-grid-drilldown" @click="blockDrilldown('grid')">进入跨省与电网边界页</el-button>
-        <span class="yno-overview__hint">{{ PAGE_BUILDING_TEXT }}</span>
-      </div>
-      <InsightSeriesChart
-        :result="viewStates['grid'].result"
-        :current="{ regionId: ctx.regionId.value, companyId: ctx.companyId.value, contextVersion: ctx.contextVersion.value }"
-        :height="260"
-        @select="() => {}"
-      />
-    </InsightBlock>
-
-    <!-- 获权场站表现：能力目录判定可见；公共账号不渲染、不请求 -->
-    <InsightBlock
+      compact-sources
       v-if="blockVisible('plants')"
-      title="获权场站表现（场站日结算）"
+      class="yno-overview__panel yno-overview__panel--plants"
+      title="场站表现"
       :result="viewStates['plants'].result"
       :error="viewStates['plants'].error"
       :loading="viewStates['plants'].loading"
@@ -1196,15 +1160,14 @@ const onAiInterpret = (): void => {
       @open-evidence="openEvidence('plants')"
     >
       <div class="yno-overview__bar">
-        <el-button size="small" data-testid="yno-plants-drilldown" @click="blockDrilldown('plants')">进入场站市场表现页</el-button>
-        <span class="yno-overview__hint">{{ PAGE_BUILDING_TEXT }}</span>
+        <el-button size="small" data-testid="yno-plants-drilldown" @click="blockDrilldown('plants')">场站分析 <ArrowUpRight :size="14" /></el-button>
       </div>
-      <InsightResultTable
+      <details class="yno-overview__details" open><summary>场站日结明细</summary><InsightResultTable
         :result="viewStates['plants'].result"
         :selection="null"
         :source-titles="sourceTitles"
         @row-click="() => {}"
-      />
+      /></details>
     </InsightBlock>
 
     <!-- 证据抽屉与历史候选（按区块所属分析） -->
@@ -1224,265 +1187,77 @@ const onAiInterpret = (): void => {
 </template>
 
 <style scoped>
-.yno-overview {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
+.yno-overview { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 18px; align-items: start; padding: 4px 0 24px; }
+.yno-overview > * { grid-column: 1 / -1; min-width: 0; }
+.yno-overview__masthead { display: flex; justify-content: space-between; gap: 16px; align-items: center; padding: 6px 2px; }
+.yno-overview__eyebrow { display: inline-flex; align-items: center; gap: 7px; font-size: var(--font-xs); color: var(--accent, #159e90); letter-spacing: .08em; }
+.yno-overview__masthead h2 { margin: 6px 0 0; font-size: var(--font-24, 24px); font-weight: 650; letter-spacing: -.03em; color: var(--text); }
+.yno-overview__mode { display: inline-flex; align-items: center; gap: 7px; padding: 7px 11px; border: 1px solid var(--line); border-radius: 7px; color: var(--muted); font-size: var(--font-xs); }
+.yno-overview__controls { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; padding: 12px 16px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; }
+.yno-overview__field { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; min-width: 0; }
+.yno-overview__field :deep(.insight-date-range) { width: min(100%, 350px); min-width: 0; }
+.yno-overview__field :deep(.el-date-editor) { width: 100%; min-width: 0; max-width: 100%; }
+.yno-overview__field > span { font-size: var(--font-sm); color: var(--muted); }
+.yno-overview__controls > .el-button { margin-left: auto; }
+.yno-overview__panel { grid-column: span 6; min-width: 0; padding: 20px; border-radius: 16px; box-shadow: 0 3px 18px rgb(0 0 0 / 2%); }
+.yno-overview__panel--prices, .yno-overview__panel--supply { grid-column: span 8; }
+.yno-overview__panel--key-items, .yno-overview__panel--forecast { grid-column: span 4; }
+.yno-overview__panel--key-items { border-top: 2px solid var(--accent, #159e90); }
+.yno-overview__panel :deep(.insight-block__head) { align-items: flex-start; flex-wrap: wrap; padding-bottom: 8px; }
+.yno-overview__panel :deep(.insight-block__title) { font-size: var(--font-lg); letter-spacing: .02em; }
+.yno-overview__panel :deep(.insight-block__source) { border: 0; background: transparent; padding: 0; font-size: var(--font-xs); }
+.yno-overview__panel :deep(.insight-block__meta) { gap: 5px 12px; }
+.yno-overview__cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr)); gap: 12px; }
+.yno-overview__panel--forecast .yno-overview__cards { grid-template-columns: minmax(0, 1fr); }
+.yno-overview__bar { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; margin: 0 0 4px; }
+.yno-overview__bar .el-button { background: transparent; border: 0; padding: 0; color: var(--accent, #159e90); }
+.yno-overview__bar :deep(.el-button span) { gap: 5px; }
+.yno-overview__items { margin: 0; padding: 0; list-style: none; }
+.yno-overview__item { padding: 14px 0; border-bottom: 1px solid var(--line); }
+.yno-overview__item:first-child { padding-top: 0; }
+.yno-overview__item-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.yno-overview__item-head .el-button { padding: 0; height: auto; margin-left: auto; }
+.yno-overview__item-rank { color: var(--accent); font-size: var(--font-xs); font-variant-numeric: tabular-nums; }
+.yno-overview__item-title { color: var(--text); font-size: var(--font-sm); font-weight: 600; }
+.yno-overview__item-statement { margin: 7px 0; font-size: var(--font-xs); color: var(--muted); line-height: 1.7; }
+.yno-overview__item-value { font-size: var(--font-xl); font-weight: 600; color: var(--text); margin: 8px 0; font-variant-numeric: tabular-nums; }
+.yno-overview__item-grid, .yno-overview__card-grid { display: grid; grid-template-columns: auto 1fr; gap: 6px 12px; margin: 0; font-size: var(--font-xs); }
+.yno-overview__item-grid dt, .yno-overview__card-grid dt { color: var(--muted); }
+.yno-overview__item-grid dd, .yno-overview__card-grid dd { margin: 0; text-align: right; color: var(--text); font-variant-numeric: tabular-nums; }
+.yno-overview__progress { padding: 14px; border-radius: 10px; background: var(--panel-sub); margin-top: 4px; }
+.yno-overview__progress h4 { margin: 0 0 6px; font-size: var(--font-sm); color: var(--text); }
+.yno-overview__progress p { margin: 0; font-size: var(--font-xs); color: var(--muted); line-height: 1.7; }
+.yno-overview__rules { border: 0; }
+.yno-overview__rules-title { font-size: var(--font-xs); color: var(--muted); }
+.yno-overview__rule-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; font-size: var(--font-xs); }
+.yno-overview__rule-list li { display: flex; flex-wrap: wrap; gap: 4px 8px; }
+.yno-overview__rule-name { font-weight: 600; color: var(--text); }
+.yno-overview__rule-status, .yno-overview__rule-desc { color: var(--muted); }
+.yno-overview__rule-desc { flex-basis: 100%; }
+.yno-overview__hint { margin: 0; font-size: var(--font-xs); color: var(--muted); line-height: 1.7; }
+.yno-overview__details > summary { cursor: pointer; color: var(--muted); font-size: var(--font-xs); padding: 10px 0; }
+.yno-overview__details > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.yno-overview__card { background: var(--panel-sub); border-radius: 10px; padding: 16px; }
+.yno-overview__card-title { margin: 0 0 14px; color: var(--text); font-size: var(--font-sm); }
+.yno-overview__events h4 { color: var(--muted); font-weight: 500; font-size: var(--font-xs); margin: 14px 0; }
+.yno-overview__events ol { list-style: none; margin: 0 0 0 4px; padding: 0 0 0 18px; border-left: 1px solid var(--line); }
+.yno-overview__events li { position: relative; display: flex; flex-direction: column; gap: 6px; padding-bottom: 20px; font-size: var(--font-xs); }
+.yno-overview__events li::before { content: ''; position: absolute; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); left: -22px; top: 5px; }
+.yno-overview__event-title { color: var(--text); font-weight: 550; overflow-wrap: anywhere; }
+.yno-overview__event-status, .yno-overview__event-time { color: var(--muted); line-height: 1.6; }
+.yno-overview__panel :deep(.insight-series-chart__pane) { border: 0; padding: 0; }
+@media (max-width: 1100px) {
+  .yno-overview__panel--prices, .yno-overview__panel--supply { grid-column: 1 / -1; }
+  .yno-overview__panel--key-items, .yno-overview__panel--forecast { grid-column: 1 / -1; }
+  .yno-overview__panel--forecast .yno-overview__cards { grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr)); }
 }
-
-.yno-overview__controls {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-end;
-  gap: 14px;
-  padding: 14px 16px;
-  border: 1px solid var(--line, #e5e7eb);
-  border-radius: 12px;
-  background: var(--panel, #fff);
+@media (max-width: 700px) {
+  .yno-overview { gap: 12px; }
+  .yno-overview__panel { grid-column: 1 / -1; padding: 16px; }
+  .yno-overview__masthead { flex-direction: column; align-items: flex-start; }
+  .yno-overview__mode { flex-wrap: wrap; }
+  .yno-overview__field { width: 100%; }
+  .yno-overview__cards { grid-template-columns: minmax(0, 1fr); }
+  .yno-overview__controls > .el-button { margin-left: 0; }
 }
-
-.yno-overview__field {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  min-width: 0;
-}
-
-.yno-overview__field > span {
-  color: var(--muted, #50616e);
-  font-size: var(--font-sm, 13px);
-  font-weight: 650;
-}
-
-.yno-overview__mode {
-  color: var(--text, #1f2a37);
-  font-size: var(--font-sm, 13px);
-  font-weight: 600;
-}
-
-.yno-overview__meta,
-.yno-overview__hint {
-  margin: 0;
-  color: var(--muted, #687987);
-  font-size: var(--font-sm, 13px);
-}
-
-.yno-overview__bar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 12px;
-  margin: 8px 0;
-}
-
-.yno-overview__items {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.yno-overview__item {
-  border: 1px solid var(--line, #e5e7eb);
-  border-radius: 10px;
-  padding: 10px 12px;
-  background: var(--panel-sub, #f8fafc);
-}
-
-.yno-overview__item-head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.yno-overview__item-rank {
-  color: var(--muted, #909399);
-  font-variant-numeric: tabular-nums;
-}
-
-.yno-overview__item-title {
-  font-weight: 600;
-  color: var(--text, #1f2a37);
-}
-
-.yno-overview__item-statement {
-  margin: 6px 0;
-  color: var(--text, #1f2a37);
-  font-size: var(--font-sm, 13px);
-}
-
-.yno-overview__item-grid,
-.yno-overview__card-grid {
-  display: grid;
-  grid-template-columns: auto 1fr;
-  gap: 4px 10px;
-  margin: 0;
-}
-
-.yno-overview__item-grid dt,
-.yno-overview__card-grid dt {
-  color: var(--muted, #64748b);
-  font-size: var(--font-xs, 12px);
-}
-
-.yno-overview__item-grid dd,
-.yno-overview__card-grid dd {
-  margin: 0;
-  font-size: var(--font-sm, 13px);
-  font-variant-numeric: tabular-nums;
-  color: var(--text, #1f2a37);
-  text-align: right;
-}
-
-.yno-overview__item-grid dd {
-  text-align: left;
-}
-
-.yno-overview__progress {
-  border: 1px dashed var(--accent-soft, #94a3b8);
-  border-radius: 10px;
-  padding: 10px 12px;
-  margin: 10px 0 0;
-}
-
-.yno-overview__progress h4 {
-  margin: 0 0 6px;
-  font-size: var(--font-md, 14px);
-  font-weight: 600;
-  color: var(--text, #1f2a37);
-}
-
-.yno-overview__progress p {
-  margin: 0;
-  color: var(--text, #1f2a37);
-  font-size: var(--font-sm, 13px);
-}
-
-.yno-overview__rules {
-  border: 1px solid var(--line, #e5e7eb);
-  border-radius: 10px;
-  background: var(--panel, #fff);
-  margin-top: 10px;
-}
-
-.yno-overview__rules-title {
-  font-weight: 600;
-  color: var(--muted, #50616e);
-}
-
-.yno-overview__rule-list {
-  list-style: none;
-  margin: 0;
-  padding: 0 8px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.yno-overview__rule-list li {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  align-items: baseline;
-  font-size: var(--font-sm, 13px);
-}
-
-.yno-overview__rule-name {
-  font-weight: 600;
-  color: var(--text, #1f2a37);
-}
-
-.yno-overview__rule-status {
-  color: var(--muted, #687987);
-}
-
-.yno-overview__rule-desc {
-  flex-basis: 100%;
-  color: var(--muted, #909399);
-  font-size: var(--font-xs, 12px);
-}
-
-.yno-overview__cards {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-  gap: 10px;
-}
-
-.yno-overview__card {
-  border: 1px solid var(--line, #e5e7eb);
-  border-radius: 10px;
-  padding: 10px 12px;
-  background: var(--panel-sub, #f8fafc);
-}
-
-.yno-overview__card--share {
-  border-style: dashed;
-  border-color: var(--accent-soft, #94a3b8);
-}
-
-.yno-overview__card-title {
-  margin: 0 0 8px;
-  font-size: var(--font-md, 14px);
-  font-weight: 600;
-  color: var(--text, #1f2a37);
-}
-
-.yno-overview__card-note {
-  margin: 8px 0 0;
-  color: var(--muted, #909399);
-  font-size: var(--font-xs, 12px);
-}
-
-.yno-overview__events {
-  border: 1px solid var(--line, #e5e7eb);
-  border-radius: 10px;
-  background: var(--panel-sub, #f8fafc);
-  padding: 10px 12px;
-}
-
-.yno-overview__events h4 {
-  margin: 0 0 8px;
-  font-size: var(--font-md, 14px);
-  font-weight: 600;
-  color: var(--text, #1f2a37);
-}
-
-.yno-overview__events ol {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.yno-overview__events li {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 6px 12px;
-  font-size: var(--font-sm, 13px);
-}
-
-.yno-overview__event-title {
-  font-weight: 600;
-  color: var(--text, #1f2a37);
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-
-.yno-overview__event-status {
-  color: var(--muted, #687987);
-  font-size: var(--font-xs, 12px);
-}
-
-.yno-overview__event-time {
-  margin-left: auto;
-  color: var(--muted, #909399);
-  font-size: var(--font-xs, 12px);
-  font-variant-numeric: tabular-nums;
-}
-
 </style>

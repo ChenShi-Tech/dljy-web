@@ -17,6 +17,7 @@
 //     不渲染空区块、不发请求；机组群来源只披露组成与占比，没有上限值，不画上限线。
 // 未选参考窗口 / 未选机组群的前置拦截在页面层完成（不发请求），后端校验是第二道防线。
 
+import InsightNote from '@/components/insight/InsightNote.vue'
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { getInsightAnalysis } from 'shared/insight/analyses.mjs'
 import { getInsightSource } from 'shared/insight/sources.mjs'
@@ -70,24 +71,20 @@ const SUPPLY_TABS = [
 type SupplyTab = (typeof SUPPLY_TABS)[number]['view']
 
 // 视图固定说明（口径来自 specs 与后端供应视图，改文案要同步 docs/market-insight-supply.md）
-const STAGE_TEXT = '本页是系统运行数据（负荷与出力），不是市场价格'
-const SCOPE_TEXT = '云南与南方电网整体口径分开表达；南网整体只作背景，不计入云南'
-const RESOLUTION_TEXT = '原生粒度 15 分钟；云南总送出预测为 60 分钟'
 const NOT_STACK_TEXT = '负荷、水电、新能源、非市场与总发电不是互斥分量：只叠线比较，不堆叠、不相加成「总供给」'
-const FORECAST_TOGGLE_TEXT = '预测曲线以虚线显示，可与实际曲线同图开关'
 const CSG_BLOCK_TITLE = '南方电网整体口径（背景，不计入云南）'
 const HYDRO_SHARE_NOTE = '同一业务范围内：水电 / 总发电（共同有效时段按时长加权）'
 const HYDRO_NO_SOURCE_TEXT = '库容、来水、弃水等暂无来源，不展示'
 const ENTITLEMENT_TEXT = '获权数据需开通：当前公司没有水电周出力与云南机组群占比的查看授权'
 const HYDRO_WEEKLY_NOTE = '逐日平均出力（MW），按区域分列、不相加；云南与其他省不可加总'
 const HYDRO_GROUPS_NOTE = '来源只披露组成与占比，未提供电量或出力上限，不画上限线'
-const PICK_UNIT_GROUP_TEXT = '请先选择机组群；未选不发请求'
+const PICK_UNIT_GROUP_TEXT = '请选择机组群'
 const FORECAST_MODE_TEXT = '事后对照（只有发布日期，没有发布时刻，不能当事前回测）'
 const NEW_ENERGY_ALIGN_TEXT = '新能源日前预测按目标日对齐（发布日次日）'
 const ERROR_DIRECTION_TEXT = '误差 = 预测 − 实际（共同有效时段；跨范围的序列不计算误差）'
 const ELIGIBILITY_BELOW_TEXT = '可查看，不参与排名'
 const RESIDUAL_PROXY_TEXT = '剩余需求代理是分析代理量，不是官方竞价空间，也不是出清供需量'
-const COMPARE_PICK_TEXT = '请先选择参考窗口（不自动选去年同期）；未选不发请求'
+const COMPARE_PICK_TEXT = '请先选择参考窗口（不自动选去年同期）'
 const COMPARE_DAYS_TEXT = '两个窗口天数不同，平均值可比、合计不可比'
 const COMPARE_SCOPE_TEXT = '只比较两边窗口都有平均功率的序列；不同业务范围不互相比较'
 
@@ -969,7 +966,7 @@ onMounted(() => {
     <!-- 顶部：日期窗与固定口径说明 -->
     <section class="yns-supply__controls">
       <label class="yns-supply__field">
-        <span>业务日期窗</span>
+        <span>分析日期</span>
         <InsightDateRange
           :model-value="ctx.businessWindow.value"
           :max-days="maxDays"
@@ -986,7 +983,7 @@ onMounted(() => {
     </section>
 
     <p class="yns-supply__meta">
-      {{ STAGE_TEXT }} · {{ SCOPE_TEXT }} · {{ RESOLUTION_TEXT }}
+      云南系统运行 · MW · 15 / 60 分钟
     </p>
 
     <el-alert v-if="capabilitiesError" type="error" show-icon :closable="false" title="能力目录读取失败">
@@ -1011,10 +1008,10 @@ onMounted(() => {
               @open-candidates="openCandidates"
               @open-evidence="openEvidence('series')"
             >
-              <el-alert type="info" :closable="false" :title="NOT_STACK_TEXT" />
+              <InsightNote label="电源与非市场属性" :text="NOT_STACK_TEXT" />
               <div class="yns-supply__bar">
                 <el-checkbox v-model="showForecast" data-testid="yns-forecast-toggle">预测曲线（虚线同图）</el-checkbox>
-                <span class="yns-supply__hint">{{ FORECAST_TOGGLE_TEXT }}</span>
+
               </div>
               <ChartCard title="云南系统曲线（实际实线；预测虚线）" :height="340" :build-option="() => overviewOption" />
               <InsightResultTable
@@ -1083,7 +1080,7 @@ onMounted(() => {
                   @open-candidates="openCandidates"
                   @open-evidence="openEvidence('series')"
                 >
-                  <el-alert type="info" :closable="false" :title="NOT_STACK_TEXT" />
+                  <InsightNote label="电源与非市场属性" :text="NOT_STACK_TEXT" />
                   <ChartCard title="南方电网整体口径系统曲线（背景）" :height="300" :build-option="() => csgOverviewOption" />
                 </InsightBlock>
               </el-collapse-item>
@@ -1121,7 +1118,7 @@ onMounted(() => {
                   <p v-if="card.note" class="yns-supply__card-note">{{ card.note }}</p>
                 </div>
               </div>
-              <p class="yns-supply__hint">{{ HYDRO_NO_SOURCE_TEXT }}</p>
+              <InsightNote label="水文数据范围" :text="HYDRO_NO_SOURCE_TEXT" />
             </InsightBlock>
 
             <el-alert v-if="!hasHydroWeekly && !hasHydroGroups" type="info" :closable="false" :title="ENTITLEMENT_TEXT" />
@@ -1150,7 +1147,7 @@ onMounted(() => {
                   />
                 </label>
               </div>
-              <el-alert type="info" :closable="false" :title="HYDRO_WEEKLY_NOTE" />
+              <InsightNote label="周出力口径" :text="HYDRO_WEEKLY_NOTE" />
               <InsightSeriesChart
                 :result="viewStates['hydro-weekly'].result"
                 :current="{ regionId: ctx.regionId.value, companyId: ctx.companyId.value, contextVersion: ctx.contextVersion.value }"
@@ -1183,7 +1180,7 @@ onMounted(() => {
                   </el-select>
                 </label>
               </div>
-              <el-alert type="info" :closable="false" :title="HYDRO_GROUPS_NOTE" />
+              <InsightNote label="机组群组成与占比" :text="HYDRO_GROUPS_NOTE" />
               <el-empty v-if="!unitGroupChoice" :description="PICK_UNIT_GROUP_TEXT" :image-size="72" />
               <el-table v-else-if="unitGroupRows.length" :data="unitGroupRows" size="small" border max-height="360">
                 <el-table-column prop="date" label="业务日" width="110" />
@@ -1224,9 +1221,9 @@ onMounted(() => {
                   </el-select>
                 </label>
               </div>
-              <el-alert type="info" :closable="false" :title="FORECAST_MODE_TEXT" />
-              <el-alert type="info" :closable="false" :title="NEW_ENERGY_ALIGN_TEXT" />
-              <el-alert type="info" :closable="false" :title="ERROR_DIRECTION_TEXT" />
+              <InsightNote label="事后对照" :text="FORECAST_MODE_TEXT" />
+              <InsightNote label="预测目标日" :text="NEW_ENERGY_ALIGN_TEXT" />
+              <InsightNote label="误差 = 预测 − 实际" :text="ERROR_DIRECTION_TEXT" />
               <template v-if="currentPair">
                 <ChartCard title="预测与实际（预测虚线、实际实线）" :height="300" :build-option="() => rawCompareOption" />
                 <ChartCard title="误差（预测 − 实际）" :height="260" :build-option="() => errorChartOption" />
@@ -1275,7 +1272,7 @@ onMounted(() => {
               @open-candidates="openCandidates"
               @open-evidence="openEvidence('residual-proxy')"
             >
-              <el-alert type="info" :closable="false" :title="RESIDUAL_PROXY_TEXT" />
+              <InsightNote label="分析代理量 · 非官方竞价空间" :text="RESIDUAL_PROXY_TEXT" />
               <el-alert v-if="proxyFormula" type="info" :closable="false" :title="`计算口径：${proxyFormula}`" />
               <el-alert v-for="(note, index) in proxyNotes" :key="index" type="info" :closable="false" :title="note" />
               <el-alert
@@ -1322,7 +1319,7 @@ onMounted(() => {
                   />
                 </label>
               </div>
-              <el-alert type="info" :closable="false" :title="COMPARE_SCOPE_TEXT" />
+              <InsightNote label="共同样本口径" :text="COMPARE_SCOPE_TEXT" />
               <el-empty v-if="!referenceWindow" :description="COMPARE_PICK_TEXT" :image-size="72" />
               <template v-else>
                 <p class="yns-supply__hint">

@@ -382,3 +382,9 @@ hasInsightDrilldownParams(query)    -> boolean              // URL 是否带 hx_
 | 六页 `*.component.spec.ts` 内「AI 解读注册（15.3）」用例 | 每页注册声明、入口按钮、当前签名采集、上下文变化后不采集旧资料 |
 | `src/features/regions/yunnan/insight/crossModuleRegression.spec.ts` | 15.6 跨模块回归：模型离线/组装失败/专题不可用/撤权四类故障下「AI 诚实不可用、查询导出保存照常、错误不伪装成功」（A14） |
 | `src/features/regions/yunnan/insight/handoffLinks.spec.ts` | 15.8 四条链路：选区→AI、对象深链往返、材料保存幂等与 409 重跑、下钻编码六页往返与未知字段丢弃提示（A18/A19） |
+
+## 口径说明与总览来源收纳（dljy#3135）
+
+`InsightNote.vue` 用原生 details/summary 收纳次要静态口径，支持键盘和焦点提示。不要把错误、缺测、无权、历史模式或运行资格放入默认收起区。
+
+`InsightBlock.compactSources` 仅在总览启用：来源摘要保留数量与公开/含获权标识，展开查看原始业务标题；证据按钮始终独立，状态处理与默认的其他页面不变。
