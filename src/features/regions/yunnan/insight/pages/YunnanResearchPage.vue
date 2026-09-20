@@ -68,6 +68,7 @@ import {
 import { useInsightContext } from '@/composables/useInsightContext'
 import { useInsightAiPage, type InsightAiEvidenceBlock, type InsightAiEvidenceItem } from '@/features/regions/yunnan/insight/useInsightAiPage'
 import InsightDateRange from '@/components/insight/InsightDateRange.vue'
+import InsightMaterialDialog from '@/components/insight/InsightMaterialDialog.vue'
 import InsightResearchSavedDialog from '@/components/insight/InsightResearchSavedDialog.vue'
 import { insightSourceTitle, type InsightSourceTitle } from '@/components/insight/insightText'
 
@@ -387,6 +388,11 @@ const saveState = reactive<{ saving: boolean; savedVersion: number | null; error
   savedVersion: null,
   error: '',
 })
+/** 最近一次保存成功的研究定义 id：材料通道（#3116）只接受 definitionId。 */
+const savedDefinitionId = ref<string | null>(null)
+/** 该定义保存时所对应的结果版本指纹：配置签名不变、源更新后重跑会得到新版本——
+ *  指纹不一致即旧定义，材料入口必须要求重新保存（不带旧冻结定义配新结果版本）。 */
+const savedForVersions = ref<{ resultVersion: string; readSetRef: string } | null>(null)
 
 /** 已保存分析窗口：查看（列表/原样只读）对所有人开放；重算入口由窗口按权限另行显隐。 */
 const savedVisible = ref(false)
@@ -423,12 +429,23 @@ watch(configSignature, () => {
   runState.loading = false
   saveState.savedVersion = null
   saveState.error = ''
+  // 已保存定义 ID 绑定配置签名：配置一变，旧定义不再对应当前结果——不清掉的话
+  // 材料入口会把 A 定义的 ID 配上 B 结果的期望版本发给服务端（版本核对必然错位）。
+  savedDefinitionId.value = null
+  savedForVersions.value = null
 })
+
+/** 研究请求上下文：显式叠加当前模式与事前时点（toQueryContext 默认事后、无时点）。
+ * 运行、保存、材料三条通道的期望版本都来自当前运行结果，上下文必须与运行同口径——
+ * 否则事前运行会被服务端按事后定义重算核对，版本必然对不上或冻结错模式。 */
+function researchContext(): InsightContextInput {
+  return { ...ctx.toQueryContext(), mode: mode.value, asOf: asOfIso.value }
+}
 
 async function runPreview(): Promise<void> {
   const preset = activePreset.value
   if (!preset || !canRun.value || runState.loading) return
-  const context: InsightContextInput = { ...ctx.toQueryContext(), mode: mode.value, asOf: asOfIso.value }
+  const context: InsightContextInput = researchContext()
   const filters = preset.kind === 'correlation' ? { groupBy: groupBy.value } : undefined
   const transformations = buildTransformations(preset)
   const key = configSignature.value
@@ -442,6 +459,13 @@ async function runPreview(): Promise<void> {
     // 新一次运行回到默认视图（序列显隐/分面顺序绑定当前结果，是会话内状态）。
     hiddenMetricIds.value = new Set()
     facetOrder.value = []
+    // 同签名重跑（源更新）会得到新版本：与已保存定义对应的版本指纹不一致即旧定义，
+    // 材料入口必须要求重新保存，不带旧冻结定义配新结果的期望版本。
+    if (savedForVersions.value && (result.resultVersion !== savedForVersions.value.resultVersion || result.readSetRef !== savedForVersions.value.readSetRef)) {
+      savedDefinitionId.value = null
+      savedForVersions.value = null
+      saveState.savedVersion = null
+    }
     runState.result = result
     runState.runKey = key
   } catch (error) {
@@ -468,7 +492,8 @@ async function saveDefinition(): Promise<void> {
     return
   }
   // 上下文剥掉代次（导航概念，同 #151 材料保存）：同口径重复保存幂等键稳定。
-  const { contextVersion: _generation, ...context } = ctx.toQueryContext()
+  // 模式/事前时点与运行同口径（researchContext）：期望版本来自当前运行，不能错口径核对。
+  const { contextVersion: _generation, ...context } = researchContext()
   const expected = { resultVersion: current.resultVersion, readSetRef: current.readSetRef }
   const filters = preset.kind === 'correlation' ? { groupBy: groupBy.value } : undefined
   const transformations = buildTransformations(preset)
@@ -484,17 +509,64 @@ async function saveDefinition(): Promise<void> {
   saveState.saving = true
   saveState.error = ''
   saveState.savedVersion = null
+  // 在途期间配置可能已变（代次签名失效会清掉旧定义 ID）：迟到响应不得把 A 配置的定义
+  // ID 写回来配 B 配置的结果/上下文——签名已变就丢弃响应，不写任何状态。
+  const signatureAtRequest = configSignature.value
   try {
     const detail = await saveResearchDefinition({ presetId: preset.presetId, context, filters, transformations, expected, idempotencyKey })
+    if (configSignature.value !== signatureAtRequest) return
+    // 保存针对的是发起时看到的结果：响应到达前若同签名重跑换成了新版本（源更新），
+    // 这份冻结定义已对不上屏幕上的结果——丢弃响应，材料入口等下一次保存。
+    const displayed = runState.result
+    if (!displayed || displayed.resultVersion !== expected.resultVersion || displayed.readSetRef !== expected.readSetRef) return
     const version = detail.latestRun?.runNo ?? 1
+    savedDefinitionId.value = detail.definitionId
+    savedForVersions.value = { resultVersion: expected.resultVersion, readSetRef: expected.readSetRef }
     saveState.savedVersion = version
     ElMessage.success(detail.replay ? `已保存（版本 ${version}）；该定义此前已保存，未重复创建` : `已保存（版本 ${version}）`)
   } catch (error) {
+    if (configSignature.value !== signatureAtRequest) return
     // 409（源已更新）→ 固定提示先重新运行；其余透传后端原因原文。未保存，绝不提示成功。
     saveState.error = researchSaveError(error, '保存未完成：研究页其余功能不受影响，请稍后重试')
   } finally {
     saveState.saving = false
   }
+}
+
+// ── 加入专题材料（任务 14.5/14.6，与 #151 价格页同模式）：运行产物作为材料主体 ────────────
+// 复用 InsightMaterialDialog 与既有 evidence/workpaper 协议，冻结与入稿全在窗口内完成，不另起
+// 第二套材料通道。材料通道只接受**已保存研究定义**（definitionId，dljy#3116 放行；研究预设 id
+// 直传会被 404——必须先经 14.3 保存协议生成定义与冻结运行，防止绕过服务端重算核验）：未保存
+// 点加入 → 提示先保存，不开窗；已保存 → analysisId=definitionId、期望版本与冻结运行对照，
+// 源已更新 409 提示先重新运行；幂等键由窗口按内容派生。材料保存是公司写入：入口按 governance
+// 写权限显隐（后端写入闸门才是权威）。
+
+const materialVisible = ref(false)
+const materialSubject = ref('')
+const materialRequest = ref<{ analysisId: string; context: Record<string, unknown>; filters?: Record<string, unknown> } | null>(null)
+
+const materialResult = computed(() => runState.result)
+
+function openMaterial(): void {
+  const preset = activePreset.value
+  const current = runState.result
+  if (!preset || !current || !current.resultVersion || !current.readSetRef) return
+  // 未保存过定义：材料通道需要 definitionId（#3116），先提示保存而不是静默不开。
+  if (!savedDefinitionId.value) {
+    ElMessage.warning('请先保存分析（生成定义与冻结运行），再加入材料')
+    return
+  }
+  // 上下文剥掉代次（导航概念，同保存分析）：同口径重复保存幂等键稳定。
+  // 模式/事前时点与运行同口径（researchContext）：期望版本来自当前运行，不能错口径核对；
+  // 服务端研究路径按定义的冻结运行核对版本并取定义里的上下文/变换冻结材料。
+  const { contextVersion: _generation, ...context } = researchContext()
+  materialSubject.value = preset.title
+  materialRequest.value = {
+    analysisId: savedDefinitionId.value,
+    context,
+    filters: preset.kind === 'correlation' ? { groupBy: groupBy.value } : undefined,
+  }
+  materialVisible.value = true
 }
 
 // ── 结果读取（宽松形状 + 展示辅助；值按登记精度或原文呈现，无任何裁剪）──────────────────
@@ -1068,6 +1140,18 @@ const onAiInterpret = (): void => {
         <header class="yr__result-head">
           <h3 class="yr__panel-title">{{ KIND_LABELS[result.method.kind] ?? result.method.kind }}结果</h3>
           <span class="yr__tag" data-testid="yr-mode-badge">{{ result.mode === 'ex-post' ? EX_POST_BADGE : EX_ANTE_BADGE }}</span>
+          <!-- 加入专题材料（任务 14.5/14.6）：公司写入入口按权限显隐（同 #151 价格页材料口径）；
+               冻结与入稿在材料窗口内完成，源已更新 409 由窗口提示先重跑 -->
+          <el-button
+            v-if="canWriteCompany"
+            size="small"
+            plain
+            data-testid="yr-add-material"
+            :disabled="!result.resultVersion || !result.readSetRef"
+            @click="openMaterial"
+          >
+            加入专题材料
+          </el-button>
         </header>
 
         <p class="yr__sample" data-testid="yr-sample">
@@ -1278,6 +1362,16 @@ const onAiInterpret = (): void => {
 
     <!-- 已保存分析：列表/查看对所有人开放（公司隔离、原样只读）；重算入口按写权限显隐 -->
     <InsightResearchSavedDialog v-model="savedVisible" :can-write="canWriteCompany" />
+
+    <!-- 加入专题材料（任务 14.5/14.6）：冻结 + 入稿全在窗口内完成，服务不可用只报错不阻断研究页 -->
+    <InsightMaterialDialog
+      v-model="materialVisible"
+      :region="ctx.regionId.value"
+      :company-id="ctx.companyId.value ?? ''"
+      :subject="materialSubject"
+      :request="materialRequest"
+      :result="materialResult"
+    />
   </div>
 </template>
 

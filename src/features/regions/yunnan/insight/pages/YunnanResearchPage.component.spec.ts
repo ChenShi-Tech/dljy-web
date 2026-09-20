@@ -16,6 +16,7 @@
 //   ⑫ 界面只出现业务语言，不出现预设标识/来源标识/模式枚举原文。
 // mock 边界：researchClient/insightClient 打桩（保留类型与错误类）；useInsightContext 用真
 // composable（真 router + 全局地区/公司 ref）；shared/insight 契约镜像用真模块（指标/精度取登记）。
+import { defineComponent, h } from 'vue'
 import { flushPromises, type VueWrapper } from '@vue/test-utils'
 import { ElDatePicker } from 'element-plus'
 import { createMemoryHistory, createRouter, type Router } from 'vue-router'
@@ -1112,5 +1113,120 @@ describe('价格响应红线', () => {
     expect(note.text()).toContain('不是官方竞价空间')
     // 因果边界同时在场：统计关联不等于因果
     expect(wrapper!.text()).toContain('统计关联不等于因果')
+  })
+})
+
+// ── 材料接线（#3116 放行 definitionId 后的取材纪律）：未保存先提示；已保存传 definitionId ──
+
+describe('材料接线（definitionId 纪律）', () => {
+  /** 带材料窗口桩的挂载：捕获 openMaterial 传入的 request（不渲染真实窗口，避开 ElSelect 递归）。 */
+  async function mountWithMaterialCapture() {
+    const captured: { visible: boolean; request: unknown } = { visible: false, request: null }
+    const MaterialStub = defineComponent({
+      name: 'InsightMaterialDialog',
+      props: { modelValue: { type: Boolean, default: false }, request: { type: Object, default: null }, subject: { type: String, default: '' } },
+      emits: ['update:modelValue'],
+      setup(props) {
+        return () => {
+          captured.visible = props.modelValue
+          captured.request = props.request
+          return h('div', { 'data-testid': 'material-stub' })
+        }
+      },
+    })
+    wrapper = appMount(YunnanResearchPage, {
+      global: {
+        plugins: [router],
+        stubs: { teleport: true, ResearchStatFacet: true, InsightMaterialDialog: MaterialStub },
+      },
+    })
+    await flushPromises()
+    return captured
+  }
+
+  it('未保存定义时点「加入专题材料」：材料窗口不开（definitionId 不存在，先保存才能进材料通道）', async () => {
+    const captured = await mountWithMaterialCapture()
+    await selectPreset('research.price-new-energy-correlation')
+    await run()
+    expect(captured.visible).toBe(false)
+    await wrapper!.find('[data-testid="yr-add-material"]').trigger('click')
+    await flushPromises()
+    expect(captured.visible).toBe(false)
+  })
+
+  it('保存成功后点加入：窗口打开且请求 analysisId 为已保存定义的 definitionId、期望版本随行', async () => {
+    const captured = await mountWithMaterialCapture()
+    await selectPreset('research.price-new-energy-correlation')
+    await run()
+    await save()
+    await wrapper!.find('[data-testid="yr-add-material"]').trigger('click')
+    await flushPromises()
+    expect(captured.visible).toBe(true)
+    const request = captured.request as { analysisId: string }
+    expect(request.analysisId).toBe('5f0c9e64-1a2b-4c3d-8e4f-001122334455')
+  })
+
+  it('保存后改配置再运行：旧定义 ID 失效，材料入口重新要求先保存（不带旧 ID 配新结果）', async () => {
+    const captured = await mountWithMaterialCapture()
+    await selectPreset('research.price-new-energy-correlation')
+    await run()
+    await save()
+    // 换窗口 = 配置签名变化：已保存定义 ID 随之失效，重跑后也不能拿旧定义 ID 配新结果
+    await setWindow('2026-09-02', '2026-09-11')
+    await run()
+    await wrapper!.find('[data-testid="yr-add-material"]').trigger('click')
+    await flushPromises()
+    expect(captured.visible).toBe(false)
+  })
+
+  it('同签名重跑（源更新）得到新版本：旧定义 ID 失效，材料入口要求重新保存', async () => {
+    const captured = await mountWithMaterialCapture()
+    await selectPreset('research.price-new-energy-correlation')
+    await run()
+    await save()
+    // 源更新后同签名重跑：新结果版本 ≠ 已保存定义对应的版本指纹
+    state.result = { ...correlationResult(), resultVersion: `rv2:${'b'.repeat(64)}` }
+    await run()
+    await wrapper!.find('[data-testid="yr-add-material"]').trigger('click')
+    await flushPromises()
+    expect(captured.visible).toBe(false)
+  })
+
+  it('保存在途时改配置：迟到响应不写回旧定义 ID（材料入口要求重新保存）', async () => {
+    const captured = await mountWithMaterialCapture()
+    await selectPreset('research.price-new-energy-correlation')
+    await run()
+    let release!: (value: unknown) => void
+    const gate = new Promise((done) => { release = done })
+    state.saveResponder = () => gate
+    await save() // 保存请求在途
+    // 配置变更 → 代次签名失效；随后迟到的保存响应不得把 A 配置的定义 ID 写回来
+    await setWindow('2026-09-02', '2026-09-11')
+    release(state.saveDetail)
+    await flushPromises()
+    await run()
+    await wrapper!.find('[data-testid="yr-add-material"]').trigger('click')
+    await flushPromises()
+    expect(captured.visible).toBe(false)
+  })
+
+  it('事前运行保存后加入材料：请求上下文与运行同口径（mode=ex-ante、asOf 随行）', async () => {
+    const captured = await mountWithMaterialCapture()
+    state.result = {
+      ...correlationResult(),
+      mode: 'ex-ante',
+      asOf: '2026-09-05T08:30:00+08:00',
+    }
+    await selectPreset('research.price-new-energy-correlation')
+    await setMode('ex-ante')
+    await setAsOf('2026-09-05 08:30')
+    await run()
+    await save()
+    await wrapper!.find('[data-testid="yr-add-material"]').trigger('click')
+    await flushPromises()
+    expect(captured.visible).toBe(true)
+    const request = captured.request as { context: { mode: string; asOf: string | null } }
+    expect(request.context.mode).toBe('ex-ante')
+    expect(request.context.asOf).toBe('2026-09-05T08:30:00+08:00')
   })
 })
