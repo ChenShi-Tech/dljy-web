@@ -29,6 +29,8 @@ import InsightDateRange from '@/components/insight/InsightDateRange.vue'
 import InsightObjectPicker from '@/components/insight/InsightObjectPicker.vue'
 import { insightResult } from '@/components/insight/insightFixtures'
 import YunnanGridBoundariesPage from './YunnanGridBoundariesPage.vue'
+import { fetchGridDisclosureEvents, fetchGridDisclosureOverview, fetchGridObject } from '@/features/gridGeo/client'
+import { ApiError } from '@/services/api'
 
 // ── 可控 mock 状态（vi.hoisted：vi.mock 工厂提升后仍可引用）────────────────────────────
 
@@ -37,6 +39,9 @@ const state = vi.hoisted(() => ({
   responder: null as ((request: any) => Promise<any>) | null,
   /** coverage 来源清单：analysisId → sources[]（objects 字段按场景给或不给）。 */
   coverageSources: null as Record<string, Array<{ sourceId: string; objects?: string[]; objectsNote?: string }>> | null,
+  /** 检修干预页签（#3092）：当前账号角色与 gridGeo 披露客户端的可控响应。 */
+  role: 'TRADER' as string,
+  availability: 'available' as string,
 }))
 
 vi.mock('@/services/insight/insightClient', async (importOriginal) => {
@@ -48,6 +53,47 @@ vi.mock('@/services/insight/insightClient', async (importOriginal) => {
     fetchInsightCoverage: vi.fn((request: any) => Promise.resolve(coverageResult(request))),
   }
 })
+
+// 检修干预页签（#3092）：gridGeo 披露客户端与账号角色的可控打桩（页面只经此读披露事件）。
+vi.mock('@/services/auth', async (importOriginal) => {
+  const actual = await importOriginal<Record<string, unknown>>()
+  return {
+    ...actual,
+    getCurrentUser: vi.fn(() => ({ roleCode: state.role }) as never),
+  }
+})
+vi.mock('@/features/gridGeo/client', async (importOriginal) => {
+  const actual = await importOriginal<Record<string, unknown>>()
+  return {
+    ...actual,
+    fetchGridDisclosureEvents: vi.fn((params: Record<string, string | number>) => {
+      const wanted = String(params.category ?? '').split(',')
+      const rows = maintenanceEventPool().filter((event) => wanted.includes(String(event.category)))
+      return Promise.resolve({
+        items: rows,
+        total: rows.length,
+        page: 1,
+        pageSize: 100,
+        categories: ['maintenance', 'intervention', 'outage'],
+        dataAvailability: { status: state.availability, reason: '', fallback: false },
+      })
+    }),
+    fetchGridDisclosureOverview: vi.fn(() => Promise.resolve(disclosureOverview.value)),
+    fetchGridObject: vi.fn(() => {
+      if (disclosureObjectError.value) return Promise.reject(disclosureObjectError.value)
+      return Promise.resolve(disclosureObjectDetail.value)
+    }),
+  }
+})
+
+/** vi.hoisted 容器：工厂与用例共享的可控响应。 */
+const { maintenanceEventPool, disclosureOverview, disclosureObjectDetail, disclosureObjectError } = vi.hoisted(() => ({
+  maintenanceEventPool: () => maintenanceEventPoolValue,
+  disclosureOverview: { value: null as any },
+  disclosureObjectDetail: { value: null as any },
+  disclosureObjectError: { value: null as any },
+}))
+let maintenanceEventPoolValue: Array<Record<string, unknown>> = []
 
 function coverageResult(request: any) {
   return {
@@ -773,5 +819,250 @@ describe('状态与展示纪律', () => {
     expect(text).not.toContain('objectIds')
     expect(text).not.toContain('limit-match')
     expect(text).not.toContain('bindingSide')
+  })
+})
+
+// ── 检修干预页签（#3092，任务 10.6，GB04—GB06、CH01）────────────────────────────────────
+// 守什么不变量：
+//   ⑨ 计划检修（maintenance）与实际干预（intervention,outage）两组分列不混，identity=annotate；
+//   ⑩ 同一事件重复披露显示「第 N 版 / 共 M 版」；计数区分原始记录与独立事件；
+//   ⑪ 只有业务日的记录如实标注时间口径（仅业务日期、起止「未提供」），不推断精确停复电；
+//   ⑫ 联看同期价格只携带事件窗口（start/end query），页面固定写明不自动归因；无窗口不给入口；
+//   ⑬ 已关联场站只来自对象接口的明确关系；404/空关系显示「同名不作为关联依据」；
+//   ⑭ 角色门控与后端同源：无披露角色不发请求；三态（有数/无数/未接入）诚实呈现。
+describe('检修干预页签（#3092）', () => {
+  const PLAN_TITLE = '220 千伏禄高肇直流检修'
+  const ACTUAL_TITLE = '某机组非计划停运'
+
+  function eventFixture(overrides: Record<string, unknown> = {}) {
+    return {
+      eventId: 'evt-plan-1',
+      providerId: 'csg-authorized-export',
+      category: 'maintenance',
+      title: PLAN_TITLE,
+      summary: '计划检修：设备例行检修，期间降低送电能力',
+      regionId: 'yunnan',
+      spatialBinding: { kind: 'region', ref: null, label: '云南', coordinates: null },
+      effectiveAt: '2026-09-17T08:00:00+08:00',
+      expiresAt: '2026-09-17T20:00:00+08:00',
+      publishedAt: null,
+      businessDate: '2026-09-17',
+      timeQuality: { effective: 'source', published: 'unknown', intervalBasis: 'planned', issues: [] },
+      source: {
+        file: 'tb_disclosure_forecast_maintenance_plan_part001.csv',
+        recordId: 'r-1',
+        url: null,
+        sourceTable: 'tb_disclosure_forecast_maintenance_plan',
+        sourceType: 'IMPORT',
+        mock: false,
+        productionWrite: false,
+        dataAvailability: 'available',
+        license: '授权导出包',
+        originalLinkStatus: 'unknown',
+      },
+      confidence: 'verified-source-row',
+      importedAt: '2026-09-18T02:00:00+08:00',
+      ...overrides,
+    }
+  }
+
+  function actualEventFixture() {
+    return eventFixture({
+      eventId: 'evt-actual-1',
+      category: 'intervention',
+      title: ACTUAL_TITLE,
+      effectiveAt: '2026-09-18T10:30:00+08:00',
+      expiresAt: '2026-09-18T21:00:00+08:00',
+      businessDate: '2026-09-18',
+      timeQuality: { effective: 'source', published: 'unknown', intervalBasis: 'actual', issues: [] },
+    })
+  }
+
+  beforeEach(() => {
+    router.addRoute({ path: '/insight/prices', component: { render: () => null } })
+    state.role = 'TRADER'
+    state.availability = 'available'
+    maintenanceEventPoolValue = []
+    disclosureOverview.value = {
+      total: 0,
+      countsByCategory: {},
+      dayOnlyCount: 0,
+      dayOnlyCountsByCategory: {},
+      buckets: [],
+      coverage: { from: null, to: null, total: 0, timeBasis: 'businessDate', publishedTimeKnown: 0, sourceImportedTimeKnown: 0, effectiveTimeKnown: 0 },
+      bucket: 'day',
+      identity: { rawCount: 9, identifiedRawCount: 9, distinctCount: 3, unidentifiedCount: 0 },
+      dataAvailability: { status: 'available', reason: '', fallback: false },
+    }
+    disclosureObjectDetail.value = null
+    disclosureObjectError.value = null
+    vi.mocked(fetchGridDisclosureEvents).mockClear()
+    vi.mocked(fetchGridDisclosureOverview).mockClear()
+    vi.mocked(fetchGridObject).mockClear()
+  })
+
+  async function openMaintenanceTab() {
+    await mountPage()
+    await switchTab('maintenance')
+  }
+
+  function groupOf(kind: 'plan' | 'actual') {
+    return wrapper!.find(`[data-testid="ygb-maintenance-${kind}"]`)
+  }
+
+  it('计划检修与实际干预两组各查一次、分列不混：category 与 identity=annotate 固定', async () => {
+    maintenanceEventPoolValue = [eventFixture(), actualEventFixture()]
+    await openMaintenanceTab()
+
+    const calls = vi.mocked(fetchGridDisclosureEvents).mock.calls
+    expect(calls).toHaveLength(2)
+    const byCategory = calls.map(([params]) => String((params as any).category)).sort()
+    expect(byCategory).toEqual(['intervention,outage', 'maintenance'])
+    for (const [params] of calls) {
+      expect((params as any).identity).toBe('annotate')
+      expect(String((params as any).pageSize)).toBe('100')
+    }
+    expect(groupOf('plan').text()).toContain(PLAN_TITLE)
+    expect(groupOf('plan').text()).not.toContain(ACTUAL_TITLE)
+    expect(groupOf('actual').text()).toContain(ACTUAL_TITLE)
+    expect(groupOf('actual').text()).not.toContain(PLAN_TITLE)
+  })
+
+  it('重复披露显示「第 N 版 / 共 M 版」，计数区分原始记录与独立事件（GB04）', async () => {
+    maintenanceEventPoolValue = [eventFixture({ identity: { rule: 'source-interval', key: 'k-1', versions: 7, version: 2 } })]
+    await openMaintenanceTab()
+
+    const counts = wrapper!.find('[data-testid="ygb-maintenance-counts"]')
+    expect(counts.text()).toContain('原始记录 9 条')
+    expect(counts.text()).toContain('独立事件 3 条')
+    expect(groupOf('plan').text()).toContain('第 2 版 / 共 7 版')
+
+    // 身份不足保留未归并提示而不是猜测合并
+    disclosureOverview.value = {
+      ...disclosureOverview.value,
+      identity: { rawCount: 11, identifiedRawCount: 9, distinctCount: 3, unidentifiedCount: 2 },
+    }
+    wrapper!.unmount()
+    await openMaintenanceTab()
+    expect(wrapper!.find('[data-testid="ygb-maintenance-counts"]').text()).toContain('2 条身份不足')
+  })
+
+  it('只有业务日的记录：起止如实「未提供」、时间口径「仅业务日期」，不推断精确停复电（GB04）', async () => {
+    maintenanceEventPoolValue = [eventFixture({
+      effectiveAt: null,
+      expiresAt: null,
+      timeQuality: { effective: 'business-date', published: 'unknown', intervalBasis: 'unknown', issues: ['legacy-business-date-inferred'] },
+      identity: undefined,
+    })]
+    await openMaintenanceTab()
+    const text = groupOf('plan').text()
+    expect(text).toContain('未提供')
+    expect(text).toContain('仅业务日期')
+    expect(text).not.toContain('08:00')
+  })
+
+  it('联看同期价格只携带事件窗口（start/end query），页面固定写明不自动归因（GB05、CH01）', async () => {
+    maintenanceEventPoolValue = [eventFixture()]
+    await openMaintenanceTab()
+    await wrapper!.find('[data-testid="ygb-maintenance-detail-open"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper!.find('[data-testid="ygb-maintenance-detail"]').text()).toContain('不自动归因')
+    await wrapper!.find('[data-testid="ygb-maintenance-compare"]').trigger('click')
+    await flushPromises()
+
+    expect(router.currentRoute.value.path).toBe('/insight/prices')
+    expect(router.currentRoute.value.query.start).toBe('2026-09-17')
+    expect(router.currentRoute.value.query.end).toBe('2026-09-17')
+  })
+
+  it('只有业务日的事件也能联看：窗口就是该业务日（同一起止日）', async () => {
+    maintenanceEventPoolValue = [eventFixture({
+      effectiveAt: null,
+      expiresAt: null,
+      timeQuality: { effective: 'business-date', published: 'unknown', intervalBasis: 'unknown', issues: [] },
+    })]
+    await openMaintenanceTab()
+    await wrapper!.find('[data-testid="ygb-maintenance-detail-open"]').trigger('click')
+    await flushPromises()
+    await wrapper!.find('[data-testid="ygb-maintenance-compare"]').trigger('click')
+    await flushPromises()
+
+    expect(router.currentRoute.value.query.start).toBe('2026-09-17')
+    expect(router.currentRoute.value.query.end).toBe('2026-09-17')
+  })
+
+  it('推不出业务窗口的事件：不给联看入口并说明原因（不猜测窗口）', async () => {
+    maintenanceEventPoolValue = [eventFixture({
+      businessDate: null,
+      effectiveAt: null,
+      expiresAt: null,
+      timeQuality: { effective: 'unknown', published: 'unknown', intervalBasis: 'unknown', issues: ['invalid-effective-time'] },
+    })]
+    await openMaintenanceTab()
+    await wrapper!.find('[data-testid="ygb-maintenance-detail-open"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper!.find('[data-testid="ygb-maintenance-compare"]').exists()).toBe(false)
+    expect(wrapper!.find('[data-testid="ygb-maintenance-detail"]').text()).toContain('无法联看同期价格')
+  })
+
+  it('已关联场站只认明确关系；无关系（404）时显示「同名不作为关联依据」（GB06）', async () => {
+    maintenanceEventPoolValue = [eventFixture()]
+    disclosureObjectDetail.value = {
+      relations: { plants: [{ id: 'p-mw', name: '漫湾水电站', regionId: 'yunnan' }], nodes: [] },
+    }
+    await openMaintenanceTab()
+    await wrapper!.find('[data-testid="ygb-maintenance-detail-open"]').trigger('click')
+    await flushPromises()
+    expect(wrapper!.find('[data-testid="ygb-maintenance-plants"]').text()).toContain('漫湾水电站')
+    expect(wrapper!.find('[data-testid="ygb-maintenance-no-plants"]').exists()).toBe(false)
+
+    disclosureObjectDetail.value = null
+    disclosureObjectError.value = new ApiError('未找到当前地区的披露对象', { status: 404, code: 404, payload: {} as never })
+    wrapper!.unmount()
+    await openMaintenanceTab()
+    await wrapper!.find('[data-testid="ygb-maintenance-detail-open"]').trigger('click')
+    await flushPromises()
+    expect(wrapper!.find('[data-testid="ygb-maintenance-plants"]').exists()).toBe(false)
+    expect(wrapper!.find('[data-testid="ygb-maintenance-no-plants"]').text()).toContain('同名')
+  })
+
+  it('无披露读取角色：页签只给门控说明、不发披露请求（角色契约与后端同源）', async () => {
+    state.role = 'AUDITOR'
+    maintenanceEventPoolValue = [eventFixture()]
+    await openMaintenanceTab()
+
+    expect(wrapper!.find('[data-testid="ygb-maintenance-gated"]').exists()).toBe(true)
+    expect(vi.mocked(fetchGridDisclosureEvents)).not.toHaveBeenCalled()
+    expect(vi.mocked(fetchGridDisclosureOverview)).not.toHaveBeenCalled()
+  })
+
+  it('三态诚实呈现：未接入与窗口内无记录分别给各自说明；窗口变化作废重查（新 from/to）', async () => {
+    maintenanceEventPoolValue = [eventFixture()]
+    await openMaintenanceTab()
+
+    state.availability = 'not-configured'
+    wrapper!.unmount()
+    await openMaintenanceTab()
+    expect(groupOf('plan').text()).toContain('公开披露事件库未接入当前地区')
+
+    state.availability = 'missing'
+    wrapper!.unmount()
+    await openMaintenanceTab()
+    expect(groupOf('plan').text()).toContain('没有已导入')
+
+    // 窗口变化 → 两组按新窗口重查
+    state.availability = 'available'
+    wrapper!.unmount()
+    await openMaintenanceTab()
+    const before = vi.mocked(fetchGridDisclosureEvents).mock.calls.length
+    await setWindow('2026-09-10', '2026-09-16')
+    const calls = vi.mocked(fetchGridDisclosureEvents).mock.calls.slice(before)
+    expect(calls).toHaveLength(2)
+    for (const [params] of calls) {
+      expect(String((params as any).from)).toBe('2026-09-10')
+      expect(String((params as any).to)).toBe('2026-09-16')
+    }
   })
 })
