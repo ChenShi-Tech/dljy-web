@@ -72,6 +72,12 @@ export const INSIGHT_METRICS = Object.freeze([
   definition({ metricId: 'sample.matched-hours', version: '1', label: '配对时长', unit: 'h', places: 2, formula: 'ΣΔt（实际与上下界都有效）', basis: '裕度与负载率只在这些时段计算' }),
   definition({ metricId: 'sample.no-limit-hours', version: '1', label: '缺限值时长', unit: 'h', places: 2, formula: 'ΣΔt（实际有效但缺上界或下界）', basis: '缺测不补，不计算' }),
   definition({ metricId: 'sample.invalid-limit-hours', version: '1', label: '限值区间不成立时长', unit: 'h', places: 2, formula: 'ΣΔt（正向限值<反向限值）', basis: '区间本身矛盾，不计算裕度' }),
+  // #3028 场站市场表现视图：捕获参考价的配对样本与负价暴露、供应商比较与覆盖摘要的样本量。
+  definition({ metricId: 'sample.valid-count', version: '1', label: '有效样本数', unit: 'count', places: 0, formula: '窗口内非空有效样本个数', basis: '样本量计数，不参与排名' }),
+  definition({ metricId: 'sample.covered-days', version: '1', label: '覆盖天数', unit: 'count', places: 0, formula: '有有效样本的业务日数', basis: '起止日期不代表连续覆盖' }),
+  definition({ metricId: 'plant.capture-paired-energy', version: '1', label: '配对电量', unit: 'MWh', places: 3, formula: 'ΣEt（电量与节点价都有效的时段，零电量时段剔除）', basis: '捕获参考价的分母口径' }),
+  definition({ metricId: 'plant.capture-reference-product', version: '1', label: '节点量价参考乘积', unit: 'yuan', places: 2, formula: 'Σ(Et×Pnode,t)', basis: '只是电量×节点价的参考乘积，不是实际结算电费，不含电网损失' }),
+  definition({ metricId: 'plant.negative-price-energy', version: '1', label: '负价时段暴露电量', unit: 'MWh', places: 3, formula: 'ΣEt(Pnode,t<0)', basis: '配对时段中节点价为负的电量合计；占比另见负价电量占比' }),
 ])
 
 const BY_ID = new Map(INSIGHT_METRICS.map(item => [item.metricId, item]))
