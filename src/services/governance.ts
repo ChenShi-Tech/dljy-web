@@ -695,6 +695,10 @@ export function canAccessPath(path: string, user: Pick<GovernanceUser, 'roleCode
   if (normalized === '/zcqjy/positions/intervals' || normalized === '/zcqjy/positions/stations' || normalized.startsWith('/zcqjy/curves/')) return true
   // P3 售电计划与交易执行（dljy#2973）：同属中长期售电经营台账，可见范围与月度持仓一致，写入由后端公司写权限闸门控制。
   if (normalized === '/zcqjy/plans' || normalized === '/zcqjy/execution') return true
+  // P4 合同调整（dljy#3014）：同属中长期售电经营台账，可见范围与合同入口一致，写入由后端公司写权限闸门控制。
+  if (normalized === '/zcqjy/adjustments') return true
+  // P5 业务复盘与外部账单（dljy#3016）：同属中长期售电经营台账，可见范围与合同入口一致，写入由后端公司写权限闸门控制。
+  if (normalized === '/zcqjy/review' || normalized === '/zcqjy/bills') return true
   // 市场洞察规范入口（dljy#2995）：与旧入口权限严格等价——任一旧入口可访问即可访问，
   // 全部不可访问则拒绝。必须先于 routes/groups 匹配（原因见 insightPathAccessAliases 注释）。
   const insightAliases = insightPathAccessAliases[normalized]

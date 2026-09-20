@@ -105,10 +105,10 @@ export const pageHelpRegistry: Record<string, PageHelpEntry> = {
   },
 
   // 中长期交易
-  ExposureBoard: {
+  HedgeWorkbench: {
     title: '中长期与现货套保',
     body: '中长期合同分解 vs 预计出力的逐时敞口：4 KPI（套保率/净卖出敞口/净买入敞口/日均合同电量）+ 主图（双线 + gap 柱正负着色）+ 日×小时敞口热力图 + 智能体解读。合同的小时形状由三种模式推演（峰谷结构/均匀/光伏镜像），是合成测算不是实测分时，页面显式标注；另并列展示现货结算口径的真实套保率与净敞口。产出为现货价格风险指标，故归现货交易；属决策支持，非投资建议，以正式结算口径为准。',
-    docPath: 'docs/features/exposure-board.md'
+    docPath: 'docs/features/hedge-workbench.md'
   },
   PositionMonitor: {
     title: '持仓量监控（山西采集）',

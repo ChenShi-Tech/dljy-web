@@ -845,13 +845,13 @@
     "feature": null
   },
   {
-    "id": "exposure-board",
-    "path": "/zcqjy/exposure",
+    "id": "hedge-workbench",
+    "path": "/xhjy/hedge",
     "title": "中长期与现货套保",
     "domain": "现货交易",
-    "kind": "mixed",
-    "endpoint": "POST /agent-api/agent/quant/exposure",
-    "dataPath": "quant_direct",
+    "kind": "real",
+    "endpoint": "GET /api/v1/hedge/{overview,months,summary,band/*,caps,baselines,mechanism-params} + POST simulate",
+    "dataPath": "midlong_readmodel + hedge legs",
     "nav": {
       "group": null,
       "listed": true

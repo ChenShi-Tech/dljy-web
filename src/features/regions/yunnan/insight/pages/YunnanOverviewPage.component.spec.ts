@@ -601,6 +601,20 @@ describe('YunnanOverviewPage', () => {
     expect(router.currentRoute.value.path).toBe('/insight/supply')
   })
 
+  it('下钻 query 为统一可校验形状（任务 15.1）：携带 hx_from 返回锚点，值中不出现原始数组', async () => {
+    await mountPage()
+    await click('yno-prices-drilldown')
+    const query = router.currentRoute.value.query
+    expect(query).toMatchObject({ hx_from: 'overview' })
+    // 共享四键仍在（目标页 useInsightContext 免费还原窗口），扩展字段只来自 hx_ 命名空间
+    expect(query.start).toBe(beijingToday())
+    expect(Object.keys(query).filter((key) => !['start', 'end', 'objects', 'sources'].includes(key))).toContain('hx_from')
+    // 红线（D3/D11.1）：任何 query 值都不 JSON 化（原始数组/行数据不进 URL）
+    for (const value of Object.values(query)) {
+      expect(String(value)).not.toMatch(/[[\]{]/)
+    }
+  })
+
   it('电网/场站区块标注详情页建设中（未交付页不由本页伪造入口能力）', async () => {
     await mountPage()
     const text = wrapper!.text()
