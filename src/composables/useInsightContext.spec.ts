@@ -189,3 +189,47 @@ describe('toQueryContext', () => {
     expect(context.contextVersion).toBe(state.contextVersion.value)
   })
 })
+
+describe('下钻恢复（dljy#3087 任务 15.1，可选入口）', () => {
+  it('URL 带下钻参数：四键照常还原（四键语义为准），hx_ 扩展字段进 drilldownRestore，无提示', async () => {
+    await router.push({
+      path: '/',
+      query: {
+        start: '2026-09-17',
+        end: '2026-09-18',
+        objects: encodeURIComponent('YN.KM/01'),
+        hx_priceObject: 'user-price',
+        hx_marketPhase: 'day-ahead',
+        hx_view: 'spread',
+        hx_from: 'overview',
+      },
+    })
+
+    const state = mountContext()
+
+    expect(state.businessWindow.value).toEqual({ start: '2026-09-17', end: '2026-09-18' })
+    expect(state.objectIds.value).toEqual(['YN.KM/01'])
+    expect(state.drilldownRestore.value).toEqual({ from: 'overview', view: 'spread', priceObject: 'user-price', marketPhase: 'day-ahead' })
+    expect(state.ignoredParamsNotice.value).toBeNull()
+  })
+
+  it('非法 hx_view 丢弃并进一次性提示；合法扩展字段照常还原（不支持字段明确提示）', async () => {
+    await router.push({
+      path: '/',
+      query: { start: '2026-09-17', end: '2026-09-18', hx_view: 'nope', hx_priceObject: 'user-price', hx_from: 'prices' },
+    })
+
+    const state = mountContext()
+
+    expect(state.drilldownRestore.value).toEqual({ from: 'prices', view: null, priceObject: 'user-price', marketPhase: null })
+    expect(state.ignoredParamsNotice.value).toContain('已忽略不合法参数')
+    expect(state.ignoredParamsNotice.value).toContain('hx_view')
+  })
+
+  it('URL 不带下钻参数：drilldownRestore 为 null，行为与既有完全一致', () => {
+    const state = mountContext()
+
+    expect(state.drilldownRestore.value).toBeNull()
+    expect(state.ignoredParamsNotice.value).toBeNull()
+  })
+})

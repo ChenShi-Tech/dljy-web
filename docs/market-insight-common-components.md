@@ -10,6 +10,7 @@
 | --- | --- | --- |
 | HTTP 客户端 | `src/services/insight/insightClient.ts` | `queryInsight` / `fetchInsightCapabilities` / `fetchInsightCoverage`；把后端信封归一成 `InsightRequestError`（status/message/details）；`assertInsightResult` 前置校验 |
 | 查询上下文 | `src/composables/useInsightContext.ts` | 地区 × 公司 × 业务日期窗 × 对象 × 来源的统一状态；地址参数互转；`contextVersion` 与请求代次联动 |
+| 下钻上下文 | `src/services/region/insightHandoff.ts` | 页面间下钻的统一可校验 URL 编解码（共享四键 + `hx_` 扩展键）、超长丢弃清单与返回状态（dljy#3087） |
 | 区块容器 | `src/components/insight/InsightBlock.vue` | 结果/错误/空态/部分数据的统一外壳，来源标签与证据/导出/材料入口 |
 | 证据抽屉 | `src/components/insight/InsightEvidenceDrawer.vue` | 逐来源证据行 + 序列覆盖明细（期望/有效/缺失/冲突时段） |
 | 历史候选 | `src/components/insight/InsightHistoryCandidates.vue` | 「查看可分析日期」：按来源覆盖求完整日期候选，用户显式选择 |
@@ -180,6 +181,34 @@ emits:  update:modelValue / saved               saved 仅在冻结并入稿成�
 - **默认窗口**：北京时间当日。**不自动跳到有数据的日子**（A02）。
 - **地区/公司变化**：清空对象选择（对象属于原地区/公司，跨地区沿用等于串读），日期保留；`contextVersion` +1 并作废在途请求（迟到响应不写入新状态）。
 - `objectIds` 不进 context，由页面放进 `filters.objectIds` 组装请求（后端按 `requiresObjects` 校验）；`toQueryContext()` 出口经契约校验，不合法直接抛中文错误。
+
+## 下钻上下文与返回状态（insightHandoff，dljy#3087 任务 15.1）
+
+洞察页面之间下钻（总览 → 价格/供需等）不再各写一套 `{ start, end }`，统一经 `src/services/region/insightHandoff.ts` 编解码（OpenSpec `insight-context-handoff` CH01：日期/来源/对象/时段一致；A15：不支持字段明确提示）。纯函数、零 Vue 依赖，规格上是 `shared/insight/handoff.mjs` 交接契约（D11.1）的 URL 承载层。
+
+```
+buildInsightDrilldownQuery(payload) -> { query, dropped }   // payload: { start, end, objects?, sources?, priceObject?, marketPhase?, view?, from? }
+parseInsightDrilldownQuery(query)   -> { payload, ignored } // 逐字段校验；非法/不支持字段进 ignored
+returnStateOf(payload)              -> { pageId, path, query } | null  // from 页 + 可恢复四键上下文
+hasInsightDrilldownParams(query)    -> boolean              // URL 是否带 hx_ 下钻参数
+```
+
+**编码规则（键命名空间设计决策）**：
+
+- 共享四键 `start` / `end` / `objects` / `sources` 直写——业务窗与对象/来源是「四键还原层」与「下钻层」的共同语义，同一信息只写一处，目标页既有的 `useInsightContext` 四键还原免费生效；**下钻参数与四键同名时以四键语义为准**：下钻层不另造 `hx_start` / `hx_objects` 等重复键，解析遇到这类键一律丢弃并提示。
+- 扩展字段带 `hx_` 前缀（handoff）：`hx_priceObject` / `hx_marketPhase` / `hx_view` / `hx_from`，camelCase 对应 D11.1 契约字段名；`from` 是发起页 pageId（返回锚点）。未登记的 `hx_*` 键进 ignored 提示（CH06：不静默忽略影响口径的未知字段）；非 `hx_` 的其他 query 键（页签、分页等）不归本层管。
+- 对象/来源逐项 `encodeURIComponent` 后逗号连接（与四键同规则）；**原始数据数组、行数据一律不进 URL**——列表只是可验证 ID 串，值中不出现 `[`（D3/D11.1 红线）。
+- **超长丢弃策略**：序列化估长（URLSearchParams 口径，对已编码值偏保守）超过 1800 字符时，按业务影响从小到大丢弃可选字段 `view → marketPhase → priceObject → objects → sources`，被丢弃字段名进 `dropped` 清单返回给调用方，**不静默截断**；窗口与 `from` 是必需字段不参与丢弃。构造期非法输入（坏窗口、坏对象、未登记 view/from）直接抛契约错误，不写进 URL。
+
+**解析校验（目标页，A15）**：窗口与四键同规则（成对且经共享契约 `parseInsightContext` 校验；对象/来源逐项过契约，任一项非法整参数丢弃，不悄悄缩窄选区）；`hx_` 扩展字段逐字段校验逐字段丢弃（`view` 必须是已登记页签枚举，数据驱动自 `shared/insight/analyses.mjs` 的 views 联集）。所有被丢弃字段汇总进 `ignored`，「不支持字段明确提示」，其余字段照常还原。
+
+**恢复入口（useInsightContext 可选能力）**：进页面时若 URL 带 `hx_` 参数，`useInsightContext` 自动解析——共享四键已由既有四键还原覆盖（同规则、四键语义为准），`hx_` 扩展字段暴露在 `ctx.drilldownRestore`（`{ from, view, priceObject, marketPhase }`）由目标页按需落状态；`ignored` 与四键解析合并成同一条「已忽略不合法参数」一次性提示（复用 ignoredParamsNotice 模式）。URL 不带 `hx_` 参数时行为与既有完全一致。
+
+**返回状态**：`returnStateOf` 从解析出的 payload 取 `from` 页与共享四键上下文，供目标页「返回」恢复发起页筛选（CH01 返回闭环）；`view` / `priceObject` / `marketPhase` 是目标页视角的口径，不带回发起页。`from` 缺失或未登记返回 `null`——没有可验证的返回位置就不显示返回入口，不猜。
+
+**当前接线范围**：总览页 `YunnanOverviewPage.vue` 的 `drilldown()` 已改用 `buildInsightDrilldownQuery`（带 `from: 'overview'`，并随窗口携带对象/来源）；价格/供需页签名不变。目标页消费 `drilldownRestore.view/priceObject` 激活页签随对应页面切片交付。
+
+对应测试：`src/services/region/insightHandoff.spec.ts`（round-trip、命名空间、逐字段丢弃、超长 dropped、原始数组不进 URL、returnState、与 insightWorkspace 页 id 同步）；`useInsightContext.spec.ts` 下钻恢复用例；`YunnanOverviewPage.component.spec.ts` 下钻 query 形状断言。
 
 ## 图表选区规则（useInsightSelection）
 

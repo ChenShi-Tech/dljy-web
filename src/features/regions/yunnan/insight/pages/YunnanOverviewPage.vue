@@ -12,7 +12,8 @@
 //     原样展示（OV03）；
 //   - 同进度比较只对单日窗口做；前一日同时段不完整时只说明原因，不显示假环比（OV04）；
 //   - 下钻带同一业务日期到详情页（OV05）：价格/供需页已交付，未交付页由宿主渲染「正在建设」
-//     占位，不借数据、不留死链；
+//     占位，不借数据、不留死链；下钻 query 经 insightHandoff 统一编解码（共享四键 + hx_from
+//     返回锚点，dljy#3087 任务 15.1）；
 //   - 获权区块（场站）按能力目录判定可见性：公共账号不渲染空框、不发获权请求；
 //   - 天气等旧驾驶舱大块不带入本页（收拢为各页自己的事）。
 
@@ -33,6 +34,7 @@ import {
 } from '@/services/insight/insightClient'
 import { useInsightContext } from '@/composables/useInsightContext'
 import { INSIGHT_PAGE_PATHS, type InsightPageId } from '@/services/region/insightWorkspace'
+import { buildInsightDrilldownQuery } from '@/services/region/insightHandoff'
 import InsightBlock from '@/components/insight/InsightBlock.vue'
 import InsightDateRange from '@/components/insight/InsightDateRange.vue'
 import InsightEvidenceDrawer from '@/components/insight/InsightEvidenceDrawer.vue'
@@ -222,7 +224,18 @@ function drilldownPageOf(target: DrilldownTarget): InsightPageId | null {
 
 function drilldown(pageId: InsightPageId, window?: { start: string; end: string }): void {
   const target = window ?? ctx.businessWindow.value
-  void router.push({ path: INSIGHT_PAGE_PATHS[pageId], query: { start: target.start, end: target.end } })
+  // 统一下钻上下文（dljy#3087，任务 15.1）：业务窗 + 对象/来源（共享四键语义）+ hx_from
+  // 返回锚点，由 insightHandoff 统一编码与校验（非法字段抛契约错误、超长丢弃可选字段）。
+  // dropped 清单只可能出现在 URL 超长的极端场景；总览当前载荷（窗口/对象/来源/from）不含
+  // 大列表，不接 UI。目标页经 useInsightContext 的下钻恢复入口解析（CH01 返回闭环）。
+  const { query } = buildInsightDrilldownQuery({
+    start: target.start,
+    end: target.end,
+    objects: [...ctx.objectIds.value],
+    sources: [...ctx.sourceIds.value],
+    from: 'overview',
+  })
+  void router.push({ path: INSIGHT_PAGE_PATHS[pageId], query })
 }
 
 function blockDrilldown(blockId: string): void {
