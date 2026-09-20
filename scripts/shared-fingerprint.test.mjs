@@ -106,12 +106,12 @@ test('增删文件 → fileCount 与 hash 都变；listSharedFiles 排除 README
   }
 })
 
-test('对真实仓库 shared/ 冒烟：87 个文件，指纹可复算且 algorithm 版本串就位', () => {
+test('对真实仓库 shared/ 冒烟：88 个文件，指纹可复算且 algorithm 版本串就位', () => {
   // 本测试用真实仓库当夹具（只读）：让「verify 门禁与 build-info 写入消费同一实现」
   // 这条链在单测里也被走到一次；不硬编码 69 之外的业务值（dljy#2938 同步 shared/midlong 8 个文件后由 37 增至 45，dljy#2969 预登记 P2/P3 共享契约 4 个文件后增至 49，dljy#2993 同步 shared/insight 20 个文件后增至 69，#3013/#3015 预登记 P4/P5 共享契约 6 个文件后增至 86（含套保契约 9 项后主仓 80 + P4/P5 6 项）（含市场洞察总览两项），与主仓 SHARED_WHITELIST 同步）。
   const repoRoot = path.resolve(import.meta.dirname, '..')
   const files = listSharedFiles(repoRoot)
-  assert.equal(files.length, 87)
+  assert.equal(files.length, 88)
   const fp = sharedFingerprint(repoRoot, files)
   assert.match(fp.hash, /^[0-9a-f]{64}$/)
   assert.equal(fp.fileCount, files.length)
