@@ -52,3 +52,36 @@
 
 - 不存在对应的界面开关或 feature flag，回滚任何一个新界面都不会恢复旧行为。
 - 如确需调整（例如云南接入全省出清清单真实来源后放开出清页），应修改客户端地区白名单（`marketInsightHeavyPagesClient.ts` 的 `CLEARING_LIST_REGION_ALLOWED`）并同步 `regionModules.ts` 能力声明与本文档，配套调整上述测试——而不是简单 revert #2991 的提交（revert 会重新引入跨地区读取与示例冒充真实两个红线问题）。
+
+## 跨地区一致性矩阵（dljy#3103，OpenSpec 任务 16.2）
+
+市场洞察的页面地址不含省份（`/insight/<pageId>`），具体内容由当前全局地区的工作区注册决定（`src/services/region/insightWorkspace.ts`）。design D2 的「跨地区一致性矩阵」逐行约定了地区切换时的一致行为，本节记录每行的产品语义与验收位置；实现退化（跨省 import、切省后请求沿用旧地区等）必须能让对应用例失败，不允许恒绿假用例。
+
+### 矩阵逐行语义
+
+| D2 矩阵行 | 一致行为 | 主要断言 |
+| --- | --- | --- |
+| 云南价格页/总览切到山西 | 规范地址保持，加载**山西现有组件**（价格分析、洞察驾驶舱） | 同 pageId 两省解析到不同 workspaceId；山西页 `load` 指向 `PriceAnalysisView.vue` / `MarketInsightCockpitView.vue` |
+| 云南专属页切到已登记但不支持此页的地区 | 落到**该地区登记的默认入口**并提示，不套云南页面 | 山西对 supply/grid-boundaries/plants/research 解析 `page-not-supported`，`resolveRegionSwitchRoute` 落山西默认入口 + 白名单 query（date 保留） |
+| 切到未登记洞察的可选地区 | 留在市场洞察显示「未开通」，不读取他省数据 | 广东/四川六页全 `not-registered`、导航不替换、无 `load` 句柄可借数；六条规范路径切区原地停留 |
+| 山西旧 `/sjfx/zrsjg` 等旧链接 | 兼容映射按 D2 迁移表登记（阶段 A 只登记不启用），山西旧入口原样可用 | `insightLegacyLinks` 11 条与 `canonicalInsightRoutePath` 全表回归；山西访问旧路径不重定向 |
+| 非市场洞察模块切地区 | 完全沿用当前行为 | 洞察六页装配后非洞察分组引用与路径集合不变；`/sjfx/zrsjg` 等非规范路径切区仍走通用 landing 逻辑 |
+| 山西业务布局/口径不变 | 兼容登记不重排山西产品 | 山西 `replacesNavigation` 为假、只登记 overview/prices 两页、侧边栏沿用旧入口 |
+
+两条负例底线（对应 RW04 与地区隔离红线）：
+
+- **跨省 import 静态断言**：`src/features/regions/yunnan/**` 不得 import 任何含 `shanxi` 的模块（含 `../shanxi/` 相对路径），反向亦然；`src/services/region/` 内核产码不得 import 任何具体省包，装配只经 `features/regions` 聚合入口。检测器带自检样例，防止恒绿。
+- **请求负例**：切省后洞察请求上下文必须跟随全局地区——`useInsightContext::toQueryContext().regionId` 跟随 `selectedRegionId`、contextVersion 递增、对象选择清空（不跨省沿用）；`api.ts` 的 `x-region-id` 头来源 `currentRegion.id` 与全局地区同步。
+
+### 测试位置
+
+| 测试文件 | 覆盖 |
+| --- | --- |
+| `src/services/region/regionConsistencyMatrix.spec.ts` | 矩阵逐行验收（22 例）：同地址异省、专属页回落默认入口、未登记地区无借数、山西布局不变、非洞察导航不变、跨省 import 负例、请求 regionId 跟随负例、旧深链全表回归 |
+| `src/services/region/regionIsolation.spec.ts` | 既有：请求/缓存/能力层面的地区隔离运行时矩阵（含「规范入口未登记地区不借数」） |
+| `src/services/region/insightWorkspace.spec.ts` | 既有：工作区注册契约（三种解析结果、重复注册抛错、真包装配） |
+| `src/services/region/regionNavigation.insight.spec.ts` | 既有：地区切换洞察分支三态与非洞察路径回归 |
+| `src/data/navigation.insight-assembly.spec.ts` | 既有：洞察分组原位替换与权限过滤链组合 |
+| `src/services/governance.insight-aliases.spec.ts` | 既有：规范入口权限等价（RW05 不扩权） |
+
+回退纪律（RW06）：云南工作区受 `VITE_YUNNAN_INSIGHT_WORKSPACE` 装配开关控制，关闭时云南按未开通处理、山西解析原样可用；矩阵用例对开关两种状态分别核对，回退云南界面装配不得改变山西或非洞察模块的任何行为。
