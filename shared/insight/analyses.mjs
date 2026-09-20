@@ -202,6 +202,79 @@ export const INSIGHT_ANALYSES = Object.freeze([
     pageIds: ['plants'], regionIds: ['yunnan'],
     sourceIds: ['cgn.plant.settlement-daily', 'cgn.plant.loss-daily'],
     filters: { objectIds: objectIdsFilter(200) }, limits: { maxObjects: 200 },
+    // 损失解释（#3081 任务 12.3，ST03—ST04）：源值照常展示，电网损失全空保持未提供，
+    // 分项不齐不做完整瀑布、只给「未解释差额」
+    viewFamily: 'plants', views: ['series', 'loss-explain'],
+  }),
+  // 正式/暂结同键差异（#3081 任务 12.1，ST01、A08）：正式读模型 vs 暂结原始证据，
+  // 两态都在才比差异，不相加；只有暂结的日期显式说明，无正式不静默用暂结
+  analysis({
+    analysisId: 'plants.settlement-status-diff', title: '场站日结算正式/暂结差异（获权）',
+    pageIds: ['plants'], regionIds: ['yunnan'],
+    sourceIds: ['cgn.plant.settlement-daily', 'cgn.settlement.daily-settlement-temp'],
+    filters: { objectIds: objectIdsFilter(200) }, limits: { maxObjects: 200 },
+    viewFamily: 'plants', views: ['series', 'status-diff'],
+  }),
+  // ── 五月月包余量分析（#3026 接入通道；数据落库前诚实缺数，#3027 补录后可查）──────────
+  analysis({
+    // 申报、出清、上网、集控实发对照（PP06）：量纲同为 MWh 但口径分开，语义对照视图并列不相加；
+    // 中长期电量以「合同口径引用」单独成列（plants.midlong-reference 的来源）
+    analysisId: 'plants.clearing-actual', title: '申报、出清、上网与集控实发对照（获权）',
+    pageIds: ['plants'], regionIds: ['yunnan'],
+    sourceIds: [
+      'cgn.plant.spot-clearing-day-ahead', 'cgn.plant.spot-clearing-real-time',
+      'cgn.plant.business-declared', 'cgn.plant.business-actual', 'cgn.plant.control-generation',
+      'cgn.plant.midlong-energy',
+    ],
+    filters: { objectIds: objectIdsFilter(50) }, limits: { maxDays: 31, maxObjects: 50, requiresObjects: true },
+    viewFamily: 'plants', views: ['series', 'semantics'],
+  }),
+  analysis({
+    analysisId: 'plants.business-forecast', title: '一体化预测出力（获权）',
+    pageIds: ['plants'], regionIds: ['yunnan'],
+    sourceIds: ['cgn.plant.business-integrated-forecast'],
+    filters: { objectIds: objectIdsFilter(50) }, limits: { maxDays: 31, maxObjects: 50, requiresObjects: true },
+  }),
+  analysis({
+    analysisId: 'plants.midlong-reference', title: '场站历史中长期电量与合同价（只读引用，获权）',
+    pageIds: ['plants'], regionIds: ['yunnan'],
+    sourceIds: ['cgn.plant.midlong-energy', 'cgn.plant.midlong-price'],
+    filters: { objectIds: objectIdsFilter(50) }, limits: { maxDays: 31, maxObjects: 50, requiresObjects: true },
+  }),
+  analysis({
+    analysisId: 'plants.daily-metrics', title: '场站日报指标（获权）',
+    pageIds: ['plants'], regionIds: ['yunnan'],
+    sourceIds: ['cgn.plant.daily-metrics'],
+    filters: { objectIds: objectIdsFilter(200) }, limits: { maxDays: 31, maxObjects: 200, requiresObjects: true },
+    // 覆盖摘要（#3028 任务 11.1）：宽表六字段各自独立统计有效样本
+    viewFamily: 'plants', views: ['series', 'coverage-summary'],
+  }),
+  analysis({
+    analysisId: 'plants.settlement-interval', title: '分时结算电量电费（正式/暂结，获权）',
+    pageIds: ['plants'], regionIds: ['yunnan'],
+    sourceIds: ['cgn.plant.settlement-interval-formal', 'cgn.plant.settlement-interval-temp'],
+    filters: { objectIds: objectIdsFilter(50) }, limits: { maxDays: 31, maxObjects: 50, requiresObjects: true },
+    // 语义对照（#3028 任务 11.4）：分时结算电量列进对照表；电费与单价不进（只对电量口径）。
+    // 结算统计（#3081 任务 12.2，ST02）：量费加权均价等按来源分别算，formal/temp 不互加。
+    viewFamily: 'plants', views: ['series', 'semantics', 'settlement-stats'],
+  }),
+  // 结算单据与核对（#3081 任务 12.4，ST05—ST06）：账单索引/下载/单元格/月结载荷/拆分审批
+  // 是记录（含月周期资料），只给记录视图；正式核对另见 plants.settlement-reconcile
+  analysis({
+    analysisId: 'plants.settlement-docs', title: '结算单据与原件引用（获权）',
+    pageIds: ['plants'], regionIds: ['yunnan'],
+    sourceIds: ['cgn.settlement.bill-records', 'cgn.settlement.bill-downloads', 'cgn.settlement.bill-cells', 'cgn.settlement.monthly-doc', 'cgn.settlement.daily-split'],
+    viewFamily: 'records', views: ['records'],
+    filters: { objectIds: objectIdsFilter(200) }, limits: { maxObjects: 200 },
+  }),
+  // 日报/日结/月结同周期核对（#3081 任务 12.4，ST05）：不同周期不相加不互比，
+  // 同周期差异列带来源引用；缺测说明参与质量过滤
+  analysis({
+    analysisId: 'plants.settlement-reconcile', title: '日报、日结与月结核对（获权）',
+    pageIds: ['plants'], regionIds: ['yunnan'],
+    sourceIds: ['cgn.plant.daily-metrics', 'cgn.plant.settlement-daily', 'cgn.settlement.monthly-total'],
+    viewFamily: 'plants', views: ['reconcile'],
+    filters: { objectIds: objectIdsFilter(200) }, limits: { maxObjects: 200, requiresObjects: true },
   }),
   // ── 五月月包余量分析（#3026 接入通道；数据落库前诚实缺数，#3027 补录后可查）──────────
   analysis({

@@ -1,8 +1,10 @@
 <script setup lang="ts">
-// 云南场站市场表现页（dljy#3083 / dljy#3029，OpenSpec build-yunnan-regional-market-insight 任务 11.5/11.6）
+// 云南场站市场表现页（dljy#3083 / dljy#3029 / dljy#3032，OpenSpec build-yunnan-regional-market-insight
+// 任务 11.5/11.6 与 12.5）
 // ----------------------------------------------------------------------------
 // /insight/plants 的云南实现：五个页签（组合总览 / 价格出力 / 预测执行 / 申报出清实际 /
-// 结算占位）。口径要点（specs yunnan-plant-market-performance，本页只呈现、不计算）：
+// 结算表现）。口径要点（specs yunnan-plant-market-performance、yunnan-settlement-insight，
+// 本页只呈现、不计算）：
 //   - 组合覆盖摘要按日报宽表六字段独立统计有效样本与覆盖天数：一个字段缺测不代表其他
 //     字段缺测；覆盖分母固定为「所选获权资料对象」，分母文案按后端原文呈现，不称全集团；
 //   - 捕获参考价 = Σ(电量×节点价)/Σ电量，是「电量加权平均节点价参考」：不是收入、不含
@@ -13,7 +15,12 @@
 //   - 申报、出清、上网、集控实发、分时结算与中长期引用语义不同：不相加、不差值、不分摊；
 //     缺失口径显示「—」（该口径本窗口无资料），不用其他口径填充；页面不提供派生偏差列
 //    （「偏差对照将在口径确认后提供」，任务 11.6 完整验收另行处理）；
-//   - 结算页签（正式/暂结对照、分项与原件追溯）是占位说明：任务 12.5 不在本切片，不发请求；
+//   - 结算页签（specs yunnan-settlement-insight ST01—ST06）：正式/暂结是显式状态轴，默认正式，
+//     暂结必须显式切换且以「正式/暂结并排对照」呈现（两态都在才算差异、永不相加）；只有暂结的
+//     期间按后端 notes 原文说明，不静默用暂结顶替正式；总量/总费/加权均价按成对有效记录口径
+//     （后端算好、页面只呈现）；策略/预测损失是源系统披露值，电网损失全空保持「来源未提供」，
+//     「未解释差额」单列并标注不是损失认定，完整瀑布只在后端判定数据齐备时出现；单据与核对是
+//     只读红线：洞察不提供任何修改电费或自动结算的入口；
 //   - 获权分析按能力目录判定可见性：公共账号整页给「获权数据需开通」说明，不发任何请求；
 //   - 对象选项来自覆盖接口（coverage）各来源的 objects 清单：字段缺失（老后端）显示
 //    「无法列出」且不发查询；为空如实说明窗口内没有对象；未选对象前置拦截不发请求。
@@ -40,23 +47,31 @@ import InsightObjectPicker, { type InsightObjectOption } from '@/components/insi
 import InsightResultTable from '@/components/insight/InsightResultTable.vue'
 import InsightSeriesChart from '@/components/insight/chart/InsightSeriesChart.vue'
 import ChartCard from '@/components/common/ChartCard.vue'
-import { formatBeijingDateTime, type InsightSourceTitle } from '@/components/insight/insightText'
+import { formatBeijingDateTime, insightSourceTitle, type InsightSourceTitle } from '@/components/insight/insightText'
 
 // ── 分析与固定文案 ───────────────────────────────────────────────────────────────────────
 
 const PLANTS_DAILY_METRICS = 'plants.daily-metrics'
 const PLANTS_SETTLEMENT_DAILY = 'plants.settlement-daily'
+const PLANTS_SETTLEMENT_STATUS_DIFF = 'plants.settlement-status-diff'
+const PLANTS_SETTLEMENT_INTERVAL = 'plants.settlement-interval'
+const PLANTS_SETTLEMENT_DOCS = 'plants.settlement-docs'
+const PLANTS_SETTLEMENT_RECONCILE = 'plants.settlement-reconcile'
 const PLANTS_PRICE_CAPTURE = 'plants.price-capture'
 const PLANTS_OUTPUT_SERIES = 'plants.output-series'
 const PLANTS_CLEARING_ACTUAL = 'plants.clearing-actual'
 const PLANTS_BUSINESS_FORECAST = 'plants.business-forecast'
 
-/** 需要对象清单（coverage.objects）的获权分析：组合摘要 / 价格捕获 / 出力曲线 / 语义对照。 */
+/** 需要对象清单（coverage.objects）的获权分析：组合摘要 / 价格捕获 / 出力曲线 / 语义对照 /
+ *  结算日结与状态对照（同一对象组）/ 分时结算统计。 */
 const OBJECT_COVERAGE_ANALYSES = [
   PLANTS_DAILY_METRICS,
   PLANTS_PRICE_CAPTURE,
   PLANTS_OUTPUT_SERIES,
   PLANTS_CLEARING_ACTUAL,
+  PLANTS_SETTLEMENT_DAILY,
+  PLANTS_SETTLEMENT_STATUS_DIFF,
+  PLANTS_SETTLEMENT_INTERVAL,
 ] as const
 type ObjectCoverageAnalysis = (typeof OBJECT_COVERAGE_ANALYSES)[number]
 
@@ -65,7 +80,7 @@ const PLANTS_TABS = [
   { view: 'price-output', label: '价格出力' },
   { view: 'forecast', label: '预测执行' },
   { view: 'clearing', label: '申报出清实际' },
-  { view: 'settlement', label: '结算占位' },
+  { view: 'settlement', label: '结算表现' },
 ] as const
 
 type PlantsTab = (typeof PLANTS_TABS)[number]['view']
@@ -79,6 +94,15 @@ const ENTITLEMENT_OVERVIEW_TEXT = '获权数据需开通：当前公司没有场
 const ENTITLEMENT_PRICE_TEXT = '获权数据需开通：当前公司没有价格捕获参考与场站出力曲线的查看授权'
 const ENTITLEMENT_FORECAST_TEXT = '获权数据需开通：当前公司没有场站出力供应商比较的查看授权'
 const ENTITLEMENT_CLEARING_TEXT = '获权数据需开通：当前公司没有申报出清实发对照与一体化预测的查看授权'
+const ENTITLEMENT_SETTLEMENT_TEXT = '获权数据需开通：当前公司没有结算表现相关分析的查看授权'
+const SETTLEMENT_STATUS_TEXT = '正式/暂结是显式状态轴：默认看正式读模型；暂结必须显式切换，且以正式/暂结并排对照呈现——两态都在才算差异、永不相加、不双计（ST01）'
+const SETTLEMENT_FORMAL_TEXT = '正式日结口径：读正式读模型；暂结不混进正式口径，要看暂结请显式切换到「暂结对照」'
+const SETTLEMENT_TEMP_TEXT = '正式/暂结对照：同对象×同业务日两态都在才给差异列（正式 − 暂结）；差异不是更正，哪一方为准由结算业务确认；只有暂结的期间按下方说明原文展示，不静默用暂结顶替正式（A08）'
+const SETTLEMENT_STATS_TEXT = '结算均价 = 成对有效记录 Σ电费/Σ电量（量费加权）：只有电量与电费同时有效的记录进分子分母；正式与暂结按来源分别统计、不相加不互加；电费不是利润（ST02）'
+const SETTLEMENT_LOSS_TEXT = '策略损失与预测损失是源系统披露值，照常展示、保留源符号；「未解释差额」= 源收入 − 已知分项合计，只是未解释差额，不是损失认定，不自动归到电网、策略或预测损失（ST03）'
+const SETTLEMENT_DOCS_TEXT = '单据是记录不是数值时序：账单索引≠账单原件；有索引不等于文件可下载（下载记录是历史行为，不生成当前可下载承诺）；单元格只是原件转录，无模板语义不得计算合计（ST06）'
+const SETTLEMENT_READONLY_TEXT = '只读红线：审批、对账处置、账单维护与正式确认留在结算业务模块——洞察只读，不提供任何修改电费或自动结算的入口（ST06）'
+const SETTLEMENT_RECONCILE_TEXT = '日报（日）、日结（日）、月结（月）是不同周期/证据层级：不相加、不跨周期互比；差异列只在同对象同业务日双方齐备时给出（日报收入 − 日结电费），差异不是判错（ST05）'
 const COVERAGE_FIELDS_TEXT = '日报宽表各字段独立统计有效样本与覆盖天数：一个字段缺测不代表其他字段缺测，也不用其他字段补齐或折算'
 const CAPTURE_TEXT = '电量加权平均节点价参考，不是收入、不含电网损失'
 const PRODUCT_TEXT = '节点量价参考乘积只是电量×节点价的参考乘积，不是实际结算电费'
@@ -86,8 +110,6 @@ const LINKAGE_TEXT = '捕获表电量口径为实际上网电量（经营汇总�
 const COMPARE_TEXT = '按「同一场站、同一曲线家族、不同供应商/预测源」分组，只用共同有效时段比较；比较是并列观察，不是供应商考核，也不判定预测责任'
 const NIGHT_ZERO_TEXT = '夜间零值是真实值：照常呈现、参与统计，不剔除、不标注异常'
 const SEMANTICS_TEXT = '申报、出清、上网、集控实发、分时结算与中长期引用语义不同：不相加、不差值、不分摊；本页不提供派生偏差列——偏差对照将在口径确认后提供'
-const SETTLEMENT_PLACEHOLDER_TEXT = '结算表现（正式/暂结对照、分项与原件追溯）建设中'
-const SETTLEMENT_NOTE = '结算页签（任务 12.5）不在本切片：正式/暂结对照、总量总费、成对均价、分项可用性与原件追溯将在后续切片提供。本页签不发任何数据请求。'
 const FOLLOW_OVERVIEW_TEXT = '与上方同一组场站对象；未选或对象清单不可用时本区块不查询'
 const FOLLOW_PRICE_TEXT = '与上方价格捕获表同一组场站对象；未选或对象清单不可用时本区块不查询'
 const FOLLOW_CLEARING_TEXT = '与上方对照表同一组场站对象；未选或对象清单不可用时本区块不查询'
@@ -115,6 +137,9 @@ const dailyMetricsDef = getInsightAnalysis(PLANTS_DAILY_METRICS)
 const priceCaptureDef = getInsightAnalysis(PLANTS_PRICE_CAPTURE)
 const outputSeriesDef = getInsightAnalysis(PLANTS_OUTPUT_SERIES)
 const clearingDef = getInsightAnalysis(PLANTS_CLEARING_ACTUAL)
+const settlementDailyDef = getInsightAnalysis(PLANTS_SETTLEMENT_DAILY)
+const statusDiffDef = getInsightAnalysis(PLANTS_SETTLEMENT_STATUS_DIFF)
+const settlementIntervalDef = getInsightAnalysis(PLANTS_SETTLEMENT_INTERVAL)
 const maxDays = computed(() => dailyMetricsDef?.limits.maxDays ?? 31)
 
 /** 获权分析按公司授权可见（capabilities 只返回当前公司可用的分析）。 */
@@ -123,10 +148,23 @@ function hasAnalysis(analysisId: string): boolean {
 }
 const hasDailyMetrics = computed(() => hasAnalysis(PLANTS_DAILY_METRICS))
 const hasSettlementDaily = computed(() => hasAnalysis(PLANTS_SETTLEMENT_DAILY))
+const hasStatusDiff = computed(() => hasAnalysis(PLANTS_SETTLEMENT_STATUS_DIFF))
+const hasSettlementInterval = computed(() => hasAnalysis(PLANTS_SETTLEMENT_INTERVAL))
+const hasSettlementDocs = computed(() => hasAnalysis(PLANTS_SETTLEMENT_DOCS))
+const hasSettlementReconcile = computed(() => hasAnalysis(PLANTS_SETTLEMENT_RECONCILE))
 const hasPriceCapture = computed(() => hasAnalysis(PLANTS_PRICE_CAPTURE))
 const hasOutputSeries = computed(() => hasAnalysis(PLANTS_OUTPUT_SERIES))
 const hasClearingActual = computed(() => hasAnalysis(PLANTS_CLEARING_ACTUAL))
 const hasBusinessForecast = computed(() => hasAnalysis(PLANTS_BUSINESS_FORECAST))
+/** 结算页签是否有任何可看区块：一个都没有才给整页「获权数据需开通」。 */
+const hasAnySettlement = computed(
+  () => hasSettlementDaily.value || hasStatusDiff.value || hasSettlementInterval.value || hasSettlementDocs.value || hasSettlementReconcile.value
+)
+
+/** 结算页签日结组的对象清单归属：状态对照优先，未获权时回落到日结自身清单（两者上限一致 ≤200）。 */
+const settlementCoverageOwner = computed<ObjectCoverageAnalysis>(() =>
+  hasStatusDiff.value ? PLANTS_SETTLEMENT_STATUS_DIFF : PLANTS_SETTLEMENT_DAILY
+)
 
 /** 价格出力页签的对象清单归属：价格捕获优先，未获权时回落到出力曲线自身清单。 */
 const priceTabOwner = computed<ObjectCoverageAnalysis>(() => (hasPriceCapture.value ? PLANTS_PRICE_CAPTURE : PLANTS_OUTPUT_SERIES))
@@ -158,7 +196,8 @@ async function loadCapabilities(): Promise<void> {
 
 // ── 查询状态（页签懒加载 + queriedKey 去重 + 代次作废）────────────────────────────────────
 
-/** 查询名：组合摘要 / 正式日结 / 价格捕获 / 出力曲线 / 供应商比较 / 语义对照 / 一体化预测。 */
+/** 查询名：组合摘要 / 正式日结 / 价格捕获 / 出力曲线 / 供应商比较 / 语义对照 / 一体化预测 /
+ *  结算页签（正式日结、正式暂结对照、分时结算统计、损失解释、单据记录、核对）。 */
 type QueryName =
   | 'overview-coverage'
   | 'settlement-daily'
@@ -167,6 +206,12 @@ type QueryName =
   | 'supplier-comparison'
   | 'semantics'
   | 'business-forecast'
+  | 'settlement-formal'
+  | 'settlement-status-diff'
+  | 'settlement-stats'
+  | 'settlement-loss'
+  | 'settlement-docs'
+  | 'settlement-reconcile'
 
 type ViewState = {
   result: InsightBlockResult | null
@@ -188,16 +233,28 @@ const viewStates = reactive<Record<QueryName, ViewState>>({
   'supplier-comparison': blankState(),
   semantics: blankState(),
   'business-forecast': blankState(),
+  'settlement-formal': blankState(),
+  'settlement-status-diff': blankState(),
+  'settlement-stats': blankState(),
+  'settlement-loss': blankState(),
+  'settlement-docs': blankState(),
+  'settlement-reconcile': blankState(),
 })
 
 const activeTab = ref<PlantsTab>('overview')
 const visitedTabs = reactive(new Set<PlantsTab>(['overview']))
 
-/** 对象选择：各页签独立持有；价格出力页签内两个区块共用、申报出清页签内两个区块共用。 */
+/** 结算页签的正式/暂结显式切换：默认正式；暂结以正式/暂结并排对照呈现，不静默顶替。 */
+const settlementStatusMode = ref<'formal' | 'temp'>('formal')
+
+/** 对象选择：各页签独立持有；价格出力页签内两个区块共用、申报出清页签内两个区块共用、
+ *  结算页签内日结组（对照/损失/核对）共用、分时统计单列（上限 50 与日结组 200 不同）。 */
 const overviewObjects = ref<string[]>([])
 const captureObjects = ref<string[]>([])
 const comparisonObjects = ref<string[]>([])
 const clearingObjects = ref<string[]>([])
+const settlementObjects = ref<string[]>([])
+const intervalObjects = ref<string[]>([])
 
 // ── 对象清单（coverage.objects）：获权区块的选项来源 ─────────────────────────────────────
 
@@ -221,6 +278,9 @@ const objectStates = reactive<Record<ObjectCoverageAnalysis, ObjectsState>>({
   [PLANTS_PRICE_CAPTURE]: blankObjects(),
   [PLANTS_OUTPUT_SERIES]: blankObjects(),
   [PLANTS_CLEARING_ACTUAL]: blankObjects(),
+  [PLANTS_SETTLEMENT_DAILY]: blankObjects(),
+  [PLANTS_SETTLEMENT_STATUS_DIFF]: blankObjects(),
+  [PLANTS_SETTLEMENT_INTERVAL]: blankObjects(),
 })
 
 /** 清单 → 选择器选项（保持覆盖清单的名称顺序）。 */
@@ -298,6 +358,14 @@ function onClearingObjectsChange(ids: string[]): void {
   clearingObjects.value = [...ids]
 }
 
+function onSettlementObjectsChange(ids: string[]): void {
+  settlementObjects.value = [...ids]
+}
+
+function onIntervalObjectsChange(ids: string[]): void {
+  intervalObjects.value = [...ids]
+}
+
 /** 查询签名：上下文代次（窗口/地区/公司都在代次里）+ 各查询自身的对象选择。 */
 function queryKeyOf(name: QueryName): string {
   switch (name) {
@@ -312,6 +380,15 @@ function queryKeyOf(name: QueryName): string {
     case 'semantics':
     case 'business-forecast':
       return [name, ctx.contextVersion.value, clearingObjects.value.join(',')].join('|')
+    case 'settlement-formal':
+    case 'settlement-status-diff':
+    case 'settlement-loss':
+    case 'settlement-reconcile':
+      return [name, ctx.contextVersion.value, settlementObjects.value.join(',')].join('|')
+    case 'settlement-stats':
+      return [name, ctx.contextVersion.value, intervalObjects.value.join(',')].join('|')
+    case 'settlement-docs':
+      return [name, ctx.contextVersion.value].join('|')
   }
 }
 
@@ -347,6 +424,20 @@ watch(clearingObjects, () => {
   ensureQuery('semantics')
   ensureQuery('business-forecast')
 })
+watch(settlementObjects, () => {
+  for (const name of ['settlement-formal', 'settlement-status-diff', 'settlement-loss', 'settlement-reconcile'] as QueryName[]) {
+    Object.assign(viewStates[name], blankState())
+    ensureQuery(name)
+  }
+})
+watch(intervalObjects, () => {
+  Object.assign(viewStates['settlement-stats'], blankState())
+  ensureQuery('settlement-stats')
+})
+// 正式/暂结显式切换：只补发当前模式的查询（另一模式的既有结果保留，切回不重查）。
+watch(settlementStatusMode, () => {
+  ensureQuery(settlementStatusMode.value === 'formal' ? 'settlement-formal' : 'settlement-status-diff')
+})
 
 function onTabChange(name: string | number): void {
   activeTab.value = name as PlantsTab
@@ -377,8 +468,17 @@ function ensureTab(tab: PlantsTab): void {
     void loadObjectOptions(PLANTS_CLEARING_ACTUAL)
     ensureQuery('semantics')
     ensureQuery('business-forecast')
+  } else if (tab === 'settlement') {
+    // 结算页签：日结组清单（状态对照/日结共用）与分时统计清单各自拉取；
+    // 单据记录不需要对象清单（记录来源对象可选，按全部获权对象查询）。
+    void loadObjectOptions(settlementCoverageOwner.value)
+    void loadObjectOptions(PLANTS_SETTLEMENT_INTERVAL)
+    ensureQuery(settlementStatusMode.value === 'formal' ? 'settlement-formal' : 'settlement-status-diff')
+    ensureQuery('settlement-stats')
+    ensureQuery('settlement-loss')
+    ensureQuery('settlement-docs')
+    ensureQuery('settlement-reconcile')
   }
-  // 结算占位页签：不发任何请求。
 }
 
 /** 对象清单是否可用（null=无法列出、[]=窗口内没有对象都不可用；不看 loading——
@@ -391,6 +491,7 @@ function objectsAvailableFor(analysisId: ObjectCoverageAnalysis): boolean {
 /** 前置拦截（能力未就绪 / 无授权 / 清单不可用 / 未选对象）+ 同签名去重后发查询。 */
 function ensureQuery(name: QueryName): void {
   if (!capabilities.value || capabilitiesError.value) return
+  if (viewStates[name].loading) return // 同名查询在飞：不叠加重复请求（结果写回前 key 尚未落账）
   if (name === 'overview-coverage') {
     if (!(hasDailyMetrics.value && objectsAvailableFor(PLANTS_DAILY_METRICS) && overviewObjects.value.length)) return
   }
@@ -411,6 +512,26 @@ function ensureQuery(name: QueryName): void {
   }
   if (name === 'business-forecast') {
     if (!(hasBusinessForecast.value && objectsAvailableFor(PLANTS_CLEARING_ACTUAL) && clearingObjects.value.length)) return
+  }
+  if (name === 'settlement-formal') {
+    if (!(hasSettlementDaily.value && objectsAvailableFor(settlementCoverageOwner.value) && settlementObjects.value.length)) return
+  }
+  if (name === 'settlement-status-diff') {
+    // 暂结对照只在显式切换到暂结时查询：正式模式绝不静默发暂结视角的请求（ST01、A08）。
+    if (settlementStatusMode.value !== 'temp') return
+    if (!(hasStatusDiff.value && objectsAvailableFor(settlementCoverageOwner.value) && settlementObjects.value.length)) return
+  }
+  if (name === 'settlement-stats') {
+    if (!(hasSettlementInterval.value && objectsAvailableFor(PLANTS_SETTLEMENT_INTERVAL) && intervalObjects.value.length)) return
+  }
+  if (name === 'settlement-loss') {
+    if (!(hasSettlementDaily.value && objectsAvailableFor(settlementCoverageOwner.value) && settlementObjects.value.length)) return
+  }
+  if (name === 'settlement-docs') {
+    if (!hasSettlementDocs.value) return
+  }
+  if (name === 'settlement-reconcile') {
+    if (!(hasSettlementReconcile.value && objectsAvailableFor(settlementCoverageOwner.value) && settlementObjects.value.length)) return
   }
   const key = queryKeyOf(name)
   const entry = viewStates[name]
@@ -441,6 +562,30 @@ function buildRequest(name: QueryName): {
   }
   if (name === 'semantics') {
     return { analysisId: PLANTS_CLEARING_ACTUAL, context: ctx.toQueryContext(), filters: { view: 'semantics', objectIds: [...clearingObjects.value] } }
+  }
+  if (name === 'settlement-formal') {
+    // 正式视角（默认）：正式读模型明细（series 视图，显式声明）。
+    return { analysisId: PLANTS_SETTLEMENT_DAILY, context: ctx.toQueryContext(), filters: { view: 'series', objectIds: [...settlementObjects.value] } }
+  }
+  if (name === 'settlement-status-diff') {
+    // 暂结视角（显式切换）：正式/暂结同键并排差异；两态都在才算差异、不相加。
+    return { analysisId: PLANTS_SETTLEMENT_STATUS_DIFF, context: ctx.toQueryContext(), filters: { view: 'status-diff', objectIds: [...settlementObjects.value] } }
+  }
+  if (name === 'settlement-stats') {
+    // 量费加权统计：后端按来源（正式/暂结）分别算，页面只呈现。
+    return { analysisId: PLANTS_SETTLEMENT_INTERVAL, context: ctx.toQueryContext(), filters: { view: 'settlement-stats', objectIds: [...intervalObjects.value] } }
+  }
+  if (name === 'settlement-loss') {
+    // 损失解释：源损失值 + 电网损失未提供态 + 未解释差额；页面不拼瀑布。
+    return { analysisId: PLANTS_SETTLEMENT_DAILY, context: ctx.toQueryContext(), filters: { view: 'loss-explain', objectIds: [...settlementObjects.value] } }
+  }
+  if (name === 'settlement-docs') {
+    // 单据记录：记录来源对象可选，不带 objectIds 查全部获权对象。
+    return { analysisId: PLANTS_SETTLEMENT_DOCS, context: ctx.toQueryContext(), filters: { view: 'records' } }
+  }
+  if (name === 'settlement-reconcile') {
+    // 核对：日报/日结/月结同周期差异，不同周期不相加不互比。
+    return { analysisId: PLANTS_SETTLEMENT_RECONCILE, context: ctx.toQueryContext(), filters: { view: 'reconcile', objectIds: [...settlementObjects.value] } }
   }
   return { analysisId: PLANTS_BUSINESS_FORECAST, context: ctx.toQueryContext(), filters: { objectIds: [...clearingObjects.value] } }
 }
@@ -485,6 +630,11 @@ type DataView = {
   coverage?: { denominatorNote?: string; observedNote?: string; objects?: Array<{ objectId: string; observed: number }> }
   groups?: Array<Record<string, unknown>>
   tables?: Record<string, { rows?: Array<Record<string, unknown>>; columns?: Array<Record<string, unknown>>; rule?: string }>
+  /** 损失解释视图（loss-explain）独有：电网损失提供态与完整瀑布判定（后端决定，页面不拼）。 */
+  gridLoss?: { provided?: boolean; note?: string }
+  waterfall?: { complete?: boolean; missingComponents?: string[]; note?: string }
+  /** 核对视图（reconcile）独有：缺测质量剔除逐条说明。 */
+  qualityExcluded?: Array<{ objectId?: string; date?: string; sourceId?: string; reason?: string }>
 }
 
 function dataOf(result: InsightBlockResult | null): DataView {
@@ -793,6 +943,258 @@ const semanticsDenominatorNote = computed(() => dataOf(viewStates.semantics.resu
 const semanticsNotes = computed(() => notesOf(viewStates.semantics.result))
 const semanticsExcluded = computed(() => (dataOf(viewStates.semantics.result).excluded ?? []).map((item) => item.reason))
 
+// ── 结算表现：正式/暂结对照、量费加权统计、损失解释、单据记录与核对（ST01—ST06）────────────
+
+type StatusDiffColumn = { id: string; label?: string; sourceId?: string }
+type StatusDiffWideRow = Record<string, unknown>
+
+/** 正式/暂结对照宽表：列与行取后端 tables.diff 原样（差异列只由后端在两态都在时给出）。 */
+const statusDiffColumns = computed<StatusDiffColumn[]>(
+  () => (dataOf(viewStates['settlement-status-diff'].result).tables?.diff?.columns ?? []) as StatusDiffColumn[]
+)
+const statusDiffRows = computed<Array<{ key: string; objectId: string; date: string; cells: Record<string, string> }>>(() => {
+  const rows = (dataOf(viewStates['settlement-status-diff'].result).tables?.diff?.rows ?? []) as StatusDiffWideRow[]
+  return rows.map((row, index) => {
+    const cells: Record<string, string> = {}
+    for (const column of statusDiffColumns.value) {
+      const value = row[column.id]
+      cells[column.id] = value === null || value === undefined || value === '' ? '—' : String(value)
+    }
+    return { key: `${String(row.objectId ?? '')}|${String(row.date ?? '')}|${index}`, objectId: String(row.objectId ?? '—'), date: String(row.date ?? '—'), cells }
+  })
+})
+const statusDiffNotes = computed(() => notesOf(viewStates['settlement-status-diff'].result))
+
+/** 分时结算统计卡的状态标签：正式/暂结按来源分列（界面只出现业务语言，不透出来源标识）。 */
+function settlementStatusLabelOf(sourceId: string): string {
+  return sourceId.endsWith('-temp') ? '暂结' : '正式'
+}
+
+const SETTLEMENT_STAT_METRICS = [
+  'settlement.total-energy',
+  'settlement.total-fee',
+  'settlement.weighted-average-price',
+  'settlement.paired-count',
+  'settlement.missing-fee-count',
+  'settlement.missing-energy-count',
+] as const
+
+type StatsEntry = { seriesId: string; kind?: string; sourceId?: string; objectId?: string | null; averagePriceUnavailableReason?: string }
+
+type StatsCard = { key: string; title: string; unavailableReason: string; rows: StatCardRow[] }
+
+/** 合计卡：同一有效记录集合的 Σ电费/Σ电量（量费加权），按正式/暂结分卡、不相加。 */
+const settlementStatsCards = computed<StatsCard[]>(() => {
+  const result = viewStates['settlement-stats'].result
+  if (!result) return []
+  const metrics = metricIndexOf(result)
+  return ((dataOf(result).series ?? []) as StatsEntry[])
+    .filter((entry) => entry.kind === 'settlement-stats-total')
+    .map((entry) => {
+      const own = metrics.get(entry.seriesId)
+      const rows = SETTLEMENT_STAT_METRICS.map((metricId) => ({
+        label: metricLabelOf(metricId),
+        text: metricTextOf(metricId, own?.get(metricId)?.value),
+        unit: metricUnitOf(metricId),
+        note: metricId === 'settlement.weighted-average-price' ? '成对有效记录 Σ电费/Σ电量' : '',
+      }))
+      return {
+        key: entry.seriesId,
+        title: `${settlementStatusLabelOf(String(entry.sourceId ?? ''))} · 所选记录合计`,
+        unavailableReason: entry.averagePriceUnavailableReason ?? '',
+        rows,
+      }
+    })
+})
+
+type StatsObjectRow = {
+  key: string
+  objectId: string
+  status: string
+  totalEnergy: string
+  totalFee: string
+  averagePrice: string
+  pairedCount: string
+  missingFee: string
+  missingEnergy: string
+}
+
+/** 逐对象统计行：正式/暂结各自成行，同场站两态并排、不相加。 */
+const settlementStatsObjectRows = computed<StatsObjectRow[]>(() => {
+  const result = viewStates['settlement-stats'].result
+  if (!result) return []
+  const metrics = metricIndexOf(result)
+  return ((dataOf(result).series ?? []) as StatsEntry[])
+    .filter((entry) => entry.kind === 'settlement-stats')
+    .map((entry) => {
+      const own = metrics.get(entry.seriesId)
+      const textOf = (metricId: string) => metricTextOf(metricId, own?.get(metricId)?.value)
+      return {
+        key: entry.seriesId,
+        objectId: String(entry.objectId ?? '—'),
+        status: settlementStatusLabelOf(String(entry.sourceId ?? '')),
+        totalEnergy: textOf('settlement.total-energy'),
+        totalFee: textOf('settlement.total-fee'),
+        averagePrice: textOf('settlement.weighted-average-price'),
+        pairedCount: textOf('settlement.paired-count'),
+        missingFee: textOf('settlement.missing-fee-count'),
+        missingEnergy: textOf('settlement.missing-energy-count'),
+      }
+    })
+})
+
+const settlementStatsNotes = computed(() => notesOf(viewStates['settlement-stats'].result))
+
+type LossWideRow = Record<string, unknown>
+type LossColumn = { id: string; label: string; note?: string }
+
+/** 损失解释表列：未解释差额列头自带「不是损失认定」边界。 */
+const LOSS_COLUMNS: LossColumn[] = [
+  { id: 'revenueYuan', label: '结算电费（源收入）' },
+  { id: 'strategyLossYuan', label: '策略损失（源系统披露）' },
+  { id: 'forecastLossYuan', label: '预测损失（源系统披露）' },
+  { id: 'gridLossYuan', label: '电网损失（源系统披露）' },
+  { id: 'unexplainedDifferenceYuan', label: '未解释差额（不是损失认定）' },
+]
+
+const lossGridNote = computed(() => (dataOf(viewStates['settlement-loss'].result).gridLoss?.note ?? ''))
+const lossGridProvided = computed(() => dataOf(viewStates['settlement-loss'].result).gridLoss?.provided === true)
+const lossWaterfallNote = computed(() => (dataOf(viewStates['settlement-loss'].result).waterfall?.note ?? ''))
+const lossWaterfallComplete = computed(() => dataOf(viewStates['settlement-loss'].result).waterfall?.complete === true)
+
+const lossRows = computed<Array<{ key: string; objectId: string; date: string; cells: Record<string, string> }>>(() => {
+  const rows = (dataOf(viewStates['settlement-loss'].result).tables?.losses?.rows ?? []) as LossWideRow[]
+  return rows.map((row, index) => {
+    const cells: Record<string, string> = {}
+    for (const column of LOSS_COLUMNS) {
+      const value = row[column.id]
+      cells[column.id] = value === null || value === undefined || value === '' ? '—' : String(value)
+    }
+    return { key: `${String(row.objectId ?? '')}|${String(row.date ?? '')}|${index}`, objectId: String(row.objectId ?? '—'), date: String(row.date ?? '—'), cells }
+  })
+})
+
+const lossNotes = computed(() => notesOf(viewStates['settlement-loss'].result))
+
+/** 单据记录表：列=记录维度并集（保持出现顺序），来源借业务标题，值与日期按原文。 */
+type DocsRecordRow = { key: string; date: string; source: string; cells: Record<string, string>; value: string }
+
+/** 记录维度 → 业务名（登记见 shared/insight/sources.mjs；未登记的键回退原文）。 */
+const DOCS_DIMENSION_TEXT: Record<string, string> = {
+  plant_name: '场站',
+  电厂名: '场站',
+  name: '场站',
+  bill_type: '单据类型',
+  settle_month: '账期月',
+  settlemonth: '账期月',
+  company_name: '交易相对方',
+  file_name: '文件名',
+  file_ext: '文件格式',
+  sheet_name: '工作表',
+  row_index: '行号',
+  col_index: '列号',
+  type: '记录类型',
+  result_type: '结算状态',
+  pdfstatus: '原件状态',
+}
+
+function docsDimensionText(key: string): string {
+  return DOCS_DIMENSION_TEXT[key] ?? key
+}
+
+const docsColumns = computed<string[]>(() => {
+  const rows = (viewStates['settlement-docs'].result?.data?.rows ?? []) as Array<Record<string, unknown>>
+  const keys: string[] = []
+  for (const row of rows) {
+    for (const key of Object.keys(row)) {
+      if (key === 'sourceId' || key === 'date' || key === 'value') continue
+      if (!keys.includes(key)) keys.push(key)
+    }
+  }
+  return keys
+})
+
+const docsRows = computed<DocsRecordRow[]>(() => {
+  const result = viewStates['settlement-docs'].result
+  if (!result?.data) return []
+  return ((result.data.rows ?? []) as Array<Record<string, unknown>>).map((row, index) => {
+    const cells: Record<string, string> = {}
+    for (const key of docsColumns.value) {
+      const value = row[key]
+      cells[key] = value === null || value === undefined || value === '' ? '—' : String(value)
+    }
+    return {
+      key: `${String(row.sourceId ?? '')}|${String(row.date ?? '')}|${docsColumns.value.map((key) => cells[key]).join('|')}|${index}`,
+      date: String(row.date ?? ''),
+      source: insightSourceTitle(String(row.sourceId ?? ''), sourceTitles.value)?.title ?? '—',
+      cells,
+      value: row.value === null || row.value === undefined || row.value === '' ? '—' : String(row.value),
+    }
+  })
+})
+
+type ReconcileDailyRow = { key: string; objectId: string; date: string; cells: Record<string, string>; missingText: string; qualityText: string }
+
+/** 核对日报/日结（同周期日）：缺失一侧显示「—」并说明缺哪侧；质量剔除逐行标注。 */
+function reconcileMissingTextOf(missingSide: unknown): string {
+  if (missingSide === 'daily-report') return '缺日报收入（该侧本窗口无资料）'
+  if (missingSide === 'settlement-daily') return '缺日结电费（该侧本窗口无资料）'
+  return ''
+}
+
+function reconcileQualityTextOf(quality: unknown): string {
+  if (quality === 'excluded-missing-flagged') return '质量剔除：日报缺测说明标缺「结算收入」'
+  if (quality === 'missing') return '缺日报'
+  return ''
+}
+
+const reconcileDailyRows = computed<ReconcileDailyRow[]>(() => {
+  const rows = (dataOf(viewStates['settlement-reconcile'].result).tables?.daily?.rows ?? []) as Array<Record<string, unknown>>
+  const cellIds = ['dailyReportRevenueYuan', 'settlementDailyFeeYuan', 'differenceYuan']
+  return rows.map((row, index) => {
+    const cells: Record<string, string> = {}
+    for (const id of cellIds) {
+      const value = row[id]
+      cells[id] = value === null || value === undefined || value === '' ? '—' : String(value)
+    }
+    return {
+      key: `${String(row.objectId ?? '')}|${String(row.date ?? '')}|${index}`,
+      objectId: String(row.objectId ?? '—'),
+      date: String(row.date ?? '—'),
+      cells,
+      missingText: reconcileMissingTextOf(row.missingSide),
+      qualityText: reconcileQualityTextOf(row.dailyReportQuality),
+    }
+  })
+})
+
+type ReconcileMonthlyRow = { key: string; objectId: string; settleMonth: string; fee: string }
+
+const reconcileMonthlyRows = computed<ReconcileMonthlyRow[]>(() => {
+  const rows = (dataOf(viewStates['settlement-reconcile'].result).tables?.monthly?.rows ?? []) as Array<Record<string, unknown>>
+  return rows.map((row, index) => ({
+    key: `${String(row.objectId ?? '')}|${String(row.settleMonth ?? '')}|${index}`,
+    objectId: String(row.objectId ?? '—'),
+    settleMonth: String(row.settleMonth ?? '—'),
+    fee: row.monthlyFeeYuan === null || row.monthlyFeeYuan === undefined || row.monthlyFeeYuan === '' ? '—' : String(row.monthlyFeeYuan),
+  }))
+})
+
+const reconcileQualityExcluded = computed(() =>
+  ((dataOf(viewStates['settlement-reconcile'].result).qualityExcluded ?? []) as Array<{ reason?: string }>).map((item) => item.reason ?? '').filter(Boolean)
+)
+const reconcileNotes = computed(() => notesOf(viewStates['settlement-reconcile'].result))
+
+/** 月结缺失说明（后端约定由页面按窗口月份给出）：所选日结组对象里本窗口月份没有月结行的，如实列出。 */
+const reconcileMonthlyMissingText = computed(() => {
+  if (!settlementObjects.value.length) return ''
+  const present = new Set(reconcileMonthlyRows.value.map((row) => row.objectId))
+  const missing = settlementObjects.value.filter((objectId) => !present.has(objectId))
+  if (!missing.length) return ''
+  const month = ctx.businessWindow.value.start.slice(0, 7)
+  return `「${missing.join('、')}」在 ${month} 没有月结记录：月结按月周期单独展示，缺失如实说明，不拿日值凑月份。`
+})
+
 // ── 证据抽屉与历史候选 ───────────────────────────────────────────────────────────────────
 
 const evidenceVisible = ref(false)
@@ -842,7 +1244,7 @@ onMounted(() => {
       <el-button size="small" :loading="capabilitiesLoading" @click="loadCapabilities">重试</el-button>
     </el-alert>
 
-    <!-- 五页签：懒加载（首次激活渲染），签名不变时切回不重查；结算页签是占位、零请求 -->
+    <!-- 五页签：懒加载（首次激活渲染），签名不变时切回不重查；结算页签按获权分析与对象选择编排查询 -->
     <el-tabs :model-value="activeTab" class="ypp__tabs" @tab-change="onTabChange">
       <el-tab-pane v-for="tab in PLANTS_TABS" :key="tab.view" :name="tab.view" :label="tab.label">
         <template v-if="visitedTabs.has(tab.view)">
@@ -1240,10 +1642,318 @@ onMounted(() => {
             </InsightBlock>
           </template>
 
-          <!-- 结算占位：任务 12.5 不在本切片，不发请求 -->
-          <template v-else>
-            <el-empty :description="SETTLEMENT_PLACEHOLDER_TEXT" :image-size="96" data-testid="ypp-settlement-placeholder" />
-            <p class="ypp__hint">{{ SETTLEMENT_NOTE }}</p>
+          <!-- 结算表现（ST01—ST06）：正式/暂结显式切换、量费加权统计、损失解释、单据记录与核对 -->
+          <template v-else-if="tab.view === 'settlement'">
+            <el-alert
+              v-if="!hasAnySettlement"
+              type="info"
+              :closable="false"
+              :title="ENTITLEMENT_SETTLEMENT_TEXT"
+              data-testid="ypp-settlement-entitlement"
+            />
+            <template v-if="hasAnySettlement">
+              <el-alert type="info" :closable="false" :title="SETTLEMENT_STATUS_TEXT" />
+              <div v-if="hasSettlementDaily || hasStatusDiff || hasSettlementReconcile" class="ypp__bar">
+                <label class="ypp__field">
+                  <span>场站对象（多选，最多 {{ (hasStatusDiff ? statusDiffDef : settlementDailyDef)?.limits.maxObjects ?? 200 }} 个）</span>
+                  <InsightObjectPicker
+                    :model-value="settlementObjects"
+                    :options="optionsOf(settlementCoverageOwner)"
+                    :max-objects="(hasStatusDiff ? statusDiffDef : settlementDailyDef)?.limits.maxObjects ?? 200"
+                    requires-objects
+                    :disabled="objectsPhase(settlementCoverageOwner) !== 'ready'"
+                    data-testid="ypp-settlement-objects"
+                    @update:model-value="onSettlementObjectsChange"
+                  />
+                </label>
+                <label class="ypp__field">
+                  <span>结算状态（默认正式；暂结显式切换）</span>
+                  <el-radio-group v-model="settlementStatusMode" data-testid="ypp-status-mode">
+                    <el-radio-button value="formal">正式</el-radio-button>
+                    <el-radio-button value="temp">暂结对照</el-radio-button>
+                  </el-radio-group>
+                </label>
+              </div>
+              <template v-if="hasSettlementDaily || hasStatusDiff || hasSettlementReconcile">
+                <template v-if="objectsPhase(settlementCoverageOwner) === 'error'">
+                  <el-alert type="error" show-icon :closable="false" title="对象清单读取失败">
+                    <p class="ypp__hint">列不出场站清单就无法选择查询范围；可重试。</p>
+                    <el-button size="small" @click="retryObjects(settlementCoverageOwner)">重试</el-button>
+                  </el-alert>
+                </template>
+                <el-alert
+                  v-else-if="objectsPhase(settlementCoverageOwner) === 'unavailable'"
+                  type="info"
+                  :closable="false"
+                  :title="OBJECTS_UNAVAILABLE_TEXT"
+                />
+                <el-alert v-else-if="objectsPhase(settlementCoverageOwner) === 'empty'" type="info" :closable="false" :title="OBJECTS_EMPTY_TEXT" />
+                <p v-if="objectStates[settlementCoverageOwner].note" class="ypp__hint">{{ objectStates[settlementCoverageOwner].note }}</p>
+              </template>
+
+              <!-- 正式（默认）：正式读模型明细 -->
+              <InsightBlock
+                v-if="settlementStatusMode === 'formal' && hasSettlementDaily"
+                title="正式日结明细（获权）"
+                :result="viewStates['settlement-formal'].result"
+                :error="viewStates['settlement-formal'].error"
+                :loading="viewStates['settlement-formal'].loading"
+                :on-retry="() => retryQuery('settlement-formal')"
+                :on-refresh="() => retryQuery('settlement-formal')"
+                :source-titles="sourceTitles"
+                @open-candidates="openCandidates"
+                @open-evidence="openEvidence('settlement-formal')"
+              >
+                <el-alert type="info" :closable="false" :title="SETTLEMENT_FORMAL_TEXT" data-testid="ypp-settlement-formal-note" />
+                <el-empty v-if="!settlementObjects.length" :description="PICK_PLANT_TEXT" :image-size="72" />
+                <InsightResultTable
+                  v-else
+                  :result="viewStates['settlement-formal'].result"
+                  :selection="null"
+                  :source-titles="sourceTitles"
+                  @row-click="() => {}"
+                />
+              </InsightBlock>
+
+              <!-- 暂结（显式切换）：正式/暂结并排对照，两态都在才给差异列 -->
+              <InsightBlock
+                v-else-if="settlementStatusMode === 'temp' && hasStatusDiff"
+                title="正式/暂结对照（获权）"
+                :result="viewStates['settlement-status-diff'].result"
+                :error="viewStates['settlement-status-diff'].error"
+                :loading="viewStates['settlement-status-diff'].loading"
+                :on-retry="() => retryQuery('settlement-status-diff')"
+                :on-refresh="() => retryQuery('settlement-status-diff')"
+                :source-titles="sourceTitles"
+                @open-candidates="openCandidates"
+                @open-evidence="openEvidence('settlement-status-diff')"
+              >
+                <el-alert type="info" :closable="false" :title="SETTLEMENT_TEMP_TEXT" data-testid="ypp-settlement-temp-note" />
+                <el-empty v-if="!settlementObjects.length" :description="PICK_PLANT_TEXT" :image-size="72" />
+                <template v-else>
+                  <el-table v-if="statusDiffRows.length" :data="statusDiffRows" size="small" border max-height="420" data-testid="ypp-status-diff-table">
+                    <el-table-column prop="objectId" label="场站" min-width="130" show-overflow-tooltip />
+                    <el-table-column prop="date" label="业务日" width="110" />
+                    <el-table-column
+                      v-for="column in statusDiffColumns"
+                      :key="column.id"
+                      :prop="`cells.${column.id}`"
+                      :label="column.label ?? column.id"
+                      min-width="130"
+                      align="right"
+                      show-overflow-tooltip
+                    />
+                  </el-table>
+                  <el-alert v-for="(note, index) in statusDiffNotes" :key="`sdn-${index}`" type="info" :closable="false" :title="note" />
+                </template>
+              </InsightBlock>
+              <el-alert
+                v-else-if="settlementStatusMode === 'temp' && !hasStatusDiff"
+                type="info"
+                :closable="false"
+                title="当前公司没有正式/暂结对照的查看授权：暂结对照需开通后查看，不静默用暂结顶替正式"
+              />
+
+              <!-- 量费加权统计：总量/总费/均价卡（后端按正式/暂结分来源算，页面只呈现） -->
+              <template v-if="hasSettlementInterval">
+                <div class="ypp__bar">
+                  <label class="ypp__field">
+                    <span>分时结算对象（多选，最多 {{ settlementIntervalDef?.limits.maxObjects ?? 50 }} 个；统计按自然月，跨月窗口后端拒绝）</span>
+                    <InsightObjectPicker
+                      :model-value="intervalObjects"
+                      :options="optionsOf(PLANTS_SETTLEMENT_INTERVAL)"
+                      :max-objects="settlementIntervalDef?.limits.maxObjects ?? 50"
+                      requires-objects
+                      :disabled="objectsPhase(PLANTS_SETTLEMENT_INTERVAL) !== 'ready'"
+                      data-testid="ypp-settlement-interval-objects"
+                      @update:model-value="onIntervalObjectsChange"
+                    />
+                  </label>
+                </div>
+                <template v-if="objectsPhase(PLANTS_SETTLEMENT_INTERVAL) === 'error'">
+                  <el-alert type="error" show-icon :closable="false" title="对象清单读取失败">
+                    <p class="ypp__hint">列不出场站清单就无法选择查询范围；可重试。</p>
+                    <el-button size="small" @click="retryObjects(PLANTS_SETTLEMENT_INTERVAL)">重试</el-button>
+                  </el-alert>
+                </template>
+                <el-alert
+                  v-else-if="objectsPhase(PLANTS_SETTLEMENT_INTERVAL) === 'unavailable'"
+                  type="info"
+                  :closable="false"
+                  :title="OBJECTS_UNAVAILABLE_TEXT"
+                />
+                <el-alert v-else-if="objectsPhase(PLANTS_SETTLEMENT_INTERVAL) === 'empty'" type="info" :closable="false" :title="OBJECTS_EMPTY_TEXT" />
+              </template>
+              <InsightBlock
+                v-if="hasSettlementInterval"
+                title="总量、总费与量费加权均价（获权）"
+                :result="viewStates['settlement-stats'].result"
+                :error="viewStates['settlement-stats'].error"
+                :loading="viewStates['settlement-stats'].loading"
+                :on-retry="() => retryQuery('settlement-stats')"
+                :on-refresh="() => retryQuery('settlement-stats')"
+                :source-titles="sourceTitles"
+                @open-candidates="openCandidates"
+                @open-evidence="openEvidence('settlement-stats')"
+              >
+                <el-alert type="info" :closable="false" :title="SETTLEMENT_STATS_TEXT" data-testid="ypp-settlement-stats-note" />
+                <el-empty v-if="!intervalObjects.length" :description="PICK_PLANT_TEXT" :image-size="72" />
+                <template v-else>
+                  <div v-if="settlementStatsCards.length" class="ypp__cards" data-testid="ypp-settlement-stats-cards">
+                    <div v-for="card in settlementStatsCards" :key="card.key" class="ypp__card">
+                      <h4 class="ypp__card-title">{{ card.title }}</h4>
+                      <el-alert v-if="card.unavailableReason" type="warning" :closable="false" :title="card.unavailableReason" />
+                      <dl class="ypp__card-grid">
+                        <template v-for="row in card.rows" :key="row.label">
+                          <dt>{{ row.label }}</dt>
+                          <dd>{{ row.text }}{{ row.unit ? ` ${row.unit}` : '' }}{{ row.note ? `（${row.note}）` : '' }}</dd>
+                        </template>
+                      </dl>
+                    </div>
+                  </div>
+                  <el-table v-if="settlementStatsObjectRows.length" :data="settlementStatsObjectRows" size="small" border max-height="360" data-testid="ypp-settlement-stats-table">
+                    <el-table-column prop="objectId" label="场站" min-width="130" show-overflow-tooltip />
+                    <el-table-column prop="status" label="结算状态" width="90" />
+                    <el-table-column prop="totalEnergy" :label="metricLabelOf('settlement.total-energy') + '（MWh）'" width="150" align="right" />
+                    <el-table-column prop="totalFee" :label="metricLabelOf('settlement.total-fee') + '（元）'" width="150" align="right" />
+                    <el-table-column prop="averagePrice" :label="metricLabelOf('settlement.weighted-average-price') + '（yuan/MWh）'" width="170" align="right" />
+                    <el-table-column prop="pairedCount" :label="metricLabelOf('settlement.paired-count')" width="130" align="right" />
+                    <el-table-column prop="missingFee" :label="metricLabelOf('settlement.missing-fee-count')" width="120" align="right" />
+                    <el-table-column prop="missingEnergy" :label="metricLabelOf('settlement.missing-energy-count')" width="120" align="right" />
+                  </el-table>
+                  <el-alert v-for="(note, index) in settlementStatsNotes" :key="`ssn-${index}`" type="info" :closable="false" :title="note" />
+                </template>
+              </InsightBlock>
+
+              <!-- 分项覆盖与损失解释：源损失值 + 电网损失未提供态 + 未解释差额（页面不拼瀑布） -->
+              <InsightBlock
+                v-if="hasSettlementDaily"
+                title="分项覆盖与损失解释（获权）"
+                :result="viewStates['settlement-loss'].result"
+                :error="viewStates['settlement-loss'].error"
+                :loading="viewStates['settlement-loss'].loading"
+                :on-retry="() => retryQuery('settlement-loss')"
+                :on-refresh="() => retryQuery('settlement-loss')"
+                :source-titles="sourceTitles"
+                @open-candidates="openCandidates"
+                @open-evidence="openEvidence('settlement-loss')"
+              >
+                <el-alert type="info" :closable="false" :title="SETTLEMENT_LOSS_TEXT" data-testid="ypp-settlement-loss-note" />
+                <el-empty v-if="!settlementObjects.length" :description="FOLLOW_OVERVIEW_TEXT" :image-size="72" />
+                <template v-else>
+                  <el-alert
+                    v-if="lossGridNote"
+                    :type="lossGridProvided ? 'info' : 'warning'"
+                    :closable="false"
+                    :title="lossGridNote"
+                    data-testid="ypp-grid-loss-note"
+                  />
+                  <el-alert
+                    v-if="lossWaterfallNote"
+                    :type="lossWaterfallComplete ? 'info' : 'warning'"
+                    :closable="false"
+                    :title="lossWaterfallNote"
+                    data-testid="ypp-waterfall-note"
+                  />
+                  <el-table v-if="lossRows.length" :data="lossRows" size="small" border max-height="420" data-testid="ypp-loss-table">
+                    <el-table-column prop="objectId" label="场站" min-width="130" show-overflow-tooltip />
+                    <el-table-column prop="date" label="业务日" width="110" />
+                    <el-table-column
+                      v-for="column in LOSS_COLUMNS"
+                      :key="column.id"
+                      :prop="`cells.${column.id}`"
+                      :label="column.label"
+                      min-width="150"
+                      align="right"
+                      show-overflow-tooltip
+                    />
+                  </el-table>
+                  <el-alert v-for="(note, index) in lossNotes" :key="`ln-${index}`" type="info" :closable="false" :title="note" />
+                </template>
+              </InsightBlock>
+
+              <!-- 单据记录（获权）：账单索引/下载/单元格/月结载荷/拆分审批，只读红线 -->
+              <InsightBlock
+                v-if="hasSettlementDocs"
+                title="结算单据与原件引用（获权）"
+                :result="viewStates['settlement-docs'].result"
+                :error="viewStates['settlement-docs'].error"
+                :loading="viewStates['settlement-docs'].loading"
+                :on-retry="() => retryQuery('settlement-docs')"
+                :on-refresh="() => retryQuery('settlement-docs')"
+                :source-titles="sourceTitles"
+                @open-candidates="openCandidates"
+                @open-evidence="openEvidence('settlement-docs')"
+              >
+                <el-alert type="info" :closable="false" :title="SETTLEMENT_DOCS_TEXT" data-testid="ypp-settlement-docs-note" />
+                <el-alert type="warning" :closable="false" :title="SETTLEMENT_READONLY_TEXT" data-testid="ypp-settlement-readonly-note" />
+                <p class="ypp__hint">单据记录按全部获权对象查询：记录来源的对象可选，这里不单设对象选择。</p>
+                <el-table v-if="docsRows.length" :data="docsRows" size="small" border max-height="420" data-testid="ypp-docs-table">
+                  <el-table-column prop="date" label="业务日/账期" width="110" />
+                  <el-table-column prop="source" label="单据类型" min-width="200" show-overflow-tooltip />
+                  <el-table-column
+                    v-for="key in docsColumns"
+                    :key="key"
+                    :prop="`cells.${key}`"
+                    :label="docsDimensionText(key)"
+                    min-width="110"
+                    show-overflow-tooltip
+                  />
+                  <el-table-column prop="value" label="记录内容" min-width="140" show-overflow-tooltip />
+                </el-table>
+                <p v-else-if="!viewStates['settlement-docs'].loading" class="ypp__hint">所选窗口没有单据记录。</p>
+              </InsightBlock>
+
+              <!-- 核对（获权）：日报/日结/月结同周期差异，缺失周期「—」+说明 -->
+              <InsightBlock
+                v-if="hasSettlementReconcile"
+                title="日报、日结与月结核对（获权）"
+                :result="viewStates['settlement-reconcile'].result"
+                :error="viewStates['settlement-reconcile'].error"
+                :loading="viewStates['settlement-reconcile'].loading"
+                :on-retry="() => retryQuery('settlement-reconcile')"
+                :on-refresh="() => retryQuery('settlement-reconcile')"
+                :source-titles="sourceTitles"
+                @open-candidates="openCandidates"
+                @open-evidence="openEvidence('settlement-reconcile')"
+              >
+                <el-alert type="info" :closable="false" :title="SETTLEMENT_RECONCILE_TEXT" data-testid="ypp-settlement-reconcile-note" />
+                <el-empty v-if="!settlementObjects.length" :description="FOLLOW_OVERVIEW_TEXT" :image-size="72" />
+                <template v-else>
+                  <h4 class="ypp__section-title">日报 vs 日结（同周期：日）</h4>
+                  <el-table v-if="reconcileDailyRows.length" :data="reconcileDailyRows" size="small" border max-height="420" data-testid="ypp-reconcile-daily-table">
+                    <el-table-column prop="objectId" label="场站" min-width="130" show-overflow-tooltip />
+                    <el-table-column prop="date" label="业务日" width="110" />
+                    <el-table-column prop="cells.dailyReportRevenueYuan" label="日报结算收入（元）" width="160" align="right" />
+                    <el-table-column prop="cells.settlementDailyFeeYuan" label="日结电费（元）" width="150" align="right" />
+                    <el-table-column prop="cells.differenceYuan" label="差异（日报−日结，元）" width="170" align="right" />
+                    <el-table-column prop="missingText" label="缺失说明" min-width="200" show-overflow-tooltip />
+                    <el-table-column prop="qualityText" label="质量说明" min-width="200" show-overflow-tooltip />
+                  </el-table>
+                  <el-alert
+                    v-for="(reason, index) in reconcileQualityExcluded"
+                    :key="`rq-${index}`"
+                    type="warning"
+                    :closable="false"
+                    :title="reason"
+                  />
+                  <h4 class="ypp__section-title">月结汇总（月周期，单独展示不与日值互比）</h4>
+                  <el-table v-if="reconcileMonthlyRows.length" :data="reconcileMonthlyRows" size="small" border max-height="300" data-testid="ypp-reconcile-monthly-table">
+                    <el-table-column prop="objectId" label="场站" min-width="130" show-overflow-tooltip />
+                    <el-table-column prop="settleMonth" label="账期月" width="110" />
+                    <el-table-column prop="fee" label="月结电费合计（元）" width="170" align="right" />
+                  </el-table>
+                  <el-alert
+                    v-if="reconcileMonthlyMissingText"
+                    type="info"
+                    :closable="false"
+                    :title="reconcileMonthlyMissingText"
+                    data-testid="ypp-reconcile-monthly-missing"
+                  />
+                  <el-alert v-for="(note, index) in reconcileNotes" :key="`rn-${index}`" type="info" :closable="false" :title="note" />
+                </template>
+              </InsightBlock>
+            </template>
           </template>
         </template>
       </el-tab-pane>

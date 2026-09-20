@@ -554,6 +554,92 @@ const plantSources = [
     dimensions: Object.freeze(['name']), objectDimension: 'name',
     accessNote: '暂结视角单独读取，只作与正式的差异对照；经营合计仍以正式为准',
   }),
+  // ── 结算表现（#3081，OpenSpec 任务 12.1—12.4，ST01—ST06）───────────────────────
+  // 暂结日结：yn_settlement_docs 的 plant_daily_settlement_raw 保真行（48 列中文表头，
+  // payload 键=原始列名），状态列 result_type=formal/temp（2026-05 月包各 992 行，逐行核验）。
+  // 正式经营合计仍由 cgn.plant.settlement-daily（正式读模型）提供，两态不混算不相加（D7、ST01）。
+  source({
+    ...monthPackage,
+    sourceId: 'cgn.settlement.daily-settlement-temp', title: '场站日结算（暂结，原始证据提取，获权）',
+    read: capture('yn_settlement_docs', 'plant_daily_settlement_raw', { result_type: 'temp' }),
+    businessScope: 'plant',
+    measure: Object.freeze({
+      kind: 'amount', unit: 'yuan', inputUnit: 'yuan', factor: '1',
+      fields: Object.freeze([
+        Object.freeze({ id: 'totalEnergy', valueField: '总电量', unit: 'MWh', kind: 'energy' }),
+        Object.freeze({ id: 'totalFee', valueField: '总电费', unit: 'yuan', kind: 'amount' }),
+      ]),
+    }),
+    time: Object.freeze({ resolutionMinutes: 1440, slotLabel: 'business-day', dateField: '日期' }),
+    priceObject: 'settlement-price', versionPolicy: 'status-axis', precision: Object.freeze({ places: 2 }),
+    dimensions: Object.freeze(['电厂名']), objectDimension: '电厂名',
+    accessNote: '暂结日结按原始证据提取：行 schema 无结构化状态列之外的状态机，按 result_type=temp 行过滤；'
+      + '正式视角默认读正式读模型，本来源只作与正式的同键差异对照，绝不并入正式合计（ST01、A08）',
+  }),
+  // 月结汇总（月周期资料）：plant_monthly_settlement_raw 保真载荷里按明确定义抽取白名单字段
+  // 「批发购电月费用合计_总电费」（原始行文本，如 2228725.86 元）。businessPeriod: month——
+  // 行的日期是月份标记（settlemonth=2026-05），按月落窗与计覆盖，不冒充某一天。
+  // 只抽电费不抽电量：月包电量表头口径未经核实（unit-semantics 台账：月表电量疑为 kWh），
+  // 不确定单位前不登记、不与日结算电量相加（D5 第 3 条）。
+  source({
+    ...monthPackage,
+    sourceId: 'cgn.settlement.monthly-total', title: '月结汇总电费（月结载荷白名单字段，获权）',
+    read: capture('yn_settlement_docs', 'plant_monthly_settlement_raw'),
+    businessScope: 'plant',
+    measure: Object.freeze({ kind: 'amount', unit: 'yuan', inputUnit: 'yuan', factor: '1', valueField: '批发购电月费用合计_总电费' }),
+    time: Object.freeze({ resolutionMinutes: 1440, slotLabel: 'business-day', dateField: 'settlemonth', businessPeriod: 'month' }),
+    priceObject: 'settlement-price', precision: Object.freeze({ places: 2 }),
+    dimensions: Object.freeze(['电厂名', 'settlemonth']), objectDimension: '电厂名',
+    accessNote: '月结是月周期：只与同对象同月份核对展示，不与日报（日）/日结（日）相加或互比（ST05）；'
+      + '总电费是月结载荷的既有事实，不倒推未舍入金额',
+  }),
+  // 以下五类是单据/审批/原件引用（记录，不是数值时序）：只走「记录」视图，不汇总不画曲线
+  // （参照 cgn.units.must-run-stop 的登记方式；ST06 源行及权属可追溯，审批仍归结算业务模块）。
+  source({
+    ...monthPackage,
+    sourceId: 'cgn.settlement.bill-records', title: '账单索引记录（获权）',
+    read: capture('yn_settlement_docs', 'settlement_bill_records_raw'),
+    businessScope: 'plant', measure: Object.freeze({ kind: 'list', unit: 'list', inputUnit: 'list', factor: '1', valueField: 'id' }),
+    time: Object.freeze({ resolutionMinutes: 1440, slotLabel: 'business-day', dateField: 'billmonth', businessPeriod: 'month' }),
+    dimensions: Object.freeze(['plant_name', 'bill_type', 'settle_month', 'company_name']), objectDimension: 'plant_name',
+    accessNote: '账单索引≠账单原件：只有索引记录不代表文件可下载、更不代表已核对原件（ST06）',
+  }),
+  source({
+    ...monthPackage,
+    sourceId: 'cgn.settlement.bill-downloads', title: '账单文件下载记录（获权）',
+    read: capture('yn_settlement_docs', 'settlement_bill_file_downloads'),
+    businessScope: 'plant', measure: Object.freeze({ kind: 'list', unit: 'list', inputUnit: 'list', factor: '1', valueField: 'download_status' }),
+    time: Object.freeze({ resolutionMinutes: 1440, slotLabel: 'business-day', dateField: 'settle_month', businessPeriod: 'month' }),
+    dimensions: Object.freeze(['plant_name', 'bill_type', 'settle_month', 'file_name', 'file_ext']), objectDimension: 'plant_name',
+    accessNote: '有索引不等于文件可下载：download_status 是历史下载记录，不生成当前可下载承诺（ST06）',
+  }),
+  source({
+    ...monthPackage,
+    sourceId: 'cgn.settlement.bill-cells', title: '账单单元格转录（获权）',
+    read: capture('yn_settlement_docs', 'settlement_bill_excel_cells'),
+    businessScope: 'plant', measure: Object.freeze({ kind: 'list', unit: 'list', inputUnit: 'list', factor: '1', valueField: 'cell_value' }),
+    time: Object.freeze({ resolutionMinutes: 1440, slotLabel: 'business-day', dateField: 'settle_month', businessPeriod: 'month' }),
+    dimensions: Object.freeze(['plant_name', 'bill_type', 'file_name', 'sheet_name', 'row_index', 'col_index']), objectDimension: 'plant_name',
+    accessNote: '无模板/单元格语义不得计算合计：单元格只是原件转录，行间没有可加性（ST06、D7）',
+  }),
+  source({
+    ...monthPackage,
+    sourceId: 'cgn.settlement.monthly-doc', title: '月结原始载荷（获权）',
+    read: capture('yn_settlement_docs', 'plant_monthly_settlement_raw'),
+    businessScope: 'plant', measure: Object.freeze({ kind: 'list', unit: 'list', inputUnit: 'list', factor: '1', valueField: '交易编号' }),
+    time: Object.freeze({ resolutionMinutes: 1440, slotLabel: 'business-day', dateField: 'settlemonth', businessPeriod: 'month' }),
+    dimensions: Object.freeze(['电厂名', 'settlemonth', 'company_name']), objectDimension: '电厂名',
+    accessNote: '月结原始载荷记录：记录值是交易编号，raw_json 载荷随保真行原样落库可溯源；数值口径看 cgn.settlement.monthly-total，不在这里求和',
+  }),
+  source({
+    ...monthPackage,
+    sourceId: 'cgn.settlement.daily-split', title: '拆分日结审批记录（获权）',
+    read: capture('yn_settlement_docs', 'plant_daily_split_settlement_raw'),
+    businessScope: 'plant', measure: Object.freeze({ kind: 'list', unit: 'list', inputUnit: 'list', factor: '1', valueField: 'billstatus' }),
+    time: Object.freeze({ resolutionMinutes: 1440, slotLabel: 'business-day', dateField: 'data_date' }),
+    dimensions: Object.freeze(['name', 'type', 'result_type', 'pdfstatus']), objectDimension: 'name',
+    accessNote: '拆分结算的审批/单据状态记录；审批与对账处置归结算业务模块，洞察只读不改（ST06）',
+  }),
 ]
 
 export const INSIGHT_SOURCES = Object.freeze([...systemSources, ...hydroDisclosureSources, ...gridDisclosureSources, ...priceSources, ...disclosureSources, ...plantSources])
@@ -593,6 +679,7 @@ export function validateInsightSources(sources = INSIGHT_SOURCES) {
     if (entry.measure?.kind === 'power' && !POWER_SEMANTICS.includes(entry.measure.powerSemantics)) errors.push(`${where}: 功率必须声明区间平均/瞬时/未知`)
     if (typeof entry.measure?.factor !== 'string' || !/^\d+(?:\.\d+)?$/.test(entry.measure.factor)) errors.push(`${where}: 单位换算系数必须是十进制字符串`)
     if (![15, 60, 1440].includes(entry.time?.resolutionMinutes)) errors.push(`${where}: 原生粒度只登记 15/60/1440 分钟`)
+    if (entry.time?.businessPeriod !== undefined && entry.time.businessPeriod !== 'month') errors.push(`${where}: businessPeriod 只支持 month（月结等月周期资料）`)
     if (entry.measure?.kind === 'price' && !entry.priceObject) errors.push(`${where}: 价格来源必须声明价格对象`)
     if (!['capture', 'serving', 'private-api'].includes(entry.read?.kind)) errors.push(`${where}: 未知读取方式`)
     if (entry.accessScope === 'company' && entry.read?.kind === 'serving') errors.push(`${where}: 公司私有来源不能经公开 serving 路由读取`)
@@ -603,7 +690,9 @@ export function validateInsightSources(sources = INSIGHT_SOURCES) {
       if (!entry.read.dataset || needed.some(name => !mapped.includes(name))) errors.push(`${where}: 私有披露来源必须声明数据集，并为全部维度与取值字段登记列名映射`)
     }
     for (const field of entry.measure?.fields ?? []) {
-      if (!/^[A-Za-z][A-Za-z0-9_]{0,63}$/.test(field.valueField ?? '') || !MEASURE_KINDS.includes(field.kind) || typeof field.unit !== 'string') errors.push(`${where}: 字段 ${field.id} 登记不完整`)
+      // valueField 是 capture payload 里的取值键：归一化行族是驼峰英文字段，保真行族
+      // （如 plant_daily_settlement_raw 的 总电量/总电费）按设计保留原始中文列名（D7 保真）。
+      if (!/^[A-Za-z\u4e00-\u9fff][A-Za-z0-9_\u4e00-\u9fff]{0,63}$/.test(field.valueField ?? '') || !MEASURE_KINDS.includes(field.kind) || typeof field.unit !== 'string') errors.push(`${where}: 字段 ${field.id} 登记不完整`)
     }
     if (entry.objectDimension && !entry.dimensions.includes(entry.objectDimension)) errors.push(`${where}: 对象维度必须是已登记维度之一`)
     if (entry.time?.leadDays !== undefined && (!entry.time.targetDateField || !Number.isInteger(entry.time.leadDays) || entry.time.leadDays < 0)) errors.push(`${where}: 提前天数必须配合目标日字段、且为非负整数`)

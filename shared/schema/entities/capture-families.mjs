@@ -485,9 +485,13 @@ const ROW_SCHEMAS = {
     ltResidualMwh: num(), ltResidualLossYuan: num(),
     missingDataJson: str(), calculationVersion: str(), createdAt: str(), updatedAt: str()
   }),
-  // C 类结算单据（6 表保真，原列名落 payload）。dateField 各表不同（日/月粒度），由
+  // C 类结算单据（7 表保真，原列名落 payload）。dateField 各表不同（日/月粒度），由
   // describeDataset 按 datasetKey 分支声明——增量窗口按本批日期/月份标记集合替换。
+  // plant_daily_settlement_raw 是日结原始证据（48 列中文表头，含 result_type formal/temp
+  // 状态列，2026-05 月包各 992 行）：保真行 payload 键=原始列名，日期列就是「日期」，
+  // 正式读模型（yn_spot_settlement）不含暂结行，暂结与正式/暂结差异从这里提取（D7、ST01）。
   yn_settle_plant_spot_data: object({ id: str({ required: true }), data_date: str({ required: true }) }),
+  yn_settle_daily_raw: object({ id: str({ required: true }), 日期: str({ required: true }) }),
   yn_settle_bill_excel_cells: object({
     settle_month: str({ required: true }), file_name: str({ required: true }),
     sheet_name: str({ required: true }), row_index: num(), col_index: num()
@@ -572,6 +576,7 @@ export const MARKET_DATASET_KEYS = Object.keys(marketAnalysisSchemas)
 // 生成器按 dataset 分表。C 类 6 表（dateField 各异）与 D 类 2 表。
 export const settlementDocSchemas = {
   plant_spot_settle_data: ROW_SCHEMAS.yn_settle_plant_spot_data,
+  plant_daily_settlement_raw: ROW_SCHEMAS.yn_settle_daily_raw,
   plant_daily_split_settlement_raw: ROW_SCHEMAS.yn_settle_daily_split_raw,
   settlement_bill_excel_cells: ROW_SCHEMAS.yn_settle_bill_excel_cells,
   settlement_bill_records_raw: ROW_SCHEMAS.yn_settle_bill_records_raw,
@@ -1117,6 +1122,7 @@ export function describeDataset(code, match) {
     case 'yn_settlement_docs': {
       const settleDocDateFields = {
         plant_spot_settle_data: 'data_date',
+        plant_daily_settlement_raw: '日期',
         plant_daily_split_settlement_raw: 'data_date',
         settlement_bill_excel_cells: 'settle_month',
         settlement_bill_records_raw: 'billmonth',
@@ -1125,6 +1131,7 @@ export function describeDataset(code, match) {
       }
       const schema = {
         plant_spot_settle_data: ROW_SCHEMAS.yn_settle_plant_spot_data,
+        plant_daily_settlement_raw: ROW_SCHEMAS.yn_settle_daily_raw,
         plant_daily_split_settlement_raw: ROW_SCHEMAS.yn_settle_daily_split_raw,
         settlement_bill_excel_cells: ROW_SCHEMAS.yn_settle_bill_excel_cells,
         settlement_bill_records_raw: ROW_SCHEMAS.yn_settle_bill_records_raw,
