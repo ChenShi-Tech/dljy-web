@@ -22,12 +22,33 @@
 //   - 旧关系图（价格×新能源/负荷散点）与旧综合分析的适用视图迁入本页：结果呈现形式与
 //     预设登记对齐（相关统计、滞后对比、异常窗口时间线、同类日候选表），数据面统一走
 //     research/preview，旧页本期保留不删（D6.1）。
+// 多指标分面与选区承接（dljy#3114，任务 13.7，RS08、DE10）：
+//   - 统计型结果（相关/滞后/同进度）的统计行按云南登记目录的量纲分面：一个量纲一张图
+//     一根轴，不同量纲各拆一张图并列，颜色/图例区分——不共轴、不做双 Y 轴混标
+//     （沿用 useInsightSeriesChart 分组纪律）；序列显隐/分面顺序是运行面板的会话内
+//     视图状态：不进请求、不改结果，后端定义未登记视图字段，保存定义不含它（如实说明）。
+//   - 参考日明示：同类日目标日本就是显式日期选择；同进度比较的参考日按登记固定为
+//     业务日前一日（reference.days=1），运行面板明示映射，不发明后端未登记的变换字段。
+//   - 承接洞察选区（价格/电网/场站页图表语义选区 → 本页）：经地址参数白名单只带窗口
+//     起止日+对象/来源引用+来源页（时段数组、原始数据不进 URL）；窗口/对象/来源由
+//     useInsightContext 还原，预设按承接来源建议预填（可更换），并给返回原页入口。
+//   - 红线：价格响应类预设（竞价空间×价格拟合/弹性）未登记开放——缺已登记的模型输入、
+//     方法与验证结果就明确不可用；剩余需求代理是分析代理量，不是官方竞价空间，不写因果。
 import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { getInsightAnalysis } from 'shared/insight/analyses.mjs'
 import { formatMetricValue, getMetricDefinition } from 'shared/insight/metrics.mjs'
 import { RESEARCH_MAX_LAG_SLOTS, RESEARCH_MAX_WINDOW_SLOTS, listResearchPresets } from 'shared/insight/research.mjs'
-import type { InsightContextInput } from 'shared/insight/contract.mjs'
+import { calendarDayMs, type InsightContextInput } from 'shared/insight/contract.mjs'
+import { buildResearchStatFacets, statFacetTitleOf } from '../researchFacets'
+import {
+  RESEARCH_HANDOFF_ORIGIN_LABELS,
+  handoffReturnLocation,
+  parseResearchHandoffOrigin,
+  suggestResearchPresetId,
+} from '../researchHandoff'
+import ResearchStatFacet from './ResearchStatFacet.vue'
 import { idempotencyKeyOf } from '@/services/api'
 import { getCurrentUser } from '@/services/auth'
 import { hasCompanyAdmin } from '@/services/governance'
@@ -84,6 +105,80 @@ const SAVE_HINT_READY = '保存会把定义与期望版本交给服务端核验�
 // ── 上下文与能力目录 ─────────────────────────────────────────────────────────────────────
 
 const ctx = useInsightContext()
+const route = useRoute()
+const router = useRouter()
+
+/** 视图选择的会话边界说明（后端定义未登记视图字段，保存不携带——如实说明，不发明字段）。 */
+const VIEW_SCOPE_NOTE =
+  '视图选择（序列显隐、分面顺序）仅本会话生效：保存的研究定义携带预设、窗口、模式与显式变换参数，不包含视图选择（后端定义未登记视图字段，不发明未登记字段）'
+
+/** 价格响应类预设的不可用说明（竞价空间×价格未登记：缺模型输入/方法/验证结果不开放）。 */
+const PRICE_RESPONSE_NOTE =
+  '价格响应类研究预设未登记开放：竞价空间价格响应需要已登记的模型输入、方法与验证结果才可运行；剩余需求代理是分析代理量，不是官方竞价空间，也不构成因果或套利结论'
+
+// ── 承接洞察选区（任务 13.7，RS08）：来源页白名单 + 预设建议预填 ─────────────────────────
+
+// 来源随路由查询派生（不能一次性拷贝）：AppLayout 保活下 setup 只跑一次，
+// 缓存实例再次被「以选区进入研究」唤起时，ref 里的旧值会让横幅与预填永远不出现。
+const handoffOrigin = computed(() => parseResearchHandoffOrigin(route.query))
+
+const handoffOriginLabel = computed(() =>
+  handoffOrigin.value ? RESEARCH_HANDOFF_ORIGIN_LABELS[handoffOrigin.value] : ''
+)
+
+/** 承接来源对应的预设建议（登记输入来源 ∩ 承接来源最大者；无交集不预填、不假装承接）。 */
+const handoffSuggestedPresetId = computed(() =>
+  suggestResearchPresetId(presets.value, ctx.sourceIds.value)
+)
+
+const handoffBanner = computed(() => {
+  const origin = handoffOrigin.value
+  if (!origin) return ''
+  const parts = [`窗口 ${ctx.businessWindow.value.start} ~ ${ctx.businessWindow.value.end}`]
+  if (ctx.objectIds.value.length) parts.push(`对象 ${ctx.objectIds.value.length} 个`)
+  if (ctx.sourceIds.value.length) parts.push(`来源 ${ctx.sourceIds.value.length} 项`)
+  // 预填文案只认实际生效的选择：建议存在 ≠ 预填成功（目录未就绪/失败/所需分析未开放时
+  // selectPreset 会拒绝，界面不得声称已预填一个空预设）。
+  const suggested = handoffSuggestedPresetId.value
+  const prefill = !suggested
+    ? '承接来源未对应已登记预设，请手动选择研究问题'
+    : selectedPresetId.value === suggested
+      ? '研究预设已按承接来源预填（可更换）'
+      : capabilitiesLoading.value
+        ? '承接预设待能力目录就绪后预填'
+        : capabilitiesError.value
+          ? '能力目录读取失败，承接预设未能预填，请手动选择研究问题'
+          : '承接来源对应的预设当前不可运行（所需分析未开放），请手动选择研究问题'
+  return `已承接「${RESEARCH_HANDOFF_ORIGIN_LABELS[origin]}」的选区范围：${parts.join('、')}；承接只携带窗口与对象/来源引用，不带原始数据；${prefill}`
+})
+
+/** 按承接来源预填（每个承接签名只试一次；用户已选预设时不覆盖、不换词）。 */
+let appliedHandoffPrefill = ''
+function applyHandoffPrefill(): void {
+  const origin = handoffOrigin.value
+  if (!origin || selectedPresetId.value) return
+  const suggested = handoffSuggestedPresetId.value
+  if (!suggested) return
+  const signature = JSON.stringify([origin, ctx.businessWindow.value.start, ctx.businessWindow.value.end, ...ctx.sourceIds.value])
+  if (signature === appliedHandoffPrefill) return
+  appliedHandoffPrefill = signature
+  selectPreset(suggested)
+}
+// 能力目录就绪后按当次承接预填；缓存实例收到新承接（路由查询变化）时再次尝试。
+watch(() => JSON.stringify(route.query), () => applyHandoffPrefill())
+
+function returnToOrigin(): void {
+  const origin = handoffOrigin.value
+  if (!origin) return
+  // 优先原路返回（历史栈）：来源页 URL 原样恢复——研究承接已不带对象范围，
+  // 用 ctx 重建的返回地址会丢掉来源页的对象选择。无历史栈（直达/刷新）才按窗口+来源重建。
+  if (window.history.state?.back) {
+    router.back()
+    return
+  }
+  const location = handoffReturnLocation(origin, ctx.businessWindow.value, ctx.objectIds.value, ctx.sourceIds.value)
+  void router.push({ path: location.path, query: location.query })
+}
 
 const capabilities = ref<InsightCapabilities | null>(null)
 const capabilitiesError = ref<InsightRequestError | null>(null)
@@ -92,15 +187,19 @@ const capabilitiesLoading = ref(false)
 async function loadCapabilities(): Promise<void> {
   capabilitiesLoading.value = true
   capabilitiesError.value = null
+  let loaded = false
   try {
     const result = await ctx.request.run((signal) => fetchInsightCapabilities({ signal }))
     if (!result) return
     capabilities.value = result
+    loaded = true
   } catch (error) {
     capabilitiesError.value = error as InsightRequestError
   } finally {
     capabilitiesLoading.value = false
   }
+  // 承接选区时按来源预填预设（资格面就绪才接得住；用户已选预设时不覆盖）。
+  if (loaded) applyHandoffPrefill()
 }
 
 onMounted(() => {
@@ -292,11 +391,14 @@ const saveState = reactive<{ saving: boolean; savedVersion: number | null; error
 /** 已保存分析窗口：查看（列表/原样只读）对所有人开放；重算入口由窗口按权限另行显隐。 */
 const savedVisible = ref(false)
 
-/** 配置签名：任一参数变化旧结果立即失效（清空展示，在途请求由代次机制作废）。 */
+/** 配置签名：任一参数或上下文代次变化，旧结果立即失效（清空展示，在途请求由代次机制作废）。
+ *  contextVersion 覆盖窗口/对象/来源/地区/公司全部业务字段——缓存页收到新承接（来源或对象
+ *  变了）而日期未变时，旧结果不得冒充新范围的结果继续展示、保存。 */
 const configSignature = computed(() =>
   JSON.stringify([
     selectedPresetId.value,
     ctx.regionId.value,
+    ctx.contextVersion.value,
     ctx.businessWindow.value.start,
     ctx.businessWindow.value.end,
     mode.value,
@@ -316,6 +418,9 @@ watch(configSignature, () => {
   runState.result = null
   runState.error = null
   runState.runKey = ''
+  // 被代次作废的迟到请求在 finally 里因同签名守卫跳过清 loading——由这里显式归还，
+  // 否则承接/上下文变化后运行按钮永远停在加载态。
+  runState.loading = false
   saveState.savedVersion = null
   saveState.error = ''
 })
@@ -334,6 +439,9 @@ async function runPreview(): Promise<void> {
       (signal) => runResearchPreview({ presetId: preset.presetId, context, filters, transformations }, { signal })
     )
     if (!result || configSignature.value !== key) return // 作废/迟到：不写状态
+    // 新一次运行回到默认视图（序列显隐/分面顺序绑定当前结果，是会话内状态）。
+    hiddenMetricIds.value = new Set()
+    facetOrder.value = []
     runState.result = result
     runState.runKey = key
   } catch (error) {
@@ -419,6 +527,65 @@ function percentTextOf(ratio: string | null | undefined): string {
 
 const result = computed(() => runState.result)
 const seriesMeta = computed<ResearchSeriesMeta | null>(() => result.value?.data.series[0] ?? null)
+
+// ── 多指标量纲分面（任务 13.7，RS08、D6.1）：统计行按登记量纲拆面并列 ────────────────────
+// 序列显隐/分面顺序是会话内视图状态：不进 configSignature（切换视图不清结果、不重查）、
+// 不进保存请求（后端定义未登记视图字段）；新一次运行（新结果）回到默认视图。
+
+/** 统计型内核（相关/滞后/同进度）才做统计分面；异常窗口是时间线、同类日是候选表。 */
+const facetEligible = computed(() => ['correlation', 'lag-comparison', 'progress-comparison'].includes(activeKind.value))
+
+const hiddenMetricIds = ref<ReadonlySet<string>>(new Set())
+const facetOrder = ref<readonly string[]>([])
+
+/** 图表分面：随显隐过滤（隐藏的序列不进图、整面隐藏时不出图）。 */
+const statFacets = computed(() => {
+  if (!facetEligible.value || !result.value) return []
+  return buildResearchStatFacets(result.value.data.rows, {
+    hiddenMetricIds: hiddenMetricIds.value,
+    facetOrder: facetOrder.value,
+  })
+})
+
+/** 控制面分面：同一套拆面与排序，但不做显隐过滤——显隐控件要一直在场，
+ * 否则取消勾选后控件随序列一起消失，唯一序列被隐藏时整面都找不回（只能重跑）。 */
+const statFacetControls = computed(() => {
+  if (!facetEligible.value || !result.value) return []
+  return buildResearchStatFacets(result.value.data.rows, {
+    facetOrder: facetOrder.value,
+  })
+})
+
+/** 可见图按单位索引：控制面渲染图表面时按单位取对应过滤后分面（无可见序列则不出图）。 */
+const statFacetByUnit = computed(
+  () => new Map(statFacets.value.map((facet) => [facet.unit, facet]))
+)
+
+/** 序列显隐：只改当前视图，不重新请求（同签名不重查），结果不清空。 */
+function toggleMetricVisibility(metricId: string, visible: boolean): void {
+  const next = new Set(hiddenMetricIds.value)
+  if (visible) next.delete(metricId)
+  else next.add(metricId)
+  hiddenMetricIds.value = next
+}
+
+/** 分面顺序（上移/下移）：会话内视图状态，同样不触发请求。按控制面全集排序——
+ * 被整面隐藏的分面也保持次序，重新勾回时不跳位。 */
+function moveFacet(index: number, delta: number): void {
+  const units = statFacetControls.value.map((facet) => facet.unit)
+  const target = index + delta
+  if (target < 0 || target >= units.length) return
+  ;[units[index], units[target]] = [units[target], units[index]]
+  facetOrder.value = units
+}
+
+/** 同进度比较的参考日：登记固定为业务日前一日（reference.days=1）——明示映射，不发明变换字段。 */
+const progressReferenceDay = computed(() => {
+  if (activeKind.value !== 'progress-comparison') return ''
+  const start = ctx.businessWindow.value.start
+  if (!start) return ''
+  return new Date(calendarDayMs(start) - 86_400_000).toISOString().slice(0, 10)
+})
 
 const methodNotes = computed(() => result.value?.method.notes ?? [])
 const exAnteInfo = computed(() => result.value?.exAnte ?? null)
@@ -714,7 +881,18 @@ const onAiInterpret = (): void => {
 
     <p class="yr__meta">{{ STAGE_TEXT }}</p>
 
+    <!-- 红线（任务 13.7，RS08/D6.1）：价格响应类预设未登记——缺模型输入/方法/验证结果明确不可用；
+         剩余需求代理沿用供需页口径：分析代理量，不是官方竞价空间，不构成因果或套利结论 -->
+    <p class="yr__meta" data-testid="yr-price-response-note">{{ PRICE_RESPONSE_NOTE }}</p>
+
     <el-alert v-if="!presets.length" type="info" show-icon :closable="false" :title="NO_PRESET_TEXT" data-testid="yr-no-preset" />
+
+    <!-- 承接洞察选区（RS08）：范围说明 + 返回原页（带回窗口/对象/来源恢复口径） -->
+    <el-alert v-if="handoffBanner" type="info" show-icon :closable="false" :title="handoffBanner" data-testid="yr-handoff">
+      <div class="yr__handoff-actions">
+        <el-button size="small" plain data-testid="yr-handoff-return" @click="returnToOrigin">返回「{{ handoffOriginLabel }}」</el-button>
+      </div>
+    </el-alert>
 
     <el-alert v-if="ineligibleNotice" type="warning" show-icon :closable="false" :title="ineligibleNotice" data-testid="yr-ineligible" />
 
@@ -830,6 +1008,13 @@ const onAiInterpret = (): void => {
               <el-input-number v-model="minCandidates" :min="2" :step="1" data-testid="yr-min-candidates" />
             </label>
           </template>
+
+          <!-- 参考日明示（任务 13.7）：同类日目标日是显式日期选择；同进度比较的参考日
+               按登记固定为业务日前一日（reference.days=1）——运行前明示映射，换参考日
+               请改业务日期窗；后端未登记参考日变换字段，本页不发明 -->
+          <p v-if="activeKind === 'progress-comparison'" class="yr__hint" data-testid="yr-reference-day">
+            参考日 {{ progressReferenceDay }}（按登记固定为业务日前一日，不自动另选参考日；换参考日请改上方业务日期窗）
+          </p>
         </div>
 
         <div class="yr__run">
@@ -1048,6 +1233,37 @@ const onAiInterpret = (): void => {
               </p>
             </div>
           </div>
+        </template>
+
+        <!-- 多指标量纲分面（任务 13.7，RS08、D6.1）：统计行按登记量纲拆面并列——
+             一个量纲一张图一根轴，不同量纲各拆一张图（不共轴、不做双 Y 轴混标）；
+             面内序列显隐、分面顺序是会话内视图状态（不进请求、不进保存定义） -->
+        <template v-if="statFacetControls.length">
+          <div class="yr__facets">
+            <!-- 分面骨架按控制面（不过滤显隐）渲染：图有可见序列才出图，控件永远在场 -->
+            <section v-for="(facet, index) in statFacetControls" :key="facet.unit" class="yr__facet" data-testid="yr-facet">
+              <header class="yr__facet-head">
+                <h4>{{ statFacetTitleOf(facet.unit) }}</h4>
+                <span class="yr__facet-actions">
+                  <el-button size="small" text :disabled="index === 0" data-testid="yr-facet-move-up" @click="moveFacet(index, -1)">上移</el-button>
+                  <el-button size="small" text :disabled="index === statFacetControls.length - 1" data-testid="yr-facet-move-down" @click="moveFacet(index, 1)">下移</el-button>
+                </span>
+              </header>
+              <div class="yr__facet-toggles">
+                <label v-for="item in facet.items" :key="item.metricId" class="yr__facet-toggle">
+                  <input
+                    type="checkbox"
+                    :checked="!hiddenMetricIds.has(item.metricId)"
+                    :data-testid="`yr-facet-series-${item.metricId.replace(/\./g, '-')}`"
+                    @change="toggleMetricVisibility(item.metricId, ($event.target as HTMLInputElement).checked)"
+                  />
+                  {{ item.label }}
+                </label>
+              </div>
+              <ResearchStatFacet v-if="statFacetByUnit.get(facet.unit)" :facet="statFacetByUnit.get(facet.unit)!" />
+            </section>
+          </div>
+          <p class="yr__hint" data-testid="yr-view-scope-note">{{ VIEW_SCOPE_NOTE }}</p>
         </template>
 
         <!-- 方法与口径说明（后端原文，含无置信区间与无因果声明） -->
@@ -1289,5 +1505,53 @@ const onAiInterpret = (): void => {
 .yr__notes h4 {
   margin: 0 0 4px;
   font-size: var(--font-sm);
+}
+/* 量纲分面：不同量纲各拆一张图并列（窄屏纵排），面内一套显隐开关 + 单轴图 */
+.yr__facets {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+  gap: 12px;
+}
+@media (max-width: 760px) {
+  .yr__facets {
+    grid-template-columns: 1fr;
+  }
+}
+.yr__facet {
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 8px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.yr__facet-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+.yr__facet-head h4 {
+  margin: 0;
+  font-size: var(--font-sm);
+}
+.yr__facet-actions {
+  display: flex;
+  gap: 4px;
+}
+.yr__facet-toggles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+}
+.yr__facet-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--font-tb-12);
+  color: var(--el-text-color-regular);
+}
+.yr__handoff-actions {
+  margin-top: 8px;
 }
 </style>
