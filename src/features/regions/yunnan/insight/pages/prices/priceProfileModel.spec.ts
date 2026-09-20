@@ -329,3 +329,91 @@ describe('sevenDayWindowEndingAt / detectWebGL / MAX_3D_NATIVE_POINTS', () => {
     expect(MAX_3D_NATIVE_POINTS).toBe(6000)
   })
 })
+
+// ── 统计不随抽样与呈现次序改变（16.8 / A20）────────────────────────────────────────────────
+// D6.1/A20 的「降采样不改变统计」在纯函数层的落点：网格是唯一事实面，三维顶点、热力格子、
+// 证据表与切面全部从同一份 rows 归纳；行序、呈现次序、拆段与阶梯只是表达，
+// 不允许新增或改动任何观测点。
+
+describe('统计不随抽样与呈现次序改变（16.8）', () => {
+  it('rows 乱序输入：网格轴、热力极值与格子数与原序一致（行序是传输细节，不进统计）', () => {
+    const series = [meta('da', 'day-ahead'), meta('rt', 'real-time')]
+    const rows: ProfileRow[] = [
+      row('rt', '2025-06-07', '00:30', '145'),
+      row('da', '2025-06-06', '00:00', '210.5'),
+      row('rt', '2025-06-06', '00:15', '215'),
+      row('da', '2025-06-07', '00:30', '130'),
+      row('rt', '2025-06-07', '00:00', '155'),
+      row('da', '2025-06-06', '00:15', '220'),
+      row('rt', '2025-06-06', '00:00', '205.25'),
+      row('da', '2025-06-07', '00:15', '140'),
+      row('rt', '2025-06-07', '00:15', '-12.5'),
+      row('da', '2025-06-07', '00:00', '150'),
+    ]
+    const ordered = buildPriceGrid(rows, series)
+    const shuffled = buildPriceGrid([...rows].reverse(), series)
+    expect(shuffled.timePoints).toEqual(ordered.timePoints)
+    expect(shuffled.dates).toEqual(ordered.dates)
+    const h1 = buildHeatmap(ordered, 'real-time')!
+    const h2 = buildHeatmap(shuffled, 'real-time')!
+    expect(h2.min).toBe(h1.min)
+    expect(h2.max).toBe(h1.max)
+    expect(h2.cells).toHaveLength(h1.cells.length)
+  })
+
+  it('三维顶点合计 === 网格原生行数：阶梯与拆段只是表达，不新增观测点', () => {
+    const grid = makeGrid()
+    expect(grid.rows.length).toBeGreaterThan(0)
+    const lines = buildLine3DSeries(grid)
+    const vertexCount = lines.flatMap((line) => line.segments).reduce((sum, seg) => sum + seg.length, 0)
+    expect(vertexCount).toBe(grid.rows.length)
+  })
+
+  it('缺测拆段无桥接顶点：各段顶点一一对应真实行，段间不存在补出的连接点', () => {
+    const series = [meta('rt', 'real-time')]
+    const rows = [
+      row('rt', '2025-06-07', '00:00', '100'),
+      row('rt', '2025-06-07', '00:15', '110'),
+      // 00:30 缺测（该时点全局不存在，轴下标连续也不能连线）
+      row('rt', '2025-06-07', '00:45', '130'),
+      row('rt', '2025-06-07', '01:00', '140'),
+    ]
+    const grid = buildPriceGrid(rows, series)
+    const segments = buildLine3DSeries(grid)[0]!.segments
+    expect(segments).toHaveLength(2)
+    const flat = segments.reduce((sum, seg) => sum + seg.length, 0)
+    expect(flat).toBe(rows.length)
+  })
+
+  it('全负价序列：热力极值两端均为负（轴 domain 可整体为负），切面与默认剖面照常解析', () => {
+    const series = [meta('rt', 'real-time')]
+    const grid = buildPriceGrid(
+      [
+        row('rt', '2025-06-06', '00:00', '-30'),
+        row('rt', '2025-06-06', '00:15', '-45'),
+        row('rt', '2025-06-07', '00:00', '-20'),
+      ],
+      series
+    )
+    const build = buildHeatmap(grid, 'real-time')!
+    expect(build.min).toBe(-45)
+    expect(build.max).toBeLessThan(0)
+    expect(buildDayProfile(grid, '2025-06-06').rt).toEqual([-30, -45])
+    // 默认剖面仍取「最高」价（最接近 0 的 -20，不向 0 截断）
+    expect(defaultCrossSection(grid)).toEqual({ date: '2025-06-07', timeOfDay: '00:00' })
+  })
+
+  it('同一网格下三维顶点、热力格子与证据表对同一时段给出同一值（各视图不各自抽样）', () => {
+    const grid = makeGrid()
+    // 2025-06-07 00:15 实时 = -12.5
+    const x = grid.timePoints.indexOf('00:15')
+    const y = grid.dates.indexOf('2025-06-07')
+    const line = buildLine3DSeries(grid).find((l) => l.phase === 'real-time' && l.date === '2025-06-07')!
+    const vertex = line.segments.flat().find((p) => p[0] === x)!
+    expect(vertex[2]).toBe(-12.5)
+    const heat = buildHeatmap(grid, 'real-time')!
+    expect(heat.cells).toContainEqual([x, y, -12.5])
+    const evidence = buildDayEvidence(grid, '2025-06-07').find((c) => c.key === '00:15')!
+    expect(evidence.realTime).toBe('-12.5')
+  })
+})
