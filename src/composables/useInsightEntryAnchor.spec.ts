@@ -70,11 +70,25 @@ describe('useInsightEntryAnchor', () => {
     const { anchor, ctx, today } = await setup()
     await vi.waitFor(() => expect(ctx.businessWindow.value).toEqual({ start: '2000-01-03', end: '2000-01-03' }))
     expect(anchor.anchorNotice.value).toMatchObject({ requested: today, anchoredTo: '2000-01-03' })
-    // 扫描请求形状：公开分析 + [今日-365, 今日] 窗口
-    const request = fetchInsightCoverage.mock.calls[0][0] as { analysisId: string; context: { businessWindow: { start: string; end: string } } }
+    // 扫描请求形状：公开分析 + [今日-365, 今日] 窗口 + 只按云南实际源求交集（codex P2：预测/背景源不得参与候选）
+    const request = fetchInsightCoverage.mock.calls[0][0] as {
+      analysisId: string
+      filters: Record<string, unknown>
+      requiredSourceIds?: string[]
+      context: { businessWindow: { start: string; end: string } }
+    }
     expect(request.analysisId).toBe('supply.system-series')
     expect(request.context.businessWindow.end).toBe(today)
     expect(request.context.businessWindow.start < request.context.businessWindow.end).toBe(true)
+    expect(request.filters).toEqual({ view: 'series' })
+    const { getInsightAnalysis } = await import('shared/insight/analyses.mjs')
+    const { getInsightSource } = await import('shared/insight/sources.mjs')
+    const expected = (getInsightAnalysis('supply.system-series')?.sourceIds ?? []).filter((sourceId) => {
+      const source = getInsightSource(sourceId)
+      return source?.businessScope === 'yunnan' && source.variant === 'actual'
+    })
+    expect(request.requiredSourceIds).toEqual(expected)
+    expect(expected.length).toBeGreaterThan(0)
   })
 
   it('URL 带过 start/end：不请求不锚定', async () => {

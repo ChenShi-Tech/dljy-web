@@ -17,6 +17,8 @@
 import { onScopeDispose, ref, watch, type Ref } from 'vue'
 
 import { beijingToday } from 'shared/midlong/dates.mjs'
+import { getInsightAnalysis } from 'shared/insight/analyses.mjs'
+import { getInsightSource } from 'shared/insight/sources.mjs'
 import { fetchInsightCoverage } from '@/services/insight/insightClient'
 
 /** 锚定用的公开分析（见文件头说明；改这里要同步 dljy#3134 的说明与用例）。 */
@@ -60,6 +62,18 @@ function daysBefore(isoDate: string, days: number): string {
   return `${shifted.getUTCFullYear()}-${pad2(shifted.getUTCMonth() + 1)}-${pad2(shifted.getUTCDate())}`
 }
 
+/**
+ * 锚定扫描只按云南实际来源求交集（与供需页历史候选同口径，dljy#3134）：
+ * 该分析的来源集里还挂着南网背景与多条预测源，它们的覆盖更短更稀，
+ * 若一并求交集，任一预测源断档就会把候选拖空或把锚点拖旧——
+ * 主公开序列有更新数据时应锚到它。空数组时不下发该键（缺省=按分析全部来源）。
+ */
+const ANCHOR_REQUIRED_SOURCE_IDS = (getInsightAnalysis(ANCHOR_ANALYSIS_ID)?.sourceIds ?? [])
+  .filter((sourceId) => {
+    const source = getInsightSource(sourceId)
+    return source?.businessScope === 'yunnan' && source.variant === 'actual'
+  })
+
 export function useInsightEntryAnchor(ctx: AnchorContext, options?: { ready?: Ref<unknown> }): InsightEntryAnchor {
   const anchorNotice = ref<InsightAnchorNotice | null>(null)
 
@@ -98,7 +112,12 @@ export function useInsightEntryAnchor(ctx: AnchorContext, options?: { ready?: Re
       const controller = new AbortController()
       const context = { ...ctx.toQueryContext(), businessWindow: { start: daysBefore(today, ANCHOR_SCAN_DAYS), end: today } }
       fetchInsightCoverage(
-        { analysisId: ANCHOR_ANALYSIS_ID, context, filters: {} },
+        {
+          analysisId: ANCHOR_ANALYSIS_ID,
+          context,
+          filters: { view: 'series' },
+          ...(ANCHOR_REQUIRED_SOURCE_IDS.length ? { requiredSourceIds: ANCHOR_REQUIRED_SOURCE_IDS } : {}),
+        },
         { signal: controller.signal },
       ).then((result) => {
         const dates = result.candidates.dates ?? []
