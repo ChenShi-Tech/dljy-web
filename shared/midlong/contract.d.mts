@@ -23,16 +23,17 @@ export type AllocationCompleteness = 'COMPLETE' | 'PARTIAL' | 'NONE'
 export type AllocationDerivation = 'SOURCE_ROW' | 'SINGLE_MONTH_TERMS'
 export type EvidenceDocumentType =
   | 'ELECTRONIC_CONFIRMATION' | 'PAPER_CONTRACT' | 'TRADING_CENTER_EXPORT' | 'IMPORT_SOURCE_FILE' | 'SUPPLEMENT_SCAN' | 'OTHER'
-export type RevisionKind = 'INITIAL' | 'BASELINE' | 'CORRECTION'
+export type RevisionKind = 'INITIAL' | 'BASELINE' | 'CORRECTION' | 'ADJUSTMENT' | 'TRANSFER' | 'PARTIAL_TERMINATION'
 export type RevisionStatus = 'DRAFT' | 'CONFIRMED'
 export type ContractOrigin = 'MANUAL' | 'IMPORT' | 'ONBOARDING'
 export type ChangeType = 'CORRECTION'
 export type EventType =
-  | 'CREATED' | 'DRAFT_UPDATED' | 'IMPORTED' | 'ONBOARDED' | 'VERIFIED' | 'CORRECTED' | 'VOIDED' | 'EVIDENCE_ADDED' | 'ALIAS_LINKED'
+  | 'CREATED' | 'DRAFT_UPDATED' | 'IMPORTED' | 'ONBOARDED' | 'VERIFIED' | 'CORRECTED' | 'VOIDED' | 'EVIDENCE_ADDED' | 'ALIAS_LINKED' | 'ADJUSTED'
 export type MidlongErrorCode =
   | 'VALIDATION_FAILED' | 'SCOPE_DENIED' | 'NOT_FOUND' | 'VERSION_CONFLICT' | 'PREVIEW_STALE' | 'BUSINESS_KEY_CONFLICT'
   | 'CONFIRMED_WRITE_PROTECTED' | 'MANAGED_BY_MIDLONG' | 'INCOMPLETE_BASIS' | 'UNSUPPORTED_PRODUCT' | 'UNSUPPORTED_REGION'
   | 'IDEMPOTENCY_KEY_REQUIRED' | 'IDEMPOTENCY_KEY_REUSED' | 'EVIDENCE_UNAVAILABLE' | 'STORAGE_UNAVAILABLE' | 'MODULE_DISABLED'
+  | 'ADJUSTMENT_CHANNEL_REQUIRED' | 'ADJUSTABLE_BALANCE_EXCEEDED'
 
 export declare const MIDLONG_API_PREFIX: '/api/v1/midlong'
 export declare const MIDLONG_PILOT_REGIONS: readonly string[]
@@ -313,6 +314,8 @@ export interface MidlongContractDetail extends MidlongContractSummary {
   /** 框架协议下关联的合同（含已作废）；电量合同恒为空数组。 */
   linkedContracts: MidlongRelatedContract[]
   linkedTrades: { label: string; tradeCount: number; volume: string }
+  /** 分类标注当前值（build-midlong-spot-hedging 3.2/D3）：分类事实，不进版本与指纹；未标注键缺省。 */
+  labels?: { BUYER_CATEGORY?: string | null } | null
 }
 
 export interface MidlongContractStats {

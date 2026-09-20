@@ -72,11 +72,13 @@ export async function loadSettlementExposure(
     ltmEnergy += toNum(r.ltmEnergy)
     totalEnergy += toNum(r.totalEnergy)
   }
+  // HA-06：这里 rows 已是按日聚合的合成场景（exposureParams），0 缺省口径维持不变；
+  // 真实结算链（cockpitData/结算复核）走 notComputable 口径。
   const cov = hedgeCoverage({ contractedMwh: ltmEnergy, forecastMwh: totalEnergy })
-  const open = cov.openExposureMwh
+  const open = cov.notComputable ? 0 : (cov.openExposureMwh as number)
 
   return {
-    coverageRate: cov.coverageRate,
+    coverageRate: (cov.coverageRate ?? 0) as number,
     openExposureMwh: open,
     sellExposureMwh: open > 0 ? +open.toFixed(1) : 0,
     buyExposureMwh: open < 0 ? +Math.abs(open).toFixed(1) : 0,
