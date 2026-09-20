@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { navigation } from './navigation'
 import { getPageHelp, pageHelpRegistry } from './pageHelp'
 
@@ -52,7 +52,7 @@ describe('getPageHelp 查找', () => {
 describe('改名后的页面在各用户可见处名称一致（dljy#2988）', () => {
   // 菜单、帮助弹窗、AI 侧边栏、清单四处分别维护标题，改名只改一处会让同一屏出现两个名字。
   const cases = [
-    { key: 'ExposureBoard', path: '/zcqjy/exposure', title: '中长期与现货套保' },
+    { key: 'HedgeWorkbench', path: '/xhjy/hedge', title: '中长期与现货套保' },
     { key: 'PositionMonitor', path: '/zcqjy/zccljk', title: '持仓量监控（山西采集）' },
     { key: 'TradeCalendar', path: '/zcqjy/zjyap', title: '交易月历（山西·国网）' }
   ]
@@ -75,9 +75,11 @@ describe('改名后的页面在各用户可见处名称一致（dljy#2988）', (
     }
   })
 
-  it('敞口页 AI 侧边栏标签与菜单一致', () => {
-    const source = readFileSync(new URL('../views/ExposureBoardView.vue', import.meta.url), 'utf8')
-    expect(source).toContain("label: '中长期与现货套保'")
-    expect(source).not.toContain("label: '中长期敞口看板'")
+  it('旧敞口页已删除，工作台 AI 侧边栏标签与菜单一致（8.8/D14）', () => {
+    const exists = existsSync(new URL('../views/ExposureBoardView.vue', import.meta.url))
+    expect(exists, 'ExposureBoardView.vue 应已删除（8.1 已迁移 /xhjy/hedge）').toBe(false)
+    const workbench = readFileSync(new URL('../views/hedge/HedgeWorkbenchView.vue', import.meta.url), 'utf8')
+    expect(workbench).toContain('中长期与现货套保')
+    expect(workbench).not.toContain('中长期敞口看板')
   })
 })

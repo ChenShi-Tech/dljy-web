@@ -62,17 +62,18 @@ export const EVIDENCE_DOCUMENT_TYPES = Object.freeze([
 /** 可作为「确认真实义务」依据的资料类型（MC-03：有效电子确认单即可，无需另附纸质合同）。 */
 export const VERIFICATION_EVIDENCE_TYPES = Object.freeze(['ELECTRONIC_CONFIRMATION', 'PAPER_CONTRACT', 'TRADING_CENTER_EXPORT'])
 
-export const REVISION_KINDS = Object.freeze(['INITIAL', 'BASELINE', 'CORRECTION'])
+/** 合同版本类型：录入/纳管/更正（P1）+ 外部调整、转让、部分终止（P4 合同调整，MA-01 与录入更正区分）。 */
+export const REVISION_KINDS = Object.freeze(['INITIAL', 'BASELINE', 'CORRECTION', 'ADJUSTMENT', 'TRANSFER', 'PARTIAL_TERMINATION'])
 export const REVISION_STATUSES = Object.freeze(['DRAFT', 'CONFIRMED'])
 export const CONTRACT_ORIGINS = Object.freeze(['MANUAL', 'IMPORT', 'ONBOARDING'])
-/** P1 开放的经济变更类型。 */
+/** 录入更正接口开放的经济变更类型（只纠正录错，不承载外部业务变更）。 */
 export const CHANGE_TYPES = Object.freeze(['CORRECTION'])
-/** 属于 P4 的变更类型：P1 明确拒绝，不自动映射。 */
+/** 录入更正不受理、必须经合同调整资源（POST /api/v1/midlong/adjustments）登记的变更类型（P4 已交付，枚举与 ADJUSTMENT_TYPES 同源）。 */
 export const DEFERRED_CHANGE_TYPES = Object.freeze(['ADJUSTMENT', 'TRANSFER', 'PARTIAL_TERMINATION'])
 
 export const EVENT_TYPES = Object.freeze([
   'CREATED', 'DRAFT_UPDATED', 'IMPORTED', 'ONBOARDED', 'VERIFIED', 'CORRECTED', 'VOIDED',
-  'EVIDENCE_ADDED', 'ALIAS_LINKED',
+  'EVIDENCE_ADDED', 'ALIAS_LINKED', 'ADJUSTED',
 ])
 
 export const MIDLONG_ERROR_CODES = Object.freeze([
@@ -92,6 +93,8 @@ export const MIDLONG_ERROR_CODES = Object.freeze([
   'EVIDENCE_UNAVAILABLE',
   'STORAGE_UNAVAILABLE',
   'MODULE_DISABLED',
+  'ADJUSTMENT_CHANNEL_REQUIRED',
+  'ADJUSTABLE_BALANCE_EXCEEDED',
 ])
 
 /** 数值导入默认最多保留的小数位；更多位须用户确认后按四舍五入保存（原文另存）。 */
@@ -161,10 +164,14 @@ export const EVIDENCE_DOCUMENT_TYPE_LABELS = Object.freeze({
   SUPPLEMENT_SCAN: '补充资料',
   OTHER: '其他',
 })
-export const REVISION_KIND_LABELS = Object.freeze({ INITIAL: '初始录入', BASELINE: '存量纳管基线', CORRECTION: '录入更正' })
+export const REVISION_KIND_LABELS = Object.freeze({
+  INITIAL: '初始录入', BASELINE: '存量纳管基线', CORRECTION: '录入更正',
+  ADJUSTMENT: '外部调整', TRANSFER: '合同转让', PARTIAL_TERMINATION: '部分终止',
+})
 export const EVENT_TYPE_LABELS = Object.freeze({
   CREATED: '创建草稿', DRAFT_UPDATED: '修改草稿', IMPORTED: '文件导入', ONBOARDED: '存量纳管', VERIFIED: '核验确认',
   CORRECTED: '录入更正', VOIDED: '纠错作废', EVIDENCE_ADDED: '补充资料', ALIAS_LINKED: '关联外部编号',
+  ADJUSTED: '合同调整生效',
 })
 export const MIDLONG_ERROR_LABELS = Object.freeze({
   VALIDATION_FAILED: '资料校验未通过',
@@ -183,6 +190,8 @@ export const MIDLONG_ERROR_LABELS = Object.freeze({
   EVIDENCE_UNAVAILABLE: '资料文件读取失败',
   STORAGE_UNAVAILABLE: '合同存储暂不可用',
   MODULE_DISABLED: '中长期售电模块已暂停使用（已确认合同仍受保护）',
+  ADJUSTMENT_CHANNEL_REQUIRED: '该变更类型须走合同调整接口，录入更正不受理',
+  ADJUSTABLE_BALANCE_EXCEEDED: '调整量超过该交割片段的可调整余额',
 })
 
 // ── 旧合同底账兼容投影 ─────────────────────────────────────────────────────────

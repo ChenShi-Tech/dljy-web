@@ -46,8 +46,10 @@ export function verificationTag(progress: PlanProgress): { label: string; type: 
 }
 
 export function proposalStatusTag(status: ProposalStatus): { label: string; type: TagType } {
+  // P4 起预成交/确认成交/外部撤单进入状态机（#3013）：预成交仍是过程态、确认成交用成功色、外部撤单用警示色。
   const type: Record<ProposalStatus, TagType> = {
-    DRAFT: 'info', EXECUTABLE: 'primary', SUBMITTED: 'warning', AWAITING_RESULT: 'warning', CANCELLED: 'info', CLOSED: 'info',
+    DRAFT: 'info', EXECUTABLE: 'primary', SUBMITTED: 'warning', AWAITING_RESULT: 'warning',
+    PRE_CLEARED: 'warning', CLEARED: 'success', WITHDRAWN: 'danger', CANCELLED: 'info', CLOSED: 'info',
   }
   return { label: PROPOSAL_STATUS_LABELS[status] ?? status, type: type[status] ?? 'info' }
 }

@@ -119,11 +119,11 @@ describe('直链守卫与切换路由', () => {
 describe('中长期菜单口径收口（dljy#2988）', () => {
   const groupChildren = (title: string) => navigation.find((g) => g.title === title)?.children?.map((c) => `${c.path}|${c.title}`) ?? []
 
-  it('敞口看板改名「中长期与现货套保」并移入现货交易组，路由路径不变', () => {
+  it('敞口看板改名「中长期与现货套保」，8.1 起路由迁入 /xhjy/hedge（旧链接重定向）', () => {
     const spot = groupChildren('现货交易')
     const midlong = groupChildren('中长期交易')
-    expect(spot).toContain('/zcqjy/exposure|中长期与现货套保')
-    expect(midlong.some((x) => x.startsWith('/zcqjy/exposure|'))).toBe(false)
+    expect(spot).toContain('/xhjy/hedge|中长期与现货套保')
+    expect(midlong.some((x) => x.includes('套保'))).toBe(false)
     expect(midlong.some((x) => x.includes('敞口'))).toBe(false)
   })
 

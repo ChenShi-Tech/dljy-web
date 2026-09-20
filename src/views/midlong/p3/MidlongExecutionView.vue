@@ -1,10 +1,11 @@
 <script setup lang="ts">
-// 中长期交易执行（/zcqjy/execution，dljy#2973，MT-01/MT-02）。
+// 中长期交易执行（/zcqjy/execution，dljy#2973，MT-01/MT-02；P4 执行确认 dljy#3014，MT-03..06）。
 // - 交易日历（默认标签）：只显示公告明确给出的申报开始、申报截止、确认时间；时间未知的公告列入「待补」，
 //   不套默认时刻、不借其他地区或历史日期生成提醒。
 // - 公告登记：人工登记与更正（原版保留），待核对参数、引用方案是否需要按新版本重新核对。
 // - 方案执行：导出申报材料（只读，不等于提交）、登记外部提交与回执（只记事实，不宣称受理、不形成持仓）、标记待结果、关闭。
-// - 本系统不自动登录或提交外部交易平台；预成交、确认成交、撤单属于后续阶段，本页不出现这些操作。
+// - 执行确认（P4）：外部成交确认单列表与登记；详情含版本链、冲正、关联合同、占用转换与计划偏差；修订/撤销冲正/关联操作。
+// - 本系统不自动登录或提交外部交易平台；登记只记录事实，不显示「平台已受理」。
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
@@ -13,24 +14,29 @@ import MidlongNotice from '@/components/midlong/MidlongNotice.vue'
 import ProposalDetailDrawer from '@/components/midlong/p3/ProposalDetailDrawer.vue'
 import WindowDetailDrawer from '@/components/midlong/p3/WindowDetailDrawer.vue'
 import WindowFormDialog from '@/components/midlong/p3/WindowFormDialog.vue'
+import ConfirmationFormDialog from '@/components/midlong/p4/ConfirmationFormDialog.vue'
+import ConfirmationDetailDrawer from '@/components/midlong/p4/ConfirmationDetailDrawer.vue'
 import { selectedCompanyId } from '@/services/company/companyContext'
 import { currentRegion } from '@/services/region/regionContext'
 import { CompanyNotSelectedError, fetchCapabilities, fetchSubjects, midlongFailureOf } from '@/services/midlong/midlongApi'
 import { fetchProposals, fetchWindowCalendar, fetchWindows } from '@/services/midlong/midlongP3Api'
+import { fetchExecutions, p4ModuleOn } from '@/services/midlong/midlongP4Api'
 import { captureScope } from '@/services/midlong/midlongP3Scope'
 import { createLoadGuard, fmtQuantity } from '@/services/midlong/midlongFormat'
 import { beijingDateTime, groupEventsByBeijingDate, proposalStatusTag, receiptTag } from '@/services/midlong/midlongP3Format'
+import { executionResultTag } from '@/services/midlong/midlongP4Format'
 import {
   PLANNING_NOTICES, PROPOSAL_STATUS_LABELS,
   type ProposalStatus, type TradeProposalDetail, type TradingWindowDetail, type TradingWindowListRow, type WindowCalendarReport,
 } from '@/services/midlong/midlongP3Types'
+import { EXECUTION_RESULT_STATUSES, EXECUTION_RESULT_STATUS_LABELS, EXECUTION_NOTICES, type ExecutionConfirmationSummaryRow } from '@/services/midlong/midlongP4Types'
 import { beijingToday, monthsBetween, type MidlongCapabilities, type MidlongSubject } from '@/services/midlong/midlongTypes'
 
 const route = useRoute()
 const router = useRouter()
 
 type LoadState = 'loading' | 'ready' | 'no-company' | 'unsupported' | 'disabled' | 'module-off' | 'denied' | 'failed'
-/** 页面级状态只管能力与权限；三个标签页各自加载、各自报错，一个失败不清空其他标签已加载的数据。 */
+/** 页面级状态只管能力与权限；各标签页各自加载、各自报错，一个失败不清空其他标签已加载的数据。 */
 const state = ref<LoadState>('loading')
 const failureText = ref('')
 const capabilities = ref<MidlongCapabilities | null>(null)
@@ -47,25 +53,40 @@ const proposalTotal = ref(0)
 const proposalsLoading = ref(false)
 const proposalsError = ref('')
 const subjects = ref<MidlongSubject[]>([])
+// P4 执行确认：确认单列表（executions 能力未开放时标签整体不渲染、接口不请求）。
+const executionsEnabled = ref(false)
+const confirmations = ref<ExecutionConfirmationSummaryRow[]>([])
+const confirmationTotal = ref(0)
+const confirmationsLoading = ref(false)
+const confirmationsError = ref('')
+/** 登记确认单对话框的方案候选（执行链路方案；与公告表单的主体候选同策略：打开时才加载）。 */
+const proposalCandidates = ref<TradeProposalDetail[]>([])
 
 const q = (key: string) => (typeof route.query[key] === 'string' ? (route.query[key] as string) : '')
-const TABS = ['calendar', 'windows', 'proposals'] as const
+const TABS = ['calendar', 'windows', 'proposals', 'confirmations'] as const
 const tab = ref<(typeof TABS)[number]>((TABS as readonly string[]).includes(q('tab')) ? (q('tab') as (typeof TABS)[number]) : 'calendar')
 const thisMonth = beijingToday().slice(0, 7)
 const defaultRange = (): string[] => [thisMonth, monthsBetween(thisMonth, `${Number(thisMonth.slice(0, 4)) + 1}-12`)[2]]
 const filters = reactive({
   monthRange: (q('fromMonth') && q('toMonth') ? [q('fromMonth'), q('toMonth')] : defaultRange()) as string[], status: q('status') as ProposalStatus | '',
   windowPage: Math.max(1, Number(q('windowPage')) || 1), proposalPage: Math.max(1, Number(q('proposalPage')) || 1),
+  // 执行确认标签：结果状态 + 只看待核对；pendingReview 只以 true 进入（false 等于不筛，语义没增量）。
+  confirmationStatus: q('confirmationStatus') as ExecutionConfirmationSummaryRow['resultStatus'] | '',
+  pendingReviewOnly: q('pendingReview') === 'true',
+  confirmationPage: Math.max(1, Number(q('confirmationPage')) || 1),
 })
 // 方案标签的筛选条件（不含页码）变化就回到第一页，不论入口是查询按钮还是改完条件直接切换标签。
 const proposalsFilterKey = () => JSON.stringify([filters.status])
 let lastProposalsFilterKey = proposalsFilterKey()
+const confirmationsFilterKey = () => JSON.stringify([filters.confirmationStatus, filters.pendingReviewOnly])
+let lastConfirmationsFilterKey = confirmationsFilterKey()
 
 const canWrite = computed(() => Boolean(capabilities.value?.canWrite))
 const pageGuard = createLoadGuard()
 const calendarGuard = createLoadGuard()
 const windowsGuard = createLoadGuard()
 const proposalsGuard = createLoadGuard()
+const confirmationsGuard = createLoadGuard()
 const scopeKey = () => `${selectedCompanyId.value}|${currentRegion.value.id}`
 let loadedScope = ''
 
@@ -131,9 +152,36 @@ async function loadProposals() {
   }
 }
 
+async function loadConfirmations() {
+  if (confirmationsFilterKey() !== lastConfirmationsFilterKey) filters.confirmationPage = 1
+  lastConfirmationsFilterKey = confirmationsFilterKey()
+  const key = `${scopeKey()}|${confirmationsFilterKey()}|${filters.confirmationPage}`
+  const token = confirmationsGuard.begin(key)
+  confirmationsLoading.value = true
+  confirmationsError.value = ''
+  try {
+    const page = await fetchExecutions({
+      page: filters.confirmationPage, pageSize: PAGE_SIZE,
+      resultStatus: filters.confirmationStatus || undefined,
+      pendingReview: filters.pendingReviewOnly ? true : undefined,
+    })
+    if (!confirmationsGuard.isCurrent(token, key)) return
+    confirmations.value = page.rows
+    confirmationTotal.value = page.total
+  } catch (error) {
+    if (!confirmationsGuard.isCurrent(token, key)) return
+    confirmations.value = []
+    confirmationTotal.value = 0
+    confirmationsError.value = midlongFailureOf(error).message
+  } finally {
+    if (confirmationsGuard.isCurrent(token, key)) confirmationsLoading.value = false
+  }
+}
+
 function loadActiveTab() {
   if (tab.value === 'windows') return loadWindows()
   if (tab.value === 'proposals') return loadProposals()
+  if (tab.value === 'confirmations' && executionsEnabled.value) return loadConfirmations()
   return loadCalendar()
 }
 
@@ -142,7 +190,10 @@ async function load() {
   const token = pageGuard.begin(key)
   // 换了公司或地区：三个标签的数据与交易主体都属于原范围，全部清空，切到其他标签时不短暂显示原公司记录
   // （错误与加载状态由各标签取数开始时重置；能力在下面重新读取，读取期间页面整体处于加载态）。
-  if (key !== loadedScope) { calendar.value = null; windows.value = []; windowTotal.value = 0; proposals.value = []; proposalTotal.value = 0; subjects.value = [] }
+  if (key !== loadedScope) {
+    calendar.value = null; windows.value = []; windowTotal.value = 0; proposals.value = []; proposalTotal.value = 0; subjects.value = []
+    confirmations.value = []; confirmationTotal.value = 0; proposalCandidates.value = []
+  }
   loadedScope = key
   state.value = 'loading'
   try {
@@ -152,6 +203,9 @@ async function load() {
     if (!caps.enabled) { state.value = 'disabled'; return }
     if (!caps.regionSupported) { state.value = 'unsupported'; return }
     if (!caps.modules.execution) { state.value = 'module-off'; return }
+    // P4 执行确认能力（executions）：关闭时「执行确认」标签不渲染、列表接口不请求（更正的 404 语义由能力开关表达）。
+    executionsEnabled.value = p4ModuleOn(caps, 'executions')
+    if (tab.value === 'confirmations' && !executionsEnabled.value) tab.value = 'calendar'
     state.value = 'ready'
   } catch (error) {
     if (!pageGuard.isCurrent(token, scopeKey())) return
@@ -164,14 +218,18 @@ async function load() {
   await loadActiveTab()
 }
 
-/** 同步路由。方案条件变化先回到第一页再写路由：否则 URL 留着旧页码，刷新或分享时又按旧页码初始化。 */
+/** 同步路由。方案/确认单条件变化先回到第一页再写路由：否则 URL 留着旧页码，刷新或分享时又按旧页码初始化。 */
 function syncRoute() {
   if (proposalsFilterKey() !== lastProposalsFilterKey) filters.proposalPage = 1
+  if (confirmationsFilterKey() !== lastConfirmationsFilterKey) filters.confirmationPage = 1
   const next: Record<string, string> = { tab: tab.value }
   if (filters.monthRange.length === 2) { next.fromMonth = filters.monthRange[0]; next.toMonth = filters.monthRange[1] }
   if (filters.status) next.status = filters.status
   if (filters.windowPage > 1) next.windowPage = String(filters.windowPage)
   if (filters.proposalPage > 1) next.proposalPage = String(filters.proposalPage)
+  if (filters.confirmationStatus) next.confirmationStatus = filters.confirmationStatus
+  if (filters.pendingReviewOnly) next.pendingReview = 'true'
+  if (filters.confirmationPage > 1) next.confirmationPage = String(filters.confirmationPage)
   void router.replace({ query: next })
 }
 
@@ -186,9 +244,10 @@ function search() {
   apply()
 }
 
-function changePage(target: 'windows' | 'proposals', page: number) {
+function changePage(target: 'windows' | 'proposals' | 'confirmations', page: number) {
   if (target === 'windows') filters.windowPage = page
-  else filters.proposalPage = page
+  else if (target === 'proposals') filters.proposalPage = page
+  else filters.confirmationPage = page
   apply()
 }
 
@@ -199,8 +258,11 @@ watch([selectedCompanyId, () => currentRegion.value.id], () => {
   windowDrawer.open = false
   proposalDrawer.open = false
   windowDialog.open = false
-  Object.assign(filters, { windowPage: 1, proposalPage: 1 })
+  confirmationDrawer.open = false
+  confirmationDialog.value = false
+  Object.assign(filters, { windowPage: 1, proposalPage: 1, confirmationPage: 1 })
   lastProposalsFilterKey = proposalsFilterKey()
+  lastConfirmationsFilterKey = confirmationsFilterKey()
   syncRoute()
   void load()
 })
@@ -249,13 +311,54 @@ async function onWindowSaved() {
 }
 
 const latestReceipt = (p: TradeProposalDetail) => p.submissions.at(-1) ?? null
+
+// ── 执行确认（P4）：登记对话框与详情抽屉 ──────────────────────────────────────
+const confirmationDialog = ref(false)
+const confirmationDrawer = reactive({ open: false, confirmationId: null as number | null })
+const candidatesLoading = ref(false)
+
+/**
+ * 打开确认单登记表单时才加载主体与执行链路方案候选；加载失败只提示，主体候选为空时仍可登记（后端会校验主体）。
+ * 加载期间切换了公司或地区就放弃打开：候选属于原公司。
+ */
+async function openConfirmationForm() {
+  if (candidatesLoading.value) return
+  const scope = captureScope()
+  let subjectRows: MidlongSubject[] = []
+  let proposalRows: TradeProposalDetail[] = []
+  candidatesLoading.value = true
+  try {
+    const [rows, proposalPage] = await Promise.all([fetchSubjects(), fetchProposals({ stage: 'execution', pageSize: 100 })])
+    subjectRows = rows
+    proposalRows = proposalPage.rows
+  } catch (error) {
+    if (scope.isCurrent()) ElMessage.warning(`候选加载失败：${midlongFailureOf(error).message}；可稍后重试或直接登记`)
+  } finally {
+    candidatesLoading.value = false
+  }
+  if (!scope.isCurrent()) return
+  subjects.value = subjectRows
+  proposalCandidates.value = proposalRows
+  confirmationDialog.value = true
+}
+function openConfirmation(id: number) {
+  Object.assign(confirmationDrawer, { open: true, confirmationId: id })
+}
+function openConfirmationProposal(proposalId: number) {
+  confirmationDrawer.open = false
+  openProposal(proposalId)
+}
+/** 确认单登记/修订/冲正/关联后：刷新当前标签（确认单与方案列表都受影响；日历与公告无关）。 */
+async function onConfirmationSaved() {
+  await loadActiveTab()
+}
 </script>
 
 <template>
   <div class="ml-page">
     <div class="ml-head">
       <h2 class="ml-title">中长期交易执行</h2>
-      <span class="ml-sub">交易日历 · 公告登记 · 申报材料与外部提交登记（不自动操作外部平台）</span>
+      <span class="ml-sub">交易日历 · 公告登记 · 申报材料与外部提交登记 · 成交确认单（不自动操作外部平台）</span>
     </div>
     <CompanyScopeBar />
 
@@ -368,6 +471,52 @@ const latestReceipt = (p: TradeProposalDetail) => p.submissions.at(-1) ?? null
             :current-page="filters.proposalPage" @current-change="(p: number) => changePage('proposals', p)"
           />
         </el-tab-pane>
+
+        <el-tab-pane v-if="executionsEnabled" label="执行确认" name="confirmations">
+          <div class="ml-filters">
+            <el-select v-model="filters.confirmationStatus" placeholder="结果状态" clearable style="width: 150px" data-test="confirmation-status-filter">
+              <el-option v-for="s in EXECUTION_RESULT_STATUSES" :key="s" :label="EXECUTION_RESULT_STATUS_LABELS[s]" :value="s" />
+            </el-select>
+            <el-checkbox v-model="filters.pendingReviewOnly" data-test="pending-review-filter">只看待核对</el-checkbox>
+            <el-button type="primary" @click="search">查询</el-button>
+            <el-button v-if="canWrite" type="primary" :loading="candidatesLoading" data-test="register-confirmation" @click="openConfirmationForm">登记确认单</el-button>
+          </div>
+          <MidlongNotice tone="info" title="执行确认口径（登记事实）">
+            预成交只保留记录（{{ EXECUTION_NOTICES.preClearedNotFormal }}）；{{ EXECUTION_NOTICES.clearedAtomic }}
+            登记不等于平台已受理；来源不支持的产品停在待核对，不自动映射。
+          </MidlongNotice>
+          <MidlongNotice v-if="confirmationsError" tone="danger" title="确认单列表加载失败" data-test="confirmations-error">
+            {{ confirmationsError }} <el-button link type="primary" @click="loadConfirmations">重试</el-button>
+          </MidlongNotice>
+          <el-table :data="confirmations" border size="small" @row-click="(row: ExecutionConfirmationSummaryRow) => openConfirmation(row.id)">
+            <el-table-column label="确认单" width="80"><template #default="{ row }">#{{ row.id }}</template></el-table-column>
+            <el-table-column label="结果状态" width="130">
+              <template #default="{ row }">
+                <el-tag size="small" :type="executionResultTag(row.resultStatus).type">{{ executionResultTag(row.resultStatus).label }}</el-tag>
+                <el-tag v-if="row.pendingReview" size="small" type="danger" effect="plain">待核对</el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column label="来源 / 确认编号" min-width="200"><template #default="{ row }"><span class="ml-mono">{{ row.sourceNamespace }} / {{ row.confirmationNo }}</span></template></el-table-column>
+            <el-table-column label="交易主体" min-width="110"><template #default="{ row }">{{ row.subjectName ?? `#${row.subjectId}` }}</template></el-table-column>
+            <el-table-column label="总量(MWh)" width="110" align="right"><template #default="{ row }">{{ fmtQuantity(row.totalQuantity) }}</template></el-table-column>
+            <el-table-column label="价格" width="90"><template #default="{ row }">{{ row.priceKnown ? '齐全' : '未知' }}</template></el-table-column>
+            <el-table-column label="已转换占用(MWh)" width="130" align="right"><template #default="{ row }">{{ fmtQuantity(row.convertedQuantity) }}</template></el-table-column>
+            <el-table-column label="关联合同" width="120">
+              <template #default="{ row }">
+                <template v-if="row.linkedContracts.length">
+                  <span v-for="l in row.linkedContracts" :key="l.contractId">#{{ l.contractId }}{{ l.linkKind === 'EXISTING_LINKED' ? '（关联）' : '' }}</span>
+                </template>
+                <span v-else class="ml-muted">未关联</span>
+              </template>
+            </el-table-column>
+            <el-table-column label="方案" width="90"><template #default="{ row }">{{ row.proposalId ? `#${row.proposalId}` : '—' }}</template></el-table-column>
+            <template #empty>尚未登记外部成交确认单。</template>
+          </el-table>
+          <el-pagination
+            v-if="confirmationTotal > PAGE_SIZE" class="ml-pagination" layout="total, prev, pager, next" :total="confirmationTotal" :page-size="PAGE_SIZE"
+            :current-page="filters.confirmationPage" @current-change="(p: number) => changePage('confirmations', p)"
+          />
+        </el-tab-pane>
       </el-tabs>
     </template>
 
@@ -377,6 +526,11 @@ const latestReceipt = (p: TradeProposalDetail) => p.submissions.at(-1) ?? null
       @correct="(w: TradingWindowDetail) => openWindowForm(w)" @open-proposal="openProposal"
     />
     <ProposalDetailDrawer v-model="proposalDrawer.open" :proposal-id="proposalDrawer.proposalId" :can-write="canWrite" mode="execution" @changed="load" />
+    <ConfirmationFormDialog v-model="confirmationDialog" :subjects="subjects" :proposals="proposalCandidates" @saved="onConfirmationSaved" />
+    <ConfirmationDetailDrawer
+      v-model="confirmationDrawer.open" :confirmation-id="confirmationDrawer.confirmationId" :can-write="canWrite"
+      :subjects="subjects" :proposals="proposalCandidates" @changed="loadActiveTab" @open-proposal="openConfirmationProposal"
+    />
   </div>
 </template>
 

@@ -1,25 +1,29 @@
 <script setup lang="ts">
-// 中长期售电合同详情（/zcqjy/contracts/:id，dljy#2939，MC-03..06 / MA-01/04）。
+// 中长期售电合同详情（/zcqjy/contracts/:id，dljy#2939，MC-03..06 / MA-01/04；P4 合同调整区块 dljy#3014，MA-01..05）。
 // 原始量与当前有效量、月度分解、版本历史、资料、事件分区展示；操作按确认状态开放：
 // 草稿/待核对 → 修改、补资料、核验确认；已确认 → 录入更正（生成新版本）、整笔纠错作废；不提供物理删除。
+// P4 起：已确认合同的「外部调整/转让/部分终止」在「合同调整」区块登记（与录入更正分开），
+// 版本历史里更正与调整产生的版本同一条时间线、都有「影响对比」。
 // 所有有状态写入带 rowVersion：他人先改过时提示刷新核对差异，不静默覆盖。
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
+import { currentRegion } from '@/services/region/regionContext'
+import {
+  CompanyNotSelectedError, addEvidence, correctContract, fetchCapabilities, fetchContract, fetchEvidenceContent, fetchSubjects,
+  linkAlias, midlongFailureOf, putContractLabels, verifyContract, voidContract, type EvidenceUpload, type MidlongFailure,
+} from '@/services/midlong/midlongApi'
 import CompanyScopeBar from '@/components/company/CompanyScopeBar.vue'
 import MidlongNotice from '@/components/midlong/MidlongNotice.vue'
 import MidlongContractFormDialog from '@/components/midlong/MidlongContractFormDialog.vue'
 import MidlongEconomicsEditor from '@/components/midlong/MidlongEconomicsEditor.vue'
 import MidlongContractCurvesPanel from '@/components/midlong/p2/MidlongContractCurvesPanel.vue'
 import MidlongContractStationsPanel from '@/components/midlong/p2/MidlongContractStationsPanel.vue'
+import MidlongContractAdjustmentsPanel from '@/components/midlong/p4/MidlongContractAdjustmentsPanel.vue'
 import { selectedCompanyId } from '@/services/company/companyContext'
 import { fetchStations, type CompanyStation } from '@/services/company/companyApi'
-import { currentRegion } from '@/services/region/regionContext'
-import {
-  CompanyNotSelectedError, addEvidence, correctContract, fetchCapabilities, fetchContract, fetchEvidenceContent, fetchSubjects,
-  linkAlias, midlongFailureOf, verifyContract, voidContract, type EvidenceUpload, type MidlongFailure,
-} from '@/services/midlong/midlongApi'
 import { p2ModuleOn } from '@/services/midlong/midlongP2Api'
+import { p4ModuleOn } from '@/services/midlong/midlongP4Api'
 import {
   DELIVERY_CYCLE_LABELS, DOCUMENT_KIND_LABELS, ENERGY_ATTRIBUTE_LABELS, EVENT_TYPE_LABELS, EVIDENCE_BASIS_LABELS,
   EVIDENCE_DOCUMENT_TYPES, EVIDENCE_DOCUMENT_TYPE_LABELS, MARKET_SCOPE_LABELS, PRICE_COMPONENT_LABELS, PRICE_TYPE_LABELS,
@@ -96,6 +100,10 @@ const releasedAliases = computed(() => (detail.value?.aliases ?? []).filter((a) 
 // P2 分时分解与场站分配（dljy#2971）：能力开关打开且是电量合同时才出现，关闭时不调用对应接口。
 const showCurves = computed(() => p2ModuleOn(capabilities.value, 'curves') && detail.value?.documentKind === 'OBLIGATION')
 const showStations = computed(() => p2ModuleOn(capabilities.value, 'stationAllocations') && detail.value?.documentKind === 'OBLIGATION')
+// P4 合同调整区块（dljy#3014）：adjustments 能力打开即出现（任何确认状态都可看历史，登记入口只对已确认合同开放）。
+const showAdjustments = computed(() => p4ModuleOn(capabilities.value, 'adjustments'))
+const adjustmentsPanel = ref<InstanceType<typeof MidlongContractAdjustmentsPanel> | null>(null)
+const openRevisionImpact = (revisionNo: number) => { adjustmentsPanel.value?.openRevisionImpact(revisionNo) }
 const stationOptions = computed(() => stations.value.map((s) => ({ id: s.id, name: s.name ?? `场站 ${s.id}` })))
 const evidenceById = computed(() => new Map((detail.value?.evidence ?? []).map((e) => [e.id, e])))
 
@@ -197,6 +205,54 @@ function submitAlias() {
   void runAction('alias', () => linkAlias(d.contractId, { expectedRowVersion: d.rowVersion, ...aliasForm }), '已关联外部编号')
 }
 
+// 购方类别标注（build-midlong-spot-hedging 3.3/D3）：分类事实，不进版本与指纹。
+const buyerCategoryForm = reactive<{ value: string; rowVersion: number | null }>({ value: 'GRID_AGENCY', rowVersion: null })
+const buyerCategoryVisible = ref(false)
+const buyerCategorySaving = ref(false)
+const BUYER_CATEGORY_OPTIONS = [
+  { value: 'GRID_AGENCY', label: '电网代理购电' },
+  { value: 'PRIORITY_GENERATION', label: '优先发电计划' },
+  { value: 'RETAILER', label: '售电公司' },
+  { value: 'END_USER', label: '电力用户' },
+  { value: 'INTER_PROVINCIAL_BUYER', label: '省外购方' },
+  { value: 'OTHER', label: '其他' },
+]
+function buyerCategoryLabel(value: string) {
+  return BUYER_CATEGORY_OPTIONS.find((o) => o.value === value)?.label ?? value
+}
+function openBuyerCategory() {
+  const d = detail.value
+  if (!d) return
+  buyerCategoryForm.value = d.labels?.BUYER_CATEGORY ?? 'GRID_AGENCY'
+  // 标注行的 rowVersion 与合同行版本无关：重开对话框不校验直接写（后端省略即直写）；
+  // 保存成功后记住返回的 rowVersion，同一会话内的后续提交带它做乐观校验。
+  buyerCategoryForm.rowVersion = null
+  buyerCategoryVisible.value = true
+}
+async function submitBuyerCategory() {
+  const d = detail.value
+  if (!d || buyerCategorySaving.value) return
+  buyerCategorySaving.value = true
+  try {
+    const payload = await putContractLabels(d.contractId, {
+      dimension: 'BUYER_CATEGORY',
+      value: buyerCategoryForm.value === '' ? null : buyerCategoryForm.value,
+      rowVersion: buyerCategoryForm.rowVersion,
+    })
+    ElMessage.success('购方类别已保存（不产生合同版本）')
+    buyerCategoryVisible.value = false
+    buyerCategoryForm.rowVersion = payload?.rowVersion ?? null
+    await load()
+  } catch (err) {
+    const failure: MidlongFailure = midlongFailureOf(err)
+    if (failure.status === 409) ElMessage.error('标注已被他人更新，请刷新后核对')
+    else if (failure.status === 403) ElMessage.error('当前账号无公司写权限，无法修改标注')
+    else ElMessage.error(failure.message || '保存失败')
+  } finally {
+    buyerCategorySaving.value = false
+  }
+}
+
 // 补充资料
 const evidenceForm = reactive({ documentType: 'ELECTRONIC_CONFIRMATION' as EvidenceUpload['documentType'], note: '', file: null as File | null })
 const uploadableTypes = EVIDENCE_DOCUMENT_TYPES.filter((t) => t !== 'IMPORT_SOURCE_FILE') as EvidenceUpload['documentType'][]
@@ -267,6 +323,10 @@ const missingBasis = computed(() => (actionError.value?.errorCode === 'INCOMPLET
             <el-tag :type="progressTag(detail.deliveryProgress).type" effect="plain">{{ progressTag(detail.deliveryProgress).label }}</el-tag>
             <el-tag effect="plain">版本 {{ detail.currentRevisionNo }}</el-tag>
             <el-tag v-if="isTestData" type="warning" effect="plain">测试数据</el-tag>
+            <el-tag v-if="detail.labels?.BUYER_CATEGORY" type="info" effect="plain" data-test="buyer-category-tag">
+              购方：{{ buyerCategoryLabel(detail.labels.BUYER_CATEGORY) }}
+            </el-tag>
+            <el-tag v-else type="info" effect="plain" data-test="buyer-category-unclassified">购方：未分类</el-tag>
           </div>
         </div>
         <div v-if="canWrite" class="ml-actions">
@@ -278,6 +338,7 @@ const missingBasis = computed(() => (actionError.value?.errorCode === 'INCOMPLET
           <template v-if="status !== 'VOIDED'">
             <el-button @click="openEvidence">补充资料</el-button>
             <el-button @click="openAlias">关联外部编号</el-button>
+            <el-button data-test="buyer-category-edit" @click="openBuyerCategory">标注购方类别</el-button>
             <el-button type="danger" plain @click="openVoid">{{ status === 'CONFIRMED' ? '整笔纠错作废' : '作废草稿' }}</el-button>
           </template>
         </div>
@@ -365,6 +426,10 @@ const missingBasis = computed(() => (actionError.value?.errorCode === 'INCOMPLET
       <!-- 核验、更正、作废等操作都会让 rowVersion 前进：面板据此重新取概览，否则仍显示旧版本状态、提交旧的 expectedRevisionNo。 -->
       <MidlongContractCurvesPanel v-if="showCurves" :contract-id="detail.contractId" :row-version="detail.rowVersion" :can-write="canWrite" :evidence="detail.evidence" />
       <MidlongContractStationsPanel v-if="showStations" :contract-id="detail.contractId" :row-version="detail.rowVersion" :can-write="canWrite" :evidence="detail.evidence" :stations="stationOptions" />
+      <MidlongContractAdjustmentsPanel
+        v-if="showAdjustments" ref="adjustmentsPanel" :contract-id="detail.contractId" :contract-label="detail.contractName"
+        :row-version="detail.rowVersion" :can-write="canWrite" :confirmation-status="detail.confirmationStatus" @changed="load"
+      />
 
       <div class="ml-panel">
         <h3>版本历史（{{ detail.revisions.length }}）</h3>
@@ -378,8 +443,13 @@ const missingBasis = computed(() => (actionError.value?.errorCode === 'INCOMPLET
                 <span class="ml-muted">录入 {{ rev.recordedBy ?? '—' }}<template v-if="rev.confirmedAt"> · 确认 {{ rev.confirmedBy }} {{ new Date(rev.confirmedAt).toLocaleString('zh-CN') }}</template></span>
               </div>
               <div>电量 {{ fmtQuantity(rev.totalQuantity) }} MWh · 售电价 {{ rev.priceStatus === 'KNOWN' ? `${fmtPrice(rev.sellerPrice)} 元/MWh` : '待核对' }} · 交割期 {{ rev.deliveryStart ?? '—' }} ~ {{ rev.deliveryEnd ?? '—' }} · 分解 {{ rev.allocations.length }} 行</div>
-              <div v-if="rev.changeReason">更正原因：{{ rev.changeReason }}<template v-if="rev.affectedMonths.length">；受影响月份 {{ rev.affectedMonths.join('、') }}</template></div>
+              <div v-if="rev.changeReason">{{ rev.revisionKind === 'CORRECTION' ? '更正原因' : '变更原因' }}：{{ rev.changeReason }}<template v-if="rev.affectedMonths.length">；受影响月份 {{ rev.affectedMonths.join('、') }}</template></div>
               <div v-if="rev.evidenceIds.length" class="ml-muted">依据：{{ rev.evidenceIds.map((id) => evidenceById.get(id)?.originalFileName ?? `#${id}`).join('、') }}</div>
+              <!-- MA-05：更正与调整产生的变更版本同一条时间线，都可看变更前后快照（初始/基线版本没有「变更前」）。 -->
+              <el-button
+                v-if="showAdjustments && rev.supersedesRevisionNo !== null" link type="primary" size="small"
+                :data-test="`revision-impact-${rev.revisionNo}`" @click.stop="openRevisionImpact(rev.revisionNo)"
+              >影响对比（变更前后快照）</el-button>
             </div>
           </el-timeline-item>
         </el-timeline>
@@ -524,7 +594,17 @@ const missingBasis = computed(() => (actionError.value?.errorCode === 'INCOMPLET
         <el-button type="primary" :loading="busy" :disabled="!evidenceForm.file" @click="submitEvidence">上传</el-button>
       </template>
     </el-dialog>
-  </div>
+      <el-dialog v-model="buyerCategoryVisible" title="标注购方类别" width="420px" data-test="buyer-category-dialog">
+      <el-select v-model="buyerCategoryForm.value" data-test="buyer-category-select" style="width: 100%">
+        <el-option v-for="o in BUYER_CATEGORY_OPTIONS" :key="o.value" :value="o.value" :label="o.label" />
+      </el-select>
+      <p class="bc-note">分类事实：不产生合同版本、不改变指纹；清除选择即回到「未分类」。保存需公司写权限。</p>
+      <template #footer>
+        <el-button @click="buyerCategoryVisible = false">取消</el-button>
+        <el-button type="primary" :loading="buyerCategorySaving" data-test="buyer-category-save" @click="submitBuyerCategory">保存</el-button>
+      </template>
+    </el-dialog>
+</div>
 </template>
 
 <style scoped>
