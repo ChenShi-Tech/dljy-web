@@ -6,8 +6,11 @@
 //   ③ 空态按 availability.reason 显示中文原因；日期相关原因提供「查看可分析日期」入口，
 //      点击 emit open-candidates（组件不改上下文）；
 //   ④ 部分可用：内容照常渲染 + 提示条 + 未读到对象列表（不装作完整）；
-//   ⑤ 展示文本永不出现 family / capture 前缀 / SQL / sourceId 原文（红词扫描）。
-import { describe, expect, it, vi } from 'vitest'
+//   ⑤ 展示文本永不出现 family / capture 前缀 / SQL / sourceId 原文（红词扫描）；
+//   ⑥ 头部导出/材料入口（dljy#3078 任务 15.2/14.5）：只对全量口径提供导出；页面声明 stale
+//      或 409 冲突时入口禁用并提示「结果已过期，请刷新后再导出」；「加入材料」只由页面
+//      权限声明显隐，点击 emit add-material；denied 结果不出现任何入口。
+import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
 import { mount } from '@/test/mount'
 import InsightBlock from './InsightBlock.vue'
 import { InsightRequestError } from '@/services/insight/insightClient'
@@ -208,5 +211,115 @@ describe('展示纪律（红词扫描）', () => {
       mount(InsightBlock, { props: { title: '节点价格', result: partialResult, error: null }, slots: { default: '<div />' } }),
     ]
     for (const wrapper of cases) expectNoRedWords(wrapper.html())
+  })
+})
+
+describe('头部导出与材料入口（dljy#3078 任务 15.2/14.5）', () => {
+  let clickSpy: ReturnType<typeof vi.spyOn>
+  let urlSpy: ReturnType<typeof vi.spyOn>
+  const downloads: string[] = []
+
+  beforeEach(() => {
+    downloads.length = 0
+    clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
+      downloads.push(this.download)
+    })
+    urlSpy = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:test')
+    vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {})
+  })
+  afterEach(() => vi.restoreAllMocks())
+
+  /** 按测试标识找头部入口按钮。 */
+  function entryButton(wrapper: ReturnType<typeof mount>, testId: string) {
+    return wrapper.find(`[data-testid="${testId}"]`)
+  }
+
+  it('未声明 exportable / materializable：头部只有「证据」，不出现导出与材料入口', () => {
+    const wrapper = mount(InsightBlock, {
+      props: { title: '时段走势', result: nodePriceResult(['300']), error: null },
+      slots: { default: '<div />' },
+    })
+
+    expect(entryButton(wrapper, 'insight-export-csv').exists()).toBe(false)
+    expect(entryButton(wrapper, 'insight-add-material').exists()).toBe(false)
+    expect(entryButton(wrapper, 'insight-export-stale-hint').exists()).toBe(false)
+  })
+
+  it('exportable 且结果为全量：导出入口可见，点击落 CSV 且文件名含业务窗口；材料入口点击 emit add-material', async () => {
+    const wrapper = mount(InsightBlock, {
+      props: { title: '时段走势', result: nodePriceResult(['300']), error: null, exportable: true, materializable: true },
+      slots: { default: '<div />' },
+    })
+
+    await entryButton(wrapper, 'insight-export-csv').trigger('click')
+    expect(urlSpy).toHaveBeenCalledTimes(1)
+    expect(clickSpy).toHaveBeenCalledTimes(1)
+    // 文件名含业务窗口（业务语言，不带 analysisId）
+    expect(downloads[0]).toBe('洞察-时段走势-2026-09-10至2026-09-10.csv')
+
+    await entryButton(wrapper, 'insight-add-material').trigger('click')
+    expect(wrapper.emitted('add-material')).toHaveLength(1)
+  })
+
+  it('分页结果（page.scope=page）不提供导出入口：一页数据不能冒充全量存档', () => {
+    const result = nodePriceResult(['300', '301'], {
+      page: { scope: 'page', size: 50, offset: 0, returnedRows: 2, totalRows: 96, nextCursor: null },
+    })
+    const wrapper = mount(InsightBlock, {
+      props: { title: '时段走势', result, error: null, exportable: true, materializable: true },
+      slots: { default: '<div />' },
+    })
+
+    expect(entryButton(wrapper, 'insight-export-csv').exists()).toBe(false)
+    // 材料冻结走服务端重算（paged:false），与分页无关，入口照常
+    expect(entryButton(wrapper, 'insight-add-material').exists()).toBe(true)
+  })
+
+  it('409 冲突且旧结果仍在：导出与材料入口禁用，出现「结果已过期，请刷新后再导出」提示', () => {
+    const wrapper = mount(InsightBlock, {
+      props: { title: '时段走势', result: nodePriceResult(['300']), error: requestError(409), exportable: true, materializable: true, onRefresh: () => {} },
+      slots: { default: '<div class="old-content">旧版本内容</div>' },
+    })
+
+    expect(wrapper.text()).toContain('旧版本内容')
+    expect(wrapper.text()).toContain('结果已过期，请刷新后再导出')
+    expect(entryButton(wrapper, 'insight-export-csv').attributes('disabled')).toBeDefined()
+    expect(entryButton(wrapper, 'insight-add-material').attributes('disabled')).toBeDefined()
+  })
+
+  it('页面声明 stale（与页面查询键同步）：入口禁用并提示，点击不触发下载与 emit', async () => {
+    const wrapper = mount(InsightBlock, {
+      props: { title: '时段走势', result: nodePriceResult(['300']), error: null, exportable: true, materializable: true, stale: true },
+      slots: { default: '<div />' },
+    })
+
+    expect(wrapper.text()).toContain('结果已过期，请刷新后再导出')
+    expect(entryButton(wrapper, 'insight-export-csv').attributes('disabled')).toBeDefined()
+    expect(entryButton(wrapper, 'insight-add-material').attributes('disabled')).toBeDefined()
+
+    await entryButton(wrapper, 'insight-export-csv').trigger('click')
+    await entryButton(wrapper, 'insight-add-material').trigger('click')
+    expect(urlSpy).not.toHaveBeenCalled()
+    expect(wrapper.emitted('add-material')).toBeUndefined()
+  })
+
+  it('denied 结果：导出、材料、证据三个入口都不出现（无权查看者无动作可做）', () => {
+    const result = insightResult({
+      runtime: {
+        access: 'denied',
+        availability: { state: 'empty' },
+        freshness: { state: 'unknown' },
+        comparability: { status: 'insufficient', reasons: [] },
+      },
+    })
+    const wrapper = mount(InsightBlock, {
+      props: { title: '时段走势', result, error: null, exportable: true, materializable: true },
+      slots: { default: '<div />' },
+    })
+
+    expect(wrapper.text()).toContain('当前公司没有这类资料的查看权限')
+    expect(entryButton(wrapper, 'insight-export-csv').exists()).toBe(false)
+    expect(entryButton(wrapper, 'insight-add-material').exists()).toBe(false)
+    expect(wrapper.findAll('button').find((button) => button.text() === '证据')).toBeUndefined()
   })
 })

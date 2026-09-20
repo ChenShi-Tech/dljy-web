@@ -28,6 +28,7 @@ import {
 import { searchSpotNodes } from '@/services/market/spotClient'
 import { fetchCgnYunnanPriceBundle } from '@/services/market/cgnYunnanLivePrice'
 import { getCurrentUser } from '@/services/auth'
+import { hasCompanyAdmin } from '@/services/governance'
 import { useInsightContext } from '@/composables/useInsightContext'
 import { useInsightSelection } from '@/components/insight/chart/useInsightSelection'
 import Price3DWorkspace from './prices/Price3DWorkspace.vue'
@@ -36,6 +37,7 @@ import InsightBlock from '@/components/insight/InsightBlock.vue'
 import InsightDateRange from '@/components/insight/InsightDateRange.vue'
 import InsightEvidenceDrawer from '@/components/insight/InsightEvidenceDrawer.vue'
 import InsightHistoryCandidates from '@/components/insight/InsightHistoryCandidates.vue'
+import InsightMaterialDialog from '@/components/insight/InsightMaterialDialog.vue'
 import InsightObjectPicker, { type InsightObjectOption } from '@/components/insight/InsightObjectPicker.vue'
 import InsightResultTable from '@/components/insight/InsightResultTable.vue'
 import InsightSeriesChart from '@/components/insight/chart/InsightSeriesChart.vue'
@@ -792,6 +794,44 @@ const basisNotes = computed(() => {
   return notes.map((item) => item.note)
 })
 
+// ── 导出与材料（dljy#3078，任务 15.2/14.5）────────────────────────────────────────────
+// 权限语义分离：导出是只读动作，凡有结果者可用；「加入材料」是公司写入，按 governance 既有
+// 口径只对公司管理员级账号显示（hasCompanyAdmin 只管显隐，后端复盘写入闸门才是权威）。
+// 冻结协议是服务端既有契约（kind: 'market_insight'）：这里只组装「登记分析 + 上下文 + 筛选 +
+// 期望版本」，服务端重算核验并冻结；409 冲突提示先重新运行，未成功绝不提示已保存。
+
+/** 公司写入显隐：与公司档案等页面的 canWrite 判断同源（governance.hasCompanyAdmin）。
+ *  用户读取的 storage 异常（隐私模式等）按无权限处理，不影响页面渲染。 */
+const canWriteCompany = computed(() => {
+  try {
+    return hasCompanyAdmin(getCurrentUser())
+  } catch {
+    return false
+  }
+})
+
+type MaterialView = 'series' | 'profile'
+
+const materialVisible = ref(false)
+const materialView = ref<MaterialView>('series')
+const materialSubject = ref('')
+const materialRequest = ref<{ analysisId: string; context: Record<string, unknown>; filters: Record<string, unknown> } | null>(null)
+
+const materialResult = computed<InsightBlockResult | null>(() => viewStates[materialView.value].result)
+
+/** 打开材料窗口：冻结请求与当前查询同口径；上下文剥掉代次（导航概念），同口径重复保存幂等键稳定。 */
+function openMaterial(view: MaterialView): void {
+  const result = viewStates[view].result
+  if (!result?.resultVersion || !result.readSetRef) return
+  const filters: Record<string, unknown> = { view }
+  if (requiresObjects.value) filters.objectIds = [...ctx.objectIds.value]
+  const { contextVersion: _generation, ...context } = ctx.toQueryContext()
+  materialView.value = view
+  materialRequest.value = { analysisId: priceObjectChoice.value, context, filters }
+  materialSubject.value = view === 'profile' ? '历史分布' : '时段走势'
+  materialVisible.value = true
+}
+
 onMounted(() => {
   void loadCapabilities()
 })
@@ -902,8 +942,11 @@ onMounted(() => {
                 :on-retry="() => retryView('series')"
                 :on-refresh="() => retryView('series')"
                 :source-titles="sourceTitles"
+                :exportable="true"
+                :materializable="canWriteCompany"
                 @open-candidates="openCandidates"
                 @open-evidence="openEvidence('series')"
+                @add-material="openMaterial('series')"
               >
                 <InsightSeriesChart
                   :result="viewStates.series.result"
@@ -1036,8 +1079,11 @@ onMounted(() => {
               :on-retry="() => retryView('profile')"
               :on-refresh="() => retryView('profile')"
               :source-titles="sourceTitles"
+              :exportable="true"
+              :materializable="canWriteCompany"
               @open-candidates="openCandidates"
               @open-evidence="openEvidence('profile')"
+              @add-material="openMaterial('profile')"
             >
               <p v-if="requiresObjects && !ctx.objectIds.value.length" class="ynp-prices__hint">
                 请先在上方选择分析对象，再进行查询（未选对象不发请求）。
@@ -1148,6 +1194,16 @@ onMounted(() => {
       :required-source-ids="candidateSourceIds"
       :source-titles="sourceTitles"
       @select="onCandidateSelect"
+    />
+
+    <!-- 材料窗口（任务 14.5）：冻结 + 入稿全在窗口内完成，服务不可用只报错不阻断分析页 -->
+    <InsightMaterialDialog
+      v-model="materialVisible"
+      :region="ctx.regionId.value"
+      :company-id="ctx.companyId.value ?? ''"
+      :subject="materialSubject"
+      :request="materialRequest"
+      :result="materialResult"
     />
   </div>
 </template>

@@ -10,7 +10,7 @@
 | --- | --- | --- |
 | HTTP 客户端 | `src/services/insight/insightClient.ts` | `queryInsight` / `fetchInsightCapabilities` / `fetchInsightCoverage`；把后端信封归一成 `InsightRequestError`（status/message/details）；`assertInsightResult` 前置校验 |
 | 查询上下文 | `src/composables/useInsightContext.ts` | 地区 × 公司 × 业务日期窗 × 对象 × 来源的统一状态；地址参数互转；`contextVersion` 与请求代次联动 |
-| 区块容器 | `src/components/insight/InsightBlock.vue` | 结果/错误/空态/部分数据的统一外壳，来源标签与证据入口 |
+| 区块容器 | `src/components/insight/InsightBlock.vue` | 结果/错误/空态/部分数据的统一外壳，来源标签与证据/导出/材料入口 |
 | 证据抽屉 | `src/components/insight/InsightEvidenceDrawer.vue` | 逐来源证据行 + 序列覆盖明细（期望/有效/缺失/冲突时段） |
 | 历史候选 | `src/components/insight/InsightHistoryCandidates.vue` | 「查看可分析日期」：按来源覆盖求完整日期候选，用户显式选择 |
 | 对象选择 | `src/components/insight/InsightObjectPicker.vue` | 多选分析对象，`maxObjects` 上限与「请先选择」引导 |
@@ -20,6 +20,7 @@
 | 选区构建 | `src/components/insight/chart/useInsightSelection.ts` | 图事件命中 → `insight-selection/v1` 语义选区（校验、合并、迟到守卫、防回环） |
 | 明细表 | `src/components/insight/InsightResultTable.vue` | 语义列明细表、本页/全量标注、选区联动高亮、CSV 导出 |
 | CSV 口径 | `src/components/insight/insightCsv.ts` | `buildInsightCsv` / `downloadInsightCsv`（本页与全量导出共用） |
+| 材料窗口 | `src/components/insight/InsightMaterialDialog.vue` | 洞察区块 → 复盘底稿材料：选择既有底稿、冻结保存（409 先重跑）、入稿 |
 | 文案中枢 | `src/components/insight/insightText.ts` | 错误/可用性/派生/阶段/价格对象/访问范围/字段的全部业务话术 |
 | 测试夹具 | `src/components/insight/insightFixtures.ts` | 能过契约校验的最小合法结果构造，各 spec 复用 |
 
@@ -35,8 +36,12 @@ props:  title: string                      区块标题
         onRetry?: () => void               「重试」回调（503/网络/参数类）
         onRefresh?: () => void             「刷新」回调（409 版本冲突取新版本）
         sourceTitles?: Record<string, InsightSourceTitle>   来自 capabilities.sources
+        exportable?: boolean               头部「导出 CSV」开关（仅全量口径 page.scope==='all' 实际可导）
+        materializable?: boolean           头部「加入材料」开关（页面按公司写权限决定显隐）
+        stale?: boolean                    页面声明结果已过期（与查询键同步）：入口禁用并提示
 emits:  open-candidates                    「查看可分析日期」→ 页面打开历史候选
         open-evidence                      「证据」→ 页面打开证据抽屉
+        add-material                       「加入材料」→ 页面打开材料窗口
 slot:   默认插槽放区块内容（图表、明细表等）；result 为 null 且无错误时插槽不渲染
 ```
 
@@ -45,6 +50,7 @@ slot:   默认插槽放区块内容（图表、明细表等）；result 为 null
 - **错误优先级**：`error` 存在且 result 为 null → 错误态（文案见下表）；`error.status === 409` 且 result 仍在 → 顶部警告条「资料已更新…」，**旧内容继续显示**，换不换版本由用户点「刷新」决定，绝不静默替换。
 - **来源标签**：头部按 `result.sourceRefs` 显示业务标题 + 公开/获权样式，不显示 sourceId 原文。
 - **部分数据**（`runtime.availability.state === 'partial'`）：提示条说明缺的部分，内容照常显示，不把部分数据藏起来冒充空。
+- **导出与材料入口**（dljy#3078）：「导出 CSV」对全量口径开放（版本绑定、文件名含业务窗口），「加入材料」emit 后由页面打开 `InsightMaterialDialog`；页面声明 `stale` 或区块处于 409 冲突（旧结果仍在）时两者禁用并提示「结果已过期，请刷新后再导出」。
 
 ### InsightEvidenceDrawer（证据抽屉）
 
@@ -126,6 +132,26 @@ props:  result: InsightBlockResult | null
 emits:  row-click: [{ series: InsightSeriesMeta, row: 原始行 }]  点击行只上抛，页面决定是否转选区
 ```
 
+### InsightMaterialDialog（材料窗口，dljy#3078 任务 14.5）
+
+```
+props:  modelValue: boolean                     v-model 开关
+        region / companyId: string              复盘材料的公司与地区范围
+        subject: string                         区块业务标题（提示与成功文案）
+        request: { analysisId; context; filters? } | null
+                                               冻结请求（context 不含 contextVersion，保证幂等键稳定）
+        result: InsightBlockResult | null       期望版本（resultVersion/readSetRef）与业务窗口来源
+emits:  update:modelValue / saved               saved 仅在冻结并入稿成功（含幂等命中）时发出
+```
+
+行为要点：
+
+- **两步复用既有协议**：冻结 `POST /api/v1/review/evidence`（`kind: 'market_insight'`，dljy#3020）+ 入稿（底稿 GET + PATCH）。请求只带登记分析、上下文、筛选与期望版本，服务端重算核验并冻结。
+- **冲突语义**：源更新 409 →「资料已更新，请先重新运行再保存」；底稿刚被他人保存（PATCH 409）→ 如实说明材料已冻结但未加入，不称已保存。未成功绝不提示成功。
+- **幂等**：幂等键按业务内容派生（`idempotencyKeyOf`），重复保存返回同一份材料；材料已在所选底稿中时提示「未重复创建」。
+- **权限**：底稿只允许主笔修改（`canEdit`），非主笔不发起冻结；入口显隐由页面按 `governance.hasCompanyAdmin` 决定。
+- **材料用途**：窗口覆盖复盘对象且日期窗在底稿周期内为「本次依据」，否则「比较依据」（与服务端 `validateMaterialReferences` 同口径）。
+
 ## 错误与空态文案对照表（insightErrorCopy / availabilityReasonText）
 
 界面只出现左列业务话术；改 `insightText.ts` 要同步本表。
@@ -172,6 +198,8 @@ emits:  row-click: [{ series: InsightSeriesMeta, row: 原始行 }]  点击行只
 - 值为**原始字符串**（原生精度），导出层不做数值加工；缺测行写「缺测」，不写空白或 0。
 - UTF-8 BOM 起（Excel 直接打开不乱码）；单元格含逗号/引号/换行按 RFC 4180 转义。
 - **导出本页**导出当前行；**导出全量**必须经 `fetchAll` 重新发起不带 `page` 的查询，拿到全量口径再落 CSV——分页结果（`page.scope === 'page'`）只标「本页 x 行 / 全量 y 行」，不冒充全量。
+- **区块级入口（dljy#3078 任务 15.2）**：`InsightBlock` 头部「导出 CSV」只对全量口径（`page.scope === 'all'` 且有 `resultVersion`/`readSetRef`）开放，导出同版本全量行，文件名含业务窗口；结果过期（页面声明或 409 冲突）时禁用并提示刷新。**服务端导出端点未建，当前为同版本全量前端导出**。
+- **值直出，不改写单元格**（含以 `=` 开头的字符串）：精度不被前端改写优先于 Excel 公式注入前缀改写；服务端分析产物是可信输入，转义只按 RFC 4180 处理逗号/引号/换行。
 
 ## 阶段 A 集成检查
 
@@ -223,4 +251,5 @@ emits:  row-click: [{ series: InsightSeriesMeta, row: 原始行 }]  点击行只
 | `src/components/insight/InsightHistoryCandidates.component.spec.ts` | 打开才请求、点击才 emit、离散提示、无交集提示、失败重试、关闭 abort |
 | `src/components/insight/chart/useInsightSeriesChart.spec.ts` | 阶梯/断开/不平滑、缺测插 null、首尾外不画点、单位分轴拆图、tooltip 口径 |
 | `src/components/insight/chart/useInsightSelection.spec.ts` | 语义字段、位置键拒绝、时段合并、迟到守卫、防回环、reset |
-| `src/components/insight/InsightResultTable.component.spec.ts` | 列与缺测、本页/全量标注、导出本页/全量、CSV 口径、选区高亮、row-click |
+| `src/components/insight/InsightResultTable.component.spec.ts` | 列与缺测、本页/全量标注、导出本页/全量、CSV 口径（含 RFC 4180 转义与精度直出）、选区高亮、row-click |
+| `src/components/insight/InsightMaterialDialog.component.spec.ts` | 底稿列表失败、冻结请求期望版本与幂等键、非主笔不冻结、成功入稿、幂等不重复入稿、409 先重跑、入稿冲突如实说明（dljy#3078） |

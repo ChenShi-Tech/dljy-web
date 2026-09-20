@@ -49,6 +49,64 @@ export async function captureReportEvidence(snapshot: ReviewEvidenceSnapshot, ba
 export async function captureSettlementReportEvidence(company: string, input: SettlementAnalysisInput) {
   return unwrap(await apiPost<ReportEvidence>(`${base}/evidence`, { kind: 'settlement', ...input }, options(company, input.region)))
 }
+
+/**
+ * 洞察材料（kind: 'market_insight'，dljy#3020 契约；dljy#3078 任务 14.5 前端入口）。
+ * 请求只带「登记分析 + 上下文 + 筛选 + 期望版本」：服务端按登记分析重新读取与计算，
+ * 读取/结果版本与期望不一致返回 409（先重跑，不悄悄保存新值），浏览器提交的汇总与结果一概不接受。
+ * `context` 不应包含 contextVersion（代次是界面导航概念）——同一业务口径的请求体保持逐字节一致，
+ * 内容派生幂等键才能让重复保存命中同一份冻结材料（重复保存不重复创建）。
+ */
+export type InsightMaterialInput = { analysisId: string; context: Record<string, unknown>; filters?: Record<string, unknown> }
+
+export type InsightMaterialEvidence = {
+  id: string; region: string; authorId: string; createdAt: string; sourceKind: string; contentHash: string
+  content: {
+    topic: 'market_insight'; title: string; labels: string[]; capturedAt: string; sourceNotice: string
+    input: {
+      analysisId: string; analysisVersion: string
+      context: { regionId: string; businessWindow: { start: string; end: string }; sourceIds: string[]; mode: string; asOf: string | null }
+      filters: Record<string, unknown>
+      expected: { resultVersion: string; readSetRef: string }
+    }
+  }
+}
+
+/** 与其它复盘材料同一套请求头：显式公司/地区 + 内容派生幂等键（重试与双击同键）。 */
+function evidenceOptions(company: string, region: string, idempotencyKey: string) {
+  return { headers: { 'x-company-id': company, 'x-tenant-id': company, 'x-region-id': region, 'idempotency-key': idempotencyKey }, timeoutMs: 20000 }
+}
+
+export async function captureInsightMaterial(
+  company: string,
+  region: string,
+  input: InsightMaterialInput,
+  expected: { resultVersion: string; readSetRef: string },
+  idempotencyKey: string
+) {
+  return unwrap(await apiPost<InsightMaterialEvidence>(`${base}/evidence`, { kind: 'market_insight', region, request: input, expected }, evidenceOptions(company, region, idempotencyKey)))
+}
+
+/** 洞察材料保存失败文案：409 = 源已更新先重跑；其余透传服务端中文原因，缺省给「未保存」口径。 */
+export function insightMaterialError(error: unknown, fallback: string): string {
+  if (error instanceof ApiError) {
+    if (error.code === 409) return '资料已更新，请先重新运行再保存'
+    const detail = serverDetail(error)
+    if (detail) return detail
+  }
+  return fallback
+}
+
+/** 冻结已成功、加入底稿失败的文案：如实说材料已保存、底稿未加入，不冒充整体成功。 */
+export function insightAttachError(error: unknown): string {
+  if (error instanceof ApiError) {
+    const detail = serverDetail(error)
+    if (error.code === 409) return `底稿刚被更新${detail ? `：${detail}` : ''}。材料已冻结保存，但还没有加入这份底稿；请重新打开本窗口再试。`
+    if (detail) return `材料已冻结保存，但加入底稿未完成：${detail}`
+  }
+  return '材料已冻结保存，但加入底稿未完成；请稍后重试，分析页其余功能不受影响。'
+}
+
 export async function listReportComments(company: string, region: string, id: string, offset = 0) { return unwrap(await apiGet<Page<ReportComment>>(`${base}/workpapers/${encodeURIComponent(id)}/comments`, { offset }, options(company, region))) }
 export async function addReportComment(company: string, draft: Workpaper, id: string, body: string, blockId: string | null) { return unwrap(await apiPost<ReportComment>(`${base}/workpapers/${encodeURIComponent(draft.id)}/comments`, { id, body, blockId, revision: draft.revision }, options(company, draft.scope.region))) }
 /**

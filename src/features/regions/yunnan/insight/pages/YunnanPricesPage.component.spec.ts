@@ -9,9 +9,12 @@
 //   ⑦ 价差方向与异常规则固定文案；异常行点击生成语义选区（无 dataIndex/seriesIndex）；
 //   ⑧ 422（只选一侧来源）直显后端文案；profile 窗口天数与有效天数如实、不冒充季节规律；
 //   ⑨ 上下文变化后迟到结果不写进新状态；页签懒加载切回不重查；
-//   ⑩ 界面只出现业务语言，不出现来源标识原文。
-// mock 边界：insightClient（保留类型与错误类）/ spotClient / cgnYunnanLivePrice 打桩；
-// useInsightContext 用真 composable（真 router + 全局地区/公司 ref）。
+//   ⑩ 界面只出现业务语言，不出现来源标识原文；
+//   ⑪ 导出与材料入口（dljy#3078 任务 15.2/14.5）：时段走势/历史分布区块有「导出 CSV」与
+//      「加入材料」；无公司写权限者只少材料入口（导出是只读动作）；材料窗口的冻结请求与
+//      当前查询同口径（analysisId + view + objectIds），期望版本取自当前结果。
+// mock 边界：insightClient（保留类型与错误类）/ spotClient / cgnYunnanLivePrice / review
+// workpapers 客户端打桩；useInsightContext 用真 composable（真 router + 全局地区/公司 ref）。
 import { defineComponent, h } from 'vue'
 import { flushPromises, type VueWrapper } from '@vue/test-utils'
 import { createMemoryHistory, createRouter, type Router } from 'vue-router'
@@ -30,11 +33,20 @@ import { selectedCompanyId } from '@/services/company/companyContext'
 import { mount as appMount } from '@/test/mount'
 import InsightDateRange from '@/components/insight/InsightDateRange.vue'
 import InsightHistoryCandidates from '@/components/insight/InsightHistoryCandidates.vue'
+import InsightMaterialDialog from '@/components/insight/InsightMaterialDialog.vue'
 import InsightObjectPicker from '@/components/insight/InsightObjectPicker.vue'
+import {
+  captureInsightMaterial,
+  getWorkpaper,
+  listWorkpapers,
+  saveWorkpaper,
+} from '@/services/review/workpapers'
 import {
   insightResult,
   nodePriceResult,
   nodePriceSeries,
+  READ_SET_REF,
+  RESULT_VERSION,
   row,
 } from '@/components/insight/insightFixtures'
 import YunnanPricesPage from './YunnanPricesPage.vue'
@@ -65,6 +77,18 @@ vi.mock('@/services/market/cgnYunnanLivePrice', () => ({
   })),
   hasCgnYunnanPriceEntitlement: () => false,
 }))
+
+// 材料窗口的复盘客户端打桩：默认成功形状，用例按需覆盖（入口显隐用例不触发调用）
+vi.mock('@/services/review/workpapers', async (importOriginal) => {
+  const actual = await importOriginal<Record<string, unknown>>()
+  return {
+    ...actual,
+    listWorkpapers: vi.fn(),
+    getWorkpaper: vi.fn(),
+    captureInsightMaterial: vi.fn(),
+    saveWorkpaper: vi.fn(),
+  }
+})
 
 // ── 图表桩：绕开 ECharts canvas；捕获 applySelection 调用（选区语义断言用）──────────────
 
@@ -398,6 +422,10 @@ beforeEach(async () => {
   vi.mocked(queryInsight).mockClear()
   vi.mocked(fetchInsightCapabilities).mockClear()
   vi.mocked(searchSpotNodes).mockClear()
+  vi.mocked(listWorkpapers).mockClear()
+  vi.mocked(getWorkpaper).mockClear()
+  vi.mocked(captureInsightMaterial).mockClear()
+  vi.mocked(saveWorkpaper).mockClear()
   chartApplyCalls.length = 0
 })
 
@@ -770,6 +798,89 @@ describe('多日展示模式', () => {
       expect(modeGroup().props('modelValue')).toBe('multi3d')
     } finally {
       Object.defineProperty(globalThis, 'localStorage', { configurable: true, writable: true, value: original })
+    }
+  })
+})
+
+// ── 导出与材料入口（dljy#3078 任务 15.2/14.5）────────────────────────────────────────────
+
+function entryButtons(testId: string) {
+  return wrapper!.findAll(`[data-testid="${testId}"]`)
+}
+
+describe('导出与材料入口', () => {
+  it('时段走势区块提供「导出 CSV」与「加入材料」（管理员默认可写）；点加入材料打开窗口，请求与当前查询同口径、期望版本取自当前结果', async () => {
+    state.capabilities = capsWith(['prices.public-node-series'])
+    await mountPage()
+    await chooseObjects('YN.KM.01')
+
+    expect(entryButtons('insight-export-csv')).toHaveLength(1)
+    expect(entryButtons('insight-add-material')).toHaveLength(1)
+
+    await entryButtons('insight-add-material')[0]!.trigger('click')
+    await flushPromises()
+
+    const dialog = wrapper!.getComponent(InsightMaterialDialog)
+    expect(dialog.props('subject')).toBe('时段走势')
+    expect(dialog.props('region')).toBe('yunnan')
+    expect(dialog.props('companyId')).toBe('c1')
+    const request = dialog.props('request') as { analysisId: string; context: Record<string, unknown>; filters: Record<string, unknown> }
+    expect(request.analysisId).toBe('prices.public-node-series')
+    expect(request.filters).toEqual({ view: 'series', objectIds: ['YN.KM.01'] })
+    // 上下文剥掉代次（导航概念）：同口径重复保存的幂等键稳定
+    expect(request.context.contextVersion).toBeUndefined()
+    // 期望版本 = 当前结果的版本引用（服务端据此核验，不一致返回 409）
+    const result = dialog.props('result') as { resultVersion: string; readSetRef: string }
+    expect(result.resultVersion).toBe(RESULT_VERSION)
+    expect(result.readSetRef).toBe(READ_SET_REF)
+  })
+
+  it('历史分布区块同样有入口；窗口请求按 view=profile 组装', async () => {
+    state.capabilities = capsWith(['prices.public-node-series'])
+    await mountPage()
+    await chooseObjects('YN.KM.01')
+    await switchTab('profile')
+
+    // el-tabs 保留已访问页签：时段走势 + 历史分布两个区块都有入口；历史分布的块在 DOM 靠后
+    expect(entryButtons('insight-add-material')).toHaveLength(2)
+    await entryButtons('insight-add-material')[1]!.trigger('click')
+    await flushPromises()
+
+    const dialog = wrapper!.getComponent(InsightMaterialDialog)
+    expect(dialog.props('subject')).toBe('历史分布')
+    expect((dialog.props('request') as { filters: Record<string, unknown> }).filters.view).toBe('profile')
+  })
+
+  it('无公司写权限（TRADER）：「加入材料」不出现，「导出 CSV」保留——只读与写入的权限语义分离', async () => {
+    localStorage.setItem('dljy_governance_user', JSON.stringify({ username: 'trader' }))
+    state.capabilities = capsWith(['prices.user-series'])
+    await mountPage()
+
+    expect(entryButtons('insight-add-material')).toHaveLength(0)
+    expect(entryButtons('insight-export-csv')).toHaveLength(1)
+    // 入口都没出现，复盘客户端一次也不该被调
+    expect(listWorkpapers).not.toHaveBeenCalled()
+  })
+
+  it('点击「导出 CSV」触发浏览器下载，文件名含业务窗口（同版本全量前端导出）', async () => {
+    const downloads: string[] = []
+    const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
+      downloads.push(this.download)
+    })
+    vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:test')
+    vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {})
+    try {
+      state.capabilities = capsWith(['prices.user-series'])
+      await mountPage()
+
+      await entryButtons('insight-export-csv')[0]!.trigger('click')
+      await flushPromises()
+
+      expect(clickSpy).toHaveBeenCalledTimes(1)
+      // 文件名窗口取自结果本体（夹具的业务窗 2026-09-10），不是「今天」
+      expect(downloads[0]).toBe('洞察-时段走势-2026-09-10至2026-09-10.csv')
+    } finally {
+      vi.restoreAllMocks()
     }
   })
 })
