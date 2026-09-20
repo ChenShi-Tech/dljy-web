@@ -50,6 +50,7 @@ import {
   openBusinessDeepLink,
   openDataMaintenanceLink,
 } from '../businessLinks'
+import { insightAiBlockOf, useInsightAiPage, type InsightAiEvidenceBlock } from '@/features/regions/yunnan/insight/useInsightAiPage'
 import InsightBlock from '@/components/insight/InsightBlock.vue'
 import InsightDateRange from '@/components/insight/InsightDateRange.vue'
 import InsightEvidenceDrawer from '@/components/insight/InsightEvidenceDrawer.vue'
@@ -1277,6 +1278,62 @@ function onCandidateSelect(range: { start: string; end: string }): void {
 /** 历史候选：场站出力曲线分析（获权账号才可达本页区块）；候选只按来源覆盖求交集。 */
 const candidatesFilters = computed<Record<string, unknown>>(() => ({ view: 'series' }))
 
+// ── AI 解读（任务 15.3）：统一侧栏注册 + 取材纪律（CH03/D9）──────────────────────────────
+// 只收「当前签名一致」的已就绪查询结果，过期区块不进上下文；只传摘要与版本引用
+// （含场站对象组等筛选摘要），不传原始行数据。
+
+const PLANTS_AI_BLOCKS: Record<QueryName, { title: string; analysisId: string; view?: string }> = {
+  'overview-coverage': { title: '组合覆盖摘要', analysisId: PLANTS_DAILY_METRICS, view: 'coverage-summary' },
+  'settlement-daily': { title: '场站日结算', analysisId: PLANTS_SETTLEMENT_DAILY },
+  capture: { title: '价格捕获', analysisId: PLANTS_PRICE_CAPTURE, view: 'capture' },
+  'output-series': { title: '出力曲线', analysisId: PLANTS_OUTPUT_SERIES, view: 'series' },
+  'supplier-comparison': { title: '报价供应商比较', analysisId: PLANTS_OUTPUT_SERIES, view: 'supplier-comparison' },
+  semantics: { title: '申报语义对照', analysisId: PLANTS_CLEARING_ACTUAL, view: 'semantics' },
+  'business-forecast': { title: '业务预测', analysisId: PLANTS_BUSINESS_FORECAST },
+  'settlement-formal': { title: '正式结算明细', analysisId: PLANTS_SETTLEMENT_DAILY, view: 'series' },
+  'settlement-status-diff': { title: '正式/暂结状态对照', analysisId: PLANTS_SETTLEMENT_STATUS_DIFF, view: 'status-diff' },
+  'settlement-stats': { title: '量费加权统计', analysisId: PLANTS_SETTLEMENT_INTERVAL, view: 'settlement-stats' },
+  'settlement-loss': { title: '损失解释', analysisId: PLANTS_SETTLEMENT_DAILY, view: 'loss-explain' },
+  'settlement-docs': { title: '结算单据', analysisId: PLANTS_SETTLEMENT_DOCS, view: 'records' },
+  'settlement-reconcile': { title: '周期核对', analysisId: PLANTS_SETTLEMENT_RECONCILE, view: 'reconcile' },
+}
+
+const insightAi = useInsightAiPage({
+  pageId: 'plants',
+  label: '云南场站表现',
+  collect: () => {
+    const blocks: InsightAiEvidenceBlock[] = []
+    for (const name of Object.keys(viewStates) as QueryName[]) {
+      const entry = viewStates[name]
+      const block = PLANTS_AI_BLOCKS[name]
+      const aiBlock = insightAiBlockOf({
+        blockId: name,
+        title: block.title,
+        analysisId: block.analysisId,
+        view: block.view ?? name,
+        currentKey: queryKeyOf(name),
+        queriedKey: entry.queriedKey,
+        result: entry.result,
+        objects:
+          name === 'overview-coverage' || name === 'settlement-daily' ? [...overviewObjects.value]
+          : name === 'capture' || name === 'output-series' ? [...captureObjects.value]
+          : name === 'supplier-comparison' ? [...comparisonObjects.value]
+          : name === 'semantics' || name === 'business-forecast' ? [...clearingObjects.value]
+          : name === 'settlement-stats' ? [...intervalObjects.value]
+          : name === 'settlement-formal' || name === 'settlement-status-diff' || name === 'settlement-loss' || name === 'settlement-reconcile' ? [...settlementObjects.value]
+          : undefined,
+      })
+      if (aiBlock) blocks.push(aiBlock)
+    }
+    return blocks
+  },
+  currentSignature: () => String(ctx.contextVersion.value),
+})
+
+const onAiInterpret = (): void => {
+  void insightAi.interpret()
+}
+
 onMounted(() => {
   void loadCapabilities()
 })
@@ -1294,6 +1351,13 @@ onMounted(() => {
           @update:model-value="onWindowChange"
         />
       </label>
+      <!-- AI 入口（15.3）：模型离线只隐藏入口，数据页不受影响（D9） -->
+      <el-button
+        v-if="insightAi.aiAvailable.value"
+        type="primary"
+        data-testid="ypp-ai-entry"
+        @click="onAiInterpret"
+      >✨ AI 解读本页</el-button>
     </section>
 
     <p class="ypp__meta">{{ STAGE_TEXT }}</p>

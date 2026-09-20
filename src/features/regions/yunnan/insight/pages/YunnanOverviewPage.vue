@@ -33,6 +33,7 @@ import {
   type InsightSeriesMeta,
 } from '@/services/insight/insightClient'
 import { useInsightContext } from '@/composables/useInsightContext'
+import { insightAiBlockOf, useInsightAiPage } from '@/features/regions/yunnan/insight/useInsightAiPage'
 import { INSIGHT_PAGE_PATHS, type InsightPageId } from '@/services/region/insightWorkspace'
 import { buildInsightDrilldownQuery } from '@/services/region/insightHandoff'
 import InsightBlock from '@/components/insight/InsightBlock.vue'
@@ -592,6 +593,34 @@ const candidatesRequiredSourceIds = computed(() => (candidatesBlock.value ? requ
 function onCandidateSelect(range: { start: string; end: string }): void {
   ctx.setBusinessWindow(range.start, range.end)
 }
+
+// ── AI 解读（任务 15.3）：统一侧栏注册 + 取材纪律（CH03/D9）──────────────────────────────
+// 采集只收「当前签名一致」的已就绪区块（insightAiBlockOf 内拒绝过期与无权区块），只传
+// 摘要与版本引用，不传原始行数据；组装期间上下文变化即作废，不带旧资料派发。
+
+const insightAi = useInsightAiPage({
+  pageId: 'overview',
+  label: '云南市场总览',
+  collect: () =>
+    visibleBlocks.value.flatMap((block) => {
+      const entry = viewStates[block.blockId]
+      const aiBlock = insightAiBlockOf({
+        blockId: block.blockId,
+        title: block.title,
+        analysisId: block.analysisId,
+        view: block.view,
+        currentKey: queryKeyOf(block.blockId),
+        queriedKey: entry.queriedKey,
+        result: entry.result,
+      })
+      return aiBlock ? [aiBlock] : []
+    }),
+  currentSignature: () => String(ctx.contextVersion.value),
+})
+
+const onAiInterpret = (): void => {
+  void insightAi.interpret()
+}
 </script>
 
 <template>
@@ -607,6 +636,13 @@ function onCandidateSelect(range: { start: string; end: string }): void {
         />
       </label>
       <span class="yno-overview__mode" data-testid="yno-window-mode">{{ windowModeText }}</span>
+      <!-- AI 入口（15.3）：模型离线只隐藏入口，数据页不受影响（D9） -->
+      <el-button
+        v-if="insightAi.aiAvailable.value"
+        type="primary"
+        data-testid="yno-ai-entry"
+        @click="onAiInterpret"
+      >✨ AI 解读本页</el-button>
     </section>
 
     <p class="yno-overview__meta">{{ PAGE_NOTE_TEXT }}</p>

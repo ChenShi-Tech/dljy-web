@@ -33,6 +33,7 @@ import { fetchCgnYunnanPriceBundle } from '@/services/market/cgnYunnanLivePrice'
 import { getCurrentUser } from '@/services/auth'
 import { hasCompanyAdmin } from '@/services/governance'
 import { useInsightContext } from '@/composables/useInsightContext'
+import { insightAiBlockOf, useInsightAiPage, type InsightAiEvidenceBlock } from '@/features/regions/yunnan/insight/useInsightAiPage'
 import { useInsightSelection } from '@/components/insight/chart/useInsightSelection'
 import { canFollowDeepLink, DEEP_LINK_TARGETS, openDataMaintenanceLink } from '../businessLinks'
 import Price3DWorkspace from './prices/Price3DWorkspace.vue'
@@ -849,6 +850,55 @@ function openMaterial(view: MaterialView): void {
   materialVisible.value = true
 }
 
+// ── AI 解读（任务 15.3）：统一侧栏注册 + 取材纪律（CH03/D9）──────────────────────────────
+// 只收「当前签名一致」的已就绪页签结果（含时段走势的 summary 摘要），过期区块不进上下文；
+// 只传价格对象/参考对象等摘要与版本引用，不传原始行数据。
+
+const insightAi = useInsightAiPage({
+  pageId: 'prices',
+  label: '云南价格分析',
+  collect: () => {
+    if (!priceObjectChoice.value) return []
+    const blocks: InsightAiEvidenceBlock[] = []
+    for (const tab of PRICE_TABS) {
+      const entry = viewStates[tab.view]
+      const aiBlock = insightAiBlockOf({
+        blockId: tab.view,
+        title: tab.label,
+        analysisId: priceObjectChoice.value,
+        view: tab.view,
+        currentKey: queryKey(tab.view),
+        queriedKey: entry.queriedKey,
+        result: entry.result,
+        objects: [...ctx.objectIds.value],
+        filterSummary: {
+          价格对象: PRICE_OBJECT_TEXT[currentEntry.value?.priceObject ?? ''] ?? null,
+          ...(tab.view === 'basis' && basisReference.value ? { 参考对象: basisReference.value } : {}),
+        },
+      })
+      if (aiBlock) blocks.push(aiBlock)
+    }
+    const summary = insightAiBlockOf({
+      blockId: 'summary',
+      title: '时段走势统计摘要',
+      analysisId: priceObjectChoice.value,
+      view: 'summary',
+      currentKey: queryKey('series'),
+      queriedKey: summaryState.queriedKey,
+      result: summaryState.result,
+      objects: [...ctx.objectIds.value],
+      filterSummary: { 价格对象: PRICE_OBJECT_TEXT[currentEntry.value?.priceObject ?? ''] ?? null },
+    })
+    if (summary) blocks.push(summary)
+    return blocks
+  },
+  currentSignature: () => globalSignature.value,
+})
+
+const onAiInterpret = (): void => {
+  void insightAi.interpret()
+}
+
 onMounted(() => {
   void loadCapabilities()
 })
@@ -899,6 +949,14 @@ onMounted(() => {
           @update:model-value="onObjectChange"
         />
       </label>
+
+      <!-- AI 入口（15.3）：模型离线只隐藏入口，数据页不受影响（D9） -->
+      <el-button
+        v-if="insightAi.aiAvailable.value"
+        type="primary"
+        data-testid="ynp-ai-entry"
+        @click="onAiInterpret"
+      >✨ AI 解读本页</el-button>
     </section>
 
     <el-alert v-if="capabilitiesError" type="error" show-icon :closable="false" title="价格对象目录读取失败">

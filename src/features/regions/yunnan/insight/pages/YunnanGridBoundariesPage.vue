@@ -28,6 +28,7 @@ import {
   type InsightRequestError,
 } from '@/services/insight/insightClient'
 import { useInsightContext } from '@/composables/useInsightContext'
+import { insightAiBlockOf, useInsightAiPage, type InsightAiEvidenceBlock } from '@/features/regions/yunnan/insight/useInsightAiPage'
 import InsightBlock from '@/components/insight/InsightBlock.vue'
 import InsightDateRange from '@/components/insight/InsightDateRange.vue'
 import InsightEvidenceDrawer from '@/components/insight/InsightEvidenceDrawer.vue'
@@ -891,6 +892,51 @@ const candidateSourceIds = computed<string[]>(() => [...(boundaryDef?.sourceIds 
 /** 历史候选的 filters：候选只按来源覆盖求交集，统一用 series 视图口径。 */
 const candidatesFilters = computed<Record<string, unknown>>(() => ({ view: 'series' }))
 
+// ── AI 解读（任务 15.3）：统一侧栏注册 + 取材纪律（CH03/D9）──────────────────────────────
+// 只收「当前签名一致」的已就绪查询结果，过期区块不进上下文；只传摘要与版本引用
+// （含通道/机组对象清单等筛选摘要），不传原始行数据。
+
+const GRID_AI_BLOCKS: Record<QueryName, { title: string; analysisId: string; view: string }> = {
+  'boundary-series': { title: '电网边界曲线', analysisId: BOUNDARY_SERIES_ANALYSIS, view: 'series' },
+  'transfer-daily': { title: '送受电日统计', analysisId: TRANSFER_DAILY_ANALYSIS, view: 'series' },
+  'channel-series': { title: '通道断面曲线', analysisId: CHANNEL_FLOWS_ANALYSIS, view: 'series' },
+  'channel-limit-match': { title: '断面限值对比', analysisId: CHANNEL_FLOWS_ANALYSIS, view: 'limit-match' },
+  'reserve-units': { title: '备用机组', analysisId: RESERVE_UNITS_ANALYSIS, view: 'series' },
+  'unit-lists': { title: '必开必停机组清单', analysisId: UNIT_LISTS_ANALYSIS, view: 'records' },
+}
+
+const insightAi = useInsightAiPage({
+  pageId: 'grid-boundaries',
+  label: '云南电网边界',
+  collect: () => {
+    const blocks: InsightAiEvidenceBlock[] = []
+    for (const name of Object.keys(viewStates) as QueryName[]) {
+      const entry = viewStates[name]
+      const aiBlock = insightAiBlockOf({
+        blockId: name,
+        title: GRID_AI_BLOCKS[name].title,
+        analysisId: GRID_AI_BLOCKS[name].analysisId,
+        view: GRID_AI_BLOCKS[name].view,
+        currentKey: queryKeyOf(name),
+        queriedKey: entry.queriedKey,
+        result: entry.result,
+        objects:
+          name === 'channel-series' || name === 'channel-limit-match' ? [...channelObjects.value]
+          : name === 'reserve-units' ? [...reserveObjects.value]
+          : name === 'unit-lists' ? [...listObjects.value]
+          : undefined,
+      })
+      if (aiBlock) blocks.push(aiBlock)
+    }
+    return blocks
+  },
+  currentSignature: () => String(ctx.contextVersion.value),
+})
+
+const onAiInterpret = (): void => {
+  void insightAi.interpret()
+}
+
 onMounted(() => {
   void loadCapabilities()
 })
@@ -908,6 +954,13 @@ onMounted(() => {
           @update:model-value="onWindowChange"
         />
       </label>
+      <!-- AI 入口（15.3）：模型离线只隐藏入口，数据页不受影响（D9） -->
+      <el-button
+        v-if="insightAi.aiAvailable.value"
+        type="primary"
+        data-testid="ygb-ai-entry"
+        @click="onAiInterpret"
+      >✨ AI 解读本页</el-button>
     </section>
 
     <p class="ygb__meta">{{ SIGN_TEXT }}</p>

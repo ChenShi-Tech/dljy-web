@@ -27,6 +27,7 @@ import { mount as appMount } from '@/test/mount'
 import InsightBlock from '@/components/insight/InsightBlock.vue'
 import InsightDateRange from '@/components/insight/InsightDateRange.vue'
 import { insightResult } from '@/components/insight/insightFixtures'
+import { activeAiPage, resolveInterpret } from '@/features/aiSidebar/pageRegistry'
 import YunnanOverviewPage from './YunnanOverviewPage.vue'
 
 // ── 可控 mock 状态 ───────────────────────────────────────────────────────────────────────
@@ -34,6 +35,11 @@ import YunnanOverviewPage from './YunnanOverviewPage.vue'
 const state = vi.hoisted(() => ({
   capabilities: null as unknown,
   responder: null as ((request: any) => Promise<any>) | null,
+}))
+
+vi.mock('@/composables/useAgentHealth', () => ({
+  // 页面 AI 入口的探活打桩：不发起真实网络连接；AI 入口可见性按在线处理。
+  useAgentHealth: () => ({ health: { value: 'online' }, ready: { value: true }, offline: { value: false }, check: async () => {} }),
 }))
 
 vi.mock('@/services/insight/insightClient', async (importOriginal) => {
@@ -694,5 +700,32 @@ describe('YunnanOverviewPage', () => {
   it('窗口上限取最紧的分析（overview.key-items 限 7 天）', async () => {
     await mountPage()
     expect(wrapper!.getComponent(InsightDateRange).props('maxDays')).toBe(7)
+  })
+})
+
+// ── AI 解读注册（dljy#3100，任务 15.3）：六页注册覆盖之总览页 ─────────────────────────────
+
+describe('YunnanOverviewPage · AI 解读注册（15.3）', () => {
+  it('注册统一侧栏声明并挂入口按钮：采集只含当前签名的已就绪区块，payload 无原始行', async () => {
+    await mountPage()
+    expect(wrapper!.find('[data-testid="yno-ai-entry"]').exists()).toBe(true)
+    const def = activeAiPage().value
+    expect(def?.label).toBe('云南市场总览')
+    const plan = resolveInterpret(def!)
+    const slice = plan?.context?.() as { blocks: Array<Record<string, unknown>> } | null
+    expect(slice).not.toBeNull()
+    // 六个可见区块（key-items/prices/spread/supply/forecast/grid）全部就绪且当前签名一致
+    expect(slice!.blocks).toHaveLength(6)
+    expect(JSON.stringify(slice)).not.toMatch(/"rows"/)
+  })
+
+  it('窗口变化后旧结果全部作废：新查询未就绪期间采集为空（过期资料不进 AI 上下文）', async () => {
+    await mountPage()
+    const def = activeAiPage().value!
+    expect((resolveInterpret(def)!.context?.() as { blocks: unknown[] }).blocks).toHaveLength(6)
+    state.responder = () => new Promise(() => {}) // 新查询挂起：旧结果已清、新结果未到
+    await setWindow('2026-09-17', '2026-09-18') // 代次 +1：旧结果属于另一份读取
+    const slice = resolveInterpret(def)!.context?.() as { blocks: unknown[] } | null
+    expect(slice?.blocks ?? []).toHaveLength(0)
   })
 })
