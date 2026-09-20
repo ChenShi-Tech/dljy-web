@@ -101,7 +101,11 @@ export function calendarDayMs(value) {
   return ms
 }
 
-function assertKnownKeys(value, allowed, where) {
+/**
+ * 未知键一律拒绝：影响口径的未知字段不能被静默丢弃（多一个没人认识的条件，结果就不是用户以为的口径）。
+ * analyses.mjs、research.mjs 等目录文件共用；导出只为复用，不改行为。
+ */
+export function assertKnownKeys(value, allowed, where) {
   for (const key of Object.keys(value)) {
     if (FORBIDDEN_KEYS.includes(key)) fail(INSIGHT_ERRORS.FORBIDDEN_FIELD, `${where}不接受「${key}」：只能选择已登记的分析与筛选条件`, { field: key })
     if (!allowed.includes(key)) fail(INSIGHT_ERRORS.UNKNOWN_FIELD, `${where}含未知字段「${key}」，为避免口径被悄悄改变，请求被拒绝`, { field: key })

@@ -12,6 +12,7 @@ export const INSIGHT_ENDPOINTS = Object.freeze({
   capabilities: Object.freeze({ method: 'GET', path: '/api/v1/market-insight/capabilities' }),
   coverage: Object.freeze({ method: 'POST', path: '/api/v1/market-insight/coverage' }),
   query: Object.freeze({ method: 'POST', path: '/api/v1/market-insight/query' }),
+  researchPreview: Object.freeze({ method: 'POST', path: '/api/v1/market-insight/research/preview' }),
 })
 
 const fail = (message, details) => { throw new InsightContractError(INSIGHT_ERRORS.BAD_REQUEST, message, details) }

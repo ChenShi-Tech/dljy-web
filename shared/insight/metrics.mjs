@@ -78,6 +78,16 @@ export const INSIGHT_METRICS = Object.freeze([
   definition({ metricId: 'plant.capture-paired-energy', version: '1', label: '配对电量', unit: 'MWh', places: 3, formula: 'ΣEt（电量与节点价都有效的时段，零电量时段剔除）', basis: '捕获参考价的分母口径' }),
   definition({ metricId: 'plant.capture-reference-product', version: '1', label: '节点量价参考乘积', unit: 'yuan', places: 2, formula: 'Σ(Et×Pnode,t)', basis: '只是电量×节点价的参考乘积，不是实际结算电费，不含电网损失' }),
   definition({ metricId: 'plant.negative-price-energy', version: '1', label: '负价时段暴露电量', unit: 'MWh', places: 3, formula: 'ΣEt(Pnode,t<0)', basis: '配对时段中节点价为负的电量合计；占比另见负价电量占比' }),
+  // #3080 研究内核：相关、滞后、异常窗口与同类日。相关未处理时序自相关，不提供置信区间（RS05）；
+  // 滞后/窗口/特征权重都由请求显式给出，内核不搜索最优参数。「by-input」表示单位跟随输入序列。
+  definition({ metricId: 'research.pearson-r', version: '1', label: '共同样本相关系数', unit: 'r', places: 6, formula: 'Σ(x−x̄)(y−ȳ)/n ÷ (σx·σy)（只在双方都有效的对齐时段）', basis: '缺测不补零；未处理时序自相关，不提供置信区间，只给 r 与样本数' }),
+  definition({ metricId: 'research.covariance', version: '1', label: '样本协方差', unit: 'by-input', places: 6, formula: 'Σ(x−x̄)(y−ȳ)/n', basis: '与 r 同一共同样本；单位跟随输入序列' }),
+  definition({ metricId: 'research.lag-mean-difference', version: '1', label: '滞后平均差', unit: 'by-input', places: 6, formula: 'Σ(x_t−y_{t−k})/n（k 由请求显式给出）', basis: '只在移动后仍共同的窗口配对；不搜索最优滞后，不是领先滞后结论' }),
+  definition({ metricId: 'research.lag-absolute-mean', version: '1', label: '滞后差绝对值均值', unit: 'by-input', places: 6, formula: 'Σ|x_t−y_{t−k}|/n', basis: '防正负相互抵消；与平均差分开列示' }),
+  definition({ metricId: 'research.anomaly-window-mean', version: '1', label: '异常窗口均值', unit: 'by-input', places: 6, formula: '窗口内等时长槽位观测的算术平均', basis: '只在时间连续的完整窗口上扫描；阈值是平台分析默认值，不是官方规则' }),
+  definition({ metricId: 'research.anomaly-threshold', version: '1', label: '异常窗口阈值', unit: 'by-input', places: 6, formula: '显式绝对值或该序列最近秩分位数', basis: '分位数只在参与扫描的序列自身观测内计算' }),
+  definition({ metricId: 'research.similar-day-distance', version: '1', label: '同类日加权距离', unit: 'distance', places: 6, formula: 'Σ wᵢ·|z目标,ᵢ−z候选,ᵢ|', basis: 'z-score 标准化参数只在完整候选集合内计算；不以相似度承诺价格预测' }),
+  definition({ metricId: 'research.feature-contribution', version: '1', label: '同类日特征贡献', unit: 'distance', places: 6, formula: 'wᵢ·|z目标,ᵢ−z候选,ᵢ|', basis: '单个特征对距离的贡献；随候选日逐项返回' }),
   // #3081 结算表现视图（任务 12.1—12.4，ST01—ST06）：加权统计、状态差异、损失边界与核对。
   definition({ metricId: 'settlement.total-energy', version: '1', label: '结算电量合计', unit: 'MWh', places: 3, formula: 'Σ电量（字段有效的记录）', basis: '同一来源同一有效记录集合内求和；正式/暂结/日/月不相加' }),
   definition({ metricId: 'settlement.total-fee', version: '1', label: '结算电费合计', unit: 'yuan', places: 2, formula: 'Σ电费（字段有效的记录）', basis: '同一来源同一有效记录集合内求和；电费不是利润；日/月/账单不相加' }),
