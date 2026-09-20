@@ -27,8 +27,11 @@ import {
 } from '@/services/insight/insightClient'
 import { searchSpotNodes } from '@/services/market/spotClient'
 import { fetchCgnYunnanPriceBundle } from '@/services/market/cgnYunnanLivePrice'
+import { getCurrentUser } from '@/services/auth'
 import { useInsightContext } from '@/composables/useInsightContext'
 import { useInsightSelection } from '@/components/insight/chart/useInsightSelection'
+import Price3DWorkspace from './prices/Price3DWorkspace.vue'
+import { readPriceMode, writePriceMode, type PriceDisplayMode } from './prices/priceModeStorage'
 import InsightBlock from '@/components/insight/InsightBlock.vue'
 import InsightDateRange from '@/components/insight/InsightDateRange.vue'
 import InsightEvidenceDrawer from '@/components/insight/InsightEvidenceDrawer.vue'
@@ -140,6 +143,12 @@ function dayAheadSourceIdOf(): string {
   return ''
 }
 
+/** 当前价格对象的对象维度（用户侧价无节点维度：立体/热力不需要选对象，直接画）。 */
+const objectDimension = computed(() => {
+  const sourceId = dayAheadSourceIdOf()
+  return sourceId ? (getInsightSource(sourceId)?.objectDimension ?? null) : null
+})
+
 /**
  * 历史候选的 requiredSourceIds：当前价格对象的日前 + 实时两个价格来源
  * （场站关联价分析里的第三来源是场站清单，不是价格读取，不参与求交集）。
@@ -234,6 +243,7 @@ watch(globalSignature, () => {
   Object.assign(summaryState, blankState())
   clearSpreadSelection()
   if (visitedTabs.has(activeTab.value)) ensureTab(activeTab.value)
+  ensureSeriesModeQueries()
 })
 
 /** 切换价格对象：用户显式操作。清对象（对象属于原价格对象）、清参考、作废在途请求。 */
@@ -250,6 +260,58 @@ function onTabChange(name: string | number): void {
   activeTab.value = name as PriceView
   visitedTabs.add(activeTab.value)
   ensureTab(activeTab.value)
+  ensureSeriesModeQueries()
+}
+
+// ── 时段走势页签的展示模式（单日走势 / 多日立体 / 日期×时段热力）────────────────────────
+// 模式按 用户+地区+价格对象 记 localStorage（try/catch，storage 异常不影响页面）；
+// 三维/热力/双切面/证据表与「历史分布」页签共用同一份 profile 结果（不另发请求）。
+
+const seriesMode = ref<PriceDisplayMode>('single')
+
+/** storage 抛错（隐私模式/被禁用）时仍可用的用户名读取：读不到按匿名处理，不影响页面。 */
+function currentUsername(): string {
+  try {
+    return getCurrentUser().username
+  } catch {
+    return 'anonymous'
+  }
+}
+
+/** 按当前键恢复记忆的模式；只赋值不回写（恢复不是用户动作，不产生记忆）。 */
+function restoreSeriesMode(): void {
+  if (!priceObjectChoice.value) return
+  const remembered = readPriceMode(currentUsername(), ctx.regionId.value, priceObjectChoice.value)
+  if (seriesMode.value !== remembered) seriesMode.value = remembered
+}
+
+// 用户/地区/价格对象任一变化 → 换键恢复（旧键的记忆不跨对象串扰）。
+watch([currentUsername, () => ctx.regionId.value, priceObjectChoice], () => {
+  restoreSeriesMode()
+})
+
+/** 用户显式切换模式（分段控件或三维降级建议）：记忆 + 非 single 时确保 profile 查询。 */
+function onModeChange(mode: PriceDisplayMode): void {
+  if (seriesMode.value !== mode) seriesMode.value = mode
+  if (priceObjectChoice.value) {
+    writePriceMode(currentUsername(), ctx.regionId.value, priceObjectChoice.value, mode)
+  }
+  ensureSeriesModeQueries()
+}
+
+/** 非单日模式的数据面是 profile 视图（与「历史分布」页签同签名不重查）。 */
+function ensureSeriesModeQueries(): void {
+  if (activeTab.value === 'series' && seriesMode.value !== 'single') ensureTab('profile')
+}
+
+/** 单日窗口点了「改为 7 天」：用户显式扩窗（多日展示不悄悄扩窗）。 */
+function onExtendWindow(range: { start: string; end: string }): void {
+  ctx.setBusinessWindow(range.start, range.end)
+}
+
+/** 三维超限/降级时用户改看热力：与分段切换同一条路径（记忆 + 确保查询）。 */
+function onSwitchMode(mode: 'heatmap'): void {
+  onModeChange(mode)
 }
 
 function onWindowChange(next: { start: string; end: string }): void {
@@ -796,23 +858,53 @@ onMounted(() => {
     <el-tabs :model-value="activeTab" class="ynp-prices__tabs" @tab-change="onTabChange">
       <el-tab-pane v-for="tab in PRICE_TABS" :key="tab.view" :name="tab.view" :label="tab.label">
         <template v-if="visitedTabs.has(tab.view)">
-          <!-- 时段走势：明细序列 + 统计摘要 -->
+          <!-- 时段走势：单日走势 / 多日立体 / 日期×时段热力（模式按 用户+地区+价格对象 记忆） + 统计摘要 -->
           <template v-if="tab.view === 'series'">
-            <InsightBlock
-              title="时段走势"
-              :result="viewStates.series.result"
-              :error="viewStates.series.error"
-              :loading="viewStates.series.loading"
-              :on-retry="() => retryView('series')"
-              :on-refresh="() => retryView('series')"
-              :source-titles="sourceTitles"
-              @open-candidates="openCandidates"
-              @open-evidence="openEvidence('series')"
-            >
-              <p v-if="requiresObjects && !ctx.objectIds.value.length" class="ynp-prices__hint">
-                请先在上方选择分析对象，再进行查询（未选对象不发请求）。
-              </p>
-              <template v-else>
+            <div class="ynp-prices__mode-row">
+              <el-radio-group
+                :model-value="seriesMode"
+                size="small"
+                data-testid="ynp-series-mode"
+                @update:model-value="onModeChange"
+              >
+                <el-radio-button value="single">单日走势</el-radio-button>
+                <el-radio-button value="multi3d">多日立体</el-radio-button>
+                <el-radio-button value="heatmap">日期×时段热力</el-radio-button>
+              </el-radio-group>
+            </div>
+
+            <p v-if="requiresObjects && !ctx.objectIds.value.length" class="ynp-prices__hint">
+              请先在上方选择分析对象，再进行查询（未选对象不发请求）。
+            </p>
+            <template v-else>
+              <!-- 多日立体 / 热力：与「历史分布」页签共用同一份 profile 结果 -->
+              <Price3DWorkspace
+                v-if="seriesMode !== 'single'"
+                :mode="seriesMode"
+                :visible="activeTab === 'series'"
+                :result="viewStates.profile.result"
+                :error="viewStates.profile.error"
+                :loading="viewStates.profile.loading"
+                :object-dimension="objectDimension"
+                :window-day-count="windowDayCount"
+                :business-window="ctx.businessWindow.value"
+                @retry="retryView('profile')"
+                @extend-window="onExtendWindow"
+                @switch-mode="onSwitchMode"
+              />
+
+              <InsightBlock
+                v-if="seriesMode === 'single'"
+                title="时段走势"
+                :result="viewStates.series.result"
+                :error="viewStates.series.error"
+                :loading="viewStates.series.loading"
+                :on-retry="() => retryView('series')"
+                :on-refresh="() => retryView('series')"
+                :source-titles="sourceTitles"
+                @open-candidates="openCandidates"
+                @open-evidence="openEvidence('series')"
+              >
                 <InsightSeriesChart
                   :result="viewStates.series.result"
                   :current="{ regionId: ctx.regionId.value, companyId: ctx.companyId.value, contextVersion: ctx.contextVersion.value }"
@@ -825,8 +917,8 @@ onMounted(() => {
                   :source-titles="sourceTitles"
                   @row-click="() => {}"
                 />
-              </template>
-            </InsightBlock>
+              </InsightBlock>
+            </template>
 
             <InsightBlock
               title="统计摘要"
@@ -1110,6 +1202,14 @@ onMounted(() => {
   margin: 0;
   color: var(--muted, #909399);
   font-size: var(--font-sm, 13px);
+}
+
+/* 时段走势页签的展示模式切换（单日走势 / 多日立体 / 日期×时段热力） */
+.ynp-prices__mode-row {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  margin-bottom: 8px;
 }
 
 .ynp-prices__cards {
