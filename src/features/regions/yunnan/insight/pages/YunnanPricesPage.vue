@@ -202,7 +202,12 @@ async function loadCapabilities(): Promise<void> {
   capabilitiesError.value = null
   try {
     const result = await ctx.request.run((signal) => fetchInsightCapabilities({ signal }))
-    if (!result) return
+    if (!result) {
+      // 在途请求被业务代次作废（业务窗/公司/对象/来源切换）：能力目录不随这些业务维度变化，
+      // 静默 return 会让「目录与错误均为 null」永久拦截查询。重拉一次恢复（dljy#3065）。
+      void loadCapabilities()
+      return
+    }
     capabilities.value = result
     // 初始默认：第一个可用对象。此后选择只随用户显式操作变化（能力目录变化也不改选）。
     if (!priceObjectChoice.value) {
