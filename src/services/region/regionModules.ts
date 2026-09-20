@@ -328,7 +328,7 @@ export const regionModuleCapabilities: RegionModuleCapability[] = [
     title: '中长期交易',
     group: 'midlong',
     routePrefixes: ['/zcqjy', '/sjxh/zjzzt'],
-    routePaths: ['/zcqjy/contracts', '/zcqjy/positions', '/zcqjy/positions/intervals', '/zcqjy/positions/stations', '/zcqjy/curves', '/zcqjy/plans', '/zcqjy/execution', '/zcqjy/zccljk', '/zcqjy/zfsdjy', '/zcqjy/zjyap', '/sjxh/zjzzt'],
+    routePaths: ['/zcqjy/contracts', '/zcqjy/positions', '/zcqjy/positions/intervals', '/zcqjy/positions/stations', '/zcqjy/curves', '/zcqjy/plans', '/zcqjy/execution', '/zcqjy/adjustments', '/zcqjy/review', '/zcqjy/bills', '/zcqjy/zccljk', '/zcqjy/exposure', '/zcqjy/zfsdjy', '/zcqjy/zjyap', '/sjxh/zjzzt'],
     statusByRegion: {
       shanxi: 'available',
       yunnan: 'degraded',
@@ -401,6 +401,24 @@ export const regionModuleCapabilities: RegionModuleCapability[] = [
         path: '/zcqjy/execution',
         statusByRegion: { yunnan: 'available', shanxi: 'hidden', guangdong: 'hidden', sichuan: 'hidden' },
         note: '交易公告与日历、申报材料导出与外部提交登记；导出不代提交、不对接外部平台；仅云南试点。'
+      },
+      // 云南中长期售电 P4（dljy#3014）：合同调整独立页；执行确认是交易执行页的第四个标签，
+      // 随 /zcqjy/execution 的能力开放，不单列。
+      {
+        path: '/zcqjy/adjustments',
+        statusByRegion: { yunnan: 'available', shanxi: 'hidden', guangdong: 'hidden', sichuan: 'hidden' },
+        note: '外部调整/转让/部分终止：方向核验、可调余额、原子生效与影响追溯；仅云南试点。'
+      },
+      // 云南中长期售电 P5（dljy#3016）：业务复盘与月报、外部账单与差异；不导入现货复盘状态。
+      {
+        path: '/zcqjy/review',
+        statusByRegion: { yunnan: 'available', shanxi: 'hidden', guangdong: 'hidden', sichuan: 'hidden' },
+        note: '中长期量价复盘与冻结月报；不输出套保/现货择时/实际利润结论；仅云南试点。'
+      },
+      {
+        path: '/zcqjy/bills',
+        statusByRegion: { yunnan: 'available', shanxi: 'hidden', guangdong: 'hidden', sichuan: 'hidden' },
+        note: '外部账单登记修订、收款凭证与量价差异闭环；综合账单不猜分；仅云南试点。'
       },
       // sdpt_zfsdjy 是三德普华私有族（曾误标 public，匿名可读该公司中长期合同台账与
       // 逐日持仓电量/持仓均价，#1617 合并后复查发现）。与 /xhjy/zrqsb、/xhjy/zptqx 同口径：

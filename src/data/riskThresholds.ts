@@ -3,9 +3,6 @@
 // 避免口径漂移。后续可按地区覆写（getRiskThresholds(regionId)）。
 
 export type RiskThresholds = {
-  // 敞口：套保率下限（中长期覆盖现货的比例）。≥ green 绿；[yellow, green) 黄；< yellow 红
-  hedgeRatioGreen: number
-  hedgeRatioYellow: number
   // 申报偏差考核：估算考核费（元）。≤ green 绿（含 0）；(green, red) 黄；≥ red 红
   deviationPenaltyGreenYuan: number
   deviationPenaltyRedYuan: number
@@ -15,8 +12,6 @@ export type RiskThresholds = {
 }
 
 export const DEFAULT_RISK_THRESHOLDS: RiskThresholds = {
-  hedgeRatioGreen: 0.8,
-  hedgeRatioYellow: 0.5,
   deviationPenaltyGreenYuan: 0,
   deviationPenaltyRedYuan: 5000,
   spreadThresholdYuan: 80,
@@ -35,12 +30,6 @@ export const RISK_LEVEL_LABEL: Record<RiskLevel, string> = {
   green: '安全',
   yellow: '关注',
   red: '越限',
-}
-
-export function hedgeRatioLevel(ratio: number, t: RiskThresholds = DEFAULT_RISK_THRESHOLDS): RiskLevel {
-  if (ratio >= t.hedgeRatioGreen) return 'green'
-  if (ratio >= t.hedgeRatioYellow) return 'yellow'
-  return 'red'
 }
 
 export function deviationPenaltyLevel(yuan: number, t: RiskThresholds = DEFAULT_RISK_THRESHOLDS): RiskLevel {
