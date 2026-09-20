@@ -15,6 +15,10 @@
 //     占位，不借数据、不留死链；下钻 query 经 insightHandoff 统一编解码（共享四键 + hx_from
 //     返回锚点，dljy#3087 任务 15.1）；
 //   - 获权区块（场站）按能力目录判定可见性：公共账号不渲染空框、不发获权请求；
+//   - 电网事件摘要（dljy#3102，任务 10.7）与电网边界页检修干预页签（10.6）消费同一批
+//     grid-geo 披露事件接口（overview/events，identity 归并口径一致），不重建事件事实库、
+//     不经洞察分析查询；可见性按接口实际语义（公开披露、公司级作用域），不按洞察能力
+//     目录门控；下钻只带业务窗口（query start/end），明细以电网边界页完整筛选为准；
 //   - 天气等旧驾驶舱大块不带入本页（收拢为各页自己的事）。
 
 import { computed, onMounted, reactive, ref, watch } from 'vue'
@@ -43,6 +47,10 @@ import InsightHistoryCandidates from '@/components/insight/InsightHistoryCandida
 import InsightResultTable from '@/components/insight/InsightResultTable.vue'
 import InsightSeriesChart from '@/components/insight/chart/InsightSeriesChart.vue'
 import { formatBeijingDateTime, insightSeriesName, insightSourceTitle, type InsightSourceTitle } from '@/components/insight/insightText'
+import { fetchGridDisclosureOverview, fetchGridDisclosureEvents } from '@/features/gridGeo/client'
+import { maintenanceTimeBasis } from '@/features/gridGeo/disclosureMaintenance'
+import { parseDisclosureTime } from '@/features/gridGeo/disclosureTime'
+import type { GridDisclosureEvent, GridDisclosureOverview } from '@/features/gridGeo/types'
 
 // ── 固定文案（改文案要同步 docs/market-insight-overview.md）──────────────────────────────
 
@@ -52,6 +60,24 @@ const SPREAD_IS_NOT_REVENUE_TEXT = '价差是价格差，不是收益'
 const FORECAST_MODE_TEXT = '事后对照（只有发布日期，没有发布时刻，不能当事前回测）'
 const PROGRESS_NO_FAKE_COMPARE_TEXT = '本期值见「供需与水电」区块；参考期不完整时不显示环比'
 const PAGE_BUILDING_TEXT = '该详情页正在建设，尚未开通'
+
+// 电网事件摘要（dljy#3102，任务 10.7）：与电网边界页完整筛选同源同口径；本区块不提供导出，
+// 明细以电网边界页为准（页面级导出只覆盖洞察分析区块，披露摘要不伪造全量口径）。
+const EVENTS_SUMMARY_NOTE_TEXT = '摘要与电网边界页完整筛选同源同口径；导出不等于当前页，明细以电网边界页为准'
+const EVENTS_IDENTITY_MISSING_TEXT = '身份归并结果未提供：独立事件数暂缺，只显示原始记录数'
+const EVENTS_EMPTY_TEXT = '当前窗口内没有计划检修、实际干预或故障的披露记录'
+const EVENTS_PLAN_TITLE = '计划检修（检修计划与电网检修信息）'
+const EVENTS_ACTUAL_TITLE = '实际干预（人工干预与非计划停运）'
+const EVENTS_RECENT_TITLE = '最近 3 条（窗口内停电时间最晚）'
+/** 与电网边界页检修干预页签同一批类别：计划=maintenance，实际=intervention+outage。 */
+const EVENTS_CATEGORY = 'maintenance,intervention,outage'
+const EVENTS_PAGE_SIZE = 100
+/** 披露类别 → 业务名（与电网边界页检修干预页签一致）。 */
+const DISCLOSURE_CATEGORY_TEXT: Record<string, string> = {
+  maintenance: '计划检修',
+  intervention: '人工干预',
+  outage: '非计划停运',
+}
 
 /** 规则评估状态 → 业务话术（insufficient-data/not-applicable 带后端原因原文）。 */
 const RULE_STATUS_TEXT: Record<string, string> = {
@@ -200,17 +226,21 @@ function retryQuery(blockId: string): void {
   ensureQuery(blockId)
 }
 
-// 上下文变化（窗口/地区/公司）：所有旧结果属于另一份读取，全部作废重查。
+// 上下文变化（窗口/地区/公司）：所有旧结果属于另一份读取，全部作废重查；
+// 电网事件摘要与洞察能力目录无关，单独作废重查（OV02：它不是洞察分析区块）。
 watch(
   () => ctx.contextVersion.value,
   () => {
     for (const blockId of Object.keys(viewStates)) Object.assign(viewStates[blockId], blankState())
+    Object.assign(eventsState, { overview: null, recent: [], loading: false, error: null, queriedKey: '' })
     if (capabilities.value) ensureAllBlocks()
+    ensureEventsQuery()
   }
 )
 
 onMounted(() => {
   void loadCapabilities()
+  ensureEventsQuery()
 })
 
 // ── 下钻（OV05：带同一业务日期到详情页）────────────────────────────────────────────────
@@ -549,6 +579,192 @@ const forecastUnpaired = computed(() => {
   })
 })
 
+// ── 电网事件摘要（dljy#3102，任务 10.7，GB04 + OV02/OV03）───────────────────────────────
+// 与电网边界页检修干预页签（10.6）消费同一批 grid-geo 披露事件接口，不重建事件事实库、
+// 不经洞察分析查询：计划（maintenance）与实际（intervention+outage）分组与该页一致；
+// 独立事件数来自后端 identity 归并汇总（身份不足的保留未归并，不猜测合并），后端未返回
+// 归并汇总时只显示原始数并如实说明（OV03：无事实不硬凑卡片）；最近三条取窗口内停电时间
+// 最晚的记录；下钻只带业务窗口跳电网边界页（检修干预页签由该页承载）。
+
+/** identity 归并汇总（新版读模型字段）：前向兼容收窄，缺失时诚实降级，不硬凑。 */
+type DisclosureIdentityCounts = {
+  rawCount?: number | null
+  distinctCount?: number | null
+  unidentifiedCount?: number | null
+  byCategory?: Record<string, { rawCount?: number | null; distinctCount?: number | null; unidentifiedCount?: number | null } | null> | null
+  note?: string | null
+}
+
+type DisclosureEventIdentity = { version?: number; versions?: number } | null
+
+type EventsOverview = GridDisclosureOverview & { identity?: DisclosureIdentityCounts | null }
+type EventsRecentRow = {
+  eventId: string
+  title: string
+  categoryText: string
+  timeBasisText: string
+  startText: string
+  endText: string
+  versionText: string
+}
+
+const eventsState = reactive<{ overview: EventsOverview | null; recent: EventsRecentRow[]; loading: boolean; error: string | null; queriedKey: string }>({
+  overview: null,
+  recent: [],
+  loading: false,
+  error: null,
+  queriedKey: '',
+})
+
+function eventsKeyOf(): string {
+  return ['events-summary', ctx.contextVersion.value].join('|')
+}
+
+/** 时间列：解析不了的起止如实「未提供」，不推断精确停复电时刻（GB04）。 */
+function disclosureTimeText(value: string | null | undefined): string {
+  return value && parseDisclosureTime(value) !== null ? formatBeijingDateTime(value) : '未提供'
+}
+
+/** 同一事件被重复披露的版本标注（identity=annotate 返回）；只有一版不显示。 */
+function disclosureVersionText(event: GridDisclosureEvent & { identity?: DisclosureEventIdentity }): string {
+  const identity = event.identity
+  if (!identity || !(Number(identity.versions) > 1)) return ''
+  return `第 ${identity.version} 版 / 共 ${identity.versions} 版`
+}
+
+/** 最近三条：窗口内停电时间最晚（start-asc 排序取尾页尾部）；记录超过一页时取末页。 */
+async function loadEventsRecent(key: string): Promise<void> {
+  const window = ctx.businessWindow.value
+  const baseParams = {
+    category: EVENTS_CATEGORY,
+    identity: 'annotate',
+    sort: 'start-asc',
+    from: window.start,
+    to: window.end,
+    pageSize: EVENTS_PAGE_SIZE,
+  }
+  const first = await fetchGridDisclosureEvents(baseParams)
+  if (eventsKeyOf() !== key) return
+  let items = first.items ?? []
+  if (Number(first.total ?? items.length) > EVENTS_PAGE_SIZE) {
+    const last = await fetchGridDisclosureEvents({ ...baseParams, page: Math.ceil(Number(first.total) / EVENTS_PAGE_SIZE) })
+    if (eventsKeyOf() !== key) return
+    items = last.items ?? items
+  }
+  eventsState.recent = items.slice(-3).reverse().map((event) => ({
+    eventId: event.eventId,
+    title: event.title,
+    categoryText: DISCLOSURE_CATEGORY_TEXT[event.category] ?? event.category,
+    timeBasisText: maintenanceTimeBasis(event),
+    startText: disclosureTimeText(event.effectiveAt),
+    endText: disclosureTimeText(event.expiresAt),
+    versionText: disclosureVersionText(event),
+  }))
+}
+
+async function runEventsQuery(): Promise<void> {
+  const key = eventsKeyOf()
+  eventsState.loading = true
+  eventsState.error = null
+  try {
+    const window = ctx.businessWindow.value
+    const overview = (await fetchGridDisclosureOverview({
+      category: EVENTS_CATEGORY,
+      identity: 'annotate',
+      from: window.start,
+      to: window.end,
+    })) as EventsOverview
+    if (eventsKeyOf() !== key) return // 作废/迟到：不写状态
+    eventsState.overview = overview
+    eventsState.queriedKey = key
+    // 未接入 / 窗口内没有记录：诚实空态，不再拉明细（OV03）。
+    const availability = overview.dataAvailability?.status ?? 'missing'
+    if (availability !== 'available' || !overview.total) return
+    await loadEventsRecent(key)
+  } catch (error) {
+    if (eventsKeyOf() !== key) return
+    eventsState.error = error instanceof Error ? error.message : String(error)
+    eventsState.queriedKey = key // 失败也记键：同口径不自动重查，重试由用户触发
+  } finally {
+    if (eventsKeyOf() === key) eventsState.loading = false
+  }
+}
+
+function ensureEventsQuery(): void {
+  if (eventsState.queriedKey === eventsKeyOf()) return
+  void runEventsQuery()
+}
+
+function retryEventsQuery(): void {
+  eventsState.queriedKey = ''
+  ensureEventsQuery()
+}
+
+const eventsIdentity = computed<DisclosureIdentityCounts | null>(() => eventsState.overview?.identity ?? null)
+
+/** 归并汇总返回了才有独立事件数；缺失时只显示原始数并说明（OV03）。 */
+const eventsIdentityAvailable = computed(() => {
+  const identity = eventsIdentity.value
+  return Boolean(identity && typeof identity.rawCount === 'number')
+})
+
+const eventsCountsText = computed(() => {
+  const overview = eventsState.overview
+  if (!overview) return ''
+  const identity = eventsIdentity.value
+  const raw = typeof identity?.rawCount === 'number' ? identity.rawCount : (overview.total ?? null)
+  if (raw === null) return ''
+  const parts = [`原始记录 ${Number(raw).toLocaleString('zh-CN')} 条`]
+  if (typeof identity?.distinctCount === 'number') parts.push(`独立事件 ${Number(identity.distinctCount).toLocaleString('zh-CN')} 条`)
+  const unidentified = Number(identity?.unidentifiedCount ?? 0)
+  if (unidentified > 0) parts.push(`${unidentified.toLocaleString('zh-CN')} 条身份不足、保留未归并`)
+  return parts.join('；')
+})
+
+type EventsGroupCounts = { raw: number | null; distinct: number | null; unidentified: number | null }
+
+/** 计划=maintenance；实际=intervention+outage（分组与电网边界页检修干预页签一致）。 */
+function eventsGroupCountsOf(kind: 'plan' | 'actual'): EventsGroupCounts {
+  const categories = kind === 'plan' ? ['maintenance'] : ['intervention', 'outage']
+  const byCategory = eventsIdentity.value?.byCategory
+  if (byCategory) {
+    let raw = 0
+    let distinct = 0
+    let unidentified = 0
+    let present = false
+    for (const category of categories) {
+      const entry = byCategory[category]
+      if (!entry) continue
+      present = true
+      raw += entry.rawCount ?? 0
+      distinct += entry.distinctCount ?? 0
+      unidentified += entry.unidentifiedCount ?? 0
+    }
+    if (present) return { raw, distinct, unidentified }
+  }
+  // 归并汇总缺失：按类别的原始计数兜底（countsByCategory），独立事件数如实缺省。
+  const counts = eventsState.overview?.countsByCategory
+  if (!counts) return { raw: null, distinct: null, unidentified: null }
+  const raw = categories.reduce((sum, category) => sum + (counts[category as keyof typeof counts] ?? 0), 0)
+  return { raw, distinct: null, unidentified: null }
+}
+
+const eventsPlanCounts = computed(() => eventsGroupCountsOf('plan'))
+const eventsActualCounts = computed(() => eventsGroupCountsOf('actual'))
+
+/** 空态原因：未接入 / 未导入 / 窗口内没有披露事件；有原因就不渲染计数与最近列表（OV03）。 */
+const eventsEmptyReason = computed(() => {
+  const overview = eventsState.overview
+  if (!overview) return ''
+  const availability = overview.dataAvailability
+  if ((availability?.status ?? 'missing') !== 'available') {
+    const reason = availability?.reason ?? '披露事件读取结果不可用'
+    return availability?.status === 'not-configured' ? `披露事件源未接入：${reason}` : `当前窗口内没有已导入的披露记录：${reason}`
+  }
+  if (!overview.total) return EVENTS_EMPTY_TEXT
+  return ''
+})
+
 // ── 证据抽屉与历史候选（按区块所属分析求候选，不混五月与八月）──────────────────────────
 
 const evidenceVisible = ref(false)
@@ -861,6 +1077,86 @@ const onAiInterpret = (): void => {
       </div>
     </InsightBlock>
 
+    <!-- 电网事件摘要（10.7）：与电网边界页检修干预页签同一批披露事件接口；
+         计划/实际分组 + 最近三条 + 带业务窗口下钻；独立查询独立重试（OV02），
+         未接入/无记录诚实空态（OV03） -->
+    <InsightBlock
+      title="电网事件摘要（计划检修 / 实际干预 / 故障）"
+      :result="null"
+      :error="null"
+      :loading="eventsState.loading"
+      :source-titles="sourceTitles"
+    >
+      <p class="yno-overview__hint" data-testid="yno-events-note">{{ EVENTS_SUMMARY_NOTE_TEXT }}</p>
+      <template v-if="eventsState.overview">
+        <el-empty v-if="eventsEmptyReason" :description="eventsEmptyReason" :image-size="72" data-testid="yno-events-empty" />
+        <template v-else>
+        <dl class="yno-overview__item-grid" data-testid="yno-events-counts">
+          <dt>窗口内事件</dt>
+          <dd>{{ eventsCountsText }}</dd>
+        </dl>
+        <p v-if="!eventsIdentityAvailable" class="yno-overview__hint" data-testid="yno-events-identity-missing">{{ EVENTS_IDENTITY_MISSING_TEXT }}</p>
+        <div class="yno-overview__cards">
+          <div class="yno-overview__card" data-testid="yno-events-plan">
+            <h4 class="yno-overview__card-title">{{ EVENTS_PLAN_TITLE }}</h4>
+            <dl class="yno-overview__card-grid">
+              <dt>原始记录</dt>
+              <dd>{{ eventsPlanCounts.raw === null ? '—' : `${eventsPlanCounts.raw.toLocaleString('zh-CN')} 条` }}</dd>
+              <dt>独立事件</dt>
+              <dd>{{ eventsPlanCounts.distinct === null ? '—' : `${eventsPlanCounts.distinct.toLocaleString('zh-CN')} 条` }}</dd>
+              <template v-if="eventsPlanCounts.unidentified">
+                <dt>身份不足</dt>
+                <dd>{{ eventsPlanCounts.unidentified.toLocaleString('zh-CN') }} 条、保留未归并</dd>
+              </template>
+            </dl>
+          </div>
+          <div class="yno-overview__card" data-testid="yno-events-actual">
+            <h4 class="yno-overview__card-title">{{ EVENTS_ACTUAL_TITLE }}</h4>
+            <dl class="yno-overview__card-grid">
+              <dt>原始记录</dt>
+              <dd>{{ eventsActualCounts.raw === null ? '—' : `${eventsActualCounts.raw.toLocaleString('zh-CN')} 条` }}</dd>
+              <dt>独立事件</dt>
+              <dd>{{ eventsActualCounts.distinct === null ? '—' : `${eventsActualCounts.distinct.toLocaleString('zh-CN')} 条` }}</dd>
+              <template v-if="eventsActualCounts.unidentified">
+                <dt>身份不足</dt>
+                <dd>{{ eventsActualCounts.unidentified.toLocaleString('zh-CN') }} 条、保留未归并</dd>
+              </template>
+            </dl>
+          </div>
+        </div>
+        <!-- 明细（最近三条）读取失败只影响这一段：计数来自已就绪的 overview，照常展示（OV02） -->
+        <template v-if="eventsState.error">
+          <el-alert type="error" :closable="false" show-icon :title="`披露事件明细读取失败：${eventsState.error}`" data-testid="yno-events-error" />
+          <div class="yno-overview__bar">
+            <el-button size="small" data-testid="yno-events-retry" @click="retryEventsQuery">重试</el-button>
+          </div>
+        </template>
+        <template v-else>
+          <div v-if="eventsState.recent.length" class="yno-overview__events" data-testid="yno-events-recent">
+          <h4>{{ EVENTS_RECENT_TITLE }}</h4>
+          <ol>
+            <li v-for="(row, index) in eventsState.recent" :key="row.eventId" :data-testid="`yno-events-recent-${index + 1}`">
+              <span class="yno-overview__event-title">{{ row.title }}</span>
+              <span class="yno-overview__event-status">{{ row.categoryText }} · {{ row.timeBasisText }}<template v-if="row.versionText"> · {{ row.versionText }}</template></span>
+              <span class="yno-overview__event-time">{{ row.startText }} ~ {{ row.endText }}</span>
+            </li>
+          </ol>
+        </div>
+            <div class="yno-overview__bar">
+              <el-button size="small" data-testid="yno-events-drilldown" @click="drilldown('grid-boundaries')">进入电网边界页检修干预页签</el-button>
+            </div>
+        </template>
+        </template>
+      </template>
+      <template v-else-if="eventsState.error">
+        <!-- overview 阶段失败：整块错误态（此时还没有任何已就绪内容可展示） -->
+        <el-alert type="error" :closable="false" show-icon :title="`披露事件读取失败：${eventsState.error}`" data-testid="yno-events-error" />
+        <div class="yno-overview__bar">
+          <el-button size="small" data-testid="yno-events-retry" @click="retryEventsQuery">重试</el-button>
+        </div>
+      </template>
+    </InsightBlock>
+
     <!-- 跨省与电网边界：背景曲线（详情页建设中） -->
     <InsightBlock
       v-if="blockVisible('grid')"
@@ -1138,4 +1434,55 @@ const onAiInterpret = (): void => {
   color: var(--muted, #909399);
   font-size: var(--font-xs, 12px);
 }
+
+.yno-overview__events {
+  border: 1px solid var(--line, #e5e7eb);
+  border-radius: 10px;
+  background: var(--panel-sub, #f8fafc);
+  padding: 10px 12px;
+}
+
+.yno-overview__events h4 {
+  margin: 0 0 8px;
+  font-size: var(--font-md, 14px);
+  font-weight: 600;
+  color: var(--text, #1f2a37);
+}
+
+.yno-overview__events ol {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.yno-overview__events li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px 12px;
+  font-size: var(--font-sm, 13px);
+}
+
+.yno-overview__event-title {
+  font-weight: 600;
+  color: var(--text, #1f2a37);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.yno-overview__event-status {
+  color: var(--muted, #687987);
+  font-size: var(--font-xs, 12px);
+}
+
+.yno-overview__event-time {
+  margin-left: auto;
+  color: var(--muted, #909399);
+  font-size: var(--font-xs, 12px);
+  font-variant-numeric: tabular-nums;
+}
+
 </style>
