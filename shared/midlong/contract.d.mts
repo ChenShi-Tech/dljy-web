@@ -314,6 +314,8 @@ export interface MidlongContractDetail extends MidlongContractSummary {
   /** 框架协议下关联的合同（含已作废）；电量合同恒为空数组。 */
   linkedContracts: MidlongRelatedContract[]
   linkedTrades: { label: string; tradeCount: number; volume: string }
+  /** 分类标注当前值（build-midlong-spot-hedging 3.2/D3）：分类事实，不进版本与指纹；未标注键缺省。 */
+  labels?: { BUYER_CATEGORY?: string | null } | null
 }
 
 export interface MidlongContractStats {
