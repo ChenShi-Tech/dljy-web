@@ -130,4 +130,19 @@ describe('useInsightEntryAnchor', () => {
     expect(ctx.businessWindow.value).toEqual({ start: today, end: today })
     expect(anchor.anchorNotice.value).toBeNull()
   })
+
+  it('ready 为布尔 false（公共账号）：不扫描；变 true 后才扫', async () => {
+    fetchInsightCoverage.mockResolvedValue(candidatesPayload(['2000-01-09']))
+    const mod = await import('./useInsightEntryAnchor')
+    const { beijingToday } = await import('shared/midlong/dates.mjs')
+    const ready = ref(false)
+    const ctx = makeCtx()
+    ctx.businessWindow.value = { start: beijingToday(), end: beijingToday() }
+    const anchor = mod.useInsightEntryAnchor(ctx, { ready })
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    expect(fetchInsightCoverage).not.toHaveBeenCalled()
+    ready.value = true
+    await vi.waitFor(() => expect(ctx.businessWindow.value.start).toBe('2000-01-09'))
+    expect(anchor.anchorNotice.value).not.toBeNull()
+  })
 })

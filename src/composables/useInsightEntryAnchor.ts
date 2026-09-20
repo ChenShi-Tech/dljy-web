@@ -119,11 +119,13 @@ export function useInsightEntryAnchor(ctx: AnchorContext, options?: { ready?: Re
     }
   }
 
+  // 真值门（非 null 门）：页面传入的是布尔 computed——公共账号恒为 false，
+  // 若只判 != null 会立即放行扫描，击穿「公共账号零请求」红线。
   if (options?.ready) {
-    if (options.ready.value != null) run()
+    if (options.ready.value) run()
     else {
       const stop = watch(options.ready, () => {
-        if (options.ready?.value != null) {
+        if (options.ready?.value) {
           stop()
           run()
         }
