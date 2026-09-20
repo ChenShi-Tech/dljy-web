@@ -9,7 +9,7 @@
  *      `node --experimental-strip-types scripts/verify/report-formula-cases.ts` 直接执行回归，
  *      与 quant.ts / tradingLab.ts 的验证方式一致。
  *   3. 每个核心公式在文件末尾 SETTLEMENT_FORMULA_EXAMPLES 配套样例，被
- *      scripts/verify-report-formulas.mjs 断言，保证口径可复现、不漂移。
+ *      同文件底部 golden 样例断言，保证口径可复现、不漂移（原 verify-report-formulas.mjs 脚本已不存在，勿当门禁引用）。
  *
  * 业务主线（贯穿全系统），三部制双结算：
  *   R电费 = Σ Q长·P长 + Σ(Q日前−Q长)·P日前 + Σ(Q实际−Q日前)·P实时
@@ -277,10 +277,14 @@ export function monthlyCapacityRevenue(input: CapacityRevenueInput) {
 
 // 域 G：持仓覆盖 / 风险敞口、VaR / CVaR
 
-/** 持仓覆盖率 = 已对冲电量 / 预测电量；未对冲敞口 = 预测 − 已对冲。 */
-export function hedgeCoverage(input: { contractedMwh: number; forecastMwh: number }) {
-  const cov = input.forecastMwh !== 0 ? input.contractedMwh / input.forecastMwh : 0
-  return { coverageRate: round(cov, 4), openExposureMwh: round(input.forecastMwh - input.contractedMwh) }
+/** 持仓覆盖率 = 已对冲电量 / 实际上网电量（HA-06：与结算复核 HR-01 同口径，缺失日不计 0）。
+ * 分母缺失或为 0 → 「不可计算」（notComputable），不再返回 0。 */
+export function hedgeCoverage(input: { contractedMwh: number | null; forecastMwh: number | null }) {
+  const { contractedMwh, forecastMwh } = input
+  if (contractedMwh == null || forecastMwh == null || forecastMwh === 0) {
+    return { coverageRate: null, openExposureMwh: null, notComputable: true as const }
+  }
+  return { coverageRate: round(contractedMwh / forecastMwh, 4), openExposureMwh: round(forecastMwh - contractedMwh), notComputable: false as const }
 }
 
 export type VarCvarResult = {
@@ -380,7 +384,7 @@ export function revenueAttribution(legs: AttributionLeg[]) {
   }
 }
 
-// 样例（被 scripts/verify-report-formulas.mjs 断言，保证口径不漂移）
+// 样例（本文件底部 golden 断言，保证口径不漂移）
 
 export type FormulaExample = {
   name: string
@@ -447,9 +451,9 @@ export const SETTLEMENT_FORMULA_EXAMPLES: FormulaExample[] = [
     expect: { annualFee: 16500000, monthlyFee: 1375000 }
   },
   {
-    name: '持仓覆盖：已对冲850 / 预测1000 = 85%，敞口150',
+    name: '持仓覆盖：已对冲850 / 实际上网1000 = 85%，敞口150',
     run: () => hedgeCoverage({ contractedMwh: 850, forecastMwh: 1000 }),
-    expect: { coverageRate: 0.85, openExposureMwh: 150 }
+    expect: { coverageRate: 0.85, openExposureMwh: 150, notComputable: false }
   },
   {
     name: '中标率：中标320 / 申报400 = 80%',

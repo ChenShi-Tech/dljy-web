@@ -1159,11 +1159,11 @@ onRegionChange(() => {
             </div>
             <div class="pos-cell">
               <div class="l">中长期覆盖率</div>
-              <div class="v num">{{ position?.hasData ? fmt(position.coverageRate * 100, 0) : '—' }}<small>%</small></div>
+              <div class="v num">{{ position?.hasData && position.coverageRate != null ? fmt(position.coverageRate * 100, 0) : '不可计算' }}<small>%</small></div>
             </div>
             <div class="pos-cell">
               <div class="l">现货敞口</div>
-              <div class="v num neg">{{ position?.hasData ? fmt(position.openExposurePct, 0) : '—' }}<small>%</small></div>
+              <div class="v num neg">{{ position?.hasData && position.openExposurePct != null ? fmt(position.openExposurePct, 0) : '—' }}<small>%</small></div>
               <div class="bar-track"><div class="bar-fill" :style="{ width: `${Math.min(position?.openExposurePct ?? 0, 100)}%`, background: 'var(--ck-neg)' }"></div></div>
             </div>
           </div>

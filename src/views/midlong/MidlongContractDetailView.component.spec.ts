@@ -7,7 +7,7 @@ import { flushPromises, enableAutoUnmount } from '@vue/test-utils'
 import { mount } from '@/test/mount'
 import type { MidlongContractDetail, MidlongRevision } from '@/services/midlong/midlongTypes'
 
-const hoisted = vi.hoisted(() => ({ fetchContract: vi.fn(), correctContract: vi.fn(), addEvidence: vi.fn(), fileToBase64: vi.fn(async () => 'Zg=='), routeQuery: {} as Record<string, string> }))
+const hoisted = vi.hoisted(() => ({ fetchContract: vi.fn(), correctContract: vi.fn(), addEvidence: vi.fn(), fileToBase64: vi.fn(async () => 'Zg=='), routeQuery: {} as Record<string, string>, fetchAdjustments: vi.fn(), fetchRevisionImpact: vi.fn(), capabilities: null as null | Record<string, unknown> }))
 
 vi.mock('element-plus', async (orig) => ({ ...(await orig<typeof import('element-plus')>()), ElMessage: { success: vi.fn(), error: vi.fn() } }))
 vi.mock('vue-router', () => ({ useRoute: () => ({ params: { id: '7' }, query: hoisted.routeQuery }), useRouter: () => ({ replace: vi.fn(), push: vi.fn() }) }))
@@ -16,7 +16,7 @@ vi.mock('@/services/region/regionContext', async () => ({ currentRegion: (await 
 vi.mock('@/services/company/companyApi', () => ({ fetchStations: vi.fn(async () => []) }))
 vi.mock('@/services/midlong/midlongApi', () => ({
   CompanyNotSelectedError: class extends Error {},
-  fetchCapabilities: vi.fn(async () => ({ enabled: true, regionId: 'yunnan', regionSupported: true, pilotRegions: ['yunnan'], phase: 'P1', modules: {}, canWrite: true, companyId: 'comp-a', scopeCompanyIds: ['comp-a'], reason: null })),
+  fetchCapabilities: vi.fn(async () => hoisted.capabilities ?? { enabled: true, regionId: 'yunnan', regionSupported: true, pilotRegions: ['yunnan'], phase: 'P1', modules: {}, canWrite: true, companyId: 'comp-a', scopeCompanyIds: ['comp-a'], reason: null }),
   fetchContract: hoisted.fetchContract,
   fetchSubjects: vi.fn(async () => []),
   correctContract: hoisted.correctContract,
@@ -25,6 +25,11 @@ vi.mock('@/services/midlong/midlongApi', () => ({
 }))
 
 vi.mock('@/services/midlong/midlongFormat', async (orig) => ({ ...(await orig<typeof import('@/services/midlong/midlongFormat')>()), fileToBase64: hoisted.fileToBase64 }))
+vi.mock('@/services/midlong/midlongP4Api', () => ({
+  fetchAdjustments: hoisted.fetchAdjustments, fetchRevisionImpact: hoisted.fetchRevisionImpact,
+  p4ModuleOn: (caps: { enabled?: boolean; regionSupported?: boolean; modules?: Record<string, boolean> } | null | undefined, name: string) =>
+    Boolean(caps?.enabled && caps.regionSupported && caps?.modules?.[name] === true),
+}))
 
 import MidlongContractDetailView from './MidlongContractDetailView.vue'
 
@@ -58,6 +63,7 @@ function detail(o: Partial<MidlongContractDetail> = {}): MidlongContractDetail {
 afterEach(() => {
   vi.clearAllMocks()
   hoisted.routeQuery = {}
+  hoisted.capabilities = null
 })
 
 // 每个用例结束卸载组件：否则遗留实例会响应后续用例的公司/地区切换继续取数，既拖慢全量运行，也可能让「最后一次请求」断言取到别的实例。
@@ -186,5 +192,69 @@ describe('中长期售电合同详情', () => {
     expect(w.text()).toContain('缺核验依据')
     expect(w.text()).toContain('质量提示（不阻止确认')
     expect(w.findAll('.ml-actions button').map((b) => b.text())).toContain('核验确认')
+  })
+})
+
+describe('合同详情：合同调整区块（P4）', () => {
+  const capsP4 = (adjustments: boolean) => ({ enabled: true, regionId: 'yunnan', regionSupported: true, pilotRegions: ['yunnan'], phase: 'P1', modules: { adjustments }, canWrite: true, companyId: 'comp-a', scopeCompanyIds: ['comp-a'], reason: null })
+
+  it('adjustments 能力打开时展示该合同的调整列表与登记入口；关闭时区块与接口都不出现', async () => {
+    hoisted.capabilities = capsP4(false)
+    hoisted.fetchContract.mockResolvedValue(detail())
+    hoisted.fetchAdjustments.mockResolvedValue({ rows: [], total: 0, page: 1, pageSize: 100 })
+    const closed = mount(MidlongContractDetailView, { global: { stubs: STUBS } })
+    await flushPromises()
+    expect(closed.text()).not.toContain('合同调整（')
+    expect(hoisted.fetchAdjustments).not.toHaveBeenCalled()
+
+    hoisted.capabilities = capsP4(true)
+    hoisted.fetchAdjustments.mockResolvedValue({
+      rows: [{
+        id: 31, contractId: 7, contractNo: 'M-7', contractName: '月度合同', subjectId: 1, subjectName: '主体',
+        sourceNamespace: '昆明交易中心', externalAdjustmentNo: 'T-2026-01', externalRevisionNo: 1, status: 'PENDING_VERIFICATION',
+        currentRevisionNo: 1, rowVersion: 1, adjustmentType: 'TRANSFER', direction: null, directionSource: null,
+        pendingReason: 'NO_DIRECTION', baseRevisionNo: 1, totalQuantity: '200', prices: {}, effective: null,
+        companyId: 'comp-a', regionId: 'yunnan', createdAt: '', createdBy: null, updatedAt: '',
+      }],
+      total: 1, page: 1, pageSize: 100,
+    })
+    const w = mount(MidlongContractDetailView, { global: { stubs: STUBS } })
+    await flushPromises()
+    expect(hoisted.fetchAdjustments).toHaveBeenCalledWith(expect.objectContaining({ contractId: '7' }))
+    expect(w.text()).toContain('合同调整（1）')
+    expect(w.text()).toContain('待核对（方向未确认）')
+    expect(w.text()).toContain('方向待核对')
+    expect(w.text()).toContain('待核对，未生效')
+    expect(w.findAll('button').some((b) => b.text() === '登记调整')).toBe(true)
+  })
+
+  it('更正与调整产生的版本在同一条时间线上：变更版本有「影响对比」并展示前后快照，初始版本没有', async () => {
+    hoisted.capabilities = capsP4(true)
+    const corrected: MidlongRevision = {
+      ...revision, id: 2, revisionNo: 2, revisionKind: 'CORRECTION', supersedesRevisionNo: 1, totalQuantity: '1000',
+      changeReason: '原确认单 1000，误录 1100', affectedMonths: ['2027-05'],
+      allocations: revision.allocations.map((a) => ({ ...a, quantity: '1000' })),
+    }
+    hoisted.fetchContract.mockResolvedValue(detail({ revisions: [revision, corrected], currentRevisionNo: 2 }))
+    hoisted.fetchAdjustments.mockResolvedValue({ rows: [], total: 0, page: 1, pageSize: 100 })
+    hoisted.fetchRevisionImpact.mockResolvedValue({
+      contractId: 7, contractNo: 'M-7', contractName: '月度合同', revisionNo: 2, revisionKind: 'CORRECTION',
+      changeReason: '原确认单 1000，误录 1100', recordedAt: '', confirmedAt: '', businessEffectiveAt: null, evidenceIds: [],
+      adjustment: null,
+      snapshot: { frozen: true, beforeRevisionNo: 1, afterRevisionNo: 2, beforeTotalQuantity: '1100', afterTotalQuantity: '1000', months: [{ deliveryMonth: '2027-05', before: '1100', after: '1000', delta: '-100' }] },
+      months: ['2027-05'], affectedPlans: [], affectedProposals: [], asOfExplanation: 'asOf 说明', endedMonths: [], notices: [],
+    })
+    const w = mount(MidlongContractDetailView, { global: { stubs: STUBS } })
+    await flushPromises()
+    // 初始版本（v1）没有影响对比；变更版本（v2 更正）有。
+    expect(w.find('[data-test="revision-impact-1"]').exists()).toBe(false)
+    const button = w.find('[data-test="revision-impact-2"]')
+    expect(button.exists()).toBe(true)
+    await button.trigger('click')
+    await flushPromises()
+    expect(hoisted.fetchRevisionImpact).toHaveBeenCalledWith(7, 2)
+    const dialog = [...document.body.querySelectorAll('.el-dialog')].find((d) => d.textContent?.includes('合同版本变更影响')) as HTMLElement
+    expect(dialog.textContent).toContain('2027-05：1,100 → 1,000（-100 MWh）')
+    expect(dialog.textContent).toContain('快照 v1 → v2')
   })
 })

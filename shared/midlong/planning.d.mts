@@ -1,4 +1,4 @@
-// 中长期售电 P3 售电目标、交易窗口与交易方案共享契约的类型侧伴随定义（#2972）。运行时见 planning.mjs。
+// 中长期售电 P3/P4 售电目标、交易窗口、交易方案与执行结果共享契约的类型侧伴随定义（#2972/#3013）。运行时见 planning.mjs。
 // 接口 DTO 形状与 server/midlong/midlong-p3-api.mjs、midlong-p3-store-pg.mjs 的响应一一对应。
 // 电量、价格、金额、比率一律是规范十进制字符串（不是 number）；未知为 null，不是 0。
 import type { PriceComponent, ProductKind, TaxBasis, TradeMethod } from './contract.mjs'
@@ -6,8 +6,8 @@ import type { PriceComponent, ProductKind, TaxBasis, TradeMethod } from './contr
 export type PlanPeriodType = 'YEAR' | 'MONTH'
 export type PlanRevisionStatus = 'DRAFT' | 'CONFIRMED'
 export type PlanVerificationStatus = 'VERIFIED' | 'UNVERIFIED' | 'TARGET_UNKNOWN'
-export type ProposalStatus = 'DRAFT' | 'EXECUTABLE' | 'SUBMITTED' | 'AWAITING_RESULT' | 'CANCELLED' | 'CLOSED'
-export type ProposalAction = 'UPDATE_DRAFT' | 'CONFIRM' | 'CANCEL' | 'CLOSE' | 'REGISTER_SUBMISSION' | 'ADD_RECEIPT' | 'AWAIT_RESULT' | 'RECHECK_WINDOW'
+export type ProposalStatus = 'DRAFT' | 'EXECUTABLE' | 'SUBMITTED' | 'AWAITING_RESULT' | 'PRE_CLEARED' | 'CLEARED' | 'WITHDRAWN' | 'CANCELLED' | 'CLOSED'
+export type ProposalAction = 'UPDATE_DRAFT' | 'CONFIRM' | 'CANCEL' | 'CLOSE' | 'REGISTER_SUBMISSION' | 'ADD_RECEIPT' | 'AWAIT_RESULT' | 'RECHECK_WINDOW' | 'PRE_CLEAR' | 'CLEAR' | 'WITHDRAW'
 export type ProposalCloseKind = 'NO_LONGER_NEEDED' | 'WINDOW_EXPIRED' | 'OTHER'
 export type OccupationReleaseReason = 'CANCELLED' | 'CLOSED'
 export type ReceiptCompleteness = 'NONE' | 'PARTIAL' | 'COMPLETE'
@@ -16,12 +16,15 @@ export type WindowReviewField =
   | 'sourceName' | 'publishedDate' | 'announcementVersion' | 'effectiveFrom' | 'effectiveTo' | 'applicability'
   | 'tradeMethod' | 'productKind' | 'deliveryStartMonth' | 'deliveryEndMonth' | 'declarationOpensAt' | 'declarationClosesAt' | 'confirmationAt'
 export type CalendarEventKind = 'DECLARATION_OPENS' | 'DECLARATION_CLOSES' | 'CONFIRMATION'
-export type PlanningAttachmentPurpose = 'WINDOW_ANNOUNCEMENT' | 'SUBMISSION_RECEIPT'
+export type PlanningAttachmentPurpose = 'WINDOW_ANNOUNCEMENT' | 'SUBMISSION_RECEIPT' | 'EXECUTION_CONFIRMATION'
 export type PlanningEventType =
   | 'PLAN_CREATED' | 'PLAN_DRAFT_UPDATED' | 'PLAN_REVISION_CREATED' | 'PLAN_CONFIRMED'
   | 'WINDOW_REGISTERED' | 'WINDOW_CORRECTED'
   | 'PROPOSAL_CREATED' | 'PROPOSAL_DRAFT_UPDATED' | 'PROPOSAL_CONFIRMED' | 'PROPOSAL_WINDOW_REVISED' | 'PROPOSAL_WINDOW_RECHECKED'
   | 'PROPOSAL_SUBMISSION_REGISTERED' | 'PROPOSAL_RECEIPT_ADDED' | 'PROPOSAL_AWAITING_RESULT' | 'PROPOSAL_CANCELLED' | 'PROPOSAL_CLOSED'
+  | 'PROPOSAL_PRE_CLEARED' | 'PROPOSAL_CLEARED' | 'PROPOSAL_WITHDRAWN'
+  | 'EXECUTION_CONFIRMATION_REGISTERED' | 'EXECUTION_CONFIRMATION_REVISED' | 'EXECUTION_CONFIRMATION_REVOKED'
+  | 'EXECUTION_CONTRACT_LINKED' | 'EXECUTION_OCCUPATION_CONVERTED'
 
 export declare const PLAN_PERIOD_TYPES: readonly PlanPeriodType[]
 export declare const PLAN_REVISION_STATUSES: readonly PlanRevisionStatus[]
@@ -29,7 +32,7 @@ export declare const PLAN_VERIFICATION_STATUSES: readonly PlanVerificationStatus
 export declare const PROPOSAL_STATUSES: readonly ProposalStatus[]
 export declare const PROPOSAL_OCCUPYING_STATUSES: readonly ProposalStatus[]
 export declare const PROPOSAL_TERMINAL_STATUSES: readonly ProposalStatus[]
-export declare const DEFERRED_PROPOSAL_STATUSES: readonly string[]
+export declare const PROPOSAL_RESULT_STATUSES: readonly ProposalStatus[]
 export declare const PROPOSAL_ACTION_FROM: Readonly<Record<ProposalAction, readonly ProposalStatus[]>>
 export declare function proposalActionAllowed(status: ProposalStatus, action: ProposalAction): boolean
 export declare const PROPOSAL_CLOSE_KINDS: readonly ProposalCloseKind[]
