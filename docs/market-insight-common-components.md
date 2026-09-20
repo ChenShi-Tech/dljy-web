@@ -39,10 +39,13 @@ props:  title: string                      区块标题
         sourceTitles?: Record<string, InsightSourceTitle>   来自 capabilities.sources
         exportable?: boolean               头部「导出 CSV」开关（仅全量口径 page.scope==='all' 实际可导）
         materializable?: boolean           头部「加入材料」开关（页面按公司写权限决定显隐）
+        maintenance?: boolean              空态「前往资料维护」开关（页面按 governance 判定资料维护权限；
+                                           仅空态原因为 未接入/超覆盖 时出现）
         stale?: boolean                    页面声明结果已过期（与查询键同步）：入口禁用并提示
 emits:  open-candidates                    「查看可分析日期」→ 页面打开历史候选
         open-evidence                      「证据」→ 页面打开证据抽屉
         add-material                       「加入材料」→ 页面打开材料窗口
+        open-maintenance                   「前往资料维护」→ 页面跳转上传中心（dljy#3096）
 slot:   默认插槽放区块内容（图表、明细表等）；result 为 null 且无错误时插槽不渲染
 ```
 
@@ -52,6 +55,7 @@ slot:   默认插槽放区块内容（图表、明细表等）；result 为 null
 - **来源标签**：头部按 `result.sourceRefs` 显示业务标题 + 公开/获权样式，不显示 sourceId 原文。
 - **部分数据**（`runtime.availability.state === 'partial'`）：提示条说明缺的部分，内容照常显示，不把部分数据藏起来冒充空。
 - **导出与材料入口**（dljy#3078）：「导出 CSV」对全量口径开放（版本绑定、文件名含业务窗口），「加入材料」emit 后由页面打开 `InsightMaterialDialog`；页面声明 `stale` 或区块处于 409 冲突（旧结果仍在）时两者禁用并提示「结果已过期，请刷新后再导出」。
+- **维护入口**（dljy#3096）：只在空态出现，原因为「未接入 / 超覆盖」（补录资料能解决的缺口）；部分缺数不引导维护，其余空态（未发布、不适用等）引导维护是误导。
 
 ### InsightEvidenceDrawer（证据抽屉）
 
@@ -166,9 +170,9 @@ emits:  update:modelValue / saved               saved 仅在冻结并入稿成�
 | 503 / 网络失败 / 未知 | 资料读取失败 | 「重试」 |
 | availability: empty + not-enabled | 功能未开通 | — |
 | empty + not-applicable | 该地区不适用 | — |
-| empty + not-onboarded | 来源里没有所选对象或尚未接入 | — |
+| empty + not-onboarded | 来源里没有所选对象或尚未接入 | 「查看可分析日期」；有资料维护权限时另有「前往资料维护」（见下节） |
 | empty + not-published | 尚未发布 | — |
-| empty + beyond-coverage | 所选日期没有已入库资料 | 提供「查看可分析日期」 |
+| empty + beyond-coverage | 所选日期没有已入库资料 | 「查看可分析日期」；有资料维护权限时另有「前往资料维护」（见下节） |
 | partial + partial-missing | 部分时段或来源缺数 | 内容照常显示 |
 | partial + quality-rejected / source-disabled / upstream-failure | 质量不合格已剔除 / 来源尚未启用 / 上游故障 | 同上 |
 
@@ -229,6 +233,34 @@ hasInsightDrilldownParams(query)    -> boolean              // URL 是否带 hx_
 - **导出本页**导出当前行；**导出全量**必须经 `fetchAll` 重新发起不带 `page` 的查询，拿到全量口径再落 CSV——分页结果（`page.scope === 'page'`）只标「本页 x 行 / 全量 y 行」，不冒充全量。
 - **区块级入口（dljy#3078 任务 15.2）**：`InsightBlock` 头部「导出 CSV」只对全量口径（`page.scope === 'all'` 且有 `resultVersion`/`readSetRef`）开放，导出同版本全量行，文件名含业务窗口；结果过期（页面声明或 409 冲突）时禁用并提示刷新。**服务端导出端点未建，当前为同版本全量前端导出**。
 - **值直出，不改写单元格**（含以 `=` 开头的字符串）：精度不被前端改写优先于 Excel 公式注入前缀改写；服务端分析产物是可信输入，转义只按 RFC 4180 处理逗号/引号/换行。
+
+## 业务模块深链（dljy#3096，OpenSpec 任务 15.5）
+
+洞察接已有交易、中长期、结算业务模块与资料维护的**只读深链**：进入只传证据（期间/对象名）与授权入口，不自动创建/提交交易，不更改合同/电费，不增加无权限操作（design D11 表、insight-context-handoff CH04、yunnan-plant-market-performance PP07）。登记与出口集中在 `src/features/regions/yunnan/insight/businessLinks.ts`。
+
+### 入口清单
+
+| 页面 × 位置 | 入口 | 目标路由 | 权限判定（governance 既有口径） |
+| --- | --- | --- | --- |
+| 场站页 · 结算页签区块头部 | 前往结算业务 | `/xhjy/review`（复盘中心：结算复盘、日报核验） | `canAccessPath('/xhjy/review')`，无权限不渲染 |
+| 场站页 · 申报出清实际页签（语义对照含「中长期电量（合同口径引用）」列时） | 前往中长期模块 | `/zcqjy/positions`（月度持仓，只读台账） | `canAccessPath('/zcqjy/positions')`，无权限不渲染 |
+| 场站页/价格页 · 区块空态（原因为 未接入/超覆盖） | 前往资料维护 | `/data-ops/console?panel=upload`（上传中心） | `canAccessPath('/data-ops/console')`（数据运维岗既有权限），无权限不渲染 |
+
+### 只读红线
+
+- **query 白名单**：只允许 `start` / `end`（期间）、`object`（单个对象名）、`from`（来源标记 `insight-plants` / `insight-prices`）、`panel`（仅资料维护跳转的 `upload`）。原始数据数组、嵌套对象与白名单外键一律不进 URL（CH05）。
+- **无写动作**：深链键与值不允许出现 `submit` / `create` / `confirm` / `approve` 等可写动词；跳转目标是既有业务模块的只读页面路径，不是任何写端点。目标模块二次鉴权，洞察不代其执行操作。
+- **显隐在页面**：入口按 `canFollowDeepLink(目标路径)`（即 `governance.canAccessPath` + 当前登录用户）决定渲染与否——无权限不渲染，而不是渲染后再靠目标页拦截；读取用户失败按无权限处理。跳转出口 `openBusinessDeepLink` 再做一次白名单与动词双保险，不合法直接不动。
+
+### 返回重查语义
+
+- 深链跳转带 `from` 标记；从业务页返回（浏览器后退/地址恢复）后，页面依赖既有 `useInsightContext` 机制：route query 恢复 → 签名变化 → `contextVersion` +1 → 全部区块状态作废并重查（含覆盖清单）。
+- **返回不视为已补齐**：资料维护成功与否以返回后重新查询 coverage 的结果为准，离开页面本身不改变任何覆盖状态（PP07）。
+
+### 测试位置
+
+- `src/features/regions/yunnan/insight/businessLinks.component.spec.ts`：query 白名单/无原始数据数组/无可写动词/目标只读路径/双保险出口。
+- `src/features/regions/yunnan/insight/pages/YunnanPlantsPage.component.spec.ts`、`YunnanPricesPage.component.spec.ts` 的「业务模块只读深链」用例：入口显隐 × 权限、跳转参数、返回重查、业务语言扫描。
 
 ## 阶段 A 集成检查
 

@@ -414,7 +414,11 @@ beforeEach(async () => {
   selectedCompanyId.value = 'c1'
   router = createRouter({
     history: createMemoryHistory(),
-    routes: [{ path: '/', component: { render: () => null } }],
+    // 兜底路由：业务模块只读深链用例要真实 push 到 /data-ops/console（dljy#3096）
+    routes: [
+      { path: '/', component: { render: () => null } },
+      { path: '/:pathMatch(.*)*', component: { render: () => null } },
+    ],
   })
   await router.push('/')
   state.capabilities = capsWith(ALL_ANALYSES)
@@ -882,5 +886,61 @@ describe('导出与材料入口', () => {
     } finally {
       vi.restoreAllMocks()
     }
+  })
+})
+
+// ── 业务模块只读深链·资料维护（dljy#3096，任务 15.5：design D11 / CH05 / PP07）───────────
+// 价格页的深链面只有「前往资料维护」：空态原因为「未接入/超覆盖」且对上传中心有权限才显示；
+// 跳转只带期间/from 标记，不在洞察手填真实值；无权限不渲染。
+
+describe('业务模块只读深链·资料维护', () => {
+  /** 让统计摘要空态（区块无条件渲染在时段走势页签），其余视图照常。 */
+  function emptySummaryResponder(reason: 'not-onboarded' | 'beyond-coverage') {
+    return (request: any): Promise<any> => {
+      if (request.filters?.view !== 'summary') return defaultResponder(request)
+      return Promise.resolve(insightResult({
+        contextVersion: request.context.contextVersion,
+        analysisId: request.analysisId,
+        sourceRefs: [{ sourceId: 'yn.price.node.public.day-ahead', accessScope: 'public' }],
+        runtime: {
+          access: 'granted',
+          availability: { state: 'empty', reason },
+          freshness: { state: 'unknown' },
+          comparability: { status: 'compatible', reasons: [] },
+        },
+        data: { schemaVersion: 'insight-result-data/v1', dimensions: [], measures: [], rows: [], series: [] },
+      }))
+    }
+  }
+
+  it('空态原因为「超覆盖」且有权限（管理员）：入口显示，跳转上传中心只带期间/from/panel', async () => {
+    localStorage.setItem('dljy_governance_user', JSON.stringify({ username: 'admin' }))
+    state.responder = emptySummaryResponder('beyond-coverage')
+    await mountPage()
+
+    const entry = wrapper!.find('[data-testid="insight-open-maintenance"]')
+    expect(entry.exists()).toBe(true)
+    expect(entry.text()).toBe('前往资料维护')
+
+    vi.spyOn(router, 'push')
+    await entry.trigger('click')
+    await flushPromises()
+
+    const target = vi.mocked(router.push).mock.calls.at(-1)![0] as unknown as { path: string; query: Record<string, string> }
+    expect(target.path).toBe('/data-ops/console')
+    // query 白名单：期间 + from + panel，全部字符串（无原始数据数组、无可写动词）
+    expect(Object.keys(target.query).sort()).toEqual(['end', 'from', 'panel', 'start'])
+    expect(Object.values(target.query).every((value) => typeof value === 'string' && value.length > 0)).toBe(true)
+    expect(target.query.from).toBe('insight-prices')
+    expect(target.query.panel).toBe('upload')
+  })
+
+  it('空态原因为「未接入」但无权限（TRADER 无数据运维授权）：入口不渲染', async () => {
+    localStorage.setItem('dljy_governance_user', JSON.stringify({ username: 'trader' }))
+    state.responder = emptySummaryResponder('not-onboarded')
+    await mountPage()
+
+    expect(wrapper!.text()).toContain('尚未接入')
+    expect(wrapper!.find('[data-testid="insight-open-maintenance"]').exists()).toBe(false)
   })
 })
