@@ -23,8 +23,9 @@ import { useInsightRequestGeneration } from './useInsightRequestGeneration'
 //      逐项 URL 编码）。进页面按 query 还原（刷新/后退可恢复），字段变化用 router.replace
 //      写回（不产生历史堆积）。解析经共享契约 parseInsightContext 校验，非法参数丢弃
 //      并给一条「已忽略不合法参数：…」提示——宁可回到默认值，不带着口径不明的条件查询。
-//   2. 默认窗口为北京时间当日：不自动跳到「有数据的日子」——有没有数据由区块的
-//      可用性说明与「查看可分析日期」候选入口表达（A02）。
+//   2. 默认窗口为北京时间当日：本层不自动跳到「有数据的日子」（A02）；入口锚定
+//      （useInsightEntryAnchor，dljy#3134 对 A02 的修订）在其上把无参数进入的默认
+//      落点锚到最新有数据日，区块可用性说明与候选入口仍照旧表达覆盖情况。
 //   3. 地区或公司变化时清空对象选择（对象属于原地区/公司，跨地区沿用等于串读），日期保留。
 //   4. 任一业务字段变化 contextVersion +1，并同步给 useInsightRequestGeneration
 //      （作废在途请求，迟到响应不写入新状态）。
@@ -139,6 +140,9 @@ export function useInsightContext() {
   // 初始化：先按 query 解析出初值再注册 watch，避免初始化被当成一次上下文变化。
   const today = beijingToday()
   const initial = parseInsightQuery(route.query)
+  // 入口锚定（dljy#3134，A02 修订）用：地址里是否出现过 start/end 键（不论合法与否）。
+  // 出现过即视为用户显式给了窗口，锚定不介入；完全没带才允许锚到最新有数据日。
+  const hadWindowParam = route.query.start !== undefined || route.query.end !== undefined
   const businessWindow = ref(initial.parsed.window ?? { start: today, end: today })
   const objectIds = ref<string[]>(initial.parsed.objects ?? [])
   const sourceIds = ref<string[]>(initial.parsed.sources ?? [])
@@ -270,6 +274,8 @@ export function useInsightContext() {
     objectIds,
     sourceIds,
     contextVersion,
+    /** 地址是否带过 start/end 键（入口锚定的介入条件，见 useInsightEntryAnchor）。 */
+    hadWindowParam,
     ignoredParamsNotice,
     /** 下钻恢复（任务 15.1）：URL 带 hx_ 参数时非 null，页面按需消费 view/priceObject/marketPhase/from。 */
     drilldownRestore,

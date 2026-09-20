@@ -33,6 +33,7 @@ import { fetchCgnYunnanPriceBundle } from '@/services/market/cgnYunnanLivePrice'
 import { getCurrentUser } from '@/services/auth'
 import { hasCompanyAdmin } from '@/services/governance'
 import { useInsightContext } from '@/composables/useInsightContext'
+import { useInsightEntryAnchor } from '@/composables/useInsightEntryAnchor'
 import { insightAiBlockOf, useInsightAiPage, type InsightAiEvidenceBlock } from '@/features/regions/yunnan/insight/useInsightAiPage'
 import { useInsightSelection } from '@/components/insight/chart/useInsightSelection'
 import { canFollowDeepLink, DEEP_LINK_TARGETS, openDataMaintenanceLink } from '../businessLinks'
@@ -50,6 +51,7 @@ import Price3DWorkspace from './prices/Price3DWorkspace.vue'
 import { readPriceMode, writePriceMode, type PriceDisplayMode } from './prices/priceModeStorage'
 import InsightBlock from '@/components/insight/InsightBlock.vue'
 import InsightDateRange from '@/components/insight/InsightDateRange.vue'
+import InsightAnchorNotice from '@/components/insight/InsightAnchorNotice.vue'
 import InsightEvidenceDrawer from '@/components/insight/InsightEvidenceDrawer.vue'
 import InsightHistoryCandidates from '@/components/insight/InsightHistoryCandidates.vue'
 import InsightMaterialDialog from '@/components/insight/InsightMaterialDialog.vue'
@@ -126,6 +128,9 @@ const ctx = useInsightContext()
 const capabilities = ref<InsightCapabilities | null>(null)
 const capabilitiesError = ref<InsightRequestError | null>(null)
 const capabilitiesLoading = ref(false)
+// 入口锚定（dljy#3134）：能力目录就绪且存在获权分析才扫描——公共账号零请求红线保持。
+const anchorReady = computed(() => (capabilities.value?.analyses?.some((entry) => entry.access === 'company') ?? false))
+const entryAnchor = useInsightEntryAnchor(ctx, { ready: anchorReady })
 
 /** 能力目录里可用（全部来源可访问）的价格对象，按目录固定顺序排列。 */
 const availableObjects = computed(() =>
@@ -989,6 +994,13 @@ onMounted(() => {
 <template>
   <div class="ynp-prices">
     <!-- 顶部：价格对象 / 日期窗 / 对象选择与口径说明 -->
+
+    <InsightAnchorNotice
+      v-if="entryAnchor.anchorNotice.value"
+      :notice="entryAnchor.anchorNotice.value"
+      @back-today="entryAnchor.backToToday"
+      @dismiss="entryAnchor.dismissAnchorNotice"
+    />
     <section class="ynp-prices__controls">
       <label class="ynp-prices__field">
         <span>价格对象</span>

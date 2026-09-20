@@ -66,8 +66,10 @@ import {
   type ResearchSeriesMeta,
 } from '@/services/insight/researchClient'
 import { useInsightContext } from '@/composables/useInsightContext'
+import { useInsightEntryAnchor } from '@/composables/useInsightEntryAnchor'
 import { useInsightAiPage, type InsightAiEvidenceBlock, type InsightAiEvidenceItem } from '@/features/regions/yunnan/insight/useInsightAiPage'
 import InsightDateRange from '@/components/insight/InsightDateRange.vue'
+import InsightAnchorNotice from '@/components/insight/InsightAnchorNotice.vue'
 import InsightMaterialDialog from '@/components/insight/InsightMaterialDialog.vue'
 import InsightResearchSavedDialog from '@/components/insight/InsightResearchSavedDialog.vue'
 import { insightSourceTitle, type InsightSourceTitle } from '@/components/insight/insightText'
@@ -184,6 +186,9 @@ function returnToOrigin(): void {
 const capabilities = ref<InsightCapabilities | null>(null)
 const capabilitiesError = ref<InsightRequestError | null>(null)
 const capabilitiesLoading = ref(false)
+// 入口锚定（dljy#3134）：能力目录就绪且存在获权分析才扫描——公共账号零请求红线保持。
+const anchorReady = computed(() => (capabilities.value?.analyses?.some((entry) => entry.access === 'company') ?? false))
+const entryAnchor = useInsightEntryAnchor(ctx, { ready: anchorReady })
 
 async function loadCapabilities(): Promise<void> {
   capabilitiesLoading.value = true
@@ -919,6 +924,13 @@ const onAiInterpret = (): void => {
 
 <template>
   <div class="yr">
+
+    <InsightAnchorNotice
+      v-if="entryAnchor.anchorNotice.value"
+      :notice="entryAnchor.anchorNotice.value"
+      @back-today="entryAnchor.backToToday"
+      @dismiss="entryAnchor.dismissAnchorNotice"
+    />
     <section class="yr__controls">
       <label class="yr__field">
         <span>业务日期窗</span>
