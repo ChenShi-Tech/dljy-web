@@ -338,7 +338,7 @@ hasInsightDrilldownParams(query)    -> boolean              // URL 是否带 hx_
 
 ### A02 默认日期与历史候选
 
-- **守什么**：默认窗口为北京时间当日，不自动跳到「有数据的日子」；候选日期只能由用户显式选择。
+- **守什么**：默认窗口为北京时间当日，本层不自动跳日；入口锚定（dljy#3134）在无窗口参数进入时把默认落点锚到最新有数据日并给提示与「切回今天」，候选日期面板仍只能由用户显式选择。
 - **怎么验证**：空库日期进页面显示 beyond-coverage 空态 + 「查看可分析日期」入口，日期不变；候选面板打开才请求、点候选才写窗口。
 - **对应测试**：`useInsightContext.spec.ts`（默认当日）；`InsightBlock.component.spec.ts`（beyond-coverage 候选入口 emit）；`InsightHistoryCandidates.component.spec.ts`（挂载不请求、点击才 emit）。
 
