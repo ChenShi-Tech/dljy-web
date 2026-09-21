@@ -376,6 +376,11 @@ const runState = reactive<{ result: ResearchPreviewResult | null; error: Insight
   runKey: '',
 })
 
+// 单调递增运行令牌：loading 归属判定以「本次运行捕获的令牌」为准，而非配置签名。
+// 签名在 A→B→A 快速切换时会回到 A，若仍用「签名相等」判 loading 归属，原 A 请求的
+// finally 会在 A'' 在途期间提前释放 loading，形成同配置并发请求窗口（见 #3117）。
+let runToken = 0
+
 // ── 保存分析（任务 14.4，RS06）与已保存列表入口 ──────────────────────────────────────────
 // 权限语义分离（同 #151 材料口径）：保存是公司写入，按 governance 既有口径只对公司管理员级
 // 账号显示入口（后端写入闸门才是权威）；运行预览与已保存列表查看不受影响。
@@ -429,7 +434,9 @@ watch(configSignature, () => {
   runState.result = null
   runState.error = null
   runState.runKey = ''
-  // 被代次作废的迟到请求在 finally 里因同签名守卫跳过清 loading——由这里显式归还，
+  // 作废全部在途请求的 loading 归属：令牌递增后，任何旧请求的 finally 都不会再释放 loading。
+  runToken++
+  // 被代次作废的迟到请求在 finally 里因同令牌守卫跳过清 loading——由这里显式归还，
   // 否则承接/上下文变化后运行按钮永远停在加载态。
   runState.loading = false
   saveState.savedVersion = null
@@ -454,13 +461,14 @@ async function runPreview(): Promise<void> {
   const filters = preset.kind === 'correlation' ? { groupBy: groupBy.value } : undefined
   const transformations = buildTransformations(preset)
   const key = configSignature.value
+  const my = ++runToken
   runState.loading = true
   runState.error = null
   try {
     const result = await ctx.request.run(
       (signal) => runResearchPreview({ presetId: preset.presetId, context, filters, transformations }, { signal })
     )
-    if (!result || configSignature.value !== key) return // 作废/迟到：不写状态
+    if (!result || runToken !== my) return // 作废/迟到：不写状态
     // 新一次运行回到默认视图（序列显隐/分面顺序绑定当前结果，是会话内状态）。
     hiddenMetricIds.value = new Set()
     facetOrder.value = []
@@ -474,11 +482,11 @@ async function runPreview(): Promise<void> {
     runState.result = result
     runState.runKey = key
   } catch (error) {
-    if (configSignature.value !== key) return
+    if (runToken !== my) return
     runState.error = error as InsightRequestError
     runState.runKey = key
   } finally {
-    if (configSignature.value === key) runState.loading = false
+    if (runToken === my) runState.loading = false
   }
 }
 
