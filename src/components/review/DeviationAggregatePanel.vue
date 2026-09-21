@@ -396,7 +396,7 @@ watch([weatherOn, agg, () => currentRegion.value.id], () => { void loadWeather()
       <p v-if="weatherOn && weatherFailed" class="dap-muted">
         天气数据不可用（该地区无天气参考点，或外部历史天气源失败）——本列留空，不合成。
       </p>
-      <p class="dap-note">合计与逐日之和恒等；金额为自算口径（caliber: self-computed，结算细则未核验）。</p>
+      <p class="dap-note">合计与逐日之和一致；金额为系统自算口径（结算细则尚未核验），不作为正式结算依据。</p>
 
       <!-- 阈值预警：自动登记已由风险维实现（确定性幂等键 + 按月去重），此处仅提示不重复登记 -->
       <p v-if="breach" class="dap-warn">

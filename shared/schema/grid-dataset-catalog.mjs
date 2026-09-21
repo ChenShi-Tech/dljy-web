@@ -129,6 +129,13 @@ export const GRID_DATASET_CATALOG = Object.freeze({
     user_price_day_ahead: series('日前用户侧统一结算价', 'CNY/MWh', '1h', '云南', 'province'),
     user_price_real_time: series('实时用户侧统一结算价', 'CNY/MWh', '1h', '云南', 'province'),
 
+    // 公开年包的小时送受电预测；目录登记不表示某家公司 API 已支持该数据集。
+    inter_provincial_forecast: dataset({
+      resourceKind: 'market_series', label: '省间送受电预测',
+      mode: 'timeseries', dimensions: ['断面名称', '送受方向'],
+      unit: 'MW', intervalLabel: '1h', regionScopeKind: 'per-row',
+    }),
+
     // ——— 公共信息披露·实际类（10 条）———
     actual_grid_load_summary: dataset({
       resourceKind: 'disclosure', label: '实际电网负荷汇总',

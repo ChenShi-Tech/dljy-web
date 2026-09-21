@@ -4,7 +4,8 @@ import {
   getRegionCapabilityForPath,
   getRegionSubCapability,
   isRegionRouteAvailable,
-  regionCapabilityAllowsRequest
+  regionCapabilityAllowsRequest,
+  resolveRegionModuleForPath
 } from './regionModules'
 
 // 注册表内任一能力覆盖路由（insight 组经典页）。注意 statusByRegion 除 shanxi/yunnan 外，
@@ -119,6 +120,71 @@ describe('公司私有族在无源地区 hidden', () => {
     // （云南有该族采集，缺的只是特定 tag 切片），它们必须继续 degraded、入口保留。
     for (const id of ['forecast.tab.jgyc', 'forecast.tab.gsfhyc', 'forecast.tab.jjkj', 'forecast.tab.rqhdcl']) {
       expect(getRegionSubCapability('forecast', id, 'yunnan')?.status).toBe('degraded')
+    }
+  })
+})
+
+describe('中长期售电合同入口仅云南开通（dljy#2939）', () => {
+  it('列表、详情子路径与月度持仓在云南可用，其余已登记地区 hidden；前缀相似路径不被详情规则覆盖', () => {
+    for (const path of ['/zcqjy/contracts', '/zcqjy/contracts/123', '/zcqjy/positions']) {
+      expect(isRegionRouteAvailable(path, 'yunnan')).toBe(true)
+      for (const region of ['shanxi', 'guangdong', 'sichuan']) {
+        expect(getRegionCapabilityForPath(path, region)?.status).toBe('hidden')
+        expect(isRegionRouteAvailable(path, region)).toBe(false)
+      }
+    }
+    expect(getRegionCapabilityForPath('/zcqjy/contracts-export', 'shanxi')?.route).toBeNull()
+  })
+
+  it('P2 分时持仓、场站维度持仓与分解集详情同样只在云南可用（dljy#2971）', () => {
+    for (const path of ['/zcqjy/positions/intervals', '/zcqjy/positions/stations', '/zcqjy/curves/7']) {
+      expect(isRegionRouteAvailable(path, 'yunnan')).toBe(true)
+      for (const region of ['shanxi', 'guangdong', 'sichuan']) {
+        expect(getRegionCapabilityForPath(path, region)?.status).toBe('hidden')
+        expect(isRegionRouteAvailable(path, region)).toBe(false)
+      }
+    }
+    expect(getRegionCapabilityForPath('/zcqjy/curves-export', 'shanxi')?.route).toBeNull()
+  })
+
+  it('敞口看板归现货模块、交易月历在云南隐藏（dljy#2988）', () => {
+    // 路径仍在 /zcqjy 下，但按精确 routePaths 解析到现货模块，不被中长期的 /zcqjy 前缀吃掉。
+    const exposure = getRegionCapabilityForPath('/zcqjy/exposure', 'yunnan')
+    expect(exposure?.module.id).toBe('spot-trading')
+    expect(exposure?.status).toBe('degraded')
+    expect(getRegionCapabilityForPath('/zcqjy/exposure', 'shanxi')?.status).toBe('available')
+    // 同前缀的中长期页面仍解析到中长期模块。
+    expect(getRegionCapabilityForPath('/zcqjy/positions', 'yunnan')?.module.id).toBe('midlong-trading')
+    expect(getRegionCapabilityForPath('/zcqjy/contracts', 'yunnan')?.module.id).toBe('midlong-trading')
+    // 云南属南网，不取国网月历：隐藏而不是显示空页面。
+    for (const southernGrid of ['yunnan', 'guangdong']) {
+      expect(getRegionCapabilityForPath('/zcqjy/zjyap', southernGrid)?.status, southernGrid).toBe('hidden')
+      expect(isRegionRouteAvailable('/zcqjy/zjyap', southernGrid), southernGrid).toBe(false)
+    }
+    expect(getRegionCapabilityForPath('/zcqjy/zjyap', 'shanxi')?.status).toBe('available')
+    // 四川同属国网，保留经国网基线回退读山西月历的既有口径，不随南网一起隐藏。
+    expect(getRegionCapabilityForPath('/zcqjy/zjyap', 'sichuan')?.status).not.toBe('hidden')
+  })
+
+  it('精确路径优先于前缀，不受模块声明顺序影响（dljy#2988）', () => {
+    // 故意把「持有 /zcqjy 前缀」的模块排在前面，把「精确登记 /zcqjy/exposure」的模块排在后面：
+    // 只有先做全局精确匹配才会命中后者。按声明顺序逐个判断会错判成前缀那个模块。
+    const prefixOwner = { id: 'prefix-owner', routePaths: ['/zcqjy/contracts'], routePrefixes: ['/zcqjy'] }
+    const exactOwner = { id: 'exact-owner', routePaths: ['/zcqjy/exposure'], routePrefixes: ['/xhjy'] }
+    expect(resolveRegionModuleForPath([prefixOwner, exactOwner], '/zcqjy/exposure')?.id).toBe('exact-owner')
+    expect(resolveRegionModuleForPath([prefixOwner, exactOwner], '/zcqjy/contracts')?.id).toBe('prefix-owner')
+    // 没有精确登记时仍按前缀回退。
+    expect(resolveRegionModuleForPath([prefixOwner, exactOwner], '/zcqjy/zfsdjy')?.id).toBe('prefix-owner')
+    expect(resolveRegionModuleForPath([prefixOwner, exactOwner], '/no-such')).toBeNull()
+  })
+
+  it('P3 售电计划与交易执行同样只在云南可用（dljy#2973）', () => {
+    for (const path of ['/zcqjy/plans', '/zcqjy/execution']) {
+      expect(isRegionRouteAvailable(path, 'yunnan')).toBe(true)
+      for (const region of ['shanxi', 'guangdong', 'sichuan']) {
+        expect(getRegionCapabilityForPath(path, region)?.status).toBe('hidden')
+        expect(isRegionRouteAvailable(path, region)).toBe(false)
+      }
     }
   })
 })

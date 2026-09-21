@@ -184,3 +184,51 @@ describe('入口专属部件不能在合并中丢失', () => {
     }
   })
 })
+
+// 统一 AI 侧边栏「在工作台打开」：/ai-agent?entry=&session= 续接同一会话（SS-06）。
+// 坏掉的症状：放大到工作台后看到的是空白新会话；或续接目标赖着不走，用户点「开始」却又回放旧会话；
+// 或工作台页被缓存时，同一次导航换入口把刚设好的续接目标清掉。
+describe('按会话续接（?session=）', () => {
+  const PANEL_WITH_PROPS = {
+    props: ['resumeSessionId', 'scenario', 'promptKey', 'initialQuestion'],
+    template: '<div class="stub-panel" :data-resume="resumeSessionId || \'\'" :data-scenario="scenario" />'
+  }
+  function mountWith(query: Record<string, string>) {
+    ;(globalThis as Record<string, unknown>).__wbRoute = reactive({ query })
+    return mount(AgentWorkbenchView, { global: { stubs: { ...STUBS, AgentChatPanel: PANEL_WITH_PROPS } } })
+  }
+
+  it('带 entry + session：选中对应入口并续接该会话，不新建', () => {
+    const w = mountWith({ entry: 'morning_brief', session: 's_brief' })
+    expect(w.find('.wb-entry.active').text()).toBe('交易晨报')
+    expect(w.find('.stub-panel').attributes('data-resume')).toBe('s_brief')
+    expect(w.find('.stub-panel').attributes('data-scenario')).toBe('morning_brief')
+  })
+
+  it('缺 entry 时落在通用对话入口，仍续接该会话', () => {
+    const w = mountWith({ session: 's_unknown' })
+    expect(w.find('.wb-entry.active').text()).toBe('通用对话')
+    expect(w.find('.stub-panel').attributes('data-resume')).toBe('s_unknown')
+  })
+
+  it('续接后点「开始」开新任务：续接目标清掉，面板不再回放旧会话', async () => {
+    const w = mountWith({ entry: 'morning_brief', session: 's_brief' })
+    await w.find('.stub-btn').trigger('click')
+    await nextTick()
+    await nextTick()
+    expect(w.find('.stub-panel').attributes('data-resume')).toBe('')
+    // 地址栏也不再指向旧会话：刷新/分享链接打开的是当前任务（dljy-web#119 审查 P2）
+    expect(currentRoute().query.session).toBeUndefined()
+    expect(currentRoute().query.entry).toBe('morning_brief')
+  })
+
+  it('工作台已停在别的入口时，同一次导航换入口并带 session：续接目标不被换入口清掉', async () => {
+    const w = mountWith({ entry: 'workbench' })
+    expect(w.find('.stub-panel').attributes('data-resume')).toBe('')
+    currentRoute().query = { entry: 'morning_brief', session: 's_nav' }
+    await nextTick()
+    await nextTick()
+    expect(w.find('.wb-entry.active').text()).toBe('交易晨报')
+    expect(w.find('.stub-panel').attributes('data-resume')).toBe('s_nav')
+  })
+})

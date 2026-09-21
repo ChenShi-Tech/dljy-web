@@ -93,6 +93,11 @@ export type NavigationLike = {
   regionIds?: string[]
   children?: NavigationLike[]
   demo?: boolean
+  /**
+   * #2991：在这些地区只从菜单隐藏（filterNavigationForUser/matchesNavigationRegion 生效），
+   * 不影响路由可达与权限——深链仍可直接访问，由页面自身解释降级。语义见 data/navigation.ts。
+   */
+  hiddenInRegionIds?: string[]
   /** 立场亲和（#2193 · #2196）：缺省=共享；语义见 services/stance/stanceNavigation.ts。 */
   stanceAffinity?: SubjectType[]
 }
@@ -654,7 +659,22 @@ export function resolveGovernanceUser(username?: string, base?: Partial<Governan
   }
 }
 
-export function canAccessPath(path: string, user: Pick<GovernanceUser, 'roleCode'> | null | undefined) {
+// 市场洞察规范入口的权限别名（dljy#2995 阶段 A）：新路径 /insight/<pageId> 的可访问性
+// 严格等价于「任一对应旧入口可访问」（spec RW05 不扩权：新路径不提供旧入口没有的访问）。
+// ⚠️ 判定必须先于 routes/groups 前缀匹配：多数业务角色的 groups 含 '/insight' 前缀组，
+// 若先走组前缀匹配，plants/grid-boundaries 等收纳了私有旧入口的页面会被 '/insight' 组
+// 放行（如 PLANT_OPERATOR 无节点价/结算价权限却可见 /insight/plants），等于借组扩权。
+// 管理员级角色在 canAccessPath 开头已全放行，不受此表影响。
+export const insightPathAccessAliases: Record<string, string[]> = {
+  '/insight/overview': ['/insight/cockpit'],
+  '/insight/prices': ['/sjfx/zrsjg'],
+  '/insight/supply': ['/sjfx/actualLoad'],
+  '/insight/grid-boundaries': ['/grid-assets/disclosures'],
+  '/insight/plants': ['/xhjy/yunnan/settlement-price', '/xhjy/yunnan/node-price'],
+  '/insight/research': ['/sjfx/zrxgx', '/sjfx/zrxgx2', '/sjfx/singleZsjfx']
+}
+
+export function canAccessPath(path: string, user: Pick<GovernanceUser, 'roleCode'> | null | undefined): boolean {
   if (!path || path === '/login') return true
   const rawPath = normalizePath(path)
   // 专题是复盘中心的展开页面，沿用同一角色权限，不能因新增路径扩大访问范围。
@@ -668,6 +688,23 @@ export function canAccessPath(path: string, user: Pick<GovernanceUser, 'roleCode
   // 公司管理入口对所有登录用户开放：每人看到的是自身公司（后端 companyId 隔离），
   // 写操作由后端 company 写权限闸门控制。故前端不按角色限制 /gsgl 菜单可见性。
   if (normalized === '/gsgl' || normalized.startsWith('/gsgl/')) return true
+  // 中长期售电合同与月度持仓（dljy#2939）承接原「公司管理 › 合同管理」的合同底账：可见范围与旧入口一致
+  // （全部登录用户看自身公司，写入由后端公司写权限闸门控制），业务迁入不因换入口而扩权或收窄。
+  if (normalized === '/zcqjy/contracts' || normalized.startsWith('/zcqjy/contracts/') || normalized === '/zcqjy/positions') return true
+  // P2 分时分解与场站分配（dljy#2971）：同属合同底账的观察维度，可见范围与月度持仓一致。
+  if (normalized === '/zcqjy/positions/intervals' || normalized === '/zcqjy/positions/stations' || normalized.startsWith('/zcqjy/curves/')) return true
+  // P3 售电计划与交易执行（dljy#2973）：同属中长期售电经营台账，可见范围与月度持仓一致，写入由后端公司写权限闸门控制。
+  if (normalized === '/zcqjy/plans' || normalized === '/zcqjy/execution') return true
+  // P4 合同调整（dljy#3014）：同属中长期售电经营台账，可见范围与合同入口一致，写入由后端公司写权限闸门控制。
+  if (normalized === '/zcqjy/adjustments') return true
+  // P5 业务复盘与外部账单（dljy#3016）：同属中长期售电经营台账，可见范围与合同入口一致，写入由后端公司写权限闸门控制。
+  if (normalized === '/zcqjy/review' || normalized === '/zcqjy/bills') return true
+  // 市场洞察规范入口（dljy#2995）：与旧入口权限严格等价——任一旧入口可访问即可访问，
+  // 全部不可访问则拒绝。必须先于 routes/groups 匹配（原因见 insightPathAccessAliases 注释）。
+  const insightAliases = insightPathAccessAliases[normalized]
+  if (insightAliases) {
+    return insightAliases.some((alias) => canAccessPath(alias, user))
+  }
 
   const rule = getEffectiveAccessRule(roleCode)
   if (rule.routes?.includes(normalized)) return true
@@ -710,7 +747,10 @@ export function filterNavigationForUser(items: NavigationLike[], user: Pick<Gove
 
 function matchesNavigationRegion(item: NavigationLike, regionId?: string) {
   const matchesDeclaredRegion = !item.regionIds?.length || Boolean(regionId && item.regionIds.includes(regionId))
-  return matchesDeclaredRegion && isPathAvailableInRegion(item.path, regionId)
+  // #2991：hiddenInRegionIds 只摘菜单入口。isPathAvailableInRegion 的地区可用性判定保持不变，
+  // 保证「菜单隐藏但路由可达」——旧链接仍可直接访问，页面自身负责降级说明。
+  const hiddenInRegion = Boolean(regionId && item.hiddenInRegionIds?.includes(regionId))
+  return matchesDeclaredRegion && !hiddenInRegion && isPathAvailableInRegion(item.path, regionId)
 }
 
 export function getDecisionGateHint(path: string, user: Pick<GovernanceUser, 'roleCode'> | null | undefined) {

@@ -5,7 +5,7 @@
 
 ## 1. 架构总览
 
-本仓是**纯前端**（Vue 3 + Vite + Element Plus + ECharts + Cesium），后端服务不在本仓，通过 HTTP 访问两个独立后端面：
+本仓是**纯前端**（Vue 3 + Vite + Element Plus + ECharts + Cesium），后端服务不在本仓，通过 Vite 代理访问各独立后端面：
 
 ```
 浏览器 ──► Vite dev server (5174)
@@ -14,8 +14,10 @@
               │   /dify-*、/console、/_next 同走此面
               ├── /agent-api/*  ──► Python FastAPI  （DLJY_AGENT_API_TARGET，默认 127.0.0.1:8000）
               │   （路径会被 rewrite：/agent-api/xxx → /api/xxx）
+              ├── /data-svc/*   ──► 数据服务        （DLJY_DATA_SVC_TARGET，默认 127.0.0.1:8190；rewrite 去前缀）
+              │   （数据管理路径族经 api.ts::dataServicePath 改道，#2169 P2-2a）
               └── /pi-api/*     ──► pi-poc 编排服务 （DLJY_PI_POC_TARGET，默认 127.0.0.1:8100；rewrite → /api）
-                  （仅战略问答 #1526 / 申报体检 #1527 两个 PoC 页使用）
+                  （战略问答 #1526 / 申报体检 #1527 PoC 与智能体工作台 chat 共用，见 §3.5 第 8 条）
 ```
 
 两个后端面的分工：
@@ -32,13 +34,14 @@
 ```bash
 # 要求 Node >= 22.12
 npm ci
-cp .env.example .env.local        # 填 DLJY_DEV_API_TARGET / DLJY_AGENT_API_TARGET（向维护者索取）
+cp .env.example .env.local        # 填 DLJY_DEV_API_TARGET / DLJY_AGENT_API_TARGET（向维护者索取）；DLJY_DATA_SVC_TARGET / DLJY_PI_POC_TARGET 默认即可
 npm run dev                        # http://localhost:5174
 ```
 
 - dev server 只监听本机回环（刻意不开 `--host 0.0.0.0`）；需要给别人演示时再临时加。
 - 端口 5174 固定（`strictPort`），被占用会直接报错——先关掉占用者。
 - 登录：账号密码由维护者发放；滑块验证拖到最右。权限受限（部分管理页 403 / 部分数据空态）属正常。
+- 功能开关见 `.env.example`「功能开关」区。其中 `VITE_YUNNAN_INSIGHT_WORKSPACE=1` 打开云南市场洞察工作区（dljy#2995，阶段 A 六页均为建设占位、导航不替换；默认关闭时云南侧边栏与现状完全一致）——它是 UI 装配开关，不是授权开关，权限一律走 `governance.insightPathAccessAliases` 与旧入口等价。
 
 ## 3. 前后端通讯约定（写代码必读）
 
@@ -47,8 +50,9 @@ npm run dev                        # http://localhost:5174
 页面组件**不直接 `fetch`**，一律经 `src/services/`：
 
 - `src/services/api.ts` —— `/api` 面的统一出口：响应信封解析、Token 注入（`Authorization: Bearer`）、**自动注入 `x-region-id` 请求头**（全局地区上下文）。
-- `src/services/agent/` —— `/agent-api` 面的出口：`agentClient.ts`、`studioClient.ts` 等客户端与它们共用的 `httpClient.ts` 基座（`createAgentClient` 工厂）。基址统一走 `AGENT_API_BASE` 常量（默认 `/agent-api`），**不得硬编码 `http://…:8000`**（生产会 404）。
+- `src/services/agent/` —— `/agent-api` 面的出口：`agentClient.ts`、`difyStudioClient.ts` 等客户端与它们共用的 `httpClient.ts` 基座（`createAgentClient` 工厂）。基址统一走 `AGENT_API_BASE` 常量（默认 `/agent-api`），**不得硬编码 `http://…:8000`**（生产会 404）。
 - `src/services/agent/piPocClient.ts` —— `/pi-api` 面唯一出口（基址 `PI_AGENT_BASE`）；dev 经 vite 代理到 pi-poc 编排服务（默认 8100），见 §1 架构图。
+- `src/services/dataServiceRoutes.ts` —— `/data-svc` 面改道：数据管理路径族经 `dataServicePath()` 改写为 `/data-svc/api/…`（#2169 P2-2a），代理目标 `DLJY_DATA_SVC_TARGET`（默认 8190）。
 - `src/services/data/` —— 统一类型 + 数据口径（basis）归一的取数基座。
 
 ### 3.2 响应信封与真伪标注
@@ -66,9 +70,20 @@ npm run dev                        # http://localhost:5174
 - **「真实或空」纪律**：除山西（基线）外，任何地区缺自身真实数据时只返回按地区合成的 Mock（标 `mock:true`）或空态，**绝不串读山西数据**。所以切到无数据省份看到空页面是设计行为，不是 bug。
 - 前端可切换地区由 `REAL_DATA_REGION_IDS`（真实：yunnan/shanxi）与演示开通地区（sichuan）控制。
 
-### 3.4 智能体聊天面板
+### 3.4 AI 侧边栏与智能体聊天面板
 
-`AgentChatPanel.vue` 多处复用；每个接入点必须给**静态且全仓唯一**的 `history-key`，且不得关闭历史持久化（`:persist-history="false"` 被门禁禁止）。
+**业务页接入 AI 只走 `@/features/aiSidebar`**（统一 AI 侧边栏，规格见工作区 OpenSpec 变更 `unify-ai-sidebar`）：
+
+- **声明页面**：在页面 setup 里调用 `defineAiPage({ label, promptKey, interpret?, presets? })`。
+  - `promptKey` 只能取 `PAGE_PROMPT_KEYS` 白名单里的值，类型层会拒绝自由文本。
+  - `interpret.context` 和预制问题的 `context` 都是函数，在点击那一刻求值，只返回当前筛选的摘要，不要传整页原始数据。
+  - 声明跟随 KeepAlive 的激活与失活自动生效或失效，不需要手动清理。
+- **发起提问**：`useAiSidebar().interpret()` 按当前页声明解读本页；`ask(question, { context })` 用于快捷任务、单卡解读和选中即问。
+  - 数据切片只随发起解读的那一轮发送；页面背景（页面名、路由、地区、公司）由侧边栏每轮自动附带。
+- **不要在业务视图里直接内嵌 `AgentChatPanel.vue`**，ESLint 会报错。确实属于流程步骤的内嵌对话（一日作业台、申报台、储能测算、复盘写作）要登记到 `eslint.config.js` 的 `EMBEDDED_CHAT_ALLOWLIST`。
+- **侧边栏和智能体工作台 `/ai-agent` 平级**，共用 `components/agent` 对话内核。工作台支持 `?entry=&session=` 续接侧边栏里的会话。
+
+`AgentChatPanel.vue` 的内嵌接入点必须给**静态且全仓唯一**的 `history-key`，且不得关闭历史持久化（不得出现 `:persist-history="false"`）。这两条由单测 `src/components/agent/historyKeyInvariants.spec.ts` 守护，边界 lint 的自测见 `src/features/aiSidebar/boundaryLint.spec.ts`。
 
 ### 3.5 API 对接指南（新增/收编端点时的 checklist）
 
@@ -98,6 +113,8 @@ npm run dev                        # http://localhost:5174
 3. **`globe.enableLighting` 不能简单关掉。** 关掉能治「夜半球全黑」，但地表明暗 100% 来自光照，关掉等于把地形摁成一张平贴图。现在的做法是保留光照、把光源换成跟随相机的 `DirectionalLight`（见 `applyLighting`）：相机看到的永远是受光面，地形明暗照常。
 
 **ion token 是运行时凭据**（`src/config/mapTokens.ts`）：localStorage 优先、`VITE_CESIUM_ION_TOKEN` 兜底。用户在「地形环境」面板里就能填，填完立即生效、无需重新构建——现场交付拿到的是构建产物，没有这条路径就永远开不了带山体阴影的那一档。它是前端可见的第三方地图凭据（随每个瓦片请求发出），不属于需要保密的后端密钥。
+
+天地图影像底图（`tianditu-imagery`，`src/config/mapProviders.ts` 注册）需要 `VITE_TIANDITU_TOKEN`（`src/config/mapTokens.ts` 读取，构建期默认，运行时可经 localStorage `dljy.grid-geo.tianditu-token` 覆盖）。
 
 ### 3.7 预测模型目录必须带目标上下文（#54）
 
@@ -155,7 +172,7 @@ npm run build         # 生产构建（index + grid-geo 双入口）
 - **断言纪律**：正反双侧断言（happy path + 错误路径都要锁）；边界穷举（NaN / ±Infinity / null / 空串 / 脏 localStorage）；金融数值手算对拍（不用「自身输出回读自身」的伪对拍）。
 - **mock 纪律**：`vi.hoisted` + 工厂模式；`vi.stubGlobal` 后必须 `vi.unstubAllGlobals()`；store/composable 的模块级单例用 `resetXxxForTest()` 或直接赋值归位。stub `fetch` 的实现签名带 `(url, init)` 两参，`mock.calls` 才能推导出元组类型。
 - **诚实语义红线**（spec 要专门锁这些）：缺数据返 `null` 而非 `0`；未知回落标 synthetic 不伪装 real；失败不缓存；`mock:true`/`sourceType!=='REAL'` 的私有数据必须 throw 而非放行。
-- **覆盖率口径**：只统计 `.ts/.js` 逻辑层（`.vue` 计入会稀释全局指标）；阈值 = floor(实测基线) − 2pp，**只升不降**。注意 Vitest 4 的 coverage include 会把未执行文件按 0% 拉进分母——`shared/` 的 19 个 .mjs 多数无覆盖，纳入会稀释约 10pp，故暂不纳管（技术债 §9）。
+- **覆盖率口径**：只统计 `.ts/.js` 逻辑层（`.vue` 计入会稀释全局指标）；阈值 = floor(实测基线) − 2pp，**只升不降**。注意 Vitest 4 的 coverage include 会把未执行文件按 0% 拉进分母——`shared/` 的 49 个 .mjs 多数无覆盖，纳入会稀释约 10pp，故暂不纳管（技术债 §9）。
 - CI（GitHub Actions）跑 mirror-guard + lint + check + coverage + build，PR 必须全绿。
 
 ## 6. 目录与代码约定
@@ -173,7 +190,7 @@ npm run build         # 生产构建（index + grid-geo 双入口）
 
 ## 7. ESLint 与分层守卫
 
-配置在 `eslint.config.ts`（flat config），设计取舍：
+配置在 `eslint.config.js`（flat config），设计取舍：
 
 - **只取 correctness 规则**（`typescript-eslint` recommended + `eslint-plugin-vue` flat/essential），不引 stylistic/格式类——格式统一交给编辑器，避免海量格式 diff 淹没真实问题。
 - **分层守卫是核心目的**（本配置存在的第一理由）：
@@ -196,10 +213,10 @@ npm run build         # 生产构建（index + grid-geo 双入口）
 |---|---|---|
 | 1 | **basis 归一双轨** | `src/services/dataBasis.ts`（根级）与 `src/services/data/contracts/*Adapter.ts` 各自实现一套口径归一；方向：以 `data/contracts` 为唯一权威，dataBasis.ts 收敛为薄引用 |
 | 2 | **云南面板双家园** | `src/features/regions/yunnan/panels/` 与 `src/views/yunnan/panels/` 并存（如结算价面板在 views 侧 1100+ 行）；方向：统一收进 features 侧，views 只留路由级页面 |
-| 3 | **services 根级扁平** | `src/services/` 根下 38 个 .ts 直接平铺；方向：按域收进子目录（agent/ 已示范），迁移需连动 import 与上游同步说明 |
-| 4 | **巨型 .vue** | 15 个超 1000 行（最大 DeclarationDeskView 1984 行）；其中 `features/gridGeo/CesiumPlantMap.vue`（1800+ 行）被 5 个页面共用，爆炸半径最大，已单列 `ChenShi-Tech/dljy` 的 Tech Debt issue；方向：拆子组件/composable，新页面禁止再写巨石 |
+| 3 | **services 根级扁平** | `src/services/` 根下 50 个 .ts（含 spec）直接平铺；方向：按域收进子目录（agent/ 已示范），迁移需连动 import 与上游同步说明 |
+| 4 | **巨型 .vue** | 20 个超 1000 行（最大 DeclarationDeskView 2499 行）；其中 `features/gridGeo/CesiumPlantMap.vue`（1800+ 行）被 5 个页面共用，爆炸半径最大，已单列 `ChenShi-Tech/dljy` 的 Tech Debt issue；方向：拆子组件/composable，新页面禁止再写巨石 |
 | 5 | **EP/ECharts 全量引入** | element-plus 与 echarts 未做按需引入（首包代价约 1MB gzip 前）；方向：unplugin 按需方案需评估与既有主题体系的兼容 |
 | 6 | **tsconfig 收紧路线** | `noUncheckedIndexedAccess`、`exactOptionalPropertyTypes` 未开；试跑：`npx tsc --noEmit --noUncheckedIndexedAccess`（当前存量报错即改造工作量清单） |
 | 7 | **DOM 重 composables 无测试** | `useEChart`（canvas + resize observer）等无 spec；方向：先抽纯函数（option 构造）再测 |
-| 8 | **shared/ 覆盖率未纳管** | Vitest 4 coverage include 会把未执行文件按 0% 计入分母，shared/ 19 个 .mjs 多数无覆盖，纳入约稀释 10pp；方向：shared/ 补测后再纳管 |
+| 8 | **shared/ 覆盖率未纳管** | Vitest 4 coverage include 会把未执行文件按 0% 计入分母，shared/ 49 个 .mjs 多数无覆盖，纳入约稀释 10pp；方向：shared/ 补测后再纳管 |
 | 9 | **no-explicit-any 存量** | ~291 处 warn（多为脏数据边界手写守卫）；方向：动到相关文件时顺手收敛，不专项批量改（避免无行为意义的大 diff） |

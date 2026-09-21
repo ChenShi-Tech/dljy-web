@@ -24,10 +24,10 @@ const READINESS_LABEL: Record<TemplateCard['readiness'], string> = {
         type="button"
         class="chip"
         :class="t.readiness"
-        :title="`${t.id} ${t.name}${t.gapNote ? ` · ${t.gapNote}` : ''}${t.notes ? ` · ${t.notes}` : ''}`"
+        :title="t.readiness === 'data_gap' ? `${t.name} · 部分资料尚未接入` : t.name"
         @click="emit('open-template', t)"
       >
-        <b>{{ t.id }}</b> {{ t.name }}<i v-if="t.slots24" class="h24">24h</i>
+        {{ t.name }}<i v-if="t.slots24" class="h24">24h</i>
         <i class="rd">{{ READINESS_LABEL[t.readiness] }}</i>
       </button>
     </div>

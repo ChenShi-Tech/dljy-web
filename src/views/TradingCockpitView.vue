@@ -9,18 +9,14 @@ import { computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMoun
 import { useRoute } from 'vue-router'
 import {
   AlarmClock,
-  ArrowRight,
   BadgeCheck,
-  Bot,
   CalendarClock,
   ClipboardCheck,
-  ChevronRight,
   FileSearch,
   Landmark,
   LineChart,
   RefreshCw,
-  ShieldAlert,
-  Sparkles
+  ShieldAlert
 } from 'lucide-vue-next'
 import { useEChart } from '../composables/useEChart'
 import { axisTooltip, bottomLayoutLegend, bottomToolbox, emptyOverlay, insideZoom } from '@/services/chart/chartOptions'
@@ -36,8 +32,7 @@ import TrustBadge from '@/components/common/TrustBadge.vue'
 import type { DataBasis } from '@/services/dataBasis'
 import SpotCockpitCore from '@/components/spot/cockpit/SpotCockpitCore.vue'
 import CockpitRegionLockedCard from '@/components/spot/cockpit/CockpitRegionLockedCard.vue'
-import AgentChatPanel from '@/components/agent/AgentChatPanel.vue'
-import { PAGE_PROMPT_KEYS } from '@/prompts/pageKeys'
+import CockpitQuickActions from '@/components/spot/cockpit/CockpitQuickActions.vue'
 // 地区增强层面板已全部迁入扩展包（features/regions/<省>/），经 regionSlots 装配
 // 本内核不再 import 任何省份的面板组件；cockpit tab 复用上面的通用 SpotCockpitCore。
 import { onRegionChange } from '../composables/useRegionReload'
@@ -45,15 +40,15 @@ import { resolveRegionSlot, type RegionSlotId } from '@/services/region/regionSl
 import { currentRegion } from '@/services/region/regionContext'
 import { getCurrentUser, type AuthUser } from '@/services/auth'
 import { fetchCaptured } from '@/services/captured'
+import type { CapturedListEnvelope, YnForecastRow } from '@/services/data/contracts'
 import { canAccessPath, isPathAvailableInRegion, roleLabels, subjectTypeLabels } from '@/services/governance'
 import { fetchLatestBidPlanSummary, nextDeclarationTargetDate, type BidPlanSummary } from '@/services/forecast/bidPlanClient'
 import { getRuleProfile } from '../rules'
 import { getYunnanRuleVerificationSummary, yunnanScenarios } from '@/services/yunnanTrading'
-import { ElMessage } from 'element-plus'
 import CgnYunnanPriceStatus from '@/components/spot/CgnYunnanPriceStatus.vue'
 import {
   fetchCgnYunnanPriceBundle,
-  isCgnYunnanPriceCompany,
+  hasCgnYunnanPriceEntitlement,
   type CgnYunnanPriceBundle,
   type CgnPricePoint
 } from '@/services/market/cgnYunnanLivePrice'
@@ -105,28 +100,28 @@ async function loadDisclosureSummary() {
     // 「按今天回推窗口」在历史包场景整窗落空，limit 尾部（文件按日期升序拼接）即最新若干天。
     const filter = { limit: 2000 }
     const [loadB, neB, ipB] = await Promise.all([
-      fetchCaptured<any>('yn_system_forecast', 'load_forecast', filter),
-      fetchCaptured<any>('yn_system_forecast', 'new_energy_forecast_d1', filter),
-      fetchCaptured<any>('yn_system_forecast', 'inter_provincial_forecast', filter)
+      fetchCaptured<CapturedListEnvelope<YnForecastRow>>('yn_system_forecast', 'load_forecast', filter),
+      fetchCaptured<CapturedListEnvelope<YnForecastRow>>('yn_system_forecast', 'new_energy_forecast_d1', filter),
+      fetchCaptured<CapturedListEnvelope<YnForecastRow>>('yn_system_forecast', 'inter_provincial_forecast', filter)
     ])
     // stale 校验：期间切了地区或发起了新请求 → 丢弃本次结果
     if (seq !== discReqSeq || currentRegion.value.id !== 'yunnan') return
     // 目标日口径：new_energy_forecast_d1 为滚动 D-1 集（operateDate=发布日、targetDate=目标日），
     // 用 targetDate 归组才是「被预测的那一天」；单日期表 targetDate=null 回退 operateDate。
-    const dayOf = (r: any) => r.targetDate ?? r.operateDate
-    const latestAvg = (body: any, pick: (r: any) => boolean): { date: string; avg: number | null } => {
-      const rows: any[] = Array.isArray(body?.data) ? body.data : []
-      const dates = rows.map(dayOf).filter(Boolean).sort()
+    const dayOf = (r: YnForecastRow) => r.targetDate ?? r.operateDate
+    const latestAvg = (body: CapturedListEnvelope<YnForecastRow>, pick: (r: YnForecastRow) => boolean): { date: string; avg: number | null } => {
+      const rows: YnForecastRow[] = Array.isArray(body?.data) ? body.data : []
+      const dates = rows.map(dayOf).filter((d): d is string => Boolean(d)).sort()
       const latest = dates.at(-1)
       if (!latest) return { date: '', avg: null }
-      const vals = rows.filter((r) => dayOf(r) === latest && pick(r) && typeof r.value === 'number')
+      const vals = rows.filter((r): r is YnForecastRow & { value: number } => dayOf(r) === latest && pick(r) && typeof r.value === 'number')
       return { date: latest, avg: vals.length ? +(vals.reduce((s, r) => s + r.value, 0) / vals.length).toFixed(0) : null }
     }
     // 云南总送出：同一时点可能有多个含「云南」断面，先按 timePoint 合计各断面送出，再对
     // 时点求日均（与弹性引擎口径一致；直接对断面行求均值会按断面数稀释外送规模）。
-    const latestSectionSum = (body: any): { date: string; avg: number | null } => {
-      const rows: any[] = (Array.isArray(body?.data) ? body.data : []).filter(
-        (r: any) => typeof r.region === 'string' && r.region.includes('云南')
+    const latestSectionSum = (body: CapturedListEnvelope<YnForecastRow>): { date: string; avg: number | null } => {
+      const rows = (Array.isArray(body?.data) ? body.data : []).filter(
+        (r): r is YnForecastRow & { value: number } => typeof r.region === 'string' && r.region.includes('云南')
           && r.metric === 'inter_provincial_send' && typeof r.value === 'number'
       )
       const latest = rows.map(dayOf).filter(Boolean).sort().at(-1)
@@ -176,7 +171,10 @@ async function loadBidPlanSummary() {
 
 // 云南现货数据区仅云南有真实节点电价/损益/结算；非云南降级为空态卡（诚实标注，不伪装）。
 const isYunnan = computed(() => currentRegion.value.id === 'yunnan')
-const cgnPriceEntitled = computed(() => isCgnYunnanPriceCompany(currentUser.value.companyId))
+// CGN 私有价判定收口到服务谓词（spot-trading-module-hygiene）：hasCgnYunnanPriceEntitlement
+// 内部按「选中公司 || 登录账号」判定（公司切换/平台超管场景），替代本页 setup 时的
+// 一次性 currentUser 快照口径——与 spotClient/SpotCockpitCore 的实际取数路径同源。
+const cgnPriceEntitled = computed(() => hasCgnYunnanPriceEntitlement())
 const usesCgnPrivatePrice = computed(() => isYunnan.value && cgnPriceEntitled.value)
 
 // 地区扩展插槽（Epic #1431 S3）：内核只认插槽 id，不 import 任何具体省份的面板；
@@ -277,31 +275,6 @@ function onGovernanceUserChanged(event: Event) {
 }
 
 // 智能体对话框在「实时价格」tab 右栏常驻（左栏侧边栏承载全部动作按钮），不再由点击惰性展开。
-const agentPanelHost = ref<HTMLElement | null>(null)
-type AgentChatPanelRef = { ask: (question: string) => boolean }
-const agentPanelRef = ref<AgentChatPanelRef | null>(null)
-const agentPanelReady = ref(false)
-const pendingQuestion = ref<string | null>(null)
-
-function onAgentPanelReady() {
-  agentPanelReady.value = true
-  const question = pendingQuestion.value
-  if (question && agentPanelRef.value?.ask(question)) pendingQuestion.value = null
-}
-
-async function runTask(q: string) {
-  if (!canUseAgent.value) return
-  activeTab.value = 'price'
-  await nextTick()
-  if (!agentPanelReady.value) {
-    if (pendingQuestion.value) ElMessage.info('面板仍在恢复历史，已保留最后一次快捷任务')
-    pendingQuestion.value = q
-  } else {
-    agentPanelRef.value?.ask(q)
-  }
-  agentPanelHost.value?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-}
-
 function formatPlanNumber(value: number | null, digits = 1): string {
   return value == null || !Number.isFinite(value) ? '—' : value.toFixed(digits)
 }
@@ -498,16 +471,8 @@ function startPriceRefresh() {
   }, 60_000)
 }
 
-// 快捷动作 + 智能体任务台合并为一卡（验收反馈：两张卡占屏过多），默认折叠只留标题行
-const agentMergedOpen = ref(false)
-// 智能体快捷任务（总览 tab 内嵌，不离开驾驶舱）
+// 明日日期：快捷动作「生成明日申报草稿」插入问题（快捷动作本身见 CockpitQuickActions）
 const tomorrow = computed(() => fmtDate(new Date(Date.now() + 86400000)))
-const quickTasks = computed(() => [
-  { icon: Sparkles, label: '生成明日申报草稿', q: `为 ${tomorrow.value} 制定日前申报策略并生成草稿` },
-  { icon: LineChart, label: '今日行情解读', q: '分析今日出清价格走势与峰谷价差，解释主要驱动因素' },
-  { icon: FileSearch, label: '检索最新披露', q: '汇总最近 3 天交易中心披露的公告、检修计划与政策' },
-  { icon: ShieldAlert, label: '执行风控巡检', q: '执行例行风控巡检：核查价格异动与风险指标' }
-])
 
 onMounted(() => {
   window.addEventListener('governance-user-changed', onGovernanceUserChanged)
@@ -525,12 +490,7 @@ onRegionChange(() => {
 })
 // ECharts 在非激活 tab 中没有可见尺寸；切入实时价格后补一帧 resize 并重渲染。
 watch(activeTab, (tab) => {
-  if (tab !== 'price') {
-    // 离开时 AgentChatPanel 随 v-else-if 卸载；ready 标记必须复位，否则切回后
-    // 新实例尚未恢复历史就被 ask() 调用，快捷任务会静默丢失。
-    agentPanelReady.value = false
-    return
-  }
+  if (tab !== 'price') return
   void nextTick(() => {
     priceChart.resize()
     void renderChart()
@@ -696,54 +656,13 @@ onBeforeUnmount(() => {
         </section>
       </div>
 
-      <!-- 底部合并卡：快捷动作 + 智能体任务台同卡（原两张卡），默认折叠、点标题行展开。
-           内容 v-show 而非 v-if：AgentChatPanel 挂载即恢复持久化会话，收起不销毁、展开即用。 -->
-      <section class="panel agent-merged">
-        <button class="am-fold-head" type="button" :aria-expanded="agentMergedOpen" @click="agentMergedOpen = !agentMergedOpen">
-          <Bot :size="14" />
-          <span>智能体任务台 · 快捷动作</span>
-          <span class="muted am-fold-hint">dashboard-overview · 会话历史已持久化（点击{{ agentMergedOpen ? '收起' : '展开' }}）</span>
-          <ChevronRight :size="15" class="am-fold-chev" :class="{ open: agentMergedOpen }" />
-        </button>
-        <div v-show="agentMergedOpen" class="agent-split">
-        <aside class="agent-actions" aria-label="智能体动作">
-          <p v-if="!canUseAgent" class="muted agent-access-hint">当前角色无智能体使用权限。</p>
-          <button
-            v-for="t in quickTasks"
-            :key="t.label"
-            class="task-btn"
-            :disabled="!canUseAgent"
-            :title="canUseAgent ? undefined : '当前角色无智能体使用权限'"
-            @click="runTask(t.q)"
-          >
-            <component :is="t.icon" :size="14" />
-            <span>{{ t.label }}</span>
-            <ArrowRight :size="13" class="task-arrow" />
-          </button>
-          <button v-if="bidPlan" class="task-btn" @click="bidDialogOpen = true">
-            <ClipboardCheck :size="14" />
-            <span>打开申报决策舱</span>
-            <ArrowRight :size="13" class="task-arrow" />
-          </button>
-          <p class="muted actions-hint"><ShieldAlert :size="12" /> 风控巡检由智能体执行：核查价格异动、CVaR 与持仓敞口，异常产出分级预警。</p>
-        </aside>
-
-        <section v-if="canUseAgent" ref="agentPanelHost" class="agent-card">
-          <div class="panel-head"><h2><Bot :size="15" /> 智能体任务台</h2></div>
-          <AgentChatPanel
-            ref="agentPanelRef"
-            scenario="chat"
-            :prompt-key="PAGE_PROMPT_KEYS.workbench"
-            history-key="dashboard_overview"
-            @ready="onAgentPanelReady"
-          />
-        </section>
-        <section v-else class="agent-card agent-card-locked">
-          <div class="panel-head"><h2><Bot :size="15" /> 智能体任务台</h2></div>
-          <p class="muted">当前角色无智能体使用权限，对话框不可用。</p>
-        </section>
-        </div>
-      </section>
+      <!-- 快捷动作：点击唤出 AI 侧边栏直接发送（统一 AI 侧边栏 EN-03，原内嵌对话卡已移除） -->
+      <CockpitQuickActions
+        :can-use-agent="canUseAgent"
+        :tomorrow="tomorrow"
+        :has-bid-plan="!!bidPlan"
+        @open-bid-plan="bidDialogOpen = true"
+      />
     </section>
 
     <SpotCockpitCore
@@ -846,31 +765,6 @@ onBeforeUnmount(() => {
 .disc-row b { color: var(--text, #22323c); font-variant-numeric: tabular-nums; }
 .disc-src { font-size: var(--font-11-5); }
 .disc-mock, .plan-warning { color: #b45309; }
-.agent-access-hint { margin: 6px 0 0; }
-/* 展开内部参照申报工作台 .aw-layout：全出血双栏 + 内部细分隔线（左侧动作栏定宽可滚动、
-   右侧栏头带下边框、对话面板撑满剩余高度），替代原来两块各带边框的浮动小卡 */
-.agent-split { display: flex; height: 620px; min-height: 0; border-top: 1px solid var(--line-faint); }
-.agent-merged { padding: 0; }
-.am-fold-head {
-  display: flex; align-items: center; gap: 8px; width: 100%;
-  padding: 11px 14px; border: none; background: transparent;
-  color: var(--text); font-size: var(--font-md); font-weight: 600; cursor: pointer; text-align: left;
-}
-.am-fold-head:hover > span:first-of-type { color: var(--primary); }
-.am-fold-hint { font-weight: 400; }
-.am-fold-chev { margin-left: auto; flex-shrink: 0; transition: transform 0.15s ease; color: var(--muted); }
-.am-fold-chev.open { transform: rotate(90deg); }
-.agent-actions { width: 248px; flex-shrink: 0; overflow-y: auto; padding: 12px; border-right: 1px solid var(--line-faint); }
-.agent-actions .task-btn { display: flex; align-items: center; gap: 8px; width: 100%; padding: 8px 10px; margin-top: 6px; font-size: var(--font-md); border: 1px solid var(--line); border-radius: 8px; background: transparent; color: var(--text); cursor: pointer; transition: all 0.15s ease; }
-.agent-actions .task-btn:hover:not(:disabled) { border-color: var(--primary); color: var(--primary); }
-.agent-actions .task-btn:disabled { opacity: 0.55; cursor: not-allowed; }
-.actions-hint { display: flex; align-items: flex-start; gap: 5px; margin: 10px 0 0; font-size: var(--font-11-5); line-height: 1.5; }
-.actions-hint svg { flex: none; margin-top: 2px; }
-.task-arrow { margin-left: auto; color: var(--muted); }
-.agent-card { flex: 1; min-width: 0; display: flex; flex-direction: column; padding: 0; }
-.agent-card > .panel-head { padding: 8px 12px; border-bottom: 1px solid var(--line); margin-bottom: 0; flex-shrink: 0; }
-.agent-card :deep(.agent-chat-panel) { flex: 1; min-height: 0; }
-.agent-card-locked > p { padding: 12px; }
 .chart-panel { padding: 14px 16px; }
 .demo-tag { font-size: var(--font-xs); padding: 1px 8px; border-radius: 999px; background: rgba(245, 158, 11, 0.15); color: #b45309; }
 .price-refresh { margin-left: auto; display: inline-flex; align-items: center; gap: 5px; padding: 4px 9px; border: 1px solid var(--line); border-radius: 7px; background: transparent; color: var(--text); cursor: pointer; }
@@ -881,7 +775,6 @@ onBeforeUnmount(() => {
 .plan-meta b { color: var(--text); }
 .plan-basis { margin: 6px 0 14px; }
 .frontier-table { width: 100%; }
-@media (max-width: 1100px) { .agent-split { flex-direction: column; height: auto; } .agent-actions { width: 100%; } }
 @media (max-width: 900px) { .overview-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } .rule-strip { align-items: flex-start; flex-direction: column; } .scenario-picker { width: 100%; } }
 @media (max-width: 768px) { .schedule-track { flex-wrap: wrap; } .phase { flex: 1 1 30%; } .schedule-now { flex-wrap: wrap; } .countdown { margin-left: 0; } .panel-head { flex-wrap: wrap; } .overview-grid { grid-template-columns: 1fr; } .overview-kpis > div { flex-wrap: wrap; } .overview-kpis b { margin-left: 0; } .scenario-picker { align-items: flex-start; flex-wrap: wrap; } .scenario-picker .el-select { width: min(100%, 280px); } .main-chart { height: 360px; } }
 </style>

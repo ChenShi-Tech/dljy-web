@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'element-plus'
+import MidlongNotice from '@/components/midlong/MidlongNotice.vue'
+import { CONFIRMATION_STATUS_LABELS as MIDLONG_STATUS_LABELS } from '@/services/midlong/midlongTypes'
 import { getCurrentUser } from '@/services/auth'
 import { hasCompanyAdmin } from '@/services/governance'
 import { selectedCompanyId } from '@/services/company/companyContext'
@@ -67,6 +70,9 @@ function detailBlank(): DetailRow {
   return { ...{ buyerName: '', sellerName: '', dateRange: '', timeType: '', buyerQty: null, sellerQty: null, buyerPrice: null, sellerPrice: null, totalFee: null, virtualHour: '' }, _uid: nextDetailUid() }
 }
 
+const route = useRoute()
+const router = useRouter()
+
 async function reload() {
   loading.value = true
   try {
@@ -80,7 +86,31 @@ async function reload() {
     loading.value = false
   }
 }
-onMounted(reload)
+
+// 旧深链分流（dljy#2939，MW-02）：/gsgl/contracts?contractId=… 指向已纳管中长期合同时进入新页面的同一合同，
+// 交割期/年份筛选随之带过去；未纳管或未知归属的合同保留在本页打开，不无差别迁移。
+async function followDeepLink() {
+  const raw = route.query.contractId ?? route.query.id
+  const id = Number(Array.isArray(raw) ? raw[0] : raw)
+  if (!Number.isInteger(id) || id <= 0) return
+  const target = contracts.value.find((c) => c.id === id)
+  if (!target) return
+  if (target.midlong) {
+    const query: Record<string, string> = {}
+    const year = String(route.query.year ?? '')
+    if (typeof route.query.deliveryFrom === 'string') query.deliveryFrom = route.query.deliveryFrom
+    if (typeof route.query.deliveryTo === 'string') query.deliveryTo = route.query.deliveryTo
+    if (/^\d{4}$/.test(year) && !query.deliveryFrom) { query.deliveryFrom = `${year}-01`; query.deliveryTo = `${year}-12` }
+    await router.replace({ path: target.midlong.detailPath, query })
+    return
+  }
+  await openView(target)
+}
+
+onMounted(async () => {
+  await reload()
+  await followDeepLink()
+})
 watch(selectedCompanyId, reload)
 
 // 筛选 / 统计（前端派生，所见即所得）
@@ -104,6 +134,8 @@ const years = computed(() => {
 
 // 即将到期：active 且 end_date 在未来 90 天内（前端派生，不入库）。
 function isExpiring(c: CompanyContract): boolean {
+  // 已纳管中长期合同按新口径展示交割进度（结束 ≠ 逾期），不在旧页按日期派生到期/逾期。
+  if (c.midlong) return false
   if (c.status !== 'active' || !c.endDate) return false
   const now = Date.now()
   const end = new Date(c.endDate).getTime()
@@ -112,6 +144,7 @@ function isExpiring(c: CompanyContract): boolean {
 // 已逾期：active 但 end_date 已过去。后端不会自动把 active 翻成 expired，需前端识别，
 // 否则过期合同会一直伪装成“执行中”（计入执行中卡 + 绿色标签）。
 function isOverdue(c: CompanyContract): boolean {
+  if (c.midlong) return false
   if (c.status !== 'active' || !c.endDate) return false
   return new Date(c.endDate).getTime() < Date.now()
 }
@@ -119,6 +152,7 @@ function isOverdue(c: CompanyContract): boolean {
 // 到期预警看板（基于全部合同，不随筛选隐藏；active 合同按到期紧急度分级）
 const alertOpen = ref(['alerts'])
 function daysToExpiry(c: CompanyContract): number | null {
+  if (c.midlong) return null
   if (c.status !== 'active' || !c.endDate) return null
   return Math.ceil((new Date(c.endDate).getTime() - Date.now()) / 86400000)
 }
@@ -156,7 +190,8 @@ const stats = computed(() => {
   let totalQty = 0
   let overdue = 0
   for (const c of list) {
-    if (c.status === 'active' && !isOverdue(c)) active += 1 // 执行中不含已逾期
+    // 执行中不含已逾期；已纳管中长期合同的兼容投影状态不代表交割进度（交割期已结束仍可能是 active），不计入旧口径「执行中」。
+    if (c.status === 'active' && !isOverdue(c) && !c.midlong) active += 1
     if (isExpiring(c)) expiring += 1
     if (isOverdue(c)) overdue += 1
     totalQty += Number(c.totalQuantity) || 0
@@ -170,7 +205,9 @@ function stationName(id: number | null | undefined): string {
   if (!id) return '—'
   return stations.value.find((s) => s.id === id)?.name ?? `#${id}`
 }
+const managedCount = computed(() => contracts.value.filter((c) => c.midlong).length)
 function statusLabel(c: CompanyContract): string {
+  if (c.midlong) return `中长期·${MIDLONG_STATUS_LABELS[c.midlong.confirmationStatus]}`
   if (isOverdue(c)) return '已逾期'
   if (isExpiring(c)) return '即将到期'
   return CONTRACT_STATUS_LABELS[c.status] ?? c.status
@@ -376,7 +413,8 @@ function exportContractsCsv() {
     c.contractNo, c.contractName, stationName(c.stationId),
     MARKET_TYPE_LABELS[c.marketType] ?? c.marketType, TRADE_MODE_LABELS[c.tradeMode] ?? c.tradeMode,
     c.startDate, c.endDate, c.totalQuantity, c.buyerName, c.sellerName, c.buyerPrice, c.sellerPrice, c.totalFee,
-    CONTRACT_STATUS_LABELS[c.status] ?? c.status, c.source === 'IMPORT' ? '导入' : '手动'
+    // 纳管合同导出与表格同口径（中长期确认状态），兼容投影的 draft/active 会把待核对、已确认混成草稿/执行中。
+    c.midlong ? statusLabel(c) : (CONTRACT_STATUS_LABELS[c.status] ?? c.status), c.source === 'IMPORT' ? '导入' : '手动'
   ])
   exportCsv(`合同_${todayBeijing()}`, headers, body)
 }
@@ -386,6 +424,11 @@ function exportContractsCsv() {
   <div class="company-page">
     <h2 class="page-title">合同管理</h2>
     <CompanyScopeBar />
+
+    <MidlongNotice v-if="managedCount" tone="info" title="中长期售电合同已迁至「中长期交易 › 售电合同」" class="midlong-notice">
+      本页有 {{ managedCount }} 份合同已纳入中长期售电管理，在此仅供查看；录入、核验、更正与作废请在
+      <router-link to="/zcqjy/contracts" class="midlong-link">售电合同</router-link> 页操作。其他合同在本页照常维护。
+    </MidlongNotice>
 
     <div class="stats-grid">
       <div class="stat-card"><div class="stat-label">合同总数</div><div class="stat-value">{{ stats.total }}</div></div>
@@ -484,7 +527,10 @@ function exportContractsCsv() {
       </el-table-column>
       <el-table-column label="操作" width="170" fixed="right">
         <template #default="{ row }">
-          <template v-if="!row.blocked">
+          <template v-if="row.midlong">
+            <router-link :to="row.midlong.detailPath" class="midlong-link">前往中长期合同</router-link>
+          </template>
+          <template v-else-if="!row.blocked">
             <el-button link type="primary" @click="openView(row)">查看</el-button>
             <el-button v-if="canWrite" link type="primary" @click="openEdit(row)">编辑</el-button>
             <el-button v-if="canWrite" link type="danger" @click="remove(row)">删除</el-button>
@@ -576,7 +622,7 @@ function exportContractsCsv() {
           <div class="exec-summary">
             <span>合同金额 <b>{{ fmtNum(settlementPreview.contractAmount, 0) }}</b> 元</span>
             <span>已执行金额 <b>{{ fmtNum(settlementPreview.executedAmount, 0) }}</b> 元</span>
-            <span>履约率 <b>{{ (settlementPreview.coverageRate * 100).toFixed(1) }}%</b></span>
+            <span>履约率 <b>{{ ((settlementPreview.coverageRate ?? 0) * 100).toFixed(1) }}%</b></span>
             <span>未执行 <b>{{ fmtNum(settlementPreview.openExposureMwh, 0) }}</b> MWh</span>
           </div>
           <p class="settle-note">基于合同量价与已执行电量的快速估算；分时结算、出清电价、两个细则偏差考核分档对账口径待理顺后接入。</p>
@@ -648,4 +694,6 @@ function exportContractsCsv() {
 .alert-spacer { flex: 1; }
 .alert-date { color: var(--el-text-color-secondary, #909399); font-size: var(--font-md); }
 .settle-note { margin: 4px 0 0; font-size: var(--font-sm); color: var(--el-text-color-secondary, #909399); }
+.midlong-notice { margin-bottom: 12px; }
+.midlong-link { color: var(--el-color-primary, #409eff); text-decoration: none; }
 </style>

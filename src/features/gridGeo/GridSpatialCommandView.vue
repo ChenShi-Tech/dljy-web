@@ -1,6 +1,7 @@
 <script setup lang="ts">
+import { parseDisclosureTime } from './disclosureTime'
 import { computed, defineAsyncComponent, inject, onBeforeUnmount, onMounted, ref, shallowRef, watch, type Component, nextTick} from 'vue'
-import { routerKey } from 'vue-router'
+import { routeLocationKey, routerKey } from 'vue-router'
 import {
   Activity,
   AlertTriangle,
@@ -30,9 +31,14 @@ import { onRegionChange } from '@/composables/useRegionReload'
 import { currentCompany, selectedCompanyId } from '@/services/company/companyContext'
 import { isMockActive } from '@/services/mock/session'
 import { currentRegion } from '@/services/region/regionContext'
+import { todayBeijing } from '@/utils/beijingDate'
 import ProvinceFlatMap from './ProvinceFlatMap.vue'
 import PlantCatalogPanel from './PlantCatalogPanel.vue'
 import PlantDetailDrawer from './PlantDetailDrawer.vue'
+import GridObjectDrawer from './GridObjectDrawer.vue'
+import GridObjectContextBar from './GridObjectContextBar.vue'
+import { useGridObjectContext } from './useGridObjectContext'
+import { buildGridObjectLocation, type GridObjectReference } from './objectNavigation'
 import PlantAssetGovernance from './PlantAssetGovernance.vue'
 import { clampCardOffset, drawerAvoidanceShift } from './draggableCard'
 import TerrainControlPanel from './TerrainControlPanel.vue'
@@ -66,7 +72,6 @@ import {
   rankGridMarketMetrics,
 } from './marketSpatialLayers'
 import {
-  COMMAND_MARKET_REPLAY_DATE,
   COMMAND_NODE_PAGE_SIZE,
   commandNodesFromResponse,
   commandWeatherItems,
@@ -96,6 +101,8 @@ import type {
 type MapExpose = { focusPlant: (plantId: string) => void; focusNode: (nodeId: string) => void; resetView: () => void; flyTerrainTour?: () => void }
 
 const appRouter = inject(routerKey, null)
+const route = inject(routeLocationKey, null)
+const objectContext = useGridObjectContext()
 const mapRef = ref<MapExpose | null>(null)
 // 演示会话（PRD R1/R4）：驾驶舱各图层的「mock 数据拒绝」治理门只在真实账号生效；
 // 演示账号全部数据本就是合成来源，按来源接受，图上仍以 mock 标注诚实展示。
@@ -155,6 +162,7 @@ const cardOffset = ref({ x: 0, y: 0 })
 let cardDragStart: { pointerX: number; pointerY: number; offsetX: number; offsetY: number } | null = null
 
 const catalogFiltered = ref<GridGeoPlant[]>([])
+const catalogContextKey = ref(0)
 const detailOpen = ref(false)
 const governanceOpen = ref(false)
 const governanceMode = ref<'edit' | 'history'>('edit')
@@ -162,7 +170,8 @@ const canWrite = ref(false)
 const catalogStats = ref<{ locatedPlantCount: number; totalPlantCountInCurrentDim: number; unresolvedPlantCount: number | null } | null>(null)
 
 const marketLayer = ref<GridMarketLayer>('risk')
-const marketDate = ref(COMMAND_MARKET_REPLAY_DATE)
+const marketDate = ref(objectContext.hasContext.value ? objectContext.date.value : todayBeijing())
+const selectedObjectWindow = computed(() => marketDate.value === objectContext.date.value ? objectContext.timeWindow.value : null)
 const selectedPlantId = ref<string | null>(null)
 const selectedNodeId = ref<string | null>(null)
 const selectedEventId = ref<string | null>(null)
@@ -218,6 +227,12 @@ const profileStyle = computed(() => operatorProfile.value ? {
 const currentScene = computed(() => sceneOptions.find((item) => item.id === scene.value) ?? sceneOptions[0])
 const selectedPlant = computed(() => plants.value.find((item) => item.plantId === selectedPlantId.value) ?? null)
 const selectedNode = computed(() => nodes.value.find((item) => item.nodeId === selectedNodeId.value) ?? null)
+const selectedObjectReference = computed<GridObjectReference | null>(() => selectedPlant.value
+  ? { kind: 'plant', id: selectedPlant.value.plantId, regionId: selectedPlant.value.regionId, gridOperator: selectedPlant.value.gridOperator }
+  : selectedNode.value
+    ? { kind: 'node', id: selectedNode.value.nodeId, regionId: selectedNode.value.regionId, gridOperator: selectedNode.value.gridOperator }
+    : selectedEventId.value ? { kind: 'disclosure', id: selectedEventId.value, regionId: currentRegion.value.id } : null)
+
 const selectedEvent = computed(() => disclosures.value.find((item) => item.eventId === selectedEventId.value) ?? null)
 const selectedTopologyFeature = computed(() => topologyFeatures.value.find((item) => item.featureId === selectedTopologyFeatureId.value) ?? null)
 const selectedWeather = computed(() => weatherItems.value.find((item) => item.plantId === selectedPlantId.value) ?? null)
@@ -302,7 +317,7 @@ function initialLayerStates(): Record<SpatialCommandScene, SpatialLayerState> {
     overview: { status: 'idle', reason: '等待加载授权空间资产' },
     nodes: { status: 'idle', reason: '按需加载已定位节点' },
     weather: { status: 'idle', reason: '按需加载当前格点天气' },
-    market: { status: 'idle', reason: '按需加载 2026-05-01 历史回放' },
+    market: { status: 'idle', reason: '按所选业务日期加载市场回放' },
     disclosure: { status: 'idle', reason: '按需加载公开披露时间轴' },
     topology: { status: 'idle', reason: '等待读取授权 Provider 状态' },
   }
@@ -387,11 +402,11 @@ function weatherValue(item: GridGeoWeatherSnapshot | null) {
 
 function formatDate(value: string | null | undefined, withTime = false) {
   if (!value) return '时间缺失'
-  const parsed = new Date(value)
-  if (Number.isNaN(parsed.getTime())) return value
-  return new Intl.DateTimeFormat('zh-CN', withTime
+  const parsed = parseDisclosureTime(value, true)
+  if (parsed === null) return value
+  return new Intl.DateTimeFormat('zh-CN', { timeZone: 'Asia/Shanghai', ...(withTime
     ? { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false }
-    : { year: 'numeric', month: '2-digit', day: '2-digit' }).format(parsed)
+    : { year: 'numeric', month: '2-digit', day: '2-digit' }) }).format(parsed)
 }
 
 function clearSelection() {
@@ -499,6 +514,7 @@ async function loadBase() {
     setLayerState('topology', { status: 'error', reason: topologyResult.reason instanceof Error ? topologyResult.reason.message : 'Provider 状态读取失败' })
   }
   baseLoading.value = false
+  await syncObjectSelection()
 }
 
 function beginLayerRequest(id: SpatialCommandScene) {
@@ -594,7 +610,7 @@ async function loadDisclosures(force = false) {
   if (!force && ['available', 'empty', 'not-configured'].includes(layerStates.value.disclosure.status)) return
   const request = beginLayerRequest('disclosure')
   try {
-    const response = await fetchGridDisclosureEvents({ page: 1, pageSize: 24 }, { signal: request.signal })
+    const response = await fetchGridDisclosureEvents({ region: currentRegion.value.id, page: 1, pageSize: 24 }, { signal: request.signal })
     if (!layerRequestCurrent(request.requestId, request.scopeId, request.signal)) return
     disclosures.value = response.items.filter((item) => item.source.mock === false || demoSession)
     disclosureTotal.value = response.total
@@ -745,10 +761,65 @@ function selectPlantById(plantId: string) {
   if (plant) selectPlant(plant)
 }
 
-function navigate(event: MouseEvent, path: string) {
+function objectLocation(path: string) {
+  return selectedObjectReference.value && selectedCompanyId.value
+    ? buildGridObjectLocation(path, selectedObjectReference.value, { companyId: selectedCompanyId.value, date: marketDate.value, from: selectedObjectWindow.value?.from, to: selectedObjectWindow.value?.to, returnTo: route?.fullPath })
+    : { path }
+}
+function objectHref(path: string) { return appRouter?.resolve(objectLocation(path)).href ?? path }
+
+function navigate(event: MouseEvent, path: string, retainObject = false) {
   if (!appRouter || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) return
   event.preventDefault()
-  void appRouter.push(path)
+  void appRouter.push(retainObject ? objectLocation(path) : path)
+}
+
+let appliedObjectContext = ''
+let resolvedObjectContext = ''
+
+// Only confirmed object relations may drive cross-page selection. A target node can
+// be outside the first map page; its detail response still has to carry valid WGS84 coordinates.
+async function syncObjectSelection() {
+  if (!objectContext.active.value) return
+  if (!objectContext.hasContext.value) { appliedObjectContext = ''; resolvedObjectContext = ''; return }
+  const reference = objectContext.reference.value
+  const key = JSON.stringify([reference, objectContext.date.value, selectedCompanyId.value])
+  if (key !== appliedObjectContext) {
+    appliedObjectContext = key
+    catalogContextKey.value += 1
+    resolvedObjectContext = ''
+    layerRequestId += 1
+    layerController?.abort()
+    clearSelection()
+    detailOpen.value = false
+    if (reference) marketDate.value = objectContext.date.value
+  }
+  if (!reference || resolvedObjectContext === key) return
+  if (baseLoading.value || objectContext.loading.value) return
+  const detail = objectContext.detail.value
+  if (!detail) return
+  resolvedObjectContext = key
+  if (reference.kind === 'node') {
+    const node = detail.node
+    const location = node?.location
+    if (!node || node.nodeId !== reference.id || node.regionId !== currentRegion.value.id || node.locationStatus === 'unresolved'
+      || location?.coordinateSystem !== 'WGS84' || !Number.isFinite(location.longitude) || !Number.isFinite(location.latitude)
+      || location.longitude < -180 || location.longitude > 180 || location.latitude < -90 || location.latitude > 90) return
+    if (!nodes.value.some(item => item.nodeId === node.nodeId)) nodes.value = [...nodes.value, node]
+    nodeTotal.value = Math.max(nodeTotal.value, nodes.value.length)
+    scene.value = 'nodes'
+    setLayerState('nodes', { status: 'available', reason: '已定位跨页选中的授权节点' })
+    await nextTick()
+    if (objectContext.active.value && objectContext.reference.value === reference) selectNode(node)
+    return
+  }
+  const ids = reference.kind === 'plant' ? [reference.id] : detail.relations.plants.filter(item => item.regionId === currentRegion.value.id).map(item => item.id)
+  const plant = plants.value.find(item => ids.includes(item.plantId))
+  if (!plant) return
+  scene.value = 'overview'
+  focusedSubdivision.value = null
+  await nextTick()
+  if (objectContext.active.value && objectContext.reference.value === reference) selectPlant(plant)
 }
 
 function layerSettled(id: SpatialCommandScene) {
@@ -767,9 +838,22 @@ function resetForScopeChange() {
 }
 
 function onKeydown(event: KeyboardEvent) {
-  if (event.key === 'Escape') clearSelection()
+  if (event.key !== 'Escape' || event.defaultPrevented) return
+  // Element Plus may already close the dialog at document before this key reaches window.
+  // Keep that same key from closing another layer or clearing its underlying map selection.
+  if (event.target instanceof Element && event.target.closest('[role="dialog"], [role="alertdialog"]')) return
+  if (governanceOpen.value) {
+    governanceOpen.value = false
+    return
+  }
+  if (detailOpen.value) {
+    detailOpen.value = false
+    return
+  }
+  clearSelection()
 }
 
+watch(() => [objectContext.active.value, objectContext.hasContext.value, objectContext.reference.value, objectContext.detail.value, objectContext.date.value, objectContext.loading.value], syncObjectSelection)
 watch(selectedCompanyId, resetForScopeChange)
 watch(weatherLayer, () => { if (scene.value === 'weather') clearSelection() })
 watch(marketLayer, () => { if (scene.value === 'market') clearSelection() })
@@ -842,6 +926,7 @@ onBeforeUnmount(() => {
         </button>
       </div>
     </header>
+    <GridObjectContextBar :date="marketDate" />
 
     <main ref="stageRef" class="command-stage" :aria-busy="stageLoading">
       <!--
@@ -959,6 +1044,7 @@ onBeforeUnmount(() => {
             否则会出现「图上只剩一个州、列表还是全省」。
           -->
           <PlantCatalogPanel
+          :key="catalogContextKey"
             variant="embedded"
             :plants="scopedPlants"
             :selected-plant-id="selectedPlantId"
@@ -1089,14 +1175,16 @@ onBeforeUnmount(() => {
         <small>LOCATED NODE</small><h2>{{ selectedNode.nodeName }}</h2>
         <p><Waypoints :size="14" aria-hidden="true" />{{ selectedNode.location?.locationLabel }} · {{ selectedNode.locationStatus }}</p>
         <div><span><small>节点类型</small><strong>{{ selectedNode.nodeKind }}</strong></span><span><small>电压等级</small><strong>{{ selectedNode.voltageLevelKv ? `${selectedNode.voltageLevelKv} kV` : '待补' }}</strong></span></div>
-        <a class="deep-link" href="/grid-assets/nodes" @click="navigate($event, '/grid-assets/nodes')">进入节点资产台<ArrowRight :size="13" aria-hidden="true" /></a>
+        <button type="button" class="deep-link" @click="detailOpen = true">完整信息<ArrowRight :size="13" aria-hidden="true" /></button>
+        <a class="deep-link" :href="objectHref('/grid-assets/nodes')" @click="navigate($event, '/grid-assets/nodes', true)">进入节点资产台<ArrowRight :size="13" aria-hidden="true" /></a>
       </article>
 
       <article v-else-if="selectedEvent" ref="selectionCardRef" class="selection-card event-card" :style="selectionCardStyle" @pointerdown="onCardPointerDown" @pointermove="onCardPointerMove" @pointerup="onCardPointerUp" @pointercancel="onCardPointerUp">
         <button type="button" class="close" aria-label="关闭选择卡片" @click="clearSelection"><X :size="15" aria-hidden="true" /></button>
         <small>{{ disclosureCategoryLabel[selectedEvent.category] }} · {{ formatDate(selectedEvent.effectiveAt, true) }}</small><h2>{{ selectedEvent.title }}</h2>
         <p><FileSearch :size="14" aria-hidden="true" />{{ selectedEvent.spatialBinding.label }} · 坐标未提供</p>
-        <a class="deep-link" href="/grid-assets/disclosures" @click="navigate($event, '/grid-assets/disclosures')">查看证据与时间轴<ArrowRight :size="13" aria-hidden="true" /></a>
+        <button type="button" class="deep-link" @click="detailOpen = true">完整信息<ArrowRight :size="13" aria-hidden="true" /></button>
+        <a class="deep-link" :href="objectHref('/grid-assets/disclosures')" @click="navigate($event, '/grid-assets/disclosures', true)">查看证据与时间轴<ArrowRight :size="13" aria-hidden="true" /></a>
       </article>
 
       <footer class="truth-console">
@@ -1116,12 +1204,17 @@ onBeforeUnmount(() => {
       之外——stage 有 `isolation: isolate`，放里面会被它的层叠上下文裁掉。
     -->
     <PlantDetailDrawer
+      v-if="selectedPlant"
       v-model:open="detailOpen"
       :plant="selectedPlant"
+      :date="marketDate"
+      :from="selectedObjectWindow?.from"
+      :to="selectedObjectWindow?.to"
       :weather="selectedWeather"
       :can-write="canWrite"
       @governance="(mode) => { governanceMode = mode; governanceOpen = true }"
     />
+    <GridObjectDrawer v-else v-model="detailOpen" :object="selectedObjectReference" :date="marketDate" :from="selectedObjectWindow?.from" :to="selectedObjectWindow?.to" />
     <PlantAssetGovernance
       v-model:open="governanceOpen"
       :plant="selectedPlant"

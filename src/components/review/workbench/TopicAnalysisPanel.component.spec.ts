@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { metricTile } from '@/test/metricTile'
 import { flushPromises, mount } from '@vue/test-utils'
 import TopicAnalysisPanel from './TopicAnalysisPanel.vue'
 import { previewTopicAnalysis, type TopicAnalysisResult } from '@/services/review/topicAnalysis'
@@ -35,7 +36,7 @@ describe('电量偏差分析交互', () => {
     await wrapper.get('select').setValue('forecast_actual'); await flushPromises()
     finish({ ...result, energy: { ...result.energy, netDeviationMwh: 99999 } }); await flushPromises()
     expect(wrapper.text()).not.toContain('99,999')
-    expect(wrapper.text()).toContain('净差异 2 MWh')
+    expect(metricTile(wrapper, '净差异')).toEqual({ value: '2', unit: 'MWh' })
   })
   it('失败隐藏统计结果，内部错误不进入业务页面', async () => {
     const wrapper = await open()
@@ -43,13 +44,13 @@ describe('电量偏差分析交互', () => {
     await wrapper.get('select').setValue('declared_actual'); await flushPromises()
     expect(wrapper.text()).toContain('分析暂未完成')
     expect(wrapper.text()).not.toContain('internal_column')
-    expect(wrapper.find('.metrics').exists()).toBe(false)
+    expect(wrapper.find('.metric-grid').exists()).toBe(false)
   })
   it('价格专题在电量缺失时独立展示同口径价差', async () => {
     vi.mocked(previewTopicAnalysis).mockResolvedValue({ ...result, energy: { baselineMwh: null, actualMwh: null, netDeviationMwh: null, absoluteDeviationMwh: null, absoluteDeviationPct: null }, prices: { daAverage: 550, rtAverage: 80, spreadAverage: 20, comparableMinutes: 15 }, priceAnomalies: [{ ...point, daPrice: 100, rtPrice: 80, differenceMwh: null }] })
     const wrapper = await open()
     await wrapper.findAll('button').find(button => button.text() === '价格与市场')!.trigger('click'); await flushPromises()
-    expect(wrapper.text()).toContain('同口径日前减实时 20 元/MWh')
+    expect(metricTile(wrapper, '同口径日前减实时')).toEqual({ value: '20', unit: '元/MWh' })
     expect(wrapper.text()).toContain('价差 20 元/MWh')
     expect(wrapper.text()).not.toContain('净差异')
   })

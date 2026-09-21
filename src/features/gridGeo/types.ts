@@ -132,6 +132,7 @@ export type GridMarketMetric = {
 }
 
 export type GridGeoNode = {
+  grouping?: { stationName: string | null; stationSegment: string; nodeSegment: string; voltageLevelKv: number | null; stationVoltageKv: number | null; basis: 'name-parsed' | 'unparsed' }
   assetId: string
   assetType: 'node'
   nodeId: string
@@ -171,11 +172,27 @@ export type GridGeoRevision<T = GridGeoPlant | GridGeoNode> = {
   createdAt: string
 }
 
+export type GridGeoNodeStationGroup = {
+  groupKey: string
+  stationName: string | null
+  displayName: string
+  nodeCount: number
+  regionId: string
+  gridOperator: GridGeoNode['gridOperator']
+  voltageLevels: number[]
+  unknownVoltageCount: number
+  summary: { locatedCount: number; approximateCount: number; unresolvedCount: number }
+  priceReferenceCount: number
+}
+
 export type GridGeoNodeListResponse = {
   code: number
   data: {
     items: GridGeoNode[]
+    groups?: GridGeoNodeStationGroup[]
+    totalNodes?: number
     summary: { visibleCount: number; locatedCount: number; approximateCount: number; unresolvedCount: number; overriddenCount: number }
+    pageSummary?: { visibleCount: number; locatedCount: number; approximateCount: number; unresolvedCount: number; overriddenCount: number }
     pagination: { page: number; pageSize: number; total: number; totalPages: number }
     dataAvailability: { status: 'available' | 'empty' | 'missing'; fallback: false }
   }
@@ -270,22 +287,39 @@ export type GridGeoCatalogMeta = {
 
 export type GridDisclosureCategory = 'maintenance' | 'outage' | 'intervention' | 'congestion' | 'constraint'
 
+export type GridDisclosureGroup = {
+  groupKey: string
+  label: string
+  kind: 'plant' | 'object' | 'unclassified'
+  regionId: string
+  total: number
+  countsByCategory: Record<GridDisclosureCategory, number>
+}
+
 export type GridDisclosureEvent = {
   eventId: string
+  personalFavorite?: boolean
   providerId: string
   category: GridDisclosureCategory
   title: string
   summary: string
   regionId: string
   spatialBinding: { kind: 'region' | 'grid' | 'section'; ref: string | null; label: string; coordinates: null }
-  effectiveAt: string
+  effectiveAt: string | null
   expiresAt: string | null
   publishedAt: string | null
+  businessDate?: string | null
+  effectiveDate?: string | null
+  sourceImportedAt?: string | null
+  timeQuality?: { effective: 'source' | 'business-date' | 'unknown'; published: 'source' | 'unknown'; intervalBasis?: 'actual' | 'planned' | 'source' | 'point' | 'unknown'; issues: string[] }
+  /** 披露身份标注（#3092，GB04）：identity=annotate 时返回；versions>1 表示同一事件被重复披露（当前行是第 version 版）。 */
+  identity?: { rule: 'source-interval' | 'planned-interval-text' | 'exact-record' | null; key: string | null; versions: number; version: number }
   source: {
     file: string
     recordId: string
     url: string | null
     sourceTable: string
+    time?: { startField?: string | null; endField?: string | null }
     sourceType: 'IMPORT'
     mock: false
     productionWrite: false
@@ -306,6 +340,27 @@ export type GridDisclosureOverlay = {
   version: number
   updatedBy: string
   updatedAt: string
+}
+
+export type GridDisclosureOverview = {
+  total: number
+  dayOnlyCount: number
+  dayOnlyCountsByCategory: Record<GridDisclosureCategory, number>
+  countsByCategory: Record<GridDisclosureCategory, number>
+  buckets: Array<{ from: string; to: string; count: number; countsByCategory: Record<GridDisclosureCategory, number> }>
+  coverage: {
+    from: string | null
+    to: string | null
+    total: number
+    timeBasis: 'businessDate'
+    publishedTimeKnown: number
+    sourceImportedTimeKnown: number
+    effectiveTimeKnown: number
+  }
+  bucket: 'hour' | 'day'
+  /** 身份归并计数（#3092，GB04）：identity=annotate 时返回；unidentified 是身份不足保留未归并的记录数。 */
+  identity?: { rawCount: number; identifiedRawCount: number; distinctCount: number; unidentifiedCount: number }
+  dataAvailability: { status: 'available' | 'missing' | 'not-configured'; reason: string; fallback: false }
 }
 
 export type GridDisclosureProvider = {

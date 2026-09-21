@@ -268,7 +268,7 @@ const ROW_SCHEMAS = {
   // —— 云南电厂主数据 DIM（中广核四路映射权威·G2，region=yunnan） ——
   // 数据来源：data/yunnan/derived/parquet/dim/{dim_plant,dim_plant_alias,dim_plant_node}.json
   //   （import:spot-export 从 plant_master_mapping CSV 归一化 + import:cgn-mapping 从
-  //    data/yunnan/source/mapping/中广核电厂映射关系表格.xlsx 人工权威补第四路 mid_long 别名与字段）。
+  //    data/yunnan/source/master-data/cgn/中广核电厂映射关系表格.xlsx 人工权威补第四路 mid_long 别名与字段）。
   // 此前 dim_*.json 零消费方；G2 把三族接入 capture 体系（capture.sqlite + capture-raw
   // region=yunnan），让 DIM 层第一次有 /api/real 回放消费方，供 B1/B4a 后续富化。
   // 注：dim_plant.mechRatio 是厂站级属性（≠ 省级 SettlementRuleSpec，勿混）；
@@ -421,6 +421,108 @@ const ROW_SCHEMAS = {
     value: num({ required: true }), unit: str(), tone: str()
   }),
 
+  // —— 南网披露表通用度量长表（issue #2825）——
+  // 数据来源：数据运维台上传中心 17 张 tb_disclosure_* 披露表（表头形状单一来源
+  // shared/schema/disclosure-table-specs.mjs，datasetKey=源表短名，共 17 键共享本 schema）。
+  // 宽表（96 点）熔为 timePoint 行；标量表按值列拆 metric/value 行（枚举列走 textValue）；
+  // 维度列池是 17 张表维度列的并集（单表只用其中 2-4 列，长表稀疏是常态）。落点判据
+  // （为何不进 grid.disclosure_events）见 issue #2825 归类结论评论。
+  yn_disclosure_metric: object({
+    id: str({ required: true }),
+    operateDate: str({ required: true }),
+    sourceTable: str({ required: true }),
+    metric: str({ required: true }),
+    value: num(),
+    textValue: str(),
+    timePoint: str(),
+    regionName: str(),
+    channelName: str(),
+    sectionName: str(),
+    categoryName: str(),
+    itemName: str(),
+    groupName: str(),
+    plantName: str(),
+    unitName: str(),
+    dataType: str(),
+    segmentNo: num(),
+    innerDate: str(),
+    tagText: str(),
+    noteText: str(),
+    unit: str(),
+    sourceFile: str()
+  }),
+  // —— 中广核月包导出表上传契约（issue #2824，kind='cgn-spot-export'）——
+  // 数据来源：data/yunnan/source/monthly-export/<YYYY-MM>/plant_spot_settlement|plant_master_mapping/
+  // 经上传中心直传（月包独有数据，不与整年导出重复）。schema 只声明「锚点字段」（normalizer
+  // 保证在场），matchesSchema 不拒绝额外字段——保真行（C/D 类）的整行原始列随 payload 落库，
+  // 展开与口径加工归消费/派生层，raw 层不加工。
+  // A 类厂站时段长表归一 camelCase（与 yn_plant_output 风格一致）：
+  //   id/power_plant→plant/record_date→date/hour_slot→hour/data_type→dataType/value/updated_at|created_at→updatedAt。
+  yn_plant_timeseries: object({
+    id: str({ required: true }),
+    plant: str({ required: true }),
+    date: str({ required: true }),
+    hour: num(),
+    dataType: str(),
+    value: num(),
+    updatedAt: str()
+  }),
+  // B 类厂站日报指标宽表（plant_daily_report_metrics，34 列）→ camelCase 保真数值化。
+  yn_plant_daily_metrics: object({
+    id: str({ required: true }),
+    date: str({ required: true }),
+    plant: str({ required: true }),
+    inReportScope: num(),
+    totalGenerationMWh: num(), marketGenerationMWh: num(),
+    dayAheadDeclaredMwh: num(), integratedForecastMwh: num(), longTermTotalMwh: num(),
+    threePartPriceYuanPerMwh: num(), marketPriceYuanPerMwh: num(),
+    settlementRevenueYuan: num(), originalValueYuan: num(),
+    dayAheadStrategyLossYuan: num(), powerForecastLossYuan: num(), longTermLossYuan: num(),
+    annualLtMwh: num(), annualLtPriceYuanPerMwh: num(), annualLtLossYuan: num(),
+    monthlyLtMwh: num(), monthlyLtPriceYuanPerMwh: num(), monthlyLtLossYuan: num(),
+    intramonthLtMwh: num(), intramonthLtPriceYuanPerMwh: num(), intramonthLtLossYuan: num(),
+    dailyRollingLtMwh: num(), dailyRollingLtPriceYuanPerMwh: num(), dailyRollingLtLossYuan: num(),
+    ltResidualMwh: num(), ltResidualLossYuan: num(),
+    missingDataJson: str(), calculationVersion: str(), createdAt: str(), updatedAt: str()
+  }),
+  // C 类结算单据（7 表保真，原列名落 payload）。dateField 各表不同（日/月粒度），由
+  // describeDataset 按 datasetKey 分支声明——增量窗口按本批日期/月份标记集合替换。
+  // plant_daily_settlement_raw 是日结原始证据（48 列中文表头，含 result_type formal/temp
+  // 状态列，2026-05 月包各 992 行）：保真行 payload 键=原始列名，日期列就是「日期」，
+  // 正式读模型（yn_spot_settlement）不含暂结行，暂结与正式/暂结差异从这里提取（D7、ST01）。
+  yn_settle_plant_spot_data: object({ id: str({ required: true }), data_date: str({ required: true }) }),
+  yn_settle_daily_raw: object({ id: str({ required: true }), 日期: str({ required: true }) }),
+  yn_settle_bill_excel_cells: object({
+    settle_month: str({ required: true }), file_name: str({ required: true }),
+    sheet_name: str({ required: true }), row_index: num(), col_index: num()
+  }),
+  yn_settle_daily_split_raw: object({ id: str({ required: true }), data_date: str({ required: true }) }),
+  yn_settle_bill_records_raw: object({ id: str({ required: true }), billmonth: str({ required: true }) }),
+  yn_settle_bill_file_downloads: object({ source_record_id: str({ required: true }), settle_month: str({ required: true }) }),
+  yn_settle_monthly_raw: object({ account_id: str({ required: true }), settlemonth: str({ required: true }) }),
+  // D 类合同与曲线（2 表保真；curves 24 买方点 + 24 价点宽表原样存，unpivot 归消费层）。
+  yn_contract_electricity: object({
+    guid: str({ required: true }), contractId: str({ required: true }),
+    deliveryPeriodBegin: str({ required: true })
+  }),
+  yn_contract_curves: object({
+    guid: str({ required: true }), contractId: str({ required: true }),
+    day: str({ required: true })
+  }),
+  // E 类余量维度表（plant_master_mapping 月包独有 3 表；行形状与 import:spot-export DIM_FAMILIES
+  // 的 normalize 输出同形——dim_plant_capacity/dim_node/dim_self_owned_plant）。
+  yn_dim_plant_capacity: object({
+    id: str({ required: true }), plantName: str({ required: true }), installedCapacityMW: num()
+  }),
+  yn_dim_node: object({
+    id: str({ required: true }), nodeName: str({ required: true }),
+    province: str(), city: str(), district: str()
+  }),
+  yn_dim_self_owned_plant: object({
+    id: str({ required: true }), tradeCenter: str(), capacityMW: num(),
+    businessType: str(), controlCenter: str(), nodeName: str()
+  }),
+
 }
 
 // 云南 PnL 行 schema 单独导出，供 normalizer（yn-fact-pnl.mjs）按字段名做 matchesNormalizedRow 校验。
@@ -450,6 +552,10 @@ export const ynPlantNodalPriceSchema = ROW_SCHEMAS.yn_plant_nodal_price
 export const ynSettlementDetailSchema = ROW_SCHEMAS.yn_settlement_detail
 export const ynHydroGroupLimitSchema = ROW_SCHEMAS.yn_hydro_group_limit
 
+// 南网披露表通用长表 schema 单独导出，供上传归一化器（yn-disclosure-upload.mjs）与
+// verify:data-upload 的披露契约行为断言按字段名做 matchesSchema 校验（issue #2825）。
+export const ynDisclosureMetricSchema = ROW_SCHEMAS.yn_disclosure_metric
+
 // 市场经营分析（手录）公共口径 7 个 datasetKey 的行 schema 映射，供 normalizer（yn-fact-market.mjs）
 // 与 ImportHub 投递层按 datasetKey 做 matchesNormalizedRow 校验（单一来源、零漂移）。
 // #669 路线①：售电套餐经营口径 market_packages 已拆出为独立 company 私有族（见下 marketRetailPackageSchemas），
@@ -464,6 +570,23 @@ export const marketAnalysisSchemas = {
   market_metrics: ROW_SCHEMAS.market_metrics
 }
 export const MARKET_DATASET_KEYS = Object.keys(marketAnalysisSchemas)
+
+// —— 月包导出表上传契约（#2824）多 datasetKey 族的 schema 映射 ——
+// 与 marketAnalysisSchemas 同款出口：describeDataset 按 key 分支消费，build-data-type-ddl
+// 生成器按 dataset 分表。C 类 6 表（dateField 各异）与 D 类 2 表。
+export const settlementDocSchemas = {
+  plant_spot_settle_data: ROW_SCHEMAS.yn_settle_plant_spot_data,
+  plant_daily_settlement_raw: ROW_SCHEMAS.yn_settle_daily_raw,
+  plant_daily_split_settlement_raw: ROW_SCHEMAS.yn_settle_daily_split_raw,
+  settlement_bill_excel_cells: ROW_SCHEMAS.yn_settle_bill_excel_cells,
+  settlement_bill_records_raw: ROW_SCHEMAS.yn_settle_bill_records_raw,
+  settlement_bill_file_downloads: ROW_SCHEMAS.yn_settle_bill_file_downloads,
+  plant_monthly_settlement_raw: ROW_SCHEMAS.yn_settle_monthly_raw
+}
+export const contractSchemas = {
+  electricity_contracts: ROW_SCHEMAS.yn_contract_electricity,
+  contract_curves: ROW_SCHEMAS.yn_contract_curves
+}
 
 // —— 售电套餐公司经营口径（#669 + #815）——
 // market_packages 含售电公司/客户/套餐类型/三段价；market_retail_package_metrics 含套餐数、
@@ -661,6 +784,22 @@ export const CAPTURE_FAMILIES = {
   // 族级归属中广核云南（comp-cgn-yunnan）。仅归属公司+ADMIN 可读（enforceCaptureVisibility 授权闸门），
   // 非归属公司走前端 synthetic 授权态（标模拟数据、不泄漏）。
   market_retail_packages: { apiFamily: null, label: '售电套餐经营口径(手录·公司私有)', kind: 'row', visibility: 'company', ownerCompanyId: CGN_YUNNAN_COMPANY_ID },
+  // 南网披露表通用长表（issue #2825）：17 张 tb_disclosure_* 披露表共享一族（datasetKey=源表短名）。
+  // public 定级依据：南网全网披露口径（省间联络线/备用/检修/调峰等，含广东/广西等行级区域字段，
+  // 行内自述来源），非任何公司的经营数据——与 grid.disclosure_events 已接入的披露事件表同源公开。
+  yn_disclosure_metric: { apiFamily: null, label: '南网披露表通用度量长表(17 键·备用/联络线/机组/价格权重等)', kind: 'row', visibility: 'public' },
+  // —— 中广核月包导出表上传契约（issue #2824）——
+  // 月包独有数据（不与整年导出重复）经上传中心 kind='cgn-spot-export' 直传。全部 company
+  // 私有、owner=comp-cgn-yunnan（厂站级经营/结算数据，与 yn_loss_attribution 等兄弟族同定级）。
+  // 写入语义：A–D 类增量（ingestRowsIncremental，feed='spot-export-upload'，#2744 dates 集合窗口
+  // 替换——同月重传幂等、跨月追加，历史月物理不触碰）；E 余 3 族全量快照替换（同 cgn-mapping）。
+  yn_plant_timeseries: { apiFamily: null, label: '云南厂站时段长表(出力/价差/中长期/集控发电·月包)', kind: 'row', visibility: 'company', ownerCompanyId: CGN_YUNNAN_COMPANY_ID },
+  yn_plant_daily_metrics: { apiFamily: null, label: '云南厂站日报指标宽表(月包)', kind: 'row', visibility: 'company', ownerCompanyId: CGN_YUNNAN_COMPANY_ID },
+  yn_settlement_docs: { apiFamily: null, label: '云南结算单据(结算明细/账单单元格/审批流·月包保真)', kind: 'row', visibility: 'company', ownerCompanyId: CGN_YUNNAN_COMPANY_ID },
+  yn_contracts: { apiFamily: null, label: '云南电力合同与曲线(月包·24点宽表保真)', kind: 'row', visibility: 'company', ownerCompanyId: CGN_YUNNAN_COMPANY_ID },
+  yn_dim_plant_capacity: { apiFamily: null, label: '云南电厂装机容量(DIM·月包)', kind: 'row', visibility: 'company', ownerCompanyId: CGN_YUNNAN_COMPANY_ID },
+  yn_dim_node: { apiFamily: null, label: '云南节点地理映射(DIM·月包)', kind: 'row', visibility: 'company', ownerCompanyId: CGN_YUNNAN_COMPANY_ID },
+  yn_dim_self_owned_plant: { apiFamily: null, label: '云南自营厂映射(DIM·月包)', kind: 'row', visibility: 'company', ownerCompanyId: CGN_YUNNAN_COMPANY_ID },
 }
 
 // 全部已登记数据源 code
@@ -969,6 +1108,55 @@ export function describeDataset(code, match) {
       if (!schema) return null
       return { kind: 'row', datasetKey: key, schema }
     }
+    case 'yn_disclosure_metric':
+      // issue #2825：17 个披露表 datasetKey 共享同一 schema，match（源表短名）不限名单；
+      // 未登记 datasetKey 的拒收由 source-registry target 解析与上传契约白名单承担。
+      return { kind: 'row', datasetKey: key, schema: ROW_SCHEMAS.yn_disclosure_metric, dateField: 'operateDate' }
+    // —— 月包导出表上传契约（#2824）——datasetKey = 月包表名（剥 _YYYYMM 后缀）。
+    // 同族各表 dateField 不同（日粒度 data_date/day，月粒度 billmonth/settlemonth），
+    // 按 key 精确匹配声明；未登记 key 拒收（与 market_analysis 同款「未登记拒收」）。
+    case 'yn_plant_timeseries':
+      return { kind: 'row', datasetKey: key, schema: ROW_SCHEMAS.yn_plant_timeseries, dateField: 'date', typeField: 'dataType' }
+    case 'yn_plant_daily_metrics':
+      return { kind: 'row', datasetKey: key, schema: ROW_SCHEMAS.yn_plant_daily_metrics, dateField: 'date' }
+    case 'yn_settlement_docs': {
+      const settleDocDateFields = {
+        plant_spot_settle_data: 'data_date',
+        plant_daily_settlement_raw: '日期',
+        plant_daily_split_settlement_raw: 'data_date',
+        settlement_bill_excel_cells: 'settle_month',
+        settlement_bill_records_raw: 'billmonth',
+        settlement_bill_file_downloads: 'settle_month',
+        plant_monthly_settlement_raw: 'settlemonth',
+      }
+      const schema = {
+        plant_spot_settle_data: ROW_SCHEMAS.yn_settle_plant_spot_data,
+        plant_daily_settlement_raw: ROW_SCHEMAS.yn_settle_daily_raw,
+        plant_daily_split_settlement_raw: ROW_SCHEMAS.yn_settle_daily_split_raw,
+        settlement_bill_excel_cells: ROW_SCHEMAS.yn_settle_bill_excel_cells,
+        settlement_bill_records_raw: ROW_SCHEMAS.yn_settle_bill_records_raw,
+        settlement_bill_file_downloads: ROW_SCHEMAS.yn_settle_bill_file_downloads,
+        plant_monthly_settlement_raw: ROW_SCHEMAS.yn_settle_monthly_raw,
+      }[key]
+      if (!schema) return null
+      return { kind: 'row', datasetKey: key, schema, dateField: settleDocDateFields[key], cadence: 'monthly' }
+    }
+    case 'yn_contracts': {
+      const contractSpec = {
+        electricity_contracts: { schema: ROW_SCHEMAS.yn_contract_electricity, dateField: 'deliveryPeriodBegin' },
+        contract_curves: { schema: ROW_SCHEMAS.yn_contract_curves, dateField: 'day' },
+      }[key]
+      if (!contractSpec) return null
+      return { kind: 'row', datasetKey: key, schema: contractSpec.schema, dateField: contractSpec.dateField }
+    }
+    case 'yn_dim_plant_capacity':
+      // 全量维度快照（非时序），无 dateField；datasetKey = 族名（schema 按族固定，
+      // 不随 match 变——match 传空/传族名/传任意值同一 schema）。
+      return { kind: 'row', datasetKey: key, schema: ROW_SCHEMAS.yn_dim_plant_capacity }
+    case 'yn_dim_node':
+      return { kind: 'row', datasetKey: key, schema: ROW_SCHEMAS.yn_dim_node }
+    case 'yn_dim_self_owned_plant':
+      return { kind: 'row', datasetKey: key, schema: ROW_SCHEMAS.yn_dim_self_owned_plant }
     default:
       return null
   }

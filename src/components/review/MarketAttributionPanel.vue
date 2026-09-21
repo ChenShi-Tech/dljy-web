@@ -63,6 +63,21 @@ const supplyDemand = computed(() =>
 )
 const anomaly = computed(() => (ds.value ? anomalyMonths(ds.value.priceTrend) : null))
 const basisLabel = computed(() => (result.value ? DATA_BASIS_LABEL[result.value.basis] : ''))
+// #2991：逐数据集真实性。页面级 basis=captured 不再代表每个数据集都真实——
+// 缺真实回放的归因行显示为空（未用示例补齐），口径说明按各自数据集标注。
+const priceReal = computed(() => Boolean(result.value?.realByKey?.['market_price']))
+const monthlyTrendReal = computed(() => Boolean(result.value?.realByKey?.['market_monthly_trend']))
+const priceBasisLabel = computed(() => (priceReal.value ? basisLabel.value : '无真实数据·未用示例补齐'))
+const trendBasisLabel = computed(() => (monthlyTrendReal.value ? basisLabel.value : '无真实数据·未用示例补齐'))
+// 整页 captured 但价格/月度趋势任一缺真实回放 → 明示哪些行为空，避免读者以为是完整归因。
+const partialGapNote = computed(() => {
+  if (!result.value || !result.value.hasRealData || result.value.basis !== 'captured') return ''
+  const gaps = [
+    priceReal.value ? null : '价格走势（market_price 无真实回放）',
+    monthlyTrendReal.value ? null : '供需形势（market_monthly_trend 无真实回放）'
+  ].filter(Boolean)
+  return gaps.length ? `部分数据集无真实回放，对应归因行为空，未用示例补齐：${gaps.join('；')}。` : ''
+})
 
 // 政策行：人工关联 + AI 建议占位（不做自动因果）
 const policyText = ref('')
@@ -185,6 +200,7 @@ async function registerAnomaly(m: string, devPct: number) {
         <p class="map-basis">
           数据基线：{{ basisLabel }}<template v-if="result?.basis === 'synthetic'">（无真实回放时演示兜底——<b>不可作为复盘依据</b>）</template>
         </p>
+        <p v-if="partialGapNote" class="map-warn">#2991 {{ partialGapNote }}</p>
 
       <table class="map-table">
         <thead><tr><th>归因行</th><th>自动预填（A 档）</th><th>口径说明</th></tr></thead>
@@ -198,7 +214,7 @@ async function registerAnomaly(m: string, devPct: number) {
               </template>
               <span v-else class="map-muted">本月无价格数据</span>
             </td>
-            <td>market_analysis priceTrend（{{ basisLabel }}）</td>
+            <td>market_analysis priceTrend（{{ priceBasisLabel }}）</td>
           </tr>
           <tr>
             <td>供需形势</td>
@@ -206,7 +222,7 @@ async function registerAnomaly(m: string, devPct: number) {
               <b>{{ supplyDemand?.direction }}</b>
               <p class="map-note">{{ supplyDemand?.note }}</p>
             </td>
-            <td>market_analysis monthlyTrend（量价方向代理 v1）</td>
+            <td>market_analysis monthlyTrend（量价方向代理 v1 · {{ trendBasisLabel }}）</td>
           </tr>
           <tr>
             <td>政策变化</td>

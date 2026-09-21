@@ -33,6 +33,7 @@ import {
   planDispatch
 } from 'shared/trading-rules/storage-arbitrage.mjs'
 import { savePreflight, type DeclarationOrder } from '@/services/declarations'
+import { useSaveState } from '@/composables/useSaveState'
 
 const props = defineProps<{ declaration: DeclarationOrder | null }>()
 const emit = defineEmits<{ updated: [d: DeclarationOrder] }>()
@@ -252,9 +253,8 @@ const minSafetyMultiple = computed(() => {
   return values.length ? Math.min(...values) : null
 })
 
-const saving = ref(false)
-const saveMsg = ref('')
-const saveError = ref('')
+// 写回三态走 useSaveState 单源（spot-trading-module-hygiene 收口六份逐字副本）
+const { saving, saveMsg, saveError, runSave } = useSaveState()
 const written = computed(() => props.declaration?.preflight?.storagePlan ?? null)
 
 /**
@@ -283,12 +283,10 @@ const dispatchMessagePreview = computed<string | null>(() => {
 
 async function writeBack() {
   if (!props.declaration) return
-  saving.value = true
-  saveMsg.value = ''
-  saveError.value = ''
-  try {
+  const declaration = props.declaration
+  await runSave(async () => {
     const updated = await savePreflight(
-      props.declaration.id,
+      declaration.id,
       'storagePlan',
       {
         socTrajectoryOk: constraintById.value.get('soc_band')?.passed === true,
@@ -306,12 +304,8 @@ async function writeBack() {
         (overrides.value.length ? `；当日覆盖 ${overrides.value.length} 项参数` : '')
     )
     emit('updated', updated)
-    saveMsg.value = '储能计划结论已写回，放行清单的 SOC 判据自动填充'
-  } catch (e) {
-    saveError.value = e instanceof Error ? e.message : '写回失败'
-  } finally {
-    saving.value = false
-  }
+    return '储能计划结论已写回，放行清单的 SOC 判据自动填充'
+  })
 }
 
 // AI 计划审查（确定性推理链 + 工具结果注入）

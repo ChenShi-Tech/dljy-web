@@ -7,8 +7,8 @@
 import { computed, onMounted, ref, nextTick, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { currentRegion } from '@/services/region/regionContext'
-import { getRegionCapabilityForPath } from '@/services/region/regionModules'
 import { fetchSpotDayAheadEnergyContract, SPOT_DAY_AHEAD_ENERGY_FAMILY } from '@/services/data/contracts'
+import type { DayAheadEnergyRow } from '@/services/data/contracts'
 import { onRegionChange } from '../composables/useRegionReload'
 import RegionDataBanner from '@/components/region/RegionDataBanner.vue'
 import CapabilitySupportBadge from '../components/CapabilitySupportBadge.vue'
@@ -17,32 +17,23 @@ import { chartChrome } from '../composables/useTheme'
 import { useEChart } from '../composables/useEChart'
 import { axisTooltip, bottomLayoutLegend, bottomToolbox, emptyOverlay, insideZoom } from '@/services/chart/chartOptions'
 import { exportCsv } from '../utils/exportCsv'
-
-const POINTS_96 = Array.from({ length: 96 }, (_, i) => { const m = (i + 1) * 15; return `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}` })
-const PTS = Array.from({ length: 96 }, (_, i) => `p${i + 1}`)
+import { POINTS_96, PTS_96 } from '@/utils/spotPoints96'
+import { useCapturedCapability } from '@/composables/useCapturedCapability'
 
 const loading = ref(true)
 const error = ref('')
-const rows = ref<any[]>([])
+// 表格行 = 契约归一行 + 本页序号（导出/勾选沿用）
+type EnergyListRow = DayAheadEnergyRow & { _idx: number }
+const rows = ref<EnergyListRow[]>([])
 const route = useRoute()
 const urlRange: [string, string] | null = (typeof route.query.from === 'string' && typeof route.query.to === 'string') ? [route.query.from as string, route.query.to as string] : (typeof route.query.date === 'string' ? [route.query.date, route.query.date] : null)
 const range = ref<[string, string] | null>(urlRange)
-const selected = ref<any[]>([])
+const selected = ref<EnergyListRow[]>([])
 const chartRef = ref<HTMLDivElement | null>(null)
 const tableRef = ref()
 const energyChart = useEChart(chartRef, { render })
-const routeCapability = computed(() => getRegionCapabilityForPath('/xhjy/zptqx', currentRegion.value.id))
-const capabilitySupports = computed(() =>
-  routeCapability.value?.route?.dataSupportByRegion?.[currentRegion.value.id]
-  ?? routeCapability.value?.module.dataSupportByRegion[currentRegion.value.id]
-  ?? []
-)
-const isCapabilityDegraded = computed(() => routeCapability.value?.status === 'degraded' || routeCapability.value?.status === 'hidden' || routeCapability.value?.status === 'not-configured')
-const capabilityNote = computed(() =>
-  routeCapability.value?.route?.note
-  ?? capabilitySupports.value.find((item) => item.expectation === 'missing')?.note
-  ?? null
-)
+// 回放取数能力降级判定四件套：单源 composable（原与本页逐字重复于 DayAheadReportView）
+const { capabilitySupports, isCapabilityDegraded, capabilityNote } = useCapturedCapability('/xhjy/zptqx')
 let loadGeneration = 0
 
 const filtered = computed(() => {
@@ -71,8 +62,9 @@ async function load() {
     })
     if (generation !== loadGeneration) return
     rows.value = contract.blocks.day_ahead_energy.rows
-      .sort((a: any, b: any) => (a.date < b.date ? 1 : -1))
-      .map((r: any, i: number) => ({ ...r, _idx: i + 1 }))
+      .slice()
+      .sort((a, b) => (a.date < b.date ? 1 : -1))
+      .map((r, i) => ({ ...r, _idx: i + 1 }))
     await nextTick()
     if (generation !== loadGeneration) return
     render()
@@ -89,7 +81,7 @@ async function load() {
   }
 }
 function reset() { range.value = null; tableRef.value?.clearSelection() }
-function onSel(rs: any[]) { selected.value = rs; render() }
+function onSel(rs: EnergyListRow[]) { selected.value = rs; render() }
 
 function clearViewState() {
   rows.value = []
@@ -106,7 +98,7 @@ function exportTable() {
   exportCsv(
     `日前电量预估_${tag}`,
     ['序号', '售电公司', '日期', '类型', '合计', ...POINTS_96],
-    filtered.value.map((r: any) => [r._idx, r.sdgs, r.date, '预估电量', r.total, ...PTS.map((p) => r[p] ?? '')])
+    filtered.value.map((r) => [r._idx, r.sdgs, r.date, '预估电量', r.total, ...PTS_96.map((p) => r[p] ?? '')])
   )
 }
 
@@ -114,7 +106,7 @@ function render() {
   if (!chartRef.value) return
   const cc = chartChrome()
   // 96 点预估电量按 15min 时段恒定，阶梯线真实呈现（平滑样条会画出不存在的假峰谷）
-  const series = selected.value.map((r) => ({ name: r.date, type: 'line', step: 'start' as const, showSymbol: false, connectNulls: true, lineStyle: { width: 1.6 }, emphasis: { focus: 'series' as const }, data: PTS.map((p) => r[p] ?? null) }))
+  const series = selected.value.map((r) => ({ name: r.date, type: 'line', step: 'start' as const, showSymbol: false, connectNulls: true, lineStyle: { width: 1.6 }, emphasis: { focus: 'series' as const }, data: PTS_96.map((p) => r[p] ?? null) }))
   energyChart.setOption({
     ...emptyOverlay(!series.length, '勾选表格行查看其 96 点预估电量曲线（可多选）'),
     // 底部布局:图例顶部居中 scroll,工具栏右下角
@@ -168,7 +160,7 @@ onRegionChange(load)
           <el-table-column prop="date" label="日期" width="120" sortable />
           <el-table-column label="类型" width="100"><template #default>预估电量</template></el-table-column>
           <el-table-column prop="total" label="合计" width="110" align="right" sortable />
-          <el-table-column v-for="(p, i) in PTS" :key="p" :prop="p" :label="POINTS_96[i]" width="78" align="right" sortable />
+          <el-table-column v-for="(p, i) in PTS_96" :key="p" :prop="p" :label="POINTS_96[i]" width="78" align="right" sortable />
         </el-table>
       </el-card>
 

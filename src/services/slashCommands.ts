@@ -1,5 +1,5 @@
 // 斜杠指令注册中心。
-// 纯逻辑、无 Vue 依赖：宿主组件（AiAssistant / AgentChatPanel）通过 CommandContext
+// 纯逻辑、无 Vue 依赖：宿主组件（AgentChatPanel 等）通过 CommandContext
 // 注入各自的动作实现，输入框集成见 src/composables/useSlashInput.ts。
 import { buildCatalog } from '@/services/aiNavigator'
 import { getCurrentUser } from '@/services/auth'
@@ -7,7 +7,8 @@ import { getCachedTiers, isLlmConfigured, refreshLlmStatus } from '@/services/ll
 import { getAllSkills, renderSkill, splitDateArgs, todayISO, type Skill } from '@/services/skills'
 import type { AgentScenario } from '@/services/agent/agentClient'
 
-export type CommandHost = 'assistant' | 'agent'
+// sidebar = 统一 AI 侧边栏：跨场景技能就地开会话、不跳转工作台，并由宿主注入专家命令
+export type CommandHost = 'assistant' | 'agent' | 'sidebar'
 
 // 指令执行上下文：由宿主组件注入，指令本身不依赖任何组件内部状态
 export type CommandContext = {
@@ -19,6 +20,8 @@ export type CommandContext = {
   sendToChat: (text: string) => void // 走当前面板的正常发送（assistant→askAssistant；agent→SSE）
   openWorkbench: (question?: string, scenario?: AgentScenario) => void
   clearSession: () => void
+  /** 宿主注入的额外指令（如侧边栏专家命令）；参与菜单、/help 与执行 */
+  extraCommands?: SlashCommand[]
 }
 
 export type ArgOption = { label: string; value: string; meta?: string }
@@ -29,7 +32,8 @@ export type SlashCommand = {
   description: string
   argHint?: string // 如 '<页面名>'，菜单内灰字展示；有参指令选中后先补全 "/name " 等待参数
   source: 'builtin' | 'skill'
-  hosts?: CommandHost[] // 缺省两端都可用
+  hosts?: CommandHost[] // 缺省各端都可用
+  hidden?: boolean // 不出现在补全菜单与 /help，但手动输入仍可执行（如「当前角色无权使用」提示）
   getArgOptions?: (query: string) => ArgOption[] // 二级参数补全候选
   runOnArgSelect?: boolean // 参数补全选中后直接执行（如 /nav 选页面即跳转）
   run: (ctx: CommandContext) => void | Promise<void>
@@ -74,8 +78,8 @@ export function filterCommands(list: SlashCommand[], query: string): SlashComman
 
 // 内置指令
 
-function helpText(host: CommandHost): string {
-  const cmds = getCommands(host)
+function helpText(host: CommandHost, extra: SlashCommand[] = []): string {
+  const cmds = getCommands(host, extra).filter((c) => !c.hidden)
   const builtin = cmds.filter((c) => c.source === 'builtin')
   const skills = cmds.filter((c) => c.source === 'skill')
   const fmt = (c: SlashCommand) =>
@@ -197,7 +201,7 @@ const builtinCommands: SlashCommand[] = [
     aliases: ['h', '帮助'],
     description: '查看全部指令与技能',
     source: 'builtin',
-    run: (ctx) => ctx.postSystemNote(helpText(ctx.host))
+    run: (ctx) => ctx.postSystemNote(helpText(ctx.host, ctx.extraCommands ?? []))
   },
   {
     name: 'clear',
@@ -279,19 +283,21 @@ const builtinCommands: SlashCommand[] = [
   }
 ]
 
-// 当前端可用的全部指令：内置 + 技能动态转化（每次打开菜单时调用，用户新建技能即时生效）
-export function getCommands(host: CommandHost): SlashCommand[] {
-  const cmds = builtinCommands.filter((c) => !c.hosts || c.hosts.includes(host))
+// 当前端可用的全部指令：内置 + 宿主注入 + 技能动态转化（每次打开菜单时调用，用户新建技能即时生效）
+// 含 hidden 指令；列给用户看（菜单、/help）时由调用方过滤。
+export function getCommands(host: CommandHost, extra: SlashCommand[] = []): SlashCommand[] {
+  const forHost = (c: SlashCommand) => !c.hosts || c.hosts.includes(host)
+  const cmds = builtinCommands.filter(forHost)
   const skillCmds = getAllSkills().map(skillToCommand)
-  return [...cmds, ...skillCmds]
+  return [...cmds, ...extra.filter(forHost), ...skillCmds]
 }
 
 // 执行斜杠输入：是已知指令则运行并返回 true；以 / 开头但未知也拦截（提示而非发给 LLM）
 export function executeSlashInput(text: string, makeContext: (args: string) => CommandContext): boolean {
   const parsed = parseSlashInput(text)
   if (!parsed) return false
-  const host = makeContext('').host
-  const cmd = findCommand(getCommands(host), parsed.name)
+  const probe = makeContext('')
+  const cmd = findCommand(getCommands(probe.host, probe.extraCommands ?? []), parsed.name)
   if (cmd) {
     void cmd.run(makeContext(parsed.args))
     return true

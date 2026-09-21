@@ -81,6 +81,8 @@
 
 **恢复步骤**
 
+> 2026-09-16 起（unify-ai-sidebar）主干的解读浮窗已迁为 `src/features/aiSidebar/AiSidebar.vue`，全局状态由 `useAiSidebar.ts` 取代 `useAiPanel.ts`、页面注册由 `pageRegistry.ts` 取代 `usePageInsight.ts`。下列步骤中的旧路径需对应换成这些新文件，且导航模式不得绕开 `/agent-api` 审计链（下架原因仍然成立）。
+
 1. 用 `AiAssistant.legacy.vue` 覆盖回 `src/components/AiAssistant.vue`（注意：主干版本在下架后可能已有解读侧的改动，需要合并而非直接覆盖）。
 2. `src/composables/useAiPanel.ts`：把 `AiPanelMode` 恢复成 `'nav' | 'agent'`，恢复 `openNav()`、`setMode()`，初始 `mode` 改回 `'nav'`。
 3. `src/layout/AppLayout.vue`：顶栏按钮改回 `openNav()`。

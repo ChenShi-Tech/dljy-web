@@ -25,14 +25,14 @@ async function downloadFormat() {
   try { const template = await fetchUploadTemplate(dataset.value, 'xlsx', scope()); if (ticket === generation) downloadTemplateFile('复盘分时资料.xlsx', template.contentBase64, template.content) }
   catch { if (ticket === generation) error.value = '填报格式暂时无法下载，请稍后重试。' }
 }
-watch(() => [props.companyId, props.region], async () => {
+watch(() => [props.companyId, props.region, props.view], async () => {
   ++generation
   const ticket = ++catalogGeneration, requestScope = scope()
   contracts.value = []; dataset.value = ''; batches.value = []; file.value = null; invalidate(); loading.value = true
   try {
     const result = await fetchUploadContracts(requestScope)
     if (ticket !== catalogGeneration) return
-    contracts.value = result.filter(item => item.review && (!item.region || item.region === requestScope.region))
+    contracts.value = result.filter(item => ((props.view ?? 'generator') === 'generator' || item.kind === 'review-intervals') && item.review && (!item.region || item.region === requestScope.region))
     dataset.value = contracts.value.find(item => item.dataset === props.preferredDataset)?.dataset ?? contracts.value[0]?.dataset ?? ''
   } catch { if (ticket === catalogGeneration) error.value = '资料目录暂时无法读取，请稍后重试。' }
   finally { if (ticket === catalogGeneration) loading.value = false }

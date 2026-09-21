@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest'
+import { existsSync, readFileSync } from 'node:fs'
+import { navigation } from './navigation'
 import { getPageHelp, pageHelpRegistry } from './pageHelp'
 
 // 页面说明注册表（#848）查找语义与结构完整性回归锁：
@@ -44,5 +46,40 @@ describe('getPageHelp 查找', () => {
     expect(getPageHelp(null)).toBeUndefined()
     expect(getPageHelp(123)).toBeUndefined()
     expect(getPageHelp(Symbol('x'))).toBeUndefined()
+  })
+})
+
+describe('改名后的页面在各用户可见处名称一致（dljy#2988）', () => {
+  // 菜单、帮助弹窗、AI 侧边栏、清单四处分别维护标题，改名只改一处会让同一屏出现两个名字。
+  const cases = [
+    { key: 'HedgeWorkbench', path: '/xhjy/hedge', title: '中长期与现货套保' },
+    { key: 'PositionMonitor', path: '/zcqjy/zccljk', title: '持仓量监控（山西采集）' },
+    { key: 'TradeCalendar', path: '/zcqjy/zjyap', title: '交易月历（山西·国网）' }
+  ]
+
+  it('帮助弹窗标题与菜单标题一致', () => {
+    const menu = new Map(navigation.flatMap((g) => g.children ?? []).map((c) => [c.path, c.title]))
+    for (const { key, path, title } of cases) {
+      expect(pageHelpRegistry[key]?.title, `${key} 帮助标题`).toBe(title)
+      expect(menu.get(path), `${path} 菜单标题`).toBe(title)
+    }
+  })
+
+  it('清单 manifest 的标题与菜单一致', () => {
+    const manifest = JSON.parse(
+      readFileSync(new URL('./manifest.json', import.meta.url), 'utf8')
+    ) as Array<{ path: string; title: string }>
+    const byPath = new Map(manifest.map((p) => [p.path, p.title]))
+    for (const { path, title } of cases) {
+      expect(byPath.get(path), `${path} 清单标题`).toBe(title)
+    }
+  })
+
+  it('旧敞口页已删除，工作台 AI 侧边栏标签与菜单一致（8.8/D14）', () => {
+    const exists = existsSync(new URL('../views/ExposureBoardView.vue', import.meta.url))
+    expect(exists, 'ExposureBoardView.vue 应已删除（8.1 已迁移 /xhjy/hedge）').toBe(false)
+    const workbench = readFileSync(new URL('../views/hedge/HedgeWorkbenchView.vue', import.meta.url), 'utf8')
+    expect(workbench).toContain('中长期与现货套保')
+    expect(workbench).not.toContain('中长期敞口看板')
   })
 })

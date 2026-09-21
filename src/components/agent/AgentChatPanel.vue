@@ -3,7 +3,7 @@
 // 事件协议见 src/services/agentClient.ts 与后端 packages/agent-runtime/src/agent_runtime/api/service.py。
 import { computed, nextTick, onMounted, onBeforeUnmount, provide, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { Bot, ChevronDown, ChevronRight, Loader2, Send, Square, User, Wrench } from 'lucide-vue-next'
+import { Bot, ChevronDown, ChevronRight, Copy, Loader2, RotateCcw, Send, Square, User, Wrench } from 'lucide-vue-next'
 import { useAgentHealth } from '@/composables/useAgentHealth'
 import { useCurrentModel } from '@/composables/useCurrentModel'
 import {
@@ -25,6 +25,7 @@ import {
   type HistoryTurn
 } from '@/services/agent/agentClient'
 import { createAsyncGenerations } from './asyncGenerations'
+import { assistantPlainText, previousUserText } from './messageActions'
 import { resolveDoneOutcome } from './doneOutcome'
 import { parseArtifactBlocks, splitStreamingArtifacts, type ArtifactBlock } from '../../utils/artifactBlocks'
 import { useSlashInput } from '../../composables/useSlashInput'
@@ -47,6 +48,8 @@ import {
 import DataBasisBadge from '../DataBasisBadge.vue'
 import type { DataBasis } from '@/services/dataBasis'
 import { ElMessage } from 'element-plus'
+import { fetchPiSessionMeta, revokeSessionAutoApprove, setSessionAutoApprove } from '@/services/agent/piPocClient'
+import type { SlashCommand } from '@/services/slashCommands'
 
 // 从工具结果文本识别数据口径：贴合本项目「合成降级必须页面可见」的标注纪律，
 // 让 agent 调用工具时是否用到真实采集/合成数据一目了然。
@@ -67,6 +70,9 @@ const props = withDefaults(
     payload?: Record<string, unknown> | null
     // 历史侧栏选中会话时由工作台传入：挂载即回放该会话 transcript（不自动发 initialQuestion）
     resumeSessionId?: string | null
+    // 与 resumeSessionId 同给（统一 AI 侧边栏「运行中」切换）：挂载即附着这个 run；该会话的 transcript
+    // 还不可得（live-token-only）时降级按 live 会话信息续看，同 attachRun，不因回放失败而开出空白面板
+    resumeRunId?: string | null
     // 是否启用聊天历史持久化（注册/每轮存档/刷新恢复）。默认开启（#498 反转）：所有接入点
     // 的对话都绑定登录用户、落 Node SQLite、切页/刷新可恢复。旧设计担心的「共用 localStorage
     // 同场景 key 串台」由 historyKey 按接入点隔离解决。
@@ -83,8 +89,20 @@ const props = withDefaults(
     restoreLastSession?: boolean
     businessOnly?: boolean
     contextPayload?: Record<string, unknown> | null
+    // 按问题取本轮不可信上下文（统一 AI 侧边栏）：给了就优先于 contextPayload，在发送开始、
+    // 任何 await 之前按本轮问题求值一次——侧边栏据此只在发起解读的那一轮附带数据切片，
+    // 之后的自由追问只带页面背景。其它宿主不传，行为不变。
+    contextPayloadFor?: ((question: string) => Record<string, unknown> | null) | null
+    // 每条已完成的助手回复下方显示「复制 / 重新提问」（统一 AI 侧边栏开启；其它宿主默认关闭，界面不变）
+    messageActions?: boolean
+    // 斜杠指令宿主：sidebar 下跨场景技能不跳转工作台，改发 openScenario 由宿主就地新开会话
+    commandHost?: 'agent' | 'sidebar'
+    // 宿主注入的额外斜杠指令（统一 AI 侧边栏的专家命令）
+    extraCommands?: SlashCommand[]
+    // 申报体检会话的业务写入（L1）审批卡上提供「本会话内自动执行」开关（统一 AI 侧边栏开启）
+    approvalAutoApprove?: boolean
   }>(),
-  { scenario: 'chat', initialQuestion: '', payload: null, resumeSessionId: null, persistHistory: true, historyKey: '', promptKey: '', contextPayload: null, restoreLastSession: true, businessOnly: false }
+  { scenario: 'chat', initialQuestion: '', payload: null, resumeSessionId: null, resumeRunId: null, persistHistory: true, historyKey: '', promptKey: '', contextPayload: null, contextPayloadFor: null, restoreLastSession: true, businessOnly: false, messageActions: false, commandHost: 'agent', extraCommands: () => [], approvalAutoApprove: false }
 )
 
 const router = useRouter()
@@ -95,10 +113,18 @@ const emit = defineEmits<{
   approval: [payload: Record<string, unknown>]
   // 会话发生持久化变更（注册/新增轮次/恢复），工作台据此刷新历史侧栏
   historyChanged: []
-  // 当前会话就绪（创建或恢复），携带 session_id 供侧栏高亮
-  sessionReady: [sessionId: string]
+  // 当前会话就绪（创建或恢复），携带 session_id 供侧栏高亮，另附会话标题（统一 AI 侧边栏据此回填头部标题）
+  sessionReady: [sessionId: string, title: string]
   // 挂载初始化（探活、历史恢复/首问处理）完成后通知宿主
   ready: []
+  // 流式生成开始/结束（统一 AI 侧边栏据此判断「当前会话是否在生成」）
+  streamingChange: [streaming: boolean]
+  // 发送被服务端以 409 拒绝（该会话已有进行中的 run）：宿主可改在新会话里重发这条问题
+  sessionBusy: [question: string]
+  // 会话被清空重置（/clear 或宿主调用 newConversation）：下一次发送将新建会话，宿主可据此复位会话属性
+  conversationReset: []
+  // commandHost=sidebar 时跨场景的技能/移交：由宿主在对应场景新开会话（问题可能为空）
+  openScenario: [question: string, scenario: AgentScenario]
 }>()
 
 // 消息模型：assistant 消息由有序「段」组成，事件流逐段构建
@@ -172,6 +198,7 @@ const messages = ref<ChatMsg[]>([])
 const todos = ref<Todo[]>([])
 const input = ref('')
 const streaming = ref(false)
+watch(streaming, (v) => emit('streamingChange', v))
 const session = ref<AgentSessionInfo | null>(null)
 const bodyRef = ref<HTMLElement | null>(null)
 const inputRef = ref<HTMLTextAreaElement | null>(null)
@@ -589,7 +616,7 @@ async function refreshHistoryFromServer() {
     todos.value = []
     session.value = { id: t.session_id, scenario: t.scenario, title: t.title, status: 'idle' }
     saveLocalSession(t.session_id)
-    emit('sessionReady', t.session_id)
+    emit('sessionReady', t.session_id, t.title ?? '')
     emit('historyChanged')
     scrollBottom(true)
   } catch (err) {
@@ -600,13 +627,22 @@ async function refreshHistoryFromServer() {
 // 回放历史会话（侧栏选中 / 刷新恢复）。设回 session 续同线程，标记全部已落库。
 // fromClick=用户主动点击侧栏（失败要可见、且不得清 localStorage 指针）；缺省=onMounted 自动恢复
 // （失败静默清陈旧指针即可）。区分两条入口，避免用户点击打不开时既无反馈又误清指针。
+// 世代守卫：侧栏快速连点会话 A、B 会并发两次 loadHistory，A 若晚归会再次覆盖
+// messages/session/高亮，用户随后在错误的旧会话里续聊。加在共享组件内，5 个接入点同受益。
+// 亦被 beginStream() 作废：加载在途时发新消息，历史响应不得再写回。
 async function loadHistory(sessionId: string, opts?: { fromClick?: boolean; allowEmpty?: boolean }): Promise<boolean> {
+  return (await loadHistoryIn(sessionId, opts, gens.beginHistoryLoad())) === 'loaded'
+}
+
+// 回放结果区分「拿不到 transcript」与「等待期间被作废」：只有前者可以降级按 live 会话续看
+type HistoryLoadResult = 'loaded' | 'unavailable' | 'stale'
+async function loadHistoryIn(
+  sessionId: string,
+  opts: { fromClick?: boolean; allowEmpty?: boolean } | undefined,
+  generation: number
+): Promise<HistoryLoadResult> {
   const fromClick = opts?.fromClick === true
   const allowEmpty = opts?.allowEmpty === true
-  // 世代守卫：侧栏快速连点会话 A、B 会并发两次 loadHistory，A 若晚归会再次覆盖
-  // messages/session/高亮，用户随后在错误的旧会话里续聊。加在共享组件内，5 个接入点同受益。
-  // 亦被 beginStream() 作废：加载在途时发新消息，历史响应不得再写回。
-  const generation = gens.beginHistoryLoad()
   const stale = () => gens.isHistoryStale(generation)
   // 切会话前必须作废在途流世代：仅 abort reader 不够，断开 SSE 不停后端 run，旧 send()
   // 的 finally 仍会以有效世代执行 finalizeStreamAfterRun('completed')，提前触发宿主的
@@ -615,42 +651,42 @@ async function loadHistory(sessionId: string, opts?: { fromClick?: boolean; allo
   detachReaderForSwitch()
   try {
     const t = await fetchHistoryTranscript(sessionId)
-    if (stale()) return false
+    if (stale()) return 'stale'
     if (!t || !t.messages?.length) {
       if (allowEmpty && t) {
-        if (stale()) return false
+        if (stale()) return 'stale'
         abort?.abort()
         messages.value = []
         todos.value = []
         session.value = { id: t.session_id, scenario: t.scenario, title: t.title, status: 'idle' }
         if (props.persistHistory) {
           saveLocalSession(t.session_id)
-          emit('sessionReady', t.session_id)
+          emit('sessionReady', t.session_id, t.title ?? '')
         }
-        return true
+        return 'loaded'
       }
       // 空 transcript 多为会话仍在生成、首轮尚未落库：主动点击给可见提示，不再静默；不清指针
       if (fromClick) ElMessage.info('该会话暂无可回放内容（可能仍在生成，请稍后再试）')
       else clearLocalSession()
-      return false
+      return 'unavailable'
     }
-    if (stale()) return false
+    if (stale()) return 'stale'
     abort?.abort()
     messages.value = t.messages.map(restoreMsg)
     todos.value = []
     session.value = { id: t.session_id, scenario: t.scenario, title: t.title, status: 'idle' }
     if (props.persistHistory) {
       saveLocalSession(t.session_id)
-      emit('sessionReady', t.session_id)
+      emit('sessionReady', t.session_id, t.title ?? '')
     }
     scrollBottom(true)
-    return true
+    return 'loaded'
   } catch (err) {
-    if (stale()) return false
+    if (stale()) return 'stale'
     console.warn('[chat-history] 恢复历史失败', err)
     if (fromClick) ElMessage.error('历史加载失败：' + (err instanceof Error ? err.message : '请稍后重试'))
     else clearLocalSession()
-    return false
+    return 'unavailable'
   }
 }
 
@@ -670,6 +706,7 @@ function newConversation() {
   reconnecting.value = false
   reconnectAttempt.value = 0
   clearLocalSession()
+  emit('conversationReset')
 }
 
 // 渲染用块：完成后用整体解析结果，流式中用稳定段增量结果（同一 ArtifactRenderer 节点，
@@ -999,7 +1036,7 @@ async function ensureSession() {
     )
     if (props.persistHistory) {
       saveLocalSession(session.value.id)
-      emit('sessionReady', session.value.id)
+      emit('sessionReady', session.value.id, session.value.title ?? '')
       emit('historyChanged')
     }
   }
@@ -1016,6 +1053,8 @@ async function send() {
   }
   pushHistory(content)
   input.value = ''
+  // 本轮不可信上下文在任何 await 之前定稿：宿主随后改动 props 不影响已发出的这一轮
+  const turnContext = props.contextPayloadFor ? props.contextPayloadFor(content) : props.contextPayload
   messages.value.push({ role: 'user', text: content, segs: [] })
   // 立即压入空助手气泡占位：动态指示（思考/计时/token）即刻出现，不必等首个事件才「弹框」
   messages.value.push({ role: 'assistant', segs: [] })
@@ -1051,7 +1090,7 @@ async function send() {
         ...packageRegionSummary(),
         ...(props.payload ?? {}),
         // B3 选中即问：上下文走 untrusted_external_content（agent 视为不可信外部内容，只引用不执行）
-        ...(props.contextPayload ? { untrusted_external_content: props.contextPayload } : {}),
+        ...(turnContext ? { untrusted_external_content: turnContext } : {}),
       },
       scenario: s.scenario,
       // 续聊重传页面提示白名单 key：harness 重启后懒重建会话需据此恢复角色与安全基线（服务端不持久化）。
@@ -1061,6 +1100,7 @@ async function send() {
     // 用户主动停止（cancelled / AbortError）不是错误：不渲染 ⚠️ 错误段，按 cancelled 终态收尾。
     const aborted = cancelled || (err as Error)?.name === 'AbortError' || ac.signal.aborted
       || gens.isStreamStale(gen)
+    if (!aborted && err instanceof AgentStreamHttpError && err.status === 409) emit('sessionBusy', content)
     if (!aborted && s && await recoverDisconnectedRun(err, s.id, gen, ac.signal)) {
       // 已通过 attach 重连续读到终态。
     } else if (!aborted) {
@@ -1183,21 +1223,104 @@ async function attachRun(sessionId: string, runId?: string): Promise<boolean> {
     return false
   }
   // 流世代作废已下沉到 loadHistory 内部，不再重复
-  const loaded = await loadHistory(sessionId, { fromClick: true, allowEmpty: true })
-  if (!loaded) {
-    // live-token-only 会话（历史绑定失败/首轮未落库）不在 Node 历史库：
-    // transcript 不可得不应阻断 attach，降级用 live session 信息建最小本地状态续看。
-    const info = await getAgentSession(sessionId).catch(() => null)
-    if (!info) return false
-    abort?.abort()
-    messages.value = []
-    todos.value = []
-    session.value = { id: info.id, scenario: info.scenario, title: info.title ?? '', status: 'idle' }
-  }
+  if (!(await resumeSession(sessionId, { fromClick: true, allowEmpty: true }))) return false
+  // 从运行中列表带 run id 切过来同样要按服务端同步授权：撤销重试用尽时，会话可能仍在后台跑且授权开着（dljy-web#121 审查 P1）
+  void syncAutoApproveFromServer()
   return runId ? attachRunById(sessionId, runId, -1) : attachActiveRunIfAny(-1)
 }
 
-// 供外部（AgentSidekick chips 等）直接发问
+// 续看一个会话：先回放历史；transcript 不可得时（live-token-only：历史绑定失败/首轮未落库，不在 Node 历史库）
+// 降级用 live 会话信息建最小本地状态。两段查询共用同一个历史世代——任一段等待期间用户发了新消息
+// （beginStream 作废历史世代）或切走，都不再写回，更不能降级覆盖新会话（dljy-web#121 审查 P1）。
+async function resumeSession(sessionId: string, opts: { fromClick?: boolean; allowEmpty?: boolean }): Promise<boolean> {
+  const generation = gens.beginHistoryLoad()
+  const result = await loadHistoryIn(sessionId, opts, generation)
+  if (result !== 'unavailable') return result === 'loaded'
+  const info = await getAgentSession(sessionId).catch(() => null)
+  if (!info || gens.isHistoryStale(generation)) return false
+  abort?.abort()
+  messages.value = []
+  todos.value = []
+  session.value = { id: info.id, scenario: info.scenario, title: info.title ?? '', status: 'idle' }
+  return true
+}
+
+// ── 审批卡上的会话级自动执行授权（统一 AI 侧边栏 EC-04，design D10）──
+// 只在宿主开启、会话场景为申报体检、且该卡是 L1 业务写入时提供；缺 level 字段（旧账本卡片）一律不提供，
+// 对外提交（submit_declaration，L2）恒不提供。授权按会话生效、不持久，由服务端留痕。
+// 开启后审批卡随即被批准、消失，而之后的 L1 写入恰恰不再出卡——所以「已开启」提示与关闭按钮放在输入框上方，
+// 不依附审批卡；离开这个会话（切换/新建/卸载）时主动撤销服务端授权，不留一个看不见的开关（dljy-web#121 审查 P1）
+// 撤销走带退避重试的服务层函数：切走/卸载后界面已不在，失败不能靠用户点按钮重试；
+// 全部失败时用户重新打开该会话，挂载时按服务端授权状态重新显示提示条（见 syncAutoApproveFromServer）。
+const autoApproveOn = ref(false)
+const autoApproveToggling = ref(false)
+let panelUnmounted = false
+function revokeAutoApprove(sessionId: string | undefined) {
+  if (!sessionId || !autoApproveOn.value) return
+  autoApproveOn.value = false
+  void revokeSessionAutoApprove(sessionId)
+}
+watch(() => session.value?.id, (_id, previousId) => { revokeAutoApprove(previousId) })
+onBeforeUnmount(() => {
+  panelUnmounted = true
+  revokeAutoApprove(session.value?.id)
+})
+async function syncAutoApproveFromServer() {
+  const sessionId = session.value?.id
+  if (!props.approvalAutoApprove || !sessionId) return
+  const meta = await fetchPiSessionMeta(sessionId).catch(() => null)
+  if (meta?.autoApprove && !panelUnmounted && session.value?.id === sessionId) autoApproveOn.value = true
+}
+function canOfferAutoApprove(seg: ApprovalSeg): boolean {
+  const payload = seg.payload as Record<string, unknown>
+  return props.approvalAutoApprove
+    && session.value?.scenario === 'declaration_checkup'
+    && payload.level === 'L1'
+    && payload.tool !== 'submit_declaration'
+}
+async function toggleAutoApprove(enabled: boolean) {
+  const sessionId = session.value?.id
+  if (!sessionId) return
+  autoApproveToggling.value = true
+  try {
+    const result = await setSessionAutoApprove(sessionId, enabled)
+    // 等待期间用户已切走或面板已卸载：迟到的「已开启」没有任何界面能关掉，立即撤销（dljy-web#121 审查 P1）
+    if (panelUnmounted || session.value?.id !== sessionId) {
+      if (result) void revokeSessionAutoApprove(sessionId)
+      return
+    }
+    autoApproveOn.value = result
+    ElMessage.success(autoApproveOn.value
+      ? '已开启本会话自动执行授权：落库草稿不再逐次审批（对外提交仍永不自动）'
+      : '已关闭自动执行授权：业务写操作恢复逐次审批')
+  } catch (exc) {
+    // 已切走：失败的请求在服务端是否生效无从得知，一律交给带重试的撤销，且不改动当前会话的界面状态
+    if (panelUnmounted || session.value?.id !== sessionId) {
+      void revokeSessionAutoApprove(sessionId)
+      return
+    }
+    autoApproveOn.value = !enabled
+    ElMessage.error(`授权切换失败：${String(exc)}`)
+  } finally {
+    autoApproveToggling.value = false
+  }
+}
+
+async function copyMessage(msg: ChatMsg) {
+  const text = assistantPlainText(msg)
+  try {
+    await navigator.clipboard.writeText(text)
+    ElMessage.success('已复制')
+  } catch {
+    ElMessage.error('复制失败，请手动选择文本复制')
+  }
+}
+function regenerate(assistantIndex: number) {
+  const question = previousUserText(messages.value, assistantIndex)
+  if (question) ask(question)
+}
+
+// 供外部（侧边栏发问、快捷任务等）直接发问
 function ask(question: string) {
   if (streaming.value || !question.trim()) return false
   input.value = question.trim()
@@ -1212,8 +1335,9 @@ provide(ARTIFACT_CONTEXT, { submit: (text: string) => ask(text), sessionId: () =
 // 斜杠指令（/help、/clear、技能… 输入 / 唤起菜单）
 function makeContext(args: string): CommandContext {
   return {
-    host: 'agent',
+    host: props.commandHost,
     args,
+    extraCommands: props.extraCommands,
     navigate: (path) => { void router.push(path) },
     postSystemNote: (text) => {
       messages.value.push({
@@ -1228,6 +1352,7 @@ function makeContext(args: string): CommandContext {
     // （审批挂起时还会被拒），与下方 openWorkbench 的场景逃逸一致（修复 PR #46 review）
     sendToChat: (text) => {
       if (props.scenario === 'chat') { ask(text); return }
+      if (props.commandHost === 'sidebar') { emit('openScenario', text, 'chat'); return }
       void router.push({ path: '/ai-agent', query: { q: text } })
     },
     // 仅当技能场景与当前会话场景一致时才同会话发送（保持上下文）；否则一律按目标
@@ -1238,6 +1363,11 @@ function makeContext(args: string): CommandContext {
       const target: AgentScenario = scenario ?? 'chat'
       if (target === props.scenario) {
         if (q) ask(q)
+        return
+      }
+      // 侧边栏：就地新开目标场景会话，不离开当前页（统一 AI 侧边栏 EC-02）
+      if (props.commandHost === 'sidebar') {
+        emit('openScenario', q ?? '', target)
         return
       }
       const query: Record<string, string> = {}
@@ -1251,7 +1381,7 @@ function makeContext(args: string): CommandContext {
   }
 }
 const { menuOpen, menuItems, activeIndex, onKeydown: onSlashKeydown, trySlash, pushHistory, selectItem } =
-  useSlashInput({ input, host: 'agent', makeContext })
+  useSlashInput({ input, host: props.commandHost, makeContext })
 
 function onInputKeydown(e: KeyboardEvent) {
   if (e.isComposing || e.keyCode === 229) return // 中文输入法组词中放行
@@ -1281,8 +1411,13 @@ const { model: currentModel } = useCurrentModel()
 onMounted(async () => {
   // resume/刷新恢复读 Node 历史（/api/agent-history），不依赖 agent-backend 在线；探活仅用于门控首条。
   await checkHealth()
-  if (props.resumeSessionId) {
-    if (await loadHistory(props.resumeSessionId, { allowEmpty: true })) {
+  if (props.resumeSessionId && props.resumeRunId) {
+    await attachRun(props.resumeSessionId, props.resumeRunId)
+  } else if (props.resumeSessionId) {
+    // 历史回放拿不到（live-token-only）时同样降级续看，并附着在途 run——工作台 `?session=`、
+    // 侧边栏刷新恢复都走这里，不能因回放失败开出空白面板、run 在后台继续却看不见（dljy-web#119 审查 P2）
+    if (await resumeSession(props.resumeSessionId, { allowEmpty: true })) {
+      void syncAutoApproveFromServer()
       await attachActiveRunIfAny(-1)
     }
   } else {
@@ -1396,6 +1531,8 @@ function approvalBrief(payload: Record<string, unknown>): { label: string; value
     </div>
 
     <div ref="bodyRef" class="panel-body" @scroll="onBodyScroll">
+      <!-- 会话前置区域（宿主插槽，不入库）：统一 AI 侧边栏放晨报预检卡、数据缺口清单、结论水印 -->
+      <slot name="conversation-top" />
       <div v-if="agentOffline" class="empty-hint">
         <div class="empty-logo offline"><Bot :size="28" /></div>
         <p class="empty-title">智能体服务未就绪</p>
@@ -1612,6 +1749,15 @@ function approvalBrief(payload: Record<string, unknown>): { label: string; value
                   <span class="k">{{ row.label }}</span><span class="v">{{ row.value }}</span>
                 </div>
                 <template v-if="!seg.resolved && !seg.readonly">
+                  <label v-if="canOfferAutoApprove(seg)" class="approval-auto" data-testid="approval-auto-approve">
+                    <input
+                      type="checkbox"
+                      :checked="autoApproveOn"
+                      :disabled="autoApproveToggling"
+                      @change="toggleAutoApprove(($event.target as HTMLInputElement).checked)"
+                    />
+                    <span>本会话内自动执行业务写入（对外提交永不自动、执行仍被硬禁）</span>
+                  </label>
                   <input v-model="seg.note" class="approval-note" placeholder="审批备注（可选）" />
                   <div class="approval-actions">
                     <button class="btn approve" @click="decide(seg, 'approve')">批准</button>
@@ -1623,6 +1769,21 @@ function approvalBrief(payload: Record<string, unknown>): { label: string; value
                 </div>
               </div>
             </template>
+
+            <!-- 消息级操作（宿主开启 messageActions）：复制整条正文；重新提问=在当前会话重发对应的用户问题 -->
+            <div
+              v-if="messageActions && !(streaming && mi === messages.length - 1) && assistantPlainText(msg)"
+              class="msg-actions"
+            >
+              <button type="button" class="msg-act" title="复制整条回复" @click="copyMessage(msg)"><Copy :size="12" /> 复制</button>
+              <button
+                type="button"
+                class="msg-act"
+                title="以同一问题重新提问"
+                :disabled="streaming || !previousUserText(messages, mi)"
+                @click="regenerate(mi)"
+              ><RotateCcw :size="12" /> 重新提问</button>
+            </div>
 
             <!-- 动态「在工作」指示：流式期间常驻，阶段(思考/调工具/生成) + 计时 + token 活动 -->
             <div v-if="streaming && mi === messages.length - 1" class="stream-meter">
@@ -1641,6 +1802,14 @@ function approvalBrief(payload: Record<string, unknown>): { label: string; value
         <ChevronDown :size="15" /> 回到底部
       </button>
     </Transition>
+
+    <div v-if="autoApproveOn" class="auto-approve-bar" data-testid="auto-approve-active">
+      <span>本会话已开启业务写入自动执行（对外提交永不自动、执行仍被硬禁）</span>
+      <button type="button" :disabled="autoApproveToggling" @click="toggleAutoApprove(false)">关闭</button>
+    </div>
+
+    <!-- 输入框上方的宿主插槽（统一 AI 侧边栏放页面背景条与本页快捷问题） -->
+    <slot name="composer-top" />
 
     <div class="panel-input">
       <SlashCommandMenu
@@ -1770,6 +1939,15 @@ function approvalBrief(payload: Record<string, unknown>): { label: string; value
   background: var(--panel-sub);
 }
 .msg.user .bubble { background: var(--primary); color: #fff; }
+.msg-actions { display: flex; gap: 4px; margin-top: 6px; }
+.approval-auto { display: flex; align-items: center; gap: 6px; margin: 6px 0; font-size: var(--font-xs); color: var(--el-text-color-secondary); }
+.msg-act {
+  display: inline-flex; align-items: center; gap: 3px;
+  padding: 2px 6px; border: 0; border-radius: 6px; background: transparent;
+  color: var(--el-text-color-secondary); font-size: var(--font-xs); cursor: pointer;
+}
+.msg-act:hover:not(:disabled) { background: var(--el-fill-color-light); color: var(--primary); }
+.msg-act:disabled { opacity: 0.45; cursor: default; }
 
 /* 渐变生成：每个 token 块淡入上浮 */
 /* 顶层工具组：折叠只显统计，展开逐条（形态复刻 .sa-head） */
@@ -1947,6 +2125,15 @@ function approvalBrief(payload: Record<string, unknown>): { label: string; value
   background: var(--panel); color: var(--text);
 }
 .approval-actions { display: flex; gap: 8px; margin-top: 8px; }
+.auto-approve-bar {
+  display: flex; align-items: center; gap: 8px; margin: 0 12px 6px; padding: 6px 10px;
+  border: 1px solid var(--warning); border-radius: 8px; font-size: var(--font-12-5); color: var(--text);
+}
+.auto-approve-bar span { flex: 1; min-width: 0; }
+.auto-approve-bar button {
+  flex: none; padding: 2px 10px; border: 1px solid var(--line); border-radius: 6px;
+  background: transparent; color: var(--text); cursor: pointer;
+}
 .btn {
   padding: 5px 16px; border-radius: var(--radius-sm); border: none; cursor: pointer;
   font-size: var(--font-md); font-weight: 600;

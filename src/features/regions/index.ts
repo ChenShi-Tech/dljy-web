@@ -5,6 +5,7 @@
 //
 // 新增一省 = 本文件加一行 + 该省包自带 register.ts；内核零改动。
 
+import { registerShanxiRegion } from './shanxi/register'
 import { registerYunnanRegion } from './yunnan/register'
 
 let installed = false
@@ -14,4 +15,5 @@ export function installRegionPackages(): void {
   if (installed) return
   installed = true
   registerYunnanRegion()
+  registerShanxiRegion()
 }

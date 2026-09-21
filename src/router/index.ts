@@ -4,6 +4,7 @@ import { resetCaptureAccessDenied } from '@/services/api'
 import { getCurrentUser, getToken } from '@/services/auth'
 import { canAccessPath, firstAccessiblePath, isPathAvailableInRegion } from '@/services/governance'
 import { getCurrentRegionSnapshot } from '@/services/region/regionContext'
+import type { InsightPageId } from '@/services/region/insightWorkspace'
 import { isMultiStance, activeStanceType, requiresStanceSelection } from '@/services/stance/stanceContext'
 import { isPathAvailableInStance } from '@/services/stance/stanceNavigation'
 
@@ -68,7 +69,7 @@ const tradingDay = () => import('../views/trading/TradingDayView.vue')
 // 且它们本就是动线中的一步、不是独立功能模块）。
 const spotDecisionDesk = () => import('../views/DeclarationDeskView.vue')
 const approvalQueue = () => import('../views/ApprovalQueueView.vue')
-const exposureBoard = () => import('../views/ExposureBoardView.vue')
+const hedgeWorkbench = () => import('../views/hedge/HedgeWorkbenchView.vue')
 const spotMonitor = () => import('../views/SpotMonitorView.vue')
 const reviewCenter = () => import('../views/ReviewCenterView.vue')
 const platformDocs = () => import('../views/PlatformDocsView.vue')
@@ -88,7 +89,24 @@ const companyAssets = () => import('../views/company/CompanyAssetsView.vue')
 const companyOutput = () => import('../views/company/CompanyOutputView.vue')
 const companyTrades = () => import('../views/company/CompanyTradesView.vue')
 const companyContracts = () => import('../views/company/CompanyContractsView.vue')
+// 云南中长期售电合同 P1（dljy#2939）：合同底账、详情与月度持仓；旧「公司管理 › 合同管理」保留并对已纳管合同分流。
+const midlongContracts = () => import('../views/midlong/MidlongContractsView.vue')
+const midlongContractDetail = () => import('../views/midlong/MidlongContractDetailView.vue')
+const midlongPositions = () => import('../views/midlong/MidlongPositionsView.vue')
+// 云南中长期售电 P2（dljy#2971）：分时持仓、场站维度持仓与分解集详情。
+const midlongIntervalPositions = () => import('../views/midlong/p2/MidlongIntervalPositionsView.vue')
+const midlongStationPositions = () => import('../views/midlong/p2/MidlongStationPositionsView.vue')
+const midlongCurveSet = () => import('../views/midlong/p2/MidlongCurveSetView.vue')
+// 云南中长期售电 P3（dljy#2973）：售电计划与交易执行。
+const midlongPlans = () => import('../views/midlong/p3/MidlongPlansView.vue')
+const midlongExecution = () => import('../views/midlong/p3/MidlongExecutionView.vue')
+// 云南中长期售电 P4（dljy#3014）：合同调整（执行确认是交易执行页的第四个标签，无新路由）。
+const midlongAdjustments = () => import('../views/midlong/p4/MidlongAdjustmentsView.vue')
+// 云南中长期售电 P5（dljy#3016）：业务复盘与月报、外部账单与差异。
+const midlongReview = () => import('../views/midlong/p5/MidlongReviewView.vue')
+const midlongBills = () => import('../views/midlong/p5/MidlongBillsView.vue')
 const riskCenter = () => import('../views/RiskCenterView.vue')
+const insightWorkspaceHost = () => import('../views/insight/InsightWorkspaceHost.vue')
 
 type PageMeta = {
   block: string
@@ -102,6 +120,8 @@ type PageMeta = {
   cfg?: any
   suiteDomain?: string
   regionIds?: string[]
+  /** 市场洞察工作区规范页 id（dljy#2995）：宿主按 当前地区+pageId 经注册表分发内容 */
+  insightPageId?: InsightPageId
 }
 const page = (path: string, name: string, meta: PageMeta, component: any = placeholder) => ({
   path,
@@ -235,7 +255,9 @@ const router = createRouter({
         { path: '/xhjy/decision-log', redirect: '/xhjy/trading-day?stage=daily-close' },
         page('xhjy/desk', 'DeclarationDesk', { block: '现货交易', title: '申报工作台', code: 'declaration-desk', endpoint: '/api/v1/trading/spot/declarations + /api/real + /agent-api/agent/*', dataPath: 'spot_declarations/knn-api', scope: 'D-1申报动线: 草稿→风控检查→审批→提交回执→出清跟踪(申报单状态机驱动)', kind: 'mixed' }, spotDecisionDesk),
         page('xhjy/approvals', 'ApprovalQueue', { block: '现货交易', title: '申报审批队列', code: 'approval-queue', endpoint: 'GET/POST /api/v1/trading/spot/declarations*', dataPath: 'spot_declarations', scope: '交易负责人/风控集中审批 PENDING_APPROVAL 申报单, approvalRecord 留痕', kind: 'real' }, approvalQueue),
-        page('zcqjy/exposure', 'ExposureBoard', { block: '中长期交易', title: '中长期敞口看板', code: 'exposure-board', endpoint: 'POST /agent-api/agent/quant/exposure', dataPath: 'quant_direct', scope: '合同分解vs预计出力、逐时敞口、套保率、敞口热力、智能体解读', kind: 'mixed' }, exposureBoard),
+        // 旧「中长期敞口看板」链接重定向到新入口并保留查询参数（HW-07，D1）；view 已由 8.8 删除。
+        { path: 'zcqjy/exposure', redirect: to => ({ path: '/xhjy/hedge', query: to.query }) },
+        page('xhjy/hedge', 'HedgeWorkbench', { block: '现货交易', title: '中长期与现货套保', code: 'hedge-workbench', endpoint: 'GET /api/v1/hedge/{overview,months,summary,band/*,caps,baselines,mechanism-params} + POST simulate', dataPath: 'midlong_readmodel + hedge legs', scope: '真实锁价（读模型）vs 三段预计发电（实际/预测/基准）：逐时段敞口两口径、套保率与判级、需关注清单、认知时点回看、试算与方案维护', kind: 'real' }, hedgeWorkbench),
         page('xhjy/monitor', 'SpotMonitor', { block: '现货交易', title: '实时监盘', code: 'spot-monitor', endpoint: 'POST /agent-api/agent/quant/monitor', dataPath: 'quant_direct', scope: 'D日动线: 实时vs日前价差、异动预警、AI异动解读(准实时/演示)', kind: 'mixed' }, spotMonitor),
         page('xhjy/review', 'ReviewCenter', { block: '现货交易', title: '复盘中心', code: 'review-center', endpoint: 'POST /agent-api/agent/quant/{review,settlement-review,cvar} + GET /quant/reports(+/content) + 市场经营分析回放 + GET /agent/review/template-instances 探针(#2039未上线则降级)', dataPath: 'quant_direct', scope: '六维复盘驾驶舱(#2033): 指标卡/六维入口/待办箱/31项模板渲染 + 偏差周月聚合(#2042)/收益三层拆解(#2043)/月度市场归因(#2046)/风险事件与压力测试(#2047)/三主体驾驶舱(#2048)/情绪化识别与会议纪要(#2049)六维深入面板', kind: 'mixed' }, reviewCenter),
         page('xhjy/review/analysis', 'ReviewAnalysis', { block: '现货交易', title: '复盘专题分析', code: 'review-analysis', endpoint: '/api/v1/review/analysis/* + /api/v1/review/workpapers', dataPath: 'review', scope: '与复盘弹窗共用专题分析、按业务视角选基准、公司周期与图表取材', kind: 'mixed' }, reviewCenter),
@@ -246,9 +268,26 @@ const router = createRouter({
         page('xhjy/region', 'SpotRegionOverview', { block: '现货交易', title: '地区现货概览', code: 'spot-region-overview', endpoint: 'local regional trading registry', dataPath: 'local_region_trading', scope: '当前地区现货机制、价格画像、电源结构和通用底座', kind: 'mixed' }, regionalTradingHub),
 
         // 中长期交易 /zcqjy
-        page('zcqjy/zccljk', 'PositionMonitor', { block: '中长期交易', title: '持仓量监控', code: 'zccljk', endpoint: 'GET /sdpt/zfsdjy/ccljkDay|ccljkTime|list', dataPath: 'sdpt_zfsdjy', scope: '2026-06，39行', kind: 'real' }, zfsdjyPosition),
+        // 售电合同与月度持仓（dljy#2939）：只读合同底账，不依赖现货/预测/厂侧接口；公司范围与旧合同页同口径。
+        page('zcqjy/contracts', 'MidlongContracts', { block: '中长期交易', title: '售电合同', code: 'midlong-contracts', endpoint: 'GET/POST/PATCH /api/v1/midlong/contracts* + /imports* + /subjects', dataPath: 'company.midlong_*', scope: '云南中长期售电合同：录入、导入、核验、更正、作废与资料', kind: 'real' }, midlongContracts),
+        page('zcqjy/contracts/:id', 'MidlongContractDetail', { block: '中长期交易', title: '售电合同详情', code: 'midlong-contract-detail', endpoint: 'GET /api/v1/midlong/contracts/{id} + verify/revisions/void/evidence/aliases', dataPath: 'company.midlong_*', scope: '版本历史、月度分解、资料与业务事件', kind: 'real' }, midlongContractDetail),
+        page('zcqjy/positions', 'MidlongPositions', { block: '中长期交易', title: '月度持仓', code: 'midlong-positions', endpoint: 'GET /api/v1/midlong/positions(+/export)', dataPath: 'company.midlong_*', scope: '已确认售电义务按月汇总、跨期未分解池、价格覆盖与名义金额、历史认知时点', kind: 'real' }, midlongPositions),
+        // 分时分解与场站分配（dljy#2971）：正式分解与估算分开，只有月量的合同在小时粒度显示分时未知；不依赖现货/预测。
+        page('zcqjy/positions/intervals', 'MidlongIntervalPositions', { block: '中长期交易', title: '分时持仓', code: 'midlong-interval-positions', endpoint: 'GET /api/v1/midlong/positions/intervals(+/export)', dataPath: 'company.midlong_curve_*', scope: '已确认分解集按月/日/时汇总、分时未知与守恒状态', kind: 'real' }, midlongIntervalPositions),
+        page('zcqjy/positions/stations', 'MidlongStationPositions', { block: '中长期交易', title: '场站维度持仓', code: 'midlong-station-positions', endpoint: 'GET /api/v1/midlong/positions/stations(+/export)', dataPath: 'company.midlong_station_allocation_*', scope: '交易单元义务按场站分配份额与未分配余额（同一义务的不同观察维度，不相加）', kind: 'real' }, midlongStationPositions),
+        // 售电目标、方案与交易日历（dljy#2973）：目标是经营安排不是物理可发电量，方案占用不计正式持仓，导出申报材料不代提交。
+        page('zcqjy/plans', 'MidlongPlans', { block: '中长期交易', title: '售电计划', code: 'midlong-plans', endpoint: 'GET/POST/PATCH /api/v1/midlong/plans* + /proposals*', dataPath: 'company.midlong_sales_plan* + midlong_trade_proposal* + midlong_plan_occupations', scope: '人工售电目标版本与完成情况、交易方案测算与方案占用', kind: 'real' }, midlongPlans),
+        page('zcqjy/execution', 'MidlongExecution', { block: '中长期交易', title: '交易执行', code: 'midlong-execution', endpoint: 'GET/POST /api/v1/midlong/windows* + /proposals/{id}/export|submissions + /submissions/{id}/receipts', dataPath: 'company.midlong_trading_window* + midlong_proposal_submissions + midlong_submission_receipts', scope: '交易公告与日历、申报材料导出、外部提交登记与回执完整度', kind: 'real' }, midlongExecution),
+        // 合同调整（dljy#3014）：转让/调整/部分终止的登记、方向核验、可调余额与影响追溯；更正仍在合同详情。
+        page('zcqjy/adjustments', 'MidlongAdjustments', { block: '中长期交易', title: '合同调整', code: 'midlong-adjustments', endpoint: 'GET/POST /api/v1/midlong/adjustments* + /executions/confirmations*', dataPath: 'company.midlong_adjustment* + midlong_execution_*', scope: '外部调整/转让/部分终止：方向核验、可调余额、原子生效与变更影响追溯', kind: 'real' }, midlongAdjustments),
+        // 业务复盘与月报（dljy#3016）：指标只读分析、报告冻结与版本追溯；不导入现货复盘状态。
+        page('zcqjy/review', 'MidlongReview', { block: '中长期交易', title: '业务复盘', code: 'midlong-review', endpoint: 'GET/POST /api/v1/midlong/review/metrics + /reports*', dataPath: 'company.midlong_review_report* + midlong_*', scope: '量价业务分析（不可比不排名）、月度报告冻结与迟到修订版本', kind: 'real' }, midlongReview),
+        // 外部账单与差异（dljy#3016）：三种金额分离、综合账单不猜分、差异处理闭环。
+        page('zcqjy/bills', 'MidlongBills', { block: '中长期交易', title: '外部账单与差异', code: 'midlong-bills', endpoint: 'GET/POST /api/v1/midlong/bills* + /discrepancies* + /settlement-attachments/{id}', dataPath: 'company.midlong_bill* + midlong_bill_discrepancies', scope: '外部账单登记与修订、收款凭证、量价差异登记与处理闭环', kind: 'real' }, midlongBills),
+        page('zcqjy/curves/:id', 'MidlongCurveSet', { block: '中长期交易', title: '分解集详情', code: 'midlong-curve-set', endpoint: 'GET /api/v1/midlong/curves/{id} + confirm/discard', dataPath: 'company.midlong_curve_*', scope: '分时分解集原始粒度、单位换算、缺段/重叠/守恒校验与来源', kind: 'real' }, midlongCurveSet),
+        page('zcqjy/zccljk', 'PositionMonitor', { block: '中长期交易', title: '持仓量监控（山西采集）', code: 'zccljk', endpoint: 'GET /sdpt/zfsdjy/ccljkDay|ccljkTime|list', dataPath: 'sdpt_zfsdjy', scope: '2026-06，39行', kind: 'real' }, zfsdjyPosition),
         page('zcqjy/zfsdjy', 'PeriodTrading', { block: '中长期交易', title: '分时段交易', code: 'zfsdjy', endpoint: 'GET /sdpt/zfsdjy/list', dataPath: 'sdpt_zfsdjy', kind: 'real' }, zfsdjyTrades),
-        page('zcqjy/zjyap', 'TradeCalendar', { block: '中长期交易', title: '交易月历', code: 'zjyap', endpoint: 'GET /sdpt/zjyap/calendar', dataPath: 'sdpt_zjyap', scope: '28行', kind: 'real' }, tradeCalendar),
+        page('zcqjy/zjyap', 'TradeCalendar', { block: '中长期交易', title: '交易月历（山西·国网）', code: 'zjyap', endpoint: 'GET /sdpt/zjyap/calendar', dataPath: 'sdpt_zjyap', scope: '28行', kind: 'real' }, tradeCalendar),
 
         // 现货交易 /xhjy
         page('xhjy/zrqsb', 'DayAheadReport', { block: '现货交易', title: '日前上报', code: 'zrqsb', endpoint: 'POST /sdpt/zrqsb/list', dataPath: 'sdpt_zrqsb', scope: '按天 2026-04-01~06-30 (真实 4/1~6/4)', kind: 'real', note: '返回对象 {jgc,jq,dl,cl,jg,xjfw,zcqjj,clqx,zxcl}' }, dayAheadReport),
@@ -273,6 +312,16 @@ const router = createRouter({
 
         // 数据分析 /sjfx
         page('insight/cockpit', 'MarketInsightCockpit', { block: '数据分析', title: '市场洞察驾驶舱', code: 'market-insight-cockpit', endpoint: 'GET /agent-api/v1/market-insight/bundle + agent sessions (SSE)', dataPath: 'market_insight', scope: '市场快照/价格弹性/价差套利/节点热力/异动雷达 一屏确定性渲染 + AI 解读(选中即问)', kind: 'mixed' }, marketInsightCockpit),
+        // 市场洞察地区工作区规范入口（dljy#2995 阶段 A）：六条统一宿主路由，地址不含省份，
+        // 内容按当前全局地区经 insightWorkspace 注册表分发（云南默认关闭；山西兼容登记
+        // overview/prices 两页；广东/四川未开通，宿主显示未开通说明，不借用他省数据）。
+        // 路由层不按地区拦截（守卫放行），权限经 governance 权限别名与旧入口严格等价。
+        page('insight/overview', 'InsightOverview', { block: '数据分析', title: '市场总览', code: 'insight-overview', endpoint: '地区工作区分发（src/services/region/insightWorkspace.ts 按当前地区解析）', dataPath: '由地区工作区注册决定', scope: '阶段A骨架:统一宿主路由;已交付地区渲染对应页面,未交付显示建设占位,未登记显示未开通', note: '权限等价旧入口 /insight/cockpit（governance.insightPathAccessAliases）', insightPageId: 'overview' }, insightWorkspaceHost),
+        page('insight/prices', 'InsightPrices', { block: '数据分析', title: '价格与价差', code: 'insight-prices', endpoint: '地区工作区分发（src/services/region/insightWorkspace.ts 按当前地区解析）', dataPath: '由地区工作区注册决定', scope: '阶段A骨架:统一宿主路由;已交付地区渲染对应页面,未交付显示建设占位,未登记显示未开通', note: '权限等价旧入口 /sjfx/zrsjg（governance.insightPathAccessAliases）', insightPageId: 'prices' }, insightWorkspaceHost),
+        page('insight/supply', 'InsightSupply', { block: '数据分析', title: '供需与水电', code: 'insight-supply', endpoint: '地区工作区分发（src/services/region/insightWorkspace.ts 按当前地区解析）', dataPath: '由地区工作区注册决定', scope: '阶段A骨架:统一宿主路由;已交付地区渲染对应页面,未交付显示建设占位,未登记显示未开通', note: '权限等价旧入口 /sjfx/actualLoad（governance.insightPathAccessAliases）', insightPageId: 'supply' }, insightWorkspaceHost),
+        page('insight/grid-boundaries', 'InsightGridBoundaries', { block: '数据分析', title: '跨省与电网边界', code: 'insight-grid-boundaries', endpoint: '地区工作区分发（src/services/region/insightWorkspace.ts 按当前地区解析）', dataPath: '由地区工作区注册决定', scope: '阶段A骨架:统一宿主路由;已交付地区渲染对应页面,未交付显示建设占位,未登记显示未开通', note: '权限等价旧入口 /grid-assets/disclosures（governance.insightPathAccessAliases）', insightPageId: 'grid-boundaries' }, insightWorkspaceHost),
+        page('insight/plants', 'InsightPlants', { block: '数据分析', title: '场站市场表现', code: 'insight-plants', endpoint: '地区工作区分发（src/services/region/insightWorkspace.ts 按当前地区解析）', dataPath: '由地区工作区注册决定', scope: '阶段A骨架:统一宿主路由;已交付地区渲染对应页面,未交付显示建设占位,未登记显示未开通', note: '权限等价旧入口 /xhjy/yunnan/settlement-price、/xhjy/yunnan/node-price（governance.insightPathAccessAliases）', insightPageId: 'plants' }, insightWorkspaceHost),
+        page('insight/research', 'InsightResearch', { block: '数据分析', title: '研究工作台', code: 'insight-research', endpoint: '地区工作区分发（src/services/region/insightWorkspace.ts 按当前地区解析）', dataPath: '由地区工作区注册决定', scope: '阶段A骨架:统一宿主路由;已交付地区渲染对应页面,未交付显示建设占位,未登记显示未开通', note: '权限等价旧入口 /sjfx/zrxgx、/sjfx/zrxgx2、/sjfx/singleZsjfx（governance.insightPathAccessAliases）', insightPageId: 'research' }, insightWorkspaceHost),
         page('sjfx/singleZsjfx', 'DataAnalysis', { block: '数据分析', title: '数据分析', code: 'singleZsjfx', endpoint: 'POST /sdpt/zsjfx/singleData', dataPath: 'sdpt_zsjfx', scope: '91天×全63类型，每天 dataMap.series 60×96点', kind: 'mixed', note: '含实际值也含预测序列；63类型见 itemConfig' }, dataAnalysis),
         page('sjfx/zcqxhdl', 'ClearingSpotAnalysis', { block: '数据分析', title: '出清现货电量分析', code: 'zcqxhdl', endpoint: 'POST /sdpt/zcqxhdl/list (宽范围)', dataPath: 'sdpt_zcqxhdl', scope: '10序列×~65天(4/1~6/4)', kind: 'real' }, clearingSpotAnalysis),
         page('sjfx/zrxgx', 'PriceNewEnergyRelation', { block: '数据分析', title: '现货价格与新能源关系', code: 'zrxgx', endpoint: 'POST /sdpt/zcqxhdl/list24 (ts=回溯天数)', dataPath: 'sdpt_zcqxhdl', scope: '373天 2025-05~2026-06', kind: 'real', note: '{rqdj日前电价, xnyz/xnyg/xnyzd/xnygd, xd}' }, priceNewEnergyRelation),

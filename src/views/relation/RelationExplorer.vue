@@ -18,7 +18,7 @@ import { useEChart } from '../../composables/useEChart'
 import { useQuerySync } from '../../composables/useQuerySync'
 import { emptyOverlay } from '@/services/chart/chartOptions'
 import { seqColors } from '@/services/chart/chartStyle'
-import { usePageInsight } from '../../composables/usePageInsight'
+import { defineAiPage, useAiSidebar } from '@/features/aiSidebar'
 import { PAGE_PROMPT_KEYS } from '@/prompts'
 import {
   RELATION_HOURS,
@@ -246,11 +246,11 @@ function renderAll() {
   renderSensitivity()
 }
 
-const { askPage, registerPageInsight } = usePageInsight(PAGE_PROMPT_KEYS.marketDataAnalysis)
+const ai = useAiSidebar()
 // 「✨ 解读本页」：筛选切片 + 当前视图 + KPI 摘要（勿传 xd 逐日逐时散点全量）。
-function askInsight() {
+function insightContext(): Record<string, unknown> {
   const k = kpi.value
-  askPage(props.promptLabel, {
+  return {
     page: `${props.promptLabel} (${props.promptPage})`,
     run_date: runDate.value,
     days: days.value,
@@ -266,11 +266,14 @@ function askInsight() {
     },
     chart: `X=${props.xLabel}(${props.xUnit})、Y=电价(元/MWh)；三视图：热力图(小时×出力→均价)/散点矩阵(叠拟合线)/敏感度条`,
     basis: 'captured'
-  })
+  }
 }
 
-// 右下角悬浮球 = 本页解读入口：与上面「✨ 解读本页」按钮同一条链路、同一份切片。
-registerPageInsight(askInsight, props.promptLabel)
+// 页面接入 AI 侧边栏：悬浮球、「✨ 解读本页」按钮共用这份声明与切片（点击时刻求值）。
+defineAiPage({ label: props.promptLabel, promptKey: PAGE_PROMPT_KEYS.marketDataAnalysis, interpret: { context: insightContext } })
+function askInsight() {
+  ai.interpret()
+}
 
 onMounted(loadData)
 watch(runDate, loadData)                       // 换运行日 → 重新取数

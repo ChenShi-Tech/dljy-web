@@ -6,6 +6,7 @@
 import { onMounted, ref, watch } from 'vue'
 import { Loader2, MessageSquarePlus, PanelLeftClose, PanelLeftOpen, Pencil, Trash2 } from 'lucide-vue-next'
 import SavedAnalysisViews from './SavedAnalysisViews.vue'
+import { historySourceLabel } from './historySources'
 import {
   listHistorySessions,
   renameHistorySession,
@@ -19,7 +20,7 @@ const props = withDefaults(
   { activeSessionId: null, collapsed: false, pageKey: '' }
 )
 const emit = defineEmits<{
-  select: [sessionId: string, scenario: AgentRunScenario]
+  select: [sessionId: string, scenario: AgentRunScenario, pageKey: string]
   newChat: []
   'update:collapsed': [value: boolean]
 }>()
@@ -47,24 +48,9 @@ function scenarioLabel(s: string): string {
   return SCENARIO_LABELS[s] ?? '自定义编排'
 }
 
-// 来源接入点标签（#498 全入口持久化后区分会话来自哪个页面；与各接入点 history-key 一一对应）。
-// 未命中（旧数据/未标注）回退 scenario 标签。
-const PAGE_KEY_LABELS: Record<string, string> = {
-  workbench: '工作台',
-  ai_center: 'AI 中心',
-  sidekick_exposure: '敞口分析',
-  sidekick_spot: '监盘解读',
-  morning_brief: '交易晨报',
-  pre_submit_check: '申报体检',
-  policy_intel: '政策情报',
-  storage_copilot: '储能测算',
-  review_center: '复盘中心',
-  declaration_market: '申报台·情报',
-  declaration_draft: '申报台·起草',
-  captured_browser: '数据浏览器'
-}
+// 来源接入点标签见 historySources.ts（与侧边栏运行中会话共用）；未命中（旧数据/未标注）回退 scenario 标签。
 function sourceLabel(s: HistorySessionMeta): string {
-  return PAGE_KEY_LABELS[s.page_key ?? ''] ?? scenarioLabel(s.scenario)
+  return historySourceLabel(s.page_key) ?? scenarioLabel(s.scenario)
 }
 
 // updated_at 为 epoch 秒 → 今天 HH:MM / 昨天 / MM-DD / YYYY-MM-DD
@@ -118,7 +104,7 @@ defineExpose({ reload })
 
 function onSelect(s: HistorySessionMeta) {
   if (editingId.value === s.session_id) return
-  emit('select', s.session_id, s.scenario)
+  emit('select', s.session_id, s.scenario, s.page_key ?? '')
 }
 
 function startRename(s: HistorySessionMeta, e: Event) {

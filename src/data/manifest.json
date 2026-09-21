@@ -845,13 +845,13 @@
     "feature": null
   },
   {
-    "id": "exposure-board",
-    "path": "/zcqjy/exposure",
-    "title": "中长期敞口看板",
-    "domain": "中长期交易",
-    "kind": "mixed",
-    "endpoint": "POST /agent-api/agent/quant/exposure",
-    "dataPath": "quant_direct",
+    "id": "hedge-workbench",
+    "path": "/xhjy/hedge",
+    "title": "中长期与现货套保",
+    "domain": "现货交易",
+    "kind": "real",
+    "endpoint": "GET /api/v1/hedge/{overview,months,summary,band/*,caps,baselines,mechanism-params} + POST simulate",
+    "dataPath": "midlong_readmodel + hedge legs",
     "nav": {
       "group": null,
       "listed": true
@@ -862,7 +862,7 @@
   {
     "id": "zccljk",
     "path": "/zcqjy/zccljk",
-    "title": "持仓量监控",
+    "title": "持仓量监控（山西采集）",
     "domain": "中长期交易",
     "kind": "real",
     "endpoint": "GET /sdpt/zfsdjy/ccljkDay|ccljkTime|list",
@@ -892,7 +892,7 @@
   {
     "id": "zjyap",
     "path": "/zcqjy/zjyap",
-    "title": "交易月历",
+    "title": "交易月历（山西·国网）",
     "domain": "中长期交易",
     "kind": "real",
     "endpoint": "GET /sdpt/zjyap/calendar",

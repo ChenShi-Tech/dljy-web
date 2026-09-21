@@ -25,7 +25,7 @@ import {
   type OptimizeBidFrontierPoint,
   type OptimizeBidResult
 } from '@/services/forecast/mlForecastClient'
-import { fetchExposure, type ExposureResult } from '@/services/quant/quantClient'
+import { fetchOverview, type HedgeOverview } from '@/services/hedge/hedgeApi'
 import { useEChart } from '../composables/useEChart'
 import { useQuerySync } from '../composables/useQuerySync'
 import { axisTooltip, bottomLayoutLegend, bottomToolbox, emptyOverlay, insideZoom } from '@/services/chart/chartOptions'
@@ -34,6 +34,8 @@ import { DATA_BASIS_LABEL, type DataBasis } from '@/services/dataBasis'
 import { assertOperational } from '@/services/data/trustGate'
 import { getCurrentUser } from '@/services/auth'
 import { currentRegion } from '@/services/region/regionContext'
+// 默认目标日与一日作业台同源（shared 地区交易日历口径）
+import { defaultTargetDate } from 'shared/trading-rules/trading-calendar.mjs'
 import { onRegionChange } from '../composables/useRegionReload'
 import RegionDataBanner from '@/components/region/RegionDataBanner.vue'
 import CapabilitySupportBadge from '../components/CapabilitySupportBadge.vue'
@@ -43,12 +45,14 @@ import {
   createDeclaration,
   declarationModeOf,
   DECLARATION_MODE_LABEL,
+  EDITABLE_DRAFT_STATUSES,
   fetchDeclarationMeta,
   getDeclaration,
   listDeclarations,
   listDeclarationsPage,
   markDeclarationCleared,
   runDeclarationRiskCheck,
+  secondSignatureNotice,
   STATUS_LABEL,
   stepOfStatus,
   submitDeclaration,
@@ -118,14 +122,13 @@ function fmtDate(d: Date): string {
   const local = new Date(d.getTime() + 8 * 3600 * 1000)
   return local.toISOString().slice(0, 10)
 }
-// 默认目标日：当前（+08:00）尚未过 10:30 → 明天可报；已过 → 后天（明天窗口已关）
-function defaultTargetDate(): string {
-  const now = new Date()
-  const local = new Date(now.getTime() + 8 * 3600 * 1000)
-  const pastDeadline = local.getUTCHours() > 10 || (local.getUTCHours() === 10 && local.getUTCMinutes() >= 30)
-  return fmtDate(new Date(now.getTime() + (pastDeadline ? 2 : 1) * 86400000))
-}
-const targetDate = ref(defaultTargetDate())
+// 默认目标日单源化（spot-trading-module-hygiene）：与一日作业台同一 shared/trading-rules
+// 口径——已登记地区按 primarySpotTarget（D+N）推导；未登记地区回落明日（同作业台回退口径）。
+// 申报窗口是否已关不再本地重复 10:30 判定，仍由既有 deadline 倒计时提示与演练降级兜底。
+const targetDate = ref(
+  defaultTargetDate(currentRegion.value.id, fmtDate(new Date()))
+  ?? fmtDate(new Date(Date.now() + 86400000))
+)
 // 目标日 ⇄ 路由 query：刷新/分享链接后还原同一申报日
 useQuerySync({ targetDate })
 // 目标日 ±1 天快捷步进（清单 C-2，复盘中心头部同款交互）：改目标日即走既有 refresh 链，
@@ -400,7 +403,7 @@ const errorMsg = ref('')
 
 const step = computed(() => (current.value ? stepOfStatus(current.value.status) : 0))
 const statusLabel = computed(() => (current.value ? STATUS_LABEL[current.value.status] : '未创建'))
-const canEditCurrentCurve = computed(() => !!current.value && ['DRAFT', 'RISK_CHECKED', 'REJECTED'].includes(current.value.status))
+const canEditCurrentCurve = computed(() => !!current.value && EDITABLE_DRAFT_STATUSES.includes(current.value.status))
 
 function applyOptimizedCurve(point: OptimizeBidFrontierPoint) {
   decisionError.value = ''
@@ -636,7 +639,7 @@ function curveMwToEnergy96(curveMw: number[]): number[] {
 
 // 风控检查输入：当月中长期合约总电量（调 harness 敞口端点用）
 const exposureTotalMwh = ref(20000)
-const exposure = ref<ExposureResult | null>(null)
+const exposure = ref<HedgeOverview | null>(null)
 const exposureLoading = ref(false)
 const exposureStatus = ref<'idle' | 'loading' | 'auto' | 'manual' | 'failed'>('idle')
 // 失败原因原文。后端对「该地区/该月无此品类采集数据」返回的是 503 + 明确 detail
@@ -645,15 +648,17 @@ const exposureStatus = ref<'idle' | 'loading' | 'auto' | 'manual' | 'failed'>('i
 const exposureError = ref('')
 const exposureTouched = ref(false)
 const exposureSourceIsMock = computed(() => {
-  const source = exposure.value?.source.toLowerCase() ?? ''
-  return source.includes('mock') || source.includes('synthetic')
+  // 套保 overview 的腿水位带 mock/来源标注；无腿数据按非 mock 处理（页面另有未知时段提示）。
+  const legs = (exposure.value?.legs ?? {}) as Record<string, { mock?: boolean; source?: string }>
+  return Object.values(legs).some((leg) => Boolean(leg?.mock))
 })
 const exposureSourceText = computed(() => {
   if (!exposure.value) return ''
+  const legs = (exposure.value.legs ?? {}) as Record<string, { label?: string; status?: string }>
+  const stale = Object.entries(legs).filter(([, leg]) => leg?.status === 'STALE')
   const prefix = exposureSourceIsMock.value ? '模拟数据' : '数据来源'
-  return exposure.value.warning
-    ? `${prefix}：${exposure.value.source}，${exposure.value.warning}`
-    : `${prefix}：${exposure.value.source}`
+  const legText = Object.entries(legs).map(([key, leg]) => `${key}(${leg?.status ?? '?'})`).join('、')
+  return stale.length ? `${prefix}：${legText}，含过期腿，请以结算复核为准` : `${prefix}：${legText || '套保服务'}`
 })
 const regionPriceCap = computed(() => {
   const mech = getRegionSpotProfile(currentRegion.value.id).mechanism
@@ -680,20 +685,16 @@ async function refreshExposure(force = false) {
   const generation = ++exposureGeneration
   try {
     if (force) exposureTouched.value = false
-    const result = await fetchExposure({
-      month,
-      total_mwh: normalizeExposureTotalMwh(exposureTotalMwh.value),
-      mode: 'peak_valley',
-      expected_source: 'renewable'
+    // HA-02（9.2）：目标日「仅中长期」逐时段敞口；机制电量不计入申报约束。
+    const result = await fetchOverview({
+      fromDate: targetDate.value,
+      toDate: targetDate.value,
+      granularity: 'HOUR',
+      scope: 'company',
     })
     if (generation !== exposureGeneration) return
     exposure.value = result
-    if (!exposureTouched.value) {
-      exposureTotalMwh.value = Math.round(result.total_mwh * 100) / 100
-      exposureStatus.value = 'auto'
-    } else {
-      exposureStatus.value = 'manual'
-    }
+    exposureStatus.value = exposureTouched.value ? 'manual' : 'auto'
   } catch (error) {
     if (generation !== exposureGeneration) return
     exposureStatus.value = 'failed'
@@ -872,7 +873,7 @@ function onPointInputWheel(e: WheelEvent, index: number) {
 const detail96 = computed(() => {
   if (!current.value) return [] as { label: string; mw: string; mwh: string }[]
   const saved = current.value.energyCurveMwh96
-  const editing = ['DRAFT', 'RISK_CHECKED', 'REJECTED'].includes(current.value.status)
+  const editing = EDITABLE_DRAFT_STATUSES.includes(current.value.status)
   return Array.from({ length: POINT_COUNT }, (_, i) => {
     const mw = editing
       ? Math.round((pointMwNumeric.value[i] ?? 0) * 100) / 100
@@ -1278,8 +1279,10 @@ function decide(decision: 'approve' | 'reject') {
     () => approveDeclaration(current.value!.id, decision, approvalComment.value || undefined),
     (declaration) => {
       // L3 双签第一签：服务端只落签不转态，单据仍是待审批——明示而不是让人以为已批准
-      if (declaration.awaitingSecondSignature) {
-        ElMessage.warning('L3 双签：第一签已记录，需第二位审批人批准后本单才进入已审批')
+      // （文案单源 secondSignatureNotice，与审批队列共用，防漂移）
+      const secondSignNote = secondSignatureNotice(declaration)
+      if (secondSignNote) {
+        ElMessage.warning(secondSignNote)
       }
       current.value = declaration
       approvalComment.value = ''
@@ -1704,7 +1707,7 @@ onRegionChange(() => {
           </details>
 
           <!-- 曲线编辑（草稿/驳回可改）-->
-          <template v-if="['DRAFT', 'RISK_CHECKED', 'REJECTED'].includes(current.status)">
+          <template v-if="EDITABLE_DRAFT_STATUSES.includes(current.status)">
             <div class="batch-row">
               <span class="muted">批量段设置</span>
               <input v-model.number="batch.from" type="number" min="0" max="95" title="起始时点（15min 序号 0~95）" />
@@ -1761,12 +1764,14 @@ onRegionChange(() => {
               </div>
               <p class="exposure-hint">
                 <template v-if="exposureStatus === 'auto' && exposure">
-                  已联动敞口端点：套保率 {{ Math.round(exposure.hedge_ratio * 100) }}%，现货卖出敞口 {{ fmt1(exposure.spot_sell_exposure_mwh) }} MWh。
+                  已联动套保工作台（仅中长期口径）：目标日逐时段已知
+                  {{ exposure.ratio.coverage.coveredCount }}/{{ exposure.ratio.coverage.totalCount }} 时段；
+                  未知时段不施加约束，人工值标注「人工」。
                   <span class="exposure-source" :class="{ mock: exposureSourceIsMock }">{{ exposureSourceText }}</span>
                 </template>
-                <template v-else-if="exposureStatus === 'manual'">已手动覆盖，刷新敞口可重新拉取端点结果。</template>
+                <template v-else-if="exposureStatus === 'manual'">已手动覆盖（人工），刷新敞口可重新拉取套保结果。</template>
                 <template v-else-if="exposureStatus === 'failed'">
-                  {{ exposureError || '敞口端点暂不可用' }}，保留当前手动值。
+                  {{ exposureError || '套保服务暂不可用' }}，保留当前手动值（人工）。
                 </template>
               </p>
             </template>

@@ -144,12 +144,22 @@ export async function fetchMarketInsightPriceAnalysisContract(params: {
   })
 }
 
+/** __list__ 出清清单允许发请求的地区：山西（三德公司私有族的宿主地区）。 */
+const CLEARING_LIST_REGION_ALLOWED = 'shanxi'
+
 export async function fetchMarketInsightClearingSpotContract(params: {
   region: string
   timeoutMs?: number
   dateFrom?: string
   dateTo?: string
 }): Promise<MarketInsightClearingSpotContract> {
+  // #2991：sdpt_zcqxhdl/__list__（连续出清序列）在 dljy 后端注册表（capture-families
+  // datasetOwners）登记为山西三德公司私有清单，只有山西有这个键。旧实现任何地区都会发
+  // 请求，云南等地拿到的只会是空——更糟的是存在跨地区读取他省公司私有清单的风险。
+  // 现改为客户端硬拦截：非山西地区不发任何请求，直接返回「本地区不适用」的诚实空态。
+  if (params.region !== CLEARING_LIST_REGION_ALLOWED) {
+    return clearingNotApplicableContract(params.region)
+  }
   if (!capabilityAllowsRequest(ROUTES.clearing, params.region)) {
     return toMarketInsightClearingSpotContract({
       payload: {},
@@ -168,6 +178,27 @@ export async function fetchMarketInsightClearingSpotContract(params: {
     payload: body,
     meta: metaFrom({ region: params.region, response: res, body })
   })
+}
+
+/**
+ * 非山西地区的「本地区不适用」空态：不发请求、不带任何数据。
+ * 元信息与能力未开通分支一致（只给地区），空 payload 由契约适配层统一归为 missing 并按既有约定标注非真实；
+ * 页面在非山西地区直接显示停用说明卡，不渲染这份契约。
+ */
+function clearingNotApplicableContract(region: string): MarketInsightClearingSpotContract {
+  const contract = toMarketInsightClearingSpotContract({
+    payload: {},
+    meta: { region_requested: region, region_served: region, region_fallback: false }
+  })
+  contract.data_availability = contract.data_availability.map((item) => ({
+    ...item,
+    note: `本地区不适用：sdpt_zcqxhdl/__list__ 是山西公司专属出清清单（dljy#2991），${region} 无对应键，客户端已拦截请求。`
+  }))
+  contract.blocks.clearing_spot.notes = [
+    ...contract.blocks.clearing_spot.notes,
+    `#2991：非山西地区（当前 ${region}）不读取 __list__——旧实现会跨地区读取山西公司私有清单，已停用；获权场站的申报、出清与实际对照后续在「场站市场表现」提供。`
+  ]
+  return contract
 }
 
 export async function fetchMarketInsightActualLoadContract(params: {

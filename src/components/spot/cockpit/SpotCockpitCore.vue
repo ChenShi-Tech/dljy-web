@@ -23,6 +23,9 @@ import { chartChrome } from '@/composables/useTheme'
 import { onRegionChange } from '@/composables/useRegionReload'
 import { COCKPIT_PRIVATE_FAMILIES, loadCockpit, type CockpitData, type DecisionItem } from '@/services/cockpitData'
 import { hasCgnYunnanPriceEntitlement } from '@/services/market/cgnYunnanLivePrice'
+import { fetchCaptureCoverage } from '@/services/market/captureCoverage'
+import { todayBeijing } from '@/utils/beijingDate'
+import { resolveCockpitInitialDate } from '@/utils/spotDateDefaults'
 import type { PlantForecastArena } from '@/services/market/plantForecastArena'
 import type { SpotMarket } from '@/services/market/spotClient'
 import { exportCsv } from '@/utils/exportCsv'
@@ -860,7 +863,12 @@ function onDateChange() {
   void reload()
 }
 
-onMounted(() => {
+onMounted(async () => {
+  // 初始展示日跟随数据源覆盖区间（spot-trading-date-defaults）：今天仍在覆盖区内取今天，
+  // 否则取覆盖区最后一天（云南价格恒滞后，钉死常量会长期落在无数据日）；覆盖不可得时
+  // 保留 props.initialDate 回退常量。只约束初值：用户手选日期后不再干预。
+  const coverage = await fetchCaptureCoverage(props.regionId, 'clearing')
+  date.value = resolveCockpitInitialDate(todayBeijing(), coverage, props.initialDate)
   void reload()
 })
 
@@ -952,8 +960,8 @@ onRegionChange(() => {
         <div class="lab">全市场{{ market === 'da' ? '日前' : '实时' }}均价</div>
         <div class="val da num">{{ fmt(kpis?.marketAvg, 0) }}<small>元/MWh</small></div>
       </div>
-      <div class="kpi">
-        <div class="lab">结算均价</div>
+      <div class="kpi" title="按厂站等权平均的结算价口径，不是集团量费加权综合结算均价（dljy#2992）">
+        <div class="lab">样站等权结算价</div>
         <div class="val gold num">{{ fmt(kpis?.settlementAvgPrice, 0) }}<small>元/MWh</small></div>
         <div v-if="kpis?.settlementDaPrice != null || kpis?.settlementRtPrice != null" class="delta">
           DA {{ fmt(kpis?.settlementDaPrice, 0) }} / RT {{ fmt(kpis?.settlementRtPrice, 0) }}
@@ -1151,11 +1159,11 @@ onRegionChange(() => {
             </div>
             <div class="pos-cell">
               <div class="l">中长期覆盖率</div>
-              <div class="v num">{{ position?.hasData ? fmt(position.coverageRate * 100, 0) : '—' }}<small>%</small></div>
+              <div class="v num">{{ position?.hasData && position.coverageRate != null ? fmt(position.coverageRate * 100, 0) : '不可计算' }}<small>%</small></div>
             </div>
             <div class="pos-cell">
               <div class="l">现货敞口</div>
-              <div class="v num neg">{{ position?.hasData ? fmt(position.openExposurePct, 0) : '—' }}<small>%</small></div>
+              <div class="v num neg">{{ position?.hasData && position.openExposurePct != null ? fmt(position.openExposurePct, 0) : '—' }}<small>%</small></div>
               <div class="bar-track"><div class="bar-fill" :style="{ width: `${Math.min(position?.openExposurePct ?? 0, 100)}%`, background: 'var(--ck-neg)' }"></div></div>
             </div>
           </div>

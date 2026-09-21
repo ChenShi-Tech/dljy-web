@@ -15,10 +15,35 @@ export type SpotTradingAdapterMeta = Partial<Omit<
 }
 
 export type DayAheadReportGroupKey = 'dl' | 'jg' | 'jgc' | 'zcqjj' | 'jq' | 'jq2' | 'cl' | 'zxcl'
-export type DayAheadReportRow = Record<string, unknown>
-export type DayAheadEnergyRow = Record<string, unknown> & {
-  type?: unknown
-  date?: unknown
+
+/**
+ * sdpt 采集宽表点位取值：数值为主，保留字符串数字与空位（采集 JSON 未做数值保证，
+ * 视图层既有 Number() 防御即为此）。
+ */
+export type SpotDayAheadPointValue = number | string | null
+
+/**
+ * sdpt_* 采集宽表原始行（p1..p96 + 汇总/口径字段）的窄类型，替换此前的
+ * Record<string, unknown>（视图层曾因此整行 any）。字段按消费路径观测收敛；
+ * 点位读取统一走 `p${number}` 键（PTS_96 / pointKey），出现新字段时在此登记。
+ */
+export type SpotDayAheadRow = {
+  /** 宽表口径 type（字典键，见 DECLARATION_QTY/PRICE_TYPE_CODES） */
+  type?: number | string
+  /** 合计（日前上报行；预估行的合计在 total） */
+  hj?: SpotDayAheadPointValue
+  /** 96 个 15 分钟点位 p1..p96 */
+  [point: `p${number}`]: SpotDayAheadPointValue | undefined
+}
+
+export type DayAheadReportRow = SpotDayAheadRow
+export type DayAheadEnergyRow = SpotDayAheadRow & {
+  /** 运行日（YYYY-MM-DD；契约层 type=4 归一行的必有字段，缺失行已被过滤） */
+  date: string
+  /** 售电公司 */
+  sdgs?: string
+  /** 日合计 */
+  total?: SpotDayAheadPointValue
 }
 
 export type SpotDayAheadReportBlock = {
@@ -66,10 +91,10 @@ function asPayloadRecord(payload: unknown): Record<string, unknown> {
   return Object.keys(data).length ? data : body
 }
 
-function envelopeRows(payload: unknown): DayAheadEnergyRow[] {
+function envelopeRows(payload: unknown): Array<Record<string, unknown>> {
   const body = asRecord(payload)
   const raw = Array.isArray(body.rows) ? body.rows : Array.isArray(body.data) ? body.data : Array.isArray(payload) ? payload : []
-  return raw.filter((row): row is DayAheadEnergyRow => Boolean(row && typeof row === 'object'))
+  return raw.filter((row): row is Record<string, unknown> => Boolean(row && typeof row === 'object'))
 }
 
 function normalizeBasis(meta?: SpotTradingAdapterMeta): ModuleContractBasis {
@@ -149,7 +174,11 @@ export function toSpotDayAheadEnergyContract(input: {
   payload: unknown
   meta?: SpotTradingAdapterMeta
 }): SpotDayAheadEnergyContract {
-  const rows = envelopeRows(input.payload).filter((row) => String(row.type) === '4')
+  // 契约边界归一：type=4 之外的原始行不承诺 DayAheadEnergyRow 形状（如必有 date），
+  // 过滤后才断言为预估行。
+  const rows = envelopeRows(input.payload)
+    .filter((row) => String(row.type) === '4')
+    .map((row) => row as DayAheadEnergyRow)
   const status = statusFrom(rows.length > 0, input.meta)
   const source = status === 'missing' ? null : `${SPOT_DAY_AHEAD_ENERGY_FAMILY}/${SPOT_DAY_AHEAD_ENERGY_MATCH}`
   const availability: ModuleAvailabilityItem[] = [{

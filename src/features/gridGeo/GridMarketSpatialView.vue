@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { computed, defineAsyncComponent, onMounted, ref, shallowRef, watch } from 'vue'
+import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
 import { selectedCompanyId } from '@/services/company/companyContext'
 import { currentRegion } from '@/services/region/regionContext'
+import { todayBeijing } from '@/utils/beijingDate'
 import { Activity, ArrowUpRight, BarChart3, CalendarDays, CircleAlert, Crosshair, Gauge, Layers3, Orbit, RefreshCw, TrendingUp, Zap } from 'lucide-vue-next'
 import { onRegionChange } from '@/composables/useRegionReload'
 import ProvinceFlatMap from './ProvinceFlatMap.vue'
@@ -10,6 +11,10 @@ import { useGridGeoViewPreference } from './useViewPreference'
 // Cesium 约 4 MiB，切到 2D 视图用不到；改为异步加载，按需拉取。
 const CesiumPlantMap = defineAsyncComponent(() => import('./CesiumPlantMap.vue'))
 import GridOperatorProfileBanner from './GridOperatorProfileBanner.vue'
+import GridObjectContextBar from './GridObjectContextBar.vue'
+import GridObjectDrawer from './GridObjectDrawer.vue'
+import type { GridObjectReference } from './objectNavigation'
+import { useGridObjectContext } from './useGridObjectContext'
 import { fetchGridGeoManifest, fetchGridGeoPlants } from './client'
 import { loadGridMarketSpatialSnapshot, type GridMarketSpatialSnapshot } from './marketSpatial'
 import {
@@ -22,17 +27,29 @@ import type { GridGeoPlant, GridGeoSelection, GridGeoTerrainStatus, GridGeoViewM
 
 type MapExpose = { flyTerrainTour?: () => void }
 const mapRef = ref<MapExpose | null>(null)
+const objectContext = useGridObjectContext()
+const detailOpen = ref(false)
 
 const plants = shallowRef<GridGeoPlant[]>([])
 const snapshot = shallowRef<GridMarketSpatialSnapshot | null>(null)
 const loading = ref(true)
 const error = ref('')
-const date = ref('2026-05-01')
+const assetsLoading = ref(true)
+const date = ref(objectContext.hasContext.value ? objectContext.date.value : todayBeijing())
+const selectedWindow = computed(() => date.value === objectContext.date.value ? objectContext.timeWindow.value : null)
 const layer = ref<GridMarketLayer>('priceSpread')
 // 首次进入落三维地形，之后记住上次选择；平面地图仍可一键切回。
 const { viewMode, terrainProvider, hillshadeEnabled, verticalExaggeration } =
   useGridGeoViewPreference('market', { verticalExaggeration: 1.35 })
 const selectedPlantId = ref<string | null>(null)
+const contextPlants = computed(() => {
+  if (!objectContext.active.value) return []
+  if (!objectContext.hasContext.value) return plants.value
+  const reference = objectContext.reference.value, detail = objectContext.detail.value
+  if (!reference || !detail) return []
+  const ids = reference.kind === 'plant' ? [reference.id] : detail.relations.plants.filter((plant) => plant.regionId === currentRegion.value.id).map((plant) => plant.id)
+  return plants.value.filter((plant) => ids.includes(plant.plantId))
+})
 
 // 浮动资产卡可拖动：地图上被卡片遮住的资产，不必先关卡片再看。
 const cardOffset = ref<{ x: number; y: number } | null>(null)
@@ -95,9 +112,12 @@ const operatorProfile = ref<GridOperatorProfile | null>(null)
 const terrainStatus = ref<GridGeoTerrainStatus>({ kind: 'arcgis-terrain', status: 'loading', label: '正在加载地形' })
 // 晕渲图层与 ArcGIS 影像同域，该域对部分出口 IP 整体 403；失败必须让面板可见。
 const hillshadeAvailable = ref<boolean | null>(null)
+let appliedObjectContext = ''
 let loadRequestId = 0
+let snapshotRequestId = 0
 
 const selectedPlant = computed(() => plants.value.find((plant) => plant.plantId === selectedPlantId.value) ?? null)
+const selectedReference = computed<GridObjectReference | null>(() => selectedPlant.value ? { kind: 'plant', id: selectedPlant.value.plantId, regionId: selectedPlant.value.regionId, gridOperator: selectedPlant.value.gridOperator } : null)
 const selectedMetric = computed(() => snapshot.value?.metrics.find((metric) => metric.plantId === selectedPlantId.value) ?? null)
 /** 平面图下钻到的地市州（#1424）；id 集合由地图给出，这里不自行判定几何归属。 */
 const focusedSubdivision = ref<{ adcode: string; name: string; plantIds: string[] } | null>(null)
@@ -142,13 +162,45 @@ function plantFor(metric: GridMarketMetric) {
 }
 
 function onSelect(selection: GridGeoSelection | null) {
+  if (selection && !contextPlants.value.some((plant) => plant.plantId === selection.plantId)) return
   selectedPlantId.value = selection?.plantId ?? null
+}
+
+async function loadSnapshot() {
+  const requestId = ++snapshotRequestId
+  snapshot.value = null; error.value = ''
+  if (!objectContext.active.value) { loading.value = false; return }
+  if (assetsLoading.value || objectContext.loading.value) { loading.value = true; return }
+  if (objectContext.hasContext.value && !contextPlants.value.length) { loading.value = false; error.value = objectContext.error.value || '当前对象尚未关联本公司、本地区的场站，未加载其他场站数据。'; return }
+  loading.value = true
+  try {
+    const nextSnapshot = await loadGridMarketSpatialSnapshot(contextPlants.value, date.value, { companyId: selectedCompanyId.value, regionId: currentRegion.value.id })
+    if (requestId === snapshotRequestId) snapshot.value = nextSnapshot
+  } catch (cause) {
+    if (requestId === snapshotRequestId) error.value = cause instanceof Error ? cause.message : '市场空间快照加载失败'
+  } finally { if (requestId === snapshotRequestId) loading.value = false }
+}
+
+async function syncObjectSelection() {
+  if (!objectContext.active.value) return
+  snapshotRequestId += 1; snapshot.value = null
+  if (objectContext.hasContext.value) {
+    const key = JSON.stringify([objectContext.reference.value, objectContext.date.value, selectedCompanyId.value])
+    if (key !== appliedObjectContext) {
+      appliedObjectContext = key
+      selectedPlantId.value = null
+      focusedSubdivision.value = null
+      if (objectContext.reference.value) date.value = objectContext.date.value
+    }
+    if (!objectContext.loading.value && !contextPlants.value.some(plant => plant.plantId === selectedPlantId.value)) selectedPlantId.value = contextPlants.value[0]?.plantId ?? null
+  } else appliedObjectContext = ''
+  await loadSnapshot()
 }
 
 async function load() {
   const requestId = ++loadRequestId
-  const companyId = selectedCompanyId.value
-  const regionId = currentRegion.value.id
+  assetsLoading.value = true
+  snapshotRequestId += 1; snapshot.value = null
   loading.value = true
   error.value = ''
   selectedPlantId.value = null
@@ -157,23 +209,21 @@ async function load() {
     if (requestId !== loadRequestId) return
     plants.value = plantResponse.data?.items ?? []
     operatorProfile.value = manifest.operatorProfile
-    const nextSnapshot = await loadGridMarketSpatialSnapshot(plants.value, date.value, {
-      companyId,
-      regionId,
-    })
-    if (requestId !== loadRequestId) return
-    snapshot.value = nextSnapshot
+    assetsLoading.value = false
+    await syncObjectSelection()
   } catch (cause) {
     if (requestId !== loadRequestId) return
     snapshot.value = null
     error.value = cause instanceof Error ? cause.message : '市场空间快照加载失败'
+    loading.value = false
   } finally {
-    if (requestId === loadRequestId) loading.value = false
+    if (requestId === loadRequestId) assetsLoading.value = false
   }
 }
 
 function resetMarketScope() {
   loadRequestId += 1
+  snapshotRequestId += 1
   plants.value = []
   snapshot.value = null
   selectedPlantId.value = null
@@ -189,6 +239,8 @@ function resetMarketScope() {
 onMounted(load)
 onRegionChange(resetMarketScope)
 watch(selectedCompanyId, resetMarketScope)
+watch(() => [objectContext.hasContext.value, objectContext.reference.value, objectContext.detail.value, objectContext.loading.value, objectContext.date.value, objectContext.active.value], syncObjectSelection)
+onBeforeUnmount(() => { loadRequestId += 1; snapshotRequestId += 1 })
 </script>
 
 <template>
@@ -197,10 +249,12 @@ watch(selectedCompanyId, resetMarketScope)
     <header class="market-header">
       <div class="title"><span><Orbit :size="22" /></span><div><small>GRID MARKET SITUATION</small><h2>电力市场空间态势</h2></div></div>
       <div class="header-actions">
-        <label><CalendarDays :size="14" /><input v-model="date" type="date" /></label>
+        <label><CalendarDays :size="14" /><input v-model="date" type="date" @change="loadSnapshot" /></label>
         <button :disabled="loading" @click="load"><RefreshCw :size="14" :class="{ spin: loading }" /> 刷新快照</button>
       </div>
     </header>
+    <GridObjectContextBar :date="date" />
+    <GridObjectDrawer v-model="detailOpen" :object="selectedReference" :date="date" :from="selectedWindow?.from" :to="selectedWindow?.to" />
 
     <main class="map-stage">
       <!--
@@ -210,7 +264,7 @@ watch(selectedCompanyId, resetMarketScope)
       <component
         :is="viewMode === '2d' ? ProvinceFlatMap : CesiumPlantMap"
         ref="mapRef"
-        :plants="plants"
+        :plants="contextPlants"
         :view-mode="viewMode"
         :selected-plant-id="selectedPlantId"
         :terrain-provider="terrainProvider"
@@ -288,6 +342,7 @@ watch(selectedCompanyId, resetMarketScope)
           <span><small>出力偏差</small><b>{{ selectedMetric?.outputDeviationMw?.toFixed(1) ?? '—' }} MW</b></span>
           <span><small>关注时段</small><b>{{ selectedMetric?.anomalyCount ?? 0 }}</b></span>
         </div>
+        <button class="object-detail-button" @click="detailOpen = true">完整信息 <ArrowUpRight :size="13" /></button>
         <nav><RouterLink v-if="currentRegion.id === 'yunnan'" to="/xhjy/yunnan/node-price">节点电价 <ArrowUpRight :size="12" /></RouterLink><RouterLink :to="currentRegion.id === 'yunnan' ? '/xhjy/yunnan/spot-pnl' : '/xhjy/risk-center'">风险工作台 <ArrowUpRight :size="12" /></RouterLink></nav>
       </article>
 
@@ -308,6 +363,7 @@ watch(selectedCompanyId, resetMarketScope)
 </template>
 
 <style scoped>
+.object-detail-button { margin-top: 10px; padding: 7px 10px; color: var(--text); background: var(--panel); border: 1px solid var(--line); border-radius: 6px; font: inherit; cursor: pointer; }
 .market-shell { --cyan:var(--primary); overflow:hidden; min-height:calc(100vh - 86px); color:var(--text); border:1px solid var(--line); border-radius:14px; background:var(--bg); }
 .market-header { display:flex; height:68px; padding:0 18px; align-items:center; justify-content:space-between; border-bottom:1px solid var(--line); background:var(--panel); }
 .title { display:flex; align-items:center; gap:11px; }.title>span{display:grid;width:39px;height:39px;place-items:center;color:var(--cyan);border-radius:11px;background:var(--primary-tint);box-shadow:none}

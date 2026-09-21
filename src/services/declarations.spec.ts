@@ -97,3 +97,35 @@ describe('invalidPointIndexesOf', () => {
     expect(invalidPointIndexesOf(Array.from({ length: 96 }, (_, i) => i % 10))).toEqual([])
   })
 })
+
+// ---------------------------------------------------------------------------
+// 状态分组命名常量 + L3 双签提示（spot-trading-module-hygiene 收口）：
+// 锚定成员与历史字面量逐一相同；双签文案与两处消费页历史文案一致。
+import {
+  EDITABLE_DRAFT_STATUSES,
+  PRE_APPROVAL_STATUSES,
+  secondSignatureNotice
+} from './declarations'
+
+describe('状态分组命名常量', () => {
+  it('EDITABLE_DRAFT_STATUSES = 草稿/已风控检查/已驳回（可编辑草稿类）', () => {
+    expect([...EDITABLE_DRAFT_STATUSES]).toEqual(['DRAFT', 'RISK_CHECKED', 'REJECTED'])
+  })
+
+  it('PRE_APPROVAL_STATUSES = 草稿/已风控检查/待审批（送审前候选）', () => {
+    expect([...PRE_APPROVAL_STATUSES]).toEqual(['DRAFT', 'RISK_CHECKED', 'PENDING_APPROVAL'])
+  })
+})
+
+describe('secondSignatureNotice', () => {
+  it('双签第一签 → 提示等待第二位审批人，文案与历史一致', () => {
+    expect(secondSignatureNotice({ awaitingSecondSignature: true })).toBe(
+      'L3 双签：第一签已记录，需第二位审批人批准后本单才进入已审批'
+    )
+  })
+
+  it('非双签场景 → null（调用方走普通成功提示）', () => {
+    expect(secondSignatureNotice({})).toBeNull()
+    expect(secondSignatureNotice({ awaitingSecondSignature: false })).toBeNull()
+  })
+})
