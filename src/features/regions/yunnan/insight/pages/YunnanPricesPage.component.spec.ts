@@ -772,6 +772,29 @@ describe('状态纪律', () => {
     await switchTab('series')
     expect(queryCallsOf((request) => request.filters?.view === 'series')).toHaveLength(seriesCallsBefore)
   })
+
+  it('能力目录请求在途被业务窗切换作废后自动重拉恢复，不静默死锁（dljy#3065）', async () => {
+    // 第一次能力目录请求挂起：模拟页面加载即被上下文切换作废的在途请求
+    let resolveFirst: (value: any) => void = () => {}
+    const firstCapabilities = new Promise((resolve) => {
+      resolveFirst = resolve
+    })
+    vi.mocked(fetchInsightCapabilities).mockResolvedValueOnce(firstCapabilities as any)
+
+    await mountPage() // onMounted → loadCapabilities → 第 1 次能力目录请求挂起
+
+    // 换窗口：上下文代次 +1，作废在途能力目录请求
+    await setWindow('2026-09-10', '2026-09-11')
+
+    // 迟到响应到达：run 判代次落后返回 null；修复后应自动重拉，而非静默死锁
+    resolveFirst(capsWith(ALL_ANALYSES))
+    await flushPromises()
+    await flushPromises()
+
+    // 重拉后能力目录就绪，默认页签（series）查询已发出；修复前目录与错误均为 null，查询被永久拦截
+    expect(vi.mocked(fetchInsightCapabilities).mock.calls.length).toBeGreaterThanOrEqual(2)
+    expect(queryCallsOf((request) => request.filters?.view === 'series').length).toBeGreaterThan(0)
+  })
 })
 
 describe('展示纪律', () => {

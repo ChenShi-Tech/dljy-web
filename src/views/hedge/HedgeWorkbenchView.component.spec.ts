@@ -140,6 +140,22 @@ describe('HedgeWorkbenchView（HW-01/02/06/07/10）', () => {
     })
   })
 
+  it('overview 缺 standardMetrics/sensitivity 等字段时降级显示，不冻结渲染（#3133 回归）', async () => {
+    const { standardMetrics: _sm, sensitivity: _se, ...bare } = overviewPayload()
+    void _sm
+    void _se
+    fetchOverview.mockResolvedValue(bare)
+    const wrapper = mountView()
+    await vi.dynamicImportSettled()
+    await vi.waitFor(() => {
+      expect(wrapper.find('[data-test="metrics"]').exists()).toBe(true)
+    })
+    const text = wrapper.text()
+    expect(text).toContain('未评估')
+    expect(text).toContain('不完整')
+    expect(wrapper.find('[data-test="intervals"]').exists()).toBe(true)
+  })
+
   it('未知时段显示未知/未覆盖原因，不用 0 冒充', async () => {
     fetchOverview.mockResolvedValue(overviewPayload())
     const wrapper = mountView()

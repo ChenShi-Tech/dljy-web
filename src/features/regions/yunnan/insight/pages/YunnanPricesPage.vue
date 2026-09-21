@@ -34,6 +34,7 @@ import { fetchCgnYunnanPriceBundle } from '@/services/market/cgnYunnanLivePrice'
 import { getCurrentUser } from '@/services/auth'
 import { hasCompanyAdmin } from '@/services/governance'
 import { useInsightContext } from '@/composables/useInsightContext'
+import { useInsightEntryAnchor } from '@/composables/useInsightEntryAnchor'
 import { insightAiBlockOf, useInsightAiPage, type InsightAiEvidenceBlock } from '@/features/regions/yunnan/insight/useInsightAiPage'
 import { useInsightSelection } from '@/components/insight/chart/useInsightSelection'
 import { canFollowDeepLink, DEEP_LINK_TARGETS, openDataMaintenanceLink } from '../businessLinks'
@@ -51,6 +52,7 @@ import Price3DWorkspace from './prices/Price3DWorkspace.vue'
 import { readPriceMode, writePriceMode, type PriceDisplayMode } from './prices/priceModeStorage'
 import InsightBlock from '@/components/insight/InsightBlock.vue'
 import InsightDateRange from '@/components/insight/InsightDateRange.vue'
+import InsightAnchorNotice from '@/components/insight/InsightAnchorNotice.vue'
 import InsightEvidenceDrawer from '@/components/insight/InsightEvidenceDrawer.vue'
 import InsightHistoryCandidates from '@/components/insight/InsightHistoryCandidates.vue'
 import InsightMaterialDialog from '@/components/insight/InsightMaterialDialog.vue'
@@ -126,6 +128,9 @@ const ctx = useInsightContext()
 const capabilities = ref<InsightCapabilities | null>(null)
 const capabilitiesError = ref<InsightRequestError | null>(null)
 const capabilitiesLoading = ref(false)
+// 入口锚定（dljy#3134）：能力目录就绪且存在获权分析才扫描——公共账号零请求红线保持。
+const anchorReady = computed(() => (capabilities.value?.analyses?.some((entry) => entry.access === 'company') ?? false))
+const entryAnchor = useInsightEntryAnchor(ctx, { ready: anchorReady })
 
 /** 能力目录里可用（全部来源可访问）的价格对象，按目录固定顺序排列。 */
 const availableObjects = computed(() =>
@@ -197,7 +202,12 @@ async function loadCapabilities(): Promise<void> {
   capabilitiesError.value = null
   try {
     const result = await ctx.request.run((signal) => fetchInsightCapabilities({ signal }))
-    if (!result) return
+    if (!result) {
+      // 在途请求被业务代次作废（业务窗/公司/对象/来源切换）：能力目录不随这些业务维度变化，
+      // 静默 return 会让「目录与错误均为 null」永久拦截查询。重拉一次恢复（dljy#3065）。
+      void loadCapabilities()
+      return
+    }
     capabilities.value = result
     // 初始默认：第一个可用对象。此后选择只随用户显式操作变化（能力目录变化也不改选）。
     if (!priceObjectChoice.value) {
@@ -989,6 +999,13 @@ onMounted(() => {
 <template>
   <div class="ynp-prices">
     <!-- 顶部：价格对象 / 日期窗 / 对象选择与口径说明 -->
+
+    <InsightAnchorNotice
+      v-if="entryAnchor.anchorNotice.value"
+      :notice="entryAnchor.anchorNotice.value"
+      @back-today="entryAnchor.backToToday"
+      @dismiss="entryAnchor.dismissAnchorNotice"
+    />
     <section class="ynp-prices__controls">
       <label class="ynp-prices__field">
         <span>价格对象</span>

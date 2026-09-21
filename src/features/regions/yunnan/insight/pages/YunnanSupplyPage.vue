@@ -32,9 +32,11 @@ import {
   type InsightSeriesMeta,
 } from '@/services/insight/insightClient'
 import { useInsightContext } from '@/composables/useInsightContext'
+import { useInsightEntryAnchor } from '@/composables/useInsightEntryAnchor'
 import { insightAiBlockOf, useInsightAiPage, type InsightAiEvidenceBlock } from '@/features/regions/yunnan/insight/useInsightAiPage'
 import InsightBlock from '@/components/insight/InsightBlock.vue'
 import InsightDateRange from '@/components/insight/InsightDateRange.vue'
+import InsightAnchorNotice from '@/components/insight/InsightAnchorNotice.vue'
 import InsightEvidenceDrawer from '@/components/insight/InsightEvidenceDrawer.vue'
 import InsightHistoryCandidates from '@/components/insight/InsightHistoryCandidates.vue'
 import InsightObjectPicker, { type InsightObjectOption } from '@/components/insight/InsightObjectPicker.vue'
@@ -117,6 +119,9 @@ const ctx = useInsightContext()
 const capabilities = ref<InsightCapabilities | null>(null)
 const capabilitiesError = ref<InsightRequestError | null>(null)
 const capabilitiesLoading = ref(false)
+// 入口锚定（dljy#3134）：能力目录就绪且存在获权分析才扫描——公共账号零请求红线保持。
+const anchorReady = computed(() => (capabilities.value?.analyses?.some((entry) => entry.access === 'company') ?? false))
+const entryAnchor = useInsightEntryAnchor(ctx, { ready: anchorReady })
 
 /** 契约镜像里的系统曲线分析登记（views / limits / sourceIds），不依赖后端 capabilities 是否下发。 */
 const systemAnalysisDef = getInsightAnalysis(SUPPLY_SYSTEM_ANALYSIS)
@@ -152,7 +157,12 @@ async function loadCapabilities(): Promise<void> {
   capabilitiesError.value = null
   try {
     const result = await ctx.request.run((signal) => fetchInsightCapabilities({ signal }))
-    if (!result) return
+    if (!result) {
+      // 在途请求被业务代次作废（业务窗/公司/对象/来源切换）：能力目录不随这些业务维度变化，
+      // 静默 return 会让「目录与错误均为 null」永久拦截查询。重拉一次恢复（dljy#3065）。
+      void loadCapabilities()
+      return
+    }
     capabilities.value = result
     // 能力目录就绪后补一次查询（之前被「目录未就绪」拦住的当前页签）。
     ensureTab(activeTab.value)
@@ -964,6 +974,13 @@ onMounted(() => {
 <template>
   <div class="yns-supply">
     <!-- 顶部：日期窗与固定口径说明 -->
+
+    <InsightAnchorNotice
+      v-if="entryAnchor.anchorNotice.value"
+      :notice="entryAnchor.anchorNotice.value"
+      @back-today="entryAnchor.backToToday"
+      @dismiss="entryAnchor.dismissAnchorNotice"
+    />
     <section class="yns-supply__controls">
       <label class="yns-supply__field">
         <span>分析日期</span>

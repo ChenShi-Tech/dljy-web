@@ -40,11 +40,13 @@ import {
   type InsightSeriesMeta,
 } from '@/services/insight/insightClient'
 import { useInsightContext } from '@/composables/useInsightContext'
+import { useInsightEntryAnchor } from '@/composables/useInsightEntryAnchor'
 import { insightAiBlockOf, useInsightAiPage } from '@/features/regions/yunnan/insight/useInsightAiPage'
 import { INSIGHT_PAGE_PATHS, type InsightPageId } from '@/services/region/insightWorkspace'
 import { buildInsightDrilldownQuery } from '@/services/region/insightHandoff'
 import InsightBlock from '@/components/insight/InsightBlock.vue'
 import InsightDateRange from '@/components/insight/InsightDateRange.vue'
+import InsightAnchorNotice from '@/components/insight/InsightAnchorNotice.vue'
 import InsightEvidenceDrawer from '@/components/insight/InsightEvidenceDrawer.vue'
 import InsightHistoryCandidates from '@/components/insight/InsightHistoryCandidates.vue'
 import InsightResultTable from '@/components/insight/InsightResultTable.vue'
@@ -109,6 +111,9 @@ const router = useRouter()
 const capabilities = ref<InsightCapabilities | null>(null)
 const capabilitiesError = ref<InsightRequestError | null>(null)
 const capabilitiesLoading = ref(false)
+// 入口锚定（dljy#3134）：能力目录就绪且存在获权分析才扫描——公共账号零请求红线保持。
+const anchorReady = computed(() => (capabilities.value?.analyses?.some((entry) => entry.access === 'company') ?? false))
+const entryAnchor = useInsightEntryAnchor(ctx, { ready: anchorReady })
 
 /** 窗口上限取最紧的分析（overview.key-items 限 7 天）。 */
 const keyItemsDef = getInsightAnalysis('overview.key-items')
@@ -845,6 +850,13 @@ const onAiInterpret = (): void => {
       <div><span class="yno-overview__eyebrow"><Activity :size="14" /> 云南市场</span><h2>市场总览</h2></div>
       <span class="yno-overview__mode" data-testid="yno-window-mode"><CalendarDays :size="14" /> {{ windowModeText }}</span>
     </header>
+
+    <InsightAnchorNotice
+      v-if="entryAnchor.anchorNotice.value"
+      :notice="entryAnchor.anchorNotice.value"
+      @back-today="entryAnchor.backToToday"
+      @dismiss="entryAnchor.dismissAnchorNotice"
+    />
     <section class="yno-overview__controls">
       <label class="yno-overview__field">
         <span>分析日期</span>

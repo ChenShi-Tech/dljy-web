@@ -306,12 +306,14 @@ const showMaintenanceEntry = computed(() => {
 
 .insight-block__head {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
 }
 
 .insight-block__title {
+  flex-shrink: 0;
   margin: 0;
   font-size: var(--font-lg, 16px);
   font-weight: 600;
