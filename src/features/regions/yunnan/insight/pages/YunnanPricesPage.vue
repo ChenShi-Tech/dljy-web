@@ -14,6 +14,7 @@
 //    governance 既有口径判定，跳转只带期间/from 标记，不在洞察手填真实值；返回后重查。
 // 未选对象 / 未选参考的前置拦截在页面层完成（不发请求），后端校验是第二道防线。
 
+import InsightNote from '@/components/insight/InsightNote.vue'
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import type { InsightSelection } from 'shared/insight/handoff.mjs'
@@ -118,8 +119,7 @@ const SPREAD_DIRECTION_TEXT = '价差 = 日前 − 实时，正值表示日前�
 const BASIS_DIRECTION_TEXT = '基差 = 所选对象价格 − 参考对象价格，只在共同有效时段计算；参考对象由你显式指定'
 const USER_PRICE_NO_BASIS_TEXT = '用户侧价格没有节点维度，不提供节点基差'
 const BASIS_PICK_REFERENCE_TEXT = '请先选择参考节点或参考场站；未选参考不发请求'
-const PROFILE_SAMPLE_TEXT = '只统计所选窗口内真实存在的时段；样本只有一年或更短时，不代表多年季节规律'
-const PROFILE_NO_FILTER_TEXT = '暂不支持按季节、工作日筛选'
+const PROFILE_SAMPLE_TEXT = '只统计所选窗口内真实存在的时段；样本只有一年或更短时，不代表多年季节规律。暂不支持按季节、工作日筛选'
 
 // ── 上下文与能力目录 ─────────────────────────────────────────────────────────────────────
 
@@ -246,7 +246,7 @@ const summaryState = reactive<ViewState>(blankState())
 const activeTab = ref<PriceView>('series')
 const visitedTabs = reactive(new Set<PriceView>(['series']))
 
-/** 基差参考对象（只能从已选对象里选；未选不发请求）。 */
+/** 基差参考对象（只能从已选对象里选）。 */
 const basisReference = ref('')
 const basisOptions = computed<InsightObjectOption[]>(() =>
   ctx.objectIds.value.map((id) => ({ id, label: id }))
@@ -1026,7 +1026,7 @@ onMounted(() => {
       </label>
 
       <label class="ynp-prices__field">
-        <span>业务日期窗</span>
+        <span>分析日期</span>
         <InsightDateRange
           :model-value="ctx.businessWindow.value"
           :max-days="maxDays"
@@ -1088,7 +1088,7 @@ onMounted(() => {
             </div>
 
             <p v-if="requiresObjects && !ctx.objectIds.value.length" class="ynp-prices__hint">
-              请先在上方选择分析对象，再进行查询（未选对象不发请求）。
+              请选择分析对象
             </p>
             <template v-else>
               <!-- 多日立体 / 热力：与「历史分布」页签共用同一份 profile 结果 -->
@@ -1189,9 +1189,9 @@ onMounted(() => {
               @open-evidence="openEvidence('spread')"
               @open-maintenance="openDataMaintenance"
             >
-              <el-alert type="info" :closable="false" :title="SPREAD_DIRECTION_TEXT" />
+              <InsightNote label="日前 − 实时 · 元/MWh" :text="SPREAD_DIRECTION_TEXT" />
               <p v-if="requiresObjects && !ctx.objectIds.value.length" class="ynp-prices__hint">
-                请先在上方选择分析对象，再进行查询（未选对象不发请求）。
+                请选择分析对象
               </p>
               <template v-else>
                 <InsightSeriesChart
@@ -1280,7 +1280,7 @@ onMounted(() => {
               @open-maintenance="openDataMaintenance"
             >
               <p v-if="requiresObjects && !ctx.objectIds.value.length" class="ynp-prices__hint">
-                请先在上方选择分析对象，再进行查询（未选对象不发请求）。
+                请选择分析对象
               </p>
               <template v-else>
                 <p class="ynp-prices__hint">
@@ -1289,8 +1289,8 @@ onMounted(() => {
                     <span v-for="item in profileCoverage" :key="item.key">{{ item.name }} {{ item.days }} 天；</span>
                   </template>
                 </p>
-                <p class="ynp-prices__hint">{{ PROFILE_SAMPLE_TEXT }}</p>
-                <p class="ynp-prices__hint">{{ PROFILE_NO_FILTER_TEXT }}</p>
+                <InsightNote label="历史样本范围" :text="PROFILE_SAMPLE_TEXT" />
+
                 <ChartCard
                   title="逐日均价（时长加权）"
                   :height="280"
@@ -1346,7 +1346,7 @@ onMounted(() => {
                     在空间视图查看
                   </el-button>
                 </div>
-                <el-alert type="info" :closable="false" :title="BASIS_DIRECTION_TEXT" />
+                <InsightNote label="所选节点 − 参考节点" :text="BASIS_DIRECTION_TEXT" />
                 <el-empty v-if="!basisReference" :description="BASIS_PICK_REFERENCE_TEXT" :image-size="72" />
                 <template v-else>
                   <InsightSeriesChart

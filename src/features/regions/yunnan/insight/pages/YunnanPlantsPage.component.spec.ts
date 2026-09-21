@@ -1001,7 +1001,7 @@ describe('组合总览', () => {
     expect(queryCallsOf((request) => request.analysisId === DAILY_METRICS)).toHaveLength(0)
   })
 
-  it('未选对象不发请求；覆盖请求不带 objectIds；空态给「请先选择场站对象」引导', async () => {
+  it('未选对象不发请求；覆盖请求不带 objectIds；空态给「请选择场站对象」引导', async () => {
     await mountPage()
 
     const coverageCalls = coverageCallsOf(DAILY_METRICS)
@@ -1009,8 +1009,7 @@ describe('组合总览', () => {
     expect((coverageCalls[0]![0] as any).filters?.objectIds).toBeUndefined()
     expect(queryCallsOf((request) => request.analysisId === DAILY_METRICS)).toHaveLength(0)
     expect(queryCallsOf((request) => request.analysisId === SETTLEMENT_DAILY)).toHaveLength(0)
-    expect(wrapper!.text()).toContain('请先选择场站对象')
-    expect(wrapper!.text()).toContain('未选不发请求')
+    expect(wrapper!.text()).toContain('请选择场站对象')
   })
 
   it('选定对象：coverage-summary 查询带 objectIds；六字段独立卡片、按有效样本排序、分母文案原文', async () => {
@@ -1078,7 +1077,7 @@ describe('价格出力', () => {
 
     expect(queryCallsOf((request) => request.analysisId === PRICE_CAPTURE)).toHaveLength(0)
     expect(queryCallsOf((request) => request.analysisId === OUTPUT_SERIES)).toHaveLength(0)
-    expect(wrapper!.text()).toContain('请先选择场站对象')
+    expect(wrapper!.text()).toContain('请选择场站对象')
 
     pickerOf('ypp-price-objects').vm.$emit('update:modelValue', ['甲风电场'])
     await flushPromises()
@@ -1149,7 +1148,7 @@ describe('价格出力', () => {
     expect(block.findAll('.series-chart-stub')).toHaveLength(1)
     expect(block.text()).toContain('并列对照')
     expect(block.text()).toContain('本期不做逐时乘积画线')
-    expect(block.text()).toContain('与上方价格捕获表同一组场站对象')
+    expect(queryCallsOf((request) => request.analysisId === OUTPUT_SERIES)[0]![0].filters!.objectIds).toEqual(['甲风电场'])
   })
 })
 
@@ -1159,7 +1158,7 @@ describe('预测执行', () => {
     await switchTab('forecast')
 
     expect(queryCallsOf((request) => request.analysisId === OUTPUT_SERIES)).toHaveLength(0)
-    expect(wrapper!.text()).toContain('请先选择场站对象')
+    expect(wrapper!.text()).toContain('请选择场站对象')
 
     pickerOf('ypp-forecast-objects').vm.$emit('update:modelValue', ['甲风电场', '乙光伏电站', '丙风电场'])
     await flushPromises()
@@ -1257,7 +1256,6 @@ describe('申报出清实际', () => {
     expect(calls[0]![0]!.filters!.objectIds).toEqual(['甲风电场'])
     const block = blockOf('一体化预测出力（获权）')!
     expect(block.findAll('.series-chart-stub')).toHaveLength(1)
-    expect(block.text()).toContain('与上方对照表同一组场站对象')
   })
 })
 
@@ -1281,7 +1279,7 @@ describe('结算表现', () => {
     for (const id of [SETTLEMENT_DAILY, SETTLEMENT_STATUS_DIFF, SETTLEMENT_INTERVAL, SETTLEMENT_RECONCILE]) {
       expect(queryCallsOf((request) => request.analysisId === id)).toHaveLength(0)
     }
-    expect(wrapper!.text()).toContain('请先选择场站对象')
+    expect(wrapper!.text()).toContain('请选择场站对象')
     expect(coverageCallsOf(SETTLEMENT_STATUS_DIFF)).toHaveLength(1)
     expect(coverageCallsOf(SETTLEMENT_INTERVAL)).toHaveLength(1)
   })
