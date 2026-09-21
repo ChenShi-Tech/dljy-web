@@ -62,8 +62,9 @@ export interface HedgeOverview {
     exposure: { withMechanism: string | null; midlongOnly: string | null }
   }>
   ratio: { coverage: Record<string, unknown>; withMechanism: { value: string | null; status: string }; midlongOnly: { value: string | null; status: string } }
-  standardMetrics: Record<string, { level: string; reason: string | null; hints: string[]; tier: string | null; basis: string | null }>
-  sensitivity: { value: string | null; incomplete: boolean; reference: string | null; note: string | null }
+  // 旧后端（未走 assembleOverview 的精简响应）可能缺这三个字段（#3133）：类型放宽 + 模板可选链防护。
+  standardMetrics?: Record<string, { level: string; reason: string | null; hints: string[]; tier: string | null; basis: string | null }>
+  sensitivity?: { value: string | null; incomplete: boolean; reference: string | null; note: string | null }
   watchlist: { rows: Array<Record<string, unknown>>; basisUsed: string; note: string | null; disclaimer: string }
   scheme: { schemeId: number; versionNo: number; basis: string; name: string } | null
   legs: Record<string, unknown>

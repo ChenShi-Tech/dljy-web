@@ -1,8 +1,9 @@
 // 云南市场洞察工作区登记（dljy#2995 阶段 A）
 // ----------------------------------------------------------------------------
-// 六页骨架齐备；overview（dljy#3009）与 supply（dljy#3008）已交付进导航；prices 页已交付
-// 第一部分（四页签，dljy#3007）但 delivered 仍为 false——多日三维价格、日期×时段热力与
-// 三维降级（任务 6.8/6.9）到位后再置 true 并整体替换导航；其余页仍为占位。
+// 六页骨架齐备；overview（dljy#3009）、prices（dljy#3007 四页签 + 多日立体/热力/降级）、
+// supply（dljy#3008）、grid-boundaries（dljy#3024 三页签）、plants（dljy#3083 五页签：
+// 组合总览/价格出力/预测执行/申报出清实际/结算表现）与 research（dljy#3080 研究工作台）
+// 全部交付进导航。
 //
 // enabled 读 VITE_YUNNAN_INSIGHT_WORKSPACE（默认关闭）——这是 UI 装配开关不是授权开关
 //（授权走 governance.canAccessPath 权限别名，与本开关无关），关闭时云南导航与现状
@@ -10,9 +11,6 @@
 
 import { registerInsightWorkspace } from '@/services/region/insightWorkspace'
 import { YUNNAN_REGION_ID } from '../profile'
-
-// 占位组件懒加载：与正式页同为按需 chunk，交付时替换为正式页组件即可
-const loadPending = () => import('./InsightPagePending.vue')
 
 export function registerYunnanInsightWorkspace(): void {
   registerInsightWorkspace({
@@ -24,11 +22,11 @@ export function registerYunnanInsightWorkspace(): void {
     replacesNavigation: true,
     pages: [
       { pageId: 'overview', title: '市场总览', order: 1, load: () => import('./pages/YunnanOverviewPage.vue'), delivered: true },
-      { pageId: 'prices', title: '价格与价差', order: 2, load: () => import('./pages/YunnanPricesPage.vue'), delivered: false },
+      { pageId: 'prices', title: '价格与价差', order: 2, load: () => import('./pages/YunnanPricesPage.vue'), delivered: true },
       { pageId: 'supply', title: '供需与水电', order: 3, load: () => import('./pages/YunnanSupplyPage.vue'), delivered: true },
-      { pageId: 'grid-boundaries', title: '跨省与电网边界', order: 4, load: loadPending, delivered: false },
-      { pageId: 'plants', title: '场站市场表现', order: 5, load: loadPending, delivered: false },
-      { pageId: 'research', title: '研究工作台', order: 6, load: loadPending, delivered: false }
+      { pageId: 'grid-boundaries', title: '跨省与电网边界', order: 4, load: () => import('./pages/YunnanGridBoundariesPage.vue'), delivered: true },
+      { pageId: 'plants', title: '场站市场表现', order: 5, load: () => import('./pages/YunnanPlantsPage.vue'), delivered: true },
+      { pageId: 'research', title: '研究工作台', order: 6, load: () => import('./pages/YunnanResearchPage.vue'), delivered: true }
     ]
   })
 }

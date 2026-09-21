@@ -140,20 +140,34 @@ describe('地区包真包集成（installRegionPackages 装配）', () => {
     expect(listInsightNavigation('yunnan')).toBeNull()
   })
 
-  it('云南开关打开：overview 与 supply 页已交付可解析并进导航，其余四页仍为建设占位（page-not-delivered）', () => {
+  it('云南开关打开：六页全部交付可解析并进导航（研究工作台 dljy#3080 收官）', () => {
     vi.stubEnv('VITE_YUNNAN_INSIGHT_WORKSPACE', '1')
     const workspace = getInsightWorkspace('yunnan')
     expect(workspace?.workspaceId).toBe('yunnan.insight')
     expect(workspace?.pages).toHaveLength(6)
-    // dljy#3009：市场总览页交付；dljy#3008：供需与水电页交付；prices 页四页签已上线但三维热力未齐，delivered 仍 false
-    expect(workspace?.pages.filter((page) => page.delivered).map((page) => page.pageId)).toEqual(['overview', 'supply'])
-    expect(resolveInsightPage('yunnan', 'overview')).toMatchObject({ kind: 'page' })
-    expect(resolveInsightPage('yunnan', 'supply')).toMatchObject({ kind: 'page' })
-    expect(resolveInsightPage('yunnan', 'prices')).toMatchObject({ kind: 'fallback', reason: 'page-not-delivered' })
-    // 导航只收 delivered 页 → 市场总览 + 供需与水电两项（按 order 排序）
+    // dljy#3009 总览、dljy#3007 价格（含多日立体/热力/降级）、dljy#3008 供需与水电、
+    // dljy#3024 跨省与电网边界（送受电/通道断面/备用机组）、dljy#3083 场站市场表现（五页签）、
+    // dljy#3080 研究工作台（预设/同类日/受控自定义）均已交付
+    expect(workspace?.pages.filter((page) => page.delivered).map((page) => page.pageId)).toEqual([
+      'overview',
+      'prices',
+      'supply',
+      'grid-boundaries',
+      'plants',
+      'research',
+    ])
+    for (const pageId of ['overview', 'prices', 'supply', 'grid-boundaries', 'plants', 'research'] as const) {
+      expect(resolveInsightPage('yunnan', pageId)).toMatchObject({ kind: 'page' })
+    }
+    // page-not-delivered 分支由上方 fixture 用例覆盖（真包已无未交付页）
+    // 导航只收 delivered 页 → 六项全部按 order 排序
     expect(listInsightNavigation('yunnan')).toEqual([
       expect.objectContaining({ path: '/insight/overview', title: '市场总览' }),
+      expect.objectContaining({ path: '/insight/prices', title: '价格与价差' }),
       expect.objectContaining({ path: '/insight/supply', title: '供需与水电' }),
+      expect.objectContaining({ path: '/insight/grid-boundaries', title: '跨省与电网边界' }),
+      expect.objectContaining({ path: '/insight/plants', title: '场站市场表现' }),
+      expect.objectContaining({ path: '/insight/research', title: '研究工作台' }),
     ])
     vi.unstubAllEnvs()
   })

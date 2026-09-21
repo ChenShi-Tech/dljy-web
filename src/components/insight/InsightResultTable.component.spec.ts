@@ -11,7 +11,7 @@ import { mount } from '@/test/mount'
 import InsightResultTable from './InsightResultTable.vue'
 import { buildInsightCsv } from './insightCsv'
 import type { InsightSelection } from 'shared/insight/handoff.mjs'
-import { insightResult, nodePriceSeries, RESULT_VERSION, nodePriceResult } from './insightFixtures'
+import { insightResult, nodePriceSeries, nodePriceResult, row, RESULT_VERSION } from './insightFixtures'
 
 const PRICE = nodePriceSeries()
 
@@ -121,6 +121,48 @@ describe('CSV 口径（insightCsv 纯函数）', () => {
     expect(csv).not.toMatch(/,\s*,yuan\/MWh/)
     // 不出现来源标识原文 / 内部词。
     expect(csv).not.toMatch(/yn\.price|capture|family|SELECT/)
+  })
+
+  // dljy#3078 任务 15.2：转义与精度口径回归。仓库约定（insightCsv.ts 头注）是 RFC 4180 转义 +
+  // 值为原始字符串直出——导出层不做数值加工，也不改写单元格内容（含以 = 开头的字符串），
+  // 「精度不被前端改写」优先于 Excel 公式注入改写；服务端结果为可信分析产物。
+  it('CSV 转义：对象名含逗号/双引号/换行按 RFC 4180 转义，不破行列', () => {
+    const series = nodePriceSeries({ dimensions: { nodeName: '节点,A"X\nY' } })
+    const result = insightResult({
+      page: { scope: 'all', totalRows: 1 },
+      data: {
+        schemaVersion: 'insight-result-data/v1',
+        dimensions: [
+          { id: 'seriesId', kind: 'category' },
+          { id: 'intervalStart', kind: 'time' },
+          { id: 'intervalEnd', kind: 'time' },
+        ],
+        measures: [{ id: 'value', unit: 'by-series' }],
+        rows: [row(series.seriesId, '2026-09-10T00:00:00+08:00', '2026-09-10T00:15:00+08:00', '300.125')],
+        series: [series],
+      },
+    })
+
+    const csv = buildInsightCsv(result)
+    const dataLines = csv.replace(/^﻿/, '').split('\r\n')
+
+    // 头部两行注释 + 列头 + 一行数据：单元格内换行被引号包裹，没有把一行数据拆成多行
+    expect(dataLines).toHaveLength(4)
+    // 逗号与双引号在带引号单元格内原样保留，双引号翻倍转义
+    expect(dataLines[3]).toContain('"节点,A""X')
+    expect(dataLines[3]).toContain('Y",')
+    expect(dataLines[3]).toContain('300.125,yuan/MWh')
+  })
+
+  it('精度不被前端改写：十进制字符串直出，不按 Number 重格式化', () => {
+    const result = nodePriceResult(['300.1250', '0.10', '-12.500'])
+    const csv = buildInsightCsv(result)
+
+    expect(csv).toContain(',300.1250,')
+    expect(csv).toContain(',0.10,')
+    expect(csv).toContain(',-12.500,')
+    expect(csv).not.toContain('300.125,')
+    expect(csv).not.toContain(',0.1,')
   })
 })
 

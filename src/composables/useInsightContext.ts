@@ -8,6 +8,11 @@ import {
 } from 'shared/insight/contract.mjs'
 import { selectedRegionId } from '@/services/region/regionContext'
 import { selectedCompanyId } from '@/services/company/companyContext'
+import {
+  hasInsightDrilldownParams,
+  parseInsightDrilldownQuery,
+  type InsightDrilldownRestore,
+} from '@/services/region/insightHandoff'
 import { useInsightRequestGeneration } from './useInsightRequestGeneration'
 
 // 市场洞察统一查询上下文（dljy#2996，OpenSpec 任务 5.4/5.6，design D3）
@@ -18,11 +23,16 @@ import { useInsightRequestGeneration } from './useInsightRequestGeneration'
 //      逐项 URL 编码）。进页面按 query 还原（刷新/后退可恢复），字段变化用 router.replace
 //      写回（不产生历史堆积）。解析经共享契约 parseInsightContext 校验，非法参数丢弃
 //      并给一条「已忽略不合法参数：…」提示——宁可回到默认值，不带着口径不明的条件查询。
-//   2. 默认窗口为北京时间当日：不自动跳到「有数据的日子」——有没有数据由区块的
-//      可用性说明与「查看可分析日期」候选入口表达（A02）。
+//   2. 默认窗口为北京时间当日：本层不自动跳到「有数据的日子」（A02）；入口锚定
+//      （useInsightEntryAnchor，dljy#3134 对 A02 的修订）在其上把无参数进入的默认
+//      落点锚到最新有数据日，区块可用性说明与候选入口仍照旧表达覆盖情况。
 //   3. 地区或公司变化时清空对象选择（对象属于原地区/公司，跨地区沿用等于串读），日期保留。
 //   4. 任一业务字段变化 contextVersion +1，并同步给 useInsightRequestGeneration
 //      （作废在途请求，迟到响应不写入新状态）。
+// 另提供可选「下钻恢复」入口（dljy#3087，任务 15.1）：URL 带 hx_ 前缀的下钻参数
+//（buildInsightDrilldownQuery 写入，见 src/services/region/insightHandoff.ts）时，
+// 进页面解析并暴露 drilldownRestore（view/priceObject/marketPhase/from 交给页面落状态）；
+// 共享四键与下钻解析同规则、四键语义为准，ignored 合并进同一条一次性提示。
 //
 // 必须在组件 setup 中调用（useRoute/useRouter 依赖注入）。objectIds 不进 context，
 // 由调用方放进 filters.objectIds 组装请求（后端按分析的 requiresObjects 校验）。
@@ -130,12 +140,35 @@ export function useInsightContext() {
   // 初始化：先按 query 解析出初值再注册 watch，避免初始化被当成一次上下文变化。
   const today = beijingToday()
   const initial = parseInsightQuery(route.query)
+  // 入口锚定（dljy#3134，A02 修订）用：地址里是否出现过 start/end 键（不论合法与否）。
+  // 出现过即视为用户显式给了窗口，锚定不介入；完全没带才允许锚到最新有数据日。
+  const hadWindowParam = route.query.start !== undefined || route.query.end !== undefined
   const businessWindow = ref(initial.parsed.window ?? { start: today, end: today })
   const objectIds = ref<string[]>(initial.parsed.objects ?? [])
   const sourceIds = ref<string[]>(initial.parsed.sources ?? [])
+
+  // 下钻恢复（任务 15.1，可选入口）：URL 带 hx_ 下钻参数（buildInsightDrilldownQuery 写入）
+  // 时解析并应用。共享四键（窗口/对象/来源）与下钻解析同规则，已由上面 parseInsightQuery
+  // 还原、四键语义为准；这里只把 hx_ 扩展字段（view/priceObject/marketPhase/from）交给
+  // 页面落状态，ignored 与四键解析合并成同一条一次性提示。价格/供需页签名不受影响。
+  let drilldownIgnored: string[] = []
+  const drilldownRestore = ref<InsightDrilldownRestore | null>(null)
+  if (hasInsightDrilldownParams(route.query)) {
+    const drilldown = parseInsightDrilldownQuery(route.query)
+    drilldownRestore.value = {
+      from: drilldown.payload.from,
+      view: drilldown.payload.view,
+      priceObject: drilldown.payload.priceObject,
+      marketPhase: drilldown.payload.marketPhase,
+    }
+    drilldownIgnored = drilldown.ignored
+  }
+
   /** 一次性提示：进页面时被丢弃的不合法参数（用户手改 URL 的场景）。 */
   const ignoredParamsNotice = ref<string | null>(
-    initial.ignored.length ? `已忽略不合法参数：${initial.ignored.join('、')}` : null
+    [...initial.ignored, ...drilldownIgnored].length
+      ? `已忽略不合法参数：${[...new Set([...initial.ignored, ...drilldownIgnored])].join('、')}`
+      : null
   )
 
   /** 全局地区（只读引用，切换经全局地区选择器）。 */
@@ -241,7 +274,11 @@ export function useInsightContext() {
     objectIds,
     sourceIds,
     contextVersion,
+    /** 地址是否带过 start/end 键（入口锚定的介入条件，见 useInsightEntryAnchor）。 */
+    hadWindowParam,
     ignoredParamsNotice,
+    /** 下钻恢复（任务 15.1）：URL 带 hx_ 参数时非 null，页面按需消费 view/priceObject/marketPhase/from。 */
+    drilldownRestore,
     dismissNotice,
     setBusinessWindow,
     setObjectIds,

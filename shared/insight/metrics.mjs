@@ -72,6 +72,36 @@ export const INSIGHT_METRICS = Object.freeze([
   definition({ metricId: 'sample.matched-hours', version: '1', label: '配对时长', unit: 'h', places: 2, formula: 'ΣΔt（实际与上下界都有效）', basis: '裕度与负载率只在这些时段计算' }),
   definition({ metricId: 'sample.no-limit-hours', version: '1', label: '缺限值时长', unit: 'h', places: 2, formula: 'ΣΔt（实际有效但缺上界或下界）', basis: '缺测不补，不计算' }),
   definition({ metricId: 'sample.invalid-limit-hours', version: '1', label: '限值区间不成立时长', unit: 'h', places: 2, formula: 'ΣΔt（正向限值<反向限值）', basis: '区间本身矛盾，不计算裕度' }),
+  // #3028 场站市场表现视图：捕获参考价的配对样本与负价暴露、供应商比较与覆盖摘要的样本量。
+  definition({ metricId: 'sample.valid-count', version: '1', label: '有效样本数', unit: 'count', places: 0, formula: '窗口内非空有效样本个数', basis: '样本量计数，不参与排名' }),
+  definition({ metricId: 'sample.covered-days', version: '1', label: '覆盖天数', unit: 'count', places: 0, formula: '有有效样本的业务日数', basis: '起止日期不代表连续覆盖' }),
+  definition({ metricId: 'plant.capture-paired-energy', version: '1', label: '配对电量', unit: 'MWh', places: 3, formula: 'ΣEt（电量与节点价都有效的时段，零电量时段剔除）', basis: '捕获参考价的分母口径' }),
+  definition({ metricId: 'plant.capture-reference-product', version: '1', label: '节点量价参考乘积', unit: 'yuan', places: 2, formula: 'Σ(Et×Pnode,t)', basis: '只是电量×节点价的参考乘积，不是实际结算电费，不含电网损失' }),
+  definition({ metricId: 'plant.negative-price-energy', version: '1', label: '负价时段暴露电量', unit: 'MWh', places: 3, formula: 'ΣEt(Pnode,t<0)', basis: '配对时段中节点价为负的电量合计；占比另见负价电量占比' }),
+  // #3080 研究内核：相关、滞后、异常窗口与同类日。相关未处理时序自相关，不提供置信区间（RS05）；
+  // 滞后/窗口/特征权重都由请求显式给出，内核不搜索最优参数。「by-input」表示单位跟随输入序列。
+  definition({ metricId: 'research.pearson-r', version: '1', label: '共同样本相关系数', unit: 'r', places: 6, formula: 'Σ(x−x̄)(y−ȳ)/n ÷ (σx·σy)（只在双方都有效的对齐时段）', basis: '缺测不补零；未处理时序自相关，不提供置信区间，只给 r 与样本数' }),
+  definition({ metricId: 'research.covariance', version: '1', label: '样本协方差', unit: 'by-input', places: 6, formula: 'Σ(x−x̄)(y−ȳ)/n', basis: '与 r 同一共同样本；单位跟随输入序列' }),
+  definition({ metricId: 'research.lag-mean-difference', version: '1', label: '滞后平均差', unit: 'by-input', places: 6, formula: 'Σ(x_t−y_{t−k})/n（k 由请求显式给出）', basis: '只在移动后仍共同的窗口配对；不搜索最优滞后，不是领先滞后结论' }),
+  definition({ metricId: 'research.lag-absolute-mean', version: '1', label: '滞后差绝对值均值', unit: 'by-input', places: 6, formula: 'Σ|x_t−y_{t−k}|/n', basis: '防正负相互抵消；与平均差分开列示' }),
+  definition({ metricId: 'research.anomaly-window-mean', version: '1', label: '异常窗口均值', unit: 'by-input', places: 6, formula: '窗口内等时长槽位观测的算术平均', basis: '只在时间连续的完整窗口上扫描；阈值是平台分析默认值，不是官方规则' }),
+  definition({ metricId: 'research.anomaly-threshold', version: '1', label: '异常窗口阈值', unit: 'by-input', places: 6, formula: '显式绝对值或该序列最近秩分位数', basis: '分位数只在参与扫描的序列自身观测内计算' }),
+  definition({ metricId: 'research.similar-day-distance', version: '1', label: '同类日加权距离', unit: 'distance', places: 6, formula: 'Σ wᵢ·|z目标,ᵢ−z候选,ᵢ|', basis: 'z-score 标准化参数只在完整候选集合内计算；不以相似度承诺价格预测' }),
+  definition({ metricId: 'research.feature-contribution', version: '1', label: '同类日特征贡献', unit: 'distance', places: 6, formula: 'wᵢ·|z目标,ᵢ−z候选,ᵢ|', basis: '单个特征对距离的贡献；随候选日逐项返回' }),
+  // #3081 结算表现视图（任务 12.1—12.4，ST01—ST06）：加权统计、状态差异、损失边界与核对。
+  definition({ metricId: 'settlement.total-energy', version: '1', label: '结算电量合计', unit: 'MWh', places: 3, formula: 'Σ电量（字段有效的记录）', basis: '同一来源同一有效记录集合内求和；正式/暂结/日/月不相加' }),
+  definition({ metricId: 'settlement.total-fee', version: '1', label: '结算电费合计', unit: 'yuan', places: 2, formula: 'Σ电费（字段有效的记录）', basis: '同一来源同一有效记录集合内求和；电费不是利润；日/月/账单不相加' }),
+  definition({ metricId: 'settlement.paired-count', version: '1', label: '成对有效记录数', unit: 'count', places: 0, formula: '电量与电费同时有效的记录个数', basis: '只有这些记录进入均价分子与分母' }),
+  definition({ metricId: 'settlement.missing-fee-count', version: '1', label: '缺电费记录数', unit: 'count', places: 0, formula: '有电量但电费缺失的记录个数', basis: '缺电费不补零、不参与均价，电量可单独如实统计（ST02）' }),
+  definition({ metricId: 'settlement.missing-energy-count', version: '1', label: '缺电量记录数', unit: 'count', places: 0, formula: '有电费但电量缺失的记录个数', basis: '缺电量不补零、不参与均价' }),
+  definition({ metricId: 'settlement.status-diff-energy', version: '1', label: '正式暂结电量差异', unit: 'MWh', places: 3, formula: '正式电量 − 暂结电量（同对象同业务键）', basis: '两态都在才计算；不相加、不双计（ST01）' }),
+  definition({ metricId: 'settlement.status-diff-fee', version: '1', label: '正式暂结电费差异', unit: 'yuan', places: 2, formula: '正式电费 − 暂结电费（同对象同业务键）', basis: '两态都在才计算；差异不是更正，以结算业务确认为准（ST01）' }),
+  definition({ metricId: 'loss.strategy', version: '1', label: '策略损失（源系统披露）', unit: 'yuan', places: 2, formula: '源值原样展示', basis: '源系统已披露值，保留源符号；本平台不做第二套推导（ST04）' }),
+  definition({ metricId: 'loss.forecast', version: '1', label: '预测损失（源系统披露）', unit: 'yuan', places: 2, formula: '源值原样展示', basis: '源系统已披露值，保留源符号；本平台不做第二套推导（ST04）' }),
+  definition({ metricId: 'loss.grid', version: '1', label: '电网损失（源系统披露）', unit: 'yuan', places: 2, formula: '源值原样展示', basis: '已核验月包全部为空：保持未提供，不补零、不用残差填充（ST04、A09）' }),
+  definition({ metricId: 'settlement.unexplained-difference', version: '1', label: '未解释差额', unit: 'yuan', places: 2, formula: '源收入 − 已知分项合计', basis: '只是未解释差额，不是损失认定，不自动归到电网/策略/预测损失（ST03）' }),
+  definition({ metricId: 'settlement.reconcile-daily-fee', version: '1', label: '日结电费（核对列）', unit: 'yuan', places: 2, formula: '正式日结 totalFee 原值', basis: '与日报收入同为日周期才进差异；来源引用随行返回（ST05）' }),
+  definition({ metricId: 'settlement.reconcile-difference', version: '1', label: '日报日结核对差异', unit: 'yuan', places: 2, formula: '日报收入 − 日结电费（同对象同业务日）', basis: '双方齐备才计算；字段定义或口径不同时不自动判错（ST05）' }),
 ])
 
 const BY_ID = new Map(INSIGHT_METRICS.map(item => [item.metricId, item]))

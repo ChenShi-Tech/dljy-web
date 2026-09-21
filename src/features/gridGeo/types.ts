@@ -312,6 +312,8 @@ export type GridDisclosureEvent = {
   effectiveDate?: string | null
   sourceImportedAt?: string | null
   timeQuality?: { effective: 'source' | 'business-date' | 'unknown'; published: 'source' | 'unknown'; intervalBasis?: 'actual' | 'planned' | 'source' | 'point' | 'unknown'; issues: string[] }
+  /** 披露身份标注（#3092，GB04）：identity=annotate 时返回；versions>1 表示同一事件被重复披露（当前行是第 version 版）。 */
+  identity?: { rule: 'source-interval' | 'planned-interval-text' | 'exact-record' | null; key: string | null; versions: number; version: number }
   source: {
     file: string
     recordId: string
@@ -356,6 +358,8 @@ export type GridDisclosureOverview = {
     effectiveTimeKnown: number
   }
   bucket: 'hour' | 'day'
+  /** 身份归并计数（#3092，GB04）：identity=annotate 时返回；unidentified 是身份不足保留未归并的记录数。 */
+  identity?: { rawCount: number; identifiedRawCount: number; distinctCount: number; unidentifiedCount: number }
   dataAvailability: { status: 'available' | 'missing' | 'not-configured'; reason: string; fallback: false }
 }
 

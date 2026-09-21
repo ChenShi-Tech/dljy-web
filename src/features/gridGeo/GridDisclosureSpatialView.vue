@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
+import { computed, inject, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
+import { routeLocationKey } from 'vue-router'
 import { Activity, ArrowRight, ArrowDownUp, CalendarDays, Check, ChevronLeft, ChevronRight, Clock3, FileText, Filter, Gauge, Layers3, MapPinned, RadioTower, RefreshCw, Search, ShieldCheck, Wind, X, Zap } from 'lucide-vue-next'
 import { currentRegion } from '@/services/region/regionContext'
 import { selectedCompanyId } from '@/services/company/companyContext'
@@ -22,6 +23,7 @@ import DisclosureMaintenanceTools from './DisclosureMaintenanceTools.vue'
 import DisclosureMaintenanceList from './DisclosureMaintenanceList.vue'
 import DisclosureEventGroups from './DisclosureEventGroups.vue'
 import { createDefaultMaintenanceFilters, hasMaintenanceFilters, type MaintenanceFilters } from './disclosureMaintenance'
+import { queryText, validObjectDate } from './objectNavigation'
 import { useGridObjectContext } from './useGridObjectContext'
 import GridObjectContextBar from './GridObjectContextBar.vue'
 import GridObjectDrawer from './GridObjectDrawer.vue'
@@ -33,6 +35,11 @@ const objectTarget = shallowRef<GridObjectReference | null>(null)
 const objectQuery = computed((): Record<string, string> => objectContext.reference.value ? { objectKind: objectContext.reference.value.kind, objectId: objectContext.reference.value.id } : {})
 const objectQueryKey = computed(() => JSON.stringify([objectContext.hasContext.value, objectQuery.value]))
 const objectBlocked = computed(() => objectContext.hasContext.value && !objectContext.reference.value)
+// 洞察电网边界页深链（dljy#3106 D6.1）：通道/断面名经 keyword 预填披露检索，输电主题
+// 按名过滤，业务日期经 objectDate 落到洞察窗口末日。只认合法单值（非空字符串、无控制
+// 字符、检索词 ≤120 字；日期必须是真实日历日），其余按缺省处理；对象上下文
+//（objectKind/objectId）仍走 useGridObjectContext，两组键互不占用。
+const deskRoute = inject(routeLocationKey, null)
 const date = ref(objectContext.hasContext.value ? objectContext.date.value : todayBeijing())
 const mode = ref<'day' | 'week'>('day')
 const themeId = ref<DeskThemeId>('price')
@@ -336,6 +343,40 @@ function changePage(next: number) { if (next > 0 && next <= totalPages.value && 
 function refresh() { refreshKey.value += 1; void Promise.all([loadRailOverview(), loadOverview(), loadEvents(), loadCurve(), loadProviders(), loadThemeAvailability()]) }
 function resetFilters() { searchText.value = ''; keyword.value = ''; clearMaintenanceFilters(); chooseTheme('price'); clearSelection() }
 watch(searchText, (value) => { if (searchTimer) clearTimeout(searchTimer); searchTimer = setTimeout(() => { keyword.value = value.trim() }, 260) })
+// 深链承接要在保活复用时也生效：AppLayout 对路由页保活，setup 只跑一次——再次带
+// keyword/objectDate 深链进入（实例未销毁）不会重跑 setup，必须按路由查询签名应用。
+// 只认洞察电网边界页的深链（from=insight-grid-boundaries 或带 keyword）：grid-geo 对象
+// 上下文链接（objectKind/objectId/objectDate，无 keyword/from）不是通道深链，不得被
+// 错当成深链而强行切到「联络线与断面」主题。接受新签名时同步重置时间范围（单日盯盘、
+// 清时段锁定与已知时刻筛选）——缓存页遗留的近七日模式或旧选区不能套在新词上；
+// 同一签名再次进入保留本地编辑；不带深链键的普通导航不覆盖现场（keep-alive 既有语义）；
+// 对象上下文键仍走 useGridObjectContext，两组键互不占用。
+const DEEP_LINK_ORIGIN = 'insight-grid-boundaries'
+let appliedDeepLink = ''
+watch(
+  () => [objectContext.active.value, JSON.stringify(deskRoute?.query ?? {})] as const,
+  ([active]) => {
+    if (!active) return
+    const query = deskRoute?.query ?? {}
+    const rawKeyword = queryText(query.keyword).trim()
+    const rawDate = queryText(query.objectDate)
+    if (!rawKeyword && !rawDate) return
+    // 通道/断面深链的来源标记：对象上下文链接也带 objectDate 但没有这个 from、没有 keyword
+    if (queryText(query.from) !== DEEP_LINK_ORIGIN && !rawKeyword) return
+    const signature = JSON.stringify([rawKeyword, validObjectDate(rawDate) ? rawDate : ''])
+    if (signature === appliedDeepLink) return
+    appliedDeepLink = signature
+    chooseTheme('transmission')
+    mode.value = 'day'
+    selection.value = null
+    timePrecision.value = 'all'
+    const linkKeyword = rawKeyword && rawKeyword.length <= 120 && !/[\u0000-\u001f]/.test(rawKeyword) ? rawKeyword : ''
+    searchText.value = linkKeyword
+    keyword.value = linkKeyword
+    if (validObjectDate(rawDate) && !objectContext.hasContext.value) date.value = rawDate
+  },
+  { immediate: true }
+)
 watch(() => [dateFrom.value, dateTo.value, scopeKey.value], () => { clearSelection(); hoveredAt.value = null })
 watch(scopeKey, clearMaintenanceFilters)
 watch([dateFrom, dateTo, scopeKey, keyword, objectQueryKey], () => { railOverview.value = null; void loadRailOverview() }, { immediate: true })

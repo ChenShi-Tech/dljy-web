@@ -9,9 +9,12 @@
 //   ⑦ 价差方向与异常规则固定文案；异常行点击生成语义选区（无 dataIndex/seriesIndex）；
 //   ⑧ 422（只选一侧来源）直显后端文案；profile 窗口天数与有效天数如实、不冒充季节规律；
 //   ⑨ 上下文变化后迟到结果不写进新状态；页签懒加载切回不重查；
-//   ⑩ 界面只出现业务语言，不出现来源标识原文。
-// mock 边界：insightClient（保留类型与错误类）/ spotClient / cgnYunnanLivePrice 打桩；
-// useInsightContext 用真 composable（真 router + 全局地区/公司 ref）。
+//   ⑩ 界面只出现业务语言，不出现来源标识原文；
+//   ⑪ 导出与材料入口（dljy#3078 任务 15.2/14.5）：时段走势/历史分布区块有「导出 CSV」与
+//      「加入材料」；无公司写权限者只少材料入口（导出是只读动作）；材料窗口的冻结请求与
+//      当前查询同口径（analysisId + view + objectIds），期望版本取自当前结果。
+// mock 边界：insightClient（保留类型与错误类）/ spotClient / cgnYunnanLivePrice / review
+// workpapers 客户端打桩；useInsightContext 用真 composable（真 router + 全局地区/公司 ref）。
 import { defineComponent, h } from 'vue'
 import { flushPromises, type VueWrapper } from '@vue/test-utils'
 import { createMemoryHistory, createRouter, type Router } from 'vue-router'
@@ -22,18 +25,31 @@ import {
   queryInsight,
 } from '@/services/insight/insightClient'
 import { searchSpotNodes } from '@/services/market/spotClient'
+import { getCurrentUser } from '@/services/auth'
+import { beijingToday } from 'shared/midlong/dates.mjs'
+import { sevenDayWindowEndingAt } from './prices/priceProfileModel'
 import { selectedRegionId } from '@/services/region/regionContext'
 import { selectedCompanyId } from '@/services/company/companyContext'
 import { mount as appMount } from '@/test/mount'
 import InsightDateRange from '@/components/insight/InsightDateRange.vue'
 import InsightHistoryCandidates from '@/components/insight/InsightHistoryCandidates.vue'
+import InsightMaterialDialog from '@/components/insight/InsightMaterialDialog.vue'
 import InsightObjectPicker from '@/components/insight/InsightObjectPicker.vue'
+import {
+  captureInsightMaterial,
+  getWorkpaper,
+  listWorkpapers,
+  saveWorkpaper,
+} from '@/services/review/workpapers'
 import {
   insightResult,
   nodePriceResult,
   nodePriceSeries,
+  READ_SET_REF,
+  RESULT_VERSION,
   row,
 } from '@/components/insight/insightFixtures'
+import { activeAiPage, resolveInterpret } from '@/features/aiSidebar/pageRegistry'
 import YunnanPricesPage from './YunnanPricesPage.vue'
 
 // ── 可控 mock 状态（vi.hoisted：vi.mock 工厂提升后仍可引用）────────────────────────────
@@ -41,6 +57,17 @@ import YunnanPricesPage from './YunnanPricesPage.vue'
 const state = vi.hoisted(() => ({
   capabilities: null as unknown,
   responder: null as ((request: any) => Promise<any>) | null,
+}))
+
+vi.mock('@/composables/useAgentHealth', () => ({
+  // 页面 AI 入口的探活打桩：不发起真实网络连接；AI 入口可见性按在线处理。
+  useAgentHealth: () => ({ health: { value: 'online' }, ready: { value: true }, offline: { value: false }, check: async () => {} }),
+}))
+
+const geo = vi.hoisted(() => ({
+  plants: vi.fn<() => Promise<any>>(),
+  nodes: vi.fn<() => Promise<any>>(),
+  object: vi.fn<() => Promise<any>>(),
 }))
 
 vi.mock('@/services/insight/insightClient', async (importOriginal) => {
@@ -52,6 +79,12 @@ vi.mock('@/services/insight/insightClient', async (importOriginal) => {
   }
 })
 
+vi.mock('@/features/gridGeo/client', () => ({
+  fetchGridGeoPlants: geo.plants,
+  fetchGridGeoNodes: geo.nodes,
+  fetchGridObject: geo.object,
+}))
+
 vi.mock('@/services/market/spotClient', () => ({
   searchSpotNodes: vi.fn(async () => ({ count: 2, nodes: ['YN.KM.01', 'YN.KM.02'] })),
 }))
@@ -62,6 +95,18 @@ vi.mock('@/services/market/cgnYunnanLivePrice', () => ({
   })),
   hasCgnYunnanPriceEntitlement: () => false,
 }))
+
+// 材料窗口的复盘客户端打桩：默认成功形状，用例按需覆盖（入口显隐用例不触发调用）
+vi.mock('@/services/review/workpapers', async (importOriginal) => {
+  const actual = await importOriginal<Record<string, unknown>>()
+  return {
+    ...actual,
+    listWorkpapers: vi.fn(),
+    getWorkpaper: vi.fn(),
+    captureInsightMaterial: vi.fn(),
+    saveWorkpaper: vi.fn(),
+  }
+})
 
 // ── 图表桩：绕开 ECharts canvas；捕获 applySelection 调用（选区语义断言用）──────────────
 
@@ -91,6 +136,13 @@ const ChartCardStub = defineComponent({
   setup(props) {
     return () => h('div', { class: 'chart-card-stub' }, props.title)
   },
+})
+
+const Price3DSceneStub = defineComponent({
+  name: 'Price3DScene',
+  props: { lines: { type: Array, default: () => [] }, timePoints: { type: Array, default: () => [] }, dates: { type: Array, default: () => [] } },
+  emits: ['initError', 'pointClick'],
+  render: () => h('div', { class: 'price-3d-scene-stub' }),
 })
 
 // ── 结果夹具（形状对照 dljy 仓 price-views.mjs；contextVersion 跟随页面请求）────────────
@@ -193,15 +245,33 @@ function spreadResult(request: any) {
   })
 }
 
+/** 长表行（多日立体/热力/双切面消费）：15 分钟时段 + 业务日 + 时点。 */
+function profileRow(seriesId: string, date: string, timeOfDay: string, value: string) {
+  const [h0, m0] = timeOfDay.split(':').map(Number)
+  const endMinutes = h0! * 60 + m0! + 15
+  const endTime = `${String(Math.floor(endMinutes / 60)).padStart(2, '0')}:${String(endMinutes % 60).padStart(2, '0')}`
+  return { seriesId, date, timeOfDay, intervalStart: `${date}T${timeOfDay}:00+08:00`, intervalEnd: `${date}T${endTime}:00+08:00`, value }
+}
+
 function profileResult(request: any) {
-  const second = nodePriceSeries({ seriesId: 'ser-node-2', dimensions: { nodeName: 'YN.KM.02' } })
+  const second = nodePriceSeries({ seriesId: 'ser-node-2', dimensions: { nodeName: 'YN.KM.02' }, marketPhase: 'real-time', sourceId: 'yn.price.node.public.real-time' })
   return insightResult({
     contextVersion: request.context.contextVersion,
     data: {
       schemaVersion: 'insight-result-data/v1',
       dimensions: [{ id: 'seriesId', kind: 'category' }, { id: 'date', kind: 'category' }, { id: 'metricId', kind: 'category' }],
       measures: [{ id: 'value', unit: 'yuan/MWh' }],
-      rows: [],
+      // 长表：两个业务日 × 日前(ser-node-1)/实时(ser-node-2)，缺测=行不存在（09-11 实时 00:15 缺、含负价）
+      rows: [
+        profileRow('ser-node-1', '2026-09-10', '00:00', '210.5'),
+        profileRow('ser-node-1', '2026-09-10', '00:15', '220'),
+        profileRow('ser-node-2', '2026-09-10', '00:00', '205.25'),
+        profileRow('ser-node-2', '2026-09-10', '00:15', '215'),
+        profileRow('ser-node-1', '2026-09-11', '00:00', '150'),
+        profileRow('ser-node-1', '2026-09-11', '00:15', '140'),
+        profileRow('ser-node-2', '2026-09-11', '00:00', '155'),
+        profileRow('ser-node-2', '2026-09-11', '00:15', '-12.5'),
+      ],
       series: [nodePriceSeries(), second],
       tables: {
         daily: {
@@ -316,7 +386,7 @@ async function mountPage(): Promise<VueWrapper<any>> {
   wrapper = appMount(YunnanPricesPage, {
     global: {
       plugins: [router],
-      stubs: { InsightSeriesChart: InsightSeriesChartStub, ChartCard: ChartCardStub },
+      stubs: { InsightSeriesChart: InsightSeriesChartStub, ChartCard: ChartCardStub, Price3DScene: Price3DSceneStub },
     },
   })
   await flushPromises()
@@ -362,7 +432,11 @@ beforeEach(async () => {
   selectedCompanyId.value = 'c1'
   router = createRouter({
     history: createMemoryHistory(),
-    routes: [{ path: '/', component: { render: () => null } }],
+    // 兜底路由：业务模块只读深链用例要真实 push 到 /data-ops/console（dljy#3096）
+    routes: [
+      { path: '/', component: { render: () => null } },
+      { path: '/:pathMatch(.*)*', component: { render: () => null } },
+    ],
   })
   await router.push('/')
   state.capabilities = capsWith(ALL_ANALYSES)
@@ -370,6 +444,10 @@ beforeEach(async () => {
   vi.mocked(queryInsight).mockClear()
   vi.mocked(fetchInsightCapabilities).mockClear()
   vi.mocked(searchSpotNodes).mockClear()
+  vi.mocked(listWorkpapers).mockClear()
+  vi.mocked(getWorkpaper).mockClear()
+  vi.mocked(captureInsightMaterial).mockClear()
+  vi.mocked(saveWorkpaper).mockClear()
   chartApplyCalls.length = 0
 })
 
@@ -566,6 +644,63 @@ describe('日前实时价差', () => {
     expect(wrapper!.text()).toContain('已定位时段')
   })
 
+  it('「以选区进入研究」：按白名单只带窗口起止日 + 来源引用跳研究页（对象引用与时段数组不进 URL）', async () => {
+    router.addRoute({ path: '/insight/research', component: { render: () => null } })
+    state.capabilities = capsWith(['prices.public-node-series'])
+    await mountPage()
+    await chooseObjects('YN.KM.01')
+    await switchTab('spread')
+
+    const tables = wrapper!.findAllComponents({ name: 'ElTable' })
+    const anomalyTable = tables.find((table) => {
+      const data = table.props('data') as Array<Record<string, unknown>>
+      return Boolean(data?.length && 'rank' in data[0])
+    })
+    anomalyTable!.vm.$emit('row-click', {
+      seriesId: 'spread:public-node:YN.KM.01',
+      intervalStart: '2026-09-10T10:00:00+08:00',
+      intervalEnd: '2026-09-10T10:15:00+08:00',
+      value: '88.25',
+      rank: '1',
+    })
+    await flushPromises()
+
+    await wrapper!.find('[data-testid="ynp-spread-to-research"]').trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.path).toBe('/insight/research')
+    const query = router.currentRoute.value.query
+    expect(query.from).toBe('prices')
+    expect(query.start).toBe('2026-09-10')
+    expect(query.end).toBe('2026-09-10')
+    expect(String(query.sources)).toContain('yn.price.node.public')
+    // 研究预览不消费对象范围：对象引用不进承接（带过去就是假承接）；时段数组与版本令牌同样不交接
+    expect(query.objects).toBeUndefined()
+    expect(query.timeIntervals).toBeUndefined()
+    expect(query.resultRef).toBeUndefined()
+  })
+
+  it('空间入口：独立节点未关联场站时不跳转（市场空间态势无法聚焦独立节点，如实说明）', async () => {
+    router.addRoute({ path: '/grid-assets/market', component: { render: () => null } })
+    state.capabilities = capsWith(['prices.public-node-series'])
+    geo.object.mockClear()
+    geo.nodes.mockResolvedValue({ data: { items: [{ assetId: 'ND-KM01', standardName: 'YN.KM.01', nodeName: 'YN.KM.01', aliases: [] }] } })
+    geo.object.mockResolvedValue({
+      reference: { kind: 'node', id: 'ND-KM01', regionId: 'yunnan' },
+      relations: { plants: [], nodes: [] },
+    })
+    await mountPage()
+    await chooseObjects('YN.KM.01')
+    await switchTab('basis')
+    basisReferenceSelect().vm.$emit('update:modelValue', 'YN.KM.01')
+    await flushPromises()
+
+    await wrapper!.find('[data-testid="ynp-basis-spatial"]').trigger('click')
+    await flushPromises()
+    // 名字解析成资产 ID 后仍要确认场站关联：无关联不跳转，路由停在价格页
+    expect(geo.object).toHaveBeenCalledTimes(1)
+    expect(router.currentRoute.value.path).not.toBe('/grid-assets/market')
+  })
+
   it('只选一侧来源的 422：直显后端文案', async () => {
     state.capabilities = capsWith(['prices.user-series'])
     await mountPage()
@@ -590,7 +725,7 @@ describe('历史分布', () => {
     expect(text).toContain('业务窗口 2026-09-10 ~ 2026-09-11（2 天）')
     // 两条序列：一条两天、一条一天（缺测如实，不装满窗；序列名含市场阶段「日前」）
     expect(text).toContain('YN.KM.01 日前 2 天')
-    expect(text).toContain('YN.KM.02 日前 1 天')
+    expect(text).toContain('YN.KM.02 实时 1 天')
     expect(text).toContain('只统计所选窗口内真实存在的时段；样本只有一年或更短时，不代表多年季节规律')
     expect(text).toContain('暂不支持按季节、工作日筛选')
     expect(text).toContain('逐日均价（时长加权）')
@@ -637,6 +772,29 @@ describe('状态纪律', () => {
     await switchTab('series')
     expect(queryCallsOf((request) => request.filters?.view === 'series')).toHaveLength(seriesCallsBefore)
   })
+
+  it('能力目录请求在途被业务窗切换作废后自动重拉恢复，不静默死锁（dljy#3065）', async () => {
+    // 第一次能力目录请求挂起：模拟页面加载即被上下文切换作废的在途请求
+    let resolveFirst: (value: any) => void = () => {}
+    const firstCapabilities = new Promise((resolve) => {
+      resolveFirst = resolve
+    })
+    vi.mocked(fetchInsightCapabilities).mockResolvedValueOnce(firstCapabilities as any)
+
+    await mountPage() // onMounted → loadCapabilities → 第 1 次能力目录请求挂起
+
+    // 换窗口：上下文代次 +1，作废在途能力目录请求
+    await setWindow('2026-09-10', '2026-09-11')
+
+    // 迟到响应到达：run 判代次落后返回 null；修复后应自动重拉，而非静默死锁
+    resolveFirst(capsWith(ALL_ANALYSES))
+    await flushPromises()
+    await flushPromises()
+
+    // 重拉后能力目录就绪，默认页签（series）查询已发出；修复前目录与错误均为 null，查询被永久拦截
+    expect(vi.mocked(fetchInsightCapabilities).mock.calls.length).toBeGreaterThanOrEqual(2)
+    expect(queryCallsOf((request) => request.filters?.view === 'series').length).toBeGreaterThan(0)
+  })
 })
 
 describe('展示纪律', () => {
@@ -651,5 +809,261 @@ describe('展示纪律', () => {
     expect(text).not.toContain('sourceId')
     expect(text).not.toContain('family')
     expect(text).not.toContain('SELECT ')
+  })
+})
+
+// ── 多日展示模式（单日走势 / 多日立体 / 日期×时段热力；dljy#3007 任务 6.8/6.9）────────
+
+function modeGroup(): VueWrapper<any> {
+  return wrapper!.getComponent('[data-testid="ynp-series-mode"]') as unknown as VueWrapper<any>
+}
+
+async function switchMode(mode: 'single' | 'multi3d' | 'heatmap') {
+  modeGroup().vm.$emit('update:modelValue', mode)
+  await flushPromises()
+}
+
+function profileCalls() {
+  return queryCallsOf((request) => request.filters?.view === 'profile')
+}
+
+function modeStorageKey(analysisId = 'prices.user-series') {
+  return `ynp.prices.mode|${getCurrentUser().username}|yunnan|${analysisId}`
+}
+
+function throwingStorage(): Storage {
+  const boom = () => {
+    throw new Error('storage disabled')
+  }
+  return { length: 0, clear: boom, getItem: boom, key: boom, removeItem: boom, setItem: boom }
+}
+
+describe('多日展示模式', () => {
+  it('切到多日立体：数据面走 profile 视图（与「历史分布」页签共用，切过去不重查）', async () => {
+    await mountPage()
+    // 默认单日走势：只查 series + summary，不发 profile
+    expect(profileCalls()).toHaveLength(0)
+    expect(queryCallsOf((request) => request.filters?.view === 'series')).toHaveLength(1)
+
+    await switchMode('multi3d')
+    expect(profileCalls()).toHaveLength(1)
+    // series 视图查询行为不变（模式只切换展示）
+    expect(queryCallsOf((request) => request.filters?.view === 'series')).toHaveLength(1)
+
+    // 历史分布页签与多日模式共用同一份 profile 结果：同签名不重查
+    await switchTab('profile')
+    expect(profileCalls()).toHaveLength(1)
+  })
+
+  it('单日窗口不悄悄扩窗：提示 + 「改为 7 天」按钮，点了才扩窗并按新口径重查', async () => {
+    await mountPage()
+    await switchMode('multi3d')
+    expect(wrapper!.find('[data-testid="ynp-3dw-window-hint"]').exists()).toBe(true)
+    const extend = wrapper!.find('[data-testid="ynp-3dw-extend"]')
+    expect(extend.exists()).toBe(true)
+    // 按钮文案写明目标窗口（结束日=今天，往前数 7 天）
+    const expected = sevenDayWindowEndingAt(beijingToday())
+    expect(extend.text()).toContain(`改为 ${expected.start} — ${expected.end} 共 7 天`)
+
+    await extend.trigger('click')
+    await flushPromises()
+    // 页面 setBusinessWindow：日期窗控件与上下文同步为 7 天窗口
+    expect(wrapper!.getComponent(InsightDateRange).props('modelValue')).toEqual(expected)
+    // 口径变化：profile 按新窗口重查（旧结果属于旧口径，不冒充）
+    expect(profileCalls()).toHaveLength(2)
+  })
+
+  it('模式按 用户+地区+价格对象 记忆：换对象换键，换回恢复', async () => {
+    await mountPage()
+    await switchMode('heatmap')
+    expect(modeGroup().props('modelValue')).toBe('heatmap')
+    expect(localStorage.getItem(modeStorageKey())).toBe('heatmap')
+
+    // 换到公开节点价：另一个键没有记忆 → 回单日走势
+    await choosePriceObject('prices.public-node-series')
+    expect(modeGroup().props('modelValue')).toBe('single')
+    expect(localStorage.getItem(modeStorageKey('prices.public-node-series'))).toBeNull()
+
+    // 换回用户侧价：恢复该键记忆的模式
+    await choosePriceObject('prices.user-series')
+    expect(modeGroup().props('modelValue')).toBe('heatmap')
+  })
+
+  it('localStorage 不可用（读写抛错）：页面正常、模式切换不炸、行为回默认', async () => {
+    const original = globalThis.localStorage
+    Object.defineProperty(globalThis, 'localStorage', { configurable: true, writable: true, value: throwingStorage() })
+    try {
+      await mountPage()
+      await switchMode('multi3d')
+      // 读写都抛错：页面仍渲染工作区（记忆静默失败，模式仍由本次会话状态决定）
+      expect(wrapper!.find('[data-testid="ynp-price-3d-workspace"]').exists()).toBe(true)
+      expect(modeGroup().props('modelValue')).toBe('multi3d')
+    } finally {
+      Object.defineProperty(globalThis, 'localStorage', { configurable: true, writable: true, value: original })
+    }
+  })
+})
+
+// ── 导出与材料入口（dljy#3078 任务 15.2/14.5）────────────────────────────────────────────
+
+function entryButtons(testId: string) {
+  return wrapper!.findAll(`[data-testid="${testId}"]`)
+}
+
+describe('导出与材料入口', () => {
+  it('时段走势区块提供「导出 CSV」与「加入材料」（管理员默认可写）；点加入材料打开窗口，请求与当前查询同口径、期望版本取自当前结果', async () => {
+    state.capabilities = capsWith(['prices.public-node-series'])
+    await mountPage()
+    await chooseObjects('YN.KM.01')
+
+    expect(entryButtons('insight-export-csv')).toHaveLength(1)
+    expect(entryButtons('insight-add-material')).toHaveLength(1)
+
+    await entryButtons('insight-add-material')[0]!.trigger('click')
+    await flushPromises()
+
+    const dialog = wrapper!.getComponent(InsightMaterialDialog)
+    expect(dialog.props('subject')).toBe('时段走势')
+    expect(dialog.props('region')).toBe('yunnan')
+    expect(dialog.props('companyId')).toBe('c1')
+    const request = dialog.props('request') as { analysisId: string; context: Record<string, unknown>; filters: Record<string, unknown> }
+    expect(request.analysisId).toBe('prices.public-node-series')
+    expect(request.filters).toEqual({ view: 'series', objectIds: ['YN.KM.01'] })
+    // 上下文剥掉代次（导航概念）：同口径重复保存的幂等键稳定
+    expect(request.context.contextVersion).toBeUndefined()
+    // 期望版本 = 当前结果的版本引用（服务端据此核验，不一致返回 409）
+    const result = dialog.props('result') as { resultVersion: string; readSetRef: string }
+    expect(result.resultVersion).toBe(RESULT_VERSION)
+    expect(result.readSetRef).toBe(READ_SET_REF)
+  })
+
+  it('历史分布区块同样有入口；窗口请求按 view=profile 组装', async () => {
+    state.capabilities = capsWith(['prices.public-node-series'])
+    await mountPage()
+    await chooseObjects('YN.KM.01')
+    await switchTab('profile')
+
+    // el-tabs 保留已访问页签：时段走势 + 历史分布两个区块都有入口；历史分布的块在 DOM 靠后
+    expect(entryButtons('insight-add-material')).toHaveLength(2)
+    await entryButtons('insight-add-material')[1]!.trigger('click')
+    await flushPromises()
+
+    const dialog = wrapper!.getComponent(InsightMaterialDialog)
+    expect(dialog.props('subject')).toBe('历史分布')
+    expect((dialog.props('request') as { filters: Record<string, unknown> }).filters.view).toBe('profile')
+  })
+
+  it('无公司写权限（TRADER）：「加入材料」不出现，「导出 CSV」保留——只读与写入的权限语义分离', async () => {
+    localStorage.setItem('dljy_governance_user', JSON.stringify({ username: 'trader' }))
+    state.capabilities = capsWith(['prices.user-series'])
+    await mountPage()
+
+    expect(entryButtons('insight-add-material')).toHaveLength(0)
+    expect(entryButtons('insight-export-csv')).toHaveLength(1)
+    // 入口都没出现，复盘客户端一次也不该被调
+    expect(listWorkpapers).not.toHaveBeenCalled()
+  })
+
+  it('点击「导出 CSV」触发浏览器下载，文件名含业务窗口（同版本全量前端导出）', async () => {
+    const downloads: string[] = []
+    const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
+      downloads.push(this.download)
+    })
+    vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:test')
+    vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {})
+    try {
+      state.capabilities = capsWith(['prices.user-series'])
+      await mountPage()
+
+      await entryButtons('insight-export-csv')[0]!.trigger('click')
+      await flushPromises()
+
+      expect(clickSpy).toHaveBeenCalledTimes(1)
+      // 文件名窗口取自结果本体（夹具的业务窗 2026-09-10），不是「今天」
+      expect(downloads[0]).toBe('洞察-时段走势-2026-09-10至2026-09-10.csv')
+    } finally {
+      vi.restoreAllMocks()
+    }
+  })
+})
+
+// ── 业务模块只读深链·资料维护（dljy#3096，任务 15.5：design D11 / CH05 / PP07）───────────
+// 价格页的深链面只有「前往资料维护」：空态原因为「未接入/超覆盖」且对上传中心有权限才显示；
+// 跳转只带期间/from 标记，不在洞察手填真实值；无权限不渲染。
+
+describe('业务模块只读深链·资料维护', () => {
+  /** 让统计摘要空态（区块无条件渲染在时段走势页签），其余视图照常。 */
+  function emptySummaryResponder(reason: 'not-onboarded' | 'beyond-coverage') {
+    return (request: any): Promise<any> => {
+      if (request.filters?.view !== 'summary') return defaultResponder(request)
+      return Promise.resolve(insightResult({
+        contextVersion: request.context.contextVersion,
+        analysisId: request.analysisId,
+        sourceRefs: [{ sourceId: 'yn.price.node.public.day-ahead', accessScope: 'public' }],
+        runtime: {
+          access: 'granted',
+          availability: { state: 'empty', reason },
+          freshness: { state: 'unknown' },
+          comparability: { status: 'compatible', reasons: [] },
+        },
+        data: { schemaVersion: 'insight-result-data/v1', dimensions: [], measures: [], rows: [], series: [] },
+      }))
+    }
+  }
+
+  it('空态原因为「超覆盖」且有权限（管理员）：入口显示，跳转上传中心只带期间/from/panel', async () => {
+    localStorage.setItem('dljy_governance_user', JSON.stringify({ username: 'admin' }))
+    state.responder = emptySummaryResponder('beyond-coverage')
+    await mountPage()
+
+    const entry = wrapper!.find('[data-testid="insight-open-maintenance"]')
+    expect(entry.exists()).toBe(true)
+    expect(entry.text()).toBe('前往资料维护')
+
+    vi.spyOn(router, 'push')
+    await entry.trigger('click')
+    await flushPromises()
+
+    const target = vi.mocked(router.push).mock.calls.at(-1)![0] as unknown as { path: string; query: Record<string, string> }
+    expect(target.path).toBe('/data-ops/console')
+    // query 白名单：期间 + from + panel，全部字符串（无原始数据数组、无可写动词）
+    expect(Object.keys(target.query).sort()).toEqual(['end', 'from', 'panel', 'start'])
+    expect(Object.values(target.query).every((value) => typeof value === 'string' && value.length > 0)).toBe(true)
+    expect(target.query.from).toBe('insight-prices')
+    expect(target.query.panel).toBe('upload')
+  })
+
+  it('空态原因为「未接入」但无权限（TRADER 无数据运维授权）：入口不渲染', async () => {
+    localStorage.setItem('dljy_governance_user', JSON.stringify({ username: 'trader' }))
+    state.responder = emptySummaryResponder('not-onboarded')
+    await mountPage()
+
+    expect(wrapper!.text()).toContain('尚未接入')
+    expect(wrapper!.find('[data-testid="insight-open-maintenance"]').exists()).toBe(false)
+  })
+})
+
+// ── AI 解读注册（dljy#3100，任务 15.3）：六页注册覆盖之价格页 ─────────────────────────────
+
+describe('YunnanPricesPage · AI 解读注册（15.3）', () => {
+  it('注册统一侧栏声明并挂入口按钮：采集含时段走势与统计摘要，payload 无原始行', async () => {
+    await mountPage()
+    expect(wrapper!.find('[data-testid="ynp-ai-entry"]').exists()).toBe(true)
+    const def = activeAiPage().value
+    expect(def?.label).toBe('云南价格分析')
+    const slice = resolveInterpret(def!)!.context?.() as { blocks: Array<Record<string, unknown>> } | null
+    expect(slice).not.toBeNull()
+    expect(slice!.blocks.map((block) => block.blockId).sort()).toEqual(['series', 'summary'])
+    expect(JSON.stringify(slice)).not.toMatch(/"rows"/)
+  })
+
+  it('切换价格对象后旧签名结果作废：新查询未就绪期间采集为空（过期资料不进上下文）', async () => {
+    await mountPage()
+    const def = activeAiPage().value!
+    expect((resolveInterpret(def)!.context?.() as { blocks: unknown[] }).blocks).toHaveLength(2)
+    state.responder = () => new Promise(() => {}) // 新查询挂起（公共节点价需先选对象）
+    await choosePriceObject('prices.public-node-series') // 全部旧结果作废
+    const slice = resolveInterpret(def)!.context?.() as { blocks: unknown[] } | null
+    expect(slice?.blocks ?? []).toHaveLength(0)
   })
 })

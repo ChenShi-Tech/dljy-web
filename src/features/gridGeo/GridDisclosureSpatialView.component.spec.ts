@@ -8,7 +8,7 @@ import { selectedCompanyId } from '@/services/company/companyContext'
 import { getDisclosureDeskMetric } from './disclosureDeskData'
 
 const calls = vi.hoisted(() => ({ overview: vi.fn(), events: vi.fn(), groups: vi.fn(), providers: vi.fn(), series: vi.fn(), themeAvailability: vi.fn() }))
-vi.mock('./client', () => ({ fetchGridDisclosureOverview: calls.overview, fetchGridDisclosureEvents: calls.events, fetchGridDisclosureGroups: calls.groups, fetchGridDisclosureProviders: calls.providers }))
+vi.mock('./client', () => ({ fetchGridDisclosureOverview: calls.overview, fetchGridDisclosureEvents: calls.events, fetchGridDisclosureGroups: calls.groups, fetchGridDisclosureProviders: calls.providers, fetchGridObject: vi.fn(async () => { throw new Error('对象详情不在本组用例范围') }) }))
 vi.mock('@/services/region/regionContext', async () => { const { ref } = await import('vue'); return { currentRegion: ref({ id: 'yunnan', shortName: '云南' }) } })
 vi.mock('@/services/company/companyContext', async () => { const { ref } = await import('vue'); return { selectedCompanyId: ref('company-a') } })
 vi.mock('@/utils/beijingDate', () => ({ todayBeijing: () => '2026-09-09' }))
@@ -1066,6 +1066,138 @@ describe('公开披露交易台上下文联动', () => {
     oldSeries.resolve(channelCurve('云南总送出 · 云南', 999)); await flushPromises()
     expect((wrapper.get('[aria-label="指标地区或通道"]').element as HTMLSelectElement).value).toBe('云南省网送广东 · 云南')
     expect(wrapper.getComponent({ name: 'DeskChartStub' }).props('series')[0].points[0].value).toBe(222)
+    wrapper.unmount()
+  })
+})
+
+// 洞察深链承接（dljy#3106 D6.1）：电网边界页「在空间视图查看」经 keyword/objectDate
+// 预填披露检索与业务日期；只认合法单值，数组/非法日历日按缺省处理，不伪造上下文。
+describe('洞察深链：keyword 与业务日期预填', () => {
+  const deskStubs = { DisclosureDeskChart: chartStub, DisclosureMetricPicker: metricPickerStub, DisclosureDeskInsights: insightsStub, DisclosureUnitRoster: rosterStub, DisclosureEventGroups: groupsStub }
+
+  async function mountWithQuery(query: Record<string, unknown>) {
+    const { createMemoryHistory, createRouter } = await import('vue-router')
+    const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/grid-assets/disclosures', component: GridDisclosureSpatialView }] })
+    await router.push({ path: '/grid-assets/disclosures', query: query as Record<string, string> })
+    await router.isReady()
+    const wrapper = mount(GridDisclosureSpatialView, { global: { plugins: [router], stubs: deskStubs } })
+    await flushPromises()
+    return wrapper
+  }
+
+  it('keyword 预填搜索框并进入首个请求；objectDate 落到洞察窗口末日', async () => {
+    const wrapper = await mountWithQuery({ keyword: '  某输电通道 ', objectDate: '2026-07-01' })
+    expect((wrapper.get('[data-testid="desk-search"]').element as HTMLInputElement).value).toBe('某输电通道')
+    expect(calls.groups.mock.calls.length).toBeGreaterThan(0)
+    expect(calls.groups.mock.lastCall![0]).toMatchObject({ keyword: '某输电通道', from: '2026-07-01T00:00:00+08:00', to: '2026-07-01T23:59:59+08:00' })
+    expect(calls.overview.mock.lastCall![0].keyword).toBe('某输电通道')
+    // 无对象上下文键：不触发对象关联读取，也不出现对象范围说明
+    expect(wrapper.find('.object-scope-note').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('数组 keyword 与非法日历日不进请求：按无词、今天处理', async () => {
+    const wrapper = await mountWithQuery({ keyword: ['a', 'b'], objectDate: '2026-02-30' })
+    expect((wrapper.get('[data-testid="desk-search"]').element as HTMLInputElement).value).toBe('')
+    expect(calls.groups.mock.lastCall![0]).toMatchObject({ from: '2026-09-09T00:00:00+08:00' })
+    expect(calls.groups.mock.lastCall![0].keyword).toBeUndefined()
+    wrapper.unmount()
+  })
+})
+
+describe('洞察深链在保活复用下按签名生效', () => {
+  const deskStubs = { DisclosureDeskChart: chartStub, DisclosureMetricPicker: metricPickerStub, DisclosureDeskInsights: insightsStub, DisclosureUnitRoster: rosterStub, DisclosureEventGroups: groupsStub }
+
+  it('离开后再带新深链进入（实例未销毁）：新签名立即应用；同一签名与无键返回保留现场', async () => {
+    const { createMemoryHistory, createRouter } = await import('vue-router')
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        { path: '/grid-assets/disclosures', component: GridDisclosureSpatialView },
+        { path: '/other', component: { render: () => null } },
+      ],
+    })
+    await router.push({ path: '/grid-assets/disclosures', query: { keyword: '第一条通道', objectDate: '2026-07-01' } })
+    await router.isReady()
+    const wrapper = mount(GridDisclosureSpatialView, { global: { plugins: [router], stubs: deskStubs } })
+    await flushPromises()
+    expect((wrapper.get('[data-testid="desk-search"]').element as HTMLInputElement).value).toBe('第一条通道')
+
+    // 用户本地改动搜索词（现场）
+    await wrapper.get('[data-testid="desk-search"]').setValue('本地改动')
+
+    // 同一签名再次进入：保留本地编辑
+    await router.push({ path: '/grid-assets/disclosures', query: { keyword: '第一条通道', objectDate: '2026-07-01' } })
+    await flushPromises()
+    expect((wrapper.get('[data-testid="desk-search"]').element as HTMLInputElement).value).toBe('本地改动')
+
+    // 离开（保活隐藏）后带新深链回来：新签名立即生效
+    await router.push('/other')
+    await flushPromises()
+    await router.push({ path: '/grid-assets/disclosures', query: { keyword: '第二条通道', objectDate: '2026-07-02' } })
+    await flushPromises()
+    expect((wrapper.get('[data-testid="desk-search"]').element as HTMLInputElement).value).toBe('第二条通道')
+    expect((wrapper.get('[data-testid="desk-date"]').element as HTMLInputElement).value).toBe('2026-07-02')
+    expect(calls.groups.mock.lastCall![0]).toMatchObject({ keyword: '第二条通道', from: '2026-07-02T00:00:00+08:00' })
+
+    // 不带深链键的普通导航（菜单返回）：不覆盖现场
+    await router.push('/other')
+    await flushPromises()
+    await router.push({ path: '/grid-assets/disclosures' })
+    await flushPromises()
+    expect((wrapper.get('[data-testid="desk-search"]').element as HTMLInputElement).value).toBe('第二条通道')
+    expect((wrapper.get('[data-testid="desk-date"]').element as HTMLInputElement).value).toBe('2026-07-02')
+
+    wrapper.unmount()
+  })
+
+  it('接受新深链签名时重置时间范围：近七日模式与时段锁定不套在新词上', async () => {
+    const { createMemoryHistory, createRouter } = await import('vue-router')
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        { path: '/grid-assets/disclosures', component: GridDisclosureSpatialView },
+        { path: '/other', component: { render: () => null } },
+      ],
+    })
+    await router.push({ path: '/grid-assets/disclosures', query: { keyword: '第一条通道', objectDate: '2026-07-01' } })
+    await router.isReady()
+    const wrapper = mount(GridDisclosureSpatialView, { global: { plugins: [router], stubs: deskStubs } })
+    await flushPromises()
+    // 缓存页遗留：近七日模式
+    await wrapper.get('[data-testid="desk-mode-week"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-testid="desk-mode-week"]').attributes('aria-pressed')).toBe('true')
+
+    await router.push('/other')
+    await flushPromises()
+    await router.push({ path: '/grid-assets/disclosures', query: { keyword: '第二条通道', objectDate: '2026-07-02' } })
+    await flushPromises()
+    // 新深链落地：回到单日盯盘，时间范围按链接日期整日展开
+    expect(wrapper.get('[data-testid="desk-mode-day"]').attributes('aria-pressed')).toBe('true')
+    expect(calls.groups.mock.lastCall![0]).toMatchObject({ keyword: '第二条通道', from: '2026-07-02T00:00:00+08:00', category: 'congestion,constraint' })
+    wrapper.unmount()
+  })
+
+  it('grid-geo 对象上下文链接（带 objectDate 但无 keyword/from）不算通道深链：主题不被切走', async () => {
+    const { createMemoryHistory, createRouter } = await import('vue-router')
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [{ path: '/grid-assets/disclosures', component: GridDisclosureSpatialView }],
+    })
+    await router.push({ path: '/grid-assets/disclosures' })
+    await router.isReady()
+    const wrapper = mount(GridDisclosureSpatialView, { global: { plugins: [router], stubs: deskStubs } })
+    await flushPromises()
+    const baseline = calls.groups.mock.calls.length
+
+    await router.push({ path: '/grid-assets/disclosures', query: { objectKind: 'disclosure', objectId: 'E1', objectRegion: 'yunnan', objectCompany: 'company-a', objectDate: '2026-07-05' } })
+    await flushPromises()
+    // 只有洞察电网边界页的通道深链（from=insight-grid-boundaries 或带 keyword）才落「联络线与断面」主题；
+    // 门控失效时 chooseTheme('transmission') 会让组查询带上输电主题的类别过滤
+    for (const call of calls.groups.mock.calls.slice(baseline)) {
+      expect(call[0]).not.toHaveProperty('category', 'congestion,constraint')
+    }
     wrapper.unmount()
   })
 })

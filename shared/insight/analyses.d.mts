@@ -1,6 +1,6 @@
 // 市场洞察分析目录类型（#2993）。
 export type InsightEndpoint = { method: 'GET' | 'POST'; path: string }
-export declare const INSIGHT_ENDPOINTS: Readonly<{ capabilities: InsightEndpoint; coverage: InsightEndpoint; query: InsightEndpoint }>
+export declare const INSIGHT_ENDPOINTS: Readonly<{ capabilities: InsightEndpoint; coverage: InsightEndpoint; query: InsightEndpoint; researchPreview: InsightEndpoint; researchDefinitionList: InsightEndpoint; researchDefinitionSave: InsightEndpoint; researchDefinitionGet: InsightEndpoint; researchDefinitionRun: InsightEndpoint }>
 export type InsightAnalysis = {
   analysisId: string
   version: string

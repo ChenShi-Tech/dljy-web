@@ -10,9 +10,12 @@
 //   - 价差固定「日前 − 实时」，是价格差不是收益；基差必须显式选参考对象；
 //   - 负价电量占比没有同对象电量支撑，按后端 unavailableMetrics 原文如实标注不可用；
 //   - 历史分布只描述所选窗口，不冒充多年季节规律。
+//   - 业务模块只读深链（dljy#3096，任务 15.5）：区块空态「前往资料维护」——显隐经
+//    governance 既有口径判定，跳转只带期间/from 标记，不在洞察手填真实值；返回后重查。
 // 未选对象 / 未选参考的前置拦截在页面层完成（不发请求），后端校验是第二道防线。
 
 import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import type { InsightSelection } from 'shared/insight/handoff.mjs'
 import { getInsightAnalysis } from 'shared/insight/analyses.mjs'
 import { getInsightSource } from 'shared/insight/sources.mjs'
@@ -27,12 +30,31 @@ import {
 } from '@/services/insight/insightClient'
 import { searchSpotNodes } from '@/services/market/spotClient'
 import { fetchCgnYunnanPriceBundle } from '@/services/market/cgnYunnanLivePrice'
+import { getCurrentUser } from '@/services/auth'
+import { hasCompanyAdmin } from '@/services/governance'
 import { useInsightContext } from '@/composables/useInsightContext'
+import { useInsightEntryAnchor } from '@/composables/useInsightEntryAnchor'
+import { insightAiBlockOf, useInsightAiPage, type InsightAiEvidenceBlock } from '@/features/regions/yunnan/insight/useInsightAiPage'
 import { useInsightSelection } from '@/components/insight/chart/useInsightSelection'
+import { canFollowDeepLink, DEEP_LINK_TARGETS, openDataMaintenanceLink } from '../businessLinks'
+import { buildResearchHandoffQuery } from '../researchHandoff'
+import {
+  SPATIAL_LINK_TARGETS,
+  objectSpatialLinkQuery,
+  openSpatialViewLink,
+  resolveSpatialObjectId,
+  spatialEntryVisible,
+} from '../spatialLinks'
+import { fetchGridObject } from '@/features/gridGeo/client'
+import { ElMessage } from 'element-plus'
+import Price3DWorkspace from './prices/Price3DWorkspace.vue'
+import { readPriceMode, writePriceMode, type PriceDisplayMode } from './prices/priceModeStorage'
 import InsightBlock from '@/components/insight/InsightBlock.vue'
 import InsightDateRange from '@/components/insight/InsightDateRange.vue'
+import InsightAnchorNotice from '@/components/insight/InsightAnchorNotice.vue'
 import InsightEvidenceDrawer from '@/components/insight/InsightEvidenceDrawer.vue'
 import InsightHistoryCandidates from '@/components/insight/InsightHistoryCandidates.vue'
+import InsightMaterialDialog from '@/components/insight/InsightMaterialDialog.vue'
 import InsightObjectPicker, { type InsightObjectOption } from '@/components/insight/InsightObjectPicker.vue'
 import InsightResultTable from '@/components/insight/InsightResultTable.vue'
 import InsightSeriesChart from '@/components/insight/chart/InsightSeriesChart.vue'
@@ -106,6 +128,9 @@ const ctx = useInsightContext()
 const capabilities = ref<InsightCapabilities | null>(null)
 const capabilitiesError = ref<InsightRequestError | null>(null)
 const capabilitiesLoading = ref(false)
+// 入口锚定（dljy#3134）：能力目录就绪且存在获权分析才扫描——公共账号零请求红线保持。
+const anchorReady = computed(() => (capabilities.value?.analyses?.some((entry) => entry.access === 'company') ?? false))
+const entryAnchor = useInsightEntryAnchor(ctx, { ready: anchorReady })
 
 /** 能力目录里可用（全部来源可访问）的价格对象，按目录固定顺序排列。 */
 const availableObjects = computed(() =>
@@ -140,6 +165,12 @@ function dayAheadSourceIdOf(): string {
   return ''
 }
 
+/** 当前价格对象的对象维度（用户侧价无节点维度：立体/热力不需要选对象，直接画）。 */
+const objectDimension = computed(() => {
+  const sourceId = dayAheadSourceIdOf()
+  return sourceId ? (getInsightSource(sourceId)?.objectDimension ?? null) : null
+})
+
 /**
  * 历史候选的 requiredSourceIds：当前价格对象的日前 + 实时两个价格来源
  * （场站关联价分析里的第三来源是场站清单，不是价格读取，不参与求交集）。
@@ -171,7 +202,12 @@ async function loadCapabilities(): Promise<void> {
   capabilitiesError.value = null
   try {
     const result = await ctx.request.run((signal) => fetchInsightCapabilities({ signal }))
-    if (!result) return
+    if (!result) {
+      // 在途请求被业务代次作废（业务窗/公司/对象/来源切换）：能力目录不随这些业务维度变化，
+      // 静默 return 会让「目录与错误均为 null」永久拦截查询。重拉一次恢复（dljy#3065）。
+      void loadCapabilities()
+      return
+    }
     capabilities.value = result
     // 初始默认：第一个可用对象。此后选择只随用户显式操作变化（能力目录变化也不改选）。
     if (!priceObjectChoice.value) {
@@ -234,6 +270,7 @@ watch(globalSignature, () => {
   Object.assign(summaryState, blankState())
   clearSpreadSelection()
   if (visitedTabs.has(activeTab.value)) ensureTab(activeTab.value)
+  ensureSeriesModeQueries()
 })
 
 /** 切换价格对象：用户显式操作。清对象（对象属于原价格对象）、清参考、作废在途请求。 */
@@ -250,6 +287,58 @@ function onTabChange(name: string | number): void {
   activeTab.value = name as PriceView
   visitedTabs.add(activeTab.value)
   ensureTab(activeTab.value)
+  ensureSeriesModeQueries()
+}
+
+// ── 时段走势页签的展示模式（单日走势 / 多日立体 / 日期×时段热力）────────────────────────
+// 模式按 用户+地区+价格对象 记 localStorage（try/catch，storage 异常不影响页面）；
+// 三维/热力/双切面/证据表与「历史分布」页签共用同一份 profile 结果（不另发请求）。
+
+const seriesMode = ref<PriceDisplayMode>('single')
+
+/** storage 抛错（隐私模式/被禁用）时仍可用的用户名读取：读不到按匿名处理，不影响页面。 */
+function currentUsername(): string {
+  try {
+    return getCurrentUser().username
+  } catch {
+    return 'anonymous'
+  }
+}
+
+/** 按当前键恢复记忆的模式；只赋值不回写（恢复不是用户动作，不产生记忆）。 */
+function restoreSeriesMode(): void {
+  if (!priceObjectChoice.value) return
+  const remembered = readPriceMode(currentUsername(), ctx.regionId.value, priceObjectChoice.value)
+  if (seriesMode.value !== remembered) seriesMode.value = remembered
+}
+
+// 用户/地区/价格对象任一变化 → 换键恢复（旧键的记忆不跨对象串扰）。
+watch([currentUsername, () => ctx.regionId.value, priceObjectChoice], () => {
+  restoreSeriesMode()
+})
+
+/** 用户显式切换模式（分段控件或三维降级建议）：记忆 + 非 single 时确保 profile 查询。 */
+function onModeChange(mode: PriceDisplayMode): void {
+  if (seriesMode.value !== mode) seriesMode.value = mode
+  if (priceObjectChoice.value) {
+    writePriceMode(currentUsername(), ctx.regionId.value, priceObjectChoice.value, mode)
+  }
+  ensureSeriesModeQueries()
+}
+
+/** 非单日模式的数据面是 profile 视图（与「历史分布」页签同签名不重查）。 */
+function ensureSeriesModeQueries(): void {
+  if (activeTab.value === 'series' && seriesMode.value !== 'single') ensureTab('profile')
+}
+
+/** 单日窗口点了「改为 7 天」：用户显式扩窗（多日展示不悄悄扩窗）。 */
+function onExtendWindow(range: { start: string; end: string }): void {
+  ctx.setBusinessWindow(range.start, range.end)
+}
+
+/** 三维超限/降级时用户改看热力：与分段切换同一条路径（记忆 + 确保查询）。 */
+function onSwitchMode(mode: 'heatmap'): void {
+  onModeChange(mode)
 }
 
 function onWindowChange(next: { start: string; end: string }): void {
@@ -580,6 +669,80 @@ function onSpreadChartSelect(selection: InsightSelection | null): void {
   spreadSelection.value = selection
 }
 
+// ── 选区承接研究（任务 13.7，RS08）：语义选区 → 研究工作台预填研究范围 ──────────────────
+// 经地址参数白名单只带窗口起止日 + 对象/来源引用（DE10：不携带时段数组/原始数据）；
+// 研究页按同一套 useInsightContext 参数还原窗口与对象、来源，并按承接来源预填预设。
+
+const router = useRouter()
+
+const RESEARCH_HANDOFF_TO_TEXT = '把选区窗口与对象/来源引用交给研究工作台预填研究范围（不带原始数据）'
+
+function onSpreadSelectionToResearch(): void {
+  const selection = spreadSelection.value
+  if (!selection) return
+  const query = buildResearchHandoffQuery(selection, 'prices')
+  if (!query) return
+  void router.push({ path: '/insight/research', query })
+}
+
+// ── 空间查阅入口（dljy#3106 D6.1「三维地形/空间」未就绪项补齐）─────────────────────────
+// 节点基差页签选中参考对象后，可跳入既有「电力市场空间态势」（grid-geo 模块原地复用，
+// 洞察不复制 Cesium）。权限显隐沿用 spatialLinks 登记（canAccessPath 既有口径，无权限
+// 不渲染）；参考对象名先经 resolveSpatialObjectId 解析成网格资产 ID（objectId 契约是
+// 不透明资产 ID，不得拿名字生成），解析失败如实说明不跳转；query 白名单只带资产 ID +
+// 地区/公司归属 + 窗口末日（objectDate）+ 来源标记，时段数组与原始序列不进 URL。
+
+const MARKET_SPATIAL_TARGET = SPATIAL_LINK_TARGETS.marketSpatial
+
+const basisSpatialVisible = computed(() =>
+  spatialEntryVisible({
+    path: MARKET_SPATIAL_TARGET,
+    objectName: basisReference.value || null,
+    companyId: ctx.companyId.value,
+  })
+)
+
+async function onBasisToSpatialView(): Promise<void> {
+  if (!basisReference.value || !ctx.companyId.value) return
+  // 参考对象先解析成网格资产 ID（objectId 契约是不透明资产 ID，名字直传会请求不存在的资产）。
+  // 对象种类跟价格对象走：场站关联节点模式的参考是场站（plant），公司厂侧节点模式是节点（node）。
+  const kind = currentEntry.value?.priceObject === 'plant-node' ? 'plant' : 'node'
+  const assetId = await resolveSpatialObjectId(kind, basisReference.value)
+  if (!assetId) {
+    ElMessage.warning(
+      kind === 'plant'
+        ? `空间资产登记中未找到与「${basisReference.value}」唯一对应的场站，本次未跳转`
+        : `空间资产登记中未找到与「${basisReference.value}」唯一对应的节点，本次未跳转`
+    )
+    return
+  }
+  if (kind === 'node') {
+    // 市场空间态势只按对象的场站关联取景（detail.relations.plants）：无场站关联的独立节点
+    // 跳过去只会得到「尚未关联场站」的报错——点击时确认关联，未关联/读取失败如实说明不跳转。
+    try {
+      const detail = await fetchGridObject({ kind: 'node', id: assetId, regionId: ctx.regionId.value })
+      if (!detail.relations.plants.length) {
+        ElMessage.warning(`「${basisReference.value}」在空间资产中未关联场站，市场空间态势暂无法聚焦独立节点，本次未跳转`)
+        return
+      }
+    } catch {
+      ElMessage.warning(`「${basisReference.value}」的空间资产关联读取失败，本次未跳转`)
+      return
+    }
+  }
+  openSpatialViewLink(router, {
+    path: MARKET_SPATIAL_TARGET,
+    query: objectSpatialLinkQuery({
+      kind,
+      objectId: assetId,
+      regionId: ctx.regionId.value,
+      companyId: ctx.companyId.value,
+      date: ctx.businessWindow.value.end,
+      from: 'insight-prices',
+    }),
+  })
+}
+
 /** 已定位时段的可读描述（「对象 · HH:mm~HH:mm」，语义身份，无下标）。 */
 const spreadSelectionText = computed(() => {
   const selection = spreadSelection.value
@@ -730,6 +893,104 @@ const basisNotes = computed(() => {
   return notes.map((item) => item.note)
 })
 
+// ── 导出与材料（dljy#3078，任务 15.2/14.5）────────────────────────────────────────────
+// 权限语义分离：导出是只读动作，凡有结果者可用；「加入材料」是公司写入，按 governance 既有
+// 口径只对公司管理员级账号显示（hasCompanyAdmin 只管显隐，后端复盘写入闸门才是权威）。
+// 冻结协议是服务端既有契约（kind: 'market_insight'）：这里只组装「登记分析 + 上下文 + 筛选 +
+// 期望版本」，服务端重算核验并冻结；409 冲突提示先重新运行，未成功绝不提示已保存。
+
+/** 公司写入显隐：与公司档案等页面的 canWrite 判断同源（governance.hasCompanyAdmin）。
+ *  用户读取的 storage 异常（隐私模式等）按无权限处理，不影响页面渲染。 */
+const canWriteCompany = computed(() => {
+  try {
+    return hasCompanyAdmin(getCurrentUser())
+  } catch {
+    return false
+  }
+})
+
+type MaterialView = 'series' | 'profile'
+
+// ── 业务模块只读深链（dljy#3096，任务 15.5，design D11 / CH04 / PP07）────────────────────
+// 价格页的深链面只有「前往资料维护」：区块空态原因为「未接入 / 超覆盖」且当前账号对
+// 上传中心有权限时出现（显隐在页面，入口在 InsightBlock）。跳转只带期间与 from 标记，
+// 不在洞察手填真实值；返回后由 contextVersion 机制重查——返回不视为已补齐。
+
+const canMaintainData = computed(() => canFollowDeepLink(DEEP_LINK_TARGETS.dataMaintenance))
+
+function openDataMaintenance(): void {
+  openDataMaintenanceLink(router, { window: ctx.businessWindow.value, from: 'insight-prices' })
+}
+
+const materialVisible = ref(false)
+const materialView = ref<MaterialView>('series')
+const materialSubject = ref('')
+const materialRequest = ref<{ analysisId: string; context: Record<string, unknown>; filters: Record<string, unknown> } | null>(null)
+
+const materialResult = computed<InsightBlockResult | null>(() => viewStates[materialView.value].result)
+
+/** 打开材料窗口：冻结请求与当前查询同口径；上下文剥掉代次（导航概念），同口径重复保存幂等键稳定。 */
+function openMaterial(view: MaterialView): void {
+  const result = viewStates[view].result
+  if (!result?.resultVersion || !result.readSetRef) return
+  const filters: Record<string, unknown> = { view }
+  if (requiresObjects.value) filters.objectIds = [...ctx.objectIds.value]
+  const { contextVersion: _generation, ...context } = ctx.toQueryContext()
+  materialView.value = view
+  materialRequest.value = { analysisId: priceObjectChoice.value, context, filters }
+  materialSubject.value = view === 'profile' ? '历史分布' : '时段走势'
+  materialVisible.value = true
+}
+
+// ── AI 解读（任务 15.3）：统一侧栏注册 + 取材纪律（CH03/D9）──────────────────────────────
+// 只收「当前签名一致」的已就绪页签结果（含时段走势的 summary 摘要），过期区块不进上下文；
+// 只传价格对象/参考对象等摘要与版本引用，不传原始行数据。
+
+const insightAi = useInsightAiPage({
+  pageId: 'prices',
+  label: '云南价格分析',
+  collect: () => {
+    if (!priceObjectChoice.value) return []
+    const blocks: InsightAiEvidenceBlock[] = []
+    for (const tab of PRICE_TABS) {
+      const entry = viewStates[tab.view]
+      const aiBlock = insightAiBlockOf({
+        blockId: tab.view,
+        title: tab.label,
+        analysisId: priceObjectChoice.value,
+        view: tab.view,
+        currentKey: queryKey(tab.view),
+        queriedKey: entry.queriedKey,
+        result: entry.result,
+        objects: [...ctx.objectIds.value],
+        filterSummary: {
+          价格对象: PRICE_OBJECT_TEXT[currentEntry.value?.priceObject ?? ''] ?? null,
+          ...(tab.view === 'basis' && basisReference.value ? { 参考对象: basisReference.value } : {}),
+        },
+      })
+      if (aiBlock) blocks.push(aiBlock)
+    }
+    const summary = insightAiBlockOf({
+      blockId: 'summary',
+      title: '时段走势统计摘要',
+      analysisId: priceObjectChoice.value,
+      view: 'summary',
+      currentKey: queryKey('series'),
+      queriedKey: summaryState.queriedKey,
+      result: summaryState.result,
+      objects: [...ctx.objectIds.value],
+      filterSummary: { 价格对象: PRICE_OBJECT_TEXT[currentEntry.value?.priceObject ?? ''] ?? null },
+    })
+    if (summary) blocks.push(summary)
+    return blocks
+  },
+  currentSignature: () => globalSignature.value,
+})
+
+const onAiInterpret = (): void => {
+  void insightAi.interpret()
+}
+
 onMounted(() => {
   void loadCapabilities()
 })
@@ -738,6 +999,13 @@ onMounted(() => {
 <template>
   <div class="ynp-prices">
     <!-- 顶部：价格对象 / 日期窗 / 对象选择与口径说明 -->
+
+    <InsightAnchorNotice
+      v-if="entryAnchor.anchorNotice.value"
+      :notice="entryAnchor.anchorNotice.value"
+      @back-today="entryAnchor.backToToday"
+      @dismiss="entryAnchor.dismissAnchorNotice"
+    />
     <section class="ynp-prices__controls">
       <label class="ynp-prices__field">
         <span>价格对象</span>
@@ -780,6 +1048,14 @@ onMounted(() => {
           @update:model-value="onObjectChange"
         />
       </label>
+
+      <!-- AI 入口（15.3）：模型离线只隐藏入口，数据页不受影响（D9） -->
+      <el-button
+        v-if="insightAi.aiAvailable.value"
+        type="primary"
+        data-testid="ynp-ai-entry"
+        @click="onAiInterpret"
+      >✨ AI 解读本页</el-button>
     </section>
 
     <el-alert v-if="capabilitiesError" type="error" show-icon :closable="false" title="价格对象目录读取失败">
@@ -796,23 +1072,58 @@ onMounted(() => {
     <el-tabs :model-value="activeTab" class="ynp-prices__tabs" @tab-change="onTabChange">
       <el-tab-pane v-for="tab in PRICE_TABS" :key="tab.view" :name="tab.view" :label="tab.label">
         <template v-if="visitedTabs.has(tab.view)">
-          <!-- 时段走势：明细序列 + 统计摘要 -->
+          <!-- 时段走势：单日走势 / 多日立体 / 日期×时段热力（模式按 用户+地区+价格对象 记忆） + 统计摘要 -->
           <template v-if="tab.view === 'series'">
-            <InsightBlock
-              title="时段走势"
-              :result="viewStates.series.result"
-              :error="viewStates.series.error"
-              :loading="viewStates.series.loading"
-              :on-retry="() => retryView('series')"
-              :on-refresh="() => retryView('series')"
-              :source-titles="sourceTitles"
-              @open-candidates="openCandidates"
-              @open-evidence="openEvidence('series')"
-            >
-              <p v-if="requiresObjects && !ctx.objectIds.value.length" class="ynp-prices__hint">
-                请先在上方选择分析对象，再进行查询（未选对象不发请求）。
-              </p>
-              <template v-else>
+            <div class="ynp-prices__mode-row">
+              <el-radio-group
+                :model-value="seriesMode"
+                size="small"
+                data-testid="ynp-series-mode"
+                @update:model-value="onModeChange"
+              >
+                <el-radio-button value="single">单日走势</el-radio-button>
+                <el-radio-button value="multi3d">多日立体</el-radio-button>
+                <el-radio-button value="heatmap">日期×时段热力</el-radio-button>
+              </el-radio-group>
+            </div>
+
+            <p v-if="requiresObjects && !ctx.objectIds.value.length" class="ynp-prices__hint">
+              请先在上方选择分析对象，再进行查询（未选对象不发请求）。
+            </p>
+            <template v-else>
+              <!-- 多日立体 / 热力：与「历史分布」页签共用同一份 profile 结果 -->
+              <Price3DWorkspace
+                v-if="seriesMode !== 'single'"
+                :mode="seriesMode"
+                :visible="activeTab === 'series'"
+                :result="viewStates.profile.result"
+                :error="viewStates.profile.error"
+                :loading="viewStates.profile.loading"
+                :object-dimension="objectDimension"
+                :window-day-count="windowDayCount"
+                :business-window="ctx.businessWindow.value"
+                @retry="retryView('profile')"
+                @extend-window="onExtendWindow"
+                @switch-mode="onSwitchMode"
+              />
+
+              <InsightBlock
+                v-if="seriesMode === 'single'"
+                title="时段走势"
+                :result="viewStates.series.result"
+                :error="viewStates.series.error"
+                :loading="viewStates.series.loading"
+                :on-retry="() => retryView('series')"
+                :on-refresh="() => retryView('series')"
+                :source-titles="sourceTitles"
+                :exportable="true"
+                :materializable="canWriteCompany"
+                :maintenance="canMaintainData"
+                @open-candidates="openCandidates"
+                @open-evidence="openEvidence('series')"
+                @add-material="openMaterial('series')"
+                @open-maintenance="openDataMaintenance"
+              >
                 <InsightSeriesChart
                   :result="viewStates.series.result"
                   :current="{ regionId: ctx.regionId.value, companyId: ctx.companyId.value, contextVersion: ctx.contextVersion.value }"
@@ -825,8 +1136,8 @@ onMounted(() => {
                   :source-titles="sourceTitles"
                   @row-click="() => {}"
                 />
-              </template>
-            </InsightBlock>
+              </InsightBlock>
+            </template>
 
             <InsightBlock
               title="统计摘要"
@@ -836,8 +1147,10 @@ onMounted(() => {
               :on-retry="() => retryView('series')"
               :on-refresh="() => retryView('series')"
               :source-titles="sourceTitles"
+              :maintenance="canMaintainData"
               @open-candidates="openCandidates"
               @open-evidence="openEvidence('summary')"
+              @open-maintenance="openDataMaintenance"
             >
               <el-alert
                 v-for="item in unavailableMetrics"
@@ -871,8 +1184,10 @@ onMounted(() => {
               :on-retry="() => retryView('spread')"
               :on-refresh="() => retryView('spread')"
               :source-titles="sourceTitles"
+              :maintenance="canMaintainData"
               @open-candidates="openCandidates"
               @open-evidence="openEvidence('spread')"
+              @open-maintenance="openDataMaintenance"
             >
               <el-alert type="info" :closable="false" :title="SPREAD_DIRECTION_TEXT" />
               <p v-if="requiresObjects && !ctx.objectIds.value.length" class="ynp-prices__hint">
@@ -886,7 +1201,19 @@ onMounted(() => {
                   :height="300"
                   @select="onSpreadChartSelect"
                 />
-                <p v-if="spreadSelectionText" class="ynp-prices__hint">已定位时段：{{ spreadSelectionText }}</p>
+                <p v-if="spreadSelectionText" class="ynp-prices__hint">
+                  已定位时段：{{ spreadSelectionText }}
+                  <el-button
+                    size="small"
+                    type="primary"
+                    plain
+                    data-testid="ynp-spread-to-research"
+                    :title="RESEARCH_HANDOFF_TO_TEXT"
+                    @click="onSpreadSelectionToResearch"
+                  >
+                    以选区进入研究
+                  </el-button>
+                </p>
                 <div v-if="spreadSummaryCards.length" class="ynp-prices__cards">
                   <div v-for="card in spreadSummaryCards" :key="card.key" class="ynp-prices__card">
                     <h4 class="ynp-prices__card-title">{{ card.title }}</h4>
@@ -944,8 +1271,13 @@ onMounted(() => {
               :on-retry="() => retryView('profile')"
               :on-refresh="() => retryView('profile')"
               :source-titles="sourceTitles"
+              :exportable="true"
+              :materializable="canWriteCompany"
+              :maintenance="canMaintainData"
               @open-candidates="openCandidates"
               @open-evidence="openEvidence('profile')"
+              @add-material="openMaterial('profile')"
+              @open-maintenance="openDataMaintenance"
             >
               <p v-if="requiresObjects && !ctx.objectIds.value.length" class="ynp-prices__hint">
                 请先在上方选择分析对象，再进行查询（未选对象不发请求）。
@@ -983,8 +1315,10 @@ onMounted(() => {
               :on-retry="() => retryView('basis')"
               :on-refresh="() => retryView('basis')"
               :source-titles="sourceTitles"
+              :maintenance="canMaintainData"
               @open-candidates="openCandidates"
               @open-evidence="openEvidence('basis')"
+              @open-maintenance="openDataMaintenance"
             >
               <el-empty v-if="!supportsBasis" :description="USER_PRICE_NO_BASIS_TEXT" :image-size="72" />
               <p v-else-if="requiresObjects && !ctx.objectIds.value.length" class="ynp-prices__hint">
@@ -1004,6 +1338,13 @@ onMounted(() => {
                       <el-option v-for="option in basisOptions" :key="option.id" :label="option.label" :value="option.id" />
                     </el-select>
                   </label>
+                  <el-button
+                    v-if="basisSpatialVisible"
+                    data-testid="ynp-basis-spatial"
+                    @click="onBasisToSpatialView"
+                  >
+                    在空间视图查看
+                  </el-button>
                 </div>
                 <el-alert type="info" :closable="false" :title="BASIS_DIRECTION_TEXT" />
                 <el-empty v-if="!basisReference" :description="BASIS_PICK_REFERENCE_TEXT" :image-size="72" />
@@ -1056,6 +1397,16 @@ onMounted(() => {
       :required-source-ids="candidateSourceIds"
       :source-titles="sourceTitles"
       @select="onCandidateSelect"
+    />
+
+    <!-- 材料窗口（任务 14.5）：冻结 + 入稿全在窗口内完成，服务不可用只报错不阻断分析页 -->
+    <InsightMaterialDialog
+      v-model="materialVisible"
+      :region="ctx.regionId.value"
+      :company-id="ctx.companyId.value ?? ''"
+      :subject="materialSubject"
+      :request="materialRequest"
+      :result="materialResult"
     />
   </div>
 </template>
@@ -1110,6 +1461,14 @@ onMounted(() => {
   margin: 0;
   color: var(--muted, #909399);
   font-size: var(--font-sm, 13px);
+}
+
+/* 时段走势页签的展示模式切换（单日走势 / 多日立体 / 日期×时段热力） */
+.ynp-prices__mode-row {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  margin-bottom: 8px;
 }
 
 .ynp-prices__cards {

@@ -2,8 +2,9 @@
 // 守什么不变量（对照 specs yunnan-market-overview）：
 //   ① 进页面自动加载当日事实：能力目录就绪后逐块查询，不需要任何预检点击；默认窗口是
 //     北京时间当日，不自动改日（A02）；
-//   ② 区块按 OVERVIEW_BLOCKS 独立查询、独立失败：单视图分析（电网/场站）不送 view 筛选，
-//     多视图分析送 block.view；一个区块失败不影响其他区块渲染（OV02）；
+//   ② 区块按 OVERVIEW_BLOCKS 独立查询、独立失败：view 筛选按契约登记（多视图分析送 block.view
+//     ——settlement-daily 升级正式/损失解释双视图后场站区块送 view=series），单视图分析不送；
+//     一个区块失败不影响其他区块渲染（OV02）；
 //   ③ 重点事项：事项与规则评估原样展示（为什么没有这一条）；无满足条件不凑数（OV03）；
 //     同进度比较 ok 给完整对比，参考期不完整只说明原因、不显示假环比（OV04）；
 //   ④ 下钻带同一业务日期（OV05）：区块按钮与事项「查看详情」都 router.push 规范地址并带
@@ -21,11 +22,13 @@ import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest'
 import { beijingToday } from 'shared/midlong/dates.mjs'
 import { fetchInsightCapabilities, queryInsight } from '@/services/insight/insightClient'
 import { selectedRegionId } from '@/services/region/regionContext'
+import { fetchGridDisclosureEvents, fetchGridDisclosureOverview } from '@/features/gridGeo/client'
 import { selectedCompanyId } from '@/services/company/companyContext'
 import { mount as appMount } from '@/test/mount'
 import InsightBlock from '@/components/insight/InsightBlock.vue'
 import InsightDateRange from '@/components/insight/InsightDateRange.vue'
 import { insightResult } from '@/components/insight/insightFixtures'
+import { activeAiPage, resolveInterpret } from '@/features/aiSidebar/pageRegistry'
 import YunnanOverviewPage from './YunnanOverviewPage.vue'
 
 // ── 可控 mock 状态 ───────────────────────────────────────────────────────────────────────
@@ -33,6 +36,11 @@ import YunnanOverviewPage from './YunnanOverviewPage.vue'
 const state = vi.hoisted(() => ({
   capabilities: null as unknown,
   responder: null as ((request: any) => Promise<any>) | null,
+}))
+
+vi.mock('@/composables/useAgentHealth', () => ({
+  // 页面 AI 入口的探活打桩：不发起真实网络连接；AI 入口可见性按在线处理。
+  useAgentHealth: () => ({ health: { value: 'online' }, ready: { value: true }, offline: { value: false }, check: async () => {} }),
 }))
 
 vi.mock('@/services/insight/insightClient', async (importOriginal) => {
@@ -43,6 +51,37 @@ vi.mock('@/services/insight/insightClient', async (importOriginal) => {
     fetchInsightCapabilities: vi.fn(() => Promise.resolve(state.capabilities)),
   }
 })
+
+// 电网事件摘要（10.7）的数据通道打桩：grid-geo 披露事件接口（与电网边界页同一批接口）。
+// eventsPool 按「窗口内停电时间升序」排列；mock 按 page/pageSize 切片模拟分页语义。
+const gridState = vi.hoisted(() => ({
+  overview: null as Record<string, unknown> | null,
+  eventsPool: [] as Array<Record<string, unknown>>,
+  eventsTotal: 0,
+  eventsError: null as Error | null,
+  overviewError: null as Error | null,
+}))
+
+vi.mock('@/features/gridGeo/client', () => ({
+  fetchGridDisclosureOverview: vi.fn(() => {
+    if (gridState.overviewError) return Promise.reject(gridState.overviewError)
+    return Promise.resolve(gridState.overview)
+  }),
+  fetchGridDisclosureEvents: vi.fn((params: Record<string, unknown>) => {
+    if (gridState.eventsError) return Promise.reject(gridState.eventsError)
+    const pageSize = Number(params.pageSize ?? 30)
+    const page = Number(params.page ?? 1)
+    const start = (page - 1) * pageSize
+    return Promise.resolve({
+      items: gridState.eventsPool.slice(start, start + pageSize),
+      total: gridState.eventsTotal || gridState.eventsPool.length,
+      page,
+      pageSize,
+      categories: [],
+      dataAvailability: { status: 'available', reason: '真实授权导出行，空间范围按源字段绑定', fallback: false },
+    })
+  }),
+}))
 
 // ── 图表/表格/候选桩：绕开 ECharts 与弹层实现，捕获 props ────────────────────────────────
 
@@ -487,8 +526,15 @@ beforeEach(async () => {
   await router.push('/')
   state.capabilities = overviewCaps(PUBLIC_CAPS)
   state.responder = defaultResponder
+  gridState.overview = gridEventsOverview()
+  gridState.eventsPool = gridEventsPool()
+  gridState.eventsTotal = 0
+  gridState.eventsError = null
+  gridState.overviewError = null
   vi.mocked(queryInsight).mockClear()
   vi.mocked(fetchInsightCapabilities).mockClear()
+  vi.mocked(fetchGridDisclosureOverview).mockClear()
+  vi.mocked(fetchGridDisclosureEvents).mockClear()
 })
 
 afterEach(() => {
@@ -600,6 +646,20 @@ describe('YunnanOverviewPage', () => {
     expect(router.currentRoute.value.path).toBe('/insight/supply')
   })
 
+  it('下钻 query 为统一可校验形状（任务 15.1）：携带 hx_from 返回锚点，值中不出现原始数组', async () => {
+    await mountPage()
+    await click('yno-prices-drilldown')
+    const query = router.currentRoute.value.query
+    expect(query).toMatchObject({ hx_from: 'overview' })
+    // 共享四键仍在（目标页 useInsightContext 免费还原窗口），扩展字段只来自 hx_ 命名空间
+    expect(query.start).toBe(beijingToday())
+    expect(Object.keys(query).filter((key) => !['start', 'end', 'objects', 'sources'].includes(key))).toContain('hx_from')
+    // 红线（D3/D11.1）：任何 query 值都不 JSON 化（原始数组/行数据不进 URL）
+    for (const value of Object.values(query)) {
+      expect(String(value)).not.toMatch(/[[\]{]/)
+    }
+  })
+
   it('电网/场站区块标注详情页建设中（未交付页不由本页伪造入口能力）', async () => {
     await mountPage()
     const text = wrapper!.text()
@@ -612,13 +672,13 @@ describe('YunnanOverviewPage', () => {
     expect(queryCallsOf((request) => request.analysisId === PLANTS)).toHaveLength(0)
   })
 
-  it('获权账号：场站区块可见并发请求（单视图分析不带 view 筛选）', async () => {
+  it('获权账号：场站区块可见并发请求（settlement-daily 已登记双视图，view 按区块送 series）', async () => {
     state.capabilities = overviewCaps(ENTITLED_CAPS)
     await mountPage()
     expect(wrapper!.text()).toContain('获权场站表现')
     const plantsCalls = queryCallsOf((request) => request.analysisId === PLANTS)
     expect(plantsCalls).toHaveLength(1)
-    expect(plantsCalls[0]![0].filters).toEqual({})
+    expect(plantsCalls[0]![0].filters).toEqual({ view: 'series' })
   })
 
   it('窗口变化（上下文代次）后全部区块作废重查，请求窗口是新日期', async () => {
@@ -679,5 +739,231 @@ describe('YunnanOverviewPage', () => {
   it('窗口上限取最紧的分析（overview.key-items 限 7 天）', async () => {
     await mountPage()
     expect(wrapper!.getComponent(InsightDateRange).props('maxDays')).toBe(7)
+  })
+})
+
+// ── AI 解读注册（dljy#3100，任务 15.3）：六页注册覆盖之总览页 ─────────────────────────────
+
+describe('YunnanOverviewPage · AI 解读注册（15.3）', () => {
+  it('注册统一侧栏声明并挂入口按钮：采集只含当前签名的已就绪区块，payload 无原始行', async () => {
+    await mountPage()
+    expect(wrapper!.find('[data-testid="yno-ai-entry"]').exists()).toBe(true)
+    const def = activeAiPage().value
+    expect(def?.label).toBe('云南市场总览')
+    const plan = resolveInterpret(def!)
+    const slice = plan?.context?.() as { blocks: Array<Record<string, unknown>> } | null
+    expect(slice).not.toBeNull()
+    // 六个可见区块（key-items/prices/spread/supply/forecast/grid）全部就绪且当前签名一致
+    expect(slice!.blocks).toHaveLength(6)
+    expect(JSON.stringify(slice)).not.toMatch(/"rows"/)
+  })
+
+  it('窗口变化后旧结果全部作废：新查询未就绪期间采集为空（过期资料不进 AI 上下文）', async () => {
+    await mountPage()
+    const def = activeAiPage().value!
+    expect((resolveInterpret(def)!.context?.() as { blocks: unknown[] }).blocks).toHaveLength(6)
+    state.responder = () => new Promise(() => {}) // 新查询挂起：旧结果已清、新结果未到
+    await setWindow('2026-09-17', '2026-09-18') // 代次 +1：旧结果属于另一份读取
+    const slice = resolveInterpret(def)!.context?.() as { blocks: unknown[] } | null
+    expect(slice?.blocks ?? []).toHaveLength(0)
+  })
+})
+
+// ── 电网事件摘要（dljy#3102，任务 10.7，GB04 + OV02/OV03）────────────────────────────────
+// 守什么不变量：摘要与电网边界页检修干预页签同一批披露事件接口（不重建事实库、不经洞察
+// 分析查询）；原始数/独立事件数与计划/实际分组口径与该页一致（GB04）；最近三条为窗口内
+// 停电时间最晚的记录；下钻只带业务窗口；未接入/无记录诚实空态；单块失败不外溢（OV02）。
+
+/** identity 归并汇总夹具：原始 7 条（计划 4 / 实际 3），独立 3 条，1 条身份不足未归并。 */
+function gridEventsOverview() {
+  return {
+    total: 7,
+    countsByCategory: { maintenance: 4, intervention: 2, outage: 1, congestion: 0, constraint: 0 },
+    dayOnlyCount: 1,
+    dayOnlyCountsByCategory: { maintenance: 1, intervention: 0, outage: 0, congestion: 0, constraint: 0 },
+    buckets: [],
+    bucket: 'day',
+    coverage: { from: '2026-09-17', to: '2026-09-17', total: 7, timeBasis: 'businessDate', publishedTimeKnown: 6, sourceImportedTimeKnown: 6, effectiveTimeKnown: 7 },
+    dataAvailability: { status: 'available', reason: '真实授权导出行，空间范围按源字段绑定', fallback: false },
+    identity: {
+      rawCount: 7,
+      distinctCount: 3,
+      unidentifiedCount: 1,
+      byCategory: {
+        maintenance: { rawCount: 4, distinctCount: 1, unidentifiedCount: 0 },
+        intervention: { rawCount: 2, distinctCount: 1, unidentifiedCount: 1 },
+        outage: { rawCount: 1, distinctCount: 1, unidentifiedCount: 0 },
+      },
+      note: '独立事件数只统计身份可确认的记录；身份不足的记录保留原样、单列为未归并。',
+    },
+  }
+}
+
+function disclosureEventFixture(overrides: Record<string, unknown> = {}) {
+  return {
+    eventId: 'ev-1',
+    providerId: 'csg-authorized-export',
+    category: 'maintenance',
+    title: '某水电厂 1 号机组检修',
+    summary: '计划检修：1 号机组停复电安排',
+    businessDate: '2026-09-17',
+    effectiveAt: '2026-09-17T08:00:00+08:00',
+    expiresAt: '2026-09-20T18:00:00+08:00',
+    publishedAt: '2026-09-16T10:00:00+08:00',
+    timeQuality: { effective: 'source', published: 'source', intervalBasis: 'planned', issues: [] },
+    source: { file: 'f.csv', recordId: 'r1', url: null, sourceTable: 'tb_disclosure_forecast_maintenance_plan' },
+    confidence: 'verified-source-row',
+    ...overrides,
+  }
+}
+
+/** 五条记录按窗口内停电时间升序（start-asc）：最近三条 = 第 3/4/5 条（倒序展示）。 */
+function gridEventsPool() {
+  return [
+    disclosureEventFixture({ eventId: 'ev-1', title: '某电厂 1 号机组检修', effectiveAt: '2026-09-13T08:00:00+08:00', expiresAt: '2026-09-14T18:00:00+08:00' }),
+    disclosureEventFixture({ eventId: 'ev-2', category: 'intervention', title: '某线路人工干预', effectiveAt: '2026-09-14T09:00:00+08:00', expiresAt: '2026-09-14T20:00:00+08:00', timeQuality: { effective: 'source', published: 'source', intervalBasis: 'actual', issues: [] } }),
+    disclosureEventFixture({ eventId: 'ev-3', category: 'outage', title: '某风电场非计划停运', effectiveAt: '2026-09-15T10:00:00+08:00', expiresAt: '2026-09-16T12:00:00+08:00', identity: { version: 2, versions: 7, rule: 'source-interval', key: 'k3' } }),
+    disclosureEventFixture({ eventId: 'ev-4', title: '某变电站检修（仅业务日）', effectiveAt: null, expiresAt: null, timeQuality: { effective: 'business-date', published: 'unknown', intervalBasis: 'unknown', issues: ['missing-interval'] } }),
+    disclosureEventFixture({ eventId: 'ev-5', category: 'intervention', title: '某水电站人工干预', effectiveAt: '2026-09-17T12:00:00+08:00', expiresAt: '2026-09-17T20:00:00+08:00' }),
+  ]
+}
+
+describe('YunnanOverviewPage · 电网事件摘要（10.7）', () => {
+  it('进页面自动读披露摘要：overview+events 各查一次，窗口为默认当日；不经洞察分析查询', async () => {
+    await mountPage()
+    const overviewCalls = vi.mocked(fetchGridDisclosureOverview).mock.calls
+    expect(overviewCalls).toHaveLength(1)
+    const today = beijingToday()
+    expect(overviewCalls[0]![0]).toMatchObject({ category: 'maintenance,intervention,outage', identity: 'annotate', from: today, to: today })
+    const eventsCalls = vi.mocked(fetchGridDisclosureEvents).mock.calls
+    expect(eventsCalls).toHaveLength(1)
+    expect(eventsCalls[0]![0]).toMatchObject({ category: 'maintenance,intervention,outage', identity: 'annotate', sort: 'start-asc', from: today, to: today, pageSize: 100 })
+  })
+
+  it('摘要计数与归并口径（GB04）：原始/独立/未归并来自 identity 汇总；计划/实际分组与电网页一致', async () => {
+    await mountPage()
+    const counts = wrapper!.get('[data-testid="yno-events-counts"]')
+    expect(counts.text()).toContain('原始记录 7 条')
+    expect(counts.text()).toContain('独立事件 3 条')
+    expect(counts.text()).toContain('1 条身份不足、保留未归并')
+    const plan = wrapper!.get('[data-testid="yno-events-plan"]')
+    expect(plan.text()).toContain('计划检修（检修计划与电网检修信息）')
+    expect(plan.text()).toContain('4 条') // 原始= maintenance 4
+    expect(plan.text()).toContain('1 条') // 独立= maintenance 1
+    const actual = wrapper!.get('[data-testid="yno-events-actual"]')
+    expect(actual.text()).toContain('实际干预（人工干预与非计划停运）')
+    expect(actual.text()).toContain('3 条') // 原始= intervention 2 + outage 1
+    expect(actual.text()).toContain('2 条') // 独立= 1 + 1
+    // 明细接口一次都没落洞察分析管道：queryInsight 调用次数与既有区块一致（6）
+    expect(queryCallsOf(() => true)).toHaveLength(6)
+  })
+
+  it('最近 3 条渲染：窗口内停电时间最晚的三条倒序展示；起止缺失如实「未提供」，带版本标注', async () => {
+    await mountPage()
+    expect(wrapper!.get('[data-testid="yno-events-recent"]').text()).toContain('最近 3 条（窗口内停电时间最晚）')
+    expect(wrapper!.get('[data-testid="yno-events-recent-1"]').text()).toContain('某水电站人工干预')
+    expect(wrapper!.get('[data-testid="yno-events-recent-1"]').text()).toContain('2026-09-17 12:00')
+    expect(wrapper!.get('[data-testid="yno-events-recent-2"]').text()).toContain('某变电站检修（仅业务日）')
+    expect(wrapper!.get('[data-testid="yno-events-recent-2"]').text()).toContain('未提供')
+    expect(wrapper!.get('[data-testid="yno-events-recent-3"]').text()).toContain('某风电场非计划停运')
+    expect(wrapper!.get('[data-testid="yno-events-recent-3"]').text()).toContain('第 2 版 / 共 7 版')
+    // 不出现更早的两条
+    expect(wrapper!.get('[data-testid="yno-events-recent"]').text()).not.toContain('1 号机组检修')
+    expect(wrapper!.get('[data-testid="yno-events-recent"]').text()).not.toContain('某线路人工干预')
+  })
+
+  it('记录超过一页：取末页尾部三条（补一次 page=2 的明细查询）', async () => {
+    const pool = Array.from({ length: 130 }, (_, index) =>
+      disclosureEventFixture({ eventId: `ev-bulk-${index}`, title: `批量披露记录 ${String(index).padStart(3, '0')}`, effectiveAt: `2026-09-0${(index % 9) + 1}T0${index % 9}:00:00+08:00` })
+    )
+    gridState.eventsPool = pool
+    gridState.eventsTotal = 130
+    await mountPage()
+    const calls = vi.mocked(fetchGridDisclosureEvents).mock.calls
+    expect(calls).toHaveLength(2)
+    expect(calls[1]![0]).toMatchObject({ page: 2 })
+    const first = wrapper!.get('[data-testid="yno-events-recent-1"]')
+    expect(first.text()).toContain('批量披露记录 129')
+  })
+
+  it('下钻携带当前业务窗口（OV05）：跳电网边界页并带 start/end', async () => {
+    await mountPage()
+    await setWindow('2026-09-15', '2026-09-17')
+    await click('yno-events-drilldown')
+    expect(router.currentRoute.value.path).toBe('/insight/grid-boundaries')
+    expect(router.currentRoute.value.query).toMatchObject({ start: '2026-09-15', end: '2026-09-17' })
+  })
+
+  it('身份归并结果缺失：只显示原始数并如实说明，不硬凑独立事件数（OV03）', async () => {
+    const overview = gridEventsOverview()
+    delete (overview as Record<string, unknown>).identity
+    gridState.overview = overview
+    await mountPage()
+    const counts = wrapper!.get('[data-testid="yno-events-counts"]')
+    expect(counts.text()).toContain('原始记录 7 条')
+    expect(counts.text()).not.toContain('独立事件')
+    expect(wrapper!.find('[data-testid="yno-events-identity-missing"]').exists()).toBe(true)
+    expect(wrapper!.get('[data-testid="yno-events-plan"]').text()).toContain('—') // 独立事件如实缺省
+    expect(wrapper!.text()).not.toContain('独立事件 1 条')
+  })
+
+  it('事件源未接入/窗口无记录：诚实空态 + 原因，不发明细查询、不硬凑卡片（OV03）', async () => {
+    gridState.overview = { ...gridEventsOverview(), dataAvailability: { status: 'not-configured', reason: '当前国网地区尚未接入省级披露 Provider', fallback: false } }
+    await mountPage()
+    expect(wrapper!.get('[data-testid="yno-events-empty"]').text()).toContain('披露事件源未接入')
+    expect(wrapper!.get('[data-testid="yno-events-empty"]').text()).toContain('当前国网地区尚未接入省级披露 Provider')
+    expect(vi.mocked(fetchGridDisclosureEvents)).not.toHaveBeenCalled()
+
+    gridState.overview = { ...gridEventsOverview(), identity: { ...gridEventsOverview().identity as Record<string, unknown>, rawCount: 0, distinctCount: 0, unidentifiedCount: 0, byCategory: {} }, total: 0 }
+    gridState.overviewError = null
+    vi.mocked(fetchGridDisclosureOverview).mockClear()
+    await mountPage()
+    expect(wrapper!.get('[data-testid="yno-events-empty"]').text()).toContain('当前窗口内没有计划检修、实际干预或故障的披露记录')
+    expect(wrapper!.find('[data-testid="yno-events-plan"]').exists()).toBe(false)
+    expect(wrapper!.find('[data-testid="yno-events-recent"]').exists()).toBe(false)
+  })
+
+  it('单块失败隔离（OV02）：明细接口失败只影响本区块，重试成功后恢复；其他区块照常', async () => {
+    gridState.eventsError = new Error('披露事件读取超时')
+    await mountPage()
+    expect(wrapper!.get('[data-testid="yno-events-error"]').text()).toContain('披露事件读取超时')
+    // 其他区块不受影响
+    expect(wrapper!.text()).toContain('云南用户侧日前价格')
+    expect(wrapper!.text()).toContain('水电占比（云南，同一业务范围）')
+    // 摘要计数（overview 成功）仍展示
+    expect(wrapper!.get('[data-testid="yno-events-counts"]').text()).toContain('原始记录 7 条')
+    // 重试成功恢复
+    gridState.eventsError = null
+    await click('yno-events-retry')
+    expect(wrapper!.find('[data-testid="yno-events-error"]').exists()).toBe(false)
+    expect(wrapper!.find('[data-testid="yno-events-recent-1"]').exists()).toBe(true)
+  })
+
+  it('可见性按接口实际语义（公开披露、公司级作用域）：公共账号可读摘要，获权场站区块仍不可见', async () => {
+    await mountPage()
+    expect(wrapper!.find('[data-testid="yno-events-note"]').exists()).toBe(true)
+    expect(wrapper!.text()).not.toContain('获权场站表现')
+    expect(queryCallsOf((request) => request.analysisId === PLANTS)).toHaveLength(0)
+  })
+
+  it('窗口变化重查：旧摘要作废，按新窗口重发 overview+events', async () => {
+    await mountPage()
+    vi.mocked(fetchGridDisclosureOverview).mockClear()
+    vi.mocked(fetchGridDisclosureEvents).mockClear()
+    await setWindow('2026-05-12', '2026-05-13')
+    expect(vi.mocked(fetchGridDisclosureOverview).mock.calls[0]![0]).toMatchObject({ from: '2026-05-12', to: '2026-05-13' })
+    expect(vi.mocked(fetchGridDisclosureEvents).mock.calls[0]![0]).toMatchObject({ from: '2026-05-12', to: '2026-05-13' })
+  })
+
+  it('业务语言：界面不出现接口原文、类别代码或身份字段原文', async () => {
+    await mountPage()
+    const text = wrapper!.get('[data-testid="yno-events-note"]').text()
+      + wrapper!.text()
+    expect(text).not.toContain('maintenance,intervention,outage')
+    expect(text).not.toContain('annotate')
+    expect(text).not.toContain('distinctCount')
+    expect(text).not.toContain('csg-authorized-export')
+    expect(text).not.toContain('start-asc')
+    expect(text).toContain('与电网边界页完整筛选同源同口径')
   })
 })

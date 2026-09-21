@@ -96,6 +96,14 @@ export type InsightCoverageSource = {
   completeDates: string[]
   partialDates: string[]
   ranges: DateRange[]
+  /**
+   * 窗口内的有效对象清单（可选）：只有对象维度的来源、且新版洞察服务才下发。
+   * 字段缺失（老后端）≠ 空数组（窗口内确实没有对象）——页面据此区分
+   * 「无法列出」与「没有对象」，绝不伪造选项。
+   */
+  objects?: string[]
+  /** 对象清单的补充说明（如清单超过上限被截断时给出说明原文）。 */
+  objectsNote?: string
 }
 
 export type InsightCoverageResult = {
@@ -160,12 +168,13 @@ export class InsightRequestError extends Error {
   }
 }
 
-/** AbortError 透传判定：取消不是失败，由请求代次层消化。 */
-function isAbortError(error: unknown): boolean {
+/** AbortError 透传判定：取消不是失败，由请求代次层消化（researchClient 等同约定复用）。 */
+export function isAbortError(error: unknown): boolean {
   return typeof error === 'object' && error !== null && (error as { name?: string }).name === 'AbortError'
 }
 
-function toInsightError(error: unknown): InsightRequestError {
+/** 统一错误折叠：AbortError 原样抛，其余折叠为 InsightRequestError（researchClient 等同约定复用）。 */
+export function toInsightError(error: unknown): InsightRequestError {
   if (error instanceof InsightRequestError) return error
   if (error instanceof InsightContractError) {
     // 契约校验失败（含 assertInsightResult）：按契约给出的 status/code 上抛，缺省 422。

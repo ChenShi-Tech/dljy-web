@@ -31,8 +31,11 @@ import {
   type InsightSeriesMeta,
 } from '@/services/insight/insightClient'
 import { useInsightContext } from '@/composables/useInsightContext'
+import { useInsightEntryAnchor } from '@/composables/useInsightEntryAnchor'
+import { insightAiBlockOf, useInsightAiPage, type InsightAiEvidenceBlock } from '@/features/regions/yunnan/insight/useInsightAiPage'
 import InsightBlock from '@/components/insight/InsightBlock.vue'
 import InsightDateRange from '@/components/insight/InsightDateRange.vue'
+import InsightAnchorNotice from '@/components/insight/InsightAnchorNotice.vue'
 import InsightEvidenceDrawer from '@/components/insight/InsightEvidenceDrawer.vue'
 import InsightHistoryCandidates from '@/components/insight/InsightHistoryCandidates.vue'
 import InsightObjectPicker, { type InsightObjectOption } from '@/components/insight/InsightObjectPicker.vue'
@@ -119,6 +122,9 @@ const ctx = useInsightContext()
 const capabilities = ref<InsightCapabilities | null>(null)
 const capabilitiesError = ref<InsightRequestError | null>(null)
 const capabilitiesLoading = ref(false)
+// 入口锚定（dljy#3134）：能力目录就绪且存在获权分析才扫描——公共账号零请求红线保持。
+const anchorReady = computed(() => (capabilities.value?.analyses?.some((entry) => entry.access === 'company') ?? false))
+const entryAnchor = useInsightEntryAnchor(ctx, { ready: anchorReady })
 
 /** 契约镜像里的系统曲线分析登记（views / limits / sourceIds），不依赖后端 capabilities 是否下发。 */
 const systemAnalysisDef = getInsightAnalysis(SUPPLY_SYSTEM_ANALYSIS)
@@ -154,7 +160,12 @@ async function loadCapabilities(): Promise<void> {
   capabilitiesError.value = null
   try {
     const result = await ctx.request.run((signal) => fetchInsightCapabilities({ signal }))
-    if (!result) return
+    if (!result) {
+      // 在途请求被业务代次作废（业务窗/公司/对象/来源切换）：能力目录不随这些业务维度变化，
+      // 静默 return 会让「目录与错误均为 null」永久拦截查询。重拉一次恢复（dljy#3065）。
+      void loadCapabilities()
+      return
+    }
     capabilities.value = result
     // 能力目录就绪后补一次查询（之前被「目录未就绪」拦住的当前页签）。
     ensureTab(activeTab.value)
@@ -903,6 +914,61 @@ const candidateSourceIds = computed(() =>
 /** 历史候选的 filters：候选只按来源覆盖求交集，统一用 series 视图口径。 */
 const candidatesFilters = computed<Record<string, unknown>>(() => ({ view: 'series' }))
 
+// ── AI 解读（任务 15.3）：统一侧栏注册 + 取材纪律（CH03/D9）──────────────────────────────
+// 只收「当前签名一致」的已就绪查询结果，过期区块不进上下文；只传摘要与版本引用
+// （含水电区域/机组群/参考窗等筛选摘要），不传原始行数据。
+
+const SUPPLY_AI_BLOCK_TITLES: Record<QueryName, string> = {
+  series: '云南供需全景',
+  summary: '统计摘要',
+  'forecast-error': '预测与实际',
+  'residual-proxy': '剩余需求代理',
+  'hydro-weekly': '云南水电周出力',
+  'hydro-groups': '水电机组群出力',
+  'compare-reference': '历史比较参考侧',
+}
+
+const insightAi = useInsightAiPage({
+  pageId: 'supply',
+  label: '云南供需与水电',
+  collect: () => {
+    const blocks: InsightAiEvidenceBlock[] = []
+    for (const name of Object.keys(viewStates) as QueryName[]) {
+      const entry = viewStates[name]
+      const aiBlock = insightAiBlockOf({
+        blockId: name,
+        title: SUPPLY_AI_BLOCK_TITLES[name],
+        analysisId:
+          name === 'hydro-weekly' ? HYDRO_WEEKLY_ANALYSIS
+          : name === 'hydro-groups' ? HYDRO_GROUPS_ANALYSIS
+          : SUPPLY_SYSTEM_ANALYSIS,
+        view: name === 'compare-reference' ? 'summary' : name,
+        currentKey: queryKeyOf(name),
+        queriedKey: entry.queriedKey,
+        result: entry.result,
+        objects:
+          name === 'hydro-weekly' ? [...hydroRegions.value]
+          : name === 'hydro-groups' && unitGroupChoice.value ? [unitGroupChoice.value]
+          : undefined,
+        filterSummary: {
+          ...(name === 'hydro-weekly' && hydroRegions.value.length ? { 水电区域: [...hydroRegions.value] } : {}),
+          ...(name === 'hydro-groups' && unitGroupChoice.value ? { 机组群: unitGroupChoice.value } : {}),
+          ...(name === 'compare-reference' && referenceWindow.value
+            ? { 参考窗: `${referenceWindow.value.start}~${referenceWindow.value.end}` }
+            : {}),
+        },
+      })
+      if (aiBlock) blocks.push(aiBlock)
+    }
+    return blocks
+  },
+  currentSignature: () => String(ctx.contextVersion.value),
+})
+
+const onAiInterpret = (): void => {
+  void insightAi.interpret()
+}
+
 onMounted(() => {
   void loadCapabilities()
 })
@@ -911,6 +977,13 @@ onMounted(() => {
 <template>
   <div class="yns-supply">
     <!-- 顶部：日期窗与固定口径说明 -->
+
+    <InsightAnchorNotice
+      v-if="entryAnchor.anchorNotice.value"
+      :notice="entryAnchor.anchorNotice.value"
+      @back-today="entryAnchor.backToToday"
+      @dismiss="entryAnchor.dismissAnchorNotice"
+    />
     <section class="yns-supply__controls">
       <label class="yns-supply__field">
         <span>业务日期窗</span>
@@ -920,6 +993,13 @@ onMounted(() => {
           @update:model-value="onWindowChange"
         />
       </label>
+      <!-- AI 入口（15.3）：模型离线只隐藏入口，数据页不受影响（D9） -->
+      <el-button
+        v-if="insightAi.aiAvailable.value"
+        type="primary"
+        data-testid="yns-ai-entry"
+        @click="onAiInterpret"
+      >✨ AI 解读本页</el-button>
     </section>
 
     <p class="yns-supply__meta">
