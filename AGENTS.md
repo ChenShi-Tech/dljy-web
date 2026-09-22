@@ -84,4 +84,4 @@
 
 ## 开发与验证
 
-提交前运行 `npm run lint`、`npm run check`、`npm run test:unit`。只读 PR 审查按具体风险选择最小验证，不机械执行全套，也不执行真实业务写入。其余开发规则以 `DEVELOPMENT.md` 和 `CONTRIBUTING.md` 为准。
+开发内循环与提交前验证均按改动影响面执行：始终运行 `npm run check`，对改动文件运行 `npm run lint:files -- <files...>`，并用 `npm run test:related -- <source-files...>` 或 `npm run test:unit -- <spec-files...>` 运行相关测试。改到路由、全局状态、公共服务、测试/构建基础设施、依赖或锁文件等高爆炸半径区域时扩大到对应模块，必要时运行全量 `npm run lint`、`npm run test:unit` 与 `npm run build`。本地不强制重复执行全量覆盖率；PR CI 继续执行全量 lint、类型检查、覆盖率和构建。只读 PR 审查按具体风险选择最小验证，不机械执行全套，也不执行真实业务写入。其余开发规则以 `DEVELOPMENT.md` 和 `CONTRIBUTING.md` 为准。

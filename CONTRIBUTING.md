@@ -16,9 +16,10 @@
 ## 提交流程
 
 1. 从 `main` 拉分支（命名 `feat/…`、`fix/…`）。
-2. 本地五门禁全绿：`npm run lint && npm run check && npm run test:unit && npm run test:coverage && npm run build`。
-3. 提 PR：说清改了什么页面/行为、怎么验证；截图/录屏欢迎。
-4. CI 绿 + 维护者 review 后合入。PR 保持小而聚焦——大 PR 在双轨同步下冲突概率高。
+2. 本地按影响面验证：始终运行 `npm run check`；对改动文件运行 `npm run lint:files -- <files...>`；用 `npm run test:related -- <source-files...>` 或 `npm run test:unit -- <spec-files...>` 运行相关测试。改到路由、全局状态、公共服务、测试/构建基础设施、依赖或锁文件时扩大验证范围，必要时补全量 `npm run lint`、`npm run test:unit` 与 `npm run build`。
+3. 本地不强制运行 `npm run test:coverage`；PR CI 统一执行全量 lint、类型检查、覆盖率测试和生产构建，作为最终门禁。
+4. 提 PR：说清改了什么页面/行为、怎么验证；截图/录屏欢迎。
+5. CI 绿 + 维护者 review 后合入。PR 保持小而聚焦——大 PR 在双轨同步下冲突概率高。
 
 ## 开发约定（与上游一致）
 

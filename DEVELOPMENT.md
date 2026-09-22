@@ -159,14 +159,22 @@ npm run dev                        # http://localhost:5174
 
 ```bash
 npm run lint          # ESLint：correctness 最小面 + 分层守卫（0 error 才能提 PR；no-explicit-any 为 warn，见技术债）
+npm run lint:files -- src/foo.ts src/Bar.vue
+                      # 仅检查指定改动文件，适合开发内循环与提交前按影响面验证
 npm run check         # vue-tsc 类型检查（0 错误才能提 PR）
 npm run test:unit     # vitest：纯函数 *.spec.ts（node 环境）+ 组件 *.component.spec.ts（happy-dom）
+npm run test:unit -- src/foo.spec.ts
+                      # 直接运行指定测试文件
+npm run test:related -- src/foo.ts src/Bar.vue
+                      # 根据源码依赖自动运行相关测试
 npm run test:coverage # 覆盖率阈值门禁（lines 44 / functions 36 / statements 42 / branches 37）
 npm run build         # 生产构建（index + grid-geo 双入口）
 ```
 
 ### 5.1 测试策略
 
+- **分层验证**：开发内循环只跑改动文件 lint 与相关测试；提交前始终运行 `npm run check`，并按实际影响面补齐 lint 和测试。修改路由、全局状态、公共服务、测试/构建基础设施、依赖或锁文件时视为高爆炸半径，须扩大到对应模块，无法可靠界定影响面时运行全量 `npm run lint`、`npm run test:unit` 与 `npm run build`。
+- **全量兜底**：本地不要求为每次小改动重复运行 `npm run test:coverage`。PR CI 固定运行全量 mirror-guard、lint、check、coverage 与 build；相关测试通过不能替代 CI 全量门禁。
 - **双 project 分工**：`*.spec.ts` 跑 node project（纯函数/服务层逻辑）；`*.component.spec.ts` 跑 dom project（happy-dom + `vitest.setup.dom.ts`）。node project 里个别 spec 确需浏览器 API（localStorage 等）时，用文件头 `// @vitest-environment happy-dom` pragma 按文件切环境——这是**合法机制**，但仅限 node 文件；`*.component.spec.ts` 天然在 dom project，**不要**再加冗余 pragma（仓内已清理过一轮，勿回潮）。
 - **文件头三要素**：守什么不变量 / 坏掉的症状 / issue 号（如有）。新 spec 必须遵循（可参照 `src/services/agent/httpClient.spec.ts`）。
 - **断言纪律**：正反双侧断言（happy path + 错误路径都要锁）；边界穷举（NaN / ±Infinity / null / 空串 / 脏 localStorage）；金融数值手算对拍（不用「自身输出回读自身」的伪对拍）。
