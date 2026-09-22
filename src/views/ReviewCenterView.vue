@@ -6,20 +6,22 @@ const route = useRoute()
 const router = useRouter()
 type ReviewViewMode = 'workbench' | 'analysis' | 'classic'
 function resolveReviewViewMode(path: string, layout: unknown): ReviewViewMode {
-  if (path === '/xhjy/review/analysis') return 'analysis'
+  if (normalizeReviewPath(path) === '/xhjy/review/analysis') return 'analysis'
   return layout === 'classic' ? 'classic' : 'workbench'
 }
+function normalizeReviewPath(path: string) { return path.length > 1 ? path.replace(/\/+$/, '') : path }
 const viewMode = ref(resolveReviewViewMode(route.path, route.query.layout))
-const reviewRoute = ref<{ path: string; query: LocationQuery }>({ path: route.path, query: { ...route.query } })
+const reviewRoute = ref<{ path: string; query: LocationQuery }>({ path: normalizeReviewPath(route.path), query: { ...route.query } })
 const routeActive = ref(true)
 onActivated(() => { routeActive.value = true })
 onDeactivated(() => { routeActive.value = false })
 watch(() => [route.path, route.query] as const, ([path, query]) => {
   // KeepAlive 失活后 useRoute 仍会跟随全局导航。离开复盘路由时保持最后一个有效模式，
   // 避免缓存中的异步工作台在 Transition 搬移 DOM 的同时被目标页 path 触发重建。
-  if (path === '/xhjy/review' || path === '/xhjy/review/analysis') {
-    viewMode.value = resolveReviewViewMode(path, query.layout)
-    reviewRoute.value = { path, query: { ...query } }
+  const normalizedPath = normalizeReviewPath(path)
+  if (normalizedPath === '/xhjy/review' || normalizedPath === '/xhjy/review/analysis') {
+    viewMode.value = resolveReviewViewMode(normalizedPath, query.layout)
+    reviewRoute.value = { path: normalizedPath, query: { ...query } }
   }
 })
 function openWorkbench() {

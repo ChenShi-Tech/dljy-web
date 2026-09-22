@@ -77,13 +77,25 @@ describe('复盘中心默认入口', () => {
     consoleError.mockRestore()
   })
 
-  it('独立路径实际渲染专题模式，旧版参数不会把它变回模板页', async () => {
+  it.each(['/xhjy/review/analysis', '/xhjy/review/analysis/'])('独立路径实际渲染专题模式，旧版参数不会把它变回模板页：%s', async path => {
     const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/xhjy/review/analysis', component: ReviewCenterView }] })
-    await router.push('/xhjy/review/analysis?layout=classic')
+    await router.push(`${path}?layout=classic`)
     const wrapper = mount(ReviewCenterView, { global: { plugins: [router] } })
     await flushPromises()
     expect(wrapper.text()).toContain('独立专题页面')
     expect(wrapper.text()).not.toContain('历史专题内容')
+    wrapper.unmount()
+  })
+  it('带尾斜杠返回普通复盘页时仍更新查询模式', async () => {
+    const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/xhjy/review', component: ReviewCenterView }] })
+    await router.push('/xhjy/review')
+    const wrapper = mount(ReviewCenterView, { global: { plugins: [router] } })
+    await flushPromises()
+    expect(wrapper.text()).toContain('决策复盘工作台')
+
+    await router.push('/xhjy/review/?layout=classic')
+    await flushPromises()
+    expect(wrapper.text()).toContain('历史专题内容')
     wrapper.unmount()
   })
   it.each(['', '?layout=decisions', '?layout=unknown'])('普通地址与兼容链接进入新版 %s', async query => {
