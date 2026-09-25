@@ -47,3 +47,7 @@ npm run test:related -- src/foo.ts src/Bar.vue     # 自动运行相关测试
 - **页面提示「模拟数据」**：平台约定——Mock 数据必须可见标注，属正常。
 - **5174 被占**：本仓与既有约定统一固定 5174，`strictPort` 下直接失败；关掉占用进程再启动。
 - **/agent-api 请求 404/超时**：检查 `.env.local` 的 `DLJY_AGENT_API_TARGET` 是否可达（它与 `DLJY_DEV_API_TARGET` 是两个不同端点）。
+
+## 相关文档
+
+- [平台后台旧入口迁移清单](docs/platform-admin-entry-migration.md) —— 客户前端旧管理入口的逐项分类与迁移待批准清单（ChenShi-Tech/dljy#3161，任务 11.4）
