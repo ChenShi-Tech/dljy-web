@@ -4,7 +4,7 @@ import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 
 // vi.mock 工厂会被提升到文件顶部：工厂里引用的桩必须经 vi.hoisted 定义，否则 TDZ 报错
-const { confirm, api } = vi.hoisted(() => ({
+const { confirm, api, getCurrentUser } = vi.hoisted(() => ({
   confirm: vi.fn(async (..._args: unknown[]): Promise<void> => undefined),
   api: {
     fetchRemoteHealth: vi.fn(),
@@ -16,6 +16,7 @@ const { confirm, api } = vi.hoisted(() => ({
     unloadRemoteModel: vi.fn(async () => ({ ok: true })),
     rescanRemote: vi.fn(async () => ({ ok: true, modelCount: 1, availableCount: 1 })),
   },
+  getCurrentUser: vi.fn(),
 }))
 vi.mock('element-plus', () => ({
   ElMessage: { success: vi.fn(), warning: vi.fn(), error: vi.fn() },
@@ -25,6 +26,8 @@ vi.mock('@/services/forecast/remoteModelAdmin', async () => ({
   ...(await vi.importActual<typeof import('@/services/forecast/remoteModelAdmin')>('@/services/forecast/remoteModelAdmin')),
   ...api,
 }))
+// dljy#3226（AA-06.2）：写按钮按当前登录角色受控，用户来源与页面其它处一致走 services/auth
+vi.mock('@/services/auth', () => ({ getCurrentUser }))
 import SystemModelsView from './SystemModelsView.vue'
 
 const STUBS = {
@@ -49,7 +52,12 @@ const MODEL = {
   basisVersion: 'model-registry.v1', provenance: { basis: 'real', sourceType: 'REAL', mock: false, productionWrite: false },
 }
 
-beforeEach(() => { vi.clearAllMocks(); api.fetchRemoteModels.mockResolvedValue([MODEL]) })
+beforeEach(() => {
+  vi.clearAllMocks()
+  api.fetchRemoteModels.mockResolvedValue([MODEL])
+  // 默认平台超管：既有用例按「可写」语义编写（dljy#3226 之前的口径即超管面）
+  getCurrentUser.mockReturnValue({ roleCode: 'ADMIN' })
+})
 
 async function mountWith(health: Record<string, unknown>) {
   api.fetchRemoteHealth.mockResolvedValue(health)
@@ -119,5 +127,48 @@ describe('写操作', () => {
     await flushPromises()
     expect(api.activateRemoteVersion).toHaveBeenCalledWith(MODEL.modelId, 'v0')
     expect(api.fetchRemoteModels).toHaveBeenCalledTimes(2)
+  })
+})
+
+describe('共享资源写权限（dljy#3226 · AA-06.2）', () => {
+  it('内部版 BOSS：看得到模型清单与版本列表，但全部写按钮禁用并提示「仅平台超管可操作」', async () => {
+    getCurrentUser.mockReturnValue({ roleCode: 'BOSS' })
+    const w = await mountWith({ state: 'ok', modelCount: 1 })
+    // 页面入口与只读信息不收窄：模型清单照常渲染
+    expect(w.find('[data-test="models"]').exists()).toBe(true)
+    expect(w.find('[data-test="models"]').text()).toContain(MODEL.name)
+    expect(w.find('[data-test="write-locked"]').exists()).toBe(true)
+    // 写按钮禁用且带提示
+    for (const key of ['toggle', 'rescan', 'memory']) {
+      const btn = w.find(`[data-test="${key}"]`)
+      expect((btn.element as HTMLButtonElement).disabled).toBe(true)
+      expect(btn.attributes('title')).toBe('仅平台超管可操作')
+    }
+    // 「版本」按钮只是打开查看，保持可点；其中的切换激活动作受控
+    const versions = w.find('[data-test="versions"]')
+    expect((versions.element as HTMLButtonElement).disabled).toBe(false)
+    await versions.trigger('click')
+    await flushPromises()
+    const activate = w.find('[data-test="activate"]')
+    expect((activate.element as HTMLButtonElement).disabled).toBe(true)
+    expect(activate.attributes('title')).toBe('仅平台超管可操作')
+    // 只读视角下点不动：写代理零调用
+    expect(api.setRemoteModelEnabled).not.toHaveBeenCalled()
+    expect(api.activateRemoteVersion).not.toHaveBeenCalled()
+    expect(api.rescanRemote).not.toHaveBeenCalled()
+    w.unmount()
+  })
+
+  it('内部版 ADMIN：写按钮可用，不出现只读提示', async () => {
+    const w = await mountWith({ state: 'ok', modelCount: 1 })
+    expect(w.find('[data-test="write-locked"]').exists()).toBe(false)
+    for (const key of ['toggle', 'rescan', 'memory']) {
+      expect((w.find(`[data-test="${key}"]`).element as HTMLButtonElement).disabled).toBe(false)
+      expect(w.find(`[data-test="${key}"]`).attributes('title')).toBeUndefined()
+    }
+    await w.find('[data-test="versions"]').trigger('click')
+    await flushPromises()
+    expect((w.find('[data-test="activate"]').element as HTMLButtonElement).disabled).toBe(false)
+    w.unmount()
   })
 })
