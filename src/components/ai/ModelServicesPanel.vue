@@ -344,8 +344,8 @@ async function doTest(tier: LlmServiceTier) {
           />
         </div>
         <div class="cred-actions">
-          <el-button type="primary" :loading="credentialSaving" :disabled="!canWrite" :title="WRITE_LOCKED_TITLE" @click="onSaveCredential">验证并保存</el-button>
-          <el-button v-if="credential?.source === 'ui'" :disabled="credentialSaving || !canWrite" :title="WRITE_LOCKED_TITLE" @click="onClearCredential">清除</el-button>
+          <el-button type="primary" :loading="credentialSaving" :disabled="!canWrite" :title="canWrite ? undefined : WRITE_LOCKED_TITLE" @click="onSaveCredential">验证并保存</el-button>
+          <el-button v-if="credential?.source === 'ui'" :disabled="credentialSaving || !canWrite" :title="canWrite ? undefined : WRITE_LOCKED_TITLE" @click="onClearCredential">清除</el-button>
           <span v-if="credentialError" class="cred-error">{{ credentialError }}</span>
         </div>
       </div>
