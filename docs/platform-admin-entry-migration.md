@@ -46,8 +46,8 @@
 | `/data-ops/console` › 运维总览 | R：`GET /v1/governance/{catalog,quality,backup}`（→ data-svc）；面板跳转按钮 | 页：BOSS+ADMIN；后端：治理只读（业务角色可达端点，仅 ADMIN 看全平台，矩阵 §2.5） | 共享展示（只读聚合：链路四段/告警/批次台账） | 有：M3 服务状态/数据健康聚合（admin.read，按作用域过滤） | 同一样本批次/告警在旧页与后台视图计数、分母未知口径一致 | 不删除；后台视图独立回退 | 待批准 |
 | `/data-ops/console` › 数据上传中心 | W：`POST /api/v1/data-upload/precheck`、`/commit`；R：`GET /api/v1/data-upload/{contracts,batches}`（→ data-svc，带 `companyId` scope） | 页：BOSS+ADMIN；后端：业务导入角色，限本公司（矩阵 §2.5） | 客户自助（本公司数据上传，五步预检-确认-台账闭环） | 无（矩阵 §2.5：不接入，客户自助导入留 dljy-web） | —（不迁移） | 不适用 | 待批准 |
 | `/data-ops/console` › 数据导入融合台 | W：`POST /v1/import-templates/upload`、模板端点写链（`/v1/{market/trades,settlements,power,customer-load,market-analysis}/import` 等，→ data-svc）；售电结算 FormData 走 `/agent-api`；R：`GET /v1/import-{templates,hub}/records` | 页：BOSS+ADMIN；后端：业务导入角色，限本公司 | 客户自助（手录/模板导入） | 无（同上） | —（不迁移） | 不适用 | 待批准 |
-| `/data-ops/console` › 数据接入向导 | W：`triggerIngest('spot-ingest'\|'forecast-etl')`（见附录 A-1 落点存疑）；R：`GET /api/v1/governance/catalog`、`GET /api/v1/import-templates/records` | 页：BOSS+ADMIN；后端：`POST /api/v1/ingest/:kind` 为服务令牌或 TRADE_LEAD/ADMIN/BOSS（矩阵 §2.5，任意 BOSS 放行未收窄） | 平台内部（T0/T1 模板投递后一键生效触发 ETL，写平台全局目录与回放层） | 部分：M4 受控动作（仅登记的补数/重跑，矩阵 §2.5）；通用「一键生效」无 | 同 kind+params 触发一次：exitCode/stdout、capture 回放层新增行数、幂等键去重行为（同键重复点击不重复 spawn）两端一致 | revert 11.5 对应 PR；后端摄取门禁回退 | 待批准 |
-| `/data-ops/console` › 数据摄取管理 | W：`triggerIngest` 五个 kind：`weather-export`、`spot-export`、`market-export`、`cgn-yunnan-prices`、`cgn-yunnan-market`（落点存疑同附录 A-1） | 页：BOSS+ADMIN；后端：同上，任意 BOSS 放行未收窄（矩阵 §4） | 平台内部（多数 kind 写平台全局目录；`cgn-*` 写中广核私有库 dljy_private） | 部分：同上 M4 受控动作 | 同上，另加：`cgn-*` 私有库写入按公司隔离比对 | 同上 | 待批准 |
+| `/data-ops/console` › 数据接入向导 | W：`triggerIngest('spot-ingest'\|'forecast-etl')`（见附录 A-1，当前 404）；R：`GET /api/v1/governance/catalog`、`GET /api/v1/import-templates/records` | 页：BOSS+ADMIN；后端：`POST /api/v1/ingest/:kind` 为服务令牌或 TRADE_LEAD/ADMIN/BOSS（矩阵 §2.5，任意 BOSS 放行未收窄） | 平台内部（T0/T1 模板投递后一键生效触发 ETL，写平台全局目录与回放层） | 部分：M4 受控动作（仅登记的补数/重跑，矩阵 §2.5）；通用「一键生效」无 | 同 kind+params 触发一次：exitCode/stdout、capture 回放层新增行数、幂等键去重行为（同键重复点击不重复 spawn）两端一致 | revert 11.5 对应 PR；后端摄取门禁回退 | 待批准 |
+| `/data-ops/console` › 数据摄取管理 | W：`triggerIngest` 五个 kind：`weather-export`、`spot-export`、`market-export`、`cgn-yunnan-prices`、`cgn-yunnan-market`（同附录 A-1，当前 404） | 页：BOSS+ADMIN；后端：同上，任意 BOSS 放行未收窄（矩阵 §4） | 平台内部（多数 kind 写平台全局目录；`cgn-*` 写中广核私有库 dljy_private） | 部分：同上 M4 受控动作 | 同上，另加：`cgn-*` 私有库写入按公司隔离比对 | 同上 | 待批准 |
 | `/data-ops/console` › 数据治理控制台 | R：`GET /v1/governance/{catalog,quality,backup,db-health}`（→ data-svc） | 页：BOSS+ADMIN；后端：治理只读（仅 ADMIN 看全平台，矩阵 §2.5） | 共享展示（只读体检：目录/质量/备份/库健康） | 有：M3 数据健康聚合（admin.read，分母未知显示未知） | 同一样本在旧页与后台聚合视图的指标/分母口径一致 | 不删除；后台视图独立回退 | 待批准 |
 | `/data-ops/console` › 数据源接入 › 电网官方平台 | W：`PUT/DELETE /api/v1/grid-access/points/:id/credentials`、`POST …/credentials/test`、`POST /api/v1/sichuan-ingest/trigger`；R：`GET /api/v1/grid-access/points`、`GET …/credentials`（掩码）、`GET /api/v1/sichuan-ingest[/health]` | 页：BOSS+ADMIN；后端：接入点凭据=全局生效集、采集触发放行任意 BOSS（矩阵 §2.2/§4，未收窄） | 平台内部（国网开放平台凭据全局生效；采集触发影响部署数据链路） | 部分：M3 服务状态按登记部署读取（admin.read）；触发走 M4 受控动作 `grid-ingest.capture.rerun`（任务 9.3/9.5）；凭据录入无替代——后台不接收明文，走既有安全交付（矩阵 §2.2） | 非本人凭据掩码不可见（#1925 口径）两端一致；`sichuan-ingest` 状态/健康快照一致；触发幂等键去重行为一致 | revert 11.5 对应 PR；后端门禁回退 | 待批准 |
 | `/data-ops/console` › 数据源接入 › 企业自建通道 | W：`PUT/DELETE /api/v1/data-sources/cgn-yunnan?company=…`、`POST …/test`；R：`GET …`、`GET …/plant-bindings` | 页：BOSS+ADMIN；后端：公司上下文 + ADMIN/BOSS，**某公司**外部数据源（矩阵 §2.2） | 客户自助（中广核云南自建透传为本公司数据源配置） | 无（矩阵 §2.2：不接入，只读摘要可在 M3 评估；客户自助设置留 dljy-web） | —（不迁移） | 不适用 | 待批准 |
@@ -93,9 +93,9 @@
 ### 3.5 数据接入向导与摄取管理（`/data-ops/console?panel=onboarding|ingest`）
 
 - **为什么是平台内部**：`POST /api/v1/ingest/:kind` 多数 kind 写**平台全局**目录与 capture 回放层（矩阵 §2.5），触发即跑 ETL 子进程，影响全部客户的数据新鲜度；`cgn-*` 两个 kind 写中广核私有库，属单客户但同样是运维操作而非业务操作。
-- **现状**：后端任意 BOSS 放行（矩阵 §4 未收窄）；前端触发请求落点存疑（附录 A-1，可能已 404）。
+- **现状**：后端任意 BOSS 放行（矩阵 §4 未收窄）；前端触发请求当前 404（附录 A-1，已实测，ChenShi-Tech/dljy#3251）。
 - **迁移后客户侧看到什么**：两面板从客户交付版隐藏；补数/重跑由后台 M4 受控动作承接（仅登记的动作）。客户上传/导入动线（upload/import-hub 面板）不受影响。
-- **风险**：受控动作未登记前隐藏 = 数据断更无人能补；A-1 若坐实，这两面板的「立即摄取」在现网可能本来就是坏的——迁移前先修或先实测，避免「迁移把坏功能藏起来」掩盖问题。
+- **风险**：受控动作未登记前隐藏 = 数据断更无人能补；A-1 已坐实，这两面板的「立即摄取」当前本来就是坏的——迁移前先修（#3251），避免「迁移把坏功能藏起来」掩盖问题。
 
 ### 3.6 电网官方平台（`/data-ops/console?panel=data-source&tab=official`）
 
@@ -112,7 +112,7 @@
 
 ## 4. 已知问题附录（只登记，本任务不修）
 
-### A-1 摄取触发用裸 fetch，疑似绕开 data-service 改道（重点核实项；**未运行验证**）
+### A-1 摄取触发用裸 fetch，绕开 data-service 改道（**已实测 404**，Bug ChenShi-Tech/dljy#3251）
 
 **现象推断**：「数据摄取管理」「数据接入向导」两个面板的触发请求**没有**经 `dataServicePath` 改道，按代码推断会落到平台 BFF（:4174）`/api/v1/ingest/:kind`；而本仓的路由面声明该路径族已归 data-service（:8190）。若平台 BFF 已随 #2169 P2-2a/#2189 退役该处理器，现网点「立即摄取/一键生效」会得到 404（页面显示「摄取失败（HTTP 404）」）。
 
@@ -125,7 +125,7 @@
 5. 现有 spec 把**未改道**的 URL 固化为预期行为：`src/services/data/ingestClient.spec.ts:73` `expect(url).toBe('/api/v1/ingest/weather-export')`——若修此问题须同步改 spec。
 6. 调用方：`src/views/DataIngestionView.vue:44`、`src/views/DataOnboardingView.vue:268`（接入向导的读取类调用 `:201,:207` 走 `apiGet`，**有**被正常改道，唯独触发绕开）。
 
-**推断结论（未运行验证）**：请求落到平台 BFF（:4174）`/api/v1/ingest/:kind`。两种可能：平台 BFF 仍保留 ingestion 处理器（则功能当前正常，但与本仓声明拓扑不一致，属路由双轨债）；或已退役（则现网触发 404，摄取管理/接入向导两个面板的写动线已断）。**建议 11.5 处理前先起本地环境实测一次触发，确认落点与状态码**；`ingestClient.ts:2` 的注释（「经 Vite /api 代理 → Node 4174 ingestion-api.mjs」）写于改道之前，已不可信。
+**实测结论（2026-09-25，本机）**：带管理员登录态 `POST /api/v1/ingest/quality-scan` 打到平台 BFF（:4174）返回 404「/api/v1 下未匹配任何已注册域」；同路径打 data-service（:8190）返回 428（端点存在、幂等键门禁生效）。即平台 BFF 已退役该处理器，「数据摄取管理」「数据接入向导」两个面板的写动线当前是断的。已立 Bug ChenShi-Tech/dljy#3251，修复与本清单的迁移决定解耦：无论入口最终放哪，都要先修。
 
 ### A-2 会话查看/删除对任意公司 BOSS 全量放行（按矩阵记载；本仓未运行后端验证）
 
