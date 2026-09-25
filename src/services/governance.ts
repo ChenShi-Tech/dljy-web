@@ -1,4 +1,5 @@
 import { GRID_GEO_FEATURE_ENABLED } from '@/features/gridGeo/config'
+import { IS_CUSTOMER_EDITION } from '@/services/edition'
 import {
   getRegionModuleAccessRoutes,
   getRegionModuleRoutePrefixes,
@@ -550,6 +551,16 @@ export function isAdminLevelRole(roleCode: RoleCode | null | undefined) {
 // 仅用于前端按钮显隐；后端 /api/company/* 的写闸门（含集团汇总只读态）才是最终权威。
 export function hasCompanyAdmin(user: Pick<GovernanceUser, 'roleCode'> | null | undefined): boolean {
   return isAdminLevelRole(user?.roleCode)
+}
+
+// 共享资源写权限（dljy#3226 · 规格 AA-06.2）：推理共享模型管理的写端点（启停/切版本/
+// 装卸/重扫）与模型服务写入（档位启用、角色路由、网关凭据）由后端 dljy#3238 收紧为——
+// 内部版仅平台超管 ADMIN，客户交付版 ADMIN/BOSS；读路径（健康/清单/版本/额度/连通探测）
+// 不变。本判定只做前端展示一致（写按钮禁用+提示），避免点了才 403；后端是唯一裁决。
+export function canWriteSharedResources(roleCode: RoleCode | null | undefined): boolean {
+  if (!roleCode) return false
+  if (IS_CUSTOMER_EDITION) return isAdminLevelRole(roleCode)
+  return roleCode === 'ADMIN'
 }
 
 export function getAccessOverrides(): Partial<Record<RoleCode, RoleAccessOverride>> {
