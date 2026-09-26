@@ -196,13 +196,14 @@ const locatedNodes = computed(() =>
 )
 
 /**
- * 节点展示策略判定：displayPolicy 优先；缺省（历史数据或未经 API 校验的直写）按
- * locationStatus 推——approximate 一律画不确定性光圈。与 CesiumPlantMap 的
- * node-uncertainty 实体同口径，2D/3D 换视图不会改变「哪个点是近似」的判断。
+ * 节点展示策略判定：approximate 一律画不确定性光圈，先于 displayPolicy 判断——
+ * 手工录入可能给近似节点带上 exact-marker，不能让它在 2D 被画成精确点。其余按
+ * displayPolicy，缺省（历史数据或未经 API 校验的直写）画精确点。与 CesiumPlantMap
+ * 的 node-uncertainty 实体同口径，2D/3D 换视图不会改变「哪个点是近似」的判断。
  */
 function nodeDisplayPolicy(node: GridGeoNode): 'exact-marker' | 'uncertainty-halo' {
-  if (node.location?.displayPolicy) return node.location.displayPolicy
-  return node.locationStatus === 'approximate' ? 'uncertainty-halo' : 'exact-marker'
+  if (node.locationStatus === 'approximate') return 'uncertainty-halo'
+  return node.location?.displayPolicy ?? 'exact-marker'
 }
 
 const activeTopology = computed(() => (props.showTopology ? props.topologyFeatures ?? [] : []))
