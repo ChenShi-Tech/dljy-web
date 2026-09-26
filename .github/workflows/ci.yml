@@ -19,21 +19,9 @@ jobs:
     # 自托管 runner（ChenShi-Tech/dljy#3266，同 dljy-admin 的 #3259）：GitHub 托管 runner 因组织账单受限无法启动，
     # 改用主仓在用的南洋 runner。组织级 vars.CI_RUNNER 的值是离线的 dljy-mac，这里直接写标签，不复用该变量。
     runs-on: [self-hosted, dljy-linux]
-    timeout-minutes: 30
+    timeout-minutes: 60
     steps:
-      # 南洋 runner 上 github.com 的 https 被阻断、git 只能走 SSH，而机器上的 SSH 密钥只对主仓有权限；
-      # api.github.com 直连可用。所以不用 actions/checkout，改用本次运行的 GITHUB_TOKEN 经 API 下载源码包
-      # （github.sha：PR 为合并提交）。工作区里没有 .git。
-      - name: Fetch source
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          find . -mindepth 1 -maxdepth 1 -exec rm -rf {} +
-          curl -fsSL --retry 3 --max-time 300 -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
-            "https://api.github.com/repos/${{ github.repository }}/tarball/${{ github.sha }}" | tar -xz --strip-components=1
-          test -f package.json
-
-      # 不用 actions/setup-node（自托管机上预下载慢且易超时，主仓同一做法）：探测 runner 预装的 node 22，
+      # 不用 actions/setup-node（先于取源码：取源码的增量逻辑要用 node，而本步不依赖源码；自托管机上预下载慢且易超时，主仓同一做法）：探测 runner 预装的 node 22，
       # 缺失回退下载到 ~/.local/node-22。版本下界与 package.json engines（>=22.12）一致。
       - name: Setup Node.js
         run: |
@@ -62,6 +50,71 @@ jobs:
           tar -xJf /tmp/node-$V.tar.xz -C "$HOME/.local/node-22" --strip-components=1
           rm -f /tmp/node-$V.tar.xz
           echo "$HOME/.local/node-22/bin" >> "$GITHUB_PATH"
+
+      # 取源码（ChenShi-Tech/dljy#3266）：南洋 runner 上 github.com 的 https 被阻断、git 只能走 SSH 而 SSH 密钥只对主仓有权限；
+      # api.github.com / codeload 能直连但只有约 35 KB/s，整包 37 MB 要十几分钟。所以在 runner 本机缓存一份 main 的源码
+      # （~/.cache/ci-src/<仓>，记录其提交号），每次经 API compare 只拉「缓存提交 → 本次提交」之间的改动文件。
+      # 只有缓存提交是本次提交的祖先（compare 状态 ahead/identical）且改动 < 300 个文件时才走增量，其余一律整包下载，
+      # 绝不在分叉的基准上打补丁。只有 main 的 push 运行才回写缓存（PR 的合并提交不作基准）。同机两个 runner 用 flock 串行。
+      # 工作区里没有 .git。
+      - name: Fetch source
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+          IS_MAIN_PUSH: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+        run: |
+          CACHE="$HOME/.cache/ci-src/$REPO"
+          mkdir -p "$(dirname "$CACHE")"
+          exec 9>"$CACHE.lock"; flock 9
+          find . -mindepth 1 -maxdepth 1 -exec rm -rf {} +
+          mode=full
+          if [ -f "$CACHE/.ci-commit" ]; then
+            cp -a "$CACHE/." . && rm -f .ci-commit
+            if node --input-type=module -e '
+              import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+              import { dirname } from "node:path";
+              const { REPO, SHA, GH_TOKEN } = process.env;
+              const base = readFileSync(process.env.HOME + "/.cache/ci-src/" + REPO + "/.ci-commit", "utf8").trim();
+              const headers = { Authorization: `Bearer ${GH_TOKEN}` };
+              const res = await fetch(`https://api.github.com/repos/${REPO}/compare/${base}...${SHA}`, { headers: { ...headers, Accept: "application/vnd.github+json" } });
+              if (!res.ok) { console.log(`compare 失败 HTTP ${res.status}，改整包下载`); process.exit(3); }
+              const cmp = await res.json();
+              const files = cmp.files ?? [];
+              if (!["ahead", "identical"].includes(cmp.status) || files.length >= 300) {
+                console.log(`缓存基准 ${base.slice(0, 7)} 不可用（状态 ${cmp.status}，改动 ${files.length} 个文件），改整包下载`); process.exit(3);
+              }
+              const inside = (p) => { if (p.startsWith("/") || p.split("/").includes("..")) throw new Error(`非法路径 ${p}`); return p; };
+              const fetchOne = async (f) => {
+                const r = await fetch(`https://api.github.com/repos/${REPO}/contents/${f.filename.split("/").map(encodeURIComponent).join("/")}?ref=${SHA}`, { headers: { ...headers, Accept: "application/vnd.github.raw" } });
+                if (!r.ok) throw new Error(`读取 ${f.filename} 失败 HTTP ${r.status}`);
+                mkdirSync(dirname(inside(f.filename)), { recursive: true });
+                writeFileSync(f.filename, Buffer.from(await r.arrayBuffer()));
+              };
+              for (const f of files) {
+                if (f.previous_filename) rmSync(inside(f.previous_filename), { force: true });
+                if (f.status === "removed") rmSync(inside(f.filename), { force: true });
+              }
+              const todo = files.filter((f) => f.status !== "removed");
+              for (let i = 0; i < todo.length; i += 6) await Promise.all(todo.slice(i, i + 6).map(fetchOne));
+              console.log(`增量取源码：基准 ${base.slice(0, 7)} → ${SHA.slice(0, 7)}，拉取 ${todo.length} 个文件，删除 ${files.length - todo.length} 个`);
+            '; then mode=incremental; else find . -mindepth 1 -maxdepth 1 -exec rm -rf {} +; fi
+          fi
+          if [ "$mode" = full ]; then
+            out="$RUNNER_TEMP/src.tar.gz"; rm -f "$out"
+            for i in 1 2 3; do
+              curl -fsSL -C - --max-time 2400 -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
+                -o "$out" "https://api.github.com/repos/$REPO/tarball/$SHA" && break
+              [ "$i" = 3 ] && { echo "::error::整包下载失败"; exit 1; }
+            done
+            tar -xzf "$out" --strip-components=1 && rm -f "$out"
+            echo "整包取源码：$SHA"
+          fi
+          test -f package.json
+          if [ "$IS_MAIN_PUSH" = true ]; then
+            rm -rf "$CACHE.tmp" && mkdir -p "$CACHE.tmp" && cp -a . "$CACHE.tmp/" && echo "$SHA" > "$CACHE.tmp/.ci-commit"
+            rm -rf "$CACHE" && mv "$CACHE.tmp" "$CACHE" && echo "已回写源码缓存：$SHA"
+          fi
 
       - run: npm ci
 

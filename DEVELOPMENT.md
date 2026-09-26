@@ -181,7 +181,7 @@ npm run build         # 生产构建（index + grid-geo 双入口）
 - **mock 纪律**：`vi.hoisted` + 工厂模式；`vi.stubGlobal` 后必须 `vi.unstubAllGlobals()`；store/composable 的模块级单例用 `resetXxxForTest()` 或直接赋值归位。stub `fetch` 的实现签名带 `(url, init)` 两参，`mock.calls` 才能推导出元组类型。
 - **诚实语义红线**（spec 要专门锁这些）：缺数据返 `null` 而非 `0`；未知回落标 synthetic 不伪装 real；失败不缓存；`mock:true`/`sourceType!=='REAL'` 的私有数据必须 throw 而非放行。
 - **覆盖率口径**：只统计 `.ts/.js` 逻辑层（`.vue` 计入会稀释全局指标）；阈值 = floor(实测基线) − 2pp，**只升不降**。注意 Vitest 4 的 coverage include 会把未执行文件按 0% 拉进分母——`shared/` 的 49 个 .mjs 多数无覆盖，纳入会稀释约 10pp，故暂不纳管（技术债 §9）。
-- CI（GitHub Actions，南洋自托管 runner `[self-hosted, dljy-linux]`，ChenShi-Tech/dljy#3266）跑 mirror-guard + lint + check + coverage + build，PR 必须全绿。runner 上没有 .git：源码经 API 下载源码包，镜像守卫经 API 读取 PR 改动文件。
+- CI（GitHub Actions，南洋自托管 runner `[self-hosted, dljy-linux]`，ChenShi-Tech/dljy#3266）跑 mirror-guard + lint + check + coverage + build，PR 必须全绿。runner 上没有 .git：源码以 runner 本机缓存（`~/.cache/ci-src/<仓>`，main push 时回写）为基准经 API 只拉改动文件，基准不可用时整包下载；镜像守卫经 API 读取 PR 改动文件。
 
 ## 6. 目录与代码约定
 
