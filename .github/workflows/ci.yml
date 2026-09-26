@@ -158,6 +158,8 @@ jobs:
 
       # test:coverage 跑同一套 spec 并附带覆盖率阈值门禁（见 vitest.config.ts），
       # 不再单独跑 test:unit（纯重复）。
-      - run: npm run test:coverage
+      # 南洋 runner 有 160 核，vitest 默认按核数起 worker（约 160 个），导入/编译互相抢占，用例成片超时（#3266 首跑实测）；
+      # 托管 runner 只有 4 核所以从未暴露。封顶 8 个 worker：与本机开发机同量级，不改用例超时阈值。
+      - run: npm run test:coverage -- --maxWorkers=8
 
       - run: npm run build
