@@ -5,7 +5,8 @@
 //   回读验证序列化产物（比只看对象更能证明「写出的工作簿真的能被 Excel 读回」）。
 //
 // 回归：Excel/Zip 打包导出。坏掉的症状：数值列变文本（Excel 求和全 #VALUE!）、
-// sheet 名非法导致文件损坏打不开、zip 内多表重名互相覆盖只剩一张。
+// sheet 名非法导致文件损坏打不开、zip 内多表重名互相覆盖只剩一张、
+// 日期/长单号宽列无 !cols 时 Excel 默认列宽放不下显示「####」（申报台单日导出）。
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const writeFileMock = vi.hoisted(() => vi.fn())
@@ -50,6 +51,25 @@ describe('exportWorkbook', () => {
   it('filename 已带 .xlsx 不重复补', () => {
     exportWorkbook('a.xlsx', [{ name: 'S', rows: [[1]] }])
     expect(writeFileMock.mock.calls[0]![1]).toBe('a.xlsx')
+  })
+
+  it('colWidths 落为 !cols/wch 且序列化后保留（Excel 打开即定宽，日期不显示 ####）', () => {
+    exportWorkbook('r', [{ name: '主表', rows: [['目标日'], ['2026-09-08']], colWidths: [12, 8] }])
+    const [wb] = writeFileMock.mock.calls[0]
+    expect((wb as XLSX.WorkBook).Sheets['主表']!['!cols']).toEqual([{ wch: 12 }, { wch: 8 }])
+    // 回读验证：<cols> 真的写进了 xlsx 产物。read 默认不解析样式（!cols 会被丢），
+    // 必须带 cellStyles: true——与共享 readBack 分开，不为单测改公共桩行为。
+    // read 会给每列补派生字段（width/wpx/MDW），这里只锁我们设定的 wch 是否原样存活。
+    const data = XLSX.write(wb as XLSX.WorkBook, { type: 'array', bookType: 'xlsx' })
+    const back = XLSX.read(data, { cellStyles: true })
+    const cols = back.Sheets['主表']!['!cols'] as { wch: number }[]
+    expect(cols.map((c) => c.wch)).toEqual([12, 8])
+  })
+
+  it('colWidths 缺省不写 !cols（保持 Excel 默认列宽的既有行为）', () => {
+    exportWorkbook('r', [{ name: 'S', rows: [[1]] }])
+    const [wb] = writeFileMock.mock.calls[0]
+    expect((wb as XLSX.WorkBook).Sheets['S']!['!cols']).toBeUndefined()
   })
 
   it('sheet 名清洗：非法字符 : \\ / ? * [ ] 替换为空格', () => {

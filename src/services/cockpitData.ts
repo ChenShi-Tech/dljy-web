@@ -92,7 +92,9 @@ export interface CockpitOptions {
 // 模块结果类型
 export interface CockpitKpis {
   marketAvg: number | null
-  settlementAvgPrice: number | null // 综合结算均价（元/MWh，settlementClient 当前日）
+  // #2992：样站等权结算均价（元/MWh，settlementClient 当前日，跨厂等权口径）。
+  // 不是集团量费加权综合结算均价——后者只由服务端结算统计提供，驾驶舱 KPI 已改名标明。
+  settlementAvgPrice: number | null
   settlementDaPrice: number | null // 日前结算电价（元/MWh）
   settlementRtPrice: number | null // 实时结算电价（元/MWh）
   peakValleySpread: number | null
@@ -199,9 +201,10 @@ export interface DecisionItem {
 export interface PositionModule {
   ltmEnergy: number | null // 中长期电量 MWh
   totalEnergy: number | null // 总电量 MWh
-  coverageRate: number // 0~1
-  openExposureMwh: number
-  openExposurePct: number // 0~100
+  // HA-06：缺失日不按 0 补齐，分母缺失 → null（页面显示「不可计算」）。
+  coverageRate: number | null
+  openExposureMwh: number | null
+  openExposurePct: number | null
   hasData: boolean
 }
 
@@ -722,13 +725,14 @@ export async function loadCockpit(opts: CockpitOptions): Promise<CockpitData> {
   }
   const ltmV = ltmEnergy.value()
   const totalV = totalEnergy.value()
-  const cov = hedgeCoverage({ contractedMwh: ltmV ?? 0, forecastMwh: totalV ?? 0 })
+  // HA-06：缺失日不按 0 计入合计；分母缺失 → 覆盖率「不可计算」，不再 ?? 0 补零。
+  const cov = hedgeCoverage({ contractedMwh: ltmV, forecastMwh: totalV })
   const position: PositionModule = {
     ltmEnergy: ltmV == null ? null : +ltmV.toFixed(1),
     totalEnergy: totalV == null ? null : +totalV.toFixed(1),
-    coverageRate: cov.coverageRate,
-    openExposureMwh: cov.openExposureMwh,
-    openExposurePct: totalV != null && totalV > 0 ? +((1 - cov.coverageRate) * 100).toFixed(1) : 0,
+    coverageRate: cov.notComputable ? null : cov.coverageRate,
+    openExposureMwh: cov.notComputable ? null : cov.openExposureMwh,
+    openExposurePct: cov.notComputable ? null : +((1 - (cov.coverageRate as number)) * 100).toFixed(1),
     hasData: settleRows.length > 0 && (ltmV != null || totalV != null)
   }
 
@@ -780,7 +784,7 @@ export async function loadCockpit(opts: CockpitOptions): Promise<CockpitData> {
 
   const kpis: CockpitKpis = {
     marketAvg: avgOfAvg,
-    settlementAvgPrice: settlementPoint?.avgPrice ?? null,
+    settlementAvgPrice: settlementPoint?.sampleAvgPrice ?? null,
     settlementDaPrice: settlementPoint?.daPrice ?? null,
     settlementRtPrice: settlementPoint?.rtPrice ?? null,
     peakValleySpread: peakValley,
@@ -852,13 +856,13 @@ export async function loadCockpit(opts: CockpitOptions): Promise<CockpitData> {
       impactLabel: '偏差电费'
     })
   }
-  // 5) 中长期覆盖 / 现货敞口
-  if (position.hasData && position.openExposurePct > 0) {
+  // 5) 中长期覆盖 / 现货敞口（HA-06：不可计算时如实提示，缺失日不按 0 计）
+  if (position.hasData && position.coverageRate != null && position.openExposurePct != null && position.openExposurePct > 0) {
     decisions.push({
       kind: 'opp',
       title: '套保比 / 敞口提示',
-      desc: `中长期覆盖率 ${(position.coverageRate * 100).toFixed(0)}%，现货敞口 ${position.openExposurePct.toFixed(0)}%（敞口电量 ${position.openExposureMwh.toFixed(0)} MWh）`,
-      impactWan: +(position.openExposureMwh / 1000).toFixed(1),
+      desc: `中长期覆盖率 ${(position.coverageRate * 100).toFixed(0)}%，现货敞口 ${position.openExposurePct.toFixed(0)}%（敞口电量 ${position.openExposureMwh?.toFixed(0)} MWh）`,
+      impactWan: +((position.openExposureMwh ?? 0) / 1000).toFixed(1),
       impactLabel: '敞口(千MWh)'
     })
   }

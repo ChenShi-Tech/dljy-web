@@ -39,6 +39,10 @@ const expectationLabel: Record<RegionCapabilityDataSupport['expectation'], strin
       <Route :size="14" />
       <span>数据到货后按当前地区通道接入，页面不跨地区回放、不合成填充。</span>
     </div>
+    <!-- 可选扩展槽：页面按自身业务补说明与替代入口（如跳转到同域可用的分析页）。 -->
+    <div v-if="$slots.extra" class="cap-degraded__extra">
+      <slot name="extra" />
+    </div>
   </section>
 </template>
 
@@ -101,6 +105,17 @@ const expectationLabel: Record<RegionCapabilityDataSupport['expectation'], strin
   display: flex;
   align-items: center;
   gap: 6px;
+  color: var(--muted);
+  font-size: var(--font-sm);
+}
+.cap-degraded__extra {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
   color: var(--muted);
   font-size: var(--font-sm);
 }

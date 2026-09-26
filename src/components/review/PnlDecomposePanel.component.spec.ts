@@ -176,7 +176,8 @@ describe('PnlDecomposePanel', () => {
     })
     vi.mocked(patchTemplateInstance).mockResolvedValue()
     const wrapper = await settle(mount(PnlDecomposePanel, { props: { spec, tolerancePct: 3, penaltyPrice: 100 } }))
-    expect(wrapper.text()).toContain('模板三实例 #33')
+    expect(wrapper.text()).toContain('本期典型交易复盘')
+    expect(wrapper.text()).not.toContain('#33')
     const row = wrapper.find('.pdp-top-table tbody tr')
     await row.findAll('.pdp-input')[0].setValue('测试成因')
     for (let i = 0; i < 10 && vi.mocked(patchTemplateInstance).mock.calls.length === 0; i++) {

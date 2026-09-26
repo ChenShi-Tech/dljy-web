@@ -8,15 +8,17 @@ import {
   listBaseMapProviders,
   resolveBaseMapFallbackSequence,
   resolveBaseMapProvider,
+  isThrottledTileError,
   shouldFallbackBaseMap,
 } from './mapProviders'
 
 describe('mapProviders 底图 Provider 配置层', () => {
   it('默认 Provider 为实测可达的免费网络源', () => {
     const def = resolveBaseMapProvider(DEFAULT_BASE_MAP_PROVIDER_ID)
-    // 由 arcgis-imagery 换来：arcgisonline.com 整域对本项目出口 IP 恒 403，实机上永远降级成
-    // OSM 街道图，三维地形被街道图盖住等于白开。carto-dark 实测 0.24-0.73s、上千次请求零失败。
-    expect(def.id).toBe('carto-voyager')
+    // 换回 arcgis-imagery：此前断言「arcgisonline.com 整域 403」只对 `services.` 子域成立，
+    // `server.` 子域实测 12 并发 0.71–1.87s 全 200。卫星影像是唯一能和三维地形互相成就的
+    // 底图——矢量街道图铺在地形上读不出地貌，等于地形白开。
+    expect(def.id).toBe('arcgis-imagery')
     expect(def.kind).toBe('url-template')
     expect(def.tier).toBe('free')
     expect(def.requiresToken ?? false).toBe(false)
@@ -105,9 +107,9 @@ describe('mapProviders 底图 Provider 配置层', () => {
       'solid-grid',
     ])
     expect(resolveBaseMapFallbackSequence('does-not-exist').map((item) => item.id)).toEqual([
+      'arcgis-imagery',
       'carto-voyager',
       'carto-dark',
-      'arcgis-imagery',
       'osm-bright',
       'osm-dark',
       'opentopo',
@@ -116,6 +118,14 @@ describe('mapProviders 底图 Provider 配置层', () => {
     expect(resolveBaseMapFallbackSequence('solid-grid').map((item) => item.id)).toEqual([
       'solid-grid',
     ])
+  })
+
+  it('注册表不得再指向实测不可达的 services.arcgisonline.com 子域', () => {
+    // 这条钉死一次教训：Esri 的 `services.` 与 `server.` 两个子域一堵一通，而当年把整域
+    // 判死后，卫星底图与晕渲图层被一起弃用了近一个月。以后谁再引 Esri 服务都得走可达那个。
+    for (const provider of listBaseMapProviders()) {
+      expect(provider.url).not.toContain('services.arcgisonline.com')
+    }
   })
 
   it('默认底图必须是网络可达的瓦片源，不能是纯色兜底', () => {
@@ -211,10 +221,19 @@ describe('mapProviders 降级链有界终止与失败组合（#1346 视觉门禁
         continue
       }
       expect(typeof provider.credit === 'string' && provider.credit.length > 0).toBe(true)
-      // 端点可以是瓦片 URL，也可以是 ion assetId；两者都没有就是不可定位的死配置。
-      const locatable = provider.url.length > 0 || Number.isFinite(provider.ionAssetId)
+      // 端点有三种形态：瓦片 URL、ion assetId、天地图服务代号（后者的完整 URL 要在运行时
+      // 拼上 tk 才成立，所以配置里存不下）。一种都没有就是不可定位的死配置。
+      const locatable = provider.url.length > 0
+        || Number.isFinite(provider.ionAssetId)
+        || Boolean(provider.tiandituLayer)
       expect(locatable).toBe(true)
       if (provider.kind === 'ion') expect(Number.isFinite(provider.ionAssetId)).toBe(true)
+      else if (provider.kind === 'tianditu') {
+        expect(provider.tiandituLayer).toBeTruthy()
+        // 天地图的 URL 必须留空：把带 tk 的地址写进配置就等于把凭据编译进产物
+        expect(provider.url).toBe('')
+        expect(provider.requiresToken).toBe(true)
+      }
       else expect(provider.url.length).toBeGreaterThan(0)
     }
   })
@@ -225,5 +244,82 @@ describe('mapProviders 降级链有界终止与失败组合（#1346 视觉门禁
     expect(terminal.url).toBe('')
     expect(terminal.tier).toBe('free')
     expect(terminal.adjustment).toEqual({ brightness: 1, contrast: 1, saturation: 1, gamma: 1 })
+  })
+})
+
+describe('天地图底图', () => {
+  it('注册了影像与地形晕渲两档，都声明需要 tk', () => {
+    for (const id of ['tianditu-imagery', 'tianditu-terrain-shading']) {
+      const provider = resolveBaseMapProvider(id)
+      expect(provider.kind).toBe('tianditu')
+      expect(provider.requiresToken).toBe(true)
+      expect(provider.tiandituLayer).toBeTruthy()
+    }
+  })
+
+  /**
+   * 二维平面图已经走天地图；三维不跟上的话，切 2D/3D 时地物、色调、注记全变，
+   * 用户的原话是「换了个星球」。所以有 tk 时它必须排在 ion 之前。
+   */
+  /**
+   * 天地图**不**进自动首选。2026-09-09 实测三维下 400 张瓦片里 96 张 429（24%）——
+   * 一次视角变化就是几百张，免费配额扛不住；二维一屏几十张则没有这个问题。
+   * 自动切过去只会让三维一开图就掉备用源，比不切更糟。
+   */
+  it('天地图只能显式指定，不因持有 tk 而自动成为首选', () => {
+    expect(resolvePreferredBaseMapId({})).toBe(DEFAULT_BASE_MAP_PROVIDER_ID)
+    expect(resolvePreferredBaseMapId({ hasIonToken: true })).toBe('ion-aerial')
+    expect(resolvePreferredBaseMapId({ explicitId: 'tianditu-imagery' })).toBe('tianditu-imagery')
+  })
+
+  it('显式指定最高优先——token 状态不得篡改显式配置', () => {
+    expect(resolvePreferredBaseMapId({ explicitId: 'carto-dark', hasIonToken: true })).toBe('carto-dark')
+  })
+
+  /**
+   * 需 token 的源不能进自动降级链：无凭据时它必失败，只会拖慢真正可用底图的出现。
+   */
+  it('天地图不出现在自动降级链里', () => {
+    const ids = resolveBaseMapFallbackSequence('carto-voyager').map((item) => item.id)
+    expect(ids).not.toContain('tianditu-imagery')
+    expect(ids).not.toContain('tianditu-terrain-shading')
+  })
+
+  it('把天地图设为首选时，后续降级仍走免费链并以离线底色收尾', () => {
+    const ids = resolveBaseMapSequenceWithPreferred('tianditu-imagery').map((item) => item.id)
+    expect(ids[0]).toBe('tianditu-imagery')
+    expect(ids.at(-1)).toBe('solid-grid')
+    expect(ids.filter((id) => id.startsWith('tianditu'))).toHaveLength(1)
+  })
+})
+
+describe('isThrottledTileError', () => {
+  /**
+   * 限流与「源不可用」必须分开：三维一帧要的瓦片远多于二维，天地图这类有配额的源很容易
+   * 撞 429。把它当故障计数，会在瓦片最密的那几秒把底图换掉——用户看到的是「刚打开就
+   * 掉到备用源」，而那个源其实好好的。
+   */
+  it('429 / 418 判为限流', () => {
+    expect(isThrottledTileError({ statusCode: 429 })).toBe(true)
+    expect(isThrottledTileError({ statusCode: 418 })).toBe(true)
+    expect(isThrottledTileError({ error: { statusCode: 429 } })).toBe(true)
+  })
+
+  it('状态码缺失时退回读错误文本', () => {
+    expect(isThrottledTileError({ message: 'Request has failed. Status Code: 429' })).toBe(true)
+    expect(isThrottledTileError({ message: 'failed with 418' })).toBe(true)
+  })
+
+  it('真故障不被误判成限流——否则底图坏了也不会降级', () => {
+    expect(isThrottledTileError({ statusCode: 404 })).toBe(false)
+    expect(isThrottledTileError({ statusCode: 500 })).toBe(false)
+    expect(isThrottledTileError({ message: 'Failed to obtain image tile X: 3 Y: 1 Level: 4' })).toBe(false)
+    expect(isThrottledTileError(null)).toBe(false)
+    expect(isThrottledTileError(undefined)).toBe(false)
+  })
+
+  it('数字嵌在别的数里不算——瓦片坐标里出现 429 是常事', () => {
+    expect(isThrottledTileError({ message: 'tile X: 1429 Y: 2 Level: 8' })).toBe(false)
+    expect(isThrottledTileError({ message: 'tile X: 4291 Y: 2' })).toBe(false)
   })
 })

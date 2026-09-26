@@ -1,5 +1,6 @@
 import {
   Gauge,
+  FileSliders,
   Coins,
   CalendarRange,
   LineChart,
@@ -17,6 +18,7 @@ import {
   Factory,
   Database,
   FileChartColumn,
+  ChartColumn,
   Table2,
   ListChecks,
   Map as MapIcon,
@@ -27,6 +29,7 @@ import { REPORTS_FEATURE_ENABLED } from '../features/reports/config'
 import { reportsNavigation } from '../features/reports/navigation'
 import { GRID_GEO_FEATURE_ENABLED } from '../features/gridGeo/config'
 import { gridGeoNavigation } from '../features/gridGeo/navigation'
+import { listInsightNavigation } from '@/services/region/insightWorkspace'
 import type { SubjectType } from '@/services/governance'
 
 // 冻结下架（简化 IA·PR-A）：演示/静态占位分组默认从侧边栏摘除（代码与路由保留、深链可达），
@@ -46,6 +49,11 @@ export type NavItem = {
   // （发电/售电/储能全立场可见）；组合/集团视角（TRADER/GROUP）恒全可见。
   // 只做叶子级标注，分组内常混排共享与专属页（如公司管理：台账属发电、合同共享）。
   stanceAffinity?: SubjectType[]
+  // #2991：在这些地区只从菜单摘除入口（filterNavigationForUser 生效），不影响路由可达
+  // 与权限——旧链接/收藏深链仍可直接访问，由页面自身显示可解释的降级说明。
+  // 与 regionIds（显式圈定可见地区）互补：regionIds 是「只在哪些地区显示」，
+  // hiddenInRegionIds 是「只在哪些地区隐藏」。
+  hiddenInRegionIds?: string[]
 }
 
 // 按交易工作流组织的菜单（信息架构重构，见 docs/agent-harness/主题与信息架构规划.md §2）。
@@ -59,7 +67,9 @@ export const navigation: NavItem[] = [
     icon: ChartSpline,
     children: [
       { path: '/insight/cockpit', title: '市场洞察驾驶舱', icon: Gauge },
-      { path: '/sjfx/fshq', title: '分时行情', icon: LineChart },
+      // #2991：云南没有撮合分时行情来源（sdpt_fshq 为山西三德私有族），菜单在云南隐藏；
+      // 路由保持可达（degraded），直接访问由 FshqView 显示可解释降级卡 + 价格分析入口。
+      { path: '/sjfx/fshq', title: '分时行情', icon: LineChart, hiddenInRegionIds: ['yunnan'] },
       { path: '/sjfx/zrsjg', title: '价格分析', icon: ChartSpline },
       { path: '/sjfx/zcqxhdl', title: '出清现货电量分析', icon: LineChart },
       { path: '/sjfx/zrxgx', title: '现货价格×新能源', icon: ChartSpline, stanceAffinity: ['GENERATOR'] },
@@ -94,6 +104,10 @@ export const navigation: NavItem[] = [
       { path: '/xhjy/approvals', title: '申报审批队列', icon: FileText },
       { path: '/xhjy/review', title: '复盘中心', icon: ChartSpline },
       { path: '/xhjy/risk-center', title: '风控阈值面板', icon: Gauge },
+      { path: '/xhjy/hedge', title: '中长期与现货套保', icon: Gauge },
+      // 旧 /zcqjy/exposure 路由已 8.1 重定向到 /xhjy/hedge（D1/HW-07）；本条目路径同步。
+      // 中长期与现货的衔接页（dljy#2988）：把中长期合同电量按形状分解后与预计出力比对，算逐时敞口与套保率，
+      // 并读现货结算口径。产出是现货价格风险指标，故归现货组；路由路径 /zcqjy/exposure 不变，深链不断。
       // 云南交易工作台侧栏入口已移除（其功能并入首位「现货交易驾驶舱」/dashboard）。
       // yunnanTradingNavigation 现为 null，此 spread 展开为空数组；保留注入点以便回滚恢复独立入口。
       ...(yunnanTradingNavigation ? [yunnanTradingNavigation] : [])
@@ -105,10 +119,22 @@ export const navigation: NavItem[] = [
     title: '中长期交易',
     icon: CalendarRange,
     children: [
-      { path: '/zcqjy/zccljk', title: '中长期持仓监控', icon: Gauge },
-      { path: '/zcqjy/exposure', title: '中长期敞口看板', icon: Gauge },
+      // 云南中长期售电 P1（dljy#2939）：合同与月度持仓；P2/P3 入口在下方，复盘未交付不出现空壳菜单。
+      { path: '/zcqjy/contracts', title: '售电合同', icon: FileText },
+      { path: '/zcqjy/positions', title: '月度持仓', icon: ChartColumn },
+      // 云南中长期售电 P2（dljy#2971）：分时分解与场站分配已交付。
+      { path: '/zcqjy/positions/intervals', title: '分时持仓', icon: ChartSpline },
+      { path: '/zcqjy/positions/stations', title: '场站维度持仓', icon: Factory },
+      // 云南中长期售电 P3（dljy#2973）：售电目标与方案、交易公告日历与提交登记已交付；与敞口/交易月历分开，不引入现货或预测口径。
+      { path: '/zcqjy/plans', title: '售电计划', icon: ListChecks },
+      { path: '/zcqjy/execution', title: '交易执行', icon: Compass },
+      { path: '/zcqjy/adjustments', title: '合同调整', icon: FileSliders },
+      { path: '/zcqjy/review', title: '业务复盘', icon: FileChartColumn },
+      { path: '/zcqjy/bills', title: '外部账单与差异', icon: Coins },
+      // 以下三项是山西采集族的旧页面，与云南中长期售电底账不同源，菜单名标注地区避免与新页面混淆（dljy#2988）。
+      { path: '/zcqjy/zccljk', title: '持仓量监控（山西采集）', icon: Gauge },
       { path: '/zcqjy/zfsdjy', title: '中长期分时段交易', icon: ChartSpline },
-      { path: '/zcqjy/zjyap', title: '交易月历', icon: CalendarRange },
+      { path: '/zcqjy/zjyap', title: '交易月历（山西·国网）', icon: CalendarRange },
       { path: '/sjxh/zjzzt', title: '省间中长期电量计划', icon: Network }
     ]
   },
@@ -240,3 +266,21 @@ export const navigation: NavItem[] = [
     ]
   }
 ]
+
+// 市场洞察地区工作区导航装配（dljy#2995 阶段 A）
+// ----------------------------------------------------------------------------
+// 纯函数：当某地区已启用「装配型」洞察工作区且有已交付页时，把「市场洞察」分组
+// （path '/insight'）的直接子项原位替换为工作区 delivered 页；其余任何情况（未注册、
+// 开关未启用、兼容型登记、已启用但无已交付页）都保持现有 children 原样。
+// 替换后的 children 仍走 filterNavigationForUser / filterNavigationForStance 过滤链，
+// 权限与立场过滤逻辑不变；其他分组永不触碰。
+export function applyInsightWorkspaceNavigation(items: NavItem[], regionId: string): NavItem[] {
+  const entries = listInsightNavigation(regionId)
+  if (!entries) return items
+  return items.map((item) => {
+    if (item.path !== '/insight' || !item.children) return item
+    // InsightNavEntry 与 NavItem 必填字段（path/title/icon）结构兼容，icon 由内核按页 id 提供
+    const children: NavItem[] = entries.map((entry) => ({ ...entry }))
+    return { ...item, children }
+  })
+}

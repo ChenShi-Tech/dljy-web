@@ -41,6 +41,8 @@ export type RegionCapabilityDataSupport = {
 
 export type RegionRouteCapability = {
   path: string
+  /** 为 true 时同样覆盖 `${path}/…` 子路径（如详情页 /zcqjy/contracts/:id），否则只精确匹配。 */
+  includeSubpaths?: boolean
   statusByRegion?: Record<string, RegionModuleCapabilityStatus>
   dataSupportByRegion?: Record<string, RegionCapabilityDataSupport[]>
   note?: string
@@ -199,7 +201,10 @@ export const regionModuleCapabilities: RegionModuleCapability[] = [
         shanxiSdptSupport('山西市场洞察基线', ['sdpt_console', 'sdpt_zsjfx_idx', 'sdpt_zcqxhdl', 'sdpt_actualLoad', 'sdpt_fshq'], '三德普华/山西采集族为基线，经典洞察页可真实回放。')
       ],
       yunnan: [
-        { label: '云南洞察已接真实族', families: ['sdpt_console', 'sdpt_zsjfx_idx', 'sdpt_zcqxhdl', 'sdpt_actualLoad', 'yn_system_forecast'], expectation: 'real', note: '2026-07-06 后 sdpt_console、zsjfx 索引、listrs_full、逐日负荷和关系图输入已有云南真实支撑。' },
+        // #2991 措辞校正：云南 sdpt_zcqxhdl 真实存在的只有 listrs_full（供价格分析页），
+        // 不含出清电量清单 __list__——那登记在山西三德公司私有面，云南没有该键。
+        { label: '云南洞察已接真实族', families: ['sdpt_console', 'sdpt_zsjfx_idx', 'sdpt_zcqxhdl', 'sdpt_actualLoad', 'yn_system_forecast'], expectation: 'real', note: '2026-07-06 后 sdpt_console、zsjfx 索引、逐日负荷和关系图输入已有云南真实支撑；sdpt_zcqxhdl 仅 listrs_full（供价格分析页使用）。' },
+        { label: '云南出清电量清单缺口', families: ['sdpt_zcqxhdl'], expectation: 'missing', note: '__list__ 出清电量清单是山西三德公司私有口径（dljy#2991），云南无全省出清清单来源；出清现货电量分析页在云南显示停用说明，不跨地区读取。' },
         { label: '云南分时行情缺口', families: ['sdpt_fshq'], expectation: 'missing', note: '交易撮合行情 fshq 暂无云南来源，页面后续应显示可解释降级卡。' },
         { label: '市场经营手录口径', families: ['market_analysis'], expectation: 'partial', note: 'market_analysis 是手录/导入公共口径（概览/发电/售电/储能/价格/月度/指标），不等价于完整云南交易中心行情。' },
         { label: '售电套餐经营口径(公司私有)', families: ['market_retail_packages'], expectation: 'partial', note: 'market_retail_packages 为售电套餐公司私有经营口径（#669），仅归属公司 comp-cgn-yunnan 登录可见真实回放；非归属公司走 synthetic 授权态，不泄漏他司经营数据。' }
@@ -221,12 +226,25 @@ export const regionModuleCapabilities: RegionModuleCapability[] = [
       { path: '/insight/cockpit', statusByRegion: { shanxi: 'available', yunnan: 'available' }, note: '市场洞察 bundle 已按地区贯穿，云南真实族缺口由 bundle gaps 标注。' },
       { path: '/sjfx/fshq', statusByRegion: { shanxi: 'available', yunnan: 'degraded' }, note: '云南无 fshq 交易撮合行情来源。' },
       { path: '/sjfx/zrsjg', statusByRegion: { shanxi: 'available', yunnan: 'available' }, note: '云南使用 sdpt_zcqxhdl listrs_full 真实回放。' },
-      { path: '/sjfx/zcqxhdl', statusByRegion: { shanxi: 'available', yunnan: 'available' }, note: '出清曲线类输入已纳入云南真实支撑。' },
+      // #2991：此前声明「出清曲线类输入已纳入云南真实支撑」是错误声明——云南 sdpt_zcqxhdl
+      // 只有 listrs_full（价格分析页用），出清电量清单 __list__ 是山西三德公司私有键。
+      // degraded 放行路由（旧深链可达），页面显示停用说明卡；客户端不再发 __list__ 请求。
+      { path: '/sjfx/zcqxhdl', statusByRegion: { shanxi: 'available', yunnan: 'degraded' }, note: '云南出清电量页已停用（dljy#2991）：__list__ 为山西公司私有清单，云南无全省出清清单来源；页面显示停用说明，不跨地区读取。' },
       { path: '/sjfx/zrxgx', statusByRegion: { shanxi: 'available', yunnan: 'available' }, note: '同页关系图可走云南 yn_system_forecast 口径；山西专有维度见 subCapabilities。' },
       { path: '/sjfx/zrxgx2', statusByRegion: { shanxi: 'available', yunnan: 'available' }, note: '统调负荷关系图可走云南系统预测/实际长表口径。' },
       { path: '/sjfx/actualLoad', statusByRegion: { shanxi: 'available', yunnan: 'available' }, note: '逐日系统负荷已有云南真实支撑。' },
       { path: '/sjfx/singleZsjfx', statusByRegion: { shanxi: 'available', yunnan: 'available' }, note: 'zsjfx 索引已具备云南真实支撑。' },
-      { path: '/sjfx/market-ops', statusByRegion: { shanxi: 'available', yunnan: 'degraded' }, note: '手录市场经营口径可用但不代表完整云南行情自动接入。' }
+      { path: '/sjfx/market-ops', statusByRegion: { shanxi: 'available', yunnan: 'degraded' }, note: '手录市场经营口径可用但不代表完整云南行情自动接入。' },
+      // dljy#2995 阶段 A：六条规范入口 /insight/<pageId>。路由层四地区一律放行（degraded 也是放行态），
+      // 内容由工作区注册（src/services/region/insightWorkspace.ts）按当前地区决定：山西兼容登记
+      // overview/prices 落现有页面，云南默认关闭（开关开后六页均为建设占位），广东/四川未登记显示
+      // 未开通说明——绝不借用他省数据。状态值只表达该地区洞察数据整体健康度，与路由可达性解耦。
+      { path: '/insight/overview', statusByRegion: { shanxi: 'available', yunnan: 'degraded', guangdong: 'degraded', sichuan: 'degraded' }, note: '由工作区注册决定内容；路由放行仅为规范地址可达，未登记地区由宿主显示未开通。' },
+      { path: '/insight/prices', statusByRegion: { shanxi: 'available', yunnan: 'degraded', guangdong: 'degraded', sichuan: 'degraded' }, note: '由工作区注册决定内容；路由放行仅为规范地址可达，未登记地区由宿主显示未开通。' },
+      { path: '/insight/supply', statusByRegion: { shanxi: 'available', yunnan: 'degraded', guangdong: 'degraded', sichuan: 'degraded' }, note: '由工作区注册决定内容；路由放行仅为规范地址可达，未登记地区由宿主显示未开通。' },
+      { path: '/insight/grid-boundaries', statusByRegion: { shanxi: 'available', yunnan: 'degraded', guangdong: 'degraded', sichuan: 'degraded' }, note: '由工作区注册决定内容；路由放行仅为规范地址可达，未登记地区由宿主显示未开通。' },
+      { path: '/insight/plants', statusByRegion: { shanxi: 'available', yunnan: 'degraded', guangdong: 'degraded', sichuan: 'degraded' }, note: '由工作区注册决定内容；路由放行仅为规范地址可达，未登记地区由宿主显示未开通。' },
+      { path: '/insight/research', statusByRegion: { shanxi: 'available', yunnan: 'degraded', guangdong: 'degraded', sichuan: 'degraded' }, note: '由工作区注册决定内容；路由放行仅为规范地址可达，未登记地区由宿主显示未开通。' }
     ],
     subCapabilities: [
       { id: 'zrxgx.xnyz', title: '新能源总出力', scope: 'dimension', statusByRegion: { shanxi: 'available', yunnan: 'available' }, note: '山西/云南均可表达新能源总量关系。' },
@@ -239,8 +257,9 @@ export const regionModuleCapabilities: RegionModuleCapability[] = [
     id: 'spot-trading',
     title: '现货交易',
     group: 'spot',
+    // /zcqjy/exposure 路径留在 zcqjy 下（深链不断），但它读现货结算口径、产出现货价格风险指标，归现货模块（dljy#2988）。
     routePrefixes: ['/dashboard', '/xhjy/monitor', '/xhjy/zrqsb', '/xhjy/zptqx', '/xhjy/desk', '/xhjy/approvals', '/xhjy/review', '/xhjy/risk-center'],
-    routePaths: ['/dashboard', '/xhjy/monitor', '/xhjy/zrqsb', '/xhjy/zptqx', '/xhjy/desk', '/xhjy/approvals', '/xhjy/review', '/xhjy/risk-center'],
+    routePaths: ['/dashboard', '/xhjy/monitor', '/xhjy/zrqsb', '/xhjy/zptqx', '/xhjy/desk', '/xhjy/approvals', '/xhjy/review', '/xhjy/risk-center', '/zcqjy/exposure'],
     statusByRegion: {
       shanxi: 'available',
       yunnan: 'degraded',
@@ -299,7 +318,9 @@ export const regionModuleCapabilities: RegionModuleCapability[] = [
       // 云南：结算口径三段式复盘已接真实源可用（#1488），但偏差考核那套的申报/实际两侧都无源
       // （sdpt_zrqsb 是山西私有族，严格地区不回退），且结算采集仅覆盖 2026-05。
       { path: '/xhjy/review', statusByRegion: { shanxi: 'degraded', yunnan: 'degraded' }, note: '山西可读真实申报量，但实际上网电量无数据源、须调用方提供；云南结算口径三段式复盘可用（采集仅覆盖 2026-05），偏差考核两侧仍无源。' },
-      { path: '/xhjy/risk-center', statusByRegion: { shanxi: 'available', yunnan: 'degraded' }, note: '风险聚合可用，云南现货执行源仍不完整。' }
+      { path: '/xhjy/risk-center', statusByRegion: { shanxi: 'available', yunnan: 'degraded' }, note: '风险聚合可用，云南现货执行源仍不完整。' },
+      // 中长期与现货套保（原中长期敞口看板，dljy#2988）：合同分解 vs 预计出力算逐时敞口，并读现货结算口径算套保率与净敞口。
+      { path: '/zcqjy/exposure', statusByRegion: { shanxi: 'available', yunnan: 'degraded' }, note: '敞口与套保计算可用，云南中长期真实输入（P2 分时分解）与结算口径待接入。' }
     ]
   },
   {
@@ -307,7 +328,7 @@ export const regionModuleCapabilities: RegionModuleCapability[] = [
     title: '中长期交易',
     group: 'midlong',
     routePrefixes: ['/zcqjy', '/sjxh/zjzzt'],
-    routePaths: ['/zcqjy/zccljk', '/zcqjy/exposure', '/zcqjy/zfsdjy', '/zcqjy/zjyap', '/sjxh/zjzzt'],
+    routePaths: ['/zcqjy/contracts', '/zcqjy/positions', '/zcqjy/positions/intervals', '/zcqjy/positions/stations', '/zcqjy/curves', '/zcqjy/plans', '/zcqjy/execution', '/zcqjy/adjustments', '/zcqjy/review', '/zcqjy/bills', '/zcqjy/zccljk', '/zcqjy/exposure', '/zcqjy/zfsdjy', '/zcqjy/zjyap', '/sjxh/zjzzt'],
     statusByRegion: {
       shanxi: 'available',
       yunnan: 'degraded',
@@ -341,6 +362,64 @@ export const regionModuleCapabilities: RegionModuleCapability[] = [
       ]
     },
     routeCapabilities: [
+      // 云南中长期售电 P1（dljy#2939）：试点只开通云南；其他地区不展示入口，也不回退读取任何地区的合同底账。
+      {
+        path: '/zcqjy/contracts',
+        includeSubpaths: true,
+        statusByRegion: { yunnan: 'available', shanxi: 'hidden', guangdong: 'hidden', sichuan: 'hidden' },
+        note: '中长期售电合同底账（company.midlong_*），P1 仅云南试点；后端对其他地区返回未开通。'
+      },
+      {
+        path: '/zcqjy/positions',
+        statusByRegion: { yunnan: 'available', shanxi: 'hidden', guangdong: 'hidden', sichuan: 'hidden' },
+        note: '已确认售电义务月度持仓，只读合同底账，不依赖现货/预测数据；P1 仅云南试点。'
+      },
+      // 云南中长期售电 P2（dljy#2971）：分时持仓、场站维度持仓与分解集详情，同样只开通云南。
+      {
+        path: '/zcqjy/positions/intervals',
+        statusByRegion: { yunnan: 'available', shanxi: 'hidden', guangdong: 'hidden', sichuan: 'hidden' },
+        note: '已确认分解集的月/日/时持仓；只有月量的合同在小时粒度显示分时未知，不依赖现货/预测数据；仅云南试点。'
+      },
+      {
+        path: '/zcqjy/positions/stations',
+        statusByRegion: { yunnan: 'available', shanxi: 'hidden', guangdong: 'hidden', sichuan: 'hidden' },
+        note: '交易单元义务的场站分配份额与未分配余额；仅云南试点。'
+      },
+      {
+        path: '/zcqjy/curves',
+        includeSubpaths: true,
+        statusByRegion: { yunnan: 'available', shanxi: 'hidden', guangdong: 'hidden', sichuan: 'hidden' },
+        note: '分时分解集详情（/zcqjy/curves/:id），仅云南试点。'
+      },
+      // 云南中长期售电 P3（dljy#2973）：售电计划与交易执行，同样只开通云南。
+      {
+        path: '/zcqjy/plans',
+        statusByRegion: { yunnan: 'available', shanxi: 'hidden', guangdong: 'hidden', sichuan: 'hidden' },
+        note: '人工售电目标、完成情况与交易方案占用；目标是经营安排，不依赖现货/预测数据；仅云南试点。'
+      },
+      {
+        path: '/zcqjy/execution',
+        statusByRegion: { yunnan: 'available', shanxi: 'hidden', guangdong: 'hidden', sichuan: 'hidden' },
+        note: '交易公告与日历、申报材料导出与外部提交登记；导出不代提交、不对接外部平台；仅云南试点。'
+      },
+      // 云南中长期售电 P4（dljy#3014）：合同调整独立页；执行确认是交易执行页的第四个标签，
+      // 随 /zcqjy/execution 的能力开放，不单列。
+      {
+        path: '/zcqjy/adjustments',
+        statusByRegion: { yunnan: 'available', shanxi: 'hidden', guangdong: 'hidden', sichuan: 'hidden' },
+        note: '外部调整/转让/部分终止：方向核验、可调余额、原子生效与影响追溯；仅云南试点。'
+      },
+      // 云南中长期售电 P5（dljy#3016）：业务复盘与月报、外部账单与差异；不导入现货复盘状态。
+      {
+        path: '/zcqjy/review',
+        statusByRegion: { yunnan: 'available', shanxi: 'hidden', guangdong: 'hidden', sichuan: 'hidden' },
+        note: '中长期量价复盘与冻结月报；不输出套保/现货择时/实际利润结论；仅云南试点。'
+      },
+      {
+        path: '/zcqjy/bills',
+        statusByRegion: { yunnan: 'available', shanxi: 'hidden', guangdong: 'hidden', sichuan: 'hidden' },
+        note: '外部账单登记修订、收款凭证与量价差异闭环；综合账单不猜分；仅云南试点。'
+      },
       // sdpt_zfsdjy 是三德普华私有族（曾误标 public，匿名可读该公司中长期合同台账与
       // 逐日持仓电量/持仓均价，#1617 合并后复查发现）。与 /xhjy/zrqsb、/xhjy/zptqx 同口径：
       // 其它地区既无自有采集、也不可能跨公司串读 → hidden，四地区逐个显式声明。
@@ -352,7 +431,6 @@ export const regionModuleCapabilities: RegionModuleCapability[] = [
         },
         note: 'sdpt_zfsdjy 为三德普华公司私有族，仅山西宿主可读；其余地区不展示该模块。'
       },
-      { path: '/zcqjy/exposure', statusByRegion: { shanxi: 'available', yunnan: 'degraded' }, note: '敞口计算可用，云南合同/中长期真实输入待补齐。' },
       {
         path: '/zcqjy/zfsdjy',
         statusByRegion: { shanxi: 'available', yunnan: 'hidden', guangdong: 'hidden', sichuan: 'hidden' },
@@ -363,7 +441,9 @@ export const regionModuleCapabilities: RegionModuleCapability[] = [
       },
       {
         path: '/zcqjy/zjyap',
-        statusByRegion: { shanxi: 'available', yunnan: 'degraded' },
+        // 云南、广东同属南网，不跨电网取国网月历（sdpt_zjyap gridScope=sgcc）：显示空页面反而误导，直接隐藏（dljy#2988）。
+        // 四川同属国网，保留经国网基线回退读山西月历的既有口径，不在此隐藏。
+        statusByRegion: { shanxi: 'available', yunnan: 'hidden', guangdong: 'hidden' },
         dataSupportByRegion: {
           shanxi: [shanxiSdptSupport('山西交易月历', ['sdpt_zjyap'], 'sdpt_zjyap/calendar 国网交易安排基线真实回放。')],
           yunnan: [{ label: '南网不取国网月历', families: ['sdpt_zjyap'], expectation: 'missing', note: 'zjyap 为 gridScope=sgcc 国网交易安排，云南属南网经营区，不跨电网取数。' }]
@@ -618,7 +698,10 @@ export function getRegionModuleAccessRoutes(roleCode: RoleCode) {
 export function getRegionCapabilityForPath(path: string, regionId?: string) {
   const module = getRegionModuleCapabilityForPath(path)
   if (!module || !regionId) return null
-  const route = module.routeCapabilities?.find((item) => normalizePath(item.path) === normalizePath(path))
+  const normalized = normalizePath(path)
+  // 精确匹配优先；声明了 includeSubpaths 的能力项再覆盖其子路径，避免详情页回落到模块整体状态而在未开通地区放行。
+  const route = module.routeCapabilities?.find((item) => normalizePath(item.path) === normalized)
+    ?? module.routeCapabilities?.find((item) => item.includeSubpaths && normalized.startsWith(`${normalizePath(item.path)}/`))
   // 覆盖面内但该地区未登记 → not-configured（fail-closed），不再返回 null 造成上游按「未覆盖」放行。
   const status = route?.statusByRegion?.[regionId] ?? module.statusByRegion[regionId] ?? 'not-configured'
   return { module, route: route ?? null, status }
@@ -654,15 +737,23 @@ export function getRegionModuleForPath(path: string) {
   })
 }
 
-export function getRegionModuleCapabilityForPath(path: string) {
+/**
+ * 路径 → 模块：先在所有模块里找精确 routePaths，再退回前缀匹配。
+ * 页面归属与路径前缀不一致时（如 /zcqjy/exposure 归现货组、路径仍在 /zcqjy 下），
+ * 结果不能取决于模块在数组里的先后（dljy#2988）。列表作为参数传入，便于单测构造顺序。
+ */
+export function resolveRegionModuleForPath<T extends Pick<RegionModuleCapability, 'routePaths' | 'routePrefixes'>>(modules: readonly T[], path: string): T | null {
   const normalized = normalizePath(path)
-  return regionModuleCapabilities.find((module) => {
-    if (module.routePaths.some((routePath) => normalizePath(routePath) === normalized)) return true
-    return module.routePrefixes.some((routePrefix) => {
-      const prefix = normalizePath(routePrefix)
-      return normalized === prefix || normalized.startsWith(`${prefix}/`)
-    })
-  }) ?? null
+  const exact = modules.find((module) => module.routePaths.some((routePath) => normalizePath(routePath) === normalized))
+  if (exact) return exact
+  return modules.find((module) => module.routePrefixes.some((routePrefix) => {
+    const prefix = normalizePath(routePrefix)
+    return normalized === prefix || normalized.startsWith(`${prefix}/`)
+  })) ?? null
+}
+
+export function getRegionModuleCapabilityForPath(path: string) {
+  return resolveRegionModuleForPath(regionModuleCapabilities, path)
 }
 
 function getRoleLandingRoutes(module: RegionBusinessModule, user: UserLike) {

@@ -20,15 +20,16 @@ npm run dev          # http://localhost:5174（端口被占会直接报错，先
 
 登录账号由维护者发放（受限权限属正常——部分管理页与数据会 403/空态）。
 
-## 本地质量门禁（提 PR 前必须全绿）
+## 本地验证（按影响面执行）
 
 ```bash
-npm run lint          # ESLint：correctness + 分层守卫（views 禁 fetch / 禁 import shared/schema）
-npm run check         # vue-tsc 类型检查
-npm run test:unit     # vitest（纯函数 + 组件双环境）
-npm run test:coverage # 覆盖率阈值门禁（lines 44 / functions 36 / statements 42 / branches 37）
-npm run build          # 生产构建（含 index 与 grid-geo 双入口）
+npm run lint:files -- src/foo.ts src/Bar.vue       # 检查改动文件
+npm run check                                      # 全仓类型检查
+npm run test:related -- src/foo.ts src/Bar.vue     # 自动运行相关测试
+# 或：npm run test:unit -- src/foo.spec.ts          # 直接指定测试文件
 ```
+
+开发与提交前不机械执行全量测试；按改动影响面扩大验证范围，无法可靠界定影响面时再运行全量 `npm run lint`、`npm run test:unit` 与 `npm run build`。PR CI 固定执行全量 lint、类型检查、覆盖率测试和生产构建。详细规则见 [DEVELOPMENT.md §5](DEVELOPMENT.md#5-测试与本地门禁)。
 
 ## 目录速览
 
@@ -46,3 +47,7 @@ npm run build          # 生产构建（含 index 与 grid-geo 双入口）
 - **页面提示「模拟数据」**：平台约定——Mock 数据必须可见标注，属正常。
 - **5174 被占**：本仓与既有约定统一固定 5174，`strictPort` 下直接失败；关掉占用进程再启动。
 - **/agent-api 请求 404/超时**：检查 `.env.local` 的 `DLJY_AGENT_API_TARGET` 是否可达（它与 `DLJY_DEV_API_TARGET` 是两个不同端点）。
+
+## 相关文档
+
+- [平台后台旧入口迁移清单](docs/platform-admin-entry-migration.md) —— 客户前端旧管理入口的逐项分类与迁移待批准清单（ChenShi-Tech/dljy#3161，任务 11.4）

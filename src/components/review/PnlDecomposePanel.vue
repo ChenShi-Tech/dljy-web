@@ -9,6 +9,7 @@
 // 四要素落库（空壳服务端拒、前端前置拦截）；失败红字+重试（写路径不静默）。
 import { computed, onMounted, ref, watch } from 'vue'
 import PnLWaterfall from '@/components/agent/dljy-ui/review/PnLWaterfall.vue'
+import PanelFetchLoading from '@/components/review/PanelFetchLoading.vue'
 import { fetchReviewRange, type PeriodReviewDay } from '@/services/review/reviewPeriodClient'
 import { fetchCases, registerCase, type CaseDraft } from '@/services/review/reviewStoreClient'
 import type { CaseSummary } from '@/services/review/reviewStoreApi'
@@ -267,50 +268,59 @@ function onToCaseChange(t: { date: string; type: string; pnlYuan: number }, chec
       <input v-model="month" type="month" />
     </header>
 
-    <p v-if="loading" class="pdp-muted">逐日取 quant /review 分解中（本月 + 上月环比基线{{ curProgress ? `，本月已取 ${curProgress.done}/${curProgress.total} 天` : '' }}）…</p>
+    <PanelFetchLoading
+      v-if="loading"
+      :text="`逐日取 quant /review 分解中（本月 + 上月环比基线${curProgress ? `，本月已取 ${curProgress.done}/${curProgress.total} 天` : ''}）…`"
+      :progress="curProgress"
+    />
 
     <template v-else>
       <p v-if="!rollup.days" class="pdp-muted">{{ month }} 无可用数据日——诚实空态，不合成。</p>
 
       <template v-else>
-        <!-- 第一层：分品种（喂 M1 预留位 PnLWaterfall 真数据） -->
-        <PnLWaterfall :data="waterfallData" :title="`${month} 收益三层拆解 · 分品种`" />
-        <p v-for="v in rollup.byVariety" v-show="v.revenueYuan === null" :key="v.variety" class="pdp-note">
-          {{ v.variety }}：{{ v.note }}
-        </p>
-
-        <!-- 第二层：分时段 -->
-        <div v-if="rollup.bySegment" class="pdp-seg">
-          <b>分时段（峰平谷 · 读 SettlementRuleSpec）</b>
-          <table class="pdp-table">
-            <thead><tr><th>时段</th><th>收益 元</th><th>占比</th></tr></thead>
-            <tbody>
-              <tr v-for="s in rollup.bySegment" :key="s.segment">
-                <td>{{ s.segment }}</td>
-                <td>{{ Math.round(s.revenueYuan).toLocaleString() }}</td>
-                <td>{{ (s.share * 100).toFixed(1) }}%</td>
-              </tr>
-            </tbody>
-          </table>
+        <!-- 三层各自成卡片（白底+细边+浅阴影，与系统卡片调性一致） -->
+        <div class="pdp-card">
+          <!-- 第一层：分品种（喂 M1 预留位 PnLWaterfall 真数据） -->
+          <PnLWaterfall :data="waterfallData" :title="`${month} 收益三层拆解 · 分品种`" />
+          <p v-for="v in rollup.byVariety" v-show="v.revenueYuan === null" :key="v.variety" class="pdp-note">
+            {{ v.variety }}：{{ v.note }}
+          </p>
         </div>
-        <p v-else class="pdp-warn">本省峰谷时段未参数化（SettlementRuleSpec 未沉淀）：分时段层不出数，不借用他省划分。</p>
 
-        <!-- 环比强制归因 -->
-        <p v-if="forcesAttribution" class="pdp-warn">
-          环比 {{ prevLabel }} 变动超 20%（{{ prevTotalYuan!.toLocaleString() }} → {{ Math.round(rollup.totalYuan).toLocaleString() }} 元）：
-          按方案规则本层主要归因<b>必填</b>——在 Top5 表「主要成因」栏填写。
-        </p>
-        <p v-else class="pdp-note">
-          环比 {{ prevLabel }}：{{ prevTotalYuan === null ? '上期无数据（不强制归因）' : `${Math.round(prevTotalYuan).toLocaleString()} 元` }}。
-        </p>
+        <div class="pdp-card">
+          <!-- 第二层：分时段 -->
+          <div v-if="rollup.bySegment" class="pdp-seg">
+            <b>分时段（峰平谷 · 读 SettlementRuleSpec）</b>
+            <table class="pdp-table">
+              <thead><tr><th>时段</th><th>收益 元</th><th>占比</th></tr></thead>
+              <tbody>
+                <tr v-for="s in rollup.bySegment" :key="s.segment">
+                  <td>{{ s.segment }}</td>
+                  <td>{{ Math.round(s.revenueYuan).toLocaleString() }}</td>
+                  <td>{{ (s.share * 100).toFixed(1) }}%</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p v-else class="pdp-warn">本省峰谷时段未参数化（SettlementRuleSpec 未沉淀）：分时段层不出数，不借用他省划分。</p>
+
+          <!-- 环比强制归因 -->
+          <p v-if="forcesAttribution" class="pdp-warn">
+            环比 {{ prevLabel }} 变动超 20%（{{ prevTotalYuan!.toLocaleString() }} → {{ Math.round(rollup.totalYuan).toLocaleString() }} 元）：
+            按方案规则本层主要归因<b>必填</b>——在 Top5 表「主要成因」栏填写。
+          </p>
+          <p v-else class="pdp-note">
+            环比 {{ prevLabel }}：{{ prevTotalYuan === null ? '上期无数据（不强制归因）' : `${Math.round(prevTotalYuan).toLocaleString()} 元` }}。
+          </p>
+        </div>
 
         <!-- 第三层：单笔 Top5（M2 以日为笔） -->
-        <div class="pdp-top">
+        <div class="pdp-card pdp-top">
           <b>单笔 Top5 盈亏榜 <i>（M2 以日为笔；逐笔成交归集待 S6 持仓线 #1966 接通后替换）</i></b>
           <p class="pdp-note" :class="{ 'pdp-warn': t03Error }">
             <template v-if="!t03Available">模板实例端点未接入——成因/经验不会自动保存，仅本机暂存；勾选「入案例库」仍会立即登记入库（不可撤回）。</template>
             <template v-else-if="t03Instance">
-              人填内容写入模板三实例 #{{ t03Instance.id }}（{{ t03Instance.periodKey }}）：
+              人工填写的内容将保存到本期典型交易复盘（{{ t03Instance.periodKey }}）：
               {{ t03Locked ? '实例已提交锁定，内容只读' : '编辑后自动存草稿' }}{{ t03SavedAt ? ` · 最近保存 ${t03SavedAt}` : '' }}<template v-if="t03Error"> · {{ t03Error }}</template>
             </template>
             <template v-else>本月无模板三实例（触发引擎未生成）——成因/经验不会自动保存，仅本机暂存；勾选「入案例库」仍会立即登记入库（不可撤回）。</template>
@@ -353,7 +363,7 @@ function onToCaseChange(t: { date: string; type: string; pnlYuan: number }, chec
             </tbody>
           </table>
           <p class="pdp-note">
-            Top5 与拆解表同源同口径（同一次 /review 聚合产出）；金额 self-computed。
+            Top5 与拆解表来自同一次计算、同一口径；金额为系统自算，不作为正式结算依据。
             「是否入库=勾选」即登记案例库（review.cases，deviation 档案纪律：四要素必填、沉淀后不可改写、无 DELETE）；
             端点缺席环境保持本地勾选并如实标注「本地」，不谎报已入库。
           </p>
@@ -371,6 +381,15 @@ function onToCaseChange(t: { date: string; type: string; pnlYuan: number }, chec
 
 <style scoped>
 .pdp { display: flex; flex-direction: column; gap: 10px; font-size: var(--font-12-5); }
+/* 三层内容卡片化：白底 + 细边 + 浅阴影，与系统卡片调性一致（--radius/--shadow 主题化） */
+.pdp-card {
+  display: flex; flex-direction: column; gap: 8px;
+  padding: 12px 14px;
+  border: 1px solid var(--line, #d9e2ec);
+  border-radius: var(--radius, 6px);
+  background: var(--panel, #fff);
+  box-shadow: var(--shadow, 0 1px 2px rgba(15, 23, 42, 0.04));
+}
 .pdp-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
 .pdp-head input { padding: 2px 6px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 6px; font-size: var(--font-11-5); }
 .pdp-muted { margin: 0; color: var(--el-text-color-secondary, #909399); }

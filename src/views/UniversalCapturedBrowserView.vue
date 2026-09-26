@@ -5,7 +5,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { Search } from 'lucide-vue-next'
 import DynamicTable from '../components/common/DynamicTable.vue'
-import AgentChatPanel from '@/components/agent/AgentChatPanel.vue'
+import { useAiSidebar } from '@/features/aiSidebar'
 import RegionDataBanner from '@/components/region/RegionDataBanner.vue'
 import { fetchCaptured } from '@/services/captured'
 import { onRegionChange } from '../composables/useRegionReload'
@@ -76,9 +76,17 @@ async function load() {
   }
 }
 
-// B3 选中即问：点击行 → 注入 contextPayload 到 AgentChatPanel（走 untrusted_external_content 语义）
+// B3 选中即问：点击行 → 「问这一行」唤出 AI 侧边栏，以该行作为不可信上下文直接解读
+// （统一 AI 侧边栏 EN-04，原内嵌对话面板已移除；走 untrusted_external_content 语义）
 const selectedRow = ref<Record<string, unknown> | null>(null)
-const askOpen = ref(false)
+const ai = useAiSidebar()
+function askSelectedRow() {
+  if (!contextPayload.value) return
+  ai.ask('请基于我选中的这行数据，结合当前数据族与业务背景，给出解读、异常提示或下一步分析建议。', {
+    context: contextPayload.value,
+    label: '通用数据浏览器'
+  })
+}
 const contextPayload = computed(() =>
   selectedRow.value
     ? {
@@ -171,18 +179,10 @@ function queryFamily() {
         :export-name="loadedFamily || 'captured'"
         @row-click="onSelectRow"
       />
-      <!-- B3 选中即问：点击表格任意行 → 把选中行作为上下文注入 AgentChatPanel -->
+      <!-- B3 选中即问：点击表格任意行 → 「问这一行」唤出 AI 侧边栏并以选中行作为上下文解读 -->
       <div v-if="selectedRow" class="data-browser__ask">
         <span class="data-browser__ask-tag">📌 已选中一行（{{ Object.keys(selectedRow).length }} 列）</span>
-        <el-button size="small" type="primary" @click="askOpen = !askOpen">
-          {{ askOpen ? '收起问 AI' : '问 AI 此行' }}
-        </el-button>
-        <AgentChatPanel
-          v-if="askOpen"
-          history-key="captured_browser"
-          :context-payload="contextPayload"
-          initial-question="请基于我选中的这行数据，结合当前数据族与业务背景，给出解读、异常提示或下一步分析建议。"
-        />
+        <el-button size="small" type="primary" data-testid="ask-selected-row" @click="askSelectedRow">问这一行</el-button>
       </div>
     </div>
   </div>

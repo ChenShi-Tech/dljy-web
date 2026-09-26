@@ -1,11 +1,11 @@
 <script setup lang="ts">
-import { computed, defineAsyncComponent, inject, onBeforeUnmount, onMounted, ref, shallowRef, watch, type Component } from 'vue'
-import { routerKey } from 'vue-router'
+import { parseDisclosureTime } from './disclosureTime'
+import { computed, defineAsyncComponent, inject, onBeforeUnmount, onMounted, ref, shallowRef, watch, type Component, nextTick} from 'vue'
+import { routeLocationKey, routerKey } from 'vue-router'
 import {
   Activity,
   AlertTriangle,
   ArrowRight,
-  Building2,
   CalendarDays,
   CheckCircle2,
   CloudRain,
@@ -30,7 +30,16 @@ import {
 import { onRegionChange } from '@/composables/useRegionReload'
 import { currentCompany, selectedCompanyId } from '@/services/company/companyContext'
 import { currentRegion } from '@/services/region/regionContext'
+import { todayBeijing } from '@/utils/beijingDate'
 import ProvinceFlatMap from './ProvinceFlatMap.vue'
+import PlantCatalogPanel from './PlantCatalogPanel.vue'
+import PlantDetailDrawer from './PlantDetailDrawer.vue'
+import GridObjectDrawer from './GridObjectDrawer.vue'
+import GridObjectContextBar from './GridObjectContextBar.vue'
+import { useGridObjectContext } from './useGridObjectContext'
+import { buildGridObjectLocation, type GridObjectReference } from './objectNavigation'
+import PlantAssetGovernance from './PlantAssetGovernance.vue'
+import { clampCardOffset, drawerAvoidanceShift } from './draggableCard'
 import TerrainControlPanel from './TerrainControlPanel.vue'
 import { useGridGeoViewPreference } from './useViewPreference'
 // Cesium 约 4 MiB；切到 2D 时用不到，按需拉取。
@@ -38,6 +47,7 @@ const CesiumPlantMap = defineAsyncComponent(() => import('./CesiumPlantMap.vue')
 import {
   fetchGridDisclosureEvents,
   fetchGridGeoNodes,
+  fetchGridGeoManifest,
   fetchGridGeoPlants,
   fetchGridGeoWeather,
   fetchGridOperatorProfile,
@@ -54,7 +64,13 @@ import {
 import { topologyFeatureLabel } from './topology/topologyStyle'
 import { loadGridMarketSpatialSnapshot, type GridMarketSpatialSnapshot } from './marketSpatial'
 import {
-  COMMAND_MARKET_REPLAY_DATE,
+  GRID_MARKET_LAYER_OPTIONS,
+  gridMarketLayerOption,
+  gridMarketTone,
+  gridMarketValueText,
+  rankGridMarketMetrics,
+} from './marketSpatialLayers'
+import {
   COMMAND_NODE_PAGE_SIZE,
   commandNodesFromResponse,
   commandWeatherItems,
@@ -82,9 +98,11 @@ import type {
   GridTopologyManifest,
 } from './types'
 
-type MapExpose = { focusPlant: (plantId: string) => void; focusNode: (nodeId: string) => void; resetView: () => void }
+type MapExpose = { focusPlant: (plantId: string) => void; focusNode: (nodeId: string) => void; resetView: () => void; flyTerrainTour?: () => void }
 
 const appRouter = inject(routerKey, null)
+const route = inject(routeLocationKey, null)
+const objectContext = useGridObjectContext()
 const mapRef = ref<MapExpose | null>(null)
 const baseLoading = ref(true)
 const baseError = ref('')
@@ -114,8 +132,43 @@ const { viewMode, terrainProvider, hillshadeEnabled, verticalExaggeration } =
   useGridGeoViewPreference('command', { verticalExaggeration: 1.3 })
 const topologyViewNotice = ref('')
 const weatherLayer = ref<GridGeoWeatherLayer>('wind')
+// 「电厂地理空间」并入后新增的一组状态：目录筛选结果、完整信息抽屉、治理弹窗与写权限。
+// catalogFiltered 单独存一份而不是直接用 plants，是因为地图上要绘制的点必须与目录里
+// 列出的一致——否则会出现「列表里搜到了、图上找不到」。
+// 选中卡片的拖动与让位。锚点取自实际 CSS 而非写死值：窄屏断点会改 .selection-card 的
+// right/bottom，用桌面端数值算钳制范围会把卡片允许拖到不可见处。computed style 读到的
+// 是声明值（不含 transform），正是我们要的「默认位置」。常量只作为读不到时的兜底。
+const SELECTION_CARD_RIGHT_FALLBACK = 382
+const SELECTION_CARD_BOTTOM_FALLBACK = 58
+const DETAIL_DRAWER_WIDTH = 580
+
+function selectionCardAnchors(element: HTMLElement | null) {
+  if (!element) return { right: SELECTION_CARD_RIGHT_FALLBACK, bottom: SELECTION_CARD_BOTTOM_FALLBACK }
+  const style = getComputedStyle(element)
+  const right = Number.parseFloat(style.right)
+  const bottom = Number.parseFloat(style.bottom)
+  return {
+    right: Number.isFinite(right) ? right : SELECTION_CARD_RIGHT_FALLBACK,
+    bottom: Number.isFinite(bottom) ? bottom : SELECTION_CARD_BOTTOM_FALLBACK,
+  }
+}
+
+const stageRef = ref<HTMLElement | null>(null)
+const selectionCardRef = ref<HTMLElement | null>(null)
+const cardOffset = ref({ x: 0, y: 0 })
+let cardDragStart: { pointerX: number; pointerY: number; offsetX: number; offsetY: number } | null = null
+
+const catalogFiltered = ref<GridGeoPlant[]>([])
+const catalogContextKey = ref(0)
+const detailOpen = ref(false)
+const governanceOpen = ref(false)
+const governanceMode = ref<'edit' | 'history'>('edit')
+const canWrite = ref(false)
+const catalogStats = ref<{ locatedPlantCount: number; totalPlantCountInCurrentDim: number; unresolvedPlantCount: number | null } | null>(null)
+
 const marketLayer = ref<GridMarketLayer>('risk')
-const marketDate = ref(COMMAND_MARKET_REPLAY_DATE)
+const marketDate = ref(objectContext.hasContext.value ? objectContext.date.value : todayBeijing())
+const selectedObjectWindow = computed(() => marketDate.value === objectContext.date.value ? objectContext.timeWindow.value : null)
 const selectedPlantId = ref<string | null>(null)
 const selectedNodeId = ref<string | null>(null)
 const selectedEventId = ref<string | null>(null)
@@ -163,12 +216,6 @@ const weatherOptions: Array<{ value: GridGeoWeatherLayer; label: string; icon: C
   { value: 'cloud', label: '云层', icon: Layers3 },
 ]
 
-const marketOptions: Array<{ value: GridMarketLayer; label: string }> = [
-  { value: 'priceSpread', label: '实时-日前价差' },
-  { value: 'outputDeviation', label: '出力偏差' },
-  { value: 'risk', label: '综合关注' },
-]
-
 const profileStyle = computed(() => operatorProfile.value ? {
   '--command-accent': operatorProfile.value.visual.accent,
   '--command-secondary': operatorProfile.value.visual.secondary,
@@ -177,6 +224,12 @@ const profileStyle = computed(() => operatorProfile.value ? {
 const currentScene = computed(() => sceneOptions.find((item) => item.id === scene.value) ?? sceneOptions[0])
 const selectedPlant = computed(() => plants.value.find((item) => item.plantId === selectedPlantId.value) ?? null)
 const selectedNode = computed(() => nodes.value.find((item) => item.nodeId === selectedNodeId.value) ?? null)
+const selectedObjectReference = computed<GridObjectReference | null>(() => selectedPlant.value
+  ? { kind: 'plant', id: selectedPlant.value.plantId, regionId: selectedPlant.value.regionId, gridOperator: selectedPlant.value.gridOperator }
+  : selectedNode.value
+    ? { kind: 'node', id: selectedNode.value.nodeId, regionId: selectedNode.value.regionId, gridOperator: selectedNode.value.gridOperator }
+    : selectedEventId.value ? { kind: 'disclosure', id: selectedEventId.value, regionId: currentRegion.value.id } : null)
+
 const selectedEvent = computed(() => disclosures.value.find((item) => item.eventId === selectedEventId.value) ?? null)
 const selectedTopologyFeature = computed(() => topologyFeatures.value.find((item) => item.featureId === selectedTopologyFeatureId.value) ?? null)
 const selectedWeather = computed(() => weatherItems.value.find((item) => item.plantId === selectedPlantId.value) ?? null)
@@ -231,13 +284,10 @@ const activeSourceSummary = computed(() => {
     ? `${topologySourceType.value} · ${topology.value?.topologyVersion ?? '版本缺失'} · ${topologyFeatures.value.length}/${topologyTotal.value} · 预算：${topologyTransport.value.budgetStatus ?? '—'} · 非模拟数据`
     : `${topologySourceType.value} · 非模拟数据 · 不写生产 · snapshot 未请求`
 })
-const marketRank = computed(() => {
-  const scope = focusedSubdivision.value
-  const allowed = scope ? new Set(scope.plantIds) : null
-  return [...visibleMarketMetrics.value]
-    .filter((metric) => marketValue(metric) !== null && (!allowed || allowed.has(metric.plantId)))
-    .sort((left, right) => Math.abs(Number(marketValue(right))) - Math.abs(Number(marketValue(left))))
-})
+const marketRank = computed(() =>
+  rankGridMarketMetrics(visibleMarketMetrics.value, marketLayer.value, focusedSubdivision.value?.plantIds))
+/** 当前图层的口径说明。指标名（「综合关注」）本身不解释它是怎么算的。 */
+const marketLayerHint = computed(() => gridMarketLayerOption(marketLayer.value)?.description ?? '')
 const disclosureCategoryCounts = computed(() => disclosures.value.reduce<Record<string, number>>((counts, event) => {
   counts[event.category] = (counts[event.category] ?? 0) + 1
   return counts
@@ -264,7 +314,7 @@ function initialLayerStates(): Record<SpatialCommandScene, SpatialLayerState> {
     overview: { status: 'idle', reason: '等待加载授权空间资产' },
     nodes: { status: 'idle', reason: '按需加载已定位节点' },
     weather: { status: 'idle', reason: '按需加载当前格点天气' },
-    market: { status: 'idle', reason: '按需加载 2026-05-01 历史回放' },
+    market: { status: 'idle', reason: '按所选业务日期加载市场回放' },
     disclosure: { status: 'idle', reason: '按需加载公开披露时间轴' },
     topology: { status: 'idle', reason: '等待读取授权 Provider 状态' },
   }
@@ -274,22 +324,68 @@ function setLayerState(id: SpatialCommandScene, state: SpatialLayerState) {
   layerStates.value = { ...layerStates.value, [id]: state }
 }
 
+/** 抽屉一开就把卡片让开，否则用户刚点的那个电厂正好被抽屉压住。 */
+const cardAvoidShift = computed(() => drawerAvoidanceShift(
+  detailOpen.value,
+  DETAIL_DRAWER_WIDTH,
+  // 依赖 cardAnchorRight 而非常量：窄屏下卡片本就更靠右/更靠边，让位量随之不同
+  cardAnchorRight.value,
+))
+/** 卡片当前的 CSS 锚点。窗口尺寸变化会跨断点改写它，故随 resize 重算。 */
+const cardAnchorRight = ref(SELECTION_CARD_RIGHT_FALLBACK)
+
+const selectionCardStyle = computed(() => ({
+  transform: `translate(${-(cardOffset.value.x + cardAvoidShift.value)}px, ${-cardOffset.value.y}px)`,
+}))
+
+function onCardPointerDown(event: PointerEvent) {
+  // 卡片里的按钮和链接要能正常点，不能被拖动吞掉
+  if ((event.target as HTMLElement | null)?.closest('button, a, input, select')) return
+  cardDragStart = { pointerX: event.clientX, pointerY: event.clientY, offsetX: cardOffset.value.x, offsetY: cardOffset.value.y }
+  ;(event.currentTarget as HTMLElement).setPointerCapture(event.pointerId)
+}
+
+function onCardPointerMove(event: PointerEvent) {
+  if (!cardDragStart) return
+  const stage = stageRef.value?.getBoundingClientRect()
+  const card = selectionCardRef.value?.getBoundingClientRect()
+  if (!stage || !card) return
+  const anchors = selectionCardAnchors(selectionCardRef.value)
+  cardOffset.value = clampCardOffset(
+    {
+      // 向左/向上为正，与 CSS 的右下角锚定一致
+      x: cardDragStart.offsetX + (cardDragStart.pointerX - event.clientX),
+      y: cardDragStart.offsetY + (cardDragStart.pointerY - event.clientY),
+    },
+    { width: card.width, height: card.height },
+    { width: stage.width, height: stage.height },
+    anchors.right,
+    anchors.bottom,
+  )
+}
+
+function onCardPointerUp(event: PointerEvent) {
+  if (!cardDragStart) return
+  cardDragStart = null
+  ;(event.currentTarget as HTMLElement).releasePointerCapture?.(event.pointerId)
+}
+
+function onPlantSaved(plant: GridGeoPlant) {
+  plants.value = plants.value.map((item) => item.plantId === plant.plantId ? plant : item)
+}
+
 function isAbort(error: unknown) {
   return error instanceof DOMException && error.name === 'AbortError'
 }
 
-function marketValue(metric: GridMarketMetric) {
-  if (marketLayer.value === 'priceSpread') return metric.priceSpread
-  if (marketLayer.value === 'outputDeviation') return metric.outputDeviationPercent
-  if (marketLayer.value === 'risk') return metric.riskScore
-  return null
+// 取值、格式化与分档口径统一在 `marketSpatialLayers.ts`——原先驾驶舱与「电力市场空间
+// 态势」页各写一份，同一个电厂在两处可能显示成不同的档位颜色。
+function marketValueText(metric: GridMarketMetric | null) {
+  return gridMarketValueText(metric, marketLayer.value)
 }
 
-function marketValueText(metric: GridMarketMetric | null) {
-  const value = metric ? marketValue(metric) : null
-  if (value === null) return '缺测'
-  if (marketLayer.value === 'risk') return `${value.toFixed(0)} 分`
-  return `${value > 0 ? '+' : ''}${value.toFixed(1)}${marketLayer.value === 'priceSpread' ? ' 元/MWh' : '%'}`
+function marketTone(metric: GridMarketMetric) {
+  return gridMarketTone(metric, marketLayer.value)
 }
 
 function weatherValue(item: GridGeoWeatherSnapshot | null) {
@@ -303,11 +399,11 @@ function weatherValue(item: GridGeoWeatherSnapshot | null) {
 
 function formatDate(value: string | null | undefined, withTime = false) {
   if (!value) return '时间缺失'
-  const parsed = new Date(value)
-  if (Number.isNaN(parsed.getTime())) return value
-  return new Intl.DateTimeFormat('zh-CN', withTime
+  const parsed = parseDisclosureTime(value, true)
+  if (parsed === null) return value
+  return new Intl.DateTimeFormat('zh-CN', { timeZone: 'Asia/Shanghai', ...(withTime
     ? { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false }
-    : { year: 'numeric', month: '2-digit', day: '2-digit' }).format(parsed)
+    : { year: 'numeric', month: '2-digit', day: '2-digit' }) }).format(parsed)
 }
 
 function clearSelection() {
@@ -363,10 +459,13 @@ async function loadBase() {
   setLayerState('overview', { status: 'loading', reason: '正在读取公司空间资产' })
   setLayerState('topology', { status: 'loading', reason: '正在读取 Provider 清单，不请求 snapshot' })
   const signal = baseController.signal
-  const [profileResult, plantResult, topologyResult] = await Promise.allSettled([
+  const [profileResult, plantResult, topologyResult, manifestResult] = await Promise.allSettled([
     fetchGridOperatorProfile(currentRegion.value.id, { signal }),
     fetchGridGeoPlants({ signal }),
     fetchGridTopologyManifest({ signal }),
+    // 目录的「已上屏 / 总数」与「编辑」按钮的可用性都来自 manifest；拿不到就退化成
+    // 只读 + 用实际加载数当分母，不阻塞主图层。
+    fetchGridGeoManifest({ signal }),
   ])
   if (requestId !== scopeRequestId || signal.aborted) return
 
@@ -379,6 +478,7 @@ async function loadBase() {
       baseError.value = '空间资产返回了不允许进入驾驶舱的 Mock 数据。'
     } else {
       plants.value = response.data?.items ?? []
+      catalogStats.value = response.data?.catalog ?? null
       plantSource.value = { sourceType: response.sourceType ?? 'DB', mock: Boolean(response.mock), productionWrite: Boolean(response.productionWrite) }
       setLayerState('overview', {
         status: plants.value.length ? 'available' : 'empty',
@@ -389,6 +489,13 @@ async function loadBase() {
     plants.value = []
     setLayerState('overview', { status: 'error', reason: plantResult.reason instanceof Error ? plantResult.reason.message : '空间资产加载失败' })
     baseError.value = '空间资产主图层加载失败；其他受控图层仍可按需尝试。'
+  }
+
+  // 写权限来自 manifest，目录统计来自电厂接口自身的 catalog 字段——两者不同源。
+  if (manifestResult.status === 'fulfilled') {
+    canWrite.value = Boolean(manifestResult.value?.capabilities.canWrite)
+  } else if (!isAbort(manifestResult.reason)) {
+    canWrite.value = false
   }
 
   if (topologyResult.status === 'fulfilled') {
@@ -404,6 +511,7 @@ async function loadBase() {
     setLayerState('topology', { status: 'error', reason: topologyResult.reason instanceof Error ? topologyResult.reason.message : 'Provider 状态读取失败' })
   }
   baseLoading.value = false
+  await syncObjectSelection()
 }
 
 function beginLayerRequest(id: SpatialCommandScene) {
@@ -508,7 +616,7 @@ async function loadDisclosures(force = false) {
   if (!force && ['available', 'empty', 'not-configured'].includes(layerStates.value.disclosure.status)) return
   const request = beginLayerRequest('disclosure')
   try {
-    const response = await fetchGridDisclosureEvents({ page: 1, pageSize: 24 }, { signal: request.signal })
+    const response = await fetchGridDisclosureEvents({ region: currentRegion.value.id, page: 1, pageSize: 24 }, { signal: request.signal })
     if (!layerRequestCurrent(request.requestId, request.scopeId, request.signal)) return
     disclosures.value = response.items.filter((item) => item.source.mock === false)
     disclosureTotal.value = response.total
@@ -659,10 +767,65 @@ function selectPlantById(plantId: string) {
   if (plant) selectPlant(plant)
 }
 
-function navigate(event: MouseEvent, path: string) {
+function objectLocation(path: string) {
+  return selectedObjectReference.value && selectedCompanyId.value
+    ? buildGridObjectLocation(path, selectedObjectReference.value, { companyId: selectedCompanyId.value, date: marketDate.value, from: selectedObjectWindow.value?.from, to: selectedObjectWindow.value?.to, returnTo: route?.fullPath })
+    : { path }
+}
+function objectHref(path: string) { return appRouter?.resolve(objectLocation(path)).href ?? path }
+
+function navigate(event: MouseEvent, path: string, retainObject = false) {
   if (!appRouter || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) return
   event.preventDefault()
-  void appRouter.push(path)
+  void appRouter.push(retainObject ? objectLocation(path) : path)
+}
+
+let appliedObjectContext = ''
+let resolvedObjectContext = ''
+
+// Only confirmed object relations may drive cross-page selection. A target node can
+// be outside the first map page; its detail response still has to carry valid WGS84 coordinates.
+async function syncObjectSelection() {
+  if (!objectContext.active.value) return
+  if (!objectContext.hasContext.value) { appliedObjectContext = ''; resolvedObjectContext = ''; return }
+  const reference = objectContext.reference.value
+  const key = JSON.stringify([reference, objectContext.date.value, selectedCompanyId.value])
+  if (key !== appliedObjectContext) {
+    appliedObjectContext = key
+    catalogContextKey.value += 1
+    resolvedObjectContext = ''
+    layerRequestId += 1
+    layerController?.abort()
+    clearSelection()
+    detailOpen.value = false
+    if (reference) marketDate.value = objectContext.date.value
+  }
+  if (!reference || resolvedObjectContext === key) return
+  if (baseLoading.value || objectContext.loading.value) return
+  const detail = objectContext.detail.value
+  if (!detail) return
+  resolvedObjectContext = key
+  if (reference.kind === 'node') {
+    const node = detail.node
+    const location = node?.location
+    if (!node || node.nodeId !== reference.id || node.regionId !== currentRegion.value.id || node.locationStatus === 'unresolved'
+      || location?.coordinateSystem !== 'WGS84' || !Number.isFinite(location.longitude) || !Number.isFinite(location.latitude)
+      || location.longitude < -180 || location.longitude > 180 || location.latitude < -90 || location.latitude > 90) return
+    if (!nodes.value.some(item => item.nodeId === node.nodeId)) nodes.value = [...nodes.value, node]
+    nodeTotal.value = Math.max(nodeTotal.value, nodes.value.length)
+    scene.value = 'nodes'
+    setLayerState('nodes', { status: 'available', reason: '已定位跨页选中的授权节点' })
+    await nextTick()
+    if (objectContext.active.value && objectContext.reference.value === reference) selectNode(node)
+    return
+  }
+  const ids = reference.kind === 'plant' ? [reference.id] : detail.relations.plants.filter(item => item.regionId === currentRegion.value.id).map(item => item.id)
+  const plant = plants.value.find(item => ids.includes(item.plantId))
+  if (!plant) return
+  scene.value = 'overview'
+  focusedSubdivision.value = null
+  await nextTick()
+  if (objectContext.active.value && objectContext.reference.value === reference) selectPlant(plant)
 }
 
 function layerSettled(id: SpatialCommandScene) {
@@ -681,12 +844,30 @@ function resetForScopeChange() {
 }
 
 function onKeydown(event: KeyboardEvent) {
-  if (event.key === 'Escape') clearSelection()
+  if (event.key !== 'Escape' || event.defaultPrevented) return
+  // Element Plus may already close the dialog at document before this key reaches window.
+  // Keep that same key from closing another layer or clearing its underlying map selection.
+  if (event.target instanceof Element && event.target.closest('[role="dialog"], [role="alertdialog"]')) return
+  if (governanceOpen.value) {
+    governanceOpen.value = false
+    return
+  }
+  if (detailOpen.value) {
+    detailOpen.value = false
+    return
+  }
+  clearSelection()
 }
 
+watch(() => [objectContext.active.value, objectContext.hasContext.value, objectContext.reference.value, objectContext.detail.value, objectContext.date.value, objectContext.loading.value], syncObjectSelection)
 watch(selectedCompanyId, resetForScopeChange)
 watch(weatherLayer, () => { if (scene.value === 'weather') clearSelection() })
 watch(marketLayer, () => { if (scene.value === 'market') clearSelection() })
+// 换了选中对象就复位手动位移：新卡片带着上一次的偏移出现，看起来像是自己跳走了。
+watch([selectedPlantId, selectedNodeId, selectedEventId], () => {
+  cardOffset.value = { x: 0, y: 0 }
+  void nextTick(() => { cardAnchorRight.value = selectionCardAnchors(selectionCardRef.value).right })
+})
 // 气象格点仍只有三维实现；停在 2D 会让侧栏报告图层已生效而地图纹丝不动，
 // 故自动切到能画的视图并告知。
 // 授权网架自 #1424 起平面图也绘制（断面/联络线走 lines、变电站走点层），不再强制切 3D
@@ -705,7 +886,7 @@ watch(
     }
   },
 )
-// Cesium 没有地市州下钻，切到 2.5D/3D 时平面图被卸载、下钻态随之失效
+// Cesium 没有地市州下钻，切到 3D 时平面图被卸载、下钻态随之失效
 // 不清空的话侧栏会继续显示「已下钻到某地州」而三维地图是全省视角。
 watch(viewMode, (mode) => {
   if (mode !== '2d') focusedSubdivision.value = null
@@ -751,16 +932,19 @@ onBeforeUnmount(() => {
         </button>
       </div>
     </header>
+    <GridObjectContextBar :date="marketDate" />
 
-    <main class="command-stage" :aria-busy="stageLoading">
+    <main ref="stageRef" class="command-stage" :aria-busy="stageLoading">
       <!--
-        2D 走省级平面地图，2.5D/3D 走 Cesium 地球；两者 props/emits 契约一致，
-        故只切组件、数据流不动。授权网架只有三维实现，见下方 watch(scene) 强制切换。
+        2D 走省级平面地图，3D 走 Cesium 地球；两者 props/emits 契约一致，
+        故只切组件、数据流不动。平面图同样能画网架要素，各场景在 2D/3D 下都可用。
+        （此处曾写「授权网架只有三维实现，见下方 watch(scene) 强制切换」——那段强制
+        切换的代码早已不在，注释没跟着删，会让人以为 2D 下网架画不出来。）
       -->
       <component
         :is="viewMode === '2d' ? ProvinceFlatMap : CesiumPlantMap"
         ref="mapRef"
-        :plants="plants"
+        :plants="scene === 'overview' ? catalogFiltered : plants"
         :nodes="visibleNodes"
         :show-located-nodes="scene === 'nodes'"
         :selected-plant-id="selectedPlantId"
@@ -810,7 +994,7 @@ onBeforeUnmount(() => {
       </nav>
 
       <div class="view-switch" role="group" aria-label="地图视图模式">
-        <button v-for="mode in (['2d', '2.5d', '3d'] as GridGeoViewMode[])" :key="mode" type="button" :class="{ active: viewMode === mode }" :aria-pressed="viewMode === mode" @click="viewMode = mode">{{ mode.toUpperCase() }}</button>
+        <button v-for="mode in (['2d', '3d'] as GridGeoViewMode[])" :key="mode" type="button" :class="{ active: viewMode === mode }" :aria-pressed="viewMode === mode" @click="viewMode = mode">{{ mode.toUpperCase() }}</button>
       </div>
 
       <TerrainControlPanel
@@ -822,6 +1006,7 @@ onBeforeUnmount(() => {
         :view-mode="viewMode"
         :hillshade-available="hillshadeAvailable"
         @request-3d="viewMode = '3d'"
+        @request-terrain-tour="mapRef?.flyTerrainTour?.()"
       />
 
       <section class="signal-strip" aria-label="当前空间资产摘要">
@@ -858,12 +1043,24 @@ onBeforeUnmount(() => {
             <article><strong>{{ scopedPlants.filter((item) => item.location.confidence === "verified").length }}</strong><small>范围已核验</small></article>
             <article><strong>{{ operatorProfile?.dataAvailability.weather.status ?? '—' }}</strong><small>天气能力</small></article>
           </div>
-          <h3>键盘等价资产列表</h3>
-          <div class="asset-list">
-            <button v-for="plant in scopedPlants" :key="plant.plantId" type="button" :class="{ selected: selectedPlantId === plant.plantId }" @click="selectPlant(plant)">
-              <Building2 :size="15" aria-hidden="true" /><span><strong>{{ plant.standardName }}</strong><small>{{ plant.location.locationLabel }}</small></span><ArrowRight :size="13" aria-hidden="true" />
-            </button>
-          </div>
+          <h3>场站目录</h3>
+          <!--
+            「电厂地理空间」并入后，这里从一份只读列表升级成带检索与筛选的场站目录。
+            输入用 scopedPlants 而非全量：下钻到地市州后目录也应该只列该范围内的场站，
+            否则会出现「图上只剩一个州、列表还是全省」。
+          -->
+          <PlantCatalogPanel
+          :key="catalogContextKey"
+            variant="embedded"
+            :plants="scopedPlants"
+            :selected-plant-id="selectedPlantId"
+            :total-count="catalogStats?.totalPlantCountInCurrentDim ?? null"
+            :located-count="catalogStats?.locatedPlantCount ?? null"
+            :unresolved-count="catalogStats?.unresolvedPlantCount ?? null"
+            @select="selectPlant"
+            @update:filtered="catalogFiltered = $event"
+            @selection-filtered-out="clearSelection"
+          />
         </template>
 
         <template v-else-if="scene === 'nodes'">
@@ -905,8 +1102,9 @@ onBeforeUnmount(() => {
             <button type="button" @click="loadMarket(true)">加载日期</button>
           </div>
           <div class="segmented-options market" role="group" aria-label="市场空间图层">
-            <button v-for="option in marketOptions" :key="option.value" type="button" :aria-pressed="marketLayer === option.value" :class="{ active: marketLayer === option.value }" @click="marketLayer = option.value">{{ option.label }}</button>
+            <button v-for="option in GRID_MARKET_LAYER_OPTIONS" :key="option.value" type="button" :aria-pressed="marketLayer === option.value" :class="{ active: marketLayer === option.value }" @click="marketLayer = option.value">{{ option.label }}</button>
           </div>
+          <p class="layer-hint">{{ marketLayerHint }}</p>
           <div class="dock-kpis">
             <article><strong>{{ marketSnapshot?.summary.pricedPlants ?? '—' }}</strong><small>价格覆盖</small></article>
             <article><strong>{{ marketSnapshot?.summary.outputPlants ?? '—' }}</strong><small>出力覆盖</small></article>
@@ -914,7 +1112,7 @@ onBeforeUnmount(() => {
           </div>
           <div class="truth-callout warning"><AlertTriangle :size="15" aria-hidden="true" />历史市场回放不与当前天气合成“实时风险”，关注分也不是潮流或阻塞成因。</div>
           <div class="asset-list">
-            <button v-for="metric in marketRank" :key="metric.plantId" type="button" :class="{ selected: selectedPlantId === metric.plantId }" @click="selectPlantById(metric.plantId)">
+            <button v-for="metric in marketRank" :key="metric.plantId" type="button" :class="[`tone-${marketTone(metric)}`, { selected: selectedPlantId === metric.plantId }]" @click="selectPlantById(metric.plantId)">
               <Gauge :size="15" aria-hidden="true" /><span><strong>{{ plants.find((plant) => plant.plantId === metric.plantId)?.standardName ?? metric.plantId }}</strong><small>{{ metric.nodeName || '节点未绑定' }}</small></span><b>{{ marketValueText(metric) }}</b>
             </button>
           </div>
@@ -970,27 +1168,29 @@ onBeforeUnmount(() => {
 
       <TopologyFeatureCard v-if="selectedTopologyFeature && topology" :feature="selectedTopologyFeature" :manifest="topology" :source-type="topologySourceType" @close="clearSelection" />
 
-      <article v-else-if="selectedPlant" class="selection-card">
+      <article v-else-if="selectedPlant" ref="selectionCardRef" class="selection-card" :style="selectionCardStyle" @pointerdown="onCardPointerDown" @pointermove="onCardPointerMove" @pointerup="onCardPointerUp" @pointercancel="onCardPointerUp">
         <button type="button" class="close" aria-label="关闭选择卡片" @click="clearSelection"><X :size="15" aria-hidden="true" /></button>
         <small>AUTHORIZED PLANT</small><h2>{{ selectedPlant.standardName }}</h2>
         <p><MapPinned :size="14" aria-hidden="true" />{{ selectedPlant.location.locationLabel }} · {{ selectedPlant.location.confidence }}</p>
-        <div><span><small>装机容量</small><strong>{{ selectedPlant.capacityMw?.toLocaleString('zh-CN') ?? '缺测' }} MW</strong></span><span v-if="scene === 'weather'"><small>{{ weatherOptions.find((item) => item.value === weatherLayer)?.label }}</small><strong>{{ weatherValue(selectedWeather) }}</strong></span><span v-if="scene === 'market'"><small>{{ marketOptions.find((item) => item.value === marketLayer)?.label }}</small><strong>{{ marketValueText(selectedMarket) }}</strong></span></div>
-        <a class="deep-link" href="/grid-assets/plants" @click="navigate($event, '/grid-assets/plants')">查看资产详情<ArrowRight :size="13" aria-hidden="true" /></a>
+        <div><span><small>装机容量</small><strong>{{ selectedPlant.capacityMw?.toLocaleString('zh-CN') ?? '缺测' }} MW</strong></span><span v-if="scene === 'weather'"><small>{{ weatherOptions.find((item) => item.value === weatherLayer)?.label }}</small><strong>{{ weatherValue(selectedWeather) }}</strong></span><span v-if="scene === 'market'"><small>{{ gridMarketLayerOption(marketLayer)?.label }}</small><strong>{{ marketValueText(selectedMarket) }}</strong></span></div>
+        <button type="button" class="deep-link" @click="detailOpen = true">完整信息<ArrowRight :size="13" aria-hidden="true" /></button>
       </article>
 
-      <article v-else-if="selectedNode" class="selection-card">
+      <article v-else-if="selectedNode" ref="selectionCardRef" class="selection-card" :style="selectionCardStyle" @pointerdown="onCardPointerDown" @pointermove="onCardPointerMove" @pointerup="onCardPointerUp" @pointercancel="onCardPointerUp">
         <button type="button" class="close" aria-label="关闭选择卡片" @click="clearSelection"><X :size="15" aria-hidden="true" /></button>
         <small>LOCATED NODE</small><h2>{{ selectedNode.nodeName }}</h2>
         <p><Waypoints :size="14" aria-hidden="true" />{{ selectedNode.location?.locationLabel }} · {{ selectedNode.locationStatus }}</p>
         <div><span><small>节点类型</small><strong>{{ selectedNode.nodeKind }}</strong></span><span><small>电压等级</small><strong>{{ selectedNode.voltageLevelKv ? `${selectedNode.voltageLevelKv} kV` : '待补' }}</strong></span></div>
-        <a class="deep-link" href="/grid-assets/nodes" @click="navigate($event, '/grid-assets/nodes')">进入节点资产台<ArrowRight :size="13" aria-hidden="true" /></a>
+        <button type="button" class="deep-link" @click="detailOpen = true">完整信息<ArrowRight :size="13" aria-hidden="true" /></button>
+        <a class="deep-link" :href="objectHref('/grid-assets/nodes')" @click="navigate($event, '/grid-assets/nodes', true)">进入节点资产台<ArrowRight :size="13" aria-hidden="true" /></a>
       </article>
 
-      <article v-else-if="selectedEvent" class="selection-card event-card">
+      <article v-else-if="selectedEvent" ref="selectionCardRef" class="selection-card event-card" :style="selectionCardStyle" @pointerdown="onCardPointerDown" @pointermove="onCardPointerMove" @pointerup="onCardPointerUp" @pointercancel="onCardPointerUp">
         <button type="button" class="close" aria-label="关闭选择卡片" @click="clearSelection"><X :size="15" aria-hidden="true" /></button>
         <small>{{ disclosureCategoryLabel[selectedEvent.category] }} · {{ formatDate(selectedEvent.effectiveAt, true) }}</small><h2>{{ selectedEvent.title }}</h2>
         <p><FileSearch :size="14" aria-hidden="true" />{{ selectedEvent.spatialBinding.label }} · 坐标未提供</p>
-        <a class="deep-link" href="/grid-assets/disclosures" @click="navigate($event, '/grid-assets/disclosures')">查看证据与时间轴<ArrowRight :size="13" aria-hidden="true" /></a>
+        <button type="button" class="deep-link" @click="detailOpen = true">完整信息<ArrowRight :size="13" aria-hidden="true" /></button>
+        <a class="deep-link" :href="objectHref('/grid-assets/disclosures')" @click="navigate($event, '/grid-assets/disclosures', true)">查看证据与时间轴<ArrowRight :size="13" aria-hidden="true" /></a>
       </article>
 
       <footer class="truth-console">
@@ -1004,6 +1204,30 @@ onBeforeUnmount(() => {
       <div v-else-if="baseError" class="stage-state error" role="alert"><AlertTriangle :size="24" aria-hidden="true" /><strong>{{ baseError }}</strong><button type="button" @click="loadBase">重试</button></div>
       <div class="visually-hidden" aria-live="polite">{{ selectionAnnouncement }}</div>
     </main>
+
+    <!--
+      「电厂地理空间」并入后的两块：完整信息抽屉与资产治理弹窗。都挂在 .command-stage
+      之外——stage 有 `isolation: isolate`，放里面会被它的层叠上下文裁掉。
+    -->
+    <PlantDetailDrawer
+      v-if="selectedPlant"
+      v-model:open="detailOpen"
+      :plant="selectedPlant"
+      :date="marketDate"
+      :from="selectedObjectWindow?.from"
+      :to="selectedObjectWindow?.to"
+      :weather="selectedWeather"
+      :can-write="canWrite"
+      @governance="(mode) => { governanceMode = mode; governanceOpen = true }"
+    />
+    <GridObjectDrawer v-else v-model="detailOpen" :object="selectedObjectReference" :date="marketDate" :from="selectedObjectWindow?.from" :to="selectedObjectWindow?.to" />
+    <PlantAssetGovernance
+      v-model:open="governanceOpen"
+      :plant="selectedPlant"
+      :can-write="canWrite"
+      :start-mode="governanceMode"
+      @saved="onPlantSaved"
+    />
   </section>
 </template>
 
@@ -1014,29 +1238,47 @@ onBeforeUnmount(() => {
 .command-title { display:flex; min-width:0; align-items:center; gap:12px; }.command-glyph{display:grid;width:46px;height:46px;flex:0 0 auto;place-items:center;color:var(--command-accent);border:1px solid color-mix(in srgb,var(--command-accent) 38%,transparent);border-radius:14px;background:color-mix(in srgb,var(--command-accent) 9%,transparent);box-shadow:0 0 28px color-mix(in srgb,var(--command-accent) 13%,transparent)}
 .command-title small,.intel-dock header small{color:var(--command-accent);font-size: var(--font-15);font-weight:800;letter-spacing:.16em}.command-title h1{margin:3px 0 2px;font-size: var(--font-24);text-wrap:balance}.command-title p{margin:0;color:#7898a8;font-size: var(--font-15);line-height:1.5}
 .scope-summary{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:7px}.scope-summary span,.scope-summary button{display:inline-flex;min-height:34px;align-items:center;gap:6px;padding:0 10px;color:#91b5c3;border:1px solid rgba(91,184,214,.17);border-radius:9px;background:rgba(3,18,31,.62);font-size: var(--font-15)}.scope-summary button{color:#c9edf5;cursor:pointer}.scope-summary button:disabled{opacity:.55;cursor:wait}
-.command-stage{position:relative;height:calc(100vh - 188px);min-height:720px;overflow:hidden;isolation:isolate}.map-vignette,.map-scan{position:absolute;z-index:2;inset:0;pointer-events:none}.map-vignette{box-shadow:inset 0 0 180px rgba(0,4,15,.72)}.map-scan{opacity:.08;background-image:linear-gradient(rgba(80,200,230,.22) 1px,transparent 1px),linear-gradient(90deg,rgba(80,200,230,.22) 1px,transparent 1px);background-size:58px 58px;mask-image:radial-gradient(circle at center,#000,transparent 80%)}
+.command-stage{position:relative;height:calc(100vh - 188px);min-height:720px;overflow:hidden;isolation:isolate}.map-vignette,.map-scan{position:absolute;z-index:2;inset:0;pointer-events:none}.map-vignette{box-shadow:inset 0 0 110px rgba(0,4,15,.34)}.map-scan{opacity:.045;background-image:linear-gradient(rgba(80,200,230,.22) 1px,transparent 1px),linear-gradient(90deg,rgba(80,200,230,.22) 1px,transparent 1px);background-size:58px 58px;mask-image:radial-gradient(circle at center,#000,transparent 80%)}
 .scene-rail{position:absolute;z-index:7;top:18px;bottom:55px;left:16px;display:flex;width:224px;flex-direction:column;gap:7px;padding:9px;border:1px solid rgba(90,187,219,.17);border-radius:14px;background:rgba(3,17,29,.84);box-shadow:0 24px 58px rgba(0,5,16,.34);backdrop-filter:blur(18px)}
 .scene-rail button{position:relative;display:grid;min-height:57px;grid-template-columns:26px minmax(0,1fr) 8px;align-items:center;gap:8px;padding:8px;color:#789baa;border:1px solid transparent;border-radius:10px;background:transparent;text-align:left;cursor:pointer}.scene-rail button:hover{color:#ccecf4;background:rgba(36,108,132,.12)}.scene-rail button.active{color:#defbff;border-color:color-mix(in srgb,var(--command-accent) 26%,transparent);background:linear-gradient(100deg,color-mix(in srgb,var(--command-accent) 16%,transparent),rgba(7,30,45,.38));box-shadow:inset 3px 0 var(--command-accent)}.scene-rail button>svg{color:var(--command-accent)}.scene-rail button span{display:flex;min-width:0;flex-direction:column;gap:2px}.scene-rail strong{font-size: var(--font-15)}.scene-rail small{overflow:hidden;color:#587a89;font-size: var(--font-15);text-overflow:ellipsis;white-space:nowrap}.scene-rail i{width:7px;height:7px;border-radius:50%;background:#516b77}.scene-rail .available i{background:#4ee0ad;box-shadow:0 0 10px rgba(78,224,173,.48)}.scene-rail .loading i{background:#51d8f4;animation:pulse 1.2s ease-in-out infinite}.scene-rail .degraded i,.scene-rail .not-configured i{background:#e9b952}.scene-rail .error i{background:#f07070}
 .view-switch{position:absolute;z-index:8;top:18px;left:258px;display:flex;padding:4px;border:1px solid rgba(92,187,218,.18);border-radius:10px;background:rgba(3,17,29,.82);backdrop-filter:blur(14px)}.view-switch button{min-width:50px;height:32px;color:#7297a6;border:0;border-radius:7px;background:transparent;font-size: var(--font-15);cursor:pointer}.view-switch button.active{color:#03131c;background:linear-gradient(135deg,var(--command-accent),var(--command-secondary));box-shadow:0 8px 24px color-mix(in srgb,var(--command-accent) 24%,transparent)}
 .terrain-dock{position:absolute;z-index:8;top:60px;left:258px;width:214px}
-.signal-strip{position:absolute;z-index:6;top:18px;right:382px;left:430px;display:flex;justify-content:center;gap:7px;pointer-events:none}.signal-strip article{display:flex;min-width:112px;align-items:center;gap:8px;padding:8px 10px;color:var(--command-accent);border:1px solid rgba(85,182,214,.15);border-radius:10px;background:rgba(3,17,29,.75);backdrop-filter:blur(14px)}.signal-strip span{display:flex;min-width:0;flex-direction:column}.signal-strip small{color:#688b99;font-size: var(--font-lg)}.signal-strip strong{overflow:hidden;color:#d9f4f9;font-size: var(--font-15);text-overflow:ellipsis;white-space:nowrap}
+/* left 必须让开左侧 .terrain-dock（left:258 + width:214 = 472）。原值 430 时地形面板
+   压着第一张 KPI 卡的左半边——面板 z-index 8 高于本条的 6，卡片数字被盖住。 */
+.signal-strip{position:absolute;z-index:6;top:18px;right:382px;left:486px;display:flex;justify-content:center;gap:7px;pointer-events:none}.signal-strip article{display:flex;min-width:112px;align-items:center;gap:8px;padding:8px 10px;color:var(--command-accent);border:1px solid rgba(85,182,214,.15);border-radius:10px;background:rgba(3,17,29,.75);backdrop-filter:blur(14px)}.signal-strip span{display:flex;min-width:0;flex-direction:column}.signal-strip small{color:#688b99;font-size: var(--font-lg)}.signal-strip strong{overflow:hidden;color:#d9f4f9;font-size: var(--font-15);text-overflow:ellipsis;white-space:nowrap}
 .dock-toggle{position:absolute;z-index:9;right:16px;bottom:57px;display:none;min-height:38px;align-items:center;gap:6px;padding:0 11px;color:#ccecf4;border:1px solid rgba(87,185,216,.2);border-radius:9px;background:rgba(3,17,29,.88)}
 .intel-dock{position:absolute;z-index:8;top:18px;right:16px;bottom:55px;width:350px;overflow:auto;padding:15px;border:1px solid rgba(89,188,219,.19);border-radius:15px;background:linear-gradient(150deg,rgba(5,27,43,.94),rgba(2,13,25,.91));box-shadow:0 28px 70px rgba(0,4,14,.5);backdrop-filter:blur(22px)}.intel-dock>header{display:flex;align-items:center;justify-content:space-between;gap:12px}.intel-dock h2{margin:3px 0 0;font-size: var(--font-21)}.intel-dock>header>span{padding:5px 8px;color:#809eaa;border-radius:999px;background:rgba(93,143,159,.12);font-size: var(--font-15)}.intel-dock>header>span.available{color:#60dfb1;background:rgba(42,159,115,.14)}.intel-dock>header>span.degraded,.intel-dock>header>span.not-configured{color:#e9bd65;background:rgba(183,127,29,.13)}.intel-dock>header>span.error{color:#ee8d84;background:rgba(181,63,55,.13)}.scene-reason{margin:11px 0;color:#7899a7;font-size: var(--font-15);line-height:1.55}
 .drill-scope{display:flex;flex-wrap:wrap;align-items:baseline;gap:5px;margin:0 0 11px;padding:8px 10px;color:#8cc6d8;border:1px solid rgba(84,177,207,.22);border-radius:8px;background:rgba(24,86,116,.18);font-size: var(--font-lg);line-height:1.5}.drill-scope svg{color:var(--command-accent)}.drill-scope strong{color:#d6ecf5}
 .source-ribbon{display:flex;min-width:0;align-items:flex-start;gap:6px;padding:8px;color:#6e919e;border:1px solid rgba(84,177,207,.11);border-radius:8px;background:rgba(2,14,25,.32);font-size: var(--font-15);line-height:1.45}.source-ribbon svg{flex:0 0 auto;margin-top:1px;color:var(--command-accent)}.source-ribbon span{min-width:0;overflow-wrap:anywhere}.source-ribbon time{flex:0 0 auto;margin-left:auto;color:#8bb1bd;white-space:nowrap}
 .dock-kpis{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px;margin:11px 0}.dock-kpis article{display:flex;min-width:0;padding:9px 7px;flex-direction:column;gap:3px;border:1px solid rgba(88,179,210,.12);border-radius:9px;background:rgba(2,14,25,.38)}.dock-kpis strong{overflow:hidden;color:#d8f3f8;font-size: var(--font-18);text-overflow:ellipsis;white-space:nowrap}.dock-kpis small{color:#6e919f;font-size: var(--font-15)}.intel-dock h3{margin:14px 0 7px;color:#a9d1dc;font-size: var(--font-15)}.asset-list,.timeline-list{display:grid;gap:6px}.asset-list>button{display:grid;width:100%;min-height:48px;grid-template-columns:22px minmax(0,1fr) auto;align-items:center;gap:7px;padding:7px 8px;color:#7ba3b2;border:1px solid rgba(86,174,204,.1);border-radius:8px;background:rgba(2,14,25,.28);text-align:left;cursor:pointer;content-visibility:auto;contain-intrinsic-size:auto 48px}.asset-list>button:hover,.asset-list>button.selected{color:#d9f6fb;border-color:color-mix(in srgb,var(--command-accent) 30%,transparent);background:color-mix(in srgb,var(--command-accent) 9%,rgba(2,14,25,.45))}.asset-list button>svg{color:var(--command-accent)}.asset-list button span{display:flex;min-width:0;flex-direction:column;gap:2px}.asset-list button strong{overflow:hidden;font-size: var(--font-15);text-overflow:ellipsis;white-space:nowrap}.asset-list button small{overflow:hidden;color:#668995;font-size: var(--font-15);text-overflow:ellipsis;white-space:nowrap}.asset-list button>b{color:#e6c374;font-size: var(--font-15);text-align:right}.truth-callout{display:flex;margin:10px 0;padding:9px;align-items:flex-start;gap:7px;color:#91b7c2;border:1px solid rgba(78,194,169,.15);border-radius:8px;background:rgba(34,132,107,.08);font-size: var(--font-15);line-height:1.55}.truth-callout svg{flex:0 0 auto;color:#58d8ad}.truth-callout.warning{color:#ceb477;border-color:rgba(208,157,59,.16);background:rgba(161,105,21,.08)}.truth-callout.warning svg{color:#e2b757}
+/* 市场排行的分档着色，口径来自 marketSpatialLayers.gridMarketTone。原「电力市场空间
+   态势」页靠这层颜色一眼分出高关注资产，并入驾驶舱时一并带过来；色值取驾驶舱既有的
+   告警/正常色，不引第三套。 */
+.asset-list>button.tone-hot>b{color:#ef8f80}
+.asset-list>button.tone-warm>b{color:#e6c374}
+.asset-list>button.tone-cool>b{color:#58d8ad}
+.asset-list>button.tone-missing>b{color:#6d8a95}
+/* 图层口径说明：指标名本身不解释它是怎么算的，「综合关注」尤其如此。 */
+.layer-hint{margin:7px 0 0;color:#6e919f;font-size:var(--font-15);line-height:1.5}
 .segmented-options{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:5px;margin:10px 0}.segmented-options button{display:flex;min-height:34px;align-items:center;justify-content:center;gap:5px;color:#779eac;border:1px solid rgba(89,179,209,.12);border-radius:7px;background:rgba(2,15,26,.34);font-size: var(--font-15);cursor:pointer}.segmented-options button.active{color:#03131c;border-color:transparent;background:linear-gradient(135deg,var(--command-accent),var(--command-secondary))}.segmented-options.market{grid-template-columns:1fr}.market-controls{display:flex;gap:6px;margin:10px 0}.market-controls label,.market-controls>button{display:flex;min-height:34px;align-items:center;gap:5px;padding:0 8px;color:#90b4c1;border:1px solid rgba(89,180,211,.14);border-radius:7px;background:rgba(2,14,25,.35);font-size: var(--font-15)}.market-controls label{flex:1}.market-controls input{width:100%;color:#bfe0e7;border:0;outline:0;background:transparent;color-scheme:dark}.market-controls>button{cursor:pointer}
 .timeline-list button{display:grid;grid-template-columns:10px minmax(0,1fr);gap:7px;padding:8px;color:#83a4b1;border:1px solid rgba(87,172,201,.1);border-radius:8px;background:rgba(2,14,25,.28);text-align:left;cursor:pointer}.timeline-list button:hover,.timeline-list button.selected{border-color:rgba(88,207,229,.3);background:rgba(29,105,128,.12)}.timeline-list button>i{width:8px;height:8px;margin-top:5px;border-radius:50%;background:#5ed8f3}.timeline-list button.maintenance>i{background:#62dfb0}.timeline-list button.outage>i{background:#ef7a70}.timeline-list button.congestion>i,.timeline-list button.constraint>i{background:#eab65c}.timeline-list span{display:flex;min-width:0;flex-direction:column;gap:3px}.timeline-list small{color:#668995;font-size: var(--font-15)}.timeline-list strong{overflow:hidden;color:#cde5eb;font-size: var(--font-15);text-overflow:ellipsis;white-space:nowrap}.timeline-list em{color:#7897a2;font-size: var(--font-15);font-style:normal}
 .topology-status{display:flex;margin:14px 0;padding:14px;flex-direction:column;align-items:center;text-align:center;border:1px solid rgba(208,161,62,.18);border-radius:12px;background:radial-gradient(circle at 50% 0,rgba(209,160,55,.12),transparent 58%),rgba(2,14,25,.35)}.topology-lock{display:grid;width:48px;height:48px;margin-bottom:9px;place-items:center;color:#e2bb68;border:1px solid rgba(220,174,74,.3);border-radius:14px;background:rgba(147,95,18,.13)}.topology-status>small{color:#8a744d;font-size: var(--font-lg)}.topology-status>strong{margin-top:4px;color:#e6d3a9;font-size: var(--font-16)}.topology-status>p{margin:6px 0 0;color:#85765b;font-size: var(--font-15);line-height:1.5}.readiness-mini{display:grid;grid-template-columns:1fr 1fr;gap:5px}.readiness-mini span{display:flex;min-height:33px;align-items:center;gap:5px;padding:6px;color:#728d99;border:1px solid rgba(87,172,201,.1);border-radius:7px;font-size: var(--font-lg)}.readiness-mini span.ready{color:#62dcb1}.list-budget-note{margin:7px 0;color:#718f9b;font-size: var(--font-lg);line-height:1.5}.deep-link{display:inline-flex;min-height:34px;align-items:center;justify-content:center;gap:6px;padding:0 10px;color:#06151d;border:0;border-radius:8px;background:linear-gradient(135deg,var(--command-accent),var(--command-secondary));font-size: var(--font-15);font-weight:750;text-decoration:none;cursor:pointer}.intel-dock>.deep-link{box-sizing:border-box;width:100%;margin-top:10px}
-.selection-card{position:absolute;z-index:10;right:382px;bottom:58px;width:min(410px,calc(100% - 640px));padding:14px;border:1px solid color-mix(in srgb,var(--command-accent) 27%,transparent);border-radius:14px;background:linear-gradient(145deg,rgba(5,28,44,.95),rgba(2,14,25,.92));box-shadow:0 25px 65px rgba(0,4,14,.5);backdrop-filter:blur(20px)}.selection-card>.close{position:absolute;top:9px;right:9px;display:grid;width:28px;height:28px;place-items:center;color:#789ba8;border:0;border-radius:7px;background:rgba(75,130,149,.1);cursor:pointer}.selection-card>small{color:var(--command-accent);font-size: var(--font-lg);font-weight:800;letter-spacing:.13em}.selection-card h2{margin:4px 28px 4px 0;font-size: var(--font-20)}.selection-card>p{display:flex;margin:0;align-items:flex-start;gap:5px;color:#779aa8;font-size: var(--font-15);line-height:1.45}.selection-card>div{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin:10px 0}.selection-card>div span{display:flex;padding:8px;flex-direction:column;gap:2px;border-radius:8px;background:rgba(2,14,25,.4)}.selection-card>div small{color:#5f808c;font-size: var(--font-lg)}.selection-card>div strong{overflow:hidden;color:#d6edf2;font-size: var(--font-15);text-overflow:ellipsis;white-space:nowrap}.selection-card.event-card{border-color:rgba(221,175,75,.25)}
+.selection-card{position:absolute;z-index:10;right:382px;bottom:58px;cursor:move;touch-action:none;transition:transform .22s ease;user-select:none;width:min(410px,calc(100% - 640px));padding:14px;border:1px solid color-mix(in srgb,var(--command-accent) 27%,transparent);border-radius:14px;background:linear-gradient(145deg,rgba(5,28,44,.95),rgba(2,14,25,.92));box-shadow:0 25px 65px rgba(0,4,14,.5);backdrop-filter:blur(20px)}.selection-card>.close{position:absolute;top:9px;right:9px;display:grid;width:28px;height:28px;place-items:center;color:#789ba8;border:0;border-radius:7px;background:rgba(75,130,149,.1);cursor:pointer}.selection-card>small{color:var(--command-accent);font-size: var(--font-lg);font-weight:800;letter-spacing:.13em}.selection-card h2{margin:4px 28px 4px 0;font-size: var(--font-20)}.selection-card>p{display:flex;margin:0;align-items:flex-start;gap:5px;color:#779aa8;font-size: var(--font-15);line-height:1.45}.selection-card>div{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin:10px 0}.selection-card>div span{display:flex;padding:8px;flex-direction:column;gap:2px;border-radius:8px;background:rgba(2,14,25,.4)}.selection-card>div small{color:#5f808c;font-size: var(--font-lg)}.selection-card>div strong{overflow:hidden;color:#d6edf2;font-size: var(--font-15);text-overflow:ellipsis;white-space:nowrap}.selection-card.event-card{border-color:rgba(221,175,75,.25)}
+/* 卡片内的文字仍可选中；只有空白区域用来拖 */
+.selection-card h2,.selection-card>p,.selection-card>div strong{user-select:text}
 .truth-console{position:absolute;z-index:7;right:16px;bottom:10px;left:16px;display:flex;min-height:35px;align-items:center;gap:16px;padding:7px 11px;color:#7399a6;border:1px solid rgba(84,176,207,.14);border-radius:9px;background:rgba(3,17,29,.82);font-size: var(--font-10-5);backdrop-filter:blur(14px)}.truth-console span{display:flex;align-items:center;gap:5px}.truth-console span:last-child{margin-left:auto;color:#69cbaa}
 .command-stage :deep(.cesium-viewer-bottom){right:382px!important;bottom:56px!important;left:auto!important;z-index:9}
+/* ProvinceFlatMap 的浮层安全区。子组件看不到宿主在它上面盖了什么，由这里按本视图
+   的实际布局声明：左边 .scene-rail（16 + 224）、右边 .intel-dock（16 + 350 + 16）、
+   底部状态条，三条边的数值与上面 .cesium-viewer-bottom 同源，改一处要一起改。
+   不声明则子组件按「无遮挡」取 0——那正是另一个宿主 GridMarketSpatialView 要的。 */
+.command-stage :deep(.province-flat-map){--map-safe-left:240px;--map-safe-right:382px;--map-safe-bottom:56px}
 .stage-state{position:absolute;z-index:20;top:50%;left:50%;display:flex;min-width:280px;padding:22px;align-items:center;justify-content:center;gap:10px;transform:translate(-50%,-50%);color:#b9e3ec;border:1px solid rgba(83,187,219,.2);border-radius:14px;background:rgba(2,15,27,.88);box-shadow:0 30px 80px rgba(0,0,0,.5);backdrop-filter:blur(18px)}.stage-state.error{flex-wrap:wrap;color:#e99587}.stage-state button{padding:6px 10px;color:#d7f2f7;border:1px solid rgba(87,184,214,.2);border-radius:7px;background:rgba(16,67,84,.25);cursor:pointer}.spin{animation:spin 1s linear infinite}.visually-hidden{position:absolute!important;width:1px!important;height:1px!important;padding:0!important;overflow:hidden!important;clip:rect(0,0,0,0)!important;white-space:nowrap!important;border:0!important}
 button:focus-visible,input:focus-visible{outline:2px solid var(--command-accent);outline-offset:3px}@keyframes spin{to{transform:rotate(360deg)}}@keyframes pulse{50%{opacity:.38}}
 
 @media(max-width:1320px){.signal-strip{display:none}}
 @media(max-width:1180px){.scene-rail{width:205px}.view-switch{left:238px}.terrain-dock{left:238px}.selection-card{right:340px;width:min(360px,calc(100% - 580px))}.intel-dock{width:320px}}
-@media(max-width:900px){.command-header{align-items:flex-start}.command-title p{display:none}.scope-summary span:first-child{display:none}.scene-rail{bottom:56px;width:72px}.scene-rail button{grid-template-columns:1fr;justify-items:center}.scene-rail button span{display:none}.view-switch{left:104px}.terrain-dock{left:104px}.intel-dock{width:330px}.selection-card{right:360px;left:104px;width:auto}.truth-console span:nth-child(-n+2){display:none}}
+@media(max-width:900px){.signal-strip{left:334px}.command-header{align-items:flex-start}.command-title p{display:none}.scope-summary span:first-child{display:none}.scene-rail{bottom:56px;width:72px}.scene-rail button{grid-template-columns:1fr;justify-items:center}.scene-rail button span{display:none}.view-switch{left:104px}.terrain-dock{left:104px}.intel-dock{width:330px}.selection-card{right:360px;left:104px;width:auto}.truth-console span:nth-child(-n+2){display:none}}
 @media(max-width:700px){.command-shell{min-height:100dvh;border-radius:0}.command-header{min-height:86px;padding:10px}.command-glyph{display:none}.command-title h1{font-size: var(--font-21)}.command-title small{font-size: var(--font-lg)}.scope-summary span{display:none}.scope-summary button{width:36px;padding:0;justify-content:center;font-size:0}.command-stage{height:calc(100dvh - 86px);min-height:calc(100dvh - 86px)}.scene-rail{top:auto;right:10px;bottom:calc(10px + env(safe-area-inset-bottom));left:10px;width:auto;height:58px;flex-direction:row;padding:5px}.scene-rail button{min-width:0;min-height:46px;flex:1;padding:5px}.scene-rail button>svg{width:17px}.view-switch{top:10px;left:10px}.terrain-dock{display:none}.dock-toggle{display:flex;top:10px;right:10px;bottom:auto}.intel-dock{top:58px;right:10px;bottom:calc(160px + env(safe-area-inset-bottom));left:10px;width:auto;overscroll-behavior:contain;transform:translateY(-112%);transition:transform .2s ease;pointer-events:none;background:rgba(4,22,36,.98);backdrop-filter:none}.intel-dock.open{transform:none;pointer-events:auto}.selection-card{right:10px;bottom:calc(166px + env(safe-area-inset-bottom));left:10px;width:auto}.truth-console{right:10px;bottom:calc(78px + env(safe-area-inset-bottom));left:10px;min-height:38px}.truth-console span{display:none!important}.truth-console span:last-child{display:flex!important;margin:0}.command-stage :deep(.cesium-viewer-bottom){right:10px!important;bottom:calc(126px + env(safe-area-inset-bottom))!important;left:auto!important}.dock-kpis strong{font-size: var(--font-16)}.asset-list button strong,.timeline-list strong{font-size: var(--font-15)}.asset-list button small,.timeline-list small,.timeline-list em{font-size: var(--font-15)}}
 @media(prefers-reduced-motion:reduce){.spin,.scene-rail .loading i{animation:none}.intel-dock{transition:none}}
 </style>

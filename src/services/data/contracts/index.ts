@@ -2,6 +2,7 @@ export type * from './common'
 export type * from './marketInsight'
 export type * from './marketInsightHeavyPages'
 export type * from './spotTrading'
+export type * from './capturedRows'
 export type * from './midlong'
 // 值导出（`export type *` 只带类型）：私有族代码，消费页传给 RegionDataBanner 用
 export { MIDLONG_TIME_BLOCK_FAMILY } from './midlong'

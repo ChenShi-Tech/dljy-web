@@ -24,6 +24,7 @@ import { ApiError } from '@/services/api'
 import { currentCompany, selectedCompanyId } from '@/services/company/companyContext'
 import { isAdminLevelRole } from '@/services/governance'
 import { onRegionChange } from '@/composables/useRegionReload'
+import ProvinceFlatMap from './ProvinceFlatMap.vue'
 import CesiumPlantMap from './CesiumPlantMap.vue'
 import TerrainControlPanel from './TerrainControlPanel.vue'
 import { useGridGeoViewPreference } from './useViewPreference'
@@ -46,6 +47,9 @@ import type {
   GridTopologyManifest,
   GridTopologyReadinessItem,
 } from './types'
+
+type MapExpose = { flyTerrainTour?: () => void }
+const mapRef = ref<MapExpose | null>(null)
 
 const loading = ref(true)
 const error = ref('')
@@ -99,6 +103,21 @@ const profileStyle = computed(() => operatorProfile.value ? {
   '--topology-secondary': operatorProfile.value.visual.secondary,
   '--topology-surface': operatorProfile.value.visual.surface,
 } : {})
+/**
+ * 头部那颗地形状态胶囊的文案。
+ *
+ * 不能把任何 `ready` 都写成「真实地形」：平面图 emit 的是 `kind: 'ellipsoid'`、label 形如
+ * 「平面省图 · 天地图 · 卫星影像」，此时地形面板明明写着「未启用」，头部却说地形是真实的
+ * ——同一屏上两处互相打脸。平面态直接用它自报的 label。
+ */
+const terrainPillLabel = computed(() => {
+  if (viewMode.value === '2d' || terrainStatus.value.kind === 'ellipsoid') {
+    return terrainStatus.value.label || '平面省图'
+  }
+  if (terrainStatus.value.status === 'ready') return '真实地形'
+  return terrainStatus.value.status === 'loading' ? '地形加载中' : '地形已降级'
+})
+
 const mapLabel = computed(() => {
   const region = operatorProfile.value?.region.label ?? topology.value?.regionId ?? '当前地区'
   if (evidenceAvailable.value) {
@@ -144,7 +163,6 @@ const dockHeadline = computed(() => {
 
 const modeOptions: Array<{ value: GridGeoViewMode; label: string }> = [
   { value: '2d', label: '2D' },
-  { value: '2.5d', label: '2.5D' },
   { value: '3d', label: '3D' },
 ]
 
@@ -250,7 +268,14 @@ watch(selectedEvidenceSourceId, () => {
     </header>
 
     <div class="topology-stage" :aria-busy="loading">
-      <CesiumPlantMap
+      <!--
+        2D 走省级平面地图（天地图底图、可下钻地市州），3D 走 Cesium 地球。两者 props/emits
+        契约一致，故只切组件、数据流不动——平面图本身就支持网架要素渲染与下钻过滤。
+        （此前本页 2D/3D 都走 Cesium，所谓 2D 是 Cesium 自己的平面模式，底图仍是境外影像。）
+      -->
+      <component
+        :is="viewMode === '2d' ? ProvinceFlatMap : CesiumPlantMap"
+        ref="mapRef"
         :plants="plants"
         :view-mode="viewMode"
         :selected-plant-id="selectedPlantId"
@@ -281,6 +306,7 @@ watch(selectedEvidenceSourceId, () => {
         :view-mode="viewMode"
         :hillshade-available="hillshadeAvailable"
         @request-3d="viewMode = '3d'"
+        @request-terrain-tour="mapRef?.flyTerrainTour?.()"
       />
       <div class="stage-vignette" aria-hidden="true" />
       <div class="stage-grid" aria-hidden="true" />
@@ -299,7 +325,7 @@ watch(selectedEvidenceSourceId, () => {
             >{{ option.label }}</button>
           </div>
           <div class="runtime-pills" aria-live="polite">
-            <span :class="terrainStatus.status"><MapPinned :size="13" aria-hidden="true" />{{ terrainStatus.status === 'ready' ? '真实地形' : terrainStatus.status === 'loading' ? '地形加载中' : '地形已降级' }}</span>
+            <span :class="terrainStatus.status"><MapPinned :size="13" aria-hidden="true" />{{ terrainPillLabel }}</span>
             <span><Database :size="13" aria-hidden="true" />{{ evidenceFeatures.length }} 个授权点线要素</span>
             <span v-if="runtimeStatus"><Activity :size="13" aria-hidden="true" />{{ runtimeStatus.network === 'weak' ? '弱网 LOD' : '标准 LOD' }}</span>
           </div>
@@ -475,7 +501,26 @@ watch(selectedEvidenceSourceId, () => {
 .spinning { animation: spin 1s linear infinite; }
 
 .topology-stage { position: relative; min-height: 720px; overflow: hidden; border: 1px solid rgba(87, 182, 220, .22); border-radius: 20px; background: #020811; box-shadow: 0 24px 72px rgba(0, 5, 16, .42); isolation: isolate; }
-.stage-vignette { position: absolute; z-index: 1; inset: 0; pointer-events: none; box-shadow: inset 0 0 170px rgba(0, 4, 15, .82); }
+/* 平面图用 `height:100%` 撑高，而本容器只有 min-height、实际高度由内容决定——
+   `height:100%` 对 auto 高度的父级解析成 0，组件挂上去就是一条 1631×0 的空壳，
+   连 canvas 都不会创建。Cesium 那边是 `position:absolute; inset:0` 才没暴露这个坑。
+   在这里把平面图也拉成绝对定位，两个组件的撑高方式就一致了。 */
+.topology-stage > :deep(.province-flat-map) {
+  position: absolute;
+  inset: 0;
+  /* 底部让开 .stage-bottom（z-index 4 的全宽底栏）。不让的话，天地图要求可见的出处
+     声明会被压在底栏下面，下钻提示与底图控件也会叠上去——驾驶舱踩过同一个坑。
+     值按实测取：底栏高 309px，地图容器底边落在它下方约 17px 处，故 330 能让浮层
+     整体抬到底栏上沿之外。窄屏下底栏换行会更高，见下方断点。 */
+  --map-safe-bottom: 330px;
+}
+@media (max-width: 1180px) {
+  .topology-stage > :deep(.province-flat-map) { --map-safe-bottom: 430px; }
+}
+/* 暗角：纯装饰。原值把地图四周压到近黑，与「看清地形起伏」直接冲突——
+   卫星影像 + 山体阴影的明暗差本来就细，再罩一层暗角等于把刚找回来的立体感抹掉一圈。
+   保留氛围但让强度退到不吃画面（不透明度砍半、扩散收窄）。 */
+.stage-vignette { position: absolute; z-index: 1; inset: 0; pointer-events: none; box-shadow: inset 0 0 104px rgba(0, 4, 15, .34); }
 .stage-grid { position: absolute; z-index: 2; inset: 0; pointer-events: none; opacity: .11; background-image: linear-gradient(rgba(93, 206, 232, .26) 1px, transparent 1px), linear-gradient(90deg, rgba(93, 206, 232, .26) 1px, transparent 1px); background-size: 52px 52px; mask-image: radial-gradient(circle at center, #000, transparent 79%); }
 .stage-content { position: relative; z-index: 4; display: grid; min-height: 720px; grid-template-rows: auto 1fr auto; gap: 16px; padding: 17px; pointer-events: none; }
 .stage-topbar, .provider-dock, .stage-bottom { pointer-events: auto; }

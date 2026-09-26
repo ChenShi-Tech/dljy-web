@@ -20,18 +20,18 @@ export type SubjectDaySummary = {
 const props = defineProps<{ daySummary: SubjectDaySummary }>()
 const emit = defineEmits<{ (e: 'open-template', templateId: string): void }>()
 
-const TABS: Array<{ id: ReviewSubject; label: string; batch: string; batchNote: string }> = [
+const TABS: Array<{ id: ReviewSubject; label: string; batchNote: string }> = [
   {
-    id: 'retail', label: '售电', batch: '批 1（先行）',
-    batchNote: '对齐 #2005「先做透用户侧」：R1/R4 公司级日度行由 quant /review 真数；R5 月度综合已就绪；R2/R3 等 D3/D4 数据。'
+    id: 'retail', label: '售电',
+    batchNote: '售电：公司日度申报与偏差、月度综合复盘已可使用；分客户明细、零售套餐履约与用户用电结构等资料接入后提供。'
   },
   {
-    id: 'renewable', label: '新能源', batch: '批 2',
-    batchNote: 'N1 出力预测准确率为首个真实试点（中广核云南场站真实 RT 数据 + 预测域产出）；N2 偏差考核可由 /review 镜像；N3 弃电率等 D5。'
+    id: 'renewable', label: '新能源',
+    batchNote: '新能源：出力预测准确率可基于本公司云南场站实时数据复盘；偏差考核可参照公司偏差测算；弃电率等资料接入后提供。'
   },
   {
-    id: 'storage', label: '储能', batch: '批 3',
-    batchNote: 'E1 计划编排接既有事前测算——价格默认 illustrative 即 MOCK，须页面明示，接真实价格才可用于实盘编排；实际充放电与辅助服务收益等 D1/D2。'
+    id: 'storage', label: '储能',
+    batchNote: '储能：充放电计划可基于事前测算查看；实际充放电与辅助服务收益等资料接入后提供。'
   }
 ]
 
@@ -56,7 +56,7 @@ const templates = computed(() => templatesBySubject(active.value).map((t) => ({
           v-for="t in TABS" :key="t.id" type="button"
           :class="{ on: active === t.id }" @click="active = t.id"
         >
-          {{ t.label }}<i>{{ t.batch }}</i>
+          {{ t.label }}
         </button>
       </nav>
     </header>
@@ -64,7 +64,7 @@ const templates = computed(() => templatesBySubject(active.value).map((t) => ({
 
     <!-- 批1 售电：公司级真数区（R1/R4 日度行） -->
     <div v-if="activeTab.id === 'retail'" class="sc-r1r4">
-      <b>R1/R4 公司级日度行（quant /review 真数 · {{ props.daySummary?.date ?? '当日' }}）</b>
+      <b>公司日度申报与偏差（{{ props.daySummary?.date ?? '当日' }}）</b>
       <template v-if="props.daySummary && props.daySummary.deviationMwh !== null">
         <div class="sc-facts">
           <span>申报 {{ props.daySummary.declaredTotalMwh?.toFixed(1) ?? '—' }} MWh</span>
@@ -74,19 +74,19 @@ const templates = computed(() => templatesBySubject(active.value).map((t) => ({
           </span>
           <span>考核费估算 {{ props.daySummary.estimatedPenaltyYuan?.toLocaleString() ?? '—' }} 元</span>
         </div>
-        <p class="sc-note">分客户明细缺（D4）：此处为公司级先行口径——分客户行随 D4 数据接入后展开；考核单价自算口径（D6 未核验）。</p>
+        <p class="sc-note">暂无分客户明细，此处为公司整体口径；考核单价为系统自算，结算细则尚未核验。</p>
       </template>
-      <p v-else class="sc-note">当日无 /review 真数（未接入/覆盖区外/未取到）——R1/R4 行不出数，不合成。</p>
+      <p v-else class="sc-note">当日没有可用的公司偏差数据，不显示数值，也不做推算。</p>
     </div>
 
     <!-- 批2 新能源：N1 真实试点说明 -->
     <p v-if="activeTab.id === 'renewable'" class="sc-note">
-      N1 为 24 时段模板：底层 96 点、24 时段仅展示聚合（2026-08-13 拍板）；实际出力读中广核云南场站 RT 数据（公司私有 PG，仅该主体该地区）。
+      该表按 24 个时段展示（底层为 96 点，按小时聚合）；实际出力取自本公司云南场站的实时数据，仅限本公司、本地区。
     </p>
 
     <!-- 批3 储能：E1 illustrative 明示 -->
     <p v-if="activeTab.id === 'storage'" class="sc-mock">
-      ⚠ E1 计划侧价格默认 illustrative 即 MOCK——仅测算演示，不可用于实盘编排；接真实价格后方可实盘。
+      ⚠ 模拟数据：储能计划使用的价格默认是演示值，仅供测算演示，不能用于实盘编排；接入真实价格后方可用于实盘。
     </p>
 
     <!-- 主体模板清单（就绪度台账驱动） -->
@@ -94,16 +94,15 @@ const templates = computed(() => templatesBySubject(active.value).map((t) => ({
       <button
         v-for="t in templates" :key="t.id" type="button"
         class="sc-tpl" :class="`sc-${t.readiness}`"
-        :title="t.gapNote ?? ''"
+        :title="t.readiness === 'data_gap' ? '部分资料尚未接入' : ''"
         @click="emit('open-template', t.id)"
       >
-        <span>{{ t.id }} {{ t.name }}{{ t.slots24 ? ' · 24 时段' : '' }}</span>
+        <span>{{ t.name }}{{ t.slots24 ? ' · 24 时段' : '' }}</span>
         <i>{{ t.readiness === 'ready' ? '就绪' : t.readiness === 'data_gap' ? '等待数据接入' : '后置' }}</i>
       </button>
     </div>
     <p class="sc-note">
-      无数据模板诚实呈现「等待数据接入」而非空白或假数；每批交付时注册表就绪度台账同步翻转
-      （data_gap→ready 须写数据来源）——台账即分期验收清单。通用模板（T01–T13）适用全部主体。
+      暂无数据的复盘表显示「等待数据接入」，不会空白或填入假数。通用复盘表适用于全部业务。
     </p>
   </section>
 </template>

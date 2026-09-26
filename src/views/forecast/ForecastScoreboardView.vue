@@ -21,6 +21,7 @@ import DataBasisBadge from '@/components/DataBasisBadge.vue'
 import { useEChart } from '../../composables/useEChart'
 import { chartChrome, cssVar } from '../../composables/useTheme'
 import { axisTooltip, chartToolbox, emptyOverlay, insideZoom, fmtNum } from '@/services/chart/chartOptions'
+import { predictionModelExclusionReason } from '@/services/forecast/predictionModelEligibility'
 
 // 报告 overall 同时含模型与基线；基线是「参照系」，不参与「打不败即标红」判定。
 const BASELINE_IDS = new Set(['naive_1d', 'naive_7d', 'knn', 'elastic_persist', 'lear'])
@@ -59,12 +60,16 @@ const isSynthetic = computed(() => basis.value !== 'captured' && basis.value !==
 type Row = ScoreboardModelMetrics & { id: string; label: string; isBaseline: boolean }
 const rows = computed<Row[]>(() => {
   const overall = currentRun.value?.overall ?? {}
-  const list: Row[] = Object.entries(overall).map(([id, m]) => ({
+  // 旧报告不能把已移除的占位/基础模型重新带回表格和趋势图。
+  // 报告只有ID/指标时按已确认ID排除；不伪造其训练或部署元数据。
+  const list: Row[] = Object.entries(overall)
+    .filter(([id, m]) => predictionModelExclusionReason({ ...m, modelId: id }) === null)
+    .map(([id, m]) => ({
     ...m,
     id,
     isBaseline: BASELINE_IDS.has(id),
     label: BASELINE_IDS.has(id) ? (BASELINE_LABEL[id] ?? id) : id,
-  }))
+    }))
   const rank = (v: number | null | undefined) => (v === null || v === undefined ? -Infinity : v)
   return list.sort((a, b) => {
     if (a.isBaseline !== b.isBaseline) return a.isBaseline ? 1 : -1

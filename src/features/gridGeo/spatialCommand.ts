@@ -16,7 +16,6 @@ export type SpatialLayerState = {
   updatedAt?: string | null
 }
 
-export const COMMAND_MARKET_REPLAY_DATE = '2026-05-01'
 export const COMMAND_NODE_PAGE_SIZE = 500
 
 export const disclosureCategoryLabel: Record<GridDisclosureCategory, string> = {

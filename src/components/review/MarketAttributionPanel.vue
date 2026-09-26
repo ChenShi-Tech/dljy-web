@@ -7,6 +7,7 @@
 // review.improvement_actions（写入端点上线，端点缺席环境仍诚实降级本地清单）。
 import { computed, onMounted, ref, watch } from 'vue'
 import { loadMarketAnalysis, type MarketAnalysisResult } from '@/services/market/marketAnalysis'
+import PanelFetchLoading from '@/components/review/PanelFetchLoading.vue'
 import { DATA_BASIS_LABEL } from '@/services/dataBasis'
 import {
   anomalyMonths,
@@ -62,6 +63,21 @@ const supplyDemand = computed(() =>
 )
 const anomaly = computed(() => (ds.value ? anomalyMonths(ds.value.priceTrend) : null))
 const basisLabel = computed(() => (result.value ? DATA_BASIS_LABEL[result.value.basis] : ''))
+// #2991：逐数据集真实性。页面级 basis=captured 不再代表每个数据集都真实——
+// 缺真实回放的归因行显示为空（未用示例补齐），口径说明按各自数据集标注。
+const priceReal = computed(() => Boolean(result.value?.realByKey?.['market_price']))
+const monthlyTrendReal = computed(() => Boolean(result.value?.realByKey?.['market_monthly_trend']))
+const priceBasisLabel = computed(() => (priceReal.value ? basisLabel.value : '无真实数据·未用示例补齐'))
+const trendBasisLabel = computed(() => (monthlyTrendReal.value ? basisLabel.value : '无真实数据·未用示例补齐'))
+// 整页 captured 但价格/月度趋势任一缺真实回放 → 明示哪些行为空，避免读者以为是完整归因。
+const partialGapNote = computed(() => {
+  if (!result.value || !result.value.hasRealData || result.value.basis !== 'captured') return ''
+  const gaps = [
+    priceReal.value ? null : '价格走势（market_price 无真实回放）',
+    monthlyTrendReal.value ? null : '供需形势（market_monthly_trend 无真实回放）'
+  ].filter(Boolean)
+  return gaps.length ? `部分数据集无真实回放，对应归因行为空，未用示例补齐：${gaps.join('；')}。` : ''
+})
 
 // 政策行：人工关联 + AI 建议占位（不做自动因果）
 const policyText = ref('')
@@ -174,13 +190,17 @@ async function registerAnomaly(m: string, devPct: number) {
       <input v-model="month" type="month" />
     </header>
 
-    <p v-if="loading" class="map-muted">读市场经营分析取数（9 数据集回放）…</p>
+    <!-- 单次取数无分批进度：进度条走 indeterminate 慢滑，骨架同款 -->
+    <PanelFetchLoading v-if="loading" text="读市场经营分析取数（9 数据集回放）…" />
     <p v-else-if="loadError" class="map-warn">取数失败：{{ loadError }}——四行不出数，不合成。</p>
 
     <template v-else-if="ds">
-      <p class="map-basis">
-        数据基线：{{ basisLabel }}<template v-if="result?.basis === 'synthetic'">（无真实回放时演示兜底——<b>不可作为复盘依据</b>）</template>
-      </p>
+      <!-- 内容卡片化：四行归因主表 + 下月关注点各成卡片（白底+细边+浅阴影，与系统调性一致） -->
+      <div class="map-card">
+        <p class="map-basis">
+          数据基线：{{ basisLabel }}<template v-if="result?.basis === 'synthetic'">（无真实回放时演示兜底——<b>不可作为复盘依据</b>）</template>
+        </p>
+        <p v-if="partialGapNote" class="map-warn">#2991 {{ partialGapNote }}</p>
 
       <table class="map-table">
         <thead><tr><th>归因行</th><th>自动预填（A 档）</th><th>口径说明</th></tr></thead>
@@ -194,7 +214,7 @@ async function registerAnomaly(m: string, devPct: number) {
               </template>
               <span v-else class="map-muted">本月无价格数据</span>
             </td>
-            <td>market_analysis priceTrend（{{ basisLabel }}）</td>
+            <td>market_analysis priceTrend（{{ priceBasisLabel }}）</td>
           </tr>
           <tr>
             <td>供需形势</td>
@@ -202,7 +222,7 @@ async function registerAnomaly(m: string, devPct: number) {
               <b>{{ supplyDemand?.direction }}</b>
               <p class="map-note">{{ supplyDemand?.note }}</p>
             </td>
-            <td>market_analysis monthlyTrend（量价方向代理 v1）</td>
+            <td>market_analysis monthlyTrend（量价方向代理 v1 · {{ trendBasisLabel }}）</td>
           </tr>
           <tr>
             <td>政策变化</td>
@@ -243,7 +263,9 @@ async function registerAnomaly(m: string, devPct: number) {
         异常事件与风险事件库双向引用已接通（review.risk_events 读写端点）；
         端点未部署的环境保持只读识别，不合成登记记录。
       </p>
+      </div>
 
+      <div class="map-card">
       <!-- 下月关注点 → 行动项 -->
       <div class="map-focus">
         <b>下月关注点 → 行动项（纳入月度策略会讨论）</b>
@@ -268,12 +290,22 @@ async function registerAnomaly(m: string, devPct: number) {
             : actionsNote }}
         </p>
       </div>
+      </div>
     </template>
   </section>
 </template>
 
 <style scoped>
 .map { display: flex; flex-direction: column; gap: 8px; font-size: var(--font-12-5); }
+/* 内容卡片化：白底 + 细边 + 浅阴影，与系统卡片调性一致（--radius/--shadow 主题化） */
+.map-card {
+  display: flex; flex-direction: column; gap: 8px;
+  padding: 12px 14px;
+  border: 1px solid var(--line, #d9e2ec);
+  border-radius: var(--radius, 6px);
+  background: var(--panel, #fff);
+  box-shadow: var(--shadow, 0 1px 2px rgba(15, 23, 42, 0.04));
+}
 .map-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
 .map-head input { padding: 2px 6px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 6px; font-size: var(--font-11-5); }
 .map-muted { margin: 0; color: var(--el-text-color-secondary, #909399); }

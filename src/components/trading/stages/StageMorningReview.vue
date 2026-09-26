@@ -81,6 +81,7 @@ import { reviewFocusOf } from 'shared/trading-rules/position-review.mjs'
 import { activeStanceType } from '@/services/stance/stanceContext'
 import { currentRegion } from '@/services/region/regionContext'
 import { onRegionChange } from '@/composables/useRegionReload'
+import { useSaveState } from '@/composables/useSaveState'
 import AiAssistFill from '@/components/trading/AiAssistFill.vue'
 import ReviewThreeQuestions from './ReviewThreeQuestions.vue'
 import OvernightReportCard from './OvernightReportCard.vue'
@@ -397,9 +398,8 @@ function applyAssist(s: Record<string, unknown>) {
   if (id) cause.value = id
   if (typeof s.lessons === 'string' && s.lessons.trim()) lessons.value = s.lessons.trim()
 }
-const saving = ref(false)
-const saveMsg = ref('')
-const saveError = ref('')
+// 写回三态走 useSaveState 单源（spot-trading-module-hygiene 收口六份逐字副本）
+const { saving, saveMsg, saveError, runSave } = useSaveState()
 
 const written = computed(() => props.declaration?.preflight?.morningReview ?? null)
 
@@ -620,12 +620,10 @@ function jumpToDim(key: string) {
 
 async function writeBack() {
   if (!props.declaration || !validation.value.ok || yesterdayLogMissing.value) return
-  saving.value = true
-  saveMsg.value = ''
-  saveError.value = ''
-  try {
+  const declaration = props.declaration
+  await runSave(async () => {
     const updated = await savePreflight(
-      props.declaration.id,
+      declaration.id,
       'morningReview',
       {
         reviewedDate: reviewedDate.value,
@@ -687,14 +685,10 @@ async function writeBack() {
     s1ElapsedFinal.value = props.declaration
       ? s1TimerView(props.declaration.id, props.targetDate).elapsedMinutes
       : null
-    saveMsg.value = isPendingCause(cause.value)
+    return isPendingCause(cause.value)
       ? '已记为待分析并写回，晨会人工讨论后回填主因；可进入 S2'
       : '复盘结论已写回，进入 S2 早间分析'
-  } catch (e) {
-    saveError.value = e instanceof Error ? e.message : '写回失败'
-  } finally {
-    saving.value = false
-  }
+  })
 }
 </script>
 

@@ -13,17 +13,20 @@ import { flushPromises } from '@vue/test-utils'
 import { mount } from '@/test/mount'
 
 // vi.mock 会被提升到文件顶部，工厂里引用的变量必须经 vi.hoisted 先于它求值
-const { getServices, putServices, testService, putCredential, deleteCredential, getServicesUsage, testSearchService } = vi.hoisted(() => ({
+const { getServices, putServices, testService, putCredential, deleteCredential, getServicesUsage, testSearchService, getCurrentUser } = vi.hoisted(() => ({
   getServices: vi.fn(),
   putServices: vi.fn(),
   testService: vi.fn(),
   putCredential: vi.fn(),
   deleteCredential: vi.fn(),
   getServicesUsage: vi.fn(),
-  testSearchService: vi.fn()
+  testSearchService: vi.fn(),
+  getCurrentUser: vi.fn()
 }))
 vi.mock('@/services/llm', () => ({ getServices, putServices, testService, putCredential, deleteCredential, getServicesUsage, testSearchService }))
 vi.mock('@/services/agent/agentConfig', () => ({ ROLE_LABELS: { market_analyst: '市场分析师' } }))
+// dljy#3226（AA-06.2）：写控件按当前登录角色受控，用户来源与页面其它处一致走 services/auth
+vi.mock('@/services/auth', () => ({ getCurrentUser }))
 
 import ModelServicesPanel from './ModelServicesPanel.vue'
 
@@ -48,6 +51,9 @@ beforeEach(() => {
   deleteCredential.mockReset()
   getServicesUsage.mockReset()
   testSearchService.mockReset()
+  getCurrentUser.mockReset()
+  // 默认平台超管：既有用例按「可写」语义编写（dljy#3226 之前的口径即超管面）
+  getCurrentUser.mockReturnValue({ roleCode: 'ADMIN' })
   // 面板可用时会拉一次用量；没显式 mock 的用例给个「给不出」的默认，避免 undefined
   getServicesUsage.mockResolvedValue({ available: false, reason: '' })
 })
@@ -330,6 +336,64 @@ describe('ModelServicesPanel', () => {
     expect(card.text()).toContain('暂时不可用')
     expect(card.text()).toContain('搜索上游超时')
     expect(card.text()).not.toContain('已开通 · 由模型服务统一提供')
+    w.unmount()
+  })
+
+  it('共享资源写权限（dljy#3226 · AA-06.2）内部版 BOSS：清单/额度/连通探测照常，全部写控件禁用并提示', async () => {
+    getCurrentUser.mockReturnValue({ roleCode: 'BOSS' })
+    getServices.mockResolvedValue({
+      ...OK,
+      credential: { configured: true, source: 'ui', url: 'https://gw.example.internal/v1', key_hint: '****abcd', updated_at: '2026-09-03T08:00:00+08:00' }
+    })
+    getServicesUsage.mockResolvedValue({
+      available: true,
+      usage: {
+        today: { day: '2026-09-03', requests: 12, total_tokens: 3456, usage_unknown: 0 },
+        quota: { requests_per_day: 100, tokens_per_day: null },
+        remaining: { requests: 88, tokens: null },
+        resets_at: '2026-06-15T12:00:00Z',
+        rows: []
+      }
+    })
+    const w = mount(ModelServicesPanel)
+    await flushPromises()
+    // 只读提示上屏；档位清单照常渲染（页面入口与查看不收窄）
+    expect(w.find('[data-test="write-locked"]').text()).toContain('仅平台超管可操作')
+    expect(w.findAll('.tier-card')).toHaveLength(3)
+    // 额度展示保持可用
+    expect(w.find('.usage-card').text()).toContain('已用 12 / 上限 100')
+    // 凭据地址/密钥输入、保存、清除全部禁用
+    const credInputs = w.find('.credential-card').findAll('input')
+    for (const input of credInputs) expect((input.element as HTMLInputElement).disabled).toBe(true)
+    const saveBtn = w.findAll('button').find((b) => b.text().includes('验证并保存'))
+    expect(saveBtn!.element.disabled).toBe(true)
+    const clearBtn = w.findAll('button').find((b) => b.text().includes('清除'))
+    expect(clearBtn!.element.disabled).toBe(true)
+    // 档位启用开关、角色路由选择禁用
+    for (const sw of w.findAll('.el-switch')) expect(sw.classes()).toContain('is-disabled')
+    // el-select 的 is-disabled 在内部 wrapper 上（版本差异），对整棵子树断言
+    expect(w.find('.route-select').html()).toContain('is-disabled')
+    // 连通探测保持可用
+    const testBtn = w.findAll('.tier-card')[1].findAll('button').find((b) => b.text().includes('测试连接'))
+    expect(testBtn).toBeTruthy()
+    expect(testBtn!.element.disabled).toBe(false)
+    w.unmount()
+  })
+
+  it('共享资源写权限（dljy#3226 · AA-06.2）内部版 ADMIN：写控件可用，不出现只读提示', async () => {
+    getServices.mockResolvedValue({
+      ...OK,
+      credential: { configured: true, source: 'ui', url: 'https://gw.example.internal/v1', key_hint: '****abcd', updated_at: null }
+    })
+    const w = mount(ModelServicesPanel)
+    await flushPromises()
+    expect(w.find('[data-test="write-locked"]').exists()).toBe(false)
+    const saveBtn = w.findAll('button').find((b) => b.text().includes('验证并保存'))
+    expect(saveBtn!.element.disabled).toBe(false)
+    expect(w.findAll('.tier-card')[0].find('.el-switch').classes()).not.toContain('is-disabled')
+    expect(w.find('.route-select').html()).not.toContain('is-disabled')
+    const credInputs = w.find('.credential-card').findAll('input')
+    for (const input of credInputs) expect((input.element as HTMLInputElement).disabled).toBe(false)
     w.unmount()
   })
 })

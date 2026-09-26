@@ -1,0 +1,202 @@
+import { flushPromises, mount } from '@vue/test-utils'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import DisclosureEventGroups from './DisclosureEventGroups.vue'
+import type { MaintenanceTiming } from './disclosureMaintenance'
+import type { GridDisclosureEvent, GridDisclosureGroup } from './types'
+
+const api = vi.hoisted(() => ({ events: vi.fn() }))
+vi.mock('./client', () => ({ fetchGridDisclosureEvents: api.events }))
+function event(id = 'unit-1', extra: Partial<GridDisclosureEvent> = {}): GridDisclosureEvent {
+  return { eventId: id, providerId: 'csg-authorized-export', category: 'maintenance', title: `大朝山电厂 ${id} 检修计划`, summary: '主机定期检修', regionId: 'yunnan', spatialBinding: { kind: 'region', ref: 'yunnan', label: '云南', coordinates: null }, businessDate: '2026-07-01', effectiveAt: '2026-06-30T23:30:00+08:00', expiresAt: '2026-07-02T01:45:00+08:00', publishedAt: null, timeQuality: { effective: 'source', published: 'unknown', intervalBasis: 'actual', issues: [] }, personalFavorite: false, source: { file: 'maintenance.csv', recordId: id, url: null, sourceTable: 'maintenance', sourceType: 'IMPORT', mock: false, productionWrite: false, dataAvailability: 'available', license: '授权导出', originalLinkStatus: 'unavailable' }, confidence: 'verified-source-row', importedAt: '2026-09-09T12:00:00+08:00', ...extra }
+}
+function group(extra: Partial<GridDisclosureGroup> = {}): GridDisclosureGroup {
+  return { groupKey: 'plant:dachaoshan', label: '大朝山电厂', kind: 'plant', regionId: 'yunnan', total: 25, countsByCategory: { maintenance: 24, outage: 0, intervention: 1, congestion: 0, constraint: 0 }, ...extra }
+}
+function result(items = [event()], total = items.length, page = 1) { return { items, total, page, pageSize: 8, categories: ['maintenance'], dataAvailability: { status: 'available', reason: '', fallback: false } } }
+function deferred<T>() { let resolve!: (value: T) => void; const promise = new Promise<T>(done => { resolve = done }); return { promise, resolve } }
+const timing = (): MaintenanceTiming => ({ startLabel: '实际停电时间', endLabel: '实际复电时间', start: '2026-06-30 23:30', end: '2026-07-02 01:45', note: '' })
+const query = { region: 'yunnan', from: '2026-07-01T00:00:00+08:00', to: '2026-07-01T23:59:59+08:00', equipmentKeyword: '大朝山', reasonKeyword: '检修', timingFilter: 'covers-window', windowMode: 'overlap', category: 'maintenance,intervention', sort: 'start-asc' }
+function mountGroups(extra = {}) { return mount(DisclosureEventGroups, { props: { groups: [group()], query: { ...query }, scopeKey: 'yunnan:company-a', eventTiming: timing, ...extra } }) }
+beforeEach(() => { vi.resetAllMocks(); api.events.mockResolvedValue(result()) })
+
+describe('按电厂或对象展开关联披露', () => {
+  it('默认只显示分组全量条数和非零类别，未展开不读取各条披露', () => {
+    const wrapper = mountGroups()
+    const button = wrapper.get('.group-toggle')
+    expect(button.attributes('type')).toBe('button')
+    expect(button.attributes('aria-expanded')).toBe('false')
+    expect(wrapper.get('.group-body').attributes('id')).toBe(button.attributes('aria-controls'))
+    expect(wrapper.get('.group-body').attributes('style')).toContain('display: none')
+    expect(wrapper.get('.group-name').text()).toBe('大朝山电厂')
+    expect(wrapper.get('.group-total').text()).toBe('25 条')
+    expect(wrapper.findAll('.category-badge').map(badge => badge.text())).toEqual(['检修计划 24', '人工干预 1'])
+    expect(wrapper.findAll('.open-event')).toHaveLength(0)
+    expect(api.events).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('首次展开仅请求本组并保留全部筛选，逐条显示原始时间、类别和选择入口', async () => {
+    const item = event()
+    api.events.mockResolvedValue(result([item], 25))
+    const wrapper = mountGroups({ selectedId: item.eventId })
+    await wrapper.get('.group-toggle').trigger('click')
+    await flushPromises()
+    expect(api.events).toHaveBeenCalledExactlyOnceWith({ ...query, groupKey: 'plant:dachaoshan', page: 1, pageSize: 8 }, { signal: expect.any(AbortSignal) })
+    expect(wrapper.get('.group-toggle').attributes('aria-expanded')).toBe('true')
+    expect(wrapper.find('[data-testid="disclosure-list"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('2026-06-30 23:30')
+    expect(wrapper.text()).toContain('2026-07-02 01:45')
+    expect(wrapper.text()).toContain('1 天 2 小时 15 分钟')
+    expect(wrapper.text()).toContain('业务日期 2026-07-01')
+    expect(wrapper.get('.open-event').attributes('aria-pressed')).toBe('true')
+    await wrapper.get('.open-event').trigger('click')
+    expect(wrapper.emitted('select')?.[0]).toEqual([item])
+    expect((wrapper.emitted('select')?.[0]?.[0] as GridDisclosureEvent).source.recordId).toBe(item.source.recordId)
+    wrapper.unmount()
+  })
+
+  it('每组独立分页采用完整查询总数，翻页和收起重开不扰动其他组', async () => {
+    const other = group({ groupKey: 'object:line', label: '鲁西直流', kind: 'object', total: 2, countsByCategory: { maintenance: 0, outage: 0, intervention: 0, congestion: 0, constraint: 2 } })
+    api.events.mockImplementation(async (params: Record<string, string | number>) => params.groupKey === 'object:line' ? result([event('line', { title: '鲁西直流约束', category: 'constraint' })], 2) : result([event(`page-${params.page}`)], 17, Number(params.page)))
+    const wrapper = mountGroups({ groups: [group(), other] })
+    const sections = wrapper.findAll('.event-group')
+    await sections[0].get('.group-toggle').trigger('click')
+    await sections[1].get('.group-toggle').trigger('click')
+    await flushPromises()
+    expect(sections[0].get('.group-pagination').text()).toContain('共 17 条 · 第 1/3 页')
+    expect(sections[1].get('.group-pagination').text()).toContain('共 2 条 · 第 1/1 页')
+    expect(sections[1].findAll('.group-pagination button')[1].attributes('disabled')).toBeDefined()
+    await sections[0].findAll('.group-pagination button')[1].trigger('click')
+    await flushPromises()
+    expect(sections[0].text()).toContain('page-2')
+    expect(sections[1].text()).toContain('鲁西直流约束')
+    expect(api.events).toHaveBeenCalledTimes(3)
+    await sections[0].get('.group-toggle').trigger('click')
+    await sections[0].get('.group-toggle').trigger('click')
+    await flushPromises()
+    expect(api.events).toHaveBeenCalledTimes(3)
+    expect(sections[0].get('.group-pagination').text()).toContain('第 2/3 页')
+    wrapper.unmount()
+  })
+
+  it('读取中收起不发重复请求，结果只保留在当前组缓存中', async () => {
+    const pending = deferred<ReturnType<typeof result>>()
+    api.events.mockReturnValue(pending.promise)
+    const wrapper = mountGroups()
+    await wrapper.get('.group-toggle').trigger('click')
+    expect(wrapper.get('.group-body').attributes('aria-busy')).toBe('true')
+    await wrapper.get('.group-toggle').trigger('click')
+    pending.resolve(result())
+    await flushPromises()
+    expect(wrapper.get('.group-body').attributes('style')).toContain('display: none')
+    await wrapper.get('.group-toggle').trigger('click')
+    expect(wrapper.find('.open-event').exists()).toBe(true)
+    expect(api.events).toHaveBeenCalledTimes(1)
+    wrapper.unmount()
+  })
+
+  it('读取失败保留重试入口且翻页失败不显示上一页冒充当前页', async () => {
+    api.events.mockResolvedValueOnce(result([event('page-1')], 17)).mockRejectedValueOnce(new Error('当前账号无读取权限')).mockResolvedValueOnce(result([event('page-2')], 17, 2))
+    const wrapper = mountGroups()
+    await wrapper.get('.group-toggle').trigger('click')
+    await flushPromises()
+    await wrapper.findAll('.group-pagination button')[1].trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[role="alert"]').text()).toContain('当前账号无读取权限')
+    expect(wrapper.findAll('.open-event')).toHaveLength(0)
+    await wrapper.get('.group-toggle').trigger('click')
+    await wrapper.get('.group-toggle').trigger('click')
+    expect(api.events).toHaveBeenCalledTimes(2)
+    await wrapper.get('[role="alert"] button').trigger('click')
+    await flushPromises()
+    expect(api.events).toHaveBeenLastCalledWith(expect.objectContaining({ groupKey: 'plant:dachaoshan', page: 2 }), expect.anything())
+    expect(wrapper.get('.group-pagination').text()).toContain('第 2/3 页')
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+    expect(wrapper.text()).toContain('page-2')
+    wrapper.unmount()
+  })
+
+  it.each(['query', 'scopeKey'] as const)('%s 变化中止旧请求并收起清空，再展开只显示新范围结果', async prop => {
+    const stale = deferred<ReturnType<typeof result>>()
+    api.events.mockReturnValueOnce(stale.promise).mockResolvedValueOnce(result([event('new')]))
+    const wrapper = mountGroups()
+    await wrapper.get('.group-toggle').trigger('click')
+    const oldSignal = api.events.mock.calls[0][1].signal as AbortSignal
+    await wrapper.setProps(prop === 'query' ? { query: { ...query, region: 'guangdong', equipmentKeyword: '新电厂' } } : { scopeKey: 'yunnan:company-b' })
+    expect(oldSignal.aborted).toBe(true)
+    expect(wrapper.get('.group-toggle').attributes('aria-expanded')).toBe('false')
+    await wrapper.get('.group-toggle').trigger('click')
+    await flushPromises()
+    stale.resolve(result([event('stale')]))
+    await flushPromises()
+    expect(wrapper.text()).toContain('new')
+    expect(wrapper.text()).not.toContain('stale')
+    expect(wrapper.get('.group-body').attributes('aria-busy')).toBe('false')
+    wrapper.unmount()
+  })
+
+  it('卸载中止尚未完成的组请求', async () => {
+    const pending = deferred<ReturnType<typeof result>>()
+    api.events.mockReturnValue(pending.promise)
+    const wrapper = mountGroups()
+    await wrapper.get('.group-toggle').trigger('click')
+    const signal = api.events.mock.calls[0][1].signal as AbortSignal
+    wrapper.unmount()
+    expect(signal.aborted).toBe(true)
+    pending.resolve(result())
+    await flushPromises()
+    expect(wrapper.emitted('select')).toBeUndefined()
+  })
+
+  it('来自事件轨道的组定位仅自动展开目标组，延迟出现的组也可定位', async () => {
+    const wrapper = mountGroups({ groups: [], focusGroupKey: 'plant:dachaoshan' })
+    expect(api.events).not.toHaveBeenCalled()
+    await wrapper.setProps({ groups: [group(), group({ groupKey: 'object:other', label: '其他对象' })] })
+    await flushPromises()
+    expect(wrapper.findAll('.group-toggle').map(button => button.attributes('aria-expanded'))).toEqual(['true', 'false'])
+    expect(api.events).toHaveBeenCalledTimes(1)
+    await wrapper.setProps({ focusGroupKey: 'object:other' })
+    await flushPromises()
+    expect(wrapper.findAll('.group-toggle').map(button => button.attributes('aria-expanded'))).toEqual(['true', 'true'])
+    expect(api.events).toHaveBeenCalledTimes(2)
+    await wrapper.get('.group-actions button').trigger('click')
+    expect(wrapper.findAll('.group-toggle').every(button => button.attributes('aria-expanded') === 'false')).toBe(true)
+    expect(api.events).toHaveBeenCalledTimes(2)
+    wrapper.unmount()
+  })
+
+  it('详情保存收藏后更新已载记录，关闭详情和收起重开仍保持已保存状态', async () => {
+    const item = event()
+    api.events.mockResolvedValue(result([item, event('unit-2')]))
+    const wrapper = mountGroups()
+    await wrapper.get('.group-toggle').trigger('click')
+    await flushPromises()
+    expect(wrapper.findAll('[aria-label="已加入个人收藏"]')).toHaveLength(0)
+    await wrapper.setProps({ selectedEvent: { ...item, personalFavorite: true } })
+    expect(wrapper.findAll('[aria-label="已加入个人收藏"]')).toHaveLength(1)
+    await wrapper.setProps({ selectedEvent: null })
+    await wrapper.get('.group-toggle').trigger('click')
+    await wrapper.get('.group-toggle').trigger('click')
+    expect(wrapper.findAll('[aria-label="已加入个人收藏"]')).toHaveLength(1)
+    await wrapper.findAll('.open-event')[0].trigger('click')
+    expect((wrapper.emitted('select')?.[0]?.[0] as GridDisclosureEvent).personalFavorite).toBe(true)
+    expect(item.personalFavorite).toBe(false)
+    await wrapper.setProps({ selectedEvent: { ...item, personalFavorite: false } })
+    await wrapper.setProps({ selectedEvent: null })
+    expect(wrapper.findAll('[aria-label="已加入个人收藏"]')).toHaveLength(0)
+    wrapper.unmount()
+  })
+
+  it('无分组或组内真实无匹配记录时显示空态，不把聚合总数伪造为明细', async () => {
+    const wrapper = mountGroups({ groups: [] })
+    expect(wrapper.get('[role="status"]').text()).toContain('没有符合当前筛选条件')
+    await wrapper.setProps({ groups: [group({ groupKey: 'unclassified:yunnan', label: '未提供对象', kind: 'unclassified' })] })
+    api.events.mockResolvedValue(result([], 0))
+    await wrapper.get('.group-toggle').trigger('click')
+    await flushPromises()
+    expect(wrapper.findAll('.open-event')).toHaveLength(0)
+    expect(wrapper.get('.group-pagination').text()).toContain('共 0 条 · 第 1/1 页')
+    expect(wrapper.get('[role="status"]').text()).toContain('没有符合当前筛选条件')
+    wrapper.unmount()
+  })
+})

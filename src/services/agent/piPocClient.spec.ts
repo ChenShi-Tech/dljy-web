@@ -16,7 +16,7 @@ vi.mock('@/services/api', () => ({
   AGENT_API_BASE_ROOT: '/agent-api'
 }))
 
-import { fetchDataGaps, setSessionAutoApprove } from './piPocClient'
+import { fetchDataGaps, fetchPiSessionMeta, revokeSessionAutoApprove, setSessionAutoApprove } from './piPocClient'
 import { PI_AGENT_BASE } from './agentClient'
 
 const fetchMock = vi.fn()
@@ -62,6 +62,189 @@ describe('fetchDataGaps', () => {
 
     await expect(fetchDataGaps()).rejects.toThrow('HTTP 404')
     await expect(fetchDataGaps()).rejects.toThrow('HTTP 502')
+  })
+})
+
+describe('fetchPiSessionMeta（统一 AI 侧边栏：重新打开会话找回专家入口与授权状态）', () => {
+  it('显式走 PI_AGENT_BASE 的会话详情（sessionId 编码），带身份头，取解读角色与授权状态', async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ id: 's 1', scenario: 'chat', prompt_key: 'pre_submit_check', auto_approve: true }))
+    vi.stubGlobal('fetch', fetchMock)
+    await expect(fetchPiSessionMeta('s 1')).resolves.toEqual({ promptKey: 'pre_submit_check', autoApprove: true })
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(url).toBe(`${PI_AGENT_BASE}/sessions/s%201`)
+    expect(init.headers).toEqual({ 'x-user-id': 'u1' })
+  })
+
+  it('pi 不认识该会话（非 2xx）返回 null；旧版 pi 缺字段时解读角色为 null、授权按未开启', async () => {
+    vi.stubGlobal('fetch', fetchMock)
+    fetchMock.mockResolvedValueOnce(jsonResponse({ detail: 'not found' }, 404))
+    await expect(fetchPiSessionMeta('s_gone')).resolves.toBeNull()
+    fetchMock.mockResolvedValueOnce(jsonResponse({ id: 's_old', scenario: 'chat' }))
+    await expect(fetchPiSessionMeta('s_old')).resolves.toEqual({ promptKey: null, autoApprove: false })
+  })
+})
+
+describe('revokeSessionAutoApprove（切走会话/卸载时撤销授权，失败按退避重试）', () => {
+  it('一次成功即返回 true，不等待', async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ auto_approve: false }))
+    vi.stubGlobal('fetch', fetchMock)
+    const sleep = vi.fn(async (_ms: number) => {})
+    await expect(revokeSessionAutoApprove('s1', { sleep })).resolves.toBe(true)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(JSON.parse((fetchMock.mock.calls[0] as [string, RequestInit])[1].body as string)).toEqual({ enabled: false })
+    expect(sleep).not.toHaveBeenCalled()
+  })
+
+  it('网络或服务端失败时按退避重试，直到成功', async () => {
+    fetchMock
+      .mockRejectedValueOnce(new TypeError('network'))
+      .mockResolvedValueOnce(jsonResponse({ detail: 'x' }, 502))
+      .mockResolvedValueOnce(jsonResponse({ auto_approve: false }))
+    vi.stubGlobal('fetch', fetchMock)
+    const sleep = vi.fn(async (_ms: number) => {})
+    await expect(revokeSessionAutoApprove('s1', { sleep, delaysMs: [10, 20, 30] })).resolves.toBe(true)
+    expect(fetchMock).toHaveBeenCalledTimes(3)
+    expect(sleep.mock.calls.map((c) => c[0])).toEqual([10, 20])
+  })
+
+  it('重试等待期间用户又重新开启了授权：旧的撤销放弃，不关掉新的授权（dljy-web#121 第四轮审查 P2）', async () => {
+    vi.stubGlobal('fetch', fetchMock)
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ detail: 'x' }, 502)) // 撤销第一次失败
+      .mockResolvedValueOnce(jsonResponse({ auto_approve: true })) // 用户重新开启成功
+    const sleep = vi.fn(async (_ms: number) => {
+      await expect(setSessionAutoApprove('s_regrant', true)).resolves.toBe(true)
+    })
+    await expect(revokeSessionAutoApprove('s_regrant', { sleep, delaysMs: [10, 20] })).resolves.toBe(false)
+    const disables = fetchMock.mock.calls.filter((c) => JSON.parse((c as [string, RequestInit])[1].body as string).enabled === false)
+    expect(disables).toHaveLength(1) // 只有最初失败的那一次
+  })
+
+  it('撤销请求已发出、尚未落地时用户重新开启：开启排在撤销之后发出，旧的关闭压不过新的开启（dljy-web#122 审查 P2）', async () => {
+    vi.stubGlobal('fetch', fetchMock)
+    let finishRevoke: (r: Response) => void = () => {}
+    fetchMock
+      .mockImplementationOnce(() => new Promise<Response>((r) => { finishRevoke = r }))
+      .mockResolvedValueOnce(jsonResponse({ auto_approve: true }))
+    const revoking = revokeSessionAutoApprove('s_race', { sleep: async () => {}, delaysMs: [] })
+    const enabling = setSessionAutoApprove('s_race', true)
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(fetchMock).toHaveBeenCalledTimes(1) // 开启还在排队
+    finishRevoke(jsonResponse({ auto_approve: false }))
+    await expect(enabling).resolves.toBe(true)
+    await revoking
+    const order = fetchMock.mock.calls.map((c) => JSON.parse((c as [string, RequestInit])[1].body as string).enabled)
+    expect(order).toEqual([false, true])
+  })
+
+  it('先后两次撤销请求都在途时开启：等全部落地才发出开启，先发出的那次也压不过新的开启（dljy-web#122 审查 P2）', async () => {
+    vi.stubGlobal('fetch', fetchMock)
+    const finishers: Array<(r: Response) => void> = []
+    fetchMock
+      .mockImplementationOnce(() => new Promise<Response>((r) => { finishers.push(r) }))
+      .mockImplementationOnce(() => new Promise<Response>((r) => { finishers.push(r) }))
+      .mockResolvedValueOnce(jsonResponse({ auto_approve: true }))
+    const first = revokeSessionAutoApprove('s_twice', { sleep: async () => {}, delaysMs: [] })
+    const second = revokeSessionAutoApprove('s_twice', { sleep: async () => {}, delaysMs: [] })
+    const enabling = setSessionAutoApprove('s_twice', true)
+    await Promise.resolve()
+    finishers[1](jsonResponse({ auto_approve: false })) // 后发出的先落地
+    await second
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(fetchMock).toHaveBeenCalledTimes(2) // 先发出的还没落地，开启继续排队
+    finishers[0](jsonResponse({ auto_approve: false }))
+    await expect(enabling).resolves.toBe(true)
+    await first
+    const order = fetchMock.mock.calls.map((c) => JSON.parse((c as [string, RequestInit])[1].body as string).enabled)
+    expect(order).toEqual([false, false, true])
+  })
+
+  it('开启请求失败或结果不明：重新发起撤销，并把错误照常抛给调用方（dljy#2962）', async () => {
+    vi.stubGlobal('fetch', fetchMock)
+    fetchMock
+      .mockRejectedValueOnce(new DOMException('timeout', 'TimeoutError')) // 开启超时：服务端是否生效未知
+      .mockResolvedValueOnce(jsonResponse({ auto_approve: false })) // 恢复的撤销
+    await expect(setSessionAutoApprove('s_ambiguous', true)).rejects.toThrow('timeout')
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2))
+    const bodies = fetchMock.mock.calls.map((c) => JSON.parse((c as [string, RequestInit])[1].body as string).enabled)
+    expect(bodies).toEqual([true, false])
+  })
+
+  it('结果不明的开启晚于清理生效：超时窗口过后复查服务端，授权仍开着就再撤销一次', async () => {
+    vi.useFakeTimers()
+    try {
+      vi.stubGlobal('fetch', fetchMock)
+      fetchMock
+        .mockRejectedValueOnce(new DOMException('timeout', 'TimeoutError')) // 开启超时
+        .mockResolvedValueOnce(jsonResponse({ auto_approve: false })) // 清理撤销成功
+        .mockResolvedValueOnce(jsonResponse({ id: 's_late', auto_approve: true })) // 复查：迟到的开启已生效
+        .mockResolvedValueOnce(jsonResponse({ auto_approve: false })) // 再撤销
+      await expect(setSessionAutoApprove('s_late', true)).rejects.toThrow('timeout')
+      await vi.advanceTimersByTimeAsync(0)
+      expect(fetchMock).toHaveBeenCalledTimes(2)
+      await vi.advanceTimersByTimeAsync(30_000)
+      expect(fetchMock).toHaveBeenCalledTimes(4)
+      const last = fetchMock.mock.calls[3] as [string, RequestInit]
+      expect(JSON.parse(last[1].body as string)).toEqual({ enabled: false })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('复查前又发起了新的开启：不复查、不撤销', async () => {
+    vi.useFakeTimers()
+    try {
+      vi.stubGlobal('fetch', fetchMock)
+      fetchMock
+        .mockRejectedValueOnce(new DOMException('timeout', 'TimeoutError'))
+        .mockResolvedValueOnce(jsonResponse({ auto_approve: false }))
+        .mockResolvedValueOnce(jsonResponse({ auto_approve: true })) // 新的开启
+      await expect(setSessionAutoApprove('s_regrant_later', true)).rejects.toThrow('timeout')
+      await vi.advanceTimersByTimeAsync(0)
+      await expect(setSessionAutoApprove('s_regrant_later', true)).resolves.toBe(true)
+      await vi.advanceTimersByTimeAsync(30_000)
+      expect(fetchMock).toHaveBeenCalledTimes(3)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('旧的开启还在途时又发起了新的开启：旧的开启随后失败，不清理、不关掉新的授权', async () => {
+    vi.stubGlobal('fetch', fetchMock)
+    let failOld: (e: Error) => void = () => {}
+    fetchMock
+      .mockImplementationOnce(() => new Promise<Response>((_r, reject) => { failOld = reject }))
+      .mockResolvedValueOnce(jsonResponse({ auto_approve: true }))
+    const older = setSessionAutoApprove('s_twice_grant', true)
+    await Promise.resolve()
+    await Promise.resolve()
+    await expect(setSessionAutoApprove('s_twice_grant', true)).resolves.toBe(true)
+    failOld(new TypeError('network'))
+    await expect(older).rejects.toThrow('network')
+    await new Promise((r) => setTimeout(r, 0))
+    const bodies = fetchMock.mock.calls.map((c) => JSON.parse((c as [string, RequestInit])[1].body as string).enabled)
+    expect(bodies).toEqual([true, true])
+  })
+
+  it('开启请求刚发起、还没返回时，待重试的撤销醒来即放弃（世代在发起时推进）', async () => {
+    vi.stubGlobal('fetch', fetchMock)
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ detail: 'x' }, 502)) // 撤销第一次失败
+      .mockImplementationOnce(() => new Promise<Response>(() => {})) // 开启请求一直在途
+    const sleep = vi.fn(async (_ms: number) => { void setSessionAutoApprove('s_pending', true) })
+    await expect(revokeSessionAutoApprove('s_pending', { sleep, delaysMs: [10] })).resolves.toBe(false)
+    const disables = fetchMock.mock.calls.filter((c) => JSON.parse((c as [string, RequestInit])[1].body as string).enabled === false)
+    expect(disables).toHaveLength(1)
+  })
+
+  it('重试用尽仍失败：返回 false（用户重新打开会话时按服务端状态仍能看到并关闭）', async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ detail: 'x' }, 503))
+    vi.stubGlobal('fetch', fetchMock)
+    const sleep = vi.fn(async (_ms: number) => {})
+    await expect(revokeSessionAutoApprove('s1', { sleep, delaysMs: [10, 20] })).resolves.toBe(false)
+    expect(fetchMock).toHaveBeenCalledTimes(3)
   })
 })
 

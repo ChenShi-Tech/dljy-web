@@ -115,3 +115,24 @@ describe('直链守卫与切换路由', () => {
     expect(resolveStanceSwitchRoute('RETAILER', user, GENERATOR_ONLY)).toBe('/xhjy/zptqx')
   })
 })
+
+describe('中长期菜单口径收口（dljy#2988）', () => {
+  const groupChildren = (title: string) => navigation.find((g) => g.title === title)?.children?.map((c) => `${c.path}|${c.title}`) ?? []
+
+  it('敞口看板改名「中长期与现货套保」，8.1 起路由迁入 /xhjy/hedge（旧链接重定向）', () => {
+    const spot = groupChildren('现货交易')
+    const midlong = groupChildren('中长期交易')
+    expect(spot).toContain('/xhjy/hedge|中长期与现货套保')
+    expect(midlong.some((x) => x.includes('套保'))).toBe(false)
+    expect(midlong.some((x) => x.includes('敞口'))).toBe(false)
+  })
+
+  it('山西采集族的两个旧页面在菜单名上标注地区，避免与云南中长期底账页混淆', () => {
+    const midlong = groupChildren('中长期交易')
+    expect(midlong).toContain('/zcqjy/zccljk|持仓量监控（山西采集）')
+    expect(midlong).toContain('/zcqjy/zjyap|交易月历（山西·国网）')
+    // 云南中长期底账页仍在中长期组。
+    expect(midlong).toContain('/zcqjy/positions|月度持仓')
+    expect(midlong).toContain('/zcqjy/plans|售电计划')
+  })
+})

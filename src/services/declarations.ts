@@ -24,15 +24,21 @@ export const DECLARATION_MODE_LABEL: Record<DeclarationMode, string> = {
 }
 
 export type RiskCheckItem = {
-  checkId: 'capacity' | 'priceCap' | 'exposure'
+  // 契约已扩为手册 T4 十项（capacity/priceCap/quotePrecision/exposure/bias/dataBasis/
+  // quoteRationale/redLine/socTrajectory/breakeven），此处只作展示用途，放宽为 string
+  checkId: string
   name: string
   status: 'PASS' | 'FAIL' | 'UNAVAILABLE'
+  severity?: 'hard' | 'overridable' | 'warning'
   detail: string
 }
 
 export type RiskCheckResult = {
   checks: RiskCheckItem[]
   passed: boolean
+  /** 硬约束不通过：结果照常落库但状态转移被拦（送审门据此拒绝） */
+  blocked?: boolean
+  blockers?: RiskCheckItem[]
   gateLevel: 'L2' | 'L3'
   totalMwh: number
   maxMw: number
@@ -49,6 +55,8 @@ export type ApprovalRecord = {
   comment: string | null
   /** 演练单创建人自批留痕（真实单永远缺席），四眼原则豁免的审计标记 */
   rehearsalSelfApproval?: boolean
+  /** L3 双签：本条只是第一签，单据尚未批准（第二签批准后另有正式记录） */
+  dualSignPending?: boolean
 }
 
 export type DeclarationAuditEntry = {
@@ -292,6 +300,14 @@ export type DeclarationOrder = {
   note: string | null
   riskCheck: RiskCheckResult | null
   approvalRecord: ApprovalRecord[]
+  /**
+   * L3 双签在途的第一签（工作台审查 P1 修复）：gateLevel=L3 的真实单须两位不同审批人
+   * 先后批准才迁移 APPROVED。送审与批准完成后服务端都会清空本数组，故非空即「已有一签、
+   * 待第二签」。
+   */
+  l3Signatures?: Array<{ approver: string; role: string; at: string; comment: string | null }>
+  /** 瞬态响应标记（不落库）：本次 approve 只完成 L3 第一签，等待第二位审批人 */
+  awaitingSecondSignature?: boolean
   receipt: {
     receiptId: string
     gateway: string
@@ -369,8 +385,8 @@ export async function listDeclarations(params: DeclarationListParams = {}): Prom
  * 带分页元信息的列表查询（历史申报单区块用）。
  * 服务端未回 counts/total 时按 rows 兜底推导，避免旧后端下 UI 整块空白。
  */
-export async function listDeclarationsPage(params: DeclarationListParams = {}): Promise<DeclarationListPage> {
-  const res = await apiGet<{ data: DeclarationListPage }>(BASE, params)
+export async function listDeclarationsPage(params: DeclarationListParams = {}, companyId?: string, region?: string): Promise<DeclarationListPage> {
+  const res = await apiGet<{ data: DeclarationListPage }>(BASE, params, companyId ? { headers: { 'x-company-id': companyId, 'x-tenant-id': companyId, ...(region ? { 'x-region-id': region } : {}) } } : undefined)
   const data = (res.data ?? res) as unknown as Partial<DeclarationListPage>
   const rows = data.rows ?? []
   const counts = data.counts ?? rows.reduce(
@@ -393,8 +409,8 @@ export async function listDeclarationsPage(params: DeclarationListParams = {}): 
   }
 }
 
-export async function getDeclaration(id: string): Promise<DeclarationOrder> {
-  const res = await apiGet<{ data: DeclarationOrder }>(`${BASE}/${encodeURIComponent(id)}`)
+export async function getDeclaration(id: string, companyId?: string): Promise<DeclarationOrder> {
+  const res = await apiGet<{ data: DeclarationOrder }>(`${BASE}/${encodeURIComponent(id)}`, undefined, companyId ? { headers: { 'x-company-id': companyId, 'x-tenant-id': companyId } } : undefined)
   return (res.data ?? res) as unknown as DeclarationOrder
 }
 
@@ -453,6 +469,51 @@ export async function updateDeclarationCurve(id: string, input: {
   return (res.data ?? res) as unknown as DeclarationOrder
 }
 
+/**
+ * 申报曲线编辑器是否相对已保存曲线存在未保存修改（脏标记的派生口径）。
+ * 对比口径与保存链一致：编辑器 96 点每点即一个 15min 时点，点电量 = MW/4（4 位舍入）。
+ * 用派生值而非「watch 置 true / 同步置 false」的标志位：deep watch 异步 flush，
+ * 「赋新数组 → 同步置 false」的序列会被迟到的 watcher 改回 true，造成加载/保存后
+ * 恒报「含未保存修改」、无修改也可点保存（服务端会把 RISK_CHECKED 打回 DRAFT）。
+ */
+export function isCurveEdited(pointMw96: number[], savedCurve96?: number[] | null): boolean {
+  if (!Array.isArray(savedCurve96) || savedCurve96.length !== 96) return false
+  return pointMw96.some((mw, i) => {
+    const point = Math.round((mw / 4) * 10000) / 10000
+    return Math.abs(savedCurve96[i] - point) > 1e-6
+  })
+}
+
+/**
+ * 申报曲线编辑器单格原始输入 → 数值 MW。清空/半输入态（v-model.number 得 ''）、
+ * 非数与负数（input min 挡不住键入）一律返回 NaN，由调用方禁用保存并明示，
+ * 不再静默按 0 处理——此前 '' 参与求和会退化成字符串拼接（总量显示成拼接数字）、
+ * 保存链上 ''/4 会把该小时静默归零。
+ */
+export function editorMwOf(value: unknown): number {
+  // Number('') === 0、Number(null) === 0：空输入必须先于数值转换判定，
+  // 否则清空一格会被静默折算成 0（本次修复要消灭的正是这个行为）
+  if (value === null || value === undefined || (typeof value === 'string' && value.trim() === '')) {
+    return Number.NaN
+  }
+  const n = Number(value)
+  return Number.isFinite(n) && n >= 0 ? n : Number.NaN
+}
+
+/** 编辑器 96 点中非法（未填/非数/负数）的时点下标，供保存门与「时点 HH:MM 未填」提示。 */
+export function invalidPointIndexesOf(points: Array<unknown>): number[] {
+  return points.flatMap((value, index) => (Number.isNaN(editorMwOf(value)) ? [index] : []))
+}
+
+/**
+ * 风控/敞口的中长期合约总量入参归一：输入框被清空/误输（''、非数、0、负数）时
+ * 不把垃圾值发给风控与敞口端点，兜底为 1 MWh。服务端虽会优雅拒绝，但前端
+ * 不发垃圾本身是口径（正常值原样透传，含小数）。
+ */
+export function normalizeExposureTotalMwh(value: unknown): number {
+  return Math.max(1, Number(value) || 1)
+}
+
 export async function runDeclarationRiskCheck(id: string, input: {
   // 当月中长期合约总电量（MWh），服务端据此调 harness 敞口端点
   exposureTotalMwh?: number
@@ -505,4 +566,25 @@ export function stepOfStatus(status: DeclarationStatus): number {
   if (status === 'APPROVED' || status === 'SUBMITTED' || status === 'ACKNOWLEDGED') return 2
   if (status === 'EXPIRED') return 1
   return 3
+}
+
+// ---------------------------------------------------------------------------
+// 状态分组命名常量（spot-trading-module-hygiene 收口）：替换申报工作台×3、审批队列×1、
+// StageDeclare×1 的就地字面量数组。刻意不从 DECLARATION_TRANSITIONS 机械派生——
+// 契约只有单步出边（能到 PENDING_APPROVAL 的仅 RISK_CHECKED），而这两个分组是
+// 业务语义（可编辑草稿类 / 送审前候选），与转移表不同构；以命名常量消除多副本，
+// 成员与各处历史字面量逐一相同，零行为变化。
+/** 可继续编辑/重走流程的草稿类状态（工作台曲线编辑入口、创建入口放行依据）。 */
+export const EDITABLE_DRAFT_STATUSES: readonly DeclarationStatus[] = ['DRAFT', 'RISK_CHECKED', 'REJECTED']
+/** 送审前候选状态（审批队列「全部申报单」区的默认关注集合）。 */
+export const PRE_APPROVAL_STATUSES: readonly DeclarationStatus[] = ['DRAFT', 'RISK_CHECKED', 'PENDING_APPROVAL']
+
+/**
+ * L3 双签第一签的统一提示：服务端只落签不转态，单据仍是待审批——
+ * 申报工作台与审批队列共用同一文案，防止两处漂移。返回 null 表示非双签场景。
+ */
+export function secondSignatureNotice(updated: Pick<DeclarationOrder, 'awaitingSecondSignature'>): string | null {
+  return updated.awaitingSecondSignature
+    ? 'L3 双签：第一签已记录，需第二位审批人批准后本单才进入已审批'
+    : null
 }

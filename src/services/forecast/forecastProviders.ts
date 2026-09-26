@@ -5,7 +5,7 @@
 //
 // 数据口径(basis)：platform/knn 回放真实采集=captured，缺数据=synthetic；ml 由后端透传。
 // 全程不伪装 Mock：合成链路 basis=synthetic，调用方据此显示「仅验链路，非真实精度」。
-import { ref, computed, watch, type Ref, type ComputedRef } from 'vue'
+import { ref, computed, watch, toValue, type ComputedRef, type MaybeRefOrGetter } from 'vue'
 import { fetchCaptured } from '@/services/captured'
 import {
   runForecastPredict,
@@ -20,6 +20,7 @@ import {
 import { FORECAST_CFGS, type ForecastCfg } from '@/data/forecastHubTabs'
 import { getRegionModuleCapabilities, type RegionCapabilityDataSupport } from '@/services/region/regionModules'
 import { currentRegion } from '@/services/region/regionContext'
+import { fetchOfficialBaseline, hasOfficialBaseline, officialTargetsForRegion } from './officialBaseline'
 
 // 契约
 export type ProviderKind = 'replay' | 'compute' // 回放真实采集 | 后端实时计算
@@ -110,10 +111,15 @@ export interface ForecastProvider {
   quality?: ModelQuality
   basisVersion?: string
   supportedTargets: string[]
+  /** false=后端未登记输出目标；前端不得把它当成已训练模型的真实支持范围。 */
+  supportedTargetsDeclared?: boolean
+  /** deployed=具体权重的输出绑定；runtime=请求时用历史数据训练/计算的兼容目标。 */
+  targetCapabilityKind?: 'deployed' | 'runtime'
   paramsSchema: ParamField[]
   // dljy#2464：模型自述（远端模型有）——输入门槛（协变量 × 平台供给）、血统、来源、架构、单位
   io?: ModelIo
   lineage?: ModelLineage
+  capabilities?: ForecastModel['capabilities'] // 含 zeroShot：让入口能识别未做业务训练的基础权重
   source?: string
   framework?: string
   unit?: string
@@ -259,9 +265,10 @@ function platformTargetCfgForRegion(regionId: string | undefined, target: string
 }
 
 export function platformTargetsForRegion(regionId?: string): string[] {
-  return Object.entries(PLATFORM_TARGET_CFG)
+  const legacy = Object.entries(PLATFORM_TARGET_CFG)
     .filter(([, cfg]) => hasRealForecastFamilySupport(regionId, cfg.family))
     .map(([target]) => target)
+  return [...new Set([...legacy, ...officialTargetsForRegion(regionId ?? '')])]
 }
 
 export const platformProvider: ForecastProvider = {
@@ -272,6 +279,15 @@ export const platformProvider: ForecastProvider = {
   supportedTargets: Object.keys(PLATFORM_TARGET_CFG),
   paramsSchema: [], // 官方回放无可调参数
   async run(ctx) {
+    if (hasOfficialBaseline(ctx.regionId, ctx.target)) {
+      const official = await fetchOfficialBaseline(ctx.regionId, ctx.target, ctx.targetDate)
+      if (!official) throw new Error(`云南${ctx.targetDate ?? '所选日期'}未取得完整且无冲突的官方预测96点；未改用其他日期或合成数据`)
+      return applyGranularity({
+        points: official.points, unit: 'MW', basis: 'captured', mock: false,
+        granularity: 96, modelId: 'platform',
+        warnings: [`${official.label}；预测目标日：${official.targetDate}；官方披露回放，不是南洋模型计算`],
+      }, ctx.granularity)
+    }
     const cfg = platformTargetCfgForRegion(ctx.regionId, ctx.target)
     if (!cfg) {
       return {
@@ -325,7 +341,10 @@ export const knnProvider: ForecastProvider = {
   name: 'KNN 相似日（基线）',
   kind: 'compute',
   tier: 'baseline',
-  supportedTargets: ['price', 'load', 'renewable'],
+  // KNN 按请求读取对应目标的真实历史数据；两条用户侧结算价走小时级 loader。
+  // 这里列的是经过取数→特征→预测回归验证的兼容目标，不是“已有固定权重”。
+  supportedTargets: ['price', 'load', 'renewable', 'price_user_da_settlement', 'price_user_rt_settlement'],
+  targetCapabilityKind: 'runtime',
   paramsSchema: [
     { key: 'k1', label: '相似日数量 K1（价格区间）', type: 'slider', default: 8, min: 1, max: 30, step: 1 },
     { key: 'k2', label: '相似日数量 K2（火电出力）', type: 'slider', default: 3, min: 1, max: 30, step: 1 },
@@ -366,52 +385,179 @@ const ML_PARAMS: ParamField[] = [
 // #762 模型清单动态化：ML 模型不再硬编码，从后端 /forecast/models（registry.catalog 单一权威）
 // 拉取，新模型（含 fm:Chronos 基础模型）上线自动出现，不可用模型带 available:false + reason。
 // 平台官方(platform)/KNN 基线(knn) 是前端专属 provider（非后端 catalog 模型），保留固定。
-const mlCatalog: Ref<ForecastModel[]> = ref([])
-const catalogLoading = ref(false)
-const catalogError = ref('')
-let catalogLoaded = false
-// 已加载目录对应的地区（#763 job646 修复）：catalog 的 quality/skill 是地区维，缓存必须按地区分键
-// 否则切 shanxi 仍复用云南目录（全局缓存放大跨地区串读）。地区不匹配即视为需重载。
-let catalogRegion = ''
-// 世代序号（#1173）：切地区 watch 每次都强制刷新，快切即产生并发 in-flight 请求。
-// 无守卫时晚归的陈旧响应会覆盖 mlCatalog 并把 catalogRegion 认领成自己的地区
-// 目录残留他区 skill/quality，且因地区已被认领，后续同地区调用命中缓存不再纠正，
-// 脏状态一直持续到下次切地区。故 await 后只有最新一次请求可写入。
-let catalogReq = 0
+type CatalogTargetInput = string | readonly string[] | undefined
 
-// 加载后端模型目录（幂等，按地区缓存于 mlCatalog）。/models 的 quality 依赖 region（skill 相对该地区回测基线）。
-// 诚实降级（#762 验收）：加载失败置空 + 记录 error，绝不回退硬编码假列表冒充可用。
-export async function ensureForecastCatalog(force = false): Promise<void> {
-  const regionId = currentRegion.value.id
-  if (catalogLoaded && !force && catalogRegion === regionId) return
-  const req = ++catalogReq
-  catalogLoading.value = true
-  catalogError.value = ''
+// #54：预测目录按「地区 + target」分桶缓存。否则首载 price 会吞掉小时用户电价 target，
+// 或 price/load 共页时把 fixed provider 的 quality/available 串到另一条腿。
+const catalogModelsByKey = ref<Record<string, ForecastModel[]>>({})
+const catalogLoadingByKey = ref<Record<string, boolean>>({})
+const catalogErrorByKey = ref<Record<string, string>>({})
+const catalogLoadedByKey: Record<string, boolean> = Object.create(null)
+const catalogReqByKey: Record<string, number> = Object.create(null)
+
+function catalogKey(regionId: string, target: string): string {
+  return `${regionId}::${target}`
+}
+
+function normalizeCatalogTargets(input: CatalogTargetInput): string[] {
+  if (Array.isArray(input)) {
+    const targets = [...new Set(input.map((v) => String(v ?? '').trim()).filter(Boolean))]
+    return targets.length ? targets : ['price']
+  }
+  const target = String(input ?? 'price').trim()
+  return [target || 'price']
+}
+
+function omitCatalogEntry<T>(source: Record<string, T>, key: string): Record<string, T> {
+  if (!(key in source)) return source
+  const { [key]: _dropped, ...rest } = source
+  return rest
+}
+
+function readCatalogModels(regionId: string, target: string): ForecastModel[] {
+  return catalogModelsByKey.value[catalogKey(regionId, target)] ?? []
+}
+
+export function catalogModelsForTarget(target: string, regionId?: string): ForecastModel[] {
+  return readCatalogModels(regionId ?? currentRegion.value.id, target)
+}
+
+export function isCatalogModelUsableForTarget(
+  model: Pick<ForecastModel, 'modelId' | 'namespace' | 'available' | 'supportedTargets'>,
+  target: string,
+): boolean {
+  return !!model.available
+    && isPredictSupported(model)
+    && Array.isArray(model.supportedTargets)
+    && model.supportedTargets.includes(target)
+}
+
+function loadedTargetsForRegion(regionId: string): string[] {
+  const prefix = `${regionId}::`
+  return Object.keys(catalogLoadedByKey)
+    .filter((key) => catalogLoadedByKey[key] === true && key.startsWith(prefix))
+    .map((key) => key.slice(prefix.length))
+}
+
+function loadingTargetsForRegion(regionId: string): string[] {
+  const prefix = `${regionId}::`
+  return Object.keys(catalogLoadingByKey.value)
+    .filter((key) => catalogLoadingByKey.value[key] === true && key.startsWith(prefix))
+    .map((key) => key.slice(prefix.length))
+}
+
+function mergeCatalogModels(regionId: string, targets: readonly string[]): ForecastModel[] {
+  const merged: ForecastModel[] = []
+  const seen = new Set<string>()
+  for (const target of targets) {
+    for (const model of readCatalogModels(regionId, target)) {
+      const key = `${target}::${model.modelId}`
+      if (seen.has(key)) continue
+      seen.add(key)
+      merged.push(model)
+    }
+  }
+  return merged
+}
+
+function joinCatalogErrors(regionId: string, targets: readonly string[]): string {
+  const errors = [...new Set(targets
+    .map((target) => catalogErrorByKey.value[catalogKey(regionId, target)] ?? '')
+    .filter(Boolean))]
+  return errors.join('；')
+}
+
+function anyCatalogLoading(regionId: string, targets: readonly string[]): boolean {
+  return targets.some((target) => catalogLoadingByKey.value[catalogKey(regionId, target)] === true)
+}
+
+function resolveEnsureCatalogArgs(
+  targetOrForce: CatalogTargetInput | boolean = 'price',
+  forceOrRegion?: boolean | string,
+  regionIdArg?: string,
+): { targets: string[]; force: boolean; regionId: string } {
+  let targets: string[] = ['price']
+  let force = false
+  let regionId = currentRegion.value.id
+  if (typeof targetOrForce === 'boolean') {
+    force = targetOrForce
+  } else {
+    targets = normalizeCatalogTargets(targetOrForce)
+  }
+  if (typeof forceOrRegion === 'boolean') force = forceOrRegion
+  if (typeof forceOrRegion === 'string') regionId = forceOrRegion
+  if (regionIdArg) regionId = regionIdArg
+  return { targets, force, regionId }
+}
+
+async function loadCatalogTarget(target: string, force: boolean, regionId: string): Promise<void> {
+  const key = catalogKey(regionId, target)
+  if (catalogLoadedByKey[key] && !force) return
+  const req = (catalogReqByKey[key] ?? 0) + 1
+  catalogReqByKey[key] = req
+  catalogLoadingByKey.value = { ...catalogLoadingByKey.value, [key]: true }
+  catalogErrorByKey.value = omitCatalogEntry(catalogErrorByKey.value, key)
   try {
-    const res = await fetchForecastModels('price', regionId)
-    if (req !== catalogReq) return    // 已被更新的请求取代：陈旧结果一律丢弃，不写入、不认领地区
-    mlCatalog.value = Array.isArray(res?.models) ? res.models : []
-    catalogLoaded = true
-    catalogRegion = regionId          // 认领本次加载的地区，供下次同地区命中缓存
+    const res = await fetchForecastModels(target, regionId)
+    if (catalogReqByKey[key] !== req) return
+    catalogModelsByKey.value = {
+      ...catalogModelsByKey.value,
+      [key]: Array.isArray(res?.models) ? res.models : [],
+    }
+    catalogLoadedByKey[key] = true
   } catch (e) {
-    if (req !== catalogReq) return    // 陈旧失败不得清空新地区已取回的结果
-    mlCatalog.value = []
-    catalogError.value = e instanceof Error ? e.message : '模型目录加载失败'
-    catalogLoaded = false             // 失败不认领地区，下次（含同地区）仍重试
-    catalogRegion = ''
+    if (catalogReqByKey[key] !== req) return
+    catalogModelsByKey.value = omitCatalogEntry(catalogModelsByKey.value, key)
+    catalogErrorByKey.value = {
+      ...catalogErrorByKey.value,
+      [key]: e instanceof Error ? e.message : '模型目录加载失败',
+    }
+    delete catalogLoadedByKey[key]     // 失败不缓存，下次同地区同 target 仍重试
   } finally {
-    // 加载态只由最新请求熄灭：否则先归的陈旧请求会提前熄灯，新请求仍在途却显示「已加载完」。
-    if (req === catalogReq) catalogLoading.value = false
+    if (catalogReqByKey[key] === req) {
+      catalogLoadingByKey.value = omitCatalogEntry(catalogLoadingByKey.value, key)
+    }
   }
 }
 
-// 全局地区切换 → 目录按新地区强制刷新（quality/skill 地区维；否则切 shanxi 仍显云南 skill/quality，job646）。
-// 仅在目录已加载过时才刷新，未挂载任何消费方时不预取（消费方 onMounted 的 ensureForecastCatalog 会按当前地区首载）。
-watch(() => currentRegion.value.id, () => { if (catalogLoaded) void ensureForecastCatalog(true) })
+// 加载后端模型目录。保留 ensureForecastCatalog(true) 旧调用语义，同时允许显式指定 target/targets + region。
+export async function ensureForecastCatalog(
+  targetOrForce: CatalogTargetInput | boolean = 'price',
+  forceOrRegion?: boolean | string,
+  regionIdArg?: string,
+): Promise<void> {
+  const { targets, force, regionId } = resolveEnsureCatalogArgs(targetOrForce, forceOrRegion, regionIdArg)
+  await Promise.all(targets.map((target) => loadCatalogTarget(target, force, regionId)))
+}
 
-// 供页面读取 catalog 加载态（选择器空态/失败提示）。
-export function forecastCatalogState(): { models: Ref<ForecastModel[]>; loading: Ref<boolean>; error: Ref<string> } {
-  return { models: mlCatalog, loading: catalogLoading, error: catalogError }
+// 全局地区切换 → 已消费过的 target 在新地区强制刷新（quality/skill 地区维；否则切区仍显旧区目录）。
+watch(() => currentRegion.value.id, (regionId, prevRegionId) => {
+  if (!prevRegionId || regionId === prevRegionId) return
+  const targets = [...new Set([...loadedTargetsForRegion(prevRegionId), ...loadingTargetsForRegion(prevRegionId)])]
+  if (targets.length) void ensureForecastCatalog(targets, true, regionId)
+})
+
+// 供页面读取 target-scope 的 catalog 加载态（选择器空态/失败提示）。
+export function forecastCatalogState(
+  targetsInput: MaybeRefOrGetter<CatalogTargetInput> = 'price',
+  regionIdInput?: MaybeRefOrGetter<string | undefined>,
+): { models: ComputedRef<ForecastModel[]>; loading: ComputedRef<boolean>; error: ComputedRef<string> } {
+  const models = computed(() => {
+    const regionId = toValue(regionIdInput) || currentRegion.value.id
+    const targets = normalizeCatalogTargets(toValue(targetsInput))
+    return mergeCatalogModels(regionId, targets)
+  })
+  const loading = computed(() => {
+    const regionId = toValue(regionIdInput) || currentRegion.value.id
+    const targets = normalizeCatalogTargets(toValue(targetsInput))
+    return anyCatalogLoading(regionId, targets)
+  })
+  const error = computed(() => {
+    const regionId = toValue(regionIdInput) || currentRegion.value.id
+    const targets = normalizeCatalogTargets(toValue(targetsInput))
+    return joinCatalogErrors(regionId, targets)
+  })
+  return { models, loading, error }
 }
 
 // 后端 registry tier（core/neural/deep/official/baseline/…）→ ForecastProvider tier，未知归 core。
@@ -420,10 +566,7 @@ function normalizeTier(tier: unknown): ForecastProvider['tier'] {
   return (t === 'official' || t === 'baseline' || t === 'core' || t === 'neural' || t === 'deep') ? t : 'core'
 }
 
-// 由注册表派生（顺序 = ForecastTarget 枚举顺序）；后端目录缺省 supportedTargets 时回退全集
-const ML_TARGETS = FORECAST_TARGET_OPTIONS.map((t) => t.id)
-
-function adaptMlResult(r: ForecastResult, modelId: string, granularity: 24 | 96, nativeSlots = 96): UnifiedForecastResult {
+export function adaptMlResult(r: ForecastResult, modelId: string, granularity: 24 | 96, nativeSlots = 96): UnifiedForecastResult {
   // 区间带按本标的原生点数判齐全（此前写死 96：60 分钟标的的 24 点区间会被当成「没有区间」）
   const hasBand = r.lower?.length === nativeSlots && r.upper?.length === nativeSlots
   return applyGranularity(
@@ -482,16 +625,13 @@ export function isPredictSupported(model: Pick<ForecastModel, 'modelId' | 'names
  * 第三道按腿判而不是要求一个模型两腿全覆盖——后者会把 remote: 与 store: 这类
  * 单 target 上架的真实模型整体挡在选择之外（#1461/#1898 的原限制），而那条限制的
  * 真实来源只是 /cockpit 聚合端点只收一个 model_type，不该扩散到四个带显式 target
- * 的调用点上。未声明 supportedTargets 的（core 模型）视为两腿都支持。
+ * 的调用点上。缺省/空 supportedTargets 都表示「没有登记这条腿的真实绑定」，不得放行。
  */
 export function isModelSelectableForTarget(
   model: Pick<ForecastModel, 'modelId' | 'namespace' | 'available' | 'supportedTargets'>,
   target: 'price' | 'load'
 ): boolean {
-  if (!model.available || !isPredictSupported(model)) return false
-  const declared = model.supportedTargets
-  if (declared && !declared.includes(target)) return false
-  return true
+  return isCatalogModelUsableForTarget(model, target)
 }
 
 /**
@@ -528,13 +668,17 @@ function makeMlProvider(model: ForecastModel): ForecastProvider {
     shadowGate: model.shadowGate,
     quality: model.quality,
     basisVersion: model.basisVersion,
-    // #1461：逐模型支持的目标清单以后端目录为准（physics_hybrid 仅 renewable 等）；
-    // 后端缺省该字段时回退 ML_TARGETS（全集），保旧目录兼容。
-    supportedTargets: model.supportedTargets ?? ML_TARGETS,
+    // #1461：逐模型支持的目标清单以后端目录为准（physics_hybrid 仅 renewable 等）。
+    // 缺省/空都视为「未登记真实输出绑定」，可以留在原始目录证据里，但不能进预测入口/台账计数。
+    supportedTargets: [...new Set(model.supportedTargets ?? [])],
+    supportedTargetsDeclared: model.supportedTargets !== undefined,
+    targetCapabilityKind: ['base', 'baseline', 'neural', 'deep', 'tslib'].includes(model.namespace ?? '')
+      ? 'runtime' : 'deployed',
     // 平台参数（训练回看/概率/共形）+ 模型自己声明的可调参数（dljy#2464：按 paramsSchema 渲染，不再一套配所有）
     paramsSchema: [...ML_PARAMS, ...modelParamFields(model.paramsSchema, ML_PARAM_KEYS)],
     io: model.io,
     lineage: model.lineage,
+    capabilities: model.capabilities,
     source: model.source,
     framework: model.framework,
     unit: model.unit,
@@ -576,8 +720,8 @@ function makeMlProvider(model: ForecastModel): ForecastProvider {
 // 消费方据此判"目录未标注"而放行，记分牌明确 passesSkillGate=false 也拦不住（#1453）。
 // 只并 quality/stage/shadowGate/basisVersion 这些目录侧事实，不动 available（knn 恒可用）
 // 与 run（固定 provider 有自己的 extra.k 等自定义逻辑）。
-function withCatalogQuality(provider: ForecastProvider): ForecastProvider {
-  const entry = mlCatalog.value.find((m) => m.modelId === provider.id)
+function withCatalogQuality(provider: ForecastProvider, target = 'price', regionId = currentRegion.value.id): ForecastProvider {
+  const entry = readCatalogModels(regionId, target).find((m) => m.modelId === provider.id)
   if (!entry) return provider
   return {
     ...provider,
@@ -588,13 +732,19 @@ function withCatalogQuality(provider: ForecastProvider): ForecastProvider {
   }
 }
 
-export const PROVIDERS: ComputedRef<ForecastProvider[]> = computed(() => [
-  withCatalogQuality(platformProvider),
-  withCatalogQuality(knnProvider),
-  // 排除与前端固定 provider 重复的 catalog id：knn/platform 由固定 provider 承担自定义逻辑
-  // （如 knn 的 extra.k、platform 的回放），否则重复 Vue key + PROVIDER_MAP 覆盖丢失固定行为。
-  ...mlCatalog.value.filter((m) => m.modelId !== 'knn' && m.modelId !== 'platform').map(makeMlProvider),
-])
+function providersFromCatalog(target = 'price', regionId = currentRegion.value.id): ForecastProvider[] {
+  const models = readCatalogModels(regionId, target)
+  return [
+    withCatalogQuality(platformProvider, target, regionId),
+    withCatalogQuality(knnProvider, target, regionId),
+    // 排除与前端固定 provider 重复的 catalog id：knn/platform 由固定 provider 承担自定义逻辑
+    // （如 knn 的 extra.k、platform 的回放），否则重复 Vue key + PROVIDER_MAP 覆盖丢失固定行为。
+    ...models.filter((m) => m.modelId !== 'knn' && m.modelId !== 'platform').map(makeMlProvider),
+  ]
+}
+
+// 向后兼容：无 target 上下文的旧调用仍视为默认 price。
+export const PROVIDERS: ComputedRef<ForecastProvider[]> = computed(() => providersFromCatalog('price', currentRegion.value.id))
 
 export const PROVIDER_MAP: ComputedRef<Record<string, ForecastProvider>> = computed(() =>
   Object.fromEntries(PROVIDERS.value.map((p) => [p.id, p])),
@@ -606,10 +756,12 @@ export function getProvider(id: string): ForecastProvider | undefined {
 
 // 某目标下可用的算法（用于工作台算法选择器按目标过滤）。available:false 模型仍返回（选择器禁用展示，不隐藏）。
 export function providersForTarget(target: string, regionId?: string): ForecastProvider[] {
-  return PROVIDERS.value.filter((p) => {
+  const activeRegionId = regionId ?? currentRegion.value.id
+  return providersFromCatalog(target, activeRegionId).map((p) => p.id === 'platform'
+    ? { ...p, supportedTargets: platformTargetsForRegion(activeRegionId), supportedTargetsDeclared: true } : p).filter((p) => {
     if (!p.supportedTargets.includes(target)) return false
     if (p.id !== 'platform') return true
-    return platformTargetsForRegion(regionId).includes(target)
+    return platformTargetsForRegion(activeRegionId).includes(target)
   })
 }
 

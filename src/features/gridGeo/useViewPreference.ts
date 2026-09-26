@@ -10,11 +10,19 @@ import { ref, watch, type Ref } from 'vue'
 
 import type { GridGeoTerrainProvider, GridGeoViewMode } from './types'
 
-const VIEW_MODES: readonly GridGeoViewMode[] = ['2d', '2.5d', '3d']
+// 白名单同时承担旧值迁移：本机存过 '2.5d' 的浏览器取值不过闸，自然回落到页面默认档，
+// 不需要额外的迁移代码。
+const VIEW_MODES: readonly GridGeoViewMode[] = ['2d', '3d']
 const TERRAIN_PROVIDERS: readonly GridGeoTerrainProvider[] = ['arcgis-terrain', 'cesium-world-terrain', 'ellipsoid']
 
-/** 山地夸张滑块区间，与 TerrainControlPanel 的 min/max 同口径。 */
-export const VERTICAL_EXAGGERATION_RANGE = { min: 1, max: 2.2 } as const
+/**
+ * 山地夸张滑块区间，与 TerrainControlPanel 的 min/max 同口径。
+ *
+ * 上限从 2.2 抬到 5：省域镜头（默认 245 万米高）下，云南 6000m 的高差相对视距只有
+ * 约 0.24%，乘 2.2 仍不到 0.6%，滑块推到底也看不出起伏——一个全程无感的控件等于没有。
+ * 5× 在同一镜头下能把山脊推到肉眼可辨，近距离巡视时又不至于失真成尖刺。
+ */
+export const VERTICAL_EXAGGERATION_RANGE = { min: 1, max: 5 } as const
 
 const STORAGE_PREFIX = 'dljy.grid-geo.view-pref'
 

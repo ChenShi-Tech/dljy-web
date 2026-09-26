@@ -11,6 +11,32 @@ import tseslint from 'typescript-eslint'
 import pluginVue from 'eslint-plugin-vue'
 import globals from 'globals'
 
+const SHARED_SCHEMA_PATTERN = {
+  group: ['shared/schema', 'shared/schema/*', 'shared/schema/**'],
+  message: '视图层禁直接 import shared/schema——请经 src/data/ 出口取用（见 DEVELOPMENT.md §6 分层约定）'
+}
+// 统一 AI 侧边栏的接入边界（unify-ai-sidebar EN-06）：业务页接入 AI 只经 @/features/aiSidebar，
+// 不直接内嵌对话内核——否则入口会再次分散成各页各一个对话框。
+const CHAT_KERNEL_PATTERN = {
+  group: ['**/agent/AgentChatPanel.vue', '@/components/agent/AgentChatPanel.vue'],
+  message: '业务视图不得直接内嵌对话内核——页面解读与提问请经 @/features/aiSidebar（defineAiPage / useAiSidebar）；流程步骤内嵌对话需登记到 eslint.config.js 白名单（见 DEVELOPMENT.md §3.4）'
+}
+const LEGACY_AI_PANEL_PATTERN = {
+  group: ['**/composables/useAiPanel', '**/composables/usePageInsight', '@/composables/useAiPanel', '@/composables/usePageInsight', '**/agent/AgentSidekick.vue'],
+  message: '全局 AI 面板接口已迁到 @/features/aiSidebar（useAiSidebar / defineAiPage）'
+}
+// 允许直接内嵌对话内核的文件：智能体工作台本身 + 作为流程步骤的内嵌对话（EN-05）。
+const EMBEDDED_CHAT_ALLOWLIST = [
+  'src/views/AgentWorkbenchView.vue',
+  'src/views/DeclarationDeskView.vue',
+  'src/views/StorageCopilotView.vue',
+  'src/components/review/ReportGenerateDialog.vue',
+  'src/components/review/workbench/ReviewAssistantWorkbench.vue',
+  'src/components/trading/stages/StageDirection.vue',
+  'src/components/trading/stages/StageMarketAnalysis.vue',
+  'src/components/trading/stages/StorageDispatchBlock.vue'
+]
+
 export default tseslint.config(
   // vendor/ 与 shared/ 为上游同步覆盖区（shared 由双主仓自己的门禁管），不在本仓 lint。
   // src/attic/ 是停用区：已下架但保留的功能，不参与构建/类型检查/lint（见该目录 README）。
@@ -50,6 +76,7 @@ export default tseslint.config(
   // 1) 视图层禁直接 import shared/schema：schema 是前后端同构契约，视图消费必须经
   //    src/data/ 出口（如 captureColumnLabels 的 re-export），否则 schema 结构调整会
   //    把破坏面直接扩散到视图层。
+  // 3) 视图层禁直接内嵌对话内核、禁用已移除的全局 AI 面板接口（统一 AI 侧边栏接入边界）。
   // 2) 视图层禁直接 fetch：取数必须经 src/services/（信封解析/鉴权头/地区头/重试都在
   //    那一层），散落 fetch 无法统一治理——/pi-api 代理被删后两页静默 404 即前车之鉴。
   //    features/ 不拦：gridGeo 的 geoJsonLoader 拉静态 geojson 资源属合法用法。
@@ -60,14 +87,7 @@ export default tseslint.config(
     rules: {
       'no-restricted-imports': [
         'error',
-        {
-          patterns: [
-            {
-              group: ['shared/schema', 'shared/schema/*', 'shared/schema/**'],
-              message: '视图层禁直接 import shared/schema——请经 src/data/ 出口取用（见 DEVELOPMENT.md §6 分层约定）'
-            }
-          ]
-        }
+        { patterns: [SHARED_SCHEMA_PATTERN, CHAT_KERNEL_PATTERN, LEGACY_AI_PANEL_PATTERN] }
       ],
       'no-restricted-syntax': [
         'error',
@@ -76,6 +96,12 @@ export default tseslint.config(
           message: '视图层禁直接 fetch——取数必须经 src/services/ 服务层（见 DEVELOPMENT.md §3.1 取数纪律）'
         }
       ]
+    }
+  },
+  {
+    files: EMBEDDED_CHAT_ALLOWLIST,
+    rules: {
+      'no-restricted-imports': ['error', { patterns: [SHARED_SCHEMA_PATTERN, LEGACY_AI_PANEL_PATTERN] }]
     }
   }
 )

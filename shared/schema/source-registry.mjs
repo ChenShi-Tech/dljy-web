@@ -269,7 +269,8 @@ const spotTargets = [
     ownerCompanyId: CGN_YUNNAN_COMPANY_ID,
     requiredFields: ['id', 'date', 'timePoint', 'plant', 'nodeName', 'dataType'],
     valueFields: ['price'],
-    expectedPointsPerDay: 96,
+    // 月包原始 hour_slot=0..23，yn-fact-special 同源归一 HH:00；不得扩成96点。
+    expectedPointsPerDay: 24,
     capturedAtField: 'date',
     qualityRules: { guardEmpty: true }
   }),
@@ -331,7 +332,9 @@ export const EXCEL_TEMPLATE_DECLARATIONS = Object.freeze({
   'yn-t0-node-price': {
     templateId: 'yn-t0-node-price',
     tier: 'T0',
-    label: '日前/实时节点电价按天分片',
+    // #2821 收紧为「日前」：模板/清单落点只有 day_ahead（装载 market 恒 'da'），
+    // 实时（rt）上传模板留待后续另开契约——标题不得声称不存在的覆盖面。
+    label: '日前节点电价按天分片',
     inputType: SOURCE_INPUT_TYPES.XLSX,
     ownership: SOURCE_OWNERSHIP.PUBLIC,
     parser: 'csv.nodePriceDaily',
@@ -586,6 +589,54 @@ const SOURCE_DECLARATIONS = {
         datasetKey: '*',
         ownership: SOURCE_OWNERSHIP.PUBLIC,
         requiredFields: ['id', 'area'],
+        qualityRules: { guardEmpty: true }
+      }),
+      // 南网披露表上传（issue #2825）：17 张 tb_disclosure_* → yn_disclosure_metric，
+      // datasetKey=源表短名（'*' 通配）。public 族，无公司归属校验；表头形状单一来源
+      // disclosure-table-specs.mjs，行归一化 yn-disclosure-upload.mjs。
+      target({
+        family: 'yn_disclosure_metric',
+        datasetKey: '*',
+        ownership: SOURCE_OWNERSHIP.PUBLIC,
+        requiredFields: ['id', 'operateDate', 'sourceTable', 'metric'],
+        valueFields: ['value'],
+        capturedAtField: 'operateDate',
+        qualityRules: { guardEmpty: true }
+      })
+    ],
+    ownership: SOURCE_OWNERSHIP.PUBLIC,
+    basis: 'captured',
+    sourceType: 'IMPORT',
+    mock: false,
+    productionWrite: false
+  },
+  // 上传批次撤销（revertUploadBatch）的 DB 重放通道：与 data-upload-center 同 targets。
+  // 历史缺陷修复（issue #2825 附带）：capture-family 批次撤销曾引用本 sourceId 却从未
+  // 登记，getSourceDeclaration 直接抛「未知 sourceId」——文件层已恢复而 DB 未回退且
+  // 台账未标 REVERTED 的三态不一致。target 集合必须与 data-upload-center 保持一致
+  // （撤销重放的数据形状=当初提交的数据形状）。
+  'data-upload-center-revert': {
+    sourceId: 'data-upload-center-revert',
+    label: '数据运维台上传批次撤销（DB 重放）',
+    inputType: SOURCE_INPUT_TYPES.MANUAL,
+    parser: 'uploadContracts.captureFamily.revert',
+    fieldMappings: { datasetKey: '与 data-upload-center 同 targets（撤销重放=恢复提交前数据形状）' },
+    timeAxis: TIME_AXIS.TIME,
+    targets: [
+      target({
+        family: 'market_analysis',
+        datasetKey: '*',
+        ownership: SOURCE_OWNERSHIP.PUBLIC,
+        requiredFields: ['id', 'area'],
+        qualityRules: { guardEmpty: true }
+      }),
+      target({
+        family: 'yn_disclosure_metric',
+        datasetKey: '*',
+        ownership: SOURCE_OWNERSHIP.PUBLIC,
+        requiredFields: ['id', 'operateDate', 'sourceTable', 'metric'],
+        valueFields: ['value'],
+        capturedAtField: 'operateDate',
         qualityRules: { guardEmpty: true }
       })
     ],
@@ -858,8 +909,12 @@ const SOURCE_DECLARATIONS = {
       privatePgTarget({
         resourceKind: 'market_series',
         factTable: 'dljy_private.fact_company_market_series',
-        // 从层 1 派生而非手写：层 1 增删曲线时这里自动跟随，不会静默漂移
-        datasetRefs: listGridDatasetCodes('csg', 'market_series'),
+        // 取得通道的支持范围必须显式声明；公开目录新增 CSV 指标不能扩张此 API。
+        datasetRefs: [
+          'load_forecast', 'load_actual', 'new_energy_forecast', 'new_energy_actual',
+          'non_market_forecast', 'non_market_actual', 'total_generation_forecast',
+          'total_generation_actual', 'hydro_generation_actual', 'user_price_day_ahead', 'user_price_real_time',
+        ],
         checkpointKeyShape: '<series>',
         requiredFields: ['series', 'date', 'time_point'],
         qualityRules: { guardEmpty: true }
@@ -879,6 +934,102 @@ const SOURCE_DECLARATIONS = {
     sourceType: 'REAL',
     mock: false,
     // 未启用真实采集前恒 false；启用由四重显式激活控制，不由本声明决定
+    productionWrite: false
+  },
+  // 中广核电厂映射表人工权威上传通道（issue #2823）：数据运维台上传中心 cgn-mapping 契约的
+  // 声明式落库 source。与 cgn-yunnan-data-api-v1（厂侧 API 持续采集，落 dljy_private 隔离域）
+  // 完全不同的输入形态——人工核对过的 Excel 全量映射表 → capture 三族（yn_dim_plant/_alias/
+  // _node），与 import:spot-export（月包 CSV 机器重建）同族不同通道（先例：import-hub-
+  // market-analysis vs market-export-batch）。整族替换（ingestRows 按 family+region+datasetKey
+  // DELETE+INSERT），谁最后跑谁生效——语义即「人工权威表全量替换机器重建」。
+  // 旧 CLI import:cgn-mapping 保持「报告 + dim_*.json merge」职责不动（source-registry.md
+  // 搁置段针对的就是它的声明式迁移），与本通道互不影响。
+  'cgn-mapping-upload': {
+    sourceId: 'cgn-mapping-upload',
+    label: '中广核电厂映射表人工权威上传（上传中心）',
+    inputType: SOURCE_INPUT_TYPES.XLSX,
+    parser: 'uploadContracts.cgnMapping（契约列别名入口匹配 + cgn-mapping-core 行级解析）',
+    fieldMappings: {
+      columns: 'shared/schema/upload-contracts.mjs 契约 cgn-mapping（name=真实表头原文，aliases 吸收人工表格字序变体）',
+      rowSemantics: 'scripts/etl/lib/cgn-mapping-core.mjs（机制比例带 % ÷100、缺测 null 不写 0、脏值告警）'
+    },
+    timeAxis: TIME_AXIS.TIME,
+    targets: [
+      target({
+        family: 'yn_dim_plant',
+        datasetKey: 'yn_dim_plant',
+        ownership: SOURCE_OWNERSHIP.COMPANY,
+        requiredFields: ['id', 'standardName'],
+        qualityRules: { guardEmpty: true }
+      }),
+      target({
+        family: 'yn_dim_plant_alias',
+        datasetKey: 'yn_dim_plant_alias',
+        ownership: SOURCE_OWNERSHIP.COMPANY,
+        requiredFields: ['id', 'standardName', 'sourceType'],
+        qualityRules: { guardEmpty: true }
+      }),
+      target({
+        family: 'yn_dim_plant_node',
+        datasetKey: 'yn_dim_plant_node',
+        ownership: SOURCE_OWNERSHIP.COMPANY,
+        requiredFields: ['id', 'standardName'],
+        qualityRules: { guardEmpty: true }
+      })
+    ],
+    ownership: SOURCE_OWNERSHIP.COMPANY,
+    ownerCompanyId: CGN_YUNNAN_COMPANY_ID,
+    basis: 'captured',
+    sourceType: 'IMPORT',
+    mock: false,
+    productionWrite: false
+  },
+  // 月包导出表上传（issue #2824，上传中心 kind='cgn-spot-export' 的 replace 通道）：
+  // plant_master_mapping 月包独有且无通道的 3 张维度表 → 新 DIM 族，全量快照整族替换
+  // （同 cgn-mapping-upload「谁最后跑谁生效」）；行形状复用 import:spot-export 的
+  // DIM_FAMILIES normalize（dim_plant_capacity/dim_node/dim_self_owned_plant），两条通道
+  // 零漂移。A–D 类增量契约不走本声明（captureStore.ingestRowsIncremental 直连，feed=
+  // 'spot-export-upload'，见 server/data/spot-export-upload.mjs）。
+  // station_node_mapping_price_db 有意不接入：已有 yn-t1-station-node 归档契约与
+  // dim_station_node.json 两处出口，capture 通道与节点基差二期绑定（issue #2824 评论）。
+  'cgn-spot-export-upload': {
+    sourceId: 'cgn-spot-export-upload',
+    label: '中广核月包导出表上传（上传中心·DIM 余量 3 族）',
+    inputType: SOURCE_INPUT_TYPES.EXPORT_PKG,
+    parser: 'uploadContracts.cgnSpotExport（契约 plan 按月包文件名选表 + DIM_FAMILIES normalize 复用）',
+    fieldMappings: {
+      columns: 'shared/schema/upload-contracts.mjs 契约 cgn-plant-dim-extra（plans 表名 = 月包文件名剥 _YYYYMM）',
+      rowSemantics: 'scripts/etl/import-spot-export.mjs DIM_FAMILIES（normalize 输入=月包 CSV 原行，命令行/UI 同函数）'
+    },
+    timeAxis: TIME_AXIS.TIME,
+    targets: [
+      target({
+        family: 'yn_dim_plant_capacity',
+        datasetKey: 'yn_dim_plant_capacity',
+        ownership: SOURCE_OWNERSHIP.COMPANY,
+        requiredFields: ['id', 'plantName'],
+        qualityRules: { guardEmpty: true }
+      }),
+      target({
+        family: 'yn_dim_node',
+        datasetKey: 'yn_dim_node',
+        ownership: SOURCE_OWNERSHIP.COMPANY,
+        requiredFields: ['id', 'nodeName'],
+        qualityRules: { guardEmpty: true }
+      }),
+      target({
+        family: 'yn_dim_self_owned_plant',
+        datasetKey: 'yn_dim_self_owned_plant',
+        ownership: SOURCE_OWNERSHIP.COMPANY,
+        requiredFields: ['id', 'tradeCenter'],
+        qualityRules: { guardEmpty: true }
+      })
+    ],
+    ownership: SOURCE_OWNERSHIP.COMPANY,
+    ownerCompanyId: CGN_YUNNAN_COMPANY_ID,
+    basis: 'captured',
+    sourceType: 'IMPORT',
+    mock: false,
     productionWrite: false
   },
 }

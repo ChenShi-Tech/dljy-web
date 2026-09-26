@@ -29,6 +29,8 @@ import {
   type LlmServiceTier
 } from '@/services/llm'
 import { ROLE_LABELS } from '@/services/agent/agentConfig'
+import { canWriteSharedResources } from '@/services/governance'
+import { getCurrentUser } from '@/services/auth'
 
 const emit = defineEmits<{ loaded: [services: LlmServices] }>()
 
@@ -38,6 +40,11 @@ const loadError = ref('')
 const saving = ref(false)
 const testing = ref<string>('')
 const testResult = ref<Record<string, { ok: boolean; msg: string }>>({})
+
+// 共享资源写权限（dljy#3226 · 规格 AA-06.2）：内部版仅平台超管可写，BOSS 等角色只读。
+// 只控写控件——档位清单、额度展示与连通探测保持可用；后端是唯一裁决。
+const canWrite = computed(() => canWriteSharedResources(getCurrentUser()?.roleCode))
+const WRITE_LOCKED_TITLE = '仅平台超管可操作'
 
 // ---- 接入凭据（#2701）----
 const credentialUrl = ref('')
@@ -301,6 +308,18 @@ async function doTest(tier: LlmServiceTier) {
       这里只需勾选启用哪些档位、并为各智能体角色指定档位；密钥由供应方提供，在下方「接入凭据」处填写一次即可；页面不显示密钥明文。
     </p>
 
+    <!-- 共享资源写权限（dljy#3226）：非平台超管只读视角，写控件整体禁用，读与探测不受影响 -->
+    <el-alert
+      v-if="!canWrite"
+      type="info"
+      :closable="false"
+      show-icon
+      class="readonly"
+      data-test="write-locked"
+      title="仅平台超管可操作"
+      description="当前账号为只读视角：修改接入凭据、启用档位或调整角色路由需平台超管；额度与连通探测不受影响。"
+    />
+
     <!-- 接入凭据（始终显示）：明文只随 PUT 直传服务端，这里只有地址输入与尾号回显 -->
     <section class="credential-card">
       <div class="cred-head">
@@ -311,7 +330,7 @@ async function doTest(tier: LlmServiceTier) {
       <div class="cred-form">
         <div class="cred-field">
           <label>模型服务地址</label>
-          <el-input v-model="credentialUrl" placeholder="供应方提供的模型服务地址" :disabled="credentialSaving" />
+          <el-input v-model="credentialUrl" placeholder="供应方提供的模型服务地址" :disabled="credentialSaving || !canWrite" />
         </div>
         <div class="cred-field">
           <label>模型服务密钥</label>
@@ -320,13 +339,13 @@ async function doTest(tier: LlmServiceTier) {
             type="password"
             show-password
             placeholder="粘贴供应方提供的密钥"
-            :disabled="credentialSaving"
+            :disabled="credentialSaving || !canWrite"
             @keyup.enter="onSaveCredential"
           />
         </div>
         <div class="cred-actions">
-          <el-button type="primary" :loading="credentialSaving" @click="onSaveCredential">验证并保存</el-button>
-          <el-button v-if="credential?.source === 'ui'" :disabled="credentialSaving" @click="onClearCredential">清除</el-button>
+          <el-button type="primary" :loading="credentialSaving" :disabled="!canWrite" :title="canWrite ? undefined : WRITE_LOCKED_TITLE" @click="onSaveCredential">验证并保存</el-button>
+          <el-button v-if="credential?.source === 'ui'" :disabled="credentialSaving || !canWrite" :title="canWrite ? undefined : WRITE_LOCKED_TITLE" @click="onClearCredential">清除</el-button>
           <span v-if="credentialError" class="cred-error">{{ credentialError }}</span>
         </div>
       </div>
@@ -354,7 +373,8 @@ async function doTest(tier: LlmServiceTier) {
             <span class="tier-label">{{ t.label }}</span>
             <el-switch
               :model-value="t.enabled && t.available"
-              :disabled="!t.available || saving"
+              :disabled="!t.available || saving || !canWrite"
+              :title="canWrite ? undefined : WRITE_LOCKED_TITLE"
               size="small"
               @change="(v: string | number | boolean) => onToggleTier(t, v === true)"
             />
@@ -390,7 +410,8 @@ async function doTest(tier: LlmServiceTier) {
             <el-select
               :model-value="role.tier ?? ''"
               class="route-select"
-              :disabled="saving"
+              :disabled="saving || !canWrite"
+              :title="canWrite ? undefined : WRITE_LOCKED_TITLE"
               :placeholder="role.tier ? '' : '默认档位未开通'"
               @change="(v: string) => onRoleChange(role, v)"
             >
@@ -486,6 +507,7 @@ async function doTest(tier: LlmServiceTier) {
 .sub strong { color: var(--primary); }
 .sub2 { margin: 0 0 14px; font-size: var(--font-12-5); line-height: 1.6; color: var(--muted); }
 .unavailable { margin-top: 4px; }
+.readonly { margin-bottom: 14px; }
 
 .tier-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
 .tier-card {

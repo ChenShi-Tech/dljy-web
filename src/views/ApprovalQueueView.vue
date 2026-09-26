@@ -9,6 +9,8 @@ import {
   declarationModeOf,
   DECLARATION_MODE_LABEL,
   listDeclarationsPage,
+  PRE_APPROVAL_STATUSES,
+  secondSignatureNotice,
   STATUS_LABEL,
   type DeclarationListParams,
   type DeclarationMode,
@@ -17,6 +19,7 @@ import {
 } from '@/services/declarations'
 import { exportCsv } from '../utils/exportCsv'
 import { todayBeijing } from '@/utils/beijingDate'
+import { getCurrentUser } from '@/services/auth'
 import { onRegionChange } from '../composables/useRegionReload'
 import RegionDataBanner from '@/components/region/RegionDataBanner.vue'
 
@@ -36,10 +39,31 @@ const visible = computed(() =>
 
 const pending = computed(() => visible.value.filter((d) => d.status === 'PENDING_APPROVAL'))
 
+// 审批可见性（UI 门，非安全边界；权威判定在服务端 APPROVE_ROLES + 自审禁止）。
+// 此前本页对所有待审批行渲染按钮，无权/创建人点了才吃 403——与申报台视图同口径镜像。
+// 两处角色集合须与服务端 APPROVE_ROLES 保持同步。
+const APPROVE_ROLES_UI = ['TRADE_LEAD', 'RISK', 'ADMIN', 'BOSS']
+const ELEVATED_ROLES_UI = ['ADMIN', 'BOSS']
+const currentUserName = computed(() => getCurrentUser().username)
+const currentUserRole = computed(() => String(getCurrentUser().roleCode ?? ''))
+function approvalDeniedReason(d: DeclarationOrder): string {
+  if (!APPROVE_ROLES_UI.includes(currentUserRole.value)) {
+    return `当前角色 ${currentUserRole.value || '未知'} 无审批权限`
+  }
+  if (
+    d.createdBy === currentUserName.value
+    && !ELEVATED_ROLES_UI.includes(currentUserRole.value)
+    && declarationModeOf(d) !== 'REHEARSAL'
+  ) {
+    return '创建人不得审批本人申报单'
+  }
+  return ''
+}
+
 // 反向定义（排除未进入审批环节的三个状态）而非正向白名单：原白名单
 // ['APPROVED','REJECTED','SUBMITTED','ACKNOWLEDGED'] 漏了 CLEARED/EXPIRED，
 // 使已走完全流程的存量单在本页整体不可见。反向定义后新增状态不会再漏。
-const PRE_APPROVAL_STATUSES = ['DRAFT', 'RISK_CHECKED', 'PENDING_APPROVAL']
+// 常量本体收口到 services/declarations 单源（spot-trading-module-hygiene）。
 const recentDecided = computed(() =>
   visible.value
     .filter((d) => !PRE_APPROVAL_STATUSES.includes(d.status) && d.approvalRecord.length)
@@ -65,6 +89,11 @@ const modeCounts = computed(() =>
     (acc, d) => { acc[declarationModeOf(d)] += 1; return acc },
     { LIVE: 0, REHEARSAL: 0 } as Record<DeclarationMode, number>
   )
+)
+// 勾选框文案拆两个数：「共 N」是全库历史模拟单存量（含已决/逾期，与下方「全部申报单」区同口径），
+// 「待审 M」才对应上方卡片队列（仅 PENDING_APPROVAL）——只写总数会让人以为勾上会出现 N 张卡。
+const rehearsalPendingCount = computed(
+  () => all.value.filter((d) => declarationModeOf(d) === 'REHEARSAL' && d.status === 'PENDING_APPROVAL').length
 )
 
 // 服务端 list 默认 limit=200、上限 500。本页要在客户端算待审批/模式计数/全部申报单，
@@ -135,6 +164,11 @@ async function load() {
 
 async function decide(declaration: DeclarationOrder, decision: 'approve' | 'reject') {
   if (busyId.value) return
+  const denied = approvalDeniedReason(declaration)
+  if (denied) {
+    ElMessage.warning(denied)
+    return
+  }
   if (decision === 'reject') {
     // 驳回属不可逆危险操作,先二次确认
     try {
@@ -149,8 +183,14 @@ async function decide(declaration: DeclarationOrder, decision: 'approve' | 'reje
   }
   busyId.value = declaration.id
   try {
-    await approveDeclaration(declaration.id, decision, comments.value[declaration.id] || undefined)
-    ElMessage.success(decision === 'approve' ? '已批准' : '已驳回')
+    const updated = await approveDeclaration(declaration.id, decision, comments.value[declaration.id] || undefined)
+    // L3 双签第一签：服务端只落签不转态，明示等待第二签而不是让人以为已批准
+    const secondSignNote = secondSignatureNotice(updated)
+    if (secondSignNote) {
+      ElMessage.warning(secondSignNote)
+    } else {
+      ElMessage.success(decision === 'approve' ? '已批准' : '已驳回')
+    }
     comments.value[declaration.id] = ''
     await load()
   } catch (error) {
@@ -175,7 +215,7 @@ function exportRecords() {
       STATUS_LABEL[d.status],
       last?.approver ?? '',
       last?.role ?? '',
-      last ? (last.decision === 'approve' ? '批准' : '驳回') : '',
+      last ? (last.decision === 'approve' ? (last.dualSignPending ? '批准（L3 第一签·待第二签）' : '批准') : '驳回') : '',
       last?.comment ?? ''
     ]
   })
@@ -218,7 +258,7 @@ onRegionChange(load)
         <h2>申报审批队列</h2>
         <span>待审批申报单集中处理（DecisionGate 档位与风控结论随单展示，审批留痕 approvalRecord）</span>
         <el-checkbox v-model="showRehearsal" size="small" style="margin-left: auto">
-          显示历史模拟单（{{ modeCounts.REHEARSAL }}）
+          显示历史模拟单（共 {{ modeCounts.REHEARSAL }} · 待审 {{ rehearsalPendingCount }}）
         </el-checkbox>
         <el-button size="small" :loading="loading" @click="load">刷新</el-button>
       </div>
@@ -235,6 +275,9 @@ onRegionChange(load)
           <el-tag size="small" :type="d.riskCheck?.gateLevel === 'L3' ? 'danger' : 'success'">
             {{ d.riskCheck?.gateLevel ?? 'L2' }}
           </el-tag>
+          <el-tag v-if="d.l3Signatures?.length" size="small" type="danger" effect="plain">
+            L3 已有一签（{{ d.l3Signatures.map((s) => s.approver).join('、') }}）· 待第二签
+          </el-tag>
           <span class="muted">目标日 {{ d.targetDate }} · {{ deadlineText(d) }} · 创建人 {{ d.createdBy }} · 来源 {{ d.strategySource }}</span>
         </div>
         <div class="card-body">
@@ -247,11 +290,25 @@ onRegionChange(load)
         </div>
         <div class="card-actions">
           <el-input v-model="comments[d.id]" size="small" placeholder="审批意见（留痕）" style="max-width: 360px" />
-          <el-button size="small" type="success" :loading="busyId === d.id" @click="decide(d, 'approve')">
-            {{ declarationModeOf(d) === 'REHEARSAL' ? '批准（演练）' : '批准' }}
+          <el-button
+            size="small"
+            type="success"
+            :loading="busyId === d.id"
+            :disabled="!!approvalDeniedReason(d)"
+            :title="approvalDeniedReason(d)"
+            @click="decide(d, 'approve')"
+          >
+            {{ declarationModeOf(d) === 'REHEARSAL' ? '批准（演练）' : (d.l3Signatures?.length ? '批准（第二签）' : '批准') }}
           </el-button>
-          <el-button size="small" type="danger" :loading="busyId === d.id" @click="decide(d, 'reject')">驳回</el-button>
-          <el-button size="small" text @click="router.push({ path: '/xhjy/desk' })">去申报台查看</el-button>
+          <el-button size="small" type="danger" :loading="busyId === d.id" :disabled="!!approvalDeniedReason(d)" :title="approvalDeniedReason(d)" @click="decide(d, 'reject')">驳回</el-button>
+          <!-- 与「全部申报单」区行按钮同参数：不带 declarationId 申报台只按日期默认选 list[0]；
+               演练单目标日多为历史日期，连 targetDate 都不带时申报台停在默认未来日，单完全不可见 -->
+          <el-button
+            size="small"
+            text
+            @click="router.push({ path: '/xhjy/desk', query: { targetDate: d.targetDate, declarationId: d.id } })"
+          >去申报台查看</el-button>
+          <span v-if="approvalDeniedReason(d)" class="muted">{{ approvalDeniedReason(d) }}，按钮已置灰</span>
         </div>
       </div>
     </section>
@@ -273,7 +330,9 @@ onRegionChange(load)
             <template v-if="row.approvalRecord.length">
               {{ row.approvalRecord[row.approvalRecord.length - 1].approver }}
               （{{ row.approvalRecord[row.approvalRecord.length - 1].role }}）
-              {{ row.approvalRecord[row.approvalRecord.length - 1].decision === 'approve' ? '批准' : '驳回' }}
+              {{ row.approvalRecord[row.approvalRecord.length - 1].decision === 'approve'
+                ? (row.approvalRecord[row.approvalRecord.length - 1].dualSignPending ? '批准（L3 第一签·待第二签）' : '批准')
+                : '驳回' }}
               {{ row.approvalRecord[row.approvalRecord.length - 1].comment ? `：${row.approvalRecord[row.approvalRecord.length - 1].comment}` : '' }}
               <el-tag v-if="row.approvalRecord[row.approvalRecord.length - 1].rehearsalSelfApproval" size="small" type="warning">
                 演练自批

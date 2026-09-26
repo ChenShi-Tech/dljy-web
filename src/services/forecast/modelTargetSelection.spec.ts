@@ -17,10 +17,10 @@ const model = (over: Partial<M>): M => ({
 } as M)
 
 describe('isModelSelectableForTarget', () => {
-  it('未声明 supportedTargets 的 core 模型两腿都可选（旧行为不回归）', () => {
+  it('未声明 supportedTargets 的模型两腿都不可选（缺省不能冒充真实绑定）', () => {
     const m = model({ modelId: 'xgboost', namespace: 'base' })
-    expect(isModelSelectableForTarget(m, 'price')).toBe(true)
-    expect(isModelSelectableForTarget(m, 'load')).toBe(true)
+    expect(isModelSelectableForTarget(m, 'price')).toBe(false)
+    expect(isModelSelectableForTarget(m, 'load')).toBe(false)
   })
 
   it('只声明 price 的远端模型：价格腿可选、负荷腿不可选', () => {
@@ -53,9 +53,7 @@ describe('isModelSelectableForTarget', () => {
     expect(isModelSelectableForTarget(m, 'load')).toBe(false)
   })
 
-  it('空的 supportedTargets 数组当作「没有声明任何腿」，两腿都不可选', () => {
-    // 判据用 declared.includes(target)，空数组恒 false——这是要的语义：
-    // 后端明确回了一个空清单，说明它哪条腿都不支持，不能当成「没声明所以都行」。
+  it('空的 supportedTargets 数组当作「没有接入任何输出目标」，两腿都不可选', () => {
     const m = model({ modelId: 'remote:empty', namespace: 'remote', supportedTargets: [] })
     expect(isModelSelectableForTarget(m, 'price')).toBe(false)
     expect(isModelSelectableForTarget(m, 'load')).toBe(false)

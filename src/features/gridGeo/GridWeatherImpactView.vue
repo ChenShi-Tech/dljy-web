@@ -1,37 +1,58 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, shallowRef, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
 import { selectedCompanyId } from '@/services/company/companyContext'
 import { currentRegion } from '@/services/region/regionContext'
+import { todayBeijing } from '@/utils/beijingDate'
 import { Activity, AlertTriangle, ArrowRight, CloudRain, Gauge, Orbit, RefreshCw, Wind, Zap } from 'lucide-vue-next'
 import { onRegionChange } from '@/composables/useRegionReload'
-import CesiumPlantMap from './CesiumPlantMap.vue'
-import TerrainControlPanel from './TerrainControlPanel.vue'
-import { useGridGeoViewPreference } from './useViewPreference'
+import ProvinceFlatMap from './ProvinceFlatMap.vue'
+import PlantCatalogPanel from './PlantCatalogPanel.vue'
 import GridOperatorProfileBanner from './GridOperatorProfileBanner.vue'
 import WeatherTrackTimeline from './WeatherTrackTimeline.vue'
+import GridObjectContextBar from './GridObjectContextBar.vue'
+import GridObjectDrawer from './GridObjectDrawer.vue'
+import type { GridObjectReference } from './objectNavigation'
+import { useGridObjectContext } from './useGridObjectContext'
 import { fetchGridGeoManifest, fetchGridGeoPlants } from './client'
 import { loadWeatherImpact, type WeatherImpactResult } from './weatherImpact'
 import type { WeatherTrackId } from './weatherTracks'
-import type { GridGeoPlant, GridGeoSelection, GridGeoTerrainStatus, GridGeoViewMode, GridOperatorProfile } from './types'
+import type { GridGeoPlant, GridGeoSelection, GridOperatorProfile } from './types'
+
+type MapExpose = { flyTerrainTour?: () => void }
+const mapRef = ref<MapExpose | null>(null)
+const objectContext = useGridObjectContext()
+const detailOpen = ref(false)
 
 const plants = shallowRef<GridGeoPlant[]>([])
 const selectedPlantId = ref('')
-const date = ref('2026-05-01')
+const date = ref(objectContext.hasContext.value ? objectContext.date.value : todayBeijing())
+const selectedWindow = computed(() => date.value === objectContext.date.value ? objectContext.timeWindow.value : null)
 const decisionHour = ref(12)
 const result = shallowRef<WeatherImpactResult | null>(null)
 const loading = ref(true)
 const error = ref('')
-const { viewMode, terrainProvider, hillshadeEnabled, verticalExaggeration } =
-  useGridGeoViewPreference('weather', { verticalExaggeration: 1.35 })
-const terrainStatus = ref<GridGeoTerrainStatus>({ kind: terrainProvider.value, status: 'loading', label: '正在加载高程地形' })
-// 晕渲图层与 ArcGIS 影像同域，该域对部分出口 IP 整体 403；失败必须让面板可见。
-const hillshadeAvailable = ref<boolean | null>(null)
+const assetsLoading = ref(true)
+// 本页只有平面图：2026-09-09 用户拍板取消三维。气象影响看的是「哪个场站、哪一小时」
+// 的时序关系，地形起伏对这件事没有信息量，一套三维只是多一份加载与操作成本。
+const catalogFiltered = ref<GridGeoPlant[]>([])
+const catalogContextKey = ref(0)
+const catalogStats = ref<{ locatedPlantCount: number; totalPlantCountInCurrentDim: number; unresolvedPlantCount: number | null } | null>(null)
 const operatorProfile = ref<GridOperatorProfile | null>(null)
 const selectedTrackId = ref<WeatherTrackId>('d1')
 const cursorHour = ref(12)
 const selectedPlant = computed(() => plants.value.find((plant) => plant.plantId === selectedPlantId.value) ?? null)
+const selectedReference = computed<GridObjectReference | null>(() => selectedPlant.value ? { kind: 'plant', id: selectedPlant.value.plantId, regionId: selectedPlant.value.regionId, gridOperator: selectedPlant.value.gridOperator } : null)
+const contextPlants = computed(() => {
+  if (!objectContext.active.value) return []
+  if (!objectContext.hasContext.value) return plants.value
+  const reference = objectContext.reference.value, detail = objectContext.detail.value
+  if (!reference || !detail) return []
+  const ids = reference.kind === 'plant' ? [reference.id] : detail.relations.plants.filter((plant) => plant.regionId === currentRegion.value.id).map((plant) => plant.id)
+  return plants.value.filter((plant) => ids.includes(plant.plantId))
+})
 const downstreamQuery = computed(() => ({ plantId: selectedPlantId.value, date: date.value, weatherTrack: selectedTrackId.value, hour: cursorHour.value, decisionHour: decisionHour.value }))
 const riskPath = computed(() => currentRegion.value.id === 'yunnan' ? '/xhjy/yunnan/spot-pnl' : '/xhjy/risk-center')
+let appliedObjectContext = ''
 let loadRequestId = 0
 let impactRequestId = 0
 
@@ -42,8 +63,9 @@ function correlationText(item: { value: number | null; samples: number }) {
 }
 
 async function loadImpact() {
-  if (!selectedPlant.value) return
   const requestId = ++impactRequestId
+  result.value = null
+  if (!selectedPlant.value || !contextPlants.value.some((plant) => plant.plantId === selectedPlantId.value)) { loading.value = false; return }
   const plant = selectedPlant.value
   const companyId = selectedCompanyId.value
   const regionId = currentRegion.value.id
@@ -63,22 +85,46 @@ async function loadImpact() {
   finally { if (requestId === impactRequestId) loading.value = false }
 }
 
+async function syncObjectSelection() {
+  if (!objectContext.active.value) return
+  impactRequestId += 1; result.value = null
+  if (objectContext.hasContext.value) {
+    const reference = objectContext.reference.value
+    const key = JSON.stringify([reference, objectContext.date.value, objectContext.timeWindow.value, selectedCompanyId.value])
+    if (key !== appliedObjectContext) {
+      appliedObjectContext = key
+      catalogContextKey.value += 1
+      selectedPlantId.value = ''
+      if (reference) date.value = objectContext.date.value
+      if (objectContext.timeWindow.value) cursorHour.value = new Date(Date.parse(objectContext.timeWindow.value.from) + 8 * 3600_000).getUTCHours()
+    }
+    if (assetsLoading.value || objectContext.loading.value) { loading.value = true; return }
+    if (!contextPlants.value.length) { selectedPlantId.value = ''; loading.value = false; error.value = objectContext.error.value || '当前对象尚未关联本公司、本地区的场站，未加载其他场站数据。'; return }
+  } else appliedObjectContext = ''
+  if (!contextPlants.value.some((plant) => plant.plantId === selectedPlantId.value)) selectedPlantId.value = contextPlants.value[0]?.plantId ?? ''
+  await loadImpact()
+}
+
 async function load() {
   const requestId = ++loadRequestId
+  assetsLoading.value = true
+  impactRequestId += 1; result.value = null
   loading.value = true
   error.value = ''
   try {
     const [response, manifest] = await Promise.all([fetchGridGeoPlants(), fetchGridGeoManifest()])
     if (requestId !== loadRequestId) return
     plants.value = response.data?.items ?? []
+    catalogStats.value = response.data?.catalog ?? null
     operatorProfile.value = manifest.operatorProfile
-    if (!plants.value.some((plant) => plant.plantId === selectedPlantId.value)) selectedPlantId.value = plants.value[0]?.plantId ?? ''
-    await loadImpact()
+    assetsLoading.value = false
+    await syncObjectSelection()
   } catch (cause) {
     if (requestId !== loadRequestId) return
     error.value = cause instanceof Error ? cause.message : '空间资产加载失败'
+    loading.value = false
   }
-  finally { if (requestId === loadRequestId) loading.value = false }
+  finally { if (requestId === loadRequestId) assetsLoading.value = false }
 }
 
 function resetDataScope() {
@@ -92,7 +138,7 @@ function resetDataScope() {
 }
 
 function onMapSelect(selection: GridGeoSelection | null) {
-  if (!selection) return
+  if (!selection || !contextPlants.value.some((plant) => plant.plantId === selection.plantId)) return
   selectedPlantId.value = selection.plantId
   void loadImpact()
 }
@@ -100,6 +146,8 @@ function onMapSelect(selection: GridGeoSelection | null) {
 onMounted(load)
 onRegionChange(resetDataScope)
 watch(selectedCompanyId, resetDataScope)
+watch(() => [objectContext.hasContext.value, objectContext.reference.value, objectContext.detail.value, objectContext.loading.value, objectContext.date.value, objectContext.timeWindow.value, objectContext.active.value], syncObjectSelection)
+onBeforeUnmount(() => { loadRequestId += 1; impactRequestId += 1 })
 </script>
 
 <template>
@@ -108,34 +156,37 @@ watch(selectedCompanyId, resetDataScope)
     <header>
       <div class="heading"><span><CloudRain :size="22" /></span><div><small>WEATHER × POWER × PRICE</small><h2>气象交易影响时序</h2></div></div>
       <div class="filters">
-        <select v-model="selectedPlantId" @change="loadImpact"><option v-for="plant in plants" :key="plant.plantId" :value="plant.plantId">{{ plant.standardName }}</option></select>
-        <input v-model="date" type="date" />
+        <select v-model="selectedPlantId" :disabled="!contextPlants.length" aria-label="关联场站" @change="loadImpact"><option v-if="!contextPlants.length" value="">暂无已确认关联场站</option><option v-for="plant in contextPlants" :key="plant.plantId" :value="plant.plantId">{{ plant.standardName }}</option></select>
+        <button :disabled="!selectedPlant" @click="detailOpen = true">完整信息</button>
+        <input v-model="date" type="date" @change="loadImpact" />
         <label class="decision-hour">截止<select v-model.number="decisionHour" aria-label="决策截止小时"><option v-for="hour in 24" :key="hour - 1" :value="hour - 1">{{ String(hour - 1).padStart(2, '0') }}:00</option></select></label>
         <button :disabled="loading" @click="loadImpact"><RefreshCw :size="14" :class="{ spin: loading }" /> 更新</button>
       </div>
     </header>
+    <GridObjectContextBar :date="date" />
+    <GridObjectDrawer v-model="detailOpen" :object="selectedReference" :date="date" :from="selectedWindow?.from" :to="selectedWindow?.to" />
 
     <div class="asof-warning"><AlertTriangle :size="16" /><span><b>四轨遵循 as-of 边界</b>：预报轨只消费 weather_asof 中 forecastAt ≤ 决策截止 ＜ validAt 的真实版本；缺源显式空段，ERA5 实况永不回填预报。</span></div>
     <div class="causality-warning"><AlertTriangle :size="17" /><b>相关性 ≠ 因果</b><span>下方相关系数与事后偏差只描述同小时共变，不能证明天气导致出力、价格或风险变化，也不是结算依据。</span></div>
 
     <main>
       <div class="map-pane">
-        <CesiumPlantMap
-          :plants="plants" :view-mode="viewMode" :selected-plant-id="selectedPlantId"
-          :terrain-provider="terrainProvider" :vertical-exaggeration="verticalExaggeration" :hillshade-enabled="hillshadeEnabled"
-          weather-layer="none" :weather-items="[]" :default-camera="operatorProfile?.defaultCamera"
-          @select="onMapSelect" @terrain="terrainStatus = $event" @hillshade="hillshadeAvailable = $event.available"
+        <ProvinceFlatMap
+          ref="mapRef"
+          :plants="catalogFiltered" view-mode="2d" :selected-plant-id="selectedPlantId"
+          weather-layer="none" :weather-items="[]"
+          @select="onMapSelect"
         />
-        <div class="mode"><button v-for="mode in (['2d','2.5d','3d'] as GridGeoViewMode[])" :key="mode" :class="{ active:viewMode===mode }" @click="viewMode=mode">{{ mode.toUpperCase() }}</button></div>
-        <TerrainControlPanel
-          v-model:provider="terrainProvider"
-          v-model:hillshade="hillshadeEnabled"
-          v-model:exaggeration="verticalExaggeration"
-          class="terrain-dock"
-          :status="terrainStatus"
-          :view-mode="viewMode"
-          :hillshade-available="hillshadeAvailable"
-          @request-3d="viewMode = '3d'"
+        <!-- 场站目录与驾驶舱同一个组件：这一页选场站原本只能在图上戳，35 个点里找一个很难 -->
+        <PlantCatalogPanel
+          :key="catalogContextKey"
+          :plants="contextPlants"
+          :selected-plant-id="selectedPlantId"
+          :total-count="catalogStats?.totalPlantCountInCurrentDim ?? null"
+          :located-count="catalogStats?.locatedPlantCount ?? null"
+          :unresolved-count="catalogStats?.unresolvedPlantCount ?? null"
+          @select="(plant) => onMapSelect({ plantId: plant.plantId } as GridGeoSelection)"
+          @update:filtered="catalogFiltered = $event"
         />
         <div v-if="result" class="map-badge"><Orbit :size="14" /><span><b>{{ selectedPlant?.standardName }}</b><small>最近气象站 {{ result.stationId || '未匹配' }} · 节点 {{ result.nodeName || '未绑定' }}</small></span></div>
       </div>

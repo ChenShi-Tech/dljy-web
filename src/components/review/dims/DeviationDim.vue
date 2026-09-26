@@ -6,7 +6,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useEChart } from '@/composables/useEChart'
 import { cssVar } from '@/composables/useTheme'
-import { axisTooltip, bottomLayoutLegend, bottomToolbox, emptyOverlay, insideZoom } from '@/services/chart/chartOptions'
+import { axisTooltip, bottomLayoutLegend, bottomToolbox, emptyOverlay, fmtNum, insideZoom } from '@/services/chart/chartOptions'
 import { classifyReviewError, fetchReview, type ReviewFailure, type ReviewResult } from '@/services/quant/quantClient'
 import { deviationDetailRows, heatCells, type DeviationDetailRow } from '@/services/review/reviewDashboard'
 import { exportCsv } from '@/utils/exportCsv'
@@ -230,9 +230,67 @@ function render() {
       label: { show: true, position: 'top', color: danger, fontWeight: 600, fontSize: 11, formatter: () => `${worstLabel.value} ${worstDev.value > 0 ? '+' : ''}${worstDev.value}` }
     })
   }
+
+  // 极值说明进 tooltip 卡片（替代在图上常驻长文字/改极值标签）：极值点平时只标裸数值，
+  const extremumIndex = (arr: number[], mode: 'max' | 'min') => {
+    let idx = -1
+    arr.forEach((v, i) => {
+      const n = Number(v)
+      if (!Number.isFinite(n)) return
+      if (idx < 0 || (mode === 'max' ? n > Number(arr[idx]) : n < Number(arr[idx]))) idx = i
+    })
+    return idx
+  }
+  const noteIdx = {
+    declaredMax: extremumIndex(declared, 'max'),
+    declaredMin: extremumIndex(declared, 'min'),
+    actualMax: extremumIndex(actual, 'max'),
+    actualMin: extremumIndex(actual, 'min')
+  }
+  const extremumNotesAt = (i: number): { text: string; color: string }[] => {
+    if (i < 0) return []
+    const notes: { text: string; color: string }[] = []
+    if (i === noteIdx.declaredMax) notes.push({ text: `申报电量当日最高 ${fmtNum(declared[i])} MWh`, color: primary })
+    if (i === noteIdx.declaredMin) notes.push({ text: `申报电量当日最低 ${fmtNum(declared[i])} MWh`, color: primary })
+    if (i === noteIdx.actualMax) notes.push({ text: `实际电量当日最高 ${fmtNum(actual[i])} MWh`, color: amber })
+    if (i === noteIdx.actualMin) notes.push({ text: `实际电量当日最低 ${fmtNum(actual[i])} MWh`, color: amber })
+    if (i === worstIdx) {
+      notes.push({ text: `实际偏离申报（偏差＝实际−申报）${worstDev.value > 0 ? '+' : ''}${worstDev.value} MWh`, color: danger })
+    }
+    return notes
+  }
+  // 与 axisTooltip 同构的卡片行 + 极值说明追加区（axisTooltip.formatter 不便就地扩展，故本地重建）
+  type TipParam = { seriesName?: string; marker?: string; axisValueLabel?: string; name?: string; value?: unknown; dataIndex?: number }
+  const reviewTooltip = {
+    ...axisTooltip({ unit: 'MWh' }),
+    formatter: (params: TipParam | TipParam[]) => {
+      const list = (Array.isArray(params) ? params : [params]).filter((p) => !String(p.seriesName ?? '').startsWith('_'))
+      if (!list.length) return ''
+      const head = list[0].axisValueLabel ?? list[0].name ?? ''
+      const rows = list
+        .map((p) => {
+          const text = fmtNum(p.value)
+          const suffix = text === '-' ? '' : ' MWh'
+          return `<div style="display:flex;justify-content:space-between;gap:18px;line-height:1.7">` +
+            `<span>${p.marker ?? ''}${p.seriesName ?? ''}</span><b>${text}${suffix}</b></div>`
+        })
+        .join('')
+      const notes = extremumNotesAt(list[0].dataIndex ?? -1)
+      const notesHtml = notes.length
+        ? `<div style="margin-top:4px;padding-top:4px;border-top:1px solid rgba(128,128,128,.25)">` +
+          notes.map((n) =>
+            `<div style="display:flex;align-items:center;gap:6px;line-height:1.7">` +
+            `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${n.color}"></span>` +
+            `<span style="color:${n.color}">${n.text}</span></div>`
+          ).join('') + `</div>`
+        : ''
+      return `<div style="font-weight:600;margin-bottom:2px">${head}</div>${rows}${notesHtml}`
+    }
+  }
+
   chart.setOption({
     ...emptyOverlay(!r.detail.length),
-    tooltip: axisTooltip({ unit: 'MWh' }),
+    tooltip: reviewTooltip,
     legend: bottomLayoutLegend({ data: legendData, textStyle: { fontSize: 10 } }),
     toolbox: bottomToolbox('申报vs实际偏差', 8),
     grid: { left: 48, right: 16, top: 56, bottom: 56 },

@@ -31,7 +31,7 @@ export type SegmentLabels =
   | { parameterized: false; labels: null; note: string }
 
 export const SEGMENT_UNPARAMETERIZED_NOTE =
-  '本省峰谷时段未参数化（SettlementRuleSpec 未沉淀）：不借用他省时段划分，峰谷标识留空。'
+  '本省峰谷时段尚未配置：不借用其他省份的时段划分，峰谷标识留空。'
 
 /**
  * 24 小时峰谷标识：按 spec.timeSegmentFactors 的 hours[] 归属；未命中小时标
