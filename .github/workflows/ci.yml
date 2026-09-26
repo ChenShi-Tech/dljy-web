@@ -8,6 +8,7 @@ on:
 
 permissions:
   contents: read
+  pull-requests: read
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -15,32 +16,83 @@ concurrency:
 
 jobs:
   quality-gate:
-    runs-on: ubuntu-latest
+    # 自托管 runner（ChenShi-Tech/dljy#3266，同 dljy-admin 的 #3259）：GitHub 托管 runner 因组织账单受限无法启动，
+    # 改用主仓在用的南洋 runner。组织级 vars.CI_RUNNER 的值是离线的 dljy-mac，这里直接写标签，不复用该变量。
+    runs-on: [self-hosted, dljy-linux]
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v5
-        with:
-          # mirror-guard 需要与 base 分支比对；仓库不大，全量 clone 便宜。
-          fetch-depth: 0
+      # 南洋 runner 上 github.com 的 https 被阻断、git 只能走 SSH，而机器上的 SSH 密钥只对主仓有权限；
+      # api.github.com 直连可用。所以不用 actions/checkout，改用本次运行的 GITHUB_TOKEN 经 API 下载源码包
+      # （github.sha：PR 为合并提交）。工作区里没有 .git。
+      - name: Fetch source
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          find . -mindepth 1 -maxdepth 1 -exec rm -rf {} +
+          curl -fsSL --retry 3 --max-time 300 -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${{ github.repository }}/tarball/${{ github.sha }}" | tar -xz --strip-components=1
+          test -f package.json
 
-      - uses: actions/setup-node@v6
-        with:
-          node-version: '22.12'
-          cache: npm
+      # 不用 actions/setup-node（自托管机上预下载慢且易超时，主仓同一做法）：探测 runner 预装的 node 22，
+      # 缺失回退下载到 ~/.local/node-22。版本下界与 package.json engines（>=22.12）一致。
+      - name: Setup Node.js
+        run: |
+          need_major=22
+          need_minor=12
+          satisfies() {
+            [ -x "$1/node" ] || return 1
+            v=$("$1/node" -v 2>/dev/null | sed 's/^v//')
+            [ -n "$v" ] || return 1
+            major=${v%%.*}; rest=${v#*.}; minor=${rest%%.*}
+            [ "$major" -gt "$need_major" ] && return 0
+            [ "$major" -eq "$need_major" ] && [ "$minor" -ge "$need_minor" ]
+          }
+          for p in /opt/node-22/bin "$HOME/.local/node-22/bin"; do
+            if satisfies "$p"; then
+              echo "$p" >> "$GITHUB_PATH"
+              echo "using preinstalled node: $p/node ($("$p/node" -v))"
+              exit 0
+            fi
+          done
+          echo "no satisfying node found (need >=${need_major}.${need_minor}), installing to ~/.local/node-22"
+          V=v22.23.2
+          rm -rf "$HOME/.local/node-22" && mkdir -p "$HOME/.local/node-22"
+          curl -fsSL --max-time 300 "https://nodejs.org/dist/$V/node-$V-linux-x64.tar.xz" -o /tmp/node-$V.tar.xz \
+            || curl -fsSL --max-time 300 "https://cdn.npmmirror.com/binaries/node/$V/node-$V-linux-x64.tar.xz" -o /tmp/node-$V.tar.xz
+          tar -xJf /tmp/node-$V.tar.xz -C "$HOME/.local/node-22" --strip-components=1
+          rm -f /tmp/node-$V.tar.xz
+          echo "$HOME/.local/node-22/bin" >> "$GITHUB_PATH"
 
       - run: npm ci
 
       # 镜像守卫：vendor/ 与 shared/schema/generated/ 是上游生成物快照（只读），
       # 协作者 PR 改它们会在下一次同步被覆盖——直接拒绝，避免无效工作。
+      # 工作区没有 .git：改动文件列表经 API 取（含改名前的旧路径）；读取失败判红，不当作「没有改动」放行。
       - name: Mirror guard
         if: github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_FILES_URL: https://api.github.com/repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/files
         run: |
-          changed=$(git diff --name-only "origin/${{ github.base_ref }}...HEAD" -- 'vendor/' 'shared/schema/generated/')
-          if [ -n "$changed" ]; then
-            echo '::error::以下文件是上游生成物镜像（只读），请勿在本仓修改：'
-            echo "$changed"
-            exit 1
-          fi
+          node --input-type=module -e '
+            const url = process.env.PR_FILES_URL;
+            const headers = { Authorization: `Bearer ${process.env.GH_TOKEN}`, Accept: "application/vnd.github+json" };
+            const files = [];
+            for (let page = 1; ; page += 1) {
+              const res = await fetch(`${url}?per_page=100&page=${page}`, { headers });
+              if (!res.ok) { console.error(`::error::读取 PR 改动文件失败（HTTP ${res.status}）`); process.exit(1); }
+              const batch = await res.json();
+              for (const f of batch) { files.push(f.filename); if (f.previous_filename) files.push(f.previous_filename); }
+              if (batch.length < 100) break;
+            }
+            const guarded = [...new Set(files)].filter((p) => p.startsWith("vendor/") || p.startsWith("shared/schema/generated/"));
+            if (guarded.length) {
+              console.error("::error::以下文件是上游生成物镜像（只读），请勿在本仓修改：");
+              for (const p of guarded) console.error(p);
+              process.exit(1);
+            }
+            console.log(`镜像守卫通过：本 PR 改动 ${files.length} 个路径，未触及只读镜像目录`);
+          '
 
       # lint 只拦 error（分层守卫 + correctness）；291 处 no-explicit-any 为 warn，
       # 列技术债渐进清零（见 DEVELOPMENT.md 已知技术债）。
