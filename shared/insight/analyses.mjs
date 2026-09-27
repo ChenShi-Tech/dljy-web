@@ -13,6 +13,8 @@ export const INSIGHT_ENDPOINTS = Object.freeze({
   coverage: Object.freeze({ method: 'POST', path: '/api/v1/market-insight/coverage' }),
   query: Object.freeze({ method: 'POST', path: '/api/v1/market-insight/query' }),
   researchPreview: Object.freeze({ method: 'POST', path: '/api/v1/market-insight/research/preview' }),
+  actions: Object.freeze({ method: 'GET', path: '/api/v1/market-insight/actions' }),
+  actionResolve: Object.freeze({ method: 'POST', path: '/api/v1/market-insight/actions/resolve' }),
   // 研究定义保存/列表/取回/按新源重跑（#3094，任务 14.3）：写接口生成研究材料，需公司写权限。
   researchDefinitionList: Object.freeze({ method: 'GET', path: '/api/v1/market-insight/research/definitions' }),
   researchDefinitionSave: Object.freeze({ method: 'POST', path: '/api/v1/market-insight/research/definitions' }),

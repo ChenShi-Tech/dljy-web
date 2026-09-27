@@ -325,6 +325,46 @@ const spotTargets = [
     expectedPointsPerDay: 96,
     capturedAtField: 'operateDate',
     qualityRules: { guardEmpty: true }
+  }),
+  // —— 月包余量层（issue #3088，design D7 B/C/D 类 13 表 + 暂结承载）：plant_spot_settlement
+  //    余量表经 import:spot-export「月包余量层」小节与上传中心 cgn-spot-export 契约两条通道
+  //    落库，行形状同源 spot-export-upload buildPlanRows（零漂移）。归属 comp-cgn-yunnan。
+  target({
+    family: 'yn_plant_timeseries',
+    datasetKey: '*',
+    ownership: SOURCE_OWNERSHIP.COMPANY,
+    ownerCompanyId: CGN_YUNNAN_COMPANY_ID,
+    requiredFields: ['id', 'plant', 'date'],
+    valueFields: ['value'],
+    capturedAtField: 'date',
+    qualityRules: { guardEmpty: true }
+  }),
+  target({
+    family: 'yn_plant_daily_metrics',
+    datasetKey: 'plant_daily_report_metrics',
+    ownership: SOURCE_OWNERSHIP.COMPANY,
+    ownerCompanyId: CGN_YUNNAN_COMPANY_ID,
+    requiredFields: ['id', 'date', 'plant'],
+    valueFields: ['totalGenerationMWh', 'settlementRevenueYuan'],
+    capturedAtField: 'date',
+    qualityRules: { guardEmpty: true }
+  }),
+  target({
+    family: 'yn_settlement_docs',
+    // 7 个 datasetKey 的必填锚点各表不同、且已由 describeDataset 行 schema 逐键承担
+    // （matchesSchema required 校验），target 层不再抄一份清单防两处漂移。
+    datasetKey: '*',
+    ownership: SOURCE_OWNERSHIP.COMPANY,
+    ownerCompanyId: CGN_YUNNAN_COMPANY_ID,
+    qualityRules: { guardEmpty: true }
+  }),
+  target({
+    family: 'yn_contracts',
+    datasetKey: '*',
+    ownership: SOURCE_OWNERSHIP.COMPANY,
+    ownerCompanyId: CGN_YUNNAN_COMPANY_ID,
+    requiredFields: ['guid', 'contractId'],
+    qualityRules: { guardEmpty: true }
   })
 ]
 

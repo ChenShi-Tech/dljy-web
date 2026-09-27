@@ -168,12 +168,15 @@ export function coalesceToCoarser(rows, { fromMinutes, toMinutes }) {
 /**
  * 价格敏感度（HM-05）：现货价格整体变动 1 元/MWh 时收入的变化量 = 已覆盖时段的含机制净敞口。
  * 含机制不完整时给参考值（仅中长期净敞口），标注「未计机制电量」。
+ * 空窗口如实返回未知（value=null/incomplete=true）——零时段的 0 不是「价格无影响」（#3133）。
  */
 export function priceSensitivity({ intervals }) {
-  const withMechanism = intervals.filter((row) => row.exposure?.withMechanism !== null && row.exposure?.withMechanism !== undefined)
-  const incomplete = withMechanism.length !== intervals.length
+  const rows = intervals ?? []
+  if (!rows.length) return { value: null, incomplete: true, reference: null, note: '窗口内无可评估时段' }
+  const withMechanism = rows.filter((row) => row.exposure?.withMechanism !== null && row.exposure?.withMechanism !== undefined)
+  const incomplete = withMechanism.length !== rows.length
   if (incomplete) {
-    const reference = decimalSum(intervals.map((row) => row.exposure?.midlongOnly ?? '0'))
+    const reference = decimalSum(rows.map((row) => row.exposure?.midlongOnly ?? '0'))
     return { value: null, incomplete: true, reference, note: '未计机制电量' }
   }
   return { value: decimalSum(withMechanism.map((row) => row.exposure.withMechanism)), incomplete: false, reference: null, note: null }

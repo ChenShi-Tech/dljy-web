@@ -15,6 +15,12 @@ export type ForecastSkillFamily = 'spot_price' | 'power' | 'daily_price';
 /** 取数来源类别，与 remote_inference._TARGET_SOURCES 的值前缀一一对应。 */
 export type ForecastDataSourceKind = 'normalized' | 'synth' | 'module';
 
+/**
+ * 模型运行时状态（dljy#2808）。'trainable' = train→predict 链路已确认跑得通；
+ * null = 无声明（跑不通的不冒充，#2679）。与 dataSource 正交。
+ */
+export type ForecastModelRuntimeStatus = 'trainable';
+
 export type ForecastDataSource = {
   kind: ForecastDataSourceKind;
   /** normalized/synth 为列名；module 为模块路径 */
@@ -37,6 +43,8 @@ export type ForecastTargetSpec = {
   dataSource: ForecastDataSource;
   /** status='blocked' 时必填，须含 dljy#NNNN */
   blockedReason: string | null;
+  /** null = 无声明；'trainable' = 模型可跑已确认（与 dataSource 正交，合取是 supported_targets 展开源，#2808） */
+  modelRuntimeStatus: ForecastModelRuntimeStatus | null;
   /** 外生特征（不含目标当期值） */
   exoFeatures: string[];
   weatherDerived: string[];
@@ -66,6 +74,9 @@ export declare const SKILL_FAMILIES: Readonly<Record<ForecastSkillFamily, Readon
 
 export declare const DATA_SOURCE_KINDS: readonly ForecastDataSourceKind[];
 
+/** 模型运行时维度词汇（dljy#2808）。 */
+export declare const MODEL_RUNTIME_STATUSES: readonly ForecastModelRuntimeStatus[];
+
 export declare const REGION_DRIVERS: Readonly<Record<string, string>>;
 export declare const REGION_EXTRA_FEATURES: Readonly<Record<string, readonly string[]>>;
 
@@ -83,6 +94,8 @@ export declare function targetUnit(id: string): string | null;
 export declare function targetSlotsPerDay(id: string): number | null;
 /** 平台有取数路径的标的 id（blocked 的不在其中）。 */
 export declare function suppliableTargetIds(): string[];
+/** 模型 supported_targets 的展开源：数据源 available 且可训练（dljy#2808）。 */
+export declare function runtimeTrainableTargetIds(): string[];
 /** 列名 → 该列会泄漏的标的集合（同值别名 + 派生量两个来源合并）。 */
 export declare function leakedTargetsByColumn(): Record<string, string[]>;
 /** 自洽校验，返回错误描述数组（空 = 自洽）。 */
