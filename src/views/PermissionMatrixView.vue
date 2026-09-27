@@ -291,13 +291,14 @@ async function saveSelectedRole() {
     await saveServerRoleAccessOverride(selectedRoleCode.value, override)
     authSyncStatus.value = 'synced'
     overrideRevision.value += 1
+    ElMessage.success(`${roleLabels[selectedRoleCode.value]}权限矩阵已保存`)
   } catch (error) {
+    // 后端失败只降级到本地暂存：成功提示必须在 try 分支内，否则失败也弹「已保存」误导管理员（#3265）
     authSyncStatus.value = 'local'
     saveRoleAccessOverride(selectedRoleCode.value, override)
     overrideRevision.value += 1
-    ElMessage.warning(error instanceof Error ? `后端同步失败，已保存本地矩阵：${error.message}` : '后端同步失败，已保存本地矩阵')
+    ElMessage.warning(error instanceof Error ? `后端同步失败，未在服务端生效，已保存本地矩阵：${error.message}` : '后端同步失败，未在服务端生效，已保存本地矩阵')
   }
-  ElMessage.success(`${roleLabels[selectedRoleCode.value]}权限矩阵已保存`)
 }
 
 async function resetSelectedRole() {
@@ -305,14 +306,15 @@ async function resetSelectedRole() {
     await resetServerRoleAccessOverride(selectedRoleCode.value)
     authSyncStatus.value = 'synced'
     overrideRevision.value += 1
+    ElMessage.success(`${roleLabels[selectedRoleCode.value]}已恢复默认矩阵`)
   } catch (error) {
+    // 后端失败只降级到本地覆盖：成功提示必须在 try 分支内（#3265）
     authSyncStatus.value = 'local'
     resetRoleAccessOverride(selectedRoleCode.value)
     overrideRevision.value += 1
-    ElMessage.warning(error instanceof Error ? `后端同步失败，已恢复本地矩阵：${error.message}` : '后端同步失败，已恢复本地矩阵')
+    ElMessage.warning(error instanceof Error ? `后端同步失败，未在服务端生效，已恢复本地矩阵：${error.message}` : '后端同步失败，未在服务端生效，已恢复本地矩阵')
   }
   loadSelectedRole()
-  ElMessage.success(`${roleLabels[selectedRoleCode.value]}已恢复默认矩阵`)
 }
 
 async function resetAllRoles() {
@@ -320,14 +322,15 @@ async function resetAllRoles() {
     await resetServerRoleAccessOverride()
     authSyncStatus.value = 'synced'
     overrideRevision.value += 1
+    ElMessage.success('所有角色已恢复默认矩阵')
   } catch (error) {
+    // 后端失败只降级到本地覆盖：成功提示必须在 try 分支内（#3265）
     authSyncStatus.value = 'local'
     resetRoleAccessOverride()
     overrideRevision.value += 1
-    ElMessage.warning(error instanceof Error ? `后端同步失败，已恢复本地矩阵：${error.message}` : '后端同步失败，已恢复本地矩阵')
+    ElMessage.warning(error instanceof Error ? `后端同步失败，未在服务端生效，已恢复本地矩阵：${error.message}` : '后端同步失败，未在服务端生效，已恢复本地矩阵')
   }
   loadSelectedRole()
-  ElMessage.success('所有角色已恢复默认矩阵')
 }
 
 function routeScopeLabel(roleCode: RoleCode) {
