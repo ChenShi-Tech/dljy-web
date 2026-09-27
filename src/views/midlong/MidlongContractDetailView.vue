@@ -14,6 +14,7 @@ import {
   linkAlias, midlongFailureOf, putContractLabels, verifyContract, voidContract, type EvidenceUpload, type MidlongFailure,
 } from '@/services/midlong/midlongApi'
 import CompanyScopeBar from '@/components/company/CompanyScopeBar.vue'
+import MetricTile from '@/components/common/MetricTile.vue'
 import MidlongNotice from '@/components/midlong/MidlongNotice.vue'
 import MidlongContractFormDialog from '@/components/midlong/MidlongContractFormDialog.vue'
 import MidlongEconomicsEditor from '@/components/midlong/MidlongEconomicsEditor.vue'
@@ -358,12 +359,12 @@ const missingBasis = computed(() => (actionError.value?.errorCode === 'INCOMPLET
         外部编号 {{ releasedAliases.map((a) => a.externalObligationId).join('、') }} 已随作废释放，可以按正确内容重新登记（重新登记时会提示曾作废）。
       </MidlongNotice>
 
-      <div class="ml-tiles">
-        <div class="ml-tile"><span>当前有效电量</span><b>{{ fmtQuantity(current?.totalQuantity) }}<i>MWh</i></b><small>版本 {{ detail.currentRevisionNo }}</small></div>
-        <div class="ml-tile"><span>原始录入电量</span><b>{{ fmtQuantity(detail.originalQuantity) }}<i>MWh</i></b><small>版本 1</small></div>
-        <div class="ml-tile"><span>售电价格</span><b>{{ current?.priceStatus === 'KNOWN' ? fmtPrice(current?.sellerPrice) : '待核对' }}<i v-if="current?.priceStatus === 'KNOWN'">元/MWh</i></b><small>{{ current?.priceType ? PRICE_TYPE_LABELS[current.priceType] : '价格类型未定' }} · {{ current ? TAX_BASIS_LABELS[current.taxBasis] : '' }}</small></div>
-        <div class="ml-tile"><span>月度分解</span><b>{{ { COMPLETE: '完整', PARTIAL: '不完整', NONE: '无' }[current?.allocationCompleteness ?? 'NONE'] }}</b><small>{{ current?.allocations.filter((a) => a.evidenceBasis === 'FORMAL').length ?? 0 }} 个月正式分解</small></div>
-        <div class="ml-tile"><span>关联成交电量</span><b>{{ fmtQuantity(detail.linkedTrades.volume) }}<i>MWh</i></b><small>{{ detail.linkedTrades.tradeCount }} 笔 · 非实际交割量/履约率</small></div>
+      <div class="tile-grid">
+        <MetricTile label="当前有效电量" :value="fmtQuantity(current?.totalQuantity)" unit="MWh" :sub="`版本 ${detail.currentRevisionNo}`" />
+        <MetricTile label="原始录入电量" :value="fmtQuantity(detail.originalQuantity)" unit="MWh" sub="版本 1" />
+        <MetricTile label="售电价格" :value="current?.priceStatus === 'KNOWN' ? fmtPrice(current?.sellerPrice) : '待核对'" :unit="current?.priceStatus === 'KNOWN' ? '元/MWh' : ''" :sub="`${current?.priceType ? PRICE_TYPE_LABELS[current.priceType] : '价格类型未定'} · ${current ? TAX_BASIS_LABELS[current.taxBasis] : ''}`" />
+        <MetricTile label="月度分解" :value="{ COMPLETE: '完整', PARTIAL: '不完整', NONE: '无' }[current?.allocationCompleteness ?? 'NONE']" :sub="`${current?.allocations.filter((a) => a.evidenceBasis === 'FORMAL').length ?? 0} 个月正式分解`" />
+        <MetricTile label="关联成交电量" :value="fmtQuantity(detail.linkedTrades.volume)" unit="MWh" :sub="`${detail.linkedTrades.tradeCount} 笔 · 非实际交割量/履约率`" />
       </div>
 
       <div class="ml-panel">
@@ -615,12 +616,7 @@ const missingBasis = computed(() => (actionError.value?.errorCode === 'INCOMPLET
 .ml-title { margin: 0 0 6px; font-size: var(--font-20); }
 .ml-tags { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .ml-actions { display: flex; gap: 8px; flex-wrap: wrap; }
-.ml-tiles { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; }
-.ml-tile { display: flex; flex-direction: column; gap: 3px; padding: 12px 14px; border: 1px solid var(--line); border-radius: var(--radius, 8px); background: var(--panel); }
-.ml-tile span { font-size: var(--font-sm); color: var(--muted); }
-.ml-tile b { font-size: var(--font-24); font-weight: 650; font-variant-numeric: tabular-nums; font-family: var(--font-display); }
-.ml-tile b i { font-style: normal; font-size: var(--font-sm); color: var(--muted); margin-left: 4px; font-weight: 500; }
-.ml-tile small { font-size: var(--font-xs); color: var(--muted); }
+.tile-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; }
 .ml-panel { border: 1px solid var(--line); border-radius: var(--radius, 8px); padding: 14px 16px; background: var(--panel); }
 .ml-panel h3 { margin: 0 0 10px; font-size: var(--font-16); }
 .ml-split { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; }
@@ -635,5 +631,5 @@ const missingBasis = computed(() => (actionError.value?.errorCode === 'INCOMPLET
 .ml-field { display: flex; flex-direction: column; gap: 6px; font-size: var(--font-md); color: var(--muted); }
 .ml-field :deep(.el-select), .ml-field :deep(.el-date-editor) { width: 100%; }
 .ml-wide { grid-column: span 2; }
-@media (max-width: 1100px) { .ml-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); } .ml-split { grid-template-columns: 1fr; } }
+@media (max-width: 1100px) { .tile-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .ml-split { grid-template-columns: 1fr; } }
 </style>

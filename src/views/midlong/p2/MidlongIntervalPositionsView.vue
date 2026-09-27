@@ -12,6 +12,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import CompanyScopeBar from '@/components/company/CompanyScopeBar.vue'
 import ChartCard from '@/components/common/ChartCard.vue'
+import MetricTile from '@/components/common/MetricTile.vue'
 import MidlongNotice from '@/components/midlong/MidlongNotice.vue'
 import { selectedCompanyId } from '@/services/company/companyContext'
 import { currentRegion } from '@/services/region/regionContext'
@@ -240,12 +241,12 @@ function buildOption(): Record<string, unknown> {
       </MidlongNotice>
       <MidlongNotice v-if="report.status === 'empty'" tone="info" title="所选范围内没有已确认的中长期售电义务" />
 
-      <div class="ml-tiles">
-        <div class="ml-tile"><span>区间正式分时电量</span><b>{{ fmtQuantity(totals.curveQuantityInRange) }}<i>MWh</i></b><small>{{ totals.contractCount }} 份已确认合同</small></div>
-        <div class="ml-tile warn"><span>分时未知时段</span><b>{{ totals.unknownBucketCount }}<i>个</i></b><small>另有 {{ totals.partialBucketCount }} 个时段部分未知</small></div>
-        <div class="ml-tile warn"><span>分时未知合同</span><b>{{ totals.timeUnknownContractCount }}<i>份</i></b><small>只有月量或粒度不足 · 不均摊</small></div>
-        <div class="ml-tile warn"><span>未分解到月份</span><b>{{ fmtQuantity(totals.unallocatedPoolQuantity) }}<i>MWh</i></b><small>{{ totals.unallocatedContractCount }} 份合同 · 不计入任何时段</small></div>
-        <div class="ml-tile"><span>内部估算分解集</span><b>{{ report.excluded.estimateCurveSets.length }}<i>套</i></b><small>不计入正式分时持仓</small></div>
+      <div class="tile-grid">
+        <MetricTile label="区间正式分时电量" :value="fmtQuantity(totals.curveQuantityInRange)" unit="MWh" :sub="`${totals.contractCount} 份已确认合同`" />
+        <MetricTile tone="warn" label="分时未知时段" :value="String(totals.unknownBucketCount)" unit="个" :sub="`另有 ${totals.partialBucketCount} 个时段部分未知`" />
+        <MetricTile tone="warn" label="分时未知合同" :value="String(totals.timeUnknownContractCount)" unit="份" sub="只有月量或粒度不足 · 不均摊" />
+        <MetricTile tone="warn" label="未分解到月份" :value="fmtQuantity(totals.unallocatedPoolQuantity)" unit="MWh" :sub="`${totals.unallocatedContractCount} 份合同 · 不计入任何时段`" />
+        <MetricTile label="内部估算分解集" :value="String(report.excluded.estimateCurveSets.length)" unit="套" sub="不计入正式分时持仓" />
       </div>
 
       <ChartCard title="分时持仓（灰色底带为分时未知，虚线框为部分已知）" :height="320" :build-option="buildOption" :empty="report.status === 'empty'" empty-text="暂无已确认持仓" />
@@ -332,18 +333,12 @@ function buildOption(): Record<string, unknown> {
 .ml-placeholder { min-height: 200px; }
 .ml-filters { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .ml-hint { color: var(--muted); font-size: var(--font-sm); margin-left: 4px; }
-.ml-tiles { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; }
-.ml-tile { display: flex; flex-direction: column; gap: 3px; padding: 12px 14px; border: 1px solid var(--line); border-radius: var(--radius, 8px); background: var(--panel); }
-.ml-tile span { font-size: var(--font-sm); color: var(--muted); }
-.ml-tile b { font-size: var(--font-24); font-weight: 650; font-variant-numeric: tabular-nums; font-family: var(--font-display); }
-.ml-tile b i { font-style: normal; font-size: var(--font-sm); color: var(--muted); margin-left: 4px; font-weight: 500; }
-.ml-tile small { font-size: var(--font-xs); color: var(--muted); }
-.ml-tile.warn b { color: var(--warning); }
+.tile-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; }
 .ml-panel { border: 1px solid var(--line); border-radius: var(--radius, 8px); padding: 14px 16px; background: var(--panel); }
 .ml-panel h3 { margin: 0 0 10px; font-size: var(--font-16); display: flex; align-items: baseline; gap: 8px; }
 .ml-panel h3 small { font-size: var(--font-sm); color: var(--muted); font-weight: 400; }
 .ml-link { color: var(--accent); text-decoration: none; margin-right: 6px; }
 .ml-warn { color: var(--warning); }
 .ml-tag { margin: 0 4px 4px 0; }
-@media (max-width: 1100px) { .ml-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 1100px) { .tile-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 </style>

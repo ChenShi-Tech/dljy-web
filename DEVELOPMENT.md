@@ -189,6 +189,7 @@ npm run build         # 生产构建（index + grid-geo 双入口）
 |---|---|
 | `src/router/index.ts` | 全量路由，每条必须带 `meta.kind: real\|mixed\|forecast` |
 | `src/views/**` | 页面组件；**禁止 import `shared/schema/**`**（分层守卫） |
+| `src/components/common/**` | 公共组件权威实现：`MetricTile`（指标卡：数值+单位+tone，`as="button"` 可点击筛选卡）与 `CalloutBox`（说明框：info/warn/danger/mock 四档）为跨域唯一实现（#2954），复盘/中长期各自的同名组件只是薄包装，新页面一律直接用公共版 |
 | `src/services/**` | 唯一取数出口；量化 TS 实现是后端 Python 权威实现的镜像，改公式要与维护者确认两端同步 |
 | `src/data/navigation.ts` | 侧边栏（顶级分组是合成路径、子项才是真实路由） |
 | `src/features/*/config.ts` | 特性开关（报表 / 云南交易 / grid-geo 等） |

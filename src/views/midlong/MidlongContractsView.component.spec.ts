@@ -148,10 +148,10 @@ describe('中长期售电合同列表', () => {
     hoisted.fetchContracts.mockResolvedValue(listOf([row({ qualityFlags: ['MISSING_PRICE'] })]))
     const w = mount(MidlongContractsView, { global: { stubs: STUBS } })
     await flushPromises()
-    const gapTile = w.findAll('.ml-tile').find((t) => t.text().includes('有质量缺口'))!
+    const gapTile = w.findAll('.tile').find((t) => t.text().includes('有质量缺口'))!
     expect(gapTile.element.tagName).not.toBe('BUTTON')
     expect(gapTile.text()).toContain('按类型查看请用「质量缺口」筛选')
-    expect(w.findAll('button.ml-tile').map((b) => b.text()).join('|')).not.toContain('有质量缺口')
+    expect(w.findAll('button.tile').map((b) => b.text()).join('|')).not.toContain('有质量缺口')
   })
 
   it('切换公司：新公司数据返回前就不再显示旧公司的合同', async () => {

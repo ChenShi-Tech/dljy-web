@@ -55,8 +55,8 @@ describe('已导入分时资料分析', () => {
   it('模拟模式醒目标记且不沿用业务资料目录', async () => {
     const wrapper = create(); await open(wrapper)
     await wrapper.findAll('select')[0]!.setValue('true')
-    expect(wrapper.find('.review-callout.mock').text()).toContain('模拟数据')
-    expect(wrapper.find('.review-callout.mock').text()).toContain('仅供演练')
+    expect(wrapper.find('.callout-box.mock').text()).toContain('模拟数据')
+    expect(wrapper.find('.callout-box.mock').text()).toContain('仅供演练')
     expect(wrapper.text()).not.toContain('测试对象')
     wrapper.unmount()
   })

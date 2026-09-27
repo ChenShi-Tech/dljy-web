@@ -103,7 +103,7 @@ describe('中长期合同导入', () => {
     const { w, commitButton } = await openAndPreview()
     expect(w.text()).toContain('整份文件的提示')
     expect(w.text()).toContain('价格单位来自导入映射声明，文件中未注明')
-    expect(w.findAll('.ml-tile').some((t) => t.text().replace(/\s+/g, '') === '提示1')).toBe(true)
+    expect(w.findAll('.tile').some((t) => t.text().replace(/\s+/g, '') === '提示1')).toBe(true)
     expect(commitButton().attributes('disabled')).toBeUndefined()
   })
 
