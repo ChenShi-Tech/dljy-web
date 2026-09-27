@@ -65,7 +65,6 @@
   --sidebar-text: #ffffff;
   --sidebar-muted: #9fb3c8;
   --sidebar-border: rgba(255, 255, 255, 0.08);
-  --brand-mark-bg: #0f9f8f;
 
   /* —— 顶栏上下文 chip —— */
   --chip-bg: #f8fbfd;
@@ -140,7 +139,6 @@
   --sidebar-text: #cfe2ff;
   --sidebar-muted: #7fa8d6;
   --sidebar-border: rgba(120, 160, 220, 0.18);
-  --brand-mark-bg: #22d3ee;
 
   --chip-bg: rgba(20, 30, 56, 0.6);
   --chip-border: rgba(90, 130, 200, 0.3);
@@ -253,7 +251,6 @@
   --sidebar-text: #f3eee3;
   --sidebar-muted: #b8ae9c;
   --sidebar-border: rgba(255, 250, 240, 0.1);
-  --brand-mark-bg: #c45b36;
 
   --chip-bg: #f0ece3;
   --chip-border: #e6e1d6;

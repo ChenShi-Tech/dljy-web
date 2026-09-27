@@ -46,6 +46,7 @@ import AlertCenter from '../components/AlertCenter.vue'
 import ThemeSwitcher from '../components/ThemeSwitcher.vue'
 import CommandPalette from '../components/CommandPalette.vue'
 import PageHelpTip from '../components/common/PageHelpTip.vue'
+import BrandEmblem from '../components/common/BrandEmblem.vue'
 import { useTheme } from '../composables/useTheme'
 
 const router = useRouter()
@@ -289,7 +290,7 @@ watch(
 
     <aside :class="['sidebar', { collapsed: !isMobile && collapsed, 'mobile-open': mobileMenuOpen }]">
       <div class="brand">
-        <div class="brand-mark">电</div>
+        <div class="brand-mark"><BrandEmblem :size="22" weight="bold" /></div>
         <div v-if="isMobile || !collapsed" class="brand-copy">
           <strong>电力交易辅助</strong>
           <span>决策支持系统</span>

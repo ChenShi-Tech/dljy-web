@@ -4,10 +4,11 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
 import {
-  Lock, UserRound, Zap, ArrowRight,
+  Lock, UserRound, ArrowRight,
   Activity, Bot, Sparkles, ShieldCheck
 } from 'lucide-vue-next'
 import loginPosterSrc from '../assets/login/power-market-quant-dashboard.png'
+import BrandEmblem from '@/components/common/BrandEmblem.vue'
 import { ApiError } from '@/services/api'
 import { changePassword, login, type AuthUser } from '@/services/auth'
 import { canAccessPath, firstAccessiblePath } from '@/services/governance'
@@ -426,7 +427,7 @@ function formatDate(value: string) {
       <!-- 左：终端品牌区 -->
       <aside class="lp-brand">
         <div class="lp-brand-head">
-          <span class="lp-brand-badge"><Zap :size="20" /></span>
+          <span class="lp-brand-badge"><BrandEmblem :size="28" weight="bold" /></span>
           <div class="lp-brand-id">
             <span class="lp-brand-name">电力交易决策</span>
             <span class="lp-brand-sub">SPOT TRADING TERMINAL</span>
@@ -809,9 +810,10 @@ function formatDate(value: string) {
   width: 42px; height: 42px; flex: none;
   display: grid; place-items: center;
   border-radius: 11px;
-  color: oklch(0.18 0.03 190);
-  background: linear-gradient(135deg, var(--teal-2), var(--teal-deep));
-  box-shadow: 0 10px 26px -10px oklch(0.74 0.12 183 / 0.8), inset 0 1px 0 oklch(1 0 0 / 0.4);
+  /* 品牌标识徽标：深蓝底 + 冷白青线稿，与网站图标、顶栏徽标一致 */
+  color: #bfe3ec;
+  background: linear-gradient(180deg, #0e2440, #050b16);
+  box-shadow: inset 0 0 0 1px rgba(108, 201, 219, 0.4), 0 10px 26px -10px rgba(44, 138, 166, 0.8);
 }
 .lp-brand-id { display: flex; flex-direction: column; line-height: 1.2; }
 .lp-brand-name { font-size: var(--font-15); font-weight: 650; letter-spacing: 0.5px; color: var(--ink); }
