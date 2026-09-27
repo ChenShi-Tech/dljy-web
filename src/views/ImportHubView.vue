@@ -12,6 +12,8 @@ import {
 import { apiGet, apiPost, ApiError } from '@/services/api'
 import { currentRegion } from '@/services/region/regionContext'
 import { createAgentClient } from '@/services/agent/httpClient'
+import { canWritePublicGridData, isPublicGridTemplate, PUBLIC_GRID_COMMIT_HINT } from '@/services/data/publicGrid'
+import { getCurrentUser } from '@/services/auth'
 
 const activeTab = ref<ImportHubTab>('retailSettlement')
 const dataset = getImportHubDataset()
@@ -140,6 +142,12 @@ const selectedTemplate = computed(() =>
   templateDeclarations.find((t) => t.templateId === selectedTemplateId.value) ?? templateDeclarations[0]
 )
 const isCompanyTemplate = computed(() => selectedTemplate.value?.ownership === 'company')
+// 公共落点提交置灰（#2898 验收③）：yn-t0-node-price 写平台公共表，后端仅 ADMIN 可提交
+// （PUBLIC_GRID_WRITE_ROLES）；非 ADMIN 的「上传填好的模板」入口置灰并提示交管理员提交。
+// 口径以服务端为准（publicGrid.ts），本判定只是前端展示一致，避免点了才 403。
+const publicGridCommitBlocked = computed(
+  () => isPublicGridTemplate(selectedTemplateId.value) && !canWritePublicGridData(getCurrentUser()?.roleCode)
+)
 const templateUploading = ref(false)
 const templateFileInput = ref<HTMLInputElement | null>(null)
 const templateRecords = ref<TemplateRecord[]>([])
@@ -174,6 +182,7 @@ async function onTemplateFileChosen(event: Event) {
   const file = input.files?.[0]
   input.value = ''
   if (!file || templateUploading.value) return
+  if (publicGridCommitBlocked.value) return
   templateUploading.value = true
   uploadErrors.value = []
   lastDelivery.value = null
@@ -492,11 +501,14 @@ onMounted(() => {
         <el-tag size="small" :type="isCompanyTemplate ? 'warning' : 'info'">
           {{ isCompanyTemplate ? '公司私有 · 归属随登录会话' : '公共口径' }}
         </el-tag>
+        <!-- 公共落点标注（#2898 验收③）：非 ADMIN 只读，提交要交平台管理员 -->
+        <el-tag v-if="publicGridCommitBlocked" size="small" type="warning">公共曲线 · 仅管理员提交</el-tag>
         <el-button type="primary" @click="downloadStandardTemplate">下载模板（xlsx）</el-button>
-        <el-button type="success" :loading="templateUploading" @click="pickTemplateFile">上传填好的模板</el-button>
+        <el-button type="success" :disabled="publicGridCommitBlocked" :loading="templateUploading" @click="pickTemplateFile">上传填好的模板</el-button>
         <el-tag size="small" type="success">来源：手录投递 IMPORT（非采集）</el-tag>
         <input ref="templateFileInput" type="file" accept=".csv,.xlsx,.xls" style="display: none" @change="onTemplateFileChosen" />
       </div>
+      <p v-if="publicGridCommitBlocked" class="template-note">{{ PUBLIC_GRID_COMMIT_HINT }}</p>
       <p v-if="isCompanyTemplate" class="template-note">
         公司私有模板不设「公司」列，数据归属由登录会话公司自动决定；非归属公司账号上传将被拒绝（422）。
       </p>

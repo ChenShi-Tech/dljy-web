@@ -2,8 +2,9 @@
 // 供 AgentChatPanel（被 8 个接入点复用）在「后端未起」时优雅提示「智能体服务未就绪」，
 // 而非挂载即发首条消息、直到 SSE 失败才报错（阶段 A G2）。
 //
-// 设计：探活走 GET /api/agent/sessions（pingAgentService，2.5s 超时），不触发鉴权门
-// （/schedules、/alerts 才需 token；sessions 列表为开放读）。每个接入点挂载时调一次 check()。
+// 设计：探活走 agent-backend 免鉴权健康端点 GET /api/v1/health（pingAgentService，2.5s 超时；
+// #2580 退役第 1 步：不再拿即将退役的 Python 会话层 /agent-api/agent/sessions 列表探活）。
+// 每个接入点挂载时调一次 check()。
 
 import { computed, ref, type ComputedRef, type Ref } from 'vue'
 import { pingAgentService } from '@/services/agent/agentClient'
