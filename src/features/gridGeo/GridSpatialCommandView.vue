@@ -75,6 +75,7 @@ import {
   commandNodesFromResponse,
   commandWeatherItems,
   disclosureCategoryLabel,
+  mergeCommandNodeResults,
   trustedMarketMetrics,
   type SpatialCommandScene,
   type SpatialLayerState,
@@ -200,7 +201,7 @@ let loadedTopologyQueryKey = ''
 
 const sceneOptions: Array<{ id: SpatialCommandScene; label: string; short: string; icon: Component }> = [
   { id: 'overview', label: '空间总览', short: '电厂资产底图', icon: Orbit },
-  { id: 'nodes', label: '已定位节点', short: '仅 WGS84 权威点位', icon: Waypoints },
+  { id: 'nodes', label: '已定位节点', short: '精确点位 + 近似光圈', icon: Waypoints },
   { id: 'weather', label: '实时天气', short: 'Open-Meteo 格点实况', icon: CloudRain },
   { id: 'market', label: '市场回放', short: '精确映射并列信号', icon: Radar },
   { id: 'disclosure', label: '披露时间轴', short: '无坐标不落点', icon: FileSearch },
@@ -529,9 +530,18 @@ async function loadNodes(force = false) {
   if (!force && ['available', 'empty'].includes(layerStates.value.nodes.status)) return
   const request = beginLayerRequest('nodes')
   try {
-    const response = await fetchGridGeoNodes({ locationStatus: 'located', page: 1, pageSize: COMMAND_NODE_PAGE_SIZE }, { signal: request.signal })
+    // 精确点位（located）与范围级近似（approximate）两档都上图：近似节点带
+    // uncertaintyMeters 光圈，正是 #1533 锚定写库后的主体；只拉 located 会让
+    // 村/镇档锚定结果永远上不了图。两档任一为 Mock 整体拒绝，不混画。
+    const [locatedResponse, approximateResponse] = await Promise.all([
+      fetchGridGeoNodes({ locationStatus: 'located', page: 1, pageSize: COMMAND_NODE_PAGE_SIZE }, { signal: request.signal }),
+      fetchGridGeoNodes({ locationStatus: 'approximate', page: 1, pageSize: COMMAND_NODE_PAGE_SIZE }, { signal: request.signal }),
+    ])
     if (!layerRequestCurrent(request.requestId, request.scopeId, request.signal)) return
-    const result = commandNodesFromResponse(response)
+    const result = mergeCommandNodeResults(
+      commandNodesFromResponse(locatedResponse),
+      commandNodesFromResponse(approximateResponse),
+    )
     nodes.value = result.mock ? [] : result.nodes
     nodeTotal.value = result.total
     nodeTruncated.value = result.truncatedByPage
@@ -541,7 +551,7 @@ async function loadNodes(force = false) {
       reason: result.mock
         ? 'Mock 节点被驾驶舱拒绝'
         : nodes.value.length
-          ? `绘制 ${nodes.value.length}/${result.total} 个权威 WGS84 节点${result.truncatedByPage ? '（分页性能预算截断）' : ''}${result.excludedInvalidCoordinates ? `；剔除 ${result.excludedInvalidCoordinates} 个无效坐标` : ''}`
+          ? `绘制 ${nodes.value.length}/${result.total} 个权威 WGS84 节点（含近似档，按不确定半径光圈表达）${result.truncatedByPage ? '（分页性能预算截断）' : ''}${result.excludedInvalidCoordinates ? `；剔除 ${result.excludedInvalidCoordinates} 个无效坐标` : ''}`
           : '当前范围没有已定位节点；未定位身份不会生成坐标',
     })
   } catch (cause) {
@@ -1059,7 +1069,7 @@ onBeforeUnmount(() => {
             <article><strong>{{ layerSettled('nodes') ? nodeTotal : '—' }}</strong><small>筛选总量</small></article>
             <article><strong>{{ layerSettled('nodes') ? (nodeTruncated ? '是' : '否') : '—' }}</strong><small>分页截断</small></article>
           </div>
-          <div class="truth-callout"><ShieldCheck :size="15" aria-hidden="true" />只读取 locationStatus=located；unresolved 身份不会生成坐标。{{ nodeExcludedInvalid ? `另剔除 ${nodeExcludedInvalid} 个无效坐标。` : '' }}</div>
+          <div class="truth-callout"><ShieldCheck :size="15" aria-hidden="true" />读取 locationStatus=located 与 approximate；近似档一律按 uncertaintyMeters 光圈表达，不假装精确点位。unresolved 身份不会生成坐标。{{ nodeExcludedInvalid ? `另剔除 ${nodeExcludedInvalid} 个无效坐标。` : '' }}</div>
           <div class="asset-list">
             <button v-for="node in scopedNodes" :key="node.nodeId" type="button" :class="{ selected: selectedNodeId === node.nodeId }" @click="selectNode(node)">
               <Waypoints :size="15" aria-hidden="true" /><span><strong>{{ node.nodeName }}</strong><small>{{ node.voltageLevelKv ? `${node.voltageLevelKv} kV` : '电压待补' }} · {{ node.location?.locationLabel }}</small></span><ArrowRight :size="13" aria-hidden="true" />

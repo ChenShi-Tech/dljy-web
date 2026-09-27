@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { commandNodesFromResponse, commandWeatherItems, trustedMarketMetrics } from './spatialCommand'
+import { commandNodesFromResponse, commandWeatherItems, mergeCommandNodeResults, trustedMarketMetrics } from './spatialCommand'
 import {
   mappingMatchesScope,
   mergeSourceTruthMetas,
@@ -55,6 +55,30 @@ describe('spatial command truth filters', () => {
     expect(result.nodes.map((item) => item.nodeId)).toEqual(['node:one'])
     expect(result.excludedInvalidCoordinates).toBe(2)
     expect(result.truncatedByPage).toBe(false)
+  })
+
+  it('located 与 approximate 两档合并入图，截断与剔除计数叠加', () => {
+    const approximate = node({
+      assetId: 'node:approx', nodeId: 'node:approx', locationStatus: 'approximate',
+      location: {
+        ...node().location!, accuracyLevel: 'village', confidence: 'unverified',
+        uncertaintyMeters: 2220, displayPolicy: 'uncertainty-halo', locationLabel: '某村（范围级参考点）',
+      },
+    })
+    const locatedResult = commandNodesFromResponse(nodeResponse([node()]))
+    const approximateResult = commandNodesFromResponse(nodeResponse([approximate]))
+    const merged = mergeCommandNodeResults(locatedResult, approximateResult)
+    expect(merged.nodes.map((item) => item.nodeId)).toEqual(['node:one', 'node:approx'])
+    expect(merged.total).toBe(2)
+    expect(merged.truncatedByPage).toBe(false)
+    expect(merged.excludedInvalidCoordinates).toBe(0)
+    expect(merged.mock).toBe(false)
+  })
+
+  it('任一档为 Mock 时合并结果整体拒绝', () => {
+    const realResult = commandNodesFromResponse(nodeResponse([node()]))
+    const mockResult = { ...commandNodesFromResponse(nodeResponse([node()])), mock: true }
+    expect(mergeCommandNodeResults(realResult, mockResult).mock).toBe(true)
   })
 
   it('天气缺测不被补成零值图形', () => {
