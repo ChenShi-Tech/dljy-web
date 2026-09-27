@@ -4,9 +4,12 @@
 //
 // agentClient 契约回归（STREAM-5/10 / #1631 / #2958）：
 // 1. identityHeaders 三元组（token+company+region）。
-// 2. pi 会话路由：建会话恒走 pi 底座（双栈退场后无第二个 base）；按会话 id 路由的
-// 请求（续聊/回放/在途 run/停止/产物/refs）不再查本地登记表——未在本浏览器建过的
-// 会话（换浏览器、清存储、登记表溢出）同样落到 pi，不会回退 legacy 404。
+// 2. pi 会话路由：建会话恒走 pi 底座（双栈退场后无第二个 base）；会话生命周期请求
+// （续聊/回放/在途 run/停止/审批）不再查本地登记表——未在本浏览器建过的会话
+// （换浏览器、清存储、登记表溢出）同样落到 pi，不会回退 legacy 404。
+// 2b. 产物（artifacts）与 data_ref（refs）例外：由 agent-runtime（agent-backend）提供，
+// 固定走 AGENT_API_BASE——pi-poc 没有这两类端点（未匹配一律 404），即便会话是
+// createAgentSession 建在 pi 上的，产物/refs 请求也必须落 agent-backend（#2958 返工）。
 // 3. SSE 流解析（核心），CRLF/LF 双分隔、心跳帧静默跳过、seq 游标取 max、
 // 尾帧无尾随分隔符仍消费（done 丢失 = 面板状态机悬挂，STREAM-5/10）、
 // 无终态帧抛 AgentStreamDisconnectedError、abort 静默返回。
@@ -37,12 +40,15 @@ vi.mock('@/services/region/regionContext', () => ({
 }))
 
 import {
+  AGENT_API_BASE,
   AgentStreamDisconnectedError,
   AgentStreamHttpError,
   attachRunStream,
   createAgentSession,
+  fetchAgentRef,
   getActiveRun,
   identityHeaders,
+  listAgentArtifacts,
   listRuns,
   pingAgentService,
   probeAgentService,
@@ -148,6 +154,48 @@ describe('createAgentSession 会话路由', () => {
     await expect(createAgentSession('chat')).rejects.toThrow('缺少 vendor-a 的 API Key')
     mockFetch(async () => new Response('oops', { status: 500 }))
     await expect(createAgentSession('chat')).rejects.toThrow('智能体后端未启动')
+  })
+})
+
+describe('会话产物与 data_ref 固定走 agent-backend（#2958 返工）', () => {
+  // artifacts 列表 / refs 明细由 agent-runtime（api/routes.py）提供：pi-poc 会话子路由
+  // 只有 ""、messages、stream、active-run、stop、approvals、auto-approve，没有
+  // artifacts/refs——恒打 pi 只会 404。会话即便建在 pi 上，这两类请求也必须落
+  // AGENT_API_BASE（对 pi 会话走历史库 owner 校验放行）。
+
+  it('listAgentArtifacts：URL 以 AGENT_API_BASE 开头，不以 pi 基址开头', async () => {
+    // 先建一个 pi 会话（createAgentSession 恒打 pi），产物请求仍不得跟随 pi 基址
+    mockFetch(async () => jsonRes({ id: 'sess-art', scenario: 'chat', title: '', status: 'idle' }))
+    const info = await createAgentSession('chat')
+    mockFetch(async () => jsonRes({ session_id: info.id, files: [{ path: 'charts/a.json', bytes: 12 }] }))
+    const files = await listAgentArtifacts(info.id)
+    expect(files).toEqual([{ path: 'charts/a.json', bytes: 12 }])
+    const url = (vi.mocked(fetch).mock.calls.at(-1) as unknown as [string])[0]
+    expect(url).toBe(`${AGENT_API_BASE}/sessions/sess-art/artifacts`)
+    expect(url.startsWith(AGENT_API_BASE)).toBe(true)
+    expect(url.startsWith(PI_BASE)).toBe(false)
+  })
+
+  it('listAgentArtifacts 非 2xx → 空数组（产物面板空态，不抛）', async () => {
+    mockFetch(async () => new Response('not found', { status: 404 }))
+    await expect(listAgentArtifacts('sess-404')).resolves.toEqual([])
+  })
+
+  it('fetchAgentRef：URL 以 AGENT_API_BASE 开头（pi 建的会话同样落 agent-backend）', async () => {
+    mockFetch(async () => jsonRes({ id: 'sess-ref', scenario: 'chat', title: '', status: 'idle' }))
+    await createAgentSession('chat')
+    mockFetch(async () => jsonRes({ data: { series: [{ x: 1, y: 2 }] } }))
+    const data = await fetchAgentRef<{ series: unknown[] }>('sess-ref', 'ref-1')
+    expect(data).toEqual({ series: [{ x: 1, y: 2 }] })
+    const url = (vi.mocked(fetch).mock.calls.at(-1) as unknown as [string])[0]
+    expect(url).toBe(`${AGENT_API_BASE}/refs/sess-ref/ref-1`)
+    expect(url.startsWith(AGENT_API_BASE)).toBe(true)
+    expect(url.startsWith(PI_BASE)).toBe(false)
+  })
+
+  it('fetchAgentRef 非 2xx → throw（图表明细缺失必须可见，不能静默空图）', async () => {
+    mockFetch(async () => new Response('gone', { status: 410 }))
+    await expect(fetchAgentRef('sess-x', 'ref-2')).rejects.toThrow('data_ref 获取失败: 410')
   })
 })
 

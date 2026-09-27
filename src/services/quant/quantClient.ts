@@ -3,7 +3,7 @@
 // 基址复用 agentClient 的 AGENT_API_BASE：开发态 /agent-api/agent（vite 代理），
 // 生产/静态部署 /api/agent（后端同源）。此前写死 /agent-api 会让生产构建下
 // 全部量化计算与产出物读取 404。
-import { AGENT_API_BASE, PI_AGENT_BASE, encodeAgentPath, identityHeaders } from '@/services/agent/agentClient'
+import { AGENT_API_BASE, encodeAgentPath, identityHeaders } from '@/services/agent/agentClient'
 import { currentRegion } from '@/services/region/regionContext'
 import { applyRegionHeaders, timeoutSignal } from '@/services/api'
 import { QuantHttpError } from './reviewError'
@@ -387,11 +387,12 @@ export async function fetchReports(reportType = 'daily_review'): Promise<ReportI
 
 /** 读取某会话某产出物正文（复用 artifacts 端点的路径防护 + 会话归属 ACL）。
  *  仅适用于「当前用户拥有的 live/历史会话」产出物；共享报告请用 fetchReportContent。
- *  按会话 id 路由恒走 pi 底座（#2958）：会话只建在 pi 上，写死旧基址会让换浏览器
- *  打开的历史会话产物读取 404。 */
+ *  固定走 agent-backend（AGENT_API_BASE，#2958 返工）：artifacts 由 agent-runtime 提供
+ *  （api/routes.py GET /sessions/{id}/artifacts/{path}），pi-poc 无此端点、恒打只会 404；
+ *  对 pi 会话走历史库 owner 校验放行，会话 id 仍传 pi 会话号。 */
 export async function fetchArtifactContent(sessionId: string, path: string): Promise<string> {
   const res = await fetch(
-    `${PI_AGENT_BASE}/sessions/${encodeURIComponent(sessionId)}/artifacts/${encodeAgentPath(path)}`,
+    `${AGENT_API_BASE}/sessions/${encodeURIComponent(sessionId)}/artifacts/${encodeAgentPath(path)}`,
     { headers: identityHeaders(), signal: timeoutSignal(QUANT_READ_TIMEOUT_MS) }
   )
   if (!res.ok) throw new Error(`读取失败: ${res.status}`)

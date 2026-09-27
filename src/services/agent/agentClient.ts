@@ -18,9 +18,11 @@ const BASE = AGENT_API_BASE
 // 留一张表只剩「有人调回 off 就把主入口路由到不再服务该场景的后端」这一种用法，
 // 前端一次查询超时触发 fail-safe 也是同样后果。
 // 会话级路由同样恒走 pi（#2958）：建会话只经 createAgentSession（恒打 pi），不再存在
-// 建在旧后端上的会话，续聊/回放等按会话 id 路由的请求无需本地登记表也能落对服务——
+// 建在旧后端上的会话，续聊/回放等生命周期请求无需本地登记表也能落对服务——
 // 曾按「内存 Map + localStorage 双写」的登记表判定归属，换浏览器/清存储/登记表溢出
-// 后历史会话会被回退到旧基址 404。persistHistory 走 #498 默认全开，归属登记由
+// 后历史会话会被回退到旧基址 404。例外：产物（artifacts）与 data_ref（refs）虽按
+// pi 会话号寻址，但由 agent-runtime 提供、固定走 AGENT_API_BASE（见 listAgentArtifacts
+// 上方说明）——pi-poc 没有这两类端点，恒打 pi 只会 404。persistHistory 走 #498 默认全开，归属登记由
 // pi-poc 服务端回调 Node bind（见 agent-poc-strategic-qa-design.md）。
 /** pi 底座（pi-poc 编排服务）基址：开发态 vite 代理 /pi-api → 8100，生产 nginx 同源同名。 */
 export const PI_AGENT_BASE = '/pi-api/agent'
@@ -446,8 +448,15 @@ export async function sendAgentApproval(
   }
 }
 
+// 会话产物（artifacts）与 data_ref（refs）由 agent-runtime（agent-backend :8000）提供，
+// **不走 pi 底座**（#2958 返工）：pi-poc server.ts 的会话子路由只有 ""、messages、stream、
+// active-run、stop、approvals、auto-approve，没有 artifacts/refs（未匹配一律 404）；真实
+// 服务端是 agent-runtime api/routes.py 的 GET /sessions/{id}/artifacts（列表）、
+// GET /sessions/{id}/artifacts/{path}（内容）与 GET /refs/{session_id}/{ref_id}——对 pi
+// 会话经历史库 owner 校验放行。pi 的画图工具 make-chart.ts 自己也是经 agentApiBase 取 ref。
+// 注意会话 id 仍是 pi 会话号：这两类端点只是「按会话号寻址的产物存储」，落在 agent-backend。
 export async function listAgentArtifacts(sessionId: string): Promise<{ path: string; bytes: number }[]> {
-  const res = await fetch(`${PI_AGENT_BASE}/sessions/${encodeURIComponent(sessionId)}/artifacts`, {
+  const res = await fetch(`${BASE}/sessions/${encodeURIComponent(sessionId)}/artifacts`, {
     headers: identityHeaders(),
     signal: timeoutSignal(AGENT_REQUEST_TIMEOUT_MS)
   })
@@ -460,9 +469,9 @@ export function encodeAgentPath(path: string): string {
   return path.split('/').map((segment) => encodeURIComponent(segment)).join('/')
 }
 
-// 取 data_ref 明细（如 chart 事件的 ECharts option）
+// 取 data_ref 明细（如 chart 事件的 ECharts option）——固定走 agent-backend（见上方说明）
 export async function fetchAgentRef<T = unknown>(sessionId: string, refId: string): Promise<T> {
-  const res = await fetch(`${PI_AGENT_BASE}/refs/${encodeURIComponent(sessionId)}/${encodeURIComponent(refId)}`, {
+  const res = await fetch(`${BASE}/refs/${encodeURIComponent(sessionId)}/${encodeURIComponent(refId)}`, {
     headers: identityHeaders(),
     signal: timeoutSignal(AGENT_REQUEST_TIMEOUT_MS)
   })
