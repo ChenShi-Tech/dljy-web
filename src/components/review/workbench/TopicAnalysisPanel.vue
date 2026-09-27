@@ -122,6 +122,6 @@ onBeforeUnmount(() => { sequence++; controller?.abort() })
 
 <style scoped>
 .metric-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:10px;margin:12px 0}
-.review-callout{margin:10px 0}
+.callout-box{margin:10px 0}
 .topic-analysis{min-width:0}.controls{display:flex;gap:16px;flex-wrap:wrap;align-items:center}.controls label{display:flex;gap:8px;align-items:center}.plot{height:320px}p,summary,label,button,select,input{font-size:var(--font-sm)}p{color:var(--muted);line-height:1.7}button,select,input{font-family:inherit;color:var(--text);background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:8px}button,summary{cursor:pointer}details{padding:12px 0;border-top:1px solid var(--line)}.interval-list{max-height:240px;overflow:auto;display:grid;gap:8px;padding:12px 0}.interval-list label{display:flex;align-items:center;gap:8px}button:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid var(--primary);outline-offset:2px}@media(max-width:720px){.controls label{width:100%}.plot{height:260px}}
 </style>

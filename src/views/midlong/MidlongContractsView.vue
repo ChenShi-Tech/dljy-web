@@ -8,6 +8,7 @@ import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import CompanyScopeBar from '@/components/company/CompanyScopeBar.vue'
+import MetricTile from '@/components/common/MetricTile.vue'
 import MidlongNotice from '@/components/midlong/MidlongNotice.vue'
 import MidlongContractFormDialog from '@/components/midlong/MidlongContractFormDialog.vue'
 import MidlongImportDialog from '@/components/midlong/MidlongImportDialog.vue'
@@ -200,13 +201,13 @@ watch([selectedCompanyId, () => currentRegion.value.id], () => {
     </MidlongNotice>
 
     <template v-if="result && (state === 'ready' || state === 'loading')">
-      <div class="ml-tiles">
-        <button class="ml-tile" type="button" @click="quickFilter('')"><span>筛选范围合同</span><b>{{ result.stats.total }}</b><small>框架协议 {{ result.stats.frameworkCount }}</small></button>
-        <button class="ml-tile warn" type="button" @click="quickFilter('PENDING_VERIFICATION')"><span>待核对</span><b>{{ result.stats.byStatus.PENDING_VERIFICATION }}</b><small>核验确认后计入持仓</small></button>
-        <button class="ml-tile" type="button" @click="quickFilter('DRAFT')"><span>草稿</span><b>{{ result.stats.byStatus.DRAFT }}</b><small>未确认</small></button>
-        <button class="ml-tile ok" type="button" @click="quickFilter('CONFIRMED')"><span>已确认电量合同</span><b>{{ fmtQuantity(result.stats.confirmedObligationQuantity) }}<i>MWh</i></b><small>{{ result.stats.byStatus.CONFIRMED }} 份</small></button>
+      <div class="tile-grid">
+        <MetricTile as="button" label="筛选范围合同" :value="String(result.stats.total)" :sub="`框架协议 ${result.stats.frameworkCount}`" @click="quickFilter('')" />
+        <MetricTile as="button" tone="warn" label="待核对" :value="String(result.stats.byStatus.PENDING_VERIFICATION)" sub="核验确认后计入持仓" @click="quickFilter('PENDING_VERIFICATION')" />
+        <MetricTile as="button" label="草稿" :value="String(result.stats.byStatus.DRAFT)" sub="未确认" @click="quickFilter('DRAFT')" />
+        <MetricTile as="button" tone="good" label="已确认电量合同" :value="fmtQuantity(result.stats.confirmedObligationQuantity)" unit="MWh" :sub="`${result.stats.byStatus.CONFIRMED} 份`" @click="quickFilter('CONFIRMED')" />
         <!-- 质量缺口有多种类型，没有「任一缺口」的聚合筛选：这张卡只展示数量，按类型查看用上方「质量缺口」筛选。 -->
-        <div class="ml-tile static"><span>有质量缺口</span><b>{{ result.stats.withQualityGaps }}</b><small>按类型查看请用「质量缺口」筛选</small></div>
+        <MetricTile label="有质量缺口" :value="String(result.stats.withQualityGaps)" sub="按类型查看请用「质量缺口」筛选" />
       </div>
 
       <MidlongNotice tone="info">
@@ -325,20 +326,7 @@ watch([selectedCompanyId, () => currentRegion.value.id], () => {
 .ml-title { margin: 0; font-size: var(--font-20); }
 .ml-sub { color: var(--muted); font-size: var(--font-md); }
 .ml-placeholder { min-height: 200px; }
-.ml-tiles { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; }
-.ml-tile {
-  text-align: left; cursor: pointer; font: inherit; color: inherit; display: flex; flex-direction: column; gap: 3px;
-  padding: 12px 14px; border: 1px solid var(--line); border-radius: var(--radius, 8px); background: var(--panel);
-}
-.ml-tile:hover { border-color: var(--accent); }
-.ml-tile.static { cursor: default; }
-.ml-tile.static:hover { border-color: var(--line); }
-.ml-tile span { font-size: var(--font-sm); color: var(--muted); }
-.ml-tile b { font-size: var(--font-24); font-weight: 650; font-variant-numeric: tabular-nums; font-family: var(--font-display); }
-.ml-tile b i { font-style: normal; font-size: var(--font-sm); color: var(--muted); margin-left: 4px; font-weight: 500; }
-.ml-tile small { font-size: var(--font-xs); color: var(--muted); }
-.ml-tile.ok b { color: var(--success); }
-.ml-tile.warn b { color: var(--warning); }
+.tile-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; }
 .ml-toolbar, .ml-filters { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .ml-link { color: var(--accent); text-decoration: none; }
 .ml-muted { color: var(--muted); font-size: var(--font-sm); }
@@ -347,5 +335,5 @@ watch([selectedCompanyId, () => currentRegion.value.id], () => {
 .ml-cell-stack small { color: var(--muted); font-size: var(--font-sm); }
 .ml-empty { padding: 24px 0; color: var(--muted); }
 .ml-pager { justify-content: flex-end; }
-@media (max-width: 1100px) { .ml-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 1100px) { .tile-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 </style>

@@ -4,6 +4,7 @@
 import { computed, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import MidlongNotice from './MidlongNotice.vue'
+import MetricTile from '@/components/common/MetricTile.vue'
 import {
   ENERGY_UNIT_FACTORS, EVIDENCE_DOCUMENT_TYPE_LABELS, PRICE_UNIT_FACTORS,
   type MidlongImportBatch, type MidlongImportIssue, type MidlongImportMapping, type MidlongImportPreview, type MidlongImportRowReport,
@@ -178,14 +179,14 @@ function close() {
       </template>
 
       <template v-if="step === 'preview' && preview">
-        <div class="ml-tiles">
-          <div class="ml-tile"><span>合同行</span><b>{{ preview.summary.contractRows }}</b></div>
-          <div class="ml-tile ok"><span>新增</span><b>{{ preview.summary.createCount }}</b></div>
-          <div class="ml-tile"><span>同内容跳过</span><b>{{ preview.summary.skipCount }}</b></div>
-          <div class="ml-tile warn"><span>内容冲突</span><b>{{ preview.summary.conflictCount }}</b></div>
-          <div class="ml-tile bad"><span>错误行</span><b>{{ preview.summary.errorRowCount }}</b></div>
-          <div class="ml-tile"><span>文件级问题</span><b>{{ preview.summary.fileErrorCount }}</b></div>
-          <div class="ml-tile warn"><span>提示</span><b>{{ preview.summary.warningCount }}</b></div>
+        <div class="tile-grid">
+          <MetricTile label="合同行" :value="String(preview.summary.contractRows)" />
+          <MetricTile tone="good" label="新增" :value="String(preview.summary.createCount)" />
+          <MetricTile label="同内容跳过" :value="String(preview.summary.skipCount)" />
+          <MetricTile tone="warn" label="内容冲突" :value="String(preview.summary.conflictCount)" />
+          <MetricTile tone="bad" label="错误行" :value="String(preview.summary.errorRowCount)" />
+          <MetricTile label="文件级问题" :value="String(preview.summary.fileErrorCount)" />
+          <MetricTile tone="warn" label="提示" :value="String(preview.summary.warningCount)" />
         </div>
         <MidlongNotice v-if="preview.summary.conflictCount" tone="warn" title="存在同编号不同内容的合同">
           冲突合同不会被导入覆盖，也不会另建第二份有效合同。请打开原合同核对差异，确需修改时走「录入更正」；核对无误后可从文件中去掉这些行再导入。
@@ -273,13 +274,7 @@ function close() {
 .ml-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px 14px; }
 .ml-field { display: flex; flex-direction: column; gap: 4px; font-size: var(--font-md); color: var(--muted); }
 .ml-field :deep(.el-select) { width: 100%; }
-.ml-tiles { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 10px; }
-.ml-tile { border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; display: flex; flex-direction: column; gap: 2px; }
-.ml-tile span { font-size: var(--font-sm); color: var(--muted); }
-.ml-tile b { font-size: var(--font-24); font-variant-numeric: tabular-nums; }
-.ml-tile.ok b { color: var(--success); }
-.ml-tile.warn b { color: var(--warning); }
-.ml-tile.bad b { color: var(--danger); }
+.tile-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 10px; }
 .ml-columns { font-size: var(--font-sm); color: var(--muted); display: flex; flex-wrap: wrap; gap: 6px; }
 .ml-col { padding: 1px 6px; border-radius: 4px; background: var(--surface-hover); color: var(--text-soft); }
 .ml-expand { display: flex; flex-direction: column; gap: 4px; padding: 4px 12px; font-size: var(--font-md); }
@@ -287,5 +282,5 @@ function close() {
 .ml-expand .warn { color: var(--warning); }
 .ml-muted { color: var(--muted); font-size: var(--font-sm); }
 .ml-link { color: var(--accent); margin-right: 8px; }
-@media (max-width: 900px) { .ml-tiles { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 900px) { .tile-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 </style>

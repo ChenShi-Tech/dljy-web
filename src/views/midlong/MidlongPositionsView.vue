@@ -11,6 +11,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import CompanyScopeBar from '@/components/company/CompanyScopeBar.vue'
 import ChartCard from '@/components/common/ChartCard.vue'
+import MetricTile from '@/components/common/MetricTile.vue'
 import MidlongNotice from '@/components/midlong/MidlongNotice.vue'
 import { selectedCompanyId } from '@/services/company/companyContext'
 import { fetchStations, type CompanyStation } from '@/services/company/companyApi'
@@ -272,12 +273,12 @@ const stationName = (id: number | null) => (id ? stations.value.find((s) => s.id
         草稿 {{ report.excluded.draftCount }}、待核对 {{ report.excluded.pendingVerificationCount }} 份合同需核验确认后才会计入。
       </MidlongNotice>
 
-      <div class="ml-tiles">
-        <div class="ml-tile"><span>区间正式分解电量</span><b>{{ fmtQuantity(totals.formalQuantityInRange) }}<i>MWh</i></b><small>{{ totals.contractCount }} 份已确认合同</small></div>
-        <div class="ml-tile warn"><span>跨期未分解电量</span><b>{{ fmtQuantity(totals.unallocatedPoolQuantity) }}<i>MWh</i></b><small>{{ totals.unallocatedContractCount }} 份合同 · 不按月均摊</small></div>
-        <div class="ml-tile"><span>涉及合同总量</span><b>{{ fmtQuantity(totals.contractTotalQuantity) }}<i>MWh</i></b><small>含区间外月份</small></div>
-        <div class="ml-tile"><span>价格覆盖</span><b>{{ fmtRatio(totals.price.coverageRatio) }}</b><small>已知价格 {{ fmtQuantity(totals.price.knownPriceQuantity) }} MWh</small></div>
-        <div class="ml-tile"><span>已知部分加权均价</span><b class="ml-small">{{ averagePriceLabel(totals.price) }}</b><small>名义金额 {{ notionalAmountLabel(totals.price) }}</small></div>
+      <div class="tile-grid">
+        <MetricTile label="区间正式分解电量" :value="fmtQuantity(totals.formalQuantityInRange)" unit="MWh" :sub="`${totals.contractCount} 份已确认合同`" />
+        <MetricTile tone="warn" label="跨期未分解电量" :value="fmtQuantity(totals.unallocatedPoolQuantity)" unit="MWh" :sub="`${totals.unallocatedContractCount} 份合同 · 不按月均摊`" />
+        <MetricTile label="涉及合同总量" :value="fmtQuantity(totals.contractTotalQuantity)" unit="MWh" sub="含区间外月份" />
+        <MetricTile label="价格覆盖" :value="fmtRatio(totals.price.coverageRatio)" :sub="`已知价格 ${fmtQuantity(totals.price.knownPriceQuantity)} MWh`" />
+        <MetricTile compact label="已知部分加权均价" :value="averagePriceLabel(totals.price)" :sub="`名义金额 ${notionalAmountLabel(totals.price)}`" />
       </div>
 
       <MidlongNotice v-if="!totals.price.comparable" tone="warn" title="价格口径不可合并">
@@ -350,18 +351,11 @@ const stationName = (id: number | null) => (id ? stations.value.find((s) => s.id
 .ml-sub { color: var(--muted); font-size: var(--font-md); }
 .ml-placeholder { min-height: 200px; }
 .ml-filters { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.ml-tiles { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; }
-.ml-tile { display: flex; flex-direction: column; gap: 3px; padding: 12px 14px; border: 1px solid var(--line); border-radius: var(--radius, 8px); background: var(--panel); }
-.ml-tile span { font-size: var(--font-sm); color: var(--muted); }
-.ml-tile b { font-size: var(--font-24); font-weight: 650; font-variant-numeric: tabular-nums; font-family: var(--font-display); }
-.ml-tile b.ml-small { font-size: var(--font-16); }
-.ml-tile b i { font-style: normal; font-size: var(--font-sm); color: var(--muted); margin-left: 4px; font-weight: 500; }
-.ml-tile small { font-size: var(--font-xs); color: var(--muted); }
-.ml-tile.warn b { color: var(--warning); }
+.tile-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; }
 .ml-panel { border: 1px solid var(--line); border-radius: var(--radius, 8px); padding: 14px 16px; background: var(--panel); }
 .ml-panel h3 { margin: 0 0 10px; font-size: var(--font-16); display: flex; align-items: baseline; gap: 8px; }
 .ml-panel h3 small { font-size: var(--font-sm); color: var(--muted); font-weight: 400; }
 .ml-link { color: var(--accent); text-decoration: none; margin-right: 6px; }
 .ml-warn { color: var(--warning); }
-@media (max-width: 1100px) { .ml-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 1100px) { .tile-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 </style>
