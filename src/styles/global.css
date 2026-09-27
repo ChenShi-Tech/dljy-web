@@ -111,14 +111,17 @@ select {
   border-bottom: 1px solid var(--sidebar-border);
 }
 
+/* 品牌标识徽标：深蓝底 + 冷白青线稿，与网站图标（public/favicon.svg）一致，四档主题不随主题换色 */
 .brand-mark {
   display: grid;
+  flex: none;
   width: 32px;
   height: 32px;
   place-items: center;
-  border-radius: 6px;
-  background: var(--brand-mark-bg);
-  font-weight: 800;
+  border-radius: 8px;
+  color: #bfe3ec;
+  background: linear-gradient(180deg, #0e2440, #050b16);
+  box-shadow: inset 0 0 0 1px rgba(108, 201, 219, 0.35);
 }
 
 .brand-copy {
