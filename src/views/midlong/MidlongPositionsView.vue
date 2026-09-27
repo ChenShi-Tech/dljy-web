@@ -16,6 +16,7 @@ import { selectedCompanyId } from '@/services/company/companyContext'
 import { fetchStations, type CompanyStation } from '@/services/company/companyApi'
 import { currentRegion } from '@/services/region/regionContext'
 import { cssVar } from '@/composables/useTheme'
+import { lastDayOfMonth } from '@/utils/calendarDate'
 import { withAlpha } from '@/services/chart/chartStyle'
 import {
   CompanyNotSelectedError, exportPositions, fetchCapabilities, fetchPositions, fetchSubjects, midlongFailureOf,
@@ -200,10 +201,15 @@ function buildOption(): Record<string, unknown> {
 }
 
 // P2 入口（dljy#2971）：分时持仓、场站维度持仓只在对应能力开通时出现，带上当前月份与主体筛选。
-const intervalLink = computed(() => ({
-  path: '/zcqjy/positions/intervals',
-  query: { fromDate: `${filters.monthRange[0] ?? report.value?.fromMonth ?? ''}-01`, toDate: `${filters.monthRange[0] ?? report.value?.fromMonth ?? ''}-01`, granularity: 'HOUR', ...(filters.subjectId ? { subjectId: filters.subjectId } : {}) },
-}))
+// 分时跳转落到入口承诺的完整自然月：fromDate 是所选月 1 号，toDate 是该月真实月末（dljy#2984），
+// 不再把两天都钉在 1 号导致目标页首屏只有 24 小时；单月 ≤31 天在小时接口上限内。
+const intervalLink = computed(() => {
+  const month = filters.monthRange[0] ?? report.value?.fromMonth ?? ''
+  return {
+    path: '/zcqjy/positions/intervals',
+    query: { fromDate: `${month}-01`, toDate: lastDayOfMonth(month) ?? '', granularity: 'HOUR', ...(filters.subjectId ? { subjectId: filters.subjectId } : {}) },
+  }
+})
 const stationLink = computed(() => ({
   path: '/zcqjy/positions/stations',
   query: { ...(filters.monthRange.length === 2 ? { fromMonth: filters.monthRange[0], toMonth: filters.monthRange[1] } : {}), ...(filters.subjectId ? { subjectId: filters.subjectId } : {}) },
