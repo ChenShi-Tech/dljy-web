@@ -133,11 +133,31 @@
       </div>
     </el-card>
 
+    <!-- ④′ 落库冲突（409）：单独成档，不是「格式错误」——两份数据都合法，需要人核对（#2898） -->
+    <el-card v-if="conflict" shadow="never" class="step-card conflict-card">
+      <template #header><span>落库冲突：库内已有不同的价格，未入库，需要人工核对</span></template>
+      <p class="conflict-lede">
+        提交被拒绝：<strong>{{ conflict.dataset }}</strong>（{{ conflict.fileName }}）中部分行与库内已有数据冲突——
+        同一日期、节点、时刻、市场的库内价与来件价不同。服务端已拒收本批次，未写入任何数据。
+      </p>
+      <pre class="conflict-detail">{{ conflict.detail }}</pre>
+      <div class="conflict-ways">
+        <span class="sect-label">三条出路</span>
+        <ul>
+          <li>来件对：联系运维走 owner 通道更正库内公共曲线（手录修正不能直接覆盖已入库数据）；</li>
+          <li>库内对：从来件文件中剔除冲突行后重新上传；</li>
+          <li>仅补缺失日期：文件里其余不冲突的数据可直接重新提交。</li>
+        </ul>
+      </div>
+      <div class="actions">
+        <el-button type="primary" @click="backToUpload">返回修改</el-button>
+      </div>
+    </el-card>
+
     <!-- ⑤ 回执 -->
     <el-card v-if="step === 'receipt' && receipt" shadow="never" class="step-card">
       <template #header><span>导入回执</span></template>
-      <el-result :icon="receipt.code === 200 ? 'success' : 'error'" :title="receipt.msg || (receipt.code === 200 ? '导入成功' : '导入失败')" />
-      <el-descriptions v-if="receipt.batch" :column="2" border size="small">
+      <el-result :icon="receipt.code === 200 ? 'success' : 'error'" :title="receipt.msg || (receipt.code === 200 ? '导入成功' : '导入失败')" />      <el-descriptions v-if="receipt.batch" :column="2" border size="small">
         <el-descriptions-item label="批次号">{{ receipt.batch.id }}</el-descriptions-item>
         <el-descriptions-item label="落库时间">{{ receipt.batch.created_at.slice(0, 19).replace('T', ' ') }}</el-descriptions-item>
         <el-descriptions-item label="有效行">{{ receipt.batch.rows_valid }}</el-descriptions-item>
@@ -185,7 +205,7 @@
 // 纯交互层，校验/落库/幂等/撤销全部服务端权威（server/data/upload-pipeline.mjs），
 // 本组件只组织步骤与呈现预检报告/回执。
 import ReviewImportFields from '@/components/review/workbench/ReviewImportFields.vue'
-import type { ReviewImportMetadata } from '@/services/data/uploadClient'
+import { UploadConflictError, type ReviewImportMetadata } from '@/services/data/uploadClient'
 import { selectedCompanyId } from '@/services/company/companyContext'
 import { selectedRegionId } from '@/services/region/regionContext'
 import { computed, onMounted, onBeforeUnmount, reactive, ref, watch } from 'vue'
@@ -222,13 +242,16 @@ const committing = ref(false)
 const reverting = ref(false)
 const report = ref<PrecheckReport | null>(null)
 const receipt = ref<CommitResult | null>(null)
+// 落库冲突（409，#2890/#2898）：节点电价「库内已有不同价」单独成档——冲突不是格式错误，
+// 两份数据都合法，需要人核对；detail 是服务端逐字下发的改价明细（含换行），按原文多行展示。
+const conflict = ref<{ dataset: string; fileName: string; detail: string } | null>(null)
 const batches = ref<UploadBatchRow[]>([])
 const loadingBatches = ref(false)
 
 let scopeGeneration = 0
 const uploadScope = (): UploadScope => ({ companyId: selectedCompanyId.value, region: activeContract.value?.region ?? regionInput.value })
 onBeforeUnmount(() => ++scopeGeneration)
-watch([selectedCompanyId, selectedRegionId], () => { ++scopeGeneration; regionInput.value = selectedRegionId.value; activeContract.value = null; pickedFile.value = null; pickedPayload = null; report.value = null; receipt.value = null; batches.value = []; contracts.value = []; step.value = 'select'; void loadContracts(); void loadBatches() })
+watch([selectedCompanyId, selectedRegionId], () => { ++scopeGeneration; regionInput.value = selectedRegionId.value; activeContract.value = null; pickedFile.value = null; pickedPayload = null; report.value = null; receipt.value = null; conflict.value = null; batches.value = []; contracts.value = []; step.value = 'select'; void loadContracts(); void loadBatches() })
 let pickedPayload: { content: string; isBinary: boolean; fileName: string } | null = null
 
 async function loadContracts() {
@@ -269,6 +292,7 @@ function selectContract(row: UploadContractSummary) {
   pickedFile.value = null
   pickedPayload = null
   report.value = null
+  conflict.value = null
   step.value = 'upload'
 }
 
@@ -280,7 +304,7 @@ function backToSelect() {
 }
 
 function backToUpload() {
-  ++scopeGeneration; report.value = null
+  ++scopeGeneration; report.value = null; conflict.value = null
   step.value = 'upload'
 }
 
@@ -356,6 +380,12 @@ async function runCommit() {
     step.value = 'receipt'
     void loadBatches()
   } catch (err) {
+    if (ticket !== scopeGeneration) return
+    if (err instanceof UploadConflictError) {
+      // 冲突单独成档（#2898）：保留服务端换行明细，给出三条出路；不走通用错误 toast。
+      conflict.value = { dataset: activeContract.value.dataset, fileName: pickedPayload.fileName, detail: err.detail }
+      return
+    }
     ElMessage.error(`落库请求失败：${(err as Error).message}`)
   } finally {
     committing.value = false
@@ -398,6 +428,7 @@ function revertRow(row: UploadBatchRow) {
 function restart() {
   receipt.value = null
   report.value = null
+  conflict.value = null
   pickedFile.value = null
   pickedPayload = null
   if (fileInputRef.value) fileInputRef.value.value = ''
@@ -429,6 +460,18 @@ function chipClass(col: { via: string | null }): string {
 .col-chip.warn { background: var(--el-color-warning-light-9); color: var(--el-color-warning); }
 .col-chip.bad { background: var(--el-color-danger-light-9); color: var(--el-color-danger); }
 .err-table { margin-bottom: 10px; }
+
+/* 落库冲突档（409，#2898）：明细按服务端原文多行展示，突出可核对性 */
+.conflict-card :deep(.el-card__header) { color: var(--warning, #d97706); font-weight: 600; }
+.conflict-lede { font-size: var(--font-13); color: var(--text-body); line-height: 1.6; margin: 0 0 10px; }
+.conflict-detail {
+  margin: 0 0 12px; padding: 10px 12px; border-radius: var(--radius-sm, 6px);
+  background: color-mix(in srgb, var(--warning, #d97706) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--warning, #d97706) 35%, transparent);
+  font-family: var(--ck-mono, ui-monospace, monospace); font-size: var(--font-xs);
+  color: var(--text); white-space: pre-wrap; word-break: break-all; max-height: 260px; overflow: auto;
+}
+.conflict-ways ul { margin: 6px 0 0; padding-left: 18px; font-size: var(--font-12-5); color: var(--text-soft); line-height: 1.7; }
 .actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }
 .batches-card { margin-top: 4px; }
 .muted { color: var(--el-text-color-secondary); }

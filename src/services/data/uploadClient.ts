@@ -1,7 +1,7 @@
 // 数据运维台上传中心 client（Epic #2169 P1 · #2173）。
 // 五步流对应：①契约与模板 ③预检 ④确认落库 ⑤批次台账/撤销。
 // POST /api/v1/* 受网关幂等门：缺 Idempotency-Key → 428，与 ingestClient 同款注入。
-import { apiGet, apiPost } from '../api'
+import { ApiError, apiGet, apiPost } from '../api'
 
 export interface UploadContractColumn {
   name: string
@@ -84,6 +84,22 @@ export interface CommitResult {
 
 export interface UploadScope { companyId: string; region: string }
 export interface ReviewImportMetadata { view: 'generator' | 'retail' | 'storage'; simulated: boolean; basisLabel: string; actualLabel: string; sourceLabel: string; sourceVersion: string }
+
+/**
+ * 落库冲突（HTTP 409，#2890 / #2898）：同一 (天, 节点, 时刻, 市场) 库内已有**不同**价。
+ * 冲突不是格式错误——两份数据都合法，需要人核对哪一边对。`detail` 是服务端逐字下发的
+ * 裁决明细（含换行：改价明细「库内值 vs 来件值」逐条列出），必须按原文多行展示，
+ * 不得压成单行 toast。
+ */
+export class UploadConflictError extends Error {
+  readonly detail: string
+  constructor(message: string, detail = message) {
+    super(message)
+    this.name = 'UploadConflictError'
+    this.detail = detail
+  }
+}
+
 function scopedOptions(scope?: UploadScope) {
   return scope ? { headers: { 'x-company-id': scope.companyId, 'x-tenant-id': scope.companyId, 'x-region-id': scope.region } } : undefined
 }
@@ -147,12 +163,21 @@ export async function commitUpload(payload: {
   region?: string
 }, scope?: UploadScope): Promise<CommitResult> {
   // commit 的 data 就是完整 result（含 code/batch/delivered/msg）。
-  const res = await apiPost<CommitResult>('/api/v1/data-upload/commit', { ...payload, ...(scope ? { companyId: scope.companyId } : {}) }, {
-    headers: { ...scopedOptions(scope)?.headers, 'Idempotency-Key': newIdempotencyKey() }
-  })
-  const data = unwrapData(res)
-  if (!data) throw new Error(res?.msg ?? '提交响应缺 data（服务端信封形状异常）')
-  return data
+  try {
+    const res = await apiPost<CommitResult>('/api/v1/data-upload/commit', { ...payload, ...(scope ? { companyId: scope.companyId } : {}) }, {
+      headers: { ...scopedOptions(scope)?.headers, 'Idempotency-Key': newIdempotencyKey() }
+    })
+    const data = unwrapData(res)
+    if (!data) throw new Error(res?.msg ?? '提交响应缺 data（服务端信封形状异常）')
+    return data
+  } catch (err) {
+    // 409 = 库内已有不同价，需人裁决（#2890）——转成专用错误，视图层单独成档展示，
+    // 不落「落库请求失败」通用档。HTTP status 与信封 code 双看：unwrap 以 code≥400 优先。
+    if (err instanceof ApiError && (err.code === 409 || err.status === 409)) {
+      throw new UploadConflictError(err.message)
+    }
+    throw err
+  }
 }
 
 export async function fetchUploadBatches(dataset?: string, scope?: UploadScope): Promise<UploadBatchRow[]> {
