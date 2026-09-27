@@ -76,7 +76,7 @@ html[data-theme='arc'] {
   --wx-chip-bg: linear-gradient(135deg, rgba(6, 182, 212, 0.14), rgba(56, 189, 248, 0.1));
   --wx-chip-fg: #d7e4f5;
 
-  /* —— Element Plus 暗色覆盖(同 neon 范式,消除 el 组件白底/白弹层) —— */
+  /* —— Element Plus 暗色覆盖(与流光同一范式,消除 el 组件白底/白弹层) —— */
   --el-bg-color: #0c1626;
   --el-bg-color-page: #070d18;
   --el-bg-color-overlay: #101d33;

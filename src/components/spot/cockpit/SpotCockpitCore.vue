@@ -7,7 +7,7 @@
 // ④ 负价雷达+弃发建议、⑤ 损益归因瀑布、⑥ 申报偏差体检、⑦ 预测精度擂台/损失诊断 + 决策清单/持仓敞口。
 //
 // 纪律：云南严格地区 · 真实或空。无真实数据 → ingest-hint 空态（提示 import:spot-export --write），
-// 绝不伪造、绝不标「模拟数据」冒充、绝不回退别地区。视觉跟随 app 全局主题（classic/neon/paper/arc）：
+// 绝不伪造、绝不标「模拟数据」冒充、绝不回退别地区。视觉跟随 app 全局主题（classic/flow/paper/arc）：
 // scoped --ck-* 令牌映射主题变量、图表 chrome 走 chartChrome() 按 render 取色；数据语义色不随主题变。
 //
 // 诚实标注：③ 基差为「选定节点」(非自有，capture 无 self-owned 维度)；⑦ 默认展示
@@ -1249,7 +1249,7 @@ onRegionChange(() => {
 
 <style scoped>
 /* 交易终端样式（移植自 prototype/spot-cockpit.html）：作用域内 --ck-* 令牌现映射到
-   app 全局主题变量，随 classic/neon/paper/arc 四主题切换。useEChart 主题切换会 dispose
+   app 全局主题变量，随 classic/flow/paper/arc 四主题切换。useEChart 主题切换会 dispose
    重建并重调 render，图表 chrome 经 chartChrome() 在 render 内取色，无需手加 watch(theme)。 */
 .cockpit {
   --ck-bg: var(--bg);
@@ -1280,7 +1280,7 @@ onRegionChange(() => {
 
 /* embedded:融合页 /dashboard 内嵌时去外层边框/圆角/底 padding,平滑融入 page-stack;
    standalone(工作台 tab,embedded=false)保留原终端边框。--ck-* 仍映射全局主题变量,
-   classic/paper 下本就浅色、neon/arc 下深色,主题切换自动跟随(useEChart dispose+重调 render)。*/
+   classic/paper 下本就浅色、flow/arc 下深色,主题切换自动跟随(useEChart dispose+重调 render)。*/
 .cockpit.embedded {
   border: 0;
   border-radius: 0;

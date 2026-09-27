@@ -1,4 +1,4 @@
-/* 颜色语义变量见 src/styles/theme.css(default / neon / paper 三档主题契约)。
+/* 颜色语义变量见 src/styles/theme.css(主题契约;弧光 / 流光见 theme-arc.css / theme-flow.css)。
    此处仅保留字体设置;default 档各变量值 === 改造前现状色。 */
 :root {
 
@@ -147,12 +147,6 @@ select {
 
 .sidebar .el-menu-item.is-active {
   background: var(--primary) !important;
-}
-
-/* neon: 展开侧栏时激活项底色为 cyan（--primary），文字需深色才能看清；
-   收起后弹出菜单不在 .sidebar 内，不受此规则影响，走 active-text-color 亮色。 */
-html[data-theme='neon'] .sidebar .el-menu-item.is-active {
-  color: #04060f !important;
 }
 
 .menu-icon {
