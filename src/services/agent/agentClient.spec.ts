@@ -1,11 +1,12 @@
 // @vitest-environment happy-dom
 // ↑ 勿删：本文件不是 *.component.spec.ts，vitest node project 默认不给 DOM；
-// 用例依赖 localStorage（身份头 / pi 会话路由登记），靠此 pragma 按文件切到 happy-dom。
+// 用例依赖 localStorage（身份头三元组），靠此 pragma 按文件切到 happy-dom。
 //
-// agentClient 契约回归（STREAM-5/10 / #1631）：
+// agentClient 契约回归（STREAM-5/10 / #1631 / #2958）：
 // 1. identityHeaders 三元组（token+company+region）。
-// 2. pi 会话路由登记：建会话恒走 pi 底座（双栈退场后无第二个 base），会话 id 写
-// localStorage（刷新后仍路由正确）；未经本函数建的会话（工作室自定义图）回退 legacy。
+// 2. pi 会话路由：建会话恒走 pi 底座（双栈退场后无第二个 base）；按会话 id 路由的
+// 请求（续聊/回放/在途 run/停止/产物/refs）不再查本地登记表——未在本浏览器建过的
+// 会话（换浏览器、清存储、登记表溢出）同样落到 pi，不会回退 legacy 404。
 // 3. SSE 流解析（核心），CRLF/LF 双分隔、心跳帧静默跳过、seq 游标取 max、
 // 尾帧无尾随分隔符仍消费（done 丢失 = 面板状态机悬挂，STREAM-5/10）、
 // 无终态帧抛 AgentStreamDisconnectedError、abort 静默返回。
@@ -36,7 +37,6 @@ vi.mock('@/services/region/regionContext', () => ({
 }))
 
 import {
-  AGENT_API_BASE,
   AgentStreamDisconnectedError,
   AgentStreamHttpError,
   attachRunStream,
@@ -50,7 +50,6 @@ import {
   type AgentEvent,
 } from '@/services/agent/agentClient'
 
-const PI_KEY = 'dljy.piPocSessionIds'
 const PI_BASE = '/pi-api/agent'
 
 function mockFetch(impl: (...args: unknown[]) => Promise<Response>) {
@@ -114,40 +113,25 @@ describe('identityHeaders', () => {
   })
 })
 
-describe('createAgentSession 会话级路由登记', () => {
-  it('建会话恒走 pi：sessionId 写 localStorage dljy.piPocSessionIds（刷新后仍路由正确）', async () => {
+describe('createAgentSession 会话路由', () => {
+  it('建会话恒走 pi：POST 打 pi 基址，后续续聊请求同样路由到 pi', async () => {
     mockFetch(async () => jsonRes({ id: 'sess-pi', scenario: 'chat', title: '', status: 'idle' }))
     const info = await createAgentSession('chat')
     expect(info.id).toBe('sess-pi')
-    expect(JSON.parse(localStorage.getItem(PI_KEY) || '[]')).toContain('sess-pi')
-    // 后续请求经 baseForSession 路由到 pi（内存表优先）
+    // 后续请求路由到 pi（不再依赖本地登记表）
     mockFetch(async () => jsonRes(null))
     await getActiveRun('sess-pi')
     const url = (vi.mocked(fetch).mock.calls.at(-1) as unknown as [string])[0]
     expect(url.startsWith(PI_BASE)).toBe(true)
   })
 
-  it('pi 会话登记保留去重且上限 50 条不无限膨胀', async () => {
-    localStorage.setItem(PI_KEY, JSON.stringify(Array.from({ length: 60 }, (_, i) => `old-${i}`)))
-    mockFetch(async () => jsonRes({ id: 'sess-new', scenario: 'chat', title: '', status: 'idle' }))
-    await createAgentSession('chat')
-    const ids = JSON.parse(localStorage.getItem(PI_KEY) || '[]') as string[]
-    expect(ids).toContain('sess-new')
-    expect(ids).toHaveLength(50) // slice(-50) 截断
-  })
-
-  it('未经 createAgentSession 建的会话回退 legacy base（工作室自定义图经 /graph-runs 建在 agent-backend）', async () => {
+  it('未登记会话仍走 pi（#2958）：换浏览器/清存储/登记表溢出后，续接在途 run 不再回退 legacy', async () => {
+    // 登记表已删除：localStorage 为空（beforeEach 已 clear）也必须落到 pi
     mockFetch(async () => jsonRes(null))
     await getActiveRun('sess-unknown')
     const url = (vi.mocked(fetch).mock.calls.at(-1) as unknown as [string])[0]
-    expect(url.startsWith(AGENT_API_BASE)).toBe(true)
-    // 对照：经 createAgentSession 建的会话走 pi
-    mockFetch(async () => jsonRes({ id: 'sess-pi2', scenario: 'chat', title: '', status: 'idle' }))
-    await createAgentSession('chat')
-    mockFetch(async () => jsonRes(null))
-    await getActiveRun('sess-pi2')
-    const url2 = (vi.mocked(fetch).mock.calls.at(-1) as unknown as [string])[0]
-    expect(url2.startsWith(PI_BASE)).toBe(true)
+    expect(url.startsWith(PI_BASE)).toBe(true)
+    expect(url.startsWith('/agent-api')).toBe(false)
   })
 
   it('POST body 带 persist/prompt_key/page_key 默认值（persist 默认 false）', async () => {
@@ -173,12 +157,11 @@ describe('listRuns 运行中列表（统一 AI 侧边栏 SS-07）', () => {
     created_at: 1, updated_at: 1, last_seq: 3, session_title: '在跑', page_key: 'ai_center', scenario: 'chat'
   })
 
-  it('走 pi 底座；返回的会话登记为 pi 会话，之后切换、停止、回放都路由到 pi', async () => {
+  it('走 pi 底座；别处建的会话不做登记也能切换、停止、回放（恒路由 pi）', async () => {
     const spy = mockFetch(async () => jsonRes([run('sess-run-elsewhere')]))
     const runs = await listRuns('running')
     expect(runs.map((r) => r.session_id)).toEqual(['sess-run-elsewhere'])
     expect((spy.mock.calls[0] as unknown as [string])[0]).toBe(`${PI_BASE}/runs?status=running`)
-    expect(JSON.parse(localStorage.getItem(PI_KEY) || '[]')).toContain('sess-run-elsewhere')
 
     mockFetch(async () => jsonRes(null))
     await getActiveRun('sess-run-elsewhere')
@@ -332,10 +315,9 @@ describe('sendAgentMessage', () => {
     localStorage.setItem('dljy_restore_token', 'tok-9')
     localStorage.setItem('dljy.currentCompanyId', 'comp-9')
     const spy = mockFetch(async () => sseResponse(['data: {"type":"done","status":"ok"}\r\n\r\n']))
-    // 注意 id 避开 createAgentSession 用例已登记进内存路由表的名字（模块级 Map 不随用例重置）
     await sendAgentMessage('sess-msg', '问', vi.fn(), { scenario: 'daily_review', promptKey: 'desk' })
     const [url, init] = spy.mock.calls[0] as [string, RequestInit]
-    expect(url).toBe(`${AGENT_API_BASE}/sessions/sess-msg/messages`)
+    expect(url).toBe(`${PI_BASE}/sessions/sess-msg/messages`)
     expect(init.headers).toMatchObject({
       'content-type': 'application/json',
       authorization: 'Bearer tok-9',
