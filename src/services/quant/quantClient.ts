@@ -386,7 +386,10 @@ export async function fetchReports(reportType = 'daily_review'): Promise<ReportI
 }
 
 /** 读取某会话某产出物正文（复用 artifacts 端点的路径防护 + 会话归属 ACL）。
- *  仅适用于「当前用户拥有的 live/历史会话」产出物；共享报告请用 fetchReportContent。 */
+ *  仅适用于「当前用户拥有的 live/历史会话」产出物；共享报告请用 fetchReportContent。
+ *  固定走 agent-backend（AGENT_API_BASE，#2958 返工）：artifacts 由 agent-runtime 提供
+ *  （api/routes.py GET /sessions/{id}/artifacts/{path}），pi-poc 无此端点、恒打只会 404；
+ *  对 pi 会话走历史库 owner 校验放行，会话 id 仍传 pi 会话号。 */
 export async function fetchArtifactContent(sessionId: string, path: string): Promise<string> {
   const res = await fetch(
     `${AGENT_API_BASE}/sessions/${encodeURIComponent(sessionId)}/artifacts/${encodeAgentPath(path)}`,
