@@ -10,10 +10,11 @@
 //   - 深链 query 只允许白名单键（期间、对象名、来源标记、目标页面板），原始数据数组
 //     与可写动词不进 URL（CH05：URL 不得携带敏感原始数据；跳转是查看，不是发起操作）。
 // 目标均为既有业务模块的只读页面路径；本模块不创建任何写端点链接，也不持有业务状态。
+// 守门骨架（白名单校验/写动词拒绝/权限门控/出口双保险）与 spatialLinks 同源，已归一到
+// insightLinkGuard.ts（dljy#3121）；本登记只保留业务目标条目与期间/对象名/来源的组装语义。
 
 import type { Router } from 'vue-router'
-import { canAccessPath } from '@/services/governance'
-import { getCurrentUser } from '@/services/auth'
+import { canFollowInsightLink, insightLinkHasWriteVerb, isWhitelistedLinkQuery, openInsightLink } from './insightLinkGuard'
 
 /** 深链目标：既有业务模块的只读页面路径（只读语义的入口登记处，文档与测试共用）。 */
 export const DEEP_LINK_TARGETS = {
@@ -28,9 +29,6 @@ export const DEEP_LINK_TARGETS = {
 /** 深链 query 白名单键：期间（start/end）、单个对象名（object）、来源标记（from）、
  *  目标页面板（panel，仅资料维护跳转用）。其余键一律不带。 */
 const DEEP_LINK_QUERY_KEYS = ['start', 'end', 'object', 'from', 'panel'] as const
-
-/** 深链 query 里不允许出现的可写动词（键名与值都不允许）：跳转只承载「查看」。 */
-const WRITE_VERBS = ['submit', 'create', 'confirm', 'approve', 'adjust', 'void', 'execute', 'action'] as const
 
 /** 来源标记：接收方与排查用「这条深链从洞察哪个页面发出」。 */
 export type InsightDeepLinkOrigin = 'insight-plants' | 'insight-prices'
@@ -59,38 +57,28 @@ export function businessDeepLinkQuery(args: {
 /** 深链必备键：期间（start/end）与来源标记（from）。缺任何一个都不算合法深链。 */
 const DEEP_LINK_REQUIRED_KEYS = ['start', 'end', 'from'] as const
 
+/** 本登记的守门口径（条目数据）：必备键齐全 + 只含白名单键，校验实现在 insightLinkGuard。 */
+const DEEP_LINK_GUARD = { allowedKeys: DEEP_LINK_QUERY_KEYS, requiredKeys: DEEP_LINK_REQUIRED_KEYS } as const
+
 /** query 是否为合法深链：必备键齐全、只含白名单键、值均为非空字符串（组装出口的统一闸门，测试共用判定）。 */
 export function isDeepLinkQuery(query: Record<string, unknown>): boolean {
-  const entries = Object.entries(query)
-  return (
-    DEEP_LINK_REQUIRED_KEYS.every((key) => key in query) &&
-    entries.every(([key]) => (DEEP_LINK_QUERY_KEYS as readonly string[]).includes(key)) &&
-    entries.every(([, value]) => typeof value === 'string' && value.length > 0)
-  )
+  return isWhitelistedLinkQuery(query, DEEP_LINK_GUARD)
 }
 
 /** 深链是否携带可写动词（键名或值里出现 submit/create/confirm 等）：携带即拒绝跳转。 */
 export function deepLinkHasWriteVerb(query: Record<string, unknown>): boolean {
-  return Object.entries(query).some(([key, value]) => {
-    const text = `${key}=${String(value)}`.toLowerCase()
-    return WRITE_VERBS.some((verb) => text.includes(verb))
-  })
+  return insightLinkHasWriteVerb(query)
 }
 
 /** 目标路径对当前用户是否可访问（governance 既有口径；读取失败按无权限处理，不渲染入口）。 */
 export function canFollowDeepLink(path: string): boolean {
-  try {
-    return canAccessPath(path, getCurrentUser())
-  } catch {
-    return false
-  }
+  return canFollowInsightLink(path)
 }
 
 /** 组装并跳转：入口显隐已由页面按 canFollowDeepLink 判定；这里再保证 query 只含
  *  白名单键且无可写动词（双保险），不合法直接不动——宁可不开口，不带脏参数跳转。 */
 export function openBusinessDeepLink(router: Router, args: { path: string; query: Record<string, string> }): void {
-  if (!isDeepLinkQuery(args.query) || deepLinkHasWriteVerb(args.query)) return
-  void router.push({ path: args.path, query: args.query })
+  openInsightLink(router, { path: args.path, query: args.query, guard: DEEP_LINK_GUARD })
 }
 
 /** 「前往资料维护」：跳上传中心面板，携带缺口期间与来源标记（显隐在页面按权限判定）。 */
