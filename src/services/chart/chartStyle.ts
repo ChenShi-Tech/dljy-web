@@ -4,7 +4,7 @@
 //
 // 设计取向：电力交易控制室式的克制专业感：语义化配色、面积渐变、圆角柱、
 // 描边 tooltip、阈值/相位标注、克制动效(≤600ms cubicOut)。所有 chrome 取色走
-// chartChrome()，随 classic/arc/neon/paper 四档主题自动切换，暗色下同样精致。
+// chartChrome()，随 classic/arc/flow/paper 四档主题自动切换，暗色下同样精致。
 //
 // 用法：在视图 render() 内组合调用：palette()/lineSeries()/stepSeries()/barSeries()/
 // gradientArea()/markLineThreshold()/tooltipStyle() 等拼进 setOption。

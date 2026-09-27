@@ -11,9 +11,10 @@ import router from './router'
 import './styles/global.css'
 import './styles/theme.css'
 import './styles/theme-arc.css'
+import './styles/theme-flow.css'
 import './styles/responsive.css'
 import './styles/charts.css'
-// 统一主题入口(services/theme):经典/弧光/霓虹/暖纸 四档 + 峰平谷时段。
+// 统一主题入口(services/theme):经典/弧光/流光/暖纸 四档 + 峰平谷时段。
 // 挂载前先按已存储值设好 <html data-theme>,避免首屏闪原版。
 import { initTheme } from '@/services/theme'
 

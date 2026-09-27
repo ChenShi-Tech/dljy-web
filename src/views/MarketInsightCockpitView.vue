@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// 市场洞察驾驶舱（Neon · agent 辅助决策）：把「市场洞察」分散信号聚成一屏 bento。
+// 市场洞察驾驶舱（agent 辅助决策）：把「市场洞察」分散信号聚成一屏 bento。
 // 左栏「预检」：fetchMarketInsightBundle 确定性装配 → dljy-ui 组件渲染六区块（不经 LLM，前后端对齐）。
 // 每卡「✨AI 解读」：把该 block 作 contextPayload 交右栏 AgentChatPanel 流式解读（B3 选中即问）。
 import { computed, ref } from 'vue'
@@ -191,19 +191,18 @@ function askGlobal() {
 .mic-err { grid-column: 1 / -1; font-size: var(--font-md); color: var(--danger); padding: 14px 16px; background: var(--danger-tint); border: 1px solid var(--danger); border-radius: 12px; }
 .mic-empty { grid-column: 1 / -1; padding: 40px 28px; text-align: center; color: var(--muted); font-size: var(--font-lg); line-height: 1.85; }
 .mic-empty strong { color: var(--primary); }
-/* neon 专属沉浸式：深空渐变 + 标题渐变 + 辉光（仅 neon 主题，其余三主题用纯净主题色）*/
-:root[data-theme='neon'] .mic-root {
+/* 流光专属沉浸式：深空径向微光 + 标题冷白青渐变 + 柔光（仅 flow 主题，其余三主题用纯净主题色）*/
+:root[data-theme='flow'] .mic-root {
   background:
-    radial-gradient(1200px 700px at 12% -10%, #0d1b3a 0%, rgba(6, 9, 20, 0) 55%),
-    radial-gradient(900px 600px at 100% 0%, rgba(176, 38, 255, .14), rgba(6, 9, 20, 0) 50%),
-    #04060f;
+    radial-gradient(1200px 700px at 50% -12%, rgba(44, 138, 166, .18), rgba(5, 11, 22, 0) 60%),
+    #050b16;
 }
-:root[data-theme='neon'] .mic-head { box-shadow: 0 10px 30px rgba(0, 0, 0, .4), inset 0 1px 0 rgba(255, 255, 255, .05); }
-:root[data-theme='neon'] .mic-title h2 {
-  background: linear-gradient(90deg, #d6f6ff, #8fb6ff); -webkit-background-clip: text; background-clip: text; color: transparent;
+:root[data-theme='flow'] .mic-head { box-shadow: 0 10px 28px rgba(1, 6, 14, .55), inset 0 1px 0 rgba(191, 227, 236, .05); }
+:root[data-theme='flow'] .mic-title h2 {
+  background: linear-gradient(90deg, #e6eff4, #86d8e7); -webkit-background-clip: text; background-clip: text; color: transparent;
 }
-:root[data-theme='neon'] .mic-ask:hover { box-shadow: 0 0 14px rgba(34, 211, 238, .4); }
-:root[data-theme='neon'] .mic-date,
+:root[data-theme='flow'] .mic-ask:hover { box-shadow: 0 0 14px rgba(108, 201, 219, .35); }
+:root[data-theme='flow'] .mic-date,
 :root[data-theme='arc'] .mic-date { color-scheme: dark; }
 
 @media (max-width: 680px) { .mic-board { grid-template-columns: 1fr; } }

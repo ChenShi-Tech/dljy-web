@@ -1,4 +1,4 @@
-// 主题适配层：状态与切换的唯一权威源在 services/theme.ts（四档:classic/arc/neon/paper）。
+// 主题适配层：状态与切换的唯一权威源在 services/theme.ts（四档:classic/arc/flow/paper）。
 // 本文件保留三档换肤时代的 API 形状（useTheme/chartChrome/cssVar），供 25+ 业务视图
 // 与 ThemeSwitcher 继续使用；同时提供 echarts 等 JS 配置的 CSS 变量取色工具。
 

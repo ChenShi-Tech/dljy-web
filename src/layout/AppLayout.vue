@@ -70,8 +70,8 @@ const menuColors = computed(() => {
   switch (theme.value) {
     case 'arc':
       return { bg: '#0a1322', text: '#8fa3bd', active: '#e6f6ff' }
-    case 'neon':
-      return { bg: '#04060f', text: '#9fc4e8', active: '#22d3ee' }
+    case 'flow':
+      return { bg: '#06101d', text: '#8fa6b8', active: '#bfe3ec' }
     case 'paper':
       return { bg: '#2a2620', text: '#cfc6b4', active: '#f3eee3' }
     default:

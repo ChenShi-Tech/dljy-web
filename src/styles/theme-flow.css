@@ -1,0 +1,289 @@
+/* ============================================================
+   流光 Flow —— 品牌深蓝 + 科技青柔光（html[data-theme='flow']）
+   ------------------------------------------------------------
+   取自品牌开场动效（电网数据粒子流汇聚成标识）：
+     · 深空底：#050b16 → #10223a 径向微光 + 26px 点阵网格（动效背景的点阵）
+     · 科技青 #5cc3d6 / 冷白青 #bfe3ec 为主色，低饱和低对比，辉光只做"柔光"不做霓虹
+     · HUD 细线语言：面板四角 1px 角标、菜单激活项的"电流"光条
+     · 告警用克制琥珀 #c9a461，涨跌红 #e0786e / 绿 #5dbe9a（国内红涨绿跌）
+   设计纪律同弧光：动效必须有功能含义，全部尊重 prefers-reduced-motion。
+   ============================================================ */
+
+html[data-theme='flow'] {
+  /* —— 底色 / 面板 —— */
+  --bg: #07111f;
+  --panel: #0a1728;
+  --panel-2: #0e1e33;
+  --panel-image: linear-gradient(165deg, rgba(18, 38, 62, 0.55), rgba(8, 18, 32, 0.35));
+  --panel-sub: #0e1e33;
+  --sidebar-bg: #050d19;
+  --topbar-bg: #07111f;
+
+  /* —— 文字 —— */
+  --text: #e6eff4;
+  --text-body: #c3d3de;
+  --text-soft: #a3b8c6;
+  --muted: #7890a3;
+
+  /* —— 线条（青色细线）—— */
+  --line: rgba(108, 201, 219, 0.16);
+  --line-soft: rgba(108, 201, 219, 0.1);
+  --line-faint: rgba(108, 201, 219, 0.06);
+
+  /* —— 主题色 —— */
+  --primary: #5cc3d6;
+  --primary-strong: #2c8aa6;
+  --accent: #86d8e7;
+  --accent-2: #bfe3ec;
+  --success: #5dbe9a;
+  --warning: #c9a461;
+  --danger: #d9776f;
+  --glow: rgba(108, 201, 219, 0.32);
+  --period-accent: #5cc3d6; /* 平段缺省，下方按时段覆盖 */
+
+  /* —— 着色表面 —— */
+  --primary-tint: rgba(92, 195, 214, 0.1);
+  --primary-tint-border: rgba(92, 195, 214, 0.3);
+  --surface-hover: rgba(108, 201, 219, 0.07);
+  --danger-tint: rgba(217, 119, 111, 0.14);
+  --warning-tint: rgba(201, 164, 97, 0.14);
+
+  /* —— 形状 / 字体 / 效果：HUD 式精确小圆角 —— */
+  --radius: 6px;
+  --radius-sm: 4px;
+  --font-display: inherit;
+  --shadow: 0 10px 28px rgba(1, 6, 14, 0.55);
+  --glow-text: 0 0 14px rgba(108, 201, 219, 0.35);
+  --panel-backdrop: blur(6px);
+  --panel-edge: rgba(108, 201, 219, 0.32);
+
+  /* —— 侧边栏 —— */
+  --sidebar-text: #d5e3ec;
+  --sidebar-muted: #7890a3;
+  --sidebar-border: rgba(108, 201, 219, 0.12);
+
+  /* —— 顶栏上下文 chip —— */
+  --chip-bg: rgba(14, 30, 51, 0.7);
+  --chip-border: rgba(108, 201, 219, 0.2);
+  --chip-text: #d5e3ec;
+  --chip-label: #7890a3;
+  --chip-sub: #a3b8c6;
+
+  /* —— AI 导航按钮 —— */
+  --ai-btn-bg: linear-gradient(135deg, #2c8aa6, #5cc3d6);
+  --ai-btn-fg: #031019;
+
+  /* —— 遮罩 / 磨砂 —— */
+  --mask-bg: rgba(2, 6, 14, 0.62);
+  --scrim: rgba(5, 11, 22, 0.85);
+
+  /* —— echarts 图表 chrome —— */
+  --chart-axis-label: #7890a3;
+  --chart-split-line: rgba(108, 201, 219, 0.08);
+  --chart-neutral-line: rgba(136, 162, 180, 0.35);
+  --chart-danger: #d9776f;
+
+  /* —— 首页天气挂件 —— */
+  --wx-chip-bg: linear-gradient(135deg, rgba(92, 195, 214, 0.14), rgba(191, 227, 236, 0.06));
+  --wx-chip-fg: #d5e3ec;
+
+  color-scheme: dark;
+
+  /* —— Element Plus 暗色覆盖（el 组件吃纯色，用面板纯色兜底，消除白底 / 白弹层）—— */
+  --el-bg-color: #0a1728;
+  --el-bg-color-page: #07111f;
+  --el-bg-color-overlay: #0e1e33;
+  --el-text-color-primary: #e6eff4;
+  --el-text-color-regular: #c3d3de;
+  --el-text-color-secondary: #7890a3;
+  --el-text-color-placeholder: #5a7285;
+  --el-text-color-disabled: #465a6b;
+  --el-border-color: #1a324a;
+  --el-border-color-light: #172d43;
+  --el-border-color-lighter: #14283c;
+  --el-border-color-extra-light: #112233;
+  --el-border-color-dark: #22405c;
+  --el-border-color-hover: rgba(92, 195, 214, 0.5);
+  --el-fill-color: #0e1e33;
+  --el-fill-color-light: #0e1e33;
+  --el-fill-color-lighter: #0a1728;
+  --el-fill-color-extra-light: #0a1728;
+  --el-fill-color-blank: #0a1728;
+  --el-fill-color-dark: #12263e;
+  --el-fill-color-darker: #162d48;
+  --el-mask-color: rgba(2, 6, 14, 0.62);
+  --el-mask-color-extra-light: rgba(2, 6, 14, 0.3);
+
+  --el-color-primary: #5cc3d6;
+  --el-color-primary-light-3: #8dd5e2;
+  --el-color-primary-light-5: #ade1ea;
+  --el-color-primary-light-7: #ceedf3;
+  --el-color-primary-light-8: #def3f7;
+  --el-color-primary-light-9: #10303f;
+  --el-color-primary-dark-2: #4a9cab;
+
+  --el-table-bg-color: #0a1728;
+  --el-table-tr-bg-color: #0a1728;
+  --el-table-header-bg-color: #0e1e33;
+  --el-table-row-hover-bg-color: #12263e;
+  --el-table-current-row-bg-color: #12263e;
+  --el-table-header-text-color: #d5e3ec;
+  --el-table-text-color: #c3d3de;
+  --el-table-border-color: #14283c;
+  --el-table-border: 1px solid #14283c;
+}
+html[data-theme='flow'][data-period='peak'] { --period-accent: #c9a461; }
+html[data-theme='flow'][data-period='valley'] { --period-accent: #5dbe9a; }
+
+/* ── 壳层：深空底 + 顶部径向微光 + 点阵网格 + 暗角（与开场动效同一画面语言，不抢内容）── */
+html[data-theme='flow'] body {
+  background:
+    radial-gradient(ellipse 120% 90% at 50% 38%, transparent 58%, rgba(2, 6, 14, 0.6) 100%) fixed,
+    radial-gradient(1100px 560px at 50% -10%, rgba(44, 138, 166, 0.22), transparent 64%) fixed,
+    radial-gradient(rgba(108, 201, 219, 0.16) 1px, transparent 1.4px) 0 0 / 24px 24px,
+    linear-gradient(180deg, #081424 0%, #050b16 100%) fixed;
+}
+/* HUD 分隔线：中间亮、两端渐隐（替代平直边框）*/
+html[data-theme='flow'] .brand {
+  border-bottom-color: transparent;
+  background: linear-gradient(90deg, transparent, rgba(108, 201, 219, 0.4), transparent) bottom / 100% 1px no-repeat;
+}
+
+html[data-theme='flow'] .sidebar {
+  background: linear-gradient(180deg, #071324 0%, #040a14 100%);
+  border-right: 1px solid rgba(108, 201, 219, 0.12);
+}
+/* 品牌徽标柔光（与开场动效定格画面的标识辉光一致） */
+html[data-theme='flow'] .brand-mark {
+  box-shadow: inset 0 0 0 1px rgba(108, 201, 219, 0.4), 0 0 16px rgba(108, 201, 219, 0.3);
+}
+
+/* 菜单激活项：青色渐隐底 + 左缘"流光"电流条（一束光沿导线下行，编码"你在这里"）*/
+html[data-theme='flow'] .sidebar .el-menu-item.is-active {
+  background: linear-gradient(90deg, rgba(92, 195, 214, 0.16), rgba(92, 195, 214, 0.02)) !important;
+  position: relative;
+}
+html[data-theme='flow'] .sidebar .el-menu-item.is-active::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 8px;
+  bottom: 8px;
+  width: 2px;
+  border-radius: 1px;
+  background: linear-gradient(180deg, rgba(191, 227, 236, 0.25) 0%, #bfe3ec 45%, #5cc3d6 55%, rgba(92, 195, 214, 0.25) 100%);
+  background-size: 100% 260%;
+  animation: flow-current 3.2s linear infinite;
+  box-shadow: 0 0 8px var(--glow);
+}
+@keyframes flow-current {
+  from { background-position: 0 100%; }
+  to { background-position: 0 -160%; }
+}
+
+html[data-theme='flow'] .topbar {
+  background:
+    linear-gradient(90deg, transparent, rgba(108, 201, 219, 0.45) 50%, transparent) bottom / 100% 1px no-repeat,
+    rgba(7, 17, 31, 0.82);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid transparent;
+}
+html[data-theme='flow'] .topbar h1,
+html[data-theme='flow'] .breadcrumb { color: var(--text); }
+/* 标题柔光（开场动效文字的辉光，收敛到几乎察觉不到的程度）*/
+html[data-theme='flow'] .topbar h1,
+html[data-theme='flow'] .panel-title { text-shadow: 0 0 12px rgba(108, 201, 219, 0.2); }
+
+/* 主按钮：深一档的科技青，白字对比度达标（#2c8aa6 上白字约 4:1）*/
+html[data-theme='flow'] .el-button--primary {
+  --el-button-bg-color: #2c8aa6;
+  --el-button-border-color: #3a9ab5;
+  --el-button-hover-bg-color: #3aa0bb;
+  --el-button-hover-border-color: #5cc3d6;
+  --el-button-active-bg-color: #247a93;
+  --el-button-active-border-color: #2c8aa6;
+}
+
+/* 面板：顶边一道扫光 + HUD 四角 1px 角标（均为背景层绘制，不占伪元素、不改定位）+ 悬浮青色描边柔光 */
+html[data-theme='flow'] .panel,
+html[data-theme='flow'] .metric-card {
+  --flow-corner: rgba(134, 216, 231, 0.55);
+  background:
+    linear-gradient(90deg, transparent 8%, rgba(191, 227, 236, 0.3) 50%, transparent 92%) top / 100% 1px no-repeat,
+    linear-gradient(var(--flow-corner), var(--flow-corner)) left top / 12px 1px no-repeat,
+    linear-gradient(var(--flow-corner), var(--flow-corner)) left top / 1px 12px no-repeat,
+    linear-gradient(var(--flow-corner), var(--flow-corner)) right top / 12px 1px no-repeat,
+    linear-gradient(var(--flow-corner), var(--flow-corner)) right top / 1px 12px no-repeat,
+    linear-gradient(var(--flow-corner), var(--flow-corner)) left bottom / 12px 1px no-repeat,
+    linear-gradient(var(--flow-corner), var(--flow-corner)) left bottom / 1px 12px no-repeat,
+    linear-gradient(var(--flow-corner), var(--flow-corner)) right bottom / 12px 1px no-repeat,
+    linear-gradient(var(--flow-corner), var(--flow-corner)) right bottom / 1px 12px no-repeat,
+    var(--panel-image),
+    var(--panel);
+  border-color: var(--line);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+html[data-theme='flow'] .panel:hover,
+html[data-theme='flow'] .metric-card:hover {
+  border-color: rgba(108, 201, 219, 0.34);
+  box-shadow: 0 0 0 1px rgba(108, 201, 219, 0.1), 0 10px 28px rgba(1, 6, 14, 0.55);
+}
+
+/* ── 功能性动效工具类（与弧光同名，页面 / 组件按需挂）── */
+html[data-theme='flow'] .arc-pulse { animation: flow-pulse 0.9s ease-out 1; }
+@keyframes flow-pulse {
+  0% { box-shadow: 0 0 0 0 var(--glow); }
+  100% { box-shadow: 0 0 0 14px transparent; }
+}
+html[data-theme='flow'] .arc-breathe { animation: flow-breathe 1.8s ease-in-out infinite; }
+@keyframes flow-breathe {
+  0%, 100% { border-color: var(--line); }
+  50% { border-color: rgba(108, 201, 219, 0.55); }
+}
+
+/* 红涨绿跌（国内市场习惯），低饱和 */
+html[data-theme='flow'] .num-up { color: #e0786e; }
+html[data-theme='flow'] .num-down { color: #5dbe9a; }
+
+/* ── 智能体面板暗色适配 ── */
+html[data-theme='flow'] .agent-panel { background: var(--panel); }
+html[data-theme='flow'] .agent-panel .bubble { background: var(--panel-2); }
+html[data-theme='flow'] .agent-panel .msg.user .bubble { background: var(--primary-strong); }
+html[data-theme='flow'] .agent-panel .panel-input input {
+  background: var(--panel-2);
+  color: var(--text);
+  border-color: var(--line);
+}
+html[data-theme='flow'] .agent-panel .tool-card { background: rgba(108, 201, 219, 0.05); }
+html[data-theme='flow'] .agent-panel .tool-card.running { animation: flow-breathe 1.8s ease-in-out infinite; }
+html[data-theme='flow'] .agent-panel .chart-card { background: var(--panel-2); }
+html[data-theme='flow'] .agent-panel .approval-card {
+  background: rgba(201, 164, 97, 0.08);
+  animation: flow-approval 2.4s ease-in-out infinite;
+}
+@keyframes flow-approval {
+  0%, 100% { border-color: rgba(201, 164, 97, 0.5); }
+  50% { border-color: #c9a461; box-shadow: 0 0 12px rgba(201, 164, 97, 0.22); }
+}
+html[data-theme='flow'] .agent-panel .shimmer {
+  background: linear-gradient(90deg, #4a6378 25%, #bfe3ec 50%, #4a6378 75%);
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+}
+
+/* ── 电价带（PriceTicker）── */
+html[data-theme='flow'] .price-ticker { background: var(--panel-2); }
+html[data-theme='flow'] .price-ticker .pt-delta.num-up { color: #e0786e; }
+html[data-theme='flow'] .price-ticker .pt-delta.num-down { color: #5dbe9a; }
+
+/* ── 降级：减少动效偏好 ── */
+@media (prefers-reduced-motion: reduce) {
+  html[data-theme='flow'] *,
+  html[data-theme='flow'] *::before,
+  html[data-theme='flow'] *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
