@@ -23,7 +23,7 @@ function memoryStorage() {
 vi.mock('@/services/auth', () => ({ getCurrentUser: vi.fn() }))
 
 const { getCurrentUser } = await import('@/services/auth')
-const { resolveCompanyForRegion, setCompanyOptions, selectedCompanyId, companyOptions } = await import(
+const { resolveCompanyForRegion, setCompanyOptions, selectedCompanyId, companyOptions, canSwitchCompany } = await import(
   './companyContext'
 )
 const { companyUnselected } = await import('./companyApi')
@@ -42,6 +42,40 @@ function fakeUser(overrides: Partial<AuthUser>): AuthUser {
 const shanxiCompany = { companyId: 'comp-shanxi', name: '山西发电' }
 const sandePuhua = { companyId: 'comp-sande-puhua', name: '三德普华' }
 const yunnanCompany = { companyId: 'comp-cgn-yunnan', name: '中广核云南新能源' }
+
+// canSwitchCompany（切换器渲染判据，#2898 / Epic #2887 拍板）回归锁：
+// 提权只认角色不认层级——GROUP 主体不再让任何角色自动可切换；此前「GROUP 层级即提权」
+// 会让 TRADER/QUANT 等看到只有自己一家的切换器、手工构造请求撞服务端 403。
+describe('canSwitchCompany', () => {
+  it('GROUP 层级但非提权角色（TRADER）→ false（层级不再自动提权）', () => {
+    expect(canSwitchCompany(fakeUser({ roleCode: 'TRADER', companyTier: 'GROUP', companyId: 'dljy-demo' }))).toBe(false)
+  })
+
+  it('GROUP 层级的其他非提权角色（SETTLEMENT）→ false', () => {
+    expect(canSwitchCompany(fakeUser({ roleCode: 'SETTLEMENT', companyTier: 'GROUP', companyId: 'dljy-demo' }))).toBe(false)
+  })
+
+  it('GROUP 层级的 BOSS → true（按角色提权；可见范围=自身公司树由后端收口）', () => {
+    expect(canSwitchCompany(fakeUser({ roleCode: 'BOSS', companyTier: 'GROUP', companyId: 'dljy-demo' }))).toBe(true)
+  })
+
+  it('COMPANY 层级的 ADMIN → true（平台管理员，不依赖 GROUP 层级）', () => {
+    expect(canSwitchCompany(fakeUser({ roleCode: 'ADMIN', companyTier: 'COMPANY', companyId: 'comp-shanxi' }))).toBe(true)
+  })
+
+  it('COMPANY 层级的 BOSS → true', () => {
+    expect(canSwitchCompany(fakeUser({ roleCode: 'BOSS', companyTier: 'COMPANY', companyId: 'comp-shanxi' }))).toBe(true)
+  })
+
+  it('COMPANY 层级普通角色（PLANT_OPERATOR）→ false', () => {
+    expect(canSwitchCompany(fakeUser({ roleCode: 'PLANT_OPERATOR', companyTier: 'COMPANY' }))).toBe(false)
+  })
+
+  it('未登录（null/undefined）→ false', () => {
+    expect(canSwitchCompany(null)).toBe(false)
+    expect(canSwitchCompany(undefined)).toBe(false)
+  })
+})
 
 // resolveCompanyForRegion（#668 四规则联动判定）纯函数回归锁：切地区后公司上下文该落到哪家
 // 由这四条规则唯一决定，规则改错会造成串公司越权读写，故用可推导的确定性用例锁死。

@@ -20,6 +20,10 @@ vi.mock('@/services/region/regionContext', () => ({
 vi.mock('@/services/agent/httpClient', () => ({
   createAgentClient: () => ({ postForm: vi.fn() }),
 }))
+// 公共落点提交置灰（#2898 验收③）按登录角色分档：默认 ADMIN（与真实默认演示账号一致），
+// 非 ADMIN 用例里换成公司级角色。
+const auth = vi.hoisted(() => ({ getCurrentUser: vi.fn(() => ({ roleCode: 'ADMIN' })) }))
+vi.mock('@/services/auth', () => auth)
 vi.mock('element-plus', () => ({
   ElMessage: { success: vi.fn(), warning: vi.fn(), error: vi.fn() },
 }))
@@ -33,7 +37,7 @@ const STUBS = {
   'el-table-column': { template: '<div />' },
   'el-radio-group': { template: '<div><slot /></div>' },
   'el-radio-button': { template: '<button><slot /></button>' },
-  'el-button': { template: '<button><slot /></button>' },
+  'el-button': { props: ['disabled'], template: '<button :disabled="disabled"><slot /></button>' },
   'el-tag': { template: '<span><slot /></span>' },
   'el-select': { template: '<select><slot /></select>' },
   'el-option': { template: '<option />' },
@@ -62,5 +66,52 @@ describe('融合台示意数据必须带标注', () => {
     const tags = w.findAll('.metric-card em').map((e) => e.text())
     expect(tags.length).toBeGreaterThan(0)
     expect(tags.every((t) => t === '演示'), `指标卡标记应全为「演示」，实际：${tags.join('/')}`).toBe(true)
+  })
+})
+
+// 公共落点模板对非 ADMIN 的提交入口（dljy#2898 验收③）：yn-t0-node-price 写平台公共表，
+// 后端仅 ADMIN 可提交；融合台这条路径的「上传填好的模板」按钮置灰 + 标注 + 说明，
+// 「下载模板」不受限（填好文件交管理员提交）。
+describe('公共落点模板的提交入口按角色分档', () => {
+  function pickTemplate(w: ReturnType<typeof mountHub>, templateId: string) {
+    ;(w.vm as unknown as { selectedTemplateId: string }).selectedTemplateId = templateId
+    return w.vm.$nextTick()
+  }
+
+  it('非 ADMIN 选中 yn-t0-node-price：上传置灰、有标注与提示，下载模板可用', async () => {
+    auth.getCurrentUser.mockReturnValue({ roleCode: 'TRADER' })
+    const w = mountHub()
+    await pickTemplate(w, 'yn-t0-node-price')
+    const buttons = w.findAll('button')
+    const uploadBtn = buttons.find((b) => b.text() === '上传填好的模板')
+    const downloadBtn = buttons.find((b) => b.text() === '下载模板（xlsx）')
+    expect(uploadBtn, '找不到「上传填好的模板」按钮').toBeTruthy()
+    expect(uploadBtn?.attributes('disabled')).toBeDefined()
+    expect(downloadBtn?.attributes('disabled')).toBeUndefined()
+    expect(w.text()).toContain('公共曲线 · 仅管理员提交')
+    expect(w.text()).toContain('仅平台管理员可提交')
+    w.unmount()
+  })
+
+  it('ADMIN 选中 yn-t0-node-price：上传按钮不受限', async () => {
+    // 上一用例把角色换成 TRADER 且本文件无 beforeEach 重置，这里显式恢复 ADMIN
+    auth.getCurrentUser.mockReturnValue({ roleCode: 'ADMIN' })
+    const w = mountHub()
+    await pickTemplate(w, 'yn-t0-node-price')
+    const uploadBtn = w.findAll('button').find((b) => b.text() === '上传填好的模板')
+    expect(uploadBtn?.attributes('disabled')).toBeUndefined()
+    expect(w.text()).not.toContain('公共曲线 · 仅管理员提交')
+    w.unmount()
+  })
+
+  it('非 ADMIN 选中公司私有模板不触发公共落点置灰', async () => {
+    auth.getCurrentUser.mockReturnValue({ roleCode: 'TRADER' })
+    const w = mountHub()
+    // 任选一个非公共落点模板：置灰标注只跟模板清单走，不殃及其余模板
+    await pickTemplate(w, 'yn-t0-system-load')
+    const uploadBtn = w.findAll('button').find((b) => b.text() === '上传填好的模板')
+    expect(uploadBtn?.attributes('disabled')).toBeUndefined()
+    expect(w.text()).not.toContain('公共曲线 · 仅管理员提交')
+    w.unmount()
   })
 })

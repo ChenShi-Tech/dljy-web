@@ -6,7 +6,8 @@ import { companyRegionId, regionHomeCompanyId } from '@/services/region/regionCo
 
 // 公司（租户）上下文：仿 regionContext 的全局响应式当前公司。
 // - 普通公司用户：currentCompanyId 锁定为自身公司，切换被拒。
-// - 平台管理员(ADMIN)/集团或公司老板(BOSS)/集团(GROUP)：可切换查看下属公司。
+// - 平台管理员(ADMIN)/老板(BOSS)：可切换查看授权范围内的公司（#2887：BOSS=自身公司树，
+//   可见范围由后端授权集合收口，前端不自行放大）。
 // 公司专属数据请求据此带 company 维度（companyApi）；后端再经下属公司白名单校验，前端切换非授权。
 
 const storageKey = 'dljy.currentCompanyId'
@@ -61,9 +62,13 @@ export const selectableCompanies = computed(() =>
 // 不自动选公司，置空待用户手动选择。currentCompanyId 为 '' 即空态；服务端 fail-closed 依旧兜底。
 export const companySelectionEmpty = computed(() => !currentCompanyId.value)
 
-export function canSwitchCompany(user: Pick<GovernanceUser, 'roleCode' | 'companyTier'> | null | undefined): boolean {
+// 切换器渲染判据（#2898 / Epic #2887 拍板）：提权只认角色不认层级——
+// GROUP 公司下的非提权角色（TRADER/QUANT/RISK/SETTLEMENT/TRADE_LEAD 等）不再自动可切换，
+// 与服务端 isElevatedForCompanyScope 同口径。BOSS 的可见范围是自身公司树，由后端
+// requireCompanyContext 收口；本判据只是前端展示门，不是安全边界。
+export function canSwitchCompany(user: Pick<GovernanceUser, 'roleCode'> | null | undefined): boolean {
   if (!user) return false
-  return user.roleCode === 'ADMIN' || user.roleCode === 'BOSS' || user.companyTier === 'GROUP'
+  return user.roleCode === 'ADMIN' || user.roleCode === 'BOSS'
 }
 
 export const currentCompany = computed<CompanyOption>(() => {
