@@ -146,8 +146,8 @@
       <p v-if="publicGridCommitBlocked" class="public-grid-note">{{ PUBLIC_GRID_PRECHECK_NOTE }}</p>
     </el-card>
 
-    <!-- ④′ 落库冲突（409）：单独成档，不是「格式错误」——两份数据都合法，需要人核对（#2898） -->
-    <el-card v-if="conflict" shadow="never" class="step-card conflict-card">
+    <!-- ④′ 落库冲突（409）：独立步骤，预检成功态已随 report 清除——两份数据都合法，需要人核对（#2898） -->
+    <el-card v-if="step === 'conflict' && conflict" shadow="never" class="step-card conflict-card">
       <template #header><span>落库冲突：库内已有不同的价格，未入库，需要人工核对</span></template>
       <p class="conflict-lede">
         提交被拒绝：<strong>{{ conflict.dataset }}</strong>（{{ conflict.fileName }}）中部分行与库内已有数据冲突——
@@ -241,10 +241,10 @@ import {
   type UploadBatchRow,
 } from '@/services/data/uploadClient'
 
-type Step = 'select' | 'upload' | 'precheck' | 'receipt'
+type Step = 'select' | 'upload' | 'precheck' | 'conflict' | 'receipt'
 const metadata = reactive<ReviewImportMetadata>({ view: 'generator', simulated: false, basisLabel: '', actualLabel: '', sourceLabel: '', sourceVersion: '' })
 const step = ref<Step>('select')
-const stepIndex = computed(() => ({ select: 0, upload: 1, precheck: 2, receipt: 4 }[step.value]))
+const stepIndex = computed(() => ({ select: 0, upload: 1, precheck: 2, conflict: 3, receipt: 4 }[step.value]))
 
 const contracts = ref<UploadContractSummary[]>([])
 const loadingContracts = ref(false)
@@ -406,7 +406,11 @@ async function runCommit() {
     if (ticket !== scopeGeneration) return
     if (err instanceof UploadConflictError) {
       // 冲突单独成档（#2898）：保留服务端换行明细，给出三条出路；不走通用错误 toast。
+      // 切到独立冲突步骤并清除预检成功态（review #193 R1-01）：否则「预检通过，可确认落库」
+      // 卡片与冲突卡片同屏、「确认落库」仍可点，会重复提交同一冲突批次。
       conflict.value = { dataset: activeContract.value.dataset, fileName: pickedPayload.fileName, detail: err.detail }
+      report.value = null
+      step.value = 'conflict'
       return
     }
     ElMessage.error(`落库请求失败：${(err as Error).message}`)

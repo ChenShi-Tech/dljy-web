@@ -29,7 +29,7 @@ const contract: ContractRow = { dataset: 'review-intervals', kind: 'review-inter
 const publicGridContract: ContractRow = { ...contract, dataset: 'yn-t0-node-price', kind: 'capture-family', title: '节点电价', regionPolicy: 'fixed', region: 'yunnan' }
 const report = { ok: true, canCommit: true, expectedToken: 'version', rows: { total: 1, valid: 1, invalid: 0, errors: [] }, rowErrors: [{ row: 4, message: '实际值不是有效数字' }], header: { colMatch: [], missingRequired: [] }, keyDupes: { count: 0 }, overlap: { count: 1 } }
 beforeEach(() => { vi.resetAllMocks(); auth.getCurrentUser.mockReturnValue({ roleCode: 'ADMIN' }); selectedCompanyId.value = 'subsidiary'; api.fetchUploadContracts.mockResolvedValue([contract]); api.fetchUploadBatches.mockResolvedValue([]); api.readLocalFile.mockResolvedValue({ fileName: '资料.csv', content: '资料', isBinary: false }); api.precheckUpload.mockResolvedValue(report); api.commitUpload.mockResolvedValue({ code: 200 }) })
-type Controls = { selectContract: (row: ContractRow) => void; onFileChange: (event: Event) => Promise<void>; runPrecheck: () => Promise<void>; runCommit: () => Promise<void> }
+type Controls = { selectContract: (row: ContractRow) => void; onFileChange: (event: Event) => Promise<void>; runPrecheck: () => Promise<void>; runCommit: () => Promise<void>; backToUpload: () => void }
 async function open(contractRow: ContractRow = contract) {
   const wrapper = mount(DataUploadView, { global: { stubs: { ElCard: { template: '<div><slot /><slot name="header" /></div>' }, ElTable: true, ElTableColumn: true, ElDescriptions: true, ElSteps: true, ElStep: true, ElAlert: { template: '<div class="stub-alert"><slot /></div>' }, ElForm: { template: '<div><slot /></div>' }, ElFormItem: { template: '<div><slot /></div>' }, ElButton: { props: ['disabled'], template: '<button :disabled="disabled"><slot /></button>' }, ElInput: true, ElResult: true }, directives: { loading: () => {} } } })
   await flushPromises(); const vm = wrapper.vm as unknown as Controls
@@ -84,6 +84,33 @@ it('非冲突的落库错误仍走通用错误提示，不误渲染冲突档', a
   expect(wrapper.text()).not.toContain('落库冲突')
   const { ElMessage } = await import('element-plus')
   expect(ElMessage.error).toHaveBeenCalledWith(expect.stringContaining('落库请求失败'))
+  wrapper.unmount()
+})
+// 冲突后不得残留预检成功态（review #193 R1-01）：409 切到独立冲突步骤后，「预检通过，
+// 可确认落库」卡片与「确认落库」按钮都要消失（report 已清，重复提交连 guard 都过不去）；
+// 返回修改重新预检后恢复可提交。
+it('落库 409 后预检成功卡片消失、确认落库不可再提交；重新预检后恢复', async () => {
+  const { wrapper, vm } = await open()
+  api.commitUpload.mockRejectedValueOnce(new api.UploadConflictError('2026-07-01|da: 与库内已有数据冲突'))
+  await vm.runPrecheck(); await flushPromises()
+  // 预检成功态在场：预检报告卡片与可点的「确认落库」按钮
+  expect(wrapper.text()).toContain('预检报告')
+  expect(wrapper.findAll('button').find((b) => b.text() === '确认落库')?.attributes('disabled')).toBeUndefined()
+  await vm.runCommit(); await flushPromises()
+  // 冲突档出现，预检成功卡片（连同「确认落库」按钮）不再渲染
+  expect(wrapper.text()).toContain('落库冲突')
+  expect(wrapper.text()).not.toContain('预检报告')
+  expect(wrapper.findAll('button').find((b) => b.text() === '确认落库')).toBeUndefined()
+  // 同一批次不可重复提交（guard 层也被 report 已清拦住）
+  await vm.runCommit(); await flushPromises()
+  expect(api.commitUpload).toHaveBeenCalledTimes(1)
+  // 返回修改（文件保留）→ 重新预检 → 恢复正常提交入口
+  vm.backToUpload(); await flushPromises()
+  expect(wrapper.text()).not.toContain('落库冲突')
+  await vm.runPrecheck(); await flushPromises()
+  expect(wrapper.text()).toContain('预检报告')
+  const btn = wrapper.findAll('button').find((b) => b.text() === '确认落库')
+  expect(btn?.attributes('disabled')).toBeUndefined()
   wrapper.unmount()
 })
 // 公共落点提交置灰（#2898 验收③）：yn-t0-node-price 写平台公共表，后端仅 ADMIN 可提交。
