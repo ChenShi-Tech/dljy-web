@@ -15,6 +15,17 @@ export function isRealCalendarDate(date: string): boolean {
   return dt.getUTCFullYear() === y && dt.getUTCMonth() === m - 1 && dt.getUTCDate() === d
 }
 
+/** month（YYYY-MM）→ 该月最后一天（YYYY-MM-DD）；形态/月份范围非法返回 null。
+ *  UTC 锚定取「下月 0 号」，平年/闰年 2 月与 30/31 天月由 Date 自动进位。
+ *  用途：月度→分时跳转把结束日落到真实月末（dljy#2984）。 */
+export function lastDayOfMonth(month: string): string | null {
+  if (!/^\d{4}-\d{2}$/.test(month)) return null
+  const [y, m] = month.split('-').map(Number)
+  if (y < 1900 || y > 2100 || m < 1 || m > 12) return null
+  const last = new Date(Date.UTC(y, m, 0))
+  return `${month}-${String(last.getUTCDate()).padStart(2, '0')}`
+}
+
 /** date（YYYY-MM-DD）→ 次日；形态/语义不符返回 null（调用方按断链处理）。
  *  UTC 锚定，跨月/跨年/闰年由 Date 自动进位。 */
 export function nextDayOf(date: string): string | null {
