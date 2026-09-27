@@ -1,11 +1,13 @@
-// ingestClient 契约单测（#1406 / #1408）。
+// ingestClient 契约单测（#1406 / #1408 / dljy#3251）。
 //
-// 守两条曾经出过事的不变量：
-// ① POST /api/v1/ingest/:kind 必须携带 idempotency-key，网关对全部 /api/v1 写请求强制该头，
+// 守三条曾经出过事的不变量：
+// ① POST /v1/ingest/:kind 必须携带 idempotency-key，网关对全部 /api/v1 写请求强制该头，
 // 缺失直接 428，导致「一键生效」与手动触发 100% 失败。
 // ② 幂等键必须由 (kind, params) 确定性派生，不能是随机 UUID，服务端
 // buildDedupKey(actor, kind, idempotencyKey || contentHash) 在客户端键存在时优先用客户端键，
 // 随机键会让原本基于 contentHash 的双击去重全部失效。
+// ③ 请求 URL 必须经 dataServicePath() 改写为 /data-svc/api/v1/ingest/:kind——摄取端点只在
+// data-service :8190 注册，裸打 /api/v1/ingest 落平台 BFF 恒 404（dljy#3251），摄取从未真正发出。
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { ingestIdempotencyKey, triggerIngest } from './ingestClient'
@@ -64,13 +66,47 @@ describe('triggerIngest', () => {
     vi.unstubAllGlobals()
   })
 
+  it('请求 URL 经 dataServicePath 改写为 /data-svc/api/v1/ingest/:kind（裸 /api/v1/ingest 恒 404，dljy#3251）', async () => {
+    fetchMock.mockResolvedValue(okResponse({ code: 200, ok: true, kind: 'weather-export' }))
+
+    await triggerIngest('weather-export', { synthetic: false })
+
+    const [url] = fetchMock.mock.calls[0]
+    // 修复前这里是裸 /api/v1/ingest/weather-export，命中平台 BFF 的 404 兜底。
+    expect(url).toBe('/data-svc/api/v1/ingest/weather-export')
+    expect(url).not.toMatch(/^\/api\//)
+  })
+
+  it('改写对全部 IngestKind 生效（无一落在裸 /api 路径）', async () => {
+    fetchMock.mockResolvedValue(okResponse({ code: 200, ok: true, kind: 'x' }))
+    const kinds = [
+      'spot-export',
+      'weather-export',
+      'market-export',
+      'spot-ingest',
+      'forecast-etl',
+      'cgn-yunnan-prices',
+      'cgn-yunnan-market',
+    ] as const
+
+    for (const kind of kinds) {
+      await triggerIngest(kind)
+    }
+
+    expect(fetchMock.mock.calls).toHaveLength(kinds.length)
+    for (const [callIndex, kind] of kinds.entries()) {
+      const [url] = fetchMock.mock.calls[callIndex]
+      expect(url).toBe(`/data-svc/api/v1/ingest/${kind}`)
+    }
+  })
+
   it('请求头携带 idempotency-key（缺失会被网关 428 拦下）', async () => {
     fetchMock.mockResolvedValue(okResponse({ code: 200, ok: true, kind: 'weather-export' }))
 
     await triggerIngest('weather-export', { synthetic: false })
 
     const [url, init] = fetchMock.mock.calls[0]
-    expect(url).toBe('/api/v1/ingest/weather-export')
+    expect(url).toBe('/data-svc/api/v1/ingest/weather-export')
     expect(init.method).toBe('POST')
     const headers = init.headers as Record<string, string>
     expect(headers['idempotency-key']).toBe(ingestIdempotencyKey('weather-export', { synthetic: false }))
