@@ -1,5 +1,6 @@
 <script setup lang="ts">
-// 数据摄取管理页（数据运维工作台 /data-ops/console?panel=ingest）：手动触发 POST /api/v1/ingest/:kind。
+// 数据摄取管理页（数据运维工作台 /data-ops/console?panel=ingest）：手动触发摄取（POST /v1/ingest/:kind，
+// 经 dataServicePath 改走 /data-svc → data-service :8190，dljy#3251）。
 // 链路闭环：?panel=import-hub（手录 CSV）→ 本页（手动/自动摄取）→ /yygl/data-browser（回放）。
 // 定时自动摄取在「AI 工作室 → 定时任务」（/system/ai-studio?tab=schedules）。
 // 主题变量驱动，四档主题协调；遵循现有深色交易终端风格。
