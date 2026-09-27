@@ -2,8 +2,8 @@
 // ----------------------------------------------------------------------------
 // 规格依据：design D6.1 末行——三维地形、场站/节点空间位置：从节点/电网/场站动作进入
 // 已有空间资产，保留入口与上下文，不在洞察复制 Cesium、底图、拓扑维护。
-// 模式复用 businessLinks（#3096 任务 15.5 的登记+白名单+权限+出口模式；该登记文件在
-// feat/insight-deeplink 分支，本分支尚未合入，故此处独立登记，红线与其一致）：
+// 守门骨架与 businessLinks 同源（登记+白名单+权限+出口双保险；公共部分已归一到
+// insightLinkGuard.ts，dljy#3121，本登记只保留空间目标条目与组装语义），红线与其一致：
 //   - 目标均为既有 grid-geo 模块的只读空间场景路径；洞察零复制 Cesium/底图/拓扑维护；
 //   - 入口显隐由 governance.canAccessPath 对目标路径做既有口径判定（复用权限别名与
 //     角色授权表，不新增权限面）；无权限不渲染，而不是渲染后再让目标页拦截；
@@ -14,8 +14,7 @@
 //     宁可不开口，不带一半上下文假装能承接。
 
 import type { Router } from 'vue-router'
-import { canAccessPath } from '@/services/governance'
-import { getCurrentUser } from '@/services/auth'
+import { canFollowInsightLink, insightLinkHasWriteVerb, isWhitelistedLinkQuery, openInsightLink } from './insightLinkGuard'
 import { fetchGridGeoNodes, fetchGridGeoPlants } from '@/features/gridGeo/client'
 
 /** 空间查阅目标：既有 grid-geo 只读空间场景路径（登记处，文档与测试共用）。 */
@@ -35,8 +34,8 @@ export type SpatialLinkOrigin = 'insight-prices' | 'insight-grid-boundaries' | '
  *  keyword 为披露空间层搜索词预填，from 为来源标记。其余键一律不带。 */
 const SPATIAL_LINK_QUERY_KEYS = ['objectKind', 'objectId', 'objectRegion', 'objectCompany', 'objectDate', 'keyword', 'from'] as const
 
-/** 深链 query 里不允许出现的可写动词（键名与值都不允许）：跳转只承载「查看」。 */
-const WRITE_VERBS = ['submit', 'create', 'confirm', 'approve', 'adjust', 'void', 'execute', 'action'] as const
+/** 本登记的守门口径（条目数据）：非空 query + 只含白名单键，校验实现在 insightLinkGuard。 */
+const SPATIAL_LINK_GUARD = { allowedKeys: SPATIAL_LINK_QUERY_KEYS } as const
 
 /** 真实日历业务日（YYYY-MM-DD，回读一致）；格式对但日历不存在（如 2026-13-01）不算。 */
 function isBusinessDate(value: string | undefined): value is string {
@@ -116,29 +115,17 @@ export function keywordSpatialLinkQuery(args: { keyword: string; date?: string; 
 
 /** query 是否为合法空间深链：非空、只含白名单键、值均为非空字符串（数组/嵌套对象拒绝）。 */
 export function isSpatialLinkQuery(query: Record<string, unknown>): boolean {
-  const entries = Object.entries(query)
-  return (
-    entries.length > 0 &&
-    entries.every(([key]) => (SPATIAL_LINK_QUERY_KEYS as readonly string[]).includes(key)) &&
-    entries.every(([, value]) => typeof value === 'string' && value.length > 0)
-  )
+  return isWhitelistedLinkQuery(query, SPATIAL_LINK_GUARD)
 }
 
 /** 深链是否携带可写动词（键名或值里出现 submit/create/confirm 等）：携带即拒绝跳转。 */
 export function spatialLinkHasWriteVerb(query: Record<string, unknown>): boolean {
-  return Object.entries(query).some(([key, value]) => {
-    const text = `${key}=${String(value)}`.toLowerCase()
-    return WRITE_VERBS.some((verb) => text.includes(verb))
-  })
+  return insightLinkHasWriteVerb(query)
 }
 
 /** 目标路径对当前用户是否可访问（governance 既有口径；读取失败按无权限处理，不渲染入口）。 */
 export function canFollowSpatialLink(path: string): boolean {
-  try {
-    return canAccessPath(path, getCurrentUser())
-  } catch {
-    return false
-  }
+  return canFollowInsightLink(path)
 }
 
 /** 入口显隐判定（三页共用）：目标路径有权限 + 单个对象名 + 公司范围明确。
@@ -154,6 +141,5 @@ export function spatialEntryVisible(args: {
 /** 组装并跳转：显隐已由页面按 spatialEntryVisible 判定；这里再保证 query 只含白名单键、
  *  值均为非空标量且无可写动词（双保险），不合法直接不动——宁可不开口，不带脏参数跳转。 */
 export function openSpatialViewLink(router: Router, args: { path: string; query: Record<string, string> }): void {
-  if (!isSpatialLinkQuery(args.query) || spatialLinkHasWriteVerb(args.query)) return
-  void router.push({ path: args.path, query: args.query })
+  openInsightLink(router, { path: args.path, query: args.query, guard: SPATIAL_LINK_GUARD })
 }
