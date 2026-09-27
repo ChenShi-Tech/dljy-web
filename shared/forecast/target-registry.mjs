@@ -79,6 +79,15 @@ export const SKILL_FAMILIES = Object.freeze({
 export const DATA_SOURCE_KINDS = Object.freeze(['normalized', 'synth', 'module'])
 
 /**
+ * 模型运行时维度词汇（dljy#2808）——与 dataSource 正交的第二个维度。
+ * 'trainable' = 模型对该标的的 train→predict 链路已被代码与真实取数链共同确认跑得通；
+ * null（字段缺省/显式 null）= 无声明：目录与 supported_targets 都不得冒充它能跑（#2679
+ * 的诚实性）。#2679 把展开源改回手写常量的理由（数据可用 ≠ 模型跑得通）成立，但代价是
+ * 失去 #2446 的自动收敛；本维度把「跑不跑得通」也变成注册表事实后，两个诉求同时满足。
+ */
+export const MODEL_RUNTIME_STATUSES = Object.freeze(['trainable'])
+
+/**
  * 地区主导因素 → 该省追加的特异特征（迁自 feature_pipeline.REGION_DRIVER /
  * REGION_EXTRA_FEATURES）。**必须与标的注册表放在一起**：泄漏门禁要做
  * 「地区追加特征 × 标的别名列」的交叉断言，分开放就抓不到 water_inflow 那一条（#2444）。
@@ -113,6 +122,9 @@ export const REGION_EXTRA_FEATURES = Object.freeze({
  *   loaderRef     非宽表标的的取数入口；column 为 null 时必填其一（或 blocked）
  *   dataSource    { kind, ref, status }：平台取数路径与是否可供给
  *   blockedReason status='blocked' 时必填，须含 dljy#NNNN
+ *   modelRuntimeStatus  模型运行时维度（dljy#2808）：'trainable' = train→predict 链路已
+ *                 确认跑得通；null = 无声明（跑不通的不冒充，#2679）。与 dataSource 正交，
+ *                 两者合取才是模型 supported_targets 的展开源（见 runtimeTrainableTargetIds）
  *   exoFeatures   外生特征（不含目标当期值）
  *   weatherDerived 追加的派生气象特征
  *   aliasColumns  与本标的同值/可精确推出的列（防泄漏，见红线 3）
@@ -129,6 +141,7 @@ export const FORECAST_TARGETS = [
     column: 'price',
     loaderRef: null,
     dataSource: { kind: 'normalized', ref: 'price', status: 'available' },
+    modelRuntimeStatus: 'trainable',
     blockedReason: null,
     exoFeatures: ['load', 'wind', 'solar', 'net_load', 'net_load_norm',
       'renewable', 'renewable_ratio', 'temp', 'coal_price',
@@ -136,7 +149,33 @@ export const FORECAST_TARGETS = [
     weatherDerived: ['clearness_index', 'wind_power_frac'],
     aliasColumns: ['price'],
     coreTarget: 'price',
+    // build-midlong-spot-hedging 11.2（HF-02/D9）：输入允许滞后与预测期限（as-of 窗口与新鲜度守卫用）。
+    horizonDays: 1,
+    inputLagDays: 1,
     noteZh: '日前 96 点现货电价，主线标的',
+  },
+  {
+    id: 'plant_generation',
+    enumName: 'PLANT_GENERATION',
+    labelZh: '场站发电量预测（对象级）',
+    quantity: 'power',
+    skillFamily: 'power',
+    granularity: '15min',
+    column: 'plant_output',
+    loaderRef: null,
+    dataSource: { kind: 'normalized', ref: 'load', status: 'blocked' },
+    modelRuntimeStatus: null,
+    // status='blocked'：G2 未满足时目录标不可用并给出原因（须含 issue 号）；满足后置 available + blockedReason=null。
+    blockedReason: '场站实际功率日更未接入（数据门 G2，dljy#3063）；日更前不可训练与评估（HF-06）',
+    exoFeatures: [],
+    weatherDerived: [],
+    aliasColumns: ['plant_output'],
+    coreTarget: null,
+    // 对象维度（HF-04）：objectScope 声明对象粒度；平台侧校验对象属于公司/地区。
+    objectScope: 'plant',
+    horizonDays: 1,
+    inputLagDays: 1,
+    noteZh: '场站级发电预测；公司私有数据，只能带公司身份写入（定时任务不生产，D18）',
   },
   {
     id: 'load',
@@ -148,6 +187,7 @@ export const FORECAST_TARGETS = [
     column: 'load',
     loaderRef: null,
     dataSource: { kind: 'normalized', ref: 'load', status: 'available' },
+    modelRuntimeStatus: 'trainable',
     blockedReason: null,
     exoFeatures: ['temp', 'humidity'],
     weatherDerived: ['hdd', 'cdd', 'apparent_temp'], // 温度→负荷的 V 形非线性
@@ -169,6 +209,7 @@ export const FORECAST_TARGETS = [
     column: 'temp',
     loaderRef: null,
     dataSource: { kind: 'synth', ref: 'temp', status: 'available' },
+    modelRuntimeStatus: null,
     blockedReason: null,
     exoFeatures: ['load', 'wind', 'solar', 'net_load'],
     weatherDerived: [],
@@ -186,6 +227,7 @@ export const FORECAST_TARGETS = [
     column: 'renewable',
     loaderRef: null,
     dataSource: { kind: 'normalized', ref: 'wind+solar', status: 'available' },
+    modelRuntimeStatus: 'trainable',
     blockedReason: null,
     exoFeatures: ['temp', 'ghi', 'wind_speed', 'cloud_cover', 'humidity'],
     weatherDerived: ['clearness_index', 'wind_power_frac',
@@ -205,6 +247,7 @@ export const FORECAST_TARGETS = [
     column: 'hydro',
     loaderRef: null,
     dataSource: { kind: 'normalized', ref: 'water_inflow', status: 'available' },
+    modelRuntimeStatus: null,
     blockedReason: null,
     // 水电出力~降水链（湿度/云量是降水代理）。不放 ghi/wind_speed：那是光伏/风电的驱动，
     // 与水电无物理关联。**绝不能放 water_inflow**——见下方 aliasColumns。
@@ -226,6 +269,7 @@ export const FORECAST_TARGETS = [
     column: 'bidding_space',
     loaderRef: null,
     dataSource: { kind: 'normalized', ref: 'net_load', status: 'available' },
+    modelRuntimeStatus: null,
     blockedReason: null,
     // 移除 load/renewable：bidding_space = load − renewable 是精确等式，同时入特征即泄漏
     exoFeatures: ['temp', 'ghi', 'wind_speed'],
@@ -246,6 +290,7 @@ export const FORECAST_TARGETS = [
     column: 'reg_price',
     loaderRef: null,
     dataSource: { kind: 'synth', ref: 'reg_price', status: 'available' },
+    modelRuntimeStatus: null,
     blockedReason: null,
     exoFeatures: ['net_load', 'ramp', 'temp'], // 调频价~净负荷爬坡
     weatherDerived: [],
@@ -263,6 +308,7 @@ export const FORECAST_TARGETS = [
     column: 'reserve_price',
     loaderRef: null,
     dataSource: { kind: 'synth', ref: 'reserve_price', status: 'available' },
+    modelRuntimeStatus: null,
     blockedReason: null,
     exoFeatures: ['net_load', 'renewable', 'temp'], // 备用价~净负荷紧张度
     weatherDerived: [],
@@ -280,6 +326,7 @@ export const FORECAST_TARGETS = [
     column: 'zonal_spread',
     loaderRef: null,
     dataSource: { kind: 'synth', ref: 'zonal_spread', status: 'available' },
+    modelRuntimeStatus: null,
     blockedReason: null,
     exoFeatures: ['solar', 'wind', 'renewable', 'net_load', 'temp',
       'ghi', 'wind_speed'], // 区域价差~新能源集中度
@@ -298,6 +345,7 @@ export const FORECAST_TARGETS = [
     column: null, // 不在 load_price 宽表里
     loaderRef: 'data/midlong_price.py::load_midlong_price',
     dataSource: { kind: 'module', ref: 'data/midlong_price.py', status: 'available' },
+    modelRuntimeStatus: null,
     blockedReason: null,
     exoFeatures: [],
     weatherDerived: [],
@@ -318,6 +366,7 @@ export const FORECAST_TARGETS = [
     loaderRef: null,
     // dljy#2457 解锁：ETL 直接接官方 total_generation_actual(yn)（35136 行零缺失），不再拼分量
     dataSource: { kind: 'normalized', ref: 'generation', status: 'available' },
+    modelRuntimeStatus: null,
     blockedReason: null,
     // 与 hydro 同样的坑：此前无登记 → 静默回落 ['temp']。它现在 blocked 跑不起来所以没暴露，
     // 但解锁那天就会踩，故一并登记（dljy#2446）。
@@ -346,6 +395,7 @@ export const FORECAST_TARGETS = [
     column: 'price_user_da_settlement',
     loaderRef: 'data_loader.load_hourly_market',
     dataSource: { kind: 'normalized', ref: 'price_user_da_settlement', status: 'available' },
+    modelRuntimeStatus: 'trainable',
     blockedReason: null,
     exoFeatures: ['load', 'wind', 'solar', 'net_load', 'temp', 'humidity', 'precipitation',
       'cloud_cover', 'wind_speed', 'ghi', 'transfer_plan_yunnan_export'],
@@ -364,6 +414,7 @@ export const FORECAST_TARGETS = [
     column: 'price_user_rt_settlement',
     loaderRef: 'data_loader.load_hourly_market',
     dataSource: { kind: 'normalized', ref: 'price_user_rt_settlement', status: 'available' },
+    modelRuntimeStatus: 'trainable',
     blockedReason: null,
     exoFeatures: ['load', 'wind', 'solar', 'net_load', 'temp', 'humidity', 'precipitation',
       'cloud_cover', 'wind_speed', 'ghi', 'transfer_plan_yunnan_export'],
@@ -400,6 +451,17 @@ export function targetSlotsPerDay(id) {
 /** 平台有取数路径的标的（= 目录该列出的集合）。blocked 的仍进目录但标不可用。 */
 export function suppliableTargetIds() {
   return FORECAST_TARGETS.filter((t) => t.dataSource.status === 'available').map((t) => t.id)
+}
+
+/**
+ * 模型 supported_targets 的展开源（dljy#2808，恢复 #2446 的派生路线）：数据源可供给
+ * **且** 模型可训练，两个正交维度合取。#2446 只看数据源会过度承诺（#2679 打回的理由）；
+ * #2679 改回手写五条则失去自动收敛——新标的接线后没人记得改常量，「目录空洞」回潮且无
+ * 门禁可拦。现在两个判据都是注册表事实：接线 + 确认可跑 → 自动出现；跑不通的不冒充。
+ */
+export function runtimeTrainableTargetIds() {
+  return FORECAST_TARGETS.filter((t) => t.dataSource.status === 'available'
+    && t.modelRuntimeStatus === 'trainable').map((t) => t.id)
 }
 
 /**
@@ -461,6 +523,13 @@ export function validateForecastTargetRegistry(targets = FORECAST_TARGETS) {
     if (!SKILL_FAMILIES[t.skillFamily]) errors.push(`${at}: 未知 skillFamily ${t.skillFamily}`)
     if (!DATA_SOURCE_KINDS.includes(t.dataSource?.kind)) {
       errors.push(`${at}: 未知 dataSource.kind ${t.dataSource?.kind}`)
+    }
+    // A3b 模型运行时维度词汇（dljy#2808）：只允许 null（无声明）或 trainable。
+    // 与 dataSource 正交——trainable 而 blocked 是合法组合（模型就绪、等数据），不报错。
+    if (!(t.modelRuntimeStatus === null
+      || MODEL_RUNTIME_STATUSES.includes(t.modelRuntimeStatus))) {
+      errors.push(`${at}: 未知 modelRuntimeStatus ${String(t.modelRuntimeStatus)}`
+        + `（可选 null/${MODEL_RUNTIME_STATUSES.join('/')}）`)
     }
     // A4 取数路径完备：宽表列 / 独立 loader / blocked，三者必居其一
     const blocked = t.dataSource?.status === 'blocked'

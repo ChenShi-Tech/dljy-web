@@ -20,6 +20,7 @@
 
 import { str, num, object } from '../define.mjs'
 import { rowFieldTypes } from '../generated/rowFieldTypes.mjs'
+import { DISCLOSURE_DATASET_KEYS } from '../disclosure-table-specs.mjs'
 
 // —— p1..pN 数值列（96 点/24 点时序） ——
 function pFields(n) {
@@ -497,9 +498,23 @@ const ROW_SCHEMAS = {
     sheet_name: str({ required: true }), row_index: num(), col_index: num()
   }),
   yn_settle_daily_split_raw: object({ id: str({ required: true }), data_date: str({ required: true }) }),
-  yn_settle_bill_records_raw: object({ id: str({ required: true }), billmonth: str({ required: true }) }),
+  // 账单索引行锚点 = id + settle_month（#3088 实测 2026-05 包：32/64 行账单未到发布月
+  // 时 billmonth 为空，而 settle_month 全量在场——月标记锚点选恒在列，billmonth 留在
+  // 保真 payload 里如实为空，不改写源值）。
+  yn_settle_bill_records_raw: object({ id: str({ required: true }), settle_month: str({ required: true }) }),
   yn_settle_bill_file_downloads: object({ source_record_id: str({ required: true }), settle_month: str({ required: true }) }),
   yn_settle_monthly_raw: object({ account_id: str({ required: true }), settlemonth: str({ required: true }) }),
+  // plant_daily_settlement_raw（issue #3088，design D7「暂结日结的具体承载」）：原始日结
+  // 载荷 formal/temp 全量保存的证据层锚点——既有 yn_spot_settlement/yn_settlement_daily
+  // 只收 formal 行的正式读模型语义不变，暂结与正式/暂结差异从本证据层读取。
+  // 源表日期列是中文原列名「日期」（保真载荷原样保留）；schema/增量窗口统一用 ASCII 别名
+  // data_date（上传契约 date 锚点带 alias，归一后两键同值）——DDL 生成器按 schema 字段
+  // 物化列，非 ASCII 标识符拒绝生成。
+  yn_settle_daily_settlement_raw: object({
+    id: str({ required: true }),
+    data_date: str({ required: true }),
+    result_type: str({ required: true })
+  }),
   // D 类合同与曲线（2 表保真；curves 24 买方点 + 24 价点宽表原样存，unpivot 归消费层）。
   yn_contract_electricity: object({
     guid: str({ required: true }), contractId: str({ required: true }),
@@ -573,10 +588,11 @@ export const MARKET_DATASET_KEYS = Object.keys(marketAnalysisSchemas)
 
 // —— 月包导出表上传契约（#2824）多 datasetKey 族的 schema 映射 ——
 // 与 marketAnalysisSchemas 同款出口：describeDataset 按 key 分支消费，build-data-type-ddl
-// 生成器按 dataset 分表。C 类 6 表（dateField 各异）与 D 类 2 表。
+// 生成器按 dataset 分表。C 类 7 表（dateField 各异，含 #3088 暂结承载 plant_daily_settlement_raw）
+// 与 D 类 2 表。
 export const settlementDocSchemas = {
   plant_spot_settle_data: ROW_SCHEMAS.yn_settle_plant_spot_data,
-  plant_daily_settlement_raw: ROW_SCHEMAS.yn_settle_daily_raw,
+  plant_daily_settlement_raw: ROW_SCHEMAS.yn_settle_daily_settlement_raw,
   plant_daily_split_settlement_raw: ROW_SCHEMAS.yn_settle_daily_split_raw,
   settlement_bill_excel_cells: ROW_SCHEMAS.yn_settle_bill_excel_cells,
   settlement_bill_records_raw: ROW_SCHEMAS.yn_settle_bill_records_raw,
@@ -624,6 +640,95 @@ export function marketFamilyForDataset(datasetKey) {
 // datasetKey → 校验 schema（跨两族，单一来源）。未登记 datasetKey 返回 null。
 export function marketSchemaForDataset(datasetKey) {
   return Object.hasOwn(ALL_MARKET_SCHEMAS, datasetKey) ? ALL_MARKET_SCHEMAS[datasetKey] : null
+}
+
+// —— datasetKey ↔ family 权威对应表（#1479）——
+//
+// 背景：「数据集合（datasetKey）↔ 采集族（family）」的对应关系此前分散在各归一化器
+// 就地字面量里，verify:data-classification 第 ⑥ 项只能靠两条启发式（文件名前缀 / 同名
+// 跨族）猜归属，注释自认「已记 follow-up；本项不宣称完备」。本表把对应关系收进注册表
+// 成为单一事实源：归一化器/上传通道从这里取 datasetKey 常量，落盘目录归属按本表精确核对。
+//
+// 登记范围：**归一化产物固定命名**的族（datasetKey 是有限枚举）。平台原样切片族
+// （sdpt_* 等，datasetKey = 采集文件词干，逐文件不同）不登记——无法预枚举，这些族的
+// 落盘核对仍由 ⑥-c（未登记目录 fail-closed）与 ⑦（载荷主体标识）兜底。
+//
+// ⚠ `da_user_price`/`rt_user_price` 两键**合法双族**：南网整年导出把用户侧电价熔进
+// yn_system_forecast 长表（yn-fact-forecast meltUserPrice），交易中心月度导出走
+// yn_user_price 专用族（yn-fact-special）——同名不同 schema、都是正当落点。反向查找
+// familyForDataset 对多命中返回 null（不判定），落盘核对改按宿主族键集判定，两族互不误伤。
+export const FAMILY_DATASET_KEYS = Object.freeze({
+  // —— yn-fact-* 归一化器产出（builder 缺源时仍保留 family/datasetKey 元信息，可运行时对拍） ——
+  yn_loss_attribution: ['yn_loss_daily'],
+  yn_spot_settlement: ['yn_settlement_daily'],
+  yn_plant_output: ['yn_plant_output'],
+  yn_system_forecast: [
+    'load_forecast', 'load_actual',
+    'non_market_forecast', 'non_market_actual',
+    'new_energy_forecast_d1', 'new_energy_actual', 'hydro_actual',
+    'total_generation_forecast', 'total_generation_actual',
+    'inter_provincial_forecast',
+    'da_user_price', 'rt_user_price' // 南网整年导出专属（与 yn_user_price 的同名键双族共存，见上）
+  ],
+  yn_node_price: ['yn_node_price_daily'],
+  yn_system_supply: ['yn_system_supply_demand'],
+  yn_meteo: ['yn_meteo_hourly'],
+  yn_irradiance: ['yn_irradiance_hourly'],
+  yn_dim_plant: ['yn_dim_plant'],
+  yn_dim_plant_alias: ['yn_dim_plant_alias'],
+  yn_dim_plant_node: ['yn_dim_plant_node'],
+  yn_user_price: ['da_user_price', 'rt_user_price'],
+  yn_plant_nodal_price: ['plant_nodal_price'],
+  yn_settlement_detail: ['summary', 'charge', 'project', 'source'],
+  yn_hydro_group_limit: ['forecast_yn_hydro_group_energy_limit'],
+  // —— 手录市场公报（键清单已有注册表来源，引用不复制） ——
+  market_analysis: MARKET_DATASET_KEYS,
+  market_retail_packages: MARKET_RETAIL_DATASET_KEYS,
+  // —— 南网披露表（datasetKey=源表短名，单一来源 disclosure-table-specs） ——
+  yn_disclosure_metric: [...DISCLOSURE_DATASET_KEYS],
+  // —— 中广核月包导出表上传契约（#2824/#3088 plans 的 capture 落点；upload-contracts
+  //    的 plan 校验对拍本表，谁漏登另一侧拦） ——
+  yn_plant_timeseries: [
+    'plant_spot_business_summary', 'plant_spot_summary_data',
+    'plant_mid_long_term_data', 'plant_control_center_generation'
+  ],
+  yn_plant_daily_metrics: ['plant_daily_report_metrics'],
+  yn_settlement_docs: [
+    'plant_spot_settle_data', 'plant_daily_settlement_raw', 'plant_daily_split_settlement_raw',
+    'settlement_bill_excel_cells', 'settlement_bill_records_raw',
+    'settlement_bill_file_downloads', 'plant_monthly_settlement_raw'
+  ],
+  yn_contracts: ['electricity_contracts', 'contract_curves'],
+  yn_dim_plant_capacity: ['yn_dim_plant_capacity'],
+  yn_dim_node: ['yn_dim_node'],
+  yn_dim_self_owned_plant: ['yn_dim_self_owned_plant'],
+  // —— 气象 as-of 归档恢复视图（etl/import-weather-asof ← open-meteo-previous-runs） ——
+  weather_asof: ['open_meteo_previous_runs_hourly'],
+})
+
+// datasetKey → datasetKey 平铺常量表：归一化器 `CAPTURE_DATASET_KEYS.<key>` 取键常量，
+// 不再就地写字面量（拼错=undefined，写入侧立刻暴露；注册表删声明=门禁静态引用对拍红）。
+export const CAPTURE_DATASET_KEYS = Object.freeze(Object.fromEntries(
+  Object.entries(FAMILY_DATASET_KEYS).flatMap(([family, keys]) => keys.map((key) => [key, key]))
+))
+
+/** 正向查找：族 → 登记的 datasetKey 集（未登记固定键集的族返回 null，如动态词干的 sdpt_*）。 */
+export function datasetKeysForFamily(family) {
+  return FAMILY_DATASET_KEYS[String(family ?? '')] ?? null
+}
+
+/** 反向查找：datasetKey → 权威族。唯一命中才返回 family；未登记或多族命中（da_user_price 型
+ *  合法双族）返回 null——调用方不得把 null 当「无此键」，只当「本函数不判定归属」。 */
+export function familyForDataset(datasetKey) {
+  const key = String(datasetKey ?? '')
+  let hit = null
+  for (const [family, keys] of Object.entries(FAMILY_DATASET_KEYS)) {
+    if (keys.includes(key)) {
+      if (hit !== null) return null // 多命中：不判定（合法双族共存）
+      hit = family
+    }
+  }
+  return hit
 }
 
 // 文档族顶层必需键（document 校验用）
@@ -734,7 +839,14 @@ export const CAPTURE_FAMILIES = {
   yn_loss_attribution: { apiFamily: null, label: '云南厂站日损益分解(策略/预测/电网)', kind: 'row', visibility: 'company', ownerCompanyId: CGN_YUNNAN_COMPANY_ID },
   yn_spot_settlement: { apiFamily: null, label: '云南厂站日结算(申报偏差/三段式)', kind: 'row', visibility: 'company', ownerCompanyId: CGN_YUNNAN_COMPANY_ID },
   yn_plant_output: { apiFamily: null, label: '云南厂站出力预测vs实际(8源长表)', kind: 'row', visibility: 'company', ownerCompanyId: CGN_YUNNAN_COMPANY_ID },
-  yn_system_forecast: { apiFamily: null, label: '云南系统预测vs实际(负荷/新能源/水电/总发电/省间/用户电价·长表)', kind: 'row', visibility: 'public' },
+  // #3066（2026-09-18 拍板）：2026-07-02 之后经中广核渠道（#2370，行上 feed=cgn-api）写入本公共族的行，
+  // 传输渠道不改变可见性——只对授权集合含中广核的账号可见（中广核公司、平台超管 ADMIN、显式获授权者）。
+  // 按「日期之后 + 来源通道」双条件认定：同一日期之后的公共来源（南网披露包、公开送受电预测等）照常公开。
+  // 不删数据，只在读路径过滤。
+  yn_system_forecast: {
+    apiFamily: null, label: '云南系统预测vs实际(负荷/新能源/水电/总发电/省间/用户电价·长表)', kind: 'row', visibility: 'public',
+    restrictedSegments: [{ after: '2026-07-02', feed: 'cgn-api', ownerCompanyId: CGN_YUNNAN_COMPANY_ID, reason: '经中广核渠道取得后写入公共族（#3066）' }],
+  },
   // yn_node_price 虽源自公共披露，但按自有厂站节点白名单聚合且带厂站映射 → 谨慎面定 company（#516 风险节定稿）。
   yn_node_price: { apiFamily: null, label: '云南自有节点电价(日聚合·快速上屏)', kind: 'row', visibility: 'company', ownerCompanyId: CGN_YUNNAN_COMPANY_ID },
   yn_system_supply: { apiFamily: null, label: '云南系统供需实际(日内时序·快速上屏)', kind: 'row', visibility: 'public' },
@@ -828,6 +940,41 @@ export function getFamilyVisibility(code, datasetKey) {
   }
   const visibility = fam.visibility === DATA_VISIBILITY.COMPANY ? DATA_VISIBILITY.COMPANY : DATA_VISIBILITY.PUBLIC
   return { visibility, ownerCompanyId: visibility === DATA_VISIBILITY.COMPANY ? (fam.ownerCompanyId ?? null) : null }
+}
+
+/**
+ * 公共族里的受限段（#3066）：返回当前账号看不到的段 [{ after, feed }]——「业务日期晚于 after 且来源
+ * 通道为 feed」的行。受限段只对授权公司集合含其归属公司的账号放行；集合缺省按空集合处理——调用方
+ * 忘了传就过滤（fail-closed），不会把受限段当公共数据发出去。
+ * @param {string} code family code
+ * @param {readonly string[] | null | undefined} authorizedCompanyIds 账号授权公司集合（ADMIN 为全部公司）
+ * @returns {readonly { after: string, feed: string }[]}
+ */
+export function captureHiddenSegments(code, authorizedCompanyIds) {
+  const segments = CAPTURE_FAMILIES[code]?.restrictedSegments
+  if (!Array.isArray(segments) || !segments.length) return Object.freeze([])
+  const authorized = new Set((Array.isArray(authorizedCompanyIds) ? authorizedCompanyIds : []).filter(Boolean).map(String))
+  return Object.freeze(segments
+    .filter((segment) => !authorized.has(segment.ownerCompanyId))
+    .map((segment) => Object.freeze({ after: segment.after, feed: segment.feed })))
+}
+
+/**
+ * 只能按日期截断的载体（语义层 Parquet 公共视图：列里没有来源通道）用的保守边界：返回当前账号能
+ * 完整看到的最后一个业务日，不受限返回 null。比按来源过滤更严——边界之后的公共行在这类载体里也不放。
+ */
+export function captureVisibleThrough(code, authorizedCompanyIds) {
+  let through = null
+  for (const segment of captureHiddenSegments(code, authorizedCompanyIds)) {
+    if (through === null || segment.after < through) through = segment.after
+  }
+  return through
+}
+
+/** 该族是否登记了按业务日期划分的受限段（读路径据此决定要不要解析账号授权集合）。 */
+export function hasRestrictedSegments(code) {
+  const segments = CAPTURE_FAMILIES[code]?.restrictedSegments
+  return Array.isArray(segments) && segments.length > 0
 }
 
 // 文件词干归一化（#1635）：去掉 .json 后缀 / 尾部内容 hash / 尾部日期，与 verify:data-classification
@@ -1113,7 +1260,7 @@ export function describeDataset(code, match) {
       // 未登记 datasetKey 的拒收由 source-registry target 解析与上传契约白名单承担。
       return { kind: 'row', datasetKey: key, schema: ROW_SCHEMAS.yn_disclosure_metric, dateField: 'operateDate' }
     // —— 月包导出表上传契约（#2824）——datasetKey = 月包表名（剥 _YYYYMM 后缀）。
-    // 同族各表 dateField 不同（日粒度 data_date/day，月粒度 billmonth/settlemonth），
+    // 同族各表 dateField 不同（日粒度 data_date/day，月粒度 settle_month/settlemonth），
     // 按 key 精确匹配声明；未登记 key 拒收（与 market_analysis 同款「未登记拒收」）。
     case 'yn_plant_timeseries':
       return { kind: 'row', datasetKey: key, schema: ROW_SCHEMAS.yn_plant_timeseries, dateField: 'date', typeField: 'dataType' }
@@ -1122,16 +1269,16 @@ export function describeDataset(code, match) {
     case 'yn_settlement_docs': {
       const settleDocDateFields = {
         plant_spot_settle_data: 'data_date',
-        plant_daily_settlement_raw: '日期',
+        plant_daily_settlement_raw: 'data_date',
         plant_daily_split_settlement_raw: 'data_date',
         settlement_bill_excel_cells: 'settle_month',
-        settlement_bill_records_raw: 'billmonth',
+        settlement_bill_records_raw: 'settle_month',
         settlement_bill_file_downloads: 'settle_month',
         plant_monthly_settlement_raw: 'settlemonth',
       }
       const schema = {
         plant_spot_settle_data: ROW_SCHEMAS.yn_settle_plant_spot_data,
-        plant_daily_settlement_raw: ROW_SCHEMAS.yn_settle_daily_raw,
+        plant_daily_settlement_raw: ROW_SCHEMAS.yn_settle_daily_settlement_raw,
         plant_daily_split_settlement_raw: ROW_SCHEMAS.yn_settle_daily_split_raw,
         settlement_bill_excel_cells: ROW_SCHEMAS.yn_settle_bill_excel_cells,
         settlement_bill_records_raw: ROW_SCHEMAS.yn_settle_bill_records_raw,

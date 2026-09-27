@@ -72,7 +72,7 @@ const systemSources = [
     sourceId: `yn.system.${id}.actual`, title: `云南${label}（实际）`, category: id,
     read: capture('yn_system_forecast', `${METRIC_KEY[id]}_actual`, { region: 'yn' }),
     businessScope: 'yunnan', accessScope: 'public', authority: 'csg-disclosure', ingestChannel: 'bulk-history',
-    accessNote: '2026-07-02 之后的行经中广核渠道取得后写入公开族，访问范围待确认（见数据基线 3.1 节）',
+    accessNote: '2026-07-02 之后经中广核渠道（feed=cgn-api）写入公开族的行，按 #3066 只对授权集合含中广核的账号可见（洞察按所选公司判定），其余公司只读到公共来源（见数据基线 3.1 节）',
     measure: POWER_MW, time: TIME_15, variant: 'actual', freshness: 'historical-package',
   })),
   ...SYSTEM_SERIES.map(([id, label]) => source({
