@@ -15,9 +15,11 @@
 // 无终态帧抛 AgentStreamDisconnectedError、abort 静默返回。
 // 4. x-run-id 响应头 → 转 attachRunStream 续流。
 // 5. getActiveRun 404 → null 不抛。
-// 6. 探活三态（probeAgentService）：2xx→online；超时拒绝（TimeoutError/AbortError，
+// 6. 探活三态（probeAgentService，#2580 退役第 1 步）：请求 URL 是 agent-backend 免鉴权
+// 健康端点 /agent-api/v1/health（后端 GET /api/v1/health），不再打即将退役的 Python 会话层
+// /sessions；2xx→online；超时拒绝（TimeoutError/AbortError，
 // AbortSignal.timeout 的规范拒绝原因）→timeout；否定答复（vite 代理对已宕 upstream 固定
-// 回 502、404 旧后端、TypeError 网络层）→unreachable。申报工作台横幅按 timeout/unreachable
+// 回 502、404 后端无该路由、TypeError 网络层）→unreachable。申报工作台横幅按 timeout/unreachable
 // 分流文案，并据 timeout 识别「同步重训占住后端」的探活假阳性（DEVELOPMENT.md §4）。
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -407,10 +409,23 @@ describe('getActiveRun', () => {
 })
 
 describe('probeAgentService 探活三态', () => {
-  it('2xx → online；pingAgentService 包装为 true', async () => {
-    mockFetch(async () => new Response('[]', { status: 200 }))
+  // #2580 退役第 1 步：探活端点改为 agent-backend 免鉴权健康检查（前端 /agent-api/v1/health
+  // 经 vite/nginx rewrite 落到后端 GET /api/v1/health），不再拿即将退役的 Python 会话层
+  // GET /agent-api/agent/sessions 列表探活。
+  it('请求 URL 是健康端点 /agent-api/v1/health（GET），不再打 /sessions', async () => {
+    const spy = mockFetch(async () => jsonRes({ status: 'healthy' }))
     await expect(probeAgentService()).resolves.toBe('online')
-    mockFetch(async () => new Response('[]', { status: 200 }))
+    expect(spy).toHaveBeenCalledTimes(1)
+    const [url, init] = spy.mock.calls[0] as [string, RequestInit]
+    expect(url).toBe('/agent-api/v1/health')
+    expect(url).not.toContain('/sessions')
+    expect(init.method).toBeUndefined() // 默认 GET
+  })
+
+  it('2xx → online；pingAgentService 包装为 true', async () => {
+    mockFetch(async () => jsonRes({ status: 'healthy' }))
+    await expect(probeAgentService()).resolves.toBe('online')
+    mockFetch(async () => jsonRes({ status: 'healthy' }))
     await expect(pingAgentService()).resolves.toBe(true)
   })
 

@@ -169,6 +169,13 @@ export async function createAgentSession(
 }
 
 // 探活：申报工作台等页面在挂载智能体面板前先确认 harness 在线
+// 探活端点是 agent-backend 的免鉴权健康检查 GET /api/v1/health（router_v2 prefix /api/v1 +
+// routes/health.py /health）：前端 URL 走 AGENT_API_BASE_ROOT（默认 /agent-api），经 vite 代理 /
+// 现场 nginx 反代 rewrite 去掉 /agent-api 前缀落到后端。#2580 退役第 1 步：不再拿 Python
+// 会话层的 GET /agent-api/agent/sessions 列表探活（该层属「仅测试可达」的空壳，即将整体
+// 退役）；Node 侧既有探活（server/cgn-yunnan-data-source.mjs）同用 /api/v1/health，口径一致。
+// health 是纯进程探活：FastAPI 活着即 2xx（DB 断连时响应体 status=unhealthy 但 HTTP 仍 200，
+// 不影响本探活只判 HTTP 层的语义），失败/宕机回 502/504 与原 /sessions 探活完全一致。
 // 探活三态：online=2xx；timeout=超时时限内未应答（后端可能在但被重活占住，如
 // /forecast/predict 同步重训）；unreachable=拿到否定答复。区分依据：
 // - AbortSignal.timeout 触发的 fetch 拒绝是 TimeoutError DOMException（MDN 规范行为），
@@ -179,7 +186,7 @@ export type AgentProbeResult = 'online' | 'timeout' | 'unreachable'
 
 export async function probeAgentService(timeoutMs = 2500): Promise<AgentProbeResult> {
   try {
-    const res = await fetch(`${BASE}/sessions`, {
+    const res = await fetch(`${AGENT_API_BASE_ROOT}/v1/health`, {
       headers: identityHeaders(),
       signal: timeoutSignal(timeoutMs)
     })
