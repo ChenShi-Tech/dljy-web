@@ -23,7 +23,15 @@
         每个数据集的格式要求（列名/类型/单位/主键）由契约声明；先下载模板再填报，可避免列名/格式不匹配。
       </el-alert>
       <el-table :data="contracts" border stripe>
-        <el-table-column prop="title" label="数据集" min-width="180" />
+        <el-table-column label="数据集" min-width="200">
+          <template #default="{ row }">
+            {{ row.title }}
+            <!-- 公共落点标注（#2898 验收③）：非 ADMIN 只读，提交要交平台管理员；预检不受限 -->
+            <el-tag v-if="isPublicGridTemplate(row.dataset) && !canWritePublicGrid" size="small" type="warning" class="public-grid-tag">
+              公共曲线 · 仅管理员提交
+            </el-tag>
+          </template>
+        </el-table-column>
         <el-table-column label="类型" width="120">
           <template #default="{ row }">
             <el-tag size="small" :type="row.kind === 'capture-family' ? 'success' : 'info'">
@@ -68,6 +76,10 @@
         <el-descriptions-item label="重叠策略">{{ activeContract?.overlap === 'replace-batch' ? '覆盖写（本批次生效）' : '追加去重' }}</el-descriptions-item>
         <el-descriptions-item label="说明">{{ activeContract?.notes || '—' }}</el-descriptions-item>
       </el-descriptions>
+      <!-- 公共落点提示（#2898 验收③）：非 ADMIN 可预检核对，确认落库需平台管理员 -->
+      <el-alert v-if="publicGridCommitBlocked" type="warning" :closable="false" show-icon class="hint">
+        {{ PUBLIC_GRID_PRECHECK_NOTE }}
+      </el-alert>
       <el-table :data="activeContract?.columns ?? []" border size="small" class="col-table">
         <el-table-column prop="name" label="列名（表头）" min-width="140" />
         <el-table-column prop="type" label="类型" width="80" />
@@ -129,8 +141,9 @@
       </el-table>
       <div class="actions">
         <el-button @click="backToUpload">返回修改</el-button>
-        <el-button type="primary" :disabled="!report.canCommit" :loading="committing" @click="runCommit">确认落库</el-button>
+        <el-button type="primary" :disabled="!report.canCommit || publicGridCommitBlocked" :loading="committing" @click="runCommit">确认落库</el-button>
       </div>
+      <p v-if="publicGridCommitBlocked" class="public-grid-note">{{ PUBLIC_GRID_PRECHECK_NOTE }}</p>
     </el-card>
 
     <!-- ④′ 落库冲突（409）：单独成档，不是「格式错误」——两份数据都合法，需要人核对（#2898） -->
@@ -206,6 +219,8 @@
 // 本组件只组织步骤与呈现预检报告/回执。
 import ReviewImportFields from '@/components/review/workbench/ReviewImportFields.vue'
 import { UploadConflictError, type ReviewImportMetadata } from '@/services/data/uploadClient'
+import { canWritePublicGridData, isPublicGridTemplate, PUBLIC_GRID_PRECHECK_NOTE } from '@/services/data/publicGrid'
+import { getCurrentUser } from '@/services/auth'
 import { selectedCompanyId } from '@/services/company/companyContext'
 import { selectedRegionId } from '@/services/region/regionContext'
 import { computed, onMounted, onBeforeUnmount, reactive, ref, watch } from 'vue'
@@ -247,6 +262,13 @@ const receipt = ref<CommitResult | null>(null)
 const conflict = ref<{ dataset: string; fileName: string; detail: string } | null>(null)
 const batches = ref<UploadBatchRow[]>([])
 const loadingBatches = ref(false)
+// 公共落点提交置灰（#2898 验收③）：yn-t0-node-price 写平台公共表，后端仅 ADMIN 可提交
+// （PUBLIC_GRID_WRITE_ROLES）。非 ADMIN 的「确认落库」入口置灰并提示先预检再交管理员，
+// 预检按钮不受影响。口径以服务端为准（publicGrid.ts），本判定只是前端展示一致，避免点了才 403。
+const canWritePublicGrid = computed(() => canWritePublicGridData(getCurrentUser()?.roleCode))
+const publicGridCommitBlocked = computed(
+  () => !!activeContract.value && isPublicGridTemplate(activeContract.value.dataset) && !canWritePublicGrid.value
+)
 
 let scopeGeneration = 0
 const uploadScope = (): UploadScope => ({ companyId: selectedCompanyId.value, region: activeContract.value?.region ?? regionInput.value })
@@ -363,6 +385,7 @@ async function runPrecheck() {
 async function runCommit() {
   if (!activeContract.value || !pickedPayload) return
   if (!report.value?.canCommit) return
+  if (publicGridCommitBlocked.value) return
   committing.value = true
   const ticket = scopeGeneration, scope = uploadScope()
   try {
@@ -460,6 +483,8 @@ function chipClass(col: { via: string | null }): string {
 .col-chip.warn { background: var(--el-color-warning-light-9); color: var(--el-color-warning); }
 .col-chip.bad { background: var(--el-color-danger-light-9); color: var(--el-color-danger); }
 .err-table { margin-bottom: 10px; }
+.public-grid-tag { margin-left: 6px; }
+.public-grid-note { margin: 4px 8px 0 0; font-size: var(--font-13); color: var(--el-color-warning); text-align: right; }
 
 /* 落库冲突档（409，#2898）：明细按服务端原文多行展示，突出可核对性 */
 .conflict-card :deep(.el-card__header) { color: var(--warning, #d97706); font-weight: 600; }

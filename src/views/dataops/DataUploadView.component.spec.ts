@@ -15,18 +15,25 @@ const api = vi.hoisted(() => {
   }
 })
 vi.mock('@/services/data/uploadClient', () => api)
+// 公共落点提交置灰（#2898 验收③）按登录角色分档：默认 ADMIN（与真实默认演示账号一致，
+// 既有用例不受置灰影响），公共落点用例里换成公司级角色。
+const auth = vi.hoisted(() => ({ getCurrentUser: vi.fn(() => ({ roleCode: 'ADMIN' })) }))
+vi.mock('@/services/auth', () => auth)
 vi.mock('@/services/company/companyContext', () => ({ selectedCompanyId: ref('subsidiary') }))
 vi.mock('@/services/region/regionContext', () => ({ selectedRegionId: ref('yunnan') }))
 vi.mock('element-plus', () => ({ ElMessage: { error: vi.fn(), success: vi.fn() }, ElMessageBox: { confirm: vi.fn() } }))
 const { selectedCompanyId } = await import('@/services/company/companyContext')
-const contract = { dataset: 'review-intervals', kind: 'review-intervals', title: '分时资料', regionPolicy: 'choose', region: null, columns: [], key: [] }
+type ContractRow = { dataset: string; kind: string; title: string; regionPolicy: string; region: string | null; columns: never[]; key: never[] }
+const contract: ContractRow = { dataset: 'review-intervals', kind: 'review-intervals', title: '分时资料', regionPolicy: 'choose', region: null, columns: [], key: [] }
+// 公共落点模板（yn-t0-node-price）：直落数据库类、地区固定（与真实契约同形）。
+const publicGridContract: ContractRow = { ...contract, dataset: 'yn-t0-node-price', kind: 'capture-family', title: '节点电价', regionPolicy: 'fixed', region: 'yunnan' }
 const report = { ok: true, canCommit: true, expectedToken: 'version', rows: { total: 1, valid: 1, invalid: 0, errors: [] }, rowErrors: [{ row: 4, message: '实际值不是有效数字' }], header: { colMatch: [], missingRequired: [] }, keyDupes: { count: 0 }, overlap: { count: 1 } }
-beforeEach(() => { vi.resetAllMocks(); selectedCompanyId.value = 'subsidiary'; api.fetchUploadContracts.mockResolvedValue([contract]); api.fetchUploadBatches.mockResolvedValue([]); api.readLocalFile.mockResolvedValue({ fileName: '资料.csv', content: '资料', isBinary: false }); api.precheckUpload.mockResolvedValue(report); api.commitUpload.mockResolvedValue({ code: 200 }) })
-type Controls = { selectContract: (row: typeof contract) => void; onFileChange: (event: Event) => Promise<void>; runPrecheck: () => Promise<void>; runCommit: () => Promise<void> }
-async function open() {
-  const wrapper = mount(DataUploadView, { global: { stubs: { ElCard: { template: '<div><slot /><slot name="header" /></div>' }, ElTable: true, ElTableColumn: true, ElDescriptions: true, ElSteps: true, ElStep: true, ElAlert: true, ElForm: { template: '<div><slot /></div>' }, ElFormItem: { template: '<div><slot /></div>' }, ElButton: { template: '<button><slot /></button>' }, ElInput: true, ElResult: true }, directives: { loading: () => {} } } })
+beforeEach(() => { vi.resetAllMocks(); auth.getCurrentUser.mockReturnValue({ roleCode: 'ADMIN' }); selectedCompanyId.value = 'subsidiary'; api.fetchUploadContracts.mockResolvedValue([contract]); api.fetchUploadBatches.mockResolvedValue([]); api.readLocalFile.mockResolvedValue({ fileName: '资料.csv', content: '资料', isBinary: false }); api.precheckUpload.mockResolvedValue(report); api.commitUpload.mockResolvedValue({ code: 200 }) })
+type Controls = { selectContract: (row: ContractRow) => void; onFileChange: (event: Event) => Promise<void>; runPrecheck: () => Promise<void>; runCommit: () => Promise<void> }
+async function open(contractRow: ContractRow = contract) {
+  const wrapper = mount(DataUploadView, { global: { stubs: { ElCard: { template: '<div><slot /><slot name="header" /></div>' }, ElTable: true, ElTableColumn: true, ElDescriptions: true, ElSteps: true, ElStep: true, ElAlert: { template: '<div class="stub-alert"><slot /></div>' }, ElForm: { template: '<div><slot /></div>' }, ElFormItem: { template: '<div><slot /></div>' }, ElButton: { props: ['disabled'], template: '<button :disabled="disabled"><slot /></button>' }, ElInput: true, ElResult: true }, directives: { loading: () => {} } } })
   await flushPromises(); const vm = wrapper.vm as unknown as Controls
-  vm.selectContract(contract); await flushPromises()
+  vm.selectContract(contractRow); await flushPromises()
   await vm.onFileChange({ target: { files: [new File(['资料'], '资料.csv')] } } as unknown as Event)
   return { wrapper, vm }
 }
@@ -77,5 +84,38 @@ it('非冲突的落库错误仍走通用错误提示，不误渲染冲突档', a
   expect(wrapper.text()).not.toContain('落库冲突')
   const { ElMessage } = await import('element-plus')
   expect(ElMessage.error).toHaveBeenCalledWith(expect.stringContaining('落库请求失败'))
+  wrapper.unmount()
+})
+// 公共落点提交置灰（#2898 验收③）：yn-t0-node-price 写平台公共表，后端仅 ADMIN 可提交。
+// 非 ADMIN：预检请求正常发出（预检不禁）、上传步与预检报告页有明确提示、「确认落库」
+// 置灰且 guard 拦截；ADMIN：不受限、可提交。
+it('非 ADMIN 对公共落点模板预检可用、确认落库置灰并提示', async () => {
+  auth.getCurrentUser.mockReturnValue({ roleCode: 'TRADER' })
+  api.fetchUploadContracts.mockResolvedValue([publicGridContract])
+  const { wrapper, vm } = await open(publicGridContract)
+  const scope = { companyId: 'subsidiary', region: 'yunnan' }
+  await vm.runPrecheck(); await flushPromises()
+  // 预检不受公共落点置灰影响：请求正常发出、报告正常渲染
+  expect(api.precheckUpload).toHaveBeenCalledWith(expect.objectContaining({ dataset: 'yn-t0-node-price' }), scope)
+  expect(wrapper.text()).toContain('预检报告')
+  // 上传步与预检报告页都有「先预检再交管理员」提示
+  expect(wrapper.text()).toContain('公共曲线，仅平台管理员可提交')
+  expect(wrapper.text()).toContain('预检不落库，不受影响')
+  // 确认落库按钮置灰，guard 拦截提交
+  const commitBtn = wrapper.findAll('button').find((b) => b.text() === '确认落库')
+  expect(commitBtn?.attributes('disabled')).toBeDefined()
+  await vm.runCommit(); await flushPromises()
+  expect(api.commitUpload).not.toHaveBeenCalled()
+  wrapper.unmount()
+})
+it('ADMIN 对公共落点模板不受置灰限制，可正常提交', async () => {
+  api.fetchUploadContracts.mockResolvedValue([publicGridContract])
+  const { wrapper, vm } = await open(publicGridContract)
+  await vm.runPrecheck(); await flushPromises()
+  expect(wrapper.text()).not.toContain('公共曲线，仅平台管理员可提交')
+  const commitBtn = wrapper.findAll('button').find((b) => b.text() === '确认落库')
+  expect(commitBtn?.attributes('disabled')).toBeUndefined()
+  await vm.runCommit(); await flushPromises()
+  expect(api.commitUpload).toHaveBeenCalledWith(expect.objectContaining({ dataset: 'yn-t0-node-price' }), { companyId: 'subsidiary', region: 'yunnan' })
   wrapper.unmount()
 })
