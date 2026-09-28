@@ -70,10 +70,8 @@ function goPanel(panel: string) {
   <div class="data-ops-console">
     <header class="page-head">
       <h1>数据运维工作台</h1>
-      <p class="sub">
-        数据进入平台的全链路操作面：接入 → 入库 → 摄取 → 治理与回放。总览给出当前链路状态与下一步动作，
-        其余面板分别承接上传、手录、向导、ETL 触发、质量体检与数据源凭据（仅系统管理员可见）。
-      </p>
+      <!-- 一行导语即可：各面板分工的完整说明在面包屑旁「?」（pageHelp 注册表 DataOpsConsole 条目），dljy#3385。 -->
+      <p class="sub">数据进入平台的全链路操作面：接入 → 入库 → 摄取 → 治理与回放（仅系统管理员可见）</p>
     </header>
 
     <el-tabs v-model="activePanel" class="ops-tabs" @tab-change="onPanelChange">

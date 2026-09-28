@@ -232,7 +232,7 @@ export const regionModuleCapabilities: RegionModuleCapability[] = [
       { path: '/sjfx/zcqxhdl', statusByRegion: { shanxi: 'available', yunnan: 'degraded' }, note: '云南出清电量页已停用（dljy#2991）：__list__ 为山西公司私有清单，云南无全省出清清单来源；页面显示停用说明，不跨地区读取。' },
       { path: '/sjfx/zrxgx', statusByRegion: { shanxi: 'available', yunnan: 'available' }, note: '同页关系图可走云南 yn_system_forecast 口径；山西专有维度见 subCapabilities。' },
       { path: '/sjfx/zrxgx2', statusByRegion: { shanxi: 'available', yunnan: 'available' }, note: '统调负荷关系图可走云南系统预测/实际长表口径。' },
-      { path: '/sjfx/actualLoad', statusByRegion: { shanxi: 'available', yunnan: 'available' }, note: '云南系统负荷实际值有真实支撑；错位负荷是山西交易平台特有统计，云南无此口径（dljy#3379）。' },
+      { path: '/sjfx/actualLoad', statusByRegion: { shanxi: 'available', yunnan: 'available' }, note: '云南系统负荷实际值有真实支撑（单源版面：日均值、日内区间与峰谷差）。' },
       { path: '/sjfx/singleZsjfx', statusByRegion: { shanxi: 'available', yunnan: 'available' }, note: 'zsjfx 索引已具备云南真实支撑。' },
       // dljy#2995 阶段 A：六条规范入口 /insight/<pageId>。路由层四地区一律放行（degraded 也是放行态），
       // 内容由工作区注册（src/services/region/insightWorkspace.ts）按当前地区决定：山西兼容登记
