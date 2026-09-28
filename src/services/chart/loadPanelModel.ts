@@ -10,6 +10,15 @@
 
 export type LoadPanelMode = 'overlay' | 'continuous'
 
+// 逐日负荷的值是日内 96 点负荷功率的均/小/大值（山西采集与云南派生同为 MW 口径，量级 2.5-4 万），
+// 不是电量——旧实现标「万KWH」会让读者差一个数量级理解（#3379）。
+export const LOAD_PANEL_UNIT = 'MW'
+
+/** 负荷源是否「无任何年份数据」：缺失（null）与空壳（如云南 misplace 无口径）同样视为空。 */
+export function isEmptyLoadSource(source: { years: string[] } | null | undefined): boolean {
+  return !source || source.years.length === 0
+}
+
 export interface LoadPanelLine {
   /** 系列名（legend 用）。 */
   name: string

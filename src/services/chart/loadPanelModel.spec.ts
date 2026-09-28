@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
+  LOAD_PANEL_UNIT,
+  isEmptyLoadSource,
   isSingleTimeline,
   buildLoadPanelModel,
   continuousTickFormatter,
@@ -186,5 +188,17 @@ describe('tick formatters', () => {
   it('overlay：月首打刻度去掉「1日」', () => {
     expect(overlayTickFormatter('7月1日')).toBe('7月')
     expect(overlayTickFormatter('7月2日')).toBe('')
+  })
+})
+
+describe('逐日负荷口径（#3379）', () => {
+  it('单位是负荷功率 MW，不是电量', () => {
+    expect(LOAD_PANEL_UNIT).toBe('MW')
+  })
+  it('缺失与空壳（无年份）都视为空，有年份则非空', () => {
+    expect(isEmptyLoadSource(null)).toBe(true)
+    expect(isEmptyLoadSource(undefined)).toBe(true)
+    expect(isEmptyLoadSource({ years: [] })).toBe(true)
+    expect(isEmptyLoadSource({ years: ['2025年'] })).toBe(false)
   })
 })

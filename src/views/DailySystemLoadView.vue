@@ -8,7 +8,7 @@
 // （每图默认高度按视口 0.66 取 [480,860]，用户可拖底部手柄自调、同页两列联动、localStorage 记忆；
 // 高度变化经 useEChart ResizeObserver 自动 resize）；
 // 额外「全部」页保留原 6 图一览（2 列 × 3 行，每图 240px）。当前页签 ⇄ URL ?metric= 同步。
-import { onMounted, ref, watch, type Ref } from 'vue'
+import { computed, onMounted, ref, watch, type Ref } from 'vue'
 import { currentRegion } from '@/services/region/regionContext'
 import {
   fetchMarketInsightActualLoadContract,
@@ -21,6 +21,8 @@ import { useQuerySync } from '../composables/useQuerySync'
 import RegionDataBanner from '@/components/region/RegionDataBanner.vue'
 import CapabilitySupportBadge from '../components/CapabilitySupportBadge.vue'
 import LoadPanelChart from '../components/common/LoadPanelChart.vue'
+import CalloutBox from '../components/common/CalloutBox.vue'
+import { LOAD_PANEL_UNIT, isEmptyLoadSource } from '@/services/chart/loadPanelModel'
 import { defineAiPage, useAiSidebar } from '@/features/aiSidebar'
 import { PAGE_PROMPT_KEYS } from '@/prompts'
 
@@ -91,6 +93,16 @@ async function load() {
   }
 }
 
+// 系统负荷有数而错位负荷为空壳 = 该地区没有错位负荷口径（错位负荷是山西交易平台的自有统计，
+// 云南等地区无法由统调负荷推出），与「数据缺失」区分开说明，避免被当成故障（#3379）。
+const misplaceUnavailable = computed(() =>
+  !!data.value && !isEmptyLoadSource(data.value.sources.system) && isEmptyLoadSource(data.value.sources.misplace)
+)
+const MISPLACE_UNAVAILABLE_TEXT = '当前地区无错位负荷口径'
+function emptyTextOf(src: ActualLoadSourceKey): string | undefined {
+  return src === 'misplace' && misplaceUnavailable.value ? MISPLACE_UNAVAILABLE_TEXT : undefined
+}
+
 const ai = useAiSidebar()
 // 「✨ 解读本页」：可用年份 + 系统负荷各年年均作摘要（勿传 6年×366天逐日矩阵全量）。
 function insightContext(): Record<string, unknown> {
@@ -106,7 +118,7 @@ function insightContext(): Record<string, unknown> {
     years,
     panels: '系统/错位负荷 × 均值/最小/最大（6 子图）',
     system_load_annual_avg_by_year: years.map((y, i) => ({ year: y, annual_avg: yearMean(average[i]) })),
-    unit: '万KWH',
+    unit: LOAD_PANEL_UNIT,
     note: '逐日 366 点 × 6 年；本摘要仅给系统负荷各年年均，逐日明细未传',
     basis: 'captured'
   }
@@ -128,6 +140,9 @@ onRegionChange(load)
     <RegionDataBanner />
     <CapabilitySupportBadge path="/sjfx/actualLoad" />
     <el-alert v-if="error" type="error" :closable="false" :title="error" class="mb" />
+    <CalloutBox v-if="misplaceUnavailable" class="mb">
+      错位负荷实际值是山西交易平台特有的统计口径，当前地区没有这项数据，右列为空并非数据缺失。数值单位为 MW（日内负荷功率的均值/最小值/最大值）。
+    </CalloutBox>
     <div class="toolbar">
       <el-button size="small" type="success" plain @click="askInsight">✨ 解读本页</el-button>
     </div>
@@ -151,6 +166,7 @@ onRegionChange(load)
             :metric-key="mt.metricKey"
             :col-name="c.col"
             :metric-name="mt.metric"
+            :empty-text="emptyTextOf(c.src)"
             :height="panelHeight"
             resizable
             @update:height="panelHeight = $event"
@@ -172,6 +188,7 @@ onRegionChange(load)
               :metric-key="row.metricKey"
               :col-name="c.col"
               :metric-name="row.metric"
+              :empty-text="emptyTextOf(c.src)"
               :height="240"
             />
           </template>
