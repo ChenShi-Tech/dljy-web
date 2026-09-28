@@ -208,6 +208,15 @@ describe('数据运维总览面板', () => {
     expect(rows[1]).toMatchObject({ sub: '上传契约', status: 'warn', link: { label: '去上传', tab: 'upload' } })
   })
 
+  it('没被数据集行覆盖的族级断流单列，不从待处理里消失（codex R1）', async () => {
+    // 默认夹具：yn_meteo/hourly 有告警明细；yn_node_price/day_ahead 族流 fail 但 items 里没有对应数据集
+    const wrapper = await mountWith(QUALITY)
+    const rows = rowsOf(wrapper, 'alert-table')
+    expect(rows.map((r) => r.key)).toEqual(['stream:yn_node_price/day_ahead', 'yn_meteo/hourly'])
+    expect(rows[0]).toMatchObject({ sub: '数据族', status: 'fail', link: { label: '查看' } })
+    expect(wrapper.text()).toContain('共 2 个数据集 / 数据流有问题')
+  })
+
   it('最该补数按族汇总，并按各族节律判新鲜度（月更数据 20 天前仍算新鲜）', async () => {
     const DAY = 86_400_000
     const iso = (daysAgo: number) => new Date(Date.now() - daysAgo * DAY).toISOString()

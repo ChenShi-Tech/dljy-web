@@ -282,7 +282,9 @@ const stages = computed<Stage[]>(() => [
   }
 ])
 
-// —— 待处理：同一数据集的不合格/告警检查合并成一行，再补上传契约流（族流与数据集行重复，不单列）——
+// —— 待处理：同一数据集的不合格/告警检查合并成一行，再补数据流行 ——
+// 族流只在同族已有数据集行时才去重：两者是独立结果、不保证一一对应，没被覆盖的族级断流必须单列，
+// 否则会从待处理和总数里消失（codex R1）。上传契约流不对应任何数据集，一律单列。
 // 检查代码 → 中文问题名（未登记的原样显示）。具体数字在「说明」列，来自巡检报告原文。
 const CHECK_LABELS: Record<string, string> = {
   freshness: '更新不及时',
@@ -298,6 +300,8 @@ const checkLabel = (id: string) => CHECK_LABELS[id] ?? (id.startsWith('pair:') ?
 
 type AlertRow = {
   key: string
+  // 数据集行所属的族，用于判断族流是否已被覆盖
+  family?: string
   label: string
   sub: string
   problems: string[]
@@ -322,6 +326,7 @@ const allAlertRows = computed<AlertRow[]>(() => {
     if (!bad.length) continue
     rows.push({
       key: `${item.family}/${item.datasetKey}`,
+      family: item.family,
       label: familyLabels.value.get(item.family) ?? item.family,
       sub: item.datasetKey,
       problems: [...new Set(bad.map((c) => checkLabel(c.id)))],
@@ -332,18 +337,23 @@ const allAlertRows = computed<AlertRow[]>(() => {
       link: { label: '查看', to: { path: '/yygl/data-browser', query: { family: item.family, match: item.datasetKey } } }
     })
   }
+  const coveredFamilies = new Set(rows.map((r) => r.family))
   for (const s of streams.value) {
-    if (s.kind !== 'upload-contract' || s.status === 'pass') continue
+    if (s.status === 'pass') continue
+    const isContract = s.kind === 'upload-contract'
+    if (!isContract && coveredFamilies.has(s.stream)) continue
     rows.push({
       key: `stream:${s.stream}`,
-      label: s.stream,
-      sub: '上传契约',
+      label: isContract ? s.stream : familyLabels.value.get(s.stream) ?? s.stream,
+      sub: isContract ? '上传契约' : '数据族',
       problems: ['更新不及时'],
       status: s.status,
       ageHours: s.ageHours,
       lastAt: s.lastAt,
       detail: s.detail || '—',
-      link: { label: '去上传', tab: 'upload' }
+      link: isContract
+        ? { label: '去上传', tab: 'upload' }
+        : { label: '查看', to: { path: '/yygl/data-browser', query: { family: s.stream } } }
     })
   }
   // 不合格在前，同档滞后久的在前：先看必须动手、拖得最久的。
