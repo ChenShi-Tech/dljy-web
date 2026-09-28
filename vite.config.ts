@@ -190,7 +190,11 @@ export default defineConfig(({ mode }) => {
       watch: {
         // .claude/worktrees/ 是本仓 worktree 根（见 .gitignore）：不排除的话 chokidar 会把
         // 每份 worktree 的完整仓库副本各遍历一遍，开几个分支就能吃满 CPU。
-        ignored: ['**/node_modules/**', '**/dist/**', '**/.claude/worktrees/**']
+        // 工作树内起 dev 时该模式会命中自身源码的绝对路径、导致 HMR 失效（chokidar 按绝对路径
+        // 匹配），故工作树场景（VITE_WORKTREE_DEV=1）不排除。
+        ignored: process.env.VITE_WORKTREE_DEV === '1'
+          ? ['**/node_modules/**', '**/dist/**']
+          : ['**/node_modules/**', '**/dist/**', '**/.claude/worktrees/**']
       }
     }
   }
