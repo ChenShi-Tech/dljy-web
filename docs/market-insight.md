@@ -4,6 +4,15 @@
 
 > 相关文档：[市场洞察旧图表能力清单](./market-insight-chart-inventory.md)——dljy#2995 云南地区工作区迁移时逐项保留的旧图表能力（现有组件位置、云南新落点、复用方式与验收要点）；[市场洞察公共证据组件与图表选区](./market-insight-common-components.md)——dljy#2996 公共件（区块容器、证据抽屉、历史候选、图表选区、明细表与导出）的接口、文案对照与阶段 A 集成检查；[云南市场洞察价格与价差页](./market-insight-prices.md)——dljy#3007 价格页（价格对象目录、四页签口径与页面状态纪律）；[云南市场洞察供需与水电页](./market-insight-supply.md)——dljy#3008 供需与水电页（分析目录、四页签口径与页面状态纪律）；[云南水电分析页](./market-insight-hydro.md)——dljy#3389 并入旧版体系的云南专属单页（页面结构、整洁纪律、登记面与数据情况）；[云南市场洞察市场总览页](./market-insight-overview.md)——dljy#3009 总览页（区块清单、重点事项与同进度比较口径、下钻与页面状态纪律）；[云南市场洞察跨省与电网边界页](./market-insight-grid.md)——dljy#3024 电网边界页（三页签口径、coverage objects 消费方式、方向/符号纪律与页面状态纪律）；[云南市场洞察场站市场表现页](./market-insight-plants.md)——dljy#3083 场站页（五页签口径、对象语义纪律、不派生承诺与页面状态纪律）。；[云南市场洞察研究工作台页](./market-insight-research.md)——dljy#3080 研究页（预设目录、同类日与受控自定义、事前事后纪律、超限与拒绝原文）；[市场洞察切片门禁记录汇编](./market-insight-gate-records.md)——dljy#3110 云南洞察各切片 PR 的门禁命令、结果与适用面汇编（OpenSpec 16.6/16.7 核销依据）；[市场洞察验收追溯与回滚汇总](./market-insight-traceability.md)——dljy#3112 业务问题 → analysisId/公式 → 源资料 → 文档/测试/PR 追溯总表与按 PR 回滚方式（OpenSpec 17.3，验收追溯入口页）
 
+## 新版地区工作区已封存（2026-09-28，dljy#3387）
+
+云南地区洞察工作区（`/insight/overview|prices|supply|grid-boundaries|plants|research` 六页，Epic dljy#2989）经用户试看后判定不如旧版，**封存、不上线**，市场洞察回归旧版体系（后续整理见 Epic dljy#3386）：
+
+- 装配开关 `VITE_YUNNAN_INSIGHT_WORKSPACE` 保持关闭（默认 0），任何环境都不要打开；云南菜单与页面沿用旧版入口。
+- 存档 tag：`archive/insight-workspace-v1`（指向封存时的 main 提交），需要找回时从该 tag 取代码。
+- 代码暂留：`src/features/regions/yunnan/insight/**` 等工作区代码与测试仍在仓内，**删除须另行征得用户同意**；新代码不得再 import 该目录。
+- 后端保留：`/api/v1/market-insight/*` 洞察分析接口与 `src/services/insight/*`、`src/components/insight/*`、`shared/insight/*` 继续使用——旧版新增的「水电分析」页（dljy#3389）复用它们取数。
+
 ## 背景速览
 
 - 市场洞察各页按「地区」取数：山西走三德普华采集族（`sdpt_*`），云南走云南真实族（`sdpt_console`、`sdpt_zsjfx_idx`、`sdpt_zcqxhdl/listrs_full`、`sdpt_actualLoad`、`yn_*` 等），广东/四川为第三省声明式试点、尚无 `sdpt_*` 专属采集。
@@ -33,6 +42,7 @@
    - 契约客户端（`src/services/data/contracts/marketInsightHeavyPagesClient.ts`）硬编码：只有 `region === 'shanxi'` 才请求 `sdpt_zcqxhdl/__list__`；其他地区在客户端层直接返回「本地区不适用」空态，**不发任何请求**（不依赖视图层自觉）。
    - 视图（`ClearingSpotAnalysisView.vue`）在非山西地区显示停用说明卡：「旧出清电量实现已停用：原实现读取的是山西公司专属清单，不代表云南全省出清。获权场站的申报、出清与实际对照将在『场站市场表现』中提供。」不画空图。
    - 能力注册表（`regionModules.ts`）：`/sjfx/zcqxhdl` 云南状态为 `degraded`（路由可达、页面停用说明），云南数据支撑措辞改为准确描述——`sdpt_zcqxhdl` 仅 `listrs_full` 支撑价格分析页，不含出清电量清单。
+   - 菜单入口（dljy#3388，2026-09-28）：云南菜单不再显示「出清现货电量分析」（`navigation.ts` 的 `hiddenInRegionIds: ['yunnan']`，与分时行情同做法）——云南打开只剩停用说明，保留入口没有意义；路由与权限不变，旧链接仍可直达并看到停用说明。
    - 山西行为不变。
 3. **分时行情入口与解释**：
    - `NavItem` 新增可选字段 `hiddenInRegionIds`（`src/data/navigation.ts`、`src/services/governance.ts`）：**只影响菜单显示，不影响路由可达与权限**。`/sjfx/fshq` 设为云南隐藏；云南菜单不再出现「分时行情」，山西/广东/四川菜单不变，旧链接在云南仍可直接访问。
@@ -44,7 +54,7 @@
 | --- | --- |
 | `src/services/market/marketAnalysis.spec.ts` | 反例（仅 `market_price` 真实 → 其余字段空、无示例值 318/1258.6/856.2/286.4/116）、正例（公共键全真实 → captured）、全不真实 → 整页示例旧行为 |
 | `src/services/data/contracts/marketInsightHeavyPagesClient.clearing.spec.ts` | 云南/广东/四川不发请求且返回「本地区不适用」空态；山西仍请求 `__list__` 并正常转换；能力声明与拦截口径一致 |
-| `src/services/governance.navigation-region.spec.ts` | 云南菜单不含 `/sjfx/fshq`，山西/广东/四川菜单仍含；云南路由保持可达 |
+| `src/services/governance.navigation-region.spec.ts` | 云南菜单不含 `/sjfx/fshq`、`/sjfx/zcqxhdl`（#3388），山西/广东/四川菜单仍含；云南路由保持可达 |
 
 ### 回滚说明
 
