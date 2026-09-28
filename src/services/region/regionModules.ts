@@ -183,8 +183,8 @@ export const regionModuleCapabilities: RegionModuleCapability[] = [
     id: 'market-insight',
     title: '市场洞察',
     group: 'insight',
-    routePrefixes: ['/insight', '/sjfx/fshq', '/sjfx/zrsjg', '/sjfx/zcqxhdl', '/sjfx/zrxgx', '/sjfx/zrxgx2', '/sjfx/actualLoad', '/sjfx/singleZsjfx', '/sjfx/market-ops'],
-    routePaths: ['/insight/cockpit', '/sjfx/fshq', '/sjfx/zrsjg', '/sjfx/zcqxhdl', '/sjfx/zrxgx', '/sjfx/zrxgx2', '/sjfx/actualLoad', '/sjfx/singleZsjfx', '/sjfx/market-ops'],
+    routePrefixes: ['/insight', '/sjfx/fshq', '/sjfx/zrsjg', '/sjfx/zcqxhdl', '/sjfx/zrxgx', '/sjfx/zrxgx2', '/sjfx/actualLoad', '/sjfx/hydro', '/sjfx/singleZsjfx', '/sjfx/market-ops'],
+    routePaths: ['/insight/cockpit', '/sjfx/fshq', '/sjfx/zrsjg', '/sjfx/zcqxhdl', '/sjfx/zrxgx', '/sjfx/zrxgx2', '/sjfx/actualLoad', '/sjfx/hydro', '/sjfx/singleZsjfx', '/sjfx/market-ops'],
     statusByRegion: {
       shanxi: 'available',
       yunnan: 'degraded',
@@ -233,6 +233,10 @@ export const regionModuleCapabilities: RegionModuleCapability[] = [
       { path: '/sjfx/zrxgx', statusByRegion: { shanxi: 'available', yunnan: 'available' }, note: '同页关系图可走云南 yn_system_forecast 口径；山西专有维度见 subCapabilities。' },
       { path: '/sjfx/zrxgx2', statusByRegion: { shanxi: 'available', yunnan: 'available' }, note: '统调负荷关系图可走云南系统预测/实际长表口径。' },
       { path: '/sjfx/actualLoad', statusByRegion: { shanxi: 'available', yunnan: 'available' }, note: '云南系统负荷实际值有真实支撑；错位负荷是山西交易平台特有统计，云南无此口径（dljy#3379）。' },
+      // 云南水电分析（dljy#3389）：并入旧版体系的单页，仅云南登记。水电数据来自中广核渠道
+      //（公开曲线库止于 2026-08-17、获权两块止于 2026-08-21，采集断供见 #2368），页面按真实
+      // 覆盖诚实展示；其他地区无该能力，hidden = 菜单不出现且路由拦截（fail-closed 同口径）。
+      { path: '/sjfx/hydro', statusByRegion: { shanxi: 'hidden', yunnan: 'available', guangdong: 'hidden', sichuan: 'hidden' }, note: '云南水电分析（dljy#3389）经市场洞察接口取数（公开系统曲线 + 获权两分析）；水电来源为中广核渠道，仅云南开通，其余地区 hidden 不展示且路由拦截。' },
       { path: '/sjfx/singleZsjfx', statusByRegion: { shanxi: 'available', yunnan: 'available' }, note: 'zsjfx 索引已具备云南真实支撑。' },
       { path: '/sjfx/market-ops', statusByRegion: { shanxi: 'available', yunnan: 'degraded' }, note: '手录市场经营口径可用但不代表完整云南行情自动接入。' },
       // dljy#2995 阶段 A：六条规范入口 /insight/<pageId>。路由层四地区一律放行（degraded 也是放行态），

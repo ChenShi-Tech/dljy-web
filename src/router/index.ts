@@ -33,6 +33,8 @@ const placeholder = () => import('../views/PlaceholderView.vue')
 // Real-data views (built from captured data via /api/real). Others still use
 // the self-documenting placeholder until they are built.
 const dailySystemLoad = () => import('../views/DailySystemLoadView.vue')
+// 云南水电分析（dljy#3389）：并入旧版体系的单页（仅云南），数据走市场洞察三接口。
+const yunnanHydroAnalysis = () => import('../views/yunnan/YunnanHydroView.vue')
 const elNinoLaNina = () => import('../views/ElNinoLaNinaView.vue')
 const dataAnalysis = () => import('../views/DataAnalysisView.vue')
 const clearingSpotAnalysis = () => import('../views/ClearingSpotAnalysisView.vue')
@@ -329,6 +331,10 @@ const router = createRouter({
         page('sjfx/market-ops', 'MarketOperationsAnalysis', { block: '数据分析', title: '市场经营分析', code: 'market-analysis', endpoint: 'local marketAnalysis + planned /api/v1/market/* and /api/v1/market-analysis/*', dataPath: 'market_analysis', scope: '市场概览、发电侧、售电公司、独立储能、套餐分析、价格趋势迁移', kind: 'mixed' }, marketOperationsAnalysis),
         page('sjfx/fshq', 'TimeOfUseMarket', { block: '数据分析', title: '分时行情', code: 'fshq', endpoint: 'GET /sdpt/fshq/data?rqlx&bdrq&jyyf', dataPath: 'sdpt_fshq', scope: 'rqlx∈{0运行,1交易}×日期 2022-12~2026-06 (2563文件)', kind: 'real', note: 'jysd 参数后端忽略(无效维度)' }, fshq),
         page('sjfx/actualLoad', 'DailySystemLoad', { block: '数据分析', title: '逐日系统负荷实际值', code: 'actualLoad', endpoint: 'GET /sdpt/actualLoad/query', dataPath: 'sdpt_actualLoad', scope: '一次返回6年(2021-2026)×366天', kind: 'real', note: 'system(日历对齐)+misplace(错位)，pjz/zxz/zdz' }, dailySystemLoad),
+        // 云南水电分析（dljy#3389，仅云南）：水电实际与统调负荷、新能源同轴叠线 + 指标卡 +
+        // 获权两分析（水电周出力预测 / 机组群构成）。数据只经 /api/v1/market-insight/*，
+        // 不依赖 VITE_YUNNAN_INSIGHT_WORKSPACE；权限与 /sjfx/actualLoad 等价（governance 别名）。
+        page('sjfx/hydro', 'YunnanHydroAnalysis', { block: '数据分析', title: '水电分析', code: 'hydro', endpoint: 'POST /api/v1/market-insight/{capabilities,query,coverage}（supply.system-series + supply.hydro-weekly-output + supply.hydro-unit-groups）', dataPath: 'market_insight', scope: '云南水电实际出力与统调负荷、新能源同轴叠线（不堆叠不相加）+ 水电概况指标卡 + 获权两卡（区域分列周出力 / 机组群占比，无上限值）', kind: 'mixed', regionIds: ['yunnan'], note: '仅云南登记（其余地区 hidden 路由拦截）；权限等价 /sjfx/actualLoad（governance.insightPathAccessAliases 由主会话补）' }, yunnanHydroAnalysis),
         page('sjfx/zrsjg', 'PriceAnalysis', { block: '数据分析', title: '价格分析', code: 'zrsjg', endpoint: 'GET /sdpt/zcqxhdl/listrs?typeList[]&tag=0', dataPath: 'sdpt_zcqxhdl', scope: '1434天×2类型 2022-07~2026-06', kind: 'real', note: '{rjz,rmx,dmx}；数组参数需编码 %5B0%5D' }, priceAnalysis),
         page('sjfx/jieqi', 'SolarTerms', { block: '数据分析', title: '24节气', code: 'actualLoad2', endpoint: 'GET /sdpt/actualLoad/query2?xl', dataPath: 'sdpt_actualLoad', scope: '6年；xl=1节气详细 / xl=0日期汇总', kind: 'real' }, solarTerms),
         page('sjfx/elninolanina', 'ElNinoLaNina', { block: '数据分析', title: '厄尔尼诺拉尼娜', code: 'elninolanina', endpoint: 'GET /sdpt/elninolanina/list', dataPath: 'sdpt_elninolanina', scope: '77行(年)', kind: 'real', note: 'ENSO 指数 djf..ndj 12个滑动季' }, elNinoLaNina),
