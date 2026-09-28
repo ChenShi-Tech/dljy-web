@@ -41,27 +41,45 @@ const simulateResult = ref<Record<string, unknown> | null>(null)
 const simulateQuantity = ref('')
 const simulateStatus = ref<string | null>(null)
 
+/**
+ * 发起一次受范围保护的读取（HW-06）：返回的判定函数在公司/地区切换（session.renew）或主视图范围
+ * 变化后恒为 false——晚到的旧响应不得写回，也不得改动当前范围的加载态。全部异步读取都经它。
+ */
+function scopedRequest() {
+  const token = session.begin(scopeKey.value)
+  return () => session.isCurrent(token, scopeKey.value)
+}
+
 async function loadMonth() {
+  const current = scopedRequest()
   monthLoading.value = true
   try {
     const range = today2Range()
-    monthData.value = await fetchMonths({ fromMonth: range.fromDate.slice(0, 7), toMonth: range.fromDate.slice(0, 7) })
-  } catch { monthData.value = null }
-  monthLoading.value = false
+    const data = await fetchMonths({ fromMonth: range.fromDate.slice(0, 7), toMonth: range.fromDate.slice(0, 7) })
+    if (current()) monthData.value = data
+  } catch {
+    if (current()) monthData.value = null
+  }
+  if (current()) monthLoading.value = false
 }
 
 async function loadSettlement() {
+  const current = scopedRequest()
   settlementLoading.value = true
   try {
     const range = today2Range()
-    settlementData.value = await fetchSettlement({
+    const data = await fetchSettlement({
       fromDate: `${range.fromDate.slice(0, 7)}-01`, toDate: range.toDate, granularity: 'DAY', view: 'FORMAL',
     })
-  } catch { settlementData.value = null }
-  settlementLoading.value = false
+    if (current()) settlementData.value = data
+  } catch {
+    if (current()) settlementData.value = null
+  }
+  if (current()) settlementLoading.value = false
 }
 
 async function runSimulate() {
+  const current = scopedRequest()
   simulateStatus.value = null
   try {
     const range = today2Range()
@@ -69,10 +87,11 @@ async function runSimulate() {
       window: { fromDate: range.fromDate, toDate: range.toDate },
       adjustments: [{ quantityMwh: simulateQuantity.value, shape: { kind: 'FLAT' } }],
     })
+    if (!current()) return
     simulateResult.value = result
     simulateStatus.value = '试算完成（不落库，刷新即消失）'
   } catch (err) {
-    simulateStatus.value = err instanceof HedgeApiError ? `${err.errorCode}：${err.message}` : '试算失败'
+    if (current()) simulateStatus.value = err instanceof HedgeApiError ? `${err.errorCode}：${err.message}` : '试算失败'
   }
 }
 
@@ -135,25 +154,40 @@ watch([selectedCompanyId, () => currentRegion.value.id], () => {
   monthData.value = null
   settlementData.value = null
   simulateResult.value = null
+  simulateStatus.value = null
+  baselineRows.value = []
+  schemeActivation.value = null
+  mechanismRows.value = []
+  capsRows.value = []
   scheduleLoad()
   if (tab.value === 'month') loadMonth()
   if (tab.value === 'settlement') loadSettlement()
+  if (maintenanceOpen.value) loadMaintenance()
 })
 
 async function openMaintenance() {
   maintenanceOpen.value = !maintenanceOpen.value
-  if (maintenanceOpen.value) {
-    try {
-      const data = await fetchBaselines({ fromMonth: '2026-10', toMonth: '2026-12' })
-      baselineRows.value = (data as { rows: Array<{ stationId: number; month: string; quantityMwh: string; basisNote?: string }> }).rows
-        .map((row) => ({ stationId: row.stationId, month: row.month, quantityMwh: row.quantityMwh, basisNote: row.basisNote }))
-    } catch { baselineRows.value = [] }
-    fetchBandPresets().then((data) => {
-      schemePresets.value = ((data as { rows: Array<Record<string, unknown>> }).rows) ?? []
-      return fetchBandActivation({}).then((act) => { schemeActivation.value = (act as { active?: Record<string, unknown> }).active ?? null })
-    }).catch(() => { schemeActivation.value = null })
-    loadMechanismParams()
-    loadCaps()
+  if (maintenanceOpen.value) await loadMaintenance()
+}
+
+async function loadMaintenance() {
+  const current = scopedRequest()
+  fetchBandPresets().then((data) => {
+    if (!current()) return undefined
+    schemePresets.value = ((data as { rows: Array<Record<string, unknown>> }).rows) ?? []
+    return fetchBandActivation({}).then((act) => {
+      if (current()) schemeActivation.value = (act as { active?: Record<string, unknown> }).active ?? null
+    })
+  }).catch(() => { if (current()) schemeActivation.value = null })
+  loadMechanismParams()
+  loadCaps()
+  try {
+    const data = await fetchBaselines({ fromMonth: '2026-10', toMonth: '2026-12' })
+    if (!current()) return
+    baselineRows.value = (data as { rows: Array<{ stationId: number; month: string; quantityMwh: string; basisNote?: string }> }).rows
+      .map((row) => ({ stationId: row.stationId, month: row.month, quantityMwh: row.quantityMwh, basisNote: row.basisNote }))
+  } catch {
+    if (current()) baselineRows.value = []
   }
 }
 
@@ -194,22 +228,26 @@ async function activateScheme(presetKey: string, label: string) {
 }
 
 async function loadMechanismParams() {
+  const current = scopedRequest()
   try {
     const data = await fetchMechanismParams({})
+    if (!current()) return
     mechanismRows.value = (data as { rows: Array<Record<string, unknown>> }).rows
     mechanismStatus.value = mechanismRows.value.length ? null : '暂无机制参数登记（导入后待业务确认）'
   } catch (err) {
-    mechanismStatus.value = err instanceof HedgeApiError ? err.message : '加载失败'
+    if (current()) mechanismStatus.value = err instanceof HedgeApiError ? err.message : '加载失败'
   }
 }
 
 async function loadCaps() {
+  const current = scopedRequest()
   try {
     const data = await fetchCaps({ fromMonth: '2026-10', toMonth: '2026-12' })
+    if (!current()) return
     capsRows.value = (data as { rows: typeof capsRows.value }).rows
     capsStatus.value = capsRows.value.length ? null : '核定上限未登记（向交易机构索取核定文件后录入）'
   } catch (err) {
-    capsStatus.value = err instanceof HedgeApiError ? err.message : '加载失败'
+    if (current()) capsStatus.value = err instanceof HedgeApiError ? err.message : '加载失败'
   }
 }
 
