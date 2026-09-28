@@ -6,12 +6,19 @@ import { afterAll, afterEach, describe, expect, it, vi } from 'vitest'
 const fetchOverview = vi.fn()
 const putCaps = vi.fn()
 const putBaselines = vi.fn()
+const fetchMonths = vi.fn(async (): Promise<unknown> => ({}))
 
 // 地区上下文桩：mountView(regionId) 切换 currentRegion，地区门禁（HW-07）才真正受测。
 const regionState = vi.hoisted(() => ({ id: 'yunnan' }))
 vi.mock('@/services/region/regionContext', () => ({
   currentRegion: { get value() { return { id: regionState.id } } },
 }))
+
+// 公司上下文桩：真实 ref，切换公司的重取与清空（HW-06/#3401）才真正受测。
+vi.mock('@/services/company/companyContext', async () => {
+  const { ref } = await import('vue')
+  return { selectedCompanyId: ref('comp-a') }
+})
 
 vi.mock('@/services/hedge/hedgeApi', () => ({
   HedgeApiError: class HedgeApiError extends Error {
@@ -32,7 +39,7 @@ vi.mock('@/services/hedge/hedgeApi', () => ({
   fetchBandActivation: vi.fn(async () => ({ active: null })),
   fetchCaps: vi.fn(async () => ({ rows: [{ subjectId: 1, month: '2026-11', capMwh: '100' }] })),
   fetchMechanismParams: vi.fn(async () => ({ rows: [] })),
-  fetchMonths: vi.fn(async () => ({})),
+  fetchMonths: (...args: unknown[]) => fetchMonths(...(args as [])),
   fetchSettlement: vi.fn(async () => ({})),
   postMechanismVersion: vi.fn(async () => ({})),
   postSimulate: vi.fn(async () => ({})),
@@ -43,6 +50,7 @@ vi.mock('@/services/hedge/hedgeApi', () => ({
 
 import HedgeWorkbenchView from './HedgeWorkbenchView.vue'
 import { HedgeApiError } from '@/services/hedge/hedgeApi'
+import { selectedCompanyId } from '@/services/company/companyContext'
 
 enableAutoUnmount(afterAll)
 
@@ -117,6 +125,57 @@ describe('HedgeWorkbenchView（HW-01/02/06/07/10）', () => {
     const text = wrapper.text()
     expect(text).toContain('MECHANISM_INCOMPLETE')
     expect(text).toContain('明日预测未到达')
+  })
+
+  it('切换公司：立即清空上一家公司的结果并按新公司重取（HW-06/#3401）', async () => {
+    selectedCompanyId.value = 'comp-a'
+    fetchOverview.mockResolvedValue(overviewPayload())
+    const wrapper = mountView()
+    await vi.dynamicImportSettled()
+    await vi.waitFor(() => {
+      expect(wrapper.find('[data-test="metrics"]').exists()).toBe(true)
+    })
+    const callsBefore = fetchOverview.mock.calls.length
+    // 新公司的请求挂起：旧结果必须先被清掉，不能在新请求返回前继续显示上一家公司的数值。
+    let release: (value: unknown) => void = () => {}
+    fetchOverview.mockImplementation(() => new Promise((resolve) => { release = resolve }))
+    selectedCompanyId.value = 'comp-b'
+    await vi.waitFor(() => {
+      expect(wrapper.find('[data-test="metrics"]').exists()).toBe(false)
+      expect(fetchOverview.mock.calls.length).toBeGreaterThan(callsBefore)
+    })
+    release(overviewPayload())
+    await vi.waitFor(() => {
+      expect(wrapper.find('[data-test="metrics"]').exists()).toBe(true)
+    })
+    selectedCompanyId.value = 'comp-a'
+  })
+
+  it('辅助页签：切公司前发出的旧请求晚到，不得覆盖新公司的结果（HW-06，#209 审查 R1-01）', async () => {
+    selectedCompanyId.value = 'comp-a'
+    fetchOverview.mockResolvedValue(overviewPayload())
+    const releases: Array<(value: unknown) => void> = []
+    fetchMonths.mockImplementation(() => new Promise((resolve) => { releases.push(resolve) }))
+    const wrapper = mountView()
+    await vi.dynamicImportSettled()
+    await vi.waitFor(() => {
+      expect(wrapper.find('[data-test="tabs"]').exists()).toBe(true)
+    })
+    await wrapper.findAll('[data-test="tabs"] button')[1].trigger('click')
+    await vi.waitFor(() => { expect(releases.length).toBeGreaterThan(0) })
+    const staleCount = releases.length
+    selectedCompanyId.value = 'comp-b'
+    await vi.waitFor(() => { expect(releases.length).toBeGreaterThan(staleCount) })
+    // 新公司先返回，旧公司后返回：页面必须停在新公司的结果上。
+    releases[releases.length - 1]({ months: [{ month: 'NEW-COMPANY' }] })
+    await vi.waitFor(() => { expect(wrapper.find('[data-test="month-view"]').text()).toContain('NEW-COMPANY') })
+    for (let i = 0; i < staleCount; i += 1) releases[i]({ months: [{ month: 'STALE-COMPANY' }] })
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(wrapper.find('[data-test="month-view"]').text()).toContain('NEW-COMPANY')
+    expect(wrapper.find('[data-test="month-view"]').text()).not.toContain('STALE-COMPANY')
+    fetchMonths.mockReset()
+    fetchMonths.mockImplementation(async () => ({}))
+    selectedCompanyId.value = 'comp-a'
   })
 
   it('非云南地区显示「未开放」且不发任何请求（HW-07 地区门禁）', async () => {
