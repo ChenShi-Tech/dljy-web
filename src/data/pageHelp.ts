@@ -175,11 +175,6 @@ export const pageHelpRegistry: Record<string, PageHelpEntry> = {
     title: '价格驱动分析',
     body: '现货价格与驱动因素（新能源出力/统调负荷）关系合并分析页：指标卡（相关系数、平均边际敏感度、最敏感/最弱时段、样本量）+ 小时×驱动量分档热力图 + 24 小时边际敏感度双驱动对比柱 + 点选联动的单小时散点与最小二乘拟合。山西走 sdpt_zcqxhdl/list24 与 fhlist24 回放，云南走 yn_system_forecast 真实长表。为真实采集数据；相关系数与敏感度为页面内统计计算，口径说明见各 ⓘ 悬浮。'
   },
-  MarketOperationsAnalysis: {
-    title: '市场经营分析',
-    body: '市场经营分析：metric 卡行 + 6 radio tab（市场概览/发电侧/售电公司/独立储能/套餐/价格趋势）+ 结构分布饼图 + 月度趋势/价格曲线双图 + 明细表，支持年份切换与 CSV 导出。数据来自本地 marketAnalysis（计划后端 /api/v1/market/*）。price tab 前端算现货/中长期均价与价差、零售均价。当前为混合口径、结构化合成。',
-    docPath: 'docs/data/market-ops-data-spec.md'
-  },
   TimeOfUseMarket: {
     title: '分时行情',
     body: '分时行情回放：按运行/交易类型×日期的分时行情数据，覆盖 2022-12~2026-06（2563 文件）。数据来自 GET /sdpt/fshq/data?rqlx&bdrq&jyyf，回放 sdpt_fshq。为真实采集回放数据（jysd 参数后端忽略，为无效维度）。'

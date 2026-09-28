@@ -129,7 +129,7 @@ function makeRouter() {
   })
 }
 const FSHQ: AiPageDefinition = { label: '分时行情', promptKey: PAGE_PROMPT_KEYS.marketDataAnalysis, interpret: { context: () => ({ d: 1 }) } }
-const PRICE: AiPageDefinition = { label: '价格分析', promptKey: PAGE_PROMPT_KEYS.marketOperations, interpret: { context: () => ({ d: 2 }) } }
+const PRICE: AiPageDefinition = { label: '价格分析', promptKey: PAGE_PROMPT_KEYS.marketDataAnalysis, interpret: { context: () => ({ d: 2 }) } }
 
 // 侧边栏响应模块级单例状态：用例结束必须卸载，否则残留实例会跟着新用例的请求再建内核
 const mounted: Array<{ unmount: () => void }> = []
@@ -250,7 +250,7 @@ describe('AiSidebar · 会话规则', () => {
     await settle()
     expect(first.unmounted).toBe(true)
     expect(live()).toHaveLength(1)
-    expect(live()[0].props.promptKey).toBe(PAGE_PROMPT_KEYS.marketOperations)
+    expect(live()[0].props.promptKey).toBe(PAGE_PROMPT_KEYS.marketDataAnalysis)
     expect(live()[0].asks).toEqual([expect.stringContaining('请解读本页「价格分析」')])
   })
 

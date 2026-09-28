@@ -39,7 +39,6 @@ export const yunnanSubjectFocus: SubjectRuleFocus[] = [
     summary: '云南发电侧要区分调节性能较好的水电报量报价、其他水电/风光起步阶段报量不报价，并重点跟踪节点电价、阻塞和运行补偿。',
     keyConcerns: ['水电梯级和水库调度约束', '报量报价与报量不报价边界', '日前/实时出清曲线', '发电侧节点电价', '运行补偿、启动费用和阻塞相关电费'],
     recommendedRoutes: [
-      { title: '市场经营分析', path: '/sjfx/market-ops', reason: '查看发电侧收益、出力和市场份额' },
       { title: '出清现货电量分析', path: '/sjfx/zcqxhdl', reason: '分析日前/实时出清电量变化' },
       { title: '新能源资产测算', path: '/tzcs/wind-solar', reason: '评估风光资产在云南现货下的收益空间' }
     ],
@@ -98,7 +97,6 @@ export const yunnanSubjectFocus: SubjectRuleFocus[] = [
       { title: '地区规则体系', path: '/sdzl/region-rules', reason: '查看云南规则阶段和资料效力' },
       { title: '售电经营工作台', path: '/xhjy/yunnan/retail', reason: '查看售电组合收益和风险' },
       { title: '结算模拟器', path: '/xhjy/yunnan/settlement', reason: '查看云南结算拆解和风险提示' },
-      { title: '市场经营分析', path: '/sjfx/market-ops', reason: '对比主体收益、价格和风险' },
       { title: '运营中枢', path: '/yygl/ops', reason: '查看风险、合同和运营状态' }
     ],
     riskWarnings: ['云南处于区域现货深度融合阶段，规则版本变化会影响经营口径', '节点电价试点和用户侧分时电价调整会改变售电利润结构'],

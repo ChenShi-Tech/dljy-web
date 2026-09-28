@@ -10,7 +10,7 @@ export function listImportTemplateDeclarations(): ExcelTemplateDeclaration[] {
   return listExcelTemplateDeclarations() as ExcelTemplateDeclaration[]
 }
 
-export type ImportHubTab = 'electricity' | 'retail' | 'settlement' | 'retailSettlement' | 'trading' | 'customerLoad' | 'marketOps'
+export type ImportHubTab = 'electricity' | 'settlement' | 'retailSettlement' | 'trading' | 'customerLoad'
 
 export interface ImportMetric {
   label: string
@@ -85,20 +85,6 @@ export function getImportHubDataset(): ImportHubDataset {
       reusable: true
     },
     {
-      // P3 零售套餐接入（链路 A）：复用 P2 投递型分支 /api/v1/market-analysis/import，
-      // 固定 datasetKey=market_packages（与 MarketOps「套餐」tab 同源，避免两套数据）。
-      // 前端 ImportHubView 对 retail 上传带 datasetKey=market_packages + region。
-      // #669：服务端按 datasetKey 把 market_packages 落 company 私有族 market_retail_packages
-      // （归属 comp-cgn-yunnan，会话 companyId 定 owner），非归属公司会话投递被拒，端点/datasetKey 不变，仅落库族与归属收紧。
-      type: 'retail',
-      label: '零售套餐导入',
-      template: 'retail_package_template.csv',
-      endpoint: '/api/v1/market-analysis/import',
-      requiredFields: ['售电公司', '用户名称', '套餐类型', '状态', '平段价', '峰段价', '谷段价', '套餐电量'],
-      supportedFormats: ['csv'],
-      reusable: true
-    },
-    {
       type: 'settlement',
       label: '结算数据导入',
       template: 'settlement_template.xlsx',
@@ -138,25 +124,12 @@ export function getImportHubDataset(): ImportHubDataset {
       requiredFields: ['客户编号', '日期', '时段', '用电量'],
       supportedFormats: ['csv'],
       reusable: true
-    },
-    {
-      // P2 投递型：市场经营分析 6 tab 手录 → capture-raw + capture.sqlite（链路 A）。
-      // 上传时前端带 datasetKey（9 选 1）+ region；后端 import-hub-api.mjs 投递分支归一化落库，
-      // 前端 MarketOps 页面经 fetchCaptured 真实回放（DataBasis=captured）。
-      type: 'marketOps',
-      label: '市场经营分析导入',
-      template: 'market_analysis_template.csv',
-      endpoint: '/api/v1/market-analysis/import',
-      requiredFields: ['按所选数据类型填写（交易汇总/月度趋势/发电/售电/储能/套餐/价格/指标）'],
-      supportedFormats: ['csv'],
-      reusable: true
     }
   ]
 
   const history: ImportHistoryRow[] = [
     { id: 1, filename: 'retail_settlement_2026_04.xlsx', type: 'retailSettlement', status: '成功', rows: 2304, validRows: 2298, invalidRows: 6, date: '2026-06-04' },
     { id: 2, filename: 'market_trades_2026_q1.xlsx', type: 'trading', status: '成功', rows: 12580, validRows: 12580, invalidRows: 0, date: '2026-06-03' },
-    { id: 3, filename: 'retail_packages_2026.xlsx', type: 'retail', status: '预览', rows: 426, validRows: 420, invalidRows: 6, date: '2026-06-03' },
     { id: 4, filename: 'generation_actual_2026_04.csv', type: 'electricity', status: '成功', rows: 2880, validRows: 2880, invalidRows: 0, date: '2026-06-02' },
     { id: 5, filename: 'settlement_march.xlsx', type: 'settlement', status: '失败', rows: 730, validRows: 682, invalidRows: 48, date: '2026-06-01' }
   ]
@@ -201,12 +174,10 @@ export function getImportHubDataset(): ImportHubDataset {
   return {
     metrics: {
       electricity: buildMetrics('electricity'),
-      retail: buildMetrics('retail'),
       settlement: buildMetrics('settlement'),
       retailSettlement: buildMetrics('retailSettlement'),
       trading: buildMetrics('trading'),
-      customerLoad: buildMetrics('customerLoad'),
-      marketOps: buildMetrics('marketOps')
+      customerLoad: buildMetrics('customerLoad')
     },
     tasks,
     history,

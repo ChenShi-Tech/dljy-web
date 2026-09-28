@@ -39,7 +39,6 @@ const dataAnalysis = () => import('../views/DataAnalysisView.vue')
 const clearingSpotAnalysis = () => import('../views/ClearingSpotAnalysisView.vue')
 // 价格驱动分析（dljy#3390）：合并旧「现货价格×新能源」与「现货价格×统调负荷」两页。
 const priceDrivers = () => import('../views/PriceDriversView.vue')
-const marketOperationsAnalysis = () => import('../views/MarketOperationsAnalysisView.vue')
 const fshq = () => import('../views/FshqView.vue')
 const priceAnalysis = () => import('../views/PriceAnalysisView.vue')
 const solarTerms = () => import('../views/SolarTermsView.vue')
@@ -333,7 +332,8 @@ const router = createRouter({
         // 因此不会出现在 feature-map / manifest 的页面清单里。
         { path: 'sjfx/zrxgx', redirect: (to) => resolvePriceDriversRedirect('renewable', to.query) },
         { path: 'sjfx/zrxgx2', redirect: (to) => resolvePriceDriversRedirect('load', to.query) },
-        page('sjfx/market-ops', 'MarketOperationsAnalysis', { block: '数据分析', title: '市场经营分析', code: 'market-analysis', endpoint: 'local marketAnalysis + planned /api/v1/market/* and /api/v1/market-analysis/*', dataPath: 'market_analysis', scope: '市场概览、发电侧、售电公司、独立储能、套餐分析、价格趋势迁移', kind: 'mixed' }, marketOperationsAnalysis),
+        // 市场经营分析页随 dljy#3391 下线（dljy#3394 删页面与融合台页签）：旧书签/深链重定向驾驶舱，不 404、不落占位页。
+        { path: '/sjfx/market-ops', redirect: '/dashboard' },
         page('sjfx/fshq', 'TimeOfUseMarket', { block: '数据分析', title: '分时行情', code: 'fshq', endpoint: 'GET /sdpt/fshq/data?rqlx&bdrq&jyyf', dataPath: 'sdpt_fshq', scope: 'rqlx∈{0运行,1交易}×日期 2022-12~2026-06 (2563文件)', kind: 'real', note: 'jysd 参数后端忽略(无效维度)' }, fshq),
         page('sjfx/actualLoad', 'DailySystemLoad', { block: '数据分析', title: '逐日系统负荷实际值', code: 'actualLoad', endpoint: 'GET /sdpt/actualLoad/query', dataPath: 'sdpt_actualLoad', scope: '一次返回6年(2021-2026)×366天', kind: 'real', note: 'system(日历对齐)+misplace(错位)，pjz/zxz/zdz' }, dailySystemLoad),
         page('sjfx/zrsjg', 'PriceAnalysis', { block: '数据分析', title: '价格分析', code: 'zrsjg', endpoint: 'GET /sdpt/zcqxhdl/listrs?typeList[]&tag=0', dataPath: 'sdpt_zcqxhdl', scope: '1434天×2类型 2022-07~2026-06', kind: 'real', note: '{rjz,rmx,dmx}；数组参数需编码 %5B0%5D' }, priceAnalysis),

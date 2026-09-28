@@ -1,16 +1,17 @@
 <script setup lang="ts">
 // 数据摄取管理页（数据运维工作台 /data-ops/console?panel=ingest）：手动触发摄取（POST /v1/ingest/:kind，
 // 经 dataServicePath 改走 /data-svc → data-service :8190，dljy#3251）。
-// 链路闭环：?panel=import-hub（手录 CSV）→ 本页（手动/自动摄取）→ /yygl/data-browser（回放）。
+// 链路：本页（手动/自动摄取）→ /yygl/data-browser（回放）。原「手录 CSV → 本页摄取」的市场分析族
+// 入口随市场经营分析页下线删除（ChenShi-Tech/dljy#3391）。
 // 定时自动摄取在「AI 工作室 → 定时任务」（/system/ai-studio?tab=schedules）。
 //
 // 版式（dljy#3385）：首屏只留「摄什么 + 关键参数 + 立即摄取」一行一个入口；写入去向、参数口径、
-// 兜底行为收进每行的 ⓘ 说明和工具栏的「说明」弹层。会改变结果的提醒（默认山西目录、中广核专属）
+// 兜底行为收进每行的 ⓘ 说明和工具栏的「说明」弹层。会改变结果的提醒（中广核专属）
 // 仍以标签常显，不藏进弹层。
 import { reactive } from 'vue'
 import type { Component } from 'vue'
 import { RouterLink } from 'vue-router'
-import { CloudDownload, CloudSun, Database, FileSpreadsheet, Loader2, Network, Workflow } from 'lucide-vue-next'
+import { CloudDownload, CloudSun, Database, Loader2, Network, Workflow } from 'lucide-vue-next'
 import { triggerIngest, type IngestKind, type IngestResult } from '@/services/data/ingestClient'
 import InfoPop from './dataops/InfoPop.vue'
 import IngestResultBox from './dataops/IngestResultBox.vue'
@@ -106,18 +107,6 @@ const GROUPS: KindGroup[] = [
           '自动选用 plant-exports 下最新的解压目录（须含 export_manifest.csv），没有目录时如实报错。',
           '要指定目录，须在服务器命令行执行。'
         ]
-      },
-      {
-        kind: 'market-export',
-        label: '市场经营分析',
-        summary: '手录 CSV → market_analysis 公共 7 个数据集',
-        icon: FileSpreadsheet,
-        chips: [{ text: '默认山西目录', tone: 'warn' }],
-        target: 'market_analysis（公共 7 个 datasetKey）',
-        notes: [
-          '默认扫 capture-raw/shanxi/market_analysis/（region=shanxi）。',
-          '云南数据须在服务器命令行加 --region yunnan 执行。'
-        ]
       }
     ]
   }
@@ -152,7 +141,6 @@ async function run(meta: KindMeta) {
           <ul>
             <li>按钮参数固定，页面上不可改；要指定目录或地区，须在服务器命令行执行。</li>
             <li>结果按 ETL 输出如实回显；嗅探到模拟或合成数据时，真伪标注降为「仅决策支持」。</li>
-            <li>链路：数据导入融合台手录 CSV → 本页摄取 → 通用数据浏览器回放。</li>
             <li>中广核两项调用厂侧外部 API（非电网官方接口），写中广核私有库，仅中广核账号可触发。</li>
           </ul>
         </InfoPop>

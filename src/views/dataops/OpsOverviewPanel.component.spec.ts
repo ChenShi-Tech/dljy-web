@@ -141,6 +141,118 @@ describe('数据运维总览面板', () => {
     expect(text).not.toContain('质量 通过 30')  // 不拿旧值/占位值冒充
   })
 
+  // —— dljy#3415 改版：缺数据如实显示、待处理按数据集合并、补数按族汇总 ——
+  // 表格在 happy-dom 下不渲染行，这里换一个把行数据原样吐出来的替身，按表的 class 取行。
+  const rowStubs = {
+    ...stubs,
+    ElTable: { props: ['data'], template: '<div class="stub-table"><pre v-for="(r, i) in data" :key="i" class="stub-row">{{ JSON.stringify(r) }}</pre></div>' }
+  }
+  async function mountWith(quality: unknown, catalog: unknown = CATALOG) {
+    apiGet.mockImplementation((path: string) => {
+      if (path === '/v1/governance/catalog') return Promise.resolve(payload(catalog))
+      if (path === '/v1/governance/quality') return Promise.resolve(payload(quality))
+      if (path === '/v1/governance/backup') return Promise.resolve(payload(BACKUP))
+      return Promise.reject(new Error(`未预期的路径 ${path}`))
+    })
+    fetchUploadBatches.mockResolvedValue(BATCHES)
+    const wrapper = mount(OpsOverviewPanel, { global: { stubs: rowStubs } })
+    await flushPromises()
+    return wrapper
+  }
+  const rowsOf = (wrapper: Awaited<ReturnType<typeof mountWith>>, table: string) =>
+    wrapper.findAll(`.${table} .stub-row`).map((r) => JSON.parse(r.text()))
+
+  it('接口缺数据流字段时断流如实显示「未提供」，不写「节奏正常」（#3414 前的假绿）', async () => {
+    const withoutStreams: Record<string, unknown> = { ...QUALITY }
+    delete withoutStreams.streams
+    const wrapper = await mountWith(withoutStreams)
+    const card = wrapper.get('[data-metric="streams"]').text()
+    expect(card).toContain('接口未提供数据流信息')
+    expect(card).not.toContain('节奏正常')
+    const stage = wrapper.get('[data-stage="ingest"]').text()
+    expect(stage).toContain('数据流状态未知')
+    expect(stage).not.toContain('各流按节奏在更新')
+  })
+
+  it('质量报告未生成（empty）时不拿全 0 计数冒充「无不合格」', async () => {
+    const wrapper = await mountWith({ generatedAt: null, summary: { pass: 0, warn: 0, fail: 0 }, streams: [], items: [], empty: true, message: '质量报告未生成' })
+    const quality = wrapper.get('[data-metric="quality"]').text()
+    expect(quality).toContain('质量报告未生成')
+    expect(quality).not.toContain('不合格 0')
+    expect(wrapper.get('[data-metric="streams"]').text()).not.toContain('节奏正常')
+    expect(wrapper.get('[data-stage="govern"]').text()).toContain('质量报告未生成')
+  })
+
+  it('待处理：同一数据集多项问题合并成一行；上传契约流单列；族流不与数据集行重复', async () => {
+    const wrapper = await mountWith({
+      ...QUALITY,
+      items: [
+        {
+          family: 'yn_meteo', datasetKey: 'hourly', region: 'yunnan',
+          freshness: { status: 'fail', cadence: 'daily', ageHours: 120, capturedAt: '2026-08-14T00:00:00.000Z' },
+          checks: [
+            { id: 'freshness', status: 'fail', detail: '日度数据超过 3 天未更新' },
+            { id: 'date-coverage', status: 'fail', detail: '缺 17 个日期' },
+            { id: 'duplicate-rows', status: 'pass' }
+          ]
+        }
+      ],
+      streams: [
+        { stream: 'yn_meteo', kind: 'family', region: 'yunnan', cadence: 'daily', status: 'fail', ageHours: 120, lastAt: null, detail: '' },
+        { stream: 'retail-settlement（上传）', kind: 'upload-contract', region: 'yunnan', cadence: 'daily', status: 'warn', ageHours: 40, lastAt: '2026-08-17T10:00:00.000Z', detail: '日度数据超过 26 小时未更新' }
+      ]
+    })
+    const rows = rowsOf(wrapper, 'alert-table')
+    expect(rows.map((r) => r.key)).toEqual(['yn_meteo/hourly', 'stream:retail-settlement（上传）'])
+    expect(rows[0]).toMatchObject({ label: '云南气象', status: 'fail', problems: ['更新不及时', '日期缺口'], detail: '日度数据超过 3 天未更新；缺 17 个日期' })
+    expect(rows[1]).toMatchObject({ sub: '上传契约', status: 'warn', link: { label: '去上传', tab: 'upload' } })
+  })
+
+  it('没被数据集行覆盖的族级断流单列，不从待处理里消失（codex R1）', async () => {
+    // 默认夹具：yn_meteo/hourly 有告警明细；yn_node_price/day_ahead 族流 fail 但 items 里没有对应数据集
+    const wrapper = await mountWith(QUALITY)
+    const rows = rowsOf(wrapper, 'alert-table')
+    expect(rows.map((r) => r.key)).toEqual(['stream:yn_node_price/day_ahead', 'yn_meteo/hourly'])
+    expect(rows[0]).toMatchObject({ sub: '数据族', status: 'fail', link: { label: '查看' } })
+    expect(wrapper.text()).toContain('共 2 个数据集 / 数据流有问题')
+  })
+
+  it('最该补数按族汇总，并按各族节律判新鲜度（月更数据 20 天前仍算新鲜）', async () => {
+    const DAY = 86_400_000
+    const iso = (daysAgo: number) => new Date(Date.now() - daysAgo * DAY).toISOString()
+    const wrapper = await mountWith(
+      {
+        ...QUALITY,
+        items: [{ family: 'yn_settlement', datasetKey: '2026-08', region: 'yunnan', freshness: { status: 'pass', cadence: 'monthly' }, checks: [] }]
+      },
+      {
+        ...CATALOG,
+        items: [
+          // 按天分片的族：三个数据集只算一行，取最新
+          { family: 'price_relation', familyLabel: '出清/价格关系分析', region: 'yunnan', datasetKey: 'd1', rowCount: 1, sourceType: 'IMPORT', capturedAt: null, dataTime: iso(12) },
+          { family: 'price_relation', familyLabel: '出清/价格关系分析', region: 'yunnan', datasetKey: 'd2', rowCount: 1, sourceType: 'IMPORT', capturedAt: null, dataTime: iso(11) },
+          { family: 'price_relation', familyLabel: '出清/价格关系分析', region: 'yunnan', datasetKey: 'd3', rowCount: 1, sourceType: 'IMPORT', capturedAt: null, dataTime: iso(10) },
+          { family: 'yn_settlement', familyLabel: '月度结算', region: 'yunnan', datasetKey: '2026-08', rowCount: 50, sourceType: 'IMPORT', capturedAt: null, dataTime: iso(20) }
+        ]
+      }
+    )
+    const rows = rowsOf(wrapper, 'stale-table')
+    expect(rows.map((r) => r.family)).toEqual(['yn_settlement', 'price_relation'])
+    // 按天分片的族汇成一行：3 个数据集、取最新那天
+    expect(rows[1]).toMatchObject({ datasets: 3, rows: 3, cadence: 'daily', cadenceDeclared: false, freshness: 'stale' })
+    expect(Date.parse(rows[1].latest)).toBeGreaterThan(Date.now() - 10.5 * DAY)
+    // 月更族按月节律：20 天前仍新鲜（按日更会被误判过期）
+    expect(rows[0]).toMatchObject({ cadence: 'monthly', cadenceDeclared: true, freshness: 'fresh' })
+  })
+
+  it('来源类型显示中文业务名', async () => {
+    mockAll()
+    const text = (await mountPanel()).text()
+    expect(text).toContain('采集 20 个数据集')
+    expect(text).toContain('导入 14 个数据集')
+    expect(text).not.toContain('CAPTURE 20')
+  })
+
   it('目录为空时显示后端给的说明而非空白', async () => {
     apiGet.mockImplementation((path: string) => {
       if (path === '/v1/governance/catalog') {
