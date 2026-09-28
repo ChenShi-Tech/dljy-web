@@ -72,8 +72,9 @@ export const navigation: NavItem[] = [
       { path: '/sjfx/fshq', title: '分时行情', icon: LineChart, hiddenInRegionIds: ['yunnan'] },
       { path: '/sjfx/zrsjg', title: '价格分析', icon: ChartSpline },
       { path: '/sjfx/zcqxhdl', title: '出清现货电量分析', icon: LineChart },
-      { path: '/sjfx/zrxgx', title: '现货价格×新能源', icon: ChartSpline, stanceAffinity: ['GENERATOR'] },
-      { path: '/sjfx/zrxgx2', title: '现货价格×统调负荷', icon: ChartSpline },
+      // dljy#3390：旧「现货价格×新能源」「现货价格×统调负荷」两页合并为一页；
+      // 不带 stanceAffinity（发电/售电均可见），旧地址 redirect 预选驱动。
+      { path: '/sjfx/price-drivers', title: '价格驱动分析', icon: ChartSpline },
       { path: '/sjfx/actualLoad', title: '逐日系统负荷', icon: LineChart },
       { path: '/sjfx/singleZsjfx', title: '综合数据分析', icon: ChartSpline },
       { path: '/sjfx/market-ops', title: '市场经营分析', icon: ChartSpline },
