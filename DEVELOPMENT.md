@@ -41,7 +41,7 @@ npm run dev                        # http://localhost:5174
 - dev server 只监听本机回环（刻意不开 `--host 0.0.0.0`）；需要给别人演示时再临时加。
 - 端口 5174 固定（`strictPort`），被占用会直接报错——先关掉占用者。
 - 登录：账号密码由维护者发放；滑块验证拖到最右。权限受限（部分管理页 403 / 部分数据空态）属正常。
-- 功能开关见 `.env.example`「功能开关」区。其中 `VITE_YUNNAN_INSIGHT_WORKSPACE=1` 打开云南市场洞察工作区（dljy#2995，阶段 A 六页均为建设占位、导航不替换；默认关闭时云南侧边栏与现状完全一致）——它是 UI 装配开关，不是授权开关，权限一律走 `governance.insightPathAccessAliases` 与旧入口等价。
+- 功能开关见 `.env.example`「功能开关」区。其中 `VITE_YUNNAN_INSIGHT_WORKSPACE` 控制的云南市场洞察工作区（dljy#2995 新版六页）**已于 2026-09-28 封存（dljy#3387），保持关闭、不要打开**——市场洞察沿用旧版入口，封存说明见 `docs/market-insight.md`。
 
 ## 3. 前后端通讯约定（写代码必读）
 
