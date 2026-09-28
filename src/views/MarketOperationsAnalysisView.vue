@@ -158,6 +158,9 @@ const categoryRows = computed<CategoryRow[]>(() => {
   }))
 })
 
+// 环形图空态改用图表下方 HTML 说明：graphic 文案画在 donut 正中会被灰环遮住两端（U2）。
+const categoryEmpty = computed(() => categoryRows.value.length === 0)
+
 // 异步取数：fetchCaptured 真实回放（链路 A）；无真实数据不展示 synthetic 口径，只给用户提示。
 async function refreshData() {
   loading.value = true
@@ -200,8 +203,8 @@ async function refreshData() {
 function renderCategoryChart() {
   if (!categoryChartRef.value) return
   // #2991：部分真实场景下空数据是诚实空态（未用示例补齐），空文案说明原因，不画空坐标冒充有数据。
+  // 空态文案不再走 emptyOverlay（donut 中心会被灰环遮挡），改由模板里的 .chart-empty-note 呈现。
   categoryChart.setOption({
-    ...emptyOverlay(!categoryRows.value.length, chartEmptyText()),
     tooltip: { trigger: 'item' },
     legend: { bottom: 0, type: 'scroll' },
     series: [
@@ -377,6 +380,7 @@ onMounted(refreshData)
           <span>电量口径</span>
         </div>
         <div ref="categoryChartRef" class="chart chart-host"></div>
+        <p v-if="categoryEmpty" class="chart-empty-note">{{ EMPTY_HINT }}</p>
       </article>
       <article class="panel">
         <div class="panel-title compact">
@@ -449,6 +453,13 @@ onMounted(refreshData)
 .chart {
   height: 340px;
   width: 100%;
+}
+
+.chart-empty-note {
+  margin: 0 0 12px;
+  text-align: center;
+  color: var(--el-text-color-secondary, #909399);
+  font-size: var(--font-sm);
 }
 
 .panel-title.compact {
