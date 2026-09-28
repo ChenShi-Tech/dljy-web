@@ -15,7 +15,7 @@ import type {
   RelationScatterDataset
 } from '@/services/data/contracts/relationScatterAdapter'
 import { getCurrentUser } from '@/services/auth'
-import { canAccessPath } from '@/services/governance'
+import { canAccessPriceDriver } from '@/services/governance'
 import { clampToCoverage, fetchCaptureCoverage } from '@/services/market/captureCoverage'
 import { onRegionChange } from '@/composables/useRegionReload'
 import RegionDataBanner from '@/components/region/RegionDataBanner.vue'
@@ -110,12 +110,11 @@ const meta = computed(() => DRIVER_META[activeKind.value])
 const otherMeta = computed(() => DRIVER_META[otherKind.value])
 
 // ---------------------------------------------------------------------------
-// 驱动选项显隐入口（dljy#3390）：合并页路径 /sjfx/price-drivers 的权限别名由主会话补进
-// governance.insightPathAccessAliases；页面内驱动分段只按旧两页的路径权限判定可选——
-// 别名落地后此入口自动等价生效。管理员角色 canAccessPath 全放行，不受影响。
+// 驱动选项显隐（dljy#3390）：每个驱动因素按各自旧路径授权判定（governance.canAccessPriceDriver，
+// 口径见 priceDriverAccessPaths 注释）；管理员角色全放行。
 // ---------------------------------------------------------------------------
 function driverAllowed(kind: MarketInsightRelationKind): boolean {
-  return canAccessPath(kind === 'renewable' ? '/sjfx/zrxgx' : '/sjfx/zrxgx2', getCurrentUser())
+  return canAccessPriceDriver(kind, getCurrentUser())
 }
 const driverOptions = computed(() => (['renewable', 'load'] as const)
   .map((kind) => ({ kind, label: DRIVER_META[kind].label, allowed: driverAllowed(kind) }))
@@ -163,8 +162,10 @@ async function loadData() {
     dates.value = []
     error.value = `${currentRegion.value.name}价格驱动数据加载失败（运行日 ${runDate.value}）`
   } finally {
+    // 先等对比请求落地再判代次：等待期间若已发起新一轮，旧结果不得写回、也不得提前收起加载态。
+    const other = await otherPromise
     if (seq === loadSeq.value) {
-      otherData.value = await otherPromise
+      otherData.value = other
       loading.value = false
     }
   }
@@ -466,7 +467,6 @@ onRegionChange(loadData)
       <MetricTile
         label="相关系数 r"
         :value="kpi.overallR.toFixed(3)"
-        :tone="kpi.overallR >= 0 ? 'bad' : 'good'"
         info="全时段散点汇成一池计算的 Pearson 相关系数，衡量电价与驱动量的线性相关方向与强度（-1~1）。"
       />
       <MetricTile
