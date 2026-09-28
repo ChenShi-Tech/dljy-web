@@ -25,9 +25,7 @@ export const PAGE_PROMPT_KEYS = {
   /** 市场洞察驾驶舱：行情/弹性/价差/节点/异动多区块解读 */
   marketInsightCockpit: 'market_insight_cockpit',
   /** 市场数据分析页（分时行情/价格/出清/量价关系/负荷/综合）：真实回放时序回看解读 */
-  marketDataAnalysis: 'market_data_analysis',
-  /** 市场经营分析：发电/售电/储能/套餐结构与价格趋势经营视角 */
-  marketOperations: 'market_operations'
+  marketDataAnalysis: 'market_data_analysis'
 } as const
 
 export type PagePromptKey = (typeof PAGE_PROMPT_KEYS)[keyof typeof PAGE_PROMPT_KEYS]

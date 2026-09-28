@@ -342,7 +342,6 @@ export const accessRules: Record<RoleCode, AccessRule> = {
       '/sjfx/fshq',
       '/sjfx/zrsjg',
       '/sjfx/zcqxhdl',
-      '/sjfx/market-ops',
       '/ycsj/center', '/ycsj/hub',
       '/ycsj/decision-cockpit',
       '/ycsj/scoreboard',
@@ -371,7 +370,6 @@ export const accessRules: Record<RoleCode, AccessRule> = {
       '/sjfx/zcqxhdl',
       '/sjfx/zrxgx',
       '/sjfx/zrxgx2',
-      '/sjfx/market-ops',
       '/sjfx/fshq',
       '/sjfx/zrsjg',
       '/ycsj/center', '/ycsj/hub',
@@ -396,7 +394,6 @@ export const accessRules: Record<RoleCode, AccessRule> = {
       '/sjfx/zcqxhdl',
       '/sjfx/zrxgx',
       '/sjfx/zrxgx2',
-      '/sjfx/market-ops',
       '/sjfx/fshq',
       '/sjfx/actualLoad',
       '/sjfx/zrsjg',
@@ -435,7 +432,6 @@ export const accessRules: Record<RoleCode, AccessRule> = {
       '/xhjy/trading-day',
       '/zcqjy/zccljk',
       '/xhjy/zrqsb',
-      '/sjfx/market-ops',
       '/djcs/retail-price',
       '/djcs/interprovincial-price',
       '/yygl/ops',
@@ -449,7 +445,9 @@ export const accessRules: Record<RoleCode, AccessRule> = {
     gate: { level: 'L2', label: '结算复核', reviewer: '结算专员', note: '可导入和复核结算，不修改交易策略与执行记录。' }
   },
   PLANT_OPERATOR: {
-    defaultRoute: '/sjfx/market-ops',
+    // 原 defaultRoute 为 /sjfx/market-ops，该页随 dljy#3391 下线（后端已同步改 /dashboard），
+    // 改落现货交易驾驶舱（与 #1799 删除页先例同款处置）。
+    defaultRoute: '/dashboard',
     routes: [
       '/dashboard',
       // 父 Issue #456：展开云南区域模块授权（[yunnanRoleHomeRoute, plant-output]），
@@ -464,7 +462,6 @@ export const accessRules: Record<RoleCode, AccessRule> = {
       '/sjfx/zcqxhdl',
       '/sjfx/zrxgx',
       '/sjfx/zrxgx2',
-      '/sjfx/market-ops',
       '/sjfx/fshq',
       '/sjfx/zrsjg',
       '/sjfx/tqyb',
@@ -496,7 +493,6 @@ export const accessRules: Record<RoleCode, AccessRule> = {
       '/zcqjy/zjyap',
       '/xhjy/zptqx',
       '/sjfx/zrxgx2',
-      '/sjfx/market-ops',
       '/sjfx/fshq',
       '/sjfx/zrsjg',
       '/ycsj/center', '/ycsj/hub',
@@ -526,7 +522,6 @@ export const accessRules: Record<RoleCode, AccessRule> = {
       // 父 Issue #456：同 PLANT_OPERATOR，展开云南区域模块授权以进工作台看出力 tab。
       ...regionalRoutesForRole('STORAGE_OPERATOR'),
       '/xhjy/trading-day',
-      '/sjfx/market-ops',
       '/sjfx/fshq',
       '/sjfx/zrsjg',
       '/tzcs/storage',
