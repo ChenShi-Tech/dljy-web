@@ -10,6 +10,7 @@ import { ApiError } from '@/services/api'
 import { selectedRegionId } from '@/services/region/regionContext'
 import { refreshCompanyOptions } from '@/services/company/companyApi'
 import {
+  clearCompanySelection,
   companyOptions,
   companyPin,
   pinCompanySelection,
@@ -92,12 +93,15 @@ export async function enterPracticeSpace(
 }
 
 // 退出练习空间：切回钉住记录里的来源公司并解除钉住；来源公司已不在授权集合
-// （授权被收回等）时不再硬切，交回正常的四规则地区协调兜底。
+// （授权被收回等）时不再硬切，交回正常的四规则地区协调兜底。兜底前先清空当前选择：
+// 练习公司随上级地区属于当前地区，直接协调会按「保持当前选择」把用户留在练习空间里，
+// 与「退出」相反；清空后自动规则不会选中练习公司，落到默认公司或空态。
 export function exitPracticeSpace(): void {
   const originCompanyId = companyPin.value?.originCompanyId ?? null
   unpinCompanySelection()
   if (!inPracticeCompany()) return
   if (originCompanyId && setCurrentCompanyId(originCompanyId)) return
+  clearCompanySelection()
   setCompanyOptions(companyOptions.value)
 }
 

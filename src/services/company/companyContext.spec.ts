@@ -28,7 +28,8 @@ vi.mock('@/services/auth', () => ({ getCurrentUser: vi.fn() }))
 const { getCurrentUser } = await import('@/services/auth')
 const {
   resolveCompanyForRegion, setCompanyOptions, selectedCompanyId, companyOptions, canSwitchCompany,
-  companyPin, pinCompanySelection, unpinCompanySelection, resetCompanyContextToHome, setCurrentCompanyId
+  companyPin, pinCompanySelection, unpinCompanySelection, resetCompanyContextToHome, setCurrentCompanyId,
+  selectableCompanies
 } = await import('./companyContext')
 const { companyUnselected } = await import('./companyApi')
 const { setCurrentRegionId } = await import('@/services/region/regionContext')
@@ -268,12 +269,15 @@ describe('练习空间钉住（#3403）', () => {
   })
 
   it('钉住属于其他用户（上一账号残留）→ 不生效，按常规协调切走', () => {
+    // 用上级无地区归属的练习公司：它只靠钉住留在云南，钉住失效就必然被协调切走（codex R1-02 后，
+    // 云南上级的练习公司按「保持当前选择」本就会留下，用它测不出钉住是否生效）。
+    const demoPractice = { companyId: 'dljy-demo-practice', name: '【练习】演示能源集团', source: 'PRACTICE', parentCompanyId: 'dljy-demo' }
     vi.mocked(getCurrentUser).mockReturnValue(fakeUser({ roleCode: 'ADMIN', companyId: 'dljy-demo', username: 'bob' }))
     setCurrentRegionId('yunnan')
-    selectedCompanyId.value = practiceCompany.companyId
-    pinCompanySelection({ companyId: practiceCompany.companyId, regionId: 'yunnan', originCompanyId: 'comp-cgn-yunnan' })
+    selectedCompanyId.value = demoPractice.companyId
+    pinCompanySelection({ companyId: demoPractice.companyId, regionId: 'yunnan', originCompanyId: 'dljy-demo' })
     vi.mocked(getCurrentUser).mockReturnValue(fakeUser({ roleCode: 'ADMIN', companyId: 'dljy-demo', username: 'alice' }))
-    setCompanyOptions([yunnanCompany, practiceCompany])
+    setCompanyOptions([yunnanCompany, demoPractice])
     expect(selectedCompanyId.value).toBe('comp-cgn-yunnan')
     // 失效不清除：钉住记录仍在，供判定「这不是当前用户的练习空间」。
     expect(companyPin.value).not.toBeNull()
@@ -342,5 +346,82 @@ describe('练习空间钉住（#3403）', () => {
       rememberedCompanyId: practiceCompany.companyId
     })
     expect(resolved).toEqual({ companyId: 'comp-shanxi', reason: 'default' })
+  })
+})
+
+// 练习公司的地区归属（#3403 · codex R1-02）：练习公司 ID 不在静态地区表里，原口径把它当「无地区」主体，
+// 在所有地区的下拉里出现、手动切换与未选判定一律放行——用户可以在山西地区选中云南的练习公司。
+// 口径：练习公司随上级公司的地区；上级无地区归属时练习公司同样无地区，只能靠钉住留住。
+describe('练习公司的地区归属（#3403 · codex R1-02）', () => {
+  // 上级无地区归属（dljy-demo 是 GROUP，不在静态表）的练习公司：钉住才是它留在云南的唯一依据。
+  const demoPractice = { companyId: 'dljy-demo-practice', name: '【练习】演示能源集团', source: 'PRACTICE', parentCompanyId: 'dljy-demo' }
+
+  beforeEach(() => {
+    companyOptions.value = []
+    selectedCompanyId.value = ''
+    unpinCompanySelection()
+    vi.mocked(getCurrentUser).mockReset()
+    vi.mocked(getCurrentUser).mockReturnValue(
+      fakeUser({ roleCode: 'ADMIN', companyId: 'dljy-demo', username: 'alice' })
+    )
+  })
+
+  it('下拉可选：云南上级的练习公司只出现在云南，不出现在山西', () => {
+    setCurrentRegionId('shanxi')
+    selectedCompanyId.value = 'comp-shanxi'
+    setCompanyOptions([shanxiCompany, yunnanCompany, practiceCompany])
+    expect(selectableCompanies.value.map((c) => c.companyId)).not.toContain(practiceCompany.companyId)
+    setCurrentRegionId('yunnan')
+    expect(selectableCompanies.value.map((c) => c.companyId)).toContain(practiceCompany.companyId)
+  })
+
+  it('手动切换：在山西切到云南的练习公司被拒；在云南放行', () => {
+    setCurrentRegionId('shanxi')
+    selectedCompanyId.value = 'comp-shanxi'
+    setCompanyOptions([shanxiCompany, yunnanCompany, practiceCompany])
+    expect(setCurrentCompanyId(practiceCompany.companyId)).toBe(false)
+    expect(selectedCompanyId.value).toBe('comp-shanxi')
+    setCurrentRegionId('yunnan')
+    expect(setCurrentCompanyId(practiceCompany.companyId)).toBe(true)
+    expect(selectedCompanyId.value).toBe(practiceCompany.companyId)
+  })
+
+  it('未选判定：当前是云南的练习公司而地区在山西 → 视同未选（防串地区读写）；在云南则有效', () => {
+    setCurrentRegionId('yunnan')
+    setCompanyOptions([yunnanCompany, practiceCompany])
+    selectedCompanyId.value = practiceCompany.companyId
+    expect(companyUnselected()).toBe(false)
+    setCurrentRegionId('shanxi')
+    selectedCompanyId.value = practiceCompany.companyId
+    expect(companyUnselected()).toBe(true)
+  })
+
+  it('规则 1：手动选中的云南练习公司不钉住也不会被授权集刷新顶掉', () => {
+    setCurrentRegionId('yunnan')
+    selectedCompanyId.value = practiceCompany.companyId
+    setCompanyOptions([yunnanCompany, practiceCompany])
+    expect(selectedCompanyId.value).toBe(practiceCompany.companyId)
+    expect(companyPin.value).toBeNull()
+  })
+
+  it('上级无地区的练习公司：不钉住会被云南地区协调切走，钉住后留住（钉住仍然必要）', () => {
+    setCurrentRegionId('yunnan')
+    selectedCompanyId.value = demoPractice.companyId
+    setCompanyOptions([yunnanCompany, demoPractice])
+    expect(selectedCompanyId.value).toBe('comp-cgn-yunnan')
+
+    selectedCompanyId.value = demoPractice.companyId
+    pinCompanySelection({ companyId: demoPractice.companyId, regionId: 'yunnan', originCompanyId: 'dljy-demo' })
+    setCompanyOptions([yunnanCompany, demoPractice])
+    expect(selectedCompanyId.value).toBe(demoPractice.companyId)
+  })
+
+  it('地区对照持久化：授权列表到达前（页面刚加载）也认得出练习公司的地区', async () => {
+    setCompanyOptions([yunnanCompany, practiceCompany])
+    vi.resetModules()
+    const fresh = await import('./practiceCompany')
+    expect(fresh.effectiveCompanyRegionId(practiceCompany.companyId)).toBe('yunnan')
+    expect(fresh.effectiveCompanyRegionId('comp-shanxi')).toBe('shanxi')
+    expect(fresh.effectiveCompanyRegionId('dljy-demo')).toBeNull()
   })
 })
