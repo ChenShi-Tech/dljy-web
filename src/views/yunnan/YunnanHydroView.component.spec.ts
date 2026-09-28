@@ -471,6 +471,24 @@ describe('指标卡', () => {
     expect(byLabel.get('数据截至')).toMatchObject({ value: '2026-09-17' })
   })
 
+  it('数据截至取最后一个有观测时段起点的日期：当日末个时段终点是次日 00:00，不算次日', async () => {
+    state.responder = async (request) => {
+      const result = await defaultResponder(request)
+      if (request.filters?.view === 'series') {
+        const hydro = SYSTEM_SERIES.filter((meta) => meta.sourceId === 'yn.system.hydro.actual')
+        result.data.rows = [
+          ...result.data.rows,
+          ...hydro.map((meta) => ({ seriesId: meta.seriesId, intervalStart: '2026-09-17T23:45:00+08:00', intervalEnd: '2026-09-18T00:00:00+08:00', value: '101' })),
+        ]
+      }
+      return result
+    }
+    await mountPage()
+
+    const byLabel = new Map(tileProps().map((tile) => [String(tile.label), tile]))
+    expect(byLabel.get('数据截至')).toMatchObject({ value: '2026-09-17' })
+  })
+
   it('缺值显示「—」不显示 0：summary 缺水电行时均值/极值卡为「—」，口径说明在卡片 ⓘ 悬浮里', async () => {
     state.responder = (request) =>
       request.filters?.view === 'summary' ? Promise.resolve(summaryResult(request, { omitHydroRows: true })) : defaultResponder(request)
@@ -559,3 +577,31 @@ describe('窗口变化作废旧结果', () => {
 function unitGroupSelect(): VueWrapper<any> {
   return wrapper!.getComponent('[data-testid="ynh-unit-group"]') as unknown as VueWrapper<any>
 }
+
+// 放在文件末尾：入口定位结果按地区缓存在模块级变量里，写入后会影响同文件后续用例。
+describe('入口定位提示（页面整洁纪律）', () => {
+  it('今日无数据时定位到最新有数日：只显示短标签与「切回今天」，不出现整句横幅', async () => {
+    vi.mocked(fetchInsightCoverage).mockResolvedValueOnce({
+      schemaVersion: 'insight-coverage/v1',
+      analysisId: 'supply.system-series',
+      regionId: 'yunnan',
+      businessWindow: { start: '2025-09-28', end: '2026-09-28' },
+      sources: [],
+      candidates: { discrete: true, dates: ['2026-07-01'], ranges: [] },
+      note: '',
+      mock: false,
+      productionWrite: false,
+    } as never)
+    await mountPage()
+
+    const tag = wrapper!.find('[data-testid="ynh-anchor-tag"]')
+    expect(tag.exists()).toBe(true)
+    expect(tag.text()).toContain('已定位最新有数日')
+    expect(wrapper!.find('[data-testid="insight-anchor-notice"]').exists()).toBe(false)
+    expect(wrapper!.text()).not.toContain('暂无数据，已定位到最新有数据日')
+
+    await wrapper!.find('[data-testid="ynh-anchor-back-today"]').trigger('click')
+    await flushPromises()
+    expect(wrapper!.find('[data-testid="ynh-anchor-tag"]').exists()).toBe(false)
+  })
+})

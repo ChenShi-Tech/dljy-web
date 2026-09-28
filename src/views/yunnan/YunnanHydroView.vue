@@ -34,7 +34,6 @@ import { PAGE_PROMPT_KEYS } from '@/prompts'
 import { currentRegion } from '@/services/region/regionContext'
 import InsightBlock from '@/components/insight/InsightBlock.vue'
 import InsightDateRange from '@/components/insight/InsightDateRange.vue'
-import InsightAnchorNotice from '@/components/insight/InsightAnchorNotice.vue'
 import InsightEvidenceDrawer from '@/components/insight/InsightEvidenceDrawer.vue'
 import InsightHistoryCandidates from '@/components/insight/InsightHistoryCandidates.vue'
 import InsightObjectPicker from '@/components/insight/InsightObjectPicker.vue'
@@ -351,13 +350,14 @@ const mainOption = computed<Record<string, unknown>>(() => {
   }
 })
 
-/** 数据截至：窗口内主图曲线的最新观测日期（区间终点，北京时间）。 */
+/** 数据截至：窗口内主图曲线最后一个有观测时段所属的日期（北京时间）。
+ *  取时段起点而非终点：当日末个 15 分钟时段的终点是次日 00:00，按终点取日期会多算一天。 */
 const dataAsOf = computed<string | null>(() => {
-  const rows = (mainSeriesResult.value?.data?.rows ?? []) as Array<{ intervalEnd?: string }>
+  const rows = (mainSeriesResult.value?.data?.rows ?? []) as Array<{ intervalStart?: string }>
   let latest = ''
   for (const row of rows) {
-    const end = typeof row.intervalEnd === 'string' ? row.intervalEnd : ''
-    if (end > latest) latest = end
+    const start = typeof row.intervalStart === 'string' ? row.intervalStart : ''
+    if (start > latest) latest = start
   }
   return latest ? latest.slice(0, 10) : null
 })
@@ -518,19 +518,26 @@ onMounted(() => {
     />
 
     <template v-else>
-      <InsightAnchorNotice
-        v-if="entryAnchor.anchorNotice.value"
-        :notice="entryAnchor.anchorNotice.value"
-        @back-today="entryAnchor.backToToday"
-        @dismiss="entryAnchor.dismissAnchorNotice"
-      />
-
       <!-- 工具条：业务日期窗（单次 ≤31 天）+ AI 解读 -->
       <section class="ynh__controls">
-        <label class="ynh__field">
-          <span>分析日期</span>
-          <InsightDateRange :model-value="ctx.businessWindow.value" :max-days="maxDays" @update:model-value="onWindowChange" />
-        </label>
+        <div class="ynh__date">
+          <label class="ynh__field">
+            <span>分析日期</span>
+            <InsightDateRange :model-value="ctx.businessWindow.value" :max-days="maxDays" @update:model-value="onWindowChange" />
+          </label>
+          <!-- 入口定位：今日无数据时自动落到最新有数日；只留短标签 + 悬浮说明，不放整句横幅 -->
+          <span v-if="entryAnchor.anchorNotice.value" class="ynh__hint-term" tabindex="0" data-testid="ynh-anchor-tag">
+            已定位最新有数日
+            <el-tooltip
+              :content="`今日（${entryAnchor.anchorNotice.value.requested}）暂无数据，已定位到最新有数据日 ${entryAnchor.anchorNotice.value.anchoredTo}`"
+              placement="top"
+              :show-after="150"
+            >
+              <span class="ynh__hint-icon" aria-label="日期定位说明"><Info :size="12" /></span>
+            </el-tooltip>
+            <el-button link type="primary" size="small" data-testid="ynh-anchor-back-today" @click="entryAnchor.backToToday">切回今天</el-button>
+          </span>
+        </div>
         <el-button type="primary" data-testid="ynh-ai-entry" @click="onAiInterpret">✨ AI 解读本页</el-button>
       </section>
 
@@ -725,6 +732,13 @@ onMounted(() => {
   border: 1px solid var(--line, #e5e7eb);
   border-radius: 12px;
   background: var(--panel, #fff);
+}
+
+.ynh__date {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 10px;
 }
 
 .ynh__field {
