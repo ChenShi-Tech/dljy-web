@@ -31,7 +31,8 @@ import { deriveJourneySteps, type JourneySteps } from './data-onboarding/onboard
 import InfoPop from './dataops/InfoPop.vue'
 import IngestResultBox from './dataops/IngestResultBox.vue'
 
-// 数据源信封类型（与后端 governance/import-hub 接口对齐）
+// 数据源信封类型（与后端 governance/import-hub 接口对齐）。两个接口都是标准信封 {code, msg, data}，
+// 内容在 data 里（与 OpsOverviewPanel 同口径）；曾误读顶层 items/rows，导致卡片状态恒为「未知 / 未上传」（dljy#3385）。
 type CatalogItem = {
   family: string
   dataTime: string | null
@@ -216,7 +217,7 @@ async function loadAll() {
   loading.value = true
   loadErr.value = ''
   try {
-    const nextCatalog = await apiGet<CatalogPayload>('/api/v1/governance/catalog')
+    const nextCatalog = (await apiGet<CatalogPayload>('/api/v1/governance/catalog')).data ?? null
     // 拉取所有关联模板的台账记录（import-templates/records 按 templateId 过滤）。
     const templateIds = Array.from(new Set(CARDS.flatMap((c) => c.templateIds)))
     const nextRecords: Record<string, TemplateRecord[] | null> = {}
@@ -224,7 +225,8 @@ async function loadAll() {
       templateIds.map(async (tid) => {
         try {
           const res = await apiGet<RecordsPayload>('/api/v1/import-templates/records', { templateId: tid })
-          nextRecords[tid] = res.rows ?? []
+          // 信封里没有 rows 数组（形状不符）同样按「未知」处理，不当成「未上传」。
+          nextRecords[tid] = Array.isArray(res.data?.rows) ? res.data.rows : null
         } catch {
           // 单个台账取数失败不阻塞整页；该模板状态落「未知」（不能当成「未上传」）。
           nextRecords[tid] = null

@@ -23,17 +23,22 @@ const stubs = { RouterLink: { props: ['to'], template: '<a :href="to"><slot /></
 
 function mockSignals() {
   apiGet.mockImplementation((path: string, params?: { templateId?: string }) => {
+    // 夹具照抄 data-service 真实信封 {code, msg, data}（2026-09-28 本机实测），别写成顶层 items/rows。
     if (path === '/api/v1/governance/catalog') {
       return Promise.resolve({
-        items: [
-          { family: 'yn_node_price', dataTime: new Date(Date.now() - 2 * HOUR).toISOString() },
-          { family: 'yn_meteo', dataTime: new Date(Date.now() - 5 * 24 * HOUR).toISOString() }
-        ]
+        code: 200,
+        msg: 'ok',
+        data: {
+          items: [
+            { family: 'yn_node_price', dataTime: new Date(Date.now() - 2 * HOUR).toISOString() },
+            { family: 'yn_meteo', dataTime: new Date(Date.now() - 5 * 24 * HOUR).toISOString() }
+          ]
+        }
       })
     }
     if (path === '/api/v1/import-templates/records') {
       const rows = params?.templateId === 'yn-t0-node-price' ? [{ status: 'COMMITTED', deliveredPaths: ['x.csv'] }] : []
-      return Promise.resolve({ rows, total: rows.length })
+      return Promise.resolve({ code: 200, msg: 'ok', data: { rows, total: rows.length } })
     }
     return Promise.reject(new Error(`未预期的路径 ${path}`))
   })
