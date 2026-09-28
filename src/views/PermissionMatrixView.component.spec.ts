@@ -16,7 +16,7 @@ const { ElMessage, auth } = vi.hoisted(() => ({
 vi.mock('element-plus', () => ({ ElMessage }))
 vi.mock('@/services/auth', () => auth)
 import PermissionMatrixView from './PermissionMatrixView.vue'
-import { getAccessOverrides } from '@/services/governance'
+import { getAccessOverrides, saveRoleAccessOverride } from '@/services/governance'
 
 const STUBS = {
   'el-segmented': { template: '<div class="stub-segmented" />' },
@@ -129,5 +129,21 @@ describe('恢复全部角色默认（resetAllRoles）', () => {
     const warned = lastMessage(ElMessage.warning)
     expect(warned).toContain('未在服务端生效')
     expect(warned).toContain('HTTP 503')
+  })
+})
+
+describe('价格驱动分析按驱动因素授权（dljy#3390）', () => {
+  it('矩阵把合并页展开成两个驱动行：只勾统调负荷的角色保存后仍只写回 /sjfx/zrxgx2', async () => {
+    // 预置交易员覆盖：只有统调负荷驱动（旧 zrxgx2）。合并页不在矩阵里单独成行，
+    // 若矩阵只列 /sjfx/price-drivers，保存会把 zrxgx2 清掉 → 该角色失去合并页。
+    saveRoleAccessOverride('TRADER', { defaultRoute: '/dashboard', groups: [], routes: ['/dashboard', '/sjfx/zrxgx2'], actions: [] })
+    const w = await mountView()
+    await findButton(w, '保存矩阵').trigger('click')
+    await flushPromises()
+    const saved = auth.saveServerRoleAccessOverride.mock.calls.at(-1) as unknown as [string, { routes: string[] }]
+    expect(saved[0]).toBe('TRADER')
+    expect(saved[1].routes).toContain('/sjfx/zrxgx2')
+    expect(saved[1].routes).not.toContain('/sjfx/zrxgx')
+    expect(saved[1].routes).not.toContain('/sjfx/price-drivers')
   })
 })

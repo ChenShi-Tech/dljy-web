@@ -1,6 +1,6 @@
 import { apiDelete, apiGet, apiPatch, apiPost } from '@/services/api'
 import { selectedCompanyId, setCompanyOptions, type CompanyOption } from '@/services/company/companyContext'
-import { companyRegionId } from '@/services/region/regionCompany'
+import { effectiveCompanyRegionId } from '@/services/company/practiceCompany'
 import { selectedRegionId } from '@/services/region/regionContext'
 import type { Infer } from 'shared/schema/define.mjs'
 import type { LegacyMidlongManagement } from '@/services/midlong/midlongTypes'
@@ -88,7 +88,8 @@ function companyWriteOptions(options?: CompanyWriteOptions) {
 export function companyUnselected(): boolean {
   const company = selectedCompanyId.value
   if (!company) return true
-  const region = companyRegionId(company)
+  // 练习公司按上级地区判断（#3403 · codex R1-02）：localStorage 恢复出另一地区的练习公司同样视为未选。
+  const region = effectiveCompanyRegionId(company)
   return region !== null && region !== selectedRegionId.value
 }
 
@@ -120,12 +121,16 @@ export async function fetchCompanies(): Promise<CompanyOption[]> {
 
 // 请求序号守卫（#3403）：并发刷新时先发后到的旧响应不得覆盖新结果——开通练习空间前
 // 在途的旧列表回来会触发 setCompanyOptions 四规则协调，把刚切到的练习公司顶掉。
+// 只丢弃比「已应用结果」更旧的响应（codex R1-01）：较新的请求若失败，仍在途的较早成功结果照常生效，
+// 否则 AppLayout 与 CompanyScopeBar 挂载时并发刷新、后发那次失败，就会把唯一成功的列表丢掉、切换器一直是空的。
 let refreshCompanyOptionsSeq = 0
+let appliedCompanyOptionsSeq = 0
 
 export async function refreshCompanyOptions(): Promise<CompanyOption[]> {
   const seq = ++refreshCompanyOptionsSeq
   const options = await fetchCompanies()
-  if (seq !== refreshCompanyOptionsSeq) return options
+  if (seq < appliedCompanyOptionsSeq) return options
+  appliedCompanyOptionsSeq = seq
   setCompanyOptions(options)
   return options
 }

@@ -396,6 +396,8 @@ export const accessRules: Record<RoleCode, AccessRule> = {
       '/sjfx/zrxgx2',
       '/sjfx/fshq',
       '/sjfx/actualLoad',
+      // 云南水电分析（dljy#3389）：可见范围与逐日系统负荷一致（同属供需数据），不扩权。
+      '/sjfx/hydro',
       '/sjfx/zrsjg',
       '/sjfx/jieqi',
       '/sjfx/elninolanina',
@@ -683,6 +685,22 @@ export const insightPathAccessAliases: Record<string, string[]> = {
   '/insight/research': ['/sjfx/zrxgx', '/sjfx/zrxgx2', '/sjfx/singleZsjfx']
 }
 
+// 价格驱动分析（dljy#3390）合并了「现货价格×新能源」「现货价格×统调负荷」两页。授权仍按驱动因素
+// 落在两个旧路径上：角色静态授权与权限矩阵保存写的都是旧路径（矩阵把合并页展开成两行），
+// 合并页可访问 ⇔ 任一驱动可访问，页内每个驱动因素按各自旧路径判定。
+// 不在 groups 前缀匹配之后判定：否则只要有 '/sjfx' 组就绕过驱动级授权；也不单独授权合并页路径，
+// 否则矩阵保存后旧路径被清掉会让只有其中一个驱动权限的角色（如售电经理只有统调负荷）失权或扩权。
+export const PRICE_DRIVERS_PATH = '/sjfx/price-drivers'
+export type PriceDriverKind = 'renewable' | 'load'
+export const priceDriverAccessPaths: Record<PriceDriverKind, string> = {
+  renewable: '/sjfx/zrxgx',
+  load: '/sjfx/zrxgx2'
+}
+
+export function canAccessPriceDriver(kind: PriceDriverKind, user: Pick<GovernanceUser, 'roleCode'> | null | undefined): boolean {
+  return canAccessPath(priceDriverAccessPaths[kind], user)
+}
+
 export function canAccessPath(path: string, user: Pick<GovernanceUser, 'roleCode'> | null | undefined): boolean {
   if (!path || path === '/login') return true
   const rawPath = normalizePath(path)
@@ -713,6 +731,10 @@ export function canAccessPath(path: string, user: Pick<GovernanceUser, 'roleCode
   const insightAliases = insightPathAccessAliases[normalized]
   if (insightAliases) {
     return insightAliases.some((alias) => canAccessPath(alias, user))
+  }
+  // 价格驱动分析（dljy#3390）：任一驱动因素的旧路径可访问即可访问（原因见 priceDriverAccessPaths 注释）。
+  if (normalized === PRICE_DRIVERS_PATH) {
+    return Object.values(priceDriverAccessPaths).some((legacyPath) => canAccessPath(legacyPath, user))
   }
 
   const rule = getEffectiveAccessRule(roleCode)

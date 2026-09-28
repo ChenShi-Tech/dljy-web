@@ -56,6 +56,24 @@ describe('refreshCompanyOptions 请求序号守卫（#3403）', () => {
     expect(fastResult).toEqual([{ companyId: 'comp-new' }])
   })
 
+  it('较新的刷新失败、较早的成功后到：成功结果照常生效，不把唯一成功的列表丢掉（codex R1-01）', async () => {
+    let resolveFirst!: (value: Rows) => void
+    const firstFetch = new Promise<Rows>((resolve) => {
+      resolveFirst = resolve
+    })
+    vi.mocked(apiGet).mockReturnValueOnce(firstFetch as never)
+    vi.mocked(apiGet).mockRejectedValueOnce(new Error('网络中断') as never)
+
+    const slow = refreshCompanyOptions()
+    const failed = refreshCompanyOptions()
+    await expect(failed).rejects.toThrow('网络中断')
+    resolveFirst({ rows: [{ companyId: 'comp-only-success' }] })
+    await slow
+
+    expect(setCompanyOptions).toHaveBeenCalledTimes(1)
+    expect(setCompanyOptions).toHaveBeenCalledWith([{ companyId: 'comp-only-success' }])
+  })
+
   it('串行刷新：每次响应都照常生效（守卫不误伤正常路径）', async () => {
     vi.mocked(apiGet).mockResolvedValueOnce({ rows: [{ companyId: 'comp-a' }] } as never)
     vi.mocked(apiGet).mockResolvedValueOnce({ rows: [{ companyId: 'comp-b' }] } as never)

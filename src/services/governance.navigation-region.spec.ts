@@ -51,3 +51,19 @@ describe('导航按地区隐藏入口但不拦路由（#2991）', () => {
     }
   })
 })
+
+describe('云南水电分析仅云南可见（dljy#3389）', () => {
+  it('云南菜单含 /sjfx/hydro，山西/广东/四川菜单不含', () => {
+    expect(flatPaths(filterNavigationForUser(navigation, ADMIN, 'yunnan'))).toContain('/sjfx/hydro')
+    for (const region of ['shanxi', 'guangdong', 'sichuan']) {
+      expect(flatPaths(filterNavigationForUser(navigation, ADMIN, region))).not.toContain('/sjfx/hydro')
+    }
+  })
+
+  it('地区拦截是路由行为：云南可达，其余地区 hidden 被路由守卫拦截', () => {
+    expect(isPathAvailableInRegion('/sjfx/hydro', 'yunnan')).toBe(true)
+    for (const region of ['shanxi', 'guangdong', 'sichuan']) {
+      expect(isPathAvailableInRegion('/sjfx/hydro', region)).toBe(false)
+    }
+  })
+})

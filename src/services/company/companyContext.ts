@@ -3,6 +3,7 @@ import { getCurrentUser } from '@/services/auth'
 import type { GovernanceUser } from '@/services/governance'
 import { selectedRegionId } from '@/services/region/regionContext'
 import { companyRegionId, regionHomeCompanyId } from '@/services/region/regionCompany'
+import { effectiveCompanyRegionId, registerPracticeCompanies } from '@/services/company/practiceCompany'
 
 // 公司（租户）上下文：仿 regionContext 的全局响应式当前公司。
 // - 普通公司用户：currentCompanyId 锁定为自身公司，切换被拒。
@@ -123,9 +124,10 @@ export const companyOptions = availableCompanies
 // 当前地区可选公司集：地区专属公司须属当前地区，杜绝「云南地区 +
 // 山西公司」的跨地区组合绕过空态隔离；GROUP 等无地区归属主体（dljy-demo）保留可选，
 // 集团汇总视角合法。切换器下拉与 setCurrentCompanyId 共用本口径。
+// 练习公司随上级公司的地区（#3403 · codex R1-02），只出现在上级所属地区的下拉里。
 export const selectableCompanies = computed(() =>
   availableCompanies.value.filter((company) => {
-    const region = companyRegionId(company.companyId)
+    const region = effectiveCompanyRegionId(company.companyId)
     return region === null || region === selectedRegionId.value
   })
 )
@@ -173,12 +175,14 @@ export function resolveCompanyForRegion(args: {
   rememberedCompanyId: string | null
 }): CompanyResolution {
   const { regionId, currentCompanyId: current, availableCompanies: available, rememberedCompanyId: remembered } = args
+  // 自动选择（规则 2/3）的候选只认静态地区表：练习公司不在表里，切地区时永远不会被自动选中。
   const regionAuthorized = available
     .map((company) => company.companyId)
     .filter((id) => companyRegionId(id) === regionId)
 
-  // 规则 1：当前公司属新地区且有授权 → 保持用户选择不覆盖。
-  if (current && companyRegionId(current) === regionId && regionAuthorized.includes(current)) {
+  // 规则 1：当前公司属新地区且有授权 → 保持用户选择不覆盖。「属新地区」按有效地区判断：
+  // 用户手动选中的练习公司随上级地区保持（#3403 · codex R1-02），不因不在静态表里被切走。
+  if (current && effectiveCompanyRegionId(current) === regionId && available.some((company) => company.companyId === current)) {
     return { companyId: current, reason: 'keep' }
   }
   // 规则 2：该地区仅一家授权公司 → 自动切换。
@@ -239,7 +243,7 @@ export function setCurrentCompanyId(id: string): boolean {
   if (availableCompanies.value.length && !availableCompanies.value.some((company) => company.companyId === id)) {
     return false
   }
-  const targetRegion = companyRegionId(id)
+  const targetRegion = effectiveCompanyRegionId(id)
   if (targetRegion !== null && targetRegion !== selectedRegionId.value) return false
   currentCompanyId.value = id
   rememberCompanyForRegion(selectedRegionId.value, id)
@@ -253,9 +257,11 @@ export function setCurrentCompanyId(id: string): boolean {
 // 公司，与 resolveCompanyForRegion 规则 1（只保持「属该地区」的公司）语义对齐，
 // 不把 null 地区归属当作任意地区兼容；集团汇总视角由各页面 scope=group 表达。
 export function setCompanyOptions(options: CompanyOption[]) {
+  // 先登记「练习公司 → 上级」对照，下面与各处的地区判定才认得出练习公司（#3403 · codex R1-02）。
+  registerPracticeCompanies(options)
   availableCompanies.value = options
-  // 练习空间钉住（#3403）：钉住生效（练习公司不在静态地区表，不满足下方「保持」条件）
-  // 且练习公司仍在授权集合 → 直接返回不协调，稳定停留在练习公司。
+  // 练习空间钉住（#3403）：钉住生效且练习公司仍在授权集合 → 直接返回不协调，稳定停留在练习公司
+  // （上级无地区归属时练习公司也无地区，下方「保持」条件不成立，靠钉住留住）。
   if (pinnedCurrent()) {
     const pin = companyPinState.value!
     if (options.some((company) => company.companyId === pin.companyId)) return
@@ -266,7 +272,7 @@ export function setCompanyOptions(options: CompanyOption[]) {
   if (
     current &&
     options.some((company) => company.companyId === current) &&
-    companyRegionId(current) === selectedRegionId.value
+    effectiveCompanyRegionId(current) === selectedRegionId.value
   ) return
   coordinateCompanyForRegion(selectedRegionId.value)
 }
