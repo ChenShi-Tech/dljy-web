@@ -370,58 +370,6 @@ const ROW_SCHEMAS = {
     sourceFile: str()
   }),
 
-  // —— 市场经营分析（手录·链路 A：ImportHub 投递 → capture-raw → fetchCaptured）——
-  // 数据来源：运维/业务方经 ImportHub UI 手录 CSV（或 import:market-export 命令行投递）。
-  // 9 个 datasetKey 覆盖 6 tab + 跨 tab 共用月度趋势 + 公共/套餐 KPI 指标卡（spec：market-ops-data-spec.md）。
-  // 全省公共数据落扁平 capture-raw/market_analysis/（基线回退）；云南专属落 capture-raw/yunnan/market_analysis/。
-  market_trade_summary: object({
-    id: str({ required: true }), area: str({ required: true }),
-    tradeType: str({ required: true }), quantity: num({ required: true }),
-    avgPrice: num(), tradeCount: num(), percentage: num()
-  }),
-  market_monthly_trend: object({
-    id: str({ required: true }), area: str({ required: true }),
-    month: str({ required: true }), quantity: num({ required: true }),
-    avgPrice: num(), mediumLong: num(), spot: num(), ancillary: num()
-  }),
-  market_generation: object({
-    id: str({ required: true }), area: str({ required: true }),
-    name: str({ required: true }), quantity: num({ required: true }),
-    avgPrice: num(), count: num(), percentage: num(),
-    category: str() // 'powerType'(发电类型聚合) | 'detail'(电厂明细)；同族分流两套 CategoryRow
-  }),
-  market_sales: object({
-    id: str({ required: true }), area: str({ required: true }),
-    name: str({ required: true }), quantity: num({ required: true }),
-    avgPrice: num(), count: num(), percentage: num()
-  }),
-  market_storage: object({
-    id: str({ required: true }), area: str({ required: true }),
-    name: str({ required: true }), quantity: num({ required: true }),
-    avgPrice: num(), count: num(), percentage: num()
-  }),
-  market_packages: object({
-    id: str({ required: true }), area: str({ required: true }),
-    companyName: str({ required: true }), userName: str({ required: true }),
-    packageType: str({ required: true }), status: str(),
-    flatPrice: num(), peakPrice: num(), valleyPrice: num(), volume: num()
-  }),
-  market_price: object({
-    id: str({ required: true }), area: str({ required: true }),
-    month: str({ required: true }), mediumLongPrice: num({ required: true }),
-    spotPrice: num({ required: true }), retailPrice: num(), deviation: num()
-  }),
-  market_metrics: object({
-    id: str({ required: true }), area: str({ required: true }),
-    tab: str({ required: true }), label: str({ required: true }),
-    value: num({ required: true }), unit: str(), tone: str()
-  }),
-  market_retail_package_metrics: object({
-    id: str({ required: true }), area: str({ required: true }),
-    tab: str({ required: true }), label: str({ required: true }),
-    value: num({ required: true }), unit: str(), tone: str()
-  }),
-
   // —— 南网披露表通用度量长表（issue #2825）——
   // 数据来源：数据运维台上传中心 17 张 tb_disclosure_* 披露表（表头形状单一来源
   // shared/schema/disclosure-table-specs.mjs，datasetKey=源表短名，共 17 键共享本 schema）。
@@ -571,23 +519,8 @@ export const ynHydroGroupLimitSchema = ROW_SCHEMAS.yn_hydro_group_limit
 // verify:data-upload 的披露契约行为断言按字段名做 matchesSchema 校验（issue #2825）。
 export const ynDisclosureMetricSchema = ROW_SCHEMAS.yn_disclosure_metric
 
-// 市场经营分析（手录）公共口径 7 个 datasetKey 的行 schema 映射，供 normalizer（yn-fact-market.mjs）
-// 与 ImportHub 投递层按 datasetKey 做 matchesNormalizedRow 校验（单一来源、零漂移）。
-// #669 路线①：售电套餐经营口径 market_packages 已拆出为独立 company 私有族（见下 marketRetailPackageSchemas），
-// 不再属公共口径，故从本映射与 MARKET_DATASET_KEYS 中移出。
-export const marketAnalysisSchemas = {
-  market_trade_summary: ROW_SCHEMAS.market_trade_summary,
-  market_monthly_trend: ROW_SCHEMAS.market_monthly_trend,
-  market_generation: ROW_SCHEMAS.market_generation,
-  market_sales: ROW_SCHEMAS.market_sales,
-  market_storage: ROW_SCHEMAS.market_storage,
-  market_price: ROW_SCHEMAS.market_price,
-  market_metrics: ROW_SCHEMAS.market_metrics
-}
-export const MARKET_DATASET_KEYS = Object.keys(marketAnalysisSchemas)
-
 // —— 月包导出表上传契约（#2824）多 datasetKey 族的 schema 映射 ——
-// 与 marketAnalysisSchemas 同款出口：describeDataset 按 key 分支消费，build-data-type-ddl
+// describeDataset 按 key 分支消费，build-data-type-ddl
 // 生成器按 dataset 分表。C 类 7 表（dateField 各异，含 #3088 暂结承载 plant_daily_settlement_raw）
 // 与 D 类 2 表。
 export const settlementDocSchemas = {
@@ -602,44 +535,6 @@ export const settlementDocSchemas = {
 export const contractSchemas = {
   electricity_contracts: ROW_SCHEMAS.yn_contract_electricity,
   contract_curves: ROW_SCHEMAS.yn_contract_curves
-}
-
-// —— 售电套餐公司经营口径（#669 + #815）——
-// market_packages 含售电公司/客户/套餐类型/三段价；market_retail_package_metrics 含套餐数、
-// 客户覆盖、加权均价/毛利等聚合 KPI。二者均能反推公司经营状况，统一放入 company 私有族
-// market_retail_packages（族级 owner comp-cgn-yunnan，见 CAPTURE_FAMILIES 登记），与 public
-// market_analysis 彻底解耦，回放层按 getFamilyVisibility=company 授权闸门保护（enforceCaptureVisibility）。
-export const MARKET_RETAIL_PACKAGES_FAMILY = 'market_retail_packages'
-export const marketRetailPackageSchemas = {
-  market_packages: ROW_SCHEMAS.market_packages,
-  market_retail_package_metrics: ROW_SCHEMAS.market_retail_package_metrics
-}
-export const MARKET_RETAIL_DATASET_KEYS = Object.keys(marketRetailPackageSchemas)
-export const MARKET_PUBLIC_METRIC_TABS = Object.freeze(['overview', 'generation', 'sales', 'storage'])
-
-// #815 存量/旁路防御：历史 public market_metrics 可能已有 tab=packages 行；新 normalizer
-// 虽会拒绝，但回放层仍须过滤旧文件/旧库，受管 DB 写入也须拒绝非公共 tab。
-export function filterPublicMarketMetricRows(family, datasetKey, rows) {
-  if (family !== 'market_analysis' || !String(datasetKey ?? '').includes('market_metrics') || !Array.isArray(rows)) return rows
-  const allowed = new Set(MARKET_PUBLIC_METRIC_TABS)
-  return rows.filter((row) => allowed.has(String(row?.tab ?? '').trim()))
-}
-
-// ImportHub 手录投递（/api/v1/market-analysis/import）接受的全部 datasetKey：
-// 7 公共键 → market_analysis(public)；套餐明细/KPI 两键 → market_retail_packages(company)。
-export const ALL_MARKET_DATASET_KEYS = [...MARKET_DATASET_KEYS, ...MARKET_RETAIL_DATASET_KEYS]
-const ALL_MARKET_SCHEMAS = { ...marketAnalysisSchemas, ...marketRetailPackageSchemas }
-
-// datasetKey → 落库 family 归属：公共 7 键 → market_analysis；套餐两键 → market_retail_packages。
-// 归一化器与投递层据此把同一手录入口按 datasetKey 分流到两个族；未登记 datasetKey 返回 null（调用方显式失败）。
-export function marketFamilyForDataset(datasetKey) {
-  if (Object.hasOwn(marketRetailPackageSchemas, datasetKey)) return MARKET_RETAIL_PACKAGES_FAMILY
-  if (Object.hasOwn(marketAnalysisSchemas, datasetKey)) return 'market_analysis'
-  return null
-}
-// datasetKey → 校验 schema（跨两族，单一来源）。未登记 datasetKey 返回 null。
-export function marketSchemaForDataset(datasetKey) {
-  return Object.hasOwn(ALL_MARKET_SCHEMAS, datasetKey) ? ALL_MARKET_SCHEMAS[datasetKey] : null
 }
 
 // —— datasetKey ↔ family 权威对应表（#1479）——
@@ -681,9 +576,6 @@ export const FAMILY_DATASET_KEYS = Object.freeze({
   yn_plant_nodal_price: ['plant_nodal_price'],
   yn_settlement_detail: ['summary', 'charge', 'project', 'source'],
   yn_hydro_group_limit: ['forecast_yn_hydro_group_energy_limit'],
-  // —— 手录市场公报（键清单已有注册表来源，引用不复制） ——
-  market_analysis: MARKET_DATASET_KEYS,
-  market_retail_packages: MARKET_RETAIL_DATASET_KEYS,
   // —— 南网披露表（datasetKey=源表短名，单一来源 disclosure-table-specs） ——
   yn_disclosure_metric: [...DISCLOSURE_DATASET_KEYS],
   // —— 中广核月包导出表上传契约（#2824/#3088 plans 的 capture 落点；upload-contracts
@@ -889,13 +781,6 @@ export const CAPTURE_FAMILIES = {
   yn_plant_nodal_price: { apiFamily: null, label: '云南厂站节点多价型结算电价', kind: 'row', visibility: 'company', ownerCompanyId: CGN_YUNNAN_COMPANY_ID },
   yn_settlement_detail: { apiFamily: null, label: '云南月结明细拆分(summary/charge/project/source)', kind: 'row', visibility: 'company', ownerCompanyId: CGN_YUNNAN_COMPANY_ID },
   yn_hydro_group_limit: { apiFamily: null, label: '云南水电群电量上限(优化出清披露)', kind: 'row', visibility: 'company', ownerCompanyId: CGN_YUNNAN_COMPANY_ID },
-  // 手录市场公报（全省公共口径：概览/发电/售电/储能/价格/月度/指标）→ public。
-  // 套餐明细及聚合 KPI 均拆到 company 私有族 market_retail_packages（下条）。
-  market_analysis: { apiFamily: null, label: '市场经营分析(手录·公共口径)', kind: 'row', visibility: 'public' },
-  // 售电套餐经营口径（#669 + #815）：含明细与聚合 KPI，属公司私有经营数据 → company，
-  // 族级归属中广核云南（comp-cgn-yunnan）。仅归属公司+ADMIN 可读（enforceCaptureVisibility 授权闸门），
-  // 非归属公司走前端 synthetic 授权态（标模拟数据、不泄漏）。
-  market_retail_packages: { apiFamily: null, label: '售电套餐经营口径(手录·公司私有)', kind: 'row', visibility: 'company', ownerCompanyId: CGN_YUNNAN_COMPANY_ID },
   // 南网披露表通用长表（issue #2825）：17 张 tb_disclosure_* 披露表共享一族（datasetKey=源表短名）。
   // public 定级依据：南网全网披露口径（省间联络线/备用/检修/调峰等，含广东/广西等行级区域字段，
   // 行内自述来源），非任何公司的经营数据——与 grid.disclosure_events 已接入的披露事件表同源公开。
@@ -918,15 +803,31 @@ export const CAPTURE_FAMILIES = {
 export const CAPTURE_FAMILY_CODES = Object.keys(CAPTURE_FAMILIES)
 
 /**
+ * 已退役但部署上可能残留数据的 company 私有族（#3395 · codex #3425 P1）。
+ * 注册表删除后 getFamilyVisibility 会把未登记族判为 public，而用过手录套餐导入的部署在
+ * capture-raw/<region>/<family>/ 下仍可能残留文件——不在这里保留原归属，匿名请求就能经
+ * /api/real、/api/realfile 读走客户与经营数据。退役族只保留访问归属，不再有写入通道、schema 与目录行；
+ * 残留数据清理后仍保留本登记，防止任何部署出现回退。
+ */
+export const RETIRED_COMPANY_FAMILIES = Object.freeze({
+  market_retail_packages: Object.freeze({ ownerCompanyId: CGN_YUNNAN_COMPANY_ID }),
+})
+
+/**
  * 查询 family 的数据可见性分级（Sub-2 /api/real 闸门的判定依据）。
- * 未登记 family 返回 public（现状兼容零回归）——但静态门禁 verify:data-classification
+ * 未登记 family 返回 public（现状兼容零回归；已退役私有族例外，见 RETIRED_COMPANY_FAMILIES）——但静态门禁 verify:data-classification
  * 强制所有已登记族显式标注、所有 yn_* 归一化产出族必须登记，漏标在 CI 被拦而非运行时放行。
  * @param {string} code family code（如 'yn_plant_output'）
  * @returns {{ visibility: 'public'|'company', ownerCompanyId: string|null }}
  */
 export function getFamilyVisibility(code, datasetKey) {
   const fam = CAPTURE_FAMILIES[code]
-  if (!fam) return { visibility: DATA_VISIBILITY.PUBLIC, ownerCompanyId: null }
+  if (!fam) {
+    // 退役私有族：残留数据仍按原归属公司闸门拒绝（见 RETIRED_COMPANY_FAMILIES）
+    const retired = Object.hasOwn(RETIRED_COMPANY_FAMILIES, code) ? RETIRED_COMPANY_FAMILIES[code] : null
+    if (retired) return { visibility: DATA_VISIBILITY.COMPANY, ownerCompanyId: retired.ownerCompanyId }
+    return { visibility: DATA_VISIBILITY.PUBLIC, ownerCompanyId: null }
+  }
   // 键级 visibility 覆盖（#1635）：family 级 public、某 datasetKey 键级 company 的族（如
   // sdpt_zcqxhdl 的 `__list__` 键），读路径按 datasetKey 判私有，其余键保持 family 级 public。
   if (datasetKey != null && fam.datasetVisibility) {
@@ -1035,7 +936,13 @@ function keyedOwnerFor(fam, datasetKey) {
  */
 export function resolveCaptureOwner(family, region, datasetKey, familyMap = CAPTURE_FAMILIES) {
   const fam = familyMap[String(family ?? '')]
-  if (!fam) return null
+  if (!fam) {
+    // 退役私有族：闸门仍需原归属公司放行其本公司账号（与 getFamilyVisibility 同口径）
+    if (familyMap === CAPTURE_FAMILIES && Object.hasOwn(RETIRED_COMPANY_FAMILIES, String(family ?? ''))) {
+      return RETIRED_COMPANY_FAMILIES[String(family)].ownerCompanyId
+    }
+    return null
+  }
   // 键级 company（#1635）：family 级 public 但某 datasetKey 键级 company（datasetVisibility）时，
   // owner 取 datasetOwners 键级登记（fallback family 默认 owner），与 family 级 company 族同语义。
   if (fam.visibility !== DATA_VISIBILITY.COMPANY) {
@@ -1240,28 +1147,13 @@ export function describeDataset(code, match) {
       return { kind: 'row', datasetKey: key, schema: ROW_SCHEMAS.yn_settlement_detail, dateField: 'month', cadence: 'monthly' }
     case 'yn_hydro_group_limit':
       return { kind: 'row', datasetKey: key, schema: ROW_SCHEMAS.yn_hydro_group_limit, dateField: 'operateDate' }
-    case 'market_analysis': {
-      // public 7 个 datasetKey 按 match（即 datasetKey 名）精确匹配；未登记 key 拒收。
-      const schema = marketAnalysisSchemas[key]
-      if (!schema) return null
-      if (key === 'market_monthly_trend' || key === 'market_price') {
-        return { kind: 'row', datasetKey: key, schema, dateField: 'month', cadence: 'monthly' }
-      }
-      return { kind: 'row', datasetKey: key, schema }
-    }
-    case 'market_retail_packages': {
-      // #669/#815：售电套餐公司私有族（明细 + 聚合 KPI）；match 即 datasetKey 名。
-      const schema = marketRetailPackageSchemas[key]
-      if (!schema) return null
-      return { kind: 'row', datasetKey: key, schema }
-    }
     case 'yn_disclosure_metric':
       // issue #2825：17 个披露表 datasetKey 共享同一 schema，match（源表短名）不限名单；
       // 未登记 datasetKey 的拒收由 source-registry target 解析与上传契约白名单承担。
       return { kind: 'row', datasetKey: key, schema: ROW_SCHEMAS.yn_disclosure_metric, dateField: 'operateDate' }
     // —— 月包导出表上传契约（#2824）——datasetKey = 月包表名（剥 _YYYYMM 后缀）。
     // 同族各表 dateField 不同（日粒度 data_date/day，月粒度 settle_month/settlemonth），
-    // 按 key 精确匹配声明；未登记 key 拒收（与 market_analysis 同款「未登记拒收」）。
+    // 按 key 精确匹配声明；未登记 key 拒收。
     case 'yn_plant_timeseries':
       return { kind: 'row', datasetKey: key, schema: ROW_SCHEMAS.yn_plant_timeseries, dateField: 'date', typeField: 'dataType' }
     case 'yn_plant_daily_metrics':

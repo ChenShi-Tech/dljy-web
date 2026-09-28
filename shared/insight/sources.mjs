@@ -600,7 +600,8 @@ const plantSources = [
     sourceId: 'cgn.settlement.bill-records', title: '账单索引记录（获权）',
     read: capture('yn_settlement_docs', 'settlement_bill_records_raw'),
     businessScope: 'plant', measure: Object.freeze({ kind: 'list', unit: 'list', inputUnit: 'list', factor: '1', valueField: 'id' }),
-    time: Object.freeze({ resolutionMinutes: 1440, slotLabel: 'business-day', dateField: 'billmonth', businessPeriod: 'month' }),
+    // 月标记锚点 = settle_month（恒在列；未到发布月的账单 billmonth 为空，#3091/#3358）。
+    time: Object.freeze({ resolutionMinutes: 1440, slotLabel: 'business-day', dateField: 'settle_month', businessPeriod: 'month' }),
     dimensions: Object.freeze(['plant_name', 'bill_type', 'settle_month', 'company_name']), objectDimension: 'plant_name',
     accessNote: '账单索引≠账单原件：只有索引记录不代表文件可下载、更不代表已核对原件（ST06）',
   }),
