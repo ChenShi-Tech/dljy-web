@@ -17,7 +17,7 @@ import { chartChrome } from '../../composables/useTheme'
 import { useEChart } from '../../composables/useEChart'
 import { axisTooltip, sliderZoom, emptyOverlay } from '@/services/chart/chartOptions'
 import { bottomEnhancedToolbox } from '@/services/chart/chartStyle'
-import { buildLoadPanelModel, continuousTickFormatter, overlayTickFormatter } from '@/services/chart/loadPanelModel'
+import { LOAD_PANEL_UNIT, buildLoadPanelModel, continuousTickFormatter, isEmptyLoadSource, overlayTickFormatter } from '@/services/chart/loadPanelModel'
 
 const props = withDefaults(defineProps<{
   /** 负荷源数据（system 或 misplace）；null 表示该源缺失。 */
@@ -32,9 +32,12 @@ const props = withDefaults(defineProps<{
   height?: number | string
   /** 是否显示底部拖拽手柄让用户自调高度（拖拽经 update:height 上抛，由父级持久化/联动）。 */
   resizable?: boolean
+  /** 无数据时的空态文案；地区无该口径时由父级传入更准确的说明（#3379）。 */
+  emptyText?: string
 }>(), {
   height: 420,
-  resizable: false
+  resizable: false,
+  emptyText: '无数据'
 })
 
 // 拖拽调高：上抛新高度（px），父级负责联动同页各图 + localStorage 记忆。
@@ -83,11 +86,11 @@ function render() {
   if (!el.value) return
   const cc = chartChrome()
   const block = props.source
-  // 数据缺失 → 空态图
-  if (!block) {
+  // 数据缺失或空壳（无任何年份）→ 空态图
+  if (!block || isEmptyLoadSource(block)) {
     chart.setOption({
       title: { text: `${props.colName} · ${props.metricName}`, left: 8, top: 2, textStyle: { fontSize: 12, color: '#303133' } },
-      ...emptyOverlay(true, '无数据')
+      ...emptyOverlay(true, props.emptyText)
     }, { notMerge: true })
     return
   }
@@ -109,7 +112,7 @@ function render() {
     legend: { top: 22, left: 'center', type: 'scroll', itemWidth: 14, itemHeight: 8, textStyle: { fontSize: 10 }, data: legend },
     // 底部布局:工具栏右下角(保留 magicType);grid bottom 加大给 toolbox + sliderZoom 滑块共存让位
     toolbox: bottomEnhancedToolbox(`${props.colName}-${props.metricName}`, 8),
-    tooltip: { ...axisTooltip({ unit: '万KWH' }), confine: true },
+    tooltip: { ...axisTooltip({ unit: LOAD_PANEL_UNIT }), confine: true },
     dataZoom: sliderZoom().map((z, i) => (i === 1 ? { ...z, bottom: 18, left: 26, right: 190 } : z)),
     grid: { left: 52, right: 16, top: 60, bottom: 64 },
     xAxis: {
@@ -117,7 +120,7 @@ function render() {
       axisLabel: { color: cc.axisLabel, fontSize: 9, interval: 0, formatter: tickFormatter },
       axisLine: { lineStyle: { color: cc.splitLine } }
     },
-    yAxis: { type: 'value', min: 0, max: 45000, interval: 9000, name: '万KWH', nameTextStyle: { color: cc.axisLabel, fontSize: 10 },
+    yAxis: { type: 'value', min: 0, max: 45000, interval: 9000, name: LOAD_PANEL_UNIT, nameTextStyle: { color: cc.axisLabel, fontSize: 10 },
       axisLabel: { color: cc.axisLabel, fontSize: 9, formatter: (v: number) => v.toLocaleString('zh-CN') }, splitLine: { lineStyle: { color: cc.splitLine } } },
     series,
     ...emptyOverlay(!series.length || !xData.length)

@@ -232,7 +232,7 @@ export const regionModuleCapabilities: RegionModuleCapability[] = [
       { path: '/sjfx/zcqxhdl', statusByRegion: { shanxi: 'available', yunnan: 'degraded' }, note: '云南出清电量页已停用（dljy#2991）：__list__ 为山西公司私有清单，云南无全省出清清单来源；页面显示停用说明，不跨地区读取。' },
       { path: '/sjfx/zrxgx', statusByRegion: { shanxi: 'available', yunnan: 'available' }, note: '同页关系图可走云南 yn_system_forecast 口径；山西专有维度见 subCapabilities。' },
       { path: '/sjfx/zrxgx2', statusByRegion: { shanxi: 'available', yunnan: 'available' }, note: '统调负荷关系图可走云南系统预测/实际长表口径。' },
-      { path: '/sjfx/actualLoad', statusByRegion: { shanxi: 'available', yunnan: 'available' }, note: '逐日系统负荷已有云南真实支撑。' },
+      { path: '/sjfx/actualLoad', statusByRegion: { shanxi: 'available', yunnan: 'available' }, note: '云南系统负荷实际值有真实支撑；错位负荷是山西交易平台特有统计，云南无此口径（dljy#3379）。' },
       { path: '/sjfx/singleZsjfx', statusByRegion: { shanxi: 'available', yunnan: 'available' }, note: 'zsjfx 索引已具备云南真实支撑。' },
       { path: '/sjfx/market-ops', statusByRegion: { shanxi: 'available', yunnan: 'degraded' }, note: '手录市场经营口径可用但不代表完整云南行情自动接入。' },
       // dljy#2995 阶段 A：六条规范入口 /insight/<pageId>。路由层四地区一律放行（degraded 也是放行态），
