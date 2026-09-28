@@ -9,6 +9,7 @@
 // （写权限由后端把关：首个 403 即转只读态并说明所需角色）。
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { currentRegion } from '@/services/region/regionContext'
+import { selectedCompanyId } from '@/services/company/companyContext'
 import {
   HedgeApiError, activateBand, fetchBandActivation, fetchBandPresets, fetchCaps, fetchBaselines,
   fetchMechanismParams, fetchMonths, fetchOverview, fetchSettlement, postMechanismVersion, postSimulate,
@@ -20,7 +21,6 @@ import { createQuerySession, scopeKeyOf } from '@/services/hedge/hedgeSession'
 const REGION_OPEN = 'yunnan'
 const regionOpen = computed(() => currentRegion.value.id === REGION_OPEN)
 
-const companyId = localStorage.getItem('company_id') ?? ''
 const granularity = ref<'HOUR' | 'DAY'>('HOUR')
 const asOfInput = ref('')
 const loading = ref(false)
@@ -77,7 +77,7 @@ async function runSimulate() {
 }
 
 const scopeKey = computed(() => scopeKeyOf({
-  companyId, regionId: currentRegion.value.id, asOf: asOfInput.value || null, granularity: granularity.value,
+  companyId: selectedCompanyId.value, regionId: currentRegion.value.id, asOf: asOfInput.value || null, granularity: granularity.value,
 }))
 let inFlight: ReturnType<typeof setTimeout> | null = null
 
@@ -126,6 +126,18 @@ watch(tab, (t) => {
 watch([granularity, asOfInput], () => {
   overview.value = null // HW-06：切换即清空旧结果
   scheduleLoad()
+})
+// HW-06：切换公司或地区时清空全部旧结果、作废在途请求并按新范围重取（#3401：原先读不存在的
+// localStorage.company_id，切公司后仍显示上一家公司的数据）。
+watch([selectedCompanyId, () => currentRegion.value.id], () => {
+  session.renew()
+  overview.value = null
+  monthData.value = null
+  settlementData.value = null
+  simulateResult.value = null
+  scheduleLoad()
+  if (tab.value === 'month') loadMonth()
+  if (tab.value === 'settlement') loadSettlement()
 })
 
 async function openMaintenance() {

@@ -13,6 +13,12 @@ vi.mock('@/services/region/regionContext', () => ({
   currentRegion: { get value() { return { id: regionState.id } } },
 }))
 
+// 公司上下文桩：真实 ref，切换公司的重取与清空（HW-06/#3401）才真正受测。
+vi.mock('@/services/company/companyContext', async () => {
+  const { ref } = await import('vue')
+  return { selectedCompanyId: ref('comp-a') }
+})
+
 vi.mock('@/services/hedge/hedgeApi', () => ({
   HedgeApiError: class HedgeApiError extends Error {
     status: number
@@ -43,6 +49,7 @@ vi.mock('@/services/hedge/hedgeApi', () => ({
 
 import HedgeWorkbenchView from './HedgeWorkbenchView.vue'
 import { HedgeApiError } from '@/services/hedge/hedgeApi'
+import { selectedCompanyId } from '@/services/company/companyContext'
 
 enableAutoUnmount(afterAll)
 
@@ -117,6 +124,30 @@ describe('HedgeWorkbenchView（HW-01/02/06/07/10）', () => {
     const text = wrapper.text()
     expect(text).toContain('MECHANISM_INCOMPLETE')
     expect(text).toContain('明日预测未到达')
+  })
+
+  it('切换公司：立即清空上一家公司的结果并按新公司重取（HW-06/#3401）', async () => {
+    selectedCompanyId.value = 'comp-a'
+    fetchOverview.mockResolvedValue(overviewPayload())
+    const wrapper = mountView()
+    await vi.dynamicImportSettled()
+    await vi.waitFor(() => {
+      expect(wrapper.find('[data-test="metrics"]').exists()).toBe(true)
+    })
+    const callsBefore = fetchOverview.mock.calls.length
+    // 新公司的请求挂起：旧结果必须先被清掉，不能在新请求返回前继续显示上一家公司的数值。
+    let release: (value: unknown) => void = () => {}
+    fetchOverview.mockImplementation(() => new Promise((resolve) => { release = resolve }))
+    selectedCompanyId.value = 'comp-b'
+    await vi.waitFor(() => {
+      expect(wrapper.find('[data-test="metrics"]').exists()).toBe(false)
+      expect(fetchOverview.mock.calls.length).toBeGreaterThan(callsBefore)
+    })
+    release(overviewPayload())
+    await vi.waitFor(() => {
+      expect(wrapper.find('[data-test="metrics"]').exists()).toBe(true)
+    })
+    selectedCompanyId.value = 'comp-a'
   })
 
   it('非云南地区显示「未开放」且不发任何请求（HW-07 地区门禁）', async () => {

@@ -147,12 +147,14 @@ describe('中长期售电合同入口仅云南开通（dljy#2939）', () => {
     expect(getRegionCapabilityForPath('/zcqjy/curves-export', 'shanxi')?.route).toBeNull()
   })
 
-  it('敞口看板归现货模块、交易月历在云南隐藏（dljy#2988）', () => {
-    // 路径仍在 /zcqjy 下，但按精确 routePaths 解析到现货模块，不被中长期的 /zcqjy 前缀吃掉。
-    const exposure = getRegionCapabilityForPath('/zcqjy/exposure', 'yunnan')
-    expect(exposure?.module.id).toBe('spot-trading')
-    expect(exposure?.status).toBe('degraded')
-    expect(getRegionCapabilityForPath('/zcqjy/exposure', 'shanxi')?.status).toBe('available')
+  it('套保页归现货模块且只开放云南、交易月历在云南隐藏（dljy#2988/#3401）', () => {
+    // 任务 8.1 起路由为 /xhjy/hedge，按精确 routePaths 解析到现货模块。
+    const hedge = getRegionCapabilityForPath('/xhjy/hedge', 'yunnan')
+    expect(hedge?.module.id).toBe('spot-trading')
+    expect(hedge?.status).toBe('degraded')
+    for (const region of ['shanxi', 'guangdong', 'sichuan']) {
+      expect(getRegionCapabilityForPath('/xhjy/hedge', region)?.status, region).toBe('hidden')
+    }
     // 同前缀的中长期页面仍解析到中长期模块。
     expect(getRegionCapabilityForPath('/zcqjy/positions', 'yunnan')?.module.id).toBe('midlong-trading')
     expect(getRegionCapabilityForPath('/zcqjy/contracts', 'yunnan')?.module.id).toBe('midlong-trading')
