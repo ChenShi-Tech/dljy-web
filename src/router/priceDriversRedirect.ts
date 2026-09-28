@@ -5,10 +5,10 @@
 // 已随散点矩阵删除，不再适用，静默丢弃。
 // 抽成纯函数（router/index.ts 顶层有 await import，vitest 不宜直接导入整表）。
 import type { RouteLocationRaw } from 'vue-router'
+import { PRICE_DRIVERS_PATH, type PriceDriverKind } from '@/services/governance'
 
-export type PriceDriverKind = 'renewable' | 'load'
-
-export const PRICE_DRIVERS_PATH = '/sjfx/price-drivers'
+// 路径与驱动类型的唯一定义在 governance（授权判定同源），这里转出口供路由与测试使用。
+export { PRICE_DRIVERS_PATH, type PriceDriverKind }
 
 /** 旧入口 query 中合并页仍支持的白名单（driver 由旧路径决定，覆盖任何透传值）。 */
 const PRESERVED_QUERY_KEYS = ['date', 'days', 'mode'] as const
