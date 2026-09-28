@@ -333,7 +333,8 @@ export const accessRules: Record<RoleCode, AccessRule> = {
       '/zcqjy/zccljk',
       '/zcqjy/zfsdjy',
       '/zcqjy/zjyap',
-      '/zcqjy/exposure',
+      // 中长期与现货套保（原 /zcqjy/exposure，任务 8.1 迁入 /xhjy/hedge；#3401 补迁白名单）。
+      '/xhjy/hedge',
       '/xhjy/zrqsb',
       '/xhjy/zptqx',
       '/xhjy/monitor',
@@ -364,6 +365,8 @@ export const accessRules: Record<RoleCode, AccessRule> = {
       ...regionalRoutesForRole('RISK'),
       '/xhjy/trading-day',
       '/xhjy/approvals',
+      // 中长期与现货套保：风控看套保率与敞口判级（#3401，用户 2026-09-28 拍板开放 RISK）。
+      '/xhjy/hedge',
       '/sjfx/singleZsjfx',
       '/sjfx/zcqxhdl',
       '/sjfx/zrxgx',
