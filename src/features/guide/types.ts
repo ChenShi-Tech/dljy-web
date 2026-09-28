@@ -88,6 +88,8 @@ export type GuideDefinition = {
   status: 'ready' | 'planned'
   /** 运行标签生成（如 GUIDE-MMddHHmm）；缺省用时间戳，内容层按域注入自己的格式。 */
   makeRunTag?: () => string
+  /** 会话开始时写入的初始产物（如本次导引固定使用的交割月份）；整次导引读同一份，不随时间漂移。 */
+  initArtifacts?: () => Record<string, unknown>
   /** 依赖的页面能力锚点名（规划中的导引先登记 plannedAnchors，ready 时逐步落实）。 */
   requires: string[]
   /** 导引会在练习空间写数据，只对有公司写权限的角色开放。 */

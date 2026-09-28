@@ -1,7 +1,9 @@
 // 「合同入门」步骤定义的结构守卫（ChenShi-Tech/dljy#3404）。
 // 守什么：每个指向对话框内元素的步骤都声明 resumeTo，且指回更早的、页面上的「打开对话框」那一步。
 // 坏掉的症状：填到一半刷新页面，对话框没了，导引停在「没找到要指的位置」出不来（实机走查踩到过）。
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { resetGuideBridge, useGuideState } from '../bridge'
+import { STATE } from './anchors'
 import { contractBasicsGuide } from './contractBasics'
 
 describe('合同入门步骤定义', () => {
@@ -49,5 +51,45 @@ describe('讲解型步骤', () => {
     for (const id of ['3-1', '4-2']) {
       expect(contractBasicsGuide.steps.find((step) => step.id === id)?.advance.kind, id).toBe('manual')
     }
+  })
+})
+
+describe('第一轮审查修复（codex R1-02 / R1-04）', () => {
+  afterEach(() => {
+    resetGuideBridge()
+    vi.useRealTimers()
+  })
+  const byId = (id: string) => contractBasicsGuide.steps.find((step) => step.id === id)!
+  const ctxWith = (artifacts: Record<string, unknown>) => ({ runTag: 'GUIDE-09281922', regionId: 'yunnan', practiceCompanyId: 'p', artifacts, go: () => {} })
+
+  it('登记主体一步接受用户自拟的编码（不要求含运行标签）', () => {
+    const advance = byId('1-4').advance
+    if (advance.kind !== 'any') throw new Error('1-4 应是 any 条件')
+    const signal = advance.of.find((sub) => sub.kind === 'signal')
+    expect(signal && signal.kind === 'signal' && signal.match).toBeFalsy()
+  })
+
+  it('刷新恢复先认已记下的主体 id（用户编码不含运行标签也能找回）', () => {
+    useGuideState(STATE.contracts, () => ({ subjects: [{ id: 7, subjectKey: 'MY-SUBJECT-01' }], contracts: [] }))
+    const ctx = ctxWith({ subjectId: 7 })
+    expect(byId('1-4').recover?.(ctx)).toBe(true)
+    expect(byId('1-4').recover?.(ctxWith({}))).toBe(false)
+  })
+
+  it('交割期与月度分解用会话固定的月份，跨月继续也不漂移', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2027-01-15T04:00:00Z'))
+    const ctx = ctxWith({ guideMonths: ['2026-10', '2026-11', '2026-12'] })
+    const delivery = byId('3-5').assist
+    const alloc = byId('3-7').assist
+    if (delivery?.kind !== 'fill' || alloc?.kind !== 'fill') throw new Error('3-5 / 3-7 应是 fill 兜底')
+    expect(delivery.values(ctx, undefined)).toMatchObject({ deliveryStart: '2026-10-01', deliveryEnd: '2026-12-31' })
+    const rows = (alloc.values(ctx, undefined) as { allocations: Array<{ deliveryMonth: string }> }).allocations
+    expect(rows.map((row) => row.deliveryMonth)).toEqual(['2026-10', '2026-11', '2026-12'])
+  })
+
+  it('会话开始时固定交割月份', () => {
+    const artifacts = contractBasicsGuide.initArtifacts?.() ?? {}
+    expect(Array.isArray(artifacts.guideMonths) && (artifacts.guideMonths as unknown[]).length).toBe(3)
   })
 })

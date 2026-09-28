@@ -81,6 +81,10 @@ export const ARTIFACT = {
   /** 409 编码冲突时的重试次数（框架协议 / 电量合同各一份）。 */
   frameworkConflictAttempt: 'frameworkConflictAttempt',
   obligationConflictAttempt: 'obligationConflictAttempt',
+  /** 本次导引固定使用的交割月份 [M+1, M+2, M+3]（会话开始时写入，跨月继续也不漂移）。 */
+  guideMonths: 'guideMonths',
+  /** 用户实际登记的主体编码（可能不含运行标签），刷新恢复时据此找回。 */
+  subjectKey: 'subjectKey',
 } as const
 
 export const GUIDE_ANCHORS: string[] = Object.values(ANCHOR)

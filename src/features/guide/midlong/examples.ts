@@ -65,8 +65,12 @@ export function guideMonths(now: Date = new Date()): [string, string, string] {
 
 /** 交割期：下月 1 日 ~ 第三个月真实月末（含当日），落在月度持仓默认 12 个月窗口内。 */
 export function deliveryRange(now: Date = new Date()): { deliveryStart: string; deliveryEnd: string } {
-  const [first, , third] = guideMonths(now)
-  // guideMonths 产出的月份恒合法，?? 兜底只是类型收窄（dates.mjs 对非法输入返回 null）。
+  return deliveryRangeForMonths(guideMonths(now))
+}
+
+/** 按给定的三个交割月算交割期（会话固定的月份传进来，跨月继续也不漂移）。 */
+export function deliveryRangeForMonths([first, , third]: readonly [string, string, string]): { deliveryStart: string; deliveryEnd: string } {
+  // 月份来自 guideMonths，恒合法；?? 兜底只是类型收窄（dates.mjs 对非法输入返回 null）。
   return { deliveryStart: monthFirstDay(first) ?? `${first}-01`, deliveryEnd: monthLastDay(third) ?? `${third}-28` }
 }
 
@@ -155,8 +159,8 @@ export function obligationExample(ctx: GuideCtx, current?: Record<string, unknow
 
 // ---- 经济内容（与 EconomicsDraft 字段一致，分步 fill 各取子集）----
 
-export function deliveryExample(): { deliveryStart: string; deliveryEnd: string } {
-  return deliveryRange()
+export function deliveryExample(months?: readonly [string, string, string]): { deliveryStart: string; deliveryEnd: string } {
+  return months ? deliveryRangeForMonths(months) : deliveryRange()
 }
 
 export function quantityPriceExample(): Pick<EconomicsDraft, 'totalQuantity' | 'quantityUnit' | 'sellerPrice' | 'priceUnit' | 'priceType' | 'taxBasis' | 'priceComponent'> {
@@ -172,8 +176,8 @@ export function quantityPriceExample(): Pick<EconomicsDraft, 'totalQuantity' | '
 }
 
 /** 月度分解 M+1=400 / M+2=300 / M+3=300，全部正式依据；合计与合同电量严格相等（不均摊）。 */
-export function allocationExample(now: Date = new Date()): { allocations: AllocationRow[]; allocationDeclaredComplete: boolean } {
-  const [m1, m2, m3] = guideMonths(now)
+export function allocationExample(now: Date = new Date(), months?: readonly [string, string, string]): { allocations: AllocationRow[]; allocationDeclaredComplete: boolean } {
+  const [m1, m2, m3] = months ?? guideMonths(now)
   return {
     allocations: [
       { uid: nextRowUid(), deliveryMonth: m1, quantity: '400', price: '280', evidenceBasis: 'FORMAL' },

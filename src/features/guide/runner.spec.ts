@@ -6,13 +6,14 @@
 // 导引还往真实公司写数据；退出后停在练习公司里出不来。
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { reactive, ref } from 'vue'
-import type { GuideDefinition, GuideStep } from './types'
+import type { GuideDefinition, GuideStep, GuideSession } from './types'
 import {
   attachGuideRouter, attachGuideTargetResolver, enterGuidePracticeSpace, exit, guideSession,
   next, pause, restore, resume, retryTarget, start,
 } from './runner'
 import { emitGuideSignal, registerGuideForm, resetGuideBridge } from './bridge'
 import { loadActiveGuideOrigin, loadCompletedGuides, loadGuideSession, resetGuideStorageCache, saveGuideSession } from './storage'
+import { registerPracticeCompanies } from '@/services/company/practiceCompany'
 
 vi.mock('./registry', () => ({
   // 假注册表：用例里往 definitions 塞定义，避免拉起真实 36 步内容层。
@@ -223,6 +224,41 @@ describe('持久化与恢复', () => {
     await restore()
     await sleep(20)
     expect(currentStepId()).toBe('s0')
+  })
+
+  it('暂停中的会话刷新后只恢复为暂停，不激活步骤（不因等目标失败改写状态）', async () => {
+    // 停在一个指向对话框内元素的步骤上：激活的话 1.5 秒等目标失败会改写成 target-missing。
+    defineGuide([manual('s0'), { id: 's1', chapter: 0, title: 's1', body: 's1', target: 'ml-in-dialog', within: 'dialog', advance: { kind: 'manual' } }])
+    await start('test.guide')
+    await sleep(320)
+    const saved = loadGuideSession('tester', 'c-origin')!
+    saveGuideSession('tester', 'c-origin', { ...saved, stepId: 's1', status: 'paused', pauseReason: 'company' })
+
+    guideSession.value = null
+    await restore()
+    await sleep(1700)
+    expect(currentStepId()).toBe('s1')
+    expect(currentStatus()).toBe('paused')
+    // 上面显式置 null 后 TS 会把 .value 窄化成 null，按声明类型读取。
+    expect((guideSession.value as GuideSession | null)?.pauseReason).toBe('company')
+  })
+
+  it('从练习公司发起（上一轮留在练习空间再来一遍）：来源记为它的上级，不记成练习公司自己', async () => {
+    registerPracticeCompanies([{ companyId: 'c-practice', source: 'PRACTICE', parentCompanyId: 'c-origin' }])
+    ;(companyContext as unknown as { __selected: { value: string } }).__selected.value = 'c-practice'
+    defineGuide([manual('s0')])
+    await start('test.guide')
+    expect(guideSession.value?.originCompanyId).toBe('c-origin')
+    registerPracticeCompanies([])
+  })
+
+  it('定义的 initArtifacts 在会话开始时写入产物', async () => {
+    definitions['test.guide'] = {
+      id: 'test.guide', group: 'midlong', title: '测试导引', summary: '', status: 'ready',
+      requires: [], needsWrite: true, steps: [manual('s0')], initArtifacts: () => ({ guideMonths: ['2026-10', '2026-11', '2026-12'] }),
+    }
+    await start('test.guide')
+    expect(guideSession.value?.artifacts.guideMonths).toEqual(['2026-10', '2026-11', '2026-12'])
   })
 
   it('done 状态的残留会话在 restore 时被清理，不再恢复', async () => {

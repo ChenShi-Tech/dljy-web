@@ -57,6 +57,12 @@ export function registerPracticeCompanies(options: readonly PracticeOptionShape[
   }
 }
 
+/** 练习公司的上级（未登记为练习公司时返回 null）。 */
+export function practiceParentOf(companyId: string | null | undefined): string | null {
+  if (!companyId) return null
+  return practiceParents.value.get(companyId) ?? null
+}
+
 /** 已登记的练习公司（授权列表或持久化记录里出现过）。 */
 export function isKnownPracticeCompanyId(companyId: string | null | undefined): boolean {
   return !!companyId && practiceParents.value.has(companyId)

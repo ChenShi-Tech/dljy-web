@@ -59,6 +59,8 @@ function captureSubjectId(payload: unknown, ctx: GuideCtx): void {
   const p = payload as { id?: number; subjects?: Array<{ id: number; subjectKey: string }> } | null
   if (typeof p?.id === 'number') {
     ctx.artifacts[ARTIFACT.subjectId] = p.id
+    const key = (p as { subjectKey?: unknown }).subjectKey
+    if (typeof key === 'string' && key) ctx.artifacts[ARTIFACT.subjectKey] = key
     return
   }
   const hit = (p?.subjects ?? []).find((s) => matchesRunTag(s.subjectKey, ctx.runTag))
@@ -86,15 +88,22 @@ const recoverPractice = (): boolean => {
   return !!snap?.practiceActive && !!snap.canWrite
 }
 
+// 刷新恢复先认本次运行已记下的主体（id / 用户实际填的编码可能不含运行标签，codex R1-02），再退回按运行标签匹配。
 function findSubjectId(ctx: GuideCtx): number | null {
-  const hit = (contractsSnapshot()?.subjects ?? []).find((s) => matchesRunTag(s.subjectKey, ctx.runTag))
+  const subjects = contractsSnapshot()?.subjects ?? []
+  const knownId = ctx.artifacts[ARTIFACT.subjectId]
+  const knownKey = ctx.artifacts[ARTIFACT.subjectKey]
+  const hit = subjects.find((s) => s.id === knownId)
+    ?? subjects.find((s) => typeof knownKey === 'string' && s.subjectKey === knownKey)
+    ?? subjects.find((s) => matchesRunTag(s.subjectKey, ctx.runTag))
   return hit ? hit.id : null
 }
 
+// 同上：先认已记下的合同 id（用户可能改过编号），再按运行标签匹配编号。
 function findContractId(ctx: GuideCtx, kind: 'FRAMEWORK' | 'OBLIGATION'): number | null {
-  const hit = (contractsSnapshot()?.contracts ?? []).find(
-    (c) => c.documentKind === kind && matchesRunTag(c.externalContractNo, ctx.runTag),
-  )
+  const contracts = (contractsSnapshot()?.contracts ?? []).filter((c) => c.documentKind === kind)
+  const knownId = ctx.artifacts[kind === 'FRAMEWORK' ? ARTIFACT.frameworkId : ARTIFACT.obligationId]
+  const hit = contracts.find((c) => c.id === knownId) ?? contracts.find((c) => matchesRunTag(c.externalContractNo, ctx.runTag))
   return hit ? hit.id : null
 }
 
@@ -125,15 +134,20 @@ const verifyConfirmed = (): boolean => detailSnapshot()?.confirmationStatus === 
 const recoverEvidenceAdded = (): boolean => evidenceAdded() || verifyConfirmed()
 const recoverVerified = (): boolean => verifyConfirmed()
 
-const spreadMonths = (): [string, string, string] => guideMonths()
+// 本次导引固定的交割月份（会话开始时写入产物）；旧会话没有这份产物时退回按当前时间算。
+function spreadMonthsFor(ctx: GuideCtx): [string, string, string] {
+  const fixed = ctx.artifacts[ARTIFACT.guideMonths]
+  if (Array.isArray(fixed) && fixed.length === 3 && fixed.every((m) => typeof m === 'string')) return fixed as [string, string, string]
+  return guideMonths()
+}
 
-const recoverPositionsLoaded = (): boolean => {
+const recoverPositionsLoaded = (ctx: GuideCtx): boolean => {
   const months = positionsSnapshot()?.months ?? []
-  const [m1, , m3] = spreadMonths()
+  const [m1, , m3] = spreadMonthsFor(ctx)
   return months.includes(m1) && months.includes(m3)
 }
 
-const recoverDrilled = (): boolean => positionsSnapshot()?.drillMonth === spreadMonths()[0]
+const recoverDrilled = (ctx: GuideCtx): boolean => positionsSnapshot()?.drillMonth === spreadMonthsFor(ctx)[0]
 
 // ---- 信号 match ----
 
@@ -145,7 +159,7 @@ const isContractsListRoute = (route: { path: string }): boolean => route.path ==
 
 /** 4-7「带我去月度持仓」：跳转后若 KeepAlive 保留了旧筛选，用 positions.filters 的 fill+submit 纠正。 */
 async function goPositions(ctx: GuideCtx): Promise<void> {
-  const [m1, , m3] = spreadMonths()
+  const [m1, , m3] = spreadMonthsFor(ctx)
   ctx.go({ path: '/zcqjy/positions', query: { fromMonth: m1, toMonth: m3 } })
   const deadline = Date.now() + 5000
   while (Date.now() < deadline && !readGuideForm(FORM.positionsFilters)) await sleep(200)
@@ -219,7 +233,8 @@ const steps: GuideStep[] = [
     advance: {
       kind: 'any',
       of: [
-        { kind: 'signal', name: 'midlong.subject.created', match: (payload, ctx) => matchesRunTag((payload as { subjectKey?: string } | null)?.subjectKey ?? '', ctx.runTag) },
+        // 这一步唯一会发生的主体登记就是用户刚点的那次：接受任何编码（1-1 允许用户自拟编码，codex R1-02）。
+        { kind: 'signal', name: 'midlong.subject.created' },
         { kind: 'state', state: STATE.contracts, done: (snap, ctx) => (snap as ContractsSnapshot | null)?.subjects?.some((s) => matchesRunTag(s.subjectKey, ctx.runTag)) ?? false },
       ],
     },
@@ -365,7 +380,7 @@ const steps: GuideStep[] = [
       return `交割期按自然月取整段：${m1} 月 1 日到 ${m3} 月月末。结束日当天也算交割。`
     },
     advance: { kind: 'form', form: FORM.contractCreate, settleMs: 0, done: (v) => nonEmpty(v.deliveryStart) && nonEmpty(v.deliveryEnd), missing: (v) => [nonEmpty(v.deliveryStart) ? '' : '交割开始日期', nonEmpty(v.deliveryEnd) ? '' : '交割结束日期'].filter(Boolean) },
-    assist: { kind: 'fill', form: FORM.contractCreate, values: () => ({ ...deliveryExample() }) },
+    assist: { kind: 'fill', form: FORM.contractCreate, values: (ctx) => ({ ...deliveryExample(spreadMonthsFor(ctx)) }) },
     recover: recoverObligationChapter,
   },
   {
@@ -381,7 +396,7 @@ const steps: GuideStep[] = [
     title: '月度分解',
     body: '不做均摊：分解必须与合同电量严格相等。三行 400 / 300 / 300（M+1/M+2/M+3）都用「正式依据」，并勾选「分解已完整」。',
     advance: { kind: 'form', form: FORM.contractCreate, settleMs: 0, done: (v) => v.allocationCompleteness === 'COMPLETE' },
-    assist: { kind: 'fill', form: FORM.contractCreate, values: () => ({ ...allocationExample() }) },
+    assist: { kind: 'fill', form: FORM.contractCreate, values: (ctx) => ({ ...allocationExample(undefined, spreadMonthsFor(ctx)) }) },
     recover: recoverObligationChapter,
   },
   {
@@ -469,9 +484,9 @@ const steps: GuideStep[] = [
       const [m1, , m3] = spreadMonthsFor(ctx)
       return `合同已确认，现在到「月度持仓」看它生效：区间 ${m1} ~ ${m3}，正式分解电量 1000 MWh。\n若页面保留了旧筛选，点「带我去」会一并纠正。`
     },
-    advance: { kind: 'state', state: STATE.positions, done: (snap) => {
+    advance: { kind: 'state', state: STATE.positions, done: (snap, ctx) => {
       const months = (snap as PositionsSnapshot | null)?.months ?? []
-      const [m1, , m3] = spreadMonths()
+      const [m1, , m3] = spreadMonthsFor(ctx)
       return months.includes(m1) && months.includes(m3)
     } },
     assist: { kind: 'action', label: '带我去', run: (ctx) => goPositions(ctx) },
@@ -502,9 +517,7 @@ const steps: GuideStep[] = [
 ]
 
 /** body 文案里的交割月展示（与示例值同源，避免两处日期算不一致）。 */
-function spreadMonthsFor(_ctx: GuideCtx): [string, string, string] {
-  return spreadMonths()
-}
+
 
 export const contractBasicsGuide: GuideDefinition = {
   id: 'midlong.contract-basics',
@@ -513,6 +526,7 @@ export const contractBasicsGuide: GuideDefinition = {
   summary: '在练习空间里建主体、录框架与电量合同、补依据核验，最后在月度持仓里看它生效。',
   status: 'ready',
   makeRunTag,
+  initArtifacts: () => ({ [ARTIFACT.guideMonths]: guideMonths() }),
   requires: [ANCHOR.openSubjects, ANCHOR.newContract, ANCHOR.positionsLink],
   needsWrite: true,
   steps,

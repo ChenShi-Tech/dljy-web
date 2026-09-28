@@ -14,6 +14,7 @@ import { loadGuideDefinition } from './registry'
 import { enterPracticeSpace, exitPracticeSpace } from '@/services/company/practiceSpace'
 import { selectedCompanyId, setCurrentCompanyId } from '@/services/company/companyContext'
 import { currentRegion, setCurrentRegionId } from '@/services/region/regionContext'
+import { isKnownPracticeCompanyId, practiceParentOf } from '@/services/company/practiceCompany'
 
 export type GuideRouterLike = {
   push(to: string | { path: string; query?: Record<string, string> }): unknown
@@ -218,13 +219,17 @@ export async function start(guideId: string): Promise<void> {
   if (!def || def.status !== 'ready') return
   teardownAdvance()
   activationSeq++
+  // 来源公司：当前就在练习公司里（上一轮选了「留在练习空间」再来一遍）时取它的上级，
+  // 否则退出时会「回到」练习公司自己（codex R1-01）。来源也是会话存储的键，只在这里定一次。
+  const current = selectedCompanyId.value ?? ''
+  const originCompanyId = isKnownPracticeCompanyId(current) ? (practiceParentOf(current) ?? current) : current
   const session: GuideSession = {
     v: 1,
     guideId,
     stepId: def.steps[0]?.id ?? '',
     runTag: def.makeRunTag?.() ?? `G${Date.now().toString(36)}`,
-    artifacts: {},
-    originCompanyId: selectedCompanyId.value ?? '',
+    artifacts: { ...(def.initArtifacts?.() ?? {}) },
+    originCompanyId,
     practiceCompanyId: '',
     regionId: currentRegion.value?.id ?? 'yunnan',
     status: 'running',
@@ -459,6 +464,9 @@ export async function restore(): Promise<void> {
   ctx = makeCtx(saved)
   const index = def.steps.findIndex((st) => st.id === saved.stepId)
   stepIndex = index >= 0 ? index : 0
+  // 暂停中的会话只恢复停靠条、不激活步骤：激活会等目标、挂推进条件，暂停在对话框步骤时还会因
+  // 目标不在而改写成 target-missing / 回退步骤，丢掉「已暂停」（codex R1-03）。继续由 resume() 负责。
+  if (saved.status === 'paused') return
   void activate(stepIndex, { restoring: true })
 }
 
