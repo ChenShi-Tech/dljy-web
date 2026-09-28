@@ -286,21 +286,6 @@
     "feature": null
   },
   {
-    "id": "report-workshop",
-    "path": "/gsgl/report-workshop",
-    "title": "报告工坊",
-    "domain": "公司管理",
-    "kind": "mixed",
-    "endpoint": "POST /dify-api/v1/workflows/run (Dify 工作流编排)",
-    "dataPath": "dify",
-    "nav": {
-      "group": "/gsgl",
-      "listed": true
-    },
-    "regions": [],
-    "feature": null
-  },
-  {
     "id": "company-trades",
     "path": "/gsgl/trades",
     "title": "历史交易",
@@ -576,8 +561,8 @@
     "title": "AI 工作室",
     "domain": "系统管理",
     "kind": "mixed",
-    "endpoint": "/agent-api/agent/{skills,sub-agents,schedules}/* + /dify-sso/session + ANY /dify-studio/*",
-    "dataPath": "schedules_sqlite,dify,llm",
+    "endpoint": "/agent-api/agent/{skills,sub-agents,schedules}/*",
+    "dataPath": "schedules_sqlite,llm",
     "nav": {
       "group": "/system",
       "listed": true

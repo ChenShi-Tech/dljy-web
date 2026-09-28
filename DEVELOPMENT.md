@@ -11,7 +11,6 @@
 浏览器 ──► Vite dev server (5174)
               │  代理（vite.config.ts server.proxy）
               ├── /api/*        ──► Node BFF        （DLJY_DEV_API_TARGET，默认 127.0.0.1:4174）
-              │   /dify-*、/console、/_next 同走此面
               ├── /agent-api/*  ──► Python FastAPI  （DLJY_AGENT_API_TARGET，默认 127.0.0.1:8000）
               │   （路径会被 rewrite：/agent-api/xxx → /api/xxx）
               ├── /data-svc/*   ──► 数据服务        （DLJY_DATA_SVC_TARGET，默认 127.0.0.1:8190；rewrite 去前缀）
@@ -50,7 +49,7 @@ npm run dev                        # http://localhost:5174
 页面组件**不直接 `fetch`**，一律经 `src/services/`：
 
 - `src/services/api.ts` —— `/api` 面的统一出口：响应信封解析、Token 注入（`Authorization: Bearer`）、**自动注入 `x-region-id` 请求头**（全局地区上下文）。
-- `src/services/agent/` —— `/agent-api` 面的出口：`agentClient.ts`、`difyStudioClient.ts` 等客户端与它们共用的 `httpClient.ts` 基座（`createAgentClient` 工厂）。基址统一走 `AGENT_API_BASE` 常量（默认 `/agent-api`），**不得硬编码 `http://…:8000`**（生产会 404）。
+- `src/services/agent/` —— `/agent-api` 面的出口：`agentClient.ts`、`scheduleClient.ts` 等客户端与它们共用的 `httpClient.ts` 基座（`createAgentClient` 工厂）。基址统一走 `AGENT_API_BASE` 常量（默认 `/agent-api`），**不得硬编码 `http://…:8000`**（生产会 404）。
 - `src/services/agent/piPocClient.ts` —— `/pi-api` 面唯一出口（基址 `PI_AGENT_BASE`）；dev 经 vite 代理到 pi-poc 编排服务（默认 8100），见 §1 架构图。
 - `src/services/dataServiceRoutes.ts` —— `/data-svc` 面改道：数据管理路径族经 `dataServicePath()` 改写为 `/data-svc/api/…`（#2169 P2-2a），代理目标 `DLJY_DATA_SVC_TARGET`（默认 8190）。
 - `src/services/data/` —— 统一类型 + 数据口径（basis）归一的取数基座。
@@ -87,7 +86,7 @@ npm run dev                        # http://localhost:5174
 
 ### 3.5 API 对接指南（新增/收编端点时的 checklist）
 
-1. **先定归属面**：业务 CRUD/鉴权/采集回放 → `/api`（`apiGet`/`apiPost`）；智能体、预测、量化权威实现 → `/agent-api`（`createAgentClient` 工厂）；pi-poc 沙箱 → `piPocClient`。URL 只写相对路径，基址一律用常量（`API_BASE` / `AGENT_API_BASE` / `PI_AGENT_BASE`），显式 `/api|/agent-api|/dify-*` 前缀不会被叠加基址。
+1. **先定归属面**：业务 CRUD/鉴权/采集回放 → `/api`（`apiGet`/`apiPost`）；智能体、预测、量化权威实现 → `/agent-api`（`createAgentClient` 工厂）；pi-poc 沙箱 → `piPocClient`。URL 只写相对路径，基址一律用常量（`API_BASE` / `AGENT_API_BASE` / `PI_AGENT_BASE`），显式 `/api|/agent-api` 前缀不会被叠加基址。
 2. **信封契约**：响应统一 `{ code, message, data, mock, sourceType, productionWrite }`。`unwrap` 的错误分类：`payload.code ≥ 400` 优先于 HTTP status；网关 HTML 错误页回落 `HTTP <status>` 文案；204 → `{ code: 204 }`；抛出的 `ApiError` 携带 `status/code/payload/lockedUntil/remainingAttempts`。
 3. **请求头自动注入**（不要在调用方手拼）：`apiGet`/`apiPost` 自动带 `Authorization`、`x-company-id`（与 `x-tenant-id` 同值）、`x-region-id`（全局地区上下文）；`apiPost` 自动 `content-type: application/json` + `idempotency-key`（幂等键）。agent 面的写方法额外带 `x-admin-token`，`postForm` **绝不手设 content-type**（multipart boundary 由浏览器生成）。
 4. **地区响应头**：`x-region-served` / `x-region-fallback` 驱动 `RegionDataBanner`；api.ts 内部有请求序号守卫，切区后旧地区的迟到响应不会覆盖新地区状态。

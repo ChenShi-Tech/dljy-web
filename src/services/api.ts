@@ -317,9 +317,6 @@ function pathBase(path: string) {
 function isExplicitApiPath(path: string) {
   return path === '/api' || path.startsWith('/api/')
     || path === '/agent-api' || path.startsWith('/agent-api/')
-    || path === '/dify-api' || path.startsWith('/dify-api/')
-    || path === '/dify-sso' || path.startsWith('/dify-sso/')
-    || path === '/dify-studio' || path.startsWith('/dify-studio/')
 }
 
 // #2169 P2-2a：数据管理路径族 → data-service（:8190）

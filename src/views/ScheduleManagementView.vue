@@ -317,7 +317,7 @@ onBeforeUnmount(stopPolling)
       type="info"
       :closable="false"
       show-icon
-      title="报告三引擎分工 · 本页结果中心 = 站内定时报告（调度自动生成 + 归档，只看不手动生成）。需手动模板结算报表 → 「报表中心」；需 AI 叙事报告 → 「报告工坊」。"
+      title="报告三引擎分工 · 本页结果中心 = 站内定时报告（调度自动生成 + 归档，只看不手动生成）。需手动模板结算报表 → 「报表中心」；需 AI 叙事报告 → 「智能体工作台」。"
       style="margin-top: 12px;"
     />
 

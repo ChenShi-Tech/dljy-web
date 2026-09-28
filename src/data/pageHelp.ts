@@ -134,11 +134,6 @@ export const pageHelpRegistry: Record<string, PageHelpEntry> = {
     body: '多智能体协同生成的今日现货行情研判·交易策略·风险提示晨报：选日期→生成晨报→AgentChatPanel 流式输出三段式（行情研判/交易策略/风险提示）+ 子智能体冒泡 + 数据口径角标。经白名单 prompt key 走服务端固定 supervisor 提示，后端零改动。数据为分析示意，合成项显式标注。',
     docPath: 'docs/agent-harness/morning-brief-deterministic-redesign.md'
   },
-  ReportWorkshop: {
-    title: '报告工坊',
-    body: '非技术人员自助构建报告工作流：选择模板→配置参数→生成图表报告。经 Dify 工作流编排（POST /dify-api/v1/workflows/run），Dify 离线自托管、社区 100+ 模板可复用；Dify 不可用时回退本地 Mock 模板。当前为混合口径：模板区块基于合成场景，Dify 状态决定真实/Mock。',
-    docPath: 'docs/dify/dify-end-to-end-runbook.md'
-  },
   StorageCopilot: {
     title: '储能投资收益测算',
     body: '储能投资收益统一工作台：完整投资公式 + 套利/MILP 调度 + 运行历史 + 智能体解释。改参数本地公式即时预览，自然语言填参，后端测算并解释（完整公式/价格/套利/MILP/敏感性保存快照）。经 /agent-api/v1/investment-assessment/runs。缺真实价格曲线时 basis=illustrative、mock=true。属决策支持，非投资建议；以正式结算口径为准。',
@@ -303,7 +298,7 @@ export const pageHelpRegistry: Record<string, PageHelpEntry> = {
   },
   SystemAiStudio: {
     title: 'AI 工作室',
-    body: 'AI 编排与配置四 tab（仅系统管理员可见）。技能工作室：SKILL.md 技能网格 + 编辑抽屉 + 导入导出，启停/编辑对新建会话生效。子智能体工作室：角色与工具集 CRUD、归属绑定，供 supervisor 派发（写操作共用 HARNESS_ADMIN_TOKEN）。Dify 工作流工作室：经服务端 SSO 同源嵌入 Dify 原生画布，取数走 /api/dify-tools/* 工具桥，前端不持密钥。定时任务调度：任务 CRUD/启停/立即执行/执行历史/结果中心，落 schedules_sqlite，产出真实落盘报告。整体为混合口径。',
+    body: 'AI 编排与配置四 tab（仅系统管理员可见）。模型接入：LLM 服务与调用配置（交付版为模型服务档位）。技能工作室：SKILL.md 技能网格 + 编辑抽屉 + 导入导出，启停/编辑对新建会话生效。子智能体工作室：角色与工具集 CRUD、归属绑定，供 supervisor 派发（写操作共用 HARNESS_ADMIN_TOKEN）。定时任务调度：任务 CRUD/启停/立即执行/执行历史/结果中心，落 schedules_sqlite，产出真实落盘报告。整体为混合口径。',
     docPath: 'docs/agent-harness/sub-agent-studio.md'
   },
 

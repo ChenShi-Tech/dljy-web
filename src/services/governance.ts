@@ -127,8 +127,8 @@ export const allGroups = [...gridGeoGroups, ...regionalTradingGroups, ...reports
 export const adminLevelRoleCodes: RoleCode[] = ['BOSS', 'ADMIN']
 // /system/ai-studio 与 /system/accounts 是 tab 合并页的新入口，权限口径统一收紧为 ADMIN-only：
 // - 原 /ai-skills、/ai-sub-agents、/system/schedules、/system/users 本就在本清单，口径不变；
-// - 原 /system/sessions 与 /xhjy/dify-studio 未列入、非管理员经 /system 与 /xhjy
-// 组可见，合并后随宿主页收紧。方向是收紧不是放开，无越权风险。
+// - 原 /system/sessions 未列入、非管理员经 /system 组可见，合并后随宿主页收紧。
+//   方向是收紧不是放开，无越权风险。
 // 旧路径已改为 redirect（不再是页面），故从本清单移除，重定向目标会再过一次本判定。
 // /data-ops/console（数据运维工作台）：上传中心/导入融合台/接入向导/摄取管理/治理控制台/
 // 数据源接入六页 + 运维总览合成的单页 tab，整页收 ADMIN-only——数据管理是数据管理员的操作面，

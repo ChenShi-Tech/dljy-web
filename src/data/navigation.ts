@@ -161,7 +161,7 @@ export const navigation: NavItem[] = [
     // URL 不失效）。
     // 储能投资收益测算**不合并**：它不是对话壳而是 6 步状态机工作台（本地公式预览 + 套利/MILP +
     // 投资评估独立落库 + 三页互链），对话只是其中一步，壳承载不了其余五步。
-    // 编排配置类（AI工作流中枢/Dify/LangGraph）已移入「系统管理」，它们是配置工具、非交易员日常动线。
+    // 编排配置类（AI工作流中枢/LangGraph）已移入「系统管理」，它们是配置工具、非交易员日常动线。
     // 日前竞价空间(/ycsj/jjkj) 已收口进「预测数据回放」hub（SP-4a），改 redirect 保深链。
     path: '/ai-copilot',
     title: 'AI 交易助手',
@@ -182,7 +182,6 @@ export const navigation: NavItem[] = [
       { path: '/gsgl/output', title: '机组出力', icon: ChartSpline, stanceAffinity: ['GENERATOR'] },
       { path: '/gsgl/trades', title: '历史交易', icon: CalendarRange },
       { path: '/gsgl/contracts', title: '合同管理', icon: FileText },
-      { path: '/gsgl/report-workshop', title: '报告工坊', icon: FileChartColumn },
       ...(REPORTS_FEATURE_ENABLED ? [reportsNavigation] : [])
     ]
   },
@@ -258,8 +257,8 @@ export const navigation: NavItem[] = [
     title: '系统管理',
     icon: ShieldCheck,
     children: [
-      // AI 工作室：技能/子智能体/Dify 工作流/高级编排/定时任务五页 tab 化合并（原分散于本组与
-      // 「智能实验室」组；「AI工作流中枢」作为它们的导航壳被 tab 栏取代，已删）。
+      // AI 工作室：模型接入/技能/子智能体/定时任务 tab 化合并（原分散于本组与「智能实验室」组；
+      // 「AI工作流中枢」作为它们的导航壳被 tab 栏取代，已删；高级编排与工作流编排 tab 已先后下线）。
       { path: '/system/ai-studio', title: 'AI 工作室', icon: Bot },
       // 用户与权限：账号目录、登录会话与权限矩阵 tab 化合并。
       { path: '/system/accounts', title: '用户与权限', icon: Users },

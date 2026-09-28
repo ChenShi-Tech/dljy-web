@@ -490,7 +490,7 @@ const builders: Record<string, BlockBuilder> = {
   },
   // issue #455 现货日报新增区块：结算三价 / 出力完成率 / 出力预测 MAPE（复用 synthScenario
   // 与 settlementFormula 口径，sourceType=MOCK 如实标注；日前价走真实采集时 provenance 上调）。
-  //使 RPT-DAILY-SPOT 一键生成即含三价/出力/MAPE 摘要，走确定性 reportEngine 不在 Dify 重造。
+  // 使 RPT-DAILY-SPOT 一键生成即含三价/出力/MAPE 摘要，统一走确定性 reportEngine，不在别处另造一套口径。
   'RB-SETTLEMENT-PRICES': async (params, ctx) => {
     const { s, realHit } = await loadScenarioWithRealPrice(params, ctx)
     const da = round(s.pDayAhead.reduce((a, b) => a + b, 0) / s.points)

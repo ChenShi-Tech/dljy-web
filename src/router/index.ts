@@ -77,7 +77,6 @@ const platformDocs = () => import('../views/PlatformDocsView.vue')
 const forecastCenter = () => import('../views/forecast/ForecastCenterView.vue')
 const agentWorkbench = () => import('../views/AgentWorkbenchView.vue')
 const marketInsightCockpit = () => import('../views/MarketInsightCockpitView.vue')
-const reportWorkshop = () => import('../views/strategy/ReportWorkshopView.vue')
 const storageCopilot = () => import('../views/StorageCopilotView.vue')
 // 两个 tab 容器页：各 tab 的子 View 由容器自身 defineAsyncComponent 懒加载，路由层不再单独登记。
 const aiStudio = () => import('../views/AiStudioView.vue')
@@ -220,9 +219,10 @@ const router = createRouter({
           redirect: '/insight/cockpit'
         },
         accountsRedirect('system/permissions', 'permissions'),
-        // AI 工作室：技能/子智能体/Dify 工作流/定时任务四页 tab 化合并（ADMIN-only）。
-        // 「高级智能体编排」tab 已随主仓 #2582 删 /agent-api/agent/graphs* 后端下线（#2540）。
-        page('system/ai-studio', 'SystemAiStudio', { block: '系统管理', title: 'AI 工作室', code: 'system-ai-studio', endpoint: '/agent-api/agent/{skills,sub-agents,schedules}/* + /dify-sso/session + ANY /dify-studio/*', dataPath: 'schedules_sqlite,dify,llm', scope: '技能(SKILL.md 增删改启停)/子智能体(CRUD 导入导出归属绑定)/Dify 原生 Studio 同源嵌入/定时任务调度四 tab;任务产出真实落盘报告', kind: 'mixed' }, aiStudio),
+        // AI 工作室：模型接入/技能/子智能体/定时任务 tab 化合并（ADMIN-only）。
+        // 「高级智能体编排」tab 已随主仓 #2582 删 /agent-api/agent/graphs* 后端下线（#2540）；
+        // Dify 工作流工作室 tab 已于 2026-09-28 随 Dify 彻底下线删除（用户拍板）。
+        page('system/ai-studio', 'SystemAiStudio', { block: '系统管理', title: 'AI 工作室', code: 'system-ai-studio', endpoint: '/agent-api/agent/{skills,sub-agents,schedules}/*', dataPath: 'schedules_sqlite,llm', scope: '模型接入/技能(SKILL.md 增删改启停)/子智能体(CRUD 导入导出归属绑定)/定时任务调度四 tab;任务产出真实落盘报告', kind: 'mixed' }, aiStudio),
         // 用户与会话：账号目录与登录会话两页 tab 化合并（ADMIN-only，原 /system/sessions 随之收紧）。
         page('system/accounts', 'SystemAccounts', { block: '系统管理', title: '用户与会话', code: 'system-accounts', endpoint: 'GET/POST/PATCH /api/auth/users + GET/DELETE /api/auth/sessions', dataPath: 'auth_sqlite', scope: '账号、角色、状态、数据域和密码重置 + 登录会话、撤销和审计日志两 tab', kind: 'real' }, accounts),
         // 推理模型管理（dljy#2465）：南洋 dljy-infer 的唯一管理面，经 agent-backend 代理，服务端按平台 RBAC 校验 ADMIN/BOSS
@@ -298,14 +298,15 @@ const router = createRouter({
         // 原“智能体编排分析”页仅做 supervisor 派工可视化，已由 /ai-agent 通用工作台承接；保留 redirect 兼容旧收藏。
         { path: 'xhjy/ai-orchestration', redirect: '/ai-agent' },
         // AI 编排页随「AI 工作室」（/system/ai-studio）tab 化收敛：原「AI工作流中枢」是这几页的
-        // 导航壳，tab 栏取代其职责后删除（其 Dify/工具桥状态展示已由各 tab 自身承载）。
-        // 旧路径保留重定向落到对应 tab，外部书签与历史深链不失效。
-        aiStudioRedirect('xhjy/ai-orchestration-studio', 'dify'),
-        aiStudioRedirect('xhjy/dify-studio', 'dify'),
+        // 导航壳，tab 栏取代其职责后删除。旧路径保留重定向，外部书签与历史深链不失效；
+        // 它原本落的 Dify tab 已于 2026-09-28 下线，故改落 AI 工作室默认 tab（不再带 ?tab=）。
+        // 原 /xhjy/dify-studio 重定向随 Dify 一并删除，旧深链由 catchAll 兜到 /dashboard。
+        { path: 'xhjy/ai-orchestration-studio', redirect: (to) => ({ path: '/system/ai-studio', query: { ...to.query } }) },
         // xhjy/langgraph-studio（LangGraph 编排画布）已随主仓 #2582 删后端整体下线（#2540）：
         // 无对应 tab 可落，旧深链由 catchAll 兜到 /dashboard（与 #1799 删页同法）。
         aiAgentRedirect('xhjy/morning-brief', 'morning_brief'),
-        page('gsgl/report-workshop', 'ReportWorkshop', { block: '公司管理', title: '报告工坊', code: 'report-workshop', endpoint: 'POST /dify-api/v1/workflows/run (Dify 工作流编排)', dataPath: 'dify', scope: '非技术人员自助构建报告工作流:选择模板→配置参数→生成图表报告;Dify离线自托管,社区100+模板可复用;Dify不可用时回退本地Mock模板', kind: 'mixed' }, reportWorkshop),
+        // gsgl/report-workshop（报告工坊）已于 2026-09-28 随 Dify 下线（用户拍板）：叙事类报告收敛到
+        // 智能体工作台（harness），确定性报表走报表中心（/report/center）；旧深链由 catchAll 兜到 /dashboard。
         page('xhjy/storage-copilot', 'StorageCopilot', { block: '智能实验室', title: '储能投资收益测算', code: 'storage-copilot', endpoint: 'POST /agent-api/v1/investment-assessment/runs + /intents/parse + /agent-api/agent/sessions + /sessions/{id}/messages (SSE)', dataPath: 'agent_backend', scope: '储能投资收益统一工作台:完整投资公式+套利/MILP调度+运行历史+智能体解释;示意/合成项显式标注', kind: 'mixed' }, storageCopilot),
         aiAgentRedirect('xhjy/presubmit-check', 'pre_submit_check'),
         aiAgentRedirect('xhjy/policy-intel', 'policy_intel'),

@@ -179,13 +179,7 @@ export default defineConfig(({ mode }) => {
           changeOrigin: true,
           rewrite: (path) => path.replace(/^\/data-svc/, '')
         },
-        '/api': apiTarget,
-        // Dify 报告工坊与 Studio 同源嵌入：全部经 4174 面二次转发。
-        '/dify-api': apiTarget,
-        '/dify-sso': apiTarget,
-        '/dify-studio': apiTarget,
-        '/console': apiTarget,
-        '/_next': apiTarget
+        '/api': apiTarget
       },
       watch: {
         // .claude/worktrees/ 是本仓 worktree 根（见 .gitignore）：不排除的话 chokidar 会把

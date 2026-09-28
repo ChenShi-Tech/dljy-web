@@ -5,7 +5,6 @@
 // 各 tab 内容仍是原 View 组件（零改造复用，只摘掉与 tab 标签重复的 h2 标题行）：
 //   AI 模型设置                → LLM 凭据/采样/路由/工具能力/用量，页内再按职责分 4 段
 //   技能工作室 / 子智能体工作室 → agent-backend /agent-api/agent/{skills,sub-agents}/*
-//   Dify 工作流工作室          → 同源嵌入 Dify 原生 Studio（/dify-sso + /dify-studio/*）
 //   定时任务调度               → /agent-api/agent/schedules
 // 「高级智能体编排」（LangGraph 画布）tab 已随主仓 #2582 删后端 /agent-api/agent/graphs* 下线（#2540）。
 // 子组件走 defineAsyncComponent + el-tab-pane lazy：进页只加载当前 tab 的 chunk，
@@ -29,7 +28,6 @@ const TABS = [
   ...MODEL_SETTINGS_TAB,
   { name: 'skills', label: '技能工作室', component: defineAsyncComponent(() => import('./SkillStudioView.vue')) },
   { name: 'sub-agents', label: '子智能体工作室', component: defineAsyncComponent(() => import('./SubAgentStudioView.vue')) },
-  { name: 'dify', label: 'Dify 工作流工作室', component: defineAsyncComponent(() => import('./strategy/DifyWorkflowStudioView.vue')) },
   { name: 'schedules', label: '定时任务调度', component: defineAsyncComponent(() => import('./ScheduleManagementView.vue')) },
 ]
 
@@ -67,7 +65,7 @@ function onTabChange(name: string | number) {
   <div class="ai-studio">
     <header class="page-head">
       <h1>AI 工作室</h1>
-      <p class="sub">技能、子智能体、工作流编排与定时任务的统一配置入口（仅系统管理员可见）。</p>
+      <p class="sub">模型接入、技能、子智能体与定时任务的统一配置入口（仅系统管理员可见）。</p>
     </header>
 
     <el-tabs v-model="activeTab" class="studio-tabs" @tab-change="onTabChange">
@@ -76,7 +74,7 @@ function onTabChange(name: string | number) {
              挂着，切走后子组件既不 onBeforeUnmount 也不 onDeactivated，定时任务调度的 4s 轮询
              会在其它 tab 下继续打接口（#1737 后台轮询问题）。改成只渲染当前 tab、由 KeepAlive
              缓存已访问的：切走触发 onDeactivated（该组件正是按这个语义写的清理），
-             切回仍保留画布/表单/iframe 状态。 -->
+             切回仍保留表单与列表状态。 -->
         <KeepAlive>
           <component :is="tab.component" v-if="activeTab === tab.name" />
         </KeepAlive>

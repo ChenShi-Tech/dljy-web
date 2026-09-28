@@ -5,14 +5,15 @@
 > 旧后端入口的权威归属与门禁结论凡引自《平台后台管理路由矩阵》（任务 2.1 副本，下称「矩阵」）均已标注——矩阵基于主仓 main `69f7a2cda`。
 > 2026-09-26 修订（分支 `glm/issue-3161-migration-list-fix`，同属任务 11.4）：总表补「新路径（dljy-admin）」列并把「对拍」列改为能力级「对照结果」；新增运行时对拍方法（§2.1）与范围外相邻入口（§4）；按 dljy 主仓 main 代码更正会话与摄取权限事实（附录 A-2/A-3，会话 #3168、摄取角色集与 cgn-* 公司归属）；回退口径统一为仅前端可见性（AI-06「回退不得恢复已确认的越权路径」）；AI 模型设置页补 MCP 服务器/通知渠道/长期记忆/语音四个面板（§2、§3.3）；补重定向壳明细（§2 表下）。dljy 主仓代码核实均为只读。
 > 本文只是清单，**不含任何代码改动**；每项移除/收窄须经用户逐项批准后在任务 11.5 另开 PR。
+> 2026-09-28 修订：登记用户对 7 项的裁决（Dify 工作流工作室、报告工坊、定时任务调度、数据接入向导、数据摄取管理、权限矩阵、电网官方平台），裁决写入 §0、§2 对应行与 §3 对应小节；原核实事实与原建议保留不改。其中 Dify 工作流工作室与报告工坊已在 dljy-web 分支 `chore/remove-dify` 删除入口。
 
 ## 0. 待用户裁决事项（汇总）
 
 除逐项批准外，以下判断点需用户显式裁决（各处标「待用户裁决」，理由见对应小节）：
 
-1. **总表 30 项逐项批准**（§2，含对每项「建议分类」的确认；删除入口或权限收窄的 PR 合并前须再次同意）。
+1. **总表 30 项逐项批准**（§2，含对每项「建议分类」的确认；删除入口或权限收窄的 PR 合并前须再次同意）。**2026-09-28 已裁决 7 项**：Dify 工作流工作室、报告工坊（彻底下线）；定时任务调度（回收到客户端）；数据接入向导、数据摄取管理（并入 dljy-admin 服务状态页受控动作入口）；权限矩阵（平台后台接入「客户角色权限」）；电网官方平台（凭据走平台后台录入「交易平台接口凭据」）——详见 §2 各行「状态」列；其余项仍待批准。
 2. **注册立场归属**（§3.7）：权威面平台级（写全局公司主数据表）vs 影响面单公司，平台内部或客户自助二选一。
-3. **cgn-\* 摄取 kind 归属**（§3.5）：与「企业自建通道」（客户自助）分类存在口径张力，随面板归平台内部还是单列客户自助。
+3. **cgn-\* 摄取 kind 归属**（§3.5）：与「企业自建通道」（客户自助）分类存在口径张力，随面板归平台内部还是单列客户自助。**已裁决（2026-09-28）**：`cgn-*` 三个 kind 属中广核私有链路，按该客户范围裁决；摄取触发整体不单列后台页面，作为受控动作并入 dljy-admin 服务状态页（§3.5）。
 4. **MCP 服务器面板分类**（§3.3）：倾向平台内部，但写鉴权依赖浏览器持有管理令牌，与「管理令牌永不下发浏览器」红线有既有张力。
 5. **通知渠道面板分类**（§3.3）：全局推送凭据倾向平台内部，任务级推送开关属自助，是否拆分处置。
 6. **长期记忆管理分类**（§3.3）：删除的是当前用户自己的跨会话记忆，倾向客户自助；但入口嵌在 AI 模型设置页内，整页收走会连带消失。
@@ -36,7 +37,7 @@
 
 **回退口径（AI-06/D13，全文统一）**：本清单所有「回退方式」一律只指**前端入口可见性/路由的回退**（恢复旧入口显示）；**后端越权修复（#3164、#3168、#3226 等）不随任何回退恢复**——AI-06 规定「回退不得恢复已确认的越权路径」，D13「只回退已验收的安全入口，不恢复被确认越权的路径」。
 
-**当前状态：全部待批准**（第 2 节总表「状态」列全部为「待批准」）。
+**当前状态：全部待批准**（第 2 节总表「状态」列全部为「待批准」）。**2026-09-28 更新**：7 项已裁决（见 §0 第 1 条，§2「状态」列标「已裁决·…」），其余仍待批准。
 
 **可见角色读法（先读这段再看表）**：
 
@@ -57,7 +58,7 @@
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | `/system/accounts` › 用户管理 | W：`POST/PATCH /api/auth/users`、`/reset-password`、`/status`、`/revoke-sessions`；R：`GET /api/auth/users`、`GET /api/company/stations?scope=group`（预测厂站绑定选项） | 页：BOSS+ADMIN（任意公司）；后端：#3164 后客户 BOSS 仅本公司树，平台超管全量（矩阵 §4） | 客户自助（本公司树） | 有：M2 客户详情账号摘要（admin.read）+ M4 开通步骤「身份绑定」（customer.manage），后台不开通用账号编辑（矩阵 §2.1） | 保留（原路径）；平台侧只读摘要 `/customers/:id` | 部分：只读摘要+身份绑定有，通用账号编辑无（admin 路由表无账号编辑页；矩阵 §2.1） | revert 11.5 对应 PR（旧入口代码保留不动） | 待批准 |
 | `/system/accounts` › 会话管理 | R：`GET /api/auth/sessions?scope=mine\|all`、`GET /api/auth/audit?limit=120`；W：`DELETE /api/auth/sessions/:id` | 页：BOSS+ADMIN；后端：#3168 后 `scope=all` 仅返回管理范围内账号会话（客户 BOSS=本公司树，平台超管=全部），撤销他人会话须目标账号在管理范围内、范围外 404（`dljy/server/auth-store.mjs:395-412,414-434`，附录 A-2） | 客户自助（矩阵 §2.1：不接入，留客户侧与运维流程） | 无 | 保留（原路径） | —（不迁移；越权面已由 #3168 关闭，不再构成迁移阻塞） | 同上 | 待批准 |
-| `/system/accounts` › 权限矩阵 | R：`GET /api/auth/directory`；W：`POST /api/auth/role-access`、`POST /api/auth/role-access/reset` | 页：BOSS+ADMIN；后端：#3164 后改全局角色矩阵仅平台超管（矩阵 §4）；前端保存按钮**无**对应闸门（见附录 A-4） | 平台内部（全局角色矩阵，影响整个部署全部客户） | 无（矩阵 §2.1：不接入——客户业务角色权限不属于平台后台范围；写已收平台超管） | 暂无（平台后台缺该能力） | 缺失：后台无角色矩阵页（admin 路由表无；矩阵 §2.1 明确不接入） | revert 11.5 对应 PR（仅恢复前端入口显示；后端 #3164 收窄**不回退**） | 待批准 |
+| `/system/accounts` › 权限矩阵 | R：`GET /api/auth/directory`；W：`POST /api/auth/role-access`、`POST /api/auth/role-access/reset` | 页：BOSS+ADMIN；后端：#3164 后改全局角色矩阵仅平台超管（矩阵 §4）；前端保存按钮**无**对应闸门（见附录 A-4） | 平台内部（全局角色矩阵，影响整个部署全部客户）。**2026-09-28 用户裁决：平台后台接入，名称「客户角色权限」**（全部署一份的客户业务角色矩阵） | 原记载：无（矩阵 §2.1：不接入——客户业务角色权限不属于平台后台范围；写已收平台超管）。**2026-09-28 裁决改为接入**：后台新建「客户角色权限」 | 待建：dljy-admin「客户角色权限」页（路由待定；当前暂无） | 缺失：后台无角色矩阵页（admin 路由表无；矩阵 §2.1 明确不接入——已被 2026-09-28 裁决取代） | revert 11.5 对应 PR（仅恢复前端入口显示；后端 #3164 收窄**不回退**） | 已裁决·后台接入（待建） |
 | `/system/models` 推理模型管理 | R：`GET /agent-api/v1/forecast/remote/{health,models,models/:id/versions,fields}`；W：`POST …/models/:id/{enable,disable,reload,unload,activate/:v}`、`POST …/rescan` | 页：BOSS+ADMIN；后端写：#3226 后内部版仅平台超管 ADMIN、客户交付版 ADMIN/BOSS（矩阵 §4；前端按钮闸门 `canWriteSharedResources`，governance.ts:560-564） | 平台内部（南洋共享推理模型，启停影响全部客户） | 部分：M4 受控动作 `inference.model.start/stop/reload`（任务 9.4/9.5，`POST /api/v1/admin/service-actions`）；`unload/activate/rescan` 不开放（矩阵 §2.3） | `/services`（状态）+ `/operations/:operationId`（受控动作）；部分 | 部分：启停/重载走受控动作可承接；`unload/activate/rescan` 与只读版本清单后台无（矩阵 §2.3；admin 路由表无模型页） | revert 11.5 对应 PR（仅恢复前端入口显示；后端 #3226 收窄**不回退**） | 待批准 |
 | `/system/ai-studio` › AI 模型设置 › LLM 服务与凭据（内部版）/ 模型服务档位（客户交付版） | W：`PUT /agent-api/llm/services`、`PUT/DELETE /agent-api/llm/services/credential`、`POST /agent-api/llm/search/test`、denylist 增删；R：`GET /agent-api/llm/services`、`/services/usage`。语音播报为**纯前端 localStorage**（`src/services/voice.ts:14-35`，键 `dljy_voice_config`），无后端接口，不属迁移项 | 页：BOSS+ADMIN；后端网关凭据写：#3226 后同上（矩阵 §4）；内部版页面含供应商/密钥面（客户交付版编译期剔除，仅剩档位启用+角色路由，`src/views/AiStudioView.vue:24-26`） | 平台内部（部署级 LLM 供应与凭据，客户不可见供应商信息——#2410/#2668） | 无（矩阵 §2.4：网关凭据是部署侧凭据留运维流程；额度发布走任务 9.2 受控任务，管理令牌永不下发浏览器） | 暂无（平台后台缺该能力） | 缺失：后台无 LLM 供应配置页（admin 路由表无；额度发布属任务 9.2 不在本项范围） | revert 11.5 对应 PR | 待批准 |
 | `/system/ai-studio` › AI 模型设置 › MCP 服务器面板 | W：`POST/PUT/DELETE /agent-api/agent/llm/mcp-servers[/:name]`、`POST …/:name/test`（写带 `x-admin-token`，`src/services/agent/mcpClient.ts:8,57-85`；挂载 `src/views/AiSettingsView.vue:612-615`）；R：清单 | 页：BOSS+ADMIN；后端：agent-backend，写鉴权 `x-admin-token`（服务端未配 token 时放行——单机/演示，mcpClient.ts:2-3） | 倾向平台内部（部署级共享外部能力边界；**待用户裁决**，§3.3） | 无 | 暂无（平台后台缺该能力） | 缺失：后台无 MCP 配置页（admin 路由表无） | revert 11.5 对应 PR | 待批准 |
@@ -65,15 +66,15 @@
 | `/system/ai-studio` › AI 模型设置 › 长期记忆管理 | W：`DELETE /agent-api/agent/memory[/:key]`（清空/删单条，仅登录身份 `identityHeaders`，`src/services/agent/memoryConfig.ts:7,28-48`）；R：`GET /agent-api/agent/memory`（挂载 `src/views/AiSettingsView.vue:639-662`） | 页：BOSS+ADMIN；后端：agent-backend，**按当前登录账号隔离**（AiSettingsView.vue:646「按你的登录账号隔离」） | 倾向客户自助（当前用户自己的跨会话记忆；**待用户裁决**——入口嵌在本页，整页收走会连带消失，§3.3） | 无 | 保留（原路径或随自助面保留） | —（若留客户侧则不迁移；裁决见 §3.3） | revert 11.5 对应 PR | 待批准 |
 | `/system/ai-studio` › 技能工作室 | W：`PUT/PATCH/POST/DELETE /agent-api/agent/skills/*`（SKILL.md 增删改启停）；R：清单 | 页：BOSS+ADMIN；后端：agent-backend 技能库为部署级共享（矩阵未单列收窄） | 平台内部（技能库全体客户共用，写影响所有会话可用能力） | 无 | 暂无（平台后台缺该能力） | 缺失：后台无技能管理页（admin 路由表无） | revert 11.5 对应 PR | 待批准 |
 | `/system/ai-studio` › 子智能体工作室 | W：`PUT/DELETE/PATCH/POST /agent-api/agent/sub-agents/*`；R：清单 | 同上 | 平台内部（同上，部署级共享） | 无 | 暂无（平台后台缺该能力） | 缺失：同上 | 同上 | 待批准 |
-| `/system/ai-studio` › Dify 工作流工作室 | R：`GET /dify-sso/status`；W：`POST /dify-sso/session`；同源嵌入 `/dify-studio/*` | 页：BOSS+ADMIN；后端：Dify 原生 Studio 会话 | 平台内部（部署级编排设施治理面） | 无 | 暂无（平台后台缺该能力） | —（嵌入页，无平台数据写；迁移仅涉入口可见性） | 同上 | 待批准 |
-| `/system/ai-studio` › 定时任务调度 | W：`POST/PUT/PATCH/DELETE /agent-api/agent/schedules/*`（CRUD+立即执行）；R：清单+执行历史 | 页：BOSS+ADMIN；后端：部署实例调度器（矩阵 §2.2，service.operate 仅登记动作，不开放通用编辑） | 平台内部（调度任务可触发全部署级 ETL/报告产出） | 无（需要时作为受控动作登记，矩阵 §2.2） | 暂无（平台后台缺该能力；受控动作进展可查 `/operations/:operationId`） | 缺失：通用调度编辑无（矩阵 §2.2；admin 路由表无）；仅可按受控动作逐项登记 | 同上 | 待批准 |
+| `/system/ai-studio` › Dify 工作流工作室 | R：`GET /dify-sso/status`；W：`POST /dify-sso/session`；同源嵌入 `/dify-studio/*` | 页：BOSS+ADMIN；后端：Dify 原生 Studio 会话 | 已下线（2026-09-28 用户拍板彻底去除 Dify 与报告工坊，报告收敛到报告中心 + harness）；原建议：平台内部（部署级编排设施治理面） | 无 | —（已下线，不迁移；dljy-web 已删 tab 与 `/xhjy/dify-studio` 重定向） | —（嵌入页，无平台数据写；迁移仅涉入口可见性） | 同上 | 已裁决·下线 |
+| `/system/ai-studio` › 定时任务调度 | W：`POST/PUT/PATCH/DELETE /agent-api/agent/schedules/*`（CRUD+立即执行）；R：清单+执行历史 | 页：BOSS+ADMIN；后端：部署实例调度器（矩阵 §2.2，service.operate 仅登记动作，不开放通用编辑） | 原建议：平台内部（调度任务可触发全部署级 ETL/报告产出）。**2026-09-28 用户裁决：回收到客户端（留 dljy-web）**，前提是后端先按公司隔离（任务 owner、列表过滤、run_as 限本公司树）；平台运维类任务（采集、摄取）不让客户建 | 原记载：无（需要时作为受控动作登记，矩阵 §2.2）。**2026-09-28 裁决：平台后台不承接** | 保留（原路径）；前提：后端公司隔离先落地 | 缺失：通用调度编辑无（矩阵 §2.2；admin 路由表无）；仅可按受控动作逐项登记（裁决后不再迁移，本列仅存档） | 同上 | 已裁决·留客户端（待后端公司隔离） |
 | `/data-ops/console` › 运维总览 | R：`GET /v1/governance/{catalog,quality,backup}`（→ data-svc）；面板跳转按钮 | 页：BOSS+ADMIN；后端：治理只读（业务角色可达端点，仅 ADMIN 看全平台，矩阵 §2.5） | 共享展示（只读聚合：链路四段/告警/批次台账） | 有：M3 服务状态/数据健康聚合（admin.read，按作用域过滤） | 保留（原路径）；后台同源视图 `/services`、`/data` | 部分：聚合同源有（按作用域过滤），明细面板跳转按钮无（admin 路由表无对应明细页） | 不删除；后台视图独立回退 | 待批准 |
 | `/data-ops/console` › 数据上传中心 | W：`POST /api/v1/data-upload/precheck`、`/commit`；R：`GET /api/v1/data-upload/{contracts,batches}`（→ data-svc，带 `companyId` scope） | 页：BOSS+ADMIN；后端：业务导入角色，限本公司（矩阵 §2.5） | 客户自助（本公司数据上传，五步预检-确认-台账闭环） | 无（矩阵 §2.5：不接入，客户自助导入留 dljy-web） | 保留（原路径） | —（不迁移） | 不适用 | 待批准 |
 | `/data-ops/console` › 数据导入融合台 | W：`POST /v1/import-templates/upload`、模板端点写链（`/v1/{market/trades,settlements,power,customer-load,market-analysis}/import` 等，→ data-svc）；售电结算 FormData 走 `/agent-api`；R：`GET /v1/import-{templates,hub}/records` | 页：BOSS+ADMIN；后端：业务导入角色，限本公司 | 客户自助（手录/模板导入） | 无（同上） | 保留（原路径） | —（不迁移） | 不适用 | 待批准 |
-| `/data-ops/console` › 数据接入向导 | W：`triggerIngest('spot-ingest'\|'forecast-etl')`（见附录 A-1，当前 404）；R：`GET /api/v1/governance/catalog`、`GET /api/v1/import-templates/records` | 页：BOSS+ADMIN；后端：`POST /api/v1/ingest/:kind` 为服务令牌或 `INGEST_ROLES` 七角色之一（SETTLEMENT/RETAIL_MANAGER/TRADER/TRADE_LEAD/PLANT_OPERATOR/ADMIN/BOSS，比矩阵 §2.5 记载的「任意 BOSS」更宽，`dljy/server/ingestion-api.mjs:36,460-461`，附录 A-3） | 平台内部（T0/T1 模板投递后一键生效触发 ETL，写平台全局目录与回放层） | 部分：M4 受控动作（仅登记的补数/重跑，矩阵 §2.5）；通用「一键生效」无 | `/operations/:operationId`（受控动作）；通用一键生效暂无 | 部分：登记的补数/重跑可承接；通用「一键生效」后台无（矩阵 §2.5） | revert 11.5 对应 PR（仅恢复前端入口显示；后端摄取门禁**不回退**） | 待批准 |
-| `/data-ops/console` › 数据摄取管理 | W：`triggerIngest` 五个 kind：`weather-export`、`spot-export`、`market-export`、`cgn-yunnan-prices`、`cgn-yunnan-market`（同附录 A-1，当前 404） | 页：BOSS+ADMIN；后端：同上七角色；`cgn-*` 三个 kind（含前端未列出的 `cgn-series-to-capture`）固定 `ownerCompanyId: 'comp-cgn-yunnan'`，非中广核公司账号触发被拒（`dljy/server/ingestion-api.mjs:145-151,201-216,463-466`） | 平台内部（多数 kind 写平台全局目录；`cgn-*` 写中广核私有库——**归属存争议待用户裁决**，§3.5） | 部分：同上 M4 受控动作 | `/operations/:operationId`（受控动作）；部分 | 部分：补数/重跑可承接；`cgn-*` 私有库触发后台无 | 同上 | 待批准 |
+| `/data-ops/console` › 数据接入向导 | W：`triggerIngest('spot-ingest'\|'forecast-etl')`（见附录 A-1，当前 404）；R：`GET /api/v1/governance/catalog`、`GET /api/v1/import-templates/records` | 页：BOSS+ADMIN；后端：`POST /api/v1/ingest/:kind` 为服务令牌或 `INGEST_ROLES` 七角色之一（SETTLEMENT/RETAIL_MANAGER/TRADER/TRADE_LEAD/PLANT_OPERATOR/ADMIN/BOSS，比矩阵 §2.5 记载的「任意 BOSS」更宽，`dljy/server/ingestion-api.mjs:36,460-461`，附录 A-3） | 平台内部（T0/T1 模板投递后一键生效触发 ETL，写平台全局目录与回放层）。**2026-09-28 用户裁决：平台后台不单列页面，摄取触发作为受控动作并入 dljy-admin 服务状态页的受控动作入口（与采集重跑同一入口）** | 部分：M4 受控动作（仅登记的补数/重跑，矩阵 §2.5）；通用「一键生效」无 | `/services` 服务状态页受控动作入口（与采集重跑同一入口，2026-09-28 裁决）+ `/operations/:operationId`（进展）；不单列页面 | 部分：登记的补数/重跑可承接；通用「一键生效」后台无（矩阵 §2.5） | revert 11.5 对应 PR（仅恢复前端入口显示；后端摄取门禁**不回退**） | 已裁决·并入服务状态受控动作 |
+| `/data-ops/console` › 数据摄取管理 | W：`triggerIngest` 五个 kind：`weather-export`、`spot-export`、`market-export`、`cgn-yunnan-prices`、`cgn-yunnan-market`（同附录 A-1，当前 404） | 页：BOSS+ADMIN；后端：同上七角色；`cgn-*` 三个 kind（含前端未列出的 `cgn-series-to-capture`）固定 `ownerCompanyId: 'comp-cgn-yunnan'`，非中广核公司账号触发被拒（`dljy/server/ingestion-api.mjs:145-151,201-216,463-466`） | 平台内部（多数 kind 写平台全局目录；`cgn-*` 写中广核私有库——**归属存争议待用户裁决**，§3.5）。**2026-09-28 用户裁决：同「数据接入向导」，不单列页面，摄取触发并入 dljy-admin 服务状态页受控动作入口（与采集重跑同一入口）；`cgn-*` 三个 kind 属中广核私有链路，按该客户范围裁决** | 部分：同上 M4 受控动作 | `/services` 服务状态页受控动作入口（同上）+ `/operations/:operationId`（进展）；不单列页面 | 部分：补数/重跑可承接；`cgn-*` 私有库触发后台无 | 同上 | 已裁决·并入服务状态受控动作 |
 | `/data-ops/console` › 数据治理控制台 | R：`GET /v1/governance/{catalog,quality,backup,db-health}`（→ data-svc） | 页：BOSS+ADMIN；后端：治理只读（仅 ADMIN 看全平台，矩阵 §2.5） | 共享展示（只读体检：目录/质量/备份/库健康） | 有：M3 数据健康聚合（admin.read，分母未知显示未知） | 保留（原路径）；后台同源视图 `/data` | 部分：数据健康聚合有；目录/备份/库健康明细页无（admin 路由表无） | 不删除；后台视图独立回退 | 待批准 |
-| `/data-ops/console` › 数据源接入 › 电网官方平台 | W：`PUT/DELETE /api/v1/grid-access/points/:id/credentials`、`POST …/credentials/test`、`POST /api/v1/sichuan-ingest/trigger`；R：`GET /api/v1/grid-access/points`、`GET …/credentials`（掩码）、`GET /api/v1/sichuan-ingest[/health]` | 页：BOSS+ADMIN；后端：接入点凭据=全局生效集、采集触发放行任意 BOSS（矩阵 §2.2/§4，未收窄） | 平台内部（国网开放平台凭据全局生效；采集触发影响部署数据链路） | 部分：M3 服务状态按登记部署读取（admin.read）；触发走 M4 受控动作 `grid-ingest.capture.rerun`（任务 9.3/9.5）；凭据录入无替代——后台不接收明文，走既有安全交付（矩阵 §2.2） | `/services`（状态）+ `/operations/:operationId`（重跑）；凭据录入暂无 | 部分：状态与当日重跑有；凭据录入无——走安全交付流程（矩阵 §2.2） | revert 11.5 对应 PR（仅恢复前端入口显示；后端门禁收窄**不回退**） | 待批准 |
+| `/data-ops/console` › 数据源接入 › 电网官方平台 | W：`PUT/DELETE /api/v1/grid-access/points/:id/credentials`、`POST …/credentials/test`、`POST /api/v1/sichuan-ingest/trigger`；R：`GET /api/v1/grid-access/points`、`GET …/credentials`（掩码）、`GET /api/v1/sichuan-ingest[/health]` | 页：BOSS+ADMIN；后端：接入点凭据=全局生效集、采集触发放行任意 BOSS（矩阵 §2.2/§4，未收窄） | 平台内部（国网开放平台凭据全局生效；采集触发影响部署数据链路）。**2026-09-28 用户裁决：凭据走平台后台录入（只写不回显、验证并保存），名称拟「交易平台接口凭据」**；四川凭据由四川大佳新能提供；披露数据由平台统一管理聚合后供各客户使用；客户私有数据平台可访问与存储但不得提供给其他客户 | 部分：M3 服务状态按登记部署读取（admin.read）；触发走 M4 受控动作 `grid-ingest.capture.rerun`（任务 9.3/9.5）；原记载凭据录入无替代——后台不接收明文，走既有安全交付（矩阵 §2.2）；**2026-09-28 裁决改为后台录入** | `/services`（状态）+ `/operations/:operationId`（重跑）；凭据录入：待建「交易平台接口凭据」（2026-09-28 裁决） | 部分：状态与当日重跑有；凭据录入无——走安全交付流程（矩阵 §2.2；已被 2026-09-28 裁决取代，待建后台录入） | revert 11.5 对应 PR（仅恢复前端入口显示；后端门禁收窄**不回退**） | 已裁决·后台录入凭据（待建） |
 | `/data-ops/console` › 数据源接入 › 企业自建通道 | W：`PUT/DELETE /api/v1/data-sources/cgn-yunnan?company=…`、`POST …/test`；R：`GET …`、`GET …/plant-bindings` | 页：BOSS+ADMIN；后端：公司上下文 + ADMIN/BOSS，**某公司**外部数据源（矩阵 §2.2） | 客户自助（中广核云南自建透传为本公司数据源配置） | 无（矩阵 §2.2：不接入，只读摘要可在 M3 评估；客户自助设置留 dljy-web） | 保留（原路径） | —（不迁移；与 `cgn-*` 摄取 kind 的归属张力见 §3.5 裁决项） | 不适用 | 待批准 |
 | `/data-ops/console` › 数据源接入 › 受控接入 | 无接口（静态受控空态：授权网架 Provider 等待 Owner 交付，`src/views/data-access/RestrictedProviderTab.vue:4-7`） | 页：BOSS+ADMIN | 共享展示（占位，无操作） | 无 | 保留（原路径） | — | 不适用 | 待批准 |
 | 重定向壳（收编旧路径，明细见表下） | 无独立动作：redirect 到合并页对应 tab/panel，不带 meta、不进 feature-map/manifest（`src/router/index.ts:139-177`）；明细见下 | 随目标面板 | —（重定向壳，随目标面板走） | — | 随目标面板 | — | 随目标面板 | 待批准 |
@@ -84,12 +85,12 @@
 | `/gsgl/output` 机组出力 | W：`POST /api/company/unit-output`（+`/import`）；R：`GET` | 同上 | 客户自助 | 无 | 保留（原路径） | —（不迁移） | 不适用 | 待批准 |
 | `/gsgl/trades` 历史交易 | W：`POST/PATCH/DELETE /api/company/trades`（+`/import`）；R：`GET` | 同上 | 客户自助 | 无 | 保留（原路径） | —（不迁移） | 不适用 | 待批准 |
 | `/gsgl/contracts` 合同管理 | W：`POST/PATCH/DELETE /api/company/contracts`（+`/import`）；R：`GET`（云南已纳管合同分流至 `/zcqjy/*`，路由 meta 注） | 同上 | 客户自助 | 无 | 保留（原路径） | —（不迁移） | 不适用 | 待批准 |
-| `/gsgl/report-workshop` 报告工坊 | W：`POST /dify-api/v1/workflows/run`；R：`GET /dify-api/health`（Dify 不可用回退本地模板） | 页：全员；后端：Dify 应用 API | 客户自助（业务报告工具，非管理操作；Dify 为部署级设施但页面不涉治理面） | 无 | 保留（原路径） | —（不迁移） | 不适用 | 待批准 |
+| `/gsgl/report-workshop` 报告工坊 | W：`POST /dify-api/v1/workflows/run`；R：`GET /dify-api/health`（Dify 不可用回退本地模板） | 页：全员；后端：Dify 应用 API | 已下线（2026-09-28 用户拍板彻底去除 Dify 与报告工坊，报告收敛到报告中心 + harness）；原建议：客户自助（业务报告工具，非管理操作；Dify 为部署级设施但页面不涉治理面） | 无 | —（已下线，不迁移；dljy-web 已删页面路由与菜单，旧深链由 catchAll 兜到 `/dashboard`） | —（不迁移） | 不适用 | 已裁决·下线 |
 
 **重定向壳明细**（统一规则：被 tab 化收编的旧路径保留 redirect、原 query 透传，不带 meta、不进 feature-map/manifest，迁移/回退随目标面板走；`src/router/index.ts`，2026-09-26 核实）：
 
 - → `/system/accounts?tab=`（辅助函数 `:146-149`；注册 `:222,230-231`）：`/system/permissions`、`/system/users`、`/system/sessions`。
-- → `/system/ai-studio?tab=`（`:141-144`；注册 `:232,303-304,384,393-394`）：`/system/schedules`、`/xhjy/ai-orchestration-studio`、`/xhjy/dify-studio`、`/ai-settings`、`/ai-skills`、`/ai-sub-agents`。
+- → `/system/ai-studio?tab=`（`:141-144`；注册 `:232,303-304,384,393-394`）：`/system/schedules`、`/xhjy/ai-orchestration-studio`、`/xhjy/dify-studio`、`/ai-settings`、`/ai-skills`、`/ai-sub-agents`。（2026-09-28：随 Dify 下线，`/xhjy/dify-studio` 重定向已删除，`/xhjy/ai-orchestration-studio` 改落 AI 工作室默认 tab、不再带 `tab=dify`。）
 - → `/data-ops/console?panel=`（`opsPanelRedirects` `:167-177`）：`/yygl/data-onboarding`、`/yygl/import-hub`、`/yygl/data-governance`、`/yygl/ingest`、`/data-ops/upload`、`/data-source-settings`；另 `/sichuan-access` 两级重定向（先落 `/data-source-settings?tab=official` 再落 console 的 data-source 面板，`:160-163,385`）。
 
 ### 2.1 运行时对拍方法（11.5 每项获准迁移前执行）
@@ -115,6 +116,7 @@
 - **现状**：#3164 后写端点仅平台超管可写（矩阵 §4）；但客户 BOSS 的页面仍呈现完整编辑界面，点保存 403 后**静默降级保存到浏览器本地**（附录 A-4）。
 - **迁移后客户侧看到什么**：建议客户交付版整 tab 隐藏（写权限本就不在客户手上，展示可编辑矩阵是误导）；内部版保留给平台超管。
 - **风险**：本地降级矩阵只影响本浏览器，会与服务器权威漂移，排查权限问题时是干扰源；隐藏入口前应先处理 A-4。
+- **2026-09-28 用户裁决**：平台后台接入，名称为「客户角色权限」（全部署一份的客户业务角色矩阵）。与矩阵 §2.1「不接入」的原结论不同，以本裁决为准；后台页面待建。
 
 ### 3.2 推理模型管理（`/system/models`）
 
@@ -139,14 +141,19 @@
 - **为什么是平台内部**：技能库与子智能体是全体客户会话共享的能力面（改一个 SKILL.md 影响所有客户的 agent 行为）；定时任务调度可触发部署级 ETL 与报告产出（矩阵 §2.2：调度器按部署实例归属）；Dify Studio 是部署级编排设施。
 - **迁移后客户侧看到什么**：整组从客户交付版隐藏（客户无改技能/调度的正当场景）；内部版可暂留 dljy-web 待后台承接，或先行收窄为平台超管可见。
 - **风险**：调度任务承载「定时自动摄取」（DataIngestionView 页内链接直达）——收窄前先确认无人依赖客户侧配置的摄取调度，否则数据链路断更；后台无替代项，迁移=可见性收窄而非能力搬迁。
+- **2026-09-28 用户裁决**：
+  - **Dify 工作流工作室**：随 Dify 彻底下线（同日一并下线 `/gsgl/report-workshop` 报告工坊），叙事类报告收敛到 harness（智能体工作台），确定性报表走报告中心（`/report/center`，RPT-DAILY-SPOT 日前市场日报、RPT-MONTHLY-SETTLEMENT 月度结算、RPT-CONTRACT-EXEC 合同执行）。dljy-web 已删该 tab 与 `/xhjy/dify-studio` 重定向，`/xhjy/ai-orchestration-studio` 改落默认 tab。
+  - **定时任务调度**：回收到客户端（留 dljy-web），平台后台不承接。前提是后端先按公司隔离——任务 owner、列表过滤、run_as 限本公司树；平台运维类任务（采集、摄取）不让客户建。上条「风险」所述定时自动摄取属平台运维类任务，按本裁决不由客户新建。
+  - 技能工作室、子智能体工作室不在本次裁决范围，仍待批准。
 
 ### 3.5 数据接入向导与摄取管理（`/data-ops/console?panel=onboarding|ingest`）
 
 - **为什么是平台内部**：`POST /api/v1/ingest/:kind` 多数 kind 写**平台全局**目录与 capture 回放层（矩阵 §2.5），触发即跑 ETL 子进程，影响全部客户的数据新鲜度。
 - **现状**：后端放行 `INGEST_ROLES` 七角色（含 TRADER 等业务角色，比矩阵 §4 记载「任意 BOSS」更宽，`dljy/server/ingestion-api.mjs:36,460-461`，附录 A-3）；前端触发请求当前 404（附录 A-1，已实测，ChenShi-Tech/dljy#3251）。
-- **cgn-\* 归属存争议（待用户裁决）**：`cgn-yunnan-prices`、`cgn-yunnan-market` 写中广核私有库，`cgn-series-to-capture`（前端面板未列出，由调度跑）写共享采集族，三者固定只允许中广核公司（`ownerCompanyId: 'comp-cgn-yunnan'`）触发（`dljy/server/ingestion-api.mjs:145-151,201-216,463-466`）——单公司数据链路。张力：同类配置入口「企业自建通道」（cgn-yunnan 数据源配置，§2）本清单归**客户自助**，若自建通道配置属客户自助，用该配置触发摄取是否也偏客户自助？本表暂随面板整体归平台内部（触发的是平台侧 ETL 子进程），**交用户裁决**。
+- **cgn-\* 归属存争议（已于 2026-09-28 裁决，见本节末条）**：`cgn-yunnan-prices`、`cgn-yunnan-market` 写中广核私有库，`cgn-series-to-capture`（前端面板未列出，由调度跑）写共享采集族，三者固定只允许中广核公司（`ownerCompanyId: 'comp-cgn-yunnan'`）触发（`dljy/server/ingestion-api.mjs:145-151,201-216,463-466`）——单公司数据链路。张力：同类配置入口「企业自建通道」（cgn-yunnan 数据源配置，§2）本清单归**客户自助**，若自建通道配置属客户自助，用该配置触发摄取是否也偏客户自助？本表暂随面板整体归平台内部（触发的是平台侧 ETL 子进程），**交用户裁决**。
 - **迁移后客户侧看到什么**：两面板从客户交付版隐藏；补数/重跑由后台 M4 受控动作承接（仅登记的动作）。客户上传/导入动线（upload/import-hub 面板）不受影响。
 - **风险**：受控动作未登记前隐藏 = 数据断更无人能补；A-1 已坐实，这两面板的「立即摄取」当前本来就是坏的——迁移前先修（#3251），避免「迁移把坏功能藏起来」掩盖问题。
+- **2026-09-28 用户裁决**：平台后台不单列页面，摄取触发作为受控动作并入 dljy-admin 服务状态页的受控动作入口（与采集重跑同一入口）；`cgn-*` 三个 kind 属中广核私有链路，按该客户范围裁决。
 
 ### 3.6 电网官方平台（`/data-ops/console?panel=data-source&tab=official`）
 
@@ -154,6 +161,10 @@
 - **现状**：凭据写与采集触发后端放行任意 BOSS（矩阵 §4 未收窄）。
 - **迁移后客户侧看到什么**：客户交付版隐藏凭据录入与触发按钮；服务健康状态可保留只读（与 M3 服务状态同源）。凭据交付继续走既有安全流程，由我方运营在后台登记步骤引用。
 - **风险**：新网省接入的凭据交付依赖人工流程，隐藏前端入口前须确认交付流程文档同步更新；`sichuan-ingest/trigger` 有「单数据集手动触发」场景（#2501 修复过 query 丢参），受控动作须覆盖该粒度否则运维降级。
+- **2026-09-28 用户裁决**：
+  - 凭据走平台后台录入（只写不回显、验证并保存），名称拟为「交易平台接口凭据」——取代上文「后台不接收明文、走既有安全交付」的口径；后台页面待建。
+  - 四川凭据由四川大佳新能提供。
+  - 披露数据由平台统一管理，聚合后供各客户使用；客户私有数据平台可访问与存储，但不得提供给其他客户。
 
 ### 3.7 注册立场（`/gsgl/profile` 内的立场登记块）
 

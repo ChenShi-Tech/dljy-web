@@ -112,7 +112,7 @@ describe('buildUrl/pathBase：API 前缀路由与 query 序列化（经 apiGet �
     expect(callUrl(fetchMock)).toBe('http://example.test/upstream?q=1')
   })
 
-  it.each(['/api', '/api/foo', '/agent-api', '/agent-api/foo', '/dify-api/foo', '/dify-sso/foo', '/dify-studio/foo'])(
+  it.each(['/api', '/api/foo', '/agent-api', '/agent-api/foo'])(
     '显式 API 前缀 %s 不再叠加 API_BASE',
     async (path) => {
       const fetchMock = stubFetchOk()

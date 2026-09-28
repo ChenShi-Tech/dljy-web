@@ -260,7 +260,7 @@ onMounted(() => { registerReportBlocks(); loadClosedLoop(); loadSubs() })
       type="info"
       :closable="false"
       show-icon
-      title="报告三引擎分工 · 本页 = 确定性结算报表（模板 + 真实结算公式，口径可验证）。需 AI 叙事 / 洞察报告 → 「报告工坊」；需定时自动生成并归档 → 「定时任务 · 结果中心」。"
+      title="报告三引擎分工 · 本页 = 确定性结算报表（模板 + 真实结算公式，口径可验证）。需 AI 叙事 / 洞察报告 → 「智能体工作台」；需定时自动生成并归档 → 「定时任务 · 结果中心」。"
       class="mock-alert"
     />
 
