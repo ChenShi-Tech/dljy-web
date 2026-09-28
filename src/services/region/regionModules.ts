@@ -183,8 +183,8 @@ export const regionModuleCapabilities: RegionModuleCapability[] = [
     id: 'market-insight',
     title: '市场洞察',
     group: 'insight',
-    routePrefixes: ['/insight', '/sjfx/fshq', '/sjfx/zrsjg', '/sjfx/zcqxhdl', '/sjfx/zrxgx', '/sjfx/zrxgx2', '/sjfx/actualLoad', '/sjfx/singleZsjfx', '/sjfx/market-ops'],
-    routePaths: ['/insight/cockpit', '/sjfx/fshq', '/sjfx/zrsjg', '/sjfx/zcqxhdl', '/sjfx/zrxgx', '/sjfx/zrxgx2', '/sjfx/actualLoad', '/sjfx/singleZsjfx', '/sjfx/market-ops'],
+    routePrefixes: ['/insight', '/sjfx/fshq', '/sjfx/zrsjg', '/sjfx/zcqxhdl', '/sjfx/zrxgx', '/sjfx/zrxgx2', '/sjfx/actualLoad', '/sjfx/singleZsjfx'],
+    routePaths: ['/insight/cockpit', '/sjfx/fshq', '/sjfx/zrsjg', '/sjfx/zcqxhdl', '/sjfx/zrxgx', '/sjfx/zrxgx2', '/sjfx/actualLoad', '/sjfx/singleZsjfx'],
     statusByRegion: {
       shanxi: 'available',
       yunnan: 'degraded',
@@ -234,7 +234,6 @@ export const regionModuleCapabilities: RegionModuleCapability[] = [
       { path: '/sjfx/zrxgx2', statusByRegion: { shanxi: 'available', yunnan: 'available' }, note: '统调负荷关系图可走云南系统预测/实际长表口径。' },
       { path: '/sjfx/actualLoad', statusByRegion: { shanxi: 'available', yunnan: 'available' }, note: '云南系统负荷实际值有真实支撑；错位负荷是山西交易平台特有统计，云南无此口径（dljy#3379）。' },
       { path: '/sjfx/singleZsjfx', statusByRegion: { shanxi: 'available', yunnan: 'available' }, note: 'zsjfx 索引已具备云南真实支撑。' },
-      { path: '/sjfx/market-ops', statusByRegion: { shanxi: 'available', yunnan: 'degraded' }, note: '手录市场经营口径可用但不代表完整云南行情自动接入。' },
       // dljy#2995 阶段 A：六条规范入口 /insight/<pageId>。路由层四地区一律放行（degraded 也是放行态），
       // 内容由工作区注册（src/services/region/insightWorkspace.ts）按当前地区决定：山西兼容登记
       // overview/prices 落现有页面，云南默认关闭（开关开后六页均为建设占位），广东/四川未登记显示

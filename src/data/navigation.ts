@@ -78,7 +78,6 @@ export const navigation: NavItem[] = [
       { path: '/sjfx/zrxgx2', title: '现货价格×统调负荷', icon: ChartSpline },
       { path: '/sjfx/actualLoad', title: '逐日系统负荷', icon: LineChart },
       { path: '/sjfx/singleZsjfx', title: '综合数据分析', icon: ChartSpline },
-      { path: '/sjfx/market-ops', title: '市场经营分析', icon: ChartSpline },
       // 云南专属真实页 fold 入市场洞察（切云南才现）
       // price-output-linkage 已并入云南交易工作台 tab（父 Issue #456），市场洞察外层不再单列
       { path: '/xhjy/yunnan/node-price', title: '节点电价分析', icon: Network, regionIds: ['yunnan'], stanceAffinity: ['GENERATOR'] },

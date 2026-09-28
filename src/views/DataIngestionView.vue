@@ -26,7 +26,7 @@ interface KindMeta {
 const KINDS: KindMeta[] = [
   { kind: 'weather-export', label: '云南气象', desc: 'Open-Meteo 气象要素 + 辐照 → yn_meteo / yn_irradiance', icon: CloudDownload, paramsHint: '无额外参数（自动从 Open-Meteo 拉取）', example: '{}' },
   { kind: 'spot-export', label: '云南现货月度导出包', desc: '交易中心月度导出包：厂站结算 / 损益 / 主数据 → yn_node_price 等', icon: Database, paramsHint: '无参数：自动选用 plant-exports 下最新解压目录（含 export_manifest.csv）；指定目录须服务器命令行', example: '{ }' },
-  { kind: 'market-export', label: '市场经营分析（山西目录）', desc: '手录 CSV → market_analysis 公共 7 datasetKey；注意默认 region=shanxi', icon: Sunset, paramsHint: '无参数：默认扫 capture-raw/shanxi/market_analysis/；云南数据须服务器命令行 --region yunnan', example: '{ }' },
+  { kind: 'market-export', label: '市场分析族（山西目录）', desc: '手录 CSV → market_analysis 公共 7 datasetKey（原市场经营分析页已下线 dljy#3391，数据族仍可经通用数据浏览器回放）；注意默认 region=shanxi', icon: Sunset, paramsHint: '无参数：默认扫 capture-raw/shanxi/market_analysis/；云南数据须服务器命令行 --region yunnan', example: '{ }' },
   { kind: 'cgn-yunnan-prices', label: '中广核云南电价', desc: '厂侧 API 节点/场站电价 → dljy_private 私有 PG（中广核专属）', icon: Database, paramsHint: 'lookbackDays + market + interval；未发布分区自动跳过', example: '{ "lookbackDays": 3, "market": "day_ahead", "interval": "15m" }', params: { lookbackDays: 3, market: 'day_ahead', interval: '15m' } },
   { kind: 'cgn-yunnan-market', label: '中广核云南市场/披露', desc: '厂侧 API 11 条市场曲线 + 26 类公共披露 → dljy_private 私有 PG（中广核专属）', icon: Sunset, paramsHint: 'resource + lookbackDays（默认回看 3 日）', example: '{ "resource": "all", "lookbackDays": 3 }', params: { resource: 'all', lookbackDays: 3 } }
 ]
