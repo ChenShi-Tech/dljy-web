@@ -396,6 +396,8 @@ export const accessRules: Record<RoleCode, AccessRule> = {
       '/sjfx/zrxgx2',
       '/sjfx/fshq',
       '/sjfx/actualLoad',
+      // 云南水电分析（dljy#3389）：可见范围与逐日系统负荷一致（同属供需数据），不扩权。
+      '/sjfx/hydro',
       '/sjfx/zrsjg',
       '/sjfx/jieqi',
       '/sjfx/elninolanina',

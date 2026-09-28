@@ -183,8 +183,8 @@ export const regionModuleCapabilities: RegionModuleCapability[] = [
     id: 'market-insight',
     title: '市场洞察',
     group: 'insight',
-    routePrefixes: ['/insight', '/sjfx/fshq', '/sjfx/zrsjg', '/sjfx/zcqxhdl', '/sjfx/zrxgx', '/sjfx/zrxgx2', '/sjfx/price-drivers', '/sjfx/actualLoad', '/sjfx/singleZsjfx'],
-    routePaths: ['/insight/cockpit', '/sjfx/fshq', '/sjfx/zrsjg', '/sjfx/zcqxhdl', '/sjfx/zrxgx', '/sjfx/zrxgx2', '/sjfx/price-drivers', '/sjfx/actualLoad', '/sjfx/singleZsjfx'],
+    routePrefixes: ['/insight', '/sjfx/fshq', '/sjfx/zrsjg', '/sjfx/zcqxhdl', '/sjfx/zrxgx', '/sjfx/zrxgx2', '/sjfx/price-drivers', '/sjfx/actualLoad', '/sjfx/hydro', '/sjfx/singleZsjfx'],
+    routePaths: ['/insight/cockpit', '/sjfx/fshq', '/sjfx/zrsjg', '/sjfx/zcqxhdl', '/sjfx/zrxgx', '/sjfx/zrxgx2', '/sjfx/price-drivers', '/sjfx/actualLoad', '/sjfx/hydro', '/sjfx/singleZsjfx'],
     statusByRegion: {
       shanxi: 'available',
       yunnan: 'degraded',
@@ -234,6 +234,10 @@ export const regionModuleCapabilities: RegionModuleCapability[] = [
       { path: '/sjfx/zrxgx2', statusByRegion: { shanxi: 'available', yunnan: 'available' }, note: '已合并为价格驱动分析（dljy#3390）：路径保留 redirect 预选统调负荷驱动；relation_scatter 契约仍按此路径做请求能力门控。' },
       { path: '/sjfx/price-drivers', statusByRegion: { shanxi: 'available', yunnan: 'available' }, note: '价格驱动分析（dljy#3390）合并旧 zrxgx/zrxgx2：山西走 list24/fhlist24 回放，云南走 yn_system_forecast；山西专有参考线维度见 subCapabilities。' },
       { path: '/sjfx/actualLoad', statusByRegion: { shanxi: 'available', yunnan: 'available' }, note: '云南系统负荷实际值有真实支撑（单源版面：日均值、日内区间与峰谷差）。' },
+      // 云南水电分析（dljy#3389）：并入旧版体系的单页，仅云南登记。水电数据来自中广核渠道
+      //（公开曲线库止于 2026-08-17、获权两块止于 2026-08-21，采集断供见 #2368），页面按真实
+      // 覆盖诚实展示；其他地区无该能力，hidden = 菜单不出现且路由拦截（fail-closed 同口径）。
+      { path: '/sjfx/hydro', statusByRegion: { shanxi: 'hidden', yunnan: 'available', guangdong: 'hidden', sichuan: 'hidden' }, note: '云南水电分析（dljy#3389）经市场洞察接口取数（公开系统曲线 + 获权两分析）；水电来源为中广核渠道，仅云南开通，其余地区 hidden 不展示且路由拦截。' },
       { path: '/sjfx/singleZsjfx', statusByRegion: { shanxi: 'available', yunnan: 'available' }, note: 'zsjfx 索引已具备云南真实支撑。' },
       // dljy#2995 阶段 A：六条规范入口 /insight/<pageId>。路由层四地区一律放行（degraded 也是放行态），
       // 内容由工作区注册（src/services/region/insightWorkspace.ts）按当前地区决定：山西兼容登记
