@@ -25,7 +25,8 @@ vi.mock('@/services/company/companyContext', async () => {
   const { ref: vueRef } = await import('vue')
   const selectedCompanyId = vueRef('comp-a')
   ;(hoisted as { companyRef?: typeof selectedCompanyId }).companyRef = selectedCompanyId
-  return { selectedCompanyId }
+  // 导引入口（GuideLauncher → availability）读 canSwitchCompany；入口本身被 STUBS 掉，这里只保证 import 不缺导出。
+  return { selectedCompanyId, canSwitchCompany: () => true }
 })
 vi.mock('@/services/region/regionContext', async () => {
   const { ref: vueRef } = await import('vue')
@@ -52,6 +53,7 @@ const STUBS = {
   MidlongContractFormDialog: { template: '<div />' },
   MidlongImportDialog: { template: '<div />' },
   MidlongSubjectDialog: { template: '<div />' },
+  GuideLauncher: { template: '<div />' },
   'router-link': { template: '<a><slot /></a>' },
 }
 
