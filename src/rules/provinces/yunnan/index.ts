@@ -67,8 +67,8 @@ export const yunnanSubjectFocus: SubjectRuleFocus[] = [
     keyConcerns: ['统调负荷预测', '新能源出力预测', '水电水库约束', '节点电价与统一结算价差异', '日前/实时价差和偏差成本'],
     recommendedRoutes: [
       { title: 'ML 预测工作台', path: '/ycsj/workbench', reason: '管理价格、负荷和新能源预测模型' },
-      { title: '价格与新能源关系', path: '/sjfx/zrxgx', reason: '观察新能源出力对价格的影响' },
-      { title: '价格与统调负荷关系', path: '/sjfx/zrxgx2', reason: '观察负荷变化对现货价格的影响' }
+      // dljy#3390：旧「价格与新能源关系」「价格与统调负荷关系」两页合并为价格驱动分析。
+      { title: '价格驱动分析', path: '/sjfx/price-drivers', reason: '观察新能源出力与统调负荷对价格的影响' }
     ],
     riskWarnings: ['统一结算价和节点价不能混作同一训练标签', '云南水电主导特性会让通用国网省份模型失真', '行业转载连续结算参数不能直接固化到模型'],
     ruleReferences: ['云南现货电能量交易实施细则（征求意见稿）', '云南电力现货市场运行情况分析官方动态']
