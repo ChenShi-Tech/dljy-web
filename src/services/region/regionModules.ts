@@ -232,7 +232,7 @@ export const regionModuleCapabilities: RegionModuleCapability[] = [
       { path: '/sjfx/zcqxhdl', statusByRegion: { shanxi: 'available', yunnan: 'degraded' }, note: '云南出清电量页已停用（dljy#2991）：__list__ 为山西公司私有清单，云南无全省出清清单来源；页面显示停用说明，不跨地区读取。' },
       { path: '/sjfx/zrxgx', statusByRegion: { shanxi: 'available', yunnan: 'available' }, note: '同页关系图可走云南 yn_system_forecast 口径；山西专有维度见 subCapabilities。' },
       { path: '/sjfx/zrxgx2', statusByRegion: { shanxi: 'available', yunnan: 'available' }, note: '统调负荷关系图可走云南系统预测/实际长表口径。' },
-      { path: '/sjfx/actualLoad', statusByRegion: { shanxi: 'available', yunnan: 'available' }, note: '云南系统负荷实际值有真实支撑；错位负荷是山西交易平台特有统计，云南无此口径（dljy#3379）。' },
+      { path: '/sjfx/actualLoad', statusByRegion: { shanxi: 'available', yunnan: 'available' }, note: '云南系统负荷实际值有真实支撑（单源版面：日均值、日内区间与峰谷差）。' },
       // 云南水电分析（dljy#3389）：并入旧版体系的单页，仅云南登记。水电数据来自中广核渠道
       //（公开曲线库止于 2026-08-17、获权两块止于 2026-08-21，采集断供见 #2368），页面按真实
       // 覆盖诚实展示；其他地区无该能力，hidden = 菜单不出现且路由拦截（fail-closed 同口径）。
