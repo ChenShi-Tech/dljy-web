@@ -459,7 +459,7 @@ onMounted(refreshData)
   margin: 0 0 12px;
   text-align: center;
   color: var(--el-text-color-secondary, #909399);
-  font-size: 13px;
+  font-size: var(--font-sm);
 }
 
 .panel-title.compact {
