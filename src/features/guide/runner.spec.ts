@@ -44,7 +44,11 @@ vi.mock('@/services/region/regionContext', async () => {
 })
 
 vi.mock('@/services/company/practiceSpace', () => ({
-  enterPracticeSpace: vi.fn(async () => ({ practiceCompanyId: 'c-practice', originCompanyId: 'c-origin' })),
+  enterPracticeSpace: vi.fn(async () => ({
+    practiceCompanyId: 'c-practice',
+    originCompanyId: 'c-origin',
+    result: { stations: [{ id: 901, regionId: 'yunnan' }, { id: 902, regionId: 'yunnan' }, { id: 903, regionId: 'shanxi' }] },
+  })),
   exitPracticeSpace: vi.fn(async () => {}),
 }))
 
@@ -249,6 +253,8 @@ describe('自动暂停与恢复', () => {
 
     await enterGuidePracticeSpace()
     expect(guideSession.value?.practiceCompanyId).toBe('c-practice')
+    // 练习场站只取开通接口返回的本地区场站（不从页面快照取来源公司的真实场站）。
+    expect(guideSession.value?.artifacts.practiceStationIds).toEqual([901, 902])
     selected.value = 'c-other'
     await sleep(20)
     expect(currentStatus()).toBe('paused')

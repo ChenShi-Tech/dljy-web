@@ -2,7 +2,7 @@
 // 叶子纪律：运行时只 import vue（类型 import 编译后消失），不碰 companyContext / router
 // 等业务模块——否则任何局部 mock 这些模块的 spec 都会连坐挂掉。
 // 页面侧：useGuideForm / useGuideState / emitGuideSignal；运行器侧：read*/fill*/signal 订阅。
-import { getCurrentInstance, onMounted, onUnmounted } from 'vue'
+import { getCurrentInstance, onMounted, onUnmounted, shallowRef } from 'vue'
 
 export type GuideFormAdapter = {
   read(): Record<string, unknown>
@@ -23,6 +23,14 @@ type FormEntry = {
 const forms = new Map<string, Set<FormEntry>>()
 const states = new Map<string, { snapshot: () => object | null; token: object }>()
 const signals = new Map<string, Set<(payload: unknown) => void>>()
+
+// 登记表的变更版本号（响应式）：表单 / 状态的登记与注销都会递增它，read* 在 watch getter 里先读它建立依赖。
+// 登记表本身是普通 Map，不带版本号时，推进条件若先于页面登记挂上（如「带我去」月度持仓，页面随后才挂载），
+// watch 永远感知不到后来的登记，这一步就停住不动（实机走查踩到过）。
+const registryVersion = shallowRef(0)
+const bumpRegistry = (): void => {
+  registryVersion.value += 1
+}
 
 function isAdapter(source: GuideFormSource): source is GuideFormAdapter {
   return typeof (source as GuideFormAdapter).read === 'function'
@@ -57,10 +65,12 @@ export function registerGuideForm(key: string, source: GuideFormSource, active?:
   }
   const entry = toEntry(source, active)
   set.add(entry)
+  bumpRegistry()
   const setRef = set
   return () => {
     setRef.delete(entry)
     if (setRef.size === 0) forms.delete(key)
+    bumpRegistry()
   }
 }
 
@@ -76,6 +86,7 @@ function activeForm(key: string): FormEntry | null {
 
 /** 读表单当前值（在 watch getter 里调用可追踪 reactive 变化）；无生效表单返回 null。 */
 export function readGuideForm(key: string): Record<string, unknown> | null {
+  void registryVersion.value
   return activeForm(key)?.read() ?? null
 }
 
@@ -113,10 +124,16 @@ export function useGuideForm(key: string, source: GuideFormSource, opts?: { acti
 /** 页面服务端状态快照登记：刷新后运行器靠它按真实数据找回进度；返回注销函数（只清自己）。 */
 export function useGuideState(key: string, snapshot: () => object | null): () => void {
   const token = {}
-  const put = () => states.set(key, { snapshot, token })
+  const put = () => {
+    states.set(key, { snapshot, token })
+    bumpRegistry()
+  }
   const dispose = () => {
     // 只清自己：被后来的注册覆盖时不删别人的。
-    if (states.get(key)?.token === token) states.delete(key)
+    if (states.get(key)?.token === token) {
+      states.delete(key)
+      bumpRegistry()
+    }
   }
   if (getCurrentInstance()) {
     onMounted(put)
@@ -129,6 +146,7 @@ export function useGuideState(key: string, snapshot: () => object | null): () =>
 
 /** 读状态快照（watch getter 里调用可追踪）；未登记返回 null。 */
 export function readGuideState(key: string): object | null {
+  void registryVersion.value
   return states.get(key)?.snapshot() ?? null
 }
 

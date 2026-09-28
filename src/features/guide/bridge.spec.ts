@@ -4,7 +4,7 @@
 // 坏掉的症状：KeepAlive 下列表页与详情页并存时，一个页面卸载把另一个页面同 key 的
 // 表单一起注销掉，「帮我填」从此失效；或信号回调互相覆盖丢事件。
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { reactive } from 'vue'
+import { nextTick, reactive, ref, watch } from 'vue'
 import {
   emitGuideSignal, fillGuideForm, onGuideSignal, readGuideForm, readGuideState, registerGuideForm,
   resetGuideBridge, submitGuideForm, useGuideState,
@@ -59,6 +59,30 @@ describe('状态快照注册', () => {
     // second 注销后没有注册者了：first 已被覆盖，不应残留误删 / 误还原。
     disposeSecond()
     expect(readGuideState('s')).toBeNull()
+  })
+})
+
+describe('登记表响应式（推进条件先挂、页面后登记）', () => {
+  it('watch 先于 useGuideState 登记挂上：页面登记后与状态变化都能被感知', async () => {
+    const seen: Array<object | null> = []
+    const stop = watch(() => readGuideState('late'), (v) => { seen.push(v) })
+    const months = ref<string[]>([])
+    useGuideState('late', () => ({ months: months.value }))
+    await nextTick()
+    expect(seen.at(-1)).toEqual({ months: [] })
+    months.value = ['2026-10']
+    await nextTick()
+    expect(seen.at(-1)).toEqual({ months: ['2026-10'] })
+    stop()
+  })
+
+  it('watch 先于表单登记挂上：表单登记后能读到值', async () => {
+    const seen: Array<Record<string, unknown> | null> = []
+    const stop = watch(() => readGuideForm('lateForm'), (v) => { seen.push(v) })
+    registerGuideForm('lateForm', reactive({ subjectKey: 'X' }))
+    await nextTick()
+    expect(seen.at(-1)).toEqual({ subjectKey: 'X' })
+    stop()
   })
 })
 

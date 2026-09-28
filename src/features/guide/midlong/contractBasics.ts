@@ -14,6 +14,11 @@ import { makeRunTag } from './examples'
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
 
+// 练习数据的来源命名空间须以 TEST 开头（示例值 TEST-GUIDE）：列表与详情据此标「教学演示」。
+// 不能只判非空——来源输入框默认就是 MANUAL，只判非空这一步会在用户看到之前自动跳过（实机走查踩到过）。
+const practiceSource = (value: unknown): boolean => /^TEST/i.test(String(value ?? '').trim())
+const PRACTICE_SOURCE_HINT = '来源改为 TEST-GUIDE'
+
 // ---- 列表页状态快照的形状（MidlongContractsView 经 useGuideState 提供）----
 
 type ContractsSnapshot = {
@@ -50,12 +55,6 @@ function positionsSnapshot(): PositionsSnapshot | null {
 
 // ---- capture：从推进 payload（信号 / 路由 / 状态快照）里记产物 ----
 
-function capturePracticeStations(payload: unknown, ctx: GuideCtx): void {
-  const snap = payload as ContractsSnapshot | null
-  const ids = (snap?.stations ?? []).map((s) => s.id).slice(0, 2)
-  if (ids.length) ctx.artifacts[ARTIFACT.practiceStationIds] = ids
-}
-
 function captureSubjectId(payload: unknown, ctx: GuideCtx): void {
   const p = payload as { id?: number; subjects?: Array<{ id: number; subjectKey: string }> } | null
   if (typeof p?.id === 'number') {
@@ -80,11 +79,11 @@ function captureContractId(artifactKey: string): (payload: unknown, ctx: GuideCt
 
 // ---- recover：刷新后按服务端状态找回（返回 true = 这一步已完成）----
 
-const recoverPractice = (ctx: GuideCtx): boolean => {
+// 练习场站 id 由 enterGuidePracticeSpace 从开通接口返回里写入会话产物，这里不从页面快照取
+// （切公司瞬间快照还是来源公司的真实场站）。
+const recoverPractice = (): boolean => {
   const snap = contractsSnapshot()
-  if (!snap?.practiceActive || !snap.canWrite) return false
-  capturePracticeStations(snap, ctx)
-  return true
+  return !!snap?.practiceActive && !!snap.canWrite
 }
 
 function findSubjectId(ctx: GuideCtx): number | null {
@@ -169,7 +168,6 @@ const steps: GuideStep[] = [
       return !!s?.practiceActive && !!s.canWrite
     } },
     assist: { kind: 'action', label: '进入练习空间并开始', run: () => enterGuidePracticeSpace() },
-    capture: capturePracticeStations,
     recover: recoverPractice,
   },
   {
@@ -191,7 +189,7 @@ const steps: GuideStep[] = [
     recover: recoverSubjectChapter,
   },
   {
-    id: '1-1', chapter: 1, target: ANCHOR.subjectKey, within: 'dialog',
+    id: '1-1', chapter: 1, target: ANCHOR.subjectKey, within: 'dialog', resumeTo: '1-0',
     title: '主体编码',
     body: '主体编码在公司内唯一，是合同的关联键；展示名不作唯一键。填一个自己能认出来的编码即可。',
     advance: { kind: 'form', form: FORM.subject, settleMs: 800, done: (v) => nonEmpty(v.subjectKey), missing: (v) => (nonEmpty(v.subjectKey) ? [] : ['主体编码']) },
@@ -199,7 +197,7 @@ const steps: GuideStep[] = [
     recover: recoverSubjectChapter,
   },
   {
-    id: '1-2', chapter: 1, target: ANCHOR.subjectName, within: 'dialog',
+    id: '1-2', chapter: 1, target: ANCHOR.subjectName, within: 'dialog', resumeTo: '1-0',
     title: '主体名称',
     body: (ctx) => `展示名称，给人看的。例如「【教学演示】交易单元 ${tagClock(ctx.runTag)}」。`,
     advance: { kind: 'form', form: FORM.subject, settleMs: 800, done: (v) => nonEmpty(v.displayName), missing: (v) => (nonEmpty(v.displayName) ? [] : ['主体名称']) },
@@ -207,7 +205,7 @@ const steps: GuideStep[] = [
     recover: recoverSubjectChapter,
   },
   {
-    id: '1-3', chapter: 1, target: ANCHOR.subjectStations, within: 'dialog', placement: 'right', optional: true,
+    id: '1-3', chapter: 1, target: ANCHOR.subjectStations, within: 'dialog', resumeTo: '1-0', placement: 'right', optional: true,
     title: '关联场站（可选）',
     body: '把主体关联到练习公司开通的两个练习场站。场站须属本公司且登记为云南；不关联也不影响本导引。',
     advance: { kind: 'form', form: FORM.subject, settleMs: 0, done: (v) => Array.isArray(v.stationIds) && v.stationIds.length > 0 },
@@ -215,7 +213,7 @@ const steps: GuideStep[] = [
     recover: recoverSubjectChapter,
   },
   {
-    id: '1-4', chapter: 1, target: ANCHOR.subjectSubmit, within: 'dialog', placement: 'bottom',
+    id: '1-4', chapter: 1, target: ANCHOR.subjectSubmit, within: 'dialog', resumeTo: '1-0', placement: 'bottom',
     title: '登记主体',
     body: '交易单元代码可以留空（不虚构官方编码），系统只提示不阻断。点「登记主体」保存；编码冲突（409）时换个编码重试即可。',
     advance: {
@@ -230,7 +228,7 @@ const steps: GuideStep[] = [
     recover: recoverSubjectChapter,
   },
   {
-    id: '1-5', chapter: 1, target: ANCHOR.subjectClose, within: 'dialog', placement: 'bottom',
+    id: '1-5', chapter: 1, target: ANCHOR.subjectClose, within: 'dialog', resumeTo: '1-0', placement: 'bottom',
     title: '关闭对话框',
     body: '主体已建好。关闭对话框回到合同列表。',
     advance: { kind: 'hidden', target: ANCHOR.subjectClose, within: 'dialog' },
@@ -249,7 +247,7 @@ const steps: GuideStep[] = [
     recover: recoverFrameworkChapter,
   },
   {
-    id: '2-1', chapter: 2, target: ANCHOR.contractDocKind, within: 'dialog', placement: 'right',
+    id: '2-1', chapter: 2, target: ANCHOR.contractDocKind, within: 'dialog', resumeTo: '2-0', placement: 'right',
     title: '文件类型：框架协议',
     body: '把文件类型切成「框架协议」。框架协议不计入月度持仓，也不要求经济内容。',
     advance: { kind: 'form', form: FORM.contractCreate, settleMs: 0, done: (v) => v.documentKind === 'FRAMEWORK' },
@@ -257,7 +255,7 @@ const steps: GuideStep[] = [
     recover: recoverFrameworkChapter,
   },
   {
-    id: '2-2', chapter: 2, target: ANCHOR.contractNo, within: 'dialog',
+    id: '2-2', chapter: 2, target: ANCHOR.contractNo, within: 'dialog', resumeTo: '2-0',
     title: '合同编号与名称',
     body: '编号在同一个来源命名空间内唯一。框架协议与后面的电量合同是两份合同，编号要错开。',
     advance: { kind: 'form', form: FORM.contractCreate, settleMs: 800, done: (v) => nonEmpty(v.externalContractNo) && nonEmpty(v.contractName), missing: (v) => [nonEmpty(v.externalContractNo) ? '' : '合同编号', nonEmpty(v.contractName) ? '' : '合同名称'].filter(Boolean) },
@@ -268,15 +266,15 @@ const steps: GuideStep[] = [
     recover: recoverFrameworkChapter,
   },
   {
-    id: '2-3', chapter: 2, target: ANCHOR.contractSource, within: 'dialog',
+    id: '2-3', chapter: 2, target: ANCHOR.contractSource, within: 'dialog', resumeTo: '2-0',
     title: '来源命名空间',
-    body: '来源决定编号的唯一性范围。用 TEST-GUIDE 时列表会显示「教学演示」标记；用其它非 TEST 开头的来源也没问题，只是不会有标记。',
-    advance: { kind: 'form', form: FORM.contractCreate, settleMs: 800, done: (v) => nonEmpty(v.sourceNamespace), missing: (v) => (nonEmpty(v.sourceNamespace) ? [] : ['来源命名空间']) },
+    body: '来源决定编号的唯一性范围（默认 MANUAL）。练习数据请把它改成 TEST-GUIDE，列表与详情会标「教学演示」，和正式合同一眼区分。',
+    advance: { kind: 'form', form: FORM.contractCreate, settleMs: 800, done: (v) => practiceSource(v.sourceNamespace), missing: (v) => (practiceSource(v.sourceNamespace) ? [] : [PRACTICE_SOURCE_HINT]) },
     assist: { kind: 'fill', form: FORM.contractCreate, values: (ctx, current) => ({ sourceNamespace: frameworkExample(ctx, current).sourceNamespace }) },
     recover: recoverFrameworkChapter,
   },
   {
-    id: '2-4', chapter: 2, target: ANCHOR.contractSubject, within: 'dialog', placement: 'right',
+    id: '2-4', chapter: 2, target: ANCHOR.contractSubject, within: 'dialog', resumeTo: '2-0', placement: 'right',
     title: '选择交易主体',
     body: '选刚登记的那个主体。下拉按名称展示，编码在旁边。',
     advance: { kind: 'form', form: FORM.contractCreate, settleMs: 0, done: (v) => v.subjectId !== null && v.subjectId !== undefined && v.subjectId !== '' },
@@ -284,7 +282,7 @@ const steps: GuideStep[] = [
     recover: recoverFrameworkChapter,
   },
   {
-    id: '2-5', chapter: 2, target: ANCHOR.contractSubmit, within: 'dialog', placement: 'bottom',
+    id: '2-5', chapter: 2, target: ANCHOR.contractSubmit, within: 'dialog', resumeTo: '2-0', placement: 'bottom',
     title: '保存框架协议',
     body: '保存后是草稿状态。框架协议不需要经济内容，直接保存即可；编号冲突（409）时点「帮我填」会换一个编号后缀。',
     advance: {
@@ -325,21 +323,18 @@ const steps: GuideStep[] = [
     recover: recoverObligationChapter,
   },
   {
-    id: '3-1', chapter: 3, target: ANCHOR.contractProductKind, within: 'dialog', placement: 'right',
+    id: '3-1', chapter: 3, target: ANCHOR.contractProductKind, within: 'dialog', resumeTo: '3-0', placement: 'right',
     title: '品种周期与分类',
-    body: '品种周期、交易方式、电能属性是三个独立分类：年度双边常规电能是默认组合，直接认可即可。',
-    advance: { kind: 'form', form: FORM.contractCreate, settleMs: 0, done: (v) => v.documentKind === 'OBLIGATION' && nonEmpty(v.productKind) && nonEmpty(v.tradeMethod) && nonEmpty(v.energyAttribute) },
-    assist: { kind: 'fill', form: FORM.contractCreate, values: (ctx, current) => {
-      const example = obligationExample(ctx, current)
-      return { documentKind: example.documentKind, productKind: example.productKind, tradeMethod: example.tradeMethod, marketScope: example.marketScope, energyAttribute: example.energyAttribute }
-    } },
+    body: '品种周期、交易方式、电能属性是三个独立分类：年度双边常规电能是默认组合，直接认可即可。看完点「下一步」。',
+    // 讲解型步骤用手动推进：默认值本身就合法，按表单条件推进会在用户看到这张卡之前就自动跳过（实机走查踩到过）。
+    advance: { kind: 'manual' },
     recover: recoverObligationChapter,
   },
   {
-    id: '3-2', chapter: 3, target: ANCHOR.contractNo, within: 'dialog',
+    id: '3-2', chapter: 3, target: ANCHOR.contractNo, within: 'dialog', resumeTo: '3-0',
     title: '编号 / 名称 / 来源',
-    body: '同一份来源命名空间里编号唯一；电量合同用 -01 结尾与框架协议错开。',
-    advance: { kind: 'form', form: FORM.contractCreate, settleMs: 800, done: (v) => nonEmpty(v.externalContractNo) && nonEmpty(v.contractName) && nonEmpty(v.sourceNamespace), missing: (v) => [nonEmpty(v.externalContractNo) ? '' : '合同编号', nonEmpty(v.contractName) ? '' : '合同名称', nonEmpty(v.sourceNamespace) ? '' : '来源命名空间'].filter(Boolean) },
+    body: '同一份来源命名空间里编号唯一；电量合同用 -01 结尾与框架协议错开。来源同样改成 TEST-GUIDE。',
+    advance: { kind: 'form', form: FORM.contractCreate, settleMs: 800, done: (v) => nonEmpty(v.externalContractNo) && nonEmpty(v.contractName) && practiceSource(v.sourceNamespace), missing: (v) => [nonEmpty(v.externalContractNo) ? '' : '合同编号', nonEmpty(v.contractName) ? '' : '合同名称', practiceSource(v.sourceNamespace) ? '' : PRACTICE_SOURCE_HINT].filter(Boolean) },
     assist: { kind: 'fill', form: FORM.contractCreate, values: (ctx, current) => {
       const example = obligationExample(ctx, current)
       return { externalContractNo: example.externalContractNo, contractName: example.contractName, sourceNamespace: example.sourceNamespace }
@@ -347,7 +342,7 @@ const steps: GuideStep[] = [
     recover: recoverObligationChapter,
   },
   {
-    id: '3-3', chapter: 3, target: ANCHOR.contractSubject, within: 'dialog', placement: 'right',
+    id: '3-3', chapter: 3, target: ANCHOR.contractSubject, within: 'dialog', resumeTo: '3-0', placement: 'right',
     title: '交易主体与场站',
     body: '主体选同一个。场站可以留空：主体统签的合同先不落到具体场站，列表只提示「场站未分配」，不阻断。',
     advance: { kind: 'form', form: FORM.contractCreate, settleMs: 0, done: (v) => v.subjectId !== null && v.subjectId !== undefined && v.subjectId !== '' },
@@ -355,7 +350,7 @@ const steps: GuideStep[] = [
     recover: recoverObligationChapter,
   },
   {
-    id: '3-4', chapter: 3, target: ANCHOR.contractFramework, within: 'dialog', placement: 'right', optional: true,
+    id: '3-4', chapter: 3, target: ANCHOR.contractFramework, within: 'dialog', resumeTo: '3-0', placement: 'right', optional: true,
     title: '挂到框架协议（可选）',
     body: '所属框架协议选刚保存的那份，形成「框架 + 电量」的层级。也可以不挂（跳过），不影响后续步骤。',
     advance: { kind: 'form', form: FORM.contractCreate, settleMs: 0, done: (v, ctx) => v.frameworkContractId === ((ctx.artifacts[ARTIFACT.frameworkId] as number | undefined) ?? null) && v.frameworkContractId !== null },
@@ -363,7 +358,7 @@ const steps: GuideStep[] = [
     recover: recoverObligationChapter,
   },
   {
-    id: '3-5', chapter: 3, target: ANCHOR.econDeliveryStart, within: 'dialog', placement: 'right',
+    id: '3-5', chapter: 3, target: ANCHOR.econDeliveryStart, within: 'dialog', resumeTo: '3-0', placement: 'right',
     title: '交割期',
     body: (ctx) => {
       const [m1, , m3] = spreadMonthsFor(ctx)
@@ -374,7 +369,7 @@ const steps: GuideStep[] = [
     recover: recoverObligationChapter,
   },
   {
-    id: '3-6', chapter: 3, target: ANCHOR.econQuantity, within: 'dialog',
+    id: '3-6', chapter: 3, target: ANCHOR.econQuantity, within: 'dialog', resumeTo: '3-0',
     title: '电量与价格',
     body: '合同电量 1000 MWh、售电价 280 元/MWh、固定价、含税、电能量价。没填价格表示「待核对」，不是 0。',
     advance: { kind: 'form', form: FORM.contractCreate, settleMs: 800, done: (v) => nonEmpty(v.totalQuantity) && Array.isArray(v.econErrors) && v.econErrors.length === 0, missing: (v) => [nonEmpty(v.totalQuantity) ? '' : '合同电量', ...(Array.isArray(v.econErrors) && v.econErrors.length ? ['经济内容有校验错误'] : [])].filter(Boolean) },
@@ -382,7 +377,7 @@ const steps: GuideStep[] = [
     recover: recoverObligationChapter,
   },
   {
-    id: '3-7', chapter: 3, target: ANCHOR.econAlloc, within: 'dialog', placement: 'bottom',
+    id: '3-7', chapter: 3, target: ANCHOR.econAlloc, within: 'dialog', resumeTo: '3-0', placement: 'bottom',
     title: '月度分解',
     body: '不做均摊：分解必须与合同电量严格相等。三行 400 / 300 / 300（M+1/M+2/M+3）都用「正式依据」，并勾选「分解已完整」。',
     advance: { kind: 'form', form: FORM.contractCreate, settleMs: 0, done: (v) => v.allocationCompleteness === 'COMPLETE' },
@@ -390,7 +385,7 @@ const steps: GuideStep[] = [
     recover: recoverObligationChapter,
   },
   {
-    id: '3-8', chapter: 3, target: ANCHOR.contractSubmit, within: 'dialog', placement: 'bottom',
+    id: '3-8', chapter: 3, target: ANCHOR.contractSubmit, within: 'dialog', resumeTo: '3-0', placement: 'bottom',
     title: '保存电量合同',
     body: '下方校验框无红色错误时保存。保存后进入详情页，能看到阻断项只剩「缺核验依据」。',
     advance: {
@@ -422,15 +417,15 @@ const steps: GuideStep[] = [
     recover: recoverEvidenceAdded,
   },
   {
-    id: '4-2', chapter: 4, target: ANCHOR.evidenceType, within: 'dialog', placement: 'right',
+    id: '4-2', chapter: 4, target: ANCHOR.evidenceType, within: 'dialog', resumeTo: '4-1', placement: 'right',
     title: '资料类型',
-    body: '电子交易确认单、纸质合同、交易中心导出三类可以作核验依据；其它类型只作留档。',
-    advance: { kind: 'form', form: FORM.evidence, settleMs: 0, done: (v) => ['ELECTRONIC_CONFIRMATION', 'PAPER_CONTRACT', 'TRADING_CENTER_EXPORT'].includes(String(v.documentType)), missing: (v) => (['ELECTRONIC_CONFIRMATION', 'PAPER_CONTRACT', 'TRADING_CENTER_EXPORT'].includes(String(v.documentType)) ? [] : ['选择可作依据的资料类型']) },
-    assist: { kind: 'fill', form: FORM.evidence, values: () => ({ documentType: 'ELECTRONIC_CONFIRMATION' }) },
+    body: '电子交易确认单、纸质合同、交易中心导出三类可以作核验依据；其它类型只作留档。默认已选电子交易确认单，看完点「下一步」。',
+    // 默认值就是可作依据的类型，按表单条件推进会自动跳过这张讲解卡，改为手动推进。
+    advance: { kind: 'manual' },
     recover: recoverEvidenceAdded,
   },
   {
-    id: '4-3', chapter: 4, target: ANCHOR.evidenceFile, within: 'dialog',
+    id: '4-3', chapter: 4, target: ANCHOR.evidenceFile, within: 'dialog', resumeTo: '4-1',
     title: '上传文件',
     body: '选一个文件。点「帮我填」会生成一份教学示例文件，正文里明确写着「非真实依据」。',
     advance: { kind: 'form', form: FORM.evidence, settleMs: 0, done: (v) => v.file !== null && v.file !== undefined, missing: (v) => (v.file ? [] : ['选择依据文件']) },
@@ -438,7 +433,7 @@ const steps: GuideStep[] = [
     recover: recoverEvidenceAdded,
   },
   {
-    id: '4-4', chapter: 4, target: ANCHOR.evidenceSubmit, within: 'dialog', placement: 'bottom',
+    id: '4-4', chapter: 4, target: ANCHOR.evidenceSubmit, within: 'dialog', resumeTo: '4-1', placement: 'bottom',
     title: '提交资料',
     body: '补充资料不会改变合同电量，只是给核验提供凭证。',
     advance: {
@@ -460,7 +455,7 @@ const steps: GuideStep[] = [
     recover: recoverVerified,
   },
   {
-    id: '4-6', chapter: 4, target: ANCHOR.verifySubmit, within: 'dialog', placement: 'bottom',
+    id: '4-6', chapter: 4, target: ANCHOR.verifySubmit, within: 'dialog', resumeTo: '4-5', placement: 'bottom',
     title: '确认核验',
     body: '可作依据的资料默认全选。确认后合同进入「已确认」版本，之后只能录更正版本、不能覆盖。',
     advance: { kind: 'state', state: STATE.contractDetail, done: (snap) => (snap as DetailSnapshot | null)?.confirmationStatus === 'CONFIRMED' },

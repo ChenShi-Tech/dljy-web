@@ -75,8 +75,9 @@ export function watchAdvance(
       // 手动推进：卡片上的「下一步」按钮，无自动订阅。
       break
     case 'visible':
-      // 元素出现即推进（waitForGuideTarget 对已存在的目标立即 resolve）。
-      waitForGuideTarget(cond.target, { within: cond.within, signal: hooks.signal }).then(
+      // 元素出现即推进（waitForGuideTarget 对已存在的目标立即 resolve）。不设超时：用户可能读卡片
+      // 读很久才去点按钮，超时后放弃等待会让这一步永远不推进（实机走查踩到）；换步时由 signal 中止。
+      waitForGuideTarget(cond.target, { within: cond.within, timeoutMs: Number.POSITIVE_INFINITY, signal: hooks.signal }).then(
         () => fire(),
         () => {
           // 中止 / 环境异常：安静结束（换步由 runner 驱动）。

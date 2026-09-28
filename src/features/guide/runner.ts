@@ -23,6 +23,13 @@ export type GuideRouterLike = {
 export type GuideTargetResolver = typeof findGuideTarget
 export type GuideTargetWaiter = typeof waitForGuideTarget
 
+/**
+ * 练习空间里本地区练习场站的 id（会话产物键）。取自开通接口的返回——那是服务端按练习公司给出的权威清单；
+ * 不能从页面状态快照里取：切到练习公司的那一刻页面还没重新加载，快照里是来源公司的真实场站
+ * （实机走查里曾把中广核的两座真实电站填进练习主体的关联场站）。
+ */
+export const PRACTICE_STATIONS_ARTIFACT = 'practiceStationIds'
+
 export const guideSession = ref<GuideSession | null>(null)
 /** 「还差：xx」实时缺项（form 条件产出）。 */
 export const guideMissing = ref<string[]>([])
@@ -313,6 +320,10 @@ export async function enterGuidePracticeSpace(): Promise<void> {
   try {
     const result = await enterPracticeSpace({ module: 'midlong', regionId: session.regionId, seedStations: true })
     session.practiceCompanyId = result.practiceCompanyId
+    const stationIds = (result.result?.stations ?? [])
+      .filter((station) => String(station.regionId ?? '').toLowerCase() === session.regionId)
+      .map((station) => station.id)
+    session.artifacts[PRACTICE_STATIONS_ARTIFACT] = stationIds
     if (!session.originCompanyId) session.originCompanyId = result.originCompanyId
     if (ctx) ctx.practiceCompanyId = result.practiceCompanyId
     persist()

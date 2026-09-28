@@ -76,6 +76,7 @@ export const ARTIFACT = {
   subjectId: 'subjectId',
   frameworkId: 'frameworkId',
   obligationId: 'obligationId',
+  /** 与 runner 的 PRACTICE_STATIONS_ARTIFACT 同值：进入练习空间时由开通接口返回写入。 */
   practiceStationIds: 'practiceStationIds',
   /** 409 编码冲突时的重试次数（框架协议 / 电量合同各一份）。 */
   frameworkConflictAttempt: 'frameworkConflictAttempt',

@@ -65,14 +65,19 @@ export function findGuideTarget(name: string, within?: GuideWithin): HTMLElement
 
 export type WaitGuideTargetOptions = {
   within?: GuideWithin
+  /** 超时毫秒；传 Infinity 表示不超时、只在 signal 中止时结束（推进条件用）。默认 10000。 */
   timeoutMs?: number
   /** 换步时取消等待：AbortController 的 signal。 */
   signal?: AbortSignal
 }
 
+// 兜底轮询间隔：MutationObserver 覆盖不到的可见性变化（如祖先 display 由样式表切换）靠它补检查。
+const WAIT_POLL_MS = 400
+
 /**
  * 等目标元素出现（渲染 + 可见）。MutationObserver 观察 body 的结构/class/style/aria-hidden
- * 变化，rAF 合并检查；超时 reject；signal 中止 reject（AbortError）。
+ * 变化，rAF 合并同一帧内的多次变化；另有 400ms 慢速兜底轮询。没找到时**不**逐帧重查——
+ * 推进条件会无限期等待用户操作，逐帧空转会一直占 CPU。超时 reject；signal 中止 reject（AbortError）。
  */
 export function waitForGuideTarget(name: string, options?: WaitGuideTargetOptions): Promise<HTMLElement> {
   const within = options?.within
@@ -85,6 +90,7 @@ export function waitForGuideTarget(name: string, options?: WaitGuideTargetOption
     let frame = 0
     // node（spec）与浏览器 setTimeout 返回类型不同，用 ReturnType 归一。
     let timer: ReturnType<typeof setTimeout> | undefined
+    let poll: ReturnType<typeof setInterval> | undefined
     let settled = false
 
     const finish = (fn: () => void) => {
@@ -93,21 +99,25 @@ export function waitForGuideTarget(name: string, options?: WaitGuideTargetOption
       observer?.disconnect()
       if (frame) cancelAnimationFrame(frame)
       if (timer !== undefined) clearTimeout(timer)
+      if (poll !== undefined) clearInterval(poll)
       fn()
     }
 
     const check = () => {
       frame = 0
+      if (settled) return
       const el = findGuideTarget(name, within)
       if (el) finish(() => resolve(el))
-      else schedule()
     }
     const schedule = () => {
-      if (!settled) frame = requestAnimationFrame(check)
+      if (!settled && !frame) frame = requestAnimationFrame(check)
     }
 
     try {
-      timer = setTimeout(() => finish(() => reject(new Error(`guide target not found within ${timeoutMs}ms: ${name}`))), timeoutMs)
+      if (Number.isFinite(timeoutMs)) {
+        timer = setTimeout(() => finish(() => reject(new Error(`guide target not found within ${timeoutMs}ms: ${name}`))), timeoutMs)
+      }
+      poll = setInterval(check, WAIT_POLL_MS)
       observer = new MutationObserver(schedule)
       observer.observe(document.body, {
         childList: true,

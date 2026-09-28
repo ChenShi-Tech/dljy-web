@@ -3,7 +3,7 @@
 // page 目标优先页面内容区；不可见元素被过滤；waitForGuideTarget 超时 reject、元素后出现能等到。
 // 坏掉的症状：导引高亮框跳到上一次打开已缓存的旧对话框字段上；或对话框还没渲染完就
 // 判定 target-missing 让用户「跳到上一步」。
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { findGuideTarget, setGuideVisibilityCheck, waitForGuideTarget } from './targets'
 
 function anchor(name: string): HTMLElement {
@@ -94,5 +94,30 @@ describe('waitForGuideTarget', () => {
     setTimeout(() => document.body.appendChild(anchor('ml-late')), 30)
     const el = await pending
     expect(el.dataset.guide).toBe('ml-late')
+  })
+
+  it('timeoutMs: Infinity（推进条件）：等再久也不 reject，元素最终出现照样 resolve', async () => {
+    vi.useFakeTimers()
+    try {
+      setGuideVisibilityCheck(() => true)
+      let settled: 'resolved' | 'rejected' | null = null
+      const pending = waitForGuideTarget('ml-slow', { timeoutMs: Number.POSITIVE_INFINITY })
+      pending.then(() => { settled = 'resolved' }, () => { settled = 'rejected' })
+      await vi.advanceTimersByTimeAsync(60_000)
+      expect(settled).toBeNull()
+      document.body.appendChild(anchor('ml-slow'))
+      await vi.advanceTimersByTimeAsync(500)
+      expect(settled).toBe('resolved')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('中止信号结束无限期等待（换步时不泄漏观察者）', async () => {
+    setGuideVisibilityCheck(() => true)
+    const abort = new AbortController()
+    const pending = waitForGuideTarget('ml-never', { timeoutMs: Number.POSITIVE_INFINITY, signal: abort.signal })
+    abort.abort()
+    await expect(pending).rejects.toThrow(/aborted/)
   })
 })

@@ -46,7 +46,15 @@ export function useAnchoredPosition(
         const liveTarget = target.value
         const liveFloat = floating.value
         if (!liveTarget || !liveFloat) return
-        const middlewares: Middleware[] = [offset(options.value.offsetPx ?? 14), flip(), shift({ padding: 12 })]
+        // 目标很宽（如占满对话框的下拉框）时左右都放不下：flip 依次退到上下方；shift 两个轴都校正，
+        // 保证卡片始终完整留在视口里（实机走查里「关联场站」一步卡片曾大半截出屏幕）。
+        const preferred = options.value.placement
+        const fallbacks = (['bottom', 'top', 'right', 'left'] as const).filter((side) => side !== preferred)
+        const middlewares: Middleware[] = [
+          offset(options.value.offsetPx ?? 14),
+          flip({ fallbackPlacements: [...fallbacks] }),
+          shift({ padding: 12, crossAxis: true }),
+        ]
         if (arrowEl) middlewares.push(arrow({ element: arrowEl }))
         const state = await computePosition(liveTarget, liveFloat, {
           placement: options.value.placement as Placement,

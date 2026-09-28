@@ -22,6 +22,9 @@ const placement = computed<'top' | 'bottom' | 'left' | 'right'>(() => {
 })
 
 const { x, y, side } = useAnchoredPosition(targetElRef, cardRef, computed(() => ({ placement: placement.value })))
+// side 是卡片落在目标的哪一侧（bottom = 卡片在目标下方），箭头要长在卡片「朝向目标」的那条边上，即相反的一侧。
+const OPPOSITE_EDGE = { top: 'bottom', bottom: 'top', left: 'right', right: 'left' } as const
+const arrowEdge = computed(() => OPPOSITE_EDGE[side.value])
 
 const cardStyle = computed<CSSProperties>(() => {
   if (anchored.value) return { position: 'fixed', top: `${y.value}px`, left: `${x.value}px`, zIndex: props.zIndex }
@@ -88,7 +91,7 @@ const finishExit = (stay: boolean): void => {
     v-else-if="state?.step"
     ref="cardRef"
     class="guide-card"
-    :class="anchored ? `is-anchored arrow-${side}` : 'is-centered'"
+    :class="anchored ? `is-anchored arrow-edge-${arrowEdge}` : 'is-centered'"
     :style="cardStyle"
   >
     <span v-if="anchored" class="guide-arrow" data-guide-arrow />
@@ -186,32 +189,34 @@ const finishExit = (stay: boolean): void => {
   border: 1px solid var(--line);
 }
 
-.arrow-top .guide-arrow {
+/* 箭头按「长在卡片哪条边」命名；沿边方向的位置（left 或 top）由 floating-ui 的 arrow 中间件逐帧写入，
+   已按箭头宽度居中，这里只沿垂直于边的方向外移半个箭头，并只保留露在卡片外的两条边框。 */
+.arrow-edge-top .guide-arrow {
   top: 0;
-  border-top: none;
-  border-left: none;
-  transform: translate(-50%, -100%) rotate(45deg);
+  border-right: none;
+  border-bottom: none;
+  transform: translateY(-50%) rotate(45deg);
 }
 
-.arrow-bottom .guide-arrow {
+.arrow-edge-bottom .guide-arrow {
   bottom: 0;
-  border-bottom: none;
-  border-right: none;
-  transform: translate(-50%, 100%) rotate(45deg);
-}
-
-.arrow-left .guide-arrow {
-  left: 0;
-  border-bottom: none;
+  border-top: none;
   border-left: none;
-  transform: translate(-100%, -50%) rotate(45deg);
+  transform: translateY(50%) rotate(45deg);
 }
 
-.arrow-right .guide-arrow {
-  right: 0;
+.arrow-edge-left .guide-arrow {
+  left: 0;
   border-top: none;
   border-right: none;
-  transform: translate(100%, -50%) rotate(45deg);
+  transform: translateX(-50%) rotate(45deg);
+}
+
+.arrow-edge-right .guide-arrow {
+  right: 0;
+  border-bottom: none;
+  border-left: none;
+  transform: translateX(50%) rotate(45deg);
 }
 
 .guide-dock {
