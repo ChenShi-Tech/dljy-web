@@ -5,6 +5,7 @@ import { getCurrentUser, getToken } from '@/services/auth'
 import { canAccessPath, firstAccessiblePath, isPathAvailableInRegion } from '@/services/governance'
 import { getCurrentRegionSnapshot } from '@/services/region/regionContext'
 import type { InsightPageId } from '@/services/region/insightWorkspace'
+import { resolvePriceDriversRedirect } from './priceDriversRedirect'
 import { isMultiStance, activeStanceType, requiresStanceSelection } from '@/services/stance/stanceContext'
 import { isPathAvailableInStance } from '@/services/stance/stanceNavigation'
 
@@ -36,8 +37,8 @@ const dailySystemLoad = () => import('../views/DailySystemLoadView.vue')
 const elNinoLaNina = () => import('../views/ElNinoLaNinaView.vue')
 const dataAnalysis = () => import('../views/DataAnalysisView.vue')
 const clearingSpotAnalysis = () => import('../views/ClearingSpotAnalysisView.vue')
-const priceNewEnergyRelation = () => import('../views/PriceNewEnergyRelationView.vue')
-const priceLoadRelation = () => import('../views/PriceLoadRelationView.vue')
+// 价格驱动分析（dljy#3390）：合并旧「现货价格×新能源」与「现货价格×统调负荷」两页。
+const priceDrivers = () => import('../views/PriceDriversView.vue')
 const fshq = () => import('../views/FshqView.vue')
 const priceAnalysis = () => import('../views/PriceAnalysisView.vue')
 const solarTerms = () => import('../views/SolarTermsView.vue')
@@ -323,8 +324,14 @@ const router = createRouter({
         page('insight/research', 'InsightResearch', { block: '数据分析', title: '研究工作台', code: 'insight-research', endpoint: '地区工作区分发（src/services/region/insightWorkspace.ts 按当前地区解析）', dataPath: '由地区工作区注册决定', scope: '阶段A骨架:统一宿主路由;已交付地区渲染对应页面,未交付显示建设占位,未登记显示未开通', note: '权限等价旧入口 /sjfx/zrxgx、/sjfx/zrxgx2、/sjfx/singleZsjfx（governance.insightPathAccessAliases）', insightPageId: 'research' }, insightWorkspaceHost),
         page('sjfx/singleZsjfx', 'DataAnalysis', { block: '数据分析', title: '数据分析', code: 'singleZsjfx', endpoint: 'POST /sdpt/zsjfx/singleData', dataPath: 'sdpt_zsjfx', scope: '91天×全63类型，每天 dataMap.series 60×96点', kind: 'mixed', note: '含实际值也含预测序列；63类型见 itemConfig' }, dataAnalysis),
         page('sjfx/zcqxhdl', 'ClearingSpotAnalysis', { block: '数据分析', title: '出清现货电量分析', code: 'zcqxhdl', endpoint: 'POST /sdpt/zcqxhdl/list (宽范围)', dataPath: 'sdpt_zcqxhdl', scope: '10序列×~65天(4/1~6/4)', kind: 'real' }, clearingSpotAnalysis),
-        page('sjfx/zrxgx', 'PriceNewEnergyRelation', { block: '数据分析', title: '现货价格与新能源关系', code: 'zrxgx', endpoint: 'POST /sdpt/zcqxhdl/list24 (ts=回溯天数)', dataPath: 'sdpt_zcqxhdl', scope: '373天 2025-05~2026-06', kind: 'real', note: '{rqdj日前电价, xnyz/xnyg/xnyzd/xnygd, xd}' }, priceNewEnergyRelation),
-        page('sjfx/zrxgx2', 'PriceSystemLoadRelation', { block: '数据分析', title: '现货价格与统调负荷关系', code: 'zrxgx2', endpoint: 'POST /sdpt/zcqxhdl/fhlist24', dataPath: 'sdpt_zcqxhdl', scope: '373天', kind: 'real' }, priceLoadRelation),
+        // 价格驱动分析（dljy#3390）：旧 zrxgx/zrxgx2 两页合并为一页，驱动分段切换
+        // （新能源出力/统调负荷），同屏热力图 + 双驱动敏感度对比 + 单小时散点拟合。
+        page('sjfx/price-drivers', 'PriceDrivers', { block: '数据分析', title: '价格驱动分析', code: 'price-drivers', endpoint: 'POST /sdpt/zcqxhdl/list24 | fhlist24 (ts=回溯天数，按 driver 分发)', dataPath: 'sdpt_zcqxhdl', scope: '373天 2025-05~2026-06', kind: 'real', note: 'driver=renewable|load；云南走 yn_system_forecast 契约适配；旧地址 zrxgx/zrxgx2 redirect 预选驱动' }, priceDrivers),
+        // 旧两条关系页地址保留 redirect（dljy#3390 合并）：预选 driver 并透传 date/days/mode，
+        // 旧书签与分享链接不失效；view/cols 随散点矩阵删除不再适用。不进导航、不带 meta，
+        // 因此不会出现在 feature-map / manifest 的页面清单里。
+        { path: 'sjfx/zrxgx', redirect: (to) => resolvePriceDriversRedirect('renewable', to.query) },
+        { path: 'sjfx/zrxgx2', redirect: (to) => resolvePriceDriversRedirect('load', to.query) },
         // 市场经营分析页随 dljy#3391 下线（dljy#3394 删页面与融合台页签）：旧书签/深链重定向驾驶舱，不 404、不落占位页。
         { path: '/sjfx/market-ops', redirect: '/dashboard' },
         page('sjfx/fshq', 'TimeOfUseMarket', { block: '数据分析', title: '分时行情', code: 'fshq', endpoint: 'GET /sdpt/fshq/data?rqlx&bdrq&jyyf', dataPath: 'sdpt_fshq', scope: 'rqlx∈{0运行,1交易}×日期 2022-12~2026-06 (2563文件)', kind: 'real', note: 'jysd 参数后端忽略(无效维度)' }, fshq),

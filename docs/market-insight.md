@@ -95,3 +95,16 @@
 | `src/services/governance.insight-aliases.spec.ts` | 既有：规范入口权限等价（RW05 不扩权） |
 
 回退纪律（RW06）：云南工作区受 `VITE_YUNNAN_INSIGHT_WORKSPACE` 装配开关控制，关闭时云南按未开通处理、山西解析原样可用；矩阵用例对开关两种状态分别核对，回退云南界面装配不得改变山西或非洞察模块的任何行为。
+
+## 价格驱动分析页合并（dljy#3390）
+
+「现货价格×新能源」（`/sjfx/zrxgx`）与「现货价格×统调负荷」（`/sjfx/zrxgx2`）两页合并为一页 `/sjfx/price-drivers`「价格驱动分析」：同一份 `relation_scatter` 契约（`kind: renewable|load`），驱动分段切换，同屏呈现「小时×驱动量分档热力图 + 24 小时双驱动敏感度对比柱 + 点选联动的单小时散点拟合」。派生量（相关系数、逐时回归、敏感度、KPI 摘要）仍全部走纯计算层 `src/services/analysis/relationInsight.ts`，口径未随合并改动。
+
+- **跳转兼容**：两条旧地址保留 redirect（`src/router/priceDriversRedirect.ts`）——zrxgx 预选 `driver=renewable`、zrxgx2 预选 `driver=load`，透传 `date/days/mode` 白名单；旧页专属 `view/cols`（散点矩阵控件）已随矩阵删除而丢弃。
+- **数据来源**：山西走 `sdpt_zcqxhdl/list24` 与 `fhlist24` 回放；云南走 `yn_system_forecast` 真实长表经契约适配（xnyzd/xnyg/xnygd 为空数组 → 参考线自然不画）。
+- **山西参考线门控**：新能源驱动散点上的 xnyzd/xnyg/xnygd 参考竖线按 `regionModules` subCapabilities（`zrxgx.*`）判 `hidden` 才显示——云南对这三个维度登记 hidden，不硬造。
+- **降级语义**：另一驱动无权限不发请求、取数失败静默降级为只画当前驱动（整页不报错）；默认运行日按地区取最新有数日（山西 `captureCoverage` 静态表、云南 `fetchCaptureCoverage` 实时区间，取不到回退今天 + 空态说明）。
+- **授权按驱动因素**：合并页不单独授权，授权仍落在两个旧路径上（`governance.priceDriverAccessPaths`：zrxgx=新能源出力、zrxgx2=统调负荷）。合并页可访问 ⇔ 任一驱动可访问，页内驱动选项逐个按旧路径判定（`canAccessPriceDriver`）——如售电经理原本只有统调负荷，合并后仍只能选统调负荷。权限矩阵把合并页展开成「价格驱动分析 · 新能源出力 / · 统调负荷」两行，保存写回旧路径，避免保存后旧路径被清掉导致失权或扩权。
+- **页面整洁纪律**：不写系统生成结论句，口径说明一律「缩略标题 + el-tooltip 悬浮」。
+- **测试**：`src/views/PriceDriversView.component.spec.ts`（驱动切换重查、小时联动、对比柱降级、对比请求迟到不写回、默认日覆盖区间、无权限回落）+ `src/services/governance.price-drivers.spec.ts`（逐角色等价、单驱动角色、矩阵覆盖）+ `PermissionMatrixView.component.spec.ts`（保存写回旧路径）+ `src/router/priceDriversRedirect.spec.ts`（参数白名单与 driver 注入）；`relationInsight.spec.ts` 保持通过（计算口径未动）。
+
