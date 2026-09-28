@@ -51,3 +51,4 @@ npm run test:related -- src/foo.ts src/Bar.vue     # 自动运行相关测试
 ## 相关文档
 
 - [平台后台旧入口迁移清单](docs/platform-admin-entry-migration.md) —— 客户前端旧管理入口的逐项分类与迁移待批准清单（ChenShi-Tech/dljy#3161，任务 11.4）
+- [练习空间](docs/practice-space.md) —— 公司上下文钉住与顶栏徽标：练习公司口径、进入/退出、与四规则地区协调的关系（ChenShi-Tech/dljy#3403）

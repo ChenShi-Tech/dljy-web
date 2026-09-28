@@ -42,6 +42,8 @@ import { AiSidebar, AiOrbLauncher } from '@/features/aiSidebar'
 // import PriceTicker from '../components/PriceTicker.vue'
 import RegionSwitcher from '@/components/region/RegionSwitcher.vue'
 import RegionMigrationTip from '@/components/region/RegionMigrationTip.vue'
+import PracticeSpaceBadge from '@/components/company/PracticeSpaceBadge.vue'
+import { isPracticeCompanyOption } from '@/services/company/practiceCompany'
 import AlertCenter from '../components/AlertCenter.vue'
 import ThemeSwitcher from '../components/ThemeSwitcher.vue'
 import CommandPalette from '../components/CommandPalette.vue'
@@ -400,6 +402,7 @@ watch(
               </span>
             </el-option>
           </el-select>
+          <PracticeSpaceBadge />
           <el-select
             v-if="topbarCompanySwitchable"
             class="company-switcher"
@@ -419,6 +422,7 @@ watch(
               <span class="company-option">
                 <span>{{ company.name }}</span>
                 <el-tag v-if="company.tier === 'GROUP'" size="small" type="warning" effect="plain">集团</el-tag>
+                <el-tag v-else-if="isPracticeCompanyOption(company)" size="small" type="info" effect="plain">练习</el-tag>
               </span>
             </el-option>
           </el-select>

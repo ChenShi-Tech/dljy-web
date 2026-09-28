@@ -11,6 +11,7 @@ import {
   setCurrentCompanyId
 } from '@/services/company/companyContext'
 import { refreshCompanyOptions } from '@/services/company/companyApi'
+import { isPracticeCompanyOption } from '@/services/company/practiceCompany'
 
 const user = computed(() => getCurrentUser())
 const switchable = computed(() => canSwitchCompany(user.value))
@@ -39,7 +40,8 @@ function onSwitch(value: string) {
     <div class="scope-info">
       <span class="scope-label">当前公司</span>
       <strong class="scope-name">{{ currentCompany.name }}</strong>
-      <el-tag v-if="currentCompany.tier === 'GROUP'" size="small" type="warning" effect="plain">集团</el-tag>
+      <el-tag v-if="isPracticeCompanyOption(currentCompany)" size="small" type="warning" effect="plain">练习空间</el-tag>
+      <el-tag v-else-if="currentCompany.tier === 'GROUP'" size="small" type="warning" effect="plain">集团</el-tag>
       <el-tag v-else size="small" type="info" effect="plain">公司</el-tag>
     </div>
 
@@ -71,7 +73,8 @@ function onSwitch(value: string) {
 
     <div class="scope-note">
       <el-tag size="small" type="success" effect="plain">公司专属</el-tag>
-      <span>数据按公司隔离，仅本公司可见可改；电网侧公共数据另在各分析页共享。</span>
+      <span v-if="isPracticeCompanyOption(currentCompany)">练习空间（不计入集团汇总，数据不能删除）。</span>
+      <span v-else>数据按公司隔离，仅本公司可见可改；电网侧公共数据另在各分析页共享。</span>
     </div>
   </div>
 </template>

@@ -3,6 +3,7 @@ import { getCurrentUser } from '@/services/auth'
 import type { GovernanceUser } from '@/services/governance'
 import { selectedRegionId } from '@/services/region/regionContext'
 import { companyRegionId, regionHomeCompanyId } from '@/services/region/regionCompany'
+import { effectiveCompanyRegionId, registerPracticeCompanies } from '@/services/company/practiceCompany'
 
 // 公司（租户）上下文：仿 regionContext 的全局响应式当前公司。
 // - 普通公司用户：currentCompanyId 锁定为自身公司，切换被拒。
@@ -13,6 +14,9 @@ import { companyRegionId, regionHomeCompanyId } from '@/services/region/regionCo
 const storageKey = 'dljy.currentCompanyId'
 // 按地区键入「上次选择的公司」记忆（#668 规则 3）：切回某地区时优先复用用户在该地区的上次选择。
 const memoryKeyPrefix = 'dljy.companyByRegion.'
+// 练习空间钉住（#3403）：进入练习空间后把公司上下文钉在练习公司上，地区协调与授权集
+// 刷新都不得把用户切走，否则导引写的数据会落到错误公司。
+const pinStorageKey = 'dljy.companyPin'
 
 export type CompanyOption = {
   companyId: string
@@ -21,8 +25,77 @@ export type CompanyOption = {
   tier?: 'GROUP' | 'COMPANY' | string
   parentCompanyId?: string | null
   status?: string
+  /** 公司来源/用途标记（#3403）：练习公司为 'PRACTICE'（shared/company/practice-space.mjs）。 */
+  source?: string | null
   /** 公司注册立场（#2193）：交易中心登记的市场主体类型集合，立场切换授权的服务端权威。 */
   subjectTypes?: string[]
+}
+
+// 钉住记录：同用户 + 同练习公司 + 同地区才生效；originCompanyId 供「退出练习空间」切回来源。
+export type CompanySelectionPin = {
+  companyId: string
+  username: string
+  regionId: string
+  originCompanyId: string
+}
+
+function readStoredPin(): CompanySelectionPin | null {
+  try {
+    const raw = window.localStorage.getItem(pinStorageKey)
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as Partial<CompanySelectionPin>
+    if (!parsed.companyId || !parsed.username || !parsed.regionId || !parsed.originCompanyId) return null
+    return {
+      companyId: parsed.companyId,
+      username: parsed.username,
+      regionId: parsed.regionId,
+      originCompanyId: parsed.originCompanyId
+    }
+  } catch {
+    // 损坏 JSON / localStorage 不可用 → 视同无钉住，不阻塞启动。
+    return null
+  }
+}
+
+const companyPinState = ref<CompanySelectionPin | null>(readStoredPin())
+
+// 只读视图：练习空间入口（practiceSpace.ts）据此读取 originCompanyId 等信息。
+export const companyPin = computed(() => companyPinState.value)
+
+export function pinCompanySelection(pin: { companyId: string; regionId: string; originCompanyId: string }) {
+  const value: CompanySelectionPin = {
+    companyId: pin.companyId,
+    username: getCurrentUser()?.username ?? '',
+    regionId: pin.regionId,
+    originCompanyId: pin.originCompanyId
+  }
+  companyPinState.value = value
+  try {
+    window.localStorage.setItem(pinStorageKey, JSON.stringify(value))
+  } catch {
+    // localStorage 写入失败（隐私模式/配额）不影响内存钉住。
+  }
+}
+
+export function unpinCompanySelection() {
+  companyPinState.value = null
+  try {
+    window.localStorage.removeItem(pinStorageKey)
+  } catch {
+    // 同上，内存态已清除即可。
+  }
+}
+
+// 钉住是否「生效」：同用户 + 当前公司即钉住公司 + 当前地区即钉住地区。
+// 用户手动切走公司后钉住保留但失效（供「回到练习空间继续」），不再拦截协调。
+function pinnedCurrent(): boolean {
+  const pin = companyPinState.value
+  if (!pin) return false
+  return (
+    pin.username === (getCurrentUser()?.username ?? '') &&
+    currentCompanyId.value === pin.companyId &&
+    selectedRegionId.value === pin.regionId
+  )
 }
 
 const availableCompanies = ref<CompanyOption[]>([])
@@ -51,9 +124,10 @@ export const companyOptions = availableCompanies
 // 当前地区可选公司集：地区专属公司须属当前地区，杜绝「云南地区 +
 // 山西公司」的跨地区组合绕过空态隔离；GROUP 等无地区归属主体（dljy-demo）保留可选，
 // 集团汇总视角合法。切换器下拉与 setCurrentCompanyId 共用本口径。
+// 练习公司随上级公司的地区（#3403 · codex R1-02），只出现在上级所属地区的下拉里。
 export const selectableCompanies = computed(() =>
   availableCompanies.value.filter((company) => {
-    const region = companyRegionId(company.companyId)
+    const region = effectiveCompanyRegionId(company.companyId)
     return region === null || region === selectedRegionId.value
   })
 )
@@ -101,12 +175,14 @@ export function resolveCompanyForRegion(args: {
   rememberedCompanyId: string | null
 }): CompanyResolution {
   const { regionId, currentCompanyId: current, availableCompanies: available, rememberedCompanyId: remembered } = args
+  // 自动选择（规则 2/3）的候选只认静态地区表：练习公司不在表里，切地区时永远不会被自动选中。
   const regionAuthorized = available
     .map((company) => company.companyId)
     .filter((id) => companyRegionId(id) === regionId)
 
-  // 规则 1：当前公司属新地区且有授权 → 保持用户选择不覆盖。
-  if (current && companyRegionId(current) === regionId && regionAuthorized.includes(current)) {
+  // 规则 1：当前公司属新地区且有授权 → 保持用户选择不覆盖。「属新地区」按有效地区判断：
+  // 用户手动选中的练习公司随上级地区保持（#3403 · codex R1-02），不因不在静态表里被切走。
+  if (current && effectiveCompanyRegionId(current) === regionId && available.some((company) => company.companyId === current)) {
     return { companyId: current, reason: 'keep' }
   }
   // 规则 2：该地区仅一家授权公司 → 自动切换。
@@ -167,7 +243,7 @@ export function setCurrentCompanyId(id: string): boolean {
   if (availableCompanies.value.length && !availableCompanies.value.some((company) => company.companyId === id)) {
     return false
   }
-  const targetRegion = companyRegionId(id)
+  const targetRegion = effectiveCompanyRegionId(id)
   if (targetRegion !== null && targetRegion !== selectedRegionId.value) return false
   currentCompanyId.value = id
   rememberCompanyForRegion(selectedRegionId.value, id)
@@ -181,18 +257,29 @@ export function setCurrentCompanyId(id: string): boolean {
 // 公司，与 resolveCompanyForRegion 规则 1（只保持「属该地区」的公司）语义对齐，
 // 不把 null 地区归属当作任意地区兼容；集团汇总视角由各页面 scope=group 表达。
 export function setCompanyOptions(options: CompanyOption[]) {
+  // 先登记「练习公司 → 上级」对照，下面与各处的地区判定才认得出练习公司（#3403 · codex R1-02）。
+  registerPracticeCompanies(options)
   availableCompanies.value = options
+  // 练习空间钉住（#3403）：钉住生效且练习公司仍在授权集合 → 直接返回不协调，稳定停留在练习公司
+  // （上级无地区归属时练习公司也无地区，下方「保持」条件不成立，靠钉住留住）。
+  if (pinnedCurrent()) {
+    const pin = companyPinState.value!
+    if (options.some((company) => company.companyId === pin.companyId)) return
+    // 钉住公司已不在授权集合（授权被收回）→ 解除钉住，走常规协调。
+    unpinCompanySelection()
+  }
   const current = currentCompanyId.value
   if (
     current &&
     options.some((company) => company.companyId === current) &&
-    companyRegionId(current) === selectedRegionId.value
+    effectiveCompanyRegionId(current) === selectedRegionId.value
   ) return
   coordinateCompanyForRegion(selectedRegionId.value)
 }
 
-// 登录/切换账号后重置为该用户自身公司。
+// 登录/切换账号后重置为该用户自身公司（同时解除练习空间钉住——新会话不应继承旧钉住）。
 export function resetCompanyContextToHome() {
+  unpinCompanySelection()
   currentCompanyId.value = homeCompanyId()
 }
 
@@ -204,4 +291,9 @@ export function clearCompanySelection() {
 // 地区切换联动公司（#668）：切到某地区时按四规则决定公司上下文
 // 保持属该地区的当前授权公司 / 单家自动切 / 多家优先记忆后落默认 / 默认越权则空态。
 // 普通公司用户锁定自身公司（canSwitchCompany=false），coordinate 内部再兜底。
-watch(selectedRegionId, (regionId) => coordinateCompanyForRegion(regionId))
+// 练习空间钉住（#3403）：切到钉住地区且当前仍是练习公司 → 不协调（练习公司不在静态
+// 地区表，四规则必然把它顶掉）。
+watch(selectedRegionId, (regionId) => {
+  if (pinnedCurrent()) return
+  coordinateCompanyForRegion(regionId)
+})
