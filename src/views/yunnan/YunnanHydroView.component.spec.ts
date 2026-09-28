@@ -1,7 +1,7 @@
 // YunnanHydroView.component.spec.ts — 云南水电分析页回归（dljy#3389）
 // 守什么不变量：
 //   ① 获权两分析按能力目录判定：公共账号不渲染空框、不发获权请求，只留一个「需开通」短标签；
-//     获权账号见两卡，周出力区域默认只选「云南」，机组群未选不发请求、表格没有「上限」列；
+//     获权账号见两卡，周出力区域默认只选「云南」，机组群默认选中唯一的群（清空则不发请求）、表格没有「上限」列；
 //   ② 区域切换即重查：新请求携带新 objectIds；清空区域不发请求；
 //   ③ 缺值显示「—」不显示 0（指标卡按登记精度，极值带出现时段）；
 //   ④ 窗口变化作废旧结果：在途旧响应迟到也不写进新窗口状态；
@@ -394,7 +394,7 @@ describe('获权与公开两种渲染', () => {
     expect(chartSeriesOf(MAIN_TITLE).length).toBeGreaterThan(0)
   })
 
-  it('获权账号：两卡并排渲染，周出力默认只选「云南」并随首查发出；机组群未选不发请求', async () => {
+  it('获权账号：两卡并排渲染，周出力默认只选「云南」、机组群默认选中唯一的群，均随首查发出；清空机组群不再发请求', async () => {
     state.capabilities = caps(ENTITLED_CAPS)
     await mountPage()
 
@@ -403,19 +403,16 @@ describe('获权与公开两种渲染', () => {
     const weeklyCalls = queryCallsOf((request) => request.analysisId === HYDRO_WEEKLY)
     expect(weeklyCalls).toHaveLength(1)
     expect(weeklyCalls[0]![0]!.filters!.objectIds).toEqual(['云南'])
-    expect(queryCallsOf((request) => request.analysisId === HYDRO_GROUPS)).toHaveLength(0)
-    expect(wrapper!.text()).toContain('请选择机组群')
+    // 机组群数据基线只有一个群：默认选中它并随首查发出（不用人再去点）
+    const groupCalls = queryCallsOf((request) => request.analysisId === HYDRO_GROUPS)
+    expect(groupCalls).toHaveLength(1)
+    expect(groupCalls[0]![0]!.filters!.objectIds).toEqual(['31 家水电'])
+    expect(unitGroupSelect().props('modelValue')).toBe('31 家水电')
     // 两项都有权：不出现「需开通」标签
     expect(wrapper!.find('[data-testid="ynh-entitlement-tag"]').exists()).toBe(false)
 
     const picker = wrapper!.getComponent('[data-testid="ynh-hydro-regions"]') as unknown as VueWrapper<any>
     expect(picker.props('modelValue')).toEqual(['云南'])
-
-    unitGroupSelect().vm.$emit('update:modelValue', '31 家水电')
-    await flushPromises()
-    const groupCalls = queryCallsOf((request) => request.analysisId === HYDRO_GROUPS)
-    expect(groupCalls).toHaveLength(1)
-    expect(groupCalls[0]![0]!.filters!.objectIds).toEqual(['31 家水电'])
     // 表格没有「上限」字样的列（来源只披露组成与占比）
     const labels = wrapper!
       .findAllComponents({ name: 'ElTableColumn' })
@@ -423,6 +420,12 @@ describe('获权与公开两种渲染', () => {
     expect(labels).toContain('出力占比（%）')
     expect(labels.filter((label) => label.includes('上限'))).toHaveLength(0)
     expect(wrapper!.text()).toContain('某水电厂')
+
+    // 清空机组群：不再发请求，显示选择提示
+    unitGroupSelect().vm.$emit('update:modelValue', '')
+    await flushPromises()
+    expect(queryCallsOf((request) => request.analysisId === HYDRO_GROUPS)).toHaveLength(1)
+    expect(wrapper!.text()).toContain('请选择机组群')
   })
 
   it('部分获权（只有机组群）：只渲染该卡，仍保留一个「需开通」标签', async () => {

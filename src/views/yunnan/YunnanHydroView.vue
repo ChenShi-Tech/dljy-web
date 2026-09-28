@@ -18,7 +18,7 @@ import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { Info } from 'lucide-vue-next'
 import { getInsightAnalysis } from 'shared/insight/analyses.mjs'
 import { formatMetricValue } from 'shared/insight/metrics.mjs'
-import type { InsightContextInput } from 'shared/insight/contract.mjs'
+import { compareText, type InsightContextInput } from 'shared/insight/contract.mjs'
 import {
   fetchInsightCapabilities,
   queryInsight,
@@ -169,8 +169,8 @@ const viewStates = reactive<Record<QueryName, ViewState>>({
 
 /** 水电周出力的区域选择：默认只选「云南」，区域分列不相加。 */
 const hydroRegions = ref<string[]>(['云南'])
-/** 机组群选择：默认不选，未选不发请求。 */
-const unitGroupChoice = ref('')
+/** 机组群选择：数据基线只有一个群，默认选中它（获权才会发请求）；清空后不发请求。 */
+const unitGroupChoice = ref(UNIT_GROUP_OPTIONS[0]?.id ?? '')
 
 function queryKeyOf(name: QueryName): string {
   if (name === 'hydro-weekly') return ['hydro-weekly', ctx.contextVersion.value, hydroRegions.value.join(',')].join('|')
@@ -443,7 +443,8 @@ const unitGroupRows = computed(() => {
       }
     })
     .filter((row): row is { date: string; plant: string; unit: string; shareText: string; raw: string } => row !== null)
-    .sort((a, b) => a.raw.localeCompare(b.raw) || a.plant.localeCompare(b.plant) || a.unit.localeCompare(b.unit))
+    // 用码位比较而非 localeCompare：后者随运行环境语言区域变化，排序不稳定。
+    .sort((a, b) => compareText(a.raw, b.raw) || compareText(a.plant, b.plant) || compareText(a.unit, b.unit))
 })
 
 // ── 证据抽屉与历史候选 ───────────────────────────────────────────────────────────────────
