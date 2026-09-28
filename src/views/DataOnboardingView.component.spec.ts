@@ -56,6 +56,8 @@ const card = (wrapper: Awaited<ReturnType<typeof mountView>>, key: string) => wr
 const stepStates = (wrapper: Awaited<ReturnType<typeof mountView>>, key: string) =>
   card(wrapper, key).findAll('.step').map((s) => (s.classes().includes('done') ? 'done' : 'pending'))
 const catalogCalls = () => apiGet.mock.calls.filter(([p]) => p === '/api/v1/governance/catalog').length
+const refreshButton = (wrapper: Awaited<ReturnType<typeof mountView>>) =>
+  wrapper.findAll('button').find((b) => b.text() === '刷新状态')!
 
 describe('数据接入向导面板', () => {
   beforeEach(() => {
@@ -102,6 +104,58 @@ describe('数据接入向导面板', () => {
       expect(card(wrapper, key).get('.tag').text()).toBe('数据未知')
     }
     expect(card(wrapper, 'node-price').get('.effect-btn').attributes('disabled')).toBeUndefined()
+  })
+
+  it('刷新失败即作废上一轮快照：不能一边报失败、一边继续显示「新鲜 / 已提交」（codex R1-01）', async () => {
+    mockSignals()
+    const wrapper = await mountView()
+    expect(card(wrapper, 'node-price').get('.tag').text()).toBe('数据新鲜')
+
+    apiGet.mockRejectedValue(new Error('HTTP 502'))
+    await refreshButton(wrapper).trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('.load-err').text()).toContain('HTTP 502')
+    expect(card(wrapper, 'node-price').get('.tag').text()).toBe('数据未知')
+    expect(card(wrapper, 'node-price').get('.status-line').text()).toContain('模板 yn-t0-node-price：状态未知')
+    expect(stepStates(wrapper, 'node-price')).toEqual(['pending', 'pending', 'pending', 'pending', 'pending'])
+  })
+
+  it('单个模板台账取数失败显示「状态未知」，不冒充「未上传」', async () => {
+    mockSignals()
+    const base = apiGet.getMockImplementation()!
+    apiGet.mockImplementation((path: string, params?: { templateId?: string }) =>
+      params?.templateId === 'yn-t1-hydro' ? Promise.reject(new Error('HTTP 500')) : base(path, params)
+    )
+    const wrapper = await mountView()
+    expect(card(wrapper, 'load-hydro').get('.status-line').text()).toContain('yn-t0-system-load / yn-t1-hydro：状态未知')
+    expect(card(wrapper, 'node-price').get('.status-line').text()).toContain('已上传并提交')
+  })
+
+  it('刷新与「生效后重读」赛跑：先发起的慢请求晚到，不得覆盖后发起的结果', async () => {
+    mockSignals()
+    const wrapper = await mountView()
+    const base = apiGet.getMockImplementation()!
+    let releaseSlow!: () => void
+    let catalogCall = 0
+    apiGet.mockImplementation((path: string, params?: { templateId?: string }) => {
+      if (path !== '/api/v1/governance/catalog') return base(path, params)
+      catalogCall += 1
+      if (catalogCall === 1) return new Promise((r) => { releaseSlow = () => r(base(path, params)) })
+      return Promise.reject(new Error('HTTP 503'))
+    })
+
+    // 刷新按钮加载中会置灰，真实的并发来源是：刷新进行中，一键生效成功又触发一次重读。
+    triggerIngest.mockResolvedValue(result({ kind: 'spot-ingest' }))
+    await refreshButton(wrapper).trigger('click') // 先发起、慢，最终会成功
+    await card(wrapper, 'node-price').get('.effect-btn').trigger('click') // 后发起的重读，失败
+    await flushPromises()
+    expect(catalogCall).toBe(2)
+    releaseSlow()
+    await flushPromises()
+
+    expect(wrapper.get('.load-err').text()).toContain('HTTP 503')
+    expect(card(wrapper, 'node-price').get('.tag').text()).toBe('数据未知')
   })
 
   it('首屏不铺说明文字，但命令行与去哪见数常显', async () => {

@@ -197,10 +197,13 @@ const CARDS: OnboardingCard[] = [
 ]
 
 // 状态：三路只读信号
+// recordsByTemplate：templateId → 台账行；null = 该模板本轮取数失败，缺键 = 尚未取到。两者都按「未知」展示。
 const catalog = ref<CatalogPayload | null>(null)
-const recordsByTemplate = reactive<Record<string, TemplateRecord[]>>({})
+const recordsByTemplate = ref<Record<string, TemplateRecord[] | null>>({})
 const loadErr = ref('')
 const loading = ref(false)
+// 加载代次：刷新按钮与「生效后重读」可能并发，只认最后一次发起的结果，旧请求晚到不得覆盖。
+let loadGen = 0
 
 // 生效按钮：每卡独立 busy / 结果 / 错误（key → ...）
 const busy = reactive<Record<string, boolean>>({})
@@ -209,27 +212,36 @@ const resultErr = reactive<Record<string, string>>({})
 const copied = ref('')
 
 async function loadAll() {
+  const gen = ++loadGen
   loading.value = true
   loadErr.value = ''
   try {
-    catalog.value = await apiGet<CatalogPayload>('/api/v1/governance/catalog')
+    const nextCatalog = await apiGet<CatalogPayload>('/api/v1/governance/catalog')
     // 拉取所有关联模板的台账记录（import-templates/records 按 templateId 过滤）。
     const templateIds = Array.from(new Set(CARDS.flatMap((c) => c.templateIds)))
+    const nextRecords: Record<string, TemplateRecord[] | null> = {}
     await Promise.all(
       templateIds.map(async (tid) => {
         try {
           const res = await apiGet<RecordsPayload>('/api/v1/import-templates/records', { templateId: tid })
-          recordsByTemplate[tid] = res.rows ?? []
+          nextRecords[tid] = res.rows ?? []
         } catch {
-          // 单个台账取数失败不阻塞整页；该模板状态落「未知」。
-          recordsByTemplate[tid] = []
+          // 单个台账取数失败不阻塞整页；该模板状态落「未知」（不能当成「未上传」）。
+          nextRecords[tid] = null
         }
       })
     )
+    if (gen !== loadGen) return
+    catalog.value = nextCatalog
+    recordsByTemplate.value = nextRecords
   } catch (e) {
+    if (gen !== loadGen) return
+    // 本轮失败即作废上一轮快照：不能一边报「状态显示为未知」，一边继续显示上次的「数据新鲜 / 已提交」。
+    catalog.value = null
+    recordsByTemplate.value = {}
     loadErr.value = (e as Error).message
   } finally {
-    loading.value = false
+    if (gen === loadGen) loading.value = false
   }
 }
 
@@ -251,11 +263,14 @@ function familyFreshness(families: string[], cadence: 'daily' | 'monthly'): Fres
   return latest ? freshnessOf(latest, { cadence }) : 'unknown'
 }
 
+// 模板台账信号。任一模板没取到（失败或尚未加载）→ known=false：五步线按未达成处理，进度文案写「状态未知」。
 function templateSignals(templateIds: string[]) {
-  const rows = templateIds.flatMap((tid) => recordsByTemplate[tid] ?? [])
-  if (!rows.length) return { hasTemplateRecord: false, hasCommitted: false, hasDelivered: false }
+  const lists = templateIds.map((tid) => recordsByTemplate.value[tid])
+  const known = lists.every(Array.isArray)
+  const rows = lists.flatMap((l) => l ?? [])
   return {
-    hasTemplateRecord: true,
+    known,
+    hasTemplateRecord: rows.length > 0,
     hasCommitted: rows.some((r) => r.status === 'COMMITTED'),
     hasDelivered: rows.some((r) => Array.isArray(r.deliveredPaths) && r.deliveredPaths.length > 0)
   }
@@ -267,7 +282,14 @@ function stepsFor(card: OnboardingCard): JourneySteps | null {
   if (card.journey === 'ledger') return null
   if (card.journey === 'auto' && !card.families.length) return null
   const fresh = familyFreshness(card.families, card.cadence)
-  const steps = deriveJourneySteps({ ...templateSignals(card.templateIds), freshness: fresh })
+  // 台账没取全时整段按未达成处理（onboardingJourney 的「取数失败不猜」口径），不拿半截信号点亮。
+  const s = templateSignals(card.templateIds)
+  const steps = deriveJourneySteps({
+    hasTemplateRecord: s.known && s.hasTemplateRecord,
+    hasCommitted: s.known && s.hasCommitted,
+    hasDelivered: s.known && s.hasDelivered,
+    freshness: fresh
+  })
   // 气象全自动：输入/校验/落位由 scheduler 自动完成，强制点亮；effect/consume 看 freshness。
   if (card.journey === 'auto') {
     return { ...steps, input: 'done', validate: 'done', deliver: 'done' }
@@ -290,7 +312,7 @@ function statusLine(card: OnboardingCard): string {
   if (latest) parts.push(`最新数据 ${formatDate(latest)}`)
   if (card.templateIds.length) {
     const s = templateSignals(card.templateIds)
-    const state = s.hasCommitted ? '已上传并提交' : s.hasTemplateRecord ? '已上传待提交' : '未上传'
+    const state = !s.known ? '状态未知' : s.hasCommitted ? '已上传并提交' : s.hasTemplateRecord ? '已上传待提交' : '未上传'
     parts.push(`模板 ${card.templateIds.join(' / ')}：${state}`)
   }
   return parts.join(' · ')
