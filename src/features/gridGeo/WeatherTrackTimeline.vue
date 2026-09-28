@@ -91,7 +91,9 @@ function renderChart() {
     type: 'value' as const,
     gridIndex,
     name,
-    nameTextStyle: { color, fontSize: 9, padding: [0, 0, 0, 8] },
+    // y 轴名称占第一行（nameGap 22，即子图顶缘上方 22px 处），图例在其下方一行；padding+左对齐与图例（left 72）共左缘。
+    nameTextStyle: { color, fontSize: 9, padding: [0, 0, 0, 14], align: 'left' as const },
+    nameGap: 22,
     axisLabel: { color: '#628291', fontSize: 8 },
     axisLine: { show: false }, axisTick: { show: false },
     splitLine: { lineStyle: { color: 'rgba(88,139,158,.09)', type: 'dashed' as const } },
@@ -107,17 +109,19 @@ function renderChart() {
     animation: !reducedMotion,
     color: ['#5edfff', '#6ce2a9', '#8da4ff', '#f3c86a', '#ff936b', '#ff6685'],
     tooltip: { trigger: 'axis', confine: true, backgroundColor: 'rgba(3,17,29,.96)', borderColor: '#315d70', textStyle: { color: '#dff7ff', fontSize: 10 } },
+    // 两行式子图头：y 轴名称占第一行（nameGap 22），图例在其下方一行（left 72 最左、底缘距子图顶缘 2px），
+    // 两行间隔约 6px；grid top 已下移 12px 给这两行让位，各带间距保持不变（pitch 104）。
     legend: [
-      { top: 0, left: 72, textStyle: { color: '#789aa7', fontSize: 9 }, data: [activeTrack.value.label] },
-      { top: 104, left: 72, textStyle: { color: '#789aa7', fontSize: 9 }, data: ['实际出力', props.targetOutputLabel] },
-      { top: 208, left: 72, textStyle: { color: '#789aa7', fontSize: 9 }, data: ['日前节点价', '实时节点价'] },
-      { top: 312, left: 72, textStyle: { color: '#789aa7', fontSize: 9 }, data: ['事后偏差暴露'] },
+      { top: 22, left: 72, textStyle: { color: '#789aa7', fontSize: 9 }, data: [activeTrack.value.label] },
+      { top: 126, left: 72, textStyle: { color: '#789aa7', fontSize: 9 }, data: ['实际出力', props.targetOutputLabel] },
+      { top: 230, left: 72, textStyle: { color: '#789aa7', fontSize: 9 }, data: ['日前节点价', '实时节点价'] },
+      { top: 334, left: 72, textStyle: { color: '#789aa7', fontSize: 9 }, data: ['事后偏差暴露'] },
     ],
     grid: [
-      { top: 26, height: 58, left: 58, right: 18 },
-      { top: 130, height: 58, left: 58, right: 18 },
-      { top: 234, height: 58, left: 58, right: 18 },
-      { top: 338, height: 58, left: 58, right: 18 },
+      { top: 38, height: 58, left: 58, right: 18 },
+      { top: 142, height: 58, left: 58, right: 18 },
+      { top: 246, height: 58, left: 58, right: 18 },
+      { top: 350, height: 58, left: 58, right: 18 },
     ],
     xAxis,
     yAxis: [axis(0, props.driverLabel, '#5edfff'), axis(1, 'MW', '#6ce2a9'), axis(2, '元/MWh', '#f3c86a'), axis(3, '%', '#ff6685')],
@@ -225,10 +229,10 @@ onBeforeUnmount(() => { stopPlayback(); resizeObserver?.disconnect(); chart?.dis
 
 <style scoped>
 .track-rail{display:grid;margin-bottom:9px;grid-template-columns:repeat(4,1fr);gap:6px}.track-rail button{display:flex;min-width:0;padding:8px 9px;text-align:left;color:#7194a1;border:1px solid rgba(92,166,190,.13);border-radius:9px;background:rgba(5,25,39,.68);cursor:pointer;transition:transform .18s ease,border-color .18s ease,background .18s ease;flex-direction:column}.track-rail button:hover{transform:translateY(-1px);border-color:rgba(95,215,244,.3)}.track-rail button.active{color:#dff9ff;border-color:rgba(95,220,245,.52);background:linear-gradient(145deg,rgba(18,76,96,.68),rgba(6,28,43,.9));box-shadow:0 10px 28px rgba(0,8,17,.26),inset 0 1px rgba(255,255,255,.04)}.track-rail button.unavailable,.track-rail button.partial{border-style:dashed}.track-rail button>span{display:flex;align-items:center;gap:5px;color:#547987;font-size: var(--font-lg);letter-spacing:.12em}.track-rail button>span i{width:5px;height:5px;border-radius:50%;background:#516d78}.track-rail button.available>span i{background:#58e1b5;box-shadow:0 0 9px rgba(88,225,181,.65)}.track-rail button.partial>span i{background:#e6b85c}.track-rail button b{margin-top:4px;font-size: var(--font-lg)}.track-rail button small{margin-top:2px;overflow:hidden;color:#52727f;font-size: var(--font-6-5);text-overflow:ellipsis;white-space:nowrap}
-.timeline-card{margin-top:10px;padding:11px;border:1px solid rgba(85,180,210,.13);border-radius:10px;background:rgba(4,19,32,.68)}.timeline-card.unavailable,.timeline-card.partial{border-style:dashed}.card-head{display:flex;align-items:center;justify-content:space-between;color:#b3dce7;font-size: var(--font-lg)}.card-head>span{display:flex;align-items:center;gap:5px}.card-head small{color:#5c7e8b;font-size: var(--font-lg)}.chart{width:100%;height:420px;margin-top:6px}.playback{display:flex;margin-top:5px;align-items:center;gap:8px}.playback button{display:grid;width:27px;height:27px;place-items:center;color:#081923;border:0;border-radius:50%;background:#62dcf4;cursor:pointer}.playback button:disabled{opacity:.45;cursor:not-allowed}.playback input{min-width:80px;flex:1;accent-color:#62dcf4}.playback b{min-width:37px;color:#d9f7ff;font-size: var(--font-lg)}.playback small{color:#5b7c88;font-size: var(--font-6-5)}.hour-focus{display:grid;margin-top:8px;grid-template-columns:repeat(5,1fr);gap:6px}.hour-focus article{display:flex;padding:7px;border-radius:7px;background:rgba(22,73,91,.13);flex-direction:column}.hour-focus small{color:#7d9aa5;font-size: var(--font-xs)}.hour-focus b{margin-top:2px;color:#d9f7ff;/* 暗底取值，不继承主题文字令牌（default/paper 档为浅底深字） */font-size: var(--font-lg)}
+.timeline-card{margin-top:10px;padding:11px;border:1px solid rgba(85,180,210,.13);border-radius:10px;background:rgba(4,19,32,.68)}.timeline-card.unavailable,.timeline-card.partial{border-style:dashed}.card-head{display:flex;align-items:center;justify-content:space-between;color:#b3dce7;font-size: var(--font-lg)}.card-head>span{display:flex;align-items:center;gap:5px}.card-head small{color:#5c7e8b;font-size: var(--font-lg)}.chart{width:100%;height:432px;margin-top:6px}.playback{display:flex;margin-top:5px;align-items:center;gap:8px}.playback button{display:grid;width:27px;height:27px;place-items:center;color:#081923;border:0;border-radius:50%;background:#62dcf4;cursor:pointer}.playback button:disabled{opacity:.45;cursor:not-allowed}.playback input{min-width:80px;flex:1;accent-color:#62dcf4}.playback b{min-width:37px;color:#d9f7ff;font-size: var(--font-lg)}.playback small{color:#5b7c88;font-size: var(--font-6-5)}.hour-focus{display:grid;margin-top:8px;grid-template-columns:repeat(5,1fr);gap:6px}.hour-focus article{display:flex;padding:7px;border-radius:7px;background:rgba(22,73,91,.13);flex-direction:column}.hour-focus small{color:#7d9aa5;font-size: var(--font-xs)}.hour-focus b{margin-top:2px;color:#d9f7ff;/* 暗底取值，不继承主题文字令牌（default/paper 档为浅底深字） */font-size: var(--font-lg)}
 .point-evidence{display:flex;margin-top:8px;padding:8px;align-items:flex-start;gap:8px;color:#5ad8ad;border:1px solid rgba(90,216,173,.19);border-radius:8px;background:rgba(29,91,72,.08)}.point-evidence.missing{color:#efbd63;border-color:rgba(239,189,99,.2);background:rgba(112,77,20,.08)}.point-evidence.outside-forecast-horizon{color:#7197a5;border-color:rgba(113,151,165,.2);background:rgba(65,93,105,.08)}.point-evidence div{min-width:0}.point-evidence b{font-size: var(--font-lg)}.point-evidence p{margin:2px 0;color:#7d9aa5;font-size: var(--font-lg)}.point-evidence small{display:block;margin-top:3px;overflow-wrap:anywhere;color:#587984;font-size: var(--font-xs)}
 .divergence-card{display:grid;margin-top:8px;padding:9px;border:1px solid rgba(96,197,221,.13);border-radius:9px;background:linear-gradient(120deg,rgba(14,51,67,.55),rgba(5,23,36,.62));grid-template-columns:auto 1fr;gap:3px 12px}.divergence-card>div{display:flex;min-width:170px;flex-direction:column;grid-row:1/3}.divergence-card span{display:flex;align-items:center;gap:5px;color:#55cbe6;font-size: var(--font-lg);letter-spacing:.12em}.divergence-card b{margin-top:4px;font-size: var(--font-lg)}.divergence-card p,.divergence-card small{margin:0;color:#658793;font-size: var(--font-lg);line-height:1.4}.divergence-card.available{border-color:rgba(92,224,181,.23)}.track-rail button:focus-visible,.playback button:focus-visible{outline:2px solid #69e2f7;outline-offset:2px}
 @media(max-width:900px){.hour-focus{grid-template-columns:repeat(2,1fr)}}
-@media(max-width:620px){.track-rail{overflow-x:auto;grid-template-columns:repeat(4,minmax(140px,1fr));scroll-snap-type:x mandatory}.track-rail button{scroll-snap-align:start}.hour-focus{grid-template-columns:1fr}.chart{height:380px}.divergence-card{grid-template-columns:1fr}.divergence-card>div{grid-row:auto}.card-head{align-items:flex-start;gap:6px;flex-direction:column}}
+@media(max-width:620px){.track-rail{overflow-x:auto;grid-template-columns:repeat(4,minmax(140px,1fr));scroll-snap-type:x mandatory}.track-rail button{scroll-snap-align:start}.hour-focus{grid-template-columns:1fr}.chart{height:432px}.divergence-card{grid-template-columns:1fr}.divergence-card>div{grid-row:auto}.card-head{align-items:flex-start;gap:6px;flex-direction:column}}
 @media(prefers-reduced-motion:reduce){.track-rail button{transition:none}}
 </style>

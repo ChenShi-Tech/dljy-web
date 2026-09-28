@@ -189,6 +189,11 @@ export const pageHelpRegistry: Record<string, PageHelpEntry> = {
     body: '价格分析回放：1434 天×2 类型（2022-07~2026-06）的电价序列（日均值/日最大/日最小），含 3D 电价图（时间×日期×价格）+ 时点切面 + 日期切面。数据来自 GET /sdpt/zcqxhdl/listrs?typeList[]&tag=0，回放 sdpt_zcqxhdl（数组参数需编码 %5B0%5D）。为真实采集回放数据。',
     docPath: 'docs/data/yunnan-parquet-derive.md'
   },
+  YunnanHydroAnalysis: {
+    title: '水电分析',
+    body: '云南水电分析（仅云南）：水电实际出力与统调负荷、新能源出力同轴叠线比较（不是互斥分量，不堆叠、不相加），配水电概况指标卡（平均/最高/最低出力、水电占比、数据截至日，缺值显示「—」）。水电周出力预测与机组群构成为获权数据，按能力目录判定：未授权整卡不渲染、不发请求，只留「需开通」标签；机组群来源只披露组成与占比，没有出力上限值。数据经市场洞察接口（supply.system-series 等分析）取数，来水、库容、弃水暂无来源不展示。为真实数据，采集断供时停留在最后有数日。',
+    docPath: 'docs/market-insight-hydro.md'
+  },
   SolarTerms: {
     title: '24 节气',
     body: '24 节气负荷回放：6 年节气详细与日期汇总两种模式（前端本地切换），节气定位对齐 nameList，各年 legendList 独立、缺失指标跳过，双轴绑定。数据来自 GET /sdpt/actualLoad/query2?xl，回放 sdpt_actualLoad。为真实实况采集回放数据。',

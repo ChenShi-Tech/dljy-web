@@ -1,7 +1,7 @@
 // 套保工作台组件测试（build-midlong-spot-hedging 任务 8.1/8.2/8.6，HW-01/06/07/10）。
 // 组件测试文件名必须是 *.component.spec.ts 才会在 happy-dom 环境运行。
 import { mount, enableAutoUnmount } from '@vue/test-utils'
-import { afterAll, afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 const fetchOverview = vi.fn()
 const putCaps = vi.fn()
@@ -52,7 +52,10 @@ import HedgeWorkbenchView from './HedgeWorkbenchView.vue'
 import { HedgeApiError } from '@/services/hedge/hedgeApi'
 import { selectedCompanyId } from '@/services/company/companyContext'
 
-enableAutoUnmount(afterAll)
+// 每条用例结束即卸载（ChenShi-Tech/dljy#3432）：原先 afterAll 让前面用例挂载的实例一直存活，切换公司时
+// 多个实例各自重取，测试保存的 release 可能放行的是别的实例的请求，本用例的页面永远等不到结果——CI 高负载下
+// 几乎每次都红（main 连红 3 次）。
+enableAutoUnmount(afterEach)
 
 const hedgeApiError = (status: number, errorCode: string, message: string, details: Record<string, unknown> | null = null) =>
   new HedgeApiError(status, errorCode, message, details)
@@ -144,6 +147,10 @@ describe('HedgeWorkbenchView（HW-01/02/06/07/10）', () => {
       expect(wrapper.find('[data-test="metrics"]').exists()).toBe(false)
       expect(fetchOverview.mock.calls.length).toBeGreaterThan(callsBefore)
     })
+    // 切换一次公司只应新增一次取数：多于一次说明有别的组件实例在响应同一切换（#3432 的根因），
+    // 等过 150ms 防抖窗口再数，否则第二次取数还没发出来。
+    await new Promise((r) => setTimeout(r, 300))
+    expect(fetchOverview.mock.calls.length - callsBefore).toBe(1)
     release(overviewPayload())
     await vi.waitFor(() => {
       expect(wrapper.find('[data-test="metrics"]').exists()).toBe(true)

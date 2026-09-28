@@ -22,7 +22,8 @@ import {
   Table2,
   ListChecks,
   Map as MapIcon,
-  Wrench
+  Wrench,
+  Droplets
 } from 'lucide-vue-next'
 import { yunnanTradingNavigation } from '../features/yunnanTrading/navigation'
 import { REPORTS_FEATURE_ENABLED } from '../features/reports/config'
@@ -78,6 +79,8 @@ export const navigation: NavItem[] = [
       // 不带 stanceAffinity（发电/售电均可见），旧地址 redirect 预选驱动。
       { path: '/sjfx/price-drivers', title: '价格驱动分析', icon: ChartSpline },
       { path: '/sjfx/actualLoad', title: '逐日系统负荷', icon: LineChart },
+      // 云南水电分析（dljy#3389，仅云南；其余地区 regionIds 不含 → 菜单不出现且路由拦截）
+      { path: '/sjfx/hydro', title: '水电分析', icon: Droplets, regionIds: ['yunnan'] },
       { path: '/sjfx/singleZsjfx', title: '综合数据分析', icon: ChartSpline },
       // 云南专属真实页 fold 入市场洞察（切云南才现）
       // price-output-linkage 已并入云南交易工作台 tab（父 Issue #456），市场洞察外层不再单列
