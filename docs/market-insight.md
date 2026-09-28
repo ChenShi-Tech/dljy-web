@@ -33,6 +33,7 @@
    - 契约客户端（`src/services/data/contracts/marketInsightHeavyPagesClient.ts`）硬编码：只有 `region === 'shanxi'` 才请求 `sdpt_zcqxhdl/__list__`；其他地区在客户端层直接返回「本地区不适用」空态，**不发任何请求**（不依赖视图层自觉）。
    - 视图（`ClearingSpotAnalysisView.vue`）在非山西地区显示停用说明卡：「旧出清电量实现已停用：原实现读取的是山西公司专属清单，不代表云南全省出清。获权场站的申报、出清与实际对照将在『场站市场表现』中提供。」不画空图。
    - 能力注册表（`regionModules.ts`）：`/sjfx/zcqxhdl` 云南状态为 `degraded`（路由可达、页面停用说明），云南数据支撑措辞改为准确描述——`sdpt_zcqxhdl` 仅 `listrs_full` 支撑价格分析页，不含出清电量清单。
+   - 菜单入口（dljy#3388，2026-09-28）：云南菜单不再显示「出清现货电量分析」（`navigation.ts` 的 `hiddenInRegionIds: ['yunnan']`，与分时行情同做法）——云南打开只剩停用说明，保留入口没有意义；路由与权限不变，旧链接仍可直达并看到停用说明。
    - 山西行为不变。
 3. **分时行情入口与解释**：
    - `NavItem` 新增可选字段 `hiddenInRegionIds`（`src/data/navigation.ts`、`src/services/governance.ts`）：**只影响菜单显示，不影响路由可达与权限**。`/sjfx/fshq` 设为云南隐藏；云南菜单不再出现「分时行情」，山西/广东/四川菜单不变，旧链接在云南仍可直接访问。
@@ -44,7 +45,7 @@
 | --- | --- |
 | `src/services/market/marketAnalysis.spec.ts` | 反例（仅 `market_price` 真实 → 其余字段空、无示例值 318/1258.6/856.2/286.4/116）、正例（公共键全真实 → captured）、全不真实 → 整页示例旧行为 |
 | `src/services/data/contracts/marketInsightHeavyPagesClient.clearing.spec.ts` | 云南/广东/四川不发请求且返回「本地区不适用」空态；山西仍请求 `__list__` 并正常转换；能力声明与拦截口径一致 |
-| `src/services/governance.navigation-region.spec.ts` | 云南菜单不含 `/sjfx/fshq`，山西/广东/四川菜单仍含；云南路由保持可达 |
+| `src/services/governance.navigation-region.spec.ts` | 云南菜单不含 `/sjfx/fshq`、`/sjfx/zcqxhdl`（#3388），山西/广东/四川菜单仍含；云南路由保持可达 |
 
 ### 回滚说明
 
