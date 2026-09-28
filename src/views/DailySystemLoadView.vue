@@ -21,7 +21,7 @@ import { useQuerySync } from '../composables/useQuerySync'
 import RegionDataBanner from '@/components/region/RegionDataBanner.vue'
 import CapabilitySupportBadge from '../components/CapabilitySupportBadge.vue'
 import LoadPanelChart from '../components/common/LoadPanelChart.vue'
-import CalloutBox from '../components/common/CalloutBox.vue'
+import LoadRangeBoard from '../components/common/LoadRangeBoard.vue'
 import { LOAD_PANEL_UNIT, isEmptyLoadSource } from '@/services/chart/loadPanelModel'
 import { defineAiPage, useAiSidebar } from '@/features/aiSidebar'
 import { PAGE_PROMPT_KEYS } from '@/prompts'
@@ -93,15 +93,13 @@ async function load() {
   }
 }
 
-// 系统负荷有数而错位负荷为空壳 = 该地区没有错位负荷口径（错位负荷是山西交易平台的自有统计，
-// 云南等地区无法由统调负荷推出），与「数据缺失」区分开说明，避免被当成故障（#3379）。
-const misplaceUnavailable = computed(() =>
-  !!data.value && !isEmptyLoadSource(data.value.sources.system) && isEmptyLoadSource(data.value.sources.misplace)
-)
-const MISPLACE_UNAVAILABLE_TEXT = '当前地区无错位负荷口径'
-function emptyTextOf(src: ActualLoadSourceKey): string | undefined {
-  return src === 'misplace' && misplaceUnavailable.value ? MISPLACE_UNAVAILABLE_TEXT : undefined
-}
+// 版面按数据决定（非地区硬编码，dljy#3384）：错位负荷有数 → 原「系统 vs 错位」双列 + 均/小/大分页；
+// 错位负荷是空壳（该地区没有这项统计，如云南）→ 整列不渲染，换成单源版面（指标行 + 日均值与日内
+// 区间带 + 峰谷差），不留空图占位。数据未到时不渲染任何图，避免先闪双列再切换。
+const layout = computed<'single' | 'dual' | null>(() => {
+  if (!data.value || isEmptyLoadSource(data.value.sources.system)) return null
+  return isEmptyLoadSource(data.value.sources.misplace) ? 'single' : 'dual'
+})
 
 const ai = useAiSidebar()
 // 「✨ 解读本页」：可用年份 + 系统负荷各年年均作摘要（勿传 6年×366天逐日矩阵全量）。
@@ -116,10 +114,10 @@ function insightContext(): Record<string, unknown> {
   return {
     page: '逐日系统负荷实际值 (actualLoad)',
     years,
-    panels: '系统/错位负荷 × 均值/最小/最大（6 子图）',
+    panels: layout.value === 'single' ? '系统负荷：日均值与日内最小~最大区间带 + 日内峰谷差' : '系统/错位负荷 × 均值/最小/最大（6 子图）',
     system_load_annual_avg_by_year: years.map((y, i) => ({ year: y, annual_avg: yearMean(average[i]) })),
     unit: LOAD_PANEL_UNIT,
-    note: '逐日 366 点 × 6 年；本摘要仅给系统负荷各年年均，逐日明细未传',
+    note: '逐日 366 点 × 覆盖年份；本摘要仅给系统负荷各年年均，逐日明细未传',
     basis: 'captured'
   }
 }
@@ -140,13 +138,11 @@ onRegionChange(load)
     <RegionDataBanner />
     <CapabilitySupportBadge path="/sjfx/actualLoad" />
     <el-alert v-if="error" type="error" :closable="false" :title="error" class="mb" />
-    <CalloutBox v-if="misplaceUnavailable" class="mb">
-      错位负荷实际值是山西交易平台特有的统计口径，当前地区没有这项数据，右列为空并非数据缺失。数值单位为 MW（日内负荷功率的均值/最小值/最大值）。
-    </CalloutBox>
     <div class="toolbar">
       <el-button size="small" type="success" plain @click="askInsight">✨ 解读本页</el-button>
     </div>
-    <el-tabs v-model="activeMetric" class="metric-tabs">
+    <LoadRangeBoard v-if="layout === 'single' && data?.sources.system" :source="data.sources.system" />
+    <el-tabs v-else-if="layout === 'dual'" v-model="activeMetric" class="metric-tabs">
       <!-- 三个指标页：每页系统 vs 错位两列对比 -->
       <el-tab-pane
         v-for="mt in METRIC_TABS"
@@ -166,7 +162,6 @@ onRegionChange(load)
             :metric-key="mt.metricKey"
             :col-name="c.col"
             :metric-name="mt.metric"
-            :empty-text="emptyTextOf(c.src)"
             :height="panelHeight"
             resizable
             @update:height="panelHeight = $event"
@@ -188,7 +183,6 @@ onRegionChange(load)
               :metric-key="row.metricKey"
               :col-name="c.col"
               :metric-name="row.metric"
-              :empty-text="emptyTextOf(c.src)"
               :height="240"
             />
           </template>

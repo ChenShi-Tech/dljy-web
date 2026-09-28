@@ -32,12 +32,9 @@ const props = withDefaults(defineProps<{
   height?: number | string
   /** 是否显示底部拖拽手柄让用户自调高度（拖拽经 update:height 上抛，由父级持久化/联动）。 */
   resizable?: boolean
-  /** 无数据时的空态文案；地区无该口径时由父级传入更准确的说明（#3379）。 */
-  emptyText?: string
 }>(), {
   height: 420,
-  resizable: false,
-  emptyText: '无数据'
+  resizable: false
 })
 
 // 拖拽调高：上抛新高度（px），父级负责联动同页各图 + localStorage 记忆。
@@ -90,7 +87,7 @@ function render() {
   if (!block || isEmptyLoadSource(block)) {
     chart.setOption({
       title: { text: `${props.colName} · ${props.metricName}`, left: 8, top: 2, textStyle: { fontSize: 12, color: '#303133' } },
-      ...emptyOverlay(true, props.emptyText)
+      ...emptyOverlay(true, '无数据')
     }, { notMerge: true })
     return
   }
