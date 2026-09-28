@@ -77,6 +77,9 @@ export async function enterPracticeSpace(
   }
 
   const practiceCompanyId = result.practiceCompanyId
+  // 退出时回到哪家以服务端解析出的上级为准：从练习公司里再进入、而授权列表尚未加载时，
+  // 上面按当前公司推断的来源会是练习公司自己，记下它会让「退出」原地不动。
+  if (result.parentCompanyId) originCompanyId = result.parentCompanyId
   // 先刷新授权列表（练习公司必须出现在 options 里，后续 setCurrentCompanyId 才能放行），
   // 再钉住、再切换；此顺序下刷新触发的四规则协调先发生，钉住随后接管，稳定停在练习公司。
   await refreshCompanyOptions()

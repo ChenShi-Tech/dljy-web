@@ -135,12 +135,30 @@ describe('enterPracticeSpace（进入练习空间，#3403）', () => {
     expect(selectedCompanyId.value).toBe('comp-cgn-yunnan-practice')
   })
 
+  it('当前是练习公司但授权列表尚未加载 → 退出目标取服务端解析的上级，不记成练习公司自己', async () => {
+    selectedCompanyId.value = practiceOption.companyId
+    companyOptions.value = []
+    vi.mocked(ensurePracticeSpace).mockResolvedValue({ ...practiceResult, created: false })
+    vi.mocked(refreshCompanyOptions).mockImplementation(async () => {
+      setCompanyOptions([yunnanCompany, practiceOption])
+      return [yunnanCompany, practiceOption]
+    })
+
+    const entered = await enterPracticeSpace()
+
+    expect(ensurePracticeSpace).toHaveBeenCalledWith(practiceOption.companyId, expect.anything())
+    expect(entered.originCompanyId).toBe('comp-cgn-yunnan')
+    expect(companyPin.value?.originCompanyId).toBe('comp-cgn-yunnan')
+    exitPracticeSpace()
+    expect(selectedCompanyId.value).toBe('comp-cgn-yunnan')
+  })
+
   it('当前公司不可写（403）且非本人归属公司 → 改用归属公司重试一次', async () => {
     selectedCompanyId.value = 'comp-cgn-yunnan'
     companyOptions.value = [yunnanCompany]
     vi.mocked(ensurePracticeSpace)
       .mockRejectedValueOnce(forbidden())
-      .mockResolvedValueOnce(practiceResult)
+      .mockResolvedValueOnce({ ...practiceResult, parentCompanyId: 'dljy-demo' })
     vi.mocked(refreshCompanyOptions).mockImplementation(async () => {
       setCompanyOptions([yunnanCompany, practiceOption])
       return [yunnanCompany, practiceOption]
