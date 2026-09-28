@@ -13,6 +13,8 @@ import {
 } from '@/services/midlong/midlongTypes'
 import { createDraft, fetchContracts, midlongFailureOf, updateDraft, type DraftWarning } from '@/services/midlong/midlongApi'
 import { draftFromRevision, emptyEconomicsDraft, toEconomicsInput, type EconomicsDraft } from '@/services/midlong/economicsDraft'
+import { emitGuideSignal, useGuideForm } from '@/features/guide/bridge'
+import { FORM, SIGNAL } from '@/features/guide/midlong/anchors'
 import type { CompanyStation } from '@/services/company/companyApi'
 
 const props = defineProps<{ modelValue: boolean; detail?: MidlongContractDetail | null; subjects: MidlongSubject[]; stations: CompanyStation[] }>()
@@ -83,6 +85,31 @@ const frameworkSelectOptions = computed(() => {
 const economics = ref<EconomicsDraft>(emptyEconomicsDraft())
 const editorRef = ref<InstanceType<typeof MidlongEconomicsEditor> | null>(null)
 
+// 操作导引（dljy#3404）：read 合并身份与经济内容（外加框架候选就绪标志与校验结论），
+// fill 按键名分流到 identity / economics；只在「新建草稿」对话框打开时生效。
+useGuideForm(
+  FORM.contractCreate,
+  {
+    read: () => {
+      const check = editorRef.value?.check
+      return {
+        ...identity,
+        ...economics.value,
+        frameworkReady: !frameworkLoading.value && !frameworkLoadError.value,
+        econErrors: (check?.errors ?? []).map((e) => e.message),
+        allocationCompleteness: check?.value?.allocationCompleteness ?? 'NONE',
+      }
+    },
+    fill: (values) => {
+      for (const [key, value] of Object.entries(values)) {
+        if (key in identity) (identity as unknown as Record<string, unknown>)[key] = value
+        else (economics.value as unknown as Record<string, unknown>)[key] = value
+      }
+    },
+  },
+  { active: () => props.modelValue && !props.detail },
+)
+
 // 重新登记曾作废的外部编号时：保存成功但先不关闭，常驻展示原合同链接，用户确认后再离开（新建后列表会跳转到新合同）。
 const savedWithWarnings = ref<{ contractId: number; warnings: DraftWarning[] } | null>(null)
 
@@ -143,6 +170,7 @@ async function submit() {
       ? await updateDraft(props.detail.contractId, { ...input, expectedRowVersion: props.detail.rowVersion })
       : await createDraft(input)
     ElMessage.success(props.detail ? '草稿已更新' : '草稿已保存（待补资料并核验确认后才计入持仓）')
+    emitGuideSignal(SIGNAL.contractSaved, { contractId: result.contractId, documentKind: identity.documentKind })
     const voidedHints = ((result.warnings ?? []) as DraftWarning[]).filter((w) => w.code === 'PREVIOUSLY_VOIDED')
     // 表单已被关闭（兜底）时直接通知父页面，不把提示留在看不见的表单里。
     if (voidedHints.length && props.modelValue) {
@@ -174,10 +202,10 @@ async function submit() {
         保存后为「草稿」。补充电子交易确认单、纸质合同或交易中心导出等依据并完成核验确认后，才计入月度持仓；缺价格或月度分解不阻止确认，但会持续提示。
       </MidlongNotice>
       <div class="ml-grid">
-        <label class="ml-field"><span>文件类型</span>
+        <label class="ml-field" data-guide="ml-contract-doc-kind"><span>文件类型</span>
           <el-select v-model="identity.documentKind"><el-option v-for="k in DOCUMENT_KINDS" :key="k" :label="DOCUMENT_KIND_LABELS[k]" :value="k" /></el-select>
         </label>
-        <label class="ml-field"><span>交易品种周期</span>
+        <label class="ml-field" data-guide="ml-contract-product-kind"><span>交易品种周期</span>
           <el-select v-model="identity.productKind"><el-option v-for="k in PRODUCT_KINDS" :key="k" :label="PRODUCT_KIND_LABELS[k]" :value="k" /></el-select>
         </label>
         <label class="ml-field"><span>交易方式</span>
@@ -189,21 +217,21 @@ async function submit() {
         <label class="ml-field"><span>电能属性</span>
           <el-select v-model="identity.energyAttribute"><el-option v-for="k in ENERGY_ATTRIBUTES" :key="k" :label="ENERGY_ATTRIBUTE_LABELS[k]" :value="k" /></el-select>
         </label>
-        <label class="ml-field"><span>外部合同/确认单编号</span><el-input v-model="identity.externalContractNo" placeholder="必填" /></label>
-        <label class="ml-field ml-wide"><span>合同名称</span><el-input v-model="identity.contractName" placeholder="必填" /></label>
-        <label class="ml-field"><span>来源</span><el-input v-model="identity.sourceNamespace" placeholder="如 MANUAL、交易中心" /></label>
-        <label class="ml-field"><span>交易主体 / 交易单元</span>
+        <label class="ml-field" data-guide="ml-contract-no"><span>外部合同/确认单编号</span><el-input v-model="identity.externalContractNo" placeholder="必填" /></label>
+        <label class="ml-field ml-wide" data-guide="ml-contract-name"><span>合同名称</span><el-input v-model="identity.contractName" placeholder="必填" /></label>
+        <label class="ml-field" data-guide="ml-contract-source"><span>来源</span><el-input v-model="identity.sourceNamespace" placeholder="如 MANUAL、交易中心" /></label>
+        <label class="ml-field" data-guide="ml-contract-subject"><span>交易主体 / 交易单元</span>
           <el-select v-model="identity.subjectId" clearable filterable placeholder="核验前必须指定">
             <el-option v-for="s in subjects" :key="s.id" :label="`${s.displayName}（${s.subjectKey}）`" :value="s.id" />
           </el-select>
         </label>
-        <label class="ml-field"><span>场站（可不分配）</span>
+        <label class="ml-field" data-guide="ml-contract-station"><span>场站（可不分配）</span>
           <el-select v-model="identity.stationId" clearable filterable placeholder="主体统签可留空">
             <el-option v-for="s in stations" :key="s.id" :label="`${s.name}（${s.type}）`" :value="s.id" />
           </el-select>
         </label>
         <label class="ml-field"><span>购电方</span><el-input v-model="identity.counterpartyName" /></label>
-        <label v-if="identity.documentKind === 'OBLIGATION'" class="ml-field"><span>所属框架协议（可空）</span>
+        <label v-if="identity.documentKind === 'OBLIGATION'" class="ml-field" data-guide="ml-contract-framework"><span>所属框架协议（可空）</span>
           <el-select v-model="identity.frameworkContractId" clearable filterable placeholder="不关联" :loading="frameworkLoading" data-testid="ml-framework-select">
             <el-option v-for="f in frameworkSelectOptions" :key="f.contractId" :label="f.label" :value="f.contractId" />
           </el-select>
@@ -232,7 +260,7 @@ async function submit() {
       <el-button v-if="savedWithWarnings" type="primary" @click="close">完成</el-button>
       <template v-else>
         <el-button :disabled="saving" @click="close">取消</el-button>
-        <el-button type="primary" :loading="saving" :disabled="!canSubmit" @click="submit">{{ editing ? '保存修改' : '保存草稿' }}</el-button>
+        <el-button data-guide="ml-contract-submit" type="primary" :loading="saving" :disabled="!canSubmit" @click="submit">{{ editing ? '保存修改' : '保存草稿' }}</el-button>
       </template>
     </template>
   </el-dialog>

@@ -13,7 +13,11 @@ import MidlongNotice from '@/components/midlong/MidlongNotice.vue'
 import MidlongContractFormDialog from '@/components/midlong/MidlongContractFormDialog.vue'
 import MidlongImportDialog from '@/components/midlong/MidlongImportDialog.vue'
 import MidlongSubjectDialog from '@/components/midlong/MidlongSubjectDialog.vue'
+import GuideLauncher from '@/features/guide/components/GuideLauncher.vue'
+import { useGuideState } from '@/features/guide/bridge'
+import { STATE } from '@/features/guide/midlong/anchors'
 import { selectedCompanyId } from '@/services/company/companyContext'
+import { currentPracticeCompany } from '@/services/company/practiceSpace'
 import { fetchStations, type CompanyStation } from '@/services/company/companyApi'
 import { currentRegion } from '@/services/region/regionContext'
 import {
@@ -25,7 +29,7 @@ import {
   TRADE_METHOD_LABELS,
   type MidlongCapabilities, type MidlongContractListResult, type MidlongContractQuery, type MidlongSubject,
 } from '@/services/midlong/midlongTypes'
-import { confirmationTag, createLoadGuard, downloadCsv, fmtPrice, fmtQuantity, progressTag, qualityTags } from '@/services/midlong/midlongFormat'
+import { confirmationTag, createLoadGuard, downloadCsv, fmtPrice, fmtQuantity, progressTag, qualityTags, testDataKind } from '@/services/midlong/midlongFormat'
 
 const route = useRoute()
 const router = useRouter()
@@ -165,8 +169,23 @@ async function doExport() {
 
 const canWrite = computed(() => Boolean(capabilities.value?.canWrite))
 const stationName = (id: number | null) => (id ? stations.value.find((s) => s.id === id)?.name ?? `#${id}` : '未分配')
-const isTestData = (ns: string) => /^TEST/i.test(ns)
-const hasTestData = computed(() => (result.value?.rows ?? []).some((r) => isTestData(r.sourceNamespace)))
+
+// 操作导引（dljy#3404）：列表页快照驱动导引第 0 章的进入练习空间判断与各章的产物恢复。
+useGuideState(STATE.contracts, () => {
+  const r = result.value
+  if (!r) return null
+  return {
+    practiceActive: currentPracticeCompany.value !== null,
+    canWrite: canWrite.value,
+    subjects: subjects.value.map((s) => ({ id: s.id, subjectKey: s.subjectKey })),
+    contracts: r.rows.map((row) => ({ id: row.contractId, documentKind: row.documentKind, externalContractNo: row.externalContractNo })),
+    stations: stations.value.map((s) => ({ id: s.id })),
+  }
+})
+
+// 测试类来源标注（dljy#3404）：教学演示（导引生成）与工程测试夹具分开说明。
+const testKinds = computed(() => [...new Set((result.value?.rows ?? []).map((row) => testDataKind(row.sourceNamespace)?.label).filter(Boolean))])
+const hasTestData = computed(() => testKinds.value.length > 0)
 
 onMounted(load)
 // 交易主体、场站、框架协议的编号只在所属公司/地区内有意义：切换后清掉这些筛选并同步地址栏，
@@ -186,6 +205,7 @@ watch([selectedCompanyId, () => currentRegion.value.id], () => {
     <div class="ml-head">
       <h2 class="ml-title">中长期售电合同</h2>
       <span class="ml-sub">云南试点 · 电源侧售电 · 只含中长期合同（不含现货与零售）</span>
+      <GuideLauncher group="midlong" :capabilities="capabilities" />
     </div>
     <CompanyScopeBar />
 
@@ -213,16 +233,16 @@ watch([selectedCompanyId, () => currentRegion.value.id], () => {
       <MidlongNotice tone="info">
         交割期已结束只表示日期已过，不代表逾期、违约或已结清；列表电量为当前版本合同电量，月度持仓以已确认版本的正式月分解为准。
       </MidlongNotice>
-      <MidlongNotice v-if="hasTestData" tone="warn" title="当前列表含测试数据">来源以 TEST 开头的合同是工程测试夹具，不代表真实合同，不作为业务验收依据。</MidlongNotice>
+      <MidlongNotice v-if="hasTestData" tone="warn" title="当前列表含测试数据">来源以 TEST 开头的合同（{{ testKinds.join('、') }}）不代表真实合同，不作为业务验收依据。</MidlongNotice>
 
       <div class="ml-toolbar">
         <template v-if="canWrite">
-          <el-button type="primary" @click="dialogs.form = true">录入合同草稿</el-button>
+          <el-button type="primary" data-guide="ml-new-contract" @click="dialogs.form = true">录入合同草稿</el-button>
           <el-button @click="dialogs.import = true">导入合同</el-button>
         </template>
-        <el-button @click="dialogs.subjects = true">交易主体</el-button>
+        <el-button data-guide="ml-open-subjects" @click="dialogs.subjects = true">交易主体</el-button>
         <el-button :loading="exporting" @click="doExport">导出筛选结果</el-button>
-        <router-link to="/zcqjy/positions" class="ml-link">查看月度持仓 →</router-link>
+        <router-link to="/zcqjy/positions" class="ml-link" data-guide="ml-positions-link">查看月度持仓 →</router-link>
         <span v-if="!canWrite" class="ml-muted">只读：当前角色无公司合同写入权限</span>
       </div>
 
@@ -263,7 +283,7 @@ watch([selectedCompanyId, () => currentRegion.value.id], () => {
         <el-table-column label="外部编号" min-width="150">
           <template #default="{ row }">
             <router-link :to="{ path: `/zcqjy/contracts/${row.contractId}`, query: route.query }" class="ml-link">{{ row.externalContractNo }}</router-link>
-            <el-tag v-if="isTestData(row.sourceNamespace)" size="small" type="warning" effect="plain" class="ml-gap">测试数据</el-tag>
+            <el-tag v-if="testDataKind(row.sourceNamespace)" size="small" type="warning" effect="plain" class="ml-gap" :title="testDataKind(row.sourceNamespace)?.title">{{ testDataKind(row.sourceNamespace)?.label }}</el-tag>
           </template>
         </el-table-column>
         <el-table-column prop="contractName" label="合同名称" min-width="190" show-overflow-tooltip />

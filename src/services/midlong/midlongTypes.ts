@@ -17,8 +17,8 @@ export {
   PRODUCT_KIND_LABELS, QUALITY_FLAG_LABELS, REVISION_KIND_LABELS, TAX_BASIS_LABELS, TRADE_METHOD_LABELS,
   VERIFICATION_EVIDENCE_TYPES, DOCUMENT_KINDS, PRODUCT_KINDS, TRADE_METHODS, MARKET_SCOPES, ENERGY_ATTRIBUTES,
   PRICE_TYPES, TAX_BASES, PRICE_COMPONENTS, EVIDENCE_BASES, QUALITY_FLAGS, CONFIRMATION_STATUSES, DELIVERY_PROGRESS_VALUES,
-  EVIDENCE_DOCUMENT_TYPES,
+  EVIDENCE_DOCUMENT_TYPES, DEFERRED_PRODUCT_KEYWORDS, deferredProductKeywordOf,
 } from 'shared/midlong/contract.mjs'
 export { normalizeEconomics } from 'shared/midlong/economics.mjs'
 export type { EconomicsIssue, NormalizedEconomics } from 'shared/midlong/economics.mjs'
-export { beijingToday, deliveryMonths, monthsBetween, normalizeMonth } from 'shared/midlong/dates.mjs'
+export { beijingToday, deliveryMonths, monthFirstDay, monthLastDay, monthsBetween, normalizeMonth } from 'shared/midlong/dates.mjs'

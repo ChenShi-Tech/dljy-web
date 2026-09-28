@@ -38,6 +38,7 @@ import {
   subjectTypeLabels
 } from '@/services/governance'
 import { AiSidebar, AiOrbLauncher } from '@/features/aiSidebar'
+import GuideHost from '@/features/guide/components/GuideHost.vue'
 // 价带卡（峰/平/谷徽标 + 参考价）按验收反馈先隐藏；恢复时解开此处与模板中的 topbar-ticker 块
 // import PriceTicker from '../components/PriceTicker.vue'
 import RegionSwitcher from '@/components/region/RegionSwitcher.vue'
@@ -493,6 +494,8 @@ watch(
     </section>
 
     <AiSidebar />
+    <!-- 操作导引全局浮层（dljy#3404）：无会话不渲染任何 DOM，挂 AppLayout 保证盖过业务弹层并在路由间常驻 -->
+    <GuideHost />
     <!-- 右下角液态玻璃 AI 球：全站 AI 侧边栏入口，有解读能力的页面直接解读本页（WebGPU 渲染，不支持时 CSS 降级） -->
     <AiOrbLauncher />
     <RegionMigrationTip />
