@@ -82,7 +82,6 @@ describe('triggerIngest', () => {
     const kinds = [
       'spot-export',
       'weather-export',
-      'market-export',
       'spot-ingest',
       'forecast-etl',
       'cgn-yunnan-prices',

@@ -26,16 +26,15 @@ interface KindMeta {
 const KINDS: KindMeta[] = [
   { kind: 'weather-export', label: '云南气象', desc: 'Open-Meteo 气象要素 + 辐照 → yn_meteo / yn_irradiance', icon: CloudDownload, paramsHint: '无额外参数（自动从 Open-Meteo 拉取）', example: '{}' },
   { kind: 'spot-export', label: '云南现货月度导出包', desc: '交易中心月度导出包：厂站结算 / 损益 / 主数据 → yn_node_price 等', icon: Database, paramsHint: '无参数：自动选用 plant-exports 下最新解压目录（含 export_manifest.csv）；指定目录须服务器命令行', example: '{ }' },
-  { kind: 'market-export', label: '市场分析族（山西目录）', desc: '手录 CSV → market_analysis 公共 7 datasetKey（原市场经营分析页已下线 dljy#3391，数据族仍可经通用数据浏览器回放）；注意默认 region=shanxi', icon: Sunset, paramsHint: '无参数：默认扫 capture-raw/shanxi/market_analysis/；云南数据须服务器命令行 --region yunnan', example: '{ }' },
   { kind: 'cgn-yunnan-prices', label: '中广核云南电价', desc: '厂侧 API 节点/场站电价 → dljy_private 私有 PG（中广核专属）', icon: Database, paramsHint: 'lookbackDays + market + interval；未发布分区自动跳过', example: '{ "lookbackDays": 3, "market": "day_ahead", "interval": "15m" }', params: { lookbackDays: 3, market: 'day_ahead', interval: '15m' } },
   { kind: 'cgn-yunnan-market', label: '中广核云南市场/披露', desc: '厂侧 API 11 条市场曲线 + 26 类公共披露 → dljy_private 私有 PG（中广核专属）', icon: Sunset, paramsHint: 'resource + lookbackDays（默认回看 3 日）', example: '{ "resource": "all", "lookbackDays": 3 }', params: { resource: 'all', lookbackDays: 3 } }
 ]
 
 // IngestKind 含 spot-ingest/forecast-etl（#885 向导一键生效），本页 KINDS 展示 5 个摄取入口
 // （含中广核两个厂侧 API kind，#2203）；补齐 Record 全部 key 满足类型完整性（未列 kind 不渲染、不触发）。
-const busy = reactive<Record<IngestKind, boolean>>({ 'spot-export': false, 'weather-export': false, 'market-export': false, 'spot-ingest': false, 'forecast-etl': false, 'cgn-yunnan-prices': false, 'cgn-yunnan-market': false })
-const last = ref<Record<IngestKind, IngestResult | null>>({ 'spot-export': null, 'weather-export': null, 'market-export': null, 'spot-ingest': null, 'forecast-etl': null, 'cgn-yunnan-prices': null, 'cgn-yunnan-market': null })
-const errMsg = ref<Record<IngestKind, string>>({ 'spot-export': '', 'weather-export': '', 'market-export': '', 'spot-ingest': '', 'forecast-etl': '', 'cgn-yunnan-prices': '', 'cgn-yunnan-market': '' })
+const busy = reactive<Record<IngestKind, boolean>>({ 'spot-export': false, 'weather-export': false, 'spot-ingest': false, 'forecast-etl': false, 'cgn-yunnan-prices': false, 'cgn-yunnan-market': false })
+const last = ref<Record<IngestKind, IngestResult | null>>({ 'spot-export': null, 'weather-export': null, 'spot-ingest': null, 'forecast-etl': null, 'cgn-yunnan-prices': null, 'cgn-yunnan-market': null })
+const errMsg = ref<Record<IngestKind, string>>({ 'spot-export': '', 'weather-export': '', 'spot-ingest': '', 'forecast-etl': '', 'cgn-yunnan-prices': '', 'cgn-yunnan-market': '' })
 
 async function run(meta: KindMeta) {
   busy[meta.kind] = true
@@ -65,7 +64,7 @@ function basisFromResult(r: IngestResult): DataSourceBasis {
 <template>
   <div class="ingest-page">
     <header class="page-head">
-      <p class="lede">手动触发数据摄取与 ETL：现货月度导出包 / 气象 / 市场分析族写各自事实层与 capture 回放层；中广核云南厂侧 API 两族写中广核私有 PostgreSQL（dljy_private）。</p>
+      <p class="lede">手动触发数据摄取与 ETL：现货月度导出包 / 气象写各自事实层与 capture 回放层；中广核云南厂侧 API 两族写中广核私有 PostgreSQL（dljy_private）。</p>
     </header>
 
     <section class="link-row">

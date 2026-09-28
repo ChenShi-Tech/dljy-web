@@ -13,7 +13,6 @@ import { dataServicePath } from '@/services/dataServiceRoutes'
 export type IngestKind =
   | 'spot-export'
   | 'weather-export'
-  | 'market-export'
   | 'spot-ingest'
   | 'forecast-etl'
   | 'cgn-yunnan-prices'
