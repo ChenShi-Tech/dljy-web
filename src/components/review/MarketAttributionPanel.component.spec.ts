@@ -9,7 +9,10 @@ import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { nextTick } from 'vue'
 
 vi.mock('vue-router', () => ({ useRouter: () => ({ push: vi.fn() }) }))
-vi.mock('@/services/review/marketAttributionSource', () => ({ fetchMarketAttributionSource: vi.fn() }))
+vi.mock('@/services/review/marketAttributionSource', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/services/review/marketAttributionSource')>()),
+  fetchMarketAttributionSource: vi.fn()
+}))
 vi.mock('@/services/region/regionContext', async () => {
   const { ref } = await import('vue')
   return { currentRegion: ref({ id: 'yunnan' }) }
@@ -24,7 +27,7 @@ vi.mock('@/services/review/reviewStoreClient', () => ({
 
 import { fetchMarketAttributionSource } from '@/services/review/marketAttributionSource'
 import { currentRegion } from '@/services/region/regionContext'
-import { fetchImprovementActions, fetchRiskEvents } from '@/services/review/reviewStoreClient'
+import { fetchImprovementActions, fetchRiskEvents, registerRiskEvent } from '@/services/review/reviewStoreClient'
 import MarketAttributionPanel from './MarketAttributionPanel.vue'
 import { mount } from '@/test/mount'
 import type { MarketAttributionSource } from '@/services/review/marketAttributionSource'
@@ -111,6 +114,8 @@ async function settle(wrapper: ReturnType<typeof mount>) {
 
 beforeEach(() => {
   vi.mocked(fetchMarketAttributionSource).mockReset()
+  vi.mocked(registerRiskEvent).mockReset()
+  ;(currentRegion as { value: { id: string } }).value = { id: 'yunnan' }
   vi.mocked(fetchImprovementActions).mockResolvedValue({ available: false, reason: 'endpoint-absent' })
   vi.mocked(fetchRiskEvents).mockResolvedValue({ available: true, events: [] })
 })
@@ -180,6 +185,56 @@ describe('MarketAttributionPanel（#3392 真实数据口径）', () => {
     await settle(wrapper)
     expect(wrapper.text()).toContain('777.0')
     expect(wrapper.text()).not.toContain('月现货均价 900.0')
+  })
+
+  // #206 R1-01：异常月可能落在滚动窗口内任一月——事件库按整个窗口查询、按异常月本身核对，
+  // 幂等键只由「地区 + 异常月」决定，避免历史异常月已登记仍出按钮、切月后重复登记。
+  /** 12 个月都有价，仅 monthsBack(curMonth, 3) 为 900（历史异常月），复盘月正常。 */
+  const historicalAnomalySource = (): MarketAttributionSource =>
+    makeSource({
+      prices: Array.from({ length: 12 }, (_, i) => {
+        const m = monthsBack(curMonth, 11 - i)
+        return [m, m === monthsBack(curMonth, 3) ? 900 : 300 + (i % 3)] as [string, number]
+      })
+    })
+
+  it('事件库查询覆盖整个滚动窗口，截止日取复盘月真实最后一天', async () => {
+    vi.mocked(fetchMarketAttributionSource).mockResolvedValue(historicalAnomalySource())
+    await settle(mount(MarketAttributionPanel))
+    const [y, m] = curMonth.split('-').map(Number)
+    const lastDay = String(new Date(y, m, 0).getDate()).padStart(2, '0')
+    expect(fetchRiskEvents).toHaveBeenLastCalledWith({
+      since: `${monthsBack(curMonth, 11)}-01`,
+      until: `${curMonth}-${lastDay}T23:59:59Z`
+    })
+  })
+
+  it('历史异常月已在事件库登记 → 不再出现登记按钮（不重复登记）', async () => {
+    const anomalyMonth = monthsBack(curMonth, 3)
+    vi.mocked(fetchMarketAttributionSource).mockResolvedValue(historicalAnomalySource())
+    vi.mocked(fetchRiskEvents).mockResolvedValue({
+      available: true,
+      events: [{ id: 'ev-1', eventType: 'price_anomaly', eventTime: `${anomalyMonth}-01T00:00:00Z` } as never]
+    })
+    const wrapper = await settle(mount(MarketAttributionPanel))
+    expect(wrapper.text()).toContain(`${anomalyMonth}：900.0 元/MWh`)
+    expect(wrapper.text()).not.toContain('登记入风险事件库')
+  })
+
+  it('登记历史异常月：幂等键只由地区 + 异常月决定，登记后按钮消失', async () => {
+    const anomalyMonth = monthsBack(curMonth, 3)
+    vi.mocked(fetchMarketAttributionSource).mockResolvedValue(historicalAnomalySource())
+    vi.mocked(registerRiskEvent).mockResolvedValue({
+      id: 'ev-2', eventType: 'price_anomaly', eventTime: `${anomalyMonth}-01T00:00:00Z`
+    } as never)
+    const wrapper = await settle(mount(MarketAttributionPanel))
+    const btn = wrapper.findAll('button').find((b) => b.text().includes('登记入风险事件库'))
+    expect(btn).toBeTruthy()
+    await btn!.trigger('click')
+    await settle(wrapper)
+    expect(registerRiskEvent).toHaveBeenCalledTimes(1)
+    expect(vi.mocked(registerRiskEvent).mock.calls[0][1]).toBe(`re-price-anomaly-yunnan-${anomalyMonth}`)
+    expect(wrapper.text()).not.toContain('登记入风险事件库')
   })
 
   it('地区切换重新取数（带新 region）', async () => {

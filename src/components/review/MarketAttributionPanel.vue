@@ -17,6 +17,7 @@ import {
   supplyDemandDirection
 } from '@/services/review/marketAttribution'
 import {
+  attributionMonths,
   fetchMarketAttributionSource,
   type MarketAttributionSource
 } from '@/services/review/marketAttributionSource'
@@ -63,7 +64,7 @@ async function load() {
   } finally {
     if (generation === loadGeneration) loading.value = false
   }
-  await loadServerState()
+  await loadServerState(generation)
 }
 onMounted(load)
 watch(month, load)
@@ -113,14 +114,31 @@ const focusInput = ref('')
 const actionBusy = ref(false)
 const actionError = ref('')
 
-/** 已登记的本月风险事件（与异常识别行双向引用的「事件库侧」）。 */
-const monthRiskEvents = ref<RiskEventSummary[]>([])
+/**
+ * 滚动窗口（复盘月及此前 11 个月）内已登记的风险事件。异常月可能落在窗口内任一月，
+ * 「是否已登记」必须按异常月本身核对——只查复盘月会让历史异常月已登记仍出现按钮，
+ * 切到相邻复盘月后窗口均值与说明文字变化，重复登记同一异常（#206 R1-01）。
+ */
+const windowRiskEvents = ref<RiskEventSummary[]>([])
+/** 复盘月内已登记的风险事件（与异常识别行双向引用的「事件库侧」回显）。 */
+const monthRiskEvents = computed(() => windowRiskEvents.value.filter((r) => r.eventTime.startsWith(month.value)))
+/** 该异常月是否已在事件库登记过价格异常。 */
+function anomalyRegistered(m: string): boolean {
+  return windowRiskEvents.value.some((r) => r.eventType === 'price_anomaly' && r.eventTime.startsWith(m))
+}
+
+function monthEndIso(ym: string): string {
+  const [y, m] = ym.split('-').map(Number)
+  return `${ym}-${String(new Date(y, m, 0).getDate()).padStart(2, '0')}T23:59:59Z`
+}
 const eventsAvailable = ref(false)
 const eventBusy = ref(false)
 const eventError = ref('')
 
-async function loadServerState() {
+async function loadServerState(generation: number) {
   const feed = await fetchImprovementActions('open')
+  // 快速切月/切地区时旧轮次后返回不得覆盖新轮次（与 load 同一代次守卫）
+  if (generation !== loadGeneration) return
   if (feed.available) {
     actionsAvailable.value = true
     savedActions.value = feed.actions
@@ -131,12 +149,13 @@ async function loadServerState() {
         ? 'improvement_actions 端点未上线：关注点暂存本地清单，不落库（端点上线后自动切换）。'
         : 'improvement_actions 端点不可达：关注点暂存本地清单，可稍后重试。'
   }
-  const [y, m] = month.value.split('-').map(Number)
-  const until = `${y}-${String(m).padStart(2, '0')}-31T23:59:59Z`
-  const evFeed = await fetchRiskEvents({ since: `${month.value}-01`, until })
+  const windowMonths = attributionMonths(month.value)
+  const since = `${windowMonths[0] ?? month.value}-01`
+  const evFeed = await fetchRiskEvents({ since, until: monthEndIso(month.value) })
+  if (generation !== loadGeneration) return
   if (evFeed.available) {
     eventsAvailable.value = true
-    monthRiskEvents.value = evFeed.events
+    windowRiskEvents.value = evFeed.events
   } else {
     eventsAvailable.value = false
   }
@@ -183,6 +202,8 @@ async function removeFocus(i: number) {
 
 /** 异常价格月登记入风险事件库（时间取月首，月粒度规则口径；金额不猜恒 null）。 */
 async function registerAnomaly(m: string, devPct: number) {
+  // 服务端不按幂等键去重、表上也无唯一约束：已登记的异常月在客户端就拦下，不再提交
+  if (anomalyRegistered(m)) return
   eventBusy.value = true
   eventError.value = ''
   try {
@@ -195,8 +216,11 @@ async function registerAnomaly(m: string, devPct: number) {
       extremeValue: null,
       durationHours: null,
       lessons: `月粒度 2σ 规则识别：偏离近 12 个月均值 ${(devPct * 100).toFixed(1)}%（data_gap：月内逐时极值与持续时长需逐时价格数据，当前未记录）`
-    })
-    monthRiskEvents.value = [ev, ...monthRiskEvents.value]
+    },
+    // 幂等键只由「地区 + 异常月」决定：说明文字随滚动窗口变化，按内容派生的键会让
+    // 同一异常月在不同复盘月下生成不同键（#206 R1-01）
+    `re-price-anomaly-${currentRegion.value.id}-${m}`)
+    windowRiskEvents.value = [ev, ...windowRiskEvents.value]
   } catch (e) {
     eventError.value = e instanceof Error ? e.message : '风险事件登记失败'
   } finally {
@@ -257,7 +281,7 @@ async function registerAnomaly(m: string, devPct: number) {
                   {{ e.month }}：{{ e.spotPrice.toFixed(1) }} 元/MWh（偏离近 12 个月均值 {{ e.devFromMeanYuan >= 0 ? '+' : '' }}{{ e.devFromMeanYuan.toFixed(1) }}，
                   {{ (e.devFromMeanPct * 100).toFixed(1) }}%）
                   <button
-                    v-if="eventsAvailable && !monthRiskEvents.some((r) => r.eventType === 'price_anomaly' && r.eventTime.startsWith(e.month))"
+                    v-if="eventsAvailable && !anomalyRegistered(e.month)"
                     type="button" class="map-reg" :disabled="eventBusy" @click="registerAnomaly(e.month, e.devFromMeanPct)"
                   >登记入风险事件库</button>
                 </p>
