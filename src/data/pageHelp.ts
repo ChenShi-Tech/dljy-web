@@ -171,15 +171,9 @@ export const pageHelpRegistry: Record<string, PageHelpEntry> = {
     body: '出清现货电量分析回放：10 序列约 65 天（4/1~6/4）的出清电量时序，nameList 为约 6528 个连续 15min 时点。数据来自 POST /sdpt/zcqxhdl/list（宽范围），回放 sdpt_zcqxhdl。为真实采集回放数据。',
     docPath: 'docs/data/yunnan-parquet-derive.md'
   },
-  PriceNewEnergyRelation: {
-    title: '现货价格与新能源关系',
-    body: '现货价格与新能源出力关系回放：日前电价与新能源总/供/总电/供电、系统负荷的关系序列，覆盖 373 天（2025-05~2026-06）。数据来自 POST /sdpt/zcqxhdl/list24（ts=回溯天数），回放 sdpt_zcqxhdl。为真实采集回放数据（日前/实时切换为 UI 预留字段，未接入数据逻辑）。',
-    docPath: 'docs/data/yunnan-parquet-derive.md'
-  },
-  PriceSystemLoadRelation: {
-    title: '现货价格与统调负荷关系',
-    body: '现货价格与统调负荷关系回放：日前电价与系统负荷的关系序列，覆盖 373 天。数据来自 POST /sdpt/zcqxhdl/fhlist24，回放 sdpt_zcqxhdl。为真实采集回放数据。',
-    docPath: 'docs/data/yunnan-parquet-derive.md'
+  PriceDrivers: {
+    title: '价格驱动分析',
+    body: '现货价格与驱动因素（新能源出力/统调负荷）关系合并分析页：指标卡（相关系数、平均边际敏感度、最敏感/最弱时段、样本量）+ 小时×驱动量分档热力图 + 24 小时边际敏感度双驱动对比柱 + 点选联动的单小时散点与最小二乘拟合。山西走 sdpt_zcqxhdl/list24 与 fhlist24 回放，云南走 yn_system_forecast 真实长表。为真实采集数据；相关系数与敏感度为页面内统计计算，口径说明见各 ⓘ 悬浮。'
   },
   TimeOfUseMarket: {
     title: '分时行情',

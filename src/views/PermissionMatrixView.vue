@@ -11,6 +11,8 @@ import {
   getAccessOverrides,
   getEffectiveAccessRule,
   isAdminLevelRole,
+  PRICE_DRIVERS_PATH,
+  priceDriverAccessPaths,
   resetRoleAccessOverride,
   roleLabels,
   saveRoleAccessOverride,
@@ -58,8 +60,19 @@ const FORECAST_CENTER_TABS: MenuRoute[] = [
   { block: '预测数据', title: '预测中心 · 质量记分牌', path: '/ycsj/scoreboard' },
   { block: '预测数据', title: '预测中心 · 申报决策', path: '/ycsj/decision-cockpit' },
 ]
+// 价格驱动分析（dljy#3390）合并了两个旧关系页，授权仍按驱动因素落在旧路径上（见 governance
+// priceDriverAccessPaths）：矩阵把合并页展开成两行、保存写回旧路径，合并页本身不单独授权——
+// 否则保存后旧路径被清掉，只有其中一个驱动权限的角色会失权或被扩权。
+function expandPriceDriverRows(rows: MenuRoute[]): MenuRoute[] {
+  return rows.flatMap((row) => row.path !== PRICE_DRIVERS_PATH
+    ? [row]
+    : [
+        { block: row.block, title: `${row.title} · 新能源出力`, path: priceDriverAccessPaths.renewable },
+        { block: row.block, title: `${row.title} · 统调负荷`, path: priceDriverAccessPaths.load }
+      ])
+}
 const menuRoutes = computed(() => {
-  const rows = flattenNavigation(navigation)
+  const rows = expandPriceDriverRows(flattenNavigation(navigation))
   const index = rows.findIndex((row) => row.path === '/ycsj/center')
   return index >= 0 ? [...rows.slice(0, index + 1), ...FORECAST_CENTER_TABS, ...rows.slice(index + 1)] : rows
 })
