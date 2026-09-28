@@ -570,7 +570,7 @@ onRegionChange(loadData)
 .card-head .spacer { flex: 1; }
 .hint {
   display: inline-grid; place-items: center; width: 16px; height: 16px; border-radius: 50%;
-  color: var(--el-text-color-secondary); cursor: help; font-size: 11px; border: 1px solid var(--el-border-color);
+  color: var(--el-text-color-secondary); cursor: help; font-size: var(--font-xs); border: 1px solid var(--el-border-color);
 }
 .chip {
   font-size: var(--font-sm); color: var(--el-text-color-regular); background: var(--el-fill-color);
