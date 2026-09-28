@@ -71,7 +71,9 @@ export const navigation: NavItem[] = [
       // 路由保持可达（degraded），直接访问由 FshqView 显示可解释降级卡 + 价格分析入口。
       { path: '/sjfx/fshq', title: '分时行情', icon: LineChart, hiddenInRegionIds: ['yunnan'] },
       { path: '/sjfx/zrsjg', title: '价格分析', icon: ChartSpline },
-      { path: '/sjfx/zcqxhdl', title: '出清现货电量分析', icon: LineChart },
+      // dljy#3388：云南没有全省出清来源（旧实现读的是山西公司专属清单，#2991 已停用），
+      // 菜单在云南隐藏；路由保持可达，直接访问由 ClearingSpotAnalysisView 显示停用说明。
+      { path: '/sjfx/zcqxhdl', title: '出清现货电量分析', icon: LineChart, hiddenInRegionIds: ['yunnan'] },
       // dljy#3390：旧「现货价格×新能源」「现货价格×统调负荷」两页合并为一页；
       // 不带 stanceAffinity（发电/售电均可见），旧地址 redirect 预选驱动。
       { path: '/sjfx/price-drivers', title: '价格驱动分析', icon: ChartSpline },
