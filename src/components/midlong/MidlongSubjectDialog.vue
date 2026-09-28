@@ -6,6 +6,8 @@ import { ElMessage } from 'element-plus'
 import MidlongNotice from './MidlongNotice.vue'
 import type { MidlongSubject } from '@/services/midlong/midlongTypes'
 import { createSubject, midlongFailureOf } from '@/services/midlong/midlongApi'
+import { emitGuideSignal, useGuideForm } from '@/features/guide/bridge'
+import { FORM, SIGNAL } from '@/features/guide/midlong/anchors'
 import type { CompanyStation } from '@/services/company/companyApi'
 
 const props = defineProps<{ modelValue: boolean; subjects: MidlongSubject[]; stations: CompanyStation[]; canWrite: boolean }>()
@@ -14,6 +16,9 @@ const emit = defineEmits<{ 'update:modelValue': [boolean]; created: [MidlongSubj
 const form = reactive({ subjectKey: '', displayName: '', unitCode: '', unitCodeSource: '', verificationNote: '', stationIds: [] as number[] })
 const saving = ref(false)
 const error = ref('')
+
+// 操作导引：登记表单值与「帮我填」兜底直接共享这个 reactive（dljy#3404）。
+useGuideForm(FORM.subject, form)
 
 watch(() => props.modelValue, (open) => {
   if (!open) return
@@ -34,6 +39,7 @@ async function submit() {
       unitCodeSource: form.unitCodeSource.trim() || null, verificationNote: form.verificationNote.trim() || null, stationIds: form.stationIds,
     })
     ElMessage.success('交易主体已登记')
+    emitGuideSignal(SIGNAL.subjectCreated, { id: subject.id, subjectKey: subject.subjectKey })
     emit('created', subject)
     Object.assign(form, { subjectKey: '', displayName: '', unitCode: '', unitCodeSource: '', verificationNote: '', stationIds: [] })
   } catch (e) {
@@ -60,11 +66,11 @@ async function submit() {
       </el-table>
       <template v-if="canWrite">
         <div class="ml-grid">
-          <label class="ml-field"><span>主体编码（公司内唯一）</span><el-input v-model="form.subjectKey" placeholder="如 CGN-YN-WIND-01" /></label>
-          <label class="ml-field"><span>名称</span><el-input v-model="form.displayName" /></label>
+          <label class="ml-field" data-guide="ml-subject-key"><span>主体编码（公司内唯一）</span><el-input v-model="form.subjectKey" placeholder="如 CGN-YN-WIND-01" /></label>
+          <label class="ml-field" data-guide="ml-subject-name"><span>名称</span><el-input v-model="form.displayName" /></label>
           <label class="ml-field"><span>交易中心单元代码（可空）</span><el-input v-model="form.unitCode" /></label>
           <label class="ml-field"><span>代码来源（填代码时必填）</span><el-input v-model="form.unitCodeSource" placeholder="如 交易中心注册回执" /></label>
-          <label class="ml-field ml-wide"><span>关联场站（本公司本地区）</span>
+          <label class="ml-field ml-wide" data-guide="ml-subject-stations"><span>关联场站（本公司本地区）</span>
             <el-select v-model="form.stationIds" multiple filterable placeholder="可多选">
               <el-option v-for="s in stations" :key="s.id" :label="`${s.name}（${s.type}）`" :value="s.id" />
             </el-select>
@@ -75,8 +81,8 @@ async function submit() {
       </template>
     </div>
     <template #footer>
-      <el-button @click="emit('update:modelValue', false)">关闭</el-button>
-      <el-button v-if="canWrite" type="primary" :loading="saving" :disabled="!valid" @click="submit">登记主体</el-button>
+      <el-button data-guide="ml-subject-close" @click="emit('update:modelValue', false)">关闭</el-button>
+      <el-button v-if="canWrite" data-guide="ml-subject-submit" type="primary" :loading="saving" :disabled="!valid" @click="submit">登记主体</el-button>
     </template>
   </el-dialog>
 </template>

@@ -49,15 +49,15 @@ defineExpose({ check })
 <template>
   <div class="ml-econ">
     <div class="ml-econ-grid">
-      <label class="ml-field">
+      <label class="ml-field" data-guide="ml-econ-delivery-start">
         <span>交割开始日期</span>
         <el-date-picker :model-value="modelValue.deliveryStart" type="date" value-format="YYYY-MM-DD" :disabled="disabled" @update:model-value="(v: string) => patch({ deliveryStart: v ?? '' })" />
       </label>
-      <label class="ml-field">
+      <label class="ml-field" data-guide="ml-econ-delivery-end">
         <span>交割结束日期（含当日）</span>
         <el-date-picker :model-value="modelValue.deliveryEnd" type="date" value-format="YYYY-MM-DD" :disabled="disabled" @update:model-value="(v: string) => patch({ deliveryEnd: v ?? '' })" />
       </label>
-      <label class="ml-field">
+      <label class="ml-field" data-guide="ml-econ-quantity">
         <span>合同电量</span>
         <el-input :model-value="modelValue.totalQuantity" placeholder="未填 = 未知" :disabled="disabled" @update:model-value="(v: string) => patch({ totalQuantity: v })">
           <template #append>
@@ -67,7 +67,7 @@ defineExpose({ check })
           </template>
         </el-input>
       </label>
-      <label class="ml-field">
+      <label class="ml-field" data-guide="ml-econ-price">
         <span>售电价格</span>
         <el-input :model-value="modelValue.sellerPrice" placeholder="未填 = 待核对（不当 0）" :disabled="disabled" @update:model-value="(v: string) => patch({ sellerPrice: v })">
           <template #append>
@@ -83,7 +83,7 @@ defineExpose({ check })
           <el-option v-for="t in PRICE_TYPES" :key="t" :label="PRICE_TYPE_LABELS[t]" :value="t" />
         </el-select>
       </label>
-      <label class="ml-field">
+      <label class="ml-field" data-guide="ml-econ-tax-basis">
         <span>含税口径</span>
         <el-select :model-value="modelValue.taxBasis" placeholder="未知" clearable :disabled="disabled" @update:model-value="(v: string) => patch({ taxBasis: v ?? '' })">
           <el-option v-for="t in TAX_BASES" :key="t" :label="TAX_BASIS_LABELS[t]" :value="t" />
@@ -101,10 +101,10 @@ defineExpose({ check })
       </label>
     </div>
 
-    <div v-if="documentKind === 'OBLIGATION'" class="ml-alloc">
+    <div v-if="documentKind === 'OBLIGATION'" class="ml-alloc" data-guide="ml-econ-alloc">
       <div class="ml-alloc-head">
         <span class="ml-alloc-title">月度分解（{{ modelValue.allocations.length }}）</span>
-        <el-checkbox :model-value="modelValue.allocationDeclaredComplete" :disabled="disabled" @update:model-value="(v: boolean | string | number) => patch({ allocationDeclaredComplete: Boolean(v) })">
+        <el-checkbox data-guide="ml-econ-alloc-complete" :model-value="modelValue.allocationDeclaredComplete" :disabled="disabled" @update:model-value="(v: boolean | string | number) => patch({ allocationDeclaredComplete: Boolean(v) })">
           分解已完整（须与合同电量严格相等）
         </el-checkbox>
         <el-button size="small" :disabled="disabled || !months.length" @click="addRow">添加月份</el-button>
@@ -124,7 +124,7 @@ defineExpose({ check })
       </div>
     </div>
 
-    <div class="ml-econ-check" :class="{ bad: check.errors.length }">
+    <div class="ml-econ-check" :class="{ bad: check.errors.length }" data-guide="ml-econ-check">
       <template v-if="check.errors.length">
         <div v-for="(e, i) in check.errors" :key="i">✕ {{ e.message }}</div>
       </template>

@@ -31,6 +31,8 @@ import {
 import {
   averagePriceLabel, createLoadGuard, downloadCsv, fmtAmount, fmtPrice, fmtQuantity, fmtRatio, monthQuantityLabel, notionalAmountLabel,
 } from '@/services/midlong/midlongFormat'
+import { useGuideForm, useGuideState } from '@/features/guide/bridge'
+import { FORM, STATE } from '@/features/guide/midlong/anchors'
 
 const route = useRoute()
 const router = useRouter()
@@ -217,6 +219,20 @@ const stationLink = computed(() => ({
 }))
 
 const stationName = (id: number | null) => (id ? stations.value.find((s) => s.id === id)?.name ?? `#${id}` : '未分配')
+
+// 操作导引（dljy#3404）：导引跳转过来时用 fill+submit 纠正 KeepAlive 保留的旧月份筛选；
+// 快照驱动第 4 章末尾「区间已查询 / 已钻取月份」的推进与恢复。
+useGuideForm(
+  FORM.positionsFilters,
+  {
+    read: () => ({ ...filters }),
+    fill: (values) => {
+      for (const [key, value] of Object.entries(values)) (filters as unknown as Record<string, unknown>)[key] = value
+    },
+    submit: () => { apply() },
+  },
+)
+useGuideState(STATE.positions, () => ({ months: (report.value?.months ?? []).map((m) => m.month), drillMonth: drillMonth.value }))
 </script>
 
 <template>
@@ -292,7 +308,7 @@ const stationName = (id: number | null) => (id ? stations.value.find((s) => s.id
 
       <ChartCard title="月度持仓（虚线框月份另有未分解电量）" :height="320" :build-option="buildOption" :empty="report.status === 'empty'" empty-text="暂无已确认持仓" />
 
-      <div class="ml-panel">
+      <div class="ml-panel" data-guide="ml-positions-months">
         <h3>月度明细 <small>点击月份查看合同贡献</small></h3>
         <el-table :data="report.months" border size="small" highlight-current-row @row-click="(row: MidlongPositionMonth) => (drillMonth = row.month)">
           <el-table-column prop="month" label="月份" width="100" />
@@ -305,7 +321,7 @@ const stationName = (id: number | null) => (id ? stations.value.find((s) => s.id
         </el-table>
       </div>
 
-      <div v-if="drillMonth" class="ml-panel">
+      <div v-if="drillMonth" class="ml-panel" data-guide="ml-positions-drill">
         <h3>{{ drillMonth }} 合同贡献 <el-button link @click="drillMonth = null">收起</el-button></h3>
         <el-table :data="drillRows" border size="small">
           <el-table-column label="合同" min-width="200">

@@ -33,8 +33,10 @@ import {
 } from '@/services/midlong/midlongTypes'
 import { draftFromRevision, toEconomicsInput, type EconomicsDraft } from '@/services/midlong/economicsDraft'
 import {
-  confirmationTag, createLoadGuard, downloadBase64, fileToBase64, fmtPrice, fmtQuantity, oversizeUploadMessage, progressTag, qualityTags,
+  confirmationTag, createLoadGuard, downloadBase64, fileToBase64, fmtPrice, fmtQuantity, oversizeUploadMessage, progressTag, qualityTags, testDataKind,
 } from '@/services/midlong/midlongFormat'
+import { emitGuideSignal, useGuideForm, useGuideState } from '@/features/guide/bridge'
+import { FORM, SIGNAL, STATE } from '@/features/guide/midlong/anchors'
 
 const route = useRoute()
 // 返回列表时带回进入详情时的列表筛选（含旧深链转来的交割期），不丢筛选。
@@ -90,7 +92,8 @@ const isEditable = computed(() => status.value === 'DRAFT' || status.value === '
 const current = computed(() => detail.value?.currentRevision ?? null)
 const blockingGaps = computed(() => qualityTags(detail.value?.qualityFlags ?? []).filter((t) => t.blocksVerification))
 const hintGaps = computed(() => qualityTags(detail.value?.qualityFlags ?? []).filter((t) => !t.blocksVerification))
-const isTestData = computed(() => /^TEST/i.test(detail.value?.sourceNamespace ?? ''))
+// 测试类来源标注（dljy#3404）：教学演示（TEST-GUIDE，导引生成）与工程测试夹具分开说明。
+const testData = computed(() => testDataKind(detail.value?.sourceNamespace ?? ''))
 const stationName = (id: number | null) => (id ? stations.value.find((s) => s.id === id)?.name ?? `#${id}` : '未分配（主体统签）')
 const subjectLabel = computed(() => {
   const d = detail.value
@@ -124,8 +127,9 @@ function openAction(name: keyof typeof dialogs) {
   dialogs[name] = true
 }
 
-async function runAction(name: keyof typeof dialogs, action: () => Promise<unknown>, success: string) {
-  if (busy.value) return
+// 返回是否成功（dljy#3404）：导引在成功后才发推进信号，失败时保持现有错误展示不动。
+async function runAction(name: keyof typeof dialogs, action: () => Promise<unknown>, success: string): Promise<boolean> {
+  if (busy.value) return false
   busy.value = true
   actionError.value = null
   try {
@@ -133,8 +137,10 @@ async function runAction(name: keyof typeof dialogs, action: () => Promise<unkno
     ElMessage.success(success)
     dialogs[name] = false
     await load()
+    return true
   } catch (error) {
     actionError.value = midlongFailureOf(error)
+    return false
   } finally {
     busy.value = false
   }
@@ -152,6 +158,7 @@ function submitVerify() {
   const d = detail.value
   if (!d) return
   void runAction('verify', () => verifyContract(d.contractId, { expectedRowVersion: d.rowVersion, evidenceIds: verifyForm.evidenceIds, note: verifyForm.note || undefined }), '已核验确认，合同将按确认版本计入月度持仓')
+    .then((ok) => { if (ok) emitGuideSignal(SIGNAL.contractVerified, { contractId: d.contractId }) })
 }
 
 // 录入更正
@@ -257,6 +264,30 @@ async function submitBuyerCategory() {
 // 补充资料
 const evidenceForm = reactive({ documentType: 'ELECTRONIC_CONFIRMATION' as EvidenceUpload['documentType'], note: '', file: null as File | null })
 const uploadableTypes = EVIDENCE_DOCUMENT_TYPES.filter((t) => t !== 'IMPORT_SOURCE_FILE') as EvidenceUpload['documentType'][]
+
+// 操作导引（dljy#3404）：导引的「帮我填」直接把示例 File 写进 evidenceForm.file（原生 input 无法程序赋值）；
+// verify 表单只读（依据默认全选，导引不代填）；详情快照驱动第 4 章的推进与恢复。
+useGuideForm(
+  FORM.evidence,
+  {
+    read: () => ({ ...evidenceForm }),
+    fill: (values) => {
+      for (const [key, value] of Object.entries(values)) (evidenceForm as unknown as Record<string, unknown>)[key] = value
+    },
+  },
+  { active: () => dialogs.evidence },
+)
+useGuideForm(FORM.verify, { read: () => ({ ...verifyForm }) }, { active: () => dialogs.verify })
+useGuideState(STATE.contractDetail, () => {
+  const d = detail.value
+  if (!d) return null
+  return {
+    contractId: d.contractId,
+    documentKind: d.documentKind,
+    confirmationStatus: d.confirmationStatus,
+    verifiableEvidenceCount: d.evidence.filter((e) => VERIFICATION_EVIDENCE_TYPES.includes(e.documentType)).length,
+  }
+})
 function openEvidence() {
   Object.assign(evidenceForm, { documentType: 'ELECTRONIC_CONFIRMATION', note: '', file: null })
   openAction('evidence')
@@ -279,7 +310,8 @@ async function submitEvidence() {
     return
   }
   const contentBase64 = await fileToBase64(file)
-  void runAction('evidence', () => addEvidence(d.contractId, { fileName: file.name, contentBase64, documentType: evidenceForm.documentType, note: evidenceForm.note || undefined, mediaType: file.type || undefined }), '资料已补充（不改变合同电量）')
+  const ok = await runAction('evidence', () => addEvidence(d.contractId, { fileName: file.name, contentBase64, documentType: evidenceForm.documentType, note: evidenceForm.note || undefined, mediaType: file.type || undefined }), '资料已补充（不改变合同电量）')
+  if (ok) emitGuideSignal(SIGNAL.evidenceAdded, { contractId: d.contractId })
 }
 
 async function downloadEvidence(evidenceId: number) {
@@ -303,7 +335,7 @@ const missingBasis = computed(() => (actionError.value?.errorCode === 'INCOMPLET
 <template>
   <div class="ml-page">
     <div class="ml-head">
-      <router-link :to="backToList" class="ml-link">← 售电合同</router-link>
+      <router-link :to="backToList" class="ml-link" data-guide="ml-detail-back">← 售电合同</router-link>
     </div>
     <CompanyScopeBar />
 
@@ -320,10 +352,10 @@ const missingBasis = computed(() => (actionError.value?.errorCode === 'INCOMPLET
           <h2 class="ml-title">{{ detail.contractName }}</h2>
           <div class="ml-tags">
             <span class="ml-mono">{{ detail.externalContractNo }}</span>
-            <el-tag :type="confirmationTag(detail.confirmationStatus).type">{{ confirmationTag(detail.confirmationStatus).label }}</el-tag>
+            <el-tag :type="confirmationTag(detail.confirmationStatus).type" data-guide="ml-detail-status">{{ confirmationTag(detail.confirmationStatus).label }}</el-tag>
             <el-tag :type="progressTag(detail.deliveryProgress).type" effect="plain">{{ progressTag(detail.deliveryProgress).label }}</el-tag>
             <el-tag effect="plain">版本 {{ detail.currentRevisionNo }}</el-tag>
-            <el-tag v-if="isTestData" type="warning" effect="plain">测试数据</el-tag>
+            <el-tag v-if="testData" type="warning" effect="plain" :title="testData.title">{{ testData.label }}</el-tag>
             <el-tag v-if="detail.labels?.BUYER_CATEGORY" type="info" effect="plain" data-test="buyer-category-tag">
               购方：{{ buyerCategoryLabel(detail.labels.BUYER_CATEGORY) }}
             </el-tag>
@@ -333,11 +365,11 @@ const missingBasis = computed(() => (actionError.value?.errorCode === 'INCOMPLET
         <div v-if="canWrite" class="ml-actions">
           <template v-if="isEditable">
             <el-button @click="openAction('form')">修改草稿</el-button>
-            <el-button type="primary" @click="openVerify">核验确认</el-button>
+            <el-button type="primary" data-guide="ml-detail-verify-btn" @click="openVerify">核验确认</el-button>
           </template>
           <el-button v-if="status === 'CONFIRMED'" type="primary" @click="openCorrect">录入更正</el-button>
           <template v-if="status !== 'VOIDED'">
-            <el-button @click="openEvidence">补充资料</el-button>
+            <el-button data-guide="ml-detail-evidence-btn" @click="openEvidence">补充资料</el-button>
             <el-button @click="openAlias">关联外部编号</el-button>
             <el-button data-test="buyer-category-edit" @click="openBuyerCategory">标注购方类别</el-button>
             <el-button type="danger" plain @click="openVoid">{{ status === 'CONFIRMED' ? '整笔纠错作废' : '作废草稿' }}</el-button>
@@ -348,8 +380,8 @@ const missingBasis = computed(() => (actionError.value?.errorCode === 'INCOMPLET
       <MidlongNotice v-if="status === 'VOIDED'" tone="warn" title="已作废">
         {{ detail.voidReason }}（{{ detail.voidedBy }} · {{ detail.voidedAt ? new Date(detail.voidedAt).toLocaleString('zh-CN') : '' }}）。作废合同不计入持仓，全部历史版本保留可查。
       </MidlongNotice>
-      <MidlongNotice v-if="isTestData" tone="warn">该合同来源为 {{ detail.sourceNamespace }}，是工程测试数据，不代表真实合同，不作为业务验收依据。</MidlongNotice>
-      <MidlongNotice v-if="isEditable && blockingGaps.length" tone="danger" title="核验确认前需补齐">
+      <MidlongNotice v-if="testData" tone="warn">{{ testData.title }}</MidlongNotice>
+      <MidlongNotice v-if="isEditable && blockingGaps.length" tone="danger" title="核验确认前需补齐" data-guide="ml-detail-blocking">
         {{ blockingGaps.map((g) => g.label).join('、') }}。
       </MidlongNotice>
       <MidlongNotice v-if="hintGaps.length" tone="warn" title="质量提示（不阻止确认，已证明的义务照常计入）">
@@ -497,7 +529,7 @@ const missingBasis = computed(() => (actionError.value?.errorCode === 'INCOMPLET
     <el-dialog v-model="dialogs.verify" title="核验确认" width="620px">
       <div class="ml-dialog">
         <MidlongNotice tone="info">确认后经济内容以不可覆盖版本保存，按确认版本计入月度持仓；价格或分解缺失不阻止确认，但会持续提示。</MidlongNotice>
-        <div class="ml-field">
+        <div class="ml-field" data-guide="ml-verify-evidence">
           <span>核验依据（至少一份电子交易确认单、纸质合同或交易中心系统导出）</span>
           <el-checkbox-group v-model="verifyForm.evidenceIds">
             <el-checkbox v-for="e in verifiableEvidence" :key="e.id" :value="e.id">{{ EVIDENCE_DOCUMENT_TYPE_LABELS[e.documentType] }} · {{ e.originalFileName }}</el-checkbox>
@@ -513,7 +545,7 @@ const missingBasis = computed(() => (actionError.value?.errorCode === 'INCOMPLET
       </div>
       <template #footer>
         <el-button @click="dialogs.verify = false">取消</el-button>
-        <el-button type="primary" :loading="busy" @click="submitVerify">确认该义务</el-button>
+        <el-button type="primary" :loading="busy" data-guide="ml-verify-submit" @click="submitVerify">确认该义务</el-button>
       </template>
     </el-dialog>
 
@@ -583,16 +615,18 @@ const missingBasis = computed(() => (actionError.value?.errorCode === 'INCOMPLET
     <el-dialog v-model="dialogs.evidence" title="补充资料" width="560px">
       <div class="ml-dialog">
         <MidlongNotice tone="info">补充资料只留痕，不改变合同电量，也不新增义务。</MidlongNotice>
-        <label class="ml-field"><span>资料类型</span>
+        <label class="ml-field" data-guide="ml-evidence-type"><span>资料类型</span>
           <el-select v-model="evidenceForm.documentType"><el-option v-for="t in uploadableTypes" :key="t" :label="EVIDENCE_DOCUMENT_TYPE_LABELS[t]" :value="t" /></el-select>
         </label>
-        <label class="ml-field"><span>文件（≤ 20 MB）</span><input type="file" data-testid="ml-evidence-file" @change="onEvidenceFile" /></label>
+        <label class="ml-field" data-guide="ml-evidence-file"><span>文件（≤ 20 MB）</span><input type="file" data-testid="ml-evidence-file" @change="onEvidenceFile" /></label>
+        <!-- 导引代填的 File 不会体现在原生 input 上，用这行让用户看到当前选中的文件（dljy#3404）。 -->
+        <p v-if="evidenceForm.file" class="ml-muted">已选择：{{ evidenceForm.file.name }}（{{ (evidenceForm.file.size / 1024).toFixed(1) }} KB）</p>
         <label class="ml-field"><span>说明（可空）</span><el-input v-model="evidenceForm.note" /></label>
         <MidlongNotice v-if="actionError" tone="danger">{{ actionError.message }}</MidlongNotice>
       </div>
       <template #footer>
         <el-button @click="dialogs.evidence = false">取消</el-button>
-        <el-button type="primary" :loading="busy" :disabled="!evidenceForm.file" @click="submitEvidence">上传</el-button>
+        <el-button type="primary" :loading="busy" :disabled="!evidenceForm.file" data-guide="ml-evidence-submit" @click="submitEvidence">上传</el-button>
       </template>
     </el-dialog>
       <el-dialog v-model="buyerCategoryVisible" title="标注购方类别" width="420px" data-test="buyer-category-dialog">

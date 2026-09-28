@@ -62,6 +62,24 @@ export function qualityTags(flags: QualityFlag[]): Array<{ flag: QualityFlag; la
 }
 
 /** 月度持仓单元格：不完整的月份在数值旁提示，不把 0 当成真实零。 */
+/** 测试类来源的展示口径（dljy#3404）：TEST-GUIDE 是操作导引在练习空间生成的教学演示数据，
+ *  与工程测试夹具分开标注；非 TEST 开头的真实来源返回 null（页面不显示任何标记）。 */
+export function testDataKind(sourceNamespace: string): { label: string; title: string } | null {
+  if (sourceNamespace === 'TEST-GUIDE') {
+    return {
+      label: '教学演示',
+      title: '该合同是操作导引在练习空间生成的教学演示数据，不代表真实合同，不计入集团汇总。',
+    }
+  }
+  if (/^TEST/i.test(sourceNamespace)) {
+    return {
+      label: '测试数据',
+      title: `该合同来源为 ${sourceNamespace}，是工程测试数据，不代表真实合同，不作为业务验收依据。`,
+    }
+  }
+  return null
+}
+
 export function monthQuantityLabel(month: MidlongPositionMonth): string {
   const qty = fmtQuantity(month.formalQuantity)
   if (!month.incomplete) return qty
