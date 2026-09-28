@@ -333,7 +333,8 @@ export const accessRules: Record<RoleCode, AccessRule> = {
       '/zcqjy/zccljk',
       '/zcqjy/zfsdjy',
       '/zcqjy/zjyap',
-      '/zcqjy/exposure',
+      // 中长期与现货套保（原 /zcqjy/exposure，任务 8.1 迁入 /xhjy/hedge；#3401 补迁白名单）。
+      '/xhjy/hedge',
       '/xhjy/zrqsb',
       '/xhjy/zptqx',
       '/xhjy/monitor',
@@ -341,7 +342,6 @@ export const accessRules: Record<RoleCode, AccessRule> = {
       '/sjfx/fshq',
       '/sjfx/zrsjg',
       '/sjfx/zcqxhdl',
-      '/sjfx/market-ops',
       '/ycsj/center', '/ycsj/hub',
       '/ycsj/decision-cockpit',
       '/ycsj/scoreboard',
@@ -364,11 +364,12 @@ export const accessRules: Record<RoleCode, AccessRule> = {
       ...regionalRoutesForRole('RISK'),
       '/xhjy/trading-day',
       '/xhjy/approvals',
+      // 中长期与现货套保：风控看套保率与敞口判级（#3401，用户 2026-09-28 拍板开放 RISK）。
+      '/xhjy/hedge',
       '/sjfx/singleZsjfx',
       '/sjfx/zcqxhdl',
       '/sjfx/zrxgx',
       '/sjfx/zrxgx2',
-      '/sjfx/market-ops',
       '/sjfx/fshq',
       '/sjfx/zrsjg',
       '/ycsj/center', '/ycsj/hub',
@@ -393,7 +394,6 @@ export const accessRules: Record<RoleCode, AccessRule> = {
       '/sjfx/zcqxhdl',
       '/sjfx/zrxgx',
       '/sjfx/zrxgx2',
-      '/sjfx/market-ops',
       '/sjfx/fshq',
       '/sjfx/actualLoad',
       // 云南水电分析（dljy#3389）：可见范围与逐日系统负荷一致（同属供需数据），不扩权。
@@ -434,7 +434,6 @@ export const accessRules: Record<RoleCode, AccessRule> = {
       '/xhjy/trading-day',
       '/zcqjy/zccljk',
       '/xhjy/zrqsb',
-      '/sjfx/market-ops',
       '/djcs/retail-price',
       '/djcs/interprovincial-price',
       '/yygl/ops',
@@ -448,7 +447,9 @@ export const accessRules: Record<RoleCode, AccessRule> = {
     gate: { level: 'L2', label: '结算复核', reviewer: '结算专员', note: '可导入和复核结算，不修改交易策略与执行记录。' }
   },
   PLANT_OPERATOR: {
-    defaultRoute: '/sjfx/market-ops',
+    // 原 defaultRoute 为 /sjfx/market-ops，该页随 dljy#3391 下线（后端已同步改 /dashboard），
+    // 改落现货交易驾驶舱（与 #1799 删除页先例同款处置）。
+    defaultRoute: '/dashboard',
     routes: [
       '/dashboard',
       // 父 Issue #456：展开云南区域模块授权（[yunnanRoleHomeRoute, plant-output]），
@@ -463,7 +464,6 @@ export const accessRules: Record<RoleCode, AccessRule> = {
       '/sjfx/zcqxhdl',
       '/sjfx/zrxgx',
       '/sjfx/zrxgx2',
-      '/sjfx/market-ops',
       '/sjfx/fshq',
       '/sjfx/zrsjg',
       '/sjfx/tqyb',
@@ -495,7 +495,6 @@ export const accessRules: Record<RoleCode, AccessRule> = {
       '/zcqjy/zjyap',
       '/xhjy/zptqx',
       '/sjfx/zrxgx2',
-      '/sjfx/market-ops',
       '/sjfx/fshq',
       '/sjfx/zrsjg',
       '/ycsj/center', '/ycsj/hub',
@@ -525,7 +524,6 @@ export const accessRules: Record<RoleCode, AccessRule> = {
       // 父 Issue #456：同 PLANT_OPERATOR，展开云南区域模块授权以进工作台看出力 tab。
       ...regionalRoutesForRole('STORAGE_OPERATOR'),
       '/xhjy/trading-day',
-      '/sjfx/market-ops',
       '/sjfx/fshq',
       '/sjfx/zrsjg',
       '/tzcs/storage',

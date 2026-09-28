@@ -81,7 +81,6 @@ export const navigation: NavItem[] = [
       // 云南水电分析（dljy#3389，仅云南；其余地区 regionIds 不含 → 菜单不出现且路由拦截）
       { path: '/sjfx/hydro', title: '水电分析', icon: Droplets, regionIds: ['yunnan'] },
       { path: '/sjfx/singleZsjfx', title: '综合数据分析', icon: ChartSpline },
-      { path: '/sjfx/market-ops', title: '市场经营分析', icon: ChartSpline },
       // 云南专属真实页 fold 入市场洞察（切云南才现）
       // price-output-linkage 已并入云南交易工作台 tab（父 Issue #456），市场洞察外层不再单列
       { path: '/xhjy/yunnan/node-price', title: '节点电价分析', icon: Network, regionIds: ['yunnan'], stanceAffinity: ['GENERATOR'] },
@@ -110,9 +109,9 @@ export const navigation: NavItem[] = [
       { path: '/xhjy/review', title: '复盘中心', icon: ChartSpline },
       { path: '/xhjy/risk-center', title: '风控阈值面板', icon: Gauge },
       { path: '/xhjy/hedge', title: '中长期与现货套保', icon: Gauge },
-      // 旧 /zcqjy/exposure 路由已 8.1 重定向到 /xhjy/hedge（D1/HW-07）；本条目路径同步。
-      // 中长期与现货的衔接页（dljy#2988）：把中长期合同电量按形状分解后与预计出力比对，算逐时敞口与套保率，
-      // 并读现货结算口径。产出是现货价格风险指标，故归现货组；路由路径 /zcqjy/exposure 不变，深链不断。
+      // 中长期与现货的衔接页（dljy#2988）：台账锁价与预计发电比对，算逐时段敞口与套保率，产出现货价格风险指标，
+      // 故归现货组。旧 /zcqjy/exposure 已于 8.1 重定向到 /xhjy/hedge（D1/HW-07），深链不断；只开放云南，
+      // 可见角色见 governance（含交易员、风控，#3401）。
       // 云南交易工作台侧栏入口已移除（其功能并入首位「现货交易驾驶舱」/dashboard）。
       // yunnanTradingNavigation 现为 null，此 spread 展开为空数组；保留注入点以便回滚恢复独立入口。
       ...(yunnanTradingNavigation ? [yunnanTradingNavigation] : [])

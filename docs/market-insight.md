@@ -25,7 +25,7 @@
 
 云南「市场洞察」有三处会误导用户的展示：
 
-1. **市场经营分析（`/sjfx/market-ops`）示例冒充真实**：页面并行取 9 个数据集（7 个公共键 + 售电套餐私有 2 键）。旧逻辑是「只要有一个数据集真实，整页就标成『真实 captured』，其余没有真实数据的字段回落到硬编码示例」。于是云南可能出现：市场价（`market_price`）真实落盘，而页面同时展示「318 家交易对手」「约 1258.6 亿千瓦时（856.2+286.4+116 示例求和）」「示例售电份额」等山西示例值，全部顶着「真实」徽章。
+1. **市场经营分析（`/sjfx/market-ops`，已下线 dljy#3391）示例冒充真实**：页面并行取 9 个数据集（7 个公共键 + 售电套餐私有 2 键）。旧逻辑是「只要有一个数据集真实，整页就标成『真实 captured』，其余没有真实数据的字段回落到硬编码示例」。于是云南可能出现：市场价（`market_price`）真实落盘，而页面同时展示「318 家交易对手」「约 1258.6 亿千瓦时（856.2+286.4+116 示例求和）」「示例售电份额」等山西示例值，全部顶着「真实」徽章。
 2. **出清电量页（`/sjfx/zcqxhdl`）跨地区读取**：云南会去请求 `sdpt_zcqxhdl/__list__`。这个键在后端注册表（dljy 仓 `shared/schema/entities/capture-families.mjs` 的 `datasetOwners`）里登记为**山西三德公司私有清单**，云南（及任何非山西地区）根本没有这个键。旧实现等于跨地区读取他省公司私有数据。
 3. **导航残留「分时行情」（`/sjfx/fshq`）**：云南没有撮合分时行情来源（`sdpt_fshq` 为山西私有族），但云南菜单仍显示该入口。
 
@@ -33,7 +33,7 @@
 
 以下修正是底线行为，**不挂任何界面开关**——关闭未来的新工作区也不会退回旧行为。
 
-1. **市场经营分析逐数据集真实性**（`src/services/market/marketAnalysis.ts`）：
+1. **市场经营分析逐数据集真实性**（`src/services/market/marketAnalysis.ts`；该页已随 dljy#3391 下线、代码于 dljy#3394 删除，以下为历史行为记录）：
    - `loadMarketAnalysis` 返回新增 `realByKey`（逐数据集是否真实）与 `sectionBasis`（逐页签口径：页面有真实数据时，页签至少一个数据集真实为 captured、全无为 empty 诚实空态；整页无真实数据时全部 synthetic 示例）与 `sectionPartial`（页签部分数据集缺失，缺失部分显示为空并提示）。
    - 只要页面**不是**纯示例（有任一真实数据集）：没有真实数据的字段一律返回**空**（空数组 / 空指标列表），`hourData` 恒为空（它从来没有真实来源）；**绝不回落示例**。
    - 只有 9 个数据集全部不真实时，才保持「整页示例 + synthetic 徽章 + 可见模拟数据提示」的原行为（这是合规的整页演示态）。
@@ -52,7 +52,7 @@
 
 | 测试文件 | 覆盖 |
 | --- | --- |
-| `src/services/market/marketAnalysis.spec.ts` | 反例（仅 `market_price` 真实 → 其余字段空、无示例值 318/1258.6/856.2/286.4/116）、正例（公共键全真实 → captured）、全不真实 → 整页示例旧行为 |
+| `src/services/market/marketAnalysis.spec.ts`（已随页面下线删除，dljy#3394） | 反例（仅 `market_price` 真实 → 其余字段空、无示例值 318/1258.6/856.2/286.4/116）、正例（公共键全真实 → captured）、全不真实 → 整页示例旧行为 |
 | `src/services/data/contracts/marketInsightHeavyPagesClient.clearing.spec.ts` | 云南/广东/四川不发请求且返回「本地区不适用」空态；山西仍请求 `__list__` 并正常转换；能力声明与拦截口径一致 |
 | `src/services/governance.navigation-region.spec.ts` | 云南菜单不含 `/sjfx/fshq`、`/sjfx/zcqxhdl`（#3388），山西/广东/四川菜单仍含；云南路由保持可达 |
 
