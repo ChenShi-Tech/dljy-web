@@ -7,6 +7,7 @@
 // 也不能用 apiPost 的随机幂等键——见 ingestIdempotencyKey 的 #1406 注释）。
 import { requestHeaders } from '@/services/api'
 import { dataServicePath } from '@/services/dataServiceRoutes'
+import type { DataSourceBasis } from '@/services/data/types'
 
 // spot-ingest / forecast-etl：数据接入向导「一键生效」(#885)，T0/T1 模板投递后 UI 点按即跑 ETL，
 // 与 import-hub DELIVERY_HINTS 同源命令。底层走 agent-python.mjs 桥（Python ETL），lockArgs 硬编码。
@@ -89,4 +90,18 @@ export async function triggerIngest(kind: IngestKind, params: Record<string, unk
     throw new Error(data?.msg || data?.error || data?.stderr?.slice(0, 200) || `摄取失败（HTTP ${res.status}）`)
   }
   return data as IngestResult
+}
+
+/**
+ * 摄取结果真伪判定（避免把合成兜底误标为可决策）。
+ *
+ * commitFamily source=IMPORT 默认 captured（operational）；但 weather-export 在 Open-Meteo
+ * 失败/超时时后端会走合成兜底正常退出（exitCode 0），此时 ETL stdout 会打印 sourceType=MOCK /
+ * (--synthetic 合成)（见 import-weather-export.mjs）。保守嗅探 stdout/stderr：出现
+ * MOCK/synthetic/合成 → synthetic（advisory_only），否则 captured（operational）。
+ * 这是前端最大努力；正解是 ingest 端点回传 family 级真伪（后续）。
+ */
+export function ingestResultBasis(r: Pick<IngestResult, 'stdout' | 'stderr'>): DataSourceBasis {
+  const blob = `${r.stdout}\n${r.stderr}`
+  return /MOCK|synthetic|合成/i.test(blob) ? 'synthetic' : 'captured'
 }

@@ -258,9 +258,10 @@ export const regionModuleCapabilities: RegionModuleCapability[] = [
     id: 'spot-trading',
     title: '现货交易',
     group: 'spot',
-    // /zcqjy/exposure 路径留在 zcqjy 下（深链不断），但它读现货结算口径、产出现货价格风险指标，归现货模块（dljy#2988）。
-    routePrefixes: ['/dashboard', '/xhjy/monitor', '/xhjy/zrqsb', '/xhjy/zptqx', '/xhjy/desk', '/xhjy/approvals', '/xhjy/review', '/xhjy/risk-center'],
-    routePaths: ['/dashboard', '/xhjy/monitor', '/xhjy/zrqsb', '/xhjy/zptqx', '/xhjy/desk', '/xhjy/approvals', '/xhjy/review', '/xhjy/risk-center', '/zcqjy/exposure'],
+    // 中长期与现货套保（dljy#2988）读现货结算口径、产出现货价格风险指标，归现货模块；
+    // 任务 8.1 起路由为 /xhjy/hedge（旧 /zcqjy/exposure 只剩重定向，#3401 同步登记）。
+    routePrefixes: ['/dashboard', '/xhjy/monitor', '/xhjy/zrqsb', '/xhjy/zptqx', '/xhjy/desk', '/xhjy/approvals', '/xhjy/review', '/xhjy/risk-center', '/xhjy/hedge'],
+    routePaths: ['/dashboard', '/xhjy/monitor', '/xhjy/zrqsb', '/xhjy/zptqx', '/xhjy/desk', '/xhjy/approvals', '/xhjy/review', '/xhjy/risk-center', '/xhjy/hedge'],
     statusByRegion: {
       shanxi: 'available',
       yunnan: 'degraded',
@@ -320,8 +321,13 @@ export const regionModuleCapabilities: RegionModuleCapability[] = [
       // （sdpt_zrqsb 是山西私有族，严格地区不回退），且结算采集仅覆盖 2026-05。
       { path: '/xhjy/review', statusByRegion: { shanxi: 'degraded', yunnan: 'degraded' }, note: '山西可读真实申报量，但实际上网电量无数据源、须调用方提供；云南结算口径三段式复盘可用（采集仅覆盖 2026-05），偏差考核两侧仍无源。' },
       { path: '/xhjy/risk-center', statusByRegion: { shanxi: 'available', yunnan: 'degraded' }, note: '风险聚合可用，云南现货执行源仍不完整。' },
-      // 中长期与现货套保（原中长期敞口看板，dljy#2988）：合同分解 vs 预计出力算逐时敞口，并读现货结算口径算套保率与净敞口。
-      { path: '/zcqjy/exposure', statusByRegion: { shanxi: 'available', yunnan: 'degraded' }, note: '敞口与套保计算可用，云南中长期真实输入（P2 分时分解）与结算口径待接入。' }
+      // 中长期与现货套保（原中长期敞口看板，dljy#2988）：台账锁价 vs 预计发电算逐时段敞口与套保率。
+      // 只开放云南（D15/HW-07）：其余地区隐藏菜单、路由守卫拦截；⚠ 四地区须逐个显式声明，漏声明回落 not-configured。
+      {
+        path: '/xhjy/hedge',
+        statusByRegion: { yunnan: 'degraded', shanxi: 'hidden', guangdong: 'hidden', sichuan: 'hidden' },
+        note: '云南可用：套保计算与判级已接真实台账与场站出力；场站出力与价格尚未日更时相应时段如实为未覆盖。其余地区未开放。'
+      }
     ]
   },
   {
@@ -329,7 +335,7 @@ export const regionModuleCapabilities: RegionModuleCapability[] = [
     title: '中长期交易',
     group: 'midlong',
     routePrefixes: ['/zcqjy', '/sjxh/zjzzt'],
-    routePaths: ['/zcqjy/contracts', '/zcqjy/positions', '/zcqjy/positions/intervals', '/zcqjy/positions/stations', '/zcqjy/curves', '/zcqjy/plans', '/zcqjy/execution', '/zcqjy/adjustments', '/zcqjy/review', '/zcqjy/bills', '/zcqjy/zccljk', '/zcqjy/exposure', '/zcqjy/zfsdjy', '/zcqjy/zjyap', '/sjxh/zjzzt'],
+    routePaths: ['/zcqjy/contracts', '/zcqjy/positions', '/zcqjy/positions/intervals', '/zcqjy/positions/stations', '/zcqjy/curves', '/zcqjy/plans', '/zcqjy/execution', '/zcqjy/adjustments', '/zcqjy/review', '/zcqjy/bills', '/zcqjy/zccljk', '/zcqjy/zfsdjy', '/zcqjy/zjyap', '/sjxh/zjzzt'],
     statusByRegion: {
       shanxi: 'available',
       yunnan: 'degraded',

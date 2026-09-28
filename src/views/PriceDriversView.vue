@@ -244,8 +244,9 @@ function renderHeatmap() {
       axisLabel: { fontSize: 10, color: cc.axisLabel }
     },
     visualMap: {
-      min: m.min, max: m.max, calculable: true, orient: 'horizontal', left: 'center', bottom: 8,
-      inRange: { color: seqColors() }, text: ['电价高', '低'], textStyle: { color: cc.axisLabel }
+      // calculable 关闭（沿用 #200 对旧关系页的修复）：拖拽手柄的数值标签会压在 X 轴刻度上；色条 + 低/电价高 文案已够表达映射
+      min: m.min, max: m.max, calculable: false, orient: 'horizontal', left: 'center', bottom: 8,
+      itemHeight: 100, inRange: { color: seqColors() }, text: ['电价高', '低'], textStyle: { color: cc.axisLabel }
     },
     series: [{
       type: 'heatmap',

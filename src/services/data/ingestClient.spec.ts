@@ -10,7 +10,7 @@
 // data-service :8190 注册，裸打 /api/v1/ingest 落平台 BFF 恒 404（dljy#3251），摄取从未真正发出。
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { ingestIdempotencyKey, triggerIngest } from './ingestClient'
+import { ingestIdempotencyKey, ingestResultBasis, triggerIngest } from './ingestClient'
 
 vi.mock('@/services/api', () => ({
   requestHeaders: () => ({ 'x-request-id': 'REQ-test', 'x-region-id': 'yunnan' }),
@@ -152,5 +152,18 @@ describe('triggerIngest', () => {
 
     fetchMock.mockResolvedValue(errResponse(502, {}))
     await expect(triggerIngest('weather-export')).rejects.toThrow('摄取失败（HTTP 502）')
+  })
+})
+
+describe('ingestResultBasis', () => {
+  // 气象合成兜底会正常退出（exitCode 0），只能靠输出里的 MOCK/synthetic/合成 标记识别，漏判就会把合成数据标成可决策。
+  it('输出含合成标记（stdout 或 stderr，大小写不敏感）→ synthetic', () => {
+    expect(ingestResultBasis({ stdout: 'sourceType=MOCK', stderr: '' })).toBe('synthetic')
+    expect(ingestResultBasis({ stdout: '', stderr: 'fallback: Synthetic series' })).toBe('synthetic')
+    expect(ingestResultBasis({ stdout: '(--synthetic 合成)', stderr: '' })).toBe('synthetic')
+  })
+
+  it('无合成标记 → captured', () => {
+    expect(ingestResultBasis({ stdout: 'wrote 96 rows to yn_meteo', stderr: '' })).toBe('captured')
   })
 })
