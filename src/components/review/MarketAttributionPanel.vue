@@ -1,19 +1,25 @@
 <script setup lang="ts">
-// 月度市场归因面板（Epic #2033 · M3 · #2046：模板六）
+// 月度市场归因面板（Epic #2033 · M3 · #2046：模板六；#3392 改接平台真实数据）
 // ---------------------------------------------------------------------------
-// 四行结构：价格走势/供需形势 A 档自动预填（市场经营分析真取数，basis 随行标注）；
+// 四行结构：价格走势/供需形势/异常价格事件读平台真实数据（#3392：云南
+// yn_system_forecast·日前用户侧电价，其余地区 sdpt_zcqxhdl·日前全省均价，
+// 负荷 sdpt_actualLoad——见 marketAttributionSource.ts，近 12 个月滚动窗口，
+// 取不到时口径说明如实标「无真实数据」，绝不回落示例）；
 // 政策变化人工 + AI 建议占位（不做自动因果声明）；异常价格事件月粒度规则识别
 // （#2047 端点上线后登记入风险事件库并双向引用）；「下月关注点」转行动项落
 // review.improvement_actions（写入端点上线，端点缺席环境仍诚实降级本地清单）。
 import { computed, onMounted, ref, watch } from 'vue'
-import { loadMarketAnalysis, type MarketAnalysisResult } from '@/services/market/marketAnalysis'
+import { currentRegion } from '@/services/region/regionContext'
 import PanelFetchLoading from '@/components/review/PanelFetchLoading.vue'
-import { DATA_BASIS_LABEL } from '@/services/dataBasis'
 import {
   anomalyMonths,
   monthPriceStats,
   supplyDemandDirection
 } from '@/services/review/marketAttribution'
+import {
+  fetchMarketAttributionSource,
+  type MarketAttributionSource
+} from '@/services/review/marketAttributionSource'
 import {
   createImprovementAction,
   fetchImprovementActions,
@@ -32,8 +38,10 @@ watch(() => props.reviewMonth, (m) => {
   if (m && m !== month.value) month.value = m
 })
 const loading = ref(false)
-const result = ref<MarketAnalysisResult | null>(null)
 const loadError = ref('')
+const source = ref<MarketAttributionSource | null>(null)
+// 快速切月/切地区时旧请求后返回不得覆盖新结果（loadGeneration 代次守卫，同 #415 惯例）。
+let loadGeneration = 0
 
 function prevMonthOf(ym: string): string {
   const [y, m] = ym.split('-').map(Number)
@@ -41,43 +49,57 @@ function prevMonthOf(ym: string): string {
 }
 
 async function load() {
+  const generation = ++loadGeneration
   loading.value = true
   loadError.value = ''
   try {
-    result.value = await loadMarketAnalysis(Number(month.value.slice(0, 4)))
+    const src = await fetchMarketAttributionSource({ region: currentRegion.value.id, month: month.value })
+    if (generation !== loadGeneration) return
+    source.value = src
   } catch (e) {
-    result.value = null
-    loadError.value = e instanceof Error ? e.message : '市场分析取数失败'
+    if (generation !== loadGeneration) return
+    source.value = null
+    loadError.value = e instanceof Error ? e.message : '市场归因取数失败'
   } finally {
-    loading.value = false
+    if (generation === loadGeneration) loading.value = false
   }
   await loadServerState()
 }
 onMounted(load)
 watch(month, load)
+watch(() => currentRegion.value.id, load)
 
-const ds = computed(() => result.value?.dataset ?? null)
-const price = computed(() => (ds.value ? monthPriceStats(ds.value.priceTrend, month.value) : null))
-const supplyDemand = computed(() =>
-  ds.value ? supplyDemandDirection(ds.value.monthlyTrend, month.value, prevMonthOf(month.value)) : null
-)
-const anomaly = computed(() => (ds.value ? anomalyMonths(ds.value.priceTrend) : null))
-const basisLabel = computed(() => (result.value ? DATA_BASIS_LABEL[result.value.basis] : ''))
-// #2991：逐数据集真实性。页面级 basis=captured 不再代表每个数据集都真实——
-// 缺真实回放的归因行显示为空（未用示例补齐），口径说明按各自数据集标注。
-const priceReal = computed(() => Boolean(result.value?.realByKey?.['market_price']))
-const monthlyTrendReal = computed(() => Boolean(result.value?.realByKey?.['market_monthly_trend']))
-const priceBasisLabel = computed(() => (priceReal.value ? basisLabel.value : '无真实数据·未用示例补齐'))
-const trendBasisLabel = computed(() => (monthlyTrendReal.value ? basisLabel.value : '无真实数据·未用示例补齐'))
-// 整页 captured 但价格/月度趋势任一缺真实回放 → 明示哪些行为空，避免读者以为是完整归因。
-const partialGapNote = computed(() => {
-  if (!result.value || !result.value.hasRealData || result.value.basis !== 'captured') return ''
-  const gaps = [
-    priceReal.value ? null : '价格走势（market_price 无真实回放）',
-    monthlyTrendReal.value ? null : '供需形势（market_monthly_trend 无真实回放）'
-  ].filter(Boolean)
-  return gaps.length ? `部分数据集无真实回放，对应归因行为空，未用示例补齐：${gaps.join('；')}。` : ''
-})
+const points = computed(() => source.value?.points ?? [])
+const price = computed(() => monthPriceStats(points.value, month.value))
+const supplyDemand = computed(() => supplyDemandDirection(points.value, month.value, prevMonthOf(month.value)))
+const anomaly = computed(() => anomalyMonths(points.value))
+const NO_REAL_DATA = '无真实数据'
+
+/** 数据覆盖月份区间：首个到最后一个非空月（「2025-10 ~ 2026-05」），全空为空串。 */
+function coverageOf(values: Array<number | null>): string {
+  const months = points.value.map((p) => p.month)
+  let first = -1
+  let last = -1
+  values.forEach((v, i) => {
+    if (v !== null) {
+      if (first < 0) first = i
+      last = i
+    }
+  })
+  if (first < 0) return ''
+  return months[first] === months[last] ? months[first] : `${months[first]} ~ ${months[last]}`
+}
+
+function basisTextOf(src: MarketAttributionSource['priceSource'] | undefined, covered: string): string {
+  if (!src || src.basis !== 'captured') return NO_REAL_DATA
+  return covered ? `${src.family} · ${src.label}（${covered}）` : `${src.family} · ${src.label}`
+}
+const priceBasisText = computed(() => basisTextOf(source.value?.priceSource, coverageOf(points.value.map((p) => p.spotPrice))))
+const loadBasisText = computed(() => basisTextOf(source.value?.loadSource, coverageOf(points.value.map((p) => p.avgLoad))))
+/** 带符号百分数（+12.3% / -4.5%）。 */
+function signedPct(v: number | null): string {
+  return v === null ? '—' : `${v >= 0 ? '+' : ''}${(v * 100).toFixed(1)}%`
+}
 
 // 政策行：人工关联 + AI 建议占位（不做自动因果）
 const policyText = ref('')
@@ -172,7 +194,7 @@ async function registerAnomaly(m: string, devPct: number) {
       // #2046 极值/持续时长：月粒度数据无逐时极值与持续口径——如实 null，lessons 注明 data_gap
       extremeValue: null,
       durationHours: null,
-      lessons: `月粒度 2σ 规则识别：偏离年均 ${(devPct * 100).toFixed(1)}%（data_gap：月内逐时极值与持续时长需 clearing_price 逐时数据，当前未记录）`
+      lessons: `月粒度 2σ 规则识别：偏离近 12 个月均值 ${(devPct * 100).toFixed(1)}%（data_gap：月内逐时极值与持续时长需逐时价格数据，当前未记录）`
     })
     monthRiskEvents.value = [ev, ...monthRiskEvents.value]
   } catch (e) {
@@ -191,38 +213,33 @@ async function registerAnomaly(m: string, devPct: number) {
     </header>
 
     <!-- 单次取数无分批进度：进度条走 indeterminate 慢滑，骨架同款 -->
-    <PanelFetchLoading v-if="loading" text="读市场经营分析取数（9 数据集回放）…" />
+    <PanelFetchLoading v-if="loading" text="读平台真实现货价与系统负荷（近 12 个月）…" />
     <p v-else-if="loadError" class="map-warn">取数失败：{{ loadError }}——四行不出数，不合成。</p>
 
-    <template v-else-if="ds">
+    <template v-else-if="source">
       <!-- 内容卡片化：四行归因主表 + 下月关注点各成卡片（白底+细边+浅阴影，与系统调性一致） -->
       <div class="map-card">
-        <p class="map-basis">
-          数据基线：{{ basisLabel }}<template v-if="result?.basis === 'synthetic'">（无真实回放时演示兜底——<b>不可作为复盘依据</b>）</template>
-        </p>
-        <p v-if="partialGapNote" class="map-warn">#2991 {{ partialGapNote }}</p>
-
       <table class="map-table">
         <thead><tr><th>归因行</th><th>自动预填（A 档）</th><th>口径说明</th></tr></thead>
         <tbody>
           <tr>
             <td>价格走势</td>
             <td>
-              <template v-if="price?.spotPrice !== null && price?.spotPrice !== undefined">
-                月现货均价 {{ price.spotPrice.toFixed(1) }} 元/MWh · 中长期 {{ price.mediumLongPrice?.toFixed(1) ?? '—' }}
-                · 较年均 {{ price.devFromYearMeanPct === null ? '—' : (price.devFromYearMeanPct * 100).toFixed(1) + '%' }}
+              <template v-if="price.spotPrice !== null">
+                月现货均价 {{ price.spotPrice.toFixed(1) }} 元/MWh · 中长期 暂无公共来源
+                · 较近 12 个月均值 {{ signedPct(price.devFromTrailingMeanPct) }}
               </template>
-              <span v-else class="map-muted">本月无价格数据</span>
+              <span v-else class="map-muted">{{ NO_REAL_DATA }}（中长期成交均价亦无全省公共来源，不找替代、不合成）</span>
             </td>
-            <td>market_analysis priceTrend（{{ priceBasisLabel }}）</td>
+            <td>价格：{{ priceBasisText }}</td>
           </tr>
           <tr>
             <td>供需形势</td>
             <td>
-              <b>{{ supplyDemand?.direction }}</b>
-              <p class="map-note">{{ supplyDemand?.note }}</p>
+              <b>{{ supplyDemand.direction }}</b>
+              <p class="map-note">{{ supplyDemand.note }}</p>
             </td>
-            <td>market_analysis monthlyTrend（量价方向代理 v1 · {{ trendBasisLabel }}）</td>
+            <td>负荷：{{ loadBasisText }}<br />判定口径：月均负荷环比 × 月现货均价环比</td>
           </tr>
           <tr>
             <td>政策变化</td>
@@ -235,9 +252,9 @@ async function registerAnomaly(m: string, devPct: number) {
           <tr>
             <td>异常价格事件</td>
             <td>
-              <template v-if="anomaly?.events.length">
+              <template v-if="anomaly.events.length">
                 <p v-for="e in anomaly.events" :key="e.month" class="map-event">
-                  {{ e.month }}：{{ e.spotPrice.toFixed(1) }} 元/MWh（偏离年均 {{ e.devFromMeanYuan >= 0 ? '+' : '' }}{{ e.devFromMeanYuan.toFixed(1) }}，
+                  {{ e.month }}：{{ e.spotPrice.toFixed(1) }} 元/MWh（偏离近 12 个月均值 {{ e.devFromMeanYuan >= 0 ? '+' : '' }}{{ e.devFromMeanYuan.toFixed(1) }}，
                   {{ (e.devFromMeanPct * 100).toFixed(1) }}%）
                   <button
                     v-if="eventsAvailable && !monthRiskEvents.some((r) => r.eventType === 'price_anomaly' && r.eventTime.startsWith(e.month))"
@@ -245,7 +262,7 @@ async function registerAnomaly(m: string, devPct: number) {
                   >登记入风险事件库</button>
                 </p>
               </template>
-              <p class="map-note">{{ anomaly?.note }}</p>
+              <p class="map-note">{{ anomaly.note }}</p>
               <template v-if="eventsAvailable && monthRiskEvents.length">
                 <p class="map-note">事件库侧（{{ month }} 已登记）：</p>
                 <p v-for="r in monthRiskEvents" :key="r.id" class="map-event">
