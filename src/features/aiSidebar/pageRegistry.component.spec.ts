@@ -58,7 +58,7 @@ describe('defineAiPage · 生命周期跟随 KeepAlive', () => {
 
   it('新页先激活、旧页后失活时不会把新页的声明清掉（只清自己）', () => {
     const oldPage: AiPageDefinition = { label: '旧页', promptKey: PAGE_PROMPT_KEYS.marketDataAnalysis }
-    const newPage: AiPageDefinition = { label: '新页', promptKey: PAGE_PROMPT_KEYS.marketOperations }
+    const newPage: AiPageDefinition = { label: '新页', promptKey: PAGE_PROMPT_KEYS.marketDataAnalysis }
     activatePage(oldPage)
     activatePage(newPage)
     deactivatePage(oldPage)

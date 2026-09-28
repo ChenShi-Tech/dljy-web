@@ -18,7 +18,7 @@ describe('decideSession', () => {
     expect(decideSession(fshq, false, page('/sjfx/zrsjg'))).toBe('new')
   })
   it('页面发起：同页面但角色不同 → 新开', () => {
-    expect(decideSession(fshq, false, page('/sjfx/fshq', 'market_operations'))).toBe('new')
+    expect(decideSession(fshq, false, page('/sjfx/fshq', 'market_insight_cockpit'))).toBe('new')
   })
   it('页面发起：当前会话正在生成 → 新开（原会话继续跑）', () => {
     expect(decideSession(fshq, true, page('/sjfx/fshq'))).toBe('new')

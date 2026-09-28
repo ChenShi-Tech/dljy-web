@@ -38,7 +38,6 @@ const dataAnalysis = () => import('../views/DataAnalysisView.vue')
 const clearingSpotAnalysis = () => import('../views/ClearingSpotAnalysisView.vue')
 const priceNewEnergyRelation = () => import('../views/PriceNewEnergyRelationView.vue')
 const priceLoadRelation = () => import('../views/PriceLoadRelationView.vue')
-const marketOperationsAnalysis = () => import('../views/MarketOperationsAnalysisView.vue')
 const fshq = () => import('../views/FshqView.vue')
 const priceAnalysis = () => import('../views/PriceAnalysisView.vue')
 const solarTerms = () => import('../views/SolarTermsView.vue')
@@ -327,7 +326,8 @@ const router = createRouter({
         page('sjfx/zcqxhdl', 'ClearingSpotAnalysis', { block: '数据分析', title: '出清现货电量分析', code: 'zcqxhdl', endpoint: 'POST /sdpt/zcqxhdl/list (宽范围)', dataPath: 'sdpt_zcqxhdl', scope: '10序列×~65天(4/1~6/4)', kind: 'real' }, clearingSpotAnalysis),
         page('sjfx/zrxgx', 'PriceNewEnergyRelation', { block: '数据分析', title: '现货价格与新能源关系', code: 'zrxgx', endpoint: 'POST /sdpt/zcqxhdl/list24 (ts=回溯天数)', dataPath: 'sdpt_zcqxhdl', scope: '373天 2025-05~2026-06', kind: 'real', note: '{rqdj日前电价, xnyz/xnyg/xnyzd/xnygd, xd}' }, priceNewEnergyRelation),
         page('sjfx/zrxgx2', 'PriceSystemLoadRelation', { block: '数据分析', title: '现货价格与统调负荷关系', code: 'zrxgx2', endpoint: 'POST /sdpt/zcqxhdl/fhlist24', dataPath: 'sdpt_zcqxhdl', scope: '373天', kind: 'real' }, priceLoadRelation),
-        page('sjfx/market-ops', 'MarketOperationsAnalysis', { block: '数据分析', title: '市场经营分析', code: 'market-analysis', endpoint: 'local marketAnalysis + planned /api/v1/market/* and /api/v1/market-analysis/*', dataPath: 'market_analysis', scope: '市场概览、发电侧、售电公司、独立储能、套餐分析、价格趋势迁移', kind: 'mixed' }, marketOperationsAnalysis),
+        // 市场经营分析页随 dljy#3391 下线（dljy#3394 删页面与融合台页签）：旧书签/深链重定向驾驶舱，不 404、不落占位页。
+        { path: '/sjfx/market-ops', redirect: '/dashboard' },
         page('sjfx/fshq', 'TimeOfUseMarket', { block: '数据分析', title: '分时行情', code: 'fshq', endpoint: 'GET /sdpt/fshq/data?rqlx&bdrq&jyyf', dataPath: 'sdpt_fshq', scope: 'rqlx∈{0运行,1交易}×日期 2022-12~2026-06 (2563文件)', kind: 'real', note: 'jysd 参数后端忽略(无效维度)' }, fshq),
         page('sjfx/actualLoad', 'DailySystemLoad', { block: '数据分析', title: '逐日系统负荷实际值', code: 'actualLoad', endpoint: 'GET /sdpt/actualLoad/query', dataPath: 'sdpt_actualLoad', scope: '一次返回6年(2021-2026)×366天', kind: 'real', note: 'system(日历对齐)+misplace(错位)，pjz/zxz/zdz' }, dailySystemLoad),
         page('sjfx/zrsjg', 'PriceAnalysis', { block: '数据分析', title: '价格分析', code: 'zrsjg', endpoint: 'GET /sdpt/zcqxhdl/listrs?typeList[]&tag=0', dataPath: 'sdpt_zcqxhdl', scope: '1434天×2类型 2022-07~2026-06', kind: 'real', note: '{rjz,rmx,dmx}；数组参数需编码 %5B0%5D' }, priceAnalysis),

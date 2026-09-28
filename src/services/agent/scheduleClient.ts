@@ -151,7 +151,7 @@ export const SCHEDULE_KIND_META: ScheduleKindMeta[] = [
         label: '摄取类型',
         type: 'text',
         placeholder: 'weather-export',
-        hint: 'weather-export / spot-export / market-export / southern-export（spot 需 dir，market 需 dir/file）'
+        hint: 'weather-export / spot-export / southern-export（spot 需 dir）'
       }
     ]
   },

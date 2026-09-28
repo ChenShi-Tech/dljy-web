@@ -421,21 +421,6 @@
     "feature": null
   },
   {
-    "id": "market-analysis",
-    "path": "/sjfx/market-ops",
-    "title": "市场经营分析",
-    "domain": "数据分析",
-    "kind": "mixed",
-    "endpoint": "local marketAnalysis + planned /api/v1/market/* and /api/v1/market-analysis/*",
-    "dataPath": "market_analysis",
-    "nav": {
-      "group": null,
-      "listed": true
-    },
-    "regions": [],
-    "feature": null
-  },
-  {
     "id": "singleZsjfx",
     "path": "/sjfx/singleZsjfx",
     "title": "数据分析",
