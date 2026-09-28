@@ -98,6 +98,11 @@ const ctx = useInsightContext()
 const capabilities = ref<InsightCapabilities | null>(null)
 const capabilitiesError = ref<InsightRequestError | null>(null)
 const capabilitiesLoading = ref(false)
+/** 当前目录是按哪个「地区|公司」拉取的：目录按公司授权返回，二者变了就必须重拉，不能沿用。 */
+const capabilitiesScope = ref('')
+function currentScope(): string {
+  return `${ctx.regionId.value}|${ctx.companyId.value ?? ''}`
+}
 
 // 入口锚定：能力目录就绪（含公开系统曲线分析）后扫描最新有数日；失败静默保持当日默认。
 const anchorReady = computed(() => capabilities.value?.analyses.some((entry) => entry.analysisId === SYSTEM_ANALYSIS) ?? false)
@@ -124,22 +129,29 @@ const sourceTitles = computed(() => {
   return map
 })
 
+/** 目录拉取序号：只认最新一次，被新一轮取代的旧拉取不写状态、不自行重拉。 */
+let capabilitiesLoadSeq = 0
+
 async function loadCapabilities(): Promise<void> {
+  const seq = ++capabilitiesLoadSeq
   capabilitiesLoading.value = true
   capabilitiesError.value = null
+  capabilitiesScope.value = currentScope()
   try {
     const result = await ctx.request.run((signal) => fetchInsightCapabilities({ signal }))
+    if (seq !== capabilitiesLoadSeq) return
     if (!result) {
-      // 在途请求被业务代次作废（窗口/地区/公司切换）：目录不随这些维度变化，重拉一次恢复。
+      // 在途请求被业务代次作废（如只改了日期窗口）且没有更新的拉取：重拉一次恢复。
       void loadCapabilities()
       return
     }
     capabilities.value = result
     ensureAll()
   } catch (error) {
+    if (seq !== capabilitiesLoadSeq) return
     capabilitiesError.value = error as InsightRequestError
   } finally {
-    capabilitiesLoading.value = false
+    if (seq === capabilitiesLoadSeq) capabilitiesLoading.value = false
   }
 }
 
@@ -178,10 +190,17 @@ function queryKeyOf(name: QueryName): string {
 }
 
 // 上下文变化（窗口/地区/公司）：所有旧结果属于另一份读取，全部作废并重查就绪的查询。
+// 地区或公司变了：能力目录也属于旧主体，先清空再重拉，拿到新目录后才发查询——
+// 否则会按旧公司的授权渲染获权卡、发出注定被拒的请求，或一直藏着新公司已获权的卡。
 watch(
   () => ctx.contextVersion.value,
   () => {
     for (const name of Object.keys(viewStates) as QueryName[]) Object.assign(viewStates[name], blankState())
+    if (capabilitiesScope.value !== currentScope()) {
+      capabilities.value = null
+      void loadCapabilities()
+      return
+    }
     ensureAll()
   }
 )

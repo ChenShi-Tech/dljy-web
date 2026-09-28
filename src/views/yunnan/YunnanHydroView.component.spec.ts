@@ -578,6 +578,41 @@ function unitGroupSelect(): VueWrapper<any> {
   return wrapper!.getComponent('[data-testid="ynh-unit-group"]') as unknown as VueWrapper<any>
 }
 
+describe('切换公司：能力目录按公司授权，必须重拉', () => {
+  it('获权公司 → 未获权公司：重拉目录，获权卡消失，且不以新公司发获权查询', async () => {
+    state.capabilities = caps(ENTITLED_CAPS)
+    await mountPage()
+    expect(wrapper!.text()).toContain('水电周出力预测')
+    const capsCallsBefore = vi.mocked(fetchInsightCapabilities).mock.calls.length
+    vi.mocked(queryInsight).mockClear()
+
+    state.capabilities = caps(PUBLIC_CAPS)
+    selectedCompanyId.value = 'c2'
+    await flushPromises()
+
+    expect(vi.mocked(fetchInsightCapabilities).mock.calls.length).toBeGreaterThan(capsCallsBefore)
+    expect(wrapper!.text()).not.toContain('水电周出力预测')
+    expect(wrapper!.text()).not.toContain('机组群构成')
+    expect(queryCallsOf((request) => request.analysisId === HYDRO_WEEKLY || request.analysisId === HYDRO_GROUPS)).toHaveLength(0)
+    expect(wrapper!.find('[data-testid="ynh-entitlement-tag"]').exists()).toBe(true)
+  })
+
+  it('未获权公司 → 获权公司：重拉目录后显示获权卡并发出获权查询', async () => {
+    await mountPage()
+    expect(wrapper!.text()).not.toContain('水电周出力预测')
+    vi.mocked(queryInsight).mockClear()
+
+    state.capabilities = caps(ENTITLED_CAPS)
+    selectedCompanyId.value = 'c2'
+    await flushPromises()
+
+    expect(wrapper!.text()).toContain('水电周出力预测')
+    expect(wrapper!.text()).toContain('机组群构成')
+    expect(queryCallsOf((request) => request.analysisId === HYDRO_WEEKLY)).toHaveLength(1)
+    expect(queryCallsOf((request) => request.analysisId === HYDRO_GROUPS)).toHaveLength(1)
+  })
+})
+
 // 放在文件末尾：入口定位结果按地区缓存在模块级变量里，写入后会影响同文件后续用例。
 describe('入口定位提示（页面整洁纪律）', () => {
   it('今日无数据时定位到最新有数日：只显示短标签与「切回今天」，不出现整句横幅', async () => {
