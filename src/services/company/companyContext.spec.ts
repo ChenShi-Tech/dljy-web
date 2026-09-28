@@ -1,9 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { nextTick } from 'vue'
 import type { AuthUser } from '@/services/auth'
 
 // companyContext.ts / regionContext.ts 在浏览器运行，模块顶层读 window.localStorage 决定初始
 // 选中地区/公司；单测环境是纯 node（vitest.config.ts 未接 jsdom，纯逻辑无需 DOM），import 前
 // 需最小 stub 才不在模块加载时抛 ReferenceError。
+// 本文件守住：公司上下文的四规则协调、切换判据与练习空间钉住（#3403）不被回归改坏——
+// 坏掉的症状是切地区/刷新授权集后用户被切到错误公司、越权读写或练习数据落错租户。
 function memoryStorage() {
   const store = new Map<string, string>()
   return {
@@ -23,9 +26,10 @@ function memoryStorage() {
 vi.mock('@/services/auth', () => ({ getCurrentUser: vi.fn() }))
 
 const { getCurrentUser } = await import('@/services/auth')
-const { resolveCompanyForRegion, setCompanyOptions, selectedCompanyId, companyOptions, canSwitchCompany } = await import(
-  './companyContext'
-)
+const {
+  resolveCompanyForRegion, setCompanyOptions, selectedCompanyId, companyOptions, canSwitchCompany,
+  companyPin, pinCompanySelection, unpinCompanySelection, resetCompanyContextToHome, setCurrentCompanyId
+} = await import('./companyContext')
 const { companyUnselected } = await import('./companyApi')
 const { setCurrentRegionId } = await import('@/services/region/regionContext')
 
@@ -42,6 +46,13 @@ function fakeUser(overrides: Partial<AuthUser>): AuthUser {
 const shanxiCompany = { companyId: 'comp-shanxi', name: '山西发电' }
 const sandePuhua = { companyId: 'comp-sande-puhua', name: '三德普华' }
 const yunnanCompany = { companyId: 'comp-cgn-yunnan', name: '中广核云南新能源' }
+// 练习公司（#3403）：不在静态地区表 COMPANY_REGION 里 → companyRegionId 返回 null。
+const practiceCompany = {
+  companyId: 'comp-cgn-yunnan-practice',
+  name: '【练习】中广核云南新能源',
+  source: 'PRACTICE',
+  parentCompanyId: 'comp-cgn-yunnan'
+}
 
 // canSwitchCompany（切换器渲染判据，#2898 / Epic #2887 拍板）回归锁：
 // 提权只认角色不认层级——GROUP 主体不再让任何角色自动可切换；此前「GROUP 层级即提权」
@@ -201,5 +212,135 @@ describe('setCompanyOptions', () => {
     selectedCompanyId.value = 'comp-cgn-yunnan'
     setCompanyOptions([yunnanCompany])
     expect(selectedCompanyId.value).toBe('')
+  })
+})
+
+// 练习空间钉住（ChenShi-Tech/dljy#3403）：进入练习空间后公司上下文必须稳定停留在练习公司，
+// 授权集刷新/地区切换都不得把用户切走——否则导引写的测试数据会落到错误公司。
+// 练习公司不在静态地区表，四规则天然不会自动选中它（规则 2/3 只从 regionAuthorized 里挑），
+// 反而会把停留其上的用户顶掉，钉住就是为这条通路加的「保持」豁免。
+describe('练习空间钉住（#3403）', () => {
+  beforeEach(() => {
+    companyOptions.value = []
+    selectedCompanyId.value = ''
+    unpinCompanySelection()
+    vi.mocked(getCurrentUser).mockReset()
+    vi.mocked(getCurrentUser).mockReturnValue(
+      fakeUser({ roleCode: 'ADMIN', companyId: 'dljy-demo', username: 'alice' })
+    )
+  })
+
+  it('钉住生效：授权集刷新（setCompanyOptions）不把练习公司顶掉', () => {
+    setCurrentRegionId('yunnan')
+    selectedCompanyId.value = practiceCompany.companyId
+    pinCompanySelection({ companyId: practiceCompany.companyId, regionId: 'yunnan', originCompanyId: 'comp-cgn-yunnan' })
+    setCompanyOptions([yunnanCompany, practiceCompany])
+    expect(selectedCompanyId.value).toBe(practiceCompany.companyId)
+    expect(companyPin.value?.companyId).toBe(practiceCompany.companyId)
+  })
+
+  it('钉住生效：切回钉住地区且当前仍是练习公司 → 地区协调不接管', async () => {
+    setCurrentRegionId('yunnan')
+    selectedCompanyId.value = practiceCompany.companyId
+    pinCompanySelection({ companyId: practiceCompany.companyId, regionId: 'yunnan', originCompanyId: 'comp-cgn-yunnan' })
+    setCompanyOptions([shanxiCompany, yunnanCompany, practiceCompany])
+    expect(selectedCompanyId.value).toBe(practiceCompany.companyId)
+    // 切到其它地区：钉住不拦截（新地区 ≠ 钉住地区），四规则正常接管，但钉住记录保留。
+    // watch 是异步 flush（pre），断言前等一拍。
+    setCurrentRegionId('shanxi')
+    await nextTick()
+    expect(selectedCompanyId.value).toBe('comp-shanxi')
+    expect(companyPin.value).not.toBeNull()
+    // 手动切回练习公司后再切回钉住地区：地区 watch 命中钉住守卫，不再协调。
+    selectedCompanyId.value = practiceCompany.companyId
+    setCurrentRegionId('yunnan')
+    await nextTick()
+    expect(selectedCompanyId.value).toBe(practiceCompany.companyId)
+  })
+
+  it('钉住公司被授权集合收回 → 清除钉住并按四规则正常协调', () => {
+    setCurrentRegionId('yunnan')
+    selectedCompanyId.value = practiceCompany.companyId
+    pinCompanySelection({ companyId: practiceCompany.companyId, regionId: 'yunnan', originCompanyId: 'comp-cgn-yunnan' })
+    setCompanyOptions([yunnanCompany])
+    expect(companyPin.value).toBeNull()
+    expect(selectedCompanyId.value).toBe('comp-cgn-yunnan')
+  })
+
+  it('钉住属于其他用户（上一账号残留）→ 不生效，按常规协调切走', () => {
+    vi.mocked(getCurrentUser).mockReturnValue(fakeUser({ roleCode: 'ADMIN', companyId: 'dljy-demo', username: 'bob' }))
+    setCurrentRegionId('yunnan')
+    selectedCompanyId.value = practiceCompany.companyId
+    pinCompanySelection({ companyId: practiceCompany.companyId, regionId: 'yunnan', originCompanyId: 'comp-cgn-yunnan' })
+    vi.mocked(getCurrentUser).mockReturnValue(fakeUser({ roleCode: 'ADMIN', companyId: 'dljy-demo', username: 'alice' }))
+    setCompanyOptions([yunnanCompany, practiceCompany])
+    expect(selectedCompanyId.value).toBe('comp-cgn-yunnan')
+    // 失效不清除：钉住记录仍在，供判定「这不是当前用户的练习空间」。
+    expect(companyPin.value).not.toBeNull()
+  })
+
+  it('手动切换公司：钉住记录保留但不再生效', () => {
+    setCurrentRegionId('yunnan')
+    selectedCompanyId.value = practiceCompany.companyId
+    pinCompanySelection({ companyId: practiceCompany.companyId, regionId: 'yunnan', originCompanyId: 'comp-cgn-yunnan' })
+    setCompanyOptions([yunnanCompany, practiceCompany])
+    expect(setCurrentCompanyId('comp-cgn-yunnan')).toBe(true)
+    expect(companyPin.value).not.toBeNull()
+    // 再次刷新授权集：当前公司 ≠ 钉住公司 → 钉住不拦截，按常规逻辑保留当前选择。
+    setCompanyOptions([yunnanCompany, practiceCompany])
+    expect(selectedCompanyId.value).toBe('comp-cgn-yunnan')
+  })
+
+  it('resetCompanyContextToHome（登录/切换账号）→ 清除钉住并归位自身公司', () => {
+    setCurrentRegionId('yunnan')
+    selectedCompanyId.value = practiceCompany.companyId
+    pinCompanySelection({ companyId: practiceCompany.companyId, regionId: 'yunnan', originCompanyId: 'comp-cgn-yunnan' })
+    resetCompanyContextToHome()
+    expect(companyPin.value).toBeNull()
+    expect(selectedCompanyId.value).toBe('dljy-demo')
+  })
+
+  it('localStorage 写入抛错 → 钉住不抛（内存态照常生效）', () => {
+    setCurrentRegionId('yunnan')
+    selectedCompanyId.value = practiceCompany.companyId
+    const storage = (globalThis as unknown as { window: { localStorage: ReturnType<typeof memoryStorage> } }).window.localStorage
+    const spy = vi.spyOn(storage, 'setItem').mockImplementation(() => {
+      throw new Error('QuotaExceededError')
+    })
+    expect(() =>
+      pinCompanySelection({ companyId: practiceCompany.companyId, regionId: 'yunnan', originCompanyId: 'comp-cgn-yunnan' })
+    ).not.toThrow()
+    expect(companyPin.value?.companyId).toBe(practiceCompany.companyId)
+    // 确认写入路径真的被走到（否则「不抛错」是假绿：setItem 没被调用也不会抛）。
+    expect(spy).toHaveBeenCalled()
+    spy.mockRestore()
+  })
+
+  it('持久化的钉住数据损坏（非 JSON）→ 初始化视同无钉住，不阻塞模块加载', async () => {
+    const storage = (globalThis as unknown as { window: { localStorage: ReturnType<typeof memoryStorage> } }).window.localStorage
+    storage.setItem('dljy.companyPin', '{not-json')
+    vi.resetModules()
+    const fresh = await import('./companyContext')
+    expect(fresh.companyPin.value).toBeNull()
+  })
+
+  it('规则2：练习公司不在静态地区表 → 该地区仅剩它也不会被自动选中', () => {
+    const resolved = resolveCompanyForRegion({
+      regionId: 'yunnan',
+      currentCompanyId: 'dljy-demo',
+      availableCompanies: [yunnanCompany, practiceCompany],
+      rememberedCompanyId: null
+    })
+    expect(resolved).toEqual({ companyId: 'comp-cgn-yunnan', reason: 'single' })
+  })
+
+  it('规则3：地区记忆指向练习公司 → 不被采纳，落默认公司', () => {
+    const resolved = resolveCompanyForRegion({
+      regionId: 'shanxi',
+      currentCompanyId: 'comp-cgn-yunnan',
+      availableCompanies: [shanxiCompany, sandePuhua, practiceCompany],
+      rememberedCompanyId: practiceCompany.companyId
+    })
+    expect(resolved).toEqual({ companyId: 'comp-shanxi', reason: 'default' })
   })
 })

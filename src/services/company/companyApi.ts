@@ -118,8 +118,14 @@ export async function fetchCompanies(): Promise<CompanyOption[]> {
   return res.rows ?? []
 }
 
+// 请求序号守卫（#3403）：并发刷新时先发后到的旧响应不得覆盖新结果——开通练习空间前
+// 在途的旧列表回来会触发 setCompanyOptions 四规则协调，把刚切到的练习公司顶掉。
+let refreshCompanyOptionsSeq = 0
+
 export async function refreshCompanyOptions(): Promise<CompanyOption[]> {
+  const seq = ++refreshCompanyOptionsSeq
   const options = await fetchCompanies()
+  if (seq !== refreshCompanyOptionsSeq) return options
   setCompanyOptions(options)
   return options
 }
