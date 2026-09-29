@@ -22,12 +22,15 @@
 //
 // **隐藏入口不区分角色**（客户账号同样不能再点会被后端 403 的旧入口），但**迁移提示与后台链接只对
 // 平台人员（内部版 ADMIN，与后端「平台超管 ADMIN」一致）显示**：客户账号（BOSS、TRADE_LEAD、TRADER
-// 等非 ADMIN 角色）只看到入口消失，不出现任何提示文字、后台路径或链接。闸门落在 migratedEntryLinks
-// 一处——它是提示渲染的唯一数据出口（宿主页 inline 提示与整页提示组件都经它），各宿主页不再各写判断。
+// 等非 ADMIN 角色）不出现任何提示文字、后台路径或链接。inline 提示的闸门落在 migratedEntryLinks
+// 一处——它是提示渲染的唯一数据出口（宿主页 inline 提示与整页提示组件都经它），各宿主页不再各写判断；
+// 整页已迁路由的深链由 migratedRouteComponent 同样按角色分流：客户账号落一段**不含任何后台措辞 /
+// 路径 / 链接**的中性说明（#217「直接访问不报错不白屏」），不是空白页。
 //
 // 因此：**任何页面只能经本模块导出的函数取用登记表**，不要直接 import 表常量（客户版的空壳里
 // 没有这些常量，构建会因缺导出而失败——这正是想要的绊线）。
 import { defineComponent, h, type Component } from 'vue'
+import { RouterLink } from 'vue-router'
 import { getCurrentUser } from '@/services/auth'
 import { IS_INTERNAL_EDITION } from '@/services/edition'
 
@@ -202,6 +205,11 @@ type RouteComponentLoader = () => Promise<Component | { default: Component }>
 /**
  * 整页迁走的路由（如 /system/models）：内部版隐藏时把路由组件换成整页提示，原页面的 setup 与取数
  * 根本不跑；未隐藏（回退 / 客户版）时原样返回原懒加载组件。直接访问路由不报错、不白屏。
+ *
+ * 替换壳渲染时现读角色（#3518）：平台人员看整页迁移提示与后台链接；客户账号（非 ADMIN）落一段
+ * 中性说明加「返回工作台」——不含任何后台措辞 / 路径 / 链接（AI-06），也不空白页（#217）。
+ * 中性文案写在本模块内：客户版构建时本文件整体重定向为 registry.customer.ts（恒返回原 loader），
+ * 文案与提示组件一样不进交付产物。
  */
 export function migratedRouteComponent(id: MigratedEntryId, loader: RouteComponentLoader): RouteComponentLoader {
   if (!isEntryHidden(id)) return loader
@@ -211,7 +219,15 @@ export function migratedRouteComponent(id: MigratedEntryId, loader: RouteCompone
     import('@/features/platformAdminMigration/MigratedToAdminNotice.vue').then(({ default: Notice }) =>
       defineComponent({
         name: 'MigratedEntryPage',
-        setup: () => () => h('div', { class: 'migrated-entry-page' }, [h(Notice, { entries: [id], variant: 'page' })])
+        setup: () => () => {
+          if (isPlatformStaff()) {
+            return h('div', { class: 'migrated-entry-page' }, [h(Notice, { entries: [id], variant: 'page' })])
+          }
+          return h('div', { class: 'migrated-entry-page', 'data-testid': 'migrated-entry-unavailable' }, [
+            h('p', { class: 'unavailable-note' }, '该页面在当前账号下不可用。'),
+            h(RouterLink, { to: '/dashboard', class: 'back-to-dashboard' }, { default: () => '返回工作台' })
+          ])
+        }
       })
     )
 }

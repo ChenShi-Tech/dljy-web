@@ -8,9 +8,11 @@
 //   组4 权限矩阵与注册立场：/system/accounts 权限矩阵 tab 不渲染；/gsgl/profile 注册立场块对所有角色恢复
 //       只读展示并读取（迁移清单 §3.7），无编辑控件；提示只对平台人员显示
 //   重定向壳：旧路径跟着目标面板走，落到宿主页有内容的 tab，不白屏
-//   客户账号（BOSS / 交易负责人 / 交易员）：四处宿主页与整页深链都不出现提示文字、后台路径或链接（AI-06）
+//   客户账号（BOSS / 交易负责人 / 交易员）：四处宿主页与整页深链都不出现提示文字、后台路径或链接（AI-06）；
+//       整页深链落中性说明页（「该页面在当前账号下不可用」+ 返回工作台），不空白页（#217）
 // 坏掉的症状：内部版留着能点但会 403 的旧入口；旧深链落到空白面板；长期记忆跟着整页一起消失；
-//             客户账号看到「已迁至平台后台」提示 / 后台路径（越权泄露）；注册立场整块消失不可见。
+//             客户账号看到「已迁至平台后台」提示 / 后台路径（越权泄露）；注册立场整块消失不可见；
+//             客户账号深链整页已迁路由得到空白页（#217「直接访问不报错不白屏」被破）。
 // 客户版对照见 migratedEntries.customer.component.spec.ts。
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createMemoryHistory, createRouter } from 'vue-router'
@@ -214,15 +216,24 @@ describe('客户账号（非平台人员，dljy#3518，AI-06）：入口照隐�
     expect(tabLabels(accounts.wrapper)).toEqual(['用户管理', '会话管理'])
   })
 
-  it('客户 BOSS 深链 /system/models 得到空提示页（不出现提示文字，原管理页也不加载）', async () => {
+  it('客户 BOSS 深链 /system/models 得到中性说明页（无「平台后台」与后台路径，原管理页不加载）', async () => {
     loginAs('boss')
     const component = await routeComponentOf('/system/models')
     expect((component as { name?: string }).name).toBe('MigratedEntryPage')
-    const wrapper = mount(component as never)
+    // 中性说明里的「返回工作台」是 RouterLink，挂载需 router 上下文（与 OpsOverviewPanel 用例同法）
+    const memory = createRouter({ history: createMemoryHistory(), routes: [{ path: '/:p(.*)*', component: { template: '<div />' } }] })
+    await memory.push('/system/models')
+    await memory.isReady()
+    const wrapper = mount(component as never, { global: { plugins: [memory] } })
     await settle()
-    expect(wrapper.find('[data-testid="migrated-to-admin-notice"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="migrated-entry-unavailable"]').text()).toContain('该页面在当前账号下不可用')
     expect(wrapper.text()).not.toContain('平台后台')
-    expect(wrapper.findAll('a')).toHaveLength(0)
+    expect(wrapper.text()).not.toContain('127.0.0.1')
+    expect(wrapper.text()).not.toContain('/#/')
+    const back = wrapper.get('a')
+    expect(back.text()).toBe('返回工作台')
+    expect(back.attributes('href')).toBe('/dashboard')
+    expect(wrapper.find('[data-testid="migrated-to-admin-notice"]').exists()).toBe(false)
     expect(wrapper.find('.stub-system-models').exists()).toBe(false)
   })
 
