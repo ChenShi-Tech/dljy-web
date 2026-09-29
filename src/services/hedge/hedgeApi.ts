@@ -138,10 +138,14 @@ export function postMechanismVersion(periodKey: string, body: { action: 'EDIT' |
   return request<Record<string, unknown>>('POST', `/mechanism-params/${periodKey}/versions`, { body })
 }
 
-/** 补仓试算（HM-07）：无状态，POST 但无副作用；服务端不落任何表。 */
-export function postSimulate(body: {
-  window: { fromDate: string; toDate: string }
-  adjustments: Array<{ from?: string; to?: string; quantityMwh: string; shape: { kind: string; stationId?: number; contractId?: number } }>
-}) {
-  return request<Record<string, unknown>>('POST', '/simulate', { body })
+/** 补仓试算（HM-07）：无状态，POST 但无副作用；服务端不落任何表。
+ * 窗口走请求体，粒度/认知时点走查询参数（后端 dispatchRead 同口径解析）；形状权重一律由服务端计算。 */
+export function postSimulate(
+  body: {
+    window: { fromDate: string; toDate: string }
+    adjustments: Array<{ from?: string; to?: string; quantityMwh: string; shape: { kind: string; stationId?: number; days?: number; contractId?: number } }>
+  },
+  query: { granularity?: string; asOf?: string } = {},
+) {
+  return request<Record<string, unknown>>('POST', '/simulate', { body, query })
 }
