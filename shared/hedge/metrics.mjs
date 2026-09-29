@@ -272,7 +272,12 @@ export function simulateAdjustments({ intervals, adjustments }) {
       error.details = { field: 'quantityMwh', startMs: row.startMs }
       throw error
     }
-    const nextMidlong = fromScaled(toScaled(midlong ?? '0') + delta)
+    if (midlong === null || midlong === undefined) {
+      // 该时段中长期锁价未知（如只有月量）：未知 + 调整量仍是未知，不能把调整量当成锁价（HM-01/HC-06）。
+      adjusted.push(row)
+      continue
+    }
+    const nextMidlong = fromScaled(toScaled(midlong) + delta)
     adjusted.push({ ...row, midlongMwh: nextMidlong })
   }
   const exposures = adjusted.map((row) => ({

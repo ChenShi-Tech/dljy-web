@@ -52,7 +52,7 @@ function round2(value) {
  * @param {Object} declaration 申报单
  * @param {Object} [inputs] 外部注入的判定依据
  * @param {{floor?:number,cap?:number,source?:string}|null} [inputs.priceCap] 地区限价
- * @param {Object|null} [inputs.exposure] 中长期敞口（quant/exposure）
+ * @param {Object|null} [inputs.exposure] 中长期敞口：套保服务目标日「仅中长期」逐时段敞口摘要（server/declaration-hedge-exposure.mjs）
  * @param {string} [inputs.subjectType] 主体立场
  * @param {number[]|null} [inputs.forecastCurveMwh96] 负荷预测量（偏置校验用）
  * @param {number} [inputs.biasManagementBand] 偏置管理带，默认 0.2
@@ -138,28 +138,8 @@ export function evaluateDeclarationChecks(declaration, inputs = {}) {
     })
   }
 
-  // ④ 中长期敞口/履约
-  const exposure = inputs.exposure
-  if (!exposure || exposure.available === false) {
-    checks.push({
-      checkId: 'exposure',
-      name: '中长期敞口',
-      status: 'UNAVAILABLE',
-      severity: 'overridable',
-      detail: `敞口服务不可用${exposure?.error ? `：${exposure.error}` : ''}（quant/exposure 未连通，按升档审批处理）`
-    })
-  } else {
-    const sellSide = ['GENERATOR', 'STORAGE'].includes(subjectType)
-    const exposureMwh = Number(sellSide ? exposure.sellExposureMwh : exposure.buyExposureMwh) || 0
-    const within = totalMwh <= exposureMwh * 1.1
-    checks.push({
-      checkId: 'exposure',
-      name: '中长期敞口',
-      status: within ? 'PASS' : 'FAIL',
-      severity: 'overridable',
-      detail: `申报总量 ${round2(totalMwh)} MWh / ${sellSide ? '售出' : '购入'}敞口 ${round2(exposureMwh)} MWh（容忍 +10%，套保率 ${exposure.hedgeRatio ?? '-'}）`
-    })
-  }
+  // ④ 中长期敞口（HA-02：约束只取套保服务在目标日给出的「仅中长期」逐时段敞口）
+  checks.push(exposureCheck({ exposure: inputs.exposure, energy, totalMwh, subjectType }))
 
   // ⑤ 用户侧申报偏置
   const forecast = Array.isArray(inputs.forecastCurveMwh96) ? inputs.forecastCurveMwh96 : null
@@ -333,6 +313,113 @@ export function evaluateDeclarationChecks(declaration, inputs = {}) {
     totalMwh: round2(totalMwh),
     maxMw: round2(maxMw),
     evaluatedAt: new Date().toISOString()
+  }
+}
+
+/** 敞口容忍度：申报量不超过敞口 × (1 + 10%)。 */
+const EXPOSURE_TOLERANCE = 0.1
+
+/** 取不到可施加约束的原因 → 文案（原因码与套保判级的未评估原因同名，见 shared/hedge/contract.mjs ASSESSMENT_REASONS）。 */
+const EXPOSURE_UNAVAILABLE_LABELS = {
+  REGION_UNSUPPORTED: '该地区未开放套保模块',
+  NO_REGION: '申报单未归属地区',
+  NO_CREDENTIAL: '无访问凭据',
+  FORBIDDEN: '无权限查看中长期持仓',
+  LEG_FAILED: '套保服务数据加载失败',
+  ALL_UNKNOWN: '目标日全部时段敞口未知',
+  SUBJECT_UNSUPPORTED: '该申报主体没有对应的套保敞口数据'
+}
+
+function unknownBreakdownText(breakdown) {
+  if (!breakdown || typeof breakdown !== 'object') return ''
+  const parts = []
+  if (breakdown.LOCKED_CURVE_MISSING) parts.push(`锁价分时未知 ${breakdown.LOCKED_CURVE_MISSING}`)
+  if (breakdown.GENERATION_UNKNOWN) parts.push(`发电未知 ${breakdown.GENERATION_UNKNOWN}`)
+  if (breakdown.NO_DATA) parts.push(`无锁价与发电数据 ${breakdown.NO_DATA}`)
+  return parts.join('、')
+}
+
+/** 约束来源说明：只在确实读到了套保结果（有生成时刻）时给出；未开放地区、无凭据、无权限等根本没读，不写来源。 */
+function constraintSourceText(exposure, { basisNote = true } = {}) {
+  const src = exposure?.constraintSource
+  if (!src || !src.generatedAt) return ''
+  const range = src.targetDate ? `目标日 ${src.targetDate}` : `${src.fromDate ?? '?'}~${src.toDate ?? '?'}`
+  return `；约束来源：${src.label ?? '套保服务'}（仅中长期口径，${range}，生成于 ${src.generatedAt}）${basisNote ? '，机制电量不计入' : ''}`
+}
+
+/**
+ * ④ 中长期敞口（HA-02）。
+ *
+ * 约束 = 套保服务在目标日给出的「仅中长期」逐时段敞口（机制电量不计入）；按申报方向取售出或购入
+ * 敞口，申报量不超过敞口 × 1.1 为 PASS。敞口对象形状见 server/declaration-hedge-exposure.mjs：
+ * - 带 `knownIntervalIndexes`（套保服务的逐时段结果）：只对已知时段施加约束——申报量只累计
+ *   落在已知时段的 15 分钟点，未知时段的申报量不参与比较并在 detail 说明；
+ * - 不带（人工填报或旧形状）：按全日申报总量比较，与原判据一致。
+ *
+ * 套保敞口是发电侧口径（场站发电 − 中长期锁价），只对发电主体给出；其余主体由取数层判为
+ * SUBJECT_UNSUPPORTED，不拿发电侧的负敞口冒充购入敞口。
+ *
+ * 状态取舍：取不到可施加的约束时（全部时段未知 / 地区未开放 / 主体无对应数据腿 / 无访问凭据 /
+ * 无权限查看中长期持仓 / 服务失败）一律 UNAVAILABLE，而不是 PASS。现有三档枚举里 PASS 只用于「本立场不适用」
+ * （如售电立场没有储能资产），这里约束本身适用、只是数据给不出——属于文件头设计点 ②「输入没接进来
+ * 之前一律 UNAVAILABLE」：不拦死（可放行项），但按升档审批处理，不把「没评估」当成「安全」
+ * （与 HA-01 风控面板「未评估不计为安全」同一立场）。
+ */
+function exposureCheck({ exposure, energy, totalMwh, subjectType }) {
+  const base = { checkId: 'exposure', name: '中长期敞口', severity: 'overridable' }
+  const sellSide = ['GENERATOR', 'STORAGE'].includes(subjectType)
+  const sideLabel = sellSide ? '售出' : '购入'
+  const knownIndexes = exposure && Array.isArray(exposure.knownIntervalIndexes) ? exposure.knownIntervalIndexes : null
+  const allUnknown = Boolean(exposure) && exposure.available !== false && knownIndexes !== null && knownIndexes.length === 0
+
+  if (!exposure || exposure.available === false || allUnknown) {
+    const reason = allUnknown ? 'ALL_UNKNOWN' : exposure?.reason
+    const label = EXPOSURE_UNAVAILABLE_LABELS[reason] ?? exposure?.reasonLabel ?? '敞口数据不可用'
+    // 全部未知时 note 是整段摘要（含来源），这里只取未知原因分布；其余原因的 note 就是具体原因。
+    const why = reason === 'ALL_UNKNOWN'
+      ? unknownBreakdownText(exposure?.unknownBreakdown)
+      : (exposure?.note ?? exposure?.error ?? '')
+    return {
+      ...base,
+      status: 'UNAVAILABLE',
+      detail: `${label}${why ? `（${why}）` : ''}，未施加中长期敞口约束${reason === 'ALL_UNKNOWN' ? '，不以模板合同曲线补齐' : ''}（按升档审批处理）${constraintSourceText(exposure, { basisNote: false })}`
+    }
+  }
+
+  const exposureMwh = Number(sellSide ? exposure.sellExposureMwh : exposure.buyExposureMwh) || 0
+  const manualPrefix = exposure.manual ? '【人工】' : ''
+  const manualSuffix = exposure.manual
+    ? `；敞口值为人工填报，不回写套保结果${exposure.hedgeFallback?.note ? `（套保服务未给出约束：${exposure.hedgeFallback.note}）` : ''}`
+    : ''
+  if (knownIndexes !== null) {
+    const known = new Set(knownIndexes.map(Number))
+    const minutesPerInterval = Number(exposure.intervalMinutes) > 0 ? Number(exposure.intervalMinutes) : 60
+    const pointMinutes = energy.length > 0 ? 1440 / energy.length : 15
+    let declaredMwh = 0
+    for (let i = 0; i < energy.length; i += 1) {
+      if (known.has(Math.floor((i * pointMinutes) / minutesPerInterval))) declaredMwh += Number(energy[i]) || 0
+    }
+    const total = Number(exposure.totalIntervals) || known.size
+    const unknown = Math.max(0, total - known.size)
+    const coverage = unknown > 0 ? `已知 ${known.size}/${total} 个时段：` : ''
+    const unconstrainedMwh = round2(totalMwh - declaredMwh)
+    const tail = unknown > 0
+      ? `；其余 ${unknown} 个时段敞口未知（${unknownBreakdownText(exposure.unknownBreakdown) || '原因未知'}），这些时段的申报量 ${unconstrainedMwh} MWh 未施加约束`
+      : ''
+    const within = declaredMwh <= exposureMwh * (1 + EXPOSURE_TOLERANCE)
+    return {
+      ...base,
+      status: within ? 'PASS' : 'FAIL',
+      detail: `${manualPrefix}${coverage}申报量 ${round2(declaredMwh)} MWh / 仅中长期${sideLabel}敞口 ${round2(exposureMwh)} MWh（容忍 +10%）${tail}${constraintSourceText(exposure)}${manualSuffix}`
+    }
+  }
+
+  // 人工填报或旧形状：没有逐时段覆盖信息，按全日申报总量比较（原判据）
+  const within = totalMwh <= exposureMwh * (1 + EXPOSURE_TOLERANCE)
+  return {
+    ...base,
+    status: within ? 'PASS' : 'FAIL',
+    detail: `${manualPrefix}申报总量 ${round2(totalMwh)} MWh / ${sideLabel}敞口 ${round2(exposureMwh)} MWh（容忍 +10%${exposure.hedgeRatio != null ? `，套保率 ${exposure.hedgeRatio}` : ''}）${constraintSourceText(exposure)}${manualSuffix}`
   }
 }
 
