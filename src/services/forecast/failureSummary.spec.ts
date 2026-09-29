@@ -20,10 +20,10 @@ describe('summarizeForecastFailures', () => {
 
   it('异因逐条列出，且每条都带算法名', () => {
     const text = summarizeForecastFailures([
-      { name: 'Chronos-2', reason: '需安装可选 extra chronos-forecasting' },
+      { name: 'XGBoost', reason: '需安装可选 extra xgboost' },
       { name: 'LightGBM', reason: 'target_date 不在可用数据范围内' },
     ])
-    expect(text).toBe('Chronos-2：需安装可选 extra chronos-forecasting；LightGBM：target_date 不在可用数据范围内')
+    expect(text).toBe('XGBoost：需安装可选 extra xgboost；LightGBM：target_date 不在可用数据范围内')
   })
 
   it('不把真实原因替换成"后端不可达"这类猜测', () => {

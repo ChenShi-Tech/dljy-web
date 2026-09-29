@@ -383,7 +383,7 @@ const ML_PARAMS: ParamField[] = [
 ]
 
 // #762 模型清单动态化：ML 模型不再硬编码，从后端 /forecast/models（registry.catalog 单一权威）
-// 拉取，新模型（含 fm:Chronos 基础模型）上线自动出现，不可用模型带 available:false + reason。
+// 拉取，新模型上线自动出现，不可用模型带 available:false + reason。
 // 平台官方(platform)/KNN 基线(knn) 是前端专属 provider（非后端 catalog 模型），保留固定。
 type CatalogTargetInput = string | readonly string[] | undefined
 
@@ -609,8 +609,7 @@ export function adaptMlResult(r: ForecastResult, modelId: string, granularity: 2
 // /predict（run_forecast）支持直算的 namespace + knn（baseline namespace 但后端有专用分支）。
 // store: 外部生产模型也支持，经 base_models.create_model 的 store 分支（load_production_model），
 // 运行时按 store_meta 校验 target/region（forecast_service）。
-// 仅 baseline 的 naive/seasonal_naive 与 fm:（基础模型走 /forecast/foundation 端点）/predict 直算会
-// ValueError，选择器标 available:false + reason 禁用不隐藏（工作台+驾驶舱共用）。
+// 仅 baseline 的 naive/seasonal_naive 经 /predict 直算会 ValueError，选择器标 available:false + reason 禁用不隐藏（工作台+驾驶舱共用）。
 // remote：远程推理服务模型（Epic #1898），train no-op、predict 经 agent-backend 转发外部服务
 const PREDICT_NAMESPACES = new Set(['base', 'deep', 'neural', 'tslib', 'store', 'remote'])
 export function isPredictSupported(model: Pick<ForecastModel, 'modelId' | 'namespace'>): boolean {

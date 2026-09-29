@@ -163,14 +163,14 @@ describe('建模工作台的目标日上下文', () => {
   it('单算法、多算法和可见台账均不显示占位、未部署与原始零样本名称', async () => {
     api.load.mockResolvedValueOnce([
       provider({ id: 'tslib:DLinear', name: 'DLinear compat', mock: true }),
-      provider({ id: 'fm:Chronos2', name: 'Chronos 2', available: false }),
+      provider({ id: 'remote:offline', name: '未部署远端模型', available: false }),
       provider({ id: 'remote:chronos-bolt-base', name: 'Chronos Bolt Base', capabilities: { zeroShot: true } as ForecastProvider['capabilities'] }),
       provider({ id: 'remote:test', name: '测试远端模型' }),
     ])
     const wrapper = await render()
     expect(wrapper.text()).toContain('测试远端模型')
     expect(wrapper.text()).not.toContain('DLinear compat')
-    expect(wrapper.text()).not.toContain('Chronos 2')
+    expect(wrapper.text()).not.toContain('未部署远端模型')
     expect(wrapper.text()).not.toContain('Chronos Bolt Base')
   })
   it('异步目录到达后可选模型，URL日期和用户结算价目标用于实际调用', async () => {
@@ -216,7 +216,7 @@ describe('建模工作台的目标日上下文', () => {
     api.load.mockResolvedValueOnce([
       provider({ id: 'tslib:PatchTST', name: 'PatchTST compat', mock: true }),
       provider({ id: 'remote:chronos-bolt-base', name: 'Chronos Bolt Base', source: 'remote:zeroshot' }),
-      provider({ id: 'fm:Chronos2', name: 'Chronos 2', available: false }),
+      provider({ id: 'remote:offline', name: '未部署远端模型', available: false }),
     ])
     const wrapper = await render()
     expect(api.run).not.toHaveBeenCalled()

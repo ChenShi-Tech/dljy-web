@@ -10,13 +10,13 @@ vi.mock('@/composables/useEChart', () => ({ useEChart: () => ({ setOption: api.c
 vi.mock('element-plus', () => ({ ElMessage: { error: vi.fn() } }))
 import Scoreboard from './ForecastScoreboardView.vue'
 
-const removed = ['fm:Chronos2', 'fm:ChronosBoltSmall', ...['Autoformer', 'DLinear', 'FEDformer', 'Informer', 'iTransformer', 'PatchTST', 'TimesNet', 'TimeXer'].map((id) => `tslib:${id}`)]
+const removed = ['Autoformer', 'DLinear', 'FEDformer', 'Informer', 'iTransformer', 'PatchTST', 'TimesNet', 'TimeXer'].map((id) => `tslib:${id}`)
 const wrappers: VueWrapper[] = []
 beforeEach(() => { api.scoreboard.mockReset(); api.chart.mockReset() })
 afterEach(() => { wrappers.splice(0).forEach((wrapper) => wrapper.unmount()) })
 
 describe('质量记分牌模型清理', () => {
-  it('完整10个移除项不出现在表格或图例，真实PatchTST和Naive参照仍保留', async () => {
+  it('全部8个TSLib占位移除项不出现在表格或图例，真实PatchTST和Naive参照仍保留', async () => {
     const ids = [...removed, 'patchtst', 'remote:yunnan-renewable-patchtst-20260729', 'naive_1d']
     api.scoreboard.mockResolvedValue({ available: true, report: {
       region_id: 'yunnan', date_range: ['2026-06-01', '2026-06-25'], n_days: 25,

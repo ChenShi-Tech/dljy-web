@@ -619,26 +619,6 @@ export function runDeviationRisk(req: DeviationRiskRequest): Promise<DeviationRi
   return post('/deviation-risk', req)
 }
 
-// PatchTST 序列预测（前日 96 点 → 次日 96 点，深度时序）。
-// 判别联合（B18）：available=false 时后端只回 {available,reason}（无 torch/样本<30 必然命中，
-// 见 sequence_forecast.py:41,49），不含指标/points；available=true 才有完整结果。消费方须先判 available。
-export type PatchtstResult =
-  | { available: false; reason: string }
-  | {
-      available: true
-      basis: ForecastBasis
-      horizon: string
-      n_test_days: number
-      mae: number
-      persistence_mae: number
-      mase_vs_persistence: number | null   // naive_mae==0 时后端返 null（B17）
-      beats_persistence: boolean
-      points: number[]
-    }
-export function runPatchtstSeq(req: ForecastRequest): Promise<PatchtstResult> {
-  return post('/patchtst-seq', req)
-}
-
 // 站级发电量预测（光伏出力，G1.2/G1.3 + G2 真实数据接入）
 // 前端传入 company station 的 station_id + installed_capacity(MW)。
 // G2：data_source=auto/real 时后端优先用站级真实出力训练(basis=real)，缺则合成；
