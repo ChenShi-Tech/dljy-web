@@ -67,6 +67,13 @@ async function load() {
   const lookback = coverageWindow(today)
   coverageLoading.value = true
   coverageError.value = null
+  // 新一轮加载（首次、重新激活、认知时点作废后重取）开始即隐藏上一轮的日历与复核结果并作废在途复核：
+  // 否则新日历先返回时会和旧复核指标拼在同一页（#220 审查 R1-01）。已选月份与视角保留。
+  coverage.value = null
+  review.value = null
+  reviewSeq += 1
+  reviewLoading.value = false
+  reviewError.value = null
   let formalRaw: unknown
   let provisionalRaw: unknown
   try {

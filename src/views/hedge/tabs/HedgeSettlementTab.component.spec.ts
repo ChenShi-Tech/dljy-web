@@ -7,7 +7,7 @@
 import { config, enableAutoUnmount, flushPromises } from '@vue/test-utils'
 import type { VueWrapper } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { defineComponent, h, nextTick } from 'vue'
+import { KeepAlive, defineComponent, h, nextTick, ref } from 'vue'
 
 const fetchSettlementCoverage = vi.fn()
 const fetchSettlementReview = vi.fn()
@@ -46,6 +46,8 @@ import { selectedCompanyId } from '@/services/company/companyContext'
 import { HedgeApiError } from '@/services/hedge/hedgeApi'
 import type { SettlementCoverage, SettlementView } from '@/services/hedge/hedgeSettlementApi'
 import { mountHedgeTab } from '@/test/hedgeWorkbench'
+import { mount } from '@vue/test-utils'
+import { useHedgeWorkbench } from '../useHedgeWorkbench'
 import { metricTile } from '@/test/metricTile'
 import { coveragePayload, incompleteRow, ledgerPayload, provisionalNotReported, reviewPayload, reviewRow } from '@/test/hedgeSettlement'
 
@@ -112,6 +114,45 @@ describe('HedgeSettlementTab（HR-01..05、HW-06/08）', () => {
     })
     // 今天之后的日子还没发生：日历只画到 9-29，不把 9-30 标成未覆盖。
     expect(wrapper.findAll('[data-test="calendar-day-row"] td[data-date]')).toHaveLength(29)
+  })
+
+  it('重新激活时先隐藏上一轮的日历与复核结果，新日历不会和旧复核指标拼在同一页（#220 审查 R1-01）', async () => {
+    mockCoverage(coveragePayload({ plants: ['甲风电场'], covered: { '2026-05-15': ['甲风电场'] } }))
+    fetchSettlementReview.mockResolvedValue(reviewPayload())
+    // 带 KeepAlive 的宿主：showTab=false 时页签失活（不卸载），切回即重新激活并调用 load()。
+    const showTab = ref(true)
+    const Other = defineComponent({ name: 'OtherTab', setup: () => () => h('div', { 'data-test': 'other-tab' }) })
+    const Host = defineComponent({
+      setup() {
+        useHedgeWorkbench()
+        return () => h(KeepAlive, null, [showTab.value ? h(HedgeSettlementTab) : h(Other)])
+      },
+    })
+    const wrapper = mount(Host)
+    await vi.waitFor(() => { expect(wrapper.find('[data-test="realized-metrics"]').exists()).toBe(true) })
+
+    // 切走再切回：新一轮覆盖日历挂起、复核也挂起。
+    const coverageGate = deferred<SettlementCoverage>()
+    const reviewGate = deferred()
+    fetchSettlementCoverage.mockImplementation(async (query: { view?: SettlementView }) => (query.view === 'PROVISIONAL' ? EMPTY_PROVISIONAL : coverageGate.promise))
+    fetchSettlementReview.mockImplementation(() => reviewGate.promise)
+    showTab.value = false
+    await nextTick()
+    showTab.value = true
+    await settle()
+    expect(wrapper.find('[data-test="realized-metrics"]').exists(), '重新加载期间不显示上一轮复核指标').toBe(false)
+    expect(wrapper.findAll('[data-test="calendar-plant-row"]'), '重新加载期间不显示上一轮日历').toHaveLength(0)
+
+    // 新日历先到、复核仍挂起：只显示新日历与复核加载态，不和旧复核指标混排。
+    coverageGate.resolve(coveragePayload({ plants: ['甲风电场'], covered: { '2026-05-15': ['甲风电场'] } }))
+    await settle()
+    expect(wrapper.findAll('[data-test="calendar-plant-row"]')).toHaveLength(1)
+    expect(wrapper.find('[data-test="realized-metrics"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="review-loading"]').exists()).toBe(true)
+
+    reviewGate.resolve(reviewPayload())
+    await vi.waitFor(() => { expect(wrapper.find('[data-test="realized-metrics"]').exists()).toBe(true) })
+    wrapper.unmount()
   })
 
   it('未覆盖的场站日显示「未覆盖」而不是 0；合计与套保率只用恒等核对通过的场站日，缺失不按 0 计（HR-01/HR-02）', async () => {
