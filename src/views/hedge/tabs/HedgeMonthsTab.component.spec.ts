@@ -1,9 +1,10 @@
 // 套保工作台「当月/后续」页签组件测试（HW-03/HW-04/HW-05/HW-06/HB-07/HM-06；openspec build-midlong-spot-hedging
 // 任务 8.3，ChenShi-Tech/dljy#3421）。
 // 守什么：默认月份范围当月 + 后 2 月、后续月份无基准不显示套保率、FORBIDDEN 不显示 0、月度未分解单列、
-// 超出/未登记核定上限提示、钻取分类求和 = 公司合计（数值 + consistency 双断言）、切公司丢弃旧响应。
+// 超出/未登记核定上限提示、钻取分类求和 = 公司合计（数值 + consistency 双断言）、切公司丢弃旧响应、
+// 月份草稿未提交不取数且提交后月卡与钻取同窗口刷新（R1-01）、核定上限读取失败不得表述成未登记（R1-02）。
 // 坏掉的症状：无基准月份出现一个像算过的百分数、无权限被渲染成 0、月量被摊进按日序列、
-// 切公司后短暂显示上一家公司的月份卡。
+// 切公司后短暂显示上一家公司的月份卡、页面同屏展示两个月份窗口的数据、读取失败被当成「未登记」。
 // 组件测试文件名必须是 *.component.spec.ts 才会在 happy-dom 环境运行。
 import { enableAutoUnmount, config } from '@vue/test-utils'
 import { defineComponent, h, nextTick } from 'vue'
@@ -273,6 +274,35 @@ describe('HedgeMonthsTab（任务 8.3）', () => {
     expect(wrapper.find('[data-test="cap-row-7"]').text()).toContain('-50')
   })
 
+  it('核定上限读取失败（FAILED）：显示读取失败/未知并带原因，不得表述成未登记（HB-07，R1-02）', async () => {
+    monthsMock.mockResolvedValue(monthsPayload([monthView({
+      caps: { status: 'FAILED', rows: [], note: '登记服务暂不可用，上限状态未知' },
+    })]))
+    const { wrapper } = await mountTab()
+    const card = wrapper.find('[data-test="month-card-2026-09"]')
+    const failed = card.find('[data-test="caps-failed"]')
+    expect(failed.exists()).toBe(true)
+    expect(failed.text()).toContain('读取失败')
+    expect(failed.text()).toContain('登记服务暂不可用，上限状态未知')
+    // FAILED 是「不知道」，不是「没有」：不得出现未登记空态，也没有可展示的行
+    expect(card.find('[data-test="caps"]').text()).not.toContain('暂无交易单元的核定上限登记')
+    expect(card.find('[data-test="caps-not-registered"]').exists()).toBe(false)
+    expect(card.find('[data-test="cap-row-7"]').exists()).toBe(false)
+  })
+
+  it('核定上限整体未登记（NOT_REGISTERED）：如实显示未登记空态（HB-07，R1-02）', async () => {
+    monthsMock.mockResolvedValue(monthsPayload([monthView({
+      caps: { status: 'NOT_REGISTERED', rows: [], note: '尚未登记任何交易单元的核定上限' },
+    })]))
+    const { wrapper } = await mountTab()
+    const card = wrapper.find('[data-test="month-card-2026-09"]')
+    const notRegistered = card.find('[data-test="caps-not-registered"]')
+    expect(notRegistered.exists()).toBe(true)
+    expect(notRegistered.text()).toContain('核定上限未登记')
+    expect(card.find('[data-test="caps-failed"]').exists()).toBe(false)
+    expect(card.find('[data-test="cap-row-7"]').exists()).toBe(false)
+  })
+
   it('钻取：分类求和 = 公司合计（数值断言）且服务端 consistency 可见（HM-06）', async () => {
     const { wrapper } = await mountTab()
     await vi.waitFor(() => { expect(wrapper.find('[data-test="drill-rows"]').exists()).toBe(true) })
@@ -374,5 +404,25 @@ describe('HedgeMonthsTab（任务 8.3）', () => {
     await wrapper.find('[data-test="months-load"]').trigger('click')
     expect(wrapper.find('[data-test="months-range-error"]').text()).toContain('起始月份不能晚于结束月份')
     expect(monthsMock.mock.calls.length).toBe(calls)
+  })
+
+  it('月份草稿未提交不触发取数；提交后月卡与钻取一次性按新范围刷新（R1-01）', async () => {
+    const { wrapper } = await mountTab()
+    await vi.waitFor(() => {
+      expect(monthsMock).toHaveBeenCalledTimes(1)
+      expect(breakdownMock).toHaveBeenCalledTimes(1)
+    })
+    // 改输入框只是草稿：等一个微任务周期以上，月卡与钻取都不得发新请求
+    await wrapper.find('[data-test="months-from"]').setValue('2026-10')
+    await wrapper.find('[data-test="months-to"]').setValue('2026-12')
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(monthsMock).toHaveBeenCalledTimes(1)
+    expect(breakdownMock).toHaveBeenCalledTimes(1)
+    // 提交：同一次点击，月卡与钻取都按已提交范围请求（窗口 = 2026-10-01 ~ 2026-12-31）
+    await wrapper.find('[data-test="months-load"]').trigger('click')
+    await vi.waitFor(() => { expect(monthsMock).toHaveBeenCalledTimes(2) })
+    expect(monthsMock.mock.calls[1][0]).toMatchObject({ fromMonth: '2026-10', toMonth: '2026-12' })
+    await vi.waitFor(() => { expect(breakdownMock).toHaveBeenCalledTimes(2) })
+    expect(breakdownMock.mock.calls[1][0]).toMatchObject({ fromDate: '2026-10-01', toDate: '2026-12-31' })
   })
 })

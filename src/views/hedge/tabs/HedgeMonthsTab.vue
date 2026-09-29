@@ -3,9 +3,11 @@
 //
 // 月份范围可调（默认北京时间当月 + 后 2 个月，不写死），加载 /months 逐月视图（按日锁价/发电、月度未分解单列、
 // 两口径套保率与判级、品种结构、机制电量、核定上限），窗口联动下方钻取区（/breakdown 维度分类 → 合同）。
+// 输入框只是草稿：月卡与钻取都只认「已提交范围」（committed），点「按此范围加载」一次性同时刷新两者——
+// 草稿编辑不触发任何取数，页面不会同时展示两个窗口的数据（#3421 审查 R1-01）。
 // 生命周期：激活即加载；切公司/地区由 lifecycle 清空并重取；认知时点/粒度变化清空重取（HW-06）；
 // 月份查询与钻取各自用序号丢弃迟到响应。顶层 FORBIDDEN：锁价侧不可用（不是 0），发电照常显示。
-import { onBeforeUnmount, reactive, ref, watch } from 'vue'
+import { nextTick, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import CalloutBox from '@/components/common/CalloutBox.vue'
 import { HedgeApiError } from '@/services/hedge/hedgeApi'
 import { fetchMonthsView } from '@/services/hedge/hedgeMonthsApi'
@@ -17,7 +19,10 @@ import MonthCard from './months/MonthCard.vue'
 
 const workbench = injectHedgeWorkbench()
 
+/** 输入框草稿：仅 v-model，未提交不触发取数。 */
 const range = reactive(defaultMonthRange())
+/** 已提交范围：月卡与钻取的唯一取数窗口，初始与默认草稿一致，只在点「按此范围加载」时更新。 */
+const committed = reactive(defaultMonthRange())
 const rangeError = ref<string | null>(null)
 const payload = ref<HedgeMonthsPayload | null>(null)
 const loading = ref(false)
@@ -28,7 +33,7 @@ const drillRef = ref<InstanceType<typeof BreakdownDrill> | null>(null)
 let monthsSeq = 0
 
 async function loadMonths() {
-  const invalid = monthRangeError(range.fromMonth, range.toMonth)
+  const invalid = monthRangeError(committed.fromMonth, committed.toMonth)
   rangeError.value = invalid
   if (invalid) return
   const scoped = workbench.scopedRequest()
@@ -38,7 +43,7 @@ async function loadMonths() {
   loadError.value = null
   try {
     const data = await fetchMonthsView({
-      fromMonth: range.fromMonth, toMonth: range.toMonth, asOf: workbench.asOf.value ?? undefined,
+      fromMonth: committed.fromMonth, toMonth: committed.toMonth, asOf: workbench.asOf.value ?? undefined,
     })
     if (!current()) return // 迟到响应丢弃（作用域或序号已过）
     payload.value = data
@@ -52,6 +57,18 @@ async function loadMonths() {
   }
 }
 
+/** 提交草稿：一次提交同时刷新月卡与钻取（R1-01）。等 nextTick 让新范围先经 props 传到钻取再取数。 */
+async function submitRange() {
+  const invalid = monthRangeError(range.fromMonth, range.toMonth)
+  rangeError.value = invalid
+  if (invalid) return
+  committed.fromMonth = range.fromMonth
+  committed.toMonth = range.toMonth
+  void loadMonths()
+  await nextTick()
+  drillRef.value?.load()
+}
+
 /** 页签整体加载：月度视图 + 钻取（钻取窗口与月度范围联动）。 */
 function load() {
   void loadMonths()
@@ -63,6 +80,9 @@ function reset() {
   payload.value = null
   loading.value = false
   loadError.value = null
+  // 未提交的草稿一并丢弃：切公司后输入框与数据都回到已提交范围，三者恒为同一窗口。
+  range.fromMonth = committed.fromMonth
+  range.toMonth = committed.toMonth
   drillRef.value?.reset()
 }
 
@@ -89,7 +109,7 @@ onBeforeUnmount(() => { monthsSeq++ })
     <div class="range-bar" data-test="months-range">
       <label>起始月份 <input v-model="range.fromMonth" type="month" data-test="months-from" /></label>
       <label>结束月份 <input v-model="range.toMonth" type="month" data-test="months-to" /></label>
-      <button type="button" data-test="months-load" :disabled="loading" @click="loadMonths">按此范围加载</button>
+      <button type="button" data-test="months-load" :disabled="loading" @click="submitRange">按此范围加载</button>
       <span class="hint">默认当月 + 后 2 个月；一次最多 12 个月</span>
     </div>
     <p v-if="rangeError" class="field-error" data-test="months-range-error">{{ rangeError }}</p>
@@ -119,8 +139,8 @@ onBeforeUnmount(() => { monthsSeq++ })
       </section>
     </template>
 
-    <!-- 钻取区独立于月度载荷挂载（自带加载/错误/FORBIDDEN 状态），窗口与上面的月份范围联动。 -->
-    <BreakdownDrill ref="drillRef" :from-month="range.fromMonth" :to-month="range.toMonth" />
+    <!-- 钻取区独立于月度载荷挂载（自带加载/错误/FORBIDDEN 状态），窗口只跟已提交范围（与月卡同一窗口）。 -->
+    <BreakdownDrill ref="drillRef" :from-month="committed.fromMonth" :to-month="committed.toMonth" />
   </div>
 </template>
 

@@ -140,22 +140,30 @@ const consistency = computed(() => consistencyView(props.month.consistency))
 
     <div class="caps" data-test="caps">
       <h4>核定上限（HB-07）</h4>
-      <p class="hint">{{ month.caps.note }}</p>
-      <table v-if="capRows.length">
-        <thead>
-          <tr><th>交易单元</th><th>核定上限（MWh）</th><th>已锁价（MWh）</th><th>剩余可签（MWh）</th><th>状态</th></tr>
-        </thead>
-        <tbody>
-          <tr v-for="row in capRows" :key="row.subjectId" :data-test="`cap-row-${row.subjectId}`">
-            <td>#{{ row.subjectId }}</td>
-            <td>{{ row.capMwh }}</td>
-            <td>{{ row.lockedMwh }}</td>
-            <td :class="{ negative: row.exceeded }">{{ row.remainingMwh }}</td>
-            <td><span class="badge" :class="row.tone" :data-test="`cap-status-${row.subjectId}`">{{ row.statusText }}</span></td>
-          </tr>
-        </tbody>
-      </table>
-      <p v-else class="hint">暂无交易单元的核定上限登记</p>
+      <!-- 顶层状态优先（#3421 审查 R1-02）：FAILED 是读取失败/未知，不能借空 rows 表述成「未登记」； -->
+      <!-- 只有整体 NOT_REGISTERED 才是真实的未登记；读取正常（REGISTERED/MODIFIED_AFTER_AS_OF）照常出表。 -->
+      <p v-if="month.caps.status === 'FAILED'" class="caps-failed" data-test="caps-failed">
+        核定上限读取失败，状态未知，无法核实<span v-if="month.caps.note">（{{ month.caps.note }}）</span>
+      </p>
+      <template v-else>
+        <p class="hint">{{ month.caps.note }}</p>
+        <p v-if="month.caps.status === 'NOT_REGISTERED'" class="hint" data-test="caps-not-registered">核定上限未登记</p>
+        <table v-else-if="capRows.length">
+          <thead>
+            <tr><th>交易单元</th><th>核定上限（MWh）</th><th>已锁价（MWh）</th><th>剩余可签（MWh）</th><th>状态</th></tr>
+          </thead>
+          <tbody>
+            <tr v-for="row in capRows" :key="row.subjectId" :data-test="`cap-row-${row.subjectId}`">
+              <td>#{{ row.subjectId }}</td>
+              <td>{{ row.capMwh }}</td>
+              <td>{{ row.lockedMwh }}</td>
+              <td :class="{ negative: row.exceeded }">{{ row.remainingMwh }}</td>
+              <td><span class="badge" :class="row.tone" :data-test="`cap-status-${row.subjectId}`">{{ row.statusText }}</span></td>
+            </tr>
+          </tbody>
+        </table>
+        <p v-else class="hint">暂无交易单元的核定上限登记</p>
+      </template>
     </div>
   </section>
 </template>
@@ -190,5 +198,6 @@ const consistency = computed(() => consistencyView(props.month.consistency))
 .caps table { width: 100%; border-collapse: collapse; font-size: var(--font-sm, 13px); }
 .caps th, .caps td { border-bottom: 1px solid #f0f0f0; padding: 4px 8px; text-align: left; }
 .caps td.negative { color: var(--danger, #f56c6c); font-weight: 600; }
+.caps-failed { color: var(--warning, #e6a23c); font-size: var(--font-sm, 13px); margin: 4px 0; }
 @media (max-width: 900px) { .ratios { grid-template-columns: 1fr; } }
 </style>

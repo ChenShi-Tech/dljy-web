@@ -4,9 +4,10 @@
 // 层级为「公司合计 → 所选维度分类 → 该分类下的合同（只读，链接中长期合同详情）」。接口按维度返回全公司
 // 分类（无按上层 key 过滤的参数），所以每层的一致性用双显示呈现：服务端 consistency 徽标（权威）+ 前端
 // 十进制「分类求和」与「公司合计」并排对照（HM-06：明细之和等于上一层）。FORBIDDEN 显示「无权限查看中长期
-// 持仓」，不渲染分类与合计，绝不显示 0（HW-04）。维度切换与窗口变化用序号丢弃迟到响应，作用域变化由
-// workbench.scopedRequest 兜底丢弃。
-import { computed, ref, watch } from 'vue'
+// 持仓」，不渲染分类与合计，绝不显示 0（HW-04）。维度切换用序号丢弃迟到响应，作用域变化由
+// workbench.scopedRequest 兜底丢弃。窗口只收「已提交范围」（父页签点「按此范围加载」后经 props 传入并显式
+// 调 load，草稿月份不触发取数——月卡与钻取恒为同一窗口，#3421 审查 R1-01）。
+import { computed, ref } from 'vue'
 import { RouterLink } from 'vue-router'
 import { HedgeApiError } from '@/services/hedge/hedgeApi'
 import {
@@ -31,7 +32,7 @@ const error = ref<string | null>(null)
 /** 展开的分类行（key 字符串化做索引）。 */
 const expandedKeys = ref<Record<string, boolean>>({})
 
-/** 维度切换/窗口连续变化时丢弃被取代的迟到响应（与维护页签基准查询同一模式）。 */
+/** 维度切换连续变化时丢弃被取代的迟到响应（与维护页签基准查询同一模式）。 */
 let seq = 0
 
 async function load() {
@@ -88,8 +89,6 @@ function rowLabel(row: { key: string | number; label: string }): string {
 }
 
 const consistency = computed(() => consistencyView(payload.value?.consistency ?? null))
-
-watch(() => [props.fromMonth, props.toMonth], () => { void load() })
 
 defineExpose({ load, reset })
 </script>
