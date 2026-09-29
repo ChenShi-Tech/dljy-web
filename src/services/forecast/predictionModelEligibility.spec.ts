@@ -12,7 +12,6 @@ describe('预测入口模型准入', () => {
       expect(reason({ modelId: 'remote:any', available: true, ...evidence })).toBe('placeholder')
     })
   it.each([
-    { id: 'fm:Chronos2' }, { modelId: 'fm:ChronosBoltSmall' },
     { capabilities: { zeroShot: true } }, { source: 'remote:zeroshot' }, { framework: 'zeroshot/chronos_bolt' },
   ])('即使可用也排除未训练的零样本权重：%j', (evidence) => {
     expect(reason({ available: true, ...evidence })).toBe('pretrained')

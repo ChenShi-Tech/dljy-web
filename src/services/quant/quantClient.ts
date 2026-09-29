@@ -272,7 +272,7 @@ export function fetchSettlementReview(date: string): Promise<SettlementReviewRes
 // 后端 optimize_cross_period 在无可行解时只回 {is_feasible:false, status, note}（不含收益/
 // 计划字段），可行时才回完整字段。故用 is_feasible 判别联合精确建模契约，消费方须先收窄
 // is_feasible===true 才能访问 objective_yuan/schedule 等，杜绝无可行解时 undefined 崩溃
-// （与全审查 B18 PatchtstResult.available 判别联合同口径，B18 为已修 P1）。
+// （与全审查 B18 同口径的判别联合建模，B18 为已修 P1）。
 export type CrossPeriodResult = {
   is_feasible: true
   status: string

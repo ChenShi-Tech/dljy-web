@@ -248,9 +248,9 @@ afterEach(() => { wrappers.splice(0).forEach((wrapper) => wrapper.unmount()) })
 
 describe('申报决策驾驶舱模型入口清理', () => {
   it('隐藏 deep link 指向的占位、零样本和错腿模型，但不会静默改跑别的模型', async () => {
-    state.route.value = { priceModel: 'fm:Chronos2', loadModel: 'remote:raw-load', date: '2026-06-25' }
+    state.route.value = { priceModel: 'tslib:DLinear', loadModel: 'remote:raw-load', date: '2026-06-25' }
     state.priceModels.value = [
-      model({ modelId: 'fm:Chronos2', name: 'Chronos 2', supportedTargets: ['price'] }),
+      model({ modelId: 'tslib:DLinear', name: 'DLinear 兼容占位', supportedTargets: ['price'] }),
       model({ modelId: 'remote:load-only', name: '负荷专用旧模型', supportedTargets: ['load'] }),
       model({ modelId: 'remote:price-ok', name: '价格真模型', supportedTargets: ['price'] }),
     ]
@@ -262,7 +262,7 @@ describe('申报决策驾驶舱模型入口清理', () => {
     const wrapper = await render()
     expect(wrapper.text()).toContain('价格真模型')
     expect(wrapper.text()).toContain('负荷真模型')
-    expect(wrapper.text()).not.toContain('Chronos 2')
+    expect(wrapper.text()).not.toContain('DLinear 兼容占位')
     expect(wrapper.text()).not.toContain('原始零样本负荷')
     expect(wrapper.text()).not.toContain('负荷专用旧模型')
     expect(wrapper.text()).not.toContain('价格专用旧模型')
