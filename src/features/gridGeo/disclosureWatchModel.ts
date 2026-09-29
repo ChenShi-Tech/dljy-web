@@ -419,7 +419,8 @@ export function buildWatchLoadChartOption(timeline: Pick<WatchTimeline, 'load' |
   })
   return {
     animation: false,
-    grid: { left: 8, right: 14, top: 26, bottom: 6, containLabel: true },
+    // 左右边距归零、纵轴刻度内收：图与上方甘特条共用同一 0–24 时刻列（运行日看板共轴）。
+    grid: { left: 0, right: 0, top: 22, bottom: 20, containLabel: false },
     tooltip: {
       trigger: 'axis' as const,
       formatter: (params: unknown) => {
@@ -430,10 +431,10 @@ export function buildWatchLoadChartOption(timeline: Pick<WatchTimeline, 'load' |
     },
     xAxis: {
       type: 'value' as const, min: 0, max: DAY_MINUTES, interval: 180,
-      axisLabel: { color: colors.axis, formatter: (value: number) => minuteText(value) },
+      axisLabel: { color: colors.axis, formatter: (value: number) => minuteText(value), showMinLabel: false, showMaxLabel: false },
       splitLine: { lineStyle: { color: colors.split, type: 'dashed' as const } },
     },
-    yAxis: { type: 'value' as const, name: load?.unit ?? 'MW', scale: true, nameTextStyle: { color: colors.axis }, axisLabel: { color: colors.axis }, splitLine: { lineStyle: { color: colors.split, type: 'dashed' as const } } },
+    yAxis: { type: 'value' as const, name: load?.unit ?? 'MW', nameGap: 6, nameTextStyle: { color: colors.axis, align: 'left' as const, padding: [0, 0, 0, 4] }, scale: true, axisLabel: { color: colors.axis, inside: true, verticalAlign: 'bottom' as const }, splitLine: { lineStyle: { color: colors.split, type: 'dashed' as const } } },
     series: [series],
   }
 }

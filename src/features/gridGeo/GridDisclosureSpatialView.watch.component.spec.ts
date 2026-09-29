@@ -71,7 +71,7 @@ describe('公开披露页日前盯盘入口', () => {
     const dialog = page.getComponent({ name: 'DisclosureWatchDialog' })
     expect(dialog.props()).toEqual({ regionId: 'yunnan', regionLabel: '云南', companyId: 'company-a', initialReviewDate: '2026-07-01' })
     expect(dialog.vm.$attrs).toEqual({})
-    expect(inDialog('watch-scope')!.textContent).toContain('全部机组披露（不受列表筛选影响）')
+    expect(inDialog('watch-scope-all')!.getAttribute('aria-label')).toBe('全部机组披露（不受列表筛选影响）')
     expect(trigger.attributes('aria-expanded')).toBe('true')
     await click('watch-run')
     expect(watchApi.caps).toHaveBeenCalledWith({ regionId: 'yunnan', companyId: 'company-a' }, liveTradeDate(), expect.anything())

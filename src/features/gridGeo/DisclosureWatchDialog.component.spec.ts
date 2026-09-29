@@ -89,7 +89,8 @@ describe('日前盯盘弹窗状态', () => {
 
   it('live 默认北京时间次日只读展示，须点击才运行，请求只含 tradeDate 与 mode', async () => {
     const view = mountDialog(); await flushPromises()
-    expect(view.get('[data-testid="watch-scope"]').text()).toBe(`研判范围：云南 · 目标日 ${LIVE} · 全部机组披露（不受列表筛选影响）`)
+    expect(view.get('[data-testid="watch-scope"]').text()).toBe(`研判范围：云南目标日 ${LIVE}全部机组`)
+    expect(view.get('[data-testid="watch-scope-all"]').attributes('aria-label')).toBe('全部机组披露（不受列表筛选影响）')
     expect((view.get('[data-testid="watch-mode-live"]').element as HTMLInputElement).checked).toBe(true)
     expect(view.find('[data-testid="watch-review-date"]').exists()).toBe(false)
     expect(api.caps).toHaveBeenCalledWith({ regionId: 'yunnan', companyId: 'company-a' }, LIVE, expect.objectContaining({ signal: expect.any(AbortSignal) }))
@@ -134,7 +135,8 @@ describe('日前盯盘弹窗状态', () => {
 describe('日前盯盘运行与结果', () => {
   it('首屏只列前三项重点；结论、资料截至时点与真实日前标识；无模型判断不标试验研判', async () => {
     const view = mountDialog(); await flushPromises(); await run(view)
-    expect(view.get('[data-testid="watch-summary"]').text()).toBe('明日有 4 项重点核对')
+    expect(view.get('[data-testid="watch-summary"]').text()).toBe('有重点核对事项')
+    expect(view.get('[data-testid="watch-summary"]').attributes('title')).toBe('明日有 4 项重点核对')
     expect(view.get('[data-testid="watch-asof"]').text()).toBe('资料截至 2026-09-29 16:00:00（北京时间）')
     expect(view.get('[data-testid="watch-mode-badge"]').text()).toBe('真实日前')
     expect(view.find('[data-testid="watch-trial-badge"]').exists()).toBe(false)
@@ -280,7 +282,8 @@ describe('日前盯盘评价', () => {
     await card().findAll('.feedback button').find((button) => button.text() === '有用')!.trigger('click'); await flushPromises()
     expect(api.feedback).toHaveBeenCalledWith({ regionId: 'yunnan', companyId: 'company-a' }, 'run-1', { itemId: 'f1', verdict: 'useful', note: null }, expect.anything())
     expect(card().get('[role="alert"]').text()).toBe('评价提交失败：该事项不在本次研判结果中')
-    expect(view.get('[data-testid="watch-summary"]').text()).toBe('明日有 4 项重点核对')
+    expect(view.get('[data-testid="watch-summary"]').text()).toBe('有重点核对事项')
+    expect(view.get('[data-testid="watch-summary"]').attributes('title')).toBe('明日有 4 项重点核对')
     expect(view.get('[aria-label="重点核对前三项"]').findAll('.watch-item')).toHaveLength(3)
     await card().findAll('.feedback button').find((button) => button.text() === '有用')!.trigger('click'); await flushPromises()
     expect(card().get('[data-testid="watch-feedback-done"]').text()).toBe('已评价：有用')
@@ -309,11 +312,13 @@ describe('日前盯盘键盘可达', () => {
   it('Esc 关闭弹窗，Tab 焦点约束在弹窗内', async () => {
     const view = mountDialog(); await flushPromises()
     expect(document.activeElement).toBe(view.get('[data-testid="disclosure-watch-dialog"]').element)
-    const focusable = view.get('[data-testid="disclosure-watch-dialog"]').findAll('button:not(:disabled), input:not(:disabled), summary')
+    const focusable = view.get('[data-testid="disclosure-watch-dialog"]').findAll('button:not(:disabled), input:not(:disabled), summary, [tabindex="0"]')
+    const first = focusable[0]!.element as HTMLElement
     const last = focusable.at(-1)!.element as HTMLElement
+    expect(first).not.toBe(last)
     last.focus()
     await view.get('[data-testid="disclosure-watch-dialog"]').trigger('keydown', { key: 'Tab' })
-    expect(document.activeElement).toBe(view.get('[data-testid="watch-close"]').element)
+    expect(document.activeElement).toBe(first)
     await view.get('[data-testid="disclosure-watch-dialog"]').trigger('keydown', { key: 'Tab', shiftKey: true })
     expect(document.activeElement).toBe(last)
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
