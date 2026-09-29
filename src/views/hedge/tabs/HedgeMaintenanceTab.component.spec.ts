@@ -282,6 +282,25 @@ describe('HedgeMaintenanceTab（HW-10）', () => {
       expect(workbench.dataRevision.value).toBe(before + 1)
     })
 
+    it('保存期间改粒度或认知时点：已成功的写入照常收尾（写请求只随公司/地区作废，#221 审查 R1-01）', async () => {
+      const { wrapper, workbench } = await openMaintenance()
+      let release: (value: unknown) => void = () => {}
+      api.putBaselines.mockImplementation(() => new Promise((resolve) => { release = resolve }))
+      const before = workbench.dataRevision.value
+      await putBaselineDraft(wrapper)
+      await wrapper.find('[data-test="baseline-note"]').setValue('修订')
+      await wrapper.find('[data-test="baseline-save"]').trigger('click')
+      expect(api.putBaselines).toHaveBeenCalledTimes(1)
+      // 写请求在途时改页头的粒度与认知时点：只改变套保计算的查询视角，不应作废维护写入。
+      workbench.granularity.value = 'DAY'
+      workbench.asOfInput.value = '2026-09-01'
+      release({ rows: [] })
+      await vi.waitFor(() => {
+        expect(wrapper.find('[data-test="baseline-status"]').text()).toContain('已保存')
+      })
+      expect(workbench.dataRevision.value).toBe(before + 1)
+    })
+
     it('409 按 details.index 定位到冲突的格子并提示刷新后重试', async () => {
       const { wrapper } = await openMaintenance()
       api.putBaselines.mockRejectedValue(hedgeApiError(409, 'VERSION_CONFLICT', '场站 10 2027-05 的基准已被他人更新，请刷新后核对', { field: 'items.expectedVersionNo', index: 0 }))

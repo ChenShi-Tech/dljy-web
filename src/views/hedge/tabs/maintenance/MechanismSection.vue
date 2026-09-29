@@ -78,7 +78,7 @@ function statusText(row: MechanismParamRow) {
 }
 
 async function load() {
-  const current = workbench.scopedRequest()
+  const current = context.contextRequest()
   loading.value = true
   const [paramRes, stationRes] = await Promise.allSettled([fetchMechanismParams(), fetchMaintenanceStations()])
   if (!current()) return

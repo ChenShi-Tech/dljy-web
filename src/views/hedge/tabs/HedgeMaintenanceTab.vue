@@ -33,7 +33,7 @@ const activeSection = ref<SectionKey>('band')
 
 /** 写权限声明：取不到（接口失败、中长期模块暂停）按未知处理，写入时以 403 为准。 */
 async function loadWriteAccess() {
-  const current = workbench.scopedRequest()
+  const current = maintenance.contextRequest()
   try {
     const access = await fetchMaintenanceWriteAccess()
     if (current()) maintenance.declareWriteAccess(access)

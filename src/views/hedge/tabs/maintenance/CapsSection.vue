@@ -73,7 +73,7 @@ function remainingText(key: string) {
 }
 
 async function loadSubjects() {
-  const current = workbench.scopedRequest()
+  const current = context.contextRequest()
   try {
     const rows = await fetchMaintenanceSubjects()
     if (!current()) return
@@ -86,11 +86,16 @@ async function loadSubjects() {
   }
 }
 
+// 月份范围不在请求有效期里：连续按不同范围查询时，用序号丢弃被后发查询取代的迟到响应（#221 审查 R1-02）。
+let capsQuerySeq = 0
+
 async function loadCaps(target: MonthRange = { fromMonth: range.fromMonth, toMonth: range.toMonth }) {
   const invalid = monthRangeError(target.fromMonth, target.toMonth)
   rangeError.value = invalid
   if (invalid) return
-  const current = workbench.scopedRequest()
+  const seq = ++capsQuerySeq
+  const inContext = context.contextRequest()
+  const current = () => inContext() && seq === capsQuerySeq
   loading.value = true
   try {
     const data = await fetchCaps({ fromMonth: target.fromMonth, toMonth: target.toMonth })

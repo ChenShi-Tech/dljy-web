@@ -14,12 +14,11 @@ function fakeContext() {
   const writable = ref(true)
   const notifyDataChanged = vi.fn()
   const context = {
-    workbench: {
-      scopedRequest: () => {
-        const mine = generation
-        return () => mine === generation
-      },
-      notifyDataChanged,
+    workbench: { notifyDataChanged },
+    // 写请求只随公司/地区切换作废（#221 审查 R1-01）：桩里用 generation 模拟切公司。
+    contextRequest: () => {
+      const mine = generation
+      return () => mine === generation
     },
     writable: computed(() => writable.value),
     failureOf: maintenanceFailureOf,

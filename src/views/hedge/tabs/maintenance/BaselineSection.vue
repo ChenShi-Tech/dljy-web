@@ -66,7 +66,7 @@ function cellTitle(stationId: number, month: string) {
 }
 
 async function loadStations() {
-  const current = workbench.scopedRequest()
+  const current = context.contextRequest()
   try {
     const rows = await fetchMaintenanceStations()
     if (!current()) return
@@ -79,11 +79,16 @@ async function loadStations() {
   }
 }
 
+// 月份范围不在请求有效期里：连续按不同范围查询时，用序号丢弃被后发查询取代的迟到响应（#221 审查 R1-02）。
+let baselineQuerySeq = 0
+
 async function loadBaselines(target: MonthRange = { fromMonth: range.fromMonth, toMonth: range.toMonth }) {
   const invalid = monthRangeError(target.fromMonth, target.toMonth)
   rangeError.value = invalid
   if (invalid) return
-  const current = workbench.scopedRequest()
+  const seq = ++baselineQuerySeq
+  const inContext = context.contextRequest()
+  const current = () => inContext() && seq === baselineQuerySeq
   loading.value = true
   try {
     const data = await fetchBaselines({ fromMonth: target.fromMonth, toMonth: target.toMonth })

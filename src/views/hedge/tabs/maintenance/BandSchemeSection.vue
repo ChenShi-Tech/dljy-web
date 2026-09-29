@@ -55,7 +55,7 @@ const BASIS_OPTIONS = Object.entries(BAND_BASIS_LABELS) as Array<[BandBasis, str
 const SIDES: BandSide[] = ['lower', 'upper']
 
 async function load() {
-  const current = workbench.scopedRequest()
+  const current = context.contextRequest()
   loading.value = true
   const [presetRes, schemeRes, activationRes] = await Promise.allSettled([fetchBandPresets(), fetchBandSchemes(), fetchBandActivation()])
   if (!current()) return
