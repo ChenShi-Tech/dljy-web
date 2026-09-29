@@ -216,6 +216,7 @@ async function render() {
         CockpitRegionLockedCard: true,
         DataBasisBadge: { props: ['basis', 'prefix'], template: '<span>{{prefix}} {{basis}}</span>' },
         TrustBadge: { props: ['basis', 'prefix'], template: '<span>{{prefix}} {{basis}}</span>' },
+        ElTag: { template: '<span class="el-tag"><slot /></span>' },
         ElInputNumber: { name: 'ElInputNumber', props: ['modelValue'], template: '<input />' },
         ElSlider: { name: 'ElSlider', props: ['modelValue'], template: '<div />' },
       },
@@ -466,5 +467,103 @@ describe('地区模型目录的完成回调隔离', () => {
     await flushPromises()
     expect(api.predict).not.toHaveBeenCalled()
     expect(api.optimize).not.toHaveBeenCalled()
+  })
+})
+
+// #3605：/cockpit 带远端 mock/sourceType/warnings 时，概览必须可见「模拟数据」，且旧后端无字段时不崩。
+describe('决策概览来源标识', () => {
+  const overviewBase = {
+    basis: 'captured',
+    bid_advice: { retailer: { expected_cost_yuan: 1000 } },
+    price_forecast: { points: [100, 110] },
+    deviation_risk: { worst_penalty_yuan: 50 },
+  }
+
+  async function openOverview() {
+    // 决策概览只在价格/负荷两腿同一模型时才发请求。
+    state.route.value = { model: 'xgboost', date: '2026-06-25' }
+    const shared = [model({ modelId: 'xgboost', name: '跨地区真实算法' })]
+    state.priceModels.value = shared
+    state.loadModels.value = shared
+    const wrapper = await render()
+    const btn = wrapper.findAll('button').find((b) => b.text() === '决策概览')
+    expect(btn).toBeTruthy()
+    await btn!.trigger('click')
+    await flushPromises()
+    return wrapper
+  }
+
+  it('中长期分区 MOCK：概览标题旁与该卡片显示「模拟数据」，warnings 折成短标签+悬浮提示', async () => {
+    api.cockpit.mockResolvedValueOnce({
+      ...overviewBase,
+      mock: true, sourceType: 'MOCK', productionWrite: false,
+      warnings: ['[中长期] 远程模型为演示权重', '[日前电价] 样本偏少'],
+      midterm_trend: { daily_avg_price: [100, 110], horizon_days: 7, mock: true, sourceType: 'MOCK', productionWrite: false },
+    })
+    const wrapper = await openOverview()
+    const head = wrapper.find('.advice-head')
+    expect(head.text()).toContain('模拟数据')
+    expect(head.text()).toContain('合成验证')
+    expect(head.text()).not.toContain('决策概览（真实）')
+    const warn = head.findAll('.el-tag').find((t) => t.text().startsWith('提示'))
+    expect(warn?.text()).toBe('提示 2')
+    expect(warn?.attributes('title')).toContain('远程模型为演示权重')
+    const midCard = wrapper.findAll('.risk-card').find((c) => c.text().includes('未来 7 天均价'))
+    expect(midCard?.text()).toContain('模拟数据')
+    // 未标 mock 的分区卡片不带标签
+    const priceCard = wrapper.findAll('.risk-card').find((c) => c.text().includes('日均预测电价'))
+    expect(priceCard?.text()).not.toContain('模拟数据')
+  })
+
+  it('全部 REAL 且 productionWrite:false：不显示模拟数据/提示标签', async () => {
+    api.cockpit.mockResolvedValueOnce({
+      ...overviewBase,
+      mock: false, sourceType: 'REAL', productionWrite: false, warnings: [],
+      price_forecast: { points: [100, 110], mock: false, sourceType: 'REAL' },
+      deviation_risk: { worst_penalty_yuan: 50, mock: false, sourceType: 'REAL' },
+      midterm_trend: { daily_avg_price: [100, 110], horizon_days: 7, mock: false, sourceType: 'REAL', warnings: [] },
+    })
+    const wrapper = await openOverview()
+    expect(wrapper.find('.advice-head').text()).toContain('决策概览（真实）')
+    expect(wrapper.text()).not.toContain('模拟数据')
+    expect(wrapper.findAll('.el-tag').some((t) => t.text().startsWith('提示'))).toBe(false)
+  })
+
+  it('旧后端无 mock/sourceType/warnings 字段：正常渲染且不出标签', async () => {
+    const wrapper = await openOverview()
+    expect(wrapper.find('.advice-head').text()).toContain('决策概览（真实）')
+    expect(wrapper.text()).toContain('未来 7 天均价')
+    expect(wrapper.text()).not.toContain('模拟数据')
+    expect(wrapper.text()).not.toContain('混合来源')
+  })
+
+  it('仅顶层 mock:true（分区缺字段）也照样标模拟数据，不漏标', async () => {
+    api.cockpit.mockResolvedValueOnce({
+      ...overviewBase, mock: true, sourceType: 'MOCK', productionWrite: false,
+      midterm_trend: { daily_avg_price: [100], horizon_days: 7 },
+    })
+    const wrapper = await openOverview()
+    expect(wrapper.find('.advice-head').text()).toContain('模拟数据')
+  })
+
+  it('中长期 UNAVAILABLE：显示「暂无南洋模型」空态，不当 0 均价、不报错，其余卡片照常', async () => {
+    api.cockpit.mockResolvedValueOnce({
+      ...overviewBase,
+      mock: false, sourceType: 'REAL', productionWrite: false, warnings: [],
+      midterm_trend: {
+        daily_avg_price: [], horizon_days: 14, available: false, reason: '南洋无 yunnan 中长期模型',
+        mock: false, sourceType: 'UNAVAILABLE', productionWrite: false,
+      },
+    })
+    const wrapper = await openOverview()
+    const midCard = wrapper.findAll('.risk-card').find((c) => c.text().includes('未来 14 天均价'))
+    expect(midCard?.text()).toContain('暂无南洋模型')
+    expect(midCard?.text()).not.toContain('NaN')
+    expect(midCard?.text()).not.toContain('元/MWh')
+    expect(midCard?.attributes('title')).toContain('南洋无 yunnan 中长期模型')
+    expect(midCard?.text()).not.toContain('模拟数据')
+    expect(wrapper.text()).toContain('日均预测电价')
+    expect(wrapper.text()).toContain('偏差最坏风险')
+    expect(wrapper.text()).not.toContain('决策概览失败')
   })
 })

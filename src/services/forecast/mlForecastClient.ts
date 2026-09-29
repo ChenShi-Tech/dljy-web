@@ -99,6 +99,7 @@ export type ForecastBaselineMetrics = {
 // 与 dataBasis.ts::DataBasis 合并为 DataSourceBasis。此处 re-export 保持本文件
 // `import { ForecastBasis } from '@/services/forecast/mlForecastClient'` 不破。
 import type { ForecastBasis } from '../data/types'
+import type { ForecastProvenance } from './forecastProvenance'
 export type { ForecastBasis }
 
 export type ForecastResult = {
@@ -325,12 +326,19 @@ export function fetchBidAdvice(req: BidAdviceRequest): Promise<BidAdviceResult> 
 }
 
 // 交易决策驾驶舱（一站式决策包）
-export type CockpitResult = {
+// 来源标识（mock/sourceType/productionWrite/warnings）为后端 #3604 起新增：顶层与三个分区各自带，
+// 全部可选以兼容旧后端。midterm_trend 远端无模型时为 UNAVAILABLE（available:false + reason + 空序列）。
+export type CockpitResult = ForecastProvenance & {
   basis: ForecastBasis
-  price_forecast: { points: number[]; lower: number[]; upper: number[]; unit: string }
+  price_forecast: ForecastProvenance & { points: number[]; lower: number[]; upper: number[]; unit: string; basis?: ForecastBasis }
   bid_advice: BidAdvice
-  deviation_risk: { expected_penalty_yuan: number; worst_penalty_yuan: number; high_risk_slots: number }
-  midterm_trend: { daily_avg_price: number[]; horizon_days: number }
+  deviation_risk: ForecastProvenance & { expected_penalty_yuan: number; worst_penalty_yuan: number; high_risk_slots: number }
+  midterm_trend: ForecastProvenance & {
+    daily_avg_price: number[]
+    horizon_days: number
+    basis?: ForecastBasis | null
+    model_id?: string | null
+  }
 }
 
 export function fetchCockpit(req: BidAdviceRequest): Promise<CockpitResult> {
@@ -533,12 +541,14 @@ export type UltraShortResult =
       source_type: string
       productionWrite: boolean
     }
-  | {
+  | ForecastProvenance & {
       available?: true
       target: string
       basis: ForecastBasis
       horizon: string
       points: number[]
+      model_version?: string | null
+      model_checksum?: string | null
       target_date?: string
       region_id?: string
       unit?: string
@@ -559,7 +569,9 @@ export function runUltraShort(req: ForecastRequest): Promise<UltraShortResult> {
 }
 
 // 中长期日均电价趋势（未来 N 天，服务中长期签约/套保）
-export type MidtermResult = {
+export type MidtermResult = ForecastProvenance & {
+  model_id?: string | null
+  model_version?: string | null
   basis: ForecastBasis
   horizon_days: number
   daily_avg_price: number[]
