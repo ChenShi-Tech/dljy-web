@@ -1,6 +1,28 @@
 # AGENTS.md — dljy-web 仓库协作与 PR 审查规则
 
-本仓是 dljy 平台的 Vue 3 前端。开发约定见 `DEVELOPMENT.md`，提交流程与红线见 `CONTRIBUTING.md`。本文件中的“PR 代码审查规则”专门约束 Codex 和其他审查 Agent；开发、测试、提交与合并仍遵守现有仓库规则。
+本仓是 dljy 平台的客户前端（Vue 3 + Vite），是前端的唯一开发权威；只有 `shared/` 与 `vendor/` 由 `ChenShi-Tech/dljy` 单向同步、本仓只读。本文件由三部分组成：跨仓通用规则块（六仓一致）、本仓专属要点、Codex 等审查 Agent 的「PR 代码审查规则」。审查 Agent 只读本仓文件，因此前两部分已自成一体。
+
+<!-- workspace-common:start v1 -->
+## 跨仓通用规则（六仓一致）
+
+> 本节由工作区统一维护，各仓原样复制，**不要在本仓单独改**：正本是工作区 `.claude/rules/common-block.md`，改正本后逐仓同步，在工作区根执行 `bash .claude/scripts/check-rules-sync.sh` 校验一致。仓内专属规则写在本节之外。
+
+- **六仓**：`dljy`（后端主仓、`shared/` 契约面、唯一 issue home）· `dljy-web`（客户前端）· `dljy-admin`（平台后台）· `grid-ingest`（取数落库）· `dljy-infer`（预测推理）· `dljy-llm-gateway`（大模型网关）。跨仓只经三条通道：HTTP 接口；`dljy/shared/` 契约面（dljy 是唯一事实源，经 `sync:*` / `export-*` 单向推给下游，**下游永远不改契约副本**）；生成物。
+- **worktree**：主工作区恒为 `main` 且只读；改动一律在本仓 `.claude/worktrees/<分支名把 / 换成 ->` 里做并走 PR。不用内置 EnterWorktree；禁止在主工作区执行 `git clean -ffdx`（会删光所有在途 worktree）。
+- **Issue**：一律建在 `ChenShi-Tech/dljy`（标题 `域: 简述`，必设原生类型与 assignee）；跨仓引用写全路径 `ChenShi-Tech/<仓>#N`；一个 PR 只解决一个 issue，靠 PR 正文 `Closes ChenShi-Tech/dljy#N` 关联。
+- **提交与 PR**：提交信息、PR 标题用 `feat|fix|docs|test|refactor|perf|chore|ci|build|revert: 中文简述`（不照抄 issue 的域前缀）；不加 `Co-Authored-By`、`Generated with` 等署名行。PR 正文四章节：`## 变更摘要` `## Mock 与真实数据状态` `## 验证记录` `## 风险与回滚`。
+- **合并**：正确性高确定、本地验证或 CI 绿、四章节齐全、与 main 无冲突、**行内审查评论已全部处理**，才可 `gh pr merge <N> --squash`。不确定 / 删文件 / 碰生产写入·安全·RBAC·资金 / 审查红 / 非本人开的 PR / 修改规则文件本身，一律先问用户。叠放在别的 PR 上的分支合并**不带** `--delete-branch`（会关掉下游 PR）。无人值守 loop 不得合并。codex 自动审查不是合并前置，但已到达的行内评论必须处理完。
+- **红线**：Mock 必须明确标注（`mock: true` + `sourceType: 'MOCK'` + `productionWrite: false`，页面有「模拟数据」提示）；非山西基线地区缺数据只能诚实为空或标 Mock，绝不串读山西口径；排查脚本、探针、临时导出落会话 scratchpad，不进仓库；凭据不进仓库与日志。
+- 完整规则与流程细节见工作区 `CLAUDE.md`。
+<!-- workspace-common:end -->
+
+## 本仓专属要点
+
+- **文档分工**：代码与架构约定见 `DEVELOPMENT.md`；本仓分界与红线见 `CONTRIBUTING.md`；worktree、issue、PR、合并等流程规则以上面的通用块与工作区 `CLAUDE.md` 为准，本仓文档不重复。
+- **验证**：本仓验证规则以 `DEVELOPMENT.md` §5.1（分层验证）为唯一权威——按改动影响面验证，PR CI 兜底全量检查。只读 PR 审查按具体风险选最小验证，不机械执行全套，也不执行真实业务写入。
+- **契约只读**：`shared/**` 与 `vendor/**` 是 dljy 单向同步来的契约副本，任何 PR 不得把它们当独立事实源修改；契约变更先在 dljy 落地，再经 `npm run sync:web` 同步。
+- **客户交付版**：`VITE_EDITION=customer` 的交付构建不得带出内部供应商 / 品牌信息、已迁至平台后台的入口提示与后台路径、`VITE_PLATFORM_ADMIN_URL`（机制见 `docs/customer-edition.md`，产物扫描为 `npm run verify:customer-edition-build`）。
+- **端口与服务**：本机前端固定 5174（`strictPort`）；后端面为 `/api`（4174）、`/agent-api`（8000）、`/data-svc`（8190）、`/pi-api`（8100），详见 `DEVELOPMENT.md` §1。
 
 ## PR 代码审查规则
 
@@ -47,10 +69,11 @@
 - **服务与代理契约**：页面通过 `src/services/` 取数，核对 `/api`、`/agent-api`、`/data-svc`、`/pi-api` 的真实路由、rewrite、响应信封和错误语义。跨仓字段或枚举变化只有能证明当前生产方/消费方不兼容时才报告；后端兼容、前端后续接入的阶段发布允许存在。
 - **写入与业务口径**：写请求不能丢失幂等键、授权上下文、生产写入标志或失败状态。核对 MW/MWh、元/kWh 与元/MWh、比例/百分数、15 分钟电量换算、交易日/运行日/目标日、时区及 24/96 点；预测、实际、出清与结算数据不能因插值、补零、截断、平滑或错误粒度产生可操作的错误结果。
 - **前端安全**：不得把服务端密钥、管理令牌或其他客户数据打入构建产物、URL、日志和客户可见错误；动态 HTML、跳转和下载需保留现有可信边界。仅报告当前改动新增或直接激活的可达风险。
+- **客户交付版隔离**：改动若让内部档专属内容（模型供应商与品牌、AI 设置/模型服务配置页、已迁至平台后台的入口提示与后台路径、`VITE_PLATFORM_ADMIN_URL`）进入 `VITE_EDITION=customer` 的产物，或绕过 `vite.config.ts` 中的占位替换（按 `@/…` 绝对别名引用被替换模块），按 P1/P2 门槛审查；`v-if` 不能替代模块解析层替换。
 
 ### 跨仓边界
 
-项目另有 `ChenShi-Tech/dljy`、`grid-ingest`、`dljy-infer`、`dljy-llm-gateway`。本文件只直接约束本仓 PR。其他仓代码和协议可用于核实兼容性，但发现必须落到当前 PR 的变更，并能证明按声明顺序合并或部署后会破坏现存调用方。允许后端先兼容、前端随后接入；若当前 PR 依赖尚未合并的破坏性契约且没有兼容层，“计划后续适配”不能排除故障。其他仓源码不可见本身不构成问题。共享契约事实源在 `dljy/shared/`，本仓同步副本不得作为独立事实源修改。
+项目另有 `ChenShi-Tech/dljy`、`dljy-admin`（平台后台，与本仓分离，只经 `/api/v1/admin/*`）、`grid-ingest`、`dljy-infer`、`dljy-llm-gateway`。本文件只直接约束本仓 PR。其他仓代码和协议可用于核实兼容性，但发现必须落到当前 PR 的变更，并能证明按声明顺序合并或部署后会破坏现存调用方。允许后端先兼容、前端随后接入；若当前 PR 依赖尚未合并的破坏性契约且没有兼容层，“计划后续适配”不能排除故障。其他仓源码不可见本身不构成问题。共享契约事实源在 `dljy/shared/`，本仓同步副本不得作为独立事实源修改。
 
 ### 输出
 
@@ -84,4 +107,4 @@
 
 ## 开发与验证
 
-开发内循环与提交前验证均按改动影响面执行：始终运行 `npm run check`，对改动文件运行 `npm run lint:files -- <files...>`，并用 `npm run test:related -- <source-files...>` 或 `npm run test:unit -- <spec-files...>` 运行相关测试。改到路由、全局状态、公共服务、测试/构建基础设施、依赖或锁文件等高爆炸半径区域时扩大到对应模块，必要时运行全量 `npm run lint`、`npm run test:unit` 与 `npm run build`。本地不强制重复执行全量覆盖率；PR CI 继续执行全量 lint、类型检查、覆盖率和构建。只读 PR 审查按具体风险选择最小验证，不机械执行全套，也不执行真实业务写入。其余开发规则以 `DEVELOPMENT.md` 和 `CONTRIBUTING.md` 为准。
+验证规则见上文「本仓专属要点」与 `DEVELOPMENT.md` §5.1；代码约定见 `DEVELOPMENT.md`，本仓分界与红线见 `CONTRIBUTING.md`；流程规则以通用块与工作区 `CLAUDE.md` 为准。三者冲突时以更严格者为准。
