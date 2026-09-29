@@ -91,6 +91,53 @@ describe('useInsightEntryAnchor', () => {
     expect(expected.length).toBeGreaterThan(0)
   })
 
+  it('pending：扫描期间为 true，落定（锚定/无需锚定/失败）后为 false；带窗口参数进入恒为 false', async () => {
+    let release: (value: unknown) => void = () => {}
+    fetchInsightCoverage.mockImplementation(() => new Promise((resolve) => { release = resolve }))
+    const { anchor, ctx } = await setup()
+    expect(anchor.pending.value).toBe(true)
+    release(candidatesPayload(['2000-01-03']))
+    await vi.waitFor(() => expect(anchor.pending.value).toBe(false))
+    expect(ctx.businessWindow.value).toEqual({ start: '2000-01-03', end: '2000-01-03' })
+
+    fetchInsightCoverage.mockReset()
+    fetchInsightCoverage.mockRejectedValue(new Error('boom'))
+    vi.resetModules()
+    const failed = await setup()
+    await vi.waitFor(() => expect(failed.anchor.pending.value).toBe(false))
+
+    const explicit = await setup(true)
+    expect(explicit.anchor.pending.value).toBe(false)
+  })
+
+  it('限定来源：扫描与必需来源都只用页面给的来源；会话缓存按来源分键，互不串用', async () => {
+    fetchInsightCoverage.mockResolvedValue(candidatesPayload(['2000-01-03']))
+    const mod = await import('./useInsightEntryAnchor')
+    const { beijingToday } = await import('shared/midlong/dates.mjs')
+    const today = beijingToday()
+    const sourceIds = ['yn.system.hydro.actual', 'yn.system.load.actual']
+    const first = makeCtx()
+    first.businessWindow.value = { start: today, end: today }
+    mod.useInsightEntryAnchor(first, { sourceIds })
+    await vi.waitFor(() => expect(first.businessWindow.value.start).toBe('2000-01-03'))
+    const request = fetchInsightCoverage.mock.calls[0][0] as { context: { sourceIds: string[] }; requiredSourceIds: string[] }
+    expect(request.context.sourceIds).toEqual(sourceIds)
+    expect(request.requiredSourceIds).toEqual(sourceIds)
+
+    // 同来源同地区再进：复用缓存不再请求；不限定来源的页面（默认来源集）不吃这条缓存，要自己扫。
+    const second = makeCtx()
+    second.businessWindow.value = { start: today, end: today }
+    const reused = mod.useInsightEntryAnchor(second, { sourceIds })
+    expect(fetchInsightCoverage).toHaveBeenCalledTimes(1)
+    expect(second.businessWindow.value.start).toBe('2000-01-03')
+    expect(reused.pending.value).toBe(false)
+
+    const other = makeCtx()
+    other.businessWindow.value = { start: today, end: today }
+    mod.useInsightEntryAnchor(other)
+    expect(fetchInsightCoverage).toHaveBeenCalledTimes(2)
+  })
+
   it('URL 带过 start/end：不请求不锚定', async () => {
     const { anchor, ctx, today } = await setup(true)
     await new Promise((resolve) => setTimeout(resolve, 10))

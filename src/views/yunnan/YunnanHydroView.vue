@@ -34,7 +34,6 @@ import { PAGE_PROMPT_KEYS } from '@/prompts'
 import { currentRegion } from '@/services/region/regionContext'
 import InsightBlock from '@/components/insight/InsightBlock.vue'
 import InsightDateRange from '@/components/insight/InsightDateRange.vue'
-import InsightEvidenceDrawer from '@/components/insight/InsightEvidenceDrawer.vue'
 import InsightHistoryCandidates from '@/components/insight/InsightHistoryCandidates.vue'
 import InsightObjectPicker from '@/components/insight/InsightObjectPicker.vue'
 import InsightSeriesChart from '@/components/insight/chart/InsightSeriesChart.vue'
@@ -68,6 +67,9 @@ const MAINLINE_SOURCES = [
 
 /** 水电序列的来源（summary 指标卡取该来源的平均/最高/最低）。 */
 const HYDRO_SOURCE = 'yn.system.hydro.actual'
+
+/** 指标卡（summary）只需要水电与总发电两个来源：水电占比 = 水电 / 总发电。 */
+const SUMMARY_SOURCES = [HYDRO_SOURCE, 'yn.system.total-generation.actual'] as const
 
 const SHARE_PREFIX = 'share:hydro:'
 
@@ -106,7 +108,8 @@ function currentScope(): string {
 
 // 入口锚定：能力目录就绪（含公开系统曲线分析）后扫描最新有数日；失败静默保持当日默认。
 const anchorReady = computed(() => capabilities.value?.analyses.some((entry) => entry.analysisId === SYSTEM_ANALYSIS) ?? false)
-const entryAnchor = useInsightEntryAnchor(ctx, { ready: anchorReady })
+// 锚定扫描只按主图三条来源求交集：与本页历史候选同口径，且不必读满整套 17 个来源。
+const entryAnchor = useInsightEntryAnchor(ctx, { ready: anchorReady, sourceIds: MAINLINE_SOURCES })
 
 /** 契约镜像里的系统曲线分析登记（maxDays / sourceIds），不依赖后端 capabilities 是否下发。 */
 const systemAnalysisDef = getInsightAnalysis(SYSTEM_ANALYSIS)
@@ -165,10 +168,12 @@ type ViewState = {
   loading: boolean
   /** 最近一次成功/失败查询的签名；与当前签名不同即口径过期 */
   queriedKey: string
+  /** 在途查询的签名：同签名在途时不重复发请求 */
+  inflightKey: string
 }
 
 function blankState(): ViewState {
-  return { result: null, error: null, loading: false, queriedKey: '' }
+  return { result: null, error: null, loading: false, queriedKey: '', inflightKey: '' }
 }
 
 const viewStates = reactive<Record<QueryName, ViewState>>({
@@ -195,13 +200,25 @@ function queryKeyOf(name: QueryName): string {
 watch(
   () => ctx.contextVersion.value,
   () => {
-    for (const name of Object.keys(viewStates) as QueryName[]) Object.assign(viewStates[name], blankState())
+    for (const name of Object.keys(viewStates) as QueryName[]) {
+      // 签名已与新上下文一致的在途查询（如锚定落定的同一拍已被另一路 watcher 发出）原样保留，避免重复请求。
+      const entry = viewStates[name]
+      if (entry.loading && entry.inflightKey === queryKeyOf(name)) continue
+      Object.assign(entry, blankState())
+    }
     if (capabilitiesScope.value !== currentScope()) {
       capabilities.value = null
       void loadCapabilities()
       return
     }
     ensureAll()
+  }
+)
+// 入口锚定落定（窗口已改到最新有数据日，或确认无需改）：发出被暂缓的首轮查询。
+watch(
+  () => entryAnchor.pending.value,
+  (pending) => {
+    if (!pending) ensureAll()
   }
 )
 // 局部选择变化：只作废对应的获权查询（系统曲线与它们无关，不重发）。
@@ -233,10 +250,13 @@ function ensureAll(): void {
 /** 前置拦截（能力未就绪 / 未选对象 / 无授权）+ 同签名去重后发查询。 */
 function ensureQuery(name: QueryName): void {
   if (!capabilities.value || capabilitiesError.value) return
+  // 入口锚定尚未落定：窗口随时会被改到最新有数据日，此刻发查询必被作废重发，等落定后再发。
+  if (anchorReady.value && entryAnchor.pending.value) return
   if (name === 'hydro-weekly' && !(hasHydroWeekly.value && hydroRegions.value.length)) return
   if (name === 'hydro-groups' && !(hasHydroGroups.value && unitGroupChoice.value)) return
   const key = queryKeyOf(name)
   if (viewStates[name].queriedKey === key) return // 有结果或已按此键失败过：重试由用户触发
+  if (viewStates[name].loading && viewStates[name].inflightKey === key) return // 同签名已在途
   void runQuery(name)
 }
 
@@ -247,13 +267,16 @@ function buildRequest(name: QueryName): { analysisId: string; context: InsightCo
   if (name === 'hydro-groups') {
     return { analysisId: HYDRO_GROUPS_ANALYSIS, context: ctx.toQueryContext(), filters: { objectIds: [unitGroupChoice.value] } }
   }
-  return { analysisId: SYSTEM_ANALYSIS, context: ctx.toQueryContext(), filters: { view: name } }
+  // 系统曲线分析登记了 17 个来源，本页只用其中几个：显式限定来源，服务端就只读这几个。
+  const sourceIds = name === 'series' ? MAINLINE_SOURCES : SUMMARY_SOURCES
+  return { analysisId: SYSTEM_ANALYSIS, context: { ...ctx.toQueryContext(), sourceIds: [...sourceIds] }, filters: { view: name } }
 }
 
 async function runQuery(name: QueryName): Promise<void> {
   const key = queryKeyOf(name)
   const entry = viewStates[name]
   entry.loading = true
+  entry.inflightKey = key
   entry.error = null
   try {
     const result = await ctx.request.run((signal) => queryInsight(buildRequest(name), { signal }))
@@ -466,15 +489,7 @@ const unitGroupRows = computed(() => {
     .sort((a, b) => compareText(a.raw, b.raw) || compareText(a.plant, b.plant) || compareText(a.unit, b.unit))
 })
 
-// ── 证据抽屉与历史候选 ───────────────────────────────────────────────────────────────────
-
-const evidenceVisible = ref(false)
-const evidenceTarget = ref<InsightBlockResult | null>(null)
-
-function openEvidence(result: InsightBlockResult | null): void {
-  evidenceTarget.value = result
-  evidenceVisible.value = true
-}
+// ── 历史候选 ─────────────────────────────────────────────────────────────────────────────
 
 const candidatesVisible = ref(false)
 
@@ -569,6 +584,7 @@ onMounted(() => {
         <!-- 指标卡一行：数值取 summary 视图与 share 行，按登记精度显示，缺值「—」不显示 0 -->
         <InsightBlock
           title="水电概况"
+          hide-sources
           :result="viewStates.summary.result"
           :error="viewStates.summary.error"
           :loading="viewStates.summary.loading"
@@ -576,7 +592,6 @@ onMounted(() => {
           :on-retry="() => retryQuery('summary')"
           :on-refresh="() => retryQuery('summary')"
           @open-candidates="candidatesVisible = true"
-          @open-evidence="openEvidence(viewStates.summary.result)"
         >
           <div class="ynh__tiles" data-testid="ynh-tiles">
             <MetricTile
@@ -595,6 +610,7 @@ onMounted(() => {
         <!-- 主图：同轴叠线（不堆叠不相加）；缺测断线；说明为缩略标签 + 悬浮提示 -->
         <InsightBlock
           title="云南水电与系统曲线"
+          hide-sources
           :result="mainSeriesResult"
           :error="viewStates.series.error"
           :loading="viewStates.series.loading"
@@ -602,7 +618,6 @@ onMounted(() => {
           :on-retry="() => retryQuery('series')"
           :on-refresh="() => retryQuery('series')"
           @open-candidates="candidatesVisible = true"
-          @open-evidence="openEvidence(mainSeriesResult)"
         >
           <div class="ynh__hints">
             <span class="ynh__hint-term" tabindex="0">
@@ -630,6 +645,7 @@ onMounted(() => {
           <InsightBlock
             v-if="hasHydroWeekly"
             title="水电周出力预测"
+            hide-sources
             class="ynh__entitled-card"
             :result="viewStates['hydro-weekly'].result"
             :error="viewStates['hydro-weekly'].error"
@@ -638,7 +654,6 @@ onMounted(() => {
             :on-retry="() => retryQuery('hydro-weekly')"
             :on-refresh="() => retryQuery('hydro-weekly')"
             @open-candidates="candidatesVisible = true"
-            @open-evidence="openEvidence(viewStates['hydro-weekly'].result)"
           >
             <div class="ynh__bar">
               <label class="ynh__field">
@@ -664,6 +679,7 @@ onMounted(() => {
           <InsightBlock
             v-if="hasHydroGroups"
             title="机组群构成"
+            hide-sources
             class="ynh__entitled-card"
             :result="viewStates['hydro-groups'].result"
             :error="viewStates['hydro-groups'].error"
@@ -672,7 +688,6 @@ onMounted(() => {
             :on-retry="() => retryQuery('hydro-groups')"
             :on-refresh="() => retryQuery('hydro-groups')"
             @open-candidates="candidatesVisible = true"
-            @open-evidence="openEvidence(viewStates['hydro-groups'].result)"
           >
             <div class="ynh__bar">
               <label class="ynh__field">
@@ -716,8 +731,7 @@ onMounted(() => {
       </template>
     </template>
 
-    <!-- 证据抽屉与历史候选 -->
-    <InsightEvidenceDrawer v-model="evidenceVisible" :result="evidenceTarget" :source-titles="sourceTitles" />
+    <!-- 历史候选 -->
     <InsightHistoryCandidates
       v-model="candidatesVisible"
       :analysis-id="'supply.system-series'"
