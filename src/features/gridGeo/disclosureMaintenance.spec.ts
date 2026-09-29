@@ -51,7 +51,8 @@ describe('检修专业筛选与已知总时长', () => {
     expect(maintenanceListSummary(item)).toBe('机组')
     expect(item.summary).toBe(summary)
   })
-  it.each(['csg-authorized-export', 'csg-disclosure-file'])('南网来源 %s 的真实原因、额外说明、非南网来源、不匹配端点或未知时间均原样保留', (providerId) => {
+  // dljy#3571：南网判定改用 shared/schema/grid-disclosure-providers.mjs，按来源 ID 全等判定，近似写法与空来源都不收拢。
+  it.each(['csg-authorized-export', 'csg-disclosure-file'])('南网来源 %s 的真实原因、额外说明、非南网或近似来源、不匹配端点或未知时间均原样保留', (providerId) => {
     const summary = '线路；实际停复电：2026-06-30T23:30:00+08:00 至 2026-07-02T01:45:00+08:00。'
     const generated = event({ providerId, summary, source: { ...event().source, sourceTable: 'tb_disclosure_forecast_maintenance_plan' } })
     expect(maintenanceListSummary(generated)).toBe('线路')
@@ -63,6 +64,7 @@ describe('检修专业筛选与已知总时长', () => {
       { ...generated, summary: summary.replace('01:45:00', '01:46:00') },
       { ...generated, providerId: 'other-source' },
       { ...generated, providerId: 'sgcc-public-disclosure' },
+      ...['csg', ' csg-disclosure-file', 'CSG-DISCLOSURE-FILE', 'csg-authorized-export ', ''].map((id) => ({ ...generated, providerId: id })),
       { ...generated, source: { ...generated.source, sourceTable: 'user-provided-reason' } },
       { ...generated, category: 'outage' as const },
       { ...generated, expiresAt: null },

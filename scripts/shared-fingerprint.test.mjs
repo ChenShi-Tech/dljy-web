@@ -106,12 +106,12 @@ test('增删文件 → fileCount 与 hash 都变；listSharedFiles 排除 README
   }
 })
 
-test('对真实仓库 shared/ 冒烟：95 个文件，指纹可复算且 algorithm 版本串就位', () => {
+test('对真实仓库 shared/ 冒烟：97 个文件，指纹可复算且 algorithm 版本串就位', () => {
   // 本测试用真实仓库当夹具（只读）：让「verify 门禁与 build-info 写入消费同一实现」
-  // 这条链在单测里也被走到一次；不硬编码 71 之外的业务值（dljy#2938 同步 shared/midlong 8 个文件后由 37 增至 45，dljy#2969 预登记 P2/P3 共享契约 4 个文件后增至 49，dljy#2993 同步 shared/insight 20 个文件后增至 69，dljy#3006 追加总览清单 2 个后增至 71，dljy#3038 追加 shared/hedge 9 个后增至 80，dljy#3080 追加 shared/insight/research.mjs 后增至 81，dljy#3092 追加 shared/schema/grid-geo-contract.mjs 后增至 82，2026-09-27 同步 dljy@4b30015c9 追加 shared/insight/actions、shared/insight/actions.d.mts 与 shared/schema/disclosure-table-specs.mjs 后增至 91，2026-09-28 同步 dljy@21143a4b9 追加练习空间契约 shared/company/practice-space.mjs 与 practice-space.d.mts（ChenShi-Tech/dljy#3403）后增至 93，2026-09-29 同步 dljy@f5f8e613a 追加日前披露盯盘契约 shared/schema/disclosure-watch-contract.mjs 与 .d.mts（ChenShi-Tech/dljy#3487）后增至 95，与主仓 SHARED_WHITELIST 同步）。
+  // 这条链在单测里也被走到一次；不硬编码 71 之外的业务值（dljy#2938 同步 shared/midlong 8 个文件后由 37 增至 45，dljy#2969 预登记 P2/P3 共享契约 4 个文件后增至 49，dljy#2993 同步 shared/insight 20 个文件后增至 69，dljy#3006 追加总览清单 2 个后增至 71，dljy#3038 追加 shared/hedge 9 个后增至 80，dljy#3080 追加 shared/insight/research.mjs 后增至 81，dljy#3092 追加 shared/schema/grid-geo-contract.mjs 后增至 82，2026-09-27 同步 dljy@4b30015c9 追加 shared/insight/actions、shared/insight/actions.d.mts 与 shared/schema/disclosure-table-specs.mjs 后增至 91，2026-09-28 同步 dljy@21143a4b9 追加练习空间契约 shared/company/practice-space.mjs 与 practice-space.d.mts（ChenShi-Tech/dljy#3403）后增至 93，2026-09-29 同步 dljy@f5f8e613a 追加日前披露盯盘契约 shared/schema/disclosure-watch-contract.mjs 与 .d.mts（ChenShi-Tech/dljy#3487）后增至 95，2026-09-29 同步 dljy@025269517 追加披露来源口径契约 shared/schema/grid-disclosure-providers.mjs 与 .d.mts（ChenShi-Tech/dljy#3571）后增至 97，与主仓 SHARED_WHITELIST 同步）。
   const repoRoot = path.resolve(import.meta.dirname, '..')
   const files = listSharedFiles(repoRoot)
-  assert.equal(files.length, 95)
+  assert.equal(files.length, 97)
   const fp = sharedFingerprint(repoRoot, files)
   assert.match(fp.hash, /^[0-9a-f]{64}$/)
   assert.equal(fp.fileCount, files.length)
