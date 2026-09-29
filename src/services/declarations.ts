@@ -505,18 +505,29 @@ export function invalidPointIndexesOf(points: Array<unknown>): number[] {
   return points.flatMap((value, index) => (Number.isNaN(editorMwOf(value)) ? [index] : []))
 }
 
+/** 风控结果里中长期敞口约束的来源说明（ChenShi-Tech/dljy#3475）。 */
+export type RiskExposureSource = {
+  /** 服务端生成的一句话：约束来源（套保服务、目标日、生成时刻）与已知/未知时段，或取不到约束的原因 */
+  note: string
+  /** 人工填报的敞口（只在套保服务给不出约束时才会被服务端采用） */
+  manual: boolean
+}
+
 /**
- * 风控/敞口的中长期合约总量入参归一：输入框被清空/误输（''、非数、0、负数）时
- * 不把垃圾值发给风控与敞口端点，兜底为 1 MWh。服务端虽会优雅拒绝，但前端
- * 不发垃圾本身是口径（正常值原样透传，含小数）。
+ * 从风控结果取中长期敞口约束的来源说明：只透出服务端字段（`inputs.exposure.note`），不在前端重算
+ * 覆盖或敞口数值。旧版风控结果（旧测算端点时代）没有说明字段，返回 null、不显示。
  */
-export function normalizeExposureTotalMwh(value: unknown): number {
-  return Math.max(1, Number(value) || 1)
+export function riskExposureSourceOf(riskCheck: RiskCheckResult | null | undefined): RiskExposureSource | null {
+  const raw = riskCheck?.inputs?.exposure
+  if (!raw || typeof raw !== 'object') return null
+  const exposure = raw as { note?: unknown; manual?: unknown }
+  if (exposure.manual === true) return { note: '人工填报的敞口，不回写套保结果', manual: true }
+  const note = typeof exposure.note === 'string' ? exposure.note.trim() : ''
+  return note ? { note, manual: false } : null
 }
 
 export async function runDeclarationRiskCheck(id: string, input: {
-  // 当月中长期合约总电量（MWh），服务端据此调 harness 敞口端点
-  exposureTotalMwh?: number
+  // 中长期敞口不由前端提供：服务端读套保服务的目标日「仅中长期」逐时段敞口（#3475）
   // 地区限价区间（来自 RegionSpotProfile.mechanism.priceCap，来源被记录审计）
   priceCap?: { floor: number; cap: number; source?: string }
 }): Promise<DeclarationOrder> {
