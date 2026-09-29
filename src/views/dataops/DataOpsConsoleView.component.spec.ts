@@ -6,6 +6,10 @@ import { flushPromises } from '@vue/test-utils'
 import { createRouter, createMemoryHistory } from 'vue-router'
 import { mount } from '@/test/mount'
 
+// 容器契约在「七面板齐全」的形态下验证：内部版已把接入向导、摄取管理迁至平台后台（ChenShi-Tech/dljy#3464，
+// 内部版隐藏与提示见 features/platformAdminMigration/migratedEntries.internal.component.spec.ts），
+// 这里切到客户交付版——入口一律照旧，也正是「客户版不受影响」这条要求。
+vi.mock('@/services/edition', () => ({ IS_CUSTOMER_EDITION: true, IS_INTERNAL_EDITION: false }))
 // 总览面板会在挂载时取数：本 spec 只关心容器行为，接口一律给空信封（渲染空态即可）。
 vi.mock('@/services/api', () => ({ apiGet: () => Promise.resolve({ code: 200, data: null }) }))
 vi.mock('@/services/data/uploadClient', () => ({ fetchUploadBatches: () => Promise.resolve([]) }))
@@ -44,7 +48,7 @@ async function mountConsole(initialRoute = '/data-ops/console') {
   return { wrapper, router }
 }
 
-describe('数据运维工作台容器', () => {
+describe('数据运维工作台容器（客户交付版：七面板照旧）', () => {
   beforeEach(() => vi.clearAllMocks())
 
   it('七个面板标签齐全（总览 + 六个管理页）', async () => {

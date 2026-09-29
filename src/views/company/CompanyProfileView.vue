@@ -6,8 +6,14 @@ import { hasCompanyAdmin, subjectTypeLabels, type SubjectType } from '@/services
 import { companyOptions, currentCompany, selectedCompanyId } from '@/services/company/companyContext'
 import { fetchCompanySubjectTypes, fetchProfile, saveCompanySubjectTypes, saveProfile } from '@/services/company/companyApi'
 import CompanyScopeBar from '@/components/company/CompanyScopeBar.vue'
+import { isEntryHidden } from '@/features/platformAdminMigration/registry'
+import MigratedToAdminNotice from '@/features/platformAdminMigration/MigratedToAdminNotice.vue'
 
 const canWrite = computed(() => hasCompanyAdmin(getCurrentUser()))
+// 注册立场已迁至平台后台（ChenShi-Tech/dljy#3464，内部版）：写入落点是平台全局公司主数据、
+// 也是立场切换授权的服务端权威，由平台人员在后台客户详情里处理。内部版不渲染立场块、也不再读取，
+// 原位置显示提示与后台链接；公司档案本体照常。客户交付版不受影响（登记表恒答未迁移）。
+const registryMigrated = isEntryHidden('subject-registry')
 
 const form = reactive({ contact: '', address: '', businessScope: '' })
 const loading = ref(false)
@@ -44,8 +50,12 @@ async function reloadRegistry() {
     registryLoading.value = false
   }
 }
-onMounted(() => { void reload(); void reloadRegistry() })
-watch(selectedCompanyId, () => { void reload(); void reloadRegistry() })
+function reloadAll() {
+  void reload()
+  if (!registryMigrated) void reloadRegistry()
+}
+onMounted(reloadAll)
+watch(selectedCompanyId, reloadAll)
 
 async function save() {
   try {
@@ -100,7 +110,9 @@ async function saveRegistry() {
       </el-col>
 
       <el-col :span="10" :xs="24">
-        <el-card shadow="never" v-loading="registryLoading">
+        <!-- 已迁至平台后台：立场块不渲染，原位置给出提示与后台链接（#3464） -->
+        <MigratedToAdminNotice v-if="registryMigrated" :entries="['subject-registry']" />
+        <el-card v-else shadow="never" v-loading="registryLoading">
           <template #header>
             <div class="card-head">
               <span>注册立场</span>

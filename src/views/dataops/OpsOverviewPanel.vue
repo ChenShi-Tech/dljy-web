@@ -14,6 +14,7 @@ import { onRegionChange } from '@/composables/useRegionReload'
 import DataBasisBadge from '@/components/DataBasisBadge.vue'
 import RegionDataBanner from '@/components/region/RegionDataBanner.vue'
 import InfoPop from './InfoPop.vue'
+import { isEntryHidden, isTabHidden, type MigratedEntryId } from '@/features/platformAdminMigration/registry'
 
 // 切 tab 用：总览的每个行动按钮都指向工作台内某一页，由宿主页切换 tab（不新开路由）。
 const emit = defineEmits<{ navigate: [tab: string] }>()
@@ -203,7 +204,19 @@ type Stage = {
   desc: string
   status: string
   statusTone: 'ok' | 'warn' | 'idle'
-  actions: Array<{ label: string; tab?: string; to?: string }>
+  actions: StageAction[]
+}
+// migratedEntry：站外跳转（to）指向的入口若已迁至平台后台，登记入口 id 以便隐藏。
+type StageAction = { label: string; tab?: string; to?: string; migratedEntry?: MigratedEntryId }
+
+// 已迁至平台后台的面板 / 入口（ChenShi-Tech/dljy#3464，内部版）不再给行动按钮——工作台里已没有
+// 那个面板，点了只会无声落回总览；客户交付版登记表恒答未迁移，按钮照旧。
+function isActionVisible(action: StageAction): boolean {
+  if (action.tab && isTabHidden('data-ops', action.tab)) return false
+  return !(action.migratedEntry && isEntryHidden(action.migratedEntry))
+}
+function withVisibleActions(list: Stage[]): Stage[] {
+  return list.map((stage) => ({ ...stage, actions: stage.actions.filter(isActionVisible) }))
 }
 
 const sourceKinds = computed(() => catalog.value?.stats.bySource ?? [])
@@ -215,7 +228,7 @@ const SOURCE_LABELS: Record<string, string> = {
 const sourceLabel = (code: string) => SOURCE_LABELS[code] ?? code
 const committedBatches = computed(() => (batches.value ?? []).filter((b) => b.status === 'COMMITTED'))
 
-const stages = computed<Stage[]>(() => [
+const stages = computed<Stage[]>(() => withVisibleActions([
   {
     key: 'access',
     step: '①',
@@ -263,7 +276,7 @@ const stages = computed<Stage[]>(() => [
     statusTone: !streamsKnown.value ? 'idle' : brokenStreams.value.length ? 'warn' : 'ok',
     actions: [
       { label: '摄取管理', tab: 'ingest' },
-      { label: '定时任务', to: '/system/ai-studio?tab=schedules' }
+      { label: '定时任务', to: '/system/ai-studio?tab=schedules', migratedEntry: 'ai-schedules' }
     ]
   },
   {
@@ -280,7 +293,7 @@ const stages = computed<Stage[]>(() => [
       { label: '数据浏览器', to: '/yygl/data-browser' }
     ]
   }
-])
+]))
 
 // —— 待处理：同一数据集的不合格/告警检查合并成一行，再补数据流行 ——
 // 族流只在同族已有数据集行时才去重：两者是独立结果、不保证一一对应，没被覆盖的族级断流必须单列，
@@ -542,7 +555,7 @@ function go(action: { tab?: string; to?: string }) {
             <InfoPop :title="stage.title" class="stage-info">{{ stage.desc }}</InfoPop>
           </header>
           <p class="stage-status" :class="stage.statusTone">{{ stage.status }}</p>
-          <footer class="stage-actions">
+          <footer v-if="stage.actions.length" class="stage-actions">
             <template v-for="action in stage.actions" :key="action.label">
               <RouterLink v-if="action.to" :to="action.to" class="stage-link">{{ action.label }} →</RouterLink>
               <button v-else type="button" class="stage-link" @click="go(action)">{{ action.label }} →</button>

@@ -15,14 +15,23 @@
 //
 // 安全（沿用 #867/#1620 红线）：凭据仅服务端掩码存储、永不回明文、写清测仅 ADMIN/BOSS；
 // #1925 起凭据按录入账号分记录，非本人连掩码不可见。整页仅 ADMIN/BOSS（governance adminOnlyRoutes）。
+//
+// 已迁至平台后台（ChenShi-Tech/dljy#3464）：内部版「电网官方平台」（接入点凭据 + 采集运维，全局生效）
+// 由平台后台接管，登记在 features/platformAdminMigration/registry.ts；该子 tab 不渲染，默认落「企业自建
+// 通道」，tab 栏上方原位置显示提示与后台链接（/sichuan-access 等旧深链因此也不会白屏）。客户交付版不受影响。
 import { defineAsyncComponent, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { hiddenEntriesOf, isTabHidden } from '@/features/platformAdminMigration/registry'
+import MigratedToAdminNotice from '@/features/platformAdminMigration/MigratedToAdminNotice.vue'
 
-const TABS = [
+const ALL_TABS = [
   { name: 'official', label: '电网官方平台', component: defineAsyncComponent(() => import('./data-access/OfficialPlatformTab.vue')) },
   { name: 'enterprise', label: '企业自建通道', component: defineAsyncComponent(() => import('./data-access/EnterpriseAdapterTab.vue')) },
   { name: 'restricted', label: '受控接入', component: defineAsyncComponent(() => import('./data-access/RestrictedProviderTab.vue')) },
 ] as const
+
+const TABS = ALL_TABS.filter((t) => !isTabHidden('data-source', t.name))
+const MIGRATED_ENTRIES = hiddenEntriesOf('data-source')
 
 const TAB_NAMES = TABS.map((t) => t.name) as readonly string[]
 const DEFAULT_TAB = TABS[0].name
@@ -62,6 +71,9 @@ function onTabChange(name: string | number) {
         接口只返回掩码，前端与仓库均不留明文；仅系统管理员(ADMIN/BOSS)可读写。
       </p>
     </header>
+
+    <!-- 已迁至平台后台的子 tab 不渲染，原位置（tab 栏上方）给出提示与后台链接（#3464） -->
+    <MigratedToAdminNotice v-if="MIGRATED_ENTRIES.length" :entries="MIGRATED_ENTRIES" />
 
     <el-tabs v-model="activeTab" class="ds-tabs" @tab-change="onTabChange">
       <el-tab-pane v-for="tab in TABS" :key="tab.name" :label="tab.label" :name="tab.name">

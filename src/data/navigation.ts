@@ -32,6 +32,7 @@ import { GRID_GEO_FEATURE_ENABLED } from '../features/gridGeo/config'
 import { gridGeoNavigation } from '../features/gridGeo/navigation'
 import { listInsightNavigation } from '@/services/region/insightWorkspace'
 import type { SubjectType } from '@/services/governance'
+import { isEntryHidden } from '@/features/platformAdminMigration/registry'
 
 // 冻结下架（简化 IA·PR-A）：演示/静态占位分组默认从侧边栏摘除（代码与路由保留、深链可达），
 // 需要演示时在 .env.local 置 1 恢复显示。
@@ -266,8 +267,10 @@ export const navigation: NavItem[] = [
       { path: '/system/ai-studio', title: 'AI 工作室', icon: Bot },
       // 用户与权限：账号目录、登录会话与权限矩阵 tab 化合并。
       { path: '/system/accounts', title: '用户与权限', icon: Users },
-      // 推理模型管理（dljy#2465）：南洋推理服务的唯一管理面，ADMIN/BOSS 可见
-      { path: '/system/models', title: '推理模型管理', icon: BrainCircuit }
+      // 推理模型管理（dljy#2465）：南洋推理服务的唯一管理面，ADMIN/BOSS 可见。
+      // 内部版已整页迁至平台后台（ChenShi-Tech/dljy#3464）：菜单摘除，路由保留（直链显示迁移提示）；
+      // 客户交付版与按组回退后照旧显示（登记表 features/platformAdminMigration/registry.ts）。
+      ...(isEntryHidden('inference-models') ? [] : [{ path: '/system/models', title: '推理模型管理', icon: BrainCircuit }])
     ]
   }
 ]
