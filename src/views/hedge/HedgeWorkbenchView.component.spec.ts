@@ -1,7 +1,7 @@
 // 套保工作台外壳组件测试（build-midlong-spot-hedging 任务 8.1/8.2/8.6，HW-01/06/07；#3420 外壳 + 页签拆分）。
 // 组件测试文件名必须是 *.component.spec.ts 才会在 happy-dom 环境运行。
 // 外壳只测地区门禁、默认页签、页签切换与跨页签的切公司行为；各页签自身的显示与写口用例在 tabs/*.component.spec.ts。
-import { mount, enableAutoUnmount } from '@vue/test-utils'
+import { flushPromises, mount, enableAutoUnmount } from '@vue/test-utils'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 const fetchOverview = vi.fn()
@@ -55,6 +55,7 @@ import HedgeSettlementTab from './tabs/HedgeSettlementTab.vue'
 import HedgeSimulateTab from './tabs/HedgeSimulateTab.vue'
 import HedgeMaintenanceTab from './tabs/HedgeMaintenanceTab.vue'
 import { selectedCompanyId } from '@/services/company/companyContext'
+import { fetchCaps as fetchCapsMock } from '@/services/hedge/hedgeApi'
 import { overviewPayload } from '@/test/hedgeWorkbench'
 
 // 每条用例结束即卸载（ChenShi-Tech/dljy#3432）：原先 afterAll 让前面用例挂载的实例一直存活，切换公司时
@@ -235,5 +236,28 @@ describe('HedgeWorkbenchView 外壳（HW-01/06/07）', () => {
     await wrapper.find('[data-test="tab-today2"]').trigger('click')
     await wrapper.find('[data-test="tab-simulate"]').trigger('click')
     expect((wrapper.find('[data-test="simulate-qty"]').element as HTMLInputElement).value).toBe('12.5')
+  })
+
+  it('维护页签切走再切回不重取，未保存的输入不被接口响应覆盖；切公司后重新激活才重取（#218 审查 R1-01）', async () => {
+    fetchOverview.mockResolvedValue(overviewPayload())
+    const caps = vi.mocked(fetchCapsMock)
+    caps.mockClear()
+    const wrapper = mountView()
+    await wrapper.find('[data-test="tab-maintenance"]').trigger('click')
+    await vi.waitFor(() => { expect(wrapper.find('[data-test="caps-row"] input[data-test="cap-mwh"]').exists()).toBe(true) })
+    expect(caps).toHaveBeenCalledTimes(1)
+    await wrapper.find('[data-test="caps-row"] input[data-test="cap-mwh"]').setValue('250')
+
+    await wrapper.find('[data-test="tab-today2"]').trigger('click')
+    await wrapper.find('[data-test="tab-maintenance"]').trigger('click')
+    await flushPromises()
+    expect(caps).toHaveBeenCalledTimes(1)
+    expect((wrapper.find('[data-test="caps-row"] input[data-test="cap-mwh"]').element as HTMLInputElement).value).toBe('250')
+
+    // 切公司：维护页签正处于激活态，清空后立即按新公司重取（草稿随上一家公司一并丢弃是预期行为）。
+    selectedCompanyId.value = 'comp-b'
+    await vi.waitFor(() => { expect(caps).toHaveBeenCalledTimes(2) })
+    selectedCompanyId.value = 'comp-a'
+    await vi.waitFor(() => { expect(caps).toHaveBeenCalledTimes(3) })
   })
 })

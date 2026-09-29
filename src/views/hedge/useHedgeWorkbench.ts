@@ -126,6 +126,11 @@ export interface HedgeTabLifecycleOptions {
   load?: () => unknown
   /** 公司/地区切换时清空本页签全部结果（HW-06/#3401：不得残留上一家公司的数据）。清空后若本页签处于激活态再调 load。 */
   reset: () => void
+  /**
+   * 重新激活时是否重取（默认 true）。有未保存草稿的页签（维护）传 false：只在首次激活、以及公司/地区切换后的
+   * 第一次激活时加载，切走再切回不重取，避免接口响应覆盖用户尚未保存的输入（#218 审查 R1-01）。
+   */
+  reloadOnActivate?: boolean
 }
 
 /**
@@ -134,13 +139,17 @@ export interface HedgeTabLifecycleOptions {
  */
 export function useHedgeTabLifecycle(workbench: HedgeWorkbench, options: HedgeTabLifecycleOptions) {
   const active = ref(false)
+  // 当前公司/地区下是否已经加载过：reloadOnActivate=false 时据此跳过重新激活的重取；切公司/地区即复位。
+  let loadedForContext = false
   function loadIfOpen() {
+    loadedForContext = true
     if (options.load && workbench.regionOpen.value) void options.load()
   }
   // KeepAlive 下首次挂载 mounted 与 activated 都会触发，不在 KeepAlive 下只有 mounted：用 active 去重。
   function activate() {
     if (active.value) return
     active.value = true
+    if (options.reloadOnActivate === false && loadedForContext) return
     loadIfOpen()
   }
   onMounted(activate)
@@ -148,6 +157,7 @@ export function useHedgeTabLifecycle(workbench: HedgeWorkbench, options: HedgeTa
   onDeactivated(() => { active.value = false })
   watch(workbench.contextKey, () => {
     options.reset()
+    loadedForContext = false
     if (active.value) loadIfOpen()
   })
   return { active: readonly(active) }

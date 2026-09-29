@@ -134,6 +134,8 @@ async function confirmMechanism(row: Record<string, unknown>) {
 
 useHedgeTabLifecycle(workbench, {
   load: loadMaintenance,
+  // 维护表单有未保存草稿：切走再切回不重取，免得接口响应覆盖尚未保存的输入（#218 审查 R1-01）；切公司/地区照常清空重取。
+  reloadOnActivate: false,
   reset: () => {
     baselineRows.value = []
     schemeActivation.value = null
@@ -164,10 +166,10 @@ useHedgeTabLifecycle(workbench, {
 
     <h3>核定上限（交易单元 × 月；未登记显示「核定上限未登记」）</h3>
     <p data-test="caps-status">{{ capsStatus ?? `${capsRows.length} 行已登记` }}</p>
-    <div v-for="(row, i) in capsRows" :key="i" class="baseline-row">
+    <div v-for="(row, i) in capsRows" :key="i" class="baseline-row" data-test="caps-row">
       <input v-model="row.subjectId" placeholder="交易单元" />
       <input v-model="row.month" placeholder="2026-11" />
-      <input v-model="row.capMwh" placeholder="MWh" />
+      <input v-model="row.capMwh" placeholder="MWh" data-test="cap-mwh" />
       <button :disabled="!canWrite" @click="saveCap(row)">保存</button>
     </div>
 
