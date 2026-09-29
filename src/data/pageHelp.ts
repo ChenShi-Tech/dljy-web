@@ -349,7 +349,7 @@ export const pageHelpRegistry: Record<string, PageHelpEntry> = {
   },
   GridDisclosureSpatial: {
     title: '公开披露空间层',
-    body: '南网五省检修、停运、干预、阻塞与约束等公开披露事件的时间轴与空间层，支持个人/公司收藏、笔记和标签协作。数据来自 GET /api/v1/grid/geo-assets/disclosures/{providers,events}（授权导出编译入受管 SQLite）。国网地区 Provider 未配置时保持诚实空态；事件无坐标不落点、不推测位置。为真实公开披露数据。',
+    body: '南网五省检修、停运、干预、阻塞与约束等公开披露事件的时间轴与空间层，支持个人/公司收藏、笔记和标签协作。数据来自 GET /api/v1/grid/geo-assets/disclosures/{providers,events}：南网公开披露（整年导出覆盖 2026-07-02 及之前，2026-07-03 起由日文件接续）编译入受管数据库，所有公司可见；卡片来源名按事件自己的来源显示。国网地区 Provider 未配置时保持诚实空态；事件无坐标不落点、不推测位置。为真实公开披露数据。',
     docPath: 'docs/product/grid-geo-assets.md'
   },
   GridOperatorProfile: {
