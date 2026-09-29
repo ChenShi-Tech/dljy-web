@@ -22,6 +22,27 @@ vi.mock('@/services/company/companyContext', async () => {
   return { selectedCompanyId: ref('comp-a') }
 })
 
+// 维护页签的接口全部经 hedgeMaintenanceApi（#3423）：外壳只测它与今明页签的联动与保活，桩给最小可用数据。
+const maintenanceApi = vi.hoisted(() => ({
+  fetchBandPresets: vi.fn(async () => ({ rows: [] })),
+  fetchBandSchemes: vi.fn(async () => ({ rows: [] })),
+  fetchBandActivation: vi.fn(async () => ({ current: null, asOf: null, active: null, history: [] })),
+  createBandScheme: vi.fn(async () => ({})),
+  addBandSchemeVersion: vi.fn(async () => ({})),
+  switchBandActivation: vi.fn(async () => ({})),
+  fetchBaselines: vi.fn(async () => ({ rows: [] })),
+  putBaselines: vi.fn(async () => ({ rows: [] })),
+  fetchMechanismParams: vi.fn(async () => ({ rows: [] })),
+  createMechanismParam: vi.fn(async () => ({})),
+  appendMechanismVersion: vi.fn(async () => ({})),
+  fetchCaps: vi.fn(async () => ({ rows: [{ subjectId: 1, month: '2026-11', capMwh: '100', sourceNote: '核定通知', rowVersion: 1 }] })),
+  putCaps: vi.fn(async () => ({ rows: [] })),
+  fetchMaintenanceStations: vi.fn(async () => [{ id: 10, name: '甲风电' }]),
+  fetchMaintenanceSubjects: vi.fn(async () => []),
+  fetchMaintenanceWriteAccess: vi.fn(async () => ({ writable: true, reason: null })),
+}))
+vi.mock('@/services/hedge/hedgeMaintenanceApi', () => maintenanceApi)
+
 vi.mock('@/services/hedge/hedgeApi', () => ({
   HedgeApiError: class HedgeApiError extends Error {
     status: number
@@ -64,7 +85,6 @@ import HedgeSettlementTab from './tabs/HedgeSettlementTab.vue'
 import HedgeSimulateTab from './tabs/HedgeSimulateTab.vue'
 import HedgeMaintenanceTab from './tabs/HedgeMaintenanceTab.vue'
 import { selectedCompanyId } from '@/services/company/companyContext'
-import { fetchCaps as fetchCapsMock } from '@/services/hedge/hedgeApi'
 import { overviewPayload } from '@/test/hedgeWorkbench'
 
 // 每条用例结束即卸载（ChenShi-Tech/dljy#3432）：原先 afterAll 让前面用例挂载的实例一直存活，切换公司时
@@ -237,7 +257,9 @@ describe('HedgeWorkbenchView 外壳（HW-01/06/07）', () => {
     })
     const callsBefore = fetchOverview.mock.calls.length
     await wrapper.find('[data-test="tab-maintenance"]').trigger('click')
-    await vi.waitFor(() => { expect(wrapper.find('[data-test="baseline-save"]').exists()).toBe(true) })
+    await vi.waitFor(() => { expect(wrapper.find('[data-test^="baseline-cell-10-"]').exists()).toBe(true) })
+    await wrapper.find('[data-test^="baseline-cell-10-"]').setValue('1300')
+    await wrapper.find('[data-test="baseline-note"]').setValue('经营计划')
     await wrapper.find('[data-test="baseline-save"]').trigger('click')
     await vi.waitFor(() => {
       expect(wrapper.find('[data-test="baseline-status"]').text()).toContain('已保存')
@@ -253,7 +275,7 @@ describe('HedgeWorkbenchView 外壳（HW-01/06/07）', () => {
 
   it('维护页签切走再切回不重取，未保存的输入不被接口响应覆盖；切公司后重新激活才重取（#218 审查 R1-01）', async () => {
     fetchOverview.mockResolvedValue(overviewPayload())
-    const caps = vi.mocked(fetchCapsMock)
+    const caps = maintenanceApi.fetchCaps
     caps.mockClear()
     const wrapper = mountView()
     await wrapper.find('[data-test="tab-maintenance"]').trigger('click')
