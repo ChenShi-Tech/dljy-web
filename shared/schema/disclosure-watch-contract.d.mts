@@ -131,7 +131,9 @@ export interface DisclosureWatchError { code: DisclosureWatchErrorCode; message:
 export interface DisclosureWatchSourceRef { snapshotId: string; rowIndex: number }
 
 export interface DisclosureWatchEvidence {
-  ref: string // 摘录编号 E1…，无摘录的证据为 S1…
+  // 摘录编号：停运原因证据为 E1…（同一原因文本的多行共用同一 E 编号），其余为 S1…；
+  // 同一事项内 ref 可能重复，列表 key 请用 sourceRef。
+  ref: string
   sourceRef: DisclosureWatchSourceRef
   dataset: DisclosureWatchDataset
   coverageDate: string
@@ -155,6 +157,8 @@ export interface DisclosureWatchItem {
   kind: DisclosureWatchItemKind
   object: { objectKey: string; plantName: string | null; unitName: string | null; deviceName: string | null }
   change: { kind: DisclosureWatchChangeKind; comparedCoverageDate: string | null; detail: string | null }
+  // kind 为 day / unknown 时 start、end 恒为 null（日级或未知时段不画小时区间）；
+  // interval 为计划原始区间（北京本地串），point 的 start 为最新状态时刻。
   window: { kind: DisclosureWatchWindowKind; start: string | null; end: string | null; label: string }
   headline: string
   facts: Array<{ label: string; value: string }>
@@ -168,6 +172,8 @@ export interface DisclosureWatchItem {
   eventId: string | null
 }
 
+// snapshotId / coverageDate / receivedAt 指「实际使用的快照」（如检修清单回退时为回退快照，status 仍按目标日记），
+// 原因写在 note。
 export interface DisclosureWatchCoverageEntry {
   status: DisclosureWatchCoverageStatus
   snapshotId: string | null
@@ -196,6 +202,7 @@ export interface DisclosureWatchRunResult {
   inputVersion: { hash: string; snapshots: DisclosureWatchSnapshotSummary[] }
   inputCoverage: Record<DisclosureWatchCoreDataset, DisclosureWatchCoverageEntry>
   backgroundCoverage: { load_forecast: DisclosureWatchCoverageEntry }
+  // modelRequired = 需要模型研判的停运项总数（含超预算未处理）；evaluated + modelFailed + unprocessed = modelRequired。
   processingCoverage: { chains: number; modelRequired: number; evaluated: number; modelFailed: number; unprocessed: number }
   counts: {
     rawRows: number; duplicateRows: number; chains: number
@@ -217,4 +224,33 @@ export interface DisclosureWatchRunResult {
   usage: { calls: number; inputTokens: number | null; outputTokens: number | null; elapsedMs: number | null }
   errors: DisclosureWatchError[]
   dataMeta: { sourceType: 'IMPORT'; mock: false; productionWrite: false; persisted: true }
+  // 仅 GET /watch-runs/:runId 返回：本人对该运行的评价（只追加）。
+  feedback?: DisclosureWatchFeedback[]
+}
+
+export interface DisclosureWatchFeedback {
+  feedbackId: string
+  runId: string
+  itemId: string
+  verdict: DisclosureWatchFeedbackVerdict
+  note: string | null
+  createdAt: string
+}
+
+// 进行中（HTTP 202）或已中断/失败而无结果时，接口只返回运行头与错误。
+export interface DisclosureWatchRunHead {
+  contractVersion: string
+  runId: string
+  status: DisclosureWatchRunStatus
+  mode: DisclosureWatchMode
+  tradeDate: string
+  regionId: string
+  asOf: string
+  createdAt: string
+  finishedAt: string | null
+  deadlineAt: string
+  scopeLabel: string
+  errors: DisclosureWatchError[]
+  dataMeta: { sourceType: 'IMPORT'; mock: false; productionWrite: false; persisted: true }
+  items?: undefined
 }
