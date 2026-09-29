@@ -15,8 +15,10 @@ import {
 import type {
   DisclosureWatchCapabilities,
   DisclosureWatchErrorCode,
+  DisclosureWatchFeedback,
   DisclosureWatchFeedbackVerdict,
   DisclosureWatchMode,
+  DisclosureWatchRunHead,
   DisclosureWatchRunResult,
 } from 'shared/schema/disclosure-watch-contract.mjs'
 
@@ -31,25 +33,15 @@ export interface DisclosureWatchScope {
 }
 
 /**
- * 运行头：HTTP 202（进行中）或 failed/interrupted 且无结果时，data 只有这些字段、没有 items。
+ * 运行头（契约 DisclosureWatchRunHead）：HTTP 202（进行中）或 failed/interrupted 且无结果时，data 只有运行头、没有 items。
  * 前端据 items 是否存在区分“有结果”与“只有运行头”。
- * TODO(契约同步)：shared 同步后改用契约导出的 DisclosureWatchRunHead。
  */
-export type DisclosureWatchRunHead = Pick<DisclosureWatchRunResult,
-  'contractVersion' | 'runId' | 'status' | 'mode' | 'tradeDate' | 'regionId' | 'asOf' | 'createdAt' | 'finishedAt' | 'deadlineAt' | 'scopeLabel' | 'errors'
-> & { dataMeta?: Record<string, unknown>; items?: undefined }
+export type { DisclosureWatchRunHead }
 
-/** 本人已提交的评价（GET /watch-runs/:runId 可选返回，重开历史运行时据此显示“已评价”）。 */
-export interface DisclosureWatchFeedbackRecord {
-  feedbackId: string
-  runId: string
-  itemId: string
-  verdict: DisclosureWatchFeedbackVerdict
-  note: string | null
-  createdAt: string
-}
+/** 本人已提交的评价（GET /watch-runs/:runId 的 feedback[]，重开历史运行时据此显示“已评价”）。 */
+export type DisclosureWatchFeedbackRecord = DisclosureWatchFeedback
 
-export type DisclosureWatchRunBody = DisclosureWatchRunResult & { feedback?: DisclosureWatchFeedbackRecord[] }
+export type DisclosureWatchRunBody = DisclosureWatchRunResult
 export type DisclosureWatchRunData = DisclosureWatchRunBody | DisclosureWatchRunHead
 
 export function hasRunBody(data: DisclosureWatchRunData | null | undefined): data is DisclosureWatchRunBody {
