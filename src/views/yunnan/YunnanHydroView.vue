@@ -569,6 +569,7 @@ onMounted(() => {
         <!-- 指标卡一行：数值取 summary 视图与 share 行，按登记精度显示，缺值「—」不显示 0 -->
         <InsightBlock
           title="水电概况"
+          hide-sources
           :result="viewStates.summary.result"
           :error="viewStates.summary.error"
           :loading="viewStates.summary.loading"
@@ -576,7 +577,6 @@ onMounted(() => {
           :on-retry="() => retryQuery('summary')"
           :on-refresh="() => retryQuery('summary')"
           @open-candidates="candidatesVisible = true"
-          @open-evidence="openEvidence(viewStates.summary.result)"
         >
           <div class="ynh__tiles" data-testid="ynh-tiles">
             <MetricTile
