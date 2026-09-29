@@ -1,9 +1,16 @@
-// 已迁入口登记表（内部版）契约（ChenShi-Tech/dljy#3464，任务 12.3）。
+// 已迁入口登记表（内部版）契约（ChenShi-Tech/dljy#3464，任务 12.3；角色闸门 dljy#3518）。
 //
 // 守什么：用户 2026-09-29 批准的四组入口在内部版全部隐藏、各自落在正确的宿主 tab / 面板 / 区块、
-// 后台路径与 dljy-admin 路由表一致；按组回退只影响本组；后台地址未配置 / 不合法时不给链接。
-// 坏掉的症状：内部版留着能点但会 403 的旧入口，或回退一组连带放出别组，或提示链接指到后台不存在的页面。
+// 后台路径与 dljy-admin 路由表一致；按组回退只影响本组；后台地址未配置 / 不合法时不给链接；
+// 提示链接只对平台人员（ADMIN）输出，客户账号下入口照隐藏但提示恒空（AI-06）。
+// 坏掉的症状：内部版留着能点但会 403 的旧入口，或回退一组连带放出别组，或提示链接指到后台不存在的页面，
+// 或客户账号看到「已迁至平台后台」提示 / 后台路径（越权泄露）。
 import { afterEach, describe, expect, it, vi } from 'vitest'
+
+// 本文件跑 node 纯函数环境（无 localStorage），getCurrentUser 真实实现会抛错——mock 掉并按用例切角色。
+const auth = vi.hoisted(() => ({ roleCode: 'ADMIN' as string }))
+vi.mock('@/services/auth', () => ({ getCurrentUser: () => ({ roleCode: auth.roleCode }) }))
+
 import {
   MIGRATED_ENTRIES,
   MIGRATION_GROUPS,
@@ -122,6 +129,35 @@ describe('组4 权限矩阵与注册立场内部版隐藏', () => {
 
   it('公司档案里只有注册立场块隐藏', () => {
     expect(hiddenEntriesOf('company-profile')).toEqual(['subject-registry'])
+  })
+})
+
+describe('角色闸门（dljy#3518，AI-06）：提示只对平台人员（ADMIN）输出', () => {
+  afterEach(() => {
+    auth.roleCode = 'ADMIN'
+  })
+
+  it('客户账号（BOSS / 交易负责人 / 交易员）不输出任何标签、后台路径或链接——即使配置了后台地址', () => {
+    vi.stubEnv('VITE_PLATFORM_ADMIN_URL', 'http://127.0.0.1:5176')
+    for (const role of ['BOSS', 'TRADE_LEAD', 'TRADER']) {
+      auth.roleCode = role
+      expect(migratedEntryLinks(['ai-llm', 'role-matrix', 'subject-registry']), role).toEqual([])
+    }
+  })
+
+  it('入口隐藏不区分角色：客户账号下照常隐藏、照常不给已迁 tab，整页路由组件照样替换（原页面 setup 不跑）', () => {
+    auth.roleCode = 'BOSS'
+    expect(isEntryHidden('ai-skills')).toBe(true)
+    expect(isTabHidden('accounts', 'permissions')).toBe(true)
+    expect(isTabHidden('ai-studio', 'models')).toBe(true)
+    expect(hiddenEntriesOf('ai-studio')).toHaveLength(8)
+    const original = async () => ({ default: {} })
+    expect(migratedRouteComponent('inference-models', original)).not.toBe(original)
+  })
+
+  it('平台人员（ADMIN）照常输出提示与后台链接', () => {
+    vi.stubEnv('VITE_PLATFORM_ADMIN_URL', 'http://127.0.0.1:5176')
+    expect(migratedEntryLinks(['ai-llm']).map((l) => l.href)).toEqual(['http://127.0.0.1:5176/#/ai/llm'])
   })
 })
 

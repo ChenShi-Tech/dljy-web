@@ -18,9 +18,17 @@
 //    重定向到空壳——提示文字与 VITE_PLATFORM_ADMIN_URL 根本不进交付产物。
 //    `npm run verify:customer-edition-build` 扫产物兜底（判据之一就是下面每条 adminPath）。
 //
+// ## 提示按角色区分（ChenShi-Tech/dljy#3518，规格 AI-06）
+//
+// **隐藏入口不区分角色**（客户账号同样不能再点会被后端 403 的旧入口），但**迁移提示与后台链接只对
+// 平台人员（内部版 ADMIN，与后端「平台超管 ADMIN」一致）显示**：客户账号（BOSS、TRADE_LEAD、TRADER
+// 等非 ADMIN 角色）只看到入口消失，不出现任何提示文字、后台路径或链接。闸门落在 migratedEntryLinks
+// 一处——它是提示渲染的唯一数据出口（宿主页 inline 提示与整页提示组件都经它），各宿主页不再各写判断。
+//
 // 因此：**任何页面只能经本模块导出的函数取用登记表**，不要直接 import 表常量（客户版的空壳里
 // 没有这些常量，构建会因缺导出而失败——这正是想要的绊线）。
 import { defineComponent, h, type Component } from 'vue'
+import { getCurrentUser } from '@/services/auth'
 import { IS_INTERNAL_EDITION } from '@/services/edition'
 
 /** 迁移分组（用户 2026-09-29 按组批准，也按组回退）。 */
@@ -163,8 +171,25 @@ export interface MigratedEntryLink {
   href: string | null
 }
 
-/** 提示组件用：入口标签 + 后台链接。未隐藏的入口不输出（回退后提示自然消失）。 */
+/**
+ * 平台人员（迁移提示的受众，dljy#3518）：内部版当前登录的 ADMIN（与后端「平台超管 ADMIN」一致）。
+ * 每次调用现读当前用户；localStorage 不可用（node 纯函数测试环境）或读取失败时从严判非平台人员。
+ */
+function isPlatformStaff(): boolean {
+  try {
+    return getCurrentUser().roleCode === 'ADMIN'
+  } catch {
+    return false
+  }
+}
+
+/**
+ * 提示组件用：入口标签 + 后台链接。未隐藏的入口不输出（回退后提示自然消失）；
+ * **非平台人员（客户账号）恒输出空**（AI-06：不得向客户暴露内部后台访问路径或权限）——
+ * 提示组件拿到空列表整体不渲染，后台地址配置与否无关。
+ */
 export function migratedEntryLinks(ids: readonly MigratedEntryId[]): MigratedEntryLink[] {
+  if (!isPlatformStaff()) return []
   const base = platformAdminBaseUrl()
   return ids.filter(isEntryHidden).map((id) => {
     const entry = MIGRATED_ENTRIES[id]

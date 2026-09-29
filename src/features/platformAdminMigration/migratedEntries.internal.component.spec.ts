@@ -1,13 +1,16 @@
-// 内部版隐藏已迁至平台后台的旧入口（ChenShi-Tech/dljy#3464，任务 12.3）——页面级契约。
+// 内部版隐藏已迁至平台后台的旧入口（ChenShi-Tech/dljy#3464，任务 12.3；角色闸门 dljy#3518）——页面级契约。
 //
-// 守什么（按用户 2026-09-29 批准的四组）：
+// 守什么（按用户 2026-09-29 批准的四组；提示与后台链接只对平台人员 ADMIN 显示，客户账号只隐藏入口）：
 //   组1 AI 设施：/system/ai-studio 的五个 tab 不渲染、原位置提示 8 项并给后台链接；长期记忆（个人自助）照常可用
 //   组2 推理模型：/system/models 菜单摘除，直接访问显示整页提示、原页面不加载
 //   组3 数据摄取与电网凭据：/data-ops/console 的接入向导、摄取管理面板与电网官方平台子 tab 不渲染；
 //       上传中心、导入融合台、企业自建通道、受控接入、运维总览、治理控制台照常；总览不再给指向已迁面板的按钮
-//   组4 权限矩阵与注册立场：/system/accounts 权限矩阵 tab、/gsgl/profile 注册立场块不渲染；用户管理、会话管理、档案本体照常
+//   组4 权限矩阵与注册立场：/system/accounts 权限矩阵 tab 不渲染；/gsgl/profile 注册立场块对所有角色恢复
+//       只读展示并读取（迁移清单 §3.7），无编辑控件；提示只对平台人员显示
 //   重定向壳：旧路径跟着目标面板走，落到宿主页有内容的 tab，不白屏
-// 坏掉的症状：内部版留着能点但会 403 的旧入口；旧深链落到空白面板；长期记忆跟着整页一起消失。
+//   客户账号（BOSS / 交易负责人 / 交易员）：四处宿主页与整页深链都不出现提示文字、后台路径或链接（AI-06）
+// 坏掉的症状：内部版留着能点但会 403 的旧入口；旧深链落到空白面板；长期记忆跟着整页一起消失；
+//             客户账号看到「已迁至平台后台」提示 / 后台路径（越权泄露）；注册立场整块消失不可见。
 // 客户版对照见 migratedEntries.customer.component.spec.ts。
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createMemoryHistory, createRouter } from 'vue-router'
@@ -65,8 +68,14 @@ import { activeTabLabels, mountHost, noticeEntries, routeComponentOf, settle, ta
 beforeEach(() => {
   vi.stubEnv('VITE_PLATFORM_ADMIN_URL', 'http://127.0.0.1:5176')
   vi.clearAllMocks()
+  // 提示受众 = 平台人员（内部版 ADMIN，dljy#3518）：显式以平台管理员登录，不依赖
+  // 「无登录态时默认用户恰为 ADMIN」的隐式行为；客户账号用例在用例内自行覆盖。
+  localStorage.setItem('dljy_governance_user', JSON.stringify({ username: 'admin' }))
 })
-afterEach(() => vi.unstubAllEnvs())
+afterEach(() => {
+  vi.unstubAllEnvs()
+  localStorage.removeItem('dljy_governance_user')
+})
 
 describe('组1 AI 设施（内部版）：/system/ai-studio 只剩「个人设置」，其余 tab 原位置提示', () => {
   it('五个 AI 设施 tab 不渲染，只剩「个人设置」', async () => {
@@ -165,13 +174,67 @@ describe('组4 权限矩阵与注册立场（内部版）', () => {
     expect(wrapper.find('.stub-permissions').exists()).toBe(false)
   })
 
-  it('/gsgl/profile 注册立场块不渲染也不读取，原位置提示；公司档案本体照常', async () => {
+  it('/gsgl/profile 注册立场恢复只读展示并读取（迁移清单 §3.7），平台人员另见提示与后台链接；公司档案本体照常', async () => {
     const { wrapper } = await mountHost('/gsgl/profile')
     expect(wrapper.text()).toContain('档案信息')
-    expect(wrapper.text()).not.toContain('交易中心登记')
-    expect(company.fetchCompanySubjectTypes).not.toHaveBeenCalled()
+    expect(wrapper.text()).toContain('交易中心登记')
+    expect(company.fetchCompanySubjectTypes).toHaveBeenCalled()
+    // 内部版立场恒只读：选择器禁用、无保存按钮（编辑只落平台后台，写接口不再调用）
+    expect(wrapper.find('.el-select__wrapper').classes()).toContain('is-disabled')
+    expect(wrapper.text()).not.toContain('保存注册立场')
     expect(noticeEntries(wrapper)).toEqual(['subject-registry'])
     expect(wrapper.get('[data-testid="migrated-to-admin-notice"] a').attributes('href')).toBe('http://127.0.0.1:5176/#/customers')
+  })
+})
+
+describe('客户账号（非平台人员，dljy#3518，AI-06）：入口照隐藏，但不出现任何迁移提示、后台路径或链接', () => {
+  // 角色经 localStorage 治理用户切换（getStoredUser → demoProfiles 按用户名解析角色）。
+  function loginAs(username: string) {
+    localStorage.setItem('dljy_governance_user', JSON.stringify({ username }))
+  }
+
+  it.each(['boss', 'lead', 'trader'])('客户账号（%s）在四处宿主页都看不到提示、后台路径与链接', async (username) => {
+    loginAs(username)
+    for (const path of ['/system/ai-studio', '/data-ops/console', '/system/accounts', '/gsgl/profile']) {
+      const { wrapper } = await mountHost(path)
+      expect(wrapper.find('[data-testid="migrated-to-admin-notice"]').exists(), path).toBe(false)
+      expect(wrapper.text(), path).not.toContain('平台后台')
+      expect(wrapper.text(), path).not.toContain('前往平台后台')
+      expect(wrapper.findAll('a.entry-link'), path).toHaveLength(0)
+    }
+  })
+
+  it('客户 BOSS 的入口隐藏照旧（提示没有，已迁 tab 也没回来）', async () => {
+    loginAs('boss')
+    const ai = await mountHost('/system/ai-studio')
+    expect(tabLabels(ai.wrapper)).toEqual(['个人设置'])
+    const ops = await mountHost('/data-ops/console')
+    expect(tabLabels(ops.wrapper)).toEqual(['运维总览', '数据上传中心', '数据导入融合台', '数据治理控制台', '数据源接入'])
+    const accounts = await mountHost('/system/accounts')
+    expect(tabLabels(accounts.wrapper)).toEqual(['用户管理', '会话管理'])
+  })
+
+  it('客户 BOSS 深链 /system/models 得到空提示页（不出现提示文字，原管理页也不加载）', async () => {
+    loginAs('boss')
+    const component = await routeComponentOf('/system/models')
+    expect((component as { name?: string }).name).toBe('MigratedEntryPage')
+    const wrapper = mount(component as never)
+    await settle()
+    expect(wrapper.find('[data-testid="migrated-to-admin-notice"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('平台后台')
+    expect(wrapper.findAll('a')).toHaveLength(0)
+    expect(wrapper.find('.stub-system-models').exists()).toBe(false)
+  })
+
+  it.each(['boss', 'lead', 'trader'])('客户账号（%s）在公司档案看到只读注册立场：读取发生、无编辑控件、无提示', async (username) => {
+    loginAs(username)
+    const { wrapper } = await mountHost('/gsgl/profile')
+    expect(wrapper.text()).toContain('交易中心登记')
+    expect(company.fetchCompanySubjectTypes).toHaveBeenCalled()
+    expect(wrapper.find('.el-select__wrapper').classes()).toContain('is-disabled')
+    expect(wrapper.text()).not.toContain('保存注册立场')
+    expect(wrapper.find('[data-testid="migrated-to-admin-notice"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('平台后台')
   })
 })
 
