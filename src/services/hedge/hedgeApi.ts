@@ -23,7 +23,8 @@ export class HedgeApiError extends Error {
   }
 }
 
-async function request<T>(method: 'GET' | 'POST' | 'PUT', path: string, opts: { body?: unknown; query?: Record<string, string | undefined> } = {}): Promise<T> {
+/** 套保接口的统一请求工具（维护入口 hedgeMaintenanceApi.ts 复用）。 */
+export async function request<T>(method: 'GET' | 'POST' | 'PUT', path: string, opts: { body?: unknown; query?: Record<string, string | undefined> } = {}): Promise<T> {
   const url = new URL(BASE + path, window.location.origin)
   for (const [key, value] of Object.entries(opts.query ?? {})) {
     if (value !== undefined && value !== null && value !== '') url.searchParams.set(key, value)

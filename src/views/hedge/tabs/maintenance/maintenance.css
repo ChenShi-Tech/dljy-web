@@ -1,0 +1,28 @@
+/* 套保维护区块共用样式（ChenShi-Tech/dljy#3423）：各区块以 <style scoped src> 引入，颜色与字号全走主题令牌。 */
+.maint-section { display: flex; flex-direction: column; gap: 10px; }
+.section-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.section-head h3 { margin: 0; font-size: var(--font-lg); }
+.section-head .spacer { flex: 1; }
+h4 { margin: 8px 0 0; font-size: var(--font-md); }
+.hint { margin: 0; color: var(--muted); font-size: var(--font-sm); }
+.status { margin: 0; font-size: var(--font-sm); }
+.status.error, .field-message { color: var(--danger); }
+.field-message { margin: 2px 0 0; font-size: var(--font-sm); }
+.field-error { border-color: var(--danger) !important; outline: 1px solid var(--danger); }
+.range-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: var(--font-sm); }
+.table-wrap { overflow-x: auto; }
+.maint-table { width: 100%; border-collapse: collapse; font-size: var(--font-sm); }
+.maint-table th, .maint-table td { border-bottom: 1px solid var(--line); padding: 4px 8px; text-align: left; vertical-align: top; }
+.maint-table th { color: var(--muted); font-weight: 500; white-space: nowrap; }
+.maint-table input { width: 100%; min-width: 72px; }
+.badge { display: inline-block; padding: 0 6px; border-radius: 4px; font-size: var(--font-xs); border: 1px solid var(--line); color: var(--muted); white-space: nowrap; }
+.badge.ok { color: var(--success); border-color: var(--success); }
+.badge.warn { color: var(--warning); border-color: var(--warning); }
+.badge.danger { color: var(--danger); border-color: var(--danger); }
+.maint-dialog { position: fixed; inset: 0; z-index: 30; display: flex; align-items: center; justify-content: center; background: rgba(15, 23, 42, 0.35); }
+.form-card { width: min(640px, 92vw); max-height: 88vh; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; padding: 16px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel); color: var(--text); }
+.form-card h4 { margin: 0; }
+.form-grid { display: grid; grid-template-columns: 140px 1fr; gap: 8px 12px; align-items: start; font-size: var(--font-sm); }
+.form-grid > label { padding-top: 4px; color: var(--muted); }
+.form-grid input, .form-grid select, .form-grid textarea { width: 100%; }
+.form-actions { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; }
