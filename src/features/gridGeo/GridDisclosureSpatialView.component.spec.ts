@@ -519,6 +519,24 @@ describe('公开披露交易台上下文联动', () => {
     wrapper.unmount()
   })
 
+  // dljy#3563：同地区有整年导出与日文件两路南网来源，卡片来源名取事件自己的来源，不再取该地区第一个来源。
+  it('信息卡片来源名按事件自己的来源显示，未登记来源如实写待确认', async () => {
+    const csgProvider = (providerId: string, name: string) => ({ providerId, gridOperator: 'csg', name, regionIds: ['yunnan', 'guangdong'], sourceType: 'IMPORT', mock: false, productionWrite: false, access: 'public', originalLinkPolicy: 'only-when-source-supplies-url', license: '南方电网公开披露信息', eventCount: 1, dataAvailability: { status: 'available', reason: '测试夹具' } })
+    calls.providers.mockResolvedValue({ providers: [csgProvider('csg-authorized-export', '南方电网公开披露'), csgProvider('csg-disclosure-file', '南方电网公开披露（日文件接续）')] })
+    calls.events.mockResolvedValue({ items: [
+      { ...event('daily-file'), providerId: 'csg-disclosure-file' },
+      { ...event('annual-export'), providerId: 'csg-authorized-export' },
+      { ...event('unregistered'), providerId: 'unregistered-source' },
+    ], total: 3, dataAvailability: availability })
+    const wrapper = view()
+    await flushPromises()
+    await showCards(wrapper)
+    expect(wrapper.findAll('.event-card .event-source > span').map((item) => item.text())).toEqual(['南方电网公开披露（日文件接续）', '南方电网公开披露', '来源名称待确认（unregistered-source）'])
+    expect(wrapper.get('.event-card .event-source > span').attributes('title')).toBe('fixture.csv')
+    expect(wrapper.get('.header-context').text()).toContain('南方电网公开披露')
+    wrapper.unmount()
+  })
+
   it.each([null, '2026-07-01T00:00:00+08:00'])('日级检修卡片缺少停复电时间时明确未提供，不用业务日或入库日补值：%s', async (effectiveAt) => {
     calls.events.mockResolvedValue({ items: [{ ...event('unknown-time'), category: 'maintenance', effectiveAt, expiresAt: null, effectiveDate: '2026-07-01', sourceImportedAt: '2026-09-09T06:30:00+08:00', timeQuality: { effective: 'business-date', published: 'unknown', intervalBasis: 'unknown', issues: [] } }], total: 1, dataAvailability: availability })
     const wrapper = view()

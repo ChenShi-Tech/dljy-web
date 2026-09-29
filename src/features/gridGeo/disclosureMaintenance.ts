@@ -1,5 +1,6 @@
 import type { GridDisclosureEvent } from './types'
 import { parseDisclosureTime as timestamp } from './disclosureTime'
+import { isCsgDisclosureProvider } from './disclosureProviders'
 
 export type MaintenanceTimingFilter = 'all' | 'starts-in-window' | 'ends-in-window' | 'covers-window' | 'incomplete'
 export type MaintenanceSort = 'default' | 'start-asc' | 'end-asc' | 'duration-desc'
@@ -23,9 +24,12 @@ export function hasMaintenanceFilters(filters: MaintenanceFilters): boolean {
   return Boolean(filters.equipmentKeyword || filters.reasonKeyword || filters.timingFilter !== 'all' || filters.sort !== 'default')
 }
 
-/** 仅收拢授权检修编译器的已知模板；原始事件与任何真实原因/其他摘要保持完整。 */
+/**
+ * 仅收拢南网披露检修编译器的已知模板（整年导出与 2026-07-03 起日文件两路来源同一模板，dljy#3563）；
+ * 原始事件与任何真实原因/其他摘要保持完整。
+ */
 export function maintenanceListSummary(event: GridDisclosureEvent): string {
-  if (event.providerId !== 'csg-authorized-export' || event.category !== 'maintenance'
+  if (!isCsgDisclosureProvider(event.providerId) || event.category !== 'maintenance'
     || event.source.sourceTable !== 'tb_disclosure_forecast_maintenance_plan' || maintenanceDuration(event).status !== 'known') return event.summary
   const match = /^([^；\r\n]+)；(实际|计划)停复电：(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\+08:00) 至 (\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\+08:00)。$/.exec(event.summary)
   if (!match || event.timeQuality?.intervalBasis !== (match[2] === '实际' ? 'actual' : 'planned')
