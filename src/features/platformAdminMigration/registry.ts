@@ -31,7 +31,6 @@
 // 没有这些常量，构建会因缺导出而失败——这正是想要的绊线）。
 import { defineComponent, h, type Component } from 'vue'
 import { RouterLink } from 'vue-router'
-import { getCurrentUser } from '@/services/auth'
 import { IS_INTERNAL_EDITION } from '@/services/edition'
 
 /** 迁移分组（用户 2026-09-29 按组批准，也按组回退）。 */
@@ -176,11 +175,21 @@ export interface MigratedEntryLink {
 
 /**
  * 平台人员（迁移提示的受众，dljy#3518）：内部版当前登录的 ADMIN（与后端「平台超管 ADMIN」一致）。
- * 每次调用现读当前用户；localStorage 不可用（node 纯函数测试环境）或读取失败时从严判非平台人员。
+ *
+ * 本模块被 src/data/navigation.ts 等纯数据模块静态引用，**不得静态引入 @/services/auth**——它连带
+ * 加载 api 与 regionContext，而 regionContext 在模块加载时就读 window.localStorage，会把所有在 node
+ * 环境引入导航的测试一加载就炸（dljy-web#228 CI）。因此这里按 auth.ts 的口径直读同一个存储键
+ * （dljy_governance_user；resolveGovernanceUser 保留存储值里的 roleCode，判定结果等价）。
+ * 每次调用现读；localStorage 不可用（node 纯函数测试环境）、无存档或读取失败时**从严判非平台人员**：
+ * 无存档意味着未登录，demo 默认 admin 不在此放行（从严即少显示提示，不会向匿名访客暴露后台路径）。
  */
+const GOVERNANCE_USER_KEY = 'dljy_governance_user'
+
 function isPlatformStaff(): boolean {
   try {
-    return getCurrentUser().roleCode === 'ADMIN'
+    const raw = localStorage.getItem(GOVERNANCE_USER_KEY)
+    if (!raw) return false
+    return JSON.parse(raw)?.roleCode === 'ADMIN'
   } catch {
     return false
   }

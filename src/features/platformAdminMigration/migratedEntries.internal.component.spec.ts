@@ -70,9 +70,10 @@ import { activeTabLabels, mountHost, noticeEntries, routeComponentOf, settle, ta
 beforeEach(() => {
   vi.stubEnv('VITE_PLATFORM_ADMIN_URL', 'http://127.0.0.1:5176')
   vi.clearAllMocks()
-  // 提示受众 = 平台人员（内部版 ADMIN，dljy#3518）：显式以平台管理员登录，不依赖
-  // 「无登录态时默认用户恰为 ADMIN」的隐式行为；客户账号用例在用例内自行覆盖。
-  localStorage.setItem('dljy_governance_user', JSON.stringify({ username: 'admin' }))
+  // 提示受众 = 平台人员（内部版 ADMIN，dljy#3518）：显式以平台管理员登录（存档按真实落盘形态
+  // 带 roleCode——registry 直读该键判角色），不依赖「无登录态时默认用户恰为 ADMIN」的隐式行为；
+  // 客户账号用例在用例内自行覆盖。
+  localStorage.setItem('dljy_governance_user', JSON.stringify({ username: 'admin', roleCode: 'ADMIN' }))
 })
 afterEach(() => {
   vi.unstubAllEnvs()
@@ -190,7 +191,7 @@ describe('组4 权限矩阵与注册立场（内部版）', () => {
 })
 
 describe('客户账号（非平台人员，dljy#3518，AI-06）：入口照隐藏，但不出现任何迁移提示、后台路径或链接', () => {
-  // 角色经 localStorage 治理用户切换（getStoredUser → demoProfiles 按用户名解析角色）。
+  // 角色经 localStorage 治理用户存档切换（registry 直读 roleCode 判平台人员；无 roleCode 一律从严非平台人员）。
   function loginAs(username: string) {
     localStorage.setItem('dljy_governance_user', JSON.stringify({ username }))
   }

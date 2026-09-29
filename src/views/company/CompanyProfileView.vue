@@ -37,27 +37,45 @@ const registryHint = computed(() =>
     : '公司在交易中心登记的市场主体类型。交易组合（TRADER）与集团（GROUP）账号可在登记立场间切换作业视角；其余主体单立场。清空即退回单立场。'
 )
 
+// 切换公司时的并发读守卫（dljy-web#228，codex R1-01）：连续切换公司、或挂载后公司列表刷新校正
+// 了选中公司，会让上一次请求变成「先发后到」——不校验就把旧公司的档案 / 立场（失败时为空数组）
+// 写到当前页面，还会提前清掉新请求的 loading。发请求前记下序号与公司快照，应用结果与 finally
+// 清 loading 之前都核对「仍是最新请求且公司未变」，过期响应整体丢弃（含错误提示）。
+let profileRequestSeq = 0
+let registryRequestSeq = 0
+
 async function reload() {
+  const seq = ++profileRequestSeq
+  const companyId = selectedCompanyId.value
+  const stale = () => seq !== profileRequestSeq || companyId !== selectedCompanyId.value
   loading.value = true
   try {
     const profile = await fetchProfile()
+    if (stale()) return
     form.contact = profile?.contact ?? ''
     form.address = profile?.address ?? ''
     form.businessScope = profile?.businessScope ?? ''
   } catch (error) {
+    if (stale()) return
     ElMessage.error(error instanceof Error ? error.message : '加载档案失败')
   } finally {
-    loading.value = false
+    if (!stale()) loading.value = false
   }
 }
 async function reloadRegistry() {
+  const seq = ++registryRequestSeq
+  const companyId = selectedCompanyId.value
+  const stale = () => seq !== registryRequestSeq || companyId !== selectedCompanyId.value
   registryLoading.value = true
   try {
-    registry.value = await fetchCompanySubjectTypes(selectedCompanyId.value)
+    const rows = await fetchCompanySubjectTypes(companyId)
+    if (stale()) return
+    registry.value = rows
   } catch {
+    if (stale()) return
     registry.value = []
   } finally {
-    registryLoading.value = false
+    if (!stale()) registryLoading.value = false
   }
 }
 function reloadAll() {

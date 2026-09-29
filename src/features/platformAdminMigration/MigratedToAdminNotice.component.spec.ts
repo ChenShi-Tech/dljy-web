@@ -10,10 +10,11 @@ import { mount } from '@/test/mount'
 import MigratedToAdminNotice from './MigratedToAdminNotice.vue'
 import { MIGRATION_GROUPS } from './registry'
 
-// 角色闸门的受众判定经 getCurrentUser（localStorage 治理用户 → demoProfiles 按用户名解析角色）。
-// 默认显式以平台管理员登录；客户角色用例内自行覆盖。
+// 角色闸门的受众判定直读 localStorage 治理用户存档（registry 内部实现，不再经 @/services/auth）。
+// 存档按真实落盘形态写入（persistAuthUser 存的完整用户必含 roleCode）；默认显式以平台管理员登录，
+// 客户角色用例内自行覆盖（无 roleCode / 非 ADMIN 一律从严判非平台人员）。
 beforeEach(() => {
-  localStorage.setItem('dljy_governance_user', JSON.stringify({ username: 'admin' }))
+  localStorage.setItem('dljy_governance_user', JSON.stringify({ username: 'admin', roleCode: 'ADMIN' }))
 })
 
 afterEach(() => {
