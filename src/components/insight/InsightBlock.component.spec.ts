@@ -178,6 +178,20 @@ describe('部分可用与来源标签', () => {
     await evidenceButton!.trigger('click')
     expect(wrapper.emitted('open-evidence')).toHaveLength(1)
   })
+
+  it('hideSources：来源标签与证据入口都不出现，内容照常渲染', () => {
+    const result = nodePriceResult(['300'], {
+      sourceRefs: [{ sourceId: 'yn.price.node.public.day-ahead', accessScope: 'public' }],
+    })
+    const wrapper = mount(InsightBlock, {
+      props: { title: '水电概况', result, error: null, hideSources: true },
+      slots: { default: '<div>指标卡</div>' },
+    })
+
+    expect(wrapper.text()).toContain('指标卡')
+    expect(wrapper.text()).not.toContain('公开')
+    expect(wrapper.findAll('button').find((button) => button.text() === '证据')).toBeUndefined()
+  })
 })
 
 describe('展示纪律（红词扫描）', () => {
