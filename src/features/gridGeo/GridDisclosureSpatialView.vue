@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, inject, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
 import { routeLocationKey } from 'vue-router'
-import { Activity, ArrowRight, ArrowDownUp, CalendarDays, Check, ChevronLeft, ChevronRight, Clock3, FileText, Filter, Gauge, Layers3, MapPinned, RadioTower, RefreshCw, Search, ShieldCheck, Wind, X, Zap } from 'lucide-vue-next'
+import { Activity, ArrowRight, ArrowDownUp, CalendarDays, Check, ChevronLeft, ChevronRight, Clock3, FileText, Filter, Gauge, Layers3, MapPinned, Radar, RadioTower, RefreshCw, Search, ShieldCheck, Wind, X, Zap } from 'lucide-vue-next'
 import { currentRegion } from '@/services/region/regionContext'
 import { selectedCompanyId } from '@/services/company/companyContext'
 import { todayBeijing } from '@/utils/beijingDate'
@@ -27,6 +27,7 @@ import { queryText, validObjectDate } from './objectNavigation'
 import { useGridObjectContext } from './useGridObjectContext'
 import GridObjectContextBar from './GridObjectContextBar.vue'
 import GridObjectDrawer from './GridObjectDrawer.vue'
+import DisclosureWatchDialog from './DisclosureWatchDialog.vue'
 import type { GridObjectReference } from './objectNavigation'
 
 const objectContext = useGridObjectContext()
@@ -35,6 +36,9 @@ const objectTarget = shallowRef<GridObjectReference | null>(null)
 const objectQuery = computed((): Record<string, string> => objectContext.reference.value ? { objectKind: objectContext.reference.value.kind, objectId: objectContext.reference.value.id } : {})
 const objectQueryKey = computed(() => JSON.stringify([objectContext.hasContext.value, objectQuery.value]))
 const objectBlocked = computed(() => objectContext.hasContext.value && !objectContext.reference.value)
+// 日前盯盘弹窗（dljy#3484）：只传地区、公司与单个目标日；关键词、主题、分页、选区不进入研判请求。
+const watchOpen = ref(false)
+const watchButton = ref<HTMLButtonElement | null>(null)
 // 洞察电网边界页深链（dljy#3106 D6.1）：通道/断面名经 keyword 预填披露检索，输电主题
 // 按名过滤，业务日期经 objectDate 落到洞察窗口末日。只认合法单值（非空字符串、无控制
 // 字符、检索词 ≤120 字；日期必须是真实日历日），其余按缺省处理；对象上下文
@@ -142,6 +146,8 @@ const eventGroupQuery = computed(() => ({ ...baseQuery(), ...(activeCategories.v
 const hasEventRows = computed(() => eventLayout.value === 'groups' ? eventGroups.value.length > 0 : events.value.length > 0)
 // The rail remains a full-date, all-category overview; the feed and facts keep their selected-window query.
 const chartOverview = computed(() => railOverview.value)
+// 历史审阅的初始日期：页面选区末日（近七日视图即窗口末日）；只作预填，须用户点“开始研判”才运行。
+const watchReviewDate = computed(() => selection.value ? minuteText(selection.value.to).slice(0, 10) : dateTo.value)
 const focusLabel = computed(() => selection.value ? `${shortTime(selection.value.from)} — ${shortTime(selection.value.to)}` : mode.value === 'day' ? `${date.value} 全天` : `${dateFrom.value} — ${dateTo.value}`)
 const categoryLabels: Record<GridDisclosureCategory, string> = { maintenance: '检修计划', outage: '非计划停运', intervention: '人工干预', congestion: '断面阻塞', constraint: '输电约束' }
 const themeIcons = { load: Activity, 'new-energy': Wind, reserve: Gauge, maintenance: Layers3, transmission: RadioTower, intervention: ShieldCheck }
@@ -156,6 +162,13 @@ function baseQuery() {
   return { region: currentRegion.value.id, from: selection.value?.from ?? `${dateFrom.value}T00:00:00+08:00`, to: selection.value?.to ?? `${dateTo.value}T23:59:59+08:00`, windowMode: 'overlap',
     timePrecision: hasEventTools.value && appliedMaintenanceFilters.value.timingFilter === 'incomplete' ? 'all' : timePrecision.value,
     ...(keyword.value ? { keyword: keyword.value } : {}), ...eventFilterQuery.value, ...objectQuery.value }
+}
+function openWatch() { watchOpen.value = true }
+function closeWatch() { watchOpen.value = false; void nextTick(() => watchButton.value?.focus()) }
+function locateWatchObject(eventId: string) {
+  closeWatch()
+  objectTarget.value = { kind: 'disclosure', id: eventId, regionId: currentRegion.value.id }
+  objectDrawerOpen.value = true
 }
 function openSelectedObject() {
   if (!selected.value) return
@@ -416,7 +429,8 @@ onBeforeUnmount(() => { overviewRequest += 1; railRequest += 1; eventRequest += 
     <GridObjectContextBar :date="date" :from="selection?.from" :to="selection?.to" />
     <div v-if="objectContext.hasContext.value" class="object-scope-note">披露按当前对象精确关联；电价与供需指标保留其标明的地区口径。</div>
     <GridObjectDrawer v-model="objectDrawerOpen" :object="objectTarget" :date="date" :from="selection?.from" :to="selection?.to" />
-    <header class="desk-header"><div class="desk-brand"><span class="brand-icon"><Zap :size="20" /></span><div><h1>公开披露<span>交易观察台</span></h1><small>日前研判 · 日内跟踪</small></div></div><div class="region-chip"><MapPinned :size="14" />{{ currentRegion.shortName }}<span>当前地区</span></div><div class="header-context"><i :class="{ muted: activeProvider?.dataAvailability.status !== 'available' }" />{{ activeProvider?.name ?? '披露来源待确认' }}</div><button class="refresh" type="button" data-testid="desk-refresh" :disabled="busy" aria-label="刷新披露与指标" @click="refresh"><RefreshCw :size="15" :class="{ spinning: busy }" /><span>刷新</span></button></header>
+    <DisclosureWatchDialog v-if="watchOpen" :region-id="currentRegion.id" :region-label="currentRegion.shortName" :company-id="selectedCompanyId" :initial-review-date="watchReviewDate" @close="closeWatch" @locate="locateWatchObject" />
+    <header class="desk-header"><div class="desk-brand"><span class="brand-icon"><Zap :size="20" /></span><div><h1>公开披露<span>交易观察台</span></h1><small>日前研判 · 日内跟踪</small></div></div><div class="region-chip"><MapPinned :size="14" />{{ currentRegion.shortName }}<span>当前地区</span></div><div class="header-context"><i :class="{ muted: activeProvider?.dataAvailability.status !== 'available' }" />{{ activeProvider?.name ?? '披露来源待确认' }}</div><button ref="watchButton" class="refresh watch-entry" type="button" data-testid="desk-watch-open" aria-haspopup="dialog" :aria-expanded="watchOpen" @click="openWatch"><Radar :size="15" /><span>日前盯盘</span></button><button class="refresh" type="button" data-testid="desk-refresh" :disabled="busy" aria-label="刷新披露与指标" @click="refresh"><RefreshCw :size="15" :class="{ spinning: busy }" /><span>刷新</span></button></header>
     <div class="desk-toolbar"><div class="period-group"><button type="button" data-testid="desk-mode-day" :aria-pressed="mode === 'day'" @click="mode = 'day'">单日盯盘</button><button type="button" data-testid="desk-mode-week" :aria-pressed="mode === 'week'" @click="mode = 'week'">近 7 日</button></div><div class="date-control"><button type="button" aria-label="前一天" @click="date = shiftDate(date, -1)"><ChevronLeft :size="14" /></button><label><CalendarDays :size="14" /><input v-model="date" type="date" aria-label="交易日期" data-testid="desk-date" /></label><button type="button" aria-label="后一天" @click="date = shiftDate(date, 1)"><ChevronRight :size="14" /></button></div><button class="text-button" type="button" @click="date = todayBeijing()">今天</button><button class="text-button" type="button" @click="date = shiftDate(todayBeijing(), 1)">明天</button><label class="search-box"><Search :size="15" /><input v-model="searchText" data-testid="desk-search" aria-label="搜索披露事件" placeholder="设备、电厂、断面、原因…" /><button v-if="searchText" type="button" aria-label="清除关键词" @click="searchText = ''"><X :size="13" /></button></label></div>
     <div class="desk-workspace"><main class="desk-main">
       <section class="trend-panel" aria-label="指标与披露趋势" @pointerdown="onTrendPointerDown" @click="onTrendPanelClick"><div class="trend-header"><div><div class="section-kicker">市场与披露 · 同一时间窗口</div><DisclosureMetricPicker v-model="metricId" :groups="metricGroups" @change="chooseMetric" /></div><div class="trend-values"><template v-if="hoveredAt"><div v-for="item in hoverValues.slice(0, 2)" :key="item.id"><small>{{ item.label }}</small><strong>{{ numberText(item.point?.value) }}<em>{{ item.unit }}</em></strong></div></template><template v-else><div v-for="item in selectedSummary.slice(0, 2)" :key="item.id"><small>{{ item.label }} · 末值</small><strong>{{ numberText(item.latest) }}<em>{{ item.unit }}</em></strong></div></template><span v-if="!selectedSummary.length" class="waiting-value">{{ curveLoading ? '读取指标…' : '等待可用数据' }}</span></div></div>
@@ -445,4 +459,7 @@ onBeforeUnmount(() => { overviewRequest += 1; railRequest += 1; eventRequest += 
 
 <style scoped>
 .object-scope-note{margin:8px 0 12px;color:var(--muted);font-size:var(--font-sm);line-height:1.5}
+.watch-entry{color:var(--primary);border-color:var(--primary-tint-border);background:var(--primary-tint)}
+@media(max-width:1100px){.watch-entry+.refresh{margin-left:0}}
+@media(max-width:700px){.desk-header{flex-wrap:wrap}}
 </style>
