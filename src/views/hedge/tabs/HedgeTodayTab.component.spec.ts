@@ -264,6 +264,52 @@ describe('HedgeTodayTab（HW-01/02/05/06/09）', () => {
     })
   })
 
+  it('同作用域并发两次 load：先发的成功响应后到被丢弃，不覆盖新结果（R1-01）', async () => {
+    selectedCompanyId.value = 'comp-a'
+    const releases: Array<(value: unknown) => void> = []
+    fetchOverview.mockImplementation(() => new Promise((resolve) => { releases.push(resolve) }))
+    const { wrapper, workbench } = mountTab()
+    await vi.dynamicImportSettled()
+    await vi.waitFor(() => { expect(releases.length).toBe(1) })
+    // 同一作用域内再触发一次 load（维护写入成功后的重取路径），两个在途请求都被判为同一作用域。
+    workbench.notifyDataChanged()
+    await vi.waitFor(() => { expect(releases.length).toBe(2) })
+    // 新请求先成功：页面显示新结果（用 midlongOnly 的值区分两次结果）。
+    const newer = richPayload()
+    newer.ratio = { ...newer.ratio, midlongOnly: { value: '0.77', status: 'OK' } }
+    releases[1](newer)
+    await vi.waitFor(() => {
+      expect(wrapper.find('[data-test="ratio-midlong-only"]').text()).toContain('0.77')
+    })
+    // 旧请求后到：必须被丢弃，不得把 0.6 覆盖回去。
+    releases[0](richPayload())
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    const cell = wrapper.find('[data-test="ratio-midlong-only"]').text()
+    expect(cell).toContain('0.77')
+    expect(cell).not.toContain('0.6')
+  })
+
+  it('同作用域并发两次 load：先发的失败后到被丢弃，不清空页面也不报错（R1-01）', async () => {
+    selectedCompanyId.value = 'comp-a'
+    const settles: Array<{ resolve: (value: unknown) => void; reject: (reason?: unknown) => void }> = []
+    fetchOverview.mockImplementation(() => new Promise((resolve, reject) => { settles.push({ resolve, reject }) }))
+    const { wrapper, workbench } = mountTab()
+    await vi.dynamicImportSettled()
+    await vi.waitFor(() => { expect(settles.length).toBe(1) })
+    workbench.notifyDataChanged()
+    await vi.waitFor(() => { expect(settles.length).toBe(2) })
+    // 新请求先成功：页面已有数据。
+    settles[1].resolve(richPayload())
+    await vi.waitFor(() => {
+      expect(wrapper.find('[data-test="metrics"]').exists()).toBe(true)
+    })
+    // 旧请求后到且失败：必须被丢弃——不清空已显示的结果、不显示错误。
+    settles[0].reject(new Error('慢请求失败'))
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(wrapper.find('[data-test="metrics"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="load-error"]').exists()).toBe(false)
+  })
+
   it('导出 CSV 带认知时点与当前结果的查询参数，不用输入框里尚未生效的值（HW-05）', async () => {
     const { wrapper, workbench } = await mountLoaded(richPayload())
     await wrapper.find('[data-test="export-csv"]').trigger('click')

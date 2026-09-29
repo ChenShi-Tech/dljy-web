@@ -8,7 +8,8 @@
 //
 // 结果以 { data, query } 快照保存：导出与侧边栏摘要都用快照里的查询参数，不是输入框里尚未生效的值。
 // 生命周期走 useHedgeTabLifecycle（公司/地区切换清空并重取）；认知时点/粒度变化清空旧结果并防抖重取（HW-06）；
-// 每个 await 之后先过 scopedRequest() 判定作用域再写状态——旧请求晚到一律丢弃。维护写入成功后重取。
+// 每个 await 之后先过 scopedRequest() 判定作用域、再比对本次 load 的序号（KeepAlive 重激活/维护写入重取会让
+// 同一作用域内并发两个请求，旧请求后返回不得覆盖新结果、不得在新请求成功后清空页面或报错）——旧请求晚到一律丢弃。
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { defineAiPage } from '@/features/aiSidebar'
 import { PAGE_PROMPT_KEYS } from '@/prompts'
@@ -43,9 +44,14 @@ const loadError = ref<string | null>(null)
 /** 当前结果 + 它对应的那次查询参数（同生共死）：导出与侧边栏摘要只认这里的参数。 */
 const result = ref<TodayResult | null>(null)
 
+/** load 的最新请求序号：作用域/会话代次之外，同一作用域内也要只认最新一次 load（KeepAlive 重激活、维护写入重取）。 */
+let latestLoadSeq = 0
+
 async function load() {
   if (!workbench.regionOpen.value) return
   const current = workbench.scopedRequest()
+  const seq = ++latestLoadSeq
+  const isCurrent = () => current() && seq === latestLoadSeq
   loading.value = true
   loadError.value = null
   const range = today2Range()
@@ -58,17 +64,17 @@ async function load() {
       fromDate: query.fromDate, toDate: query.toDate, granularity: query.granularity,
       scope: 'company', asOf: query.asOf ?? undefined,
     })
-    if (!current()) return // HW-06：迟到响应丢弃
+    if (!isCurrent()) return // HW-06：迟到响应丢弃（作用域外，或已被更新的 load 取代）
     result.value = { data: todayOverviewOf(raw), query }
     workbench.syncAsOfBanner()
   } catch (err) {
-    if (!current()) return
+    if (!isCurrent()) return
     loadError.value = err instanceof HedgeApiError
       ? `${err.errorCode}：${err.message}`
       : '数据加载失败，可重试'
     result.value = null
   } finally {
-    if (current()) loading.value = false
+    if (isCurrent()) loading.value = false
   }
 }
 

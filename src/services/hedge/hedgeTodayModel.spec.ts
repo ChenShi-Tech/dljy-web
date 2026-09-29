@@ -166,6 +166,16 @@ describe('legRowsOf / legPublishText（HW-01 数据腿）', () => {
     })).toBe('09-15 06:00')
     expect(formatIsoShort(null)).toBe(null)
   })
+
+  it('formatIsoShort 解析时区偏移后按北京时间显示：02:00Z → 10:00，+08:00 偏移的值不变（R1-02）', () => {
+    // UTC 的 Z 时间必须换算成 Asia/Shanghai，否则新鲜度整体错报 8 小时。
+    expect(formatIsoShort('2026-09-29T02:00:00Z')).toBe('09-29 10:00')
+    // 已带 +08:00 偏移的时刻（本地口径的 dataThrough/发布时刻）显示不变。
+    expect(formatIsoShort('2026-09-15T08:00:00+08:00')).toBe('09-15 08:00')
+    // 同一 instant 的两种写法显示一致。
+    expect(formatIsoShort('2026-09-29T02:00:00+00:00')).toBe(formatIsoShort('2026-09-29T02:00:00Z'))
+    expect(formatIsoShort(null)).toBe(null)
+  })
 })
 
 function todayResult(overrides: Record<string, unknown> = {}): TodayResult {

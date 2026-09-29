@@ -10,6 +10,7 @@
 
 import type { CsvCell } from '@/utils/exportCsv'
 import type { HedgeOverview } from './hedgeApi'
+import { formatBeijingTime } from './hedgeMaintenanceModel'
 import { compareText } from 'shared/insight/contract.mjs'
 import {
   ASSESSMENT_LEVEL_LABELS,
@@ -177,10 +178,14 @@ export function standardMetricLabel(metric: string): string {
   return STANDARD_METRIC_LABELS[metric as keyof typeof STANDARD_METRIC_LABELS] ?? metric
 }
 
-/** ISO 时刻的短显示（MM-DD HH:mm）；用于腿水位与发布时刻，缺失返回 null。 */
+/**
+ * ISO 时刻的短显示（MM-DD HH:mm，北京时间）；用于腿水位与发布时刻，缺失返回 null。
+ * 必须解析 instant 后按 Asia/Shanghai 格式化（复用 hedgeMaintenanceModel 的 formatBeijingTime）：
+ * 直接截取 ISO 字符串会把 UTC 的 Z 时间原样显示，新鲜度整体错报 8 小时。
+ */
 export function formatIsoShort(iso: string | null): string | null {
   if (!iso) return null
-  return iso.slice(5, 16).replace('T', ' ')
+  return formatBeijingTime(iso).slice(5)
 }
 
 /** 腿状态色调：正常 muted 以外按状态给警示/危险/弱化，供状态徽标 class。 */
