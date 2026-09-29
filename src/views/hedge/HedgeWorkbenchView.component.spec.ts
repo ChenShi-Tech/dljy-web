@@ -7,6 +7,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 const fetchOverview = vi.fn()
 const fetchMonths = vi.fn(async (): Promise<unknown> => ({}))
 const fetchSettlement = vi.fn(async (): Promise<unknown> => ({}))
+const emptyCoverage = async (): Promise<unknown> => ({ plants: [], calendar: { days: [], coveredDays: 0, totalDays: 0 }, status: 'NOT_REPORTED' })
+const fetchSettlementCoverage = vi.fn(emptyCoverage)
 
 // 地区上下文桩：mountView(regionId) 切换 currentRegion，地区门禁（HW-07）才真正受测。
 const regionState = vi.hoisted(() => ({ id: 'yunnan' }))
@@ -69,6 +71,13 @@ vi.mock('@/services/hedge/hedgeApi', () => ({
   activateBand: vi.fn(async () => ({})),
 }))
 
+// 结算复核页签改走 hedgeSettlementApi（ChenShi-Tech/dljy#3054）：复核请求仍计入原 fetchSettlement 桩，
+// 原有「非云南不发请求」「失活页签切公司不取数」的断言保持不变；覆盖日历请求单独计数。
+vi.mock('@/services/hedge/hedgeSettlementApi', () => ({
+  fetchSettlementCoverage: (...args: unknown[]) => fetchSettlementCoverage(...(args as [])),
+  fetchSettlementReview: (...args: unknown[]) => fetchSettlement(...(args as [])),
+}))
+
 import HedgeWorkbenchView from './HedgeWorkbenchView.vue'
 import HedgeTodayTab from './tabs/HedgeTodayTab.vue'
 import HedgeMonthsTab from './tabs/HedgeMonthsTab.vue'
@@ -110,6 +119,8 @@ describe('HedgeWorkbenchView 外壳（HW-01/06/07）', () => {
     fetchMonths.mockImplementation(async () => ({}))
     fetchSettlement.mockReset()
     fetchSettlement.mockImplementation(async () => ({}))
+    fetchSettlementCoverage.mockReset()
+    fetchSettlementCoverage.mockImplementation(emptyCoverage)
     regionState.id = 'yunnan'
   })
 
@@ -165,6 +176,7 @@ describe('HedgeWorkbenchView 外壳（HW-01/06/07）', () => {
     expect(fetchOverview).not.toHaveBeenCalled()
     expect(fetchMonths).not.toHaveBeenCalled()
     expect(fetchSettlement).not.toHaveBeenCalled()
+    expect(fetchSettlementCoverage).not.toHaveBeenCalled()
     expect(wrapper.find('[data-test="tabs"]').exists()).toBe(false)
   })
 
@@ -233,6 +245,7 @@ describe('HedgeWorkbenchView 外壳（HW-01/06/07）', () => {
     // 失活的页签只清空不取数：切换一次公司只应新增一次月度请求（结算复核失活，不得因切公司取数）。
     expect(releases.length).toBe(3)
     expect(fetchSettlement).toHaveBeenCalledTimes(1)
+    expect(fetchSettlementCoverage).toHaveBeenCalledTimes(2)
     selectedCompanyId.value = 'comp-a'
   })
 
