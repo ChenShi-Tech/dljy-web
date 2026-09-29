@@ -8,6 +8,10 @@ import { describe, expect, it, vi } from 'vitest'
 import { readFileSync } from 'node:fs'
 
 vi.mock('@/services/edition', () => ({ IS_CUSTOMER_EDITION: true, IS_INTERNAL_EDITION: false }))
+// 真实 registry.ts 经提示角色闸门连带 import '@/services/auth'（→ api → regionContext 顶层读
+// window.localStorage）；本文件跑 node 纯函数环境且客户版契约与登录用户无关（产物里整个模块
+// 本就被空壳替换），mock 掉以隔离浏览器依赖。
+vi.mock('@/services/auth', () => ({ getCurrentUser: () => ({ roleCode: 'ADMIN' }) }))
 
 import * as registry from './registry'
 import * as stub from './registry.customer'

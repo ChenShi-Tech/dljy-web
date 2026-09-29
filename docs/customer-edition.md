@@ -64,7 +64,7 @@ npm run verify:customer-edition-build   # 扫产物，确认零泄露
 
 ## 内部版已迁入口与交付档（ChenShi-Tech/dljy#3464）
 
-内部版把已由平台后台接管的旧入口隐藏、原位置换成「已迁至平台后台」提示（登记表 `src/features/platformAdminMigration/registry.ts`，清单见 `docs/platform-admin-entry-migration.md` §2.2）。交付档入口一律照旧，靠的仍是模块解析层：`dljy-customer-edition` 插件把登记表、提示组件与 AI 工作室「个人设置」面板分别重定向到 `registry.customer.ts`（恒答未迁移、不含标签与后台路径）、`MigratedToAdminNotice.customer.vue`（空壳）与 `EditionRemovedView.vue`。这些模块一律用 `@/…` 别名 import——插件按说明符后缀匹配。
+内部版把已由平台后台接管的旧入口隐藏、原位置换成「已迁至平台后台」提示（登记表 `src/features/platformAdminMigration/registry.ts`，清单见 `docs/platform-admin-entry-migration.md` §2.2）。提示与后台链接**只对平台人员（内部版 ADMIN）显示**（dljy#3518，规格 AI-06）：客户账号（BOSS、交易负责人、交易员等）只看到入口隐藏，不出现任何提示文字、后台路径或链接——角色闸门集中在登记表的 `migratedEntryLinks`，不随交付产物出去。交付档入口一律照旧，靠的仍是模块解析层：`dljy-customer-edition` 插件把登记表、提示组件与 AI 工作室「个人设置」面板分别重定向到 `registry.customer.ts`（恒答未迁移、不含标签与后台路径）、`MigratedToAdminNotice.customer.vue`（空壳）与 `EditionRemovedView.vue`。这些模块一律用 `@/…` 别名 import——插件按说明符后缀匹配。
 
 ## 与后端的关系
 
