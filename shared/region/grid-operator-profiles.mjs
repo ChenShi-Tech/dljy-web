@@ -47,7 +47,7 @@ function availabilityFor(regionId, operator) {
       assets: regionId === 'yunnan' ? { status: 'partial', reason: '已接云南首批有证据电厂；其他省份等待坐标证据库' } : { status: 'missing', reason: '当前省份尚无已核验电厂坐标目录' },
       nodes: { status: 'available', reason: '南网 DA/RT Parquet 已编译省级节点身份；坐标仍按节点逐项治理' },
       topology: { status: 'not-configured', reason: '授权网架 Provider 未接入；不根据公开节点或场站位置生成替代拓扑' },
-      disclosure: { status: 'available', reason: '南网授权导出已编译检修、停运、干预、阻塞与约束事件' },
+      disclosure: { status: 'available', reason: '南网公开披露（整年导出 + 2026-07-03 起日文件接续）已编译检修、停运、干预、阻塞与约束事件' },
       weather: regionId === 'yunnan' ? { status: 'partial', reason: '仅对已定位云南电厂按需请求格点天气' } : { status: 'missing', reason: '没有可匹配天气的已定位电厂' },
       marketTimeseries: { status: 'available', reason: '五省节点日前/实时价格身份可用；时序按需加载，不进入空间 manifest' },
     }
