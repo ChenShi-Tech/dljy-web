@@ -1,6 +1,6 @@
 import type { GridDisclosureEvent } from './types'
 import { parseDisclosureTime as timestamp } from './disclosureTime'
-import { isCsgDisclosureProvider } from './disclosureProviders'
+import { isCsgDisclosureProvider } from 'shared/schema/grid-disclosure-providers.mjs'
 
 export type MaintenanceTimingFilter = 'all' | 'starts-in-window' | 'ends-in-window' | 'covers-window' | 'incomplete'
 export type MaintenanceSort = 'default' | 'start-asc' | 'end-asc' | 'duration-desc'
