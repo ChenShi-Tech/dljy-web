@@ -24,6 +24,40 @@ export const LEG_KEYS = Object.freeze([
 export const LEG_STATUSES = Object.freeze(['OK', 'PARTIAL', 'STALE', 'FAILED', 'FORBIDDEN', 'UNSUPPORTED', 'NOT_CONFIGURED'])
 export const STALE_ELIGIBLE_LEG_KEYS = Object.freeze(['ACTUAL', 'FORECAST_MODEL', 'FORECAST_VENDOR', 'PRICE'])
 
+/** 数据腿中文名（页头逐腿列出新鲜度，HW-01）。 */
+export const LEG_KEY_LABELS = Object.freeze({
+  LEDGER: '中长期台账',
+  LABELS: '合同分类标注',
+  MECHANISM: '机制参数',
+  ACTUAL: '实际发电',
+  FORECAST_MODEL: '自研发电预测',
+  FORECAST_VENDOR: '供应商发电预测',
+  PRICE: '价格预测',
+  BAND: '生效方案',
+  BASELINE: '月度发电基准',
+  CAPS: '核定上限',
+})
+export const LEG_STATUS_LABELS = Object.freeze({
+  OK: '正常',
+  PARTIAL: '部分可用',
+  STALE: '过期',
+  FAILED: '加载失败',
+  FORBIDDEN: '无权限',
+  UNSUPPORTED: '不支持',
+  NOT_CONFIGURED: '未配置',
+})
+/**
+ * 数据腿行（legs.rows[]）的字段（HW-01）：
+ * key/sourceKey/label/status；changedAt = 最近变更时刻（台账、标注、机制、基准、上限、方案，不判过期）；
+ * dataThrough = 数据截止点（实际、预测、价格）；publishRule/publishAssumption = 发布口径；
+ * publishedAt = 发布时刻（源数据带发布时刻时才有）；ingestedAt = 数据集入库时刻；
+ * version = 生效方案及版本；reason = 缺失/失败/过期原因（中文）；note = 口径说明。
+ */
+export const HEDGE_LEG_ROW_KEYS = Object.freeze([
+  'key', 'sourceKey', 'label', 'status', 'changedAt', 'dataThrough', 'publishRule', 'publishAssumption',
+  'publishedAt', 'ingestedAt', 'version', 'reason', 'note',
+])
+
 /** 发电来源（HG-01）：每个「场站 × 时段」只能取这三种之一。 */
 export const INTERVAL_SOURCES = Object.freeze(['ACTUAL', 'FORECAST', 'UNCOVERED'])
 
@@ -136,6 +170,49 @@ export const BREAKDOWN_DIMENSION_LABELS = Object.freeze({
 export const LOCK_SOURCES = Object.freeze(['MIDLONG', 'MECHANISM'])
 export const LOCK_SOURCE_LABELS = Object.freeze({ MIDLONG: '中长期', MECHANISM: '机制电量' })
 
+/**
+ * GET /breakdown 的 dimension 取值（HW-04/HC-02）：交易单元、场站两个钻取层级 + 四个品种维度。
+ * 口径为窗口所触及月份的中长期月度净义务（HC-06：月量不摊到更细粒度）。
+ * 锁价来源（lockSource）需要计划口径机制电量，走 /months，这里不开放。
+ */
+export const BREAKDOWN_QUERY_DIMENSIONS = Object.freeze(['subject', 'station', 'productKind', 'marketScope', 'energyAttribute', 'buyerCategory'])
+export const BREAKDOWN_QUERY_DIMENSION_LABELS = Object.freeze({
+  subject: '交易单元',
+  station: '场站',
+  productKind: '交易品种周期',
+  marketScope: '市场范围',
+  energyAttribute: '电能属性',
+  buyerCategory: '购方类别',
+})
+/** 钻取的特殊类别键：维度属性未登记 → 未分类；未分配到场站 → 未分配；跨月总量分配拆不到月份 → 月份未分到场站。 */
+export const BREAKDOWN_UNCLASSIFIED = 'UNCLASSIFIED'
+export const BREAKDOWN_UNALLOCATED = 'UNALLOCATED'
+export const BREAKDOWN_STATION_MONTH_UNKNOWN = 'STATION_MONTH_UNKNOWN'
+export const BREAKDOWN_SPECIAL_KEY_LABELS = Object.freeze({
+  UNCLASSIFIED: '未分类',
+  UNALLOCATED: '未分配',
+  STATION_MONTH_UNKNOWN: '月份未分到场站',
+})
+
+// ── 月度视图（HW-03/HB-07/HM-02）──────────────────────────────────────────────
+
+/** 月份相对评估时刻 T 的期限：当月判月内档，后续月份判远期档，已过去月份只展示不判级。 */
+export const MONTH_PERIODS = Object.freeze(['PAST', 'CURRENT', 'FORWARD'])
+export const MONTH_PERIOD_LABELS = Object.freeze({ PAST: '已过去月份', CURRENT: '当月', FORWARD: '后续月份' })
+/** 基准覆盖：全部场站有基准 / 部分场站缺基准（不完整）/ 没有任何基准。 */
+export const BASELINE_COVERAGES = Object.freeze(['COMPLETE', 'PARTIAL', 'NONE'])
+export const BASELINE_UNCOVERED_NOTE = '预计发电未覆盖（无预测、无基准）'
+export const BASELINE_PLAN_LABEL = '计划口径'
+/**
+ * 核定上限登记状态（HB-07）：已登记 / 未登记 / 上限腿读取失败。
+ * MODIFIED_AFTER_AS_OF 只出现在认知时点视图（HW-05/HC-09）：上限存储是原行 UPDATE、无历史版本，
+ * 登记或更新时刻（recorded_at，UPDATE 时由触发器刷新）晚于 T 的行无法回放当时的值，不计算剩余可签与超出。
+ */
+export const CAP_STATUSES = Object.freeze(['REGISTERED', 'NOT_REGISTERED', 'MODIFIED_AFTER_AS_OF', 'FAILED'])
+export const CAP_NOT_REGISTERED_LABEL = '核定上限未登记'
+export const CAP_EXCEEDED_LABEL = '超出核定上限'
+export const CAP_MODIFIED_AFTER_AS_OF_LABEL = '认知时点之后修改过，无法回放当时的值'
+
 // ── 机制参数（HC-03/D4）────────────────────────────────────────────────────────
 
 export const MECHANISM_PARAM_STATUSES = Object.freeze(['PENDING', 'CONFIRMED', 'RETIRED'])
@@ -161,6 +238,11 @@ export const SIMULATION_SHAPE_LABELS = Object.freeze({
   RECENT_ACTUAL_PROFILE: '近 14 天实际出力形状',
   CONTRACT_CURVE: '合同分时曲线',
 })
+/** 近 N 日实际出力形状的缺省与上限天数（权重由服务端按 T 之前 N 个整日的实际出力算出）。 */
+export const SIMULATION_PROFILE_DEFAULT_DAYS = 14
+export const SIMULATION_PROFILE_MAX_DAYS = 60
+/** 试算所用形状一律标「假设」（HM-07）。 */
+export const SIMULATION_ASSUMPTION_LABEL = '假设'
 
 // ── 附录 C 错误码 ──────────────────────────────────────────────────────────────
 

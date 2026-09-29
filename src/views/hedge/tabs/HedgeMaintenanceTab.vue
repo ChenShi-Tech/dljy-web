@@ -1,191 +1,78 @@
 <script setup lang="ts">
-// 套保工作台「维护」页签（openspec build-midlong-spot-hedging 任务 8.5/8.6，HW-10；#3420 由开关面板改为第五个页签）。
+// 套保工作台「维护」页签（openspec build-midlong-spot-hedging 任务 8.6，HW-10；ChenShi-Tech/dljy#3420 页签化、#3423 四个入口补齐）。
 //
-// 区间方案切换、场站机制参数确认、核定上限与月度发电基准录入。写权限由后端把关：首个 403 即转只读态并注明所需角色，
-// 422 按 details.field 定位字段，409 提示刷新。每次被激活都重取；切公司/地区清空已载入的行，激活中则按新范围重取。
-// 写入成功后通知依赖计算结果的页签重取（原面板写后刷新总览）。
+// 四个维护入口：区间方案（HB）、月度发电基准（HG-07）、场站机制参数（HC-03）、核定上限（HB-07），各自是 maintenance/ 下的区块组件，
+// 自己负责加载、草稿与写入。本页签只做三件事：子入口切换（v-show，切换不丢草稿）、写权限（接口声明不可写或首个 403 即整页只读，
+// 并注明所需权限）、给区块 provide 共享的维护上下文。
+// 维护表单有未保存草稿：切走再切回不重取（reloadOnActivate: false，#218 审查 R1-01）；切公司/地区照常清空并按新范围重取。
+// 任一写入成功都会 notifyDataChanged，让依赖计算结果的页签（今明两日）下次读取即反映。
 import { ref } from 'vue'
-import {
-  HedgeApiError, activateBand, fetchBandActivation, fetchBandPresets, fetchBaselines, fetchCaps,
-  fetchMechanismParams, postMechanismVersion, putBaselines, putCaps, requestBandSchemeCreate,
-} from '@/services/hedge/hedgeApi'
+import CalloutBox from '@/components/common/CalloutBox.vue'
+import { fetchMaintenanceWriteAccess } from '@/services/hedge/hedgeMaintenanceApi'
+import { MAINTENANCE_WRITE_ROLE_NOTE } from '@/services/hedge/hedgeMaintenanceModel'
 import { injectHedgeWorkbench, useHedgeTabLifecycle } from '../useHedgeWorkbench'
+import { provideMaintenanceContext } from './maintenance/maintenanceContext'
+import BandSchemeSection from './maintenance/BandSchemeSection.vue'
+import BaselineSection from './maintenance/BaselineSection.vue'
+import MechanismSection from './maintenance/MechanismSection.vue'
+import CapsSection from './maintenance/CapsSection.vue'
 
-type BaselineRow = { stationId: number; month: string; quantityMwh: string; basisNote?: string }
-type CapRow = { subjectId: number; month: string; capMwh: string; sourceNote?: string; rowVersion?: number }
+type SectionKey = 'band' | 'baseline' | 'mechanism' | 'caps'
+
+const SECTIONS: ReadonlyArray<{ key: SectionKey; label: string }> = [
+  { key: 'band', label: '区间方案' },
+  { key: 'baseline', label: '月度发电基准' },
+  { key: 'mechanism', label: '场站机制参数' },
+  { key: 'caps', label: '核定上限' },
+]
 
 const workbench = injectHedgeWorkbench()
-const { canWrite } = workbench
+const maintenance = provideMaintenanceContext(workbench)
+const { writable, readOnlyReason } = maintenance
+const activeSection = ref<SectionKey>('band')
 
-const baselineRows = ref<BaselineRow[]>([])
-const baselineStatus = ref<string | null>(null)
-const schemePresets = ref<Array<Record<string, unknown>>>([])
-const schemeActivation = ref<Record<string, unknown> | null>(null)
-const schemeStatus = ref<string | null>(null)
-const mechanismRows = ref<Array<Record<string, unknown>>>([])
-const mechanismStatus = ref<string | null>(null)
-const capsRows = ref<CapRow[]>([])
-const capsStatus = ref<string | null>(null)
-
-async function loadMaintenance() {
-  const current = workbench.scopedRequest()
-  fetchBandPresets().then((data) => {
-    if (!current()) return undefined
-    schemePresets.value = ((data as { rows: Array<Record<string, unknown>> }).rows) ?? []
-    return fetchBandActivation({}).then((act) => {
-      if (current()) schemeActivation.value = (act as { active?: Record<string, unknown> }).active ?? null
-    })
-  }).catch(() => { if (current()) schemeActivation.value = null })
-  loadMechanismParams()
-  loadCaps()
+/** 写权限声明：取不到（接口失败、中长期模块暂停）按未知处理，写入时以 403 为准。 */
+async function loadWriteAccess() {
+  const current = maintenance.contextRequest()
   try {
-    const data = await fetchBaselines({ fromMonth: '2026-10', toMonth: '2026-12' })
-    if (!current()) return
-    baselineRows.value = (data as { rows: BaselineRow[] }).rows
-      .map((row) => ({ stationId: row.stationId, month: row.month, quantityMwh: row.quantityMwh, basisNote: row.basisNote }))
+    const access = await fetchMaintenanceWriteAccess()
+    if (current()) maintenance.declareWriteAccess(access)
   } catch {
-    if (current()) baselineRows.value = []
-  }
-}
-
-/** 维护写口错误统一映射（HW-10）：403 转只读态并说明所需权限；422 定位字段（details.field）；409 提示刷新。 */
-function hedgeMaintenanceMessage(err: unknown): string {
-  if (!(err instanceof HedgeApiError)) return '操作失败'
-  if (err.status === 403) {
-    workbench.markReadOnly()
-    return '403：当前角色无公司写权限，已转只读（维护需要 ADMIN / 本公司 BOSS）'
-  }
-  if (err.status === 422) {
-    const field = typeof err.details?.field === 'string' ? String(err.details.field) : null
-    return field ? `422：字段 ${field} —— ${err.message}` : `422：${err.message}`
-  }
-  if (err.status === 409) return '409：已被他人更新，请刷新后核对'
-  return `${err.errorCode}：${err.message}`
-}
-
-async function activateScheme(presetKey: string, label: string) {
-  schemeStatus.value = null
-  try {
-    const created = await requestBandSchemeCreate({ name: `采用-${label}`, presetKey, origin: 'PRESET' })
-    await activateBand({ schemeId: (created as { schemeId: number }).schemeId, versionNo: 1, reason: `采用预置${label}` })
-    schemeStatus.value = `已切换到「${label}」（唯一生效，历史保留）`
-    workbench.notifyDataChanged()
-  } catch (err) {
-    schemeStatus.value = hedgeMaintenanceMessage(err)
-  }
-}
-
-async function loadMechanismParams() {
-  const current = workbench.scopedRequest()
-  try {
-    const data = await fetchMechanismParams({})
-    if (!current()) return
-    mechanismRows.value = (data as { rows: Array<Record<string, unknown>> }).rows
-    mechanismStatus.value = mechanismRows.value.length ? null : '暂无机制参数登记（导入后待业务确认）'
-  } catch (err) {
-    if (current()) mechanismStatus.value = err instanceof HedgeApiError ? err.message : '加载失败'
-  }
-}
-
-async function loadCaps() {
-  const current = workbench.scopedRequest()
-  try {
-    const data = await fetchCaps({ fromMonth: '2026-10', toMonth: '2026-12' })
-    if (!current()) return
-    capsRows.value = (data as { rows: CapRow[] }).rows
-    capsStatus.value = capsRows.value.length ? null : '核定上限未登记（向交易机构索取核定文件后录入）'
-  } catch (err) {
-    if (current()) capsStatus.value = err instanceof HedgeApiError ? err.message : '加载失败'
-  }
-}
-
-async function saveCap(row: CapRow) {
-  capsStatus.value = null
-  try {
-    await putCaps([row])
-    capsStatus.value = '核定上限已保存'
-    await loadCaps()
-  } catch (err) {
-    capsStatus.value = hedgeMaintenanceMessage(err)
-  }
-}
-
-async function saveBaselines() {
-  baselineStatus.value = null
-  try {
-    await putBaselines(baselineRows.value)
-    baselineStatus.value = '已保存（写入后下一次读取即反映到套保计算）'
-    workbench.notifyDataChanged()
-  } catch (err) {
-    baselineStatus.value = hedgeMaintenanceMessage(err)
-  }
-}
-
-async function confirmMechanism(row: Record<string, unknown>) {
-  mechanismStatus.value = null
-  try {
-    await postMechanismVersion(String(row.periodKey), { action: 'CONFIRM', baseVersionNo: Number(row.versionNo), effectiveFrom: '2025-06-01' })
-    mechanismStatus.value = '机制参数已确认生效'
-    workbench.notifyDataChanged()
-  } catch (err) {
-    mechanismStatus.value = err instanceof HedgeApiError ? hedgeMaintenanceMessage(err) : '确认失败'
+    if (current()) maintenance.declareWriteAccess(null)
   }
 }
 
 useHedgeTabLifecycle(workbench, {
-  load: loadMaintenance,
-  // 维护表单有未保存草稿：切走再切回不重取，免得接口响应覆盖尚未保存的输入（#218 审查 R1-01）；切公司/地区照常清空重取。
+  load: loadWriteAccess,
   reloadOnActivate: false,
-  reset: () => {
-    baselineRows.value = []
-    schemeActivation.value = null
-    mechanismRows.value = []
-    capsRows.value = []
-  },
+  reset: () => maintenance.declareWriteAccess(null),
 })
 </script>
 
 <template>
   <section class="maintenance" data-test="maintenance">
-    <h3>区间方案（预置带出处，采用即快照；未配置时全站「未评估」）</h3>
-    <p data-test="scheme-status">{{ schemeStatus ?? (schemeActivation ? `当前生效：v${(schemeActivation as { versionNo?: number }).versionNo ?? '—'}` : '未配置') }}</p>
-    <div class="baseline-row">
-      <button v-for="p in schemePresets" :key="String(p.key)" data-test="scheme-activate" :disabled="!canWrite" @click="activateScheme(String(p.key), String(p.label))">
-        采用{{ p.label }}
-      </button>
-    </div>
-
-    <h3>场站机制参数（比例制，待确认不参与计算）</h3>
-    <p data-test="mechanism-status">{{ mechanismStatus ?? `${mechanismRows.length} 个生效期已登记` }}</p>
-    <ul>
-      <li v-for="(row, i) in mechanismRows" :key="i">
-        场站 {{ row.stationId }}：比例 {{ row.ratio }}（{{ row.status }}<span v-if="row.endReason">/{{ row.endReason }}</span>）
-        <button v-if="row.status === 'PENDING'" :disabled="!canWrite" @click="confirmMechanism(row)">确认生效</button>
-      </li>
-    </ul>
-
-    <h3>核定上限（交易单元 × 月；未登记显示「核定上限未登记」）</h3>
-    <p data-test="caps-status">{{ capsStatus ?? `${capsRows.length} 行已登记` }}</p>
-    <div v-for="(row, i) in capsRows" :key="i" class="baseline-row" data-test="caps-row">
-      <input v-model="row.subjectId" placeholder="交易单元" />
-      <input v-model="row.month" placeholder="2026-11" />
-      <input v-model="row.capMwh" placeholder="MWh" data-test="cap-mwh" />
-      <button :disabled="!canWrite" @click="saveCap(row)">保存</button>
-    </div>
-
-    <h3>月度发电基准（经营计划口径，禁止用售电目标顶替）</h3>
-    <p v-if="!canWrite" class="readonly-note">只读：维护需要公司写权限（ADMIN / 本公司 BOSS）</p>
-    <div v-for="(row, i) in baselineRows" :key="i" class="baseline-row">
-      <input v-model="row.stationId" placeholder="stationId" />
-      <input v-model="row.month" placeholder="2026-11" />
-      <input v-model="row.quantityMwh" placeholder="MWh" />
-      <input v-model="row.basisNote" placeholder="依据说明" />
-    </div>
-    <button data-test="baseline-save" :disabled="!canWrite" @click="saveBaselines">保存基准</button>
-    <p data-test="baseline-status">{{ baselineStatus }}</p>
+    <CalloutBox v-if="!writable" tone="warn" title="只读" class="readonly-note" data-test="readonly-note">
+      {{ readOnlyReason }}。{{ MAINTENANCE_WRITE_ROLE_NOTE }}；当前可以查看，写操作已禁用。
+    </CalloutBox>
+    <nav class="maint-nav" data-test="maint-nav">
+      <button
+        v-for="item in SECTIONS"
+        :key="item.key"
+        :class="{ active: activeSection === item.key }"
+        :data-test="`maint-nav-${item.key}`"
+        @click="activeSection = item.key"
+      >{{ item.label }}</button>
+    </nav>
+    <BandSchemeSection v-show="activeSection === 'band'" />
+    <BaselineSection v-show="activeSection === 'baseline'" />
+    <MechanismSection v-show="activeSection === 'mechanism'" />
+    <CapsSection v-show="activeSection === 'caps'" />
   </section>
 </template>
 
 <style scoped>
-.baseline-row { display: flex; gap: 8px; margin-bottom: 6px; }
+.maintenance { display: flex; flex-direction: column; gap: 12px; }
+.maint-nav { display: flex; gap: 4px; border-bottom: 1px solid var(--line); }
+.maint-nav button { border: none; background: none; padding: 6px 12px; font-size: var(--font-md); color: var(--muted); cursor: pointer; border-bottom: 2px solid transparent; }
+.maint-nav button.active { color: var(--text); border-bottom-color: var(--accent); font-weight: 600; }
 </style>
