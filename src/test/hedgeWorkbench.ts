@@ -7,8 +7,10 @@ import { defineComponent, h } from 'vue'
 import type { Component } from 'vue'
 import { useHedgeWorkbench } from '@/views/hedge/useHedgeWorkbench'
 import type { HedgeWorkbench } from '@/views/hedge/useHedgeWorkbench'
+import type { HedgeOverview } from '@/services/hedge/hedgeApi'
 
-export function overviewPayload() {
+/** /overview 样例载荷：标注为契约类型 HedgeOverview，spec 覆盖字段（如 value 换成字符串）才是类型正确的。 */
+export function overviewPayload(): HedgeOverview {
   return {
     asOf: '2026-09-15T02:00:00Z',
     view: 'CURRENT',
@@ -33,7 +35,6 @@ export function overviewPayload() {
     scheme: null,
     legs: {},
     gaps: [{ code: 'FORECAST_NOT_ARRIVED', message: '明日预测未到达', affected: null }],
-    meta: {},
   }
 }
 

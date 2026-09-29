@@ -179,7 +179,8 @@ describe('HedgeWorkbenchView 外壳（HW-01/06/07）', () => {
       expect(wrapper.find('[data-test="metrics"]').exists()).toBe(true)
     })
     const text = wrapper.text()
-    expect(text).toContain('MECHANISM_INCOMPLETE')
+    // 判级与套保率状态走契约中文标签（ASSESSMENT_REASON_LABELS）；缺口消息为后端原文。
+    expect(text).toContain('机制参数不完整')
     expect(text).toContain('明日预测未到达')
   })
 
