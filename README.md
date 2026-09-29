@@ -2,7 +2,7 @@
 
 电力现货交易工作台前端（Vue 3 + Vite + Element Plus + ECharts + Cesium）。
 
-本仓是上游平台仓的**前端镜像下游**：`src/`、`shared/`、`vendor/` 等目录由上游单向同步（见 CONTRIBUTING.md 的分界说明），后端服务不在本仓。
+本仓是客户前端的唯一开发权威，后端服务不在本仓；只有 `shared/` 与 `vendor/` 由上游 `ChenShi-Tech/dljy` 单向同步、本仓只读（分界见 CONTRIBUTING.md）。
 
 **开发前请读 [DEVELOPMENT.md](DEVELOPMENT.md)**——架构与前后端通讯、环境搭建、联调排错表、代码约定、任务协作流的完整指南。
 
@@ -20,16 +20,9 @@ npm run dev          # http://localhost:5174（端口被占会直接报错，先
 
 登录账号由维护者发放（受限权限属正常——部分管理页与数据会 403/空态）。
 
-## 本地验证（按影响面执行）
+## 本地验证
 
-```bash
-npm run lint:files -- src/foo.ts src/Bar.vue       # 检查改动文件
-npm run check                                      # 全仓类型检查
-npm run test:related -- src/foo.ts src/Bar.vue     # 自动运行相关测试
-# 或：npm run test:unit -- src/foo.spec.ts          # 直接指定测试文件
-```
-
-开发与提交前不机械执行全量测试；按改动影响面扩大验证范围，无法可靠界定影响面时再运行全量 `npm run lint`、`npm run test:unit` 与 `npm run build`。PR CI 固定执行全量 lint、类型检查、覆盖率测试和生产构建。详细规则见 [DEVELOPMENT.md §5](DEVELOPMENT.md#5-测试与本地门禁)。
+按改动影响面分层验证，命令与规则以 [DEVELOPMENT.md §5](DEVELOPMENT.md#5-测试与本地门禁) 为准；PR CI 固定执行全量检查。
 
 ## 目录速览
 
@@ -38,8 +31,8 @@ npm run test:related -- src/foo.ts src/Bar.vue     # 自动运行相关测试
 | `src/views/` + `src/router/` | 路由页面与全量路由表（路由 meta 标注每页数据来源与可信度） |
 | `src/components/` / `src/composables/` | 组件与组合式函数 |
 | `src/services/` | 服务层：所有取数出口（api 信封、地区上下文、agent 客户端、图表） |
-| `src/features/` | 特性包（gridGeo 空间资产、regions 地区扩展、reports、yunnanTrading） |
-| `shared/` | 与后端共享的纯同构规则/schema（上游同步，改动须在 PR 里说明） |
+| `src/features/` | 特性包（aiSidebar 统一 AI 侧边栏、gridGeo 空间资产、regions 地区扩展、reports、yunnanTrading、guide 操作导引、platformAdminMigration 已迁后台入口等） |
+| `shared/` | 与后端共享的纯同构规则/schema（由 dljy 单向同步，本仓只读） |
 | `vendor/` | 上游生成物快照（只读，CI 拒绝改动） |
 
 ## 常见问题
