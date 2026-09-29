@@ -59,6 +59,18 @@ function dljyBuildInfoPlugin(edition: 'customer' | 'internal', viteMode: string)
   }
 }
 
+// 客户交付档的模块解析层重定向：内部档专属模块 → 交付档占位（docs/customer-edition.md「v-if 藏不住东西」）。
+// 按 import 说明符后缀匹配（与 AiSettingsView 的既有做法一致），因此这些模块一律用 `@/…` 绝对别名引用。
+//   - 已迁入口登记表与「已迁至平台后台」提示（ChenShi-Tech/dljy#3464）：客户版恒答未迁移，提示文字、
+//     后台路径与 VITE_PLATFORM_ADMIN_URL 都不能进交付产物（verify:customer-edition-build 扫产物兜底）；
+//   - AI 工作室「个人设置」tab（仅内部版迁移后出现）：内含长期记忆与语音播报，同 AiSettingsView 不进交付产物。
+const CUSTOMER_EDITION_STUBS: ReadonlyArray<readonly [suffix: string, stub: string]> = [
+  ['/features/platformAdminMigration/registry', './src/features/platformAdminMigration/registry.customer.ts'],
+  ['/features/platformAdminMigration/registry.ts', './src/features/platformAdminMigration/registry.customer.ts'],
+  ['/features/platformAdminMigration/MigratedToAdminNotice.vue', './src/features/platformAdminMigration/MigratedToAdminNotice.customer.vue'],
+  ['/components/ai/PersonalAiSettingsPanel.vue', './src/views/edition/EditionRemovedView.vue']
+]
+
 // dljy-web 是 dljy 原仓前端的保密镜像下游（见 CONTRIBUTING.md）。
 // 本文件为「新仓自有」：同步脚本不覆盖它，改动直接在本仓维护。
 // 与原仓 vite.config.ts 的刻意差异只有四处：
@@ -96,6 +108,9 @@ export default defineConfig(({ mode }) => {
             resolveId(source: string) {
               if (source.endsWith('/AiSettingsView.vue') || source.endsWith('./AiSettingsView.vue')) {
                 return fileURLToPath(new URL('./src/views/edition/EditionRemovedView.vue', import.meta.url))
+              }
+              for (const [suffix, stub] of CUSTOMER_EDITION_STUBS) {
+                if (source.endsWith(suffix)) return fileURLToPath(new URL(stub, import.meta.url))
               }
               return null
             }

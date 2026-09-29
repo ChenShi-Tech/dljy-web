@@ -8,6 +8,8 @@ import type { InsightPageId } from '@/services/region/insightWorkspace'
 import { resolvePriceDriversRedirect } from './priceDriversRedirect'
 import { isMultiStance, activeStanceType, requiresStanceSelection } from '@/services/stance/stanceContext'
 import { isPathAvailableInStance } from '@/services/stance/stanceNavigation'
+import { migratedRouteComponent } from '@/features/platformAdminMigration/registry'
+import { accountsRedirect, aiStudioRedirect, dataSourceSettingsRedirect, opsPanelRedirects } from './legacyRedirects'
 
 const YUNNAN_TRADING_FEATURE_ENABLED = import.meta.env.VITE_DISABLE_YUNNAN_TRADING !== '1'
 const yunnanTradingRoutes = YUNNAN_TRADING_FEATURE_ENABLED
@@ -84,7 +86,9 @@ const storageCopilot = () => import('../views/StorageCopilotView.vue')
 // 两个 tab 容器页：各 tab 的子 View 由容器自身 defineAsyncComponent 懒加载，路由层不再单独登记。
 const aiStudio = () => import('../views/AiStudioView.vue')
 const accounts = () => import('../views/AccountsView.vue')
-const systemModels = () => import('../views/SystemModelsView.vue')
+// 推理模型管理整页已迁至平台后台（ChenShi-Tech/dljy#3464，内部版）：路由保留、组件换成整页提示，
+// 直接访问不报错不白屏；菜单项由 data/navigation.ts 按同一登记表摘除。客户交付版原样。
+const systemModels = migratedRouteComponent('inference-models', () => import('../views/SystemModelsView.vue'))
 const companyProfile = () => import('../views/company/CompanyProfileView.vue')
 const companyOverview = () => import('../views/company/CompanyOverviewView.vue')
 const companyAssets = () => import('../views/company/CompanyAssetsView.vue')
@@ -138,17 +142,9 @@ const hubRedirect = (path: string, tab: string): RouteRecordRaw => ({
   redirect: (to) => ({ path: '/ycsj/center', query: { ...to.query, mod: 'replay', tab } })
 })
 
-// 被「AI 工作室」/「用户与会话」tab 化收编的旧页面：路径保留为重定向，落到合并页对应 tab。
-// 这些条目不进导航、不带 meta，因此不会出现在 feature-map / manifest 的页面清单里。
-const aiStudioRedirect = (path: string, tab: string): RouteRecordRaw => ({
-  path,
-  redirect: (to) => ({ path: '/system/ai-studio', query: { ...to.query, tab } })
-})
-
-const accountsRedirect = (path: string, tab: string): RouteRecordRaw => ({
-  path,
-  redirect: (to) => ({ path: '/system/accounts', query: { ...to.query, tab } })
-})
+// 被「AI 工作室」/「用户与会话」/「数据运维工作台」/「数据源接入」tab 化收编的旧页面重定向壳
+// （aiStudioRedirect / accountsRedirect / dataSourceSettingsRedirect / opsPanelRedirects）已抽到
+// ./legacyRedirects.ts：目标面板已迁至平台后台时壳跟着目标走（落宿主页 + 提示），不重定向到不渲染的面板。
 
 // 被智能体工作台合并的五个对话入口（主仓 #2023/#2237）：路径保留为重定向，带 ?entry= 落到
 // 对应入口。这些条目不进导航、不带 meta，因此不会出现在 feature-map / manifest 的页面清单里。
@@ -157,26 +153,6 @@ const aiAgentRedirect = (path: string, entry: string): RouteRecordRaw => ({
   path,
   redirect: (to) => ({ path: '/ai-agent', query: { ...to.query, entry } })
 })
-
-// 「数据源接入」tab 化收编的旧页面：路径保留为重定向，落到合并页对应 tab（#1896）。
-const dataSourceSettingsRedirect = (path: string, tab: string): RouteRecordRaw => ({
-  path,
-  redirect: (to) => ({ path: '/data-source-settings', query: { ...to.query, tab } })
-})
-
-// 数据运维六页原独立路径 → 数据运维工作台对应面板（?panel=）。原查询参数原样带过去，
-// 「数据源接入」的子 tab（?tab=official 等）因此在两级 redirect 后仍然生效。
-const opsPanelRedirects: RouteRecordRaw[] = ([
-  ['yygl/data-onboarding', 'onboarding'],
-  ['yygl/import-hub', 'import-hub'],
-  ['yygl/data-governance', 'governance'],
-  ['yygl/ingest', 'ingest'],
-  ['data-ops/upload', 'upload'],
-  ['data-source-settings', 'data-source']
-] as const).map(([path, panel]) => ({
-  path,
-  redirect: (to) => ({ path: '/data-ops/console', query: { ...to.query, panel } })
-}))
 
 const router = createRouter({
   history: createWebHistory(),
