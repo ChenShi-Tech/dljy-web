@@ -255,7 +255,8 @@ onBeforeUnmount(() => { invalidate(); document.removeEventListener('keydown', on
             <div v-if="capState === 'loading'" class="state" role="status" data-testid="watch-cap-loading"><RefreshCw :size="16" class="spinning" />正在读取功能状态…</div>
             <div v-else-if="capState === 'error'" class="state error" role="alert" data-testid="watch-cap-error">功能状态读取失败：{{ capError }}<button type="button" class="text" @click="loadCapabilities">重试</button></div>
             <div v-else-if="disabled" class="state" role="status" data-testid="watch-disabled"><strong>日前盯盘功能未开通</strong><p>服务端功能开关关闭，暂不能运行；原披露浏览不受影响。</p></div>
-            <div v-if="ready || capState === 'loading'" class="controls">
+            <!-- 控件在日期非法或能力读取失败时也保留，用户才能改日期/切模式；运行按钮由 canRun 单独把关。 -->
+            <div v-if="!disabled" class="controls">
               <fieldset class="modes" :disabled="runPhase === 'running'">
                 <legend class="sr-only">研判模式</legend>
                 <div class="segmented" role="presentation">
@@ -267,8 +268,8 @@ onBeforeUnmount(() => { invalidate(); document.removeEventListener('keydown', on
               </fieldset>
               <button type="button" class="run" :disabled="!canRun" data-testid="watch-run" @click="startRun">{{ runLabel }}</button>
             </div>
+            <p v-if="!disabled && !validTarget" class="notice warn" role="status" data-testid="watch-invalid-date">请选择合法的审阅日期。</p>
             <template v-if="ready">
-              <p v-if="!validTarget" class="notice warn" role="status">请选择合法的审阅日期。</p>
               <p v-if="modelMissing" class="notice" data-testid="watch-model-missing">模型未配置：非计划停运原因不做研判，相关事项转待核</p>
               <div v-if="mode === 'live' && gaps.allMissing" class="notice warn" role="status" data-testid="watch-live-missing">
                 <el-tooltip :content="`目标日 ${liveDate} 的${gaps.missing.join('、')}尚未收到。仍可运行，结果会如实标注缺失，不会用其他日期补位。`" placement="bottom" :show-after="150"><strong class="hint" tabindex="0">明日资料未到</strong></el-tooltip>：{{ gaps.missing.join('、') }}

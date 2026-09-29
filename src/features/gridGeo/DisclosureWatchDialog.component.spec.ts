@@ -130,6 +130,32 @@ describe('日前盯盘弹窗状态', () => {
     await view.get('[data-testid="watch-cap-error"] button').trigger('click'); await flushPromises()
     expect(view.find('[data-testid="watch-run"]').exists()).toBe(true)
   })
+
+  it('审阅日期被清空时保留模式与日期控件，只禁用运行，改回合法日期后重新读取能力', async () => {
+    const view = mountDialog(); await flushPromises()
+    await view.get('[data-testid="watch-mode-review"]').setValue(true); await flushPromises()
+    await view.get('[data-testid="watch-review-date"]').setValue(''); await flushPromises()
+    expect(view.find('[data-testid="watch-review-date"]').exists()).toBe(true)
+    expect(view.find('[data-testid="watch-mode-live"]').exists()).toBe(true)
+    expect(view.get('[data-testid="watch-invalid-date"]').text()).toBe('请选择合法的审阅日期。')
+    expect((view.get('[data-testid="watch-run"]').element as HTMLButtonElement).disabled).toBe(true)
+    const calls = api.caps.mock.calls.length
+    await view.get('[data-testid="watch-review-date"]').setValue('2026-07-02'); await flushPromises()
+    expect(api.caps.mock.calls.length).toBe(calls + 1)
+    expect(api.caps.mock.calls.at(-1)?.[1]).toBe('2026-07-02')
+    expect(view.find('[data-testid="watch-invalid-date"]').exists()).toBe(false)
+    expect((view.get('[data-testid="watch-run"]').element as HTMLButtonElement).disabled).toBe(false)
+  })
+
+  it('能力读取失败时仍可改日期，运行按钮保持禁用', async () => {
+    api.caps.mockRejectedValueOnce(new DisclosureWatchRequestError('internal-error', '服务内部错误（HTTP 500）', 500))
+    const view = mountDialog(); await flushPromises()
+    expect(view.find('[data-testid="watch-cap-error"]').exists()).toBe(true)
+    expect((view.get('[data-testid="watch-run"]').element as HTMLButtonElement).disabled).toBe(true)
+    await view.get('[data-testid="watch-mode-review"]').setValue(true); await flushPromises()
+    expect(view.find('[data-testid="watch-cap-error"]').exists()).toBe(false)
+    expect((view.get('[data-testid="watch-run"]').element as HTMLButtonElement).disabled).toBe(false)
+  })
 })
 
 describe('日前盯盘运行与结果', () => {
