@@ -11,9 +11,9 @@
 //
 // ①②是**两个不同的量，不可互相替代**：中标率答「我报的量中了多少」，执行偏差答「我实际
 // 干的和我报的差多少、要交多少考核费」。只看中标率会漏掉「全中但执行跑偏」的那类亏损。
-import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { History, Save, Scale, TriangleAlert } from 'lucide-vue-next'
+import { Save, TriangleAlert } from 'lucide-vue-next'
 import {
   listDeclarations,
   savePreflight,
@@ -59,6 +59,8 @@ import {
 } from '@/services/review/marketReview'
 import { fetchRiskEvents } from '@/services/review/reviewStoreClient'
 import type { RiskEventSummary } from '@/services/review/reviewStoreApi'
+import MorningSummaryCard from './MorningSummaryCard.vue'
+import DataStatusLine, { type DataStatusItem } from './DataStatusLine.vue'
 import { beijingDayStartUtc, eventsInWindow, riskDimSummary, riskReviewReminder } from '@/services/review/morningRiskReview'
 import { markS1Started, s1TimerView, type S1TimerView } from '@/services/trading/stageTimer'
 import { coverageOf, hitRate, type DecisionLogEntry } from 'shared/trading-rules/decision-log.mjs'
@@ -103,6 +105,12 @@ const reviewedDate = computed(() => {
 // ── 作业窗口提示（公司内控规范，非市场规则：只提示、不拦）───────────────────
 const now = new Date()
 const windowState = morningWindowState(now.getHours() * 60 + now.getMinutes())
+
+// 窗口提示收纳进「数据与口径状态」行（降噪任务 4.2/4.3）：三态都是说明性文案
+// （窗口只提示不硬拦，trading-day.md §S1⑤），不再是常驻横幅。
+const statusItems = computed<DataStatusItem[]>(() => [
+  { tone: windowState === 'after' ? 'caveat' : 'info', text: MORNING_WINDOW_NOTE[windowState] }
+])
 
 const reviewed = ref<DeclarationOrder | null>(null)
 const loading = ref(false)
@@ -611,11 +619,19 @@ const sixDims = computed<SixDimState[]>(() => {
     }
   ]
 })
-/** 六维摘要行点击展开对应区块（滚动定位，区块本身常驻——不折叠已有面板，保持现有作业动线）。 */
+/** 六维摘要行点击：先开「更多复盘维度」抽屉，再滚动定位到对应面板（抽屉化后面板在抽屉内）。 */
 function jumpToDim(key: string) {
   const map: Record<string, string> = { result: 'mr-panel-result', strategy: 'mr-panel-strategy', market: 'mr-panel-market', risk: 'mr-panel-risk', deviation: 'mr-panel-deviation', decision: 'mr-panel-decision' }
   const id = map[key]
-  if (id) document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  if (id) openMore(id)
+}
+
+// 「更多复盘维度」抽屉（design 决策 10）：主脸不摆深度面板，一个入口收放全部参考内容。
+const moreDrawerEl = ref<HTMLDetailsElement | null>(null)
+function openMore(anchor?: string) {
+  const el = moreDrawerEl.value
+  if (el) el.open = true
+  if (anchor) void nextTick(() => document.getElementById(anchor)?.scrollIntoView({ behavior: 'smooth', block: 'start' }))
 }
 
 async function writeBack() {
@@ -694,81 +710,10 @@ async function writeBack() {
 
 <template>
   <div class="mr">
-    <p class="mr-window" :class="`mr-window-${windowState}`">{{ MORNING_WINDOW_NOTE[windowState] }}</p>
-
-    <!-- 复盘体系三件套（#2040）：三问结论条 + 昨夜智能体报告卡 + 复盘待办徽标。
-         全部只读/跳转，不给 S1 增加任何填写负担（<5 分钟红线）。 -->
-    <section class="mr-system">
-      <ReviewThreeQuestions
-        :reviewed-date="reviewedDate"
-        :has-reviewed="!!reviewed"
-        :clear-rate="analysis?.clearRate ?? null"
-        :deviation-mwh="execReview?.deviation.total_abs_deviation_mwh ?? null"
-        :deviation-pct="execDeviationPct"
-        :prev-deviation-mwh="prevDeviationMwh"
-        :prev-reviewed-date="prevReviewedDate"
-        :pnl="threeQuestionsPnl"
-        :position="activeStanceType"
-      />
-      <div class="mr-system-row">
-        <div class="mr-report-slot"><OvernightReportCard /></div>
-        <ReviewTodoBadge />
-      </div>
-    </section>
-
-    <!-- 六维摘要（需求 5）：每维一行；①④⑥ 有真实数据，②③⑤ 占位待数据接入。
-         数据由下方各面板 computed 汇总，不新增数据源。 -->
-    <section class="mr-panel mr-dims">
-      <h3>六维摘要 <span class="mr-dims-sub">昨日 {{ reviewedDate }} · 点击已就绪维度定位到对应面板</span></h3>
-      <div class="mr-dim-list">
-        <button
-          v-for="d in sixDims"
-          :key="d.key"
-          type="button"
-          class="mr-dim"
-          :class="{ 'mr-dim-ready': d.ready }"
-          :title="d.note ?? ''"
-          @click="jumpToDim(d.key)"
-        >
-          <strong>{{ d.name }}</strong>
-          <span>{{ d.summary }}</span>
-        </button>
-      </div>
-    </section>
-
-    <!-- 角色分流（需求 6）：六维摘要不随角色变，只角色专属区变 -->
-    <section class="mr-panel mr-role">
-      <div class="mr-role-head">
-        <label class="mr-role-select">
-          复盘角色
-          <select v-model="role">
-            <option v-for="r in ROLE_OPTIONS" :key="r.id" :value="r.id">{{ r.label }}</option>
-          </select>
-        </label>
-        <span class="mr-role-note">
-          售电=真实数据（R1 代理购电偏差 + R4 考核成本，复用现有偏差口径）；
-          储能/新能源角色待数据接入 <code>#1968</code>（模板 E1–E3/S1、N1）。
-        </span>
-      </div>
-      <table v-if="roleSpecificRows.length" class="mr-table mr-role-table">
-        <thead><tr><th>指标（模板口径）</th><th>值</th><th>来源</th></tr></thead>
-        <tbody>
-          <tr v-for="row in roleSpecificRows" :key="row.k">
-            <td>{{ row.k }}</td>
-            <td :class="row.real ? '' : 'mr-muted'">{{ row.v }}</td>
-            <td>{{ row.real ? '真实（/review）' : '待数据接入' }}</td>
-          </tr>
-        </tbody>
-      </table>
-    </section>
-
-    <!-- 立场复盘焦点：用户侧问「买没买到」、电源侧问「卖没卖掉」、储能问「窗口吃到没」 -->
-    <section v-if="reviewFocus" class="mr-focus">
-      <strong>{{ activeStanceType === 'GENERATOR' ? '电厂侧' : activeStanceType === 'STORAGE' ? '储能' : '用户侧' }}复盘目标：{{ reviewFocus.goal }}</strong>
-      <ul>
-        <li v-for="(point, i) in reviewFocus.reviewPoints" :key="i">{{ point }}</li>
-      </ul>
-    </section>
+    <!-- 数据与口径状态行（降噪 4.2/4.3）：窗口提示等说明性内容收进一行，展开看原文。
+         主任务轴（①中标 → ②执行偏差 → 风险复盘 → ③决策日志 → ④结论写回）在其后首屏直达；
+         昨日复盘摘要块与折叠参考区在主任务轴之后（spec「S1 主任务轴与参考区分层」）。 -->
+    <DataStatusLine :items="statusItems" />
 
     <!-- 异常分支：昨日决策日志缺失 → 强制补写（KPI 100% 必填），未补不收口今日复盘 -->
     <p v-if="yesterdayLogMissing" class="mr-backfill-block">
@@ -778,321 +723,64 @@ async function writeBack() {
       <button type="button" class="mr-jump" @click="emit('go', 'daily-close')">去 S7 补写昨日日志（归属日期切昨日）</button>
     </p>
 
-    <section id="mr-panel-result" class="mr-panel">
-      <h3><History :size="14" /> ① 中标情况 · 申报 vs 出清（标的日 {{ reviewedDate }}）</h3>
+    <!-- 昨日偏差（①+②合并，第二轮降噪 design 决策 10）：结论行上脸——中标率/偏差率/罚款
+         即晨会要拿走的数字；分层 tab、最坏时段表、口径边界等深度明细整体退到「更多复盘
+         维度」抽屉，不再在主脸占卡。 -->
+    <section class="mr-panel mr-dev">
+      <h3>昨日偏差 · 中标与执行（标的日 {{ reviewedDate }}）</h3>
       <p v-if="loading" class="mr-muted">读取昨日申报单…</p>
       <p v-else-if="loadError" class="mr-err">{{ loadError }}</p>
       <p v-else-if="!reviewed" class="mr-muted">
-        {{ reviewedDate }} 无申报单——无可复盘对象（首个交易日或昨日未作业）。仍可写下今日要点后开工。
+        {{ reviewedDate }} 无申报单——无可复盘对象（首个交易日或昨日未作业）。仍可在下方写下今日要点后开工。
       </p>
       <template v-else>
-        <div class="mr-facts">
-          <span class="mr-decl">{{ reviewed.id }} <em>{{ STATUS_LABEL[reviewed.status] }}</em></span>
-          <span>申报 {{ reviewed.energyCurveMwh96.reduce((a, b) => a + b, 0).toFixed(1) }} MWh</span>
-          <template v-if="analysis">
-            <span>出清 {{ analysis.totalClearedMwh.toFixed(1) }} MWh</span>
-            <span :class="analysis.clearRate !== null && analysis.clearRate < 0.85 ? 'mr-bad' : 'mr-ok'">
-              中标率 {{ analysis.clearRate === null ? '—' : (analysis.clearRate * 100).toFixed(1) + '%' }}
-            </span>
-          </template>
-          <span v-else class="mr-muted">出清结果未登记，中标情况无从对照</span>
-        </div>
-        <p v-if="analysis" class="mr-summary">{{ analysis.summary }}</p>
-
-        <!-- 需求 3：三层拆分 tab（品种 / 峰平谷 / 单笔）——模板二口径的日级缩影 -->
-        <div class="mr-layers">
-          <div class="mr-layer-tabs" role="tablist">
-            <button
-              v-for="t in LAYER_TABS"
-              :key="t.id"
-              type="button"
-              role="tab"
-              :aria-selected="layerTab === t.id"
-              class="mr-layer-tab"
-              :class="{ on: layerTab === t.id }"
-              @click="layerTab = t.id"
-            >
-              {{ t.label }}
-            </button>
+        <div class="mr-dev-grid">
+          <div class="mr-dev-col">
+            <h4>中标情况 · 申报 vs 出清</h4>
+            <div class="mr-facts">
+              <span class="mr-decl">{{ reviewed.id }} <em>{{ STATUS_LABEL[reviewed.status] }}</em></span>
+              <span>申报 {{ reviewed.energyCurveMwh96.reduce((a, b) => a + b, 0).toFixed(1) }} MWh</span>
+              <template v-if="analysis">
+                <span>出清 {{ analysis.totalClearedMwh.toFixed(1) }} MWh</span>
+                <span :class="analysis.clearRate !== null && analysis.clearRate < 0.85 ? 'mr-bad' : 'mr-ok'">
+                  中标率 {{ analysis.clearRate === null ? '—' : (analysis.clearRate * 100).toFixed(1) + '%' }}
+                </span>
+              </template>
+              <span v-else class="mr-muted">出清结果未登记，中标情况无从对照</span>
+            </div>
+            <p v-if="analysis" class="mr-summary">{{ analysis.summary }}</p>
           </div>
-          <!-- 第一层 分品种：日前现货真实（回测口径），其余标 MOCK 不编数 -->
-          <table v-if="layerTab === 'product'" class="mr-table">
-            <thead><tr><th>品种</th><th>收益（元）</th><th>占比</th><th>来源</th></tr></thead>
-            <tbody>
-              <tr v-for="p in byProductRows" :key="p.product">
-                <td>{{ p.product }}</td>
-                <td>{{ p.revenue === null ? '—' : p.revenue.toFixed(0) }}</td>
-                <td>{{ p.share === null ? '—' : p.share + '%' }}</td>
-                <td :class="p.sourceType === 'MOCK' ? 'mr-muted' : 'mr-ok'">
-                  {{ p.sourceType === 'REAL' ? '真实' : 'MOCK' }}<em v-if="p.note" class="mr-layer-note">（{{ p.note }}）</em>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-          <!-- 第二层 分时段峰平谷：时段定义从地区结算规则包读，真算聚合 -->
-          <template v-else-if="layerTab === 'period'">
-            <p class="mr-muted">{{ peakFlatNote }}</p>
-            <table v-if="peakFlatRows.length" class="mr-table">
-              <thead><tr><th>时段</th><th>96点数</th><th>申报电量（MWh）</th><th>占比</th></tr></thead>
-              <tbody>
-                <tr v-for="row in peakFlatRows" :key="row.segment">
-                  <td>{{ row.segment }}</td>
-                  <td>{{ row.slots }}</td>
-                  <td>{{ row.totalMwh.toFixed(1) }}</td>
-                  <td>{{ row.sharePct === null ? '—' : row.sharePct + '%' }}</td>
-                </tr>
-              </tbody>
-            </table>
-            <p v-else class="mr-muted">无申报曲线或时段定义，峰平谷层不可算。</p>
-          </template>
-          <!-- 第三层 单笔 TOP5：待结算明细接入（#1968），框架先搭不编数 -->
-          <p v-else class="mr-muted">
-            单笔 TOP5 盈亏需结算明细，待数据接入 <code>#1968</code>——框架已就位，数据到位后此层自动可用。
-          </p>
-        </div>
-
-        <details class="mr-worstslots">
-          <summary>最坏时段明细（{{ analysis?.worstSlots.length ?? 0 }} 个）</summary>
-          <table v-if="analysis?.worstSlots.length" class="mr-table">
-            <thead><tr><th>时段</th><th>申报</th><th>出清</th><th>偏差</th><th>偏差率</th></tr></thead>
-            <tbody>
-              <tr v-for="w in analysis.worstSlots" :key="w.slot">
-                <td>#{{ w.slot + 1 }}</td>
-                <td>{{ w.declaredMwh }}</td>
-                <td>{{ w.clearedMwh }}</td>
-                <td :class="w.deltaMwh < 0 ? 'mr-bad' : ''">{{ w.deltaMwh }}</td>
-                <td>{{ w.deltaPct === null ? '—' : (w.deltaPct * 100).toFixed(1) + '%' }}</td>
-              </tr>
-            </tbody>
-          </table>
-        </details>
-      </template>
-    </section>
-
-    <!-- 策略复盘（六维② · #2016 第 2 期）：区分「策略错了」与「执行错了」。样本 <30
-         不出胜率（服务端硬门禁）；连败过门禁才标「过时」；跑赢率缺市场基准→data_gap。 -->
-    <section id="mr-panel-strategy" class="mr-panel">
-      <h3>策略复盘 · 近 N 期胜率与临场改价（六维②）</h3>
-      <p v-if="!strategyFeed.available" class="mr-muted">
-        策略胜率服务{{ strategyFeed.reason === 'endpoint-absent' ? '未上线' : '暂不可达' }}——本维保持占位，不合成假胜率。
-      </p>
-      <template v-else>
-        <p v-if="!strategyFeed.stats.length" class="mr-muted">
-          暂无策略交易记录（review.trading-memory 空）——逐笔结果积累后本维出数。
-        </p>
-        <table v-else class="mr-table">
-          <thead>
-            <tr><th>策略</th><th>样本</th><th>胜率（Beta-Binomial 后验）</th><th>累计损益（万）</th><th>连败</th></tr>
-          </thead>
-          <tbody>
-            <tr v-for="s in strategyFeed.stats" :key="s.strategyName">
-              <td>{{ s.strategyName }}</td>
-              <td>{{ s.sampleSize }}</td>
-              <td>{{ s.winRate === null ? '样本不足（<30 笔不出胜率）' : (s.winRate * 100).toFixed(1) + '%' }}</td>
-              <td>{{ s.cumulativePnlWan === null ? '—' : s.cumulativePnlWan.toFixed(1) }}</td>
-              <td :class="(lossStreakByStrategy[s.strategyName] ?? 0) >= 3 ? 'mr-bad' : ''">
-                {{ lossStreakByStrategy[s.strategyName] ?? 0 }} 期
-              </td>
-            </tr>
-          </tbody>
-        </table>
-        <p v-for="f in staleStrategy.findings" :key="f.strategyName" class="mr-warn">
-          「{{ f.strategyName }}」连败 {{ f.lossStreak }} 期且样本已过门禁（{{ f.sampleSize }} 笔）——
-          策略可能过时，需改逻辑（方向问题；执行纪律问题在④偏差维）。
-        </p>
-        <p class="mr-muted">{{ BEAT_MARKET_DATA_GAP_NOTE }}</p>
-      </template>
-
-      <details class="mr-pc">
-        <summary>临场改价留痕（{{ pcPending.length }} 条待判定）</summary>
-        <p class="mr-muted">
-          记录「计划价 → 临场改价」及依据；次日回判——改对=<b>可复制</b>（值得沉淀为规则）、
-          改错=<b>需修正</b>（纪律问题回到执行侧）。
-        </p>
-        <div class="mr-pc-form">
-          <label>日期<input v-model="pcForm.date" type="date" /></label>
-          <label>决策点<input v-model="pcForm.decisionPoint" type="text" placeholder="如：晚高峰申报价" /></label>
-          <label>计划价<input v-model.number="pcForm.planPrice" type="number" step="0.01" placeholder="如：0.35" /></label>
-          <label>改后价<input v-model.number="pcForm.changedPrice" type="number" step="0.01" placeholder="如：0.38" /></label>
-          <label class="mr-pc-why">依据<input v-model="pcForm.rationale" type="text" placeholder="当时看到了什么" /></label>
-          <button type="button" class="ghost" @click="submitPriceChange">登记</button>
-        </div>
-        <p v-if="pcError" class="mr-err">{{ pcError }}</p>
-        <ul v-if="pcPending.length" class="mr-pc-list">
-          <li v-for="r in pcPending" :key="r.id">
-            {{ r.date }} · {{ r.decisionPoint }}：计划 {{ r.planPrice }} → 改 {{ r.changedPrice }}（{{ r.rationale }}）
-            <span class="mr-pc-actions">
-              <button type="button" class="link" @click="judgePc(r.id, 'replicable')">改对（可复制）</button>
-              <button type="button" class="link" @click="judgePc(r.id, 'needs-fix')">改错（需修正）</button>
-            </span>
-          </li>
-        </ul>
-        <p v-else class="mr-muted">无待判定的临场改价。</p>
-      </details>
-    </section>
-
-    <section id="mr-panel-deviation" class="mr-panel">
-      <h3><Scale :size="14" /> ② 执行偏差 · 申报 vs 实际（考核口径）</h3>
-      <p v-if="execLoading" class="mr-muted">取实际电量并计算偏差…</p>
-      <p v-else-if="!reviewed" class="mr-muted">无昨单，执行偏差无基准。</p>
-      <template v-else-if="execFailure">
-        <p class="mr-empty">{{ execFailure.title }}</p>
-        <p class="mr-muted">{{ execFailure.description }}</p>
-        <p v-if="execFailure.detail" class="mr-muted mr-detail">后端说明：{{ execFailure.detail }}</p>
-      </template>
-      <template v-else-if="execReview">
-        <div class="mr-facts">
-          <span>偏差点数 {{ execReview.deviation.points }}</span>
-          <span>总偏差 {{ execReview.deviation.total_abs_deviation_mwh.toFixed(2) }} MWh</span>
-          <span :class="execDeviationPct !== null && execDeviationPct > 0.05 ? 'mr-bad' : 'mr-ok'">
-            偏差率 {{ execDeviationPct === null ? '—' : (execDeviationPct * 100).toFixed(2) + '%' }}
-          </span>
-          <span>被考核 {{ execReview.deviation.assessed_mwh.toFixed(2) }} MWh</span>
-          <span :class="execReview.deviation.estimated_penalty_yuan > 0 ? 'mr-bad' : ''">
-            罚款估算 {{ execReview.deviation.estimated_penalty_yuan.toFixed(0) }} 元
-          </span>
-        </div>
-        <p v-if="execReview.deviation.worst_point?.datetime" class="mr-summary">
-          最坏点 {{ execReview.deviation.worst_point.datetime }}，偏差
-          {{ execReview.deviation.worst_point.deviation.toFixed(2) }} MWh（免罚带
-          {{ (execReview.deviation.tolerance_pct * 100).toFixed(0) }}%）
-        </p>
-        <p v-if="execReview.warning" class="mr-warn">{{ execReview.warning }}</p>
-        <!-- 口径边界由后端随响应下发，原样呈现：数字本身不带口径，不显示等于把
-             「按平台实时电量自算」悄悄当成了「电网结算结论」。 -->
-        <details v-if="execReview.caliber_caveats?.length" class="mr-caveat">
-          <summary>口径边界 · 这份偏差不能当作什么（{{ execReview.caliber_caveats.length }} 条）</summary>
-          <ul><li v-for="(c, i) in execReview.caliber_caveats" :key="i">{{ c }}</li></ul>
-        </details>
-        <button type="button" class="link" @click="router.push('/xhjy/review')">查看完整复盘 →</button>
-      </template>
-      <p v-else class="mr-muted">昨单无申报曲线，执行偏差无基准。</p>
-    </section>
-
-    <!-- 市场复盘（六维③ · #2012 第 2 期）：昨价高低点+异常标记（S7 同款口径）、供需快照
-         （S2 基本面，带来源可信度）、归因只做关联提示、政策 data_gap 人工行。 -->
-    <section id="mr-panel-market" class="mr-panel">
-      <h3>市场复盘 · 昨日价格与供需（六维③）</h3>
-      <template v-if="marketDigest">
-        <div class="mr-facts">
-          <span>加权均价 {{ marketDigest.weightedAvgYuanPerMwh ?? '—' }} 元/MWh</span>
-          <span>高 {{ marketDigest.highYuanPerMwh ?? '—' }}（{{ marketDigest.highHour !== null ? `${marketDigest.highHour}:00` : '—' }}）</span>
-          <span>低 {{ marketDigest.lowYuanPerMwh ?? '—' }}（{{ marketDigest.lowHour !== null ? `${marketDigest.lowHour}:00` : '—' }}）</span>
-          <span class="mr-muted">口径：{{ marketDigest.sourceBasis === 'cleared' ? '本单出清' : '本单申报' }}（全市场概况待数据活源）</span>
-        </div>
-        <template v-if="marketAnomalies.length">
-          <p class="mr-summary">异常点（偏离加权均值 ≥15%）：{{ marketAnomalies.length }} 个</p>
-          <ul class="mr-anomaly-list">
-            <li v-for="(p, i) in marketAnomalies" :key="i" :class="p.direction === 'high' ? 'mr-bad' : 'mr-ok'">
-              {{ attributionHintOf(p, marketSnapshot) }}
-            </li>
-          </ul>
-          <p class="mr-muted">{{ ATTRIBUTION_HINT_NOTE }}</p>
-        </template>
-        <p v-else class="mr-muted">昨日价格无明显异常点（各小时偏离加权均值低于 15%）。</p>
-      </template>
-      <p v-else class="mr-muted">昨单价格曲线缺失——市场段无基准（{{ reviewed ? '价格未登记' : '昨日无申报单' }}）。</p>
-
-      <table class="mr-table">
-        <thead><tr><th>供需基本面（{{ reviewedDate }}）</th><th>值（MW）</th><th>来源</th></tr></thead>
-        <tbody>
-          <tr v-for="row in marketSnapshot" :key="row.key">
-            <td>{{ row.label }}</td>
-            <td :class="row.valueMw === null ? 'mr-muted' : ''">
-              {{ row.valueMw === null ? '—' : row.valueMw.toLocaleString() }}{{ row.note ? `（${row.note}）` : '' }}
-            </td>
-            <td>{{ row.valueMw === null ? '无记录' : row.trusted ? `数据（${row.credibility ?? '—'} 档）` : '自报口径' }}</td>
-          </tr>
-        </tbody>
-      </table>
-      <p v-if="fundamentalsError" class="mr-err">{{ fundamentalsError }}——基本面快照缺席，价格侧不受影响。</p>
-      <p class="mr-muted">{{ POLICY_DATA_GAP_NOTE }}</p>
-      <div class="mr-actions">
-        <button type="button" class="ghost" @click="emit('go', 'market-analysis')">去 S2 看曲线与基本面</button>
-        <button type="button" class="ghost" @click="emit('go', 'daily-close')">去 S7 看市场概况</button>
-      </div>
-    </section>
-
-    <!-- 风险复盘（六维⑤ · #2015 第 2 期）：昨日事件+仓位受损+near_miss 标注+回顾提醒；
-         子组件抽离还技术债 #4（自带面板样式与 mr-panel-risk 锚点）；两项无源监测
-         data_gap 口径在组件内常驻。 -->
-    <MorningRiskPanel
-      :events="yesterdayRiskEvents"
-      :available="riskFeedAvailable"
-      :window-label="`昨日 ${reviewedDate}`"
-      @go-risk-library="router.push('/xhjy/review')"
-    />
-
-    <section id="mr-panel-decision" class="mr-panel">
-      <h3>
-        ③ 昨日决策日志
-        <button v-if="reviewedEntries.length" type="button" class="link" @click="showEntries = !showEntries">
-          {{ showEntries ? '收起条目' : `调阅 ${reviewedEntries.length} 条` }}
-        </button>
-      </h3>
-      <div class="mr-log">
-        <span>填写率：{{ logCoverage.recorded }}/{{ logCoverage.expected }} 条</span>
-        <span v-if="!logCoverage.meetsVeto" class="mr-bad"><TriangleAlert :size="12" /> 未达一票否决线</span>
-        <span>P10–P90 命中率 {{ logHits.rate === null ? '—（无可回填样本）' : (logHits.rate * 100).toFixed(0) + '%' }}</span>
-        <span>三问复盘：{{ decisionReviewComputed.reviewedDecisions }}/{{ decisionReviewComputed.totalDecisions }} 条已复盘</span>
-      </div>
-      <p v-if="!reviewedEntries.length" class="mr-muted">{{ reviewedDate }} 无决策日志条目——昨日决策未留痕，无从回顾。</p>
-      <template v-else-if="showEntries">
-        <table class="mr-table mr-entries">
-          <thead><tr><th>#</th><th>决策点</th><th>结论</th><th>P10–P90</th><th>实际</th><th>心得</th><th title="信息/逻辑/情绪">三问</th><th></th></tr></thead>
-          <tbody>
-            <template v-for="e in reviewedEntries" :key="e.id">
-              <tr>
-                <td>{{ e.seq }}</td>
-                <td>{{ e.decisionPoint }}</td>
-                <td class="mr-wrap">{{ e.judgement }}</td>
-                <td>{{ e.p10 }}–{{ e.p90 }}</td>
-                <td :class="e.actual === null ? 'mr-muted' : ''">{{ e.actual === null ? '未回填' : e.actual }}</td>
-                <td class="mr-wrap">{{ e.lesson || '—' }}</td>
-                <!-- 需求 4：三问状态（信息/逻辑/情绪），· 未填 / ✓ 正常 / ✗ 存疑 -->
-                <td class="mr-threeq">
-                  <span :title="'信息' + (qMark(entryThreeQ(e.id)?.info, 'ok') === '·' ? '未填' : entryThreeQ(e.id)!.info === 'ok' ? '充分' : '有缺')">{{ qMark(entryThreeQ(e.id)?.info, 'ok') }}</span>
-                  <span :title="'逻辑' + (qMark(entryThreeQ(e.id)?.logic, 'ok') === '·' ? '未填' : entryThreeQ(e.id)!.logic === 'ok' ? '严密' : '有漏')">{{ qMark(entryThreeQ(e.id)?.logic, 'ok') }}</span>
-                  <span :title="'情绪' + (qMark(entryThreeQ(e.id)?.emotion, 'calm') === '·' ? '未填' : entryThreeQ(e.id)!.emotion === 'calm' ? '稳定' : '受扰')">{{ qMark(entryThreeQ(e.id)?.emotion, 'calm') }}</span>
-                </td>
-                <td><button type="button" class="link" @click="toggleReview(e.id)">{{ openReviewId === e.id ? '收起' : '复盘单' }}</button></td>
-              </tr>
-              <!-- 需求 4：决策复盘单（模板一精简版 8 核心字段；结论随 S1 写回 decisionReview） -->
-              <tr v-if="openReviewId === e.id" class="mr-review-form-row">
-                <td colspan="8">
-                  <div class="mr-review-form">
-                    <p class="mr-review-title">决策复盘单（模板一精简版）· #{{ e.seq }} {{ e.decisionPoint }}</p>
-                    <div class="mr-review-meta">
-                      <span>品种/方向/量价：决策日志条目未记（模板一全量 17 字段留后续期）</span>
-                    </div>
-                    <div class="mr-review-qs">
-                      <label>信息（够不够、有无遗漏）
-                        <select v-model="qz(e.id).info">
-                          <option value="ok">充分</option><option value="lacking">有缺</option>
-                        </select>
-                      </label>
-                      <label>逻辑（推理有无漏洞）
-                        <select v-model="qz(e.id).logic">
-                          <option value="ok">严密</option><option value="flawed">有漏</option>
-                        </select>
-                      </label>
-                      <label>情绪（追涨杀跌/过度自信/犹豫）
-                        <select v-model="qz(e.id).emotion">
-                          <option value="calm">稳定</option><option value="biased">受扰</option>
-                        </select>
-                      </label>
-                      <label class="mr-review-note">改进措施
-                        <input v-model="qz(e.id).note" type="text" placeholder="具体改进事项（选填，随三问结论写回）" />
-                      </label>
-                    </div>
-                  </div>
-                </td>
-              </tr>
+          <div class="mr-dev-col">
+            <h4>执行偏差 · 申报 vs 实际（考核口径）</h4>
+            <p v-if="execLoading" class="mr-muted">取实际电量并计算偏差…</p>
+            <template v-else-if="execFailure">
+              <p class="mr-empty">{{ execFailure.title }}</p>
+              <p class="mr-muted">{{ execFailure.description }}</p>
             </template>
-          </tbody>
-        </table>
+            <template v-else-if="execReview">
+              <div class="mr-facts">
+                <span>偏差 {{ execReview.deviation.total_abs_deviation_mwh.toFixed(2) }} MWh</span>
+                <span :class="execDeviationPct !== null && execDeviationPct > 0.05 ? 'mr-bad' : 'mr-ok'">
+                  偏差率 {{ execDeviationPct === null ? '—' : (execDeviationPct * 100).toFixed(2) + '%' }}
+                </span>
+                <span :class="execReview.deviation.estimated_penalty_yuan > 0 ? 'mr-bad' : ''">
+                  罚款估算 {{ execReview.deviation.estimated_penalty_yuan.toFixed(0) }} 元
+                </span>
+              </div>
+              <p v-if="execReview.deviation.worst_point?.datetime" class="mr-summary">
+                最坏点 {{ execReview.deviation.worst_point.datetime }}，偏差
+                {{ execReview.deviation.worst_point.deviation.toFixed(2) }} MWh（免罚带
+                {{ (execReview.deviation.tolerance_pct * 100).toFixed(0) }}%）
+              </p>
+            </template>
+            <p v-else class="mr-muted">昨单无申报曲线，执行偏差无基准。</p>
+          </div>
+        </div>
+        <div class="mr-dev-more">
+          <button type="button" class="link" @click="openMore('mr-panel-result')">分层明细 · 最坏时段 · 口径边界 →</button>
+          <button type="button" class="link" @click="router.push('/xhjy/review')">查看完整复盘 →</button>
+        </div>
       </template>
-      <p class="mr-proto" :class="{ server: logMode === 'server' }">{{ logNotice }}</p>
     </section>
 
     <section class="mr-panel">
@@ -1166,14 +854,407 @@ async function writeBack() {
         提交申报后本段锁定，不接受事后改写。归因判不了就选「待分析」——随手挑一个主因比留空更坏。
       </p>
     </section>
+
+    <!-- 昨日复盘摘要（trading-day-morning-summary-and-lazy-stages 任务 2.2）：三类摘要入口
+         统一收纳——昨夜报告（quant daily_review）+ 本日适用措施（复盘中心未闭环）+ 复盘待办
+         （触发引擎）。全部只读/跳转，不给 S1 增加填写负担（<5 分钟红线）；风险事件类重要
+         发现由上方 MorningRiskPanel 承载，此处不重复取数。 -->
+    <section class="mr-summary">
+      <h3>昨日复盘摘要</h3>
+      <div class="mr-summary-row">
+        <div class="mr-report-slot"><OvernightReportCard /></div>
+        <ReviewTodoBadge />
+      </div>
+      <MorningSummaryCard :target-date="targetDate" />
+    </section>
+
+    <!-- 更多复盘维度（第二轮降噪 design 决策 10）：唯一抽屉收纳全部深度内容——分层明细/
+         最坏时段/口径边界/决策日志/风险/策略/市场/六维/角色/三问。主脸只留结论与写回；
+         展开后内容与重排前等价，只搬家不删功能。 -->
+    <details ref="moreDrawerEl" class="mr-ref mr-more">
+      <summary>更多复盘维度 · 决策日志 / 风险 / 策略 / 市场 / 分层明细 / 六维 / 角色 / 三问</summary>
+      <div class="mr-more-body">
+        <!-- 六维摘要（需求 5）：每维一行；①④⑥ 有真实数据，②③⑤ 占位待数据接入。
+             数据由各面板 computed 汇总，不新增数据源。 -->
+        <section class="mr-panel mr-dims">
+          <h3>六维摘要 <span class="mr-dims-sub">昨日 {{ reviewedDate }} · 点击已就绪维度定位到对应面板</span></h3>
+          <div class="mr-dim-list">
+            <button
+              v-for="d in sixDims"
+              :key="d.key"
+              type="button"
+              class="mr-dim"
+              :class="{ 'mr-dim-ready': d.ready }"
+              :title="d.note ?? ''"
+              @click="jumpToDim(d.key)"
+            >
+              <strong>{{ d.name }}</strong>
+              <span>{{ d.summary }}</span>
+            </button>
+          </div>
+        </section>
+
+        <!-- 中标情况分层明细（原①的深度部分）：三层拆分 tab（品种 / 峰平谷 / 单笔） -->
+        <section id="mr-panel-result" class="mr-panel">
+          <h3>中标情况 · 分层明细与最坏时段（标的日 {{ reviewedDate }}）</h3>
+          <template v-if="reviewed">
+            <div class="mr-layers">
+              <div class="mr-layer-tabs" role="tablist">
+                <button
+                  v-for="t in LAYER_TABS"
+                  :key="t.id"
+                  type="button"
+                  role="tab"
+                  :aria-selected="layerTab === t.id"
+                  class="mr-layer-tab"
+                  :class="{ on: layerTab === t.id }"
+                  @click="layerTab = t.id"
+                >
+                  {{ t.label }}
+                </button>
+              </div>
+              <!-- 第一层 分品种：日前现货真实（回测口径），其余标 MOCK 不编数 -->
+              <table v-if="layerTab === 'product'" class="mr-table">
+                <thead><tr><th>品种</th><th>收益（元）</th><th>占比</th><th>来源</th></tr></thead>
+                <tbody>
+                  <tr v-for="p in byProductRows" :key="p.product">
+                    <td>{{ p.product }}</td>
+                    <td>{{ p.revenue === null ? '—' : p.revenue.toFixed(0) }}</td>
+                    <td>{{ p.share === null ? '—' : p.share + '%' }}</td>
+                    <td :class="p.sourceType === 'MOCK' ? 'mr-muted' : 'mr-ok'">
+                      {{ p.sourceType === 'REAL' ? '真实' : 'MOCK' }}<em v-if="p.note" class="mr-layer-note">（{{ p.note }}）</em>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+              <!-- 第二层 分时段峰平谷：时段定义从地区结算规则包读，真算聚合 -->
+              <template v-else-if="layerTab === 'period'">
+                <p class="mr-muted">{{ peakFlatNote }}</p>
+                <table v-if="peakFlatRows.length" class="mr-table">
+                  <thead><tr><th>时段</th><th>96点数</th><th>申报电量（MWh）</th><th>占比</th></tr></thead>
+                  <tbody>
+                    <tr v-for="row in peakFlatRows" :key="row.segment">
+                      <td>{{ row.segment }}</td>
+                      <td>{{ row.slots }}</td>
+                      <td>{{ row.totalMwh.toFixed(1) }}</td>
+                      <td>{{ row.sharePct === null ? '—' : row.sharePct + '%' }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+                <p v-else class="mr-muted">无申报曲线或时段定义，峰平谷层不可算。</p>
+              </template>
+              <!-- 第三层 单笔 TOP5：待结算明细接入（#1968），框架先搭不编数 -->
+              <p v-else class="mr-muted">
+                单笔 TOP5 盈亏需结算明细，待数据接入 <code>#1968</code>——框架已就位，数据到位后此层自动可用。
+              </p>
+            </div>
+
+            <details class="mr-worstslots">
+              <summary>最坏时段明细（{{ analysis?.worstSlots.length ?? 0 }} 个）</summary>
+              <table v-if="analysis?.worstSlots.length" class="mr-table">
+                <thead><tr><th>时段</th><th>申报</th><th>出清</th><th>偏差</th><th>偏差率</th></tr></thead>
+                <tbody>
+                  <tr v-for="w in analysis.worstSlots" :key="w.slot">
+                    <td>#{{ w.slot + 1 }}</td>
+                    <td>{{ w.declaredMwh }}</td>
+                    <td>{{ w.clearedMwh }}</td>
+                    <td :class="w.deltaMwh < 0 ? 'mr-bad' : ''">{{ w.deltaMwh }}</td>
+                    <td>{{ w.deltaPct === null ? '—' : (w.deltaPct * 100).toFixed(1) + '%' }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </details>
+          </template>
+          <p v-else class="mr-muted">无昨单，无分层明细。</p>
+        </section>
+
+        <!-- 执行偏差补充明细（原②的深度部分）：完整数字 + 口径边界原样呈现 -->
+        <section id="mr-panel-deviation" class="mr-panel">
+          <h3>执行偏差 · 补充明细（考核口径）</h3>
+          <p v-if="execLoading" class="mr-muted">取实际电量并计算偏差…</p>
+          <template v-else-if="execFailure">
+            <p class="mr-muted">{{ execFailure.description }}</p>
+            <p v-if="execFailure.detail" class="mr-muted mr-detail">后端说明：{{ execFailure.detail }}</p>
+          </template>
+          <template v-else-if="execReview">
+            <div class="mr-facts">
+              <span>偏差点数 {{ execReview.deviation.points }}</span>
+              <span>总偏差 {{ execReview.deviation.total_abs_deviation_mwh.toFixed(2) }} MWh</span>
+              <span>被考核 {{ execReview.deviation.assessed_mwh.toFixed(2) }} MWh</span>
+            </div>
+            <p v-if="execReview.warning" class="mr-warn">{{ execReview.warning }}</p>
+            <!-- 口径边界由后端随响应下发，原样呈现：数字本身不带口径，不显示等于把
+                 「按平台实时电量自算」悄悄当成了「电网结算结论」。 -->
+            <details v-if="execReview.caliber_caveats?.length" class="mr-caveat">
+              <summary>口径边界 · 这份偏差不能当作什么（{{ execReview.caliber_caveats.length }} 条）</summary>
+              <ul><li v-for="(c, i) in execReview.caliber_caveats" :key="i">{{ c }}</li></ul>
+            </details>
+          </template>
+          <p v-else class="mr-muted">昨单无申报曲线，执行偏差无基准。</p>
+        </section>
+
+        <!-- ③ 昨日决策日志（回顾是晨会手册动作；服务端化 #2037） -->
+        <section id="mr-panel-decision" class="mr-panel">
+          <h3>
+            ③ 昨日决策日志
+            <button v-if="reviewedEntries.length" type="button" class="link" @click="showEntries = !showEntries">
+              {{ showEntries ? '收起条目' : `调阅 ${reviewedEntries.length} 条` }}
+            </button>
+          </h3>
+          <div class="mr-log">
+            <span>填写率：{{ logCoverage.recorded }}/{{ logCoverage.expected }} 条</span>
+            <span v-if="!logCoverage.meetsVeto" class="mr-bad"><TriangleAlert :size="12" /> 未达一票否决线</span>
+            <span>P10–P90 命中率 {{ logHits.rate === null ? '—（无可回填样本）' : (logHits.rate * 100).toFixed(0) + '%' }}</span>
+            <span>三问复盘：{{ decisionReviewComputed.reviewedDecisions }}/{{ decisionReviewComputed.totalDecisions }} 条已复盘</span>
+          </div>
+          <p v-if="!reviewedEntries.length" class="mr-muted">{{ reviewedDate }} 无决策日志条目——昨日决策未留痕，无从回顾。</p>
+          <template v-else-if="showEntries">
+            <table class="mr-table mr-entries">
+              <thead><tr><th>#</th><th>决策点</th><th>结论</th><th>P10–P90</th><th>实际</th><th>心得</th><th title="信息/逻辑/情绪">三问</th><th></th></tr></thead>
+              <tbody>
+                <template v-for="e in reviewedEntries" :key="e.id">
+                  <tr>
+                    <td>{{ e.seq }}</td>
+                    <td>{{ e.decisionPoint }}</td>
+                    <td class="mr-wrap">{{ e.judgement }}</td>
+                    <td>{{ e.p10 }}–{{ e.p90 }}</td>
+                    <td :class="e.actual === null ? 'mr-muted' : ''">{{ e.actual === null ? '未回填' : e.actual }}</td>
+                    <td class="mr-wrap">{{ e.lesson || '—' }}</td>
+                    <!-- 需求 4：三问状态（信息/逻辑/情绪），· 未填 / ✓ 正常 / ✗ 存疑 -->
+                    <td class="mr-threeq">
+                      <span :title="'信息' + (qMark(entryThreeQ(e.id)?.info, 'ok') === '·' ? '未填' : entryThreeQ(e.id)!.info === 'ok' ? '充分' : '有缺')">{{ qMark(entryThreeQ(e.id)?.info, 'ok') }}</span>
+                      <span :title="'逻辑' + (qMark(entryThreeQ(e.id)?.logic, 'ok') === '·' ? '未填' : entryThreeQ(e.id)!.logic === 'ok' ? '严密' : '有漏')">{{ qMark(entryThreeQ(e.id)?.logic, 'ok') }}</span>
+                      <span :title="'情绪' + (qMark(entryThreeQ(e.id)?.emotion, 'calm') === '·' ? '未填' : entryThreeQ(e.id)!.emotion === 'calm' ? '稳定' : '受扰')">{{ qMark(entryThreeQ(e.id)?.emotion, 'calm') }}</span>
+                    </td>
+                    <td><button type="button" class="link" @click="toggleReview(e.id)">{{ openReviewId === e.id ? '收起' : '复盘单' }}</button></td>
+                  </tr>
+                  <!-- 需求 4：决策复盘单（模板一精简版 8 核心字段；结论随 S1 写回 decisionReview） -->
+                  <tr v-if="openReviewId === e.id" class="mr-review-form-row">
+                    <td colspan="8">
+                      <div class="mr-review-form">
+                        <p class="mr-review-title">决策复盘单（模板一精简版）· #{{ e.seq }} {{ e.decisionPoint }}</p>
+                        <div class="mr-review-meta">
+                          <span>品种/方向/量价：决策日志条目未记（模板一全量 17 字段留后续期）</span>
+                        </div>
+                        <div class="mr-review-qs">
+                          <label>信息（够不够、有无遗漏）
+                            <select v-model="qz(e.id).info">
+                              <option value="ok">充分</option><option value="lacking">有缺</option>
+                            </select>
+                          </label>
+                          <label>逻辑（推理有无漏洞）
+                            <select v-model="qz(e.id).logic">
+                              <option value="ok">严密</option><option value="flawed">有漏</option>
+                            </select>
+                          </label>
+                          <label>情绪（追涨杀跌/过度自信/犹豫）
+                            <select v-model="qz(e.id).emotion">
+                              <option value="calm">稳定</option><option value="biased">受扰</option>
+                            </select>
+                          </label>
+                          <label class="mr-review-note">改进措施
+                            <input v-model="qz(e.id).note" type="text" placeholder="具体改进事项（选填，随三问结论写回）" />
+                          </label>
+                        </div>
+                      </div>
+                    </td>
+                  </tr>
+                </template>
+              </tbody>
+            </table>
+          </template>
+          <p class="mr-proto" :class="{ server: logMode === 'server' }">{{ logNotice }}</p>
+        </section>
+
+        <!-- 风险复盘（六维⑤ · #2015 第 2 期）：昨日事件+仓位受损+near_miss 标注+回顾提醒；
+             两项无源监测 data_gap 口径在组件内常驻。重要发现的承载面板，摘要块不重复取数。 -->
+        <MorningRiskPanel
+          :events="yesterdayRiskEvents"
+          :available="riskFeedAvailable"
+          :window-label="`昨日 ${reviewedDate}`"
+          @go-risk-library="router.push('/xhjy/review')"
+        />
+
+        <!-- 策略复盘（六维② · #2016 第 2 期）：区分「策略错了」与「执行错了」。样本 <30
+             不出胜率（服务端硬门禁）；连败过门禁才标「过时」；跑赢率缺市场基准→data_gap。 -->
+        <section id="mr-panel-strategy" class="mr-panel">
+          <h3>策略复盘 · 近 N 期胜率与临场改价（六维②）</h3>
+          <p v-if="!strategyFeed.available" class="mr-muted">
+            策略胜率服务{{ strategyFeed.reason === 'endpoint-absent' ? '未上线' : '暂不可达' }}——本维保持占位，不合成假胜率。
+          </p>
+          <template v-else>
+            <p v-if="!strategyFeed.stats.length" class="mr-muted">
+              暂无策略交易记录（review.trading-memory 空）——逐笔结果积累后本维出数。
+            </p>
+            <table v-else class="mr-table">
+              <thead>
+                <tr><th>策略</th><th>样本</th><th>胜率（Beta-Binomial 后验）</th><th>累计损益（万）</th><th>连败</th></tr>
+              </thead>
+              <tbody>
+                <tr v-for="s in strategyFeed.stats" :key="s.strategyName">
+                  <td>{{ s.strategyName }}</td>
+                  <td>{{ s.sampleSize }}</td>
+                  <td>{{ s.winRate === null ? '样本不足（<30 笔不出胜率）' : (s.winRate * 100).toFixed(1) + '%' }}</td>
+                  <td>{{ s.cumulativePnlWan === null ? '—' : s.cumulativePnlWan.toFixed(1) }}</td>
+                  <td :class="(lossStreakByStrategy[s.strategyName] ?? 0) >= 3 ? 'mr-bad' : ''">
+                    {{ lossStreakByStrategy[s.strategyName] ?? 0 }} 期
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+            <p v-for="f in staleStrategy.findings" :key="f.strategyName" class="mr-warn">
+              「{{ f.strategyName }}」连败 {{ f.lossStreak }} 期且样本已过门禁（{{ f.sampleSize }} 笔）——
+              策略可能过时，需改逻辑（方向问题；执行纪律问题在④偏差维）。
+            </p>
+            <p class="mr-muted">{{ BEAT_MARKET_DATA_GAP_NOTE }}</p>
+          </template>
+
+          <details class="mr-pc">
+            <summary>临场改价留痕（{{ pcPending.length }} 条待判定）</summary>
+            <p class="mr-muted">
+              记录「计划价 → 临场改价」及依据；次日回判——改对=<b>可复制</b>（值得沉淀为规则）、
+              改错=<b>需修正</b>（纪律问题回到执行侧）。
+            </p>
+            <div class="mr-pc-form">
+              <label>日期<input v-model="pcForm.date" type="date" /></label>
+              <label>决策点<input v-model="pcForm.decisionPoint" type="text" placeholder="如：晚高峰申报价" /></label>
+              <label>计划价<input v-model.number="pcForm.planPrice" type="number" step="0.01" placeholder="如：0.35" /></label>
+              <label>改后价<input v-model.number="pcForm.changedPrice" type="number" step="0.01" placeholder="如：0.38" /></label>
+              <label class="mr-pc-why">依据<input v-model="pcForm.rationale" type="text" placeholder="当时看到了什么" /></label>
+              <button type="button" class="ghost" @click="submitPriceChange">登记</button>
+            </div>
+            <p v-if="pcError" class="mr-err">{{ pcError }}</p>
+            <ul v-if="pcPending.length" class="mr-pc-list">
+              <li v-for="r in pcPending" :key="r.id">
+                {{ r.date }} · {{ r.decisionPoint }}：计划 {{ r.planPrice }} → 改 {{ r.changedPrice }}（{{ r.rationale }}）
+                <span class="mr-pc-actions">
+                  <button type="button" class="link" @click="judgePc(r.id, 'replicable')">改对（可复制）</button>
+                  <button type="button" class="link" @click="judgePc(r.id, 'needs-fix')">改错（需修正）</button>
+                </span>
+              </li>
+            </ul>
+            <p v-else class="mr-muted">无待判定的临场改价。</p>
+          </details>
+        </section>
+
+        <!-- 市场复盘（六维③ · #2012 第 2 期）：昨价高低点+异常标记（S7 同款口径）、供需快照
+             （S2 基本面，带来源可信度）、归因只做关联提示、政策 data_gap 人工行。 -->
+        <section id="mr-panel-market" class="mr-panel">
+          <h3>市场复盘 · 昨日价格与供需（六维③）</h3>
+          <template v-if="marketDigest">
+            <div class="mr-facts">
+              <span>加权均价 {{ marketDigest.weightedAvgYuanPerMwh ?? '—' }} 元/MWh</span>
+              <span>高 {{ marketDigest.highYuanPerMwh ?? '—' }}（{{ marketDigest.highHour !== null ? `${marketDigest.highHour}:00` : '—' }}）</span>
+              <span>低 {{ marketDigest.lowYuanPerMwh ?? '—' }}（{{ marketDigest.lowHour !== null ? `${marketDigest.lowHour}:00` : '—' }}）</span>
+              <span class="mr-muted">口径：{{ marketDigest.sourceBasis === 'cleared' ? '本单出清' : '本单申报' }}（全市场概况待数据活源）</span>
+            </div>
+            <template v-if="marketAnomalies.length">
+              <p class="mr-summary">异常点（偏离加权均值 ≥15%）：{{ marketAnomalies.length }} 个</p>
+              <ul class="mr-anomaly-list">
+                <li v-for="(p, i) in marketAnomalies" :key="i" :class="p.direction === 'high' ? 'mr-bad' : 'mr-ok'">
+                  {{ attributionHintOf(p, marketSnapshot) }}
+                </li>
+              </ul>
+              <p class="mr-muted">{{ ATTRIBUTION_HINT_NOTE }}</p>
+            </template>
+            <p v-else class="mr-muted">昨日价格无明显异常点（各小时偏离加权均值低于 15%）。</p>
+          </template>
+          <p v-else class="mr-muted">昨单价格曲线缺失——市场段无基准（{{ reviewed ? '价格未登记' : '昨日无申报单' }}）。</p>
+
+          <table class="mr-table">
+            <thead><tr><th>供需基本面（{{ reviewedDate }}）</th><th>值（MW）</th><th>来源</th></tr></thead>
+            <tbody>
+              <tr v-for="row in marketSnapshot" :key="row.key">
+                <td>{{ row.label }}</td>
+                <td :class="row.valueMw === null ? 'mr-muted' : ''">
+                  {{ row.valueMw === null ? '—' : row.valueMw.toLocaleString() }}{{ row.note ? `（${row.note}）` : '' }}
+                </td>
+                <td>{{ row.valueMw === null ? '无记录' : row.trusted ? `数据（${row.credibility ?? '—'} 档）` : '自报口径' }}</td>
+              </tr>
+            </tbody>
+          </table>
+          <p v-if="fundamentalsError" class="mr-err">{{ fundamentalsError }}——基本面快照缺席，价格侧不受影响。</p>
+          <p class="mr-muted">{{ POLICY_DATA_GAP_NOTE }}</p>
+          <div class="mr-actions">
+            <button type="button" class="ghost" @click="emit('go', 'market-analysis')">去 S2 看曲线与基本面</button>
+            <button type="button" class="ghost" @click="emit('go', 'daily-close')">去 S7 看市场概况</button>
+          </div>
+        </section>
+
+        <!-- 角色分流（需求 6）+ 立场复盘焦点 -->
+        <section class="mr-panel mr-role">
+          <div class="mr-role-head">
+            <label class="mr-role-select">
+              复盘角色
+              <select v-model="role">
+                <option v-for="r in ROLE_OPTIONS" :key="r.id" :value="r.id">{{ r.label }}</option>
+              </select>
+            </label>
+            <span class="mr-role-note">
+              售电=真实数据（R1 代理购电偏差 + R4 考核成本，复用现有偏差口径）；
+              储能/新能源角色待数据接入 <code>#1968</code>（模板 E1–E3/S1、N1）。
+            </span>
+          </div>
+          <table v-if="roleSpecificRows.length" class="mr-table mr-role-table">
+            <thead><tr><th>指标（模板口径）</th><th>值</th><th>来源</th></tr></thead>
+            <tbody>
+              <tr v-for="row in roleSpecificRows" :key="row.k">
+                <td>{{ row.k }}</td>
+                <td :class="row.real ? '' : 'mr-muted'">{{ row.v }}</td>
+                <td>{{ row.real ? '真实（/review）' : '待数据接入' }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </section>
+
+        <!-- 立场复盘焦点：用户侧问「买没买到」、电源侧问「卖没卖掉」、储能问「窗口吃到没」 -->
+        <section v-if="reviewFocus" class="mr-focus">
+          <strong>{{ activeStanceType === 'GENERATOR' ? '电厂侧' : activeStanceType === 'STORAGE' ? '储能' : '用户侧' }}复盘目标：{{ reviewFocus.goal }}</strong>
+          <ul>
+            <li v-for="(point, i) in reviewFocus.reviewPoints" :key="i">{{ point }}</li>
+          </ul>
+        </section>
+
+        <!-- 三问复盘单 -->
+        <section class="mr-panel">
+          <ReviewThreeQuestions
+            :reviewed-date="reviewedDate"
+            :has-reviewed="!!reviewed"
+            :clear-rate="analysis?.clearRate ?? null"
+            :deviation-mwh="execReview?.deviation.total_abs_deviation_mwh ?? null"
+            :deviation-pct="execDeviationPct"
+            :prev-deviation-mwh="prevDeviationMwh"
+            :prev-reviewed-date="prevReviewedDate"
+            :pnl="threeQuestionsPnl"
+            :position="activeStanceType"
+          />
+        </section>
+      </div>
+    </details>
   </div>
 </template>
 
 <style scoped>
 .mr { display: flex; flex-direction: column; gap: 12px; }
-/* 复盘体系三件套（#2040） */
-.mr-system { display: flex; flex-direction: column; gap: 8px; }
-.mr-system-row { display: flex; gap: 10px; align-items: stretch; flex-wrap: wrap; }
+/* 折叠参考区（降噪 4.2）：默认收起，summary 行轻量呈现 */
+.mr-ref { border: 1px dashed var(--el-border-color-lighter, #ebeef5); border-radius: 10px; padding: 6px 10px; background: #fcfcfd; }
+.mr-ref > summary { cursor: pointer; font-size: var(--font-sm); color: var(--el-text-color-secondary, #666); user-select: none; padding: 2px 0; }
+.mr-ref > summary:hover { color: var(--el-text-color-regular, #606266); }
+.mr-ref[open] > summary { margin-bottom: 8px; }
+.mr-ref > details,
+.mr-ref section + section { margin-top: 8px; }
+.mr-ref section { min-width: 0; }
+/* 昨日偏差合并卡（第二轮降噪）：左右两栏结论 + 抽屉入口行 */
+.mr-dev-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 10px 18px; }
+.mr-dev-col h4 { margin: 0 0 6px; font-size: var(--font-sm); color: var(--el-text-color-regular, #606266); }
+.mr-dev-more { display: flex; gap: 14px; margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--el-border-color-lighter, #ebeef5); flex-wrap: wrap; }
+/* 「更多复盘维度」抽屉 */
+.mr-more > summary { font-size: var(--font-12-5); }
+.mr-more-body { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
+/* 昨日复盘摘要块（任务 2.2）：三类摘要入口统一收纳 */
+.mr-summary { display: flex; flex-direction: column; gap: 8px; padding: 12px 14px; border: 1px solid var(--el-border-color-lighter, #ebeef5); border-radius: 10px; background: #fff; }
+.mr-summary h3 { display: flex; align-items: center; gap: 8px; margin: 0; font-size: var(--font-md); }
+.mr-summary-row { display: flex; gap: 10px; align-items: stretch; flex-wrap: wrap; }
 .mr-report-slot { flex: 1 1 320px; min-width: 0; display: flex; }
 .mr-report-slot > * { flex: 1; }
 .mr-backfill-block { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin: 0; padding: 7px 12px; border: 1px solid #f87171; border-radius: 8px; background: #fef2f2; color: #991b1b; font-size: var(--font-sm); line-height: 1.6; }
@@ -1181,12 +1262,8 @@ async function writeBack() {
 .mr-focus { margin: 0; padding: 7px 12px; border: 1px solid #bfdbfe; border-radius: 8px; background: #f8fbff; font-size: var(--font-sm); }
 .mr-focus strong { color: #075985; }
 .mr-focus ul { margin: 4px 0 0; padding-left: 18px; font-size: var(--font-xs); line-height: 1.7; color: #475569; }
-.mr-window { margin: 0; padding: 6px 12px; border-radius: 8px; font-size: var(--font-sm); }
 .mr-muted { color: var(--el-text-color-secondary, #909399); font-size: var(--font-sm); }
 .mr-s1-slow { color: #b45309; }
-.mr-window-within { background: #f0fdf4; color: #166534; }
-.mr-window-before { background: #f8fafc; color: #475569; }
-.mr-window-after { background: #fffbeb; color: #a16207; }
 .mr-panel { padding: 12px 14px; border: 1px solid var(--el-border-color-lighter, #ebeef5); border-radius: 10px; background: #fff; }
 .mr-panel h3 { display: flex; align-items: flex-start; gap: 10px; margin: 0 0 8px; font-size: var(--font-md); flex-wrap: wrap; }
 .mr-muted { margin: 0; font-size: var(--font-sm); color: var(--el-text-color-secondary, #667); }

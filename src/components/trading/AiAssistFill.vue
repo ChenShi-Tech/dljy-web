@@ -151,13 +151,14 @@ function fmt(v: unknown): string {
 </template>
 
 <style scoped>
-.aaf { display: inline-flex; flex-direction: column; gap: 6px; align-items: flex-start; }
+.aaf { display: inline-flex; flex-direction: row; align-items: center; gap: 8px; flex-wrap: wrap; }
 .aaf-btn { display: inline-flex; align-items: center; gap: 4px; padding: 3px 11px; border: 1px solid #7c3aed; border-radius: 12px; background: #faf5ff; color: #6d28d9; font-size: var(--font-xs); cursor: pointer; }
 .aaf-btn:disabled { opacity: .45; cursor: not-allowed; }
 .aaf-hint { font-size: var(--font-10); color: var(--el-text-color-secondary, #889); }
 .aaf-err { font-size: var(--font-xs); color: #b91c1c; max-width: 420px; line-height: 1.5; }
 
-.aaf-card { min-width: 320px; max-width: 560px; padding: 10px 12px; border: 1px solid #ddd6fe; border-radius: 10px; background: #faf5ff; }
+/* 建议卡独立成段：按钮行下整行展开，不与按钮挤一行 */
+.aaf-card { flex-basis: 100%; min-width: 320px; max-width: 560px; padding: 10px 12px; border: 1px solid #ddd6fe; border-radius: 10px; background: #faf5ff; }
 .aaf-card-head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; font-size: var(--font-sm); }
 .aaf-conf { padding: 1px 8px; border-radius: 9px; background: #ede9fe; color: #6d28d9; font-size: var(--font-10); }
 .aaf-conf.low { background: #fef3c7; color: #92400e; }
