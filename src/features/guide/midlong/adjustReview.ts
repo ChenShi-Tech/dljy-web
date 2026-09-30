@@ -94,11 +94,10 @@ function voucherRegistered(ctx: GuideCtx): boolean {
   return (billsSnapshotFor(ctx)?.bills ?? []).some((b) => b.id === billId && b.voucherCount > 0)
 }
 
-// 章 4 完成：本导引登记的差异存在（OPEN/RECHECK_REQUIRED 均算已登记）。
+// 章 4 完成：只认本导引实际登记的差异（capture 的 discrepancyId）；账单存在不代表差异已登记——
+// 若按前置账单判定，恢复链会跳过 4-0..4-3 而第 5 章没有差异可关（codex R1-01）。
 function discrepancyRegistered(ctx: GuideCtx): boolean {
-  if (typeof ctx.artifacts[ARTIFACT.discrepancyId] === 'number') return true
-  const no = `${runTagOf(ctx)}-B1`
-  return (billsSnapshotFor(ctx)?.bills ?? []).some((b) => b.externalBillNo === no)
+  return typeof ctx.artifacts[ARTIFACT.discrepancyId] === 'number'
 }
 
 // 章 5 完成：差异已关闭（RESOLVED；登记快照与处理说明冻结）。
@@ -141,14 +140,33 @@ async function gotoBills(ctx: GuideCtx, tab: 'bills' | 'discrepancies'): Promise
   window.location.assign(`/zcqjy/bills?tab=${tab}`)
 }
 
-/** 「带我去」到复盘页。 */
+/** 「带我去」到复盘页，并把交割月筛选切到本导引的目标月（codex R1-02）。 */
 async function gotoReview(ctx: GuideCtx): Promise<void> {
+  const targetMonth = monthsFor(ctx)[0]
+  const [year, mon] = targetMonth.split('-')
   ctx.go({ path: '/zcqjy/review' })
   const deadline = Date.now() + 8000
   while (Date.now() < deadline) {
-    if (findGuideTarget(ANCHOR.reviewMonth, 'page')) {
-      // 把筛选月份切到目标月（query 不带月份，页面默认当月）
-      ;(findGuideTarget(ANCHOR.reviewMonth, 'page') as HTMLElement | null)?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    const picker = findGuideTarget(ANCHOR.reviewMonth, 'page')
+    if (picker) {
+      picker.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await sleep(600)
+      // 月面板：必要时切年，再点目标月
+      for (let i = 0; i < 24; i += 1) {
+        const panel = [...document.querySelectorAll('.el-month-panel, .el-picker-panel')].find((p) => p.getClientRects().length > 0)
+        const header = panel?.querySelector('.el-date-picker__header-label')?.textContent ?? ''
+        if (header.includes(year)) break
+        const nextYear = [...(panel?.querySelectorAll('.el-date-picker__header .el-picker-panel__icon-btn') ?? [])].pop()
+        nextYear?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+        await sleep(200)
+      }
+      const cells = [...document.querySelectorAll('.el-month-table td')].filter((td) => td.getClientRects().length > 0)
+      const cell = cells.find((td) => (td.textContent ?? '').replace(/[^0-9]/g, '') === String(Number(mon))) as HTMLElement | null
+      cell?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await sleep(400)
+      // 面板关闭后点「查询」触发 loadMetrics
+      const searchBtn = [...document.querySelectorAll<HTMLElement>('main button')].find((b) => b.textContent?.trim() === '查询')
+      searchBtn?.click()
       return
     }
     await sleep(300)
@@ -252,7 +270,7 @@ const steps: GuideStep[] = [
         { kind: 'state', state: STATE.adjustments, done: (_snap, ctx) => adjustmentEffective(ctx) },
       ],
     },
-    assist: { kind: 'action', label: '帮我点', run: async () => {
+    assist: { kind: 'action', label: '帮我点', run: async (ctx) => {
       const deadline = Date.now() + 10_000
       while (Date.now() < deadline) {
         const btn = findGuideTarget(ANCHOR.adjustmentConfirm, 'drawer')
@@ -262,15 +280,25 @@ const steps: GuideStep[] = [
         }
         await sleep(300)
       }
+      // 无既有依据时补教学示例文件（codex R1-03）：与 FORM.adjustmentConfirm 的 fill 同构，
+      // 直接写 File 使「确认生效」按钮脱离禁用，再等按钮可点后提交。
+      const fileInput = (findGuideTarget(ANCHOR.adjustmentConfirmFile, 'dialog') as HTMLElement | null)?.querySelector('input[type="file"]') as HTMLInputElement | null
       const submitDeadline = Date.now() + 8000
       while (Date.now() < submitDeadline) {
-        // 帮填文件后提交按钮仍可能因文件解析未完成而暂不可点：轮询到可点再点。
-        const submit = findGuideTarget(ANCHOR.adjustmentConfirmSubmit, 'dialog')
-        if (submit && !submit.classList.contains('is-loading')) {
-          // 先由本步 assist 的 form 填充教学示例文件：这里直接触发一次 help-fill 的文件注入等价物不可行，
-          // 改为注入完成后由用户确认；若文件已就绪（按钮可点）直接提交。
+        const submit = findGuideTarget(ANCHOR.adjustmentConfirmSubmit, 'dialog') as HTMLButtonElement | null
+        if (submit && !submit.disabled) {
           submit.click()
           return
+        }
+        if (fileInput && fileInput.files?.length === 0) {
+          const file = makeExampleEvidenceFile(`${ctx.runTag}-ADJ1`, ctx, { label: '调整生效依据', guide: '调整与复盘账单' })
+          const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'files')?.set
+          if (setter) {
+            const dt = new DataTransfer()
+            dt.items.add(file)
+            setter.call(fileInput, dt.files)
+            fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+          }
         }
         await sleep(300)
       }
