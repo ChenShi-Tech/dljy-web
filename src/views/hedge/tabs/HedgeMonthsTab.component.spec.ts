@@ -156,7 +156,7 @@ describe('HedgeMonthsTab（任务 8.3）', () => {
     expect((wrapper.find('[data-test="months-to"]').element as HTMLInputElement).value).toBe(def.toMonth)
     expect(monthsMock).toHaveBeenCalledWith(expect.objectContaining({ fromMonth: def.fromMonth, toMonth: def.toMonth }))
     await vi.waitFor(() => { expect(breakdownMock).toHaveBeenCalled() })
-    expect(breakdownMock.mock.calls[0][0]).toMatchObject({ fromDate: `${def.fromMonth}-01`, dimension: 'subject' })
+    expect(breakdownMock.mock.calls[0][0]).toMatchObject({ fromDate: `${def.fromMonth}-01`, dimension: 'subject', granularity: 'DAY' })
   })
 
   it('当月月卡：两口径套保率并列、判级带期限档（HM-02/HB-02）', async () => {
@@ -423,6 +423,6 @@ describe('HedgeMonthsTab（任务 8.3）', () => {
     await vi.waitFor(() => { expect(monthsMock).toHaveBeenCalledTimes(2) })
     expect(monthsMock.mock.calls[1][0]).toMatchObject({ fromMonth: '2026-10', toMonth: '2026-12' })
     await vi.waitFor(() => { expect(breakdownMock).toHaveBeenCalledTimes(2) })
-    expect(breakdownMock.mock.calls[1][0]).toMatchObject({ fromDate: '2026-10-01', toDate: '2026-12-31' })
+    expect(breakdownMock.mock.calls[1][0]).toMatchObject({ fromDate: '2026-10-01', toDate: '2026-12-31', granularity: 'DAY' })
   })
 })
