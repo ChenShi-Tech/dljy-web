@@ -19,7 +19,6 @@ import {
 import { onRegionChange } from '../composables/useRegionReload'
 import { useQuerySync } from '../composables/useQuerySync'
 import RegionDataBanner from '@/components/region/RegionDataBanner.vue'
-import CapabilitySupportBadge from '../components/CapabilitySupportBadge.vue'
 import LoadPanelChart from '../components/common/LoadPanelChart.vue'
 import LoadRangeBoard from '../components/common/LoadRangeBoard.vue'
 import { LOAD_PANEL_UNIT, isEmptyLoadSource } from '@/services/chart/loadPanelModel'
@@ -136,7 +135,6 @@ onRegionChange(load)
 <template>
   <div class="dl" v-loading="loading">
     <RegionDataBanner />
-    <CapabilitySupportBadge path="/sjfx/actualLoad" />
     <el-alert v-if="error" type="error" :closable="false" :title="error" class="mb" />
     <div class="toolbar">
       <el-button size="small" type="success" plain @click="askInsight">✨ 解读本页</el-button>

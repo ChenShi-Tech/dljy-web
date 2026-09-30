@@ -15,9 +15,6 @@ vi.mock('@/features/aiSidebar', () => ({ defineAiPage: () => {}, useAiSidebar: (
 vi.mock('@/components/region/RegionDataBanner.vue', () => ({
   default: { name: 'RegionDataBanner', template: '<div class="stub-banner" />' }
 }))
-vi.mock('../components/CapabilitySupportBadge.vue', () => ({
-  default: { name: 'CapabilitySupportBadge', template: '<div class="stub-badge" />' }
-}))
 vi.mock('../components/common/LoadPanelChart.vue', () => ({
   default: {
     name: 'LoadPanelChart',

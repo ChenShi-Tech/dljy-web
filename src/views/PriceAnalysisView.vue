@@ -16,7 +16,6 @@ import {
 } from '@/services/data/contracts'
 import { onRegionChange } from '../composables/useRegionReload'
 import RegionDataBanner from '@/components/region/RegionDataBanner.vue'
-import CapabilitySupportBadge from '../components/CapabilitySupportBadge.vue'
 import { chartChrome } from '../composables/useTheme'
 import { useEChart } from '../composables/useEChart'
 import { axisTooltip, bottomToolbox, emptyOverlay, insideZoom } from '@/services/chart/chartOptions'
@@ -270,7 +269,6 @@ onRegionChange(load)
 <template>
   <div class="pa" v-loading="loading">
     <RegionDataBanner />
-    <CapabilitySupportBadge path="/sjfx/zrsjg" />
     <el-alert v-if="error" type="error" :closable="false" :title="error" class="mb" />
     <div class="toolbar">
       <span class="lbl">运行日期</span>
