@@ -30,7 +30,7 @@ import { POINTS_96 } from '@/utils/spotPoints96'
 import ZsjfxScorecardPanel from '@/components/analysis/ZsjfxScorecardPanel.vue'
 import ZsjfxAvailabilityHeatmap from '@/components/analysis/ZsjfxAvailabilityHeatmap.vue'
 import { fetchZsjfxScorecard, type ZsjfxScorecard } from '@/services/insight/zsjfxScorecardClient'
-import { computeDerivedSeries, DERIVED_LABEL, type DerivedKind, type DerivedSpec } from '@/utils/zsjfxDerived'
+import { computeDerivedSeries, DERIVED_LABEL, normalizeDerivedSpecs, type DerivedKind, type DerivedSpec } from '@/utils/zsjfxDerived'
 import { buildZsjfxCsv, downloadTextFile, zsjfxExportFilenames } from '@/utils/zsjfxExport'
 // S3（#3595）：确定性 AI 素材与异动标记
 import { buildAnomalyContext, buildAnomalyMarks, buildScorecardContext, segmentStats } from '@/utils/zsjfxAiContext'
@@ -280,7 +280,8 @@ function render() {
         target.markPoint = {
           symbol: 'circle', symbolSize: 7,
           label: { show: true, formatter: '{b}', fontSize: 10, position: 'top' },
-          data: anomalyMarks.points.filter((pt) => pt.market === market).map((pt) => ({ coord: pt.coord, name: pt.value, itemStyle: pt.itemStyle }))
+          // ZW-08：标记名带阈值口径（如「负价 <0」「逼近限价 ≥1080」），不依赖悬浮即可读
+          data: anomalyMarks.points.filter((pt) => pt.market === market).map((pt) => ({ coord: pt.coord, name: pt.label, itemStyle: pt.itemStyle }))
         }
       }
     }
@@ -364,7 +365,7 @@ function applyConfig(cfg: ViewConfig) {
   hideAxis.value = !!cfg.hideAxis
   activeGroups.value = [...(cfg.activeGroups ?? [])]
   if (cfg.company) company.value = cfg.company
-  derivedSpecs.value = (cfg.derived ?? []).filter((d) => d && d.kind && d.a && d.b).map((d) => ({ kind: d.kind, a: d.a, b: d.b }))
+  derivedSpecs.value = normalizeDerivedSpecs(cfg.derived)
   viewsDrawer.value = false
   // 应用视图后取当日数据再渲染（避免 fetchDay 完成前空图闪烁，复用 pickDay 的 loading 包裹）
   if (cfg.currentDate) {
@@ -779,6 +780,7 @@ onRegionChange(load)
         :window="scorecardWindow"
         @pair-change="onScorecardPair"
         @window-change="onScorecardWindow"
+        @interpret="ai.interpret()"
       />
     </el-drawer>
 
