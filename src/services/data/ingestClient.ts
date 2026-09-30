@@ -8,16 +8,16 @@
 import { requestHeaders } from '@/services/api'
 import { dataServicePath } from '@/services/dataServiceRoutes'
 import type { DataSourceBasis } from '@/services/data/types'
+import { CUSTOMER_CHANNELS } from 'shared/data-collection/generated/customer-channels.mjs'
 
+// 手动摄取的可选类型从注册表**客户可见投影**派生（#3536，规格 CR-02：前端只露注册表标为
+// 「可手动触发、客户可见」的通道）。投影经 sync:web 镜像，字段白名单（id/name/content/
+// kind/trigger）——无凭据键名/落点表名/内部通道/运维状态（codex P1：registry 全量不得进浏览器产物）。
 // spot-ingest / forecast-etl：数据接入向导「一键生效」(#885)，T0/T1 模板投递后 UI 点按即跑 ETL，
 // 与 import-hub DELIVERY_HINTS 同源命令。底层走 agent-python.mjs 桥（Python ETL），lockArgs 硬编码。
-export type IngestKind =
-  | 'spot-export'
-  | 'weather-export'
-  | 'spot-ingest'
-  | 'forecast-etl'
-  | 'cgn-yunnan-prices'
-  | 'cgn-yunnan-market'
+export const MANUAL_INGEST_KINDS = Object.freeze(CUSTOMER_CHANNELS.map((ch) => ch.kind)) as readonly string[]
+
+export type IngestKind = (typeof MANUAL_INGEST_KINDS)[number]
 
 export interface IngestResult {
   code: number
