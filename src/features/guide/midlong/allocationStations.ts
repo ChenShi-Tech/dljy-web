@@ -189,7 +189,16 @@ function captureStartContract(payload: unknown, ctx: GuideCtx): void {
 
 function captureCurveSetId(payload: unknown, ctx: GuideCtx): void {
   const p = payload as { curveSetId?: number } | null
-  if (typeof p?.curveSetId === 'number' && p.curveSetId > 0) ctx.artifacts[ARTIFACT.curveSetId] = p.curveSetId
+  if (typeof p?.curveSetId === 'number' && p.curveSetId > 0) {
+    ctx.artifacts[ARTIFACT.curveSetId] = p.curveSetId
+    return
+  }
+  // state 分支的 payload 是分解面板快照：优先取未确认的草稿（正在走的流），兜底已确认的集。
+  const snap = payload as CurvesSnapshot | null
+  if (!snap) return
+  const draft = (snap.sets ?? []).find((s) => s.status === 'DRAFT' && s.isCurrentRevision && s.blockingIssueCount === 0)
+  const id = draft?.id ?? (snap.months ?? []).map((m) => m.formalCurveSetId).find((v): v is number => typeof v === 'number' && v > 0)
+  if (typeof id === 'number') ctx.artifacts[ARTIFACT.curveSetId] = id
 }
 
 // ---- 「带我去」导航：先跳转，等页面表单挂载后用 fill+submit 纠正 KeepAlive 可能保留的旧筛选 ----
@@ -390,8 +399,19 @@ const steps: GuideStep[] = [
     title: '去分解集详情页',
     body: '草稿已保存。点结果里的「查看分解集并确认」，或点「带我去」。',
     advance: { kind: 'route', match: isCurveDetailRoute },
-    assist: { kind: 'navigate', to: (ctx) => ({ path: `/zcqjy/curves/${ctx.artifacts[ARTIFACT.curveSetId] ?? ''}` }) },
+    assist: { kind: 'navigate', to: (ctx) => {
+      // 本轮 capture 过草稿 id 就用它；重复导引落到已确认分解集时从面板快照兜底取已确认的集 id；
+      // 都没有（如快照未加载）就回合同详情，用户从「分时分解」区点进去也能推进。
+      const known = ctx.artifacts[ARTIFACT.curveSetId]
+      if (typeof known === 'number' && known > 0) return { path: `/zcqjy/curves/${known}` }
+      const snap = curvesSnapshotFor(ctx)
+      const confirmed = (snap?.months ?? []).map((m) => m.formalCurveSetId).find((id): id is number => typeof id === 'number' && id > 0)
+      if (typeof confirmed === 'number') return { path: `/zcqjy/curves/${confirmed}` }
+      const obligation = ctx.artifacts[ARTIFACT.guideObligationId]
+      return { path: `/zcqjy/contracts/${typeof obligation === 'number' ? obligation : ''}` }
+    } },
     recover: (ctx): boolean => {
+      if (typeof ctx.artifacts[ARTIFACT.curveSetId] === 'number') return true
       const snap = curveSetSnapshotFor(ctx)
       return Boolean(snap?.curveSetId)
     },
@@ -417,8 +437,15 @@ const steps: GuideStep[] = [
   {
     id: '2-1', chapter: 2, target: ANCHOR.curvesetConfirm, within: 'page', placement: 'bottom',
     title: '确认这份分解集',
-    body: '校验通过后「确认」可点。点它打开确认对话框。',
-    advance: { kind: 'visible', target: ANCHOR.curvesetEvidence, within: 'dialog' },
+    body: '校验通过后「确认」可点。点它打开确认对话框。重复导引落到已确认的分解集时，这一步会直接跳过。',
+    advance: {
+      kind: 'any',
+      of: [
+        { kind: 'visible', target: ANCHOR.curvesetEvidence, within: 'dialog' },
+        // 重复导引：分解集已是确认态（正常流里快照是草稿态，不会误触）。
+        { kind: 'state', state: STATE.curveSet, done: (snap) => (snap as CurveSetSnapshot | null)?.status === 'CONFIRMED' },
+      ],
+    },
     assist: { kind: 'click' },
     recover: curveSetConfirmed,
   },
@@ -491,9 +518,9 @@ const steps: GuideStep[] = [
 
   // 章 4：场站分配
   {
-    id: '4-0', chapter: 4, target: ANCHOR.stationsPanel, within: 'page', placement: 'top',
+    id: '4-0', chapter: 4, target: ANCHOR.allocCreate, within: 'page', placement: 'top',
     title: '回到合同详情，打开场站分配',
-    body: '电量现在挂在交易主体名下（主体统签），还没落到场站。回合同详情的「场站分配」区，点「登记正式交易分解」。',
+    body: '电量现在挂在交易主体名下（主体统签），还没落到场站。回合同详情的「场站分配」区，点「登记正式交易分解」（兜底直接帮你点这个按钮）。',
     advance: { kind: 'visible', target: ANCHOR.allocType, within: 'dialog' },
     assist: { kind: 'click' },
     recover: allocationReady,
