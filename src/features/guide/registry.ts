@@ -5,11 +5,12 @@ const cache = new Map<string, GuideDefinition>()
 
 export async function listGuides(group: 'midlong'): Promise<GuideDefinition[]> {
   if (group === 'midlong') {
-    const [{ contractBasicsGuide }, { plannedGuides }] = await Promise.all([
+    const [{ contractBasicsGuide }, { allocationStationsGuide }, { plannedGuides }] = await Promise.all([
       import('./midlong/contractBasics'),
+      import('./midlong/allocationStations'),
       import('./midlong/plannedGuides'),
     ])
-    return [contractBasicsGuide, ...plannedGuides]
+    return [contractBasicsGuide, allocationStationsGuide, ...plannedGuides]
   }
   return []
 }

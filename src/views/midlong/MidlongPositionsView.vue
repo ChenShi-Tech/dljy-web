@@ -273,8 +273,8 @@ useGuideState(STATE.positions, () => ({ months: (report.value?.months ?? []).map
         <el-button type="primary" @click="apply">查询</el-button>
         <el-button :loading="exporting" @click="doExport">导出</el-button>
         <router-link to="/zcqjy/contracts" class="ml-link">售电合同 →</router-link>
-        <router-link v-if="p2ModuleOn(capabilities, 'curves')" :to="intervalLink" class="ml-link">分时持仓 →</router-link>
-        <router-link v-if="p2ModuleOn(capabilities, 'stationAllocations')" :to="stationLink" class="ml-link">场站维度 →</router-link>
+        <router-link v-if="p2ModuleOn(capabilities, 'curves')" :to="intervalLink" class="ml-link" data-guide="ml-positions-intervals-link">分时持仓 →</router-link>
+        <router-link v-if="p2ModuleOn(capabilities, 'stationAllocations')" :to="stationLink" class="ml-link" data-guide="ml-positions-stations-link">场站维度 →</router-link>
       </div>
 
       <MidlongNotice v-if="report.view === 'AS_OF'" tone="info" title="历史认知时点视图">

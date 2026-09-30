@@ -22,6 +22,9 @@ import {
 import { createLoadGuard, fmtQuantity } from '@/services/midlong/midlongFormat'
 import { basisTag, curveSetStatusTag, issueLocation } from '@/services/midlong/midlongP2Format'
 import { createDialogSession } from '@/services/midlong/midlongP2Session'
+// 操作导引（dljy#3405）：分解集快照与确认表单注册给「分解与场站」导引，确认成功发推进信号。
+import { emitGuideSignal, useGuideForm, useGuideState } from '@/features/guide/bridge'
+import { FORM, SIGNAL, STATE } from '@/features/guide/midlong/anchors'
 
 const route = useRoute()
 const router = useRouter()
@@ -115,6 +118,25 @@ function openDiscard() {
   dialogs.discard = true
 }
 
+// 操作导引（dljy#3405）：确认表单只读注册（曲线文件声明为电子确认单时依据自动登记，导引不代填），
+// 快照驱动「核对守恒 / 已确认」的推进与刷新恢复。
+useGuideForm(FORM.curvesetConfirm, { read: () => ({ ...confirmForm, evidenceIds: [...confirmForm.evidenceIds] }) }, { active: () => dialogs.confirm })
+useGuideState(STATE.curveSet, () => {
+  const d = detail.value
+  if (!d) return null
+  return {
+    curveSetId: d.id,
+    setNo: d.setNo,
+    contractId: d.contractId,
+    status: d.status,
+    evidenceBasis: d.evidenceBasis,
+    isCurrentRevision: d.isCurrentRevision,
+    blocking: Boolean(blocking.value),
+    coverage: [d.coverageFromMonth, d.coverageToMonth],
+    monthStatuses: (d.validation?.months ?? []).map((m) => ({ month: m.month, status: m.status })),
+  }
+})
+
 const confirmBlockedReason = computed(() => {
   const d = detail.value
   if (!d) return ''
@@ -131,8 +153,8 @@ const ACTION_HINTS: Record<string, string> = {
   CONFIRMED_WRITE_PROTECTED: '该分解集已确认或已废弃，不能再操作。',
 }
 
-async function run(name: 'confirm' | 'discard', action: () => Promise<unknown>, success: string) {
-  if (busy.value) return
+async function run(name: 'confirm' | 'discard', action: () => Promise<unknown>, success: string): Promise<boolean> {
+  if (busy.value) return false
   const token = actionSession.begin(String(setId.value))
   const current = () => actionSession.isCurrent(token, String(setId.value))
   busy.value = true
@@ -140,11 +162,13 @@ async function run(name: 'confirm' | 'discard', action: () => Promise<unknown>, 
   try {
     await action()
     ElMessage.success(success)
-    if (!current()) return
+    if (!current()) return true
     dialogs[name] = false
     await load()
+    return true
   } catch (error) {
     if (current()) actionError.value = midlongFailureOf(error)
+    return false
   } finally {
     busy.value = false
   }
@@ -155,6 +179,7 @@ function submitConfirm() {
   const d = detail.value
   void run('confirm', () => confirmCurveSet(d.id, { evidenceIds: confirmForm.evidenceIds, note: confirmForm.note.trim() || undefined }),
     d.evidenceBasis === 'FORMAL' ? '分时分解已确认，将计入正式分时持仓' : '内部估算已保存（不计入正式分时持仓）')
+    .then((ok) => { if (ok) emitGuideSignal(SIGNAL.curveSetConfirmed, { contractId: d.contractId, curveSetId: d.id }) })
 }
 
 function submitDiscard() {
@@ -198,7 +223,7 @@ function submitDiscard() {
       </MidlongNotice>
 
       <div class="ml-actions">
-        <el-button v-if="canConfirm" type="primary" :disabled="blocking" @click="openConfirm">确认</el-button>
+        <el-button v-if="canConfirm" type="primary" :disabled="blocking" data-guide="ml-curveset-confirm" @click="openConfirm">确认</el-button>
         <el-button v-if="canDiscard" @click="openDiscard">废弃草稿</el-button>
       </div>
 
@@ -233,7 +258,7 @@ function submitDiscard() {
         </el-descriptions>
       </div>
 
-      <div class="ml-panel">
+      <div class="ml-panel" data-guide="ml-curveset-checks">
         <h3>守恒核对</h3>
         <el-table :data="validation.months" border size="small">
           <el-table-column prop="month" label="月份" width="100" />
@@ -290,7 +315,7 @@ function submitDiscard() {
       <MidlongNotice v-if="detail?.evidenceBasis === 'FORMAL'" tone="info">确认后按月计入正式分时持仓；同月已有的旧分解集保留在历史视图。</MidlongNotice>
       <MidlongNotice v-else tone="warn">内部估算确认后仍不计入正式分时持仓，请写明估算依据。</MidlongNotice>
       <el-form label-width="96px" class="ml-form">
-        <el-form-item v-if="detail?.evidenceBasis === 'FORMAL'" label="依据资料">
+        <el-form-item v-if="detail?.evidenceBasis === 'FORMAL'" label="依据资料" data-guide="ml-curveset-evidence">
           <el-select v-model="confirmForm.evidenceIds" multiple placeholder="选择合同已有资料" style="width: 100%">
             <el-option v-for="e in basisEvidence" :key="e.id" :label="`${EVIDENCE_DOCUMENT_TYPE_LABELS[e.documentType]} · ${e.originalFileName}`" :value="e.id" />
           </el-select>
@@ -304,7 +329,7 @@ function submitDiscard() {
       <template #footer>
         <span v-if="confirmBlockedReason" class="ml-hint">{{ confirmBlockedReason }}</span>
         <el-button @click="dialogs.confirm = false">取消</el-button>
-        <el-button type="primary" :loading="busy" :disabled="Boolean(confirmBlockedReason)" @click="submitConfirm">确认</el-button>
+        <el-button type="primary" :loading="busy" :disabled="Boolean(confirmBlockedReason)" data-guide="ml-curveset-confirm" @click="submitConfirm">确认</el-button>
       </template>
     </el-dialog>
 

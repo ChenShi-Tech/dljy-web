@@ -171,6 +171,7 @@ const canWrite = computed(() => Boolean(capabilities.value?.canWrite))
 const stationName = (id: number | null) => (id ? stations.value.find((s) => s.id === id)?.name ?? `#${id}` : '未分配')
 
 // 操作导引（dljy#3404）：列表页快照驱动导引第 0 章的进入练习空间判断与各章的产物恢复。
+// #3405 起合同行带上确认状态与场站：「分解与场站」导引要从中挑出「已确认、场站未分配」的电量合同当起点。
 useGuideState(STATE.contracts, () => {
   const r = result.value
   if (!r) return null
@@ -178,7 +179,7 @@ useGuideState(STATE.contracts, () => {
     practiceActive: currentPracticeCompany.value !== null,
     canWrite: canWrite.value,
     subjects: subjects.value.map((s) => ({ id: s.id, subjectKey: s.subjectKey })),
-    contracts: r.rows.map((row) => ({ id: row.contractId, documentKind: row.documentKind, externalContractNo: row.externalContractNo })),
+    contracts: r.rows.map((row) => ({ id: row.contractId, documentKind: row.documentKind, externalContractNo: row.externalContractNo, confirmationStatus: row.confirmationStatus, stationId: row.stationId })),
     stations: stations.value.map((s) => ({ id: s.id })),
   }
 })

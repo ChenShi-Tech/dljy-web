@@ -1,19 +1,9 @@
-// 中长期操作导引中尚未实现的三条（dljy#3404）：选择面板里灰显「规划中」，不可点。
+// 中长期操作导引中尚未实现的条目（dljy#3404）：选择面板里灰显「规划中」，不可点。
 // 只登记标题/摘要/涉及的锚点（plannedAnchors 仅作文档索引，锚点守卫不检查）。
+// 「分解与场站」已实现（dljy#3405，midlong/allocationStations.ts），从本清单移除。
 import type { GuideDefinition } from '../types'
 
 export const plannedGuides: GuideDefinition[] = [
-  {
-    id: 'midlong.allocation-stations',
-    group: 'midlong',
-    title: '分解与场站',
-    summary: '给电量合同补月度分解、把电量分到场站，理解跨期未分解池。',
-    status: 'planned',
-    requires: [],
-    needsWrite: true,
-    steps: [],
-    plannedAnchors: ['ml-econ-alloc', 'ml-positions-stations-link'],
-  },
   {
     id: 'midlong.plan-execution',
     group: 'midlong',

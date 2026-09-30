@@ -26,6 +26,9 @@ import {
 } from '@/services/midlong/midlongP2Types'
 import { createLoadGuard, downloadCsv, fmtQuantity } from '@/services/midlong/midlongFormat'
 import { bucketQuantityLabel, bucketTimeLabel, coverageTag, inheritedLabel, rangeValue, timeStatusTag } from '@/services/midlong/midlongP2Format'
+// 操作导引（dljy#3405）
+import { useGuideForm, useGuideState } from '@/features/guide/bridge'
+import { FORM, STATE } from '@/features/guide/midlong/anchors'
 
 const route = useRoute()
 const router = useRouter()
@@ -128,6 +131,32 @@ watch([selectedCompanyId, () => currentRegion.value.id], () => {
   apply()
 })
 
+// 操作导引（dljy#3405）：筛选表单（fill+submit 纠正 KeepAlive 旧筛选）与报告快照注册给「分解与场站」导引。
+useGuideForm(
+  FORM.intervalFilters,
+  {
+    read: () => ({ ...filters, dateRange: [...filters.dateRange] }),
+    fill: (values) => {
+      for (const [key, value] of Object.entries(values)) (filters as unknown as Record<string, unknown>)[key] = value
+    },
+    submit: () => { apply() },
+  },
+)
+useGuideState(STATE.intervalPositions, () => {
+  const r = report.value
+  if (!r) return null
+  return {
+    fromDate: reportQuery.value?.fromDate ?? null,
+    toDate: reportQuery.value?.toDate ?? null,
+    granularity: reportQuery.value?.granularity ?? null,
+    status: r.status,
+    months: [...new Set(r.contracts.flatMap((c) => c.months.map((m) => m.month)))],
+    timeKnownMonths: [...new Set(r.contracts.flatMap((c) => c.months.filter((m) => m.timeStatus === 'CURVE').map((m) => m.month)))],
+    bucketCount: r.buckets.length,
+    drillDate: drillBucket.value?.start.slice(0, 10) ?? null,
+  }
+})
+
 const totals = computed(() => report.value?.totals ?? null)
 const maxDaysHint = computed(() => `当前粒度一次最多 ${INTERVAL_POSITION_MAX_DAYS[filters.granularity]} 天`)
 const contractById = computed(() => new Map((report.value?.contracts ?? []).map((c) => [c.contractId, c])))
@@ -212,7 +241,10 @@ function buildOption(): Record<string, unknown> {
 
     <template v-if="report && totals && (state === 'ready' || state === 'loading')">
       <div class="ml-filters">
-        <el-date-picker :model-value="filters.dateRange" type="daterange" @update:model-value="(v: unknown) => (filters.dateRange = rangeValue(v))" value-format="YYYY-MM-DD" range-separator="至" start-placeholder="起始日" end-placeholder="结束日" style="width: 240px" />
+        <!-- 锚点挂包装元素：el-date-picker 的 range 变体不透传 data-*（实机走查踩到） -->
+        <span data-guide="ml-interval-filters-date">
+          <el-date-picker :model-value="filters.dateRange" type="daterange" @update:model-value="(v: unknown) => (filters.dateRange = rangeValue(v))" value-format="YYYY-MM-DD" range-separator="至" start-placeholder="起始日" end-placeholder="结束日" style="width: 240px" />
+        </span>
         <el-radio-group v-model="filters.granularity" size="small">
           <el-radio-button v-for="g in GRANULARITY_OPTIONS" :key="g.value" :value="g.value">{{ g.label }}</el-radio-button>
         </el-radio-group>
@@ -251,7 +283,7 @@ function buildOption(): Record<string, unknown> {
 
       <ChartCard title="分时持仓（灰色底带为分时未知，虚线框为部分已知）" :height="320" :build-option="buildOption" :empty="report.status === 'empty'" empty-text="暂无已确认持仓" />
 
-      <div class="ml-panel">
+      <div class="ml-panel" data-guide="ml-interval-buckets">
         <h3>时段明细 <small>点击时段查看合同与所用分解集</small></h3>
         <el-table :data="report.buckets" border size="small" max-height="420" highlight-current-row @row-click="(row: IntervalBucket) => (drillBucket = row)">
           <el-table-column label="时段" min-width="200"><template #default="{ row }">{{ row.start.slice(0, 16).replace('T', ' ') }} ~ {{ row.end.slice(11, 16) }}</template></el-table-column>
@@ -265,7 +297,7 @@ function buildOption(): Record<string, unknown> {
         </el-table>
       </div>
 
-      <div v-if="drillBucket" class="ml-panel">
+      <div v-if="drillBucket" class="ml-panel" data-guide="ml-interval-drill">
         <h3>{{ drillBucket.start.slice(0, 16).replace('T', ' ') }} 合同分时来源 <el-button link @click="drillBucket = null">收起</el-button></h3>
         <el-table :data="drillContracts" border size="small">
           <el-table-column label="合同" min-width="220">
