@@ -65,7 +65,8 @@ export function fetchMonthsView(query: { fromMonth: string; toMonth: string; asO
 }
 
 export function fetchBreakdownView(query: { fromDate: string; toDate: string; dimension: BreakdownDimension; asOf?: string }) {
-  return request<HedgeBreakdownPayload>('GET', '/breakdown', { query })
+  // 月度分类不需要小时曲线；DAY 支持默认跨月及最多十二个月窗口。
+  return request<HedgeBreakdownPayload>('GET', '/breakdown', { query: { ...query, granularity: 'DAY' } })
 }
 
 /** 月份范围 → 钻取窗口（首月一日 → 末月最后一日）；任一月键非法为 null。 */
