@@ -80,6 +80,11 @@ let reloadReqId = 0
 const errorMsg = ref('')
 const ingestHint = ref(false)
 
+// 加载遮罩文案：标明「目标」日期/市场（date/market 是 v-model，选中即变），
+// 面板各处标题（如损益归因区间）也随 v-model 先行切换——遮罩文案负责说清
+// 「正在去哪」，避免切换耗时被误读成没切上。
+const loadingText = computed(() => `正在加载 ${date.value} · ${market.value === 'da' ? '日前' : '实时'} 数据…`)
+
 // ECharts chrome（轴/网格/文字/tooltip）随当前主题
 // 每个 builder 在 render 内调用 axisX/axisY/tt/ttfix，函数体内取 chartChrome()，故 useEChart
 // 主题切换 dispose 重建并重调 render 时自动拿到新色。数据系列语义色（青/琥珀/绿/红/金）不走此层。
@@ -909,6 +914,7 @@ onRegionChange(() => {
           value-format="YYYY-MM-DD"
           size="small"
           :clearable="false"
+          :disabled="loading"
           class="ck-date"
           @change="onDateChange"
         />
@@ -917,6 +923,7 @@ onRegionChange(() => {
             v-for="m in marketOptions"
             :key="m.value"
             :class="{ on: market === m.value }"
+            :disabled="loading"
             type="button"
             @click="((market = m.value), onMarketChange())"
           >
@@ -955,7 +962,7 @@ onRegionChange(() => {
     />
 
     <!-- 市场态势条 -->
-    <section class="pulse">
+    <section class="pulse" v-loading="loading" :element-loading-text="loadingText">
       <div class="kpi">
         <div class="lab">全市场{{ market === 'da' ? '日前' : '实时' }}均价</div>
         <div class="val da num">{{ fmt(kpis?.marketAvg, 0) }}<small>元/MWh</small></div>
@@ -1016,7 +1023,7 @@ onRegionChange(() => {
       </div>
     </section>
 
-    <div class="wrap">
+    <div class="wrap" v-loading="loading" :element-loading-text="loadingText">
       <!-- 主区 -->
       <div class="col-main">
         <!-- ② 价格热力场 -->
@@ -1391,6 +1398,10 @@ onRegionChange(() => {
 .seg button.on {
   background: linear-gradient(180deg, rgba(56, 189, 248, 0.22), rgba(56, 189, 248, 0.08));
   color: var(--ck-da);
+}
+.seg button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 .arena-source-select {
   min-width: 132px;
