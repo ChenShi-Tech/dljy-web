@@ -32,11 +32,13 @@ import ZsjfxAvailabilityHeatmap from '@/components/analysis/ZsjfxAvailabilityHea
 import { fetchZsjfxScorecard, type ZsjfxScorecard } from '@/services/insight/zsjfxScorecardClient'
 import { computeDerivedSeries, DERIVED_LABEL, type DerivedKind, type DerivedSpec } from '@/utils/zsjfxDerived'
 import { buildZsjfxCsv, downloadTextFile, zsjfxExportFilenames } from '@/utils/zsjfxExport'
+// S3（#3595）：确定性 AI 素材与异动标记
+import { buildAnomalyContext, buildAnomalyMarks, buildScorecardContext, segmentStats } from '@/utils/zsjfxAiContext'
 
 const loading = ref(true)
 const error = ref('')
 const chartRef = ref<HTMLDivElement | null>(null)
-const mainChart = useEChart(chartRef, { render })
+const mainChart = useEChart(chartRef, { render, onInit: (instance) => { instance.on('brushEnd', onBrushEnd) } })
 
 const meta = ref<ZsjfxMetaViewModel | null>(null)
 const dateSet = ref<Set<string>>(new Set())
@@ -266,15 +268,41 @@ function render() {
   }))
   const legendData = [...drawn, ...derivedBuilt.map((d) => d.name)]
 
+  // S3（#3595，ZW-08）：异动标记（口径对齐驾驶舱，服务端确定性派生）；开关关闭则不加任何标记，
+  // 手动标注走 analysis store、与本渲染路径无关（关闭不影响其存取）。
+  const freshSc = freshScorecard()
+  const anomalyMarks = buildAnomalyMarks(freshSc?.anomalies ?? [], { show: showAnomalyMarks.value && !!freshSc })
+  if (anomalyMarks.points.length || anomalyMarks.areas.length) {
+    const attachPoint = (market: 'da' | 'rt') => {
+      const name = market === 'da' ? '日前价出清' : '实时价出清'
+      const target = [...series, ...derivedSeries].find((x: any) => x.name === name)
+      if (target) {
+        target.markPoint = {
+          symbol: 'circle', symbolSize: 7,
+          label: { show: true, formatter: '{b}', fontSize: 10, position: 'top' },
+          data: anomalyMarks.points.filter((pt) => pt.market === market).map((pt) => ({ coord: pt.coord, name: pt.value, itemStyle: pt.itemStyle }))
+        }
+      }
+    }
+    attachPoint('da')
+    attachPoint('rt')
+    const first = [...series, ...derivedSeries][0]
+    if (first && anomalyMarks.areas.length) {
+      first.markArea = { silent: true, data: anomalyMarks.areas }
+    }
+  }
+
   const units: Record<string, string> = {}
   drawn.forEach((name) => { units[name] = axisUnit(String(yz[Number(typeAxis[name] ?? 0)]?.name || '')) })
   derivedBuilt.forEach((d) => { units[d.name] = d.kind === 'diff' ? axisUnit(String(yz[Number(typeAxis[d.a] ?? 0)]?.name || '')) : d.kind === 'coverage' ? '%' : '比值' })
 
   mainChart.setOption({
     tooltip: { ...axisTooltip({ units }), confine: true },
+    // S3（#3595，ZW-07）：框选即问——lineX 框选槽位区间，brushEnd 生成确定性区段统计发 AI 侧栏
+    brush: { toolbox: ['lineX'], xAxisIndex: 0, brushLink: 'all', throttleType: 'debounce', throttleDelay: 200, brushStyle: { borderColor: 'rgba(64,158,255,0.4)' }, title: '框选即问' },
     // 底部布局:工具栏右下角,图例顶部居中 scroll
-    toolbox: bottomToolbox('数据分析', 8),
-    legend: bottomLayoutLegend({ data: drawn, itemWidth: 18, itemHeight: 8, textStyle: { fontSize: 11 } }),
+    toolbox: { ...bottomToolbox('数据分析', 8), feature: { ...((bottomToolbox('数据分析', 8) as any).feature ?? {}), brush: { type: ['lineX'], title: '框选即问' } } },
+    legend: bottomLayoutLegend({ data: legendData, itemWidth: 18, itemHeight: 8, textStyle: { fontSize: 11 } }),
     // 右侧留白随轴数伸缩（codex #235 R1：天气轴追加后固定 300 会把高位轴挤出画布）
     grid: { left: hideAxis.value ? 16 : 56, right: hideAxis.value ? 24 : Math.min(72 + yz.length * 54, 560),
       top: 64, bottom: 56, containLabel: hideAxis.value },
@@ -370,6 +398,51 @@ async function onSaveAnnotation() {
     await analysis.saveAnnotation('point', `sdpt_zsjfx_idx|${currentDate.value}`, annoContent.value.trim())
     ElMessage.success('标注已保存'); annoContent.value = ''; annoDialog.value = false
   } catch (e) { ElMessage.error(e instanceof Error ? e.message : '标注保存失败') }
+}
+
+// ── S3（#3595，ZW-07/08）：框选区段即问 + 异动标记开关 ──
+// 框选：ECharts brush（lineX）选槽位区间 → 确定性区段统计 → AI 侧栏提问（素材为算好的数值）。
+const segmentSelection = ref<{ from: number; to: number } | null>(null)
+const showAnomalyMarks = ref(true)
+try { showAnomalyMarks.value = localStorage.getItem('zsjfx.anomalyMarks') !== 'off' } catch { /* 无 localStorage 环境按默认开 */ }
+function toggleAnomalyMarks() {
+  showAnomalyMarks.value = !showAnomalyMarks.value
+  try { localStorage.setItem('zsjfx.anomalyMarks', showAnomalyMarks.value ? 'on' : 'off') } catch { /* 忽略存储失败 */ }
+  render()
+}
+function drawnSeriesMap(): Record<string, Array<number | null>> {
+  const day = dayCache.value[currentDate.value] || {}
+  const out: Record<string, Array<number | null>> = {}
+  for (const t of selected.value) {
+    if (day[t] && (day[t] as Array<number | null>).some((v) => v != null)) out[t] = day[t] as Array<number | null>
+  }
+  return out
+}
+function segmentContextSnapshot(): Record<string, unknown> {
+  if (!segmentSelection.value) return {}
+  const { from, to } = segmentSelection.value
+  const stats = segmentStats(drawnSeriesMap(), from, to)
+  return {
+    slot_range: `${POINTS_96[from]}~${POINTS_96[to]}`,
+    date: currentDate.value,
+    series_stats: stats
+  }
+}
+/** codex #239 R1-01：与当前地区+日期同时匹配的对拍结果才可被消费（上下文与标记同源）。 */
+function freshScorecard() {
+  const sc = scorecard.value
+  return sc && sc.regionId === currentRegion.value.id && sc.dateTo === currentDate.value ? sc : null
+}
+function onBrushEnd(params: unknown) {
+  const areas = (params as { areas?: Array<{ coordRange?: [number, number] }> })?.areas ?? []
+  const range = areas[0]?.coordRange
+  if (!Array.isArray(range) || range.length !== 2) return
+  const from = Math.max(0, Math.round(Math.min(range[0], range[1])))
+  const to = Math.min(95, Math.round(Math.max(range[0], range[1])))
+  if (to <= from) return
+  segmentSelection.value = { from, to }
+  ai.ask(`请解读我在 ${currentDate.value} ${POINTS_96[from]}~${POINTS_96[to]} 选中的时段（各序列统计已附上，请基于数值分析不要自行计算）`, { context: segmentContextSnapshot() })
+  mainChart.instance()?.dispatchAction({ type: 'brush', areas: [] })
 }
 
 // ── S2（#3594）：预测×实际对拍面板 ──
@@ -558,6 +631,12 @@ function insightContext(): Record<string, unknown> {
     if (!nums.length) return null
     return { min: Math.round(Math.min(...nums)), max: Math.round(Math.max(...nums)), avg: Math.round(nums.reduce((s, x) => s + x, 0) / nums.length) }
   }
+  // S3（#3595，ZW-07）：AI 素材升级为确定性指标包——对拍结果/异动/可用性都是算好的数值，
+  // LLM 只叙事不计算；区段统计在用户框选后由 segment_context 附加。
+  // codex #239 R1-01：只消费与当前地区+日期同时匹配的对拍结果，过期结果不进 AI 上下文
+  const scorecardFresh = freshScorecard()
+  const scorecardCtx = buildScorecardContext(scorecardFresh) ?? null
+  const anomalyCtx = buildAnomalyContext(scorecardFresh) ?? []
   return {
     page: '综合数据分析 (singleZsjfx)',
     current_date: currentDate.value,
@@ -565,7 +644,14 @@ function insightContext(): Record<string, unknown> {
     selected_count: selected.value.length,
     drawn_series: drawn.map((name) => ({ name, stat: stat(day[name]) })),
     axis_mode: fixedAxis.value ? '坐标固定' : '坐标自动',
-    note: '本页可叠加 63 类型曲线；摘要仅含当日已勾选且有数据的序列统计，96 点逐点未传',
+    type_granularities: Object.keys(meta.value?.typeMeta ?? {}).length
+      ? Object.fromEntries(Object.entries(meta.value!.typeMeta!).map(([t, tm]) => [t, tm.granularity]))
+      : undefined,
+    scorecard: scorecardCtx ?? undefined,
+    anomalies: anomalyCtx.length ? anomalyCtx : undefined,
+    anomaly_notes: scorecard.value?.anomalyNotes?.length ? scorecard.value.anomalyNotes : undefined,
+    segment_context: segmentSelection.value ? segmentContextSnapshot() : undefined,
+    note: '本页可叠加目录内全部类型曲线；drawn_series/scorecard/anomalies 均为确定性统计（非 LLM 计算），96 点逐点未传',
     basis: 'captured'
   }
 }
@@ -578,6 +664,8 @@ function askInsight() {
 
 onMounted(load)
 watch(selected, render, { deep: true })
+// codex #239 R1-02：对拍结果落地/失效后重绘，异动标记不依赖无关操作才出现
+watch([scorecard, currentDate], render)
 
 onRegionChange(load)
 </script>
@@ -608,6 +696,7 @@ onRegionChange(load)
       <el-button size="small" type="success" plain @click="openScorecard">📊 对拍</el-button>
       <el-button size="small" type="success" plain @click="openDerivedDialog">➗ 衍生线</el-button>
       <el-button size="small" type="success" plain @click="openHeat">🗓 可用性</el-button>
+      <el-button size="small" :type="showAnomalyMarks ? 'warning' : 'info'" plain @click="toggleAnomalyMarks">{{ showAnomalyMarks ? '🚨 异动开' : '🚨 异动关' }}</el-button>
       <el-button size="small" type="primary" @click="toggleFixed">{{ fixedAxis ? '坐标自动' : '坐标固定' }}</el-button>
       <el-button size="small" type="primary" @click="selectAll">所有数据</el-button>
       <el-button size="small" type="primary" @click="toggleHideAxis">{{ hideAxis ? '显示Y轴' : '隐藏Y轴' }}</el-button>
