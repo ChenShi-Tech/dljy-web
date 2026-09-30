@@ -90,7 +90,7 @@ function positionLabel(e: RiskEventSummary): string {
 .mrp { display: flex; flex-direction: column; gap: 6px; padding: 12px 14px; border: 1px solid var(--el-border-color-lighter, #ebeef5); border-radius: 10px; background: #fff; }
 .mrp h3 { font-size: var(--font-sm); margin: 0; display: flex; align-items: center; gap: 6px; }
 /* 标题 ⓘ：两项无源监测的 data_gap 口径说明收纳为 tooltip（诚实标注不减可见性，悬浮即达） */
-.mrp-info { display: inline-flex; align-items: center; justify-content: center; width: 15px; height: 15px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 50%; background: #f8fafc; color: var(--el-text-color-secondary, #667); font-size: 10px; font-style: normal; cursor: help; user-select: none; }
+.mrp-info { display: inline-flex; align-items: center; justify-content: center; width: 15px; height: 15px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 50%; background: #f8fafc; color: var(--el-text-color-secondary, #667); font-size: var(--font-10); font-style: normal; cursor: help; user-select: none; }
 .mrp-muted { margin: 0; font-size: var(--font-xs); color: var(--el-text-color-secondary, #909399); line-height: 1.6; }
 .mrp-remind { margin: 0; padding: 6px 9px; border-radius: 6px; background: #fffbeb; color: #92400e; font-size: var(--font-xs); line-height: 1.6; }
 .mrp-table { width: 100%; border-collapse: collapse; font-size: var(--font-xs); font-variant-numeric: tabular-nums; }

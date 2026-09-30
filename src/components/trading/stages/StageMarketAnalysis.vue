@@ -938,7 +938,7 @@ async function writeBack() {
 
 .ma-src-legend { margin-left: 8px; font-style: normal; font-weight: 400; font-size: var(--font-10); color: var(--el-text-color-secondary, #889); }
 /* 标题/表头 ⓘ：说明性文字收纳为 el-tooltip（内嵌浏览器不渲染原生 title），与 S1 同款 */
-.ma-info { display: inline-flex; align-items: center; justify-content: center; width: 15px; height: 15px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 50%; background: #f8fafc; color: var(--el-text-color-secondary, #667); font-size: 10px; font-style: normal; cursor: help; user-select: none; }
+.ma-info { display: inline-flex; align-items: center; justify-content: center; width: 15px; height: 15px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 50%; background: #f8fafc; color: var(--el-text-color-secondary, #667); font-size: var(--font-10); font-style: normal; cursor: help; user-select: none; }
 .ma-cell { display: inline-flex; align-items: center; gap: 3px; }
 .ma-src { font-style: normal; font-size: var(--font-9); padding: 0 4px; border-radius: 6px; white-space: nowrap; }
 .src-capture, .src-dispatch { background: #dcfce7; color: #15803d; }

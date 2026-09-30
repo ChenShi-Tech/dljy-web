@@ -615,6 +615,6 @@ async function writeBack() {
 /* 写回契约说明：恢复卡内下方常驻段落（点位单一且是操作前提，比 tooltip 更可达） */
 .mr-note { margin: 8px 0 0; font-size: var(--font-xs); line-height: 1.6; color: #a16207; }
 /* 立场焦点行 ⓘ（第五轮订正：样式块在第五轮换回 .mr-note 时被一并替换掉，此处补回，与风险面板 .mrp-info 同款） */
-.mr-title-info { display: inline-flex; align-items: center; justify-content: center; width: 15px; height: 15px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 50%; background: #f8fafc; color: var(--el-text-color-secondary, #667); font-size: 10px; font-style: normal; cursor: help; user-select: none; }
+.mr-title-info { display: inline-flex; align-items: center; justify-content: center; width: 15px; height: 15px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 50%; background: #f8fafc; color: var(--el-text-color-secondary, #667); font-size: var(--font-10); font-style: normal; cursor: help; user-select: none; }
 .mr-opt { margin-left: 6px; font-size: var(--font-xs); color: var(--el-text-color-secondary, #889); }
 </style>
