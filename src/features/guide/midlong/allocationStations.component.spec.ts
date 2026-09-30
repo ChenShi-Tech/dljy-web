@@ -131,7 +131,7 @@ describe('第 4 章：场站分配', () => {
     expect(doneOf('4-3', { evidenceIds: [7] })).toBe(true)
   })
 
-  it('「帮我填」按交割月分配、每个月两个练习场站对半（整数微单位，合计与合同电量严格相等）', () => {
+  it('「帮我填」按每个月的正式月度电量对半分（合同月分解不均等时也不能超额）', () => {
     useGuideState(STATE.contractStations, () => ({ contractId: 1, totalQuantity: '999.99' }))
     useGuideState(STATE.curves, () => ({
       contractId: 1,
@@ -148,12 +148,18 @@ describe('第 4 章：场站分配', () => {
     expect(values.segmentMode).toBe('MONTHLY')
     expect(values.rows).toHaveLength(6)
     const sum = values.rows.reduce((total, row) => total + Number(row.quantity), 0)
-    expect(Math.abs(sum - 999.99)).toBeLessThan(1e-9)
-    for (const month of ['2026-10', '2026-11', '2026-12']) {
+    expect(Math.abs(sum - 1000)).toBeLessThan(1e-9)
+    // 每月的分配合计不得超过该月正式月度分解。
+    for (const [month, formal] of [['2026-10', 400], ['2026-11', 300], ['2026-12', 300]] as const) {
       const monthRows = values.rows.filter((row) => row.segmentMonth === month)
       expect(monthRows).toHaveLength(2)
       expect(monthRows.map((row) => row.stationId)).toEqual([11, 12])
+      const monthSum = monthRows.reduce((total, row) => total + Number(row.quantity), 0)
+      expect(monthSum).toBeLessThanOrEqual(formal)
     }
+    expect(values.rows[0].quantity).toBe('200')
+    expect(values.rows[1].quantity).toBe('200')
+    expect(values.rows[2].quantity).toBe('150')
   })
 })
 

@@ -225,14 +225,25 @@ async function goStationPositions(ctx: GuideCtx): Promise<void> {
   await submitGuideForm(FORM.stationPositionsFilters)
 }
 
-// ---- 分配行示例：按交割月分配，每个月两个练习场站对半（整数微单位算，避免浮点尾数）----
+// ---- 分配行示例：按交割月分配，每个月按该月正式月度电量对半分给两个练习场站（整数微单位算，避免浮点尾数）----
 
 function allocationRowsExample(ctx: GuideCtx): Array<{ stationId: number | null; segmentMonth: string; quantity: string }> {
   const seeded = ctx.artifacts[ARTIFACT.practiceStationIds]
   const stationIds = Array.isArray(seeded) ? (seeded as number[]).slice(0, 2) : []
-  const months = coverageMonthsFor(ctx)
+  // 片段电量是「该月的正式月度分解」——不是合同总量均分（合同月分解常不均等，均分会超额，实机走查踩到）。
+  const specs = monthQuantitiesFor(ctx)
+  if (specs.length) {
+    return specs.flatMap(({ month, quantityMicro }) => {
+      const half = Math.floor(quantityMicro / 2)
+      return [
+        { stationId: stationIds[0] ?? null, segmentMonth: month, quantity: microText(half) },
+        { stationId: stationIds[1] ?? null, segmentMonth: month, quantity: microText(quantityMicro - half) },
+      ]
+    })
+  }
+  // 兜底：正式月度分解还没加载出来时按合同总量的覆盖月均分（正常到不了这里）。
   const totalMicro = quantityToMicro(stationsSnapshotFor(ctx)?.totalQuantity) ?? 0
-  // 月总额：前面的月吃整除部分，最后一个月拿尾差，合计与合同电量严格相等。
+  const months = coverageMonthsFor(ctx)
   const monthBase = Math.floor(totalMicro / months.length)
   const rows: Array<{ stationId: number | null; segmentMonth: string; quantity: string }> = []
   months.forEach((month, index) => {
