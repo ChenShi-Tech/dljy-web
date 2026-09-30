@@ -20,6 +20,9 @@ import {
 import { createLoadGuard, fmtQuantity } from '@/services/midlong/midlongFormat'
 import { allocationKindTag, curveSetStatusTag, inheritedLabel, segmentLabel } from '@/services/midlong/midlongP2Format'
 import { createDialogSession } from '@/services/midlong/midlongP2Session'
+// 操作导引（dljy#3405）：场站分配快照驱动「分解与场站」导引第 4 章的推进与刷新恢复。
+import { useGuideState } from '@/features/guide/bridge'
+import { STATE } from '@/features/guide/midlong/anchors'
 
 const props = defineProps<{ contractId: number; rowVersion: number; canWrite: boolean; evidence: MidlongEvidence[]; stations: Array<{ id: number; name: string }> }>()
 
@@ -55,6 +58,20 @@ watch([selectedCompanyId, () => currentRegion.value.id, () => props.contractId, 
 
 const canCreate = computed(() => Boolean(props.canWrite && overview.value?.canCreate))
 const drafts = computed(() => (overview.value?.sets ?? []).filter((s) => s.status === 'DRAFT'))
+
+useGuideState(STATE.contractStations, () => {
+  const o = overview.value
+  if (!o) return null
+  return {
+    contractId: o.contractId,
+    confirmationStatus: o.confirmationStatus,
+    canCreate: o.canCreate,
+    totalQuantity: o.totalQuantity,
+    contractStationId: o.contractStation?.stationId ?? null,
+    effectiveSetNos: Object.fromEntries(STATION_ALLOCATION_KINDS.map((kind) => [kind, o.effective[kind]?.setNo ?? null])),
+    drafts: (o.sets ?? []).filter((s) => s.status === 'DRAFT').map((s) => ({ id: s.id, setNo: s.setNo, allocationKind: s.allocationKind, blocking: s.blockingIssueCount > 0 })),
+  }
+})
 
 function openDialog(kind: StationAllocationKind) {
   dialogKind.value = kind
@@ -111,12 +128,12 @@ async function discard(setId: number) {
 </script>
 
 <template>
-  <div class="ml-panel">
+  <div class="ml-panel" data-guide="ml-stations-panel">
     <h3>
       场站分配
       <small>主体合计与场站份额是同一义务的两种观察维度，不相加</small>
       <span class="ml-grow" />
-      <el-button v-if="canCreate" size="small" type="primary" @click="openDialog('FORMAL_TRADING')">登记正式交易分解</el-button>
+      <el-button v-if="canCreate" size="small" type="primary" data-guide="ml-alloc-create" @click="openDialog('FORMAL_TRADING')">登记正式交易分解</el-button>
       <el-button v-if="canCreate" size="small" @click="openDialog('INTERNAL_OPERATING')">登记内部经营分配</el-button>
     </h3>
     <div v-if="loading && !overview" v-loading="true" class="ml-placeholder" />

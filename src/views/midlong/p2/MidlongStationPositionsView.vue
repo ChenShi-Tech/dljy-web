@@ -21,6 +21,9 @@ import {
 } from '@/services/midlong/midlongP2Types'
 import { createLoadGuard, downloadCsv, fmtQuantity } from '@/services/midlong/midlongFormat'
 import { allocationKindTag, inheritedLabel, rangeValue, stationSplitText } from '@/services/midlong/midlongP2Format'
+// 操作导引（dljy#3405）：筛选表单与报告快照注册给「分解与场站」导引第 5 章。
+import { useGuideForm, useGuideState } from '@/features/guide/bridge'
+import { FORM, STATE } from '@/features/guide/midlong/anchors'
 
 const route = useRoute()
 const router = useRouter()
@@ -123,6 +126,30 @@ watch([selectedCompanyId, () => currentRegion.value.id], () => {
 
 const totals = computed(() => report.value?.totals ?? null)
 const stationColumns = computed(() => report.value?.stations ?? [])
+
+useGuideForm(
+  FORM.stationPositionsFilters,
+  {
+    read: () => ({ ...filters, monthRange: [...filters.monthRange] }),
+    fill: (values) => {
+      for (const [key, value] of Object.entries(values)) (filters as unknown as Record<string, unknown>)[key] = value
+    },
+    submit: () => { apply() },
+  },
+)
+useGuideState(STATE.stationPositions, () => {
+  const r = report.value
+  if (!r) return null
+  return {
+    fromMonth: reportQuery.value?.fromMonth ?? null,
+    toMonth: reportQuery.value?.toMonth ?? null,
+    allocationKind: r.allocationKind,
+    status: r.status,
+    months: r.months.map((m) => m.month),
+    drillMonth: drillMonth.value,
+    unallocatedQuantity: totals.value?.unallocatedQuantity ?? null,
+  }
+})
 const stationQuantity = (month: StationPositionReport['months'][number], stationId: number) => month.stations.find((s) => s.stationId === stationId)?.quantity ?? null
 const drillRows = computed(() => (report.value?.contributions ?? []).filter((c) => c.month === drillMonth.value))
 const inheritedSetCount = computed(() => (report.value?.allocationSetsUsed ?? []).filter((s) => s.inheritedFromRevisionNo).length)
@@ -184,7 +211,7 @@ const stationName = (id: number | null) => (id === null ? '—' : stationColumns
         <MetricTile tone="warn" label="其中：月份未分到场站" :value="fmtQuantity(totals.stationMonthUnknownQuantity)" unit="MWh" sub="按合同总量分配 · 不按比例推算" />
       </div>
 
-      <div class="ml-panel">
+      <div class="ml-panel" data-guide="ml-station-positions-table">
         <h3>逐月拆分 <small>点击月份查看合同贡献</small></h3>
         <el-table :data="report.months" border size="small" highlight-current-row @row-click="(row: StationPositionReport['months'][number]) => (drillMonth = row.month)">
           <el-table-column prop="month" label="月份" width="90" fixed />
