@@ -137,7 +137,7 @@ const inputFreezeLines = computed(() => {
           <el-table-column label="生成" width="150"><template #default="{ row }">{{ beijingDateTime(row.generatedAt) }}</template></el-table-column>
           <el-table-column label="导出" width="90">
             <template #default="{ row }">
-              <el-button link type="primary" size="small" :loading="exporting === row.versionNo" data-test="report-export" @click.stop="exportVersion(row.versionNo)">CSV</el-button>
+              <el-button link type="primary" size="small" :loading="exporting === row.versionNo" data-guide="ml-report-export" data-test="report-export" @click.stop="exportVersion(row.versionNo)">CSV</el-button>
             </template>
           </el-table-column>
         </el-table>
