@@ -108,9 +108,9 @@ function confirmationRegistered(ctx: GuideCtx): boolean {
 
 // ---- 导航兜底动作 ----
 
-/** 「带我去」到执行页某个标签：SPA 导航 + 轮询页面按钮出现；视图切换被挂起时整页直达（会话持久化可恢复）。 */
-async function gotoExecutionTab(ctx: GuideCtx, tab: 'windows' | 'proposals' | 'confirmations', button: string): Promise<void> {
-  ctx.go({ path: '/zcqjy/execution', query: { tab } })
+/** 「带我去」到某页某个标签：SPA 导航 + 轮询页面按钮出现；视图切换被挂起时整页直达（会话持久化可恢复）。 */
+async function gotoPageTab(ctx: GuideCtx, path: string, tab: string, button: string): Promise<void> {
+  ctx.go({ path, query: { tab } })
   const deadline = Date.now() + 8000
   while (Date.now() < deadline) {
     const el = findGuideTarget(button, 'page')
@@ -120,7 +120,7 @@ async function gotoExecutionTab(ctx: GuideCtx, tab: 'windows' | 'proposals' | 'c
     }
     await sleep(300)
   }
-  window.location.assign(`/zcqjy/execution?tab=${tab}`)
+  window.location.assign(`${path}?tab=${tab}`)
 }
 
 /** 方案确认后抽屉留在计划页（plans 模式没有导出/提交按钮）：第 4 章去执行页打开同一方案的执行抽屉。 */
@@ -129,9 +129,9 @@ async function gotoExecutionProposal(ctx: GuideCtx): Promise<void> {
   const deadline = Date.now() + 8000
   while (Date.now() < deadline) {
     const table = findGuideTarget(ANCHOR.executionProposalRows, 'page')
-    const row = table?.querySelector('.el-table__body-wrapper tbody tr')
-    if (row) {
-      row.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    const cell = table?.querySelector('.el-table__body-wrapper tbody tr td')
+    if (cell) {
+      cell.dispatchEvent(new MouseEvent('click', { bubbles: true }))
       return
     }
     await sleep(300)
@@ -187,7 +187,7 @@ const steps: GuideStep[] = [
   {
     id: '1-3', chapter: 1, target: ANCHOR.planQuantity, within: 'dialog', resumeTo: '1-0',
     title: '目标电量与依据',
-    body: '目标电量 600 MWh（示例口径），依据与负责人确认前必填——「帮我填」一并写上教学演示值。价格为空表示未定，不是 0。',
+    body: '目标电量示例 600 MWh；依据与负责人确认前必填——「帮我填」一并写上教学演示值。价格为空表示未定，不是 0。若后续方案确认时提示「可安排计划量不足」，把方案电量调小即可（练习公司可能已有历史确认合同占了额度）。',
     advance: { kind: 'form', form: FORM.planCreate, settleMs: 800, done: (v) => nonEmpty(v.targetQuantity) && nonEmpty(v.basisNote) && nonEmpty(v.ownerName) },
     assist: { kind: 'fill', form: FORM.planCreate, values: (ctx) => ({ targetQuantity: '600', basisNote: `教学示例目标（操作导引 ${ctx.runTag}）`, ownerName: DEMO_OPERATOR }) },
     recover: planConfirmedFor,
@@ -232,7 +232,7 @@ const steps: GuideStep[] = [
     title: '去交易执行，登记公告',
     body: '交易公告记录申报的起止时间，是方案关联与日历提醒的依据。「带我去」到交易执行页的公告登记，并帮你点「登记公告」。',
     advance: { kind: 'visible', target: ANCHOR.windowName, within: 'dialog' },
-    assist: { kind: 'action', label: '带我去', run: (ctx) => gotoExecutionTab(ctx, 'windows', ANCHOR.executionRegisterWindow) },
+    assist: { kind: 'action', label: '带我去', run: (ctx) => gotoPageTab(ctx, '/zcqjy/execution', 'windows', ANCHOR.executionRegisterWindow) },
     recover: windowRegistered,
   },
   {
@@ -277,7 +277,7 @@ const steps: GuideStep[] = [
     title: '新建方案草稿',
     body: '回到计划页的「交易方案」标签。方案是内部安排：保存草稿不建立占用、不进持仓；「确认可执行」才建立占用。「带我去」会切到该标签并帮你点「新建方案草稿」。',
     advance: { kind: 'visible', target: ANCHOR.proposalSubject, within: 'dialog' },
-    assist: { kind: 'action', label: '带我去', run: (ctx) => gotoExecutionTab(ctx, 'proposals', ANCHOR.plansNewProposal) },
+    assist: { kind: 'action', label: '带我去', run: (ctx) => gotoPageTab(ctx, '/zcqjy/plans', 'proposals', ANCHOR.plansNewProposal) },
     recover: proposalExecutable,
   },
   {
@@ -326,7 +326,7 @@ const steps: GuideStep[] = [
   {
     id: '3-5', chapter: 3, target: ANCHOR.plansProposalTable, within: 'page', placement: 'top',
     title: '方案测算与确认可执行',
-    body: '保存后方案抽屉自动打开：先看「方案测算」（交易前/后的电量与名义金额对比，模拟值），再点「确认可执行（建立占用）」——占用会体现在计划页的「未完成占用」。抽屉若被关闭，在方案列表点行重开；「帮我点」会代点（等测算加载完成、按钮可点后才点）。',
+    body: '保存后方案抽屉自动打开：先看「方案测算」（交易前/后的电量与名义金额对比，模拟值），再点「确认可执行（建立占用）」——占用会体现在计划页的「未完成占用」。抽屉若被关闭：在计划页「交易方案」标签的列表里点行重开（不在计划页就先回去）；「帮我点」会代点（等测算加载完成、按钮可点后才点）。',
     advance: {
       kind: 'any',
       of: [
@@ -428,7 +428,7 @@ const steps: GuideStep[] = [
     title: '登记成交确认单',
     body: '外部成交后拿到的确认单在这里登记：「确认成交」会把方案占用原子转换为合同义务。「带我去」到执行确认标签并帮你点「登记确认单」。',
     advance: { kind: 'visible', target: ANCHOR.confirmSubject, within: 'dialog' },
-    assist: { kind: 'action', label: '带我去', run: (ctx) => gotoExecutionTab(ctx, 'confirmations', ANCHOR.executionRegisterConfirmation) },
+    assist: { kind: 'action', label: '带我去', run: (ctx) => gotoPageTab(ctx, '/zcqjy/execution', 'confirmations', ANCHOR.executionRegisterConfirmation) },
     recover: confirmationRegistered,
   },
   {
@@ -446,9 +446,9 @@ const steps: GuideStep[] = [
   {
     id: '5-2', chapter: 5, target: ANCHOR.confirmStatus, within: 'dialog', resumeTo: '5-0', placement: 'right',
     title: '确认成交',
-    body: '「预成交」只保留记录、不建合同义务；「确认成交」会把关联方案的占用原子转换为合同义务（转换逐月展示在登记结果里）。这步切成「确认成交」。',
+    body: '「预成交」只保留记录、不建合同义务；「确认成交」会把关联方案的占用原子转换为合同义务（转换逐月展示在登记结果里）。这步切成「确认成交」——品种周期（月度）与交易方式（双边协商）是创建合同义务的必需项，一并帮你填上。',
     advance: { kind: 'form', form: FORM.confirmationRegister, settleMs: 0, done: (v) => v.resultStatus === 'CLEARED' },
-    assist: { kind: 'fill', form: FORM.confirmationRegister, values: () => ({ resultStatus: 'CLEARED' }) },
+    assist: { kind: 'fill', form: FORM.confirmationRegister, values: () => ({ resultStatus: 'CLEARED', productKind: 'MONTH', tradeMethod: 'BILATERAL' }) },
     recover: confirmationRegistered,
   },
   {
