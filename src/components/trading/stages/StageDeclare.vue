@@ -24,6 +24,13 @@ import { activeStanceType } from '@/services/stance/stanceContext'
 import { getRegionSpotProfile } from '@/data/regionSpotProfiles'
 import { buildSegmentDraft, segmentsToPriceCurve96, validateSegments, type SegmentRow } from '@/services/trading/segmentQuote'
 import {
+  addPriceChange,
+  judgePriceChange,
+  pendingPriceChanges,
+  type PriceChangeRecord
+} from '@/services/trading/priceChangeStore'
+import type { PriceChangeVerdict } from '@/services/review/strategyReview'
+import {
   approveDeclaration,
   declarationModeOf,
   runDeclarationRiskCheck,
@@ -53,6 +60,7 @@ const now = ref(Date.now())
 let tickTimer: number | undefined
 onMounted(() => {
   tickTimer = window.setInterval(() => { now.value = Date.now() }, 30_000)
+  pcPending.value = pendingPriceChanges()
 })
 onUnmounted(() => { if (tickTimer !== undefined) window.clearInterval(tickTimer) })
 
@@ -143,6 +151,42 @@ function applySegmentPrices() {
     }),
     '分段价格曲线已写入申报单（priceCurve96）'
   )
+}
+
+// 临场改价留痕（#2016 缺口二 · slim-s1-morning-review 自 S1 迁入 S4）：改价发生在
+// 申报刻，登记与次日回判都放在报价现场完成。当日登记（计划价/改后价/依据），次日
+// 回判「改对=可复制 / 改错=需修正」；纯 localStorage 原型 store，键不变——S1 时期的
+// 历史记录直接可读可判。默认收起，不给 S4 主动线加层级。
+const pcForm = reactive({
+  date: props.targetDate,
+  decisionPoint: '',
+  planPrice: null as number | null,
+  changedPrice: null as number | null,
+  rationale: ''
+})
+const pcPending = ref<PriceChangeRecord[]>([])
+const pcError = ref('')
+function submitPriceChange() {
+  pcError.value = ''
+  try {
+    addPriceChange({
+      date: pcForm.date,
+      decisionPoint: pcForm.decisionPoint,
+      planPrice: Number(pcForm.planPrice),
+      changedPrice: Number(pcForm.changedPrice),
+      rationale: pcForm.rationale
+    })
+    pcForm.decisionPoint = ''
+    pcForm.planPrice = null
+    pcForm.changedPrice = null
+    pcForm.rationale = ''
+    pcPending.value = pendingPriceChanges()
+  } catch (e) {
+    pcError.value = e instanceof Error ? e.message : '登记失败'
+  }
+}
+function judgePc(id: string, verdict: PriceChangeVerdict) {
+  if (judgePriceChange(id, verdict)) pcPending.value = pendingPriceChanges()
 }
 
 const busy = ref(false)
@@ -461,6 +505,34 @@ const receiptChecks = computed<ReceiptCheckRow[] | null>(() => {
       当前立场（{{ activeStanceType ?? '未选' }}）为报量不报价口径（售电 T3）——无分段报价环节；发电/储能立场在此生成分段草稿。
     </p>
 
+    <!-- 临场改价留痕（#2016 · slim-s1-morning-review 自 S1 迁入）：改价发生在申报刻，
+         计划价→改后价及依据当场登记，次日回判「改对=可复制 / 改错=需修正」。默认收起。 -->
+    <details class="dc-segments dc-pricechange">
+      <summary>
+        <Layers :size="13" /> 临场改价留痕
+        <em>{{ pcPending.length ? `${pcPending.length} 条待判定` : '计划价与临场改价的事后追溯记录（本地原型）' }}</em>
+      </summary>
+      <div class="dc-pc-form">
+        <label>日期<input v-model="pcForm.date" type="date" /></label>
+        <label>决策点<input v-model="pcForm.decisionPoint" type="text" placeholder="如：晚高峰申报价" /></label>
+        <label>计划价<input v-model.number="pcForm.planPrice" type="number" step="0.01" placeholder="如：0.35" /></label>
+        <label>改后价<input v-model.number="pcForm.changedPrice" type="number" step="0.01" placeholder="如：0.38" /></label>
+        <label class="dc-pc-why">依据<input v-model="pcForm.rationale" type="text" placeholder="当时看到了什么" /></label>
+        <button type="button" class="dc-btn" @click="submitPriceChange">登记</button>
+      </div>
+      <p v-if="pcError" class="dc-err">{{ pcError }}</p>
+      <ul v-if="pcPending.length" class="dc-pc-list">
+        <li v-for="r in pcPending" :key="r.id">
+          {{ r.date }} · {{ r.decisionPoint }}：计划 {{ r.planPrice }} → 改 {{ r.changedPrice }}（{{ r.rationale }}）
+          <span class="dc-pc-actions">
+            <button type="button" class="dc-jump" @click="judgePc(r.id, 'replicable')">改对（可复制）</button>
+            <button type="button" class="dc-jump" @click="judgePc(r.id, 'needs-fix')">改错（需修正）</button>
+          </span>
+        </li>
+      </ul>
+      <p v-else class="dc-muted">无待判定的临场改价。</p>
+    </details>
+
     <!-- 储能立场：充放电计划（写回后 SOC 判据自动生效） -->
     <details class="dc-storage" :open="activeStanceType === 'STORAGE'">
       <summary>
@@ -749,6 +821,14 @@ const receiptChecks = computed<ReceiptCheckRow[] | null>(() => {
 .dc-deadline.remind-red { border-color: #f87171; background: #fef2f2; color: #991b1b; font-weight: 600; }
 
 .dc-segments { border: 1px solid var(--el-border-color-lighter, #ebeef5); border-radius: 10px; background: #fff; padding: 8px 12px; }
+/* 临场改价留痕（#2016 · 自 S1 迁入）：登记表单 + 待判定回判列表 */
+.dc-pc-form { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; font-size: var(--font-sm); }
+.dc-pc-form label { display: inline-flex; align-items: center; gap: 4px; color: var(--el-text-color-secondary, #667); }
+.dc-pc-form input { padding: 3px 6px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 6px; font-size: var(--font-sm); width: 96px; }
+.dc-pc-why { flex: 1 1 180px; } .dc-pc-why input { width: 100%; }
+.dc-pc-list { margin: 6px 0 0; padding-left: 18px; font-size: var(--font-sm); }
+.dc-pc-list li { margin: 3px 0; line-height: 1.6; }
+.dc-pc-actions { margin-left: 8px; white-space: nowrap; }
 .dc-segments summary { display: flex; align-items: center; gap: 8px; font-size: var(--font-sm); font-weight: 600; cursor: pointer; flex-wrap: wrap; }
 .dc-segments summary em { font-style: normal; font-weight: 400; font-size: var(--font-xs); color: var(--el-text-color-secondary, #889); }
 .dc-segments[open] summary { margin-bottom: 8px; }

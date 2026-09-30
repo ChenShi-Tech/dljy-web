@@ -584,16 +584,18 @@ async function writeBack() {
         <span class="ma-regime">
           {{ daySummary.dominantRegime ? REGIME_LABEL[daySummary.dominantRegime] : '无法判断' }}
         </span>
+        <el-tooltip placement="top" :show-after="150">
+          <template #content>
+            <p>主导态势取<strong>时段数最多</strong>的档位而非平均供需比——平均会把「多数偏紧 + 个别极松」抹成宽松，恰好抹掉当天最该防的时段。</p>
+          </template>
+          <span class="ma-info" tabindex="0">ⓘ</span>
+        </el-tooltip>
         <span v-if="daySummary.priceCenterLow !== null" class="ma-center">
           均价指引 {{ daySummary.priceCenterLow }}–{{ daySummary.priceCenterHigh }} 元/MWh
         </span>
         <span v-if="daySummary.coverage" class="ma-cov">主导档覆盖 {{ (daySummary.coverage * 100).toFixed(0) }}% 时段</span>
       </div>
       <p class="ma-summary">{{ daySummary.summary }}</p>
-      <p class="ma-note">
-        主导态势取<strong>时段数最多</strong>的档位而非平均供需比——平均会把「多数偏紧 + 个别极松」
-        抹成宽松，恰好抹掉当天最该防的时段。
-      </p>
 
       <!-- 昨日偏差 → 今日判断（手册 S2 步骤④） -->
       <div class="ma-yday">
@@ -632,8 +634,11 @@ async function writeBack() {
         </p>
       </div>
 
-      <p v-if="positionGoal" class="ma-pos-goal" title="同一态势判断，三类身份的策略方向相反（#2005）">
+      <p v-if="positionGoal" class="ma-pos-goal">
         当前立场目标：{{ positionGoal }}——下方建议按此立场解读。
+        <el-tooltip placement="top" :show-after="150" content="同一态势判断，三类身份的策略方向相反（#2005）">
+          <span class="ma-info" tabindex="0">ⓘ</span>
+        </el-tooltip>
       </p>
       <div class="ma-actions">
         <button type="button" class="primary" :disabled="!declaration || !daySummary.dominantRegime || saving" @click="writeBack">
@@ -661,7 +666,15 @@ async function writeBack() {
           <thead>
             <tr>
               <th>时段</th>
-              <th title="全网口径（调度侧数据，市场成员通常拿不到全量）——注意与「公司代理机组容量」是两个不同的量，不可混填">全网可调机组 ⓘ</th>
+              <th>
+                <el-tooltip placement="top" :show-after="150">
+                  <template #content>
+                    <p>全网口径（调度侧数据，市场成员通常拿不到全量）——注意与「公司代理机组容量」是两个不同的量，不可混填。</p>
+                    <p>采集库没有此口径——从调度渠道拿到后在此录入并「保存到基本面库」，手改任一格来源即打回「人工」。</p>
+                  </template>
+                  <span>全网可调机组 <span class="ma-info">ⓘ</span></span>
+                </el-tooltip>
+              </th>
               <th>新能源</th><th>净外购</th><th>统调负荷</th><th>外送计划</th><th>备用</th>
             </tr>
           </thead>
@@ -679,8 +692,6 @@ async function writeBack() {
         </table>
         <p class="ma-tip">
           单位 MW。<strong>外送计入分母</strong>（外送增加等价于省内净负荷增加）。
-          「全网可调机组」是调度口径，采集库没有——从调度渠道拿到后在此录入并「保存到基本面库」，
-          手改任一格来源即打回「人工」。
         </p>
       </section>
 
@@ -688,7 +699,14 @@ async function writeBack() {
       <section class="ma-panel">
         <h3>供需比与边际机组</h3>
         <table class="ma-table">
-          <thead><tr><th>时段</th><th>供需比</th><th>市场态势</th><th>边际机组</th><th>价格中枢</th></tr></thead>
+          <thead><tr><th>时段</th><th>供需比</th><th>市场态势</th><th>边际机组</th><th>
+            <el-tooltip placement="top" :show-after="150">
+              <template #content>
+                <p>供需比 → 历史价格区间映射：规则层已实现（supply-demand.mjs::historicalPriceBand），但「历史供需比 × 价格」配对数据尚无活源（#1968 / Epic #1981）——不给编造的区间，暂显示「—」。</p>
+              </template>
+              <span>价格中枢 <span class="ma-info">ⓘ</span></span>
+            </el-tooltip>
+          </th></tr></thead>
           <tbody>
             <tr v-for="(a, i) in assessments" :key="a.slot" :class="regimeClass(a.regime)">
               <td class="ma-slot">{{ slots[i].label }}</td>
@@ -717,11 +735,6 @@ async function writeBack() {
             <strong>档位被推翻</strong>：{{ REGIME_LABEL[coupling.regimeBefore!] }} → {{ REGIME_LABEL[coupling.regimeAfter!] }}
           </template>
           <template v-else>档位未变（{{ coupling.regimeBefore ? REGIME_LABEL[coupling.regimeBefore] : '—' }}）</template>
-        </p>
-        <p class="ma-tip" style="margin-top: 8px">
-          供需比 → 历史价格区间映射（给定预测供需比，调出历史上相同供需比时段的价格范围）：
-          规则层已实现（supply-demand.mjs::historicalPriceBand），但「历史供需比 × 价格」配对数据
-          尚无活源（数据活源 #1968 / Epic #1981）——不给编造的区间。
         </p>
       </section>
 
@@ -758,17 +771,18 @@ async function writeBack() {
           <label>省内参考 元/MWh
             <input v-model.number="domesticPrice" type="number" min="0" placeholder="可取本页价格中枢中值" />
           </label>
-          <button
-            type="button"
-            class="ma-compare-fill"
-            :disabled="daySummary.priceCenterLow === null || daySummary.priceCenterHigh === null"
-            title="取供需分档价格中枢的中值作省内参考（来源=本页 S2 推演）"
-            @click="domesticPrice = daySummary.priceCenterLow !== null && daySummary.priceCenterHigh !== null
-              ? Math.round((daySummary.priceCenterLow + daySummary.priceCenterHigh) / 2)
-              : null"
-          >
-            取中枢中值
-          </button>
+          <el-tooltip placement="top" :show-after="150" content="取供需分档价格中枢的中值作省内参考（来源=本页 S2 推演）">
+            <button
+              type="button"
+              class="ma-compare-fill"
+              :disabled="daySummary.priceCenterLow === null || daySummary.priceCenterHigh === null"
+              @click="domesticPrice = daySummary.priceCenterLow !== null && daySummary.priceCenterHigh !== null
+                ? Math.round((daySummary.priceCenterLow + daySummary.priceCenterHigh) / 2)
+                : null"
+            >
+              取中枢中值
+            </button>
+          </el-tooltip>
           <label>省外/省间参考 元/MWh
             <span class="ma-cell">
               <input
@@ -832,19 +846,21 @@ async function writeBack() {
 
     <!-- 第二行：八源验签 × AI 晨间分析，与上一行「基本面 × 供需比」成 2×2 -->
     <div class="ma-grid">
-      <!-- 八源验签：作业前的清单式自查（逻辑见 h3 title 与底部说明） -->
+      <!-- 八源验签：作业前的清单式自查（逻辑见 h3 ⓘ 与底部口径说明） -->
       <section class="ma-panel">
         <h3>
           <ClipboardCheck :size="13" /> 数据可信度自查（八源验签）
+          <el-tooltip placement="top" :show-after="150">
+            <template #content>
+              <p>逻辑：开工前逐一勾验八类输入数据「到位没有、几成可信、是不是 Mock」→ 算完整率 → 判三态门禁（可申报 / 可参考 / 仅展示）。</p>
+              <p>任一源缺席或标 Mock 即降档；结论随市场判断一并写回，直接决定申报暴露系数（1 / 0.5 / 0）。当前为人工勾选，自动验签探针未接。</p>
+            </template>
+            <span class="ma-info" tabindex="0">ⓘ</span>
+          </el-tooltip>
           <em class="ma-gate-badge" :class="integrityVerdict.gate">
             {{ USAGE_GATE_LABEL[integrityVerdict.gate] }} · 完整率 {{ (integrityVerdict.completenessRate * 100).toFixed(0) }}%
           </em>
         </h3>
-        <p class="ma-tip" style="margin: 0 0 6px">
-          逻辑：开工前逐一勾验八类输入数据「到位没有、几成可信、是不是 Mock」→ 算完整率 → 判三态门禁
-          （可申报 / 可参考 / 仅展示）。任一源缺席或标 Mock 即降档；结论随市场判断一并写回，
-          直接决定申报暴露系数（1 / 0.5 / 0）。当前为人工勾选，自动验签探针未接。
-        </p>
         <table class="ma-table ma-sources">
           <thead>
             <tr><th>#</th><th>数据源</th><th>到位</th><th>可信度</th><th>完整度</th><th>Mock</th></tr>
@@ -921,6 +937,8 @@ async function writeBack() {
 .ma-pull-ok { font-size: var(--font-xs); color: #047857; }
 
 .ma-src-legend { margin-left: 8px; font-style: normal; font-weight: 400; font-size: var(--font-10); color: var(--el-text-color-secondary, #889); }
+/* 标题/表头 ⓘ：说明性文字收纳为 el-tooltip（内嵌浏览器不渲染原生 title），与 S1 同款 */
+.ma-info { display: inline-flex; align-items: center; justify-content: center; width: 15px; height: 15px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 50%; background: #f8fafc; color: var(--el-text-color-secondary, #667); font-size: 10px; font-style: normal; cursor: help; user-select: none; }
 .ma-cell { display: inline-flex; align-items: center; gap: 3px; }
 .ma-src { font-style: normal; font-size: var(--font-9); padding: 0 4px; border-radius: 6px; white-space: nowrap; }
 .src-capture, .src-dispatch { background: #dcfce7; color: #15803d; }
@@ -944,7 +962,6 @@ async function writeBack() {
 .ma-regime { font-size: var(--font-20); font-weight: 700; }
 .ma-center, .ma-cov { font-size: var(--font-md); font-variant-numeric: tabular-nums; }
 .ma-summary { margin: 6px 0 4px; font-size: var(--font-sm); line-height: 1.6; }
-.ma-note { margin: 0 0 8px; font-size: var(--font-xs); line-height: 1.6; color: var(--el-text-color-secondary, #667); }
 .ma-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .ma-actions .primary { display: inline-flex; align-items: center; gap: 5px; padding: 5px 14px; border: 1px solid #2563eb; border-radius: 6px; background: #2563eb; color: #fff; font-size: var(--font-sm); cursor: pointer; }
 .ma-actions .primary:disabled { opacity: .45; cursor: not-allowed; }
