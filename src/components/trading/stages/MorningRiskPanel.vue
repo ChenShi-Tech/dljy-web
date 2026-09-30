@@ -43,7 +43,16 @@ function positionLabel(e: RiskEventSummary): string {
 
 <template>
   <section id="mr-panel-risk" class="mrp">
-    <h3>风险复盘 · {{ windowLabel }}（六维⑤）</h3>
+    <h3>
+      风险复盘 · {{ windowLabel }}
+      <el-tooltip placement="top" :show-after="150">
+        <template #content>
+          <p>{{ NODE_PRICE_SPIKE_DATA_GAP_NOTE }}</p>
+          <p>{{ STOP_LOSS_DATA_GAP_NOTE }}</p>
+        </template>
+        <span class="mrp-info" tabindex="0">ⓘ</span>
+      </el-tooltip>
+    </h3>
 
     <p v-if="!available" class="mrp-muted">
       风险事件服务未上线或暂不可达——本维保持占位，不合成假事件。
@@ -71,8 +80,6 @@ function positionLabel(e: RiskEventSummary): string {
           </tbody>
         </table>
       </template>
-      <p class="mrp-muted">{{ NODE_PRICE_SPIKE_DATA_GAP_NOTE }}</p>
-      <p class="mrp-muted">{{ STOP_LOSS_DATA_GAP_NOTE }}</p>
       <button type="button" class="mrp-jump" @click="emit('goRiskLibrary')">去风险事件库登记/回填处置 →</button>
     </template>
   </section>
@@ -81,7 +88,9 @@ function positionLabel(e: RiskEventSummary): string {
 <style scoped>
 /* 面板外观对齐父级 .mr-panel（同款边框/内距，抽组件不改视觉） */
 .mrp { display: flex; flex-direction: column; gap: 6px; padding: 12px 14px; border: 1px solid var(--el-border-color-lighter, #ebeef5); border-radius: 10px; background: #fff; }
-.mrp h3 { font-size: var(--font-sm); margin: 0; }
+.mrp h3 { font-size: var(--font-sm); margin: 0; display: flex; align-items: center; gap: 6px; }
+/* 标题 ⓘ：两项无源监测的 data_gap 口径说明收纳为 tooltip（诚实标注不减可见性，悬浮即达） */
+.mrp-info { display: inline-flex; align-items: center; justify-content: center; width: 15px; height: 15px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 50%; background: #f8fafc; color: var(--el-text-color-secondary, #667); font-size: var(--font-10); font-style: normal; cursor: help; user-select: none; }
 .mrp-muted { margin: 0; font-size: var(--font-xs); color: var(--el-text-color-secondary, #909399); line-height: 1.6; }
 .mrp-remind { margin: 0; padding: 6px 9px; border-radius: 6px; background: #fffbeb; color: #92400e; font-size: var(--font-xs); line-height: 1.6; }
 .mrp-table { width: 100%; border-collapse: collapse; font-size: var(--font-xs); font-variant-numeric: tabular-nums; }
