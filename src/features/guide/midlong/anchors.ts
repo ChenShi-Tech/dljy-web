@@ -78,6 +78,8 @@ export const ANCHOR = {
   allocBalance: 'ml-alloc-balance',
   allocSave: 'ml-alloc-save',
   allocConfirm: 'ml-alloc-confirm',
+  allocDraftConfirm: 'ml-alloc-draft-confirm',
+  allocDraftConfirmSubmit: 'ml-alloc-draft-confirm-submit',
   // 场站维度持仓
   positionsStationsLink: 'ml-positions-stations-link',
   stationPositionsTable: 'ml-station-positions-table',

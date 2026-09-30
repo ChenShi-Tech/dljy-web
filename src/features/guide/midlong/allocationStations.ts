@@ -7,6 +7,7 @@
 import type { GuideCtx, GuideDefinition, GuideStep } from '../types'
 import { enterGuidePracticeSpace } from '../runner'
 import { fillGuideForm, readGuideForm, readGuideState, submitGuideForm } from '../bridge'
+import { findGuideTarget } from '../targets'
 import { ANCHOR, ARTIFACT, FORM, SIGNAL, STATE } from './anchors'
 import { guideMonths, makeRunTag } from './examples'
 import { makeExampleCurveFile, quantityToMicro, type CurveMonthSpec } from './curveFile'
@@ -531,9 +532,25 @@ const steps: GuideStep[] = [
   {
     id: '4-0', chapter: 4, target: ANCHOR.allocCreate, within: 'page', placement: 'top',
     title: '回到合同详情，打开场站分配',
-    body: '电量现在挂在交易主体名下（主体统签），还没落到场站。回合同详情的「场站分配」区，点「登记正式交易分解」（兜底直接帮你点这个按钮）。',
+    body: '电量现在挂在交易主体名下（主体统签），还没落到场站。还在分时持仓页的话点「带我去」回合同详情；「帮我点」会直接打开「登记正式交易分解」。',
     advance: { kind: 'visible', target: ANCHOR.allocType, within: 'dialog' },
-    assist: { kind: 'click' },
+    // 兜底是一条完整动作：先按产物导航回合同详情（第 3 章结束时用户在分时持仓页），等面板加载出来再点创建按钮。
+    assist: { kind: 'action', label: '带我去', run: async (ctx) => {
+      const id = ctx.artifacts[ARTIFACT.guideObligationId]
+      const path = `/zcqjy/contracts/${typeof id === 'number' ? id : ''}`
+      ctx.go({ path })
+      const deadline = Date.now() + 8000
+      while (Date.now() < deadline) {
+        const el = findGuideTarget(ANCHOR.allocCreate, 'page')
+        if (el) {
+          el.click()
+          return
+        }
+        await sleep(300)
+      }
+      // SPA 视图切换被挂起（如路由过渡未完成）时整页直达：会话持久化，加载后恢复回本步。
+      window.location.assign(path)
+    } },
     recover: allocationReady,
   },
   {
@@ -584,14 +601,14 @@ const steps: GuideStep[] = [
   {
     id: '4-4', chapter: 4, target: ANCHOR.allocBalance, within: 'dialog', resumeTo: '4-0', placement: 'top',
     title: '片段余额预览',
-    body: '「合同总量」片段的电量 = 已分配 + 未分配。超额会标红且不能确认；保存草稿不改变场站维度持仓。看完点「下一步」。',
+    body: '每个交割月片段的电量 = 已分配 + 未分配。超额会标红且不能确认；保存草稿不改变场站维度持仓。看完点「下一步」。',
     advance: { kind: 'manual' },
     recover: allocationReady,
   },
   {
     id: '4-5', chapter: 4, target: ANCHOR.allocSave, within: 'dialog', resumeTo: '4-0', placement: 'bottom',
     title: '保存草稿并校验',
-    body: '保存后按钮换成「确认分配」——同一套「先草稿、再确认」的节奏：草稿随时可废弃重来，确认才生效。',
+    body: '保存后草稿出现在「场站分配」区的「未确认的草稿」列表里——草稿随时可废弃重来，确认才生效。',
     advance: {
       kind: 'any',
       of: [
@@ -603,9 +620,9 @@ const steps: GuideStep[] = [
     recover: allocationReady,
   },
   {
-    id: '4-6', chapter: 4, target: ANCHOR.allocConfirm, within: 'dialog', resumeTo: '4-0', placement: 'bottom',
-    title: '确认分配',
-    body: '确认后这份正式交易分解生效，替换同类旧分配（整套快照）。',
+    id: '4-6', chapter: 4, target: ANCHOR.stationsPanel, within: 'page', placement: 'top',
+    title: '确认这份草稿',
+    body: '到「场站分配」区的「未确认的草稿」列表：点草稿行的「确认」，在弹出的确认框里检查依据资料后再点一次「确认」——生效后场站维度持仓按新分配拆分。刷新后草稿还在面板上，从这里继续，不会重复建稿；「帮我点」会代点这两下。',
     advance: {
       kind: 'any',
       of: [
@@ -613,7 +630,27 @@ const steps: GuideStep[] = [
         { kind: 'state', state: STATE.contractStations, done: (_snap, ctx) => formalAllocationConfirmed(ctx) },
       ],
     },
-    assist: { kind: 'click' },
+    assist: { kind: 'action', label: '帮我点', run: async () => {
+      // 两连点：草稿行的「确认」→ 弹出的确认框里的「确认」（后者挂了独立锚点以便区分遮罩层级）。
+      const deadline = Date.now() + 10_000
+      while (Date.now() < deadline) {
+        const row = findGuideTarget(ANCHOR.allocDraftConfirm, 'page')
+        if (row) {
+          row.click()
+          break
+        }
+        await sleep(300)
+      }
+      const submitDeadline = Date.now() + 5000
+      while (Date.now() < submitDeadline) {
+        const submit = findGuideTarget(ANCHOR.allocDraftConfirmSubmit, 'dialog')
+        if (submit) {
+          submit.click()
+          return
+        }
+        await sleep(300)
+      }
+    } },
     recover: formalAllocationConfirmed,
   },
   {
