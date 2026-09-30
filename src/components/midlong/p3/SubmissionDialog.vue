@@ -11,6 +11,9 @@ import { createWriteSession, isWriteAbandoned } from '@/services/midlong/midlong
 import { fileToBase64, oversizeUploadMessage } from '@/services/midlong/midlongFormat'
 import { receiptTag } from '@/services/midlong/midlongP3Format'
 import { PLANNING_NOTICES, RECEIPT_ELEMENT_LABELS, isCompleteBeijingDateTimeInput, type ProposalSubmission, type ReceiptCompleteness, type ReceiptElement, type TradeProposalDetail } from '@/services/midlong/midlongP3Types'
+// 操作导引（dljy#3406）：提交表单接给导引；登记成功发含 submissionId 的推进信号（capture 用）。
+import { emitGuideSignal, useGuideForm } from '@/features/guide/bridge'
+import { FORM, SIGNAL } from '@/features/guide/midlong/anchors'
 
 const props = defineProps<{ modelValue: boolean; mode: 'submission' | 'receipt'; proposal: TradeProposalDetail; submission: ProposalSubmission | null }>()
 const emit = defineEmits<{ 'update:modelValue': [boolean]; saved: [number] }>()
@@ -50,6 +53,21 @@ function onFile(event: Event) {
   file.value = selected
 }
 
+// 操作导引（dljy#3406）：只服务登记外部提交（补充回执不是导引路径）。
+useGuideForm(
+  FORM.proposalSubmission,
+  {
+    read: () => ({ ...form, hasFile: file.value !== null, mode: props.mode }),
+    fill: (values) => {
+      for (const [key, value] of Object.entries(values)) {
+        if (key === 'file') file.value = value as File | null
+        else (form as unknown as Record<string, unknown>)[key] = value
+      }
+    },
+  },
+  { active: () => props.modelValue && props.mode === 'submission' },
+)
+
 /** 回执输入：表单值在调用时同步读取，只有读取文件内容要等待。 */
 async function receiptInput(): Promise<ReceiptInput | null> {
   const selected = file.value
@@ -78,6 +96,8 @@ async function submit() {
       : await registerSubmission(proposal.id, { expectedRowVersion: proposal.rowVersion, ...submissionFields, receipt })
     ElMessage.success(mode === 'receipt' ? '回执已补充' : '已登记外部提交（不代表平台已受理）')
     emit('saved', proposal.id)
+    // 操作导引（dljy#3406）：submissionId 只在登记返回里有，供 capture 记产物；补充回执不发本信号。
+    if (mode === 'submission') emitGuideSignal(SIGNAL.proposalSubmitted, { proposalId: saved.proposalId, submissionId: saved.submissionId })
     // 写请求返回前表单已关闭或重开：结果属于上一次打开，不显示到当前表单。
     if (ticket.sameSession()) result.value = { completeness: saved.receiptCompleteness, missing: saved.receiptMissing }
   } catch (e) {
@@ -95,10 +115,10 @@ async function submit() {
     <MidlongNotice tone="warn">{{ PLANNING_NOTICES.submissionNotAccepted }}</MidlongNotice>
     <el-form label-width="120px" class="p3-form" @submit.prevent>
       <template v-if="mode === 'submission'">
-        <el-form-item label="外部提交时间" required>
+        <el-form-item label="外部提交时间" required data-guide="ml-submission-at">
           <BeijingDateTimeInput v-model="form.submittedAt" data-test="submittedAt" />
         </el-form-item>
-        <el-form-item label="外部操作人" required><el-input v-model="form.submittedByName" /></el-form-item>
+        <el-form-item label="外部操作人" required data-guide="ml-submission-by"><el-input v-model="form.submittedByName" /></el-form-item>
         <el-form-item label="渠道"><el-input v-model="form.channel" placeholder="如：交易平台人工申报" /></el-form-item>
         <el-form-item label="说明"><el-input v-model="form.note" type="textarea" :rows="2" /></el-form-item>
       </template>
@@ -111,14 +131,14 @@ async function submit() {
       <el-form-item label="回执文件"><input type="file" data-test="receipt-file" @change="onFile" /></el-form-item>
       <el-form-item label="回执说明"><el-input v-model="form.receiptNote" /></el-form-item>
     </el-form>
-    <MidlongNotice v-if="result" :tone="result.completeness === 'COMPLETE' ? 'info' : 'warn'" :title="`登记完成：${receiptTag(result.completeness).label}`">
+    <MidlongNotice v-if="result" :tone="result.completeness === 'COMPLETE' ? 'info' : 'warn'" :title="`登记完成：${receiptTag(result.completeness).label}`" data-guide="ml-submission-result">
       <template v-if="result.missing.length">依据待补：{{ result.missing.map((k) => RECEIPT_ELEMENT_LABELS[k]).join('、') }}。</template>
       平台是否受理由外部平台结果为准，本系统不作判断。
     </MidlongNotice>
     <MidlongNotice v-if="error" tone="danger">{{ error }}</MidlongNotice>
     <template #footer>
       <el-button @click="emit('update:modelValue', false)">{{ result ? '完成' : '取消' }}</el-button>
-      <el-button v-if="!result" type="primary" :loading="saving" :disabled="!valid" @click="submit">登记</el-button>
+      <el-button v-if="!result" type="primary" :loading="saving" :disabled="!valid" data-guide="ml-submission-submit" @click="submit">登记</el-button>
     </template>
   </el-dialog>
 </template>

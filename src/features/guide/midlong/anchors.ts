@@ -83,6 +83,46 @@ export const ANCHOR = {
   // 场站维度持仓
   positionsStationsLink: 'ml-positions-stations-link',
   stationPositionsTable: 'ml-station-positions-table',
+  // 售电计划页（dljy#3406）
+  plansNewTarget: 'ml-plans-new-target',
+  plansNewProposal: 'ml-plans-new-proposal',
+  plansTargetTable: 'ml-plans-target-table',
+  plansProposalTable: 'ml-plans-proposal-table',
+  planRowConfirm: 'ml-plan-row-confirm',
+  // 新建目标对话框
+  planSubject: 'ml-plan-subject',
+  planPeriod: 'ml-plan-period',
+  planQuantity: 'ml-plan-quantity',
+  planSubmit: 'ml-plan-submit',
+  // 交易执行页与公告对话框
+  executionRegisterWindow: 'ml-execution-register-window',
+  executionRegisterConfirmation: 'ml-execution-register-confirmation',
+  executionProposalRows: 'ml-execution-proposal-rows',
+  windowName: 'ml-window-name',
+  windowDeclCloses: 'ml-window-decl-closes',
+  windowSubmit: 'ml-window-submit',
+  // 方案对话框与方案抽屉
+  proposalSubject: 'ml-proposal-subject',
+  proposalWindow: 'ml-proposal-window',
+  proposalSegments: 'ml-proposal-segments',
+  proposalSubmit: 'ml-proposal-submit',
+  pdetailConfirm: 'ml-pdetail-confirm',
+  pdetailExport: 'ml-pdetail-export',
+  pdetailSubmit: 'ml-pdetail-submit',
+  // 外部提交对话框
+  submissionAt: 'ml-submission-at',
+  submissionBy: 'ml-submission-by',
+  submissionSubmit: 'ml-submission-submit',
+  submissionResult: 'ml-submission-result',
+  // 成交确认单对话框
+  confirmSubject: 'ml-confirm-subject',
+  confirmNo: 'ml-confirm-no',
+  confirmStatus: 'ml-confirm-status',
+  confirmSegments: 'ml-confirm-segments',
+  confirmFile: 'ml-confirm-file',
+  confirmProposal: 'ml-confirm-proposal',
+  confirmSubmit: 'ml-confirm-submit',
+  confirmResult: 'ml-confirm-result',
 } as const
 
 export const FORM = {
@@ -96,6 +136,12 @@ export const FORM = {
   intervalFilters: 'midlong.positions.intervals.filters',
   stationAllocation: 'midlong.stations.allocation',
   stationPositionsFilters: 'midlong.positions.stations.filters',
+  planCreate: 'midlong.plan.create',
+  windowRegister: 'midlong.window.register',
+  proposalCreate: 'midlong.proposal.create',
+  proposalDetail: 'midlong.proposal.detail',
+  proposalSubmission: 'midlong.proposal.submission',
+  confirmationRegister: 'midlong.confirmation.register',
 } as const
 
 export const STATE = {
@@ -107,6 +153,8 @@ export const STATE = {
   contractStations: 'midlong.contractStations',
   intervalPositions: 'midlong.positions.intervals',
   stationPositions: 'midlong.positions.stations',
+  plans: 'midlong.plans',
+  execution: 'midlong.execution',
 } as const
 
 export const SIGNAL = {
@@ -118,6 +166,13 @@ export const SIGNAL = {
   curveSetConfirmed: 'midlong.curveset.confirmed',
   allocationDraftSaved: 'midlong.stations.allocation.saved',
   allocationConfirmed: 'midlong.stations.allocation.confirmed',
+  planSaved: 'midlong.plan.saved',
+  planConfirmed: 'midlong.plan.confirmed',
+  windowSaved: 'midlong.window.saved',
+  proposalSaved: 'midlong.proposal.saved',
+  proposalConfirmed: 'midlong.proposal.confirmed',
+  proposalSubmitted: 'midlong.proposal.submitted',
+  confirmationSaved: 'midlong.confirmation.saved',
 } as const
 
 /** 会话 artifacts 里的产物键（capture / recover 写，后续步骤的示例值读）。 */
@@ -140,6 +195,14 @@ export const ARTIFACT = {
   coverageMonths: 'coverageMonths',
   /** 「分解与场站」：导入草稿 / 确认的分解集 id（推进信号 payload 记下，「带我去」跳转用）。 */
   curveSetId: 'curveSetId',
+  /** 「计划与交易执行」：各环节产物 id（推进信号 payload 记下）。 */
+  planId: 'planId',
+  windowId: 'windowId',
+  proposalId: 'proposalId',
+  submissionId: 'submissionId',
+  confirmationId: 'confirmationId',
+  /** 「计划与交易执行」：本次导引使用的交割月份（会话开始时写入，覆盖月份/公告/方案/确认单共用）。 */
+  executionMonths: 'executionMonths',
 } as const
 
 export const GUIDE_ANCHORS: string[] = Object.values(ANCHOR)

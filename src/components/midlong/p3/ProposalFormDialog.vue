@@ -13,6 +13,9 @@ import {
   PRICE_COMPONENTS, PRICE_COMPONENT_LABELS, PRODUCT_KINDS, PRODUCT_KIND_LABELS, TAX_BASES, TAX_BASIS_LABELS, TRADE_METHODS, TRADE_METHOD_LABELS,
   type MidlongSubject, type PriceComponent, type ProductKind, type TaxBasis, type TradeMethod,
 } from '@/services/midlong/midlongTypes'
+// 操作导引（dljy#3406）：方案表单接给「计划与交易执行」导引，保存成功发推进信号。
+import { emitGuideSignal, useGuideForm } from '@/features/guide/bridge'
+import { FORM, SIGNAL } from '@/features/guide/midlong/anchors'
 
 const props = defineProps<{ modelValue: boolean; proposal: TradeProposalDetail | null; subjects: MidlongSubject[]; windows: TradingWindowListRow[] }>()
 const emit = defineEmits<{ 'update:modelValue': [boolean]; saved: [ProposalWriteResult] }>()
@@ -51,6 +54,27 @@ const selectedWindow = computed(() => props.windows.find((w) => w.id === form.wi
 const valid = computed(() => Boolean(form.subjectId) && form.segments.length > 0 && form.segments.every((s) => s.deliveryMonth && s.quantity.trim()))
 const text = (v: string) => (v.trim() === '' ? null : v.trim())
 
+// 操作导引（dljy#3406）：交割片段是行数组，fill 按行覆盖而非整体 assign；公告候选与主体候选暴露给 ready 与示例值。
+useGuideForm(
+  FORM.proposalCreate,
+  {
+    read: () => ({
+      ...form,
+      segments: form.segments.map((s) => ({ ...s })),
+      subjectOptions: props.subjects.map((s) => s.id),
+      windowOptions: props.windows.map((w) => w.id),
+      windowsReady: props.windows.length > 0,
+    }),
+    fill: (values) => {
+      for (const [key, value] of Object.entries(values)) {
+        if (key === 'segments') form.segments = (value as Array<{ deliveryMonth: string; quantity: string }>).map((s) => ({ ...s }))
+        else (form as unknown as Record<string, unknown>)[key] = value
+      }
+    },
+  },
+  { active: () => props.modelValue && !props.proposal },
+)
+
 function addSegment() {
   form.segments.push({ deliveryMonth: '', quantity: '' })
 }
@@ -80,6 +104,7 @@ async function submit() {
       : await createProposal(input)
     ElMessage.success('方案草稿已保存（未建立占用）')
     emit('saved', result)
+    emitGuideSignal(SIGNAL.proposalSaved, { proposalId: result.proposalId, status: result.status, rowVersion: result.rowVersion, subjectId: form.subjectId })
     // 写请求返回前表单已关闭或重开：结果属于上一次打开，不关闭当前表单。
     if (ticket.sameSession()) emit('update:modelValue', false)
   } catch (e) {
@@ -96,18 +121,18 @@ async function submit() {
   <el-dialog :model-value="modelValue" :title="proposal ? `修改方案草稿 #${proposal.id}` : '新建交易方案草稿'" width="720px" @update:model-value="(v: boolean) => emit('update:modelValue', v)">
     <MidlongNotice tone="info">{{ PLANNING_NOTICES.occupation }}</MidlongNotice>
     <el-form label-width="110px" class="p3-form" @submit.prevent>
-      <el-form-item label="交易主体" required>
+      <el-form-item label="交易主体" required data-guide="ml-proposal-subject">
         <el-select v-model="form.subjectId" filterable placeholder="选择交易主体" style="width: 100%">
           <el-option v-for="s in subjects" :key="s.id" :label="`${s.displayName}（${s.subjectKey}）`" :value="s.id" />
         </el-select>
       </el-form-item>
-      <el-form-item label="交易窗口">
+      <el-form-item label="交易窗口" data-guide="ml-proposal-window">
         <el-select v-model="form.windowId" clearable filterable placeholder="关联已登记的公告（确认前必选）" style="width: 100%">
           <el-option v-for="w in windows" :key="w.id" :label="`${w.current.announcementName}（v${w.currentRevisionNo}）`" :value="w.id" />
         </el-select>
         <div v-if="selectedWindow && selectedWindow.current.pendingFields.length" class="p3-hint">公告待核对：{{ selectedWindow.current.pendingFields.map((p) => p.label).join('、') }}</div>
       </el-form-item>
-      <el-form-item label="交割片段" required>
+      <el-form-item label="交割片段" required data-guide="ml-proposal-segments">
         <div class="p3-segments">
           <div v-for="(s, i) in form.segments" :key="i" class="p3-segment">
             <el-date-picker v-model="s.deliveryMonth" type="month" value-format="YYYY-MM" placeholder="交割月" style="width: 140px" />
@@ -140,7 +165,7 @@ async function submit() {
     <MidlongNotice v-if="error" tone="danger">{{ error }}</MidlongNotice>
     <template #footer>
       <el-button @click="emit('update:modelValue', false)">取消</el-button>
-      <el-button type="primary" :loading="saving" :disabled="!valid" @click="submit">保存草稿</el-button>
+      <el-button type="primary" :loading="saving" :disabled="!valid" data-guide="ml-proposal-submit" @click="submit">保存草稿</el-button>
     </template>
   </el-dialog>
 </template>
