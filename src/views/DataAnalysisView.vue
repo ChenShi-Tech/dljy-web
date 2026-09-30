@@ -15,7 +15,6 @@ import {
 } from '@/services/data/contracts'
 import { onRegionChange } from '../composables/useRegionReload'
 import RegionDataBanner from '@/components/region/RegionDataBanner.vue'
-import CapabilitySupportBadge from '../components/CapabilitySupportBadge.vue'
 import { chartChrome } from '../composables/useTheme'
 import { useEChart } from '../composables/useEChart'
 import { useQuerySync } from '../composables/useQuerySync'
@@ -356,7 +355,6 @@ onRegionChange(load)
 <template>
   <div class="a2" v-loading="loading">
     <RegionDataBanner />
-    <CapabilitySupportBadge path="/sjfx/singleZsjfx" />
     <el-alert v-if="error" type="error" :closable="false" :title="error" class="mb" />
 
     <!-- 顶部工具条 -->
