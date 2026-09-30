@@ -26,6 +26,12 @@ import { defineAiPage, useAiSidebar } from '@/features/aiSidebar'
 import { PAGE_PROMPT_KEYS } from '@/prompts'
 
 import { POINTS_96 } from '@/utils/spotPoints96'
+// S2（#3594）：对拍面板 / 衍生线 / 可用性热力 / 导出
+import ZsjfxScorecardPanel from '@/components/analysis/ZsjfxScorecardPanel.vue'
+import ZsjfxAvailabilityHeatmap from '@/components/analysis/ZsjfxAvailabilityHeatmap.vue'
+import { fetchZsjfxScorecard, type ZsjfxScorecard } from '@/services/insight/zsjfxScorecardClient'
+import { computeDerivedSeries, DERIVED_LABEL, type DerivedKind, type DerivedSpec } from '@/utils/zsjfxDerived'
+import { buildZsjfxCsv, downloadTextFile, zsjfxExportFilenames } from '@/utils/zsjfxExport'
 
 const loading = ref(true)
 const error = ref('')
@@ -111,6 +117,7 @@ async function load() {
 }
 
 function clearViewState() {
+  clearScorecardState()
   meta.value = null
   dateSet.value = new Set()
   selected.value = []
@@ -235,8 +242,33 @@ function render() {
   })
 
   // 各系列单位按其所属 Y 轴名推导
+  // 衍生线（#3594 ZW-05）：当日两条已勾选曲线的确定性逐点运算；比值/覆盖率挂独立右轴
+  const derivedBuilt = derivedSpecs.value
+    .map((spec) => computeDerivedSeries(spec, day[spec.a] as Array<number | null> | undefined, day[spec.b] as Array<number | null> | undefined))
+    .filter((d) => d.points.some((v) => v != null))
+  const ratioKinds = derivedBuilt.filter((d) => d.kind !== 'diff')
+  const derivedAxisIndex = yz.length
+  const yAxisFinal = ratioKinds.length
+    ? [...yAxis, {
+        type: 'value', name: hideAxis.value ? '' : '比值/覆盖率', scale: true,
+        nameTextStyle: { color: cc.axisLabel, fontSize: 11 }, position: 'right', offset: (yz.length - 1) * 54,
+        axisLine: { show: !hideAxis.value, lineStyle: { color: cc.splitLine } },
+        axisLabel: { show: !hideAxis.value, color: cc.axisLabel, fontSize: 10 },
+        splitLine: { show: false }
+      }]
+    : yAxis
+  const derivedSeries = derivedBuilt.map((d) => ({
+    name: d.name, type: 'line', showSymbol: false, connectNulls: false,
+    yAxisIndex: d.kind === 'diff' ? Number(typeAxis[d.a] ?? 0) : derivedAxisIndex,
+    lineStyle: { width: 1.6, type: 'dashed', color: '#9a60b4' },
+    itemStyle: { color: '#9a60b4' },
+    data: d.points
+  }))
+  const legendData = [...drawn, ...derivedBuilt.map((d) => d.name)]
+
   const units: Record<string, string> = {}
   drawn.forEach((name) => { units[name] = axisUnit(String(yz[Number(typeAxis[name] ?? 0)]?.name || '')) })
+  derivedBuilt.forEach((d) => { units[d.name] = d.kind === 'diff' ? axisUnit(String(yz[Number(typeAxis[d.a] ?? 0)]?.name || '')) : d.kind === 'coverage' ? '%' : '比值' })
 
   mainChart.setOption({
     tooltip: { ...axisTooltip({ units }), confine: true },
@@ -249,9 +281,9 @@ function render() {
     dataZoom: insideZoom(),
     xAxis: { type: 'category', data: POINTS_96, boundaryGap: false,
       axisLabel: { interval: 8, color: cc.axisLabel, fontSize: 10 }, axisLine: { lineStyle: { color: cc.splitLine } } },
-    yAxis,
-    series,
-    ...emptyOverlay(!drawn.length, '暂无数据或未勾选数据项')
+    yAxis: yAxisFinal,
+    series: [...series, ...derivedSeries],
+    ...emptyOverlay(!legendData.length, '暂无数据或未勾选数据项')
   }, { notMerge: true })
 }
 
@@ -291,7 +323,8 @@ function currentConfig(): ViewConfig {
     kind: 'page-state',  // 判别式：区分于 agent 图表/仪表盘快照 config（对齐 contracts 1.12.0 analysis-view）
     selected: [...selected.value], currentDate: currentDate.value, viewMonth: viewMonth.value,
     fixedAxis: fixedAxis.value, hideAxis: hideAxis.value,
-    activeGroups: [...activeGroups.value], company: company.value
+    activeGroups: [...activeGroups.value], company: company.value,
+    derived: derivedSpecs.value.map((spec) => ({ kind: spec.kind, a: spec.a, b: spec.b }))
   }
 }
 // 应用已保存视图：回写各 ref → 触发 ECharts 重渲
@@ -303,6 +336,7 @@ function applyConfig(cfg: ViewConfig) {
   hideAxis.value = !!cfg.hideAxis
   activeGroups.value = [...(cfg.activeGroups ?? [])]
   if (cfg.company) company.value = cfg.company
+  derivedSpecs.value = (cfg.derived ?? []).filter((d) => d && d.kind && d.a && d.b).map((d) => ({ kind: d.kind, a: d.a, b: d.b }))
   viewsDrawer.value = false
   // 应用视图后取当日数据再渲染（避免 fetchDay 完成前空图闪烁，复用 pickDay 的 loading 包裹）
   if (cfg.currentDate) {
@@ -336,6 +370,182 @@ async function onSaveAnnotation() {
     await analysis.saveAnnotation('point', `sdpt_zsjfx_idx|${currentDate.value}`, annoContent.value.trim())
     ElMessage.success('标注已保存'); annoContent.value = ''; annoDialog.value = false
   } catch (e) { ElMessage.error(e instanceof Error ? e.message : '标注保存失败') }
+}
+
+// ── S2（#3594）：预测×实际对拍面板 ──
+const scorecardDrawer = ref(false)
+const scorecard = ref<ZsjfxScorecard | null>(null)
+const scorecardLoading = ref(false)
+const scorecardError = ref('')
+const scorecardPair = ref('load-d1')
+const scorecardWindow = ref<'day' | '30d'>('day')
+
+function scorecardRange(): { dateFrom: string; dateTo: string } {
+  const dateTo = currentDate.value
+  if (scorecardWindow.value === 'day' || !dateTo) return { dateFrom: dateTo, dateTo }
+  const from = new Date(Date.parse(`${dateTo}T00:00:00Z`) - 29 * 86400000).toISOString().slice(0, 10)
+  return { dateFrom: from, dateTo }
+}
+
+let scorecardGeneration = 0
+async function loadScorecard() {
+  if (!currentDate.value) return
+  // codex #238 R1-01：请求代次守卫——切地区/改日期/换配对后，过期响应不得覆盖新上下文
+  const generation = ++scorecardGeneration
+  const region = currentRegion.value.id
+  scorecardLoading.value = true
+  scorecardError.value = ''
+  try {
+    const { dateFrom, dateTo } = scorecardRange()
+    const result = await fetchZsjfxScorecard({ pair: scorecardPair.value, dateFrom, dateTo })
+    if (generation !== scorecardGeneration || region !== currentRegion.value.id) return
+    scorecard.value = result
+    if (result.pair.id !== scorecardPair.value) scorecardPair.value = result.pair.id
+  } catch (e) {
+    if (generation !== scorecardGeneration) return
+    scorecardError.value = e instanceof Error ? e.message : '对拍加载失败'
+  } finally {
+    if (generation === scorecardGeneration) scorecardLoading.value = false
+  }
+}
+// codex #238 R1-01：切地区时清空对拍状态（load 会重建），旧地区结果不进入新上下文
+function clearScorecardState() {
+  scorecardGeneration += 1
+  scorecard.value = null
+  scorecardError.value = ''
+  scorecardLoading.value = false
+}
+async function openScorecard() {
+  scorecardDrawer.value = true
+  await loadScorecard()
+}
+function onScorecardPair(pairId: string) {
+  scorecardPair.value = pairId
+  loadScorecard()
+}
+function onScorecardWindow(win: 'day' | '30d') {
+  scorecardWindow.value = win
+  loadScorecard()
+}
+
+// ── S2（#3594）：衍生线生成器（差值/比值/覆盖率；空值传播、分母保护见 utils）──
+const derivedSpecs = ref<DerivedSpec[]>([])
+const derivedDialog = ref(false)
+const derivedKind = ref<DerivedKind>('diff')
+const derivedA = ref('')
+const derivedB = ref('')
+const derivedCandidates = computed(() => {
+  const day = dayCache.value[currentDate.value] || {}
+  return selected.value.filter((t) => day[t] && (day[t] as Array<number | null>).some((v) => v != null))
+})
+function openDerivedDialog() {
+  const c = derivedCandidates.value
+  if (c.length < 2) { ElMessage.info('衍生线需要至少勾选 2 条当日有数据的曲线'); return }
+  derivedA.value = c[0]
+  derivedB.value = c[1]
+  derivedDialog.value = true
+}
+function addDerived() {
+  if (!derivedA.value || !derivedB.value || derivedA.value === derivedB.value) { ElMessage.warning('请选择两条不同的曲线'); return }
+  const spec: DerivedSpec = { kind: derivedKind.value, a: derivedA.value, b: derivedB.value }
+  if (derivedSpecs.value.some((d) => d.kind === spec.kind && d.a === spec.a && d.b === spec.b)) { ElMessage.info('该衍生线已存在'); return }
+  derivedSpecs.value = [...derivedSpecs.value, spec]
+  derivedDialog.value = false
+  render()
+}
+function removeDerived(name: string) {
+  derivedSpecs.value = derivedSpecs.value.filter((d) => derivedNameOf(d) !== name)
+  render()
+}
+function derivedNameOf(d: DerivedSpec): string {
+  return computeDerivedSeries(d, [], []).name
+}
+
+// ── S2（#3594）：数据可用性热力（按月拉取逐日 series，真实非空判定）──
+const heatDialog = ref(false)
+const heatLoading = ref(false)
+const heatMonth = ref('')
+const heatDates = ref<string[]>([])
+const heatGrid = ref<Record<string, Record<string, boolean | 'failed'>>>({})
+
+async function openHeat() {
+  heatMonth.value = viewMonth.value || (currentDate.value ? currentDate.value.slice(0, 7) : '')
+  heatDialog.value = true
+  await loadHeat()
+}
+let heatGeneration = 0
+async function loadHeat() {
+  if (!heatMonth.value || !meta.value) return
+  const ym = heatMonth.value
+  const days = monthDays(ym)
+  // codex #238 R1-05：月份代次守卫——旧月份的迟到结果不得覆盖新月份网格
+  const generation = ++heatGeneration
+  heatLoading.value = true
+  try {
+    const grid: Record<string, Record<string, boolean | 'failed'>> = {}
+    let failedDays = 0
+    for (let i = 1; i <= days; i += 1) {
+      const date = `${ym}-${String(i).padStart(2, '0')}`
+      // codex R1-02：取数失败 ≠ 无数据——目录覆盖日直接取契约，失败日全类型标 'failed'
+      // （三态格子：不计入无数据与覆盖分母，显示可重试提示；不污染日缓存）
+      if (dateSet.value.has(date)) {
+        if (!dayCache.value[date]) {
+          try {
+            const contract = await fetchMarketInsightZsjfxDayContract({ region: currentRegion.value.id, date })
+            dayCache.value[date] = contract.blocks.zsjfx.day?.series || {}
+          } catch {
+            failedDays += 1
+            for (const type of allTypes.value) {
+              if (!grid[type]) grid[type] = {}
+              grid[type][date] = 'failed'
+            }
+            continue
+          }
+        }
+        const day = dayCache.value[date]
+        if (!day) continue
+        for (const type of allTypes.value) {
+          const curve = day[type]
+          const has = Array.isArray(curve) && curve.some((v: any) => v != null)
+          if (!grid[type]) grid[type] = {}
+          grid[type][date] = has
+        }
+      }
+    }
+    if (generation !== heatGeneration) return
+    heatGrid.value = grid
+    heatDates.value = Array.from({ length: days }, (_, k) => `${ym}-${String(k + 1).padStart(2, '0')}`)
+    if (failedDays) ElMessage.warning(`${ym} 有 ${failedDays} 天取数失败，已跳过（未计为无数据，可重试）`)
+  } finally {
+    if (generation === heatGeneration) heatLoading.value = false
+  }
+}
+
+// ── S2（#3594）：导出（图片=当前视口；CSV=当前绘制系列+衍生线，空值为空单元格）──
+function currentUnits(name: string): string {
+  const yz = (meta.value?.yzConfig || []) as Array<{ name?: string }>
+  const idx = Number(meta.value?.typeAxis?.[name] ?? 0)
+  return axisUnit(String(yz[idx]?.name || ''))
+}
+function exportCsv() {
+  if (!currentDate.value) return
+  const day = dayCache.value[currentDate.value] || {}
+  const drawn = selected.value.filter((t) => day[t] && (day[t] as Array<number | null>).some((v) => v != null))
+  if (!drawn.length && !derivedSpecs.value.length) { ElMessage.info('当前没有可导出的曲线'); return }
+  const series = drawn.map((name) => ({ name, unit: currentUnits(name), points: day[name] as Array<number | null> }))
+  for (const spec of derivedSpecs.value) {
+    const d = computeDerivedSeries(spec, day[spec.a], day[spec.b])
+    series.push({ name: `${d.name}（${DERIVED_LABEL[d.kind]}）`, unit: d.kind === 'diff' ? currentUnits(spec.a) : d.kind === 'coverage' ? '%' : '比值', points: d.points })
+  }
+  downloadTextFile(zsjfxExportFilenames(currentDate.value).csv, buildZsjfxCsv({ date: currentDate.value, series }))
+}
+function exportPng() {
+  const url = mainChart.instance()?.getDataURL({ pixelRatio: 2, backgroundColor: '#fff' })
+  if (!url) { ElMessage.warning('图表尚未渲染'); return }
+  const a = document.createElement('a')
+  a.href = url
+  a.download = zsjfxExportFilenames(currentDate.value || 'chart').png
+  a.click()
 }
 
 const ai = useAiSidebar()
@@ -395,6 +605,9 @@ onRegionChange(load)
       <el-button size="small" type="primary" @click="setDefaults">默认数据项</el-button>
       <el-button size="small" type="primary" @click="clearAll">清空数据项</el-button>
       <el-button size="small" type="primary" plain @click="notReady('纵向展示')">纵向展示</el-button>
+      <el-button size="small" type="success" plain @click="openScorecard">📊 对拍</el-button>
+      <el-button size="small" type="success" plain @click="openDerivedDialog">➗ 衍生线</el-button>
+      <el-button size="small" type="success" plain @click="openHeat">🗓 可用性</el-button>
       <el-button size="small" type="primary" @click="toggleFixed">{{ fixedAxis ? '坐标自动' : '坐标固定' }}</el-button>
       <el-button size="small" type="primary" @click="selectAll">所有数据</el-button>
       <el-button size="small" type="primary" @click="toggleHideAxis">{{ hideAxis ? '显示Y轴' : '隐藏Y轴' }}</el-button>
@@ -408,7 +621,8 @@ onRegionChange(load)
           <el-button size="small" type="primary" @click="onQuery">查询</el-button>
           <el-button size="small" @click="onReset">重置</el-button>
           <el-button size="small" @click="notReady('配置')">配置</el-button>
-          <el-button size="small" type="primary" @click="notReady('导出')">导出</el-button>
+          <el-button size="small" type="primary" @click="exportPng">导出图</el-button>
+        <el-button size="small" type="primary" @click="exportCsv">导出CSV</el-button>
         </div>
         <el-checkbox-group v-model="selected" class="grp-wrap">
           <el-collapse v-model="activeGroups">
@@ -467,6 +681,71 @@ onRegionChange(load)
       </DataState>
     </el-drawer>
 
+    <!-- S2（#3594）：预测×实际对拍抽屉（服务端确定性指标，前端只渲染） -->
+    <el-drawer v-model="scorecardDrawer" title="预测 × 实际对拍" direction="rtl" size="480px">
+      <ZsjfxScorecardPanel
+        :scorecard="scorecard"
+        :loading="scorecardLoading"
+        :error="scorecardError || undefined"
+        :window="scorecardWindow"
+        @pair-change="onScorecardPair"
+        @window-change="onScorecardWindow"
+      />
+    </el-drawer>
+
+    <!-- S2（#3594）：衍生线对话框（空值传播/分母保护见 utils/zsjfxDerived） -->
+    <el-dialog v-model="derivedDialog" title="生成衍生线" width="460px">
+      <el-form label-width="90px" size="small">
+        <el-form-item label="运算">
+          <el-radio-group v-model="derivedKind">
+            <el-radio-button value="diff">差值 A−B</el-radio-button>
+            <el-radio-button value="ratio">比值 A÷B</el-radio-button>
+            <el-radio-button value="coverage">覆盖率 B÷A</el-radio-button>
+          </el-radio-group>
+        </el-form-item>
+        <el-form-item label="曲线 A">
+          <el-select v-model="derivedA" filterable>
+            <el-option v-for="t in derivedCandidates" :key="t" :value="t" :label="t" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="曲线 B">
+          <el-select v-model="derivedB" filterable>
+            <el-option v-for="t in derivedCandidates" :key="t" :value="t" :label="t" />
+          </el-select>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button size="small" @click="derivedDialog = false">取消</el-button>
+        <el-button size="small" type="primary" @click="addDerived">生成</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- S2（#3594）：数据可用性热力（按月拉取逐日 series 的真实非空判定） -->
+    <el-dialog v-model="heatDialog" title="数据可用性（类型 × 日期）" width="860px">
+      <div class="heat-bar">
+        <el-date-picker v-model="heatMonth" type="month" value-format="YYYY-MM" size="small" :clearable="false" @change="loadHeat" />
+        <span v-if="heatLoading" class="heat-loading">加载中…</span>
+      </div>
+      <ZsjfxAvailabilityHeatmap
+        :month="heatMonth"
+        :types="allTypes"
+        :dates="heatDates"
+        :grid="heatGrid"
+        :type-meta="meta?.typeMeta"
+      />
+    </el-dialog>
+
+    <!-- 衍生线管理：已生成清单（可移除） -->
+    <div v-if="derivedSpecs.length" class="derived-list">
+      <el-tag
+        v-for="spec in derivedSpecs"
+        :key="spec.kind + spec.a + spec.b"
+        size="small"
+        closable
+        @close="removeDerived(derivedNameOf(spec))"
+      >{{ DERIVED_LABEL[spec.kind] }}：{{ spec.a }} / {{ spec.b }}</el-tag>
+    </div>
+
     <el-dialog v-model="annoDialog" title="添加数据点标注" width="420px">
       <el-input v-model="annoContent" type="textarea" :rows="3" :placeholder="currentDate ? `对 ${currentDate} 添加标注（point · target=sdpt_zsjfx_idx|${currentDate}）` : '请先选择日期'" />
       <template #footer>
@@ -517,6 +796,10 @@ onRegionChange(load)
 .src { color: var(--el-text-color-secondary); font-size: var(--font-sm); margin: 4px 0 0; }
 .src code { color: var(--el-color-primary); }
 .mb { margin-bottom: 12px; }
+/* S2（#3594）：衍生线清单与热力工具条 */
+.derived-list { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+.heat-bar { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+.heat-loading { font-size: var(--font-sm); color: var(--el-text-color-secondary); }
 /* Phase 6 PR-B：我的视图抽屉 */
 .save-row { display: flex; gap: 8px; margin-bottom: 12px; }
 .save-row .el-input { flex: 1; }
