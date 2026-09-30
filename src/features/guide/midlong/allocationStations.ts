@@ -216,17 +216,23 @@ async function goStationPositions(ctx: GuideCtx): Promise<void> {
   await submitGuideForm(FORM.stationPositionsFilters)
 }
 
-// ---- 分配行示例：两个练习场站对半分（整数微单位算，避免浮点尾数）----
+// ---- 分配行示例：按交割月分配，每个月两个练习场站对半（整数微单位算，避免浮点尾数）----
 
 function allocationRowsExample(ctx: GuideCtx): Array<{ stationId: number | null; segmentMonth: string; quantity: string }> {
   const seeded = ctx.artifacts[ARTIFACT.practiceStationIds]
   const stationIds = Array.isArray(seeded) ? (seeded as number[]).slice(0, 2) : []
+  const months = coverageMonthsFor(ctx)
   const totalMicro = quantityToMicro(stationsSnapshotFor(ctx)?.totalQuantity) ?? 0
-  const half = Math.floor(totalMicro / 2)
-  return [
-    { stationId: stationIds[0] ?? null, segmentMonth: '', quantity: microText(half) },
-    { stationId: stationIds[1] ?? null, segmentMonth: '', quantity: microText(totalMicro - half) },
-  ]
+  // 月总额：前面的月吃整除部分，最后一个月拿尾差，合计与合同电量严格相等。
+  const monthBase = Math.floor(totalMicro / months.length)
+  const rows: Array<{ stationId: number | null; segmentMonth: string; quantity: string }> = []
+  months.forEach((month, index) => {
+    const monthMicro = index === months.length - 1 ? totalMicro - monthBase * (months.length - 1) : monthBase
+    const half = Math.floor(monthMicro / 2)
+    rows.push({ stationId: stationIds[0] ?? null, segmentMonth: month, quantity: microText(half) })
+    rows.push({ stationId: stationIds[1] ?? null, segmentMonth: month, quantity: microText(monthMicro - half) })
+  })
+  return rows
 }
 
 /** 整数微单位 → 去尾零的小数文本（导引文案与示例值统一用它）。 */
@@ -347,7 +353,7 @@ const steps: GuideStep[] = [
     title: '覆盖月份',
     body: (ctx) => {
       const months = coverageMonthsFor(ctx)
-      return `声明这份曲线覆盖哪些交割月，必须落在合同交割期内：${months.join(' ~ ')}（即这份合同的正式月度分解月份）。示例文件恰好覆盖这些月份的每一个时段。`
+      return `声明这份曲线覆盖哪些交割月，必须落在合同交割期内：${months[0]} 至 ${months[months.length - 1]}（即这份合同的正式月度分解月份 ${months.join('、')}）。示例文件恰好覆盖这些月份的每一个时段。`
     },
     advance: { kind: 'form', form: FORM.curveImport, settleMs: 0, done: (v, ctx) => {
       const months = coverageMonthsFor(ctx)
@@ -494,8 +500,8 @@ const steps: GuideStep[] = [
   },
   {
     id: '4-1', chapter: 4, target: ANCHOR.allocType, within: 'dialog', resumeTo: '4-0', placement: 'right',
-    title: '分配类型',
-    body: '「正式交易分解」是给交易与结算看的正式口径；「内部经营分配」是内部口径、单独展示。这里用默认的正式交易分解，看完点「下一步」。',
+    title: '分配类型与片段',
+    body: '「正式交易分解」是给交易与结算看的正式口径；「内部经营分配」是内部口径、单独展示。「分配片段」选「按交割月」——每个月单独分；「按合同总量」整笔分但拆不到月份，场站持仓里会记成「月份未分到场站」。这里保持默认的正式交易分解，把片段切成按交割月，看完点「下一步」。',
     advance: { kind: 'manual' },
     recover: allocationReady,
   },
@@ -503,25 +509,27 @@ const steps: GuideStep[] = [
     id: '4-2', chapter: 4, target: ANCHOR.allocRows, within: 'dialog', resumeTo: '4-0', placement: 'right',
     title: '分给两个练习场站',
     body: (ctx) => {
+      const months = coverageMonthsFor(ctx)
       const seeded = ctx.artifacts[ARTIFACT.practiceStationIds]
       const enough = Array.isArray(seeded) && (seeded as number[]).length >= 2
-      return `点「+ 添加场站」加一行，两个练习场站各分一部分（对半即可；示例按合同电量对半填）。分配合计不得超过片段电量，余额始终显示在下方。${enough ? '' : '\n（练习场站清单还没取到，请手选两行场站。）'}`
+      return `每个月加两行：两个练习场站各分该月的一半（示例按合同电量均分到 ${months.join('、')} 再对半）。同一片段的分配合计不得超过该月电量，余额始终显示在下方。${enough ? '' : '\n（练习场站清单还没取到，请手选场站。）'}`
     },
     advance: { kind: 'form', form: FORM.stationAllocation, settleMs: 800, done: (v) =>
       Array.isArray(v.rows) && v.rows.length >= 2
-      && v.rows.every((row: { stationId: unknown; quantity: unknown }) => row.stationId != null && quantityToMicro(row.quantity) !== null && quantityToMicro(row.quantity)! > 0)
+      && v.rows.every((row: { stationId: unknown; segmentMonth: unknown; quantity: unknown }) => row.stationId != null && nonEmpty(row.segmentMonth) && quantityToMicro(row.quantity) !== null && quantityToMicro(row.quantity)! > 0)
       && v.blocking === false,
       missing: (v) => {
-        const rows = Array.isArray(v.rows) ? (v.rows as Array<{ stationId: unknown; quantity: unknown }>) : []
+        const rows = Array.isArray(v.rows) ? (v.rows as Array<{ stationId: unknown; segmentMonth: unknown; quantity: unknown }>) : []
         return [
           rows.length >= 2 ? '' : '第二行场站（点「+ 添加场站」）',
           rows.every((r) => r.stationId != null) ? '' : '每行选场站',
+          rows.every((r) => nonEmpty(r.segmentMonth)) ? '' : '按交割月分配时每行选月份',
           rows.every((r) => quantityToMicro(r.quantity) !== null && quantityToMicro(r.quantity)! > 0) ? '' : '每行填电量',
           v.blocking === false ? '' : '分配合计超出片段电量，先调小',
         ].filter(Boolean)
       },
     },
-    assist: { kind: 'fill', form: FORM.stationAllocation, values: (ctx) => ({ rows: allocationRowsExample(ctx) }) },
+    assist: { kind: 'fill', form: FORM.stationAllocation, values: (ctx) => ({ segmentMode: 'MONTHLY', rows: allocationRowsExample(ctx) }) },
     recover: allocationReady,
   },
   {

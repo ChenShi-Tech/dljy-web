@@ -241,7 +241,10 @@ function buildOption(): Record<string, unknown> {
 
     <template v-if="report && totals && (state === 'ready' || state === 'loading')">
       <div class="ml-filters">
-        <el-date-picker :model-value="filters.dateRange" type="daterange" data-guide="ml-interval-filters-date" @update:model-value="(v: unknown) => (filters.dateRange = rangeValue(v))" value-format="YYYY-MM-DD" range-separator="至" start-placeholder="起始日" end-placeholder="结束日" style="width: 240px" />
+        <!-- 锚点挂包装元素：el-date-picker 的 range 变体不透传 data-*（实机走查踩到） -->
+        <span data-guide="ml-interval-filters-date">
+          <el-date-picker :model-value="filters.dateRange" type="daterange" @update:model-value="(v: unknown) => (filters.dateRange = rangeValue(v))" value-format="YYYY-MM-DD" range-separator="至" start-placeholder="起始日" end-placeholder="结束日" style="width: 240px" />
+        </span>
         <el-radio-group v-model="filters.granularity" size="small">
           <el-radio-button v-for="g in GRANULARITY_OPTIONS" :key="g.value" :value="g.value">{{ g.label }}</el-radio-button>
         </el-radio-group>

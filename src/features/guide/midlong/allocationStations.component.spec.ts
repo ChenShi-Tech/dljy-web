@@ -114,14 +114,15 @@ describe('第 4 章：场站分配', () => {
     return advance.done(values, ctxWith(artifacts))
   }
 
-  it('分配行：两条齐全、电量非零、无超额才推进', () => {
+  it('分配行：两条齐全、月份/电量非零、无超额才推进', () => {
     const rows = [
-      { stationId: 11, segmentMonth: '', quantity: '500' },
-      { stationId: 12, segmentMonth: '', quantity: '500' },
+      { stationId: 11, segmentMonth: '2026-10', quantity: '500' },
+      { stationId: 12, segmentMonth: '2026-10', quantity: '500' },
     ]
     expect(doneOf('4-2', { rows: rows.slice(0, 1), blocking: false })).toBe(false)
     expect(doneOf('4-2', { rows, blocking: true })).toBe(false)
     expect(doneOf('4-2', { rows: [...rows, { stationId: null, segmentMonth: '', quantity: '' }], blocking: false })).toBe(false)
+    expect(doneOf('4-2', { rows: [{ ...rows[0], segmentMonth: '' }, rows[1]], blocking: false })).toBe(false)
     expect(doneOf('4-2', { rows, blocking: false })).toBe(true)
   })
 
@@ -130,16 +131,29 @@ describe('第 4 章：场站分配', () => {
     expect(doneOf('4-3', { evidenceIds: [7] })).toBe(true)
   })
 
-  it('「帮我填」按练习场站对半分合同电量（整数微单位，不出现浮点尾数）', () => {
+  it('「帮我填」按交割月分配、每个月两个练习场站对半（整数微单位，合计与合同电量严格相等）', () => {
     useGuideState(STATE.contractStations, () => ({ contractId: 1, totalQuantity: '999.99' }))
+    useGuideState(STATE.curves, () => ({
+      contractId: 1,
+      months: [
+        { month: '2026-10', timeStatus: 'MONTH_UNKNOWN', monthlyFormalQuantity: '400', formalCurveSetId: null },
+        { month: '2026-11', timeStatus: 'MONTH_UNKNOWN', monthlyFormalQuantity: '300', formalCurveSetId: null },
+        { month: '2026-12', timeStatus: 'MONTH_UNKNOWN', monthlyFormalQuantity: '300', formalCurveSetId: null },
+      ],
+      sets: [],
+    }))
     const assist = byId('4-2').assist
     if (assist?.kind !== 'fill') throw new Error('4-2 应是 fill 兜底')
-    const rows = assist.values(ctxWith({ practiceStationIds: [11, 12] }), {}).rows as Array<{ stationId: number | null; quantity: string }>
-    expect(rows).toHaveLength(2)
-    expect(rows[0].stationId).toBe(11)
-    expect(rows[1].stationId).toBe(12)
-    const sum = rows.reduce((total, row) => total + Number(row.quantity), 0)
+    const values = assist.values(ctxWith({ practiceStationIds: [11, 12] }), {}) as { segmentMode: string; rows: Array<{ stationId: number | null; segmentMonth: string; quantity: string }> }
+    expect(values.segmentMode).toBe('MONTHLY')
+    expect(values.rows).toHaveLength(6)
+    const sum = values.rows.reduce((total, row) => total + Number(row.quantity), 0)
     expect(Math.abs(sum - 999.99)).toBeLessThan(1e-9)
+    for (const month of ['2026-10', '2026-11', '2026-12']) {
+      const monthRows = values.rows.filter((row) => row.segmentMonth === month)
+      expect(monthRows).toHaveLength(2)
+      expect(monthRows.map((row) => row.stationId)).toEqual([11, 12])
+    }
   })
 })
 
