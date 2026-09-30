@@ -79,9 +79,9 @@ const running = ref(false)
 // 本面板也不渲染结果里的 dateUsed 警告，交易员会把错日曲线当成目标日预测。
 // 它同时不是 `/forecast/predict` 支持的 model_type（后端报 Unsupported forecast model）。
 // 官方披露曲线的正确去处是工作台/驾驶舱，那里有完整的日期口径标注。
-// 不支持 price 目标的模型（如 physics_hybrid 仅 renewable，price 下缺 clearsky_ghi 特征列
-// 稳定 400）已由后端目录按 supportedTargets 过滤，不会进 providersForTarget 的结果（#1461），
-// 无需再前端补挡。
+// 不支持 price 目标的模型（如只在新能源目标上架的算法，price 下缺特征列稳定 400）
+// 已由后端目录按 supportedTargets 过滤，不会进 providersForTarget 的结果（#1461），
+// 无需再前端补挡；下线的算法同理由目录不再返回，前端不维护名单（dljy#3647）。
 const pool = computed<ForecastProvider[]>(() =>
   providersForTarget('price', currentRegion.value.id)
     .filter((p) => p.kind !== 'replay')
@@ -90,7 +90,7 @@ const selectable = computed(() => pool.value.filter((p) => p.available !== false
 // ForecastProvider 的主键是 `id`，服务层（declarationForecast.ts）统一用 `modelId`。
 // 在边界处显式映射，不把两套词汇混进服务层。
 const selectableForPick = computed(() =>
-  selectable.value.map((p) => ({ modelId: p.id, mock: p.mock, available: p.available }))
+  selectable.value.map((p) => ({ modelId: p.id, mock: p.mock, available: p.available, recommended: p.recommended }))
 )
 
 const rows = computed<CompareRow[]>(() => buildCompareRows(outcomes.value))
@@ -379,7 +379,7 @@ const usableOutcomes = computed(() =>
   // 两道过滤缺一不可：
   // - `canBeDecisionModel` 看 provider 静态属性（占位 / 不可用 / 回放 / 目标专用 store）；
   // - `isTrustworthyForecast` 看本次结果，真实回放缺失时后端会用合成数据兜底，
-  //   普通 KNN/XGBoost 的 result.mock 仍是 false，只看静态属性会让合成曲线当上决策模型。
+  //   普通 KNN 与其它真实算法的 result.mock 仍是 false，只看静态属性会让合成曲线当上决策模型。
   outcomes.value.filter(
     (o) => isTrustworthyForecast(o.result, { isBaseline: o.isBaseline })
       && canBeDecisionModel(pool.value.find((p) => p.id === o.modelId))
@@ -443,7 +443,7 @@ onMounted(async () => {
   })()
   // 记忆的选择须与当前地区目录取交集：换地区后旧模型可能已不在池中，直接用会全军失败
   const usable = saved?.filter((id) => selectable.value.some((p) => p.id === id)) ?? []
-  selected.value = usable.length ? usable.slice(0, MAX_SELECTED) : defaultSelection(selectableForPick.value)
+  selected.value = usable.length ? usable.slice(0, MAX_SELECTED) : defaultSelection(selectableForPick.value, catalog.defaultModelId.value)
   // 走统一入口而非直接 run()：目录请求是异步的，用户完全可能在它返回前离开申报台
   // （KeepAlive 只触发 deactivate），直接跑就会在隐藏页为默认模型起最多两项同步训练。
   // initialized 由 run() 自己置，故推迟到 onActivated 补跑时才放开就绪态。
@@ -493,7 +493,7 @@ async function applyRegionChange() {
   catalogSyncing = false
   // 地区切换后旧选择可能整组失效，回落到新地区的默认选择
   const usable = selected.value.filter((id) => selectable.value.some((p) => p.id === id))
-  selected.value = usable.length ? usable : defaultSelection(selectableForPick.value)
+  selected.value = usable.length ? usable : defaultSelection(selectableForPick.value, catalog.defaultModelId.value)
   // 目录同步期间排下的队由这一次统一覆盖（它已带上最新的目标日与新地区 pool），
   // 先清标志再跑，否则本批 finally 会看到 queuedRun 为真而多跑一整批。
   queuedRun = false

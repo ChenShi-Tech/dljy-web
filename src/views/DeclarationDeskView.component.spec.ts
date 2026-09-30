@@ -61,6 +61,7 @@ vi.mock('../composables/useEChart', () => ({
 }))
 
 import DeclarationDeskView from './DeclarationDeskView.vue'
+import { fetchCockpit } from '@/services/forecast/mlForecastClient'
 
 enableAutoUnmount(afterEach)
 
@@ -201,5 +202,60 @@ describe('申报台风控检查：敞口约束来自套保服务（#3475）', ()
     expect(hint).toContain('20/24')
     expect(hint).not.toContain('人工')
     expect(fetchOverview).toHaveBeenCalledWith(expect.objectContaining({ fromDate: TARGET_DATE, toDate: TARGET_DATE, scope: 'company' }))
+  })
+})
+
+// dljy#3647：决策模型初值不再写死任何算法名（原先是 'xgboost'，下线后会变成必 400 的决策入口）。
+// 守什么：对比区回吐前 decisionModel 为空且不能生成决策包；回吐什么模型，决策包就用什么模型。
+describe('申报台决策模型不写死算法（#3647）', () => {
+  const CompareProbe = {
+    name: 'DeclarationForecastCompare',
+    props: ['decisionModel', 'targetDate'],
+    emits: ['update:decisionModel', 'batch-ready', 'summary', 'suggest-date', 'suggest-rehearsal'],
+    template: '<span class="compare-probe" />',
+  }
+  async function mountWithProbe() {
+    const wrapper = mount(DeclarationDeskView, {
+      global: {
+        stubs: {
+          ...Object.fromEntries([
+            'AgentChatPanel', 'AgentHistorySidebar', 'RegionDataBanner', 'CapabilitySupportBadge', 'DataBasisBadge', 'TrustBadge',
+          ].map((name) => [name, { template: '<span />' }])),
+          DeclarationForecastCompare: CompareProbe,
+        },
+      },
+    })
+    await flushPromises()
+    return wrapper
+  }
+  const generateButton = (wrapper: Awaited<ReturnType<typeof mountWithProbe>>) => {
+    const button = wrapper.findAll('button').find((b) => b.text() === '生成')
+    if (!button) throw new Error('未找到「生成」决策包按钮')
+    return button
+  }
+
+  it('对比区还没回吐模型时决策模型为空，生成按钮禁用，不发决策包请求', async () => {
+    vi.mocked(fetchCockpit).mockClear()
+    const wrapper = await mountWithProbe()
+    const probe = wrapper.getComponent({ name: 'DeclarationForecastCompare' })
+    expect(probe.props('decisionModel')).toBe('')
+    probe.vm.$emit('batch-ready', true)          // 批次就绪但没有可作决策依据的模型
+    await flushPromises()
+    expect(generateButton(wrapper).attributes('disabled')).toBeDefined()
+    await generateButton(wrapper).trigger('click')
+    expect(fetchCockpit).not.toHaveBeenCalled()
+  })
+
+  it('对比区回吐的模型就是决策包实际使用的 model_type', async () => {
+    vi.mocked(fetchCockpit).mockClear()
+    const wrapper = await mountWithProbe()
+    const probe = wrapper.getComponent({ name: 'DeclarationForecastCompare' })
+    probe.vm.$emit('update:decisionModel', 'random_forest')
+    probe.vm.$emit('batch-ready', true)
+    await flushPromises()
+    expect(probe.props('decisionModel')).toBe('random_forest')
+    await generateButton(wrapper).trigger('click')
+    await flushPromises()
+    expect(fetchCockpit).toHaveBeenCalledWith(expect.objectContaining({ model_type: 'random_forest', target: 'price' }))
   })
 })

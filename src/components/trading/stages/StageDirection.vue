@@ -25,6 +25,7 @@ import { useSaveState } from '@/composables/useSaveState'
 import { applyBias, buildLoadCurve96, LOAD_SHAPE_LABEL, type LoadShapeId } from '@/services/trading/loadShape'
 import { runForecastPredict, runMidterm, unavailableReasonOf, type ForecastResult, type MidtermResult } from '@/services/forecast/mlForecastClient'
 import { ensureForecastCatalog, forecastCatalogState, isModelSelectableForTarget, predictBlockerReason } from '@/services/forecast/forecastProviders'
+import { NO_AVAILABLE_MODEL_TEXT, pickDefaultModelId } from '@/services/forecast/defaultModel'
 import { dualCurveDecision, type MidtermCurve } from '@/services/trading/priceDistribution'
 import {
   arbitrageWindowList,
@@ -106,8 +107,9 @@ const forecastError = ref('')
 // 模型显式可选（#2326）：此前不传 model_type、走后端默认模型，远端真实模型（remote:*）
 // 接进来了却用不上。改为从目录取「价格腿可选」的模型列表让人自己选——不替用户判定
 // 「最优」（目录里没有可比的质量口径，替他选等于把一个没有依据的判断写死进代码）。
-// 默认取列表首项，与驾驶舱归一逻辑一致。
-const { models: catalogModels, error: catalogError } = forecastCatalogState()
+// 默认取目录对价格标的标记的默认算法，目录没标注则取列表里第一个可用的非占位模型（与驾驶舱归一逻辑一致，
+// dljy#3647：不写死算法名）；一个都没有就显示「暂无可用模型」。
+const { models: catalogModels, error: catalogError, defaultModelId: catalogDefaultModelId } = forecastCatalogState()
 const priceModels = computed(() => catalogModels.value.filter((m) => isModelSelectableForTarget(m, 'price')))
 const modelType = ref('')
 
@@ -170,8 +172,8 @@ onMounted(async () => {
   // 目录用于模型下拉；失败不阻断本阶段其它功能（预测按钮点下去会如实报目录加载失败）。
   try {
     await ensureForecastCatalog()
-    if (priceModels.value.length && !priceModels.value.some((m) => m.modelId === modelType.value)) {
-      modelType.value = priceModels.value[0].modelId
+    if (!priceModels.value.some((m) => m.modelId === modelType.value)) {
+      modelType.value = pickDefaultModelId(priceModels.value, catalogDefaultModelId.value)
     }
   } catch { /* catalogError 已记录，loadForecast 会如实提示 */ }
   try {
@@ -508,6 +510,7 @@ async function writeBack() {
           <label class="dr-model">
             <span>模型</span>
             <select v-model="modelType" :disabled="forecastLoading || !priceModels.length">
+              <option v-if="!priceModels.length" disabled value="">{{ NO_AVAILABLE_MODEL_TEXT }}</option>
               <option v-for="m in priceModels" :key="m.modelId" :value="m.modelId">
                 {{ m.name ?? m.modelId }}{{ m.provenance.mock ? '（占位）' : '' }}
               </option>

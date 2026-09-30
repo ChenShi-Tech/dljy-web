@@ -168,6 +168,10 @@ async function render() {
 function targetOptionsText(wrapper: VueWrapper) {
   return wrapper.find('.shared').findAll('.stub-select')[1].findAll('.stub-option').map((item) => item.text())
 }
+/** 单算法 tab 的「算法」下拉（共享任务栏的地区、目标下拉之后的第三个下拉）。 */
+function algoOptionValues(wrapper: VueWrapper) {
+  return wrapper.findAll('.stub-select')[2].findAll('.stub-option').map((item) => item.attributes('data-value'))
+}
 async function run(wrapper: VueWrapper) {
   await wrapper.findAll('button').find((button) => button.text() === '预测')!.trigger('click')
   await flushPromises()
@@ -295,5 +299,38 @@ describe('建模工作台目标发现', () => {
     expect(targetOptionsText(wrapper)).toEqual([])
     expect(wrapper.text()).toContain('预测目标目录加载失败：catalog refused')
     expect(wrapper.text()).not.toContain('用户侧日前统一结算电价')
+  })
+})
+
+// dljy#3647：算法下拉只由后端目录决定。目录不再返回的算法（下线）不会因为前端有残留而出现在选项里。
+describe('建模工作台算法下拉只取目录', () => {
+  it('目录刷新后不再返回的算法从下拉消失，选中项自动移到目录里仍在的算法', async () => {
+    route.query.target = 'price'
+    api.load.mockImplementation(async (targets: string[], regionId: string) => {
+      const catalogs: Record<string, ForecastProvider[]> = {
+        yunnan: [
+          provider({ id: 'nbeats', name: 'N-BEATS', supportedTargets: ['price'] }),
+          provider({ id: 'random_forest', name: '随机森林', supportedTargets: ['price'] }),
+        ],
+        shanxi: [provider({ id: 'random_forest', name: '随机森林', supportedTargets: ['price'] })],
+      }
+      return Object.fromEntries(targets.map((target) => [target, target === 'price' ? (catalogs[regionId] ?? []) : []]))
+    })
+    const wrapper = await render()
+    // 反向锚：目录里有它时它就在下拉里——下面的「消失」才是目录使然而非断言空转
+    expect(algoOptionValues(wrapper)).toEqual(['nbeats', 'random_forest'])
+
+    setCurrentRegionId('shanxi')
+    await flushPromises()
+    await flushPromises()
+    await flushPromises()
+    expect(algoOptionValues(wrapper)).toEqual(['random_forest'])
+    expect(wrapper.text()).not.toContain('N-BEATS')
+
+    await run(wrapper)
+    expect(api.run).toHaveBeenLastCalledWith(
+      expect.objectContaining({ regionId: 'shanxi', target: 'price' }),
+      expect.anything(),
+    )
   })
 })

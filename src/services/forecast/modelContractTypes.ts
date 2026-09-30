@@ -117,6 +117,8 @@ export interface ModelRegistryEntry {
   version?: ModelVersionInfo
   /** 明确目标能力清单（#1461）：部署权重=实际输出绑定，runtime=已验证即时训练范围；缺省/空不得补成全目标。 */
   supportedTargets?: string[]
+  /** 目录对当前标的标记的推荐算法（dljy#3647）；缺省=目录未标注，前端不得自行编造推荐。 */
+  recommended?: boolean
   // ── dljy-contracts 2.1.0（dljy#2461）：模型 I/O × 平台供给、参数面、血统、单位、来源、架构 ──
   /** 标的单位（平台标的注册表 quantity 派生） */
   unit?: string

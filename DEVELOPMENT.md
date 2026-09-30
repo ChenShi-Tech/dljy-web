@@ -124,6 +124,7 @@ npm run dev                        # http://localhost:5174
 - 单目标工作台：调用 `ensureForecastCatalog(target, false, regionId)`，用 `forecastCatalogState(targetRef, regionRef)` 读取响应式状态，用 `providersForTarget(target, regionId)` 读取对应模型。
 - 价格/负荷共页：可并行调用 `ensureForecastCatalog(['price', 'load'])`，但两个选择器分别读取各自的 `forecastCatalogState`，不要按模型ID合并可用性或质量。
 - 申报决策页 `ForecastDecisionCockpitView.vue` 的首载和切区共用目录请求代次，并显式传递地区快照。只有当前代次可标记就绪、校验模型选择或启动预测；A→B→A 的旧完成/失败及卸载后回调均不得改动当前状态，不以自动换模型掩盖选择丢失。
+- **默认算法只取目录（ChenShi-Tech/dljy#3647）**：前端不写死任何算法名当选项或默认值，算法下线只需后端目录不再返回，前端不维护下线名单。`/forecast/models` 响应的顶层 `defaultModelId`（按标的）与条目 `recommended` 经 `modelContract.ts` 归一，`services/forecast/defaultModel.ts::pickDefaultModelId` 在页面真实可选的列表里按「目录默认 → recommended → 第一个可用非占位模型」挑默认（目录默认不在可选列表里就忽略，不硬凑）；一个都没有则下拉显示「暂无可用模型」、不发预测请求。深链/建模台/用户手选点名过的模型从目录消失时只清空并提示重选，不静默改取默认（只有从未被点名的「自动默认」才会随目录改取新默认）。
 - `ensureForecastCatalog(true)`、`PROVIDERS`、`getProvider(id)` 保留旧的默认 `price` 语义；新增非价格路径不得依赖它们推断模型状态。
 - 目录修复不等于远端可用：后端返回的 `available:false` 和不可用原因必须保留，不得为了显示模型而伪造数据、权重或授权状态。
 

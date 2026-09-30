@@ -51,7 +51,7 @@ const stations = ref<CompanyStation[]>([])
 const loading = ref(false)
 const predicting = ref(false)
 const result = ref<StationGenerationResult | null>(null)
-const form = ref({ stationId: null as number | null, modelType: 'xgboost' })
+const form = ref({ stationId: null as number | null, modelType: MODELS[0].value })
 
 // G3.3 申报闭环状态
 const advising = ref(false)

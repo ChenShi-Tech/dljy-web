@@ -28,6 +28,7 @@ import { summarizeForecastFailures, type ForecastFailure } from '@/services/fore
 import { runSerially } from '@/services/forecast/serialRun'
 import { isForecastDate } from '@/services/forecast/onlineForecastResult'
 import { predictionModelExclusionReason } from '@/services/forecast/predictionModelEligibility'
+import { NO_AVAILABLE_MODEL_TEXT } from '@/services/forecast/defaultModel'
 
 const REGION_IDS = ['shanxi', 'shandong', 'gansu', 'guangdong', 'sichuan', 'yunnan']
 const regionOptions = REGION_IDS.map((id) => ({ id, name: getRegionById(id).name }))
@@ -91,14 +92,14 @@ const singleModelEmptyText = computed(() => !targetDiscoveryRequested.value || !
     ? (targetCatalogError.value ? '预测目标目录加载失败，请先处理目录错误' : '当前地区暂无已接入预测目标')
     : catalogError.value
   ? '模型目录加载失败，请先处理目录错误'
-  : '当前预测中心没有可展示的模型（占位、未部署、原始零样本权重已隐藏）')
+  : `${NO_AVAILABLE_MODEL_TEXT}（占位、未部署、原始零样本权重已隐藏）`)
 const compareModelEmptyText = computed(() => !targetDiscoveryRequested.value || !targetDiscoverySettled.value || targetOptionsLoading.value
   ? '预测目标目录加载中，请稍候'
   : !targetOptions.value.length
     ? (targetCatalogError.value ? '预测目标目录加载失败，请先处理目录错误' : '当前地区暂无已接入预测目标')
     : catalogError.value
   ? '模型目录加载失败，请先处理目录错误'
-  : '当前预测中心没有可用于对比的模型（占位、未部署、原始零样本权重已隐藏）')
+  : `${NO_AVAILABLE_MODEL_TEXT}可供对比（占位、未部署、原始零样本权重已隐藏）`)
 
 // 算法选项标签：附占位/不可用+原因（#762 available:false 禁用，原因随 label 与 title 可见）。
 function providerOptionLabel(p: ForecastProvider): string {
@@ -629,7 +630,7 @@ onMounted(() => { discoverTargetOptions(false, regionId.value) })
           </el-table>
         </el-tab-pane>
 
-        <!-- 扩展预测：超短期/中长期/偏差；独立PatchTST序列演示已按用户要求移除。 -->
+        <!-- 扩展预测：超短期/中长期/偏差；独立的深度序列演示已按用户要求移除。 -->
         <el-tab-pane label="扩展预测" name="extra">
           <ForecastExtraPanel ref="extraPanel" :region-id="regionId" :target="target" :train-days="historyDays" :target-date="targetDate" />
         </el-tab-pane>
@@ -655,7 +656,7 @@ onMounted(() => { discoverTargetOptions(false, regionId.value) })
 
         <!-- 附 tab：模型台账 -->
         <el-tab-pane label="模型台账" name="ledger">
-          <p class="hint">当前目标下的真实可运行算法分两类：已部署权重显示其固定输出；KNN、XGBoost、PatchTST 等按请求算法显示可读取真实历史数据并即时训练/计算的目标。后者不是已保存权重或历史训练次数。占位和原始零样本模型仍不展示，协变量不计入目标数。</p>
+          <p class="hint">当前目标下的真实可运行算法分两类：已部署权重显示其固定输出；KNN 等按请求算法显示可读取真实历史数据并即时训练/计算的目标。后者不是已保存权重或历史训练次数。占位和原始零样本模型仍不展示，协变量不计入目标数。</p>
           <el-table :data="ledger" size="small" border>
             <el-table-column prop="name" label="算法" />
             <el-table-column label="运行时" width="120">

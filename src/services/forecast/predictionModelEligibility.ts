@@ -14,8 +14,8 @@ type ModelEvidence = {
   framework?: string
 }
 
-// 这些本地 ID 的实现明确为 StandardScaler+Ridge；即使旧目录漏 mock 也不能重新上架。
-// 不按算法名字屏蔽，以免误伤已训练的 remote:...PatchTST / DLinear 真模型。
+// 这些本地 ID 的实现明确为 StandardScaler+Ridge 兼容占位；即使旧目录漏 mock 也不能重新上架。
+// 只按下面这份占位 ID 清单屏蔽，不按算法名字屏蔽，以免误伤同名的已训练真模型（下线哪些算法由后端目录决定，前端不维护名单）。
 const COMPAT_PLACEHOLDERS = new Set([
   'tslib:Autoformer', 'tslib:DLinear', 'tslib:FEDformer', 'tslib:Informer',
   'tslib:iTransformer', 'tslib:PatchTST', 'tslib:TimesNet', 'tslib:TimeXer',

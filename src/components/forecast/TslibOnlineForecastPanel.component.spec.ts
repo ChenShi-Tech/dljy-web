@@ -141,19 +141,44 @@ describe('在线面板真实请求与响应', () => {
     expect(wrapper.findComponent({ name: 'ElButton' }).props('disabled')).toBe(true)
     expect(wrapper.findComponent(Chart).exists()).toBe(false)
   })
-  it('按能力命名空间保留无前缀的运行时 PatchTST', async () => {
+  it('按能力命名空间保留无前缀的运行时模型', async () => {
     const data = catalog()
     data.models = [
-      { ...data.models[0], modelId: 'patchtst', name: 'PatchTST（运行时）', namespace: 'neural' },
+      { ...data.models[0], modelId: 'dlinear', name: 'DLinear（运行时）', namespace: 'neural' },
       { ...data.models[0], modelId: 'tslib:PatchTST', name: 'PatchTST（兼容占位）', namespace: 'tslib' },
     ]
     api.models.mockResolvedValueOnce(data)
     const wrapper = await render()
     const options = wrapper.findAllComponents({ name: 'ElOption' }).map((option) => option.props('value'))
-    expect(options).toContain('patchtst')
+    expect(options).toContain('dlinear')
     expect(options).not.toContain('tslib:PatchTST')
     await run(wrapper)
-    expect(api.predict).toHaveBeenCalledWith(expect.objectContaining({ model_type: 'patchtst' }))
+    expect(api.predict).toHaveBeenCalledWith(expect.objectContaining({ model_type: 'dlinear' }))
+  })
+  // dljy#3647：默认模型取目录标注的默认算法，缺省退回第一个可用的在线模型，不写死任何算法名。
+  it('目录标注的默认算法优先于列表顺序，并且就是实际发给后端的 model_type', async () => {
+    const data = catalog()
+    data.models = [
+      { ...data.models[0], modelId: 'remote:first', name: 'first' },
+      { ...data.models[0], modelId: 'remote:marked', name: 'marked' },
+    ]
+    data.defaultModelId = 'remote:marked'
+    api.models.mockResolvedValueOnce(data)
+    const wrapper = await render()
+    expect(wrapper.findAllComponents({ name: 'ElSelect' })[0].props('modelValue')).toBe('remote:marked')
+    await run(wrapper)
+    expect(api.predict).toHaveBeenCalledWith(expect.objectContaining({ model_type: 'remote:marked' }))
+  })
+  it('目录默认算法不在在线模型子集里（或不可用）时忽略，退回第一个可用模型', async () => {
+    const data = catalog()
+    data.models = [
+      { ...data.models[0], modelId: 'remote:down', name: 'down', available: false },
+      { ...data.models[0], modelId: 'remote:ok', name: 'ok' },
+    ]
+    data.defaultModelId = 'random_forest'   // 非在线深度模型子集
+    api.models.mockResolvedValueOnce(data)
+    const wrapper = await render()
+    expect(wrapper.findAllComponents({ name: 'ElSelect' })[0].props('modelValue')).toBe('remote:ok')
   })
   it('改数据源立即清除旧曲线，合成标签持续可见', async () => {
     const wrapper = await render()

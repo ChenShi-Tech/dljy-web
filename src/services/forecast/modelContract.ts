@@ -35,6 +35,11 @@ export type ForecastModelCatalog = {
   available: boolean
   models: ModelRegistryEntry[]
   unavailableReason: string | null
+  /**
+   * 目录对本标的标记的默认算法 id（dljy#3647：后端按标的取评测推荐）。
+   * 缺省/空 = 目录未标注：前端只能退回「第一个可用模型」，不得再写死某个算法名当默认值。
+   */
+  defaultModelId: string | null
 }
 
 const LEGACY_MODEL_BASIS_VERSION = 'legacy-forecast-catalog.v1'
@@ -270,6 +275,7 @@ export function normalizeModelRegistryEntry(
     quality: normalizeQuality(raw.quality),
     version: normalizeVersion(raw.version),
     supportedTargets,
+    ...(typeof raw.recommended === 'boolean' ? { recommended: raw.recommended } : {}),
     // dljy-contracts 2.1.0（dljy#2461）：全部可选，缺省即缺席
     unit: nonEmpty(raw.unit),
     framework: nonEmpty(raw.framework),
@@ -297,6 +303,7 @@ export function normalizeForecastModelCatalog(
     available: models.length > 0,
     models,
     unavailableReason: models.length > 0 ? null : '当前地区没有可消费的模型目录产物',
+    defaultModelId: nonEmpty(raw.defaultModelId ?? raw.default_model_id) ?? null,
   }
 }
 

@@ -31,6 +31,7 @@ function catalogModel(input: {
   available?: boolean
   qualitySource?: 'full' | 'lag_only'
   namespace?: string
+  recommended?: boolean
 }) {
   return {
     modelId: input.modelId,
@@ -43,6 +44,7 @@ function catalogModel(input: {
     supportedTargets: input.supportedTargets ?? [input.target],
     provenance: { basis: 'real', sourceType: 'REAL', mock: false, productionWrite: false },
     quality: { passesSkillGate: true, sourceRun: input.qualitySource ?? 'full' },
+    ...(input.recommended !== undefined ? { recommended: input.recommended } : {}),
   }
 }
 
@@ -151,17 +153,17 @@ describe('forecast catalog target buckets (#54)', () => {
     const mod = await import('./forecastProviders')
     const task = mod.ensureForecastCatalog('renewable', true, 'yunnan')
     deferred[0].resolve({ models: [
-      catalogModel({ modelId: 'patchtst', target: 'renewable', namespace: 'neural',
+      catalogModel({ modelId: 'dlinear', target: 'renewable', namespace: 'neural',
         supportedTargets: ['price', 'load', 'renewable', 'price_user_da_settlement', 'price_user_rt_settlement'] }),
-      catalogModel({ modelId: 'remote:yunnan-renewable-patchtst-20260729', target: 'renewable',
+      catalogModel({ modelId: 'remote:yunnan-renewable-bundle-20260729', target: 'renewable',
         supportedTargets: ['renewable'] }),
     ] })
     await task
 
     const providers = mod.providersForTarget('renewable', 'yunnan')
     expect(providers.find((item) => item.id === 'knn')?.targetCapabilityKind).toBe('runtime')
-    expect(providers.find((item) => item.id === 'patchtst')?.targetCapabilityKind).toBe('runtime')
-    expect(providers.find((item) => item.id === 'remote:yunnan-renewable-patchtst-20260729')?.targetCapabilityKind)
+    expect(providers.find((item) => item.id === 'dlinear')?.targetCapabilityKind).toBe('runtime')
+    expect(providers.find((item) => item.id === 'remote:yunnan-renewable-bundle-20260729')?.targetCapabilityKind)
       .toBe('deployed')
   })
 
@@ -279,5 +281,51 @@ describe('forecast catalog target buckets (#54)', () => {
     await retry
     expect(loadState.error.value).toBe('')
     expect(loadState.models.value.map((m) => m.modelId)).toEqual(['recovered'])
+  })
+
+  // dljy#3647：目录对各标的标记的默认算法按「地区+标的」分桶保存；目录不再标注/失败时必须清掉，
+  // 否则页面会沿用已下线算法当默认。
+  describe('目录默认算法（按标的）', () => {
+    it('price 与 load 各存各的默认，互不串用', async () => {
+      const mod = await import('./forecastProviders')
+      const task = mod.ensureForecastCatalog(['price', 'load'], true, 'yunnan')
+      deferred.find((d) => d.target === 'price')!.resolve({
+        defaultModelId: 'random_forest', models: [catalogModel({ modelId: 'random_forest', target: 'price', recommended: true })] })
+      deferred.find((d) => d.target === 'load')!.resolve({
+        defaultModelId: 'load-default', models: [catalogModel({ modelId: 'load-default', target: 'load' })] })
+      await task
+      expect(mod.catalogDefaultModelId('price', 'yunnan')).toBe('random_forest')
+      expect(mod.catalogDefaultModelId('load', 'yunnan')).toBe('load-default')
+      expect(mod.forecastCatalogState('load', 'yunnan').defaultModelId.value).toBe('load-default')
+      // recommended 标注透传到 provider，供「无默认 id 时取推荐」使用
+      expect(mod.providersForTarget('price', 'yunnan').find((p) => p.id === 'random_forest')?.recommended).toBe(true)
+      expect(mod.providersForTarget('load', 'yunnan').find((p) => p.id === 'load-default')?.recommended).toBeUndefined()
+      // 没加载过的地区/标的没有默认
+      expect(mod.catalogDefaultModelId('renewable', 'yunnan')).toBeNull()
+      expect(mod.catalogDefaultModelId('price', 'shanxi')).toBeNull()
+    })
+
+    it('目录刷新后不再标注默认，旧默认被清掉；刷新失败同样清掉', async () => {
+      const mod = await import('./forecastProviders')
+      const first = mod.ensureForecastCatalog('price', true, 'yunnan')
+      deferred[0].resolve({ defaultModelId: 'random_forest', models: [catalogModel({ modelId: 'random_forest', target: 'price' })] })
+      await first
+      expect(mod.catalogDefaultModelId('price', 'yunnan')).toBe('random_forest')
+
+      const refreshed = mod.ensureForecastCatalog('price', true, 'yunnan')
+      deferred[1].resolve({ models: [catalogModel({ modelId: 'other', target: 'price' })] })
+      await refreshed
+      expect(mod.catalogDefaultModelId('price', 'yunnan')).toBeNull()
+
+      const again = mod.ensureForecastCatalog('price', true, 'yunnan')
+      deferred[2].resolve({ defaultModelId: 'other', models: [catalogModel({ modelId: 'other', target: 'price' })] })
+      await again
+      expect(mod.catalogDefaultModelId('price', 'yunnan')).toBe('other')
+
+      const failed = mod.ensureForecastCatalog('price', true, 'yunnan')
+      deferred[3].resolve(Promise.reject(new Error('catalog down')))
+      await failed
+      expect(mod.catalogDefaultModelId('price', 'yunnan')).toBeNull()
+    })
   })
 })

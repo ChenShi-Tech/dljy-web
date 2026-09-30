@@ -1,4 +1,5 @@
 // 回归不变量：占位/未部署/原始零样本权重不进入预测选择器，真实同名算法不能误伤。
+// 下线哪些算法由后端目录决定（dljy#3647）：准入规则不按算法名维护屏蔽名单，目录返回什么就保留什么。
 import { describe, expect, it } from 'vitest'
 import { predictionModelExclusionReason as reason } from './predictionModelEligibility'
 
@@ -20,7 +21,7 @@ describe('预测入口模型准入', () => {
     expect(reason({ modelId: 'remote:missing', available: false })).toBe('unavailable')
   })
   it.each(['ridge', 'lightgbm', 'xgboost', 'random_forest', 'mlp', 'nbeats', 'tft', 'nhits', 'patchtst', 'physics_hybrid'])
-    ('保留真实按请求训练的%s；没有trainedAt不等于使用原始权重', (id) => {
+    ('算法名%s本身不决定去留（下线由后端目录决定）；没有trainedAt不等于使用原始权重', (id) => {
       expect(reason({ id, available: true, mock: false })).toBeNull()
     })
   it.each(['remote:yunnan-load-dlinear-20260729', 'remote:yunnan-renewable-patchtst-20260729', 'remote:yunnan-user-price-da-tfps-20260730'])
