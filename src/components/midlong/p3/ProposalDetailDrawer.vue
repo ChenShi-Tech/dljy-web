@@ -28,6 +28,9 @@ import {
   type ProposalCloseKind, type ProposalComparison, type ProposalSubmission, type TradeProposalDetail,
 } from '@/services/midlong/midlongP3Types'
 import { PRICE_COMPONENT_LABELS, PRODUCT_KIND_LABELS, TAX_BASIS_LABELS, TRADE_METHOD_LABELS } from '@/services/midlong/midlongTypes'
+// 操作导引（dljy#3406）：抽屉状态（测算是否就绪、方案状态）接给导引；确认可执行成功发推进信号。
+import { emitGuideSignal, useGuideForm } from '@/features/guide/bridge'
+import { FORM, SIGNAL } from '@/features/guide/midlong/anchors'
 
 const props = withDefaults(defineProps<{ modelValue: boolean; proposalId: number | null; canWrite: boolean; mode?: 'plans' | 'execution' }>(), { mode: 'plans' })
 const emit = defineEmits<{ 'update:modelValue': [boolean]; changed: [number]; edit: [TradeProposalDetail] }>()
@@ -142,7 +145,11 @@ function confirmExecutable() {
   const d = detail.value
   const c = comparison.value
   if (!d || !c) return
-  void run('confirm', () => confirmProposal(d.id, { expectedRowVersion: d.rowVersion, expectedPlanRevisions: expectedPlanRevisionsOf(c) }), '方案已确认可执行，占用已建立')
+  void run('confirm', async () => {
+    await confirmProposal(d.id, { expectedRowVersion: d.rowVersion, expectedPlanRevisions: expectedPlanRevisionsOf(c) })
+    // 操作导引（dljy#3406）：确认可执行成功（占用已建立）发推进信号；失败时 action 抛错不会走到这里。
+    emitGuideSignal(SIGNAL.proposalConfirmed, { proposalId: d.id, status: 'EXECUTABLE' })
+  }, '方案已确认可执行，占用已建立')
 }
 
 function openEnd(kind: 'cancel' | 'close') {
@@ -209,6 +216,20 @@ async function downloadAttachment(attachmentId: number) {
 }
 
 const statusTag = computed(() => (detail.value ? proposalStatusTag(detail.value.status) : null))
+
+// 操作导引（dljy#3406）：只读表单暴露测算就绪与方案状态（确认可执行按钮在测算加载完成前禁用，「帮我点」要等 ready）。
+useGuideForm(
+  FORM.proposalDetail,
+  {
+    read: () => ({
+      comparisonReady: comparison.value !== null,
+      status: detail.value?.status ?? null,
+      proposalId: detail.value?.id ?? null,
+      hasWindow: Boolean(detail.value?.window),
+    }),
+  },
+  { active: () => props.modelValue },
+)
 </script>
 
 <template>
@@ -228,11 +249,11 @@ const statusTag = computed(() => (detail.value ? proposalStatusTag(detail.value.
       <div class="p3-actions">
         <template v-if="mode === 'plans'">
           <el-button v-if="allowed('UPDATE_DRAFT')" @click="emit('edit', detail)">修改草稿</el-button>
-          <el-button v-if="allowed('CONFIRM')" type="primary" :loading="busy === 'confirm'" :disabled="!comparison" @click="confirmExecutable">确认可执行（建立占用）</el-button>
+          <el-button v-if="allowed('CONFIRM')" type="primary" :loading="busy === 'confirm'" :disabled="!comparison" data-guide="ml-pdetail-confirm" @click="confirmExecutable">确认可执行（建立占用）</el-button>
         </template>
         <template v-else>
-          <el-button :loading="busy === 'export'" @click="doExport">导出申报材料</el-button>
-          <el-button v-if="allowed('REGISTER_SUBMISSION')" type="primary" @click="openSubmission('submission')">登记外部提交</el-button>
+          <el-button :loading="busy === 'export'" data-guide="ml-pdetail-export" @click="doExport">导出申报材料</el-button>
+          <el-button v-if="allowed('REGISTER_SUBMISSION')" type="primary" data-guide="ml-pdetail-submit" @click="openSubmission('submission')">登记外部提交</el-button>
           <el-button v-if="allowed('AWAIT_RESULT')" :loading="busy === 'await'" @click="awaitResult">标记待结果</el-button>
         </template>
         <el-button v-if="allowed('CANCEL')" :loading="busy === 'cancel'" @click="openEnd('cancel')">撤销方案</el-button>

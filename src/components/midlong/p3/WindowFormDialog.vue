@@ -14,6 +14,10 @@ import { fileToBase64, oversizeUploadMessage } from '@/services/midlong/midlongF
 import { beijingDateTime } from '@/services/midlong/midlongP3Format'
 import { PLANNING_NOTICES, PROPOSAL_STATUS_LABELS, isCompleteBeijingDateTimeInput, type TradingWindowDetail, type TradingWindowInput } from '@/services/midlong/midlongP3Types'
 import { PRODUCT_KINDS, PRODUCT_KIND_LABELS, TRADE_METHODS, TRADE_METHOD_LABELS, type MidlongSubject, type ProductKind, type TradeMethod } from '@/services/midlong/midlongTypes'
+// 操作导引（dljy#3406）：公告表单接给「计划与交易执行」导引；保存成功无条件发推进信号
+// （结果是否展示受会话守卫影响，信号不放进守卫分支，避免 capture 丢失卡住导引）。
+import { emitGuideSignal, useGuideForm } from '@/features/guide/bridge'
+import { FORM, SIGNAL } from '@/features/guide/midlong/anchors'
 
 const props = defineProps<{ modelValue: boolean; window: TradingWindowDetail | null; subjects: MidlongSubject[] }>()
 const emit = defineEmits<{ 'update:modelValue': [boolean]; saved: [WindowWriteResult] }>()
@@ -58,6 +62,18 @@ watch(() => props.modelValue, (open) => {
     })
   }
 }, { immediate: true })
+
+// 操作导引（dljy#3406）：登记模式才对导引可见（更正不是导引路径）。
+useGuideForm(
+  FORM.windowRegister,
+  {
+    read: () => ({ ...form, announcementVersion: form.announcementVersion, correcting: Boolean(props.window) }),
+    fill: (values) => {
+      for (const [key, value] of Object.entries(values)) (form as unknown as Record<string, unknown>)[key] = value
+    },
+  },
+  { active: () => props.modelValue && !props.window },
+)
 
 const correcting = computed(() => Boolean(props.window))
 /**
@@ -108,6 +124,7 @@ async function submit() {
       : await registerWindow(input)
     ElMessage.success(target ? '更正公告已登记，原版本保留' : '公告已登记')
     emit('saved', saved)
+    emitGuideSignal(SIGNAL.windowSaved, { windowId: saved.windowId, revisionNo: saved.revisionNo, affectedProposals: saved.affectedProposals?.length ?? 0 })
     // 写请求返回前表单已关闭或重开：结果属于上一次打开，不关闭、不改写当前表单。
     if (!ticket.sameSession()) return
     if (saved.affectedProposals?.length) outcome.value = saved
@@ -126,7 +143,7 @@ async function submit() {
   <el-dialog :model-value="modelValue" :title="window ? `登记更正公告（当前 v${window.currentRevisionNo}）` : '登记交易公告'" width="760px" @update:model-value="(v: boolean) => emit('update:modelValue', v)">
     <MidlongNotice tone="info">{{ PLANNING_NOTICES.windowPending }}</MidlongNotice>
     <el-form label-width="120px" class="p3-form" @submit.prevent>
-      <el-form-item label="公告名称" required><el-input v-model="form.announcementName" /></el-form-item>
+      <el-form-item label="公告名称" required data-guide="ml-window-name"><el-input v-model="form.announcementName" /></el-form-item>
       <el-form-item label="来源">
         <el-input v-model="form.sourceName" placeholder="发布机构/渠道" style="width: 220px" />
         <el-input v-model="form.sourceReference" placeholder="文号或链接" style="width: 300px; margin-left: 8px" />
@@ -162,7 +179,7 @@ async function submit() {
       <el-form-item label="申报开始">
         <BeijingDateTimeInput v-model="form.declarationOpensAt" data-test="declarationOpensAt" />
       </el-form-item>
-      <el-form-item label="申报截止">
+      <el-form-item label="申报截止" data-guide="ml-window-decl-closes">
         <BeijingDateTimeInput v-model="form.declarationClosesAt" data-test="declarationClosesAt" />
       </el-form-item>
       <el-form-item label="确认时间">
@@ -192,7 +209,7 @@ async function submit() {
     <MidlongNotice v-if="error" tone="danger">{{ error }}</MidlongNotice>
     <template #footer>
       <el-button @click="emit('update:modelValue', false)">{{ outcome ? '完成' : '取消' }}</el-button>
-      <el-button v-if="!outcome" type="primary" :loading="saving" :disabled="!valid" @click="submit">{{ window ? '登记更正版本' : '登记' }}</el-button>
+      <el-button v-if="!outcome" type="primary" :loading="saving" :disabled="!valid" data-guide="ml-window-submit" @click="submit">{{ window ? '登记更正版本' : '登记' }}</el-button>
     </template>
   </el-dialog>
 </template>
