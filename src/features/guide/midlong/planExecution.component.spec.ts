@@ -67,12 +67,14 @@ describe('章 1：售电目标', () => {
     expect(doneOf('1-3', { targetQuantity: '600', basisNote: '示例', ownerName: '演示' })).toBe(true)
   })
 
-  it('保存信号只认本导引目标月的计划', () => {
+  it('保存信号只认本导引目标月的计划；重复导引（目标已确认）走 state 分支自动滑过', () => {
     const advance = byId('1-4').advance
-    if (advance.kind !== 'signal') throw new Error('1-4 应是 signal 条件')
+    if (advance.kind !== 'any') throw new Error('1-4 应是 any 条件')
+    const signal = advance.of.find((sub) => sub.kind === 'signal')
+    if (!signal || signal.kind !== 'signal') throw new Error('1-4 应含 signal 条件')
     const ctx = ctxWith({ executionMonths: ['2026-10', '2026-11', '2026-12'] })
-    expect(advance.match?.({ periodKey: '2026-11' }, ctx)).toBe(false)
-    expect(advance.match?.({ periodKey: '2026-10' }, ctx)).toBe(true)
+    expect(signal.match?.({ periodKey: '2026-11' }, ctx)).toBe(false)
+    expect(signal.match?.({ periodKey: '2026-10' }, ctx)).toBe(true)
   })
 })
 

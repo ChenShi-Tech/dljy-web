@@ -76,8 +76,10 @@ function planConfirmedFor(ctx: GuideCtx): boolean {
   return (plansSnapshotFor(ctx)?.targets ?? []).some((t) => t.confirmedRevisionNo !== null && t.periodKey === months[0])
 }
 
-// 章 2 完成：练习公司已登记至少一条交易公告（公告无业务键，重跑导引会追加新的一条，练习数据可接受）。
+// 章 2 完成：本导引已登记公告（capture 记下 id），或执行页快照里已有任何公告（重复导引追加，练习数据可接受）。
+// recover 优先认 artifacts：恢复链的 2.5s 轮询里执行页 windows 标签可能尚未加载，快照为空不代表没登记过。
 function windowRegistered(ctx: GuideCtx): boolean {
+  if (typeof ctx.artifacts[ARTIFACT.windowId] === 'number') return true
   return (executionSnapshotFor(ctx)?.windows ?? []).length > 0
 }
 
@@ -89,20 +91,22 @@ function proposalDraftExists(ctx: GuideCtx): boolean {
 
 function proposalExecutable(ctx: GuideCtx): boolean {
   const known = ctx.artifacts[ARTIFACT.proposalId]
-  const statuses = ['EXECUTABLE', 'SUBMITTED', 'AWAITING_RESULT']
+  const statuses = ['EXECUTABLE', 'SUBMITTED', 'AWAITING_RESULT', 'CLEARED']
   return (executionSnapshotFor(ctx)?.proposals ?? []).some((p) => p.id === known && statuses.includes(p.status))
     || (plansSnapshotFor(ctx)?.proposals ?? []).some((p) => p.id === known && statuses.includes(p.status))
 }
 
 // 章 4 完成：方案已登记外部提交（或已推进到待结果）。
 function proposalSubmitted(ctx: GuideCtx): boolean {
+  if (typeof ctx.artifacts[ARTIFACT.submissionId] === 'number') return true
   const known = ctx.artifacts[ARTIFACT.proposalId]
-  const statuses = ['SUBMITTED', 'AWAITING_RESULT']
+  const statuses = ['SUBMITTED', 'AWAITING_RESULT', 'CLEARED']
   return (executionSnapshotFor(ctx)?.proposals ?? []).some((p) => p.id === known && statuses.includes(p.status))
 }
 
-// 章 5 完成：练习公司已登记至少一条成交确认单。
+// 章 5 完成：本导引已登记成交确认单（capture 记下 id），或执行页已有任何确认单。
 function confirmationRegistered(ctx: GuideCtx): boolean {
+  if (typeof ctx.artifacts[ARTIFACT.confirmationId] === 'number') return true
   return (executionSnapshotFor(ctx)?.confirmations ?? []).length > 0
 }
 
@@ -161,7 +165,7 @@ const steps: GuideStep[] = [
 
   // 章 1：售电目标
   {
-    id: '1-0', chapter: 1, target: ANCHOR.plansNewTarget, within: 'page', placement: 'bottom',
+    id: '1-0', chapter: 1, target: ANCHOR.plansNewTarget, within: 'page', placement: 'bottom', optional: true,
     title: '新建售电目标',
     body: '售电目标是人工确认的经营安排（不是物理可发电量）。确认后的目标决定「剩余计划待售量」与完成率的分母。点「新建目标」。',
     advance: { kind: 'visible', target: ANCHOR.planSubject, within: 'dialog' },
@@ -169,7 +173,7 @@ const steps: GuideStep[] = [
     recover: planConfirmedFor,
   },
   {
-    id: '1-1', chapter: 1, target: ANCHOR.planSubject, within: 'dialog', resumeTo: '1-0',
+    id: '1-1', chapter: 1, target: ANCHOR.planSubject, within: 'dialog', resumeTo: '1-0', optional: true,
     title: '交易主体',
     body: '选「合同入门」里登记的那个练习主体。「帮我填」会选练习公司的第一个主体。',
     advance: { kind: 'form', form: FORM.planCreate, settleMs: 0, done: (v) => v.subjectId !== null && v.subjectId !== undefined && v.subjectId !== '' },
@@ -177,7 +181,7 @@ const steps: GuideStep[] = [
     recover: planConfirmedFor,
   },
   {
-    id: '1-2', chapter: 1, target: ANCHOR.planPeriod, within: 'dialog', resumeTo: '1-0', placement: 'right',
+    id: '1-2', chapter: 1, target: ANCHOR.planPeriod, within: 'dialog', resumeTo: '1-0', placement: 'right', optional: true,
     title: '交割期',
     body: (ctx) => `粒度「月」、交割月 ${monthsFor(ctx)[0]}——后面方案的交割片段、成交确认单都要落在这个月里。`,
     advance: { kind: 'form', form: FORM.planCreate, settleMs: 0, done: (v, ctx) => v.periodType === ('MONTH' as PlanPeriodType) && isPeriodKey('MONTH', v.periodKey) && v.periodKey === monthsFor(ctx)[0] },
@@ -185,7 +189,7 @@ const steps: GuideStep[] = [
     recover: planConfirmedFor,
   },
   {
-    id: '1-3', chapter: 1, target: ANCHOR.planQuantity, within: 'dialog', resumeTo: '1-0',
+    id: '1-3', chapter: 1, target: ANCHOR.planQuantity, within: 'dialog', resumeTo: '1-0', optional: true,
     title: '目标电量与依据',
     body: '目标电量示例 600 MWh；依据与负责人确认前必填——「帮我填」一并写上教学演示值。价格为空表示未定，不是 0。若后续方案确认时提示「可安排计划量不足」，把方案电量调小即可（练习公司可能已有历史确认合同占了额度）。',
     advance: { kind: 'form', form: FORM.planCreate, settleMs: 800, done: (v) => nonEmpty(v.targetQuantity) && nonEmpty(v.basisNote) && nonEmpty(v.ownerName) },
@@ -195,8 +199,15 @@ const steps: GuideStep[] = [
   {
     id: '1-4', chapter: 1, target: ANCHOR.planSubmit, within: 'dialog', resumeTo: '1-0', placement: 'bottom',
     title: '保存目标（待确认）',
-    body: '保存后是待确认草稿，计入完成情况前还要「确认」——下一步就在列表里点。',
-    advance: { kind: 'signal', name: SIGNAL.planSaved, match: (payload, ctx) => (payload as { periodKey?: string } | null)?.periodKey === monthsFor(ctx)[0] },
+    body: '保存后是待确认草稿，计入完成情况前还要「确认」——下一步就在列表里点。重复导引时该主体该交割期可能已有目标（保存会提示不能重复新建）：目标已确认的话本章会自动跳过。',
+    advance: {
+      kind: 'any',
+      of: [
+        { kind: 'signal', name: SIGNAL.planSaved, match: (payload, ctx) => (payload as { periodKey?: string } | null)?.periodKey === monthsFor(ctx)[0] },
+        // 重复导引：该主体该交割期的目标已存在（保存会 409），已确认即视为本章完成。
+        { kind: 'state', state: STATE.plans, done: (_snap, ctx) => planConfirmedFor(ctx) },
+      ],
+    },
     assist: { kind: 'click' },
     capture: (payload, ctx) => {
       const id = (payload as { planId?: number } | null)?.planId
@@ -231,7 +242,13 @@ const steps: GuideStep[] = [
     id: '2-0', chapter: 2, target: ANCHOR.executionRegisterWindow, within: 'page', placement: 'bottom',
     title: '去交易执行，登记公告',
     body: '交易公告记录申报的起止时间，是方案关联与日历提醒的依据。「带我去」到交易执行页的公告登记，并帮你点「登记公告」。',
-    advance: { kind: 'visible', target: ANCHOR.windowName, within: 'dialog' },
+    advance: {
+      kind: 'any',
+      of: [
+        { kind: 'visible', target: ANCHOR.windowName, within: 'dialog' },
+        { kind: 'state', state: STATE.execution, done: (_snap, ctx) => windowRegistered(ctx) },
+      ],
+    },
     assist: { kind: 'action', label: '带我去', run: (ctx) => gotoPageTab(ctx, '/zcqjy/execution', 'windows', ANCHOR.executionRegisterWindow) },
     recover: windowRegistered,
   },
@@ -273,7 +290,7 @@ const steps: GuideStep[] = [
 
   // 章 3：交易方案
   {
-    id: '3-0', chapter: 3, target: ANCHOR.plansNewProposal, within: 'page', placement: 'bottom',
+    id: '3-0', chapter: 3, target: ANCHOR.plansNewProposal, within: 'page', placement: 'bottom', optional: true,
     title: '新建方案草稿',
     body: '回到计划页的「交易方案」标签。方案是内部安排：保存草稿不建立占用、不进持仓；「确认可执行」才建立占用。「带我去」会切到该标签并帮你点「新建方案草稿」。',
     advance: { kind: 'visible', target: ANCHOR.proposalSubject, within: 'dialog' },
@@ -281,7 +298,7 @@ const steps: GuideStep[] = [
     recover: proposalExecutable,
   },
   {
-    id: '3-1', chapter: 3, target: ANCHOR.proposalSubject, within: 'dialog', resumeTo: '3-0',
+    id: '3-1', chapter: 3, target: ANCHOR.proposalSubject, within: 'dialog', resumeTo: '3-0', optional: true,
     title: '交易主体',
     body: '与售电目标同一个主体——方案的占用要落在该主体的目标上。',
     advance: { kind: 'form', form: FORM.proposalCreate, settleMs: 0, done: (v) => v.subjectId !== null && v.subjectId !== undefined && v.subjectId !== '' },
@@ -289,7 +306,7 @@ const steps: GuideStep[] = [
     recover: proposalDraftExists,
   },
   {
-    id: '3-2', chapter: 3, target: ANCHOR.proposalWindow, within: 'dialog', resumeTo: '3-0', placement: 'right',
+    id: '3-2', chapter: 3, target: ANCHOR.proposalWindow, within: 'dialog', resumeTo: '3-0', placement: 'right', optional: true,
     title: '关联交易公告',
     body: '选刚登记的公告——确认可执行前必须关联；公告更正后方案会提示按新版本重新核对。',
     advance: { kind: 'form', form: FORM.proposalCreate, settleMs: 0, done: (v) => v.windowId !== null && v.windowId !== undefined && v.windowId !== '' },
@@ -297,7 +314,7 @@ const steps: GuideStep[] = [
     recover: proposalDraftExists,
   },
   {
-    id: '3-3', chapter: 3, target: ANCHOR.proposalSegments, within: 'dialog', resumeTo: '3-0', placement: 'left',
+    id: '3-3', chapter: 3, target: ANCHOR.proposalSegments, within: 'dialog', resumeTo: '3-0', placement: 'left', optional: true,
     title: '交割片段',
     body: (ctx) => {
       const [m1, m2, m3] = monthsFor(ctx)
@@ -312,7 +329,7 @@ const steps: GuideStep[] = [
     recover: proposalDraftExists,
   },
   {
-    id: '3-4', chapter: 3, target: ANCHOR.proposalSubmit, within: 'dialog', resumeTo: '3-0', placement: 'bottom',
+    id: '3-4', chapter: 3, target: ANCHOR.proposalSubmit, within: 'dialog', resumeTo: '3-0', placement: 'bottom', optional: true,
     title: '保存方案草稿',
     body: '保存后对话框关闭、方案抽屉自动打开——测算与「确认可执行」就在抽屉里。',
     advance: { kind: 'signal', name: SIGNAL.proposalSaved },
@@ -331,7 +348,9 @@ const steps: GuideStep[] = [
       kind: 'any',
       of: [
         { kind: 'signal', name: SIGNAL.proposalConfirmed, match: (payload, ctx) => (payload as { proposalId?: number } | null)?.proposalId === ctx.artifacts[ARTIFACT.proposalId] },
-        { kind: 'state', state: STATE.execution, done: (_snap, ctx) => proposalExecutable(ctx) },
+        // 挂 plans 快照：存在任何非草稿方案（含已成交完结的 CLEARED）即视为本章已走过——
+        // 重跑导引的新会话没有 proposalId 产物，也能在计划页直接跳过本章（练习公司的方案只来自导引/演练）。
+        { kind: 'state', state: STATE.plans, done: (snap) => ((snap as PlansSnapshot | null)?.proposals ?? []).some((p) => p.status !== 'DRAFT') },
       ],
     },
     assist: { kind: 'action', label: '帮我点', run: async () => {
@@ -427,7 +446,13 @@ const steps: GuideStep[] = [
     id: '5-0', chapter: 5, target: ANCHOR.executionRegisterConfirmation, within: 'page', placement: 'bottom',
     title: '登记成交确认单',
     body: '外部成交后拿到的确认单在这里登记：「确认成交」会把方案占用原子转换为合同义务。「带我去」到执行确认标签并帮你点「登记确认单」。',
-    advance: { kind: 'visible', target: ANCHOR.confirmSubject, within: 'dialog' },
+    advance: {
+      kind: 'any',
+      of: [
+        { kind: 'visible', target: ANCHOR.confirmSubject, within: 'dialog' },
+        { kind: 'state', state: STATE.plans, done: (_snap, ctx) => confirmationRegistered(ctx) },
+      ],
+    },
     assist: { kind: 'action', label: '带我去', run: (ctx) => gotoPageTab(ctx, '/zcqjy/execution', 'confirmations', ANCHOR.executionRegisterConfirmation) },
     recover: confirmationRegistered,
   },
