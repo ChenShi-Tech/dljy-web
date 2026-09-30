@@ -19,6 +19,9 @@ import { beijingDateTime } from '@/services/midlong/midlongP3Format'
 import { createWriteSession, isWriteAbandoned } from '@/services/midlong/midlongP3Scope'
 import { reportChangeLine, reportScopeLabel, settlementFailureText } from '@/services/midlong/midlongP5Format'
 import { SETTLEMENT_NOTICES, type AffectedReportInputKind, type AffectedReportsResult, type GenerateReportResult, type ReviewMetrics, type ReviewReportSummaryRow } from '@/services/midlong/midlongP5Types'
+// 操作导引（dljy#3407）：复盘页筛选/生成表单接给「调整与复盘账单」导引，生成成功发推进信号。
+import { emitGuideSignal, useGuideForm, useGuideState } from '@/features/guide/bridge'
+import { FORM, SIGNAL, STATE } from '@/features/guide/midlong/anchors'
 import type { MidlongCapabilities, MidlongSubject } from '@/services/midlong/midlongTypes'
 
 const route = useRoute()
@@ -158,6 +161,17 @@ function changePage(page: number) {
   void loadReports()
 }
 
+// 操作导引（dljy#3407）：复盘页筛选快照接给导引。
+useGuideState(STATE.reports, () => {
+  if (state.value !== 'ready') return null
+  return {
+    canWrite: canWrite.value,
+    month: filters.month,
+    subjectId: filters.subjectId || null,
+    reports: reports.value.map((r) => ({ id: r.id, reportMonth: r.reportMonth })),
+  }
+})
+
 // ── 生成月报（冻结报告；REPORT_INPUTS_UNCHANGED / 迟到修订新版本）────────────
 
 const generateDialog = ref(false)
@@ -180,6 +194,18 @@ watch(generateDialog, (open) => {
   if (!open) generateSession.close()
 })
 
+// 操作导引（dljy#3407）：生成说明接给导引。
+useGuideForm(
+  FORM.reportGenerate,
+  {
+    read: () => ({ note: generateNote.value, month: filters.month }),
+    fill: (values) => {
+      if (typeof values.note === 'string') generateNote.value = values.note
+    },
+  },
+  { active: () => generateDialog.value },
+)
+
 async function submitGenerate() {
   if (generating.value) return
   generating.value = true
@@ -192,6 +218,8 @@ async function submitGenerate() {
     ElMessage.success(`报告已生成：v${result.versionNo}（输入已冻结）`)
     // 成功后对话框保持打开展示冻结结果（版本、变化输入与输入计数），用户确认后再关闭。
     if (ticket.sameSession()) generateResult.value = result
+    // 操作导引（dljy#3407）：生成成功（输入冻结）发推进信号。
+    emitGuideSignal(SIGNAL.reportGenerated, { reportId: result.reportId, versionNo: result.versionNo, month: filters.month })
     void loadReports()
   } catch (e) {
     const f = e instanceof Error && isWriteAbandoned(e) ? { message: (e as Error).message, errorCode: '', details: null } : midlongFailureOf(e)
@@ -274,26 +302,26 @@ const subjectLabel = (id: number | null) => (id === null ? null : subjects.value
 
     <template v-if="state === 'ready'">
       <div class="ml-filters">
-        <el-date-picker v-model="filters.month" type="month" value-format="YYYY-MM" placeholder="交割月（必选）" style="width: 150px" data-test="month-filter" />
+        <el-date-picker v-model="filters.month" type="month" value-format="YYYY-MM" placeholder="交割月（必选）" style="width: 150px" data-guide="ml-review-month" data-test="month-filter" />
         <el-select v-model="filters.subjectId" filterable clearable placeholder="交易主体（可空 = 全公司）" style="width: 220px" data-test="subject-filter">
           <el-option v-for="s in subjects" :key="s.id" :label="s.displayName" :value="s.id" />
         </el-select>
         <el-button type="primary" @click="search">查询</el-button>
-        <el-button v-if="canWrite" type="primary" plain data-test="generate-report" @click="openGenerate">生成月报（冻结）</el-button>
+        <el-button v-if="canWrite" type="primary" plain data-guide="ml-review-generate" data-test="generate-report" @click="openGenerate">生成月报（冻结）</el-button>
       </div>
 
       <div v-if="metricsLoading" v-loading="true" class="ml-placeholder" />
       <MidlongNotice v-else-if="metricsError" tone="danger" title="复盘指标加载失败" data-test="metrics-error">
         {{ metricsError }} <el-button link type="primary" @click="loadMetrics">重试</el-button>
       </MidlongNotice>
-      <ReviewMetricsPanel v-else-if="metrics" :metrics="metrics" />
+      <ReviewMetricsPanel v-else-if="metrics" :metrics="metrics" data-guide="ml-review-metrics" />
 
       <div class="ml-reports">
         <h3 class="ml-subtitle">月度报告版本</h3>
         <MidlongNotice v-if="reportsError" tone="danger" title="报告列表加载失败" data-test="reports-error">
           {{ reportsError }} <el-button link type="primary" @click="loadReports">重试</el-button>
         </MidlongNotice>
-        <el-table v-else :data="reports" border size="small" v-loading="reportsLoading" @row-click="(row: ReviewReportSummaryRow) => openReport(row.id)">
+        <el-table data-guide="ml-report-row" v-else :data="reports" border size="small" v-loading="reportsLoading" @row-click="(row: ReviewReportSummaryRow) => openReport(row.id)">
           <el-table-column label="报告" width="70"><template #default="{ row }">#{{ row.id }}</template></el-table-column>
           <el-table-column label="交割月" width="100"><template #default="{ row }">{{ row.reportMonth }}</template></el-table-column>
           <el-table-column label="范围" min-width="180"><template #default="{ row }">{{ reportScopeLabel(row.scope, row.subjectName) }}</template></el-table-column>
@@ -339,10 +367,10 @@ const subjectLabel = (id: number | null) => (id === null ? null : subjects.value
       <MidlongNotice tone="info">{{ SETTLEMENT_NOTICES.reportFrozen }}</MidlongNotice>
       <div class="ml-generate-fields">
         <div>交割月：<b data-test="generate-month">{{ filters.month }}</b> · 范围：<b data-test="generate-scope">{{ filters.subjectId ? `按交易主体 · ${subjectLabel(filters.subjectId)}` : '全公司（该月有确认目标的主体，超过 50 个须按主体筛选）' }}</b></div>
-        <el-input v-model="generateNote" type="textarea" :rows="2" placeholder="生成说明（可空）" data-test="generate-note" />
+        <el-input v-model="generateNote" type="textarea" :rows="2" placeholder="生成说明（可空）" data-guide="ml-review-generate-note" data-test="generate-note" />
       </div>
       <template v-if="generateResult">
-        <MidlongNotice tone="info" :title="`已生成：报告 #${generateResult.reportId} v${generateResult.versionNo}`" data-test="generate-result">
+        <MidlongNotice tone="info" :title="`已生成：报告 #${generateResult.reportId} v${generateResult.versionNo}`" data-guide="ml-review-generate-result" data-test="generate-result">
           <div>变更说明：{{ generateResult.changeReason }}</div>
           <div v-if="generateResult.changes.length">变化输入：{{ generateResult.changes.map(reportChangeLine).join('、') }}</div>
           <div>冻结输入：合同 {{ generateResult.frozenInputs.contracts }} · 计划 {{ generateResult.frozenInputs.plans }} · 成交确认 {{ generateResult.frozenInputs.confirmations }} · 账单 {{ generateResult.frozenInputs.bills }}</div>
@@ -352,7 +380,7 @@ const subjectLabel = (id: number | null) => (id === null ? null : subjects.value
       <MidlongNotice v-if="generateError" tone="danger" title="未能生成" data-test="generate-error">{{ generateError }}</MidlongNotice>
       <template #footer>
         <el-button @click="generateDialog = false">{{ generateResult ? '完成' : '取消' }}</el-button>
-        <el-button v-if="!generateResult" type="primary" :loading="generating" data-test="generate-submit" @click="submitGenerate">生成（冻结当前输入）</el-button>
+        <el-button v-if="!generateResult" type="primary" :loading="generating" data-guide="ml-review-generate-submit" data-test="generate-submit" @click="submitGenerate">生成（冻结当前输入）</el-button>
       </template>
     </el-dialog>
 

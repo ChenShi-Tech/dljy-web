@@ -26,7 +26,7 @@ describe('makeExampleEvidenceFile', () => {
     const text = await file.text()
     expect(text).toContain('教学示例文件，非真实依据。')
     expect(text).toContain('练习公司：c-practice-9')
-    expect(text).toContain('合同编号：NO-7')
+    expect(text).toContain('关联编号：NO-7')
     expect(text).toContain('运行标签：GUIDE-01020304')
     expect(text).toMatch(/生成时间（北京时间）：\d{4}-\d{2}-\d{2} \d{2}:\d{2}/)
   })

@@ -17,6 +17,9 @@ import {
   type BillDetailDto, type BillKind, type BillRegisterInput, type BillRegisterResult, type BillReviseResult,
 } from '@/services/midlong/midlongP5Types'
 import { PRICE_COMPONENTS, PRICE_COMPONENT_LABELS, TAX_BASES, TAX_BASIS_LABELS, type MidlongSubject, type PriceComponent, type TaxBasis } from '@/services/midlong/midlongTypes'
+// 操作导引（dljy#3407）：账单表单接给「调整与复盘账单」导引，登记成功发推进信号。
+import { emitGuideSignal, useGuideForm } from '@/features/guide/bridge'
+import { FORM, SIGNAL } from '@/features/guide/midlong/anchors'
 
 const props = defineProps<{
   modelValue: boolean
@@ -48,6 +51,28 @@ const file = ref<File | null>(null)
 const saving = ref(false)
 const error = ref('')
 const result = ref<BillRegisterResult | BillReviseResult | null>(null)
+
+// 操作导引（dljy#3407）：登记模式才对导引可见；分项行按行覆盖，file 单独暴露。
+useGuideForm(
+  FORM.billRegister,
+  {
+    read: () => ({
+      ...form,
+      lineItems: form.lineItems.map((s) => ({ ...s })),
+      hasFile: file.value !== null,
+      subjectOptions: props.subjects.map((s) => s.id),
+      subjectsReady: props.subjects.length > 0,
+    }),
+    fill: (values) => {
+      for (const [key, value] of Object.entries(values)) {
+        if (key === 'lineItems') form.lineItems = (value as LineItemForm[]).map((s) => ({ ...s }))
+        else if (key === 'file') file.value = value as File | null
+        else (form as unknown as Record<string, unknown>)[key] = value
+      }
+    },
+  },
+  { active: () => props.modelValue && !props.bill },
+)
 const reviseResult = ref<BillReviseResult | null>(null)
 // 写入会话：登记 = 本对话框的一次登记（业务身份进幂等键，不随表单填写变化）；修订 = 账单 id + 行版本。
 // 关闭或重开让进行中的保存失效（读取账单原件期间点取消不会写入）。
@@ -167,6 +192,7 @@ async function submit() {
       ElMessage.success(saved.businessKeyReplay ? '同一外部账单重复处理：已链接既有记录，金额不重复累计' : '外部账单已登记')
     }
     emit('saved', 'billId' in saved ? saved.billId : 0)
+    if ('billId' in saved && saved.billId) emitGuideSignal(SIGNAL.billSaved, { billId: saved.billId, revisionNo: saved.revisionNo, billKind: form.billKind, amount: form.amount })
   } catch (e) {
     const f = e instanceof Error && isWriteAbandoned(e) ? { message: (e as Error).message, errorCode: '', details: null } : midlongFailureOf(e)
     const message = settlementFailureText(f.errorCode, f.message, f.details)
@@ -189,29 +215,29 @@ async function submit() {
       </MidlongNotice>
       <el-form label-width="150px" @submit.prevent>
         <div class="p5-grid">
-          <el-form-item label="所属交易主体" required>
+          <el-form-item label="所属交易主体" required data-guide="ml-bill-subject">
             <el-select v-model="form.subjectId" filterable placeholder="选择主体" :disabled="Boolean(bill)" style="width: 240px" data-test="bill-subject">
               <el-option v-for="s in subjects" :key="s.id" :label="s.displayName" :value="s.id" />
             </el-select>
           </el-form-item>
-          <el-form-item label="来源" required>
+          <el-form-item label="来源" required data-guide="ml-bill-source">
             <el-input v-model="form.sourceNamespace" :disabled="Boolean(bill)" placeholder="如：昆明交易中心 / MANUAL" data-test="bill-source" />
           </el-form-item>
-          <el-form-item label="外部账单编号" required>
+          <el-form-item label="外部账单编号" required data-guide="ml-bill-no">
             <el-input v-model="form.externalBillNo" :disabled="Boolean(bill)" data-test="bill-no" />
           </el-form-item>
-          <el-form-item label="账单形态" required>
+          <el-form-item label="账单形态" required data-guide="ml-bill-kind">
             <el-radio-group v-model="form.billKind" data-test="bill-kind">
               <el-radio v-for="k in BILL_KINDS" :key="k" :value="k">{{ BILL_KIND_LABELS[k] }}</el-radio>
             </el-radio-group>
           </el-form-item>
-          <el-form-item label="期间（起始月）" required>
+          <el-form-item label="期间（起始月）" required data-guide="ml-bill-period">
             <el-date-picker v-model="form.periodStartMonth" type="month" value-format="YYYY-MM" placeholder="YYYY-MM" style="width: 140px" data-test="bill-period-start" />
           </el-form-item>
           <el-form-item label="期间（结束月）" required>
             <el-date-picker v-model="form.periodEndMonth" type="month" value-format="YYYY-MM" placeholder="YYYY-MM" style="width: 140px" data-test="bill-period-end" />
           </el-form-item>
-          <el-form-item label="账单总金额(元)" required>
+          <el-form-item label="账单总金额(元)" required data-guide="ml-bill-amount">
             <el-input v-model="form.amount" placeholder="十进制，最多 6 位小数" style="width: 200px" data-test="bill-amount" />
           </el-form-item>
           <el-form-item label="外部修订标识">
@@ -236,7 +262,7 @@ async function submit() {
         </MidlongNotice>
 
         <template v-if="form.billKind === 'ITEMIZED'">
-          <div class="p5-sub">中长期明确分项（至少一条；交割月可空 = 期间合计行；只登记外部账单上明确给出的行，不做任何推算）</div>
+          <div class="p5-sub" data-guide="ml-bill-items">中长期明确分项（至少一条；交割月可空 = 期间合计行；只登记外部账单上明确给出的行，不做任何推算）</div>
           <div v-for="(item, i) in form.lineItems" :key="i" class="p5-item">
             <el-date-picker v-model="item.deliveryMonth" type="month" value-format="YYYY-MM" placeholder="交割月（可空=期间合计）" style="width: 190px" :data-test="`bill-item-month-${i}`" />
             <el-input v-model="item.quantity" placeholder="电量 MWh（可空）" style="width: 150px" :data-test="`bill-item-quantity-${i}`" />
@@ -249,7 +275,7 @@ async function submit() {
         </template>
 
         <div class="p5-sub">依据与说明</div>
-        <el-form-item label="账单原件"><input type="file" data-test="bill-file" @change="onFile" /></el-form-item>
+        <el-form-item label="账单原件" data-guide="ml-bill-file"><input type="file" data-test="bill-file" @change="onFile" /></el-form-item>
         <el-form-item v-if="bill" label="修订原因" required>
           <el-input v-model="form.changeReason" placeholder="如：收到更正版本 C-2026-001-R2" data-test="bill-change-reason" />
         </el-form-item>
@@ -273,7 +299,7 @@ async function submit() {
     </div>
     <template #footer>
       <el-button @click="emit('update:modelValue', false)">{{ result || reviseResult ? '完成' : '取消' }}</el-button>
-      <el-button v-if="!result && !reviseResult" type="primary" :loading="saving" :disabled="!valid" data-test="bill-submit" @click="submit">{{ bill ? '生成修订版本' : '登记' }}</el-button>
+      <el-button v-if="!result && !reviseResult" type="primary" :loading="saving" :disabled="!valid" data-guide="ml-bill-submit" data-test="bill-submit" @click="submit">{{ bill ? '生成修订版本' : '登记' }}</el-button>
     </template>
   </el-dialog>
 </template>

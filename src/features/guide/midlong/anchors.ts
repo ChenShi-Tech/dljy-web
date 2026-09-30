@@ -123,6 +123,64 @@ export const ANCHOR = {
   confirmProposal: 'ml-confirm-proposal',
   confirmSubmit: 'ml-confirm-submit',
   confirmResult: 'ml-confirm-result',
+  // 合同调整（dljy#3407）
+  adjustmentRegister: 'ml-adjustment-register',
+  adjustmentContractNext: 'ml-adjustment-contract-next',
+  adjustmentType: 'ml-adjustment-type',
+  adjustmentSource: 'ml-adjustment-source',
+  adjustmentNo: 'ml-adjustment-no',
+  adjustmentDirection: 'ml-adjustment-direction',
+  adjustmentReason: 'ml-adjustment-reason',
+  adjustmentSegments: 'ml-adjustment-segments',
+  adjustmentFile: 'ml-adjustment-file',
+  adjustmentSubmit: 'ml-adjustment-submit',
+  adjustmentRow: 'ml-adjustment-row',
+  adjustmentConfirm: 'ml-adjustment-confirm',
+  adjustmentConfirmFile: 'ml-adjustment-confirm-file',
+  adjustmentConfirmSubmit: 'ml-adjustment-confirm-submit',
+  adjustmentConfirmResult: 'ml-adjustment-confirm-result',
+  adjustmentResult: 'ml-adjustment-result',
+  adjustmentImpact: 'ml-adjustment-impact',
+  // 账单与凭证（dljy#3407）
+  billRegister: 'ml-bill-register',
+  billSubject: 'ml-bill-subject',
+  billSource: 'ml-bill-source',
+  billNo: 'ml-bill-no',
+  billKind: 'ml-bill-kind',
+  billPeriod: 'ml-bill-period',
+  billAmount: 'ml-bill-amount',
+  billItems: 'ml-bill-items',
+  billFile: 'ml-bill-file',
+  billSubmit: 'ml-bill-submit',
+  billRow: 'ml-bill-row',
+  voucherOpen: 'ml-voucher-open',
+  voucherNo: 'ml-voucher-no',
+  voucherAmount: 'ml-voucher-amount',
+  voucherDate: 'ml-voucher-date',
+  voucherFile: 'ml-voucher-file',
+  voucherSubmit: 'ml-voucher-submit',
+  voucherResult: 'ml-voucher-result',
+  // 差异（dljy#3407）
+  discrepancyRegister: 'ml-discrepancy-register',
+  discrepancySubject: 'ml-discrepancy-subject',
+  discrepancyMonth: 'ml-discrepancy-month',
+  discrepancyBill: 'ml-discrepancy-bill',
+  discrepancySubmit: 'ml-discrepancy-submit',
+  discrepancyRow: 'ml-discrepancy-row',
+  discrepancyResolve: 'ml-discrepancy-resolve',
+  discrepancyNote: 'ml-discrepancy-resolution-note',
+  discrepancyResult: 'ml-discrepancy-result',
+  discrepancyResolveSubmit: 'ml-discrepancy-resolve-submit',
+  discrepancyResolved: 'ml-discrepancy-resolved',
+  // 复盘与月报（dljy#3407）
+  reviewMonth: 'ml-review-month',
+  reviewMetrics: 'ml-review-metrics',
+  reviewGenerate: 'ml-review-generate',
+  reviewGenerateNote: 'ml-review-generate-note',
+  reviewGenerateSubmit: 'ml-review-generate-submit',
+  reviewGenerateResult: 'ml-review-generate-result',
+  reportRow: 'ml-report-row',
+  reportExport: 'ml-report-export',
 } as const
 
 export const FORM = {
@@ -142,6 +200,13 @@ export const FORM = {
   proposalDetail: 'midlong.proposal.detail',
   proposalSubmission: 'midlong.proposal.submission',
   confirmationRegister: 'midlong.confirmation.register',
+  adjustmentRegister: 'midlong.adjustment.register',
+  adjustmentConfirm: 'midlong.adjustment.confirm',
+  billRegister: 'midlong.bill.register',
+  voucherRegister: 'midlong.voucher.register',
+  discrepancyRegister: 'midlong.discrepancy.register',
+  discrepancyResolve: 'midlong.discrepancy.resolve',
+  reportGenerate: 'midlong.report.generate',
 } as const
 
 export const STATE = {
@@ -155,6 +220,10 @@ export const STATE = {
   stationPositions: 'midlong.positions.stations',
   plans: 'midlong.plans',
   execution: 'midlong.execution',
+  adjustments: 'midlong.adjustments',
+  bills: 'midlong.bills',
+  discrepancies: 'midlong.discrepancies',
+  reports: 'midlong.reports',
 } as const
 
 export const SIGNAL = {
@@ -173,6 +242,13 @@ export const SIGNAL = {
   proposalConfirmed: 'midlong.proposal.confirmed',
   proposalSubmitted: 'midlong.proposal.submitted',
   confirmationSaved: 'midlong.confirmation.saved',
+  adjustmentSaved: 'midlong.adjustment.saved',
+  adjustmentConfirmed: 'midlong.adjustment.confirmed',
+  billSaved: 'midlong.bill.saved',
+  voucherSaved: 'midlong.voucher.saved',
+  discrepancySaved: 'midlong.discrepancy.saved',
+  discrepancyResolved: 'midlong.discrepancy.resolved',
+  reportGenerated: 'midlong.report.generated',
 } as const
 
 /** 会话 artifacts 里的产物键（capture / recover 写，后续步骤的示例值读）。 */
@@ -201,6 +277,12 @@ export const ARTIFACT = {
   proposalId: 'proposalId',
   submissionId: 'submissionId',
   confirmationId: 'confirmationId',
+  /** 「调整与复盘账单」：各环节产物 id。 */
+  adjustmentId: 'adjustmentId',
+  billId: 'billId',
+  voucherId: 'voucherId',
+  discrepancyId: 'discrepancyId',
+  reportId: 'reportId',
   /** 「计划与交易执行」：本次导引使用的交割月份（会话开始时写入，覆盖月份/公告/方案/确认单共用）。 */
   executionMonths: 'executionMonths',
 } as const

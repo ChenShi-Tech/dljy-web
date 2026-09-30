@@ -18,6 +18,9 @@ import {
 } from '@/services/midlong/midlongP4Types'
 import type { TaxBasis } from '@/services/midlong/midlongTypes'
 import { TAX_BASES, TAX_BASIS_LABELS } from '@/services/midlong/midlongTypes'
+// 操作导引（dljy#3407）：调整表单接给「调整与复盘账单」导引，登记成功发推进信号。
+import { emitGuideSignal, useGuideForm } from '@/features/guide/bridge'
+import { FORM, SIGNAL } from '@/features/guide/midlong/anchors'
 
 const props = defineProps<{
   modelValue: boolean
@@ -162,6 +165,8 @@ async function submit() {
       : await registerAdjustment(input)
     ElMessage.success(target ? '调整修订已登记（旧版本保留）' : saved.status === 'PENDING_VERIFICATION' ? '调整已登记（待核对，未生效）' : '调整已登记（待确认生效）')
     emit('saved', saved.adjustmentId)
+    // 操作导引（dljy#3407）：登记成功发推进信号（方向/状态供 recover 与文案）。
+    emitGuideSignal(SIGNAL.adjustmentSaved, { adjustmentId: saved.adjustmentId, revisionNo: saved.revisionNo, status: saved.status, direction: saved.direction })
     if (ticket.sameSession()) result.value = saved
   } catch (e) {
     const f = e instanceof Error && isWriteAbandoned(e) ? { message: (e as Error).message, errorCode: '', details: null } : midlongFailureOf(e)
@@ -172,6 +177,27 @@ async function submit() {
     if (ticket.sameSession()) saving.value = false
   }
 }
+
+// 操作导引（dljy#3407）：登记模式才对导引可见；segments 按行覆盖，file 单独暴露。
+useGuideForm(
+  FORM.adjustmentRegister,
+  {
+    read: () => ({
+      ...form,
+      segments: form.segments.map((s) => ({ ...s })),
+      hasFile: file.value !== null,
+      pricesTransfer: form.prices.transferPrice?.enabled ?? false,
+    }),
+    fill: (values) => {
+      for (const [key, value] of Object.entries(values)) {
+        if (key === 'segments') form.segments = (value as Array<{ deliveryMonth: string; quantity: string }>).map((s) => ({ ...s }))
+        else if (key === 'file') file.value = value as File | null
+        else (form as unknown as Record<string, unknown>)[key] = value
+      }
+    },
+  },
+  { active: () => props.modelValue && !props.adjustment },
+)
 
 const statusTagOf = (status: AdjustmentStatus) => adjustmentStatusTag(status)
 </script>
@@ -187,21 +213,21 @@ const statusTagOf = (status: AdjustmentStatus) => adjustmentStatusTag(status)
       </MidlongNotice>
       <el-form label-width="140px" @submit.prevent>
         <div class="p4-grid">
-          <el-form-item label="调整类型" required>
+          <el-form-item label="调整类型" required data-guide="ml-adjustment-type">
             <el-select v-model="form.adjustmentType" :disabled="Boolean(adjustment)" data-test="adjustment-type">
               <el-option v-for="t in ADJUSTMENT_TYPES" :key="t" :label="ADJUSTMENT_TYPE_LABELS[t]" :value="t" />
             </el-select>
           </el-form-item>
-          <el-form-item label="来源" required>
+          <el-form-item label="来源" required data-guide="ml-adjustment-source">
             <el-input v-model="form.sourceNamespace" :disabled="Boolean(adjustment)" data-test="adjustment-source" placeholder="如：昆明交易中心 / MANUAL" />
           </el-form-item>
-          <el-form-item label="外部调整编号" required>
+          <el-form-item label="外部调整编号" required data-guide="ml-adjustment-no">
             <el-input v-model="form.externalAdjustmentNo" :disabled="Boolean(adjustment)" data-test="external-adjustment-no" />
           </el-form-item>
           <el-form-item label="外部修订号" required>
             <el-input v-model="form.externalRevisionNo" :disabled="Boolean(adjustment)" data-test="external-revision-no" placeholder="同一文件的新修订号 = 新调整记录" />
           </el-form-item>
-          <el-form-item label="我方义务方向">
+          <el-form-item label="我方义务方向" data-guide="ml-adjustment-direction">
             <el-select v-model="form.direction" clearable placeholder="留空 = 待核对（阻止生效）" data-test="direction">
               <el-option v-for="d in OBLIGATION_DIRECTIONS" :key="d" :label="directionLabel(d)" :value="d" />
             </el-select>
@@ -213,14 +239,14 @@ const statusTagOf = (status: AdjustmentStatus) => adjustmentStatusTag(status)
           <el-form-item label="业务生效时间">
             <el-date-picker v-model="form.businessEffectiveAt" type="datetime" value-format="YYYY-MM-DDTHH:mm" placeholder="可空 = 确认即生效" style="width: 220px" data-test="business-effective-at" />
           </el-form-item>
-          <el-form-item label="调整原因" required>
+          <el-form-item label="调整原因" required data-guide="ml-adjustment-reason">
             <el-input v-model="form.reason" type="textarea" :rows="2" data-test="adjustment-reason" placeholder="如：经平台转让 10—12 月电量 200 MWh 给买方" />
           </el-form-item>
         </div>
 
         <MidlongNotice v-if="form.direction === ''" tone="warn" data-test="direction-pending-hint">{{ ADJUSTMENT_NOTICES.directionPending }}</MidlongNotice>
 
-        <div class="p4-sub">交割段（各月变化量的绝对值；方向由上面统一给出，减少的校验以片段可调余额为准）</div>
+        <div class="p4-sub" data-guide="ml-adjustment-segments">交割段（各月变化量的绝对值；方向由上面统一给出，减少的校验以片段可调余额为准）</div>
         <div v-for="(s, i) in form.segments" :key="i" class="p4-segment">
           <el-date-picker v-model="s.deliveryMonth" type="month" value-format="YYYY-MM" placeholder="交割月" style="width: 130px" :data-test="`adj-segment-month-${i}`" />
           <el-input v-model="s.quantity" placeholder="变化量 MWh（绝对值）" style="width: 200px" :data-test="`adj-segment-quantity-${i}`" />
@@ -245,7 +271,7 @@ const statusTagOf = (status: AdjustmentStatus) => adjustmentStatusTag(status)
         </div>
 
         <div class="p4-sub">依据与说明</div>
-        <el-form-item label="依据文件（可后补）"><input type="file" data-test="adjustment-file" @change="onFile" /></el-form-item>
+        <el-form-item label="依据文件（可后补）" data-guide="ml-adjustment-file"><input type="file" data-test="adjustment-file" @change="onFile" /></el-form-item>
         <el-form-item v-if="adjustment" label="修订原因" required>
           <el-input v-model="form.changeReason" data-test="adjustment-change-reason" placeholder="如：人工核对单据后补明确方向 / 基线移动后按原内容重新对准" />
         </el-form-item>
@@ -253,7 +279,7 @@ const statusTagOf = (status: AdjustmentStatus) => adjustmentStatusTag(status)
       </el-form>
 
       <template v-if="result">
-        <MidlongNotice :tone="result.status === 'PENDING_VERIFICATION' ? 'warn' : 'info'" :title="`登记完成：${statusTagOf(result.status).label}（调整 #${result.adjustmentId} v${result.revisionNo}，基线版本 v${result.baseRevisionNo}）`" data-test="adjustment-result">
+        <MidlongNotice :tone="result.status === 'PENDING_VERIFICATION' ? 'warn' : 'info'" :title="`登记完成：${statusTagOf(result.status).label}（调整 #${result.adjustmentId} v${result.revisionNo}，基线版本 v${result.baseRevisionNo}）`" data-guide="ml-adjustment-result" data-test="adjustment-result">
           <div>{{ directionLabel(result.direction) }}<template v-if="result.directionSource">（{{ result.directionSource === 'DOCUMENT_FIELD' ? '核验单据明确字段' : '显式映射登记' }}）</template>。</div>
           <div v-if="result.businessKeyReplay">{{ ADJUSTMENT_NOTICES.duplicateReplay }}</div>
           <div>交割段：{{ result.segments.map((s) => `${s.deliveryMonth} ${fmtQuantity(s.quantity)} MWh`).join('、') }}；确认生效后{{ result.direction === 'OBLIGATION_INCREASE' ? '增加' : '减少' }}各片段义务。</div>
@@ -272,7 +298,7 @@ const statusTagOf = (status: AdjustmentStatus) => adjustmentStatusTag(status)
     </div>
     <template #footer>
       <el-button @click="emit('update:modelValue', false)">{{ result ? '完成' : '取消' }}</el-button>
-      <el-button v-if="!result" type="primary" :loading="saving" :disabled="!valid" data-test="adjustment-submit" @click="submit">{{ adjustment ? '生成修订版本' : '登记（未生效）' }}</el-button>
+      <el-button v-if="!result" type="primary" :loading="saving" :disabled="!valid" data-guide="ml-adjustment-submit" data-test="adjustment-submit" @click="submit">{{ adjustment ? '生成修订版本' : '登记（未生效）' }}</el-button>
     </template>
   </el-dialog>
 </template>

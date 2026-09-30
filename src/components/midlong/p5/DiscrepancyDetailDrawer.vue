@@ -4,6 +4,9 @@
 // 账单修订转回「需重新核对」。关闭差异不改变任何台账数据（来源一致性核对 ≠ 完整结算复算）。
 import { computed, reactive, ref, watch } from 'vue'
 import MidlongNotice from '../MidlongNotice.vue'
+// 操作导引（dljy#3407）：关闭差异的处理说明接给导引，关闭成功发推进信号。
+import { emitGuideSignal, useGuideForm } from '@/features/guide/bridge'
+import { FORM, SIGNAL } from '@/features/guide/midlong/anchors'
 import { fetchDiscrepancy, resolveDiscrepancy, updateDiscrepancy } from '@/services/midlong/midlongP5Api'
 import { midlongFailureOf } from '@/services/midlong/midlongApi'
 import { createWriteSession, isWriteAbandoned } from '@/services/midlong/midlongP3Scope'
@@ -101,6 +104,18 @@ async function submitUpdate() {
 
 // ── 关闭（resolve）：处理说明必填（422 DISCREPANCY_RESOLUTION_NOTE_REQUIRED）──
 const resolveDialog = reactive({ open: false, resolutionNote: '' })
+
+// 操作导引（dljy#3407）：处理说明接给导引。
+useGuideForm(
+  FORM.discrepancyResolve,
+  {
+    read: () => ({ resolutionNote: resolveDialog.resolutionNote }),
+    fill: (values) => {
+      for (const [key, value] of Object.entries(values)) (resolveDialog as unknown as Record<string, unknown>)[key] = value
+    },
+  },
+  { active: () => props.modelValue && resolveDialog.open },
+)
 const resolveSession = createWriteSession(() => `resolve:${props.discrepancyId}`)
 
 function resetView() {
@@ -144,6 +159,8 @@ async function submitResolve() {
     resolveDialog.open = false
     resolveSession.close()
     emit('changed')
+    // 操作导引（dljy#3407）：差异关闭（留痕、不改台账）发推进信号。
+    emitGuideSignal(SIGNAL.discrepancyResolved, { discrepancyId: d.id })
     await load()
   } catch (e) {
     const f = e instanceof Error && isWriteAbandoned(e) ? { message: (e as Error).message, errorCode: '', details: null } : midlongFailureOf(e)
@@ -188,7 +205,7 @@ const resolved = computed(() => detail.value?.status === 'RESOLVED')
         <h4>处理信息</h4>
         <div class="p5-row">原因：{{ detail.reason ?? '未登记' }} · 负责人：{{ detail.ownerName ?? '未指定' }} · 证据：{{ detail.evidenceIds.length ? detail.evidenceIds.map((id) => `#${id}`).join('、') : '无' }}</div>
         <template v-if="resolved">
-          <MidlongNotice tone="info" title="已解决（登记快照与处理说明冻结）" data-test="resolved-box">
+          <MidlongNotice tone="info" title="已解决（登记快照与处理说明冻结）" data-guide="ml-discrepancy-resolved" data-test="resolved-box">
             <div>处理说明：{{ detail.resolutionNote ?? '—' }}</div>
             <div>解决于 {{ beijingDateTime(detail.resolvedAt) }} · {{ detail.resolvedBy ?? '—' }}</div>
           </MidlongNotice>
@@ -206,7 +223,7 @@ const resolved = computed(() => detail.value?.status === 'RESOLVED')
 
       <div v-if="canWrite && !resolved" class="p5-actions">
         <el-button plain :disabled="Boolean(busy)" data-test="update-discrepancy" @click="openUpdate">补充原因 / 负责人 / 证据</el-button>
-        <el-button type="primary" plain :disabled="Boolean(busy)" data-test="resolve-discrepancy" @click="openResolve">关闭（必须填处理说明）</el-button>
+        <el-button type="primary" plain :disabled="Boolean(busy)" data-guide="ml-discrepancy-resolve" data-test="resolve-discrepancy" @click="openResolve">关闭（必须填处理说明）</el-button>
       </div>
       <MidlongNotice v-if="actionError" tone="danger" title="操作未完成" data-test="discrepancy-action-error">{{ actionError }}</MidlongNotice>
     </div>
@@ -229,11 +246,11 @@ const resolved = computed(() => detail.value?.status === 'RESOLVED')
 
     <el-dialog v-model="resolveDialog.open" title="关闭差异（处理说明必填）" width="560px" append-to-body>
       <MidlongNotice tone="info">{{ SETTLEMENT_NOTICES.resolutionNoteRequired }} {{ SETTLEMENT_NOTICES.consistencyNotRecompute }}</MidlongNotice>
-      <el-input v-model="resolveDialog.resolutionNote" type="textarea" :rows="3" placeholder="说明原因、依据与处理结果（关闭后登记快照与处理说明冻结）" data-test="resolution-note" />
+      <el-input v-model="resolveDialog.resolutionNote" type="textarea" :rows="3" placeholder="说明原因、依据与处理结果（关闭后登记快照与处理说明冻结）" data-guide="ml-discrepancy-resolution-note" data-test="resolution-note" />
       <MidlongNotice v-if="actionError" tone="danger">{{ actionError }}</MidlongNotice>
       <template #footer>
         <el-button @click="resolveDialog.open = false">取消</el-button>
-        <el-button type="primary" :loading="busy === 'resolve'" :disabled="!resolveDialog.resolutionNote.trim()" data-test="resolve-submit" @click="submitResolve">关闭（留痕）</el-button>
+        <el-button type="primary" :loading="busy === 'resolve'" :disabled="!resolveDialog.resolutionNote.trim()" data-guide="ml-discrepancy-resolve-submit" data-test="resolve-submit" @click="submitResolve">关闭（留痕）</el-button>
       </template>
     </el-dialog>
   </el-drawer>
