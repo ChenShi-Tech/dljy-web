@@ -461,9 +461,10 @@ const riskNote = computed(
 // 仅对发电侧开放，而不是让按钮静默地点不动。开放发电侧另议（需服务端主体授权校验）。
 const declarationSubjectType = 'retailer' as const
 // 决策模型不再硬编码：由对比表的「设为决策模型」指定，占位模型被组件侧阻断。
-// 初值仍给 xgboost（core tier 真实模型），对比组件挂载后会按实际可用模型纠正。
-// 空串 = 本批没有可作决策依据的模型（对比组件回吐），此时决策包不可生成。
-const decisionModel = ref('xgboost')
+// 初值不写死任何算法名（dljy#3647：算法清单与默认值都以后端目录为准，写死的算法下线后会变成 400 入口），
+// 对比组件按本批实际跑出并验真的模型回吐；未回吐前一律视为「无决策模型」，决策包不可生成
+// （forecastBatchReady 也在门控）。空串同时表示本批没有可作决策依据的模型。
+const decisionModel = ref('')
 // 本批预测是否已跑完并验真。首次挂载与切目标日/地区后的运行期间，decisionModel 还是初始或
 // 上一批的值，此时若允许生成，用户会拿到基于「最终会被判为合成/门禁失败」的模型算出的
 // 申报建议。故未就绪一律禁用生成。
@@ -538,7 +539,7 @@ function riskLevelLabel(level: OptimizeBidFrontierPoint['risk_level']): string {
 }
 
 // 决策模型变更（对比表手动切换，或组件侧自动回退）必须作废已有决策包：竞价空间/申报建议/
-// 偏差风险都是按某个模型算出来的，只换标签不清结果，表里写着 KNN、下面的建议却来自 XGBoost。
+// 偏差风险都是按某个模型算出来的，只换标签不清结果，表里写着 KNN、下面的建议却来自另一个模型。
 function onDecisionModelChange(modelId: string) {
   if (modelId === decisionModel.value) return
   decisionModel.value = modelId

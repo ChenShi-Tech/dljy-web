@@ -12,6 +12,7 @@ import {
 import { FORECAST_TARGET_OPTIONS, type UnifiedForecastResult } from '@/services/forecast/forecastProviders'
 import { isForecastDate, toOnlineForecastResult } from '@/services/forecast/onlineForecastResult'
 import { predictionModelExclusionReason } from '@/services/forecast/predictionModelEligibility'
+import { pickDefaultModelId } from '@/services/forecast/defaultModel'
 
 const props = withDefaults(defineProps<{
   target: string
@@ -39,7 +40,7 @@ const forecastError = ref('')
 const catalogError = ref('')
 
 // 与单算法/多算法入口使用同一准入规则；按模型能力命名空间识别深度/远程模型，
-// 不再只认 tslib:/remote: 前缀，否则运行时 ID=patchtst 的真实模型会被误隐藏。
+// 不再只认 tslib:/remote: 前缀，否则运行时无前缀 ID 的真实模型会被误隐藏。
 // 前缀判断只保留给旧目录兼容；占位、不可用或原始零样本仍由统一准入规则移除。
 const ONLINE_MODEL_NAMESPACES = new Set(['neural', 'deep', 'tslib', 'remote'])
 const onlineModels = computed(() => models.value.filter((model) =>
@@ -79,8 +80,9 @@ async function loadModels() {
     if (reqId !== loadModelsReqId) return // 较早请求晚返回则丢弃，防覆盖最新地区目录
     models.value = response.models
     catalogError.value = response.available === false ? (response.unavailableReason || '当前目标模型目录不可用') : ''
+    // 保留上次选择；否则取目录对本标的标记的默认算法（在线深度模型子集里才认），再退回第一个可用模型
     modelType.value = onlineModels.value.find((model) => model.modelId === previousModel && model.available)?.modelId
-      ?? onlineModels.value.find((model) => model.available)?.modelId ?? ''
+      ?? pickDefaultModelId(onlineModels.value, response.defaultModelId)
   } catch (error) {
     if (reqId !== loadModelsReqId) return
     catalogError.value = error instanceof Error ? error.message : '在线模型列表加载失败'

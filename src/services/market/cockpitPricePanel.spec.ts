@@ -21,7 +21,7 @@ const emptyClearing = (): ClearingPriceCurve =>
 const forecast = (over: Partial<LatestForecast> = {}): LatestForecast => ({
   available: true, targetDate: '2026-08-18',
   runs: [{
-    modelId: 'lightgbm', modelVersion: 'v1', status: 'ok',
+    modelId: 'random_forest', modelVersion: 'v1', status: 'ok',
     points: Array.from({ length: N }, (_, i) => 200 + i),
     lower: null, upper: null, predictedAt: '2026-08-22T12:31:03Z', basis: 'captured', mock: false,
   }],

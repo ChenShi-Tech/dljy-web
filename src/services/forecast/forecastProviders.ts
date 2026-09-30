@@ -1,5 +1,5 @@
 // 预测「深度融合」统一抽象层（Phase 1 / PR-A）。
-// 把「平台官方回放(replay) / KNN(replay→Phase4 compute) / ML 6 模型(compute)」统一到一套
+// 把「平台官方回放(replay) / KNN(replay→Phase4 compute) / ML 目录模型(compute)」统一到一套
 // ForecastProvider 契约下：选目标→选算法→配该算法参数→出统一结果(UnifiedForecastResult)，
 // 让不同算法同台可选、同台对比。本文件只做契约 + 注册表 + 三类实现，不接入任何页面（PR-B 起接入）。
 //
@@ -99,7 +99,7 @@ export interface SharedTaskContext {
 }
 
 export interface ForecastProvider {
-  id: string // 'platform' | 'knn' | 'xgboost' | 'lightgbm' | 'random_forest' | 'mlp' | 'nbeats' | 'tft'
+  id: string // 'platform' | 'knn' | 后端目录里的模型 id（算法清单以 /forecast/models 为准，前端不再列举）
   name: string
   kind: ProviderKind
   tier: 'official' | 'baseline' | 'core' | 'neural' | 'deep'
@@ -111,6 +111,8 @@ export interface ForecastProvider {
   quality?: ModelQuality
   basisVersion?: string
   supportedTargets: string[]
+  /** 目录对当前标的标记的推荐算法（dljy#3647）；缺省=未标注。默认选中只认目录标注，不在前端编造。 */
+  recommended?: boolean
   /** false=后端未登记输出目标；前端不得把它当成已训练模型的真实支持范围。 */
   supportedTargetsDeclared?: boolean
   /** deployed=具体权重的输出绑定；runtime=请求时用历史数据训练/计算的兼容目标。 */
@@ -371,7 +373,7 @@ export const knnProvider: ForecastProvider = {
   },
 }
 
-// ML：6 个后端模型（compute）。包 mlForecastClient.runForecastPredict，适配 ForecastResult→统一契约。
+// ML：后端目录里的模型（compute，清单以 /forecast/models 为准）。包 mlForecastClient.runForecastPredict，适配 ForecastResult→统一契约。
 const ML_PARAM_KEYS: ReadonlySet<string> = new Set(['train_days', 'probabilistic', 'conformal'])
 const ML_PARAMS: ParamField[] = [
   { key: 'train_days', label: '训练回看(天)', type: 'number', default: 180, min: 30, max: 365, step: 30 },
@@ -390,6 +392,8 @@ type CatalogTargetInput = string | readonly string[] | undefined
 // #54：预测目录按「地区 + target」分桶缓存。否则首载 price 会吞掉小时用户电价 target，
 // 或 price/load 共页时把 fixed provider 的 quality/available 串到另一条腿。
 const catalogModelsByKey = ref<Record<string, ForecastModel[]>>({})
+// 目录对各「地区+标的」标记的默认算法 id（dljy#3647）；目录没标注就不存，消费方退回「第一个可用」。
+const catalogDefaultByKey = ref<Record<string, string>>({})
 const catalogLoadingByKey = ref<Record<string, boolean>>({})
 const catalogErrorByKey = ref<Record<string, string>>({})
 const catalogLoadedByKey: Record<string, boolean> = Object.create(null)
@@ -420,6 +424,11 @@ function readCatalogModels(regionId: string, target: string): ForecastModel[] {
 
 export function catalogModelsForTarget(target: string, regionId?: string): ForecastModel[] {
   return readCatalogModels(regionId ?? currentRegion.value.id, target)
+}
+
+/** 目录对该地区+标的标记的默认算法 id；目录未标注返回 null（由 pickDefaultModelId 退回第一个可用模型）。 */
+export function catalogDefaultModelId(target: string, regionId?: string): string | null {
+  return catalogDefaultByKey.value[catalogKey(regionId ?? currentRegion.value.id, target)] ?? null
 }
 
 export function isCatalogModelUsableForTarget(
@@ -504,10 +513,15 @@ async function loadCatalogTarget(target: string, force: boolean, regionId: strin
       ...catalogModelsByKey.value,
       [key]: Array.isArray(res?.models) ? res.models : [],
     }
+    // 默认算法随目录同批更新：目录不再标注时必须清掉旧值，否则会沿用已下线算法当默认。
+    catalogDefaultByKey.value = res?.defaultModelId
+      ? { ...catalogDefaultByKey.value, [key]: res.defaultModelId }
+      : omitCatalogEntry(catalogDefaultByKey.value, key)
     catalogLoadedByKey[key] = true
   } catch (e) {
     if (catalogReqByKey[key] !== req) return
     catalogModelsByKey.value = omitCatalogEntry(catalogModelsByKey.value, key)
+    catalogDefaultByKey.value = omitCatalogEntry(catalogDefaultByKey.value, key)
     catalogErrorByKey.value = {
       ...catalogErrorByKey.value,
       [key]: e instanceof Error ? e.message : '模型目录加载失败',
@@ -541,7 +555,13 @@ watch(() => currentRegion.value.id, (regionId, prevRegionId) => {
 export function forecastCatalogState(
   targetsInput: MaybeRefOrGetter<CatalogTargetInput> = 'price',
   regionIdInput?: MaybeRefOrGetter<string | undefined>,
-): { models: ComputedRef<ForecastModel[]>; loading: ComputedRef<boolean>; error: ComputedRef<string> } {
+): {
+  models: ComputedRef<ForecastModel[]>
+  loading: ComputedRef<boolean>
+  error: ComputedRef<string>
+  /** 目录对（第一个）标的标记的默认算法 id；多标的合并视图下只取第一个标的，需要逐标的默认值请用 catalogDefaultModelId。 */
+  defaultModelId: ComputedRef<string | null>
+} {
   const models = computed(() => {
     const regionId = toValue(regionIdInput) || currentRegion.value.id
     const targets = normalizeCatalogTargets(toValue(targetsInput))
@@ -557,7 +577,11 @@ export function forecastCatalogState(
     const targets = normalizeCatalogTargets(toValue(targetsInput))
     return joinCatalogErrors(regionId, targets)
   })
-  return { models, loading, error }
+  const defaultModelId = computed(() => {
+    const regionId = toValue(regionIdInput) || currentRegion.value.id
+    return catalogDefaultModelId(normalizeCatalogTargets(toValue(targetsInput))[0], regionId)
+  })
+  return { models, loading, error, defaultModelId }
 }
 
 // 后端 registry tier（core/neural/deep/official/baseline/…）→ ForecastProvider tier，未知归 core。
@@ -667,10 +691,11 @@ function makeMlProvider(model: ForecastModel): ForecastProvider {
     shadowGate: model.shadowGate,
     quality: model.quality,
     basisVersion: model.basisVersion,
-    // #1461：逐模型支持的目标清单以后端目录为准（physics_hybrid 仅 renewable 等）。
+    // #1461：逐模型支持的目标清单以后端目录为准（只在个别标的上架的模型不会出现在其它标的目录里）。
     // 缺省/空都视为「未登记真实输出绑定」，可以留在原始目录证据里，但不能进预测入口/台账计数。
     supportedTargets: [...new Set(model.supportedTargets ?? [])],
     supportedTargetsDeclared: model.supportedTargets !== undefined,
+    ...(model.recommended === true ? { recommended: true } : {}),
     targetCapabilityKind: ['base', 'baseline', 'neural', 'deep', 'tslib'].includes(model.namespace ?? '')
       ? 'runtime' : 'deployed',
     // 平台参数（训练回看/概率/共形）+ 模型自己声明的可调参数（dljy#2464：按 paramsSchema 渲染，不再一套配所有）

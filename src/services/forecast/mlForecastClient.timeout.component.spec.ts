@@ -2,7 +2,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { FORECAST_REQUEST_TIMEOUT_MS, FORECAST_TIMEOUT_MESSAGE, runForecastPredict, toForecastRequestError } from './mlForecastClient'
 
-const req = { region_id: 'yunnan', target: 'price', model_type: 'lightgbm' } as unknown as Parameters<typeof runForecastPredict>[0]
+const req = { region_id: 'yunnan', target: 'price', model_type: 'random_forest' } as unknown as Parameters<typeof runForecastPredict>[0]
 
 afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks() })
 

@@ -34,7 +34,7 @@ describe('normalizeModelRegistryEntry 2.1.0 字段', () => {
     expect(e.lineage).toMatchObject({ activeVersion: 'zs-v1', versionCount: 1, dataSeenThrough: '2026-06-30', loaded: true, lineageNote: null })
   })
   it('缺 io 的旧目录条目照常归一化（全部可选）', () => {
-    const e = normalizeModelRegistryEntry({ modelId: 'xgboost', target: 'price', regionId: 'yunnan', available: true,
+    const e = normalizeModelRegistryEntry({ modelId: 'random_forest', target: 'price', regionId: 'yunnan', available: true,
       basisVersion: 'model-registry.v1', provenance: RAW.provenance }, { target: 'price', regionId: 'yunnan' })!
     expect(e.io).toBeUndefined(); expect(e.paramsSchema).toBeUndefined(); expect(e.lineage).toBeUndefined()
   })

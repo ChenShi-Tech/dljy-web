@@ -7,7 +7,7 @@
 // 现改走 forecastProviders 契约，可多模型叠加对比。两条纪律：
 // 1. 失败不合成兜底：任一模型失败只记原因、不填假数据；全失败则空态给可操作出口。
 // 2. 占位模型不参与排名：tslib:* 实为 StandardScaler+Ridge，实测 MAE 45.87 比最简单的
-// ridge(42.96) 还差；若按 MAE 排序且不排除，用户会误以为它只是"表现一般的真实模型"。
+// 线性基线(42.96) 还差；若按 MAE 排序且不排除，用户会误以为它只是"表现一般的真实模型"。
 //
 // 本 PR 不做「实际出清参照曲线」与「对目标日实际 MAE」（原计划有，实测后撤下）：
 // 底层 `loadClearingCurve` 对 `sdpt_zcqxhdl` 这类 listrs_full 数据集取不到正确数据
@@ -18,6 +18,7 @@
 // 地区适配器才能做对，已另开技术债；在那之前宁可不显示。
 
 import type { UnifiedForecastResult } from '@/services/forecast/forecastProviders'
+import { pickDefaultModelId } from '@/services/forecast/defaultModel'
 
 /** 单个模型的一次运行结果（成功或失败都保留，失败也要能显示原因）。 */
 export type ModelRunOutcome = {
@@ -31,7 +32,7 @@ export type ModelRunOutcome = {
    * 是否基线模型（`tier==='baseline'`，即 KNN）。
    * 后端的 `passes_gate` 定义是「比 KNN 基线改善 ≥10%」，对 KNN 自身在定义上就不适用：
    * `run_forecast` 用同一个 k 的 KNN 算 `knn_mae`，于是 `improve_vs_knn_pct` 恒为 0、
-   * `passes_gate` 恒为 false（实测云南 2026-06-20：knn 0.0/false，xgboost 10.48/true）。
+   * `passes_gate` 恒为 false（实测云南 2026-06-20：knn 0.0/false，某个真实树模型 10.48/true）。
    * 不豁免的话，默认恒可用的基线会被判"未过门禁"，目录加载失败时更是全军覆没。
    */
   isBaseline?: boolean
@@ -64,7 +65,7 @@ const UNTRUSTWORTHY_BASIS = new Set(['synthetic', 'illustrative'])
  *
  * 只看 provider 的静态 mock 标志是不够的：后端 `forecast_service.run_forecast` 在真实
  * 回放缺失时会用合成数据兜底（`data_loader.load_price` 返回 `basis='synthetic'`），而普通
- * KNN/XGBoost 的 `result.mock` 仍是 false。历史演练日很容易命中，合成曲线会排到 #1、被
+ * KNN 与其它真实算法的 `result.mock` 仍是 false。历史演练日很容易命中，合成曲线会排到 #1、被
  * 自动设成决策模型，再拿去生成申报决策包。这正是本仓 Mock 纪律要挡的事（P1）。
  * 故必须按本次结果的 basis 判，而不是模型的静态属性。
  */
@@ -219,17 +220,24 @@ export function resolveDecisionModel(opts: {
   return top ?? opts.usableIds[0]
 }
 
-// 曾存在的前端临时挡板 isIncapableForTarget（挡 price→physics_hybrid）已删除
+// 曾存在的前端临时挡板 isIncapableForTarget（挡不支持 price 目标的模型）已删除
 // #1461 根因已闭环：后端目录按模型声明 supportedTargets，不支持该 target 的模型不再进目录，
 // providersForTarget 据 supportedTargets 过滤，申报台/工作台/驾驶舱三页统一生效。
 
-/** 默认选中集：knn（基线、恒可用、便宜）+ 首个非占位可用模型，最多 2 个，避免首屏并发过多。 */
+/**
+ * 默认选中集：knn（基线、恒可用、便宜）+ 目录默认算法（dljy#3647，缺省退回首个非占位可用模型），
+ * 最多 2 个，避免首屏并发过多。目录默认算法不在可用池里（被下线/占位/不可用）时忽略，不硬凑。
+ */
 export function defaultSelection(
-  models: readonly { modelId: string; mock?: boolean; available?: boolean }[]
+  models: readonly { modelId: string; mock?: boolean; available?: boolean; recommended?: boolean }[],
+  catalogDefaultId?: string | null,
 ): string[] {
   const usable = models.filter((m) => m.available !== false && !m.mock)
   const knn = usable.find((m) => m.modelId === 'knn')
   const picked: string[] = knn ? [knn.modelId] : []
+  // 目录标注的默认算法优先补位（不含 knn 自身：knn 已经在选中集里）
+  const preferred = pickDefaultModelId(usable.filter((m) => m.modelId !== 'knn'), catalogDefaultId)
+  if (preferred && picked.length < 2) picked.push(preferred)
   // 补到 2 个：一条曲线谈不上"对比"，无 knn 时也应给出两个可用模型
   for (const m of usable) {
     if (picked.length >= 2) break
