@@ -107,7 +107,8 @@ function proposalSubmitted(ctx: GuideCtx): boolean {
 // 章 5 完成：本导引已登记成交确认单（capture 记下 id），或执行页已有任何确认单。
 function confirmationRegistered(ctx: GuideCtx): boolean {
   if (typeof ctx.artifacts[ARTIFACT.confirmationId] === 'number') return true
-  return (executionSnapshotFor(ctx)?.confirmations ?? []).length > 0
+  // 预成交（PRE_CLEARED）不创建义务、不推进完成率，不能视为本章已走过；只认确认成交。
+  return (executionSnapshotFor(ctx)?.confirmations ?? []).some((c) => c.resultStatus === 'CLEARED')
 }
 
 // ---- 导航兜底动作 ----
@@ -317,15 +318,20 @@ const steps: GuideStep[] = [
     id: '3-3', chapter: 3, target: ANCHOR.proposalSegments, within: 'dialog', resumeTo: '3-0', placement: 'left', optional: true,
     title: '交割片段',
     body: (ctx) => {
-      const [m1, m2, m3] = monthsFor(ctx)
-      return `逐月填拟售电量：${m1}、${m2}、${m3} 各 200 MWh（示例口径，合计 600 与目标一致）。「帮我填」会替换成这三行。`
+      const month = monthsFor(ctx)[0]
+      return `交割片段落在本导引的目标月 ${month}：一行、拟售电量与目标一致（示例 600 MWh）。交易方式、负责人与理由是「确认可执行」的必填项，帮填会一并写上教学演示值。`
     },
     advance: { kind: 'form', form: FORM.proposalCreate, settleMs: 800, done: (v, ctx) => {
-      const months = monthsFor(ctx)
       const segments = (v as { segments?: Array<{ deliveryMonth: string; quantity: string }> }).segments ?? []
-      return segments.length === 3 && segments.every((s, i) => s.deliveryMonth === months[i] && nonEmpty(s.quantity))
+      return segments.length === 1 && segments[0]?.deliveryMonth === monthsFor(ctx)[0] && nonEmpty(segments[0]?.quantity)
+        && nonEmpty(v.tradeMethod) && nonEmpty(v.ownerName) && nonEmpty(v.rationale)
     } },
-    assist: { kind: 'fill', form: FORM.proposalCreate, values: (ctx) => ({ segments: monthsFor(ctx).map((month) => ({ deliveryMonth: month, quantity: '200' })) }) },
+    assist: { kind: 'fill', form: FORM.proposalCreate, values: (ctx) => ({
+      segments: [{ deliveryMonth: monthsFor(ctx)[0], quantity: '600' }],
+      tradeMethod: 'BILATERAL',
+      ownerName: DEMO_OPERATOR,
+      rationale: `教学示例方案（操作导引 ${ctx.runTag}）`,
+    }) },
     recover: proposalDraftExists,
   },
   {
@@ -480,14 +486,14 @@ const steps: GuideStep[] = [
     id: '5-3', chapter: 5, target: ANCHOR.confirmSegments, within: 'dialog', resumeTo: '5-0', placement: 'left',
     title: '交割段',
     body: (ctx) => {
-      const [m1, m2, m3] = monthsFor(ctx)
-      return `逐段填实际成交量：${m1}、${m2}、${m3} 各 200 MWh、价 280 元/MWh（与方案一致；价格未知就留空，不编价）。`
+      const month = monthsFor(ctx)[0]
+      return `交割段与方案一致：${month} 成交 300 MWh、价 280 元/MWh（价格未知就留空，不编价）。`
     },
     advance: { kind: 'form', form: FORM.confirmationRegister, settleMs: 800, done: (v, ctx) => {
-      const months = monthsFor(ctx)
-      return Array.isArray(v.segments) && v.segments.length === 3 && v.segments.every((s: { deliveryMonth: string; quantity: string; price: string }, i: number) => s.deliveryMonth === months[i] && Number(s.quantity) > 0)
+      const segments = (v as { segments?: Array<{ deliveryMonth: string; quantity: string }> }).segments ?? []
+      return segments.length === 1 && segments[0]?.deliveryMonth === monthsFor(ctx)[0] && Number(segments[0]?.quantity) > 0
     } },
-    assist: { kind: 'fill', form: FORM.confirmationRegister, values: (ctx) => ({ segments: monthsFor(ctx).map((month) => ({ deliveryMonth: month, quantity: '200', price: '280' })) }) },
+    assist: { kind: 'fill', form: FORM.confirmationRegister, values: (ctx) => ({ segments: [{ deliveryMonth: monthsFor(ctx)[0], quantity: '300', price: '280' }] }) },
     recover: confirmationRegistered,
   },
   {

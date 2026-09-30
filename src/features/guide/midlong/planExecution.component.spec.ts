@@ -94,11 +94,11 @@ describe('章 2-4：公告 / 方案 / 提交', () => {
     expect(doneOf('2-2', { declarationClosesAt: '' })).toBe(false)
   })
 
-  it('交割片段三行逐月对齐会话月份、电量非空', () => {
+  it('交割片段单行对齐目标月，且交易方式/负责人/理由齐备（确认可执行前置）', () => {
     const artifacts = { executionMonths: ['2026-10', '2026-11', '2026-12'] }
-    expect(doneOf('3-3', { segments: [{ deliveryMonth: '2026-10', quantity: '200' }] }, artifacts)).toBe(false)
-    expect(doneOf('3-3', { segments: [{ deliveryMonth: '2026-10', quantity: '200' }, { deliveryMonth: '2026-11', quantity: '' }, { deliveryMonth: '2026-12', quantity: '200' }] }, artifacts)).toBe(false)
-    expect(doneOf('3-3', { segments: ['2026-10', '2026-11', '2026-12'].map((m) => ({ deliveryMonth: m, quantity: '200' })) }, artifacts)).toBe(true)
+    expect(doneOf('3-3', { segments: [{ deliveryMonth: '2026-11', quantity: '600' }], tradeMethod: '', ownerName: '', rationale: '' }, artifacts)).toBe(false)
+    expect(doneOf('3-3', { segments: [{ deliveryMonth: '2026-12', quantity: '600' }], tradeMethod: 'BILATERAL', ownerName: 'x', rationale: 'y' }, artifacts)).toBe(false)
+    expect(doneOf('3-3', { segments: [{ deliveryMonth: '2026-10', quantity: '600' }], tradeMethod: 'BILATERAL', ownerName: 'x', rationale: 'y' }, artifacts)).toBe(true)
   })
 
   it('外部提交时间完整 + 操作人非空才推进', () => {
@@ -116,13 +116,15 @@ describe('章 2-4：公告 / 方案 / 提交', () => {
     expect(advance.match?.({ proposalId: 7, submissionId: 1 }, ctx)).toBe(true)
   })
 
-  it('「帮我填」的片段示例按会话月份生成三行', () => {
+  it('「帮我填」的片段示例落在目标月、量与目标一致，并带确认前置字段', () => {
     useGuideState(STATE.plans, () => null)
     const assist = byId('3-3').assist
     if (assist?.kind !== 'fill') throw new Error('3-3 应是 fill 兜底')
-    const values = assist.values(ctxWith({ executionMonths: ['2026-10', '2026-11', '2026-12'] }), {}) as { segments: Array<{ deliveryMonth: string; quantity: string }> }
-    expect(values.segments.map((s) => s.deliveryMonth)).toEqual(['2026-10', '2026-11', '2026-12'])
-    expect(values.segments.every((s) => s.quantity === '200')).toBe(true)
+    const values = assist.values(ctxWith({ executionMonths: ['2026-10', '2026-11', '2026-12'] }), {}) as { segments: Array<{ deliveryMonth: string; quantity: string }>; tradeMethod: string; ownerName: string; rationale: string }
+    expect(values.segments).toEqual([{ deliveryMonth: '2026-10', quantity: '600' }])
+    expect(values.tradeMethod).toBe('BILATERAL')
+    expect(values.ownerName).toContain('教学演示')
+    expect(values.rationale).toContain('GUIDE-09302300')
   })
 })
 
@@ -147,10 +149,11 @@ describe('章 5：成交确认单', () => {
     expect(doneOf('5-2', { resultStatus: 'CLEARED' })).toBe(true)
   })
 
-  it('交割段逐月对齐会话月份、电量大于 0', () => {
+  it('确认单交割段单行对齐目标月、电量大于 0', () => {
     const artifacts = { executionMonths: ['2026-10', '2026-11', '2026-12'] }
-    expect(doneOf('5-3', { segments: [{ deliveryMonth: '2026-10', quantity: '200', price: '280' }, { deliveryMonth: '2026-11', quantity: '200', price: '280' }, { deliveryMonth: '2026-12', quantity: '0', price: '280' }] }, artifacts)).toBe(false)
-    expect(doneOf('5-3', { segments: ['2026-10', '2026-11', '2026-12'].map((m) => ({ deliveryMonth: m, quantity: '200', price: '280' })) }, artifacts)).toBe(true)
+    expect(doneOf('5-3', { segments: [{ deliveryMonth: '2026-12', quantity: '300', price: '280' }] }, artifacts)).toBe(false)
+    expect(doneOf('5-3', { segments: [{ deliveryMonth: '2026-11', quantity: '0', price: '280' }] }, artifacts)).toBe(false)
+    expect(doneOf('5-3', { segments: [{ deliveryMonth: '2026-10', quantity: '300', price: '280' }] }, artifacts)).toBe(true)
   })
 
   it('确认成交必须有依据文件（帮我填生成教学示例文件）', () => {
