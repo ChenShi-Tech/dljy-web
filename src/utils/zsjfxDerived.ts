@@ -70,3 +70,16 @@ export function computeDerivedSeries(spec: DerivedSpec, a: Array<number | null> 
   }
   return { name: derivedName(spec), kind: spec.kind, a: spec.a, b: spec.b, points, excludedZeroDenominator, nullPropagated }
 }
+
+const DERIVED_KINDS: ReadonlyArray<DerivedKind> = ['diff', 'ratio', 'coverage']
+
+/** 「我的视图」还原入口（ZW-05 场景 3）：契约 2.2.0 可选 derived 的防御式规整——
+ * 非法项（缺字段/未知运算）逐项丢弃，旧视图无字段 → 空清单（不还原任何衍生线）。 */
+export function normalizeDerivedSpecs(input: unknown): DerivedSpec[] {
+  if (!Array.isArray(input)) return []
+  return input.filter((item): item is DerivedSpec =>
+    !!item && typeof item === 'object'
+    && DERIVED_KINDS.includes((item as DerivedSpec).kind)
+    && typeof (item as DerivedSpec).a === 'string' && (item as DerivedSpec).a.length > 0
+    && typeof (item as DerivedSpec).b === 'string' && (item as DerivedSpec).b.length > 0)
+}

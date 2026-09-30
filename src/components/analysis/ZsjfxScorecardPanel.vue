@@ -17,6 +17,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   (e: 'pair-change', pairId: string): void
   (e: 'window-change', window: 'day' | '30d'): void
+  (e: 'interpret'): void
 }>()
 
 const totals = computed(() => props.scorecard?.totals ?? null)
@@ -26,8 +27,10 @@ const skipNote = computed(() => {
   const parts: string[] = []
   if (t.skippedDays.forecastMissing) parts.push(`预测缺失 ${t.skippedDays.forecastMissing} 天`)
   if (t.skippedDays.actualMissing) parts.push(`实际缺失 ${t.skippedDays.actualMissing} 天`)
-  if (t.skippedDays.noData) parts.push(`双缺 ${t.skippedDays.noData} 天`)
-  return parts.length ? `${parts.join('、')}未计入` : '窗口内全部日期参与计分'
+  // noData 只展示一次：同一计数涵盖「双侧皆缺」与「目录未覆盖（历史外或未来日）」两种成因
+  if (t.skippedDays.noData) parts.push(`双缺/目录未覆盖（历史外或未来日）${t.skippedDays.noData} 天`)
+  if (parts.length) parts.push('未计入')
+  return parts.length ? parts.join('、') : '窗口内全部日期参与计分'
 })
 const pct = (v: number | null | undefined) => (v == null ? '—' : `${(v * 100).toFixed(1)}%`)
 const num = (v: number | null | undefined) => (v == null ? '—' : String(v))
@@ -60,6 +63,7 @@ const num = (v: number | null | undefined) => (v == null ? '—' : String(v))
             <el-radio-button value="day">当日</el-radio-button>
             <el-radio-button value="30d">近 30 天</el-radio-button>
           </el-radio-group>
+          <el-button size="small" type="success" plain @click="emit('interpret')">✨ 解读本对拍</el-button>
         </div>
 
         <el-alert

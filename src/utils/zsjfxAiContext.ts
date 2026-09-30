@@ -37,7 +37,7 @@ export function segmentStats(series: Record<string, Array<number | null>>, from:
 
 export type AnomalyMarks = {
   /** 挂到价格序列的 markPoint 数据（负价/限价逼近，market 标记归属 da/rt 序列）。 */
-  points: Array<{ market: 'da' | 'rt'; coord: [number, number]; value: string; itemStyle?: Record<string, unknown> }>
+  points: Array<{ market: 'da' | 'rt'; coord: [number, number]; value: string; label: string; threshold: number; itemStyle?: Record<string, unknown> }>
   /** 价差离群的横向 markArea：ECharts 区间数据要求每段 [起点, 终点] 成对（codex #239 R1-03）。 */
   areas: Array<[{ xAxis: number; itemStyle?: Record<string, unknown> }, { xAxis: number }]>
 }
@@ -70,6 +70,9 @@ export function buildAnomalyMarks(anomalies: ZsjfxScorecardAnomaly[], opts: { sh
         market: a.market === 'rt' ? 'rt' : 'da',
         coord: [from, a.value],
         value: a.type === 'negative_price' ? '负价' : '逼近限价',
+        // ZW-08：标记名即含事件类型与阈值口径（悬浮/截图都可直接读到判据）
+        label: a.type === 'negative_price' ? `负价 <${a.threshold}` : `逼近限价 ≥${Math.round(a.threshold)}`,
+        threshold: a.threshold,
         itemStyle: { color: a.severity === 'high' ? '#f56c6c' : '#e6a23c' }
       })
     }
