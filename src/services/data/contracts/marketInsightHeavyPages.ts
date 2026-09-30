@@ -18,6 +18,12 @@ export type MarketInsightAdapterMeta = Partial<Omit<
   productionWrite?: boolean
 }
 
+/** 类型来源与粒度标注（可选；后端 zsjfx_meta.typeMeta，D8 向后兼容扩展）。 */
+export type ZsjfxTypeMeta = {
+  source?: string
+  granularity?: string
+}
+
 export type ZsjfxMetaViewModel = {
   dates: string[]
   goodDates: string[]
@@ -26,6 +32,7 @@ export type ZsjfxMetaViewModel = {
   yzConfig: Array<Record<string, unknown>>
   colorMap: Record<string, string>
   defaults: string[]
+  typeMeta?: Record<string, ZsjfxTypeMeta>
 }
 
 export type ZsjfxDayViewModel = {
@@ -230,6 +237,20 @@ function objectOfStrings(value: unknown): Record<string, string> {
   return out
 }
 
+function zsjfxTypeMetaOf(value: unknown): Record<string, ZsjfxTypeMeta> {
+  if (!value || typeof value !== 'object') return {}
+  const out: Record<string, ZsjfxTypeMeta> = {}
+  for (const [type, raw] of Object.entries(value as Record<string, unknown>)) {
+    if (!raw || typeof raw !== 'object') continue
+    const entry = raw as { source?: unknown; granularity?: unknown }
+    out[type] = {
+      ...(typeof entry.source === 'string' ? { source: entry.source } : {}),
+      ...(typeof entry.granularity === 'string' ? { granularity: entry.granularity } : {})
+    }
+  }
+  return out
+}
+
 function objectOfNumberArrays(value: unknown): Record<string, Array<number | null>> {
   if (!value || typeof value !== 'object') return {}
   const out: Record<string, Array<number | null>> = {}
@@ -351,7 +372,8 @@ export function toMarketInsightZsjfxMetaContract(input: {
     typeAxis: objectOfNumbers(raw.typeAxis),
     yzConfig: Array.isArray(raw.yzConfig) ? raw.yzConfig as Array<Record<string, unknown>> : [],
     colorMap: objectOfStrings(raw.colorMap),
-    defaults: stringArray(raw.defaults)
+    defaults: stringArray(raw.defaults),
+    ...(raw.typeMeta && typeof raw.typeMeta === 'object' ? { typeMeta: zsjfxTypeMetaOf(raw.typeMeta) } : {})
   }
   const status = statusFrom(metaView.dates.length > 0, input.meta)
   const source = status === 'missing' ? null : zsjfxSource(MARKET_INSIGHT_ZSJFX_META_MATCH)

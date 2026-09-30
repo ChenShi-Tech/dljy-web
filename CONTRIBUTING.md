@@ -1,29 +1,27 @@
 # 贡献指南
 
+流程规则（worktree、issue、提交与 PR 格式、合并条件）以 `AGENTS.md` 的「跨仓通用规则」块与工作区 `CLAUDE.md` 为准，本文只写本仓专属的分界与红线。
+
 ## 本仓的定位（先读）
 
-本仓是上游平台仓前端的**镜像下游**：
+本仓是客户前端的**唯一开发权威**：页面、组件、服务层、样式与前端单测都在这里改，PR 在本仓合并即生效。与上游 `ChenShi-Tech/dljy` 之间只有一条单向同步：
 
-- **同步覆盖区**（上游同步脚本全权管理，含删除）：`src/**`、`shared/**`、`vendor/**`、`index.html`、`grid-geo.html`、`vitest.setup.dom.ts`。你的 PR 改这些是常态；合入后维护者会把改动搬运回上游，再经下一次同步回流。**PR 合并后短期内被一条 `sync: mirror from dljy@…` 提交覆盖重放属正常**（内容不丢，只是换了提交载体）。
-- **本仓自有区**（不经同步，直接维护）：`package.json`、lockfile、`vite.config.ts`、`tsconfig.json`、`vitest.config.ts`、`.env.example`、`.gitignore`、README/CONTRIBUTING、`.github/**`。改这些需在 PR 里单独说明动机。
+- **只读区**（由 dljy 经 `npm run sync:web -- --dest ../dljy-web` 单向推送，含删除）：`shared/**`、`vendor/dljy-contracts/`。本仓**不改**，需要变更先改 dljy 再同步。
+- **本仓自有区**：`src/**`、`index.html`、`grid-geo.html`、`package.json`、lockfile、`vite.config.ts`、`tsconfig.json`、`vitest.config.ts`、`.env.example`、`.gitignore`、README/CONTRIBUTING、`.github/**`。改构建、依赖与 CI 相关文件需在 PR 里单独说明动机。
 
-## 三条红线（CI 会拒）
+## 红线
 
-1. **不改 `vendor/`**——上游生成物快照，改了也会被同步覆盖，CI mirror-guard 直接红。
-2. **不改 `shared/schema/generated/`**——上游生成物（生成器在上游仓），同上。
-3. **改 `shared/` 其它文件必须在 PR 描述显式说明**——这些文件与后端共用（双主），维护者要额外跑后端侧门禁评审，改动理由写清楚能显著加快合入。
+1. **不改 `vendor/`**——上游生成物快照，CI mirror-guard 直接红。
+2. **不改 `shared/schema/generated/`**——上游生成物（生成器在 dljy），同上。
+3. **不改 `shared/` 其它文件**——契约副本以 dljy 为唯一事实源，本仓改了也会被下次同步覆盖（此条 CI 不拦，靠自觉与审查）。
 
 ## 提交流程
 
-1. 从 `main` 拉分支（命名 `feat/…`、`fix/…`）。
-2. 本地按影响面验证：始终运行 `npm run check`；对改动文件运行 `npm run lint:files -- <files...>`；用 `npm run test:related -- <source-files...>` 或 `npm run test:unit -- <spec-files...>` 运行相关测试。改到路由、全局状态、公共服务、测试/构建基础设施、依赖或锁文件时扩大验证范围，必要时补全量 `npm run lint`、`npm run test:unit` 与 `npm run build`。
-3. 本地不强制运行 `npm run test:coverage`；PR CI 统一执行全量 lint、类型检查、覆盖率测试和生产构建，作为最终门禁。
-4. 提 PR：说清改了什么页面/行为、怎么验证；截图/录屏欢迎。
-5. CI 绿 + 维护者 review 后合入。PR 保持小而聚焦——大 PR 在双轨同步下冲突概率高。
+1. 按通用规则在本仓 worktree 里建分支。
+2. 本地验证按 `DEVELOPMENT.md` §5.1（分层验证）执行。
+3. 开 PR：标题与四章节正文格式见通用规则；改了页面或交互时，正文里说明怎么验证，截图/录屏欢迎。
+4. CI（`quality-gate`）全绿且行内审查评论处理完，才可合并。
 
-## 开发约定（与上游一致）
+## 开发约定
 
-- 页面组件只经 `src/services/` 取数，不直接 `fetch`；agent 相关请求走 `AGENT_API_BASE`（`/agent-api`）。
-- `src/views/**` 不得 import `shared/schema/**`（分层约束）；路由必须带 `meta.kind: real|mixed|forecast`。
-- Mock 数据必须可见标注（`mock: true` + 页面「模拟数据」提示），不得伪装真实接入。
-- 图表遵循真实呈现纪律：分时值用阶梯线、预测虚线/出清实线、不做视觉平滑。
+代码约定见 `DEVELOPMENT.md` §3（取数只经 `src/services/`、Mock 可见标注、地区隔离）、§6（目录与分层）、§7（ESLint 分层守卫）。

@@ -6,6 +6,8 @@
 import { computed, ref, nextTick, onBeforeUnmount, onMounted, watch } from 'vue'
 import * as echarts from 'echarts'
 import DataBasisBadge from '../DataBasisBadge.vue'
+import ForecastProvenanceTags from './ForecastProvenanceTags.vue'
+import { isUnavailableProvenance, sourceTypeOf } from '@/services/forecast/forecastProvenance'
 import { setCurrentRegionId } from '@/services/region/regionContext'
 import { nativeSlotsForTarget } from '@/services/forecast/forecastProviders'
 import {
@@ -34,7 +36,7 @@ function ultraFinitePoints(points: unknown): number[] | null {
 }
 function unavailableReasonOf(result: unknown): string {
   if (!result || typeof result !== 'object') return ''
-  return (result as { available?: boolean; reason?: unknown }).available === false
+  return isUnavailableProvenance(result as never)
     ? String((result as { reason?: unknown }).reason ?? '').trim() || '当前预测能力暂不可用，服务未返回具体原因'
     : ''
 }
@@ -42,8 +44,11 @@ function unavailableReasonOf(result: unknown): string {
 // 三能力状态
 const ultra = ref<UltraShortResult | null>(null); const ultraLoading = ref(false)
 const ultraError = ref('')
+// sourceType==='UNAVAILABLE'（远端无模型/不可用）走空态而非红色报错：结果不存在不是页面出错。
+const ultraEmpty = ref('')
 const mid = ref<MidtermResult | null>(null); const midLoading = ref(false); const midHorizon = ref(14)
 const midError = ref('')
+const midEmpty = ref('')
 const dev = ref<DeviationRiskResult | null>(null); const devLoading = ref(false)
 const devError = ref('')
 
@@ -58,7 +63,11 @@ function ultraUnsupportedReason(target: string, slotsPerDay: number): string {
 const ultraBlockedReason = computed(() => ultraUnsupportedReason(props.target, ultraNativeSlots.value))
 const ultraHorizon = computed(() => (ultra.value && ultra.value.available !== false ? ultra.value.horizon : '—'))
 const ultraHint = computed(() => ultraBlockedReason.value
-  || `本地 XGBoost · ${props.targetDate || '最新完整历史日'} · 每步用之前的实际值预测下一15分钟，不是南洋日前模型或未来整天预测。步长：${ultraHorizon.value}。`)
+  || `${props.targetDate || '最新完整历史日'} · 每步用之前的实际值预测下一15分钟，不是日前或未来整天预测。步长：${ultraHorizon.value}。`)
+// 结果自报为 UNAVAILABLE 时才走空态；旧后端只回 available:false 无 sourceType 的仍按原样报错，不改口径。
+function emptyStateOf(result: unknown): boolean {
+  return !!result && typeof result === 'object' && sourceTypeOf(result as never) === 'UNAVAILABLE' && isUnavailableProvenance(result as never)
+}
 
 // echarts 实例管理（每图一个容器/实例，按需 init + 切换 resize）
 const elUltra = ref<HTMLDivElement | null>(null)
@@ -87,12 +96,14 @@ function clearChart(key: keyof typeof charts) { charts[key]?.clear() }
 function clearUltraState(resetLoading = false) {
   ultra.value = null
   ultraError.value = ''
+  ultraEmpty.value = ''
   clearChart('ultra')
   if (resetLoading) ultraLoading.value = false
 }
 function clearMidState(resetLoading = false) {
   mid.value = null
   midError.value = ''
+  midEmpty.value = ''
   clearChart('mid')
   if (resetLoading) midLoading.value = false
 }
@@ -118,8 +129,9 @@ async function doUltra() {
     setCurrentRegionId(props.regionId)
     const r = await runUltraShort({ region_id: props.regionId, target: props.target, train_days: props.trainDays, data_source: 'auto', target_date: props.targetDate || undefined })
     if (gen !== ultraGen) return // 期间切了地区/目标 → 丢弃旧结果
-    if (r.available === false) {
-      ultraError.value = r.reason || '超短期结果当前不可用'
+    if (r.available === false || sourceTypeOf(r) === 'UNAVAILABLE') {
+      if (emptyStateOf(r)) ultraEmpty.value = r.reason || '服务未返回具体原因'
+      else ultraError.value = r.reason || '超短期结果当前不可用'
       return
     }
     const points = ultraFinitePoints(r.points)
@@ -168,7 +180,8 @@ async function doMidterm() {
     if (gen !== midGen) return
     const unavailableReason = unavailableReasonOf(r)
     if (unavailableReason) {
-      midError.value = unavailableReason
+      if (emptyStateOf(r)) midEmpty.value = unavailableReason
+      else midError.value = unavailableReason
       return
     }
     mid.value = r
@@ -239,6 +252,7 @@ onBeforeUnmount(() => {
           <div class="ext-hd"><span>超短期滚动检验（15 分钟）</span>
             <el-button size="small" :loading="ultraLoading" :disabled="!!ultraBlockedReason" :title="ultraBlockedReason || ''" @click="doUltra">运行</el-button>
             <DataBasisBadge v-if="ultra && ultra.available !== false" :basis="ultra.basis" />
+            <ForecastProvenanceTags v-if="ultra && ultra.available !== false" :provenance="ultra" />
           </div>
           <p class="hint">{{ ultraHint }}</p>
           <p v-if="ultra && ultra.available !== false && ultra.mae != null && ultra.persistence_mae != null" class="hint ultra-metrics">
@@ -247,6 +261,7 @@ onBeforeUnmount(() => {
             · {{ ultra.beats_persistence ? '本次优于对照' : '本次未优于对照' }}
           </p>
           <p v-if="ultra && ultra.available !== false && ultra.data_available_to" class="hint">实际数据截至 {{ ultra.data_available_to.replace('T', ' ') }}；历史检验不代表已接入当前实时数据。</p>
+          <p v-if="ultraEmpty" class="empty-state">暂无可用预测<span class="empty-reason" :title="ultraEmpty">{{ ultraEmpty }}</span></p>
           <el-alert v-if="ultraError" :title="ultraError" type="error" :closable="false" show-icon style="margin: 4px 0 10px" />
           <div ref="elUltra" class="chart sm" v-loading="ultraLoading"></div>
         </div>
@@ -258,7 +273,9 @@ onBeforeUnmount(() => {
             <el-input-number v-model="midHorizon" :min="7" :max="60" :step="7" size="small" />
             <el-button size="small" :loading="midLoading" @click="doMidterm">运行</el-button>
             <DataBasisBadge v-if="mid" :basis="mid.basis" />
+            <ForecastProvenanceTags v-if="mid" :provenance="mid" />
           </div>
+          <p v-if="midEmpty" class="empty-state">暂无可用预测<span class="empty-reason" :title="midEmpty">{{ midEmpty }}</span></p>
           <el-alert v-if="midError" :title="midError" type="error" :closable="false" show-icon style="margin: 4px 0 10px" />
           <p class="hint" v-if="mid">
             MAE {{ mid.mae.toFixed(1) }} {{ mid.unit }} · vs 持续 MASE {{ mid.mase_vs_persistence?.toFixed(3) ?? '—' }}
@@ -299,6 +316,8 @@ onBeforeUnmount(() => {
 .lbl { color: var(--el-text-color-secondary); font-size: var(--font-md); }
 .chart { width: 100%; height: 360px; }
 .chart.sm { height: 240px; }
+.empty-state { display: flex; align-items: baseline; gap: 8px; margin: 4px 0 10px; color: var(--el-text-color-secondary); font-size: var(--font-md); }
+.empty-reason { font-size: var(--font-sm); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .ext-card { border: 1px solid var(--el-border-color-lighter); border-radius: 6px; padding: 10px 12px; margin-bottom: 12px; }
 .ext-hd { display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: var(--font-lg); margin-bottom: 4px; flex-wrap: wrap; }
 </style>

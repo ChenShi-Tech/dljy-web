@@ -15,7 +15,6 @@ import {
 } from '@/services/data/contracts'
 import { onRegionChange } from '../composables/useRegionReload'
 import RegionDataBanner from '@/components/region/RegionDataBanner.vue'
-import CapabilitySupportBadge from '../components/CapabilitySupportBadge.vue'
 import { chartChrome } from '../composables/useTheme'
 import { useEChart } from '../composables/useEChart'
 import { useQuerySync } from '../composables/useQuerySync'
@@ -167,7 +166,28 @@ function axisUnit(name: string): string {
   if (name.includes('负荷')) return 'MW'
   if (name.includes('电量')) return 'MWh'
   if (name.includes('台')) return '台'
+  // 天气轴（#3592 S1 新增：辐照/风速/温度）
+  if (name.includes('辐照')) return 'W/m²'
+  if (name.includes('风速')) return 'm/s'
+  if (name.includes('温度')) return '℃'
   return ''
+}
+
+// 类型粒度标注（ZW-02）：后端 meta.typeMeta 可选携带；周级类型呈阶梯线，非 96 点逐时口径
+function granOf(name: string): string {
+  return meta.value?.typeMeta?.[name]?.granularity ?? ''
+}
+const GRAN_LABEL: Record<string, string> = { weekly: '周级', daily: '日级', hourly: '小时' }
+function granLabel(name: string): string {
+  return GRAN_LABEL[granOf(name)] ?? ''
+}
+function granTitle(name: string): string {
+  const tm = meta.value?.typeMeta?.[name]
+  return tm ? `来源：${tm.source ?? '未标注'}｜粒度：${GRAN_LABEL[tm.granularity ?? ''] ?? tm.granularity ?? '未标注'}` : ''
+}
+function isStepKind(name: string): boolean {
+  // 价格/持仓比例/策略类按时段恒定→阶梯线；周级披露口径恒定→阶梯线
+  return /价|比例|策略/.test(name) || granOf(name) === 'weekly'
 }
 
 function render() {
@@ -199,10 +219,8 @@ function render() {
   // 只画"被勾选且当天有数据"的类型
   const drawn = selected.value.filter((t) => day[t] && day[t].some((v: any) => v != null))
   const series = drawn.map((name, i) => {
-    // 价格/持仓比例/策略类按时段恒定→阶梯线；负荷等连续量→直线
-    const isStepKind = /价|比例|策略/.test(name)
     const s: any = {
-      name, type: 'line', ...(isStepKind ? { step: 'start' } : {}), showSymbol: false, connectNulls: true,
+      name, type: 'line', ...(isStepKind(name) ? { step: 'start' } : {}), showSymbol: false, connectNulls: true,
       yAxisIndex: Number(typeAxis[name] ?? 0),
       lineStyle: { width: 1.6, color: colorOf(name, i) },
       itemStyle: { color: colorOf(name, i) },
@@ -225,7 +243,8 @@ function render() {
     // 底部布局:工具栏右下角,图例顶部居中 scroll
     toolbox: bottomToolbox('数据分析', 8),
     legend: bottomLayoutLegend({ data: drawn, itemWidth: 18, itemHeight: 8, textStyle: { fontSize: 11 } }),
-    grid: { left: hideAxis.value ? 16 : 56, right: hideAxis.value ? 24 : 300,
+    // 右侧留白随轴数伸缩（codex #235 R1：天气轴追加后固定 300 会把高位轴挤出画布）
+    grid: { left: hideAxis.value ? 16 : 56, right: hideAxis.value ? 24 : Math.min(72 + yz.length * 54, 560),
       top: 64, bottom: 56, containLabel: hideAxis.value },
     dataZoom: insideZoom(),
     xAxis: { type: 'category', data: POINTS_96, boundaryGap: false,
@@ -356,7 +375,6 @@ onRegionChange(load)
 <template>
   <div class="a2" v-loading="loading">
     <RegionDataBanner />
-    <CapabilitySupportBadge path="/sjfx/singleZsjfx" />
     <el-alert v-if="error" type="error" :closable="false" :title="error" class="mb" />
 
     <!-- 顶部工具条 -->
@@ -401,6 +419,7 @@ onRegionChange(load)
               <div class="grp-items">
                 <el-checkbox v-for="t in types" :key="t" :value="t" :label="t" class="tag-item">
                   <span class="dot" :style="{ background: colorOf(t, 0) }"></span>{{ t }}
+                  <em v-if="granLabel(t)" class="gran" :title="granTitle(t)">{{ granLabel(t) }}</em>
                 </el-checkbox>
               </div>
             </el-collapse-item>
@@ -478,6 +497,9 @@ onRegionChange(load)
 .tag-item.is-checked :deep(.el-checkbox__label) { color: var(--el-text-color-primary); font-weight: 600; }
 .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 5px; flex: none; opacity: .35; }
 .tag-item.is-checked .dot { opacity: 1; }
+/* 粒度标注（ZW-02）：周级/日级/小时口径徽标，悬浮显示来源 */
+.gran { font-style: normal; font-size: var(--font-xs); line-height: 1; padding: 1px 4px; border-radius: 3px; margin-left: 4px; flex: none;
+  color: var(--el-color-primary); background: var(--primary-tint); cursor: help; }
 
 /* 中:日期两列 */
 .dates { display: flex; gap: 8px; background: var(--panel); border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,.04); padding: 8px; height: 100%; min-height: 0; }

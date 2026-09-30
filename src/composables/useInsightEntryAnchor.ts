@@ -26,7 +26,7 @@ const ANCHOR_ANALYSIS_ID = 'supply.system-series'
 /** 扫描窗天数：契约上下文窗口上限 366 天，取 365 留出闭区间余量。 */
 const ANCHOR_SCAN_DAYS = 365
 
-/** 会话级锚定记忆：regionId → 最新有数据日（SPA 生存期内数据视为不变，刷新重扫）。 */
+/** 会话级锚定记忆：regionId（+ 限定来源）→ 最新有数据日（SPA 生存期内数据视为不变，刷新重扫）。 */
 const sessionAnchor = new Map<string, string>()
 
 export type InsightAnchorNotice = {
@@ -37,6 +37,9 @@ export type InsightAnchorNotice = {
 }
 
 export type InsightEntryAnchor = {
+  /** 锚定尚未结束（进入页面且无窗口参数时起为 true，扫描/复用完成或失败后为 false）：
+   *  页面可据此暂缓首轮查询，避免先按「今天」查一轮、锚定落定后又整轮作废重发。 */
+  pending: Ref<boolean>
   anchorNotice: Ref<InsightAnchorNotice | null>
   dismissAnchorNotice: () => void
   backToToday: () => void
@@ -74,8 +77,18 @@ const ANCHOR_REQUIRED_SOURCE_IDS = (getInsightAnalysis(ANCHOR_ANALYSIS_ID)?.sour
     return source?.businessScope === 'yunnan' && source.variant === 'actual'
   })
 
-export function useInsightEntryAnchor(ctx: AnchorContext, options?: { ready?: Ref<unknown> }): InsightEntryAnchor {
+export function useInsightEntryAnchor(
+  ctx: AnchorContext,
+  options?: {
+    ready?: Ref<unknown>
+    /** 只扫这几个来源（页面只关心其中几条曲线时，避免读整套来源拖慢扫描）；缺省=沿用云南实际来源集。 */
+    sourceIds?: readonly string[]
+  },
+): InsightEntryAnchor {
   const anchorNotice = ref<InsightAnchorNotice | null>(null)
+  const pending = ref(!ctx.hadWindowParam)
+  const scanSourceIds = options?.sourceIds?.length ? [...options.sourceIds] : null
+  const requiredSourceIds = scanSourceIds ?? ANCHOR_REQUIRED_SOURCE_IDS
 
   function dismissAnchorNotice(): void {
     anchorNotice.value = null
@@ -105,18 +118,24 @@ export function useInsightEntryAnchor(ctx: AnchorContext, options?: { ready?: Re
     if (ctx.hadWindowParam) return
     const today = beijingToday()
     const regionId = ctx.regionId.value
-    const cached = sessionAnchor.get(regionId)
+    const cacheKey = scanSourceIds ? `${regionId}|${scanSourceIds.join(',')}` : regionId
+    const cached = sessionAnchor.get(cacheKey)
     if (cached) {
       applyAnchor(today, cached)
+      pending.value = false
     } else {
       const controller = new AbortController()
-      const context = { ...ctx.toQueryContext(), businessWindow: { start: daysBefore(today, ANCHOR_SCAN_DAYS), end: today } }
+      const context = {
+        ...ctx.toQueryContext(),
+        businessWindow: { start: daysBefore(today, ANCHOR_SCAN_DAYS), end: today },
+        ...(scanSourceIds ? { sourceIds: scanSourceIds } : {}),
+      }
       fetchInsightCoverage(
         {
           analysisId: ANCHOR_ANALYSIS_ID,
           context,
           filters: { view: 'series' },
-          ...(ANCHOR_REQUIRED_SOURCE_IDS.length ? { requiredSourceIds: ANCHOR_REQUIRED_SOURCE_IDS } : {}),
+          ...(requiredSourceIds.length ? { requiredSourceIds } : {}),
         },
         { signal: controller.signal },
       ).then((result) => {
@@ -124,10 +143,12 @@ export function useInsightEntryAnchor(ctx: AnchorContext, options?: { ready?: Re
         const rangeEnds = (result.candidates.ranges ?? []).map((range) => range.end)
         const latest = [...dates, ...rangeEnds].sort().at(-1)
         if (!latest) return
-        sessionAnchor.set(regionId, latest)
+        sessionAnchor.set(cacheKey, latest)
         applyAnchor(today, latest)
       }).catch(() => {
         // 锚定是锦上添花：失败静默保持当日默认，不引入新的错误态（诚实空态仍由区块表达）。
+      }).finally(() => {
+        pending.value = false
       })
     // 组件卸载即中止在途扫描；迟到响应即使到达也会因 windowUntouched 守卫而不写入。
     try {
@@ -154,5 +175,5 @@ export function useInsightEntryAnchor(ctx: AnchorContext, options?: { ready?: Re
     run()
   }
 
-  return { anchorNotice, dismissAnchorNotice, backToToday }
+  return { pending, anchorNotice, dismissAnchorNotice, backToToday }
 }

@@ -42,6 +42,8 @@ const props = defineProps<{
   title: string
   /** 总览将来源清单折叠，保留公开/获权标记与证据入口。 */
   compactSources?: boolean
+  /** 隐藏头部来源标签与「证据」入口（页面判定该区块对读者无实质作用，如水电页指标卡概况）。 */
+  hideSources?: boolean
   /** 区块结果（null = 尚未查询或查询失败） */
   result: InsightBlockResult | null
   /** 请求错误（InsightRequestError）；与 result 互斥出现 */
@@ -155,7 +157,7 @@ const showMaintenanceEntry = computed(() => {
     <header class="insight-block__head">
       <h3 class="insight-block__title">{{ title }}</h3>
       <div class="insight-block__meta">
-        <details v-if="compactSources && sourceTags.length" class="insight-block__sources">
+        <details v-if="!hideSources && compactSources && sourceTags.length" class="insight-block__sources">
           <summary>{{ sourceTags.length }} 个来源 · {{ sourceTags.some(tag => tag.accessScope === 'company') ? '含获权' : '公开' }}</summary>
           <div class="insight-block__source-list">
         <span
@@ -168,7 +170,7 @@ const showMaintenanceEntry = computed(() => {
         </span>
           </div>
         </details>
-        <template v-else>
+        <template v-else-if="!hideSources">
         <span
           v-for="tag in sourceTags"
           :key="tag.title"
@@ -208,7 +210,7 @@ const showMaintenanceEntry = computed(() => {
           加入材料
         </el-button>
         <el-button
-          v-if="result && !denied"
+          v-if="result && !denied && !hideSources"
           link
           type="primary"
           size="small"

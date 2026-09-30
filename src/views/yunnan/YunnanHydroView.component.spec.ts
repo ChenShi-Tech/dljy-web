@@ -537,6 +537,48 @@ describe('主图与整洁纪律', () => {
   })
 })
 
+describe('加载速度：只读所需来源、锚定落定后再发查询', () => {
+  const EMPTY_COVERAGE = {
+    schemaVersion: 'insight-coverage/v1',
+    analysisId: 'supply.system-series',
+    regionId: 'yunnan',
+    businessWindow: { start: '2025-09-28', end: '2026-09-28' },
+    sources: [],
+    candidates: { discrete: false, dates: [], ranges: [] },
+    note: '',
+    mock: false,
+    productionWrite: false,
+  }
+
+  it('系统曲线查询显式限定来源：主图只读三条云南实际曲线，指标卡只读水电与总发电；锚定扫描同样只扫主图三来源', async () => {
+    await mountPage()
+
+    const seriesCall = queryCallsOf((request) => request.filters?.view === 'series')[0]![0]
+    expect(seriesCall.context.sourceIds).toEqual(['yn.system.hydro.actual', 'yn.system.load.actual', 'yn.system.new-energy.actual'])
+    const summaryCall = queryCallsOf((request) => request.filters?.view === 'summary')[0]![0]
+    expect(summaryCall.context.sourceIds).toEqual(['yn.system.hydro.actual', 'yn.system.total-generation.actual'])
+
+    const scan = vi.mocked(fetchInsightCoverage).mock.calls[0]![0] as any
+    expect(scan.context.sourceIds).toEqual(['yn.system.hydro.actual', 'yn.system.load.actual', 'yn.system.new-energy.actual'])
+    expect(scan.requiredSourceIds).toEqual(scan.context.sourceIds)
+  })
+
+  it('入口锚定未落定前不发任何查询（否则先按今天查一轮又整轮作废）；落定后每个视图只发一次', async () => {
+    let release: (value: unknown) => void = () => {}
+    vi.mocked(fetchInsightCoverage).mockImplementationOnce(() => new Promise((resolve) => { release = resolve }) as never)
+    await mountPage()
+
+    expect(fetchInsightCoverage).toHaveBeenCalledTimes(1)
+    expect(queryInsight).not.toHaveBeenCalled()
+
+    release(EMPTY_COVERAGE)
+    await flushPromises()
+
+    expect(queryCallsOf((request) => request.filters?.view === 'series')).toHaveLength(1)
+    expect(queryCallsOf((request) => request.filters?.view === 'summary')).toHaveLength(1)
+  })
+})
+
 describe('窗口变化作废旧结果', () => {
   it('改窗重查新窗口；在途旧代次响应迟到也不写回（标记值不出现、新窗口值保留）', async () => {
     // 旧代次 summary 挂起（标记值 88.8）；其余查询走默认 responder
@@ -638,5 +680,13 @@ describe('入口定位提示（页面整洁纪律）', () => {
     await wrapper!.find('[data-testid="ynh-anchor-back-today"]').trigger('click')
     await flushPromises()
     expect(wrapper!.find('[data-testid="ynh-anchor-tag"]').exists()).toBe(false)
+  })
+
+  it('会话内复用已锚定日：不再扫描，首轮查询直接落在锚定日，没有先查今天的浪费', async () => {
+    await mountPage()
+
+    expect(fetchInsightCoverage).not.toHaveBeenCalled()
+    const windows = queryCallsOf((request) => request.filters?.view === 'series').map(([request]) => request.context.businessWindow)
+    expect(windows).toEqual([{ start: '2026-07-01', end: '2026-07-01', timeZone: 'Asia/Shanghai' }])
   })
 })

@@ -41,9 +41,11 @@ export default tseslint.config(
   // vendor/ 与 shared/ 为上游同步覆盖区（shared 由双主仓自己的门禁管），不在本仓 lint。
   // src/attic/ 是停用区：已下架但保留的功能，不参与构建/类型检查/lint（见该目录 README）。
   // dist-customer-verify/ 是 verify:customer-edition-build 自建的交付版扫描产物（与 dist/ 同性质，已在 .gitignore）。
+  // .claude/worktrees/ 是主工作区下的嵌套 worktree（每份都是完整仓库副本，lint 会报数千个解析错误）；
+  // .Codex/ 是 Codex 会话产物目录。
   globalIgnores([
     'dist/', 'dist-customer-verify/', 'coverage/', 'node_modules/', 'vendor/', 'shared/',
-    'src/data/generated/', '.omc/', 'src/attic/'
+    'src/data/generated/', '.omc/', 'src/attic/', '.claude/worktrees/**', '.Codex/**'
   ]),
 
   // —— 基线：TS recommended（correctness 面）——

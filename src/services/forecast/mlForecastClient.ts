@@ -26,24 +26,42 @@ export type {
 } from './modelContract'
 
 const BASE = `${AGENT_API_BASE_ROOT}/v1/forecast`
-const FORECAST_REQUEST_TIMEOUT_MS = 90000
+// 单次预测请求超时：迁移期推理部分在南洋 A800、部分仍在本机同步重训，重模型一次可超过 90s，
+// 放宽到 180s 以免正常计算被前端提前掐断（#3578）；多算法对比另已改串行，不再叠加排队耗时。
+export const FORECAST_REQUEST_TIMEOUT_MS = 180000
 const FORECAST_METADATA_TIMEOUT_MS = 10000
 
+export const FORECAST_TIMEOUT_MESSAGE = '预测耗时过长已超时，可稍后重试或减少同时对比的算法'
+
+/**
+ * 超时信号触发的 fetch 拒绝转成可读中文提示：AbortSignal.timeout 抛 TimeoutError，
+ * 无该 API 时 timeoutSignal 回退为 controller.abort() 抛 AbortError（与 agentClient 探活同款判据）。
+ * 本请求没有用户取消入口，abort 只可能来自超时信号。其余错误（含后端 detail）原样返回，不改分类。
+ */
+export function toForecastRequestError(err: unknown): unknown {
+  const name = (err as { name?: string } | null)?.name
+  return name === 'TimeoutError' || name === 'AbortError' ? new Error(FORECAST_TIMEOUT_MESSAGE) : err
+}
+
 async function post<T>(path: string, body: unknown): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', 'x-region-id': currentRegion.value.id, ...identityHeaders() },
-    body: JSON.stringify(body),
-    signal: timeoutSignal(FORECAST_REQUEST_TIMEOUT_MS),
-  })
-  if (!res.ok) {
-    const detail = await res.json().catch(() => ({}))
-    throw new Error(detail.detail || `预测请求失败: ${res.status}`)
+  try {
+    const res = await fetch(`${BASE}${path}`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-region-id': currentRegion.value.id, ...identityHeaders() },
+      body: JSON.stringify(body),
+      signal: timeoutSignal(FORECAST_REQUEST_TIMEOUT_MS),
+    })
+    if (!res.ok) {
+      const detail = await res.json().catch(() => ({}))
+      throw new Error(detail.detail || `预测请求失败: ${res.status}`)
+    }
+    // 回读后端地区命中头 x-region-served/x-region-fallback → regionDataStatus → RegionDataBanner，
+    // 使预测页的地区回退/合成兜底对用户可见（B03，与现货 spotClient / 量化 quantClient 对齐）。
+    applyRegionHeaders(res)
+    return (await res.json()) as T
+  } catch (err) {
+    throw toForecastRequestError(err)
   }
-  // 回读后端地区命中头 x-region-served/x-region-fallback → regionDataStatus → RegionDataBanner，
-  // 使预测页的地区回退/合成兜底对用户可见（B03，与现货 spotClient / 量化 quantClient 对齐）。
-  applyRegionHeaders(res)
-  return (await res.json()) as T
 }
 
 async function get<T>(path: string): Promise<T> {
@@ -81,6 +99,7 @@ export type ForecastBaselineMetrics = {
 // 与 dataBasis.ts::DataBasis 合并为 DataSourceBasis。此处 re-export 保持本文件
 // `import { ForecastBasis } from '@/services/forecast/mlForecastClient'` 不破。
 import type { ForecastBasis } from '../data/types'
+import type { ForecastProvenance } from './forecastProvenance'
 export type { ForecastBasis }
 
 export type ForecastResult = {
@@ -307,12 +326,19 @@ export function fetchBidAdvice(req: BidAdviceRequest): Promise<BidAdviceResult> 
 }
 
 // 交易决策驾驶舱（一站式决策包）
-export type CockpitResult = {
+// 来源标识（mock/sourceType/productionWrite/warnings）为后端 #3604 起新增：顶层与三个分区各自带，
+// 全部可选以兼容旧后端。midterm_trend 远端无模型时为 UNAVAILABLE（available:false + reason + 空序列）。
+export type CockpitResult = ForecastProvenance & {
   basis: ForecastBasis
-  price_forecast: { points: number[]; lower: number[]; upper: number[]; unit: string }
+  price_forecast: ForecastProvenance & { points: number[]; lower: number[]; upper: number[]; unit: string; basis?: ForecastBasis }
   bid_advice: BidAdvice
-  deviation_risk: { expected_penalty_yuan: number; worst_penalty_yuan: number; high_risk_slots: number }
-  midterm_trend: { daily_avg_price: number[]; horizon_days: number }
+  deviation_risk: ForecastProvenance & { expected_penalty_yuan: number; worst_penalty_yuan: number; high_risk_slots: number }
+  midterm_trend: ForecastProvenance & {
+    daily_avg_price: number[]
+    horizon_days: number
+    basis?: ForecastBasis | null
+    model_id?: string | null
+  }
 }
 
 export function fetchCockpit(req: BidAdviceRequest): Promise<CockpitResult> {
@@ -515,12 +541,14 @@ export type UltraShortResult =
       source_type: string
       productionWrite: boolean
     }
-  | {
+  | ForecastProvenance & {
       available?: true
       target: string
       basis: ForecastBasis
       horizon: string
       points: number[]
+      model_version?: string | null
+      model_checksum?: string | null
       target_date?: string
       region_id?: string
       unit?: string
@@ -541,7 +569,9 @@ export function runUltraShort(req: ForecastRequest): Promise<UltraShortResult> {
 }
 
 // 中长期日均电价趋势（未来 N 天，服务中长期签约/套保）
-export type MidtermResult = {
+export type MidtermResult = ForecastProvenance & {
+  model_id?: string | null
+  model_version?: string | null
   basis: ForecastBasis
   horizon_days: number
   daily_avg_price: number[]
@@ -587,26 +617,6 @@ export type DeviationRiskResult = {
 }
 export function runDeviationRisk(req: DeviationRiskRequest): Promise<DeviationRiskResult> {
   return post('/deviation-risk', req)
-}
-
-// PatchTST 序列预测（前日 96 点 → 次日 96 点，深度时序）。
-// 判别联合（B18）：available=false 时后端只回 {available,reason}（无 torch/样本<30 必然命中，
-// 见 sequence_forecast.py:41,49），不含指标/points；available=true 才有完整结果。消费方须先判 available。
-export type PatchtstResult =
-  | { available: false; reason: string }
-  | {
-      available: true
-      basis: ForecastBasis
-      horizon: string
-      n_test_days: number
-      mae: number
-      persistence_mae: number
-      mase_vs_persistence: number | null   // naive_mae==0 时后端返 null（B17）
-      beats_persistence: boolean
-      points: number[]
-    }
-export function runPatchtstSeq(req: ForecastRequest): Promise<PatchtstResult> {
-  return post('/patchtst-seq', req)
 }
 
 // 站级发电量预测（光伏出力，G1.2/G1.3 + G2 真实数据接入）

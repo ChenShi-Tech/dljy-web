@@ -348,4 +348,103 @@ describe('ForecastExtraPanel', () => {
     await flushPromises()
     expect(chartState.init).not.toHaveBeenCalled()
   })
+
+  // #3605：远端 mock 标识与 warnings 展示
+  describe('远端来源标识', () => {
+    const ultra96 = (extra: Record<string, unknown> = {}) => ({
+      target: 'load', region_id: 'yunnan', target_date: '2026-06-25', basis: 'captured',
+      mode: 'historical_one_step_replay', interval_minutes: 15, unit: 'MW', horizon: '1-step',
+      points: Array(96).fill(101), actual: Array(96).fill(100), persistence: Array(96).fill(102),
+      slots: Array.from({ length: 96 }, (_, i) => i), mae: 1, persistence_mae: 2, beats_persistence: true,
+      ...extra,
+    })
+
+    it('中长期 mock:true / sourceType:MOCK 显示「模拟数据」并把 warnings 折成短标签+悬浮提示', async () => {
+      api.runMidterm.mockResolvedValueOnce({
+        basis: 'illustrative', horizon_days: 14, daily_avg_price: [100, 101], mae: 1, persistence_mae: 2,
+        mase_vs_persistence: 0.5, beats_persistence: true, unit: '元/MWh',
+        mock: true, sourceType: 'MOCK', source_type: 'MOCK', productionWrite: false,
+        warnings: ['远程模型为演示权重', '窗口内有泄漏风险'],
+      })
+      const wrapper = await render()
+      await clickMid(wrapper)
+      const card = wrapper.findAll('.ext-card')[1]
+      expect(card.text()).toContain('模拟数据')
+      const warn = card.findAll('.fp-warn')
+      expect(warn).toHaveLength(1)
+      expect(warn[0].text()).toBe('提示 2')
+      expect(warn[0].attributes('title')).toContain('远程模型为演示权重')
+      expect(warn[0].attributes('title')).toContain('窗口内有泄漏风险')
+      // 未运行/其他卡片不受影响
+      expect(wrapper.findAll('.ext-card')[0].text()).not.toContain('模拟数据')
+    })
+
+    it('超短期 mock:true 显示「模拟数据」；旧字段 source_type:MOCK 同样识别', async () => {
+      api.runUltraShort.mockResolvedValueOnce(ultra96({ mock: false, source_type: 'MOCK', warnings: ['仅历史回放'] }))
+      const wrapper = await render({ target: 'load', targetDate: '2026-06-25' })
+      await clickUltra(wrapper)
+      const card = wrapper.findAll('.ext-card')[0]
+      expect(card.text()).toContain('模拟数据')
+      expect(card.find('.fp-warn').text()).toBe('提示 1')
+    })
+
+    it('非 mock（REAL、warnings 为空）不显示任何标签', async () => {
+      api.runUltraShort.mockResolvedValueOnce(ultra96({ mock: false, sourceType: 'REAL', productionWrite: false, warnings: [] }))
+      api.runMidterm.mockResolvedValueOnce({
+        basis: 'captured', horizon_days: 14, daily_avg_price: [100], mae: 1, persistence_mae: 2,
+        mase_vs_persistence: 0.5, beats_persistence: true, unit: '元/MWh',
+        mock: false, sourceType: 'REAL', productionWrite: false, warnings: [],
+      })
+      const wrapper = await render({ target: 'load', targetDate: '2026-06-25' })
+      await clickUltra(wrapper)
+      await clickMid(wrapper)
+      expect(wrapper.find('.fp-tags').exists()).toBe(false)
+      expect(wrapper.text()).not.toContain('模拟数据')
+    })
+
+    it('旧后端无任何来源字段：默认响应正常渲染、无标签、不崩', async () => {
+      const wrapper = await render()
+      await clickMid(wrapper)
+      expect(wrapper.text()).toContain('MAE 1.2 MW')
+      expect(wrapper.find('.fp-tags').exists()).toBe(false)
+    })
+
+    it('warnings 非数组或含空串（异常形态）不崩，也不渲染空提示', async () => {
+      api.runMidterm.mockResolvedValueOnce({
+        basis: 'captured', horizon_days: 14, daily_avg_price: [100], mae: 1, persistence_mae: 2,
+        mase_vs_persistence: 0.5, beats_persistence: true, unit: '元/MWh', warnings: '不是数组',
+      })
+      const wrapper = await render()
+      await clickMid(wrapper)
+      expect(wrapper.text()).toContain('MAE 1.0')
+      expect(wrapper.find('.fp-warn').exists()).toBe(false)
+    })
+
+    it('中长期 UNAVAILABLE：空态「暂无可用预测」+ 原因，不是红色报错，也不画图', async () => {
+      api.runMidterm.mockResolvedValueOnce({
+        available: false, reason: '南洋无 yunnan 中长期模型', mock: false, sourceType: 'UNAVAILABLE', productionWrite: false,
+      })
+      const wrapper = await render()
+      await clickMid(wrapper)
+      const card = wrapper.findAll('.ext-card')[1]
+      expect(card.find('.empty-state').text()).toContain('暂无可用预测')
+      expect(card.find('.empty-state').text()).toContain('南洋无 yunnan 中长期模型')
+      expect(card.find('.alert').exists()).toBe(false)
+      expect(card.find('.basis').exists()).toBe(false)
+      expect(chartState.init).not.toHaveBeenCalled()
+    })
+
+    it('超短期 UNAVAILABLE 走空态；随后重跑成功会清掉空态', async () => {
+      api.runUltraShort.mockResolvedValueOnce({
+        available: false, reason: '南洋无超短期模型', mock: false, source_type: 'UNAVAILABLE', productionWrite: false,
+      })
+      const wrapper = await render()
+      await clickUltra(wrapper)
+      const card = wrapper.findAll('.ext-card')[0]
+      expect(card.find('.empty-state').text()).toContain('南洋无超短期模型')
+      expect(card.find('.alert').exists()).toBe(false)
+      await clickUltra(wrapper)
+      expect(card.find('.empty-state').exists()).toBe(false)
+    })
+  })
 })

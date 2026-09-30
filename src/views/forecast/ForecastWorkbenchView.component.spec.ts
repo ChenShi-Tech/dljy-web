@@ -134,17 +134,43 @@ describe('建模工作台的目标日上下文', () => {
     expect(wrapper.find('.compare-checkboxes').findAllComponents({ name: 'ElCheckbox' }).map((item: VueWrapper) => item.props())).toEqual([expect.objectContaining({ disabled: false })])
     expect(compareChart(wrapper).props('results')).toHaveLength(1)
   })
+  it('多算法对比串行执行、逐个回显进度，单个失败不中断后续且汇总失败原因（#3578）', async () => {
+    api.load.mockResolvedValueOnce([
+      provider({ id: 'm1', name: '算法一' }), provider({ id: 'm2', name: '算法二' }), provider({ id: 'm3', name: '算法三' }),
+    ])
+    const first = deferred<UnifiedForecastResult>()
+    const third = deferred<UnifiedForecastResult>()
+    api.run.mockReset()
+      .mockReturnValueOnce(first.promise)
+      .mockRejectedValueOnce(new Error('预测耗时过长已超时，可稍后重试或减少同时对比的算法'))
+      .mockReturnValueOnce(third.promise)
+    const wrapper = await render()
+    await setCompareIds(wrapper, ['m1', 'm2', 'm3'])
+    await runCompare(wrapper)
+    // 第一个未完成时后两个不得发出
+    expect(api.run).toHaveBeenCalledTimes(1)
+    expect(wrapper.find('.compare-progress').text()).toBe('已完成 0/3')
+    first.resolve(result()); await flushPromises()
+    // 第二个立即失败 → 第三个才发出；进度含失败项
+    expect(api.run).toHaveBeenCalledTimes(3)
+    expect(wrapper.find('.compare-progress').text()).toBe('已完成 2/3')
+    third.resolve(result()); await flushPromises()
+    expect(wrapper.find('.compare-progress').exists()).toBe(false)
+    expect(compareChart(wrapper).props('results').map((r: { provider: string }) => r.provider)).toEqual(['算法一', '算法三'])
+    expect(wrapper.text()).toContain('算法二')
+    expect(wrapper.text()).toContain('预测耗时过长已超时')
+  })
   it('单算法、多算法和可见台账均不显示占位、未部署与原始零样本名称', async () => {
     api.load.mockResolvedValueOnce([
       provider({ id: 'tslib:DLinear', name: 'DLinear compat', mock: true }),
-      provider({ id: 'fm:Chronos2', name: 'Chronos 2', available: false }),
+      provider({ id: 'remote:offline', name: '未部署远端模型', available: false }),
       provider({ id: 'remote:chronos-bolt-base', name: 'Chronos Bolt Base', capabilities: { zeroShot: true } as ForecastProvider['capabilities'] }),
       provider({ id: 'remote:test', name: '测试远端模型' }),
     ])
     const wrapper = await render()
     expect(wrapper.text()).toContain('测试远端模型')
     expect(wrapper.text()).not.toContain('DLinear compat')
-    expect(wrapper.text()).not.toContain('Chronos 2')
+    expect(wrapper.text()).not.toContain('未部署远端模型')
     expect(wrapper.text()).not.toContain('Chronos Bolt Base')
   })
   it('异步目录到达后可选模型，URL日期和用户结算价目标用于实际调用', async () => {
@@ -190,7 +216,7 @@ describe('建模工作台的目标日上下文', () => {
     api.load.mockResolvedValueOnce([
       provider({ id: 'tslib:PatchTST', name: 'PatchTST compat', mock: true }),
       provider({ id: 'remote:chronos-bolt-base', name: 'Chronos Bolt Base', source: 'remote:zeroshot' }),
-      provider({ id: 'fm:Chronos2', name: 'Chronos 2', available: false }),
+      provider({ id: 'remote:offline', name: '未部署远端模型', available: false }),
     ])
     const wrapper = await render()
     expect(api.run).not.toHaveBeenCalled()
@@ -253,8 +279,9 @@ describe('建模工作台的目标日上下文', () => {
     const wrapper = await render()
     await setCompareIds(wrapper, ['remote:keep', 'remote:gone'])
     await runCompare(wrapper)
+    // 串行（#3578）：第一个未结束时第二个不发出
     expect(keepRun).toHaveBeenCalledTimes(1)
-    expect(hiddenRun).toHaveBeenCalledTimes(1)
+    expect(hiddenRun).toHaveBeenCalledTimes(0)
     rows.value = [
       provider({ id: 'remote:keep', name: '保留模型', run: keepRun }),
       provider({ id: 'remote:gone', name: '旧占位模型', capabilities: { zeroShot: true } as ForecastProvider['capabilities'], run: hiddenRun }),
@@ -266,7 +293,7 @@ describe('建模工作台的目标日上下文', () => {
     expect(compareChart(wrapper).props('results')).toEqual([])
     await setCompareIds(wrapper, ['remote:gone'])
     await runCompare(wrapper)
-    expect(hiddenRun).toHaveBeenCalledTimes(1)
+    expect(hiddenRun).toHaveBeenCalledTimes(0)
     expect(keepRun).toHaveBeenCalledTimes(1)
     expect(wrapper.text()).toContain('所有算法预测均失败')
   })

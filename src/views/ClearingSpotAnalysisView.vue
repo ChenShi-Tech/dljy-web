@@ -13,7 +13,6 @@ import {
 import { getRegionCapabilityForPath, type RegionCapabilityDataSupport } from '@/services/region/regionModules'
 import { onRegionChange } from '../composables/useRegionReload'
 import RegionDataBanner from '@/components/region/RegionDataBanner.vue'
-import CapabilitySupportBadge from '../components/CapabilitySupportBadge.vue'
 import CapabilityDegradedCard from '../components/CapabilityDegradedCard.vue'
 import { chartChrome } from '../composables/useTheme'
 import { useEChart } from '../composables/useEChart'
@@ -276,7 +275,6 @@ onRegionChange(load)
 <template>
   <div class="a3" v-loading="loading">
     <RegionDataBanner />
-    <CapabilitySupportBadge path="/sjfx/zcqxhdl" />
     <!-- #2991：非山西地区显示停用说明卡（不发请求、不画空图），山西保持原出清图不动 -->
     <CapabilityDegradedCard
       v-if="!isClearingRegionSupported"

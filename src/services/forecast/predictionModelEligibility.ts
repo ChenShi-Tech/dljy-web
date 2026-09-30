@@ -20,7 +20,6 @@ const COMPAT_PLACEHOLDERS = new Set([
   'tslib:Autoformer', 'tslib:DLinear', 'tslib:FEDformer', 'tslib:Informer',
   'tslib:iTransformer', 'tslib:PatchTST', 'tslib:TimesNet', 'tslib:TimeXer',
 ])
-const ORIGINAL_FOUNDATION_MODELS = new Set(['fm:Chronos2', 'fm:ChronosBoltSmall'])
 
 export type PredictionModelExclusion = 'placeholder' | 'pretrained' | 'unavailable'
 
@@ -29,7 +28,7 @@ export function predictionModelExclusionReason(model: ModelEvidence): Prediction
   const id = model.modelId ?? model.id ?? ''
   if (model.mock === true || model.provenance?.mock === true || model.lineage?.mock === true
     || COMPAT_PLACEHOLDERS.has(id)) return 'placeholder'
-  if (model.capabilities?.zeroShot === true || ORIGINAL_FOUNDATION_MODELS.has(id)
+  if (model.capabilities?.zeroShot === true
     || model.source?.toLowerCase() === 'remote:zeroshot'
     || model.framework?.toLowerCase().startsWith('zeroshot/')) return 'pretrained'
   if (model.available === false) return 'unavailable'

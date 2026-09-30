@@ -20,6 +20,10 @@ import RegionDataBanner from '@/components/region/RegionDataBanner.vue'
 import CapabilitySupportBadge from '@/components/CapabilitySupportBadge.vue'
 import CockpitRegionLockedCard from '@/components/spot/cockpit/CockpitRegionLockedCard.vue'
 import DataBasisBadge from '@/components/DataBasisBadge.vue'
+import ForecastProvenanceTags from '@/components/forecast/ForecastProvenanceTags.vue'
+import {
+  isMockProvenance, isUnavailableProvenance, provenanceWarnings, type ForecastProvenance,
+} from '@/services/forecast/forecastProvenance'
 import TrustBadge from '@/components/common/TrustBadge.vue'
 import { useEChart } from '@/composables/useEChart'
 import { onRegionChange } from '@/composables/useRegionReload'
@@ -475,21 +479,40 @@ async function runDecisionOverview() {
   }
 }
 
+type OverviewCard = { label: string; value: string; provenance?: ForecastProvenance; hint?: string }
+
 const overviewCards = computed(() => {
   const o = decisionOverview.value
   if (!o) return []
-  const cards: Array<{ label: string; value: string }> = []
+  const cards: OverviewCard[] = []
   const priceAvg = avg(o.price_forecast.points)
-  cards.push({ label: '日均预测电价', value: Number.isFinite(priceAvg) ? `${priceAvg.toFixed(0)} 元/MWh` : '—' })
+  cards.push({ label: '日均预测电价', value: Number.isFinite(priceAvg) ? `${priceAvg.toFixed(0)} 元/MWh` : '—', provenance: o.price_forecast })
   if (o.bid_advice.storage) {
     cards.push({ label: '储能预期套利', value: `${o.bid_advice.storage.expected_profit_yuan.toLocaleString()} 元` })
   } else if (o.bid_advice.retailer) {
     cards.push({ label: '售电预期成本', value: `${o.bid_advice.retailer.expected_cost_yuan.toLocaleString()} 元` })
   }
-  cards.push({ label: '偏差最坏风险', value: `${o.deviation_risk.worst_penalty_yuan.toLocaleString()} 元` })
-  const midAvg = avg(o.midterm_trend.daily_avg_price)
-  cards.push({ label: `未来 ${o.midterm_trend.horizon_days} 天均价`, value: Number.isFinite(midAvg) ? `${midAvg.toFixed(0)} 元/MWh` : '—' })
+  cards.push({ label: '偏差最坏风险', value: `${o.deviation_risk.worst_penalty_yuan.toLocaleString()} 元`, provenance: o.deviation_risk })
+  const mid = o.midterm_trend
+  const midLabel = `未来 ${mid.horizon_days} 天均价`
+  if (isUnavailableProvenance(mid)) {
+    // 远端无南洋模型：给空态而不是 0/NaN 或报错，原因放悬浮提示。
+    cards.push({ label: midLabel, value: '暂无南洋模型', hint: String(mid.reason ?? '').trim() || '中长期模型当前不可用' })
+  } else {
+    const midAvg = avg(mid.daily_avg_price)
+    cards.push({ label: midLabel, value: Number.isFinite(midAvg) ? `${midAvg.toFixed(0)} 元/MWh` : '—', provenance: mid })
+  }
   return cards
+})
+// 概览顶层的模拟标识与聚合提示；任一分区为模拟时后端顶层也会置 MOCK，这里取并集防旧/异常响应漏标。
+const overviewIsMock = computed(() => {
+  const o = decisionOverview.value
+  return !!o && [o, o.price_forecast, o.deviation_risk, o.midterm_trend].some((p) => isMockProvenance(p))
+})
+const overviewProvenance = computed<ForecastProvenance | undefined>(() => {
+  const o = decisionOverview.value
+  if (!o) return undefined
+  return { mock: overviewIsMock.value, sourceType: o.sourceType ?? o.source_type, warnings: provenanceWarnings(o) }
 })
 
 // 原「下发到实验室」按钮（把 96 点电价预测重采样为 24 点送交易策略实验室）
@@ -1031,13 +1054,15 @@ onBeforeUnmount(() => {
 
         <template v-if="decisionOverview">
           <div class="advice-head">
-            <b>决策概览（{{ decisionOverview.basis === 'captured' ? '真实' : '合成验证' }}）</b>
+            <b>决策概览（{{ decisionOverview.basis === 'captured' && !overviewIsMock ? '真实' : '合成验证' }}）</b>
             <DataBasisBadge :basis="decisionOverview.basis" prefix="数据口径" />
+            <ForecastProvenanceTags :provenance="overviewProvenance" />
           </div>
           <div class="risk-grid advice-grid">
-            <div v-for="card in overviewCards" :key="card.label" class="risk-card">
+            <div v-for="card in overviewCards" :key="card.label" class="risk-card" :title="card.hint">
               <span>{{ card.label }}</span>
-              <b>{{ card.value }}</b>
+              <b :class="{ 'card-empty': card.hint }">{{ card.value }}</b>
+              <ForecastProvenanceTags v-if="card.provenance" :provenance="card.provenance" hide-warnings />
             </div>
           </div>
         </template>
@@ -1286,6 +1311,12 @@ onBeforeUnmount(() => {
   display: block;
   margin-top: 5px;
   color: var(--muted);
+}
+.risk-card .fp-tags { display: flex; margin-top: 8px; }
+.risk-card b.card-empty {
+  color: var(--muted);
+  font-size: var(--font-md);
+  font-weight: 500;
 }
 .risk-card.risk {
   border-color: rgba(220, 38, 38, 0.25);
