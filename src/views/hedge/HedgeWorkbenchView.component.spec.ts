@@ -5,10 +5,49 @@ import { flushPromises, mount, enableAutoUnmount } from '@vue/test-utils'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 const fetchOverview = vi.fn()
-const fetchMonths = vi.fn(async (): Promise<unknown> => ({}))
+const fetchMonths = vi.fn(async (): Promise<unknown> => monthsOk('2026-09'))
 const fetchSettlement = vi.fn(async (): Promise<unknown> => ({}))
 const emptyCoverage = async (): Promise<unknown> => ({ plants: [], calendar: { days: [], coveredDays: 0, totalDays: 0 }, status: 'NOT_REPORTED' })
 const fetchSettlementCoverage = vi.fn(emptyCoverage)
+// 月页签钻取（/breakdown）走 hedgeApi.request：外壳只关心页签切换，桩给最小可用空结果。
+const fetchBreakdown = vi.fn(async (): Promise<unknown> => ({
+  status: 'OK', reason: null, dimension: 'subject', dimensionLabel: '交易单元', basis: 'MONTHLY_NET_OBLIGATION',
+  basisNote: '', months: [], totalMwh: null, rows: [], consistency: null, fromDate: '', toDate: '', contracts: [],
+}))
+
+// 月页签的按日图（MonthDaysChart → useEChart → echarts）真实加载太重：外壳只断言页签 marker，
+// 桩掉图表生命周期（数据组装由 MonthDaysChart.component.spec 直接断言）。
+vi.mock('@/composables/useEChart', () => ({
+  useEChart: () => ({ setOption: vi.fn(), resize: vi.fn(), instance: () => null }),
+}))
+
+/**
+ * 月页签（/months）的最小完整载荷（任务 8.3 / #3421 后 MonthCard 渲染需要全部字段，
+ * 缺字段会在渲染期抛错——旧占位版整包 JSON 展示不再存在）。
+ */
+function monthsOk(month: string): Record<string, unknown> {
+  const notComputed = () => ({ value: null, status: 'NOT_COMPUTABLE' })
+  const notAssessed = { metric: null, tier: null, level: 'NOT_ASSESSED', reason: 'NOT_COMPUTABLE', hints: [], basis: null }
+  const view = {
+    month, formalQuantity: null, period: 'CURRENT',
+    midlong: { lockedMwh: '1', structure: null, incomplete: false, affectedContractIds: [], note: null },
+    monthlyUndecomposed: { quantityMwh: '0', contractIds: [], note: '' },
+    mechanism: { basis: 'PLANNED', label: '计划口径', value: null, stations: [], unknownStationIds: [], note: '' },
+    generation: { granularity: 'DAY', actualDays: 0, forecastDays: 0, uncoveredDays: 0, totalDays: 0 },
+    days: [],
+    baseline: { coverage: 'NONE', totalMwh: null, coveredStationIds: [], missingStationIds: [], label: '计划口径', note: null },
+    ratios: {
+      interval: { granularity: 'DAY', coverage: { coveredCount: 0, totalCount: 0, ratio: null }, withMechanism: notComputed(), midlongOnly: notComputed(), assessment: notAssessed },
+      baseline: { label: '计划口径', withMechanism: notComputed(), midlongOnly: notComputed(), assessment: notAssessed },
+    },
+    caps: { status: 'NOT_REGISTERED', rows: [], note: '' },
+    consistency: { ok: true, partial: false },
+  }
+  return {
+    status: 'OK', fromMonth: month, toMonth: month, months: [view], totals: null, unallocatedPool: [],
+    revisionsUsed: [], contracts: [], scheme: null, legs: {}, gaps: [], asOf: '2026-09-15T02:00:00Z', view: 'CURRENT',
+  }
+}
 
 // 地区上下文桩：mountView(regionId) 切换 currentRegion，地区门禁（HW-07）才真正受测。
 const regionState = vi.hoisted(() => ({ id: 'yunnan' }))
@@ -64,6 +103,12 @@ vi.mock('@/services/hedge/hedgeApi', () => ({
   fetchMechanismParams: vi.fn(async () => ({ rows: [] })),
   fetchMonths: (...args: unknown[]) => fetchMonths(...(args as [])),
   fetchSettlement: (...args: unknown[]) => fetchSettlement(...(args as [])),
+  // 月页签与钻取（任务 8.3 / #3421）经 request 取 /months、/breakdown；分流到各自桩，其余路径拒绝。
+  request: (_method: string, path: string) => {
+    if (path === '/months') return fetchMonths()
+    if (path === '/breakdown') return fetchBreakdown()
+    return Promise.reject(new Error(`外壳测试未预期的请求：${path}`))
+  },
   postMechanismVersion: vi.fn(async () => ({})),
   postSimulate: vi.fn(async () => ({})),
   putCaps: vi.fn(async () => ({})),
@@ -116,11 +161,12 @@ describe('HedgeWorkbenchView 外壳（HW-01/06/07）', () => {
   afterEach(() => {
     fetchOverview.mockReset()
     fetchMonths.mockReset()
-    fetchMonths.mockImplementation(async () => ({}))
+    fetchMonths.mockImplementation(async () => monthsOk('2026-09'))
     fetchSettlement.mockReset()
     fetchSettlement.mockImplementation(async () => ({}))
     fetchSettlementCoverage.mockReset()
     fetchSettlementCoverage.mockImplementation(emptyCoverage)
+    fetchBreakdown.mockClear()
     regionState.id = 'yunnan'
   })
 
@@ -223,7 +269,7 @@ describe('HedgeWorkbenchView 外壳（HW-01/06/07）', () => {
     // 首次激活「当月/后续」：取回 comp-a 的月度视图。
     await wrapper.find('[data-test="tab-month"]').trigger('click')
     await vi.waitFor(() => { expect(releases.length).toBe(1) })
-    releases[0]({ months: [{ month: 'COMP-A' }] })
+    releases[0](monthsOk('COMP-A'))
     await vi.waitFor(() => { expect(wrapper.find('[data-test="month-view"]').text()).toContain('COMP-A') })
     // 切走再切回：页签被重新激活即重取（comp-a 的第二个请求挂起），期间仍显示已取回的数据。
     await wrapper.find('[data-test="tab-settlement"]').trigger('click')
@@ -237,9 +283,9 @@ describe('HedgeWorkbenchView 外壳（HW-01/06/07）', () => {
       expect(releases.length).toBe(3)
     })
     // 新公司先返回、旧公司（切换前发出的请求）后返回：页面必须停在新公司的结果上。
-    releases[2]({ months: [{ month: 'COMP-B' }] })
+    releases[2](monthsOk('COMP-B'))
     await vi.waitFor(() => { expect(wrapper.find('[data-test="month-view"]').text()).toContain('COMP-B') })
-    releases[1]({ months: [{ month: 'STALE-COMP-A' }] })
+    releases[1](monthsOk('STALE-COMP-A'))
     await new Promise((resolve) => setTimeout(resolve, 20))
     expect(wrapper.find('[data-test="month-view"]').text()).toContain('COMP-B')
     expect(wrapper.find('[data-test="month-view"]').text()).not.toContain('STALE-COMP-A')
