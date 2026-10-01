@@ -50,9 +50,12 @@ const activeTabComponent = computed(() => TABS.find((item) => item.key === activ
             :key="item.key"
             :class="{ active: activeTab === item.key }"
             :data-test="`tab-${item.key}`"
+            type="button"
+            :aria-pressed="activeTab === item.key"
             @click="activeTab = item.key"
           >{{ item.label }}</button>
         </nav>
+        <div class="query-controls">
         <label>粒度
           <select v-model="granularity" data-test="granularity">
             <option value="HOUR">小时</option>
@@ -62,6 +65,7 @@ const activeTabComponent = computed(() => TABS.find((item) => item.key === activ
         <label>认知时点
           <input v-model="asOfInput" data-test="asof-input" placeholder="留空 = 当前视图" />
         </label>
+        </div>
       </header>
 
       <KeepAlive>
@@ -72,7 +76,29 @@ const activeTabComponent = computed(() => TABS.find((item) => item.key === activ
 </template>
 
 <style scoped>
-.hedge-workbench { padding: 16px; }
+.hedge-workbench { display: grid; gap: 16px; min-width: 0; padding: 16px; color: var(--text); }
+.page-head { display: grid; gap: 16px; padding: 20px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); }
+.page-head h2 { margin: 0; font-size: 20px; line-height: 1.4; }
+.tabs { display: flex; flex-wrap: wrap; gap: 4px; width: fit-content; max-width: 100%; padding: 4px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel-sub); }
+.hedge-workbench :deep(button) { min-height: 36px; padding: 6px 14px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--panel); color: var(--text); font: inherit; font-size: var(--font-sm, 14px); cursor: pointer; }
+.hedge-workbench :deep(button:hover:not(:disabled)) { border-color: var(--primary); background: var(--surface-hover); }
+.hedge-workbench :deep(button:disabled) { opacity: .55; cursor: not-allowed; }
+.tabs button { border-color: transparent; background: transparent; white-space: nowrap; }
+.tabs button.active { border-color: var(--primary-tint-border); background: var(--primary-tint); color: var(--primary); font-weight: 600; }
+.query-controls { display: flex; flex-wrap: wrap; align-items: end; gap: 12px 20px; }
+.query-controls label { display: grid; gap: 6px; font-size: var(--font-sm, 14px); color: var(--muted); }
+.hedge-workbench :deep(input:not([type='radio']):not([type='checkbox'])), .hedge-workbench :deep(select) { min-height: 36px; box-sizing: border-box; max-width: 100%; padding: 6px 10px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--panel); color: var(--text); font: inherit; font-size: var(--font-sm, 14px); }
+.query-controls input { width: 280px; }
+.hedge-workbench :deep(button:focus-visible), .hedge-workbench :deep(input:focus-visible), .hedge-workbench :deep(select:focus-visible) { outline: 2px solid var(--primary); outline-offset: 2px; }
 .region-closed { padding: 48px; text-align: center; font-size: var(--font-lg, 18px); }
-.asof-banner { background: #fff7e6; padding: 8px 12px; border: 1px solid #f0c36d; margin-bottom: 8px; }
+.asof-banner { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 12px 16px; background: var(--warning-tint); border: 1px solid var(--warning); border-radius: var(--radius); }
+@media (max-width: 700px) {
+  .hedge-workbench { padding: 8px; gap: 12px; }
+  .page-head { padding: 14px; }
+  .tabs { width: 100%; box-sizing: border-box; }
+  .tabs button { flex: 1 0 auto; }
+  .query-controls { align-items: stretch; }
+  .query-controls label { flex: 1 1 160px; }
+  .query-controls input { width: 100%; }
+}
 </style>
