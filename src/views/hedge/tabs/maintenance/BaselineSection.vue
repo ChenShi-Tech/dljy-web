@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import HedgeHint from '../HedgeHint.vue'
 // 维护 · 月度发电基准（openspec build-midlong-spot-hedging HG-07，design D7；ChenShi-Tech/dljy#3423）。
 //
 // 按「场站 × 月」批量录入经营计划口径的预计发电量：场站来自公司场站清单（已登记基准但不在清单里的场站照常列出并标注），
@@ -173,20 +174,16 @@ async function save() {
 <template>
   <section class="maint-section" data-test="baseline-section">
     <div class="section-head">
-      <h3>月度发电基准</h3>
+      <h3>月度发电基准<HedgeHint text="按场站与月份录入预计发电量，仅用于计划基准和机制电量。缺项保持未覆盖，不以售电目标替代。保存后保留旧版本。" /></h3>
       <span class="badge">经营计划口径</span>
       <span class="spacer" />
       <button data-test="baseline-refresh" :disabled="loading" @click="load">刷新</button>
     </div>
-    <p class="hint">
-      按「场站 × 月」录入预计发电量（MWh），只用于基准口径套保率与计划口径机制电量，禁止用中长期售电目标顶替；
-      某场站某月没有基准即为未覆盖。每次保存追加新版本，旧版本可按认知时点回看。
-    </p>
     <div class="range-bar">
       <label>起始月份 <input v-model="range.fromMonth" type="month" data-test="baseline-from" /></label>
       <label>结束月份 <input v-model="range.toMonth" type="month" data-test="baseline-to" /></label>
       <button data-test="baseline-query" :disabled="loading" @click="loadBaselines()">按此范围加载</button>
-      <span class="hint">默认当月起 3 个月；重新加载会丢弃未保存的改动</span>
+      <HedgeHint text="默认查询当月起三个月。重新加载会丢弃未保存的改动。" />
     </div>
     <p v-if="rangeError" class="status error" data-test="baseline-range-error">{{ rangeError }}</p>
     <p v-if="stationsError" class="status error" data-test="baseline-stations-error">{{ stationsError }}</p>

@@ -42,6 +42,7 @@ vi.mock('vue-router', () => ({
   RouterLink: { name: 'RouterLink', props: ['to'], template: '<a :href="to"><slot /></a>' },
 }))
 
+import MonthDaysChart from './months/MonthDaysChart.vue'
 import HedgeMonthsTab from './HedgeMonthsTab.vue'
 import { selectedCompanyId } from '@/services/company/companyContext'
 import { defaultMonthRange } from '@/services/hedge/hedgeMaintenanceModel'
@@ -426,4 +427,35 @@ describe('HedgeMonthsTab（任务 8.3）', () => {
     await vi.waitFor(() => { expect(breakdownMock).toHaveBeenCalledTimes(2) })
     expect(breakdownMock.mock.calls[1][0]).toMatchObject({ fromDate: '2026-10-01', toDate: '2026-12-31', granularity: 'DAY' })
   })
+  it('过去月份仍展示已有逐日数据，不受当月条件限制', async () => {
+    const historical=monthView({month:'2026-08',period:'PAST'})
+    historical.days=historical.days.map(day=>({...day,date:day.date.replace('2026-09','2026-08')}))
+    monthsMock.mockResolvedValue(monthsPayload([historical]))
+    const {wrapper}=await mountTab()
+    const card=wrapper.get('[data-test="month-card-2026-08"]')
+    expect(card.get('[data-test="month-daily-statistics"]').isVisible()).toBe(true)
+    expect(wrapper.findComponent(MonthDaysChart).props('days')).toEqual(historical.days)
+    expect(wrapper.find('[data-test="month-generation-empty"]').exists()).toBe(false)
+  })
+  it('过去月份发电缺失仍保留图表并明确空态，未补零', async () => {
+    const historical=monthView({month:'2026-08',period:'PAST',days:[{date:'2026-08-01',lockedDecomposedMwh:'0',generation:{value:null,source:'UNCOVERED',uncoveredReason:'ACTUAL_MISSING',unknownStationIds:[1]}}]})
+    monthsMock.mockResolvedValue(monthsPayload([historical]))
+    const {wrapper}=await mountTab()
+    expect(wrapper.get('[data-test="month-daily-statistics"]').isVisible()).toBe(true)
+    expect(wrapper.find('[data-test="month-generation-empty"]').exists()).toBe(true)
+    expect(wrapper.findComponent(MonthDaysChart).props('days')[0].generation.value).toBeNull()
+  })
+  it('加载使用动画组件，数据缺口保留主题提示框', async () => {
+    let resolve!: (value: unknown)=>void
+    monthsMock.mockReturnValue(new Promise(done=>{resolve=done}))
+    const {wrapper}=mountHedgeTab(HedgeMonthsTab)
+    await vi.waitFor(()=>expect(wrapper.find('[data-test="loading"] .pfl-spinner').exists()).toBe(true))
+    expect(wrapper.get('[data-test="loading"]').attributes('role')).toBe('status')
+    resolve(monthsPayload([monthView()],{gaps:[{code:'BASELINES_MISSING',message:'发电基准缺失'}]}))
+    await vi.waitFor(()=>expect(wrapper.find('[data-test="month-view"]').exists()).toBe(true))
+    expect(wrapper.find('[data-test="loading"]').exists()).toBe(false)
+    expect(wrapper.get('[data-test="gaps"]').classes()).toContain('gaps')
+    expect(wrapper.get('[data-test="gaps"] .hedge-hint').attributes('aria-label')).toContain('发电基准缺失')
+  })
+
 })

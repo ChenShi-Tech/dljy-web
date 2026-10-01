@@ -177,7 +177,7 @@ describe('结算复核图表、口径与并发隔离', () => {
     await vi.waitFor(() => expect(wrapper.find('[data-test="realized-metrics"]').exists()).toBe(true))
     await panel(wrapper,'quality')
     expect(wrapper.get('[data-test="dq-fee"] b').text()).toBe('1')
-    expect(wrapper.get('[data-test="dq-fee"] .hedge-hint').attributes('aria-label')).toContain('无法拆分')
+    expect(wrapper.get('[data-test="dq-fee"] .hedge-hint').attributes('aria-label')).toContain('暂不确认中长期费用拆分')
   })
   it('公司切换清空并重新取数', async () => {
     const { wrapper } = mountHedgeTab(HedgeSettlementTab)
@@ -261,6 +261,24 @@ describe('结算复核图表、口径与并发隔离', () => {
     const chart=option(wrapper,'各场站已实现指标')!
     expect(chart.series[0].data).toEqual([34100])
     expect(chart.series[3].data).toEqual([null])
+  })
+
+  it('费用核对不符与字段缺失分开统计，可拆分显示分母', async () => {
+    fetchSettlementReview.mockResolvedValue(reviewPayload({rows:[
+      reviewRow(),
+      reviewRow({date:'2026-05-16',feeSplit:{status:'UNSPLIT',spotIncrementFee:4100,midlongFee:null,totalFee:34100,note:'总额不符'}}),
+      reviewRow({date:'2026-05-17',feeSplit:{status:'UNKNOWN',spotIncrementFee:null,midlongFee:null,totalFee:null,note:'总电费缺失'}}),
+    ]}))
+    const {wrapper}=mountHedgeTab(HedgeSettlementTab)
+    await vi.waitFor(()=>expect(wrapper.find('[data-test="realized-metrics"]').exists()).toBe(true))
+    await panel(wrapper,'quality')
+    expect(wrapper.get('[data-test="fee-summary"] b').text()).toBe('1 / 3')
+    expect(wrapper.get('[data-test="dq-fee"] b').text()).toBe('1')
+    expect(wrapper.get('[data-test="dq-fee-missing"] b').text()).toBe('1')
+    expect(wrapper.get('[data-test="dq-fee"] .hedge-hint').attributes('aria-label')).toContain('不等同于结算账单错误')
+    const chart=option(wrapper,'结算数据质量异常分布')!
+    expect(chart.yAxis.data).toContain('费用核对不符')
+    expect(chart.yAxis.data).toContain('费用字段缺失')
   })
 
 })

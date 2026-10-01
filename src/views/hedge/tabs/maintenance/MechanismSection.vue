@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import HedgeHint from '../HedgeHint.vue'
 // 维护 · 场站机制参数（openspec build-midlong-spot-hedging HC-03，design D4；ChenShi-Tech/dljy#3423）。
 //
 // 每个「场站 × 生效期」只追加版本：新建（待确认）→ 编辑 → 确认（用户填写生效起止，不写死日期）→ 结束（选择结束原因）。
@@ -281,20 +282,16 @@ async function submitEnd() {
 <template>
   <section class="maint-section" data-test="mechanism-section">
     <div class="section-head">
-      <h3>场站机制参数</h3>
-      <span class="badge">比例制 · 云发改价格〔2025〕720 号</span>
+      <h3>场站机制参数<HedgeHint text="已登记依据：云发改价格〔2025〕720 号。机制电量按当期比例计算。待确认的参数不参与计算，生效期需业务确认；比例增加时须填写说明。执行期结束或退出后机制电量为零。" data-test="mech-pending-explain" /></h3>
+      <span class="badge">比例制</span>
       <span class="spacer" />
       <button data-test="mechanism-refresh" :disabled="loading" @click="load">刷新</button>
       <button data-test="mech-new" :disabled="!writable" @click="openCreate">新建生效期</button>
     </div>
-    <p class="hint" data-test="mech-pending-explain">
-      机制电量 = 上网电量 × 当期比例，是独立的锁价层（锁定的是机制电价与同类型月度均价之差）。<b>待确认</b>的生效期不参与套保计算（对应场站该期的机制电量显示为未知），
-      确认时须填写生效起止；新一年的比例高于上一年度时须填写确认说明。执行期到期或自愿退出后，机制电量为真实零。
-    </p>
     <p v-if="loadError" class="status error">{{ loadError }}</p>
     <p v-if="stationsError" class="status error">{{ stationsError }}</p>
     <p class="status" data-test="mechanism-status">
-      {{ status ?? (rows.length ? `${rows.length} 个生效期已登记${pendingCount ? `，其中 ${pendingCount} 个待确认（不参与计算）` : ''}` : loading ? '加载中…' : '暂无机制参数登记（导入或新建后待业务确认）') }}
+      {{ status ?? (rows.length ? `${rows.length} 个生效期已登记${pendingCount ? `，其中 ${pendingCount} 个待确认` : ''}` : loading ? '加载中…' : '暂无机制参数登记') }}
     </p>
 
     <div class="table-wrap">

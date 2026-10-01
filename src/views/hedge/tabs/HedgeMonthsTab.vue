@@ -7,6 +7,7 @@
 // 草稿编辑不触发任何取数，页面不会同时展示两个窗口的数据（#3421 审查 R1-01）。
 // 生命周期：激活即加载；切公司/地区由 lifecycle 清空并重取；认知时点/粒度变化清空重取（HW-06）；
 // 月份查询与钻取各自用序号丢弃迟到响应。顶层 FORBIDDEN：锁价侧不可用（不是 0），发电照常显示。
+import PanelFetchLoading from '@/components/review/PanelFetchLoading.vue'
 import HedgeHint from './HedgeHint.vue'
 import { nextTick, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import CalloutBox from '@/components/common/CalloutBox.vue'
@@ -118,7 +119,7 @@ const monthPanel = ref('overview')
     <p v-if="rangeError" class="field-error" data-test="months-range-error">{{ rangeError }}</p>
 
     <p v-if="loadError" class="load-error" data-test="load-error">{{ loadError }}</p>
-    <p v-else-if="loading" data-test="loading">加载中…</p>
+    <PanelFetchLoading v-else-if="loading" text="正在读取月度数据" data-test="loading" />
 
     <template v-if="payload">
       <!-- 顶层 FORBIDDEN（HW-04）：锁价侧无权限不是 0，明确说无权限；发电侧照常显示。 -->
@@ -127,8 +128,8 @@ const monthPanel = ref('overview')
       </CalloutBox>
 
       <section v-if="payload.gaps.length" class="gaps" data-test="gaps">
-        <h4>数据缺口</h4>
-        <span>{{ payload.gaps.length }} 项待补充<HedgeHint :text="payload.gaps.map(gap => gap.message).join('；')" /></span>
+        <h4>数据待补充</h4>
+        <span class="gap-count">{{ payload.gaps.length }} 项待补充<HedgeHint :text="payload.gaps.map(gap => gap.message).join('；')" /></span>
       </section>
 
       <nav class="month-nav" aria-label="月度内容"><button :aria-pressed="monthPanel === 'overview'" @click="monthPanel = 'overview'">月度概览</button><button :aria-pressed="monthPanel === 'breakdown'" @click="monthPanel = 'breakdown'">持仓结构</button></nav>
@@ -155,6 +156,8 @@ const monthPanel = ref('overview')
 .range-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .range-bar input { margin-left: 4px; }
 .months { display: flex; flex-direction: column; gap: 14px; }
+.gaps { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; padding: 12px 16px; border: 1px solid var(--warning-tint-border, var(--line)); border-radius: var(--radius); background: var(--warning-tint, var(--panel)); color: var(--warning); }
+.gap-count { font-size: var(--font-sm); }
 .gaps h4 { margin: 0 0 4px; font-size: var(--font-md, 14px); }
 .gaps ul { margin: 0; padding-left: 18px; color: var(--warning, #e6a23c); font-size: var(--font-sm, 13px); }
 .hint { color: var(--muted, #909399); font-size: var(--font-xs, 12px); }
