@@ -78,7 +78,7 @@ const activeTabComponent = computed(() => TABS.find((item) => item.key === activ
 <style scoped>
 .hedge-workbench { display: grid; gap: 16px; min-width: 0; padding: 16px; color: var(--text); }
 .page-head { display: grid; gap: 16px; padding: 20px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); }
-.page-head h2 { margin: 0; font-size: 20px; line-height: 1.4; }
+.page-head h2 { margin: 0; font-size: var(--font-xl); line-height: 1.4; }
 .tabs { display: flex; flex-wrap: wrap; gap: 4px; width: fit-content; max-width: 100%; padding: 4px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel-sub); }
 .hedge-workbench :deep(button) { min-height: 36px; padding: 6px 14px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--panel); color: var(--text); font: inherit; font-size: var(--font-sm, 14px); cursor: pointer; }
 .hedge-workbench :deep(button:hover:not(:disabled)) { border-color: var(--primary); background: var(--surface-hover); }
