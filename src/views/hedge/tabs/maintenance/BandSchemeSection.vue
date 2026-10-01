@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import HedgeHint from '../HedgeHint.vue'
+
 // 维护 · 区间方案（openspec build-midlong-spot-hedging HB-01..04/HB-06，design D10；ChenShi-Tech/dljy#3423）。
 //
 // 预置方案只读且带出处（推断数值标「推断，仅供参考」）；自定义方案按 HB-03 预校验（与后端同一份 validateSchemeTiers），
@@ -257,7 +259,7 @@ async function submitActivate() {
       <span class="spacer" />
       <button data-test="band-refresh" :disabled="loading" @click="load">刷新</button>
     </div>
-    <p class="hint">判定欠保 / 过保的上下限。每个公司在本地区同一时刻只有一个生效方案；未配置时所有判级为「未评估：套保区间未配置」。</p>
+    <HedgeHint text="套保区间用于判定欠保与过保。同一公司地区同一时刻只采用一个生效方案。" />
     <p v-for="message in loadErrors" :key="message" class="status error">{{ message }}</p>
 
     <div class="current" data-test="band-current">
@@ -269,7 +271,7 @@ async function submitActivate() {
       </template>
       <template v-else-if="!loading">
         <b>未配置生效方案</b>
-        <span class="hint">（判级一律为「未评估：套保区间未配置」，不会默认采用任何预置方案）</span>
+        <HedgeHint text="请确认并启用方案，不会自动采用预置区间。" />
       </template>
       <p v-for="row in scheduledRows" :key="row.activationId ?? row.effectiveFrom ?? ''" class="hint" data-test="band-scheduled">
         已预约：「{{ row.name }}」v{{ row.versionNo }} 将于 {{ formatBeijingTime(row.effectiveFrom) }} 生效<template v-if="row.reason">（{{ row.reason }}）</template>
@@ -277,15 +279,15 @@ async function submitActivate() {
     </div>
     <p v-if="status" class="status" data-test="scheme-status">{{ status }}</p>
 
-    <h4>预置方案（只读）</h4>
-    <p v-if="presetNote" class="hint">{{ presetNote }}</p>
+    <h4>预置方案<HedgeHint text="预置区间只读，均为推断参考。采用时需确认，不自动生效。" /></h4>
+    <HedgeHint :text="presetNote" />
     <div class="preset-grid">
       <article v-for="preset in presets" :key="preset.key" class="preset-card" data-test="band-preset">
         <header>
           <b>{{ preset.label }}</b>
           <span class="badge">判级依据：{{ BAND_BASIS_LABELS[preset.basis] ?? preset.basis }}</span>
         </header>
-        <p class="hint">适用：{{ preset.scenario }}</p>
+        <p class="hint">{{ preset.scenario }}<HedgeHint :text="presetSources(preset).map(source => `${source.id}：${source.text}`).join('\n')" /></p>
         <table class="maint-table">
           <thead><tr><th>档位</th><th>下限</th><th>上限</th><th>效力与依据</th></tr></thead>
           <tbody>
@@ -295,15 +297,12 @@ async function submitActivate() {
               <td>{{ formatPercent(preset.tiers[tier]?.upper) }}</td>
               <td>
                 <span class="badge warn" data-test="band-preset-origin">{{ originLabel(preset.tiers[tier]?.origin) }}</span>
-                {{ preset.tiers[tier]?.note }}
-                <span v-for="id in preset.tiers[tier]?.sources ?? []" :key="id" class="source-ref">[{{ id }}]</span>
+                <HedgeHint :text="preset.tiers[tier]?.note?.replace(/（[^）]*）/g, '')" />
+                <HedgeHint v-for="id in preset.tiers[tier]?.sources ?? []" :key="id" :label="id" :text="presetSources(preset).find(source => source.id === id)?.text" />
               </td>
             </tr>
           </tbody>
         </table>
-        <ul class="sources" data-test="band-preset-sources">
-          <li v-for="source in presetSources(preset)" :key="source.id">[{{ source.id }}] {{ source.text }}</li>
-        </ul>
         <div class="form-actions">
           <button data-test="preset-customize" :disabled="!writable" @click="openCustom(preset)">以此为起点自定义</button>
           <button
@@ -475,4 +474,11 @@ async function submitActivate() {
 .preset-card header { display: flex; gap: 8px; align-items: center; }
 .source-ref { color: var(--muted); font-size: var(--font-xs); margin-left: 2px; }
 .sources { margin: 0; padding-left: 16px; color: var(--muted); font-size: var(--font-xs); }
+</style>
+
+<style scoped>
+.preset-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.preset-card { min-width: 0; font-size: var(--font-sm); }
+.preset-card .maint-table { width: 100%; }
+@media (max-width: 800px) { .preset-grid { grid-template-columns: 1fr; } }
 </style>

@@ -18,6 +18,9 @@ import {
 import type {
   HedgeSimulationInterval, HedgeSimulationResult, SimulateFailure, SimulationShapeKind, SimulateWindowPreset,
 } from '@/services/hedge/hedgeSimulateModel'
+import HedgeHint from './HedgeHint.vue'
+import HedgeChart from './HedgeChart.vue'
+import type { EChartsOption } from 'echarts'
 import SchemeComparePanel from './simulate/SchemeComparePanel.vue'
 import { injectHedgeWorkbench, useHedgeTabLifecycle } from '../useHedgeWorkbench'
 
@@ -218,17 +221,23 @@ const pairedIntervals = computed<Array<{ before: HedgeSimulationInterval; after:
   const byStart = new Map(result.value.intervals.map((row) => [row.start, row]))
   return result.value.before.intervals.map((before) => ({ before, after: byStart.get(before.start) ?? before }))
 })
+const resultPanel = ref('exposure')
+const simulationChart = computed<EChartsOption>(() => ({
+  tooltip: { trigger: 'axis', renderMode: 'richText' }, legend: { top: 0 }, grid: { left: 55, right: 20, top: 45, bottom: 45 },
+  xAxis: { type: 'category', data: result.value?.intervals.map(row => row.start.replace('T', ' ').slice(5,16)) ?? [] }, yAxis: { type: 'value', name: 'MWh' },
+  series: [{ name: '含机制敞口', type: 'line', step: 'end', connectNulls: false, data: result.value?.intervals.map(row => row.exposure?.withMechanism == null ? null : Number(row.exposure.withMechanism)) ?? [] }, { name: '中长期敞口', type: 'line', step: 'end', connectNulls: false, data: result.value?.intervals.map(row => row.exposure?.midlongOnly == null ? null : Number(row.exposure.midlongOnly)) ?? [] }],
+}))
 </script>
 
 <template>
   <section data-test="simulate-view" class="body">
-    <h3>补仓试算 <span class="badge">试算 · 不落库，刷新即消失</span></h3>
+    <h3>补仓试算 <span class="badge">试算</span><HedgeHint text="结果不保存，不影响正式持仓，刷新后消失。" /></h3>
 
     <div class="form">
       <label>交割窗口
         <select v-model="windowPreset" data-test="simulate-window">
           <option value="TODAY2">今明两日</option>
-          <option value="MONTH">当月（T 所在整月）</option>
+          <option value="MONTH">当月</option>
           <option value="CUSTOM">自定义</option>
         </select>
       </label>
@@ -240,22 +249,22 @@ const pairedIntervals = computed<Array<{ before: HedgeSimulationInterval; after:
           <input v-model="customTo" type="date" data-test="simulate-to">
         </label>
       </template>
-      <label>试算电量（MWh，正为补仓、负为减仓）
+      <label>试算电量<HedgeHint text="单位兆瓦时。正值补仓，负值减仓。" />
         <input v-model="quantityText" data-test="simulate-qty" placeholder="如 2000 或 -500">
       </label>
 
       <fieldset class="shape">
-        <legend>形状（权重由服务端计算，形状仅是{{ SIMULATION_ASSUMPTION_LABEL }}）</legend>
+        <legend>形状<HedgeHint text="权重按选择的曲线计算，形状仅为试算假设。" /></legend>
         <label v-for="kind in SIMULATION_SHAPE_KINDS" :key="kind" :class="{ picked: shapeKind === kind }">
           <input v-model="shapeKind" type="radio" :value="kind" :data-test="`shape-${kind}`">
           {{ SIMULATION_SHAPE_KIND_LABELS[kind] }}
         </label>
 
         <div v-if="shapeKind === 'RECENT_ACTUAL_PROFILE'" class="shape-extra" data-test="shape-profile-extra">
-          <label>回看天数（1—60，缺省 14）
+          <label>回看天数
             <input v-model="daysText" data-test="shape-days" inputmode="numeric" placeholder="14">
           </label>
-          <label>场站（缺省 = 范围内全部场站之和）
+          <label>场站
             <select v-model="stationIdText" data-test="shape-station" :disabled="!stations">
               <option value="">全部场站</option>
               <option v-for="station in stations ?? []" :key="station.id" :value="String(station.id)">{{ station.name }}</option>
@@ -267,7 +276,7 @@ const pairedIntervals = computed<Array<{ before: HedgeSimulationInterval; after:
         </div>
 
         <div v-else-if="shapeKind === 'CONTRACT_CURVE'" class="shape-extra" data-test="shape-contract-extra">
-          <label>合同（当前交割窗口涉及的合同）
+          <label>合同
             <select v-model="contractIdText" data-test="shape-contract" :disabled="!contracts">
               <option value="">请选择合同</option>
               <option v-for="row in contracts?.rows ?? []" :key="row.contractId" :value="String(row.contractId)">{{ row.label }}</option>
@@ -290,35 +299,35 @@ const pairedIntervals = computed<Array<{ before: HedgeSimulationInterval; after:
       {{ simulateError.text }}
     </p>
 
-    <section v-if="result" class="result" data-test="simulate-result">
+    <section v-if="result" v-show="resultPanel === 'exposure'" class="result" data-test="simulate-result">
       <p class="result-badges">
         <span class="badge strong">试算</span><span class="badge strong">{{ SIMULATION_ASSUMPTION_LABEL }}</span>
-        窗口 {{ result.fromDate ?? '未知' }} ~ {{ result.toDate ?? '未知' }}（粒度 {{ result.granularity ?? '未知' }}）：不落库、不影响正式持仓与其它用户；敞口列为试算后数值。
+        窗口 {{ result.fromDate ?? '未知' }} ~ {{ result.toDate ?? '未知' }}<HedgeHint text="试算不影响正式持仓；曲线为试算后敞口。" />
       </p>
 
       <div class="ratios" data-test="simulate-ratios">
         <div class="ratio-card">
-          <h4>正式口径（试算前）</h4>
-          <p>含机制：{{ result.before.ratio?.withMechanism.value ?? '不可计算' }}（{{ result.before.ratio?.withMechanism.status ?? '—' }}）</p>
-          <p>仅中长期：{{ result.before.ratio?.midlongOnly.value ?? '不可计算' }}（{{ result.before.ratio?.midlongOnly.status ?? '—' }}）</p>
+          <h4>试算前</h4>
+          <p>含机制：{{ result.before.ratio?.withMechanism.value ?? '不可计算' }}</p>
+          <p>仅中长期：{{ result.before.ratio?.midlongOnly.value ?? '不可计算' }}</p>
           <p v-if="result.before.ratio">覆盖时段：{{ result.before.ratio.coverage.coveredCount ?? '—' }} / {{ result.before.ratio.coverage.totalCount ?? '—' }}</p>
         </div>
         <div class="ratio-card">
           <h4>试算后 <span class="badge strong">{{ SIMULATION_ASSUMPTION_LABEL }}</span></h4>
-          <p>含机制：{{ result.ratio?.withMechanism.value ?? '不可计算' }}（{{ result.ratio?.withMechanism.status ?? '—' }}）</p>
-          <p>仅中长期：{{ result.ratio?.midlongOnly.value ?? '不可计算' }}（{{ result.ratio?.midlongOnly.status ?? '—' }}）</p>
+          <p>含机制：{{ result.ratio?.withMechanism.value ?? '不可计算' }}</p>
+          <p>仅中长期：{{ result.ratio?.midlongOnly.value ?? '不可计算' }}</p>
           <p v-if="result.ratio">覆盖时段：{{ result.ratio.coverage.coveredCount ?? '—' }} / {{ result.ratio.coverage.totalCount ?? '—' }}</p>
         </div>
       </div>
 
-      <section class="intervals" data-test="simulate-intervals">
-        <h4>逐时段对照（锁价：正式 → 试算；未知时段如实为「未知」，不用 0 冒充）</h4>
+      <details class="intervals result-detail" data-test="simulate-intervals"><summary>逐时段对照</summary>
+        <HedgeHint text="锁价电量对照正式与试算结果，缺失时段保持未知。" />
         <table>
           <thead>
             <tr>
               <th>时段</th><th>发电</th><th>机制</th>
-              <th>中长期锁价（正式）</th><th>中长期锁价（试算）</th>
-              <th>敞口（含机制，试算后）</th><th>敞口（仅中长期，试算后）</th>
+              <th>正式锁价</th><th>试算锁价</th>
+              <th>含机制敞口</th><th>中长期敞口</th>
             </tr>
           </thead>
           <tbody>
@@ -333,17 +342,17 @@ const pairedIntervals = computed<Array<{ before: HedgeSimulationInterval; after:
             </tr>
           </tbody>
         </table>
-      </section>
+      </details>
 
       <section class="shapes" data-test="simulate-shapes">
-        <h4>形状明细（{{ SIMULATION_ASSUMPTION_LABEL }}）</h4>
+        <h4>形状明细<HedgeHint :text="SIMULATION_ASSUMPTION_LABEL" /></h4>
         <div v-for="shape in result.shapes" :key="shape.index" class="shape-row" :data-test="`shape-info-${shape.index}`">
           <p>
             形状 {{ shape.index + 1 }}：{{ shape.label || SIMULATION_SHAPE_KIND_LABELS[shape.kind] || shape.kind }}
             <span class="badge">{{ shape.assumption || SIMULATION_ASSUMPTION_LABEL }}</span>
             · 分摊 {{ shape.weightedIntervalCount }} 个时段
             <template v-if="shape.skippedIntervalCount">
-              · <span class="warn">未分摊 {{ shape.skippedIntervalCount }} 个时段</span>（缺权重的时段不分摊，其余重归一化；{{ startsLabel(shape.skippedStarts) }}）
+              · <span class="warn">未分摊 {{ shape.skippedIntervalCount }} 个时段</span><HedgeHint :text="`缺权重的时段不分摊：${startsLabel(shape.skippedStarts)}`" />
             </template>
           </p>
           <p v-if="shape.note" class="hint">{{ shape.note }}</p>
@@ -352,7 +361,10 @@ const pairedIntervals = computed<Array<{ before: HedgeSimulationInterval; after:
       </section>
     </section>
 
-    <SchemeComparePanel :result="result" :metric="windowMetric" />
+    <nav class="subtabs" aria-label="试算结果"><button :aria-pressed="resultPanel === 'exposure'" @click="resultPanel = 'exposure'">敞口变化</button><button :aria-pressed="resultPanel === 'compare'" @click="resultPanel = 'compare'">方案对比</button></nav>
+    <HedgeChart v-if="result && resultPanel === 'exposure'" :option="simulationChart" label="试算后逐时段敞口" />
+    <p v-if="!result && resultPanel === 'exposure'" class="empty">填写电量后进行试算<HedgeHint text="无数据时保留缺失，不生成模拟曲线。可使用有数据的自定义日期。" /></p>
+    <SchemeComparePanel v-show="resultPanel === 'compare'" :result="result" :metric="windowMetric" />
   </section>
 </template>
 
@@ -384,4 +396,13 @@ td.changed { font-weight: 600; color: #b45309; }
 .shapes { margin-top: 12px; }
 .shape-row p { margin: 4px 0; font-size: var(--font-sm, 13px); }
 .warn { color: #b45309; font-weight: 600; }
+</style>
+
+<style scoped>
+.form { display: flex; flex-wrap: wrap; align-items: end; gap: 16px; padding: 16px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); }
+.form label { display: grid; gap: 6px; }
+.form fieldset { min-width: 260px; flex: 1; border: 1px solid var(--line); border-radius: var(--radius-sm); }
+.subtabs { display: flex; gap: 8px; }
+.subtabs button[aria-pressed="true"] { background: var(--primary-tint); color: var(--primary); }
+.result-detail { max-height: 420px; overflow: auto; }
 </style>

@@ -9,18 +9,19 @@
 // - 台账对照：后端以结算期末为认知时点读台账，差额叫「未解释差异」、不归因（HR-04）；费用只称「现货增量电费」（HR-05）。
 // 切公司/地区由 useHedgeTabLifecycle 统一清空并（激活中则）重取；每个 await 之后先过 scopedRequest 判定再写状态（HW-06）。
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import HedgeChart from './HedgeChart.vue'
+import HedgeHint from './HedgeHint.vue'
+import type { EChartsOption } from 'echarts'
 import MetricTile from '@/components/common/MetricTile.vue'
 import { HedgeApiError } from '@/services/hedge/hedgeApi'
 import { fetchSettlementCoverage, fetchSettlementReview } from '@/services/hedge/hedgeSettlementApi'
 import type { SettlementCoverage, SettlementReview, SettlementReviewRow, SettlementView } from '@/services/hedge/hedgeSettlementApi'
 import { injectHedgeWorkbench, today2Range, useHedgeTabLifecycle } from '../useHedgeWorkbench'
 import {
-  CELL_LABEL,
   buildCoverageMatrix,
   coverageWindow,
   datesBetween,
   datesByPlant,
-  dayLabel,
   defaultMonth,
   formatAmount,
   formatRatio,
@@ -213,13 +214,6 @@ const viewCoverage = computed(() => {
   }
 })
 
-function plantCoveredDays(plant: string): string {
-  const m = matrix.value
-  const row = m?.rows.find((item) => item.plant === plant)
-  if (!m || !row) return '—'
-  return `${isProvisional.value ? row.provisionalRecords : row.formal}/${m.dates.length}`
-}
-
 const viewPill = computed(() => (isProvisional.value ? { text: '暂结', tone: 'info' as const } : null))
 
 const ratioValue = computed(() => (realized.value.usedRows ? formatRatio(realized.value.realizedRatio) : '—'))
@@ -246,43 +240,54 @@ const ledgerEmptyText = computed(() => {
   return '所选月份无已入库结算行，不做对照'
 })
 
-const missingByPlant = computed(() => (matrix.value ? datesByPlant(matrix.value, 'MISSING') : []))
-const provisionalOnlyByPlant = computed(() => (matrix.value ? datesByPlant(matrix.value, 'PROVISIONAL') : []))
-const unbalancedRows = computed(() => rows.value.filter((row) => row.balanced === false))
-const incompleteRows = computed(() => rows.value.filter((row) => row.balanced !== true && row.balanced !== false))
-const unsplitFeeRows = computed(() => rows.value.filter((row) => row.feeSplit?.status === 'UNSPLIT'))
-const unknownFeeRows = computed(() => rows.value.filter((row) => row.feeSplit?.status === 'UNKNOWN'))
+const unbalancedRows = computed(() => rows.value.filter(row => row.balanced === false))
+const incompleteRows = computed(() => rows.value.filter(row => row.balanced !== true && row.balanced !== false))
+const unsplitFeeRows = computed(() => rows.value.filter(row => row.feeSplit?.status === 'UNSPLIT'))
+const unknownFeeRows = computed(() => rows.value.filter(row => row.feeSplit?.status === 'UNKNOWN'))
 const excludedUnverified = computed(() => reviewData.value?.dataQuality?.excludedUnverified ?? 0)
-
-function balanceText(row: SettlementReviewRow): string {
-  if (row.balanced === true) return '平'
-  if (row.balanced === false) return `不平（差 ${formatAmount(row.residual)}）`
-  return '未核对'
-}
-
-function rowRatioText(row: SettlementReviewRow): string {
-  if (row.balanced !== true) return '—'
-  return formatRatio(row.realizedRatio)
-}
-
-function rowGrossText(row: SettlementReviewRow): string {
-  if (!row.spotExposure) return '—'
-  return formatAmount(row.spotExposure.dayAheadAbsMwh + row.spotExposure.realTimeAbsMwh)
-}
-
-function midlongFeeText(row: SettlementReviewRow): string {
-  if (row.feeSplit?.status === 'SPLIT') return formatAmount(row.feeSplit.midlongFee)
-  if (row.feeSplit?.status === 'UNSPLIT') return '不可拆分'
-  return '—'
-}
-
-const shortDate = (date: string) => date.slice(5)
+const panel = ref('realized')
+const metric = ref('energy')
+const chartBase = { tooltip: { trigger: 'axis' as const, renderMode: 'richText' as const }, legend: { top: 0 }, grid: { left: 130, right: 28, top: 40, bottom: 55 }, dataZoom: [{ type: 'slider' as const, yAxisIndex: 0, right: 0, start: 0, end: 40 }], xAxis: { type: 'value' as const }, yAxis: { type: 'category' as const } }
+const coverageOption = computed<EChartsOption>(() => {
+  const m = matrix.value
+  return {
+    tooltip: { renderMode: 'richText', formatter: (p: unknown) => { const v = (p as { value: number[] }).value; return `${m?.rows[v[1]]?.plant}\n${m?.dates[v[0]]}\n${['未覆盖','暂结','正式'][v[2]]}` } },
+    grid: { left: 140, right: 35, top: 15, bottom: 70 },
+    xAxis: { type: 'category', data: m?.dates.map(date => date.slice(8)), splitArea: { show: true } },
+    yAxis: { type: 'category', data: m?.plants, axisLabel: { width: 125, overflow: 'truncate' } },
+    dataZoom: [{ type: 'slider', yAxisIndex: 0, right: 0, start: 0, end: 40 }],
+    visualMap: { type: 'piecewise', orient: 'horizontal', bottom: 0, left: 'center', pieces: [{ value: 0, label: '未覆盖', color: '#e2e8f0' }, { value: 1, label: '暂结', color: '#e9a23b' }, { value: 2, label: '正式', color: '#0f9d8a' }] },
+    series: [{ type: 'heatmap', data: m?.rows.flatMap((row, y) => row.cells.map((state, x) => [x,y,state === 'FORMAL' ? 2 : state === 'PROVISIONAL' ? 1 : 0])) ?? [] }],
+  }
+})
+const realizedOption = computed<EChartsOption>(() => metric.value === 'fees' ? ({
+  ...chartBase, yAxis: { type: 'category', data: rows.value.map(row => `${row.date.slice(5)} ${row.plant}`), axisLabel: { width: 115, overflow: 'truncate' } }, xAxis: { type: 'value', name: '元' },
+  series: [{name:'总电费', type:'bar', data:rows.value.map(row => row.totalFee)}, {name:'日前增量电费', type:'bar', data:rows.value.map(row => row.dayAheadFee)}, {name:'实时增量电费', type:'bar', data:rows.value.map(row => row.realTimeFee)}, {name:'中长期电费', type:'bar', data:rows.value.map(row => row.feeSplit?.status === 'SPLIT' ? row.feeSplit.midlongFee : null)}],
+}) : ({
+  ...chartBase, yAxis: { type: 'category', data: byPlant.value.map(row => row.plant), axisLabel: { width: 115, overflow: 'truncate' } },
+  xAxis: { type: 'value', name: metric.value === 'ratio' ? '%' : 'MWh' },
+  series: metric.value === 'ratio' ? [{ name: '已实现套保率', type: 'bar', data: byPlant.value.map(row => row.usedRows && row.realizedRatio !== null ? row.realizedRatio * 100 : null) }] :
+    (metric.value === 'energy' ? [{ name: '中长期', key: 'ltmMwh' as const }, { name: '实际上网', key: 'actualMwh' as const }] : [{ name: '现货总敞口', key: 'spotGrossMwh' as const }, { name: '净敞口', key: 'spotNetMwh' as const }]).map(item => ({ name: item.name, type: 'bar' as const, data: byPlant.value.map(row => row.usedRows ? row[item.key] : null) })),
+}))
+const ledgerOption = computed<EChartsOption>(() => {
+  const entries = [...(ledger.value?.stations ?? []).map(row => ({ name: row.plantName, locked: row.ledgerMwh, settled: row.settlementMwh, diff: row.unexplainedDiff })), ...(ledger.value?.unmapped ?? []).map(row => ({ name: row.plantName, locked: null, settled: row.settlementMwh, diff: null }))]
+  return { ...chartBase, yAxis: { type: 'category', data: entries.map(row => row.name), axisLabel: { width: 115, overflow: 'truncate' } }, xAxis: { type: 'value', name: 'MWh' }, series: [{ name: '台账锁价', type: 'bar', data: entries.map(row => row.locked) }, { name: '结算中长期', type: 'bar', data: entries.map(row => row.settled) }, { name: '未解释差异', type: 'bar', data: entries.map(row => row.diff) }] }
+})
+const qualityItems = computed(() => [
+  { label: '未覆盖', value: matrix.value?.totals.missing ?? 0, test: 'dq-missing', hint: '没有结算记录的场站日，不作为零电量计入合计。\n' + (matrix.value ? datesByPlant(matrix.value, 'MISSING').map(item => `${item.plant}：${item.dates}`).join('\n') : '') },
+  { label: '仅暂结', value: matrix.value?.totals.provisionalOnly ?? 0, test: 'dq-provisional', hint: '只有暂结记录，正式视角不计入；可切换暂结查看。\n' + (matrix.value ? datesByPlant(matrix.value, 'PROVISIONAL').map(item => `${item.plant}：${item.dates}`).join('\n') : '') },
+  { label: '电量不平', value: unbalancedRows.value.length, test: 'dq-unbalanced', hint: '电量合计核对不符，不计入套保率。\n' + unbalancedRows.value.map(row => `${row.date} ${row.plant}：差额 ${formatAmount(row.residual)} 兆瓦时`).join('\n') },
+  { label: '分段缺失', value: incompleteRows.value.length, test: 'dq-incomplete', hint: '分段电量缺失，无法核对，不计入套保率。\n' + incompleteRows.value.map(row => `${row.date} ${row.plant}`).join('\n') },
+  { label: '费用未拆分', value: unsplitFeeRows.value.length + unknownFeeRows.value.length, test: 'dq-fee', hint: '费用分段缺失或合计不符，保留总费用，无法拆分中长期电费。\n' + [...unsplitFeeRows.value, ...unknownFeeRows.value].map(row => `${row.date} ${row.plant}`).join('\n') },
+  { label: '来源未核实', value: excludedUnverified.value, test: 'dq-unverified', hint: '模拟或未经核实的来源已剔除，不用于业务指标。' },
+])
+const qualityOption = computed<EChartsOption>(() => ({ ...chartBase, dataZoom: [], yAxis: { type: 'category', data: qualityItems.value.map(item => item.label) }, xAxis: { type: 'value', minInterval: 1, name: '场站日 / 行' }, series: [{ type: 'bar', data: qualityItems.value.map(item => item.value), itemStyle: { color: '#e9a23b' } }] }))
 </script>
 
 <template>
   <section data-test="settlement-view" class="settlement">
     <header class="bar">
-      <h3>结算复核 <small>已实现指标 · 只展示数值</small></h3>
+      <h3>结算复核<HedgeHint text="事后复核，不用于今明套保判级。" /></h3>
       <label v-if="coverage" class="month">月份
         <select data-test="settlement-month" :value="selectedMonth ?? ''" @change="onMonthChange">
           <option v-for="summary in monthSummaries" :key="summary.month" :value="summary.month">{{ monthOptionLabel(summary) }}</option>
@@ -302,211 +307,44 @@ const shortDate = (date: string) => date.slice(5)
     <p v-else-if="coverageLoading && !coverage" data-test="settlement-loading">加载中…</p>
 
     <template v-if="coverage && matrix">
-      <section class="block" data-test="coverage-calendar">
-        <h4>覆盖日历 · {{ selectedMonth }}</h4>
-        <p class="legend">
-          <span class="cell-chip FORMAL">正式</span>有正式日结
-          <span class="cell-chip PROVISIONAL">暂结</span>正式缺失、只有暂结（正式视角不计入）
-          <span class="cell-chip MISSING">未覆盖</span>无结算记录，不按 0 计
-        </p>
-        <p v-if="noPlantsInWindow" class="muted" data-test="no-plants">近 {{ coverage.months.length }} 个月暂无已入库结算记录（新月份入库后自动出现）</p>
-        <div class="grid-wrap">
-          <table class="calendar">
-            <thead>
-              <tr>
-                <th class="plant">场站</th>
-                <th v-for="date in matrix.dates" :key="date">{{ date.slice(8) }}</th>
-                <th class="sum">{{ isProvisional ? '暂结覆盖' : '正式覆盖' }}</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr class="day-row" data-test="calendar-day-row">
-                <th class="plant">全场站</th>
-                <td v-for="day in matrix.days" :key="day.date" :class="['cell', day.state]" :data-date="day.date" :data-state="day.state">{{ dayLabel(day) }}</td>
-                <td class="sum">正式全覆盖 {{ matrix.totals.fullFormalDays }}/{{ matrix.dates.length }} 天</td>
-              </tr>
-              <tr v-for="row in matrix.rows" :key="row.plant" data-test="calendar-plant-row" :data-plant="row.plant">
-                <th class="plant">{{ row.plant }}</th>
-                <td
-                  v-for="(state, i) in row.cells"
-                  :key="matrix.dates[i]"
-                  :class="['cell', state]"
-                  data-test="calendar-cell"
-                  :data-date="matrix.dates[i]"
-                  :data-state="state"
-                >{{ CELL_LABEL[state] }}</td>
-                <td class="sum">{{ plantCoveredDays(row.plant) }} 天</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
+      <nav class="subtabs" aria-label="复核内容">
+        <button v-for="item in [{key:'realized',label:'已实现指标'},{key:'coverage',label:'覆盖日历'},{key:'ledger',label:'台账对照'},{key:'quality',label:'数据质量'}]" :key="item.key" :data-test="`settlement-panel-${item.key}`" :aria-pressed="panel === item.key" @click="panel = item.key">{{ item.label }}</button>
+      </nav>
+      <p v-if="reviewError" class="load-error" data-test="review-error">{{ reviewError }} <button @click="loadReview">重试</button></p>
+      <p v-else-if="reviewLoading" data-test="review-loading">加载中…</p>
+      <section v-if="panel === 'coverage'" class="block" data-test="coverage-calendar">
+        <h4>覆盖日历 · {{ selectedMonth }}<HedgeHint text="横轴为日期，纵轴为场站。绿色正式、橙色暂结、灰色未覆盖。可拖动右侧缩放条查看更多场站。" /></h4>
+        <p v-if="noPlantsInWindow" data-test="no-plants">暂无结算记录</p>
+        <HedgeChart v-else :option="coverageOption" label="场站日期覆盖热力图" />
       </section>
-
-      <p v-if="reviewError" class="load-error" data-test="review-error">
-        {{ reviewError }} <button type="button" @click="loadReview">重试</button>
-      </p>
-      <p v-else-if="reviewLoading && !reviewData" data-test="review-loading">加载中…</p>
-
       <template v-if="reviewData">
-        <p v-if="reviewStatusNote" class="status-note" data-test="review-status">{{ reviewStatusNote }}</p>
-
-        <section v-if="rows.length" class="block" data-test="realized-metrics">
-          <h4>已实现指标<span v-if="isProvisional" class="view-badge">暂结</span></h4>
+        <p v-if="reviewStatusNote" class="status-note" data-test="review-status">暂无结算数据<HedgeHint :text="reviewStatusNote" /></p>
+        <section v-if="panel === 'realized' && rows.length" class="block" data-test="realized-metrics">
           <div class="tiles">
-            <MetricTile
-              label="场站日覆盖"
-              :value="viewCoverage?.value ?? '—'"
-              :sub="viewCoverage?.sub ?? ''"
-              :pill="viewPill"
-              info="按已入库结算的场站 × 日计数；未覆盖的场站日不按 0 计入任何合计"
-            />
-            <MetricTile
-              label="已实现套保率"
-              :value="ratioValue"
-              :sub="`计入 ${realized.usedRows} 个场站日 · 不平 ${realized.unbalancedRows} · 分段缺失 ${realized.incompleteRows}`"
-              :pill="viewPill"
-              info="Σ中长期结算电量 ÷ Σ实际上网电量，只用恒等核对通过的场站日；不平、分段缺失的行与未覆盖的场站日不计入；分母为 0 时不可计算。事后指标，不按套保区间判级"
-            />
-            <MetricTile label="中长期结算电量" :value="formatAmount(realized.ltmMwh)" unit="MWh" :pill="viewPill" info="计入场站日的中长期结算电量之和" />
-            <MetricTile label="实际上网电量" :value="formatAmount(realized.actualMwh)" unit="MWh" :pill="viewPill" info="计入场站日的实际上网电量之和" />
-            <MetricTile label="现货总敞口" :value="formatAmount(realized.spotGrossMwh)" unit="MWh" :pill="viewPill" info="Σ(|日前增量| + |实时增量|)，计入场站日" />
-            <MetricTile label="净敞口" :value="formatAmount(realized.spotNetMwh)" unit="MWh" :pill="viewPill" info="Σ(日前增量 + 实时增量)，计入场站日" />
-            <MetricTile label="机制差价结算" :value="mechanismFeeText" compact :info="reviewData.mechanismFee?.note ?? '机制差价科目预留'" />
+            <MetricTile label="场站日覆盖" :value="viewCoverage?.value ?? '—'" :pill="viewPill" info="未覆盖的场站日不按零计入合计" />
+            <MetricTile label="已实现套保率" :value="ratioValue" :pill="viewPill" info="中长期结算电量除以上网电量，只用核对通过的场站日" />
+            <MetricTile label="中长期" :value="formatAmount(realized.ltmMwh)" unit="MWh" :pill="viewPill" />
+            <MetricTile label="实际上网" :value="formatAmount(realized.actualMwh)" unit="MWh" :pill="viewPill" />
+            <MetricTile label="现货总敞口" :value="formatAmount(realized.spotGrossMwh)" unit="MWh" :pill="viewPill" />
+            <MetricTile label="净敞口" :value="formatAmount(realized.spotNetMwh)" unit="MWh" :pill="viewPill" />
+            <MetricTile label="机制差价结算" :value="mechanismFeeText" compact :info="reviewData.mechanismFee?.note" />
           </div>
-
-          <table class="data-table" data-test="plant-summary">
-            <thead>
-              <tr>
-                <th>场站</th><th>{{ isProvisional ? '暂结覆盖' : '正式覆盖' }}（天）</th><th>计入场站日</th><th>中长期（MWh）</th><th>实际上网（MWh）</th>
-                <th>已实现套保率</th><th>现货总敞口（MWh）</th><th>净敞口（MWh）</th><th>不平</th><th>分段缺失</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="item in byPlant" :key="item.plant" :data-plant="item.plant">
-                <td>{{ item.plant }}</td>
-                <td>{{ plantCoveredDays(item.plant) }}</td>
-                <td>{{ item.usedRows }}</td>
-                <td>{{ formatAmount(item.ltmMwh) }}</td>
-                <td>{{ formatAmount(item.actualMwh) }}</td>
-                <td>{{ item.usedRows ? formatRatio(item.realizedRatio) : '—' }}</td>
-                <td>{{ formatAmount(item.spotGrossMwh) }}</td>
-                <td>{{ formatAmount(item.spotNetMwh) }}</td>
-                <td>{{ item.unbalancedRows }}</td>
-                <td>{{ item.incompleteRows }}</td>
-              </tr>
-            </tbody>
-          </table>
+          <nav class="subtabs" aria-label="指标图表"><button v-for="item in [{key:'energy',label:'电量'},{key:'ratio',label:'套保率'},{key:'exposure',label:'敞口'},{key:'fees',label:'电费'}]" :key="item.key" :aria-pressed="metric === item.key" @click="metric = item.key">{{ item.label }}</button></nav>
+          <HedgeChart :option="realizedOption" label="各场站已实现指标" data-test="plant-summary" />
         </section>
-
-        <section class="block" data-test="ledger">
-          <h4>台账对照 <small>台账锁价电量 vs 结算中长期电量</small></h4>
-          <template v-if="ledger">
-            <table class="data-table">
-              <thead>
-                <tr><th>场站</th><th>台账锁价电量（MWh）</th><th>结算中长期电量（MWh）</th><th>未解释差异（MWh）</th><th>说明</th></tr>
-              </thead>
-              <tbody>
-                <tr v-for="station in ledger.stations" :key="`s-${station.stationId}`" data-test="ledger-station" :data-plant="station.plantName">
-                  <td>{{ station.plantName }}</td>
-                  <td>{{ formatAmount(station.ledgerMwh) }}</td>
-                  <td>{{ formatAmount(station.settlementMwh) }}</td>
-                  <td>{{ formatAmount(station.unexplainedDiff) }}</td>
-                  <td>{{ station.ledgerMwh === 0 && station.settlementMwh !== 0 ? '台账可能缺少合同录入' : '' }}</td>
-                </tr>
-                <tr v-for="item in ledger.unmapped" :key="`u-${item.plantName}`" data-test="ledger-unmapped" :data-plant="item.plantName">
-                  <td>{{ item.plantName }}</td>
-                  <td>未映射</td>
-                  <td>{{ formatAmount(item.settlementMwh) }}</td>
-                  <td>—</td>
-                  <td>场站映射缺失，无法与台账对照</td>
-                </tr>
-                <tr v-if="!ledger.stations.length && !ledger.unmapped.length">
-                  <td colspan="5" class="muted">本月无可对照的场站</td>
-                </tr>
-              </tbody>
-            </table>
-            <ul v-if="ledger.unallocatedSubjectLevel?.length" class="plain" data-test="ledger-unallocated">
-              <li v-for="item in ledger.unallocatedSubjectLevel" :key="String(item.key)">
-                交易单元 {{ item.key }}：含未分配到场站的 {{ formatAmount(item.quantity) }} MWh，在交易单元一级对照
-              </li>
-            </ul>
-            <p class="muted" data-test="ledger-note">
-              {{ ledger.note }}<template v-if="ledger.readmodelAsOf">台账认知时点 {{ ledger.readmodelAsOf }}。</template>
-            </p>
-          </template>
-          <p v-else class="muted" data-test="ledger-empty">{{ ledgerEmptyText }}</p>
+        <section v-if="panel === 'ledger'" class="block" data-test="ledger">
+          <h4>台账对照<HedgeHint :text="ledger ? `${ledger.note} 读取时点：${ledger.readmodelAsOf ?? '未记录'}` : ledgerEmptyText" /></h4>
+          <HedgeChart v-if="ledger" :option="ledgerOption" label="台账与结算电量对照" />
+          <p v-else data-test="ledger-empty">暂无可对照数据</p>
+          <p v-if="ledger?.unmapped.length" class="muted">{{ ledger.unmapped.length }} 个场站未映射<HedgeHint :text="ledger.unmapped.map(item => item.plantName).join('、')" /></p>
+          <p v-if="ledger?.unallocatedSubjectLevel?.length" data-test="ledger-unallocated">有交易单元电量未分配到场站<HedgeHint :text="ledger.unallocatedSubjectLevel.map(item => `${item.key}：${formatAmount(item.quantity)} 兆瓦时`).join('；')" /></p>
         </section>
-
-        <section class="block" data-test="data-quality">
-          <h4>数据质量</h4>
-          <ul class="plain">
-            <li data-test="dq-missing">
-              未覆盖 {{ matrix.totals.missing }} 个场站日（不按 0 计）
-              <ul v-if="missingByPlant.length" class="sub">
-                <li v-for="item in missingByPlant" :key="item.plant">{{ item.plant }}：{{ item.dates }}</li>
-              </ul>
-            </li>
-            <li data-test="dq-provisional">
-              只有暂结 {{ matrix.totals.provisionalOnly }} 个场站日（正式缺失，正式视角不计入）
-              <ul v-if="provisionalOnlyByPlant.length" class="sub">
-                <li v-for="item in provisionalOnlyByPlant" :key="item.plant">{{ item.plant }}：{{ item.dates }}</li>
-              </ul>
-            </li>
-            <li data-test="dq-unbalanced">
-              恒等核对不平 {{ unbalancedRows.length }} 行（中长期 + 日前增量 + 实时增量 ≠ 实际上网，超 0.01 MWh；不计入套保率）
-              <ul v-if="unbalancedRows.length" class="sub">
-                <li v-for="(row, i) in unbalancedRows" :key="i">{{ shortDate(row.date) }} {{ row.plant }}：差额 {{ formatAmount(row.residual) }} MWh</li>
-              </ul>
-            </li>
-            <li data-test="dq-incomplete">
-              分段电量缺失 {{ incompleteRows.length }} 行（未做恒等核对，不计入套保率）
-              <ul v-if="incompleteRows.length" class="sub">
-                <li v-for="(row, i) in incompleteRows" :key="i">{{ shortDate(row.date) }} {{ row.plant }}：{{ row.note ?? '分段电量缺失' }}</li>
-              </ul>
-            </li>
-            <li data-test="dq-fee">
-              中长期电费不可拆分 {{ unsplitFeeRows.length }} 行（总电费与分段不符）；费用分段缺失未拆 {{ unknownFeeRows.length }} 行
-              <ul v-if="unsplitFeeRows.length" class="sub">
-                <li v-for="(row, i) in unsplitFeeRows" :key="i">{{ shortDate(row.date) }} {{ row.plant }}</li>
-              </ul>
-            </li>
-            <li v-if="excludedUnverified" data-test="dq-unverified">剔除未核实/模拟来源 {{ excludedUnverified }} 行（不进业务口径）</li>
-            <li data-test="dq-mechanism">机制差价结算：{{ mechanismFeeText }}</li>
-          </ul>
+        <section v-if="panel === 'quality'" class="block" data-test="data-quality">
+          <h4>数据质量<HedgeHint text="检查结算记录的覆盖、分段完整性和电量核对结果。异常记录不进入套保率，费用异常只影响费用拆分。" /></h4>
+          <div class="tiles"><div v-for="item in qualityItems" :key="item.test" :data-test="item.test" class="quality-tile">{{ item.label }}<HedgeHint :text="item.hint" /><b>{{ item.value }}</b></div></div>
+          <HedgeChart :option="qualityOption" label="结算数据质量异常分布" />
+          <p data-test="dq-mechanism">机制差价：{{ mechanismFeeText }}<HedgeHint :text="reviewData.mechanismFee?.note" /></p>
         </section>
-
-        <details v-if="rows.length" class="block" data-test="detail-rows">
-          <summary>逐日明细（{{ rows.length }} 行 · 电量 MWh · 电费 元）</summary>
-          <div class="grid-wrap">
-            <table class="data-table">
-              <thead>
-                <tr>
-                  <th>日期</th><th>场站</th><th>中长期</th><th>日前增量</th><th>实时增量</th><th>实际上网</th><th>恒等核对</th>
-                  <th>已实现套保率</th><th>现货总敞口</th><th>净敞口</th><th>总电费</th>
-                  <th>现货增量电费·日前</th><th>现货增量电费·实时</th><th>中长期电费</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-for="(row, i) in rows" :key="i" :class="{ excluded: row.balanced !== true }" data-test="detail-row">
-                  <td>{{ shortDate(row.date) }}</td>
-                  <td>{{ row.plant }}</td>
-                  <td>{{ formatAmount(row.ltmEnergy) }}</td>
-                  <td>{{ formatAmount(row.dayAheadIncrementMwh) }}</td>
-                  <td>{{ formatAmount(row.realTimeIncrementMwh) }}</td>
-                  <td>{{ formatAmount(row.actualOnGridEnergy) }}</td>
-                  <td>{{ balanceText(row) }}</td>
-                  <td>{{ rowRatioText(row) }}</td>
-                  <td>{{ rowGrossText(row) }}</td>
-                  <td>{{ formatAmount(row.spotExposure?.netMwh) }}</td>
-                  <td>{{ formatAmount(row.totalFee) }}</td>
-                  <td>{{ formatAmount(row.dayAheadFee) }}</td>
-                  <td>{{ formatAmount(row.realTimeFee) }}</td>
-                  <td>{{ midlongFeeText(row) }}</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </details>
       </template>
     </template>
   </section>
@@ -546,4 +384,12 @@ const shortDate = (date: string) => date.slice(5)
 .muted { color: var(--muted); font-size: var(--font-sm); }
 .status-note { margin: 0; color: var(--muted); }
 .load-error { color: var(--danger); }
+</style>
+
+<style scoped>
+.block { padding: 16px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); min-width: 0; }
+.subtabs { display: flex; gap: 8px; flex-wrap: wrap; }
+.subtabs button[aria-pressed="true"] { background: var(--primary-tint); color: var(--primary); }
+.quality-tile { padding: 12px; border: 1px solid var(--line); border-radius: var(--radius-sm); font-size: var(--font-sm); }
+.quality-tile b { display: block; margin-top: 8px; font-size: var(--font-xl); }
 </style>

@@ -32,7 +32,7 @@ export interface TodayInterval {
   start: string
   end: string
   covered: boolean
-  generation: { value: string | null; source: string | null; sourceKey?: string | null; uncoveredReason?: string | null; unknownStationIds?: number[] }
+  generation: { value: string | null; source: string | null; sourceKey?: string | null; uncoveredReason?: string | null; unknownStationIds?: number[]; knownStationCount?: number }
   locked: { midlong: string | null; lockNote?: string | null; mechanism: { value: string | null; note?: string | null }; total: string | null }
   exposure: { withMechanism: string | null; midlongOnly: string | null }
 }
@@ -64,6 +64,8 @@ export interface TodayOverview extends Omit<HedgeOverview, 'intervals' | 'legs'>
 
 /** 当前结果对应的那次查询参数（与 overview 同生共死；不是输入框里尚未生效的值）。 */
 export interface TodayResultQuery {
+  stationId?: string
+  stationName?: string
   fromDate: string
   toDate: string
   granularity: string
@@ -95,6 +97,7 @@ function normalizeInterval(raw: unknown): TodayInterval {
       source: str(gen.source),
       sourceKey: str(gen.sourceKey),
       uncoveredReason: str(gen.uncoveredReason),
+      knownStationCount: typeof gen.knownStationCount === 'number' ? gen.knownStationCount : undefined,
       unknownStationIds: Array.isArray(gen.unknownStationIds) ? gen.unknownStationIds.map(Number) : [],
     },
     locked: {
@@ -334,7 +337,7 @@ export function buildTodayCsv(result: TodayResult): { filename: string; headers:
   const headers = [
     '认知时点', '视图', '窗口起', '窗口止', '粒度',
     '时段开始', '时段结束', '发电(MWh)', '发电来源', '未覆盖原因',
-    '中长期锁价(MWh)', '锁价说明', '机制电量(MWh)', '敞口-含机制(MWh)', '敞口-仅中长期(MWh)',
+    '中长期锁价(MWh)', '锁价说明', '机制电量(MWh)', '敞口-含机制(MWh)', '敞口-仅中长期(MWh)', '展示范围',
   ]
   const rows = data.intervals.map((row) => [
     asOfText,
@@ -349,6 +352,7 @@ export function buildTodayCsv(result: TodayResult): { filename: string; headers:
     row.locked.mechanism.value ?? '',
     row.exposure.withMechanism ?? '',
     row.exposure.midlongOnly ?? '',
+    query.stationName ?? '全公司',
   ])
   return { filename: todayCsvFilename(query), headers, rows }
 }
@@ -365,6 +369,7 @@ export function buildTodaySummary(result: TodayResult | null): Record<string, un
   return {
     view: 'hedge_today2',
     window: { fromDate: query.fromDate, toDate: query.toDate, granularity: query.granularity, asOf: query.asOf ?? '当前视图' },
+    scope: query.stationId ? { stationId: query.stationId, stationName: query.stationName } : { company: true },
     ratios: {
       withMechanism: { value: ratioValueText(data.ratio?.withMechanism), status: ratioStatusText(data.ratio?.withMechanism) },
       midlongOnly: { value: ratioValueText(data.ratio?.midlongOnly), status: ratioStatusText(data.ratio?.midlongOnly) },

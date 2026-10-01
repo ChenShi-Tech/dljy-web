@@ -26,19 +26,29 @@ import {
   intervalLabel,
   legRowsOf,
   midlongText,
-  ratioStatusText,
   ratioValueText,
   splitGaps,
   todayOverviewOf,
   uncoveredLabel,
   watchlistDirectionLabel,
 } from '@/services/hedge/hedgeTodayModel'
+import { fetchMaintenanceStations } from '@/services/hedge/hedgeMaintenanceApi'
+import type { MaintenanceStation } from '@/services/hedge/hedgeMaintenanceApi'
+import HedgeHint from './HedgeHint.vue'
+import { calculationReason, hasGeneration, latestGenerationRange } from './hedgePresentation'
 import TodayExposureChart from './today/TodayExposureChart.vue'
 import TodayLegsPanel from './today/TodayLegsPanel.vue'
 import { injectHedgeWorkbench, today2Range, useHedgeTabLifecycle } from '../useHedgeWorkbench'
 
 const workbench = injectHedgeWorkbench()
 
+const stations = ref<MaintenanceStation[]>([])
+const selectedStation = ref('')
+const panel = ref('overview')
+const detailPage = ref(1)
+const selectedDate = ref('')
+const allowFallback = ref(true)
+const fallbackDate = ref(false)
 const loading = ref(false)
 const loadError = ref<string | null>(null)
 /** 当前结果 + 它对应的那次查询参数（同生共死）：导出与侧边栏摘要只认这里的参数。 */
@@ -53,19 +63,39 @@ async function load() {
   const seq = ++latestLoadSeq
   const isCurrent = () => current() && seq === latestLoadSeq
   loading.value = true
+  result.value = null
   loadError.value = null
-  const range = today2Range()
+  const range = selectedDate.value ? { fromDate: selectedDate.value, toDate: new Date(Date.parse(selectedDate.value + 'T00:00:00Z') + 86_400_000).toISOString().slice(0, 10) } : today2Range()
   const query = {
     fromDate: range.fromDate, toDate: range.toDate,
     granularity: workbench.granularity.value, asOf: workbench.asOf.value,
+    stationId: selectedStation.value || undefined, stationName: stations.value.find(row => String(row.id) === selectedStation.value)?.name,
   }
   try {
     const raw = await fetchOverview({
       fromDate: query.fromDate, toDate: query.toDate, granularity: query.granularity,
-      scope: 'company', asOf: query.asOf ?? undefined,
+      scope: 'company', stationId: query.stationId, asOf: query.asOf ?? undefined,
     })
     if (!isCurrent()) return // HW-06：迟到响应丢弃（作用域外，或已被更新的 load 取代）
-    result.value = { data: todayOverviewOf(raw), query }
+    let data = todayOverviewOf(raw)
+    fallbackDate.value = false
+    // 历史认知视角与手动日期不自动跳转；同一请求代次保护第二次读取。
+    if (allowFallback.value && !selectedDate.value && !query.asOf && !hasGeneration(data)) {
+      const candidate = latestGenerationRange(data)
+      if (candidate && candidate.toDate < query.fromDate) {
+        let fallback: Awaited<ReturnType<typeof fetchOverview>> | null = null
+        try { fallback = await fetchOverview({ ...candidate, granularity: query.granularity, scope: 'company', stationId: query.stationId }) } catch { /* 保留成功的当前窗口，回看失败不覆盖原始响应。 */ }
+        if (!isCurrent()) return
+        const historical = todayOverviewOf(fallback)
+        if (fallback && hasGeneration(historical)) {
+          data = historical
+          Object.assign(query, candidate)
+          fallbackDate.value = true
+        }
+      }
+    }
+    result.value = { data, query }
+    detailPage.value = 1
     workbench.syncAsOfBanner()
   } catch (err) {
     if (!isCurrent()) return
@@ -79,12 +109,22 @@ async function load() {
 }
 
 function reset() {
+  selectedDate.value = ''
+  allowFallback.value = true
+  selectedStation.value = ''
+  stations.value = []
+  fallbackDate.value = false
+  detailPage.value = 1
   result.value = null
   loading.value = false
   loadError.value = null
 }
 
-useHedgeTabLifecycle(workbench, { load, reset })
+async function loadStations() {
+  const current = workbench.scopedRequest()
+  try { const rows = await fetchMaintenanceStations(); if (current()) stations.value = rows } catch { if (current()) stations.value = [] }
+}
+useHedgeTabLifecycle(workbench, { load: () => { void loadStations(); return load() }, reset })
 
 // 认知时点/粒度变化：立即清空旧结果（不得显示旧口径的数据）并防抖重取。
 // 公司/地区变化走 useHedgeTabLifecycle（contextKey），这里跳过，避免双重加载。
@@ -107,6 +147,8 @@ onBeforeUnmount(() => { if (reloadTimer) clearTimeout(reloadTimer) })
 
 // ── 派生显示 ─────────────────────────────────────────────────────────────────
 
+const pageRows = computed(() => overview.value?.intervals.slice((detailPage.value - 1) * 12, detailPage.value * 12) ?? [])
+const pageCount = computed(() => Math.max(1, Math.ceil((overview.value?.intervals.length ?? 0) / 12)))
 const overview = computed(() => result.value?.data ?? null)
 const legRows = computed(() => (overview.value ? legRowsOf(overview.value) : []))
 const legsDegraded = computed(() => Boolean((overview.value?.legs as { degraded?: unknown } | null)?.degraded))
@@ -133,8 +175,8 @@ function supplementQuestion(): string {
   const summary = buildTodaySummary(result.value)
   const level = (summary?.assessment as { level?: string } | null)?.level
   return level
-    ? `今明两日逐时段判级为「${level}」，请结合逐时段敞口与数据腿状态判断明天要不要补仓，给出建议与风险提示。`
-    : '请结合今明两日逐时段敞口与数据腿状态判断明天要不要补仓，给出建议与风险提示。'
+    ? `当前展示窗口的判级为「${level}」，请结合展示日期、场站范围、逐时段敞口与数据状态分析，历史结果不要作为明天的持仓。`
+    : '请分析当前展示日期与场站范围的敞口和数据状态，历史数据不可替代今明持仓。'
 }
 
 defineAiPage({
@@ -155,54 +197,64 @@ defineAiPage({
     <section v-if="overview" class="body">
       <div class="toolbar">
         <span class="grain">窗口 {{ overview.fromDate ?? '—' }} ~ {{ overview.toDate ?? '—' }} · {{ overview.granularity === 'DAY' ? '日' : '小时' }}粒度</span>
-        <button type="button" data-test="export-csv" :disabled="!overview.intervals.length" @click="exportCurrent">导出 CSV（含认知时点）</button>
+        <span v-if="fallbackDate" class="history-date" data-test="history-date">历史数据 · 当前日期无数据</span>
+        <label class="grain">范围 <select v-model="selectedStation" data-test="today-station" @change="load"><option value="">全公司</option><option v-for="station in stations" :key="station.id" :value="String(station.id)">{{ station.name }}</option></select></label>
+        <label class="grain">起始日期 <input v-model="selectedDate" type="date" data-test="today-date" @change="load" /></label>
+        <button v-if="selectedDate || fallbackDate" @click="selectedDate = ''; allowFallback = false; load()">回到今明</button>
+        <button v-if="!allowFallback" @click="selectedDate = ''; allowFallback = true; load()">查看最近数据</button>
+        <button type="button" data-test="export-csv" :disabled="!overview.intervals.length" @click="exportCurrent">导出</button>
       </div>
 
-      <TodayLegsPanel :rows="legRows" :degraded="legsDegraded" />
+      <nav class="subtabs" aria-label="展示内容">
+        <button v-for="item in [{key:'overview',label:'概览'},{key:'details',label:'逐时段明细'},{key:'status',label:'数据状态'}]" :key="item.key" :data-test="`today-panel-${item.key}`" :aria-pressed="panel === item.key" @click="panel = item.key">{{ item.label }}</button>
+      </nav>
+      <TodayLegsPanel v-show="panel === 'status'" :rows="legRows" :degraded="legsDegraded" />
 
-      <div class="metrics" data-test="metrics">
+      <div v-show="panel === 'overview'" class="metrics" data-test="metrics">
         <div class="metric-card" data-test="metric-today2">
-          <h3>今明两日逐时段套保率</h3>
-          <p data-test="ratio-with-mechanism">含机制：<b>{{ ratioValueText(overview.ratio?.withMechanism) }}</b><span v-if="ratioStatusText(overview.ratio?.withMechanism)">（{{ ratioStatusText(overview.ratio?.withMechanism) }}）</span></p>
-          <p data-test="ratio-midlong-only">仅中长期：<b>{{ ratioValueText(overview.ratio?.midlongOnly) }}</b><span v-if="ratioStatusText(overview.ratio?.midlongOnly)">（{{ ratioStatusText(overview.ratio?.midlongOnly) }}）</span></p>
+          <h3>逐时段套保率</h3>
+          <p data-test="ratio-with-mechanism">含机制：<b>{{ ratioValueText(overview.ratio?.withMechanism) }}</b><HedgeHint :text="calculationReason(overview, true)" /></p>
+          <p data-test="ratio-midlong-only">仅中长期：<b>{{ ratioValueText(overview.ratio?.midlongOnly) }}</b><HedgeHint :text="calculationReason(overview, false)" /></p>
           <p data-test="assessment">
-            判级：{{ assessment ? assessmentLevelLabel(assessment.level) : '未评估' }}<span v-if="assessment?.reason">（{{ assessmentReasonLabel(assessment.reason) }}）</span>
+            判级：{{ assessment ? assessmentLevelLabel(assessment.level) : '未评估' }}<HedgeHint :text="assessment?.reason ? assessmentReasonLabel(assessment.reason) : null" />
           </p>
-          <p v-if="overview.scheme" class="scheme">生效方案：{{ overview.scheme.name }} v{{ overview.scheme.versionNo }}（{{ overview.scheme.basis === 'WITH_MECHANISM' ? '含机制' : '仅中长期' }} 判级）</p>
-          <p v-else class="scheme">未评估：套保区间未配置</p>
+          <p v-if="overview.scheme" class="scheme">生效方案：{{ overview.scheme.name }} v{{ overview.scheme.versionNo }}<HedgeHint :text="overview.scheme.basis === 'WITH_MECHANISM' ? '按含机制口径判级' : '按仅中长期口径判级'" /></p>
+          <p v-else class="scheme">区间未配置<HedgeHint text="在维护页配置并启用套保区间后，可对标准窗口判级。历史窗口只展示数值。" /></p>
         </div>
         <div class="metric-card" data-test="sensitivity">
           <h3>价格敏感度</h3>
-          <p>{{ sensitivityText }}<span v-if="overview.sensitivity?.note">（{{ overview.sensitivity?.note }}）</span></p>
+          <p>{{ sensitivityText }}<HedgeHint :text="overview.sensitivity?.note" /></p>
         </div>
       </div>
 
-      <TodayExposureChart :series="series" />
+      <p v-if="!overview.intervals.some(row => row.generation.value !== null) && panel === 'overview'" class="empty">{{ overview.intervals.some(row => (row.generation.knownStationCount ?? 0) > 0) ? '公司数据未完整覆盖，请选择场站查看' : '所选日期暂无发电数据' }}</p>
+      <TodayExposureChart v-if="panel === 'overview'" :series="series" />
 
-      <section class="intervals" data-test="intervals">
-        <h3>逐时段明细（未知时段不做平滑/插值，不以 0 冒充）</h3>
+      <section v-show="panel === 'details'" class="intervals" data-test="intervals">
+        <h3>逐时段明细<HedgeHint text="未知时段不插值、不补零。电量单位为兆瓦时。" /></h3>
         <div class="grid-wrap">
           <table>
             <thead>
               <tr><th>时段</th><th>发电</th><th>来源</th><th>中长期锁价</th><th>机制</th><th>敞口（含机制）</th><th>敞口（仅中长期）</th></tr>
             </thead>
             <tbody>
-              <tr v-for="row in overview.intervals" :key="row.start" :class="{ uncovered: row.generation.value === null || row.locked.midlong === null }">
+              <tr v-for="row in pageRows" :key="row.start" :class="{ uncovered: row.generation.value === null || row.locked.midlong === null }">
                 <td>{{ intervalLabel(row.start) }}</td>
                 <td>{{ row.generation.value ?? '未知' }}</td>
                 <td>{{ row.generation.value === null ? uncoveredLabel(row.generation.uncoveredReason) ?? '未知' : generationSourceLabel(row.generation.source) }}</td>
                 <td data-test="midlong-cell">{{ midlongText(row) }}</td>
-                <td>{{ row.locked.mechanism.value ?? '未知' }}<span v-if="row.locked.mechanism.note">（{{ row.locked.mechanism.note }}）</span></td>
+                <td>{{ row.locked.mechanism.value ?? '未知' }}<HedgeHint :text="row.locked.mechanism.note" /></td>
                 <td>{{ row.exposure.withMechanism ?? '未知' }}</td>
                 <td>{{ row.exposure.midlongOnly ?? '未知' }}</td>
               </tr>
             </tbody>
           </table>
         </div>
+        <div class="pagination"><button :disabled="detailPage === 1" @click="detailPage--">上一页</button><span>{{ detailPage }} / {{ pageCount }}</span><button :disabled="detailPage === pageCount" @click="detailPage++">下一页</button></div>
       </section>
 
-      <section class="watchlist" data-test="watchlist">
-        <h3>需关注时段（服务端生成）</h3>
+      <section v-show="panel === 'overview'" class="watchlist" data-test="watchlist">
+        <h3>需关注时段<HedgeHint :text="overview.watchlist?.disclaimer" /></h3>
         <p v-if="!overview.watchlist?.rows?.length">暂无已覆盖的风险时段</p>
         <ul v-else>
           <li v-for="(row, wi) in overview.watchlist.rows" :key="wi" data-test="watchlist-row">
@@ -212,14 +264,14 @@ defineAiPage({
             <span v-if="row.priceTag">【{{ row.priceTag }}】</span>
           </li>
         </ul>
-        <p class="disclaimer">{{ overview.watchlist?.disclaimer }}</p>
+
       </section>
 
-      <section class="gaps" data-test="gaps">
+      <section v-show="panel === 'status'" class="gaps" data-test="gaps">
         <h3>数据缺口</h3>
         <div v-if="gapGroups.failures.length" data-test="gap-failures">
           <h4>数据读取失败</h4>
-          <ul><li v-for="gap in gapGroups.failures" :key="gap.code" class="failure">{{ gap.message }}（{{ gap.code }}）<span v-if="gap.affected">：{{ gap.affected }}</span></li></ul>
+          <ul><li v-for="gap in gapGroups.failures" :key="gap.code" class="failure">{{ gap.message }}<span v-if="gap.affected">：{{ gap.affected }}</span></li></ul>
         </div>
         <div v-if="gapGroups.coverage.length" data-test="gap-coverage">
           <h4>数据覆盖</h4>
@@ -235,6 +287,9 @@ defineAiPage({
 .hedge-today-tab { min-width: 0; }
 .toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
 .body { display: grid; gap: 16px; }
+.subtabs, .pagination { display: flex; align-items: center; gap: 8px; }
+.subtabs button[aria-pressed="true"] { color: var(--primary); background: var(--primary-tint); }
+.history-date { color: var(--warning); font-size: var(--font-sm); }
 .grain { font-size: var(--font-xs); color: var(--muted); }
 .metric-card { border: 1px solid var(--line); border-radius: 6px; padding: 12px; }
 .metric-card h3 { margin: 0 0 8px; }

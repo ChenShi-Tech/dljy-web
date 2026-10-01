@@ -4,6 +4,7 @@
 // 逐腿展示状态与时刻（/overview 的 legs.rows，契约 HedgeLegRow）：供应商预测按来源各一行；
 // 状态/原因用契约中文标签（STALE 标「过期」，FAILED 等显示后端给出的原因）；publishAssumption 有值时
 // 标注「发布时刻为登记假设」。腿行的取数与文本全在 hedgeTodayModel（本组件只做展示），旧后端无 rows 时整块不显示。
+import HedgeHint from '../HedgeHint.vue'
 import type { HedgeLegRowView } from '@/services/hedge/hedgeTodayModel'
 import { formatIsoShort, legPublishText, legStatusLabel, legStatusTone } from '@/services/hedge/hedgeTodayModel'
 
@@ -16,22 +17,13 @@ defineProps<{
 
 <template>
   <section v-if="rows.length" class="legs" data-test="legs-panel">
-    <h3>数据腿新鲜度 <small>各数据来源的当前水位</small><span v-if="degraded" class="degraded" data-test="legs-degraded">存在缺失腿，指标按不完整口径计算</span></h3>
-    <div class="grid-wrap">
-      <table>
-        <thead>
-          <tr><th>数据腿</th><th>状态</th><th>数据截至</th><th>发布时刻</th><th>说明</th></tr>
-        </thead>
-        <tbody>
-          <tr v-for="row in rows" :key="`${row.key}:${row.sourceKey ?? ''}`" data-test="leg-row" :data-leg="row.key">
-            <td>{{ row.label }}</td>
-            <td><span class="status" :class="legStatusTone(row.status)" data-test="leg-status">{{ legStatusLabel(row.status) }}</span></td>
-            <td>{{ formatIsoShort(row.dataThrough) ?? '—' }}</td>
-            <td>{{ legPublishText(row) ?? '—' }}</td>
-            <td class="reason">{{ row.reason ?? row.note ?? '' }}</td>
-          </tr>
-        </tbody>
-      </table>
+    <h3>数据状态 <HedgeHint text="各来源的数据截止时间和可用状态。过期来源仍可用于历史回看，缺失数据不补零。" /><span v-if="degraded" class="degraded" data-test="legs-degraded">有缺项</span></h3>
+    <div class="leg-grid">
+      <div v-for="row in rows" :key="`${row.key}:${row.sourceKey ?? ''}`" class="leg-tile" data-test="leg-row" :data-leg="row.key">
+        <span>{{ row.label }}<HedgeHint :text="[row.reason ?? row.note, legPublishText(row)].filter(Boolean).join('；')" /></span>
+        <span class="status" :class="legStatusTone(row.status)" data-test="leg-status">{{ legStatusLabel(row.status) }}</span>
+        <small>{{ formatIsoShort(row.dataThrough) ?? '—' }}</small>
+      </div>
     </div>
   </section>
 </template>
@@ -49,4 +41,10 @@ td.reason { white-space: normal; color: var(--muted); font-size: var(--font-xs);
 .status.warn { color: var(--warning, #b45309); border-color: var(--warning, #b45309); }
 .status.danger { color: var(--danger); border-color: var(--danger); }
 .status.muted { color: var(--muted); border-style: dashed; border-color: var(--line); }
+</style>
+
+<style scoped>
+.leg-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 8px; }
+.leg-tile { display: grid; grid-template-columns: 1fr auto; gap: 6px; padding: 12px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius-sm); font-size: var(--font-sm); }
+.leg-tile small { color: var(--muted); }
 </style>

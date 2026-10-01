@@ -4,6 +4,7 @@
 // 含机制/仅中长期两条阶梯线（分时恒定值，step:'end' 匹配起点标签）+ 发电柱（实际/预测两色）。
 // 图表纪律（design D8）：不平滑、不插值——未知时段的数据点就是 null（ECharts 默认 connectNulls:false，
 // 线在断点断开、柱不绘制），绝不用 0 冒充；未覆盖时段以灰色 markArea 标出，悬停显示未覆盖原因（契约中文标签）。
+import HedgeHint from '../HedgeHint.vue'
 import { onMounted, ref, watch } from 'vue'
 import { useEChart } from '@/composables/useEChart'
 import { POWER, barSeries, catAxis, grid, legend, stepSeries, tooltipStyle, valueAxis, withAlpha } from '@/services/chart/chartStyle'
@@ -61,8 +62,8 @@ function buildOption(series: ExposureSeries) {
           ]),
         },
       },
-      stepSeries('敞口（含机制）', series.withMechanism, POWER.deviation, { step: 'end' }),
-      stepSeries('敞口（仅中长期）', series.midlongOnly, POWER.load, { step: 'end' }),
+      stepSeries('含机制敞口', series.withMechanism, POWER.deviation, { step: 'end' }),
+      stepSeries('中长期敞口', series.midlongOnly, POWER.load, { step: 'end' }),
     ],
   }
 }
@@ -78,10 +79,10 @@ onMounted(renderChart)
 
 <template>
   <section v-if="series" class="chart-block" data-test="exposure-chart">
-    <h3>逐时段敞口 <small>未知时段断开，不做平滑/插值</small></h3>
+    <h3>逐时段敞口<HedgeHint text="发电量区分实际与预测。未知时段断开，悬停查看数据来源与缺失原因。" /></h3>
     <div ref="chartEl" class="chart" />
     <p class="chart-legend">
-      发电：<span class="chip actual" />实际 <span class="chip forecast" />预测 <span class="chip uncovered" />未覆盖（灰带，悬停见原因）
+      发电：<span class="chip actual" />实际 <span class="chip forecast" />预测 <span class="chip uncovered" />未覆盖
       ｜ 敞口线：红=含机制、蓝=仅中长期
     </p>
   </section>
