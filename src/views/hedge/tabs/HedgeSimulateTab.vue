@@ -225,7 +225,10 @@ const resultPanel = ref('exposure')
 const simulationChart = computed<EChartsOption>(() => ({
   tooltip: { trigger: 'axis', renderMode: 'richText' }, legend: { top: 0 }, grid: { left: 55, right: 20, top: 45, bottom: 45 },
   xAxis: { type: 'category', data: result.value?.intervals.map(row => row.start.replace('T', ' ').slice(5,16)) ?? [] }, yAxis: { type: 'value', name: 'MWh' },
-  series: [{ name: '含机制敞口', type: 'line', step: 'end', connectNulls: false, data: result.value?.intervals.map(row => row.exposure?.withMechanism == null ? null : Number(row.exposure.withMechanism)) ?? [] }, { name: '中长期敞口', type: 'line', step: 'end', connectNulls: false, data: result.value?.intervals.map(row => row.exposure?.midlongOnly == null ? null : Number(row.exposure.midlongOnly)) ?? [] }],
+  series: (['before', 'after'] as const).flatMap(side => (['withMechanism', 'midlongOnly'] as const).map(basis => ({
+    name: `${side === 'before' ? '试算前' : '试算后'}${basis === 'withMechanism' ? '含机制' : '中长期'}敞口`, type: 'line' as const, step: 'end' as const, connectNulls: false,
+    data: pairedIntervals.value.map(pair => pair[side].exposure?.[basis] == null ? null : Number(pair[side].exposure?.[basis])),
+  }))),
 }))
 </script>
 
@@ -362,7 +365,7 @@ const simulationChart = computed<EChartsOption>(() => ({
     </section>
 
     <nav class="subtabs" aria-label="试算结果"><button :aria-pressed="resultPanel === 'exposure'" @click="resultPanel = 'exposure'">敞口变化</button><button :aria-pressed="resultPanel === 'compare'" @click="resultPanel = 'compare'">方案对比</button></nav>
-    <HedgeChart v-if="result && resultPanel === 'exposure'" :option="simulationChart" label="试算后逐时段敞口" />
+    <HedgeChart v-if="result && resultPanel === 'exposure'" :option="simulationChart" label="试算前后逐时段敞口" />
     <p v-if="!result && resultPanel === 'exposure'" class="empty">填写电量后进行试算<HedgeHint text="无数据时保留缺失，不生成模拟曲线。可使用有数据的自定义日期。" /></p>
     <SchemeComparePanel v-show="resultPanel === 'compare'" :result="result" :metric="windowMetric" />
   </section>

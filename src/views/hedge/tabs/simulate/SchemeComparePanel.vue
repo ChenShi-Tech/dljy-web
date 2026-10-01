@@ -172,7 +172,6 @@ function assessmentOf(row: SchemeCompareRow): SchemeAssessment | null | undefine
 <style scoped>
 .scheme-compare { margin-top: 16px; border: 1px solid #e5e7eb; border-radius: 6px; padding: 12px; }
 .badge { display: inline-block; background: #eef2ff; color: #3730a3; border-radius: 4px; padding: 1px 8px; font-size: var(--font-xs, 12px); }
-.preview-note { color: #6b7280; font-size: var(--font-xs, 12px); }
 .empty { color: #9ca3af; }
 .ratio-lines { margin: 4px 0; font-size: var(--font-sm, 13px); }
 .scheme-compare table { width: 100%; border-collapse: collapse; font-size: var(--font-sm, 13px); }

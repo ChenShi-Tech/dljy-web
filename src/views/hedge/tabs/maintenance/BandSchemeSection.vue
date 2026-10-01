@@ -473,7 +473,6 @@ async function submitActivate() {
 .preset-card, .scheme { border: 1px solid var(--line); border-radius: 6px; padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; }
 .preset-card header { display: flex; gap: 8px; align-items: center; }
 .source-ref { color: var(--muted); font-size: var(--font-xs); margin-left: 2px; }
-.sources { margin: 0; padding-left: 16px; color: var(--muted); font-size: var(--font-xs); }
 </style>
 
 <style scoped>

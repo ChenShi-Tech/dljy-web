@@ -143,7 +143,7 @@ watch(workbench.scopeKey, () => {
 })
 // 维护写入成功（区间方案、月度基准、机制参数）后重取：写入后下一次读取即反映到套保计算。
 watch(workbench.dataRevision, () => { void load() })
-onBeforeUnmount(() => { if (reloadTimer) clearTimeout(reloadTimer) })
+onBeforeUnmount(() => { latestLoadSeq++; if (reloadTimer) clearTimeout(reloadTimer) })
 
 // ── 派生显示 ─────────────────────────────────────────────────────────────────
 

@@ -351,42 +351,16 @@ const qualityOption = computed<EChartsOption>(() => ({ ...chartBase, dataZoom: [
 </template>
 
 <style scoped>
-.settlement { display: flex; flex-direction: column; gap: 12px; }
+.settlement { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
 .bar { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
-.bar h3 { margin: 0; }
-.bar h3 small, .block h4 small { font-size: var(--font-xs); color: var(--muted); font-weight: 400; margin-left: 6px; }
-.view-switch { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
-.view-switch button { border: 0; background: transparent; color: var(--text); padding: 4px 12px; cursor: pointer; font-size: var(--font-sm); }
-.view-switch button.active { background: color-mix(in srgb, var(--accent) 16%, transparent); font-weight: 600; }
-.view-badge {
-  display: inline-block; margin-left: 6px; padding: 0 6px; border-radius: 4px; font-size: var(--font-xs);
-  border: 1px dashed var(--accent); color: var(--accent);
-}
-.grain { font-size: var(--font-xs); color: var(--muted); }
-.block h4 { margin: 0 0 8px; }
-.legend { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: var(--font-xs); color: var(--muted); margin: 0 0 8px; }
-.cell-chip { display: inline-block; padding: 0 6px; border-radius: 3px; margin-left: 6px; }
-.grid-wrap { overflow-x: auto; }
-.calendar { border-collapse: collapse; font-size: var(--font-xs); white-space: nowrap; }
-.calendar th, .calendar td { border: 1px solid var(--line); padding: 2px 4px; text-align: center; }
-.calendar th.plant { text-align: left; position: sticky; left: 0; background: var(--panel); }
-.calendar td.sum, .calendar th.sum { color: var(--muted); }
-.cell.FORMAL, .cell-chip.FORMAL { background: color-mix(in srgb, var(--accent) 18%, transparent); }
-.cell.PARTIAL { background: color-mix(in srgb, var(--accent) 8%, transparent); }
-.cell.PROVISIONAL, .cell-chip.PROVISIONAL { outline: 1px dashed var(--muted); outline-offset: -3px; }
-.cell.MISSING, .cell-chip.MISSING { color: var(--muted); }
-.tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 8px; margin-bottom: 8px; }
-.data-table { width: 100%; border-collapse: collapse; font-size: var(--font-sm); }
-.data-table th, .data-table td { border-bottom: 1px solid var(--line); padding: 4px 8px; text-align: left; white-space: nowrap; }
-.data-table tr.excluded td { color: var(--muted); }
-.plain { margin: 0; padding-left: 18px; font-size: var(--font-sm); }
-.plain .sub { padding-left: 16px; color: var(--muted); }
-.muted { color: var(--muted); font-size: var(--font-sm); }
-.status-note { margin: 0; color: var(--muted); }
+.bar h3, .block h4 { margin: 0 0 8px; }
+.view-switch { display: inline-flex; gap: 4px; }
+.view-switch button.active { background: var(--primary-tint); color: var(--primary); }
+.view-badge { margin-left: 6px; padding: 0 6px; border: 1px dashed var(--primary); border-radius: var(--radius-sm); color: var(--primary); font-size: var(--font-xs); }
+.grain, .muted { font-size: var(--font-xs); color: var(--muted); }
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; margin-bottom: 12px; }
 .load-error { color: var(--danger); }
-</style>
-
-<style scoped>
+.status-note { color: var(--warning); }
 .block { padding: 16px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); min-width: 0; }
 .subtabs { display: flex; gap: 8px; flex-wrap: wrap; }
 .subtabs button[aria-pressed="true"] { background: var(--primary-tint); color: var(--primary); }

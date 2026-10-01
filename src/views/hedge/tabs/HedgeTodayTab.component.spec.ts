@@ -428,4 +428,15 @@ describe('HedgeTodayTab（HW-01/02/05/06/09）', () => {
     expect(wrapper.findAll('.toolbar button').some(button=>button.text()==='查看最近数据')).toBe(true)
   })
 
+  it('卸载后当前窗口晚到不再补发历史查询', async () => {
+    let resolve!: (value: unknown) => void
+    fetchOverview.mockReturnValue(new Promise(done => { resolve=done }))
+    const {wrapper}=mountHedgeTab(HedgeTodayTab)
+    await vi.waitFor(()=>expect(fetchOverview).toHaveBeenCalledTimes(1))
+    wrapper.unmount()
+    resolve({...richPayload(),intervals:[],legs:{rows:[{key:'ACTUAL',dataThrough:'2026-06-01T00:00:00+08:00'}]}})
+    await new Promise(done=>setTimeout(done,30))
+    expect(fetchOverview).toHaveBeenCalledTimes(1)
+  })
+
 })

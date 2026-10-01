@@ -7,7 +7,9 @@
 import { config, enableAutoUnmount, flushPromises } from '@vue/test-utils'
 import type { VueWrapper } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { defineComponent, h } from 'vue'
+import { KeepAlive, defineComponent, h, nextTick, ref } from 'vue'
+import { mount } from '@vue/test-utils'
+import { useHedgeWorkbench } from '../useHedgeWorkbench'
 
 const fetchSettlementCoverage = vi.fn()
 const fetchSettlementReview = vi.fn()
@@ -235,4 +237,30 @@ describe('结算复核图表、口径与并发隔离', () => {
     old.resolve(reviewPayload({rows:[reviewRow({plant:'过期'})]}));await settle()
     expect(option(wrapper,'各场站已实现指标')?.yAxis.data).not.toContain('过期')
   })
+  it('重新激活时不把新日历和旧复核指标拼接', async () => {
+    const shown=ref(true)
+    const Host=defineComponent({setup(){useHedgeWorkbench();return ()=>h(KeepAlive,null,{default:()=>shown.value?h(HedgeSettlementTab):null})}})
+    const wrapper=mount(Host)
+    await vi.waitFor(()=>expect(metricTile(wrapper,'中长期')?.value).toBe('100'))
+    const cov=deferred(),rev=deferred()
+    fetchSettlementCoverage.mockReturnValue(cov.promise)
+    fetchSettlementReview.mockReturnValue(rev.promise)
+    shown.value=false;await nextTick();shown.value=true;await settle()
+    expect(wrapper.findAllComponents(HedgeChart)).toHaveLength(0)
+    cov.resolve(formal());await settle()
+    expect(wrapper.find('[data-test="realized-metrics"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="review-loading"]').exists()).toBe(true)
+    rev.resolve(reviewPayload({rows:[reviewRow({ltmEnergy:200})]}))
+    await vi.waitFor(()=>expect(metricTile(wrapper,'中长期')?.value).toBe('200'))
+  })
+  it('电费图保留总费用和增量，未拆分中长期费用保持空值', async () => {
+    fetchSettlementReview.mockResolvedValue(reviewPayload({rows:[reviewRow({feeSplit:{status:'UNSPLIT',spotIncrementFee:4100,midlongFee:null,totalFee:34100,note:'不符'}})]}))
+    const {wrapper}=mountHedgeTab(HedgeSettlementTab)
+    await vi.waitFor(()=>expect(option(wrapper,'各场站已实现指标')).toBeTruthy())
+    await wrapper.findAll('nav[aria-label="指标图表"] button')[3].trigger('click')
+    const chart=option(wrapper,'各场站已实现指标')!
+    expect(chart.series[0].data).toEqual([34100])
+    expect(chart.series[3].data).toEqual([null])
+  })
+
 })
