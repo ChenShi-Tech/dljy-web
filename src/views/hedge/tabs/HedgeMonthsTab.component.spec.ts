@@ -215,7 +215,8 @@ describe('HedgeMonthsTab（任务 8.3）', () => {
     const card = wrapper.find('[data-test="month-card-2026-09"]')
     expect(card.find('[data-test="baseline-partial"]').exists()).toBe(true)
     expect(card.find('[data-test="baseline-partial"]').text()).toContain('场站 #2')
-    expect(card.find('[data-test="baseline-with-mechanism"]').text()).toContain('部分场站缺基准')
+    expect(card.find('[data-test="baseline-with-mechanism"]').text()).toBe('不完整')
+    expect(card.findAll('.hedge-hint').some(node => node.attributes('aria-label')?.includes('部分场站缺基准'))).toBe(true)
   })
 
   it('FORBIDDEN：锁价侧与钻取显示无权限而非 0（HW-04）', async () => {
@@ -249,7 +250,7 @@ describe('HedgeMonthsTab（任务 8.3）', () => {
     expect(card.text()).toContain('月度未分解')
     expect(card.text()).toContain('80')
     // 整段断言：fixture 的 note 里也含「不摊到日」，只断四个字会被 info 文本撑住，测不到 sub 模板本身
-    expect(card.text()).toContain('1 份合同只登记月量（不摊到日）')
+    expect(card.text()).toContain('1 份合同')
     // 按日序列只含已分解量（100/110/120），80 不属于任何一天——图表序列另由 MonthDaysChart spec 直接断言
     const dayTexts = card.findAll('[data-test="month-days-chart"]')
     expect(dayTexts).toHaveLength(1)

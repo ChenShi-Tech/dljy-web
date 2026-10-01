@@ -12,6 +12,8 @@ const { setOptionMock, exportCsvMock, defineAiPageMock } = vi.hoisted(() => ({
   defineAiPageMock: vi.fn(),
 }))
 
+vi.mock('@/services/hedge/hedgeMaintenanceApi', () => ({ fetchMaintenanceStations: async () => [{ id: 44, name: '云海风电' }] }))
+
 vi.mock('@/services/region/regionContext', () => ({
   currentRegion: { get value() { return { id: 'yunnan' } } },
 }))
@@ -178,8 +180,8 @@ describe('HedgeTodayTab（HW-01/02/05/06/09）', () => {
     await mountLoaded(richPayload())
     await vi.waitFor(() => { expect(setOptionMock).toHaveBeenCalled() })
     const option = setOptionMock.mock.calls.at(-1)?.[0] as { series: Array<{ name: string; data: unknown[]; step?: string; smooth?: boolean; connectNulls?: boolean; markArea?: { data: unknown[] } }> }
-    const withMech = option.series.find((s) => s.name === '敞口（含机制）')
-    const midlongOnly = option.series.find((s) => s.name === '敞口（仅中长期）')
+    const withMech = option.series.find((s) => s.name === '含机制敞口')
+    const midlongOnly = option.series.find((s) => s.name === '中长期敞口')
     const bar = option.series.find((s) => s.name === '发电')
     // 未知时段是 null，不是 0（ECharts 默认 connectNulls:false → 线在断点断开）。
     expect(withMech?.data).toEqual([20, 30, null])
@@ -363,4 +365,78 @@ describe('HedgeTodayTab（HW-01/02/05/06/09）', () => {
     expect(watchlist).toHaveLength(1)
     expect(watchlist[0]?.exposureMwh).toBe('20.5')
   })
+  it('当日无数据自动回看有实际水位的历史日期，并保持导出日期一致', async () => {
+    const empty = { ...richPayload(), intervals: [], legs: { rows: [{ key: 'ACTUAL', dataThrough: '2026-06-01T00:00:00+08:00' }] } }
+    fetchOverview.mockResolvedValueOnce(empty).mockResolvedValueOnce({ ...richPayload(), fromDate:'2026-05-30', toDate:'2026-05-31' })
+    const {wrapper}=mountHedgeTab(HedgeTodayTab)
+    await vi.waitFor(()=>expect(wrapper.find('[data-test="history-date"]').exists()).toBe(true))
+    expect(fetchOverview.mock.calls[1][0]).toMatchObject({fromDate:'2026-05-30',toDate:'2026-05-31'})
+    await wrapper.get('[data-test="export-csv"]').trigger('click')
+    expect(exportCsvMock.mock.calls[0][2][0].slice(2,4)).toEqual(['2026-05-30','2026-05-31'])
+  })
+  it('历史回看请求失败保留成功的空窗口，不伪造数值', async () => {
+    fetchOverview.mockResolvedValueOnce({ ...richPayload(), intervals:[], legs:{rows:[{key:'ACTUAL',dataThrough:'2026-06-01T00:00:00+08:00'}]} }).mockRejectedValueOnce(new Error('历史读取失败'))
+    const {wrapper}=mountHedgeTab(HedgeTodayTab)
+    await vi.waitFor(()=>expect(fetchOverview).toHaveBeenCalledTimes(2))
+    await new Promise(resolve=>setTimeout(resolve,30))
+    expect(wrapper.find('[data-test="load-error"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="history-date"]').exists()).toBe(false)
+  })
+  it('手动日期与场站查询使用选定作用域，明细每页十二行', async () => {
+    const payload=richPayload();payload.intervals=Array.from({length:48},(_,i)=>({...payload.intervals[0],start:`2026-09-15T${String(i%24).padStart(2,'0')}:00:00+08:00`}))
+    const {wrapper}=await mountLoaded(payload)
+    await wrapper.get('[data-test="today-station"]').setValue('44')
+    await vi.waitFor(()=>expect(fetchOverview).toHaveBeenLastCalledWith(expect.objectContaining({stationId:'44'})))
+    await wrapper.get('[data-test="today-date"]').setValue('2026-05-30')
+    await vi.waitFor(()=>expect(fetchOverview).toHaveBeenLastCalledWith(expect.objectContaining({fromDate:'2026-05-30',toDate:'2026-05-31',stationId:'44'})))
+    await wrapper.get('[data-test="today-panel-details"]').trigger('click')
+    expect(wrapper.findAll('[data-test="intervals"] tbody tr')).toHaveLength(12)
+    expect(wrapper.get('[data-test="intervals"] h3').text()).not.toContain('（')
+  })
+
+  it('历史回看中的旧公司响应晚到不会覆盖新公司', async () => {
+    let resolveHistory!: (value: unknown) => void
+    const history = new Promise(resolve => { resolveHistory = resolve })
+    fetchOverview.mockResolvedValueOnce({ ...richPayload(), intervals:[], legs:{rows:[{key:'ACTUAL',dataThrough:'2026-06-01T00:00:00+08:00'}]} }).mockReturnValueOnce(history).mockResolvedValue(richPayload())
+    const {wrapper}=mountHedgeTab(HedgeTodayTab)
+    await vi.waitFor(()=>expect(fetchOverview).toHaveBeenCalledTimes(2))
+    selectedCompanyId.value='comp-b'
+    await vi.waitFor(()=>expect(wrapper.find('[data-test="metrics"]').exists()).toBe(true))
+    resolveHistory({...richPayload(),fromDate:'2026-05-30',toDate:'2026-05-31'})
+    await new Promise(resolve=>setTimeout(resolve,30))
+    expect(wrapper.find('[data-test="history-date"]').exists()).toBe(false)
+    expect(wrapper.get('.toolbar').text()).not.toContain('2026-05-30')
+  })
+  it('认知时点视角不自动跳转到历史日期', async () => {
+    const {wrapper,workbench}=await mountLoaded(richPayload())
+    fetchOverview.mockReset().mockResolvedValue({ ...richPayload(), intervals:[], legs:{rows:[{key:'ACTUAL',dataThrough:'2026-06-01T00:00:00+08:00'}]} })
+    workbench.asOfInput.value='2026-09-15T08:00:00+08:00'
+    await new Promise(resolve=>setTimeout(resolve,300))
+    expect(fetchOverview).toHaveBeenCalledTimes(1)
+    expect(wrapper.find('[data-test="history-date"]').exists()).toBe(false)
+  })
+
+  it('回到今明可明确保留当前空态，不会再次自动跳回历史', async () => {
+    const empty={...richPayload(),intervals:[],legs:{rows:[{key:'ACTUAL',dataThrough:'2026-06-01T00:00:00+08:00'}]}}
+    fetchOverview.mockResolvedValueOnce(empty).mockResolvedValueOnce(richPayload()).mockResolvedValue(empty)
+    const {wrapper}=mountHedgeTab(HedgeTodayTab)
+    await vi.waitFor(()=>expect(wrapper.find('[data-test="history-date"]').exists()).toBe(true))
+    await wrapper.findAll('.toolbar button').find(button=>button.text()==='回到今明')!.trigger('click')
+    await vi.waitFor(()=>expect(wrapper.find('[data-test="metrics"]').exists()).toBe(true))
+    expect(fetchOverview).toHaveBeenCalledTimes(3)
+    expect(wrapper.find('[data-test="history-date"]').exists()).toBe(false)
+    expect(wrapper.findAll('.toolbar button').some(button=>button.text()==='查看最近数据')).toBe(true)
+  })
+
+  it('卸载后当前窗口晚到不再补发历史查询', async () => {
+    let resolve!: (value: unknown) => void
+    fetchOverview.mockReturnValue(new Promise(done => { resolve=done }))
+    const {wrapper}=mountHedgeTab(HedgeTodayTab)
+    await vi.waitFor(()=>expect(fetchOverview).toHaveBeenCalledTimes(1))
+    wrapper.unmount()
+    resolve({...richPayload(),intervals:[],legs:{rows:[{key:'ACTUAL',dataThrough:'2026-06-01T00:00:00+08:00'}]}})
+    await new Promise(done=>setTimeout(done,30))
+    expect(fetchOverview).toHaveBeenCalledTimes(1)
+  })
+
 })

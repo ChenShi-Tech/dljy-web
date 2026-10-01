@@ -416,8 +416,8 @@ describe('HedgeMaintenanceTab（HW-10）', () => {
       const card = wrapper.findAll('[data-test="band-preset"]')[0]!
       expect(card.text()).toContain('保守')
       expect(card.findAll('[data-test="band-preset-origin"]').every((badge) => badge.text() === '推断，仅供参考')).toBe(true)
-      expect(card.find('[data-test="band-preset-sources"]').text()).toContain('[F6]')
-      expect(card.find('[data-test="band-preset-sources"]').text()).toContain('1861')
+      expect(card.findAll('.hedge-hint').map(node => node.attributes('aria-label')).join(' ')).toContain('F6')
+      expect(card.findAll('.hedge-hint').map(node => node.attributes('aria-label')).join(' ')).toContain('1861')
       expect(wrapper.find('[data-test="band-current"]').text()).toContain('v1')
       expect(wrapper.find('[data-test="band-version"]').text()).toContain('生效中')
     })

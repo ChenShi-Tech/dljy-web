@@ -7,6 +7,7 @@
 // 草稿编辑不触发任何取数，页面不会同时展示两个窗口的数据（#3421 审查 R1-01）。
 // 生命周期：激活即加载；切公司/地区由 lifecycle 清空并重取；认知时点/粒度变化清空重取（HW-06）；
 // 月份查询与钻取各自用序号丢弃迟到响应。顶层 FORBIDDEN：锁价侧不可用（不是 0），发电照常显示。
+import HedgeHint from './HedgeHint.vue'
 import { nextTick, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import CalloutBox from '@/components/common/CalloutBox.vue'
 import { HedgeApiError } from '@/services/hedge/hedgeApi'
@@ -102,6 +103,8 @@ watch(workbench.scopeKey, () => {
 })
 
 onBeforeUnmount(() => { monthsSeq++ })
+const activeMonth = ref('')
+const monthPanel = ref('overview')
 </script>
 
 <template>
@@ -110,7 +113,7 @@ onBeforeUnmount(() => { monthsSeq++ })
       <label>起始月份 <input v-model="range.fromMonth" type="month" data-test="months-from" /></label>
       <label>结束月份 <input v-model="range.toMonth" type="month" data-test="months-to" /></label>
       <button type="button" data-test="months-load" :disabled="loading" @click="submitRange">按此范围加载</button>
-      <span class="hint">默认当月 + 后 2 个月；一次最多 12 个月</span>
+      <HedgeHint text="默认当月与后两个月，一次最多查询十二个月。" />
     </div>
     <p v-if="rangeError" class="field-error" data-test="months-range-error">{{ rangeError }}</p>
 
@@ -125,13 +128,16 @@ onBeforeUnmount(() => { monthsSeq++ })
 
       <section v-if="payload.gaps.length" class="gaps" data-test="gaps">
         <h4>数据缺口</h4>
-        <ul><li v-for="(gap, i) in payload.gaps" :key="i">{{ gap.code }}：{{ gap.message }}</li></ul>
+        <span>{{ payload.gaps.length }} 项待补充<HedgeHint :text="payload.gaps.map(gap => gap.message).join('；')" /></span>
       </section>
 
-      <section class="months" data-test="month-view">
+      <nav class="month-nav" aria-label="月度内容"><button :aria-pressed="monthPanel === 'overview'" @click="monthPanel = 'overview'">月度概览</button><button :aria-pressed="monthPanel === 'breakdown'" @click="monthPanel = 'breakdown'">持仓结构</button></nav>
+      <nav v-show="monthPanel === 'overview'" class="month-nav" aria-label="月份"><button v-for="month in payload.months" :key="month.month" :aria-pressed="(payload.months.some(item => item.month === activeMonth) ? activeMonth : payload.months[0]?.month) === month.month" @click="activeMonth = month.month">{{ month.month }}</button></nav>
+      <section v-show="monthPanel === 'overview'" class="months" data-test="month-view">
         <MonthCard
           v-for="month in payload.months"
           :key="month.month"
+          v-show="(payload.months.some(item => item.month === activeMonth) ? activeMonth : payload.months[0]?.month) === month.month"
           :month="month"
           :forbidden="payload.status === 'FORBIDDEN'"
         />
@@ -140,7 +146,7 @@ onBeforeUnmount(() => { monthsSeq++ })
     </template>
 
     <!-- 钻取区独立于月度载荷挂载（自带加载/错误/FORBIDDEN 状态），窗口只跟已提交范围（与月卡同一窗口）。 -->
-    <BreakdownDrill ref="drillRef" :from-month="committed.fromMonth" :to-month="committed.toMonth" />
+    <BreakdownDrill v-show="monthPanel === 'breakdown'" ref="drillRef" :from-month="committed.fromMonth" :to-month="committed.toMonth" />
   </div>
 </template>
 
@@ -154,4 +160,9 @@ onBeforeUnmount(() => { monthsSeq++ })
 .hint { color: var(--muted, #909399); font-size: var(--font-xs, 12px); }
 .field-error { color: var(--danger, #b91c1c); font-size: var(--font-sm, 13px); margin: 0; }
 .load-error { color: var(--danger, #b91c1c); }
+</style>
+
+<style scoped>
+.month-nav { display: flex; flex-wrap: wrap; gap: 8px; }
+.month-nav button[aria-pressed="true"] { color: var(--primary); background: var(--primary-tint); }
 </style>

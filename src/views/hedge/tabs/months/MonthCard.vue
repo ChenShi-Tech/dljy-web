@@ -5,7 +5,7 @@
 // 两口径套保率并列（逐时段 / 基准）、品种结构四维度、核定上限、月级守恒标注。值为服务端十进制字符串、
 // 未知为 null → 「未知」，绝不用 0 冒充；FORBIDDEN 时锁价侧显示「无权限查看中长期持仓」，发电照常（HW-04）。
 // 基准覆盖 NONE：显示「预计发电未覆盖」且不显示基准口径套保率；PARTIAL：如实标注缺基准场站。
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import MetricTile from '@/components/common/MetricTile.vue'
 import {
   BREAKDOWN_QUERY_DIMENSION_LABELS, BREAKDOWN_SPECIAL_KEY_LABELS, type HedgeMonthCapRow, type HedgeMonthStructureRow, type HedgeMonthView,
@@ -13,8 +13,11 @@ import {
 import {
   assessmentText, assessmentTierText, capRowView, consistencyView, mwhText, periodLabel, ratioText,
 } from './monthsModel'
+import HedgeHint from '../HedgeHint.vue'
 import MonthDaysChart from './MonthDaysChart.vue'
 
+const compactText = (text: string) => text.split('（')[0]
+const cardPanel = ref('overview')
 const props = defineProps<{ month: HedgeMonthView; forbidden?: boolean }>()
 
 const FORBIDDEN_TEXT = '无权限查看中长期持仓'
@@ -74,51 +77,52 @@ const consistency = computed(() => consistencyView(props.month.consistency))
       >{{ consistency.text }}</span>
     </header>
 
-    <div class="tiles">
+    <nav class="card-nav" aria-label="月度项目"><button v-for="item in [{key:'overview',label:'电量与套保率'},{key:'structure',label:'锁价结构'},{key:'caps',label:'核定上限'}]" :key="item.key" :aria-pressed="cardPanel === item.key" @click="cardPanel = item.key">{{ item.label }}</button></nav>
+    <div v-show="cardPanel === 'overview'" class="tiles">
       <MetricTile label="锁价合计" :value="lockedTile.value" unit="MWh" :tone="lockedTile.tone" :compact="lockedTile.compact"
-        :sub="forbidden ? '' : (month.midlong.note ?? '')" :info="'中长期合同月度锁价（分解到日的部分 + 月度未分解）'" />
+        :info="month.midlong.note ?? '已分解与未分解的中长期月度锁价电量'" />
       <MetricTile label="月度未分解" :value="undecomposedTile.value" unit="MWh"
         :tone="undecomposedTile.value === '未知' || forbidden ? 'muted' : 'default'"
-        :sub="`${undecomposedTile.count} 份合同只登记月量（不摊到日）`" :info="month.monthlyUndecomposed.note" />
+        :sub="`${undecomposedTile.count} 份合同`" :info="month.monthlyUndecomposed.note" />
       <MetricTile label="机制电量" :value="mwhText(month.mechanism.value)" unit="MWh"
-        :tone="month.mechanism.value === null ? 'muted' : 'default'" sub="月度基准 × 比例（计划口径）"
+        :tone="month.mechanism.value === null ? 'muted' : 'default'"
         :info="month.mechanism.note" />
       <MetricTile label="发电基准" :value="baselineTile.value" unit="MWh" :tone="baselineTile.tone" :pill="baselineTile.pill"
-        :sub="month.baseline.note ?? ''" :info="`${month.baseline.label}：场站 × 月的预计发电量合计`" />
+        :info="month.baseline.note ?? `${month.baseline.label}：预计发电量合计`" />
       <MetricTile label="发电覆盖天数" :value="`${coveredDays} / ${gen.totalDays}`"
         :sub="`实际 ${gen.actualDays} 天 · 预测 ${gen.forecastDays} 天 · 未覆盖 ${gen.uncoveredDays} 天`"
         :tone="gen.uncoveredDays > 0 ? 'warn' : 'default'" />
     </div>
 
-    <div class="ratios">
+    <div v-show="cardPanel === 'overview'" class="ratios">
       <div class="ratio-block" data-test="ratio-interval">
         <h4>逐时段口径</h4>
-        <p>含机制：<b data-test="interval-with-mechanism">{{ ratioText(month.ratios.interval.withMechanism) }}</b></p>
-        <p>仅中长期：<b data-test="interval-midlong-only">{{ ratioText(month.ratios.interval.midlongOnly) }}</b></p>
+        <p>含机制：<b data-test="interval-with-mechanism">{{ compactText(ratioText(month.ratios.interval.withMechanism)) }}</b><HedgeHint :text="ratioText(month.ratios.interval.withMechanism)" /></p>
+        <p>仅中长期：<b data-test="interval-midlong-only">{{ compactText(ratioText(month.ratios.interval.midlongOnly)) }}</b><HedgeHint :text="ratioText(month.ratios.interval.midlongOnly)" /></p>
         <p class="assessment" data-test="interval-assessment">
-          判级：{{ assessmentText(month.ratios.interval.assessment) }}<span v-if="assessmentTierText(month.ratios.interval.assessment)">（{{ assessmentTierText(month.ratios.interval.assessment) }}）</span>
+          判级：{{ assessmentText(month.ratios.interval.assessment) }}<HedgeHint :text="assessmentTierText(month.ratios.interval.assessment)" />
         </p>
       </div>
       <div class="ratio-block" data-test="ratio-baseline">
-        <h4>基准口径（{{ month.ratios.baseline.label }}）</h4>
+        <h4>基准口径<HedgeHint :text="month.ratios.baseline.label" /></h4>
         <!-- 基准覆盖 NONE：预计发电未覆盖，不显示套保率（HW-03），不能让「不可计算」看起来像算过但为 0 -->
         <p v-if="month.baseline.coverage === 'NONE'" class="uncovered" data-test="baseline-uncovered">
-          预计发电未覆盖——不显示基准口径套保率<span v-if="month.baseline.note">（{{ month.baseline.note }}）</span>
+          发电基准缺失<HedgeHint :text="month.baseline.note" />
         </p>
         <template v-else>
-          <p>含机制：<b data-test="baseline-with-mechanism">{{ ratioText(month.ratios.baseline.withMechanism) }}</b></p>
-          <p>仅中长期：<b data-test="baseline-midlong-only">{{ ratioText(month.ratios.baseline.midlongOnly) }}</b></p>
+          <p>含机制：<b data-test="baseline-with-mechanism">{{ compactText(ratioText(month.ratios.baseline.withMechanism)) }}</b><HedgeHint :text="ratioText(month.ratios.baseline.withMechanism)" /></p>
+          <p>仅中长期：<b data-test="baseline-midlong-only">{{ compactText(ratioText(month.ratios.baseline.midlongOnly)) }}</b><HedgeHint :text="ratioText(month.ratios.baseline.midlongOnly)" /></p>
           <p v-if="month.baseline.coverage === 'PARTIAL'" class="partial" data-test="baseline-partial">
-            部分场站缺基准（{{ month.baseline.missingStationIds.map((id) => `场站 #${id}`).join('、') }}），基准口径不完整
+            基准覆盖不完整<HedgeHint :text="month.baseline.missingStationIds.map(id => `场站 #${id}`).join('、')" />
           </p>
           <p class="assessment" data-test="baseline-assessment">
-            判级：{{ assessmentText(month.ratios.baseline.assessment) }}<span v-if="assessmentTierText(month.ratios.baseline.assessment)">（{{ assessmentTierText(month.ratios.baseline.assessment) }}）</span>
+            判级：{{ assessmentText(month.ratios.baseline.assessment) }}<HedgeHint :text="assessmentTierText(month.ratios.baseline.assessment)" />
           </p>
         </template>
       </div>
     </div>
 
-    <div class="structure" data-test="midlong-structure">
+    <div v-show="cardPanel === 'structure'" class="structure" data-test="midlong-structure">
       <h4>锁价品种结构</h4>
       <p v-if="forbidden || !month.midlong.structure" class="hint">{{ FORBIDDEN_TEXT }}</p>
       <div v-else class="structure-grid">
@@ -133,17 +137,17 @@ const consistency = computed(() => consistencyView(props.month.consistency))
       </div>
     </div>
 
-    <div v-if="month.period === 'CURRENT'" class="days-chart" data-test="current-month-days">
-      <h4>按日已分解锁价与发电（未知日断开，不做平滑/插值；月度未分解不摊到日）</h4>
+    <div v-if="month.period === 'CURRENT'" v-show="cardPanel === 'overview'" class="days-chart" data-test="current-month-days">
+      <h4>按日电量<HedgeHint text="未知日期断开，不插值。月度未分解电量不摊到日。" /></h4>
       <MonthDaysChart :days="month.days" />
     </div>
 
-    <div class="caps" data-test="caps">
-      <h4>核定上限（HB-07）</h4>
+    <div v-show="cardPanel === 'caps'" class="caps" data-test="caps">
+      <h4>核定上限</h4>
       <!-- 顶层状态优先（#3421 审查 R1-02）：FAILED 是读取失败/未知，不能借空 rows 表述成「未登记」； -->
       <!-- 只有整体 NOT_REGISTERED 才是真实的未登记；读取正常（REGISTERED/MODIFIED_AFTER_AS_OF）照常出表。 -->
       <p v-if="month.caps.status === 'FAILED'" class="caps-failed" data-test="caps-failed">
-        核定上限读取失败，状态未知，无法核实<span v-if="month.caps.note">（{{ month.caps.note }}）</span>
+        上限读取失败<HedgeHint :text="month.caps.note" />
       </p>
       <template v-else>
         <p class="hint">{{ month.caps.note }}</p>
@@ -200,4 +204,9 @@ const consistency = computed(() => consistencyView(props.month.consistency))
 .caps td.negative { color: var(--danger, #f56c6c); font-weight: 600; }
 .caps-failed { color: var(--warning, #e6a23c); font-size: var(--font-sm, 13px); margin: 4px 0; }
 @media (max-width: 900px) { .ratios { grid-template-columns: 1fr; } }
+</style>
+
+<style scoped>
+.card-nav { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
+.card-nav button[aria-pressed="true"] { background: var(--primary-tint); color: var(--primary); }
 </style>
