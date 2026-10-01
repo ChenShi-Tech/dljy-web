@@ -232,11 +232,15 @@ defineAiPage({
 </template>
 
 <style scoped>
-.toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.hedge-today-tab { min-width: 0; }
+.toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
+.body { display: grid; gap: 16px; }
 .grain { font-size: var(--font-xs); color: var(--muted); }
 .metric-card { border: 1px solid var(--line); border-radius: 6px; padding: 12px; }
 .metric-card h3 { margin: 0 0 8px; }
-.metrics { display: flex; flex-wrap: wrap; gap: 12px; }
+.metrics { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 16px; }
+.metric-card, .intervals, .watchlist, .gaps { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; min-width: 0; }
+@media (max-width: 700px) { .metrics { grid-template-columns: minmax(0, 1fr); } }
 .intervals h3, .watchlist h3, .gaps h3 { margin: 0 0 8px; }
 .grid-wrap { overflow-x: auto; }
 .intervals table { width: 100%; border-collapse: collapse; font-size: var(--font-sm); }
