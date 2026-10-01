@@ -175,7 +175,7 @@ describe('PnlDecomposePanel', () => {
       instances: [{ id: '33', templateId: 'T03', periodKey: '2026-09', status: 'draft', dueAt: null, updatedAt: null, payload: { existing: { a: 1 } } }]
     })
     vi.mocked(patchTemplateInstance).mockResolvedValue()
-    const wrapper = await settle(mount(PnlDecomposePanel, { props: { spec, tolerancePct: 3, penaltyPrice: 100 } }))
+    const wrapper = await settle(mount(PnlDecomposePanel, { props: { spec, tolerancePct: 3, penaltyPrice: 100, reviewMonth: '2026-09' } }))
     expect(wrapper.text()).toContain('本期典型交易复盘')
     expect(wrapper.text()).not.toContain('#33')
     const row = wrapper.find('.pdp-top-table tbody tr')
