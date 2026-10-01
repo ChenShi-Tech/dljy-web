@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import HedgeHint from '../HedgeHint.vue'
 // 维护 · 核定上限（openspec build-midlong-spot-hedging HB-07，design D10；ChenShi-Tech/dljy#3423）。
 //
 // 按「交易单元 × 月」登记交易机构核定的月度净合同量上限：交易单元来自中长期交易单元清单（清单取不到时可手动加行），
@@ -195,26 +196,22 @@ async function saveRow(row: { key: string; subjectId: number; month: string; nam
 <template>
   <section class="maint-section" data-test="caps-section">
     <div class="section-head">
-      <h3>核定上限</h3>
-      <span class="badge">交易约束 · 与套保区间分开展示</span>
+      <h3>核定上限<HedgeHint text="交易机构核定的月度净合同量上限，独立于套保区间判级。" /></h3>
       <span class="spacer" />
       <button data-test="caps-refresh" :disabled="loading" @click="load">刷新</button>
     </div>
-    <p class="hint">
-      按「交易单元 × 月」登记交易机构核定的月度净合同量上限（含来源文件或通知）。核定上限不参与套保区间判级；
-      未登记显示「核定上限未登记」，不用装机容量或发电基准推算。
-    </p>
     <div class="range-bar">
       <label>起始月份 <input v-model="range.fromMonth" type="month" data-test="caps-from" /></label>
       <label>结束月份 <input v-model="range.toMonth" type="month" data-test="caps-to" /></label>
       <button data-test="caps-query" :disabled="loading" @click="loadCaps()">按此范围加载</button>
-      <span class="hint">默认当月起 3 个月；重新加载会丢弃未保存的改动</span>
+      <HedgeHint text="默认查询当月起三个月。重新加载会丢弃未保存的改动。" />
     </div>
     <p v-if="rangeError" class="status error" data-test="caps-range-error">{{ rangeError }}</p>
     <p v-if="subjectsError" class="status error" data-test="caps-subjects-error">{{ subjectsError }}</p>
     <p v-if="loadError" class="status error">{{ loadError }}</p>
     <p class="status" data-test="caps-status">
-      {{ status ?? (Object.keys(caps).length ? `${Object.keys(caps).length} 行已登记` : loading ? '加载中…' : '核定上限未登记（向交易机构索取核定文件后录入）') }}
+      {{ status ?? (Object.keys(caps).length ? `${Object.keys(caps).length} 行已登记` : loading ? '加载中…' : '核定上限未登记') }}
+      <HedgeHint text="请按交易单元与月份登记核定值，并附来源文件。未登记不使用装机容量或发电基准推算。" />
     </p>
 
     <div class="table-wrap">
@@ -259,7 +256,7 @@ async function saveRow(row: { key: string; subjectId: number; month: string; nam
             </td>
           </tr>
           <tr v-if="!gridRows.length">
-            <td colspan="7" class="hint">没有可登记的交易单元：请先在中长期模块登记交易单元，或在下方手动添加</td>
+            <td colspan="7" class="hint">暂无交易单元<HedgeHint text="请先在中长期模块登记交易单元，或手动添加。" /></td>
           </tr>
         </tbody>
       </table>

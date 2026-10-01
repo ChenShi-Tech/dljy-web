@@ -243,7 +243,8 @@ const ledgerEmptyText = computed(() => {
 const unbalancedRows = computed(() => rows.value.filter(row => row.balanced === false))
 const incompleteRows = computed(() => rows.value.filter(row => row.balanced !== true && row.balanced !== false))
 const unsplitFeeRows = computed(() => rows.value.filter(row => row.feeSplit?.status === 'UNSPLIT'))
-const unknownFeeRows = computed(() => rows.value.filter(row => row.feeSplit?.status === 'UNKNOWN'))
+const unknownFeeRows = computed(() => rows.value.filter(row => !row.feeSplit || row.feeSplit.status === 'UNKNOWN'))
+const splitFeeCount = computed(() => rows.value.filter(row => row.feeSplit?.status === 'SPLIT').length)
 const excludedUnverified = computed(() => reviewData.value?.dataQuality?.excludedUnverified ?? 0)
 const panel = ref('realized')
 const metric = ref('energy')
@@ -278,7 +279,8 @@ const qualityItems = computed(() => [
   { label: '仅暂结', value: matrix.value?.totals.provisionalOnly ?? 0, test: 'dq-provisional', hint: '只有暂结记录，正式视角不计入；可切换暂结查看。\n' + (matrix.value ? datesByPlant(matrix.value, 'PROVISIONAL').map(item => `${item.plant}：${item.dates}`).join('\n') : '') },
   { label: '电量不平', value: unbalancedRows.value.length, test: 'dq-unbalanced', hint: '电量合计核对不符，不计入套保率。\n' + unbalancedRows.value.map(row => `${row.date} ${row.plant}：差额 ${formatAmount(row.residual)} 兆瓦时`).join('\n') },
   { label: '分段缺失', value: incompleteRows.value.length, test: 'dq-incomplete', hint: '分段电量缺失，无法核对，不计入套保率。\n' + incompleteRows.value.map(row => `${row.date} ${row.plant}`).join('\n') },
-  { label: '费用未拆分', value: unsplitFeeRows.value.length + unknownFeeRows.value.length, test: 'dq-fee', hint: '费用分段缺失或合计不符，保留总费用，无法拆分中长期电费。\n' + [...unsplitFeeRows.value, ...unknownFeeRows.value].map(row => `${row.date} ${row.plant}`).join('\n') },
+  { label: '费用核对不符', value: unsplitFeeRows.value.length, test: 'dq-fee', hint: '中长期电量乘价格，再加日前和实时增量电费，与总电费差额超过现有的一分钱核对阈值，暂不确认中长期费用拆分。核对不符不等同于结算账单错误，也不影响已通过的电量核对。\n' + unsplitFeeRows.value.map(row => `${row.date} ${row.plant}`).join('\n') },
+  { label: '费用字段缺失', value: unknownFeeRows.value.length, test: 'dq-fee-missing', hint: '总电费、增量电费、或中长期量价字段缺失，无法进行费用核对，不以零补齐。\n' + unknownFeeRows.value.map(row => `${row.date} ${row.plant}`).join('\n') },
   { label: '来源未核实', value: excludedUnverified.value, test: 'dq-unverified', hint: '模拟或未经核实的来源已剔除，不用于业务指标。' },
 ])
 const qualityOption = computed<EChartsOption>(() => ({ ...chartBase, dataZoom: [], yAxis: { type: 'category', data: qualityItems.value.map(item => item.label) }, xAxis: { type: 'value', minInterval: 1, name: '场站日 / 行' }, series: [{ type: 'bar', data: qualityItems.value.map(item => item.value), itemStyle: { color: '#e9a23b' } }] }))
@@ -341,6 +343,7 @@ const qualityOption = computed<EChartsOption>(() => ({ ...chartBase, dataZoom: [
         </section>
         <section v-if="panel === 'quality'" class="block" data-test="data-quality">
           <h4>数据质量<HedgeHint text="检查结算记录的覆盖、分段完整性和电量核对结果。异常记录不进入套保率，费用异常只影响费用拆分。" /></h4>
+          <p class="fee-summary" data-test="fee-summary">费用可拆分 <b>{{ splitFeeCount }} / {{ rows.length }}</b><HedgeHint text="费用可拆分需量价还原的分段费用与总额核对通过。现有采集没有独立中长期电费字段，差额需核对价格精度和其他结算科目，不能直接确认费用归属。" /></p>
           <div class="tiles"><div v-for="item in qualityItems" :key="item.test" :data-test="item.test" class="quality-tile">{{ item.label }}<HedgeHint :text="item.hint" /><b>{{ item.value }}</b></div></div>
           <HedgeChart :option="qualityOption" label="结算数据质量异常分布" />
           <p data-test="dq-mechanism">机制差价：{{ mechanismFeeText }}<HedgeHint :text="reviewData.mechanismFee?.note" /></p>
@@ -364,6 +367,7 @@ const qualityOption = computed<EChartsOption>(() => ({ ...chartBase, dataZoom: [
 .block { padding: 16px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); min-width: 0; }
 .subtabs { display: flex; gap: 8px; flex-wrap: wrap; }
 .subtabs button[aria-pressed="true"] { background: var(--primary-tint); color: var(--primary); }
+.fee-summary { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--radius-sm); color: var(--muted); font-size: var(--font-sm); }
 .quality-tile { padding: 12px; border: 1px solid var(--line); border-radius: var(--radius-sm); font-size: var(--font-sm); }
 .quality-tile b { display: block; margin-top: 8px; font-size: var(--font-xl); }
 </style>

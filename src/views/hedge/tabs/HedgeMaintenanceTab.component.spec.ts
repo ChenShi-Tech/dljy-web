@@ -502,6 +502,14 @@ describe('HedgeMaintenanceTab（HW-10）', () => {
       })
     })
   })
+  it('核定上限说明进入悬浮提示，保存和状态仍在正文', async () => {
+    const {wrapper}=await openMaintenance()
+    const section=wrapper.get('[data-test="caps-section"]')
+    expect(section.findAll('p.hint')).toHaveLength(0)
+    expect(section.findAll('.hedge-hint').some(node=>node.attributes('aria-label')?.includes('不使用装机容量'))).toBe(true)
+    expect(section.get('[data-test="caps-status"]').text()).toContain('1 行已登记')
+  })
+
 })
 
 /** 把甲风电 2027-05 的基准从 1500 改成 1300（已有 v2）。 */

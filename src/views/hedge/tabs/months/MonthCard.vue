@@ -137,8 +137,9 @@ const consistency = computed(() => consistencyView(props.month.consistency))
       </div>
     </div>
 
-    <div v-if="month.period === 'CURRENT'" v-show="cardPanel === 'overview'" class="days-chart" data-test="current-month-days">
+    <div v-show="cardPanel === 'overview'" class="days-chart" data-test="month-daily-statistics">
       <h4>按日电量<HedgeHint text="未知日期断开，不插值。月度未分解电量不摊到日。" /></h4>
+      <p v-if="!month.days.some(day => day.generation.value !== null)" class="hint" data-test="month-generation-empty">暂无可用发电数据<HedgeHint text="该月发电量未覆盖，图中仅展示已知的锁价电量，不把缺失发电量计为零。" /></p>
       <MonthDaysChart :days="month.days" />
     </div>
 
