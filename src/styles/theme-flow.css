@@ -48,6 +48,13 @@ html[data-theme='flow'] {
   --danger-tint: rgba(217, 119, 111, 0.14);
   --warning-tint: rgba(201, 164, 97, 0.14);
 
+  --violet: #b9a8ef;
+  --violet-soft: #a78bfa;
+  --violet-tint: rgba(167, 139, 250, 0.12);
+  --violet-tint-border: rgba(167, 139, 250, 0.32);
+  --sky: #93c5fd;
+  --sky-tint: rgba(125, 211, 252, 0.1);
+
   /* —— 形状 / 字体 / 效果：HUD 式精确小圆角 —— */
   --radius: 6px;
   --radius-sm: 4px;
