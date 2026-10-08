@@ -88,9 +88,9 @@ const prevPending = computed(
   flex-direction: column;
   gap: 6px;
   padding: 10px 12px;
-  border: 1px solid var(--el-border-color-lighter, #ebeef5);
+  border: 1px solid var(--line, #ebeef5);
   border-radius: 10px;
-  background: var(--el-fill-color-light, #f8fafc);
+  background: var(--panel-sub, #f8fafc);
 }
 
 .ws-track {
@@ -124,7 +124,7 @@ const prevPending = computed(
 }
 
 .ws-link:hover {
-  background: rgba(37, 99, 235, 0.06);
+  background: var(--surface-hover, rgba(37, 99, 235, 0.06));
 }
 
 .ws-badge {
@@ -136,8 +136,8 @@ const prevPending = computed(
   border-radius: 50%;
   font-size: var(--font-xs);
   font-weight: 600;
-  background: #e2e8f0;
-  color: #64748b;
+  background: var(--line, #e2e8f0);
+  color: var(--muted, #64748b);
   flex-shrink: 0;
 }
 
@@ -155,35 +155,35 @@ const prevPending = computed(
 .ws-text em {
   font-style: normal;
   font-size: var(--font-10);
-  color: var(--el-text-color-secondary, #667);
+  color: var(--muted, #667);
 }
 
 .ws-node.done .ws-badge {
-  background: #dcfce7;
-  color: #15803d;
+  background: var(--primary-tint, #dcfce7);
+  color: var(--success, #15803d);
 }
 
 .ws-node.current .ws-badge {
-  background: #2563eb;
+  background: var(--accent, #2563eb);
   color: #fff;
 }
 
 .ws-node.locked .ws-badge {
-  background: #f1f5f9;
-  color: #94a3b8;
+  background: var(--panel-sub, #f1f5f9);
+  color: var(--muted, #94a3b8);
 }
 
 .ws-node.locked .ws-text b {
-  color: #94a3b8;
+  color: var(--muted, #94a3b8);
 }
 
 .ws-node.active .ws-link {
-  background: #eff6ff;
-  box-shadow: inset 0 0 0 1px #bfdbfe;
+  background: var(--primary-tint, #eff6ff);
+  box-shadow: inset 0 0 0 1px var(--primary-tint-border, #bfdbfe);
 }
 
 .ws-arrow {
-  color: #cbd5e1;
+  color: var(--line, #cbd5e1);
   flex-shrink: 0;
 }
 
@@ -192,18 +192,18 @@ const prevPending = computed(
   padding-left: 2px;
   font-size: var(--font-xs);
   line-height: 1.6;
-  color: var(--el-text-color-secondary, #667);
+  color: var(--muted, #667);
 }
 
 .ws-hint.warn {
-  color: #b45309;
+  color: var(--warning, #b45309);
 }
 
 .ws-jump {
   padding: 0;
   border: none;
   background: none;
-  color: #1d4ed8;
+  color: var(--accent, #1d4ed8);
   font: inherit;
   cursor: pointer;
   text-decoration: underline;

@@ -340,10 +340,10 @@ onMounted(loadDeclaration)
 .td-head h2 { margin: 0 0 4px; font-size: var(--font-18); }
 .td-sub { margin: 0; max-width: 680px; font-size: var(--font-sm); line-height: 1.6; color: var(--el-text-color-secondary, #667); }
 .td-progress { display: flex; align-items: center; gap: 8px; font-size: var(--font-sm); font-variant-numeric: tabular-nums; flex-shrink: 0; }
-.td-progress-bar { width: 100px; height: 8px; border-radius: 4px; background: #e2e8f0; overflow: hidden; }
-.td-progress-fill { height: 100%; background: #2563eb; transition: width .3s; }
+.td-progress-bar { width: 100px; height: 8px; border-radius: 4px; background: var(--line, #e2e8f0); overflow: hidden; }
+.td-progress-fill { height: 100%; background: var(--accent, #2563eb); transition: width .3s; }
 
-.td-bind { display: flex; flex-direction: column; gap: 8px; padding: 6px 12px; border: 1px solid var(--el-border-color-lighter, #ebeef5); border-radius: 8px; font-size: var(--font-sm); background: #fff; }
+.td-bind { display: flex; flex-direction: column; gap: 8px; padding: 6px 12px; border: 1px solid var(--el-border-color-lighter, #ebeef5); border-radius: 8px; font-size: var(--font-sm); background: var(--panel, #fff); }
 .td-bind-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; width: 100%; padding: 2px 0; border: none; background: none; font: inherit; color: inherit; cursor: pointer; text-align: left; }
 .td-bind-date { font-variant-numeric: tabular-nums; }
 .td-bind-missing { color: #b45309; }
@@ -372,8 +372,8 @@ onMounted(loadDeclaration)
 .td-err { margin: 0; padding: 6px 10px; border-radius: 6px; background: #fef2f2; color: #991b1b; font-size: var(--font-sm); }
 
 .td-guide { margin: 0; font-size: var(--font-xs); line-height: 1.6; color: var(--el-text-color-secondary, #889); }
-.td-stage { padding: 14px 16px; border: 1px solid var(--el-border-color-lighter, #ebeef5); border-radius: 10px; background: #fff; }
+.td-stage { padding: 14px 16px; border: 1px solid var(--el-border-color-lighter, #ebeef5); border-radius: 10px; background: var(--panel, #fff); }
 .td-stage-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-bottom: 12px; padding-bottom: 10px; border-bottom: 1px solid var(--el-border-color-lighter, #ebeef5); }
 .td-stage-head h3 { margin: 0; font-size: var(--font-15); }
-.td-stage-state { font-size: var(--font-xs); padding: 2px 10px; border-radius: 9px; background: #eff6ff; color: #1d4ed8; }
+.td-stage-state { font-size: var(--font-xs); padding: 2px 10px; border-radius: 9px; background: var(--primary-tint, #eff6ff); color: var(--accent, #1d4ed8); }
 </style>

@@ -14,6 +14,10 @@ import { summarizeReportMd } from '@/services/review/reportDigest'
 /** 昨夜窗口：夜跑跨零点，放宽到 36h 内的最新定时报告 */
 const OVERNIGHT_WINDOW_MS = 36 * 3600 * 1000
 
+withDefaults(defineProps<{ bare?: boolean }>(), { bare: false })
+/** 行摘要上报（S1 材料行状态列）：终态一行话，取数逻辑仍在本组件 */
+const emit = defineEmits<{ status: [summary: string] }>()
+
 const router = useRouter()
 const loading = ref(true)
 const latest = ref<ReportItem | null>(null)
@@ -22,6 +26,7 @@ const contentError = ref('')
 
 async function load() {
   loading.value = true
+  emit('status', '查询昨夜报告…')
   try {
     const rows = await fetchReports('daily_review')
     const now = Date.now()
@@ -42,7 +47,12 @@ async function load() {
     latest.value = null
   } finally {
     loading.value = false
+    emit('status', latest.value ? `${hhmm(latest.value.mtime)} 定时产出` : '昨夜未生成')
   }
+}
+
+function hhmm(epochSec: number): string {
+  return new Date(epochSec * 1000).toLocaleTimeString('zh-CN', { hour12: false, hour: '2-digit', minute: '2-digit' })
 }
 
 onMounted(load)
@@ -60,8 +70,8 @@ function triggerManually() {
 </script>
 
 <template>
-  <section class="orc">
-    <header class="orc-head">
+  <section class="orc" :class="{ 'orc-bare': bare }">
+    <header v-if="!bare" class="orc-head">
       <MoonStar :size="14" />
       <b>昨夜智能体报告</b>
       <span class="orc-src">daily_review 夜跑</span>
@@ -80,23 +90,26 @@ function triggerManually() {
     </template>
 
     <template v-else>
-      <p class="orc-empty">昨夜未生成（36 小时内无定时任务产出）。</p>
+      <!-- 非裸模式保留完整说明；裸模式空态只留入口（分区头状态已说「昨夜未生成」） -->
+      <p v-if="!bare" class="orc-empty">昨夜未生成（36 小时内无定时任务产出）。</p>
       <button type="button" class="orc-trigger" @click="triggerManually">去复盘中心手动生成 →</button>
     </template>
   </section>
 </template>
 
 <style scoped>
-.orc { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border: 1px solid var(--el-border-color-lighter, #ebeef5); border-radius: 10px; background: #fff; min-width: 0; }
+.orc { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border: 1px solid var(--line, #ebeef5); border-radius: 12px; background: var(--panel, #fff); min-width: 0; }
+/* 裸模式：外层材料行已提供卡壳与标题 */
+.orc-bare { padding: 0; border: none; background: transparent; }
 .orc-head { display: flex; align-items: center; gap: 6px; font-size: var(--font-sm); }
 .orc-head b { font-size: var(--font-12-5); }
-.orc-src { margin-left: auto; font-size: var(--font-10-5); color: var(--el-text-color-secondary, #666); border: 1px dashed var(--el-border-color, #dcdfe6); border-radius: 999px; padding: 0 7px; }
-.orc-card { display: flex; flex-direction: column; gap: 2px; text-align: left; padding: 7px 9px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 8px; background: #f8fafc; cursor: pointer; min-width: 0; }
-.orc-card:hover { border-color: var(--el-color-primary, #2563eb); }
-.orc-title { display: flex; align-items: center; gap: 5px; font-size: var(--font-12-5); font-weight: 600; color: var(--el-text-color-primary, #303133); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.orc-meta { font-size: var(--font-xs); color: var(--el-text-color-secondary, #666); }
-.orc-summary { margin: 0; font-size: var(--font-sm); line-height: 1.6; color: var(--el-text-color-regular, #606266); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-.orc-muted { margin: 0; font-size: var(--font-11-5); color: var(--el-text-color-secondary, #666); }
-.orc-empty { margin: 0; font-size: var(--font-sm); color: var(--el-text-color-secondary, #666); }
-.orc-trigger { align-self: flex-start; padding: 0; border: none; background: none; color: #2563eb; font-size: var(--font-sm); cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
+.orc-src { margin-left: auto; font-size: var(--font-10-5); color: var(--muted, #666); border: 1px dashed var(--line, #dcdfe6); border-radius: 999px; padding: 0 7px; }
+.orc-card { display: flex; flex-direction: column; gap: 2px; text-align: left; padding: 7px 9px; border: 1px solid var(--line, #dcdfe6); border-radius: 8px; background: var(--panel-sub, #f8fafc); cursor: pointer; min-width: 0; }
+.orc-card:hover { border-color: var(--accent, #2563eb); }
+.orc-title { display: flex; align-items: center; gap: 5px; font-size: var(--font-12-5); font-weight: 600; color: var(--text, #303133); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.orc-meta { font-size: var(--font-xs); color: var(--muted, #666); }
+.orc-summary { margin: 0; font-size: var(--font-sm); line-height: 1.6; color: var(--text-soft, #606266); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.orc-muted { margin: 0; font-size: var(--font-11-5); color: var(--muted, #666); }
+.orc-empty { margin: 0; font-size: var(--font-sm); color: var(--muted, #666); }
+.orc-trigger { align-self: flex-start; padding: 0; border: none; background: none; color: var(--accent, #2563eb); font-size: var(--font-sm); cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
 </style>

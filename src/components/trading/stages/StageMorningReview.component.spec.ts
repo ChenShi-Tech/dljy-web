@@ -148,19 +148,19 @@ describe('StageMorningReview（slim：主脸四块，摘要消费者）', () => 
     for (const banned of ['④', '⑥', '六维']) {
       expect(wrapper.text()).not.toContain(banned)
     }
-    // 写回契约/锁定期说明恢复为卡内下方常驻段落（用户拍板）；立场要点仍收进 el-tooltip
-    // （内嵌浏览器不渲染原生 title，故用 DOM 提示）；责任归属与台账模式同理。
+    // 写回契约/锁定期说明收进标题 ⓘ tooltip（s1-visual-redesign：不再常驻成段）；立场要点
+    // 仍收进 el-tooltip（内嵌浏览器不渲染原生 title，故用 DOM 提示）；责任归属与台账模式同理。
     const tooltips = wrapper.findAllComponents({ name: 'ElTooltip' })
-    expect(tooltips.length).toBeGreaterThanOrEqual(3) // 立场要点 / 责任归属 / 台账模式
-    expect(wrapper.text()).toContain('S7 日报收尾会把它带进当日闭环记录')
-    expect(wrapper.text()).toContain('提交申报后本段锁定')
+    expect(tooltips.length).toBeGreaterThanOrEqual(4) // 写回契约 / 立场要点 / 责任归属 / 台账模式
+    expect(wrapper.find('.mr-write-head .mr-title-info').exists()).toBe(true)
+    expect(wrapper.text()).not.toContain('随手挑一个主因') // 契约全文不常驻正文
     // 无抽屉、无九类深度区块
     expect(wrapper.find('.mr-more').exists()).toBe(false)
     for (const banned of ['更多复盘维度', '六维摘要', '策略复盘', '市场复盘', '角色', '三问复盘单', '临场改价', '分层明细与最坏时段']) {
       expect(wrapper.text()).not.toContain(banned)
     }
-    // 写回卡下仍提供深链入口（承接语），但不是「分层明细」区块本身
-    expect(wrapper.text()).toContain('分层明细 · 最坏时段 · 完整复盘')
+    // 写回卡上仍提供深链入口（承接语），但不是「分层明细」区块本身（s1-visual-redesign 缩短为「完整复盘」）
+    expect(wrapper.text()).toContain('完整复盘')
   })
 
   it('风险事件面板升入昨日复盘摘要块并置于报告/待办之前（重要发现主脸可见）', async () => {
@@ -178,9 +178,12 @@ describe('StageMorningReview（slim：主脸四块，摘要消费者）', () => 
   it('结论行呈现两段偏差数字，口径警示一行摘要紧邻数字且可展开原文', async () => {
     const wrapper = await mountS1()
     const dev = wrapper.find('.mr-dev')
-    expect(dev.text()).toContain('中标率 80.0%')
+    // KPI 带：标签与大数字分元素渲染（s1-visual-redesign 方案 B），分别断言
+    expect(dev.text()).toContain('中标率')
+    expect(dev.text()).toContain('80.0%')
     expect(dev.text()).toContain('偏差 12.34 MWh')
-    expect(dev.text()).toContain('罚款估算 890 元')
+    expect(dev.text()).toContain('罚款估算')
+    expect(dev.text()).toContain('890')
     const caveat = dev.find('.mr-caveat')
     expect(caveat.exists()).toBe(true)
     expect(caveat.find('summary').text()).toContain('2 条')
@@ -196,7 +199,7 @@ describe('StageMorningReview（slim：主脸四块，摘要消费者）', () => 
     expect(dev.find('.mr-caveat').exists()).toBe(false)
     // 空态下执行偏差栏无数字（中标侧的「时段偏差率超限」提示属于中标摘要，保留）
     expect(dev.text()).not.toContain('偏差 12.34')
-    expect(dev.text()).not.toContain('罚款估算')
+    expect(dev.text()).not.toContain('890')
   })
 
   it('决策日志改摘要行：条数与填写率上脸，回顾经深链落复盘中心决策评价', async () => {
