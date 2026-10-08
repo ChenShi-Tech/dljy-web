@@ -37,11 +37,11 @@ const open = ref(false)
 
 <style scoped>
 .dsl { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
-.dsl-bar { display: inline-flex; align-items: center; gap: 6px; align-self: flex-start; padding: 3px 10px; border: 1px dashed var(--el-border-color, #dcdfe6); border-radius: 999px; background: #fafafa; color: var(--el-text-color-secondary, #666); font-size: var(--font-11-5); cursor: pointer; }
-.dsl-bar:hover { color: var(--el-text-color-regular, #606266); }
+.dsl-bar { display: inline-flex; align-items: center; gap: 6px; align-self: flex-start; padding: 3px 10px; border: 1px dashed var(--line, #dcdfe6); border-radius: 999px; background: var(--surface-hover, #fafafa); color: var(--muted, #666); font-size: var(--font-11-5); cursor: pointer; }
+.dsl-bar:hover { color: var(--text-soft, #606266); }
 .dsl-chevron { transition: transform 0.15s ease; }
 .dsl-chevron-open { transform: rotate(180deg); }
-.dsl-list { list-style: none; margin: 0; padding: 8px 10px; display: flex; flex-direction: column; gap: 4px; border: 1px dashed var(--el-border-color, #dcdfe6); border-radius: 8px; background: #fafafa; }
+.dsl-list { list-style: none; margin: 0; padding: 8px 10px; display: flex; flex-direction: column; gap: 4px; border: 1px dashed var(--line, #dcdfe6); border-radius: 8px; background: var(--surface-hover, #fafafa); }
 .dsl-item-info { font-size: var(--font-11-5); color: var(--el-text-color-secondary, #666); }
 .dsl-item-caveat { font-size: var(--font-11-5); color: var(--el-color-warning, #b45309); }
 </style>
