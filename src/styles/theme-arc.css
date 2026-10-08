@@ -44,6 +44,13 @@ html[data-theme='arc'] {
   --danger-tint: rgba(248, 113, 113, 0.12);
   --warning-tint: rgba(245, 158, 11, 0.12);
 
+  --violet: #c4b5fd;
+  --violet-soft: #a78bfa;
+  --violet-tint: rgba(167, 139, 250, 0.12);
+  --violet-tint-border: rgba(167, 139, 250, 0.35);
+  --sky: #7dd3fc;
+  --sky-tint: rgba(125, 211, 252, 0.1);
+
   --radius: 10px;
   --radius-sm: 8px;
   --font-display: inherit;

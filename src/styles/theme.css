@@ -52,6 +52,15 @@
   --danger-tint: #fde8e4;
   --warning-tint: #fff8e8;
 
+  /* —— 类目色(数据/资产类目编码:紫=数据库/外部源/储能/卖方,天蓝=信息说明/口径 chip;
+        S2–S7 一日工作台迁移引入,default 取迁移前现状色,零回归;paper 沿用本组浅色值)—— */
+  --violet: #6d28d9;
+  --violet-soft: #a78bfa;
+  --violet-tint: #f5f3ff;
+  --violet-tint-border: #ddd6fe;
+  --sky: #075985;
+  --sky-tint: #f0f9ff;
+
   /* —— 形状 / 字体 / 效果 —— */
   --radius: 6px; /* 卡片圆角(default 原值 6px) */
   --radius-sm: 4px; /* 按钮/输入圆角 */
