@@ -64,6 +64,12 @@ const statusItems = computed<DataStatusItem[]>(() => {
       ? { tone: 'info', text: `S3 方向：${direction.value === 'add' ? '增持' : direction.value === 'reduce' ? '减持' : '观望'}` }
       : { tone: 'caveat', text: 'S3 未定方向——两可情形缺拍板依据，补仓动作建议先观望' }
   )
+  // 持仓联动（原持仓对照 h3 的长说明并入状态行，面板头只留操作）
+  items.push(
+    clearingPosition.value
+      ? { tone: 'info', text: `日前中标 ${clearingPosition.value.dayAheadClearedMwh.toFixed(1)} MWh 已自动计入持仓（S5）` }
+      : { tone: 'caveat', text: '日前中标量未联动——S5 出清分析写回后自动计入' }
+  )
   return items
 })
 
@@ -153,7 +159,7 @@ async function loadContracts() {
   contractsNote.value = ''
   try {
     contracts.value = await fetchContracts()
-    if (!contracts.value.length) contractsNote.value = '公司合同库无记录——持仓与价格仍为人工口径'
+    if (!contracts.value.length) contractsNote.value = '合同库无记录——持仓与价格为人工口径'
     else {
       const pos = monthPositionFromLibrary.value
       if (pos !== null && contractedMwh.value === 0) contractedMwh.value = pos
@@ -334,23 +340,21 @@ function gapClass(s: GapSuggestion) {
       <section class="cg-panel">
         <h3>
           <Wallet :size="14" /> 持仓对照
-          <em v-if="clearingPosition" class="cg-pos-auto">
-            日前中标 {{ clearingPosition.dayAheadClearedMwh.toFixed(1) }} MWh（S5 自动喂入，不再人工填）
-          </em>
-          <em v-else class="cg-pos-none">日前中标量未联动——S5 出清分析写回后自动计入持仓视图</em>
-                    <button type="button" class="cg-lib-btn" :disabled="contractsBusy" @click="loadContracts">
+          <button type="button" class="cg-lib-btn" :disabled="contractsBusy" @click="loadContracts">
             <Database :size="12" /> {{ contractsBusy ? '读取中…' : '从公司合同库载入' }}
           </button>
           <em v-if="monthPositionFromLibrary !== null" class="cg-lib-badge">
-            库内月度持仓 {{ monthPositionFromLibrary }} MWh（覆盖当月中长期合同按重叠天数/合同天数折算）
+            库内月度持仓 {{ monthPositionFromLibrary }} MWh（按重叠天数折算）
           </em>
           <em v-else-if="contractsNote" class="cg-lib-none">{{ contractsNote }}</em>        </h3>
         <div class="cg-fields">
           <label>
-            预测电量 MWh
-            <button v-if="forecastFromS3 === null" type="button" class="cg-jump" @click="emit('go', 'direction')">
-              S3 未产出——回 S3 补
-            </button>
+            <span class="cg-lab">
+              预测电量 MWh
+              <button v-if="forecastFromS3 === null" type="button" class="cg-jump" @click="emit('go', 'direction')">
+                回 S3 补
+              </button>
+            </span>
             <input
               v-model.number="forecastInput"
               type="number"
@@ -359,16 +363,21 @@ function gapClass(s: GapSuggestion) {
               :placeholder="forecastFromS3 !== null ? `${forecastFromS3.toFixed(1)}（取自 S3）` : '手填'"
             />
           </label>
-          <label>中长期已持仓 MWh<input v-model.number="contractedMwh" type="number" step="10" /></label>
           <label>
-            观望带 ±%
-            <el-tooltip placement="top" :show-after="150">
-              <template #content>
-                观望带：|敞口率| 不超过该值不动作（动仓的交易成本大于敞口损益）。口径为买方立场——
-                储能/发电立场的补仓逻辑不同，本面板目前只覆盖售电/大用户。
-              </template>
-              <span class="cg-info" tabindex="0">ⓘ</span>
-            </el-tooltip>
+            <span class="cg-lab">中长期已持仓 MWh</span>
+            <input v-model.number="contractedMwh" type="number" step="10" />
+          </label>
+          <label>
+            <span class="cg-lab">
+              观望带 ±%
+              <el-tooltip placement="top" :show-after="150">
+                <template #content>
+                  观望带：|敞口率| 不超过该值不动作（动仓的交易成本大于敞口损益）。口径为买方立场——
+                  储能/发电立场的补仓逻辑不同，本面板目前只覆盖售电/大用户。
+                </template>
+                <span class="cg-info" tabindex="0">ⓘ</span>
+              </el-tooltip>
+            </span>
             <input v-model.number="holdBand" type="number" step="0.01" min="0" max="0.3" />
           </label>
         </div>
@@ -416,16 +425,16 @@ function gapClass(s: GapSuggestion) {
       </div>
       <p v-if="kelly" class="cg-tip">{{ kelly.note }}</p>
       <p v-if="listingCompare" class="cg-compare" :class="listingCompare.verdict">{{ listingCompare.hint }}</p>
-      <p v-else class="cg-tip">挂牌价或年度均价缺失——对比不成立时按缺口紧迫度单独决策，不硬给价格结论。</p>
+      <p v-else class="cg-tip">挂牌价或年度均价缺失——对比不成立，按缺口紧迫度单独决策。</p>
       <p v-if="timingVerdict" class="cg-compare" :class="timingVerdict.verdict">{{ timingVerdict.hint }}</p>
-      <p v-else class="cg-tip">分布判时机需 S3 概率分布产出（P50 均值/谷/峰）——未产出时不判断时机。</p>
+      <p v-else class="cg-tip">分布判时机需 S3 概率分布——未产出不判断时机。</p>
       <p class="cg-vol" :class="{ paused: volatility.paused }"><ShieldAlert :size="12" /> {{ volatility.hint }}</p>
     </section>
 
     <!-- 实际动作 -->
     <section class="cg-panel">
       <h3>
-        补仓执行（建议是建议、执行是执行——分开记，随单据留痕）
+        补仓执行（建议与执行分开记，随单据留痕）
         <AiAssistFill
           kind="contract_gap"
           :context="assistContext"
@@ -491,6 +500,8 @@ function gapClass(s: GapSuggestion) {
 
 .cg-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 6px 10px; }
 .cg-fields label { display: flex; flex-direction: column; gap: 2px; font-size: var(--font-xs); color: var(--el-text-color-secondary, #667); }
+.cg-lab { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; font-size: var(--font-10-5); }
+.cg-lab .cg-jump { font-size: var(--font-10-5); }
 .cg-fields input { padding: 4px 7px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 5px; font-size: var(--font-sm); }
 .cg-fields input:disabled { background: var(--panel-sub, #f1f5f9); color: var(--muted, #475569); }
 .cg-tip { margin: 8px 0 0; font-size: var(--font-xs); line-height: 1.6; color: var(--el-text-color-secondary, #667); }
@@ -515,8 +526,6 @@ function gapClass(s: GapSuggestion) {
 .cg-btn:disabled { opacity: .45; cursor: not-allowed; }
 .cg-ok { font-size: var(--font-sm); color: var(--success, #15803d); }
 .cg-err { font-size: var(--font-sm); color: var(--danger, #b91c1c); }
-.cg-pos-auto { font-style: normal; font-size: var(--font-10); color: var(--success, #047857); }
-.cg-pos-none { font-style: normal; font-size: var(--font-10); color: var(--warning, #b45309); }
 .cg-lib-btn { display: inline-flex; align-items: center; gap: 4px; padding: 3px 10px; border: 1px solid var(--violet, #7c3aed); border-radius: 5px; background: var(--violet-tint, #f5f3ff); color: var(--violet, #6d28d9); font-size: var(--font-xs); cursor: pointer; }
 .cg-lib-btn:disabled { opacity: .5; cursor: wait; }
 .cg-lib-badge { font-style: normal; font-size: var(--font-10); color: var(--violet, #6d28d9); }
