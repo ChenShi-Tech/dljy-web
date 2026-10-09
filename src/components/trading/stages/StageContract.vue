@@ -28,6 +28,7 @@ import { useSaveState } from '@/composables/useSaveState'
 import { createContract, fetchContracts, type CompanyContract } from '@/services/company/companyApi'
 import { activeStanceType } from '@/services/stance/stanceContext'
 import AiAssistFill from '@/components/trading/AiAssistFill.vue'
+import DataStatusLine, { type DataStatusItem } from '@/components/trading/stages/DataStatusLine.vue'
 import type { StageId } from '@/data/workflowStages'
 
 const props = defineProps<{ declaration: DeclarationOrder | null; targetDate: string }>()
@@ -42,6 +43,29 @@ const forecastFromS3 = computed(() =>
 )
 const regime = computed(() => (pf.value.dataGate?.regime ?? null) as string | null)
 const direction = computed(() => (pf.value.forecast?.direction ?? null) as 'add' | 'reduce' | 'hold' | null)
+
+// 上游状态一行化（slim-s3-s7-stages）：产出事实与未产出的处理口径合并为单行状态
+// （DataStatusLine，默认一行可展开），替代原先三段警告行 + 三段灰字说明的堆叠。
+// 回 S3 的跳转入口保留在「预测电量」字段行，不因收纳丢导航。
+const statusItems = computed<DataStatusItem[]>(() => {
+  const items: DataStatusItem[] = []
+  if (forecastFromS3.value !== null) {
+    items.push({ tone: 'info', text: `预测电量取自 S3：${forecastFromS3.value.toFixed(1)} MWh` })
+  } else {
+    items.push({ tone: 'caveat', text: 'S3 未产出预测——电量需手填，敞口未定时暂缓补仓决定' })
+  }
+  items.push(
+    regime.value
+      ? { tone: 'info', text: `S2 态势：${REGIME_LABEL[regime.value as keyof typeof REGIME_LABEL]}` }
+      : { tone: 'caveat', text: 'S2 未产出态势——按平衡市处理' }
+  )
+  items.push(
+    direction.value
+      ? { tone: 'info', text: `S3 方向：${direction.value === 'add' ? '增持' : direction.value === 'reduce' ? '减持' : '观望'}` }
+      : { tone: 'caveat', text: 'S3 未定方向——两可情形缺拍板依据，补仓动作建议先观望' }
+  )
+  return items
+})
 
 // 输入（缺上游产出时手填）
 const forecastInput = ref<number>(0)
@@ -302,21 +326,8 @@ function gapClass(s: GapSuggestion) {
 
 <template>
   <div class="cg">
-    <!-- 上游产出回显 -->
-    <section class="cg-upstream">
-      <span v-if="forecastFromS3 !== null" class="cg-ok">
-        <ArrowDownUp :size="12" /> 预测电量取自 S3：{{ forecastFromS3.toFixed(1) }} MWh
-      </span>
-      <span v-else class="cg-warn">
-        S3 未产出预测——电量需手填。
-        <button type="button" class="cg-jump" @click="emit('go', 'direction')">回 S3 补</button>
-      </span>
-      <span v-if="regime">
-        S2 态势：<strong>{{ REGIME_LABEL[regime as keyof typeof REGIME_LABEL] }}</strong>
-      </span>
-      <span v-else class="cg-warn">S2 未产出态势（按平衡市处理）</span>
-      <span v-if="direction">S3 方向：{{ { add: '增持', reduce: '减持', hold: '观望' }[direction] }}</span>
-    </section>
+    <!-- 上游状态一行化（slim-s3-s7-stages）：一行摘要 + 可展开逐条；回 S3 跳转在预测电量字段行 -->
+    <DataStatusLine :items="statusItems" label="上游产出" />
 
     <div class="cg-grid">
       <!-- 输入 -->
@@ -337,6 +348,9 @@ function gapClass(s: GapSuggestion) {
         <div class="cg-fields">
           <label>
             预测电量 MWh
+            <button v-if="forecastFromS3 === null" type="button" class="cg-jump" @click="emit('go', 'direction')">
+              S3 未产出——回 S3 补
+            </button>
             <input
               v-model.number="forecastInput"
               type="number"
@@ -346,12 +360,18 @@ function gapClass(s: GapSuggestion) {
             />
           </label>
           <label>中长期已持仓 MWh<input v-model.number="contractedMwh" type="number" step="10" /></label>
-          <label>观望带 ±%<input v-model.number="holdBand" type="number" step="0.01" min="0" max="0.3" /></label>
+          <label>
+            观望带 ±%
+            <el-tooltip placement="top" :show-after="150">
+              <template #content>
+                观望带：|敞口率| 不超过该值不动作（动仓的交易成本大于敞口损益）。口径为买方立场——
+                储能/发电立场的补仓逻辑不同，本面板目前只覆盖售电/大用户。
+              </template>
+              <span class="cg-info" tabindex="0">ⓘ</span>
+            </el-tooltip>
+            <input v-model.number="holdBand" type="number" step="0.01" min="0" max="0.3" />
+          </label>
         </div>
-        <p class="cg-tip">
-          观望带：|敞口率| 不超过该值不动作（动仓的交易成本大于敞口损益）。口径为买方立场——
-          储能/发电立场的补仓逻辑不同，本面板目前只覆盖售电/大用户。
-        </p>
       </section>
 
       <!-- 评估结果 -->
@@ -427,7 +447,15 @@ function gapClass(s: GapSuggestion) {
         <button type="button" class="cg-jump" @click="emit('go', 'daily-close')">跳到 S7 日报收尾</button>
       </div>
       <div class="cg-register">
-        <h4>执行落库（手册步骤④：执行后更新合约库、持仓前进）</h4>
+        <h4>
+          执行落库（手册步骤④：执行后更新合约库、持仓前进）
+          <el-tooltip placement="top" :show-after="150">
+            <template #content>
+              登记生成一条月度双边（挂牌）合同记录并自动重载持仓——对方主体与结算条款请在合同管理页补全。
+            </template>
+            <span class="cg-info" tabindex="0">ⓘ</span>
+          </el-tooltip>
+        </h4>
         <div class="cg-fields">
           <label>本次执行量 MWh<input v-model.number="executedVolumeMwh" type="number" min="0" step="1" /></label>
           <label>成交价 元/MWh<input v-model.number="executedPriceYuan" type="number" min="0" step="0.01" /></label>
@@ -442,7 +470,6 @@ function gapClass(s: GapSuggestion) {
           <span v-if="registerMsg" class="cg-ok">{{ registerMsg }}</span>
           <span v-if="registerError" class="cg-warn">{{ registerError }}</span>
         </div>
-        <p class="cg-tip">登记生成一条月度双边（挂牌）合同记录并自动重载持仓——对方主体与结算条款请在合同管理页补全。</p>
       </div>
       <span v-if="saveMsg" class="cg-ok">{{ saveMsg }}</span>
       <span v-if="saveError" class="cg-err">{{ saveError }}</span>
@@ -452,7 +479,8 @@ function gapClass(s: GapSuggestion) {
 
 <style scoped>
 .cg { display: flex; flex-direction: column; gap: 12px; }
-.cg-upstream { display: flex; gap: 14px; flex-wrap: wrap; align-items: center; padding: 8px 12px; border: 1px solid var(--el-border-color-lighter, #ebeef5); border-radius: 8px; background: var(--panel-sub, #f8fafc); font-size: var(--font-sm); }
+.cg-fields label .cg-jump { align-self: flex-start; text-align: left; }
+.cg-info { display: inline-flex; align-items: center; justify-content: center; width: 15px; height: 15px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 50%; background: var(--panel-sub, #f8fafc); color: var(--el-text-color-secondary, #667); font-size: var(--font-10); font-style: normal; cursor: help; user-select: none; flex-shrink: 0; }
 .cg-ok { color: var(--success, #15803d); display: inline-flex; align-items: center; gap: 4px; }
 .cg-warn { color: var(--warning, #b45309); display: inline-flex; align-items: center; gap: 4px; }
 .cg-jump { padding: 0; border: none; background: none; color: var(--accent, #1d4ed8); font: inherit; font-size: var(--font-sm); cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
