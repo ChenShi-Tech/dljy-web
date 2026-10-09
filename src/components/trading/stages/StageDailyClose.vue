@@ -417,7 +417,9 @@ async function writeBack() {
           <h3>
             <NotebookPen :size="14" /> 决策日志（T7）
             <el-tooltip placement="top" :show-after="150">
-              <template #content>写后不可改，更正只能追加。填写率 100% 是一票否决 KPI。</template>
+              <template #content>
+                写后不可改，更正只能追加。填写率 100% 是一票否决 KPI。<template v-if="mode === 'server'">决策人由登录身份落名（服务端强制，不可代签）。</template>
+              </template>
               <span class="dc7-info" tabindex="0">ⓘ</span>
             </el-tooltip>
           </h3>
@@ -449,15 +451,15 @@ async function writeBack() {
             <input v-model.number="expectedPoints" type="number" min="1" />
           </label>
           <label class="full">
-            <span class="dc7-lab">决策点</span>
+            <span class="dc7-lab">决策点<i class="dc7-req">*</i></span>
             <input v-model="form.decisionPoint" type="text" placeholder="如：储能充放时段选择" />
           </label>
           <label class="full">
-            <span class="dc7-lab">判断结论</span>
+            <span class="dc7-lab">判断结论<i class="dc7-req">*</i></span>
             <input v-model="form.judgement" type="text" placeholder="如：低谷 02-05 充、尖峰 19-20 放" />
           </label>
           <label class="full">
-            <span class="dc7-lab">理由（须可追溯到成本或机会成本的具体数值）</span>
+            <span class="dc7-lab">理由<i class="dc7-req">*</i></span>
             <input v-model="form.rationale" type="text" placeholder="如：尖谷价差 340，要求价差 109，安全倍数 3.1" />
           </label>
           <!-- 深化字段收纳（slim-s3-s7-stages）：P10/50/90 与置信度服务贝叶斯更新与命中判定、
@@ -478,10 +480,9 @@ async function writeBack() {
             </div>
           </details>
           <label v-if="mode === 'local'">
-            <span class="dc7-lab">决策人（不可代签）</span>
+            <span class="dc7-lab">决策人（不可代签）<i class="dc7-req">*</i></span>
             <input v-model="form.author" type="text" />
           </label>
-          <span v-else class="dc7-author-note">决策人：由登录身份落名（服务端强制，不可代签）</span>
         </div>
         <ul v-if="issues.length" class="dc7-issues">
           <li v-for="i in issues" :key="i.field">{{ i.message }}</li>
@@ -636,7 +637,7 @@ async function writeBack() {
 .dc7 { display: flex; flex-direction: column; gap: 12px; }
 .dc7-warning { display: flex; align-items: flex-start; gap: 6px; margin: 0; padding: 8px 12px; border: 1px dashed var(--warning, #f59e0b); border-radius: 8px; background: var(--warning-tint, #fffbeb); font-size: var(--font-xs); line-height: 1.6; color: var(--warning, #92400e); }
 .dc7-warning.server { border-color: var(--success, #86efac); background: var(--primary-tint, #f0fdf4); color: var(--success, #166534); }
-.dc7-author-note { grid-column: 1 / -1; align-self: center; padding: 4px 0; font-size: var(--font-10-5); color: var(--sky, #0369a1); line-height: 1.5; white-space: nowrap; }
+.dc7-req { font-style: normal; color: var(--danger, #dc2626); margin-left: 2px; }
 .dc7-list-tools { display: inline-flex; gap: 6px; align-items: center; }
 .dc7-import-msg { margin: 6px 0 0; font-size: var(--font-xs); color: var(--success, #166534); line-height: 1.6; }
 
