@@ -424,10 +424,13 @@ function gapClass(s: GapSuggestion) {
         <label>今日价格波动幅度 %<input v-model.number="volatilityPct" type="number" step="0.1" placeholder="人工录入（>5% 触发暂停）" /></label>
       </div>
       <p v-if="kelly" class="cg-tip">{{ kelly.note }}</p>
-      <p v-if="listingCompare" class="cg-compare" :class="listingCompare.verdict">{{ listingCompare.hint }}</p>
-      <p v-else class="cg-tip">挂牌价或年度均价缺失——对比不成立，按缺口紧迫度单独决策。</p>
-      <p v-if="timingVerdict" class="cg-compare" :class="timingVerdict.verdict">{{ timingVerdict.hint }}</p>
-      <p v-else class="cg-tip">分布判时机需 S3 概率分布——未产出不判断时机。</p>
+      <!-- 对比结论与时机结论同行（slim-s3-s7-stages 评审：空态说明两行并一行） -->
+      <div class="cg-compare-row">
+        <p v-if="listingCompare" class="cg-compare" :class="listingCompare.verdict">{{ listingCompare.hint }}</p>
+        <p v-else class="cg-tip">挂牌价或年度均价缺失——对比不成立，按缺口紧迫度单独决策。</p>
+        <p v-if="timingVerdict" class="cg-compare" :class="timingVerdict.verdict">{{ timingVerdict.hint }}</p>
+        <p v-else class="cg-tip">分布判时机需 S3 概率分布——未产出不判断时机。</p>
+      </div>
       <p class="cg-vol" :class="{ paused: volatility.paused }"><ShieldAlert :size="12" /> {{ volatility.hint }}</p>
     </section>
 
@@ -532,6 +535,8 @@ function gapClass(s: GapSuggestion) {
 .cg-lib-none { font-style: normal; font-size: var(--font-10); color: var(--warning, #b45309); }
 .cg-inline { display: inline-flex; align-items: center; gap: 5px; }
 .cg-src { font-style: normal; font-size: var(--font-10); color: var(--el-text-color-secondary, #889); }
+.cg-compare-row { display: flex; align-items: baseline; gap: 18px; flex-wrap: wrap; margin-top: 8px; }
+.cg-compare-row p { margin: 0; }
 .cg-compare { margin: 6px 0 0; padding: 6px 10px; border-radius: 6px; font-size: var(--font-sm); line-height: 1.6; background: var(--panel-sub, #f8fafc); }
 .cg-compare.below, .cg-compare.lock_now { background: var(--primary-tint, #f0fdf4); color: var(--success, #166534); }
 .cg-compare.above, .cg-compare.wait { background: var(--warning-tint, #fffbeb); color: var(--warning, #92400e); }
