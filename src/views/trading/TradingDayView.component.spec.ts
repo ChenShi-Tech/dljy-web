@@ -66,10 +66,10 @@ describe('TradingDayView（一日作业台容器）', () => {
     expect(wrapper.text()).toContain('S1-STUB')
     expect(wrapper.text()).not.toContain('S2-STUB')
     expect(wrapper.text()).not.toContain('S7-STUB')
-    // 绑单收敛：一行摘要可见，展开明细不渲染；步进区（含引导）与主内容同屏
+    // 绑单收敛：一行摘要可见，展开明细不渲染；引导与快捷键收在页头行右侧 ⓘ；主内容同屏
     expect(wrapper.find('.td-bind-bar').exists()).toBe(true)
     expect(wrapper.find('.td-bind-detail').exists()).toBe(false)
-    expect(wrapper.find('.td-nav .td-guide').exists()).toBe(true)
+    expect(wrapper.find('.td-head .td-guide-trigger').exists()).toBe(true)
     expect(wrapper.find('.td-stage').exists()).toBe(true)
   })
 
