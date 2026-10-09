@@ -407,9 +407,9 @@ function gapClass(s: GapSuggestion) {
         <ArrowDownUp :size="14" /> 挂牌价对比与补仓时机
         <em v-if="kelly" class="cg-kelly">凯利仓位上限 {{ kelly.capPct }}%</em>
       </h3>
-      <div class="cg-fields">
+      <div class="cg-fields cg-fields-inline">
         <label>
-          挂牌价 元/MWh
+          <span class="cg-lab">挂牌价 元/MWh</span>
           <span class="cg-inline">
             <input
               v-model.number="listingPrice"
@@ -420,8 +420,14 @@ function gapClass(s: GapSuggestion) {
             <em class="cg-src">{{ listingPriceSource === 'library' ? '取自合同库月度价' : '人工' }}</em>
           </span>
         </label>
-        <label>年度均价（库内年度合同量加权）<input :value="annualAvgFromLibrary ?? ''" readonly placeholder="库内无年度合同" /></label>
-        <label>今日价格波动幅度 %<input v-model.number="volatilityPct" type="number" step="0.1" placeholder="人工录入（>5% 触发暂停）" /></label>
+        <label>
+          <span class="cg-lab">年度均价（库内年度合同量加权）</span>
+          <input :value="annualAvgFromLibrary ?? ''" readonly placeholder="库内无年度合同" />
+        </label>
+        <label>
+          <span class="cg-lab">今日价格波动幅度 %</span>
+          <input v-model.number="volatilityPct" type="number" step="0.1" placeholder="人工录入（>5% 触发暂停）" />
+        </label>
       </div>
       <p v-if="kelly" class="cg-tip">{{ kelly.note }}</p>
       <!-- 对比结论与时机结论同行（slim-s3-s7-stages 评审：空态说明两行并一行） -->
@@ -505,6 +511,9 @@ function gapClass(s: GapSuggestion) {
 .cg-fields label { display: flex; flex-direction: column; gap: 2px; font-size: var(--font-xs); color: var(--el-text-color-secondary, #667); }
 .cg-lab { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; font-size: var(--font-10-5); }
 .cg-lab .cg-jump { font-size: var(--font-10-5); }
+.cg-fields-inline { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px 18px; align-items: center; }
+.cg-fields-inline label { flex-direction: row; align-items: center; gap: 8px; }
+.cg-fields-inline .cg-lab { flex-shrink: 0; }
 .cg-fields input { padding: 4px 7px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 5px; font-size: var(--font-sm); }
 .cg-fields input:disabled { background: var(--panel-sub, #f1f5f9); color: var(--muted, #475569); }
 .cg-tip { margin: 8px 0 0; font-size: var(--font-xs); line-height: 1.6; color: var(--el-text-color-secondary, #667); }
@@ -533,7 +542,9 @@ function gapClass(s: GapSuggestion) {
 .cg-lib-btn:disabled { opacity: .5; cursor: wait; }
 .cg-lib-badge { font-style: normal; font-size: var(--font-10); color: var(--violet, #6d28d9); }
 .cg-lib-none { font-style: normal; font-size: var(--font-10); color: var(--warning, #b45309); }
-.cg-inline { display: inline-flex; align-items: center; gap: 5px; }
+.cg-inline { display: flex; align-items: center; gap: 5px; }
+.cg-inline input { flex: 1; min-width: 0; }
+.cg-inline .cg-src { flex-shrink: 0; }
 .cg-src { font-style: normal; font-size: var(--font-10); color: var(--el-text-color-secondary, #889); }
 .cg-compare-row { display: flex; align-items: baseline; gap: 18px; flex-wrap: wrap; margin-top: 8px; }
 .cg-compare-row p { margin: 0; }
