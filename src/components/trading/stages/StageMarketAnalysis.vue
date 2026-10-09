@@ -576,10 +576,8 @@ async function writeBack() {
   <div class="ma">
     <DataStatusLine :items="statusItems" />
 
-    <!-- 主区 2×2 上排：左市场判断卡（主产出）· 右基本面输入（数据管道收在卡头）；
-         窄屏（≤1240px）单列。与下排共用 .ma-row 网格配方，列宽对齐 -->
-    <div class="ma-row">
-      <section class="ma-verdict" :class="regimeClass(daySummary.dominantRegime)">
+    <!-- 今日市场判断（S2 主产出，视觉主角）：整行呈现 -->
+    <section class="ma-verdict" :class="regimeClass(daySummary.dominantRegime)">
       <div class="ma-verdict-main">
         <span class="ma-regime">
           {{ daySummary.dominantRegime ? REGIME_LABEL[daySummary.dominantRegime] : '无法判断' }}
@@ -708,6 +706,8 @@ async function writeBack() {
       </div>
     </section>
 
+    <!-- 主区一行两列：基本面（左，输入）∥ 供需比与边际机组（右，推演）；窄屏（≤1240px）单列 -->
+    <div class="ma-row">
       <!-- 基本面输入：逐格带来源徽章（可信链的展示端） -->
       <section class="ma-panel">
         <h3>
@@ -762,10 +762,7 @@ async function writeBack() {
           单位 MW。<strong>外送计入分母</strong>（外送增加等价于省内净负荷增加）。
         </p>
       </section>
-    </div>
 
-    <!-- 主区下排：供需比与边际机组（AI 晨间分析单独整行置于其下） -->
-    <div class="ma-row">
       <!-- 逐时段供需比与档位 -->
       <section class="ma-panel">
         <h3>供需比与边际机组</h3>
@@ -790,27 +787,6 @@ async function writeBack() {
         </table>
       </section>
     </div>
-
-    <!-- AI 晨间分析：单独整行（简报初稿 + 追问，注入当前面板全部推演结果为上下文；按钮后置） -->
-    <section class="ma-panel">
-      <h3>
-        AI 晨间分析
-        <em>产出分析初稿与反对意见，不替人拍板；写回仍走判断卡「写回」按钮</em>
-      </h3>
-      <div v-if="!aiOpen" class="ma-ai-idle">
-        <p>
-          注入当前基本面（逐格含来源）、供需推演与验签门禁，产出结构化晨间简报：态势理由 / 规则表可疑点 / 最该防时段 / 给 S3 的方向倾向。
-        </p>
-        <button type="button" class="ma-ai-start" @click="aiOpen = true">生成晨间简报</button>
-      </div>
-      <AgentChatPanel
-        v-if="aiOpen"
-        scenario="morning_brief"
-        :initial-question="aiQuestion"
-        :context-payload="aiContext"
-        history-key="s2_market_analysis"
-      />
-    </section>
 
     <!-- 24 时段聚合视图（底层 96 点存储，24 时段仅作聚合展示 · 会议拍板） -->
     <details class="ma-fold ma-hourly">
@@ -849,6 +825,27 @@ async function writeBack() {
         </tbody>
       </table>
     </details>
+
+    <!-- AI 晨间分析：面板末行（简报初稿 + 追问，注入当前面板全部推演结果为上下文；按钮后置） -->
+    <section class="ma-panel">
+      <h3>
+        AI 晨间分析
+        <em>产出分析初稿与反对意见，不替人拍板；写回仍走判断卡「写回」按钮</em>
+      </h3>
+      <div v-if="!aiOpen" class="ma-ai-idle">
+        <p>
+          注入当前基本面（逐格含来源）、供需推演与验签门禁，产出结构化晨间简报：态势理由 / 规则表可疑点 / 最该防时段 / 给 S3 的方向倾向。
+        </p>
+        <button type="button" class="ma-ai-start" @click="aiOpen = true">生成晨间简报</button>
+      </div>
+      <AgentChatPanel
+        v-if="aiOpen"
+        scenario="morning_brief"
+        :initial-question="aiQuestion"
+        :context-payload="aiContext"
+        history-key="s2_market_analysis"
+      />
+    </section>
   </div>
 </template>
 

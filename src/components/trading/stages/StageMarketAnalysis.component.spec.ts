@@ -82,23 +82,20 @@ describe('StageMarketAnalysis 主任务轴（slim-s2）', () => {
     // 判断卡（视觉主角）
     expect(w.find('.ma-verdict').exists()).toBe(true)
     expect(w.find('.ma-verdict').text()).toContain('均价指引')
-    // 双行网格：上排 判断卡∥基本面；下排 供需比（AI 单独整行置于其后）
-    expect(w.findAll('.ma-row')[1]?.findAll('.ma-panel') ?? []).toHaveLength(1)
-    expect(w.text()).toContain('基本面（分时段 · 逐格标来源）')
-    expect(w.text()).toContain('供需比与边际机组')
     // 无首屏按钮横幅；数据管道按钮收进基本面卡头
     expect(w.find('.ma-presets').exists()).toBe(false)
     expect(w.find('.ma-tools').text()).toContain('采集拉取')
     expect(w.find('.ma-tools').text()).toContain('库载入')
     expect(w.find('.ma-tools').text()).toContain('保存到库')
-    // 行归属：判断卡与基本面在上排，AI 晨间分析单独整行（.ma 直接子级面板）
+    // 一行两列：基本面（左，输入）∥ 供需比与边际机组（右，推演）——同一 .ma-row、列宽对齐
     const rows = w.findAll('.ma-row')
-    expect(rows.length).toBe(2)
-    expect(rows[0].find('.ma-verdict').exists()).toBe(true)
-    expect(rows[0].text()).toContain('基本面（分时段 · 逐格标来源）')
-    expect(rows[0].text()).not.toContain('AI 晨间分析')
-    expect(rows[1].text()).toContain('供需比与边际机组')
-    expect(rows[1].text()).not.toContain('AI 晨间分析')
+    expect(rows.length).toBe(1)
+    const mainPanels = rows[0].findAll('.ma-panel')
+    expect(mainPanels).toHaveLength(2)
+    expect(mainPanels[0].text()).toContain('基本面（分时段 · 逐格标来源）')
+    expect(mainPanels[1].text()).toContain('供需比与边际机组')
+    // 判断卡与 AI 晨间分析均为整行（.ma 直接子级；直接子级面板仅 AI 一个）
+    expect(w.find('.ma > .ma-verdict').exists()).toBe(true)
     const aiStandalone = w.findAll('.ma > .ma-panel')
     expect(aiStandalone.length).toBe(1)
     expect(aiStandalone[0].text()).toContain('AI 晨间分析')
