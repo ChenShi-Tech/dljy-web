@@ -514,6 +514,7 @@ function gapClass(s: GapSuggestion) {
 .cg-fields-inline { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px 18px; align-items: center; }
 .cg-fields-inline label { flex-direction: row; align-items: center; gap: 8px; }
 .cg-fields-inline .cg-lab { flex-shrink: 0; }
+.cg-fields-inline input, .cg-fields-inline .cg-inline { flex: 1; min-width: 0; }
 .cg-fields input { padding: 4px 7px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 5px; font-size: var(--font-sm); }
 .cg-fields input:disabled { background: var(--panel-sub, #f1f5f9); color: var(--muted, #475569); }
 .cg-tip { margin: 8px 0 0; font-size: var(--font-xs); line-height: 1.6; color: var(--el-text-color-secondary, #667); }
