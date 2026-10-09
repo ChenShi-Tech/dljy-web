@@ -647,7 +647,7 @@ async function writeBack() {
 .dc7-stats .ok { background: var(--primary-tint, #dcfce7); color: var(--success, #15803d); }
 .dc7-stats .bad { background: var(--danger-tint, #fee2e2); color: var(--danger, #991b1b); }
 .dc7-info { display: inline-flex; align-items: center; justify-content: center; width: 15px; height: 15px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 50%; background: var(--panel-sub, #f8fafc); color: var(--el-text-color-secondary, #667); font-size: var(--font-10); font-style: normal; cursor: help; user-select: none; flex-shrink: 0; }
-.dc7-more-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(90px, 1fr)); gap: 6px 8px; }
+.dc7-more-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(90px, 1fr)); gap: 14px 8px; }
 .dc7-more-grid label { display: flex; flex-direction: column; gap: 2px; font-size: var(--font-10); color: var(--el-text-color-secondary, #667); }
 .dc7-more-grid input { padding: 4px 6px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 4px; font-size: var(--font-sm); }
 .dc7-more-grid label.dt { grid-column: span 2; flex-direction: row; align-items: center; gap: 8px; }
@@ -659,7 +659,7 @@ async function writeBack() {
 .dc7-chain[open] summary { margin-bottom: 8px; }
 .dc7-broken { margin: 0 0 8px; padding: 6px 10px; border-radius: 6px; background: var(--danger-tint, #fef2f2); color: var(--danger, #991b1b); font-size: var(--font-sm); }
 
-.dc7-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(90px, 1fr)); gap: 6px 8px; }
+.dc7-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(90px, 1fr)); gap: 14px 8px; }
 .dc7-form label { display: flex; flex-direction: row; align-items: center; gap: 8px; font-size: var(--font-10); color: var(--el-text-color-secondary, #667); }
 .dc7-form .dc7-lab { flex-shrink: 0; text-align: left; }
 .dc7-form .full { grid-column: 1 / -1; }
