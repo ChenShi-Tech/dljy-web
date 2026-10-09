@@ -193,15 +193,29 @@ onMounted(loadDeclaration)
 
 <template>
   <div class="td">
-    <!-- 页头 -->
+    <!-- 页头（容器降噪：单层——两色调标题 + 七步流程句；说明文字收 ⓘ 不删除） -->
     <header class="td-head">
       <div>
-        <h2>交易员一日作业台</h2>
-        <p class="td-sub">
-          七步产出自动串联：前一步的结论直接喂给下一步，不必手抄。
+        <h2><em>交易员</em>一日作业台</h2>
+        <p class="td-flow">
+          <span>复盘</span><i>→</i><span>观察</span><i>→</i><span>定向</span><i>→</i><span>决策</span><i>→</i><span>行动</span><i>→</i><span>补仓</span><i>→</i><span>收口</span>
+          <el-tooltip placement="top" :show-after="150">
+            <template #content>
+              <p>七步产出自动串联：前一步的结论直接喂给下一步，不必手抄。</p>
+              <p>步骤按 OODA 环排列——上一步的输出就是这一步的输入。</p>
+            </template>
+            <span class="td-head-info" tabindex="0">ⓘ</span>
+          </el-tooltip>
         </p>
       </div>
-      <div class="td-progress" :title="`${progress.done}/${progress.total} 步完成`">
+      <div class="td-progress">
+        <el-tooltip placement="top" :show-after="150">
+          <template #content>
+            <p>首次使用：按 S1→S7 顺序走，<strong>高亮步 = 当前该做的</strong>，上一步产出自动喂下一步。</p>
+            <p>快捷键：Alt+←/→ 切换相邻步，Alt+1…7 直达。</p>
+          </template>
+          <span class="td-guide-trigger" tabindex="0">首次使用与快捷键 <span class="td-guide-ico">ⓘ</span></span>
+        </el-tooltip>
         <div class="td-progress-bar">
           <div class="td-progress-fill" :style="{ width: `${(progress.done / progress.total) * 100}%` }" />
         </div>
@@ -278,13 +292,9 @@ onMounted(loadDeclaration)
 
     <p v-if="declError" class="td-err">{{ declError }}</p>
 
-    <!-- 页内步进条（不走路由）+ 首次引导（降噪 4.1：引导并入步进条区域，不单独占层）-->
+    <!-- 页内步进条（不走路由）；首次引导与快捷键收纳于页头行右侧 ⓘ，不单独占层 -->
     <div class="td-nav">
       <WorkflowStepper :current="activeStage" :declaration="declaration" @select="selectStage" />
-      <p class="td-guide">
-        首次使用：按 S1→S7 顺序走，<strong>高亮步 = 当前该做的</strong>，上一步产出自动喂下一步。
-        快捷键：Alt+←/→ 切换相邻步，Alt+1…7 直达。
-      </p>
     </div>
 
     <!-- 当前面板 -->
@@ -337,8 +347,12 @@ onMounted(loadDeclaration)
 <style scoped>
 .td { display: flex; flex-direction: column; gap: 12px; }
 .td-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-wrap: wrap; }
-.td-head h2 { margin: 0 0 4px; font-size: var(--font-18); }
-.td-sub { margin: 0; max-width: 680px; font-size: var(--font-sm); line-height: 1.6; color: var(--el-text-color-secondary, #667); }
+.td-head h2 { margin: 0; font-size: var(--font-xl); }
+.td-head h2 em { font-style: normal; font-weight: 400; color: var(--muted, #667); margin-right: 2px; }
+/* 容器降噪：流程句一行替代两行说明（jyy 场景-OODA 映射）；说明文字收页头 ⓘ */
+.td-flow { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; margin: 2px 0 0; font-size: var(--font-xs); color: var(--text-soft, #475467); }
+.td-flow i { font-style: normal; color: var(--line, #cbd5e1); }
+.td-head-info { display: inline-flex; align-items: center; justify-content: center; width: 15px; height: 15px; margin-left: 3px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 50%; background: var(--panel-sub, #f8fafc); color: var(--el-text-color-secondary, #667); font-size: var(--font-10); font-style: normal; cursor: help; user-select: none; }
 .td-progress { display: flex; align-items: center; gap: 8px; font-size: var(--font-sm); font-variant-numeric: tabular-nums; flex-shrink: 0; }
 .td-progress-bar { width: 100px; height: 8px; border-radius: 4px; background: var(--line, #e2e8f0); overflow: hidden; }
 .td-progress-fill { height: 100%; background: var(--accent, #2563eb); transition: width .3s; }
@@ -352,6 +366,9 @@ onMounted(loadDeclaration)
 .td-bind-toggle { font-size: var(--font-xs); color: var(--el-text-color-secondary, #667); }
 .td-bind-detail { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding-top: 6px; border-top: 1px dashed var(--el-border-color-lighter, #ebeef5); }
 .td-nav { display: flex; flex-direction: column; gap: 2px; }
+.td-guide { margin: 0; font-size: var(--font-xs); color: var(--el-text-color-secondary, #889); }
+.td-guide-trigger { display: inline-flex; align-items: center; gap: 4px; cursor: help; user-select: none; }
+.td-guide-ico { display: inline-flex; align-items: center; justify-content: center; width: 14px; height: 14px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 50%; background: var(--panel-sub, #f8fafc); font-size: var(--font-10); font-style: normal; }
 .td-stage-loading { margin: 0; padding: 10px 0; font-size: var(--font-sm); color: var(--el-text-color-secondary, #667); }
 .td-stage-error { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; padding: 10px 12px; border: 1px solid var(--danger, #fecaca); border-radius: 8px; background: var(--danger-tint, #fef2f2); color: var(--danger, #991b1b); font-size: var(--font-sm); }
 .td-stage-error p { margin: 0; }
@@ -371,7 +388,6 @@ onMounted(loadDeclaration)
 .td-rat-hint { font-size: var(--font-xs); color: var(--warning, #b45309); }
 .td-err { margin: 0; padding: 6px 10px; border-radius: 6px; background: var(--danger-tint, #fef2f2); color: var(--danger, #991b1b); font-size: var(--font-sm); }
 
-.td-guide { margin: 0; font-size: var(--font-xs); line-height: 1.6; color: var(--el-text-color-secondary, #889); }
 .td-stage { padding: 14px 16px; border: 1px solid var(--el-border-color-lighter, #ebeef5); border-radius: 10px; background: var(--panel, #fff); }
 .td-stage-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-bottom: 12px; padding-bottom: 10px; border-bottom: 1px solid var(--el-border-color-lighter, #ebeef5); }
 .td-stage-head h3 { margin: 0; font-size: var(--font-15); }

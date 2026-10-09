@@ -13,8 +13,14 @@
 // ③ 八源验签是本步的异常分支（v1.0："数据缺失→标注低可信并人工补判"），收进折叠
 // 区块：验签结论参与写回，但只要基本面仍由使用者给定，门禁上限就压在「可参考」，
 //      验签打满分也不放开，防止「表格里都勾了 A」伪装成实测口径。
+//
+// slim-s2-market-analysis：主任务轴重排（纯呈现层）——状态行 + 判断卡 + 基本面/供需比
+// 双栏为主脸，日内要素 / 24 时段表默认折叠；二轮收紧如实下线三项：预置示例形态（演示
+// 脚手架，采集拉取已覆盖）、外送耦合推演 UI（默认情景计算保留仅供 AI 上下文）、八源验签
+// 手动清单（全默认下恒满分，门禁由自建口径封顶决定，探针接入时恢复异常分支 UI）。
+// 写回 payload 与 AI 上下文字段集合一字未动。
 import { computed, ref } from 'vue'
-import { ArrowRightLeft, ClipboardCheck, Save } from 'lucide-vue-next'
+import { Save } from 'lucide-vue-next'
 import {
   assessSlots,
   coalPriceToThermalAnchor,
@@ -27,11 +33,8 @@ import {
 } from 'shared/trading-rules/supply-demand.mjs'
 import {
   assessIntegrity,
-  CREDIBILITY_LABEL,
   REQUIRED_SOURCES,
-  USAGE_GATE_LABEL,
-  type DataCredibility,
-  type SourceStatus
+  USAGE_GATE_LABEL
 } from 'shared/trading-rules/data-integrity.mjs'
 import { savePreflight, type DeclarationOrder } from '@/services/declarations'
 import { useSaveState } from '@/composables/useSaveState'
@@ -48,6 +51,8 @@ import { currentRegion } from '@/services/region/regionContext'
 import { reviewFocusOf } from 'shared/trading-rules/position-review.mjs'
 import { activeStanceType } from '@/services/stance/stanceContext'
 import AgentChatPanel from '@/components/agent/AgentChatPanel.vue'
+import DataStatusLine from './DataStatusLine.vue'
+import type { DataStatusItem } from './DataStatusLine.vue'
 import type { StageId } from '@/data/workflowStages'
 
 const props = defineProps<{ declaration: DeclarationOrder | null; targetDate: string }>()
@@ -55,34 +60,15 @@ const emit = defineEmits<{ updated: [d: DeclarationOrder]; go: [stage: StageId] 
 
 type SlotRow = SupplyDemandInput & { label: string }
 
-/** 四个代表时段：够表达「供需比区间」，又不至于让人填 24 行。 */
-function presetSlots(kind: 'typical' | 'renewable' | 'tight'): SlotRow[] {
-  if (kind === 'renewable') {
-    return [
-      { label: '低谷 00–08', dispatchableMaxMw: 20000, renewableForecastMw: 12000, netImportMw: 0, systemLoadMw: 13000, exportPlanMw: 6000, reserveMw: 1000 },
-      { label: '平段 08–17', dispatchableMaxMw: 20000, renewableForecastMw: 14000, netImportMw: 0, systemLoadMw: 17000, exportPlanMw: 6000, reserveMw: 1000 },
-      { label: '高峰 17–21', dispatchableMaxMw: 20000, renewableForecastMw: 6000, netImportMw: 0, systemLoadMw: 21000, exportPlanMw: 6500, reserveMw: 1200 },
-      { label: '晚谷 21–24', dispatchableMaxMw: 20000, renewableForecastMw: 9000, netImportMw: 0, systemLoadMw: 15000, exportPlanMw: 6000, reserveMw: 1000 }
-    ]
-  }
-  if (kind === 'tight') {
-    return [
-      { label: '低谷 00–08', dispatchableMaxMw: 18000, renewableForecastMw: 5000, netImportMw: 0, systemLoadMw: 15000, exportPlanMw: 6000, reserveMw: 1000 },
-      { label: '平段 08–17', dispatchableMaxMw: 18000, renewableForecastMw: 4000, netImportMw: 0, systemLoadMw: 19000, exportPlanMw: 6000, reserveMw: 1000 },
-      { label: '高峰 17–21', dispatchableMaxMw: 18000, renewableForecastMw: 2000, netImportMw: 0, systemLoadMw: 22000, exportPlanMw: 6500, reserveMw: 1200 },
-      { label: '晚谷 21–24', dispatchableMaxMw: 18000, renewableForecastMw: 4000, netImportMw: 0, systemLoadMw: 17000, exportPlanMw: 6000, reserveMw: 1000 }
-    ]
-  }
-  return [
-    { label: '低谷 00–08', dispatchableMaxMw: 20000, renewableForecastMw: 9000, netImportMw: 0, systemLoadMw: 14000, exportPlanMw: 6000, reserveMw: 1000 },
-    { label: '平段 08–17', dispatchableMaxMw: 20000, renewableForecastMw: 8000, netImportMw: 0, systemLoadMw: 18000, exportPlanMw: 6000, reserveMw: 1000 },
-    { label: '高峰 17–21', dispatchableMaxMw: 20000, renewableForecastMw: 4000, netImportMw: 0, systemLoadMw: 21000, exportPlanMw: 6500, reserveMw: 1200 },
-    { label: '晚谷 21–24', dispatchableMaxMw: 20000, renewableForecastMw: 7000, netImportMw: 0, systemLoadMw: 16000, exportPlanMw: 6000, reserveMw: 1000 }
-  ]
-}
+/** 初始表值（原「常规」预置；slim-s2 二轮起预置示例形态 UI 下线，仅作为开局默认数据）。 */
+const INITIAL_SLOTS: SlotRow[] = [
+  { label: '低谷 00–08', dispatchableMaxMw: 20000, renewableForecastMw: 9000, netImportMw: 0, systemLoadMw: 14000, exportPlanMw: 6000, reserveMw: 1000 },
+  { label: '平段 08–17', dispatchableMaxMw: 20000, renewableForecastMw: 8000, netImportMw: 0, systemLoadMw: 18000, exportPlanMw: 6000, reserveMw: 1000 },
+  { label: '高峰 17–21', dispatchableMaxMw: 20000, renewableForecastMw: 4000, netImportMw: 0, systemLoadMw: 21000, exportPlanMw: 6500, reserveMw: 1200 },
+  { label: '晚谷 21–24', dispatchableMaxMw: 20000, renewableForecastMw: 7000, netImportMw: 0, systemLoadMw: 16000, exportPlanMw: 6000, reserveMw: 1000 }
+]
 
-const presetName = ref<'typical' | 'renewable' | 'tight' | 'captured' | 'db'>('typical')
-const slots = ref<SlotRow[]>(presetSlots('typical'))
+const slots = ref<SlotRow[]>(INITIAL_SLOTS.map((s) => ({ ...s })))
 
 // 逐格来源跟踪（可信链）
 // 六列 × 四段，每格一个来源标记。预置示例=manual（人工假设），采集拉取=capture，
@@ -111,12 +97,6 @@ function markManual(slotIndex: number, field: FieldKey) {
 }
 function sourceOf(slotIndex: number, field: FieldKey): SourceKind {
   return cellSources.value[`${slotIndex}:${field}`] ?? 'manual'
-}
-
-function applyPreset(kind: 'typical' | 'renewable' | 'tight') {
-  presetName.value = kind
-  slots.value = presetSlots(kind)
-  cellSources.value = blankSources() // 预置示例值全按人工假设计
 }
 
 // 基本面库（PG · 迁移 012）：保存/载入，缺什么录什么
@@ -159,7 +139,6 @@ async function loadFromDb() {
       cellSources.value[`${slotIndex}:${field}`] = e.source_kind
       applied += 1
     }
-    presetName.value = 'db'
     dbMsg.value = `已载入 ${applied} 格（${currentRegion.value.id} · ${props.targetDate}），来源随库`
   } catch (e) {
     dbError.value = e instanceof Error ? e.message : '基本面库读取失败'
@@ -282,7 +261,6 @@ async function pullFundamentals() {
       return
     }
     pulledFields.value = applied
-    presetName.value = 'captured'
     pullMsg.value = `已拉取：${applied.join('、')}；可调机组与备用该族不含，仍需人工核定`
   } catch (e) {
     pullError.value = e instanceof Error ? e.message : '采集库拉取失败'
@@ -391,6 +369,24 @@ const priceCompare = computed(() => provincePriceCompare(domesticPrice.value, ex
 // 外送公告（会议 §4：外送有无可做交易作为基本面因素）
 const exportNotice = ref('')
 
+/** 日内要素短结论（判断卡单行展示）：锚对照与比价方向各给一枚结论 chip。 */
+const anchorHintShort = computed(() => {
+  if (!anchorVerdict.value) return null
+  return anchorVerdict.value.verdict === 'anchor_within'
+    ? '锚在中枢内'
+    : anchorVerdict.value.verdict === 'anchor_above_center'
+      ? '锚高于中枢'
+      : '锚低于中枢'
+})
+const compareHintShort = computed(() => {
+  if (!priceCompare.value) return null
+  return priceCompare.value.side === 'domestic'
+    ? '先省内'
+    : priceCompare.value.side === 'external'
+      ? '先省外'
+      : '省内外无显著差异'
+})
+
 // AI 晨间分析（L1 简报 + L2 追问，共用一个面板）
 // 把当前面板的全部推演结果注入为上下文：AI 拿到的是"人已经算出来的东西"，
 // 它的职责是给出态势判断的理由、挑出规则表结论可疑的地方、提示最该防的时段，
@@ -456,7 +452,8 @@ const aiQuestion = computed(() =>
 const assessments = computed(() => assessSlots(slots.value))
 const daySummary = computed(() => summarizeDay(assessments.value))
 
-// 外送耦合推演：外送一变，档位会不会被推翻
+// 外送耦合推演（slim-s2 二轮起 UI 下线）：默认情景计算保留——高峰段 +2000MW 的档位
+// 影响仅供 aiContext.exportCoupling，字段集合与下线前一致；UI 回补走 git 历史。
 const exportDelta = ref(2000)
 const couplingSlotIndex = ref(2) // 默认看高峰段
 const coupling = computed(() =>
@@ -470,21 +467,18 @@ function regimeClass(regime: string | null) {
   return 'r-tight'
 }
 
-// 八源验签（作业前清单式自查，与 AI 面板并列成 2×2 第二行）
-type SourceRow = SourceStatus & { label: string }
-const sourceRows = ref<SourceRow[]>(
-  REQUIRED_SOURCES.map((s) => ({
-    id: s.id,
-    label: s.label,
-    present: true,
-    credibility: 'B' as DataCredibility,
-    timestamp: '07:30',
-    completeness: 1,
-    mock: false
-  }))
-)
-const CREDIBILITIES: DataCredibility[] = ['A', 'B', 'C', 'D']
-const integrityVerdict = computed(() => assessIntegrity(sourceRows.value))
+// 八源验签（自动探针未接期间的静态默认口径）：slim-s2 二轮起手动勾验清单下线——
+// 八源默认全到位/B 级时验签恒满分，写回门禁实际由下方「自建口径封顶」决定，
+// 手动表格不产生任何信息增量。自动验签探针接入后由其产出逐源状态并恢复异常分支 UI。
+const DEFAULT_SOURCES = REQUIRED_SOURCES.map((s) => ({
+  ...s,
+  present: true,
+  credibility: 'B' as const,
+  timestamp: '07:30',
+  completeness: 1,
+  mock: false
+}))
+const integrityVerdict = computed(() => assessIntegrity(DEFAULT_SOURCES))
 
 /**
  * 写回口径的封顶：基本面由使用者给定期间，门禁上限「可参考」、可信度上限 C。
@@ -503,6 +497,25 @@ const effectiveCredibility = computed(() => {
   const cap = CRED_ORDER.indexOf('C')
   return CRED_ORDER[Math.max(fromIntegrity, cap)]
 })
+
+/** 数据与口径状态行（slim-s2）：原脚注与封顶说明收进一行摘要。诚实边界——阻断提示
+ * （S1 未写回）与采集/库操作三态不进 items，仍在卡内直显；Mock/原型态标识同理。 */
+const statusItems = computed<DataStatusItem[]>(() => [
+  {
+    tone: 'info',
+    text: pulledFields.value.length
+      ? `基本面口径：负荷/新能源/外送已接云南采集库调度预测（${pulledFields.value.join('、')}），可调机组与备用仍为人工核定`
+      : '基本面口径：当前由使用者给定，可从基本面卡头「采集拉取」接入云南调度预测（负荷/新能源/外送）'
+  },
+  {
+    tone: 'info',
+    text: `可信数据 ${trustedCellCount.value}/24 格（采集/调度口径），其余为人工或公司假设；AI 简报对假设上的结论强制标注「基于假设」`
+  },
+  {
+    tone: 'caveat',
+    text: `写回口径如实封顶：自建模型（C 级）、门禁「${USAGE_GATE_LABEL[effectiveGate.value]}」（自动验签探针未接，接前不放开）——申报暴露系数会因此减半`
+  }
+])
 
 // 立场目标（#2005）：同一态势判断，三类身份的策略方向相反
 const positionGoal = computed(() => reviewFocusOf(activeStanceType.value)?.goal ?? null)
@@ -561,24 +574,9 @@ async function writeBack() {
 
 <template>
   <div class="ma">
-    <div class="ma-presets">
-      <span>典型日形态：</span>
-      <button type="button" :class="{ on: presetName === 'typical' }" @click="applyPreset('typical')">常规</button>
-      <button type="button" :class="{ on: presetName === 'renewable' }" @click="applyPreset('renewable')">新能源大发</button>
-      <button type="button" :class="{ on: presetName === 'tight' }" @click="applyPreset('tight')">供需偏紧</button>
-      <button type="button" class="pull" :class="{ on: presetName === 'captured' }" :disabled="pulling" @click="pullFundamentals">
-        {{ pulling ? '拉取中…' : '从采集库拉取（云南调度预测）' }}
-      </button>
-      <span class="ma-sep" />
-      <button type="button" class="db" :class="{ on: presetName === 'db' }" :disabled="dbBusy" @click="loadFromDb">从基本面库载入</button>
-      <button type="button" class="db" :disabled="dbBusy" @click="saveToDb">保存到基本面库</button>
-      <span v-if="pullMsg" class="ma-pull-ok">{{ pullMsg }}</span>
-      <span v-if="pullError" class="ma-err">{{ pullError }}</span>
-      <span v-if="dbMsg" class="ma-pull-ok">{{ dbMsg }}</span>
-      <span v-if="dbError" class="ma-err">{{ dbError }}</span>
-    </div>
+    <DataStatusLine :items="statusItems" />
 
-    <!-- 今日市场判断（S2 主产出） -->
+    <!-- 今日市场判断（S2 主产出，视觉主角）：整行呈现 -->
     <section class="ma-verdict" :class="regimeClass(daySummary.dominantRegime)">
       <div class="ma-verdict-main">
         <span class="ma-regime">
@@ -597,7 +595,62 @@ async function writeBack() {
       </div>
       <p class="ma-summary">{{ daySummary.summary }}</p>
 
-      <!-- 昨日偏差 → 今日判断（手册 S2 步骤④） -->
+      <!-- 日内要素一行（slim-s2 三轮：由折叠行升入判断卡，与判断同屏——煤价锚对照的正是
+           上方价格中枢，比价答的正是给 S3 的方向倾向；说明文字收进行头 ⓘ） -->
+      <div class="ma-dayline">
+        <el-tooltip placement="top" :show-after="150">
+          <template #content>
+            <p>煤价是火电边际成本的锚（换算式可复核）；比价答「先做省内还是省外」；外送公告作为基本面要素留痕。</p>
+          </template>
+          <span class="ma-dayline-label">日内要素 <span class="ma-info">ⓘ</span></span>
+        </el-tooltip>
+        <label>
+          煤价
+          <span class="ma-cell">
+            <input v-model.number="coalPrice" type="number" min="0" placeholder="元/吨" @input="coalSource = 'manual'" />
+            <i class="ma-src" :class="`src-${coalSource}`">{{ SOURCE_KIND_LABEL[coalSource] }}</i>
+          </span>
+        </label>
+        <template v-if="coalAnchor">
+          <span class="ma-dayline-calc">→ 锚 <strong>{{ coalAnchor.totalYuanPerMwh }}</strong></span>
+          <el-tooltip placement="top" :show-after="150" :content="`燃料 ${coalAnchor.fuelYuanPerMwh} + 其它变动；标煤 ${coalAnchor.standardCoalYuanPerTon} 元/吨标煤。${coalAnchor.assumptions}`">
+            <em v-if="anchorHintShort" class="ma-chip" :class="anchorVerdict?.verdict">{{ anchorHintShort }}</em>
+          </el-tooltip>
+        </template>
+        <span class="ma-dayline-sep" aria-hidden="true" />
+        <label>省内 <input v-model.number="domesticPrice" type="number" min="0" placeholder="元/MWh" /></label>
+        <el-tooltip placement="top" :show-after="150" content="取供需分档价格中枢的中值作省内参考（来源=本页 S2 推演）">
+          <button
+            type="button"
+            class="ma-compare-fill"
+            :disabled="daySummary.priceCenterLow === null || daySummary.priceCenterHigh === null"
+            @click="domesticPrice = daySummary.priceCenterLow !== null && daySummary.priceCenterHigh !== null
+              ? Math.round((daySummary.priceCenterLow + daySummary.priceCenterHigh) / 2)
+              : null"
+          >
+            取中枢中值
+          </button>
+        </el-tooltip>
+        <label>省外
+          <span class="ma-cell">
+            <input
+              v-model.number="externalPrice"
+              type="number"
+              min="0"
+              placeholder="元/MWh"
+              @input="externalPriceSource = 'manual'"
+            />
+            <i class="ma-src" :class="`src-${externalPriceSource}`">{{ SOURCE_KIND_LABEL[externalPriceSource] }}</i>
+          </span>
+        </label>
+        <em v-if="compareHintShort" class="ma-chip" :class="priceCompare?.side">{{ compareHintShort }}</em>
+        <span class="ma-dayline-sep" aria-hidden="true" />
+        <label class="ma-dayline-notice">公告
+          <input v-model="exportNotice" type="text" placeholder="如：华东通道 11:00–13:00 有余量窗口" />
+        </label>
+      </div>
+
+      <!-- 昨日偏差 → 今日判断（手册 S2 步骤④）：文档要求的唯一主任务输入；S1 未写回为阻断态直显 -->
       <div class="ma-yday">
         <template v-if="yesterdayReview">
           <div class="ma-yday-facts">
@@ -653,15 +706,36 @@ async function writeBack() {
       </div>
     </section>
 
-    <div class="ma-grid">
+    <!-- 主区一行两列：基本面（左，输入）∥ 供需比与边际机组（右，推演）；窄屏（≤1240px）单列 -->
+    <div class="ma-row">
       <!-- 基本面输入：逐格带来源徽章（可信链的展示端） -->
       <section class="ma-panel">
         <h3>
           基本面（分时段 · 逐格标来源）
-          <em class="ma-src-legend">
-            <i class="src-capture">采集</i> = 调度预测采集；<i class="src-manual">人工</i> = 估计/假设，AI 只当假设用
-          </em>
+          <el-tooltip placement="top" :show-after="150">
+            <template #content>
+              <p>单位 MW；外送计入分母（外送增加等价于省内净负荷增加）。</p>
+              <p>采集 = 调度预测采集；人工 = 估计/假设，AI 只当假设用。</p>
+            </template>
+            <span class="ma-info" tabindex="0">ⓘ</span>
+          </el-tooltip>
         </h3>
+        <div class="ma-tools">
+          <el-tooltip placement="top" :show-after="150" content="从采集库拉取云南调度预测（yn_system_forecast 族：负荷/新能源/外送三项按标的日聚合；可调机组与备用该族不含，维持人工值）">
+            <button type="button" :disabled="pulling" @click="pullFundamentals">
+              {{ pulling ? '拉取中…' : '采集拉取' }}
+            </button>
+          </el-tooltip>
+          <el-tooltip placement="top" :show-after="150" content="从 PG 基本面库载入本日记录（含逐格来源与煤价、小时持仓）；无记录时提示先录入">
+            <button type="button" :disabled="dbBusy" @click="loadFromDb">库载入</button>
+          </el-tooltip>
+          <button type="button" :disabled="dbBusy" @click="saveToDb">保存到库</button>
+        </div>
+        <!-- 采集/库操作三态直显（诚实边界：不折叠、不进状态行） -->
+        <p v-if="pullMsg" class="ma-pipe-ok">{{ pullMsg }}</p>
+        <p v-if="pullError" class="ma-pipe-err">{{ pullError }}</p>
+        <p v-if="dbMsg" class="ma-pipe-ok">{{ dbMsg }}</p>
+        <p v-if="dbError" class="ma-pipe-err">{{ dbError }}</p>
         <table class="ma-table">
           <thead>
             <tr>
@@ -670,7 +744,7 @@ async function writeBack() {
                 <el-tooltip placement="top" :show-after="150">
                   <template #content>
                     <p>全网口径（调度侧数据，市场成员通常拿不到全量）——注意与「公司代理机组容量」是两个不同的量，不可混填。</p>
-                    <p>采集库没有此口径——从调度渠道拿到后在此录入并「保存到基本面库」，手改任一格来源即打回「人工」。</p>
+                    <p>采集库没有此口径——从调度渠道拿到后在此录入并「保存到库」，手改任一格来源即打回「人工」。</p>
                   </template>
                   <span>全网可调机组 <span class="ma-info">ⓘ</span></span>
                 </el-tooltip>
@@ -690,9 +764,6 @@ async function writeBack() {
             </tr>
           </tbody>
         </table>
-        <p class="ma-tip">
-          单位 MW。<strong>外送计入分母</strong>（外送增加等价于省内净负荷增加）。
-        </p>
       </section>
 
       <!-- 逐时段供需比与档位 -->
@@ -717,111 +788,24 @@ async function writeBack() {
             </tr>
           </tbody>
         </table>
-
-        <h3><ArrowRightLeft :size="13" /> 外送耦合推演</h3>
-        <div class="ma-coupling">
-          <label>
-            时段
-            <select v-model.number="couplingSlotIndex">
-              <option v-for="(row, i) in slots" :key="row.label" :value="i">{{ row.label }}</option>
-            </select>
-          </label>
-          <label>外送增量 MW<input v-model.number="exportDelta" type="number" step="500" /></label>
-        </div>
-        <p class="ma-coupling-out" :class="{ shifted: coupling.regimeShifted }">
-          供需比 {{ coupling.ratioBefore ?? '—' }} → {{ coupling.ratioAfter ?? '—' }}
-          （Δ {{ coupling.delta ?? '—' }}）·
-          <template v-if="coupling.regimeShifted">
-            <strong>档位被推翻</strong>：{{ REGIME_LABEL[coupling.regimeBefore!] }} → {{ REGIME_LABEL[coupling.regimeAfter!] }}
-          </template>
-          <template v-else>档位未变（{{ coupling.regimeBefore ? REGIME_LABEL[coupling.regimeBefore] : '—' }}）</template>
-        </p>
-      </section>
-
-      <!-- 日内要素：煤价（基本面第四项）· 省内外比价 · 外送公告（会议 §4） -->
-      <section class="ma-panel">
-        <h3>
-          日内要素 · 煤价 / 省内外比价 / 外送公告
-          <em class="ma-src-legend">煤价是火电边际成本的锚（换算式可复核）；比价答「先做省内还是省外」</em>
-        </h3>
-
-        <div class="ma-coal">
-          <label>
-            到厂煤价 元/吨
-            <span class="ma-cell">
-              <input
-                v-model.number="coalPrice"
-                type="number"
-                min="0"
-                placeholder="如 850（5500 大卡）"
-                @input="coalSource = 'manual'"
-              />
-              <i class="ma-src" :class="`src-${coalSource}`">{{ SOURCE_KIND_LABEL[coalSource] }}</i>
-            </span>
-          </label>
-          <p v-if="coalAnchor" class="ma-coal-anchor">
-            火电边际成本锚 ≈ <strong>{{ coalAnchor.totalYuanPerMwh }}</strong> 元/MWh
-            （燃料 {{ coalAnchor.fuelYuanPerMwh }} + 其它变动；标煤 {{ coalAnchor.standardCoalYuanPerTon }} 元/吨标煤）
-            <span class="ma-coal-assume">{{ coalAnchor.assumptions }}</span>
-          </p>
-          <p v-if="anchorVerdict" class="ma-coal-verdict" :class="anchorVerdict.verdict">{{ anchorVerdict.hint }}</p>
-        </div>
-
-        <div class="ma-compare">
-          <label>省内参考 元/MWh
-            <input v-model.number="domesticPrice" type="number" min="0" placeholder="可取本页价格中枢中值" />
-          </label>
-          <el-tooltip placement="top" :show-after="150" content="取供需分档价格中枢的中值作省内参考（来源=本页 S2 推演）">
-            <button
-              type="button"
-              class="ma-compare-fill"
-              :disabled="daySummary.priceCenterLow === null || daySummary.priceCenterHigh === null"
-              @click="domesticPrice = daySummary.priceCenterLow !== null && daySummary.priceCenterHigh !== null
-                ? Math.round((daySummary.priceCenterLow + daySummary.priceCenterHigh) / 2)
-                : null"
-            >
-              取中枢中值
-            </button>
-          </el-tooltip>
-          <label>省外/省间参考 元/MWh
-            <span class="ma-cell">
-              <input
-                v-model.number="externalPrice"
-                type="number"
-                min="0"
-                placeholder="省间联动价（人工录入）"
-                @input="externalPriceSource = 'manual'"
-              />
-              <i class="ma-src" :class="`src-${externalPriceSource}`">{{ SOURCE_KIND_LABEL[externalPriceSource] }}</i>
-            </span>
-          </label>
-          <p v-if="priceCompare" class="ma-compare-out" :class="priceCompare.side">{{ priceCompare.hint }}</p>
-          <p v-else class="ma-tip" style="margin: 4px 0 0">填入两边参考价后给出「先省内还是先省外」比价结论。</p>
-        </div>
-
-        <label class="ma-notice">
-          外送公告（有无、可做交易窗口）
-          <input v-model="exportNotice" type="text" placeholder="如「华东通道 11:00–13:00 有 200 MW 余量窗口」；无公告留空" />
-        </label>
       </section>
     </div>
 
     <!-- 24 时段聚合视图（底层 96 点存储，24 时段仅作聚合展示 · 会议拍板） -->
-    <details class="ma-hourly">
+    <details class="ma-fold ma-hourly">
       <summary>
         24 时段聚合视图：需求电量 / 中长期持仓 / 差额（现货敞口）
-        <em v-if="hourlyTotals.gapMwh !== null">合计 需求 {{ hourlyTotals.demandMwh }} · 持仓 {{ hourlyTotals.positionMwh }} · 差额 {{ hourlyTotals.gapMwh }} MWh</em>
-        <em v-else>需求与持仓至少填一侧后出合计</em>
+        <em v-if="hourlyTotals.gapMwh !== null" class="ma-fold-hint">合计 需求 {{ hourlyTotals.demandMwh }} · 持仓 {{ hourlyTotals.positionMwh }} · 差额 {{ hourlyTotals.gapMwh }} MWh</em>
+        <em v-else class="ma-fold-hint">需求与持仓至少填一侧后出合计</em>
       </summary>
       <div class="ma-hourly-bar">
         <button type="button" class="pull" :disabled="hourlyPulling" @click="pullHourlyDemand">
           {{ hourlyPulling ? '聚合中…' : '需求电量按采集负荷预测聚合（96 点 → 24 小时）' }}
         </button>
-        <span v-if="hourlyPullMsg" class="ma-pull-ok">{{ hourlyPullMsg }}</span>
-        <span v-if="hourlyPullError" class="ma-err">{{ hourlyPullError }}</span>
+        <span v-if="hourlyPullMsg" class="ma-pipe-ok">{{ hourlyPullMsg }}</span>
+        <span v-if="hourlyPullError" class="ma-pipe-err">{{ hourlyPullError }}</span>
         <span class="ma-tip" style="margin: 0">
-          需求电量来源：{{ hourlyDemandSource === 'capture' ? `采集（${hourlyDemandDate}）` : '人工' }}；持仓为人工/公司口径（合约库联动见 S6）——
-          差额 = 需求 − 持仓，正数即需在现货补买的敞口。持仓逐时保存随「保存到基本面库」。
+          来源：{{ hourlyDemandSource === 'capture' ? `采集（${hourlyDemandDate}）` : '人工' }}；差额 = 需求 − 持仓，正数即需现货补买的敞口；持仓随「保存到库」存档（合约库联动见 S6）。
         </span>
       </div>
       <table class="ma-table ma-hourly-table">
@@ -844,200 +828,148 @@ async function writeBack() {
       </table>
     </details>
 
-    <!-- 第二行：八源验签 × AI 晨间分析，与上一行「基本面 × 供需比」成 2×2 -->
-    <div class="ma-grid">
-      <!-- 八源验签：作业前的清单式自查（逻辑见 h3 ⓘ 与底部口径说明） -->
-      <section class="ma-panel">
-        <h3>
-          <ClipboardCheck :size="13" /> 数据可信度自查（八源验签）
-          <el-tooltip placement="top" :show-after="150">
-            <template #content>
-              <p>逻辑：开工前逐一勾验八类输入数据「到位没有、几成可信、是不是 Mock」→ 算完整率 → 判三态门禁（可申报 / 可参考 / 仅展示）。</p>
-              <p>任一源缺席或标 Mock 即降档；结论随市场判断一并写回，直接决定申报暴露系数（1 / 0.5 / 0）。当前为人工勾选，自动验签探针未接。</p>
-            </template>
-            <span class="ma-info" tabindex="0">ⓘ</span>
-          </el-tooltip>
-          <em class="ma-gate-badge" :class="integrityVerdict.gate">
-            {{ USAGE_GATE_LABEL[integrityVerdict.gate] }} · 完整率 {{ (integrityVerdict.completenessRate * 100).toFixed(0) }}%
-          </em>
-        </h3>
-        <table class="ma-table ma-sources">
-          <thead>
-            <tr><th>#</th><th>数据源</th><th>到位</th><th>可信度</th><th>完整度</th><th>Mock</th></tr>
-          </thead>
-          <tbody>
-            <tr v-for="(row, i) in sourceRows" :key="row.id" :class="{ 'row-bad': !row.present || row.credibility === 'D' || row.mock }">
-              <td>{{ i + 1 }}</td>
-              <td class="ma-slot">{{ row.label }}</td>
-              <td><input v-model="row.present" type="checkbox" /></td>
-              <td>
-                <select v-model="row.credibility" :disabled="!row.present">
-                  <option v-for="c in CREDIBILITIES" :key="c" :value="c">{{ CREDIBILITY_LABEL[c] }}</option>
-                </select>
-              </td>
-              <td><input v-model.number="row.completeness" type="number" min="0" max="1" step="0.05" :disabled="!row.present" /></td>
-              <td><input v-model="row.mock" type="checkbox" :disabled="!row.present" /></td>
-            </tr>
-          </tbody>
-        </table>
-        <ul v-if="integrityVerdict.problems.length" class="ma-problems">
-          <li v-for="(p, i) in integrityVerdict.problems" :key="`${p.id}-${i}`"><strong>{{ p.label }}</strong> — {{ p.reason }}</li>
-        </ul>
-        <p class="ma-tip">
-          写回口径 = 验签结论与「自建口径封顶」取更严者：基本面未全接调度边界条件包期间，门禁上限
-          「可参考」（本次写回 {{ USAGE_GATE_LABEL[effectiveGate] }}）、可信度上限 C——验签打满分也不放开。
-        </p>
-      </section>
-
-      <!-- AI 晨间分析：简报初稿 + 追问（注入当前面板全部推演结果为上下文） -->
-      <section class="ma-panel">
-        <h3>
-          AI 晨间分析
-          <em class="ma-src-legend">产出分析初稿与反对意见，不替人拍板；写回仍走上方「写回」按钮</em>
-        </h3>
-        <div v-if="!aiOpen" class="ma-ai-idle">
-          <p>
-            把左侧基本面（逐格含来源标注）、供需比推演、外送耦合、验签门禁与昨日复盘一并注入
-            AI 上下文，产出结构化简报：态势判断理由 / 规则表可疑点 / 最该防时段 / 给 S3 的方向倾向。
-            当前 {{ trustedCellCount }}/24 格为可信数据——建立在人工假设上的结论会被强制标注「基于假设」。
-          </p>
-          <button type="button" class="ma-ai-start" @click="aiOpen = true">生成晨间简报</button>
-        </div>
-        <AgentChatPanel
-          v-if="aiOpen"
-          scenario="morning_brief"
-          :initial-question="aiQuestion"
-          :context-payload="aiContext"
-          history-key="s2_market_analysis"
-        />
-      </section>
-    </div>
-
-    <p class="ma-foot">
-      基本面口径：{{ pulledFields.length
-        ? `负荷/新能源/外送已接云南采集库调度预测（${pulledFields.join('、')}），可调机组与备用仍为人工核定`
-        : '当前由使用者给定，可点上方「从采集库拉取」接入云南调度预测（负荷/新能源/外送）' }}；
-      写回口径如实封顶为自建模型（C 级）、门禁「可参考」——申报暴露会因此减半。
-    </p>
+    <!-- AI 晨间分析：面板末行——空闲态为一条 invite 横条，展开后为完整面板（写回仍走判断卡「写回」按钮） -->
+    <section v-if="!aiOpen" class="ma-ai-invite">
+      <p><b>AI 晨间简报</b>——态势理由 · 规则表可疑点 · 最该防时段 · 给 S3 的方向倾向</p>
+      <button type="button" class="ma-ai-start" @click="aiOpen = true">生成晨间简报</button>
+    </section>
+    <section v-else class="ma-panel">
+      <h3>
+        AI 晨间分析
+        <em>产出分析初稿与反对意见，不替人拍板；写回仍走判断卡「写回」按钮</em>
+      </h3>
+      <AgentChatPanel
+        scenario="morning_brief"
+        :initial-question="aiQuestion"
+        :context-payload="aiContext"
+        history-key="s2_market_analysis"
+      />
+    </section>
   </div>
 </template>
 
 <style scoped>
+/* ── S2 主任务轴重排（slim-s2-market-analysis）───────────────────────────────
+ * 纪律与 S1 方案 B 同款：一套卡片配方（12px 圆角 / 1px var(--line) / var(--panel) 底 / 无阴影）；
+ * 层级靠「字号跳变 + 字重 + 颜色」三杠杆（态势 28px 大字 vs 11.5px 灰标签）；
+ * 颜色配给——红=偏紧、琥珀=待人处理/口径警示、绿=宽松/完成、accent=链接、primary=唯一主动作。
+ * 参考区（日内要素/24时段）默认折叠，AI 按钮后置；预置示例/耦合推演 UI/验签清单已下线；
+ * 写回契约与折叠无关。 */
 .ma { display: flex; flex-direction: column; gap: 12px; }
-.ma-presets { display: flex; align-items: center; gap: 6px; font-size: var(--font-sm); flex-wrap: wrap; }
-.ma-presets button { padding: 3px 11px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 12px; background: var(--panel, #fff); font-size: var(--font-sm); cursor: pointer; }
-.ma-presets button.on { border-color: var(--accent, #2563eb); background: var(--primary-tint, #eff6ff); color: var(--accent, #1d4ed8); }
-.ma-presets button.pull { border-color: var(--success, #059669); color: var(--success, #047857); }
-.ma-presets button.pull.on { background: var(--primary-tint, #ecfdf5); }
-.ma-presets button.pull:disabled { opacity: .5; cursor: wait; }
-.ma-presets button.db { border-color: var(--violet, #7c3aed); color: var(--violet, #6d28d9); }
-.ma-presets button.db.on { background: var(--violet-tint, #f5f3ff); }
-.ma-presets button.db:disabled { opacity: .5; cursor: wait; }
-.ma-sep { width: 1px; height: 16px; background: var(--el-border-color, #dcdfe6); }
-.ma-pull-ok { font-size: var(--font-xs); color: var(--success, #047857); }
 
-.ma-src-legend { margin-left: 8px; font-style: normal; font-weight: 400; font-size: var(--font-10); color: var(--el-text-color-secondary, #889); }
 /* 标题/表头 ⓘ：说明性文字收纳为 el-tooltip（内嵌浏览器不渲染原生 title），与 S1 同款 */
 .ma-info { display: inline-flex; align-items: center; justify-content: center; width: 15px; height: 15px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 50%; background: var(--panel-sub, #f8fafc); color: var(--el-text-color-secondary, #667); font-size: var(--font-10); font-style: normal; cursor: help; user-select: none; }
-.ma-cell { display: inline-flex; align-items: center; gap: 3px; }
-.ma-src { font-style: normal; font-size: var(--font-9); padding: 0 4px; border-radius: 6px; white-space: nowrap; }
-.src-capture, .src-dispatch { background: var(--primary-tint, #dcfce7); color: var(--success, #15803d); }
-.src-company { background: var(--warning-tint, #fef3c7); color: var(--warning, #92400e); }
-.src-manual { background: var(--panel-sub, #f1f5f9); color: var(--muted, #64748b); }
 
-.ma-ai-idle p { margin: 0 0 10px; font-size: var(--font-sm); line-height: 1.7; color: var(--el-text-color-secondary, #667); }
-.ma-ai-start { padding: 6px 18px; border: 1px solid var(--accent, #2563eb); border-radius: 6px; background: var(--accent, #2563eb); color: #fff; font-size: var(--font-sm); cursor: pointer; }
+/* ── 主区 2×2（四块两组，同款网格保证列宽对齐）：上排 判断卡∥基本面、下排 AI∥供需比 ── */
+.ma-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; align-items: start; }
+@media (max-width: 1240px) { .ma-row { grid-template-columns: 1fr; } }
 
-.ma-gate-badge { margin-left: auto; font-style: normal; font-size: var(--font-10); font-weight: 600; padding: 2px 9px; border-radius: 9px; }
-.ma-gate-badge.declarable { background: var(--primary-tint, #dcfce7); color: var(--success, #15803d); }
-.ma-gate-badge.reference { background: var(--warning-tint, #fef3c7); color: var(--warning, #92400e); }
-.ma-gate-badge.display_only { background: var(--danger-tint, #fee2e2); color: var(--danger, #991b1b); }
-
-.ma-verdict { padding: 12px 14px; border: 1px solid; border-radius: 10px; }
+/* ── 判断卡（视觉主角）：态势语义 tint 定底色，主导态势放大成 28px 大字 ── */
+.ma-verdict { padding: 14px 16px 12px; border: 1px solid; border-radius: 12px; }
 .ma-verdict.r-loose { border-color: var(--success, #86efac); background: var(--primary-tint, #f0fdf4); }
 .ma-verdict.r-mid { border-color: var(--primary-tint-border, #bfdbfe); background: var(--panel-sub, #f8fbff); }
 .ma-verdict.r-tight { border-color: var(--danger, #fca5a5); background: var(--danger-tint, #fef2f2); }
 .ma-verdict.r-unknown { border-color: var(--line, #e2e8f0); background: var(--panel-sub, #f8fafc); }
 .ma-verdict-main { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; }
-.ma-regime { font-size: var(--font-20); font-weight: 700; }
+.ma-regime { font-size: var(--font-28, 28px); font-weight: 700; line-height: 1.25; letter-spacing: -0.01em; font-variant-numeric: tabular-nums; }
 .ma-center, .ma-cov { font-size: var(--font-md); font-variant-numeric: tabular-nums; }
-.ma-summary { margin: 6px 0 4px; font-size: var(--font-sm); line-height: 1.6; }
-.ma-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.ma-summary { margin: 6px 0 0; font-size: var(--font-sm); line-height: 1.6; }
+.ma-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 8px; }
 .ma-actions .primary { display: inline-flex; align-items: center; gap: 5px; padding: 5px 14px; border: 1px solid var(--accent, #2563eb); border-radius: 6px; background: var(--accent, #2563eb); color: #fff; font-size: var(--font-sm); cursor: pointer; }
 .ma-actions .primary:disabled { opacity: .45; cursor: not-allowed; }
 .ma-actions .ghost { padding: 5px 12px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 6px; background: var(--panel, #fff); font-size: var(--font-sm); cursor: pointer; }
 .ma-ok { font-size: var(--font-sm); color: var(--success, #15803d); }
 .ma-err { font-size: var(--font-sm); color: var(--danger, #b91c1c); }
 .ma-written { font-size: var(--font-sm); color: var(--success, #15803d); }
+.ma-pos-goal { margin: 8px 0 0; font-size: var(--font-xs); color: var(--sky, #075985); }
 
-.ma-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); gap: 12px; }
-.ma-panel { padding: 12px 14px; border: 1px solid var(--el-border-color-lighter, #ebeef5); border-radius: 10px; background: var(--panel, #fff); }
-.ma-panel h3 { display: flex; align-items: center; gap: 5px; margin: 10px 0 6px; font-size: var(--font-md); }
-.ma-panel h3:first-child { margin-top: 0; }
-
-.ma-table { width: 100%; border-collapse: collapse; font-size: var(--font-xs); font-variant-numeric: tabular-nums; }
-.ma-table th, .ma-table td { padding: 4px 5px; border-bottom: 1px solid var(--el-border-color-lighter, #ebeef5); text-align: right; }
-.ma-table th:first-child, .ma-table td:first-child { text-align: left; }
-.ma-table th { color: var(--el-text-color-secondary, #667); font-weight: 600; }
-.ma-table input[type='number'] { width: 74px; padding: 2px 4px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 4px; font-size: var(--font-xs); text-align: right; }
-.ma-slot { white-space: nowrap; text-align: left; }
-.ma-export input { border-color: var(--warning, #f59e0b); }
-.ma-table tr.r-loose td:nth-child(3) { color: var(--success, #15803d); }
-.ma-table tr.r-tight td:nth-child(3) { color: var(--danger, #b91c1c); }
-
-.ma-tip, .ma-foot { margin: 6px 0 0; font-size: var(--font-xs); line-height: 1.6; color: var(--el-text-color-secondary, #667); }
-.ma-foot { color: var(--warning, #a16207); }
-.ma-pos-goal { margin: 6px 0 0; font-size: var(--font-xs); color: var(--sky, #075985); }
-
-.ma-coupling { display: flex; gap: 12px; flex-wrap: wrap; font-size: var(--font-xs); }
-.ma-coupling label { display: inline-flex; align-items: center; gap: 5px; }
-.ma-coupling select, .ma-coupling input { padding: 3px 6px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 5px; font-size: var(--font-xs); }
-.ma-coupling-out { margin: 6px 0 0; padding: 6px 9px; border-radius: 6px; background: var(--panel-sub, #f8fafc); font-size: var(--font-xs); }
-.ma-coupling-out.shifted { background: var(--danger-tint, #fef2f2); color: var(--danger, #991b1b); }
-
-.ma-sources td select, .ma-sources td input[type='number'] { font-size: var(--font-xs); }
-.row-bad { background: var(--warning-tint, #fff7ed); }
-.ma-problems { margin: 8px 0 0; padding-left: 18px; font-size: var(--font-xs); color: var(--warning, #b45309); line-height: 1.7; }
-@media (max-width: 760px) {
-  .ma-grid { grid-template-columns: 1fr; }
-  .ma-table, .ma-hourly-table { display: block; overflow-x: auto; }
-}
-
-/* 昨日偏差 → 今日判断 */
-.ma-yday { margin: 8px 0; padding: 8px 10px; border-radius: 8px; background: var(--panel-sub, rgba(255,255,255,.75)); border: 1px dashed var(--el-border-color, #dcdfe6); }
+/* 昨日偏差 → 今日判断（主任务内嵌块） */
+.ma-yday { margin: 10px 0 0; padding: 8px 10px; border-radius: 8px; background: var(--panel-sub, rgba(255,255,255,.75)); border: 1px dashed var(--el-border-color, #dcdfe6); }
 .ma-yday-facts { display: flex; gap: 14px; flex-wrap: wrap; font-size: var(--font-sm); }
 .ma-yday-pending { font-style: normal; font-size: var(--font-10); padding: 0 6px; border-radius: 8px; background: var(--warning-tint, #fef3c7); color: var(--warning, #92400e); }
 .ma-yday-lessons { margin: 4px 0 0; font-size: var(--font-xs); color: var(--el-text-color-secondary, #667); }
 .ma-yday-input { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 6px; font-size: var(--font-xs); }
 .ma-yday-input select { padding: 3px 6px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 5px; font-size: var(--font-xs); }
 .ma-yday-note { flex: 1; min-width: 220px; padding: 4px 7px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 5px; font-size: var(--font-xs); }
-.ma-warn-inline { font-size: var(--font-sm); color: var(--warning, #b45309); }
+.ma-warn-inline { margin: 0; font-size: var(--font-sm); color: var(--warning, #b45309); }
 .ma-jump { padding: 0; border: none; background: none; color: var(--accent, #1d4ed8); font: inherit; font-size: var(--font-sm); cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
 
-/* 日内要素：煤价 / 比价 / 公告 */
-.ma-coal, .ma-compare { display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px; }
-.ma-coal label, .ma-compare label { display: flex; align-items: center; gap: 8px; font-size: var(--font-xs); color: var(--el-text-color-secondary, #667); }
-.ma-coal input, .ma-compare input { width: 110px; padding: 3px 6px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 5px; font-size: var(--font-sm); text-align: right; }
-.ma-coal-anchor { margin: 0; font-size: var(--font-sm); font-variant-numeric: tabular-nums; }
-.ma-coal-assume { display: block; font-size: var(--font-10); color: var(--el-text-color-secondary, #889); }
-.ma-coal-verdict { margin: 0; padding: 5px 9px; border-radius: 6px; font-size: var(--font-xs); line-height: 1.6; }
-.ma-coal-verdict.anchor_within { background: var(--primary-tint, #f0fdf4); color: var(--success, #166534); }
-.ma-coal-verdict.anchor_above_center, .ma-coal-verdict.anchor_below_center { background: var(--warning-tint, #fffbeb); color: var(--warning, #92400e); }
-.ma-compare { flex-direction: row; flex-wrap: wrap; align-items: center; gap: 10px; }
-.ma-compare-out { margin: 0; padding: 5px 9px; border-radius: 6px; font-size: var(--font-xs); }
-.ma-compare-out.domestic { background: var(--primary-tint, #eff6ff); color: var(--accent, #1d4ed8); }
-.ma-compare-out.external { background: var(--violet-tint, #f5f3ff); color: var(--violet, #6d28d9); }
-.ma-compare-out.comparable { background: var(--panel-sub, #f8fafc); color: var(--muted, #64748b); }
-.ma-compare-fill { padding: 3px 10px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 5px; background: var(--panel, #fff); font-size: var(--font-xs); cursor: pointer; color: var(--muted, #475569); }
-.ma-compare-fill:disabled { opacity: .45; cursor: not-allowed; }
-.ma-notice { display: flex; flex-direction: column; gap: 3px; font-size: var(--font-xs); color: var(--el-text-color-secondary, #667); }
-.ma-notice input { padding: 4px 7px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 5px; font-size: var(--font-sm); }
+/* 卡片统一配方（S1 方案 B） */
+.ma-panel { padding: 14px 16px 12px; border: 1px solid var(--line, #e2e8f0); border-radius: 12px; background: var(--panel, #fff); }
+.ma-panel h3 { display: flex; align-items: center; gap: 6px; margin: 0 0 8px; font-size: var(--font-lg, 15px); font-weight: 600; color: var(--text, #1e293b); flex-wrap: wrap; min-width: 0; }
+.ma-panel h3::before { content: ''; flex: none; width: 3px; height: 14px; border-radius: 2px; background: var(--primary, #0f766e); margin-right: 2px; }
+.ma-panel h3 em { font-style: normal; font-weight: 400; font-size: var(--font-xs); color: var(--el-text-color-secondary, #889); min-width: 0; }
 
-/* 24 时段聚合视图 */
-.ma-hourly { border: 1px solid var(--el-border-color-lighter, #ebeef5); border-radius: 10px; background: var(--panel, #fff); padding: 8px 12px; }
-.ma-hourly summary { display: flex; align-items: center; gap: 10px; font-size: var(--font-sm); font-weight: 600; cursor: pointer; flex-wrap: wrap; }
-.ma-hourly summary em { font-style: normal; font-weight: 400; font-size: var(--font-xs); color: var(--el-text-color-secondary, #889); font-variant-numeric: tabular-nums; }
-.ma-hourly[open] summary { margin-bottom: 8px; }
+/* 数据管道按钮组（基本面卡头） */
+.ma-tools { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; margin: 0 0 8px; font-size: var(--font-xs); }
+.ma-tools button { padding: 2px 9px; border: 1px solid var(--line, #dcdfe6); border-radius: 999px; background: var(--panel, #fff); color: var(--muted, #475569); font-size: var(--font-xs); cursor: pointer; }
+.ma-tools button:disabled { opacity: .5; cursor: wait; }
+/* 采集/库操作三态：卡内直显（不折叠、不进状态行） */
+.ma-pipe-ok { margin: 0 0 6px; font-size: var(--font-xs); color: var(--success, #047857); }
+.ma-pipe-err { margin: 0 0 6px; font-size: var(--font-xs); color: var(--danger, #b91c1c); }
+
+/* 来源徽章（可信链展示端，配色配给：绿=采集/调度、琥珀=公司、灰=人工） */
+.ma-cell { display: inline-flex; align-items: center; gap: 3px; }
+.ma-src { font-style: normal; font-size: var(--font-9); padding: 0 4px; border-radius: 6px; white-space: nowrap; }
+.src-capture, .src-dispatch { background: var(--primary-tint, #dcfce7); color: var(--success, #15803d); }
+.src-company { background: var(--warning-tint, #fef3c7); color: var(--warning, #92400e); }
+.src-manual { background: var(--panel-sub, #f1f5f9); color: var(--muted, #64748b); }
+
+/* ── 参考区折叠配方：同卡片 12px 配方；结论预告跟在标题后，收起也可扫读 ── */
+.ma-fold { padding: 8px 16px; border: 1px solid var(--line, #e2e8f0); border-radius: 12px; background: var(--panel, #fff); }
+.ma-fold summary { display: flex; align-items: center; gap: 6px; cursor: pointer; list-style: none; user-select: none; font-size: var(--font-sm); font-weight: 600; color: var(--text, #1e293b); flex-wrap: wrap; min-width: 0; }
+.ma-fold summary::-webkit-details-marker { display: none; }
+.ma-fold summary::before { content: ''; flex: none; width: 3px; height: 14px; border-radius: 2px; background: var(--primary, #0f766e); margin-right: 2px; }
+.ma-fold summary::after { content: '▾'; flex: none; margin-left: auto; color: var(--muted, #64748b); font-size: var(--font-xs); transition: transform .15s; }
+.ma-fold[open] summary::after { transform: rotate(180deg); }
+.ma-fold[open] summary { margin-bottom: 8px; }
+.ma-fold-hint { font-style: normal; font-weight: 400; font-size: var(--font-xs); color: var(--muted, #64748b); font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ma-fold .ma-tip { margin: 2px 0 8px; }
+
+/* AI 晨间分析：空闲态为一条 invite 横条（左一句话右按钮），展开后为完整面板 */
+.ma-ai-invite { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 10px 16px; border: 1px dashed var(--line, #e2e8f0); border-radius: 12px; background: var(--panel-sub, #f8fafc); }
+.ma-ai-invite p { margin: 0; font-size: var(--font-sm); color: var(--text-soft, #475467); }
+.ma-ai-invite b { color: var(--text, #1e293b); }
+.ma-ai-start { padding: 5px 16px; border: 1px solid var(--accent, #2563eb); border-radius: 6px; background: var(--accent, #2563eb); color: #fff; font-size: var(--font-sm); cursor: pointer; }
+
+/* ── 表格（tabular-nums；发丝线用 --line-faint 与 S1 对齐） ──
+   基本面 7 列在双栏下偏紧：输入框收窄 + 单元格减 pad，窄屏退化为横向滚动 */
+.ma-table { width: 100%; border-collapse: collapse; font-size: var(--font-xs); font-variant-numeric: tabular-nums; }
+.ma-table th, .ma-table td { padding: 4px 3px; border-bottom: 1px solid var(--line-faint, #f0f2f5); text-align: right; }
+.ma-table th:first-child, .ma-table td:first-child { text-align: left; padding-left: 0; }
+.ma-table th { color: var(--el-text-color-secondary, #667); font-weight: 600; }
+.ma-table input[type='number'] { width: 58px; padding: 2px 3px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 4px; font-size: var(--font-xs); text-align: right; }
+.ma-slot { white-space: nowrap; text-align: left; }
+.ma-export input { border-color: var(--warning, #f59e0b); }
+.ma-table tr.r-loose td:nth-child(3) { color: var(--success, #15803d); }
+.ma-table tr.r-tight td:nth-child(3) { color: var(--danger, #b91c1c); }
+
+.ma-tip { margin: 6px 0 0; font-size: var(--font-xs); line-height: 1.6; color: var(--el-text-color-secondary, #667); }
+
+.row-bad { background: var(--warning-tint, #fff7ed); }
+@media (max-width: 760px) {
+  .ma-table, .ma-hourly-table { display: block; overflow-x: auto; }
+}
+
+/* 日内要素一行（判断卡内，虚线子块与昨日表态块同配方）：紧凑输入 + 结论 chip，
+   煤价锚对照的价格中枢、比价答的方向倾向就在同一张卡里 */
+.ma-dayline { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 10px 0 0; padding: 8px 10px; border-radius: 8px; background: var(--panel-sub, rgba(255,255,255,.75)); border: 1px dashed var(--el-border-color, #dcdfe6); font-size: var(--font-xs); }
+.ma-dayline-label { display: inline-flex; align-items: center; gap: 4px; font-weight: 600; color: var(--text, #1e293b); }
+.ma-dayline label { display: inline-flex; align-items: center; gap: 4px; color: var(--el-text-color-secondary, #667); }
+.ma-dayline input[type='number'] { width: 76px; padding: 2px 5px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 5px; font-size: var(--font-xs); text-align: right; }
+.ma-dayline input[type='text'] { width: 240px; max-width: 100%; padding: 2px 6px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 5px; font-size: var(--font-xs); }
+.ma-dayline-calc { color: var(--text-soft, #475467); font-variant-numeric: tabular-nums; }
+.ma-dayline-sep { width: 1px; height: 14px; background: var(--line, #e2e8f0); }
+.ma-chip { font-style: normal; font-size: var(--font-10); font-weight: 600; padding: 1px 8px; border-radius: 9px; white-space: nowrap; cursor: help; }
+.ma-chip.anchor_within { background: var(--primary-tint, #f0fdf4); color: var(--success, #166534); }
+.ma-chip.anchor_above_center, .ma-chip.anchor_below_center { background: var(--warning-tint, #fffbeb); color: var(--warning, #92400e); }
+.ma-chip.domestic { background: var(--primary-tint, #eff6ff); color: var(--accent, #1d4ed8); }
+.ma-chip.external { background: var(--violet-tint, #f5f3ff); color: var(--violet, #6d28d9); }
+.ma-chip.comparable { background: var(--panel-sub, #f8fafc); color: var(--muted, #64748b); }
+.ma-compare-fill { padding: 2px 8px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 5px; background: var(--panel, #fff); font-size: var(--font-xs); cursor: pointer; color: var(--muted, #475569); }
+.ma-compare-fill:disabled { opacity: .45; cursor: not-allowed; }
+
+/* 24 时段聚合视图（折叠形态 · 会议拍板仅作聚合展示） */
 .ma-hourly-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; }
 .ma-hourly-bar .pull { padding: 3px 11px; border: 1px solid var(--success, #059669); border-radius: 12px; background: var(--panel, #fff); color: var(--success, #047857); font-size: var(--font-xs); cursor: pointer; }
 .ma-hourly-bar .pull:disabled { opacity: .5; cursor: wait; }
