@@ -48,8 +48,10 @@ const pf = computed(() => decl.value?.preflight ?? {})
 const log = ref<DecisionLogEntry[]>([])
 const errorMsg = ref('')
 const expectedPoints = ref(3)
-/** 存储模式（探针决定）：server=服务端权威台账；local=浏览器原型降级 */
+/** 存储模式（探针决定）：server=服务端权威台账；local=浏览器原型降级。
+ * modeReady：探针落定前不渲染随模式切换的行（决策人），避免刷新时先闪一帧本地态。 */
 const mode = ref<DecisionLogMode>('local')
+const modeReady = ref(false)
 const loadError = ref('')
 /** server 模式的链校验结论（SHA-256 服务端权威，前端不重算）；null=校验服务不可用 */
 const serverVerdict = ref<{ engine: string; verdict: ChainVerdict } | null>(null)
@@ -123,10 +125,15 @@ const issues = computed(() => {
   if (mode.value === 'server') list = list.filter((i) => i.field !== 'author')
   return list
 })
+/** 展示用的校验清单：主必填项的空缺提示由红星 + 写入禁用表达，不再逐条列出；
+ * 口径类错误（分位序、置信度范围等）保持可见。提交拦截仍看全量 issues。 */
+const REQUIRED_MAIN_FIELDS = new Set(['decisionPoint', 'judgement', 'rationale', 'author'])
+const visibleIssues = computed(() => issues.value.filter((i) => !REQUIRED_MAIN_FIELDS.has(i.field)))
 
 onMounted(async () => {
   const snap = await loadLogAsync()
   mode.value = snap.mode
+  modeReady.value = true
   log.value = snap.log
   loadError.value = snap.error ?? ''
   if (snap.mode === 'server') serverVerdict.value = await fetchServerVerdict(snap.mode)
@@ -479,13 +486,13 @@ async function writeBack() {
               </label>
             </div>
           </details>
-          <label v-if="mode === 'local'">
+          <label v-if="modeReady && mode === 'local'">
             <span class="dc7-lab">决策人（不可代签）<i class="dc7-req">*</i></span>
             <input v-model="form.author" type="text" />
           </label>
         </div>
-        <ul v-if="issues.length" class="dc7-issues">
-          <li v-for="i in issues" :key="i.field">{{ i.message }}</li>
+        <ul v-if="visibleIssues.length" class="dc7-issues">
+          <li v-for="i in visibleIssues" :key="i.field">{{ i.message }}</li>
         </ul>
         <p v-if="errorMsg" class="dc7-error">{{ errorMsg }}</p>
         <div class="dc7-actions">
