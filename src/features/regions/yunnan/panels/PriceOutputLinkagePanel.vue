@@ -15,13 +15,12 @@ import { onRegionChange } from '@/composables/useRegionReload'
 import { onSelectionChange, useSpotSelection } from '@/composables/useSpotSelection'
 import { usePlantUnitFilter } from '@/composables/usePlantUnitFilter'
 import { chartChrome } from '@/composables/useTheme'
-import { axisTooltip, chartToolbox, emptyOverlay, fmtNum, sliderZoom } from '@/services/chart/chartOptions'
+import { axisTooltip, bottomLayoutLegend, bottomToolbox, emptyOverlay, fmtNum, insideZoom } from '@/services/chart/chartOptions'
 import {
   POWER,
   animation,
   catAxis,
   grid,
-  legend,
   stepSeries,
   tooltipStyle,
   valueAxis,
@@ -464,10 +463,18 @@ function buildMainOption() {
       ...tooltipStyle(),
       confine: true
     },
-    toolbox: chartToolbox('云南电价自有机组出力联动'),
-    legend: legend({ top: 2, right: 92 }),
-    grid: grid({ legend: true, zoom: true, right: 58 }),
-    dataZoom: sliderZoom(),
+    toolbox: bottomToolbox('云南电价自有机组出力联动', 8),
+    legend: bottomLayoutLegend({
+      data: [
+        `${marketLabel.value}出清价`,
+        `实际出力 · ${outputSeries.value.actualSource}`,
+        `计划出力 · ${outputSeries.value.planSource}`
+      ],
+      textStyle: { fontSize: 10 }
+    }),
+    // 底部工具栏 + 滚轮内置缩放（对齐监盘「实时vs日前价差」图布局），grid 底部为工具栏预留高度
+    grid: { ...grid({ legend: true, right: 58 }), bottom: 56 },
+    dataZoom: insideZoom(),
     ...animation(),
     xAxis: catAxis(labels, {
       boundaryGap: false,
@@ -595,9 +602,14 @@ function buildScatterOption() {
       },
       ...tooltipStyle()
     },
-    toolbox: chartToolbox('价格出力散点关系'),
-    legend: legend({ top: 2, right: 92 }),
-    grid: grid({ legend: true, zoom: false, right: 24 }),
+    toolbox: bottomToolbox('价格出力散点关系', 8),
+    legend: bottomLayoutLegend({
+      data: ['价格-实际出力', '线性趋势'],
+      textStyle: { fontSize: 10 }
+    }),
+    // 与主图同款底部工具栏布局，grid 底部为工具栏预留高度
+    grid: { ...grid({ legend: true, right: 24 }), bottom: 56 },
+    dataZoom: insideZoom(),
     ...animation(),
     xAxis: valueAxis('元/MWh', { scale: true }),
     yAxis: valueAxis('MW', { scale: true }),
