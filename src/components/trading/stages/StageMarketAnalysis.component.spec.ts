@@ -94,13 +94,12 @@ describe('StageMarketAnalysis 主任务轴（slim-s2）', () => {
     expect(mainPanels).toHaveLength(2)
     expect(mainPanels[0].text()).toContain('基本面（分时段 · 逐格标来源）')
     expect(mainPanels[1].text()).toContain('供需比与边际机组')
-    // 判断卡与 AI 晨间分析均为整行（.ma 直接子级；直接子级面板仅 AI 一个）
+    // 判断卡整行；AI 空闲态为 invite 横条（不渲染整卡面板）
     expect(w.find('.ma > .ma-verdict').exists()).toBe(true)
-    const aiStandalone = w.findAll('.ma > .ma-panel')
-    expect(aiStandalone.length).toBe(1)
-    expect(aiStandalone[0].text()).toContain('AI 晨间分析')
+    expect(w.find('.ma > .ma-ai-invite').exists()).toBe(true)
+    expect(w.findAll('.ma > .ma-panel').length).toBe(0)
     // AI 空闲态：一句话 + 按钮后置
-    expect(w.find('.ma-ai-idle').text()).toContain('生成晨间简报')
+    expect(w.find('.ma-ai-invite').text()).toContain('生成晨间简报')
   })
 
   it('三项下线：预置示例/耦合推演 UI/验签清单不再渲染', async () => {

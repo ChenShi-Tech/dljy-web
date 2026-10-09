@@ -646,7 +646,7 @@ async function writeBack() {
         <em v-if="compareHintShort" class="ma-chip" :class="priceCompare?.side">{{ compareHintShort }}</em>
         <span class="ma-dayline-sep" aria-hidden="true" />
         <label class="ma-dayline-notice">公告
-          <input v-model="exportNotice" type="text" placeholder="如「华东通道 11:00–13:00 有余量窗口」；无公告留空" />
+          <input v-model="exportNotice" type="text" placeholder="如：华东通道 11:00–13:00 有余量窗口" />
         </label>
       </div>
 
@@ -712,7 +712,13 @@ async function writeBack() {
       <section class="ma-panel">
         <h3>
           基本面（分时段 · 逐格标来源）
-          <em>采集 = 调度预测采集；人工 = 估计/假设，AI 只当假设用</em>
+          <el-tooltip placement="top" :show-after="150">
+            <template #content>
+              <p>单位 MW；外送计入分母（外送增加等价于省内净负荷增加）。</p>
+              <p>采集 = 调度预测采集；人工 = 估计/假设，AI 只当假设用。</p>
+            </template>
+            <span class="ma-info" tabindex="0">ⓘ</span>
+          </el-tooltip>
         </h3>
         <div class="ma-tools">
           <el-tooltip placement="top" :show-after="150" content="从采集库拉取云南调度预测（yn_system_forecast 族：负荷/新能源/外送三项按标的日聚合；可调机组与备用该族不含，维持人工值）">
@@ -758,9 +764,6 @@ async function writeBack() {
             </tr>
           </tbody>
         </table>
-        <p class="ma-tip">
-          单位 MW。<strong>外送计入分母</strong>（外送增加等价于省内净负荷增加）。
-        </p>
       </section>
 
       <!-- 逐时段供需比与档位 -->
@@ -802,8 +805,7 @@ async function writeBack() {
         <span v-if="hourlyPullMsg" class="ma-pipe-ok">{{ hourlyPullMsg }}</span>
         <span v-if="hourlyPullError" class="ma-pipe-err">{{ hourlyPullError }}</span>
         <span class="ma-tip" style="margin: 0">
-          需求电量来源：{{ hourlyDemandSource === 'capture' ? `采集（${hourlyDemandDate}）` : '人工' }}；持仓为人工/公司口径（合约库联动见 S6）——
-          差额 = 需求 − 持仓，正数即需在现货补买的敞口。持仓逐时保存随「保存到库」。
+          来源：{{ hourlyDemandSource === 'capture' ? `采集（${hourlyDemandDate}）` : '人工' }}；差额 = 需求 − 持仓，正数即需现货补买的敞口；持仓随「保存到库」存档（合约库联动见 S6）。
         </span>
       </div>
       <table class="ma-table ma-hourly-table">
@@ -826,20 +828,17 @@ async function writeBack() {
       </table>
     </details>
 
-    <!-- AI 晨间分析：面板末行（简报初稿 + 追问，注入当前面板全部推演结果为上下文；按钮后置） -->
-    <section class="ma-panel">
+    <!-- AI 晨间分析：面板末行——空闲态为一条 invite 横条，展开后为完整面板（写回仍走判断卡「写回」按钮） -->
+    <section v-if="!aiOpen" class="ma-ai-invite">
+      <p><b>AI 晨间简报</b>——态势理由 · 规则表可疑点 · 最该防时段 · 给 S3 的方向倾向</p>
+      <button type="button" class="ma-ai-start" @click="aiOpen = true">生成晨间简报</button>
+    </section>
+    <section v-else class="ma-panel">
       <h3>
         AI 晨间分析
         <em>产出分析初稿与反对意见，不替人拍板；写回仍走判断卡「写回」按钮</em>
       </h3>
-      <div v-if="!aiOpen" class="ma-ai-idle">
-        <p>
-          注入当前基本面（逐格含来源）、供需推演与验签门禁，产出结构化晨间简报：态势理由 / 规则表可疑点 / 最该防时段 / 给 S3 的方向倾向。
-        </p>
-        <button type="button" class="ma-ai-start" @click="aiOpen = true">生成晨间简报</button>
-      </div>
       <AgentChatPanel
-        v-if="aiOpen"
         scenario="morning_brief"
         :initial-question="aiQuestion"
         :context-payload="aiContext"
@@ -927,9 +926,11 @@ async function writeBack() {
 .ma-fold-hint { font-style: normal; font-weight: 400; font-size: var(--font-xs); color: var(--muted, #64748b); font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ma-fold .ma-tip { margin: 2px 0 8px; }
 
-/* AI 晨间分析 */
-.ma-ai-idle p { margin: 0 0 10px; font-size: var(--font-sm); line-height: 1.7; color: var(--el-text-color-secondary, #667); }
-.ma-ai-start { padding: 6px 18px; border: 1px solid var(--accent, #2563eb); border-radius: 6px; background: var(--accent, #2563eb); color: #fff; font-size: var(--font-sm); cursor: pointer; }
+/* AI 晨间分析：空闲态为一条 invite 横条（左一句话右按钮），展开后为完整面板 */
+.ma-ai-invite { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 10px 16px; border: 1px dashed var(--line, #e2e8f0); border-radius: 12px; background: var(--panel-sub, #f8fafc); }
+.ma-ai-invite p { margin: 0; font-size: var(--font-sm); color: var(--text-soft, #475467); }
+.ma-ai-invite b { color: var(--text, #1e293b); }
+.ma-ai-start { padding: 5px 16px; border: 1px solid var(--accent, #2563eb); border-radius: 6px; background: var(--accent, #2563eb); color: #fff; font-size: var(--font-sm); cursor: pointer; }
 
 /* ── 表格（tabular-nums；发丝线用 --line-faint 与 S1 对齐） ──
    基本面 7 列在双栏下偏紧：输入框收窄 + 单元格减 pad，窄屏退化为横向滚动 */
