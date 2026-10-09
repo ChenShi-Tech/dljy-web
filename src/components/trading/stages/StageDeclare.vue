@@ -533,8 +533,9 @@ const receiptChecks = computed<ReceiptCheckRow[] | null>(() => {
       <p v-else class="dc-muted">无待判定的临场改价。</p>
     </details>
 
-    <!-- 储能立场：充放电计划（写回后 SOC 判据自动生效） -->
-    <details class="dc-storage" :open="activeStanceType === 'STORAGE'">
+    <!-- 储能立场：充放电计划（写回后 SOC 判据自动生效）。仅 STORAGE 立场渲染——
+         其它立场此前渲染一个「可忽略」的空折叠，纯噪音（slim-s3-s7-stages）。 -->
+    <details v-if="activeStanceType === 'STORAGE'" class="dc-storage" open>
       <summary>
         储能充放电计划（R1/R2/R3/R11 + 八项约束）
         <em v-if="pf.storagePlan">已写回：循环 {{ pf.storagePlan.cycles }} 次 · 预期毛利 {{ pf.storagePlan.grossMarginYuan }} 元</em>
@@ -555,25 +556,33 @@ const receiptChecks = computed<ReceiptCheckRow[] | null>(() => {
 
       <div class="dc-grid">
         <div>
-          <h4>判据输入<em v-if="pf.dataGate || pf.storagePlan || pf.forecast" class="dc-auto">部分已由 S1–S3 产出自动填充</em></h4>
-          <div class="dc-fields">
-            <label>日 VaR 元<input v-model.number="form.dailyVarYuan" type="number" /></label>
-            <label>授权额度 元<input v-model.number="form.varLimitYuan" type="number" /></label>
-            <label>储能安全倍数<input v-model.number="form.safetyMultiple" type="number" step="0.05" /></label>
-            <label>最大申报偏置<input v-model.number="form.maxBiasAbs" type="number" step="0.01" /></label>
-            <label>中长期履约率<input v-model.number="form.complianceRatio" type="number" step="0.01" /></label>
-            <label>编制人<input v-model="form.preparedBy" type="text" /></label>
-            <label>复核人<input v-model="form.reviewedBy" type="text" /></label>
-          </div>
-          <div class="dc-toggles">
-            <label><input v-model="form.socTrajectoryOk" type="checkbox" /> SOC 轨迹在带内</label>
-            <label><input v-model="form.socEndOk" type="checkbox" /> 终止 SOC 达标</label>
-            <label><input v-model="form.dataDeclarable" type="checkbox" /> 数据门禁允许申报</label>
-          </div>
-          <label class="dc-redline">
-            触碰的合规红线（逗号分隔，留空为无）
-            <input v-model="redLineInput" type="text" placeholder="如 R-2 身份混用" />
-          </label>
+          <!-- 判据输入收纳（slim-s3-s7-stages）：与十项清单同款自动展开——有未过项即展开，
+               全过时收起只留结论徽章；部分判据已由 S1–S3 写回自动填充（徽章提示）。 -->
+          <details class="dc-criteria" :open="!verdict.allowed">
+            <summary>
+              判据输入
+              <em v-if="pf.dataGate || pf.storagePlan || pf.forecast" class="dc-auto">部分已由 S1–S3 产出自动填充</em>
+              <em v-else>展开人工录入</em>
+            </summary>
+            <div class="dc-fields">
+              <label>日 VaR 元<input v-model.number="form.dailyVarYuan" type="number" /></label>
+              <label>授权额度 元<input v-model.number="form.varLimitYuan" type="number" /></label>
+              <label>储能安全倍数<input v-model.number="form.safetyMultiple" type="number" step="0.05" /></label>
+              <label>最大申报偏置<input v-model.number="form.maxBiasAbs" type="number" step="0.01" /></label>
+              <label>中长期履约率<input v-model.number="form.complianceRatio" type="number" step="0.01" /></label>
+              <label>编制人<input v-model="form.preparedBy" type="text" /></label>
+              <label>复核人<input v-model="form.reviewedBy" type="text" /></label>
+            </div>
+            <div class="dc-toggles">
+              <label><input v-model="form.socTrajectoryOk" type="checkbox" /> SOC 轨迹在带内</label>
+              <label><input v-model="form.socEndOk" type="checkbox" /> 终止 SOC 达标</label>
+              <label><input v-model="form.dataDeclarable" type="checkbox" /> 数据门禁允许申报</label>
+            </div>
+            <label class="dc-redline">
+              触碰的合规红线（逗号分隔，留空为无）
+              <input v-model="redLineInput" type="text" placeholder="如 R-2 身份混用" />
+            </label>
+          </details>
         </div>
 
         <div>
@@ -764,6 +773,10 @@ const receiptChecks = computed<ReceiptCheckRow[] | null>(() => {
 .dc-list-fold { border: 1px solid var(--el-border-color-lighter, #ebeef5); border-radius: 8px; padding: 6px 10px; }
 .dc-list-fold summary { display: flex; align-items: center; gap: 8px; font-size: var(--font-sm); font-weight: 600; cursor: pointer; }
 .dc-list-fold[open] summary { margin-bottom: 6px; }
+.dc-criteria { border: 1px solid var(--el-border-color-lighter, #ebeef5); border-radius: 8px; padding: 6px 10px; }
+.dc-criteria summary { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: var(--font-sm); font-weight: 600; cursor: pointer; }
+.dc-criteria summary em { font-style: normal; font-weight: 400; }
+.dc-criteria[open] summary { margin-bottom: 8px; }
 .dc-fold-badge { padding: 1px 9px; border-radius: 9px; font-size: var(--font-10); font-weight: 600; }
 .dc-fold-badge.ok { background: var(--primary-tint, #dcfce7); color: var(--success, #15803d); }
 .dc-fold-badge.bad { background: var(--danger-tint, #fee2e2); color: var(--danger, #991b1b); }

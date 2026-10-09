@@ -28,6 +28,7 @@ import { useSaveState } from '@/composables/useSaveState'
 import { createContract, fetchContracts, type CompanyContract } from '@/services/company/companyApi'
 import { activeStanceType } from '@/services/stance/stanceContext'
 import AiAssistFill from '@/components/trading/AiAssistFill.vue'
+import DataStatusLine, { type DataStatusItem } from '@/components/trading/stages/DataStatusLine.vue'
 import type { StageId } from '@/data/workflowStages'
 
 const props = defineProps<{ declaration: DeclarationOrder | null; targetDate: string }>()
@@ -42,6 +43,35 @@ const forecastFromS3 = computed(() =>
 )
 const regime = computed(() => (pf.value.dataGate?.regime ?? null) as string | null)
 const direction = computed(() => (pf.value.forecast?.direction ?? null) as 'add' | 'reduce' | 'hold' | null)
+
+// 上游状态一行化（slim-s3-s7-stages）：产出事实与未产出的处理口径合并为单行状态
+// （DataStatusLine，默认一行可展开），替代原先三段警告行 + 三段灰字说明的堆叠。
+// 回 S3 的跳转入口保留在「预测电量」字段行，不因收纳丢导航。
+const statusItems = computed<DataStatusItem[]>(() => {
+  const items: DataStatusItem[] = []
+  if (forecastFromS3.value !== null) {
+    items.push({ tone: 'info', text: `预测电量取自 S3：${forecastFromS3.value.toFixed(1)} MWh` })
+  } else {
+    items.push({ tone: 'caveat', text: 'S3 未产出预测——电量需手填，敞口未定时暂缓补仓决定' })
+  }
+  items.push(
+    regime.value
+      ? { tone: 'info', text: `S2 态势：${REGIME_LABEL[regime.value as keyof typeof REGIME_LABEL]}` }
+      : { tone: 'caveat', text: 'S2 未产出态势——按平衡市处理' }
+  )
+  items.push(
+    direction.value
+      ? { tone: 'info', text: `S3 方向：${direction.value === 'add' ? '增持' : direction.value === 'reduce' ? '减持' : '观望'}` }
+      : { tone: 'caveat', text: 'S3 未定方向——两可情形缺拍板依据，补仓动作建议先观望' }
+  )
+  // 持仓联动（原持仓对照 h3 的长说明并入状态行，面板头只留操作）
+  items.push(
+    clearingPosition.value
+      ? { tone: 'info', text: `日前中标 ${clearingPosition.value.dayAheadClearedMwh.toFixed(1)} MWh 已自动计入持仓（S5）` }
+      : { tone: 'caveat', text: '日前中标量未联动——S5 出清分析写回后自动计入' }
+  )
+  return items
+})
 
 // 输入（缺上游产出时手填）
 const forecastInput = ref<number>(0)
@@ -129,7 +159,7 @@ async function loadContracts() {
   contractsNote.value = ''
   try {
     contracts.value = await fetchContracts()
-    if (!contracts.value.length) contractsNote.value = '公司合同库无记录——持仓与价格仍为人工口径'
+    if (!contracts.value.length) contractsNote.value = '合同库无记录——持仓与价格为人工口径'
     else {
       const pos = monthPositionFromLibrary.value
       if (pos !== null && contractedMwh.value === 0) contractedMwh.value = pos
@@ -302,41 +332,29 @@ function gapClass(s: GapSuggestion) {
 
 <template>
   <div class="cg">
-    <!-- 上游产出回显 -->
-    <section class="cg-upstream">
-      <span v-if="forecastFromS3 !== null" class="cg-ok">
-        <ArrowDownUp :size="12" /> 预测电量取自 S3：{{ forecastFromS3.toFixed(1) }} MWh
-      </span>
-      <span v-else class="cg-warn">
-        S3 未产出预测——电量需手填。
-        <button type="button" class="cg-jump" @click="emit('go', 'direction')">回 S3 补</button>
-      </span>
-      <span v-if="regime">
-        S2 态势：<strong>{{ REGIME_LABEL[regime as keyof typeof REGIME_LABEL] }}</strong>
-      </span>
-      <span v-else class="cg-warn">S2 未产出态势（按平衡市处理）</span>
-      <span v-if="direction">S3 方向：{{ { add: '增持', reduce: '减持', hold: '观望' }[direction] }}</span>
-    </section>
+    <!-- 上游状态一行化（slim-s3-s7-stages）：一行摘要 + 可展开逐条；回 S3 跳转在预测电量字段行 -->
+    <DataStatusLine :items="statusItems" label="上游产出" />
 
     <div class="cg-grid">
       <!-- 输入 -->
       <section class="cg-panel">
         <h3>
           <Wallet :size="14" /> 持仓对照
-          <em v-if="clearingPosition" class="cg-pos-auto">
-            日前中标 {{ clearingPosition.dayAheadClearedMwh.toFixed(1) }} MWh（S5 自动喂入，不再人工填）
-          </em>
-          <em v-else class="cg-pos-none">日前中标量未联动——S5 出清分析写回后自动计入持仓视图</em>
-                    <button type="button" class="cg-lib-btn" :disabled="contractsBusy" @click="loadContracts">
+          <button type="button" class="cg-lib-btn" :disabled="contractsBusy" @click="loadContracts">
             <Database :size="12" /> {{ contractsBusy ? '读取中…' : '从公司合同库载入' }}
           </button>
           <em v-if="monthPositionFromLibrary !== null" class="cg-lib-badge">
-            库内月度持仓 {{ monthPositionFromLibrary }} MWh（覆盖当月中长期合同按重叠天数/合同天数折算）
+            库内月度持仓 {{ monthPositionFromLibrary }} MWh（按重叠天数折算）
           </em>
           <em v-else-if="contractsNote" class="cg-lib-none">{{ contractsNote }}</em>        </h3>
         <div class="cg-fields">
           <label>
-            预测电量 MWh
+            <span class="cg-lab">
+              预测电量 MWh
+              <button v-if="forecastFromS3 === null" type="button" class="cg-jump" @click="emit('go', 'direction')">
+                回 S3 补
+              </button>
+            </span>
             <input
               v-model.number="forecastInput"
               type="number"
@@ -345,13 +363,24 @@ function gapClass(s: GapSuggestion) {
               :placeholder="forecastFromS3 !== null ? `${forecastFromS3.toFixed(1)}（取自 S3）` : '手填'"
             />
           </label>
-          <label>中长期已持仓 MWh<input v-model.number="contractedMwh" type="number" step="10" /></label>
-          <label>观望带 ±%<input v-model.number="holdBand" type="number" step="0.01" min="0" max="0.3" /></label>
+          <label>
+            <span class="cg-lab">中长期已持仓 MWh</span>
+            <input v-model.number="contractedMwh" type="number" step="10" />
+          </label>
+          <label>
+            <span class="cg-lab">
+              观望带 ±%
+              <el-tooltip placement="top" :show-after="150">
+                <template #content>
+                  观望带：|敞口率| 不超过该值不动作（动仓的交易成本大于敞口损益）。口径为买方立场——
+                  储能/发电立场的补仓逻辑不同，本面板目前只覆盖售电/大用户。
+                </template>
+                <span class="cg-info" tabindex="0">ⓘ</span>
+              </el-tooltip>
+            </span>
+            <input v-model.number="holdBand" type="number" step="0.01" min="0" max="0.3" />
+          </label>
         </div>
-        <p class="cg-tip">
-          观望带：|敞口率| 不超过该值不动作（动仓的交易成本大于敞口损益）。口径为买方立场——
-          储能/发电立场的补仓逻辑不同，本面板目前只覆盖售电/大用户。
-        </p>
       </section>
 
       <!-- 评估结果 -->
@@ -378,9 +407,9 @@ function gapClass(s: GapSuggestion) {
         <ArrowDownUp :size="14" /> 挂牌价对比与补仓时机
         <em v-if="kelly" class="cg-kelly">凯利仓位上限 {{ kelly.capPct }}%</em>
       </h3>
-      <div class="cg-fields">
+      <div class="cg-fields cg-fields-inline">
         <label>
-          挂牌价 元/MWh
+          <span class="cg-lab">挂牌价 元/MWh</span>
           <span class="cg-inline">
             <input
               v-model.number="listingPrice"
@@ -391,21 +420,30 @@ function gapClass(s: GapSuggestion) {
             <em class="cg-src">{{ listingPriceSource === 'library' ? '取自合同库月度价' : '人工' }}</em>
           </span>
         </label>
-        <label>年度均价（库内年度合同量加权）<input :value="annualAvgFromLibrary ?? ''" readonly placeholder="库内无年度合同" /></label>
-        <label>今日价格波动幅度 %<input v-model.number="volatilityPct" type="number" step="0.1" placeholder="人工录入（>5% 触发暂停）" /></label>
+        <label>
+          <span class="cg-lab">年度均价（库内年度合同量加权）</span>
+          <input :value="annualAvgFromLibrary ?? ''" readonly placeholder="库内无年度合同" />
+        </label>
+        <label>
+          <span class="cg-lab">今日价格波动幅度 %</span>
+          <input v-model.number="volatilityPct" type="number" step="0.1" placeholder="人工录入（>5% 触发暂停）" />
+        </label>
       </div>
       <p v-if="kelly" class="cg-tip">{{ kelly.note }}</p>
-      <p v-if="listingCompare" class="cg-compare" :class="listingCompare.verdict">{{ listingCompare.hint }}</p>
-      <p v-else class="cg-tip">挂牌价或年度均价缺失——对比不成立时按缺口紧迫度单独决策，不硬给价格结论。</p>
-      <p v-if="timingVerdict" class="cg-compare" :class="timingVerdict.verdict">{{ timingVerdict.hint }}</p>
-      <p v-else class="cg-tip">分布判时机需 S3 概率分布产出（P50 均值/谷/峰）——未产出时不判断时机。</p>
+      <!-- 对比结论与时机结论同行（slim-s3-s7-stages 评审：空态说明两行并一行） -->
+      <div class="cg-compare-row">
+        <p v-if="listingCompare" class="cg-compare" :class="listingCompare.verdict">{{ listingCompare.hint }}</p>
+        <p v-else class="cg-tip">挂牌价或年度均价缺失——对比不成立，按缺口紧迫度单独决策。</p>
+        <p v-if="timingVerdict" class="cg-compare" :class="timingVerdict.verdict">{{ timingVerdict.hint }}</p>
+        <p v-else class="cg-tip">分布判时机需 S3 概率分布——未产出不判断时机。</p>
+      </div>
       <p class="cg-vol" :class="{ paused: volatility.paused }"><ShieldAlert :size="12" /> {{ volatility.hint }}</p>
     </section>
 
     <!-- 实际动作 -->
     <section class="cg-panel">
       <h3>
-        补仓执行（建议是建议、执行是执行——分开记，随单据留痕）
+        补仓执行（建议与执行分开记，随单据留痕）
         <AiAssistFill
           kind="contract_gap"
           :context="assistContext"
@@ -427,7 +465,15 @@ function gapClass(s: GapSuggestion) {
         <button type="button" class="cg-jump" @click="emit('go', 'daily-close')">跳到 S7 日报收尾</button>
       </div>
       <div class="cg-register">
-        <h4>执行落库（手册步骤④：执行后更新合约库、持仓前进）</h4>
+        <h4>
+          执行落库（手册步骤④：执行后更新合约库、持仓前进）
+          <el-tooltip placement="top" :show-after="150">
+            <template #content>
+              登记生成一条月度双边（挂牌）合同记录并自动重载持仓——对方主体与结算条款请在合同管理页补全。
+            </template>
+            <span class="cg-info" tabindex="0">ⓘ</span>
+          </el-tooltip>
+        </h4>
         <div class="cg-fields">
           <label>本次执行量 MWh<input v-model.number="executedVolumeMwh" type="number" min="0" step="1" /></label>
           <label>成交价 元/MWh<input v-model.number="executedPriceYuan" type="number" min="0" step="0.01" /></label>
@@ -442,7 +488,6 @@ function gapClass(s: GapSuggestion) {
           <span v-if="registerMsg" class="cg-ok">{{ registerMsg }}</span>
           <span v-if="registerError" class="cg-warn">{{ registerError }}</span>
         </div>
-        <p class="cg-tip">登记生成一条月度双边（挂牌）合同记录并自动重载持仓——对方主体与结算条款请在合同管理页补全。</p>
       </div>
       <span v-if="saveMsg" class="cg-ok">{{ saveMsg }}</span>
       <span v-if="saveError" class="cg-err">{{ saveError }}</span>
@@ -452,7 +497,8 @@ function gapClass(s: GapSuggestion) {
 
 <style scoped>
 .cg { display: flex; flex-direction: column; gap: 12px; }
-.cg-upstream { display: flex; gap: 14px; flex-wrap: wrap; align-items: center; padding: 8px 12px; border: 1px solid var(--el-border-color-lighter, #ebeef5); border-radius: 8px; background: var(--panel-sub, #f8fafc); font-size: var(--font-sm); }
+.cg-fields label .cg-jump { align-self: flex-start; text-align: left; }
+.cg-info { display: inline-flex; align-items: center; justify-content: center; width: 15px; height: 15px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 50%; background: var(--panel-sub, #f8fafc); color: var(--el-text-color-secondary, #667); font-size: var(--font-10); font-style: normal; cursor: help; user-select: none; flex-shrink: 0; }
 .cg-ok { color: var(--success, #15803d); display: inline-flex; align-items: center; gap: 4px; }
 .cg-warn { color: var(--warning, #b45309); display: inline-flex; align-items: center; gap: 4px; }
 .cg-jump { padding: 0; border: none; background: none; color: var(--accent, #1d4ed8); font: inherit; font-size: var(--font-sm); cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
@@ -463,6 +509,12 @@ function gapClass(s: GapSuggestion) {
 
 .cg-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 6px 10px; }
 .cg-fields label { display: flex; flex-direction: column; gap: 2px; font-size: var(--font-xs); color: var(--el-text-color-secondary, #667); }
+.cg-lab { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; font-size: var(--font-10-5); }
+.cg-lab .cg-jump { font-size: var(--font-10-5); }
+.cg-fields-inline { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px 18px; align-items: center; }
+.cg-fields-inline label { flex-direction: row; align-items: center; gap: 8px; }
+.cg-fields-inline .cg-lab { flex-shrink: 0; }
+.cg-fields-inline input, .cg-fields-inline .cg-inline { flex: 1; min-width: 0; }
 .cg-fields input { padding: 4px 7px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 5px; font-size: var(--font-sm); }
 .cg-fields input:disabled { background: var(--panel-sub, #f1f5f9); color: var(--muted, #475569); }
 .cg-tip { margin: 8px 0 0; font-size: var(--font-xs); line-height: 1.6; color: var(--el-text-color-secondary, #667); }
@@ -487,14 +539,16 @@ function gapClass(s: GapSuggestion) {
 .cg-btn:disabled { opacity: .45; cursor: not-allowed; }
 .cg-ok { font-size: var(--font-sm); color: var(--success, #15803d); }
 .cg-err { font-size: var(--font-sm); color: var(--danger, #b91c1c); }
-.cg-pos-auto { font-style: normal; font-size: var(--font-10); color: var(--success, #047857); }
-.cg-pos-none { font-style: normal; font-size: var(--font-10); color: var(--warning, #b45309); }
 .cg-lib-btn { display: inline-flex; align-items: center; gap: 4px; padding: 3px 10px; border: 1px solid var(--violet, #7c3aed); border-radius: 5px; background: var(--violet-tint, #f5f3ff); color: var(--violet, #6d28d9); font-size: var(--font-xs); cursor: pointer; }
 .cg-lib-btn:disabled { opacity: .5; cursor: wait; }
 .cg-lib-badge { font-style: normal; font-size: var(--font-10); color: var(--violet, #6d28d9); }
 .cg-lib-none { font-style: normal; font-size: var(--font-10); color: var(--warning, #b45309); }
-.cg-inline { display: inline-flex; align-items: center; gap: 5px; }
+.cg-inline { display: flex; align-items: center; gap: 5px; }
+.cg-inline input { flex: 1; min-width: 0; }
+.cg-inline .cg-src { flex-shrink: 0; }
 .cg-src { font-style: normal; font-size: var(--font-10); color: var(--el-text-color-secondary, #889); }
+.cg-compare-row { display: flex; align-items: baseline; gap: 18px; flex-wrap: wrap; margin-top: 8px; }
+.cg-compare-row p { margin: 0; }
 .cg-compare { margin: 6px 0 0; padding: 6px 10px; border-radius: 6px; font-size: var(--font-sm); line-height: 1.6; background: var(--panel-sub, #f8fafc); }
 .cg-compare.below, .cg-compare.lock_now { background: var(--primary-tint, #f0fdf4); color: var(--success, #166534); }
 .cg-compare.above, .cg-compare.wait { background: var(--warning-tint, #fffbeb); color: var(--warning, #92400e); }
