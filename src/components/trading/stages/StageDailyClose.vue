@@ -102,7 +102,7 @@ const hits = computed(() => hitRate(log.value))
 // 字段分层（slim-s3-s7-stages）：深化字段（概率分位/置信度/决策时点）收进「更多字段」
 // 折叠，必填四件套（决策点/判断/理由/决策人）常驻；折叠 summary 常显当前值摘要，
 // AI 回填后不用展开也能看到落了什么。
-const moreUserOpen = ref(false)
+const moreUserOpen = ref(true)
 const moreDigest = computed(() => {
   const parts = [`P50 ${form.p50}`, `置信 ${form.confidence}`]
   if (decisionTime.value) parts.push('决策时点已设')
@@ -481,8 +481,8 @@ async function writeBack() {
               <label>P50<input v-model.number="form.p50" type="number" /></label>
               <label>P90<input v-model.number="form.p90" type="number" /></label>
               <label>置信度<input v-model.number="form.confidence" type="number" min="0" max="100" /></label>
-              <label class="wide">
-                <span class="dc7-wide-lab">决策时点（选填，情绪化识别用）</span>
+              <label class="dt">
+                <span class="dc7-dt-lab">决策时点（选填，情绪化识别用）</span>
                 <input v-model="decisionTime" type="datetime-local" title="不参与哈希链；缺省=时点未知（追涨/杀跌不打标）" />
               </label>
             </div>
@@ -668,10 +668,10 @@ async function writeBack() {
 .dc7-more[open] summary { margin-bottom: 6px; }
 .dc7-more-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(90px, 1fr)); gap: 6px 8px; }
 .dc7-more-grid label { display: flex; flex-direction: column; gap: 2px; font-size: var(--font-10); color: var(--el-text-color-secondary, #667); }
-.dc7-more-grid label.wide { grid-column: 1 / -1; flex-direction: row; align-items: center; gap: 10px; }
-.dc7-more-grid label.wide .dc7-wide-lab { flex: 0 0 88px; line-height: 1.4; }
-.dc7-more-grid label.wide input { flex: 1; min-width: 0; }
 .dc7-more-grid input { padding: 4px 6px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 4px; font-size: var(--font-sm); }
+.dc7-more-grid label.dt { grid-column: span 2; flex-direction: row; align-items: center; gap: 8px; }
+.dc7-more-grid label.dt .dc7-dt-lab { flex: 0 0 88px; line-height: 1.4; }
+.dc7-more-grid label.dt input { flex: 1; min-width: 0; }
 .dc7-chain { border: 1px dashed var(--el-border-color-lighter, #ebeef5); border-radius: 8px; padding: 6px 10px; margin-top: 10px; }
 .dc7-chain summary { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: var(--font-sm); font-weight: 600; cursor: pointer; }
 .dc7-chain summary em { font-style: normal; font-weight: 400; font-size: var(--font-10); color: var(--el-text-color-secondary, #889); }

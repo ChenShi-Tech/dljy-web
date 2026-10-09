@@ -98,11 +98,11 @@ beforeEach(() => {
 })
 
 describe('StageDailyClose 字段分层（slim-s3-s7-stages）', () => {
-  it('必填四件套常驻，深化字段收进「更多字段」折叠且摘要常显当前值', async () => {
+  it('必填四件套常驻，深化字段在「更多字段」折叠内默认展开且摘要常显当前值', async () => {
     const w = await mountS7()
     const more = w.find('details.dc7-more')
     expect(more.exists()).toBe(true)
-    expect(more.attributes('open')).toBeUndefined()
+    expect(more.attributes('open')).toBeDefined()
     expect(more.text()).toContain('更多字段')
     expect(more.text()).toContain('P50 240 · 置信 70')
     // 必填字段在折叠外；P10 输入在折叠内
