@@ -99,15 +99,6 @@ const chain = computed<ChainView>(() => {
 const coverage = computed(() => coverageOf(log.value, props.targetDate, expectedPoints.value))
 const hits = computed(() => hitRate(log.value))
 
-// 字段分层（slim-s3-s7-stages）：深化字段（概率分位/置信度/决策时点）收进「更多字段」
-// 折叠，必填四件套（决策点/判断/理由/决策人）常驻；折叠 summary 常显当前值摘要，
-// AI 回填后不用展开也能看到落了什么。
-const moreUserOpen = ref(true)
-const moreDigest = computed(() => {
-  const parts = [`P50 ${form.p50}`, `置信 ${form.confidence}`]
-  if (decisionTime.value) parts.push('决策时点已设')
-  return parts.join(' · ')
-})
 
 // 链上记录 + T+2 回填：无待回填且链完整时收起；有待回填条目或链断开自动展开
 // （链断裂警示本身留在折叠外直接可见）。手动开合后以手动态优先。
@@ -469,14 +460,9 @@ async function writeBack() {
             <span class="dc7-lab">理由<i class="dc7-req">*</i></span>
             <input v-model="form.rationale" type="text" placeholder="如：尖谷价差 340，要求价差 109，安全倍数 3.1" />
           </label>
-          <!-- 深化字段收纳（slim-s3-s7-stages）：P10/50/90 与置信度服务贝叶斯更新与命中判定、
-               决策时点服务情绪化识别——都不在 jyy T7 必填四件套里，收进折叠，摘要常显当前值。 -->
-          <details class="dc7-more full" :open="moreUserOpen" @toggle="moreUserOpen = ($event.target as HTMLDetailsElement).open">
-            <summary>
-              更多字段（概率分位 · 置信度 · 决策时点）
-              <em>{{ moreDigest }}</em>
-            </summary>
-            <div class="dc7-more-grid">
+          <!-- 深化字段直接平铺（slim-s3-s7-stages 评审：不再折叠）——P10/50/90 与置信度
+               服务贝叶斯更新与命中判定、决策时点服务情绪化识别。 -->
+          <div class="dc7-more-grid full">
               <label>P10<input v-model.number="form.p10" type="number" /></label>
               <label>P50<input v-model.number="form.p50" type="number" /></label>
               <label>P90<input v-model.number="form.p90" type="number" /></label>
@@ -485,8 +471,7 @@ async function writeBack() {
                 <span class="dc7-dt-lab">决策时点（选填，情绪化识别用）</span>
                 <input v-model="decisionTime" type="datetime-local" title="不参与哈希链；缺省=时点未知（追涨/杀跌不打标）" />
               </label>
-            </div>
-          </details>
+          </div>
           <label v-if="modeReady && mode === 'local'">
             <span class="dc7-lab">决策人（不可代签）<i class="dc7-req">*</i></span>
             <input v-model="form.author" type="text" />
@@ -662,10 +647,6 @@ async function writeBack() {
 .dc7-stats .ok { background: var(--primary-tint, #dcfce7); color: var(--success, #15803d); }
 .dc7-stats .bad { background: var(--danger-tint, #fee2e2); color: var(--danger, #991b1b); }
 .dc7-info { display: inline-flex; align-items: center; justify-content: center; width: 15px; height: 15px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 50%; background: var(--panel-sub, #f8fafc); color: var(--el-text-color-secondary, #667); font-size: var(--font-10); font-style: normal; cursor: help; user-select: none; flex-shrink: 0; }
-.dc7-more { border: 1px dashed var(--el-border-color-lighter, #ebeef5); border-radius: 8px; padding: 6px 10px; }
-.dc7-more summary { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: var(--font-11-5); font-weight: 600; cursor: pointer; color: var(--el-text-color-secondary, #667); }
-.dc7-more summary em { font-style: normal; font-weight: 400; font-size: var(--font-10); color: var(--el-text-color-secondary, #889); }
-.dc7-more[open] summary { margin-bottom: 6px; }
 .dc7-more-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(90px, 1fr)); gap: 6px 8px; }
 .dc7-more-grid label { display: flex; flex-direction: column; gap: 2px; font-size: var(--font-10); color: var(--el-text-color-secondary, #667); }
 .dc7-more-grid input { padding: 4px 6px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 4px; font-size: var(--font-sm); }
@@ -681,7 +662,7 @@ async function writeBack() {
 .dc7-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(90px, 1fr)); gap: 6px 8px; }
 .dc7-form label { display: flex; flex-direction: row; align-items: center; gap: 8px; font-size: var(--font-10); color: var(--el-text-color-secondary, #667); }
 .dc7-form .dc7-lab { flex-shrink: 0; text-align: left; }
-.dc7-form label.full, .dc7-form details.full { grid-column: 1 / -1; }
+.dc7-form .full { grid-column: 1 / -1; }
 .dc7-form input { flex: 1; min-width: 0; padding: 4px 6px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 4px; font-size: var(--font-sm); }
 .dc7-issues { margin: 6px 0 0; padding-left: 16px; font-size: var(--font-xs); color: var(--warning, #b45309); line-height: 1.7; }
 .dc7-error { margin: 6px 0 0; font-size: var(--font-sm); color: var(--danger, #b91c1c); }

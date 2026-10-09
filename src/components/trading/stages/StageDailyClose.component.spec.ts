@@ -98,20 +98,16 @@ beforeEach(() => {
 })
 
 describe('StageDailyClose 字段分层（slim-s3-s7-stages）', () => {
-  it('必填四件套常驻，深化字段在「更多字段」折叠内默认展开且摘要常显当前值', async () => {
+  it('必填四件套常驻，深化字段直接平铺（无更多字段折叠）', async () => {
     const w = await mountS7()
-    const more = w.find('details.dc7-more')
-    expect(more.exists()).toBe(true)
-    expect(more.attributes('open')).toBeDefined()
-    expect(more.text()).toContain('更多字段')
-    expect(more.text()).toContain('P50 240 · 置信 70')
-    // 必填字段在折叠外；P10 输入在折叠内
+    expect(w.find('details.dc7-more').exists()).toBe(false)
+    expect(w.text()).not.toContain('更多字段')
     const dp = w.find('input[placeholder="如：储能充放时段选择"]')
     expect(dp.exists()).toBe(true)
-    expect(more.element.contains(dp.element)).toBe(false)
+    // 深化字段网格与必填字段同处表单、直接可见
     const p10 = w.find('.dc7-more-grid input')
     expect(p10.exists()).toBe(true)
-    expect(more.element.contains(p10.element)).toBe(true)
+    expect(w.find('.dc7-form').element.contains(p10.element)).toBe(true)
   })
 
   it('链上记录与 T+2 回填默认收起（无待回填、链完整）', async () => {
