@@ -441,6 +441,16 @@ function readStoredGovernanceUser(): Record<string, unknown> | null {
   }
 }
 
+// #1350 序号守卫的应用侧：带地区头且序号不小于已应用序号的响应才写横幅状态（见
+// nextRegionHeaderSeq 注释）。unwrap 与不走共享 fetch 层的独立客户端（如
+// marketInsightClient 的裸 fetch）共用，晚归的过期地区头不得覆盖 RegionDataBanner。
+export function applyRegionHeadersWithSeq(response: Response, seq: number) {
+  if (hasRegionHeaders(response) && seq >= lastAppliedRegionSeq) {
+    applyRegionHeaders(response)
+    lastAppliedRegionSeq = seq
+  }
+}
+
 export async function unwrap<T>(response: Response, path: string, seq?: number): Promise<T & ApiEnvelope<T>> {
   if (response.status === 204) {
     return { code: 204 } as T & ApiEnvelope<T>
@@ -460,9 +470,10 @@ export async function unwrap<T>(response: Response, path: string, seq?: number):
   // #1350：seq 守卫，仅「序号不小于已应用序号」的带地区头响应应用；较早发起、较晚返回
   // 的过期响应（快速切换数据族/地区时常见）不得覆盖横幅状态。无地区头请求不推进已应用
   // 序号（不会作废更早的有效取数响应）。seq 缺省（历史调用）则保持原行为。
-  if (seq === undefined || (hasRegionHeaders(response) && seq >= lastAppliedRegionSeq)) {
+  if (seq === undefined) {
     applyRegionHeaders(response)
-    if (seq !== undefined) lastAppliedRegionSeq = seq
+  } else {
+    applyRegionHeadersWithSeq(response, seq)
   }
   return payload as T & ApiEnvelope<T>
 }

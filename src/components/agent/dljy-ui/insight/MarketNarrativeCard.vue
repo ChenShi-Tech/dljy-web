@@ -32,7 +32,7 @@ const segments = computed<Seg[]>(() => {
         <p class="seg-b">{{ s.body }}</p>
       </div>
     </div>
-    <p v-else class="empty">点击各卡片右上「✨ AI 解读」生成市场研判</p>
+    <p v-else class="empty">点击各卡片右上「AI 解读」生成市场研判</p>
   </section>
 </template>
 

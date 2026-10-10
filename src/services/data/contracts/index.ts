@@ -1,4 +1,5 @@
 export type * from './common'
+export { normalizeContractBasis } from './common'
 export type * from './marketInsight'
 export type * from './marketInsightHeavyPages'
 export type * from './spotTrading'

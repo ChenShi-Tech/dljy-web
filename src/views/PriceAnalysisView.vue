@@ -3,6 +3,7 @@
 // 顶部:运行日期(区间) + 日前价/实时价 勾选(控制三图显示哪类)。
 // 数据经市场洞察价格分析契约归一为 averageCurves / dayCurves / dailyStats。
 // 3D: 选定日期区间内每天的 96 点价格曲线(时间×日期×价格);时点切面=平均日内;日期切面=按天 max/min/avg。
+import { Sparkles } from 'lucide-vue-next'
 import { onMounted, onBeforeUnmount, onActivated, ref, nextTick, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import * as echarts from 'echarts'
@@ -15,6 +16,7 @@ import {
   type PriceMarket
 } from '@/services/data/contracts'
 import { onRegionChange } from '../composables/useRegionReload'
+import { normalizeContractBasis } from '@/services/data/contracts'
 import RegionDataBanner from '@/components/region/RegionDataBanner.vue'
 import { chartChrome } from '../composables/useTheme'
 import { useEChart } from '../composables/useEChart'
@@ -37,6 +39,8 @@ const urlRange: [string, string] | null = (typeof route.query.from === 'string' 
 if (route.query.rq === '0') showRq.value = false
 if (route.query.ss === '0') showSs.value = false
 const allDates = ref<string[]>([])
+// 取数契约的口径（captured/synthetic）；未取到/失败时保守 synthetic（R4 宁严勿谎）
+const contractBasis = ref<'captured' | 'synthetic'>('synthetic')
 const averageCurves = ref<PriceCurveViewModel[]>([]) // 平均日内(日前/实时,96点) → 时点切面
 const dailyStats = ref<PriceDailyStatViewModel[]>([]) // 逐日汇总(max/min/avg) → 日期切面
 const dayCurves = ref<PriceCurveViewModel[]>([]) // 逐日明细(96点价格曲线/日) → 3D
@@ -60,6 +64,7 @@ async function load() {
   try {
     const contract = await fetchMarketInsightPriceAnalysisContract({ region: currentRegion.value.id })
     if (generation !== loadGeneration) return
+    contractBasis.value = normalizeContractBasis(contract.basis)
     const block = contract.blocks.price_analysis
     averageCurves.value = block.averageCurves
     dailyStats.value = block.dailyStats
@@ -91,6 +96,7 @@ async function load() {
 
 function clearViewState() {
   dateRange.value = null
+  contractBasis.value = 'synthetic'
   allDates.value = []
   averageCurves.value = []
   dailyStats.value = []
@@ -147,7 +153,9 @@ function render3D() {
     legend: { type: 'plain', top: 4, left: 8, right: 8, data: legend, itemWidth: 16, itemHeight: 8, textStyle: { fontSize: 10 } },
     xAxis3D: { type: 'category', name: '日期', data: dates, axisLabel: { fontSize: 9 } },
     yAxis3D: { type: 'value', name: '时间', min: 0, max: 24, interval: 4, axisLabel: { formatter: '{value}:00' } },
-    zAxis3D: { type: 'value', name: '价格', min: 0 },
+    // 价格轴不写死下限：山西/云南均有负价（floor -80 / 节点价负价占比），
+    // min:0 会把负价段截出轴外，与右上时点切面（scale:true 负值可见）口径打架
+    zAxis3D: { type: 'value', name: '价格' },
     grid3D: { boxWidth: 90, boxDepth: 90, boxHeight: 88, top: 64,
       viewControl: { alpha: 18, beta: 30, distance: 180, autoRotate: false },
       light: { main: { intensity: 1.1 }, ambient: { intensity: 0.4 } } },
@@ -212,7 +220,7 @@ function renderDateSlice() {
 }
 
 const ai = useAiSidebar()
-// 「✨ 解读本页」：当前日期区间 + 勾选价类 + 日前/实时逐日极值均值统计作摘要（勿传逐日96点全量）。
+// 「解读本页」：当前日期区间 + 勾选价类 + 日前/实时逐日极值均值统计作摘要（勿传逐日96点全量）。
 function insightContext(): Record<string, unknown> {
   const dates = selectedDates()
   const set = new Set(dates)
@@ -235,11 +243,12 @@ function insightContext(): Record<string, unknown> {
     show: { dayahead: showRq.value, realtime: showSs.value },
     dayahead_price: showRq.value ? summarize(TYPE.rq) : null,
     realtime_price: showSs.value ? summarize(TYPE.ss) : null,
-    basis: 'captured'
+    // R4：消费取数契约口径（captured/synthetic），广东/四川合成口径不得被 AI 当真实采集
+    basis: contractBasis.value
   }
 }
 
-// 页面接入 AI 侧边栏：悬浮球、「✨ 解读本页」按钮共用这份声明与切片（点击时刻求值）。
+// 页面接入 AI 侧边栏：悬浮球、「解读本页」按钮共用这份声明与切片（点击时刻求值）。
 defineAiPage({ label: '价格分析', promptKey: PAGE_PROMPT_KEYS.marketDataAnalysis, interpret: { context: insightContext } })
 function askInsight() {
   ai.interpret()
@@ -278,7 +287,7 @@ onRegionChange(load)
       <el-checkbox v-model="showSs" label="实时价" border size="small" />
       <span class="spacer" />
       <el-button size="small" type="primary" @click="renderAll">查询</el-button>
-      <el-button size="small" type="success" plain @click="askInsight">✨ 解读本页</el-button>
+      <el-button size="small" type="success" plain :icon="Sparkles" @click="askInsight">解读本页</el-button>
     </div>
     <div class="body">
       <div class="card big">

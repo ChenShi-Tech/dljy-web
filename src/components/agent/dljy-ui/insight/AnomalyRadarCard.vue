@@ -35,7 +35,7 @@ const items = computed<Row[]>(() => {
   <section class="mic-radar">
     <header>
       <h3>{{ title || '异动雷达' }}</h3>
-      <span class="sub">{{ items.length ? `${items.length} 项异动` : '实时巡检' }}</span>
+      <span class="sub">{{ items.length ? `${items.length} 项异动` : '异动扫描' }}</span>
     </header>
     <ul v-if="items.length" class="flow">
       <li v-for="(it, i) in items" :key="i" class="row" :class="it.sevMeta.cls">
@@ -50,7 +50,7 @@ const items = computed<Row[]>(() => {
         </div>
       </li>
     </ul>
-    <div v-else class="empty"><span class="ok-dot"></span> 暂无异动 · 市场运行平稳</div>
+    <div v-else class="empty"><span class="ok-dot"></span> 暂无异动事件</div>
   </section>
 </template>
 

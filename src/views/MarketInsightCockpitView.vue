@@ -1,7 +1,8 @@
 <script setup lang="ts">
 // 市场洞察驾驶舱（agent 辅助决策）：把「市场洞察」分散信号聚成一屏 bento。
 // 左栏「预检」：fetchMarketInsightBundle 确定性装配 → dljy-ui 组件渲染六区块（不经 LLM，前后端对齐）。
-// 每卡「✨AI 解读」：把该 block 作 contextPayload 交右栏 AgentChatPanel 流式解读（B3 选中即问）。
+// 每卡「AI 解读」：把该 block 作 contextPayload 交右栏 AgentChatPanel 流式解读（B3 选中即问）。
+import { Sparkles } from 'lucide-vue-next'
 import { computed, ref } from 'vue'
 import MarketSnapshotCard from '@/components/agent/dljy-ui/insight/MarketSnapshotCard.vue'
 import AnomalyRadarCard from '@/components/agent/dljy-ui/insight/AnomalyRadarCard.vue'
@@ -15,6 +16,7 @@ import { currentRegion } from '@/services/region/regionContext'
 import { PAGE_PROMPT_KEYS } from '@/prompts'
 import { fetchMarketInsightBundle, type MarketInsightBundle } from '@/services/market/marketInsightClient'
 import { defineAiPage, useAiSidebar } from '@/features/aiSidebar'
+import { onRegionChange } from '@/composables/useRegionReload'
 
 function todayISO(): string {
   const d = new Date()
@@ -33,24 +35,40 @@ const error = ref('')
 const blocks = computed(() => (bundle.value?.blocks ?? {}) as Record<string, unknown>)
 const basisLabel = computed(() => (bundle.value ? (bundle.value.basis === 'captured' ? '真实采集' : '含模拟/缺失') : ''))
 
+// 预检请求代次：连点预检/切地区后，晚归的旧响应不得写回 bundle/error/loading。
+let precheckSeq = 0
+
 async function runPrecheck() {
+  const seq = ++precheckSeq
   loading.value = true
   error.value = ''
   try {
-    bundle.value = await fetchMarketInsightBundle({
+    const result = await fetchMarketInsightBundle({
       date: date.value,
       region: currentRegion.value.id,
       region_name: currentRegion.value.name,
       market: market.value
     })
+    if (seq !== precheckSeq) return // 晚归的旧预检：写回会复活已失效的旧地区 bundle
+    bundle.value = result
   } catch (e) {
+    if (seq !== precheckSeq) return
     error.value = e instanceof Error ? e.message : String(e)
   } finally {
-    loading.value = false
+    if (seq === precheckSeq) loading.value = false
   }
 }
 
-// 选中即问：单卡解读把该区块作切片交 AI 侧边栏；悬浮球与「✨ AI 综合解读」走全局解读那一支。
+// 切地区后旧地区的预检结果立即失效（KeepAlive 缓存页不重挂载，须显式清空）；
+// bundle 是「数据预检」按钮触发的后端重计算，这里只清空回空态，不自动重拉；
+// 同时作废在途预检，防止晚归响应把旧地区 bundle 写回来。
+onRegionChange(() => {
+  precheckSeq += 1
+  bundle.value = null
+  error.value = ''
+})
+
+// 选中即问：单卡解读把该区块作切片交 AI 侧边栏；悬浮球与「AI 综合解读」走全局解读那一支。
 // 切片在点击时刻求值，只随发起解读的那一轮下发。
 const ai = useAiSidebar()
 
@@ -81,12 +99,12 @@ function askGlobal() {
       type="info"
       :closable="false"
       show-icon
-      title="市场洞察为回看与解读：数值由后端确定性装配，弹性/价差/预测为分析参考·非结算依据；AI 解读仅供参考，请勿直接作为交易决策依据。"
+      title="市场洞察为回看与解读：分析参考、非结算依据；AI 解读仅供参考。"
     />
     <header class="mic-head">
       <div class="mic-title">
-        <h2>🛰 市场洞察驾驶舱</h2>
-        <span class="mic-sub">{{ currentRegion.name }} · 行情 / 弹性 / 价差 / 节点 / 异动 一屏决策</span>
+        <h2>市场洞察驾驶舱</h2>
+        <span class="mic-sub">{{ currentRegion.name }} · 行情 / 弹性 / 价差 / 节点 / 异动</span>
       </div>
       <div class="mic-ctrl">
         <input v-model="date" type="date" class="mic-date" />
@@ -96,7 +114,7 @@ function askGlobal() {
         </div>
         <TrustBadge v-if="bundle" :basis="bundle.basis" prefix="决策口径" />
         <el-button :loading="loading" @click="runPrecheck">数据预检</el-button>
-        <el-button type="primary" :disabled="!bundle" @click="askGlobal">✨ AI 综合解读</el-button>
+        <el-button type="primary" :icon="Sparkles" :disabled="!bundle" @click="askGlobal">AI 综合解读</el-button>
       </div>
     </header>
 
@@ -104,41 +122,40 @@ function askGlobal() {
       <div class="mic-board">
         <section class="mic-overview span-2">
           <header class="mic-sec-head">
-            <span class="mic-sec-title">📊 市场概览</span>
+            <span class="mic-sec-title">市场概览</span>
             <small>基础指标 · 实时采集：新能源出力 / 平台负荷 / 日均价 / 天气</small>
           </header>
           <HomeConsoleView :embedded="true" />
         </section>
         <div class="mic-sec-head mic-insight-head span-2">
-          <span class="mic-sec-title">🛰 深度洞察</span>
-          <small>价格弹性 / 价差套利 / 节点热力 / 异动雷达 · 确定性装配（不经 LLM），预检后呈现</small>
+          <span class="mic-sec-title">深度洞察</span>
+          <small>预检后呈现 · 确定性装配（不经 LLM）</small>
         </div>
         <div v-if="error" class="mic-err">数据预检失败：{{ error }}（请确认 agent-backend 已启动）</div>
         <div v-else-if="!bundle" class="mic-empty">
-          <p>选择日期与市场后点击<strong>「数据预检」</strong>，一屏 bento 即以
-            <strong>市场快照 · 价格弹性 · 价差套利 · 节点热力 · 异动雷达</strong> 确定性呈现（不经 LLM）。</p>
-          <p>每张卡右上<strong>「✨AI 解读」</strong>把该区块交给右侧智能体流式研判（选中即问）。</p>
+          <p>选择日期与市场后点击<strong>「数据预检」</strong>，五区块洞察一屏确定性呈现（不经 LLM）；
+            每张卡右上<strong>「AI 解读」</strong>可就该区块流式研判。</p>
         </div>
         <template v-else>
           <div class="mic-tag" :class="bundle.basis === 'captured' ? 't-real' : 't-mock'">数据口径：{{ basisLabel }}</div>
           <div class="mic-cell span-2">
-            <button class="mic-ask" @click="ask('异动雷达', 'anomalies')">✨ AI 解读</button>
+            <button class="mic-ask" @click="ask('异动雷达', 'anomalies')"><Sparkles :size="12" /> AI 解读</button>
             <AnomalyRadarCard :data="blocks" />
           </div>
           <div class="mic-cell span-2">
-            <button class="mic-ask" @click="ask('市场快照', 'snapshot')">✨ AI 解读</button>
+            <button class="mic-ask" @click="ask('市场快照', 'snapshot')"><Sparkles :size="12" /> AI 解读</button>
             <MarketSnapshotCard :data="blocks" />
           </div>
           <div class="mic-cell">
-            <button class="mic-ask" @click="ask('价格弹性', 'elasticity')">✨ AI 解读</button>
+            <button class="mic-ask" @click="ask('价格弹性', 'elasticity')"><Sparkles :size="12" /> AI 解读</button>
             <ElasticityCurveCard :data="blocks" />
           </div>
           <div class="mic-cell">
-            <button class="mic-ask" @click="ask('日前-实时价差', 'spread')">✨ AI 解读</button>
+            <button class="mic-ask" @click="ask('日前-实时价差', 'spread')"><Sparkles :size="12" /> AI 解读</button>
             <SpreadArbitrageCard :data="blocks" />
           </div>
           <div class="mic-cell span-2">
-            <button class="mic-ask" @click="ask('节点电价热力', 'node_price')">✨ AI 解读</button>
+            <button class="mic-ask" @click="ask('节点电价热力', 'node_price')"><Sparkles :size="12" /> AI 解读</button>
             <NodePriceHeatCard :data="blocks" />
           </div>
           <div class="mic-cell span-2">
@@ -188,6 +205,7 @@ function askGlobal() {
   border: 1px solid var(--primary-tint-border); border-radius: 999px; transition: all .15s;
 }
 .mic-ask:hover { background: var(--primary-tint); border-color: var(--primary); }
+.mic-ask svg { vertical-align: -2px; margin-right: 3px; }
 .mic-err { grid-column: 1 / -1; font-size: var(--font-md); color: var(--danger); padding: 14px 16px; background: var(--danger-tint); border: 1px solid var(--danger); border-radius: 12px; }
 .mic-empty { grid-column: 1 / -1; padding: 40px 28px; text-align: center; color: var(--muted); font-size: var(--font-lg); line-height: 1.85; }
 .mic-empty strong { color: var(--primary); }

@@ -6,6 +6,7 @@
 // 页面整洁纪律（用户 2026-09-28 拍板）：不写任何系统生成的结论句，
 // 口径说明一律「缩略标题 + el-tooltip 悬浮」，不放大段说明框。
 // ⚠️ 模板必须保持单根：fragment 根会让 AppLayout 的 <Transition mode="out-in"> 卡死（先例见两个旧薄壳）。
+import { Sparkles } from 'lucide-vue-next'
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { currentRegion } from '@/services/region/regionContext'
 import { getRegionCapabilityForPath } from '@/services/region/regionModules'
@@ -35,6 +36,7 @@ import {
   sensitivityBars,
   summaryKpis
 } from '@/services/analysis/relationInsight'
+import { normalizeContractBasis } from '@/services/data/contracts'
 
 /** 参考竖线配置（沿用旧两页：山西 xnyzd/xnyg/xnygd 数组按小时取值，云南契约为空数组自然不画）。 */
 type ReferenceLine = {
@@ -155,10 +157,13 @@ async function loadData() {
     const contract = await fetchMarketInsightRelationScatterContract({ kind: activeKind.value, ...params() })
     if (seq !== loadSeq.value) return
     data.value = routeAvailable.value ? contract.blocks.relation_scatter.dataset : null
+    // 契约口径元数据（ModuleContractMeta）：AI 解读上下文按此标注，不硬编码 captured
+    dataBasis.value = normalizeContractBasis(contract.basis)
   } catch {
     if (seq !== loadSeq.value) return
     // 清空旧数据并重绘空态，避免 ECharts 仍持上一轮画布被误读为当前地区真实。
     data.value = null
+    dataBasis.value = 'synthetic'
     dates.value = []
     error.value = `${currentRegion.value.name}价格驱动数据加载失败（运行日 ${runDate.value}）`
   } finally {
@@ -187,10 +192,12 @@ function dimensionVisible(id?: string) {
 const visibleRefLines = computed(() => meta.value.refLines.filter((l) => dimensionVisible(l.dimensionId)))
 const legendRefLines = computed(() => visibleRefLines.value.filter((l) => l.legendLabel))
 
+// 取数契约的口径（captured/synthetic）；取数失败/未取到时保守 synthetic（R4 宁严勿谎）
+const dataBasis = ref<'captured' | 'synthetic'>('synthetic')
 // KPI 摘要（relationInsight.summaryKpis，口径不改）
 const kpi = computed(() => summaryKpis(data.value?.xd ?? [], days.value))
-function fmtSlope(perMw: number) {
-  return (perMw * 1000).toFixed(1) // 元/MWh per MW → per GW
+function fmtSlope(perMw: number | null) {
+  return perMw == null ? '—' : (perMw * 1000).toFixed(1) // 元/MWh per MW → per GW；空样本显示缺测
 }
 
 // ---------------------------------------------------------------------------
@@ -372,7 +379,9 @@ function renderScatter() {
     xAxis: meta.value.xFixedMax != null
       ? { type: 'value', min: 0, max: meta.value.xFixedMax, interval: meta.value.xFixedMax / 4, axisLabel: { fontSize: 10, color: cc.axisLabel }, splitLine: { lineStyle: { color: cc.splitLine } } }
       : { type: 'value', scale: true, axisLabel: { fontSize: 10, color: cc.axisLabel }, splitLine: { lineStyle: { color: cc.splitLine } } },
-    yAxis: { type: 'value', min: 0, max: 1500, interval: 300, axisLabel: { fontSize: 10, color: cc.axisLabel }, splitLine: { lineStyle: { color: cc.splitLine } } },
+    // 电价轴自适应：负价时段的「驱动-价格」关系恰是本页最关心的场景，
+    // 写死 min:0/max:1500 会系统性裁掉负价散点与拟合线负值端
+    yAxis: { type: 'value', scale: true, axisLabel: { fontSize: 10, color: cc.axisLabel }, splitLine: { lineStyle: { color: cc.splitLine } } },
     series
   }, { notMerge: true })
 }
@@ -403,13 +412,15 @@ function insightContext(): Record<string, unknown> {
     dates_shown: dates.value,
     days_loaded: k.sampleDays,
     summary: {
-      overall_r: Number(k.overallR.toFixed(3)),
+      overall_r: k.overallR == null ? null : Number(k.overallR.toFixed(3)),
       strongest_hour: k.strongestHour,
       weakest_hour: k.weakestHour,
-      mean_marginal_sensitivity_yuan_per_mwh_gw: Number(fmtSlope(k.meanSlope))
+      mean_marginal_sensitivity_yuan_per_mwh_gw: k.meanSlope == null ? null : Number((k.meanSlope * 1000).toFixed(1))
     },
     chart: `X=${meta.value.label}(${meta.value.unit})、Y=电价(元/MWh)；热力图(小时×驱动量分档→均价)/双驱动敏感度柱/单小时散点+拟合`,
-    basis: 'captured'
+    // R4：AI 上下文消费取数契约口径（captured/synthetic），不再硬编码真实采集；
+    // 契约元数据缺失时保守按 synthetic（宁严勿谎——广东/四川后端合成口径不被当成真实采集）。
+    basis: dataBasis.value
   }
 }
 defineAiPage({ label: '价格驱动分析', promptKey: PAGE_PROMPT_KEYS.marketDataAnalysis, interpret: { context: insightContext } })
@@ -460,14 +471,14 @@ onRegionChange(loadData)
       </el-radio-group>
       <span class="spacer" />
       <el-button size="small" type="primary" @click="loadData">查询</el-button>
-      <el-button size="small" type="success" plain @click="askInsight">✨ 解读本页</el-button>
+      <el-button size="small" type="success" plain :icon="Sparkles" @click="askInsight">解读本页</el-button>
     </div>
 
     <!-- 指标卡：口径说明一律 ⓘ 悬浮（MetricTile.info），页面不写结论句 -->
     <div class="kpis">
       <MetricTile
         label="相关系数 r"
-        :value="kpi.overallR.toFixed(3)"
+        :value="kpi.overallR == null ? '—' : kpi.overallR.toFixed(3)"
         info="全时段散点汇成一池计算的 Pearson 相关系数，衡量电价与驱动量的线性相关方向与强度（-1~1）。"
       />
       <MetricTile

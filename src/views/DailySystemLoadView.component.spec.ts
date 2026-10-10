@@ -7,7 +7,8 @@ import type { ActualLoadSourceViewModel, MarketInsightActualLoadContract } from 
 
 const fetchContract = vi.fn()
 vi.mock('@/services/data/contracts', () => ({
-  fetchMarketInsightActualLoadContract: (...args: unknown[]) => fetchContract(...args)
+  fetchMarketInsightActualLoadContract: (...args: unknown[]) => fetchContract(...args),
+  normalizeContractBasis: (b?: string) => (b === 'real' || b === 'captured' ? 'captured' : 'synthetic')
 }))
 vi.mock('../composables/useRegionReload', () => ({ onRegionChange: () => {} }))
 vi.mock('../composables/useQuerySync', () => ({ useQuerySync: () => {} }))

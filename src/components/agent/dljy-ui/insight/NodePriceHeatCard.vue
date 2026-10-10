@@ -56,7 +56,7 @@ onBeforeUnmount(() => { window.removeEventListener('resize', resize); chart?.dis
     </header>
     <template v-if="available && matrix.length">
       <div ref="el" class="chart"></div>
-      <p class="note">真实列式聚合（DuckDB）· 蓝→青→黄→红 价高</p>
+      <p class="note">真实列式聚合 · 蓝→青→黄→红 价高</p>
     </template>
     <div v-else class="empty"><p>无节点电价数据</p><span>严格地区「真实或空」：节点电价 Parquet 未摄取时空态</span></div>
   </section>

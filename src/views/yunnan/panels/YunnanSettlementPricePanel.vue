@@ -23,6 +23,8 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { Coins, Activity, BarChart3, TableProperties, Waves, History } from 'lucide-vue-next'
 import ChartCard from '../../../components/common/ChartCard.vue'
 import DataQualityBadge from '../../../components/common/DataQualityBadge.vue'
+import InfoHint from '@/components/common/InfoHint.vue'
+import DataStatusLine from '@/components/trading/stages/DataStatusLine.vue'
 import DataState from '../../../components/common/DataState.vue'
 import { mapWithConcurrency } from '../../../utils/concurrency'
 import DynamicTable from '../../../components/common/DynamicTable.vue'
@@ -193,6 +195,14 @@ const historyNotice = computed(() =>
     : ''
 )
 
+// hero ⓘ 全文（#2992 口径一字不减，只降呈现层级；端点/公式原文保留于此）
+const HERO_INFO = [
+  '综合结算均价：服务端结算统计按「成对有效记录 Σ电费/Σ电量」量费加权（集团口径，前端不做二次计算），失败时不提供替代算法。',
+  '日前/实时/中长期：样站等权参照线（全部厂站时为按厂站等权），中长期为合约虚线。',
+  '节点电价峰谷价差水位：来自节点电价权威后端（/v1/spot/node-price/daily）。',
+  '云南缺真实数据时如实为空，不回退他省口径。'
+].join('\n')
+
 // 展示名（#2992）：综合结算均价只认服务端量费加权口径；样站三条线在「全部厂站」时
 // 明示等权口径，单厂时保持原名（无跨厂平均）。
 const seriesNames = computed(() => ({
@@ -238,7 +248,7 @@ const dataQualityNote = computed(() => {
   const parts: string[] = []
   if (settleIngestHint.value) parts.push('结算族空态')
   if (nodeIngestHint.value) parts.push('节点电价空态')
-  return parts.length ? parts.join('；') : '云南严格地区真实或空'
+  return parts.length ? parts.join('；') : '云南真实或空（不回退他省）'
 })
 
 function daysBetween(range: DateRange): string[] {
@@ -976,13 +986,13 @@ onRegionChange(() => {
   <div class="settle-panel">
     <RegionDataBanner :families="SETTLEMENT_PRIVATE_FAMILIES" />
 
+    <!-- hero 一行化（slim-and-fix-market-insight-pages R5）：公式/端点/口径全文经 ⓘ 渐进披露 -->
     <section class="sp-hero">
-      <div class="sp-kicker"><Coins :size="16" /><span>云南 · 现货结算价分析</span></div>
-      <p>
-        综合结算均价由服务端结算统计按「成对有效记录 Σ电费/Σ电量」量费加权给出（集团口径，前端不做二次计算）；
-        日前/实时/中长期为样站等权参照线，中长期为合约虚线；节点电价峰谷价差水位来自现货权威后端
-        /v1/spot/node-price/daily。严格地区 yunnan「真实或空」，无数据走空态、不回退山西。
-      </p>
+      <div class="sp-hero-main">
+        <div class="sp-kicker"><Coins :size="16" /><span>云南 · 现货结算价分析</span></div>
+        <InfoHint :text="HERO_INFO" label="口径" />
+        <el-tag size="small" type="info" effect="plain">真实或空 · 不回退他省</el-tag>
+      </div>
     </section>
 
     <div class="sp-quality">
@@ -1056,23 +1066,18 @@ onRegionChange(() => {
       show-icon
       :title="historyNotice"
     />
-    <el-alert
-      v-else-if="!errorMsg && !weightedErrorMsg && settleIngestHint"
-      type="warning"
-      :closable="false"
-      class="sp-alert"
-      show-icon
-      title="后端暂无 yn_spot_settlement 结算数据"
-      description="请先在主仓库运行现货结算导出 ETL（scripts/private-cache-adapters/yn-fact-pnl.mjs + import-spot-export）落 capture-raw/yunnan/，或更换为已摄取的日期范围。"
+    <!-- 摄取指引降层（R5，同 spot-degradation-honesty 呈现层级）：事实一行可见，完整命令展开可达 -->
+    <DataStatusLine
+      v-if="!errorMsg && !weightedErrorMsg && settleIngestHint"
+      class="sp-statusline"
+      summary="后端暂无云南结算数据"
+      :items="[{ tone: 'caveat', text: '请先在主仓库运行现货结算导出 ETL（scripts/private-cache-adapters/yn-fact-pnl.mjs + import-spot-export）落 capture-raw/yunnan/，或更换为已摄取的日期范围。' }]"
     />
-    <el-alert
+    <DataStatusLine
       v-if="nodeIngestHint && !errorMsg"
-      type="warning"
-      :closable="false"
-      class="sp-alert"
-      show-icon
-      title="后端暂无该日节点电价数据（峰谷水位/KPI 不可用）"
-      description="请先在主仓库摄取节点电价 Parquet（现货权威后端 /api/v1/spot 数据源），或更换为已摄取的日期/市场。"
+      class="sp-statusline"
+      summary="后端暂无该日节点电价数据（峰谷水位/KPI 不可用）"
+      :items="[{ tone: 'caveat', text: '请先在主仓库摄取节点电价 Parquet（现货权威后端 /api/v1/spot 数据源），或更换为已摄取的日期/市场。' }]"
     />
 
     <!-- KPI 行（当日跨节点聚合）-->
@@ -1130,7 +1135,7 @@ onRegionChange(() => {
         </div>
         <ChartCard
           v-else
-          title="结算三价对比（样站等权日前/实时/中长期 + 综合结算均价）"
+          title="结算三价对比（样站等权 + 综合结算均价）"
           :height="340"
           :build-option="buildPriceOption"
           fullscreen
@@ -1149,7 +1154,7 @@ onRegionChange(() => {
       <DataState
         :loading="dailyLoading"
         :empty="!hasDailySnapshot || !!dailyErrorMsg"
-        :empty-text="dailyErrorMsg ? '节点电价加载失败，原因见顶部错误提示' : '当日暂无节点电价（峰谷水位需节点级 max/min）'"
+        :empty-text="dailyErrorMsg ? '节点电价数据不可用' : '当日暂无节点电价（峰谷水位需节点级 max/min）'"
       >
         <template #skeleton>
           <SpotSkeleton variant="chart" :height="420" />
@@ -1171,7 +1176,7 @@ onRegionChange(() => {
       <DataState
         :loading="dailyLoading"
         :empty="!hasPeakValleyTrend || !!dailyErrorMsg"
-        :empty-text="dailyErrorMsg ? '节点电价加载失败，原因见顶部错误提示' : '该日期范围暂无峰谷价差趋势数据'"
+        :empty-text="dailyErrorMsg ? '节点电价数据不可用' : '该日期范围暂无峰谷价差趋势数据'"
       >
         <template #skeleton>
           <SpotSkeleton variant="chart" :height="300" />
@@ -1195,7 +1200,7 @@ onRegionChange(() => {
       <div class="sp-table-head">
         <h3><TableProperties :size="16" /> 结算价明细（按聚合粒度）</h3>
         <span class="sp-table-sub">
-          {{ plantLabel }} · {{ dateRange[0] }} ~ {{ dateRange[1] }} · 共 {{ settleRows.length }} 行<template v-if="equalWeightNote"> · {{ equalWeightNote }}</template>
+          {{ plantLabel }} · {{ dateRange[0] }} ~ {{ dateRange[1] }} · 共 {{ settleRows.length }} 行
         </span>
       </div>
       <DataState
@@ -1220,7 +1225,7 @@ onRegionChange(() => {
 }
 
 .sp-hero {
-  padding: 16px 18px;
+  padding: 10px 14px;
   border: 1px solid #dfe7eb;
   border-radius: 8px;
   background: linear-gradient(135deg, #ffffff 0%, #eef7f3 55%, #f7fbff 100%);
@@ -1235,11 +1240,14 @@ onRegionChange(() => {
   font-weight: 650;
 }
 
-.sp-hero p {
-  margin: 8px 0 0;
-  color: #5c6b76;
-  line-height: 1.7;
-  font-size: var(--font-md);
+.sp-hero-main {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+.sp-statusline {
+  margin-bottom: 10px;
 }
 
 .sp-quality {

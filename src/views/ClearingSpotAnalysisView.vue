@@ -3,6 +3,7 @@
 // 市场洞察出清契约返回 timePoints + series[]，保持连续时序、多轴叠加。
 // 4 轴:0 电量(左,MWh) | 1 价格(右,0-1500) | 2 比率(右,0-2) | 3 价格差(右,-1500~1500)。
 // 差异点(对照线上):运行日期=区间(控横轴) / 对比日期=单日(竖线对比) / 价格差用红柱 / 主策略用圆点标值 / Y轴可隐藏。
+import { Sparkles } from 'lucide-vue-next'
 import { computed, onMounted, ref, nextTick, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { currentRegion } from '@/services/region/regionContext'
@@ -241,7 +242,7 @@ function render() {
 }
 
 const ai = useAiSidebar()
-// 「✨ 解读本页」：当前运行区间/对比日 + 序列图例 + 区间天数作摘要（勿传全量 series）。
+// 「解读本页」：当前运行区间/对比日 + 序列图例 + 区间天数作摘要（勿传全量 series）。
 function insightContext(): Record<string, unknown> {
   const d = clearing.value
   const names = d?.series.map((item) => item.name) || []
@@ -260,7 +261,7 @@ function insightContext(): Record<string, unknown> {
   }
 }
 
-// 页面接入 AI 侧边栏：悬浮球、「✨ 解读本页」按钮共用这份声明与切片（点击时刻求值）。
+// 页面接入 AI 侧边栏：悬浮球、「解读本页」按钮共用这份声明与切片（点击时刻求值）。
 defineAiPage({ label: '出清现货电量分析', promptKey: PAGE_PROMPT_KEYS.marketDataAnalysis, interpret: { context: insightContext } })
 function askInsight() {
   ai.interpret()
@@ -297,7 +298,7 @@ onRegionChange(load)
         <el-button size="small" type="primary" @click="fixedAxis = !fixedAxis">{{ fixedAxis ? '坐标自动' : '坐标固定' }}</el-button>
         <el-button size="small" type="primary" @click="hideAxis = !hideAxis">{{ hideAxis ? '显示Y轴' : '隐藏Y轴' }}</el-button>
         <el-button size="small" :type="compactAxes ? 'default' : 'primary'" @click="compactAxes = !compactAxes">{{ compactAxes ? '完整视角' : '精简视角' }}</el-button>
-        <el-button size="small" type="success" plain @click="askInsight">✨ 解读本页</el-button>
+        <el-button size="small" type="success" plain :icon="Sparkles" @click="askInsight">解读本页</el-button>
         <TrustBadge :basis="dataBasis" prefix="决策口径" />
       </div>
       <div class="chart-card">

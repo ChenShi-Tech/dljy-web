@@ -165,25 +165,30 @@ async function load() {
     loading.value = false
   }
 
-  // 日均价:后台先拉 1 天快速出图(秒显),再补全部历史(供"上/下一天"切换),都不卡首屏
+  // 日均价:后台先拉 1 天快速出图(秒显),再补全部历史(供"上/下一天"切换),都不卡首屏。
+  // 与主 load 同一代次（seq）守卫：期间切地区/重复刷新时，晚归闭包不得把旧地区日均价写回新地区图。
   ;(async () => {
     avgChart.showLoading()
     try {
       const one = await fetchCaptured<any>('sdpt_console', 'getAveragePriceChart')
+      if (seq !== loadSeq) return
       if (one?.data) {
         avgPriceFiles.value = [one]
         avgSelectedIndex.value = 0
         await nextTick(); renderAvgPriceChart()
       }
     } catch { /* 快速首图失败不提示,等全量列表兜底 */ }
+    if (seq !== loadSeq) return
     try {
       const list = await fetchAvgPriceList()
+      if (seq !== loadSeq) return
       if (list.length) {
         avgPriceFiles.value = list
         avgSelectedIndex.value = list.length - 1
         await nextTick(); renderAvgPriceChart()
       }
     } catch { /* fetchAvgPriceList 内部已有单文件回退,至此仍失败则走下方空数据提示 */ }
+    if (seq !== loadSeq) return
     avgChart.hideLoading()
     if (!avgPriceFiles.value.length) {
       ElMessage.warning('日均价数据加载失败,可点击右上角刷新重试')
@@ -205,7 +210,8 @@ function goProvinceDetail() { goWeatherPage(PROVINCES.find((x) => x.name === pro
 // 加载全部日均价变体(35 天)，按日期去重 + 升序
 async function fetchAvgPriceList() {
   try {
-    const listRes = await apiGet<any>('/real-list', { family: 'sdpt_console' })
+      // region 与同页 fetchCaptured 同口径：清单按地区过滤，避免下一地区图取到上一地区的文件清单
+      const listRes = await apiGet<any>('/real-list', { family: 'sdpt_console', region: currentRegion.value.id })
     const files = (listRes.data || []).filter((f: any) => String(f.file).includes('getAveragePriceChart'))
     const results = await Promise.all(
       files.map(async (f: any) => {
