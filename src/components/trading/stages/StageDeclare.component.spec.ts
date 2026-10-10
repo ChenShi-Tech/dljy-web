@@ -145,3 +145,17 @@ describe('S4 L3 双签真实反馈（fix-spot-p2-remaining）', () => {
     w.unmount()
   })
 })
+
+// slim-spot-page-explainers：放行自查说明性尾注收 ⓘ（spec trading-day-workbench
+// 「折叠头只留标题与状态徽章」——S4 尾注不再以常驻段落显示）。
+describe('S4 放行自查尾注收纳（slim-spot-page-explainers）', () => {
+  it('「权威把关在服务端」说明收进 h3 ⓘ，无常驻 dc-note 段落', async () => {
+    const wrapper = await mountS4()
+    expect(wrapper.find('p.dc-note').exists()).toBe(false)
+    const info = wrapper.find('#dc-sec-checklist h3').findComponent({ name: 'InfoHint' })
+    expect(info.exists()).toBe(true)
+    expect(info.props('text')).toContain('权威把关在服务端')
+    // 结论徽章与十项清单折叠可见性不变
+    expect(wrapper.find('#dc-sec-checklist .dc-verdict').exists()).toBe(true)
+  })
+})

@@ -10,6 +10,7 @@
 // 储能立场多一张充放电计划单（折叠块），写回后放行清单的 SOC 判据自动生效。
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { FileUp, Link2, PenLine, PhoneCall, ShieldCheck, Save, Layers } from 'lucide-vue-next'
+import InfoHint from '@/components/common/InfoHint.vue'
 import {
   buildChecklist,
   evaluateRelease,
@@ -556,6 +557,7 @@ const receiptChecks = computed<ReceiptCheckRow[] | null>(() => {
         <span class="dc-verdict" :class="verdict.allowed ? 'ok' : 'bad'">
           {{ verdict.passedCount }}/{{ verdict.total }} {{ verdict.allowed ? '可进入提交' : '不可提交' }}
         </span>
+        <InfoHint text="本清单是交易员的推演台；权威把关在服务端——下方「风控检查」用同一套规则重算并阻断硬约束（409 拦转态），故此处结论不直接改单据状态。" />
       </h3>
       <p class="dc-summary" :class="verdict.allowed ? 'ok' : 'bad'">{{ verdict.summary }}</p>
 
@@ -641,10 +643,6 @@ const receiptChecks = computed<ReceiptCheckRow[] | null>(() => {
           </li>
         </ul>
       </div>
-      <p class="dc-note">
-        本清单是交易员的推演台；**权威把关在服务端**——下方「风控检查」用同一套规则重算并
-        阻断硬约束（409 拦转态），故此处结论不直接改单据状态。
-      </p>
     </section>
 
     <!-- ③ 状态机 -->
@@ -805,7 +803,6 @@ const receiptChecks = computed<ReceiptCheckRow[] | null>(() => {
 .dc-overrides li { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; padding: 5px 8px; border-radius: 6px; background: var(--panel-sub, #f8fafc); margin-bottom: 4px; }
 .dc-overrides button { margin-left: auto; padding: 1px 8px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 4px; background: var(--panel, #fff); cursor: pointer; font-size: var(--font-xs); }
 
-.dc-note { margin: 8px 0 0; font-size: var(--font-xs); line-height: 1.6; color: var(--warning, #a16207); }
 
 .dc-machine { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .dc-status { padding: 3px 12px; border-radius: 9px; background: var(--primary-tint, #eff6ff); color: var(--accent, #1d4ed8); font-size: var(--font-sm); font-weight: 600; }

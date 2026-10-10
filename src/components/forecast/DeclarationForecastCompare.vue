@@ -16,6 +16,7 @@ import { computed, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, 
 import { AlertTriangle, CalendarClock, Loader2, Play, RefreshCw } from 'lucide-vue-next'
 
 import UnifiedForecastChart from './UnifiedForecastChart.vue'
+import InfoHint from '../common/InfoHint.vue'
 import DataBasisBadge from '../DataBasisBadge.vue'
 import {
   ensureForecastCatalog,
@@ -638,8 +639,8 @@ defineExpose({ run })
         <span v-for="r in rows.filter((x) => x.error)" :key="r.modelId">{{ r.name }}：{{ r.error }}；</span>
       </p>
       <p class="dfc-note">
-        holdout MAE 为模型在训练窗口内自报，是它在训练窗口留出集上的误差，<b>不是目标日实际误差</b>；
-        本页暂不提供「对目标日实际 MAE」——底层出清曲线取数需按日期抽取的地区适配器，未就绪前不显示，也不用近似值顶替。
+        holdout MAE 为训练窗口自报口径，非目标日实际误差
+        <InfoHint text="holdout MAE 为模型在训练窗口内自报，是它在训练窗口留出集上的误差，不是目标日实际误差；本页暂不提供「对目标日实际 MAE」——底层出清曲线取数需按日期抽取的地区适配器，未就绪前不显示，也不用近似值顶替。" />
       </p>
     </template>
   </div>

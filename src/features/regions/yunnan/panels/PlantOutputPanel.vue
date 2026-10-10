@@ -30,6 +30,12 @@ import {
   valueAxis
 } from '@/services/chart/chartStyle'
 import type { DataSourceBasis } from '@/services/data/types'
+import InfoHint from '@/components/common/InfoHint.vue'
+import DataStatusLine from '@/components/trading/stages/DataStatusLine.vue'
+
+// hero 口径说明收 ⓘ（spot-page-hint-density：hero 一行化）。
+const HERO_INFO =
+  '实际出力、计划/预测出力、完成率、偏差和异常时段按日期范围与日/周/月粒度聚合展示，支持多电厂与机组对比。'
 import {
   ALL_PLANTS,
   ALL_UNITS,
@@ -568,8 +574,10 @@ onRegionChange(() => {
 
     <section class="po-hero">
       <div>
-        <div class="po-kicker"><Factory :size="16" /><span>云南 · 电厂出力分析</span></div>
-        <p>实际出力、计划/预测出力、完成率、偏差和异常时段按日期范围与日/周/月粒度聚合展示，支持多电厂与机组对比。</p>
+        <div class="po-kicker">
+          <Factory :size="16" /><span>云南 · 电厂出力分析</span>
+          <InfoHint :text="HERO_INFO" label="口径" />
+        </div>
       </div>
       <DataQualityBadge
         :basis="qualityBasis"
@@ -643,23 +651,18 @@ onRegionChange(() => {
       </label>
     </SpotFilterBar>
 
-    <el-alert
-      v-if="meta.mock"
-      type="warning"
-      :closable="false"
-      class="po-alert"
-      show-icon
-      title="检测到模拟回放，已禁止上屏"
-      description="该响应标记 mock:true / sourceType:MOCK / productionWrite:false。请先运行 import:spot-export --write 摄取 yn_plant_output 真实数据。"
-    />
-    <el-alert
+    <!-- Mock 标识保持显著形态（红线：直接可见）；摄取命令降层为展开明细 -->
+    <el-alert v-if="meta.mock" type="warning" :closable="false" class="po-alert" show-icon title="检测到模拟回放，已禁止上屏">
+      <details class="po-ingest-detail">
+        <summary>摄取指引</summary>
+        <p>该响应标记 mock:true / sourceType:MOCK / productionWrite:false。请先运行 import:spot-export --write 摄取 yn_plant_output 真实数据。</p>
+      </details>
+    </el-alert>
+    <DataStatusLine
       v-else-if="ingestHint"
-      type="warning"
-      :closable="false"
-      class="po-alert"
-      show-icon
-      title="后端暂无 yn_plant_output 厂站出力数据"
-      description="请在主仓库用云南月度导出包运行 import:spot-export --write，确认 plant_integrated_power_forecast_actual.csv 已落入 capture-raw/yunnan/yn_plant_output/。"
+      label="数据状态"
+      summary="后端暂无 yn_plant_output 厂站出力数据"
+      :items="[{ tone: 'caveat', text: '请在主仓库用云南月度导出包运行 import:spot-export --write，确认 plant_integrated_power_forecast_actual.csv 已落入 capture-raw/yunnan/yn_plant_output/。' }]"
     />
 
     <DataState :loading="loading" :error="errorMsg" :empty="!hasData" :empty-text="emptyText">
@@ -742,10 +745,10 @@ onRegionChange(() => {
 
 .po-hero {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: 14px;
-  padding: 16px 18px;
+  padding: 10px 14px;
   border: 1px solid #dfe7eb;
   border-radius: 8px;
   background: #fff;
@@ -758,13 +761,6 @@ onRegionChange(() => {
   color: #0f766e;
   font-size: var(--font-md);
   font-weight: 650;
-}
-
-.po-hero p {
-  margin: 8px 0 0;
-  color: #5c6b76;
-  font-size: var(--font-md);
-  line-height: 1.7;
 }
 
 .po-field {
@@ -795,6 +791,18 @@ onRegionChange(() => {
 
 .po-alert {
   border-radius: 8px;
+}
+
+.po-ingest-detail summary {
+  cursor: pointer;
+  font-size: var(--font-xs);
+  color: var(--muted, #909399);
+}
+
+.po-ingest-detail p {
+  margin: 4px 0 0;
+  font-size: var(--font-xs);
+  line-height: 1.6;
 }
 
 .po-kpi-row {
