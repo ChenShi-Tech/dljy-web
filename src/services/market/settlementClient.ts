@@ -19,8 +19,8 @@
 // 只能以「样站等权平均电价」名义消费。
 //
 // 严格地区「真实或空」：fetchCaptured 自动带 currentRegion.id；云南在
-// REGION_STRICT_REAL_DATA 内，无真实数据走空态、不回退山西基线。失败/无数据 →
-// hasData=false（basis='empty'），由调用方决定空态呈现，不抛错断页面。
+// REGION_STRICT_REAL_DATA 内，无真实数据走空态、不回退山西基线。请求成功而无行 →
+// hasData=false（basis='empty'）由调用方呈现空态；取数失败则上抛（失败≠未摄取）。
 import { fetchCaptured } from '@/services/captured'
 import { capturedAtFromProvenance } from '@/services/data/freshness'
 
@@ -113,8 +113,11 @@ export async function loadSettlementPrices(
     mock = envelope.mock === true || sourceType === 'MOCK'
     updatedAt = capturedAtFromProvenance(raw)
     rows = envelope.provenance?.realDataConnected === true && !mock ? pickRows<SettlementRow>(raw) : []
-  } catch {
-    rows = []
+  } catch (e) {
+    // 失败≠未摄取（slim-and-fix-market-insight-pages R2）：网络/服务端错误上抛由调用方呈现
+    // 失败态（三个调用方均有错误通道）。此前吞错置空会把接口故障伪装成「族未摄取、
+    // 请先跑 ETL」，误导排查方向——真实或空的「空」只认「请求成功且无行」。
+    throw e instanceof Error ? new Error(`结算数据读取失败：${e.message}`) : new Error('结算数据读取失败')
   }
 
   const inRange = (d: string) => (!from || d >= from) && (!to || d <= to)

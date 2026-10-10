@@ -68,7 +68,6 @@ onBeforeUnmount(() => { window.removeEventListener('resize', resize); chart?.dis
         <span v-if="maeModel != null">模型 MAE <b>{{ fmt(maeModel, 1) }}</b></span>
         <span v-if="maeNaive != null">naive <b>{{ fmt(maeNaive, 1) }}</b></span>
       </div>
-      <p class="note">分析参考 · 非结算依据</p>
     </template>
     <div v-else class="empty"><p>无弹性数据</p><span>严格地区「真实或空」：缺真实供需数据时不臆造</span></div>
   </section>

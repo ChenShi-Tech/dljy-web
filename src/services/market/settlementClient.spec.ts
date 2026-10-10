@@ -170,10 +170,16 @@ describe('loadSettlementPrices', () => {
     expect(r.hasData).toBe(false)
   })
 
-  it('fetchCaptured 抛错 → 空态不抛（由页面渲染，不崩整页）', async () => {
+  it('fetchCaptured 网络失败 → 上抛失败态（失败≠未摄取，不再吞错置空）', async () => {
+    // slim-and-fix-market-insight-pages R2：吞错置空会把接口故障伪装成「族未摄取、
+    // 请先跑 ETL」误导排查方向；三个调用方（结算价面板/驾驶舱 safe/厂站属性）都有错误通道。
     vi.mocked(fetchCaptured).mockRejectedValue(new Error('network down'))
-    const r = await loadSettlementPrices()
-    expect(r).toMatchObject({ basis: 'empty', hasData: false, points: [] })
+    await expect(loadSettlementPrices()).rejects.toThrow('结算数据读取失败：network down')
+  })
+
+  it('fetchCaptured 404/空类错误 → 同样上抛（原文保留，供调用方按空态分类）', async () => {
+    vi.mocked(fetchCaptured).mockRejectedValue(new Error('capture family not found: yn_spot_settlement (404)'))
+    await expect(loadSettlementPrices()).rejects.toThrow('结算数据读取失败：capture family not found: yn_spot_settlement (404)')
   })
 
   it('行内 null 价经 toNum 落 0 再被均值剔除 → 该维度 null', async () => {

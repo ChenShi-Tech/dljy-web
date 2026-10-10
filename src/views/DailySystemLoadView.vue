@@ -8,6 +8,7 @@
 // （每图默认高度按视口 0.66 取 [480,860]，用户可拖底部手柄自调、同页两列联动、localStorage 记忆；
 // 高度变化经 useEChart ResizeObserver 自动 resize）；
 // 额外「全部」页保留原 6 图一览（2 列 × 3 行，每图 240px）。当前页签 ⇄ URL ?metric= 同步。
+import { Sparkles } from 'lucide-vue-next'
 import { computed, onMounted, ref, watch, type Ref } from 'vue'
 import { currentRegion } from '@/services/region/regionContext'
 import {
@@ -17,6 +18,7 @@ import {
   type MarketInsightActualLoadBlock
 } from '@/services/data/contracts'
 import { onRegionChange } from '../composables/useRegionReload'
+import { normalizeContractBasis } from '@/services/data/contracts'
 import { useQuerySync } from '../composables/useQuerySync'
 import RegionDataBanner from '@/components/region/RegionDataBanner.vue'
 import LoadPanelChart from '../components/common/LoadPanelChart.vue'
@@ -64,6 +66,8 @@ watch(panelHeight, (h) => {
 const loading = ref(true)
 const error = ref('')
 const data = ref<MarketInsightActualLoadBlock | null>(null)
+// 取数契约的口径（captured/synthetic）；未取到/失败时保守 synthetic（R4 宁严勿谎）
+const contractBasis = ref<'captured' | 'synthetic'>('synthetic')
 // 当前页签 ⇄ 路由 query：刷新或分享链接后停留在同一迁移面
 const activeMetric = ref<ActiveMetric>('average')
 useQuerySync({ metric: activeMetric as Ref<string> })
@@ -78,6 +82,7 @@ async function load() {
   data.value = null
   try {
     const contract = await fetchMarketInsightActualLoadContract({ region: currentRegion.value.id })
+    contractBasis.value = normalizeContractBasis(contract.basis)
     if (generation !== loadGeneration) return
     data.value = contract.blocks.actual_load
     if (!data.value.sources.system) {
@@ -101,7 +106,7 @@ const layout = computed<'single' | 'dual' | null>(() => {
 })
 
 const ai = useAiSidebar()
-// 「✨ 解读本页」：可用年份 + 系统负荷各年年均作摘要（勿传 6年×366天逐日矩阵全量）。
+// 「解读本页」：可用年份 + 系统负荷各年年均作摘要（勿传 6年×366天逐日矩阵全量）。
 function insightContext(): Record<string, unknown> {
   const sys = data.value?.sources.system
   const years = sys?.years || []
@@ -117,11 +122,12 @@ function insightContext(): Record<string, unknown> {
     system_load_annual_avg_by_year: years.map((y, i) => ({ year: y, annual_avg: yearMean(average[i]) })),
     unit: LOAD_PANEL_UNIT,
     note: '逐日 366 点 × 覆盖年份；本摘要仅给系统负荷各年年均，逐日明细未传',
-    basis: 'captured'
+    // R4：消费取数契约口径（captured/synthetic），不硬编码真实采集
+    basis: contractBasis.value
   }
 }
 
-// 页面接入 AI 侧边栏：悬浮球、「✨ 解读本页」按钮共用这份声明与切片（点击时刻求值）。
+// 页面接入 AI 侧边栏：悬浮球、「解读本页」按钮共用这份声明与切片（点击时刻求值）。
 defineAiPage({ label: '逐日系统负荷', promptKey: PAGE_PROMPT_KEYS.marketDataAnalysis, interpret: { context: insightContext } })
 function askInsight() {
   ai.interpret()
@@ -137,7 +143,7 @@ onRegionChange(load)
     <RegionDataBanner />
     <el-alert v-if="error" type="error" :closable="false" :title="error" class="mb" />
     <div class="toolbar">
-      <el-button size="small" type="success" plain @click="askInsight">✨ 解读本页</el-button>
+      <el-button size="small" type="success" plain :icon="Sparkles" @click="askInsight">解读本页</el-button>
     </div>
     <LoadRangeBoard v-if="layout === 'single' && data?.sources.system" :source="data.sources.system" />
     <el-tabs v-else-if="layout === 'dual'" v-model="activeMetric" class="metric-tabs">

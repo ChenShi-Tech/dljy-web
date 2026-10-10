@@ -1,7 +1,7 @@
 // 市场洞察驾驶舱数据包客户端：消费 agent-backend /v1/market-insight/bundle。
 // bundle 由后端确定性装配（不经 LLM），逐项标注数据真伪供 dljy-ui 组件确定性渲染。
 // 类型严格对齐可选 Agent 服务的 build_market_insight_bundle 契约（blocks 结构）。
-import { AGENT_API_BASE_ROOT, applyRegionHeaders, timeoutSignal } from '@/services/api'
+import { AGENT_API_BASE_ROOT, applyRegionHeadersWithSeq, nextRegionHeaderSeq, timeoutSignal } from '@/services/api'
 import { identityHeaders } from '@/services/agent/agentClient'
 
 const BASE = `${AGENT_API_BASE_ROOT}/v1/market-insight`
@@ -88,10 +88,13 @@ export async function fetchMarketInsightBundle(params: {
   if (params.region) url.searchParams.set('region', params.region)
   if (params.region_name) url.searchParams.set('region_name', params.region_name)
   if (params.market) url.searchParams.set('market', params.market)
+  // #1350 同款序号守卫：本客户端是裸 fetch（不经 unwrap），取号后经守卫应用地区头，
+  // 快速连点预检/切地区时晚归的过期响应不得把 RegionDataBanner 写回旧地区口径。
+  const seq = nextRegionHeaderSeq()
   const res = await fetch(url.toString(), {
     headers: identityHeaders(),
     signal: timeoutSignal(REQUEST_TIMEOUT_MS)
   })
-  applyRegionHeaders(res)
+  applyRegionHeadersWithSeq(res, seq)
   return readJson<MarketInsightBundle>(res, '市场洞察数据预检失败')
 }

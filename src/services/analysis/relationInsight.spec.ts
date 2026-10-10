@@ -150,14 +150,18 @@ describe('sensitivityBars & summaryKpis', () => {
     expect(s.strongestHour).toBe(1)
     expect(s.sampleDays).toBe(3)
     expect(s.totalPoints).toBe(6)
-    expect(Math.abs(s.overallR)).toBeGreaterThan(0)
+    expect(s.overallR).not.toBeNull()
+    expect(Math.abs(s.overallR!)).toBeGreaterThan(0)
   })
 
-  it('全空 → KPI 安全归零、时段为 null', () => {
+  it('全空 → KPI 缺测为 null（不显示假 0），时段为 null', () => {
     const s = summaryKpis([], 30)
     expect(s.strongestHour).toBeNull()
     expect(s.weakestHour).toBeNull()
-    expect(s.meanSlope).toBe(0)
+    // R3：空样本显示缺测（null），不再伪装成 0 相关/0 敏感度的假零
+    expect(s.meanSlope).toBeNull()
+    expect(s.overallR).toBeNull()
+    expect(s.totalPoints).toBe(0)
     expect(s.totalPoints).toBe(0)
   })
 })

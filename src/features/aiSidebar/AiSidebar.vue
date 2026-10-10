@@ -480,7 +480,7 @@ function goConfig() {
         <div v-else class="ai-agent-empty">
           <div class="ai-welcome-ico"><Sparkles :size="26" /></div>
           <p class="ai-welcome-t">AI 助手</p>
-          <p class="ai-welcome-s">在页面点「✨ 解读本页」可基于本页数据直接解读，也可以在这里直接提问。</p>
+          <p class="ai-welcome-s">在页面点「解读本页」可基于本页数据直接解读，也可以在这里直接提问。</p>
         </div>
       </div>
     </div>
