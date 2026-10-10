@@ -126,7 +126,7 @@ function buildCurveOption() {
       confine: true,
       formatter: (p: { seriesType?: string; value?: [number, number] }) => {
         if (p.seriesType === 'scatter' && p.value) {
-          return `竞价空间 ${fmtNum(p.value[0], 0)} MW<br/>出清价 <b>${fmtNum(p.value[1], 2)}</b> 元/MWh`
+          return `竞价空间 ${fmtNum(p.value[0], 0)}（原始值）<br/>出清价 <b>${fmtNum(p.value[1], 2)}</b> 元/MWh`
         }
         return ''
       }
@@ -136,7 +136,7 @@ function buildCurveOption() {
     grid: { left: 60, right: 24, top: 40, bottom: 48, containLabel: false },
     xAxis: {
       type: 'value',
-      name: '竞价空间 (MW)',
+      name: '竞价空间 (原始值)',
       scale: true,
       nameLocation: 'middle',
       nameGap: 30,
@@ -255,7 +255,7 @@ function buildBidSpaceOption() {
     },
     yAxis: {
       type: 'value',
-      name: '竞价空间 MW',
+      name: '竞价空间 原始值',
       scale: true,
       nameTextStyle: { color: cc.axisLabel, fontSize: 11 },
       axisLabel: { color: cc.axisLabel, fontSize: 10, formatter: (v: number) => fmtNum(v, 0) },

@@ -50,6 +50,7 @@ import {
   type CgnYunnanPriceBundle,
   type CgnPricePoint
 } from '@/services/market/cgnYunnanLivePrice'
+import { selectedCompanyId } from '@/services/company/companyContext'
 
 const route = useRoute()
 const currentUser = ref<AuthUser>(getCurrentUser())
@@ -470,6 +471,14 @@ onMounted(() => {
 })
 // 切换全局地区时重渲染价格曲线（昨日出清/今日预测经 spotPrice→fetchCaptured 已按地区回放）
 onRegionChange(() => {
+  void loadDisclosureSummary()
+  void loadBidPlanSummary()
+  renderChart()
+})
+// 切换公司：中广核厂侧私有价格授权（usesCgnPrivatePrice 等标签层）随 selectedCompanyId
+// 立即翻转，但数据层若不重载会混源——KPI 口径与标签不符，最长滞留一个 60s 轮询周期。
+// 镜像 onRegionChange 的重载面（其余页面均有此 watch，本页此前漏接）。
+watch(selectedCompanyId, () => {
   void loadDisclosureSummary()
   void loadBidPlanSummary()
   renderChart()

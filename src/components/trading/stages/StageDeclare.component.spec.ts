@@ -7,6 +7,8 @@ import { flushPromises } from '@vue/test-utils'
 
 vi.mock('@/services/declarations', () => ({
   approveDeclaration: vi.fn().mockResolvedValue({}),
+  secondSignatureNotice: (u: { awaitingSecondSignature?: boolean }) =>
+    u.awaitingSecondSignature ? 'L3 双签：第一签已记录，需第二位审批人批准后本单才进入已审批' : null,
   declarationModeOf: () => 'LIVE',
   runDeclarationRiskCheck: vi.fn().mockResolvedValue({}),
   EDITABLE_DRAFT_STATUSES: ['DRAFT', 'REJECTED'],
@@ -111,5 +113,35 @@ describe('StageDeclare 判据收纳与立场渲染（slim-s3-s7-stages）', () =
     const w = await mountS4()
     expect(w.find('.dc-machine').exists()).toBe(true)
     expect(w.find('.dc-machine').text()).toContain('风控检查')
+  })
+})
+
+describe('S4 L3 双签真实反馈（fix-spot-p2-remaining）', () => {
+  it('第一签（awaitingSecondSignature=true）：显示双签提示，不谎报「已批准」', async () => {
+    const { approveDeclaration } = await import('@/services/declarations')
+    vi.mocked(approveDeclaration).mockResolvedValueOnce(
+      order({ status: 'PENDING_APPROVAL', awaitingSecondSignature: true }) as never
+    )
+    const w = await mountS4({ declaration: order({ status: 'PENDING_APPROVAL' }) })
+    const btn = w.findAll('button').find((b) => b.text().trim() === '批准')
+    expect(btn).toBeTruthy()
+    await btn!.trigger('click')
+    await settle(w)
+    expect(w.find('.dc-ok').text()).toContain('需第二位审批人批准')
+    expect(w.find('.dc-ok').text()).not.toContain('已批准')
+    w.unmount()
+  })
+
+  it('批准生效（awaitingSecondSignature=false）：照常显示「已批准」', async () => {
+    const { approveDeclaration } = await import('@/services/declarations')
+    vi.mocked(approveDeclaration).mockResolvedValueOnce(
+      order({ status: 'APPROVED', awaitingSecondSignature: false }) as never
+    )
+    const w = await mountS4({ declaration: order({ status: 'PENDING_APPROVAL' }) })
+    const btn = w.findAll('button').find((b) => b.text().trim() === '批准')
+    await btn!.trigger('click')
+    await settle(w)
+    expect(w.find('.dc-ok').text()).toContain('已批准')
+    w.unmount()
   })
 })

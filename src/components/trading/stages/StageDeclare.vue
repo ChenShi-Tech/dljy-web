@@ -36,6 +36,7 @@ import {
   runDeclarationRiskCheck,
   EDITABLE_DRAFT_STATUSES,
   STATUS_LABEL,
+  secondSignatureNotice,
   submitDeclaration,
   submitDeclarationForApproval,
   updateDeclarationCurve,
@@ -193,7 +194,7 @@ const busy = ref(false)
 const actionMsg = ref('')
 const actionError = ref('')
 
-async function run(action: () => Promise<DeclarationOrder>, doneMsg: string) {
+async function run(action: () => Promise<DeclarationOrder>, doneMsg: string | ((updated: DeclarationOrder) => string)) {
   if (busy.value) return
   busy.value = true
   actionMsg.value = ''
@@ -201,7 +202,7 @@ async function run(action: () => Promise<DeclarationOrder>, doneMsg: string) {
   try {
     const updated = await action()
     emit('updated', updated)
-    actionMsg.value = doneMsg
+    actionMsg.value = typeof doneMsg === 'function' ? doneMsg(updated) : doneMsg
   } catch (e) {
     actionError.value = e instanceof Error ? e.message : '操作失败'
   } finally {
@@ -325,7 +326,11 @@ function doApprove(decision: 'approve' | 'reject') {
   if (!decl.value) return
   void run(
     () => approveDeclaration(decl.value!.id, decision, approveComment.value || undefined),
-    decision === 'approve' ? '已批准' : '已驳回'
+    // L3 双签第一签：服务端只落签不转态——明示待第二签，不谎报「已批准」
+    // （文案单源 secondSignatureNotice，与申报工作台/审批队列共用，防漂移）。
+    decision === 'approve'
+      ? (updated) => secondSignatureNotice(updated) ?? '已批准'
+      : '已驳回'
   )
 }
 // 提交失败自动重试 3 次 → 人工通道（手册 S4 异常处理）。非瞬态错误（过截止/状态机
