@@ -11,17 +11,25 @@ import type { DataBasis } from '@/services/dataBasis'
 import type { LatestForecast, LatestForecastRun } from '@/services/forecast/latestForecast'
 
 /**
- * 挑一条能用来画图的曲线：`status === 'ok'` 且点数非空，取最新的一条（后端已按 predicted_at 倒序）。
+ * 挑一条能用来画图的曲线：`status === 'ok'`、点数非空、且未标注模拟/合成口径，取最新的一条
+ * （后端已按 predicted_at 倒序）。
  *
- * 两个判据都不能省。只判 status 会放过 ok 但 points 为空的行；只判点数会让 error/skipped 的
- * 残留曲线被画成正常预测——那比没有图更糟，因为看不出它是一次没跑成的预测留下的。
+ * 三个判据都不能省。只判 status 会放过 ok 但 points 为空的行；只判点数会让 error/skipped 的
+ * 残留曲线被画成正常预测——那比没有图更糟，因为看不出它是一次没跑成的预测留下的；
+ * 不判 mock 会把演示/compat 权重产出的预测当真画上主图——后端对这类 run 强制
+ * illustrative+mock 落库（forecast_service 的 tslib compat 与远程演示权重路径），
+ * `/v1/forecast/latest` 原样透出，主图口径是「真实或空」（fix-spot-degradation-honesty）。
  *
  * 放在这里而不是 latestForecast.ts：本模块必须**运行时零依赖**（同 spotPriceCore），
  * 一旦 import 那个 fetch 客户端就会把 `@/services/api` → regionContext → `window`
  * 整条链拖进来，纯函数单测在 node 环境直接崩。
  */
 export function pickUsableRun(result: LatestForecast): LatestForecastRun | null {
-  return result.runs.find((r) => r.status === 'ok' && r.points.length > 0) ?? null
+  return (
+    result.runs.find(
+      (r) => r.status === 'ok' && r.points.length > 0 && !r.mock && r.basis !== 'synthetic'
+    ) ?? null
+  )
 }
 
 export interface DateRange { start: string; end: string }

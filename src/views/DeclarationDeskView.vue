@@ -196,7 +196,9 @@ const countdownText = computed(() => {
 
 // 价格预测情报
 const forecastBasis = ref<DataBasis>('synthetic')
-const forecastStats = ref({ mean: 0, spread: 0 })
+// null = 无可用预测（未选模型/全失败/越界）：摘要显示「—」，不得显示 0——
+// 现货市场 0 元是合法价，缺失被渲染成真实零值是误导（fix-spot-degradation-honesty）。
+const forecastStats = ref<{ mean: number; spread: number } | null>(null)
 // 价格预测已改为多模型叠加对比（DeclarationForecastCompare），图表由该组件自持；
 // 只保留供「创建草稿」落库的口径与统计摘要。
 
@@ -388,7 +390,7 @@ function onForecastSummary(summary: { basis: DataBasis; stats: { mean: number; s
     // 仍显示旧均价，createDraft() 还会把旧口径写进新草稿。basis 回落 illustrative
     // 契约 createPayload.basis 的缺省值就是它，表示"无真实预测支撑"，不谎报 captured。
     forecastBasis.value = 'illustrative'
-    forecastStats.value = { mean: 0, spread: 0 }
+    forecastStats.value = null
     return
   }
   forecastBasis.value = summary.basis
@@ -1491,8 +1493,8 @@ onRegionChange(() => {
         <div class="panel-head">
           <h2><LineChart :size="15" /> {{ targetDate }} 价格预测</h2>
           <div class="stat-chips">
-            <span>均价 <b>{{ forecastStats.mean }}</b></span>
-            <span>价差 <b>{{ forecastStats.spread }}</b></span>
+            <span>均价 <b>{{ forecastStats?.mean ?? '—' }}</b></span>
+            <span>价差 <b>{{ forecastStats?.spread ?? '—' }}</b></span>
           </div>
         </div>
         <CapabilitySupportBadge path="/xhjy/desk" class="forecast-support" />
