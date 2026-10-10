@@ -79,7 +79,9 @@ describe('StageDirection 参考区收纳（slim-s3-s7-stages）', () => {
     expect(ref.exists()).toBe(true)
     expect(ref.attributes('open')).toBeUndefined()
     expect(ref.text()).toContain('预测与窗口参考')
-    expect(ref.text()).toContain('未跑——跑 2026-10-10 价格预测后自动展开')
+    // slim-spot-page-explainers：summary 只留徽章「未跑」，长句移入折叠体首行
+    expect(ref.text()).toContain('未跑')
+    expect(ref.text()).toContain('尚未跑 2026-10-10 价格预测——跑预测后本参考区自动展开')
     expect(ref.text()).toContain('ML 价格概率分布')
     // 套利窗口/双曲线/凯利随预测产出条件渲染，收进同一折叠（见下一条预测后断言）
     expect(ref.text()).toContain('ML 分布 · 套利窗口 · 双曲线 · 凯利红线')
@@ -139,7 +141,8 @@ describe('S3 迟到守卫（fix-stale-response-guards）', () => {
     // 预测在途时切标的日（S3 面板常驻不重挂，watch 须作废在途并清状态）
     await w.setProps({ targetDate: '2026-10-11' })
     await nextTick()
-    expect(w.find('details.dr-ref').text()).toContain('未跑——跑 2026-10-11 价格预测后自动展开')
+    expect(w.find('details.dr-ref').text()).toContain('未跑')
+    expect(w.find('details.dr-ref').text()).toContain('尚未跑 2026-10-11 价格预测——跑预测后本参考区自动展开')
 
     // 旧日期的响应迟到：不得落屏（参考区不得展开出分布摘要），loading 不得被旧轮卡死
     resolveOld(fixtureForecast())
@@ -153,5 +156,21 @@ describe('S3 迟到守卫（fix-stale-response-guards）', () => {
     await settle(w, 8)
     expect(w.find('details.dr-ref').text()).toContain('平均带宽')
     w.unmount()
+  })
+})
+
+// slim-spot-page-explainers：折叠头只留区块名+状态徽章（spec trading-day-workbench
+// 「折叠头只留标题与状态徽章」）——AI 折叠头长句收 ⓘ。
+describe('S3 折叠头徽章化（slim-spot-page-explainers）', () => {
+  it('dr-ref summary 无说明长句，徽章显未跑；dr-ai 说明收 ⓘ', async () => {
+    const w = await mountS3()
+    const ref = w.find('details.dr-ref')
+    expect(ref.find('summary .dr-sum-badge').text()).toBe('未跑')
+    expect(ref.find('summary em').exists()).toBe(false)
+    const ai = w.find('details.dr-ai')
+    expect(ai.find('summary em').exists()).toBe(false)
+    const info = ai.find('summary').findComponent({ name: 'InfoHint' })
+    expect(info.exists()).toBe(true)
+    expect(info.props('text')).toContain('注入 S2 判断 + ML 预测摘要')
   })
 })

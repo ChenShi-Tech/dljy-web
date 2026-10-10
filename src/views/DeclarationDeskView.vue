@@ -12,6 +12,7 @@ import { AlarmClock, ArrowRight, Bot, CheckCircle2, ChevronLeft, ChevronRight, F
 import AgentChatPanel from '../components/agent/AgentChatPanel.vue'
 import AgentHistorySidebar from '../components/agent/AgentHistorySidebar.vue'
 import DeclarationForecastCompare from '../components/forecast/DeclarationForecastCompare.vue'
+import InfoHint from '../components/common/InfoHint.vue'
 import { makeSessionReadyGuard } from '../components/agent/sessionReadyGuard'
 import { resolveIntelCapability, type IntelCapability } from '../data/declarationIntelCapability'
 import { PAGE_PROMPT_KEYS } from '@/prompts/pageKeys'
@@ -1582,11 +1583,6 @@ onRegionChange(() => {
             </button>
           </div>
         </div>
-
-        <p class="checklist-moved muted">
-          <FileSearch :size="13" />
-          申报前情报清单与智能体协助起草已移至页面底部的「智能体工作区」，可与历史对话并排查看。
-        </p>
       </section>
 
       <!-- 右：申报单工作流（当前单 / 历史单 两个 tab 同框） -->
@@ -1643,15 +1639,17 @@ onRegionChange(() => {
               <option value="REHEARSAL">历史模拟 — 不受截止约束，用于回测演练</option>
             </select>
           </label>
+          <!-- 历史模拟/窗口关闭提示压一行（完整口径收 ⓘ）；Mock 回执标注保持直接可见 -->
           <p v-if="draftMode === 'REHEARSAL'" class="rehearsal-hint">
             <FlaskConical :size="13" />
-            <span>历史模拟单不受申报截止约束、可自批走完整流程，回执为本地 Mock 网关（<b>非真实申报</b>），在列表中与真实申报分开统计。模式创建后不可修改。</span>
+            <span>历史模拟：不受截止约束 · 回执为本地 Mock 网关（<b>非真实申报</b>） · 与真实申报分开统计</span>
+            <InfoHint text="历史模拟单不受申报截止约束、可自批走完整流程，回执为本地 Mock 网关（非真实申报），在列表中与真实申报分开统计。模式创建后不可修改。" />
           </p>
           <p v-else-if="isPastTargetDate || isLiveWindowClosed" class="rehearsal-hint warn">
             <AlarmClock :size="13" />
             <template v-if="isPastTargetDate">目标日 {{ targetDate }} 早于今日，真实申报窗口已关闭</template>
-            <template v-else>目标日 {{ targetDate }} 的申报截止（D-1 10:30）已过，真实申报窗口已关闭</template>
-            —— 建单后会立即被判定逾期作废。如需回测或演练请改用「历史模拟」模式。
+            <template v-else>申报截止（D-1 10:30）已过，真实申报窗口已关闭</template>
+            —— 建单即逾期作废；回测演练请用「历史模拟」
           </p>
           <label class="rationale-field">
             <span>报价依据摘要 <b>必填</b></span>
@@ -1666,10 +1664,12 @@ onRegionChange(() => {
                 : '至少 8 个字：无法解释的报价即高风险报价，事后补写等于自证材料失效' }}
             </small>
           </label>
-          <p class="muted">创建后生成 96 点申报草稿（按容量 60% 平铺初始化），可手工编辑或交给智能体起草，再走风控检查 → 审批 → 截止前提交。</p>
-          <button class="launch" :disabled="busy || !quoteRationaleValid" @click="createDraft">
-            {{ draftMode === 'REHEARSAL' ? '创建历史模拟草稿' : '创建申报草稿' }}
-          </button>
+          <div class="launch-row">
+            <button class="launch" :disabled="busy || !quoteRationaleValid" @click="createDraft">
+              {{ draftMode === 'REHEARSAL' ? '创建历史模拟草稿' : '创建申报草稿' }}
+            </button>
+            <InfoHint text="创建后生成 96 点申报草稿（按容量 60% 平铺初始化），可手工编辑或交给智能体起草，再走风控检查 → 审批 → 截止前提交。" />
+          </div>
         </template>
 
         <!-- 有申报单：曲线 + 流程动作 -->
@@ -1729,7 +1729,6 @@ onRegionChange(() => {
               </select>
               <button class="mini" :disabled="!copySourceId || busy" @click="applyCopyHistory">应用</button>
             </div>
-            <p class="pending-note">「导入预测曲线」还没做：要先确认两件事——导入哪条预测曲线（价格还是负荷出力）、按什么规则换算成申报电量。已列入问题清单，确认后开发。</p>
             <div class="hour-grid point-grid">
               <label v-for="(_, i) in pointMw" :key="i">
                 <span>{{ pointStartLabel(i) }}</span>
@@ -1756,16 +1755,14 @@ onRegionChange(() => {
                 </button>
                 <button class="mini primary" :disabled="busy" @click="runRisk">运行风控检查</button>
               </div>
-              <p class="exposure-hint">
-                <template v-if="exposureStatus === 'auto' && exposure">
-                  已联动套保工作台（仅中长期口径，预览）：目标日逐时段已知
-                  {{ exposure.ratio.coverage.coveredCount }}/{{ exposure.ratio.coverage.totalCount }} 时段；
-                  风控检查由服务端按同一口径施加约束，未知时段不施加约束。
-                  <span class="exposure-source" :class="{ mock: exposureSourceIsMock }">{{ exposureSourceText }}</span>
-                </template>
-                <template v-else-if="exposureStatus === 'failed'">
-                  {{ exposureError || '套保服务暂不可用' }}；风控检查时服务端会如实标注是否施加了敞口约束。
-                </template>
+              <p v-if="exposureStatus === 'auto' && exposure" class="exposure-hint">
+                已联动套保工作台（仅中长期口径，预览）：已知
+                {{ exposure.ratio.coverage.coveredCount }}/{{ exposure.ratio.coverage.totalCount }} 时段
+                <InfoHint text="风控检查由服务端按同一口径施加约束，未知时段不施加约束。" />
+                <span class="exposure-source" :class="{ mock: exposureSourceIsMock }">{{ exposureSourceText }}</span>
+              </p>
+              <p v-else-if="exposureStatus === 'failed'" class="exposure-hint">
+                {{ exposureError || '套保服务暂不可用' }}；风控检查时服务端会如实标注是否施加了敞口约束。
               </p>
             </template>
             <ul v-if="current.riskCheck" class="check-list">
@@ -2327,6 +2324,8 @@ onRegionChange(() => {
   padding: 7px 10px; border: 1px solid var(--line); border-radius: 8px;
   background: transparent; color: var(--text); font-size: var(--font-md);
 }
+.launch-row { display: flex; align-items: center; gap: 8px; }
+
 .launch {
   display: flex; align-items: center; justify-content: center; gap: 7px; width: 100%;
   margin-top: 10px; padding: 10px; font-size: var(--font-lg); font-weight: 600;
@@ -2339,7 +2338,6 @@ onRegionChange(() => {
 .launch:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .batch-row { display: flex; align-items: center; gap: 6px; margin: 8px 0; font-size: var(--font-12-5); flex-wrap: wrap; }
-.pending-note { margin: 0; font-size: var(--font-11-5); color: var(--muted); line-height: 1.6; }
 .batch-row input {
   width: 72px; padding: 4px 6px; border: 1px solid var(--line); border-radius: 6px;
   background: transparent; color: var(--text); font-size: var(--font-12-5);
@@ -2465,10 +2463,6 @@ onRegionChange(() => {
 .aw-chat { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .aw-chat :deep(.agent-panel) { flex: 1; min-height: 0; }
 .draft-entry { margin-top: 10px; border-color: var(--primary); color: var(--primary); }
-.checklist-moved {
-  display: flex; align-items: flex-start; gap: 6px;
-  margin: 10px 0 0; font-size: var(--font-sm); line-height: 1.6;
-}
 
 /* 窄屏：三栏竖排（沿用已接侧栏三页的 900px 断点约定） */
 @media (max-width: 900px) {

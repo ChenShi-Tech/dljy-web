@@ -198,8 +198,10 @@ describe('申报台风控检查：敞口约束来自套保服务（#3475）', ()
   it('预览区不再出现「人工」手填覆盖文案，敞口预览仍按目标日读套保（仅中长期）', async () => {
     const wrapper = await mountDesk()
     const hint = wrapper.get('.exposure-hint').text()
-    expect(hint).toContain('目标日逐时段已知')
+    // slim-spot-page-explainers：敞口说明压一行（已知 N/M 时段），约束口径收 ⓘ（text 含 tooltip 全文）
+    expect(hint).toContain('已联动套保工作台')
     expect(hint).toContain('20/24')
+    expect(hint).toContain('未知时段不施加约束')
     expect(hint).not.toContain('人工')
     expect(fetchOverview).toHaveBeenCalledWith(expect.objectContaining({ fromDate: TARGET_DATE, toDate: TARGET_DATE, scope: 'company' }))
   })
@@ -312,5 +314,63 @@ describe('申报台价格预测摘要空占位（fix-spot-degradation-honesty）
     expect(text).toContain('价差 -12')
     expect(text).not.toContain('—')
     wrapper.unmount()
+  })
+})
+
+// slim-spot-page-explainers：申报台常驻说明清场（spec spot-page-hint-density
+// 「申报工作台常驻说明清场」）。守什么：迁移公告与未实现功能 TODO 不再常驻渲染；
+// 教学句收 ⓘ；窗口关闭提示压一行；智能体工作区入口不受公告下线影响。
+describe('申报台常驻说明清场（slim-spot-page-explainers）', () => {
+  it('迁移公告与「导入预测曲线」TODO 文案不渲染', async () => {
+    const wrapper = await mountDesk()
+    expect(wrapper.text()).not.toContain('已移至页面底部')
+    expect(wrapper.text()).not.toContain('「智能体工作区」')
+    expect(wrapper.text()).not.toContain('还没做')
+    // 智能体工作区本体入口仍在（折叠头）
+    expect(wrapper.text()).toContain('智能体工作区')
+  })
+
+  it('窗口已过提示压一行：保留事实与去处，不再有成段解释', async () => {
+    // 无单态才渲染创建表单（提示在表单内）；目标日 2026-10-01 早于本机今日 → warn 态
+    http.get.mockImplementation(async (url: string) => {
+      if (url.endsWith('/meta')) {
+        return { data: { targetDate: TARGET_DATE, deadline: '2026-09-30T02:30:00.000Z', deadlineHHmm: '10:30', now: '2026-09-29T02:00:00.000Z', msRemaining: 3_600_000, expired: false } }
+      }
+      if (url.endsWith('/declarations')) {
+        return { data: { rows: [], total: 0, limit: 500, offset: 0, counts: { LIVE: 0, REHEARSAL: 0 } } }
+      }
+      return { data: {} }
+    })
+    const wrapper = await mountDesk()
+    // 目标日已过 → 表单预选 REHEARSAL（draftMode watcher），显示的是历史模拟提示的一行形态
+    const hint = wrapper.find('.rehearsal-hint')
+    expect(hint.exists()).toBe(true)
+    expect(hint.text()).toContain('不受截止约束')
+    expect(hint.text()).toContain('Mock 网关')
+    expect(hint.text()).toContain('非真实申报')
+    // 完整口径（可自批走完整流程等）收 ⓘ
+    const info = hint.findComponent({ name: 'InfoHint' })
+    expect(info.exists()).toBe(true)
+    expect(info.props('text')).toContain('可自批走完整流程')
+  })
+
+  it('无单态：创建教学句收 ⓘ，常驻段落不再出现', async () => {
+    http.get.mockImplementation(async (url: string) => {
+      if (url.endsWith('/meta')) {
+        return { data: { targetDate: TARGET_DATE, deadline: '2026-09-30T02:30:00.000Z', deadlineHHmm: '10:30', now: '2026-09-29T02:00:00.000Z', msRemaining: 3_600_000, expired: false } }
+      }
+      if (url.endsWith('/declarations')) {
+        return { data: { rows: [], total: 0, limit: 500, offset: 0, counts: { LIVE: 0, REHEARSAL: 0 } } }
+      }
+      return { data: {} }
+    })
+    const wrapper = await mountDesk()
+    const launchRow = wrapper.find('.launch-row')
+    expect(launchRow.exists()).toBe(true)
+    const hint = launchRow.findComponent({ name: 'InfoHint' })
+    expect(hint.exists()).toBe(true)
+    // 教学句全文收进 ⓘ（text() 会带出 tooltip 全文，故断言 props 而非常驻段落形态）
+    expect(hint.props('text')).toContain('再走风控检查 → 审批 → 截止前提交')
+    expect(wrapper.findAll('p.muted').some((p) => p.text().includes('再走风控检查'))).toBe(false)
   })
 })

@@ -17,6 +17,7 @@ import { chartChrome } from '@/composables/useTheme'
 import { axisTooltip, chartToolbox, fmtNum, sliderZoom, emptyOverlay } from '@/services/chart/chartOptions'
 import { fetchCaptured } from '@/services/captured'
 import { capturedAtFromProvenance } from '@/services/data/freshness'
+import DataStatusLine from '@/components/trading/stages/DataStatusLine.vue'
 
 // 行类型（来自数据层 capture-families.mjs 的 ROW_SCHEMAS）
 // #1755：数值字段 number | null，数据层缺测诚实落 null（#1746），前端不得用 Number(null)=0
@@ -627,14 +628,11 @@ onRegionChange(() => {
     </section>
 
     <el-alert v-if="errorMsg" type="error" :closable="false" :title="errorMsg" class="sp-alert" show-icon />
-    <el-alert
+    <DataStatusLine
       v-else-if="ingestHint"
-      type="warning"
-      :closable="false"
-      class="sp-alert"
-      show-icon
-      title="后端暂无云南损益/结算数据"
-      description="请先在主仓库摄取月度结算导出（运行 import:spot-export --write 落 capture-raw/yunnan/），或确认当前地区为云南后重试。"
+      label="数据状态"
+      summary="后端暂无云南损益/结算数据"
+      :items="[{ tone: 'caveat', text: '请先在主仓库摄取月度结算导出（运行 import:spot-export --write 落 capture-raw/yunnan/），或确认当前地区为云南后重试。' }]"
     />
 
     <section class="sp-charts">

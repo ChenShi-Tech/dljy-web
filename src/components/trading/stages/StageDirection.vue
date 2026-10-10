@@ -16,6 +16,7 @@
 // 说明两处有一处想错了，界面拦下来让人先想清楚。
 import { computed, onMounted, ref, watch } from 'vue'
 import { Compass, LineChart, Save, Sparkles, TriangleAlert, Zap } from 'lucide-vue-next'
+import InfoHint from '@/components/common/InfoHint.vue'
 import { decideBias } from 'shared/trading-rules/demand-bias.mjs'
 import { exposureFactorOf, USAGE_GATE_LABEL } from 'shared/trading-rules/data-integrity.mjs'
 import { DEFAULT_REGIME_BANDS, REGIME_LABEL } from 'shared/trading-rules/supply-demand.mjs'
@@ -552,9 +553,11 @@ async function writeBack() {
         <details class="dr-ref" :open="refOpen" @toggle="refOpen = ($event.target as HTMLDetailsElement).open">
           <summary>
             预测与窗口参考
-            <em v-if="refReady">分布与窗口已就绪（ML 分布 · 套利窗口 · 双曲线 · 凯利红线）</em>
-            <em v-else>未跑——跑 {{ targetDate }} 价格预测后自动展开（ML 分布 · 套利窗口 · 双曲线 · 凯利红线）</em>
+            <span class="dr-sum-badge" :class="refReady ? 'ok' : 'off'">{{ refReady ? '已就绪' : '未跑' }}</span>
           </summary>
+          <p v-if="!refReady" class="dr-ref-run-hint">
+            尚未跑 {{ targetDate }} 价格预测——跑预测后本参考区自动展开（ML 分布 · 套利窗口 · 双曲线 · 凯利红线）。
+          </p>
 
           <!-- ML 价格预测参考：P10/P50/P90 概率分布上屏（Z1：看分布而非点价） -->
           <h3>
@@ -702,7 +705,7 @@ async function writeBack() {
     <details class="dr-ai" :open="aiOpen" @toggle="aiOpen = ($event.target as HTMLDetailsElement).open">
       <summary>
         <Sparkles :size="13" /> AI 方向与曲线建议
-        <em>注入 S2 判断 + ML 预测摘要 + R4 规则机制；AI 给建议方向/ΔP 区间/反对意见，不改你的输入——采纳自己改</em>
+        <InfoHint text="注入 S2 判断 + ML 预测摘要 + R4 规则机制；AI 给建议方向/ΔP 区间/反对意见，不改你的输入——采纳自己改" />
       </summary>
       <AgentChatPanel
         v-if="aiOpen"
@@ -768,6 +771,11 @@ async function writeBack() {
 .dr-ref { border: 1px solid var(--el-border-color-lighter, #ebeef5); border-radius: 8px; padding: 6px 10px; margin-top: 10px; }
 .dr-ref summary { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: var(--font-sm); font-weight: 600; cursor: pointer; }
 .dr-ref summary em { font-style: normal; font-weight: 400; font-size: var(--font-xs); color: var(--el-text-color-secondary, #889); }
+/* 折叠头只留区块名 + 状态徽章（slim-spot-page-explainers）；说明长句移入折叠体 */
+.dr-sum-badge { padding: 1px 8px; border-radius: 999px; font-size: var(--font-10); font-weight: 600; }
+.dr-sum-badge.ok { border: 1px solid var(--el-color-success, #16a34a); color: var(--el-color-success, #16a34a); }
+.dr-sum-badge.off { border: 1px solid var(--el-border-color, #dcdfe6); color: var(--el-text-color-secondary, #889); }
+.dr-ref-run-hint { margin: 4px 0 0; font-size: var(--font-xs); color: var(--el-text-color-secondary, #889); }
 .dr-ref[open] summary { margin-bottom: 8px; }
 
 .dr-forecast { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; font-size: var(--font-sm); font-variant-numeric: tabular-nums; }

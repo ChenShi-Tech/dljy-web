@@ -112,3 +112,16 @@ describe('切地区迟到守卫（fix-stale-response-guards）', () => {
     wrapper.unmount()
   })
 })
+
+// slim-spot-page-explainers：风控副题收纳（spec spot-page-hint-density「风控阈值页副题收纳」）。
+describe('风控页副题收纳（slim-spot-page-explainers）', () => {
+  it('副题两行段落不再渲染，口径/来源经 ⓘ 可达，地区徽标保留', async () => {
+    const wrapper = await mountView()
+    expect(wrapper.find('p.rc-sub').exists()).toBe(false)
+    const info = wrapper.find('.rc-head h2').findComponent({ name: 'InfoHint' })
+    expect(info.exists()).toBe(true)
+    expect(info.props('text')).toContain('/agent-api/agent/quant/*')
+    expect(info.props('text')).toContain('仅供参考')
+    expect(wrapper.find('.rc-head-region').exists()).toBe(true)
+  })
+})

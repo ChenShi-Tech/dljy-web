@@ -16,6 +16,7 @@ import {
 import { fetchSummary } from '@/services/hedge/hedgeApi'
 import { listAlerts, type Alert } from '@/services/alertClient'
 import { currentRegion } from '@/services/region/regionContext'
+import InfoHint from '@/components/common/InfoHint.vue'
 import { onRegionChange } from '@/composables/useRegionReload'
 import {
   getRiskThresholds,
@@ -112,11 +113,11 @@ function levelClass(l: RiskLevel) {
 <template>
   <div class="risk-center">
     <header class="rc-head">
-      <h2><ShieldCheck :size="18" /> 风控阈值统一面板</h2>
-      <p class="rc-sub">
-        聚合敞口 / 申报偏差 / 价差异动 / 告警越限，统一阈值判红黄绿。地区：{{ currentRegion.shortName || regionId }}
-        · 数据经量化权威端点（/agent-api/agent/quant/*），预测/合成序列数值仅供参考（mixed）。
-      </p>
+      <h2>
+        <ShieldCheck :size="18" /> 风控阈值统一面板
+        <span class="rc-head-region">{{ currentRegion.shortName || regionId }}</span>
+        <InfoHint text="聚合敞口 / 申报偏差 / 价差异动 / 告警越限，统一阈值判红黄绿。数据经量化权威端点（/agent-api/agent/quant/*），预测/合成序列数值仅供参考（mixed）。" />
+      </h2>
     </header>
 
     <section class="rc-thr">
@@ -197,8 +198,9 @@ function levelClass(l: RiskLevel) {
 
 <style scoped>
 .risk-center { padding: 16px 20px; }
-.rc-head h2 { margin: 0 0 4px; display: flex; align-items: center; gap: 6px; }
-.rc-sub { margin: 0 0 12px; color: var(--el-text-color-secondary); font-size: var(--font-md); }
+.rc-head h2 { margin: 0 0 12px; display: flex; align-items: center; gap: 6px; }
+/* 副题收纳（slim-spot-page-explainers）：口径/来源收 ⓘ，地区名留标题旁短徽标 */
+.rc-head-region { padding: 1px 8px; border-radius: 999px; border: 1px solid var(--el-border-color); color: var(--el-text-color-secondary); font-size: var(--font-xs); font-weight: 500; }
 .rc-thr {
   display: flex; flex-wrap: wrap; gap: 14px;
   font-size: var(--font-sm); color: var(--el-text-color-secondary);

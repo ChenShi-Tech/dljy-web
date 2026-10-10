@@ -32,6 +32,7 @@ import type { SpotMarket } from '@/services/market/spotClient'
 import { exportCsv } from '@/utils/exportCsv'
 import { exportBundleCsv, type CsvTable } from '@/utils/exportBundle'
 import { ElMessage } from 'element-plus'
+import DataStatusLine from '@/components/trading/stages/DataStatusLine.vue'
 
 // 宿主注入:融合页 /dashboard(embedded=true,内嵌去边框)与云南工作台 cockpit tab
 // (embedded=false,standalone 终端)共用此组件。regionName/regionId 由宿主从
@@ -958,14 +959,11 @@ watch(selectedCompanyId, () => {
 
     <!-- 空态 / 错误提示 -->
     <el-alert v-if="errorMsg" type="error" :closable="false" :title="errorMsg" class="ck-alert" show-icon />
-    <el-alert
+    <DataStatusLine
       v-else-if="ingestHint"
-      type="warning"
-      :closable="false"
-      class="ck-alert"
-      show-icon
-      title="云南现货数据暂未摄取"
-      description="请先在具备受管数据根的采集环境摄取月度现货导出（节点电价 Parquet + 运行 import:spot-export --write），或更换为已摄取的日期/市场后重试。"
+      label="数据状态"
+      summary="云南现货数据暂未摄取"
+      :items="[{ tone: 'caveat', text: '请先在具备受管数据根的采集环境摄取月度现货导出（节点电价 Parquet + 运行 import:spot-export --write），或更换为已摄取的日期/市场后重试。' }]"
     />
 
     <!-- 市场态势条 -->

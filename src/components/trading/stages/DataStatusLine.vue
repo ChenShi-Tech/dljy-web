@@ -5,15 +5,18 @@
 // 常驻黄条与徽章——默认一行摘要，展开逐条看原文（spec「警示与口径状态收纳」）。
 // 诚实边界：阻断性提示（强制补写拦截、硬约束拦截）、取数三态（无权限/读取失败/无
 // 数据）与 Mock/原型态标识不由本组件承载，必须保持直接可见——调用方不得把这几类
-// 塞进 items。
+// 塞进 items。唯一例外：传 summary 时，三态事实（如「该日数据未摄取」）经收起态
+// 摘要文字直接可见，仅其明细（摄取指引、口径说明）收进 items 展开呈现
+// （spec spot-degradation-honesty「摄取指引提示的呈现层级」）。
 export interface DataStatusItem {
   tone: 'info' | 'caveat'
   text: string
 }
 
-withDefaults(defineProps<{ items?: DataStatusItem[]; label?: string }>(), {
+withDefaults(defineProps<{ items?: DataStatusItem[]; label?: string; summary?: string }>(), {
   items: () => [],
-  label: '数据与口径状态'
+  label: '数据与口径状态',
+  summary: ''
 })
 
 import { ref } from 'vue'
@@ -26,7 +29,7 @@ const open = ref(false)
   <div v-if="items.length" class="dsl">
     <button type="button" class="dsl-bar" :aria-expanded="open" @click="open = !open">
       <Info :size="13" />
-      <span>{{ label }} {{ items.length }} 条</span>
+      <span>{{ summary ? `${summary} · ${items.length} 条` : `${label} ${items.length} 条` }}</span>
       <ChevronDown :size="13" class="dsl-chevron" :class="{ 'dsl-chevron-open': open }" />
     </button>
     <ul v-if="open" class="dsl-list">

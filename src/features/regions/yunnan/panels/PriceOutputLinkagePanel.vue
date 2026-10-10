@@ -9,6 +9,12 @@ import ChartCard from '@/components/common/ChartCard.vue'
 import DataQualityBadge from '@/components/common/DataQualityBadge.vue'
 import SpotSkeleton from '@/components/common/SpotSkeleton.vue'
 import { mapWithConcurrency } from '@/utils/concurrency'
+import InfoHint from '@/components/common/InfoHint.vue'
+import DataStatusLine from '@/components/trading/stages/DataStatusLine.vue'
+
+// hero 口径说明收 ⓘ（spot-page-hint-density：hero 一行化）。
+const HERO_INFO =
+  '同一时间轴对齐节点现货出清价与自有电厂/机组实际、计划物理出力，标注高价和低价时段。'
 import RegionDataBanner from '@/components/region/RegionDataBanner.vue'
 import SpotFilterBar from '@/components/spot/SpotFilterBar.vue'
 import { onRegionChange } from '@/composables/useRegionReload'
@@ -984,8 +990,10 @@ onBeforeUnmount(() => {
 
     <section class="pol-hero">
       <div>
-        <div class="pol-kicker"><Factory :size="16" /><span>云南 · 电价 × 自有机组出力</span></div>
-        <p>同一时间轴对齐节点现货出清价与自有电厂/机组实际、计划物理出力，标注高价和低价时段。</p>
+        <div class="pol-kicker">
+          <Factory :size="16" /><span>云南 · 电价 × 自有机组出力</span>
+          <InfoHint :text="HERO_INFO" label="口径" />
+        </div>
       </div>
       <div class="pol-hero__meta">
         <DataQualityBadge
@@ -1030,33 +1038,25 @@ onBeforeUnmount(() => {
       </template>
     </SpotFilterBar>
 
-    <el-alert
-      v-if="meta.mock"
-      type="warning"
-      :closable="false"
-      class="pol-alert"
-      show-icon
-      title="检测到模拟出力回放，已禁止上屏"
-      description="该响应标记 mock:true / sourceType:MOCK / productionWrite:false。请先摄取 yn_plant_output 真实数据。"
-    />
+    <!-- Mock 标识保持显著形态（红线：直接可见）；摄取命令降层为展开明细 -->
+    <el-alert v-if="meta.mock" type="warning" :closable="false" class="pol-alert" show-icon title="检测到模拟出力回放，已禁止上屏">
+      <details class="pol-ingest-detail">
+        <summary>摄取指引</summary>
+        <p>该响应标记 mock:true / sourceType:MOCK / productionWrite:false。请先摄取 yn_plant_output 真实数据。</p>
+      </details>
+    </el-alert>
     <el-alert v-else-if="errorMsg" type="error" :closable="false" :title="errorMsg" class="pol-alert" show-icon />
-    <el-alert
+    <DataStatusLine
       v-else-if="outputIngestHint"
-      type="warning"
-      :closable="false"
-      class="pol-alert"
-      show-icon
-      title="后端暂无 yn_plant_output 电厂出力数据"
-      description="请在主仓库运行 import:spot-export --write 摄取云南月度导出包后重试。"
+      label="数据状态"
+      summary="后端暂无 yn_plant_output 电厂出力数据"
+      :items="[{ tone: 'caveat', text: '请在主仓库运行 import:spot-export --write 摄取云南月度导出包后重试。' }]"
     />
-    <el-alert
+    <DataStatusLine
       v-else-if="priceIngestHint"
-      type="warning"
-      :closable="false"
-      class="pol-alert"
-      show-icon
-      title="后端暂无该节点现货电价序列"
-      description="请确认节点电价 Parquet 已摄取，或切换日期、市场、电厂/节点后重试。"
+      label="数据状态"
+      summary="后端暂无该节点现货电价序列"
+      :items="[{ tone: 'caveat', text: '请确认节点电价 Parquet 已摄取，或切换日期、市场、电厂/节点后重试。' }]"
     />
 
     <section class="pol-kpi-row" v-loading="loading || priceLoading">
@@ -1154,10 +1154,10 @@ onBeforeUnmount(() => {
 
 .pol-hero {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: 14px;
-  padding: 16px 18px;
+  padding: 10px 14px;
   border: 1px solid #dfe7eb;
   border-radius: 8px;
   background: #fff;
@@ -1172,12 +1172,6 @@ onBeforeUnmount(() => {
   font-weight: 650;
 }
 
-.pol-hero p {
-  margin: 8px 0 0;
-  color: #5c6b76;
-  font-size: var(--font-md);
-  line-height: 1.7;
-}
 
 .pol-hero__meta {
   display: flex;
@@ -1231,6 +1225,18 @@ onBeforeUnmount(() => {
 
 .pol-alert {
   border-radius: 8px;
+}
+
+.pol-ingest-detail summary {
+  cursor: pointer;
+  font-size: var(--font-xs);
+  color: var(--muted, #909399);
+}
+
+.pol-ingest-detail p {
+  margin: 4px 0 0;
+  font-size: var(--font-xs);
+  line-height: 1.6;
 }
 
 .pol-kpi-row {
