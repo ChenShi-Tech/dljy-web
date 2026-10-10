@@ -259,3 +259,58 @@ describe('申报台决策模型不写死算法（#3647）', () => {
     expect(fetchCockpit).toHaveBeenCalledWith(expect.objectContaining({ model_type: 'random_forest', target: 'price' }))
   })
 })
+
+describe('申报台价格预测摘要空占位（fix-spot-degradation-honesty）', () => {
+  // 无可用预测（summary=null）时均价/价差显示「—」：缺失值不得渲染成真实数字 0——
+  // 现货市场 0 元是合法价（负电价日常态），「均价 0」会被读成真实预测。
+  const CompareProbe = {
+    name: 'DeclarationForecastCompare',
+    props: ['decisionModel', 'targetDate'],
+    emits: ['update:decisionModel', 'batch-ready', 'summary', 'suggest-date', 'suggest-rehearsal'],
+    template: '<span class="compare-probe" />',
+  }
+  async function mountWithProbe() {
+    const wrapper = mount(DeclarationDeskView, {
+      global: {
+        stubs: {
+          ...Object.fromEntries([
+            'AgentChatPanel', 'AgentHistorySidebar', 'RegionDataBanner', 'CapabilitySupportBadge', 'DataBasisBadge', 'TrustBadge',
+          ].map((name) => [name, { template: '<span />' }])),
+          DeclarationForecastCompare: CompareProbe,
+        },
+      },
+    })
+    await flushPromises()
+    return wrapper
+  }
+  const chips = (wrapper: Awaited<ReturnType<typeof mountWithProbe>>) => {
+    const el = wrapper.find('.stat-chips')
+    if (!el.exists()) throw new Error('未找到价格预测摘要区')
+    return el.text()
+  }
+
+  it('无可用预测（summary=null）：均价/价差显示「—」，不出现 0', async () => {
+    const wrapper = await mountWithProbe()
+    const probe = wrapper.getComponent({ name: 'DeclarationForecastCompare' })
+    probe.vm.$emit('summary', null)
+    await flushPromises()
+    const text = chips(wrapper)
+    expect(text).toContain('均价 —')
+    expect(text).toContain('价差 —')
+    expect(text).not.toContain('均价 0')
+    expect(text).not.toContain('价差 0')
+    wrapper.unmount()
+  })
+
+  it('有预测统计（含真实 0 值）：照常显示数字，0 不被「—」吞掉', async () => {
+    const wrapper = await mountWithProbe()
+    const probe = wrapper.getComponent({ name: 'DeclarationForecastCompare' })
+    probe.vm.$emit('summary', { basis: 'captured', stats: { mean: 0, spread: -12 } })
+    await flushPromises()
+    const text = chips(wrapper)
+    expect(text).toContain('均价 0')
+    expect(text).toContain('价差 -12')
+    expect(text).not.toContain('—')
+    wrapper.unmount()
+  })
+})

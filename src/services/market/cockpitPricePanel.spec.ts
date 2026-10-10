@@ -106,3 +106,45 @@ describe('失败或空的预测不得被画成结论', () => {
     expect(panel.forecastPoints[N - 1].time).toBe('23:45')
   })
 })
+
+describe('演示/合成口径的预测 run 不得上主图（fix-spot-degradation-honesty）', () => {
+  it('ok 且点数非空但 mock=true（演示/compat 权重产出）→ 不画，走「尚无预测」口径', () => {
+    const panel = buildPricePanel({
+      date: '2026-08-18', coverage: COVERAGE, clearing: clearing(),
+      forecast: forecast({ runs: [{ ...forecast().runs[0], mock: true, basis: 'illustrative' }] }),
+    })
+    expect(panel.forecastPoints).toEqual([])
+    expect(panel.error).toContain('尚无已落库的模型预测')
+    // 真实出清不受牵连
+    expect(panel.realPoints).toHaveLength(N)
+  })
+
+  it('basis=synthetic 的 run 同样排除（历史行可能只落 basis 标志）', () => {
+    const panel = buildPricePanel({
+      date: '2026-08-18', coverage: COVERAGE, clearing: clearing(),
+      forecast: forecast({ runs: [{ ...forecast().runs[0], basis: 'synthetic' }] }),
+    })
+    expect(panel.forecastPoints).toEqual([])
+  })
+
+  it('mock run 在前、真实 run 在后 → 跳过 mock 选真实（不因排序错过可用曲线）', () => {
+    const real = forecast().runs[0]
+    const panel = buildPricePanel({
+      date: '2026-08-18', coverage: COVERAGE, clearing: clearing(),
+      forecast: forecast({
+        runs: [
+          { ...real, modelId: 'demo_weights', mock: true, basis: 'illustrative' },
+          { ...real, modelId: 'random_forest' },
+        ],
+      }),
+    })
+    expect(panel.forecastPoints).toHaveLength(N)
+  })
+
+  it('未标注 mock/synthetic 的真实 run 照常选中（现状行为不变）', () => {
+    const panel = buildPricePanel({
+      date: '2026-08-18', coverage: COVERAGE, clearing: clearing(), forecast: forecast(),
+    })
+    expect(panel.forecastPoints).toHaveLength(N)
+  })
+})

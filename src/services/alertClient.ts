@@ -1,4 +1,6 @@
-// 盯盘哨兵告警客户端：对接 /api/agent/alerts/*。后端离线时静默降级（返回空），不打断页面。
+// 盯盘哨兵告警客户端：对接 /api/agent/alerts/*。
+// listAlerts 失败（网络/非 2xx/不可解析）**抛错**：告警链路不可用不得冒充「无告警」（风控页
+// 会把空列表判成绿色安全）。需要静默降级的消费方（顶栏 AlertCenter）自行 catch。
 // 阶段 A 起 scan/dismiss 走管理员鉴权（携 x-admin-token，与调度/密钥写操作同款）；
 // list 仅需登录（authorization），保留 identityHeaders。
 import { AGENT_API_BASE, identityHeaders } from '@/services/agent/agentClient'
@@ -32,13 +34,10 @@ export type Alert = {
 }
 
 export async function listAlerts(): Promise<{ alerts: Alert[]; open_count: number }> {
-  try {
-    const res = await fetch(BASE, { headers: identityHeaders(), signal: timeoutSignal(ALERT_TIMEOUT_MS) })
-    if (!res.ok) return { alerts: [], open_count: 0 }
-    return (await res.json()) as { alerts: Alert[]; open_count: number }
-  } catch {
-    return { alerts: [], open_count: 0 }
-  }
+  // 失败抛错（见头注）；res.json() 对非 JSON 响应自然抛 SyntaxError，同样算失败。
+  const res = await fetch(BASE, { headers: identityHeaders(), signal: timeoutSignal(ALERT_TIMEOUT_MS) })
+  if (!res.ok) throw new Error(`告警列表请求失败: HTTP ${res.status}`)
+  return (await res.json()) as { alerts: Alert[]; open_count: number }
 }
 
 export async function scanAlerts(
