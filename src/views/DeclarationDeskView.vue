@@ -61,7 +61,7 @@ import {
   isCurveEdited,
   editorMwOf,
   invalidPointIndexesOf,
-  normalizeExposureTotalMwh,
+  riskExposureSourceOf,
   type DeclarationMeta,
   type DeclarationMode,
   type DeclarationOrder,
@@ -461,9 +461,10 @@ const riskNote = computed(
 // 仅对发电侧开放，而不是让按钮静默地点不动。开放发电侧另议（需服务端主体授权校验）。
 const declarationSubjectType = 'retailer' as const
 // 决策模型不再硬编码：由对比表的「设为决策模型」指定，占位模型被组件侧阻断。
-// 初值仍给 xgboost（core tier 真实模型），对比组件挂载后会按实际可用模型纠正。
-// 空串 = 本批没有可作决策依据的模型（对比组件回吐），此时决策包不可生成。
-const decisionModel = ref('xgboost')
+// 初值不写死任何算法名（dljy#3647：算法清单与默认值都以后端目录为准，写死的算法下线后会变成 400 入口），
+// 对比组件按本批实际跑出并验真的模型回吐；未回吐前一律视为「无决策模型」，决策包不可生成
+// （forecastBatchReady 也在门控）。空串同时表示本批没有可作决策依据的模型。
+const decisionModel = ref('')
 // 本批预测是否已跑完并验真。首次挂载与切目标日/地区后的运行期间，decisionModel 还是初始或
 // 上一批的值，此时若允许生成，用户会拿到基于「最终会被判为合成/门禁失败」的模型算出的
 // 申报建议。故未就绪一律禁用生成。
@@ -538,7 +539,7 @@ function riskLevelLabel(level: OptimizeBidFrontierPoint['risk_level']): string {
 }
 
 // 决策模型变更（对比表手动切换，或组件侧自动回退）必须作废已有决策包：竞价空间/申报建议/
-// 偏差风险都是按某个模型算出来的，只换标签不清结果，表里写着 KNN、下面的建议却来自 XGBoost。
+// 偏差风险都是按某个模型算出来的，只换标签不清结果，表里写着 KNN、下面的建议却来自另一个模型。
 function onDecisionModelChange(modelId: string) {
   if (modelId === decisionModel.value) return
   decisionModel.value = modelId
@@ -637,16 +638,16 @@ function curveMwToEnergy96(curveMw: number[]): number[] {
   return padded.map((mw) => Math.round((Math.max(0, mw) / 4) * 10000) / 10000)
 }
 
-// 风控检查输入：当月中长期合约总电量（调 harness 敞口端点用）
-const exposureTotalMwh = ref(20000)
+// 申报前的敞口预览（HA-02，套保任务 9.2）：目标日「仅中长期」逐时段敞口，只作参考展示。
+// 风控检查时服务端按同一套保口径自行取数施加约束（ChenShi-Tech/dljy#3475），
+// 页面不再手填「当月中长期合约总量」，也不向风控传任何敞口值。
 const exposure = ref<HedgeOverview | null>(null)
 const exposureLoading = ref(false)
-const exposureStatus = ref<'idle' | 'loading' | 'auto' | 'manual' | 'failed'>('idle')
+const exposureStatus = ref<'idle' | 'loading' | 'auto' | 'failed'>('idle')
 // 失败原因原文。后端对「该地区/该月无此品类采集数据」返回的是 503 + 明确 detail
 // （如「回放服务无该品类数据（sdpt_console，2026-07-01~2026-07-31）」），前端原先一律
 // 显示「敞口端点暂不可用」，把数据缺失说成了服务故障，用户无从判断该等还是该换日期。
 const exposureError = ref('')
-const exposureTouched = ref(false)
 const exposureSourceIsMock = computed(() => {
   // 套保 overview 的腿水位带 mock/来源标注；无腿数据按非 mock 处理（页面另有未知时段提示）。
   const legs = (exposure.value?.legs ?? {}) as Record<string, { mock?: boolean; source?: string }>
@@ -660,6 +661,8 @@ const exposureSourceText = computed(() => {
   const legText = Object.entries(legs).map(([key, leg]) => `${key}(${leg?.status ?? '?'})`).join('、')
   return stale.length ? `${prefix}：${legText}，含过期腿，请以结算复核为准` : `${prefix}：${legText || '套保服务'}`
 })
+// 风控结果里中长期敞口约束的来源说明（服务端字段原样透出，不在前端重算，#3475）
+const riskExposureSource = computed(() => riskExposureSourceOf(current.value?.riskCheck))
 const regionPriceCap = computed(() => {
   const mech = getRegionSpotProfile(currentRegion.value.id).mechanism
   return Number.isFinite(mech.priceCap)
@@ -667,15 +670,10 @@ const regionPriceCap = computed(() => {
     : undefined
 })
 
-function markExposureManual() {
-  exposureTouched.value = true
-  exposureStatus.value = 'manual'
-}
-
 // 竞态守卫：快速切目标日/连点刷新时，旧敞口响应晚归会覆盖新月份数据（月份口径错位）
 let exposureGeneration = 0
 
-async function refreshExposure(force = false) {
+async function refreshExposure() {
   const month = targetDate.value.slice(0, 7)
   if (!month) return
   exposureLoading.value = true
@@ -684,7 +682,6 @@ async function refreshExposure(force = false) {
   // 竞态守卫：快速切目标日/连点刷新时，旧敞口响应晚归会覆盖新月份数据（月份口径错位）
   const generation = ++exposureGeneration
   try {
-    if (force) exposureTouched.value = false
     // HA-02（9.2）：目标日「仅中长期」逐时段敞口；机制电量不计入申报约束。
     const result = await fetchOverview({
       fromDate: targetDate.value,
@@ -694,7 +691,7 @@ async function refreshExposure(force = false) {
     })
     if (generation !== exposureGeneration) return
     exposure.value = result
-    exposureStatus.value = exposureTouched.value ? 'manual' : 'auto'
+    exposureStatus.value = 'auto'
   } catch (error) {
     if (generation !== exposureGeneration) return
     exposureStatus.value = 'failed'
@@ -1254,8 +1251,8 @@ function saveCurve() {
 function runRisk() {
   if (!current.value) return
   act(
-    // 与 refreshExposure 同一归一口径：输入被清空/误输时不把垃圾值发给风控
-    () => runDeclarationRiskCheck(current.value!.id, { exposureTotalMwh: normalizeExposureTotalMwh(exposureTotalMwh.value), priceCap: regionPriceCap.value }),
+    // 中长期敞口由服务端读套保服务（目标日「仅中长期」逐时段敞口）施加约束，请求体不带任何敞口值（#3475）
+    () => runDeclarationRiskCheck(current.value!.id, { priceCap: regionPriceCap.value }),
     (declaration) => {
       current.value = declaration
     }
@@ -1369,7 +1366,6 @@ watch(targetDate, (d) => {
   if (!isRealCalendarDate(d)) return
   resetDecisionPackage()
   void refresh()
-  exposureTouched.value = false
   void refreshExposure()
 })
 watch(pointMw, () => {
@@ -1424,7 +1420,6 @@ onBeforeUnmount(() => {
 onRegionChange(() => {
   resetDecisionPackage()
   void refresh()
-  exposureTouched.value = false
   void refreshExposure()
 })
 </script>
@@ -1753,10 +1748,7 @@ onRegionChange(() => {
             </div>
             <template v-if="['DRAFT', 'RISK_CHECKED'].includes(current.status)">
               <div class="batch-row">
-                <span class="muted">当月中长期合约总量</span>
-                <input v-model.number="exposureTotalMwh" type="number" min="1" @input="markExposureManual" />
-                <span>MWh</span>
-                <button class="mini" :disabled="exposureLoading" @click="refreshExposure(true)">
+                <button class="mini" :disabled="exposureLoading" @click="refreshExposure()">
                   <Loader2 v-if="exposureLoading" :size="13" class="spin" />
                   <span>刷新敞口</span>
                 </button>
@@ -1764,14 +1756,13 @@ onRegionChange(() => {
               </div>
               <p class="exposure-hint">
                 <template v-if="exposureStatus === 'auto' && exposure">
-                  已联动套保工作台（仅中长期口径）：目标日逐时段已知
+                  已联动套保工作台（仅中长期口径，预览）：目标日逐时段已知
                   {{ exposure.ratio.coverage.coveredCount }}/{{ exposure.ratio.coverage.totalCount }} 时段；
-                  未知时段不施加约束，人工值标注「人工」。
+                  风控检查由服务端按同一口径施加约束，未知时段不施加约束。
                   <span class="exposure-source" :class="{ mock: exposureSourceIsMock }">{{ exposureSourceText }}</span>
                 </template>
-                <template v-else-if="exposureStatus === 'manual'">已手动覆盖（人工），刷新敞口可重新拉取套保结果。</template>
                 <template v-else-if="exposureStatus === 'failed'">
-                  {{ exposureError || '套保服务暂不可用' }}，保留当前手动值（人工）。
+                  {{ exposureError || '套保服务暂不可用' }}；风控检查时服务端会如实标注是否施加了敞口约束。
                 </template>
               </p>
             </template>
@@ -1780,6 +1771,10 @@ onRegionChange(() => {
                 <b>{{ c.name }}</b> {{ c.status === 'PASS' ? '通过' : c.status === 'FAIL' ? '未通过' : '不可用' }} — {{ c.detail }}
               </li>
             </ul>
+            <!-- 中长期敞口约束的来源与覆盖说明：服务端生成（套保服务、目标日、已知/未知时段），原样展示不重算 -->
+            <p v-if="riskExposureSource" class="exposure-source-note" :class="{ manual: riskExposureSource.manual }" data-testid="risk-exposure-source">
+              中长期敞口约束 · {{ riskExposureSource.note }}
+            </p>
           </div>
 
           <!-- 送审：最新风控被硬约束拦下（blocked 结果照常落库但单据停在 RISK_CHECKED）
@@ -2388,6 +2383,10 @@ onRegionChange(() => {
   color: var(--muted);
   overflow-wrap: anywhere;
 }
+.exposure-source-note {
+  margin: 2px 0 6px; color: var(--muted); font-size: var(--font-11-5); line-height: 1.6; overflow-wrap: anywhere;
+}
+.exposure-source-note.manual { color: #b45309; }
 .exposure-source.mock {
   border-color: rgba(245, 158, 11, 0.55);
   color: #b45309;

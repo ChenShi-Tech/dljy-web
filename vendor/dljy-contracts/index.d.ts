@@ -202,7 +202,8 @@ export declare const ANALYSIS_CHART_TYPES: readonly AnalysisChartType[]
 
 // ---- 命名分析视图契约（AnalysisView，#18 P3） ----
 export type AnalysisViewConfigKind = "page-state" | "chart" | "dashboard"
-export interface AnalysisViewPageStateConfig { kind: "page-state"; selected: string[]; currentDate: string; viewMonth: string; fixedAxis: boolean; hideAxis: boolean; activeGroups: string[]; company: string }
+export interface AnalysisViewDerivedSpec { kind: 'diff' | 'ratio' | 'coverage'; a: string; b: string }
+export interface AnalysisViewPageStateConfig { kind: "page-state"; selected: string[]; currentDate: string; viewMonth: string; fixedAxis: boolean; hideAxis: boolean; activeGroups: string[]; company: string; derived?: AnalysisViewDerivedSpec[] }
 export interface AnalysisViewChartConfig { kind: "chart"; spec: AnalysisChartSpec; sql?: string | null; question?: string | null; savedAt?: string }
 export interface AnalysisViewDashboardConfig { kind: "dashboard"; dashboard: AnalysisDashboard; sql?: string | null; question?: string | null; savedAt?: string }
 export type AnalysisViewConfig = AnalysisViewPageStateConfig | AnalysisViewChartConfig | AnalysisViewDashboardConfig

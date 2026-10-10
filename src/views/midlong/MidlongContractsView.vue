@@ -8,11 +8,16 @@ import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import CompanyScopeBar from '@/components/company/CompanyScopeBar.vue'
+import MetricTile from '@/components/common/MetricTile.vue'
 import MidlongNotice from '@/components/midlong/MidlongNotice.vue'
 import MidlongContractFormDialog from '@/components/midlong/MidlongContractFormDialog.vue'
 import MidlongImportDialog from '@/components/midlong/MidlongImportDialog.vue'
 import MidlongSubjectDialog from '@/components/midlong/MidlongSubjectDialog.vue'
+import GuideLauncher from '@/features/guide/components/GuideLauncher.vue'
+import { useGuideState } from '@/features/guide/bridge'
+import { STATE } from '@/features/guide/midlong/anchors'
 import { selectedCompanyId } from '@/services/company/companyContext'
+import { currentPracticeCompany } from '@/services/company/practiceSpace'
 import { fetchStations, type CompanyStation } from '@/services/company/companyApi'
 import { currentRegion } from '@/services/region/regionContext'
 import {
@@ -24,7 +29,7 @@ import {
   TRADE_METHOD_LABELS,
   type MidlongCapabilities, type MidlongContractListResult, type MidlongContractQuery, type MidlongSubject,
 } from '@/services/midlong/midlongTypes'
-import { confirmationTag, createLoadGuard, downloadCsv, fmtPrice, fmtQuantity, progressTag, qualityTags } from '@/services/midlong/midlongFormat'
+import { confirmationTag, createLoadGuard, downloadCsv, fmtPrice, fmtQuantity, progressTag, qualityTags, testDataKind } from '@/services/midlong/midlongFormat'
 
 const route = useRoute()
 const router = useRouter()
@@ -164,8 +169,24 @@ async function doExport() {
 
 const canWrite = computed(() => Boolean(capabilities.value?.canWrite))
 const stationName = (id: number | null) => (id ? stations.value.find((s) => s.id === id)?.name ?? `#${id}` : '未分配')
-const isTestData = (ns: string) => /^TEST/i.test(ns)
-const hasTestData = computed(() => (result.value?.rows ?? []).some((r) => isTestData(r.sourceNamespace)))
+
+// 操作导引（dljy#3404）：列表页快照驱动导引第 0 章的进入练习空间判断与各章的产物恢复。
+// #3405 起合同行带上确认状态与场站：「分解与场站」导引要从中挑出「已确认、场站未分配」的电量合同当起点。
+useGuideState(STATE.contracts, () => {
+  const r = result.value
+  if (!r) return null
+  return {
+    practiceActive: currentPracticeCompany.value !== null,
+    canWrite: canWrite.value,
+    subjects: subjects.value.map((s) => ({ id: s.id, subjectKey: s.subjectKey })),
+    contracts: r.rows.map((row) => ({ id: row.contractId, documentKind: row.documentKind, externalContractNo: row.externalContractNo, confirmationStatus: row.confirmationStatus, stationId: row.stationId })),
+    stations: stations.value.map((s) => ({ id: s.id })),
+  }
+})
+
+// 测试类来源标注（dljy#3404）：教学演示（导引生成）与工程测试夹具分开说明。
+const testKinds = computed(() => [...new Set((result.value?.rows ?? []).map((row) => testDataKind(row.sourceNamespace)?.label).filter(Boolean))])
+const hasTestData = computed(() => testKinds.value.length > 0)
 
 onMounted(load)
 // 交易主体、场站、框架协议的编号只在所属公司/地区内有意义：切换后清掉这些筛选并同步地址栏，
@@ -185,6 +206,7 @@ watch([selectedCompanyId, () => currentRegion.value.id], () => {
     <div class="ml-head">
       <h2 class="ml-title">中长期售电合同</h2>
       <span class="ml-sub">云南试点 · 电源侧售电 · 只含中长期合同（不含现货与零售）</span>
+      <GuideLauncher group="midlong" :capabilities="capabilities" />
     </div>
     <CompanyScopeBar />
 
@@ -200,28 +222,28 @@ watch([selectedCompanyId, () => currentRegion.value.id], () => {
     </MidlongNotice>
 
     <template v-if="result && (state === 'ready' || state === 'loading')">
-      <div class="ml-tiles">
-        <button class="ml-tile" type="button" @click="quickFilter('')"><span>筛选范围合同</span><b>{{ result.stats.total }}</b><small>框架协议 {{ result.stats.frameworkCount }}</small></button>
-        <button class="ml-tile warn" type="button" @click="quickFilter('PENDING_VERIFICATION')"><span>待核对</span><b>{{ result.stats.byStatus.PENDING_VERIFICATION }}</b><small>核验确认后计入持仓</small></button>
-        <button class="ml-tile" type="button" @click="quickFilter('DRAFT')"><span>草稿</span><b>{{ result.stats.byStatus.DRAFT }}</b><small>未确认</small></button>
-        <button class="ml-tile ok" type="button" @click="quickFilter('CONFIRMED')"><span>已确认电量合同</span><b>{{ fmtQuantity(result.stats.confirmedObligationQuantity) }}<i>MWh</i></b><small>{{ result.stats.byStatus.CONFIRMED }} 份</small></button>
+      <div class="tile-grid">
+        <MetricTile as="button" label="筛选范围合同" :value="String(result.stats.total)" :sub="`框架协议 ${result.stats.frameworkCount}`" @click="quickFilter('')" />
+        <MetricTile as="button" tone="warn" label="待核对" :value="String(result.stats.byStatus.PENDING_VERIFICATION)" sub="核验确认后计入持仓" @click="quickFilter('PENDING_VERIFICATION')" />
+        <MetricTile as="button" label="草稿" :value="String(result.stats.byStatus.DRAFT)" sub="未确认" @click="quickFilter('DRAFT')" />
+        <MetricTile as="button" tone="good" label="已确认电量合同" :value="fmtQuantity(result.stats.confirmedObligationQuantity)" unit="MWh" :sub="`${result.stats.byStatus.CONFIRMED} 份`" @click="quickFilter('CONFIRMED')" />
         <!-- 质量缺口有多种类型，没有「任一缺口」的聚合筛选：这张卡只展示数量，按类型查看用上方「质量缺口」筛选。 -->
-        <div class="ml-tile static"><span>有质量缺口</span><b>{{ result.stats.withQualityGaps }}</b><small>按类型查看请用「质量缺口」筛选</small></div>
+        <MetricTile label="有质量缺口" :value="String(result.stats.withQualityGaps)" sub="按类型查看请用「质量缺口」筛选" />
       </div>
 
       <MidlongNotice tone="info">
         交割期已结束只表示日期已过，不代表逾期、违约或已结清；列表电量为当前版本合同电量，月度持仓以已确认版本的正式月分解为准。
       </MidlongNotice>
-      <MidlongNotice v-if="hasTestData" tone="warn" title="当前列表含测试数据">来源以 TEST 开头的合同是工程测试夹具，不代表真实合同，不作为业务验收依据。</MidlongNotice>
+      <MidlongNotice v-if="hasTestData" tone="warn" title="当前列表含测试数据">来源以 TEST 开头的合同（{{ testKinds.join('、') }}）不代表真实合同，不作为业务验收依据。</MidlongNotice>
 
       <div class="ml-toolbar">
         <template v-if="canWrite">
-          <el-button type="primary" @click="dialogs.form = true">录入合同草稿</el-button>
+          <el-button type="primary" data-guide="ml-new-contract" @click="dialogs.form = true">录入合同草稿</el-button>
           <el-button @click="dialogs.import = true">导入合同</el-button>
         </template>
-        <el-button @click="dialogs.subjects = true">交易主体</el-button>
+        <el-button data-guide="ml-open-subjects" @click="dialogs.subjects = true">交易主体</el-button>
         <el-button :loading="exporting" @click="doExport">导出筛选结果</el-button>
-        <router-link to="/zcqjy/positions" class="ml-link">查看月度持仓 →</router-link>
+        <router-link to="/zcqjy/positions" class="ml-link" data-guide="ml-positions-link">查看月度持仓 →</router-link>
         <span v-if="!canWrite" class="ml-muted">只读：当前角色无公司合同写入权限</span>
       </div>
 
@@ -262,7 +284,7 @@ watch([selectedCompanyId, () => currentRegion.value.id], () => {
         <el-table-column label="外部编号" min-width="150">
           <template #default="{ row }">
             <router-link :to="{ path: `/zcqjy/contracts/${row.contractId}`, query: route.query }" class="ml-link">{{ row.externalContractNo }}</router-link>
-            <el-tag v-if="isTestData(row.sourceNamespace)" size="small" type="warning" effect="plain" class="ml-gap">测试数据</el-tag>
+            <el-tag v-if="testDataKind(row.sourceNamespace)" size="small" type="warning" effect="plain" class="ml-gap" :title="testDataKind(row.sourceNamespace)?.title">{{ testDataKind(row.sourceNamespace)?.label }}</el-tag>
           </template>
         </el-table-column>
         <el-table-column prop="contractName" label="合同名称" min-width="190" show-overflow-tooltip />
@@ -325,20 +347,7 @@ watch([selectedCompanyId, () => currentRegion.value.id], () => {
 .ml-title { margin: 0; font-size: var(--font-20); }
 .ml-sub { color: var(--muted); font-size: var(--font-md); }
 .ml-placeholder { min-height: 200px; }
-.ml-tiles { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; }
-.ml-tile {
-  text-align: left; cursor: pointer; font: inherit; color: inherit; display: flex; flex-direction: column; gap: 3px;
-  padding: 12px 14px; border: 1px solid var(--line); border-radius: var(--radius, 8px); background: var(--panel);
-}
-.ml-tile:hover { border-color: var(--accent); }
-.ml-tile.static { cursor: default; }
-.ml-tile.static:hover { border-color: var(--line); }
-.ml-tile span { font-size: var(--font-sm); color: var(--muted); }
-.ml-tile b { font-size: var(--font-24); font-weight: 650; font-variant-numeric: tabular-nums; font-family: var(--font-display); }
-.ml-tile b i { font-style: normal; font-size: var(--font-sm); color: var(--muted); margin-left: 4px; font-weight: 500; }
-.ml-tile small { font-size: var(--font-xs); color: var(--muted); }
-.ml-tile.ok b { color: var(--success); }
-.ml-tile.warn b { color: var(--warning); }
+.tile-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; }
 .ml-toolbar, .ml-filters { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .ml-link { color: var(--accent); text-decoration: none; }
 .ml-muted { color: var(--muted); font-size: var(--font-sm); }
@@ -347,5 +356,5 @@ watch([selectedCompanyId, () => currentRegion.value.id], () => {
 .ml-cell-stack small { color: var(--muted); font-size: var(--font-sm); }
 .ml-empty { padding: 24px 0; color: var(--muted); }
 .ml-pager { justify-content: flex-end; }
-@media (max-width: 1100px) { .ml-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 1100px) { .tile-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 </style>

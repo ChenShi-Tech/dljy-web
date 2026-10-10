@@ -743,7 +743,7 @@ onBeforeUnmount(() => {
 .tab-group-label { font-size: var(--font-xs); font-weight: 700; letter-spacing: 0.06em; color: var(--muted); }
 .tab-group-items { display: flex; flex-wrap: wrap; gap: 8px; }
 .tab-button { padding: 9px 14px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); color: var(--text-body); font-size: var(--font-md); font-weight: 650; cursor: pointer; }
-.tab-button:hover:not(:disabled) { border-color: var(--primary); color: var(--primary); }
+.tab-button:hover:not(:disabled):not(.active) { border-color: var(--primary); color: var(--primary); }
 .tab-button.active { border-color: var(--primary); background: var(--primary); color: #fff; }
 .tab-button.locked { color: var(--muted); cursor: not-allowed; opacity: 0.7; }
 .tab-lock { display: block; margin-top: 2px; font-size: var(--font-10); font-weight: 500; }

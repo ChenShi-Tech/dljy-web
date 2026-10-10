@@ -5,7 +5,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   averagePriceLabel, confirmationTag, createLoadGuard, fmtPrice, fmtQuantity, fmtRatio, monthQuantityLabel,
-  notionalAmountLabel, progressTag, qualityTags,
+  notionalAmountLabel, progressTag, qualityTags, testDataKind,
 } from './midlongFormat'
 import type { MidlongPositionMonth, MidlongPriceSummary } from './midlongTypes'
 
@@ -82,5 +82,29 @@ describe('迟到响应守卫', () => {
     const guard = createLoadGuard()
     const token = guard.begin('comp-a|yunnan')
     expect(guard.isCurrent(token, 'comp-b|yunnan')).toBe(false)
+  })
+})
+
+describe('测试数据口径标注', () => {
+  // 守什么不变量：导引在练习空间生成的合同（TEST-GUIDE）标「教学演示」并声明不计入汇总；
+  // 其它 TEST 前缀标「测试数据」并带上来源命名空间；非测试来源不硬贴标签。
+  // 坏掉的症状：教学演示合同混在真实合同里无标记被当成业务数据，或真实合同被误标测试。
+  it('TEST-GUIDE（操作导引练习空间）标教学演示', () => {
+    const kind = testDataKind('TEST-GUIDE')
+    expect(kind?.label).toBe('教学演示')
+    expect(kind?.title).toContain('练习空间')
+    expect(kind?.title).toContain('不计入集团汇总')
+  })
+
+  it('其它 TEST 前缀标测试数据，说明里带来源命名空间', () => {
+    const kind = testDataKind('TEST-DEV')
+    expect(kind?.label).toBe('测试数据')
+    expect(kind?.title).toContain('TEST-DEV')
+    expect(kind?.title).toContain('不作为业务验收依据')
+  })
+
+  it('非测试来源返回 null（不硬贴标签）', () => {
+    expect(testDataKind('PROD')).toBeNull()
+    expect(testDataKind('')).toBeNull()
   })
 })

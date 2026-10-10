@@ -9,7 +9,7 @@
 //     同进度比较 ok 给完整对比，参考期不完整只说明原因、不显示假环比（OV04）；
 //   ④ 下钻带同一业务日期（OV05）：区块按钮与事项「查看详情」都 router.push 规范地址并带
 //     start/end；未交付页留给宿主占位，本页不留死链逻辑；
-//   ⑤ 获权区块按能力目录判定：公共账号不渲染「获权场站表现」、不发 plants 请求；
+//   ⑤ 获权区块按能力目录判定：公共账号不渲染「场站表现」、不发 plants 请求；
 //   ⑥ 窗口变化（上下文代次）后所有区块旧结果作废、全部重查；
 //   ⑦ 历史候选按区块所属分析传入（required-source-ids 按分析必需输入），不混源；
 //   ⑧ 界面只出现业务语言，不出现来源标识原文。
@@ -575,11 +575,11 @@ describe('YunnanOverviewPage', () => {
     expect(text).toContain('云南用户侧日前价格')
     expect(text).toContain('云南用户侧实时价格')
     expect(text).toContain('云南电网负荷（实际）')
-    expect(text).toContain('水电占比（云南，同一业务范围）')
+    expect(text).toContain('云南水电占比')
     expect(text).toContain('负荷预测') // 预测卡标题（类别业务名）
     expect(text).toContain('事后对照') // mode 说明
     expect(text).toContain('可查看，不参与排名')
-    expect(text).toContain('跨省送受预测（公开披露）')
+    expect(text).toContain('跨省送受趋势')
     // 业务语言：来源标识不出现
     expect(text).not.toContain('yn.price.user.day-ahead')
     expect(text).not.toContain('cgn.plant.settlement-daily')
@@ -589,7 +589,7 @@ describe('YunnanOverviewPage', () => {
 
   it('供需概况卡不含预测序列（fixtures 里含负荷预测行，被总览卡过滤）', async () => {
     await mountPage()
-    const supplyCards = wrapper!.findAll('.yno-overview__card').filter((card) => card.text().includes('云南负荷预测'))
+    const supplyCards = wrapper!.findAll('.overview-metric').filter((card) => card.text().includes('云南负荷预测'))
     expect(supplyCards).toHaveLength(0)
   })
 
@@ -615,7 +615,6 @@ describe('YunnanOverviewPage', () => {
     await mountPage()
     const text = wrapper!.text()
     expect(text).toContain(PROGRESS_INSUFFICIENT_REASON)
-    expect(text).toContain('本期值见「供需与水电」区块')
     // 不出现环比数值（ok 分支才有的「前一日同时段 … MW」对比句式）
     expect(text).not.toContain('前一日同时段 12')
   })
@@ -625,7 +624,7 @@ describe('YunnanOverviewPage', () => {
       request.analysisId === KEY_ITEMS ? Promise.resolve(keyItemsResult(request, { empty: true })) : defaultResponder(request)
     await mountPage()
     const text = wrapper!.text()
-    expect(text).toContain('没有满足阈值的事项')
+    expect(text).toContain('暂无触发事项')
     expect(text).toContain('未达阈值')
   })
 
@@ -660,22 +659,24 @@ describe('YunnanOverviewPage', () => {
     }
   })
 
-  it('电网/场站区块标注详情页建设中（未交付页不由本页伪造入口能力）', async () => {
+  it('已交付的电网详情入口可用，不再显示建设占位文案', async () => {
     await mountPage()
     const text = wrapper!.text()
-    expect(text).toContain('该详情页正在建设，尚未开通')
+    expect(text).not.toContain('该详情页正在建设，尚未开通')
+    await click('yno-grid-drilldown')
+    expect(router.currentRoute.value.path).toBe('/insight/grid-boundaries')
   })
 
   it('公共账号：不渲染获权场站区块、不发 plants 请求', async () => {
     await mountPage()
-    expect(wrapper!.text()).not.toContain('获权场站表现')
+    expect(wrapper!.text()).not.toContain('场站表现')
     expect(queryCallsOf((request) => request.analysisId === PLANTS)).toHaveLength(0)
   })
 
   it('获权账号：场站区块可见并发请求（settlement-daily 已登记双视图，view 按区块送 series）', async () => {
     state.capabilities = overviewCaps(ENTITLED_CAPS)
     await mountPage()
-    expect(wrapper!.text()).toContain('获权场站表现')
+    expect(wrapper!.text()).toContain('场站表现')
     const plantsCalls = queryCallsOf((request) => request.analysisId === PLANTS)
     expect(plantsCalls).toHaveLength(1)
     expect(plantsCalls[0]![0].filters).toEqual({ view: 'series' })
@@ -705,18 +706,18 @@ describe('YunnanOverviewPage', () => {
     await mountPage()
     const text = wrapper!.text()
     expect(text).toContain('云南用户侧日前价格') // 价格概况正常
-    expect(text).toContain('水电占比（云南，同一业务范围）') // 供需正常
+    expect(text).toContain('云南水电占比') // 供需正常
     expect(text).toContain('实时用户侧价累计负价') // 重点事项正常
     // 价差区块标题仍在（独立外壳），其内容是错误态而不是别的区块的数据
-    expect(wrapper!.findAll('.yno-overview__card').some((card) => card.text().includes('日前 − 实时价差'))).toBe(false)
+    expect(wrapper!.findAll('.overview-metric').some((card) => card.text().includes('日前 − 实时 · 用户侧'))).toBe(false)
   })
 
   it('历史候选按区块所属分析传入：供需块候选为云南实际来源，key-items 块为该分析全部来源', async () => {
     await mountPage()
-    // 打开供需区块的候选（第二个 InsightBlock：顺序 key-items, prices, spread, supply, ...）
+    // 按业务标题定位，布局排序不影响候选归属。
     const blocks = blockComponents()
     const titles = blocks.map((block) => block.props('title'))
-    const supplyIndex = titles.findIndex((title) => String(title).includes('供需与水电概况'))
+    const supplyIndex = titles.findIndex((title) => String(title).includes('供需与水电'))
     blocks[supplyIndex]!.vm.$emit('open-candidates')
     await flushPromises()
     const candidates = wrapper!.getComponent(CandidatesStub)
@@ -730,7 +731,7 @@ describe('YunnanOverviewPage', () => {
       'yn.system.total-generation.actual',
     ])
     // key-items 块候选为该分析全部来源
-    blocks[0]!.vm.$emit('open-candidates')
+    blocks[titles.indexOf('重点关注')]!.vm.$emit('open-candidates')
     await flushPromises()
     expect(wrapper!.getComponent(CandidatesStub).props('analysisId')).toBe(KEY_ITEMS)
     expect(wrapper!.getComponent(CandidatesStub).props('requiredSourceIds')).toHaveLength(5)
@@ -847,11 +848,11 @@ describe('YunnanOverviewPage · 电网事件摘要（10.7）', () => {
     expect(counts.text()).toContain('独立事件 3 条')
     expect(counts.text()).toContain('1 条身份不足、保留未归并')
     const plan = wrapper!.get('[data-testid="yno-events-plan"]')
-    expect(plan.text()).toContain('计划检修（检修计划与电网检修信息）')
+    expect(plan.text()).toContain('计划检修')
     expect(plan.text()).toContain('4 条') // 原始= maintenance 4
     expect(plan.text()).toContain('1 条') // 独立= maintenance 1
     const actual = wrapper!.get('[data-testid="yno-events-actual"]')
-    expect(actual.text()).toContain('实际干预（人工干预与非计划停运）')
+    expect(actual.text()).toContain('实际干预与停运')
     expect(actual.text()).toContain('3 条') // 原始= intervention 2 + outage 1
     expect(actual.text()).toContain('2 条') // 独立= 1 + 1
     // 明细接口一次都没落洞察分析管道：queryInsight 调用次数与既有区块一致（6）
@@ -860,7 +861,7 @@ describe('YunnanOverviewPage · 电网事件摘要（10.7）', () => {
 
   it('最近 3 条渲染：窗口内停电时间最晚的三条倒序展示；起止缺失如实「未提供」，带版本标注', async () => {
     await mountPage()
-    expect(wrapper!.get('[data-testid="yno-events-recent"]').text()).toContain('最近 3 条（窗口内停电时间最晚）')
+    expect(wrapper!.get('[data-testid="yno-events-recent"]').text()).toContain('近期事件')
     expect(wrapper!.get('[data-testid="yno-events-recent-1"]').text()).toContain('某水电站人工干预')
     expect(wrapper!.get('[data-testid="yno-events-recent-1"]').text()).toContain('2026-09-17 12:00')
     expect(wrapper!.get('[data-testid="yno-events-recent-2"]').text()).toContain('某变电站检修（仅业务日）')
@@ -929,7 +930,7 @@ describe('YunnanOverviewPage · 电网事件摘要（10.7）', () => {
     expect(wrapper!.get('[data-testid="yno-events-error"]').text()).toContain('披露事件读取超时')
     // 其他区块不受影响
     expect(wrapper!.text()).toContain('云南用户侧日前价格')
-    expect(wrapper!.text()).toContain('水电占比（云南，同一业务范围）')
+    expect(wrapper!.text()).toContain('云南水电占比')
     // 摘要计数（overview 成功）仍展示
     expect(wrapper!.get('[data-testid="yno-events-counts"]').text()).toContain('原始记录 7 条')
     // 重试成功恢复
@@ -942,7 +943,7 @@ describe('YunnanOverviewPage · 电网事件摘要（10.7）', () => {
   it('可见性按接口实际语义（公开披露、公司级作用域）：公共账号可读摘要，获权场站区块仍不可见', async () => {
     await mountPage()
     expect(wrapper!.find('[data-testid="yno-events-note"]').exists()).toBe(true)
-    expect(wrapper!.text()).not.toContain('获权场站表现')
+    expect(wrapper!.text()).not.toContain('场站表现')
     expect(queryCallsOf((request) => request.analysisId === PLANTS)).toHaveLength(0)
   })
 

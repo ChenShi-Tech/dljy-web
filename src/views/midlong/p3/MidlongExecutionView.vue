@@ -31,6 +31,9 @@ import {
 } from '@/services/midlong/midlongP3Types'
 import { EXECUTION_RESULT_STATUSES, EXECUTION_RESULT_STATUS_LABELS, EXECUTION_NOTICES, type ExecutionConfirmationSummaryRow } from '@/services/midlong/midlongP4Types'
 import { beijingToday, monthsBetween, type MidlongCapabilities, type MidlongSubject } from '@/services/midlong/midlongTypes'
+// 操作导引（dljy#3406）：执行页快照接给「计划与交易执行」导引。
+import { useGuideState } from '@/features/guide/bridge'
+import { STATE } from '@/features/guide/midlong/anchors'
 
 const route = useRoute()
 const router = useRouter()
@@ -352,6 +355,19 @@ function openConfirmationProposal(proposalId: number) {
 async function onConfirmationSaved() {
   await loadActiveTab()
 }
+
+// 操作导引（dljy#3406）：三个标签的数据摘要进快照，驱动「登记公告 → 方案 → 确认单」各章的推进与恢复。
+useGuideState(STATE.execution, () => {
+  if (state.value !== 'ready') return null
+  return {
+    canWrite: canWrite.value,
+    executionsEnabled: executionsEnabled.value,
+    windows: windows.value.map((w) => ({ id: w.id, name: w.current.announcementName })),
+    proposals: proposals.value.map((p) => ({ id: p.id, status: p.status })),
+    confirmations: confirmations.value.map((c) => ({ id: c.id, resultStatus: c.resultStatus })),
+    proposalCandidates: proposalCandidates.value.map((p) => ({ id: p.id, status: p.status })),
+  }
+})
 </script>
 
 <template>
@@ -414,7 +430,7 @@ async function onConfirmationSaved() {
 
         <el-tab-pane label="公告登记" name="windows">
           <div class="ml-filters">
-            <el-button v-if="canWrite" type="primary" :loading="subjectsLoading" @click="openWindowForm(null)">登记公告</el-button>
+            <el-button v-if="canWrite" type="primary" :loading="subjectsLoading" data-guide="ml-execution-register-window" @click="openWindowForm(null)">登记公告</el-button>
           </div>
           <MidlongNotice v-if="windowsError" tone="danger" title="公告列表加载失败" data-test="windows-error">
             {{ windowsError }} <el-button link type="primary" @click="loadWindows">重试</el-button>
@@ -448,7 +464,7 @@ async function onConfirmationSaved() {
           <MidlongNotice v-if="proposalsError" tone="danger" title="方案列表加载失败" data-test="proposals-error">
             {{ proposalsError }} <el-button link type="primary" @click="loadProposals">重试</el-button>
           </MidlongNotice>
-          <el-table :data="proposals" border size="small" @row-click="(row: TradeProposalDetail) => openProposal(row.id)">
+          <el-table :data="proposals" border size="small" data-guide="ml-execution-proposal-rows" @row-click="(row: TradeProposalDetail) => openProposal(row.id)">
             <el-table-column label="方案" width="80"><template #default="{ row }">#{{ row.id }}</template></el-table-column>
             <el-table-column label="状态" width="110"><template #default="{ row }"><el-tag size="small" :type="proposalStatusTag(row.status).type">{{ proposalStatusTag(row.status).label }}</el-tag></template></el-table-column>
             <el-table-column label="交易主体" min-width="120"><template #default="{ row }">{{ row.subjectName ?? `#${row.subjectId}` }}</template></el-table-column>
@@ -479,7 +495,7 @@ async function onConfirmationSaved() {
             </el-select>
             <el-checkbox v-model="filters.pendingReviewOnly" data-test="pending-review-filter">只看待核对</el-checkbox>
             <el-button type="primary" @click="search">查询</el-button>
-            <el-button v-if="canWrite" type="primary" :loading="candidatesLoading" data-test="register-confirmation" @click="openConfirmationForm">登记确认单</el-button>
+            <el-button v-if="canWrite" type="primary" :loading="candidatesLoading" data-guide="ml-execution-register-confirmation" data-test="register-confirmation" @click="openConfirmationForm">登记确认单</el-button>
           </div>
           <MidlongNotice tone="info" title="执行确认口径（登记事实）">
             预成交只保留记录（{{ EXECUTION_NOTICES.preClearedNotFormal }}）；{{ EXECUTION_NOTICES.clearedAtomic }}

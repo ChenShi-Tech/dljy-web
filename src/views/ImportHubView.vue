@@ -10,8 +10,9 @@ import {
   type ExcelTemplateDeclaration
 } from '@/services/importHub'
 import { apiGet, apiPost, ApiError } from '@/services/api'
-import { currentRegion } from '@/services/region/regionContext'
 import { createAgentClient } from '@/services/agent/httpClient'
+import { canWritePublicGridData, isPublicGridTemplate, PUBLIC_GRID_COMMIT_HINT } from '@/services/data/publicGrid'
+import { getCurrentUser } from '@/services/auth'
 
 const activeTab = ref<ImportHubTab>('retailSettlement')
 const dataset = getImportHubDataset()
@@ -25,54 +26,22 @@ const retailSettlementImportClient = createAgentClient('/data-svc/api/v1/retail-
 const tabs: Array<{ label: string; value: ImportHubTab }> = [
   { label: '电量', value: 'electricity' },
   { label: '客户负荷', value: 'customerLoad' },
-  { label: '零售套餐', value: 'retail' },
   { label: '结算', value: 'settlement' },
   { label: '售电结算', value: 'retailSettlement' },
-  { label: '市场交易', value: 'trading' },
-  { label: '市场分析', value: 'marketOps' }
+  { label: '市场交易', value: 'trading' }
 ]
 
 // 已实装真实后端（CSV 解析+校验+状态机+台账）：结算/市场交易（P2）+
-// 电量（发电侧）/客户分时负荷（售电侧）（P3 分主体数据通道）+
-// 市场经营分析（P2 投递型 → capture-raw + capture.sqlite，链路 A）；
+// 电量（发电侧）/客户分时负荷（售电侧）（P3 分主体数据通道）；
 // 其余仍为模板级演示，历史列表明确标注"演示"。
-const IMPLEMENTED: ImportHubTab[] = ['settlement', 'trading', 'electricity', 'customerLoad', 'marketOps', 'retail', 'retailSettlement']
+// 「市场分析」（marketOps）与「零售套餐」（retail）两页签随 dljy#3394 下线（其唯一消费页
+// 市场经营分析已删，dljy#3391），相关投递型逻辑（datasetKey 选择/上传分支）一并移除。
+const IMPLEMENTED: ImportHubTab[] = ['settlement', 'trading', 'electricity', 'customerLoad', 'retailSettlement']
 const isImplemented = computed(() => IMPLEMENTED.includes(activeTab.value))
-
-// marketOps 投递型：9 个 datasetKey（7 公共 + 套餐明细/KPI 两个 company 私有）。
-const marketDatasetKeys: Array<{ label: string; value: string }> = [
-  { label: '交易汇总', value: 'market_trade_summary' },
-  { label: '月度趋势', value: 'market_monthly_trend' },
-  { label: '发电构成', value: 'market_generation' },
-  { label: '售电公司', value: 'market_sales' },
-  { label: '独立储能', value: 'market_storage' },
-  { label: '零售套餐', value: 'market_packages' },
-  { label: '价格趋势', value: 'market_price' },
-  { label: '公共KPI指标', value: 'market_metrics' },
-  { label: '套餐KPI指标（公司私有）', value: 'market_retail_package_metrics' }
-]
-// 各 datasetKey 的主要中文列名（前端字段提示 + 模板下载；权威字段映射在后端 yn-fact-market.mjs ALIASES）。
-const marketFieldsByDataset: Record<string, string[]> = {
-  market_trade_summary: ['交易类型', '电量', '均价', '笔数', '占比'],
-  market_monthly_trend: ['月份', '电量', '均价', '中长期', '现货', '辅助服务'],
-  market_generation: ['名称', '电量', '均价', '数量', '分类(powerType/detail)'],
-  market_sales: ['售电公司', '电量', '均价', '用户数'],
-  market_storage: ['储能项目', '电量', '均价', '数量'],
-  market_packages: ['售电公司', '用户名称', '套餐类型', '平段价', '峰段价', '谷段价', '套餐电量'],
-  market_price: ['月份', '中长期电价', '现货电价', '零售电价'],
-  market_metrics: ['tab(overview/generation/sales/storage)', '指标', '值', '单位', '色调'],
-  market_retail_package_metrics: ['tab(packages)', '指标', '值', '单位', '色调']
-}
-const selectedDatasetKey = ref('market_trade_summary')
-// 投递型 tabs：marketOps（9 datasetKey 选）+ retail（固定 market_packages，与 MarketOps「套餐」tab 同源）。
-const isDelivery = computed(() => activeTab.value === 'marketOps' || activeTab.value === 'retail')
-const deliveryDatasetKey = computed(() => activeTab.value === 'retail' ? 'market_packages' : selectedDatasetKey.value)
 
 type RealImportRecord = {
   id: string
   type: string
-  datasetKey?: string
-  region?: string
   fileName: string
   status: 'CREATED' | 'UPLOADED' | 'VALIDATED' | 'COMMITTED' | 'FAILED'
   totalRows: number
@@ -140,6 +109,12 @@ const selectedTemplate = computed(() =>
   templateDeclarations.find((t) => t.templateId === selectedTemplateId.value) ?? templateDeclarations[0]
 )
 const isCompanyTemplate = computed(() => selectedTemplate.value?.ownership === 'company')
+// 公共落点提交置灰（#2898 验收③）：yn-t0-node-price 写平台公共表，后端仅 ADMIN 可提交
+// （PUBLIC_GRID_WRITE_ROLES）；非 ADMIN 的「上传填好的模板」入口置灰并提示交管理员提交。
+// 口径以服务端为准（publicGrid.ts），本判定只是前端展示一致，避免点了才 403。
+const publicGridCommitBlocked = computed(
+  () => isPublicGridTemplate(selectedTemplateId.value) && !canWritePublicGridData(getCurrentUser()?.roleCode)
+)
 const templateUploading = ref(false)
 const templateFileInput = ref<HTMLInputElement | null>(null)
 const templateRecords = ref<TemplateRecord[]>([])
@@ -174,6 +149,7 @@ async function onTemplateFileChosen(event: Event) {
   const file = input.files?.[0]
   input.value = ''
   if (!file || templateUploading.value) return
+  if (publicGridCommitBlocked.value) return
   templateUploading.value = true
   uploadErrors.value = []
   lastDelivery.value = null
@@ -226,12 +202,8 @@ async function loadRealRecords() {
   // 避免把仅有管理令牌保护的全量售电结算记录接到公司业务页。
   if (activeTab.value === 'retailSettlement') { realRecords.value = []; return }
   try {
-    // retail 走投递分支（record.type='marketOps'），查 type=marketOps 并按 datasetKey=market_packages 过滤。
-    const queryType = activeTab.value === 'retail' ? 'marketOps' : activeTab.value
-    const res = await apiGet<{ data: { rows: RealImportRecord[] } }>('/v1/import-hub/records', { type: queryType })
-    let rows = ((res.data ?? res) as unknown as { rows?: RealImportRecord[] }).rows ?? []
-    if (activeTab.value === 'retail') rows = rows.filter((r) => r.datasetKey === 'market_packages')
-    realRecords.value = rows
+    const res = await apiGet<{ data: { rows: RealImportRecord[] } }>('/v1/import-hub/records', { type: activeTab.value })
+    realRecords.value = ((res.data ?? res) as unknown as { rows?: RealImportRecord[] }).rows ?? []
   } catch {
     realRecords.value = []
   }
@@ -282,11 +254,6 @@ async function onFileChosen(event: Event) {
     const isExcel = /\.(xlsx|xls)$/i.test(file.name)
     const content = isExcel ? await fileToBase64(file) : await file.text()
     const body: Record<string, unknown> = { fileName: file.name, content, isBinary: isExcel }
-    // 投递型（marketOps 选 datasetKey / retail 固定 market_packages）：带 datasetKey + 当前 region。
-    if (isDelivery.value) {
-      body.datasetKey = deliveryDatasetKey.value
-      body.region = currentRegion.value.id
-    }
     const res = await apiPost<{ data: RealImportRecord; msg?: string }>(apiPathFromEndpoint(currentTask.value.endpoint), body)
     // 部分跳过：把逐行 reason 铺开展示（#660 遗留 422 展示的正向版本）。
     if (res.data?.errors?.length) {
@@ -305,11 +272,8 @@ async function onFileChosen(event: Event) {
 }
 
 function downloadTemplate() {
-  // 模板 = 必填列表头 CSV（实装类型直接可回传导入）；marketOps 按 selectedDatasetKey 取列名。
-  const fields = activeTab.value === 'marketOps'
-    ? (marketFieldsByDataset[selectedDatasetKey.value] ?? [])
-    : currentTask.value.requiredFields
-  const headers = fields.join(',')
+  // 模板 = 必填列表头 CSV（实装类型直接可回传导入）。
+  const headers = currentTask.value.requiredFields.join(',')
   const blob = new Blob([`﻿${headers}\n`], { type: 'text/csv;charset=utf-8' })
   const a = document.createElement('a')
   a.href = URL.createObjectURL(blob)
@@ -336,12 +300,7 @@ const metrics = computed<ImportMetric[]>(() => {
   ]
 })
 const currentHistory = computed(() => dataset.history.filter((row) => row.type === activeTab.value))
-// marketOps 字段提示随 datasetKey 变化；其他类型用 task.requiredFields。
-const currentFields = computed(() => {
-  if (activeTab.value === 'marketOps') return marketFieldsByDataset[selectedDatasetKey.value] ?? []
-  if (activeTab.value === 'retail') return marketFieldsByDataset['market_packages'] ?? []
-  return currentTask.value.requiredFields
-})
+const currentFields = computed(() => currentTask.value.requiredFields)
 
 watch(activeTab, () => {
   uploadErrors.value = []
@@ -371,7 +330,7 @@ onMounted(() => {
     <section class="panel">
       <div class="panel-title">
         <h2>数据导入融合台</h2>
-        <span>电量、零售套餐、结算、售电结算、市场交易与市场经营分析导入迁移版</span>
+        <span>电量、客户负荷、结算、售电结算与市场交易导入迁移版</span>
       </div>
       <div class="toolbar import-toolbar">
         <el-radio-group v-model="activeTab">
@@ -379,15 +338,6 @@ onMounted(() => {
             {{ tab.label }}
           </el-radio-button>
         </el-radio-group>
-        <el-select
-          v-if="activeTab === 'marketOps'"
-          v-model="selectedDatasetKey"
-          size="small"
-          style="width: 150px"
-          placeholder="选择数据类型"
-        >
-          <el-option v-for="k in marketDatasetKeys" :key="k.value" :label="k.label" :value="k.value" />
-        </el-select>
         <el-button type="primary" @click="downloadTemplate">下载模板（CSV）</el-button>
         <el-button v-if="isImplemented" type="success" :loading="uploading" @click="pickFile">选择文件导入</el-button>
         <el-tag v-if="isImplemented" type="success" size="small">
@@ -401,7 +351,7 @@ onMounted(() => {
     <section class="import-layout">
       <article class="panel">
         <div class="panel-title compact">
-          <h2>{{ activeTab === 'marketOps' ? `${currentTask.label}·${marketDatasetKeys.find((k) => k.value === selectedDatasetKey)?.label ?? selectedDatasetKey}` : currentTask.label }}</h2>
+          <h2>{{ currentTask.label }}</h2>
           <span>{{ currentTask.endpoint }}</span>
         </div>
         <div class="drop-zone" :class="{ clickable: isImplemented }" @click="isImplemented && pickFile()">
@@ -430,9 +380,6 @@ onMounted(() => {
         />
         <el-table v-else-if="isImplemented" :data="realRecords" size="small">
           <el-table-column prop="fileName" label="文件" min-width="180" />
-          <el-table-column v-if="activeTab === 'marketOps'" label="数据类型" width="130">
-            <template #default="{ row }">{{ marketDatasetKeys.find((k) => k.value === row.datasetKey)?.label ?? row.datasetKey ?? '-' }}</template>
-          </el-table-column>
           <el-table-column label="状态" width="90">
             <template #default="{ row }">
               <el-tag :type="row.status === 'COMMITTED' ? 'success' : row.status === 'FAILED' ? 'danger' : 'warning'" size="small">
@@ -492,11 +439,14 @@ onMounted(() => {
         <el-tag size="small" :type="isCompanyTemplate ? 'warning' : 'info'">
           {{ isCompanyTemplate ? '公司私有 · 归属随登录会话' : '公共口径' }}
         </el-tag>
+        <!-- 公共落点标注（#2898 验收③）：非 ADMIN 只读，提交要交平台管理员 -->
+        <el-tag v-if="publicGridCommitBlocked" size="small" type="warning">公共曲线 · 仅管理员提交</el-tag>
         <el-button type="primary" @click="downloadStandardTemplate">下载模板（xlsx）</el-button>
-        <el-button type="success" :loading="templateUploading" @click="pickTemplateFile">上传填好的模板</el-button>
+        <el-button type="success" :disabled="publicGridCommitBlocked" :loading="templateUploading" @click="pickTemplateFile">上传填好的模板</el-button>
         <el-tag size="small" type="success">来源：手录投递 IMPORT（非采集）</el-tag>
         <input ref="templateFileInput" type="file" accept=".csv,.xlsx,.xls" style="display: none" @change="onTemplateFileChosen" />
       </div>
+      <p v-if="publicGridCommitBlocked" class="template-note">{{ PUBLIC_GRID_COMMIT_HINT }}</p>
       <p v-if="isCompanyTemplate" class="template-note">
         公司私有模板不设「公司」列，数据归属由登录会话公司自动决定；非归属公司账号上传将被拒绝（422）。
       </p>

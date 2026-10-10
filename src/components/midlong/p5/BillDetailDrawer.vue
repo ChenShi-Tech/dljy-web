@@ -183,7 +183,7 @@ const sortedRevisions = computed(() => [...(detail.value?.revisions ?? [])].reve
 
       <div v-if="canWrite" class="p5-actions">
         <el-button type="primary" plain data-test="revise-bill" @click="reviseDialog = true">修订（新版本，旧版保留）</el-button>
-        <el-button plain data-test="add-voucher" @click="voucherDialog = true">登记收款凭证</el-button>
+        <el-button plain data-guide="ml-voucher-open" data-test="add-voucher" @click="voucherDialog = true">登记收款凭证</el-button>
       </div>
       <div class="p5-muted">当前口径提示：{{ billAmountText({ billKind: detail.billKind, amount: detail.amount, lineItemAmount: detail.lineItemAmount }) }}</div>
     </div>

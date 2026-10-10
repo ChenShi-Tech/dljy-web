@@ -151,7 +151,7 @@ export const SCHEDULE_KIND_META: ScheduleKindMeta[] = [
         label: '摄取类型',
         type: 'text',
         placeholder: 'weather-export',
-        hint: 'weather-export / spot-export / market-export / southern-export（spot 需 dir，market 需 dir/file）'
+        hint: 'weather-export / spot-export / southern-export（spot 需 dir）'
       }
     ]
   },
@@ -159,7 +159,7 @@ export const SCHEDULE_KIND_META: ScheduleKindMeta[] = [
     kind: 'forecast_run',
     label: '每日预测管线',
     char: '预',
-    desc: '训练预测器组（naive_1d/弹性/ridge/lightgbm）→ T+1 96 点电价预测落 forecast_runs（数据未到位自动 skipped 留痕；产出仅决策支持、非申报/结算依据）',
+    desc: '训练后端当前启用的预测器组 → T+1 96 点电价预测落 forecast_runs（数据未到位自动 skipped 留痕；产出仅决策支持、非申报/结算依据）',
     params: [
       { key: 'region_id', label: '地区', type: 'region', hint: '留空=yunnan' },
       { key: 'target_date', label: '目标日', type: 'date', hint: '留空=运行日+1（回填历史日显式指定）' }

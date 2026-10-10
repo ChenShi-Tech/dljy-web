@@ -7,7 +7,7 @@
 // ④ 负价雷达+弃发建议、⑤ 损益归因瀑布、⑥ 申报偏差体检、⑦ 预测精度擂台/损失诊断 + 决策清单/持仓敞口。
 //
 // 纪律：云南严格地区 · 真实或空。无真实数据 → ingest-hint 空态（提示 import:spot-export --write），
-// 绝不伪造、绝不标「模拟数据」冒充、绝不回退别地区。视觉跟随 app 全局主题（classic/neon/paper/arc）：
+// 绝不伪造、绝不标「模拟数据」冒充、绝不回退别地区。视觉跟随 app 全局主题（classic/flow/paper/arc）：
 // scoped --ck-* 令牌映射主题变量、图表 chrome 走 chartChrome() 按 render 取色；数据语义色不随主题变。
 //
 // 诚实标注：③ 基差为「选定节点」(非自有，capture 无 self-owned 维度)；⑦ 默认展示
@@ -79,6 +79,11 @@ const loading = ref(false)
 let reloadReqId = 0
 const errorMsg = ref('')
 const ingestHint = ref(false)
+
+// 加载遮罩文案：标明「目标」日期/市场（date/market 是 v-model，选中即变），
+// 面板各处标题（如损益归因区间）也随 v-model 先行切换——遮罩文案负责说清
+// 「正在去哪」，避免切换耗时被误读成没切上。
+const loadingText = computed(() => `正在加载 ${date.value} · ${market.value === 'da' ? '日前' : '实时'} 数据…`)
 
 // ECharts chrome（轴/网格/文字/tooltip）随当前主题
 // 每个 builder 在 render 内调用 axisX/axisY/tt/ttfix，函数体内取 chartChrome()，故 useEChart
@@ -909,6 +914,7 @@ onRegionChange(() => {
           value-format="YYYY-MM-DD"
           size="small"
           :clearable="false"
+          :disabled="loading"
           class="ck-date"
           @change="onDateChange"
         />
@@ -917,6 +923,7 @@ onRegionChange(() => {
             v-for="m in marketOptions"
             :key="m.value"
             :class="{ on: market === m.value }"
+            :disabled="loading"
             type="button"
             @click="((market = m.value), onMarketChange())"
           >
@@ -955,7 +962,7 @@ onRegionChange(() => {
     />
 
     <!-- 市场态势条 -->
-    <section class="pulse">
+    <section class="pulse" v-loading="loading" :element-loading-text="loadingText">
       <div class="kpi">
         <div class="lab">全市场{{ market === 'da' ? '日前' : '实时' }}均价</div>
         <div class="val da num">{{ fmt(kpis?.marketAvg, 0) }}<small>元/MWh</small></div>
@@ -1016,7 +1023,7 @@ onRegionChange(() => {
       </div>
     </section>
 
-    <div class="wrap">
+    <div class="wrap" v-loading="loading" :element-loading-text="loadingText">
       <!-- 主区 -->
       <div class="col-main">
         <!-- ② 价格热力场 -->
@@ -1249,7 +1256,7 @@ onRegionChange(() => {
 
 <style scoped>
 /* 交易终端样式（移植自 prototype/spot-cockpit.html）：作用域内 --ck-* 令牌现映射到
-   app 全局主题变量，随 classic/neon/paper/arc 四主题切换。useEChart 主题切换会 dispose
+   app 全局主题变量，随 classic/flow/paper/arc 四主题切换。useEChart 主题切换会 dispose
    重建并重调 render，图表 chrome 经 chartChrome() 在 render 内取色，无需手加 watch(theme)。 */
 .cockpit {
   --ck-bg: var(--bg);
@@ -1280,7 +1287,7 @@ onRegionChange(() => {
 
 /* embedded:融合页 /dashboard 内嵌时去外层边框/圆角/底 padding,平滑融入 page-stack;
    standalone(工作台 tab,embedded=false)保留原终端边框。--ck-* 仍映射全局主题变量,
-   classic/paper 下本就浅色、neon/arc 下深色,主题切换自动跟随(useEChart dispose+重调 render)。*/
+   classic/paper 下本就浅色、flow/arc 下深色,主题切换自动跟随(useEChart dispose+重调 render)。*/
 .cockpit.embedded {
   border: 0;
   border-radius: 0;
@@ -1391,6 +1398,10 @@ onRegionChange(() => {
 .seg button.on {
   background: linear-gradient(180deg, rgba(56, 189, 248, 0.22), rgba(56, 189, 248, 0.08));
   color: var(--ck-da);
+}
+.seg button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 .arena-source-select {
   min-width: 132px;

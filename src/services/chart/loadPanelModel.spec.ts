@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest'
 import {
+  LOAD_PANEL_UNIT,
+  buildLoadRangeSeries,
+  isEmptyLoadSource,
+  loadRangeStats,
   isSingleTimeline,
   buildLoadPanelModel,
   continuousTickFormatter,
@@ -186,5 +190,51 @@ describe('tick formatters', () => {
   it('overlay：月首打刻度去掉「1日」', () => {
     expect(overlayTickFormatter('7月1日')).toBe('7月')
     expect(overlayTickFormatter('7月2日')).toBe('')
+  })
+})
+
+describe('逐日负荷口径（#3379）', () => {
+  it('单位是负荷功率 MW，不是电量', () => {
+    expect(LOAD_PANEL_UNIT).toBe('MW')
+  })
+  it('缺失与空壳（无年份）都视为空，有年份则非空', () => {
+    expect(isEmptyLoadSource(null)).toBe(true)
+    expect(isEmptyLoadSource(undefined)).toBe(true)
+    expect(isEmptyLoadSource({ years: [] })).toBe(true)
+    expect(isEmptyLoadSource({ years: ['2025年'] })).toBe(false)
+  })
+})
+
+describe('单源版面：连续日期序列与指标（dljy#3384）', () => {
+  const names = ['12月30日', '12月31日', '1月1日', '1月2日', '2月29日']
+  // 年 × 槽：2025 只有 12/30、12/31；2026 只有 1/2（1/1 缺数）；2026 的 2月29日槽非法须忽略
+  const years = ['2025年', '2026年']
+  const metrics = {
+    average: [[100, 110, null, null, null], [null, null, null, 130, 999]],
+    min: [[90, 95, null, null, null], [null, null, null, 120, 999]],
+    max: [[120, 140, null, null, null], [null, null, null, 150, 999]]
+  }
+
+  it('按真实日期展开并保留缺数日为 null（断线不插值），非法日期槽忽略', () => {
+    const s = buildLoadRangeSeries(names, years, metrics)
+    expect(s.dates).toEqual(['2025-12-30', '2025-12-31', '2026-01-01', '2026-01-02'])
+    expect(s.avg).toEqual([100, 110, null, 130])
+    expect(s.spread).toEqual([30, 45, null, 30])
+  })
+
+  it('指标：最近日均、区间最高/最低、覆盖天数与缺口', () => {
+    const st = loadRangeStats(buildLoadRangeSeries(names, years, metrics))
+    expect(st.latest).toEqual({ date: '2026-01-02', avg: 130 })
+    expect(st.peak).toEqual({ date: '2026-01-02', value: 150 })
+    expect(st.trough).toEqual({ date: '2025-12-30', value: 90 })
+    expect(st.days).toBe(3)
+    expect(st.gapDays).toBe(1)
+    expect([st.firstDate, st.lastDate]).toEqual(['2025-12-30', '2026-01-02'])
+  })
+
+  it('无任何有数日：空序列、空指标', () => {
+    const s = buildLoadRangeSeries([], [], { average: [], min: [], max: [] })
+    expect(s.dates).toEqual([])
+    expect(loadRangeStats(s)).toMatchObject({ days: 0, latest: null, peak: null, trough: null, gapDays: 0 })
   })
 })

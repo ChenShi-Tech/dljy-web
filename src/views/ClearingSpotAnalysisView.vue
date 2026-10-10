@@ -14,7 +14,6 @@ import { getRegionCapabilityForPath, type RegionCapabilityDataSupport } from '@/
 import { onRegionChange } from '../composables/useRegionReload'
 import { isMockActive } from '@/services/mock/session'
 import RegionDataBanner from '@/components/region/RegionDataBanner.vue'
-import CapabilitySupportBadge from '../components/CapabilitySupportBadge.vue'
 import CapabilityDegradedCard from '../components/CapabilityDegradedCard.vue'
 import { chartChrome } from '../composables/useTheme'
 import { useEChart } from '../composables/useEChart'
@@ -56,6 +55,8 @@ const urlRange: [string, string] | null = (typeof route.query.from === 'string' 
 const compareDate = ref('') // 对比日期(单日)
 const fixedAxis = ref(true)
 const hideAxis = ref(false)
+// 精简视角（U7）：默认只显示 电量(0)+价格(1) 轴与其系列，比率(2)/价格差(3) 收进「完整视角」开关
+const compactAxes = ref(true)
 // 对比日期同步至 URL(运行日期区间沿用上方手写 from/to 还原逻辑)
 useQuerySync({ compare: compareDate })
 
@@ -187,12 +188,16 @@ function render() {
   }
   const xs = nameList.slice(lo, hi)
 
+  // 精简视角（U7）：默认只保留 电量(0)+价格(1) 轴，比率(2)/价格差(3) 轴与其系列隐藏
+  const axisVisible = (ax: number) => !hideAxis.value && (!compactAxes.value || ax === 0 || ax === 1)
+
   // Y 轴
   const yAxis = AXES.map((a, i) => {
     const base: any = {
       type: 'value', name: hideAxis.value ? '' : a.name,
       nameTextStyle: { color: cc.axisLabel, fontSize: 11 },
       position: a.pos, offset: a.off,
+      show: axisVisible(i),
       axisLine: { show: !hideAxis.value, lineStyle: { color: cc.splitLine } },
       axisTick: { show: !hideAxis.value },
       axisLabel: { show: !hideAxis.value, color: cc.axisLabel, fontSize: 10 },
@@ -236,20 +241,28 @@ function render() {
   const units: Record<string, string> = {}
   names.forEach((nm, i) => { units[nm] = AXIS_UNITS[Number(axOf[i] ?? 0)] || '' })
 
+  // 精简视角：隐藏轴上的系列一并移出绘图与图例（tooltip units 仍保留全量映射）
+  const visibleIdx = names.map((_, i) => i).filter((i) => axisVisible(Number(axOf[i] ?? 0)))
+  const visibleNames = visibleIdx.map((i) => names[i])
+  const visibleSeries = visibleIdx.map((i) => series[i])
+
   mainChart.setOption({
     tooltip: { ...axisTooltip({ units }), confine: true },
     // 底部布局:工具栏右下角,图例顶部居中 scroll
     toolbox: bottomToolbox('出清现货电量分析', 8),
-    legend: bottomLayoutLegend({ data: names, itemWidth: 18, itemHeight: 8, textStyle: { fontSize: 11 } }),
-    grid: { left: hideAxis.value ? 16 : 64, right: hideAxis.value ? 24 : 178, top: 56, bottom: 56, containLabel: hideAxis.value },
+    legend: bottomLayoutLegend({ data: visibleNames, itemWidth: 18, itemHeight: 8, textStyle: { fontSize: 11 } }),
+    grid: { left: hideAxis.value ? 16 : 64, right: hideAxis.value ? 24 : (compactAxes.value ? 64 : 178), top: 56, bottom: 56, containLabel: hideAxis.value },
     dataZoom: [{ type: 'inside' }],
     xAxis: {
       type: 'category', data: xs, boundaryGap: false,
       axisLabel: { color: cc.axisLabel, fontSize: 10,
+        // U1：interval 回调强制只在每天 12:00 的类目打刻度，日期标签按天稳定显示
+        // （原实现只靠 formatter 放行 12:00，自动抽稀几乎不落在 12:00 → 整条轴无标签）
+        interval: (index: number, value: string) => String(value).slice(11) === '12:00',
         formatter: (v: string) => (String(v).slice(11) === '12:00' ? String(v).slice(5, 10) : '') },
       axisLine: { lineStyle: { color: cc.splitLine } }
     },
-    yAxis, series,
+    yAxis, series: visibleSeries,
     ...emptyOverlay(!xs.length)
   }, { notMerge: true })
 }
@@ -281,7 +294,7 @@ function askInsight() {
 }
 
 onMounted(load)
-watch([runRange, compareDate, fixedAxis, hideAxis], render, { deep: true })
+watch([runRange, compareDate, fixedAxis, hideAxis, compactAxes], render, { deep: true })
 
 onRegionChange(load)
 </script>
@@ -289,7 +302,6 @@ onRegionChange(load)
 <template>
   <div class="a3" v-loading="loading">
     <RegionDataBanner />
-    <CapabilitySupportBadge path="/sjfx/zcqxhdl" />
     <!-- #2991：非山西地区显示停用说明卡（不发请求、不画空图），山西保持原出清图不动 -->
     <CapabilityDegradedCard
       v-if="!isClearingRegionSupported"
@@ -311,6 +323,7 @@ onRegionChange(load)
         <span class="spacer" />
         <el-button size="small" type="primary" @click="fixedAxis = !fixedAxis">{{ fixedAxis ? '坐标自动' : '坐标固定' }}</el-button>
         <el-button size="small" type="primary" @click="hideAxis = !hideAxis">{{ hideAxis ? '显示Y轴' : '隐藏Y轴' }}</el-button>
+        <el-button size="small" :type="compactAxes ? 'default' : 'primary'" @click="compactAxes = !compactAxes">{{ compactAxes ? '完整视角' : '精简视角' }}</el-button>
         <el-button size="small" type="success" plain @click="askInsight">✨ 解读本页</el-button>
         <TrustBadge :basis="dataBasis" prefix="决策口径" />
       </div>

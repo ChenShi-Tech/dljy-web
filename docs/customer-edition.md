@@ -43,7 +43,7 @@ npm run verify:customer-edition-build   # 扫产物，确认零泄露
 
 **两次都是「源码看着改对了、产物里还在」。所以判据只能是构建产物。**
 
-## 门禁（两道，共用一张关键词表）
+## 门禁（品牌词两道共用一张关键词表；另有已迁入口一道）
 
 关键词表在 `scripts/llm-brand-keywords.mjs`：供应商 id、中文厂商名、真实型号族，全部小写。#2410 时判据从前端的供应商清单现场解析（「新增供应商门禁自动跟上」）；**#2668 起前端不再持有任何供应商 / 型号信息**，判据来源没了，这张表就是判据本身——它是回归绊线，谁把品牌词写回前端就红。新供应商在网关侧接入，前端永远不知道它叫什么，所以 #2410 担心的「新增供应商漏判」在新架构下不存在；真要新增品牌词，在合入那条 PR 时补进表里。
 
@@ -53,6 +53,7 @@ npm run verify:customer-edition-build   # 扫产物，确认零泄露
 |---|---|---|
 | `verify:customer-edition-build` | 交付版构建**产物**（.js） | 内部档专属的东西没有随 tree-shaking 失效混进交付版 |
 | `src/services/edition.brand-keywords.spec.ts` | 前端**源码**（src/**，含 spec） | 前端不写品牌 / 型号——不论哪个档。`volcengine` 豁免：它是联网搜索工具的后端契约枚举值 |
+| `verify:customer-edition-build` 中段（ChenShi-Tech/dljy#3464） | 交付版构建**产物**（.js） | 内部版「已迁至平台后台」的提示短语、后台 hash 路径、后台地址 `VITE_PLATFORM_ADMIN_URL` 零命中；判据从提示组件与登记表源码现取并自检，自建产物时注入金丝雀地址 |
 
 两条变异验证过区分力：
 
@@ -60,6 +61,10 @@ npm run verify:customer-edition-build   # 扫产物，确认零泄露
 - **关键词表被清空** → 红，而不是 0 个关键词后报绿
 
 第二条尤其重要：判据失效时报绿的门禁，比没有门禁更糟。
+
+## 内部版已迁入口与交付档（ChenShi-Tech/dljy#3464）
+
+内部版把已由平台后台接管的旧入口隐藏、原位置换成「已迁至平台后台」提示（登记表 `src/features/platformAdminMigration/registry.ts`，清单见 `docs/platform-admin-entry-migration.md` §2.2）。提示与后台链接**只对平台人员（内部版 ADMIN）显示**（dljy#3518，规格 AI-06）：客户账号（BOSS、交易负责人、交易员等）只看到入口隐藏，不出现任何提示文字、后台路径或链接——角色闸门集中在登记表的 `migratedEntryLinks`，不随交付产物出去。交付档入口一律照旧，靠的仍是模块解析层：`dljy-customer-edition` 插件把登记表、提示组件与 AI 工作室「个人设置」面板分别重定向到 `registry.customer.ts`（恒答未迁移、不含标签与后台路径）、`MigratedToAdminNotice.customer.vue`（空壳）与 `EditionRemovedView.vue`。这些模块一律用 `@/…` 别名 import——插件按说明符后缀匹配。
 
 ## 与后端的关系
 

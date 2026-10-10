@@ -79,14 +79,33 @@ export interface CockpitOptions {
   regionName: string
   /** 全局地区 id（如 'yunnan'），用于 banner/标注。 */
   regionId: string
-  /** 交易日（默认 2026-05 内），节点电价/热力按此日。 */
+  /** 交易日，节点电价/热力按此日；月度聚合区块按此日所在日历月聚合。 */
   date: string
   /** 市场口径 da=日前 / rt=实时。 */
   market: SpotMarket
-  /** 损益/结算/敞口的日期范围（默认整月）。 */
+  /** 损益/结算/敞口的日期范围；缺省取所选交易日所在日历月（monthWindowOf）。 */
   dateRange?: [string, string]
   /** 基差/负价雷达选定节点；缺省时取 daily summary 首个有效节点。 */
   node?: string
+}
+
+// 历史缺省窗口：初版演示数据落在 2026-05，date 无法解析出年月时按此回退。
+const LEGACY_DATE_RANGE: [string, string] = ['2026-05-01', '2026-05-31']
+
+// 缺省数据窗口 = 所选交易日所在日历月（月初~月末，零填充 YYYY-MM-DD 闭区间端点）。
+// 取代写死的 2026-05 常量：否则切日期后 KPI 按所选日刷新，损益/结算区块永远停在 5 月，
+// 且「损益归因」标题月份（绑定所选日）与数据月份互相矛盾。月末用 UTC 语义计算，含闰年 2 月。
+export function monthWindowOf(date: string): [string, string] {
+  const m = /^(\d{4})-(\d{2})/.exec(date)
+  const year = m ? Number(m[1]) : NaN
+  const month = m ? Number(m[2]) : NaN
+  if (!Number.isInteger(year) || !Number.isInteger(month) || month < 1 || month > 12) {
+    return LEGACY_DATE_RANGE
+  }
+  const mm = String(month).padStart(2, '0')
+  // Date.UTC 月份为 0 基：「1 基月份的下月 0 号」即本月末（2 月 → day 29/28，12 月跨年 → 12-31）。
+  const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate()
+  return [`${year}-${mm}-01`, `${year}-${mm}-${String(lastDay).padStart(2, '0')}`]
 }
 
 // 模块结果类型
@@ -448,7 +467,7 @@ async function safe<T>(p: Promise<T>, errors: string[], label: string): Promise<
  */
 export async function loadCockpit(opts: CockpitOptions): Promise<CockpitData> {
   const { regionName, regionId, date, market } = opts
-  const dateRange = opts.dateRange ?? ['2026-05-01', '2026-05-31']
+  const dateRange = opts.dateRange ?? monthWindowOf(date)
   const errors: string[] = []
 
   // 并行取真实数据

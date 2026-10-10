@@ -1,13 +1,14 @@
 // 主题服务（全站唯一权威源）：四档主题 classic（经典浅色）/ arc（弧光·能源科技暗色）
-// / neon（霓虹·深色辉光）/ paper（暖纸·暖色质感），唯一写入 <html data-theme>。
+// / flow（流光·品牌深蓝科技青）/ paper（暖纸·暖色质感），唯一写入 <html data-theme>。
 // 同时维护市场时段 data-period（峰/平/谷），驱动时段感知配色与电价带。
 // 历史：classic/arc 来自 agent-harness 规划（docs/agent-harness/主题与信息架构规划.md）；
-// neon/paper 来自三档换肤交接（历史文档已归档，git log 可追溯），
-// 本文件在合并时统一两套系统。composables/useTheme.ts 是本服务的薄适配层。
+// paper 来自三档换肤交接（历史文档已归档，git log 可追溯），本文件在合并时统一两套系统；
+// flow 由品牌开场动效凝练（dljy#3332），取代已下线的 neon（霓虹），存量 neon 选择自动迁到 flow。
+// composables/useTheme.ts 是本服务的薄适配层。
 
 import { nextTick, reactive } from 'vue'
 
-export type ThemeName = 'classic' | 'arc' | 'neon' | 'paper'
+export type ThemeName = 'classic' | 'arc' | 'flow' | 'paper'
 export type MarketPeriod = 'peak' | 'flat' | 'valley'
 
 export interface ThemeOption {
@@ -20,13 +21,15 @@ export interface ThemeOption {
 export const THEME_OPTIONS: ThemeOption[] = [
   { key: 'classic', label: '经典', desc: '浅色商务' },
   { key: 'arc', label: '弧光', desc: '能源科技暗色 · 时段感知' },
-  { key: 'neon', label: '霓虹', desc: '深色辉光' },
+  { key: 'flow', label: '流光', desc: '品牌深蓝 · 科技青柔光' },
   { key: 'paper', label: '暖纸', desc: '暖纸质感' }
 ]
 
 const KEY = 'dljy_theme'
 const LEGACY_KEY = 'dljy-theme' // 三档换肤旧 key（'default'|'neon'|'paper'）
-const VALID = new Set<ThemeName>(['classic', 'arc', 'neon', 'paper'])
+const VALID = new Set<ThemeName>(['classic', 'arc', 'flow', 'paper'])
+/** 已下线 / 更名主题的迁移表：三档换肤旧值 default→classic；霓虹下线后并入流光（同为深色档）。 */
+const RENAMED: Record<string, ThemeName> = { default: 'classic', neon: 'flow' }
 
 // 峰谷时段表（小时 → 时段），默认参考晋蒙鲁常见目录结构，可按省调整
 const PEAK_HOURS = new Set([8, 9, 10, 17, 18, 19, 20, 21])
@@ -56,20 +59,25 @@ function apply() {
   el.dataset.period = themeState.period
 }
 
-function readStoredTheme(): ThemeName {
+function normalizeTheme(raw: string | null): ThemeName | null {
+  if (!raw) return null
+  const mapped = RENAMED[raw] ?? raw
+  return VALID.has(mapped as ThemeName) ? (mapped as ThemeName) : null
+}
+
+/** 读存储主题；migrated=true 表示取自旧 key 或经迁移表换算，需要回写新 key。 */
+function readStoredTheme(): { theme: ThemeName; migrated: boolean } {
   try {
     const raw = localStorage.getItem(KEY)
-    if (raw && VALID.has(raw as ThemeName)) return raw as ThemeName
-    // 迁移三档换肤旧 key：'default' → 'classic'，neon/paper 原样
-    const legacy = localStorage.getItem(LEGACY_KEY)
-    if (legacy) {
-      const mapped = legacy === 'default' ? 'classic' : (legacy as ThemeName)
-      if (VALID.has(mapped)) return mapped
-    }
+    const current = normalizeTheme(raw)
+    if (current) return { theme: current, migrated: current !== raw }
+    // 三档换肤旧 key：'default' → 'classic'，'neon' → 'flow'，paper 原样
+    const legacy = normalizeTheme(localStorage.getItem(LEGACY_KEY))
+    if (legacy) return { theme: legacy, migrated: true }
   } catch {
     /* localStorage 不可用（隐私模式等）时回退默认 */
   }
-  return 'classic'
+  return { theme: 'classic', migrated: false }
 }
 
 function persist(theme: ThemeName) {
@@ -123,7 +131,9 @@ export function toggleTheme() {
 let timer: number | undefined
 
 export function initTheme() {
-  themeState.theme = readStoredTheme()
+  const stored = readStoredTheme()
+  themeState.theme = stored.theme
+  if (stored.migrated) persist(stored.theme)
   themeState.period = currentPeriod()
   apply()
   // 每分钟校准市场时段（跨时段时界面随之换色）

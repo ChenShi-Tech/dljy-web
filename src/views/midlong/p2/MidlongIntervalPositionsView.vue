@@ -12,6 +12,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import CompanyScopeBar from '@/components/company/CompanyScopeBar.vue'
 import ChartCard from '@/components/common/ChartCard.vue'
+import MetricTile from '@/components/common/MetricTile.vue'
 import MidlongNotice from '@/components/midlong/MidlongNotice.vue'
 import { selectedCompanyId } from '@/services/company/companyContext'
 import { currentRegion } from '@/services/region/regionContext'
@@ -25,6 +26,9 @@ import {
 } from '@/services/midlong/midlongP2Types'
 import { createLoadGuard, downloadCsv, fmtQuantity } from '@/services/midlong/midlongFormat'
 import { bucketQuantityLabel, bucketTimeLabel, coverageTag, inheritedLabel, rangeValue, timeStatusTag } from '@/services/midlong/midlongP2Format'
+// 操作导引（dljy#3405）
+import { useGuideForm, useGuideState } from '@/features/guide/bridge'
+import { FORM, STATE } from '@/features/guide/midlong/anchors'
 
 const route = useRoute()
 const router = useRouter()
@@ -127,6 +131,32 @@ watch([selectedCompanyId, () => currentRegion.value.id], () => {
   apply()
 })
 
+// 操作导引（dljy#3405）：筛选表单（fill+submit 纠正 KeepAlive 旧筛选）与报告快照注册给「分解与场站」导引。
+useGuideForm(
+  FORM.intervalFilters,
+  {
+    read: () => ({ ...filters, dateRange: [...filters.dateRange] }),
+    fill: (values) => {
+      for (const [key, value] of Object.entries(values)) (filters as unknown as Record<string, unknown>)[key] = value
+    },
+    submit: () => { apply() },
+  },
+)
+useGuideState(STATE.intervalPositions, () => {
+  const r = report.value
+  if (!r) return null
+  return {
+    fromDate: reportQuery.value?.fromDate ?? null,
+    toDate: reportQuery.value?.toDate ?? null,
+    granularity: reportQuery.value?.granularity ?? null,
+    status: r.status,
+    months: [...new Set(r.contracts.flatMap((c) => c.months.map((m) => m.month)))],
+    timeKnownMonths: [...new Set(r.contracts.flatMap((c) => c.months.filter((m) => m.timeStatus === 'CURVE').map((m) => m.month)))],
+    bucketCount: r.buckets.length,
+    drillDate: drillBucket.value?.start.slice(0, 10) ?? null,
+  }
+})
+
 const totals = computed(() => report.value?.totals ?? null)
 const maxDaysHint = computed(() => `当前粒度一次最多 ${INTERVAL_POSITION_MAX_DAYS[filters.granularity]} 天`)
 const contractById = computed(() => new Map((report.value?.contracts ?? []).map((c) => [c.contractId, c])))
@@ -211,7 +241,10 @@ function buildOption(): Record<string, unknown> {
 
     <template v-if="report && totals && (state === 'ready' || state === 'loading')">
       <div class="ml-filters">
-        <el-date-picker :model-value="filters.dateRange" type="daterange" @update:model-value="(v: unknown) => (filters.dateRange = rangeValue(v))" value-format="YYYY-MM-DD" range-separator="至" start-placeholder="起始日" end-placeholder="结束日" style="width: 240px" />
+        <!-- 锚点挂包装元素：el-date-picker 的 range 变体不透传 data-*（实机走查踩到） -->
+        <span data-guide="ml-interval-filters-date">
+          <el-date-picker :model-value="filters.dateRange" type="daterange" @update:model-value="(v: unknown) => (filters.dateRange = rangeValue(v))" value-format="YYYY-MM-DD" range-separator="至" start-placeholder="起始日" end-placeholder="结束日" style="width: 240px" />
+        </span>
         <el-radio-group v-model="filters.granularity" size="small">
           <el-radio-button v-for="g in GRANULARITY_OPTIONS" :key="g.value" :value="g.value">{{ g.label }}</el-radio-button>
         </el-radio-group>
@@ -240,17 +273,17 @@ function buildOption(): Record<string, unknown> {
       </MidlongNotice>
       <MidlongNotice v-if="report.status === 'empty'" tone="info" title="所选范围内没有已确认的中长期售电义务" />
 
-      <div class="ml-tiles">
-        <div class="ml-tile"><span>区间正式分时电量</span><b>{{ fmtQuantity(totals.curveQuantityInRange) }}<i>MWh</i></b><small>{{ totals.contractCount }} 份已确认合同</small></div>
-        <div class="ml-tile warn"><span>分时未知时段</span><b>{{ totals.unknownBucketCount }}<i>个</i></b><small>另有 {{ totals.partialBucketCount }} 个时段部分未知</small></div>
-        <div class="ml-tile warn"><span>分时未知合同</span><b>{{ totals.timeUnknownContractCount }}<i>份</i></b><small>只有月量或粒度不足 · 不均摊</small></div>
-        <div class="ml-tile warn"><span>未分解到月份</span><b>{{ fmtQuantity(totals.unallocatedPoolQuantity) }}<i>MWh</i></b><small>{{ totals.unallocatedContractCount }} 份合同 · 不计入任何时段</small></div>
-        <div class="ml-tile"><span>内部估算分解集</span><b>{{ report.excluded.estimateCurveSets.length }}<i>套</i></b><small>不计入正式分时持仓</small></div>
+      <div class="tile-grid">
+        <MetricTile label="区间正式分时电量" :value="fmtQuantity(totals.curveQuantityInRange)" unit="MWh" :sub="`${totals.contractCount} 份已确认合同`" />
+        <MetricTile tone="warn" label="分时未知时段" :value="String(totals.unknownBucketCount)" unit="个" :sub="`另有 ${totals.partialBucketCount} 个时段部分未知`" />
+        <MetricTile tone="warn" label="分时未知合同" :value="String(totals.timeUnknownContractCount)" unit="份" sub="只有月量或粒度不足 · 不均摊" />
+        <MetricTile tone="warn" label="未分解到月份" :value="fmtQuantity(totals.unallocatedPoolQuantity)" unit="MWh" :sub="`${totals.unallocatedContractCount} 份合同 · 不计入任何时段`" />
+        <MetricTile label="内部估算分解集" :value="String(report.excluded.estimateCurveSets.length)" unit="套" sub="不计入正式分时持仓" />
       </div>
 
       <ChartCard title="分时持仓（灰色底带为分时未知，虚线框为部分已知）" :height="320" :build-option="buildOption" :empty="report.status === 'empty'" empty-text="暂无已确认持仓" />
 
-      <div class="ml-panel">
+      <div class="ml-panel" data-guide="ml-interval-buckets">
         <h3>时段明细 <small>点击时段查看合同与所用分解集</small></h3>
         <el-table :data="report.buckets" border size="small" max-height="420" highlight-current-row @row-click="(row: IntervalBucket) => (drillBucket = row)">
           <el-table-column label="时段" min-width="200"><template #default="{ row }">{{ row.start.slice(0, 16).replace('T', ' ') }} ~ {{ row.end.slice(11, 16) }}</template></el-table-column>
@@ -264,7 +297,7 @@ function buildOption(): Record<string, unknown> {
         </el-table>
       </div>
 
-      <div v-if="drillBucket" class="ml-panel">
+      <div v-if="drillBucket" class="ml-panel" data-guide="ml-interval-drill">
         <h3>{{ drillBucket.start.slice(0, 16).replace('T', ' ') }} 合同分时来源 <el-button link @click="drillBucket = null">收起</el-button></h3>
         <el-table :data="drillContracts" border size="small">
           <el-table-column label="合同" min-width="220">
@@ -332,18 +365,12 @@ function buildOption(): Record<string, unknown> {
 .ml-placeholder { min-height: 200px; }
 .ml-filters { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .ml-hint { color: var(--muted); font-size: var(--font-sm); margin-left: 4px; }
-.ml-tiles { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; }
-.ml-tile { display: flex; flex-direction: column; gap: 3px; padding: 12px 14px; border: 1px solid var(--line); border-radius: var(--radius, 8px); background: var(--panel); }
-.ml-tile span { font-size: var(--font-sm); color: var(--muted); }
-.ml-tile b { font-size: var(--font-24); font-weight: 650; font-variant-numeric: tabular-nums; font-family: var(--font-display); }
-.ml-tile b i { font-style: normal; font-size: var(--font-sm); color: var(--muted); margin-left: 4px; font-weight: 500; }
-.ml-tile small { font-size: var(--font-xs); color: var(--muted); }
-.ml-tile.warn b { color: var(--warning); }
+.tile-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; }
 .ml-panel { border: 1px solid var(--line); border-radius: var(--radius, 8px); padding: 14px 16px; background: var(--panel); }
 .ml-panel h3 { margin: 0 0 10px; font-size: var(--font-16); display: flex; align-items: baseline; gap: 8px; }
 .ml-panel h3 small { font-size: var(--font-sm); color: var(--muted); font-weight: 400; }
 .ml-link { color: var(--accent); text-decoration: none; margin-right: 6px; }
 .ml-warn { color: var(--warning); }
 .ml-tag { margin: 0 4px 4px 0; }
-@media (max-width: 1100px) { .ml-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 1100px) { .tile-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 </style>

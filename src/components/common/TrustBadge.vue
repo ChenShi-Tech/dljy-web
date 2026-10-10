@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // TrustBadge — 可信度芯片：把 PR-6 的 basis→decisionGrade 判定落地为产出标题旁的小标签。
 // operational（real/captured/user_saved）显绿「可决策」；advisory_only（synthetic/illustrative/占位/未知）显琥珀「仅决策支持」。
-// 主题变量驱动（var(--success)/var(--warning)），四档主题（classic/arc/neon/paper）自动协调，不硬编码。
+// 主题变量驱动（var(--success)/var(--warning)），四档主题（classic/arc/flow/paper）自动协调，不硬编码。
 import { computed } from 'vue'
 import type { DataSourceBasis } from '@/services/data/types'
 import { decisionGradeFromBasis } from '@/services/data/trustGate'

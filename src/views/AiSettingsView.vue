@@ -19,9 +19,12 @@ import {
 } from '@/services/llm'
 import ModelServicesPanel from '../components/ai/ModelServicesPanel.vue'
 import { fetchUsage, type UsageRow } from '@/services/agent/usageClient'
-import { getVoiceConfig, saveVoiceConfig } from '@/services/voice'
 import McpServersPanel from '../components/McpServersPanel.vue'
 import NotifyPanel from '../components/NotifyPanel.vue'
+// 长期记忆与语音播报是个人自助，抽成独立卡片（ChenShi-Tech/dljy#3464）：本页照旧嵌着它们，
+// 内部版 AI 设施整组迁至平台后台后，由 AI 工作室「个人设置」tab 复用同一组件承载。
+import MemoryManagementCard from '../components/ai/MemoryManagementCard.vue'
+import VoiceBroadcastCard from '../components/ai/VoiceBroadcastCard.vue'
 
 // 我方运维令牌（服务端 HARNESS_ADMIN_TOKEN）：写配置时随请求头发送，存本机浏览器。交付档不需要它。
 const adminToken = ref(getAdminToken())
@@ -301,14 +304,6 @@ async function doRemoveDenylist(domain: string) {
   }
 }
 
-// 语音播报（页面跳转提示音）
-// 纯前端 localStorage（voice.ts），默认关、全程静音；AI 回复正文改为每条「朗读」按钮手动播放。
-const ttsEnabled = ref(getVoiceConfig().tts)
-function onTtsChange(v: boolean) {
-  saveVoiceConfig({ tts: v })
-  ElMessage.success(v ? '已开启页面跳转语音播报' : '已关闭语音播报（全程静音）')
-}
-
 async function doTestSearch() {
   if (!searchApiKey.value && !searchSaved.value) {
     ElMessage.warning('请先填写 API Key')
@@ -364,37 +359,6 @@ async function doClearSearch() {
   } catch (err) {
     ElMessage.error(err instanceof Error ? `清除失败：${err.message}` : '清除失败')
   }
-}
-
-// 长期记忆管理（查看/删除当前用户的跨会话记忆）
-import { listMemories, deleteMemory, clearMemories, type MemoryItem } from '@/services/agent/memoryConfig'
-
-const memories = ref<MemoryItem[]>([])
-const memoryLoading = ref(false)
-
-async function loadMemories() {
-  memoryLoading.value = true
-  try {
-    memories.value = (await listMemories()).memories
-  } catch {
-    memories.value = []
-  }
-  memoryLoading.value = false
-}
-onMounted(loadMemories)
-
-async function doDeleteMemory(key: string) {
-  if (await deleteMemory(key)) {
-    ElMessage.success('已删除该记忆')
-    await loadMemories()
-  } else ElMessage.error('删除失败（后端未运行？）')
-}
-
-async function doClearMemories() {
-  if (await clearMemories()) {
-    ElMessage.success('已清空全部长期记忆')
-    await loadMemories()
-  } else ElMessage.error('清空失败')
 }
 
 // 页内分段（模型接入 / 生成行为 / 工具与能力 / 运行观测）：原先 10 张卡片在一页平铺，
@@ -619,47 +583,9 @@ const section = ref<string>('access')
           <NotifyPanel />
         </section>
 
-        <!-- 语音播报（页面跳转提示音） -->
-        <section class="card">
-          <div class="card-head">
-            <h2>语音播报</h2>
-            <span class="muted-tag">{{ ttsEnabled ? '已开启' : '已关闭' }}</span>
-          </div>
-          <p class="sub">
-            控制 AI 助手的<strong>页面跳转提示音</strong>——识别到目标自动跳转时是否朗读「正在前往…」。
-            默认关闭、全程静音；AI 回复正文不会自动朗读，需要时点每条回复下方的「朗读」按钮手动播放。
-            使用浏览器原生语音（Web Speech API），不联网、不上传。
-          </p>
-          <div class="field tts-field">
-            <el-switch v-model="ttsEnabled" @change="onTtsChange" />
-            <label>页面跳转时语音播报</label>
-          </div>
-        </section>
-
-        <!-- 长期记忆管理 -->
-        <section class="card">
-          <div class="card-head">
-            <h3>长期记忆管理</h3>
-            <span v-if="memories.length" class="muted-tag">{{ memories.length }} 条</span>
-          </div>
-          <p class="sub2">
-            智能体在对话中沉淀的跨会话记忆（用户偏好/复盘结论/策略经验/市场规律），按你的登录账号隔离。
-            可查看、删除单条或全部清空。记忆由 <code>save_memory</code> 工具写入、<code>search_memory</code> 检索。
-          </p>
-          <div v-if="memoryLoading" class="hint">加载中…</div>
-          <div v-else-if="!memories.length" class="hint">暂无长期记忆（智能体会在对话中自动沉淀，或未登录）</div>
-          <div v-else class="mem-list">
-            <div v-for="m in memories" :key="m.key" class="mem-row">
-              <span class="mem-topic">{{ m.topic || 'other' }}</span>
-              <span class="mem-content">{{ m.content }}</span>
-              <span class="mem-time">{{ m.created_at || '' }}</span>
-              <el-button text size="small" class="del-btn" @click="doDeleteMemory(m.key)"><Trash2 :size="13" /> 删除</el-button>
-            </div>
-          </div>
-          <div v-if="memories.length" class="actions">
-            <el-button text class="del-btn" @click="doClearMemories">清空全部记忆</el-button>
-          </div>
-        </section>
+        <!-- 语音播报（页面跳转提示音）与长期记忆管理：个人自助卡片（#3464 抽出，迁移后由「个人设置」tab 复用） -->
+        <VoiceBroadcastCard />
+        <MemoryManagementCard />
       </div>
     </div>
 
@@ -702,8 +628,6 @@ const section = ref<string>('access')
 </template>
 
 <style scoped>
-.tts-field { display: flex; align-items: center; gap: 10px; }
-.tts-field label { margin: 0; }
 /* 页面 = 分段导航 + 单个可见分段；卡片的两列排布收敛在 .pane-body 里，
    不再由页面级 grid 按 DOM 顺序「流」，那正是旧版卡片看着零散的根因。 */
 .ai-settings { display: flex; flex-direction: column; gap: 18px; }

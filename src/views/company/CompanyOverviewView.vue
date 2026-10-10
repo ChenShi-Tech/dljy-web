@@ -424,7 +424,7 @@ function buildFinOption(): Record<string, unknown> {
 </template>
 
 <style scoped>
-/* 大屏继承全局主题 token（classic/arc/neon/paper），不再硬编码 arc 深色。
+/* 大屏继承全局主题 token（classic/arc/flow/paper），不再硬编码 arc 深色。
    大屏专用变量（blob 辉光强度 / 网格色 / 径向高光 / KPI 辉光强度）按主题覆盖，
    见文件末 <style> 非 scoped 块，实现四主题对称皮肤（深色辉光、浅色精致）。 */
 .biz-screen {
@@ -538,12 +538,12 @@ function buildFinOption(): Record<string, unknown> {
 <style>
 /* 大屏 el 弹层深色（弹层挂 body，需全局；仅 .co-popper 作用域，不污染其他页面弹层）。
    基础覆盖：panel 背景/边框/文字 + 下拉项 hover + 日期表头/单元格/箭头。 */
-/* 四主题对称皮肤：深色(arc/neon)辉光强、浅色(classic/paper)精致弱辉光。
+/* 四主题对称皮肤：深色(arc/flow)辉光强、浅色(classic/paper)精致弱辉光。
    覆盖 .biz-screen 的大屏专用变量（blob alpha / 网格 / 径向高光 / KPI 辉光强度）。 */
 :root[data-theme='classic'] .biz-screen,
 :root[data-theme='paper'] .biz-screen { --screen-blob-alpha: 0.08; --screen-grid: rgba(15, 23, 42, 0.04); --screen-radial: var(--panel); --kpi-glow-strength: 0.2; }
 :root[data-theme='arc'] .biz-screen { --screen-blob-alpha: 0.4; --screen-grid: rgba(70, 120, 200, 0.06); --screen-radial: #0d1b3a; --kpi-glow-strength: 0.45; }
-:root[data-theme='neon'] .biz-screen { --screen-blob-alpha: 0.45; --screen-grid: rgba(90, 130, 200, 0.07); --screen-radial: #1a0b2e; --kpi-glow-strength: 0.5; }
+:root[data-theme='flow'] .biz-screen { --screen-blob-alpha: 0.35; --screen-grid: rgba(108, 201, 219, 0.06); --screen-radial: #10223a; --kpi-glow-strength: 0.4; }
 
 /* 大屏 el 弹层主题感知（弹层挂 body，用全局 var 继承主题，不再硬编码深色）。 */
 .co-popper.el-popper { background: var(--panel) !important; border: 1px solid var(--line) !important; color: var(--text) !important; }

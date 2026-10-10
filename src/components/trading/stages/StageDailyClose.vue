@@ -48,8 +48,10 @@ const pf = computed(() => decl.value?.preflight ?? {})
 const log = ref<DecisionLogEntry[]>([])
 const errorMsg = ref('')
 const expectedPoints = ref(3)
-/** 存储模式（探针决定）：server=服务端权威台账；local=浏览器原型降级 */
+/** 存储模式（探针决定）：server=服务端权威台账；local=浏览器原型降级。
+ * modeReady：探针落定前不渲染随模式切换的行（决策人），避免刷新时先闪一帧本地态。 */
 const mode = ref<DecisionLogMode>('local')
+const modeReady = ref(false)
 const loadError = ref('')
 /** server 模式的链校验结论（SHA-256 服务端权威，前端不重算）；null=校验服务不可用 */
 const serverVerdict = ref<{ engine: string; verdict: ChainVerdict } | null>(null)
@@ -96,16 +98,33 @@ const chain = computed<ChainView>(() => {
 })
 const coverage = computed(() => coverageOf(log.value, props.targetDate, expectedPoints.value))
 const hits = computed(() => hitRate(log.value))
+
+
+// 链上记录 + T+2 回填：无待回填且链完整时收起；有待回填条目或链断开自动展开
+// （链断裂警示本身留在折叠外直接可见）。手动开合后以手动态优先。
+const chainUserOpen = ref<boolean | null>(null)
+const chainPendingBackfill = computed(() => log.value.some((e) => e.actual === null))
+const chainOpen = computed({
+  get: () => chainUserOpen.value ?? (chainPendingBackfill.value || (!chain.value.unavailable && !chain.value.intact)),
+  set: (v: boolean) => {
+    chainUserOpen.value = v
+  }
+})
 const issues = computed(() => {
   let list = validateDraft({ at: new Date().toISOString(), targetDate: props.targetDate, ...form })
   // server 模式决策人由会话身份落名（服务端强制）：本地 author 校验在此模式无意义
   if (mode.value === 'server') list = list.filter((i) => i.field !== 'author')
   return list
 })
+/** 展示用的校验清单：主必填项的空缺提示由红星 + 写入禁用表达，不再逐条列出；
+ * 口径类错误（分位序、置信度范围等）保持可见。提交拦截仍看全量 issues。 */
+const REQUIRED_MAIN_FIELDS = new Set(['decisionPoint', 'judgement', 'rationale', 'author'])
+const visibleIssues = computed(() => issues.value.filter((i) => !REQUIRED_MAIN_FIELDS.has(i.field)))
 
 onMounted(async () => {
   const snap = await loadLogAsync()
   mode.value = snap.mode
+  modeReady.value = true
   log.value = snap.log
   loadError.value = snap.error ?? ''
   if (snap.mode === 'server') serverVerdict.value = await fetchServerVerdict(snap.mode)
@@ -393,7 +412,15 @@ async function writeBack() {
       <!-- 决策日志 -->
       <section class="dc7-panel">
         <div class="dc7-head">
-          <h3><NotebookPen :size="14" /> 决策日志（T7）</h3>
+          <h3>
+            <NotebookPen :size="14" /> 决策日志（T7）
+            <el-tooltip placement="top" :show-after="150">
+              <template #content>
+                写后不可改，更正只能追加。填写率 100% 是一票否决 KPI。<template v-if="mode === 'server'">决策人由登录身份落名（服务端强制，不可代签）。</template>
+              </template>
+              <span class="dc7-info" tabindex="0">ⓘ</span>
+            </el-tooltip>
+          </h3>
           <div class="dc7-stats">
             <span :class="coverage.meetsVeto ? 'ok' : 'bad'">{{ coverage.recorded }}/{{ coverage.expected }} 当日填写率</span>
             <span v-if="!chain.unavailable" :class="chain.intact ? 'ok' : 'bad'">
@@ -402,7 +429,6 @@ async function writeBack() {
             <span v-else class="bad"><Link2 :size="12" /> 哈希链校验服务不可用</span>
           </div>
         </div>
-        <p class="dc7-sub">写后不可改，更正只能追加。填写率 100% 是一票否决 KPI。</p>
         <AiAssistFill
           kind="decision_log"
           :context="assistContext"
@@ -418,24 +444,41 @@ async function writeBack() {
           <em v-if="logTargetDate !== targetDate">补写模式：条目归属 {{ logTargetDate }}（次日晨会强制补写的落点）</em>
         </div>
         <div class="dc7-form">
-          <label>当日应记录决策点数<input v-model.number="expectedPoints" type="number" min="1" /></label>
-          <label class="full">决策点<input v-model="form.decisionPoint" type="text" placeholder="如：储能充放时段选择" /></label>
-          <label class="full">判断结论<input v-model="form.judgement" type="text" placeholder="如：低谷 02-05 充、尖峰 19-20 放" /></label>
-          <label class="full">理由（须可追溯到成本或机会成本的具体数值）
+          <label class="full">
+            <span class="dc7-lab">当日应记录决策点数</span>
+            <input v-model.number="expectedPoints" type="number" min="1" />
+          </label>
+          <label class="full">
+            <span class="dc7-lab">决策点<i class="dc7-req">*</i></span>
+            <input v-model="form.decisionPoint" type="text" placeholder="如：储能充放时段选择" />
+          </label>
+          <label class="full">
+            <span class="dc7-lab">判断结论<i class="dc7-req">*</i></span>
+            <input v-model="form.judgement" type="text" placeholder="如：低谷 02-05 充、尖峰 19-20 放" />
+          </label>
+          <label class="full">
+            <span class="dc7-lab">理由<i class="dc7-req">*</i></span>
             <input v-model="form.rationale" type="text" placeholder="如：尖谷价差 340，要求价差 109，安全倍数 3.1" />
           </label>
-          <label>P10<input v-model.number="form.p10" type="number" /></label>
-          <label>P50<input v-model.number="form.p50" type="number" /></label>
-          <label>P90<input v-model.number="form.p90" type="number" /></label>
-          <label>置信度<input v-model.number="form.confidence" type="number" min="0" max="100" /></label>
-          <label>决策时点（选填，情绪化识别用）
-            <input v-model="decisionTime" type="datetime-local" title="不参与哈希链；缺省=时点未知（追涨/杀跌不打标）" />
+          <!-- 深化字段直接平铺（slim-s3-s7-stages 评审：不再折叠）——P10/50/90 与置信度
+               服务贝叶斯更新与命中判定、决策时点服务情绪化识别。 -->
+          <div class="dc7-more-grid full">
+              <label>P10<input v-model.number="form.p10" type="number" /></label>
+              <label>P50<input v-model.number="form.p50" type="number" /></label>
+              <label>P90<input v-model.number="form.p90" type="number" /></label>
+              <label>置信度<input v-model.number="form.confidence" type="number" min="0" max="100" /></label>
+              <label class="dt">
+                <span class="dc7-dt-lab">决策时点（选填，情绪化识别用）</span>
+                <input v-model="decisionTime" type="datetime-local" title="不参与哈希链；缺省=时点未知（追涨/杀跌不打标）" />
+              </label>
+          </div>
+          <label v-if="modeReady && mode === 'local'">
+            <span class="dc7-lab">决策人（不可代签）<i class="dc7-req">*</i></span>
+            <input v-model="form.author" type="text" />
           </label>
-          <label v-if="mode === 'local'">决策人（不可代签）<input v-model="form.author" type="text" /></label>
-          <span v-else class="dc7-author-note">决策人：由登录身份落名（服务端强制，不可代签）</span>
         </div>
-        <ul v-if="issues.length" class="dc7-issues">
-          <li v-for="i in issues" :key="i.field">{{ i.message }}</li>
+        <ul v-if="visibleIssues.length" class="dc7-issues">
+          <li v-for="i in visibleIssues" :key="i.field">{{ i.message }}</li>
         </ul>
         <p v-if="errorMsg" class="dc7-error">{{ errorMsg }}</p>
         <div class="dc7-actions">
@@ -445,56 +488,67 @@ async function writeBack() {
           <button v-if="form.correctionOf" type="button" class="ghost" @click="form.correctionOf = null">取消更正</button>
         </div>
 
-        <!-- T+2 回填 -->
-        <div class="dc7-backfill">
-          <select v-model="backfillTarget">
-            <option value="">选择待回填条目…</option>
-            <option v-for="e in log.filter((x) => x.actual === null)" :key="e.id" :value="e.id">#{{ e.seq }} {{ e.decisionPoint }}</option>
-          </select>
-          <input v-model.number="backfillValue" type="number" placeholder="实际结算价" />
-          <input v-model="backfillLesson" type="text" placeholder="事后心得（可选）" />
-          <button type="button" :disabled="!backfillTarget || backfillValue === null" @click="doBackfill">回填</button>
-        </div>
+        <!-- 链上记录与 T+2 回填收纳（slim-s3-s7-stages）：无待回填且链完整时收起，
+             有待回填条目或链断开自动展开（警示本身在折叠外）。 -->
+        <details class="dc7-chain" :open="chainOpen" @toggle="chainOpen = ($event.target as HTMLDetailsElement).open">
+          <summary>
+            链上记录与回填
+            <em v-if="chainPendingBackfill">{{ log.filter((x) => x.actual === null).length }} 条待回填——回填后计入命中判定</em>
+            <em v-else-if="!chain.unavailable && !chain.intact">链已断开——见上方警示</em>
+            <em v-else>{{ log.length }} 条 · 无待回填</em>
+          </summary>
 
-        <!-- 链上记录 -->
-        <div class="dc7-list-head">
-          <span>链上记录（{{ log.length }}）</span>
-          <span class="dc7-list-tools">
-            <button
-              v-if="mode === 'server' && localCount > 0"
-              type="button"
-              class="ghost"
-              :disabled="importing || importDone"
-              :title="'把浏览器原型链按序落进服务端台账（作者改为当前登录身份，落链时间为准）'"
-              @click="importLocal"
-            >
-              <Upload :size="11" /> {{ importDone ? '已导入' : `导入浏览器原型（${localCount} 条）` }}
-            </button>
-            <button v-if="mode === 'local'" type="button" class="ghost" @click="reset"><RefreshCw :size="11" /> 清空（仅原型）</button>
-          </span>
-        </div>
-        <p v-if="importMsg" class="dc7-import-msg">{{ importMsg }}</p>
-        <p v-if="!log.length" class="dc7-empty">尚无记录。</p>
-        <table v-else class="dc7-table">
-          <thead><tr><th>#</th><th>决策点</th><th>判断</th><th>P10/50/90</th><th>置信</th><th>实际</th><th>命中</th><th></th></tr></thead>
-          <tbody>
-            <tr v-for="e in log" :key="e.id" :class="{ correction: e.correctionOf }">
-              <td>{{ e.seq }}</td>
-              <td>{{ e.decisionPoint }}<em v-if="e.correctionOf" class="dc7-corr">更正 {{ e.correctionOf }}</em></td>
-              <td class="dc7-judge">{{ e.judgement }}</td>
-              <td>{{ e.p10 }}/{{ e.p50 }}/{{ e.p90 }}</td>
-              <td>{{ e.confidence }}</td>
-              <td>{{ e.actual ?? '—' }}</td>
-              <td>
-                <span v-if="e.actual === null">—</span>
-                <span v-else :class="e.actual >= e.p10 && e.actual <= e.p90 ? 'hit' : 'miss'">
-                  {{ e.actual >= e.p10 && e.actual <= e.p90 ? '命中' : '偏离' }}
-                </span>
-              </td>
-              <td><button type="button" class="ghost" @click="startCorrection(e)">更正</button></td>
-            </tr>
-          </tbody>
-        </table>
+          <!-- T+2 回填 -->
+          <div class="dc7-backfill">
+            <select v-model="backfillTarget">
+              <option value="">选择待回填条目…</option>
+              <option v-for="e in log.filter((x) => x.actual === null)" :key="e.id" :value="e.id">#{{ e.seq }} {{ e.decisionPoint }}</option>
+            </select>
+            <input v-model.number="backfillValue" type="number" placeholder="实际结算价" />
+            <input v-model="backfillLesson" type="text" placeholder="事后心得（可选）" />
+            <button type="button" :disabled="!backfillTarget || backfillValue === null" @click="doBackfill">回填</button>
+          </div>
+
+          <!-- 链上记录 -->
+          <div class="dc7-list-head">
+            <span>链上记录（{{ log.length }}）</span>
+            <span class="dc7-list-tools">
+              <button
+                v-if="mode === 'server' && localCount > 0"
+                type="button"
+                class="ghost"
+                :disabled="importing || importDone"
+                :title="'把浏览器原型链按序落进服务端台账（作者改为当前登录身份，落链时间为准）'"
+                @click="importLocal"
+              >
+                <Upload :size="11" /> {{ importDone ? '已导入' : `导入浏览器原型（${localCount} 条）` }}
+              </button>
+              <button v-if="mode === 'local'" type="button" class="ghost" @click="reset"><RefreshCw :size="11" /> 清空（仅原型）</button>
+            </span>
+          </div>
+          <p v-if="importMsg" class="dc7-import-msg">{{ importMsg }}</p>
+          <p v-if="!log.length" class="dc7-empty">尚无记录。</p>
+          <table v-else class="dc7-table">
+            <thead><tr><th>#</th><th>决策点</th><th>判断</th><th>P10/50/90</th><th>置信</th><th>实际</th><th>命中</th><th></th></tr></thead>
+            <tbody>
+              <tr v-for="e in log" :key="e.id" :class="{ correction: e.correctionOf }">
+                <td>{{ e.seq }}</td>
+                <td>{{ e.decisionPoint }}<em v-if="e.correctionOf" class="dc7-corr">更正 {{ e.correctionOf }}</em></td>
+                <td class="dc7-judge">{{ e.judgement }}</td>
+                <td>{{ e.p10 }}/{{ e.p50 }}/{{ e.p90 }}</td>
+                <td>{{ e.confidence }}</td>
+                <td>{{ e.actual ?? '—' }}</td>
+                <td>
+                  <span v-if="e.actual === null">—</span>
+                  <span v-else :class="e.actual >= e.p10 && e.actual <= e.p90 ? 'hit' : 'miss'">
+                    {{ e.actual >= e.p10 && e.actual <= e.p90 ? '命中' : '偏离' }}
+                  </span>
+                </td>
+                <td><button type="button" class="ghost" @click="startCorrection(e)">更正</button></td>
+              </tr>
+            </tbody>
+          </table>
+        </details>
         <!-- AI 建议回溯（建议 vs 实际，判断该不该信它） -->
         <AssistTracePanel :target-date="targetDate" />
       </section>
@@ -553,14 +607,17 @@ async function writeBack() {
           </button>
           <button type="button" class="ghost" @click="downloadReport"><Download :size="13" /> 导出日报（Markdown）</button>
           <button type="button" class="ghost" @click="copyReport"><ClipboardCopy :size="13" /> 复制全文</button>
+          <el-tooltip placement="top" :show-after="150">
+            <template #content>
+              导出为 Markdown 落文件 / 复制粘贴自取；定时发送通道（邮件/钉钉）未接——日报发送以人工转发为主，
+              不伪造「已发送」状态。
+            </template>
+            <span class="dc7-info" tabindex="0">ⓘ</span>
+          </el-tooltip>
           <span v-if="copyState" class="dc7-ok">{{ copyState }}</span>
           <span v-if="saveMsg" class="dc7-ok">{{ saveMsg }}</span>
           <span v-if="saveError" class="dc7-error">{{ saveError }}</span>
         </div>
-        <p class="dc7-send-note">
-          导出为 Markdown 落文件 / 复制粘贴自取；定时发送通道（邮件/钉钉）未接——日报发送以人工转发为主，
-          不伪造「已发送」状态。
-        </p>
         <p v-if="coverage.recorded > 0 && !coverage.meetsVeto" class="dc7-veto-warn">
           决策日志填写率未达一票否决线（{{ coverage.recorded }}/{{ coverage.expected }}）——收口时如实标注「未达标」。
         </p>
@@ -571,42 +628,53 @@ async function writeBack() {
 
 <style scoped>
 .dc7 { display: flex; flex-direction: column; gap: 12px; }
-.dc7-warning { display: flex; align-items: flex-start; gap: 6px; margin: 0; padding: 8px 12px; border: 1px dashed #f59e0b; border-radius: 8px; background: #fffbeb; font-size: var(--font-xs); line-height: 1.6; color: #92400e; }
-.dc7-warning.server { border-color: #86efac; background: #f0fdf4; color: #166534; }
-.dc7-author-note { align-self: end; padding: 4px 0; font-size: var(--font-10-5); color: #0369a1; line-height: 1.5; }
+.dc7-warning { display: flex; align-items: flex-start; gap: 6px; margin: 0; padding: 8px 12px; border: 1px dashed var(--warning, #f59e0b); border-radius: 8px; background: var(--warning-tint, #fffbeb); font-size: var(--font-xs); line-height: 1.6; color: var(--warning, #92400e); }
+.dc7-warning.server { border-color: var(--success, #86efac); background: var(--primary-tint, #f0fdf4); color: var(--success, #166534); }
+.dc7-req { font-style: normal; color: var(--danger, #dc2626); margin-left: 2px; }
 .dc7-list-tools { display: inline-flex; gap: 6px; align-items: center; }
-.dc7-import-msg { margin: 6px 0 0; font-size: var(--font-xs); color: #166534; line-height: 1.6; }
+.dc7-import-msg { margin: 6px 0 0; font-size: var(--font-xs); color: var(--success, #166534); line-height: 1.6; }
 
 .dc7-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 @media (max-width: 980px) { .dc7-grid { grid-template-columns: 1fr; } }
 
-.dc7-panel { padding: 12px 14px; border: 1px solid var(--el-border-color-lighter, #ebeef5); border-radius: 10px; background: #fff; }
+.dc7-panel { padding: 12px 14px; border: 1px solid var(--el-border-color-lighter, #ebeef5); border-radius: 10px; background: var(--panel, #fff); }
 .dc7-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; flex-wrap: wrap; }
 .dc7-head h3 { display: flex; align-items: center; gap: 5px; margin: 0; font-size: var(--font-md); }
 .dc7-panel h3 { display: flex; align-items: center; gap: 5px; margin: 10px 0 6px; font-size: var(--font-md); }
 .dc7-panel h3:first-of-type { margin-top: 0; }
 .dc7-stats { display: flex; gap: 10px; font-size: var(--font-xs); }
-.dc7-stats span { display: inline-flex; align-items: center; gap: 3px; padding: 2px 8px; border-radius: 8px; background: #f1f5f9; }
-.dc7-stats .ok { background: #dcfce7; color: #15803d; }
-.dc7-stats .bad { background: #fee2e2; color: #991b1b; }
-.dc7-sub { margin: 4px 0 8px; font-size: var(--font-xs); color: var(--el-text-color-secondary, #667); }
-.dc7-broken { margin: 0 0 8px; padding: 6px 10px; border-radius: 6px; background: #fef2f2; color: #991b1b; font-size: var(--font-sm); }
+.dc7-stats span { display: inline-flex; align-items: center; gap: 3px; padding: 2px 8px; border-radius: 8px; background: var(--panel-sub, #f1f5f9); }
+.dc7-stats .ok { background: var(--primary-tint, #dcfce7); color: var(--success, #15803d); }
+.dc7-stats .bad { background: var(--danger-tint, #fee2e2); color: var(--danger, #991b1b); }
+.dc7-info { display: inline-flex; align-items: center; justify-content: center; width: 15px; height: 15px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 50%; background: var(--panel-sub, #f8fafc); color: var(--el-text-color-secondary, #667); font-size: var(--font-10); font-style: normal; cursor: help; user-select: none; flex-shrink: 0; }
+.dc7-more-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(90px, 1fr)); gap: 14px 8px; }
+.dc7-more-grid label { display: flex; flex-direction: column; gap: 2px; font-size: var(--font-10); color: var(--el-text-color-secondary, #667); }
+.dc7-more-grid input { padding: 4px 6px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 4px; font-size: var(--font-sm); }
+.dc7-more-grid label.dt { grid-column: span 2; flex-direction: row; align-items: center; gap: 8px; }
+.dc7-more-grid label.dt .dc7-dt-lab { flex: 0 0 88px; line-height: 1.4; }
+.dc7-more-grid label.dt input { flex: 1; min-width: 0; }
+.dc7-chain { border: 1px dashed var(--el-border-color-lighter, #ebeef5); border-radius: 8px; padding: 6px 10px; margin-top: 10px; }
+.dc7-chain summary { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: var(--font-sm); font-weight: 600; cursor: pointer; }
+.dc7-chain summary em { font-style: normal; font-weight: 400; font-size: var(--font-10); color: var(--el-text-color-secondary, #889); }
+.dc7-chain[open] summary { margin-bottom: 8px; }
+.dc7-broken { margin: 0 0 8px; padding: 6px 10px; border-radius: 6px; background: var(--danger-tint, #fef2f2); color: var(--danger, #991b1b); font-size: var(--font-sm); }
 
-.dc7-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(90px, 1fr)); gap: 6px 8px; }
-.dc7-form label { display: flex; flex-direction: column; gap: 2px; font-size: var(--font-10); color: var(--el-text-color-secondary, #667); }
-.dc7-form label.full { grid-column: 1 / -1; }
-.dc7-form input { padding: 4px 6px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 4px; font-size: var(--font-sm); }
-.dc7-issues { margin: 6px 0 0; padding-left: 16px; font-size: var(--font-xs); color: #b45309; line-height: 1.7; }
-.dc7-error { margin: 6px 0 0; font-size: var(--font-sm); color: #b91c1c; }
+.dc7-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(90px, 1fr)); gap: 14px 8px; }
+.dc7-form label { display: flex; flex-direction: row; align-items: center; gap: 8px; font-size: var(--font-10); color: var(--el-text-color-secondary, #667); }
+.dc7-form .dc7-lab { flex-shrink: 0; text-align: left; }
+.dc7-form .full { grid-column: 1 / -1; }
+.dc7-form input { flex: 1; min-width: 0; padding: 4px 6px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 4px; font-size: var(--font-sm); }
+.dc7-issues { margin: 6px 0 0; padding-left: 16px; font-size: var(--font-xs); color: var(--warning, #b45309); line-height: 1.7; }
+.dc7-error { margin: 6px 0 0; font-size: var(--font-sm); color: var(--danger, #b91c1c); }
 .dc7-actions { display: flex; gap: 8px; margin-top: 8px; align-items: center; flex-wrap: wrap; }
-.dc7-actions button { padding: 5px 14px; border: 1px solid #2563eb; border-radius: 6px; background: #2563eb; color: #fff; font-size: var(--font-sm); cursor: pointer; display: inline-flex; align-items: center; gap: 4px; }
+.dc7-actions button { padding: 5px 14px; border: 1px solid var(--accent, #2563eb); border-radius: 6px; background: var(--accent, #2563eb); color: #fff; font-size: var(--font-sm); cursor: pointer; display: inline-flex; align-items: center; gap: 4px; }
 .dc7-actions button:disabled { opacity: .45; cursor: not-allowed; }
-.dc7-actions button.ghost { background: #fff; color: inherit; border-color: var(--el-border-color, #dcdfe6); }
-button.ghost { display: inline-flex; align-items: center; gap: 4px; padding: 3px 10px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 5px; background: #fff; color: inherit; font-size: var(--font-xs); cursor: pointer; }
+.dc7-actions button.ghost { background: var(--panel, #fff); color: inherit; border-color: var(--el-border-color, #dcdfe6); }
+button.ghost { display: inline-flex; align-items: center; gap: 4px; padding: 3px 10px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 5px; background: var(--panel, #fff); color: inherit; font-size: var(--font-xs); cursor: pointer; }
 
 .dc7-backfill { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--el-border-color-lighter, #ebeef5); }
 .dc7-backfill select, .dc7-backfill input { padding: 4px 7px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 5px; font-size: var(--font-sm); }
-.dc7-backfill button { padding: 4px 14px; border: 1px solid #2563eb; border-radius: 5px; background: #eff6ff; color: #1d4ed8; font-size: var(--font-sm); cursor: pointer; }
+.dc7-backfill button { padding: 4px 14px; border: 1px solid var(--accent, #2563eb); border-radius: 5px; background: var(--primary-tint, #eff6ff); color: var(--accent, #1d4ed8); font-size: var(--font-sm); cursor: pointer; }
 .dc7-backfill button:disabled { opacity: .45; cursor: not-allowed; }
 
 .dc7-list-head { display: flex; justify-content: space-between; align-items: center; margin-top: 12px; padding-top: 10px; border-top: 1px dashed var(--el-border-color-lighter, #ebeef5); font-size: var(--font-sm); }
@@ -614,40 +682,39 @@ button.ghost { display: inline-flex; align-items: center; gap: 4px; padding: 3px
 .dc7-table { width: 100%; border-collapse: collapse; font-size: var(--font-xs); }
 .dc7-table th, .dc7-table td { padding: 4px 5px; border-bottom: 1px solid var(--el-border-color-lighter, #ebeef5); text-align: left; vertical-align: top; }
 .dc7-table th { color: var(--el-text-color-secondary, #667); font-weight: 600; }
-.dc7-table tr.correction { background: #fffbeb; }
+.dc7-table tr.correction { background: var(--warning-tint, #fffbeb); }
 .dc7-judge { max-width: 140px; }
-.dc7-corr { display: block; font-style: normal; font-size: var(--font-10); color: #b45309; }
-.hit { color: #15803d; }
-.miss { color: #b91c1c; }
+.dc7-corr { display: block; font-style: normal; font-size: var(--font-10); color: var(--warning, #b45309); }
+.hit { color: var(--success, #15803d); }
+.miss { color: var(--danger, #b91c1c); }
 
-.dc7-report { padding: 10px 12px; border-radius: 8px; background: #f8fafc; font-size: var(--font-sm); line-height: 1.9; }
+.dc7-report { padding: 10px 12px; border-radius: 8px; background: var(--panel-sub, #f8fafc); font-size: var(--font-sm); line-height: 1.9; }
 .dc7-report p { margin: 0; }
-.dc7-written { margin-bottom: 8px; padding: 6px 10px; border-radius: 6px; background: #f0fdf4; color: #166534; font-size: var(--font-sm); }
-.dc7-written em { font-style: normal; color: #4d7c0f; }
+.dc7-written { margin-bottom: 8px; padding: 6px 10px; border-radius: 6px; background: var(--primary-tint, #f0fdf4); color: var(--success, #166534); font-size: var(--font-sm); }
+.dc7-written em { font-style: normal; color: var(--success, #4d7c0f); }
 .dc7-summary { width: 100%; padding: 6px 8px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 6px; font-size: var(--font-sm); font-family: inherit; resize: vertical; }
-.dc7-ok { font-size: var(--font-sm); color: #15803d; }
-.dc7-veto-warn { margin: 6px 0 0; font-size: var(--font-xs); color: #b45309; }
+.dc7-ok { font-size: var(--font-sm); color: var(--success, #15803d); }
+.dc7-veto-warn { margin: 6px 0 0; font-size: var(--font-xs); color: var(--warning, #b45309); }
 
 .dc7-logdate { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 6px; font-size: var(--font-xs); }
 .dc7-logdate label { display: flex; align-items: center; gap: 5px; color: var(--el-text-color-secondary, #667); }
 .dc7-logdate input { padding: 3px 6px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 4px; font-size: var(--font-xs); }
-.dc7-logdate.backfill { padding: 5px 8px; border-radius: 6px; background: #fffbeb; }
-.dc7-logdate.backfill em { font-style: normal; color: #92400e; font-size: var(--font-xs); }
+.dc7-logdate.backfill { padding: 5px 8px; border-radius: 6px; background: var(--warning-tint, #fffbeb); }
+.dc7-logdate.backfill em { font-style: normal; color: var(--warning, #92400e); font-size: var(--font-xs); }
 
 .dc7-market { margin-top: 10px; padding: 8px 10px; border: 1px solid var(--el-border-color-lighter, #ebeef5); border-radius: 8px; }
 .dc7-market h4 { margin: 0 0 6px; font-size: var(--font-sm); }
 .dc7-market-stats { display: flex; gap: 14px; flex-wrap: wrap; font-size: var(--font-sm); font-variant-numeric: tabular-nums; }
 .dc7-market-hours { margin-top: 6px; }
 .dc7-market-hours summary { display: flex; align-items: center; gap: 8px; font-size: var(--font-xs); font-weight: 600; cursor: pointer; }
-.dc7-market-hours summary em { font-style: normal; font-weight: 400; font-size: var(--font-10); color: #92400e; }
-.dc7-peak td { background: #fef2f2; }
-.dc7-valley td { background: #f0fdf4; }
+.dc7-market-hours summary em { font-style: normal; font-weight: 400; font-size: var(--font-10); color: var(--warning, #92400e); }
+.dc7-peak td { background: var(--danger-tint, #fef2f2); }
+.dc7-valley td { background: var(--primary-tint, #f0fdf4); }
 
-.dc7-reminders { margin-top: 10px; padding: 8px 10px; border: 1px solid #bfdbfe; border-radius: 8px; background: #f8fbff; }
+.dc7-reminders { margin-top: 10px; padding: 8px 10px; border: 1px solid var(--primary-tint-border, #bfdbfe); border-radius: 8px; background: var(--panel-sub, #f8fbff); }
 .dc7-reminders h4 { display: flex; align-items: center; gap: 5px; margin: 0 0 4px; font-size: var(--font-sm); }
 .dc7-reminders ul { margin: 0 0 6px; padding-left: 18px; font-size: var(--font-sm); line-height: 1.8; }
 .dc7-empty-li { color: var(--el-text-color-secondary, #667); list-style: none; }
-.dc7-send-note { margin: 6px 0 0; font-size: var(--font-10); color: var(--el-text-color-secondary, #889); }
 @media (max-width: 760px) {
   .dc7-table { display: block; overflow-x: auto; }
 }

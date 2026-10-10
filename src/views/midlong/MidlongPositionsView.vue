@@ -11,11 +11,13 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import CompanyScopeBar from '@/components/company/CompanyScopeBar.vue'
 import ChartCard from '@/components/common/ChartCard.vue'
+import MetricTile from '@/components/common/MetricTile.vue'
 import MidlongNotice from '@/components/midlong/MidlongNotice.vue'
 import { selectedCompanyId } from '@/services/company/companyContext'
 import { fetchStations, type CompanyStation } from '@/services/company/companyApi'
 import { currentRegion } from '@/services/region/regionContext'
 import { cssVar } from '@/composables/useTheme'
+import { lastDayOfMonth } from '@/utils/calendarDate'
 import { withAlpha } from '@/services/chart/chartStyle'
 import {
   CompanyNotSelectedError, exportPositions, fetchCapabilities, fetchPositions, fetchSubjects, midlongFailureOf,
@@ -29,6 +31,8 @@ import {
 import {
   averagePriceLabel, createLoadGuard, downloadCsv, fmtAmount, fmtPrice, fmtQuantity, fmtRatio, monthQuantityLabel, notionalAmountLabel,
 } from '@/services/midlong/midlongFormat'
+import { useGuideForm, useGuideState } from '@/features/guide/bridge'
+import { FORM, STATE } from '@/features/guide/midlong/anchors'
 
 const route = useRoute()
 const router = useRouter()
@@ -200,16 +204,35 @@ function buildOption(): Record<string, unknown> {
 }
 
 // P2 入口（dljy#2971）：分时持仓、场站维度持仓只在对应能力开通时出现，带上当前月份与主体筛选。
-const intervalLink = computed(() => ({
-  path: '/zcqjy/positions/intervals',
-  query: { fromDate: `${filters.monthRange[0] ?? report.value?.fromMonth ?? ''}-01`, toDate: `${filters.monthRange[0] ?? report.value?.fromMonth ?? ''}-01`, granularity: 'HOUR', ...(filters.subjectId ? { subjectId: filters.subjectId } : {}) },
-}))
+// 分时跳转落到入口承诺的完整自然月：fromDate 是所选月 1 号，toDate 是该月真实月末（dljy#2984），
+// 不再把两天都钉在 1 号导致目标页首屏只有 24 小时；单月 ≤31 天在小时接口上限内。
+const intervalLink = computed(() => {
+  const month = filters.monthRange[0] ?? report.value?.fromMonth ?? ''
+  return {
+    path: '/zcqjy/positions/intervals',
+    query: { fromDate: `${month}-01`, toDate: lastDayOfMonth(month) ?? '', granularity: 'HOUR', ...(filters.subjectId ? { subjectId: filters.subjectId } : {}) },
+  }
+})
 const stationLink = computed(() => ({
   path: '/zcqjy/positions/stations',
   query: { ...(filters.monthRange.length === 2 ? { fromMonth: filters.monthRange[0], toMonth: filters.monthRange[1] } : {}), ...(filters.subjectId ? { subjectId: filters.subjectId } : {}) },
 }))
 
 const stationName = (id: number | null) => (id ? stations.value.find((s) => s.id === id)?.name ?? `#${id}` : '未分配')
+
+// 操作导引（dljy#3404）：导引跳转过来时用 fill+submit 纠正 KeepAlive 保留的旧月份筛选；
+// 快照驱动第 4 章末尾「区间已查询 / 已钻取月份」的推进与恢复。
+useGuideForm(
+  FORM.positionsFilters,
+  {
+    read: () => ({ ...filters }),
+    fill: (values) => {
+      for (const [key, value] of Object.entries(values)) (filters as unknown as Record<string, unknown>)[key] = value
+    },
+    submit: () => { apply() },
+  },
+)
+useGuideState(STATE.positions, () => ({ months: (report.value?.months ?? []).map((m) => m.month), drillMonth: drillMonth.value }))
 </script>
 
 <template>
@@ -250,8 +273,8 @@ const stationName = (id: number | null) => (id ? stations.value.find((s) => s.id
         <el-button type="primary" @click="apply">查询</el-button>
         <el-button :loading="exporting" @click="doExport">导出</el-button>
         <router-link to="/zcqjy/contracts" class="ml-link">售电合同 →</router-link>
-        <router-link v-if="p2ModuleOn(capabilities, 'curves')" :to="intervalLink" class="ml-link">分时持仓 →</router-link>
-        <router-link v-if="p2ModuleOn(capabilities, 'stationAllocations')" :to="stationLink" class="ml-link">场站维度 →</router-link>
+        <router-link v-if="p2ModuleOn(capabilities, 'curves')" :to="intervalLink" class="ml-link" data-guide="ml-positions-intervals-link">分时持仓 →</router-link>
+        <router-link v-if="p2ModuleOn(capabilities, 'stationAllocations')" :to="stationLink" class="ml-link" data-guide="ml-positions-stations-link">场站维度 →</router-link>
       </div>
 
       <MidlongNotice v-if="report.view === 'AS_OF'" tone="info" title="历史认知时点视图">
@@ -266,12 +289,12 @@ const stationName = (id: number | null) => (id ? stations.value.find((s) => s.id
         草稿 {{ report.excluded.draftCount }}、待核对 {{ report.excluded.pendingVerificationCount }} 份合同需核验确认后才会计入。
       </MidlongNotice>
 
-      <div class="ml-tiles">
-        <div class="ml-tile"><span>区间正式分解电量</span><b>{{ fmtQuantity(totals.formalQuantityInRange) }}<i>MWh</i></b><small>{{ totals.contractCount }} 份已确认合同</small></div>
-        <div class="ml-tile warn"><span>跨期未分解电量</span><b>{{ fmtQuantity(totals.unallocatedPoolQuantity) }}<i>MWh</i></b><small>{{ totals.unallocatedContractCount }} 份合同 · 不按月均摊</small></div>
-        <div class="ml-tile"><span>涉及合同总量</span><b>{{ fmtQuantity(totals.contractTotalQuantity) }}<i>MWh</i></b><small>含区间外月份</small></div>
-        <div class="ml-tile"><span>价格覆盖</span><b>{{ fmtRatio(totals.price.coverageRatio) }}</b><small>已知价格 {{ fmtQuantity(totals.price.knownPriceQuantity) }} MWh</small></div>
-        <div class="ml-tile"><span>已知部分加权均价</span><b class="ml-small">{{ averagePriceLabel(totals.price) }}</b><small>名义金额 {{ notionalAmountLabel(totals.price) }}</small></div>
+      <div class="tile-grid">
+        <MetricTile label="区间正式分解电量" :value="fmtQuantity(totals.formalQuantityInRange)" unit="MWh" :sub="`${totals.contractCount} 份已确认合同`" />
+        <MetricTile tone="warn" label="跨期未分解电量" :value="fmtQuantity(totals.unallocatedPoolQuantity)" unit="MWh" :sub="`${totals.unallocatedContractCount} 份合同 · 不按月均摊`" />
+        <MetricTile label="涉及合同总量" :value="fmtQuantity(totals.contractTotalQuantity)" unit="MWh" sub="含区间外月份" />
+        <MetricTile label="价格覆盖" :value="fmtRatio(totals.price.coverageRatio)" :sub="`已知价格 ${fmtQuantity(totals.price.knownPriceQuantity)} MWh`" />
+        <MetricTile compact label="已知部分加权均价" :value="averagePriceLabel(totals.price)" :sub="`名义金额 ${notionalAmountLabel(totals.price)}`" />
       </div>
 
       <MidlongNotice v-if="!totals.price.comparable" tone="warn" title="价格口径不可合并">
@@ -285,7 +308,7 @@ const stationName = (id: number | null) => (id ? stations.value.find((s) => s.id
 
       <ChartCard title="月度持仓（虚线框月份另有未分解电量）" :height="320" :build-option="buildOption" :empty="report.status === 'empty'" empty-text="暂无已确认持仓" />
 
-      <div class="ml-panel">
+      <div class="ml-panel" data-guide="ml-positions-months">
         <h3>月度明细 <small>点击月份查看合同贡献</small></h3>
         <el-table :data="report.months" border size="small" highlight-current-row @row-click="(row: MidlongPositionMonth) => (drillMonth = row.month)">
           <el-table-column prop="month" label="月份" width="100" />
@@ -298,7 +321,7 @@ const stationName = (id: number | null) => (id ? stations.value.find((s) => s.id
         </el-table>
       </div>
 
-      <div v-if="drillMonth" class="ml-panel">
+      <div v-if="drillMonth" class="ml-panel" data-guide="ml-positions-drill">
         <h3>{{ drillMonth }} 合同贡献 <el-button link @click="drillMonth = null">收起</el-button></h3>
         <el-table :data="drillRows" border size="small">
           <el-table-column label="合同" min-width="200">
@@ -344,18 +367,11 @@ const stationName = (id: number | null) => (id ? stations.value.find((s) => s.id
 .ml-sub { color: var(--muted); font-size: var(--font-md); }
 .ml-placeholder { min-height: 200px; }
 .ml-filters { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.ml-tiles { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; }
-.ml-tile { display: flex; flex-direction: column; gap: 3px; padding: 12px 14px; border: 1px solid var(--line); border-radius: var(--radius, 8px); background: var(--panel); }
-.ml-tile span { font-size: var(--font-sm); color: var(--muted); }
-.ml-tile b { font-size: var(--font-24); font-weight: 650; font-variant-numeric: tabular-nums; font-family: var(--font-display); }
-.ml-tile b.ml-small { font-size: var(--font-16); }
-.ml-tile b i { font-style: normal; font-size: var(--font-sm); color: var(--muted); margin-left: 4px; font-weight: 500; }
-.ml-tile small { font-size: var(--font-xs); color: var(--muted); }
-.ml-tile.warn b { color: var(--warning); }
+.tile-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; }
 .ml-panel { border: 1px solid var(--line); border-radius: var(--radius, 8px); padding: 14px 16px; background: var(--panel); }
 .ml-panel h3 { margin: 0 0 10px; font-size: var(--font-16); display: flex; align-items: baseline; gap: 8px; }
 .ml-panel h3 small { font-size: var(--font-sm); color: var(--muted); font-weight: 400; }
 .ml-link { color: var(--accent); text-decoration: none; margin-right: 6px; }
 .ml-warn { color: var(--warning); }
-@media (max-width: 1100px) { .ml-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 1100px) { .tile-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 </style>

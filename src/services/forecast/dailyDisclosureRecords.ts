@@ -1,7 +1,7 @@
 // 当日披露事件：只读取最新 grid.disclosure_events 规范化事件契约。
 import { apiGet, type ApiRequestOptions } from '@/services/api'
 import { selectedCompanyId } from '@/services/company/companyContext'
-import { companyRegionId } from '@/services/region/regionCompany'
+import { effectiveCompanyRegionId } from '@/services/company/practiceCompany'
 
 const BASE = '/v1/grid/geo-assets/disclosures/events'
 const PAGE_SIZE = 20
@@ -99,7 +99,8 @@ function scopedQuery(region: string) {
   if (region !== 'yunnan') throw new Error('披露事件当前仅接入云南及明确标注的南网全网记录')
   const company = selectedCompanyId.value.trim()
   if (!company) throw new Error('请先选择当前地区的授权公司')
-  const companyRegion = companyRegionId(company)
+  // 练习公司按上级公司的地区判断（#3403 · codex R1-02）
+  const companyRegion = effectiveCompanyRegionId(company)
   if (companyRegion && companyRegion !== region) throw new Error('当前公司不属于所选地区')
   return { region, company }
 }

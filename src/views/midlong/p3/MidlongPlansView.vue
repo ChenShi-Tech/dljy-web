@@ -28,6 +28,9 @@ import {
 } from '@/services/midlong/midlongP3Types'
 import type { MidlongCapabilities, MidlongSubject } from '@/services/midlong/midlongTypes'
 import { ElMessage } from 'element-plus'
+// 操作导引（dljy#3406）：计划页快照与行内确认信号接给「计划与交易执行」导引。
+import { emitGuideSignal, useGuideState } from '@/features/guide/bridge'
+import { SIGNAL, STATE } from '@/features/guide/midlong/anchors'
 
 const route = useRoute()
 const router = useRouter()
@@ -235,6 +238,7 @@ async function doConfirmPlan(row: PlanProgressRow) {
   try {
     await confirmPlan(row.id, row.rowVersion)
     ElMessage.success(`目标 ${planPeriodLabel(row.periodType, row.periodKey)} 已确认新版本`)
+    emitGuideSignal(SIGNAL.planConfirmed, { planId: row.id, periodKey: row.periodKey })
     await Promise.all([loadTargets(), reloadPlanDrawer(row.id)])
   } catch (e) {
     const f = midlongFailureOf(e)
@@ -311,6 +315,26 @@ async function onProposalSaved(result: ProposalWriteResult) {
 }
 
 const segmentSummary = (p: TradeProposalDetail) => p.segments.map((s) => `${s.deliveryMonth} ${fmtQuantity(s.quantity)}`).join('；')
+
+// 操作导引（dljy#3406）：两个标签页的数据都放进快照（未加载的 tab 返回空数组），恢复判定不因当前 tab 缺数据而误判。
+useGuideState(STATE.plans, () => {
+  if (state.value !== 'ready') return null
+  return {
+    canWrite: canWrite.value,
+    subjectsReady: subjects.value.length > 0,
+    windowsReady: windows.value.length > 0,
+    targets: (report.value?.rows ?? []).map((row) => ({
+      id: row.id,
+      subjectId: row.subjectId,
+      periodKey: row.periodKey,
+      confirmedRevisionNo: row.confirmedRevision?.revisionNo ?? null,
+      draftRevisionNo: row.draftRevision?.revisionNo ?? null,
+      openOccupationQuantity: row.progress.openOccupationQuantity,
+      knownSoldQuantity: row.progress.knownSoldQuantity,
+    })),
+    proposals: proposals.value.map((p) => ({ id: p.id, status: p.status, subjectId: p.subjectId })),
+  }
+})
 </script>
 
 <template>
@@ -349,7 +373,7 @@ const segmentSummary = (p: TradeProposalDetail) => p.segments.map((s) => `${s.de
               <el-option v-for="t in PLAN_PERIOD_TYPES" :key="t" :label="PLAN_PERIOD_TYPE_LABELS[t]" :value="t" />
             </el-select>
             <el-button type="primary" @click="search">查询</el-button>
-            <el-button v-if="canWrite && report.view === 'CURRENT'" @click="openPlanDialog('create')">新建目标</el-button>
+            <el-button v-if="canWrite && report.view === 'CURRENT'" data-guide="ml-plans-new-target" @click="openPlanDialog('create')">新建目标</el-button>
           </div>
 
           <MidlongNotice v-if="report.view === 'AS_OF'" tone="info" title="历史视图（旧报告）">
@@ -361,7 +385,7 @@ const segmentSummary = (p: TradeProposalDetail) => p.segments.map((s) => `${s.de
           <MidlongNotice v-if="hasOverCommitted" tone="warn" title="占用超过目标">{{ PLANNING_NOTICES.overCommitted }}</MidlongNotice>
           <MidlongNotice v-if="planActionError" tone="danger" title="操作未完成">{{ planActionError }}</MidlongNotice>
 
-          <el-table :data="report.rows" border size="small" class="ml-table">
+          <el-table :data="report.rows" border size="small" class="ml-table" data-guide="ml-plans-target-table">
             <el-table-column label="交易主体" min-width="130"><template #default="{ row }">{{ row.subjectName ?? `#${row.subjectId}` }}</template></el-table-column>
             <el-table-column label="交割期" width="130"><template #default="{ row }">{{ planPeriodLabel(row.periodType, row.periodKey) }}</template></el-table-column>
             <el-table-column label="确认目标(MWh)" width="130" align="right">
@@ -393,7 +417,7 @@ const segmentSummary = (p: TradeProposalDetail) => p.segments.map((s) => `${s.de
                 <el-button link type="primary" @click="Object.assign(planDrawer, { open: true, planId: row.id })">版本与占用</el-button>
                 <template v-if="canWrite && report.view === 'CURRENT'">
                   <el-button v-if="row.draftRevision" link @click="openPlanDialog('edit', row)">修改</el-button>
-                  <el-button v-if="row.draftRevision" link type="primary" :loading="confirming === row.id" @click="doConfirmPlan(row)">确认</el-button>
+                  <el-button v-if="row.draftRevision" link type="primary" :loading="confirming === row.id" data-guide="ml-plan-row-confirm" @click="doConfirmPlan(row)">确认</el-button>
                   <el-button v-if="!row.draftRevision && row.confirmedRevision" link @click="openPlanDialog('revise', row)">发起更改</el-button>
                 </template>
               </template>
@@ -417,13 +441,13 @@ const segmentSummary = (p: TradeProposalDetail) => p.segments.map((s) => `${s.de
               <el-option v-for="s in subjects" :key="s.id" :label="s.displayName" :value="String(s.id)" />
             </el-select>
             <el-button type="primary" @click="search">查询</el-button>
-            <el-button v-if="canWrite" :loading="windowsLoading" @click="openProposalForm(null)">新建方案草稿</el-button>
+            <el-button v-if="canWrite" :loading="windowsLoading" data-guide="ml-plans-new-proposal" @click="openProposalForm(null)">新建方案草稿</el-button>
           </div>
           <MidlongNotice tone="info">{{ PLANNING_NOTICES.simulation }}</MidlongNotice>
           <MidlongNotice v-if="proposalsError" tone="danger" title="方案列表加载失败" data-test="proposals-error">
             {{ proposalsError }} <el-button link type="primary" @click="loadProposals">重试</el-button>
           </MidlongNotice>
-          <el-table v-loading="proposalsLoading" :data="proposals" border size="small" class="ml-table" @row-click="(row: TradeProposalDetail) => openProposal(row.id)">
+          <el-table v-loading="proposalsLoading" :data="proposals" border size="small" class="ml-table" data-guide="ml-plans-proposal-table" @row-click="(row: TradeProposalDetail) => openProposal(row.id)">
             <el-table-column label="方案" width="80"><template #default="{ row }">#{{ row.id }}</template></el-table-column>
             <el-table-column label="状态" width="110"><template #default="{ row }"><el-tag size="small" :type="proposalStatusTag(row.status).type">{{ proposalStatusTag(row.status).label }}</el-tag></template></el-table-column>
             <el-table-column label="交易主体" min-width="120"><template #default="{ row }">{{ row.subjectName ?? `#${row.subjectId}` }}</template></el-table-column>

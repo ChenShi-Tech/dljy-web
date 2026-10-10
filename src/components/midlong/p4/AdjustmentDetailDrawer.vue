@@ -17,6 +17,9 @@ import {
 } from '@/services/midlong/midlongP4Types'
 import { beijingDateTime } from '@/services/midlong/midlongP3Format'
 import { selectedCompanyId } from '@/services/company/companyContext'
+// 操作导引（dljy#3407）：确认生效表单接给导引，生效成功发推进信号。
+import { emitGuideSignal, useGuideForm } from '@/features/guide/bridge'
+import { FORM, SIGNAL } from '@/features/guide/midlong/anchors'
 import { currentRegion } from '@/services/region/regionContext'
 
 const props = defineProps<{ modelValue: boolean; adjustmentId: number | null; canWrite: boolean }>()
@@ -121,6 +124,20 @@ const current = computed(() => detail.value?.revisions.at(-1) ?? null)
 const effective = computed(() => detail.value?.status === 'EFFECTIVE')
 const pendingDirection = computed(() => detail.value?.status === 'PENDING_VERIFICATION')
 
+// 操作导引（dljy#3407）：确认生效子对话框的文件字段接给导引。
+useGuideForm(
+  FORM.adjustmentConfirm,
+  {
+    read: () => ({ hasFile: confirmDialog.file !== null, hasEvidence: Boolean(current.value?.evidenceIds.length) }),
+    fill: (values) => {
+      for (const [key, value] of Object.entries(values)) {
+        if (key === 'file') confirmDialog.file = value as File | null
+      }
+    },
+  },
+  { active: () => props.modelValue && confirmDialog.open },
+)
+
 function onConfirmFile(event: Event) {
   const input = event.target as HTMLInputElement
   const selected = input.files?.[0] ?? null
@@ -138,6 +155,8 @@ function submitConfirm() {
       expectedRowVersion: d.rowVersion,
       file: selected ? { fileName: selected.name, contentBase64, mediaType: selected.type || null } : null,
     })
+    // 操作导引（dljy#3407）：生效成功（占用/义务已原子更新）发推进信号。
+    emitGuideSignal(SIGNAL.adjustmentConfirmed, { adjustmentId: d.id, contractRevisionNo: saved.contractRevisionNo, totalDelta: saved.totalDelta })
     confirmResult.value = saved
     confirmDialog.open = false
   }, '已生效（合同新版本与生效台账已生成）')
@@ -183,7 +202,7 @@ function submitConfirm() {
       </div>
 
       <div class="p4-section">
-        <h4>变更影响（{{ impact?.snapshot.frozen ? '生效台账冻结快照' : '拟变更（未生效）' }}）</h4>
+        <h4 data-guide="ml-adjustment-impact">变更影响（{{ impact?.snapshot.frozen ? '生效台账冻结快照' : '拟变更（未生效）' }}）</h4>
         <MidlongNotice v-if="impactFailure" tone="warn" title="影响查询失败">{{ impactFailure }} <el-button link type="primary" @click="load">重试</el-button></MidlongNotice>
         <template v-if="impact">
           <div v-for="m in impact.snapshot.months" :key="m.deliveryMonth" class="p4-row" :data-test="`impact-month-${m.deliveryMonth}`">
@@ -228,7 +247,7 @@ function submitConfirm() {
       </div>
 
       <template v-if="confirmResult">
-        <MidlongNotice tone="info" :title="`已生效：合同 v${confirmResult.contractRevisionNo}（基线 v${confirmResult.baseRevisionNo}）`" data-test="confirm-result">
+        <MidlongNotice tone="info" :title="`已生效：合同 v${confirmResult.contractRevisionNo}（基线 v${confirmResult.baseRevisionNo}）`" data-guide="ml-adjustment-confirm-result" data-test="confirm-result">
           <div v-for="m in confirmResult.months" :key="m.deliveryMonth">{{ impactMonthLine(m) }}</div>
           <div>总差量 {{ signedDeltaLabel(confirmResult.totalDelta) }}，调整后总量 {{ fmtQuantity(confirmResult.totalQuantityAfter) }} MWh。</div>
           <div v-for="line in priceLines(confirmResult.prices)" :key="line">{{ line }}</div>
@@ -237,7 +256,7 @@ function submitConfirm() {
       </template>
 
       <div v-if="canWrite && !effective" class="p4-actions">
-        <el-button type="primary" plain :disabled="Boolean(busy) || pendingDirection" data-test="confirm-adjustment" @click="Object.assign(confirmDialog, { open: true, file: null })">确认生效</el-button>
+        <el-button type="primary" plain :disabled="Boolean(busy) || pendingDirection" data-guide="ml-adjustment-confirm" data-test="confirm-adjustment" @click="Object.assign(confirmDialog, { open: true, file: null })">确认生效</el-button>
         <el-button plain :disabled="Boolean(busy)" data-test="revise-adjustment" @click="reviseDialog = true">修订（新版本）</el-button>
       </div>
       <div v-if="canWrite && pendingDirection" class="p4-muted">方向待核对：请以修订补明确方向（或先登记显式映射）后再确认生效。</div>
@@ -250,12 +269,12 @@ function submitConfirm() {
         该调整尚无依据资料：生效必须附核验依据，请选择文件（登记时未附的在此补传）。
       </MidlongNotice>
       <div class="p4-fields">
-        <label class="p4-field"><span>依据文件（无既有依据时必填）</span><input type="file" data-test="confirm-file" @change="onConfirmFile" /></label>
+        <label class="p4-field" data-guide="ml-adjustment-confirm-file"><span>依据文件（无既有依据时必填）</span><input type="file" data-test="confirm-file" @change="onConfirmFile" /></label>
       </div>
       <MidlongNotice v-if="actionError" tone="danger">{{ actionError }}</MidlongNotice>
       <template #footer>
         <el-button @click="confirmDialog.open = false">取消</el-button>
-        <el-button type="primary" :loading="busy === 'confirm'" :disabled="!current?.evidenceIds.length && !confirmDialog.file" data-test="submit-confirm" @click="submitConfirm">确认生效（原子）</el-button>
+        <el-button type="primary" :loading="busy === 'confirm'" :disabled="!current?.evidenceIds.length && !confirmDialog.file" data-guide="ml-adjustment-confirm-submit" data-test="submit-confirm" @click="submitConfirm">确认生效（原子）</el-button>
       </template>
     </el-dialog>
 

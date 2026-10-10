@@ -18,6 +18,9 @@ import {
 import { fmtQuantity } from '@/services/midlong/midlongFormat'
 import { segmentLabel } from '@/services/midlong/midlongP2Format'
 import { createDialogSession } from '@/services/midlong/midlongP2Session'
+// 操作导引（dljy#3405）：分配表单注册给「分解与场站」导引；存草稿、确认成功各发一个推进信号。
+import { emitGuideSignal, useGuideForm } from '@/features/guide/bridge'
+import { FORM, SIGNAL } from '@/features/guide/midlong/anchors'
 
 const props = defineProps<{
   modelValue: boolean
@@ -96,6 +99,33 @@ function addRow() {
   form.rows.push({ stationId: null, segmentMonth: form.segmentMode === 'MONTHLY' ? months.value[0] ?? '' : '', quantity: '' })
 }
 
+// 操作导引（dljy#3405）：read 里带上预览结论与已选依据候选，供「分给两个练习场站」一步的完成判定与示例值使用；
+// 草稿保存后表单锁定（el-form disabled），fill 也同步拒写，避免导引改到已保存的行。
+useGuideForm(
+  FORM.stationAllocation,
+  {
+    read: () => ({
+      allocationKind: form.allocationKind,
+      segmentMode: form.segmentMode,
+      rows: form.rows.map((r) => ({ ...r })),
+      evidenceIds: [...form.evidenceIds],
+      basisNote: form.basisNote,
+      evidenceOptions: basisEvidence.value.map((e) => e.id),
+      draftSetNo: draft.value?.setNo ?? null,
+      blocking: draft.value ? draft.value.validation.blocking : preview.value.segments.some((s) => s.status === 'EXCEEDS'),
+    }),
+    fill: (values) => {
+      if (draft.value) return
+      for (const [key, value] of Object.entries(values)) {
+        if (key === 'rows') form.rows = (value as Row[]).map((r) => ({ ...r }))
+        else if (key === 'evidenceIds') form.evidenceIds = [...(value as number[])]
+        else (form as unknown as Record<string, unknown>)[key] = value
+      }
+    },
+  },
+  { active: () => props.modelValue },
+)
+
 async function saveDraft() {
   if (busy.value) return
   const token = session.begin(targetKey())
@@ -111,6 +141,7 @@ async function saveDraft() {
       evidenceIds: form.evidenceIds,
     })
     emit('changed')
+    emitGuideSignal(SIGNAL.allocationDraftSaved, { contractId: props.overview.contractId, allocationSetId: saved.allocationSetId, setNo: saved.setNo, blocking: saved.validation.blocking })
     if (session.isCurrent(token, targetKey())) draft.value = saved
   } catch (error) {
     if (session.isCurrent(token, targetKey())) failure.value = midlongFailureOf(error)
@@ -123,12 +154,14 @@ async function confirm() {
   if (!draft.value || confirmBlocked.value || busy.value) return
   const token = session.begin(targetKey())
   const kind = form.allocationKind
+  const setId = draft.value.allocationSetId
   busy.value = true
   failure.value = null
   try {
-    await confirmStationAllocationSet(draft.value.allocationSetId, { evidenceIds: form.evidenceIds, basisNote: form.basisNote.trim() || undefined })
+    await confirmStationAllocationSet(setId, { evidenceIds: form.evidenceIds, basisNote: form.basisNote.trim() || undefined })
     ElMessage.success(kind === 'FORMAL_TRADING' ? '场站分配已确认，场站维度持仓按新分配拆分' : '内部经营分配已确认（不作为正式交易分解）')
     emit('changed')
+    emitGuideSignal(SIGNAL.allocationConfirmed, { contractId: props.overview.contractId, allocationSetId: setId })
     if (session.isCurrent(token, targetKey())) emit('update:modelValue', false)
   } catch (error) {
     if (session.isCurrent(token, targetKey())) failure.value = midlongFailureOf(error)
@@ -146,7 +179,7 @@ const failureDetails = computed(() => failure.value?.details as { segments?: Sta
       合同电量 {{ fmtQuantity(overview.totalQuantity) }} MWh 由交易单元统签；场站份额是同一义务的拆分，分配合计不得超过片段电量，剩余为未分配。新分配集是完整快照，确认后替换当前生效的同类分配。
     </MidlongNotice>
     <el-form label-width="96px" class="ml-form" :disabled="Boolean(draft)">
-      <el-form-item label="分配类型">
+      <el-form-item label="分配类型" data-guide="ml-alloc-type">
         <el-radio-group v-model="form.allocationKind" @change="onKindChange">
           <el-radio value="FORMAL_TRADING">{{ STATION_ALLOCATION_KIND_LABELS.FORMAL_TRADING }}</el-radio>
           <el-radio value="INTERNAL_OPERATING">{{ STATION_ALLOCATION_KIND_LABELS.INTERNAL_OPERATING }}（非正式交易分解）</el-radio>
@@ -158,7 +191,7 @@ const failureDetails = computed(() => failure.value?.details as { segments?: Sta
           <el-radio v-for="(label, mode) in STATION_SEGMENT_MODE_LABELS" :key="mode" :value="mode">{{ label }}</el-radio>
         </el-radio-group>
       </el-form-item>
-      <el-form-item label="分配行">
+      <el-form-item label="分配行" data-guide="ml-alloc-rows">
         <div class="ml-rows">
           <div v-for="(row, index) in form.rows" :key="index" class="ml-row">
             <el-select v-model="row.stationId" placeholder="场站" filterable style="width: 200px">
@@ -176,7 +209,7 @@ const failureDetails = computed(() => failure.value?.details as { segments?: Sta
       </el-form-item>
     </el-form>
     <el-form label-width="96px">
-      <el-form-item :label="form.allocationKind === 'FORMAL_TRADING' ? '依据资料' : '依据说明'">
+      <el-form-item :label="form.allocationKind === 'FORMAL_TRADING' ? '依据资料' : '依据说明'" data-guide="ml-alloc-evidence">
         <el-select v-if="form.allocationKind === 'FORMAL_TRADING'" v-model="form.evidenceIds" multiple placeholder="选择合同已有资料" style="width: 100%">
           <el-option v-for="e in basisEvidence" :key="e.id" :label="`${EVIDENCE_DOCUMENT_TYPE_LABELS[e.documentType]} · ${e.originalFileName}`" :value="e.id" />
         </el-select>
@@ -184,7 +217,7 @@ const failureDetails = computed(() => failure.value?.details as { segments?: Sta
       </el-form-item>
     </el-form>
 
-    <el-table :data="segments" border size="small" class="ml-segments">
+    <el-table :data="segments" border size="small" class="ml-segments" data-guide="ml-alloc-balance">
       <el-table-column label="片段" width="120"><template #default="{ row }">{{ segmentLabel(row.segment) }}</template></el-table-column>
       <el-table-column label="片段电量(MWh)" width="140" align="right"><template #default="{ row }">{{ row.segmentQuantity === null ? '未知（不能确认）' : fmtQuantity(row.segmentQuantity) }}</template></el-table-column>
       <el-table-column label="已分配" width="120" align="right"><template #default="{ row }">{{ fmtQuantity(row.allocatedQuantity) }}</template></el-table-column>
@@ -207,8 +240,8 @@ const failureDetails = computed(() => failure.value?.details as { segments?: Sta
     <template #footer>
       <span v-if="confirmBlocked" class="ml-hint">{{ confirmBlocked }}</span>
       <el-button @click="emit('update:modelValue', false)">{{ draft ? '关闭' : '取消' }}</el-button>
-      <el-button v-if="!draft" type="primary" :loading="busy" :disabled="!form.rows.length" @click="saveDraft">保存草稿并校验</el-button>
-      <el-button v-else type="primary" :loading="busy" :disabled="Boolean(confirmBlocked)" @click="confirm">确认分配</el-button>
+      <el-button v-if="!draft" type="primary" :loading="busy" :disabled="!form.rows.length" data-guide="ml-alloc-save" @click="saveDraft">保存草稿并校验</el-button>
+      <el-button v-else type="primary" :loading="busy" :disabled="Boolean(confirmBlocked)" data-guide="ml-alloc-confirm" @click="confirm">确认分配</el-button>
     </template>
   </el-dialog>
 </template>

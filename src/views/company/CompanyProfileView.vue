@@ -6,8 +6,16 @@ import { hasCompanyAdmin, subjectTypeLabels, type SubjectType } from '@/services
 import { companyOptions, currentCompany, selectedCompanyId } from '@/services/company/companyContext'
 import { fetchCompanySubjectTypes, fetchProfile, saveCompanySubjectTypes, saveProfile } from '@/services/company/companyApi'
 import CompanyScopeBar from '@/components/company/CompanyScopeBar.vue'
+import { isEntryHidden } from '@/features/platformAdminMigration/registry'
+import MigratedToAdminNotice from '@/features/platformAdminMigration/MigratedToAdminNotice.vue'
 
 const canWrite = computed(() => hasCompanyAdmin(getCurrentUser()))
+// 注册立场编辑已迁至平台后台（ChenShi-Tech/dljy#3464，内部版）：写入落点是平台全局公司主数据、
+// 也是立场切换授权的服务端权威，由平台人员在后台客户详情里处理。内部版立场块恢复只读展示已登记
+// 立场（dljy#3518，迁移清单 §3.7）：所有角色可见、不可编辑，读接口未被收窄照常读取，写接口
+// saveCompanySubjectTypes 不再调用；「已迁至平台后台」提示只对平台人员渲染（registry 的角色闸门），
+// 客户账号只见只读立场。客户交付版不受影响（登记表恒答未迁移，立场块照旧可编辑）。
+const registryMigrated = isEntryHidden('subject-registry')
 
 const form = reactive({ contact: '', address: '', businessScope: '' })
 const loading = ref(false)
@@ -21,31 +29,62 @@ const subjectTypeOptions = (Object.keys(subjectTypeLabels) as SubjectType[]).map
   label: subjectTypeLabels[t]
 }))
 
+// 内部版只读态的说明去掉编辑指引（「清空即退回单立场」），且不提后台——客户账号不见任何
+// 后台路径或提示（AI-06）；只读态只描述立场是什么。
+const registryHint = computed(() =>
+  registryMigrated
+    ? '公司在交易中心登记的市场主体类型。交易组合（TRADER）与集团（GROUP）账号可在登记立场间切换作业视角；其余主体单立场。'
+    : '公司在交易中心登记的市场主体类型。交易组合（TRADER）与集团（GROUP）账号可在登记立场间切换作业视角；其余主体单立场。清空即退回单立场。'
+)
+
+// 切换公司时的并发读守卫（dljy-web#228，codex R1-01）：连续切换公司、或挂载后公司列表刷新校正
+// 了选中公司，会让上一次请求变成「先发后到」——不校验就把旧公司的档案 / 立场（失败时为空数组）
+// 写到当前页面，还会提前清掉新请求的 loading。发请求前记下序号与公司快照，应用结果与 finally
+// 清 loading 之前都核对「仍是最新请求且公司未变」，过期响应整体丢弃（含错误提示）。
+let profileRequestSeq = 0
+let registryRequestSeq = 0
+
 async function reload() {
+  const seq = ++profileRequestSeq
+  const companyId = selectedCompanyId.value
+  const stale = () => seq !== profileRequestSeq || companyId !== selectedCompanyId.value
   loading.value = true
   try {
     const profile = await fetchProfile()
+    if (stale()) return
     form.contact = profile?.contact ?? ''
     form.address = profile?.address ?? ''
     form.businessScope = profile?.businessScope ?? ''
   } catch (error) {
+    if (stale()) return
     ElMessage.error(error instanceof Error ? error.message : '加载档案失败')
   } finally {
-    loading.value = false
+    if (!stale()) loading.value = false
   }
 }
 async function reloadRegistry() {
+  const seq = ++registryRequestSeq
+  const companyId = selectedCompanyId.value
+  const stale = () => seq !== registryRequestSeq || companyId !== selectedCompanyId.value
   registryLoading.value = true
   try {
-    registry.value = await fetchCompanySubjectTypes(selectedCompanyId.value)
+    const rows = await fetchCompanySubjectTypes(companyId)
+    if (stale()) return
+    registry.value = rows
   } catch {
+    if (stale()) return
     registry.value = []
   } finally {
-    registryLoading.value = false
+    if (!stale()) registryLoading.value = false
   }
 }
-onMounted(() => { void reload(); void reloadRegistry() })
-watch(selectedCompanyId, () => { void reload(); void reloadRegistry() })
+function reloadAll() {
+  void reload()
+  // 注册立场恢复读取（dljy#3518）：读接口未被后端收窄，所有角色都读；编辑只落平台后台。
+  void reloadRegistry()
+}
+onMounted(reloadAll)
+watch(selectedCompanyId, reloadAll)
 
 async function save() {
   try {
@@ -100,6 +139,9 @@ async function saveRegistry() {
       </el-col>
 
       <el-col :span="10" :xs="24">
+        <!-- 编辑已迁平台后台（#3464）：提示只对平台人员显示（registry 角色闸门，#3518），
+             立场块对所有角色恢复只读展示（迁移清单 §3.7），两者共存而非互斥 -->
+        <MigratedToAdminNotice v-if="registryMigrated" :entries="['subject-registry']" />
         <el-card shadow="never" v-loading="registryLoading">
           <template #header>
             <div class="card-head">
@@ -111,16 +153,14 @@ async function saveRegistry() {
             v-model="registry"
             multiple
             filterable
-            :disabled="!canWrite"
+            :disabled="!canWrite || registryMigrated"
             placeholder="未登记多立场"
             style="width: 100%"
           >
             <el-option v-for="opt in subjectTypeOptions" :key="opt.value" :value="opt.value" :label="opt.label" />
           </el-select>
-          <p class="hint">
-            公司在交易中心登记的市场主体类型。交易组合（TRADER）与集团（GROUP）账号可在登记立场间切换作业视角；其余主体单立场。清空即退回单立场。
-          </p>
-          <el-button v-if="canWrite" type="primary" size="small" style="margin-top: 8px" @click="saveRegistry">保存注册立场</el-button>
+          <p class="hint">{{ registryHint }}</p>
+          <el-button v-if="canWrite && !registryMigrated" type="primary" size="small" style="margin-top: 8px" @click="saveRegistry">保存注册立场</el-button>
         </el-card>
         <el-card shadow="never" style="margin-top: 16px">
           <template #header>可见公司</template>
@@ -148,4 +188,6 @@ async function saveRegistry() {
 .card-head { display: flex; align-items: center; justify-content: space-between; }
 .readonly-hint { color: var(--el-text-color-secondary, #909399); font-size: var(--font-md); }
 .hint { margin: 10px 0 0; color: var(--el-text-color-secondary, #909399); font-size: var(--font-sm); }
+/* 迁移提示（仅平台人员渲染）与立场卡片之间留间距；提示不渲染时选择器不命中，客户账号无多余空隙 */
+.migrated-notice + .el-card { margin-top: 16px; }
 </style>

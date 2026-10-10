@@ -10,6 +10,15 @@
 
 export type LoadPanelMode = 'overlay' | 'continuous'
 
+// 逐日负荷的值是日内 96 点负荷功率的均/小/大值（山西采集与云南派生同为 MW 口径，量级 2.5-4 万），
+// 不是电量——旧实现标「万KWH」会让读者差一个数量级理解（#3379）。
+export const LOAD_PANEL_UNIT = 'MW'
+
+/** 负荷源是否「无任何年份数据」：缺失（null）与空壳（如云南 misplace 无口径）同样视为空。 */
+export function isEmptyLoadSource(source: { years: string[] } | null | undefined): boolean {
+  return !source || source.years.length === 0
+}
+
 export interface LoadPanelLine {
   /** 系列名（legend 用）。 */
   name: string
@@ -148,4 +157,107 @@ export function continuousTickFormatter(v: string): string {
 /** 逐年对比 x 轴刻度：每月「1日」打刻度，标签去掉「1日」（如 7月）。 */
 export function overlayTickFormatter(v: string): string {
   return v.endsWith('月1日') ? v.replace('1日', '') : ''
+}
+
+// ── 单源版面（dljy#3384）：只有系统负荷、无错位负荷口径的地区（如云南）不再套用「系统 vs 错位」双列，
+// 改为一条按时序连续的日期轴：日均值折线 + 日内最小~最大区间带 + 日内峰谷差。
+// 源数据是「年 × 366 月-日槽」矩阵；这里按真实日期展开，首末日之间缺数的日子保留为 null（断线，
+// 不连线、不插值），让数据缺口在图上如实可见。
+
+export interface LoadRangeSeries {
+  /** 连续日期（YYYY-MM-DD），覆盖首个有数日到最后一个有数日。 */
+  dates: string[]
+  avg: (number | null)[]
+  min: (number | null)[]
+  max: (number | null)[]
+  /** 日内峰谷差 = 最大 − 最小（任一缺失则 null）。 */
+  spread: (number | null)[]
+}
+
+export interface LoadRangeStats {
+  /** 有数天数（均值非空）。 */
+  days: number
+  firstDate: string | null
+  lastDate: string | null
+  latest: { date: string; avg: number } | null
+  peak: { date: string; value: number } | null
+  trough: { date: string; value: number } | null
+  /** 首末日之间缺数的天数。 */
+  gapDays: number
+}
+
+const pad2 = (n: number) => String(n).padStart(2, '0')
+
+// 「M月D日」+「YYYY年」→ YYYY-MM-DD；非闰年的 2月29日槽等非法日期返回 null。
+function slotDate(year: string, name: string): string | null {
+  const y = Number(String(year).replace(/年$/, ''))
+  const m = /^(\d{1,2})月(\d{1,2})日$/.exec(name)
+  if (!Number.isInteger(y) || !m) return null
+  const month = Number(m[1]), day = Number(m[2])
+  const dt = new Date(Date.UTC(y, month - 1, day))
+  if (dt.getUTCMonth() !== month - 1 || dt.getUTCDate() !== day) return null
+  return `${y}-${pad2(month)}-${pad2(day)}`
+}
+
+function nextDate(date: string): string {
+  const dt = new Date(`${date}T00:00:00Z`)
+  dt.setUTCDate(dt.getUTCDate() + 1)
+  return `${dt.getUTCFullYear()}-${pad2(dt.getUTCMonth() + 1)}-${pad2(dt.getUTCDate())}`
+}
+
+type MetricMatrix = (number | null)[][]
+
+/** 年 × 月-日矩阵 → 连续日期序列（均/小/大/峰谷差）。无任何有数日返回空序列。 */
+export function buildLoadRangeSeries(
+  nameList: string[],
+  years: string[],
+  metrics: { average: MetricMatrix; min: MetricMatrix; max: MetricMatrix }
+): LoadRangeSeries {
+  const byDate = new Map<string, { avg: number | null; min: number | null; max: number | null }>()
+  const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : null)
+  years.forEach((year, yi) => {
+    nameList.forEach((name, si) => {
+      const avg = num(metrics.average[yi]?.[si]), min = num(metrics.min[yi]?.[si]), max = num(metrics.max[yi]?.[si])
+      if (avg == null && min == null && max == null) return
+      const date = slotDate(year, name)
+      if (date) byDate.set(date, { avg, min, max })
+    })
+  })
+  const out: LoadRangeSeries = { dates: [], avg: [], min: [], max: [], spread: [] }
+  if (!byDate.size) return out
+  const sorted = [...byDate.keys()].sort()
+  const last = sorted[sorted.length - 1]
+  for (let d = sorted[0]; ; d = nextDate(d)) {
+    const v = byDate.get(d)
+    out.dates.push(d)
+    out.avg.push(v?.avg ?? null)
+    out.min.push(v?.min ?? null)
+    out.max.push(v?.max ?? null)
+    out.spread.push(v && v.min != null && v.max != null ? Math.round((v.max - v.min) * 100) / 100 : null)
+    if (d === last) break
+  }
+  return out
+}
+
+/** 单源版面顶部指标：最近日均、区间最高/最低负荷、覆盖天数与缺口。 */
+export function loadRangeStats(series: LoadRangeSeries): LoadRangeStats {
+  let days = 0
+  let latest: LoadRangeStats['latest'] = null
+  let peak: LoadRangeStats['peak'] = null
+  let trough: LoadRangeStats['trough'] = null
+  series.dates.forEach((date, i) => {
+    const avg = series.avg[i], max = series.max[i], min = series.min[i]
+    if (avg != null) { days++; latest = { date, avg } }
+    if (max != null && (!peak || max > peak.value)) peak = { date, value: max }
+    if (min != null && (!trough || min < trough.value)) trough = { date, value: min }
+  })
+  return {
+    days,
+    firstDate: series.dates[0] ?? null,
+    lastDate: series.dates[series.dates.length - 1] ?? null,
+    latest,
+    peak,
+    trough,
+    gapDays: series.dates.length - days
+  }
 }

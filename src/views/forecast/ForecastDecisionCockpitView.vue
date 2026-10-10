@@ -20,6 +20,10 @@ import RegionDataBanner from '@/components/region/RegionDataBanner.vue'
 import CapabilitySupportBadge from '@/components/CapabilitySupportBadge.vue'
 import CockpitRegionLockedCard from '@/components/spot/cockpit/CockpitRegionLockedCard.vue'
 import DataBasisBadge from '@/components/DataBasisBadge.vue'
+import ForecastProvenanceTags from '@/components/forecast/ForecastProvenanceTags.vue'
+import {
+  isMockProvenance, isUnavailableProvenance, provenanceWarnings, type ForecastProvenance,
+} from '@/services/forecast/forecastProvenance'
 import TrustBadge from '@/components/common/TrustBadge.vue'
 import { useEChart } from '@/composables/useEChart'
 import { onRegionChange } from '@/composables/useRegionReload'
@@ -40,6 +44,7 @@ import {
   type RiskQuantifyResult
 } from '@/services/forecast/mlForecastClient'
 import { ensureForecastCatalog, forecastCatalogState, isModelSelectableForTarget, isPredictSupported } from '@/services/forecast/forecastProviders'
+import { NO_AVAILABLE_MODEL_TEXT, pickDefaultModelId } from '@/services/forecast/defaultModel'
 import { latestBenchContext } from '@/services/forecast/forecastBenchContext'
 import { predictionModelExclusionReason } from '@/services/forecast/predictionModelEligibility'
 import { loadClearingCurve, type SpotCurve } from '@/services/market/spotPrice'
@@ -81,8 +86,16 @@ const benchInit = latestBenchContext.value
 // 价格腿与负荷腿各自选模型（#2324）：remote:* 真实模型多为单 target 上架
 // （只声明 price 或只声明 load），旧版一个 modelType 跑两腿把它们整体挡在选择之外。
 // `?model=` 深链仍认，同时设两腿（向后兼容，行为与旧版一致）。
-const priceModelType = ref(queryStr('priceModel') || queryStr('model') || benchInit?.modelId || 'xgboost')
-const loadModelType = ref(queryStr('loadModel') || queryStr('model') || benchInit?.modelId || 'xgboost')
+// 没有任何点名（深链/建模台）时初值留空，目录就绪后取「目录对该标的标记的默认算法，无则第一个可用模型」
+// （dljy#3647：不再写死某个算法名当默认——它下线后会变成一个必 400 的入口）。
+const initialPriceModel = queryStr('priceModel') || queryStr('model') || benchInit?.modelId || ''
+const initialLoadModel = queryStr('loadModel') || queryStr('model') || benchInit?.modelId || ''
+const priceModelType = ref(initialPriceModel)
+const loadModelType = ref(initialLoadModel)
+// 「自动默认」= 这条腿的模型不是任何人点名的：目录里没有它（切区/目录变化）时重新取目录默认；
+// 一旦被深链、建模台或用户手选点名，则该模型消失只清空并提示重选，不静默改跑别的模型（保持旧行为）。
+let priceAutoModel = initialPriceModel === ''
+let loadAutoModel = initialLoadModel === ''
 // 决策概览（/cockpit 聚合端点）后端用**同一个** model_type 跑 PRICE+LOAD 两腿，
 // 两腿选了不同模型时它无法如实表达——此时不发请求、页内明示，不拿一条腿的模型冒充两腿。
 const bothLegsSameModel = computed(() => priceModelType.value === loadModelType.value)
@@ -475,21 +488,40 @@ async function runDecisionOverview() {
   }
 }
 
+type OverviewCard = { label: string; value: string; provenance?: ForecastProvenance; hint?: string }
+
 const overviewCards = computed(() => {
   const o = decisionOverview.value
   if (!o) return []
-  const cards: Array<{ label: string; value: string }> = []
+  const cards: OverviewCard[] = []
   const priceAvg = avg(o.price_forecast.points)
-  cards.push({ label: '日均预测电价', value: Number.isFinite(priceAvg) ? `${priceAvg.toFixed(0)} 元/MWh` : '—' })
+  cards.push({ label: '日均预测电价', value: Number.isFinite(priceAvg) ? `${priceAvg.toFixed(0)} 元/MWh` : '—', provenance: o.price_forecast })
   if (o.bid_advice.storage) {
     cards.push({ label: '储能预期套利', value: `${o.bid_advice.storage.expected_profit_yuan.toLocaleString()} 元` })
   } else if (o.bid_advice.retailer) {
     cards.push({ label: '售电预期成本', value: `${o.bid_advice.retailer.expected_cost_yuan.toLocaleString()} 元` })
   }
-  cards.push({ label: '偏差最坏风险', value: `${o.deviation_risk.worst_penalty_yuan.toLocaleString()} 元` })
-  const midAvg = avg(o.midterm_trend.daily_avg_price)
-  cards.push({ label: `未来 ${o.midterm_trend.horizon_days} 天均价`, value: Number.isFinite(midAvg) ? `${midAvg.toFixed(0)} 元/MWh` : '—' })
+  cards.push({ label: '偏差最坏风险', value: `${o.deviation_risk.worst_penalty_yuan.toLocaleString()} 元`, provenance: o.deviation_risk })
+  const mid = o.midterm_trend
+  const midLabel = `未来 ${mid.horizon_days} 天均价`
+  if (isUnavailableProvenance(mid)) {
+    // 远端无南洋模型：给空态而不是 0/NaN 或报错，原因放悬浮提示。
+    cards.push({ label: midLabel, value: '暂无南洋模型', hint: String(mid.reason ?? '').trim() || '中长期模型当前不可用' })
+  } else {
+    const midAvg = avg(mid.daily_avg_price)
+    cards.push({ label: midLabel, value: Number.isFinite(midAvg) ? `${midAvg.toFixed(0)} 元/MWh` : '—', provenance: mid })
+  }
   return cards
+})
+// 概览顶层的模拟标识与聚合提示；任一分区为模拟时后端顶层也会置 MOCK，这里取并集防旧/异常响应漏标。
+const overviewIsMock = computed(() => {
+  const o = decisionOverview.value
+  return !!o && [o, o.price_forecast, o.deviation_risk, o.midterm_trend].some((p) => isMockProvenance(p))
+})
+const overviewProvenance = computed<ForecastProvenance | undefined>(() => {
+  const o = decisionOverview.value
+  if (!o) return undefined
+  return { mock: overviewIsMock.value, sourceType: o.sourceType ?? o.source_type, warnings: provenanceWarnings(o) }
 })
 
 // 原「下发到实验室」按钮（把 96 点电价预测重采样为 24 点送交易策略实验室）
@@ -710,30 +742,38 @@ function modelOptionLabel(m: ForecastModel): string {
   ].filter(Boolean)
   return (m.name ?? m.modelId) + (tags.length ? `（${tags.join('·')}）` : '')
 }
+/** 单腿模型归一：在页面真正可选的列表里，决定当前值保留 / 清空 / 取目录默认。 */
+function settleLegModel(
+  current: string,
+  models: readonly ForecastModel[],
+  auto: boolean,
+  catalogDefaultId: string | null,
+  allowEmptyClear: boolean,
+): string {
+  if (!models.length) return allowEmptyClear ? '' : current
+  if (current !== '' && models.some((model) => model.modelId === current)) return current
+  // 没人点名（初值/上一次也是自动默认）→ 取目录默认；点名过的模型不在目录里 → 清空，等用户重选
+  return auto ? pickDefaultModelId(models, catalogDefaultId) : ''
+}
 function normalizeSelectedModels(options?: { allowEmptyClear?: boolean }): boolean {
   if (!catalogBatchReady.value) return false
   const allowEmptyClear = options?.allowEmptyClear === true
   let changed = false
-  if (priceCatalogModels.value.length) {
-    if (priceModelType.value !== '' && !selectedPriceModel.value) {
-      priceModelType.value = ''
-      changed = true
-    }
-  } else if (allowEmptyClear && priceModelType.value !== '') {
-    priceModelType.value = ''
-    changed = true
-  }
-  if (loadCatalogModels.value.length) {
-    if (loadModelType.value !== '' && !selectedLoadModel.value) {
-      loadModelType.value = ''
-      changed = true
-    }
-  } else if (allowEmptyClear && loadModelType.value !== '') {
-    loadModelType.value = ''
-    changed = true
-  }
+  const nextPrice = settleLegModel(priceModelType.value, priceCatalogModels.value, priceAutoModel,
+    priceCatalog.defaultModelId.value, allowEmptyClear)
+  if (nextPrice !== priceModelType.value) { priceModelType.value = nextPrice; changed = true }
+  const nextLoad = settleLegModel(loadModelType.value, loadCatalogModels.value, loadAutoModel,
+    loadCatalog.defaultModelId.value, allowEmptyClear)
+  if (nextLoad !== loadModelType.value) { loadModelType.value = nextLoad; changed = true }
   return changed
 }
+/** 下拉占位项：目录没加载完 / 加载完没有可选模型 / 有可选项但当前未选，三种说法不能混。 */
+function modelPlaceholder(optionCount: number): string {
+  if (optionCount > 0) return '请选择模型'
+  return catalogBatchReady.value ? NO_AVAILABLE_MODEL_TEXT : '模型目录加载中…'
+}
+function onPriceModelPicked() { priceAutoModel = false; markControlsDirty() }
+function onLoadModelPicked() { loadAutoModel = false; markControlsDirty() }
 
 // 预测中心同页上下文（#79，3620694192/3620694219）
 // dirty：用户在本 tab 手动改过模型/目标日/训练窗后不再被建模上下文覆盖（深链 query 仍优先）。
@@ -753,6 +793,9 @@ function applyDeepLinkQuery(): boolean {
   const watchWillReload = (priceModel !== '' && priceModel !== priceModelType.value)
     || (loadModel !== '' && loadModel !== loadModelType.value)
     || (dateValid && date !== targetDate.value)
+  // 深链点了名的腿不再是「自动默认」：该模型不在目录里时清空提示，而不是改取目录默认。
+  if (priceModel !== '') priceAutoModel = false
+  if (loadModel !== '') loadAutoModel = false
   if (dateValid && date !== targetDate.value) { targetDate.value = date; changed = true }
   if (priceModel !== '' && priceModel !== priceModelType.value) { priceModelType.value = priceModel; changed = true }
   if (loadModel !== '' && loadModel !== loadModelType.value) { loadModelType.value = loadModel; changed = true }
@@ -777,6 +820,8 @@ function applyBenchContext(): void {
   let trainDaysChanged = false
   if (ctx.targetDate !== targetDate.value) targetDate.value = ctx.targetDate
   if (ctx.modelId !== undefined) {
+    priceAutoModel = false
+    loadAutoModel = false
     if (ctx.modelId !== priceModelType.value) priceModelType.value = ctx.modelId
     if (ctx.modelId !== loadModelType.value) loadModelType.value = ctx.modelId
   }
@@ -843,8 +888,8 @@ onBeforeUnmount(() => {
           <!-- 模型清单从后端 /forecast/models（registry.catalog 单一权威）动态拉取（#762）：
                新模型上线自动出现，available:false 禁用+reason；不再硬编码防漂移。
                两腿各一个下拉（#2324）：单 target 上架的 remote:* 真实模型只会在它声明的那条腿里可选。 -->
-          <select v-model="priceModelType" @change="markControlsDirty">
-            <option disabled value="">请选择模型</option>
+          <select v-model="priceModelType" @change="onPriceModelPicked">
+            <option disabled value="">{{ modelPlaceholder(priceCatalogModels.length) }}</option>
             <option v-for="m in priceCatalogModels" :key="m.modelId" :value="m.modelId"
               :title="modelOptionTitle(m, 'price')">
               {{ modelOptionLabel(m) }}
@@ -854,8 +899,8 @@ onBeforeUnmount(() => {
         </label>
         <label class="field">
           <span>负荷模型</span>
-          <select v-model="loadModelType" @change="markControlsDirty">
-            <option disabled value="">请选择模型</option>
+          <select v-model="loadModelType" @change="onLoadModelPicked">
+            <option disabled value="">{{ modelPlaceholder(loadCatalogModels.length) }}</option>
             <option v-for="m in loadCatalogModels" :key="m.modelId" :value="m.modelId"
               :title="modelOptionTitle(m, 'load')">
               {{ modelOptionLabel(m) }}
@@ -1031,13 +1076,15 @@ onBeforeUnmount(() => {
 
         <template v-if="decisionOverview">
           <div class="advice-head">
-            <b>决策概览（{{ decisionOverview.basis === 'captured' ? '真实' : '合成验证' }}）</b>
+            <b>决策概览（{{ decisionOverview.basis === 'captured' && !overviewIsMock ? '真实' : '合成验证' }}）</b>
             <DataBasisBadge :basis="decisionOverview.basis" prefix="数据口径" />
+            <ForecastProvenanceTags :provenance="overviewProvenance" />
           </div>
           <div class="risk-grid advice-grid">
-            <div v-for="card in overviewCards" :key="card.label" class="risk-card">
+            <div v-for="card in overviewCards" :key="card.label" class="risk-card" :title="card.hint">
               <span>{{ card.label }}</span>
-              <b>{{ card.value }}</b>
+              <b :class="{ 'card-empty': card.hint }">{{ card.value }}</b>
+              <ForecastProvenanceTags v-if="card.provenance" :provenance="card.provenance" hide-warnings />
             </div>
           </div>
         </template>
@@ -1286,6 +1333,12 @@ onBeforeUnmount(() => {
   display: block;
   margin-top: 5px;
   color: var(--muted);
+}
+.risk-card .fp-tags { display: flex; margin-top: 8px; }
+.risk-card b.card-empty {
+  color: var(--muted);
+  font-size: var(--font-md);
+  font-weight: 500;
 }
 .risk-card.risk {
   border-color: rgba(220, 38, 38, 0.25);

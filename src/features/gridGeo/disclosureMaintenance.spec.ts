@@ -3,7 +3,7 @@ import { createDefaultMaintenanceFilters, formatMaintenanceDuration, hasMaintena
 import type { GridDisclosureEvent } from './types'
 
 function event(extra: Partial<GridDisclosureEvent> = {}): GridDisclosureEvent {
-  return { eventId: 'maintenance-a', providerId: 'csg-authorized-export', category: 'maintenance', title: '电厂 #1 机检修', summary: '计划检修', regionId: 'yunnan', spatialBinding: { kind: 'region', ref: 'yunnan', label: '云南', coordinates: null }, effectiveAt: '2026-06-30T23:30:00+08:00', expiresAt: '2026-07-02T01:45:00+08:00', publishedAt: null, businessDate: '2026-07-01', sourceImportedAt: '2026-09-09T08:00:00+08:00', timeQuality: { effective: 'source', published: 'unknown', intervalBasis: 'actual', issues: [] }, source: { file: 'source.csv', recordId: '1', url: null, sourceTable: 'maintenance', sourceType: 'IMPORT', mock: false, productionWrite: false, dataAvailability: 'available', license: '授权导出', originalLinkStatus: 'unavailable' }, confidence: 'verified-source-row', importedAt: '2026-09-09T08:00:00+08:00', ...extra }
+  return { eventId: 'maintenance-a', providerId: 'csg-authorized-export', category: 'maintenance', title: '电厂 #1 机检修', summary: '计划检修', regionId: 'yunnan', spatialBinding: { kind: 'region', ref: 'yunnan', label: '云南', coordinates: null }, effectiveAt: '2026-06-30T23:30:00+08:00', expiresAt: '2026-07-02T01:45:00+08:00', publishedAt: null, businessDate: '2026-07-01', sourceImportedAt: '2026-09-09T08:00:00+08:00', timeQuality: { effective: 'source', published: 'unknown', intervalBasis: 'actual', issues: [] }, source: { file: 'source.csv', recordId: '1', url: null, sourceTable: 'maintenance', sourceType: 'IMPORT', mock: false, productionWrite: false, dataAvailability: 'available', license: '南方电网公开披露信息（整年导出包）；按公开披露口径所有公司可见', originalLinkStatus: 'unavailable' }, confidence: 'verified-source-row', importedAt: '2026-09-09T08:00:00+08:00', ...extra }
 }
 
 describe('检修专业筛选与已知总时长', () => {
@@ -40,16 +40,22 @@ describe('检修专业筛选与已知总时长', () => {
     expect(formatMaintenanceDuration(NaN)).toBe('未提供')
     expect(formatMaintenanceDuration(-1)).toBe('未提供')
   })
-  it.each([['actual', '实际'], ['planned', '计划']] as const)('只收拢严格匹配编译模板及真实端点的%s时间后缀，原事件不变', (basis, label) => {
+  // dljy#3563：整年导出（≤ 2026-07-02）与日文件接续（2026-07-03 起）同属南网发布方、同一编译模板，两路都要收拢。
+  it.each([
+    ['csg-authorized-export', 'actual', '实际'], ['csg-authorized-export', 'planned', '计划'],
+    ['csg-disclosure-file', 'actual', '实际'], ['csg-disclosure-file', 'planned', '计划'],
+  ] as const)('南网来源 %s 只收拢严格匹配编译模板及真实端点的 %s 时间后缀，原事件不变', (providerId, basis, label) => {
     const summary = `机组；${label}停复电：2026-06-30T23:30:00+08:00 至 2026-07-02T01:45:00+08:00。`
-    const item = event({ summary, source: { ...event().source, sourceTable: 'tb_disclosure_forecast_maintenance_plan' }, timeQuality: { effective: 'source', published: 'unknown', intervalBasis: basis, issues: [] } })
+    const item = event({ providerId, summary, source: { ...event().source, sourceTable: 'tb_disclosure_forecast_maintenance_plan' }, timeQuality: { effective: 'source', published: 'unknown', intervalBasis: basis, issues: [] } })
     Object.freeze(item)
     expect(maintenanceListSummary(item)).toBe('机组')
     expect(item.summary).toBe(summary)
   })
-  it('真实原因、额外说明、不同来源、不匹配端点或未知时间均原样保留', () => {
+  // dljy#3571：南网判定改用 shared/schema/grid-disclosure-providers.mjs，按来源 ID 全等判定，近似写法与空来源都不收拢。
+  it.each(['csg-authorized-export', 'csg-disclosure-file'])('南网来源 %s 的真实原因、额外说明、非南网或近似来源、不匹配端点或未知时间均原样保留', (providerId) => {
     const summary = '线路；实际停复电：2026-06-30T23:30:00+08:00 至 2026-07-02T01:45:00+08:00。'
-    const generated = event({ summary, source: { ...event().source, sourceTable: 'tb_disclosure_forecast_maintenance_plan' } })
+    const generated = event({ providerId, summary, source: { ...event().source, sourceTable: 'tb_disclosure_forecast_maintenance_plan' } })
+    expect(maintenanceListSummary(generated)).toBe('线路')
     const variants = [
       { ...generated, summary: '计划外故障停运，需复核保护装置。' },
       { ...generated, summary: `原因：保护故障；${summary}` },
@@ -57,6 +63,8 @@ describe('检修专业筛选与已知总时长', () => {
       { ...generated, summary: summary.replace(' 至 ', '至') },
       { ...generated, summary: summary.replace('01:45:00', '01:46:00') },
       { ...generated, providerId: 'other-source' },
+      { ...generated, providerId: 'sgcc-public-disclosure' },
+      ...['csg', ' csg-disclosure-file', 'CSG-DISCLOSURE-FILE', 'csg-authorized-export ', ''].map((id) => ({ ...generated, providerId: id })),
       { ...generated, source: { ...generated.source, sourceTable: 'user-provided-reason' } },
       { ...generated, category: 'outage' as const },
       { ...generated, expiresAt: null },

@@ -38,14 +38,18 @@ import {
   subjectTypeLabels
 } from '@/services/governance'
 import { AiSidebar, AiOrbLauncher } from '@/features/aiSidebar'
+import GuideHost from '@/features/guide/components/GuideHost.vue'
 // 价带卡（峰/平/谷徽标 + 参考价）按验收反馈先隐藏；恢复时解开此处与模板中的 topbar-ticker 块
 // import PriceTicker from '../components/PriceTicker.vue'
 import RegionSwitcher from '@/components/region/RegionSwitcher.vue'
 import RegionMigrationTip from '@/components/region/RegionMigrationTip.vue'
+import PracticeSpaceBadge from '@/components/company/PracticeSpaceBadge.vue'
+import { isPracticeCompanyOption } from '@/services/company/practiceCompany'
 import AlertCenter from '../components/AlertCenter.vue'
 import ThemeSwitcher from '../components/ThemeSwitcher.vue'
 import CommandPalette from '../components/CommandPalette.vue'
 import PageHelpTip from '../components/common/PageHelpTip.vue'
+import BrandEmblem from '../components/common/BrandEmblem.vue'
 import { useTheme } from '../composables/useTheme'
 // Mock 演示账号（PRD：docs/product/mock-demo-account-prd.md）：顶栏常驻「演示模式」徽标，
 // 红线要求 mock 数据必须可见标注（P1）；AppLayout 在登录后挂载，setup 期读取一次即可。
@@ -74,8 +78,8 @@ const menuColors = computed(() => {
   switch (theme.value) {
     case 'arc':
       return { bg: '#0a1322', text: '#8fa3bd', active: '#e6f6ff' }
-    case 'neon':
-      return { bg: '#04060f', text: '#9fc4e8', active: '#22d3ee' }
+    case 'flow':
+      return { bg: '#06101d', text: '#8fa6b8', active: '#bfe3ec' }
     case 'paper':
       return { bg: '#2a2620', text: '#cfc6b4', active: '#f3eee3' }
     default:
@@ -294,7 +298,7 @@ watch(
 
     <aside :class="['sidebar', { collapsed: !isMobile && collapsed, 'mobile-open': mobileMenuOpen }]">
       <div class="brand">
-        <div class="brand-mark">电</div>
+        <div class="brand-mark"><BrandEmblem :size="22" weight="bold" /></div>
         <div v-if="isMobile || !collapsed" class="brand-copy">
           <strong>电力交易辅助</strong>
           <span>决策支持系统</span>
@@ -411,6 +415,7 @@ watch(
               </span>
             </el-option>
           </el-select>
+          <PracticeSpaceBadge />
           <el-select
             v-if="topbarCompanySwitchable"
             class="company-switcher"
@@ -430,6 +435,7 @@ watch(
               <span class="company-option">
                 <span>{{ company.name }}</span>
                 <el-tag v-if="company.tier === 'GROUP'" size="small" type="warning" effect="plain">集团</el-tag>
+                <el-tag v-else-if="isPracticeCompanyOption(company)" size="small" type="info" effect="plain">练习</el-tag>
               </span>
             </el-option>
           </el-select>
@@ -500,6 +506,8 @@ watch(
     </section>
 
     <AiSidebar />
+    <!-- 操作导引全局浮层（dljy#3404）：无会话不渲染任何 DOM，挂 AppLayout 保证盖过业务弹层并在路由间常驻 -->
+    <GuideHost />
     <!-- 右下角液态玻璃 AI 球：全站 AI 侧边栏入口，有解读能力的页面直接解读本页（WebGPU 渲染，不支持时 CSS 降级） -->
     <AiOrbLauncher />
     <RegionMigrationTip />

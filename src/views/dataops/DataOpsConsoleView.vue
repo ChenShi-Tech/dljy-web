@@ -14,11 +14,18 @@
 // 同名会互相踩（父切走 / 子回落默认值）。父 panel + 子 tab 各管一层，深链两级都保得住。
 //
 // 门禁：/data-ops/console 在 governance.adminOnlyRoutes 内，仅 ADMIN/BOSS 可见可进。
+//
+// 已迁至平台后台（ChenShi-Tech/dljy#3464）：内部版「数据接入向导」「数据摄取管理」由平台后台接管
+// （「数据源接入 › 电网官方平台」子 tab 由 DataSourceSettingsView 自己处理），登记在
+// features/platformAdminMigration/registry.ts。被迁走的面板不渲染，tab 栏上方原位置显示提示与后台链接；
+// 上传中心、导入融合台、运维总览、治理控制台、数据源接入（企业自建通道 / 受控接入）照常。客户交付版不受影响。
 import { defineAsyncComponent, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import OpsOverviewPanel from './OpsOverviewPanel.vue'
+import { hiddenEntriesOf, isTabHidden } from '@/features/platformAdminMigration/registry'
+import MigratedToAdminNotice from '@/features/platformAdminMigration/MigratedToAdminNotice.vue'
 
-const PANELS = [
+const ALL_PANELS = [
   { name: 'overview', label: '运维总览', component: OpsOverviewPanel },
   { name: 'upload', label: '数据上传中心', component: defineAsyncComponent(() => import('./DataUploadView.vue')) },
   { name: 'import-hub', label: '数据导入融合台', component: defineAsyncComponent(() => import('../ImportHubView.vue')) },
@@ -27,6 +34,9 @@ const PANELS = [
   { name: 'governance', label: '数据治理控制台', component: defineAsyncComponent(() => import('../DataGovernanceView.vue')) },
   { name: 'data-source', label: '数据源接入', component: defineAsyncComponent(() => import('../DataSourceSettingsView.vue')) }
 ] as const
+
+const PANELS = ALL_PANELS.filter((p) => !isTabHidden('data-ops', p.name))
+const MIGRATED_ENTRIES = hiddenEntriesOf('data-ops')
 
 const PANEL_NAMES = PANELS.map((p) => p.name) as readonly string[]
 const DEFAULT_PANEL = PANELS[0].name
@@ -70,11 +80,12 @@ function goPanel(panel: string) {
   <div class="data-ops-console">
     <header class="page-head">
       <h1>数据运维工作台</h1>
-      <p class="sub">
-        数据进入平台的全链路操作面：接入 → 入库 → 摄取 → 治理与回放。总览给出当前链路状态与下一步动作，
-        其余面板分别承接上传、手录、向导、ETL 触发、质量体检与数据源凭据（仅系统管理员可见）。
-      </p>
+      <!-- 一行导语即可：各面板分工的完整说明在面包屑旁「?」（pageHelp 注册表 DataOpsConsole 条目），dljy#3385。 -->
+      <p class="sub">数据进入平台的全链路操作面：接入 → 入库 → 摄取 → 治理与回放（仅系统管理员可见）</p>
     </header>
+
+    <!-- 已迁至平台后台的面板不渲染，原位置（tab 栏上方）给出提示与后台链接（#3464） -->
+    <MigratedToAdminNotice v-if="MIGRATED_ENTRIES.length" :entries="MIGRATED_ENTRIES" />
 
     <el-tabs v-model="activePanel" class="ops-tabs" @tab-change="onPanelChange">
       <el-tab-pane v-for="panel in PANELS" :key="panel.name" :label="panel.label" :name="panel.name">

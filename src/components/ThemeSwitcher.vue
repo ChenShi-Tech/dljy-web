@@ -1,7 +1,7 @@
 <script setup lang="ts">
-// 主题切换器：顶栏闪电图标 → 弹窗展示四档主题（经典/弧光/霓虹/暖纸）。
+// 主题切换器：顶栏闪电图标 → 弹窗展示四档主题（经典/弧光/流光/暖纸）。
 // 状态源 services/theme(经 useTheme 适配层),切换走 View Transitions 整页淡入。
-import { BookOpen, Activity, Sun, Zap } from 'lucide-vue-next'
+import { BookOpen, Activity, Hexagon, Sun, Zap } from 'lucide-vue-next'
 import type { Component } from 'vue'
 import { useTheme, type ThemeKey } from '../composables/useTheme'
 
@@ -10,7 +10,7 @@ const { theme, options, setTheme } = useTheme()
 const icons: Record<ThemeKey, Component> = {
   classic: Sun,
   arc: Activity,
-  neon: Zap,
+  flow: Hexagon,
   paper: BookOpen
 }
 </script>

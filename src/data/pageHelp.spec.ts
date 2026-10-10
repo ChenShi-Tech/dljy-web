@@ -83,3 +83,12 @@ describe('改名后的页面在各用户可见处名称一致（dljy#2988）', (
     expect(workbench).not.toContain('中长期敞口看板')
   })
 })
+
+describe('公开披露空间层帮助文案按公开口径（dljy#3563）', () => {
+  // 2026-09-28 拍板「南网披露按公开写、所有公司可见」；两路来源（整年导出 + 2026-07-03 起日文件）同属南网公开披露。
+  it('不再写授权导出或授权范围，写明公开披露、所有公司可见与日文件接续', () => {
+    const body = pageHelpRegistry.GridDisclosureSpatial?.body ?? ''
+    for (const stale of ['授权导出', '授权范围', '仅限']) expect(body, `不应出现「${stale}」`).not.toContain(stale)
+    for (const current of ['南网公开披露', '所有公司可见', '2026-07-03 起由日文件接续']) expect(body, `应写明「${current}」`).toContain(current)
+  })
+})

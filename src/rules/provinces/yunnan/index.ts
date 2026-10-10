@@ -39,7 +39,6 @@ export const yunnanSubjectFocus: SubjectRuleFocus[] = [
     summary: '云南发电侧要区分调节性能较好的水电报量报价、其他水电/风光起步阶段报量不报价，并重点跟踪节点电价、阻塞和运行补偿。',
     keyConcerns: ['水电梯级和水库调度约束', '报量报价与报量不报价边界', '日前/实时出清曲线', '发电侧节点电价', '运行补偿、启动费用和阻塞相关电费'],
     recommendedRoutes: [
-      { title: '市场经营分析', path: '/sjfx/market-ops', reason: '查看发电侧收益、出力和市场份额' },
       { title: '出清现货电量分析', path: '/sjfx/zcqxhdl', reason: '分析日前/实时出清电量变化' },
       { title: '新能源资产测算', path: '/tzcs/wind-solar', reason: '评估风光资产在云南现货下的收益空间' }
     ],
@@ -68,8 +67,8 @@ export const yunnanSubjectFocus: SubjectRuleFocus[] = [
     keyConcerns: ['统调负荷预测', '新能源出力预测', '水电水库约束', '节点电价与统一结算价差异', '日前/实时价差和偏差成本'],
     recommendedRoutes: [
       { title: 'ML 预测工作台', path: '/ycsj/workbench', reason: '管理价格、负荷和新能源预测模型' },
-      { title: '价格与新能源关系', path: '/sjfx/zrxgx', reason: '观察新能源出力对价格的影响' },
-      { title: '价格与统调负荷关系', path: '/sjfx/zrxgx2', reason: '观察负荷变化对现货价格的影响' }
+      // dljy#3390：旧「价格与新能源关系」「价格与统调负荷关系」两页合并为价格驱动分析。
+      { title: '价格驱动分析', path: '/sjfx/price-drivers', reason: '观察新能源出力与统调负荷对价格的影响' }
     ],
     riskWarnings: ['统一结算价和节点价不能混作同一训练标签', '云南水电主导特性会让通用国网省份模型失真', '行业转载连续结算参数不能直接固化到模型'],
     ruleReferences: ['云南现货电能量交易实施细则（征求意见稿）', '云南电力现货市场运行情况分析官方动态']
@@ -98,7 +97,6 @@ export const yunnanSubjectFocus: SubjectRuleFocus[] = [
       { title: '地区规则体系', path: '/sdzl/region-rules', reason: '查看云南规则阶段和资料效力' },
       { title: '售电经营工作台', path: '/xhjy/yunnan/retail', reason: '查看售电组合收益和风险' },
       { title: '结算模拟器', path: '/xhjy/yunnan/settlement', reason: '查看云南结算拆解和风险提示' },
-      { title: '市场经营分析', path: '/sjfx/market-ops', reason: '对比主体收益、价格和风险' },
       { title: '运营中枢', path: '/yygl/ops', reason: '查看风险、合同和运营状态' }
     ],
     riskWarnings: ['云南处于区域现货深度融合阶段，规则版本变化会影响经营口径', '节点电价试点和用户侧分时电价调整会改变售电利润结构'],

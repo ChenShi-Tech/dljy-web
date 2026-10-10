@@ -72,7 +72,7 @@ const systemSources = [
     sourceId: `yn.system.${id}.actual`, title: `云南${label}（实际）`, category: id,
     read: capture('yn_system_forecast', `${METRIC_KEY[id]}_actual`, { region: 'yn' }),
     businessScope: 'yunnan', accessScope: 'public', authority: 'csg-disclosure', ingestChannel: 'bulk-history',
-    accessNote: '2026-07-02 之后的行经中广核渠道取得后写入公开族，访问范围待确认（见数据基线 3.1 节）',
+    accessNote: '2026-07-02 之后经中广核渠道（feed=cgn-api）写入公开族的行，按 #3066 只对授权集合含中广核的账号可见（洞察按所选公司判定），其余公司只读到公共来源（见数据基线 3.1 节）',
     measure: POWER_MW, time: TIME_15, variant: 'actual', freshness: 'historical-package',
   })),
   ...SYSTEM_SERIES.map(([id, label]) => source({
@@ -600,7 +600,8 @@ const plantSources = [
     sourceId: 'cgn.settlement.bill-records', title: '账单索引记录（获权）',
     read: capture('yn_settlement_docs', 'settlement_bill_records_raw'),
     businessScope: 'plant', measure: Object.freeze({ kind: 'list', unit: 'list', inputUnit: 'list', factor: '1', valueField: 'id' }),
-    time: Object.freeze({ resolutionMinutes: 1440, slotLabel: 'business-day', dateField: 'billmonth', businessPeriod: 'month' }),
+    // 月标记锚点 = settle_month（恒在列；未到发布月的账单 billmonth 为空，#3091/#3358）。
+    time: Object.freeze({ resolutionMinutes: 1440, slotLabel: 'business-day', dateField: 'settle_month', businessPeriod: 'month' }),
     dimensions: Object.freeze(['plant_name', 'bill_type', 'settle_month', 'company_name']), objectDimension: 'plant_name',
     accessNote: '账单索引≠账单原件：只有索引记录不代表文件可下载、更不代表已核对原件（ST06）',
   }),

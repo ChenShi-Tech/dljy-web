@@ -2,6 +2,7 @@
 // 接现有真实接口的设计验证版；不把公司汇总数据拼成单笔交易结果。
 import { computed, ref, watch, onMounted, onBeforeUnmount } from 'vue'
 import { useRoute, useRouter, onBeforeRouteLeave } from 'vue-router'
+import type { LocationQuery } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { ArrowLeft, ArrowRight, FileText, RefreshCw, ArrowUpRight } from 'lucide-vue-next'
 import { activeStanceType } from '@/services/stance/stanceContext'
@@ -34,14 +35,25 @@ import SpotSkeleton from '../../components/common/SpotSkeleton.vue'
 import { buildReviewEvidence, executionEvidence, simulatedOrder, type ReviewEvidenceSnapshot } from '@/services/review/reviewEvidence'
 import RegionDataBanner from '@/components/region/RegionDataBanner.vue'
 
-const props = defineProps<{ standaloneTopics?: boolean }>()
+const props = withDefaults(defineProps<{
+  standaloneTopics?: boolean
+  reviewRoute?: { path: string; query: LocationQuery }
+  routeActive?: boolean
+}>(), { routeActive: true })
 const route = useRoute(), router = useRouter()
-const businessView = computed({ get: () => reviewView(route.query.view ?? (activeStanceType.value === 'RETAILER' ? 'retail' : activeStanceType.value === 'STORAGE' ? 'storage' : 'generator')), set: value => { void router.replace({ query: { ...route.query, view: value } }) } })
+// ReviewCenterView passes the last valid review-route snapshot in production. Direct component
+// tests keep using the live route fallback. A deactivated KeepAlive page must never consume the
+// destination page's query or write review filters into that destination URL.
+const reviewRoute = computed(() => props.reviewRoute ?? route)
+const businessView = computed({
+  get: () => reviewView(reviewRoute.value.query.view ?? (activeStanceType.value === 'RETAILER' ? 'retail' : activeStanceType.value === 'STORAGE' ? 'storage' : 'generator')),
+  set: value => { if (props.routeActive) void router.replace({ path: reviewRoute.value.path, query: { ...reviewRoute.value.query, view: value } }) }
+})
 const region = computed(() => currentRegion.value.id)
-const topicScopeMismatch = computed(() => props.standaloneTopics && ((typeof route.query.companyId === 'string' && route.query.companyId !== selectedCompanyId.value) || (typeof route.query.region === 'string' && route.query.region !== region.value)))
-const date = computed(() => typeof route.query.date === 'string' && isRealCalendarDate(route.query.date) ? route.query.date : clampToCoverage(region.value, 'review', beijingDay(-1)))
-const task = computed(() => reviewTaskOf(route.query.task ?? (['strategy', 'decision'].includes(String(route.query.dim)) ? 'decision' : route.query.todo === '1' ? 'improvement' : 'result')))
-const selectedKey = computed(() => typeof route.query.declarationId === 'string' && route.query.declarationId ? `order:${route.query.declarationId}` : typeof route.query.decisionId === 'string' && route.query.decisionId ? `decision:${route.query.decisionId}` : '')
+const topicScopeMismatch = computed(() => props.standaloneTopics && ((typeof reviewRoute.value.query.companyId === 'string' && reviewRoute.value.query.companyId !== selectedCompanyId.value) || (typeof reviewRoute.value.query.region === 'string' && reviewRoute.value.query.region !== region.value)))
+const date = computed(() => typeof reviewRoute.value.query.date === 'string' && isRealCalendarDate(reviewRoute.value.query.date) ? reviewRoute.value.query.date : clampToCoverage(region.value, 'review', beijingDay(-1)))
+const task = computed(() => reviewTaskOf(reviewRoute.value.query.task ?? (['strategy', 'decision'].includes(String(reviewRoute.value.query.dim)) ? 'decision' : reviewRoute.value.query.todo === '1' ? 'improvement' : 'result')))
+const selectedKey = computed(() => typeof reviewRoute.value.query.declarationId === 'string' && reviewRoute.value.query.declarationId ? `order:${reviewRoute.value.query.declarationId}` : typeof reviewRoute.value.query.decisionId === 'string' && reviewRoute.value.query.decisionId ? `decision:${reviewRoute.value.query.decisionId}` : '')
 const orders = ref<DeclarationOrder[]>([]), decisions = ref<DecisionLogEntry[]>([])
 const extraOrder = ref<DeclarationOrder | null>(null)
 const orderLoading = ref(false), decisionLoading = ref(false), evidenceLoading = ref(false), selectionLoading = ref(false)
@@ -74,30 +86,39 @@ function openCompanyWorkpaper(material: ReportEvidence) {
 // 改进记录写入进行中不能关闭：服务端可能已改了措施状态，关掉会丢掉本该写进报告的回查段。
 function closeWorkpaper(done: () => void) { if (workpaperBusy.value) { ElMessage.warning('正在保存改进措施记录，请等待完成后再关闭'); return } if (!workpaperDirty.value || window.confirm('当前底稿或批注尚未保存，确定关闭吗？')) done() }
 let clearTopicObject = false
-const energySelection = ref(dailyEnergySelectionFromQuery(route.query,date.value))
-const priceSelection = ref(priceSelectionFromQuery(route.query, date.value))
-const periodSelection = ref(settlementSelectionFromQuery(route.query, date.value))
-const topicMode = ref<ReviewTopic>(reviewTopic(route.query.topic, !!selectedKey.value))
+const energySelection = ref(dailyEnergySelectionFromQuery(reviewRoute.value.query,date.value))
+const priceSelection = ref(priceSelectionFromQuery(reviewRoute.value.query, date.value))
+const periodSelection = ref(settlementSelectionFromQuery(reviewRoute.value.query, date.value))
+const topicMode = ref<ReviewTopic>(reviewTopic(reviewRoute.value.query.topic, !!selectedKey.value))
 // 专题窗口关闭即销毁，资料来源与补充分时资料的筛选由这里保留，重新打开时恢复。
 const topicSource = ref<ReviewAnalysisSource>(), importedSelection = ref<ImportedSelection>()
+function syncSelectionsFromReviewRoute() {
+  periodSelection.value = settlementSelectionFromQuery(reviewRoute.value.query, date.value)
+  priceSelection.value = priceSelectionFromQuery(reviewRoute.value.query, date.value)
+  energySelection.value = dailyEnergySelectionFromQuery(reviewRoute.value.query, date.value)
+  topicMode.value = reviewTopic(reviewRoute.value.query.topic, !!selectedKey.value)
+  topicSource.value = undefined
+  importedSelection.value = undefined
+  clearTopicObject = false
+}
 // 资料来源只在同一复盘范围内沿用：换对象、日期、地区、公司或业务视角后回到新范围的默认来源。
 watch(() => [selectedKey.value, date.value, region.value, selectedCompanyId.value, businessView.value], () => { topicSource.value = undefined })
-watch(() => route.query.topic, value => { topicMode.value = reviewTopic(value, !!selectedKey.value) })
+watch(() => reviewRoute.value.query.topic, value => { topicMode.value = reviewTopic(value, !!selectedKey.value) })
 // Batch synchronous filter resets into a single navigation so one topic cannot overwrite another.
 watch([energySelection, priceSelection, periodSelection, topicMode], () => {
   const objectReset = clearTopicObject ? { declarationId: undefined, decisionId: undefined } : {}
   clearTopicObject = false
-  if (props.standaloneTopics) void router.replace({ query: { ...route.query, ...objectReset, ...dailyEnergySelectionQuery(energySelection.value), ...priceSelectionQuery(priceSelection.value), ...settlementSelectionQuery(periodSelection.value), topic: topicMode.value } })
+  if (props.routeActive && props.standaloneTopics) void router.replace({ path: reviewRoute.value.path, query: { ...reviewRoute.value.query, ...objectReset, ...dailyEnergySelectionQuery(energySelection.value), ...priceSelectionQuery(priceSelection.value), ...settlementSelectionQuery(periodSelection.value), topic: topicMode.value } })
 })
 const liveTopicSnapshot = computed(() => canAnalyze.value ? currentSnapshot() : null)
-function analysisLocation() { return { path: '/xhjy/review/analysis', query: { ...route.query, layout: undefined, analysisReturn: undefined, ...settlementSelectionQuery(periodSelection.value), ...priceSelectionQuery(priceSelection.value), ...dailyEnergySelectionQuery(energySelection.value), topic: topicMode.value, view: businessView.value, companyId: selectedCompanyId.value, region: region.value } } }
+function analysisLocation() { return { path: '/xhjy/review/analysis', query: { ...reviewRoute.value.query, layout: undefined, analysisReturn: undefined, ...settlementSelectionQuery(periodSelection.value), ...priceSelectionQuery(priceSelection.value), ...dailyEnergySelectionQuery(energySelection.value), topic: topicMode.value, view: businessView.value, companyId: selectedCompanyId.value, region: region.value } } }
 function openIndependentTopics() { void router.push(analysisLocation()) }
-const analysisReturn = computed(() => safeAnalysisReturn(route.query.analysisReturn, selectedCompanyId.value, region.value))
+const analysisReturn = computed(() => safeAnalysisReturn(reviewRoute.value.query.analysisReturn, selectedCompanyId.value, region.value))
 function returnToAnalysis() { if (analysisReturn.value) void router.push(analysisReturn.value) }
 function openPeriodDecision(order: DeclarationOrder) {
   if (!matchesReviewScope(order, order.targetDate, region.value, selectedCompanyId.value) || maintenanceBusy.value) return
   // Cross-route navigation uses the leave guard; only same-route modal navigation needs this check.
-  if (route.path === '/xhjy/review' && hasDraft() && !window.confirm('当前有未保存的内容，确定切换到这笔申报吗？')) return
+  if (reviewRoute.value.path === '/xhjy/review' && hasDraft() && !window.confirm('当前有未保存的内容，确定切换到这笔申报吗？')) return
   const back = router.resolve(analysisLocation()).fullPath
   topicVisible.value = false
   void router.push({ path: '/xhjy/review', query: { date: order.targetDate, declarationId: order.id, task: 'decision', view: businessView.value, analysisReturn: back } })
@@ -134,7 +155,7 @@ function currentSnapshot(interval = '') {
   snapshot.scope.businessView = businessView.value
   return snapshot
 }
-function openTopic() { if (selectedCompanyId.value) { topicSnapshot.value = canAnalyze.value ? currentSnapshot() : null; topicMode.value = reviewTopic(route.query.topic, !!selectedKey.value && canAnalyze.value); topicVisible.value = true } }
+function openTopic() { if (selectedCompanyId.value) { topicSnapshot.value = canAnalyze.value ? currentSnapshot() : null; topicMode.value = reviewTopic(reviewRoute.value.query.topic, !!selectedKey.value && canAnalyze.value); topicVisible.value = true } }
 /** 等待态骨架占位（防整页抖动）：切日期会同步清空旧数据，若让成品面板直接卸载，
  *  内容高度会在「取数塌缩→数据回弹」间跳变并钳掉滚动位置。等待期改用与成品面板
  *  等量的骨架屏撑住布局；云南平台分时本就不返回（结算面板等待态单独撑位）。 */
@@ -151,12 +172,12 @@ watch([date, region, selectedCompanyId, selectedKey], () => { assistantVisible.v
 watch(selectedKey, () => { focus.value = ''; lesson.value = '' })
 watch(selectedDecision, d => { lesson.value = d?.lesson ?? '' })
 function changeDate(value: string) {
-  if (isRealCalendarDate(value)) void router.replace({ query: { ...route.query, date: value, declarationId: undefined, decisionId: undefined } })
+  if (isRealCalendarDate(value)) void router.replace({ path: reviewRoute.value.path, query: { ...reviewRoute.value.query, date: value, declarationId: undefined, decisionId: undefined } })
 }
 function choose(value: string) {
-  void router.replace({ query: { ...route.query, declarationId: value.startsWith('order:') ? value.slice(6) : undefined, decisionId: value.startsWith('decision:') ? value.slice(9) : undefined } })
+  void router.replace({ path: reviewRoute.value.path, query: { ...reviewRoute.value.query, declarationId: value.startsWith('order:') ? value.slice(6) : undefined, decisionId: value.startsWith('decision:') ? value.slice(9) : undefined } })
 }
-function setTask(value: string) { void router.replace({ query: { ...route.query, task: value, dim: undefined, todo: undefined } }) }
+function setTask(value: string) { void router.replace({ path: reviewRoute.value.path, query: { ...reviewRoute.value.query, task: value, dim: undefined, todo: undefined } }) }
 function investigate(label: string) { focus.value = label; setTask('improvement') }
 function openOriginal() {
   if (selectedOrder.value) void router.push({ path: '/xhjy/desk', query: { declarationId: selectedOrder.value.id, targetDate: selectedOrder.value.targetDate } })
@@ -178,7 +199,7 @@ async function openLinkedPublication(row: LinkedReview) {
 }
 // 已经读出来的报告同样不能跨对象停留：切走即作废，不让上一笔申报的报告盖在新对象上。
 watch([selectedKey, date, selectedCompanyId, region], () => { linkedSequence++; linkedPublication.value = null; linkedError.value = ''; linkedVisible.value = false })
-function openLegacyArchive() { void router.push({ path: '/xhjy/review', query: { ...route.query, layout: 'classic', task: undefined, decisionId: undefined } }) }
+function openLegacyArchive() { void router.push({ path: '/xhjy/review', query: { ...reviewRoute.value.query, layout: 'classic', task: undefined, decisionId: undefined } }) }
 let scopeSequence = 0, selectionSequence = 0, pageSequence = 0
 async function loadOrders(seq: number, day: string, rid: string, offset = 0) {
   const page = ++pageSequence, company = selectedCompanyId.value
@@ -233,6 +254,16 @@ async function reload() {
   if (seq === scopeSequence) evidenceLoading.value = false
 }
 watch([date, region, selectedCompanyId, topicScopeMismatch], (_next, previous) => {
+  if (!props.routeActive) {
+    // 新的复盘深链会在 KeepAlive 激活前先更新快照；旧范围证据不能与新日期短暂混用。
+    result.value = null
+    settlement.value = null
+    extraOrder.value = null
+    decisions.value = []
+    orders.value = []
+    linkedPublication.value = null
+    return
+  }
   if (previous?.length && (previous[1] !== region.value || previous[2] !== selectedCompanyId.value) && selectedKey.value) {
     if (props.standaloneTopics) clearTopicObject = true
     else choose('')
@@ -240,7 +271,22 @@ watch([date, region, selectedCompanyId, topicScopeMismatch], (_next, previous) =
   if (previous?.length) { periodSelection.value = settlementSelectionFromQuery({}, date.value); priceSelection.value = priceSelectionFromQuery({}, date.value); energySelection.value = dailyEnergySelectionFromQuery({},date.value); importedSelection.value = undefined }
   focus.value = ''; void reload()
 }, { immediate: true })
-watch(selectedKey, loadSelection)
+watch(selectedKey, () => { if (props.routeActive) void loadSelection() })
+watch(() => props.routeActive, active => {
+  if (active) {
+    syncSelectionsFromReviewRoute()
+    focus.value = ''
+    void reload()
+    return
+  }
+  ++scopeSequence
+  ++selectionSequence
+  ++pageSequence
+  evidenceLoading.value = false
+  decisionLoading.value = false
+  orderLoading.value = false
+  selectionLoading.value = false
+})
 async function saveLesson() {
   const d = selectedDecision.value
   if (!d || !lesson.value.trim() || savingLesson.value) return
@@ -258,7 +304,7 @@ async function saveLesson() {
 <template>
   <div class="review-workbench page-stack">
     <RegionDataBanner />
-    <header class="heading"><div class="title"><h1>{{ props.standaloneTopics ? '复盘专题分析' : '复盘中心' }}</h1><span>{{ currentRegion.shortName || currentRegion.name }}</span></div><div class="date-control"><button type="button" aria-label="前一天" @click="changeDate(shiftDate(date, -1))"><ArrowLeft :size="14" /></button><input type="date" aria-label="复盘交易日" :value="date" @change="changeDate(($event.target as HTMLInputElement).value)" /><button type="button" aria-label="后一天" @click="changeDate(shiftDate(date, 1))"><ArrowRight :size="14" /></button></div><div class="header-actions"><button v-if="props.standaloneTopics" type="button" @click="router.push({ path: '/xhjy/review', query: { ...route.query, layout: undefined } })">返回本次复盘</button><button v-else type="button" :disabled="!selectedCompanyId" @click="openTopic">专题分析</button><button type="button" :disabled="!canAnalyze" @click="openAssistant('analysis')">分析本次复盘</button><button type="button" :disabled="!canAnalyze" @click="openWorkpaper()">本次底稿</button><button type="button" @click="openArchive"><FileText :size="14" />报告目录</button><button type="button" @click="reload"><RefreshCw :size="14" />刷新</button></div></header>
+    <header class="heading"><div class="title"><h1>{{ props.standaloneTopics ? '复盘专题分析' : '复盘中心' }}</h1><span>{{ currentRegion.shortName || currentRegion.name }}</span></div><div class="date-control"><button type="button" aria-label="前一天" @click="changeDate(shiftDate(date, -1))"><ArrowLeft :size="14" /></button><input type="date" aria-label="复盘交易日" :value="date" @change="changeDate(($event.target as HTMLInputElement).value)" /><button type="button" aria-label="后一天" @click="changeDate(shiftDate(date, 1))"><ArrowRight :size="14" /></button></div><div class="header-actions"><button v-if="props.standaloneTopics" type="button" @click="router.push({ path: '/xhjy/review', query: { ...reviewRoute.query, layout: undefined } })">返回本次复盘</button><button v-else type="button" :disabled="!selectedCompanyId" @click="openTopic">专题分析</button><button type="button" :disabled="!canAnalyze" @click="openAssistant('analysis')">分析本次复盘</button><button type="button" :disabled="!canAnalyze" @click="openWorkpaper()">本次底稿</button><button type="button" @click="openArchive"><FileText :size="14" />报告目录</button><button type="button" @click="reload"><RefreshCw :size="14" />刷新</button></div></header>
     <div v-if="analysisReturn" class="notice"><button type="button" @click="returnToAnalysis">返回原周期专题分析</button><span> 返回时恢复原日期、参考期、厂站和图表选区。</span></div>
     <p v-if="!selectedCompanyId" class="notice" role="alert">请先在顶部选择有权查看的公司，再进行复盘。</p>
     <p v-else-if="topicScopeMismatch" class="notice" role="alert">此专题链接的公司或地区与当前选择不一致。请先切换到原公司和地区，再查看同一份复盘资料。</p>

@@ -12,9 +12,16 @@
 // 不把 2000+ 行四个页面打进同一个首屏包（原本每页各自路由级懒加载，合并不得劣化）。
 //
 // tab 状态同步到 ?tab= query：旧路由 redirect 落到对应 tab、刷新与深链保持位置。
-import { defineAsyncComponent, ref, watch } from 'vue'
+//
+// 已迁至平台后台（ChenShi-Tech/dljy#3464）：内部版 AI 设施整组由平台后台接管，登记在
+// features/platformAdminMigration/registry.ts。被迁走的 tab 不渲染，tab 栏上方原位置显示提示与后台链接；
+// 「AI 模型设置」里的个人自助内容（长期记忆、语音播报）单独成「个人设置」tab 保留。
+// 客户交付版不受影响（登记表客户版恒答未迁移，tab 与原来完全一致）。
+import { defineAsyncComponent, ref, watch, type Component } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { IS_CUSTOMER_EDITION } from '@/services/edition'
+import { IS_CUSTOMER_EDITION, IS_INTERNAL_EDITION } from '@/services/edition'
+import { hiddenEntriesOf, isTabHidden } from '@/features/platformAdminMigration/registry'
+import MigratedToAdminNotice from '@/features/platformAdminMigration/MigratedToAdminNotice.vue'
 
 // 「模型接入」tab 按档分流（#2410 → #2668）：内部档是完整的「AI 模型设置」页（联网搜索密钥、
 // 我方管理令牌、采样参数、工作流参数……）；交付档只有「模型服务」面（档位启用 + 角色路由），
@@ -25,13 +32,27 @@ const MODEL_SETTINGS_TAB = IS_CUSTOMER_EDITION
   ? [{ name: 'models', label: '模型服务', component: defineAsyncComponent(() => import('@/components/ai/ModelServicesPanel.vue')) }]
   : [{ name: 'models', label: 'AI 模型设置', component: defineAsyncComponent(() => import('./AiSettingsView.vue')) }]
 
-const TABS = [
+type StudioTab = { name: string; label: string; component: Component }
+
+const STUDIO_TABS: StudioTab[] = [
   ...MODEL_SETTINGS_TAB,
   { name: 'skills', label: '技能工作室', component: defineAsyncComponent(() => import('./SkillStudioView.vue')) },
   { name: 'sub-agents', label: '子智能体工作室', component: defineAsyncComponent(() => import('./SubAgentStudioView.vue')) },
   { name: 'dify', label: 'Dify 工作流工作室', component: defineAsyncComponent(() => import('./strategy/DifyWorkflowStudioView.vue')) },
   { name: 'schedules', label: '定时任务调度', component: defineAsyncComponent(() => import('./ScheduleManagementView.vue')) },
 ]
+
+// 「AI 模型设置」整 tab 迁走时，个人自助部分单独成 tab 并排第一（成为默认 tab）。
+// 先过编译期常量 IS_INTERNAL_EDITION：交付档里整条分支被折叠掉，连 tab 标签都不进产物。
+const PERSONAL_TAB: StudioTab[] = IS_INTERNAL_EDITION && isTabHidden('ai-studio', 'models')
+  ? [{ name: 'personal', label: '个人设置', component: defineAsyncComponent(() => import('@/components/ai/PersonalAiSettingsPanel.vue')) }]
+  : []
+
+const TABS: StudioTab[] = [...PERSONAL_TAB, ...STUDIO_TABS.filter((t) => !isTabHidden('ai-studio', t.name))]
+const MIGRATED_ENTRIES = hiddenEntriesOf('ai-studio')
+const PAGE_SUB = MIGRATED_ENTRIES.length
+  ? '个人 AI 设置：长期记忆与语音播报（仅系统管理员可见）。'
+  : '技能、子智能体、工作流编排与定时任务的统一配置入口（仅系统管理员可见）。'
 
 const TAB_NAMES = TABS.map((t) => t.name) as readonly string[]
 const DEFAULT_TAB = TABS[0].name
@@ -67,8 +88,11 @@ function onTabChange(name: string | number) {
   <div class="ai-studio">
     <header class="page-head">
       <h1>AI 工作室</h1>
-      <p class="sub">技能、子智能体、工作流编排与定时任务的统一配置入口（仅系统管理员可见）。</p>
+      <p class="sub">{{ PAGE_SUB }}</p>
     </header>
+
+    <!-- 已迁至平台后台的 tab 不渲染，原位置（tab 栏上方）给出提示与后台链接（#3464） -->
+    <MigratedToAdminNotice v-if="MIGRATED_ENTRIES.length" :entries="MIGRATED_ENTRIES" />
 
     <el-tabs v-model="activeTab" class="studio-tabs" @tab-change="onTabChange">
       <el-tab-pane v-for="tab in TABS" :key="tab.name" :label="tab.label" :name="tab.name">

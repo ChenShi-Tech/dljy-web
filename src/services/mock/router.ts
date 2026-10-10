@@ -2753,11 +2753,19 @@ const ROUTES: MockRoute[] = [
     return mockEnvelopeResponse({ data: node })
   } },
   { method: 'GET', prefix: '/api/v1/grid/geo-assets/nodes', handler: (ctx) => {
-    const items = gridDemoNodes(ctx)
+    // 与真实后端同径：按 locationStatus 查询参数过滤（驾驶舱 located/approximate 两档分拉后
+    // 在前端合并，见 GridSpatialCommandView.loadNodes）。演示节点全部为 located 档，
+    // approximate 档如实返回空集，避免两档各回全量导致合并后节点重影、total 翻倍。
+    const status = ctx.url.searchParams.get('locationStatus')
+    const all = gridDemoNodes(ctx)
+    const items = status ? all.filter((item) => item.locationStatus === status) : all
+    const locatedCount = items.filter((item) => item.locationStatus === 'located').length
+    const approximateCount = items.filter((item) => item.locationStatus === 'approximate').length
+    const unresolvedCount = items.filter((item) => item.locationStatus === 'unresolved').length
     return mockEnvelopeResponse({
       data: {
         items,
-        summary: { visibleCount: items.length, locatedCount: items.length, approximateCount: 0, unresolvedCount: 0, overriddenCount: 0 },
+        summary: { visibleCount: items.length, locatedCount, approximateCount, unresolvedCount, overriddenCount: 0 },
         pagination: { page: 1, pageSize: items.length, total: items.length, totalPages: 1 },
         dataAvailability: { status: 'available', fallback: false }
       },

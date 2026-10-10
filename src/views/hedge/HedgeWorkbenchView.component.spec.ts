@@ -1,17 +1,86 @@
-// 套保工作台组件测试（build-midlong-spot-hedging 任务 8.1/8.2/8.6，HW-01/06/07/10）。
+// 套保工作台外壳组件测试（build-midlong-spot-hedging 任务 8.1/8.2/8.6，HW-01/06/07；#3420 外壳 + 页签拆分）。
 // 组件测试文件名必须是 *.component.spec.ts 才会在 happy-dom 环境运行。
-import { mount, enableAutoUnmount } from '@vue/test-utils'
-import { afterAll, afterEach, describe, expect, it, vi } from 'vitest'
+// 外壳只测地区门禁、默认页签、页签切换与跨页签的切公司行为；各页签自身的显示与写口用例在 tabs/*.component.spec.ts。
+import { flushPromises, mount, enableAutoUnmount } from '@vue/test-utils'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 const fetchOverview = vi.fn()
-const putCaps = vi.fn()
-const putBaselines = vi.fn()
+const fetchMonths = vi.fn(async (): Promise<unknown> => monthsOk('2026-09'))
+const fetchSettlement = vi.fn(async (): Promise<unknown> => ({}))
+const emptyCoverage = async (): Promise<unknown> => ({ plants: [], calendar: { days: [], coveredDays: 0, totalDays: 0 }, status: 'NOT_REPORTED' })
+const fetchSettlementCoverage = vi.fn(emptyCoverage)
+// 月页签钻取（/breakdown）走 hedgeApi.request：外壳只关心页签切换，桩给最小可用空结果。
+const fetchBreakdown = vi.fn(async (): Promise<unknown> => ({
+  status: 'OK', reason: null, dimension: 'subject', dimensionLabel: '交易单元', basis: 'MONTHLY_NET_OBLIGATION',
+  basisNote: '', months: [], totalMwh: null, rows: [], consistency: null, fromDate: '', toDate: '', contracts: [],
+}))
+
+// 月页签的按日图（MonthDaysChart → useEChart → echarts）真实加载太重：外壳只断言页签 marker，
+// 桩掉图表生命周期（数据组装由 MonthDaysChart.component.spec 直接断言）。
+vi.mock('@/composables/useEChart', () => ({
+  useEChart: () => ({ setOption: vi.fn(), resize: vi.fn(), instance: () => null }),
+}))
+
+/**
+ * 月页签（/months）的最小完整载荷（任务 8.3 / #3421 后 MonthCard 渲染需要全部字段，
+ * 缺字段会在渲染期抛错——旧占位版整包 JSON 展示不再存在）。
+ */
+function monthsOk(month: string): Record<string, unknown> {
+  const notComputed = () => ({ value: null, status: 'NOT_COMPUTABLE' })
+  const notAssessed = { metric: null, tier: null, level: 'NOT_ASSESSED', reason: 'NOT_COMPUTABLE', hints: [], basis: null }
+  const view = {
+    month, formalQuantity: null, period: 'CURRENT',
+    midlong: { lockedMwh: '1', structure: null, incomplete: false, affectedContractIds: [], note: null },
+    monthlyUndecomposed: { quantityMwh: '0', contractIds: [], note: '' },
+    mechanism: { basis: 'PLANNED', label: '计划口径', value: null, stations: [], unknownStationIds: [], note: '' },
+    generation: { granularity: 'DAY', actualDays: 0, forecastDays: 0, uncoveredDays: 0, totalDays: 0 },
+    days: [],
+    baseline: { coverage: 'NONE', totalMwh: null, coveredStationIds: [], missingStationIds: [], label: '计划口径', note: null },
+    ratios: {
+      interval: { granularity: 'DAY', coverage: { coveredCount: 0, totalCount: 0, ratio: null }, withMechanism: notComputed(), midlongOnly: notComputed(), assessment: notAssessed },
+      baseline: { label: '计划口径', withMechanism: notComputed(), midlongOnly: notComputed(), assessment: notAssessed },
+    },
+    caps: { status: 'NOT_REGISTERED', rows: [], note: '' },
+    consistency: { ok: true, partial: false },
+  }
+  return {
+    status: 'OK', fromMonth: month, toMonth: month, months: [view], totals: null, unallocatedPool: [],
+    revisionsUsed: [], contracts: [], scheme: null, legs: {}, gaps: [], asOf: '2026-09-15T02:00:00Z', view: 'CURRENT',
+  }
+}
 
 // 地区上下文桩：mountView(regionId) 切换 currentRegion，地区门禁（HW-07）才真正受测。
 const regionState = vi.hoisted(() => ({ id: 'yunnan' }))
 vi.mock('@/services/region/regionContext', () => ({
   currentRegion: { get value() { return { id: regionState.id } } },
 }))
+
+// 公司上下文桩：真实 ref，切换公司的重取与清空（HW-06/#3401）才真正受测。
+vi.mock('@/services/company/companyContext', async () => {
+  const { ref } = await import('vue')
+  return { selectedCompanyId: ref('comp-a') }
+})
+
+// 维护页签的接口全部经 hedgeMaintenanceApi（#3423）：外壳只测它与今明页签的联动与保活，桩给最小可用数据。
+const maintenanceApi = vi.hoisted(() => ({
+  fetchBandPresets: vi.fn(async () => ({ rows: [] })),
+  fetchBandSchemes: vi.fn(async () => ({ rows: [] })),
+  fetchBandActivation: vi.fn(async () => ({ current: null, asOf: null, active: null, history: [] })),
+  createBandScheme: vi.fn(async () => ({})),
+  addBandSchemeVersion: vi.fn(async () => ({})),
+  switchBandActivation: vi.fn(async () => ({})),
+  fetchBaselines: vi.fn(async () => ({ rows: [] })),
+  putBaselines: vi.fn(async () => ({ rows: [] })),
+  fetchMechanismParams: vi.fn(async () => ({ rows: [] })),
+  createMechanismParam: vi.fn(async () => ({})),
+  appendMechanismVersion: vi.fn(async () => ({})),
+  fetchCaps: vi.fn(async () => ({ rows: [{ subjectId: 1, month: '2026-11', capMwh: '100', sourceNote: '核定通知', rowVersion: 1 }] })),
+  putCaps: vi.fn(async () => ({ rows: [] })),
+  fetchMaintenanceStations: vi.fn(async () => [{ id: 10, name: '甲风电' }]),
+  fetchMaintenanceSubjects: vi.fn(async () => []),
+  fetchMaintenanceWriteAccess: vi.fn(async () => ({ writable: true, reason: null })),
+}))
+vi.mock('@/services/hedge/hedgeMaintenanceApi', () => maintenanceApi)
 
 vi.mock('@/services/hedge/hedgeApi', () => ({
   HedgeApiError: class HedgeApiError extends Error {
@@ -27,27 +96,46 @@ vi.mock('@/services/hedge/hedgeApi', () => ({
   },
   fetchOverview: (...args: unknown[]) => fetchOverview(...(args as [])),
   fetchBaselines: vi.fn(async () => ({ rows: [] })),
-  putBaselines: (...args: unknown[]) => putBaselines(...(args as [])),
+  putBaselines: vi.fn(async () => ({})),
   fetchBandPresets: vi.fn(async () => ({ rows: [] })),
   fetchBandActivation: vi.fn(async () => ({ active: null })),
   fetchCaps: vi.fn(async () => ({ rows: [{ subjectId: 1, month: '2026-11', capMwh: '100' }] })),
   fetchMechanismParams: vi.fn(async () => ({ rows: [] })),
-  fetchMonths: vi.fn(async () => ({})),
-  fetchSettlement: vi.fn(async () => ({})),
+  fetchMonths: (...args: unknown[]) => fetchMonths(...(args as [])),
+  fetchSettlement: (...args: unknown[]) => fetchSettlement(...(args as [])),
+  // 月页签与钻取（任务 8.3 / #3421）经 request 取 /months、/breakdown；分流到各自桩，其余路径拒绝。
+  request: (_method: string, path: string) => {
+    if (path === '/months') return fetchMonths()
+    if (path === '/breakdown') return fetchBreakdown()
+    return Promise.reject(new Error(`外壳测试未预期的请求：${path}`))
+  },
   postMechanismVersion: vi.fn(async () => ({})),
   postSimulate: vi.fn(async () => ({})),
-  putCaps: (...args: unknown[]) => putCaps(...(args as [])),
+  putCaps: vi.fn(async () => ({})),
   requestBandSchemeCreate: vi.fn(async () => ({ schemeId: 1 })),
   activateBand: vi.fn(async () => ({})),
 }))
 
+// 结算复核页签改走 hedgeSettlementApi（ChenShi-Tech/dljy#3054）：复核请求仍计入原 fetchSettlement 桩，
+// 原有「非云南不发请求」「失活页签切公司不取数」的断言保持不变；覆盖日历请求单独计数。
+vi.mock('@/services/hedge/hedgeSettlementApi', () => ({
+  fetchSettlementCoverage: (...args: unknown[]) => fetchSettlementCoverage(...(args as [])),
+  fetchSettlementReview: (...args: unknown[]) => fetchSettlement(...(args as [])),
+}))
+
 import HedgeWorkbenchView from './HedgeWorkbenchView.vue'
-import { HedgeApiError } from '@/services/hedge/hedgeApi'
+import HedgeTodayTab from './tabs/HedgeTodayTab.vue'
+import HedgeMonthsTab from './tabs/HedgeMonthsTab.vue'
+import HedgeSettlementTab from './tabs/HedgeSettlementTab.vue'
+import HedgeSimulateTab from './tabs/HedgeSimulateTab.vue'
+import HedgeMaintenanceTab from './tabs/HedgeMaintenanceTab.vue'
+import { selectedCompanyId } from '@/services/company/companyContext'
+import { overviewPayload } from '@/test/hedgeWorkbench'
 
-enableAutoUnmount(afterAll)
-
-const hedgeApiError = (status: number, errorCode: string, message: string, details: Record<string, unknown> | null = null) =>
-  new HedgeApiError(status, errorCode, message, details)
+// 每条用例结束即卸载（ChenShi-Tech/dljy#3432）：原先 afterAll 让前面用例挂载的实例一直存活，切换公司时
+// 多个实例各自重取，测试保存的 release 可能放行的是别的实例的请求，本用例的页面永远等不到结果——CI 高负载下
+// 几乎每次都红（main 连红 3 次）。
+enableAutoUnmount(afterEach)
 
 function mountView(regionId = 'yunnan') {
   regionState.id = regionId
@@ -60,50 +148,26 @@ function mountView(regionId = 'yunnan') {
   })
 }
 
-function overviewPayload() {
-  return {
-    asOf: '2026-09-15T02:00:00Z',
-    view: 'CURRENT',
-    intervals: [
-      { start: '2026-09-15T07:00:00+08:00', end: '2026-09-15T08:00:00+08:00', covered: true,
-        generation: { value: '50', source: 'ACTUAL', uncoveredReason: null },
-        locked: { midlong: '20', mechanism: { value: '10', note: null }, total: '30' },
-        exposure: { withMechanism: '20', midlongOnly: '30' } },
-      { start: '2026-09-15T10:00:00+08:00', end: '2026-09-15T11:00:00+08:00', covered: false,
-        generation: { value: null, source: 'FORECAST', uncoveredReason: 'FORECAST_NOT_ARRIVED' },
-        locked: { midlong: '20', mechanism: { value: null, note: null }, total: null },
-        exposure: { withMechanism: null, midlongOnly: null } },
-    ],
-    ratio: {
-      coverage: { coveredCount: 1, totalCount: 2 },
-      withMechanism: { value: null, status: 'MECHANISM_INCOMPLETE' },
-      midlongOnly: { value: '0.6', status: 'OK' },
-    },
-    standardMetrics: { TODAY2_INTERVAL: { level: 'NOT_ASSESSED', reason: 'MECHANISM_INCOMPLETE', hints: [], tier: null, basis: 'WITH_MECHANISM' } },
-    sensitivity: { value: null, incomplete: true, reference: '30', note: '未计机制电量' },
-    watchlist: { rows: [], basisUsed: 'WITH_MECHANISM', note: null, disclaimer: '决策支持参考，不构成自动下单或确定性买卖指令' },
-    scheme: null,
-    legs: {},
-    gaps: [{ code: 'FORECAST_NOT_ARRIVED', message: '明日预测未到达', affected: null }],
-    meta: {},
-  }
-}
+// 每个页签在外壳里渲染时的标志区块：切到某页签后只应出现它自己的那一块。
+const TAB_MARKERS = {
+  today2: '[data-test="metrics"]',
+  month: '[data-test="month-view"]',
+  settlement: '[data-test="settlement-view"]',
+  simulate: '[data-test="simulate-view"]',
+  maintenance: '[data-test="maintenance"]',
+} as const
 
-async function openMaintenance(wrapper: ReturnType<typeof mount>) {
-  await vi.waitFor(() => {
-    expect(wrapper.find('[data-test="maintenance-toggle"]').exists()).toBe(true)
-  })
-  await wrapper.find('[data-test="maintenance-toggle"]').trigger('click')
-  await vi.waitFor(() => {
-    expect(wrapper.find('[data-test="maintenance"]').exists()).toBe(true)
-  })
-}
-
-describe('HedgeWorkbenchView（HW-01/02/06/07/10）', () => {
+describe('HedgeWorkbenchView 外壳（HW-01/06/07）', () => {
   afterEach(() => {
     fetchOverview.mockReset()
-    putCaps.mockReset()
-    putBaselines.mockReset()
+    fetchMonths.mockReset()
+    fetchMonths.mockImplementation(async () => monthsOk('2026-09'))
+    fetchSettlement.mockReset()
+    fetchSettlement.mockImplementation(async () => ({}))
+    fetchSettlementCoverage.mockReset()
+    fetchSettlementCoverage.mockImplementation(emptyCoverage)
+    fetchBreakdown.mockClear()
+    regionState.id = 'yunnan'
   })
 
   it('地区开放时按今明窗口请求 /overview 并渲染判级与缺口', async () => {
@@ -115,8 +179,37 @@ describe('HedgeWorkbenchView（HW-01/02/06/07/10）', () => {
       expect(wrapper.find('[data-test="metrics"]').exists()).toBe(true)
     })
     const text = wrapper.text()
-    expect(text).toContain('MECHANISM_INCOMPLETE')
+    // 判级与套保率状态走契约中文标签（ASSESSMENT_REASON_LABELS）；缺口消息为后端原文。
+    expect(text).toContain('机制参数不完整')
     expect(text).toContain('明日预测未到达')
+  })
+
+  it('切换公司：立即清空上一家公司的结果并按新公司重取（HW-06/#3401）', async () => {
+    selectedCompanyId.value = 'comp-a'
+    fetchOverview.mockResolvedValue(overviewPayload())
+    const wrapper = mountView()
+    await vi.dynamicImportSettled()
+    await vi.waitFor(() => {
+      expect(wrapper.find('[data-test="metrics"]').exists()).toBe(true)
+    })
+    const callsBefore = fetchOverview.mock.calls.length
+    // 新公司的请求挂起：旧结果必须先被清掉，不能在新请求返回前继续显示上一家公司的数值。
+    let release: (value: unknown) => void = () => {}
+    fetchOverview.mockImplementation(() => new Promise((resolve) => { release = resolve }))
+    selectedCompanyId.value = 'comp-b'
+    await vi.waitFor(() => {
+      expect(wrapper.find('[data-test="metrics"]').exists()).toBe(false)
+      expect(fetchOverview.mock.calls.length).toBeGreaterThan(callsBefore)
+    })
+    // 切换一次公司只应新增一次取数：多于一次说明有别的组件实例在响应同一切换（#3432 的根因），
+    // 等过 150ms 防抖窗口再数，否则第二次取数还没发出来。
+    await new Promise((r) => setTimeout(r, 300))
+    expect(fetchOverview.mock.calls.length - callsBefore).toBe(1)
+    release(overviewPayload())
+    await vi.waitFor(() => {
+      expect(wrapper.find('[data-test="metrics"]').exists()).toBe(true)
+    })
+    selectedCompanyId.value = 'comp-a'
   })
 
   it('非云南地区显示「未开放」且不发任何请求（HW-07 地区门禁）', async () => {
@@ -128,97 +221,125 @@ describe('HedgeWorkbenchView（HW-01/02/06/07/10）', () => {
     })
     expect(wrapper.find('[data-test="region-closed"]').text()).toContain('该地区未开放')
     expect(fetchOverview).not.toHaveBeenCalled()
+    expect(fetchMonths).not.toHaveBeenCalled()
+    expect(fetchSettlement).not.toHaveBeenCalled()
+    expect(fetchSettlementCoverage).not.toHaveBeenCalled()
+    expect(wrapper.find('[data-test="tabs"]').exists()).toBe(false)
   })
 
-  it('判级未评估时展示原因而不是默认安全色', async () => {
+  it('切换到每个页签都渲染对应组件，且只显示当前页签的内容（#3420）', async () => {
     fetchOverview.mockResolvedValue(overviewPayload())
     const wrapper = mountView()
-    await vi.dynamicImportSettled()
     await vi.waitFor(() => {
-      const assessment = wrapper.find('[data-test="assessment"]').text()
-      expect(assessment).toContain('未评估')
+      expect(wrapper.find(TAB_MARKERS.today2).exists()).toBe(true)
     })
+    const cases = [
+      { key: 'month', component: HedgeMonthsTab },
+      { key: 'settlement', component: HedgeSettlementTab },
+      { key: 'simulate', component: HedgeSimulateTab },
+      { key: 'maintenance', component: HedgeMaintenanceTab },
+      { key: 'today2', component: HedgeTodayTab },
+    ] as const
+    for (const { key, component } of cases) {
+      await wrapper.find(`[data-test="tab-${key}"]`).trigger('click')
+      await vi.waitFor(() => {
+        expect(wrapper.findComponent(component).exists()).toBe(true)
+        expect(wrapper.find(TAB_MARKERS[key]).exists()).toBe(true)
+      })
+      for (const [other, selector] of Object.entries(TAB_MARKERS)) {
+        if (other !== key) expect(wrapper.find(selector).exists(), `${key} 页签下不应出现 ${other} 的内容`).toBe(false)
+      }
+      expect(wrapper.find(`[data-test="tab-${key}"]`).classes()).toContain('active')
+    }
+    // 维护不再是页头开关：原「维护」按钮已并入页签导航。
+    expect(wrapper.find('[data-test="maintenance-toggle"]').exists()).toBe(false)
+    expect(wrapper.findAll('[data-test="tabs"] button').map((b) => b.text()))
+      .toEqual(['今明两日', '当月/后续', '结算复核', '补仓试算', '维护'])
   })
 
-  it('overview 缺 standardMetrics/sensitivity 等字段时降级显示，不冻结渲染（#3133 回归）', async () => {
-    const { standardMetrics: _sm, sensitivity: _se, ...bare } = overviewPayload()
-    void _sm
-    void _se
-    fetchOverview.mockResolvedValue(bare)
+  it('非今明页签：切公司立即清空当前页签数据并按新公司重取，旧响应晚到被丢弃（HW-06/#3420）', async () => {
+    selectedCompanyId.value = 'comp-a'
+    fetchOverview.mockResolvedValue(overviewPayload())
+    const releases: Array<(value: unknown) => void> = []
+    fetchMonths.mockImplementation(() => new Promise((resolve) => { releases.push(resolve) }))
     const wrapper = mountView()
-    await vi.dynamicImportSettled()
+    await vi.waitFor(() => {
+      expect(wrapper.find('[data-test="tab-month"]').exists()).toBe(true)
+    })
+    // 首次激活「当月/后续」：取回 comp-a 的月度视图。
+    await wrapper.find('[data-test="tab-month"]').trigger('click')
+    await vi.waitFor(() => { expect(releases.length).toBe(1) })
+    releases[0](monthsOk('COMP-A'))
+    await vi.waitFor(() => { expect(wrapper.find('[data-test="month-view"]').text()).toContain('COMP-A') })
+    // 切走再切回：页签被重新激活即重取（comp-a 的第二个请求挂起），期间仍显示已取回的数据。
+    await wrapper.find('[data-test="tab-settlement"]').trigger('click')
+    await wrapper.find('[data-test="tab-month"]').trigger('click')
+    await vi.waitFor(() => { expect(releases.length).toBe(2) })
+    expect(wrapper.find('[data-test="month-view"]').text()).toContain('COMP-A')
+    // 切公司：上一家公司的结果立即消失，并按新公司只重取一次。
+    selectedCompanyId.value = 'comp-b'
+    await vi.waitFor(() => {
+      expect(wrapper.find('[data-test="month-view"]').exists()).toBe(false)
+      expect(releases.length).toBe(3)
+    })
+    // 新公司先返回、旧公司（切换前发出的请求）后返回：页面必须停在新公司的结果上。
+    releases[2](monthsOk('COMP-B'))
+    await vi.waitFor(() => { expect(wrapper.find('[data-test="month-view"]').text()).toContain('COMP-B') })
+    releases[1](monthsOk('STALE-COMP-A'))
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(wrapper.find('[data-test="month-view"]').text()).toContain('COMP-B')
+    expect(wrapper.find('[data-test="month-view"]').text()).not.toContain('STALE-COMP-A')
+    // 失活的页签只清空不取数：切换一次公司只应新增一次月度请求（结算复核失活，不得因切公司取数）。
+    expect(releases.length).toBe(3)
+    expect(fetchSettlement).toHaveBeenCalledTimes(1)
+    expect(fetchSettlementCoverage).toHaveBeenCalledTimes(2)
+    selectedCompanyId.value = 'comp-a'
+  })
+
+  it('维护页签写入成功后今明两日重取总览；切走再切回不丢试算输入（#3420 保持原面板行为）', async () => {
+    fetchOverview.mockResolvedValue(overviewPayload())
+    const wrapper = mountView()
     await vi.waitFor(() => {
       expect(wrapper.find('[data-test="metrics"]').exists()).toBe(true)
     })
-    const text = wrapper.text()
-    expect(text).toContain('未评估')
-    expect(text).toContain('不完整')
-    expect(wrapper.find('[data-test="intervals"]').exists()).toBe(true)
-  })
-
-  it('未知时段显示未知/未覆盖原因，不用 0 冒充', async () => {
-    fetchOverview.mockResolvedValue(overviewPayload())
-    const wrapper = mountView()
-    await vi.dynamicImportSettled()
-    await vi.waitFor(() => {
-      const row = wrapper.find('tbody tr:nth-child(2)')
-      expect(row.text()).toContain('未知')
-      expect(row.text()).toContain('FORECAST_NOT_ARRIVED')
-      expect(row.text()).not.toContain('0</td>')
-    })
-  })
-
-  it('加载失败显示失败原因，不用空图冒充零敞口（HW-08）', async () => {
-    fetchOverview.mockRejectedValue(new Error('网络中断'))
-    const wrapper = mountView()
-    await vi.dynamicImportSettled()
-    await vi.waitFor(() => {
-      expect(wrapper.find('[data-test="load-error"]').text()).toContain('数据加载失败')
-    })
-  })
-
-  it('维护入口 409 冲突提示刷新（8.6/HW-10）', async () => {
-    fetchOverview.mockResolvedValue(overviewPayload())
-    const wrapper = mountView()
-    await vi.dynamicImportSettled()
-    await openMaintenance(wrapper)
-    putCaps.mockRejectedValue(hedgeApiError(409, 'VERSION_CONFLICT', '标注已被他人更新，请刷新后核对'))
-    await wrapper.find('[data-test="caps-status"]').exists()
-    const saveButtons = wrapper.findAll('button').filter((b) => b.text() === '保存')
-    expect(saveButtons.length).toBeGreaterThan(0)
-    await saveButtons[0]!.trigger('click')
-    await vi.waitFor(() => {
-      expect(wrapper.find('[data-test="caps-status"]').text()).toContain('409')
-      expect(wrapper.find('[data-test="caps-status"]').text()).toContain('刷新后核对')
-    })
-  })
-
-  it('维护入口 422 按 details.field 定位字段（8.6/HB-07）', async () => {
-    fetchOverview.mockResolvedValue(overviewPayload())
-    const wrapper = mountView()
-    await vi.dynamicImportSettled()
-    await openMaintenance(wrapper)
-    putCaps.mockRejectedValue(hedgeApiError(422, 'BAND_TIER_INVALID', '比例不在允许档位', { field: 'capMwh' }))
-    const saveButtons = wrapper.findAll('button').filter((b) => b.text() === '保存')
-    await saveButtons[0]!.trigger('click')
-    await vi.waitFor(() => {
-      expect(wrapper.find('[data-test="caps-status"]').text()).toContain('422')
-      expect(wrapper.find('[data-test="caps-status"]').text()).toContain('字段 capMwh')
-    })
-  })
-
-  it('维护入口 403 转只读态并说明所需权限（8.6）', async () => {
-    fetchOverview.mockResolvedValue(overviewPayload())
-    const wrapper = mountView()
-    await vi.dynamicImportSettled()
-    await openMaintenance(wrapper)
-    putBaselines.mockRejectedValue(hedgeApiError(403, 'FORBIDDEN', '当前角色无公司写权限'))
+    const callsBefore = fetchOverview.mock.calls.length
+    await wrapper.find('[data-test="tab-maintenance"]').trigger('click')
+    await vi.waitFor(() => { expect(wrapper.find('[data-test^="baseline-cell-10-"]').exists()).toBe(true) })
+    await wrapper.find('[data-test^="baseline-cell-10-"]').setValue('1300')
+    await wrapper.find('[data-test="baseline-note"]').setValue('经营计划')
     await wrapper.find('[data-test="baseline-save"]').trigger('click')
     await vi.waitFor(() => {
-      expect(wrapper.find('[data-test="baseline-status"]').text()).toContain('403')
-      expect(wrapper.find('.readonly-note').exists()).toBe(true)
-      expect(wrapper.find('.readonly-note').text()).toContain('ADMIN / 本公司 BOSS')
-      expect((wrapper.find('[data-test="baseline-save"]').element as HTMLButtonElement).disabled).toBe(true)
+      expect(wrapper.find('[data-test="baseline-status"]').text()).toContain('已保存')
+      expect(fetchOverview.mock.calls.length).toBe(callsBefore + 1)
     })
+
+    await wrapper.find('[data-test="tab-simulate"]').trigger('click')
+    await wrapper.find('[data-test="simulate-qty"]').setValue('12.5')
+    await wrapper.find('[data-test="tab-today2"]').trigger('click')
+    await wrapper.find('[data-test="tab-simulate"]').trigger('click')
+    expect((wrapper.find('[data-test="simulate-qty"]').element as HTMLInputElement).value).toBe('12.5')
+  })
+
+  it('维护页签切走再切回不重取，未保存的输入不被接口响应覆盖；切公司后重新激活才重取（#218 审查 R1-01）', async () => {
+    fetchOverview.mockResolvedValue(overviewPayload())
+    const caps = maintenanceApi.fetchCaps
+    caps.mockClear()
+    const wrapper = mountView()
+    await wrapper.find('[data-test="tab-maintenance"]').trigger('click')
+    await vi.waitFor(() => { expect(wrapper.find('[data-test="caps-row"] input[data-test="cap-mwh"]').exists()).toBe(true) })
+    expect(caps).toHaveBeenCalledTimes(1)
+    await wrapper.find('[data-test="caps-row"] input[data-test="cap-mwh"]').setValue('250')
+
+    await wrapper.find('[data-test="tab-today2"]').trigger('click')
+    await wrapper.find('[data-test="tab-maintenance"]').trigger('click')
+    await flushPromises()
+    expect(caps).toHaveBeenCalledTimes(1)
+    expect((wrapper.find('[data-test="caps-row"] input[data-test="cap-mwh"]').element as HTMLInputElement).value).toBe('250')
+
+    // 切公司：维护页签正处于激活态，清空后立即按新公司重取（草稿随上一家公司一并丢弃是预期行为）。
+    selectedCompanyId.value = 'comp-b'
+    await vi.waitFor(() => { expect(caps).toHaveBeenCalledTimes(2) })
+    selectedCompanyId.value = 'comp-a'
+    await vi.waitFor(() => { expect(caps).toHaveBeenCalledTimes(3) })
   })
 })

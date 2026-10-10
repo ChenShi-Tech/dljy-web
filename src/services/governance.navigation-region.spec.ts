@@ -32,10 +32,38 @@ describe('导航按地区隐藏入口但不拦路由（#2991）', () => {
     expect(isPathAvailableInRegion('/sjfx/fshq', 'shanxi')).toBe(true)
   })
 
+  it('云南菜单不含出清现货电量分析 /sjfx/zcqxhdl，其他地区仍含（#3388）', () => {
+    expect(flatPaths(filterNavigationForUser(navigation, ADMIN, 'yunnan'))).not.toContain('/sjfx/zcqxhdl')
+    for (const region of ['shanxi', 'guangdong', 'sichuan']) {
+      expect(flatPaths(filterNavigationForUser(navigation, ADMIN, region))).toContain('/sjfx/zcqxhdl')
+    }
+  })
+
+  it('云南 /sjfx/zcqxhdl 路由保持可达（旧深链落到停用说明，不被守卫踢走）', () => {
+    expect(isPathAvailableInRegion('/sjfx/zcqxhdl', 'yunnan')).toBe(true)
+    expect(isPathAvailableInRegion('/sjfx/zcqxhdl', 'shanxi')).toBe(true)
+  })
+
   it('hiddenInRegionIds 不影响其他地区的条目（无 regionIds 交集时行为不变）', () => {
     // 市场洞察驾驶舱没有 hiddenInRegionIds，各地区菜单都应保留
     for (const region of ['yunnan', 'shanxi']) {
       expect(flatPaths(filterNavigationForUser(navigation, ADMIN, region))).toContain('/insight/cockpit')
+    }
+  })
+})
+
+describe('云南水电分析仅云南可见（dljy#3389）', () => {
+  it('云南菜单含 /sjfx/hydro，山西/广东/四川菜单不含', () => {
+    expect(flatPaths(filterNavigationForUser(navigation, ADMIN, 'yunnan'))).toContain('/sjfx/hydro')
+    for (const region of ['shanxi', 'guangdong', 'sichuan']) {
+      expect(flatPaths(filterNavigationForUser(navigation, ADMIN, region))).not.toContain('/sjfx/hydro')
+    }
+  })
+
+  it('地区拦截是路由行为：云南可达，其余地区 hidden 被路由守卫拦截', () => {
+    expect(isPathAvailableInRegion('/sjfx/hydro', 'yunnan')).toBe(true)
+    for (const region of ['shanxi', 'guangdong', 'sichuan']) {
+      expect(isPathAvailableInRegion('/sjfx/hydro', region)).toBe(false)
     }
   })
 })

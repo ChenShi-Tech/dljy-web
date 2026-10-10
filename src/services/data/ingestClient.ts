@@ -1,18 +1,23 @@
-// ingestClient — 数据摄取 HTTP 客户端（PR-2 端点 POST /api/v1/ingest/:kind 的前端封装）。
-// 经 Vite /api 代理 → Node 4174 ingestion-api.mjs（admin/service token 鉴权 + subprocess 触发 ETL）。
-// 端点返回非标准 envelope（{code, ok, kind, ...}），故用 fetch + requestHeaders（不走 apiPost 的 envelope 解包）。
+// ingestClient — 数据摄取 HTTP 客户端（PR-2 端点 POST /v1/ingest/:kind 的前端封装）。
+// 摄取端点只在 data-service :8190 注册（#2169 P2-2a，/v1/ingest/ 已登记 dataServiceRoutes），
+// 平台 BFF :4174 不再挂这条路由——URL 必须经 dataServicePath() 改写为 /data-svc/api/...（dljy#3251，
+// 裸打 /api/v1/ingest 恒 404）。经 Vite /data-svc 代理 → data-service（ingestion-api.mjs，
+// admin/service token 鉴权 + subprocess 触发 ETL）。
+// 端点返回非标准 envelope（{code, ok, kind, ...}），故用 fetch + requestHeaders（不走 apiPost 的 envelope 解包，
+// 也不能用 apiPost 的随机幂等键——见 ingestIdempotencyKey 的 #1406 注释）。
 import { requestHeaders } from '@/services/api'
+import { dataServicePath } from '@/services/dataServiceRoutes'
+import type { DataSourceBasis } from '@/services/data/types'
+import { CUSTOMER_CHANNELS } from 'shared/data-collection/generated/customer-channels.mjs'
 
+// 手动摄取的可选类型从注册表**客户可见投影**派生（#3536，规格 CR-02：前端只露注册表标为
+// 「可手动触发、客户可见」的通道）。投影经 sync:web 镜像，字段白名单（id/name/content/
+// kind/trigger）——无凭据键名/落点表名/内部通道/运维状态（codex P1：registry 全量不得进浏览器产物）。
 // spot-ingest / forecast-etl：数据接入向导「一键生效」(#885)，T0/T1 模板投递后 UI 点按即跑 ETL，
 // 与 import-hub DELIVERY_HINTS 同源命令。底层走 agent-python.mjs 桥（Python ETL），lockArgs 硬编码。
-export type IngestKind =
-  | 'spot-export'
-  | 'weather-export'
-  | 'market-export'
-  | 'spot-ingest'
-  | 'forecast-etl'
-  | 'cgn-yunnan-prices'
-  | 'cgn-yunnan-market'
+export const MANUAL_INGEST_KINDS = Object.freeze(CUSTOMER_CHANNELS.map((ch) => ch.kind)) as readonly string[]
+
+export type IngestKind = (typeof MANUAL_INGEST_KINDS)[number]
 
 export interface IngestResult {
   code: number
@@ -62,7 +67,10 @@ export function ingestIdempotencyKey(kind: IngestKind, params: Record<string, un
 
 /** 触发一次数据摄取。params 透传给 ETL CLI（如 weather-export 的 synthetic、spot-export 的 dir）。 */
 export async function triggerIngest(kind: IngestKind, params: Record<string, unknown> = {}): Promise<IngestResult> {
-  const res = await fetch(`/api/v1/ingest/${kind}`, {
+  // /v1/ingest/ 归 data-service（dljy#3251）：经 dataServicePath 改写为 /data-svc/api/v1/ingest/:kind。
+  // ?? 兜底仅在路由清单被摘掉该前缀时退回裸 /api/v1 路径（保持函数可用性，不吞错）。
+  const path = `/api/v1/ingest/${kind}`
+  const res = await fetch(dataServicePath(path) ?? path, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -81,4 +89,18 @@ export async function triggerIngest(kind: IngestKind, params: Record<string, unk
     throw new Error(data?.msg || data?.error || data?.stderr?.slice(0, 200) || `摄取失败（HTTP ${res.status}）`)
   }
   return data as IngestResult
+}
+
+/**
+ * 摄取结果真伪判定（避免把合成兜底误标为可决策）。
+ *
+ * commitFamily source=IMPORT 默认 captured（operational）；但 weather-export 在 Open-Meteo
+ * 失败/超时时后端会走合成兜底正常退出（exitCode 0），此时 ETL stdout 会打印 sourceType=MOCK /
+ * (--synthetic 合成)（见 import-weather-export.mjs）。保守嗅探 stdout/stderr：出现
+ * MOCK/synthetic/合成 → synthetic（advisory_only），否则 captured（operational）。
+ * 这是前端最大努力；正解是 ingest 端点回传 family 级真伪（后续）。
+ */
+export function ingestResultBasis(r: Pick<IngestResult, 'stdout' | 'stderr'>): DataSourceBasis {
+  const blob = `${r.stdout}\n${r.stderr}`
+  return /MOCK|synthetic|合成/i.test(blob) ? 'synthetic' : 'captured'
 }

@@ -18,6 +18,9 @@ import type { MidlongEvidence } from '@/services/midlong/midlongTypes'
 import { CORRECTION_IMPACT_LABELS, CURVE_GRANULARITY_LABELS, type ContractCurvesOverview } from '@/services/midlong/midlongP2Types'
 import { createLoadGuard, fmtQuantity } from '@/services/midlong/midlongFormat'
 import { basisTag, curveSetStatusTag, inheritedLabel, timeStatusTag } from '@/services/midlong/midlongP2Format'
+// 操作导引（dljy#3405）：分时分解快照驱动「分解与场站」导引的推进与刷新恢复。
+import { useGuideState } from '@/features/guide/bridge'
+import { STATE } from '@/features/guide/midlong/anchors'
 
 const props = defineProps<{ contractId: number; rowVersion: number; canWrite: boolean; evidence: MidlongEvidence[] }>()
 
@@ -55,6 +58,18 @@ const canCreate = computed(() => Boolean(props.canWrite && overview.value?.canCr
 const impactMonths = computed(() => (overview.value?.months ?? []).filter((m) => m.correctionImpact))
 const estimateImpactMonths = computed(() => (overview.value?.months ?? []).filter((m) => m.estimateCorrectionImpact))
 
+useGuideState(STATE.curves, () => {
+  const o = overview.value
+  if (!o) return null
+  return {
+    contractId: o.contractId,
+    confirmationStatus: o.confirmationStatus,
+    canCreate: o.canCreate,
+    months: o.months.map((m) => ({ month: m.month, timeStatus: m.timeStatus, monthlyFormalQuantity: m.monthlyFormalQuantity, formalCurveSetId: m.formalCurve?.curveSetId ?? null })),
+    sets: o.sets.map((s) => ({ id: s.id, setNo: s.setNo, status: s.status, evidenceBasis: s.evidenceBasis, isCurrentRevision: s.isCurrentRevision, blockingIssueCount: s.blockingIssueCount })),
+  }
+})
+
 async function copyFrom(month: ContractCurvesOverview['months'][number]) {
   const o = overview.value
   const impact = month.correctionImpact
@@ -78,13 +93,13 @@ async function copyFrom(month: ContractCurvesOverview['months'][number]) {
 </script>
 
 <template>
-  <div class="ml-panel">
+  <div class="ml-panel" data-guide="ml-curves-panel">
     <h3>
       分时分解
       <small>只计已确认的正式分解；只有月量的月份在小时视图显示「分时未知」</small>
       <span class="ml-grow" />
-      <el-button v-if="canCreate" size="small" type="primary" @click="dialogs.import = true">导入曲线</el-button>
-      <el-button v-if="canCreate" size="small" @click="dialogs.estimate = true">生成估算</el-button>
+      <el-button v-if="canCreate" size="small" type="primary" data-guide="ml-curves-import-btn" @click="dialogs.import = true">导入曲线</el-button>
+      <el-button v-if="canCreate" size="small" data-guide="ml-curves-estimate-btn" @click="dialogs.estimate = true">生成估算</el-button>
     </h3>
     <div v-if="loading && !overview" v-loading="true" class="ml-placeholder" />
     <MidlongNotice v-else-if="failure" tone="danger" title="分时分解加载失败（未显示任何替代数值）">{{ failure }} <el-button link type="primary" @click="load">重试</el-button></MidlongNotice>

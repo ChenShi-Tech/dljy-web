@@ -8,14 +8,26 @@
 // 该分支代码保留不动：页面级已挡在 ADMIN 之外，组件级判断作为纵深防御。
 //
 // tab 状态同步到 ?tab= query，旧路由 redirect 落到对应 tab。
+//
+// 已迁至平台后台（ChenShi-Tech/dljy#3464）：内部版「权限矩阵」（全局角色矩阵）由平台后台接管，
+// 登记在 features/platformAdminMigration/registry.ts；该 tab 不渲染，tab 栏上方原位置显示提示与后台链接。
+// 用户管理、会话管理照常。客户交付版不受影响。
 import { defineAsyncComponent, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { hiddenEntriesOf, isTabHidden } from '@/features/platformAdminMigration/registry'
+import MigratedToAdminNotice from '@/features/platformAdminMigration/MigratedToAdminNotice.vue'
 
-const TABS = [
+const ALL_TABS = [
   { name: 'users', label: '用户管理', component: defineAsyncComponent(() => import('./UserManagementView.vue')) },
   { name: 'sessions', label: '会话管理', component: defineAsyncComponent(() => import('./SessionManagementView.vue')) },
   { name: 'permissions', label: '权限矩阵', component: defineAsyncComponent(() => import('./PermissionMatrixView.vue')) },
 ] as const
+
+const TABS = ALL_TABS.filter((t) => !isTabHidden('accounts', t.name))
+const MIGRATED_ENTRIES = hiddenEntriesOf('accounts')
+const PAGE_SUB = MIGRATED_ENTRIES.length
+  ? '账号目录与登录会话——「谁能登录 / 谁正登录着」两面（仅系统管理员可见）。'
+  : '账号目录、登录会话与角色权限矩阵——「谁能登录 / 谁正登录着 / 能干什么」三面（仅系统管理员可见）。'
 
 const TAB_NAMES = TABS.map((t) => t.name) as readonly string[]
 const DEFAULT_TAB = TABS[0].name
@@ -49,8 +61,11 @@ function onTabChange(name: string | number) {
   <div class="accounts-page">
     <header class="page-head">
       <h1>用户与权限</h1>
-      <p class="sub">账号目录、登录会话与角色权限矩阵——「谁能登录 / 谁正登录着 / 能干什么」三面（仅系统管理员可见）。</p>
+      <p class="sub">{{ PAGE_SUB }}</p>
     </header>
+
+    <!-- 已迁至平台后台的 tab 不渲染，原位置（tab 栏上方）给出提示与后台链接（#3464） -->
+    <MigratedToAdminNotice v-if="MIGRATED_ENTRIES.length" :entries="MIGRATED_ENTRIES" />
 
     <el-tabs v-model="activeTab" class="accounts-tabs" @tab-change="onTabChange">
       <el-tab-pane v-for="tab in TABS" :key="tab.name" :label="tab.label" :name="tab.name">

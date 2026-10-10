@@ -14,6 +14,7 @@
 //   - 获权四分析按能力目录判定可见性：公共账号不渲染获权区块、不发获权请求。
 // 未选对象 / 对象清单不可用 / 窗口超限的前置拦截在页面层完成（不发请求），后端校验是第二道防线。
 
+import InsightNote from '@/components/insight/InsightNote.vue'
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { getInsightAnalysis } from 'shared/insight/analyses.mjs'
@@ -97,10 +98,10 @@ const LIMIT_NOT_ATC_TEXT = '这是实测与披露限值的对比，不是可用�
 const RECORDS_NOTE = '记录不是时序曲线：是否开展调峰与必开必停清单按业务日列表呈现，不画曲线、不换算出力'
 const OBJECTS_UNAVAILABLE_TEXT = '对象清单需要新版洞察服务，当前无法列出'
 const OBJECTS_EMPTY_TEXT = '所选窗口内没有可选对象：可换一个日期窗或确认数据接入情况'
-const PICK_CHANNEL_TEXT = '请先选择通道或断面（选项来自所选窗口的覆盖清单）；未选不发请求'
-const PICK_RESERVE_TEXT = '请先选择区域或机组群对象（选项来自所选窗口的覆盖清单）；未选不发请求'
-const PICK_LIST_TEXT = '请先选择区域或电厂对象（选项来自所选窗口的覆盖清单）；未选不发请求'
-const CHANNEL_WINDOW_TEXT = '通道断面分析一次最多查 7 天：请把业务日期窗缩短后再查'
+const PICK_CHANNEL_TEXT = '请选择通道或断面'
+const PICK_RESERVE_TEXT = '请选择区域或机组群对象'
+const PICK_LIST_TEXT = '请选择区域或电厂对象'
+const CHANNEL_WINDOW_TEXT = '通道断面分析一次最多查 7 天：请把分析日期缩短后再查'
 const LIMIT_MATCH_FOLLOW_TEXT = '与上方同一组对象；对象未选或窗口超限时本区块不查询'
 const ENTITLEMENT_TRANSFER_TEXT = '获权数据需开通：当前公司没有逐日送电电量与通道能力的查看授权'
 const ENTITLEMENT_CHANNEL_TEXT = '获权数据需开通：当前公司没有省间联络线与断面限值的查看授权'
@@ -991,7 +992,7 @@ onMounted(() => {
     />
     <section class="ygb__controls">
       <label class="ygb__field">
-        <span>业务日期窗</span>
+        <span>分析日期</span>
         <InsightDateRange
           :model-value="ctx.businessWindow.value"
           :max-days="maxDays"
@@ -1007,7 +1008,7 @@ onMounted(() => {
       >✨ AI 解读本页</el-button>
     </section>
 
-    <p class="ygb__meta">{{ SIGN_TEXT }}</p>
+    <InsightNote label="送受电方向" :text="SIGN_TEXT" />
 
     <el-alert v-if="capabilitiesError" type="error" show-icon :closable="false" title="能力目录读取失败">
       <p class="ygb__hint">当前看不到可用的电网边界分析；可重试，不影响已就绪区块的展示。</p>
@@ -1054,7 +1055,7 @@ onMounted(() => {
               @open-candidates="openCandidates"
               @open-evidence="openEvidence('transfer-daily')"
             >
-              <el-alert type="info" :closable="false" :title="DAILY_NOTE" />
+              <InsightNote label="电量与容量口径" :text="DAILY_NOTE" />
               <el-alert type="info" :closable="false" :title="SIGN_TEXT" />
               <InsightSeriesChart
                 :result="viewStates['transfer-daily'].result"
@@ -1147,8 +1148,8 @@ onMounted(() => {
               @open-candidates="openCandidates"
               @open-evidence="openEvidence('channel-limit-match')"
             >
-              <el-alert type="info" :closable="false" :title="LIMIT_PAIR_TEXT" />
-              <el-alert type="info" :closable="false" :title="LIMIT_NOT_ATC_TEXT" />
+              <InsightNote label="限值配对口径" :text="LIMIT_PAIR_TEXT" />
+              <InsightNote label="披露限值对比" :text="LIMIT_NOT_ATC_TEXT" />
               <template v-if="objectsPhase(CHANNEL_FLOWS_ANALYSIS) === 'ready' && channelObjects.length && !channelWindowTooLarge">
                 <el-table
                   v-if="limitRows.length"
@@ -1197,7 +1198,7 @@ onMounted(() => {
           <template v-else-if="tab.view === 'maintenance'">
             <el-alert v-if="!canReadMaintenance" type="info" :closable="false" :title="MAINTENANCE_ROLE_TEXT" data-testid="ygb-maintenance-gated" />
             <template v-else>
-              <el-alert type="info" :closable="false" :title="MAINTENANCE_NOTE_TEXT" />
+              <InsightNote label="事件统计口径" :text="MAINTENANCE_NOTE_TEXT" />
               <p v-if="maintenanceCountText" class="ygb__hint" data-testid="ygb-maintenance-counts">{{ maintenanceCountText }}</p>
               <el-alert v-else-if="maintenanceCounts.error" type="error" show-icon :closable="false" title="披露计数读取失败">
                 <p class="ygb__hint">独立事件与原始记录计数不可用；其余区块不受影响。</p>
@@ -1270,7 +1271,7 @@ onMounted(() => {
                   </el-button>
                   <span v-else class="ygb__hint">{{ MAINTENANCE_NO_WINDOW_TEXT }}</span>
                 </div>
-                <p class="ygb__hint">{{ MAINTENANCE_COMPARE_TEXT }}</p>
+                <InsightNote label="同期联看口径" :text="MAINTENANCE_COMPARE_TEXT" />
                 <p v-if="maintenanceRelation.loading" class="ygb__hint">正在读取对象关系…</p>
                 <p v-else-if="maintenanceRelation.error" class="ygb__hint">对象关系读取失败：{{ maintenanceRelation.error }}</p>
                 <p
@@ -1358,7 +1359,7 @@ onMounted(() => {
               @open-candidates="openCandidates"
               @open-evidence="openEvidence('unit-lists')"
             >
-              <el-alert type="info" :closable="false" :title="RECORDS_NOTE" />
+              <InsightNote label="机组清单口径" :text="RECORDS_NOTE" />
               <div class="ygb__bar">
                 <label class="ygb__field">
                   <span>区域与电厂对象（多选，最多 50 个）</span>

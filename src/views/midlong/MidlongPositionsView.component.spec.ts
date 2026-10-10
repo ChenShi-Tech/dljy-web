@@ -33,7 +33,8 @@ vi.mock('@/services/midlong/midlongFormat', async (orig) => ({ ...(await orig<ty
 
 import MidlongPositionsView from './MidlongPositionsView.vue'
 
-const STUBS = { CompanyScopeBar: { template: '<div />' }, ChartCard: { template: '<div class="stub-chart" />' }, 'router-link': { template: '<a><slot /></a>' } }
+// router-link 把 to 序列化进 data-to：跳转入口的 query 参数（如分时持仓的 fromDate/toDate）可从 DOM 断言。
+const STUBS = { CompanyScopeBar: { template: '<div />' }, ChartCard: { template: '<div class="stub-chart" />' }, 'router-link': { props: ['to'], template: '<a :data-to="JSON.stringify(to)"><slot /></a>' } }
 const caps: MidlongCapabilities = {
   enabled: true, regionId: 'yunnan', regionSupported: true, pilotRegions: ['yunnan'], phase: 'P1',
   modules: { contracts: true, positions: true, imports: true, curves: true, stationAllocations: true, plans: false, execution: false, review: false },
@@ -201,6 +202,24 @@ describe('中长期售电月度持仓', () => {
     await flushPromises()
     expect(hoisted.exportPositions).toHaveBeenCalledTimes(1)
     expect(hoisted.exportPositions.mock.calls[0][0]).toEqual({ fromMonth: '2027-01', toMonth: '2027-02', productKind: 'MONTHLY' })
+  })
+
+  // 三个月份各自独立用例、各只挂载一次：合并进一个 it 循环挂载 3 次会在 CI 覆盖率模式下超 5s 超时（dljy#3355）；
+  // 卸载由 enableAutoUnmount 接管，与文件内其它用例一致。
+  it.each([
+    ['闰年 2 月', '2028-02', '2028-02-29'],
+    ['30 天月', '2027-04', '2027-04-30'],
+    ['31 天月', '2027-01', '2027-01-31'],
+  ] as const)('分时持仓入口落到所选月份的完整自然月：toDate 为真实月末，%s（#2984）', async (_label, month, lastDay) => {
+    hoisted.fetchCapabilities.mockResolvedValue(caps)
+    hoisted.fetchPositions.mockResolvedValue(report())
+    hoisted.routeQuery = { fromMonth: month, toMonth: month }
+    const w = mount(MidlongPositionsView, { global: { stubs: STUBS } })
+    await flushPromises()
+    const link = w.findAll('a[data-to]').find((a) => a.text().includes('分时持仓'))!
+    const to = JSON.parse(link.attributes('data-to')!) as { path: string; query: Record<string, string> }
+    expect(to.path).toBe('/zcqjy/positions/intervals')
+    expect(to.query).toMatchObject({ fromDate: `${month}-01`, toDate: lastDay, granularity: 'HOUR' })
   })
 
   it('历史认知时点视图给出说明', async () => {

@@ -1,4 +1,5 @@
-// 守说明框：模拟数据提示必须带标题且与普通口径说明区分，不能退回和正文同色的小字。dljy#2875。
+// 守说明框（复盘域薄包装）：模拟数据提示必须带标题且与普通口径说明区分，不能退回和正文同色的小字。dljy#2875。
+// 实现已上移 src/components/common/CalloutBox.vue（#2954），本 spec 锁薄包装的对外契约：tone 'note' → 公共 'info'。
 import { afterEach, describe, expect, it } from 'vitest'
 import { mount } from '@vue/test-utils'
 import ReviewCallout from './ReviewCallout.vue'
@@ -14,10 +15,11 @@ describe('复盘说明框', () => {
     expect(wrapper.find('.title').text()).toBe('模拟数据')
     expect(wrapper.attributes('role')).toBe('status')
   })
-  it('口径说明默认中性样式、无标题', () => {
+  it('口径说明默认中性样式、无标题（tone note 映射为公共 info）', () => {
     const wrapper = create({})
-    expect(wrapper.classes()).toContain('note')
+    expect(wrapper.classes()).toContain('info')
     expect(wrapper.find('.title').exists()).toBe(false)
+    expect(wrapper.attributes('role')).toBe('note')
     expect(wrapper.text()).toBe('说明正文')
   })
 })

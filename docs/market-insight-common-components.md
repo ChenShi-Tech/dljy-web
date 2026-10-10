@@ -230,7 +230,7 @@ hasInsightDrilldownParams(query)    -> boolean              // URL 是否带 hx_
 
 ## 跨模块深链（spatialLinks，dljy#3106）
 
-洞察页动作按钮跳入既有业务模块的只读页面，模式沿用 businessLinks（#3096 登记+白名单+权限+出口双保险；该登记文件在 `feat/insight-deeplink` 分支）。当前登记：**空间查阅深链** `src/features/regions/yunnan/insight/spatialLinks.ts`——design D6.1「三维地形、场站/节点空间位置：从节点/电网/场站动作进入已有空间资产，保留入口与上下文，不在洞察复制 Cesium」。入口清单：
+洞察页动作按钮跳入既有业务模块的只读页面，模式沿用 businessLinks（#3096 登记+白名单+权限+出口双保险）。两套登记的公共守门骨架（白名单校验/写动词拒绝/权限门控/出口双保险）已归一到 `src/features/regions/yunnan/insight/insightLinkGuard.ts`（dljy#3121），各登记只保留目标条目与 query 组装语义。当前登记：**空间查阅深链** `src/features/regions/yunnan/insight/spatialLinks.ts`——design D6.1「三维地形、场站/节点空间位置：从节点/电网/场站动作进入已有空间资产，保留入口与上下文，不在洞察复制 Cesium」。入口清单：
 
 | 来源页 | 触发条件 | 目标（既有只读路径） | query 承接 |
 | --- | --- | --- | --- |
@@ -251,7 +251,7 @@ hasInsightDrilldownParams(query)    -> boolean              // URL 是否带 hx_
 
 ## 业务模块深链（dljy#3096，OpenSpec 任务 15.5）
 
-洞察接已有交易、中长期、结算业务模块与资料维护的**只读深链**：进入只传证据（期间/对象名）与授权入口，不自动创建/提交交易，不更改合同/电费，不增加无权限操作（design D11 表、insight-context-handoff CH04、yunnan-plant-market-performance PP07）。登记与出口集中在 `src/features/regions/yunnan/insight/businessLinks.ts`。
+洞察接已有交易、中长期、结算业务模块与资料维护的**只读深链**：进入只传证据（期间/对象名）与授权入口，不自动创建/提交交易，不更改合同/电费，不增加无权限操作（design D11 表、insight-context-handoff CH04、yunnan-plant-market-performance PP07）。登记与出口集中在 `src/features/regions/yunnan/insight/businessLinks.ts`；白名单校验、写动词拒绝、权限门控与出口双保险的公共实现在 `insightLinkGuard.ts`（与 spatialLinks 共用，dljy#3121）。
 
 ### 入口清单
 
@@ -275,6 +275,7 @@ hasInsightDrilldownParams(query)    -> boolean              // URL 是否带 hx_
 ### 测试位置
 
 - `src/features/regions/yunnan/insight/businessLinks.component.spec.ts`：query 白名单/无原始数据数组/无可写动词/目标只读路径/双保险出口。
+- `src/features/regions/yunnan/insight/insightLinkGuard.spec.ts`：两套深链登记共用的守门骨架（放行/拒绝/写动词/URL 编码安全/权限门控/出口双保险，dljy#3121）。
 - `src/features/regions/yunnan/insight/pages/YunnanPlantsPage.component.spec.ts`、`YunnanPricesPage.component.spec.ts` 的「业务模块只读深链」用例：入口显隐 × 权限、跳转参数、返回重查、业务语言扫描。
 ## AI 取材纪律（useInsightAiPage，dljy#3100 任务 15.3）
 
@@ -382,3 +383,9 @@ hasInsightDrilldownParams(query)    -> boolean              // URL 是否带 hx_
 | 六页 `*.component.spec.ts` 内「AI 解读注册（15.3）」用例 | 每页注册声明、入口按钮、当前签名采集、上下文变化后不采集旧资料 |
 | `src/features/regions/yunnan/insight/crossModuleRegression.spec.ts` | 15.6 跨模块回归：模型离线/组装失败/专题不可用/撤权四类故障下「AI 诚实不可用、查询导出保存照常、错误不伪装成功」（A14） |
 | `src/features/regions/yunnan/insight/handoffLinks.spec.ts` | 15.8 四条链路：选区→AI、对象深链往返、材料保存幂等与 409 重跑、下钻编码六页往返与未知字段丢弃提示（A18/A19） |
+
+## 口径说明与总览来源收纳（dljy#3135）
+
+`InsightNote.vue` 用原生 details/summary 收纳次要静态口径，支持键盘和焦点提示。不要把错误、缺测、无权、历史模式或运行资格放入默认收起区。
+
+`InsightBlock.compactSources` 仅在总览启用：来源摘要保留数量与公开/含获权标识，展开查看原始业务标题；证据按钮始终独立，状态处理与默认的其他页面不变。

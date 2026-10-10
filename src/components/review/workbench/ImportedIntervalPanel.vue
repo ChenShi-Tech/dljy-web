@@ -121,7 +121,7 @@ function toggle(event: Event) { const next = (event.target as HTMLDetailsElement
 .imported-analysis{padding:16px;border:1px solid var(--line);border-radius:8px;min-width:0}summary{cursor:pointer;padding:6px 0}.controls,label{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.controls{margin:14px 0}select,input,button{font:inherit;padding:7px;border:1px solid var(--line);border-radius:5px;background:var(--panel);color:var(--text);max-width:100%}p{line-height:1.6}details label{margin:8px 0}button:disabled{opacity:.5}[role=alert]{color:var(--danger)}
 .objects{display:flex;flex-wrap:wrap;gap:8px 18px;margin:8px 0}
 .metric-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:10px;margin:12px 0}
-.review-callout{margin:10px 0}
+.callout-box{margin:10px 0}
 .table-scroll{overflow:auto;margin:8px 0}
 .table-scroll table{border-collapse:collapse;width:100%}
 .table-scroll th,.table-scroll td{padding:8px;text-align:right;border-bottom:1px solid var(--line);font-size:var(--font-sm)}

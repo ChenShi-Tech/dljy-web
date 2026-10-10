@@ -14,13 +14,12 @@ type ModelEvidence = {
   framework?: string
 }
 
-// 这些本地 ID 的实现明确为 StandardScaler+Ridge；即使旧目录漏 mock 也不能重新上架。
-// 不按算法名字屏蔽，以免误伤已训练的 remote:...PatchTST / DLinear 真模型。
+// 这些本地 ID 的实现明确为 StandardScaler+Ridge 兼容占位；即使旧目录漏 mock 也不能重新上架。
+// 只按下面这份占位 ID 清单屏蔽，不按算法名字屏蔽，以免误伤同名的已训练真模型（下线哪些算法由后端目录决定，前端不维护名单）。
 const COMPAT_PLACEHOLDERS = new Set([
   'tslib:Autoformer', 'tslib:DLinear', 'tslib:FEDformer', 'tslib:Informer',
   'tslib:iTransformer', 'tslib:PatchTST', 'tslib:TimesNet', 'tslib:TimeXer',
 ])
-const ORIGINAL_FOUNDATION_MODELS = new Set(['fm:Chronos2', 'fm:ChronosBoltSmall'])
 
 export type PredictionModelExclusion = 'placeholder' | 'pretrained' | 'unavailable'
 
@@ -29,7 +28,7 @@ export function predictionModelExclusionReason(model: ModelEvidence): Prediction
   const id = model.modelId ?? model.id ?? ''
   if (model.mock === true || model.provenance?.mock === true || model.lineage?.mock === true
     || COMPAT_PLACEHOLDERS.has(id)) return 'placeholder'
-  if (model.capabilities?.zeroShot === true || ORIGINAL_FOUNDATION_MODELS.has(id)
+  if (model.capabilities?.zeroShot === true
     || model.source?.toLowerCase() === 'remote:zeroshot'
     || model.framework?.toLowerCase().startsWith('zeroshot/')) return 'pretrained'
   if (model.available === false) return 'unavailable'

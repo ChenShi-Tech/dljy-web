@@ -12,6 +12,9 @@ import { settlementFailureText } from '@/services/midlong/midlongP5Format'
 import { SETTLEMENT_NOTICES, type VoucherResult } from '@/services/midlong/midlongP5Types'
 
 const props = defineProps<{ modelValue: boolean; billId: number | null; billLabel?: string }>()
+// 操作导引（dljy#3407）：凭证表单接给「调整与复盘账单」导引，登记成功发含 voucherId 的推进信号。
+import { emitGuideSignal, useGuideForm } from '@/features/guide/bridge'
+import { FORM, SIGNAL } from '@/features/guide/midlong/anchors'
 const emit = defineEmits<{ 'update:modelValue': [boolean]; saved: [] }>()
 
 const blank = () => ({ voucherNo: '', amount: '', receivedAt: '', note: '' })
@@ -20,6 +23,21 @@ const file = ref<File | null>(null)
 const saving = ref(false)
 const error = ref('')
 const result = ref<VoucherResult | null>(null)
+
+// 操作导引（dljy#3407）
+useGuideForm(
+  FORM.voucherRegister,
+  {
+    read: () => ({ ...form, hasFile: file.value !== null }),
+    fill: (values) => {
+      for (const [key, value] of Object.entries(values)) {
+        if (key === 'file') file.value = value as File | null
+        else (form as unknown as Record<string, unknown>)[key] = value
+      }
+    },
+  },
+  { active: () => props.modelValue },
+)
 const session = createWriteSession(() => `voucher:${props.billId}`)
 onBeforeUnmount(() => session.close())
 
@@ -62,6 +80,8 @@ async function submit() {
     })
     ElMessage.success('收款凭证已登记（到账金额以凭证为准）')
     emit('saved')
+    // 操作导引（dljy#3407）：登记成功发含 voucherId 的推进信号。
+    emitGuideSignal(SIGNAL.voucherSaved, { billId: saved.billId, voucherId: saved.voucherId, voucherNo: saved.voucherNo, amount: saved.amount })
     if (ticket.sameSession()) result.value = saved
   } catch (e) {
     const f = e instanceof Error && isWriteAbandoned(e) ? { message: (e as Error).message, errorCode: '', details: null } : midlongFailureOf(e)
@@ -79,22 +99,22 @@ async function submit() {
     <div class="p5-form">
       <MidlongNotice tone="info">{{ SETTLEMENT_NOTICES.noVoucherNoReceipt }}</MidlongNotice>
       <el-form label-width="120px" @submit.prevent>
-        <el-form-item label="凭证编号" required><el-input v-model="form.voucherNo" data-test="voucher-no" /></el-form-item>
-        <el-form-item label="收款金额(元)" required><el-input v-model="form.amount" placeholder="大于 0" style="width: 200px" data-test="voucher-amount" /></el-form-item>
-        <el-form-item label="收款日期" required>
+        <el-form-item label="凭证编号" required data-guide="ml-voucher-no"><el-input v-model="form.voucherNo" data-test="voucher-no" /></el-form-item>
+        <el-form-item label="收款金额(元)" required data-guide="ml-voucher-amount"><el-input v-model="form.amount" placeholder="大于 0" style="width: 200px" data-test="voucher-amount" /></el-form-item>
+        <el-form-item label="收款日期" required data-guide="ml-voucher-date">
           <el-date-picker v-model="form.receivedAt" type="date" value-format="YYYY-MM-DD" placeholder="YYYY-MM-DD" style="width: 170px" data-test="voucher-date" />
         </el-form-item>
-        <el-form-item label="凭证文件"><input type="file" data-test="voucher-file" @change="onFile" /></el-form-item>
+        <el-form-item label="凭证文件"><input type="file" data-guide="ml-voucher-file" data-test="voucher-file" @change="onFile" /></el-form-item>
         <el-form-item label="备注"><el-input v-model="form.note" type="textarea" :rows="2" /></el-form-item>
       </el-form>
-      <MidlongNotice v-if="result" tone="info" :title="`已登记：凭证 ${result.voucherNo}（${result.receivedAt}）`" data-test="voucher-result">
+      <MidlongNotice data-guide="ml-voucher-result" v-if="result" tone="info" :title="`已登记：凭证 ${result.voucherNo}（${result.receivedAt}）`" data-test="voucher-result">
         <div>{{ result.notice }}</div>
       </MidlongNotice>
       <MidlongNotice v-if="error" tone="danger" title="未能保存" data-test="voucher-form-error">{{ error }}</MidlongNotice>
     </div>
     <template #footer>
       <el-button @click="emit('update:modelValue', false)">{{ result ? '完成' : '取消' }}</el-button>
-      <el-button v-if="!result" type="primary" :loading="saving" :disabled="!valid" data-test="voucher-submit" @click="submit">登记（只追加）</el-button>
+      <el-button v-if="!result" type="primary" :loading="saving" :disabled="!valid" data-guide="ml-voucher-submit" data-test="voucher-submit" @click="submit">登记（只追加）</el-button>
     </template>
   </el-dialog>
 </template>

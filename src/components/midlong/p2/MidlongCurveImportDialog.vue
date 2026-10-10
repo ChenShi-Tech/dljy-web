@@ -16,6 +16,9 @@ import {
 import { downloadBase64, downloadCsv, fileToBase64, fmtQuantity, oversizeUploadMessage } from '@/services/midlong/midlongFormat'
 import { rangeValue } from '@/services/midlong/midlongP2Format'
 import { STALE_DIALOG_WRITE_MESSAGE, createDialogSession } from '@/services/midlong/midlongP2Session'
+// 操作导引（dljy#3405）：导入表单整体注册给「分解与场站」导引（帮我填含示例文件），保存成功发推进信号。
+import { emitGuideSignal, useGuideForm } from '@/features/guide/bridge'
+import { FORM, SIGNAL } from '@/features/guide/midlong/anchors'
 
 const props = defineProps<{ modelValue: boolean; contractId: number; revisionNo: number; deliveryStart: string | null; deliveryEnd: string | null; evidence: MidlongEvidence[] }>()
 const emit = defineEmits<{ 'update:modelValue': [boolean]; created: [CurveDraftResult] }>()
@@ -42,6 +45,23 @@ const CSV_ROLES: CsvRole[] = ['intervals', 'typicalDays', 'typicalDayRanges', 'd
 
 const session = createDialogSession()
 const targetKey = () => `${props.contractId}|${props.revisionNo}`
+
+// 操作导引（dljy#3405）：与补充资料对话框同款做法——「帮我填」直接把示例 File 写进 files.intervals
+// （原生 input 无法程序赋值），模板里用「已选择」行让用户看到；草稿保存成功发推进信号供 capture 记分解集 id。
+useGuideForm(
+  FORM.curveImport,
+  {
+    read: () => ({ format: format.value, file: files.intervals, ...form, coverage: [...form.coverage], evidenceIds: [...form.evidenceIds] }),
+    fill: (values) => {
+      for (const [key, value] of Object.entries(values)) {
+        if (key === 'format') format.value = value as 'xlsx' | 'csv'
+        else if (key === 'file') files.intervals = value as File | null
+        else (form as unknown as Record<string, unknown>)[key] = value
+      }
+    },
+  },
+  { active: () => props.modelValue && !result.value },
+)
 
 watch(() => props.modelValue, (open) => {
   session.renew()
@@ -117,6 +137,7 @@ async function submit() {
     const created = await createCurveDraft(contractId, { ...body, files: payload })
     // 草稿已保存：通知父级刷新；会话已变时不把旧结果显示到新会话里。
     emit('created', created)
+    emitGuideSignal(SIGNAL.curveDraftCreated, { contractId, curveSetId: created.curveSetId, setNo: created.setNo, blocking: created.validation.blocking })
     if (session.isCurrent(token, targetKey())) result.value = created
   } catch (error) {
     if (session.isCurrent(token, targetKey())) failure.value = midlongFailureOf(error)
@@ -140,38 +161,44 @@ const STATUS_TEXT: Record<string, string> = { CONSERVED: '守恒', WITHIN_TOLERA
         <el-form-item label="文件格式">
           <el-radio-group v-model="format"><el-radio value="xlsx">Excel 工作簿</el-radio><el-radio value="csv">CSV 文件</el-radio></el-radio-group>
         </el-form-item>
-        <el-form-item v-if="format === 'xlsx'" label="工作簿">
+        <el-form-item v-if="format === 'xlsx'" label="工作簿" data-guide="ml-curve-file">
           <input type="file" accept=".xlsx" data-role="workbook" @change="onFile('workbook', $event)" />
+          <p v-if="files.workbook" class="ml-hint">已选择：{{ files.workbook.name }}</p>
           <span class="ml-hint">含「{{ CURVE_FILE_SHEETS.intervals }}」或「{{ CURVE_FILE_SHEETS.typicalDays }}」+「{{ CURVE_FILE_SHEETS.typicalDayRanges }}」，可选「{{ CURVE_FILE_SHEETS.dailyTotals }}」；典型日可按峰平谷时刻段填写功率（跨零点的谷段可写 22:00—08:00）</span>
         </el-form-item>
         <template v-else>
-          <el-form-item v-for="role in CSV_ROLES" :key="role" :label="CURVE_FILE_SHEETS[role]">
+          <el-form-item label="分时曲线" data-guide="ml-curve-file">
+            <input type="file" accept=".csv" data-role="intervals" @change="onFile('intervals', $event)" />
+            <p v-if="files.intervals" class="ml-hint">已选择：{{ files.intervals.name }}</p>
+          </el-form-item>
+          <el-form-item v-for="role in (['typicalDays', 'typicalDayRanges', 'dailyTotals'] as const)" :key="role" :label="CURVE_FILE_SHEETS[role]">
             <input type="file" accept=".csv" :data-role="role" @change="onFile(role, $event)" />
+            <p v-if="files[role]" class="ml-hint">已选择：{{ files[role]!.name }}</p>
           </el-form-item>
         </template>
         <el-form-item label="依据类型">
           <el-radio-group v-model="form.evidenceBasis"><el-radio value="FORMAL">正式资料</el-radio><el-radio value="INTERNAL_ESTIMATE">内部估算（不计入正式持仓）</el-radio></el-radio-group>
         </el-form-item>
-        <el-form-item label="原始粒度" required>
+        <el-form-item label="原始粒度" required data-guide="ml-curve-granularity">
           <el-select v-model="form.granularityMinutes" placeholder="请选择" style="width: 160px">
             <el-option v-for="g in CURVE_GRANULARITIES" :key="g" :label="CURVE_GRANULARITY_LABELS[g]" :value="g" />
           </el-select>
         </el-form-item>
-        <el-form-item label="单位" required>
+        <el-form-item label="单位" required data-guide="ml-curve-unit">
           <el-select v-model="form.unit" placeholder="请选择（功率按时长换算）" style="width: 260px">
             <el-option v-for="(spec, unit) in CURVE_UNITS" :key="unit" :label="`${unit}（${spec.measure === 'POWER' ? '功率' : '电量'}）`" :value="unit" />
           </el-select>
         </el-form-item>
-        <el-form-item label="原始时区" required>
+        <el-form-item label="原始时区" required data-guide="ml-curve-timezone">
           <el-select v-model="form.sourceTimezone" placeholder="必须声明，不默认" style="width: 260px">
             <el-option v-for="tz in TIMEZONES" :key="tz.value" :label="tz.label" :value="tz.value" />
           </el-select>
         </el-form-item>
-        <el-form-item label="覆盖月份" required>
+        <el-form-item label="覆盖月份" required data-guide="ml-curve-coverage">
           <el-date-picker :model-value="form.coverage" type="monthrange" @update:model-value="(v: unknown) => (form.coverage = rangeValue(v))" value-format="YYYY-MM" range-separator="至" start-placeholder="起始月" end-placeholder="结束月" style="width: 240px" />
           <span class="ml-hint">交割期 {{ deliveryStart ?? '—' }} ~ {{ deliveryEnd ?? '—' }}</span>
         </el-form-item>
-        <el-form-item v-if="form.evidenceBasis === 'FORMAL'" label="文件性质">
+        <el-form-item v-if="form.evidenceBasis === 'FORMAL'" label="文件性质" data-guide="ml-curve-basis">
           <el-select v-model="form.sourceDocumentType" style="width: 260px">
             <el-option v-for="t in CURVE_SOURCE_DOCUMENT_TYPES" :key="t" :label="EVIDENCE_DOCUMENT_TYPE_LABELS[t]" :value="t" />
           </el-select>
@@ -211,7 +238,7 @@ const STATUS_TEXT: Record<string, string> = { CONSERVED: '守恒', WITHIN_TOLERA
     <template #footer>
       <span v-if="!result && missing.length" class="ml-hint">请补充：{{ missing.join('、') }}</span>
       <el-button @click="emit('update:modelValue', false)">{{ result ? '完成' : '取消' }}</el-button>
-      <el-button v-if="!result" type="primary" :loading="busy" :disabled="missing.length > 0" @click="submit">保存草稿并校验</el-button>
+      <el-button v-if="!result" type="primary" :loading="busy" :disabled="missing.length > 0" data-guide="ml-curve-submit" @click="submit">保存草稿并校验</el-button>
     </template>
   </el-dialog>
 </template>

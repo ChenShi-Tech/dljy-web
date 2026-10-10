@@ -17,39 +17,15 @@ const BASE = AGENT_API_BASE
 // （主仓 #2231），前端不再有可选的第二个 base——旧图那侧的对话编排路径已经不存在，
 // 留一张表只剩「有人调回 off 就把主入口路由到不再服务该场景的后端」这一种用法，
 // 前端一次查询超时触发 fail-safe 也是同样后果。
-// 会话级路由仍在 createAgentSession 时登记（内存 Map + localStorage 双写，刷新后仍可
-// 把续聊/回放请求路由到正确后端）；persistHistory 走 #498 默认全开，归属登记由
+// 会话级路由同样恒走 pi（#2958）：建会话只经 createAgentSession（恒打 pi），不再存在
+// 建在旧后端上的会话，续聊/回放等生命周期请求无需本地登记表也能落对服务——
+// 曾按「内存 Map + localStorage 双写」的登记表判定归属，换浏览器/清存储/登记表溢出
+// 后历史会话会被回退到旧基址 404。例外：产物（artifacts）与 data_ref（refs）虽按
+// pi 会话号寻址，但由 agent-runtime 提供、固定走 AGENT_API_BASE（见 listAgentArtifacts
+// 上方说明）——pi-poc 没有这两类端点，恒打 pi 只会 404。persistHistory 走 #498 默认全开，归属登记由
 // pi-poc 服务端回调 Node bind（见 agent-poc-strategic-qa-design.md）。
 /** pi 底座（pi-poc 编排服务）基址：开发态 vite 代理 /pi-api → 8100，生产 nginx 同源同名。 */
 export const PI_AGENT_BASE = '/pi-api/agent'
-const sessionBaseById = new Map<string, string>()
-// pi-poc 会话 id 落 localStorage：刷新后内存登记表清空，续聊/回放仍能路由到正确后端
-const PI_SESSIONS_KEY = 'dljy.piPocSessionIds'
-
-function rememberPiSession(...ids: string[]): void {
-  for (const id of ids) sessionBaseById.set(id, PI_AGENT_BASE)
-  try {
-    const known = new Set<string>(JSON.parse(localStorage.getItem(PI_SESSIONS_KEY) || '[]'))
-    const before = known.size
-    for (const id of ids) known.add(id)
-    // 没有新会话就不写（运行中列表每 5 秒轮询一次）
-    if (known.size !== before) localStorage.setItem(PI_SESSIONS_KEY, JSON.stringify([...known].slice(-50)))
-  } catch { /* localStorage 不可用时仅本页内存路由 */ }
-}
-
-function isPiSession(id: string): boolean {
-  try {
-    return (JSON.parse(localStorage.getItem(PI_SESSIONS_KEY) || '[]') as string[]).includes(id)
-  } catch {
-    return false
-  }
-}
-
-function baseForSession(sessionId: string): string {
-  const remembered = sessionBaseById.get(sessionId)
-  if (remembered) return remembered
-  return isPiSession(sessionId) ? PI_AGENT_BASE : BASE
-}
 const AGENT_REQUEST_TIMEOUT_MS = 10000
 
 const TOKEN_KEY = 'dljy_restore_token'
@@ -169,8 +145,7 @@ export async function createAgentSession(
   title = '',
   opts?: { persist?: boolean; timeoutMs?: number; promptKey?: string; pageKey?: string }
 ): Promise<AgentSessionInfo> {
-  const createBase = PI_AGENT_BASE
-  const res = await fetch(`${createBase}/sessions`, {
+  const res = await fetch(`${PI_AGENT_BASE}/sessions`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', ...identityHeaders() },
     // persist=true（全部 AgentChatPanel 接入点默认）时 harness 创建会话后会用服务端凭证回调
@@ -190,14 +165,17 @@ export async function createAgentSession(
     throw new Error(formatCreateSessionError(res.status, await readErrorDetail(res)))
   }
   const info = (await res.json()) as AgentSessionInfo
-  if (createBase !== BASE) {
-    sessionBaseById.set(info.id, createBase)
-    rememberPiSession(info.id)
-  }
   return info
 }
 
 // 探活：申报工作台等页面在挂载智能体面板前先确认 harness 在线
+// 探活端点是 agent-backend 的免鉴权健康检查 GET /api/v1/health（router_v2 prefix /api/v1 +
+// routes/health.py /health）：前端 URL 走 AGENT_API_BASE_ROOT（默认 /agent-api），经 vite 代理 /
+// 现场 nginx 反代 rewrite 去掉 /agent-api 前缀落到后端。#2580 退役第 1 步：不再拿 Python
+// 会话层的 GET /agent-api/agent/sessions 列表探活（该层属「仅测试可达」的空壳，即将整体
+// 退役）；Node 侧既有探活（server/cgn-yunnan-data-source.mjs）同用 /api/v1/health，口径一致。
+// health 是纯进程探活：FastAPI 活着即 2xx（DB 断连时响应体 status=unhealthy 但 HTTP 仍 200，
+// 不影响本探活只判 HTTP 层的语义），失败/宕机回 502/504 与原 /sessions 探活完全一致。
 // 探活三态：online=2xx；timeout=超时时限内未应答（后端可能在但被重活占住，如
 // /forecast/predict 同步重训）；unreachable=拿到否定答复。区分依据：
 // - AbortSignal.timeout 触发的 fetch 拒绝是 TimeoutError DOMException（MDN 规范行为），
@@ -208,7 +186,7 @@ export type AgentProbeResult = 'online' | 'timeout' | 'unreachable'
 
 export async function probeAgentService(timeoutMs = 2500): Promise<AgentProbeResult> {
   try {
-    const res = await fetch(`${BASE}/sessions`, {
+    const res = await fetch(`${AGENT_API_BASE_ROOT}/v1/health`, {
       headers: identityHeaders(),
       signal: timeoutSignal(timeoutMs)
     })
@@ -320,7 +298,7 @@ export async function attachRunStream(
   let res: Response
   try {
     const params = new URLSearchParams({ run_id: runId, cursor: String(cursor) })
-    res = await fetch(`${baseForSession(sessionId)}/sessions/${encodeURIComponent(sessionId)}/stream?${params.toString()}`, {
+    res = await fetch(`${PI_AGENT_BASE}/sessions/${encodeURIComponent(sessionId)}/stream?${params.toString()}`, {
       headers: identityHeaders(),
       signal: opts?.signal
     })
@@ -337,7 +315,7 @@ export async function attachRunStream(
 }
 
 export async function getActiveRun(sessionId: string): Promise<AgentActiveRun | null> {
-  const res = await fetch(`${baseForSession(sessionId)}/sessions/${encodeURIComponent(sessionId)}/active-run`, {
+  const res = await fetch(`${PI_AGENT_BASE}/sessions/${encodeURIComponent(sessionId)}/active-run`, {
     headers: identityHeaders(),
     signal: timeoutSignal(AGENT_REQUEST_TIMEOUT_MS)
   })
@@ -347,8 +325,6 @@ export async function getActiveRun(sessionId: string): Promise<AgentActiveRun | 
 }
 
 // 运行中列表只来自 pi 底座（统一 AI 侧边栏 SS-07）：对话 run 早已全部跑在 pi 上，查 agent-backend 恒为空。
-// 列表里的会话都是 pi 会话，一并登记路由——别的页面或别的浏览器建的会话不在本机登记表里，
-// 不登记的话在这里切换、停止、回放时会被送到 legacy base。
 export async function listRuns(status: AgentRunStatus = 'running'): Promise<AgentRunSummary[]> {
   const params = new URLSearchParams({ status })
   const res = await fetch(`${PI_AGENT_BASE}/runs?${params.toString()}`, {
@@ -357,13 +333,11 @@ export async function listRuns(status: AgentRunStatus = 'running'): Promise<Agen
   })
   if (res.status === 401 || res.status === 403 || res.status === 404) return []
   if (!res.ok) throw new AgentStreamHttpError(res.status)
-  const runs = (await res.json()) as AgentRunSummary[]
-  rememberPiSession(...runs.map((run) => run.session_id))
-  return runs
+  return (await res.json()) as AgentRunSummary[]
 }
 
 export async function getAgentSession(sessionId: string): Promise<AgentSessionInfo | null> {
-  const res = await fetch(`${baseForSession(sessionId)}/sessions/${encodeURIComponent(sessionId)}`, {
+  const res = await fetch(`${PI_AGENT_BASE}/sessions/${encodeURIComponent(sessionId)}`, {
     headers: identityHeaders(),
     signal: timeoutSignal(AGENT_REQUEST_TIMEOUT_MS)
   })
@@ -373,7 +347,7 @@ export async function getAgentSession(sessionId: string): Promise<AgentSessionIn
 }
 
 export async function stopAgentRun(sessionId: string, runId: string): Promise<boolean> {
-  const res = await fetch(`${baseForSession(sessionId)}/sessions/${encodeURIComponent(sessionId)}/stop`, {
+  const res = await fetch(`${PI_AGENT_BASE}/sessions/${encodeURIComponent(sessionId)}/stop`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', ...identityHeaders() },
     body: JSON.stringify({ run_id: runId }),
@@ -398,7 +372,7 @@ export async function sendAgentMessage(
   }
 ): Promise<AgentStreamResult> {
   try {
-    const res = await fetch(`${baseForSession(sessionId)}/sessions/${encodeURIComponent(sessionId)}/messages`, {
+    const res = await fetch(`${PI_AGENT_BASE}/sessions/${encodeURIComponent(sessionId)}/messages`, {
       method: 'POST',
       // 必须带登录身份(Authorization + x-company-id)：续聊时若 harness 已重启、该会话不在内存，
       // ensure_session 会用这些头重建会话(owner 校验 + 公司隔离工具的登录上下文)。
@@ -453,7 +427,7 @@ export async function sendAgentApproval(
   }
 ): Promise<AgentStreamResult> {
   try {
-    const res = await fetch(`${baseForSession(sessionId)}/sessions/${encodeURIComponent(sessionId)}/approvals`, {
+    const res = await fetch(`${PI_AGENT_BASE}/sessions/${encodeURIComponent(sessionId)}/approvals`, {
       method: 'POST',
       // 同 sendAgentMessage：带登录身份，保证续聊/重建会话时公司隔离工具有上下文
       headers: { 'content-type': 'application/json', ...identityHeaders() },
@@ -481,8 +455,15 @@ export async function sendAgentApproval(
   }
 }
 
+// 会话产物（artifacts）与 data_ref（refs）由 agent-runtime（agent-backend :8000）提供，
+// **不走 pi 底座**（#2958 返工）：pi-poc server.ts 的会话子路由只有 ""、messages、stream、
+// active-run、stop、approvals、auto-approve，没有 artifacts/refs（未匹配一律 404）；真实
+// 服务端是 agent-runtime api/routes.py 的 GET /sessions/{id}/artifacts（列表）、
+// GET /sessions/{id}/artifacts/{path}（内容）与 GET /refs/{session_id}/{ref_id}——对 pi
+// 会话经历史库 owner 校验放行。pi 的画图工具 make-chart.ts 自己也是经 agentApiBase 取 ref。
+// 注意会话 id 仍是 pi 会话号：这两类端点只是「按会话号寻址的产物存储」，落在 agent-backend。
 export async function listAgentArtifacts(sessionId: string): Promise<{ path: string; bytes: number }[]> {
-  const res = await fetch(`${baseForSession(sessionId)}/sessions/${encodeURIComponent(sessionId)}/artifacts`, {
+  const res = await fetch(`${BASE}/sessions/${encodeURIComponent(sessionId)}/artifacts`, {
     headers: identityHeaders(),
     signal: timeoutSignal(AGENT_REQUEST_TIMEOUT_MS)
   })
@@ -495,9 +476,9 @@ export function encodeAgentPath(path: string): string {
   return path.split('/').map((segment) => encodeURIComponent(segment)).join('/')
 }
 
-// 取 data_ref 明细（如 chart 事件的 ECharts option）
+// 取 data_ref 明细（如 chart 事件的 ECharts option）——固定走 agent-backend（见上方说明）
 export async function fetchAgentRef<T = unknown>(sessionId: string, refId: string): Promise<T> {
-  const res = await fetch(`${baseForSession(sessionId)}/refs/${encodeURIComponent(sessionId)}/${encodeURIComponent(refId)}`, {
+  const res = await fetch(`${BASE}/refs/${encodeURIComponent(sessionId)}/${encodeURIComponent(refId)}`, {
     headers: identityHeaders(),
     signal: timeoutSignal(AGENT_REQUEST_TIMEOUT_MS)
   })

@@ -9,6 +9,7 @@ import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import CompanyScopeBar from '@/components/company/CompanyScopeBar.vue'
+import MetricTile from '@/components/common/MetricTile.vue'
 import MidlongNotice from '@/components/midlong/MidlongNotice.vue'
 import { selectedCompanyId } from '@/services/company/companyContext'
 import { currentRegion } from '@/services/region/regionContext'
@@ -20,6 +21,9 @@ import {
 } from '@/services/midlong/midlongP2Types'
 import { createLoadGuard, downloadCsv, fmtQuantity } from '@/services/midlong/midlongFormat'
 import { allocationKindTag, inheritedLabel, rangeValue, stationSplitText } from '@/services/midlong/midlongP2Format'
+// 操作导引（dljy#3405）：筛选表单与报告快照注册给「分解与场站」导引第 5 章。
+import { useGuideForm, useGuideState } from '@/features/guide/bridge'
+import { FORM, STATE } from '@/features/guide/midlong/anchors'
 
 const route = useRoute()
 const router = useRouter()
@@ -122,6 +126,30 @@ watch([selectedCompanyId, () => currentRegion.value.id], () => {
 
 const totals = computed(() => report.value?.totals ?? null)
 const stationColumns = computed(() => report.value?.stations ?? [])
+
+useGuideForm(
+  FORM.stationPositionsFilters,
+  {
+    read: () => ({ ...filters, monthRange: [...filters.monthRange] }),
+    fill: (values) => {
+      for (const [key, value] of Object.entries(values)) (filters as unknown as Record<string, unknown>)[key] = value
+    },
+    submit: () => { apply() },
+  },
+)
+useGuideState(STATE.stationPositions, () => {
+  const r = report.value
+  if (!r) return null
+  return {
+    fromMonth: reportQuery.value?.fromMonth ?? null,
+    toMonth: reportQuery.value?.toMonth ?? null,
+    allocationKind: r.allocationKind,
+    status: r.status,
+    months: r.months.map((m) => m.month),
+    drillMonth: drillMonth.value,
+    unallocatedQuantity: totals.value?.unallocatedQuantity ?? null,
+  }
+})
 const stationQuantity = (month: StationPositionReport['months'][number], stationId: number) => month.stations.find((s) => s.stationId === stationId)?.quantity ?? null
 const drillRows = computed(() => (report.value?.contributions ?? []).filter((c) => c.month === drillMonth.value))
 const inheritedSetCount = computed(() => (report.value?.allocationSetsUsed ?? []).filter((s) => s.inheritedFromRevisionNo).length)
@@ -176,14 +204,14 @@ const stationName = (id: number | null) => (id === null ? '—' : stationColumns
         另有 {{ fmtQuantity(totals.unallocatedPoolQuantity) }} MWh 尚未分解到月份（见月度持仓的跨期未分解池），不在本表各月内。
       </MidlongNotice>
 
-      <div class="ml-tiles">
-        <div class="ml-tile"><span>主体合计</span><b>{{ fmtQuantity(totals.subjectTotalQuantity) }}<i>MWh</i></b><small>与月度持仓同一数值</small></div>
-        <div class="ml-tile"><span>其中：场站份额</span><b>{{ fmtQuantity(totals.stationAllocatedQuantity) }}<i>MWh</i></b><small>{{ stationColumns.length }} 个场站</small></div>
-        <div class="ml-tile warn"><span>其中：未分配</span><b>{{ fmtQuantity(totals.unallocatedQuantity) }}<i>MWh</i></b><small>交易单元统签、尚未分到场站</small></div>
-        <div class="ml-tile warn"><span>其中：月份未分到场站</span><b>{{ fmtQuantity(totals.stationMonthUnknownQuantity) }}<i>MWh</i></b><small>按合同总量分配 · 不按比例推算</small></div>
+      <div class="tile-grid">
+        <MetricTile label="主体合计" :value="fmtQuantity(totals.subjectTotalQuantity)" unit="MWh" sub="与月度持仓同一数值" />
+        <MetricTile label="其中：场站份额" :value="fmtQuantity(totals.stationAllocatedQuantity)" unit="MWh" :sub="`${stationColumns.length} 个场站`" />
+        <MetricTile tone="warn" label="其中：未分配" :value="fmtQuantity(totals.unallocatedQuantity)" unit="MWh" sub="交易单元统签、尚未分到场站" />
+        <MetricTile tone="warn" label="其中：月份未分到场站" :value="fmtQuantity(totals.stationMonthUnknownQuantity)" unit="MWh" sub="按合同总量分配 · 不按比例推算" />
       </div>
 
-      <div class="ml-panel">
+      <div class="ml-panel" data-guide="ml-station-positions-table">
         <h3>逐月拆分 <small>点击月份查看合同贡献</small></h3>
         <el-table :data="report.months" border size="small" highlight-current-row @row-click="(row: StationPositionReport['months'][number]) => (drillMonth = row.month)">
           <el-table-column prop="month" label="月份" width="90" fixed />
@@ -223,18 +251,12 @@ const stationName = (id: number | null) => (id === null ? '—' : stationColumns
 .ml-sub { color: var(--muted); font-size: var(--font-md); }
 .ml-placeholder { min-height: 200px; }
 .ml-filters { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.ml-tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
-.ml-tile { display: flex; flex-direction: column; gap: 3px; padding: 12px 14px; border: 1px solid var(--line); border-radius: var(--radius, 8px); background: var(--panel); }
-.ml-tile span { font-size: var(--font-sm); color: var(--muted); }
-.ml-tile b { font-size: var(--font-24); font-weight: 650; font-variant-numeric: tabular-nums; font-family: var(--font-display); }
-.ml-tile b i { font-style: normal; font-size: var(--font-sm); color: var(--muted); margin-left: 4px; font-weight: 500; }
-.ml-tile small { font-size: var(--font-xs); color: var(--muted); }
-.ml-tile.warn b { color: var(--warning); }
+.tile-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
 .ml-panel { border: 1px solid var(--line); border-radius: var(--radius, 8px); padding: 14px 16px; background: var(--panel); }
 .ml-panel h3 { margin: 0 0 10px; font-size: var(--font-16); display: flex; align-items: baseline; gap: 8px; }
 .ml-panel h3 small { font-size: var(--font-sm); color: var(--muted); font-weight: 400; }
 .ml-link { color: var(--accent); text-decoration: none; margin-right: 6px; }
 .ml-warn { color: var(--warning); }
 .ml-muted { color: var(--muted); font-size: var(--font-sm); }
-@media (max-width: 1100px) { .ml-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 1100px) { .tile-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 </style>

@@ -63,8 +63,9 @@ describe('检修停运紧凑列表', () => {
     expect(wrapper.find('[role="status"]').text()).toContain('没有符合当前筛选条件')
     wrapper.unmount()
   })
-  it('生成摘要去重只影响紧凑行，完整日期列和点击详情原始摘要保持不变', async () => {
-    const item = row({ providerId: 'csg-authorized-export', summary: '机组；实际停复电：2026-06-30T23:30:00+08:00 至 2026-07-02T01:45:00+08:00。' })
+  // dljy#3563：南网整年导出与 2026-07-03 起日文件两路来源的检修计划同样收拢。
+  it.each(['csg-authorized-export', 'csg-disclosure-file'])('南网来源 %s 的生成摘要去重只影响紧凑行，完整日期列和点击详情原始摘要保持不变', async (providerId) => {
+    const item = row({ providerId, summary: '机组；实际停复电：2026-06-30T23:30:00+08:00 至 2026-07-02T01:45:00+08:00。' })
     item.event.source.sourceTable = 'tb_disclosure_forecast_maintenance_plan'
     const summary = item.event.summary
     const wrapper = mount(DisclosureMaintenanceList, { props: { rows: [item] } })

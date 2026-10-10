@@ -24,6 +24,13 @@ import { activeStanceType } from '@/services/stance/stanceContext'
 import { getRegionSpotProfile } from '@/data/regionSpotProfiles'
 import { buildSegmentDraft, segmentsToPriceCurve96, validateSegments, type SegmentRow } from '@/services/trading/segmentQuote'
 import {
+  addPriceChange,
+  judgePriceChange,
+  pendingPriceChanges,
+  type PriceChangeRecord
+} from '@/services/trading/priceChangeStore'
+import type { PriceChangeVerdict } from '@/services/review/strategyReview'
+import {
   approveDeclaration,
   declarationModeOf,
   runDeclarationRiskCheck,
@@ -53,6 +60,7 @@ const now = ref(Date.now())
 let tickTimer: number | undefined
 onMounted(() => {
   tickTimer = window.setInterval(() => { now.value = Date.now() }, 30_000)
+  pcPending.value = pendingPriceChanges()
 })
 onUnmounted(() => { if (tickTimer !== undefined) window.clearInterval(tickTimer) })
 
@@ -143,6 +151,42 @@ function applySegmentPrices() {
     }),
     '分段价格曲线已写入申报单（priceCurve96）'
   )
+}
+
+// 临场改价留痕（#2016 缺口二 · slim-s1-morning-review 自 S1 迁入 S4）：改价发生在
+// 申报刻，登记与次日回判都放在报价现场完成。当日登记（计划价/改后价/依据），次日
+// 回判「改对=可复制 / 改错=需修正」；纯 localStorage 原型 store，键不变——S1 时期的
+// 历史记录直接可读可判。默认收起，不给 S4 主动线加层级。
+const pcForm = reactive({
+  date: props.targetDate,
+  decisionPoint: '',
+  planPrice: null as number | null,
+  changedPrice: null as number | null,
+  rationale: ''
+})
+const pcPending = ref<PriceChangeRecord[]>([])
+const pcError = ref('')
+function submitPriceChange() {
+  pcError.value = ''
+  try {
+    addPriceChange({
+      date: pcForm.date,
+      decisionPoint: pcForm.decisionPoint,
+      planPrice: Number(pcForm.planPrice),
+      changedPrice: Number(pcForm.changedPrice),
+      rationale: pcForm.rationale
+    })
+    pcForm.decisionPoint = ''
+    pcForm.planPrice = null
+    pcForm.changedPrice = null
+    pcForm.rationale = ''
+    pcPending.value = pendingPriceChanges()
+  } catch (e) {
+    pcError.value = e instanceof Error ? e.message : '登记失败'
+  }
+}
+function judgePc(id: string, verdict: PriceChangeVerdict) {
+  if (judgePriceChange(id, verdict)) pcPending.value = pendingPriceChanges()
 }
 
 const busy = ref(false)
@@ -461,8 +505,37 @@ const receiptChecks = computed<ReceiptCheckRow[] | null>(() => {
       当前立场（{{ activeStanceType ?? '未选' }}）为报量不报价口径（售电 T3）——无分段报价环节；发电/储能立场在此生成分段草稿。
     </p>
 
-    <!-- 储能立场：充放电计划（写回后 SOC 判据自动生效） -->
-    <details class="dc-storage" :open="activeStanceType === 'STORAGE'">
+    <!-- 临场改价留痕（#2016 · slim-s1-morning-review 自 S1 迁入）：改价发生在申报刻，
+         计划价→改后价及依据当场登记，次日回判「改对=可复制 / 改错=需修正」。默认收起。 -->
+    <details class="dc-segments dc-pricechange">
+      <summary>
+        <Layers :size="13" /> 临场改价留痕
+        <em>{{ pcPending.length ? `${pcPending.length} 条待判定` : '计划价与临场改价的事后追溯记录（本地原型）' }}</em>
+      </summary>
+      <div class="dc-pc-form">
+        <label>日期<input v-model="pcForm.date" type="date" /></label>
+        <label>决策点<input v-model="pcForm.decisionPoint" type="text" placeholder="如：晚高峰申报价" /></label>
+        <label>计划价<input v-model.number="pcForm.planPrice" type="number" step="0.01" placeholder="如：0.35" /></label>
+        <label>改后价<input v-model.number="pcForm.changedPrice" type="number" step="0.01" placeholder="如：0.38" /></label>
+        <label class="dc-pc-why">依据<input v-model="pcForm.rationale" type="text" placeholder="当时看到了什么" /></label>
+        <button type="button" class="dc-btn" @click="submitPriceChange">登记</button>
+      </div>
+      <p v-if="pcError" class="dc-err">{{ pcError }}</p>
+      <ul v-if="pcPending.length" class="dc-pc-list">
+        <li v-for="r in pcPending" :key="r.id">
+          {{ r.date }} · {{ r.decisionPoint }}：计划 {{ r.planPrice }} → 改 {{ r.changedPrice }}（{{ r.rationale }}）
+          <span class="dc-pc-actions">
+            <button type="button" class="dc-jump" @click="judgePc(r.id, 'replicable')">改对（可复制）</button>
+            <button type="button" class="dc-jump" @click="judgePc(r.id, 'needs-fix')">改错（需修正）</button>
+          </span>
+        </li>
+      </ul>
+      <p v-else class="dc-muted">无待判定的临场改价。</p>
+    </details>
+
+    <!-- 储能立场：充放电计划（写回后 SOC 判据自动生效）。仅 STORAGE 立场渲染——
+         其它立场此前渲染一个「可忽略」的空折叠，纯噪音（slim-s3-s7-stages）。 -->
+    <details v-if="activeStanceType === 'STORAGE'" class="dc-storage" open>
       <summary>
         储能充放电计划（R1/R2/R3/R11 + 八项约束）
         <em v-if="pf.storagePlan">已写回：循环 {{ pf.storagePlan.cycles }} 次 · 预期毛利 {{ pf.storagePlan.grossMarginYuan }} 元</em>
@@ -483,25 +556,33 @@ const receiptChecks = computed<ReceiptCheckRow[] | null>(() => {
 
       <div class="dc-grid">
         <div>
-          <h4>判据输入<em v-if="pf.dataGate || pf.storagePlan || pf.forecast" class="dc-auto">部分已由 S1–S3 产出自动填充</em></h4>
-          <div class="dc-fields">
-            <label>日 VaR 元<input v-model.number="form.dailyVarYuan" type="number" /></label>
-            <label>授权额度 元<input v-model.number="form.varLimitYuan" type="number" /></label>
-            <label>储能安全倍数<input v-model.number="form.safetyMultiple" type="number" step="0.05" /></label>
-            <label>最大申报偏置<input v-model.number="form.maxBiasAbs" type="number" step="0.01" /></label>
-            <label>中长期履约率<input v-model.number="form.complianceRatio" type="number" step="0.01" /></label>
-            <label>编制人<input v-model="form.preparedBy" type="text" /></label>
-            <label>复核人<input v-model="form.reviewedBy" type="text" /></label>
-          </div>
-          <div class="dc-toggles">
-            <label><input v-model="form.socTrajectoryOk" type="checkbox" /> SOC 轨迹在带内</label>
-            <label><input v-model="form.socEndOk" type="checkbox" /> 终止 SOC 达标</label>
-            <label><input v-model="form.dataDeclarable" type="checkbox" /> 数据门禁允许申报</label>
-          </div>
-          <label class="dc-redline">
-            触碰的合规红线（逗号分隔，留空为无）
-            <input v-model="redLineInput" type="text" placeholder="如 R-2 身份混用" />
-          </label>
+          <!-- 判据输入收纳（slim-s3-s7-stages）：与十项清单同款自动展开——有未过项即展开，
+               全过时收起只留结论徽章；部分判据已由 S1–S3 写回自动填充（徽章提示）。 -->
+          <details class="dc-criteria" :open="!verdict.allowed">
+            <summary>
+              判据输入
+              <em v-if="pf.dataGate || pf.storagePlan || pf.forecast" class="dc-auto">部分已由 S1–S3 产出自动填充</em>
+              <em v-else>展开人工录入</em>
+            </summary>
+            <div class="dc-fields">
+              <label>日 VaR 元<input v-model.number="form.dailyVarYuan" type="number" /></label>
+              <label>授权额度 元<input v-model.number="form.varLimitYuan" type="number" /></label>
+              <label>储能安全倍数<input v-model.number="form.safetyMultiple" type="number" step="0.05" /></label>
+              <label>最大申报偏置<input v-model.number="form.maxBiasAbs" type="number" step="0.01" /></label>
+              <label>中长期履约率<input v-model.number="form.complianceRatio" type="number" step="0.01" /></label>
+              <label>编制人<input v-model="form.preparedBy" type="text" /></label>
+              <label>复核人<input v-model="form.reviewedBy" type="text" /></label>
+            </div>
+            <div class="dc-toggles">
+              <label><input v-model="form.socTrajectoryOk" type="checkbox" /> SOC 轨迹在带内</label>
+              <label><input v-model="form.socEndOk" type="checkbox" /> 终止 SOC 达标</label>
+              <label><input v-model="form.dataDeclarable" type="checkbox" /> 数据门禁允许申报</label>
+            </div>
+            <label class="dc-redline">
+              触碰的合规红线（逗号分隔，留空为无）
+              <input v-model="redLineInput" type="text" placeholder="如 R-2 身份混用" />
+            </label>
+          </details>
         </div>
 
         <div>
@@ -651,36 +732,36 @@ const receiptChecks = computed<ReceiptCheckRow[] | null>(() => {
 
 <style scoped>
 .dc { display: flex; flex-direction: column; gap: 12px; }
-.dc-deadline { padding: 7px 12px; border: 1px solid #bfdbfe; border-radius: 8px; background: #f8fbff; font-size: var(--font-sm); }
-.dc-deadline.over { border-color: #fca5a5; background: #fef2f2; color: #991b1b; }
-.dc-panel { padding: 12px 14px; border: 1px solid var(--el-border-color-lighter, #ebeef5); border-radius: 10px; background: #fff; }
+.dc-deadline { padding: 7px 12px; border: 1px solid var(--primary-tint-border, #bfdbfe); border-radius: 8px; background: var(--panel-sub, #f8fbff); font-size: var(--font-sm); }
+.dc-deadline.over { border-color: var(--danger, #fca5a5); background: var(--danger-tint, #fef2f2); color: var(--danger, #991b1b); }
+.dc-panel { padding: 12px 14px; border: 1px solid var(--el-border-color-lighter, #ebeef5); border-radius: 10px; background: var(--panel, #fff); }
 .dc-panel h3 { display: flex; align-items: center; gap: 6px; margin: 0 0 8px; font-size: var(--font-md); flex-wrap: wrap; }
 .dc-panel h4 { display: flex; align-items: center; gap: 5px; margin: 0 0 6px; font-size: var(--font-sm); }
 .dc-verdict { margin-left: auto; padding: 2px 10px; border-radius: 9px; font-size: var(--font-xs); }
-.dc-verdict.ok { background: #f0fdf4; color: #15803d; }
-.dc-verdict.bad { background: #fef2f2; color: #b91c1c; }
+.dc-verdict.ok { background: var(--primary-tint, #f0fdf4); color: var(--success, #15803d); }
+.dc-verdict.bad { background: var(--danger-tint, #fef2f2); color: var(--danger, #b91c1c); }
 .dc-summary { margin: 0 0 8px; padding: 6px 10px; border-radius: 6px; font-size: var(--font-sm); line-height: 1.6; }
-.dc-summary.ok { background: #f0fdf4; color: #166534; }
-.dc-summary.bad { background: #fef2f2; color: #991b1b; }
+.dc-summary.ok { background: var(--primary-tint, #f0fdf4); color: var(--success, #166534); }
+.dc-summary.bad { background: var(--danger-tint, #fef2f2); color: var(--danger, #991b1b); }
 
 .dc-curve { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; font-size: var(--font-sm); font-variant-numeric: tabular-nums; }
-.dc-btn { padding: 4px 14px; border: 1px solid #2563eb; border-radius: 5px; background: #eff6ff; color: #1d4ed8; font-size: var(--font-sm); cursor: pointer; }
-.dc-btn.primary { background: #2563eb; color: #fff; }
-.dc-btn.danger { border-color: #dc2626; background: #fef2f2; color: #b91c1c; }
+.dc-btn { padding: 4px 14px; border: 1px solid var(--accent, #2563eb); border-radius: 5px; background: var(--primary-tint, #eff6ff); color: var(--accent, #1d4ed8); font-size: var(--font-sm); cursor: pointer; }
+.dc-btn.primary { background: var(--accent, #2563eb); color: #fff; }
+.dc-btn.danger { border-color: var(--danger, #dc2626); background: var(--danger-tint, #fef2f2); color: var(--danger, #b91c1c); }
 .dc-btn:disabled { opacity: .45; cursor: not-allowed; }
-.dc-jump { padding: 0; border: none; background: none; color: #1d4ed8; font: inherit; font-size: var(--font-sm); cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
-.dc-ok { margin: 6px 0 0; font-size: var(--font-sm); color: #15803d; display: inline-flex; align-items: center; gap: 4px; }
-.dc-err { margin: 6px 0 0; padding: 6px 10px; border-radius: 6px; background: #fef2f2; color: #991b1b; font-size: var(--font-sm); }
+.dc-jump { padding: 0; border: none; background: none; color: var(--accent, #1d4ed8); font: inherit; font-size: var(--font-sm); cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
+.dc-ok { margin: 6px 0 0; font-size: var(--font-sm); color: var(--success, #15803d); display: inline-flex; align-items: center; gap: 4px; }
+.dc-err { margin: 6px 0 0; padding: 6px 10px; border-radius: 6px; background: var(--danger-tint, #fef2f2); color: var(--danger, #991b1b); font-size: var(--font-sm); }
 .dc-muted { font-size: var(--font-xs); color: var(--el-text-color-secondary, #667); }
-.dc-warn-inline { font-size: var(--font-sm); color: #b45309; }
+.dc-warn-inline { font-size: var(--font-sm); color: var(--warning, #b45309); }
 
-.dc-storage { border: 1px solid var(--el-border-color-lighter, #ebeef5); border-radius: 10px; background: #fff; padding: 8px 12px; }
+.dc-storage { border: 1px solid var(--el-border-color-lighter, #ebeef5); border-radius: 10px; background: var(--panel, #fff); padding: 8px 12px; }
 .dc-storage summary { display: flex; align-items: center; gap: 8px; font-size: var(--font-sm); font-weight: 600; cursor: pointer; flex-wrap: wrap; }
 .dc-storage summary em { font-style: normal; font-weight: 400; font-size: var(--font-xs); color: var(--el-text-color-secondary, #889); }
 .dc-storage[open] summary { margin-bottom: 8px; }
 
 .dc-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 12px; }
-.dc-auto { margin-left: 8px; font-style: normal; font-size: var(--font-10); font-weight: 400; padding: 1px 7px; border-radius: 8px; background: #ecfdf5; color: #047857; }
+.dc-auto { margin-left: 8px; font-style: normal; font-size: var(--font-10); font-weight: 400; padding: 1px 7px; border-radius: 8px; background: var(--primary-tint, #ecfdf5); color: var(--success, #047857); }
 .dc-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 6px 10px; }
 .dc-fields label { display: flex; flex-direction: column; gap: 2px; font-size: var(--font-xs); color: var(--el-text-color-secondary, #667); }
 .dc-fields input { padding: 3px 6px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 4px; font-size: var(--font-sm); }
@@ -692,63 +773,75 @@ const receiptChecks = computed<ReceiptCheckRow[] | null>(() => {
 .dc-list-fold { border: 1px solid var(--el-border-color-lighter, #ebeef5); border-radius: 8px; padding: 6px 10px; }
 .dc-list-fold summary { display: flex; align-items: center; gap: 8px; font-size: var(--font-sm); font-weight: 600; cursor: pointer; }
 .dc-list-fold[open] summary { margin-bottom: 6px; }
+.dc-criteria { border: 1px solid var(--el-border-color-lighter, #ebeef5); border-radius: 8px; padding: 6px 10px; }
+.dc-criteria summary { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: var(--font-sm); font-weight: 600; cursor: pointer; }
+.dc-criteria summary em { font-style: normal; font-weight: 400; }
+.dc-criteria[open] summary { margin-bottom: 8px; }
 .dc-fold-badge { padding: 1px 9px; border-radius: 9px; font-size: var(--font-10); font-weight: 600; }
-.dc-fold-badge.ok { background: #dcfce7; color: #15803d; }
-.dc-fold-badge.bad { background: #fee2e2; color: #991b1b; }
+.dc-fold-badge.ok { background: var(--primary-tint, #dcfce7); color: var(--success, #15803d); }
+.dc-fold-badge.bad { background: var(--danger-tint, #fee2e2); color: var(--danger, #991b1b); }
 
 .dc-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
 .dc-list li { padding: 6px 9px; border-radius: 6px; border-left: 3px solid transparent; }
-.dc-list li.pass { background: #f6fefa; border-left-color: #4ade80; }
-.dc-list li.hard { background: #fef2f2; border-left-color: #ef4444; }
-.dc-list li.soft { background: #fffbeb; border-left-color: #f59e0b; }
+.dc-list li.pass { background: var(--primary-tint, #f6fefa); border-left-color: var(--success, #4ade80); }
+.dc-list li.hard { background: var(--danger-tint, #fef2f2); border-left-color: var(--danger, #ef4444); }
+.dc-list li.soft { background: var(--warning-tint, #fffbeb); border-left-color: var(--warning, #f59e0b); }
 .dc-item-head { display: flex; align-items: baseline; gap: 7px; flex-wrap: wrap; font-size: var(--font-sm); }
-.dc-no { min-width: 18px; height: 18px; line-height: 18px; text-align: center; border-radius: 50%; background: #1e293b; color: #fff; font-size: var(--font-10); }
-.dc-sev { margin-left: auto; font-size: var(--font-10); padding: 1px 7px; border-radius: 8px; background: rgba(0,0,0,.06); }
+.dc-no { min-width: 18px; height: 18px; line-height: 18px; text-align: center; border-radius: 50%; background: var(--text, #1e293b); color: #fff; font-size: var(--font-10); }
+.dc-sev { margin-left: auto; font-size: var(--font-10); padding: 1px 7px; border-radius: 8px; background: var(--surface-hover, rgba(0,0,0,.06)); }
 .dc-detail { margin-top: 2px; padding-left: 25px; font-size: var(--font-xs); color: var(--el-text-color-secondary, #667); }
 
 .dc-override { margin-top: 10px; }
 .dc-override-form { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
 .dc-override-form select, .dc-override-form input { padding: 4px 7px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 5px; font-size: var(--font-sm); }
 .dc-override-form input { min-width: 150px; }
-.dc-override-form button { padding: 4px 14px; border: 1px solid #2563eb; border-radius: 5px; background: #eff6ff; color: #1d4ed8; font-size: var(--font-sm); cursor: pointer; }
+.dc-override-form button { padding: 4px 14px; border: 1px solid var(--accent, #2563eb); border-radius: 5px; background: var(--primary-tint, #eff6ff); color: var(--accent, #1d4ed8); font-size: var(--font-sm); cursor: pointer; }
 .dc-overrides { list-style: none; margin: 8px 0 0; padding: 0; font-size: var(--font-xs); }
-.dc-overrides li { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; padding: 5px 8px; border-radius: 6px; background: #f8fafc; margin-bottom: 4px; }
-.dc-overrides button { margin-left: auto; padding: 1px 8px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 4px; background: #fff; cursor: pointer; font-size: var(--font-xs); }
+.dc-overrides li { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; padding: 5px 8px; border-radius: 6px; background: var(--panel-sub, #f8fafc); margin-bottom: 4px; }
+.dc-overrides button { margin-left: auto; padding: 1px 8px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 4px; background: var(--panel, #fff); cursor: pointer; font-size: var(--font-xs); }
 
-.dc-note { margin: 8px 0 0; font-size: var(--font-xs); line-height: 1.6; color: #a16207; }
+.dc-note { margin: 8px 0 0; font-size: var(--font-xs); line-height: 1.6; color: var(--warning, #a16207); }
 
 .dc-machine { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.dc-status { padding: 3px 12px; border-radius: 9px; background: #eff6ff; color: #1d4ed8; font-size: var(--font-sm); font-weight: 600; }
+.dc-status { padding: 3px 12px; border-radius: 9px; background: var(--primary-tint, #eff6ff); color: var(--accent, #1d4ed8); font-size: var(--font-sm); font-weight: 600; }
 .dc-comment { padding: 4px 7px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 5px; font-size: var(--font-sm); min-width: 200px; }
 
 .dc-table { width: 100%; border-collapse: collapse; font-size: var(--font-xs); margin-top: 8px; }
 .dc-table th, .dc-table td { padding: 4px 6px; border-bottom: 1px solid var(--el-border-color-lighter, #ebeef5); text-align: left; }
 .dc-table th { color: var(--el-text-color-secondary, #667); font-weight: 600; }
-.dc-table tr.fail td { background: #fef2f2; }
-.dc-table tr.unavailable td { background: #fffbeb; }
+.dc-table tr.fail td { background: var(--danger-tint, #fef2f2); }
+.dc-table tr.unavailable td { background: var(--warning-tint, #fffbeb); }
 .dc-detail-cell { color: var(--el-text-color-secondary, #667); }
 
 .dc-section-nav { display: flex; gap: 6px; flex-wrap: wrap; }
-.dc-section-nav button { padding: 3px 12px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 12px; background: #fff; font-size: var(--font-xs); cursor: pointer; color: #475569; }
-.dc-section-nav button:hover { border-color: #2563eb; color: #1d4ed8; }
+.dc-section-nav button { padding: 3px 12px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 12px; background: var(--panel, #fff); font-size: var(--font-xs); cursor: pointer; color: var(--muted, #475569); }
+.dc-section-nav button:hover { border-color: var(--accent, #2563eb); color: var(--accent, #1d4ed8); }
 @media (max-width: 760px) {
   .dc-grid { grid-template-columns: 1fr; }
   .dc-table, .dc-seg-table, .dc-receipt-checks { display: block; overflow-x: auto; }
   .dc-fields { grid-template-columns: 1fr 1fr; }
 }
-.dc-receipt { margin-top: 8px; padding: 7px 10px; border-radius: 8px; background: #f0fdf4; color: #166534; font-size: var(--font-sm); display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.dc-receipt em { font-style: normal; padding: 1px 7px; border-radius: 8px; background: #fef3c7; color: #92400e; font-size: var(--font-10); }
-.dc-receipt-checks { width: 100%; border-collapse: collapse; font-size: var(--font-xs); margin-top: 6px; background: #fff; }
+.dc-receipt { margin-top: 8px; padding: 7px 10px; border-radius: 8px; background: var(--primary-tint, #f0fdf4); color: var(--success, #166534); font-size: var(--font-sm); display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.dc-receipt em { font-style: normal; padding: 1px 7px; border-radius: 8px; background: var(--warning-tint, #fef3c7); color: var(--warning, #92400e); font-size: var(--font-10); }
+.dc-receipt-checks { width: 100%; border-collapse: collapse; font-size: var(--font-xs); margin-top: 6px; background: var(--panel, #fff); }
 .dc-receipt-checks th, .dc-receipt-checks td { padding: 4px 8px; border-bottom: 1px solid var(--el-border-color-lighter, #ebeef5); text-align: left; }
 .dc-receipt-checks th { color: var(--el-text-color-secondary, #667); }
-.dc-receipt-checks tr.bad td { background: #fef2f2; color: #991b1b; }
-.dc-receipt-checks tr.manual td { background: #fffbeb; color: #92400e; }
+.dc-receipt-checks tr.bad td { background: var(--danger-tint, #fef2f2); color: var(--danger, #991b1b); }
+.dc-receipt-checks tr.manual td { background: var(--warning-tint, #fffbeb); color: var(--warning, #92400e); }
 
-.dc-deadline.remind-blue { border-color: #93c5fd; background: #eff6ff; }
-.dc-deadline.remind-yellow { border-color: #fcd34d; background: #fffbeb; color: #92400e; }
-.dc-deadline.remind-red { border-color: #f87171; background: #fef2f2; color: #991b1b; font-weight: 600; }
+.dc-deadline.remind-blue { border-color: var(--primary-tint-border, #93c5fd); background: var(--primary-tint, #eff6ff); }
+.dc-deadline.remind-yellow { border-color: var(--warning, #fcd34d); background: var(--warning-tint, #fffbeb); color: var(--warning, #92400e); }
+.dc-deadline.remind-red { border-color: var(--danger, #f87171); background: var(--danger-tint, #fef2f2); color: var(--danger, #991b1b); font-weight: 600; }
 
-.dc-segments { border: 1px solid var(--el-border-color-lighter, #ebeef5); border-radius: 10px; background: #fff; padding: 8px 12px; }
+.dc-segments { border: 1px solid var(--el-border-color-lighter, #ebeef5); border-radius: 10px; background: var(--panel, #fff); padding: 8px 12px; }
+/* 临场改价留痕（#2016 · 自 S1 迁入）：登记表单 + 待判定回判列表 */
+.dc-pc-form { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; font-size: var(--font-sm); }
+.dc-pc-form label { display: inline-flex; align-items: center; gap: 4px; color: var(--el-text-color-secondary, #667); }
+.dc-pc-form input { padding: 3px 6px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 6px; font-size: var(--font-sm); width: 96px; }
+.dc-pc-why { flex: 1 1 180px; } .dc-pc-why input { width: 100%; }
+.dc-pc-list { margin: 6px 0 0; padding-left: 18px; font-size: var(--font-sm); }
+.dc-pc-list li { margin: 3px 0; line-height: 1.6; }
+.dc-pc-actions { margin-left: 8px; white-space: nowrap; }
 .dc-segments summary { display: flex; align-items: center; gap: 8px; font-size: var(--font-sm); font-weight: 600; cursor: pointer; flex-wrap: wrap; }
 .dc-segments summary em { font-style: normal; font-weight: 400; font-size: var(--font-xs); color: var(--el-text-color-secondary, #889); }
 .dc-segments[open] summary { margin-bottom: 8px; }
@@ -759,8 +852,8 @@ const receiptChecks = computed<ReceiptCheckRow[] | null>(() => {
 .dc-seg-table th:first-child, .dc-seg-table td:first-child { text-align: left; }
 .dc-seg-table input { width: 84px; padding: 3px 6px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 4px; font-size: var(--font-xs); text-align: right; }
 
-.dc-manual { margin-top: 8px; padding: 8px 12px; border: 1px solid #fca5a5; border-radius: 8px; background: #fef2f2; font-size: var(--font-sm); line-height: 1.7; }
-.dc-manual h4 { display: flex; align-items: center; gap: 5px; margin: 0 0 4px; font-size: var(--font-sm); color: #991b1b; }
-.dc-manual-fails { margin: 0 0 6px; padding-left: 18px; font-size: var(--font-xs); color: #991b1b; }
-.dc-manual-read { display: flex; gap: 14px; flex-wrap: wrap; padding: 5px 9px; border-radius: 6px; background: #fff; font-variant-numeric: tabular-nums; }
+.dc-manual { margin-top: 8px; padding: 8px 12px; border: 1px solid var(--danger, #fca5a5); border-radius: 8px; background: var(--danger-tint, #fef2f2); font-size: var(--font-sm); line-height: 1.7; }
+.dc-manual h4 { display: flex; align-items: center; gap: 5px; margin: 0 0 4px; font-size: var(--font-sm); color: var(--danger, #991b1b); }
+.dc-manual-fails { margin: 0 0 6px; padding-left: 18px; font-size: var(--font-xs); color: var(--danger, #991b1b); }
+.dc-manual-read { display: flex; gap: 14px; flex-wrap: wrap; padding: 5px 9px; border-radius: 6px; background: var(--panel, #fff); font-variant-numeric: tabular-nums; }
 </style>

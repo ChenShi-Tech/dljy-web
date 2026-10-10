@@ -1,7 +1,7 @@
 # 开发指南（前端 × 后端）
 
 > 本文是 dljy-web 的开发权威指南：架构、前后端通讯、环境搭建、联调、约定与排错。
-> 快速开始见 README.md；提交流程与红线见 CONTRIBUTING.md。
+> 快速开始见 README.md；本仓分界与红线见 CONTRIBUTING.md；worktree、issue、PR、合并等流程规则见 AGENTS.md 的「跨仓通用规则」块与工作区 CLAUDE.md。
 
 ## 1. 架构总览
 
@@ -40,8 +40,8 @@ npm run dev                        # http://localhost:5174
 
 - dev server 只监听本机回环（刻意不开 `--host 0.0.0.0`）；需要给别人演示时再临时加。
 - 端口 5174 固定（`strictPort`），被占用会直接报错——先关掉占用者。
-- 登录：账号密码由维护者发放；滑块验证拖到最右。权限受限（部分管理页 403 / 部分数据空态）属正常。
-- 功能开关见 `.env.example`「功能开关」区。其中 `VITE_YUNNAN_INSIGHT_WORKSPACE=1` 打开云南市场洞察工作区（dljy#2995，阶段 A 六页均为建设占位、导航不替换；默认关闭时云南侧边栏与现状完全一致）——它是 UI 装配开关，不是授权开关，权限一律走 `governance.insightPathAccessAliases` 与旧入口等价。
+- 登录：账号密码由维护者发放；滑块验证仅生产构建才有，dev server 默认跳过。权限受限（部分管理页 403 / 部分数据空态）属正常。
+- 功能开关见 `.env.example`「功能开关」区。其中 `VITE_YUNNAN_INSIGHT_WORKSPACE` 控制的云南市场洞察工作区（dljy#2995 新版六页）**已于 2026-09-28 封存（dljy#3387），保持关闭、不要打开**——市场洞察沿用旧版入口，封存说明见 `docs/market-insight.md`。
 
 ## 3. 前后端通讯约定（写代码必读）
 
@@ -50,7 +50,7 @@ npm run dev                        # http://localhost:5174
 页面组件**不直接 `fetch`**，一律经 `src/services/`：
 
 - `src/services/api.ts` —— `/api` 面的统一出口：响应信封解析、Token 注入（`Authorization: Bearer`）、**自动注入 `x-region-id` 请求头**（全局地区上下文）。
-- `src/services/agent/` —— `/agent-api` 面的出口：`agentClient.ts`、`difyStudioClient.ts` 等客户端与它们共用的 `httpClient.ts` 基座（`createAgentClient` 工厂）。基址统一走 `AGENT_API_BASE` 常量（默认 `/agent-api`），**不得硬编码 `http://…:8000`**（生产会 404）。
+- `src/services/agent/` —— `/agent-api` 面的出口：`agentClient.ts`、`difyStudioClient.ts` 等客户端与它们共用的 `httpClient.ts` 基座（`createAgentClient` 工厂）。基址统一走 `AGENT_API_BASE` 常量（`${AGENT_API_BASE_ROOT}/agent`，根 `AGENT_API_BASE_ROOT` 定义在 `api.ts`、默认 `/agent-api`，可被 `VITE_AGENT_API_BASE` 覆盖），**不得硬编码 `http://…:8000`**（生产会 404）。
 - `src/services/agent/piPocClient.ts` —— `/pi-api` 面唯一出口（基址 `PI_AGENT_BASE`）；dev 经 vite 代理到 pi-poc 编排服务（默认 8100），见 §1 架构图。
 - `src/services/dataServiceRoutes.ts` —— `/data-svc` 面改道：数据管理路径族经 `dataServicePath()` 改写为 `/data-svc/api/…`（#2169 P2-2a），代理目标 `DLJY_DATA_SVC_TARGET`（默认 8190）。
 - `src/services/data/` —— 统一类型 + 数据口径（basis）归一的取数基座。
@@ -72,7 +72,7 @@ npm run dev                        # http://localhost:5174
 
 ### 3.4 AI 侧边栏与智能体聊天面板
 
-**业务页接入 AI 只走 `@/features/aiSidebar`**（统一 AI 侧边栏，规格见工作区 OpenSpec 变更 `unify-ai-sidebar`）：
+**业务页接入 AI 只走 `@/features/aiSidebar`**（统一 AI 侧边栏，规格见工作区 `openspec/specs/ai-sidebar-*`）：
 
 - **声明页面**：在页面 setup 里调用 `defineAiPage({ label, promptKey, interpret?, presets? })`。
   - `promptKey` 只能取 `PAGE_PROMPT_KEYS` 白名单里的值，类型层会拒绝自由文本。
@@ -87,18 +87,18 @@ npm run dev                        # http://localhost:5174
 
 ### 3.5 API 对接指南（新增/收编端点时的 checklist）
 
-1. **先定归属面**：业务 CRUD/鉴权/采集回放 → `/api`（`apiGet`/`apiPost`）；智能体、预测、量化权威实现 → `/agent-api`（`createAgentClient` 工厂）；pi-poc 沙箱 → `piPocClient`。URL 只写相对路径，基址一律用常量（`API_BASE` / `AGENT_API_BASE` / `PI_AGENT_BASE`），显式 `/api|/agent-api|/dify-*` 前缀不会被叠加基址。
-2. **信封契约**：响应统一 `{ code, message, data, mock, sourceType, productionWrite }`。`unwrap` 的错误分类：`payload.code ≥ 400` 优先于 HTTP status；网关 HTML 错误页回落 `HTTP <status>` 文案；204 → `{ code: 204 }`；抛出的 `ApiError` 携带 `status/code/payload/lockedUntil/remainingAttempts`。
+1. **先定归属面**：业务 CRUD/鉴权/采集回放 → `/api`（`apiGet`/`apiPost`）；智能体、预测、量化权威实现 → `/agent-api`（`createAgentClient` 工厂）；pi-poc 沙箱 → `piPocClient`。URL 只写相对路径，基址一律用常量（`/api` 面由 `api.ts` 内部拼接、可被 `VITE_API_BASE` 覆盖；agent / pi 面用 `AGENT_API_BASE` / `PI_AGENT_BASE`），显式 `/api|/agent-api|/dify-*` 前缀不会被叠加基址。
+2. **信封契约**：响应统一 `{ code, message, data, mock, sourceType, productionWrite }`。`unwrap` 的错误分类：`payload.code ≥ 400` 优先于 HTTP status；响应体非 JSON（如网关 HTML 错误页）时 msg 回落 `statusText`，仍无则为「接口响应无法解析」；204 → `{ code: 204 }`；抛出的 `ApiError` 携带 `status/code/payload/lockedUntil/remainingAttempts`。
 3. **请求头自动注入**（不要在调用方手拼）：`apiGet`/`apiPost` 自动带 `Authorization`、`x-company-id`（与 `x-tenant-id` 同值）、`x-region-id`（全局地区上下文）；`apiPost` 自动 `content-type: application/json` + `idempotency-key`（幂等键）。agent 面的写方法额外带 `x-admin-token`，`postForm` **绝不手设 content-type**（multipart boundary 由浏览器生成）。
 4. **地区响应头**：`x-region-served` / `x-region-fallback` 驱动 `RegionDataBanner`；api.ts 内部有请求序号守卫，切区后旧地区的迟到响应不会覆盖新地区状态。
 5. **401 白名单**：`/auth/login`、`/auth/login-options`、`/qweather`、`/csg/disclosure` 之外的 401 会清登录态 + `auth-expired` 事件 + 跳 `/login?redirect=`。新端点若属「后端代理外部服务」性质，评估是否要加白名单（否则外部服务 401 会误触发全局登出）。
 6. **GET 退避重试**：502/503/504 自动重试最多 2 次（退避 400→800ms）；500/404 不重试；AbortError 直抛。新写 client 不要自己再包一层重试。
 7. **mock 标注透传**：收编/新写 client 时，信封的 `mock` 与 `mockFields` 必须原样透传给 UI 层（驾驶舱/工作台的 Mock 可见标注依赖它）；「缺数据返 null、失败不缓存、未知回落标 synthetic」是数据诚实性红线。
-8. **`/pi-api` 特例**：战略问答/申报体检 PoC 与智能体工作台（chat 已切流 #2158）共用，后端是 integrations/pi-poc 沙箱（`DLJY_PI_POC_TARGET`，默认 8100，代理 rewrite `/pi-api` → `/api`）；不跑该服务时代理目标不可达属正常。
+8. **`/pi-api` 特例**：战略问答/申报体检 PoC 与智能体工作台（chat 已切流 #2158）共用，后端是 integrations/pi-poc 沙箱（`DLJY_PI_POC_TARGET`，默认 8100，代理 rewrite `/pi-api` → `/api`）；不跑该服务时代理目标不可达属正常。会话**生命周期**请求（建/查会话、messages、stream、active-run、stop、approvals）恒走 `PI_AGENT_BASE`（#2958）；但**产物（artifacts）与 data_ref（refs）虽按 pi 会话号寻址，却由 agent-runtime 提供**（pi-poc 没有这两类端点），固定走 `AGENT_API_BASE`。
 
 ### 3.6 三维地图：底图、地形与凭据（改 `src/features/gridGeo/**` 前必读）
 
-「空间资产」下 5 个页面共用 `CesiumPlantMap.vue`，三层是**互相独立**的，排障时先分清坏在哪一层：
+「空间资产」下的多个页面共用 `CesiumPlantMap.vue`（装配层，实现拆在 `composables/`：底图 `useBaseMap.ts`、地形与光照 `useTerrain.ts` 等），三层是**互相独立**的，排障时先分清坏在哪一层：
 
 | 层 | 配置位置 | 现状 |
 |---|---|---|
@@ -116,7 +116,7 @@ npm run dev                        # http://localhost:5174
 
 天地图影像底图（`tianditu-imagery`，`src/config/mapProviders.ts` 注册）需要 `VITE_TIANDITU_TOKEN`（`src/config/mapTokens.ts` 读取，构建期默认，运行时可经 localStorage `dljy.grid-geo.tianditu-token` 覆盖）。
 
-### 3.7 预测模型目录必须带目标上下文（#54）
+### 3.7 预测模型目录必须带目标上下文（ChenShi-Tech/dljy-web#54）
 
 `src/services/forecast/forecastProviders.ts` 按 `(regionId, target)` 分开保存目录、加载状态与错误；
 不同目标的同名模型可能有不同的可用性和质量，不能借用普通电价 `price` 的目录。
@@ -124,10 +124,11 @@ npm run dev                        # http://localhost:5174
 - 单目标工作台：调用 `ensureForecastCatalog(target, false, regionId)`，用 `forecastCatalogState(targetRef, regionRef)` 读取响应式状态，用 `providersForTarget(target, regionId)` 读取对应模型。
 - 价格/负荷共页：可并行调用 `ensureForecastCatalog(['price', 'load'])`，但两个选择器分别读取各自的 `forecastCatalogState`，不要按模型ID合并可用性或质量。
 - 申报决策页 `ForecastDecisionCockpitView.vue` 的首载和切区共用目录请求代次，并显式传递地区快照。只有当前代次可标记就绪、校验模型选择或启动预测；A→B→A 的旧完成/失败及卸载后回调均不得改动当前状态，不以自动换模型掩盖选择丢失。
+- **默认算法只取目录（ChenShi-Tech/dljy#3647）**：前端不写死任何算法名当选项或默认值，算法下线只需后端目录不再返回，前端不维护下线名单。`/forecast/models` 响应的顶层 `defaultModelId`（按标的）与条目 `recommended` 经 `modelContract.ts` 归一，`services/forecast/defaultModel.ts::pickDefaultModelId` 在页面真实可选的列表里按「目录默认 → recommended → 第一个可用非占位模型」挑默认（目录默认不在可选列表里就忽略，不硬凑）；一个都没有则下拉显示「暂无可用模型」、不发预测请求。深链/建模台/用户手选点名过的模型从目录消失时只清空并提示重选，不静默改取默认（只有从未被点名的「自动默认」才会随目录改取新默认）。
 - `ensureForecastCatalog(true)`、`PROVIDERS`、`getProvider(id)` 保留旧的默认 `price` 语义；新增非价格路径不得依赖它们推断模型状态。
 - 目录修复不等于远端可用：后端返回的 `available:false` 和不可用原因必须保留，不得为了显示模型而伪造数据、权重或授权状态。
 
-### 3.8 指定日期与在线模型入口（#54）
+### 3.8 指定日期与在线模型入口（ChenShi-Tech/dljy-web#54）
 
 - 工作台消费 `/ycsj/center?mod=bench&target=price_user_da_settlement&date=YYYY-MM-DD`，并跟随同页query变化。日期为空或非法时不自动改算固定历史日；模型目录异步加载后按当前目标选择可用模型。
 - 云南旧价格回放与厂站负荷tab仍遵循degraded/not-configured门控。新目标入口仅在账号有 `/ycsj/workbench` 权限且地区工作台能力为available时出现，切到同页建模工作台；区域负荷不是厂站负荷，用户结算价不是旧平台价格回放。
@@ -158,22 +159,37 @@ npm run dev                        # http://localhost:5174
 ## 5. 测试与本地门禁
 
 ```bash
-npm run lint          # ESLint：correctness 最小面 + 分层守卫（0 error 才能提 PR；no-explicit-any 为 warn，见技术债）
+npm run lint          # 全量门禁 = 字号令牌检查（scripts/check-font-tokens.mjs）+ ESLint（correctness 最小面 + 分层守卫，0 error 才能提 PR；no-explicit-any 为 warn）+ shared 指纹脚本测试（scripts/shared-fingerprint.test.mjs）
+npm run lint:files -- src/foo.ts src/Bar.vue
+                      # 仅 ESLint 检查指定改动文件（不含字号令牌检查与指纹测试）
+node scripts/check-font-tokens.mjs
+                      # 改了 .vue/.css 时另跑：src 下不允许裸 font-size px，必须用 var(--font-*) 令牌（档位见 src/styles/global.css）
 npm run check         # vue-tsc 类型检查（0 错误才能提 PR）
 npm run test:unit     # vitest：纯函数 *.spec.ts（node 环境）+ 组件 *.component.spec.ts（happy-dom）
-npm run test:coverage # 覆盖率阈值门禁（lines 44 / functions 36 / statements 42 / branches 37）
+npm run test:unit -- src/foo.spec.ts
+                      # 直接运行指定测试文件
+npm run test:related -- src/foo.ts src/Bar.vue
+                      # 根据源码依赖自动运行相关测试
+npm run test:coverage # 覆盖率阈值门禁（阈值见 vitest.config.ts）
+npm run test:scripts  # scripts/ 下的 node:test 测试（shared 指纹算法）
 npm run build         # 生产构建（index + grid-geo 双入口）
+npm run build:customer                  # 客户交付版构建（vite --mode customer，内部档专属模块被占位替换）
+npm run verify:customer-edition-build   # 扫交付版产物，确认无内部供应商/品牌/后台路径泄露
 ```
+
+客户交付版的机制、占位替换清单与构建信息文件见 `docs/customer-edition.md`；改到 AI 设置、模型服务、平台后台迁移入口（`src/features/platformAdminMigration/`）等内部档专属面时，须同时考虑交付版产物。
 
 ### 5.1 测试策略
 
+- **分层验证（本仓验证规则的唯一权威，AGENTS.md / CONTRIBUTING.md / README.md 只指向此处）**：开发内循环只跑改动文件 `lint:files` 与相关测试（`test:related` 或指定 spec）；提交前始终运行 `npm run check`，改了 `.vue`/`.css` 另跑字号令牌检查，并按实际影响面补齐 lint 和测试。修改路由、全局状态、公共服务、测试/构建基础设施、依赖或锁文件时视为高爆炸半径，须扩大到对应模块，无法可靠界定影响面时运行全量 `npm run lint`、`npm run test:unit` 与 `npm run build`。
+- **全量兜底**：本地不要求为每次小改动重复运行 `npm run test:coverage`。PR CI 固定运行全量 mirror-guard、lint、check、coverage 与 build；相关测试通过不能替代 CI 全量门禁。
 - **双 project 分工**：`*.spec.ts` 跑 node project（纯函数/服务层逻辑）；`*.component.spec.ts` 跑 dom project（happy-dom + `vitest.setup.dom.ts`）。node project 里个别 spec 确需浏览器 API（localStorage 等）时，用文件头 `// @vitest-environment happy-dom` pragma 按文件切环境——这是**合法机制**，但仅限 node 文件；`*.component.spec.ts` 天然在 dom project，**不要**再加冗余 pragma（仓内已清理过一轮，勿回潮）。
 - **文件头三要素**：守什么不变量 / 坏掉的症状 / issue 号（如有）。新 spec 必须遵循（可参照 `src/services/agent/httpClient.spec.ts`）。
 - **断言纪律**：正反双侧断言（happy path + 错误路径都要锁）；边界穷举（NaN / ±Infinity / null / 空串 / 脏 localStorage）；金融数值手算对拍（不用「自身输出回读自身」的伪对拍）。
 - **mock 纪律**：`vi.hoisted` + 工厂模式；`vi.stubGlobal` 后必须 `vi.unstubAllGlobals()`；store/composable 的模块级单例用 `resetXxxForTest()` 或直接赋值归位。stub `fetch` 的实现签名带 `(url, init)` 两参，`mock.calls` 才能推导出元组类型。
 - **诚实语义红线**（spec 要专门锁这些）：缺数据返 `null` 而非 `0`；未知回落标 synthetic 不伪装 real；失败不缓存；`mock:true`/`sourceType!=='REAL'` 的私有数据必须 throw 而非放行。
-- **覆盖率口径**：只统计 `.ts/.js` 逻辑层（`.vue` 计入会稀释全局指标）；阈值 = floor(实测基线) − 2pp，**只升不降**。注意 Vitest 4 的 coverage include 会把未执行文件按 0% 拉进分母——`shared/` 的 49 个 .mjs 多数无覆盖，纳入会稀释约 10pp，故暂不纳管（技术债 §9）。
-- CI（GitHub Actions）跑 mirror-guard + lint + check + coverage + build，PR 必须全绿。
+- **覆盖率口径**：只统计 `.ts/.js` 逻辑层（`.vue` 计入会稀释全局指标）；阈值 = floor(实测基线) − 2pp，**只升不降**。注意 Vitest 4 的 coverage include 会把未执行文件按 0% 拉进分母——`shared/` 的 .mjs 多数无覆盖，纳入会明显稀释全局指标，故暂不纳管（技术债 §9）。
+- CI（GitHub Actions，南洋自托管 runner `[self-hosted, dljy-linux]`，ChenShi-Tech/dljy#3266）跑 mirror-guard + lint + check + coverage + build，PR 必须全绿。runner 上没有 .git：源码以 runner 本机缓存（`~/.cache/ci-src/<仓>`，main push 时回写）为基准经 API 只拉改动文件，基准不可用时整包下载；镜像守卫经 API 读取 PR 改动文件。
 
 ## 6. 目录与代码约定
 
@@ -181,11 +197,14 @@ npm run build         # 生产构建（index + grid-geo 双入口）
 |---|---|
 | `src/router/index.ts` | 全量路由，每条必须带 `meta.kind: real\|mixed\|forecast` |
 | `src/views/**` | 页面组件；**禁止 import `shared/schema/**`**（分层守卫） |
+| `src/components/common/**` | 公共组件权威实现：`MetricTile`（指标卡：数值+单位+tone，`as="button"` 可点击筛选卡）与 `CalloutBox`（说明框：info/warn/danger/mock 四档）为跨域唯一实现（#2954），复盘/中长期各自的同名组件只是薄包装，新页面一律直接用公共版 |
 | `src/services/**` | 唯一取数出口；量化 TS 实现是后端 Python 权威实现的镜像，改公式要与维护者确认两端同步 |
 | `src/data/navigation.ts` | 侧边栏（顶级分组是合成路径、子项才是真实路由） |
 | `src/features/*/config.ts` | 特性开关（报表 / 云南交易 / grid-geo 等） |
-| `shared/**` | 与后端共用的规则/schema（上游同步）；改动须在 PR 描述显式说明 |
-| `vendor/**`、`shared/schema/generated/**` | 上游生成物镜像，**只读**（CI 会拒） |
+| `shared/**` | 与后端共用的规则/schema，**只读**：dljy 是唯一事实源，只经 `npm run sync:web -- --dest ../dljy-web`（在 dljy 仓执行）单向更新，本仓不改（改了会被下次同步覆盖） |
+| `vendor/**`、`shared/schema/generated/**` | 上游生成物镜像，**只读**（CI mirror-guard 会拒） |
+| `src/attic/` | 停用区：已下架但保留的功能，不参与构建、类型检查与 lint（见该目录 README） |
+| `docs/` | 功能与专题文档（客户交付版 `customer-edition.md`、平台后台入口迁移、练习空间、操作导引、市场洞察等），按需查阅 |
 | 图表 | 真实呈现纪律：分时值用阶梯线（不做视觉平滑）、连续量直线、预测虚线/出清实线 |
 
 ## 7. ESLint 与分层守卫
@@ -195,28 +214,44 @@ npm run build         # 生产构建（index + grid-geo 双入口）
 - **只取 correctness 规则**（`typescript-eslint` recommended + `eslint-plugin-vue` flat/essential），不引 stylistic/格式类——格式统一交给编辑器，避免海量格式 diff 淹没真实问题。
 - **分层守卫是核心目的**（本配置存在的第一理由）：
   - `src/views/**`、`src/components/**` 禁直接 `import shared/schema/**`——schema 是前后端同构契约，视图消费必须经 `src/data/` 出口（如 `captureColumnLabels.ts` 的 re-export）；
-  - `src/views/**`、`src/components/**` 禁直接 `fetch`——取数必须经 `src/services/`（散落取数无法统一治理，/pi-api 代理被误删后两页静默 404 即前车之鉴）。`features/` 不拦（geoJsonLoader 拉静态资源属合法），spec 文件不拦（mock fetch 是测试手段）。
-- **`no-explicit-any` 降为 warn**：存量 ~291 处（多为脏数据边界的手写守卫），列技术债渐进清零（§9），不在门禁里制造巨型 diff。
+  - `src/views/**`、`src/components/**` 禁直接 `fetch`——取数必须经 `src/services/`（散落取数无法统一治理，/pi-api 代理被误删后两页静默 404 即前车之鉴）。`features/` 不拦（geoJsonLoader 拉静态资源属合法），spec 文件不拦（mock fetch 是测试手段）；
+  - `src/views/**`、`src/components/**` 禁直接内嵌对话内核 `AgentChatPanel.vue`（白名单 `EMBEDDED_CHAT_ALLOWLIST`，见 §3.4），并禁用已移除的旧全局 AI 面板接口（`useAiPanel` / `usePageInsight` / `AgentSidekick`）。
+- **`no-explicit-any` 降为 warn**：存量较多（多为脏数据边界的手写守卫），列技术债渐进清零（§9），不在门禁里制造巨型 diff。
 - **`_` 前缀约定**：有意保留的占位参数/变量（接口位置参数、响应式订阅读值等）以 `_` 开头，不按未使用报错。
-- `vendor/`、`shared/`、`src/data/generated/`、构建产物不在 lint 范围（上游生成物由双主仓自己的门禁管）。
+- `vendor/`、`shared/`、`src/data/generated/`、`src/attic/`、`dist-customer-verify/`、构建产物不在 lint 范围（上游生成物由 dljy 侧门禁管）。
 
 ## 8. 任务与协作流
 
-- **Issue 建在本仓**（dljy-web），会自动/由维护者纳入 org 看板「电力现货交易」统一排期；标题格式 `web: 一句话简述`。
-- 分支从 `main` 拉（`feat/…`、`fix/…`），PR 小而聚焦；本仓是镜像下游，合入的 PR 由维护者搬运回上游后经下一次同步回流（你的 commit 可能被 `sync: mirror from dljy@…` 提交覆盖重放，内容不丢）。
-- PR 说明写清：改了哪个页面/行为、怎么验证（截图/录屏欢迎）、是否碰了 `shared/`。
-- 遇到需要后端改动才能实现的功能：在 issue 里描述清楚需要的接口/字段，由维护者在上游仓排期，**不要在前端硬造假数据绕过**（违反 Mock 标注纪律）。
+worktree、issue、提交与 PR 格式、合并条件等流程规则一律以 `AGENTS.md` 的「跨仓通用规则」块与工作区 `CLAUDE.md` 为准，本文不重复。本仓补充两点：
 
-## 9. 已知技术债（动到相关区域时顺手还，不专门开大工程）
+- PR 里改了页面或交互时，正文「验证记录」写清怎么验证（截图/录屏欢迎）；验证命令按 §5.1。
+- 需要后端改动才能实现的功能：在 `ChenShi-Tech/dljy` 的 issue 里写清需要的接口/字段，先后端后前端；**不要在前端硬造假数据绕过**（违反 Mock 标注纪律）。
 
-| # | 债 | 现状与方向 |
-|---|---|---|
-| 1 | **basis 归一双轨** | `src/services/dataBasis.ts`（根级）与 `src/services/data/contracts/*Adapter.ts` 各自实现一套口径归一；方向：以 `data/contracts` 为唯一权威，dataBasis.ts 收敛为薄引用 |
-| 2 | **云南面板双家园** | `src/features/regions/yunnan/panels/` 与 `src/views/yunnan/panels/` 并存（如结算价面板在 views 侧 1100+ 行）；方向：统一收进 features 侧，views 只留路由级页面 |
-| 3 | **services 根级扁平** | `src/services/` 根下 50 个 .ts（含 spec）直接平铺；方向：按域收进子目录（agent/ 已示范），迁移需连动 import 与上游同步说明 |
-| 4 | **巨型 .vue** | 20 个超 1000 行（最大 DeclarationDeskView 2499 行）；其中 `features/gridGeo/CesiumPlantMap.vue`（1800+ 行）被 5 个页面共用，爆炸半径最大，已单列 `ChenShi-Tech/dljy` 的 Tech Debt issue；方向：拆子组件/composable，新页面禁止再写巨石 |
-| 5 | **EP/ECharts 全量引入** | element-plus 与 echarts 未做按需引入（首包代价约 1MB gzip 前）；方向：unplugin 按需方案需评估与既有主题体系的兼容 |
-| 6 | **tsconfig 收紧路线** | `noUncheckedIndexedAccess`、`exactOptionalPropertyTypes` 未开；试跑：`npx tsc --noEmit --noUncheckedIndexedAccess`（当前存量报错即改造工作量清单） |
-| 7 | **DOM 重 composables 无测试** | `useEChart`（canvas + resize observer）等无 spec；方向：先抽纯函数（option 构造）再测 |
-| 8 | **shared/ 覆盖率未纳管** | Vitest 4 coverage include 会把未执行文件按 0% 计入分母，shared/ 49 个 .mjs 多数无覆盖，纳入约稀释 10pp；方向：shared/ 补测后再纳管 |
-| 9 | **no-explicit-any 存量** | ~291 处 warn（多为脏数据边界手写守卫）；方向：动到相关文件时顺手收敛，不专项批量改（避免无行为意义的大 diff） |
+## 9. 已知技术债
+
+技术债统一记在 Tech Debt 总账 `ChenShi-Tech/dljy#3085`；动到相关区域时顺手还，不专门开大工程。本节只留仍成立、且改动前值得知道的方向，新增债按总账流程开 issue，不在此扩表：
+
+- **云南面板双家园**：`src/features/regions/yunnan/panels/` 与 `src/views/yunnan/panels/` 并存；方向是统一收进 features 侧，views 只留路由级页面。
+- **`src/services/` 根级平铺**：大量 .ts 直接平铺在根下；方向是按域收进子目录（`agent/` 已示范）。
+- **巨型 .vue**：仍有多个超 1000 行的页面组件；新页面禁止再写巨石，拆子组件/composable。
+- **element-plus 与 echarts 全量引入**：未做按需引入，首包偏大；按需方案需评估与既有主题体系的兼容。
+- **tsconfig 收紧**：`noUncheckedIndexedAccess`、`exactOptionalPropertyTypes` 未开；试跑 `npx tsc --noEmit --noUncheckedIndexedAccess`，存量报错即工作量清单。
+- **DOM 重 composables 无测试**：`useEChart` 等无 spec；先抽纯函数（option 构造）再测。
+- **`shared/` 覆盖率未纳管**：见 §5.1 覆盖率口径；补测后再纳管。
+- **`no-explicit-any` 存量**：动到相关文件时顺手收敛，不专项批量改。
+
+### 套保月份下钻
+
+当月/后续页签的分类和合同下钻按已提交月份范围查询，并明确传 `granularity=DAY`。默认三个月或最多十二个月窗口不受小时曲线 31 天限制；今明两日的小时粒度保持独立。
+
+套保工作台外壳按现有主题令牌展示页头、页签、筛选控件与焦点；选中页签同步 aria-pressed。今明两日指标区采用宽窄两栏，700px 以下转单栏。真实数据缺失与读取失败仍分别显示，不用 TEST 截图值替换运行数据。
+
+### 套保工作台展示与日期回看（#3696）
+
+今明页按概览、逐时段明细、数据状态切换，明细每页十二行；月度页按月份与项目切换；结算复核使用覆盖热力图、场站指标柱图、台账对照柱图和质量图表。补仓结果以敞口图为主，原始逐时段对照按需展开。解释与来源使用可键盘聚焦的悬浮提示，预置方案仍保留可见的推断参考标识。
+
+默认今明窗口完全没有已知发电点时，依据当前公司实际数据水位回看最后两天；水位为午夜结束点时归属前一天。页面明确显示历史日期，导出及智能体摘要使用显示结果的日期和场站快照。手动日期、历史认知视角不自动跳转；缺水位或历史查询失败不伪造日期与数值。公司部分场站缺数据时，汇总仍保持未知，可选择已覆盖场站查看。例：本机历史窗口 2026-05-30—31，公司有一个场站缺失，已覆盖场站有 48 个有效小时；机制参数未配置仍按不完整显示，未录入合同可独立得到仅中长期零套保率。
+
+验证：相关组件及模型测试检查日期回退、空态、零分母、机制缺失、分页、图表缺失点与公司/月份/正式暂结切换时的迟到响应。浏览器策略限制时以代码、构建、图表配置与真实接口验证作为证据，视觉验收需在允许访问的浏览器中完成。
+
+套保展示补充（#3698）：过去月份同样渲染已返回的逐日图表；发电缺失时标注暂无可用数据，不补零。月度查询使用已有骨架动画加载组件，缺口摘要使用主题提示框。核定上限、发电基准和机制参数的静态说明放悬浮提示，写入、错误和待保存状态继续可见。结算质量将费用核对不符与费用字段缺失分列，并展示可拆分记录数 / 总记录数；复用服务端状态，不改变一分钱核对阈值或费用公式。现有采集没有独立中长期电费科目，总额与量价还原的分段差额需继续核对价格精度及结算科目，不将其解释为已确认的账单错误。

@@ -8,7 +8,7 @@
 // （每图默认高度按视口 0.66 取 [480,860]，用户可拖底部手柄自调、同页两列联动、localStorage 记忆；
 // 高度变化经 useEChart ResizeObserver 自动 resize）；
 // 额外「全部」页保留原 6 图一览（2 列 × 3 行，每图 240px）。当前页签 ⇄ URL ?metric= 同步。
-import { onMounted, ref, watch, type Ref } from 'vue'
+import { computed, onMounted, ref, watch, type Ref } from 'vue'
 import { currentRegion } from '@/services/region/regionContext'
 import {
   fetchMarketInsightActualLoadContract,
@@ -19,8 +19,9 @@ import {
 import { onRegionChange } from '../composables/useRegionReload'
 import { useQuerySync } from '../composables/useQuerySync'
 import RegionDataBanner from '@/components/region/RegionDataBanner.vue'
-import CapabilitySupportBadge from '../components/CapabilitySupportBadge.vue'
 import LoadPanelChart from '../components/common/LoadPanelChart.vue'
+import LoadRangeBoard from '../components/common/LoadRangeBoard.vue'
+import { LOAD_PANEL_UNIT, isEmptyLoadSource } from '@/services/chart/loadPanelModel'
 import { defineAiPage, useAiSidebar } from '@/features/aiSidebar'
 import { PAGE_PROMPT_KEYS } from '@/prompts'
 
@@ -91,6 +92,14 @@ async function load() {
   }
 }
 
+// 版面按数据决定（非地区硬编码，dljy#3384）：错位负荷有数 → 原「系统 vs 错位」双列 + 均/小/大分页；
+// 错位负荷是空壳（该地区没有这项统计，如云南）→ 整列不渲染，换成单源版面（指标行 + 日均值与日内
+// 区间带 + 峰谷差），不留空图占位。数据未到时不渲染任何图，避免先闪双列再切换。
+const layout = computed<'single' | 'dual' | null>(() => {
+  if (!data.value || isEmptyLoadSource(data.value.sources.system)) return null
+  return isEmptyLoadSource(data.value.sources.misplace) ? 'single' : 'dual'
+})
+
 const ai = useAiSidebar()
 // 「✨ 解读本页」：可用年份 + 系统负荷各年年均作摘要（勿传 6年×366天逐日矩阵全量）。
 function insightContext(): Record<string, unknown> {
@@ -104,10 +113,10 @@ function insightContext(): Record<string, unknown> {
   return {
     page: '逐日系统负荷实际值 (actualLoad)',
     years,
-    panels: '系统/错位负荷 × 均值/最小/最大（6 子图）',
+    panels: layout.value === 'single' ? '系统负荷：日均值与日内最小~最大区间带 + 日内峰谷差' : '系统/错位负荷 × 均值/最小/最大（6 子图）',
     system_load_annual_avg_by_year: years.map((y, i) => ({ year: y, annual_avg: yearMean(average[i]) })),
-    unit: '万KWH',
-    note: '逐日 366 点 × 6 年；本摘要仅给系统负荷各年年均，逐日明细未传',
+    unit: LOAD_PANEL_UNIT,
+    note: '逐日 366 点 × 覆盖年份；本摘要仅给系统负荷各年年均，逐日明细未传',
     basis: 'captured'
   }
 }
@@ -126,12 +135,12 @@ onRegionChange(load)
 <template>
   <div class="dl" v-loading="loading">
     <RegionDataBanner />
-    <CapabilitySupportBadge path="/sjfx/actualLoad" />
     <el-alert v-if="error" type="error" :closable="false" :title="error" class="mb" />
     <div class="toolbar">
       <el-button size="small" type="success" plain @click="askInsight">✨ 解读本页</el-button>
     </div>
-    <el-tabs v-model="activeMetric" class="metric-tabs">
+    <LoadRangeBoard v-if="layout === 'single' && data?.sources.system" :source="data.sources.system" />
+    <el-tabs v-else-if="layout === 'dual'" v-model="activeMetric" class="metric-tabs">
       <!-- 三个指标页：每页系统 vs 错位两列对比 -->
       <el-tab-pane
         v-for="mt in METRIC_TABS"

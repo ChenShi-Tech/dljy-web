@@ -5,8 +5,11 @@ import { getCurrentUser, getToken } from '@/services/auth'
 import { canAccessPath, firstAccessiblePath, isPathAvailableInRegion } from '@/services/governance'
 import { getCurrentRegionSnapshot } from '@/services/region/regionContext'
 import type { InsightPageId } from '@/services/region/insightWorkspace'
+import { resolvePriceDriversRedirect } from './priceDriversRedirect'
 import { isMultiStance, activeStanceType, requiresStanceSelection } from '@/services/stance/stanceContext'
 import { isPathAvailableInStance } from '@/services/stance/stanceNavigation'
+import { migratedRouteComponent } from '@/features/platformAdminMigration/registry'
+import { accountsRedirect, aiStudioRedirect, dataSourceSettingsRedirect, opsPanelRedirects } from './legacyRedirects'
 
 const YUNNAN_TRADING_FEATURE_ENABLED = import.meta.env.VITE_DISABLE_YUNNAN_TRADING !== '1'
 const yunnanTradingRoutes = YUNNAN_TRADING_FEATURE_ENABLED
@@ -33,12 +36,13 @@ const placeholder = () => import('../views/PlaceholderView.vue')
 // Real-data views (built from captured data via /api/real). Others still use
 // the self-documenting placeholder until they are built.
 const dailySystemLoad = () => import('../views/DailySystemLoadView.vue')
+// 云南水电分析（dljy#3389）：并入旧版体系的单页（仅云南），数据走市场洞察三接口。
+const yunnanHydroAnalysis = () => import('../views/yunnan/YunnanHydroView.vue')
 const elNinoLaNina = () => import('../views/ElNinoLaNinaView.vue')
 const dataAnalysis = () => import('../views/DataAnalysisView.vue')
 const clearingSpotAnalysis = () => import('../views/ClearingSpotAnalysisView.vue')
-const priceNewEnergyRelation = () => import('../views/PriceNewEnergyRelationView.vue')
-const priceLoadRelation = () => import('../views/PriceLoadRelationView.vue')
-const marketOperationsAnalysis = () => import('../views/MarketOperationsAnalysisView.vue')
+// 价格驱动分析（dljy#3390）：合并旧「现货价格×新能源」与「现货价格×统调负荷」两页。
+const priceDrivers = () => import('../views/PriceDriversView.vue')
 const fshq = () => import('../views/FshqView.vue')
 const priceAnalysis = () => import('../views/PriceAnalysisView.vue')
 const solarTerms = () => import('../views/SolarTermsView.vue')
@@ -82,7 +86,9 @@ const storageCopilot = () => import('../views/StorageCopilotView.vue')
 // 两个 tab 容器页：各 tab 的子 View 由容器自身 defineAsyncComponent 懒加载，路由层不再单独登记。
 const aiStudio = () => import('../views/AiStudioView.vue')
 const accounts = () => import('../views/AccountsView.vue')
-const systemModels = () => import('../views/SystemModelsView.vue')
+// 推理模型管理整页已迁至平台后台（ChenShi-Tech/dljy#3464，内部版）：路由保留、组件换成整页提示，
+// 直接访问不报错不白屏；菜单项由 data/navigation.ts 按同一登记表摘除。客户交付版原样。
+const systemModels = migratedRouteComponent('inference-models', () => import('../views/SystemModelsView.vue'))
 const companyProfile = () => import('../views/company/CompanyProfileView.vue')
 const companyOverview = () => import('../views/company/CompanyOverviewView.vue')
 const companyAssets = () => import('../views/company/CompanyAssetsView.vue')
@@ -136,17 +142,9 @@ const hubRedirect = (path: string, tab: string): RouteRecordRaw => ({
   redirect: (to) => ({ path: '/ycsj/center', query: { ...to.query, mod: 'replay', tab } })
 })
 
-// 被「AI 工作室」/「用户与会话」tab 化收编的旧页面：路径保留为重定向，落到合并页对应 tab。
-// 这些条目不进导航、不带 meta，因此不会出现在 feature-map / manifest 的页面清单里。
-const aiStudioRedirect = (path: string, tab: string): RouteRecordRaw => ({
-  path,
-  redirect: (to) => ({ path: '/system/ai-studio', query: { ...to.query, tab } })
-})
-
-const accountsRedirect = (path: string, tab: string): RouteRecordRaw => ({
-  path,
-  redirect: (to) => ({ path: '/system/accounts', query: { ...to.query, tab } })
-})
+// 被「AI 工作室」/「用户与会话」/「数据运维工作台」/「数据源接入」tab 化收编的旧页面重定向壳
+// （aiStudioRedirect / accountsRedirect / dataSourceSettingsRedirect / opsPanelRedirects）已抽到
+// ./legacyRedirects.ts：目标面板已迁至平台后台时壳跟着目标走（落宿主页 + 提示），不重定向到不渲染的面板。
 
 // 被智能体工作台合并的五个对话入口（主仓 #2023/#2237）：路径保留为重定向，带 ?entry= 落到
 // 对应入口。这些条目不进导航、不带 meta，因此不会出现在 feature-map / manifest 的页面清单里。
@@ -155,26 +153,6 @@ const aiAgentRedirect = (path: string, entry: string): RouteRecordRaw => ({
   path,
   redirect: (to) => ({ path: '/ai-agent', query: { ...to.query, entry } })
 })
-
-// 「数据源接入」tab 化收编的旧页面：路径保留为重定向，落到合并页对应 tab（#1896）。
-const dataSourceSettingsRedirect = (path: string, tab: string): RouteRecordRaw => ({
-  path,
-  redirect: (to) => ({ path: '/data-source-settings', query: { ...to.query, tab } })
-})
-
-// 数据运维六页原独立路径 → 数据运维工作台对应面板（?panel=）。原查询参数原样带过去，
-// 「数据源接入」的子 tab（?tab=official 等）因此在两级 redirect 后仍然生效。
-const opsPanelRedirects: RouteRecordRaw[] = ([
-  ['yygl/data-onboarding', 'onboarding'],
-  ['yygl/import-hub', 'import-hub'],
-  ['yygl/data-governance', 'governance'],
-  ['yygl/ingest', 'ingest'],
-  ['data-ops/upload', 'upload'],
-  ['data-source-settings', 'data-source']
-] as const).map(([path, panel]) => ({
-  path,
-  redirect: (to) => ({ path: '/data-ops/console', query: { ...to.query, panel } })
-}))
 
 const router = createRouter({
   history: createWebHistory(),
@@ -324,11 +302,22 @@ const router = createRouter({
         page('insight/research', 'InsightResearch', { block: '数据分析', title: '研究工作台', code: 'insight-research', endpoint: '地区工作区分发（src/services/region/insightWorkspace.ts 按当前地区解析）', dataPath: '由地区工作区注册决定', scope: '阶段A骨架:统一宿主路由;已交付地区渲染对应页面,未交付显示建设占位,未登记显示未开通', note: '权限等价旧入口 /sjfx/zrxgx、/sjfx/zrxgx2、/sjfx/singleZsjfx（governance.insightPathAccessAliases）', insightPageId: 'research' }, insightWorkspaceHost),
         page('sjfx/singleZsjfx', 'DataAnalysis', { block: '数据分析', title: '数据分析', code: 'singleZsjfx', endpoint: 'POST /sdpt/zsjfx/singleData', dataPath: 'sdpt_zsjfx', scope: '91天×全63类型，每天 dataMap.series 60×96点', kind: 'mixed', note: '含实际值也含预测序列；63类型见 itemConfig' }, dataAnalysis),
         page('sjfx/zcqxhdl', 'ClearingSpotAnalysis', { block: '数据分析', title: '出清现货电量分析', code: 'zcqxhdl', endpoint: 'POST /sdpt/zcqxhdl/list (宽范围)', dataPath: 'sdpt_zcqxhdl', scope: '10序列×~65天(4/1~6/4)', kind: 'real' }, clearingSpotAnalysis),
-        page('sjfx/zrxgx', 'PriceNewEnergyRelation', { block: '数据分析', title: '现货价格与新能源关系', code: 'zrxgx', endpoint: 'POST /sdpt/zcqxhdl/list24 (ts=回溯天数)', dataPath: 'sdpt_zcqxhdl', scope: '373天 2025-05~2026-06', kind: 'real', note: '{rqdj日前电价, xnyz/xnyg/xnyzd/xnygd, xd}' }, priceNewEnergyRelation),
-        page('sjfx/zrxgx2', 'PriceSystemLoadRelation', { block: '数据分析', title: '现货价格与统调负荷关系', code: 'zrxgx2', endpoint: 'POST /sdpt/zcqxhdl/fhlist24', dataPath: 'sdpt_zcqxhdl', scope: '373天', kind: 'real' }, priceLoadRelation),
-        page('sjfx/market-ops', 'MarketOperationsAnalysis', { block: '数据分析', title: '市场经营分析', code: 'market-analysis', endpoint: 'local marketAnalysis + planned /api/v1/market/* and /api/v1/market-analysis/*', dataPath: 'market_analysis', scope: '市场概览、发电侧、售电公司、独立储能、套餐分析、价格趋势迁移', kind: 'mixed' }, marketOperationsAnalysis),
+        // 价格驱动分析（dljy#3390）：旧 zrxgx/zrxgx2 两页合并为一页，驱动分段切换
+        // （新能源出力/统调负荷），同屏热力图 + 双驱动敏感度对比 + 单小时散点拟合。
+        page('sjfx/price-drivers', 'PriceDrivers', { block: '数据分析', title: '价格驱动分析', code: 'price-drivers', endpoint: 'POST /sdpt/zcqxhdl/list24 | fhlist24 (ts=回溯天数，按 driver 分发)', dataPath: 'sdpt_zcqxhdl', scope: '373天 2025-05~2026-06', kind: 'real', note: 'driver=renewable|load；云南走 yn_system_forecast 契约适配；旧地址 zrxgx/zrxgx2 redirect 预选驱动' }, priceDrivers),
+        // 旧两条关系页地址保留 redirect（dljy#3390 合并）：预选 driver 并透传 date/days/mode，
+        // 旧书签与分享链接不失效；view/cols 随散点矩阵删除不再适用。不进导航、不带 meta，
+        // 因此不会出现在 feature-map / manifest 的页面清单里。
+        { path: 'sjfx/zrxgx', redirect: (to) => resolvePriceDriversRedirect('renewable', to.query) },
+        { path: 'sjfx/zrxgx2', redirect: (to) => resolvePriceDriversRedirect('load', to.query) },
+        // 市场经营分析页随 dljy#3391 下线（dljy#3394 删页面与融合台页签）：旧书签/深链重定向驾驶舱，不 404、不落占位页。
+        { path: '/sjfx/market-ops', redirect: '/dashboard' },
         page('sjfx/fshq', 'TimeOfUseMarket', { block: '数据分析', title: '分时行情', code: 'fshq', endpoint: 'GET /sdpt/fshq/data?rqlx&bdrq&jyyf', dataPath: 'sdpt_fshq', scope: 'rqlx∈{0运行,1交易}×日期 2022-12~2026-06 (2563文件)', kind: 'real', note: 'jysd 参数后端忽略(无效维度)' }, fshq),
         page('sjfx/actualLoad', 'DailySystemLoad', { block: '数据分析', title: '逐日系统负荷实际值', code: 'actualLoad', endpoint: 'GET /sdpt/actualLoad/query', dataPath: 'sdpt_actualLoad', scope: '一次返回6年(2021-2026)×366天', kind: 'real', note: 'system(日历对齐)+misplace(错位)，pjz/zxz/zdz' }, dailySystemLoad),
+        // 云南水电分析（dljy#3389，仅云南）：水电实际与统调负荷、新能源同轴叠线 + 指标卡 +
+        // 获权两分析（水电周出力预测 / 机组群构成）。数据只经 /api/v1/market-insight/*，
+        // 不依赖 VITE_YUNNAN_INSIGHT_WORKSPACE；权限与 /sjfx/actualLoad 等价（governance 别名）。
+        page('sjfx/hydro', 'YunnanHydroAnalysis', { block: '数据分析', title: '水电分析', code: 'hydro', endpoint: 'POST /api/v1/market-insight/{capabilities,query,coverage}（supply.system-series + supply.hydro-weekly-output + supply.hydro-unit-groups）', dataPath: 'market_insight', scope: '云南水电实际出力与统调负荷、新能源同轴叠线（不堆叠不相加）+ 水电概况指标卡 + 获权两卡（区域分列周出力 / 机组群占比，无上限值）', kind: 'mixed', regionIds: ['yunnan'], note: '仅云南登记（其余地区 hidden 路由拦截）；权限等价 /sjfx/actualLoad（governance.insightPathAccessAliases 由主会话补）' }, yunnanHydroAnalysis),
         page('sjfx/zrsjg', 'PriceAnalysis', { block: '数据分析', title: '价格分析', code: 'zrsjg', endpoint: 'GET /sdpt/zcqxhdl/listrs?typeList[]&tag=0', dataPath: 'sdpt_zcqxhdl', scope: '1434天×2类型 2022-07~2026-06', kind: 'real', note: '{rjz,rmx,dmx}；数组参数需编码 %5B0%5D' }, priceAnalysis),
         page('sjfx/jieqi', 'SolarTerms', { block: '数据分析', title: '24节气', code: 'actualLoad2', endpoint: 'GET /sdpt/actualLoad/query2?xl', dataPath: 'sdpt_actualLoad', scope: '6年；xl=1节气详细 / xl=0日期汇总', kind: 'real' }, solarTerms),
         page('sjfx/elninolanina', 'ElNinoLaNina', { block: '数据分析', title: '厄尔尼诺拉尼娜', code: 'elninolanina', endpoint: 'GET /sdpt/elninolanina/list', dataPath: 'sdpt_elninolanina', scope: '77行(年)', kind: 'real', note: 'ENSO 指数 djf..ndj 12个滑动季' }, elNinoLaNina),

@@ -39,7 +39,7 @@ describe('useTheme · options 与初始态', () => {
   it('options 对拍 THEME_OPTIONS：四档顺序即切换器展示顺序', () => {
     const { options } = useTheme()
     expect(options).toBe(THEME_OPTIONS)
-    expect(options.map((o) => o.key)).toEqual(['classic', 'arc', 'neon', 'paper'])
+    expect(options.map((o) => o.key)).toEqual(['classic', 'arc', 'flow', 'paper'])
   })
 
   it('默认主题为 classic', () => {
@@ -71,6 +71,13 @@ describe('setTheme', () => {
     expect(document.documentElement.classList.contains('theme-anim')).toBe(false)
   })
 
+  it('已下线的霓虹不再可选：setTheme(neon) 为 no-op', () => {
+    setTheme('neon' as ThemeName)
+
+    expect(themeState.theme).toBe('classic')
+    expect(localStorage.getItem(THEME_KEY)).toBeNull()
+  })
+
   it('非法值 no-op：状态不变、不落盘、不触发过渡', () => {
     setTheme('dark' as ThemeName)
 
@@ -82,7 +89,7 @@ describe('setTheme', () => {
   it('无 View Transitions 兜底：切换时加 theme-anim 过渡类，520ms 后自动移除', () => {
     vi.useFakeTimers()
 
-    setTheme('neon')
+    setTheme('flow')
 
     expect(document.documentElement.classList.contains('theme-anim')).toBe(true)
     vi.advanceTimersByTime(530)
@@ -120,7 +127,7 @@ describe('initTheme · 启动还原', () => {
     expect(themeState.theme).toBe('classic')
   })
 
-  it('旧 key 迁移：default→classic，neon 原样', () => {
+  it('旧 key 迁移：default→classic，neon→flow（霓虹下线并入流光），并回写新 key、清旧 key', () => {
     localStorage.setItem(LEGACY_KEY, 'default')
     initTheme()
     expect(themeState.theme).toBe('classic')
@@ -128,7 +135,30 @@ describe('initTheme · 启动还原', () => {
     localStorage.removeItem(THEME_KEY)
     localStorage.setItem(LEGACY_KEY, 'neon')
     initTheme()
-    expect(themeState.theme).toBe('neon')
+    expect(themeState.theme).toBe('flow')
+    expect(document.documentElement.dataset.theme).toBe('flow')
+    expect(localStorage.getItem(THEME_KEY)).toBe('flow')
+    expect(localStorage.getItem(LEGACY_KEY)).toBeNull()
+  })
+
+  it('新 key 存霓虹（已下线）→ 迁到流光并回写，不回落浅色', () => {
+    localStorage.setItem(THEME_KEY, 'neon')
+
+    initTheme()
+
+    expect(themeState.theme).toBe('flow')
+    expect(document.documentElement.dataset.theme).toBe('flow')
+    expect(localStorage.getItem(THEME_KEY)).toBe('flow')
+  })
+
+  it('新 key 已是合法主题 → 不做多余回写', () => {
+    localStorage.setItem(THEME_KEY, 'paper')
+    localStorage.setItem(LEGACY_KEY, 'neon') // 残留旧 key 不应覆盖新 key
+
+    initTheme()
+
+    expect(themeState.theme).toBe('paper')
+    expect(localStorage.getItem(LEGACY_KEY)).toBe('neon')
   })
 })
 

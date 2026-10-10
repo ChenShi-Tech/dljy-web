@@ -18,6 +18,9 @@ import type { MidlongSubject, PriceComponent, ProductKind, TaxBasis, TradeMethod
 import { PRICE_COMPONENTS, PRICE_COMPONENT_LABELS, PRODUCT_KIND_LABELS, PRODUCT_KINDS, TAX_BASES, TAX_BASIS_LABELS, TRADE_METHOD_LABELS, TRADE_METHODS } from '@/services/midlong/midlongTypes'
 import type { TradeProposalDetail } from '@/services/midlong/midlongP3Types'
 import { isCompleteBeijingDateTimeInput } from '@/services/midlong/midlongP3Types'
+// 操作导引（dljy#3406）：确认单表单接给「计划与交易执行」导引，登记成功发含完整结果的推进信号。
+import { emitGuideSignal, useGuideForm } from '@/features/guide/bridge'
+import { FORM, SIGNAL } from '@/features/guide/midlong/anchors'
 
 const props = defineProps<{
   modelValue: boolean
@@ -97,6 +100,29 @@ watch(() => props.modelValue, (open) => {
 function addSegment() { form.segments.push({ deliveryMonth: '', quantity: '', price: '' }) }
 function removeSegment(index: number) { if (form.segments.length > 1) form.segments.splice(index, 1) }
 
+// 操作导引（dljy#3406）：登记模式才对导引可见；片段按行覆盖，候选就绪与文件暴露给 ready 与「帮我填」。
+useGuideForm(
+  FORM.confirmationRegister,
+  {
+    read: () => ({
+      ...form,
+      segments: form.segments.map((s) => ({ ...s })),
+      hasFile: file.value !== null,
+      candidatesReady: props.proposals.length > 0,
+      proposalOptions: props.proposals.map((p) => p.id),
+      subjectOptions: props.subjects.map((s) => s.id),
+    }),
+    fill: (values) => {
+      for (const [key, value] of Object.entries(values)) {
+        if (key === 'segments') form.segments = (value as SegmentForm[]).map((s) => ({ ...s }))
+        else if (key === 'file') file.value = value as File | null
+        else (form as unknown as Record<string, unknown>)[key] = value
+      }
+    },
+  },
+  { active: () => props.modelValue && !props.confirmation },
+)
+
 function onFile(event: Event) {
   const input = event.target as HTMLInputElement
   const selected = input.files?.[0] ?? null
@@ -153,6 +179,10 @@ async function submit() {
       : await registerConfirmation(input)
     ElMessage.success(target ? '确认单修订已登记（旧版本保留）' : '确认单已登记')
     emit('saved', saved.confirmationId)
+    emitGuideSignal(SIGNAL.confirmationSaved, {
+      confirmationId: saved.confirmationId, revisionNo: saved.revisionNo, resultStatus: saved.resultStatus,
+      contractId: saved.contractId ?? null, proposalId: saved.proposalId ?? null, pendingReview: saved.pendingReview,
+    })
     // 写请求返回前表单已关闭或重开：结果属于上一次打开，不显示到当前表单。
     if (ticket.sameSession()) result.value = saved
   } catch (e) {
@@ -180,7 +210,7 @@ const deviationRows = (report: RegisterConfirmationResultDto | null): PlanDeviat
       </MidlongNotice>
       <el-form label-width="130px" @submit.prevent>
         <div class="p4-grid">
-          <el-form-item label="交易主体" required>
+          <el-form-item label="交易主体" required data-guide="ml-confirm-subject">
             <el-select v-model="form.subjectId" :disabled="Boolean(confirmation)" placeholder="选择主体" filterable data-test="subject">
               <el-option v-for="s in subjects" :key="s.id" :label="`${s.displayName}（${s.subjectKey}）`" :value="String(s.id)" />
             </el-select>
@@ -188,10 +218,10 @@ const deviationRows = (report: RegisterConfirmationResultDto | null): PlanDeviat
           <el-form-item label="来源" required>
             <el-input v-model="form.sourceNamespace" :disabled="Boolean(confirmation)" placeholder="如：昆明交易中心" data-test="source-namespace" />
           </el-form-item>
-          <el-form-item label="外部确认编号" required>
+          <el-form-item label="外部确认编号" required data-guide="ml-confirm-no">
             <el-input v-model="form.confirmationNo" :disabled="Boolean(confirmation)" data-test="confirmation-no" />
           </el-form-item>
-          <el-form-item label="确认结果" required>
+          <el-form-item label="确认结果" required data-guide="ml-confirm-status">
             <el-radio-group v-model="form.resultStatus" data-test="result-status">
               <el-radio-button value="PRE_CLEARED">预成交</el-radio-button>
               <el-radio-button value="CLEARED">确认成交</el-radio-button>
@@ -203,7 +233,7 @@ const deviationRows = (report: RegisterConfirmationResultDto | null): PlanDeviat
           <el-form-item label="交易对手">
             <el-input v-model="form.counterpartyName" placeholder="可空（创建合同义务时使用）" />
           </el-form-item>
-          <el-form-item label="关联方案">
+          <el-form-item label="关联方案" data-guide="ml-confirm-proposal">
             <el-select v-model="form.proposalId" clearable placeholder="可空" filterable data-test="proposal">
               <el-option v-for="p in proposals" :key="p.id" :label="`#${p.id} ${p.subjectName ?? ''} · ${fmtQuantity(p.totalQuantity)} MWh`" :value="String(p.id)" />
             </el-select>
@@ -247,16 +277,18 @@ const deviationRows = (report: RegisterConfirmationResultDto | null): PlanDeviat
         </div>
 
         <div class="p4-sub">交割段（各月实际成交量与价格；价格可空 = 价格未知，不编价）</div>
-        <div v-for="(s, i) in form.segments" :key="i" class="p4-segment">
-          <el-date-picker v-model="s.deliveryMonth" type="month" value-format="YYYY-MM" placeholder="交割月" style="width: 130px" :data-test="`segment-month-${i}`" />
-          <el-input v-model="s.quantity" placeholder="电量 MWh" style="width: 150px" :data-test="`segment-quantity-${i}`" />
-          <el-input v-model="s.price" placeholder="价格 元/MWh（可空）" style="width: 180px" :data-test="`segment-price-${i}`" />
-          <el-button v-if="form.segments.length > 1" link type="danger" @click="removeSegment(i)">删除</el-button>
+        <div data-guide="ml-confirm-segments">
+          <div v-for="(s, i) in form.segments" :key="i" class="p4-segment">
+            <el-date-picker v-model="s.deliveryMonth" type="month" value-format="YYYY-MM" placeholder="交割月" style="width: 130px" :data-test="`segment-month-${i}`" />
+            <el-input v-model="s.quantity" placeholder="电量 MWh" style="width: 150px" :data-test="`segment-quantity-${i}`" />
+            <el-input v-model="s.price" placeholder="价格 元/MWh（可空）" style="width: 180px" :data-test="`segment-price-${i}`" />
+            <el-button v-if="form.segments.length > 1" link type="danger" @click="removeSegment(i)">删除</el-button>
+          </div>
         </div>
         <el-button link type="primary" class="p4-add" @click="addSegment">+ 添加交割段</el-button>
 
         <div class="p4-sub">依据与说明</div>
-        <el-form-item :label="fileRequired ? '确认单文件（必填）' : '确认单文件（预成交可后补）'">
+        <el-form-item :label="fileRequired ? '确认单文件（必填）' : '确认单文件（预成交可后补）'" data-guide="ml-confirm-file">
           <input type="file" :data-test="`file-input-${fileRequired ? 'required' : 'optional'}`" @change="onFile" />
         </el-form-item>
         <el-form-item v-if="confirmation" label="修订原因" required>
@@ -266,7 +298,7 @@ const deviationRows = (report: RegisterConfirmationResultDto | null): PlanDeviat
       </el-form>
 
       <template v-if="result">
-        <MidlongNotice tone="info" :title="`登记完成：${result.resultStatus === 'CLEARED' ? '确认成交' : '预成交'}（确认单 #${result.confirmationId} v${result.revisionNo}）`" data-test="register-result">
+        <MidlongNotice tone="info" :title="`登记完成：${result.resultStatus === 'CLEARED' ? '确认成交' : '预成交'}（确认单 #${result.confirmationId} v${result.revisionNo}）`" data-test="register-result" data-guide="ml-confirm-result">
           <div>{{ linkKindText(result.linkKind) }}<template v-if="result.contractId">，<router-link :to="`/zcqjy/contracts/${result.contractId}`" class="p4-link">查看合同 #{{ result.contractId }}</router-link></template>。</div>
           <div v-if="result.businessKeyReplay">{{ EXECUTION_NOTICES.duplicateReplay }}</div>
           <div v-if="result.linkKind === 'EXISTING_LINKED'">{{ EXECUTION_NOTICES.linkNoDoubleCount }}</div>
@@ -294,7 +326,7 @@ const deviationRows = (report: RegisterConfirmationResultDto | null): PlanDeviat
     </div>
     <template #footer>
       <el-button @click="emit('update:modelValue', false)">{{ result ? '完成' : '取消' }}</el-button>
-      <el-button v-if="!result" type="primary" :loading="saving" :disabled="!valid" data-test="submit" @click="submit">{{ confirmation ? '生成修订版本' : '登记' }}</el-button>
+      <el-button v-if="!result" type="primary" :loading="saving" :disabled="!valid" data-guide="ml-confirm-submit" data-test="submit" @click="submit">{{ confirmation ? '生成修订版本' : '登记' }}</el-button>
     </template>
   </el-dialog>
 </template>

@@ -20,6 +20,9 @@ import { createLoadGuard, downloadCsv, fmtAmount } from '@/services/midlong/midl
 import { beijingDateTime } from '@/services/midlong/midlongP3Format'
 import { billKindTag, billPeriodLabel, discrepancyStatusTag, settlementFailureText, signedDeltaLabel, voucherText } from '@/services/midlong/midlongP5Format'
 import { DISCREPANCY_STATUSES, DISCREPANCY_STATUS_LABELS, SETTLEMENT_NOTICES, type BillSummaryRow, type DiscrepancyStatus, type DiscrepancySummaryRow } from '@/services/midlong/midlongP5Types'
+// 操作导引（dljy#3407）：账单/差异快照接给「调整与复盘账单」导引。
+import { useGuideState } from '@/features/guide/bridge'
+import { STATE } from '@/features/guide/midlong/anchors'
 import type { MidlongCapabilities, MidlongSubject } from '@/services/midlong/midlongTypes'
 
 const route = useRoute()
@@ -34,6 +37,22 @@ const q = (key: string) => (typeof route.query[key] === 'string' ? (route.query[
 const tab = ref(q('tab') === 'discrepancies' ? 'discrepancies' : 'bills')
 
 const canWrite = computed(() => Boolean(capabilities.value?.canWrite))
+
+// 操作导引（dljy#3407）：账单与差异摘要进快照（凭证数/状态供恢复判定）。
+useGuideState(STATE.bills, () => {
+  if (state.value !== 'ready') return null
+  return {
+    canWrite: canWrite.value,
+    bills: bills.value.map((b) => ({ id: b.id, externalBillNo: b.externalBillNo, billKind: b.billKind, voucherCount: b.voucherCount })),
+  }
+})
+useGuideState(STATE.discrepancies, () => {
+  if (state.value !== 'ready') return null
+  return {
+    canWrite: canWrite.value,
+    discrepancies: discrepancies.value.map((d) => ({ id: d.id, status: d.status })),
+  }
+})
 const pageGuard = createLoadGuard()
 const scopeKey = () => `${selectedCompanyId.value}|${currentRegion.value.id}`
 let loadedScope = ''
@@ -259,13 +278,13 @@ watch([selectedCompanyId, () => currentRegion.value.id], () => {
             <el-date-picker v-model="billFilters.month" type="month" value-format="YYYY-MM" placeholder="覆盖月份" style="width: 140px" data-test="bill-month-filter" />
             <el-input v-model="billFilters.externalBillNo" placeholder="外部账单编号" clearable style="width: 170px" data-test="bill-no-filter" />
             <el-button type="primary" @click="search">查询</el-button>
-            <el-button v-if="canWrite" type="primary" data-test="register-bill" @click="billDialog = true">登记账单</el-button>
+            <el-button v-if="canWrite" type="primary" data-guide="ml-bill-register" data-test="register-bill" @click="billDialog = true">登记账单</el-button>
             <el-button :loading="exporting === 'bills'" data-test="export-bills" @click="exportCurrent('bills')">导出台账</el-button>
           </div>
           <MidlongNotice v-if="billsError" tone="danger" title="账单列表加载失败" data-test="bills-error">
             {{ billsError }} <el-button link type="primary" @click="loadBills">重试</el-button>
           </MidlongNotice>
-          <el-table v-else :data="bills" border size="small" v-loading="billsLoading" @row-click="(row: BillSummaryRow) => Object.assign(billDrawer, { open: true, billId: row.id })">
+          <el-table v-else :data="bills" border size="small" v-loading="billsLoading" data-guide="ml-bill-row" @row-click="(row: BillSummaryRow) => Object.assign(billDrawer, { open: true, billId: row.id })">
             <el-table-column label="账单" width="70"><template #default="{ row }">#{{ row.id }}</template></el-table-column>
             <el-table-column label="形态" width="150">
               <template #default="{ row }">
@@ -303,13 +322,13 @@ watch([selectedCompanyId, () => currentRegion.value.id], () => {
             </el-select>
             <el-date-picker v-model="discrepancyFilters.month" type="month" value-format="YYYY-MM" placeholder="交割月" style="width: 140px" data-test="discrepancy-month-filter" />
             <el-button type="primary" @click="search">查询</el-button>
-            <el-button v-if="canWrite" type="primary" data-test="register-discrepancy" @click="discrepancyDialog = true">登记差异</el-button>
+            <el-button v-if="canWrite" type="primary" data-guide="ml-discrepancy-register" data-test="register-discrepancy" @click="discrepancyDialog = true">登记差异</el-button>
             <el-button :loading="exporting === 'discrepancies'" data-test="export-discrepancies" @click="exportCurrent('discrepancies')">导出台账</el-button>
           </div>
           <MidlongNotice v-if="discrepanciesError" tone="danger" title="差异列表加载失败" data-test="discrepancies-error">
             {{ discrepanciesError }} <el-button link type="primary" @click="loadDiscrepancies">重试</el-button>
           </MidlongNotice>
-          <el-table v-else :data="discrepancies" border size="small" v-loading="discrepanciesLoading" @row-click="(row: DiscrepancySummaryRow) => Object.assign(discrepancyDrawer, { open: true, discrepancyId: row.id })">
+          <el-table v-else :data="discrepancies" border size="small" v-loading="discrepanciesLoading" data-guide="ml-discrepancy-row" @row-click="(row: DiscrepancySummaryRow) => Object.assign(discrepancyDrawer, { open: true, discrepancyId: row.id })">
             <el-table-column label="差异" width="70"><template #default="{ row }">#{{ row.id }}</template></el-table-column>
             <el-table-column label="状态" width="190"><template #default="{ row }"><el-tag size="small" :type="discrepancyStatusTag(row.status).type">{{ discrepancyStatusTag(row.status).label }}</el-tag></template></el-table-column>
             <el-table-column label="交易主体" width="140"><template #default="{ row }">{{ row.subjectName ?? `主体 #${row.subjectId}` }}</template></el-table-column>

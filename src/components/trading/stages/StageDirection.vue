@@ -25,6 +25,7 @@ import { useSaveState } from '@/composables/useSaveState'
 import { applyBias, buildLoadCurve96, LOAD_SHAPE_LABEL, type LoadShapeId } from '@/services/trading/loadShape'
 import { runForecastPredict, runMidterm, unavailableReasonOf, type ForecastResult, type MidtermResult } from '@/services/forecast/mlForecastClient'
 import { ensureForecastCatalog, forecastCatalogState, isModelSelectableForTarget, predictBlockerReason } from '@/services/forecast/forecastProviders'
+import { NO_AVAILABLE_MODEL_TEXT, pickDefaultModelId } from '@/services/forecast/defaultModel'
 import { dualCurveDecision, type MidtermCurve } from '@/services/trading/priceDistribution'
 import {
   arbitrageWindowList,
@@ -106,8 +107,9 @@ const forecastError = ref('')
 // 模型显式可选（#2326）：此前不传 model_type、走后端默认模型，远端真实模型（remote:*）
 // 接进来了却用不上。改为从目录取「价格腿可选」的模型列表让人自己选——不替用户判定
 // 「最优」（目录里没有可比的质量口径，替他选等于把一个没有依据的判断写死进代码）。
-// 默认取列表首项，与驾驶舱归一逻辑一致。
-const { models: catalogModels, error: catalogError } = forecastCatalogState()
+// 默认取目录对价格标的标记的默认算法，目录没标注则取列表里第一个可用的非占位模型（与驾驶舱归一逻辑一致，
+// dljy#3647：不写死算法名）；一个都没有就显示「暂无可用模型」。
+const { models: catalogModels, error: catalogError, defaultModelId: catalogDefaultModelId } = forecastCatalogState()
 const priceModels = computed(() => catalogModels.value.filter((m) => isModelSelectableForTarget(m, 'price')))
 const modelType = ref('')
 
@@ -170,8 +172,8 @@ onMounted(async () => {
   // 目录用于模型下拉；失败不阻断本阶段其它功能（预测按钮点下去会如实报目录加载失败）。
   try {
     await ensureForecastCatalog()
-    if (priceModels.value.length && !priceModels.value.some((m) => m.modelId === modelType.value)) {
-      modelType.value = priceModels.value[0].modelId
+    if (!priceModels.value.some((m) => m.modelId === modelType.value)) {
+      modelType.value = pickDefaultModelId(priceModels.value, catalogDefaultModelId.value)
     }
   } catch { /* catalogError 已记录，loadForecast 会如实提示 */ }
   try {
@@ -292,6 +294,18 @@ const bandChart = computed(() => {
   const lowerRev = [...q.p10].reverse().map((v, i) => `${x(23 - i).toFixed(1)},${y(v).toFixed(1)}`)
   const band = `M${upper.join(' L')} L${lowerRev.join(' L')} Z`
   return { W, H, band, p50: line(q.p50), p10: line(q.p10), p90: line(q.p90) }
+})
+
+// 预测与窗口参考折叠（slim-s3-s7-stages）：ML 分布/套利窗口/双曲线/凯利四块参考内容
+// 默认收起——它们是判断的输入参照（jyy S3 动作①②），不是要常驻填写的任务。预测或
+// 双曲线就绪时自动展开；用户手动收起后以手动态优先，再跑预测不强制重开。
+const refUserOpen = ref<boolean | null>(null)
+const refReady = computed(() => Boolean(forecastDigest.value || bandChart.value || midtermCurve.value))
+const refOpen = computed({
+  get: () => refUserOpen.value ?? refReady.value,
+  set: (v: boolean) => {
+    refUserOpen.value = v
+  }
 })
 
 // AI 建议（判据先算好，AI 解释与建议，人拍板采纳）
@@ -474,7 +488,16 @@ async function writeBack() {
 
       <!-- 申报曲线 -->
       <section class="dr-panel">
-        <h3>申报曲线（预测 × 偏置）</h3>
+        <h3>
+          申报曲线（预测 × 偏置）
+          <el-tooltip placement="top" :show-after="150">
+            <template #content>
+              预览为逐小时抽样（悬停看功率）。形态模板是兜底出发点（总量守恒）；
+              预测与 AI 建议给「往哪偏、偏多少」提供参照，S4 还可逐点微调。
+            </template>
+            <span class="dr-info" tabindex="0">ⓘ</span>
+          </el-tooltip>
+        </h3>
         <div class="dr-fields">
           <label>日预测电量 MWh<input v-model.number="totalMwh" type="number" step="10" /></label>
           <label>
@@ -497,17 +520,32 @@ async function writeBack() {
             :title="`${String(i).padStart(2, '0')}:00 ≈ ${(v * 4).toFixed(1)} MW`"
           />
         </div>
-        <p class="dr-tip">
-          预览为逐小时抽样（悬停看功率）。形态模板是兜底出发点（总量守恒）；下方 ML 价格预测
-          与 AI 建议给"往哪偏、偏多少"提供参照，S4 还可逐点微调。
-        </p>
 
-        <!-- ML 价格预测参考：P10/P50/P90 概率分布上屏（Z1：看分布而非点价） -->
-        <h3><LineChart :size="13" /> ML 价格概率分布（P10/P50/P90）</h3>
+        <!-- 参考区收纳（slim-s3-s7-stages）：ML 分布/套利窗口/双曲线/凯利是判断的输入参照，
+             收进一个折叠，预测就绪自动展开；未跑预测时收起，主任务（定方向、给曲线）不被淹没。 -->
+        <details class="dr-ref" :open="refOpen" @toggle="refOpen = ($event.target as HTMLDetailsElement).open">
+          <summary>
+            预测与窗口参考
+            <em v-if="refReady">分布与窗口已就绪（ML 分布 · 套利窗口 · 双曲线 · 凯利红线）</em>
+            <em v-else>未跑——跑 {{ targetDate }} 价格预测后自动展开（ML 分布 · 套利窗口 · 双曲线 · 凯利红线）</em>
+          </summary>
+
+          <!-- ML 价格预测参考：P10/P50/P90 概率分布上屏（Z1：看分布而非点价） -->
+          <h3>
+            <LineChart :size="13" /> ML 价格概率分布（P10/P50/P90）
+            <el-tooltip placement="top" :show-after="150">
+              <template #content>
+                实线 = P50 中位；带 = P90–P10 区间（虚线为两沿）。决策看带宽不只看中位——
+                高价时段带宽最宽时，按 P10（不利侧）核可做性，见套利窗口的保守口径比对。
+              </template>
+              <span class="dr-info" tabindex="0">ⓘ</span>
+            </el-tooltip>
+          </h3>
         <div class="dr-forecast">
           <label class="dr-model">
             <span>模型</span>
             <select v-model="modelType" :disabled="forecastLoading || !priceModels.length">
+              <option v-if="!priceModels.length" disabled value="">{{ NO_AVAILABLE_MODEL_TEXT }}</option>
               <option v-for="m in priceModels" :key="m.modelId" :value="m.modelId">
                 {{ m.name ?? m.modelId }}{{ m.provenance.mock ? '（占位）' : '' }}
               </option>
@@ -533,21 +571,26 @@ async function writeBack() {
 
         <div v-if="bandChart" class="dr-band-chart">
           <svg :viewBox="`0 0 ${bandChart.W} ${bandChart.H}`" role="img" aria-label="价格概率分布带状图：P90-P10 带与 P50 中位线">
-            <path :d="bandChart.band" fill="#93c5fd" fill-opacity="0.35" />
+            <path :d="bandChart.band" fill="var(--primary-tint-border, #93c5fd)" fill-opacity="0.35" />
             <path :d="bandChart.p10" fill="none" stroke="#60a5fa" stroke-width="1" stroke-dasharray="3 2" />
             <path :d="bandChart.p90" fill="none" stroke="#60a5fa" stroke-width="1" stroke-dasharray="3 2" />
-            <path :d="bandChart.p50" fill="none" stroke="#1d4ed8" stroke-width="2" />
+            <path :d="bandChart.p50" fill="none" stroke="var(--accent, #1d4ed8)" stroke-width="2" />
             <text v-for="h in [0, 6, 12, 18, 23]" :key="h" :x="10 + (h / 23) * 460" :y="bandChart.H - 4" text-anchor="middle" font-size="9" fill="#889">{{ h }}时</text>
           </svg>
-          <p class="dr-band-legend">
-            实线 = P50 中位；带 = P90–P10 区间（虚线为两沿）。<strong>决策看带宽不只看中位</strong>——
-            高价时段带宽最宽时，按 P10（不利侧）核可做性，见下方套利窗口的保守口径比对。
-          </p>
         </div>
 
         <!-- 套利窗口清单（F2.4，储能立场）+ P90 价差 vs 盈亏平衡自动比对 + 凯利仓位红线 -->
         <div v-if="forecastDigest" class="dr-arb">
-          <h4><Zap :size="13" /> 套利窗口清单（储能立场 · 保守口径判级）</h4>
+          <h4>
+            <Zap :size="13" /> 套利窗口清单（储能立场 · 保守口径判级）
+            <el-tooltip placement="top" :show-after="150">
+              <template #content>
+                盈亏平衡要求价差 {{ requiredSpread }} 元/MWh（R3 口径 · 充电价参考取预测谷段 P50 ·
+                容量收益未计故偏保守 · 资产参数：{{ assetLabel }}）。
+              </template>
+              <span class="dr-info" tabindex="0">ⓘ</span>
+            </el-tooltip>
+          </h4>
           <p v-if="assetNote" class="dr-arb-note">{{ assetNote }}</p>
           <template v-if="arbitrageRows.length">
             <table class="dr-arb-table">
@@ -568,14 +611,11 @@ async function writeBack() {
             </table>
             <p class="dr-arb-verdict" :class="{ exec: prepareExecute }">
               <template v-if="prepareExecute">
-                <strong>准备执行</strong>：存在 P90 保守口径价差（峰 P10 − 谷 P90）超过盈亏平衡
-                {{ requiredSpread }} 元/MWh × 1.15 的窗口——可进 S4 出充放计划。
+                <strong>准备执行</strong>：存在 P90 保守口径价差（峰 P10 − 谷 P90）超过盈亏平衡 × 1.15 的窗口——可进 S4 出充放计划。
               </template>
               <template v-else>
                 无「准备执行」信号：各窗口 P90 保守口径未同时超盈亏平衡 × 1.15——按判级列执行或等待窗口。
               </template>
-              盈亏平衡要求价差 {{ requiredSpread }} 元/MWh（R3 口径 · 充电价参考取预测谷段 P50 ·
-              容量收益未计故偏保守 · 资产参数：{{ assetLabel }}）。
             </p>
           </template>
           <p v-else class="dr-arb-empty">
@@ -583,7 +623,13 @@ async function writeBack() {
           </p>
         <!-- 日前 vs 中长期双曲线对比（#2006：会议决策核心输入） -->
         <div class="dr-dual">
-          <h4>日前 vs 中长期价 双曲线对比</h4>
+          <h4>
+            日前 vs 中长期价 双曲线对比
+            <el-tooltip v-if="dualDecision" placement="top" :show-after="150">
+              <template #content>{{ dualDecision.confidenceNote }}</template>
+              <span class="dr-info" tabindex="0">ⓘ</span>
+            </el-tooltip>
+          </h4>
           <div class="dr-dual-bar">
             <button type="button" class="dr-fc-btn" :disabled="midtermLoading" @click="loadMidterm">
               {{ midtermLoading ? '取中长期预测中…' : '取中长期价预测（预测域 /midterm · 14 天）' }}
@@ -610,7 +656,6 @@ async function writeBack() {
             <p class="dr-dual-verdict" :class="`v-${dualDecision.verdict}`">
               <em :class="dualDecision.confident ? 'hi' : 'lo'">{{ dualDecision.confident ? '高置信' : '低置信' }}</em>
               {{ dualDecision.hint }}
-              <span class="dr-dual-note">{{ dualDecision.confidenceNote }}</span>
             </p>
           </template>
           <p v-else-if="midtermCurve" class="dr-muted">日前分布未产出（先跑上方价格预测）——双曲线对比需要两条曲线齐备。</p>
@@ -623,6 +668,7 @@ async function writeBack() {
             持仓率合规带 80–120% 与凯利上限取更严者。
           </p>
         </div>
+        </details>
       </section>
     </div>
 
@@ -663,17 +709,17 @@ async function writeBack() {
 
 <style scoped>
 .dr { display: flex; flex-direction: column; gap: 12px; }
-.dr-upstream { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding: 8px 12px; border: 1px solid #bfdbfe; border-radius: 8px; background: #f8fbff; font-size: var(--font-sm); }
-.dr-upstream.warn { border-color: #fcd34d; background: #fffbeb; color: #92400e; }
-.dr-jump { padding: 0; border: none; background: none; color: #1d4ed8; font: inherit; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
+.dr-upstream { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding: 8px 12px; border: 1px solid var(--primary-tint-border, #bfdbfe); border-radius: 8px; background: var(--panel-sub, #f8fbff); font-size: var(--font-sm); }
+.dr-upstream.warn { border-color: var(--warning, #fcd34d); background: var(--warning-tint, #fffbeb); color: var(--warning, #92400e); }
+.dr-jump { padding: 0; border: none; background: none; color: var(--accent, #1d4ed8); font: inherit; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
 
 .dr-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); gap: 12px; }
-.dr-panel { padding: 12px 14px; border: 1px solid var(--el-border-color-lighter, #ebeef5); border-radius: 10px; background: #fff; }
+.dr-panel { padding: 12px 14px; border: 1px solid var(--el-border-color-lighter, #ebeef5); border-radius: 10px; background: var(--panel, #fff); }
 .dr-panel h3 { display: flex; align-items: flex-start; gap: 10px; flex-wrap: wrap; margin: 0 0 8px; font-size: var(--font-md); }
 
 .dr-directions { display: flex; gap: 8px; flex-wrap: wrap; }
 .dr-directions label { flex: 1; min-width: 150px; display: flex; flex-direction: column; gap: 2px; padding: 8px 10px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 8px; cursor: pointer; font-size: var(--font-sm); }
-.dr-directions label.on { border-color: #2563eb; background: #eff6ff; }
+.dr-directions label.on { border-color: var(--accent, #2563eb); background: var(--primary-tint, #eff6ff); }
 .dr-directions input { display: none; }
 .dr-directions em { font-style: normal; font-size: var(--font-10); line-height: 1.5; color: var(--el-text-color-secondary, #667); }
 
@@ -681,21 +727,25 @@ async function writeBack() {
 .dr-fields label { display: flex; flex-direction: column; gap: 3px; font-size: var(--font-xs); color: var(--el-text-color-secondary, #667); }
 .dr-fields input, .dr-fields select { padding: 4px 7px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 5px; font-size: var(--font-sm); }
 
-.dr-conflict { margin: 8px 0 0; padding: 6px 10px; border-radius: 6px; background: #fef2f2; color: #991b1b; font-size: var(--font-sm); }
+.dr-conflict { margin: 8px 0 0; padding: 6px 10px; border-radius: 6px; background: var(--danger-tint, #fef2f2); color: var(--danger, #991b1b); font-size: var(--font-sm); }
 .dr-rationale { display: flex; flex-direction: column; gap: 3px; margin-top: 10px; font-size: var(--font-xs); color: var(--el-text-color-secondary, #667); }
 .dr-rationale input { padding: 4px 7px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 5px; font-size: var(--font-sm); }
 
-.dr-bias { margin-top: 10px; padding: 8px 10px; border-radius: 8px; background: #eff6ff; font-size: var(--font-sm); }
-.dr-bias.zero { background: #f8fafc; }
+.dr-bias { margin-top: 10px; padding: 8px 10px; border-radius: 8px; background: var(--primary-tint, #eff6ff); font-size: var(--font-sm); }
+.dr-bias.zero { background: var(--panel-sub, #f8fafc); }
 .dr-bias em { display: block; margin-top: 2px; font-style: normal; font-size: var(--font-xs); color: var(--el-text-color-secondary, #667); }
 
 .dr-curve-sum { margin: 8px 0; font-size: var(--font-sm); font-variant-numeric: tabular-nums; }
 .dr-spark { display: flex; align-items: flex-end; gap: 2px; height: 50px; padding: 2px 0; }
-.dr-bar { flex: 1; background: #93c5fd; border-radius: 1px 1px 0 0; }
-.dr-tip { margin: 6px 0 0; font-size: var(--font-xs); line-height: 1.6; color: var(--el-text-color-secondary, #667); }
+.dr-bar { flex: 1; background: var(--primary-tint-border, #93c5fd); border-radius: 1px 1px 0 0; }
+.dr-info { display: inline-flex; align-items: center; justify-content: center; width: 15px; height: 15px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 50%; background: var(--panel-sub, #f8fafc); color: var(--el-text-color-secondary, #667); font-size: var(--font-10); font-style: normal; cursor: help; user-select: none; flex-shrink: 0; }
+.dr-ref { border: 1px solid var(--el-border-color-lighter, #ebeef5); border-radius: 8px; padding: 6px 10px; margin-top: 10px; }
+.dr-ref summary { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: var(--font-sm); font-weight: 600; cursor: pointer; }
+.dr-ref summary em { font-style: normal; font-weight: 400; font-size: var(--font-xs); color: var(--el-text-color-secondary, #889); }
+.dr-ref[open] summary { margin-bottom: 8px; }
 
 .dr-forecast { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; font-size: var(--font-sm); font-variant-numeric: tabular-nums; }
-.dr-fc-btn { padding: 4px 12px; border: 1px solid #059669; border-radius: 5px; background: #ecfdf5; color: #047857; font-size: var(--font-sm); cursor: pointer; }
+.dr-fc-btn { padding: 4px 12px; border: 1px solid var(--success, #059669); border-radius: 5px; background: var(--primary-tint, #ecfdf5); color: var(--success, #047857); font-size: var(--font-sm); cursor: pointer; }
 .dr-fc-btn:disabled { opacity: .5; cursor: wait; }
 .dr-model { display: inline-flex; align-items: center; gap: 5px; font-size: var(--font-sm); }
 .dr-model select { padding: 3px 6px; border: 1px solid var(--line, #d0d5dd); border-radius: 5px; background: var(--panel, #fff); font-size: var(--font-sm); max-width: 200px; }
@@ -703,30 +753,29 @@ async function writeBack() {
 .dr-muted { font-size: var(--font-xs); color: var(--el-text-color-secondary, #667); }
 
 /* 漂移横幅与策略速查 */
-.dr-drift { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding: 8px 12px; border: 1px solid #fca5a5; border-radius: 8px; background: #fef2f2; color: #991b1b; font-size: var(--font-sm); line-height: 1.6; }
-.dr-strategy { width: 100%; font-size: var(--font-xs); color: #075985; }
+.dr-drift { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding: 8px 12px; border: 1px solid var(--danger, #fca5a5); border-radius: 8px; background: var(--danger-tint, #fef2f2); color: var(--danger, #991b1b); font-size: var(--font-sm); line-height: 1.6; }
+.dr-strategy { width: 100%; font-size: var(--font-xs); color: var(--sky, #075985); }
 
 /* 分布带状图 */
 .dr-band-chart { margin-top: 10px; }
 .dr-band-chart svg { width: 100%; height: auto; display: block; }
-.dr-band-legend { margin: 4px 0 0; font-size: var(--font-xs); line-height: 1.6; color: var(--el-text-color-secondary, #667); }
-.dr-band-note { font-size: var(--font-xs); color: #92400e; cursor: help; }
+.dr-band-note { font-size: var(--font-xs); color: var(--warning, #92400e); cursor: help; }
 
 /* 套利窗口清单 */
 .dr-arb { margin-top: 12px; padding-top: 10px; border-top: 1px dashed var(--el-border-color, #dcdfe6); }
 .dr-arb h4 { display: flex; align-items: center; gap: 5px; margin: 0 0 6px; font-size: var(--font-sm); }
-.dr-arb-note { margin: 0 0 6px; font-size: var(--font-xs); color: #b45309; }
+.dr-arb-note { margin: 0 0 6px; font-size: var(--font-xs); color: var(--warning, #b45309); }
 .dr-arb-table { width: 100%; border-collapse: collapse; font-size: var(--font-xs); font-variant-numeric: tabular-nums; }
 .dr-arb-table th, .dr-arb-table td { padding: 4px 6px; border-bottom: 1px solid var(--el-border-color-lighter, #ebeef5); text-align: right; }
 .dr-arb-table th:first-child, .dr-arb-table td:first-child, .dr-arb-table th:nth-child(2), .dr-arb-table td:nth-child(2) { text-align: left; }
 .dr-arb-table th { color: var(--el-text-color-secondary, #667); font-weight: 600; }
-.dr-arb-table tr.execute td:last-child { color: #15803d; font-weight: 600; }
-.dr-arb-table tr.needs_approval td:last-child { color: #92400e; }
-.dr-arb-table tr.skip td:last-child { color: #64748b; }
-.dr-arb-verdict { margin: 8px 0 0; padding: 6px 9px; border-radius: 6px; background: #f8fafc; font-size: var(--font-xs); line-height: 1.7; color: #475569; }
-.dr-arb-verdict.exec { background: #f0fdf4; color: #166534; }
+.dr-arb-table tr.execute td:last-child { color: var(--success, #15803d); font-weight: 600; }
+.dr-arb-table tr.needs_approval td:last-child { color: var(--warning, #92400e); }
+.dr-arb-table tr.skip td:last-child { color: var(--muted, #64748b); }
+.dr-arb-verdict { margin: 8px 0 0; padding: 6px 9px; border-radius: 6px; background: var(--panel-sub, #f8fafc); font-size: var(--font-xs); line-height: 1.7; color: var(--muted, #475569); }
+.dr-arb-verdict.exec { background: var(--primary-tint, #f0fdf4); color: var(--success, #166534); }
 .dr-arb-empty { margin: 6px 0 0; font-size: var(--font-xs); color: var(--el-text-color-secondary, #667); }
-.dr-dual { margin-top: 12px; padding: 8px 12px; border: 1px solid var(--el-border-color-lighter, #ebeef5); border-radius: 8px; background: #fff; }
+.dr-dual { margin-top: 12px; padding: 8px 12px; border: 1px solid var(--el-border-color-lighter, #ebeef5); border-radius: 8px; background: var(--panel, #fff); }
 .dr-dual h4 { margin: 0 0 6px; font-size: var(--font-sm); }
 .dr-dual-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .dr-dual-curves { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin-top: 8px; }
@@ -735,25 +784,24 @@ async function writeBack() {
 .dr-dual-side strong { font-size: var(--font-18); font-variant-numeric: tabular-nums; }
 .dr-dual-unit { font-size: var(--font-10); color: var(--el-text-color-secondary, #889); }
 .dr-dual-spark { display: flex; align-items: flex-end; gap: 2px; height: 46px; }
-.dr-ms-bar { width: 8px; background: #a78bfa; border-radius: 1px 1px 0 0; }
-.dr-dual-verdict { margin: 8px 0 0; padding: 6px 10px; border-radius: 6px; font-size: var(--font-xs); line-height: 1.7; background: #f8fafc; }
-.dr-dual-verdict.v-prefer_spot { background: #f0fdf4; color: #166534; }
-.dr-dual-verdict.v-prefer_mlt { background: #eff6ff; color: #1d4ed8; }
+.dr-ms-bar { width: 8px; background: var(--violet-soft, #a78bfa); border-radius: 1px 1px 0 0; }
+.dr-dual-verdict { margin: 8px 0 0; padding: 6px 10px; border-radius: 6px; font-size: var(--font-xs); line-height: 1.7; background: var(--panel-sub, #f8fafc); }
+.dr-dual-verdict.v-prefer_spot { background: var(--primary-tint, #f0fdf4); color: var(--success, #166534); }
+.dr-dual-verdict.v-prefer_mlt { background: var(--primary-tint, #eff6ff); color: var(--accent, #1d4ed8); }
 .dr-dual-verdict em { font-style: normal; margin-right: 6px; padding: 1px 8px; border-radius: 8px; font-weight: 600; }
-.dr-dual-verdict em.hi { background: #dcfce7; color: #15803d; }
-.dr-dual-verdict em.lo { background: #fef3c7; color: #92400e; }
-.dr-dual-note { display: block; margin-top: 2px; font-size: var(--font-10); color: var(--el-text-color-secondary, #889); }
-.dr-kelly { margin: 8px 0 0; padding: 6px 9px; border-radius: 6px; background: #fffbeb; color: #92400e; font-size: var(--font-xs); line-height: 1.7; }
+.dr-dual-verdict em.hi { background: var(--primary-tint, #dcfce7); color: var(--success, #15803d); }
+.dr-dual-verdict em.lo { background: var(--warning-tint, #fef3c7); color: var(--warning, #92400e); }
+.dr-kelly { margin: 8px 0 0; padding: 6px 9px; border-radius: 6px; background: var(--warning-tint, #fffbeb); color: var(--warning, #92400e); font-size: var(--font-xs); line-height: 1.7; }
 
-.dr-ai { border: 1px solid var(--el-border-color-lighter, #ebeef5); border-radius: 10px; background: #fff; padding: 8px 12px; }
+.dr-ai { border: 1px solid var(--el-border-color-lighter, #ebeef5); border-radius: 10px; background: var(--panel, #fff); padding: 8px 12px; }
 .dr-ai summary { display: flex; align-items: center; gap: 8px; font-size: var(--font-sm); font-weight: 600; cursor: pointer; flex-wrap: wrap; }
 .dr-ai summary em { font-style: normal; font-weight: 400; font-size: var(--font-10); color: var(--el-text-color-secondary, #889); }
 .dr-ai[open] summary { margin-bottom: 8px; }
 
 .dr-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.dr-actions .primary { display: inline-flex; align-items: center; gap: 5px; padding: 5px 14px; border: 1px solid #2563eb; border-radius: 6px; background: #2563eb; color: #fff; font-size: var(--font-sm); cursor: pointer; }
+.dr-actions .primary { display: inline-flex; align-items: center; gap: 5px; padding: 5px 14px; border: 1px solid var(--accent, #2563eb); border-radius: 6px; background: var(--accent, #2563eb); color: #fff; font-size: var(--font-sm); cursor: pointer; }
 .dr-actions .primary:disabled { opacity: .45; cursor: not-allowed; }
-.dr-actions .ghost { padding: 5px 12px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 6px; background: #fff; font-size: var(--font-sm); cursor: pointer; }
-.dr-ok { font-size: var(--font-sm); color: #15803d; }
-.dr-err { font-size: var(--font-sm); color: #b91c1c; }
+.dr-actions .ghost { padding: 5px 12px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 6px; background: var(--panel, #fff); font-size: var(--font-sm); cursor: pointer; }
+.dr-ok { font-size: var(--font-sm); color: var(--success, #15803d); }
+.dr-err { font-size: var(--font-sm); color: var(--danger, #b91c1c); }
 </style>

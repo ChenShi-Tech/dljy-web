@@ -34,6 +34,7 @@
 //     useInsightContext 还原，预设按承接来源建议预填（可更换），并给返回原页入口。
 //   - 红线：价格响应类预设（竞价空间×价格拟合/弹性）未登记开放——缺已登记的模型输入、
 //     方法与验证结果就明确不可用；剩余需求代理是分析代理量，不是官方竞价空间，不写因果。
+import InsightNote from '@/components/insight/InsightNote.vue'
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
@@ -100,7 +101,6 @@ const KIND_LABELS: Record<string, string> = {
 
 const EX_POST_BADGE = '事后对照'
 const EX_ANTE_BADGE = '事前 · 截至时点'
-const STAGE_TEXT = '研究工作台只运行登记过的预设：结果保留样本、覆盖与方法说明；统计关联不等于因果，同类日不以相似度承诺价格预测'
 const NO_PRESET_TEXT = '当前地区暂未开通研究预设：研究入口按地区登记，未登记地区不借用其他地区的预设'
 const SAVE_HINT_NO_RESULT = '运行预览后才能保存：保存提交的是研究定义与版本，不是结果本身'
 const SAVE_HINT_READY = '保存会把定义与期望版本交给服务端核验：按同口径重算一致才冻结；资料已更新时会要求先重新运行再保存'
@@ -376,6 +376,11 @@ const runState = reactive<{ result: ResearchPreviewResult | null; error: Insight
   runKey: '',
 })
 
+// 单调递增运行令牌：loading 归属判定以「本次运行捕获的令牌」为准，而非配置签名。
+// 签名在 A→B→A 快速切换时会回到 A，若仍用「签名相等」判 loading 归属，原 A 请求的
+// finally 会在 A'' 在途期间提前释放 loading，形成同配置并发请求窗口（见 #3117）。
+let runToken = 0
+
 // ── 保存分析（任务 14.4，RS06）与已保存列表入口 ──────────────────────────────────────────
 // 权限语义分离（同 #151 材料口径）：保存是公司写入，按 governance 既有口径只对公司管理员级
 // 账号显示入口（后端写入闸门才是权威）；运行预览与已保存列表查看不受影响。
@@ -429,7 +434,9 @@ watch(configSignature, () => {
   runState.result = null
   runState.error = null
   runState.runKey = ''
-  // 被代次作废的迟到请求在 finally 里因同签名守卫跳过清 loading——由这里显式归还，
+  // 作废全部在途请求的 loading 归属：令牌递增后，任何旧请求的 finally 都不会再释放 loading。
+  runToken++
+  // 被代次作废的迟到请求在 finally 里因同令牌守卫跳过清 loading——由这里显式归还，
   // 否则承接/上下文变化后运行按钮永远停在加载态。
   runState.loading = false
   saveState.savedVersion = null
@@ -454,13 +461,14 @@ async function runPreview(): Promise<void> {
   const filters = preset.kind === 'correlation' ? { groupBy: groupBy.value } : undefined
   const transformations = buildTransformations(preset)
   const key = configSignature.value
+  const my = ++runToken
   runState.loading = true
   runState.error = null
   try {
     const result = await ctx.request.run(
       (signal) => runResearchPreview({ presetId: preset.presetId, context, filters, transformations }, { signal })
     )
-    if (!result || configSignature.value !== key) return // 作废/迟到：不写状态
+    if (!result || runToken !== my) return // 作废/迟到：不写状态
     // 新一次运行回到默认视图（序列显隐/分面顺序绑定当前结果，是会话内状态）。
     hiddenMetricIds.value = new Set()
     facetOrder.value = []
@@ -474,11 +482,11 @@ async function runPreview(): Promise<void> {
     runState.result = result
     runState.runKey = key
   } catch (error) {
-    if (configSignature.value !== key) return
+    if (runToken !== my) return
     runState.error = error as InsightRequestError
     runState.runKey = key
   } finally {
-    if (configSignature.value === key) runState.loading = false
+    if (runToken === my) runState.loading = false
   }
 }
 
@@ -933,7 +941,7 @@ const onAiInterpret = (): void => {
     />
     <section class="yr__controls">
       <label class="yr__field">
-        <span>业务日期窗</span>
+        <span>分析日期</span>
         <InsightDateRange
           :model-value="ctx.businessWindow.value"
           :max-days="activePreset?.limits.maxDays ?? 0"
@@ -942,7 +950,7 @@ const onAiInterpret = (): void => {
         />
       </label>
       <label class="yr__field">
-        <span>研究预设（只列已登记项）</span>
+        <span>研究问题</span>
         <select class="yr-select" data-testid="yr-preset-select" :value="selectedPresetId" @change="selectPreset(($event.target as HTMLSelectElement).value)">
           <option value="">请选择研究问题</option>
           <option v-for="preset in presets" :key="preset.presetId" :value="preset.presetId" :disabled="!inputEligibilityOf(preset).eligible">
@@ -958,16 +966,14 @@ const onAiInterpret = (): void => {
         @click="onAiInterpret"
       >✨ AI 解读本页</el-button>
       <div class="yr__field yr__saved">
-        <span>已保存分析（本公司，可查看与按新源重算）</span>
+        <span>本公司分析</span>
         <el-button plain data-testid="yr-saved-open" @click="savedVisible = true">查看已保存分析</el-button>
       </div>
     </section>
 
-    <p class="yr__meta">{{ STAGE_TEXT }}</p>
-
     <!-- 红线（任务 13.7，RS08/D6.1）：价格响应类预设未登记——缺模型输入/方法/验证结果明确不可用；
          剩余需求代理沿用供需页口径：分析代理量，不是官方竞价空间，不构成因果或套利结论 -->
-    <p class="yr__meta" data-testid="yr-price-response-note">{{ PRICE_RESPONSE_NOTE }}</p>
+    <InsightNote label="研究范围 · 统计关联不等于因果" :text="PRICE_RESPONSE_NOTE" data-testid="yr-price-response-note" />
 
     <el-alert v-if="!presets.length" type="info" show-icon :closable="false" :title="NO_PRESET_TEXT" data-testid="yr-no-preset" />
 
@@ -992,7 +998,7 @@ const onAiInterpret = (): void => {
           <h3 class="yr__preset-title">{{ preset.title }}</h3>
           <span class="yr__tag">{{ KIND_LABELS[preset.kind] ?? preset.kind }}</span>
         </header>
-        <p class="yr__preset-reason">{{ preset.gapReason }}</p>
+        <InsightNote label="方法与样本" :text="preset.gapReason" />
         <p class="yr__preset-sample">
           最低样本 {{ preset.sample.minSamples }} 条<template v-if="preset.sample.minCoverageRatio"> · 最低覆盖率 {{ percentTextOf(preset.sample.minCoverageRatio) }}</template>
           · 一次最多 {{ preset.limits.maxDays }} 天
@@ -1082,7 +1088,7 @@ const onAiInterpret = (): void => {
 
           <template v-if="activeKind === 'similar-day'">
             <label class="yr__field">
-              <span>目标日（须在业务日期窗内）</span>
+              <span>目标日（须在分析日期内）</span>
               <span data-testid="yr-target-date">
                 <el-date-picker v-model="targetDate" type="date" value-format="YYYY-MM-DD" placeholder="选择目标日" />
               </span>
@@ -1095,9 +1101,9 @@ const onAiInterpret = (): void => {
 
           <!-- 参考日明示（任务 13.7）：同类日目标日是显式日期选择；同进度比较的参考日
                按登记固定为业务日前一日（reference.days=1）——运行前明示映射，换参考日
-               请改业务日期窗；后端未登记参考日变换字段，本页不发明 -->
+               请改分析日期；后端未登记参考日变换字段，本页不发明 -->
           <p v-if="activeKind === 'progress-comparison'" class="yr__hint" data-testid="yr-reference-day">
-            参考日 {{ progressReferenceDay }}（按登记固定为业务日前一日，不自动另选参考日；换参考日请改上方业务日期窗）
+            参考日 {{ progressReferenceDay }}（按登记固定为业务日前一日，不自动另选参考日；换参考日请改上方分析日期）
           </p>
         </div>
 
@@ -1105,7 +1111,7 @@ const onAiInterpret = (): void => {
           <el-button type="primary" :disabled="!canRun || runState.loading" :loading="runState.loading" data-testid="yr-run" @click="runPreview">
             运行预览
           </el-button>
-          <span class="yr__hint">{{ runBlocker || '运行只做预览：结果不落库、不保存' }}</span>
+          <span class="yr__hint">{{ runBlocker }}</span>
         </div>
       </section>
 
@@ -1359,7 +1365,7 @@ const onAiInterpret = (): void => {
               <ResearchStatFacet v-if="statFacetByUnit.get(facet.unit)" :facet="statFacetByUnit.get(facet.unit)!" />
             </section>
           </div>
-          <p class="yr__hint" data-testid="yr-view-scope-note">{{ VIEW_SCOPE_NOTE }}</p>
+          <InsightNote label="视图保存范围" :text="VIEW_SCOPE_NOTE" data-testid="yr-view-scope-note" />
         </template>
 
         <!-- 方法与口径说明（后端原文，含无置信区间与无因果声明） -->
@@ -1411,11 +1417,6 @@ const onAiInterpret = (): void => {
 .yr__saved {
   justify-content: flex-end;
 }
-.yr__meta {
-  margin: 0;
-  font-size: var(--font-tb-12);
-  color: var(--el-text-color-secondary);
-}
 .yr__presets {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
@@ -1449,11 +1450,6 @@ const onAiInterpret = (): void => {
   border: 1px solid var(--el-color-primary-light-5);
   border-radius: 4px;
   padding: 0 6px;
-}
-.yr__preset-reason {
-  margin: 0;
-  font-size: var(--font-tb-12);
-  color: var(--el-text-color-regular);
 }
 .yr__preset-sample,
 .yr__preset-block {

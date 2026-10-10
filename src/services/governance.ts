@@ -1,4 +1,5 @@
 import { GRID_GEO_FEATURE_ENABLED } from '@/features/gridGeo/config'
+import { IS_CUSTOMER_EDITION } from '@/services/edition'
 import {
   getRegionModuleAccessRoutes,
   getRegionModuleRoutePrefixes,
@@ -332,7 +333,8 @@ export const accessRules: Record<RoleCode, AccessRule> = {
       '/zcqjy/zccljk',
       '/zcqjy/zfsdjy',
       '/zcqjy/zjyap',
-      '/zcqjy/exposure',
+      // 中长期与现货套保（原 /zcqjy/exposure，任务 8.1 迁入 /xhjy/hedge；#3401 补迁白名单）。
+      '/xhjy/hedge',
       '/xhjy/zrqsb',
       '/xhjy/zptqx',
       '/xhjy/monitor',
@@ -340,7 +342,6 @@ export const accessRules: Record<RoleCode, AccessRule> = {
       '/sjfx/fshq',
       '/sjfx/zrsjg',
       '/sjfx/zcqxhdl',
-      '/sjfx/market-ops',
       '/ycsj/center', '/ycsj/hub',
       '/ycsj/decision-cockpit',
       '/ycsj/scoreboard',
@@ -363,11 +364,12 @@ export const accessRules: Record<RoleCode, AccessRule> = {
       ...regionalRoutesForRole('RISK'),
       '/xhjy/trading-day',
       '/xhjy/approvals',
+      // 中长期与现货套保：风控看套保率与敞口判级（#3401，用户 2026-09-28 拍板开放 RISK）。
+      '/xhjy/hedge',
       '/sjfx/singleZsjfx',
       '/sjfx/zcqxhdl',
       '/sjfx/zrxgx',
       '/sjfx/zrxgx2',
-      '/sjfx/market-ops',
       '/sjfx/fshq',
       '/sjfx/zrsjg',
       '/ycsj/center', '/ycsj/hub',
@@ -392,9 +394,10 @@ export const accessRules: Record<RoleCode, AccessRule> = {
       '/sjfx/zcqxhdl',
       '/sjfx/zrxgx',
       '/sjfx/zrxgx2',
-      '/sjfx/market-ops',
       '/sjfx/fshq',
       '/sjfx/actualLoad',
+      // 云南水电分析（dljy#3389）：可见范围与逐日系统负荷一致（同属供需数据），不扩权。
+      '/sjfx/hydro',
       '/sjfx/zrsjg',
       '/sjfx/jieqi',
       '/sjfx/elninolanina',
@@ -431,7 +434,6 @@ export const accessRules: Record<RoleCode, AccessRule> = {
       '/xhjy/trading-day',
       '/zcqjy/zccljk',
       '/xhjy/zrqsb',
-      '/sjfx/market-ops',
       '/djcs/retail-price',
       '/djcs/interprovincial-price',
       '/yygl/ops',
@@ -445,7 +447,9 @@ export const accessRules: Record<RoleCode, AccessRule> = {
     gate: { level: 'L2', label: '结算复核', reviewer: '结算专员', note: '可导入和复核结算，不修改交易策略与执行记录。' }
   },
   PLANT_OPERATOR: {
-    defaultRoute: '/sjfx/market-ops',
+    // 原 defaultRoute 为 /sjfx/market-ops，该页随 dljy#3391 下线（后端已同步改 /dashboard），
+    // 改落现货交易驾驶舱（与 #1799 删除页先例同款处置）。
+    defaultRoute: '/dashboard',
     routes: [
       '/dashboard',
       // 父 Issue #456：展开云南区域模块授权（[yunnanRoleHomeRoute, plant-output]），
@@ -460,7 +464,6 @@ export const accessRules: Record<RoleCode, AccessRule> = {
       '/sjfx/zcqxhdl',
       '/sjfx/zrxgx',
       '/sjfx/zrxgx2',
-      '/sjfx/market-ops',
       '/sjfx/fshq',
       '/sjfx/zrsjg',
       '/sjfx/tqyb',
@@ -492,7 +495,6 @@ export const accessRules: Record<RoleCode, AccessRule> = {
       '/zcqjy/zjyap',
       '/xhjy/zptqx',
       '/sjfx/zrxgx2',
-      '/sjfx/market-ops',
       '/sjfx/fshq',
       '/sjfx/zrsjg',
       '/ycsj/center', '/ycsj/hub',
@@ -522,7 +524,6 @@ export const accessRules: Record<RoleCode, AccessRule> = {
       // 父 Issue #456：同 PLANT_OPERATOR，展开云南区域模块授权以进工作台看出力 tab。
       ...regionalRoutesForRole('STORAGE_OPERATOR'),
       '/xhjy/trading-day',
-      '/sjfx/market-ops',
       '/sjfx/fshq',
       '/sjfx/zrsjg',
       '/tzcs/storage',
@@ -550,6 +551,16 @@ export function isAdminLevelRole(roleCode: RoleCode | null | undefined) {
 // 仅用于前端按钮显隐；后端 /api/company/* 的写闸门（含集团汇总只读态）才是最终权威。
 export function hasCompanyAdmin(user: Pick<GovernanceUser, 'roleCode'> | null | undefined): boolean {
   return isAdminLevelRole(user?.roleCode)
+}
+
+// 共享资源写权限（dljy#3226 · 规格 AA-06.2）：推理共享模型管理的写端点（启停/切版本/
+// 装卸/重扫）与模型服务写入（档位启用、角色路由、网关凭据）由后端 dljy#3238 收紧为——
+// 内部版仅平台超管 ADMIN，客户交付版 ADMIN/BOSS；读路径（健康/清单/版本/额度/连通探测）
+// 不变。本判定只做前端展示一致（写按钮禁用+提示），避免点了才 403；后端是唯一裁决。
+export function canWriteSharedResources(roleCode: RoleCode | null | undefined): boolean {
+  if (!roleCode) return false
+  if (IS_CUSTOMER_EDITION) return isAdminLevelRole(roleCode)
+  return roleCode === 'ADMIN'
 }
 
 export function getAccessOverrides(): Partial<Record<RoleCode, RoleAccessOverride>> {
@@ -674,6 +685,22 @@ export const insightPathAccessAliases: Record<string, string[]> = {
   '/insight/research': ['/sjfx/zrxgx', '/sjfx/zrxgx2', '/sjfx/singleZsjfx']
 }
 
+// 价格驱动分析（dljy#3390）合并了「现货价格×新能源」「现货价格×统调负荷」两页。授权仍按驱动因素
+// 落在两个旧路径上：角色静态授权与权限矩阵保存写的都是旧路径（矩阵把合并页展开成两行），
+// 合并页可访问 ⇔ 任一驱动可访问，页内每个驱动因素按各自旧路径判定。
+// 不在 groups 前缀匹配之后判定：否则只要有 '/sjfx' 组就绕过驱动级授权；也不单独授权合并页路径，
+// 否则矩阵保存后旧路径被清掉会让只有其中一个驱动权限的角色（如售电经理只有统调负荷）失权或扩权。
+export const PRICE_DRIVERS_PATH = '/sjfx/price-drivers'
+export type PriceDriverKind = 'renewable' | 'load'
+export const priceDriverAccessPaths: Record<PriceDriverKind, string> = {
+  renewable: '/sjfx/zrxgx',
+  load: '/sjfx/zrxgx2'
+}
+
+export function canAccessPriceDriver(kind: PriceDriverKind, user: Pick<GovernanceUser, 'roleCode'> | null | undefined): boolean {
+  return canAccessPath(priceDriverAccessPaths[kind], user)
+}
+
 export function canAccessPath(path: string, user: Pick<GovernanceUser, 'roleCode'> | null | undefined): boolean {
   if (!path || path === '/login') return true
   const rawPath = normalizePath(path)
@@ -704,6 +731,10 @@ export function canAccessPath(path: string, user: Pick<GovernanceUser, 'roleCode
   const insightAliases = insightPathAccessAliases[normalized]
   if (insightAliases) {
     return insightAliases.some((alias) => canAccessPath(alias, user))
+  }
+  // 价格驱动分析（dljy#3390）：任一驱动因素的旧路径可访问即可访问（原因见 priceDriverAccessPaths 注释）。
+  if (normalized === PRICE_DRIVERS_PATH) {
+    return Object.values(priceDriverAccessPaths).some((legacyPath) => canAccessPath(legacyPath, user))
   }
 
   const rule = getEffectiveAccessRule(roleCode)

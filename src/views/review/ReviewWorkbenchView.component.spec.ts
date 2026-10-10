@@ -35,6 +35,53 @@ async function open(query = '', standaloneTopics = false) {
   await flushPromises(); return { wrapper, router }
 }
 describe('真实接口复盘工作流', () => {
+  it('KeepAlive 失活期间不污染目标页，按新复盘深链恢复筛选后再取数', async () => {
+    const router = createRouter({ history: createMemoryHistory(), routes: [
+      { path: '/xhjy/review/analysis', component: ReviewWorkbenchView },
+      { path: '/other', component: { template: '<div>其他页面</div>' } }
+    ] })
+    await router.push('/xhjy/review/analysis?date=2026-05-31&energyDate=2026-05-20&energyPlants=old')
+    await router.isReady()
+    const wrapper = mount(ReviewWorkbenchView, {
+      props: {
+        standaloneTopics: true,
+        routeActive: true,
+        reviewRoute: {
+          path: '/xhjy/review/analysis',
+          query: { date: '2026-05-31', energyDate: '2026-05-20', energyPlants: 'old', companyId: 'company-a', region: 'yunnan' }
+        }
+      },
+      global: { plugins: [router], stubs: { RegionDataBanner: true, ReviewTopicWorkspace: true, ReportArchivePanel: true, ReportWorkpaperEditor: true } }
+    })
+    wrappers.push(wrapper)
+    await flushPromises()
+
+    await router.push('/other?foreign=target-value')
+    await wrapper.setProps({ routeActive: false })
+    vi.clearAllMocks()
+    await wrapper.setProps({
+      reviewRoute: {
+        path: '/xhjy/review/analysis',
+        query: { date: '2026-06-01', energyDate: '2026-06-01', energyPlants: 'new', companyId: 'company-a', region: 'yunnan' }
+      }
+    })
+    await flushPromises()
+
+    expect(router.currentRoute.value.fullPath).toBe('/other?foreign=target-value')
+    expect(listDeclarationsPage).not.toHaveBeenCalled()
+    expect(fetchDecisionLogFeed).not.toHaveBeenCalled()
+    expect(fetchSettlementReview).not.toHaveBeenCalled()
+
+    await router.push('/xhjy/review/analysis?date=2026-06-01&energyDate=2026-06-01&energyPlants=new')
+    await wrapper.setProps({ routeActive: true })
+    await flushPromises()
+
+    const workspace = wrapper.findComponent({ name: 'ReviewTopicWorkspace' })
+    expect(workspace.props('date')).toBe('2026-06-01')
+    expect(workspace.props('energySelection')).toMatchObject({ date: '2026-06-01', plants: ['new'] })
+    expect(fetchSettlementReview).toHaveBeenCalledWith('2026-06-01')
+  })
+
   it('导入材料以自身对象和完整周期建立底稿，不借用当前申报对象', async () => {
     const { wrapper } = await open('&declarationId=a', true)
     const material = { sourceKind: 'imported', region: 'yunnan', content: { topic: 'energy', objectLabel: '补充用电组合', capturedAt: '2026-06-01T00:00:00Z', input: { scope: { companyId: 'company-a', objectId: 'imported:object' } }, result: { simulated: true, periods: { current: { start: '2026-05-25', end: '2026-05-31' } } } } }

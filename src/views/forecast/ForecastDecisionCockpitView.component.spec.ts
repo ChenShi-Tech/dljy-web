@@ -18,12 +18,16 @@ type MockForecastModel = {
   source?: string
   framework?: string
   capabilities?: { zeroShot?: boolean }
+  recommended?: boolean
 }
 type RegionCatalog = {
   price: MockForecastModel[]
   load: MockForecastModel[]
   priceError?: string
   loadError?: string
+  /** 目录对该标的标记的默认算法 id（dljy#3647）；不给 = 目录未标注 */
+  priceDefault?: string
+  loadDefault?: string
 }
 
 const state = await vi.hoisted(async () => {
@@ -36,6 +40,8 @@ const state = await vi.hoisted(async () => {
     loadModels: ref<MockForecastModel[]>([]),
     priceCatalogError: ref(''),
     loadCatalogError: ref(''),
+    priceDefault: ref<string | null>(null),
+    loadDefault: ref<string | null>(null),
     regionCatalogs: ref<Record<string, RegionCatalog>>({}),
   }
 })
@@ -80,6 +86,8 @@ vi.mock('@/services/forecast/forecastProviders', () => ({
       ?? (target === 'price' ? state.priceModels.value : state.loadModels.value)),
     error: computed(() => state.regionCatalogs.value[state.currentRegionId.value]?.[`${target}Error`]
       ?? (target === 'price' ? state.priceCatalogError.value : state.loadCatalogError.value)),
+    defaultModelId: computed(() => state.regionCatalogs.value[state.currentRegionId.value]?.[`${target}Default`]
+      ?? (target === 'price' ? state.priceDefault.value : state.loadDefault.value)),
   }),
   isPredictSupported: () => true,
   isModelSelectableForTarget: (model: MockForecastModel, target: ForecastLeg) =>
@@ -192,14 +200,14 @@ function requestUsesModel(input: unknown, modelType: string): boolean {
 // 跨地区共有的真实模型排在第二项，防止修复时以“自动选首项”掩盖原选择被清空。
 function sharedRuntimeCatalog(): RegionCatalog {
   const models = [
-    model({ modelId: 'ridge', name: '线性基线' }),
-    model({ modelId: 'xgboost', name: '跨地区真实算法' }),
+    model({ modelId: 'stacking', name: '集成基线' }),
+    model({ modelId: 'random_forest', name: '跨地区真实算法' }),
   ]
   return { price: models, load: models }
 }
 
 function prepareRegionCatalogs() {
-  state.route.value = { model: 'xgboost', date: '2026-06-25' }
+  state.route.value = { model: 'random_forest', date: '2026-06-25' }
   state.regionCatalogs.value = {
     yunnan: { price: [], load: [] },
     shanxi: { price: [], load: [] },
@@ -216,6 +224,7 @@ async function render() {
         CockpitRegionLockedCard: true,
         DataBasisBadge: { props: ['basis', 'prefix'], template: '<span>{{prefix}} {{basis}}</span>' },
         TrustBadge: { props: ['basis', 'prefix'], template: '<span>{{prefix}} {{basis}}</span>' },
+        ElTag: { template: '<span class="el-tag"><slot /></span>' },
         ElInputNumber: { name: 'ElInputNumber', props: ['modelValue'], template: '<input />' },
         ElSlider: { name: 'ElSlider', props: ['modelValue'], template: '<div />' },
       },
@@ -232,6 +241,8 @@ beforeEach(() => {
   state.currentRegionId.value = 'yunnan'
   state.priceCatalogError.value = ''
   state.loadCatalogError.value = ''
+  state.priceDefault.value = null
+  state.loadDefault.value = null
   state.regionCatalogs.value = {}
   state.priceModels.value = [model({ modelId: 'remote:price-ok', name: '价格真模型', supportedTargets: ['price'] })]
   state.loadModels.value = [model({ modelId: 'remote:load-ok', name: '负荷真模型', supportedTargets: ['load'] })]
@@ -247,9 +258,9 @@ afterEach(() => { wrappers.splice(0).forEach((wrapper) => wrapper.unmount()) })
 
 describe('申报决策驾驶舱模型入口清理', () => {
   it('隐藏 deep link 指向的占位、零样本和错腿模型，但不会静默改跑别的模型', async () => {
-    state.route.value = { priceModel: 'fm:Chronos2', loadModel: 'remote:raw-load', date: '2026-06-25' }
+    state.route.value = { priceModel: 'tslib:DLinear', loadModel: 'remote:raw-load', date: '2026-06-25' }
     state.priceModels.value = [
-      model({ modelId: 'fm:Chronos2', name: 'Chronos 2', supportedTargets: ['price'] }),
+      model({ modelId: 'tslib:DLinear', name: 'DLinear 兼容占位', supportedTargets: ['price'] }),
       model({ modelId: 'remote:load-only', name: '负荷专用旧模型', supportedTargets: ['load'] }),
       model({ modelId: 'remote:price-ok', name: '价格真模型', supportedTargets: ['price'] }),
     ]
@@ -261,7 +272,7 @@ describe('申报决策驾驶舱模型入口清理', () => {
     const wrapper = await render()
     expect(wrapper.text()).toContain('价格真模型')
     expect(wrapper.text()).toContain('负荷真模型')
-    expect(wrapper.text()).not.toContain('Chronos 2')
+    expect(wrapper.text()).not.toContain('DLinear 兼容占位')
     expect(wrapper.text()).not.toContain('原始零样本负荷')
     expect(wrapper.text()).not.toContain('负荷专用旧模型')
     expect(wrapper.text()).not.toContain('价格专用旧模型')
@@ -374,6 +385,130 @@ describe('申报决策驾驶舱模型入口清理', () => {
   })
 })
 
+// dljy#3647：默认算法不再写死（原先初值 'xgboost'，价格腿下线后会变成一个必 400 的入口），
+// 一律取「目录标注的默认 → 目录 recommended → 第一个可用模型」；目录里没有的算法下拉里也不会出现。
+describe('默认算法取自目录（无深链/建模台点名时）', () => {
+  const selectValues = (wrapper: VueWrapper, index: number) =>
+    wrapper.findAll('select')[index].findAll('option').map((option) => (option.element as HTMLOptionElement).value)
+
+  beforeEach(() => { state.route.value = { date: '2026-06-25' } })
+
+  it('目录标注了默认算法：两腿各自选中自己标的的默认，且实际请求用的就是它', async () => {
+    state.priceModels.value = [
+      model({ modelId: 'knn', name: '相似日', supportedTargets: ['price'] }),
+      model({ modelId: 'random_forest', name: '随机森林', supportedTargets: ['price'] }),
+    ]
+    state.loadModels.value = [
+      model({ modelId: 'stacking', name: '集成', supportedTargets: ['load'] }),
+      model({ modelId: 'lgbm_load', name: '负荷默认', supportedTargets: ['load'] }),
+    ]
+    state.priceDefault.value = 'random_forest'
+    state.loadDefault.value = 'lgbm_load'
+    const wrapper = await render()
+    expect(wrapper.findAll('select')[0].element.value).toBe('random_forest')
+    expect(wrapper.findAll('select')[1].element.value).toBe('lgbm_load')
+    expect(api.predict).toHaveBeenCalledWith(expect.objectContaining({ target: 'price', model_type: 'random_forest' }))
+    expect(api.optimize).toHaveBeenCalledWith(expect.objectContaining({ target: 'load', model_type: 'lgbm_load' }))
+    expect(wrapper.text()).not.toContain('当前价格预测模型不可用')
+  })
+
+  it('目录没标注默认：取 recommended，再退回第一个可用模型（不会去找任何写死的算法名）', async () => {
+    state.priceModels.value = [
+      model({ modelId: 'price-a', name: '价格 A', supportedTargets: ['price'] }),
+      model({ modelId: 'price-b', name: '价格 B', supportedTargets: ['price'], recommended: true }),
+    ]
+    state.loadModels.value = [
+      model({ modelId: 'load-down', name: '负荷停用', supportedTargets: ['load'], available: false }),
+      model({ modelId: 'load-a', name: '负荷 A', supportedTargets: ['load'] }),
+    ]
+    const wrapper = await render()
+    expect(wrapper.findAll('select')[0].element.value).toBe('price-b')
+    expect(wrapper.findAll('select')[1].element.value).toBe('load-a')
+    expect(api.predict).toHaveBeenCalledWith(expect.objectContaining({ model_type: 'price-b' }))
+  })
+
+  it('目录默认算法指向不可选的模型（占位/错腿/已隐藏）时忽略，不硬凑', async () => {
+    state.priceModels.value = [
+      model({ modelId: 'raw-price', name: '原始零样本', supportedTargets: ['price'], source: 'remote:zeroshot' }),
+      model({ modelId: 'price-ok', name: '价格真模型', supportedTargets: ['price'] }),
+    ]
+    state.priceDefault.value = 'raw-price'
+    state.loadModels.value = [model({ modelId: 'load-ok', name: '负荷真模型', supportedTargets: ['load'] })]
+    const wrapper = await render()
+    expect(wrapper.findAll('select')[0].element.value).toBe('price-ok')
+  })
+
+  it('下拉只由目录决定：目录里没有的算法（如已下线的）不会出现，目录刷新后消失且默认改取新默认', async () => {
+    const retired = ['nbeats', 'tft', 'mlp', 'ridge', 'physics_hybrid', 'xgboost']
+    state.priceModels.value = [
+      model({ modelId: 'nbeats', name: 'N-BEATS', supportedTargets: ['price'] }),
+      model({ modelId: 'random_forest', name: '随机森林', supportedTargets: ['price'] }),
+    ]
+    state.loadModels.value = [model({ modelId: 'load-ok', name: '负荷真模型', supportedTargets: ['load'] })]
+    state.priceDefault.value = 'nbeats'
+    const wrapper = await render()
+    // 反向锚：目录里有它时它确实会出现并被选为默认——证明下面「不出现」是目录使然，不是断言空转
+    expect(selectValues(wrapper, 0)).toContain('nbeats')
+    expect(wrapper.findAll('select')[0].element.value).toBe('nbeats')
+
+    // 后端目录刷新：nbeats 下线，默认改标 random_forest（切区触发页面重载目录）
+    state.regionCatalogs.value = {
+      yunnan: {
+        price: [model({ modelId: 'random_forest', name: '随机森林', supportedTargets: ['price'] })],
+        load: [model({ modelId: 'load-ok', name: '负荷真模型', supportedTargets: ['load'] })],
+        priceDefault: 'random_forest',
+      },
+      shanxi: {
+        price: [model({ modelId: 'random_forest', name: '随机森林', supportedTargets: ['price'] })],
+        load: [model({ modelId: 'load-ok', name: '负荷真模型', supportedTargets: ['load'] })],
+        priceDefault: 'random_forest',
+      },
+    }
+    state.currentRegionId.value = 'shanxi'
+    await flushPromises()
+    // 下拉选项 = 占位项 + 目录里的模型，一个不多（页面没有夹带任何写死的算法）
+    expect(selectValues(wrapper, 0)).toEqual(['', 'random_forest'])
+    for (const id of retired) expect(selectValues(wrapper, 0)).not.toContain(id)
+    // 原默认（nbeats）不在新目录：自动默认的腿改取目录新默认，而不是清空成空白
+    expect(wrapper.findAll('select')[0].element.value).toBe('random_forest')
+    expect(api.predict).toHaveBeenLastCalledWith(expect.objectContaining({ region_id: 'shanxi', model_type: 'random_forest' }))
+  })
+
+  it('点名过的模型被目录下线：清空并提示重选，不因为「自动默认」而静默改跑别的（用户手选也算点名）', async () => {
+    state.priceModels.value = [
+      model({ modelId: 'random_forest', name: '随机森林', supportedTargets: ['price'] }),
+      model({ modelId: 'stacking', name: '集成', supportedTargets: ['price'] }),
+    ]
+    state.loadModels.value = [model({ modelId: 'load-ok', name: '负荷真模型', supportedTargets: ['load'] })]
+    state.priceDefault.value = 'random_forest'
+    const wrapper = await render()
+    const priceSelect = wrapper.findAll('select')[0]
+    expect(priceSelect.element.value).toBe('random_forest')
+    await priceSelect.setValue('stacking')   // 用户手选 → 之后不再是「自动默认」
+    await flushPromises()
+    api.predict.mockClear()
+    state.priceModels.value = [model({ modelId: 'random_forest', name: '随机森林', supportedTargets: ['price'] })]
+    await flushPromises()
+    expect(wrapper.findAll('select')[0].element.value).toBe('')
+    expect(wrapper.text()).toContain('当前价格预测模型不可用，请另选模型')
+    expect(api.predict).not.toHaveBeenCalled()
+  })
+
+  it('目录里没有任何可选模型：下拉显示「暂无可用模型」，不发预测请求、不回落到任何算法', async () => {
+    state.priceModels.value = []
+    state.loadModels.value = []
+    const wrapper = await render()
+    for (const index of [0, 1]) {
+      const options = wrapper.findAll('select')[index].findAll('option')
+      expect(options.map((option) => option.text())).toEqual(['暂无可用模型'])
+      expect(wrapper.findAll('select')[index].element.value).toBe('')
+    }
+    expect(wrapper.text()).toContain('当前地区没有可消费的模型目录产物')
+    expect(api.predict).not.toHaveBeenCalled()
+    expect(api.optimize).not.toHaveBeenCalled()
+  })
+})
+
 describe('地区模型目录的完成回调隔离', () => {
   it('A 首载晚到时不清空仍在加载的 B 选择，B 就绪后只运行原选模型', async () => {
     prepareRegionCatalogs()
@@ -392,11 +527,11 @@ describe('地区模型目录的完成回调隔离', () => {
     state.regionCatalogs.value.shanxi = sharedRuntimeCatalog()
     latest.resolve()
     await flushPromises()
-    expect(wrapper.findAll('select')[0]?.element.value).toBe('xgboost')
-    expect(wrapper.findAll('select')[1]?.element.value).toBe('xgboost')
+    expect(wrapper.findAll('select')[0]?.element.value).toBe('random_forest')
+    expect(wrapper.findAll('select')[1]?.element.value).toBe('random_forest')
     expect(api.predict).toHaveBeenCalledTimes(1)
-    expect(api.predict).toHaveBeenCalledWith(expect.objectContaining({ region_id: 'shanxi', target: 'price', model_type: 'xgboost' }))
-    expect(api.optimize).toHaveBeenCalledWith(expect.objectContaining({ region_id: 'shanxi', target: 'load', model_type: 'xgboost' }))
+    expect(api.predict).toHaveBeenCalledWith(expect.objectContaining({ region_id: 'shanxi', target: 'price', model_type: 'random_forest' }))
+    expect(api.optimize).toHaveBeenCalledWith(expect.objectContaining({ region_id: 'shanxi', target: 'load', model_type: 'random_forest' }))
     expect(wrapper.text()).not.toContain('当前价格预测模型不可用')
     expect(api.ensureCatalog).toHaveBeenNthCalledWith(1, ['price', 'load'], false, 'yunnan')
     expect(api.ensureCatalog).toHaveBeenNthCalledWith(2, ['price', 'load'], true, 'shanxi')
@@ -423,10 +558,10 @@ describe('地区模型目录的完成回调隔离', () => {
     state.regionCatalogs.value.yunnan = sharedRuntimeCatalog()
     latest.resolve()
     await flushPromises()
-    expect(wrapper.findAll('select')[0]?.element.value).toBe('xgboost')
-    expect(wrapper.findAll('select')[1]?.element.value).toBe('xgboost')
+    expect(wrapper.findAll('select')[0]?.element.value).toBe('random_forest')
+    expect(wrapper.findAll('select')[1]?.element.value).toBe('random_forest')
     expect(api.predict).toHaveBeenCalledTimes(1)
-    expect(api.predict).toHaveBeenCalledWith(expect.objectContaining({ region_id: 'yunnan', model_type: 'xgboost' }))
+    expect(api.predict).toHaveBeenCalledWith(expect.objectContaining({ region_id: 'yunnan', model_type: 'random_forest' }))
     expect(api.ensureCatalog).toHaveBeenNthCalledWith(3, ['price', 'load'], true, 'yunnan')
   })
 
@@ -449,7 +584,7 @@ describe('地区模型目录的完成回调隔离', () => {
     await flushPromises()
     expect(api.predict).toHaveBeenCalledTimes(1)
     expect(api.optimize).toHaveBeenCalledTimes(1)
-    expect(wrapper.findAll('select')[0]?.element.value).toBe('xgboost')
+    expect(wrapper.findAll('select')[0]?.element.value).toBe('random_forest')
     expect(wrapper.text()).not.toContain('旧地区目录读取失败')
     expect(wrapper.text()).not.toContain('当前价格预测模型不可用')
   })
@@ -466,5 +601,103 @@ describe('地区模型目录的完成回调隔离', () => {
     await flushPromises()
     expect(api.predict).not.toHaveBeenCalled()
     expect(api.optimize).not.toHaveBeenCalled()
+  })
+})
+
+// #3605：/cockpit 带远端 mock/sourceType/warnings 时，概览必须可见「模拟数据」，且旧后端无字段时不崩。
+describe('决策概览来源标识', () => {
+  const overviewBase = {
+    basis: 'captured',
+    bid_advice: { retailer: { expected_cost_yuan: 1000 } },
+    price_forecast: { points: [100, 110] },
+    deviation_risk: { worst_penalty_yuan: 50 },
+  }
+
+  async function openOverview() {
+    // 决策概览只在价格/负荷两腿同一模型时才发请求。
+    state.route.value = { model: 'random_forest', date: '2026-06-25' }
+    const shared = [model({ modelId: 'random_forest', name: '跨地区真实算法' })]
+    state.priceModels.value = shared
+    state.loadModels.value = shared
+    const wrapper = await render()
+    const btn = wrapper.findAll('button').find((b) => b.text() === '决策概览')
+    expect(btn).toBeTruthy()
+    await btn!.trigger('click')
+    await flushPromises()
+    return wrapper
+  }
+
+  it('中长期分区 MOCK：概览标题旁与该卡片显示「模拟数据」，warnings 折成短标签+悬浮提示', async () => {
+    api.cockpit.mockResolvedValueOnce({
+      ...overviewBase,
+      mock: true, sourceType: 'MOCK', productionWrite: false,
+      warnings: ['[中长期] 远程模型为演示权重', '[日前电价] 样本偏少'],
+      midterm_trend: { daily_avg_price: [100, 110], horizon_days: 7, mock: true, sourceType: 'MOCK', productionWrite: false },
+    })
+    const wrapper = await openOverview()
+    const head = wrapper.find('.advice-head')
+    expect(head.text()).toContain('模拟数据')
+    expect(head.text()).toContain('合成验证')
+    expect(head.text()).not.toContain('决策概览（真实）')
+    const warn = head.findAll('.el-tag').find((t) => t.text().startsWith('提示'))
+    expect(warn?.text()).toBe('提示 2')
+    expect(warn?.attributes('title')).toContain('远程模型为演示权重')
+    const midCard = wrapper.findAll('.risk-card').find((c) => c.text().includes('未来 7 天均价'))
+    expect(midCard?.text()).toContain('模拟数据')
+    // 未标 mock 的分区卡片不带标签
+    const priceCard = wrapper.findAll('.risk-card').find((c) => c.text().includes('日均预测电价'))
+    expect(priceCard?.text()).not.toContain('模拟数据')
+  })
+
+  it('全部 REAL 且 productionWrite:false：不显示模拟数据/提示标签', async () => {
+    api.cockpit.mockResolvedValueOnce({
+      ...overviewBase,
+      mock: false, sourceType: 'REAL', productionWrite: false, warnings: [],
+      price_forecast: { points: [100, 110], mock: false, sourceType: 'REAL' },
+      deviation_risk: { worst_penalty_yuan: 50, mock: false, sourceType: 'REAL' },
+      midterm_trend: { daily_avg_price: [100, 110], horizon_days: 7, mock: false, sourceType: 'REAL', warnings: [] },
+    })
+    const wrapper = await openOverview()
+    expect(wrapper.find('.advice-head').text()).toContain('决策概览（真实）')
+    expect(wrapper.text()).not.toContain('模拟数据')
+    expect(wrapper.findAll('.el-tag').some((t) => t.text().startsWith('提示'))).toBe(false)
+  })
+
+  it('旧后端无 mock/sourceType/warnings 字段：正常渲染且不出标签', async () => {
+    const wrapper = await openOverview()
+    expect(wrapper.find('.advice-head').text()).toContain('决策概览（真实）')
+    expect(wrapper.text()).toContain('未来 7 天均价')
+    expect(wrapper.text()).not.toContain('模拟数据')
+    expect(wrapper.text()).not.toContain('混合来源')
+  })
+
+  it('仅顶层 mock:true（分区缺字段）也照样标模拟数据，不漏标', async () => {
+    api.cockpit.mockResolvedValueOnce({
+      ...overviewBase, mock: true, sourceType: 'MOCK', productionWrite: false,
+      midterm_trend: { daily_avg_price: [100], horizon_days: 7 },
+    })
+    const wrapper = await openOverview()
+    expect(wrapper.find('.advice-head').text()).toContain('模拟数据')
+  })
+
+  it('中长期 UNAVAILABLE：显示「暂无南洋模型」空态，不当 0 均价、不报错，其余卡片照常', async () => {
+    api.cockpit.mockResolvedValueOnce({
+      ...overviewBase,
+      mock: false, sourceType: 'REAL', productionWrite: false, warnings: [],
+      midterm_trend: {
+        daily_avg_price: [], horizon_days: 14, available: false, reason: '南洋无 yunnan 中长期模型',
+        mock: false, sourceType: 'UNAVAILABLE', productionWrite: false,
+      },
+    })
+    const wrapper = await openOverview()
+    const midCard = wrapper.findAll('.risk-card').find((c) => c.text().includes('未来 14 天均价'))
+    expect(midCard?.text()).toContain('暂无南洋模型')
+    expect(midCard?.text()).not.toContain('NaN')
+    expect(midCard?.text()).not.toContain('元/MWh')
+    expect(midCard?.attributes('title')).toContain('南洋无 yunnan 中长期模型')
+    expect(midCard?.text()).not.toContain('模拟数据')
+    expect(wrapper.text()).toContain('日均预测电价')
+    expect(wrapper.text()).toContain('偏差最坏风险')
+    expect(wrapper.text()).not.toContain('决策概览失败')
   })
 })

@@ -10,6 +10,9 @@ import { midlongFailureOf } from '@/services/midlong/midlongApi'
 import { createWriteSession, isWriteAbandoned } from '@/services/midlong/midlongP3Scope'
 import { PLANNING_NOTICES, PLAN_PERIOD_TYPES, PLAN_PERIOD_TYPE_LABELS, isPeriodKey, type PlanPeriodType, type SalesPlanListRow, type SalesPlanRevision } from '@/services/midlong/midlongP3Types'
 import { TAX_BASES, TAX_BASIS_LABELS, type MidlongSubject, type TaxBasis } from '@/services/midlong/midlongTypes'
+// 操作导引（dljy#3406）：目标表单接给「计划与交易执行」导引，保存成功发推进信号。
+import { emitGuideSignal, useGuideForm } from '@/features/guide/bridge'
+import { FORM, SIGNAL } from '@/features/guide/midlong/anchors'
 
 const props = defineProps<{ modelValue: boolean; mode: 'create' | 'edit' | 'revise'; plan: SalesPlanListRow | null; subjects: MidlongSubject[] }>()
 const emit = defineEmits<{ 'update:modelValue': [boolean]; saved: [PlanWriteResult] }>()
@@ -52,6 +55,23 @@ watch(() => props.modelValue, (open) => {
   }
 }, { immediate: true })
 
+// 操作导引（dljy#3406）：主体候选与表单值一起暴露，供「帮我填」的 ready 前置与示例值使用。
+useGuideForm(
+  FORM.planCreate,
+  {
+    read: () => ({
+      ...form,
+      changeReason: form.changeReason,
+      subjectOptions: props.subjects.map((s) => s.id),
+      subjectsReady: props.subjects.length > 0,
+    }),
+    fill: (values) => {
+      for (const [key, value] of Object.entries(values)) (form as unknown as Record<string, unknown>)[key] = value
+    },
+  },
+  { active: () => props.modelValue && props.mode === 'create' },
+)
+
 const title = computed(() => ({ create: '新建售电目标', edit: '修改待确认目标', revise: '发起目标更改（生成新版本）' })[props.mode])
 const needsReason = computed(() => props.mode === 'revise' || (props.mode === 'edit' && (props.plan?.currentRevisionNo ?? 1) > 1))
 const periodValid = computed(() => isPeriodKey(form.periodType, form.periodKey))
@@ -83,6 +103,7 @@ async function submit() {
     }
     ElMessage.success(mode === 'revise' ? '已发起更改，确认后生效' : '目标草稿已保存，确认后生效')
     emit('saved', result)
+    emitGuideSignal(SIGNAL.planSaved, { planId: result.planId, revisionNo: result.revisionNo, status: result.status, subjectId: form.subjectId, periodType: form.periodType, periodKey: form.periodKey })
     // 写请求返回前表单已关闭或重开：结果属于上一次打开，不关闭当前表单。
     if (ticket.sameSession()) emit('update:modelValue', false)
   } catch (e) {
@@ -111,12 +132,12 @@ async function submit() {
   <el-dialog :model-value="modelValue" :title="title" width="640px" @update:model-value="(v: boolean) => emit('update:modelValue', v)">
     <MidlongNotice tone="info">{{ PLANNING_NOTICES.targetNature }}</MidlongNotice>
     <el-form label-width="120px" class="p3-form" @submit.prevent>
-      <el-form-item label="交易主体" required>
+      <el-form-item label="交易主体" required data-guide="ml-plan-subject">
         <el-select v-model="form.subjectId" :disabled="mode !== 'create'" filterable placeholder="选择交易主体" style="width: 100%">
           <el-option v-for="s in subjects" :key="s.id" :label="`${s.displayName}（${s.subjectKey}）`" :value="s.id" />
         </el-select>
       </el-form-item>
-      <el-form-item label="交割期" required>
+      <el-form-item label="交割期" required data-guide="ml-plan-period">
         <el-select v-model="form.periodType" :disabled="mode !== 'create'" style="width: 110px">
           <el-option v-for="t in PLAN_PERIOD_TYPES" :key="t" :label="PLAN_PERIOD_TYPE_LABELS[t]" :value="t" />
         </el-select>
@@ -125,7 +146,7 @@ async function submit() {
           :disabled="mode !== 'create'" placeholder="交割年/月" style="width: 160px; margin-left: 8px"
         />
       </el-form-item>
-      <el-form-item label="目标电量(MWh)">
+      <el-form-item label="目标电量(MWh)" data-guide="ml-plan-quantity">
         <el-input v-model="form.targetQuantity" placeholder="空=未确定（确认前必填，可为 0）" />
       </el-form-item>
       <el-form-item label="目标价格区间">
@@ -149,7 +170,7 @@ async function submit() {
     <MidlongNotice v-if="error" tone="danger">{{ error }}</MidlongNotice>
     <template #footer>
       <el-button @click="emit('update:modelValue', false)">取消</el-button>
-      <el-button type="primary" :loading="saving" :disabled="!valid" @click="submit">保存（待确认）</el-button>
+      <el-button type="primary" :loading="saving" :disabled="!valid" data-guide="ml-plan-submit" @click="submit">保存（待确认）</el-button>
     </template>
   </el-dialog>
 </template>

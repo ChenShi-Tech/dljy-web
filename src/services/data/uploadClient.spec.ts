@@ -17,14 +17,18 @@ import { describe, expect, it, vi, beforeEach } from 'vitest'
 
 const apiGet = vi.fn()
 const apiPost = vi.fn()
-vi.mock('@/services/api', () => ({
+// spread 真实模块：commitUpload 需对 409 的 ApiError 做 instanceof 判别（#2898），
+// mock 工厂必须保留真实 ApiError 类，否则 uploadClient 内 instanceof 恒 false。
+vi.mock('@/services/api', async (importOriginal) => ({
+  ...await importOriginal<typeof import('@/services/api')>(),
   apiGet: (...args: unknown[]) => apiGet(...args),
   apiPost: (...args: unknown[]) => apiPost(...args)
 }))
 
 const {
-  fetchUploadContracts, fetchUploadTemplate, fetchUploadBatches, precheckUpload, commitUpload, downloadTemplateFile
+  fetchUploadContracts, fetchUploadTemplate, fetchUploadBatches, precheckUpload, commitUpload, downloadTemplateFile, UploadConflictError
 } = await import('./uploadClient')
+const { ApiError } = await import('@/services/api')
 
 /** 与 server/data-upload-api.mjs::envelope 逐字同形：载荷恒在 data 下。 */
 const envelope = <T,>(data: T, extra: Record<string, unknown> = {}) =>
@@ -104,5 +108,50 @@ describe('uploadClient 从信封的 data 层取载荷', () => {
   it('提交：data 缺失时抛出服务端 msg，不静默当成功', async () => {
     apiPost.mockResolvedValue({ code: 422, msg: '校验未通过' })
     await expect(commitUpload({ dataset: 'd', fileName: 'f.csv', content: 'a', isBinary: false })).rejects.toThrow('校验未通过')
+  })
+})
+
+// 落库冲突 409 → UploadConflictError（#2890 / #2898）：冲突不是格式错误，需要人裁决。
+// 服务端信封 { code: 409, msg: 带换行的改价明细 }，unwrap 以 code≥400 优先抛 ApiError。
+describe('commitUpload 对 409 冲突单独转档', () => {
+  /** 与 server/data/upload-pipeline.mjs:718 同形：code 409 + 带换行的裁决明细。 */
+  const conflictEnvelope = {
+    code: 409,
+    msg: '2026-07-01|da: 与库内已有数据冲突（该日维表命中 2 行中 2 行已存在，其中 1 行价格不同）。\n  改价明细（库内值 vs 来件值）：\n    昆明北 @ 2026-07-01 00:00：库内 352.4，来件 999.9',
+    traceId: 'REQ-c'
+  }
+
+  it('HTTP 200 但信封 code=409 → UploadConflictError，detail 逐字保留换行明细', async () => {
+    // unwrap 以 payload.code ≥ 400 优先于 HTTP status：此时 ApiError.status=200、code=409。
+    apiPost.mockRejectedValue(new ApiError(conflictEnvelope.msg, { status: 200, code: 409, payload: conflictEnvelope }))
+    const err = await commitUpload({ dataset: 'yn-t0-node-price', fileName: 'f.csv', content: 'a', isBinary: false }).then(
+      () => { throw new Error('应当 reject') },
+      (e: unknown) => e
+    )
+    expect(err).toBeInstanceOf(UploadConflictError)
+    expect((err as InstanceType<typeof UploadConflictError>).detail).toContain('昆明北 @ 2026-07-01 00:00：库内 352.4，来件 999.9')
+    expect((err as InstanceType<typeof UploadConflictError>).detail).toContain('\n')
+  })
+
+  it('HTTP 409（信封 code≥400 抛 ApiError）→ UploadConflictError', async () => {
+    apiPost.mockRejectedValue(new ApiError(conflictEnvelope.msg, { status: 409, code: 409, payload: conflictEnvelope }))
+    await expect(commitUpload({ dataset: 'yn-t0-node-price', fileName: 'f.csv', content: 'a', isBinary: false }))
+      .rejects.toBeInstanceOf(UploadConflictError)
+  })
+
+  it('422 格式错误仍是普通错误，不误标成冲突', async () => {
+    apiPost.mockRejectedValue(new ApiError('第 3 行：日期格式不合法', { status: 422, code: 422, payload: { code: 422, msg: 'x' } }))
+    const err = await commitUpload({ dataset: 'd', fileName: 'f.csv', content: 'a', isBinary: false }).then(
+      () => { throw new Error('应当 reject') },
+      (e: unknown) => e
+    )
+    expect(err).toBeInstanceOf(ApiError)
+    expect(err).not.toBeInstanceOf(UploadConflictError)
+  })
+
+  it('非 ApiError 的网络错误原样透传，不被包装', async () => {
+    const boom = new Error('network down')
+    apiPost.mockRejectedValue(boom)
+    await expect(commitUpload({ dataset: 'd', fileName: 'f.csv', content: 'a', isBinary: false })).rejects.toBe(boom)
   })
 })

@@ -8,8 +8,8 @@ describe('summarizeForecastFailures', () => {
 
   it('同因合并：多算法同一原因只说一次，并带上算法数量', () => {
     const failures: ForecastFailure[] = [
-      { name: 'LightGBM', reason: 'target_date=2026-08-20 不在可用数据范围内（2026-01-03..2026-07-01）' },
-      { name: 'PatchTST', reason: 'target_date=2026-08-20 不在可用数据范围内（2026-01-03..2026-07-01）' },
+      { name: 'RandomForest', reason: 'target_date=2026-08-20 不在可用数据范围内（2026-01-03..2026-07-01）' },
+      { name: '模型乙', reason: 'target_date=2026-08-20 不在可用数据范围内（2026-01-03..2026-07-01）' },
       { name: 'KNN 相似日', reason: 'target_date=2026-08-20 不在可用数据范围内（2026-01-03..2026-07-01）' },
     ]
     const text = summarizeForecastFailures(failures)
@@ -20,14 +20,14 @@ describe('summarizeForecastFailures', () => {
 
   it('异因逐条列出，且每条都带算法名', () => {
     const text = summarizeForecastFailures([
-      { name: 'Chronos-2', reason: '需安装可选 extra chronos-forecasting' },
-      { name: 'LightGBM', reason: 'target_date 不在可用数据范围内' },
+      { name: '模型甲', reason: '需安装可选 extra scikit-learn' },
+      { name: 'RandomForest', reason: 'target_date 不在可用数据范围内' },
     ])
-    expect(text).toBe('Chronos-2：需安装可选 extra chronos-forecasting；LightGBM：target_date 不在可用数据范围内')
+    expect(text).toBe('模型甲：需安装可选 extra scikit-learn；RandomForest：target_date 不在可用数据范围内')
   })
 
   it('不把真实原因替换成"后端不可达"这类猜测', () => {
-    const text = summarizeForecastFailures([{ name: 'LightGBM', reason: '地区 yunnan 的真实回放数据未提供目标列 reg_price' }])
+    const text = summarizeForecastFailures([{ name: 'RandomForest', reason: '地区 yunnan 的真实回放数据未提供目标列 reg_price' }])
     expect(text).toContain('未提供目标列 reg_price')
     expect(text).not.toContain('不可达')
   })

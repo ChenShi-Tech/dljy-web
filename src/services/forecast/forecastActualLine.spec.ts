@@ -10,7 +10,7 @@ const runForecastPredict = vi.fn()
 const CATALOG = {
   target: 'price',
   models: [{
-    modelId: 'lightgbm', name: 'LightGBM', target: 'price', regionId: 'yunnan',
+    modelId: 'random_forest', name: 'RandomForest', target: 'price', regionId: 'yunnan',
     namespace: 'base', tier: 'ml', available: true, supportedTargets: ['price'],
     capabilities: { horizon: 96 },
     provenance: { basis: 'real', sourceType: 'REAL', mock: false, productionWrite: false },
@@ -35,7 +35,7 @@ const ramp = (base: number) => Array.from({ length: 96 }, (_, i) => base + i)
 function backendResult() {
   return {
     task: {}, points: ramp(100), lower: [], upper: [],
-    basis: 'captured', mock: false, source_type: 'CAPTURED', model_version: 'lightgbm',
+    basis: 'captured', mock: false, source_type: 'CAPTURED', model_version: 'random_forest',
     metrics: { mae: 1 }, baseline_metrics: { naive_mae: 2, knn_mae: 3 },
     unit: '元/MWh', warnings: [],
     actual: ramp(200),
@@ -47,8 +47,8 @@ function backendResult() {
 async function runLightgbm(granularity: 24 | 96) {
   const { getProvider, ensureForecastCatalog } = await import('./forecastProviders')
   await ensureForecastCatalog(true)   // provider 由 catalog 驱动，必须先载入目录
-  const p = getProvider('lightgbm')
-  expect(p, 'lightgbm provider 应存在').toBeTruthy()
+  const p = getProvider('random_forest')
+  expect(p, 'random_forest provider 应存在').toBeTruthy()
   return p!.run(
     { regionId: 'yunnan', target: 'price', targetDate: '2026-06-04', granularity, historyDays: 180 },
     {},

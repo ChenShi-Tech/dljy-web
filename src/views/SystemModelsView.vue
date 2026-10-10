@@ -13,6 +13,8 @@ import {
   reloadRemoteModel, rescanRemote, setRemoteModelEnabled, unloadRemoteModel,
   type RemoteHealth, type RemoteModelVersion,
 } from '@/services/forecast/remoteModelAdmin'
+import { canWriteSharedResources } from '@/services/governance'
+import { getCurrentUser } from '@/services/auth'
 
 const health = ref<RemoteHealth | null>(null)
 const models = ref<ForecastModel[]>([])
@@ -22,6 +24,11 @@ const busy = ref<Record<string, boolean>>({})
 const versionDialog = ref<{ open: boolean; modelId: string; name: string; rows: RemoteModelVersion[]; loading: boolean }>({
   open: false, modelId: '', name: '', rows: [], loading: false,
 })
+
+// 共享资源写权限（dljy#3226 · 规格 AA-06.2）：内部版仅平台超管可写，BOSS 等角色只读。
+// 只控写按钮——页面入口、模型清单与版本查看不收窄；后端是唯一裁决。
+const canWrite = computed(() => canWriteSharedResources(getCurrentUser()?.roleCode))
+const writeLockedTitle = computed(() => (canWrite.value ? undefined : '仅平台超管可操作'))
 
 const errText = (e: unknown) => (e instanceof Error ? e.message : String(e))
 
@@ -132,13 +139,16 @@ async function rescan() {
           <el-tag class="health" :type="healthLabel.type" size="small" data-test="health">{{ healthLabel.text }}</el-tag>
           <span class="spacer" />
           <el-button size="small" :loading="loading" @click="load">刷新</el-button>
-          <el-button size="small" type="primary" :loading="busy.__rescan" :disabled="health?.state !== 'ok'" @click="rescan">重扫目录</el-button>
+          <el-button size="small" type="primary" :loading="busy.__rescan" :disabled="!canWrite || health?.state !== 'ok'"
+            :title="writeLockedTitle" data-test="rescan" @click="rescan">重扫目录</el-button>
         </div>
       </template>
 
       <el-alert v-if="error" :title="error" type="error" :closable="false" show-icon class="err" />
       <el-alert v-else-if="health?.state === 'unauthorized'" type="warning" :closable="false" show-icon
         title="平台能连到推理服务，但平台凭据在南洋没有权限——检查南洋侧平台用户角色或令牌配置；本页只读、写操作会被拒。" />
+      <el-alert v-if="!canWrite" type="info" :closable="false" show-icon class="err" data-test="write-locked"
+        title="仅平台超管可操作：当前账号对本页写操作（启停、切版本、装卸、重扫）为只读视角。" />
 
       <table class="models-table" data-test="models">
         <thead>
@@ -176,12 +186,14 @@ async function rescan() {
             </td>
             <td class="ops">
               <el-button size="small" :type="m.available ? 'warning' : 'success'" :loading="busy[m.modelId]"
-                :disabled="health?.state !== 'ok'" data-test="toggle" @click="toggleEnabled(m)">
+                :disabled="!canWrite || health?.state !== 'ok'" :title="writeLockedTitle" data-test="toggle" @click="toggleEnabled(m)">
                 {{ m.available ? '停用' : '启用' }}
               </el-button>
               <el-button size="small" :disabled="health?.state !== 'ok'" data-test="versions" @click="openVersions(m)">版本</el-button>
-              <el-button v-if="m.lineage?.loaded === false" size="small" :disabled="health?.state !== 'ok'" @click="memory(m, 'reload')">装载</el-button>
-              <el-button v-else-if="m.lineage?.loaded === true" size="small" :disabled="health?.state !== 'ok'" @click="memory(m, 'unload')">卸载</el-button>
+              <el-button v-if="m.lineage?.loaded === false" size="small" :disabled="!canWrite || health?.state !== 'ok'"
+                :title="writeLockedTitle" data-test="memory" @click="memory(m, 'reload')">装载</el-button>
+              <el-button v-else-if="m.lineage?.loaded === true" size="small" :disabled="!canWrite || health?.state !== 'ok'"
+                :title="writeLockedTitle" data-test="memory" @click="memory(m, 'unload')">卸载</el-button>
             </td>
           </tr>
           <tr v-if="!loading && !models.length">
@@ -207,7 +219,8 @@ async function rescan() {
             </td>
             <td>
               <el-button v-if="!v.active && !v.bundleManaged" size="small" type="primary"
-                :loading="busy[versionDialog.modelId]" data-test="activate" @click="activate(v)">切到此版本</el-button>
+                :loading="busy[versionDialog.modelId]" :disabled="!canWrite" :title="writeLockedTitle"
+                data-test="activate" @click="activate(v)">切到此版本</el-button>
             </td>
           </tr>
           <tr v-if="!versionDialog.loading && !versionDialog.rows.length"><td colspan="6" class="empty">无版本槽位信息</td></tr>

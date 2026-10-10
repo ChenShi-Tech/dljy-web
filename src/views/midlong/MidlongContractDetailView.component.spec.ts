@@ -31,6 +31,8 @@ vi.mock('@/services/midlong/midlongP4Api', () => ({
     Boolean(caps?.enabled && caps.regionSupported && caps?.modules?.[name] === true),
 }))
 
+import { fillGuideForm, onGuideSignal, resetGuideBridge } from '@/features/guide/bridge'
+import { FORM, SIGNAL } from '@/features/guide/midlong/anchors'
 import MidlongContractDetailView from './MidlongContractDetailView.vue'
 
 const STUBS = { CompanyScopeBar: { template: '<div />' }, MidlongContractFormDialog: { template: '<div />' }, 'router-link': { props: ['to'], template: '<a :data-to="JSON.stringify(to)"><slot /></a>' } }
@@ -64,6 +66,7 @@ afterEach(() => {
   vi.clearAllMocks()
   hoisted.routeQuery = {}
   hoisted.capabilities = null
+  resetGuideBridge() // 详情页把表单挂进了真 bridge，用例间要清
 })
 
 // 每个用例结束卸载组件：否则遗留实例会响应后续用例的公司/地区切换继续取数，既拖慢全量运行，也可能让「最后一次请求」断言取到别的实例。
@@ -192,6 +195,44 @@ describe('中长期售电合同详情', () => {
     expect(w.text()).toContain('缺核验依据')
     expect(w.text()).toContain('质量提示（不阻止确认')
     expect(w.findAll('.ml-actions button').map((b) => b.text())).toContain('核验确认')
+  })
+
+  it('导引「帮我填」直接把示例 File 写进补充资料表单，上传成功发 evidenceAdded 信号（dljy#3404）', async () => {
+    hoisted.fetchContract.mockResolvedValue(detail({ confirmationStatus: 'PENDING_VERIFICATION' }))
+    hoisted.addEvidence.mockResolvedValue(undefined)
+    const w = mount(MidlongContractDetailView, { global: { stubs: STUBS } })
+    await flushPromises()
+    await w.findAll('.ml-actions button').find((b) => b.text() === '补充资料')!.trigger('click')
+    await flushPromises()
+
+    // 原生 input[type=file] 无法程序赋值，导引兜底直接写表单 reactive 的 file 字段。
+    const example = new File(['x'], '教学示例-电子交易确认单-M-7.txt', { type: 'text/plain' })
+    expect(fillGuideForm(FORM.evidence, { note: '教学示例', file: example })).toBe(true)
+    await flushPromises()
+    expect(w.text()).toContain('已选择：教学示例-电子交易确认单-M-7.txt')
+
+    const seen: unknown[] = []
+    onGuideSignal(SIGNAL.evidenceAdded, (payload) => seen.push(payload))
+    await w.find('[data-guide="ml-evidence-submit"]').trigger('click')
+    await flushPromises()
+    expect(hoisted.addEvidence).toHaveBeenCalledWith(7, expect.objectContaining({
+      fileName: '教学示例-电子交易确认单-M-7.txt', documentType: 'ELECTRONIC_CONFIRMATION', note: '教学示例',
+    }))
+    expect(seen).toEqual([{ contractId: 7 }])
+  })
+
+  it('核验确认成功发 contractVerified 信号，载荷带合同号（dljy#3404）', async () => {
+    hoisted.fetchContract.mockResolvedValue(detail({ confirmationStatus: 'PENDING_VERIFICATION' }))
+    const w = mount(MidlongContractDetailView, { global: { stubs: STUBS } })
+    await flushPromises()
+    await w.findAll('.ml-actions button').find((b) => b.text() === '核验确认')!.trigger('click')
+    await flushPromises()
+
+    const seen: unknown[] = []
+    onGuideSignal(SIGNAL.contractVerified, (payload) => seen.push(payload))
+    await w.find('[data-guide="ml-verify-submit"]').trigger('click')
+    await flushPromises()
+    expect(seen).toEqual([{ contractId: 7 }])
   })
 })
 

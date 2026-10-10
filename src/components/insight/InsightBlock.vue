@@ -40,6 +40,10 @@ import LoadingState from '../common/LoadingState.vue'
 
 const props = defineProps<{
   title: string
+  /** 总览将来源清单折叠，保留公开/获权标记与证据入口。 */
+  compactSources?: boolean
+  /** 隐藏头部来源标签与「证据」入口（页面判定该区块对读者无实质作用，如水电页指标卡概况）。 */
+  hideSources?: boolean
   /** 区块结果（null = 尚未查询或查询失败） */
   result: InsightBlockResult | null
   /** 请求错误（InsightRequestError）；与 result 互斥出现 */
@@ -153,6 +157,9 @@ const showMaintenanceEntry = computed(() => {
     <header class="insight-block__head">
       <h3 class="insight-block__title">{{ title }}</h3>
       <div class="insight-block__meta">
+        <details v-if="!hideSources && compactSources && sourceTags.length" class="insight-block__sources">
+          <summary>{{ sourceTags.length }} 个来源 · {{ sourceTags.some(tag => tag.accessScope === 'company') ? '含获权' : '公开' }}</summary>
+          <div class="insight-block__source-list">
         <span
           v-for="tag in sourceTags"
           :key="tag.title"
@@ -161,6 +168,18 @@ const showMaintenanceEntry = computed(() => {
         >
           {{ tag.title }}·{{ tag.accessScope === 'company' ? '获权' : '公开' }}
         </span>
+          </div>
+        </details>
+        <template v-else-if="!hideSources">
+        <span
+          v-for="tag in sourceTags"
+          :key="tag.title"
+          class="insight-block__source"
+          :class="{ 'insight-block__source--company': tag.accessScope === 'company' }"
+        >
+          {{ tag.title }}·{{ tag.accessScope === 'company' ? '获权' : '公开' }}
+        </span>
+        </template>
         <span
           v-if="exportBlocked"
           class="insight-block__stale-hint"
@@ -191,7 +210,7 @@ const showMaintenanceEntry = computed(() => {
           加入材料
         </el-button>
         <el-button
-          v-if="result && !denied"
+          v-if="result && !denied && !hideSources"
           link
           type="primary"
           size="small"
@@ -272,6 +291,11 @@ const showMaintenanceEntry = computed(() => {
 </template>
 
 <style scoped>
+.insight-block__sources { font-size: var(--font-xs); color: var(--muted); }
+.insight-block__sources summary { cursor: pointer; }
+.insight-block__sources summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.insight-block__source-list { display: grid; gap: 6px; padding: 10px 0; }
+
 .insight-block {
   display: flex;
   flex-direction: column;
@@ -284,12 +308,14 @@ const showMaintenanceEntry = computed(() => {
 
 .insight-block__head {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
 }
 
 .insight-block__title {
+  flex-shrink: 0;
   margin: 0;
   font-size: var(--font-lg, 16px);
   font-weight: 600;

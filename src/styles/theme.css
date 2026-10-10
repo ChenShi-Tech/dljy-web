@@ -1,10 +1,10 @@
 /* =====================================================================
- * 三档风格主题契约(default / neon / paper)—— 完整设计 token 系统
+ * 主题契约 —— 完整设计 token 系统
  * ---------------------------------------------------------------------
- * neon / paper 的取值直接对齐 demo 源:
- *   src/views/demo/neon/NeonOverview.vue · NeonAi.vue
- *   src/views/demo/paper/PaperOverview.vue · PaperAi.vue
- * 目标:主界面切到 neon / paper 时,观感即两套 demo(底色/卡片/辉光/字体/圆角)。
+ * 本文件:经典 classic(default) / 暖纸 paper;弧光 arc、流光 flow 在 theme-arc.css /
+ * theme-flow.css,取同一套 token 词汇。paper 的取值对齐 demo 源
+ * src/views/demo/paper/PaperOverview.vue · PaperAi.vue。
+ * 霓虹 neon 已下线(dljy#3332),由品牌开场动效凝练的流光 flow 取代。
  *
  * 回归红线:default 列每个 token 值 === 改造前现状色;新增 token(--radius /
  * --font-display / --accent-2 / --glow-text / --panel-backdrop / --panel-image)
@@ -19,8 +19,8 @@
   /* —— 底色 / 面板 —— */
   --bg: #f3f6f9;
   --panel: #ffffff;
-  --panel-bg: var(--panel); /* 「面板底」别名(聊天面板/历史新建钮/重命名框/审批备注/artifact 链用);全 5 主题统一取 --panel,修复 neon/arc 下回退白底穿帮 */
-  --panel-image: none; /* 卡片叠加渐变(neon 用);default/paper = none */
+  --panel-bg: var(--panel); /* 「面板底」别名(聊天面板/历史新建钮/重命名框/审批备注/artifact 链用);各主题统一取 --panel,修复暗色主题下回退白底穿帮 */
+  --panel-image: none; /* 卡片叠加渐变(暗色主题用);default/paper = none */
   --panel-sub: #f8fafc;
   --sidebar-bg: #172b3a;
   --topbar-bg: #ffffff;
@@ -40,7 +40,7 @@
   --primary: #0f766e;
   --primary-strong: #0b5f59;
   --accent: #2563eb;
-  --accent-2: #2563eb; /* 次强调(neon 青柠 / paper 暗金);default 取 = accent 不显特异 */
+  --accent-2: #2563eb; /* 次强调(flow 冷白青 / paper 暗金);default 取 = accent 不显特异 */
   --success: #16803c;
   --warning: #d97706;
   --danger: #dc2626;
@@ -52,20 +52,28 @@
   --danger-tint: #fde8e4;
   --warning-tint: #fff8e8;
 
+  /* —— 类目色(数据/资产类目编码:紫=数据库/外部源/储能/卖方,天蓝=信息说明/口径 chip;
+        S2–S7 一日工作台迁移引入,default 取迁移前现状色,零回归;paper 沿用本组浅色值)—— */
+  --violet: #6d28d9;
+  --violet-soft: #a78bfa;
+  --violet-tint: #f5f3ff;
+  --violet-tint-border: #ddd6fe;
+  --sky: #075985;
+  --sky-tint: #f0f9ff;
+
   /* —— 形状 / 字体 / 效果 —— */
   --radius: 6px; /* 卡片圆角(default 原值 6px) */
   --radius-sm: 4px; /* 按钮/输入圆角 */
   --font-display: inherit; /* 标题/强调字体(paper = 衬线);default 继承 Inter */
   --shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
-  --glow-text: none; /* 强调数字辉光(neon 用) */
-  --panel-backdrop: none; /* 卡片 backdrop-filter(neon 毛玻璃) */
-  --panel-edge: var(--line); /* 卡片发光描边(neon 用),default = 普通边框色 */
+  --glow-text: none; /* 强调数字辉光(暗色主题用) */
+  --panel-backdrop: none; /* 卡片 backdrop-filter(暗色主题毛玻璃) */
+  --panel-edge: var(--line); /* 卡片发光描边(暗色主题用),default = 普通边框色 */
 
   /* —— 侧边栏(三档均为深底浅字)—— */
   --sidebar-text: #ffffff;
   --sidebar-muted: #9fb3c8;
   --sidebar-border: rgba(255, 255, 255, 0.08);
-  --brand-mark-bg: #0f9f8f;
 
   /* —— 顶栏上下文 chip —— */
   --chip-bg: #f8fbfd;
@@ -93,119 +101,6 @@
   --wx-chip-fg: #5a4a2a;
 
   color-scheme: light;
-}
-
-/* =====================================================================
- * 霓虹(neon)—— 深色 + 青色辉光(对齐 NeonOverview/NeonAi)
- * ===================================================================== */
-:root[data-theme='neon'] {
-  --bg: #060914;
-  --panel: #0e1830; /* 卡片基底(纯色兜底);叠加 --panel-image 渐变 */
-  --panel-image: linear-gradient(160deg, rgba(20, 30, 56, 0.72), rgba(10, 16, 34, 0.66));
-  --panel-sub: #14203a;
-  --sidebar-bg: #04060f;
-  --topbar-bg: #0a1428;
-
-  --text: #e6f0ff;
-  --text-body: #d6e4fb;
-  --text-soft: #9bb6dd;
-  --muted: #7fa8d6;
-
-  --line: rgba(90, 130, 200, 0.22);
-  --line-soft: rgba(90, 130, 200, 0.12);
-  --line-faint: rgba(90, 130, 200, 0.08);
-
-  --primary: #22d3ee;
-  --primary-strong: #0891b2;
-  --accent: #e879f9;
-  --accent-2: #a3e635;
-  --success: #4ade80;
-  --warning: #fbbf24;
-  --danger: #fb7185;
-
-  --primary-tint: rgba(34, 211, 238, 0.1);
-  --primary-tint-border: rgba(34, 211, 238, 0.28);
-  --surface-hover: rgba(120, 160, 220, 0.08);
-  --danger-tint: rgba(251, 113, 133, 0.14);
-  --warning-tint: rgba(251, 191, 36, 0.12);
-
-  --radius: 16px;
-  --radius-sm: 12px;
-  --font-display: inherit;
-  --shadow: 0 10px 30px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.05);
-  --glow-text: 0 0 18px rgba(34, 211, 238, 0.45);
-  --panel-backdrop: blur(8px);
-  --panel-edge: rgba(34, 211, 238, 0.4);
-
-  --sidebar-text: #cfe2ff;
-  --sidebar-muted: #7fa8d6;
-  --sidebar-border: rgba(120, 160, 220, 0.18);
-  --brand-mark-bg: #22d3ee;
-
-  --chip-bg: rgba(20, 30, 56, 0.6);
-  --chip-border: rgba(90, 130, 200, 0.3);
-  --chip-text: #cfe2ff;
-  --chip-label: #7fa8d6;
-  --chip-sub: #9bb6dd;
-
-  --ai-btn-bg: linear-gradient(135deg, #22d3ee, #34d399);
-  --ai-btn-fg: #04121a;
-
-  --mask-bg: rgba(2, 6, 16, 0.6);
-  --scrim: rgba(8, 12, 24, 0.8);
-
-  --chart-axis-label: #7fa8d6;
-  --chart-split-line: rgba(90, 120, 180, 0.14);
-  --chart-neutral-line: rgba(120, 160, 220, 0.28);
-  --chart-danger: #fb7185;
-
-  --wx-chip-bg: linear-gradient(135deg, rgba(34, 211, 238, 0.12), rgba(232, 121, 249, 0.1));
-  --wx-chip-fg: #cfe2ff;
-
-  color-scheme: dark;
-
-  /* —— Element Plus 暗色覆盖(消除白底;el 组件吃纯色,用 panel 兜底纯色)—— */
-  --el-bg-color: #0e1830;
-  --el-bg-color-page: #060914;
-  --el-bg-color-overlay: #0e1830;
-  --el-text-color-primary: #e6f0ff;
-  --el-text-color-regular: #d6e4fb;
-  --el-text-color-secondary: #7fa8d6;
-  --el-text-color-placeholder: #5e789f;
-  --el-text-color-disabled: #4b6a96;
-  --el-border-color: rgba(90, 130, 200, 0.3);
-  --el-border-color-light: rgba(90, 130, 200, 0.22);
-  --el-border-color-lighter: rgba(90, 130, 200, 0.16);
-  --el-border-color-extra-light: rgba(90, 130, 200, 0.1);
-  --el-border-color-dark: rgba(90, 130, 200, 0.38);
-  --el-border-color-hover: rgba(34, 211, 238, 0.5);
-  --el-fill-color: #14203a;
-  --el-fill-color-light: #14203a;
-  --el-fill-color-lighter: #0e1830;
-  --el-fill-color-extra-light: #0e1830;
-  --el-fill-color-blank: #0e1830;
-  --el-fill-color-dark: #18243e;
-  --el-fill-color-darker: #1c2a46;
-  --el-mask-color: rgba(2, 6, 16, 0.6);
-  --el-mask-color-extra-light: rgba(2, 6, 16, 0.3);
-
-  --el-color-primary: #22d3ee;
-  --el-color-primary-light-3: #64e0f3;
-  --el-color-primary-light-5: #90e9f6;
-  --el-color-primary-light-7: #bcf1f9;
-  --el-color-primary-light-8: #d3f6fb;
-  --el-color-primary-light-9: #16344a;
-  --el-color-primary-dark-2: #1ba9be;
-
-  --el-table-bg-color: #0e1830;
-  --el-table-tr-bg-color: #0e1830;
-  --el-table-header-bg-color: #14203a;
-  --el-table-row-hover-bg-color: #18243e;
-  --el-table-current-row-bg-color: #18243e;
-  --el-table-header-text-color: #cfe2ff;
-  --el-table-text-color: #d6e4fb;
-  --el-table-border-color: rgba(90, 130, 200, 0.16);
-  --el-table-border: 1px solid rgba(90, 130, 200, 0.16);
 }
 
 /* =====================================================================
@@ -253,7 +148,6 @@
   --sidebar-text: #f3eee3;
   --sidebar-muted: #b8ae9c;
   --sidebar-border: rgba(255, 250, 240, 0.1);
-  --brand-mark-bg: #c45b36;
 
   --chip-bg: #f0ece3;
   --chip-border: #e6e1d6;
@@ -312,62 +206,8 @@
 }
 
 /* =====================================================================
- * 主题专属结构增强(让骨架/卡片观感贴合 demo)
- * —— 仅 neon/paper 生效;default 不受影响。
+ * 主题专属结构增强(paper 页底;arc / flow 的结构增强在各自文件)
  * ===================================================================== */
-
-/* neon 页底:径向辉光 + 细网格(对齐 demo .neon-root + .grid-overlay) */
-:root[data-theme='neon'] body {
-  background:
-    radial-gradient(1200px 700px at 15% -10%, #0d1b3a 0%, #060914 55%),
-    #04060f;
-}
-:root[data-theme='neon'] .app-layout::before {
-  content: '';
-  position: fixed;
-  inset: 0;
-  z-index: 0;
-  pointer-events: none;
-  background-image:
-    linear-gradient(rgba(70, 120, 200, 0.06) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(70, 120, 200, 0.06) 1px, transparent 1px);
-  background-size: 44px 44px;
-}
-/* 内容层置于网格之上 */
-:root[data-theme='neon'] .sidebar,
-:root[data-theme='neon'] .workspace {
-  position: relative;
-  z-index: 1;
-}
-
-/* neon 卡片发光描边(对齐 demo .card::before 的青↔品红渐变描边) */
-:root[data-theme='neon'] .metric-card,
-:root[data-theme='neon'] .panel {
-  position: relative;
-}
-:root[data-theme='neon'] .metric-card::before,
-:root[data-theme='neon'] .panel::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  z-index: 0;
-  border-radius: var(--radius);
-  padding: 1px;
-  pointer-events: none;
-  background: linear-gradient(120deg, rgba(34, 211, 238, 0.7), rgba(232, 121, 249, 0.5), transparent 60%);
-  -webkit-mask:
-    linear-gradient(#000 0 0) content-box,
-    linear-gradient(#000 0 0);
-  -webkit-mask-composite: xor;
-  mask-composite: exclude;
-  opacity: 0.5;
-}
-/* 卡片内容压在发光描边之上 */
-:root[data-theme='neon'] .metric-card > *,
-:root[data-theme='neon'] .panel > * {
-  position: relative;
-  z-index: 1;
-}
 
 /* paper 页底 */
 :root[data-theme='paper'] body {

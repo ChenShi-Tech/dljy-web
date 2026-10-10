@@ -25,8 +25,10 @@ import { publishBenchContext } from '@/services/forecast/forecastBenchContext'
 import { fetchOfficialBaseline, officialMae, hasOfficialBaseline } from '@/services/forecast/officialBaseline'
 import { aggregate96to24 } from '@/services/forecast/forecastProviders'
 import { summarizeForecastFailures, type ForecastFailure } from '@/services/forecast/failureSummary'
+import { runSerially } from '@/services/forecast/serialRun'
 import { isForecastDate } from '@/services/forecast/onlineForecastResult'
 import { predictionModelExclusionReason } from '@/services/forecast/predictionModelEligibility'
+import { NO_AVAILABLE_MODEL_TEXT } from '@/services/forecast/defaultModel'
 
 const REGION_IDS = ['shanxi', 'shandong', 'gansu', 'guangdong', 'sichuan', 'yunnan']
 const regionOptions = REGION_IDS.map((id) => ({ id, name: getRegionById(id).name }))
@@ -90,14 +92,14 @@ const singleModelEmptyText = computed(() => !targetDiscoveryRequested.value || !
     ? (targetCatalogError.value ? '预测目标目录加载失败，请先处理目录错误' : '当前地区暂无已接入预测目标')
     : catalogError.value
   ? '模型目录加载失败，请先处理目录错误'
-  : '当前预测中心没有可展示的模型（占位、未部署、原始零样本权重已隐藏）')
+  : `${NO_AVAILABLE_MODEL_TEXT}（占位、未部署、原始零样本权重已隐藏）`)
 const compareModelEmptyText = computed(() => !targetDiscoveryRequested.value || !targetDiscoverySettled.value || targetOptionsLoading.value
   ? '预测目标目录加载中，请稍候'
   : !targetOptions.value.length
     ? (targetCatalogError.value ? '预测目标目录加载失败，请先处理目录错误' : '当前地区暂无已接入预测目标')
     : catalogError.value
   ? '模型目录加载失败，请先处理目录错误'
-  : '当前预测中心没有可用于对比的模型（占位、未部署、原始零样本权重已隐藏）')
+  : `${NO_AVAILABLE_MODEL_TEXT}可供对比（占位、未部署、原始零样本权重已隐藏）`)
 
 // 算法选项标签：附占位/不可用+原因（#762 available:false 禁用，原因随 label 与 title 可见）。
 function providerOptionLabel(p: ForecastProvider): string {
@@ -293,6 +295,8 @@ const compareIds = ref<string[]>([])
 const loadingB = ref(false)
 type Row = { id: string; name: string; mae: number | null; rmse: number | null; mase: number | null; improve: number | null; passes: boolean | null; basis: UnifiedForecastResult['basis']; rank: number }
 const compareRows = ref<Row[]>([])
+// 串行对比进度文案（如「已完成 2/5」）；空串=未在运行。
+const compareProgress = ref('')
 const compareResults = ref<{ provider: string; result: UnifiedForecastResult }[]>([])
 const chartB = ref<InstanceType<typeof UnifiedForecastChart> | null>(null)
 let compareGeneration = 0
@@ -311,13 +315,26 @@ async function runCompare() {
   const failures: ForecastFailure[] = []
   try {
     setCurrentRegionId(regionId.value)
-    const settled = await Promise.all(compareIds.value.map((id) => {
+    // 限并发串行（并发 1，#3578）：后端预测本机排队，并发发出只会让后排请求在队列里干等到前端超时。
+    // 逐个跑、每个完成即回显进度；单个失败记入 failures 不影响后续；上下文切换后不再发起后续请求。
+    const ctx = buildCtx()
+    const trainDays = historyDays.value
+    const isStale = () => generation !== contextGeneration || requestId !== compareGeneration
+    compareProgress.value = `已完成 0/${compareIds.value.length}`
+    const outcomes = await runSerially(compareIds.value, async (id) => {
       const p = visibleTargetProviders.value.find((provider) => provider.id === id)
-      if (!p) return Promise.resolve(null)
-      return p.run(buildCtx(), { ...defaultParams(p), train_days: historyDays.value })
-        .then((r) => ({ id, name: p.name, result: r }))
-        .catch((e) => { failures.push({ name: p.name, reason: (e as Error).message || '预测失败' }); return null })
-    }))
+      if (!p) return null
+      try {
+        return { id, name: p.name, result: await p.run(ctx, { ...defaultParams(p), train_days: trainDays }) }
+      } catch (e) {
+        failures.push({ name: p.name, reason: (e as Error).message || '预测失败' })
+        return null
+      }
+    }, {
+      shouldContinue: () => !isStale(),
+      onProgress: (done, total) => { if (!isStale()) compareProgress.value = `已完成 ${done}/${total}` },
+    })
+    const settled = outcomes.map((o) => (o.ok ? o.value : null))
     if (generation !== contextGeneration || requestId !== compareGeneration) return
     const ok = settled.filter((x): x is { id: string; name: string; result: UnifiedForecastResult } => x !== null)
     if (!ok.length) {
@@ -340,7 +357,7 @@ async function runCompare() {
   } catch (e) {
     if (generation !== contextGeneration || requestId !== compareGeneration) return
     error.value = (e as Error).message
-  } finally { if (requestId === compareGeneration) loadingB.value = false }
+  } finally { if (requestId === compareGeneration) { loadingB.value = false; compareProgress.value = '' } }
 }
 
 // 模式 D：多目标总览（平台官方回放）
@@ -414,7 +431,7 @@ function requireTargetDate(): boolean {
 
 function invalidateRequests() {
   ++contextGeneration; ++runGeneration; ++backtestGeneration; ++compareGeneration; ++overviewGeneration
-  loadingA.value = false; backtestLoadingA.value = false; loadingB.value = false; overviewLoading.value = false
+  loadingA.value = false; backtestLoadingA.value = false; loadingB.value = false; compareProgress.value = ''; overviewLoading.value = false
   clearForecastState()
 }
 // 覆盖日期/窗口/显示粒度/算法参数，防旧日期响应贴到新日期标签，包括A→B→A。
@@ -574,6 +591,7 @@ onMounted(() => { discoverTargetOptions(false, regionId.value) })
               </el-checkbox>
             </el-checkbox-group>
             <el-button type="primary" :loading="loadingB" :disabled="!hasVisibleTargetProviders" @click="runCompare">运行对比</el-button>
+            <span v-if="loadingB && compareProgress" class="hint compare-progress" role="status">{{ compareProgress }}</span>
           </div>
           <el-empty v-if="!hasVisibleTargetProviders" :description="compareModelEmptyText" :image-size="72" />
           <p class="hint">同地区/目标/日期/粒度下，对所选算法各自预测，叠加曲线；算法名保持单行省略、卡片等宽对齐。有评估指标的按 MAE 升序排名（平台官方/KNN 回放无监督指标，列为「—」）。</p>
@@ -612,7 +630,7 @@ onMounted(() => { discoverTargetOptions(false, regionId.value) })
           </el-table>
         </el-tab-pane>
 
-        <!-- 扩展预测：超短期/中长期/偏差；独立PatchTST序列演示已按用户要求移除。 -->
+        <!-- 扩展预测：超短期/中长期/偏差；独立的深度序列演示已按用户要求移除。 -->
         <el-tab-pane label="扩展预测" name="extra">
           <ForecastExtraPanel ref="extraPanel" :region-id="regionId" :target="target" :train-days="historyDays" :target-date="targetDate" />
         </el-tab-pane>
@@ -638,7 +656,7 @@ onMounted(() => { discoverTargetOptions(false, regionId.value) })
 
         <!-- 附 tab：模型台账 -->
         <el-tab-pane label="模型台账" name="ledger">
-          <p class="hint">当前目标下的真实可运行算法分两类：已部署权重显示其固定输出；KNN、XGBoost、PatchTST 等按请求算法显示可读取真实历史数据并即时训练/计算的目标。后者不是已保存权重或历史训练次数。占位和原始零样本模型仍不展示，协变量不计入目标数。</p>
+          <p class="hint">当前目标下的真实可运行算法分两类：已部署权重显示其固定输出；KNN 等按请求算法显示可读取真实历史数据并即时训练/计算的目标。后者不是已保存权重或历史训练次数。占位和原始零样本模型仍不展示，协变量不计入目标数。</p>
           <el-table :data="ledger" size="small" border>
             <el-table-column prop="name" label="算法" />
             <el-table-column label="运行时" width="120">

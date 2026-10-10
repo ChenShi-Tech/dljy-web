@@ -14,6 +14,9 @@ import { selectedCompanyId } from '@/services/company/companyContext'
 import { currentRegion } from '@/services/region/regionContext'
 import { CompanyNotSelectedError, fetchCapabilities, fetchContracts, midlongFailureOf } from '@/services/midlong/midlongApi'
 import { fetchAdjustments, p4ModuleOn } from '@/services/midlong/midlongP4Api'
+// 操作导引（dljy#3407）：调整列表快照接给「调整与复盘账单」导引。
+import { useGuideState } from '@/features/guide/bridge'
+import { STATE } from '@/features/guide/midlong/anchors'
 import { createLoadGuard, fmtQuantity } from '@/services/midlong/midlongFormat'
 import { adjustmentStatusTag, adjustmentTypeLabel, directionLabel, signedDeltaLabel } from '@/services/midlong/midlongP4Format'
 import { ADJUSTMENT_STATUSES, ADJUSTMENT_STATUS_LABELS, ADJUSTMENT_TYPES, ADJUSTMENT_TYPE_LABELS, ADJUSTMENT_NOTICES, type AdjustmentStatus, type AdjustmentSummaryRow, type AdjustmentType } from '@/services/midlong/midlongP4Types'
@@ -46,6 +49,15 @@ const filterKey = () => JSON.stringify([filters.status, filters.adjustmentType, 
 let lastFilterKey = filterKey()
 
 const canWrite = computed(() => Boolean(capabilities.value?.canWrite))
+
+// 操作导引（dljy#3407）：列表摘要进快照（状态/方向/外部编号），恢复判定优先认 runTag 匹配。
+useGuideState(STATE.adjustments, () => {
+  if (state.value !== 'ready') return null
+  return {
+    canWrite: canWrite.value,
+    rows: rows.value.map((r) => ({ id: r.id, status: r.status, direction: r.direction, externalAdjustmentNo: r.externalAdjustmentNo })),
+  }
+})
 const pageGuard = createLoadGuard()
 const listGuard = createLoadGuard()
 const scopeKey = () => `${selectedCompanyId.value}|${currentRegion.value.id}`
@@ -157,6 +169,12 @@ const drawer = reactive({ open: false, adjustmentId: null as number | null })
 function openAdjustment(id: number) {
   Object.assign(drawer, { open: true, adjustmentId: id })
 }
+
+/** 调整登记成功：刷新列表并直接打开新调整的详情抽屉（确认生效就在抽屉里）。 */
+async function onAdjustmentSaved(adjustmentId: number) {
+  await loadList()
+  openAdjustment(adjustmentId)
+}
 const mappingDialog = ref(false)
 
 onMounted(load)
@@ -202,7 +220,7 @@ const registerContractLabel = computed(() => {
         </el-select>
         <el-checkbox v-model="filters.pendingDirectionOnly" data-test="pending-direction-filter">只看方向待核对</el-checkbox>
         <el-button type="primary" @click="search">查询</el-button>
-        <el-button v-if="canWrite" type="primary" :loading="contractsLoading" data-test="register-adjustment" @click="openRegister">登记调整</el-button>
+        <el-button v-if="canWrite" type="primary" :loading="contractsLoading" data-guide="ml-adjustment-register" data-test="register-adjustment" @click="openRegister">登记调整</el-button>
         <el-button v-if="canWrite" plain :loading="contractsLoading" data-test="open-mapping" @click="mappingDialog = true">产品映射登记</el-button>
       </div>
       <MidlongNotice tone="info" title="调整口径">
@@ -211,7 +229,7 @@ const registerContractLabel = computed(() => {
       <MidlongNotice v-if="loadError" tone="danger" title="调整列表加载失败" data-test="adjustments-error">
         {{ loadError }} <el-button link type="primary" @click="loadList">重试</el-button>
       </MidlongNotice>
-      <el-table :data="rows" border size="small" @row-click="(row: AdjustmentSummaryRow) => openAdjustment(row.id)">
+      <el-table :data="rows" border size="small" data-guide="ml-adjustment-row" @row-click="(row: AdjustmentSummaryRow) => openAdjustment(row.id)">
         <el-table-column label="调整" width="80"><template #default="{ row }">#{{ row.id }}</template></el-table-column>
         <el-table-column label="状态" width="150">
           <template #default="{ row }">
@@ -250,11 +268,11 @@ const registerContractLabel = computed(() => {
       </el-select>
       <template #footer>
         <el-button @click="registerDialog = false">取消</el-button>
-        <el-button type="primary" :disabled="!registerContractId" data-test="open-adjustment-form" @click="registerDialog = false; formDialog = true">下一步</el-button>
+        <el-button type="primary" :disabled="!registerContractId" data-guide="ml-adjustment-contract-next" data-test="open-adjustment-form" @click="registerDialog = false; formDialog = true">下一步</el-button>
       </template>
     </el-dialog>
     <AdjustmentFormDialog
-      v-if="formDialog" v-model="formDialog" :contract-id="registerContractId" :contract-label="registerContractLabel" @saved="loadList"
+      v-if="formDialog" v-model="formDialog" :contract-id="registerContractId" :contract-label="registerContractLabel" @saved="onAdjustmentSaved"
     />
     <AdjustmentDetailDrawer v-model="drawer.open" :adjustment-id="drawer.adjustmentId" :can-write="canWrite" @changed="loadList" />
     <AdjustmentMappingDialog v-model="mappingDialog" />

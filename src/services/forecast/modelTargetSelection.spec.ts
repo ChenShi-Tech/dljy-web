@@ -13,12 +13,12 @@ import { isModelSelectableForTarget, predictBlockerReason } from './forecastProv
 
 type M = Parameters<typeof isModelSelectableForTarget>[0]
 const model = (over: Partial<M>): M => ({
-  modelId: 'xgboost', namespace: 'base', available: true, ...over,
+  modelId: 'random_forest', namespace: 'base', available: true, ...over,
 } as M)
 
 describe('isModelSelectableForTarget', () => {
   it('未声明 supportedTargets 的模型两腿都不可选（缺省不能冒充真实绑定）', () => {
-    const m = model({ modelId: 'xgboost', namespace: 'base' })
+    const m = model({ modelId: 'random_forest', namespace: 'base' })
     expect(isModelSelectableForTarget(m, 'price')).toBe(false)
     expect(isModelSelectableForTarget(m, 'load')).toBe(false)
   })
@@ -30,7 +30,7 @@ describe('isModelSelectableForTarget', () => {
   })
 
   it('只声明 load 的远端模型：负荷腿可选、价格腿不可选', () => {
-    const m = model({ modelId: 'remote:tft-load', namespace: 'remote', supportedTargets: ['load'] })
+    const m = model({ modelId: 'remote:load-only', namespace: 'remote', supportedTargets: ['load'] })
     expect(isModelSelectableForTarget(m, 'load')).toBe(true)
     expect(isModelSelectableForTarget(m, 'price')).toBe(false)
   })
@@ -63,7 +63,7 @@ describe('isModelSelectableForTarget', () => {
 describe('predictBlockerReason：拦住静默回落', () => {
   // 不传 model_type 时后端会用它的默认模型——请求成功、页面出数字，但那不是用户选的模型。
   // 这组用例守的是「宁可空着并说清原因，也不给一个来路不明的结果」。
-  const ok = { catalogError: '', selectable: [{ modelId: 'xgboost' }], selectedModelId: 'xgboost', targetLabel: '价格预测' }
+  const ok = { catalogError: '', selectable: [{ modelId: 'random_forest' }], selectedModelId: 'random_forest', targetLabel: '价格预测' }
 
   it('一切正常时返回空串（可以发请求）', () => {
     expect(predictBlockerReason(ok)).toBe('')

@@ -183,8 +183,8 @@ export const regionModuleCapabilities: RegionModuleCapability[] = [
     id: 'market-insight',
     title: '市场洞察',
     group: 'insight',
-    routePrefixes: ['/insight', '/sjfx/fshq', '/sjfx/zrsjg', '/sjfx/zcqxhdl', '/sjfx/zrxgx', '/sjfx/zrxgx2', '/sjfx/actualLoad', '/sjfx/singleZsjfx', '/sjfx/market-ops'],
-    routePaths: ['/insight/cockpit', '/sjfx/fshq', '/sjfx/zrsjg', '/sjfx/zcqxhdl', '/sjfx/zrxgx', '/sjfx/zrxgx2', '/sjfx/actualLoad', '/sjfx/singleZsjfx', '/sjfx/market-ops'],
+    routePrefixes: ['/insight', '/sjfx/fshq', '/sjfx/zrsjg', '/sjfx/zcqxhdl', '/sjfx/zrxgx', '/sjfx/zrxgx2', '/sjfx/price-drivers', '/sjfx/actualLoad', '/sjfx/hydro', '/sjfx/singleZsjfx'],
+    routePaths: ['/insight/cockpit', '/sjfx/fshq', '/sjfx/zrsjg', '/sjfx/zcqxhdl', '/sjfx/zrxgx', '/sjfx/zrxgx2', '/sjfx/price-drivers', '/sjfx/actualLoad', '/sjfx/hydro', '/sjfx/singleZsjfx'],
     statusByRegion: {
       shanxi: 'available',
       yunnan: 'degraded',
@@ -230,11 +230,15 @@ export const regionModuleCapabilities: RegionModuleCapability[] = [
       // 只有 listrs_full（价格分析页用），出清电量清单 __list__ 是山西三德公司私有键。
       // degraded 放行路由（旧深链可达），页面显示停用说明卡；客户端不再发 __list__ 请求。
       { path: '/sjfx/zcqxhdl', statusByRegion: { shanxi: 'available', yunnan: 'degraded' }, note: '云南出清电量页已停用（dljy#2991）：__list__ 为山西公司私有清单，云南无全省出清清单来源；页面显示停用说明，不跨地区读取。' },
-      { path: '/sjfx/zrxgx', statusByRegion: { shanxi: 'available', yunnan: 'available' }, note: '同页关系图可走云南 yn_system_forecast 口径；山西专有维度见 subCapabilities。' },
-      { path: '/sjfx/zrxgx2', statusByRegion: { shanxi: 'available', yunnan: 'available' }, note: '统调负荷关系图可走云南系统预测/实际长表口径。' },
-      { path: '/sjfx/actualLoad', statusByRegion: { shanxi: 'available', yunnan: 'available' }, note: '逐日系统负荷已有云南真实支撑。' },
+      { path: '/sjfx/zrxgx', statusByRegion: { shanxi: 'available', yunnan: 'available' }, note: '已合并为价格驱动分析（dljy#3390）：路径保留 redirect 预选新能源驱动；relation_scatter 契约仍按此路径做请求能力门控。' },
+      { path: '/sjfx/zrxgx2', statusByRegion: { shanxi: 'available', yunnan: 'available' }, note: '已合并为价格驱动分析（dljy#3390）：路径保留 redirect 预选统调负荷驱动；relation_scatter 契约仍按此路径做请求能力门控。' },
+      { path: '/sjfx/price-drivers', statusByRegion: { shanxi: 'available', yunnan: 'available' }, note: '价格驱动分析（dljy#3390）合并旧 zrxgx/zrxgx2：山西走 list24/fhlist24 回放，云南走 yn_system_forecast；山西专有参考线维度见 subCapabilities。' },
+      { path: '/sjfx/actualLoad', statusByRegion: { shanxi: 'available', yunnan: 'available' }, note: '云南系统负荷实际值有真实支撑（单源版面：日均值、日内区间与峰谷差）。' },
+      // 云南水电分析（dljy#3389）：并入旧版体系的单页，仅云南登记。水电数据来自中广核渠道
+      //（公开曲线库止于 2026-08-17、获权两块止于 2026-08-21，采集断供见 #2368），页面按真实
+      // 覆盖诚实展示；其他地区无该能力，hidden = 菜单不出现且路由拦截（fail-closed 同口径）。
+      { path: '/sjfx/hydro', statusByRegion: { shanxi: 'hidden', yunnan: 'available', guangdong: 'hidden', sichuan: 'hidden' }, note: '云南水电分析（dljy#3389）经市场洞察接口取数（公开系统曲线 + 获权两分析）；水电来源为中广核渠道，仅云南开通，其余地区 hidden 不展示且路由拦截。' },
       { path: '/sjfx/singleZsjfx', statusByRegion: { shanxi: 'available', yunnan: 'available' }, note: 'zsjfx 索引已具备云南真实支撑。' },
-      { path: '/sjfx/market-ops', statusByRegion: { shanxi: 'available', yunnan: 'degraded' }, note: '手录市场经营口径可用但不代表完整云南行情自动接入。' },
       // dljy#2995 阶段 A：六条规范入口 /insight/<pageId>。路由层四地区一律放行（degraded 也是放行态），
       // 内容由工作区注册（src/services/region/insightWorkspace.ts）按当前地区决定：山西兼容登记
       // overview/prices 落现有页面，云南默认关闭（开关开后六页均为建设占位），广东/四川未登记显示
@@ -257,9 +261,10 @@ export const regionModuleCapabilities: RegionModuleCapability[] = [
     id: 'spot-trading',
     title: '现货交易',
     group: 'spot',
-    // /zcqjy/exposure 路径留在 zcqjy 下（深链不断），但它读现货结算口径、产出现货价格风险指标，归现货模块（dljy#2988）。
-    routePrefixes: ['/dashboard', '/xhjy/monitor', '/xhjy/zrqsb', '/xhjy/zptqx', '/xhjy/desk', '/xhjy/approvals', '/xhjy/review', '/xhjy/risk-center'],
-    routePaths: ['/dashboard', '/xhjy/monitor', '/xhjy/zrqsb', '/xhjy/zptqx', '/xhjy/desk', '/xhjy/approvals', '/xhjy/review', '/xhjy/risk-center', '/zcqjy/exposure'],
+    // 中长期与现货套保（dljy#2988）读现货结算口径、产出现货价格风险指标，归现货模块；
+    // 任务 8.1 起路由为 /xhjy/hedge（旧 /zcqjy/exposure 只剩重定向，#3401 同步登记）。
+    routePrefixes: ['/dashboard', '/xhjy/monitor', '/xhjy/zrqsb', '/xhjy/zptqx', '/xhjy/desk', '/xhjy/approvals', '/xhjy/review', '/xhjy/risk-center', '/xhjy/hedge'],
+    routePaths: ['/dashboard', '/xhjy/monitor', '/xhjy/zrqsb', '/xhjy/zptqx', '/xhjy/desk', '/xhjy/approvals', '/xhjy/review', '/xhjy/risk-center', '/xhjy/hedge'],
     statusByRegion: {
       shanxi: 'available',
       yunnan: 'degraded',
@@ -319,8 +324,13 @@ export const regionModuleCapabilities: RegionModuleCapability[] = [
       // （sdpt_zrqsb 是山西私有族，严格地区不回退），且结算采集仅覆盖 2026-05。
       { path: '/xhjy/review', statusByRegion: { shanxi: 'degraded', yunnan: 'degraded' }, note: '山西可读真实申报量，但实际上网电量无数据源、须调用方提供；云南结算口径三段式复盘可用（采集仅覆盖 2026-05），偏差考核两侧仍无源。' },
       { path: '/xhjy/risk-center', statusByRegion: { shanxi: 'available', yunnan: 'degraded' }, note: '风险聚合可用，云南现货执行源仍不完整。' },
-      // 中长期与现货套保（原中长期敞口看板，dljy#2988）：合同分解 vs 预计出力算逐时敞口，并读现货结算口径算套保率与净敞口。
-      { path: '/zcqjy/exposure', statusByRegion: { shanxi: 'available', yunnan: 'degraded' }, note: '敞口与套保计算可用，云南中长期真实输入（P2 分时分解）与结算口径待接入。' }
+      // 中长期与现货套保（原中长期敞口看板，dljy#2988）：台账锁价 vs 预计发电算逐时段敞口与套保率。
+      // 只开放云南（D15/HW-07）：其余地区隐藏菜单、路由守卫拦截；⚠ 四地区须逐个显式声明，漏声明回落 not-configured。
+      {
+        path: '/xhjy/hedge',
+        statusByRegion: { yunnan: 'degraded', shanxi: 'hidden', guangdong: 'hidden', sichuan: 'hidden' },
+        note: '云南可用：套保计算与判级已接真实台账与场站出力；场站出力与价格尚未日更时相应时段如实为未覆盖。其余地区未开放。'
+      }
     ]
   },
   {
@@ -328,7 +338,7 @@ export const regionModuleCapabilities: RegionModuleCapability[] = [
     title: '中长期交易',
     group: 'midlong',
     routePrefixes: ['/zcqjy', '/sjxh/zjzzt'],
-    routePaths: ['/zcqjy/contracts', '/zcqjy/positions', '/zcqjy/positions/intervals', '/zcqjy/positions/stations', '/zcqjy/curves', '/zcqjy/plans', '/zcqjy/execution', '/zcqjy/adjustments', '/zcqjy/review', '/zcqjy/bills', '/zcqjy/zccljk', '/zcqjy/exposure', '/zcqjy/zfsdjy', '/zcqjy/zjyap', '/sjxh/zjzzt'],
+    routePaths: ['/zcqjy/contracts', '/zcqjy/positions', '/zcqjy/positions/intervals', '/zcqjy/positions/stations', '/zcqjy/curves', '/zcqjy/plans', '/zcqjy/execution', '/zcqjy/adjustments', '/zcqjy/review', '/zcqjy/bills', '/zcqjy/zccljk', '/zcqjy/zfsdjy', '/zcqjy/zjyap', '/sjxh/zjzzt'],
     statusByRegion: {
       shanxi: 'available',
       yunnan: 'degraded',

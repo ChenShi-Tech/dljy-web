@@ -180,9 +180,11 @@ const weightedByLabel = computed(() => {
 })
 // 「查看历史资料（起—止）」入口：仅当拿到真实覆盖区间才出现（取不到只说暂无资料，不编造覆盖）。
 const coverageJump = computed(() => historyJumpRange(settlementCoverage.value))
-// 空态：x 轴无样站点且加载/错误都不在场 → 诚实空态 + 覆盖入口。
+// 空态兜底：加载结束且 x 轴无样站点即进空态分支。加载失败（settleErrorMsg）也落在这里，
+// 由模板把文案切换成「加载失败」并指向顶部页面级错误提示——错误整条只在顶部 alert 出现
+// 一次，区块内不再重复渲染（对齐 YunnanNodePricePanel 的单点报错惯例）。
 const showSettleEmpty = computed(
-  () => !settleLoading.value && !weightedLoading.value && !settleErrorMsg.value && !hasSettleData.value
+  () => !settleLoading.value && !weightedLoading.value && !hasSettleData.value
 )
 // 历史资料提示：所选范围整体早于今天（完整日期）。
 const historyNotice = computed(() =>
@@ -1074,7 +1076,11 @@ onRegionChange(() => {
     />
 
     <!-- KPI 行（当日跨节点聚合）-->
-    <DataState :loading="dailyLoading" :error="dailyErrorMsg">
+    <DataState
+      :loading="dailyLoading"
+      :empty="!!dailyErrorMsg"
+      empty-text="节点电价加载失败，原因见顶部错误提示"
+    >
       <template #skeleton>
         <SpotSkeleton variant="rows" :rows="4" />
       </template>
@@ -1103,29 +1109,24 @@ onRegionChange(() => {
     </DataState>
 
     <section class="sp-charts">
-      <DataState
-        :loading="settleLoading"
-        :error="settleErrorMsg"
-      >
+      <DataState :loading="settleLoading">
         <template #skeleton>
           <SpotSkeleton variant="chart" :height="340" />
         </template>
-        <!-- #2992：诚实空态 + 「查看历史资料」入口（仅当拿到真实覆盖区间才出现） -->
+        <!-- #2992：诚实空态 + 「查看历史资料」入口（仅当拿到真实覆盖区间才出现）；
+             加载失败时文案切换为「加载失败」，不把失败伪装成「暂无资料」，覆盖入口一并隐藏 -->
         <div v-if="showSettleEmpty" class="sp-settle-empty">
-          <p>所选日期（{{ dateRange[0] }} 至 {{ dateRange[1] }}）暂无已入库结算资料。</p>
-          <p v-if="coverageJump" class="sp-settle-empty-cov">
-            已入库结算资料覆盖：{{ settlementCoverage?.start }} 至 {{ settlementCoverage?.end }}
-          </p>
-          <el-button
-            v-if="coverageJump"
-            type="primary"
-            plain
-            size="small"
-            @click="applyCoverageRange"
-          >
-            <History :size="14" style="margin-right: 4px" />
-            查看历史资料（{{ coverageJump[0] }}—{{ coverageJump[1] }}）
-          </el-button>
+          <p v-if="settleErrorMsg">结算数据加载失败，原因见顶部错误提示。</p>
+          <p v-else>所选日期（{{ dateRange[0] }} 至 {{ dateRange[1] }}）暂无已入库结算资料。</p>
+          <template v-if="!settleErrorMsg && coverageJump">
+            <p class="sp-settle-empty-cov">
+              已入库结算资料覆盖：{{ settlementCoverage?.start }} 至 {{ settlementCoverage?.end }}
+            </p>
+            <el-button type="primary" plain size="small" @click="applyCoverageRange">
+              <History :size="14" style="margin-right: 4px" />
+              查看历史资料（{{ coverageJump[0] }}—{{ coverageJump[1] }}）
+            </el-button>
+          </template>
         </div>
         <ChartCard
           v-else
@@ -1147,9 +1148,8 @@ onRegionChange(() => {
 
       <DataState
         :loading="dailyLoading"
-        :error="dailyErrorMsg"
-        :empty="!hasDailySnapshot"
-        empty-text="当日暂无节点电价（峰谷水位需节点级 max/min）"
+        :empty="!hasDailySnapshot || !!dailyErrorMsg"
+        :empty-text="dailyErrorMsg ? '节点电价加载失败，原因见顶部错误提示' : '当日暂无节点电价（峰谷水位需节点级 max/min）'"
       >
         <template #skeleton>
           <SpotSkeleton variant="chart" :height="420" />
@@ -1170,9 +1170,8 @@ onRegionChange(() => {
 
       <DataState
         :loading="dailyLoading"
-        :error="dailyErrorMsg"
-        :empty="!hasPeakValleyTrend"
-        empty-text="该日期范围暂无峰谷价差趋势数据"
+        :empty="!hasPeakValleyTrend || !!dailyErrorMsg"
+        :empty-text="dailyErrorMsg ? '节点电价加载失败，原因见顶部错误提示' : '该日期范围暂无峰谷价差趋势数据'"
       >
         <template #skeleton>
           <SpotSkeleton variant="chart" :height="300" />
@@ -1201,9 +1200,8 @@ onRegionChange(() => {
       </div>
       <DataState
         :loading="settleLoading"
-        :error="settleErrorMsg"
         :empty="!settleRows.length"
-        empty-text="当前筛选下暂无结算三价明细"
+        :empty-text="settleErrorMsg ? '结算数据加载失败，原因见顶部错误提示' : '当前筛选下暂无结算三价明细'"
       >
         <template #skeleton>
           <SpotSkeleton variant="table" :rows="8" :columns="6" />

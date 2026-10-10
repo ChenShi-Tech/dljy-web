@@ -46,21 +46,29 @@ describe('isCurveEdited', () => {
   })
 })
 
-// 风控/敞口入参归一：输入框清空/误输不向服务端发垃圾值，兜底 1 MWh；正常值原样透传。
-// 人工不可见（服务端本就优雅拒绝），故以单测锁定归一口径。
-import { normalizeExposureTotalMwh } from './declarations'
+// 风控结果里的中长期敞口约束说明（ChenShi-Tech/dljy#3475）：只透出服务端 note，不在前端重算；
+// 坏掉的症状 = 页面自己拼覆盖数字（与服务端口径漂移）或旧结果显示出空白说明。
+import { riskExposureSourceOf, type RiskCheckResult } from './declarations'
 
-describe('normalizeExposureTotalMwh', () => {
-  it('清空/非数/0/负数 → 兜底 1 MWh', () => {
-    for (const bad of ['', 'abc', 0, -5, Number.NaN, null, undefined]) {
-      expect(normalizeExposureTotalMwh(bad)).toBe(1)
-    }
+describe('riskExposureSourceOf', () => {
+  const base: RiskCheckResult = { checks: [], passed: false, gateLevel: 'L3', totalMwh: 0, maxMw: 0, evaluatedAt: '2026-09-29T00:00:00Z' }
+
+  it('套保来源：原样返回服务端 note', () => {
+    const note = '约束来源：套保服务（仅中长期口径，目标日 2026-10-01，生成于 2026-09-29T02:00:00Z）；已知 20/24 个时段，其余 4 个时段敞口未知（锁价分时未知 4），未施加约束'
+    expect(riskExposureSourceOf({ ...base, inputs: { exposure: { available: true, note } } })).toEqual({ note, manual: false })
   })
 
-  it('正常正数原样透传（含小数）', () => {
-    expect(normalizeExposureTotalMwh(20000)).toBe(20000)
-    expect(normalizeExposureTotalMwh(12.5)).toBe(12.5)
-    expect(normalizeExposureTotalMwh('3000')).toBe(3000)
+  it('人工敞口：标注人工', () => {
+    expect(riskExposureSourceOf({ ...base, inputs: { exposure: { manual: true, available: true } } }))
+      .toEqual({ note: '人工填报的敞口，不回写套保结果', manual: true })
+  })
+
+  it('旧测算端点时代的结果、缺字段、空白 note → null（不显示）', () => {
+    expect(riskExposureSourceOf({ ...base, inputs: { exposure: { available: true, hedgeRatio: 0.8, source: 'harness' } } })).toBeNull()
+    expect(riskExposureSourceOf({ ...base, inputs: { exposure: { note: '   ' } } })).toBeNull()
+    expect(riskExposureSourceOf({ ...base, inputs: {} })).toBeNull()
+    expect(riskExposureSourceOf(null)).toBeNull()
+    expect(riskExposureSourceOf(undefined)).toBeNull()
   })
 })
 

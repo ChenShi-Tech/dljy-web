@@ -9,6 +9,41 @@ export declare type LegKey =
 export declare const LEG_STATUSES: readonly string[]
 export declare type LegStatus = 'OK' | 'PARTIAL' | 'STALE' | 'FAILED' | 'FORBIDDEN' | 'UNSUPPORTED' | 'NOT_CONFIGURED'
 export declare const STALE_ELIGIBLE_LEG_KEYS: readonly string[]
+export declare const LEG_KEY_LABELS: Readonly<Record<LegKey, string>>
+export declare const LEG_STATUS_LABELS: Readonly<Record<LegStatus, string>>
+export declare const HEDGE_LEG_ROW_KEYS: readonly string[]
+
+/** 页头逐腿水位（HW-01）：legs.rows[] 的一行。时刻为 ISO 字符串；缺失为 null 并在 reason 写原因。 */
+export interface HedgeLegRow {
+  key: LegKey
+  /** 来源键：FORECAST_VENDOR 各来源分别一行（yunnan-vendor-envision / yunnan-vendor-guoneng）。 */
+  sourceKey: string | null
+  label: string
+  status: LegStatus
+  /** 最近变更时刻（台账、标注、机制、基准、上限、生效方案；这些腿不判过期）。 */
+  changedAt: string | null
+  /** 数据截止点（实际、预测、价格）。 */
+  dataThrough: string | null
+  /** 发布口径：BUSINESS_TIME / DAY_BEFORE_MIDNIGHT / RUN_RECORD。 */
+  publishRule: string | null
+  publishAssumption: string | null
+  /** 发布时刻：仅源数据自带发布时刻时给出，登记假设口径为 null。 */
+  publishedAt: string | null
+  /** 数据集入库时刻。 */
+  ingestedAt: string | null
+  /** 生效方案及版本（BAND 腿）。 */
+  version: { schemeId: number; versionNo: number; name: string; basis: LockBasis | null; effectiveFrom: string | null } | null
+  reason: string | null
+  note: string | null
+}
+
+/** 读侧响应的 legs：旧摘要字段保留，rows 为逐腿水位。 */
+export interface HedgeLegs {
+  status: 'OK' | 'PARTIAL'
+  note?: string
+  degraded?: boolean
+  rows: HedgeLegRow[]
+}
 
 export declare const INTERVAL_SOURCES: readonly string[]
 export declare type IntervalSource = 'ACTUAL' | 'FORECAST' | 'UNCOVERED'
@@ -63,6 +98,116 @@ export declare const BREAKDOWN_DIMENSION_LABELS: Readonly<Record<BreakdownDimens
 export declare const LOCK_SOURCES: readonly string[]
 export declare const LOCK_SOURCE_LABELS: Readonly<Record<'MIDLONG' | 'MECHANISM', string>>
 
+export declare const BREAKDOWN_QUERY_DIMENSIONS: readonly string[]
+export declare type BreakdownQueryDimension = 'subject' | 'station' | 'productKind' | 'marketScope' | 'energyAttribute' | 'buyerCategory'
+export declare const BREAKDOWN_QUERY_DIMENSION_LABELS: Readonly<Record<BreakdownQueryDimension, string>>
+export declare const BREAKDOWN_UNCLASSIFIED: 'UNCLASSIFIED'
+export declare const BREAKDOWN_UNALLOCATED: 'UNALLOCATED'
+export declare const BREAKDOWN_STATION_MONTH_UNKNOWN: 'STATION_MONTH_UNKNOWN'
+export declare const BREAKDOWN_SPECIAL_KEY_LABELS: Readonly<Record<'UNCLASSIFIED' | 'UNALLOCATED' | 'STATION_MONTH_UNKNOWN', string>>
+
+/** 守恒校验结果（HM-06）：全部已知时严格校验；含未知时只校验已知部分不超过上层。 */
+export interface HedgeConsistency {
+  ok: boolean | null
+  partial: boolean | null
+  code?: 'HEDGE_CONSISTENCY_FAILED'
+  level?: string
+  diff?: string
+  gaps?: Array<{ code: string; message: string; affected: string | null }>
+  note?: string
+}
+
+/** 钻取中的合同层（HW-04）：版本、指纹与中长期详情所需标识。 */
+export interface HedgeBreakdownContractRef {
+  contractId: number
+  externalContractNo: string | null
+  contractName: string | null
+  subjectId: number | null
+  stationId: number | null
+  quantityMwh: string
+  revisionId: number | null
+  revisionNo: number | null
+  confirmedAt: string | null
+  fingerprint: string | null
+  detail: { module: 'midlong'; contractId: number; api: string }
+}
+
+/** GET /breakdown（HW-04/HC-02）：按窗口所触及月份的月度净义务分类汇总。旧字段 contracts/months 保留。 */
+export interface HedgeBreakdown {
+  status: 'OK' | 'FORBIDDEN'
+  reason: string | null
+  dimension: BreakdownQueryDimension
+  dimensionLabel: string
+  basis: 'MONTHLY_NET_OBLIGATION'
+  basisNote: string
+  months: unknown[]
+  totalMwh: string | null
+  rows: Array<{ key: string | number; label: string; quantityMwh: string; contractCount: number; contracts: HedgeBreakdownContractRef[] }>
+  consistency: HedgeConsistency | null
+}
+
+export declare const MONTH_PERIODS: readonly string[]
+export declare type MonthPeriod = 'PAST' | 'CURRENT' | 'FORWARD'
+export declare const MONTH_PERIOD_LABELS: Readonly<Record<MonthPeriod, string>>
+export declare const BASELINE_COVERAGES: readonly string[]
+export declare type BaselineCoverage = 'COMPLETE' | 'PARTIAL' | 'NONE'
+export declare const BASELINE_UNCOVERED_NOTE: string
+export declare const BASELINE_PLAN_LABEL: string
+export declare const CAP_STATUSES: readonly string[]
+export declare type CapStatus = 'REGISTERED' | 'NOT_REGISTERED' | 'MODIFIED_AFTER_AS_OF' | 'FAILED'
+export declare const CAP_NOT_REGISTERED_LABEL: string
+export declare const CAP_EXCEEDED_LABEL: string
+export declare const CAP_MODIFIED_AFTER_AS_OF_LABEL: string
+
+/** 比率值：status 为 OK / NOT_COMPUTABLE / INCOMPLETE_COVERAGE / MECHANISM_INCOMPLETE / FORBIDDEN。 */
+export interface HedgeRatioValue { value: string | null; status: string }
+/** 判级：metric 为 null 表示非标准窗口（只展示）；tier 按标准指标对照表给出。 */
+export interface HedgeMonthAssessment {
+  metric: StandardMetric | null
+  tier: Tier | null
+  level: AssessmentLevel
+  reason: AssessmentReason | null
+  hints: string[]
+  basis: LockBasis | null
+}
+
+/** GET /months 的逐月一行（HW-03/HB-07/HM-02）：读模型月度行的字段保留，其余为新增。 */
+export interface HedgeMonthView {
+  month: string
+  formalQuantity: string | null
+  period: MonthPeriod
+  midlong: {
+    lockedMwh: string | null
+    structure: Record<'productKind' | 'marketScope' | 'energyAttribute' | 'buyerCategory', Array<{ key: string; label: string; quantityMwh: string }>> | null
+    incomplete: boolean | null
+    affectedContractIds: number[]
+    note: string | null
+  }
+  /** 只有月量的合同的月净义务（不摊到日）。 */
+  monthlyUndecomposed: { quantityMwh: string | null; contractIds: number[]; note: string }
+  /** 计划口径机制电量（月度基准 × 比例，扣省间）。 */
+  mechanism: { basis: 'PLANNED'; label: string; value: string | null; stations: Array<{ stationId: number; value: string | null; expired: boolean; note: string | null }>; unknownStationIds: number[]; note: string }
+  generation: { granularity: 'DAY'; actualDays: number; forecastDays: number; uncoveredDays: number; totalDays: number }
+  days: Array<{
+    date: string
+    /** 当日已确认分时分解的锁价（只有月量的合同不计入；任一分解缺当日为 null）。 */
+    lockedDecomposedMwh: string | null
+    generation: { value: string | null; source: IntervalSource; uncoveredReason: UncoveredReason | null; unknownStationIds: number[] }
+  }>
+  baseline: { coverage: BaselineCoverage; totalMwh: string | null; coveredStationIds: number[]; missingStationIds: number[]; label: string; note: string | null }
+  ratios: {
+    interval: { granularity: 'HOUR' | 'DAY'; coverage: { coveredCount: number; totalCount: number; ratio: string | null }; withMechanism: HedgeRatioValue; midlongOnly: HedgeRatioValue; assessment: HedgeMonthAssessment }
+    baseline: { label: string; withMechanism: HedgeRatioValue; midlongOnly: HedgeRatioValue; assessment: HedgeMonthAssessment }
+  }
+  caps: {
+    status: CapStatus
+    /** 行级 status：认知时点视图下 recorded_at 晚于 T 的行为 MODIFIED_AFTER_AS_OF（不回放当时的上限值）。 */
+    rows: Array<{ subjectId: number; status: 'REGISTERED' | 'NOT_REGISTERED' | 'MODIFIED_AFTER_AS_OF'; capMwh: string | null; lockedMwh: string | null; remainingMwh: string | null; exceeded: boolean | null; sourceNote: string | null; note: string | null }>
+    note: string
+  }
+  consistency: HedgeConsistency
+}
+
 export declare const MECHANISM_PARAM_STATUSES: readonly string[]
 export declare const MECHANISM_PARAM_STATUS_LABELS: Readonly<Record<'PENDING' | 'CONFIRMED' | 'RETIRED', string>>
 export declare const MECHANISM_END_REASONS: readonly string[]
@@ -76,6 +221,39 @@ export declare const MECHANISM_PRICE_UNIT: 'CNY_PER_MWH'
 export declare const SIMULATION_SHAPES: readonly string[]
 export declare type SimulationShape = 'FLAT' | 'RECENT_ACTUAL_PROFILE' | 'CONTRACT_CURVE'
 export declare const SIMULATION_SHAPE_LABELS: Readonly<Record<SimulationShape, string>>
+export declare const SIMULATION_PROFILE_DEFAULT_DAYS: number
+export declare const SIMULATION_PROFILE_MAX_DAYS: number
+export declare const SIMULATION_ASSUMPTION_LABEL: string
+
+/** POST /simulate 请求中的形状：权重一律由服务端计算，客户端传入的 weights 被忽略。 */
+export interface HedgeSimulationShapeRequest {
+  kind: SimulationShape
+  /** RECENT_ACTUAL_PROFILE：场站（缺省为查询 stationId，再缺省为范围内全部场站之和）。 */
+  stationId?: number
+  /** RECENT_ACTUAL_PROFILE：回看整日数（1—60，缺省 14）。 */
+  days?: number
+  /** CONTRACT_CURVE：合同。 */
+  contractId?: number
+}
+
+/** POST /simulate 响应 shapes[]：每条调整实际用到的形状（标「假设」）。 */
+export interface HedgeSimulationShapeInfo {
+  index: number
+  kind: SimulationShape
+  label?: string
+  assumption?: string
+  stationId?: number | null
+  stationIds?: number[]
+  days?: number
+  profileFrom?: string
+  contractId?: number
+  revisionNo?: number | null
+  note?: string
+  weightedIntervalCount: number
+  skippedIntervalCount: number
+  /** 缺权重、未分摊的时段开始时刻（最多 96 个）。 */
+  skippedStarts: string[]
+}
 
 export declare const HEDGE_ERROR_CODES: readonly string[]
 export declare type HedgeErrorCode =

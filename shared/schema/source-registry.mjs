@@ -325,6 +325,46 @@ const spotTargets = [
     expectedPointsPerDay: 96,
     capturedAtField: 'operateDate',
     qualityRules: { guardEmpty: true }
+  }),
+  // —— 月包余量层（issue #3088，design D7 B/C/D 类 13 表 + 暂结承载）：plant_spot_settlement
+  //    余量表经 import:spot-export「月包余量层」小节与上传中心 cgn-spot-export 契约两条通道
+  //    落库，行形状同源 spot-export-upload buildPlanRows（零漂移）。归属 comp-cgn-yunnan。
+  target({
+    family: 'yn_plant_timeseries',
+    datasetKey: '*',
+    ownership: SOURCE_OWNERSHIP.COMPANY,
+    ownerCompanyId: CGN_YUNNAN_COMPANY_ID,
+    requiredFields: ['id', 'plant', 'date'],
+    valueFields: ['value'],
+    capturedAtField: 'date',
+    qualityRules: { guardEmpty: true }
+  }),
+  target({
+    family: 'yn_plant_daily_metrics',
+    datasetKey: 'plant_daily_report_metrics',
+    ownership: SOURCE_OWNERSHIP.COMPANY,
+    ownerCompanyId: CGN_YUNNAN_COMPANY_ID,
+    requiredFields: ['id', 'date', 'plant'],
+    valueFields: ['totalGenerationMWh', 'settlementRevenueYuan'],
+    capturedAtField: 'date',
+    qualityRules: { guardEmpty: true }
+  }),
+  target({
+    family: 'yn_settlement_docs',
+    // 7 个 datasetKey 的必填锚点各表不同、且已由 describeDataset 行 schema 逐键承担
+    // （matchesSchema required 校验），target 层不再抄一份清单防两处漂移。
+    datasetKey: '*',
+    ownership: SOURCE_OWNERSHIP.COMPANY,
+    ownerCompanyId: CGN_YUNNAN_COMPANY_ID,
+    qualityRules: { guardEmpty: true }
+  }),
+  target({
+    family: 'yn_contracts',
+    datasetKey: '*',
+    ownership: SOURCE_OWNERSHIP.COMPANY,
+    ownerCompanyId: CGN_YUNNAN_COMPANY_ID,
+    requiredFields: ['guid', 'contractId'],
+    qualityRules: { guardEmpty: true }
   })
 ]
 
@@ -527,70 +567,17 @@ const SOURCE_DECLARATIONS = {
     mock: false,
     productionWrite: false
   },
-  'import-hub-market-analysis': {
-    sourceId: 'import-hub-market-analysis',
-    label: 'ImportHub 市场经营分析手录投递',
-    inputType: SOURCE_INPUT_TYPES.MANUAL,
-    parser: 'importHub.marketAnalysisCsv',
-    fieldMappings: { datasetKey: 'marketSchemaForDataset(datasetKey)（套餐明细/KPI → marketRetailPackageSchemas）' },
-    unitConversions: { quantity: 'MWh', price: '元/MWh' },
-    timeAxis: TIME_AXIS.TIME,
-    targets: [
-      // 公共口径 7 键 → public market_analysis 族。
-      target({
-        family: 'market_analysis',
-        datasetKey: '*',
-        ownership: SOURCE_OWNERSHIP.PUBLIC,
-        requiredFields: ['id', 'area'],
-        qualityRules: { guardEmpty: true }
-      }),
-      // #669 路线①：售电套餐经营口径 market_packages → company 私有族 market_retail_packages，
-      // 归属中广核云南。在线投递用会话 companyId 定 owner（assertSourceTargetOwnership），
-      // 非归属公司会话写入被拒（422），杜绝跨公司投递他司经营数据。
-      target({
-        family: 'market_retail_packages',
-        datasetKey: 'market_packages',
-        ownership: SOURCE_OWNERSHIP.COMPANY,
-        ownerCompanyId: CGN_YUNNAN_COMPANY_ID,
-        requiredFields: ['id', 'area'],
-        qualityRules: { guardEmpty: true }
-      }),
-      // #815：套餐聚合 KPI 与明细同属公司经营敏感口径，禁止落 public market_metrics。
-      target({
-        family: 'market_retail_packages',
-        datasetKey: 'market_retail_package_metrics',
-        ownership: SOURCE_OWNERSHIP.COMPANY,
-        ownerCompanyId: CGN_YUNNAN_COMPANY_ID,
-        requiredFields: ['id', 'area', 'tab'],
-        qualityRules: { guardEmpty: true }
-      })
-    ],
-    // 声明含公共 + 公司两类 target，故 source 级归属标 mixed（与 yunnan-spot-monthly-export 同例）。
-    ownership: 'mixed',
-    basis: 'captured',
-    sourceType: 'IMPORT',
-    mock: false,
-    productionWrite: false
-  },
   // 数据运维台上传中心（Epic #2169 P1）：五步流「确认落库」的 capture-family 型契约经
-  // 此源双写（归一化同源 yn-fact-market::normalizeMarketDataset，与 import-hub 在线投递
-  // 同链）；首批仅公共 7 键（market_analysis public），套餐两键仍走 import-hub 旧入口。
+  // 此源双写（手录市场族已随 #3395 退役，现役契约=南网披露表 capture-family 通道）。
   'data-upload-center': {
     sourceId: 'data-upload-center',
     label: '数据运维台上传中心（手录投递）',
     inputType: SOURCE_INPUT_TYPES.MANUAL,
     parser: 'uploadContracts.captureFamily',
-    fieldMappings: { datasetKey: 'marketSchemaForDataset(datasetKey)（upload-contracts 契约声明列/别名做入口校验）' },
+    fieldMappings: { datasetKey: 'upload-contracts 契约 marketDatasetKey 载体（契约声明列/别名做入口校验）' },
     unitConversions: { quantity: 'MWh', price: '元/MWh' },
     timeAxis: TIME_AXIS.TIME,
     targets: [
-      target({
-        family: 'market_analysis',
-        datasetKey: '*',
-        ownership: SOURCE_OWNERSHIP.PUBLIC,
-        requiredFields: ['id', 'area'],
-        qualityRules: { guardEmpty: true }
-      }),
       // 南网披露表上传（issue #2825）：17 张 tb_disclosure_* → yn_disclosure_metric，
       // datasetKey=源表短名（'*' 通配）。public 族，无公司归属校验；表头形状单一来源
       // disclosure-table-specs.mjs，行归一化 yn-disclosure-upload.mjs。
@@ -624,50 +611,12 @@ const SOURCE_DECLARATIONS = {
     timeAxis: TIME_AXIS.TIME,
     targets: [
       target({
-        family: 'market_analysis',
-        datasetKey: '*',
-        ownership: SOURCE_OWNERSHIP.PUBLIC,
-        requiredFields: ['id', 'area'],
-        qualityRules: { guardEmpty: true }
-      }),
-      target({
         family: 'yn_disclosure_metric',
         datasetKey: '*',
         ownership: SOURCE_OWNERSHIP.PUBLIC,
         requiredFields: ['id', 'operateDate', 'sourceTable', 'metric'],
         valueFields: ['value'],
         capturedAtField: 'operateDate',
-        qualityRules: { guardEmpty: true }
-      })
-    ],
-    ownership: SOURCE_OWNERSHIP.PUBLIC,
-    basis: 'captured',
-    sourceType: 'IMPORT',
-    mock: false,
-    productionWrite: false
-  },
-  // 市场经营分析手录「批量」摄取入口（issue #769）：与 import-hub-market-analysis 同族（market_analysis
-  // public），区别在投递通道——本源是 import:market-export 批处理（--dir/--file + --region），
-  // 在线 ImportHub 投递仍走 import-hub-market-analysis。归一化同源 yn-fact-market::normalizeMarketDataset
-  // （已内置 matchesSchema），声明式 prepareDeclaredFamily 不会再额外隔离行，落盘逐字段一致。
-  // 仅公共 7 键（MARKET_DATASET_KEYS）落 public market_analysis；套餐明细/KPI 私有键不从此入口落。
-  'market-export-batch': {
-    sourceId: 'market-export-batch',
-    label: '市场经营分析手录批量摄取',
-    inputType: SOURCE_INPUT_TYPES.MANUAL,
-    parser: 'importHub.marketAnalysisCsv',
-    fieldMappings: {
-      datasetKey: 'marketSchemaForDataset(datasetKey)（MARKET_DATASET_KEYS 公共 7 键 → market_analysis）'
-    },
-    unitConversions: { quantity: 'MWh', price: '元/MWh' },
-    timeAxis: TIME_AXIS.TIME,
-    targets: [
-      target({
-        family: 'market_analysis',
-        // 本入口只投 market_analysis 公共 7 键，用 '*' 通配；family 已阻止私有套餐键误命中。
-        datasetKey: '*',
-        ownership: SOURCE_OWNERSHIP.PUBLIC,
-        requiredFields: ['id', 'area'],
         qualityRules: { guardEmpty: true }
       })
     ],
@@ -939,9 +888,9 @@ const SOURCE_DECLARATIONS = {
   // 中广核电厂映射表人工权威上传通道（issue #2823）：数据运维台上传中心 cgn-mapping 契约的
   // 声明式落库 source。与 cgn-yunnan-data-api-v1（厂侧 API 持续采集，落 dljy_private 隔离域）
   // 完全不同的输入形态——人工核对过的 Excel 全量映射表 → capture 三族（yn_dim_plant/_alias/
-  // _node），与 import:spot-export（月包 CSV 机器重建）同族不同通道（先例：import-hub-
-  // market-analysis vs market-export-batch）。整族替换（ingestRows 按 family+region+datasetKey
-  // DELETE+INSERT），谁最后跑谁生效——语义即「人工权威表全量替换机器重建」。
+  // _node），与 import:spot-export（月包 CSV 机器重建）同族不同通道。整族替换
+  // （ingestRows 按 family+region+datasetKey DELETE+INSERT），谁最后跑谁生效——
+  // 语义即「人工权威表全量替换机器重建」。
   // 旧 CLI import:cgn-mapping 保持「报告 + dim_*.json merge」职责不动（source-registry.md
   // 搁置段针对的就是它的声明式迁移），与本通道互不影响。
   'cgn-mapping-upload': {

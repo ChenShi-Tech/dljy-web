@@ -5,6 +5,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, enableAutoUnmount } from '@vue/test-utils'
 import { mount } from '@/test/mount'
+import { fillGuideForm, onGuideSignal, resetGuideBridge } from '@/features/guide/bridge'
+import { FORM, SIGNAL } from '@/features/guide/midlong/anchors'
 import type { MidlongContractDetail, MidlongContractSummary, MidlongRevision } from '@/services/midlong/midlongTypes'
 
 const hoisted = vi.hoisted(() => ({ fetchContracts: vi.fn(), createDraft: vi.fn(), updateDraft: vi.fn(), warning: vi.fn() }))
@@ -55,7 +57,10 @@ async function open(props: Record<string, unknown>) {
   return { w, save: () => w.findAll('.el-dialog__footer button').find((b) => /保存/.test(b.text()))!.trigger('click') }
 }
 
-afterEach(() => vi.clearAllMocks())
+afterEach(() => {
+  vi.clearAllMocks()
+  resetGuideBridge() // 表单挂进了真 bridge，用例间要清，避免上例的注册泄漏
+})
 enableAutoUnmount(afterEach)
 
 // 整个 el-dialog 表单挂载较重，全量并发跑且本机负载高时单例偶发超过默认 5 秒；放宽超时，不改断言。
@@ -180,5 +185,34 @@ describe('中长期合同草稿表单', { timeout: 20000 }, () => {
     document.querySelector<HTMLElement>('[data-testid="ml-framework-select"] .el-select__wrapper')?.click()
     await flushPromises()
     expect(document.body.textContent).not.toContain('年度框架协议（FW-5）')
+  })
+
+  it('导引「帮我填」能写进新建表单（identity 与 economics 分流），保存成功发 contractSaved 信号（dljy#3404）', async () => {
+    hoisted.fetchContracts.mockResolvedValue({ rows: [], page: 1, pageSize: 200, total: 0, stats: {} })
+    hoisted.createDraft.mockResolvedValue({ contractId: 12, warnings: [] })
+    const { w, save } = await open({ detail: null })
+
+    const ok = fillGuideForm(FORM.contractCreate, {
+      externalContractNo: 'G-9-XY', contractName: '【教学演示】练习合同', sourceNamespace: 'TEST-GUIDE',
+    })
+    expect(ok).toBe(true)
+    await flushPromises() // fill 写进 reactive 后等一拍，v-model 的 input 才刷新
+    const noInput = w.findAll('.ml-field').filter((f) => /外部合同/.test(f.text()))[0].find('input')
+    expect((noInput.element as HTMLInputElement).value).toBe('G-9-XY')
+
+    const seen: unknown[] = []
+    onGuideSignal(SIGNAL.contractSaved, (payload) => seen.push(payload))
+    await save()
+    await flushPromises()
+    expect(hoisted.createDraft).toHaveBeenCalledWith(expect.objectContaining({
+      externalContractNo: 'G-9-XY', contractName: '【教学演示】练习合同', sourceNamespace: 'TEST-GUIDE',
+    }))
+    expect(seen).toEqual([{ contractId: 12, documentKind: 'OBLIGATION' }])
+  })
+
+  it('修改草稿对话框不是导引的填写目标：fill 不生效，避免示例值覆盖真实草稿（dljy#3404）', async () => {
+    hoisted.fetchContracts.mockResolvedValue({ rows: [], page: 1, pageSize: 200, total: 0, stats: {} })
+    await open({ detail: detail() })
+    expect(fillGuideForm(FORM.contractCreate, { contractName: '不该写进来' })).toBe(false)
   })
 })

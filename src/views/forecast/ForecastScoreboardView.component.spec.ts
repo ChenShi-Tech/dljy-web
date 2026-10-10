@@ -10,19 +10,19 @@ vi.mock('@/composables/useEChart', () => ({ useEChart: () => ({ setOption: api.c
 vi.mock('element-plus', () => ({ ElMessage: { error: vi.fn() } }))
 import Scoreboard from './ForecastScoreboardView.vue'
 
-const removed = ['fm:Chronos2', 'fm:ChronosBoltSmall', ...['Autoformer', 'DLinear', 'FEDformer', 'Informer', 'iTransformer', 'PatchTST', 'TimesNet', 'TimeXer'].map((id) => `tslib:${id}`)]
+const removed = ['Autoformer', 'DLinear', 'FEDformer', 'Informer', 'iTransformer', 'PatchTST', 'TimesNet', 'TimeXer'].map((id) => `tslib:${id}`)
 const wrappers: VueWrapper[] = []
 beforeEach(() => { api.scoreboard.mockReset(); api.chart.mockReset() })
 afterEach(() => { wrappers.splice(0).forEach((wrapper) => wrapper.unmount()) })
 
 describe('质量记分牌模型清理', () => {
-  it('完整10个移除项不出现在表格或图例，真实PatchTST和Naive参照仍保留', async () => {
-    const ids = [...removed, 'patchtst', 'remote:yunnan-renewable-patchtst-20260729', 'naive_1d']
+  it('全部8个TSLib占位移除项不出现在表格或图例，真实模型和Naive参照仍保留', async () => {
+    const ids = [...removed, 'random_forest', 'remote:yunnan-load-dlinear-20260729', 'naive_1d']
     api.scoreboard.mockResolvedValue({ available: true, report: {
       region_id: 'yunnan', date_range: ['2026-06-01', '2026-06-25'], n_days: 25,
       basis: 'captured', generated_at: '2026-08-31', runs: { full: {
         overall: Object.fromEntries(ids.map((id) => [id, { mae: 1, skill_vs_lear: 0.1 }])),
-        per_day: [{ date: '2026-06-25', patchtst_mase: 0.9 }],
+        per_day: [{ date: '2026-06-25', random_forest_mase: 0.9 }],
       } },
     } })
     const slot = { template: '<div><slot name="title"/><slot name="header"/><slot/></div>' }
@@ -34,11 +34,11 @@ describe('质量记分牌模型清理', () => {
     wrappers.push(wrapper)
     await flushPromises()
     const rows = wrapper.findComponent({ name: 'ElTable' }).props('data') as Array<{ id: string }>
-    expect(rows.map((row) => row.id)).toEqual(['patchtst', 'remote:yunnan-renewable-patchtst-20260729', 'naive_1d'])
+    expect(rows.map((row) => row.id)).toEqual(['random_forest', 'remote:yunnan-load-dlinear-20260729', 'naive_1d'])
     for (const id of removed) expect(wrapper.text()).not.toContain(id)
     expect(api.chart).toHaveBeenCalled()
     const chart = api.chart.mock.calls.at(-1)![0]
-    expect(chart.legend.data).toEqual(['patchtst', 'remote:yunnan-renewable-patchtst-20260729'])
+    expect(chart.legend.data).toEqual(['random_forest', 'remote:yunnan-load-dlinear-20260729'])
     for (const id of removed) expect(chart.series.map((series: { name: string }) => series.name)).not.toContain(id)
   })
 })

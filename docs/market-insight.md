@@ -2,7 +2,16 @@
 
 本页记录「市场洞察」域（导航分组：市场洞察，路由前缀 `/insight`、`/sjfx/*`）的数据来源约定与真实性修正记录。面向业务与开发，避免「示例数据冒充真实」「跨地区读取他省数据」两类问题再次出现。
 
-> 相关文档：[市场洞察旧图表能力清单](./market-insight-chart-inventory.md)——dljy#2995 云南地区工作区迁移时逐项保留的旧图表能力（现有组件位置、云南新落点、复用方式与验收要点）；[市场洞察公共证据组件与图表选区](./market-insight-common-components.md)——dljy#2996 公共件（区块容器、证据抽屉、历史候选、图表选区、明细表与导出）的接口、文案对照与阶段 A 集成检查；[云南市场洞察价格与价差页](./market-insight-prices.md)——dljy#3007 价格页（价格对象目录、四页签口径与页面状态纪律）；[云南市场洞察供需与水电页](./market-insight-supply.md)——dljy#3008 供需与水电页（分析目录、四页签口径与页面状态纪律）；[云南市场洞察市场总览页](./market-insight-overview.md)——dljy#3009 总览页（区块清单、重点事项与同进度比较口径、下钻与页面状态纪律）；[云南市场洞察跨省与电网边界页](./market-insight-grid.md)——dljy#3024 电网边界页（三页签口径、coverage objects 消费方式、方向/符号纪律与页面状态纪律）；[云南市场洞察场站市场表现页](./market-insight-plants.md)——dljy#3083 场站页（五页签口径、对象语义纪律、不派生承诺与页面状态纪律）。；[云南市场洞察研究工作台页](./market-insight-research.md)——dljy#3080 研究页（预设目录、同类日与受控自定义、事前事后纪律、超限与拒绝原文）；[市场洞察切片门禁记录汇编](./market-insight-gate-records.md)——dljy#3110 云南洞察各切片 PR 的门禁命令、结果与适用面汇编（OpenSpec 16.6/16.7 核销依据）；[市场洞察验收追溯与回滚汇总](./market-insight-traceability.md)——dljy#3112 业务问题 → analysisId/公式 → 源资料 → 文档/测试/PR 追溯总表与按 PR 回滚方式（OpenSpec 17.3，验收追溯入口页）
+> 相关文档：[市场洞察旧图表能力清单](./market-insight-chart-inventory.md)——dljy#2995 云南地区工作区迁移时逐项保留的旧图表能力（现有组件位置、云南新落点、复用方式与验收要点）；[市场洞察公共证据组件与图表选区](./market-insight-common-components.md)——dljy#2996 公共件（区块容器、证据抽屉、历史候选、图表选区、明细表与导出）的接口、文案对照与阶段 A 集成检查；[云南市场洞察价格与价差页](./market-insight-prices.md)——dljy#3007 价格页（价格对象目录、四页签口径与页面状态纪律）；[云南市场洞察供需与水电页](./market-insight-supply.md)——dljy#3008 供需与水电页（分析目录、四页签口径与页面状态纪律）；[云南水电分析页](./market-insight-hydro.md)——dljy#3389 并入旧版体系的云南专属单页（页面结构、整洁纪律、登记面与数据情况）；[云南市场洞察市场总览页](./market-insight-overview.md)——dljy#3009 总览页（区块清单、重点事项与同进度比较口径、下钻与页面状态纪律）；[云南市场洞察跨省与电网边界页](./market-insight-grid.md)——dljy#3024 电网边界页（三页签口径、coverage objects 消费方式、方向/符号纪律与页面状态纪律）；[云南市场洞察场站市场表现页](./market-insight-plants.md)——dljy#3083 场站页（五页签口径、对象语义纪律、不派生承诺与页面状态纪律）。；[云南市场洞察研究工作台页](./market-insight-research.md)——dljy#3080 研究页（预设目录、同类日与受控自定义、事前事后纪律、超限与拒绝原文）；[市场洞察切片门禁记录汇编](./market-insight-gate-records.md)——dljy#3110 云南洞察各切片 PR 的门禁命令、结果与适用面汇编（OpenSpec 16.6/16.7 核销依据）；[市场洞察验收追溯与回滚汇总](./market-insight-traceability.md)——dljy#3112 业务问题 → analysisId/公式 → 源资料 → 文档/测试/PR 追溯总表与按 PR 回滚方式（OpenSpec 17.3，验收追溯入口页）
+
+## 新版地区工作区已封存（2026-09-28，dljy#3387）
+
+云南地区洞察工作区（`/insight/overview|prices|supply|grid-boundaries|plants|research` 六页，Epic dljy#2989）经用户试看后判定不如旧版，**封存、不上线**，市场洞察回归旧版体系（后续整理见 Epic dljy#3386）：
+
+- 装配开关 `VITE_YUNNAN_INSIGHT_WORKSPACE` 保持关闭（默认 0），任何环境都不要打开；云南菜单与页面沿用旧版入口。
+- 存档 tag：`archive/insight-workspace-v1`（指向封存时的 main 提交），需要找回时从该 tag 取代码。
+- 代码暂留：`src/features/regions/yunnan/insight/**` 等工作区代码与测试仍在仓内，**删除须另行征得用户同意**；新代码不得再 import 该目录。
+- 后端保留：`/api/v1/market-insight/*` 洞察分析接口与 `src/services/insight/*`、`src/components/insight/*`、`shared/insight/*` 继续使用——旧版新增的「水电分析」页（dljy#3389）复用它们取数。
 
 ## 背景速览
 
@@ -16,7 +25,7 @@
 
 云南「市场洞察」有三处会误导用户的展示：
 
-1. **市场经营分析（`/sjfx/market-ops`）示例冒充真实**：页面并行取 9 个数据集（7 个公共键 + 售电套餐私有 2 键）。旧逻辑是「只要有一个数据集真实，整页就标成『真实 captured』，其余没有真实数据的字段回落到硬编码示例」。于是云南可能出现：市场价（`market_price`）真实落盘，而页面同时展示「318 家交易对手」「约 1258.6 亿千瓦时（856.2+286.4+116 示例求和）」「示例售电份额」等山西示例值，全部顶着「真实」徽章。
+1. **市场经营分析（`/sjfx/market-ops`，已下线 dljy#3391）示例冒充真实**：页面并行取 9 个数据集（7 个公共键 + 售电套餐私有 2 键）。旧逻辑是「只要有一个数据集真实，整页就标成『真实 captured』，其余没有真实数据的字段回落到硬编码示例」。于是云南可能出现：市场价（`market_price`）真实落盘，而页面同时展示「318 家交易对手」「约 1258.6 亿千瓦时（856.2+286.4+116 示例求和）」「示例售电份额」等山西示例值，全部顶着「真实」徽章。
 2. **出清电量页（`/sjfx/zcqxhdl`）跨地区读取**：云南会去请求 `sdpt_zcqxhdl/__list__`。这个键在后端注册表（dljy 仓 `shared/schema/entities/capture-families.mjs` 的 `datasetOwners`）里登记为**山西三德公司私有清单**，云南（及任何非山西地区）根本没有这个键。旧实现等于跨地区读取他省公司私有数据。
 3. **导航残留「分时行情」（`/sjfx/fshq`）**：云南没有撮合分时行情来源（`sdpt_fshq` 为山西私有族），但云南菜单仍显示该入口。
 
@@ -24,7 +33,7 @@
 
 以下修正是底线行为，**不挂任何界面开关**——关闭未来的新工作区也不会退回旧行为。
 
-1. **市场经营分析逐数据集真实性**（`src/services/market/marketAnalysis.ts`）：
+1. **市场经营分析逐数据集真实性**（`src/services/market/marketAnalysis.ts`；该页已随 dljy#3391 下线、代码于 dljy#3394 删除，以下为历史行为记录）：
    - `loadMarketAnalysis` 返回新增 `realByKey`（逐数据集是否真实）与 `sectionBasis`（逐页签口径：页面有真实数据时，页签至少一个数据集真实为 captured、全无为 empty 诚实空态；整页无真实数据时全部 synthetic 示例）与 `sectionPartial`（页签部分数据集缺失，缺失部分显示为空并提示）。
    - 只要页面**不是**纯示例（有任一真实数据集）：没有真实数据的字段一律返回**空**（空数组 / 空指标列表），`hourData` 恒为空（它从来没有真实来源）；**绝不回落示例**。
    - 只有 9 个数据集全部不真实时，才保持「整页示例 + synthetic 徽章 + 可见模拟数据提示」的原行为（这是合规的整页演示态）。
@@ -33,6 +42,7 @@
    - 契约客户端（`src/services/data/contracts/marketInsightHeavyPagesClient.ts`）硬编码：只有 `region === 'shanxi'` 才请求 `sdpt_zcqxhdl/__list__`；其他地区在客户端层直接返回「本地区不适用」空态，**不发任何请求**（不依赖视图层自觉）。
    - 视图（`ClearingSpotAnalysisView.vue`）在非山西地区显示停用说明卡：「旧出清电量实现已停用：原实现读取的是山西公司专属清单，不代表云南全省出清。获权场站的申报、出清与实际对照将在『场站市场表现』中提供。」不画空图。
    - 能力注册表（`regionModules.ts`）：`/sjfx/zcqxhdl` 云南状态为 `degraded`（路由可达、页面停用说明），云南数据支撑措辞改为准确描述——`sdpt_zcqxhdl` 仅 `listrs_full` 支撑价格分析页，不含出清电量清单。
+   - 菜单入口（dljy#3388，2026-09-28）：云南菜单不再显示「出清现货电量分析」（`navigation.ts` 的 `hiddenInRegionIds: ['yunnan']`，与分时行情同做法）——云南打开只剩停用说明，保留入口没有意义；路由与权限不变，旧链接仍可直达并看到停用说明。
    - 山西行为不变。
 3. **分时行情入口与解释**：
    - `NavItem` 新增可选字段 `hiddenInRegionIds`（`src/data/navigation.ts`、`src/services/governance.ts`）：**只影响菜单显示，不影响路由可达与权限**。`/sjfx/fshq` 设为云南隐藏；云南菜单不再出现「分时行情」，山西/广东/四川菜单不变，旧链接在云南仍可直接访问。
@@ -42,9 +52,9 @@
 
 | 测试文件 | 覆盖 |
 | --- | --- |
-| `src/services/market/marketAnalysis.spec.ts` | 反例（仅 `market_price` 真实 → 其余字段空、无示例值 318/1258.6/856.2/286.4/116）、正例（公共键全真实 → captured）、全不真实 → 整页示例旧行为 |
+| `src/services/market/marketAnalysis.spec.ts`（已随页面下线删除，dljy#3394） | 反例（仅 `market_price` 真实 → 其余字段空、无示例值 318/1258.6/856.2/286.4/116）、正例（公共键全真实 → captured）、全不真实 → 整页示例旧行为 |
 | `src/services/data/contracts/marketInsightHeavyPagesClient.clearing.spec.ts` | 云南/广东/四川不发请求且返回「本地区不适用」空态；山西仍请求 `__list__` 并正常转换；能力声明与拦截口径一致 |
-| `src/services/governance.navigation-region.spec.ts` | 云南菜单不含 `/sjfx/fshq`，山西/广东/四川菜单仍含；云南路由保持可达 |
+| `src/services/governance.navigation-region.spec.ts` | 云南菜单不含 `/sjfx/fshq`、`/sjfx/zcqxhdl`（#3388），山西/广东/四川菜单仍含；云南路由保持可达 |
 
 ### 回滚说明
 
@@ -85,3 +95,16 @@
 | `src/services/governance.insight-aliases.spec.ts` | 既有：规范入口权限等价（RW05 不扩权） |
 
 回退纪律（RW06）：云南工作区受 `VITE_YUNNAN_INSIGHT_WORKSPACE` 装配开关控制，关闭时云南按未开通处理、山西解析原样可用；矩阵用例对开关两种状态分别核对，回退云南界面装配不得改变山西或非洞察模块的任何行为。
+
+## 价格驱动分析页合并（dljy#3390）
+
+「现货价格×新能源」（`/sjfx/zrxgx`）与「现货价格×统调负荷」（`/sjfx/zrxgx2`）两页合并为一页 `/sjfx/price-drivers`「价格驱动分析」：同一份 `relation_scatter` 契约（`kind: renewable|load`），驱动分段切换，同屏呈现「小时×驱动量分档热力图 + 24 小时双驱动敏感度对比柱 + 点选联动的单小时散点拟合」。派生量（相关系数、逐时回归、敏感度、KPI 摘要）仍全部走纯计算层 `src/services/analysis/relationInsight.ts`，口径未随合并改动。
+
+- **跳转兼容**：两条旧地址保留 redirect（`src/router/priceDriversRedirect.ts`）——zrxgx 预选 `driver=renewable`、zrxgx2 预选 `driver=load`，透传 `date/days/mode` 白名单；旧页专属 `view/cols`（散点矩阵控件）已随矩阵删除而丢弃。
+- **数据来源**：山西走 `sdpt_zcqxhdl/list24` 与 `fhlist24` 回放；云南走 `yn_system_forecast` 真实长表经契约适配（xnyzd/xnyg/xnygd 为空数组 → 参考线自然不画）。
+- **山西参考线门控**：新能源驱动散点上的 xnyzd/xnyg/xnygd 参考竖线按 `regionModules` subCapabilities（`zrxgx.*`）判 `hidden` 才显示——云南对这三个维度登记 hidden，不硬造。
+- **降级语义**：另一驱动无权限不发请求、取数失败静默降级为只画当前驱动（整页不报错）；默认运行日按地区取最新有数日（山西 `captureCoverage` 静态表、云南 `fetchCaptureCoverage` 实时区间，取不到回退今天 + 空态说明）。
+- **授权按驱动因素**：合并页不单独授权，授权仍落在两个旧路径上（`governance.priceDriverAccessPaths`：zrxgx=新能源出力、zrxgx2=统调负荷）。合并页可访问 ⇔ 任一驱动可访问，页内驱动选项逐个按旧路径判定（`canAccessPriceDriver`）——如售电经理原本只有统调负荷，合并后仍只能选统调负荷。权限矩阵把合并页展开成「价格驱动分析 · 新能源出力 / · 统调负荷」两行，保存写回旧路径，避免保存后旧路径被清掉导致失权或扩权。
+- **页面整洁纪律**：不写系统生成结论句，口径说明一律「缩略标题 + el-tooltip 悬浮」。
+- **测试**：`src/views/PriceDriversView.component.spec.ts`（驱动切换重查、小时联动、对比柱降级、对比请求迟到不写回、默认日覆盖区间、无权限回落）+ `src/services/governance.price-drivers.spec.ts`（逐角色等价、单驱动角色、矩阵覆盖）+ `PermissionMatrixView.component.spec.ts`（保存写回旧路径）+ `src/router/priceDriversRedirect.spec.ts`（参数白名单与 driver 注入）；`relationInsight.spec.ts` 保持通过（计算口径未动）。
+

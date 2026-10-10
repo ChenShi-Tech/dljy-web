@@ -624,7 +624,7 @@ describe('水电页签', () => {
     await mountPage()
     await switchTab('hydro')
 
-    expect(wrapper!.text()).toContain('请先选择机组群')
+    expect(wrapper!.text()).toContain('请选择机组群')
     expect(queryCallsOf((request) => request.analysisId === HYDRO_GROUPS)).toHaveLength(0)
 
     unitGroupSelect().vm.$emit('update:modelValue', '31 家水电')

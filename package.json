@@ -12,8 +12,10 @@
     "preview": "vite preview",
     "check": "vue-tsc --noEmit",
     "test:unit": "vitest run --configLoader runner",
+    "test:related": "vitest related --configLoader runner",
     "test:coverage": "vitest run --configLoader runner --coverage",
     "lint": "node scripts/check-font-tokens.mjs && eslint . && node --test scripts/shared-fingerprint.test.mjs",
+    "lint:files": "eslint",
     "lint:fix": "eslint . --fix",
     "test:scripts": "node --test scripts/shared-fingerprint.test.mjs",
     "build:customer": "vite build --mode customer",
@@ -21,6 +23,7 @@
   },
   "dependencies": {
     "@element-plus/icons-vue": "^2.3.2",
+    "@floating-ui/dom": "^1.8.0",
     "cesium": "^1.144.0",
     "docx": "^9.7.1",
     "dompurify": "^3.4.13",

@@ -1,6 +1,6 @@
 import { apiGet, apiPatch, apiPost, apiPut, fetchRaw, type ApiRequestOptions } from '@/services/api'
 import { selectedCompanyId } from '@/services/company/companyContext'
-import { companyRegionId } from '@/services/region/regionCompany'
+import { effectiveCompanyRegionId } from '@/services/company/practiceCompany'
 import { currentRegion, selectedRegionId } from '@/services/region/regionContext'
 import type { GridDisclosureEvent, GridDisclosureGroup, GridDisclosureOverlay, GridDisclosureOverview, GridDisclosureProvider, GridGeoListResponse, GridGeoManifest, GridGeoNode, GridGeoNodeListResponse, GridGeoPlant, GridGeoPlantIntegrations, GridGeoPlantLocationRegistryItem, GridGeoRevision, GridGeoWeatherResponse, GridOperatorProfile, GridTopologyManifestResponse, GridTopologySnapshotResponse } from './types'
 import type { GridTopologyEvidenceResponse } from './topology/gridEvidence'
@@ -17,7 +17,8 @@ function cacheScope() {
 function activeCompanyId() {
   const companyId = String(selectedCompanyId.value || '').trim()
   if (!companyId) throw new Error('请先选择当前地区的授权公司')
-  const companyRegion = companyRegionId(companyId)
+  // 练习公司按上级公司的地区判断（#3403 · codex R1-02）
+  const companyRegion = effectiveCompanyRegionId(companyId)
   if (companyRegion !== null && companyRegion !== selectedRegionId.value) {
     throw new Error('当前公司不属于所选地区，请先切换到本地区的授权公司')
   }
