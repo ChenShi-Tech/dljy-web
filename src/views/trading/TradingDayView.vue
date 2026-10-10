@@ -183,8 +183,12 @@ const progress = computed(() => {
   return { done, total: ALL_STAGES.length }
 })
 
-/** 面板产出写回后刷新单据（保持容器持有的为最新，下游步读到刚写的产出）。 */
+/** 面板产出写回后刷新单据（保持容器持有的为最新，下游步读到刚写的产出）。
+ * 迟到守卫：S4 提交重试等慢请求在切标的日后归来时，旧单据不能塞回新标的日的容器——
+ * 否则后续 S5/S6/S7 的读写全落在旧单上（跨单据留痕污染，且 loadDeclaration 不会再跑）。 */
 function onUpdated(d: DeclarationOrder) {
+  if (d.targetDate !== targetDate.value) return
+  if (declaration.value && d.id !== declaration.value.id) return
   declaration.value = d
 }
 

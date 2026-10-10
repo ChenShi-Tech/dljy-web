@@ -46,7 +46,12 @@ function failureText(reason: unknown): string {
   return reason instanceof Error && reason.message ? reason.message : '网络错误（智能体后端未运行？）'
 }
 
+// 迟到守卫（fix-stale-response-guards）：onRegionChange 会重入 load，quant 端点超时上限 45s——
+// 切地区后旧地区的慢响应不能覆盖新地区的数据与红黄绿判级（本页无轮询，错误状态会长期停留）。
+let loadSeq = 0
+
 async function load() {
+  const seq = ++loadSeq
   loading.value = true
   error.value = ''
   reviewFailure.value = null
@@ -59,6 +64,7 @@ async function load() {
     fetchSummary({ window: 'today2' }),
     listAlerts(),
   ])
+  if (seq !== loadSeq) return
   review.value = tasks[0].status === 'fulfilled' ? tasks[0].value : null
   monitor.value = tasks[1].status === 'fulfilled' ? tasks[1].value : null
   hedgeSummary.value = tasks[2].status === 'fulfilled' ? tasks[2].value : null
