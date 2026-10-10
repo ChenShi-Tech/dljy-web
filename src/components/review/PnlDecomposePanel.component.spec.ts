@@ -228,3 +228,37 @@ describe('PnlDecomposePanel', () => {
     expect(wrapper.text()).toContain('本地')
   })
 })
+
+describe('PnlDecomposePanel 迟到守卫（fix-stale-response-guards）', () => {
+  it('连续切月：旧月整月取数迟到不覆盖新月数据', async () => {
+    // 按目标月路由 mock：2026-09/2026-08 立即返回；2026-10（默认月）挂起待手动放行
+    const quick: Record<string, () => PeriodReviewDay[]> = {
+      '2026-09': () => [okDay('2026-09-15', 100, 120)],
+      '2026-08': () => [],
+    }
+    const pending202610: Array<(v: { days: PeriodReviewDay[] }) => void> = []
+    vi.mocked(fetchReviewRange).mockImplementation(((dates: string[]) => {
+      const ym = dates[0].slice(0, 7)
+      if (quick[ym]) return Promise.resolve({ days: quick[ym]() })
+      return new Promise((r) => { pending202610.push(r as (v: { days: PeriodReviewDay[] }) => void) })
+    }) as unknown as typeof fetchReviewRange)
+
+    const wrapper = await settle(mount(PnlDecomposePanel, { props: { spec, tolerancePct: 3, penaltyPrice: 100 } }))
+    const input = wrapper.find('input[type="month"]')
+    const m1 = (input.element as HTMLInputElement).value
+    expect(m1).toBe('2026-10')
+
+    // 默认月（2026-10）两轮仍在途时切到 2026-09：新月数据立即落屏
+    await input.setValue('2026-09')
+    await settle(wrapper)
+    expect(wrapper.text()).toContain('2026-09-15')
+
+    // 旧月整月取数此刻迟到返回：不得覆盖新月（旧月数据不得出现）
+    expect(pending202610.length).toBeGreaterThan(0)
+    for (const r of pending202610) r({ days: [okDay('2026-10-20', 300, 320)] })
+    await settle(wrapper)
+    expect(wrapper.text()).not.toContain('2026-10-20')
+    expect(wrapper.text()).toContain('2026-09-15')
+    wrapper.unmount()
+  })
+})

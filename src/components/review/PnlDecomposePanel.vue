@@ -51,7 +51,12 @@ function prevMonthOf(ym: string): string {
 }
 
 const curProgress = ref<{ done: number; total: number } | null>(null)
+// 迟到守卫（fix-stale-response-guards）：每次切月发起两轮整月取数（20-30s），连续切月时
+// 谁最后返回谁覆盖 data——「选中周却渲染出月聚合」的同款病灶（DeviationAggregatePanel
+// 注释原话）。进度回调与 finally 一并核对，旧月批次不进新月「已取 x/y」文案、不提前收 loading。
+let loadSeq = 0
 async function load() {
+  const seq = ++loadSeq
   loading.value = true
   curDays.value = []
   prevTotalYuan.value = null
@@ -60,10 +65,11 @@ async function load() {
     const [cur, prev] = await Promise.all([
       fetchReviewRange(monthDays(month.value, true), {
         tolerancePct: props.tolerancePct, penaltyPrice: props.penaltyPrice,
-        onProgress: (done, total) => (curProgress.value = { done, total })
+        onProgress: (done, total) => { if (seq === loadSeq) curProgress.value = { done, total } }
       }),
       fetchReviewRange(monthDays(prevMonthOf(month.value)), { tolerancePct: props.tolerancePct, penaltyPrice: props.penaltyPrice })
     ])
+    if (seq !== loadSeq) return
     curDays.value = cur.days.map((day: PeriodReviewDay) => {
       if (!day.ok) return { date: day.date, d: null, pnlYuan: null }
       const d = decomposeDaily(day.result.detail, props.spec)
@@ -77,7 +83,7 @@ async function load() {
     prevTotalYuan.value = prevRoll.days ? prevRoll.totalYuan : null
     prevLabel.value = prevMonthOf(month.value)
   } finally {
-    loading.value = false
+    if (seq === loadSeq) loading.value = false
   }
 }
 onMounted(load)

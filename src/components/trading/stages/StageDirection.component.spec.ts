@@ -128,3 +128,30 @@ describe('StageDirection 参考区收纳（slim-s3-s7-stages）', () => {
     expect(writeBtn!.attributes('disabled')).toBeDefined()
   })
 })
+
+describe('S3 迟到守卫（fix-stale-response-guards）', () => {
+  it('预测在途时切标的日：旧响应被丢弃、面板清空复位，旧日期结论不落新单', async () => {
+    let resolveOld!: (v: unknown) => void
+    runForecastPredictMock.mockImplementation(() => new Promise((r) => { resolveOld = r }))
+    const w = await mountS3({ targetDate: '2026-10-10' })
+    await w.find('.dr-forecast .dr-fc-btn').trigger('click')
+
+    // 预测在途时切标的日（S3 面板常驻不重挂，watch 须作废在途并清状态）
+    await w.setProps({ targetDate: '2026-10-11' })
+    await nextTick()
+    expect(w.find('details.dr-ref').text()).toContain('未跑——跑 2026-10-11 价格预测后自动展开')
+
+    // 旧日期的响应迟到：不得落屏（参考区不得展开出分布摘要），loading 不得被旧轮卡死
+    resolveOld(fixtureForecast())
+    await settle(w, 8)
+    expect(w.find('details.dr-ref').text()).not.toContain('平均带宽')
+    expect(w.find('.dr-forecast .dr-fc-btn').attributes('disabled')).toBeUndefined()
+
+    // 新标的日重新跑预测：照常落屏（守卫不误伤正常取数）
+    runForecastPredictMock.mockResolvedValue(fixtureForecast())
+    await w.find('.dr-forecast .dr-fc-btn').trigger('click')
+    await settle(w, 8)
+    expect(w.find('details.dr-ref').text()).toContain('平均带宽')
+    w.unmount()
+  })
+})

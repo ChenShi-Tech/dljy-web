@@ -86,3 +86,29 @@ describe('价差/告警卡失败态（失败不得判绿）', () => {
     wrapper.unmount()
   })
 })
+
+describe('切地区迟到守卫（fix-stale-response-guards）', () => {
+  it('切地区后旧地区慢响应不覆盖新地区数据与判级', async () => {
+    let resolveOldMonitor!: (v: unknown) => void
+    fetchReview.mockResolvedValue(EMPTY_REVIEW)
+    fetchSummary.mockResolvedValue({ status: 'OK', scheme: { name: '默认' } })
+    listAlertsMock.mockResolvedValue({ alerts: [], open_count: 0 })
+    // 首轮（云南）monitor 挂起；其余端点即刻完成
+    fetchMonitor.mockImplementationOnce(() => new Promise((r) => { resolveOldMonitor = r }))
+    const wrapper = await mountView()
+
+    // 切地区（山西）触发第二轮 load：monitor 返回 1 条异动（黄色关注档）
+    fetchMonitor.mockResolvedValue({ alerts: [{ id: 'a' }], spread_threshold: 80 })
+    const { setCurrentRegionId } = await import('@/services/region/regionContext')
+    setCurrentRegionId('shanxi')
+    await flushPromises()
+    const card = () => cardOf(wrapper, '实时-日前价差异动')
+    expect(card().text()).toContain('1 条')
+
+    // 旧地区（云南）的 monitor 此刻迟到返回 3 条：不得覆盖新地区数据
+    resolveOldMonitor({ alerts: [{ id: 'b' }, { id: 'c' }, { id: 'd' }], spread_threshold: 99 })
+    await flushPromises()
+    expect(card().text()).toContain('1 条')
+    wrapper.unmount()
+  })
+})
