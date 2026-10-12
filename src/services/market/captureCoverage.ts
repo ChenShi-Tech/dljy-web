@@ -19,7 +19,6 @@
  */
 
 import { apiGet } from '@/services/api'
-import { fetchCaptured } from '@/services/captured'
 
 export type DateRange = { start: string; end: string }
 
@@ -123,10 +122,15 @@ export async function fetchCaptureCoverage(
 // 得时回落手工静态表（price 用途，静态批次不会过时）。
 // ---------------------------------------------------------------------------
 
-/** 尾行探针：某数据集最后一个有行日期；失败/空返回 null（不臆造）。 */
+/** 尾行探针：某数据集最后一个有行日期；失败/空返回 null（不臆造）。
+ *  刻意用 apiGet 直连 /api/real 而不是 captured.ts 的 fetchCaptured——后者 import
+ *  regionContext（模块顶层读 window.localStorage），会把本文件拖出 node 环境
+ *  纯函数单测的可测范围（CI 实测踩中，同 cockpitPricePanel 头注释的同类约束）。 */
 async function datasetTailDate(family: string, datasetKey: string, regionId: string): Promise<string | null> {
   try {
-    const res = await fetchCaptured<{ data?: Array<{ operateDate?: unknown }> }>(family, datasetKey, { limit: 1, region: regionId })
+    const res = await apiGet<{ data?: Array<{ operateDate?: unknown }> }>('/api/real', {
+      family, match: datasetKey, region: regionId, limit: 1
+    })
     const tail = res?.data?.[0]
     return typeof tail?.operateDate === 'string' ? tail.operateDate.slice(0, 10) : null
   } catch {
