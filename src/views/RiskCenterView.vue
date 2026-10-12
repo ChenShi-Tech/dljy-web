@@ -44,7 +44,7 @@ const yesterday = new Date(now.getTime() - 86400000)
 const dateStr = `${yesterday.getFullYear()}-${String(yesterday.getMonth() + 1).padStart(2, '0')}-${String(yesterday.getDate()).padStart(2, '0')}`
 
 function failureText(reason: unknown): string {
-  return reason instanceof Error && reason.message ? reason.message : '网络错误（智能体后端未运行？）'
+  return reason instanceof Error && reason.message ? reason.message : '网络错误（预测服务暂不可用，请稍后重试或联系管理员）'
 }
 
 // 迟到守卫（fix-stale-response-guards）：onRegionChange 会重入 load，quant 端点超时上限 45s——
@@ -169,7 +169,7 @@ function levelClass(l: RiskLevel) {
         <template v-if="!alertsFailure">
           <div class="rc-val">{{ alerts.length }} 条</div>
           <div class="rc-tag">{{ RISK_LEVEL_LABEL[alertLevel] }}</div>
-          <div class="rc-hint">复用 /api/agent/alerts 轮询（AlertCenter 同源）</div>
+          <div class="rc-hint">与告警中心同源轮询</div>
         </template>
         <div v-else class="rc-card-empty">
           <strong>告警读取失败</strong>

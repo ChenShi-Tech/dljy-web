@@ -256,7 +256,7 @@ onRegionChange(load)
     <section class="panel">
       <div class="panel-title">
         <h2>申报审批队列</h2>
-        <span>待审批申报单集中处理（DecisionGate 档位与风控结论随单展示，审批留痕 approvalRecord）</span>
+        <span>待审批申报单集中处理（DecisionGate 档位与风控结论随单展示，审批全程留痕）</span>
         <el-checkbox v-model="showRehearsal" size="small" style="margin-left: auto">
           显示历史模拟单（共 {{ modeCounts.REHEARSAL }} · 待审 {{ rehearsalPendingCount }}）
         </el-checkbox>

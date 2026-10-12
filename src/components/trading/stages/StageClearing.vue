@@ -8,9 +8,11 @@
 import { computed, reactive, ref } from 'vue'
 import { Activity, Save, Send, TriangleAlert } from 'lucide-vue-next'
 import {
+  CLEARING_SOURCE_LABEL,
   markDeclarationCleared,
   savePreflight,
   STATUS_LABEL,
+  type ClearingSource,
   type DeclarationOrder
 } from '@/services/declarations'
 import { analyzeClearing, type ClearingAnalysis } from '@/services/trading/clearingReview'
@@ -42,15 +44,17 @@ const busy = ref(false)
 const msg = ref('')
 const error = ref('')
 
-async function register(curve: number[], source: string, note: string) {
+async function register(curve: number[], sourceLabel: string, source: ClearingSource, note: string) {
   if (!decl.value || busy.value) return
   busy.value = true
   msg.value = ''
   error.value = ''
   try {
-    const updated = await markDeclarationCleared(decl.value.id, { clearedCurveMwh96: curve, note })
+    // source 随请求持久化（现货审计二轮 P2）：此前只进一次性 toast，落库恒为 manual，
+    // 合成出清（按申报假定、偏差恒零）与真实手工登记在页面上无法区分。
+    const updated = await markDeclarationCleared(decl.value.id, { clearedCurveMwh96: curve, note, source })
     emit('updated', updated)
-    msg.value = `出清结果已登记（${source}）`
+    msg.value = `出清结果已登记（${sourceLabel}）`
   } catch (e) {
     error.value = e instanceof Error ? e.message : '登记失败'
   } finally {
@@ -60,13 +64,14 @@ async function register(curve: number[], source: string, note: string) {
 
 function registerPasted() {
   if (!parseOk.value) return
-  void register(parsedCleared.value, '手工登记', '出清曲线手工登记（交易平台披露口径）')
+  void register(parsedCleared.value, '手工登记', 'manual', '出清曲线手工登记（交易平台披露口径）')
 }
 function registerFullAward() {
   if (!decl.value) return
   void register(
     [...decl.value.energyCurveMwh96],
     '按申报假定',
+    'assumed_full_award',
     '按申报全额中标假定登记——非平台披露数据，偏差分析将恒为零'
   )
 }
@@ -208,7 +213,7 @@ async function writeBack() {
       <section v-if="analysis" class="cl-panel">
         <h3>
           <Activity :size="14" /> ② 中标偏差判读
-          <span v-if="decl.clearing" class="cl-source">来源：{{ decl.clearing.source }}</span>
+          <span v-if="decl.clearing" class="cl-source">来源：{{ CLEARING_SOURCE_LABEL[decl.clearing.source as ClearingSource] ?? decl.clearing.source }}</span>
         </h3>
         <div class="cl-stats">
           <div class="cl-stat">

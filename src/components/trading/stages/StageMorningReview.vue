@@ -138,11 +138,17 @@ watch(reviewedDate, () => {
 // 昨日窗口（复盘对象日）事件 + near_miss 标注 + 回顾提醒；取数与探针降级留在这里。
 const riskFeedAvailable = ref(false)
 const yesterdayRiskEvents = ref<RiskEventSummary[]>([])
+// 现货审计二轮 P2：补迟到令牌（同文件 loadReviewed/loadExecDeviation 范式）——快速
+// 连续切标的日时，慢响应不得把旧窗口事件写回新窗口；并纳入切地区重载（事件按地区
+// 隔离，fetchRiskEvents 走 identityHeaders 含 x-region-id）。
+let riskToken = 0
 async function loadYesterdayRiskEvents() {
+  const token = ++riskToken
   // 「昨日」按北京日界取窗口（beijingDayStartUtc）——UTC 零点会把窗口后移 8 小时
   const since = beijingDayStartUtc(reviewedDate.value)
   const until = beijingDayStartUtc(props.targetDate)
   const feed = await fetchRiskEvents({ since, until })
+  if (token !== riskToken) return
   riskFeedAvailable.value = feed.available
   yesterdayRiskEvents.value = feed.available ? eventsInWindow(feed.events, since, until) : []
 }
@@ -222,6 +228,7 @@ watch(reviewed, loadExecDeviation)
 // 实际侧强地区相关（只有山西接线），切地区后不重载会把上一个地区的结论留在屏幕上。
 onRegionChange(() => {
   void loadReviewed()
+  void loadYesterdayRiskEvents()
 })
 
 /** 偏差率 = 总偏差电量 / 申报总量；申报为 0 时无从计率。 */

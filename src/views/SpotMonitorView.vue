@@ -15,7 +15,7 @@ import CgnYunnanPriceStatus from '@/components/spot/CgnYunnanPriceStatus.vue'
 import { currentRegion } from '@/services/region/regionContext'
 import { getCurrentUser, type AuthUser } from '@/services/auth'
 import { isCgnYunnanPriceCompany } from '@/services/market/cgnYunnanLivePrice'
-import { clampToCoverage, fetchCaptureCoverage, isOutOfCoverage } from '@/services/market/captureCoverage'
+import { clampToCoverage, fetchCaptureCoverageWithFallback, isOutOfCoverage } from '@/services/market/captureCoverage'
 import {
   allowsDualPriceSeries,
   granularityBadgeText,
@@ -206,7 +206,8 @@ function setAuto(on: boolean) {
 const initialDate = date.value
 async function syncCoverageDefault() {
   if (date.value !== initialDate) return
-  const range = await fetchCaptureCoverage(currentRegion.value.id, 'price')
+  // 带兜底（现货审计二轮 S1）：云南价格数据集缺席覆盖接口时尾行探针补齐，非厂侧账号不再停今天空屏
+  const range = await fetchCaptureCoverageWithFallback(currentRegion.value.id, 'price')
   if (!range || date.value !== initialDate) return
   if (date.value !== range.end) date.value = range.end   // 变更由 watch 触发重载
 }

@@ -113,6 +113,59 @@ export async function fetchCaptureCoverage(
 }
 
 // ---------------------------------------------------------------------------
+// 覆盖缺口兜底（现货审计二轮 S1）：/api/real-coverage 按 region 精确聚合 DB 行，
+// 而云南价格数据集以 region='all' 归档，缺席覆盖返回（实测 da/rt_user_price 不在
+// datasets 里）→ 依赖覆盖钳默认日的页面在云南集体拿 null：现货驾驶舱 tab 回退
+// 2026-05-01 硬编码常量、旗舰「实时价格」落今天空屏、监盘非厂侧账号停今天。
+// 兜底两层：① 云南按用途数据集逐个「尾行探针」（limit=1 取回放层真实尾行日期，
+// 仍是服务层数据事实，不猜日期，取各尾日最小值为交集末日）；② 其余地区/探针不可
+// 得时回落手工静态表（price 用途，静态批次不会过时）。
+// ---------------------------------------------------------------------------
+
+/** 尾行探针：某数据集最后一个有行日期；失败/空返回 null（不臆造）。
+ *  刻意用 apiGet 直连 /api/real 而不是 captured.ts 的 fetchCaptured——后者 import
+ *  regionContext（模块顶层读 window.localStorage），会把本文件拖出 node 环境
+ *  纯函数单测的可测范围（CI 实测踩中，同 cockpitPricePanel 头注释的同类约束）。 */
+async function datasetTailDate(family: string, datasetKey: string, regionId: string): Promise<string | null> {
+  try {
+    const res = await apiGet<{ data?: Array<{ operateDate?: unknown }> }>('/api/real', {
+      family, match: datasetKey, region: regionId, limit: 1
+    })
+    const tail = res?.data?.[0]
+    return typeof tail?.operateDate === 'string' ? tail.operateDate.slice(0, 10) : null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * 带兜底的覆盖区间：优先实时覆盖接口；云南价格数据集（region='all' 归档）用尾行
+ * 探针补齐；再不行回落静态表。仅供「把默认日期钳到有数据的一天」这类 UI 用途——
+ * 任何一层失败都返回 null，调用方保持原默认并由空态诚实说明，绝不猜日期。
+ */
+export async function fetchCaptureCoverageWithFallback(
+  regionId: string,
+  purpose: CoveragePurpose
+): Promise<DateRange | null> {
+  const range = await fetchCaptureCoverage(regionId, purpose)
+  if (range) return range
+  const spec = purpose === 'price' ? PRICE_DATASETS[regionId]
+    : purpose === 'clearing' ? CLEARING_DATASETS[regionId]
+      : undefined
+  if (regionId === 'yunnan' && spec) {
+    const tails = (await Promise.all(
+      spec.datasetKeys.map((key) => datasetTailDate(spec.family, key, regionId))
+    )).filter((t): t is string => t != null)
+    // 交集语义与 queryCoverage 一致：任一数据集无尾行即不可声称交集，保守回落
+    if (tails.length === spec.datasetKeys.length) {
+      const end = tails.sort()[0]
+      return { start: end, end }
+    }
+  }
+  return captureCoverage(regionId, purpose) ?? captureCoverage(regionId, 'price')
+}
+
+// ---------------------------------------------------------------------------
 // 结算族覆盖区间（#2992）：云南结算价页「查看历史资料」入口用。
 // 与上面同一条 /api/real-coverage 通道：yn_spot_settlement 是公司私有族，
 // apiGet 自动带的身份头（x-company-id 等）决定能否看到；无权/失败返回 null，

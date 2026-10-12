@@ -118,6 +118,12 @@ function retryHarness() {
   void checkHarness()
 }
 
+// 智能体离线横幅（现货审计二轮 D 类）：拉起命令只给开发环境自用排障，
+// 非开发构建收敛为业务语言——交易终端用户不应看到 npm 命令与内部端口。
+const devAgentHint = import.meta.env.DEV
+  ? '（开发环境：需执行 npm run install:agent-api（首次）与 npm run dev:agent-api 拉起服务。）'
+  : ''
+
 // 目标日与截止倒计时
 function fmtDate(d: Date): string {
   const local = new Date(d.getTime() + 8 * 3600 * 1000)
@@ -1478,9 +1484,8 @@ onRegionChange(() => {
       </template>
       <template v-else>
         <span>
-          <b>智能体服务未连接</b> — 情报问答与协助起草依赖 agent 后端（端口 8000），
-          手动申报流程不受影响。需要时执行 <code>npm run install:agent-api</code>（首次）和
-          <code>npm run dev:agent-api</code>，服务拉起后本提示会自动消失。
+          <b>智能体服务未连接</b> — 情报问答与协助起草暂不可用，手动申报流程不受影响；
+          服务恢复后本提示会自动消失，也可点击重试。{{ devAgentHint }}
         </span>
         <button class="retry-btn" @click="retryHarness">重试连接</button>
       </template>
@@ -1494,8 +1499,8 @@ onRegionChange(() => {
         <div class="panel-head">
           <h2><LineChart :size="15" /> {{ targetDate }} 价格预测</h2>
           <div class="stat-chips">
-            <span>均价 <b>{{ forecastStats?.mean ?? '—' }}</b></span>
-            <span>价差 <b>{{ forecastStats?.spread ?? '—' }}</b></span>
+            <span>均价 <b>{{ forecastStats?.mean ?? '—' }}</b> 元/MWh</span>
+            <span>价差 <b>{{ forecastStats?.spread ?? '—' }}</b> 元/MWh</span>
           </div>
         </div>
         <CapabilitySupportBadge path="/xhjy/desk" class="forecast-support" />
@@ -1526,10 +1531,13 @@ onRegionChange(() => {
           </div>
           <p v-if="decisionError" class="decision-error">{{ decisionError }}</p>
           <div v-if="cockpit" class="decision-cards">
+            <!-- 现货审计二轮 P1-2：本卡取值是预测电价序列均值（price_forecast P50），
+                 本仓「竞价空间」在其它页面均为电量口径（MWh，负荷−新能源−外来电）——
+                 名实不符会把报价水位判断的输入换名，改按实际渲染内容命名。 -->
             <div class="decision-metric">
-              <span class="metric-label">竞价空间</span>
+              <span class="metric-label">预测均价（P50）</span>
               <b>{{ fmt0(avg(cockpit.price_forecast.points)) }}</b>
-              <small>元/MWh · 带宽 {{ fmt0(avg(cockpit.price_forecast.upper) - avg(cockpit.price_forecast.lower)) }}</small>
+              <small>元/MWh · 预测带宽 {{ fmt0(avg(cockpit.price_forecast.upper) - avg(cockpit.price_forecast.lower)) }}</small>
             </div>
             <div class="decision-metric">
               <span class="metric-label">申报建议</span>
@@ -1797,7 +1805,7 @@ onRegionChange(() => {
               </span>
               <span v-if="isRehearsal && isSelfDeclaration" class="rehearsal-chip">演练自批 · 将留痕</span>
             </div>
-            <textarea v-model="approvalComment" rows="2" placeholder="审批意见（写入 approvalRecord 审计留痕）" />
+            <textarea v-model="approvalComment" rows="2" placeholder="审批意见（写入审计留痕）" />
             <div class="action-row">
               <button class="mini primary" :disabled="busy" @click="decide('approve')">
                 {{ isRehearsal ? '批准（演练）' : '批准' }}

@@ -17,8 +17,7 @@ import type {
 } from '@/services/data/contracts/relationScatterAdapter'
 import { getCurrentUser } from '@/services/auth'
 import { canAccessPriceDriver } from '@/services/governance'
-import { clampToCoverage, fetchCaptureCoverage } from '@/services/market/captureCoverage'
-import { fetchCaptured } from '@/services/captured'
+import { clampToCoverage, fetchCaptureCoverageWithFallback } from '@/services/market/captureCoverage'
 import { onRegionChange } from '@/composables/useRegionReload'
 import RegionDataBanner from '@/components/region/RegionDataBanner.vue'
 import MetricTile from '@/components/common/MetricTile.vue'
@@ -435,33 +434,14 @@ function askInsight() {
   ai.interpret()
 }
 
-// 云南默认运行日校正（仅当用户尚未动过日期）：优先 fetchCaptureCoverage 实时区间。
-// 兜底尾行探针：覆盖接口按 region 精确聚合 DB 行，云南价格数据集以 region='all' 归档时
-// 不会出现在覆盖返回里（实测 da/rt_user_price 缺席）→ fetchCaptureCoverage 得 null、
-// 默认日停在今天、首屏 12 天 0 点。此时取价格与两类驱动量四个「尾行日期」(limit=1)
-// 的最小值钳默认日——仍是数据事实，不是猜的日期。
-async function datasetTailDate(datasetKey: string): Promise<string | null> {
-  try {
-    const body = await fetchCaptured<{ data?: Array<{ operateDate?: unknown }> }>('yn_system_forecast', datasetKey, { limit: 1 })
-    const tail = body?.data?.[0]
-    return typeof tail?.operateDate === 'string' ? tail.operateDate : null
-  } catch {
-    return null
-  }
-}
+// 云南默认运行日校正（仅当用户尚未动过日期）：fetchCaptureCoverageWithFallback
+// 已内置尾行探针兜底（覆盖接口缺 region='all' 价格数据集时按用途数据集取真实尾日，
+// 见 captureCoverage.ts），此处只消费区间末日；驱动量（new_energy/load）覆盖若早于
+// 价格交集末日，散点自然按无 x 值剔除，不虚增点。
 async function syncCoverageDefault() {
   if (runDate.value !== initialRunDate) return
-  const range = await fetchCaptureCoverage(currentRegion.value.id, 'price')
-  let end: string | null = range?.end ?? null
-  if (!range && currentRegion.value.id === 'yunnan') {
-    const tails = await Promise.all([
-      datasetTailDate('da_user_price'),
-      datasetTailDate('rt_user_price'),
-      datasetTailDate('new_energy_actual'),
-      datasetTailDate('load_actual')
-    ])
-    end = tails.filter((t): t is string => t != null).sort()[0] ?? null
-  }
+  const range = await fetchCaptureCoverageWithFallback(currentRegion.value.id, 'price')
+  const end = range?.end ?? null
   if (!end || runDate.value !== initialRunDate) return
   if (runDate.value !== end) runDate.value = end // 变更由 watch 触发重载
 }

@@ -36,7 +36,7 @@ vi.mock('@/services/auth', () => ({ getCurrentUser: () => ({ roleCode: 'ADMIN' }
 const fetchCoverage = vi.fn()
 vi.mock('@/services/market/captureCoverage', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/services/market/captureCoverage')>()
-  return { ...actual, fetchCaptureCoverage: (...args: unknown[]) => fetchCoverage(...args) }
+  return { ...actual, fetchCaptureCoverage: (...args: unknown[]) => fetchCoverage(...args), fetchCaptureCoverageWithFallback: (...args: unknown[]) => fetchCoverage(...args) }
 })
 vi.mock('@/composables/useRegionReload', () => ({ onRegionChange: () => {} }))
 vi.mock('@/composables/useQuerySync', () => ({ useQuerySync: () => {} }))
