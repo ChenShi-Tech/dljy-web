@@ -197,6 +197,8 @@ async function saveToDb() {
 const pulling = ref(false)
 const pullMsg = ref('')
 const pullError = ref('')
+/** 采集源只有云南调度预测：非云南禁用「采集拉取」（跨省串数红线，见 pullFundamentals）。 */
+const isYunnanRegion = computed(() => currentRegion.value.id === 'yunnan')
 /** 拉到的口径说明（哪些字段来自采集、哪些仍是手工），随写回一并留痕。 */
 const pulledFields = ref<string[]>([])
 
@@ -215,6 +217,14 @@ function avgInRange(rows: Array<{ timePoint: string; value: number }>, range: [n
 }
 
 async function pullFundamentals() {
+  // 现货审计二轮 P2：采集源只有云南调度预测（yn_system_forecast），非云南地区拉取
+  // 会把云南数值灌进当前地区的基本面格子、还以可信 capture 口径落库——跨省串读
+  // 踩「非本地区缺数据只能诚实为空」红线。非云南直接拒绝并说明，不拉取。
+  if (currentRegion.value.id !== 'yunnan') {
+    pullError.value = `采集库只有云南调度预测；${currentRegion.value.name}无本省采集源，基本面请手工填写（来源标人工）。`
+    pullMsg.value = ''
+    return
+  }
   pulling.value = true
   pullMsg.value = ''
   pullError.value = ''
@@ -721,8 +731,8 @@ async function writeBack() {
           </el-tooltip>
         </h3>
         <div class="ma-tools">
-          <el-tooltip placement="top" :show-after="150" content="从采集库拉取云南调度预测（yn_system_forecast 族：负荷/新能源/外送三项按标的日聚合；可调机组与备用该族不含，维持人工值）">
-            <button type="button" :disabled="pulling" @click="pullFundamentals">
+          <el-tooltip placement="top" :show-after="150" :content="isYunnanRegion ? '从采集库拉取云南调度预测（yn_system_forecast 族：负荷/新能源/外送三项按标的日聚合；可调机组与备用该族不含，维持人工值）' : '采集库只有云南调度预测，当前地区无本省采集源；基本面请手工填写'">
+            <button type="button" :disabled="pulling || !isYunnanRegion" @click="pullFundamentals">
               {{ pulling ? '拉取中…' : '采集拉取' }}
             </button>
           </el-tooltip>

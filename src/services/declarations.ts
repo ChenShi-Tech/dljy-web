@@ -550,7 +550,19 @@ export async function submitDeclaration(id: string, idempotencyKey: string): Pro
   return (res.data ?? res) as unknown as DeclarationOrder
 }
 
-export async function markDeclarationCleared(id: string, input: { clearedCurveMwh96?: number[]; note?: string } = {}): Promise<DeclarationOrder> {
+// 出清登记来源（现货审计二轮 P2）：「按申报假定」是合成口径（假定全额中标、偏差恒零），
+// 必须与「手工登记」在持久层可区分——后端 mark-cleared 已支持 source 字段（缺省 manual），
+// 此前前端不传导致合成出清落库后与真实登记同徽章，S1 明晨复盘无从分辨。
+export type ClearingSource = 'manual' | 'assumed_full_award'
+export const CLEARING_SOURCE_LABEL: Record<ClearingSource, string> = {
+  manual: '手工登记',
+  assumed_full_award: '按申报假定'
+}
+
+export async function markDeclarationCleared(
+  id: string,
+  input: { clearedCurveMwh96?: number[]; note?: string; source?: ClearingSource } = {}
+): Promise<DeclarationOrder> {
   const res = await apiPost<{ data: DeclarationOrder }>(`${BASE}/${encodeURIComponent(id)}/mark-cleared`, input)
   return (res.data ?? res) as unknown as DeclarationOrder
 }

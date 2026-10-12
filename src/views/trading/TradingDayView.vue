@@ -65,11 +65,18 @@ const calendarSummary = computed(() =>
 
 const targetDate = ref(defaultTargetDate(currentRegion.value.id, isoOf(new Date())) ?? tomorrow())
 
-// 换地区 = 换口径：标的日按新口径重置（旧日期是旧口径下的选择，跟着换不算粗暴）
+// 换地区 = 换口径：标的日按新口径重置（旧日期是旧口径下的选择，跟着换不算粗暴）。
+// 现货审计二轮 P1-1：单据是地区隔离的（请求头 x-region-id 随当前地区注入），而口径
+// 注册表只登记山西（D+1）/新疆（D+2），其余地区默认同为「明天」——山西↔云南切换时
+// targetDate 值不变、其 watch 不触发，旧地区申报单会在新地区上下文里继续被读写。
+// 日期变了由下方 targetDate watch 重载（避免双请求）；没变（同默认日）则此处直接重载。
 watch(
   () => currentRegion.value.id,
   (rid) => {
-    targetDate.value = defaultTargetDate(rid, isoOf(new Date())) ?? tomorrow()
+    const next = defaultTargetDate(rid, isoOf(new Date())) ?? tomorrow()
+    const dateChanged = next !== targetDate.value
+    targetDate.value = next
+    if (!dateChanged) loadDeclaration()
   }
 )
 

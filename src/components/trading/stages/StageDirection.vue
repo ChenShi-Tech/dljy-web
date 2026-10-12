@@ -164,7 +164,7 @@ async function loadForecast() {
     }
   } catch (e) {
     if (token !== forecastToken) return
-    forecastError.value = e instanceof Error ? e.message : '预测服务不可达（agent-backend 8000 未起？）'
+    forecastError.value = e instanceof Error ? e.message : '预测服务不可达，请稍后重试或联系管理员'
   } finally {
     if (token === forecastToken) forecastLoading.value = false
   }
@@ -594,7 +594,7 @@ async function writeBack() {
             </span>
           </template>
           <span v-else-if="!forecastLoading" class="dr-muted">
-            未跑——分布与套利窗口需预测在线（agent-backend 8000）
+            未跑——分布与套利窗口需预测服务在线
           </span>
         </div>
 

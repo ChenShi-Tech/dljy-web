@@ -62,7 +62,8 @@ vi.mock('@/services/market/cgnYunnanLivePrice', () => ({
 }))
 vi.mock('@/services/market/captureCoverage', () => ({
   // 覆盖不可得 → 初始日期回退 props.initialDate（2026-05-01），测试确定性
-  fetchCaptureCoverage: vi.fn(async () => null)
+  fetchCaptureCoverage: vi.fn(async () => null),
+  fetchCaptureCoverageWithFallback: vi.fn(async () => null)
 }))
 vi.mock('@/services/market/spotClient', () => ({
   fetchDailySummary: vi.fn(async (date: string, market: string) => {

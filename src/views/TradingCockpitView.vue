@@ -22,7 +22,7 @@ import { useEChart } from '../composables/useEChart'
 import { axisTooltip, bottomLayoutLegend, bottomToolbox, emptyOverlay, insideZoom } from '@/services/chart/chartOptions'
 import { curveStats } from '@/services/market/spotPrice'
 import { fetchClearingPrice } from '@/services/market/regionClearingPrice'
-import { fetchCaptureCoverage } from '@/services/market/captureCoverage'
+import { fetchCaptureCoverageWithFallback } from '@/services/market/captureCoverage'
 import { fetchLatestForecast } from '@/services/forecast/latestForecast'
 import { buildPricePanel, resolvePanelDate } from '@/services/market/cockpitPricePanel'
 import RegionDataBanner from '@/components/region/RegionDataBanner.vue'
@@ -384,7 +384,9 @@ async function renderChart() {
       // 数日（今天 08-22 时节点电价最新到 08-18），钉在今天就永远落在无数据的日期上——
       // 此前正是因此长期显示 synth96 合成的假曲线与编造的 KPI。
       const region = currentRegion.value.id
-      const coverage = await fetchCaptureCoverage(region, 'clearing')
+      // 覆盖带兜底（现货审计二轮 S1）：云南价格数据集 region='all' 缺席覆盖接口，
+      // 原实现拿 null → 日期钉今天 → 山西/云南非厂侧账号首屏恒空图
+      const coverage = await fetchCaptureCoverageWithFallback(region, 'clearing')
       const date = resolvePanelDate(fmtDate(today), coverage)
       const [clearing, forecast] = await Promise.all([
         fetchClearingPrice(region, date),
@@ -647,7 +649,7 @@ onBeforeUnmount(() => {
             <p v-if="bidPlan.mock" class="muted disc-mock">⚠ 结算系数为 mock 占位（{{ bidPlan.mockFields.join('、') || '云南系数未确认' }}），金额口径为估算。</p>
             <p class="muted disc-src">{{ bidPlan.basisNote }}（{{ bidPlan.planId }}）。</p>
           </template>
-          <p v-else class="muted">暂无当日 ok 报价方案；agent-backend 离线或无方案时保持空态。</p>
+          <p v-else class="muted">暂无当日可用的报价方案（报价服务离线或当日未生成时保持空态）。</p>
         </section>
       </div>
 
