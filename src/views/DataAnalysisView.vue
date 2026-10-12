@@ -90,8 +90,9 @@ async function load() {
   mainChart.showLoading()
   try {
     const contract = await fetchMarketInsightZsjfxMetaContract({ region: currentRegion.value.id })
-    contractBasis.value = normalizeContractBasis(contract.basis)
     if (generation !== loadGeneration) return
+    // 口径标记须在代次守卫之后写入：切地区时旧响应晚归不得把 basis 写错地区（AI 上下文会引用）
+    contractBasis.value = normalizeContractBasis(contract.basis)
     meta.value = contract.blocks.zsjfx.meta ?? null
     if (!meta.value) throw new Error('暂无可用指标元数据')
     dateSet.value = new Set(meta.value.dates)
@@ -686,15 +687,17 @@ onRegionChange(load)
     <!-- 顶部工具条 -->
     <div class="toolbar">
       <el-button-group class="mode">
-        <el-button size="small" type="success">展示日期</el-button>
+        <el-tooltip content="线上功能，暂未接入" placement="bottom"><span><el-button size="small" disabled>展示日期</el-button></span></el-tooltip>
         <el-tooltip content="线上功能，暂未接入" placement="bottom"><span><el-button size="small" disabled>弹出日历</el-button></span></el-tooltip>
         <el-tooltip content="线上功能，暂未接入" placement="bottom"><span><el-button size="small" disabled>分别指定</el-button></span></el-tooltip>
       </el-button-group>
       <el-date-picker v-model="viewMonth" type="month" value-format="YYYY-MM" size="small"
         :clearable="false" placeholder="选择月份" style="width: 130px" />
-      <el-select v-model="company" size="small" style="width: 130px">
-        <el-option label="默认公司" value="默认公司" />
-      </el-select>
+      <el-tooltip content="线上功能，暂未接入（当前固定为默认公司口径）" placement="bottom">
+        <span><el-select v-model="company" size="small" disabled style="width: 130px">
+          <el-option label="默认公司" value="默认公司" />
+        </el-select></span>
+      </el-tooltip>
       <span class="spacer" />
       <el-button size="small" type="warning" :icon="FolderOpen" @click="onOpenViews">我的视图</el-button>
       <el-button size="small" :icon="Tag" @click="annoDialog = true">标注</el-button>

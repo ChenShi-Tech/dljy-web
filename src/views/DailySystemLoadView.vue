@@ -82,8 +82,9 @@ async function load() {
   data.value = null
   try {
     const contract = await fetchMarketInsightActualLoadContract({ region: currentRegion.value.id })
-    contractBasis.value = normalizeContractBasis(contract.basis)
     if (generation !== loadGeneration) return
+    // 口径标记须在代次守卫之后写入：切地区时旧响应晚归不得把 basis 写错地区（AI 上下文会引用）
+    contractBasis.value = normalizeContractBasis(contract.basis)
     data.value = contract.blocks.actual_load
     if (!data.value.sources.system) {
       throw new Error('无 system 数据')

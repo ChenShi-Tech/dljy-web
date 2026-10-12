@@ -22,6 +22,7 @@ import {
   type HeatmapData
 } from '@/services/market/spotClient'
 import { hasCgnYunnanPriceEntitlement } from '@/services/market/cgnYunnanLivePrice'
+import { IS_CUSTOMER_EDITION } from '@/services/edition'
 import InfoHint from '@/components/common/InfoHint.vue'
 import DataStatusLine from '@/components/trading/stages/DataStatusLine.vue'
 
@@ -36,6 +37,12 @@ const heroInfo = computed(() =>
     ? '选择日期与市场后，查看原生 15m/1h 节点曲线、全网节点热力图与日聚合明细。来源为中广核云南厂侧私有 PostgreSQL，非电网官方接口。'
     : '选择日期与市场后，查看原生 15m/1h 节点曲线、全网节点热力图与日聚合明细。来源为平台已入库的公共节点电价行情，非中广核厂侧私有数据。'
 )
+
+// A3：空态摄取指引按交付档分层（编译期常量，rollup 消掉另一分支字符串——客户产物
+// 不含内部轮询名/库名）；内部档保留运维可执行的原文。
+const INGEST_GUIDE = IS_CUSTOMER_EDITION
+  ? '该日数据暂未就绪，可更换日期/市场重试，或联系技术支持；不会以其他来源数据替代。'
+  : '请检查中广核云南 prices/all 常驻轮询及该日期/市场的私有 PostgreSQL 数据；不会回落公共节点价。'
 
 const region = ref('云南')
 const date = ref(new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Shanghai' }).format(new Date()))
@@ -256,7 +263,7 @@ function buildSeriesOption() {
         color: cc.axisLabel,
         fontSize: 10,
         // 15m 与 1h 都只标整点；不把 1h 源升采样成 96 点。
-        formatter: (v: string) => (String(v).endsWith(':00') || /:00$/.test(String(v)) ? String(v) : '')
+        formatter: (v: string) => (String(v).endsWith(':00') ? String(v) : '')
       },
       axisLine: { lineStyle: { color: cc.splitLine } }
     },
@@ -442,12 +449,13 @@ onRegionChange(() => {
     </section>
 
     <el-alert v-if="errorMsg" type="error" :closable="false" :title="errorMsg" class="np-alert" show-icon />
-    <!-- 摄取指引降层（R5）：事实一行可见，完整指引展开可达 -->
+    <!-- 摄取指引降层（R5）：事实一行可见，完整指引展开可达。
+         A3：指引按交付档分层（编译期常量，客户产物不含内部轮询/库名），内部档保留运维原文。 -->
     <DataStatusLine
       v-else-if="ingestHint"
       class="np-statusline"
       summary="后端暂无该日节点电价数据"
-      :items="[{ tone: 'caveat', text: '请检查中广核云南 prices/all 常驻轮询及该日期/市场的私有 PostgreSQL 数据；不会回落公共节点价。' }]"
+      :items="[{ tone: 'caveat', text: INGEST_GUIDE }]"
     />
 
     <section class="np-charts">
@@ -464,7 +472,7 @@ onRegionChange(() => {
       </ChartCard>
 
       <ChartCard
-        title="节点价格热力图（Top 40 节点 × 96 时段）"
+        :title="`节点价格热力图（Top 40 节点 × ${heatmap?.time_points?.length ?? '—'} 时段）`"
         :height="440"
         :loading="heatmapLoading"
         :build-option="buildHeatmapOption"
@@ -500,18 +508,21 @@ onRegionChange(() => {
   gap: 14px;
 }
 
+/* 主题 token 化（P1）：原硬编码 #fff/#dfe7eb/#50616e 在 arc/flow 深色主题下呈白卡贴深底
+   （实测 rgb(255,255,255) 卡片 vs rgb(7,13,24) 页底），与全站 var(--panel) 体系脱节；
+   兜底值保持 classic 观感不变。 */
 .np-hero {
   padding: 10px 14px;
-  border: 1px solid #dfe7eb;
+  border: 1px solid var(--line, #dfe7eb);
   border-radius: 8px;
-  background: linear-gradient(135deg, #ffffff 0%, #eef7f3 55%, #f7fbff 100%);
+  background: var(--panel-sub, #f7fbff);
 }
 
 .np-kicker {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  color: #0f766e;
+  color: var(--primary, #0f766e);
   font-size: var(--font-md);
   font-weight: 650;
 }
@@ -526,9 +537,9 @@ onRegionChange(() => {
   align-items: flex-end;
   gap: 14px;
   padding: 14px 16px;
-  border: 1px solid #dfe7eb;
+  border: 1px solid var(--line, #dfe7eb);
   border-radius: 8px;
-  background: #fff;
+  background: var(--panel, #fff);
 }
 
 .np-field {
@@ -539,7 +550,7 @@ onRegionChange(() => {
 }
 
 .np-field > span {
-  color: #50616e;
+  color: var(--muted, #50616e);
   font-size: var(--font-sm);
   font-weight: 650;
 }
@@ -577,9 +588,9 @@ onRegionChange(() => {
 
 .np-table-card {
   padding: 16px;
-  border: 1px solid #dfe7eb;
+  border: 1px solid var(--line, #dfe7eb);
   border-radius: 8px;
-  background: #fff;
+  background: var(--panel, #fff);
 }
 
 .np-table-head {
@@ -595,12 +606,12 @@ onRegionChange(() => {
   align-items: center;
   gap: 6px;
   margin: 0;
-  color: #172b3a;
+  color: var(--text, #172b3a);
   font-size: var(--font-15);
 }
 
 .np-table-sub {
-  color: #687987;
+  color: var(--muted, #687987);
   font-size: var(--font-sm);
 }
 

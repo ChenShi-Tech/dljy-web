@@ -4,7 +4,7 @@
 // 数据经市场洞察价格分析契约归一为 averageCurves / dayCurves / dailyStats。
 // 3D: 选定日期区间内每天的 96 点价格曲线(时间×日期×价格);时点切面=平均日内;日期切面=按天 max/min/avg。
 import { Sparkles } from 'lucide-vue-next'
-import { onMounted, onBeforeUnmount, onActivated, ref, nextTick, watch } from 'vue'
+import { onMounted, onBeforeUnmount, onActivated, ref, nextTick, watch, computed } from 'vue'
 import { useRoute } from 'vue-router'
 import * as echarts from 'echarts'
 import 'echarts-gl'
@@ -119,6 +119,17 @@ function selectedDates(): string[] {
   const [s, e] = dateRange.value
   return allDates.value.filter((d) => d >= s && d <= e)
 }
+
+// 运行日期只能选数据覆盖内（allDates 升序）：手选无数据日期只会得到空图，与驾驶舱
+// 新能源面板同款禁选（P3）。allDates 为空（未加载/失败）时不限制，避免误伤。
+function disabledRangeDate(date: Date): boolean {
+  if (!allDates.value.length) return false
+  const y = date.getFullYear()
+  const m = String(date.getMonth() + 1).padStart(2, '0')
+  const d = String(date.getDate()).padStart(2, '0')
+  const s = `${y}-${m}-${d}`
+  return s < allDates.value[0] || s > allDates.value[allDates.value.length - 1]
+}
 function renderAll() { render3D(); renderTimeSlice(); renderDateSlice() }
 
 // 每条线一个独立颜色(按色相均匀分布)
@@ -164,18 +175,37 @@ function render3D() {
   }, true)
 }
 
-// 右上:时点切面(日前均价/实时均价,96 点)
+// 时点切面按所选区间现算（实测口径缺陷：契约 averageCurves 是全窗口日内均价，不随
+// 运行日期筛选变化——收窄区间后三图口径分裂）。从 dayCurves 逐日 96 点曲线按选中日期
+// 重算日内均值；选中区间内无该价类逐日数据时该系列不显示（诚实空态，不回退全期均值）。
+const selectedAverageCurves = computed<PriceCurveViewModel[]>(() => {
+  const set = new Set(selectedDates())
+  return ([TYPE.rq, TYPE.ss] as const)
+    .map((market) => {
+      const rows = dayCurves.value.filter((r) => r.market === market && set.has(r.date))
+      if (!rows.length) return null
+      const points: Array<number | null> = []
+      for (let i = 0; i < 96; i += 1) {
+        const vals = rows.map((r) => curve(r)[i]).filter((v): v is number => typeof v === 'number')
+        points.push(vals.length ? vals.reduce((s, x) => s + x, 0) / vals.length : null)
+      }
+      return { market, label: 'average', date: 'average', points, unit: 'yuan_per_mwh' as const }
+    })
+    .filter((r): r is PriceCurveViewModel => r !== null)
+})
+
+// 右上:时点切面(日前均价/实时均价,96 点,按所选区间)
 function renderTimeSlice() {
   const cc = chartChrome()
   const series: any[] = []
-  const rq = averageCurves.value.find((r) => r.market === TYPE.rq)
-  const ss = averageCurves.value.find((r) => r.market === TYPE.ss)
+  const rq = selectedAverageCurves.value.find((r) => r.market === TYPE.rq)
+  const ss = selectedAverageCurves.value.find((r) => r.market === TYPE.ss)
   if (showRq.value && rq) series.push({ name: '日前均价', type: 'line', step: 'start', showSymbol: false, lineStyle: { color: '#4472C4', width: 2 }, itemStyle: { color: '#4472C4' }, data: curve(rq) })
   if (showSs.value && ss) series.push({ name: '实时均价', type: 'line', step: 'start', showSymbol: false, lineStyle: { color: '#70AD1F', width: 2 }, itemStyle: { color: '#70AD1F' }, data: curve(ss) })
   tHandle.setOption({
-    title: { text: '时点切面 · 日内均价', left: 8, top: 4, textStyle: { fontSize: 12, color: '#303133' } },
+    title: { text: '时点切面 · 区间日内均价', left: 8, top: 4, textStyle: { fontSize: 12, color: '#303133' } },
     legend: { top: 26, left: 'center', type: 'scroll', data: series.map((s) => s.name), textStyle: { fontSize: 11 } },
-    toolbox: bottomToolbox('时点切面-日内均价', 8),
+    toolbox: bottomToolbox('时点切面-区间日内均价', 8),
     tooltip: axisTooltip({ unit: '元/MWh' }),
     dataZoom: insideZoom(),
     grid: { left: 52, right: 16, top: 56, bottom: 48 },
@@ -282,7 +312,7 @@ onRegionChange(load)
     <div class="toolbar">
       <span class="lbl">运行日期</span>
       <el-date-picker v-model="dateRange" type="daterange" value-format="YYYY-MM-DD" unlink-panels range-separator="~"
-        start-placeholder="开始" end-placeholder="结束" size="small" :clearable="false" style="width: 240px" />
+        start-placeholder="开始" end-placeholder="结束" size="small" :clearable="false" :disabled-date="disabledRangeDate" style="width: 240px" />
       <el-checkbox v-model="showRq" label="日前价" border size="small" style="margin-left: 8px" />
       <el-checkbox v-model="showSs" label="实时价" border size="small" />
       <span class="spacer" />
