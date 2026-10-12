@@ -22,12 +22,20 @@ import {
   type HeatmapData
 } from '@/services/market/spotClient'
 import { hasCgnYunnanPriceEntitlement } from '@/services/market/cgnYunnanLivePrice'
+import InfoHint from '@/components/common/InfoHint.vue'
+import DataStatusLine from '@/components/trading/stages/DataStatusLine.vue'
 
 // 控件状态
 // 来源标注必须与实际取数路径同源：spotClient 只在「云南 + 账号属中广核云南」时走厂侧
 // 专属端点，其余账号静默落到公共节点价端点。标注写死会让非中广核账号读着公共数据、
 // 页面却宣称是中广核厂侧私有数据，来源错标（#1791）。复用 spotClient 同一个谓词。
 const usesCgnPrivatePrice = computed(() => hasCgnYunnanPriceEntitlement())
+// hero ⓘ 全文：教学句 + 来源全文（原文保留，只降呈现层级）
+const heroInfo = computed(() =>
+  usesCgnPrivatePrice.value
+    ? '选择日期与市场后，查看原生 15m/1h 节点曲线、全网节点热力图与日聚合明细。来源为中广核云南厂侧私有 PostgreSQL，非电网官方接口。'
+    : '选择日期与市场后，查看原生 15m/1h 节点曲线、全网节点热力图与日聚合明细。来源为平台已入库的公共节点电价行情，非中广核厂侧私有数据。'
+)
 
 const region = ref('云南')
 const date = ref(new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Shanghai' }).format(new Date()))
@@ -377,11 +385,13 @@ onRegionChange(() => {
   <div class="node-price-panel">
     <RegionDataBanner />
 
+    <!-- hero 一行化（R5）：操作教学句进 ⓘ；来源标注保持直接可见（#1791 防来源错标，不折叠） -->
     <section class="np-hero">
       <div class="np-hero-main">
         <div class="np-kicker"><MapPin :size="16" /><span>云南 · 现货节点电价分析</span></div>
-        <p v-if="usesCgnPrivatePrice">选择日期与市场后，查看原生 15m/1h 节点曲线、全网节点热力图与日聚合明细。来源为中广核云南厂侧私有 PostgreSQL，非电网官方接口。</p>
-        <p v-else>选择日期与市场后，查看原生 15m/1h 节点曲线、全网节点热力图与日聚合明细。来源为平台已入库的公共节点电价行情，非中广核厂侧私有数据。</p>
+        <InfoHint :text="heroInfo" label="说明" />
+        <el-tag v-if="usesCgnPrivatePrice" size="small" type="warning">中广核厂侧私有库 · 非电网官方</el-tag>
+        <el-tag v-else size="small" type="info">公共节点电价行情</el-tag>
       </div>
     </section>
 
@@ -432,14 +442,12 @@ onRegionChange(() => {
     </section>
 
     <el-alert v-if="errorMsg" type="error" :closable="false" :title="errorMsg" class="np-alert" show-icon />
-    <el-alert
+    <!-- 摄取指引降层（R5）：事实一行可见，完整指引展开可达 -->
+    <DataStatusLine
       v-else-if="ingestHint"
-      type="warning"
-      :closable="false"
-      class="np-alert"
-      show-icon
-      title="后端暂无该日节点电价数据"
-      description="请检查中广核云南 prices/all 常驻轮询及该日期/市场的私有 PostgreSQL 数据；不会回落公共节点价。"
+      class="np-statusline"
+      summary="后端暂无该日节点电价数据"
+      :items="[{ tone: 'caveat', text: '请检查中广核云南 prices/all 常驻轮询及该日期/市场的私有 PostgreSQL 数据；不会回落公共节点价。' }]"
     />
 
     <section class="np-charts">
@@ -493,7 +501,7 @@ onRegionChange(() => {
 }
 
 .np-hero {
-  padding: 16px 18px;
+  padding: 10px 14px;
   border: 1px solid #dfe7eb;
   border-radius: 8px;
   background: linear-gradient(135deg, #ffffff 0%, #eef7f3 55%, #f7fbff 100%);
@@ -508,10 +516,8 @@ onRegionChange(() => {
   font-weight: 650;
 }
 
-.np-hero p {
-  margin: 8px 0 0;
-  color: #5c6b76;
-  line-height: 1.7;
+.np-statusline {
+  margin-bottom: 10px;
 }
 
 .np-controls {

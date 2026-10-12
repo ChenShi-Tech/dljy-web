@@ -48,14 +48,15 @@ export interface HeatmapMatrix {
 
 /** KPI 摘要。 */
 export interface RelationSummary {
-  /** 全时段汇总的 Pearson 相关系数（所有小时的点汇入一池）。 */
-  overallR: number
+  /** 全时段汇总的 Pearson 相关系数（所有小时的点汇入一池）；无有效样本（<2 点）为 null——
+   *  空池回归的 r=0 是「没算」不是「零相关」，显示侧应呈现缺测（—）而非假 0。 */
+  overallR: number | null
   /** 相关性最强（|r| 最大）的小时；无有效样本为 null。 */
   strongestHour: number | null
   /** 相关性最弱（|r| 最小、n≥2）的小时；无有效样本为 null。 */
   weakestHour: number | null
-  /** 各小时斜率的均值（元/MWh per MW）。 */
-  meanSlope: number
+  /** 各小时斜率的均值（元/MWh per MW）；无有效小时（n≥2）为 null，不显示假 0。 */
+  meanSlope: number | null
   /** 实际参与统计的天数（xd 截取后长度）。 */
   sampleDays: number
   /** 参与汇总的总点数。 */
@@ -222,9 +223,9 @@ export function summaryKpis(
   }
   const meanSlope = valid.length
     ? valid.reduce((s, b) => s + b.slope, 0) / valid.length
-    : 0
+    : null
   return {
-    overallR: overall.r,
+    overallR: pooled.length >= 2 ? overall.r : null,
     strongestHour,
     weakestHour,
     meanSlope,

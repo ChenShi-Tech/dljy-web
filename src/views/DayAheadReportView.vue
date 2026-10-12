@@ -204,8 +204,10 @@ function render() {
     xAxis: { type: 'category', data: POINTS_96, boundaryGap: false, axisLabel: { color: cc.axisLabel, fontSize: 9, interval: 11 } },
     yAxis: [
       { type: 'value', name: '电量 MWh', min: 0, scale: true, nameTextStyle: { color: cc.axisLabel, fontSize: 10 }, axisLabel: { color: cc.axisLabel, fontSize: 9 }, splitLine: { lineStyle: { color: cc.splitLine } } },
-      { type: 'value', name: '价格', min: 0, max: 800, position: 'right', offset: 0, nameTextStyle: { color: cc.axisLabel, fontSize: 10 }, axisLabel: { color: cc.axisLabel, fontSize: 9 }, splitLine: { show: false } },
-      { type: 'value', name: '价差', min: -800, max: 800, position: 'right', offset: 58, nameTextStyle: { color: cc.axisLabel, fontSize: 10 }, axisLabel: { color: cc.axisLabel, fontSize: 9 }, splitLine: { show: false } },
+      // 价格/价差轴自适应（同 zcqjj 轴修法）：写死 ±800 会把真实尖峰画出轴外——
+      // 采集实测 27/92 天存在 >800 的点、最高 1577.3（2026-04-06），尖峰段被视觉抹平。
+      { type: 'value', name: '价格', scale: true, position: 'right', offset: 0, nameTextStyle: { color: cc.axisLabel, fontSize: 10 }, axisLabel: { color: cc.axisLabel, fontSize: 9 }, splitLine: { show: false } },
+      { type: 'value', name: '价差', scale: true, position: 'right', offset: 58, nameTextStyle: { color: cc.axisLabel, fontSize: 10 }, axisLabel: { color: cc.axisLabel, fontSize: 9 }, splitLine: { show: false } },
       { type: 'value', name: '策略', min: 0, max: 2, position: 'right', offset: 116, nameTextStyle: { color: cc.axisLabel, fontSize: 10 }, axisLabel: { color: cc.axisLabel, fontSize: 9 }, splitLine: { show: false } },
       // zcqjj 专用轴：语义未定（#1468），故 scale 自适应而非写死量纲，原 min:0/max:100 正是曲线恒不可见的成因。
       { type: 'value', name: 'zcqjj', scale: true, position: 'right', offset: 174, nameTextStyle: { color: cc.axisLabel, fontSize: 10 }, axisLabel: { color: cc.axisLabel, fontSize: 9 }, splitLine: { show: false } }

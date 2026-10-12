@@ -24,7 +24,13 @@ function todayISO() {
 }
 
 async function refresh() {
-  alerts.value = (await listAlerts()).alerts
+  // listAlerts 失败抛错（告警链路不可用不得冒充「无告警」）；顶栏角标保持静默——
+  // 保留旧值不打断页面，风控页等其他消费方自行按失败呈现。
+  try {
+    alerts.value = (await listAlerts()).alerts
+  } catch {
+    /* 后端离线：保留上一次告警值 */
+  }
 }
 async function scanNow() {
   scanning.value = true

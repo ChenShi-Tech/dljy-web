@@ -10,6 +10,7 @@
 // 储能立场多一张充放电计划单（折叠块），写回后放行清单的 SOC 判据自动生效。
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { FileUp, Link2, PenLine, PhoneCall, ShieldCheck, Save, Layers } from 'lucide-vue-next'
+import InfoHint from '@/components/common/InfoHint.vue'
 import {
   buildChecklist,
   evaluateRelease,
@@ -36,6 +37,7 @@ import {
   runDeclarationRiskCheck,
   EDITABLE_DRAFT_STATUSES,
   STATUS_LABEL,
+  secondSignatureNotice,
   submitDeclaration,
   submitDeclarationForApproval,
   updateDeclarationCurve,
@@ -193,7 +195,7 @@ const busy = ref(false)
 const actionMsg = ref('')
 const actionError = ref('')
 
-async function run(action: () => Promise<DeclarationOrder>, doneMsg: string) {
+async function run(action: () => Promise<DeclarationOrder>, doneMsg: string | ((updated: DeclarationOrder) => string)) {
   if (busy.value) return
   busy.value = true
   actionMsg.value = ''
@@ -201,7 +203,7 @@ async function run(action: () => Promise<DeclarationOrder>, doneMsg: string) {
   try {
     const updated = await action()
     emit('updated', updated)
-    actionMsg.value = doneMsg
+    actionMsg.value = typeof doneMsg === 'function' ? doneMsg(updated) : doneMsg
   } catch (e) {
     actionError.value = e instanceof Error ? e.message : '操作失败'
   } finally {
@@ -325,7 +327,11 @@ function doApprove(decision: 'approve' | 'reject') {
   if (!decl.value) return
   void run(
     () => approveDeclaration(decl.value!.id, decision, approveComment.value || undefined),
-    decision === 'approve' ? '已批准' : '已驳回'
+    // L3 双签第一签：服务端只落签不转态——明示待第二签，不谎报「已批准」
+    // （文案单源 secondSignatureNotice，与申报工作台/审批队列共用，防漂移）。
+    decision === 'approve'
+      ? (updated) => secondSignatureNotice(updated) ?? '已批准'
+      : '已驳回'
   )
 }
 // 提交失败自动重试 3 次 → 人工通道（手册 S4 异常处理）。非瞬态错误（过截止/状态机
@@ -551,6 +557,7 @@ const receiptChecks = computed<ReceiptCheckRow[] | null>(() => {
         <span class="dc-verdict" :class="verdict.allowed ? 'ok' : 'bad'">
           {{ verdict.passedCount }}/{{ verdict.total }} {{ verdict.allowed ? '可进入提交' : '不可提交' }}
         </span>
+        <InfoHint text="本清单是交易员的推演台；权威把关在服务端——下方「风控检查」用同一套规则重算并阻断硬约束（409 拦转态），故此处结论不直接改单据状态。" />
       </h3>
       <p class="dc-summary" :class="verdict.allowed ? 'ok' : 'bad'">{{ verdict.summary }}</p>
 
@@ -636,10 +643,6 @@ const receiptChecks = computed<ReceiptCheckRow[] | null>(() => {
           </li>
         </ul>
       </div>
-      <p class="dc-note">
-        本清单是交易员的推演台；**权威把关在服务端**——下方「风控检查」用同一套规则重算并
-        阻断硬约束（409 拦转态），故此处结论不直接改单据状态。
-      </p>
     </section>
 
     <!-- ③ 状态机 -->
@@ -800,7 +803,6 @@ const receiptChecks = computed<ReceiptCheckRow[] | null>(() => {
 .dc-overrides li { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; padding: 5px 8px; border-radius: 6px; background: var(--panel-sub, #f8fafc); margin-bottom: 4px; }
 .dc-overrides button { margin-left: auto; padding: 1px 8px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 4px; background: var(--panel, #fff); cursor: pointer; font-size: var(--font-xs); }
 
-.dc-note { margin: 8px 0 0; font-size: var(--font-xs); line-height: 1.6; color: var(--warning, #a16207); }
 
 .dc-machine { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .dc-status { padding: 3px 12px; border-radius: 9px; background: var(--primary-tint, #eff6ff); color: var(--accent, #1d4ed8); font-size: var(--font-sm); font-weight: 600; }

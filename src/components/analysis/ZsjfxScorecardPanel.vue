@@ -2,6 +2,7 @@
 // ZsjfxScorecardPanel — 预测×实际对拍结果面板（Epic #3591 S2 / dljy#3594，ZW-04）。
 // 只渲染服务端确定性算好的指标（MAE/MAPE/方向命中率/逐时段误差/异动），不在前端重算；
 // 「预测缺失 N 天未计入」作为一等展示；无可计分日/配对不可用时如实说明，不显示空指标卡。
+import { Sparkles } from 'lucide-vue-next'
 import { computed } from 'vue'
 import DataState from '@/components/common/DataState.vue'
 import type { ZsjfxScorecard } from '@/services/insight/zsjfxScorecardClient'
@@ -63,7 +64,7 @@ const num = (v: number | null | undefined) => (v == null ? '—' : String(v))
             <el-radio-button value="day">当日</el-radio-button>
             <el-radio-button value="30d">近 30 天</el-radio-button>
           </el-radio-group>
-          <el-button size="small" type="success" plain @click="emit('interpret')">✨ 解读本对拍</el-button>
+          <el-button size="small" type="success" plain :icon="Sparkles" @click="emit('interpret')">解读本对拍</el-button>
         </div>
 
         <el-alert
@@ -76,7 +77,7 @@ const num = (v: number | null | undefined) => (v == null ? '—' : String(v))
         <template v-else>
           <div class="metric-cards">
             <div class="metric"><em>{{ num(totals?.mae) }}</em><span>MAE{{ scorecard.pair.id.includes('price') ? '（元/MWh）' : '' }}</span></div>
-            <div class="metric"><em>{{ totals?.mape == null ? '—' : `${totals.mape.toFixed(1)}%` }}</em><span>MAPE（服务端百分数口径）</span></div>
+            <div class="metric"><em>{{ totals?.mape == null ? '—' : `${totals.mape.toFixed(1)}%` }}</em><span>MAPE（百分数）</span></div>
             <div class="metric"><em>{{ pct(totals?.directionHitRate) }}</em><span>方向命中率</span></div>
             <div class="metric"><em>{{ num(totals?.scoredDays) }}</em><span>计分天数 / {{ totals?.slots }} 时段</span></div>
           </div>
@@ -93,7 +94,7 @@ const num = (v: number | null | undefined) => (v == null ? '—' : String(v))
             ></span>
           </div>
 
-          <h4>异动事件（口径对齐市场洞察驾驶舱，确定性派生）</h4>
+          <h4>异动事件</h4>
           <el-empty v-if="!scorecard.anomalies.length" description="当日无负价 / 价差离群事件" :image-size="48" />
           <ul v-else class="anomaly-list">
             <li v-for="(a, i) in scorecard.anomalies" :key="i" :class="a.severity">

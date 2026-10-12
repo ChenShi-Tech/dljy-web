@@ -15,7 +15,7 @@
 // 本页不依赖 VITE_YUNNAN_INSIGHT_WORKSPACE 工作区装配，开关关闭时完整可用。
 
 import { computed, onMounted, reactive, ref, watch } from 'vue'
-import { Info } from 'lucide-vue-next'
+import { Info, Sparkles } from 'lucide-vue-next'
 import { getInsightAnalysis } from 'shared/insight/analyses.mjs'
 import { formatMetricValue } from 'shared/insight/metrics.mjs'
 import { compareText, type InsightContextInput } from 'shared/insight/contract.mjs'
@@ -572,7 +572,7 @@ onMounted(() => {
             <el-button link type="primary" size="small" data-testid="ynh-anchor-back-today" @click="entryAnchor.backToToday">切回今天</el-button>
           </span>
         </div>
-        <el-button type="primary" data-testid="ynh-ai-entry" @click="onAiInterpret">✨ AI 解读本页</el-button>
+        <el-button type="primary" :icon="Sparkles" data-testid="ynh-ai-entry" @click="onAiInterpret">AI 解读本页</el-button>
       </section>
 
       <el-alert v-if="capabilitiesError" type="error" show-icon :closable="false" title="能力目录读取失败">

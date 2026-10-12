@@ -118,3 +118,32 @@ describe('TradingDayView（一日作业台容器）', () => {
     expect(wrapper.text()).toContain('换单：改上方标的交易日后自动重读该日最新单据')
   })
 })
+
+describe('迟到写回守卫（fix-stale-response-guards）', () => {
+  it('迟到的旧单据写回被丢弃；当前单据的写回照常落屏', async () => {
+    listDeclarations.mockResolvedValue([
+      { id: 'DECL-A', targetDate: '2026-09-28', updatedAt: '2026-09-28T01:00:00Z', status: 'DRAFT', preflight: {} }
+    ])
+    const wrapper = await settle(mount(TradingDayView))
+    expect(wrapper.text()).toContain('0/7')
+
+    const s1 = wrapper.findComponent({ name: 'S1-STUB' })
+    // S4 提交重试（最长 4-5s）在途期间切标的日后归来：旧单不能塞回容器，
+    // 否则后续 S5/S6/S7 的读写全落在旧单上。
+    s1.vm.$emit('updated', {
+      id: 'DECL-OLD', targetDate: '2026-09-27', updatedAt: '2026-09-27T01:00:00Z', status: 'DRAFT',
+      preflight: { morningReview: { note: '旧日结论' } }
+    })
+    await nextTick()
+    expect(wrapper.text()).toContain('0/7')
+
+    // 同 id 同标的日的正常写回：接受，S1 完成度点亮
+    s1.vm.$emit('updated', {
+      id: 'DECL-A', targetDate: '2026-09-28', updatedAt: '2026-09-28T02:00:00Z', status: 'DRAFT',
+      preflight: { morningReview: { note: '今日结论' } }
+    })
+    await nextTick()
+    expect(wrapper.text()).toContain('1/7')
+    wrapper.unmount()
+  })
+})

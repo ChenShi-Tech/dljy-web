@@ -12,7 +12,7 @@
 //
 // 诚实标注：③ 基差为「选定节点」(非自有，capture 无 self-owned 维度)；⑦ 默认展示
 // yn_plant_output 厂站 8 源 vs 实际功率 MAPE 擂台，yn_loss_attribution 厂站损失排行保留为互补视图。
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import * as echarts from 'echarts'
 import { Gauge } from 'lucide-vue-next'
 import DataBasisBadge from '@/components/DataBasisBadge.vue'
@@ -21,6 +21,7 @@ import RegionDataBanner from '@/components/region/RegionDataBanner.vue'
 import { useEChart } from '@/composables/useEChart'
 import { chartChrome } from '@/composables/useTheme'
 import { onRegionChange } from '@/composables/useRegionReload'
+import { selectedCompanyId } from '@/services/company/companyContext'
 import { COCKPIT_PRIVATE_FAMILIES, loadCockpit, type CockpitData, type DecisionItem } from '@/services/cockpitData'
 import { hasCgnYunnanPriceEntitlement } from '@/services/market/cgnYunnanLivePrice'
 import { fetchCaptureCoverage } from '@/services/market/captureCoverage'
@@ -31,6 +32,7 @@ import type { SpotMarket } from '@/services/market/spotClient'
 import { exportCsv } from '@/utils/exportCsv'
 import { exportBundleCsv, type CsvTable } from '@/utils/exportBundle'
 import { ElMessage } from 'element-plus'
+import DataStatusLine from '@/components/trading/stages/DataStatusLine.vue'
 
 // 宿主注入:融合页 /dashboard(embedded=true,内嵌去边框)与云南工作台 cockpit tab
 // (embedded=false,standalone 终端)共用此组件。regionName/regionId 由宿主从
@@ -880,6 +882,12 @@ onMounted(async () => {
 onRegionChange(() => {
   void reload()
 })
+
+// 切换公司：厂侧私有价格授权标签（usesCgnPrivatePrice/nodePriceBasis）随 selectedCompanyId
+// 立即翻转，数据层必须同步重载，否则 KPI 口径与标签混源（与外层 TradingCockpitView 同修）。
+watch(selectedCompanyId, () => {
+  void reload()
+})
 </script>
 
 <template>
@@ -951,14 +959,11 @@ onRegionChange(() => {
 
     <!-- 空态 / 错误提示 -->
     <el-alert v-if="errorMsg" type="error" :closable="false" :title="errorMsg" class="ck-alert" show-icon />
-    <el-alert
+    <DataStatusLine
       v-else-if="ingestHint"
-      type="warning"
-      :closable="false"
-      class="ck-alert"
-      show-icon
-      title="云南现货数据暂未摄取"
-      description="请先在具备受管数据根的采集环境摄取月度现货导出（节点电价 Parquet + 运行 import:spot-export --write），或更换为已摄取的日期/市场后重试。"
+      label="数据状态"
+      summary="云南现货数据暂未摄取"
+      :items="[{ tone: 'caveat', text: '请先在具备受管数据根的采集环境摄取月度现货导出（节点电价 Parquet + 运行 import:spot-export --write），或更换为已摄取的日期/市场后重试。' }]"
     />
 
     <!-- 市场态势条 -->
@@ -1014,8 +1019,8 @@ onRegionChange(() => {
         <div v-if="kpis?.forecastMapeSource" class="delta">{{ kpis.forecastMapeSource }} · {{ kpis.forecastMapeSamples }} MAPE点</div>
       </div>
       <div class="kpi">
-        <div class="lab">竞价空间（日均·外送未入）</div>
-        <div class="val num">{{ fmt(kpis?.biddingSpaceMWh, 0) }}<small>MW</small></div>
+        <div class="lab" title="源字段 96 点/日的 loadMWh−newEnergyMWh 日均；源单位口径未定（旧目录 100kW 与适配器文档 MW 冲突，同 dailyDisclosure 不擅自换算），故标原始值不标单位">竞价空间（日均·外送未入）</div>
+        <div class="val num">{{ fmt(kpis?.biddingSpaceMWh, 0) }}<small>原始值</small></div>
       </div>
       <div class="kpi">
         <div class="lab">水电占比（日均）</div>

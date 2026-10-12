@@ -23,8 +23,14 @@ vi.mock('@/services/api', () => ({
   AGENT_API_BASE_ROOT: '/agent-api',
   applyRegionHeaders: vi.fn(),
   timeoutSignal: () => signalState.signal,
+  // 序号守卫接线（slim-and-fix-market-insight-pages 1.2）：客户端取号并经守卫应用地区头。
+  nextRegionHeaderSeq: vi.fn(() => ++seqState.n),
+  applyRegionHeadersWithSeq: vi.fn(),
 }))
 
+const seqState = vi.hoisted(() => ({ n: 0 }))
+
+import { applyRegionHeadersWithSeq, nextRegionHeaderSeq } from '@/services/api'
 import { fetchMarketInsightBundle } from '@/services/market/marketInsightClient'
 
 // 实现签名带 fetch 两参，让 vi.fn 推导出 [string, RequestInit] 元组（用例直接取 calls[0][1]）
@@ -70,6 +76,19 @@ describe('URL 参数构造', () => {
     const init = spy.mock.calls[0][1] as RequestInit
     expect(init.headers).toEqual({ authorization: 'Bearer t' })
     expect(init.signal).toBe(signalState.signal)
+  })
+
+  it('每次预检取号并经序号守卫应用地区头（晚归旧响应不写横幅）', async () => {
+    vi.mocked(nextRegionHeaderSeq).mockClear()
+    vi.mocked(applyRegionHeadersWithSeq).mockClear()
+    mockFetch(async () => bundleRes())
+    await fetchMarketInsightBundle({ date: '2026-05-15' })
+    expect(nextRegionHeaderSeq).toHaveBeenCalledTimes(1)
+    expect(applyRegionHeadersWithSeq).toHaveBeenCalledTimes(1)
+    // 守卫收到「本次取号」与 fetch 返回的同一 Response
+    const [res, seq] = vi.mocked(applyRegionHeadersWithSeq).mock.calls[0]
+    expect(seq).toBe(seqState.n)
+    expect(res).toBeInstanceOf(Response)
   })
 })
 

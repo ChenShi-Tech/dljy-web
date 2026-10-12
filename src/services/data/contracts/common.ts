@@ -57,3 +57,11 @@ export type ModuleEmptyState = {
   reason: string
   source: string | null
 }
+
+
+/** AI 页解读上下文的口径归一（slim-and-fix-market-insight-pages R4）：
+ *  real/captured → captured，其余取值（provisional/illustrative/empty/user_saved/缺失）保守按
+ *  synthetic——宁严勿谎，后端按地区合成的口径不得被 AI 上下文当成真实采集。 */
+export function normalizeContractBasis(basis?: string): 'captured' | 'synthetic' {
+  return basis === 'real' || basis === 'captured' ? 'captured' : 'synthetic'
+}

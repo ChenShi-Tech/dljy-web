@@ -9,7 +9,7 @@ vi.stubGlobal('window', {
   location: { origin: 'http://localhost' }
 })
 
-const { unwrap, nextRegionHeaderSeq, regionDataStatus } = await import('@/services/api')
+const { unwrap, applyRegionHeadersWithSeq, nextRegionHeaderSeq, regionDataStatus } = await import('@/services/api')
 
 function servedResponse(served: string, fallback = 'false') {
   return new Response(JSON.stringify({ code: 200 }), {
@@ -84,5 +84,26 @@ describe('unwrap 地区头 seq 守卫（#1350）', () => {
     await unwrap(servedResponse('shanxi', 'true'), '/real', seqA) // A 后到：跳过
     await unwrap(servedResponse('yunnan'), '/real', seqB) // B 后到：应用
     expect(regionDataStatus.value.served).toBe('yunnan')
+  })
+})
+
+describe('applyRegionHeadersWithSeq：裸 fetch 客户端同守卫', () => {
+  // marketInsightClient 等不经 unwrap 的独立客户端：取号后经同一守卫应用地区头，
+  // 晚归旧响应不得把横幅写回旧地区口径（slim-and-fix-market-insight-pages 1.2）。
+  it('晚归的旧带头响应不覆盖新响应已应用的横幅状态', () => {
+    resetStatus()
+    const seqA = nextRegionHeaderSeq()
+    const seqB = nextRegionHeaderSeq()
+    applyRegionHeadersWithSeq(servedResponse('yunnan'), seqB) // B 先返回：应用
+    applyRegionHeadersWithSeq(servedResponse('shanxi', 'true'), seqA) // A 晚归：跳过
+    expect(regionDataStatus.value.served).toBe('yunnan')
+    expect(regionDataStatus.value.fallback).toBe(false)
+  })
+
+  it('无地区头的响应不应用也不推进序号', () => {
+    resetStatus()
+    const seqA = nextRegionHeaderSeq()
+    applyRegionHeadersWithSeq(new Response('{}', { status: 200 }), seqA)
+    expect(regionDataStatus.value.served).toBeNull()
   })
 })

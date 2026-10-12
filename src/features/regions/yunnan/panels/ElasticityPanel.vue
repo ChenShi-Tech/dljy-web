@@ -15,6 +15,17 @@ import { chartChrome } from '@/composables/useTheme'
 import { axisTooltip, chartToolbox, fmtNum, insideZoom, emptyOverlay } from '@/services/chart/chartOptions'
 import { fetchSpotRegions, type SpotMarket } from '@/services/market/spotClient'
 import { fetchElasticity, type ElasticityResult } from '@/services/market/elasticityClient'
+import InfoHint from '@/components/common/InfoHint.vue'
+import DataStatusLine from '@/components/trading/stages/DataStatusLine.vue'
+
+// hero 口径全文：主定义句已升格进标题行，公式段与 MAE 口径收 ⓘ（spot-page-hint-density：hero 一行化）。
+const HERO_INFO = [
+  '竞价空间 = 统调负荷 + 外送电量 − 新能源出力（外送取南网官方 D-1 断面预测；外送数据当期缺披露时按 0 计）。',
+  '拟合「竞价空间→出清价」分段弹性曲线，预判目标日价格水平 + 价格弹性（陡段=供需紧张、价格对负荷敏感；平段=宽松），对照朴素基线（昨日同时段）。',
+  'MAE 口径（非 MAPE）。'
+].join('\n')
+const EMPTY_INFO =
+  '价格弹性引擎仅云南有真实系统供需与节点电价；严格地区「真实或空」，缺真实数据走空态（不臆造曲线）。请更换为数据覆盖范围内（2026-05）的云南日期重试。'
 
 // 控件状态
 const regions = ref<string[]>([])
@@ -38,6 +49,7 @@ const errorMsg = ref('')
 const reloadSeq = ref(0)
 
 const available = computed(() => result.value?.available === true)
+const noteItems = computed(() => (result.value?.notes ?? []).map((n) => ({ tone: 'info' as const, text: n })))
 const steepColor = '#dc2626'
 const flatColor = '#2563eb'
 
@@ -126,7 +138,7 @@ function buildCurveOption() {
       confine: true,
       formatter: (p: { seriesType?: string; value?: [number, number] }) => {
         if (p.seriesType === 'scatter' && p.value) {
-          return `竞价空间 ${fmtNum(p.value[0], 0)} MW<br/>出清价 <b>${fmtNum(p.value[1], 2)}</b> 元/MWh`
+          return `竞价空间 ${fmtNum(p.value[0], 0)}（原始值）<br/>出清价 <b>${fmtNum(p.value[1], 2)}</b> 元/MWh`
         }
         return ''
       }
@@ -136,7 +148,7 @@ function buildCurveOption() {
     grid: { left: 60, right: 24, top: 40, bottom: 48, containLabel: false },
     xAxis: {
       type: 'value',
-      name: '竞价空间 (MW)',
+      name: '竞价空间 (原始值)',
       scale: true,
       nameLocation: 'middle',
       nameGap: 30,
@@ -255,7 +267,7 @@ function buildBidSpaceOption() {
     },
     yAxis: {
       type: 'value',
-      name: '竞价空间 MW',
+      name: '竞价空间 原始值',
       scale: true,
       nameTextStyle: { color: cc.axisLabel, fontSize: 11 },
       axisLabel: { color: cc.axisLabel, fontSize: 10, formatter: (v: number) => fmtNum(v, 0) },
@@ -301,15 +313,9 @@ onRegionChange(() => {
     <section class="el-hero">
       <div class="el-hero-main">
         <div class="el-kicker"><TrendingUp :size="16" /><span>云南 · 竞价空间 → 价格弹性预判</span></div>
-        <p>
-          竞价空间 = 统调负荷 + 外送电量 − 新能源出力（外送取南网官方 D-1 断面预测；外送数据当期缺披露时按 0 计）。拟合「竞价空间→出清价」分段弹性曲线，
-          预判目标日价格水平 + 价格弹性（陡段=供需紧张、价格对负荷敏感；平段=宽松），对照朴素基线（昨日同时段）。
-        </p>
-        <div class="el-tags">
-          <el-tag size="small" type="warning">分析参考 · 非结算依据</el-tag>
-          <el-tag size="small" type="success">真实数据：系统供需 + 节点电价</el-tag>
-          <el-tag size="small" type="info">MAE 口径（非 MAPE）</el-tag>
-        </div>
+        <InfoHint class="el-hero-info" :text="HERO_INFO" label="口径" />
+        <el-tag size="small" type="warning">分析参考 · 非结算依据</el-tag>
+        <el-tag size="small" type="success">真实数据：系统供需 + 节点电价</el-tag>
       </div>
     </section>
 
@@ -354,14 +360,11 @@ onRegionChange(() => {
     </section>
 
     <el-alert v-if="errorMsg" type="error" :closable="false" :title="errorMsg" class="el-alert" show-icon />
-    <el-alert
+    <DataStatusLine
       v-else-if="!loading && !available"
-      type="warning"
-      :closable="false"
-      class="el-alert"
-      show-icon
-      title="该日/地区暂无足够真实数据拟合弹性曲线"
-      description="价格弹性引擎仅云南有真实系统供需与节点电价；严格地区「真实或空」，缺真实数据走空态（不臆造曲线）。请更换为数据覆盖范围内（2026-05）的云南日期重试。"
+      label="数据状态"
+      summary="该日/地区暂无足够真实数据拟合弹性曲线"
+      :items="[{ tone: 'caveat', text: EMPTY_INFO }]"
     />
 
     <section v-if="available && kpis" class="el-kpis">
@@ -425,12 +428,7 @@ onRegionChange(() => {
       </ChartCard>
     </section>
 
-    <section v-if="available && result" class="el-notes">
-      <h4>口径与数据说明</h4>
-      <ul>
-        <li v-for="(n, i) in result.notes" :key="i">{{ n }}</li>
-      </ul>
-    </section>
+    <DataStatusLine v-if="available && result" label="口径与数据说明" :items="noteItems" />
   </div>
 </template>
 
@@ -442,10 +440,21 @@ onRegionChange(() => {
 }
 
 .el-hero {
-  padding: 16px 18px;
+  padding: 10px 14px;
   border: 1px solid #dfe7eb;
   border-radius: 8px;
   background: linear-gradient(135deg, #ffffff 0%, #f3effb 55%, #f7fbff 100%);
+}
+
+.el-hero-main {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.el-hero-info {
+  margin-left: 2px;
 }
 
 .el-kicker {
@@ -455,18 +464,6 @@ onRegionChange(() => {
   color: #7c3aed;
   font-size: var(--font-md);
   font-weight: 650;
-}
-
-.el-hero p {
-  margin: 8px 0 10px;
-  color: #5c6b76;
-  line-height: 1.7;
-}
-
-.el-tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
 }
 
 .el-controls {
@@ -565,27 +562,6 @@ onRegionChange(() => {
   gap: 4px;
   font-size: var(--font-xs);
   color: var(--muted, #909399);
-}
-
-.el-notes {
-  padding: 14px 18px;
-  border: 1px solid #dfe7eb;
-  border-radius: 8px;
-  background: #fbfcfd;
-}
-
-.el-notes h4 {
-  margin: 0 0 8px;
-  color: #172b3a;
-  font-size: var(--font-lg);
-}
-
-.el-notes ul {
-  margin: 0;
-  padding-left: 18px;
-  color: #5c6b76;
-  font-size: var(--font-sm);
-  line-height: 1.7;
 }
 
 @media (max-width: 1024px) {

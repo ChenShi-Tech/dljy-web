@@ -75,17 +75,22 @@ function contractsKey(win: { fromDate: string; toDate: string }): string {
   return `${win.fromDate}~${win.toDate}|${workbench.asOf.value ?? ''}`
 }
 
+// 迟到守卫（fix-stale-response-guards）：此前「加载中直接丢弃新窗口请求」——watch 只在变化时
+// 触发，被丢弃的窗口永不再取，旧窗口合同滞留新窗口下拉、过期 id 随新窗口提交。改为世代号 +
+// 最后发起的窗口胜出：窗口变化照常取数，旧响应 seq 不匹配即丢（含 catch/finally/清选择逻辑）。
+let contractsSeq = 0
 async function ensureContracts() {
   const win = activeWindow.value
   if (!win) return
   const key = contractsKey(win)
-  if (contracts.value?.key === key || contractsLoading.value) return
+  if (contracts.value?.key === key) return
+  const seq = ++contractsSeq
   const current = workbench.scopedRequest()
   contractsLoading.value = true
   contractsError.value = null
   try {
     const raw = await fetchContracts({ fromDate: win.fromDate, toDate: win.toDate, asOf: workbench.asOf.value ?? undefined })
-    if (!current()) return
+    if (!current() || seq !== contractsSeq) return
     const list = Array.isArray((raw as { contracts?: unknown }).contracts) ? (raw as { contracts: unknown[] }).contracts : []
     const rows: ContractOption[] = []
     for (const item of list) {
@@ -102,9 +107,9 @@ async function ensureContracts() {
     const picked = Number(contractIdText.value)
     if (contractIdText.value && !rows.some((row) => row.contractId === picked)) contractIdText.value = ''
   } catch (err) {
-    if (current()) contractsError.value = err instanceof HedgeApiError ? `${err.errorCode}：${err.message}` : '合同清单加载失败，可重新选择形状重试'
+    if (current() && seq === contractsSeq) contractsError.value = err instanceof HedgeApiError ? `${err.errorCode}：${err.message}` : '合同清单加载失败，可重新选择形状重试'
   } finally {
-    if (current()) contractsLoading.value = false
+    if (current() && seq === contractsSeq) contractsLoading.value = false
   }
 }
 

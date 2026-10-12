@@ -14,7 +14,8 @@ import type { RelationScatterRow } from '@/services/data/contracts/relationScatt
 
 const fetchContract = vi.fn()
 vi.mock('@/services/data/contracts', () => ({
-  fetchMarketInsightRelationScatterContract: (...args: unknown[]) => fetchContract(...args)
+  fetchMarketInsightRelationScatterContract: (...args: unknown[]) => fetchContract(...args),
+  normalizeContractBasis: (b?: string) => (b === 'real' || b === 'captured' ? 'captured' : 'synthetic')
 }))
 // 地区：可变状态 + computed，供云南用例在 mount 前切换。
 const regionState = vi.hoisted(() => ({ id: 'shanxi', name: '山西' }))
@@ -39,7 +40,12 @@ vi.mock('@/services/market/captureCoverage', async (importOriginal) => {
 })
 vi.mock('@/composables/useRegionReload', () => ({ onRegionChange: () => {} }))
 vi.mock('@/composables/useQuerySync', () => ({ useQuerySync: () => {} }))
-vi.mock('@/features/aiSidebar', () => ({ defineAiPage: () => {}, useAiSidebar: () => ({ interpret: vi.fn() }) }))
+// 捕获 defineAiPage 配置：用例可调 interpret.context() 断言 AI 切片的 basis 口径
+const aiPage = vi.hoisted(() => ({ config: null as { interpret?: { context: () => Record<string, unknown> } } | null }))
+vi.mock('@/features/aiSidebar', () => ({
+  defineAiPage: (config: unknown) => { aiPage.config = config as never },
+  useAiSidebar: () => ({ interpret: vi.fn() })
+}))
 vi.mock('@/components/region/RegionDataBanner.vue', () => ({
   default: { name: 'RegionDataBanner', template: '<div class="stub-banner" />' }
 }))
@@ -91,8 +97,13 @@ function makeDataset(k = 0.02): RelationScatterDataset {
   return { xd, xnyzd: [{ p6: 3400 }], xnyg: [{ p6: 3300 }], xnygd: [{ p6: 100 }] }
 }
 
-function relationContract(kind: MarketInsightRelationKind, k = 0.02): MarketInsightRelationScatterContract {
+function relationContract(
+  kind: MarketInsightRelationKind,
+  k = 0.02,
+  basis: 'captured' | 'synthetic' = 'captured'
+): MarketInsightRelationScatterContract {
   return {
+    basis,
     blocks: {
       relation_scatter: {
         key: kind === 'renewable' ? 'price_renewable_relation' : 'price_load_relation',
@@ -157,6 +168,39 @@ describe('价格驱动分析（dljy#3390）', () => {
     expect(kinds).toEqual(['load', 'renewable']) // 主请求 load + 对比请求 renewable 各一次
     // loadData 先发对比请求再发主请求：load 是本轮主驱动，只出现一次
     expect(kinds.filter((k) => k === 'load')).toHaveLength(1)
+  })
+
+  it('AI 解读上下文消费契约口径：synthetic 契约不称真实采集（R4）', async () => {
+    fetchContract.mockImplementation(({ kind }: { kind: MarketInsightRelationKind }) =>
+      Promise.resolve(relationContract(kind, 0.02, 'synthetic')))
+    await mountView()
+    expect(aiPage.config?.interpret?.context().basis).toBe('synthetic')
+  })
+
+  it('AI 解读上下文消费契约口径：captured 契约行为不变（R4）', async () => {
+    fetchContract.mockImplementation(({ kind }: { kind: MarketInsightRelationKind }) =>
+      Promise.resolve(relationContract(kind, 0.02, 'captured')))
+    await mountView()
+    expect(aiPage.config?.interpret?.context().basis).toBe('captured')
+  })
+
+  it('单小时散点电价轴自适应：不写死 min:0/max:1500，负价不被裁出轴外', async () => {
+    // slim-and-fix-market-insight-pages R3：负价时段的驱动-价格关系恰是本页最关心的场景
+    await mountView()
+    const scatterOptions = charts[2].setOption.mock.calls
+      .map((c) => c[0] as { yAxis?: { min?: number; max?: number; scale?: boolean } })
+      .filter((o) => o.yAxis)
+    expect(scatterOptions.length).toBeGreaterThanOrEqual(1)
+    for (const option of scatterOptions) {
+      expect(option.yAxis!.min).toBeUndefined()
+      expect(option.yAxis!.max).toBeUndefined()
+      expect(option.yAxis!.scale).toBe(true)
+    }
+    // 联动切换小时后仍然自适应
+    clickChart(1, { dataIndex: 11 })
+    await flushPromises()
+    const after = charts[2].setOption.mock.calls.at(-1)?.[0] as { yAxis?: { min?: number } }
+    expect(after?.yAxis?.min).toBeUndefined()
   })
 
   it('点热力图小时列 / 敏感度柱 → 单小时散点联动切换', async () => {

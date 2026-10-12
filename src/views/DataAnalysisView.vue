@@ -4,6 +4,7 @@
 // 中:两列日期(自动联动上个月+本月),点某天看该天 96 点曲线。
 // 右:6 个 Y 轴(负荷 左 | 比例%/电价/公司电量/出清电量/台数 右),坐标可固定/自动、Y轴可隐藏。
 // 数据经市场洞察 zsjfx 契约归一为 meta(分组/轴/颜色/默认) + day(按日曲线) view model。
+import { Sparkles, FolderOpen, Tag, ArrowLeftRight, TrendingUp, CalendarRange, Siren } from 'lucide-vue-next'
 import { onMounted, ref, computed, nextTick, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
@@ -23,6 +24,7 @@ import { useAnalysisStore } from '../stores/analysisData'
 import DataState from '../components/common/DataState.vue'
 import type { AnalysisView, ViewConfig } from '@/services/analysisClient'
 import { defineAiPage, useAiSidebar } from '@/features/aiSidebar'
+import { normalizeContractBasis } from '@/services/data/contracts'
 import { PAGE_PROMPT_KEYS } from '@/prompts'
 
 import { POINTS_96 } from '@/utils/spotPoints96'
@@ -54,6 +56,8 @@ const hideAxis = ref(false)
 const activeGroups = ref<string[]>(['预测', '策略与价格', '电量', '实际值'])
 const company = ref('默认公司')
 const dayCache = ref<Record<string, Record<string, Array<number | null>>>>({})
+// 取数契约的口径（captured/synthetic）；未取到/失败时保守 synthetic（R4 宁严勿谎）
+const contractBasis = ref<'captured' | 'synthetic'>('synthetic')
 // 防止切地区时旧地区慢响应覆盖新地区状态/日缓存（#415）。
 let loadGeneration = 0
 
@@ -86,6 +90,7 @@ async function load() {
   mainChart.showLoading()
   try {
     const contract = await fetchMarketInsightZsjfxMetaContract({ region: currentRegion.value.id })
+    contractBasis.value = normalizeContractBasis(contract.basis)
     if (generation !== loadGeneration) return
     meta.value = contract.blocks.zsjfx.meta ?? null
     if (!meta.value) throw new Error('暂无可用指标元数据')
@@ -142,9 +147,11 @@ async function fetchDay(date: string, generation = loadGeneration): Promise<bool
     return true
   } catch {
     if (generation !== loadGeneration) return false
-    dayCache.value[date] = {}
+    // 失败≠无数据（slim-and-fix-market-insight-pages R2）：不把失败缓存成「已加载且
+    // 无数据」的成功态——不写 dayCache，该天保持可重试；热力图路径 loadHeat 自带
+    // 失败三态，也不会再读到被污染的空缓存把失败日画成无数据灰格。
     ElMessage.warning(`${date} 当日数据加载失败`)
-    return true
+    return false
   }
 }
 
@@ -335,7 +342,6 @@ function onReset() {
     })
   }
 }
-function notReady(label: string) { ElMessage.info(`「${label}」为线上功能,当前 demo 暂用真实数据回放,未接该接口`) }
 
 // Phase 6 PR-B：分析视图/标注（analysis.sqlite 用户产物，/api/v1/analysis/*）
 const analysis = useAnalysisStore()
@@ -623,7 +629,7 @@ function exportPng() {
 }
 
 const ai = useAiSidebar()
-// 「✨ 解读本页」：当前日期 + 已勾选分组 + 当日实绘序列的极值/均值作摘要（勿传 dayCache 96 点逐点）。
+// 「解读本页」：当前日期 + 已勾选分组 + 当日实绘序列的极值/均值作摘要（勿传 dayCache 96 点逐点）。
 function insightContext(): Record<string, unknown> {
   const day = dayCache.value[currentDate.value] || {}
   const drawn = selected.value.filter((t) => day[t] && day[t].some((v: any) => v != null))
@@ -653,11 +659,12 @@ function insightContext(): Record<string, unknown> {
     anomaly_notes: scorecard.value?.anomalyNotes?.length ? scorecard.value.anomalyNotes : undefined,
     segment_context: segmentSelection.value ? segmentContextSnapshot() : undefined,
     note: '本页可叠加目录内全部类型曲线；drawn_series/scorecard/anomalies 均为确定性统计（非 LLM 计算），96 点逐点未传',
-    basis: 'captured'
+    // R4：消费取数契约口径（captured/synthetic），不硬编码真实采集
+    basis: contractBasis.value
   }
 }
 
-// 页面接入 AI 侧边栏：悬浮球、「✨ 解读本页」按钮共用这份声明与切片（点击时刻求值）。
+// 页面接入 AI 侧边栏：悬浮球、「解读本页」按钮共用这份声明与切片（点击时刻求值）。
 defineAiPage({ label: '综合数据分析', promptKey: PAGE_PROMPT_KEYS.marketDataAnalysis, interpret: { context: insightContext } })
 function askInsight() {
   ai.interpret()
@@ -680,8 +687,8 @@ onRegionChange(load)
     <div class="toolbar">
       <el-button-group class="mode">
         <el-button size="small" type="success">展示日期</el-button>
-        <el-button size="small" @click="notReady('弹出日历')">弹出日历</el-button>
-        <el-button size="small" @click="notReady('分别指定')">分别指定</el-button>
+        <el-tooltip content="线上功能，暂未接入" placement="bottom"><span><el-button size="small" disabled>弹出日历</el-button></span></el-tooltip>
+        <el-tooltip content="线上功能，暂未接入" placement="bottom"><span><el-button size="small" disabled>分别指定</el-button></span></el-tooltip>
       </el-button-group>
       <el-date-picker v-model="viewMonth" type="month" value-format="YYYY-MM" size="small"
         :clearable="false" placeholder="选择月份" style="width: 130px" />
@@ -689,19 +696,19 @@ onRegionChange(load)
         <el-option label="默认公司" value="默认公司" />
       </el-select>
       <span class="spacer" />
-      <el-button size="small" type="warning" @click="onOpenViews">📁 我的视图</el-button>
-      <el-button size="small" @click="annoDialog = true">🏷 标注</el-button>
+      <el-button size="small" type="warning" :icon="FolderOpen" @click="onOpenViews">我的视图</el-button>
+      <el-button size="small" :icon="Tag" @click="annoDialog = true">标注</el-button>
       <el-button size="small" type="primary" @click="setDefaults">默认数据项</el-button>
       <el-button size="small" type="primary" @click="clearAll">清空数据项</el-button>
-      <el-button size="small" type="primary" plain @click="notReady('纵向展示')">纵向展示</el-button>
-      <el-button size="small" type="success" plain @click="openScorecard">📊 对拍</el-button>
-      <el-button size="small" type="success" plain @click="openDerivedDialog">➗ 衍生线</el-button>
-      <el-button size="small" type="success" plain @click="openHeat">🗓 可用性</el-button>
-      <el-button size="small" :type="showAnomalyMarks ? 'warning' : 'info'" plain @click="toggleAnomalyMarks">{{ showAnomalyMarks ? '🚨 异动开' : '🚨 异动关' }}</el-button>
+      <el-tooltip content="线上功能，暂未接入" placement="bottom"><span><el-button size="small" type="primary" plain disabled>纵向展示</el-button></span></el-tooltip>
+      <el-button size="small" type="success" plain :icon="ArrowLeftRight" @click="openScorecard">对拍</el-button>
+      <el-button size="small" type="success" plain :icon="TrendingUp" @click="openDerivedDialog">衍生线</el-button>
+      <el-button size="small" type="success" plain :icon="CalendarRange" @click="openHeat">可用性</el-button>
+      <el-button size="small" :type="showAnomalyMarks ? 'warning' : 'info'" plain :icon="Siren" @click="toggleAnomalyMarks">{{ showAnomalyMarks ? '异动开' : '异动关' }}</el-button>
       <el-button size="small" type="primary" @click="toggleFixed">{{ fixedAxis ? '坐标自动' : '坐标固定' }}</el-button>
       <el-button size="small" type="primary" @click="selectAll">所有数据</el-button>
       <el-button size="small" type="primary" @click="toggleHideAxis">{{ hideAxis ? '显示Y轴' : '隐藏Y轴' }}</el-button>
-      <el-button size="small" type="success" plain @click="askInsight">✨ 解读本页</el-button>
+      <el-button size="small" type="success" plain :icon="Sparkles" @click="askInsight">解读本页</el-button>
     </div>
 
     <div class="body">
@@ -710,7 +717,7 @@ onRegionChange(load)
         <div class="tag-actions">
           <el-button size="small" type="primary" @click="onQuery">查询</el-button>
           <el-button size="small" @click="onReset">重置</el-button>
-          <el-button size="small" @click="notReady('配置')">配置</el-button>
+          <el-tooltip content="线上功能，暂未接入" placement="bottom"><span><el-button size="small" disabled>配置</el-button></span></el-tooltip>
           <el-button size="small" type="primary" @click="exportPng">导出图</el-button>
         <el-button size="small" type="primary" @click="exportCsv">导出CSV</el-button>
         </div>

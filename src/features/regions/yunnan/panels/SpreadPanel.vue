@@ -13,6 +13,16 @@ import { chartChrome } from '@/composables/useTheme'
 import { axisTooltip, chartToolbox, fmtNum, insideZoom, emptyOverlay } from '@/services/chart/chartOptions'
 import { fetchSpotRegions } from '@/services/market/spotClient'
 import { fetchSpread, type SpreadResult } from '@/services/market/spreadClient'
+import InfoHint from '@/components/common/InfoHint.vue'
+import DataStatusLine from '@/components/trading/stages/DataStatusLine.vue'
+
+// hero 口径全文：主定义句已升格进标题行，方法学段落收 ⓘ（spot-page-hint-density：hero 一行化）。
+const HERO_INFO = [
+  '价差 = 日前出清价 − 实时出清价（系统均价）。',
+  '以昨日同时段价差（persistence，叠加 A 价格弹性的竞价空间日间增量）预测目标日价差符号+幅度，按预测信号驱动储能跨期套利（cross_period_optimizer），按实际价差回放结算收益。'
+].join('\n')
+const EMPTY_INFO =
+  '价差引擎仅云南有真实日前/实时系统价；严格地区「真实或空」，缺真实数据走空态（不臆造）。请更换为数据覆盖范围内（2026-05）的云南日期重试。'
 
 const regions = ref<string[]>([])
 const region = ref('云南')
@@ -28,6 +38,7 @@ const errorMsg = ref('')
 const reloadSeq = ref(0)
 
 const available = computed(() => result.value?.available === true)
+const noteItems = computed(() => (result.value?.notes ?? []).map((n) => ({ tone: 'info' as const, text: n })))
 
 async function loadRegions() {
   try {
@@ -213,15 +224,10 @@ onRegionChange(() => {
     <section class="sp-hero">
       <div class="sp-hero-main">
         <div class="sp-kicker"><ArrowLeftRight :size="16" /><span>云南 · 日前-实时价差预测与套利决策</span></div>
-        <p>
-          价差 = 日前出清价 − 实时出清价（系统均价）。以昨日同时段价差（persistence，叠加 A 价格弹性的竞价空间日间增量）预测目标日价差符号+幅度，
-          按预测信号驱动储能跨期套利（cross_period_optimizer），按实际价差回放结算收益。
-        </p>
-        <div class="sp-tags">
-          <el-tag size="small" type="warning">决策支持参考 · 非结算依据</el-tag>
-          <el-tag size="small" type="success">真实数据：节点电价 DA/RT</el-tag>
-          <el-tag size="small" type="info">套利收益=回放参考·非真实成交</el-tag>
-        </div>
+        <InfoHint class="sp-hero-info" :text="HERO_INFO" label="口径" />
+        <el-tag size="small" type="warning">决策支持参考 · 非结算依据</el-tag>
+        <el-tag size="small" type="success">真实数据：节点电价 DA/RT</el-tag>
+        <el-tag size="small" type="info">套利收益=回放参考·非真实成交</el-tag>
       </div>
     </section>
 
@@ -253,14 +259,11 @@ onRegionChange(() => {
     </section>
 
     <el-alert v-if="errorMsg" type="error" :closable="false" :title="errorMsg" class="sp-alert" show-icon />
-    <el-alert
+    <DataStatusLine
       v-else-if="!loading && !available"
-      type="warning"
-      :closable="false"
-      class="sp-alert"
-      show-icon
-      title="该日/地区暂无足够真实 DA/RT 价差数据"
-      description="价差引擎仅云南有真实日前/实时系统价；严格地区「真实或空」，缺真实数据走空态（不臆造）。请更换为数据覆盖范围内（2026-05）的云南日期重试。"
+      label="数据状态"
+      summary="该日/地区暂无足够真实 DA/RT 价差数据"
+      :items="[{ tone: 'caveat', text: EMPTY_INFO }]"
     />
 
     <section v-if="available && kpis" class="sp-kpis">
@@ -312,12 +315,7 @@ onRegionChange(() => {
       </ChartCard>
     </section>
 
-    <section v-if="available && result" class="sp-notes">
-      <h4>口径与数据说明</h4>
-      <ul>
-        <li v-for="(n, i) in result.notes" :key="i">{{ n }}</li>
-      </ul>
-    </section>
+    <DataStatusLine v-if="available && result" label="口径与数据说明" :items="noteItems" />
   </div>
 </template>
 
@@ -329,10 +327,21 @@ onRegionChange(() => {
 }
 
 .sp-hero {
-  padding: 16px 18px;
+  padding: 10px 14px;
   border: 1px solid #dfe7eb;
   border-radius: 8px;
   background: linear-gradient(135deg, #ffffff 0%, #eef4fb 55%, #f7fbff 100%);
+}
+
+.sp-hero-main {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.sp-hero-info {
+  margin-left: 2px;
 }
 
 .sp-kicker {
@@ -342,18 +351,6 @@ onRegionChange(() => {
   color: #2563eb;
   font-size: var(--font-md);
   font-weight: 650;
-}
-
-.sp-hero p {
-  margin: 8px 0 10px;
-  color: #5c6b76;
-  line-height: 1.7;
-}
-
-.sp-tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
 }
 
 .sp-controls {
@@ -452,27 +449,6 @@ onRegionChange(() => {
   gap: 4px;
   font-size: var(--font-xs);
   color: var(--muted, #909399);
-}
-
-.sp-notes {
-  padding: 14px 18px;
-  border: 1px solid #dfe7eb;
-  border-radius: 8px;
-  background: #fbfcfd;
-}
-
-.sp-notes h4 {
-  margin: 0 0 8px;
-  color: #172b3a;
-  font-size: var(--font-lg);
-}
-
-.sp-notes ul {
-  margin: 0;
-  padding-left: 18px;
-  color: #5c6b76;
-  font-size: var(--font-sm);
-  line-height: 1.7;
 }
 
 @media (max-width: 1024px) {

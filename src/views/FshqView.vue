@@ -4,6 +4,7 @@
 // 底部「滚动值明细」:点击主图某个时间点 → 列出该点及附近时段(±1.5h)的真实数值(出清/价差/开收低高/量/滚动类型)。
 //   说明:线上"买卖盘(买1-3量价/卖1-3量价)"走 /sdpt/fshq/dataDet(按点 id),本次仅采集了 /fshq/data,未含 dataDet;
 //   故底部改用已采集的逐点滚动值(extendMap 标注日/旬/月滚动 + opData/出清价),买卖盘待补抓(见 今日进度.md)。
+import { Sparkles } from 'lucide-vue-next'
 import { computed, onMounted, ref, nextTick, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { fetchCaptured } from '@/services/captured'
@@ -125,7 +126,7 @@ const bsRef = ref<HTMLDivElement | null>(null)
 let bsData: any = null // 最近一次买卖盘数据(主题切换重建时重绘用)
 const bsHandle = useEChart(bsRef, { render: () => { if (bsData) renderBuySell(bsData) } })
 const bsTitle = ref('')
-const bsStatus = ref<'hint' | 'loading' | 'ok' | 'none'>('hint')
+const bsStatus = ref<'hint' | 'loading' | 'ok' | 'none' | 'error'>('hint')
 const BS_SERIES: { key: string; name: string; color: string; kind: 'bar' | 'line' }[] = [
   { key: 'mrl1', name: '买1量', color: '#4472c4', kind: 'bar' }, { key: 'mrl2', name: '买2量', color: '#ed7d31', kind: 'bar' }, { key: 'mrl3', name: '买3量', color: '#70ad1f', kind: 'bar' },
   { key: 'mcl1', name: '卖1量', color: '#00a2e8', kind: 'bar' }, { key: 'mcl2', name: '卖2量', color: '#8e6fb6', kind: 'bar' }, { key: 'mcl3', name: '卖3量', color: '#b5e61d', kind: 'bar' },
@@ -149,7 +150,11 @@ async function loadBuySell(idx: number) {
       bsStatus.value = 'ok'; bsTitle.value = d.title || em.title || ''
       await nextTick(); renderBuySell(d)
     } else { bsStatus.value = 'none' }
-  } catch { bsStatus.value = 'none' }
+  } catch {
+    // 失败≠该点无逐笔（R2）：网络/服务端错误呈现失败态并保留重试（再点该点即重试），
+    // 不与「该点确实没有买卖盘」共用 none 文案误导排查。
+    bsStatus.value = 'error'
+  }
 }
 function renderBuySell(d: any) {
   bsData = d
@@ -224,7 +229,7 @@ function renderMain() {
 }
 
 const ai = useAiSidebar()
-// 「✨ 解读本页」：当前模式/日期 + 出清价均值极值 + 已有预测线列表作摘要交全局 AI 中心（勿传 96 点全量）。
+// 「解读本页」：当前模式/日期 + 出清价均值极值 + 已有预测线列表作摘要交全局 AI 中心（勿传 96 点全量）。
 function insightContext(): Record<string, unknown> {
   const d = data.value || {}
   const nums = (a: any[]) => (a || []).filter((v: any) => typeof v === 'number')
@@ -244,7 +249,7 @@ function insightContext(): Record<string, unknown> {
   }
 }
 
-// 页面接入 AI 侧边栏：悬浮球、「✨ 解读本页」按钮共用这份声明与切片（点击时刻求值）。
+// 页面接入 AI 侧边栏：悬浮球、「解读本页」按钮共用这份声明与切片（点击时刻求值）。
 defineAiPage({ label: '分时行情', promptKey: PAGE_PROMPT_KEYS.marketDataAnalysis, interpret: { context: insightContext } })
 function askInsight() {
   ai.interpret()
@@ -288,7 +293,7 @@ onRegionChange(load)
         <el-button size="small" type="primary" @click="load">搜索</el-button>
         <el-button size="small" @click="mode = 'rq'; runDate = '2026-06-01'">重置</el-button>
         <span style="flex: 1 1 auto" />
-        <el-button size="small" type="success" plain @click="askInsight">✨ 解读本页</el-button>
+        <el-button size="small" type="success" plain :icon="Sparkles" @click="askInsight">解读本页</el-button>
       </div>
 
       <div class="card">
@@ -299,9 +304,10 @@ onRegionChange(load)
         <div class="ctitle">买卖盘逐笔 · {{ bsTitle || '点击上方主图任一时间点查看该点买卖盘' }}
           <span v-if="bsStatus==='ok'" class="hint">（买1-3/卖1-3 量价 + 最新价 ｜ 量:买正卖负 · 价:买正卖负）</span>
           <span v-else-if="bsStatus==='none'" class="hint">（该点暂无买卖盘数据）</span>
+          <span v-else-if="bsStatus==='error'" class="hint">（买卖盘加载失败，点击主图该点重试）</span>
         </div>
         <div v-show="bsStatus==='ok'" ref="bsRef" class="bs-chart chart-host"></div>
-        <el-empty v-show="bsStatus!=='ok'" :description="bsStatus==='loading' ? '加载中…' : (bsStatus==='none' ? '该点暂无买卖盘数据' : '点击主图上的时间点查看买卖盘逐笔量价')" :image-size="64" />
+        <el-empty v-show="bsStatus!=='ok'" :description="bsStatus==='loading' ? '加载中…' : (bsStatus==='none' ? '该点暂无买卖盘数据' : (bsStatus==='error' ? '买卖盘加载失败，可重试' : '点击主图上的时间点查看买卖盘逐笔量价'))" :image-size="64" />
       </div>
       <!-- 数据源(内部参考,勿对外展示)：真实数据：GET /sdpt/fshq/data ｜ 模式 ｜ 点击主图点联动下方滚动明细 （线上买卖盘走 /fshq/dataDet 按点 id,本次未采集,待补抓） -->
     </template>

@@ -16,6 +16,7 @@ import {
 import { fetchSummary } from '@/services/hedge/hedgeApi'
 import { listAlerts, type Alert } from '@/services/alertClient'
 import { currentRegion } from '@/services/region/regionContext'
+import InfoHint from '@/components/common/InfoHint.vue'
 import { onRegionChange } from '@/composables/useRegionReload'
 import {
   getRiskThresholds,
@@ -34,16 +35,29 @@ const error = ref('')
 const review = ref<ReviewResult | null>(null)
 const reviewFailure = ref<ReviewFailure | null>(null)
 const monitor = ref<MonitorResult | null>(null)
+const monitorFailure = ref<string | null>(null)
 const alerts = ref<Alert[]>([])
+const alertsFailure = ref<string | null>(null)
 
 const now = new Date()
 const yesterday = new Date(now.getTime() - 86400000)
 const dateStr = `${yesterday.getFullYear()}-${String(yesterday.getMonth() + 1).padStart(2, '0')}-${String(yesterday.getDate()).padStart(2, '0')}`
 
+function failureText(reason: unknown): string {
+  return reason instanceof Error && reason.message ? reason.message : '网络错误（智能体后端未运行？）'
+}
+
+// 迟到守卫（fix-stale-response-guards）：onRegionChange 会重入 load，quant 端点超时上限 45s——
+// 切地区后旧地区的慢响应不能覆盖新地区的数据与红黄绿判级（本页无轮询，错误状态会长期停留）。
+let loadSeq = 0
+
 async function load() {
+  const seq = ++loadSeq
   loading.value = true
   error.value = ''
   reviewFailure.value = null
+  monitorFailure.value = null
+  alertsFailure.value = null
   // 各端点用 allSettled 隔离：单点失败不阻断整页，但不再用 catch 把原因折成 null。
   const tasks = await Promise.allSettled([
     fetchReview({ date: dateStr }),
@@ -51,11 +65,14 @@ async function load() {
     fetchSummary({ window: 'today2' }),
     listAlerts(),
   ])
+  if (seq !== loadSeq) return
   review.value = tasks[0].status === 'fulfilled' ? tasks[0].value : null
   monitor.value = tasks[1].status === 'fulfilled' ? tasks[1].value : null
   hedgeSummary.value = tasks[2].status === 'fulfilled' ? tasks[2].value : null
   if (tasks[0].status === 'rejected') reviewFailure.value = classifyReviewError(tasks[0].reason)
+  if (tasks[1].status === 'rejected') monitorFailure.value = failureText(tasks[1].reason)
   alerts.value = tasks[3].status === 'fulfilled' ? tasks[3].value.alerts : []
+  if (tasks[3].status === 'rejected') alertsFailure.value = failureText(tasks[3].reason)
   const otherFailures = [tasks[1], tasks[2], tasks[3]].filter((task) => task.status === 'rejected')
   if (otherFailures.length) error.value = `其他 ${otherFailures.length} 项风控数据加载失败，已保留可用结果。`
   loading.value = false
@@ -96,11 +113,11 @@ function levelClass(l: RiskLevel) {
 <template>
   <div class="risk-center">
     <header class="rc-head">
-      <h2><ShieldCheck :size="18" /> 风控阈值统一面板</h2>
-      <p class="rc-sub">
-        聚合敞口 / 申报偏差 / 价差异动 / 告警越限，统一阈值判红黄绿。地区：{{ currentRegion.shortName || regionId }}
-        · 数据经量化权威端点（/agent-api/agent/quant/*），预测/合成序列数值仅供参考（mixed）。
-      </p>
+      <h2>
+        <ShieldCheck :size="18" /> 风控阈值统一面板
+        <span class="rc-head-region">{{ currentRegion.shortName || regionId }}</span>
+        <InfoHint text="聚合敞口 / 申报偏差 / 价差异动 / 告警越限，统一阈值判红黄绿。数据经量化权威端点（/agent-api/agent/quant/*），预测/合成序列数值仅供参考（mixed）。" />
+      </h2>
     </header>
 
     <section class="rc-thr">
@@ -134,23 +151,38 @@ function levelClass(l: RiskLevel) {
           <small v-if="reviewFailure.detail">后端返回：{{ reviewFailure.detail }}</small>
         </div>
       </div>
-      <div class="rc-card" :class="levelClass(spreadLevel)">
+      <div class="rc-card" :class="monitor ? levelClass(spreadLevel) : 'state-empty'">
         <div class="rc-card-head"><AlertTriangle :size="15" /> 实时-日前价差异动</div>
-        <div class="rc-val">{{ monitor ? monitor.alerts.length + ' 条' : '—' }}</div>
-        <div class="rc-tag">{{ RISK_LEVEL_LABEL[spreadLevel] }}</div>
-        <div class="rc-hint">阈值 {{ monitor?.spread_threshold ?? thresholds.spreadThresholdYuan }} 元/MWh</div>
+        <template v-if="monitor">
+          <div class="rc-val">{{ monitor.alerts.length }} 条</div>
+          <div class="rc-tag">{{ RISK_LEVEL_LABEL[spreadLevel] }}</div>
+          <div class="rc-hint">阈值 {{ monitor.spread_threshold ?? thresholds.spreadThresholdYuan }} 元/MWh</div>
+        </template>
+        <div v-else-if="monitorFailure" class="rc-card-empty">
+          <strong>价差数据加载失败</strong>
+          <span>无法判定当前价差异动级别，失败不代表安全。</span>
+          <small>后端返回：{{ monitorFailure }}</small>
+        </div>
       </div>
-      <div class="rc-card" :class="levelClass(alertLevel)">
+      <div class="rc-card" :class="alertsFailure ? 'state-empty' : levelClass(alertLevel)">
         <div class="rc-card-head"><AlertTriangle :size="15" /> 盯盘告警（未消除）</div>
-        <div class="rc-val">{{ alerts.length }} 条</div>
-        <div class="rc-tag">{{ RISK_LEVEL_LABEL[alertLevel] }}</div>
-        <div class="rc-hint">复用 /api/agent/alerts 轮询（AlertCenter 同源）</div>
+        <template v-if="!alertsFailure">
+          <div class="rc-val">{{ alerts.length }} 条</div>
+          <div class="rc-tag">{{ RISK_LEVEL_LABEL[alertLevel] }}</div>
+          <div class="rc-hint">复用 /api/agent/alerts 轮询（AlertCenter 同源）</div>
+        </template>
+        <div v-else class="rc-card-empty">
+          <strong>告警读取失败</strong>
+          <span>告警链路不可用，无法确认是否存在未消除告警。</span>
+          <small>后端返回：{{ alertsFailure }}</small>
+        </div>
       </div>
     </div>
 
     <section class="rc-alerts">
       <div class="rc-block-title"><AlertTriangle :size="14" /> 活跃告警</div>
-      <DataState v-if="!alerts.length" :empty="true" empty-text="暂无活跃告警" />
+      <DataState v-if="alertsFailure" :error="`告警读取失败：${alertsFailure}`" />
+      <DataState v-else-if="!alerts.length" :empty="true" empty-text="暂无活跃告警" />
       <ul v-else class="rc-alert-list">
         <li v-for="a in alerts.slice(0, 12)" :key="a.id" :class="a.severity">
           <span class="rc-alert-sev">{{ a.severity }}</span>
@@ -166,8 +198,9 @@ function levelClass(l: RiskLevel) {
 
 <style scoped>
 .risk-center { padding: 16px 20px; }
-.rc-head h2 { margin: 0 0 4px; display: flex; align-items: center; gap: 6px; }
-.rc-sub { margin: 0 0 12px; color: var(--el-text-color-secondary); font-size: var(--font-md); }
+.rc-head h2 { margin: 0 0 12px; display: flex; align-items: center; gap: 6px; }
+/* 副题收纳（slim-spot-page-explainers）：口径/来源收 ⓘ，地区名留标题旁短徽标 */
+.rc-head-region { padding: 1px 8px; border-radius: 999px; border: 1px solid var(--el-border-color); color: var(--el-text-color-secondary); font-size: var(--font-xs); font-weight: 500; }
 .rc-thr {
   display: flex; flex-wrap: wrap; gap: 14px;
   font-size: var(--font-sm); color: var(--el-text-color-secondary);
