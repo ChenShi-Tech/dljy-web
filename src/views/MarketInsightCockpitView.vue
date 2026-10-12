@@ -3,7 +3,7 @@
 // 左栏「预检」：fetchMarketInsightBundle 确定性装配 → dljy-ui 组件渲染六区块（不经 LLM，前后端对齐）。
 // 每卡「AI 解读」：把该 block 作 contextPayload 交右栏 AgentChatPanel 流式解读（B3 选中即问）。
 import { Sparkles } from 'lucide-vue-next'
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import MarketSnapshotCard from '@/components/agent/dljy-ui/insight/MarketSnapshotCard.vue'
 import AnomalyRadarCard from '@/components/agent/dljy-ui/insight/AnomalyRadarCard.vue'
 import ElasticityCurveCard from '@/components/agent/dljy-ui/insight/ElasticityCurveCard.vue'
@@ -68,6 +68,15 @@ onRegionChange(() => {
   error.value = ''
 })
 
+// 改日期/市场同理（实测缺陷：改参后旧 bundle 继续以当前参数的姿态展示，且「AI 综合
+// 解读」的提问用新 date、上下文却是旧日期数据，问答错位）。清空回空态并禁用 AI 按钮，
+// 由用户重新预检——与切地区行为对齐，不自动重拉。
+watch([date, market], () => {
+  precheckSeq += 1
+  bundle.value = null
+  error.value = ''
+})
+
 // 选中即问：单卡解读把该区块作切片交 AI 侧边栏；悬浮球与「AI 综合解读」走全局解读那一支。
 // 切片在点击时刻求值，只随发起解读的那一轮下发。
 const ai = useAiSidebar()
@@ -85,7 +94,7 @@ defineAiPage({
   promptKey,
   interpret: {
     context: () => ({ block_name: '市场洞察全局', data_availability: bundle.value?.data_availability ?? null }),
-    question: () => `请综合解读今日市场态势（${date.value}）：行情 / 弹性 / 价差 / 节点 / 异动，给出三段式判断`
+    question: () => `请综合解读 ${date.value} 市场态势：行情 / 弹性 / 价差 / 节点 / 异动，给出关键判断`
   }
 })
 function askGlobal() {
@@ -129,12 +138,12 @@ function askGlobal() {
         </section>
         <div class="mic-sec-head mic-insight-head span-2">
           <span class="mic-sec-title">深度洞察</span>
-          <small>预检后呈现 · 确定性装配（不经 LLM）</small>
+          <small>预检后呈现</small>
         </div>
-        <div v-if="error" class="mic-err">数据预检失败：{{ error }}（请确认 agent-backend 已启动）</div>
+        <div v-if="error" class="mic-err">数据预检失败：{{ error }}（服务暂不可用，请稍后重试）</div>
         <div v-else-if="!bundle" class="mic-empty">
-          <p>选择日期与市场后点击<strong>「数据预检」</strong>，五区块洞察一屏确定性呈现（不经 LLM）；
-            每张卡右上<strong>「AI 解读」</strong>可就该区块流式研判。</p>
+          <p>选择日期与市场后点击<strong>「数据预检」</strong>，五区块洞察一屏呈现；
+            每张卡右上<strong>「AI 解读」</strong>可就该区块继续研判。</p>
         </div>
         <template v-else>
           <div class="mic-tag" :class="bundle.basis === 'captured' ? 't-real' : 't-mock'">数据口径：{{ basisLabel }}</div>

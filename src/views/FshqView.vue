@@ -86,7 +86,12 @@ function updateJyBoundsFromData(d: any) {
   if (dates.length) jyBounds.value = [dates[0], dates[dates.length - 1]]
 }
 
+// 请求代次守卫（#415 范式，本页此前是市场洞察菜单里唯一缺失的取数页）：连续改
+// mode/日期或切地区时，晚归旧响应不得把旧选择的数据写回当前状态。
+let loadGeneration = 0
+
 async function load() {
+  const generation = ++loadGeneration
   loading.value = true; error.value = ''
   mainHandle.showLoading()
   try {
@@ -99,6 +104,7 @@ async function load() {
     }
     const match = mode.value === 'rq' ? `rqlx0__${runDate.value}` : `rqlx1__${jyDate.value}`
     const res = await fetchCaptured<any>('sdpt_fshq', match)
+    if (generation !== loadGeneration) return
     data.value = res?.data || {}
     updateJyBoundsFromData(data.value)
     // 默认选「有买卖盘(extendMap 含 id)的点」里实时价最高的,保证下方买卖盘默认有数据
@@ -109,13 +115,17 @@ async function load() {
     if (mi < 0) { const k = Object.keys(em)[0]; mi = k ? Number(k.slice(5)) : 0 } // 退路:首个有 id 的点
     selectedIdx.value = mi
     await nextTick()
+    if (generation !== loadGeneration) return
     renderMain()
     loadBuySell(selectedIdx.value)
   } catch (e) {
+    if (generation !== loadGeneration) return
     error.value = e instanceof Error ? e.message : '加载失败'
   } finally {
-    loading.value = false
-    mainHandle.hideLoading()
+    if (generation === loadGeneration) {
+      loading.value = false
+      mainHandle.hideLoading()
+    }
   }
 }
 

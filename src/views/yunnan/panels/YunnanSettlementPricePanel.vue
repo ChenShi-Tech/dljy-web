@@ -37,6 +37,7 @@ import { onSelectionChange, useSpotSelection } from '@/composables/useSpotSelect
 import { ALL_PLANTS, ALL_UNITS, usePlantUnitFilter, type PlantUnitFilterRow } from '@/composables/usePlantUnitFilter'
 import { axisTooltip, chartToolbox, fmtNum, emptyOverlay, sliderZoom } from '@/services/chart/chartOptions'
 import { selectedCompanyId } from '@/services/company/companyContext'
+import { IS_CUSTOMER_EDITION } from '@/services/edition'
 import { fetchSettlementCoverage } from '@/services/market/captureCoverage'
 import {
   fetchDailySummary,
@@ -202,6 +203,15 @@ const HERO_INFO = [
   '节点电价峰谷价差水位：来自节点电价权威后端（/v1/spot/node-price/daily）。',
   '云南缺真实数据时如实为空，不回退他省口径。'
 ].join('\n')
+
+// A3：摄取指引按交付档分层。IS_CUSTOMER_EDITION 是编译期常量，rollup 会连同字符串一起
+// 消掉另一分支——客户产物里不存在主仓脚本路径/内部组件名；内部档保留运维可执行的原文。
+const SETTLE_INGEST_GUIDE = IS_CUSTOMER_EDITION
+  ? '所选范围的数据暂未就绪，可更换日期范围，或联系技术支持。'
+  : '请先在主仓库运行现货结算导出 ETL（scripts/private-cache-adapters/yn-fact-pnl.mjs + import-spot-export）落 capture-raw/yunnan/，或更换为已摄取的日期范围。'
+const NODE_INGEST_GUIDE = IS_CUSTOMER_EDITION
+  ? '节点电价数据暂未就绪，可更换日期/市场，或联系技术支持。'
+  : '请先在主仓库摄取节点电价 Parquet（现货权威后端 /api/v1/spot 数据源），或更换为已摄取的日期/市场。'
 
 // 展示名（#2992）：综合结算均价只认服务端量费加权口径；样站三条线在「全部厂站」时
 // 明示等权口径，单厂时保持原名（无跨厂平均）。
@@ -1066,18 +1076,20 @@ onRegionChange(() => {
       show-icon
       :title="historyNotice"
     />
-    <!-- 摄取指引降层（R5，同 spot-degradation-honesty 呈现层级）：事实一行可见，完整命令展开可达 -->
+    <!-- 摄取指引降层（R5，同 spot-degradation-honesty 呈现层级）：事实一行可见，完整命令展开可达。
+         A3：指引文案按交付档分层——客户交付版不得出现主仓脚本路径/内部组件名（编译期常量，
+         rollup 消掉另一分支字符串），内部档保留运维可执行的原文。 -->
     <DataStatusLine
       v-if="!errorMsg && !weightedErrorMsg && settleIngestHint"
       class="sp-statusline"
       summary="后端暂无云南结算数据"
-      :items="[{ tone: 'caveat', text: '请先在主仓库运行现货结算导出 ETL（scripts/private-cache-adapters/yn-fact-pnl.mjs + import-spot-export）落 capture-raw/yunnan/，或更换为已摄取的日期范围。' }]"
+      :items="[{ tone: 'caveat', text: SETTLE_INGEST_GUIDE }]"
     />
     <DataStatusLine
       v-if="nodeIngestHint && !errorMsg"
       class="sp-statusline"
       summary="后端暂无该日节点电价数据（峰谷水位/KPI 不可用）"
-      :items="[{ tone: 'caveat', text: '请先在主仓库摄取节点电价 Parquet（现货权威后端 /api/v1/spot 数据源），或更换为已摄取的日期/市场。' }]"
+      :items="[{ tone: 'caveat', text: NODE_INGEST_GUIDE }]"
     />
 
     <!-- KPI 行（当日跨节点聚合）-->
@@ -1226,16 +1238,16 @@ onRegionChange(() => {
 
 .sp-hero {
   padding: 10px 14px;
-  border: 1px solid #dfe7eb;
+  border: 1px solid var(--line, #dfe7eb);
   border-radius: 8px;
-  background: linear-gradient(135deg, #ffffff 0%, #eef7f3 55%, #f7fbff 100%);
+  background: var(--panel-sub, #f7fbff);
 }
 
 .sp-kicker {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  color: #0f766e;
+  color: var(--primary, #0f766e);
   font-size: var(--font-md);
   font-weight: 650;
 }
@@ -1254,9 +1266,9 @@ onRegionChange(() => {
   display: flex;
   align-items: center;
   padding: 10px 14px;
-  border: 1px solid #dfe7eb;
+  border: 1px solid var(--line, #dfe7eb);
   border-radius: 8px;
-  background: #fff;
+  background: var(--panel, #fff);
 }
 
 .sp-field {
@@ -1267,7 +1279,7 @@ onRegionChange(() => {
 }
 
 .sp-field > span {
-  color: #50616e;
+  color: var(--muted, #50616e);
   font-size: var(--font-sm);
   font-weight: 650;
 }
@@ -1289,23 +1301,23 @@ onRegionChange(() => {
 
 .sp-kpi {
   padding: 14px 16px;
-  border: 1px solid #dfe7eb;
+  border: 1px solid var(--line, #dfe7eb);
   border-radius: 8px;
-  background: #fff;
+  background: var(--panel, #fff);
 }
 
 .sp-kpi-label {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  color: #50616e;
+  color: var(--muted, #50616e);
   font-size: var(--font-sm);
   font-weight: 650;
 }
 
 .sp-kpi-value {
   margin-top: 6px;
-  color: #172b3a;
+  color: var(--text, #172b3a);
   font-size: var(--font-24);
   font-weight: 700;
   line-height: 1.2;
@@ -1330,14 +1342,14 @@ onRegionChange(() => {
   align-items: center;
   gap: 10px;
   padding: 40px 16px;
-  border: 1px dashed #dfe7eb;
+  border: 1px dashed var(--line, #dfe7eb);
   border-radius: 8px;
-  background: #fff;
+  background: var(--panel, #fff);
 }
 
 .sp-settle-empty p {
   margin: 0;
-  color: #687987;
+  color: var(--muted, #687987);
   font-size: var(--font-md);
 }
 
@@ -1356,9 +1368,9 @@ onRegionChange(() => {
 
 .sp-table-card {
   padding: 16px;
-  border: 1px solid #dfe7eb;
+  border: 1px solid var(--line, #dfe7eb);
   border-radius: 8px;
-  background: #fff;
+  background: var(--panel, #fff);
 }
 
 .sp-table-head {
@@ -1374,12 +1386,12 @@ onRegionChange(() => {
   align-items: center;
   gap: 6px;
   margin: 0;
-  color: #172b3a;
+  color: var(--text, #172b3a);
   font-size: var(--font-15);
 }
 
 .sp-table-sub {
-  color: #687987;
+  color: var(--muted, #687987);
   font-size: var(--font-sm);
 }
 

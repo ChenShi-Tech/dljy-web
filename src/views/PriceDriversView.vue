@@ -18,6 +18,7 @@ import type {
 import { getCurrentUser } from '@/services/auth'
 import { canAccessPriceDriver } from '@/services/governance'
 import { clampToCoverage, fetchCaptureCoverage } from '@/services/market/captureCoverage'
+import { fetchCaptured } from '@/services/captured'
 import { onRegionChange } from '@/composables/useRegionReload'
 import RegionDataBanner from '@/components/region/RegionDataBanner.vue'
 import MetricTile from '@/components/common/MetricTile.vue'
@@ -99,13 +100,17 @@ const activeKind = computed<MarketInsightRelationKind>(() => (driver.value === '
 const otherKind = computed<MarketInsightRelationKind>(() => (activeKind.value === 'renewable' ? 'load' : 'renewable'))
 
 // 驱动元数据（X 轴范围/分箱/文案/参考线），与旧两页薄壳的注入一致。
+// X 轴不再写死 14000 上界：该值按早年山西量级标定，2026 年云南/山西午间新能源出力
+// 实测已达 20~33GW，固定上限会把午间主力散点整段裁出轴外（回归/KPI 用全量数据，
+// 图与数字口径分裂），热力图顶箱也混入数倍越界值。改为数据自适应，新能源保持 0 锚。
 const DRIVER_META: Record<MarketInsightRelationKind, {
   label: string
   unit: string
-  xFixedMax?: number
+  /** 散点 X 轴/热力图分箱锚 0 下界：新能源出力物理非负；负荷留空走样本自适应。 */
+  xAnchorZero?: boolean
   refLines: ReferenceLine[]
 }> = {
-  renewable: { label: '新能源出力', unit: 'MW', xFixedMax: 14000, refLines: RENEWABLE_REF_LINES },
+  renewable: { label: '新能源出力', unit: 'MW', xAnchorZero: true, refLines: RENEWABLE_REF_LINES },
   load: { label: '统调负荷', unit: 'MW', refLines: LOAD_REF_LINES }
 }
 const meta = computed(() => DRIVER_META[activeKind.value])
@@ -228,7 +233,7 @@ function bindClick(handle: EChartHandle, onClick: (params: { dataIndex?: number;
 // 视图①：小时 × 驱动量分档 → 平均电价 热力图；点击小时列联动单小时散点。
 function renderHeatmap() {
   const xd = data.value?.xd ?? []
-  const m = heatmapMatrix(xd, { days: days.value, binCount: 10, binMax: meta.value.xFixedMax })
+  const m = heatmapMatrix(xd, { days: days.value, binCount: 10, binMin: meta.value.xAnchorZero ? 0 : undefined })
   const cc = chartChrome()
   const hi = selectedHour.value != null ? m.xHours.indexOf(selectedHour.value) : -1
   heatmapChart.setOption({
@@ -358,8 +363,8 @@ function renderScatter() {
   const reg = hourlyRegression(d.xd || [], h, days.value)
   if (reg.n >= 2) {
     const xs = pointsForHour(d.xd || [], h, days.value).map((p) => p[0])
-    const xMin = meta.value.xFixedMax != null ? 0 : Math.min(...xs)
-    const xMax = meta.value.xFixedMax != null ? meta.value.xFixedMax : Math.max(...xs)
+    const xMin = meta.value.xAnchorZero ? 0 : (xs.length ? Math.min(...xs) : 0)
+    const xMax = xs.length ? Math.max(...xs) : 1
     series.push({
       name: '拟合', type: 'line', showSymbol: false, silent: true, z: 2,
       lineStyle: { color: '#606266', width: 1.5, type: 'dashed' },
@@ -376,8 +381,10 @@ function renderScatter() {
         ? `拟合线`
         : `${p.seriesName}<br/>${meta.value.label} ${p.value[0]} ${meta.value.unit} / 电价 ${p.value[1]} 元/MWh`
     },
-    xAxis: meta.value.xFixedMax != null
-      ? { type: 'value', min: 0, max: meta.value.xFixedMax, interval: meta.value.xFixedMax / 4, axisLabel: { fontSize: 10, color: cc.axisLabel }, splitLine: { lineStyle: { color: cc.splitLine } } }
+    // X 轴自适应：新能源锚 0 下界（出力非负、量级随地区差异大），负荷 scale 自适应；
+    // 不再写死上界（原 14000 已被 2026 年两地区实际出力越界，见 DRIVER_META 注释）。
+    xAxis: meta.value.xAnchorZero
+      ? { type: 'value', min: 0, axisLabel: { fontSize: 10, color: cc.axisLabel }, splitLine: { lineStyle: { color: cc.splitLine } } }
       : { type: 'value', scale: true, axisLabel: { fontSize: 10, color: cc.axisLabel }, splitLine: { lineStyle: { color: cc.splitLine } } },
     // 电价轴自适应：负价时段的「驱动-价格」关系恰是本页最关心的场景，
     // 写死 min:0/max:1500 会系统性裁掉负价散点与拟合线负值端
@@ -428,12 +435,35 @@ function askInsight() {
   ai.interpret()
 }
 
-// 云南默认运行日校正：fetchCaptureCoverage 实时区间（仅当用户尚未动过日期）。
+// 云南默认运行日校正（仅当用户尚未动过日期）：优先 fetchCaptureCoverage 实时区间。
+// 兜底尾行探针：覆盖接口按 region 精确聚合 DB 行，云南价格数据集以 region='all' 归档时
+// 不会出现在覆盖返回里（实测 da/rt_user_price 缺席）→ fetchCaptureCoverage 得 null、
+// 默认日停在今天、首屏 12 天 0 点。此时取价格与两类驱动量四个「尾行日期」(limit=1)
+// 的最小值钳默认日——仍是数据事实，不是猜的日期。
+async function datasetTailDate(datasetKey: string): Promise<string | null> {
+  try {
+    const body = await fetchCaptured<{ data?: Array<{ operateDate?: unknown }> }>('yn_system_forecast', datasetKey, { limit: 1 })
+    const tail = body?.data?.[0]
+    return typeof tail?.operateDate === 'string' ? tail.operateDate : null
+  } catch {
+    return null
+  }
+}
 async function syncCoverageDefault() {
   if (runDate.value !== initialRunDate) return
   const range = await fetchCaptureCoverage(currentRegion.value.id, 'price')
-  if (!range || runDate.value !== initialRunDate) return
-  if (runDate.value !== range.end) runDate.value = range.end // 变更由 watch 触发重载
+  let end: string | null = range?.end ?? null
+  if (!range && currentRegion.value.id === 'yunnan') {
+    const tails = await Promise.all([
+      datasetTailDate('da_user_price'),
+      datasetTailDate('rt_user_price'),
+      datasetTailDate('new_energy_actual'),
+      datasetTailDate('load_actual')
+    ])
+    end = tails.filter((t): t is string => t != null).sort()[0] ?? null
+  }
+  if (!end || runDate.value !== initialRunDate) return
+  if (runDate.value !== end) runDate.value = end // 变更由 watch 触发重载
 }
 
 onMounted(() => {
