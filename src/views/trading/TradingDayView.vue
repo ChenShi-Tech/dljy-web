@@ -95,6 +95,10 @@ const bindCalTitle = computed(() =>
 )
 
 let loadToken = 0
+// 跨日选单（四次验收，S4 历史单选入作业）：切标的日重载后要精确选中用户点的那张，
+// 而不是默认取最新——同日多张单时点击旧单会被最新单顶掉。pendingSelectId 由
+// onSelectOrder 写入、loadDeclaration 消费（找不到则如实回退最新单，与申报台同口径）。
+const pendingSelectId = ref('')
 async function loadDeclaration() {
   const token = ++loadToken
   loading.value = true
@@ -102,7 +106,10 @@ async function loadDeclaration() {
   try {
     const rows = await listDeclarations({ date: targetDate.value, limit: 20 })
     if (token !== loadToken) return
-    declaration.value = rows.length ? rows.reduce((a, c) => (c.updatedAt > a.updatedAt ? c : a)) : null
+    const wanted = pendingSelectId.value
+    pendingSelectId.value = ''
+    const picked = wanted ? rows.find((r) => r.id === wanted) : undefined
+    declaration.value = picked ?? (rows.length ? rows.reduce((a, c) => (c.updatedAt > a.updatedAt ? c : a)) : null)
   } catch (e) {
     if (token !== loadToken) return
     declError.value = e instanceof Error ? e.message : '申报单读取失败'
@@ -197,6 +204,18 @@ function onUpdated(d: DeclarationOrder) {
   if (d.targetDate !== targetDate.value) return
   if (declaration.value && d.id !== declaration.value.id) return
   declaration.value = d
+}
+
+// S4 历史单/同日单选入作业（四次验收）：同日直接换单（不重载）；跨日先记
+// pendingSelectId 再切标的日，由 targetDate watcher → loadDeclaration 精确选中。
+// S1–S7 与绑单摘要随容器整体切到那一天，与申报台「查看=选入动线」同口径。
+function onSelectOrder(d: DeclarationOrder) {
+  if (d.targetDate === targetDate.value) {
+    declaration.value = d
+    return
+  }
+  pendingSelectId.value = d.id
+  targetDate.value = d.targetDate
 }
 
 onMounted(loadDeclaration)
@@ -334,7 +353,7 @@ onMounted(loadDeclaration)
       <StageDeclare
         v-else-if="activeStage === 'declare'"
         :declaration="declaration" :target-date="targetDate"
-        @updated="onUpdated" @go="selectStage"
+        @updated="onUpdated" @go="selectStage" @select-order="onSelectOrder"
       />
       <StageClearing
         v-else-if="activeStage === 'clearing'"
