@@ -940,6 +940,10 @@ watch(selectedCompanyId, () => {
             {{ m.label }}
           </button>
         </div>
+        <span
+          class="pill ck-data-date"
+          title="最近一次成功加载数据的日期与市场，新数据落地后才更新"
+        ><span class="k">数据</span>{{ data?.date ?? '—' }} · {{ data ? (data.market === 'da' ? '日前' : '实时') : '—' }}</span>
         <span class="pill"><span class="k">视角</span>全自有厂站</span>
         <el-button :loading="loading" size="small" class="ck-reload" @click="reload">重新加载</el-button>
         <el-dropdown
