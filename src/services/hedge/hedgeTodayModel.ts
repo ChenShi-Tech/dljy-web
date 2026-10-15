@@ -9,6 +9,7 @@
 // 5) 侧边栏摘要（HW-09）：两个套保率、判级、需关注时段与数据腿状态；不含试算与方案对比，未覆盖时段不带数值。
 
 import type { CsvCell } from '@/utils/exportCsv'
+import { readableSourceText } from '@/utils/mojibake'
 import type { HedgeOverview } from './hedgeApi'
 import { formatBeijingTime } from './hedgeMaintenanceModel'
 import { compareText } from 'shared/insight/contract.mjs'
@@ -42,6 +43,8 @@ export interface HedgeLegRowView {
   key: string
   sourceKey: string | null
   label: string
+  /** label 判为乱码时的原文（悬停排查），正常为 null。 */
+  labelMojibakeRaw?: string | null
   status: LegStatus
   changedAt: string | null
   dataThrough: string | null
@@ -51,7 +54,11 @@ export interface HedgeLegRowView {
   ingestedAt: string | null
   version: { schemeId: number; versionNo: number; name: string; basis: string | null; effectiveFrom: string | null } | null
   reason: string | null
+  /** reason 判为乱码时的原文，正常为 null。 */
+  reasonMojibakeRaw?: string | null
   note: string | null
+  /** note 判为乱码时的原文，正常为 null。 */
+  noteMojibakeRaw?: string | null
 }
 
 export interface TodayOverview extends Omit<HedgeOverview, 'intervals' | 'legs'> {
@@ -126,10 +133,16 @@ function normalizeLegRow(raw: unknown): HedgeLegRowView | null {
   const row = (raw ?? {}) as Record<string, unknown>
   if (!row.key) return null
   const version = (row.version ?? null) as HedgeLegRowView['version']
+  // 来源类文本防乱码（dljy#3731 缺陷⑤）：label/reason/note 直通后端原文，编码错配时整行
+  // 谚语式乱码上屏。可读化后呈现占位，原文挂 *MojibakeRaw 供悬停排查（TodayLegsPanel）。
+  const label = readableSourceText(str(row.label) ?? String(row.key))
+  const reason = readableSourceText(str(row.reason))
+  const note = readableSourceText(str(row.note))
   return {
     key: String(row.key),
     sourceKey: str(row.sourceKey),
-    label: String(row.label ?? row.key),
+    label: label.text,
+    labelMojibakeRaw: label.raw,
     status: String(row.status ?? 'OK') as LegStatus,
     changedAt: str(row.changedAt),
     dataThrough: str(row.dataThrough),
@@ -138,8 +151,10 @@ function normalizeLegRow(raw: unknown): HedgeLegRowView | null {
     publishedAt: str(row.publishedAt),
     ingestedAt: str(row.ingestedAt),
     version: version && typeof version === 'object' ? version : null,
-    reason: str(row.reason),
-    note: str(row.note),
+    reason: reason.text,
+    reasonMojibakeRaw: reason.raw,
+    note: note.text,
+    noteMojibakeRaw: note.raw,
   }
 }
 

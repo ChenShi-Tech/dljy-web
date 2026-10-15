@@ -374,3 +374,150 @@ describe('申报台常驻说明清场（slim-spot-page-explainers）', () => {
     expect(wrapper.findAll('p.muted').some((p) => p.text().includes('再走风控检查'))).toBe(false)
   })
 })
+
+// ── 报价优化竞态含模型维度（dljy#3731 遗留缺陷③ · yunnan-launch-readiness
+// stale-response-guards delta「世代号含模型维度」）──
+// 守什么：optimize 在途时切决策模型，旧模型的迟到结果不落屏、错误不上屏、
+//        loading 不悬挂；不切模型时结果照常采纳。
+// 坏掉的症状：旧模型的 frontier 曲线被当成新模型结论展示，报价水位判断输入被换。
+describe('申报台报价优化竞态含模型维度（缺陷③）', () => {
+  const CompareProbe = {
+    name: 'DeclarationForecastCompare',
+    props: ['decisionModel', 'targetDate'],
+    emits: ['update:decisionModel', 'batch-ready', 'summary', 'suggest-date', 'suggest-rehearsal'],
+    template: '<span class="compare-probe" />',
+  }
+  async function mountWithProbe() {
+    const wrapper = mount(DeclarationDeskView, {
+      global: {
+        stubs: {
+          ...Object.fromEntries([
+            'AgentChatPanel', 'AgentHistorySidebar', 'RegionDataBanner', 'CapabilitySupportBadge', 'DataBasisBadge', 'TrustBadge',
+          ].map((name) => [name, { template: '<span />' }])),
+          DeclarationForecastCompare: CompareProbe,
+        },
+      },
+    })
+    await flushPromises()
+    return wrapper
+  }
+  const cockpitFixture = () => ({
+    basis: 'captured',
+    price_forecast: {
+      points: [210, 220, 230, 240],
+      lower: [200, 210, 220, 230],
+      upper: [220, 230, 240, 250],
+      unit: '元/MWh',
+      basis: 'captured',
+      source_type: 'db',
+      mock: false,
+    },
+    bid_advice: { subject_type: 'generator', retailer: null, storage: null, generator: { total_declared_mwh: 960 } },
+    deviation_risk: { expected_penalty_yuan: 0, worst_penalty_yuan: 0, high_risk_slots: 0, source_type: 'db', mock: false },
+    midterm_trend: { daily_avg_price: [210, 215], horizon_days: 2, source_type: 'db', mock: false },
+  })
+  const optimizeFixture = () => ({
+    source_type: 'db',
+    mock: false,
+    optimize_bid: {
+      solver: 'cvar',
+      note: 'fixture',
+      frontier: [
+        { lambda: 0, risk_level: 'aggressive', bid_mw: 80, expected_profit_yuan: 1000 },
+        { lambda: 3, risk_level: 'conservative', bid_mw: 60, expected_profit_yuan: 800 },
+      ],
+    },
+    forecast: { basis: 'captured', points: [1, 2], lower: [1, 2], upper: [1, 2], unit: '' },
+  })
+
+  async function prepare(wrapper: Awaited<ReturnType<typeof mountWithProbe>>) {
+    const probe = wrapper.getComponent({ name: 'DeclarationForecastCompare' })
+    probe.vm.$emit('update:decisionModel', 'model_a')
+    probe.vm.$emit('batch-ready', true)
+    await flushPromises()
+    const generate = wrapper.findAll('button').find((b) => b.text() === '生成')
+    await generate!.trigger('click')
+    await flushPromises()
+  }
+
+  it('不切模型：结果照常采纳（frontier 列表出现）', async () => {
+    vi.mocked(fetchCockpit).mockResolvedValueOnce(cockpitFixture() as never)
+    const optimize = vi.mocked(await import('@/services/forecast/mlForecastClient')).fetchOptimizeBid
+    optimize.mockResolvedValueOnce(optimizeFixture() as never)
+    const wrapper = await mountWithProbe()
+    await prepare(wrapper)
+
+    const btn = wrapper.findAll('button').find((b) => b.text().includes('一键生成最优申报曲线'))
+    await btn!.trigger('click')
+    await flushPromises()
+    expect(wrapper.find('.frontier-list').exists()).toBe(true)
+  })
+
+  it('在途切模型：旧模型迟到结果不落屏、按钮锁不悬挂', async () => {
+    vi.mocked(fetchCockpit).mockResolvedValueOnce(cockpitFixture() as never)
+    const optimize = vi.mocked(await import('@/services/forecast/mlForecastClient')).fetchOptimizeBid
+    let resolveOptimize!: (v: unknown) => void
+    optimize.mockImplementationOnce(() => new Promise((res) => { resolveOptimize = res as unknown as (v: unknown) => void }))
+    const wrapper = await mountWithProbe()
+    await prepare(wrapper)
+
+    const btn = wrapper.findAll('button').find((b) => b.text().includes('一键生成最优申报曲线'))
+    await btn!.trigger('click')
+    const probe = wrapper.getComponent({ name: 'DeclarationForecastCompare' })
+    probe.vm.$emit('update:decisionModel', 'model_b')
+    await flushPromises()
+    resolveOptimize(optimizeFixture())
+    await flushPromises()
+
+    expect(wrapper.find('.frontier-list').exists()).toBe(false)
+    // 模型切换的 resetDecisionPackage 已接手解锁：不因旧请求 finally 按世代跳过而悬挂
+    expect((wrapper.vm as unknown as Record<string, unknown>).optimizeLoading ?? true).not.toBe(true)
+  })
+})
+
+// ── 情报清单随上下文重置（dljy#3731 遗留缺陷④ · stale-response-guards delta
+// 「情报清单跨面板缓存隔离」）──
+// 守什么：情报清单三态（竞价空间/检修披露/持仓敞口）是按目标日算的结论，切标的日后
+//        旧结论必须清回 idle，不得顶着旧日的 done/failed 充当新日报价依据。
+// 坏掉的症状：换了目标日，清单还显示「已核查」，报价水位判断用了旧日结论。
+describe('申报台情报清单随标的日重置（缺陷④）', () => {
+  const CompareProbe = {
+    name: 'DeclarationForecastCompare',
+    props: ['decisionModel', 'targetDate'],
+    emits: ['update:decisionModel', 'batch-ready', 'summary', 'suggest-date', 'suggest-rehearsal'],
+    template: '<span class="compare-probe" />',
+  }
+  async function mountWithProbe() {
+    const wrapper = mount(DeclarationDeskView, {
+      global: {
+        stubs: {
+          ...Object.fromEntries([
+            'AgentChatPanel', 'AgentHistorySidebar', 'RegionDataBanner', 'CapabilitySupportBadge', 'DataBasisBadge', 'TrustBadge',
+          ].map((name) => [name, { template: '<span />' }])),
+          DeclarationForecastCompare: CompareProbe,
+        },
+      },
+    })
+    await flushPromises()
+    return wrapper
+  }
+
+  it('切标的日后清单三态清回 idle，不残留旧日结论', async () => {
+    const wrapper = await mountWithProbe()
+    const setup = (wrapper.vm.$ as unknown as { setupState: Record<string, unknown> }).setupState as {
+      intelChecklist: Array<{ status: string }>
+    }
+    setup.intelChecklist[0].status = 'done'
+    setup.intelChecklist[1].status = 'failed'
+    await flushPromises()
+    expect(wrapper.findAll('.check-item.done').length).toBe(1)
+
+    const probe = wrapper.getComponent({ name: 'DeclarationForecastCompare' })
+    probe.vm.$emit('suggest-date', '2026-10-02')
+    await flushPromises()
+
+    expect(setup.intelChecklist.every((item) => item.status === 'idle')).toBe(true)
+    expect(wrapper.findAll('.check-item.done').length).toBe(0)
+    expect(wrapper.findAll('.check-item.failed').length).toBe(0)
+  })
+})

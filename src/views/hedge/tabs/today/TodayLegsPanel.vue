@@ -20,7 +20,11 @@ defineProps<{
     <h3>数据状态 <HedgeHint text="各来源的数据截止时间和可用状态。过期来源仍可用于历史回看，缺失数据不补零。" /><span v-if="degraded" class="degraded" data-test="legs-degraded">有缺项</span></h3>
     <div class="leg-grid">
       <div v-for="row in rows" :key="`${row.key}:${row.sourceKey ?? ''}`" class="leg-tile" data-test="leg-row" :data-leg="row.key">
-        <span>{{ row.label }}<HedgeHint :text="[row.reason ?? row.note, legPublishText(row)].filter(Boolean).join('；')" /></span>
+        <span
+          :title="[row.labelMojibakeRaw, row.reasonMojibakeRaw, row.noteMojibakeRaw].filter(Boolean).length
+            ? `该来源文本编码解析失败，原文：${[row.labelMojibakeRaw, row.reasonMojibakeRaw, row.noteMojibakeRaw].filter(Boolean).join(' / ')}`
+            : undefined"
+        >{{ row.label }}<HedgeHint :text="[row.reason ?? row.note, legPublishText(row)].filter(Boolean).join('；')" /></span>
         <span class="status" :class="legStatusTone(row.status)" data-test="leg-status">{{ legStatusLabel(row.status) }}</span>
         <small>{{ formatIsoShort(row.dataThrough) ?? '—' }}</small>
       </div>

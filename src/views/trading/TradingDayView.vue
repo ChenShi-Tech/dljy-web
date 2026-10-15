@@ -309,6 +309,11 @@ onMounted(loadDeclaration)
     </div>
 
     <!-- 当前面板 -->
+    <!-- 切标的日强制重挂非 S4 面板（dljy#3731 遗留缺陷② · stale-response-guards delta「常驻面板
+         在上下文切换时重置派生状态」）：:key=targetDate 使旧日期实例整体卸载——派生结论、在途请求、
+         面板临时输入随实例销毁，新日期首次渲染即干净状态（各面板 onMounted 按新 targetDate 重新取数）。
+         S4 申报执行属 S4 片区（design D2），其单据由父视图 loadDeclaration 随日期重载，待 merge-declare
+         合入后按同口径处理。 -->
     <main class="td-stage">
       <div class="td-stage-head">
         <h3>{{ ALL_STAGES.find((s) => s.id === activeStage)?.scenario }}
@@ -323,11 +328,13 @@ onMounted(loadDeclaration)
       />
       <StageMarketAnalysis
         v-else-if="activeStage === 'market-analysis'"
+        :key="targetDate"
         :declaration="declaration" :target-date="targetDate"
         @updated="onUpdated" @go="selectStage"
       />
       <StageDirection
         v-else-if="activeStage === 'direction'"
+        :key="targetDate"
         :declaration="declaration" :target-date="targetDate"
         @updated="onUpdated" @go="selectStage"
       />
@@ -338,16 +345,19 @@ onMounted(loadDeclaration)
       />
       <StageClearing
         v-else-if="activeStage === 'clearing'"
+        :key="targetDate"
         :declaration="declaration" :target-date="targetDate"
         @updated="onUpdated" @go="selectStage"
       />
       <StageContract
         v-else-if="activeStage === 'contract'"
+        :key="targetDate"
         :declaration="declaration" :target-date="targetDate"
         @updated="onUpdated" @go="selectStage"
       />
       <StageDailyClose
         v-else-if="activeStage === 'daily-close'"
+        :key="targetDate"
         :declaration="declaration" :target-date="targetDate"
         @updated="onUpdated" @go="selectStage"
       />
