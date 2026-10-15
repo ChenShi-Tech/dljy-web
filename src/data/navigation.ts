@@ -31,6 +31,7 @@ import { reportsNavigation } from '../features/reports/navigation'
 import { GRID_GEO_FEATURE_ENABLED } from '../features/gridGeo/config'
 import { gridGeoNavigation } from '../features/gridGeo/navigation'
 import { listInsightNavigation } from '@/services/region/insightWorkspace'
+import { isEditionRouteAvailable } from '@/services/region/regionModules'
 import type { SubjectType } from '@/services/governance'
 import { isEntryHidden } from '@/features/platformAdminMigration/registry'
 
@@ -206,21 +207,27 @@ export const navigation: NavItem[] = [
         ]
       }] as NavItem[])
     : []),
-  {
-    // 横向工具域：数据动作链（手录 → 自动摄取 → 回放探查），对标「测算工具」收口范式。
-    // 子项 path 全不变（RBAC 按 /yygl 前缀匹配，零影响）；data-browser 从市场洞察迁入
-    // （修订 IA §2.2：它是探查工具，非市场洞察内容页）。
-    path: '/data-mgmt',
-    title: '数据管理',
-    icon: Database,
-    children: [
-      // 数据运维工作台：上传中心 / 导入融合台 / 接入向导 / 摄取管理 / 治理控制台 / 数据源接入
-      // 六页 + 运维总览的单页 tab 入口（原独立控制台收回主平台，见 DataOpsConsoleView 头注）。
-      // 仅 ADMIN/BOSS 可见（governance.adminOnlyRoutes 同口径），其余角色本组只看到浏览器。
-      { path: '/data-ops/console', title: '数据运维工作台', icon: Wrench },
-      { path: '/yygl/data-browser', title: '通用数据浏览器', icon: Table2 }
-    ]
-  },
+  // 数据接入页群（customer-edition-page-gating）：与路由层同一注册表判定
+  // （regionModules.editionModuleCapabilities，fail-closed）。customer 构建下编译期常量分支
+  // 被 DCE——分组与标题字符串不进交付产物；内部档照常。运行期 filterNavigationForUser 仍按
+  // 同一注册表再过滤一遍（防御纵深，两处同源不构成第二套开关）。
+  ...(isEditionRouteAvailable('/data-ops/console')
+    ? ([{
+        // 横向工具域：数据动作链（手录 → 自动摄取 → 回放探查），对标「测算工具」收口范式。
+        // 子项 path 全不变（RBAC 按 /yygl 前缀匹配，零影响）；data-browser 从市场洞察迁入
+        // （修订 IA §2.2：它是探查工具，非市场洞察内容页）。
+        path: '/data-mgmt',
+        title: '数据管理',
+        icon: Database,
+        children: [
+          // 数据运维工作台：上传中心 / 导入融合台 / 接入向导 / 摄取管理 / 治理控制台 / 数据源接入
+          // 六页 + 运维总览的单页 tab 入口（原独立控制台收回主平台，见 DataOpsConsoleView 头注）。
+          // 仅 ADMIN/BOSS 可见（governance.adminOnlyRoutes 同口径），其余角色本组只看到浏览器。
+          { path: '/data-ops/console', title: '数据运维工作台', icon: Wrench },
+          { path: '/yygl/data-browser', title: '通用数据浏览器', icon: Table2 }
+        ]
+      }] as NavItem[])
+    : []),
   {
     // 后台事务与资料
     path: '/operations',
@@ -287,8 +294,12 @@ export function applyInsightWorkspaceNavigation(items: NavItem[], regionId: stri
   if (!entries) return items
   return items.map((item) => {
     if (item.path !== '/insight' || !item.children) return item
-    // InsightNavEntry 与 NavItem 必填字段（path/title/icon）结构兼容，icon 由内核按页 id 提供
-    const children: NavItem[] = entries.map((entry) => ({ ...entry }))
+    // InsightNavEntry 与 NavItem 必填字段（path/title/icon）结构兼容，icon 由内核按页 id 提供；
+    // 客户档下封存工作区入口被版本门控摘除（customer-edition-page-gating Requirement 2，
+    // 与路由层同一注册表判定），未摘尽的地区入口也在这里兜一道，菜单不出现死链接。
+    const children: NavItem[] = entries
+      .filter((entry) => isEditionRouteAvailable(entry.path))
+      .map((entry) => ({ ...entry }))
     return { ...item, children }
   })
 }

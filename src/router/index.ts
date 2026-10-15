@@ -3,6 +3,7 @@ import { finishRouteProgress, startRouteProgress } from '@/services/routeProgres
 import { resetCaptureAccessDenied } from '@/services/api'
 import { getCurrentUser, getToken } from '@/services/auth'
 import { canAccessPath, firstAccessiblePath, isPathAvailableInRegion } from '@/services/governance'
+import { isEditionRouteAvailable } from '@/services/region/regionModules'
 import { getCurrentRegionSnapshot } from '@/services/region/regionContext'
 import type { InsightPageId } from '@/services/region/insightWorkspace'
 import { resolvePriceDriversRedirect } from './priceDriversRedirect'
@@ -294,12 +295,20 @@ const router = createRouter({
         // 内容按当前全局地区经 insightWorkspace 注册表分发（云南默认关闭；山西兼容登记
         // overview/prices 两页；广东/四川未开通，宿主显示未开通说明，不借用他省数据）。
         // 路由层不按地区拦截（守卫放行），权限经 governance 权限别名与旧入口严格等价。
-        page('insight/overview', 'InsightOverview', { block: '数据分析', title: '市场总览', code: 'insight-overview', endpoint: '地区工作区分发（src/services/region/insightWorkspace.ts 按当前地区解析）', dataPath: '由地区工作区注册决定', scope: '阶段A骨架:统一宿主路由;已交付地区渲染对应页面,未交付显示建设占位,未登记显示未开通', note: '权限等价旧入口 /insight/cockpit（governance.insightPathAccessAliases）', insightPageId: 'overview' }, insightWorkspaceHost),
-        page('insight/prices', 'InsightPrices', { block: '数据分析', title: '价格与价差', code: 'insight-prices', endpoint: '地区工作区分发（src/services/region/insightWorkspace.ts 按当前地区解析）', dataPath: '由地区工作区注册决定', scope: '阶段A骨架:统一宿主路由;已交付地区渲染对应页面,未交付显示建设占位,未登记显示未开通', note: '权限等价旧入口 /sjfx/zrsjg（governance.insightPathAccessAliases）', insightPageId: 'prices' }, insightWorkspaceHost),
-        page('insight/supply', 'InsightSupply', { block: '数据分析', title: '供需与水电', code: 'insight-supply', endpoint: '地区工作区分发（src/services/region/insightWorkspace.ts 按当前地区解析）', dataPath: '由地区工作区注册决定', scope: '阶段A骨架:统一宿主路由;已交付地区渲染对应页面,未交付显示建设占位,未登记显示未开通', note: '权限等价旧入口 /sjfx/actualLoad（governance.insightPathAccessAliases）', insightPageId: 'supply' }, insightWorkspaceHost),
-        page('insight/grid-boundaries', 'InsightGridBoundaries', { block: '数据分析', title: '跨省与电网边界', code: 'insight-grid-boundaries', endpoint: '地区工作区分发（src/services/region/insightWorkspace.ts 按当前地区解析）', dataPath: '由地区工作区注册决定', scope: '阶段A骨架:统一宿主路由;已交付地区渲染对应页面,未交付显示建设占位,未登记显示未开通', note: '权限等价旧入口 /grid-assets/disclosures（governance.insightPathAccessAliases）', insightPageId: 'grid-boundaries' }, insightWorkspaceHost),
-        page('insight/plants', 'InsightPlants', { block: '数据分析', title: '场站市场表现', code: 'insight-plants', endpoint: '地区工作区分发（src/services/region/insightWorkspace.ts 按当前地区解析）', dataPath: '由地区工作区注册决定', scope: '阶段A骨架:统一宿主路由;已交付地区渲染对应页面,未交付显示建设占位,未登记显示未开通', note: '权限等价旧入口 /xhjy/yunnan/settlement-price、/xhjy/yunnan/node-price（governance.insightPathAccessAliases）', insightPageId: 'plants' }, insightWorkspaceHost),
-        page('insight/research', 'InsightResearch', { block: '数据分析', title: '研究工作台', code: 'insight-research', endpoint: '地区工作区分发（src/services/region/insightWorkspace.ts 按当前地区解析）', dataPath: '由地区工作区注册决定', scope: '阶段A骨架:统一宿主路由;已交付地区渲染对应页面,未交付显示建设占位,未登记显示未开通', note: '权限等价旧入口 /sjfx/zrxgx、/sjfx/zrxgx2、/sjfx/singleZsjfx（governance.insightPathAccessAliases）', insightPageId: 'research' }, insightWorkspaceHost),
+        // 封存洞察工作区六条规范入口（yunnan-launch-readiness W1-T4 / customer-edition-page-gating
+        // Requirement 2）：工作区已封存（Epic #3386），customer 档整组不注册路由——产物不携带指向
+        // 封存工作区的路由/入口；内部档照常（地区注册表分发，未登记地区宿主显示未开通）。
+        // /insight/cockpit（已交付驾驶舱）与 /sjfx/* 经典页不在此面内。
+        ...(isEditionRouteAvailable('/insight/overview')
+          ? [
+          page('insight/overview', 'InsightOverview', { block: '数据分析', title: '市场总览', code: 'insight-overview', endpoint: '地区工作区分发（src/services/region/insightWorkspace.ts 按当前地区解析）', dataPath: '由地区工作区注册决定', scope: '阶段A骨架:统一宿主路由;已交付地区渲染对应页面,未交付显示建设占位,未登记显示未开通', note: '权限等价旧入口 /insight/cockpit（governance.insightPathAccessAliases）', insightPageId: 'overview' }, insightWorkspaceHost),
+          page('insight/prices', 'InsightPrices', { block: '数据分析', title: '价格与价差', code: 'insight-prices', endpoint: '地区工作区分发（src/services/region/insightWorkspace.ts 按当前地区解析）', dataPath: '由地区工作区注册决定', scope: '阶段A骨架:统一宿主路由;已交付地区渲染对应页面,未交付显示建设占位,未登记显示未开通', note: '权限等价旧入口 /sjfx/zrsjg（governance.insightPathAccessAliases）', insightPageId: 'prices' }, insightWorkspaceHost),
+          page('insight/supply', 'InsightSupply', { block: '数据分析', title: '供需与水电', code: 'insight-supply', endpoint: '地区工作区分发（src/services/region/insightWorkspace.ts 按当前地区解析）', dataPath: '由地区工作区注册决定', scope: '阶段A骨架:统一宿主路由;已交付地区渲染对应页面,未交付显示建设占位,未登记显示未开通', note: '权限等价旧入口 /sjfx/actualLoad（governance.insightPathAccessAliases）', insightPageId: 'supply' }, insightWorkspaceHost),
+          page('insight/grid-boundaries', 'InsightGridBoundaries', { block: '数据分析', title: '跨省与电网边界', code: 'insight-grid-boundaries', endpoint: '地区工作区分发（src/services/region/insightWorkspace.ts 按当前地区解析）', dataPath: '由地区工作区注册决定', scope: '阶段A骨架:统一宿主路由;已交付地区渲染对应页面,未交付显示建设占位,未登记显示未开通', note: '权限等价旧入口 /grid-assets/disclosures（governance.insightPathAccessAliases）', insightPageId: 'grid-boundaries' }, insightWorkspaceHost),
+          page('insight/plants', 'InsightPlants', { block: '数据分析', title: '场站市场表现', code: 'insight-plants', endpoint: '地区工作区分发（src/services/region/insightWorkspace.ts 按当前地区解析）', dataPath: '由地区工作区注册决定', scope: '阶段A骨架:统一宿主路由;已交付地区渲染对应页面,未交付显示建设占位,未登记显示未开通', note: '权限等价旧入口 /xhjy/yunnan/settlement-price、/xhjy/yunnan/node-price（governance.insightPathAccessAliases）', insightPageId: 'plants' }, insightWorkspaceHost),
+          page('insight/research', 'InsightResearch', { block: '数据分析', title: '研究工作台', code: 'insight-research', endpoint: '地区工作区分发（src/services/region/insightWorkspace.ts 按当前地区解析）', dataPath: '由地区工作区注册决定', scope: '阶段A骨架:统一宿主路由;已交付地区渲染对应页面,未交付显示建设占位,未登记显示未开通', note: '权限等价旧入口 /sjfx/zrxgx、/sjfx/zrxgx2、/sjfx/singleZsjfx（governance.insightPathAccessAliases）', insightPageId: 'research' }, insightWorkspaceHost),
+          ]
+          : []),
         page('sjfx/singleZsjfx', 'DataAnalysis', { block: '数据分析', title: '数据分析', code: 'singleZsjfx', endpoint: 'POST /sdpt/zsjfx/singleData', dataPath: 'sdpt_zsjfx', scope: '91天×全63类型，每天 dataMap.series 60×96点', kind: 'mixed', note: '含实际值也含预测序列；63类型见 itemConfig' }, dataAnalysis),
         page('sjfx/zcqxhdl', 'ClearingSpotAnalysis', { block: '数据分析', title: '出清现货电量分析', code: 'zcqxhdl', endpoint: 'POST /sdpt/zcqxhdl/list (宽范围)', dataPath: 'sdpt_zcqxhdl', scope: '10序列×~65天(4/1~6/4)', kind: 'real' }, clearingSpotAnalysis),
         // 价格驱动分析（dljy#3390）：旧 zrxgx/zrxgx2 两页合并为一页，驱动分段切换
@@ -358,12 +367,24 @@ const router = createRouter({
 
         // 运营管理 /yygl
         page('yygl/ops', 'OperationsWorkbench', { block: '运营管理', title: '运营中枢', code: 'operations', endpoint: 'local operations + planned /api/v1/stations|contracts|settlements|risks|statistics|retail-settlement-import|model-config|agents', dataPath: 'operations_backend', scope: '电站、合同、结算、风险、统计、数据导入、模型配置、智能体监控运营面迁移', kind: 'mixed' }, operationsWorkbench),
-        page('yygl/data-browser', 'DataBrowser', { block: '数据管理', title: '通用数据浏览器', code: 'data-browser', endpoint: 'GET /api/real?family=&match=&region=', dataPath: '*', scope: '任意已注册数据族归一化真实回放数据，动态列展示+筛选+CSV导出', kind: 'mixed' }, dataBrowser),
+
+        // 客户交付档页群门控（customer-edition-page-gating spec）：数据接入页群在 customer 构建
+        // 下整组不注册路由——直连不可达（落入 catch-all 回 /dashboard），非渲染期隐藏。
+        // 判定走 regionModules.editionModuleCapabilities 单一事实源（fail-closed）；
+        // IS_CUSTOMER_EDITION 是编译期常量，customer 构建下这些 spread 条件连同路由条目被消除，
+        // 页面组件不进 customer 模块图由 vite dljy-customer-edition 插件的 resolveId 兜底。
+        ...(isEditionRouteAvailable('/yygl/data-browser')
+          ? [page('yygl/data-browser', 'DataBrowser', { block: '数据管理', title: '通用数据浏览器', code: 'data-browser', endpoint: 'GET /api/real?family=&match=&region=', dataPath: '*', scope: '任意已注册数据族归一化真实回放数据，动态列展示+筛选+CSV导出', kind: 'mixed' }, dataBrowser)]
+          : []),
 
         // 数据运维 /data-ops：数据管理操作面单一入口（导航里与「通用数据浏览器」同组）。
         // 六个管理页 + 运维总览为同页 tab，旧独立路径全部 redirect 到对应 panel（收藏与深链不断）。
-        page('data-ops/console', 'DataOpsConsole', { block: '数据管理', title: '数据运维工作台', code: 'ops-console', endpoint: '/api/v1/governance/{catalog,quality,backup} + /api/v1/data-upload/* + /api/v1/ingest/*（数据管理路径族经 dataServicePath → /data-svc → data-service :8190）', dataPath: 'governance_catalog,upload_batches', scope: '运维总览（链路四段/告警/批次台账）+ 上传中心/导入融合台/接入向导/摄取管理/治理控制台/数据源接入六页', kind: 'real' }, dataOpsConsole),
-        ...opsPanelRedirects,
+        ...(isEditionRouteAvailable('/data-ops/console')
+          ? [
+              page('data-ops/console', 'DataOpsConsole', { block: '数据管理', title: '数据运维工作台', code: 'ops-console', endpoint: '/api/v1/governance/{catalog,quality,backup} + /api/v1/data-upload/* + /api/v1/ingest/*（数据管理路径族经 dataServicePath → /data-svc → data-service :8190）', dataPath: 'governance_catalog,upload_batches', scope: '运维总览（链路四段/告警/批次台账）+ 上传中心/导入融合台/接入向导/摄取管理/治理控制台/数据源接入六页', kind: 'real' }, dataOpsConsole),
+              ...opsPanelRedirects
+            ]
+          : []),
 
         // 售电资料 /sdzl
         page('sdzl/region-rules', 'RegionRules', { block: '售电资料', title: '地区规则体系', code: 'region-rules', endpoint: 'local region rules', dataPath: 'local_rules', scope: '地区规则画像 + 主体角色关注矩阵', kind: 'real' }, regionRules),
@@ -371,7 +392,11 @@ const router = createRouter({
 
         // AI 模型设置（从 AI 导航助手进入，不在左侧菜单）
         aiStudioRedirect('ai-settings', 'models'),
-        dataSourceSettingsRedirect('sichuan-access', 'official'),
+        // sichuan-access 是「数据源接入 · 电网官方平台」旧别名 redirect，属数据接入页群，
+        // 客户档随页群整组摘除（customer-edition-page-gating，与上面 data-ops 同一注册表判定）。
+        ...(isEditionRouteAvailable('/sichuan-access')
+          ? [dataSourceSettingsRedirect('sichuan-access', 'official')]
+          : []),
         // 智能体工作台（交互式 Agent 对话，后端 /api/agent/* SSE）
         page('ai-agent', 'AgentWorkbench', { block: '系统', title: '智能体工作台', code: 'ai-agent', endpoint: '/agent-api/agent/*', dataPath: '', kind: 'real' }, agentWorkbench),
         // 战略问答 PoC（#1526）：pi harness 旗舰切片，后端 integrations/pi-poc（/pi-api → 8100）

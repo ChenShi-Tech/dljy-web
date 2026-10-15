@@ -4,6 +4,11 @@
 // 推理模型菜单与页面、数据运维七面板与电网官方平台子 tab、权限矩阵 tab、注册立场块都在，页面上没有
 // 任何迁移提示；旧路径重定向壳照旧落到原 tab / 面板。
 // 坏掉的症状：内部版的隐藏逻辑漏进交付版，客户丢了入口。内部版对照见 migratedEntries.internal.component.spec.ts。
+//
+// ⚠ 2026-10-15 起数据接入页群按 yunnan-launch-readiness 的 customer-edition-page-gating spec
+// 在客户档整组门控（regionModules.editionModuleCapabilities，fail-closed）：数据运维工作台/
+// 通用数据浏览器及其旧路径重定向壳不再注册路由，重定向壳用例里相应移除并改为断言不可达；
+// 组件级「七面板无提示」用例保留——它守的是组件本身不夹带迁移提示，与页群是否进客户档正交。
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { mount } from '@/test/mount'
@@ -43,6 +48,7 @@ vi.mock('@/views/data-access/RestrictedProviderTab.vue', () => ({ __esModule: tr
 vi.mock('@/views/SystemModelsView.vue', () => ({ __esModule: true, default: { template: '<div class="stub-system-models" />' } }))
 
 import { navigation } from '@/data/navigation'
+import router from '@/router'
 import OpsOverviewPanel from '@/views/dataops/OpsOverviewPanel.vue'
 import { activeTabLabels, mountHost, routeComponentOf, settle, tabLabels, terminalOf } from '@/test/platformAdminMigration'
 
@@ -124,10 +130,7 @@ describe('重定向壳（客户版照旧落原 tab / 面板）', () => {
     ['/ai-skills', '/system/ai-studio?tab=skills', '技能工作室', '.stub-skills'],
     ['/system/schedules', '/system/ai-studio?tab=schedules', '定时任务调度', '.stub-schedules'],
     ['/xhjy/dify-studio', '/system/ai-studio?tab=dify', 'Dify 工作流工作室', '.stub-dify'],
-    ['/system/permissions', '/system/accounts?tab=permissions', '权限矩阵', '.stub-permissions'],
-    ['/yygl/ingest', '/data-ops/console?panel=ingest', '数据摄取管理', '.stub-ingest'],
-    ['/yygl/data-onboarding', '/data-ops/console?panel=onboarding', '数据接入向导', '.stub-onboarding'],
-    ['/sichuan-access', '/data-ops/console?tab=official&panel=data-source', '电网官方平台', '.stub-official']
+    ['/system/permissions', '/system/accounts?tab=permissions', '权限矩阵', '.stub-permissions']
   ]
 
   it.each(CASES)('%s → %s', async (legacy, expected, activeLabel, content) => {
@@ -136,5 +139,15 @@ describe('重定向壳（客户版照旧落原 tab / 面板）', () => {
     const { wrapper } = await mountHost(terminal)
     expect(activeTabLabels(wrapper)).toContain(activeLabel)
     expect(wrapper.find(content).exists(), content).toBe(true)
+  })
+
+  // 数据接入页群旧路径（原落在数据运维工作台面板）：customer-edition-page-gating 起
+  // 随页群整组不注册路由——resolve 只能落到 catch-all（/:pathMatch(.*)* → /dashboard），
+  // 即直连不可达、非渲染期隐藏。
+  it('数据接入页群旧路径重定向壳在客户档不可达（全部落 catch-all）', () => {
+    for (const legacy of ['/yygl/ingest', '/yygl/data-onboarding', '/sichuan-access', '/data-ops/console', '/yygl/data-browser', '/data-ops/upload']) {
+      const resolved = router.resolve(legacy)
+      expect(resolved.matched[0]?.path, legacy).toBe('/:pathMatch(.*)*')
+    }
   })
 })

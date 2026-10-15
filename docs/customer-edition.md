@@ -1,8 +1,8 @@
 # 客户交付版前端（`VITE_EDITION=customer`）
 
 > 配套实现：`src/services/edition.ts` · `vite.config.ts`（`dljy-customer-edition` / `dljy-build-info` 插件）·
-> `src/views/edition/EditionRemovedView.vue` · `scripts/verify-customer-edition-build.mjs` · `.env.customer`
-> `scripts/shared-fingerprint.mjs`（#2454）
+> `src/views/edition/EditionRemovedView.vue` · `src/services/region/regionModules.ts`（`editionModuleCapabilities` 页群门控）·
+> `scripts/verify-customer-edition-build.mjs` · `.env.customer` · `scripts/shared-fingerprint.mjs`（#2454）
 >
 > 上游：主仓 Epic #2408 · 子任务 #2410（后端侧见主仓 #2409）
 
@@ -26,8 +26,9 @@ npm run verify:customer-edition-build   # 扫产物，确认零泄露
 | 子智能体卡片的模型路由标签 | 不显示 |
 | 子智能体编辑表单的模型选择 | 不显示 |
 | 编排画布的节点级模型覆盖 | 不显示 |
+| 数据接入页群（数据运维工作台 + 通用数据浏览器 + 旧路径重定向壳） | 客户档整组不可达：路由条目构建期摘除 + 菜单同源过滤 + 模块解析层占位（见下文「数据接入页群门控」） |
 
-产物层面：交付版没有 `AiSettingsView` / `notifyClient` / `voice` 这些内部档专属 chunk；`llmProviders` 这个 chunk 已随 #2668 从两个档一起消失（前端不再持有供应商清单）。
+产物层面：交付版没有 `AiSettingsView` / `notifyClient` / `voice` 这些内部档专属 chunk；`llmProviders` 这个 chunk 已随 #2668 从两个档一起消失（前端不再持有供应商清单）；数据接入页群的 `DataOpsConsoleView` / `UniversalCapturedBrowserView` 及其六个面板组件不进交付产物。
 
 ## 关键：v-if 藏不住东西
 
@@ -65,6 +66,18 @@ npm run verify:customer-edition-build   # 扫产物，确认零泄露
 ## 内部版已迁入口与交付档（ChenShi-Tech/dljy#3464）
 
 内部版把已由平台后台接管的旧入口隐藏、原位置换成「已迁至平台后台」提示（登记表 `src/features/platformAdminMigration/registry.ts`，清单见 `docs/platform-admin-entry-migration.md` §2.2）。提示与后台链接**只对平台人员（内部版 ADMIN）显示**（dljy#3518，规格 AI-06）：客户账号（BOSS、交易负责人、交易员等）只看到入口隐藏，不出现任何提示文字、后台路径或链接——角色闸门集中在登记表的 `migratedEntryLinks`，不随交付产物出去。交付档入口一律照旧，靠的仍是模块解析层：`dljy-customer-edition` 插件把登记表、提示组件与 AI 工作室「个人设置」面板分别重定向到 `registry.customer.ts`（恒答未迁移、不含标签与后台路径）、`MigratedToAdminNotice.customer.vue`（空壳）与 `EditionRemovedView.vue`。这些模块一律用 `@/…` 别名 import——插件按说明符后缀匹配。
+
+## 数据接入页群门控（yunnan-launch-readiness W1-T3 · spec `customer-edition-page-gating`）
+
+内部取数与接入管理入口（数据运维工作台七面板：上传中心 / 导入融合台 / 接入向导 / 摄取管理 / 治理控制台 / 数据源接入 / 运维总览，加通用数据浏览器与 `sichuan-access` 等旧路径重定向壳）在客户档整组不可达。三层同一事实源（`regionModules.editionModuleCapabilities`，与地区门控同款 fail-closed：覆盖面内未显式登记 `available` 一律拦截，未覆盖路径版本中性放行）：
+
+1. **路由层**：`src/router/index.ts` 的页群条目按 `isEditionRouteAvailable(...)` 条件展开——customer 构建下条目根本不注册，直连落 catch-all 回 `/dashboard`（直连不可达，非渲染期隐藏）。
+2. **菜单层**：`filterNavigationForUser`（`src/services/governance.ts`，侧边栏 / 命令面板 / AI 导航共用）按同一注册表过滤；分组子项全被滤掉时整组消失（不回退成点击落空的死叶子）。`src/data/navigation.ts` 的静态分组也走同一判定做防御纵深。
+3. **产物层**：`vite.config.ts` 的 `CUSTOMER_EDITION_STUBS` 把两个页面组件在 `resolveId` 重定向到 `EditionRemovedView`——真实组件不进 customer 模块图（rollup 对动态 import 的 chunk 生成是保守的，光删路由条目挡不住 chunk 产出，见上文两次踩坑）。
+
+登记口径：新增「客户档也不可见的页群」时在 `editionModuleCapabilities` 加条目（`statusByEdition: { internal: 'available', customer: 'hidden' }`），路由 / 菜单 / 导航三处自动跟随，不要在各页面散落第二套版本开关。当前唯一登记项是 `data-ops`；结算资料人工上传由内部档运维侧承担（云南上线决策①人工资料路线），故上传中心随页群一起不出客户档。
+
+验收：`npm run build:customer` + `npm run verify:customer-edition-build` 全绿；产物中无 `DataOpsConsoleView` / `UniversalCapturedBrowserView` chunk；内部档 `npm run build` 行为不变（页群照常）；单测见 `regionModules.edition.spec.ts`（内部档基线）与 `regionModules.edition.customer.spec.ts`（客户档 fail-closed）。
 
 ## 与后端的关系
 

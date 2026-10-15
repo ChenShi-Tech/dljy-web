@@ -16,6 +16,7 @@
 
 import InsightNote from '@/components/insight/InsightNote.vue'
 import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { isEditionRouteAvailable } from '@/services/region/regionModules'
 import { useRouter } from 'vue-router'
 import type { InsightSelection } from 'shared/insight/handoff.mjs'
 import { getInsightAnalysis } from 'shared/insight/analyses.mjs'
@@ -677,7 +678,11 @@ const router = useRouter()
 
 const RESEARCH_HANDOFF_TO_TEXT = '把选区窗口与对象/来源引用交给研究工作台预填研究范围（不带原始数据）'
 
+// 客户档封存工作区摘除（customer-edition-page-gating Requirement 2）：研究工作台入口
+// 不可达时按钮隐藏、函数短路——不留点了落 catch-all 的死跳转。
+const researchHandoffAvailable = isEditionRouteAvailable('/insight/research')
 function onSpreadSelectionToResearch(): void {
+  if (!researchHandoffAvailable) return
   const selection = spreadSelection.value
   if (!selection) return
   const query = buildResearchHandoffQuery(selection, 'prices')
@@ -1204,6 +1209,7 @@ onMounted(() => {
                 <p v-if="spreadSelectionText" class="ynp-prices__hint">
                   已定位时段：{{ spreadSelectionText }}
                   <el-button
+                    v-if="researchHandoffAvailable"
                     size="small"
                     type="primary"
                     plain

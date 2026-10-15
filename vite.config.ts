@@ -68,7 +68,16 @@ const CUSTOMER_EDITION_STUBS: ReadonlyArray<readonly [suffix: string, stub: stri
   ['/features/platformAdminMigration/registry', './src/features/platformAdminMigration/registry.customer.ts'],
   ['/features/platformAdminMigration/registry.ts', './src/features/platformAdminMigration/registry.customer.ts'],
   ['/features/platformAdminMigration/MigratedToAdminNotice.vue', './src/features/platformAdminMigration/MigratedToAdminNotice.customer.vue'],
-  ['/components/ai/PersonalAiSettingsPanel.vue', './src/views/edition/EditionRemovedView.vue']
+  ['/components/ai/PersonalAiSettingsPanel.vue', './src/views/edition/EditionRemovedView.vue'],
+  // 数据接入页群（customer-edition-page-gating spec）：customer 档菜单与路由已由
+  // regionModules.editionModuleCapabilities 在构建层整组摘除（路由条目不注册），
+  // 这里再兜一层模块解析——真实页面组件即便被 rollup 保守地保留引用，也重定向到
+  // 占位组件，不进 customer 产物。内部档插件不生效，页面照常。
+  ['/views/dataops/DataOpsConsoleView.vue', './src/views/edition/EditionRemovedView.vue'],
+  ['/views/UniversalCapturedBrowserView.vue', './src/views/edition/EditionRemovedView.vue'],
+  // 封存洞察工作区宿主（customer-edition-page-gating Requirement 2）：六条规范路由已在
+  // 路由层按注册表摘除，这里再兜模块解析——宿主组件及其按需加载的工作区页面不进客户产物。
+  ['/views/insight/InsightWorkspaceHost.vue', './src/views/edition/EditionRemovedView.vue']
 ]
 
 // dljy-web 是 dljy 原仓前端的保密镜像下游（见 CONTRIBUTING.md）。
