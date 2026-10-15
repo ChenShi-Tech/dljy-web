@@ -2,8 +2,8 @@
 // 用户切日期/市场后取数+渲染耗时，但此前面板无任何加载反馈，loading 只体现在
 // 「重新加载」按钮上——用户以为没切换成功；且 date 是 v-model 选中即变，面板标题
 // 先于数据跳到新月份，构成「假切换」。本 spec 用可控时序 mock 锁住：
-//   加载中 → 遮罩在、控件禁用、KPI 仍显示旧落地数据；
-//   落地后 → 遮罩消失、控件恢复、KPI 换成新窗口数据、面板标题进入新月份。
+//   加载中 → 遮罩在、控件禁用、KPI 仍显示旧落地数据、「数据」徽标保持旧落地日期/市场；
+//   落地后 → 遮罩消失、控件恢复、KPI 换成新窗口数据、面板标题进入新月份、徽标翻为新落地值。
 // 「已落地」判据用实现损益 KPI（绑定 data 聚合值）而非日期输入框/面板标题（v-model 先行）。
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { flushPromises } from '@vue/test-utils'
@@ -120,6 +120,10 @@ function pnlTitle(wrapper: { element: Element }) {
 function segButtons(wrapper: { element: Element }) {
   return Array.from(wrapper.element.querySelectorAll<HTMLButtonElement>('.ctrls .seg button'))
 }
+// 当前数据日期徽标：绑定已落地 data（date+market），加载中保持旧值，落地后才翻转。
+function dateBadge(wrapper: { element: Element }) {
+  return wrapper.element.querySelector('.ck-data-date')?.textContent?.replace(/\s+/g, '') ?? ''
+}
 function segDisabled(wrapper: { element: Element }) {
   const btns = segButtons(wrapper)
   return btns.length > 0 && btns.every((b) => b.disabled)
@@ -145,6 +149,7 @@ describe('现货 cockpit · 切日期加载反馈', () => {
     // 初始落地：KPI 显示已加载的 5 月结算合计，无遮罩
     await until(() => landedKpi(wrapper).includes('4,800'))
     expect(maskVisible(wrapper)).toBe(false)
+    expect(dateBadge(wrapper)).toBe('数据2026-05-01·日前')
 
     // 切到 2026-06-03，取数挂起（模拟加载慢）
     gate.arm()
@@ -157,6 +162,7 @@ describe('现货 cockpit · 切日期加载反馈', () => {
     expect(picker.props('disabled')).toBe(true)
     expect(segDisabled(wrapper)).toBe(true)
     expect(landedKpi(wrapper)).toContain('4,800')
+    expect(dateBadge(wrapper)).toBe('数据2026-05-01·日前')
 
     // 数据落地：遮罩消失、控件恢复、KPI 进入 6 月窗口（mock 无 6 月数据 → 诚实空态）
     gate.release()
@@ -164,6 +170,7 @@ describe('现货 cockpit · 切日期加载反馈', () => {
     expect(maskVisible(wrapper)).toBe(false)
     expect(segDisabled(wrapper)).toBe(false)
     expect(pnlTitle(wrapper)).toContain('2026-06 区间')
+    expect(dateBadge(wrapper)).toBe('数据2026-06-03·日前')
 
     wrapper.unmount()
   })
@@ -185,6 +192,7 @@ describe('现货 cockpit · 切日期加载反馈', () => {
     await until(() => spotCalls.list.at(-1)?.market === 'rt')
     await until(() => !maskVisible(wrapper))
     expect(spotCalls.list.at(-1)?.market).toBe('rt')
+    expect(dateBadge(wrapper)).toBe('数据2026-05-01·实时')
 
     wrapper.unmount()
   })
