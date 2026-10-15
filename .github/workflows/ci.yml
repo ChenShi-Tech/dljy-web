@@ -163,3 +163,8 @@ jobs:
       - run: npm run test:coverage -- --maxWorkers=8
 
       - run: npm run build
+
+      # 客户交付版门禁（yunnan-launch-readiness W3-T7）：自建 customer 产物
+      # （dist-customer-verify）后扫描——品牌词/已迁入口/后台地址零泄露 + shared 指纹同代。
+      # Linux runner 无 Windows 的 spawnSync npx 问题，脚本自建路径可用。
+      - run: npm run verify:customer-edition-build

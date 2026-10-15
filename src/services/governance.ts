@@ -3,6 +3,7 @@ import { IS_CUSTOMER_EDITION } from '@/services/edition'
 import {
   getRegionModuleAccessRoutes,
   getRegionModuleRoutePrefixes,
+  isEditionRouteAvailable,
   isRegionRouteAvailable
 } from '@/services/region/regionModules'
 
@@ -764,12 +765,17 @@ export function filterNavigationForUser(items: NavigationLike[], user: Pick<Gove
   for (const item of items) {
     if (!matchesNavigationRegion(item, regionId)) continue
     const children = item.children ? filterNavigationForUser(item.children, user, regionId) : undefined
-    if (children?.length) {
-      filtered.push({ ...item, children })
+    // 源本就是分组（有 children）的项：子项全被滤掉时整组消失，不回退成叶子——分组 path
+    // 多为合成路径（如 /data-mgmt）并非真实路由，回退会渲染出点了落 catch-all 的死菜单项
+    // （客户档页群门控摘掉数据管理两个子项后即此情形）。
+    if (item.children) {
+      if (children?.length) {
+        filtered.push({ ...item, children })
+      }
       continue
     }
     if (canAccessPath(item.path, user)) {
-      filtered.push({ ...item, children: undefined })
+      filtered.push({ ...item })
     }
   }
 
@@ -781,7 +787,10 @@ function matchesNavigationRegion(item: NavigationLike, regionId?: string) {
   // #2991：hiddenInRegionIds 只摘菜单入口。isPathAvailableInRegion 的地区可用性判定保持不变，
   // 保证「菜单隐藏但路由可达」——旧链接仍可直接访问，页面自身负责降级说明。
   const hiddenInRegion = Boolean(regionId && item.hiddenInRegionIds?.includes(regionId))
-  return matchesDeclaredRegion && !hiddenInRegion && isPathAvailableInRegion(item.path, regionId)
+  // 客户交付档页群门控（customer-edition-page-gating）：与地区门控同一注册表事实源
+  // （regionModules.editionModuleCapabilities，fail-closed）。菜单/命令面板/AI 导航都汇到
+  // 本过滤链，不在各页面散落第二套版本开关；客户档下被登记为 hidden 的页群整组不出菜单。
+  return matchesDeclaredRegion && !hiddenInRegion && isPathAvailableInRegion(item.path, regionId) && isEditionRouteAvailable(item.path)
 }
 
 export function getDecisionGateHint(path: string, user: Pick<GovernanceUser, 'roleCode'> | null | undefined) {

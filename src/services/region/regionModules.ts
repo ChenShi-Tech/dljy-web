@@ -1,4 +1,5 @@
 import type { GovernanceUser, RoleCode } from '@/services/governance'
+import { IS_CUSTOMER_EDITION } from '@/services/edition'
 import {
   CSG_DATA_NAMESPACE,
   CSG_REGION_INSTANCES,
@@ -676,6 +677,70 @@ export const regionBusinessModules: RegionBusinessModule[] = [
     }
   }
 ]
+
+// —— 客户交付档页群门控（yunnan-launch-readiness · spec customer-edition-page-gating）——
+// 与地区门控共用本文件这一注册表事实源：页群按「版本档位」登记可用性，语义与地区门控同款
+// fail-closed——被覆盖面圈中但未显式登记为 available 的路径在对应档位一律不可达；未覆盖
+// 路径版本中性（照常放行，兼容存量页群）。IS_CUSTOMER_EDITION 是编译期常量（services/edition），
+// customer 构建下判断分支可被 rollup 消除；产物纯净性另由 vite dljy-customer-edition 插件在
+// 模块解析层兜底（内部档专属页面组件根本不进 customer 模块图），本注册表管的是菜单与路由层。
+export type EditionType = 'internal' | 'customer'
+
+export type EditionModuleCapability = {
+  id: string
+  title: string
+  /** 前缀覆盖面：`${prefix}/…` 子路径同判（面板深链/redirect 一并拦截）。 */
+  routePrefixes: string[]
+  routePaths: string[]
+  statusByEdition: Record<EditionType, 'available' | 'hidden'>
+  note: string
+}
+
+export const editionModuleCapabilities: EditionModuleCapability[] = [
+  {
+    id: 'data-ops',
+    title: '数据接入页群（数据管理）',
+    routePrefixes: ['/data-ops'],
+    routePaths: ['/yygl/data-browser', '/data-ops/console', '/sichuan-access'],
+    statusByEdition: { internal: 'available', customer: 'hidden' },
+    note: '内部取数与接入管理入口（数据运维工作台：上传中心/导入融合台/接入向导/摄取管理/治理控制台/数据源接入 + 通用数据浏览器 + sichuan-access 旧别名）。客户交付档菜单、路由、产物三重不可达；结算资料人工上传由内部档运维侧承担（决策①人工资料路线）。'
+  },
+  {
+    id: 'insight-workspace',
+    title: '封存洞察工作区（六条规范入口）',
+    // 精确路径、不带前缀：/insight/cockpit（已交付的市场洞察驾驶舱）与 /sjfx/* 经典页不在封存面内，照常。
+    routePrefixes: [],
+    routePaths: [
+      '/insight/overview',
+      '/insight/prices',
+      '/insight/supply',
+      '/insight/grid-boundaries',
+      '/insight/plants',
+      '/insight/research'
+    ],
+    statusByEdition: { internal: 'available', customer: 'hidden' },
+    note: '装配型洞察工作区（Epic #3386）已封存：客户产物不得携带指向封存工作区的路由/菜单/跳转入口（customer-edition-page-gating Requirement 2）。内部档保留（地区注册表按地区分发，未登记地区显示未开通）。'
+  }
+]
+
+export function currentEdition(): EditionType {
+  return IS_CUSTOMER_EDITION ? 'customer' : 'internal'
+}
+
+/** 版本档位可达性：未覆盖路径版本中性放行；覆盖面内必须显式登记 available（fail-closed）。 */
+export function isEditionRouteAvailable(path: string) {
+  const normalized = normalizePath(path)
+  const module = editionModuleCapabilities.find(
+    (item) =>
+      item.routePaths.some((routePath) => normalizePath(routePath) === normalized)
+      || item.routePrefixes.some((prefix) => {
+        const p = normalizePath(prefix)
+        return normalized === p || normalized.startsWith(`${p}/`)
+      }),
+  )
+  if (!module) return true
+  return module.statusByEdition[currentEdition()] === 'available'
+}
 
 export function isRegionRouteAvailable(path: string, regionId?: string) {
   const module = getRegionModuleForPath(path)
