@@ -399,19 +399,35 @@ const signals = computed<Partial<Record<ShellTab, DimSignal>>>(() => ({
 }))
 
 // tab ↔ ?dim= 双向：切标签写回地址（可分享 / S1 深链），不新增历史记录
+// KeepAlive 缓存期路由隔离（dljy#3731 缺陷⑥）：失活后 useRoute 仍跟随全局导航，下列深链
+// watcher 若不设防会把缓存页的参数语义套到其他路由上——别的页面带 ?report=/ ?run=/
+// ?todo= 会被缓存实例当成本页深链消费，然后 router.replace 改写/剥掉那个页面的参数。
+// 判据用当前路由路径而非激活标志：离开复盘路由后 path 必不是 /xhjy/review*，天然拦截；
+// 返回复盘路由的当次导航中 path 已就位，深链即时生效（不受 onActivated 时序影响）。
+function reviewRouteCurrent(): boolean {
+  const p = route.path.length > 1 ? route.path.replace(/\/+$/, '') : route.path
+  return p === '/xhjy/review' || p === '/xhjy/review/analysis'
+}
 watch(tab, (t) => {
   if (route.query.dim === t) return
+  if (!reviewRouteCurrent()) return
   router.replace({ query: { ...route.query, dim: t } })
 })
-watch(() => route.query.dim, (q) => { const t = parseDimQuery(q); if (t !== tab.value) tab.value = t })
+watch(() => route.query.dim, (q) => {
+  if (!reviewRouteCurrent()) return
+  const t = parseDimQuery(q)
+  if (t !== tab.value) tab.value = t
+})
 
 // 深链 ?date= / ?declarationId= 的同路由再导航（组件复用不重跑 setup）：query 变了要跟上。
 // declarationId 有值→空（参数被删）同样清空基准单，否则残留旧申报曲线继续当基准。
 watch(() => route.query.date, (q) => {
+  if (!reviewRouteCurrent()) return
   const d = dateFromQuery(q)
   if (d !== date.value) date.value = d // 复用既有 [date,…] watch 触发重载
 })
 watch(() => route.query.declarationId, (q) => {
+  if (!reviewRouteCurrent()) return
   const id = typeof q === 'string' ? q : ''
   if (id === declarationId.value) return
   declaration.value = null // 换/清基准单：旧申报曲线不可复用，load() 重新取
@@ -422,6 +438,7 @@ watch(() => route.query.declarationId, (q) => {
 
 // 深链 ?todo=1（S1 待办徽标跳转落点，设计稿 U7「直开待办箱」）：滚动定位 + 短促高亮
 function focusTodoInbox(): void {
+  if (!reviewRouteCurrent()) return
   if (route.query.todo !== '1') return
   void nextTick(() => {
     const el = document.getElementById('review-todo')
@@ -439,6 +456,7 @@ watch(() => route.query.todo, focusTodoInbox, { immediate: true })
 // 匹配并直开阅读器。匹配不到如实提示（报告可能未生成/不属于当前公司数据范围），不静默吞。
 // 用后即清参数：刷新/分享落地页不再反复弹层。
 watch(() => route.query.report, async (q) => {
+  if (!reviewRouteCurrent()) return
   const sid = typeof q === 'string' ? q : ''
   if (!sid) return
   try {
@@ -455,6 +473,7 @@ watch(() => route.query.report, async (q) => {
 
 // 深链 ?run=1（S1 夜间报告卡「去复盘中心手动生成」落点）：直开生成弹层
 watch(() => route.query.run, (q) => {
+  if (!reviewRouteCurrent()) return
   if (q !== '1') return
   generating.value = true
   void router.replace({ query: { ...route.query, run: undefined } })

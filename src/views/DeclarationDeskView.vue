@@ -324,6 +324,16 @@ function onNewChat() {
   sessionIdByMode[agentMode.value] = null
 }
 
+// 情报清单随上下文重置（dljy#3731 遗留缺陷④ · stale-response-guards delta「情报清单
+// 跨面板缓存隔离」）：三项核查结论（竞价空间/检修披露/持仓敞口）都是按「目标日+地区」
+// 算出来的，切上下文后旧结论对号不入座——不重置会让新标的日顶着旧日的 done/failed
+// 三态，报价依据被串台。会话历史按 page_key 隔离不受影响，仅清核查状态。
+function resetIntelChecklist() {
+  for (const item of intelChecklist) item.status = 'idle'
+  activeIntelLabel.value = null
+  activeIntelHadError.value = false
+}
+
 function onHistoryChanged() {
   void sidebarRef.value?.reload()
 }
@@ -529,9 +539,12 @@ function resetDecisionPackage() {
   cockpit.value = null
   resetOptimizationResult()
   decisionError.value = ''
-  // 作废在途请求并立即解锁：切模型/切日期时旧请求的结果不再需要，按钮也应马上可用
+  // 作废在途请求并立即解锁：切模型/切日期时旧请求的结果不再需要，按钮也应马上可用。
+  // cockpitLoading 与 optimizeLoading 都要解：报价优化在途时上下文被切，其 finally 会因
+  // 世代不匹配跳过解锁（防旧结果落屏），必须由这里接手（同 #538/#550 加载锁世代纪律）。
   cockpitRequest += 1
   cockpitLoading.value = false
+  optimizeLoading.value = false
 }
 
 function avg(values: number[]): number {
@@ -613,6 +626,12 @@ async function optimizeDraftCurve() {
   }
   const requestDate = targetDate.value
   const requestRegion = currentRegion.value.id
+  // 报价优化结果随模型变化（dljy#3731 遗留缺陷③ · stale-response-guards delta）：
+  // 世代比较必须含模型维度——在途切模型后，旧模型的迟到结果/失败回执/finally 解锁全部丢弃
+  //（日期+地区+模型与决策包 isDecisionRequestCurrent 同口径）。
+  const requestModel = decisionModel.value
+  const requestCurrent = () =>
+    requestDate === targetDate.value && requestRegion === currentRegion.value.id && requestModel === decisionModel.value
   optimizeLoading.value = true
   decisionError.value = ''
   try {
@@ -620,7 +639,7 @@ async function optimizeDraftCurve() {
       region_id: requestRegion,
       target: 'load',
       target_date: requestDate,
-      model_type: decisionModel.value,
+      model_type: requestModel,
       train_days: 180,
       probabilistic: true,
       capacity_mw: current.value?.capacityMw ?? capacityMw.value,
@@ -628,14 +647,16 @@ async function optimizeDraftCurve() {
       n_scenarios: 40,
       price_forecast_p50: priceForecastP50,
     })
-    if (requestDate === targetDate.value && requestRegion === currentRegion.value.id) {
+    if (requestCurrent()) {
       optimizeResult.value = result
       selectedLambda.value = null
     }
   } catch (error) {
-    decisionError.value = error instanceof Error ? error.message : '最优申报曲线生成失败'
+    if (requestCurrent()) {
+      decisionError.value = error instanceof Error ? error.message : '最优申报曲线生成失败'
+    }
   } finally {
-    optimizeLoading.value = false
+    if (requestCurrent()) optimizeLoading.value = false
   }
 }
 
@@ -1374,6 +1395,7 @@ watch(targetDate, (d) => {
   // 同上：非法日期不发刷新链（meta/列表/敞口/决策包全部依赖合法目标日）
   if (!isRealCalendarDate(d)) return
   resetDecisionPackage()
+  resetIntelChecklist()
   void refresh()
   void refreshExposure()
 })
@@ -1428,6 +1450,7 @@ onBeforeUnmount(() => {
 })
 onRegionChange(() => {
   resetDecisionPackage()
+  resetIntelChecklist()
   void refresh()
   void refreshExposure()
 })

@@ -63,13 +63,20 @@ function applyPreset(name: string) {
   priceText.value = PRESETS[name].join(', ')
 }
 
-const unitPrices = computed(() => {
-  const parsed = priceText.value
+const parsedUnitPrices = computed(() =>
+  priceText.value
     .split(/[,，\s]+/)
+    // 先滤空串再转数：Number('')===0，不滤会把「清空输入」伪装成全零价格序列
+    // （同 segmentQuote 对价格中枢的先验原始值再转数纪律）。
+    .filter((s) => s.trim() !== '')
     .map((s) => Number(s.trim()))
     .filter((n) => Number.isFinite(n))
-  return parsed.length ? parsed : PRESETS['典型双峰']
-})
+)
+/** 价格序列不可用（清空/全部非法）→ 回落「典型双峰」预置。必须可见标注，
+ * 不静默以内置值冒充输入（dljy#3731 遗留缺陷⑦ · spot-degradation-honesty delta）；
+ * 输入恢复可解析后标注随真实输入消失。 */
+const pricePresetFallback = computed(() => parsedUnitPrices.value.length === 0)
+const unitPrices = computed(() => (pricePresetFallback.value ? PRESETS['典型双峰'] : parsedUnitPrices.value))
 
 // 资产与成本参数（档案拉取 + 当日覆盖模型）
 const powerMw = ref(100)
@@ -463,6 +470,9 @@ const aiReviewQuestion = computed(() =>
           </button>
         </div>
         <textarea v-model="priceText" rows="3" class="sb-prices" />
+        <p v-if="pricePresetFallback" class="sb-preset-fallback" data-test="sb-preset-fallback">
+          ⚠ 价格序列为空或不可解析，当前按「典型双峰」预置值计算——修改上方输入为有效数字后恢复按输入计算。
+        </p>
 
         <h4>R3 要求价差速查</h4>
         <table class="sb-table">
@@ -606,6 +616,7 @@ const aiReviewQuestion = computed(() =>
 .sb-table th { color: var(--el-text-color-secondary, #667); font-weight: 600; }
 
 .sb-empty { padding: 8px 0; font-size: var(--font-sm); color: var(--warning, #b45309); }
+.sb-preset-fallback { margin: 6px 0 0; padding: 6px 10px; font-size: var(--font-sm); color: var(--warning, #b45309); background: color-mix(in srgb, var(--warning, #b45309) 8%, transparent); border: 1px dashed var(--warning, #b45309); border-radius: 6px; }
 .sb-total { margin: 8px 0 0; font-size: var(--font-sm); }
 
 .sb-asset { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 7px 10px; border: 1px solid var(--violet-tint-border, #ddd6fe); border-radius: 8px; background: var(--violet-tint, #faf5ff); font-size: var(--font-sm); }

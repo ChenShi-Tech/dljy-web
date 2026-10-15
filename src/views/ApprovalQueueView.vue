@@ -206,12 +206,15 @@ function exportRecords() {
     ElMessage.warning('暂无可导出的审批记录')
     return
   }
-  const headers = ['申报单', '目标日', '状态', '审批人', '角色', '决策', '意见']
+  // 模式列与页面表格同源同口径（DECLARATION_MODE_LABEL[declarationModeOf()]），
+  // 线下核对要能区分真实申报/历史模拟（dljy#3731 遗留缺陷⑨）。
+  const headers = ['申报单', '目标日', '模式', '状态', '审批人', '角色', '决策', '意见']
   const body = recentDecided.value.map((d) => {
     const last = d.approvalRecord[d.approvalRecord.length - 1]
     return [
       d.id,
       d.targetDate,
+      DECLARATION_MODE_LABEL[declarationModeOf(d)] ?? String(declarationModeOf(d) ?? ''),
       STATUS_LABEL[d.status],
       last?.approver ?? '',
       last?.role ?? '',
