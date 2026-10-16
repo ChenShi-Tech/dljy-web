@@ -129,6 +129,44 @@ html[data-theme='flow'] {
   --el-color-primary-light-9: #10303f;
   --el-color-primary-dark-2: #4a9cab;
 
+  /* —— EP 语义色档（缺陷⑧ 暗色走查 2026-10-16，同 theme-arc 补缺）：基色取本主题
+     语义色（--success/--warning/--danger），light-N 透明度叠加自然成"暗底浅调"。 */
+  --el-color-success: #5dbe9a;
+  --el-color-success-light-3: rgba(93, 190, 154, 0.4);
+  --el-color-success-light-5: rgba(93, 190, 154, 0.26);
+  --el-color-success-light-7: rgba(93, 190, 154, 0.17);
+  --el-color-success-light-8: rgba(93, 190, 154, 0.13);
+  --el-color-success-light-9: rgba(93, 190, 154, 0.09);
+  --el-color-success-dark-2: #86d8b4;
+  --el-color-warning: #c9a461;
+  --el-color-warning-light-3: rgba(201, 164, 97, 0.4);
+  --el-color-warning-light-5: rgba(201, 164, 97, 0.26);
+  --el-color-warning-light-7: rgba(201, 164, 97, 0.17);
+  --el-color-warning-light-8: rgba(201, 164, 97, 0.13);
+  --el-color-warning-light-9: rgba(201, 164, 97, 0.09);
+  --el-color-warning-dark-2: #ddbe85;
+  --el-color-danger: #d9776f;
+  --el-color-danger-light-3: rgba(217, 119, 111, 0.4);
+  --el-color-danger-light-5: rgba(217, 119, 111, 0.26);
+  --el-color-danger-light-7: rgba(217, 119, 111, 0.17);
+  --el-color-danger-light-8: rgba(217, 119, 111, 0.13);
+  --el-color-danger-light-9: rgba(217, 119, 111, 0.09);
+  --el-color-danger-dark-2: #e5968f;
+  --el-color-error: #d9776f;
+  --el-color-error-light-3: rgba(217, 119, 111, 0.4);
+  --el-color-error-light-5: rgba(217, 119, 111, 0.26);
+  --el-color-error-light-7: rgba(217, 119, 111, 0.17);
+  --el-color-error-light-8: rgba(217, 119, 111, 0.13);
+  --el-color-error-light-9: rgba(217, 119, 111, 0.09);
+  --el-color-error-dark-2: #e5968f;
+  --el-color-info: #8fa8bd;
+  --el-color-info-light-3: rgba(143, 168, 189, 0.4);
+  --el-color-info-light-5: rgba(143, 168, 189, 0.26);
+  --el-color-info-light-7: rgba(143, 168, 189, 0.17);
+  --el-color-info-light-8: rgba(143, 168, 189, 0.13);
+  --el-color-info-light-9: rgba(143, 168, 189, 0.09);
+  --el-color-info-dark-2: #adc2d3;
+
   --el-table-bg-color: #0a1728;
   --el-table-tr-bg-color: #0a1728;
   --el-table-header-bg-color: #0e1e33;

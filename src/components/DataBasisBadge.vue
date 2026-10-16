@@ -31,18 +31,19 @@ defineProps<{ basis: DataBasis; prefix?: string }>()
   background: #eff6ff;
 }
 
+/* 走 EP 语义色变量：浅色档视觉同原值（EP 默认 light-9 即浅底），弧光/流光暗色档自动暗底 */
 .data-basis-badge.provisional {
-  color: #b45309;
-  background: #fffbeb;
+  color: var(--el-color-warning-dark-2, #b45309);
+  background: var(--el-color-warning-light-9, #fffbeb);
 }
 
 .data-basis-badge.illustrative {
-  color: #a16207;
-  background: #fffaf0;
+  color: var(--el-color-warning-dark-2, #a16207);
+  background: var(--el-color-warning-light-9, #fffaf0);
 }
 
 .data-basis-badge.synthetic {
-  color: #b91c1c;
-  background: #fef2f2;
+  color: var(--el-color-danger, #b91c1c);
+  background: var(--el-color-danger-light-9, #fef2f2);
 }
 </style>
