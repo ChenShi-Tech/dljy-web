@@ -116,6 +116,53 @@ html[data-theme='arc'] {
   --el-color-primary-light-9: #123448;
   --el-color-primary-dark-2: #0594ac;
 
+  /* —— EP 语义色档（缺陷⑧ 暗色走查 2026-10-16）：此前 arc 未定义任何
+     --el-color-{success|warning|danger|error|info}，el-tag--light / el-alert--light
+     全站回落浅色主题浅底（approval/region 页成片浅色标签）。基色取本主题语义色，
+     light-N 用透明度叠加（在深空底上自然成"暗底浅调"），dark-2 为文字/hover 提亮档。 */
+  --el-color-success: #34d399;
+  --el-color-success-light-3: rgba(52, 211, 153, 0.4);
+  --el-color-success-light-5: rgba(52, 211, 153, 0.26);
+  --el-color-success-light-7: rgba(52, 211, 153, 0.17);
+  --el-color-success-light-8: rgba(52, 211, 153, 0.13);
+  --el-color-success-light-9: rgba(52, 211, 153, 0.09);
+  --el-color-success-dark-2: #6ee7b7;
+  --el-color-warning: #f59e0b;
+  --el-color-warning-light-3: rgba(245, 158, 11, 0.4);
+  --el-color-warning-light-5: rgba(245, 158, 11, 0.26);
+  --el-color-warning-light-7: rgba(245, 158, 11, 0.17);
+  --el-color-warning-light-8: rgba(245, 158, 11, 0.13);
+  --el-color-warning-light-9: rgba(245, 158, 11, 0.09);
+  --el-color-warning-dark-2: #fbbf24;
+  --el-color-danger: #f87171;
+  --el-color-danger-light-3: rgba(248, 113, 113, 0.4);
+  --el-color-danger-light-5: rgba(248, 113, 113, 0.26);
+  --el-color-danger-light-7: rgba(248, 113, 113, 0.17);
+  --el-color-danger-light-8: rgba(248, 113, 113, 0.13);
+  --el-color-danger-light-9: rgba(248, 113, 113, 0.09);
+  --el-color-danger-dark-2: #fca5a5;
+  --el-color-error: #f87171;
+  --el-color-error-light-3: rgba(248, 113, 113, 0.4);
+  --el-color-error-light-5: rgba(248, 113, 113, 0.26);
+  --el-color-error-light-7: rgba(248, 113, 113, 0.17);
+  --el-color-error-light-8: rgba(248, 113, 113, 0.13);
+  --el-color-error-light-9: rgba(248, 113, 113, 0.09);
+  --el-color-error-dark-2: #fca5a5;
+  --el-color-info: #94a3b8;
+  --el-color-info-light-3: rgba(148, 163, 184, 0.4);
+  --el-color-info-light-5: rgba(148, 163, 184, 0.26);
+  --el-color-info-light-7: rgba(148, 163, 184, 0.17);
+  --el-color-info-light-8: rgba(148, 163, 184, 0.13);
+  --el-color-info-light-9: rgba(148, 163, 184, 0.09);
+  --el-color-info-dark-2: #b6c2d2;
+
+  /* —— violet 类目 token 暗色档（与 #257 的 violet 族同源；此前 arc 缺档，
+     AI 辅助类紫色组件（aaf-btn 等）回落 classic 浅紫底）—— */
+  --violet: #a78bfa;
+  --violet-soft: #c4b5fd;
+  --violet-tint: rgba(167, 139, 250, 0.12);
+  --violet-tint-border: rgba(167, 139, 250, 0.32);
+
   --el-table-bg-color: #0c1626;
   --el-table-tr-bg-color: #0c1626;
   --el-table-header-bg-color: #101d33;

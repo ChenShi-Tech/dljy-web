@@ -220,9 +220,10 @@ function levelClass(l: RiskLevel) {
 .rc-card-head { display: flex; align-items: center; gap: 5px; font-size: var(--font-md); color: var(--el-text-color-regular); margin-bottom: 8px; }
 .rc-val { font-size: var(--font-22); font-weight: 600; }
 .rc-tag { display: inline-block; font-size: var(--font-sm); padding: 1px 8px; border-radius: 10px; margin-top: 6px; }
-.lv-green .rc-tag { background: #f0f9eb; color: #67c23a; }
-.lv-yellow .rc-tag { background: #fdf6ec; color: #e6a23c; }
-.lv-red .rc-tag { background: #fef0f0; color: #f56c6c; }
+/* 浅色档原值即 EP 默认 light-9（classic 零变化）；走 EP 变量让弧光/流光暗色档自动暗底 */
+.lv-green .rc-tag { background: var(--el-color-success-light-9); color: var(--el-color-success); }
+.lv-yellow .rc-tag { background: var(--el-color-warning-light-9); color: var(--el-color-warning); }
+.lv-red .rc-tag { background: var(--el-color-danger-light-9); color: var(--el-color-danger); }
 .rc-hint { font-size: var(--font-sm); color: var(--el-text-color-secondary); margin-top: 6px; }
 .rc-card-empty { display: flex; flex-direction: column; gap: 5px; font-size: var(--font-sm); color: var(--el-text-color-regular); }
 .rc-card-empty small { color: var(--el-text-color-secondary); line-height: 1.5; }
