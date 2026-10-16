@@ -662,8 +662,10 @@ function switchDeclTab(tab: 'current' | 'history') {
     historyLoaded.value = true
     void loadHistory()
   }
-  // 切到历史 tab 后列表容器进 DOM，面板固定件从兜底值换成实测，重算上限
-  if (tab === 'history') nextTick(measureHistCap)
+  // 切回历史 tab 时列表容器是重新挂载的 DOM（scrollTop=0）：隐藏期间 historyRows/
+  // targetDate 变化触发的 updateHistWindow 拿不到元素（窗口被清零或停在旧滚动位），
+  // 重新可见时必须按新容器重算虚拟窗口与上限，否则多次切换后列表渲染空窗口（无数据）
+  if (tab === 'history') nextTick(() => { updateHistWindow(); measureHistCap() })
 }
 // 编辑器「复制历史曲线」常显入口（D7）：与历史 tab 同一加载链，打开下拉时懒加载候选
 function onEditorRequestHistory() {
@@ -689,7 +691,9 @@ const histVisibleRows = computed(() => historyRows.value.slice(histWin.value.sta
 function updateHistWindow() {
   const el = histScrollEl.value
   const n = historyRows.value.length
-  if (!el || !n) { histWin.value = { start: 0, end: 0 }; return }
+  if (!n) { histWin.value = { start: 0, end: 0 }; return }
+  // 历史 tab 隐藏期间容器不在 DOM：不按 null 元素清零/错算窗口，重显时由 switchDeclTab 重算
+  if (!el) return
   const top = Math.max(0, el.scrollTop - HIST_HEAD_H)
   const start = Math.max(0, Math.floor(top / HIST_ROW_H) - HIST_OVERSCAN)
   const visible = Math.ceil(el.clientHeight / HIST_ROW_H) + HIST_OVERSCAN * 2
@@ -732,6 +736,34 @@ onUnmounted(() => {
   curveObserver?.disconnect()
   window.removeEventListener('resize', measureHistCap)
 })
+
+// 十项清单限高（八次验收）：上限跟随「展开态判据输入」容器的实测高度——判据与清单同栅格
+// 行且互不影响内容，判据收起或未测得时沿用最近一次展开高度（初始兜底 360）。
+// 滚动同历史申报单：可滚但纵向滚动条隐藏。
+const checklistCap = ref(360)
+const criteriaEl = ref<HTMLDetailsElement | null>(null)
+let criteriaObserver: ResizeObserver | undefined
+function measureChecklistCap() {
+  const criteria = criteriaEl.value
+  const fold = criteria?.closest('.dc-grid')?.querySelector<HTMLDetailsElement>('.dc-list-fold')
+  const list = fold?.querySelector<HTMLElement>('.dc-list')
+  if (!criteria || !criteria.open || !fold || !list) return
+  // 清单固定件 = 折叠框总高 − 列表高（summary/内边距）。开合瞬时态可能读到负值，
+  // 退回 summary 最小高度兜底，保证上限恒不超过判据容器高
+  const raw = fold.offsetHeight - list.offsetHeight
+  const chrome = raw > 0 ? raw : 31
+  const cap = criteria.offsetHeight - chrome
+  if (cap > 0) checklistCap.value = Math.max(160, cap)
+}
+// 绑定驱动的开合（verdict 翻转）不保证 toggle 事件时序，补一次 nextTick 后重测
+watch(() => verdict.value.allowed, () => nextTick(measureChecklistCap))
+onMounted(() => {
+  if (typeof ResizeObserver === 'undefined') return
+  criteriaObserver = new ResizeObserver(measureChecklistCap)
+  if (criteriaEl.value) criteriaObserver.observe(criteriaEl.value)
+  nextTick(measureChecklistCap)
+})
+onUnmounted(() => criteriaObserver?.disconnect())
 
 // 导出某日申报明细（清单 D2：对齐参考系统出清结算单的单日期长表格式）。
 // 行 = 96 时点 × 当天每张申报单；用 xlsx：日期按文本保留、列宽显式定宽，打开即所见。
@@ -1122,12 +1154,13 @@ async function consumeDeskQuery() {
     <!-- 风控与提交（申报台 trust gate/审批记录/L3 双签/出清标记/套保敞口预览
          + S4 重试/人工通道/回执核对，合并后只留一套） -->
     <section id="dc-sec-machine" class="dc-panel">
-      <h3><Save :size="14" /> 风控与提交</h3>
+      <h3>
+        <Save :size="14" /> 风控与提交
+        <span v-if="decl" class="dc-status dc-status-head">{{ STATUS_LABEL[decl.status] }}</span>
+      </h3>
       <div v-if="!decl" class="dc-muted">未绑定作业单据——先在「申报单」创建草稿。</div>
       <template v-else>
         <div class="dc-machine">
-          <span class="dc-status">{{ STATUS_LABEL[decl.status] }}</span>
-
           <template v-if="status === 'DRAFT' || status === 'REJECTED' || status === 'RISK_CHECKED'">
             <button type="button" class="dc-btn primary" :disabled="busy" @click="doRiskCheck">
               {{ status === 'RISK_CHECKED' ? '风控复检' : '风控检查' }}
@@ -1159,6 +1192,10 @@ async function consumeDeskQuery() {
           <template v-if="status === 'ACKNOWLEDGED'">
             <button type="button" class="dc-btn" :disabled="busy" @click="doMarkCleared">出清结果已核对（标记已出清）</button>
           </template>
+          <!-- 敞口预览按钮与风控检查同一行（降噪：不再单独占一行）；仅预览态提供 -->
+          <template v-if="status === 'DRAFT' || status === 'RISK_CHECKED'">
+            <button type="button" class="dc-btn" :disabled="exposureLoading" @click="refreshExposure()">刷新敞口预览</button>
+          </template>
         </div>
 
         <!-- L3 双签与演练自批留痕提示（申报台同款） -->
@@ -1168,9 +1205,12 @@ async function consumeDeskQuery() {
         <p v-else-if="status === 'PENDING_APPROVAL' && isRehearsal && isSelfDeclaration" class="dc-muted">演练自批 · 将留痕</p>
         <p v-if="approvalBlockedReason" class="dc-muted">{{ approvalBlockedReason }}</p>
 
-        <!-- 套保敞口预览（HA-02：仅中长期口径，只作参考；约束由服务端风控按同口径施加） -->
-        <div v-if="status === 'DRAFT' || status === 'RISK_CHECKED'" class="dc-exposure">
-          <button type="button" class="dc-btn" :disabled="exposureLoading" @click="refreshExposure()">刷新敞口预览</button>
+        <!-- 套保敞口预览（HA-02：仅中长期口径，只作参考；约束由服务端风控按同口径施加）
+             ——只留状态文本行，按钮已上移至风控检查同一行 -->
+        <div
+          v-if="(status === 'DRAFT' || status === 'RISK_CHECKED') && (exposureStatus === 'auto' || exposureStatus === 'failed')"
+          class="dc-exposure"
+        >
           <span v-if="exposureStatus === 'auto' && exposure" class="dc-muted">
             已联动套保工作台（仅中长期口径，预览）：已知
             {{ exposure.ratio.coverage.coveredCount }}/{{ exposure.ratio.coverage.totalCount }} 时段
@@ -1323,8 +1363,8 @@ async function consumeDeskQuery() {
         <em>{{ pcPending.length ? `${pcPending.length} 条待判定` : '计划价与临场改价的事后追溯记录（本地原型）' }}</em>
       </summary>
       <div class="dc-pc-form">
-        <label>日期<input v-model="pcForm.date" type="date" /></label>
-        <label>决策点<input v-model="pcForm.decisionPoint" type="text" placeholder="如：晚高峰申报价" /></label>
+        <label class="dc-pc-date">日期<input v-model="pcForm.date" type="date" /></label>
+        <label class="dc-pc-point">决策点<input v-model="pcForm.decisionPoint" type="text" placeholder="如：晚高峰申报价" /></label>
         <label>计划价<input v-model.number="pcForm.planPrice" type="number" step="0.01" placeholder="如：0.35" /></label>
         <label>改后价<input v-model.number="pcForm.changedPrice" type="number" step="0.01" placeholder="如：0.38" /></label>
         <label class="dc-pc-why">依据<input v-model="pcForm.rationale" type="text" placeholder="当时看到了什么" /></label>
@@ -1361,7 +1401,7 @@ async function consumeDeskQuery() {
           <!-- 判据输入收纳（slim-s3-s7-stages）：与十项清单同款自动展开——有未过项即展开，
                全过时收起只留结论徽章；部分判据已由 S1–S3 写回自动填充（徽章提示）。
                无上游产出项标「无上游数据」转人工勾填，不判不通过（D1）。 -->
-          <details class="dc-criteria" :open="!verdict.allowed">
+          <details ref="criteriaEl" class="dc-criteria" :open="!verdict.allowed" @toggle="measureChecklistCap">
             <summary>
               判据输入
               <em v-if="pf.dataGate || pf.storagePlan || pf.forecast" class="dc-auto">部分已由 S1–S3 产出自动填充</em>
@@ -1391,7 +1431,7 @@ async function consumeDeskQuery() {
 
         <div>
           <!-- 十项清单：检验不是主角，默认只列未通过项，全过时折叠为一行 -->
-          <details class="dc-list-fold" :open="!verdict.allowed">
+          <details class="dc-list-fold" :open="!verdict.allowed" @toggle="measureChecklistCap">
             <summary>
               十项清单
               <span v-if="verdict.allowed" class="dc-fold-badge ok">{{ verdict.passedCount }}/{{ verdict.total }} 全部通过</span>
@@ -1399,7 +1439,7 @@ async function consumeDeskQuery() {
                 <span class="dc-fold-badge bad">{{ verdict.total - verdict.passedCount }} 项未过</span>
               </template>
             </summary>
-            <ol class="dc-list">
+            <ol class="dc-list" :style="checklistCap ? { maxHeight: checklistCap + 'px' } : undefined">
               <li
                 v-for="item in items"
                 :key="item.id"
@@ -1555,6 +1595,10 @@ async function consumeDeskQuery() {
 .dc-fold-badge.bad { background: var(--danger-tint, #fee2e2); color: var(--danger, #991b1b); }
 
 .dc-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+/* 十项清单限高内滚（八次验收）：maxHeight 由 checklistCap 内联下发（跟随展开判据容器高），
+   纵向滚动条隐藏——与历史申报单列表同款（滚动功能保留、无滚动条样式） */
+.dc-list { overflow-y: auto; scrollbar-width: none; }
+.dc-list::-webkit-scrollbar { width: 0; }
 .dc-list li { padding: 6px 9px; border-radius: 6px; border-left: 3px solid transparent; }
 .dc-list li.pass { background: var(--primary-tint, #f6fefa); border-left-color: var(--success, #4ade80); }
 .dc-list li.hard { background: var(--danger-tint, #fef2f2); border-left-color: var(--danger, #ef4444); }
@@ -1575,6 +1619,8 @@ async function consumeDeskQuery() {
 
 .dc-machine { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .dc-status { padding: 3px 12px; border-radius: 9px; background: var(--primary-tint, #eff6ff); color: var(--accent, #1d4ed8); font-size: var(--font-sm); font-weight: 600; }
+/* 标题行小号状态徽章（八次验收降噪）：单据状态不占内容行，缩进面板头 */
+.dc-status-head { margin-left: auto; padding: 1px 8px; font-size: var(--font-xs); }
 .dc-comment { padding: 4px 7px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 5px; font-size: var(--font-sm); min-width: 200px; }
 .dc-exposure { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
 .dc-mock-src { padding: 1px 7px; border-radius: 8px; background: var(--warning-tint, #fef3c7); color: var(--warning, #92400e); }
@@ -1627,6 +1673,7 @@ async function consumeDeskQuery() {
   .dc-grid { grid-template-columns: 1fr; }
   .dc-table, .dc-seg-table, .dc-receipt-checks { display: block; overflow-x: auto; }
   .dc-fields { grid-template-columns: 1fr 1fr; }
+  /* 改价留痕表单窄屏：字段自然换行（flex-wrap 已兜底，无需额外规则） */
 }
 .dc-receipt { margin-top: 8px; padding: 7px 10px; border-radius: 8px; background: var(--primary-tint, #f0fdf4); color: var(--success, #166534); font-size: var(--font-sm); display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .dc-receipt em { font-style: normal; padding: 1px 7px; border-radius: 8px; background: var(--warning-tint, #fef3c7); color: var(--warning, #92400e); font-size: var(--font-10); }
@@ -1641,11 +1688,25 @@ async function consumeDeskQuery() {
 .dc-deadline.remind-red { border-color: var(--danger, #f87171); background: var(--danger-tint, #fef2f2); color: var(--danger, #991b1b); font-weight: 600; }
 
 .dc-segments { border: 1px solid var(--el-border-color-lighter, #ebeef5); border-radius: 10px; background: var(--panel, #fff); padding: 8px 12px; }
-/* 临场改价留痕（#2016 · 自 S1 迁入）：登记表单 + 待判定回判列表 */
-.dc-pc-form { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; font-size: var(--font-sm); }
+/* 临场改价留痕（#2016 · 自 S1 迁入）：登记表单 + 待判定回判列表。
+   表单两行（五次验收）：日期/决策点/计划价/改后价 + 登记一行，依据独占第二行——
+   单行放不下会把 label 与输入挤得不可读；窄面板 flex-wrap 自然换行不裁切。 */
+.dc-pc-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  align-items: center;
+  font-size: var(--font-sm);
+}
+.dc-pc-form .dc-btn { flex: none; }
 .dc-pc-form label { display: inline-flex; align-items: center; gap: 4px; color: var(--el-text-color-secondary, #667); }
-.dc-pc-form input { padding: 3px 6px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 6px; font-size: var(--font-sm); width: 96px; }
-.dc-pc-why { flex: 1 1 180px; } .dc-pc-why input { width: 100%; }
+.dc-pc-form input { padding: 3px 6px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 6px; font-size: var(--font-sm); width: 76px; }
+.dc-pc-date input { width: 110px; }
+/* 决策点弹性伸展：常规宽度下一行四字段齐平；依据第二行与登记按钮同排 */
+.dc-pc-point { flex: 1 1 130px; }
+.dc-pc-point input { width: 100%; min-width: 0; }
+.dc-pc-why { flex: 1 1 220px; }
+.dc-pc-why input { width: 100%; min-width: 0; }
 .dc-pc-list { margin: 6px 0 0; padding-left: 18px; font-size: var(--font-sm); }
 .dc-pc-list li { margin: 3px 0; line-height: 1.6; }
 .dc-pc-actions { margin-left: 8px; white-space: nowrap; }
